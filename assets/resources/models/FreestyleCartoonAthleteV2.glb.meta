@@ -1,0 +1,330 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa",
+  "files": [
+    "__original-animation-0.bin"
+  ],
+  "subMetas": {
+    "27767": {
+      "importer": "gltf-scene",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@27767",
+      "displayName": "",
+      "id": "27767",
+      "name": "FreestyleCartoonAthleteV2.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "73e25": {
+      "importer": "gltf-mesh",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@73e25",
+      "displayName": "",
+      "id": "73e25",
+      "name": "characterMedium.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 1604
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "ed341": {
+      "importer": "gltf-mesh",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@ed341",
+      "displayName": "",
+      "id": "ed341",
+      "name": "Sphere.001.mesh",
+      "userData": {
+        "gltfIndex": 1,
+        "triangleCount": 528
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "597d3": {
+      "importer": "gltf-mesh",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@597d3",
+      "displayName": "",
+      "id": "597d3",
+      "name": "Sphere.002.mesh",
+      "userData": {
+        "gltfIndex": 2,
+        "triangleCount": 528
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "41ac8": {
+      "importer": "gltf-mesh",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@41ac8",
+      "displayName": "",
+      "id": "41ac8",
+      "name": "Cube.001.mesh",
+      "userData": {
+        "gltfIndex": 3,
+        "triangleCount": 12
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "825ed": {
+      "importer": "gltf-mesh",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@825ed",
+      "displayName": "",
+      "id": "825ed",
+      "name": "Sphere.mesh",
+      "userData": {
+        "gltfIndex": 4,
+        "triangleCount": 960
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a8b18": {
+      "importer": "gltf-animation",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@a8b18",
+      "displayName": "",
+      "id": "a8b18",
+      "name": "FreestyleFull.animation",
+      "userData": {
+        "gltfIndex": 0,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 2
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
+    "d6ff4": {
+      "importer": "gltf-skeleton",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@d6ff4",
+      "displayName": "",
+      "id": "d6ff4",
+      "name": "FreestyleCartoonAthleteRig.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 58
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b8691": {
+      "importer": "gltf-embeded-image",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@b8691",
+      "displayName": "",
+      "id": "b8691",
+      "name": "humanMaleA.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".json",
+        ".png"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "31b8e0e8-b547-4445-ad1a-430679aa9afa@b8691"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b25f1": {
+      "importer": "gltf-material",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@b25f1",
+      "displayName": "",
+      "id": "b25f1",
+      "name": "kenney_human_male_texture.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a48d9": {
+      "importer": "gltf-material",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@a48d9",
+      "displayName": "",
+      "id": "a48d9",
+      "name": "goggle_lens_blue.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "166fa": {
+      "importer": "gltf-material",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@166fa",
+      "displayName": "",
+      "id": "166fa",
+      "name": "goggles_black.material",
+      "userData": {
+        "gltfIndex": 2
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d0e6e": {
+      "importer": "gltf-material",
+      "uuid": "31b8e0e8-b547-4445-ad1a-430679aa9afa@d0e6e",
+      "displayName": "",
+      "id": "d0e6e",
+      "name": "swimcap_yellow.material",
+      "userData": {
+        "gltfIndex": 3
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "humanMaleA",
+        "uri": "31b8e0e8-b547-4445-ad1a-430679aa9afa@b8691"
+      }
+    ],
+    "animationImportSettings": [
+      {
+        "name": "FreestyleFull",
+        "duration": 2,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "FreestyleFull",
+            "from": 0,
+            "to": 2,
+            "wrapMode": 2,
+            "previousId": "a8b18"
+          }
+        ]
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@73e25",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@ed341",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@597d3",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@41ac8",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@825ed"
+      ],
+      "skeletons": [
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@d6ff4"
+      ],
+      "textures": [
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@e39f7"
+      ],
+      "materials": [
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@b25f1",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@a48d9",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@166fa",
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@d0e6e"
+      ],
+      "scenes": [
+        "31b8e0e8-b547-4445-ad1a-430679aa9afa@27767"
+      ]
+    }
+  }
+}

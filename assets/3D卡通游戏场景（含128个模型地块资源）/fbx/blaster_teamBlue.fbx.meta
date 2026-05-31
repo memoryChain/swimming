@@ -1,0 +1,114 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "7bc17357-e391-4895-81ac-5f3b4ff2dd02",
+  "files": [],
+  "subMetas": {
+    "a3f8c": {
+      "importer": "gltf-mesh",
+      "uuid": "7bc17357-e391-4895-81ac-5f3b4ff2dd02@a3f8c",
+      "displayName": "",
+      "id": "a3f8c",
+      "name": "blaster_teamBlue_Material0.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 1748
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "710bf": {
+      "importer": "gltf-material",
+      "uuid": "7bc17357-e391-4895-81ac-5f3b4ff2dd02@710bf",
+      "displayName": "",
+      "id": "710bf",
+      "name": "Metal.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "78e12": {
+      "importer": "gltf-material",
+      "uuid": "7bc17357-e391-4895-81ac-5f3b4ff2dd02@78e12",
+      "displayName": "",
+      "id": "78e12",
+      "name": "Blue.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8c097": {
+      "importer": "gltf-scene",
+      "uuid": "7bc17357-e391-4895-81ac-5f3b4ff2dd02@8c097",
+      "displayName": "",
+      "id": "8c097",
+      "name": "blaster_teamBlue.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "7bc17357-e391-4895-81ac-5f3b4ff2dd02@a3f8c"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "7bc17357-e391-4895-81ac-5f3b4ff2dd02@710bf",
+        "7bc17357-e391-4895-81ac-5f3b4ff2dd02@78e12"
+      ],
+      "scenes": [
+        "7bc17357-e391-4895-81ac-5f3b4ff2dd02@8c097"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

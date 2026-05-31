@@ -1,0 +1,97 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "7a1cd695-7944-4156-8850-5c55a37df19f",
+  "files": [],
+  "subMetas": {
+    "215b1": {
+      "importer": "gltf-mesh",
+      "uuid": "7a1cd695-7944-4156-8850-5c55a37df19f@215b1",
+      "displayName": "",
+      "id": "215b1",
+      "name": "Icosphere.000.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 396
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "78e12": {
+      "importer": "gltf-material",
+      "uuid": "7a1cd695-7944-4156-8850-5c55a37df19f@78e12",
+      "displayName": "",
+      "id": "78e12",
+      "name": "Blue.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a3062": {
+      "importer": "gltf-scene",
+      "uuid": "7a1cd695-7944-4156-8850-5c55a37df19f@a3062",
+      "displayName": "",
+      "id": "a3062",
+      "name": "diamond_teamBlue.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "7a1cd695-7944-4156-8850-5c55a37df19f@215b1"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "7a1cd695-7944-4156-8850-5c55a37df19f@78e12"
+      ],
+      "scenes": [
+        "7a1cd695-7944-4156-8850-5c55a37df19f@a3062"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

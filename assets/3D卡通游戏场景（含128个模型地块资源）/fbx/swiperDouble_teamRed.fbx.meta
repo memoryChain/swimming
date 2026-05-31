@@ -1,0 +1,148 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e",
+  "files": [],
+  "subMetas": {
+    "3928a": {
+      "importer": "gltf-mesh",
+      "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e@3928a",
+      "displayName": "",
+      "id": "3928a",
+      "name": "swiperDouble_teamRed_Material0.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 2196
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1f97b": {
+      "importer": "gltf-material",
+      "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e@1f97b",
+      "displayName": "",
+      "id": "1f97b",
+      "name": "Brown.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "710bf": {
+      "importer": "gltf-material",
+      "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e@710bf",
+      "displayName": "",
+      "id": "710bf",
+      "name": "Metal.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5fd32": {
+      "importer": "gltf-material",
+      "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e@5fd32",
+      "displayName": "",
+      "id": "5fd32",
+      "name": "Red.material",
+      "userData": {
+        "gltfIndex": 2
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "935df": {
+      "importer": "gltf-material",
+      "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e@935df",
+      "displayName": "",
+      "id": "935df",
+      "name": "White.material",
+      "userData": {
+        "gltfIndex": 3
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "c98fa": {
+      "importer": "gltf-scene",
+      "uuid": "41694aa9-a143-4f71-941b-ae3d2fc4402e@c98fa",
+      "displayName": "",
+      "id": "c98fa",
+      "name": "swiperDouble_teamRed.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "41694aa9-a143-4f71-941b-ae3d2fc4402e@3928a"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "41694aa9-a143-4f71-941b-ae3d2fc4402e@1f97b",
+        "41694aa9-a143-4f71-941b-ae3d2fc4402e@710bf",
+        "41694aa9-a143-4f71-941b-ae3d2fc4402e@5fd32",
+        "41694aa9-a143-4f71-941b-ae3d2fc4402e@935df"
+      ],
+      "scenes": [
+        "41694aa9-a143-4f71-941b-ae3d2fc4402e@c98fa"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "13731f52-db8a-42ee-9a59-e64381e05d35",
+  "files": [],
+  "subMetas": {
+    "afd8c": {
+      "importer": "gltf-mesh",
+      "uuid": "13731f52-db8a-42ee-9a59-e64381e05d35@afd8c",
+      "displayName": "",
+      "id": "afd8c",
+      "name": "Cube.1364.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 648
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5fd32": {
+      "importer": "gltf-material",
+      "uuid": "13731f52-db8a-42ee-9a59-e64381e05d35@5fd32",
+      "displayName": "",
+      "id": "5fd32",
+      "name": "Red.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "710cb": {
+      "importer": "gltf-scene",
+      "uuid": "13731f52-db8a-42ee-9a59-e64381e05d35@710cb",
+      "displayName": "",
+      "id": "710cb",
+      "name": "gateSmall_teamRed.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "13731f52-db8a-42ee-9a59-e64381e05d35@afd8c"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "13731f52-db8a-42ee-9a59-e64381e05d35@5fd32"
+      ],
+      "scenes": [
+        "13731f52-db8a-42ee-9a59-e64381e05d35@710cb"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

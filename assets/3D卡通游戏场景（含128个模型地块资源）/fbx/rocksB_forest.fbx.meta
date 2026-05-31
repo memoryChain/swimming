@@ -1,0 +1,97 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "523bfb31-a79c-4650-afa0-d8b69bd6052e",
+  "files": [],
+  "subMetas": {
+    "17464": {
+      "importer": "gltf-material",
+      "uuid": "523bfb31-a79c-4650-afa0-d8b69bd6052e@17464",
+      "displayName": "",
+      "id": "17464",
+      "name": "Stone.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8563e": {
+      "importer": "gltf-mesh",
+      "uuid": "523bfb31-a79c-4650-afa0-d8b69bd6052e@8563e",
+      "displayName": "",
+      "id": "8563e",
+      "name": "Cube.1386.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 552
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "124f2": {
+      "importer": "gltf-scene",
+      "uuid": "523bfb31-a79c-4650-afa0-d8b69bd6052e@124f2",
+      "displayName": "",
+      "id": "124f2",
+      "name": "rocksB_forest.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "523bfb31-a79c-4650-afa0-d8b69bd6052e@8563e"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "523bfb31-a79c-4650-afa0-d8b69bd6052e@17464"
+      ],
+      "scenes": [
+        "523bfb31-a79c-4650-afa0-d8b69bd6052e@124f2"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

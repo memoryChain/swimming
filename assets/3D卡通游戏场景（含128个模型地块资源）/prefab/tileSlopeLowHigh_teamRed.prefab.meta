@@ -1,0 +1,13 @@
+{
+  "ver": "1.1.50",
+  "importer": "prefab",
+  "imported": true,
+  "uuid": "e3e3d05f-39ac-427a-b04a-1f4e1c6f6539",
+  "files": [
+    ".json"
+  ],
+  "subMetas": {},
+  "userData": {
+    "syncNodeName": "tileSlopeLowHigh_teamRed"
+  }
+}

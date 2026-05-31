@@ -1,0 +1,148 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f",
+  "files": [],
+  "subMetas": {
+    "cb967": {
+      "importer": "gltf-mesh",
+      "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@cb967",
+      "displayName": "",
+      "id": "cb967",
+      "name": "swiperDouble_teamBlue_Material0.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 2196
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1f97b": {
+      "importer": "gltf-material",
+      "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@1f97b",
+      "displayName": "",
+      "id": "1f97b",
+      "name": "Brown.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "710bf": {
+      "importer": "gltf-material",
+      "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@710bf",
+      "displayName": "",
+      "id": "710bf",
+      "name": "Metal.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "78e12": {
+      "importer": "gltf-material",
+      "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@78e12",
+      "displayName": "",
+      "id": "78e12",
+      "name": "Blue.material",
+      "userData": {
+        "gltfIndex": 2
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "935df": {
+      "importer": "gltf-material",
+      "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@935df",
+      "displayName": "",
+      "id": "935df",
+      "name": "White.material",
+      "userData": {
+        "gltfIndex": 3
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7f08c": {
+      "importer": "gltf-scene",
+      "uuid": "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@7f08c",
+      "displayName": "",
+      "id": "7f08c",
+      "name": "swiperDouble_teamBlue.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@cb967"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@1f97b",
+        "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@710bf",
+        "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@78e12",
+        "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@935df"
+      ],
+      "scenes": [
+        "7659dd7b-bab8-4cbf-9f31-4ad9412ed43f@7f08c"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

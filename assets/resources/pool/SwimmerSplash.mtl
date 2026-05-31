@@ -1,0 +1,56 @@
+{
+  "__type__": "cc.Material",
+  "_name": "SwimmerSplash",
+  "_objFlags": 0,
+  "_native": "",
+  "_effectAsset": {
+    "__uuid__": "5b195002-25fc-4273-bd85-1ad12705326d"
+  },
+  "_techIdx": 0,
+  "_defines": [
+    {}
+  ],
+  "_states": [
+    {
+      "blendState": {
+        "targets": [
+          {}
+        ]
+      },
+      "depthStencilState": {},
+      "rasterizerState": {}
+    }
+  ],
+  "_props": [
+    {
+      "foamColor": {
+        "__type__": "cc.Color",
+        "r": 219,
+        "g": 250,
+        "b": 255,
+        "a": 188
+      },
+      "rippleColor": {
+        "__type__": "cc.Color",
+        "r": 38,
+        "g": 194,
+        "b": 245,
+        "a": 112
+      },
+      "splashParams": {
+        "__type__": "cc.Vec4",
+        "x": 0,
+        "y": 0,
+        "z": 0,
+        "w": 0
+      },
+      "shapeParams": {
+        "__type__": "cc.Vec4",
+        "x": 0.25,
+        "y": 0.6,
+        "z": 0,
+        "w": 0
+      }
+    }
+  ]
+}

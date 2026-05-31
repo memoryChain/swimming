@@ -1,0 +1,132 @@
+CCEffect %{
+  techniques:
+  - name: transparent
+    passes:
+    - vert: water-vs:vert
+      frag: water-fs:frag
+      rasterizerState:
+        cullMode: none
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendSrcAlpha: src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      properties:
+        deepColor:    { value: [0.02, 0.30, 0.58, 0.44], linear: true, editor: { type: color } }
+        shallowColor: { value: [0.08, 0.70, 0.94, 0.38], linear: true, editor: { type: color } }
+        foamColor:    { value: [0.84, 0.98, 1.00, 0.42], linear: true, editor: { type: color } }
+        waveA:        { value: [0.020, 0.45, 0.80, 1.00] }
+        waveB:        { value: [0.012, 1.20, 1.15, 0.58] }
+        foamParams:   { value: [0.78, 1.35, 0.10, 0.20] }
+}%
+
+CCProgram water-vs %{
+  precision highp float;
+
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+  #include <legacy/fog-vs>
+
+  out vec3 v_worldPos;
+  out vec2 v_waterUv;
+  out float v_wave;
+
+  uniform WaterParams {
+    vec4 deepColor;
+    vec4 shallowColor;
+    vec4 foamColor;
+    vec4 waveA;
+    vec4 waveB;
+    vec4 foamParams;
+  };
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+
+    float t = cc_time.x;
+    float waveX = sin(position.x * waveA.y + t * waveA.z);
+    float waveZ = sin(position.z * waveB.y - t * waveB.z);
+    float cross = sin((position.x + position.z * 1.7) * 0.18 + t * 0.7);
+    float wave = waveX * waveA.x + waveZ * waveB.x + cross * 0.006;
+    position.y += wave;
+
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    vec4 world = matWorld * position;
+    v_worldPos = world.xyz;
+    v_waterUv = position.xz * 0.05;
+    v_wave = wave;
+
+    CC_TRANSFER_FOG(world);
+    return cc_matProj * (cc_matView * world);
+  }
+}%
+
+CCProgram water-fs %{
+  precision highp float;
+
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/output-standard>
+  #include <legacy/fog-fs>
+
+  in vec3 v_worldPos;
+  in vec2 v_waterUv;
+  in float v_wave;
+
+  uniform WaterParams {
+    vec4 deepColor;
+    vec4 shallowColor;
+    vec4 foamColor;
+    vec4 waveA;
+    vec4 waveB;
+    vec4 foamParams;
+  };
+
+  float waveLine(vec2 p, float speed, float freq, float width) {
+    float n = sin(p.x * freq + p.y * (freq * 0.73) + cc_time.x * speed);
+    float ridge = 1.0 - abs(n);
+    return smoothstep(1.0 - width, 1.0, ridge);
+  }
+
+  vec4 frag () {
+    vec2 uv = v_waterUv;
+    float t = cc_time.x;
+
+    float large = sin(v_worldPos.x * waveA.y + t * waveA.z)
+                + sin(v_worldPos.z * waveB.y - t * waveB.z)
+                + sin((v_worldPos.x - v_worldPos.z) * 0.16 + t * 0.9);
+    large *= 0.3333;
+
+    float chop = waveLine(uv + vec2(t * 0.055, -t * 0.02), foamParams.y, 22.0, foamParams.z);
+    chop += waveLine(uv.yx + vec2(-t * 0.035, t * 0.025), foamParams.y * 1.15, 34.0, foamParams.z * 0.55);
+    chop = clamp(chop, 0.0, 1.0);
+
+    float laneGlint = sin(v_worldPos.x * 2.35 - t * 2.4) * sin(v_worldPos.z * 0.72 + t * 0.35);
+    float laneHighlight = smoothstep(0.82, 1.0, laneGlint);
+    float causticA = waveLine(uv + vec2(t * 0.025, t * 0.010), 0.75, 46.0, 0.045);
+    float causticB = waveLine(uv.yx + vec2(-t * 0.018, t * 0.018), 0.95, 58.0, 0.035);
+    float caustic = clamp(causticA * 0.55 + causticB * 0.38, 0.0, 1.0);
+    float foam = smoothstep(foamParams.x, 1.0, chop * 0.52 + laneHighlight * 0.18 + abs(large) * 0.25);
+
+    vec3 water = mix(deepColor.rgb, shallowColor.rgb, 0.58 + large * 0.12 + chop * 0.16);
+    water += vec3(0.10, 0.22, 0.24) * laneHighlight * 0.18;
+    water += vec3(0.11, 0.22, 0.20) * caustic * 0.13;
+    water += vec3(0.03, 0.08, 0.10) * max(v_wave, 0.0) * 0.9;
+    vec3 color = mix(water, foamColor.rgb, foam * foamParams.w);
+
+    float alpha = mix(deepColor.a, shallowColor.a, 0.55 + large * 0.08);
+    alpha = max(alpha, foam * foamColor.a * 0.75);
+
+    vec4 o = vec4(color, alpha);
+    CC_APPLY_FOG(o);
+    return CCFragOutput(o);
+  }
+}%

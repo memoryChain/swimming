@@ -1,0 +1,114 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "dd1159d0-193a-4d34-acbd-71f1ecbae171",
+  "files": [],
+  "subMetas": {
+    "c05f9": {
+      "importer": "gltf-mesh",
+      "uuid": "dd1159d0-193a-4d34-acbd-71f1ecbae171@c05f9",
+      "displayName": "",
+      "id": "c05f9",
+      "name": "tileSlopeMediumHigh_forest_Material0.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 348
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "9f269": {
+      "importer": "gltf-material",
+      "uuid": "dd1159d0-193a-4d34-acbd-71f1ecbae171@9f269",
+      "displayName": "",
+      "id": "9f269",
+      "name": "Green.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "3fdbc": {
+      "importer": "gltf-material",
+      "uuid": "dd1159d0-193a-4d34-acbd-71f1ecbae171@3fdbc",
+      "displayName": "",
+      "id": "3fdbc",
+      "name": "BrownDark.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b4022": {
+      "importer": "gltf-scene",
+      "uuid": "dd1159d0-193a-4d34-acbd-71f1ecbae171@b4022",
+      "displayName": "",
+      "id": "b4022",
+      "name": "tileSlopeMediumHigh_forest.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "dd1159d0-193a-4d34-acbd-71f1ecbae171@c05f9"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "dd1159d0-193a-4d34-acbd-71f1ecbae171@9f269",
+        "dd1159d0-193a-4d34-acbd-71f1ecbae171@3fdbc"
+      ],
+      "scenes": [
+        "dd1159d0-193a-4d34-acbd-71f1ecbae171@b4022"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "b0aad554-a6ed-475d-927f-821f71461efe",
+  "files": [],
+  "subMetas": {
+    "b6d4c": {
+      "importer": "gltf-mesh",
+      "uuid": "b0aad554-a6ed-475d-927f-821f71461efe@b6d4c",
+      "displayName": "",
+      "id": "b6d4c",
+      "name": "Cube.1375.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 720
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "3fdbc": {
+      "importer": "gltf-material",
+      "uuid": "b0aad554-a6ed-475d-927f-821f71461efe@3fdbc",
+      "displayName": "",
+      "id": "3fdbc",
+      "name": "BrownDark.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "31f37": {
+      "importer": "gltf-scene",
+      "uuid": "b0aad554-a6ed-475d-927f-821f71461efe@31f37",
+      "displayName": "",
+      "id": "31f37",
+      "name": "plantB_desert.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "b0aad554-a6ed-475d-927f-821f71461efe@b6d4c"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "b0aad554-a6ed-475d-927f-821f71461efe@3fdbc"
+      ],
+      "scenes": [
+        "b0aad554-a6ed-475d-927f-821f71461efe@31f37"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

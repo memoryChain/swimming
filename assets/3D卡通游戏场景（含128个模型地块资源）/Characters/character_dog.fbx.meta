@@ -1,0 +1,188 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0",
+  "files": [],
+  "subMetas": {
+    "a4d51": {
+      "importer": "gltf-mesh",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@a4d51",
+      "displayName": "",
+      "id": "a4d51",
+      "name": "Cube.029.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 428
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "3283f": {
+      "importer": "gltf-mesh",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@3283f",
+      "displayName": "",
+      "id": "3283f",
+      "name": "character_dogHead_Material0.mesh",
+      "userData": {
+        "gltfIndex": 1,
+        "triangleCount": 1472
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d664e": {
+      "importer": "gltf-mesh",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@d664e",
+      "displayName": "",
+      "id": "d664e",
+      "name": "Cube.027.mesh",
+      "userData": {
+        "gltfIndex": 2,
+        "triangleCount": 326
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7b9da": {
+      "importer": "gltf-mesh",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@7b9da",
+      "displayName": "",
+      "id": "7b9da",
+      "name": "Cube.026.mesh",
+      "userData": {
+        "gltfIndex": 3,
+        "triangleCount": 326
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "00773": {
+      "importer": "gltf-material",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@00773",
+      "displayName": "",
+      "id": "00773",
+      "name": "Beige.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5fd32": {
+      "importer": "gltf-material",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@5fd32",
+      "displayName": "",
+      "id": "5fd32",
+      "name": "Red.material",
+      "userData": {
+        "gltfIndex": 1
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8f8aa": {
+      "importer": "gltf-material",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@8f8aa",
+      "displayName": "",
+      "id": "8f8aa",
+      "name": "Black.material",
+      "userData": {
+        "gltfIndex": 2
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5d696": {
+      "importer": "gltf-scene",
+      "uuid": "78150690-8ff9-4a09-a972-ec41d00d6ce0@5d696",
+      "displayName": "",
+      "id": "5d696",
+      "name": "character_dog.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@a4d51",
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@3283f",
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@d664e",
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@7b9da"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@00773",
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@5fd32",
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@8f8aa"
+      ],
+      "scenes": [
+        "78150690-8ff9-4a09-a972-ec41d00d6ce0@5d696"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}

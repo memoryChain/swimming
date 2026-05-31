@@ -1,0 +1,144 @@
+CCEffect %{
+  techniques:
+  - name: transparent
+    passes:
+    - vert: splash-vs:vert
+      frag: splash-fs:frag
+      priority: max - 20
+      rasterizerState:
+        cullMode: none
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendSrcAlpha: src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      properties:
+        foamColor:    { value: [0.86, 0.98, 1.0, 0.82], linear: true, editor: { type: color } }
+        rippleColor:  { value: [0.15, 0.76, 0.96, 0.48], linear: true, editor: { type: color } }
+        splashParams: { value: [0.0, 0.0, 0.0, 0.0] }
+        shapeParams:  { value: [0.25, 0.60, 0.0, 0.0] }
+}%
+
+CCProgram splash-vs %{
+  precision highp float;
+
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+
+  out vec2 v_uv;
+  out float v_sideFade;
+
+  uniform SplashParams {
+    vec4 foamColor;
+    vec4 rippleColor;
+    vec4 splashParams;
+    vec4 shapeParams;
+  };
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+
+    float intensity = splashParams.x;
+    float speedRatio = splashParams.y;
+    float t = cc_time.x + splashParams.w;
+    float flowStrength = shapeParams.x;
+    float lateral = 1.0 - smoothstep(0.18, 0.62, abs(position.z));
+    float radial = 1.0 - smoothstep(0.12, 1.0, length(position.xz));
+    float ripple = sin(position.x * 12.0 - t * (7.0 + speedRatio * 6.0))
+                 * sin(position.z * 24.0 + t * 3.6);
+    float burstLift = max(0.0, sin((1.0 - length(position.xz)) * 5.2 + t * 7.0)) * splashParams.z * (1.0 - flowStrength * 0.45);
+    position.y += (ripple * 0.004 * intensity + burstLift * 0.005) * max(lateral, radial);
+
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    vec4 world = matWorld * position;
+    v_uv = a_texCoord;
+    v_sideFade = lateral;
+    return cc_matProj * (cc_matView * world);
+  }
+}%
+
+CCProgram splash-fs %{
+  precision highp float;
+
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/output-standard>
+
+  in vec2 v_uv;
+  in float v_sideFade;
+
+  uniform SplashParams {
+    vec4 foamColor;
+    vec4 rippleColor;
+    vec4 splashParams;
+    vec4 shapeParams;
+  };
+
+  float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float blob(vec2 uv, vec2 center, vec2 radius, float softness) {
+    vec2 d = (uv - center) / radius;
+    return 1.0 - smoothstep(1.0 - softness, 1.0, dot(d, d));
+  }
+
+  vec4 frag () {
+    float intensity = splashParams.x;
+    float speedRatio = splashParams.y;
+    float burst = splashParams.z;
+    float t = cc_time.x + splashParams.w;
+    float flowStrength = shapeParams.x;
+    float trailStrength = shapeParams.y;
+
+    vec2 uv = v_uv;
+    vec2 center = uv - vec2(0.5);
+    float ellipse = length(center * vec2(1.2, 1.45));
+    float coreMask = 1.0 - smoothstep(0.08, 0.44, ellipse);
+    float outerMask = 1.0 - smoothstep(0.34, 0.78, ellipse);
+    float wakeMask = outerMask * v_sideFade;
+
+    float cloud = blob(uv, vec2(0.40, 0.50), vec2(0.26, 0.18), 0.42);
+    cloud += blob(uv, vec2(0.55, 0.42), vec2(0.18, 0.13), 0.42);
+    cloud += blob(uv, vec2(0.55, 0.60), vec2(0.17, 0.13), 0.42);
+    cloud += blob(uv, vec2(0.26, 0.50), vec2(0.20, 0.14), 0.48) * speedRatio;
+    cloud = clamp(cloud, 0.0, 1.0);
+
+    float edgeWave = 0.5 + 0.5 * sin(uv.x * 18.0 - t * 2.6 + sin(uv.y * 9.0) * 1.2 + splashParams.w);
+    float fineWave = 0.5 + 0.5 * sin((uv.x + uv.y) * 31.0 + t * 1.7 + splashParams.w * 0.7);
+    float edgeBreakup = smoothstep(0.28, 0.84, edgeWave * 0.68 + fineWave * 0.24 + outerMask * 0.18);
+    float ring = 1.0 - smoothstep(0.035, 0.12, abs(ellipse - (0.28 + fract(t * 0.45) * 0.22)));
+    ring *= 1.0 - flowStrength * 0.65;
+    vec2 local = fract((uv + vec2(t * 0.06, -t * 0.04)) * vec2(10.0, 8.0)) - 0.5;
+    float dropletGate = smoothstep(0.52, 0.92, 0.5 + 0.5 * sin((uv.x * 23.0 - uv.y * 17.0) + t * 4.0 + splashParams.w));
+    float droplets = smoothstep(0.22, 0.045, length(local)) * dropletGate * (0.35 + burst * 0.45);
+    droplets *= 1.0 - flowStrength * 0.72;
+    vec2 flowUv = vec2(uv.x + t * (0.18 + speedRatio * 0.45) * flowStrength, uv.y);
+    float ribbonA = 0.5 + 0.5 * sin(flowUv.x * 26.0 + sin(uv.y * 13.0 + t * 0.6) * 1.4);
+    float ribbonB = 0.5 + 0.5 * sin(flowUv.x * 14.0 - uv.y * 11.0 + splashParams.w);
+    float trailMask = smoothstep(0.04, 0.18, uv.x) * (1.0 - smoothstep(0.78, 1.0, uv.x));
+    float centerWake = 1.0 - smoothstep(0.05, 0.46, abs(uv.y - 0.5));
+    float flowFoam = smoothstep(0.38, 0.82, ribbonA * 0.62 + ribbonB * 0.28);
+    flowFoam *= trailMask * centerWake * flowStrength * trailStrength;
+    float foamBody = cloud * edgeBreakup * smoothstep(0.22, 0.82, fineWave + cloud * 0.48);
+    float spray = clamp(foamBody * (0.42 + intensity * 0.55) + ring * burst * 0.35 + droplets * (0.45 + burst * 0.45) + flowFoam * (0.7 + intensity * 0.34), 0.0, 1.0);
+    float thinRipples = (1.0 - smoothstep(0.02, 0.09, abs(ellipse - 0.62))) * wakeMask * (0.4 + speedRatio * 0.6);
+
+    vec3 color = mix(rippleColor.rgb, foamColor.rgb, spray);
+    float alpha = (thinRipples * rippleColor.a * 0.55 + spray * foamColor.a + flowFoam * foamColor.a * 0.42) * max(wakeMask, coreMask * 0.65);
+    alpha *= clamp(0.18 + intensity * 0.82 + burst * 0.48, 0.0, 1.0);
+
+    vec4 o = vec4(color, alpha);
+    return CCFragOutput(o);
+  }
+}%

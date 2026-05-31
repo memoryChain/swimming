@@ -1,0 +1,97 @@
+{
+  "ver": "2.3.14",
+  "importer": "fbx",
+  "imported": true,
+  "uuid": "9ae8354f-c506-45bb-bac5-c0219532661d",
+  "files": [],
+  "subMetas": {
+    "e6096": {
+      "importer": "gltf-mesh",
+      "uuid": "9ae8354f-c506-45bb-bac5-c0219532661d@e6096",
+      "displayName": "",
+      "id": "e6096",
+      "name": "Cube.1367.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 572
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5fd32": {
+      "importer": "gltf-material",
+      "uuid": "9ae8354f-c506-45bb-bac5-c0219532661d@5fd32",
+      "displayName": "",
+      "id": "5fd32",
+      "name": "Red.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "6e0ab": {
+      "importer": "gltf-scene",
+      "uuid": "9ae8354f-c506-45bb-bac5-c0219532661d@6e0ab",
+      "displayName": "",
+      "id": "6e0ab",
+      "name": "heart_teamRed.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "fbx": {
+      "smartMaterialEnabled": true,
+      "matchMeshNames": false
+    },
+    "assetFinder": {
+      "meshes": [
+        "9ae8354f-c506-45bb-bac5-c0219532661d@e6096"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "9ae8354f-c506-45bb-bac5-c0219532661d@5fd32"
+      ],
+      "scenes": [
+        "9ae8354f-c506-45bb-bac5-c0219532661d@6e0ab"
+      ]
+    },
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    }
+  }
+}
