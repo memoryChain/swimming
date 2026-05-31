@@ -112,9 +112,9 @@ export class CartoonSwimmerRig extends Component {
         this.splashNode.active = true;
         this.buildSplashSurface();
 
-        loadSwimmerPrefab((err, prefab) => {
+        loadSwimmerPrefab((err, prefab, path) => {
             if (err || !prefab || !this.node?.isValid) {
-                console.error('[SpeedSwimming] failed to load UserSwimmer.glb prefab', err);
+                console.error('[SpeedSwimming] failed to load swimmer prefab', err);
                 return;
             }
 
@@ -145,7 +145,7 @@ export class CartoonSwimmerRig extends Component {
                 this.setActiveSwimming(this._active);
             }
             console.log(
-                `[SpeedSwimming] loaded Blender athlete GLB joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
+                `[SpeedSwimming] loaded athlete prefab=${path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
                 `skinned=${this._skinnedRenderers.length} baseEuler=${this._rootBaseEuler.x.toFixed(1)},${this._rootBaseEuler.y.toFixed(1)},${this._rootBaseEuler.z.toFixed(1)}`,
             );
         });
@@ -824,7 +824,7 @@ export class CartoonSwimmerRig extends Component {
             const roots = this._skinnedRenderers.map((renderer) => renderer.skinningRoot?.name || 'none').join('|');
             console.log(`[SpeedSwimming] skinned mesh realtime enabled count=${this._skinnedRenderers.length} roots=${roots}`);
         } else {
-            console.warn('[SpeedSwimming] no SkinnedMeshRenderer found on UserSwimmer prefab');
+            console.warn('[SpeedSwimming] no SkinnedMeshRenderer found on swimmer prefab');
         }
     }
 
@@ -1123,19 +1123,21 @@ function collectComponentsRecursive<T extends Component>(root: Node, type: new (
     }
 }
 
-function loadSwimmerPrefab(done: (err: Error | null, prefab: Prefab | null) => void) {
-        const paths = [
+function loadSwimmerPrefab(done: (err: Error | null, prefab: Prefab | null, path?: string) => void) {
+    const paths = [
+        'models/UserSwimmerLow',
+        'models/UserSwimmerLow/UserSwimmerLow',
         'models/UserSwimmer',
         'models/UserSwimmer/UserSwimmer',
     ];
     const tryPath = (index: number) => {
         if (index >= paths.length) {
-            done(new Error('UserSwimmer prefab not imported yet'), null);
+            done(new Error('swimmer prefab not imported yet'), null);
             return;
         }
         resources.load(paths[index], Prefab, (err, prefab) => {
             if (!err && prefab) {
-                done(null, prefab);
+                done(null, prefab, paths[index]);
                 return;
             }
             tryPath(index + 1);
@@ -1168,21 +1170,7 @@ function makeMaterial(name: string, albedo: Color, roughness = 0.58, metallic = 
 }
 
 function makePlayerOutlineMaterial(albedo: Color): Material {
-    const material = new Material();
-    material.initialize({
-        effectName: 'builtin-toon',
-        defines: { USE_OUTLINE_PASS: true },
-    });
-    material.name = 'PlayerRedOutlineToon';
-    material.setProperty('lineWidth', 8, 0);
-    material.setProperty('baseColor', new Color(255, 26, 28, 255), 0);
-    material.setProperty('mainColor', albedo);
-    material.setProperty('shadeColor1', darkenColor(albedo, 0.58));
-    material.setProperty('shadeColor2', darkenColor(albedo, 0.34));
-    material.setProperty('specular', new Color(255, 245, 230, 110));
-    material.setProperty('baseStep', 0.62);
-    material.setProperty('shadeStep', 0.38);
-    return material;
+    return makeMaterial('PlayerRedHighlight', blendColor(albedo, new Color(255, 26, 28, 255), 0.32), 0.42, 0.02);
 }
 
 function blendColor(a: Color, b: Color, amount: number): Color {

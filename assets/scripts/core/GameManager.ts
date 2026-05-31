@@ -48,16 +48,19 @@ const POOL_LENGTH = RACE_DISTANCE + 8;
 const POOL_SCENE_PREFAB_PATH = 'pool/PoolScene';
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
+const FIRST_PERSON_SHOT_SECONDS = 6.8;
+const FIRST_PERSON_MIN_SECONDS = 5.8;
 
 enum RaceCameraMode {
     Broadcast = 0,
     Side = 1,
     Chase = 2,
     Top = 3,
-    Free = 4,
+    FirstPerson = 4,
+    Free = 5,
 }
 
-const RACE_CAMERA_MODE_NAMES = ['AUTO', 'SIDE', 'CHASE', 'TOP', 'FREE'];
+const RACE_CAMERA_MODE_NAMES = ['AUTO', 'SIDE', 'CHASE', 'TOP', 'FIRST', 'FREE'];
 
 @ccclass('GameManager')
 export class GameManager extends Component {
@@ -94,6 +97,8 @@ export class GameManager extends Component {
     private _raceFreeCameraDistance = 10.5;
     private _broadcastShotTimer = 0;
     private _broadcastShotIndex = 0;
+    private _broadcastShotSequence: number[] = [];
+    private _broadcastShotSequenceCursor = 0;
     private _broadcastDuelTimer = 0;
     private _broadcastDuelCooldown = 0;
     private _broadcastDuelShotIndex = 1;
@@ -295,8 +300,53 @@ export class GameManager extends Component {
             pool.setParent(root);
             pool.setPosition(Vec3.ZERO);
             pool.setScale(Vec3.ONE);
+            this.configureLoadedPool(pool);
             this.debug(`pool prefab loaded: ${POOL_SCENE_PREFAB_PATH}`);
         });
+    }
+
+    private configureLoadedPool(pool: Node) {
+        const oldWaterNodes: Node[] = [];
+        this.collectNodesByName(pool, new Set(['PoolWater_0_50', 'PoolWater_50_100']), oldWaterNodes);
+        for (const node of oldWaterNodes) {
+            node.active = false;
+        }
+
+        const newWaterNodes: Node[] = [];
+        this.collectNodesByName(pool, new Set(['flat_transparent_water_plane']), newWaterNodes);
+        for (const node of newWaterNodes) {
+            node.active = true;
+        }
+
+        if (!pool.getComponent(WaterSurface)) {
+            pool.addComponent(WaterSurface);
+        }
+
+        resources.load('pool/RagingPoolWater', Material, (err, material) => {
+            if (err || !material || !pool.isValid) {
+                console.warn('[SpeedSwimming] failed to load transparent pool water material', err);
+                return;
+            }
+            for (const node of newWaterNodes) {
+                if (!node.isValid) {
+                    continue;
+                }
+                const renderer = node.getComponent(MeshRenderer);
+                if (renderer) {
+                    renderer.setMaterial(material, 0);
+                }
+            }
+            this.debug(`transparent low-poly water bound nodes=${newWaterNodes.length}`);
+        });
+    }
+
+    private collectNodesByName(root: Node, names: Set<string>, out: Node[]) {
+        if (names.has(root.name)) {
+            out.push(root);
+        }
+        for (const child of root.children) {
+            this.collectNodesByName(child, names, out);
+        }
     }
 
     private buildPoolFallback(root: Node) {
@@ -751,6 +801,10 @@ export class GameManager extends Component {
             this.updateRaceFreeCamera();
             return;
         }
+        if (this._raceCameraMode === RaceCameraMode.FirstPerson) {
+            this.updateRaceFirstPersonCamera();
+            return;
+        }
         if (this._raceCameraMode === RaceCameraMode.Broadcast) {
             this.updateBroadcastCamera(dt);
             return;
@@ -775,18 +829,18 @@ export class GameManager extends Component {
             if (this._broadcastRaceElapsed > 1.2) {
                 this._broadcastShotTimer += dt;
             }
-            if (this._broadcastShotTimer > BROADCAST_SHOT_SECONDS) {
+            if (this._broadcastShotTimer > this.currentBroadcastShotSeconds()) {
                 this._broadcastShotTimer = 0;
-                this._broadcastShotIndex = (this._broadcastShotIndex + 1) % 4;
+                this.advanceBroadcastShot();
             }
         }
 
         const closestGap = this.closestAiDistanceGap(playerDistance);
-        const leadingDistance = this.leadingSwimmerDistance();
         const closeDuel = raceActive && raceRatio > 0.12 && raceRatio < 0.82 && closestGap < 3.2;
         this._broadcastDuelTimer = Math.max(0, this._broadcastDuelTimer - dt);
         this._broadcastDuelCooldown = Math.max(0, this._broadcastDuelCooldown - dt);
-        if (closeDuel && this._broadcastShotTimer >= MIN_BROADCAST_VIEW_SECONDS && this._broadcastDuelTimer <= 0 && this._broadcastDuelCooldown <= 0) {
+        const minViewSeconds = this._broadcastShotIndex === 4 ? FIRST_PERSON_MIN_SECONDS : MIN_BROADCAST_VIEW_SECONDS;
+        if (closeDuel && this._broadcastShotTimer >= minViewSeconds && this._broadcastDuelTimer <= 0 && this._broadcastDuelCooldown <= 0) {
             this._broadcastDuelTimer = 4.4;
             this._broadcastDuelCooldown = 7.4;
             this._broadcastShotTimer = 0;
@@ -817,10 +871,10 @@ export class GameManager extends Component {
             desiredTarget = new Vec3(playerX + 0.6, 0.44, PLAYER_LANE_Z);
             desiredPos = new Vec3(desiredTarget.x, 1.65, PLAYER_LANE_Z + 9.8);
             this._broadcastDesiredFov = 32;
-        } else if (leadingDistance >= RACE_DISTANCE - 12) {
-            const finishViewCenterX = RACE_DISTANCE - 16;
-            const topViewHalfWidth = 15;
-            const targetX = playerX < finishViewCenterX - topViewHalfWidth ? playerX : finishViewCenterX;
+        } else if (playerDistance >= RACE_DISTANCE - 8) {
+            const finishAnchorX = RACE_DISTANCE - 7.5;
+            const playerFollowX = playerX + 3.4;
+            const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
             desiredTarget = new Vec3(targetX, 0.18, 0);
             desiredPos = new Vec3(desiredTarget.x, 22.5, 0);
             this._broadcastDesiredFov = 46;
@@ -860,6 +914,10 @@ export class GameManager extends Component {
                 desiredPos = new Vec3(playerX - 3.9, 2.35, PLAYER_LANE_Z + 7.6);
                 desiredTarget = new Vec3(playerX + 2.0, 0.48, PLAYER_LANE_Z);
                 this._broadcastDesiredFov = 33;
+            } else if (shot === 4) {
+                desiredPos = firstPersonCameraPos(playerX);
+                desiredTarget = new Vec3(playerX + 9.0, 0.58, PLAYER_LANE_Z);
+                this._broadcastDesiredFov = 62;
             }
         }
 
@@ -908,6 +966,21 @@ export class GameManager extends Component {
         this.applyRaceCameraFov();
     }
 
+    private updateRaceFirstPersonCamera() {
+        if (!this._cameraNode || !this._playerSwimmer) {
+            return;
+        }
+
+        const playerX = this._playerSwimmer.node.position.x;
+        const desiredPos = firstPersonCameraPos(playerX);
+        const desiredTarget = new Vec3(playerX + 9.0, 0.58, PLAYER_LANE_Z);
+        this._cameraPos.set(desiredPos);
+        this._cameraTarget.set(desiredTarget);
+        this._cameraNode.setPosition(this._cameraPos);
+        this._cameraNode.lookAt(this._cameraTarget);
+        this.applyRaceCameraFov();
+    }
+
     private updateRaceFreeCamera() {
         if (!this._cameraNode || !this._playerSwimmer) {
             return;
@@ -937,7 +1010,9 @@ export class GameManager extends Component {
             ? this._broadcastCameraFov
             : this._raceCameraMode === RaceCameraMode.Top
                 ? 44
-                : this._raceCameraMode === RaceCameraMode.Free ? 38 : 36;
+                : this._raceCameraMode === RaceCameraMode.FirstPerson
+                    ? 62
+                    : this._raceCameraMode === RaceCameraMode.Free ? 38 : 36;
     }
 
     private resetBroadcastCamera() {
@@ -952,7 +1027,6 @@ export class GameManager extends Component {
 
     private resetBroadcastDirector() {
         this._broadcastShotTimer = 0;
-        this._broadcastShotIndex = 0;
         this._broadcastDuelTimer = 0;
         this._broadcastDuelCooldown = 0;
         this._broadcastDuelShotIndex = 1;
@@ -960,6 +1034,37 @@ export class GameManager extends Component {
         this._broadcastDesiredFov = 42;
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
+        this.pickBroadcastShotSequence();
+    }
+
+    private pickBroadcastShotSequence() {
+        const sequences = [
+            [4, 0, 1, 2, 3],
+            [0, 4, 2, 1, 3],
+            [2, 0, 4, 3, 1],
+            [0, 1, 3, 4, 2],
+            [4, 2, 0, 3, 1],
+        ];
+        this._broadcastShotSequence = sequences[Math.floor(Math.random() * sequences.length)].slice();
+        this._broadcastShotSequenceCursor = 0;
+        this._broadcastShotIndex = this._broadcastShotSequence[0];
+    }
+
+    private advanceBroadcastShot() {
+        if (this._broadcastShotSequence.length === 0) {
+            this.pickBroadcastShotSequence();
+            return;
+        }
+        this._broadcastShotSequenceCursor++;
+        if (this._broadcastShotSequenceCursor >= this._broadcastShotSequence.length) {
+            this.pickBroadcastShotSequence();
+            return;
+        }
+        this._broadcastShotIndex = this._broadcastShotSequence[this._broadcastShotSequenceCursor];
+    }
+
+    private currentBroadcastShotSeconds(): number {
+        return this._broadcastShotIndex === 4 ? FIRST_PERSON_SHOT_SECONDS : BROADCAST_SHOT_SECONDS;
     }
 
     private closestAiDistanceGap(playerDistance: number): number {
@@ -970,16 +1075,6 @@ export class GameManager extends Component {
             }
         }
         return gap;
-    }
-
-    private leadingSwimmerDistance(): number {
-        let distance = this._playerSwimmer?.distance ?? 0;
-        for (const swimmer of this._aiSwimmers) {
-            if (swimmer.node.active) {
-                distance = Math.max(distance, swimmer.distance);
-            }
-        }
-        return distance;
     }
 
     private enterModelDebug() {
@@ -1246,6 +1341,10 @@ function cameraBlend(dt: number, speed: number): number {
 function smoothStep(value: number): number {
     const t = clamp(value, 0, 1);
     return t * t * (3 - 2 * t);
+}
+
+function firstPersonCameraPos(playerX: number): Vec3 {
+    return new Vec3(playerX + 0.95, 0.74, PLAYER_LANE_Z + 0.08);
 }
 
 function laneCenterZ(index: number): number {
