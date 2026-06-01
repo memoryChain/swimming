@@ -46,6 +46,12 @@
   - C：切换比赛镜头。
   - V：自由镜头。
   - F3 / 反引号：调试面板。
+- 比赛中的左右半屏输入现在由 `GameManager.buildRaceHud()` 创建不可见 `mkTouchArea()` 命中区直接处理：
+  - 左半屏触发 `StrokeType.LEG`。
+  - 右半屏触发 `StrokeType.ARM`。
+  - 命中区不绘制透明背景和文字，避免中线阴影或提示文案遮挡画面。
+  - `handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
+- `InputManager.pointerInputEnabled` 当前在比赛 HUD 下设为 `false`，保留键盘输入和后续兜底能力，避免全局指针事件与 UI 命中区重复触发。
 - `RhythmEvaluator` 负责节奏判定：
   - 目标节奏由 `TARGET_BPM = 156` 和 `TARGET_INTERVAL = 60 / TARGET_BPM` 决定。
   - `PERFECT_WINDOW = 0.08`。
@@ -249,7 +255,7 @@
   - 最长 combo。
   - 平均速度。
   - Perfect/Good/Miss 次数。
-- 移动端触摸区保留左右半屏，但减少显式文字遮挡。
+- 移动端触摸区保持左右半屏不可见命中区，不显示 `LEFT / KICK`、`RIGHT / ARM` 等提示文字。
 
 验收标准：
 
@@ -342,7 +348,7 @@
   - 当前大资源已清理，继续避免把原始高模、预览图、备份文件放入 `assets`。
   - Blender 源文件在 `tools` 中，后续可考虑不进入发布分支。
 - 触摸输入：
-  - 左右半屏点击继续作为主输入。
+  - 左右半屏点击继续作为主输入，触摸区必须保持不可见，不绘制半透明背景，避免屏幕中央出现拼接阴影。
   - 需要明确处理多点触控，避免左右同时点时被吞。
 - 渲染：
   - 默认低模、低分辨率运行时贴图。

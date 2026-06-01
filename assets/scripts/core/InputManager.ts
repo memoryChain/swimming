@@ -7,6 +7,7 @@ const { ccclass, property } = _decorator;
 export class InputManager extends Component {
     @property(Node) public strokeTarget: Node = null;
     public modelDebugMode = false;
+    public pointerInputEnabled = true;
 
     onEnable() {
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
@@ -47,18 +48,20 @@ export class InputManager extends Component {
     }
 
     private onMouseDown(event: EventMouse) {
-        if (this.modelDebugMode) {
+        if (this.modelDebugMode || !this.pointerInputEnabled) {
             return;
         }
         if (event.getButton() === EventMouse.BUTTON_LEFT) {
-            this.emitStroke(StrokeType.LEG);
+            const mousePos = event.getUILocation();
+            const halfX = view.getVisibleSize().width / 2;
+            this.emitStroke(mousePos.x < halfX ? StrokeType.LEG : StrokeType.ARM);
         } else if (event.getButton() === EventMouse.BUTTON_RIGHT) {
             this.emitStroke(StrokeType.ARM);
         }
     }
 
     private onTouchStart(event: EventTouch) {
-        if (this.modelDebugMode) {
+        if (this.modelDebugMode || !this.pointerInputEnabled) {
             return;
         }
         const touchPos = event.getUILocation();

@@ -110,6 +110,8 @@ export class GameManager extends Component {
 
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
+    private _lastPadStrokeMs = 0;
+    private _lastPadStrokeType: StrokeType | null = null;
 
     onLoad() {
         game.frameRate = 60;
@@ -547,6 +549,7 @@ export class GameManager extends Component {
         const uiRoot = mkUiNode('RuntimeUIRoot', root);
         const input = uiRoot.addComponent(InputManager);
         input.strokeTarget = this.node;
+        input.pointerInputEnabled = false;
         this._inputManager = input;
 
         this._raceHud = mkUiNode('RaceHUD', uiRoot);
@@ -560,10 +563,22 @@ export class GameManager extends Component {
     }
 
     private buildRaceHud(parent: Node, w: number, h: number) {
-        const leftPad = mkButton('LeftInput', parent, w / 2, h, color(255, 255, 255, 8), 'LEFT / KICK');
+        const leftPad = mkTouchArea('LeftInput', parent, w / 2, h);
         leftPad.setPosition(-w / 4, 0, 0);
-        const rightPad = mkButton('RightInput', parent, w / 2, h, color(255, 255, 255, 8), 'RIGHT / ARM');
+        leftPad.on(Node.EventType.TOUCH_START, () => this.handlePadStroke(StrokeType.LEG), this);
+        leftPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
+            if (event.getButton() === EventMouse.BUTTON_LEFT) {
+                this.handlePadStroke(StrokeType.LEG);
+            }
+        }, this);
+        const rightPad = mkTouchArea('RightInput', parent, w / 2, h);
         rightPad.setPosition(w / 4, 0, 0);
+        rightPad.on(Node.EventType.TOUCH_START, () => this.handlePadStroke(StrokeType.ARM), this);
+        rightPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
+            if (event.getButton() === EventMouse.BUTTON_LEFT || event.getButton() === EventMouse.BUTTON_RIGHT) {
+                this.handlePadStroke(StrokeType.ARM);
+            }
+        }, this);
 
         mkRect('TopBar', parent, w, 82, color(6, 18, 30, 190)).setPosition(0, h / 2 - 41, 0);
         mkLabel('Title', parent, 'SPEED SWIMMING 3D', 24, color(255, 255, 255)).setPosition(-w / 2 + 188, h / 2 - 38, 0);
@@ -608,8 +623,6 @@ export class GameManager extends Component {
         menu.on(Node.EventType.TOUCH_END, () => this.showStartScreen(), this);
 
         const ui = mkUiNode('UIController', parent).addComponent(UIController);
-        ui.btnArm = rightPad;
-        ui.btnLeg = leftPad;
         ui.timerLabel = timerLabel.getComponent(Label);
         ui.speedLabel = speedLabel.getComponent(Label);
         ui.hintLabel = hintLabel.getComponent(Label);
@@ -751,6 +764,16 @@ export class GameManager extends Component {
 
     private onLegKick() {
         this.handlePlayerStroke(StrokeType.LEG);
+    }
+
+    private handlePadStroke(type: StrokeType) {
+        const now = Date.now();
+        if (this._lastPadStrokeType === type && now - this._lastPadStrokeMs < 45) {
+            return;
+        }
+        this._lastPadStrokeType = type;
+        this._lastPadStrokeMs = now;
+        this.handlePlayerStroke(type);
     }
 
     private handlePlayerStroke(type: StrokeType) {
@@ -1414,6 +1437,14 @@ function mkLeftRect(name: string, parent: Node, w: number, h: number, fill: Colo
     node.getComponent(UITransform).setContentSize(w, h);
     const gfx = node.addComponent(Graphics);
     drawLeftFill(gfx, w, h, 1, fill);
+    return node;
+}
+
+function mkTouchArea(name: string, parent: Node, w: number, h: number): Node {
+    const node = mkUiNode(name, parent);
+    node.getComponent(UITransform).setContentSize(w, h);
+    const button = node.addComponent(Button);
+    button.transition = Button.Transition.NONE;
     return node;
 }
 
