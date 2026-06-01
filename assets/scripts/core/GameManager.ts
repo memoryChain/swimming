@@ -505,8 +505,9 @@ export class GameManager extends Component {
         node.setPosition(x, 0.22, z);
 
         const rig = node.addComponent(CartoonSwimmerRig);
+        const sharedSkin = color(246, 176, 118);
         rig.build(
-            isAI ? color(145, 178, 190) : color(246, 176, 118),
+            sharedSkin,
             suitColor || (isAI ? color(58, 92, 128) : color(245, 42, 64)),
             capColor || (isAI ? color(110, 230, 248) : color(255, 220, 72)),
             isAI,

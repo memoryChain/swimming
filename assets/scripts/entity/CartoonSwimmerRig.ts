@@ -1,8 +1,9 @@
-import { _decorator, Color, Component, instantiate, Material, MeshRenderer, Node, Prefab, primitives, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, utils, Vec3, Vec4 } from 'cc';
+import { _decorator, Color, Component, gfx, instantiate, Material, MeshRenderer, Node, Prefab, primitives, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, utils, Vec3, Vec4 } from 'cc';
 
 const { ccclass } = _decorator;
 
 const SPLASH_WATER_Y = 0.408;
+const SWIMMER_TEXTURE_SIZE = 128;
 
 type SplashPart = {
     node: Node;
@@ -53,6 +54,7 @@ export class CartoonSwimmerRig extends Component {
     private _rightToe: Node = null;
     private _animation: SkeletalAnimation = null;
     private _skinnedRenderers: SkinnedMeshRenderer[] = [];
+    private _playerOutlineNode: Node = null;
     private _rootBasePos = new Vec3();
     private _rootBaseEuler = new Vec3();
     private _rootBaseRotation = new Quat();
@@ -172,6 +174,13 @@ export class CartoonSwimmerRig extends Component {
                 this.resetPose();
             }
         }
+    }
+
+    setSwimmerColors(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
+        if (!this._loaded || !this.root) {
+            return;
+        }
+        this.applyLaneMaterials(skinColor, suitColor, capColor, robotStyle, playerOutline);
     }
 
     setPreRaceStanding(active: boolean) {
@@ -455,6 +464,10 @@ export class CartoonSwimmerRig extends Component {
     }
 
     private applyLaneMaterials(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
+        if (this.applyLowSwimmerTextureMaterial(skinColor, suitColor, capColor, robotStyle, playerOutline)) {
+            return;
+        }
+
         const skin = makeMaterial('GLBSwimmerSkin', skinColor, robotStyle ? 0.34 : 0.52, robotStyle ? 0.5 : 0);
         const suit = makeMaterial('GLBSwimmerSuit', suitColor, robotStyle ? 0.38 : 0.5, robotStyle ? 0.35 : 0.02);
         const cap = makeMaterial('GLBSwimmerCap', capColor, robotStyle ? 0.32 : 0.44, robotStyle ? 0.45 : 0.04);
@@ -482,6 +495,58 @@ export class CartoonSwimmerRig extends Component {
             }
             console.log(`[SpeedSwimming] applied fallback athlete material robot=${robotStyle} outline=${playerOutline} renderers=${this._skinnedRenderers.length}`);
         }
+    }
+
+    private applyLowSwimmerTextureMaterial(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean): boolean {
+        if (this._skinnedRenderers.length !== 1) {
+            return false;
+        }
+
+        const renderer = this._skinnedRenderers[0];
+        const looksLikeLowProxy = renderer.node.name === 'Skin' || renderer.node.name === 'node_0.003';
+        if (!looksLikeLowProxy) {
+            return false;
+        }
+
+        const tintSuit = playerOutline ? blendColor(suitColor, new Color(255, 26, 28, 255), 0.22) : suitColor;
+        const tintCap = robotStyle ? blendColor(capColor, new Color(175, 245, 255, 255), 0.18) : capColor;
+        renderer.setMaterial(makeSwimmerTextureMaterial(skinColor, tintSuit, tintCap, robotStyle), 0);
+        this.configurePlayerOutlineShell(renderer, playerOutline);
+        console.log(`[SpeedSwimming] applied low swimmer texture material suit=${tintSuit.r},${tintSuit.g},${tintSuit.b} cap=${tintCap.r},${tintCap.g},${tintCap.b}`);
+        return true;
+    }
+
+    private configurePlayerOutlineShell(source: SkinnedMeshRenderer, enabled: boolean) {
+        if (!enabled) {
+            if (this._playerOutlineNode?.isValid) {
+                this._playerOutlineNode.destroy();
+            }
+            this._playerOutlineNode = null;
+            return;
+        }
+
+        if (this._playerOutlineNode?.isValid) {
+            const existing = this._playerOutlineNode.getComponent(SkinnedMeshRenderer);
+            if (existing) {
+                existing.setMaterial(makePlayerShellOutlineMaterial(), 0);
+            }
+            return;
+        }
+
+        const outlineNode = new Node('PlayerOutlineShell');
+        outlineNode.setParent(source.node.parent || this.root || this._model);
+        outlineNode.setPosition(source.node.position);
+        outlineNode.setRotation(source.node.rotation);
+        outlineNode.setScale(source.node.scale.x * 1.085, source.node.scale.y * 1.085, source.node.scale.z * 1.085);
+
+        const outline = outlineNode.addComponent(SkinnedMeshRenderer);
+        outline.mesh = source.mesh;
+        outline.skeleton = source.skeleton;
+        outline.skinningRoot = source.skinningRoot || this._model;
+        outline.setUseBakedAnimation(false, true);
+        outline.uploadAnimation(null);
+        outline.setMaterial(makePlayerShellOutlineMaterial(), 0);
+        this._playerOutlineNode = outlineNode;
     }
 
     private applyModelDebugSetup() {
@@ -815,6 +880,7 @@ export class CartoonSwimmerRig extends Component {
         }
         this._skinnedRenderers = [];
         collectComponentsRecursive(this._model, SkinnedMeshRenderer, this._skinnedRenderers);
+        this._skinnedRenderers = this._skinnedRenderers.filter((renderer) => renderer.node.name !== 'PlayerOutlineShell');
         for (const renderer of this._skinnedRenderers) {
             renderer.skinningRoot = this._model;
             renderer.setUseBakedAnimation(false, true);
@@ -1167,6 +1233,95 @@ function makeMaterial(name: string, albedo: Color, roughness = 0.58, metallic = 
     material.setProperty('roughness', roughness);
     material.setProperty('metallic', metallic);
     return material;
+}
+
+function makeSwimmerTextureMaterial(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean): Material {
+    const texture = makeSwimmerClothesTexture(skinColor, suitColor, capColor);
+    const material = new Material();
+    material.initialize({ effectName: 'builtin-standard', defines: { USE_ALBEDO_MAP: true } });
+    material.name = 'RuntimeLowSwimmerTexture';
+    material.setProperty('albedo', new Color(255, 255, 255, 255));
+    material.setProperty('albedoMap', texture);
+    material.setProperty('roughness', robotStyle ? 0.36 : 0.56);
+    material.setProperty('metallic', robotStyle ? 0.16 : 0);
+    return material;
+}
+
+function makePlayerShellOutlineMaterial(): Material {
+    const material = new Material();
+    material.initialize({
+        effectName: 'builtin-standard',
+        states: {
+            rasterizerState: { cullMode: gfx.CullMode.FRONT },
+        },
+    });
+    material.name = 'PlayerShellOutline';
+    material.setProperty('albedo', new Color(6, 12, 24, 255));
+    material.setProperty('roughness', 0.9);
+    material.setProperty('metallic', 0);
+    return material;
+}
+
+function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor: Color): Texture2D {
+    const data = new Uint8Array(SWIMMER_TEXTURE_SIZE * SWIMMER_TEXTURE_SIZE * 4);
+    const suitEdge = darkenColor(suitColor, 0.48);
+
+    for (let y = 0; y < SWIMMER_TEXTURE_SIZE; y++) {
+        const v = 1 - (y + 0.5) / SWIMMER_TEXTURE_SIZE;
+        for (let x = 0; x < SWIMMER_TEXTURE_SIZE; x++) {
+            const u = (x + 0.5) / SWIMMER_TEXTURE_SIZE;
+            const nx = (u - 0.5) * 2;
+            const color = swimmerTextureColor(nx, v, skinColor, suitColor, capColor, suitEdge);
+            const index = (y * SWIMMER_TEXTURE_SIZE + x) * 4;
+            data[index] = color.r;
+            data[index + 1] = color.g;
+            data[index + 2] = color.b;
+            data[index + 3] = color.a;
+        }
+    }
+
+    const texture = new Texture2D('RuntimeLowSwimmerClothes');
+    texture.create(SWIMMER_TEXTURE_SIZE, SWIMMER_TEXTURE_SIZE, Texture2D.PixelFormat.RGBA8888);
+    texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
+    texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
+    texture.uploadData(data);
+    return texture;
+}
+
+function swimmerTextureColor(nx: number, v: number, skin: Color, suit: Color, cap: Color, suitEdge: Color): Color {
+    const ax = Math.abs(nx);
+    let color = skin;
+
+    const torsoWidth = 0.38 + clamp((v - 0.54) / 0.30, 0, 1) * 0.22;
+    if (v >= 0.42 && v <= 0.91 && ax <= torsoWidth) {
+        color = suit;
+    }
+    if (v >= 0.30 && v < 0.60 && ax <= 0.58) {
+        color = suit;
+    }
+    if (v >= 0.24 && v < 0.47 && ax >= 0.12 && ax <= 0.56) {
+        color = suit;
+    }
+    if (v >= 0.34 && v <= 0.91 && ax >= 0.42 && ax <= 0.98) {
+        color = suit;
+    }
+
+    if (v >= 0.44 && v <= 0.56 && ax >= 0.58) {
+        color = skin;
+    }
+
+    if ((v >= 0.902 && v <= 0.915 && ax <= 0.46) || (v >= 0.232 && v <= 0.246 && ax >= 0.12 && ax <= 0.56)) {
+        color = suitEdge;
+    }
+    if (v >= 0.330 && v <= 0.345 && ax >= 0.42 && ax <= 0.98) {
+        color = suitEdge;
+    }
+
+    if (v >= 0.965 && v <= 1 && ax <= 0.78) {
+        color = cap;
+    }
+
+    return color;
 }
 
 function makePlayerOutlineMaterial(albedo: Color): Material {
