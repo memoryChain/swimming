@@ -1,0 +1,67 @@
+CCEffect %{
+  techniques:
+  - name: opaque
+    passes:
+    - vert: outline-vs
+      frag: outline-fs
+      priority: max - 30
+      rasterizerState:
+        cullMode: front
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      properties:
+        lineWidth: { value: 18, target: outlineParams.x }
+        depthBias: { value: 0.08, target: outlineParams.y }
+        baseColor: { value: [0.012, 0.018, 0.03, 1.0], linear: true, editor: { type: color } }
+}%
+
+CCProgram surface-vertex-outline %{
+  uniform OutlineVert {
+    vec4 outlineParams;
+  };
+
+  #define CC_SURFACES_VERTEX_MODIFY_LOCAL_POS
+  vec3 SurfacesVertexModifyLocalPos(in SurfacesStandardVertexIntermediate In)
+  {
+    return In.position.xyz + normalize(In.normal) * outlineParams.x * 0.001;
+  }
+
+  #define CC_SURFACES_VERTEX_MODIFY_CLIP_POS
+  vec4 SurfacesVertexModifyClipPos(in SurfacesStandardVertexIntermediate In)
+  {
+    vec4 clipPos = In.clipPos;
+    clipPos.z -= outlineParams.y * 0.002;
+    return clipPos;
+  }
+}%
+
+CCProgram surface-fragment-outline %{
+  uniform OutlineFrag {
+    vec4 baseColor;
+  };
+
+  #define CC_SURFACES_FRAGMENT_MODIFY_BASECOLOR_AND_TRANSPARENCY
+  vec4 SurfacesFragmentModifyBaseColorAndTransparency()
+  {
+    vec4 color = baseColor;
+    color.rgb = SRGBToLinear(color.rgb);
+    return color;
+  }
+}%
+
+CCProgram outline-vs %{
+  precision highp float;
+  #include <surfaces/effect-macros/silhouette-edge>
+  #include <surfaces/includes/common-vs>
+  #include <surface-vertex-outline>
+  #include <shading-entries/main-functions/misc/silhouette-edge-vs>
+}%
+
+CCProgram outline-fs %{
+  precision highp float;
+  #include <surfaces/effect-macros/silhouette-edge>
+  #include <surfaces/includes/common-fs>
+  #include <surface-fragment-outline>
+  #include <shading-entries/main-functions/misc/silhouette-edge-fs>
+}%
