@@ -1228,8 +1228,6 @@ function loadSwimmerPrefab(done: (err: Error | null, prefab: Prefab | null, path
     const paths = [
         'models/UserSwimmerLow',
         'models/UserSwimmerLow/UserSwimmerLow',
-        'models/UserSwimmer',
-        'models/UserSwimmer/UserSwimmer',
     ];
     const tryPath = (index: number) => {
         if (index >= paths.length) {
