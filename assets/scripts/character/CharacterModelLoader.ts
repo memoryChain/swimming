@@ -101,7 +101,15 @@ export function pruneNullComponentsRecursive(root: Node): number {
     return removed;
 }
 
-function pruneNullComponents(node: Node): number {
+export function pruneNullComponentsInParentChain(node: Node | null): number {
+    let removed = 0;
+    for (let current = node; current; current = current.parent) {
+        removed += pruneNullComponents(current);
+    }
+    return removed;
+}
+
+export function pruneNullComponents(node: Node): number {
     const internals = node as unknown as { _components?: unknown[] };
     const components = internals._components;
     if (!Array.isArray(components)) {

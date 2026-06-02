@@ -1,7 +1,7 @@
 import { _decorator, Color, Component, instantiate, Layers, Node, SkeletalAnimation, SkinnedMeshRenderer, Vec3 } from 'cc';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin } from '../character/CharacterSkinApplier';
-import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
+import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 
@@ -78,10 +78,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             if (prunedComponents > 0) {
                 console.warn(`[SpeedSwimming] pruned null components from swimmer prefab count=${prunedComponents}`);
             }
-            try {
-                this._model.setParent(this.node);
-            } catch (error) {
-                console.error('[SpeedSwimming] failed to attach swimmer model prefab', error);
+            const prunedParents = pruneNullComponentsInParentChain(this.node);
+            if (prunedParents > 0) {
+                console.warn(`[SpeedSwimming] pruned null components from swimmer parent chain count=${prunedParents}`);
+            }
+            if (!this.attachModelToSwimmerNode()) {
                 this._model.destroy();
                 this._model = null;
                 return;
@@ -112,6 +113,30 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 `skinned=${this._skinnedRenderers.length} baseEuler=${this._pose.rootBaseEuler.x.toFixed(1)},${this._pose.rootBaseEuler.y.toFixed(1)},${this._pose.rootBaseEuler.z.toFixed(1)}`,
             );
         });
+    }
+
+    private attachModelToSwimmerNode(): boolean {
+        if (!this._model) {
+            return false;
+        }
+        try {
+            this._model.setParent(this.node);
+            return true;
+        } catch (firstError) {
+            console.warn('[SpeedSwimming] retry swimmer model attach after component cleanup', firstError);
+            const prunedModel = pruneNullComponentsRecursive(this._model);
+            const prunedParents = pruneNullComponentsInParentChain(this.node);
+            if (prunedModel + prunedParents > 0) {
+                console.warn(`[SpeedSwimming] retry pruned null components model=${prunedModel} parents=${prunedParents}`);
+            }
+            try {
+                this._model.setParent(this.node);
+                return true;
+            } catch (secondError) {
+                console.error('[SpeedSwimming] failed to attach swimmer model prefab', secondError);
+                return false;
+            }
+        }
     }
 
     setActiveSwimming(active: boolean) {

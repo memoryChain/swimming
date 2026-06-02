@@ -1,5 +1,5 @@
 import { instantiate, Node, Prefab, resources, Vec3 } from 'cc';
-import { pruneNullComponentsRecursive } from '../character/CharacterModelLoader';
+import { pruneNullComponentsInParentChain, pruneNullComponentsRecursive } from '../character/CharacterModelLoader';
 import { PoolDefinition } from './VenueConfig';
 
 export type PoolSceneLoadResult = {
@@ -26,12 +26,26 @@ export class PoolSceneLoader {
             if (prunedComponents > 0) {
                 console.warn(`[SpeedSwimming] pruned null components from pool prefab count=${prunedComponents}`);
             }
+            const prunedParents = pruneNullComponentsInParentChain(root);
+            if (prunedParents > 0) {
+                console.warn(`[SpeedSwimming] pruned null components from pool parent chain count=${prunedParents}`);
+            }
             try {
                 pool.setParent(root);
             } catch (error) {
-                pool.destroy();
-                done({ pool: null, error: error instanceof Error ? error : new Error(`${error}`) });
-                return;
+                console.warn('[SpeedSwimming] retry pool prefab attach after component cleanup', error);
+                const retryPrunedPool = pruneNullComponentsRecursive(pool);
+                const retryPrunedParents = pruneNullComponentsInParentChain(root);
+                if (retryPrunedPool + retryPrunedParents > 0) {
+                    console.warn(`[SpeedSwimming] retry pruned null components pool=${retryPrunedPool} parents=${retryPrunedParents}`);
+                }
+                try {
+                    pool.setParent(root);
+                } catch (retryError) {
+                    pool.destroy();
+                    done({ pool: null, error: retryError instanceof Error ? retryError : new Error(`${retryError}`) });
+                    return;
+                }
             }
             pool.setPosition(Vec3.ZERO);
             pool.setScale(Vec3.ONE);
