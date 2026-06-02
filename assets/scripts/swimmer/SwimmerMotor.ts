@@ -1,4 +1,5 @@
-import { BASE_SPEED, RACE_DISTANCE, StrokeType } from '../core/GameConstants';
+import { RACE_DISTANCE, SWIMMER_BALANCE } from '../core/GameBalance';
+import { StrokeType } from '../core/GameConstants';
 import { StrokeMetrics } from './StrokeMetrics';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 
@@ -26,7 +27,7 @@ export class SwimmerMotor {
     private _armAction = 0;
     private _kickAction = 0;
 
-    startRace(initialDistance = 0, initialSpeed = BASE_SPEED) {
+    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed) {
         this._isRacing = true;
         this._currentSpeed = initialSpeed;
         this.resetRaceState(initialDistance);

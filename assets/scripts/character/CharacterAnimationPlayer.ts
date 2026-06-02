@@ -1,6 +1,5 @@
 import { SkeletalAnimation } from 'cc';
-
-const FREESTYLE_CLIP_NAME = 'FreestyleFull';
+import { ANIMATION_CLIPS } from '../core/ResourcePaths';
 
 export class CharacterAnimationPlayer {
     private _animation: SkeletalAnimation | null = null;
@@ -68,7 +67,7 @@ export class CharacterAnimationPlayer {
         if (!this._animation) {
             return null;
         }
-        return this._animation.clips.find((item) => item?.name === FREESTYLE_CLIP_NAME)
+        return this._animation.clips.find((item) => item?.name === ANIMATION_CLIPS.freestyle)
             || this._animation.defaultClip
             || this._animation.clips[0]
             || null;

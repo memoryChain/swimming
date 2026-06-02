@@ -1,9 +1,9 @@
 import { _decorator, Component } from 'cc';
-import { COUNTDOWN_SECONDS, GameState, RACE_DISTANCE } from './GameConstants';
+import { COUNTDOWN_SECONDS, GLIDE_SECONDS, RACE_DISTANCE } from './GameBalance';
+import { GameState } from './GameConstants';
 import { Swimmer } from '../entity/Swimmer';
 
 const { ccclass, property } = _decorator;
-const GLIDE_SECONDS = 0.72;
 
 @ccclass('RaceManager')
 export class RaceManager extends Component {

@@ -1,5 +1,6 @@
 import { _decorator, Color, Component, Label, Node, Tween, tween, UITransform, Vec3 } from 'cc';
-import { MAX_SPEED, RACE_DISTANCE, Rating } from '../core/GameConstants';
+import { RACE_DISTANCE, SWIMMER_BALANCE } from '../core/GameBalance';
+import { Rating } from '../core/GameConstants';
 
 const { ccclass, property } = _decorator;
 
@@ -59,7 +60,7 @@ export class UIController extends Component {
 
     updateSpeed(speed: number) {
         if (this.speedLabel) {
-            this.speedLabel.string = `${speed.toFixed(2)} m/s  ${Math.round((speed / MAX_SPEED) * 100)}%`;
+            this.speedLabel.string = `${speed.toFixed(2)} m/s  ${Math.round((speed / SWIMMER_BALANCE.maxSpeed) * 100)}%`;
         }
     }
 

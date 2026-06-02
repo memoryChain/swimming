@@ -3,17 +3,12 @@ import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
+import { DIVE_BALANCE } from '../core/GameBalance';
 import { RhythmEvaluator, RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
-
-const DIVE_PLATFORM_NODE_OFFSET = new Vec3(-1.37, 0.53, 0);
-const DIVE_MIN_DISTANCE = 0.55;
-const DIVE_MAX_DISTANCE = 1.85;
-const DIVE_MIN_SPEED = 0.85;
-const DIVE_MAX_SPEED = 2.35;
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -55,7 +50,7 @@ export class Swimmer extends Component {
         this.captureStartPosition();
     }
 
-    startRace(initialDistance = 0, initialSpeed = DIVE_MIN_SPEED) {
+    startRace(initialDistance = 0, initialSpeed = DIVE_BALANCE.minSpeed) {
         this.captureStartPosition();
         this._motor.startRace(initialDistance, initialSpeed);
         this._comboSpeedBonus = 0;
@@ -82,8 +77,8 @@ export class Swimmer extends Component {
     performDive(power: number): number {
         this.captureStartPosition();
         const divePower = clamp01(power);
-        const distance = lerp(DIVE_MIN_DISTANCE, DIVE_MAX_DISTANCE, divePower);
-        const entrySpeed = lerp(DIVE_MIN_SPEED, DIVE_MAX_SPEED, divePower);
+        const distance = lerp(DIVE_BALANCE.minDistance, DIVE_BALANCE.maxDistance, divePower);
+        const entrySpeed = lerp(DIVE_BALANCE.minSpeed, DIVE_BALANCE.maxSpeed, divePower);
         const crouchDuration = lerp(0.16, 0.1, divePower);
         const flightDuration = lerp(0.5, 0.38, divePower);
         const arcHeight = lerp(0.1, 0.22, divePower);
@@ -490,9 +485,9 @@ export class Swimmer extends Component {
 
     private divePlatformPosition(): Vec3 {
         return new Vec3(
-            this._startPosition.x + DIVE_PLATFORM_NODE_OFFSET.x,
-            this._startPosition.y + DIVE_PLATFORM_NODE_OFFSET.y,
-            this._startPosition.z + DIVE_PLATFORM_NODE_OFFSET.z,
+            this._startPosition.x + DIVE_BALANCE.platformNodeOffset.x,
+            this._startPosition.y + DIVE_BALANCE.platformNodeOffset.y,
+            this._startPosition.z + DIVE_BALANCE.platformNodeOffset.z,
         );
     }
 

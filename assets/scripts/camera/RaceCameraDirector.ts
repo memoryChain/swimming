@@ -1,5 +1,5 @@
 import { Camera, Node, Vec3 } from 'cc';
-import { COUNTDOWN_SECONDS, RACE_DISTANCE } from '../core/GameConstants';
+import { COUNTDOWN_SECONDS, RACE_DISTANCE } from '../core/GameBalance';
 
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;

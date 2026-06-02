@@ -1,16 +1,7 @@
 import { _decorator, Component } from 'cc';
-import {
-    COMBO_GOOD_BONUS,
-    COMBO_MISS_PENALTY,
-    COMBO_PERFECT_BONUS,
-    GOOD_WINDOW,
-    MAX_COMBO_BONUS,
-    PERFECT_WINDOW,
-    Rating,
-    RHYTHM_WINDOW,
-    StrokeType,
-    TARGET_INTERVAL,
-} from './GameConstants';
+import { RHYTHM_BALANCE, TARGET_INTERVAL } from './GameBalance';
+import { Rating, StrokeType } from './GameConstants';
+import { INPUT_TUNING } from './InputTuning';
 
 const { ccclass } = _decorator;
 
@@ -50,9 +41,9 @@ export class RhythmEvaluator extends Component {
             rating = Rating.MISS;
         } else if (this._strokeCount > 0) {
             const deviation = Math.abs(interval - TARGET_INTERVAL);
-            if (deviation <= PERFECT_WINDOW) {
+            if (deviation <= INPUT_TUNING.rhythmPerfectWindowSeconds) {
                 rating = Rating.PERFECT;
-            } else if (deviation <= GOOD_WINDOW || interval <= RHYTHM_WINDOW) {
+            } else if (deviation <= INPUT_TUNING.rhythmGoodWindowSeconds || interval <= INPUT_TUNING.rhythmLooseWindowSeconds) {
                 rating = Rating.GOOD;
             } else {
                 rating = Rating.MISS;
@@ -72,14 +63,14 @@ export class RhythmEvaluator extends Component {
             this._combo = Math.max(0, this._combo);
             this._goodCount += 1;
         } else {
-            this._combo = Math.max(0, this._combo - COMBO_MISS_PENALTY);
+            this._combo = Math.max(0, this._combo - RHYTHM_BALANCE.comboMissPenalty);
             this._missCount += 1;
         }
         this._maxCombo = Math.max(this._maxCombo, this._combo);
 
-        const perfectBonus = this._combo * COMBO_PERFECT_BONUS;
-        const goodBonus = rating === Rating.GOOD ? COMBO_GOOD_BONUS : 0;
-        const speedMultiplier = Math.min(MAX_COMBO_BONUS, 1 + perfectBonus + goodBonus);
+        const perfectBonus = this._combo * RHYTHM_BALANCE.comboPerfectBonus;
+        const goodBonus = rating === Rating.GOOD ? RHYTHM_BALANCE.comboGoodBonus : 0;
+        const speedMultiplier = Math.min(RHYTHM_BALANCE.maxComboBonus, 1 + perfectBonus + goodBonus);
         const expectedNext = type === StrokeType.ARM ? StrokeType.LEG : StrokeType.ARM;
 
         return { rating, speedMultiplier, combo: this._combo, interval, expectedNext };

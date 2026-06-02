@@ -1,7 +1,8 @@
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
-import { GameState, RACE_DISTANCE, StrokeType } from '../core/GameConstants';
+import { DIVE_BALANCE, RACE_DISTANCE } from '../core/GameBalance';
+import { GameState, StrokeType } from '../core/GameConstants';
 import { RaceManager } from '../core/RaceManager';
 import { UIFlowController } from '../ui/UIFlowController';
 
@@ -97,7 +98,7 @@ export class GameFlowController {
         if (this._refs.getState() !== GameState.DIVING) {
             return;
         }
-        const effectiveHold = this._diveChargeStarted ? holdSeconds : 0.12;
+        const effectiveHold = this._diveChargeStarted ? holdSeconds : DIVE_BALANCE.defaultFallbackHoldSeconds;
         const power = this.calculateDivePower(effectiveHold);
         this._diveChargeStarted = false;
         this._refs.debug(`dive release hold=${effectiveHold.toFixed(2)} power=${power.toFixed(2)}`);
@@ -257,23 +258,23 @@ export class GameFlowController {
     }
 
     private aiDiveReactionDelay(controller: AISwimmerController | null): number {
-        const baseReaction = controller?.diveReaction ?? 0.14;
-        return Math.max(0.03, baseReaction + Math.random() * 0.08);
+        const baseReaction = controller?.diveReaction ?? DIVE_BALANCE.defaultAiReactionSeconds;
+        return Math.max(0.03, baseReaction + Math.random() * DIVE_BALANCE.aiReactionRandomSeconds);
     }
 
     private aiDivePower(swimmer: Swimmer, controller: AISwimmerController | null): number {
-        const basePower = controller?.divePower ?? 0.72;
-        const variance = (Math.random() * 2 - 1) * 0.08;
-        return Math.max(0.38, Math.min(0.96, basePower + variance));
+        const basePower = controller?.divePower ?? DIVE_BALANCE.defaultAiPower;
+        const variance = (Math.random() * 2 - 1) * DIVE_BALANCE.aiPowerVariance;
+        return Math.max(DIVE_BALANCE.aiPowerMin, Math.min(DIVE_BALANCE.aiPowerMax, basePower + variance));
     }
 
     private calculateDivePower(holdSeconds: number): number {
-        const minHold = 0.08;
-        const maxHold = 1.1;
+        const minHold = DIVE_BALANCE.minHoldSeconds;
+        const maxHold = DIVE_BALANCE.maxHoldSeconds;
         if (holdSeconds <= minHold) {
-            return 0.18;
+            return DIVE_BALANCE.minPower;
         }
-        return Math.max(0.18, Math.min(1, (holdSeconds - minHold) / (maxHold - minHold)));
+        return Math.max(DIVE_BALANCE.minPower, Math.min(1, (holdSeconds - minHold) / (maxHold - minHold)));
     }
 
     private calculatePlayerPlacement(): { placement: number; racerCount: number } {

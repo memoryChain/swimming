@@ -1,22 +1,18 @@
 import { Component, Node, Prefab, resources, SkinnedMeshRenderer } from 'cc';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 export type SwimmerPrefabLoadResult = {
     prefab: Prefab;
     path: string;
 };
 
-const SWIMMER_PREFAB_PATHS = [
-    'models/UserSwimmerLow',
-    'models/UserSwimmerLow/UserSwimmerLow',
-];
-
 export function loadSwimmerPrefab(done: (err: Error | null, result: SwimmerPrefabLoadResult | null) => void) {
     const tryPath = (index: number) => {
-        if (index >= SWIMMER_PREFAB_PATHS.length) {
+        if (index >= RESOURCE_PATHS.swimmerPrefabCandidates.length) {
             done(new Error('swimmer prefab not imported yet'), null);
             return;
         }
-        const path = SWIMMER_PREFAB_PATHS[index];
+        const path = RESOURCE_PATHS.swimmerPrefabCandidates[index];
         resources.load(path, Prefab, (err, prefab) => {
             if (!err && prefab) {
                 done(null, { prefab, path });

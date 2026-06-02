@@ -1,5 +1,6 @@
 import { EventMouse, input, Input, Node } from 'cc';
 import { StrokeType } from './GameConstants';
+import { INPUT_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
@@ -63,7 +64,7 @@ export class InputRouter {
 
     handlePadStroke(type: StrokeType) {
         const now = Date.now();
-        if (this._lastPadStrokeType === type && now - this._lastPadStrokeMs < 45) {
+        if (this._lastPadStrokeType === type && now - this._lastPadStrokeMs < INPUT_TUNING.padStrokeDedupeMs) {
             return;
         }
         this._lastPadStrokeType = type;

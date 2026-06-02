@@ -2,18 +2,7 @@
 
 本文档记录当前重构和玩法扩展后续待办事项。优先级从上到下排列，建议按批次实现、验证、提交。
 
-## 1. 输入玩法深化
-
-- [ ] 把游泳输入从“按下触发”改成“按下开始、松开发力”。
-- [ ] 每次手/腿输入记录 `holdDuration`。
-- [ ] 增加 `holdRating`：`too short` / `good` / `perfect` / `too long`。
-- [ ] `RhythmEvaluator` 同时输出节奏评分和按压评分。
-- [ ] `SwimmerMotor` 根据 hold 结果调整推进力、阻力、疲劳。
-- [ ] `CartoonSwimmerRig` 根据 power 调整动作幅度和水花。
-
-目标：让普通游泳也形成“按住蓄力、松开发力”的操作手感，而不是只靠点击频率和节奏。
-
-## 2. GameManager 继续瘦身
+## 1. GameManager 继续瘦身
 
 - [x] 拆 `InputRouter`，统一处理 `arm-stroke`、`leg-kick`、`dive-release` 等事件。
 - [x] 拆 `UIFlowController`，管理开始页、比赛 HUD、结果面板、跳水提示。
@@ -22,7 +11,7 @@
 
 目标：继续降低 `GameManager` 的协调负担，让它更像场景入口，而不是功能聚合类。
 
-## 3. CartoonSwimmerRig 继续拆分
+## 2. CartoonSwimmerRig 继续拆分
 
 - [x] 拆 `CharacterAnimationPlayer`，负责动画 clip 播放、暂停、速度控制。
 - [x] 拆 `CharacterDebugController`，负责模型 debug 模式、debug 输入频率、debug 摄像机辅助逻辑。
@@ -31,7 +20,7 @@
 
 目标：把动画、debug、姿态状态从角色外壳里继续剥离，便于后续替换人物模型。
 
-## 4. 跳水与开局完善
+## 3. 跳水与开局完善
 
 - [ ] 微调跳台站位 `DIVE_PLATFORM_NODE_OFFSET`。
 - [ ] 给跳水动作增加更自然的身体前倾和入水姿态。
@@ -41,7 +30,7 @@
 
 目标：让开局从“跳水 tween”升级为完整的出发动作段，并给不同 AI 留出明确参数。
 
-## 5. 比赛流程扩展
+## 4. 比赛流程扩展
 
 - [x] 增加 `GLIDING` 状态。
 - [x] 增加触墙/冲线动作。
@@ -51,16 +40,16 @@
 
 目标：把比赛从“开始-游-结束面板”扩展成完整赛事流程。
 
-## 6. 配置集中化
+## 5. 配置集中化
 
-- [ ] 新建 `GameBalance.ts`，集中速度、疲劳、跳水、hold 输入参数。
-- [ ] 新建 `ResourcePaths.ts`，集中模型、泳池、水面、水花、描边资源路径。
-- [ ] 新建 `InputTuning.ts`，集中按压窗口、节奏窗口、输入去重参数。
-- [ ] 减少散落在 `Swimmer.ts`、`GameFlowController.ts`、`SwimPhysicsModel.ts` 里的 magic number。
+- [x] 新建 `GameBalance.ts`，集中比赛距离、倒计时、速度、疲劳、跳水和 AI 节奏参数。
+- [x] 新建 `ResourcePaths.ts`，集中模型、泳池、水面、水花、描边资源路径和动画 clip 名。
+- [x] 新建 `InputTuning.ts`，集中节奏窗口、输入频率窗口、输入去重参数。
+- [x] 减少散落在 `Swimmer.ts`、`GameFlowController.ts`、`SwimPhysicsModel.ts` 里的核心玩法 magic number。
 
 目标：降低调参成本，让玩法、资源路径和输入手感都有明确归属。
 
-## 7. 测试与验证
+## 6. 测试与验证
 
 - [ ] 为 `RhythmEvaluator` 增加脚本级测试。
 - [ ] 为 `StrokeMetrics` 增加输入频率/同步度测试。
@@ -74,7 +63,7 @@ npx --yes --package typescript tsc --noEmit --ignoreDeprecations 6.0 --skipLibCh
 
 目标：让核心玩法逻辑有可重复验证方式，减少每次改手感都只能靠人工跑一局。
 
-## 8. Cocos 构建配置确认
+## 7. Cocos 构建配置确认
 
 - [ ] 在 Cocos 构建面板确认启动场景为 `Login.scene`。
 - [ ] 场景列表确认包含 `Login.scene` 和 `MainGame.scene`。
@@ -85,4 +74,4 @@ npx --yes --package typescript tsc --noEmit --ignoreDeprecations 6.0 --skipLibCh
 
 ## 建议下一步
 
-优先做第 1 项“输入玩法深化”。它对游戏手感收益最大，也会自然推动动作表现、速度模型和配置拆分继续成熟。
+优先做第 1 项 `GameManager` 继续瘦身或第 2 项 `CharacterPoseStateController`。玩法输入改动暂时不放在当前重构列表里，等方向重新确定后再单独设计。

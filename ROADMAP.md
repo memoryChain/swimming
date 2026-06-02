@@ -69,11 +69,11 @@
   - 命中区不绘制透明背景和文字，避免中线阴影或提示文案遮挡画面。
   - `InputRouter.handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
 - `InputManager.pointerInputEnabled` 当前在比赛 HUD 下设为 `false`，保留键盘输入和后续兜底能力，避免全局指针事件与 UI 命中区重复触发。
-- `InputManager` 现在同时监听 `KEY_DOWN / KEY_UP`，用于判断 `A + D` 的同时按住时长。该按住时长目前只用于开局跳水，后续可以扩展到每次划水/打腿的 hold 输入评分。
+- `InputManager` 现在同时监听 `KEY_DOWN / KEY_UP`，用于判断 `A + D` 的同时按住时长。该按住时长目前只用于开局跳水。
 - `RhythmEvaluator` 负责节奏判定：
-  - 目标节奏由 `TARGET_BPM = 156` 和 `TARGET_INTERVAL = 60 / TARGET_BPM` 决定。
-  - `PERFECT_WINDOW = 0.08`。
-  - `GOOD_WINDOW = 0.18`。
+  - 目标节奏由 `GameBalance.RHYTHM_BALANCE.targetBpm = 156` 和 `TARGET_INTERVAL = 60 / targetBpm` 决定。
+  - Perfect 窗口来自 `InputTuning.INPUT_TUNING.rhythmPerfectWindowSeconds = 0.08`。
+  - Good 窗口来自 `InputTuning.INPUT_TUNING.rhythmGoodWindowSeconds = 0.18`。
   - 连续同类型输入会判为 `MISS`，鼓励手腿交替。
   - `PERFECT` 会累计 combo，combo 转化为速度倍率。
 
@@ -96,13 +96,13 @@
   - 高速阻力：速度越接近最大速度，阻力越强。
   - 疲劳：比赛中缓慢累积，当前上限 `0.22`。
   - combo：玩家节奏奖励会提高最大速度和加速度。
-- 当前关键常量：
-  - `BASE_SPEED = 0.8`
-  - `MAX_SPEED = 3.2`
-  - `MAX_SWIM_ACCEL = 1.85`
-  - `KICK_START_ACCEL = 2.45`
-  - `BASE_DRAG = 0.34`
-  - `HIGH_SPEED_DRAG = 0.46`
+- 当前关键速度参数集中在 `core/GameBalance.ts`：
+  - `SWIMMER_BALANCE.baseSpeed = 0.8`
+  - `SWIMMER_BALANCE.maxSpeed = 3.2`
+  - `SWIMMER_BALANCE.maxSwimAccel = 1.85`
+  - `SWIMMER_BALANCE.kickStartAccel = 2.45`
+  - `SWIMMER_BALANCE.baseDrag = 0.34`
+  - `SWIMMER_BALANCE.highSpeedDrag = 0.46`
 
 ### AI 选手
 
@@ -231,6 +231,9 @@ assets/scripts/
   core/
     GameManager.ts        # 启动、流程协调、运行时模块创建
     RaceManager.ts        # 倒计时、玩家跳水、比赛计时、进度、完赛回调
+    GameBalance.ts        # 比赛距离、速度、疲劳、跳水和 AI 节奏配置
+    InputTuning.ts        # 节奏评分窗口、输入频率窗口和输入去重配置
+    ResourcePaths.ts      # resources 路径和动画 clip 名配置
     InputManager.ts       # 键盘/鼠标/触摸输入入口
     InputRouter.ts        # 游戏输入事件、跳水事件和 debug 摄像机事件路由
     DebugLogController.ts # debug 日志缓存、面板绑定和显示开关
@@ -547,8 +550,8 @@ ui -> Cocos UI details
 - 后续继续拆分：
   - `SceneBootstrap`：如后续需要更完整启动流程，可包一层 `RuntimeSceneBuilder`、资源预热和流程 controller 初始化。
   - `CharacterPoseStateController`：进一步收拢赛前站姿、跳水、游泳和结束姿态切换。
-- 将游戏参数集中到配置文件或 `GameBalance.ts`。
-- 将资源路径集中到 `ResourcePaths.ts`。
+- 核心游戏参数已集中到 `GameBalance.ts`，后续新增玩法参数应优先进入该配置。
+- 资源路径已集中到 `ResourcePaths.ts`，后续新增 resources 路径不要散落在 loader 里。
 - 为核心逻辑补充单元测试或轻量脚本测试：
   - `RhythmEvaluator`
   - `Swimmer` 速度公式

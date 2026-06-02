@@ -1,4 +1,5 @@
 import { Material, MeshRenderer, Node, primitives, resources, utils, Vec3, Vec4 } from 'cc';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 type SplashPart = {
     node: Node;
@@ -65,7 +66,7 @@ export class SplashEmitter {
     }
 
     build() {
-        resources.load('pool/SwimmerSplash', Material, (err, material) => {
+        resources.load(RESOURCE_PATHS.swimmerSplashMaterial, Material, (err, material) => {
             if (err || !material || !this.node?.isValid) {
                 console.warn('[SpeedSwimming] failed to load swimmer splash material', err);
                 return;

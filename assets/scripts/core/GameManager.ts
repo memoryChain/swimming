@@ -28,7 +28,8 @@ import { DebugLogController } from './DebugLogController';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
-import { GameState, MAX_SPEED, StrokeType } from './GameConstants';
+import { SWIMMER_BALANCE } from './GameBalance';
+import { GameState, StrokeType } from './GameConstants';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -96,7 +97,7 @@ export class GameManager extends Component {
             return;
         }
         this._uiFlow?.updateSpeed(this._playerSwimmer.currentSpeed);
-        this.drawSpeedBar(this._playerSwimmer.currentSpeed / MAX_SPEED);
+        this.drawSpeedBar(this._playerSwimmer.currentSpeed / SWIMMER_BALANCE.maxSpeed);
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.updateCamera();
             return;

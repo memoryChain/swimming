@@ -1,4 +1,5 @@
-import { RACE_DISTANCE } from '../core/GameConstants';
+import { RACE_DISTANCE } from '../core/GameBalance';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 export type PoolDefinition = {
     id: string;
@@ -13,8 +14,8 @@ export type PoolDefinition = {
 
 export const DEFAULT_POOL_DEFINITION: PoolDefinition = {
     id: 'default-indoor-pool',
-    prefabPath: 'pool/PoolScene',
-    waterMaterialPath: 'pool/RagingPoolWater',
+    prefabPath: RESOURCE_PATHS.poolPrefab,
+    waterMaterialPath: RESOURCE_PATHS.poolWaterMaterial,
     laneCount: 8,
     laneWidth: 2.05,
     raceDistance: RACE_DISTANCE,

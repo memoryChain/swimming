@@ -1,11 +1,4 @@
-import { MAX_SPEED } from '../core/GameConstants';
-
-const MAX_SWIM_ACCEL = 1.85;
-const KICK_START_ACCEL = 2.45;
-const BASE_DRAG = 0.34;
-const HIGH_SPEED_DRAG = 0.46;
-const HIGH_SPEED_DESYNC_PENALTY = 1.15;
-const MIN_SWIM_SPEED = 0;
+import { SWIMMER_BALANCE } from '../core/GameBalance';
 
 export type SwimPhysicsState = {
     currentSpeed: number;
@@ -28,30 +21,30 @@ export type SwimPhysicsInput = {
 
 export class SwimPhysicsModel {
     step(state: SwimPhysicsState, input: SwimPhysicsInput): SwimPhysicsState {
-        const fatigue = Math.min(0.22, state.fatigue + input.dt * 0.004);
+        const fatigue = Math.min(SWIMMER_BALANCE.fatigueLimit, state.fatigue + input.dt * SWIMMER_BALANCE.fatigueRate);
         const rhythmBonus = input.isAI ? 0 : input.rhythmBonus;
-        const maxSpeed = MAX_SPEED * (input.isAI ? input.aiMaxSpeedScale : 1 + rhythmBonus * 0.18);
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (input.isAI ? input.aiMaxSpeedScale : 1 + rhythmBonus * SWIMMER_BALANCE.playerRhythmMaxSpeedScale);
         const aiPower = input.isAI ? input.aiPower : 1;
         const speedRatio = clamp01(state.currentSpeed / maxSpeed);
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
         const syncedEffort = input.effortScore * input.syncScore;
         const kickEffort = clamp01(input.kickInputRate / input.targetLimbRate);
         const armEffort = clamp01(input.armInputRate / input.targetLimbRate);
-        const kickLaunchPhase = 1 - smoothRange(state.distance, 15, 18);
+        const kickLaunchPhase = 1 - smoothRange(state.distance, SWIMMER_BALANCE.kickLaunchDistanceStart, SWIMMER_BALANCE.kickLaunchDistanceEnd);
         const kickOnlyBias = kickEffort * (1 - armEffort) * kickLaunchPhase;
-        const earlySyncScale = 1 - kickLaunchPhase * 0.72;
+        const earlySyncScale = 1 - kickLaunchPhase * SWIMMER_BALANCE.earlySyncPenaltyDuringKickLaunch;
         const startAssist = 1 - smoothRange(speedRatio, 0.4, 0.58);
-        const kickStartAccel = KICK_START_ACCEL * kickEffort * startAssist;
-        const kickOnlyLaunchAccel = KICK_START_ACCEL * 0.9 * kickOnlyBias * startAssist;
-        const comboAccelScale = 1 + rhythmBonus * 0.7;
-        const accel = (MAX_SWIM_ACCEL * syncedEffort * accelLimit * earlySyncScale + kickStartAccel + kickOnlyLaunchAccel) * (1 - fatigue) * aiPower * comboAccelScale;
+        const kickStartAccel = SWIMMER_BALANCE.kickStartAccel * kickEffort * startAssist;
+        const kickOnlyLaunchAccel = SWIMMER_BALANCE.kickStartAccel * 0.9 * kickOnlyBias * startAssist;
+        const comboAccelScale = 1 + rhythmBonus * SWIMMER_BALANCE.comboAccelScale;
+        const accel = (SWIMMER_BALANCE.maxSwimAccel * syncedEffort * accelLimit * earlySyncScale + kickStartAccel + kickOnlyLaunchAccel) * (1 - fatigue) * aiPower * comboAccelScale;
         const dragRelief = Math.max(syncedEffort * 0.55, kickEffort * startAssist * 0.42);
         const aiDragScale = input.isAI ? Math.max(0.7, 1 - (aiPower - 1) * 0.32) : 1;
-        const drag = (BASE_DRAG + HIGH_SPEED_DRAG * speedRatio) * (1 - dragRelief) * aiDragScale;
+        const drag = (SWIMMER_BALANCE.baseDrag + SWIMMER_BALANCE.highSpeedDrag * speedRatio) * (1 - dragRelief) * aiDragScale;
         const highSpeedPenaltyScale = smoothRange(speedRatio, 0.68, 0.98);
         const activeInput = clamp01((input.armInputRate + input.kickInputRate) / (input.targetLimbRate * 2));
-        const desyncPenalty = HIGH_SPEED_DESYNC_PENALTY * (1 - input.syncScore) * highSpeedPenaltyScale * activeInput;
-        const currentSpeed = clamp(state.currentSpeed + (accel - drag - desyncPenalty) * input.dt, MIN_SWIM_SPEED, maxSpeed);
+        const desyncPenalty = SWIMMER_BALANCE.highSpeedDesyncPenalty * (1 - input.syncScore) * highSpeedPenaltyScale * activeInput;
+        const currentSpeed = clamp(state.currentSpeed + (accel - drag - desyncPenalty) * input.dt, SWIMMER_BALANCE.minSpeed, maxSpeed);
 
         return {
             currentSpeed,

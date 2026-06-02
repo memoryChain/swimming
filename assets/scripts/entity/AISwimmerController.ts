@@ -1,5 +1,6 @@
 import { _decorator, Component } from 'cc';
-import { AI_BPM_VARIANCE, AI_DIFFICULTY, StrokeType, TARGET_BPM, TARGET_INTERVAL } from '../core/GameConstants';
+import { DIVE_BALANCE, RHYTHM_BALANCE, TARGET_INTERVAL } from '../core/GameBalance';
+import { StrokeType } from '../core/GameConstants';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
@@ -7,10 +8,10 @@ const { ccclass, property } = _decorator;
 @ccclass('AISwimmerController')
 export class AISwimmerController extends Component {
     @property(Swimmer) public swimmer: Swimmer = null;
-    @property({ range: [0, 1, 0.01] }) public difficulty = AI_DIFFICULTY;
+    @property({ range: [0, 1, 0.01] }) public difficulty = RHYTHM_BALANCE.aiDifficulty;
     @property public bpmOffset = 0;
-    @property({ range: [0, 1, 0.01] }) public divePower = 0.72;
-    @property public diveReaction = 0.12;
+    @property({ range: [0, 1, 0.01] }) public divePower = DIVE_BALANCE.defaultAiPower;
+    @property public diveReaction = DIVE_BALANCE.defaultAiReactionSeconds;
 
     private _active = false;
     private _timer = 0;
@@ -19,7 +20,7 @@ export class AISwimmerController extends Component {
     private _nextStroke = StrokeType.ARM;
 
     startSwimming() {
-        const bpm = TARGET_BPM + this.bpmOffset + (Math.random() * 2 - 1) * AI_BPM_VARIANCE;
+        const bpm = RHYTHM_BALANCE.targetBpm + this.bpmOffset + (Math.random() * 2 - 1) * RHYTHM_BALANCE.aiBpmVariance;
         this._baseInterval = 60 / bpm;
         this._interval = this._baseInterval;
         this._timer = this._interval * 0.35;

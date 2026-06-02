@@ -1,4 +1,5 @@
 import { Color, EffectAsset, Layers, Material, MeshRenderer, Node, Quat, resources, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const SWIMMER_TEXTURE_SIZE = 128;
 const OUTLINE_SHELL_WIDTH = 18;
@@ -198,7 +199,7 @@ function loadOutlineShellMaterial(done: (material: Material | null) => void) {
     }
     outlineShellLoading = true;
 
-    resources.load('effects/PlayerOutline', EffectAsset, (err, effect) => {
+    resources.load(RESOURCE_PATHS.playerOutlineEffect, EffectAsset, (err, effect) => {
         outlineShellLoading = false;
         if (err || !effect) {
             console.warn('[SpeedSwimming] failed to load character outline effect', err);

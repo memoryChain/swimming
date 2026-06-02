@@ -1,7 +1,7 @@
-import { StrokeType, TARGET_INTERVAL } from '../core/GameConstants';
+import { StrokeType } from '../core/GameConstants';
+import { INPUT_TUNING, TARGET_LIMB_RATE } from '../core/InputTuning';
 
-const INPUT_RATE_WINDOW = 1.2;
-const TARGET_LIMB_RATE = 1 / (TARGET_INTERVAL * 2);
+const INPUT_RATE_WINDOW = INPUT_TUNING.inputRateWindowSeconds;
 
 export class StrokeMetrics {
     private _motionClock = 0;
