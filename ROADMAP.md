@@ -11,7 +11,13 @@
 ### 场景与资源
 
 - 主场景是 `assets/scenes/MainGame.scene`。
-- 运行时主要由 `assets/scripts/core/GameManager.ts` 生成 3D 世界、UI、灯光、镜头、泳池和选手。
+- 运行时入口仍是 `assets/scripts/core/GameManager.ts`，但它现在主要负责启动、流程协调和事件绑定。
+- 运行时装配已经拆成多个模块：
+  - `assets/scripts/swimmer`：泳手输入窗口、速度物理和移动状态。
+  - `assets/scripts/venue`：泳池配置、泳池 prefab 加载、水面绑定、fallback 泳池和泳道布局。
+  - `assets/scripts/camera`：比赛摄像机模式、自动转播镜头、自由镜头和 FOV。
+  - `assets/scripts/competitor`：玩家/AI 泳手创建、AI 参数、泳衣泳帽颜色配置。
+  - `assets/scripts/ui`：运行时 UI factory、HUD、开始页、模型调试 HUD 和 debug 面板构建。
 - 当前保留的运行时资源集中在 `assets/resources`：
   - `models/UserSwimmerLow.glb`：当前低模角色，带骨骼和动画。
   - `pool/LowPolyPool.glb`：低模泳池模型。
@@ -26,8 +32,9 @@
 
 ### 比赛流程
 
-- `GameManager` 负责状态入口和运行时装配。
+- `GameManager` 负责状态入口、运行时装配、事件绑定和高层流程协调。
 - `RaceManager` 负责倒计时、开赛、计时、进度和完赛回调。
+- `GameManager` 会把 `RaceManager` 的状态和计时回调转发给 UI、摄像机和 AI 控制。
 - 状态流：
   - `READY`：开始界面。
   - `COUNTDOWN`：5 秒倒计时。
@@ -46,11 +53,11 @@
   - C：切换比赛镜头。
   - V：自由镜头。
   - F3 / 反引号：调试面板。
-- 比赛中的左右半屏输入现在由 `GameManager.buildRaceHud()` 创建不可见 `mkTouchArea()` 命中区直接处理：
+- 比赛中的左右半屏输入现在由 `ui/RaceHudBuilder.ts` 创建不可见命中区直接处理：
   - 左半屏触发 `StrokeType.LEG`。
   - 右半屏触发 `StrokeType.ARM`。
   - 命中区不绘制透明背景和文字，避免中线阴影或提示文案遮挡画面。
-  - `handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
+  - `GameManager.handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
 - `InputManager.pointerInputEnabled` 当前在比赛 HUD 下设为 `false`，保留键盘输入和后续兜底能力，避免全局指针事件与 UI 命中区重复触发。
 - `RhythmEvaluator` 负责节奏判定：
   - 目标节奏由 `TARGET_BPM = 156` 和 `TARGET_INTERVAL = 60 / TARGET_BPM` 决定。
@@ -61,7 +68,11 @@
 
 ### 游泳速度模型
 
-- `Swimmer` 管理单个选手的速度、距离、动作相位和输入窗口。
+- `Swimmer` 现在是 Cocos 组件门面，主要负责节点位置、表现触发和对外 API。
+- 速度和输入逻辑拆到 `assets/scripts/swimmer`：
+  - `StrokeMetrics`：记录手/腿输入窗口，计算输入频率、effort score 和 sync score。
+  - `SwimPhysicsModel`：计算速度、阻力、疲劳、AI 加成和 combo 影响。
+  - `SwimmerMotor`：管理速度、距离、动作 cycle、比赛状态推进。
 - 当前速度不是简单点一次加一次，而是综合几个因素：
   - 输入频率：最近 `1.2s` 的手/腿输入次数。
   - 同步度：手和腿输入频率越接近越好。
@@ -79,7 +90,9 @@
 
 ### AI 选手
 
-- `GameManager` 创建 8 条泳道中的 1 名玩家和 7 名 AI。
+- `competitor/CompetitorManager.ts` 创建 8 条泳道中的 1 名玩家和 7 名 AI。
+- `competitor/SwimmerFactory.ts` 创建单个泳手节点、绑定 `CartoonSwimmerRig`、`RhythmEvaluator` 和 `Swimmer`。
+- `competitor/CompetitorConfig.ts` 保存默认 AI profile 和泳衣/泳帽颜色。
 - `AISwimmerController` 按目标 BPM 自动交替触发手/腿动作。
 - 每条 AI 泳道配置了不同参数：
   - `difficulty`
@@ -138,12 +151,17 @@
 
 ### 水面与水花
 
+- `venue/VenueManager.ts` 负责构建泳池入口。
+- `venue/PoolSceneLoader.ts` 负责加载 `pool/PoolScene`。
+- `venue/WaterSurfaceBinder.ts` 负责隐藏旧水面节点、启用透明水面节点并绑定 `pool/RagingPoolWater`。
+- `venue/PoolFallbackBuilder.ts` 在泳池 prefab 加载失败时生成基础泳池面、起点线和终点线。
 - `WaterSurface` 会收集指定名称的水面节点和波纹节点，给局部水纹做轻微 transform 动画。
 - `CartoonSwimmerRig` 自带 `splashNode`，并根据手入水、脚打水和速度更新水花强度。
 - 水花材质来自 `pool/SwimmerSplash`，水面材质来自 `pool/RagingPoolWater`。
 
 ### 镜头与调试
 
+- 比赛摄像机逻辑已经拆到 `camera/RaceCameraDirector.ts`。
 - 比赛镜头支持：
   - 自动转播镜头。
   - 侧面镜头。
@@ -152,10 +170,75 @@
   - 第一人称镜头。
   - 自由镜头。
 - 自动转播镜头会在倒计时和比赛中切换机位，并在玩家和 AI 接近时进入对抗镜头。
+- `GameManager` 每帧只向 `RaceCameraDirector` 提供比赛快照：
+  - 玩家 x 坐标。
+  - 玩家距离。
+  - 最近 AI 距离差。
+  - 是否倒计时。
+  - 是否比赛中。
 - 模型调试模式可用于只看主角动作：
   - A/D 触发腿/手动作。
   - Q/E 调慢或调快动作速度。
   - 鼠标拖拽环绕，滚轮缩放。
+
+### 当前工程结构
+
+当前结构已经从单个 `GameManager` 集中实现，拆成以下主要模块：
+
+```text
+assets/scripts/
+  core/
+    GameManager.ts        # 启动、流程协调、事件绑定、模型 debug 入口
+    RaceManager.ts        # 倒计时、比赛计时、进度、完赛回调
+    InputManager.ts       # 键盘/鼠标/触摸输入入口
+    RhythmEvaluator.ts    # 节奏判定
+    WaterSurface.ts       # 水面节点轻动画
+
+  swimmer/
+    StrokeMetrics.ts      # 手/腿输入频率、effort、sync
+    SwimPhysicsModel.ts   # 速度、阻力、疲劳、AI/节奏加成
+    SwimmerMotor.ts       # 距离、速度、动作 cycle、比赛状态
+
+  competitor/
+    CompetitorConfig.ts   # AI profile 和选手视觉配置
+    SwimmerFactory.ts     # 创建单个泳手和 rig
+    CompetitorManager.ts  # 创建玩家、AI 列表和主 AI
+
+  venue/
+    VenueConfig.ts        # 泳池默认配置
+    LaneLayout.ts         # 泳道中心点和泳池宽度计算
+    PoolSceneLoader.ts    # 泳池 prefab 加载
+    WaterSurfaceBinder.ts # 水面节点和材质绑定
+    PoolFallbackBuilder.ts# fallback 泳池
+    VenueManager.ts       # 场馆构建入口
+
+  camera/
+    RaceCameraDirector.ts # 比赛镜头、自动转播、自由镜头、FOV
+
+  ui/
+    RuntimeUiFactory.ts   # 运行时 UI 基础节点工厂
+    RaceHudBuilder.ts     # 比赛 HUD 和结果面板
+    StartScreenBuilder.ts # 开始页
+    ModelDebugHudBuilder.ts
+    DebugPanelBuilder.ts
+    UIController.ts       # UI 数据刷新和动画反馈
+
+  entity/
+    Swimmer.ts            # Cocos 门面组件，连接 motor 和表现
+    AISwimmerController.ts
+    CartoonSwimmerRig.ts  # 当前仍偏大的角色表现/模型/水花实现
+```
+
+后续继续重构时应保持依赖方向：
+
+```text
+GameManager -> race / competitor / venue / camera / ui
+Swimmer -> swimmer motor / rhythm / character rig
+competitor -> entity / ai / config
+venue -> Cocos prefab/material/water details
+camera -> Cocos Camera details
+ui -> Cocos UI details
+```
 
 ## 近期 Roadmap
 
@@ -218,7 +301,7 @@
 
 实现细节：
 
-- 把 `Swimmer.ts` 中的速度参数整理为一个配置对象，便于调参：
+- 把 `swimmer/SwimPhysicsModel.ts` 和 `swimmer/StrokeMetrics.ts` 中的速度参数整理为一个配置对象，便于调参：
   - `inputWindow`
   - `targetLimbRate`
   - `maxAccel`
@@ -319,7 +402,7 @@
 
 实现细节：
 
-- 把 AI 参数从 `GameManager` 提取到配置表。
+- AI 参数已经从 `GameManager` 提取到 `competitor/CompetitorConfig.ts`，后续继续扩展为难度配置表。
 - 增加难度等级：
   - Easy：AI 节奏误差大，最高速度低。
   - Normal：当前参数附近。
@@ -394,12 +477,16 @@
 
 ### 11. 工程结构整理
 
-- 将 `GameManager.ts` 中的大块职责拆分：
-  - `SceneBuilder`
-  - `SwimmerFactory`
-  - `CameraDirector`
-  - `RuntimeHudBuilder`
-  - `DebugPanel`
+- 已完成第一轮拆分：
+  - `swimmer/*`
+  - `venue/*`
+  - `camera/RaceCameraDirector`
+  - `competitor/*`
+  - `ui/*Builder`
+- 后续继续拆分：
+  - `GameFlowController`：开始、重开、返回开始页、比赛状态协调。
+  - `ModelDebugFlowController`：模型 debug 进入/退出、debug 摄像机、动作速度控制。
+  - `SceneBootstrap` 或 `RuntimeSceneBuilder`：Canvas、世界根节点、摄像机、灯光、清理旧节点。
 - 将游戏参数集中到配置文件或 `GameBalance.ts`。
 - 将资源路径集中到 `ResourcePaths.ts`。
 - 为核心逻辑补充单元测试或轻量脚本测试：
@@ -409,7 +496,8 @@
 
 ## 技术债与注意事项
 
-- `GameManager.ts` 当前承担了太多职责，后续功能继续增加前应先拆分。
+- `GameManager.ts` 已完成第一轮瘦身，但仍承担高层流程、事件绑定、模型 debug 和基础场景 setup，后续功能继续增加前应继续拆分。
+- `CartoonSwimmerRig.ts` 仍是当前最大技术债，混合了模型加载、骨骼绑定、材质贴图、水花、动作和 debug。后续应按 TDB 拆出角色表现接口和子模块。
 - 当前 `RhythmEvaluator` 用 `Date.now()` 计算输入间隔，这在暂停、低帧率或测试中不够理想。更稳的方案是由游戏时钟传入时间。
 - 描边 shell 会增加渲染成本；角色数量或模型复杂度增加时，需要默认关闭 AI 描边或改为更便宜的识别方式。
 - 运行时程序贴图目前是基于 UV 位置的区域判断，模型 UV 一旦变化，衣服区域可能错位。后续资产管线要固定 UV 规范，或改为 mask texture。
@@ -428,8 +516,18 @@
 ## 当前验收基线
 
 - 项目能在 Cocos Creator 3.8.8 中打开。
-- 主比赛场景可通过运行时脚本生成 UI、泳池、角色和 AI。
+- 主比赛场景可通过运行时模块生成 UI、泳池、角色、AI 和比赛镜头。
 - 当前运行资源均在 `assets/resources` 下有明确引用。
 - 低模角色使用动态贴图换色，不依赖额外衣服 mesh。
 - 描边资源路径为 `resources/effects/PlayerOutline`。
-- TypeScript 应保持 `tsc --noEmit --skipLibCheck` 通过。
+- TypeScript 检查使用以下命令：
+
+```bash
+npx --yes --package typescript tsc --noEmit --ignoreDeprecations 6.0 --skipLibCheck
+```
+
+说明：
+
+- `--ignoreDeprecations 6.0`：绕过新版 TypeScript 对 Cocos 临时 tsconfig 中 `moduleResolution=node10` 的弃用报错。
+- `--skipLibCheck`：跳过 Cocos Creator 3.8.8 自带 `.d.ts` 与新版 TypeScript 的兼容报错，只检查项目代码。
+- 该命令是当前重构阶段的编译级验证基线。

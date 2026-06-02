@@ -1,6 +1,5 @@
 import {
     _decorator,
-    Button,
     Camera,
     Canvas,
     Color,
@@ -19,13 +18,17 @@ import {
     Vec3,
     view,
 } from 'cc';
+import { CompetitorManager } from '../competitor/CompetitorManager';
 import { AISwimmerController } from '../entity/AISwimmerController';
-import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
+import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
+import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
+import { RaceHudBuilder } from '../ui/RaceHudBuilder';
+import { makeUiNode, makeRect, makeLabel, drawLeftFill } from '../ui/RuntimeUiFactory';
+import { StartScreenBuilder } from '../ui/StartScreenBuilder';
 import { UIController } from '../ui/UIController';
 import { InputManager } from './InputManager';
 import { RaceManager } from './RaceManager';
-import { RhythmEvaluator } from './RhythmEvaluator';
 import { GameState, MAX_SPEED, RACE_DISTANCE, StrokeType } from './GameConstants';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
@@ -35,12 +38,10 @@ import { VenueManager } from '../venue/VenueManager';
 const { ccclass } = _decorator;
 
 const LANE_LAYOUT = new LaneLayout(DEFAULT_POOL_DEFINITION.laneCount, DEFAULT_POOL_DEFINITION.laneWidth);
-const LANE_COUNT = LANE_LAYOUT.laneCount;
 const POOL_WIDTH = LANE_LAYOUT.poolWidth;
 const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
 const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
-const AI_LANE_Z = LANE_LAYOUT.centerZ(PRIMARY_AI_LANE_INDEX);
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -256,240 +257,54 @@ export class GameManager extends Component {
     }
 
     private buildSwimmers3D(root: Node) {
-        const group = mkWorldNode('Swimmers3D', root);
-        this._aiControllers = [];
-        this._aiSwimmers = [];
-
-        const suits = [
-            color(255, 75, 94),
-            color(26, 152, 255),
-            color(255, 205, 38),
-            color(255, 40, 58),
-            color(36, 214, 116),
-            color(168, 82, 255),
-            color(255, 126, 42),
-            color(20, 220, 230),
-        ];
-        const caps = [
-            color(35, 235, 255),
-            color(255, 246, 64),
-            color(255, 90, 220),
-            color(255, 242, 52),
-            color(250, 250, 255),
-            color(94, 255, 130),
-            color(70, 110, 255),
-            color(255, 255, 255),
-        ];
-        const aiProfiles = [
-            { difficulty: 0.86, bpmOffset: 0, power: 1.02, maxSpeed: 1.0 },
-            { difficulty: 0.93, bpmOffset: 10, power: 1.12, maxSpeed: 1.04 },
-            { difficulty: 0.98, bpmOffset: 20, power: 1.24, maxSpeed: 1.08 },
-            { difficulty: 0.92, bpmOffset: 8, power: 1.08, maxSpeed: 1.03 },
-            { difficulty: 0.99, bpmOffset: 24, power: 1.28, maxSpeed: 1.1 },
-            { difficulty: 0.82, bpmOffset: -2, power: 1.0, maxSpeed: 1.0 },
-            { difficulty: 0.96, bpmOffset: 16, power: 1.18, maxSpeed: 1.06 },
-            { difficulty: 1.0, bpmOffset: 28, power: 1.32, maxSpeed: 1.12 },
-        ];
-
-        for (let lane = 0; lane < LANE_COUNT; lane++) {
-            const isPlayer = lane === PLAYER_LANE_INDEX;
-            const swimmer = this.createSwimmer3D(
-                group,
-                isPlayer ? 'PlayerSwimmer3D' : `AISwimmerLane${lane + 1}`,
-                0,
-                LANE_LAYOUT.centerZ(lane),
-                !isPlayer,
-                suits[lane],
-                caps[lane],
-            );
-            if (isPlayer) {
-                this._playerSwimmer = swimmer;
-                continue;
-            }
-
-            const controller = swimmer.node.addComponent(AISwimmerController);
-            controller.swimmer = swimmer;
-            controller.difficulty = aiProfiles[lane].difficulty;
-            controller.bpmOffset = aiProfiles[lane].bpmOffset;
-            swimmer.aiPower = aiProfiles[lane].power;
-            swimmer.aiMaxSpeedScale = aiProfiles[lane].maxSpeed;
-            this._aiSwimmers.push(swimmer);
-            this._aiControllers.push(controller);
-            if (lane === PRIMARY_AI_LANE_INDEX) {
-                this._aiController = controller;
-            }
-        }
-    }
-
-    private createSwimmer3D(parent: Node, name: string, x: number, z: number, isAI: boolean, suitColor?: Color, capColor?: Color): Swimmer {
-        const node = mkWorldNode(name, parent);
-        node.setPosition(x, 0.22, z);
-
-        const rig = node.addComponent(CartoonSwimmerRig);
-        const sharedSkin = color(246, 176, 118);
-        rig.build(
-            sharedSkin,
-            suitColor || (isAI ? color(58, 92, 128) : color(245, 42, 64)),
-            capColor || (isAI ? color(110, 230, 248) : color(255, 220, 72)),
-            isAI,
-            !isAI,
-        );
-        const swimmer = node.addComponent(Swimmer);
-        swimmer.cartoonRig = rig;
-        swimmer.splashNode = rig.splashNode;
-        swimmer.rhythmEvaluator = node.addComponent(RhythmEvaluator);
-        swimmer.isAI = isAI;
-        swimmer.swimmerName = isAI ? 'AI' : 'Player';
-        this.debug(`${name} uses CartoonSwimmerRig`);
-        return swimmer;
+        const competitors = new CompetitorManager({
+            laneLayout: LANE_LAYOUT,
+            playerLaneIndex: PLAYER_LANE_INDEX,
+            primaryAiLaneIndex: PRIMARY_AI_LANE_INDEX,
+            debug: (message) => this.debug(message),
+        }).build(root);
+        this._playerSwimmer = competitors.playerSwimmer;
+        this._aiController = competitors.primaryAiController;
+        this._aiControllers = competitors.aiControllers;
+        this._aiSwimmers = competitors.aiSwimmers;
     }
 
     private buildUi(root: Node, w: number, h: number) {
-        const uiRoot = mkUiNode('RuntimeUIRoot', root);
+        const uiRoot = makeUiNode('RuntimeUIRoot', root);
         const input = uiRoot.addComponent(InputManager);
         input.strokeTarget = this.node;
         input.pointerInputEnabled = false;
         this._inputManager = input;
 
-        this._raceHud = mkUiNode('RaceHUD', uiRoot);
+        this._raceHud = makeUiNode('RaceHUD', uiRoot);
         this._raceHud.active = false;
-        this.buildRaceHud(this._raceHud, w, h);
-        this._startScreen = this.buildStartScreen(uiRoot, w, h);
-        this._modelDebugHud = this.buildModelDebugHud(uiRoot, w, h);
+        const raceHud = new RaceHudBuilder({
+            onStroke: (type) => this.handlePadStroke(type),
+            onRestart: () => this.restartGame(),
+            onMenu: () => this.showStartScreen(),
+        }).build(this._raceHud, w, h);
+        this._uiController = raceHud.uiController;
+        this._speedFill = raceHud.speedFill;
+
+        this._startScreen = new StartScreenBuilder({
+            onStart: () => this.startGame(),
+            onToggleDebug: () => this.toggleDebug(),
+            onModelDebug: () => this.enterModelDebug(),
+        }).build(uiRoot, w, h);
+
+        const modelDebugHud = new ModelDebugHudBuilder({
+            onExit: () => this.exitModelDebug(true),
+            onSlow: () => this.slowModelDebugMotion(),
+            onFast: () => this.speedUpModelDebugMotion(),
+        }).build(uiRoot, w, h);
+        this._modelDebugHud = modelDebugHud.root;
+        this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
         this._modelDebugHud.active = false;
-        this._debugPanel = this.buildDebugPanel(uiRoot, w, h);
+
+        const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
+        this._debugPanel = debugPanel.root;
+        this._debugLabel = debugPanel.logLabel;
         this._debugPanel.active = this._debugVisible;
-    }
-
-    private buildRaceHud(parent: Node, w: number, h: number) {
-        const leftPad = mkTouchArea('LeftInput', parent, w / 2, h);
-        leftPad.setPosition(-w / 4, 0, 0);
-        leftPad.on(Node.EventType.TOUCH_START, () => this.handlePadStroke(StrokeType.LEG), this);
-        leftPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
-            if (event.getButton() === EventMouse.BUTTON_LEFT) {
-                this.handlePadStroke(StrokeType.LEG);
-            }
-        }, this);
-        const rightPad = mkTouchArea('RightInput', parent, w / 2, h);
-        rightPad.setPosition(w / 4, 0, 0);
-        rightPad.on(Node.EventType.TOUCH_START, () => this.handlePadStroke(StrokeType.ARM), this);
-        rightPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
-            if (event.getButton() === EventMouse.BUTTON_LEFT || event.getButton() === EventMouse.BUTTON_RIGHT) {
-                this.handlePadStroke(StrokeType.ARM);
-            }
-        }, this);
-
-        mkRect('TopBar', parent, w, 82, color(6, 18, 30, 190)).setPosition(0, h / 2 - 41, 0);
-        mkLabel('Title', parent, 'SPEED SWIMMING 3D', 24, color(255, 255, 255)).setPosition(-w / 2 + 188, h / 2 - 38, 0);
-        const timerLabel = mkLabel('Timer', parent, '0:00.00', 30, color(255, 255, 255));
-        timerLabel.setPosition(w / 2 - 118, h / 2 - 38, 0);
-        const hintLabel = mkLabel('Hint', parent, 'Left/A kick   Right/D arms   C camera   V free view', 18, color(190, 236, 255));
-        hintLabel.setPosition(0, h / 2 - 38, 0);
-
-        mkLabel('SpeedText', parent, 'PACE', 16, color(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);
-        mkRect('SpeedTrack', parent, 240, 12, color(5, 18, 30, 210)).setPosition(0, h / 2 - 92, 0);
-        const speedFillNode = mkLeftRect('SpeedFill', parent, 240, 10, color(89, 234, 160));
-        speedFillNode.setPosition(-120, h / 2 - 92, 0);
-        this._speedFill = speedFillNode.getComponent(Graphics);
-        const speedLabel = mkLabel('SpeedValue', parent, '0.00 m/s  0%', 16, color(255, 255, 255));
-        speedLabel.getComponent(UITransform).setContentSize(180, 26);
-        speedLabel.setPosition(164, h / 2 - 92, 0);
-
-        const ratingLabel = mkLabel('Rating', parent, '', 34, color(255, 255, 255));
-        ratingLabel.setPosition(0, h / 2 - 142, 0);
-        const comboLabel = mkLabel('Combo', parent, '', 20, color(255, 255, 255));
-        comboLabel.setPosition(0, h / 2 - 176, 0);
-
-        const countdownOverlay = mkUiNode('CountdownOverlay', parent);
-        countdownOverlay.active = false;
-        mkRect('CountdownShade', countdownOverlay, w, h, color(0, 0, 0, 70));
-        const countdownLabel = mkLabel('CountdownLabel', countdownOverlay, '3', 96, color(255, 255, 255));
-        countdownLabel.getComponent(UITransform).setContentSize(720, 220);
-        countdownLabel.getComponent(Label).lineHeight = 140;
-
-        const resultPanel = mkUiNode('ResultPanel', parent);
-        resultPanel.active = false;
-        mkRect('ResultBg', resultPanel, 500, 236, color(8, 22, 34, 240));
-        const resultTitle = mkLabel('ResultTitle', resultPanel, 'YOU WIN', 42, color(255, 224, 89));
-        resultTitle.setPosition(0, 64, 0);
-        const resultTime = mkLabel('ResultTime', resultPanel, '', 20, color(255, 255, 255));
-        resultTime.setPosition(0, 12, 0);
-        const restart = mkButton('RestartButton', resultPanel, 178, 44, color(38, 116, 190), 'RACE AGAIN');
-        restart.setPosition(-98, -70, 0);
-        restart.on(Node.EventType.TOUCH_END, () => this.restartGame(), this);
-        const menu = mkButton('MenuButton', resultPanel, 150, 44, color(232, 68, 72), 'MENU');
-        menu.setPosition(104, -70, 0);
-        menu.on(Node.EventType.TOUCH_END, () => this.showStartScreen(), this);
-
-        const ui = mkUiNode('UIController', parent).addComponent(UIController);
-        ui.timerLabel = timerLabel.getComponent(Label);
-        ui.speedLabel = speedLabel.getComponent(Label);
-        ui.hintLabel = hintLabel.getComponent(Label);
-        ui.countdownOverlay = countdownOverlay;
-        ui.countdownLabel = countdownLabel.getComponent(Label);
-        ui.resultPanel = resultPanel;
-        ui.resultTitle = resultTitle.getComponent(Label);
-        ui.resultTime = resultTime.getComponent(Label);
-        ui.ratingLabel = ratingLabel.getComponent(Label);
-        ui.comboLabel = comboLabel.getComponent(Label);
-        this._uiController = ui;
-    }
-
-    private buildStartScreen(parent: Node, w: number, h: number): Node {
-        const screen = mkUiNode('StartScreen', parent);
-        mkRect('StartShade', screen, w, h, color(4, 12, 22, 125));
-        mkRect('TopAccent', screen, w, 12, color(255, 224, 89)).setPosition(0, h / 2 - 6, 0);
-        mkLabel('Kicker', screen, '100M FREESTYLE RHYTHM', 18, color(128, 225, 235)).setPosition(0, 124, 0);
-        mkLabel('Logo', screen, 'SPEED SWIMMING 3D', 62, color(255, 255, 255)).setPosition(0, 70, 0);
-        mkLabel('SubTitle', screen, 'Freestyle rhythm: left click kicks, right click pulls the arms.', 22, color(224, 235, 235)).setPosition(0, 16, 0);
-
-        const start = mkButton('StartButton', screen, 220, 52, color(255, 224, 89), 'START RACE');
-        start.setPosition(-124, -62, 0);
-        start.on(Node.EventType.TOUCH_END, () => this.startGame(), this);
-
-        const debug = mkButton('DebugButton', screen, 190, 52, color(38, 116, 190), 'DEBUG');
-        debug.setPosition(116, -62, 0);
-        debug.on(Node.EventType.TOUCH_END, () => this.toggleDebug(), this);
-
-        const modelDebug = mkButton('ModelDebugButton', screen, 240, 48, color(28, 148, 124), 'MODEL DEBUG');
-        modelDebug.setPosition(0, -126, 0);
-        modelDebug.on(Node.EventType.TOUCH_END, () => this.enterModelDebug(), this);
-
-        mkLabel('Controls', screen, 'Left mouse / A: kick    Right mouse / D: arm pull    C: camera    V: free view', 18, color(220, 232, 235)).setPosition(0, -184, 0);
-        return screen;
-    }
-
-    private buildModelDebugHud(parent: Node, w: number, h: number): Node {
-        const hud = mkUiNode('ModelDebugHUD', parent);
-        mkRect('ModelDebugTop', hud, w, 76, color(5, 16, 26, 190)).setPosition(0, h / 2 - 38, 0);
-        mkLabel('ModelDebugTitle', hud, 'MODEL ACTION DEBUG', 24, color(255, 255, 255)).setPosition(-w / 2 + 190, h / 2 - 38, 0);
-        mkLabel('ModelDebugHint', hud, 'A: legs    D: arms    Q/E: speed    Drag: orbit    Wheel: zoom', 18, color(150, 235, 255)).setPosition(0, h / 2 - 38, 0);
-        const exit = mkButton('ModelDebugExit', hud, 130, 42, color(232, 68, 72), 'EXIT');
-        exit.setPosition(w / 2 - 86, h / 2 - 38, 0);
-        exit.on(Node.EventType.TOUCH_END, () => this.exitModelDebug(true), this);
-        mkRect('ModelDebugBottom', hud, w, 54, color(5, 16, 26, 120)).setPosition(0, -h / 2 + 27, 0);
-        const slower = mkButton('ModelDebugSlow', hud, 54, 36, color(38, 116, 190), '-');
-        slower.setPosition(-88, -h / 2 + 27, 0);
-        slower.on(Node.EventType.TOUCH_END, () => this.slowModelDebugMotion(), this);
-        const faster = mkButton('ModelDebugFast', hud, 54, 36, color(38, 116, 190), '+');
-        faster.setPosition(88, -h / 2 + 27, 0);
-        faster.on(Node.EventType.TOUCH_END, () => this.speedUpModelDebugMotion(), this);
-        const speedLabel = mkLabel('ModelDebugStatus', hud, 'Speed 0.35x', 18, color(230, 244, 250));
-        speedLabel.setPosition(0, -h / 2 + 27, 0);
-        this._modelDebugSpeedLabel = speedLabel.getComponent(Label);
-        return hud;
-    }
-
-    private buildDebugPanel(parent: Node, w: number, h: number): Node {
-        const panel = mkUiNode('DebugPanel', parent);
-        panel.setPosition(-w / 2 + 210, -h / 2 + 144, 0);
-        mkRect('DebugBack', panel, 390, 210, color(0, 0, 0, 205));
-        mkLabel('DebugTitle', panel, 'DEBUG', 18, color(255, 224, 89)).setPosition(-150, 80, 0);
-        const label = mkLabel('DebugLog', panel, '', 14, color(150, 235, 255));
-        label.getComponent(UITransform).setContentSize(350, 150);
-        label.setPosition(0, -10, 0);
-        this._debugLabel = label.getComponent(Label);
-        return panel;
     }
 
     private registerEvents() {
@@ -854,11 +669,11 @@ export class GameManager extends Component {
 
     private paintError(error: unknown) {
         const canvasNode = this.findCanvasNode();
-        const panel = mkUiNode('RuntimeErrorPanel', canvasNode);
+        const panel = makeUiNode('RuntimeErrorPanel', canvasNode);
         panel.setPosition(0, 0, 0);
-        mkRect('ErrorBack', panel, 780, 190, color(70, 16, 16, 245));
+        makeRect('ErrorBack', panel, 780, 190, color(70, 16, 16, 245));
         const message = error instanceof Error ? error.message : `${error}`;
-        const label = mkLabel('ErrorLabel', panel, `Runtime error: ${message}`, 20, color(255, 255, 255));
+        const label = makeLabel('ErrorLabel', panel, `Runtime error: ${message}`, 20, color(255, 255, 255));
         label.getComponent(UITransform).setContentSize(720, 120);
         label.setPosition(0, 0, 0);
         console.error('[SpeedSwimming] runtime error', error);
@@ -889,71 +704,4 @@ function mkWorldNode(name: string, parent: Node): Node {
     node.setParent(parent);
     node.layer = Layers.Enum.DEFAULT;
     return node;
-}
-
-function mkUiNode(name: string, parent: Node): Node {
-    const node = new Node(name);
-    node.setParent(parent);
-    node.layer = Layers.Enum.UI_2D;
-    node.addComponent(UITransform);
-    return node;
-}
-
-function mkRect(name: string, parent: Node, w: number, h: number, fill: Color): Node {
-    const node = mkUiNode(name, parent);
-    node.getComponent(UITransform).setContentSize(w, h);
-    const gfx = node.addComponent(Graphics);
-    gfx.fillColor = fill;
-    gfx.rect(-w / 2, -h / 2, w, h);
-    gfx.fill();
-    return node;
-}
-
-function mkLeftRect(name: string, parent: Node, w: number, h: number, fill: Color): Node {
-    const node = mkUiNode(name, parent);
-    node.getComponent(UITransform).setContentSize(w, h);
-    const gfx = node.addComponent(Graphics);
-    drawLeftFill(gfx, w, h, 1, fill);
-    return node;
-}
-
-function mkTouchArea(name: string, parent: Node, w: number, h: number): Node {
-    const node = mkUiNode(name, parent);
-    node.getComponent(UITransform).setContentSize(w, h);
-    const button = node.addComponent(Button);
-    button.transition = Button.Transition.NONE;
-    return node;
-}
-
-function mkLabel(name: string, parent: Node, text: string, fontSize: number, fill: Color): Node {
-    const node = mkUiNode(name, parent);
-    node.getComponent(UITransform).setContentSize(620, fontSize + 14);
-    const label = node.addComponent(Label);
-    label.string = text;
-    label.fontSize = fontSize;
-    label.color = fill;
-    label.horizontalAlign = Label.HorizontalAlign.CENTER;
-    label.verticalAlign = Label.VerticalAlign.CENTER;
-    return node;
-}
-
-function mkButton(name: string, parent: Node, w: number, h: number, fill: Color, text: string): Node {
-    const node = mkRect(name, parent, w, h, fill);
-    const button = node.addComponent(Button);
-    button.transition = Button.Transition.NONE;
-    if (text) {
-        const labelNode = mkLabel('Label', node, text, 18, color(255, 255, 255, 235));
-        labelNode.getComponent(UITransform).setContentSize(w, h);
-    }
-    return node;
-}
-
-function drawLeftFill(gfx: Graphics, w: number, h: number, ratio: number, fill: Color) {
-    if (!gfx) {
-        return;
-    }
-    gfx.clear();
-    gfx.fillColor = fill;
-    gfx.rect(0, -h / 2, w * ratio, h);
-    gfx.fill();
 }
