@@ -11,18 +11,11 @@ import {
     Graphics,
     input,
     Input,
-    instantiate,
     Label,
     Layers,
-    Material,
-    MeshRenderer,
     Node,
-    Prefab,
-    primitives,
-    resources,
     SphereLight,
     UITransform,
-    utils,
     Vec3,
     view,
 } from 'cc';
@@ -33,36 +26,21 @@ import { UIController } from '../ui/UIController';
 import { InputManager } from './InputManager';
 import { RaceManager } from './RaceManager';
 import { RhythmEvaluator } from './RhythmEvaluator';
-import { WaterSurface } from './WaterSurface';
-import { COUNTDOWN_SECONDS, GameState, MAX_SPEED, RACE_DISTANCE, StrokeType } from './GameConstants';
+import { GameState, MAX_SPEED, RACE_DISTANCE, StrokeType } from './GameConstants';
+import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
+import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
+import { LaneLayout } from '../venue/LaneLayout';
+import { VenueManager } from '../venue/VenueManager';
 
 const { ccclass } = _decorator;
 
-const LANE_COUNT = 8;
-const LANE_WIDTH = 2.05;
-const POOL_WIDTH = LANE_COUNT * LANE_WIDTH;
+const LANE_LAYOUT = new LaneLayout(DEFAULT_POOL_DEFINITION.laneCount, DEFAULT_POOL_DEFINITION.laneWidth);
+const LANE_COUNT = LANE_LAYOUT.laneCount;
+const POOL_WIDTH = LANE_LAYOUT.poolWidth;
 const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
-const PLAYER_LANE_Z = laneCenterZ(PLAYER_LANE_INDEX);
-const AI_LANE_Z = laneCenterZ(PRIMARY_AI_LANE_INDEX);
-const POOL_LENGTH = RACE_DISTANCE + 8;
-const POOL_SCENE_PREFAB_PATH = 'pool/PoolScene';
-const MIN_BROADCAST_VIEW_SECONDS = 4.2;
-const BROADCAST_SHOT_SECONDS = 6.2;
-const FIRST_PERSON_SHOT_SECONDS = 6.8;
-const FIRST_PERSON_MIN_SECONDS = 5.8;
-
-enum RaceCameraMode {
-    Broadcast = 0,
-    Side = 1,
-    Chase = 2,
-    Top = 3,
-    FirstPerson = 4,
-    Free = 5,
-}
-
-const RACE_CAMERA_MODE_NAMES = ['AUTO', 'SIDE', 'CHASE', 'TOP', 'FIRST', 'FREE'];
-
+const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
+const AI_LANE_Z = LANE_LAYOUT.centerZ(PRIMARY_AI_LANE_INDEX);
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -91,22 +69,7 @@ export class GameManager extends Component {
     private _modelDebugCameraPitch = 0.04;
     private _modelDebugCameraDistance = 3.2;
     private _modelDebugSpeedScale = 0.35;
-    private _raceCameraMode = RaceCameraMode.Broadcast;
-    private _raceCameraDragging = false;
-    private _raceFreeCameraYaw = Math.PI / 2;
-    private _raceFreeCameraPitch = 0.32;
-    private _raceFreeCameraDistance = 10.5;
-    private _broadcastShotTimer = 0;
-    private _broadcastShotIndex = 0;
-    private _broadcastShotSequence: number[] = [];
-    private _broadcastShotSequenceCursor = 0;
-    private _broadcastDuelTimer = 0;
-    private _broadcastDuelCooldown = 0;
-    private _broadcastDuelShotIndex = 1;
-    private _broadcastCameraFov = 36;
-    private _broadcastDesiredFov = 36;
-    private _broadcastCountdownElapsed = 0;
-    private _broadcastRaceElapsed = 0;
+    private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z);
 
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -174,10 +137,7 @@ export class GameManager extends Component {
         this._raceManager?.resetRace();
         this.resetExtraAiSwimmers();
         this.drawSpeedBar(0);
-        this._raceCameraMode = RaceCameraMode.Broadcast;
-        this._raceCameraDragging = false;
-        this.resetBroadcastDirector();
-        this.resetBroadcastCamera();
+        this._raceCameraDirector.resetToBroadcast();
         this._raceManager?.startRace();
     }
 
@@ -194,10 +154,7 @@ export class GameManager extends Component {
         this._raceManager?.resetRace();
         this.resetExtraAiSwimmers();
         this.drawSpeedBar(0);
-        this._raceCameraMode = RaceCameraMode.Broadcast;
-        this._raceCameraDragging = false;
-        this.resetBroadcastDirector();
-        this.resetBroadcastCamera();
+        this._raceCameraDirector.resetToBroadcast();
         if (this._raceHud) {
             this._raceHud.active = false;
         }
@@ -263,6 +220,7 @@ export class GameManager extends Component {
         camera.far = 260;
         camera.priority = 0;
         this._cameraNode.lookAt(this._cameraTarget);
+        this._raceCameraDirector.bindCamera(this._cameraNode);
     }
 
     private buildLights(root: Node) {
@@ -293,150 +251,8 @@ export class GameManager extends Component {
     }
 
     private buildPool3D(root: Node) {
-        resources.load(POOL_SCENE_PREFAB_PATH, Prefab, (err, prefab) => {
-            if (err || !prefab || !root.isValid) {
-                console.warn(`[SpeedSwimming] failed to load ${POOL_SCENE_PREFAB_PATH}, using line-only fallback`, err);
-                this.buildPoolFallback(root);
-                return;
-            }
-
-            const pool = instantiate(prefab);
-            pool.name = 'LoadedEditablePoolScene';
-            pool.setParent(root);
-            pool.setPosition(Vec3.ZERO);
-            pool.setScale(Vec3.ONE);
-            this.configureLoadedPool(pool);
-            this.debug(`pool prefab loaded: ${POOL_SCENE_PREFAB_PATH}`);
-        });
-    }
-
-    private configureLoadedPool(pool: Node) {
-        const oldWaterNodes: Node[] = [];
-        this.collectNodesByName(pool, new Set(['PoolWater_0_50', 'PoolWater_50_100']), oldWaterNodes);
-        for (const node of oldWaterNodes) {
-            node.active = false;
-        }
-
-        const newWaterNodes: Node[] = [];
-        this.collectNodesByName(pool, new Set(['flat_transparent_water_plane']), newWaterNodes);
-        for (const node of newWaterNodes) {
-            node.active = true;
-        }
-
-        if (!pool.getComponent(WaterSurface)) {
-            pool.addComponent(WaterSurface);
-        }
-
-        resources.load('pool/RagingPoolWater', Material, (err, material) => {
-            if (err || !material || !pool.isValid) {
-                console.warn('[SpeedSwimming] failed to load transparent pool water material', err);
-                return;
-            }
-            for (const node of newWaterNodes) {
-                if (!node.isValid) {
-                    continue;
-                }
-                const renderer = node.getComponent(MeshRenderer);
-                if (renderer) {
-                    renderer.setMaterial(material, 0);
-                }
-            }
-            this.debug(`transparent low-poly water bound nodes=${newWaterNodes.length}`);
-        });
-    }
-
-    private collectNodesByName(root: Node, names: Set<string>, out: Node[]) {
-        if (names.has(root.name)) {
-            out.push(root);
-        }
-        for (const child of root.children) {
-            this.collectNodesByName(child, names, out);
-        }
-    }
-
-    private buildPoolFallback(root: Node) {
-        const mats = {
-            floor: mat('emptyPoolFloor', color(14, 32, 54)),
-            start: mat('startLine', color(255, 224, 36)),
-            finish: mat('finishLine', color(255, 255, 255)),
-            white: mat('white', color(255, 255, 255)),
-        };
-
-        addBox(root, 'EmptyRaceSurface', mats.floor, new Vec3(50, -0.06, 0), new Vec3(POOL_LENGTH + 8, 0.04, POOL_WIDTH + 2));
-        addBox(root, 'StartLine', mats.start, new Vec3(0, 0.02, 0), new Vec3(0.24, 0.04, POOL_WIDTH + 1));
-        addBox(root, 'FinishLine', mats.finish, new Vec3(100, 0.02, 0), new Vec3(0.28, 0.04, POOL_WIDTH + 1));
-    }
-
-    private buildLaneRope3D(root: Node, z: number, red: Material, white: Material) {
-        for (let x = -3; x <= 103; x += 1.35) {
-            const material = Math.floor((x + 3) / 5.4) % 2 === 0 ? red : white;
-            addSphere(root, 'LaneFloat', material, new Vec3(x, 0.14, z), 0.16, new Vec3(1, 0.55, 0.55));
-        }
-    }
-
-    private buildStartingBlock(root: Node, lane: number, z: number, mats: Record<string, Material>) {
-        addBox(root, `Lane${lane + 1}BlockBase`, mats.white, new Vec3(-2.42, 0.5, z), new Vec3(1.08, 0.46, 1.05));
-        const top = addBox(root, `Lane${lane + 1}BlockTop`, mats.white, new Vec3(-2.72, 0.9, z), new Vec3(0.92, 0.18, 0.82));
-        top.setRotationFromEuler(0, 0, -2);
-        addBox(root, `Lane${lane + 1}BlockFace`, mats.deckDark, new Vec3(-3.0, 0.66, z), new Vec3(0.05, 0.28, 0.68));
-        addBox(root, `Lane${lane + 1}BlockGrip`, mats.steel, new Vec3(-2.18, 0.93, z), new Vec3(0.08, 0.08, 0.78));
-
-        const numberBars = lane + 1;
-        const startZ = z - Math.min(0.28, numberBars * 0.045);
-        for (let i = 0; i < numberBars; i++) {
-            addBox(root, `Lane${lane + 1}NumberMark`, mats.black, new Vec3(-3.035, 0.69, startZ + i * 0.08), new Vec3(0.025, 0.16, 0.035));
-        }
-    }
-
-    private buildArenaStands(root: Node, deckZ: number, mats: Record<string, Material>) {
-        for (const side of [-1, 1]) {
-            const zBase = side * (deckZ + 3.2);
-            addBox(root, 'LowerStandWall', mats.bannerDark, new Vec3(50, 0.82, zBase), new Vec3(116, 1.05, 0.7));
-            addBox(root, 'SwimmingBanner', mats.banner, new Vec3(50, 1.48, zBase - side * 0.42), new Vec3(116, 0.34, 0.18));
-            addBox(root, 'UpperStandWall', mats.bannerDark, new Vec3(50, 2.55, zBase + side * 1.35), new Vec3(116, 1.1, 0.78));
-            addBox(root, 'UpperBanner', mats.banner, new Vec3(50, 3.18, zBase + side * 0.88), new Vec3(116, 0.3, 0.18));
-
-            for (let row = 0; row < 6; row++) {
-                const y = 1.25 + row * 0.34;
-                const z = zBase + side * (0.58 + row * 0.34);
-                const material = row % 2 === 0 ? mats.seatA : mats.seatB;
-                addBox(root, 'SeatRow', material, new Vec3(50, y, z), new Vec3(112, 0.16, 0.22));
-                for (let x = -2; x <= 102; x += 7.2) {
-                    addBox(root, 'SeatBreak', mats.deckDark, new Vec3(x, y + 0.03, z - side * 0.02), new Vec3(0.18, 0.18, 0.26));
-                }
-            }
-
-            for (let x = 0; x <= 100; x += 20) {
-                addBox(root, 'AisleStripe', mats.white, new Vec3(x, 2.0, zBase + side * 1.35), new Vec3(0.18, 2.05, 0.08));
-            }
-        }
-
-        addBox(root, 'CenterScoreboard', mats.white, new Vec3(50, 4.2, deckZ + 4.9), new Vec3(11, 2.2, 0.2));
-        addBox(root, 'CenterScoreboardBlue', mats.banner, new Vec3(53.4, 4.2, deckZ + 4.76), new Vec3(3.8, 1.8, 0.12));
-        addBox(root, 'ScoreboardWordMark', mats.bannerDark, new Vec3(47.0, 4.45, deckZ + 4.74), new Vec3(3.6, 0.16, 0.1));
-        addBox(root, 'ScoreboardLine', mats.banner, new Vec3(47.0, 4.0, deckZ + 4.73), new Vec3(4.6, 0.12, 0.1));
-    }
-
-    private buildRoofRig(root: Node, mats: Record<string, Material>) {
-        const roofY = 7.1;
-        const leftZ = -POOL_WIDTH / 2 - 8.1;
-        const rightZ = POOL_WIDTH / 2 + 8.1;
-        addBox(root, 'RoofGlassPanel', mats.laneBlue, new Vec3(50, roofY + 0.35, 0), new Vec3(116, 0.08, POOL_WIDTH + 13));
-
-        for (let x = -4; x <= 104; x += 12) {
-            addBox(root, 'RoofCrossBeam', mats.steel, new Vec3(x, roofY, 0), new Vec3(0.18, 0.16, POOL_WIDTH + 17));
-            const diagA = addBox(root, 'RoofDiagonalBeam', mats.steel, new Vec3(x + 3, roofY - 0.15, -3.9), new Vec3(0.14, 0.14, POOL_WIDTH + 6));
-            diagA.setRotationFromEuler(0, 0, 8);
-            const diagB = addBox(root, 'RoofDiagonalBeam', mats.steel, new Vec3(x + 9, roofY - 0.15, 3.9), new Vec3(0.14, 0.14, POOL_WIDTH + 6));
-            diagB.setRotationFromEuler(0, 0, -8);
-        }
-
-        for (let x = -2; x <= 102; x += 4) {
-            addSphere(root, 'RoofBulbLeft', mats.light, new Vec3(x, roofY - 0.45, leftZ), 0.13, new Vec3(1, 1, 1));
-            addSphere(root, 'RoofBulbRight', mats.light, new Vec3(x, roofY - 0.45, rightZ), 0.13, new Vec3(1, 1, 1));
-        }
-        addBox(root, 'LeftLightRail', mats.steel, new Vec3(50, roofY - 0.46, leftZ), new Vec3(112, 0.06, 0.08));
-        addBox(root, 'RightLightRail', mats.steel, new Vec3(50, roofY - 0.46, rightZ), new Vec3(112, 0.06, 0.08));
+        const venue = new VenueManager({ debug: (message) => this.debug(message) });
+        venue.buildPool(root, DEFAULT_POOL_DEFINITION);
     }
 
     private buildSwimmers3D(root: Node) {
@@ -481,7 +297,7 @@ export class GameManager extends Component {
                 group,
                 isPlayer ? 'PlayerSwimmer3D' : `AISwimmerLane${lane + 1}`,
                 0,
-                laneCenterZ(lane),
+                LANE_LAYOUT.centerZ(lane),
                 !isPlayer,
                 suits[lane],
                 caps[lane],
@@ -526,23 +342,6 @@ export class GameManager extends Component {
         swimmer.swimmerName = isAI ? 'AI' : 'Player';
         this.debug(`${name} uses CartoonSwimmerRig`);
         return swimmer;
-    }
-
-    private buildWaterDetail(root: Node, foam: Material, bright: Material) {
-        for (let lane = 0; lane < LANE_COUNT; lane++) {
-            const z = laneCenterZ(lane);
-            for (let x = 6; x <= 98; x += 16) {
-                const offset = ((lane * 3 + Math.floor(x)) % 5) * 0.08;
-                const waveA = addBox(root, 'LaneWave', foam, new Vec3(x + offset, 0.064, z - 0.34), new Vec3(1.0, 0.014, 0.018));
-                waveA.setRotationFromEuler(0, 0, (lane % 2 === 0 ? 4 : -4));
-                const waveB = addBox(root, 'LaneBlueRipple', bright, new Vec3(x + 4.6, 0.058, z + 0.3), new Vec3(0.82, 0.012, 0.016));
-                waveB.setRotationFromEuler(0, 0, (lane % 2 === 0 ? -3 : 3));
-            }
-        }
-        for (let x = 4; x <= 100; x += 18) {
-            addBox(root, 'WallFoamLeft', foam, new Vec3(x, 0.064, -POOL_WIDTH / 2 + 0.18), new Vec3(1.2, 0.014, 0.022));
-            addBox(root, 'WallFoamRight', foam, new Vec3(x + 6, 0.064, POOL_WIDTH / 2 - 0.18), new Vec3(1.2, 0.014, 0.022));
-        }
     }
 
     private buildUi(root: Node, w: number, h: number) {
@@ -727,13 +526,10 @@ export class GameManager extends Component {
             this._state = state;
             this.debug(`state=${state}`);
             if (state === GameState.COUNTDOWN) {
-                this._broadcastCountdownElapsed = 0;
-                this._broadcastRaceElapsed = 0;
-                this._broadcastShotTimer = 0;
+                this._raceCameraDirector.resetCountdownTimers();
             }
             if (state === GameState.RACING) {
-                this._broadcastRaceElapsed = 0;
-                this._broadcastShotTimer = 0;
+                this._raceCameraDirector.resetRaceTimers();
                 this._uiController?.hideCountdown();
                 this.startExtraAiSwimmers();
                 this.startAllAi();
@@ -801,297 +597,28 @@ export class GameManager extends Component {
         if (this._modelDebugActive) {
             return;
         }
-        this._raceCameraMode = (this._raceCameraMode + 1) % RACE_CAMERA_MODE_NAMES.length;
-        this._raceCameraDragging = false;
-        if (this._raceCameraMode === RaceCameraMode.Broadcast) {
-            this.resetBroadcastDirector();
-        }
-        this.applyRaceCameraFov();
-        this.debug(`race camera=${RACE_CAMERA_MODE_NAMES[this._raceCameraMode]}`);
+        this.debug(`race camera=${this._raceCameraDirector.cycleMode()}`);
     }
 
     private toggleFreeRaceCamera() {
         if (this._modelDebugActive) {
             return;
         }
-        this._raceCameraMode = this._raceCameraMode === RaceCameraMode.Free ? RaceCameraMode.Broadcast : RaceCameraMode.Free;
-        this._raceCameraDragging = false;
-        if (this._raceCameraMode === RaceCameraMode.Broadcast) {
-            this.resetBroadcastDirector();
-        }
-        this.applyRaceCameraFov();
-        this.debug(`race camera=${RACE_CAMERA_MODE_NAMES[this._raceCameraMode]}`);
+        this.debug(`race camera=${this._raceCameraDirector.toggleFreeMode()}`);
     }
 
     private updateRaceCamera(dt: number) {
-        if (this._raceCameraMode === RaceCameraMode.Free) {
-            this.updateRaceFreeCamera();
+        if (!this._playerSwimmer) {
             return;
         }
-        if (this._raceCameraMode === RaceCameraMode.FirstPerson) {
-            this.updateRaceFirstPersonCamera();
-            return;
-        }
-        if (this._raceCameraMode === RaceCameraMode.Broadcast) {
-            this.updateBroadcastCamera(dt);
-            return;
-        }
-        this.updateRacePresetCamera();
-    }
-
-    private updateBroadcastCamera(dt: number) {
-        if (!this._cameraNode || !this._playerSwimmer) {
-            return;
-        }
-        const playerX = this._playerSwimmer.node.position.x;
         const playerDistance = this._playerSwimmer.distance;
-        const raceRatio = Math.max(0, Math.min(1, this._playerSwimmer.distance / RACE_DISTANCE));
-        const raceActive = this._state === GameState.RACING;
-        const countdownActive = this._state === GameState.COUNTDOWN;
-        if (countdownActive) {
-            this._broadcastCountdownElapsed += dt;
-        }
-        if (raceActive) {
-            this._broadcastRaceElapsed += dt;
-            if (this._broadcastRaceElapsed > 1.2) {
-                this._broadcastShotTimer += dt;
-            }
-            if (this._broadcastShotTimer > this.currentBroadcastShotSeconds()) {
-                this._broadcastShotTimer = 0;
-                this.advanceBroadcastShot();
-            }
-        }
-
-        const closestGap = this.closestAiDistanceGap(playerDistance);
-        const closeDuel = raceActive && raceRatio > 0.12 && raceRatio < 0.82 && closestGap < 3.2;
-        this._broadcastDuelTimer = Math.max(0, this._broadcastDuelTimer - dt);
-        this._broadcastDuelCooldown = Math.max(0, this._broadcastDuelCooldown - dt);
-        const minViewSeconds = this._broadcastShotIndex === 4 ? FIRST_PERSON_MIN_SECONDS : MIN_BROADCAST_VIEW_SECONDS;
-        if (closeDuel && this._broadcastShotTimer >= minViewSeconds && this._broadcastDuelTimer <= 0 && this._broadcastDuelCooldown <= 0) {
-            this._broadcastDuelTimer = 4.4;
-            this._broadcastDuelCooldown = 7.4;
-            this._broadcastShotTimer = 0;
-            this._broadcastDuelShotIndex = (this._broadcastDuelShotIndex + 1) % 2;
-        }
-
-        let desiredPos: Vec3;
-        let desiredTarget: Vec3;
-        let fixedTopView = false;
-        if (!raceActive && !countdownActive) {
-            desiredTarget = new Vec3(0.2, 0.78, 0);
-            desiredPos = new Vec3(5.8, 1.65, 0);
-            this._broadcastDesiredFov = 42;
-        } else if (countdownActive) {
-            const sideTarget = new Vec3(0.2, 0.44, PLAYER_LANE_Z);
-            const sidePos = new Vec3(sideTarget.x, 1.65, PLAYER_LANE_Z + 9.8);
-            const frontTarget = new Vec3(0.2, 0.78, 0);
-            const frontPos = new Vec3(5.8, 1.65, 0);
-            const moveStart = 1;
-            const moveDuration = Math.max(0.1, COUNTDOWN_SECONDS - 2);
-            const ratio = smoothStep(clamp((this._broadcastCountdownElapsed - moveStart) / moveDuration, 0, 1));
-            desiredTarget = new Vec3();
-            desiredPos = new Vec3();
-            Vec3.lerp(desiredTarget, frontTarget, sideTarget, ratio);
-            Vec3.lerp(desiredPos, frontPos, sidePos, ratio);
-            this._broadcastDesiredFov = 32 + (42 - 32) * (1 - ratio);
-        } else if (this._broadcastRaceElapsed < 1.2) {
-            desiredTarget = new Vec3(playerX + 0.6, 0.44, PLAYER_LANE_Z);
-            desiredPos = new Vec3(desiredTarget.x, 1.65, PLAYER_LANE_Z + 9.8);
-            this._broadcastDesiredFov = 32;
-        } else if (playerDistance >= RACE_DISTANCE - 8) {
-            const finishAnchorX = RACE_DISTANCE - 7.5;
-            const playerFollowX = playerX + 3.4;
-            const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
-            desiredTarget = new Vec3(targetX, 0.18, 0);
-            desiredPos = new Vec3(desiredTarget.x, 22.5, 0);
-            this._broadcastDesiredFov = 46;
-            fixedTopView = true;
-        } else if (!raceActive || raceRatio < 0.06) {
-            desiredPos = new Vec3(playerX - 5.7, 4.25, PLAYER_LANE_Z + 11.8);
-            desiredTarget = new Vec3(playerX + 5.0, 0.36, PLAYER_LANE_Z + 0.1);
-            this._broadcastDesiredFov = 36;
-        } else if (raceRatio < 0.18) {
-            desiredTarget = new Vec3(playerX + 1.2, 0.44, PLAYER_LANE_Z);
-            desiredPos = new Vec3(desiredTarget.x, 1.65, PLAYER_LANE_Z + 9.8);
-            this._broadcastDesiredFov = 32;
-        } else if (this._broadcastDuelTimer > 0) {
-            if (this._broadcastDuelShotIndex === 0) {
-                desiredPos = new Vec3(playerX - 4.1, 2.05, PLAYER_LANE_Z + 3.5);
-                desiredTarget = new Vec3(playerX + 1.85, 0.62, PLAYER_LANE_Z);
-            } else {
-                desiredTarget = new Vec3(playerX + 0.9, 0.62, PLAYER_LANE_Z);
-                desiredPos = new Vec3(desiredTarget.x, 1.95, PLAYER_LANE_Z + 4.4);
-            }
-            this._broadcastDesiredFov = 28;
-        } else {
-            const shot = this._broadcastShotIndex;
-            if (shot === 0) {
-                desiredTarget = new Vec3(playerX + 3.2, 0.42, PLAYER_LANE_Z);
-                desiredPos = new Vec3(desiredTarget.x, 1.55, PLAYER_LANE_Z + 9.2);
-                this._broadcastDesiredFov = 33;
-            } else if (shot === 1) {
-                desiredPos = new Vec3(playerX - 7.2, 2.75, PLAYER_LANE_Z + 3.3);
-                desiredTarget = new Vec3(playerX + 3.6, 0.48, PLAYER_LANE_Z);
-                this._broadcastDesiredFov = 34;
-            } else if (shot === 2) {
-                desiredPos = new Vec3(playerX - 5.7, 4.25, PLAYER_LANE_Z + 11.8);
-                desiredTarget = new Vec3(playerX + 5.0, 0.36, PLAYER_LANE_Z + 0.1);
-                this._broadcastDesiredFov = 36;
-            } else if (shot === 3) {
-                desiredPos = new Vec3(playerX - 3.9, 2.35, PLAYER_LANE_Z + 7.6);
-                desiredTarget = new Vec3(playerX + 2.0, 0.48, PLAYER_LANE_Z);
-                this._broadcastDesiredFov = 33;
-            } else if (shot === 4) {
-                desiredPos = firstPersonCameraPos(playerX);
-                desiredTarget = new Vec3(playerX + 9.0, 0.58, PLAYER_LANE_Z);
-                this._broadcastDesiredFov = 62;
-            }
-        }
-
-        if (fixedTopView) {
-            this._cameraPos.set(desiredPos);
-            this._cameraTarget.set(desiredTarget);
-            this._broadcastCameraFov = this._broadcastDesiredFov;
-            this._cameraNode.setPosition(this._cameraPos);
-            this._cameraNode.lookAt(this._cameraTarget, new Vec3(0, 0, -1));
-            this.applyRaceCameraFov();
-            return;
-        }
-
-        const smooth = raceActive ? cameraBlend(dt, this._broadcastDuelTimer > 0 ? 4.4 : 2.7) : cameraBlend(dt, 5.8);
-        Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
-        Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
-        this._broadcastCameraFov += (this._broadcastDesiredFov - this._broadcastCameraFov) * smooth;
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
-        this.applyRaceCameraFov();
-    }
-
-    private updateRacePresetCamera() {
-        if (!this._cameraNode || !this._playerSwimmer) {
-            return;
-        }
-
-        const playerX = this._playerSwimmer.node.position.x;
-        let desiredPos: Vec3;
-        let desiredTarget: Vec3;
-        if (this._raceCameraMode === RaceCameraMode.Side) {
-            desiredTarget = new Vec3(playerX + 3.0, 0.42, PLAYER_LANE_Z);
-            desiredPos = new Vec3(desiredTarget.x, 1.6, PLAYER_LANE_Z + 9.6);
-        } else if (this._raceCameraMode === RaceCameraMode.Chase) {
-            desiredPos = new Vec3(playerX - 7.2, 2.55, PLAYER_LANE_Z + 2.9);
-            desiredTarget = new Vec3(playerX + 3.6, 0.42, PLAYER_LANE_Z);
-        } else {
-            desiredPos = new Vec3(playerX + 1.8, 17.5, PLAYER_LANE_Z + 0.1);
-            desiredTarget = new Vec3(playerX + 2.6, 0.12, PLAYER_LANE_Z);
-        }
-        const smooth = this._state === GameState.RACING ? 0.1 : 0.2;
-        Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
-        Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
-        this.applyRaceCameraFov();
-    }
-
-    private updateRaceFirstPersonCamera() {
-        if (!this._cameraNode || !this._playerSwimmer) {
-            return;
-        }
-
-        const playerX = this._playerSwimmer.node.position.x;
-        const desiredPos = firstPersonCameraPos(playerX);
-        const desiredTarget = new Vec3(playerX + 9.0, 0.58, PLAYER_LANE_Z);
-        this._cameraPos.set(desiredPos);
-        this._cameraTarget.set(desiredTarget);
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
-        this.applyRaceCameraFov();
-    }
-
-    private updateRaceFreeCamera() {
-        if (!this._cameraNode || !this._playerSwimmer) {
-            return;
-        }
-
-        const playerX = this._playerSwimmer.node.position.x;
-        const target = new Vec3(playerX + 1.2, 0.55, PLAYER_LANE_Z);
-        const cosPitch = Math.cos(this._raceFreeCameraPitch);
-        const desiredPos = new Vec3(
-            target.x + Math.cos(this._raceFreeCameraYaw) * cosPitch * this._raceFreeCameraDistance,
-            target.y + Math.sin(this._raceFreeCameraPitch) * this._raceFreeCameraDistance,
-            target.z + Math.sin(this._raceFreeCameraYaw) * cosPitch * this._raceFreeCameraDistance,
-        );
-        Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, 0.18);
-        Vec3.lerp(this._cameraTarget, this._cameraTarget, target, 0.18);
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
-        this.applyRaceCameraFov();
-    }
-
-    private applyRaceCameraFov() {
-        const camera = this._cameraNode?.getComponent(Camera);
-        if (!camera || this._modelDebugActive) {
-            return;
-        }
-        camera.fov = this._raceCameraMode === RaceCameraMode.Broadcast
-            ? this._broadcastCameraFov
-            : this._raceCameraMode === RaceCameraMode.Top
-                ? 44
-                : this._raceCameraMode === RaceCameraMode.FirstPerson
-                    ? 62
-                    : this._raceCameraMode === RaceCameraMode.Free ? 38 : 36;
-    }
-
-    private resetBroadcastCamera() {
-        this._cameraTarget.set(0.2, 0.78, 0);
-        this._cameraPos.set(5.8, 1.65, 0);
-        this.applyRaceCameraFov();
-        if (this._cameraNode) {
-            this._cameraNode.setPosition(this._cameraPos);
-            this._cameraNode.lookAt(this._cameraTarget);
-        }
-    }
-
-    private resetBroadcastDirector() {
-        this._broadcastShotTimer = 0;
-        this._broadcastDuelTimer = 0;
-        this._broadcastDuelCooldown = 0;
-        this._broadcastDuelShotIndex = 1;
-        this._broadcastCameraFov = 42;
-        this._broadcastDesiredFov = 42;
-        this._broadcastCountdownElapsed = 0;
-        this._broadcastRaceElapsed = 0;
-        this.pickBroadcastShotSequence();
-    }
-
-    private pickBroadcastShotSequence() {
-        const sequences = [
-            [4, 0, 1, 2, 3],
-            [0, 4, 2, 1, 3],
-            [2, 0, 4, 3, 1],
-            [0, 1, 3, 4, 2],
-            [4, 2, 0, 3, 1],
-        ];
-        this._broadcastShotSequence = sequences[Math.floor(Math.random() * sequences.length)].slice();
-        this._broadcastShotSequenceCursor = 0;
-        this._broadcastShotIndex = this._broadcastShotSequence[0];
-    }
-
-    private advanceBroadcastShot() {
-        if (this._broadcastShotSequence.length === 0) {
-            this.pickBroadcastShotSequence();
-            return;
-        }
-        this._broadcastShotSequenceCursor++;
-        if (this._broadcastShotSequenceCursor >= this._broadcastShotSequence.length) {
-            this.pickBroadcastShotSequence();
-            return;
-        }
-        this._broadcastShotIndex = this._broadcastShotSequence[this._broadcastShotSequenceCursor];
-    }
-
-    private currentBroadcastShotSeconds(): number {
-        return this._broadcastShotIndex === 4 ? FIRST_PERSON_SHOT_SECONDS : BROADCAST_SHOT_SECONDS;
+        this._raceCameraDirector.update(dt, {
+            playerX: this._playerSwimmer.node.position.x,
+            playerDistance,
+            closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
+            raceActive: this._state === GameState.RACING,
+            countdownActive: this._state === GameState.COUNTDOWN,
+        });
     }
 
     private closestAiDistanceGap(playerDistance: number): number {
@@ -1112,6 +639,9 @@ export class GameManager extends Component {
         this._modelDebugCameraDistance = 3.2;
         this._modelDebugCameraDragging = false;
         this._modelDebugSpeedScale = 0.35;
+        if (this._cameraNode) {
+            this._cameraPos.set(this._cameraNode.position);
+        }
         this.applyModelDebugSpeed();
         if (this._inputManager) {
             this._inputManager.modelDebugMode = true;
@@ -1166,7 +696,7 @@ export class GameManager extends Component {
         this._playerSwimmer?.cartoonRig?.setModelDebugMode(false);
         this._playerSwimmer?.reset();
         this.resetExtraAiSwimmers();
-        this.resetBroadcastCamera();
+        this._raceCameraDirector.resetBroadcastCamera();
         const camera = this._cameraNode?.getComponent(Camera);
         if (camera) {
             camera.fov = 36;
@@ -1199,8 +729,8 @@ export class GameManager extends Component {
             this._modelDebugCameraDragging = button === EventMouse.BUTTON_LEFT || button === EventMouse.BUTTON_RIGHT || button === EventMouse.BUTTON_MIDDLE;
             return;
         }
-        if (this._raceCameraMode === RaceCameraMode.Free && this._state === GameState.RACING) {
-            this._raceCameraDragging = button === EventMouse.BUTTON_MIDDLE;
+        if (this._raceCameraDirector.mode === RaceCameraMode.Free && this._state === GameState.RACING && button === EventMouse.BUTTON_MIDDLE) {
+            this._raceCameraDirector.startFreeDrag();
         }
     }
 
@@ -1214,16 +744,12 @@ export class GameManager extends Component {
             this._modelDebugCameraPitch = clamp(this._modelDebugCameraPitch, -0.85, 0.85);
             return;
         }
-        if (this._raceCameraMode === RaceCameraMode.Free && this._raceCameraDragging) {
-            this._raceFreeCameraYaw -= event.getDeltaX() * 0.006;
-            this._raceFreeCameraPitch += event.getDeltaY() * 0.0045;
-            this._raceFreeCameraPitch = clamp(this._raceFreeCameraPitch, -0.15, 1.22);
-        }
+        this._raceCameraDirector.dragFreeCamera(event.getDeltaX(), event.getDeltaY());
     }
 
     private onDebugCameraMouseUp() {
         this._modelDebugCameraDragging = false;
-        this._raceCameraDragging = false;
+        this._raceCameraDirector.stopFreeDrag();
     }
 
     private onDebugCameraWheel(event: EventMouse) {
@@ -1231,8 +757,8 @@ export class GameManager extends Component {
             this._modelDebugCameraDistance = clamp(this._modelDebugCameraDistance - event.getScrollY() * 0.004, 1.45, 7.5);
             return;
         }
-        if (this._raceCameraMode === RaceCameraMode.Free && this._state === GameState.RACING) {
-            this._raceFreeCameraDistance = clamp(this._raceFreeCameraDistance - event.getScrollY() * 0.006, 3.2, 22);
+        if (this._state === GameState.RACING) {
+            this._raceCameraDirector.zoomFreeCamera(event.getScrollY());
         }
     }
 
@@ -1358,59 +884,10 @@ function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
 
-function cameraBlend(dt: number, speed: number): number {
-    if (dt <= 0) {
-        return 0.1;
-    }
-    return clamp(1 - Math.exp(-dt * speed), 0.035, 0.28);
-}
-
-function smoothStep(value: number): number {
-    const t = clamp(value, 0, 1);
-    return t * t * (3 - 2 * t);
-}
-
-function firstPersonCameraPos(playerX: number): Vec3 {
-    return new Vec3(playerX + 0.95, 0.74, PLAYER_LANE_Z + 0.08);
-}
-
-function laneCenterZ(index: number): number {
-    return -POOL_WIDTH / 2 + LANE_WIDTH * (index + 0.5);
-}
-
-function mat(name: string, albedo: Color): Material {
-    const material = new Material();
-    material.initialize({ effectName: 'builtin-standard' });
-    material.name = name;
-    material.setProperty('albedo', albedo);
-    material.setProperty('roughness', 0.68);
-    return material;
-}
-
 function mkWorldNode(name: string, parent: Node): Node {
     const node = new Node(name);
     node.setParent(parent);
     node.layer = Layers.Enum.DEFAULT;
-    return node;
-}
-
-function addBox(parent: Node, name: string, material: Material, pos: Vec3, scale: Vec3): Node {
-    const node = mkWorldNode(name, parent);
-    node.setPosition(pos);
-    node.setScale(scale);
-    const renderer = node.addComponent(MeshRenderer);
-    renderer.mesh = utils.createMesh(primitives.box());
-    renderer.setMaterial(material, 0);
-    return node;
-}
-
-function addSphere(parent: Node, name: string, material: Material, pos: Vec3, radius: number, scale = new Vec3(1, 1, 1)): Node {
-    const node = mkWorldNode(name, parent);
-    node.setPosition(pos);
-    node.setScale(radius * scale.x, radius * scale.y, radius * scale.z);
-    const renderer = node.addComponent(MeshRenderer);
-    renderer.mesh = utils.createMesh(primitives.sphere(1, { segments: 18 }));
-    renderer.setMaterial(material, 0);
     return node;
 }
 

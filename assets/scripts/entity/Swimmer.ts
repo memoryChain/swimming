@@ -1,25 +1,13 @@
 import { _decorator, Component, Node, Tween, Vec3, tween } from 'cc';
 import {
-    BASE_SPEED,
-    MAX_SPEED,
-    RACE_DISTANCE,
     Rating,
     StrokeType,
-    TARGET_INTERVAL,
 } from '../core/GameConstants';
 import { RhythmEvaluator, RhythmResult } from '../core/RhythmEvaluator';
+import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
-
-const INPUT_RATE_WINDOW = 1.2;
-const TARGET_LIMB_RATE = 1 / (TARGET_INTERVAL * 2);
-const MAX_SWIM_ACCEL = 1.85;
-const KICK_START_ACCEL = 2.45;
-const BASE_DRAG = 0.34;
-const HIGH_SPEED_DRAG = 0.46;
-const HIGH_SPEED_DESYNC_PENALTY = 1.15;
-const MIN_SWIM_SPEED = 0;
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -49,26 +37,9 @@ export class Swimmer extends Component {
     @property public aiMaxSpeedScale = 1;
     @property public swimmerName = 'Swimmer';
 
-    private _currentSpeed = 0;
-    private _distance = 0;
-    private _isRacing = false;
+    private readonly _motor = new SwimmerMotor();
     private _startPosition = new Vec3();
     private _hasStartPosition = false;
-    private _bodyPhase = 0;
-    private _fatigue = 0;
-    private _armCycle = 0;
-    private _kickCycle = 0;
-    private _motionClock = 0;
-    private _armMotionRemaining = 0;
-    private _kickMotionRemaining = 0;
-    private _armInputTimes: number[] = [];
-    private _kickInputTimes: number[] = [];
-    private _armInputRate = 0;
-    private _kickInputRate = 0;
-    private _syncScore = 0;
-    private _effortScore = 0;
-    private _armAction = 0;
-    private _kickAction = 0;
     private _comboSpeedBonus = 0;
     private _modelBaseRootEuler = new Vec3(90, 0, -90);
     private _modelBaseRootPos = new Vec3(0, 0.1, 0);
@@ -80,23 +51,7 @@ export class Swimmer extends Component {
 
     startRace() {
         this.captureStartPosition();
-        this._isRacing = true;
-        this._currentSpeed = BASE_SPEED;
-        this._distance = 0;
-        this._fatigue = 0;
-        this._armCycle = 0;
-        this._kickCycle = 0;
-        this._motionClock = 0;
-        this._armMotionRemaining = 0;
-        this._kickMotionRemaining = 0;
-        this._armInputTimes.length = 0;
-        this._kickInputTimes.length = 0;
-        this._armInputRate = 0;
-        this._kickInputRate = 0;
-        this._syncScore = 0;
-        this._effortScore = 0;
-        this._armAction = 0;
-        this._kickAction = 0;
+        this._motor.startRace();
         this._comboSpeedBonus = 0;
         this.node.setPosition(this._startPosition);
         this.cartoonRig?.setPreRaceStanding(false);
@@ -105,34 +60,32 @@ export class Swimmer extends Component {
     }
 
     stopRace() {
-        this._isRacing = false;
+        this._motor.stopRace();
         this.cartoonRig?.setActiveSwimming(false);
     }
 
     update(dt: number) {
-        if (!this._isRacing) {
+        if (!this._motor.isRacing) {
             return;
         }
 
-        this._fatigue = Math.min(0.22, this._fatigue + dt * 0.004);
-        this._armAction = Math.max(0, this._armAction - dt * 4.6);
-        this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
-        this.updateStrokeMetrics(dt);
-        this.updateSpeedPhysics(dt);
-        this._distance = Math.min(RACE_DISTANCE, this._distance + this._currentSpeed * dt);
-
-        const x = this._startPosition.x + this._distance;
+        const finished = this._motor.update(dt, {
+            isAI: this.isAI,
+            aiPower: this.aiPower,
+            aiMaxSpeedScale: this.aiMaxSpeedScale,
+            rhythmBonus: this._comboSpeedBonus,
+        });
+        const x = this._startPosition.x + this._motor.distance;
         this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
         this.updateBodyMotion(dt);
 
-        if (this._distance >= RACE_DISTANCE) {
-            this._isRacing = false;
+        if (finished) {
             this.node.emit('swimmer-finished', this);
         }
     }
 
     handleStroke(type: StrokeType): RhythmResult | null {
-        if (!this._isRacing || !this.rhythmEvaluator) {
+        if (!this._motor.isRacing || !this.rhythmEvaluator) {
             return null;
         }
 
@@ -143,7 +96,7 @@ export class Swimmer extends Component {
     }
 
     playFinishRagdoll() {
-        this._isRacing = false;
+        this._motor.stopRace();
         this.cartoonRig?.setActiveSwimming(false);
         tween(this.node)
             .to(0.14, { eulerAngles: new Vec3(0, 0, -8) })
@@ -154,24 +107,7 @@ export class Swimmer extends Component {
 
     reset() {
         this.captureStartPosition();
-        this._currentSpeed = 0;
-        this._distance = 0;
-        this._isRacing = false;
-        this._bodyPhase = 0;
-        this._fatigue = 0;
-        this._armCycle = 0;
-        this._kickCycle = 0;
-        this._motionClock = 0;
-        this._armMotionRemaining = 0;
-        this._kickMotionRemaining = 0;
-        this._armInputTimes.length = 0;
-        this._kickInputTimes.length = 0;
-        this._armInputRate = 0;
-        this._kickInputRate = 0;
-        this._syncScore = 0;
-        this._effortScore = 0;
-        this._armAction = 0;
-        this._kickAction = 0;
+        this._motor.reset();
         this._comboSpeedBonus = 0;
         this.rhythmEvaluator?.reset();
         this.node.setPosition(this._startPosition);
@@ -183,16 +119,13 @@ export class Swimmer extends Component {
 
     private playStroke(type: StrokeType, rating: Rating) {
         const powerScale = rating === Rating.PERFECT ? 1.18 : rating === Rating.MISS ? 0.72 : 1;
+        this._motor.recordStroke(type);
         if (type === StrokeType.ARM) {
-            this.queueStrokeMotion(this._armInputTimes, Math.PI * 2);
-            this._armAction = 1;
             this.cartoonRig?.triggerArmStroke();
             this.pulseModel(10, 0.18 / powerScale);
             this.freestyleArmPull(this.armNode, new Vec3(0.64, 0.08, -0.52), -4, new Vec3(-0.1, -0.03, -0.5), -150, 0.26 / powerScale);
             this.freestyleArmPull(this.rearArmNode, new Vec3(0.12, 0.2, 0.52), 42, new Vec3(0.7, 0.12, 0.52), -2, 0.28 / powerScale);
         } else {
-            this.queueStrokeMotion(this._kickInputTimes, Math.PI * 2);
-            this._kickAction = 1;
             this.cartoonRig?.triggerKick();
             this.pulseModel(-7, 0.12 / powerScale);
             this.flutterKick(this.legNode, new Vec3(-1.02, -0.08, -0.25), 164, 0.12 / powerScale);
@@ -225,117 +158,19 @@ export class Swimmer extends Component {
     }
 
     private updateBodyMotion(dt: number) {
-        const armCycleSpeed = this.motionSpeedForRate(this._armInputRate, Math.PI * 2, 0.82, 5.2);
-        const kickCycleSpeed = this.motionSpeedForRate(this._kickInputRate, Math.PI * 2, 0.82, 5.2);
-
-        this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
-        this._armCycle += this.advanceQueuedMotion(dt, armCycleSpeed, true);
-        this._kickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, false);
-        const bob = Math.sin(this._bodyPhase) * 0.045;
-        const roll = Math.sin(this._armCycle) * 9;
+        const bob = Math.sin(this._motor.bodyPhase) * 0.045;
+        const roll = Math.sin(this._motor.armCycle) * 9;
         if (this.cartoonRig) {
-            this.cartoonRig.updateFreestyle(dt, this._armCycle, this._kickCycle, this._bodyPhase, this._currentSpeed);
+            this.cartoonRig.updateFreestyle(dt, this._motor.armCycle, this._motor.kickCycle, this._motor.bodyPhase, this._motor.currentSpeed);
             return;
         }
         this.bodyNode?.setPosition(0, 0.18 + bob, 0);
         this.bodyNode?.setRotationFromEuler(0, roll * 0.35, 0);
         this.headNode?.setPosition(1.23, 0.28 + bob * 0.45, 0);
-        this.applyFreestyleArm(this.armNode, Math.sin(this._armCycle), -0.48, false, 1 + this._armAction * 0.55);
-        this.applyFreestyleArm(this.rearArmNode, Math.sin(this._armCycle + Math.PI), 0.48, true, 1 + this._armAction * 0.55);
-        this.applyFlutterKick(this.legNode, Math.sin(this._kickCycle), -0.24, 1 + this._kickAction * 0.75);
-        this.applyFlutterKick(this.rearLegNode, Math.sin(this._kickCycle + Math.PI), 0.24, 1 + this._kickAction * 0.75);
-    }
-
-    private queueStrokeMotion(times: number[], cycleAmount: number) {
-        times.push(this._motionClock);
-        this.pruneInputTimes(times);
-        if (times === this._armInputTimes) {
-            this._armMotionRemaining += cycleAmount;
-        } else {
-            this._kickMotionRemaining += cycleAmount;
-        }
-    }
-
-    private advanceQueuedMotion(dt: number, speed: number, arm: boolean): number {
-        const remaining = arm ? this._armMotionRemaining : this._kickMotionRemaining;
-        if (remaining <= 0) {
-            return 0;
-        }
-
-        const step = Math.min(remaining, speed * dt);
-        if (arm) {
-            this._armMotionRemaining -= step;
-        } else {
-            this._kickMotionRemaining -= step;
-        }
-        return step;
-    }
-
-    private motionSpeedForRate(ratePerSecond: number, cycleAmount: number, minCyclesPerSecond: number, maxCyclesPerSecond: number): number {
-        const cyclesPerSecond = Math.max(minCyclesPerSecond, Math.min(maxCyclesPerSecond, ratePerSecond));
-        return cycleAmount * cyclesPerSecond;
-    }
-
-    private updateStrokeMetrics(dt: number) {
-        this._motionClock += dt;
-        this.pruneInputTimes(this._armInputTimes);
-        this.pruneInputTimes(this._kickInputTimes);
-        this._armInputRate = this.inputRatePerSecond(this._armInputTimes);
-        this._kickInputRate = this.inputRatePerSecond(this._kickInputTimes);
-        this._effortScore = this.calculateEffortScore(this._armInputRate, this._kickInputRate);
-        this._syncScore = this.calculateSyncScore(this._armInputRate, this._kickInputRate);
-    }
-
-    private updateSpeedPhysics(dt: number) {
-        const rhythmBonus = this.isAI ? 0 : this._comboSpeedBonus;
-        const maxSpeed = MAX_SPEED * (this.isAI ? this.aiMaxSpeedScale : 1 + rhythmBonus * 0.18);
-        const aiPower = this.isAI ? this.aiPower : 1;
-        const speedRatio = clamp01(this._currentSpeed / maxSpeed);
-        const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
-        const syncedEffort = this._effortScore * this._syncScore;
-        const kickEffort = clamp01(this._kickInputRate / TARGET_LIMB_RATE);
-        const armEffort = clamp01(this._armInputRate / TARGET_LIMB_RATE);
-        const kickLaunchPhase = 1 - smoothRange(this._distance, 15, 18);
-        const kickOnlyBias = kickEffort * (1 - armEffort) * kickLaunchPhase;
-        const earlySyncScale = 1 - kickLaunchPhase * 0.72;
-        const startAssist = 1 - smoothRange(speedRatio, 0.4, 0.58);
-        const kickStartAccel = KICK_START_ACCEL * kickEffort * startAssist;
-        const kickOnlyLaunchAccel = KICK_START_ACCEL * 0.9 * kickOnlyBias * startAssist;
-        const comboAccelScale = 1 + rhythmBonus * 0.7;
-        const accel = (MAX_SWIM_ACCEL * syncedEffort * accelLimit * earlySyncScale + kickStartAccel + kickOnlyLaunchAccel) * (1 - this._fatigue) * aiPower * comboAccelScale;
-        const dragRelief = Math.max(syncedEffort * 0.55, kickEffort * startAssist * 0.42);
-        const aiDragScale = this.isAI ? Math.max(0.7, 1 - (aiPower - 1) * 0.32) : 1;
-        const drag = (BASE_DRAG + HIGH_SPEED_DRAG * speedRatio) * (1 - dragRelief) * aiDragScale;
-        const highSpeedPenaltyScale = smoothRange(speedRatio, 0.68, 0.98);
-        const activeInput = clamp01((this._armInputRate + this._kickInputRate) / (TARGET_LIMB_RATE * 2));
-        const desyncPenalty = HIGH_SPEED_DESYNC_PENALTY * (1 - this._syncScore) * highSpeedPenaltyScale * activeInput;
-
-        this._currentSpeed = clamp(this._currentSpeed + (accel - drag - desyncPenalty) * dt, MIN_SWIM_SPEED, maxSpeed);
-    }
-
-    private calculateEffortScore(armRate: number, kickRate: number): number {
-        return clamp01(((armRate + kickRate) * 0.5) / TARGET_LIMB_RATE);
-    }
-
-    private calculateSyncScore(armRate: number, kickRate: number): number {
-        const maxRate = Math.max(armRate, kickRate);
-        if (maxRate < 0.15) {
-            return 0;
-        }
-        const minRate = Math.min(armRate, kickRate);
-        const balance = minRate / maxRate;
-        const rateMatch = 1 - clamp01(Math.abs(armRate - kickRate) / (TARGET_LIMB_RATE * 1.1));
-        return clamp01(rateMatch * 0.68 + balance * 0.32);
-    }
-
-    private inputRatePerSecond(times: number[]): number {
-        return times.length / INPUT_RATE_WINDOW;
-    }
-
-    private pruneInputTimes(times: number[]) {
-        while (times.length > 0 && this._motionClock - times[0] > INPUT_RATE_WINDOW) {
-            times.shift();
-        }
+        this.applyFreestyleArm(this.armNode, Math.sin(this._motor.armCycle), -0.48, false, 1 + this._motor.armAction * 0.55);
+        this.applyFreestyleArm(this.rearArmNode, Math.sin(this._motor.armCycle + Math.PI), 0.48, true, 1 + this._motor.armAction * 0.55);
+        this.applyFlutterKick(this.legNode, Math.sin(this._motor.kickCycle), -0.24, 1 + this._motor.kickAction * 0.75);
+        this.applyFlutterKick(this.rearLegNode, Math.sin(this._motor.kickCycle + Math.PI), 0.24, 1 + this._motor.kickAction * 0.75);
     }
 
     private flashSplash(rating: Rating) {
@@ -403,24 +238,24 @@ export class Swimmer extends Component {
             this.captureModelBindPose();
         }
 
-        const arm = Math.sin(this._armCycle);
-        const armOpposite = Math.sin(this._armCycle + Math.PI);
-        const kick = Math.sin(this._kickCycle);
-        const kickOpposite = Math.sin(this._kickCycle + Math.PI);
+        const arm = Math.sin(this._motor.armCycle);
+        const armOpposite = Math.sin(this._motor.armCycle + Math.PI);
+        const kick = Math.sin(this._motor.kickCycle);
+        const kickOpposite = Math.sin(this._motor.kickCycle + Math.PI);
 
         this.modelRootNode.setPosition(
-            this._modelBaseRootPos.x + Math.sin(this._armCycle) * 0.04,
+            this._modelBaseRootPos.x + Math.sin(this._motor.armCycle) * 0.04,
             this._modelBaseRootPos.y + bob * 0.55,
-            this._modelBaseRootPos.z + Math.sin(this._kickCycle) * 0.02,
+            this._modelBaseRootPos.z + Math.sin(this._motor.kickCycle) * 0.02,
         );
         this.modelRootNode.setRotationFromEuler(
-            this._modelBaseRootEuler.x + Math.sin(this._kickCycle) * 1.5,
+            this._modelBaseRootEuler.x + Math.sin(this._motor.kickCycle) * 1.5,
             this._modelBaseRootEuler.y + roll * 0.55,
-            this._modelBaseRootEuler.z + Math.sin(this._armCycle) * 2.5,
+            this._modelBaseRootEuler.z + Math.sin(this._motor.armCycle) * 2.5,
         );
 
-        this.applyBoneOffset(this.modelSpine, 0, roll * 0.45, Math.sin(this._armCycle) * 3);
-        this.applyBoneOffset(this.modelHead, -4, roll * 0.2, Math.sin(this._armCycle + 0.8) * 2);
+        this.applyBoneOffset(this.modelSpine, 0, roll * 0.45, Math.sin(this._motor.armCycle) * 3);
+        this.applyBoneOffset(this.modelHead, -4, roll * 0.2, Math.sin(this._motor.armCycle + 0.8) * 2);
 
         this.applyBoneOffset(this.modelLeftArm, -38 - Math.max(0, -arm) * 36, 0, -18 + arm * 22);
         this.applyBoneOffset(this.modelLeftForeArm, -20 - Math.max(0, -arm) * 34, 0, 8);
@@ -586,33 +421,14 @@ export class Swimmer extends Component {
     }
 
     get currentSpeed(): number {
-        return this._currentSpeed;
+        return this._motor.currentSpeed;
     }
 
     get distance(): number {
-        return this._distance;
+        return this._motor.distance;
     }
 
     get isRacing(): boolean {
-        return this._isRacing;
+        return this._motor.isRacing;
     }
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-}
-
-function clamp01(value: number): number {
-    return clamp(value, 0, 1);
-}
-
-function smoothRange(value: number, start: number, end: number): number {
-    if (value <= start) {
-        return 0;
-    }
-    if (value >= end) {
-        return 1;
-    }
-    const t = (value - start) / (end - start);
-    return t * t * (3 - 2 * t);
 }
