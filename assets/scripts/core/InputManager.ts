@@ -14,6 +14,8 @@ export class InputManager extends Component {
     private _rightHeld = false;
     private _diveCharging = false;
     private _diveChargeStartedAt = 0;
+    private _leftMouseStrokeType: StrokeType | null = null;
+    private _touchStrokeType: StrokeType | null = null;
 
     onEnable() {
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
@@ -47,11 +49,17 @@ export class InputManager extends Component {
 
     private onKeyDown(event: EventKeyboard) {
         if (event.keyCode === KeyCode.KEY_A || event.keyCode === KeyCode.ARROW_LEFT) {
-            this.setDiveHeld(StrokeType.LEG, true);
-            this.emitStroke(StrokeType.LEG);
+            const wasHeld = this._leftHeld;
+            this.setInputHeld(StrokeType.LEFT, true);
+            if (!wasHeld) {
+                this.emitStroke(StrokeType.LEFT);
+            }
         } else if (event.keyCode === KeyCode.KEY_D || event.keyCode === KeyCode.ARROW_RIGHT) {
-            this.setDiveHeld(StrokeType.ARM, true);
-            this.emitStroke(StrokeType.ARM);
+            const wasHeld = this._rightHeld;
+            this.setInputHeld(StrokeType.RIGHT, true);
+            if (!wasHeld) {
+                this.emitStroke(StrokeType.RIGHT);
+            }
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_Q) {
             this.strokeTarget?.emit('model-debug-speed-down');
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_E) {
@@ -69,9 +77,9 @@ export class InputManager extends Component {
 
     private onKeyUp(event: EventKeyboard) {
         if (event.keyCode === KeyCode.KEY_A || event.keyCode === KeyCode.ARROW_LEFT) {
-            this.setDiveHeld(StrokeType.LEG, false);
+            this.setInputHeld(StrokeType.LEFT, false);
         } else if (event.keyCode === KeyCode.KEY_D || event.keyCode === KeyCode.ARROW_RIGHT) {
-            this.setDiveHeld(StrokeType.ARM, false);
+            this.setInputHeld(StrokeType.RIGHT, false);
         }
     }
 
@@ -82,20 +90,26 @@ export class InputManager extends Component {
         if (event.getButton() === EventMouse.BUTTON_LEFT) {
             const mousePos = event.getUILocation();
             const halfX = view.getVisibleSize().width / 2;
-            const type = mousePos.x < halfX ? StrokeType.LEG : StrokeType.ARM;
-            this.setDiveHeld(type, true);
+            const type = mousePos.x < halfX ? StrokeType.LEFT : StrokeType.RIGHT;
+            this._leftMouseStrokeType = type;
+            this.setInputHeld(type, true);
             this.emitStroke(type);
         } else if (event.getButton() === EventMouse.BUTTON_RIGHT) {
-            this.setDiveHeld(StrokeType.ARM, true);
-            this.emitStroke(StrokeType.ARM);
+            this.setInputHeld(StrokeType.RIGHT, true);
+            this.emitStroke(StrokeType.RIGHT);
         }
     }
 
     private onMouseUp(event: EventMouse) {
         if (event.getButton() === EventMouse.BUTTON_LEFT) {
-            this.releaseDiveInput();
+            if (this._leftMouseStrokeType) {
+                this.setInputHeld(this._leftMouseStrokeType, false);
+                this._leftMouseStrokeType = null;
+            } else {
+                this.releaseDiveInput();
+            }
         } else if (event.getButton() === EventMouse.BUTTON_RIGHT) {
-            this.setDiveHeld(StrokeType.ARM, false);
+            this.setInputHeld(StrokeType.RIGHT, false);
         }
     }
 
@@ -105,30 +119,43 @@ export class InputManager extends Component {
         }
         const touchPos = event.getUILocation();
         const halfX = view.getVisibleSize().width / 2;
-        const type = touchPos.x < halfX ? StrokeType.LEG : StrokeType.ARM;
-        this.setDiveHeld(type, true);
+        const type = touchPos.x < halfX ? StrokeType.LEFT : StrokeType.RIGHT;
+        this._touchStrokeType = type;
+        this.setInputHeld(type, true);
         this.emitStroke(type);
     }
 
     private onTouchEnd() {
+        if (this._touchStrokeType) {
+            this.setInputHeld(this._touchStrokeType, false);
+            this._touchStrokeType = null;
+            return;
+        }
         this.releaseDiveInput();
     }
 
     private emitStroke(type: StrokeType) {
         const target = this.strokeTarget || this.node;
-        target.emit(type === StrokeType.ARM ? 'arm-stroke' : 'leg-kick');
+        target.emit(type === StrokeType.LEFT ? 'left-stroke' : 'right-stroke');
     }
 
-    private setDiveHeld(type: StrokeType, held: boolean) {
+    private setInputHeld(type: StrokeType, held: boolean) {
+        if (type === StrokeType.LEFT) {
+            if (this._leftHeld === held) {
+                return;
+            }
+            this._leftHeld = held;
+        } else {
+            if (this._rightHeld === held) {
+                return;
+            }
+            this._rightHeld = held;
+        }
+        this.emitStrokeHeld(type, held);
+
         if (!this.diveInputEnabled || this.modelDebugMode) {
             return;
         }
-        if (type === StrokeType.LEG) {
-            this._leftHeld = held;
-        } else {
-            this._rightHeld = held;
-        }
-
         if (this._leftHeld && this._rightHeld && !this._diveCharging) {
             this._diveCharging = true;
             this._diveChargeStartedAt = Date.now() / 1000;
@@ -144,6 +171,13 @@ export class InputManager extends Component {
         }
         this._leftHeld = false;
         this._rightHeld = false;
+        this.emitStrokeHeld(StrokeType.LEFT, false);
+        this.emitStrokeHeld(StrokeType.RIGHT, false);
+    }
+
+    private emitStrokeHeld(type: StrokeType, held: boolean) {
+        const target = this.strokeTarget || this.node;
+        target.emit(type === StrokeType.LEFT ? 'left-stroke-held' : 'right-stroke-held', held);
     }
 
     private emitDiveChargeStart() {

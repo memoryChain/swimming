@@ -153,6 +153,23 @@ export class Swimmer extends Component {
         return result;
     }
 
+    handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
+        this._motor.setStrokeHeld(type, held);
+        this.cartoonRig?.setStrokeHeld(type, held);
+        if (!this.rhythmEvaluator) {
+            return null;
+        }
+        if (held) {
+            this.rhythmEvaluator.beginHold(type);
+            return null;
+        }
+        const result = this.rhythmEvaluator.endHold(type);
+        if (result) {
+            this._comboSpeedBonus = Math.max(0, result.speedMultiplier - 1);
+        }
+        return result;
+    }
+
     playFinishRagdoll() {
         this.playFinishTouch();
     }
@@ -182,15 +199,22 @@ export class Swimmer extends Component {
 
     private playStroke(type: StrokeType, rating: Rating) {
         const powerScale = rating === Rating.PERFECT ? 1.18 : rating === Rating.MISS ? 0.72 : 1;
-        this._motor.recordStroke(type);
-        if (type === StrokeType.ARM) {
-            this.cartoonRig?.triggerArmStroke();
-            this.pulseModel(10, 0.18 / powerScale);
+        if (type !== StrokeType.BOTH || rating !== Rating.MISS) {
+            this._motor.recordStroke(type);
+        }
+        this.cartoonRig?.triggerStroke(type);
+        if (type === StrokeType.LEFT) {
+            this.pulseModel(-8, 0.16 / powerScale);
+            this.freestyleArmPull(this.armNode, new Vec3(0.64, 0.08, -0.52), -4, new Vec3(-0.1, -0.03, -0.5), -150, 0.26 / powerScale);
+            this.flutterKick(this.rearLegNode, new Vec3(-1.02, 0.18, 0.25), 198, 0.12 / powerScale);
+        } else if (type === StrokeType.RIGHT) {
+            this.pulseModel(8, 0.16 / powerScale);
+            this.freestyleArmPull(this.rearArmNode, new Vec3(0.12, 0.2, 0.52), 42, new Vec3(0.7, 0.12, 0.52), -2, 0.28 / powerScale);
+            this.flutterKick(this.legNode, new Vec3(-1.02, -0.08, -0.25), 164, 0.12 / powerScale);
+        } else {
+            this.pulseModel(0, 0.16 / powerScale);
             this.freestyleArmPull(this.armNode, new Vec3(0.64, 0.08, -0.52), -4, new Vec3(-0.1, -0.03, -0.5), -150, 0.26 / powerScale);
             this.freestyleArmPull(this.rearArmNode, new Vec3(0.12, 0.2, 0.52), 42, new Vec3(0.7, 0.12, 0.52), -2, 0.28 / powerScale);
-        } else {
-            this.cartoonRig?.triggerKick();
-            this.pulseModel(-7, 0.12 / powerScale);
             this.flutterKick(this.legNode, new Vec3(-1.02, -0.08, -0.25), 164, 0.12 / powerScale);
             this.flutterKick(this.rearLegNode, new Vec3(-1.02, 0.18, 0.25), 198, 0.12 / powerScale);
         }
@@ -222,18 +246,26 @@ export class Swimmer extends Component {
 
     private updateBodyMotion(dt: number) {
         const bob = Math.sin(this._motor.bodyPhase) * 0.045;
-        const roll = Math.sin(this._motor.armCycle) * 9;
+        const sideRoll = sideBodyRollSignal(this._motor.leftArmCycle, this._motor.rightArmCycle);
         if (this.cartoonRig) {
-            this.cartoonRig.updateFreestyle(dt, this._motor.armCycle, this._motor.kickCycle, this._motor.bodyPhase, this._motor.currentSpeed);
+            this.cartoonRig.updateFreestyle(
+                dt,
+                this._motor.leftArmCycle,
+                this._motor.rightArmCycle,
+                this._motor.leftKickCycle,
+                this._motor.rightKickCycle,
+                this._motor.bodyPhase,
+                this._motor.currentSpeed,
+            );
             return;
         }
         this.bodyNode?.setPosition(0, 0.18 + bob, 0);
-        this.bodyNode?.setRotationFromEuler(0, roll * 0.35, 0);
+        this.bodyNode?.setRotationFromEuler(0, sideRoll * 26, 0);
         this.headNode?.setPosition(1.23, 0.28 + bob * 0.45, 0);
-        this.applyFreestyleArm(this.armNode, Math.sin(this._motor.armCycle), -0.48, false, 1 + this._motor.armAction * 0.55);
-        this.applyFreestyleArm(this.rearArmNode, Math.sin(this._motor.armCycle + Math.PI), 0.48, true, 1 + this._motor.armAction * 0.55);
-        this.applyFlutterKick(this.legNode, Math.sin(this._motor.kickCycle), -0.24, 1 + this._motor.kickAction * 0.75);
-        this.applyFlutterKick(this.rearLegNode, Math.sin(this._motor.kickCycle + Math.PI), 0.24, 1 + this._motor.kickAction * 0.75);
+        this.applyFreestyleArm(this.armNode, Math.sin(this._motor.leftArmCycle), -0.48, false, 1 + this._motor.armAction * 0.55);
+        this.applyFreestyleArm(this.rearArmNode, Math.sin(this._motor.rightArmCycle), 0.48, true, 1 + this._motor.armAction * 0.55);
+        this.applyFlutterKick(this.legNode, Math.sin(this._motor.leftKickCycle), -0.24, 1 + this._motor.kickAction * 0.75);
+        this.applyFlutterKick(this.rearLegNode, Math.sin(this._motor.rightKickCycle), 0.24, 1 + this._motor.kickAction * 0.75);
     }
 
     private flashSplash(rating: Rating) {
@@ -301,10 +333,10 @@ export class Swimmer extends Component {
             this.captureModelBindPose();
         }
 
-        const arm = Math.sin(this._motor.armCycle);
-        const armOpposite = Math.sin(this._motor.armCycle + Math.PI);
-        const kick = Math.sin(this._motor.kickCycle);
-        const kickOpposite = Math.sin(this._motor.kickCycle + Math.PI);
+        const arm = Math.sin(this._motor.leftArmCycle);
+        const armOpposite = Math.sin(this._motor.rightArmCycle);
+        const kick = Math.sin(this._motor.leftKickCycle);
+        const kickOpposite = Math.sin(this._motor.rightKickCycle);
 
         this.modelRootNode.setPosition(
             this._modelBaseRootPos.x + Math.sin(this._motor.armCycle) * 0.04,
@@ -519,4 +551,14 @@ function lerp(a: number, b: number, t: number): number {
 
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
+}
+
+function sideBodyRollSignal(leftCycle: number, rightCycle: number): number {
+    const leftReach = Math.cos(positiveMod(-leftCycle, Math.PI * 2));
+    const rightReach = Math.cos(positiveMod(-rightCycle, Math.PI * 2));
+    return (leftReach - rightReach) * 0.5;
+}
+
+function positiveMod(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
 }

@@ -6,6 +6,7 @@ import { applyCharacterSkin } from '../character/CharacterSkinApplier';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
+import { StrokeType } from '../core/GameConstants';
 
 const { ccclass } = _decorator;
 
@@ -136,7 +137,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (active) {
             this._preRaceStanding = false;
             this.applyRaceModelSetup();
-            this._animationPlayer.playFreestyle();
+            this._animationPlayer.stop();
         } else {
             this._animationPlayer.stop();
             if (this._preRaceStanding) {
@@ -196,7 +197,27 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    updateFreestyle(dt: number, armCycle: number, kickCycle: number, bodyPhase: number, speed: number) {
+    triggerStroke(type: StrokeType) {
+        if (this._modelDebugMode) {
+            this._debug.triggerStroke(type);
+            return;
+        }
+        this._armAction = 1;
+        this._kickAction = 1;
+        this._splashEmitter?.triggerArmStroke();
+        this._splashEmitter?.triggerKick();
+        if (this._loaded) {
+            console.log(`[SpeedSwimming] rig ${type} diagonal stroke trigger`);
+        }
+    }
+
+    setStrokeHeld(type: StrokeType, held: boolean) {
+        if (this._modelDebugMode) {
+            this._debug.setStrokeHeld(type, held);
+        }
+    }
+
+    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number) {
         if (!this._loaded || !this._active || !this.root) {
             return;
         }
@@ -204,23 +225,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._armAction = Math.max(0, this._armAction - dt * 4.8);
         this._kickAction = Math.max(0, this._kickAction - dt * 7);
         this._splashEmitter?.decay(dt);
-        this.updateArmCycleMotion(dt, armCycle);
-        this.updateKickCycleMotion(dt, kickCycle);
-        this._leftHandWaterContact = this._pose.handWaterContact(armCycle);
-        this._rightHandWaterContact = this._pose.handWaterContact(armCycle + Math.PI);
-        this._leftHandWaterProgress = this._pose.handWaterProgress(armCycle);
-        this._rightHandWaterProgress = this._pose.handWaterProgress(armCycle + Math.PI);
+        this.updateArmCycleMotion(dt, leftArmCycle, rightArmCycle);
+        this.updateKickCycleMotion(dt, leftKickCycle, rightKickCycle);
+        this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle);
+        this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle);
+        this._leftHandWaterProgress = this._pose.handWaterProgress(leftArmCycle);
+        this._rightHandWaterProgress = this._pose.handWaterProgress(rightArmCycle);
         this.syncSplashState();
 
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
-        this._pose.applyFreestyleRootMotion(armCycle, kickCycle, bodyPhase);
-        const state = this._animationPlayer.getFreestyleState();
-        if (state) {
-            state.speed = Math.max(0.8, Math.min(1.8, drive + this._armAction * 0.35 + this._kickAction * 0.25));
-            this.updateSplashSurface(speed);
-            return;
-        }
-        this._pose.applyFreestylePose(armCycle, kickCycle, bodyPhase, drive + this._armAction * 0.45, drive + this._armAction * 0.7, drive + this._kickAction * 0.8);
+        this._pose.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase);
+        this._pose.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, drive + this._armAction * 0.45, drive + this._armAction * 0.7, drive + this._kickAction * 0.8);
         this.updateSplashSurface(speed);
     }
 
@@ -370,35 +385,37 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.update(speed);
     }
 
-    private updateArmCycleMotion(dt: number, armCycle: number) {
+    private updateArmCycleMotion(dt: number, leftArmCycle: number, rightArmCycle: number) {
         if (dt <= 0) {
             return;
         }
         if (!this._hasLastArmCycle) {
-            this._lastArmCycle = armCycle;
+            this._lastArmCycle = (leftArmCycle + rightArmCycle) * 0.5;
             this._hasLastArmCycle = true;
             return;
         }
 
-        const angularSpeed = Math.abs(armCycle - this._lastArmCycle) / dt;
-        this._lastArmCycle = armCycle;
+        const cycle = (leftArmCycle + rightArmCycle) * 0.5;
+        const angularSpeed = Math.abs(cycle - this._lastArmCycle) / dt;
+        this._lastArmCycle = cycle;
         const target = Math.max(0, Math.min(1, angularSpeed / (Math.PI * 2 * 2.6)));
         const blend = Math.min(1, dt * 10);
         this._armCycleMotion += (target - this._armCycleMotion) * blend;
     }
 
-    private updateKickCycleMotion(dt: number, kickCycle: number) {
+    private updateKickCycleMotion(dt: number, leftKickCycle: number, rightKickCycle: number) {
         if (dt <= 0) {
             return;
         }
         if (!this._hasLastKickCycle) {
-            this._lastKickCycle = kickCycle;
+            this._lastKickCycle = (leftKickCycle + rightKickCycle) * 0.5;
             this._hasLastKickCycle = true;
             return;
         }
 
-        const angularSpeed = Math.abs(kickCycle - this._lastKickCycle) / dt;
-        this._lastKickCycle = kickCycle;
+        const cycle = (leftKickCycle + rightKickCycle) * 0.5;
+        const angularSpeed = Math.abs(cycle - this._lastKickCycle) / dt;
+        this._lastKickCycle = cycle;
         const target = Math.max(0, Math.min(1, angularSpeed / (Math.PI * 2 * 3.2)));
         const blend = Math.min(1, dt * 10);
         this._kickCycleMotion += (target - this._kickCycleMotion) * blend;

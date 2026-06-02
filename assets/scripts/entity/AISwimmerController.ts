@@ -1,5 +1,5 @@
 import { _decorator, Component } from 'cc';
-import { DIVE_BALANCE, RHYTHM_BALANCE, TARGET_INTERVAL } from '../core/GameBalance';
+import { DIVE_BALANCE, RHYTHM_BALANCE, getTargetInterval } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { Swimmer } from './Swimmer';
 
@@ -15,16 +15,16 @@ export class AISwimmerController extends Component {
 
     private _active = false;
     private _timer = 0;
-    private _interval = TARGET_INTERVAL;
-    private _baseInterval = TARGET_INTERVAL;
-    private _nextStroke = StrokeType.ARM;
+    private _interval = getTargetInterval();
+    private _baseInterval = getTargetInterval();
+    private _nextStroke = StrokeType.LEFT;
 
     startSwimming() {
         const bpm = RHYTHM_BALANCE.targetBpm + this.bpmOffset + (Math.random() * 2 - 1) * RHYTHM_BALANCE.aiBpmVariance;
         this._baseInterval = 60 / bpm;
         this._interval = this._baseInterval;
         this._timer = this._interval * 0.35;
-        this._nextStroke = StrokeType.ARM;
+        this._nextStroke = StrokeType.LEFT;
         this._active = true;
     }
 
@@ -44,7 +44,7 @@ export class AISwimmerController extends Component {
 
         this._timer -= this._interval;
         this.swimmer.handleStroke(this._nextStroke);
-        this._nextStroke = this._nextStroke === StrokeType.ARM ? StrokeType.LEG : StrokeType.ARM;
+        this._nextStroke = this._nextStroke === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
 
         const rhythmError = (1 - this.difficulty) * 0.32;
         this._interval = this._baseInterval * (1 + (Math.random() * 2 - 1) * rhythmError);

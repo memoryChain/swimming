@@ -30,6 +30,7 @@ import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { SWIMMER_BALANCE } from './GameBalance';
 import { GameState, StrokeType } from './GameConstants';
+import { loadSavedTuning } from './TuningDebugControls';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -60,6 +61,8 @@ export class GameManager extends Component {
     private _worldRoot: Node = null;
     private _cameraNode: Node = null;
     private _modelDebugSpeedLabel: Label = null;
+    private _modelDebugRatingLabel: Label = null;
+    private _modelDebugSwimSpeedLabel: Label = null;
     private _speedFill: Graphics = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
@@ -71,6 +74,7 @@ export class GameManager extends Component {
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
     onLoad() {
+        loadSavedTuning();
         game.frameRate = 60;
         console.log(`[SpeedSwimming] target frameRate=${game.frameRate}`);
         this.node.layer = Layers.Enum.UI_2D;
@@ -99,6 +103,7 @@ export class GameManager extends Component {
         this._uiFlow?.updateSpeed(this._playerSwimmer.currentSpeed);
         this.drawSpeedBar(this._playerSwimmer.currentSpeed / SWIMMER_BALANCE.maxSpeed);
         if (this._modelDebugFlow?.active) {
+            this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
             return;
         }
@@ -153,6 +158,7 @@ export class GameManager extends Component {
             raceCameraDirector: this._raceCameraDirector,
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
+            handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
             setState: (state) => {
                 this._state = state;
             },
@@ -175,6 +181,8 @@ export class GameManager extends Component {
             aiControllers: this._aiControllers,
             uiFlow: this._uiFlow,
             speedLabel: this._modelDebugSpeedLabel,
+            ratingLabel: this._modelDebugRatingLabel,
+            swimSpeedLabel: this._modelDebugSwimSpeedLabel,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
             showStartScreen: () => this.showStartScreen(),
             setState: (state) => {
@@ -187,6 +195,7 @@ export class GameManager extends Component {
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
             onStroke: (type) => this.handlePlayerStroke(type),
+            onStrokeHeld: (type, held) => this.handlePlayerStrokeHeld(type, held),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
@@ -231,6 +240,7 @@ export class GameManager extends Component {
         this._raceHud.active = false;
         const raceHud = new RaceHudBuilder({
             onStroke: (type) => this._inputRouter?.handlePadStroke(type),
+            onStrokeEnd: (type) => this._inputRouter?.handlePadStrokeEnd(type),
             onRestart: () => this.restartGame(),
             onMenu: () => this.showStartScreen(),
         }).build(this._raceHud, w, h);
@@ -250,6 +260,8 @@ export class GameManager extends Component {
         }).build(uiRoot, w, h);
         this._modelDebugHud = modelDebugHud.root;
         this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
+        this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
+        this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
         this._modelDebugHud.active = false;
 
         const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
@@ -271,6 +283,10 @@ export class GameManager extends Component {
 
     private handlePlayerStroke(type: StrokeType) {
         this._gameFlow?.handlePlayerStroke(type);
+    }
+
+    private handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
+        this._gameFlow?.handlePlayerStrokeHeld(type, held);
     }
 
     private cycleRaceCamera() {

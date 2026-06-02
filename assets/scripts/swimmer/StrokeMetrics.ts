@@ -1,7 +1,5 @@
 import { StrokeType } from '../core/GameConstants';
-import { INPUT_TUNING, TARGET_LIMB_RATE } from '../core/InputTuning';
-
-const INPUT_RATE_WINDOW = INPUT_TUNING.inputRateWindowSeconds;
+import { INPUT_TUNING, getTargetLimbRate } from '../core/InputTuning';
 
 export class StrokeMetrics {
     private _motionClock = 0;
@@ -33,13 +31,14 @@ export class StrokeMetrics {
     }
 
     recordStroke(type: StrokeType) {
-        const times = type === StrokeType.ARM ? this._armInputTimes : this._kickInputTimes;
-        times.push(this._motionClock);
-        this.pruneInputTimes(times);
+        this._armInputTimes.push(this._motionClock);
+        this._kickInputTimes.push(this._motionClock);
+        this.pruneInputTimes(this._armInputTimes);
+        this.pruneInputTimes(this._kickInputTimes);
     }
 
     private calculateEffortScore(armRate: number, kickRate: number): number {
-        return clamp01(((armRate + kickRate) * 0.5) / TARGET_LIMB_RATE);
+        return clamp01(((armRate + kickRate) * 0.5) / getTargetLimbRate());
     }
 
     private calculateSyncScore(armRate: number, kickRate: number): number {
@@ -49,16 +48,16 @@ export class StrokeMetrics {
         }
         const minRate = Math.min(armRate, kickRate);
         const balance = minRate / maxRate;
-        const rateMatch = 1 - clamp01(Math.abs(armRate - kickRate) / (TARGET_LIMB_RATE * 1.1));
+        const rateMatch = 1 - clamp01(Math.abs(armRate - kickRate) / (getTargetLimbRate() * 1.1));
         return clamp01(rateMatch * 0.68 + balance * 0.32);
     }
 
     private inputRatePerSecond(times: number[]): number {
-        return times.length / INPUT_RATE_WINDOW;
+        return times.length / INPUT_TUNING.inputRateWindowSeconds;
     }
 
     private pruneInputTimes(times: number[]) {
-        while (times.length > 0 && this._motionClock - times[0] > INPUT_RATE_WINDOW) {
+        while (times.length > 0 && this._motionClock - times[0] > INPUT_TUNING.inputRateWindowSeconds) {
             times.shift();
         }
     }
@@ -80,7 +79,7 @@ export class StrokeMetrics {
     }
 
     get targetLimbRate(): number {
-        return TARGET_LIMB_RATE;
+        return getTargetLimbRate();
     }
 }
 

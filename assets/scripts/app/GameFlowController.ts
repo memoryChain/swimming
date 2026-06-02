@@ -15,6 +15,7 @@ export type GameFlowRefs = {
     raceCameraDirector: RaceCameraDirector;
     exitModelDebug: (showStart: boolean) => void;
     handleModelDebugStroke: (type: StrokeType) => boolean;
+    handleModelDebugStrokeHeld: (type: StrokeType, held: boolean) => boolean;
     setState: (state: GameState) => void;
     getState: () => GameState;
     debug: (message: string) => void;
@@ -73,6 +74,22 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStroke(type);
         if (result) {
             this._refs.debug(`stroke=${type} rating=${result.rating} combo=${result.combo}`);
+            this._refs.uiFlow.showRating(result.rating, result.combo);
+        }
+    }
+
+    handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
+        if (this._refs.handleModelDebugStrokeHeld(type, held)) {
+            return;
+        }
+        if (this._refs.getState() !== GameState.RACING) {
+            return;
+        }
+        const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
+        if (result) {
+            this._refs.debug(
+                `hold=${type} rating=${result.rating} hold=${(result.holdSeconds ?? 0).toFixed(2)} target=${(result.targetHoldSeconds ?? 0).toFixed(2)} combo=${result.combo}`,
+            );
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }

@@ -45,9 +45,16 @@ export const RHYTHM_BALANCE = {
     maxComboBonus: 1.55,
     comboPerfectBonus: 0.045,
     comboGoodBonus: 0.015,
+    holdPerfectBonus: 0.08,
+    holdGoodBonus: 0.035,
+    holdMissPenalty: 1,
     comboMissPenalty: 3,
     aiDifficulty: 0.86,
     aiBpmVariance: 12,
 };
 
 export const TARGET_INTERVAL = 60 / RHYTHM_BALANCE.targetBpm;
+
+export function getTargetInterval(): number {
+    return 60 / RHYTHM_BALANCE.targetBpm;
+}

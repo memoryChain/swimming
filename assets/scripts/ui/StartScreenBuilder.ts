@@ -16,7 +16,7 @@ export class StartScreenBuilder {
         makeRect('TopAccent', screen, w, 12, uiColor(255, 224, 89)).setPosition(0, h / 2 - 6, 0);
         makeLabel('Kicker', screen, '100M FREESTYLE RHYTHM', 18, uiColor(128, 225, 235)).setPosition(0, 124, 0);
         makeLabel('Logo', screen, 'SPEED SWIMMING 3D', 62, uiColor(255, 255, 255)).setPosition(0, 70, 0);
-        makeLabel('SubTitle', screen, 'Freestyle rhythm: left click kicks, right click pulls the arms.', 22, uiColor(224, 235, 235)).setPosition(0, 16, 0);
+        makeLabel('SubTitle', screen, 'Freestyle rhythm: alternate diagonal hand and foot strokes.', 22, uiColor(224, 235, 235)).setPosition(0, 16, 0);
 
         const start = makeButton('StartButton', screen, 220, 52, uiColor(255, 224, 89), 'START RACE');
         start.setPosition(-124, -62, 0);
@@ -30,7 +30,7 @@ export class StartScreenBuilder {
         modelDebug.setPosition(0, -126, 0);
         modelDebug.on(Node.EventType.TOUCH_END, () => this._callbacks.onModelDebug());
 
-        makeLabel('Controls', screen, 'Left mouse / A: kick    Right mouse / D: arm pull    C: camera    V: free view', 18, uiColor(220, 232, 235)).setPosition(0, -184, 0);
+        makeLabel('Controls', screen, 'A / left side: left hand + right foot    D / right side: right hand + left foot    C: camera    V: free view', 18, uiColor(220, 232, 235)).setPosition(0, -184, 0);
         return screen;
     }
 }

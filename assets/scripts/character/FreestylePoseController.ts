@@ -1,6 +1,10 @@
 import { Node, Quat, Vec3 } from 'cc';
 import { findNode } from './CharacterModelLoader';
 
+const SIDE_BODY_ROLL_DEGREES = 28;
+const ARM_FORWARD_CYCLE_OFFSET = 0;
+const MOVEMENT_FORWARD_WORLD = new Vec3(1, 0, 0);
+
 export class FreestylePoseController {
     public root: Node = null;
     public readonly rootBasePos = new Vec3();
@@ -41,6 +45,7 @@ export class FreestylePoseController {
     private readonly _tmpParentWorldRotation = new Quat();
     private readonly _tmpInverseParentWorldRotation = new Quat();
     private readonly _tmpSplashWorldB = new Vec3();
+    private readonly _tmpMovementForwardRoot = new Vec3();
 
     bind(root: Node) {
         this.root = root;
@@ -93,59 +98,96 @@ export class FreestylePoseController {
         }
     }
 
-    applyFreestylePose(armCycle: number, kickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
-        this.applyFreestyleRootMotion(armCycle, kickCycle, bodyPhase);
-        this.applyUpperBodyRoll(this.armReachSignal(armCycle), upperBodyPower);
-        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, armCycle, armPower);
-        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, armCycle + Math.PI, armPower);
-        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, kickCycle, kickPower);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, kickCycle + Math.PI, kickPower);
+    applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
+        this.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase);
+        this.applyUpperBodyRoll(this.armReachSignal(leftArmCycle, rightArmCycle), upperBodyPower);
+        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), armPower);
+        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
+        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
+        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
     }
 
-    applyFreestyleRootMotion(armCycle: number, kickCycle: number, bodyPhase: number) {
+    applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number) {
         if (!this.root) {
             return;
         }
         const bob = Math.sin(bodyPhase) * 0.045;
-        const roll = Math.sin(armCycle) * 10;
-        this.root.setPosition(this.rootBasePos.x + Math.sin(armCycle) * 0.03, this.rootBasePos.y + bob, this.rootBasePos.z);
+        const armReach = this.armReachSignal(leftArmCycle, rightArmCycle);
+        const sideRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle);
+        const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
+        this.root.setPosition(this.rootBasePos.x + armReach * 0.03, this.rootBasePos.y + bob, this.rootBasePos.z);
         this.root.setRotationFromEuler(
-            this.rootBaseEuler.x + Math.sin(kickCycle) * 1.5,
-            this.rootBaseEuler.y + roll * 0.16,
-            this.rootBaseEuler.z + Math.sin(armCycle) * 1.8,
+            this.rootBaseEuler.x + kickSignal * 1.5,
+            this.rootBaseEuler.y + sideRoll * SIDE_BODY_ROLL_DEGREES,
+            this.rootBaseEuler.z + armReach * 1.2,
         );
     }
 
     applyPreviewPose(selfTime: number) {
         const previewArmCycle = selfTime * 3.8;
         const previewKickCycle = selfTime * 7.2;
-        this.applyUpperBodyRoll(this.armReachSignal(previewArmCycle), 1);
-        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, previewArmCycle, 1.05);
-        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, previewArmCycle + Math.PI, 1.05);
+        this.applyUpperBodyRoll(this.armReachSignal(previewArmCycle, previewArmCycle), 1);
+        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(previewArmCycle), 1.05);
+        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(previewArmCycle), 1.05);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, previewKickCycle, 1.05);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, previewKickCycle + Math.PI, 1.05);
+        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, previewKickCycle, 1.05);
     }
 
-    applyDebugPose(armReach: number, armPower: number, leftArmCycle: number, kickPower: number, leftKickCycle: number) {
+    applyDebugPose(
+        armReach: number,
+        upperBodyPower: number,
+        leftArmCycle: number,
+        rightArmCycle: number,
+        leftArmPower: number,
+        rightArmPower: number,
+        leftKickCycle: number,
+        rightKickCycle: number,
+        leftKickPower: number,
+        rightKickPower: number,
+    ) {
         if (!this.root) {
             return;
         }
+        this.restoreBasePose();
         this.root.setPosition(this.rootBasePos.x, this.rootBasePos.y, this.rootBasePos.z);
-        this.root.setRotation(this.rootBaseRotation);
-        this.applyUpperBodyRoll(armReach, armPower);
-        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, leftArmCycle, armPower);
-        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, leftArmCycle + Math.PI, armPower);
-        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, leftKickCycle + Math.PI, kickPower);
+        this.root.setRotationFromEuler(
+            this.rootBaseEuler.x,
+            this.rootBaseEuler.y + this.sideBodyRollSignal(leftArmCycle, rightArmCycle) * SIDE_BODY_ROLL_DEGREES,
+            this.rootBaseEuler.z,
+        );
+        void armReach;
+        void upperBodyPower;
+        this.applyArm(
+            this._leftShoulder,
+            this._leftArm,
+            this._leftForeArm,
+            this._leftHand,
+            this.armPoseCycle(leftArmPower > 1.001 ? leftArmCycle : 0),
+            leftArmPower > 1.001 ? leftArmPower : 1,
+        );
+        this.applyArm(
+            this._rightShoulder,
+            this._rightArm,
+            this._rightForeArm,
+            this._rightHand,
+            this.armPoseCycle(rightArmPower > 1.001 ? rightArmCycle : 0),
+            rightArmPower > 1.001 ? rightArmPower : 1,
+        );
+        if (leftKickPower > 1.001) {
+            this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, leftKickPower);
+        }
+        if (rightKickPower > 1.001) {
+            this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, rightKickPower);
+        }
     }
 
     applyModelDebugPose() {
         this.restoreBasePose();
         this.applyUpperBodyRoll(0, 1);
-        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, 0, 1);
-        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, Math.PI, 1);
+        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(0), 1);
+        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(0), 1);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, 0, 1);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, Math.PI, 1);
+        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, 0, 1);
     }
 
     applyPreRaceStandingPose() {
@@ -161,24 +203,32 @@ export class FreestylePoseController {
     }
 
     handWaterContact(cycle: number): number {
-        const phase = positiveMod(-cycle, Math.PI * 2) / (Math.PI * 2);
+        const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
         const catchToPull = smoothPulse(phase, 0.10, 0.20, 0.46, 0.58);
         const entry = smoothPulse(phase, 0.90, 0.96, 1.0, 1.0) + smoothPulse(phase, 0.0, 0.0, 0.035, 0.09);
         return Math.max(catchToPull, Math.min(1, entry * 0.65));
     }
 
     handWaterProgress(cycle: number): number {
-        const phase = positiveMod(-cycle, Math.PI * 2) / (Math.PI * 2);
+        const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
         if (phase >= 0.10 && phase <= 0.58) {
             return smoothRange(phase, 0.10, 0.58);
         }
         return 0;
     }
 
-    armReachSignal(cycle: number): number {
-        const leftReach = Math.cos(positiveMod(-cycle, Math.PI * 2));
-        const rightReach = Math.cos(positiveMod(-(cycle + Math.PI), Math.PI * 2));
+    armReachSignal(leftCycle: number, rightCycle = leftCycle): number {
+        const leftReach = Math.cos(positiveMod(-this.armPoseCycle(leftCycle), Math.PI * 2));
+        const rightReach = Math.cos(positiveMod(-this.armPoseCycle(rightCycle), Math.PI * 2));
         return (leftReach - rightReach) * 0.5;
+    }
+
+    sideBodyRollSignal(leftCycle: number, rightCycle = leftCycle): number {
+        return -this.armReachSignal(leftCycle, rightCycle);
+    }
+
+    private armPoseCycle(cycle: number): number {
+        return cycle + ARM_FORWARD_CYCLE_OFFSET;
     }
 
     getSplashBoneWorldPosition(name: string, out: Vec3): boolean {
@@ -292,7 +342,12 @@ export class FreestylePoseController {
         const sideClearance = 0.58;
 
         this.applyBoneOffset(shoulder, shoulderLift, shoulderOpen, shoulderRoll);
-        this._tmpDirection.set(side * sideClearance, c, s);
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        this._tmpDirection.set(
+            side * sideClearance + this._tmpMovementForwardRoot.x * c,
+            this._tmpMovementForwardRoot.y * c,
+            s + this._tmpMovementForwardRoot.z * c,
+        );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
         this.applyBoneDirectionFromRoot(arm, foreArm, this._tmpDirection);
         this.applyBoneOffset(foreArm, elbowStraight, side * 3 * armPower, side * 2 * armPower);
@@ -390,6 +445,18 @@ export class FreestylePoseController {
         Vec3.transformQuat(this._tmpParentDirection, this._tmpWorldDirection, this._tmpInverseParentWorldRotation);
         Vec3.normalize(this._tmpParentDirection, this._tmpParentDirection);
         this.applyBoneDirection(bone, child, this._tmpParentDirection);
+    }
+
+    private movementForwardInRoot(out: Vec3): Vec3 {
+        if (!this.root) {
+            out.set(0, 1, 0);
+            return out;
+        }
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpRootWorldRotation);
+        Vec3.transformQuat(out, MOVEMENT_FORWARD_WORLD, this._tmpInverseParentWorldRotation);
+        Vec3.normalize(out, out);
+        return out;
     }
 }
 

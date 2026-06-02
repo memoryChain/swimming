@@ -99,7 +99,7 @@ export class UIController extends Component {
             this.countdownOverlay.active = false;
         }
         if (this.hintLabel) {
-            this.hintLabel.string = 'Left/A kick   Right/D arms';
+            this.hintLabel.string = 'A: left hand + right foot   D: right hand + left foot';
         }
     }
 

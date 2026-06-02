@@ -1,10 +1,14 @@
-import { Camera, EventMouse, Label, Node, Vec3 } from 'cc';
+import { Camera, Color, EventMouse, Label, Node, Vec3 } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
-import { GameState, StrokeType } from '../core/GameConstants';
+import { SWIMMER_BALANCE } from '../core/GameBalance';
+import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
+import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
+import { RhythmResult } from '../core/RhythmEvaluator';
+import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
 
 export type ModelDebugFlowRefs = {
@@ -20,6 +24,8 @@ export type ModelDebugFlowRefs = {
     aiControllers: AISwimmerController[];
     uiFlow: UIFlowController;
     speedLabel: Label | null;
+    ratingLabel: Label | null;
+    swimSpeedLabel: Label | null;
     resetExtraAiSwimmers: () => void;
     showStartScreen: () => void;
     setState: (state: GameState) => void;
@@ -32,7 +38,11 @@ export class ModelDebugFlowController {
     private _cameraYaw = Math.PI / 2;
     private _cameraPitch = 0.04;
     private _cameraDistance = 3.2;
-    private _speedScale = 0.35;
+    private _speedScale = MOTION_TUNING.animationSpeedScale;
+    private readonly _debugMotor = new SwimmerMotor();
+    private _debugRhythmBonus = 0;
+    private _lastRating: Rating | null = null;
+    private _lastCombo = 0;
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
 
@@ -47,12 +57,17 @@ export class ModelDebugFlowController {
         this._cameraPitch = 0.04;
         this._cameraDistance = 3.2;
         this._cameraDragging = false;
-        this._speedScale = 0.35;
+        this._speedScale = MOTION_TUNING.animationSpeedScale;
+        this._debugRhythmBonus = 0;
+        this._lastRating = null;
+        this._lastCombo = 0;
+        this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
 
         if (this._refs.cameraNode) {
             this._refs.cameraPos.set(this._refs.cameraNode.position);
         }
         this.applySpeed();
+        this.updateDebugHud();
 
         if (this._refs.inputManager) {
             this._refs.inputManager.modelDebugMode = true;
@@ -93,6 +108,7 @@ export class ModelDebugFlowController {
             swimmer.node.active = true;
         }
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugMode(false);
+        this._debugMotor.stopRace();
         this._refs.playerSwimmer?.reset();
         this._refs.resetExtraAiSwimmers();
         this._refs.raceCameraDirector.resetBroadcastCamera();
@@ -109,14 +125,55 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        if (type === StrokeType.ARM) {
-            this._refs.playerSwimmer?.cartoonRig?.triggerArmStroke();
-            this._refs.debug('model debug: arms');
-        } else {
-            this._refs.playerSwimmer?.cartoonRig?.triggerKick();
-            this._refs.debug('model debug: legs');
+        const result = this.evaluateDebugStroke(type);
+        this._refs.playerSwimmer?.cartoonRig?.triggerStroke(type);
+        if (!result || type !== StrokeType.BOTH || result.rating !== Rating.MISS) {
+            this._debugMotor.recordStroke(type);
         }
+        if (type === StrokeType.LEFT) {
+            this._refs.debug('model debug: left hand + right foot');
+        } else if (type === StrokeType.RIGHT) {
+            this._refs.debug('model debug: right hand + left foot');
+        } else {
+            this._refs.debug('model debug: both hands + both feet');
+        }
+        this.updateDebugHud();
         return true;
+    }
+
+    handleStrokeHeld(type: StrokeType, held: boolean): boolean {
+        if (!this._active) {
+            return false;
+        }
+        this._refs.playerSwimmer?.cartoonRig?.setStrokeHeld(type, held);
+        this._debugMotor.setStrokeHeld(type, held);
+        const evaluator = this._refs.playerSwimmer?.rhythmEvaluator;
+        if (evaluator) {
+            if (held) {
+                evaluator.beginHold(type);
+            } else {
+                this.applyDebugRhythmResult(evaluator.endHold(type));
+            }
+        }
+        this.updateDebugHud();
+        return true;
+    }
+
+    update(dt: number) {
+        if (!this._active) {
+            return;
+        }
+        this.syncSpeedFromTuning();
+        const finished = this._debugMotor.update(dt, {
+            isAI: false,
+            aiPower: 1,
+            aiMaxSpeedScale: 1,
+            rhythmBonus: this._debugRhythmBonus,
+        });
+        if (finished) {
+            this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
+        }
+        this.updateDebugHud();
     }
 
     updateCamera(smooth = 0.18) {
@@ -179,6 +236,7 @@ export class ModelDebugFlowController {
             return;
         }
         this._speedScale = clamp(this._speedScale - 0.1, 0.1, 1.5);
+        MOTION_TUNING.animationSpeedScale = this._speedScale;
         this.applySpeed();
     }
 
@@ -187,6 +245,7 @@ export class ModelDebugFlowController {
             return;
         }
         this._speedScale = clamp(this._speedScale + 0.1, 0.1, 1.5);
+        MOTION_TUNING.animationSpeedScale = this._speedScale;
         this.applySpeed();
     }
 
@@ -196,6 +255,61 @@ export class ModelDebugFlowController {
             this._refs.speedLabel.string = `Speed ${this._speedScale.toFixed(2)}x`;
         }
         this._refs.debug(`model debug speed=${this._speedScale.toFixed(2)}x`);
+    }
+
+    private syncSpeedFromTuning() {
+        const next = clamp(MOTION_TUNING.animationSpeedScale, 0.1, 1.5);
+        if (Math.abs(next - this._speedScale) < 0.001) {
+            return;
+        }
+        this._speedScale = next;
+        MOTION_TUNING.animationSpeedScale = next;
+        this.applySpeed();
+    }
+
+    private evaluateDebugStroke(type: StrokeType): RhythmResult | null {
+        const evaluator = this._refs.playerSwimmer?.rhythmEvaluator;
+        if (!evaluator) {
+            return null;
+        }
+        return this.applyDebugRhythmResult(evaluator.evaluate(type));
+    }
+
+    private applyDebugRhythmResult(result: RhythmResult | null): RhythmResult | null {
+        if (!result) {
+            return null;
+        }
+        this._debugRhythmBonus = Math.max(0, result.speedMultiplier - 1);
+        this._lastRating = result.rating;
+        this._lastCombo = result.combo;
+        return result;
+    }
+
+    private updateDebugHud() {
+        if (this._refs.ratingLabel) {
+            this._refs.ratingLabel.string = this._lastRating
+                ? `${this._lastRating.toUpperCase()}  ${this._lastCombo} COMBO`
+                : 'READY';
+            this._refs.ratingLabel.color = this.ratingColor(this._lastRating);
+        }
+        if (this._refs.swimSpeedLabel) {
+            const speed = this._debugMotor.currentSpeed;
+            const ratio = SWIMMER_BALANCE.maxSpeed > 0 ? Math.round((speed / SWIMMER_BALANCE.maxSpeed) * 100) : 0;
+            this._refs.swimSpeedLabel.string = `${speed.toFixed(2)} m/s  ${ratio}%`;
+        }
+    }
+
+    private ratingColor(rating: Rating | null): Color {
+        if (rating === Rating.PERFECT) {
+            return new Color(255, 224, 89, 255);
+        }
+        if (rating === Rating.GOOD) {
+            return new Color(80, 242, 161, 255);
+        }
+        if (rating === Rating.MISS) {
+            return new Color(255, 92, 92, 255);
+        }
+        return new Color(230, 244, 250, 255);
     }
 
     private stopAllAi() {

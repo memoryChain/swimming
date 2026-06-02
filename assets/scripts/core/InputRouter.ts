@@ -4,6 +4,7 @@ import { INPUT_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
+    onStrokeHeld: (type: StrokeType, held: boolean) => void;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
     onPrimaryAction: () => void;
@@ -21,6 +22,9 @@ export type InputRouterCallbacks = {
 export class InputRouter {
     private _lastPadStrokeMs = 0;
     private _lastPadStrokeType: StrokeType | null = null;
+    private _pendingStrokeType: StrokeType | null = null;
+    private _pendingStrokeMs = 0;
+    private _pendingStrokeTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(
         private readonly _target: Node,
@@ -29,8 +33,10 @@ export class InputRouter {
 
     bind() {
         this.unbind();
-        this._target.on('arm-stroke', this.onArmStroke, this);
-        this._target.on('leg-kick', this.onLegKick, this);
+        this._target.on('left-stroke', this.onLeftStroke, this);
+        this._target.on('right-stroke', this.onRightStroke, this);
+        this._target.on('left-stroke-held', this.onLeftStrokeHeld, this);
+        this._target.on('right-stroke-held', this.onRightStrokeHeld, this);
         this._target.on('dive-charge-start', this.onDiveChargeStart, this);
         this._target.on('dive-release', this.onDiveRelease, this);
         this._target.on('primary-action', this.onPrimaryAction, this);
@@ -46,8 +52,11 @@ export class InputRouter {
     }
 
     unbind() {
-        this._target.off('arm-stroke', this.onArmStroke, this);
-        this._target.off('leg-kick', this.onLegKick, this);
+        this.clearPendingStroke();
+        this._target.off('left-stroke', this.onLeftStroke, this);
+        this._target.off('right-stroke', this.onRightStroke, this);
+        this._target.off('left-stroke-held', this.onLeftStrokeHeld, this);
+        this._target.off('right-stroke-held', this.onRightStrokeHeld, this);
         this._target.off('dive-charge-start', this.onDiveChargeStart, this);
         this._target.off('dive-release', this.onDiveRelease, this);
         this._target.off('primary-action', this.onPrimaryAction, this);
@@ -69,15 +78,73 @@ export class InputRouter {
         }
         this._lastPadStrokeType = type;
         this._lastPadStrokeMs = now;
+        this._callbacks.onStrokeHeld(type, true);
+        this.queueStroke(type);
+    }
+
+    handlePadStrokeEnd(type: StrokeType) {
+        this._callbacks.onStrokeHeld(type, false);
+    }
+
+    private onLeftStroke() {
+        this.queueStroke(StrokeType.LEFT);
+    }
+
+    private onRightStroke() {
+        this.queueStroke(StrokeType.RIGHT);
+    }
+
+    private queueStroke(type: StrokeType) {
+        if (type === StrokeType.BOTH) {
+            this.clearPendingStroke();
+            this._callbacks.onStroke(StrokeType.BOTH);
+            return;
+        }
+
+        const now = Date.now();
+        if (this._pendingStrokeType) {
+            const pending = this._pendingStrokeType;
+            const withinChordWindow = now - this._pendingStrokeMs <= INPUT_TUNING.chordMergeWindowMs;
+            if (pending !== type && withinChordWindow) {
+                this.clearPendingStroke();
+                this._callbacks.onStroke(StrokeType.BOTH);
+                return;
+            }
+            if (pending === type && withinChordWindow) {
+                return;
+            }
+            this.flushPendingStroke();
+        }
+
+        this._pendingStrokeType = type;
+        this._pendingStrokeMs = now;
+        this._pendingStrokeTimer = setTimeout(() => this.flushPendingStroke(), INPUT_TUNING.chordMergeWindowMs);
+    }
+
+    private flushPendingStroke() {
+        if (!this._pendingStrokeType) {
+            return;
+        }
+        const type = this._pendingStrokeType;
+        this.clearPendingStroke();
         this._callbacks.onStroke(type);
     }
 
-    private onArmStroke() {
-        this._callbacks.onStroke(StrokeType.ARM);
+    private clearPendingStroke() {
+        if (this._pendingStrokeTimer) {
+            clearTimeout(this._pendingStrokeTimer);
+            this._pendingStrokeTimer = null;
+        }
+        this._pendingStrokeType = null;
+        this._pendingStrokeMs = 0;
     }
 
-    private onLegKick() {
-        this._callbacks.onStroke(StrokeType.LEG);
+    private onLeftStrokeHeld(held: boolean) {
+        this._callbacks.onStrokeHeld(StrokeType.LEFT, held);
+    }
+
+    private onRightStrokeHeld(held: boolean) {
+        this._callbacks.onStrokeHeld(StrokeType.RIGHT, held);
     }
 
     private onDiveChargeStart() {

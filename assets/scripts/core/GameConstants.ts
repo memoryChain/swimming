@@ -14,6 +14,7 @@ export enum GameState {
 }
 
 export enum StrokeType {
-    ARM = 'arm',
-    LEG = 'leg',
+    LEFT = 'left',
+    RIGHT = 'right',
+    BOTH = 'both',
 }
