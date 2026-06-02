@@ -13,10 +13,12 @@
 - 主场景是 `assets/scenes/MainGame.scene`。
 - 运行时入口仍是 `assets/scripts/core/GameManager.ts`，但它现在主要负责启动、流程协调和事件绑定。
 - 运行时装配已经拆成多个模块：
+  - `assets/scripts/app`：运行时场景基础搭建、模型 debug 流程控制。
   - `assets/scripts/swimmer`：泳手输入窗口、速度物理和移动状态。
   - `assets/scripts/venue`：泳池配置、泳池 prefab 加载、水面绑定、fallback 泳池和泳道布局。
   - `assets/scripts/camera`：比赛摄像机模式、自动转播镜头、自由镜头和 FOV。
   - `assets/scripts/competitor`：玩家/AI 泳手创建、AI 参数、泳衣泳帽颜色配置。
+  - `assets/scripts/character`：角色 rig 接口、模型加载工具、皮肤/描边应用、自由泳骨骼姿态、水花 emitter。
   - `assets/scripts/ui`：运行时 UI factory、HUD、开始页、模型调试 HUD 和 debug 面板构建。
 - 当前保留的运行时资源集中在 `assets/resources`：
   - `models/UserSwimmerLow.glb`：当前低模角色，带骨骼和动画。
@@ -101,14 +103,25 @@
   - `aiMaxSpeedScale`
 - 当前 AI 与玩家使用相同肤色，不同泳衣和泳帽颜色；主角通过描边和泳道视觉识别。
 
-### 角色模型与蒙皮
+### 角色模型、蒙皮与特效
 
 - 当前角色加载路径只保留低模：
   - `models/UserSwimmerLow`
   - `models/UserSwimmerLow/UserSwimmerLow`
-- `CartoonSwimmerRig` 实例化 prefab 后会：
+- `character/CharacterRig.ts` 定义了当前角色表现层的公共接口，后续替换人物模型时应优先适配该接口。
+- `character/CharacterModelLoader.ts` 负责：
+  - 加载泳手 prefab。
+  - 递归查找节点/组件。
+  - 统一配置 `SkinnedMeshRenderer` 的实时骨骼渲染。
+- `character/FreestylePoseController.ts` 负责：
+  - 绑定关键骨骼。
+  - 捕获和恢复基础骨骼姿态。
+  - 应用自由泳手臂、腿部和上半身滚转姿态。
+  - 应用模型 debug 姿态和赛前站姿。
+  - 为水花系统提供手脚骨骼世界坐标。
+- `CartoonSwimmerRig` 仍是当前 Cocos 组件外壳，实例化 prefab 后会：
   - 查找 `Armature` 作为骨骼根。
-  - 绑定关键骨骼：躯干、头、肩、上臂、前臂、手、腿、脚、脚趾。
+  - 初始化 `FreestylePoseController`。
   - 收集 `SkinnedMeshRenderer`。
   - 强制 `skinningRoot = this._model`。
   - 关闭 baked animation 上传，保持实时骨骼可控。
@@ -122,7 +135,8 @@
 ### 角色外观
 
 - 低模角色目前走运行时贴图方案，不额外增加衣服网格。
-- `makeSwimmerClothesTexture()` 生成 `128x128` RGBA 贴图：
+- `character/CharacterSkinApplier.ts` 负责材质、运行时贴图和描边 shell。
+- 运行时贴图为 `128x128` RGBA：
   - 肤色来自 `skinColor`。
   - 连体泳衣来自 `suitColor`。
   - 泳帽来自 `capColor`。
@@ -137,7 +151,7 @@
 ### 描边实现
 
 - 当前描边采用倒壳方案，不是屏幕空间后处理。
-- `CartoonSwimmerRig.configureOutlineShells()` 为每个 `SkinnedMeshRenderer` 复制一个描边 shell。
+- `CharacterSkinApplier` 为每个 `SkinnedMeshRenderer` 复制一个描边 shell。
 - shell 复用原 mesh、skeleton、skinningRoot，只替换为 `PlayerOutline.effect`。
 - `PlayerOutline.effect` 关键点：
   - front-face culling。
@@ -156,7 +170,8 @@
 - `venue/WaterSurfaceBinder.ts` 负责隐藏旧水面节点、启用透明水面节点并绑定 `pool/RagingPoolWater`。
 - `venue/PoolFallbackBuilder.ts` 在泳池 prefab 加载失败时生成基础泳池面、起点线和终点线。
 - `WaterSurface` 会收集指定名称的水面节点和波纹节点，给局部水纹做轻微 transform 动画。
-- `CartoonSwimmerRig` 自带 `splashNode`，并根据手入水、脚打水和速度更新水花强度。
+- `character/SplashEmitter.ts` 负责 `splashNode`、水花材质加载、水花强度计算，以及手/脚骨骼位置跟随。
+- `CartoonSwimmerRig` 每帧只把当前手脚接水状态、动作强度和速度同步给 `SplashEmitter`。
 - 水花材质来自 `pool/SwimmerSplash`，水面材质来自 `pool/RagingPoolWater`。
 
 ### 镜头与调试
@@ -187,8 +202,13 @@
 
 ```text
 assets/scripts/
+  app/
+    RuntimeSceneBuilder.ts # Canvas/UI 摄像机、3D 摄像机、灯光、运行时节点清理
+    GameFlowController.ts  # 开始、重开、回开始页、RaceManager 回调和 AI 流程协调
+    ModelDebugFlowController.ts # 模型 debug 进入/退出、debug 摄像机、动作速度控制
+
   core/
-    GameManager.ts        # 启动、流程协调、事件绑定、模型 debug 入口
+    GameManager.ts        # 启动、流程协调、事件绑定
     RaceManager.ts        # 倒计时、比赛计时、进度、完赛回调
     InputManager.ts       # 键盘/鼠标/触摸输入入口
     RhythmEvaluator.ts    # 节奏判定
@@ -203,6 +223,13 @@ assets/scripts/
     CompetitorConfig.ts   # AI profile 和选手视觉配置
     SwimmerFactory.ts     # 创建单个泳手和 rig
     CompetitorManager.ts  # 创建玩家、AI 列表和主 AI
+
+  character/
+    CharacterRig.ts        # 角色表现层公共接口
+    CharacterModelLoader.ts# prefab 加载、节点/组件查找、skinned renderer 配置
+    CharacterSkinApplier.ts# 动态贴图、材质、描边 shell
+    FreestylePoseController.ts # 自由泳骨骼姿态、基础姿态、赛前/debug 姿态
+    SplashEmitter.ts       # 水花节点、材质、强度和骨骼跟随
 
   venue/
     VenueConfig.ts        # 泳池默认配置
@@ -226,7 +253,7 @@ assets/scripts/
   entity/
     Swimmer.ts            # Cocos 门面组件，连接 motor 和表现
     AISwimmerController.ts
-    CartoonSwimmerRig.ts  # 当前仍偏大的角色表现/模型/水花实现
+    CartoonSwimmerRig.ts  # 当前角色表现外壳，协调模型/动画/姿态/水花/debug
 ```
 
 后续继续重构时应保持依赖方向：
@@ -482,11 +509,17 @@ ui -> Cocos UI details
   - `venue/*`
   - `camera/RaceCameraDirector`
   - `competitor/*`
+  - `character/CharacterModelLoader`
+  - `character/CharacterSkinApplier`
+  - `character/FreestylePoseController`
+  - `character/SplashEmitter`
+  - `app/RuntimeSceneBuilder`
+  - `app/GameFlowController`
+  - `app/ModelDebugFlowController`
   - `ui/*Builder`
 - 后续继续拆分：
-  - `GameFlowController`：开始、重开、返回开始页、比赛状态协调。
-  - `ModelDebugFlowController`：模型 debug 进入/退出、debug 摄像机、动作速度控制。
-  - `SceneBootstrap` 或 `RuntimeSceneBuilder`：Canvas、世界根节点、摄像机、灯光、清理旧节点。
+  - `SceneBootstrap`：如后续需要更完整启动流程，可包一层 `RuntimeSceneBuilder`、资源预热和流程 controller 初始化。
+  - `InputRouter`：将当前字符串事件转成 typed game command。
 - 将游戏参数集中到配置文件或 `GameBalance.ts`。
 - 将资源路径集中到 `ResourcePaths.ts`。
 - 为核心逻辑补充单元测试或轻量脚本测试：
@@ -496,8 +529,8 @@ ui -> Cocos UI details
 
 ## 技术债与注意事项
 
-- `GameManager.ts` 已完成第一轮瘦身，但仍承担高层流程、事件绑定、模型 debug 和基础场景 setup，后续功能继续增加前应继续拆分。
-- `CartoonSwimmerRig.ts` 仍是当前最大技术债，混合了模型加载、骨骼绑定、材质贴图、水花、动作和 debug。后续应按 TDB 拆出角色表现接口和子模块。
+- `GameManager.ts` 已拆出基础场景 setup、比赛流程协调和模型 debug 流程，但仍承担输入事件绑定、UI 构建入口、debug panel 日志和少量 UI/Race/Camera 转发。后续可继续拆出 `InputRouter` 和 `UIFlowController`。
+- `CartoonSwimmerRig.ts` 已拆出模型加载、皮肤/描边、自由泳骨骼姿态和水花 emitter，但仍混合动画 clip 控制、模型 debug 状态机和角色外壳流程。后续可继续拆出 `CharacterDebugController`，并把动画 clip 控制封装为更小的 `CharacterAnimationPlayer`。
 - 当前 `RhythmEvaluator` 用 `Date.now()` 计算输入间隔，这在暂停、低帧率或测试中不够理想。更稳的方案是由游戏时钟传入时间。
 - 描边 shell 会增加渲染成本；角色数量或模型复杂度增加时，需要默认关闭 AI 描边或改为更便宜的识别方式。
 - 运行时程序贴图目前是基于 UV 位置的区域判断，模型 UV 一旦变化，衣服区域可能错位。后续资产管线要固定 UV 规范，或改为 mask texture。

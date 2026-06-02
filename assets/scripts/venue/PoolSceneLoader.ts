@@ -1,4 +1,5 @@
 import { instantiate, Node, Prefab, resources, Vec3 } from 'cc';
+import { pruneNullComponentsRecursive } from '../character/CharacterModelLoader';
 import { PoolDefinition } from './VenueConfig';
 
 export type PoolSceneLoadResult = {
@@ -21,7 +22,17 @@ export class PoolSceneLoader {
 
             const pool = instantiate(prefab);
             pool.name = 'LoadedEditablePoolScene';
-            pool.setParent(root);
+            const prunedComponents = pruneNullComponentsRecursive(pool);
+            if (prunedComponents > 0) {
+                console.warn(`[SpeedSwimming] pruned null components from pool prefab count=${prunedComponents}`);
+            }
+            try {
+                pool.setParent(root);
+            } catch (error) {
+                pool.destroy();
+                done({ pool: null, error: error instanceof Error ? error : new Error(`${error}`) });
+                return;
+            }
             pool.setPosition(Vec3.ZERO);
             pool.setScale(Vec3.ONE);
             done({ pool, error: null });
