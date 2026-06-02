@@ -15,6 +15,7 @@ export class RaceManager extends Component {
     public onRaceTimerUpdate: (time: number) => void = null;
     public onProgressUpdate: (playerDist: number, aiDist: number) => void = null;
     public onRaceFinished: (playerWin: boolean, playerTime: number, aiTime: number) => void = null;
+    public onDiveReady: () => void = null;
 
     private _state = GameState.READY;
     private _countdownTimer = 0;
@@ -24,8 +25,10 @@ export class RaceManager extends Component {
     private _playerFinishTime = 0;
     private _aiFinishTime = 0;
     private _lastCountdownValue = -1;
+    private _diveResolved = false;
 
     startRace() {
+        this.unscheduleAllCallbacks();
         this._countdownTimer = this.countdownSeconds;
         this._raceTimer = 0;
         this._playerFinished = false;
@@ -33,6 +36,7 @@ export class RaceManager extends Component {
         this._playerFinishTime = 0;
         this._aiFinishTime = 0;
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
+        this._diveResolved = false;
         this.setState(GameState.COUNTDOWN);
         this.onCountdownTick?.(this._lastCountdownValue);
     }
@@ -40,18 +44,22 @@ export class RaceManager extends Component {
     update(dt: number) {
         if (this._state === GameState.COUNTDOWN) {
             this.updateCountdown(dt);
+        } else if (this._state === GameState.DIVING) {
+            this.updateDiving(dt);
         } else if (this._state === GameState.RACING) {
             this.updateRacing(dt);
         }
     }
 
     resetRace() {
+        this.unscheduleAllCallbacks();
         this._state = GameState.READY;
         this._countdownTimer = 0;
         this._raceTimer = 0;
         this._playerFinished = false;
         this._aiFinished = false;
         this._lastCountdownValue = -1;
+        this._diveResolved = false;
         this.playerSwimmer?.reset();
         this.aiSwimmer?.reset();
         this.onProgressUpdate?.(0, 0);
@@ -67,10 +75,29 @@ export class RaceManager extends Component {
         }
 
         if (this._countdownTimer <= -0.35) {
-            this.playerSwimmer?.startRace();
-            this.aiSwimmer?.startRace();
-            this.setState(GameState.RACING);
+            this.playerSwimmer?.prepareDive();
+            this.setState(GameState.DIVING);
+            this.onDiveReady?.();
         }
+    }
+
+    startFromDive(playerDivePower: number) {
+        if (this._state !== GameState.DIVING || this._diveResolved) {
+            return;
+        }
+        this._diveResolved = true;
+        const playerDuration = this.playerSwimmer?.performDive(playerDivePower) ?? 0;
+        this.scheduleOnce(() => {
+            if (this._state === GameState.DIVING && this._diveResolved) {
+                this.setState(GameState.RACING);
+            }
+        }, playerDuration);
+    }
+
+    private updateDiving(dt: number) {
+        this._raceTimer += dt;
+        this.onRaceTimerUpdate?.(this._raceTimer);
+        this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
     }
 
     private updateRacing(dt: number) {

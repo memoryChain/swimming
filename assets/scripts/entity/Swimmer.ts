@@ -9,6 +9,12 @@ import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
 
+const DIVE_PLATFORM_NODE_OFFSET = new Vec3(-1.37, 0.53, 0);
+const DIVE_MIN_DISTANCE = 0.55;
+const DIVE_MAX_DISTANCE = 1.85;
+const DIVE_MIN_SPEED = 0.85;
+const DIVE_MAX_SPEED = 2.35;
+
 @ccclass('Swimmer')
 export class Swimmer extends Component {
     @property(Node) public bodyNode: Node = null;
@@ -49,17 +55,74 @@ export class Swimmer extends Component {
         this.captureStartPosition();
     }
 
-    startRace() {
+    startRace(initialDistance = 0, initialSpeed = DIVE_MIN_SPEED) {
         this.captureStartPosition();
-        this._motor.startRace();
+        this._motor.startRace(initialDistance, initialSpeed);
         this._comboSpeedBonus = 0;
-        this.node.setPosition(this._startPosition);
+        this.node.setPosition(this._startPosition.x + initialDistance, this._startPosition.y, this._startPosition.z);
+        this.node.setRotationFromEuler(0, 0, 0);
         this.cartoonRig?.setPreRaceStanding(false);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(true);
     }
 
+    prepareDive() {
+        this.captureStartPosition();
+        Tween.stopAllByTarget(this.node);
+        this._motor.reset();
+        this._comboSpeedBonus = 0;
+        this.rhythmEvaluator?.reset();
+        this.node.setPosition(this.divePlatformPosition());
+        this.node.setRotationFromEuler(0, 0, 0);
+        this.resetPose();
+        this.cartoonRig?.setActiveSwimming(false);
+        this.cartoonRig?.setPreRaceStanding(true);
+    }
+
+    performDive(power: number): number {
+        this.captureStartPosition();
+        const divePower = clamp01(power);
+        const distance = lerp(DIVE_MIN_DISTANCE, DIVE_MAX_DISTANCE, divePower);
+        const entrySpeed = lerp(DIVE_MIN_SPEED, DIVE_MAX_SPEED, divePower);
+        const crouchDuration = lerp(0.16, 0.1, divePower);
+        const flightDuration = lerp(0.5, 0.38, divePower);
+        const arcHeight = lerp(0.1, 0.22, divePower);
+        const totalDuration = crouchDuration + flightDuration;
+        const start = this.divePlatformPosition();
+        const entry = new Vec3(this._startPosition.x + distance, this._startPosition.y + 0.02, this._startPosition.z);
+
+        Tween.stopAllByTarget(this.node);
+        this.node.setPosition(start);
+        this.node.setRotationFromEuler(0, 0, 0);
+        this.cartoonRig?.setPreRaceStanding(true);
+        tween(this.node)
+            .to(crouchDuration, {
+                position: new Vec3(start.x - 0.06, start.y - 0.04, start.z),
+                eulerAngles: new Vec3(0, 0, -5),
+            })
+            .to(flightDuration * 0.42, {
+                position: new Vec3(start.x + distance * 0.42, start.y + arcHeight, start.z),
+                eulerAngles: new Vec3(0, 0, -12),
+            })
+            .call(() => {
+                this.cartoonRig?.setPreRaceStanding(false);
+                this.resetPose();
+            })
+            .to(flightDuration * 0.58, {
+                position: entry,
+                eulerAngles: new Vec3(0, 0, 0),
+            })
+            .call(() => {
+                this.startRace(distance, entrySpeed);
+                this.flashSplash(divePower > 0.72 ? Rating.PERFECT : divePower > 0.42 ? Rating.GOOD : Rating.MISS);
+            })
+            .start();
+
+        return totalDuration;
+    }
+
     stopRace() {
+        Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
         this.cartoonRig?.setActiveSwimming(false);
     }
@@ -107,10 +170,11 @@ export class Swimmer extends Component {
 
     reset() {
         this.captureStartPosition();
+        Tween.stopAllByTarget(this.node);
         this._motor.reset();
         this._comboSpeedBonus = 0;
         this.rhythmEvaluator?.reset();
-        this.node.setPosition(this._startPosition);
+        this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, 0, 0);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
@@ -420,6 +484,14 @@ export class Swimmer extends Component {
         this._hasStartPosition = true;
     }
 
+    private divePlatformPosition(): Vec3 {
+        return new Vec3(
+            this._startPosition.x + DIVE_PLATFORM_NODE_OFFSET.x,
+            this._startPosition.y + DIVE_PLATFORM_NODE_OFFSET.y,
+            this._startPosition.z + DIVE_PLATFORM_NODE_OFFSET.z,
+        );
+    }
+
     get currentSpeed(): number {
         return this._motor.currentSpeed;
     }
@@ -431,4 +503,12 @@ export class Swimmer extends Component {
     get isRacing(): boolean {
         return this._motor.isRacing;
     }
+}
+
+function lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t;
+}
+
+function clamp01(value: number): number {
+    return Math.max(0, Math.min(1, value));
 }

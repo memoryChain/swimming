@@ -26,10 +26,10 @@ export class SwimmerMotor {
     private _armAction = 0;
     private _kickAction = 0;
 
-    startRace() {
+    startRace(initialDistance = 0, initialSpeed = BASE_SPEED) {
         this._isRacing = true;
-        this._currentSpeed = BASE_SPEED;
-        this.resetRaceState();
+        this._currentSpeed = initialSpeed;
+        this.resetRaceState(initialDistance);
     }
 
     stopRace() {
@@ -92,8 +92,8 @@ export class SwimmerMotor {
         return false;
     }
 
-    private resetRaceState() {
-        this._distance = 0;
+    private resetRaceState(initialDistance = 0) {
+        this._distance = Math.max(0, initialDistance);
         this._fatigue = 0;
         this._bodyPhase = 0;
         this._armCycle = 0;

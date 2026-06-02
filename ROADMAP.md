@@ -10,6 +10,7 @@
 
 ### 场景与资源
 
+- 默认入口场景是 `assets/scenes/Login.scene`，只负责展示轻量登录/开始入口并跳转到 `MainGame`。
 - 主场景是 `assets/scenes/MainGame.scene`。
 - 运行时入口仍是 `assets/scripts/core/GameManager.ts`，但它现在主要负责启动、流程协调和事件绑定。
 - 运行时装配已经拆成多个模块：
@@ -35,13 +36,18 @@
 ### 比赛流程
 
 - `GameManager` 负责状态入口、运行时装配、事件绑定和高层流程协调。
-- `RaceManager` 负责倒计时、开赛、计时、进度和完赛回调。
+- `RaceManager` 负责倒计时、玩家跳水、开赛、计时、进度和完赛回调。
 - `GameManager` 会把 `RaceManager` 的状态和计时回调转发给 UI、摄像机和 AI 控制。
 - 状态流：
   - `READY`：开始界面。
-  - `COUNTDOWN`：5 秒倒计时。
+  - `COUNTDOWN`：5 秒倒计时，玩家可按住 `A + D` 提前蓄力。
+  - `DIVING`：倒计时结束后的出发阶段，玩家松开 `A/D` 后跳水，AI 会按各自反应时间自动跳水。
   - `RACING`：玩家和 AI 开始前进。
   - `FINISHED`：展示结果，支持重新开始。
+- 跳水阶段当前由 `GameFlowController` 协调：
+  - 玩家蓄力由 `InputManager` 发出 `dive-charge-start` / `dive-release` 事件。
+  - `RaceManager.startFromDive()` 只负责玩家跳水完成后切入 `RACING`。
+  - 所有 AI 由 `GameFlowController.prepareAndScheduleAiDives()` 独立调度，基于 `difficulty`、`aiPower` 和少量随机波动计算反应时间与跳水能力。
 - 比赛距离固定为 `RACE_DISTANCE = 100`。
 - 目标帧率当前在 `GameManager.onLoad()` 中设置为 `game.frameRate = 60`，用于排查和避免低帧率锁定。
 
@@ -49,6 +55,7 @@
 
 - `InputManager` 统一处理键盘、鼠标和触摸。
 - 默认输入：
+  - 倒计时/跳水阶段：同时按住 `A + D` 蓄力，倒计时结束后松开触发跳水。
   - 鼠标左键 / A / 左半屏：腿打水。
   - 鼠标右键 / D / 右半屏：手划水。
   - Space / Enter：开始或重开。
@@ -61,6 +68,7 @@
   - 命中区不绘制透明背景和文字，避免中线阴影或提示文案遮挡画面。
   - `GameManager.handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
 - `InputManager.pointerInputEnabled` 当前在比赛 HUD 下设为 `false`，保留键盘输入和后续兜底能力，避免全局指针事件与 UI 命中区重复触发。
+- `InputManager` 现在同时监听 `KEY_DOWN / KEY_UP`，用于判断 `A + D` 的同时按住时长。该按住时长目前只用于开局跳水，后续可以扩展到每次划水/打腿的 hold 输入评分。
 - `RhythmEvaluator` 负责节奏判定：
   - 目标节奏由 `TARGET_BPM = 156` 和 `TARGET_INTERVAL = 60 / TARGET_BPM` 决定。
   - `PERFECT_WINDOW = 0.08`。
@@ -71,6 +79,11 @@
 ### 游泳速度模型
 
 - `Swimmer` 现在是 Cocos 组件门面，主要负责节点位置、表现触发和对外 API。
+- `Swimmer` 管理两套出发坐标：
+  - 游泳基准点：水面附近的比赛起点，用于 `SwimmerMotor.distance`。
+  - 跳台站位点：通过 `DIVE_PLATFORM_NODE_OFFSET` 从游泳基准点偏移，让运动员在倒计时阶段站到出发台上。
+- `Swimmer.prepareDive()` 会将运动员摆到跳台站位并恢复赛前站姿。
+- `Swimmer.performDive(power)` 会播放下蹲、起跳、入水 tween，并将跳水距离和入水速度传给 `SwimmerMotor.startRace(initialDistance, initialSpeed)`。
 - 速度和输入逻辑拆到 `assets/scripts/swimmer`：
   - `StrokeMetrics`：记录手/腿输入窗口，计算输入频率、effort score 和 sync score。
   - `SwimPhysicsModel`：计算速度、阻力、疲劳、AI 加成和 combo 影响。
@@ -96,6 +109,10 @@
 - `competitor/SwimmerFactory.ts` 创建单个泳手节点、绑定 `CartoonSwimmerRig`、`RhythmEvaluator` 和 `Swimmer`。
 - `competitor/CompetitorConfig.ts` 保存默认 AI profile 和泳衣/泳帽颜色。
 - `AISwimmerController` 按目标 BPM 自动交替触发手/腿动作。
+- AI 跳水不是由 `AISwimmerController` 触发，而是在 `GameFlowController` 的 `DIVING` 阶段统一调度：
+  - `difficulty` 越高，反应延迟越短。
+  - `aiPower` 和 `difficulty` 越高，跳水 power 越高。
+  - 每个 AI 都会独立 `prepareDive()` 和 `performDive()`，不会等待玩家松手。
 - 每条 AI 泳道配置了不同参数：
   - `difficulty`
   - `bpmOffset`
@@ -209,7 +226,7 @@ assets/scripts/
 
   core/
     GameManager.ts        # 启动、流程协调、事件绑定
-    RaceManager.ts        # 倒计时、比赛计时、进度、完赛回调
+    RaceManager.ts        # 倒计时、玩家跳水、比赛计时、进度、完赛回调
     InputManager.ts       # 键盘/鼠标/触摸输入入口
     RhythmEvaluator.ts    # 节奏判定
     WaterSurface.ts       # 水面节点轻动画

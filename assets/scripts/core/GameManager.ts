@@ -90,6 +90,8 @@ export class GameManager extends Component {
     onDestroy() {
         this.node.off('arm-stroke', this.onArmStroke, this);
         this.node.off('leg-kick', this.onLegKick, this);
+        this.node.off('dive-charge-start', this.onDiveChargeStart, this);
+        this.node.off('dive-release', this.onDiveRelease, this);
         this.node.off('primary-action', this.onPrimaryAction, this);
         this.node.off('toggle-debug', this.toggleDebug, this);
         this.node.off('cycle-race-camera', this.cycleRaceCamera, this);
@@ -260,6 +262,8 @@ export class GameManager extends Component {
     private registerEvents() {
         this.node.off('arm-stroke', this.onArmStroke, this);
         this.node.off('leg-kick', this.onLegKick, this);
+        this.node.off('dive-charge-start', this.onDiveChargeStart, this);
+        this.node.off('dive-release', this.onDiveRelease, this);
         this.node.off('primary-action', this.onPrimaryAction, this);
         this.node.off('toggle-debug', this.toggleDebug, this);
         this.node.off('cycle-race-camera', this.cycleRaceCamera, this);
@@ -272,6 +276,8 @@ export class GameManager extends Component {
         input.off(Input.EventType.MOUSE_WHEEL, this.onDebugCameraWheel, this);
         this.node.on('arm-stroke', this.onArmStroke, this);
         this.node.on('leg-kick', this.onLegKick, this);
+        this.node.on('dive-charge-start', this.onDiveChargeStart, this);
+        this.node.on('dive-release', this.onDiveRelease, this);
         this.node.on('primary-action', this.onPrimaryAction, this);
         this.node.on('toggle-debug', this.toggleDebug, this);
         this.node.on('cycle-race-camera', this.cycleRaceCamera, this);
@@ -296,6 +302,14 @@ export class GameManager extends Component {
 
     private onLegKick() {
         this.handlePlayerStroke(StrokeType.LEG);
+    }
+
+    private onDiveChargeStart() {
+        this._gameFlow?.handleDiveChargeStart();
+    }
+
+    private onDiveRelease(holdSeconds: number) {
+        this._gameFlow?.handleDiveRelease(holdSeconds);
     }
 
     private handlePadStroke(type: StrokeType) {

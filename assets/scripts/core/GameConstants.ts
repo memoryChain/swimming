@@ -34,6 +34,7 @@ export enum Rating {
 export enum GameState {
     READY = 'ready',
     COUNTDOWN = 'countdown',
+    DIVING = 'diving',
     RACING = 'racing',
     FINISHED = 'finished',
 }

@@ -39,7 +39,7 @@ export class RaceHudBuilder {
         makeLabel('Title', parent, 'SPEED SWIMMING 3D', 24, uiColor(255, 255, 255)).setPosition(-w / 2 + 188, h / 2 - 38, 0);
         const timerLabel = makeLabel('Timer', parent, '0:00.00', 30, uiColor(255, 255, 255));
         timerLabel.setPosition(w / 2 - 118, h / 2 - 38, 0);
-        const hintLabel = makeLabel('Hint', parent, 'Left/A kick   Right/D arms   C camera   V free view', 18, uiColor(190, 236, 255));
+        const hintLabel = makeLabel('Hint', parent, 'Dive: hold A+D during countdown, release after GO', 18, uiColor(190, 236, 255));
         hintLabel.setPosition(0, h / 2 - 38, 0);
 
         makeLabel('SpeedText', parent, 'PACE', 16, uiColor(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);

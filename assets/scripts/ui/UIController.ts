@@ -72,6 +72,9 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        if (this.hintLabel) {
+            this.hintLabel.string = 'Hold A+D during countdown, release after GO to dive';
+        }
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(720, 220);
             this.countdownLabel.lineHeight = 140;
@@ -85,7 +88,40 @@ export class UIController extends Component {
             this.countdownOverlay.active = false;
         }
         if (this.hintLabel) {
-            this.hintLabel.string = 'Left click kicks, right click pulls';
+            this.hintLabel.string = 'Left/A kick   Right/D arms';
+        }
+    }
+
+    showDivePrompt() {
+        if (this.countdownOverlay) {
+            this.countdownOverlay.active = true;
+        }
+        if (this.countdownLabel) {
+            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
+            this.countdownLabel.lineHeight = 64;
+            this.countdownLabel.string = 'HOLD A + D';
+            this.pulse(this.countdownLabel.node, 1.08);
+        }
+        if (this.hintLabel) {
+            this.hintLabel.string = 'Hold both sides to load the dive, release to enter the water';
+        }
+    }
+
+    showDiveCharging() {
+        if (this.countdownLabel) {
+            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
+            this.countdownLabel.lineHeight = 64;
+            this.countdownLabel.string = 'CHARGING';
+            this.pulse(this.countdownLabel.node, 1.12);
+        }
+    }
+
+    showDiveRelease(power: number) {
+        if (this.countdownLabel) {
+            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
+            this.countdownLabel.lineHeight = 64;
+            this.countdownLabel.string = `DIVE ${Math.round(power * 100)}%`;
+            this.pulse(this.countdownLabel.node, 1.18);
         }
     }
 
