@@ -1,4 +1,6 @@
 import { _decorator, Color, Component, instantiate, Layers, Node, SkeletalAnimation, SkinnedMeshRenderer, Vec3 } from 'cc';
+import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
+import { CharacterDebugController } from '../character/CharacterDebugController';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin } from '../character/CharacterSkinApplier';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
@@ -17,7 +19,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _model: Node = null;
     private _splashEmitter: SplashEmitter = null;
     private readonly _pose = new FreestylePoseController();
-    private _animation: SkeletalAnimation = null;
+    private readonly _animationPlayer = new CharacterAnimationPlayer();
+    private readonly _debug = new CharacterDebugController(this._pose);
     private _skinnedRenderers: SkinnedMeshRenderer[] = [];
     private _outlineRoot: Node = null;
     private _active = false;
@@ -38,17 +41,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _debugTimer = 0;
     private _modelDebugMode = false;
     private _preRaceStanding = false;
-    private _debugArmPhase = 0;
-    private _debugKickPhase = 0;
-    private _debugArmPower = 0;
-    private _debugArmCycleRemaining = 0;
-    private _debugKickCycleRemaining = 0;
-    private _debugKickPower = 0;
-    private _debugMotionClock = 0;
-    private _debugArmInputTimes: number[] = [];
-    private _debugKickInputTimes: number[] = [];
-    private _modelDebugSpeedScale = 1;
-    private _debugLogTimer = 0;
     private readonly _tmpSplashWorld = new Vec3();
 
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
@@ -94,10 +86,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._pose.bind(this.root);
             this.configureSkinnedRenderers();
             this.applyLaneMaterials(skinColor, suitColor, capColor, robotStyle, playerOutline);
-            this._animation = findComponentRecursive(this._model, SkeletalAnimation);
-            if (this._animation) {
-                this._animation.useBakedAnimation = false;
-            }
+            this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation));
             this._pose.captureBasePose();
             this._loaded = true;
             this.resetPose();
@@ -147,13 +136,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (active) {
             this._preRaceStanding = false;
             this.applyRaceModelSetup();
-            if (this._animation) {
-                this.playFreestyleClip();
-            }
+            this._animationPlayer.playFreestyle();
         } else {
-            if (this._animation) {
-                this._animation.stop();
-            }
+            this._animationPlayer.stop();
             if (this._preRaceStanding) {
                 this.applyPreRaceStandingSetup();
             } else {
@@ -175,9 +160,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._preRaceStanding = active;
         this._active = false;
-        if (this._animation) {
-            this._animation.stop();
-        }
+        this._animationPlayer.stop();
         if (!this._loaded || !this._model || !this.root) {
             return;
         }
@@ -191,9 +174,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     triggerArmStroke() {
         if (this._modelDebugMode) {
-            this.queueDebugMotion(this._debugArmInputTimes, Math.PI * 2);
-            this._debugArmPower = 1;
-            console.log(`[SpeedSwimming] model debug arm stroke trigger rate=${this.debugInputRatePerSecond(this._debugArmInputTimes).toFixed(1)}/s`);
+            this._debug.triggerArmStroke();
             return;
         }
         this._armAction = 1;
@@ -205,9 +186,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     triggerKick() {
         if (this._modelDebugMode) {
-            this.queueDebugMotion(this._debugKickInputTimes, Math.PI * 2);
-            this._debugKickPower = 1;
-            console.log(`[SpeedSwimming] model debug leg kick trigger rate=${this.debugInputRatePerSecond(this._debugKickInputTimes).toFixed(1)}/s`);
+            this._debug.triggerKick();
             return;
         }
         this._kickAction = 1;
@@ -235,13 +214,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
         this._pose.applyFreestyleRootMotion(armCycle, kickCycle, bodyPhase);
-        if (this._animation) {
-            const state = this.getFreestyleState();
-            if (state) {
-                state.speed = Math.max(0.8, Math.min(1.8, drive + this._armAction * 0.35 + this._kickAction * 0.25));
-                this.updateSplashSurface(speed);
-                return;
-            }
+        const state = this._animationPlayer.getFreestyleState();
+        if (state) {
+            state.speed = Math.max(0.8, Math.min(1.8, drive + this._armAction * 0.35 + this._kickAction * 0.25));
+            this.updateSplashSurface(speed);
+            return;
         }
         this._pose.applyFreestylePose(armCycle, kickCycle, bodyPhase, drive + this._armAction * 0.45, drive + this._armAction * 0.7, drive + this._kickAction * 0.8);
         this.updateSplashSurface(speed);
@@ -260,7 +237,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
-        if (!this._active && !this._animation) {
+        if (!this._active && !this._animationPlayer.hasAnimation) {
             this._pose.applyPreviewPose(this._selfTime);
         }
 
@@ -268,7 +245,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._debugTimer = 0;
             const leftArmY = this._pose.leftArmEuler;
             const leftLegX = this._pose.leftLegEuler;
-            const animState = this.getFreestyleState();
+            const animState = this._animationPlayer.getFreestyleState();
             console.log(`[SpeedSwimming] rig pose sample active=${this._active} anim=${!!animState} animTime=${animState ? animState.time.toFixed(2) : '-'} leftArmY=${leftArmY} leftLegX=${leftLegX}`);
         }
     }
@@ -297,20 +274,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     setModelDebugMode(active: boolean) {
         this._modelDebugMode = active;
         this._active = false;
-        this._debugArmPhase = 0;
-        this._debugKickPhase = 0;
-        this._debugArmPower = 0;
-        this._debugArmCycleRemaining = 0;
-        this._debugKickCycleRemaining = 0;
-        this._debugKickPower = 0;
-        this._debugMotionClock = 0;
-        this._debugArmInputTimes.length = 0;
-        this._debugKickInputTimes.length = 0;
-        this._debugLogTimer = 0;
-        if (this._animation) {
-            this._animation.stop();
-            this._animation.enabled = false;
-        }
+        this._debug.setEnabled(active);
+        this._animationPlayer.disable();
         for (const renderer of this._skinnedRenderers) {
             renderer.setUseBakedAnimation(false, true);
             renderer.uploadAnimation(null);
@@ -327,12 +292,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setModelDebugSpeedScale(scale: number) {
-        this._modelDebugSpeedScale = Math.max(0.1, Math.min(1.5, scale));
-        console.log(`[SpeedSwimming] model debug speed=${this._modelDebugSpeedScale.toFixed(2)}x`);
+        this._debug.setSpeedScale(scale);
     }
 
     get modelDebugSpeedScale(): number {
-        return this._modelDebugSpeedScale;
+        return this._debug.speedScale;
     }
 
     triggerSplashBurst(scale = 1) {
@@ -340,53 +304,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private updateModelDebug(dt: number) {
-        const actionDt = dt * this._modelDebugSpeedScale;
-        this._debugMotionClock += dt;
-        this.pruneDebugInputTimes(this._debugArmInputTimes);
-        this.pruneDebugInputTimes(this._debugKickInputTimes);
-
-        if (this._debugArmCycleRemaining > 0) {
-            const armRate = this.debugInputRatePerSecond(this._debugArmInputTimes);
-            const step = Math.min(this._debugArmCycleRemaining, actionDt * this.debugMotionSpeedForRate(armRate, Math.PI * 2, 0.7, 5.2));
-            this._debugArmPhase += step;
-            this._debugArmCycleRemaining -= step;
-            this._debugArmPower = Math.max(0.25, Math.min(1, this._debugArmCycleRemaining / (Math.PI * 2)));
-        } else {
-            this._debugArmPower = 0;
-            this._debugArmPhase = 0;
-        }
-        if (this._debugKickCycleRemaining > 0) {
-            const kickRate = this.debugInputRatePerSecond(this._debugKickInputTimes);
-            const step = Math.min(this._debugKickCycleRemaining, actionDt * this.debugMotionSpeedForRate(kickRate, Math.PI * 2, 0.82, 5.2));
-            this._debugKickPhase += step;
-            this._debugKickCycleRemaining -= step;
-            this._debugKickPower = Math.max(0.25, Math.min(1, this._debugKickCycleRemaining / (Math.PI * 2)));
-        } else {
-            this._debugKickPower = 0;
-            this._debugKickPhase = 0;
-        }
-
-        const armPower = 1 + this._debugArmPower * 1.45;
-        const kickPower = 1 + this._debugKickPower * 1.6;
-        const armActive = this._debugArmCycleRemaining > 0;
-        const armPhase = armActive ? Math.sin(this._debugArmPhase) : 0;
-        const armReach = armActive ? this._pose.armReachSignal(this._debugArmPhase) : 0;
-        const leftArmCycle = armActive ? this._debugArmPhase : 0;
-        const kickPhase = this._debugKickPower > 0 ? Math.sin(this._debugKickPhase) : 0;
-        const leftKickCycle = this._debugKickPower > 0 ? this._debugKickPhase : 0;
-
-        this._pose.applyDebugPose(armReach, armPower, leftArmCycle, kickPower, leftKickCycle);
-
-        this._debugLogTimer += dt;
-        if (this._debugLogTimer >= 0.75) {
-            this._debugLogTimer = 0;
-            console.log(
-                `[SpeedSwimming] model debug sample arm=${armPhase.toFixed(2)} kick=${kickPhase.toFixed(2)} ` +
-                `speed=${this._modelDebugSpeedScale.toFixed(2)} armRate=${this.debugInputRatePerSecond(this._debugArmInputTimes).toFixed(1)}/s kickRate=${this.debugInputRatePerSecond(this._debugKickInputTimes).toFixed(1)}/s ` +
-                `armPower=${this._debugArmPower.toFixed(2)} kickPower=${this._debugKickPower.toFixed(2)} ` +
-                `leftArmEuler=${this._pose.leftArmEuler} leftLegEuler=${this._pose.leftLegEuler}`,
-            );
-        }
+        this._debug.update(dt);
     }
 
     private applyLaneMaterials(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
@@ -516,31 +434,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    private queueDebugMotion(times: number[], cycleAmount: number) {
-        times.push(this._debugMotionClock);
-        this.pruneDebugInputTimes(times);
-        if (times === this._debugArmInputTimes) {
-            this._debugArmCycleRemaining += cycleAmount;
-        } else {
-            this._debugKickCycleRemaining += cycleAmount;
-        }
-    }
-
-    private debugMotionSpeedForRate(ratePerSecond: number, cycleAmount: number, minCyclesPerSecond: number, maxCyclesPerSecond: number): number {
-        const cyclesPerSecond = Math.max(minCyclesPerSecond, Math.min(maxCyclesPerSecond, ratePerSecond));
-        return cycleAmount * cyclesPerSecond;
-    }
-
-    private debugInputRatePerSecond(times: number[]): number {
-        return times.length;
-    }
-
-    private pruneDebugInputTimes(times: number[]) {
-        while (times.length > 0 && this._debugMotionClock - times[0] > 1) {
-            times.shift();
-        }
-    }
-
     private get boundJointCount(): number {
         return this._pose.boundJointCount;
     }
@@ -550,44 +443,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private get animationClipNames(): string {
-        if (!this._animation) {
-            return 'none';
-        }
-        return this._animation.clips.map((clip) => clip?.name || '-').join('|') || 'empty';
-    }
-
-    private getFreestyleState() {
-        if (!this._animation) {
-            return null;
-        }
-        const clip = this.getFreestyleClip();
-        return clip ? this._animation.getState(clip.name) : null;
-    }
-
-    private getFreestyleClip() {
-        if (!this._animation) {
-            return null;
-        }
-        return this._animation.clips.find((item) => item?.name === 'FreestyleFull') || this._animation.defaultClip || this._animation.clips[0] || null;
-    }
-
-    private playFreestyleClip() {
-        if (!this._animation) {
-            return;
-        }
-        const clip = this.getFreestyleClip();
-        if (!clip) {
-            console.warn('[SpeedSwimming] freestyle animation missing clip');
-            return;
-        }
-        this._animation.enabled = true;
-        this._animation.defaultClip = clip;
-        this._animation.play(clip.name);
-        const state = this._animation.getState(clip.name);
-        if (state) {
-            state.repeatCount = Infinity;
-            state.speed = 1;
-        }
-        console.log(`[SpeedSwimming] playing freestyle clip=${clip.name}`);
+        return this._animationPlayer.clipNames;
     }
 }

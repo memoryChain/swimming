@@ -5,6 +5,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { GameState, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { RaceManager } from '../core/RaceManager';
+import { UIFlowController } from '../ui/UIFlowController';
 
 export type ModelDebugFlowRefs = {
     cameraNode: Node | null;
@@ -17,9 +18,7 @@ export type ModelDebugFlowRefs = {
     playerSwimmer: Swimmer | null;
     aiSwimmers: Swimmer[];
     aiControllers: AISwimmerController[];
-    startScreen: Node | null;
-    raceHud: Node | null;
-    modelDebugHud: Node | null;
+    uiFlow: UIFlowController;
     speedLabel: Label | null;
     resetExtraAiSwimmers: () => void;
     showStartScreen: () => void;
@@ -61,15 +60,7 @@ export class ModelDebugFlowController {
         this.stopAllAi();
         this._refs.raceManager?.resetRace();
         this._refs.setState(GameState.READY);
-        if (this._refs.startScreen) {
-            this._refs.startScreen.active = false;
-        }
-        if (this._refs.raceHud) {
-            this._refs.raceHud.active = false;
-        }
-        if (this._refs.modelDebugHud) {
-            this._refs.modelDebugHud.active = true;
-        }
+        this._refs.uiFlow.showModelDebugHud();
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = false;
         }
@@ -97,9 +88,7 @@ export class ModelDebugFlowController {
         if (this._refs.inputManager) {
             this._refs.inputManager.modelDebugMode = false;
         }
-        if (this._refs.modelDebugHud) {
-            this._refs.modelDebugHud.active = false;
-        }
+        this._refs.uiFlow.hideModelDebugHud();
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = true;
         }

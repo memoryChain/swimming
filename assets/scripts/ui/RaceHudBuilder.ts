@@ -64,16 +64,17 @@ export class RaceHudBuilder {
 
         const resultPanel = makeUiNode('ResultPanel', parent);
         resultPanel.active = false;
-        makeRect('ResultBg', resultPanel, 500, 236, uiColor(8, 22, 34, 240));
+        makeRect('ResultBg', resultPanel, 540, 316, uiColor(8, 22, 34, 240));
         const resultTitle = makeLabel('ResultTitle', resultPanel, 'YOU WIN', 42, uiColor(255, 224, 89));
-        resultTitle.setPosition(0, 64, 0);
+        resultTitle.setPosition(0, 104, 0);
         const resultTime = makeLabel('ResultTime', resultPanel, '', 20, uiColor(255, 255, 255));
+        resultTime.getComponent(UITransform).setContentSize(500, 132);
         resultTime.setPosition(0, 12, 0);
         const restart = makeButton('RestartButton', resultPanel, 178, 44, uiColor(38, 116, 190), 'RACE AGAIN');
-        restart.setPosition(-98, -70, 0);
+        restart.setPosition(-98, -112, 0);
         restart.on(Node.EventType.TOUCH_END, () => this._callbacks.onRestart());
         const menu = makeButton('MenuButton', resultPanel, 150, 44, uiColor(232, 68, 72), 'MENU');
-        menu.setPosition(104, -70, 0);
+        menu.setPosition(104, -112, 0);
         menu.on(Node.EventType.TOUCH_END, () => this._callbacks.onMenu());
 
         const ui = makeUiNode('UIController', parent).addComponent(UIController);

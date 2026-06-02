@@ -22,12 +22,23 @@ export interface RhythmResult {
     expectedNext: StrokeType;
 }
 
+export interface RhythmStats {
+    maxCombo: number;
+    perfectCount: number;
+    goodCount: number;
+    missCount: number;
+}
+
 @ccclass('RhythmEvaluator')
 export class RhythmEvaluator extends Component {
     private _lastStrokeType: StrokeType | null = null;
     private _lastStrokeTime = 0;
     private _combo = 0;
+    private _maxCombo = 0;
     private _strokeCount = 0;
+    private _perfectCount = 0;
+    private _goodCount = 0;
+    private _missCount = 0;
 
     evaluate(type: StrokeType): RhythmResult {
         const now = Date.now() / 1000;
@@ -56,11 +67,15 @@ export class RhythmEvaluator extends Component {
 
         if (rating === Rating.PERFECT) {
             this._combo += 1;
+            this._perfectCount += 1;
         } else if (rating === Rating.GOOD) {
             this._combo = Math.max(0, this._combo);
+            this._goodCount += 1;
         } else {
             this._combo = Math.max(0, this._combo - COMBO_MISS_PENALTY);
+            this._missCount += 1;
         }
+        this._maxCombo = Math.max(this._maxCombo, this._combo);
 
         const perfectBonus = this._combo * COMBO_PERFECT_BONUS;
         const goodBonus = rating === Rating.GOOD ? COMBO_GOOD_BONUS : 0;
@@ -74,10 +89,23 @@ export class RhythmEvaluator extends Component {
         this._lastStrokeType = null;
         this._lastStrokeTime = 0;
         this._combo = 0;
+        this._maxCombo = 0;
         this._strokeCount = 0;
+        this._perfectCount = 0;
+        this._goodCount = 0;
+        this._missCount = 0;
     }
 
     get combo(): number {
         return this._combo;
+    }
+
+    get stats(): RhythmStats {
+        return {
+            maxCombo: this._maxCombo,
+            perfectCount: this._perfectCount,
+            goodCount: this._goodCount,
+            missCount: this._missCount,
+        };
     }
 }

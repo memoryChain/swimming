@@ -3,6 +3,7 @@ import { COUNTDOWN_SECONDS, GameState, RACE_DISTANCE } from './GameConstants';
 import { Swimmer } from '../entity/Swimmer';
 
 const { ccclass, property } = _decorator;
+const GLIDE_SECONDS = 0.72;
 
 @ccclass('RaceManager')
 export class RaceManager extends Component {
@@ -46,6 +47,8 @@ export class RaceManager extends Component {
             this.updateCountdown(dt);
         } else if (this._state === GameState.DIVING) {
             this.updateDiving(dt);
+        } else if (this._state === GameState.GLIDING) {
+            this.updateGliding(dt);
         } else if (this._state === GameState.RACING) {
             this.updateRacing(dt);
         }
@@ -89,12 +92,23 @@ export class RaceManager extends Component {
         const playerDuration = this.playerSwimmer?.performDive(playerDivePower) ?? 0;
         this.scheduleOnce(() => {
             if (this._state === GameState.DIVING && this._diveResolved) {
-                this.setState(GameState.RACING);
+                this.setState(GameState.GLIDING);
+                this.scheduleOnce(() => {
+                    if (this._state === GameState.GLIDING) {
+                        this.setState(GameState.RACING);
+                    }
+                }, GLIDE_SECONDS);
             }
         }, playerDuration);
     }
 
     private updateDiving(dt: number) {
+        this._raceTimer += dt;
+        this.onRaceTimerUpdate?.(this._raceTimer);
+        this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
+    }
+
+    private updateGliding(dt: number) {
         this._raceTimer += dt;
         this.onRaceTimerUpdate?.(this._raceTimer);
         this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
@@ -111,7 +125,7 @@ export class RaceManager extends Component {
         if (!this._playerFinished && playerDist >= RACE_DISTANCE) {
             this._playerFinished = true;
             this._playerFinishTime = this._raceTimer;
-            this.playerSwimmer?.playFinishRagdoll();
+            this.playerSwimmer?.playFinishTouch();
         }
         if (!this._aiFinished && aiDist >= RACE_DISTANCE) {
             this._aiFinished = true;

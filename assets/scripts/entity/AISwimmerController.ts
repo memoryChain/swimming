@@ -9,6 +9,8 @@ export class AISwimmerController extends Component {
     @property(Swimmer) public swimmer: Swimmer = null;
     @property({ range: [0, 1, 0.01] }) public difficulty = AI_DIFFICULTY;
     @property public bpmOffset = 0;
+    @property({ range: [0, 1, 0.01] }) public divePower = 0.72;
+    @property public diveReaction = 0.12;
 
     private _active = false;
     private _timer = 0;

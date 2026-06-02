@@ -35,6 +35,7 @@ export enum GameState {
     READY = 'ready',
     COUNTDOWN = 'countdown',
     DIVING = 'diving',
+    GLIDING = 'gliding',
     RACING = 'racing',
     FINISHED = 'finished',
 }

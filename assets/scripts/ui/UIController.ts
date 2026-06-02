@@ -3,6 +3,16 @@ import { MAX_SPEED, RACE_DISTANCE, Rating } from '../core/GameConstants';
 
 const { ccclass, property } = _decorator;
 
+export type RaceResultStats = {
+    averageSpeed: number;
+    maxCombo: number;
+    perfectCount: number;
+    goodCount: number;
+    missCount: number;
+    placement?: number;
+    racerCount?: number;
+};
+
 @ccclass('UIController')
 export class UIController extends Component {
     @property(Node) public btnArm: Node = null;
@@ -125,7 +135,16 @@ export class UIController extends Component {
         }
     }
 
-    showResult(isWin: boolean, playerTime: number, aiTime: number) {
+    showGliding() {
+        if (this.countdownOverlay) {
+            this.countdownOverlay.active = false;
+        }
+        if (this.hintLabel) {
+            this.hintLabel.string = 'Streamline glide... get ready to stroke';
+        }
+    }
+
+    showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
         if (this.resultPanel) {
             this.resultPanel.active = true;
         }
@@ -134,7 +153,15 @@ export class UIController extends Component {
             this.resultTitle.color = isWin ? new Color(255, 224, 89, 255) : new Color(255, 112, 112, 255);
         }
         if (this.resultTime) {
-            this.resultTime.string = `Your time ${playerTime.toFixed(2)}s  |  AI ${aiTime.toFixed(2)}s`;
+            const base = `Your time ${playerTime.toFixed(2)}s  |  AI ${aiTime.toFixed(2)}s`;
+            const placement = stats?.placement && stats?.racerCount
+                ? `\nPLACE #${stats.placement}/${stats.racerCount}`
+                : '';
+            const details = stats
+                ? `${placement}\nAVG ${stats.averageSpeed.toFixed(2)} m/s  MAX ${stats.maxCombo} combo\nP/G/M ${stats.perfectCount}/${stats.goodCount}/${stats.missCount}`
+                : '';
+            this.resultTime.string = `${base}${details}`;
+            this.resultTime.lineHeight = 28;
         }
         if (this.hintLabel) {
             this.hintLabel.string = 'Press Space or tap Restart';

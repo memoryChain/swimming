@@ -3,7 +3,7 @@ import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
-import { RhythmEvaluator, RhythmResult } from '../core/RhythmEvaluator';
+import { RhythmEvaluator, RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
@@ -159,11 +159,15 @@ export class Swimmer extends Component {
     }
 
     playFinishRagdoll() {
+        this.playFinishTouch();
+    }
+
+    playFinishTouch() {
         this._motor.stopRace();
         this.cartoonRig?.setActiveSwimming(false);
         tween(this.node)
-            .to(0.14, { eulerAngles: new Vec3(0, 0, -8) })
-            .to(0.22, { eulerAngles: new Vec3(8, 0, 18), position: new Vec3(this.node.position.x + 1.15, this.node.position.y - 0.12, this.node.position.z) })
+            .to(0.12, { eulerAngles: new Vec3(0, 0, -5), position: new Vec3(this.node.position.x + 0.42, this.node.position.y, this.node.position.z) })
+            .to(0.16, { eulerAngles: new Vec3(0, 0, 6), position: new Vec3(this.node.position.x + 0.64, this.node.position.y - 0.05, this.node.position.z) })
             .to(0.18, { eulerAngles: new Vec3(0, 0, 0) })
             .start();
     }
@@ -502,6 +506,15 @@ export class Swimmer extends Component {
 
     get isRacing(): boolean {
         return this._motor.isRacing;
+    }
+
+    get rhythmStats(): RhythmStats {
+        return this.rhythmEvaluator?.stats ?? {
+            maxCombo: 0,
+            perfectCount: 0,
+            goodCount: 0,
+            missCount: 0,
+        };
     }
 }
 

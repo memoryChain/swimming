@@ -5,8 +5,6 @@ import {
     EventMouse,
     game,
     Graphics,
-    input,
-    Input,
     Label,
     Layers,
     Node,
@@ -25,7 +23,10 @@ import { RaceHudBuilder } from '../ui/RaceHudBuilder';
 import { makeUiNode, makeRect, makeLabel, drawLeftFill } from '../ui/RuntimeUiFactory';
 import { StartScreenBuilder } from '../ui/StartScreenBuilder';
 import { UIController } from '../ui/UIController';
+import { UIFlowController } from '../ui/UIFlowController';
+import { DebugLogController } from './DebugLogController';
 import { InputManager } from './InputManager';
+import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, MAX_SPEED, StrokeType } from './GameConstants';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
@@ -49,6 +50,7 @@ export class GameManager extends Component {
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
     private _uiController: UIController = null;
+    private _uiFlow: UIFlowController = null;
     private _inputManager: InputManager = null;
 
     private _startScreen: Node = null;
@@ -56,20 +58,16 @@ export class GameManager extends Component {
     private _modelDebugHud: Node = null;
     private _worldRoot: Node = null;
     private _cameraNode: Node = null;
-    private _debugPanel: Node = null;
-    private _debugLabel: Label = null;
     private _modelDebugSpeedLabel: Label = null;
     private _speedFill: Graphics = null;
-    private _debugLines: string[] = [];
-    private _debugVisible = false;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
+    private _inputRouter: InputRouter = null;
+    private readonly _debugLog = new DebugLogController();
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z);
 
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
-    private _lastPadStrokeMs = 0;
-    private _lastPadStrokeType: StrokeType | null = null;
 
     onLoad() {
         game.frameRate = 60;
@@ -88,20 +86,7 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
-        this.node.off('arm-stroke', this.onArmStroke, this);
-        this.node.off('leg-kick', this.onLegKick, this);
-        this.node.off('dive-charge-start', this.onDiveChargeStart, this);
-        this.node.off('dive-release', this.onDiveRelease, this);
-        this.node.off('primary-action', this.onPrimaryAction, this);
-        this.node.off('toggle-debug', this.toggleDebug, this);
-        this.node.off('cycle-race-camera', this.cycleRaceCamera, this);
-        this.node.off('toggle-free-race-camera', this.toggleFreeRaceCamera, this);
-        this.node.off('model-debug-speed-down', this.slowModelDebugMotion, this);
-        this.node.off('model-debug-speed-up', this.speedUpModelDebugMotion, this);
-        input.off(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
-        input.off(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
-        input.off(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
-        input.off(Input.EventType.MOUSE_WHEEL, this.onDebugCameraWheel, this);
+        this._inputRouter?.unbind();
         this._gameFlow?.stopAllAi();
         this._gameFlow?.clearRaceManagerCallbacks();
     }
@@ -110,7 +95,7 @@ export class GameManager extends Component {
         if (!this._playerSwimmer) {
             return;
         }
-        this._uiController?.updateSpeed(this._playerSwimmer.currentSpeed);
+        this._uiFlow?.updateSpeed(this._playerSwimmer.currentSpeed);
         this.drawSpeedBar(this._playerSwimmer.currentSpeed / MAX_SPEED);
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.updateCamera();
@@ -144,6 +129,7 @@ export class GameManager extends Component {
         this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
         this._gameFlow = this.createGameFlow();
         this._modelDebugFlow = this.createModelDebugFlow();
+        this._inputRouter = this.createInputRouter();
     }
 
     private createRuntimeSceneBuilder(): RuntimeSceneBuilder {
@@ -162,12 +148,8 @@ export class GameManager extends Component {
             playerSwimmer: this._playerSwimmer,
             aiSwimmers: this._aiSwimmers,
             aiControllers: this._aiControllers,
-            startScreen: this._startScreen,
-            raceHud: this._raceHud,
-            modelDebugHud: this._modelDebugHud,
-            uiController: this._uiController,
+            uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
-            drawSpeedBar: (ratio) => this.drawSpeedBar(ratio),
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             setState: (state) => {
@@ -190,9 +172,7 @@ export class GameManager extends Component {
             playerSwimmer: this._playerSwimmer,
             aiSwimmers: this._aiSwimmers,
             aiControllers: this._aiControllers,
-            startScreen: this._startScreen,
-            raceHud: this._raceHud,
-            modelDebugHud: this._modelDebugHud,
+            uiFlow: this._uiFlow,
             speedLabel: this._modelDebugSpeedLabel,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
             showStartScreen: () => this.showStartScreen(),
@@ -200,6 +180,24 @@ export class GameManager extends Component {
                 this._state = state;
             },
             debug: (message) => this.debug(message),
+        });
+    }
+
+    private createInputRouter(): InputRouter {
+        return new InputRouter(this.node, {
+            onStroke: (type) => this.handlePlayerStroke(type),
+            onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
+            onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
+            onToggleDebug: () => this.toggleDebug(),
+            onCycleRaceCamera: () => this.cycleRaceCamera(),
+            onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
+            onModelDebugSpeedDown: () => this.slowModelDebugMotion(),
+            onModelDebugSpeedUp: () => this.speedUpModelDebugMotion(),
+            onDebugCameraMouseDown: (event) => this.onDebugCameraMouseDown(event),
+            onDebugCameraMouseMove: (event) => this.onDebugCameraMouseMove(event),
+            onDebugCameraMouseUp: () => this.onDebugCameraMouseUp(),
+            onDebugCameraWheel: (event) => this.onDebugCameraWheel(event),
         });
     }
 
@@ -231,7 +229,7 @@ export class GameManager extends Component {
         this._raceHud = makeUiNode('RaceHUD', uiRoot);
         this._raceHud.active = false;
         const raceHud = new RaceHudBuilder({
-            onStroke: (type) => this.handlePadStroke(type),
+            onStroke: (type) => this._inputRouter?.handlePadStroke(type),
             onRestart: () => this.restartGame(),
             onMenu: () => this.showStartScreen(),
         }).build(this._raceHud, w, h);
@@ -254,72 +252,20 @@ export class GameManager extends Component {
         this._modelDebugHud.active = false;
 
         const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
-        this._debugPanel = debugPanel.root;
-        this._debugLabel = debugPanel.logLabel;
-        this._debugPanel.active = this._debugVisible;
+        this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
+
+        this._uiFlow = new UIFlowController({
+            startScreen: this._startScreen,
+            raceHud: this._raceHud,
+            modelDebugHud: this._modelDebugHud,
+            uiController: this._uiController,
+            drawSpeedBar: (ratio) => this.drawSpeedBar(ratio),
+        });
     }
 
     private registerEvents() {
-        this.node.off('arm-stroke', this.onArmStroke, this);
-        this.node.off('leg-kick', this.onLegKick, this);
-        this.node.off('dive-charge-start', this.onDiveChargeStart, this);
-        this.node.off('dive-release', this.onDiveRelease, this);
-        this.node.off('primary-action', this.onPrimaryAction, this);
-        this.node.off('toggle-debug', this.toggleDebug, this);
-        this.node.off('cycle-race-camera', this.cycleRaceCamera, this);
-        this.node.off('toggle-free-race-camera', this.toggleFreeRaceCamera, this);
-        this.node.off('model-debug-speed-down', this.slowModelDebugMotion, this);
-        this.node.off('model-debug-speed-up', this.speedUpModelDebugMotion, this);
-        input.off(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
-        input.off(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
-        input.off(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
-        input.off(Input.EventType.MOUSE_WHEEL, this.onDebugCameraWheel, this);
-        this.node.on('arm-stroke', this.onArmStroke, this);
-        this.node.on('leg-kick', this.onLegKick, this);
-        this.node.on('dive-charge-start', this.onDiveChargeStart, this);
-        this.node.on('dive-release', this.onDiveRelease, this);
-        this.node.on('primary-action', this.onPrimaryAction, this);
-        this.node.on('toggle-debug', this.toggleDebug, this);
-        this.node.on('cycle-race-camera', this.cycleRaceCamera, this);
-        this.node.on('toggle-free-race-camera', this.toggleFreeRaceCamera, this);
-        this.node.on('model-debug-speed-down', this.slowModelDebugMotion, this);
-        this.node.on('model-debug-speed-up', this.speedUpModelDebugMotion, this);
-        input.on(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
-        input.on(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
-        input.on(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
-        input.on(Input.EventType.MOUSE_WHEEL, this.onDebugCameraWheel, this);
-
+        this._inputRouter?.bind();
         this._gameFlow?.bindRaceManagerCallbacks();
-    }
-
-    private onPrimaryAction() {
-        this._gameFlow?.handlePrimaryAction();
-    }
-
-    private onArmStroke() {
-        this.handlePlayerStroke(StrokeType.ARM);
-    }
-
-    private onLegKick() {
-        this.handlePlayerStroke(StrokeType.LEG);
-    }
-
-    private onDiveChargeStart() {
-        this._gameFlow?.handleDiveChargeStart();
-    }
-
-    private onDiveRelease(holdSeconds: number) {
-        this._gameFlow?.handleDiveRelease(holdSeconds);
-    }
-
-    private handlePadStroke(type: StrokeType) {
-        const now = Date.now();
-        if (this._lastPadStrokeType === type && now - this._lastPadStrokeMs < 45) {
-            return;
-        }
-        this._lastPadStrokeType = type;
-        this._lastPadStrokeMs = now;
-        this.handlePlayerStroke(type);
     }
 
     private handlePlayerStroke(type: StrokeType) {
@@ -388,11 +334,7 @@ export class GameManager extends Component {
     }
 
     private toggleDebug() {
-        this._debugVisible = !this._debugVisible;
-        if (this._debugPanel) {
-            this._debugPanel.active = this._debugVisible;
-        }
-        this.debug(`debug=${this._debugVisible ? 'on' : 'off'}`);
+        this._debugLog.toggle();
     }
 
     private drawSpeedBar(ratio: number) {
@@ -412,14 +354,7 @@ export class GameManager extends Component {
     }
 
     private debug(message: string) {
-        console.log(`[SpeedSwimming] ${message}`);
-        this._debugLines.push(message);
-        if (this._debugLines.length > 9) {
-            this._debugLines.shift();
-        }
-        if (this._debugLabel) {
-            this._debugLabel.string = this._debugLines.join('\n');
-        }
+        this._debugLog.log(message);
     }
 }
 

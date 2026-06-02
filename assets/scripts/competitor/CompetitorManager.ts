@@ -54,6 +54,8 @@ export class CompetitorManager {
             controller.swimmer = swimmer;
             controller.difficulty = profile.difficulty;
             controller.bpmOffset = profile.bpmOffset;
+            controller.divePower = profile.divePower;
+            controller.diveReaction = profile.diveReaction;
             swimmer.aiPower = profile.power;
             swimmer.aiMaxSpeedScale = profile.maxSpeed;
             aiSwimmers.push(swimmer);

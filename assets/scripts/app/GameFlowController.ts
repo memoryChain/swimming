@@ -1,22 +1,17 @@
-import { Node } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
-import { GameState, StrokeType } from '../core/GameConstants';
+import { GameState, RACE_DISTANCE, StrokeType } from '../core/GameConstants';
 import { RaceManager } from '../core/RaceManager';
-import { UIController } from '../ui/UIController';
+import { UIFlowController } from '../ui/UIFlowController';
 
 export type GameFlowRefs = {
     raceManager: RaceManager;
     playerSwimmer: Swimmer;
     aiSwimmers: Swimmer[];
     aiControllers: AISwimmerController[];
-    startScreen: Node;
-    raceHud: Node;
-    modelDebugHud: Node;
-    uiController: UIController;
+    uiFlow: UIFlowController;
     raceCameraDirector: RaceCameraDirector;
-    drawSpeedBar: (ratio: number) => void;
     exitModelDebug: (showStart: boolean) => void;
     handleModelDebugStroke: (type: StrokeType) => boolean;
     setState: (state: GameState) => void;
@@ -34,12 +29,9 @@ export class GameFlowController {
         this._refs.debug('startGame');
         this.clearAiDiveTimers();
         this._refs.exitModelDebug(false);
-        this._refs.startScreen.active = false;
-        this._refs.raceHud.active = true;
-        this._refs.uiController?.resetAll();
+        this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
-        this._refs.drawSpeedBar(0);
         this._refs.raceCameraDirector.resetToBroadcast();
         this._refs.raceManager?.startRace();
     }
@@ -56,17 +48,9 @@ export class GameFlowController {
         this.stopAllAi();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
-        this._refs.drawSpeedBar(0);
+        this._refs.uiFlow.resetSpeedBar();
         this._refs.raceCameraDirector.resetToBroadcast();
-        if (this._refs.raceHud) {
-            this._refs.raceHud.active = false;
-        }
-        if (this._refs.modelDebugHud) {
-            this._refs.modelDebugHud.active = false;
-        }
-        if (this._refs.startScreen) {
-            this._refs.startScreen.active = true;
-        }
+        this._refs.uiFlow.showStartScreen();
     }
 
     handlePrimaryAction() {
@@ -88,7 +72,7 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStroke(type);
         if (result) {
             this._refs.debug(`stroke=${type} rating=${result.rating} combo=${result.combo}`);
-            this._refs.uiController?.showRating(result.rating, result.combo);
+            this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
 
@@ -100,7 +84,7 @@ export class GameFlowController {
         this._diveChargeStarted = true;
         this._refs.debug('dive charging');
         if (state === GameState.DIVING) {
-            this._refs.uiController?.showDiveCharging();
+            this._refs.uiFlow.showDiveCharging();
         }
     }
 
@@ -117,7 +101,7 @@ export class GameFlowController {
         const power = this.calculateDivePower(effectiveHold);
         this._diveChargeStarted = false;
         this._refs.debug(`dive release hold=${effectiveHold.toFixed(2)} power=${power.toFixed(2)}`);
-        this._refs.uiController?.showDiveRelease(power);
+        this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceManager?.startFromDive(power);
     }
 
@@ -126,7 +110,7 @@ export class GameFlowController {
         if (!raceManager) {
             return;
         }
-        raceManager.onCountdownTick = (value) => this._refs.uiController?.showCountdown(value);
+        raceManager.onCountdownTick = (value) => this._refs.uiFlow.showCountdown(value);
         raceManager.onStateChange = (state) => {
             this._refs.setState(state);
             this._refs.debug(`state=${state}`);
@@ -136,32 +120,45 @@ export class GameFlowController {
             }
             if (state === GameState.DIVING) {
                 if (this._diveChargeStarted) {
-                    this._refs.uiController?.showDiveCharging();
+                    this._refs.uiFlow.showDiveCharging();
                 } else {
-                    this._refs.uiController?.showDivePrompt();
+                    this._refs.uiFlow.showDivePrompt();
                 }
                 this.prepareAndScheduleAiDives();
             }
-            if (state === GameState.RACING) {
+            if (state === GameState.GLIDING) {
                 this._refs.raceCameraDirector.resetRaceTimers();
-                this._refs.uiController?.hideCountdown();
+                this._refs.uiFlow.showGliding();
+            }
+            if (state === GameState.RACING) {
+                this._refs.uiFlow.hideCountdown();
                 this.startAllAi();
             }
         };
-        raceManager.onRaceTimerUpdate = (time) => this._refs.uiController?.updateTimer(time);
+        raceManager.onRaceTimerUpdate = (time) => this._refs.uiFlow.updateTimer(time);
         raceManager.onProgressUpdate = (playerDist, aiDist) => {
-            this._refs.uiController?.updateProgress(playerDist, aiDist);
+            this._refs.uiFlow.updateProgress(playerDist, aiDist);
         };
         raceManager.onRaceFinished = (playerWin, playerTime, aiTime) => {
             this._refs.debug(`finished win=${playerWin} player=${playerTime.toFixed(2)} ai=${aiTime.toFixed(2)}`);
             this.stopAllAi();
-            this._refs.uiController?.showResult(playerWin, playerTime, aiTime);
+            const rhythm = this._refs.playerSwimmer?.rhythmStats;
+            const placement = this.calculatePlayerPlacement();
+            this._refs.uiFlow.showResult(playerWin, playerTime, aiTime, {
+                averageSpeed: playerTime > 0 ? RACE_DISTANCE / playerTime : 0,
+                maxCombo: rhythm?.maxCombo ?? 0,
+                perfectCount: rhythm?.perfectCount ?? 0,
+                goodCount: rhythm?.goodCount ?? 0,
+                missCount: rhythm?.missCount ?? 0,
+                placement: placement.placement,
+                racerCount: placement.racerCount,
+            });
         };
         raceManager.onDiveReady = () => {
             if (this._diveChargeStarted) {
-                this._refs.uiController?.showDiveCharging();
+                this._refs.uiFlow.showDiveCharging();
             } else {
-                this._refs.uiController?.showDivePrompt();
+                this._refs.uiFlow.showDivePrompt();
             }
         };
     }
@@ -197,7 +194,7 @@ export class GameFlowController {
             playerX: playerSwimmer.node.position.x,
             playerDistance,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
-            raceActive: this._refs.getState() === GameState.RACING,
+            raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
         });
     }
@@ -243,7 +240,7 @@ export class GameFlowController {
             const power = this.aiDivePower(swimmer, controller);
             const timerId = setTimeout(() => {
                 const state = this._refs.getState();
-                if (state !== GameState.DIVING && state !== GameState.RACING) {
+                if (state !== GameState.DIVING && state !== GameState.GLIDING && state !== GameState.RACING) {
                     return;
                 }
                 swimmer.performDive(power);
@@ -260,15 +257,14 @@ export class GameFlowController {
     }
 
     private aiDiveReactionDelay(controller: AISwimmerController | null): number {
-        const difficulty = controller?.difficulty ?? 0.85;
-        return Math.max(0.03, (1 - difficulty) * 0.34 + Math.random() * 0.12);
+        const baseReaction = controller?.diveReaction ?? 0.14;
+        return Math.max(0.03, baseReaction + Math.random() * 0.08);
     }
 
     private aiDivePower(swimmer: Swimmer, controller: AISwimmerController | null): number {
-        const powerScore = (swimmer.aiPower - 0.92) / 0.48;
-        const difficulty = controller?.difficulty ?? 0.85;
+        const basePower = controller?.divePower ?? 0.72;
         const variance = (Math.random() * 2 - 1) * 0.08;
-        return Math.max(0.38, Math.min(0.96, powerScore * 0.62 + difficulty * 0.28 + variance));
+        return Math.max(0.38, Math.min(0.96, basePower + variance));
     }
 
     private calculateDivePower(holdSeconds: number): number {
@@ -278,5 +274,21 @@ export class GameFlowController {
             return 0.18;
         }
         return Math.max(0.18, Math.min(1, (holdSeconds - minHold) / (maxHold - minHold)));
+    }
+
+    private calculatePlayerPlacement(): { placement: number; racerCount: number } {
+        const player = this._refs.playerSwimmer;
+        const racers = [
+            { isPlayer: true, distance: player?.distance ?? 0 },
+            ...this._refs.aiSwimmers
+                .filter((swimmer) => swimmer.node.active)
+                .map((swimmer) => ({ isPlayer: false, distance: swimmer.distance })),
+        ];
+        racers.sort((a, b) => b.distance - a.distance);
+        const placement = racers.findIndex((racer) => racer.isPlayer) + 1;
+        return {
+            placement: placement > 0 ? placement : racers.length,
+            racerCount: racers.length,
+        };
     }
 }

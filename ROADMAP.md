@@ -12,7 +12,7 @@
 
 - 默认入口场景是 `assets/scenes/Login.scene`，只负责展示轻量登录/开始入口并跳转到 `MainGame`。
 - 主场景是 `assets/scenes/MainGame.scene`。
-- 运行时入口仍是 `assets/scripts/core/GameManager.ts`，但它现在主要负责启动、流程协调和事件绑定。
+- 运行时入口仍是 `assets/scripts/core/GameManager.ts`，但它现在主要负责启动、模块创建和高层流程协调，输入/UI/debug 细节已经继续下沉到专门模块。
 - 运行时装配已经拆成多个模块：
   - `assets/scripts/app`：运行时场景基础搭建、模型 debug 流程控制。
   - `assets/scripts/swimmer`：泳手输入窗口、速度物理和移动状态。
@@ -42,12 +42,13 @@
   - `READY`：开始界面。
   - `COUNTDOWN`：5 秒倒计时，玩家可按住 `A + D` 提前蓄力。
   - `DIVING`：倒计时结束后的出发阶段，玩家松开 `A/D` 后跳水，AI 会按各自反应时间自动跳水。
+  - `GLIDING`：入水后的短暂流线型滑行阶段，速度会自然衰减，普通划水输入暂不生效。
   - `RACING`：玩家和 AI 开始前进。
   - `FINISHED`：展示结果，支持重新开始。
 - 跳水阶段当前由 `GameFlowController` 协调：
   - 玩家蓄力由 `InputManager` 发出 `dive-charge-start` / `dive-release` 事件。
-  - `RaceManager.startFromDive()` 只负责玩家跳水完成后切入 `RACING`。
-  - 所有 AI 由 `GameFlowController.prepareAndScheduleAiDives()` 独立调度，基于 `difficulty`、`aiPower` 和少量随机波动计算反应时间与跳水能力。
+  - `RaceManager.startFromDive()` 负责玩家跳水完成后切入 `GLIDING`，滑行结束后进入 `RACING`。
+  - 所有 AI 由 `GameFlowController.prepareAndScheduleAiDives()` 独立调度，基于 AI profile 中的 `diveReaction`、`divePower` 和少量随机波动计算反应时间与跳水能力。
 - 比赛距离固定为 `RACE_DISTANCE = 100`。
 - 目标帧率当前在 `GameManager.onLoad()` 中设置为 `game.frameRate = 60`，用于排查和避免低帧率锁定。
 
@@ -66,7 +67,7 @@
   - 左半屏触发 `StrokeType.LEG`。
   - 右半屏触发 `StrokeType.ARM`。
   - 命中区不绘制透明背景和文字，避免中线阴影或提示文案遮挡画面。
-  - `GameManager.handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
+  - `InputRouter.handlePadStroke()` 做 45ms 同类型去重，防止部分浏览器同时派发 touch/mouse 导致一次点击触发两次。
 - `InputManager.pointerInputEnabled` 当前在比赛 HUD 下设为 `false`，保留键盘输入和后续兜底能力，避免全局指针事件与 UI 命中区重复触发。
 - `InputManager` 现在同时监听 `KEY_DOWN / KEY_UP`，用于判断 `A + D` 的同时按住时长。该按住时长目前只用于开局跳水，后续可以扩展到每次划水/打腿的 hold 输入评分。
 - `RhythmEvaluator` 负责节奏判定：
@@ -110,14 +111,16 @@
 - `competitor/CompetitorConfig.ts` 保存默认 AI profile 和泳衣/泳帽颜色。
 - `AISwimmerController` 按目标 BPM 自动交替触发手/腿动作。
 - AI 跳水不是由 `AISwimmerController` 触发，而是在 `GameFlowController` 的 `DIVING` 阶段统一调度：
-  - `difficulty` 越高，反应延迟越短。
-  - `aiPower` 和 `difficulty` 越高，跳水 power 越高。
+  - `diveReaction` 越低，反应延迟越短。
+  - `divePower` 越高，跳水 power 越高。
   - 每个 AI 都会独立 `prepareDive()` 和 `performDive()`，不会等待玩家松手。
 - 每条 AI 泳道配置了不同参数：
   - `difficulty`
   - `bpmOffset`
   - `aiPower`
   - `aiMaxSpeedScale`
+  - `divePower`
+  - `diveReaction`
 - 当前 AI 与玩家使用相同肤色，不同泳衣和泳帽颜色；主角通过描边和泳道视觉识别。
 
 ### 角色模型、蒙皮与特效
@@ -143,6 +146,7 @@
   - 强制 `skinningRoot = this._model`。
   - 关闭 baked animation 上传，保持实时骨骼可控。
   - 捕获初始骨骼姿态，后续用相对旋转驱动动作。
+- `CharacterAnimationPlayer` 已从 `CartoonSwimmerRig` 中拆出，负责 `SkeletalAnimation` 绑定、`FreestyleFull` 选择、播放、停止和动画 state speed 控制。
 - 如果模型自带 `FreestyleFull` 动画，运行时优先播放动画并按速度调节 animation state speed。
 - 如果没有合适动画，代码可以退回到手动骨骼驱动：
   - `FREESTYLE_ARM_POSES` 采样手臂关键姿势。
@@ -225,9 +229,11 @@ assets/scripts/
     ModelDebugFlowController.ts # 模型 debug 进入/退出、debug 摄像机、动作速度控制
 
   core/
-    GameManager.ts        # 启动、流程协调、事件绑定
+    GameManager.ts        # 启动、流程协调、运行时模块创建
     RaceManager.ts        # 倒计时、玩家跳水、比赛计时、进度、完赛回调
     InputManager.ts       # 键盘/鼠标/触摸输入入口
+    InputRouter.ts        # 游戏输入事件、跳水事件和 debug 摄像机事件路由
+    DebugLogController.ts # debug 日志缓存、面板绑定和显示开关
     RhythmEvaluator.ts    # 节奏判定
     WaterSurface.ts       # 水面节点轻动画
 
@@ -242,6 +248,8 @@ assets/scripts/
     CompetitorManager.ts  # 创建玩家、AI 列表和主 AI
 
   character/
+    CharacterAnimationPlayer.ts # 角色动画 clip 选择、播放、停止和速度控制
+    CharacterDebugController.ts # 模型 debug 动作输入频率、动作相位和调试姿态驱动
     CharacterRig.ts        # 角色表现层公共接口
     CharacterModelLoader.ts# prefab 加载、节点/组件查找、skinned renderer 配置
     CharacterSkinApplier.ts# 动态贴图、材质、描边 shell
@@ -266,11 +274,12 @@ assets/scripts/
     ModelDebugHudBuilder.ts
     DebugPanelBuilder.ts
     UIController.ts       # UI 数据刷新和动画反馈
+    UIFlowController.ts   # 开始页、比赛 HUD、模型调试 HUD 和比赛提示显隐流程
 
   entity/
     Swimmer.ts            # Cocos 门面组件，连接 motor 和表现
     AISwimmerController.ts
-    CartoonSwimmerRig.ts  # 当前角色表现外壳，协调模型/动画/姿态/水花/debug
+    CartoonSwimmerRig.ts  # 当前角色表现外壳，协调模型/姿态/水花/debug
 ```
 
 后续继续重构时应保持依赖方向：
@@ -379,6 +388,7 @@ ui -> Cocos UI details
 - rating 文案保留 `PERFECT / GOOD / MISS`，但增加颜色和动画区分。
 - 在比赛结束面板展示：
   - 完赛时间。
+  - 当前名次。
   - 最长 combo。
   - 平均速度。
   - Perfect/Good/Miss 次数。
@@ -536,7 +546,7 @@ ui -> Cocos UI details
   - `ui/*Builder`
 - 后续继续拆分：
   - `SceneBootstrap`：如后续需要更完整启动流程，可包一层 `RuntimeSceneBuilder`、资源预热和流程 controller 初始化。
-  - `InputRouter`：将当前字符串事件转成 typed game command。
+  - `CharacterPoseStateController`：进一步收拢赛前站姿、跳水、游泳和结束姿态切换。
 - 将游戏参数集中到配置文件或 `GameBalance.ts`。
 - 将资源路径集中到 `ResourcePaths.ts`。
 - 为核心逻辑补充单元测试或轻量脚本测试：
@@ -546,8 +556,8 @@ ui -> Cocos UI details
 
 ## 技术债与注意事项
 
-- `GameManager.ts` 已拆出基础场景 setup、比赛流程协调和模型 debug 流程，但仍承担输入事件绑定、UI 构建入口、debug panel 日志和少量 UI/Race/Camera 转发。后续可继续拆出 `InputRouter` 和 `UIFlowController`。
-- `CartoonSwimmerRig.ts` 已拆出模型加载、皮肤/描边、自由泳骨骼姿态和水花 emitter，但仍混合动画 clip 控制、模型 debug 状态机和角色外壳流程。后续可继续拆出 `CharacterDebugController`，并把动画 clip 控制封装为更小的 `CharacterAnimationPlayer`。
+- `GameManager.ts` 已拆出基础场景 setup、比赛流程协调、模型 debug 流程、输入路由、UI flow 和 debug panel 日志，但仍承担运行时 UI 构建入口和少量 UI/Race/Camera 转发。后续可继续包一层更薄的 `SceneBootstrap`。
+- `CartoonSwimmerRig.ts` 已拆出模型加载、皮肤/描边、自由泳骨骼姿态、水花 emitter、动画 clip 播放控制和模型 debug 动作控制，但仍混合赛前/跳水/游泳/结束姿态切换和角色外壳流程。后续可继续拆出 `CharacterPoseStateController`。
 - 当前 `RhythmEvaluator` 用 `Date.now()` 计算输入间隔，这在暂停、低帧率或测试中不够理想。更稳的方案是由游戏时钟传入时间。
 - 描边 shell 会增加渲染成本；角色数量或模型复杂度增加时，需要默认关闭 AI 描边或改为更便宜的识别方式。
 - 运行时程序贴图目前是基于 UV 位置的区域判断，模型 UV 一旦变化，衣服区域可能错位。后续资产管线要固定 UV 规范，或改为 mask texture。
