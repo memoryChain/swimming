@@ -18,16 +18,18 @@ const SPECTATOR_COLORS = [
     color(255, 64, 28),
 ];
 
+const WOBBLE_GROUP_COUNT = 4;
+
 const SIDE_TIER_SPECS = [
-    { y: 3.65, zOffset: 12.4, zSpan: 5.1, columns: 38, bands: 3 },
-    { y: 6.0, zOffset: 19.2, zSpan: 5.4, columns: 40, bands: 3 },
-    { y: 8.5, zOffset: 27.0, zSpan: 6.0, columns: 42, bands: 3 },
+    { y: 3.65, zOffset: 12.4, zSpan: 5.1, columns: 26, bands: 2 },
+    { y: 6.0, zOffset: 19.2, zSpan: 5.4, columns: 28, bands: 2 },
+    { y: 8.5, zOffset: 27.0, zSpan: 6.0, columns: 30, bands: 2 },
 ];
 
 const END_TIER_SPECS = [
-    { y: 3.65, xOffset: 13.0, xSpan: 6.2, columns: 28, bands: 3 },
-    { y: 6.0, xOffset: 21.0, xSpan: 7.0, columns: 30, bands: 3 },
-    { y: 8.5, xOffset: 30.0, xSpan: 8.0, columns: 32, bands: 3 },
+    { y: 3.65, xOffset: 13.0, xSpan: 6.2, columns: 18, bands: 2 },
+    { y: 6.0, xOffset: 21.0, xSpan: 7.0, columns: 20, bands: 2 },
+    { y: 8.5, xOffset: 30.0, xSpan: 8.0, columns: 22, bands: 2 },
 ];
 
 type SpectatorSpec = {
@@ -62,17 +64,28 @@ export class SpectatorGroupWobble extends Component {
 }
 
 export class SpectatorCrowdBuilder {
-    build(root: Node, definition: PoolDefinition) {
+    build(root: Node, definition: PoolDefinition, debug?: (message: string) => void) {
         const crowdRoot = makeWorldNode('SpectatorCrowd', root);
         try {
             const materials = SPECTATOR_COLORS.map((c, i) => makeMaterial(`SpectatorColor${i}`, c));
-            const buckets = SPECTATOR_COLORS.map(() => [] as SpectatorSpec[]);
+            const buckets = Array.from({ length: SPECTATOR_COLORS.length * WOBBLE_GROUP_COUNT }, () => [] as SpectatorSpec[]);
             const poolWidth = definition.laneCount * definition.laneWidth;
             this.collectSideStands(buckets, definition, poolWidth);
             this.collectEndStands(buckets, definition, poolWidth);
+            let groupCount = 0;
+            let spectatorCount = 0;
             for (let i = 0; i < buckets.length; i++) {
-                addSpectatorGroup(crowdRoot, `SpectatorColorGroup${i}`, materials[i], buckets[i], i);
+                const colorIndex = i % SPECTATOR_COLORS.length;
+                const wobbleIndex = Math.floor(i / SPECTATOR_COLORS.length);
+                const group = addSpectatorGroup(crowdRoot, `SpectatorColor${colorIndex}Wobble${wobbleIndex}`, materials[colorIndex], buckets[i], i);
+                if (group) {
+                    groupCount += 1;
+                    spectatorCount += buckets[i].length;
+                }
             }
+            const message = `spectator crowd built groups=${groupCount} planes=${spectatorCount}`;
+            debug?.(message);
+            console.log(`[SpeedSwimming] ${message}`);
         } catch (error) {
             crowdRoot.active = false;
             throw error;
@@ -116,7 +129,7 @@ export class SpectatorCrowdBuilder {
                 const spec = END_TIER_SPECS[tier];
                 for (let band = 0; band < spec.bands; band++) {
                     for (let col = 0; col < spec.columns; col++) {
-                        if (random01(col, tier + band * 5, end, 53) < 0.04) {
+                        if (random01(col, tier + band * 5, end, 53) < 0.14) {
                             continue;
                         }
                         const t = spec.columns > 1 ? col / (spec.columns - 1) : 0;
@@ -152,11 +165,12 @@ export class SpectatorCrowdBuilder {
             yaw: number;
         },
     ) {
-        if (random01(options.col, options.row, options.side, 11) < 0.035) {
+        if (random01(options.col, options.row, options.side, 11) < 0.12) {
             return;
         }
-        const materialIndex = Math.floor(random01(options.col, options.row, options.colorSeed, 23) * buckets.length) % buckets.length;
-        buckets[materialIndex].push({
+        const colorIndex = Math.floor(random01(options.col, options.row, options.colorSeed, 23) * SPECTATOR_COLORS.length) % SPECTATOR_COLORS.length;
+        const wobbleIndex = Math.floor(random01(options.row, options.col, options.side, 71) * WOBBLE_GROUP_COUNT) % WOBBLE_GROUP_COUNT;
+        buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
             pos: options.pos,
             width: 0.28 + random01(options.widthSeed, options.row, options.side, 31) * 0.26,
             height: 0.42 + random01(options.heightSeed, options.side, options.col, 37) * 0.38 + options.row * 0.012,
@@ -184,14 +198,15 @@ function addSpectatorGroup(parent: Node, name: string, material: Material, spect
 
     const node = makeWorldNode(name, parent);
     const renderer = node.addComponent(MeshRenderer);
-    renderer.setMaterial(material, 0);
     renderer.mesh = utils.createMesh(buildSpectatorGeometry(spectators));
+    renderer.setMaterial(material, 0);
 
     const wobble = node.addComponent(SpectatorGroupWobble);
-    wobble.amplitude = 0.012 + positiveMod(groupIndex, 5) * 0.004;
-    wobble.sideAmplitude = 0.006 + positiveMod(groupIndex * 2, 4) * 0.003;
-    wobble.speed = 0.9 + positiveMod(groupIndex * 7, 9) * 0.08;
-    wobble.phase = groupIndex * 0.63;
+    const wobbleIndex = Math.floor(groupIndex / SPECTATOR_COLORS.length);
+    wobble.amplitude = 0.09 + positiveMod(groupIndex, 5) * 0.018;
+    wobble.sideAmplitude = 0.035 + positiveMod(groupIndex * 2, 4) * 0.014;
+    wobble.speed = 1.75 + wobbleIndex * 0.33 + positiveMod(groupIndex * 7, 9) * 0.035;
+    wobble.phase = wobbleIndex * 1.57 + groupIndex * 0.21;
     return node;
 }
 
@@ -266,13 +281,9 @@ function pushCorner(
 
 function makeMaterial(name: string, albedo: Color): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-standard' });
+    material.initialize({ effectName: 'builtin-unlit' });
     material.name = name;
     material.setProperty('mainColor', albedo);
-    material.setProperty('albedo', albedo);
-    material.setProperty('emissive', albedo);
-    material.setProperty('emissiveScale', new Vec3(0.32, 0.32, 0.32));
-    material.setProperty('roughness', 0.42);
     return material;
 }
 

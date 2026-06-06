@@ -6,6 +6,8 @@ import { makeButton, makeLabel, makeLeftRect, makeRect, makeTouchArea, makeUiNod
 export type RaceHudCallbacks = {
     onStroke: (type: StrokeType) => void;
     onStrokeEnd: (type: StrokeType) => void;
+    onDiveHoldStart: () => void;
+    onDiveHoldEnd: (holdSeconds: number) => void;
     onRestart: () => void;
     onMenu: () => void;
 };
@@ -16,38 +18,62 @@ export type RaceHudRefs = {
 };
 
 export class RaceHudBuilder {
+    private _diveHoldStartedAt = 0;
+
     constructor(private readonly _callbacks: RaceHudCallbacks) {}
 
     build(parent: Node, w: number, h: number): RaceHudRefs {
         const leftPad = makeTouchArea('LeftInput', parent, w / 2, h);
         leftPad.setPosition(-w / 4, 0, 0);
-        leftPad.on(Node.EventType.TOUCH_START, () => this._callbacks.onStroke(StrokeType.LEFT));
-        leftPad.on(Node.EventType.TOUCH_END, () => this._callbacks.onStrokeEnd(StrokeType.LEFT));
-        leftPad.on(Node.EventType.TOUCH_CANCEL, () => this._callbacks.onStrokeEnd(StrokeType.LEFT));
-        leftPad.on(Node.EventType.MOUSE_UP, () => this._callbacks.onStrokeEnd(StrokeType.LEFT));
+        leftPad.on(Node.EventType.TOUCH_START, () => {
+            this.beginDiveHold();
+            this._callbacks.onStroke(StrokeType.LEFT);
+        });
+        leftPad.on(Node.EventType.TOUCH_END, () => {
+            this._callbacks.onStrokeEnd(StrokeType.LEFT);
+            this.endDiveHold();
+        });
+        leftPad.on(Node.EventType.TOUCH_CANCEL, () => {
+            this._callbacks.onStrokeEnd(StrokeType.LEFT);
+            this.endDiveHold();
+        });
+        leftPad.on(Node.EventType.MOUSE_UP, () => {
+            this._callbacks.onStrokeEnd(StrokeType.LEFT);
+            this.endDiveHold();
+        });
         leftPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT) {
+                this.beginDiveHold();
                 this._callbacks.onStroke(StrokeType.LEFT);
             }
         });
         const rightPad = makeTouchArea('RightInput', parent, w / 2, h);
         rightPad.setPosition(w / 4, 0, 0);
-        rightPad.on(Node.EventType.TOUCH_START, () => this._callbacks.onStroke(StrokeType.RIGHT));
-        rightPad.on(Node.EventType.TOUCH_END, () => this._callbacks.onStrokeEnd(StrokeType.RIGHT));
-        rightPad.on(Node.EventType.TOUCH_CANCEL, () => this._callbacks.onStrokeEnd(StrokeType.RIGHT));
-        rightPad.on(Node.EventType.MOUSE_UP, () => this._callbacks.onStrokeEnd(StrokeType.RIGHT));
+        rightPad.on(Node.EventType.TOUCH_START, () => {
+            this.beginDiveHold();
+            this._callbacks.onStroke(StrokeType.RIGHT);
+        });
+        rightPad.on(Node.EventType.TOUCH_END, () => {
+            this._callbacks.onStrokeEnd(StrokeType.RIGHT);
+            this.endDiveHold();
+        });
+        rightPad.on(Node.EventType.TOUCH_CANCEL, () => {
+            this._callbacks.onStrokeEnd(StrokeType.RIGHT);
+            this.endDiveHold();
+        });
+        rightPad.on(Node.EventType.MOUSE_UP, () => {
+            this._callbacks.onStrokeEnd(StrokeType.RIGHT);
+            this.endDiveHold();
+        });
         rightPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT || event.getButton() === EventMouse.BUTTON_RIGHT) {
+                this.beginDiveHold();
                 this._callbacks.onStroke(StrokeType.RIGHT);
             }
         });
 
-        makeRect('TopBar', parent, w, 82, uiColor(6, 18, 30, 190)).setPosition(0, h / 2 - 41, 0);
-        makeLabel('Title', parent, 'SPEED SWIMMING 3D', 24, uiColor(255, 255, 255)).setPosition(-w / 2 + 188, h / 2 - 38, 0);
         const timerLabel = makeLabel('Timer', parent, '0:00.00', 30, uiColor(255, 255, 255));
         timerLabel.setPosition(w / 2 - 118, h / 2 - 38, 0);
-        const hintLabel = makeLabel('Hint', parent, 'Dive: hold A+D during countdown, release after GO', 18, uiColor(190, 236, 255));
-        hintLabel.setPosition(0, h / 2 - 38, 0);
 
         makeLabel('SpeedText', parent, 'PACE', 16, uiColor(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);
         makeRect('SpeedTrack', parent, 240, 12, uiColor(5, 18, 30, 210)).setPosition(0, h / 2 - 92, 0);
@@ -66,7 +92,17 @@ export class RaceHudBuilder {
         comboLabel.setPosition(0, h / 2 - 186, 0);
 
         const countdownOverlay = makeUiNode('CountdownOverlay', parent);
+        countdownOverlay.getComponent(UITransform).setContentSize(w, h);
         countdownOverlay.active = false;
+        countdownOverlay.on(Node.EventType.TOUCH_START, () => this.beginDiveHold());
+        countdownOverlay.on(Node.EventType.TOUCH_END, () => this.endDiveHold());
+        countdownOverlay.on(Node.EventType.TOUCH_CANCEL, () => this.endDiveHold());
+        countdownOverlay.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
+            if (event.getButton() === EventMouse.BUTTON_LEFT) {
+                this.beginDiveHold();
+            }
+        });
+        countdownOverlay.on(Node.EventType.MOUSE_UP, () => this.endDiveHold());
         const countdownLabel = makeLabel('CountdownLabel', countdownOverlay, '3', 96, uiColor(255, 255, 255));
         countdownLabel.getComponent(UITransform).setContentSize(720, 220);
         countdownLabel.getComponent(Label).lineHeight = 140;
@@ -78,6 +114,16 @@ export class RaceHudBuilder {
         diveChargeFill.setPosition(300, -34, 0);
         diveChargeTrack.active = false;
         diveChargeFill.active = false;
+        const diveTouchArea = makeTouchArea('DiveTouchArea', countdownOverlay, w, h);
+        diveTouchArea.on(Node.EventType.TOUCH_START, () => this.beginDiveHold());
+        diveTouchArea.on(Node.EventType.TOUCH_END, () => this.endDiveHold());
+        diveTouchArea.on(Node.EventType.TOUCH_CANCEL, () => this.endDiveHold());
+        diveTouchArea.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
+            if (event.getButton() === EventMouse.BUTTON_LEFT) {
+                this.beginDiveHold();
+            }
+        });
+        diveTouchArea.on(Node.EventType.MOUSE_UP, () => this.endDiveHold());
 
         const resultPanel = makeUiNode('ResultPanel', parent);
         resultPanel.active = false;
@@ -98,7 +144,6 @@ export class RaceHudBuilder {
         ui.timerLabel = timerLabel.getComponent(Label);
         ui.speedLabel = speedLabel.getComponent(Label);
         ui.telemetryLabel = telemetryLabel.getComponent(Label);
-        ui.hintLabel = hintLabel.getComponent(Label);
         ui.countdownOverlay = countdownOverlay;
         ui.countdownLabel = countdownLabel.getComponent(Label);
         ui.diveChargeTrack = diveChargeTrack;
@@ -113,5 +158,22 @@ export class RaceHudBuilder {
             uiController: ui,
             speedFill: speedFillNode.getComponent(Graphics),
         };
+    }
+
+    private beginDiveHold() {
+        if (this._diveHoldStartedAt > 0) {
+            return;
+        }
+        this._diveHoldStartedAt = Date.now() / 1000;
+        this._callbacks.onDiveHoldStart();
+    }
+
+    private endDiveHold() {
+        if (this._diveHoldStartedAt <= 0) {
+            return;
+        }
+        const holdSeconds = Math.max(0, Date.now() / 1000 - this._diveHoldStartedAt);
+        this._diveHoldStartedAt = 0;
+        this._callbacks.onDiveHoldEnd(holdSeconds);
     }
 }

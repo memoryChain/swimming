@@ -93,10 +93,11 @@ export class UIController extends Component {
             this.countdownOverlay.active = true;
         }
         if (this.hintLabel) {
-            this.hintLabel.string = 'Hold A+D during countdown, release after GO to dive';
+            this.hintLabel.string = 'Hold A+D during countdown, auto dive on GO';
         }
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(720, 220);
+            this.countdownLabel.fontSize = 96;
             this.countdownLabel.lineHeight = 140;
             this.countdownLabel.string = value > 0 ? `${value}` : 'GO';
             this.pulse(this.countdownLabel.node, 1.25);
@@ -129,12 +130,13 @@ export class UIController extends Component {
         }
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
-            this.countdownLabel.lineHeight = 64;
-            this.countdownLabel.string = 'HOLD A + D';
+            this.countdownLabel.fontSize = 58;
+            this.countdownLabel.lineHeight = 72;
+            this.countdownLabel.string = '双指按住屏幕蓄力';
             this.pulse(this.countdownLabel.node, 1.08);
         }
         if (this.hintLabel) {
-            this.hintLabel.string = 'Hold both sides to load the dive, release to enter the water';
+            this.hintLabel.string = '双指按住屏幕蓄力，倒计时结束自动起跳';
         }
         this.updateDiveCharge(0, true);
     }
@@ -142,6 +144,7 @@ export class UIController extends Component {
     showDiveCharging() {
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
+            this.countdownLabel.fontSize = 64;
             this.countdownLabel.lineHeight = 64;
             this.countdownLabel.string = 'CHARGING';
             this.pulse(this.countdownLabel.node, 1.12);
@@ -151,6 +154,7 @@ export class UIController extends Component {
     showDiveRelease(power: number) {
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
+            this.countdownLabel.fontSize = 64;
             this.countdownLabel.lineHeight = 64;
             this.countdownLabel.string = `DIVE ${Math.round(power * 100)}%`;
             this.pulse(this.countdownLabel.node, 1.18);

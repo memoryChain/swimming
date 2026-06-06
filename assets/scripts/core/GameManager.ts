@@ -227,7 +227,7 @@ export class GameManager extends Component {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
         venue.buildPool(root, DEFAULT_POOL_DEFINITION);
         try {
-            new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION);
+            new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
         } catch (error) {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);
@@ -275,6 +275,8 @@ export class GameManager extends Component {
         const raceHud = new RaceHudBuilder({
             onStroke: (type) => this._inputRouter?.handlePadStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handlePadStrokeEnd(type),
+            onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
+            onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),
             onMenu: () => this.showStartScreen(),
         }).build(this._raceHud, w, h);

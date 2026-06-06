@@ -87,7 +87,7 @@ export class RaceManager extends Component {
             this.onCountdownTick?.(value);
         }
 
-        if (this._countdownTimer <= -0.35) {
+        if (this._countdownTimer <= 0) {
             this.playerSwimmer?.prepareDive();
             this.setState(GameState.DIVING);
             this.onDiveReady?.();

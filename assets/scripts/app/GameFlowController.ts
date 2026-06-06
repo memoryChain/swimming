@@ -26,6 +26,7 @@ export class GameFlowController {
     private _diveChargeStarted = false;
     private _diveChargeElapsed = 0;
     private _diveChargePower = 0;
+    private _diveCommitted = false;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
 
     constructor(private readonly _refs: GameFlowRefs) {}
@@ -114,6 +115,9 @@ export class GameFlowController {
     }
 
     handleDiveRelease(holdSeconds: number) {
+        if (this._diveCommitted) {
+            return;
+        }
         if (this._refs.getState() === GameState.COUNTDOWN) {
             this.resetDiveCharge();
             this._refs.debug('dive charge cancelled before start');
@@ -123,12 +127,7 @@ export class GameFlowController {
             return;
         }
         const charge = this._diveChargeStarted ? this._diveChargePower : 0;
-        const power = this.calculateDivePower(charge);
-        this._diveChargeStarted = false;
-        this._refs.debug(`dive release charge=${charge.toFixed(2)} power=${power.toFixed(2)} hold=${holdSeconds.toFixed(2)}`);
-        this._refs.uiFlow.showDiveRelease(power);
-        this._refs.raceCameraDirector.startDiveShot();
-        this._refs.raceManager?.startFromDive(power);
+        this.commitDive(charge, `release hold=${holdSeconds.toFixed(2)}`);
     }
 
     bindRaceManagerCallbacks() {
@@ -182,7 +181,7 @@ export class GameFlowController {
         };
         raceManager.onDiveReady = () => {
             if (this._diveChargeStarted) {
-                this._refs.uiFlow.showDiveCharging();
+                this.commitDive(this._diveChargePower, 'countdown-end auto');
             } else {
                 this._refs.uiFlow.showDivePrompt();
             }
@@ -313,7 +312,21 @@ export class GameFlowController {
         this._diveChargeStarted = false;
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
+        this._diveCommitted = false;
         this._refs.uiFlow.updateDiveCharge(0, false);
+    }
+
+    private commitDive(charge: number, reason: string) {
+        if (this._diveCommitted || this._refs.getState() !== GameState.DIVING) {
+            return;
+        }
+        const power = this.calculateDivePower(charge);
+        this._diveCommitted = true;
+        this._diveChargeStarted = false;
+        this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
+        this._refs.uiFlow.showDiveRelease(power);
+        this._refs.raceCameraDirector.startDiveShot();
+        this._refs.raceManager?.startFromDive(power);
     }
 
     private calculateDivePower(charge: number): number {
