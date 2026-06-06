@@ -5,6 +5,24 @@
   "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3",
   "files": [],
   "subMetas": {
+    "19531": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@19531",
+      "displayName": "",
+      "id": "19531",
+      "name": "Cube.038.mesh",
+      "userData": {
+        "gltfIndex": 11,
+        "triangleCount": 96
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "70240": {
       "importer": "gltf-material",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@70240",
@@ -147,6 +165,24 @@
       ],
       "subMetas": {}
     },
+    "b5a4f": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@b5a4f",
+      "displayName": "",
+      "id": "b5a4f",
+      "name": "indoor_far_night_window_cylinder_mesh.mesh",
+      "userData": {
+        "gltfIndex": 7,
+        "triangleCount": 48
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "bf48e": {
       "importer": "gltf-mesh",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@bf48e",
@@ -154,7 +190,7 @@
       "id": "bf48e",
       "name": "Cube.035.mesh",
       "userData": {
-        "gltfIndex": 7,
+        "gltfIndex": 8,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -172,8 +208,8 @@
       "id": "d7dae",
       "name": "Cube.036.mesh",
       "userData": {
-        "gltfIndex": 8,
-        "triangleCount": 96
+        "gltfIndex": 9,
+        "triangleCount": 12
       },
       "ver": "1.1.1",
       "imported": true,
@@ -190,7 +226,7 @@
       "id": "4e629",
       "name": "Cube.037.mesh",
       "userData": {
-        "gltfIndex": 9,
+        "gltfIndex": 10,
         "triangleCount": 96
       },
       "ver": "1.1.1",
@@ -201,14 +237,14 @@
       ],
       "subMetas": {}
     },
-    "9e284": {
+    "6f162": {
       "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@9e284",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@6f162",
       "displayName": "",
-      "id": "9e284",
-      "name": "Cube.052.mesh",
+      "id": "6f162",
+      "name": "Cube.053.mesh",
       "userData": {
-        "gltfIndex": 10,
+        "gltfIndex": 12,
         "triangleCount": 948
       },
       "ver": "1.1.1",
@@ -219,14 +255,14 @@
       ],
       "subMetas": {}
     },
-    "9c990": {
+    "d293f": {
       "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@9c990",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@d293f",
       "displayName": "",
-      "id": "9c990",
-      "name": "Cube.070.mesh",
+      "id": "d293f",
+      "name": "Cube.071.mesh",
       "userData": {
-        "gltfIndex": 11,
+        "gltfIndex": 13,
         "triangleCount": 84
       },
       "ver": "1.1.1",
@@ -257,12 +293,52 @@
       ],
       "subMetas": {}
     },
-    "e39f7": {
-      "importer": "texture",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@e39f7",
+    "1236e": {
+      "importer": "gltf-embeded-image",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@1236e",
       "displayName": "",
-      "id": "e39f7",
-      "name": "UnnamedTexture.texture",
+      "id": "1236e",
+      "name": "IndoorNightSky.image",
+      "userData": {
+        "gltfIndex": 1,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": true,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".json",
+        ".png"
+      ],
+      "subMetas": {}
+    },
+    "482e2": {
+      "importer": "gltf-embeded-image",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@482e2",
+      "displayName": "",
+      "id": "482e2",
+      "name": "IndoorCeiling.image",
+      "userData": {
+        "gltfIndex": 2,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": true,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".json",
+        ".png"
+      ],
+      "subMetas": {}
+    },
+    "3effa": {
+      "importer": "texture",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@3effa",
+      "displayName": "",
+      "id": "3effa",
+      "name": "UnnamedTexture-0.texture",
       "userData": {
         "wrapModeS": "repeat",
         "wrapModeT": "repeat",
@@ -272,6 +348,52 @@
         "anisotropy": 0,
         "isUuid": true,
         "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@58dd7"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "221a5": {
+      "importer": "texture",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@221a5",
+      "displayName": "",
+      "id": "221a5",
+      "name": "UnnamedTexture-1.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@1236e"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "0089c": {
+      "importer": "texture",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@0089c",
+      "displayName": "",
+      "id": "0089c",
+      "name": "UnnamedTexture-2.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@482e2"
       },
       "ver": "1.0.22",
       "imported": true,
@@ -376,6 +498,38 @@
       ],
       "subMetas": {}
     },
+    "6642d": {
+      "importer": "gltf-material",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@6642d",
+      "displayName": "",
+      "id": "6642d",
+      "name": "indoor_high_window_texture.material",
+      "userData": {
+        "gltfIndex": 7
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "cde31": {
+      "importer": "gltf-material",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@cde31",
+      "displayName": "",
+      "id": "cde31",
+      "name": "indoor_ceiling_texture.material",
+      "userData": {
+        "gltfIndex": 8
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "6290e": {
       "importer": "gltf-material",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@6290e",
@@ -383,7 +537,7 @@
       "id": "6290e",
       "name": "water_clear_blue.material",
       "userData": {
-        "gltfIndex": 7
+        "gltfIndex": 9
       },
       "ver": "1.0.14",
       "imported": true,
@@ -399,7 +553,7 @@
       "id": "00d93",
       "name": "block_face_white.material",
       "userData": {
-        "gltfIndex": 8
+        "gltfIndex": 10
       },
       "ver": "1.0.14",
       "imported": true,
@@ -415,7 +569,7 @@
       "id": "d84cd",
       "name": "block_top_blue.material",
       "userData": {
-        "gltfIndex": 9
+        "gltfIndex": 11
       },
       "ver": "1.0.14",
       "imported": true,
@@ -431,7 +585,7 @@
       "id": "f85a8",
       "name": "lane_rope_red.material",
       "userData": {
-        "gltfIndex": 10
+        "gltfIndex": 12
       },
       "ver": "1.0.14",
       "imported": true,
@@ -447,7 +601,7 @@
       "id": "e956a",
       "name": "lane_rope_blue.material",
       "userData": {
-        "gltfIndex": 11
+        "gltfIndex": 13
       },
       "ver": "1.0.14",
       "imported": true,
@@ -478,6 +632,14 @@
       {
         "name": "LowPolyPoolFloor",
         "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@58dd7"
+      },
+      {
+        "name": "IndoorNightSky",
+        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@1236e"
+      },
+      {
+        "name": "IndoorCeiling",
+        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@482e2"
       }
     ],
     "lods": {
@@ -507,15 +669,19 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@cf1a7",
         "a751d540-5ebd-4868-a41a-334975b3aed3@c172e",
         "a751d540-5ebd-4868-a41a-334975b3aed3@1ed8d",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@b5a4f",
         "a751d540-5ebd-4868-a41a-334975b3aed3@bf48e",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d7dae",
         "a751d540-5ebd-4868-a41a-334975b3aed3@4e629",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@9e284",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@9c990"
+        "a751d540-5ebd-4868-a41a-334975b3aed3@19531",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@6f162",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@d293f"
       ],
       "skeletons": [],
       "textures": [
-        "a751d540-5ebd-4868-a41a-334975b3aed3@e39f7"
+        "a751d540-5ebd-4868-a41a-334975b3aed3@3effa",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@221a5",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@0089c"
       ],
       "materials": [
         "a751d540-5ebd-4868-a41a-334975b3aed3@70240",
@@ -525,6 +691,8 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@6cbf2",
         "a751d540-5ebd-4868-a41a-334975b3aed3@5ebda",
         "a751d540-5ebd-4868-a41a-334975b3aed3@f4499",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@6642d",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@cde31",
         "a751d540-5ebd-4868-a41a-334975b3aed3@6290e",
         "a751d540-5ebd-4868-a41a-334975b3aed3@00d93",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d84cd",

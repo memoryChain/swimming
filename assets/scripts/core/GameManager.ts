@@ -36,6 +36,7 @@ import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
+import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 
 const { ccclass } = _decorator;
 
@@ -71,6 +72,7 @@ export class GameManager extends Component {
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z);
+    private _ceilingHiddenForTopView = false;
 
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -112,9 +114,11 @@ export class GameManager extends Component {
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
+            this.updateTopViewCeilingVisibility(false);
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
+        this.updateTopViewCeilingVisibility(this._raceCameraDirector.topViewActive);
     }
 
     startGame() {
@@ -140,6 +144,7 @@ export class GameManager extends Component {
         this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
         this._raceManager.playerSwimmer = this._playerSwimmer;
         this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
+        this._raceManager.aiSwimmers = this._aiSwimmers;
         this._gameFlow = this.createGameFlow();
         this._modelDebugFlow = this.createModelDebugFlow();
         this._inputRouter = this.createInputRouter();
@@ -221,6 +226,13 @@ export class GameManager extends Component {
     private buildPool3D(root: Node) {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
         venue.buildPool(root, DEFAULT_POOL_DEFINITION);
+        try {
+            new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : `${error}`;
+            this.debug(`spectator crowd skipped: ${message}`);
+            console.warn('[SpeedSwimming] spectator crowd skipped', error);
+        }
     }
 
     private buildSwimmers3D(root: Node) {
@@ -386,6 +398,14 @@ export class GameManager extends Component {
         this._debugLog.toggle();
     }
 
+    private updateTopViewCeilingVisibility(topViewActive: boolean) {
+        if (!this._worldRoot || this._ceilingHiddenForTopView === topViewActive) {
+            return;
+        }
+        this._ceilingHiddenForTopView = topViewActive;
+        setCeilingNodesVisible(this._worldRoot, !topViewActive);
+    }
+
     private drawSpeedBar(ratio: number) {
         drawLeftFill(this._speedFill, 240, 10, Math.max(0, Math.min(1, ratio)), color(89, 234, 160));
     }
@@ -409,4 +429,15 @@ export class GameManager extends Component {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
+}
+
+function setCeilingNodesVisible(root: Node, visible: boolean) {
+    const lowerName = root.name.toLowerCase();
+    if (lowerName.includes('ceiling')) {
+        root.active = visible;
+        return;
+    }
+    for (const child of root.children) {
+        setCeilingNodesVisible(child, visible);
+    }
 }

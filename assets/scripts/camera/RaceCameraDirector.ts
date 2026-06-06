@@ -1,6 +1,7 @@
 import { Camera, Node, Vec3 } from 'cc';
 import { COUNTDOWN_SECONDS, DIVE_BALANCE, RACE_DISTANCE } from '../core/GameBalance';
 
+const PRE_COUNTDOWN_CAMERA_SECONDS = 2.35;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
 const FIRST_PERSON_SHOT_SECONDS = 6.8;
@@ -51,6 +52,10 @@ export class RaceCameraDirector {
     private _broadcastCountdownElapsed = 0;
     private _broadcastRaceElapsed = 0;
     private _diveShotElapsed = -1;
+    private _topViewActive = false;
+    private _preCountdownElapsed = 0;
+    private _preCountdownActive = false;
+    private _preCountdownReady = false;
 
     constructor(private readonly _playerLaneZ: number) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
@@ -67,6 +72,7 @@ export class RaceCameraDirector {
     cycleMode(): string {
         this._mode = (this._mode + 1) % RACE_CAMERA_MODE_NAMES.length;
         this._freeDragging = false;
+        this._topViewActive = this._mode === RaceCameraMode.Top;
         if (this._mode === RaceCameraMode.Broadcast) {
             this.resetBroadcastDirector();
         }
@@ -77,6 +83,7 @@ export class RaceCameraDirector {
     toggleFreeMode(): string {
         this._mode = this._mode === RaceCameraMode.Free ? RaceCameraMode.Broadcast : RaceCameraMode.Free;
         this._freeDragging = false;
+        this._topViewActive = false;
         if (this._mode === RaceCameraMode.Broadcast) {
             this.resetBroadcastDirector();
         }
@@ -87,6 +94,7 @@ export class RaceCameraDirector {
     resetToBroadcast() {
         this._mode = RaceCameraMode.Broadcast;
         this._freeDragging = false;
+        this._topViewActive = false;
         this.resetBroadcastDirector();
         this.resetBroadcastCamera();
     }
@@ -96,6 +104,29 @@ export class RaceCameraDirector {
         this._broadcastRaceElapsed = 0;
         this._broadcastShotTimer = 0;
         this._diveShotElapsed = -1;
+    }
+
+    startPreCountdownOrbit() {
+        this._mode = RaceCameraMode.Broadcast;
+        this._freeDragging = false;
+        this._topViewActive = false;
+        this._preCountdownElapsed = 0;
+        this._preCountdownActive = true;
+        this._preCountdownReady = false;
+        this._broadcastCountdownElapsed = 0;
+        this._broadcastRaceElapsed = 0;
+        this._diveShotElapsed = -1;
+        this._broadcastCameraFov = 42;
+        this._broadcastDesiredFov = 42;
+        this.resetBroadcastCamera();
+    }
+
+    consumePreCountdownReady(): boolean {
+        if (!this._preCountdownReady) {
+            return false;
+        }
+        this._preCountdownReady = false;
+        return true;
     }
 
     resetRaceTimers() {
@@ -114,10 +145,12 @@ export class RaceCameraDirector {
             return;
         }
         if (this._mode === RaceCameraMode.Free) {
+            this._topViewActive = false;
             this.updateFreeCamera(snapshot);
             return;
         }
         if (this._mode === RaceCameraMode.FirstPerson) {
+            this._topViewActive = false;
             this.updateFirstPersonCamera(snapshot);
             return;
         }
@@ -185,6 +218,9 @@ export class RaceCameraDirector {
         const raceRatio = Math.max(0, Math.min(1, playerDistance / RACE_DISTANCE));
         const raceActive = snapshot.raceActive;
         const countdownActive = snapshot.countdownActive;
+        if (this._preCountdownActive) {
+            this._preCountdownElapsed += dt;
+        }
         if (countdownActive) {
             this._broadcastCountdownElapsed += dt;
         }
@@ -209,7 +245,17 @@ export class RaceCameraDirector {
         let desiredPos: Vec3;
         let desiredTarget: Vec3;
         let fixedTopView = false;
-        if (!raceActive && !countdownActive) {
+        if (this._preCountdownActive) {
+            const ratio = smoothStep(clamp(this._preCountdownElapsed / PRE_COUNTDOWN_CAMERA_SECONDS, 0, 1));
+            const target = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
+            desiredTarget = target;
+            desiredPos = countdownOrbitCameraPosition(target, ratio);
+            this._broadcastDesiredFov = lerp(42, 34, ratio);
+            if (ratio >= 1) {
+                this._preCountdownActive = false;
+                this._preCountdownReady = true;
+            }
+        } else if (!raceActive && !countdownActive) {
             desiredTarget = new Vec3(countdownAthleteTargetX(DIVE_BALANCE.platformNodeOffset.x), countdownAthleteTargetY(DIVE_BALANCE.platformNodeOffset.y), this._playerLaneZ);
             desiredPos = new Vec3(4.8, 2.1, this._playerLaneZ);
             this._broadcastDesiredFov = 42;
@@ -231,19 +277,17 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = lerp(58, 33, ratio);
         } else if (countdownActive && this._diveShotElapsed < 0) {
             const target = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
-            const moveStart = 0;
-            const moveDuration = Math.max(0.1, COUNTDOWN_SECONDS);
-            const ratio = smoothStep(clamp((this._broadcastCountdownElapsed - moveStart) / moveDuration, 0, 1));
-            const angle = Math.PI * ratio;
-            const radius = lerp(6.2, 3.65, ratio);
-            const height = lerp(2.15, 1.95, ratio);
+            const ratio = smoothStep(clamp(this._broadcastCountdownElapsed / Math.max(0.1, COUNTDOWN_SECONDS), 0, 1));
             desiredTarget = target;
+            desiredPos = countdownOrbitCameraPosition(target, 1);
+            desiredPos.x += lerp(0, -0.45, ratio);
+            desiredPos.y += lerp(0, 0.18, ratio);
             desiredPos = new Vec3(
-                target.x + Math.cos(angle) * radius,
-                height,
-                target.z + Math.sin(angle) * radius * 0.16,
+                desiredPos.x,
+                desiredPos.y,
+                desiredPos.z,
             );
-            this._broadcastDesiredFov = lerp(42, 34, ratio);
+            this._broadcastDesiredFov = 34;
         } else if (playerDistance >= RACE_DISTANCE - 8) {
             const finishAnchorX = RACE_DISTANCE - 7.5;
             const playerFollowX = playerX + 3.4;
@@ -267,6 +311,7 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = 33;
         }
 
+        this._topViewActive = fixedTopView;
         if (fixedTopView) {
             this._cameraPos.set(desiredPos);
             this._cameraTarget.set(desiredTarget);
@@ -320,12 +365,15 @@ export class RaceCameraDirector {
         let desiredPos: Vec3;
         let desiredTarget: Vec3;
         if (this._mode === RaceCameraMode.Side) {
+            this._topViewActive = false;
             desiredTarget = new Vec3(playerX + 3.0, 0.42, this._playerLaneZ);
             desiredPos = new Vec3(desiredTarget.x, 1.6, this._playerLaneZ + 9.6);
         } else if (this._mode === RaceCameraMode.Chase) {
+            this._topViewActive = false;
             desiredPos = new Vec3(playerX - 7.2, 2.55, this._playerLaneZ + 2.9);
             desiredTarget = new Vec3(playerX + 3.6, 0.42, this._playerLaneZ);
         } else {
+            this._topViewActive = true;
             desiredPos = new Vec3(playerX + 1.8, 17.5, this._playerLaneZ + 0.1);
             desiredTarget = new Vec3(playerX + 2.6, 0.12, this._playerLaneZ);
         }
@@ -374,6 +422,10 @@ export class RaceCameraDirector {
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
         this._diveShotElapsed = -1;
+        this._topViewActive = false;
+        this._preCountdownElapsed = 0;
+        this._preCountdownActive = false;
+        this._preCountdownReady = false;
         this.pickBroadcastShotSequence();
     }
 
@@ -414,6 +466,10 @@ export class RaceCameraDirector {
     get mode(): RaceCameraMode {
         return this._mode;
     }
+
+    get topViewActive(): boolean {
+        return this._topViewActive;
+    }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -438,6 +494,18 @@ function lerp(a: number, b: number, t: number): number {
 
 function firstPersonCameraPos(playerX: number, playerLaneZ: number): Vec3 {
     return new Vec3(playerX + 0.95, 0.74, playerLaneZ + 0.04);
+}
+
+function countdownOrbitCameraPosition(target: Vec3, ratio: number): Vec3 {
+    const t = clamp(ratio, 0, 1);
+    const angle = Math.PI * t;
+    const radius = lerp(6.2, 3.65, t);
+    const height = lerp(2.15, 1.95, t);
+    return new Vec3(
+        target.x + Math.cos(angle) * radius,
+        height,
+        target.z + Math.sin(angle) * radius * 0.16,
+    );
 }
 
 function countdownAthleteTargetY(playerY: number): number {

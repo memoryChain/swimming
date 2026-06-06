@@ -67,7 +67,6 @@ export class RaceHudBuilder {
 
         const countdownOverlay = makeUiNode('CountdownOverlay', parent);
         countdownOverlay.active = false;
-        makeRect('CountdownShade', countdownOverlay, w, h, uiColor(0, 0, 0, 70));
         const countdownLabel = makeLabel('CountdownLabel', countdownOverlay, '3', 96, uiColor(255, 255, 255));
         countdownLabel.getComponent(UITransform).setContentSize(720, 220);
         countdownLabel.getComponent(Label).lineHeight = 140;

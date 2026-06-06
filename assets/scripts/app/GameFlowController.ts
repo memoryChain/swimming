@@ -39,7 +39,8 @@ export class GameFlowController {
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
         this._refs.raceCameraDirector.resetToBroadcast();
-        this._refs.raceManager?.startRace();
+        this._refs.raceCameraDirector.startPreCountdownOrbit();
+        this._refs.setState(GameState.PRECOUNTDOWN);
     }
 
     restartGame() {
@@ -164,11 +165,11 @@ export class GameFlowController {
         raceManager.onProgressUpdate = (playerDist, aiDist) => {
             this._refs.uiFlow.updateProgress(playerDist, aiDist);
         };
-        raceManager.onRaceFinished = (playerWin, playerTime, aiTime) => {
+        raceManager.onRaceFinished = (playerWin, playerTime, aiTime, placementSummary) => {
             this._refs.debug(`finished win=${playerWin} player=${playerTime.toFixed(2)} ai=${aiTime.toFixed(2)}`);
             this.stopAllAi();
             const rhythm = this._refs.playerSwimmer?.rhythmStats;
-            const placement = this.calculatePlayerPlacement();
+            const placement = placementSummary ?? this.calculatePlayerPlacement();
             this._refs.uiFlow.showResult(playerWin, playerTime, aiTime, {
                 averageSpeed: playerTime > 0 ? RACE_DISTANCE / playerTime : 0,
                 maxCombo: rhythm?.maxCombo ?? 0,
@@ -224,6 +225,10 @@ export class GameFlowController {
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
         });
+        if (this._refs.getState() === GameState.PRECOUNTDOWN && this._refs.raceCameraDirector.consumePreCountdownReady()) {
+            this._refs.debug('pre-countdown camera ready');
+            this._refs.raceManager?.startRace();
+        }
     }
 
     resetExtraAiSwimmers() {

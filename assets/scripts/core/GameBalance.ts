@@ -1,7 +1,7 @@
 import { Vec3 } from 'cc';
 
 export const RACE_DISTANCE = 100;
-export const COUNTDOWN_SECONDS = 5;
+export const COUNTDOWN_SECONDS = 3;
 export const GLIDE_SECONDS = 0.72;
 
 export const SWIMMER_BALANCE = {

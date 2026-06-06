@@ -142,22 +142,32 @@
 ### 比赛流程
 
 - `GameManager` 负责状态入口、运行时装配、事件绑定和高层流程协调。
-- `RaceManager` 负责倒计时、玩家跳水、开赛、计时、进度和完赛回调。
+- `RaceManager` 负责倒计时、玩家跳水、开赛、计时、进度、AI 完赛时间记录和完赛回调。
 - `GameManager` 会把 `RaceManager` 的状态和计时回调转发给 UI、摄像机和 AI 控制。
+- 场馆背景不再通过运行时代码硬造天空盒；室内游泳馆的深蓝灰上墙、顶棚、横梁和灯带已经写入 `tools/build-lowpoly-pool.py`，随 `assets/resources/pool/LowPolyPool.glb` 一起由 Blender 导出。这样背景属于低模场馆资产本身，不依赖 Cocos 原生 skybox 贴图，也避免运行时用大面片临时拼背景导致观感割裂。
+- 面向微信小游戏的场馆背景会优先使用贴图而不是堆几何体：天花板现在是一块正常高度的低面数 slab，细节来自 `assets/resources/pool/IndoorCeiling.png` 的深色顶棚和交错条纹贴图；泳池、看台和天花板之间的空隙用一个远距离 24 段圆筒背景承接，贴图来自 `assets/resources/pool/IndoorNightSky.png`，表现为克制的深色夜窗/上墙，而不是贴近镜头的四面大墙。顶棚灯光不再写进 Blender 模型，改由 `RuntimeSceneBuilder.buildCeilingLightStrips()` 在运行时生成较细的暖色/冷色 `builtin-unlit` 发光长条，并按材质合并成 2 个 mesh，避免大量 draw call；灯条不依赖场景光照，低角度镜头也应该清晰可见。顶棚还会由 `RuntimeSceneBuilder.buildCeilingSparkBulbs()` 生成一批闪光灯式小灯泡亮点，每个灯泡由中心点和横竖光芒三段组成，按 4 个 mesh/材质分组，由 `CeilingLightSparkle` 用不同相位做短促爆闪。比赛进入手动 TOP 镜头或临近终点自动俯视镜头时，`GameManager.updateTopViewCeilingVisibility()` 会隐藏名字包含 `ceiling` 的顶棚节点和运行时灯带/灯泡，离开俯视后恢复，避免顶棚挡住俯视视角。导出前会把同材质静态 mesh 合并，避免天花板和背景给面数带来明显压力。
+- 场馆当前会在泳池四周灰色看台上生成简单观众：`venue/SpectatorCrowdBuilder.ts` 使用高饱和多色 plane primitive，按低模泳池的 lower/middle/upper tier 坐标分别摆到左右两侧、起点端和终点端；每层看台有多条不规则观众带，包含少量空位、错列、随机旋转和尺寸变化。观众不再是每个人一个 `MeshRenderer`，而是先按颜色分桶，再把同色观众合并成一份运行时 mesh，最终只创建十几个渲染组件；`SpectatorGroupWobble` 给每个颜色组添加轻微上下/侧向晃动。观众 mesh 会为每个面片写入正反两套三角形，材质使用高饱和 `albedo` 加轻量 `emissive` 自发光，避免 Web 上背面剔除或光照偏暗导致观众不可见，同时避免整片看台过曝。这个实现用于避免 Web 预览中动态创建和销毁大量 mesh/renderer 时出现空 pass 的 `localSetLayout`、半初始化 submodel 销毁等渲染错误；如果观众构建失败，只跳过观众，不中断比赛场景。
+- 运行时灯光在 `RuntimeSceneBuilder.buildLights()` 和 `setupEnvironment()` 中走卡通但不过曝的室内馆方案：暖色主方向光、低强度偏中性的反向补光、暖色顶部方向光、偏灰绿的环境清屏色，并显式设置 sky/ground 环境光颜色和 sky illuminance。整体目标是让场景从冷蓝环境转成更接近室内游泳馆灯光的暖白基调，同时保留水面的清爽感；Web 预览不再动态创建 `SphereLight` 本地光源，避免登录场景切到比赛场景时触发 local light descriptor 报错。
 - 状态流：
   - `READY`：开始界面。
-  - `COUNTDOWN`：5 秒倒计时，玩家可按住 `A + D` 提前蓄力。
+  - `PRECOUNTDOWN`：比赛开始后的赛前镜头准备阶段，相机先从赛前正面视角绕到主角背后；这一阶段不显示倒计时，也不处理跳水蓄力。
+  - `COUNTDOWN`：相机到主角背后后才开始 3 秒倒计时，玩家可按住 `A + D` 提前蓄力。
   - `DIVING`：倒计时结束后的出发阶段，玩家松开 `A/D` 后跳水，AI 会按各自反应时间自动跳水。
   - `GLIDING`：保留的滑行状态；当前默认跳水完成后不再主动进入该状态，避免入水后还要等待才能划水。
   - `RACING`：玩家和 AI 开始前进，普通划水输入立即生效。
   - `FINISHED`：展示结果，支持重新开始。
 - 跳水阶段当前由 `GameFlowController` 协调：
+  - `startGame()` 不再立即调用 `RaceManager.startRace()`，而是先调用 `RaceCameraDirector.startPreCountdownOrbit()` 并把游戏状态置为 `PRECOUNTDOWN`。
+  - `RaceCameraDirector.consumePreCountdownReady()` 返回 true 后，`GameFlowController.updateRaceCamera()` 才真正启动 `RaceManager.startRace()`，因此倒计时一定发生在相机已经绕到主角背后之后。
   - 玩家蓄力由 `InputManager` 发出 `dive-charge-start` / `dive-release` 事件。
   - 倒计时期间按住 `A + D` 会显示跳水蓄力条。蓄力条在倒计时文字右侧竖向显示，从下到上填充；数值按三角波从 0 涨到 1，再从 1 降回 0，循环往复；松开时使用当前蓄力条值计算跳水力度。
+  - 倒计时和起跳提示不再绘制全屏半透明遮罩，只显示文字和蓄力条，避免遮住赛前镜头画面。
   - 跳水力度由 `DIVE_BALANCE.minPower + charge * (1 - minPower)` 得到，因此蓄力条越接近顶部，起跳距离和入水速度越高。
   - `RaceManager.startFromDive()` 负责玩家跳水完成后直接切入 `RACING`，让入水并启动 `SwimmerMotor` 后立刻可以划水。
   - 所有 AI 由 `GameFlowController.prepareAndScheduleAiDives()` 独立调度，基于 AI profile 中的 `diveReaction`、`divePower` 和少量随机波动计算反应时间与跳水能力。
 - 比赛距离固定为 `RACE_DISTANCE = 100`。
+- 结算排名不再按结算瞬间的距离排序。玩家到达 100m 后立即结算；所有早于玩家完赛的 AI 计入玩家前方，未完赛 AI 计入玩家后方，避免多个选手都停在 100m 时排名错误。
+- 结算面板中的 `PLACE #x/y` 来自 `RaceManager` 的完赛时间统计；`Best AI` 显示最早完赛 AI 的时间，如果玩家第一且没有 AI 完赛则显示 `--`。
 - 目标帧率当前在 `GameManager.onLoad()` 中设置为 `game.frameRate = 60`，用于排查和避免低帧率锁定。
 
 ### 输入与节奏判定

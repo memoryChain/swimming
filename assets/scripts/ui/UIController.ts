@@ -177,9 +177,10 @@ export class UIController extends Component {
             this.resultTitle.color = (soloRace || isWin) ? new Color(255, 224, 89, 255) : new Color(255, 112, 112, 255);
         }
         if (this.resultTime) {
+            const aiTimeText = aiTime > 0 ? `${aiTime.toFixed(2)}s` : '--';
             const base = soloRace
                 ? `Your time ${playerTime.toFixed(2)}s`
-                : `Your time ${playerTime.toFixed(2)}s  |  AI ${aiTime.toFixed(2)}s`;
+                : `Your time ${playerTime.toFixed(2)}s  |  Best AI ${aiTimeText}`;
             const placement = !soloRace && stats?.placement && stats?.racerCount
                 ? `\nPLACE #${stats.placement}/${stats.racerCount}`
                 : '';

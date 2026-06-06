@@ -10,6 +10,8 @@ OUT_GLB = ROOT / "assets" / "resources" / "pool" / "LowPolyPool.glb"
 OUT_BLEND = ROOT / "tools" / "LowPolyPool.blend"
 OUT_PREVIEW = ROOT / "tools" / "lowpoly_pool_preview.png"
 OUT_FLOOR_TEXTURE = ROOT / "assets" / "resources" / "pool" / "LowPolyPoolFloor.png"
+OUT_CEILING_TEXTURE = ROOT / "assets" / "resources" / "pool" / "IndoorCeiling.png"
+OUT_NIGHT_SKY_TEXTURE = ROOT / "assets" / "resources" / "pool" / "IndoorNightSky.png"
 
 LANE_COUNT = 8
 LANE_WIDTH = 2.05
@@ -18,18 +20,26 @@ POOL_LENGTH = 104.0
 RACE_LENGTH = 100.0
 
 
+def random01(a, b, c, salt):
+    seed = math.sin(a * 12.9898 + b * 78.233 + c * 37.719 + salt * 19.19) * 43758.5453
+    return seed - math.floor(seed)
+
+
 def clear_scene():
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete()
 
 
-def mat(name, color, roughness=0.7, metallic=0.0, alpha=1.0):
+def mat(name, color, roughness=0.7, metallic=0.0, alpha=1.0, emission_strength=0.0):
     material = bpy.data.materials.new(name)
     material.use_nodes = True
+    material.use_backface_culling = False
     bsdf = material.node_tree.nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = (color[0], color[1], color[2], alpha)
     bsdf.inputs["Roughness"].default_value = roughness
     bsdf.inputs["Metallic"].default_value = metallic
+    if emission_strength > 0:
+        set_emission(bsdf, color, emission_strength)
     if alpha < 1.0:
         bsdf.inputs["Alpha"].default_value = alpha
         material.blend_method = "BLEND"
@@ -38,15 +48,27 @@ def mat(name, color, roughness=0.7, metallic=0.0, alpha=1.0):
     return material
 
 
-def textured_mat(name, image_path, color=(1.0, 1.0, 1.0), roughness=0.8):
+def set_emission(bsdf, color, strength):
+    if "Emission Color" in bsdf.inputs:
+        bsdf.inputs["Emission Color"].default_value = (color[0], color[1], color[2], 1.0)
+    elif "Emission" in bsdf.inputs:
+        bsdf.inputs["Emission"].default_value = (color[0], color[1], color[2], 1.0)
+    if "Emission Strength" in bsdf.inputs:
+        bsdf.inputs["Emission Strength"].default_value = strength
+
+
+def textured_mat(name, image_path, color=(1.0, 1.0, 1.0), roughness=0.8, emission_strength=0.0):
     material = bpy.data.materials.new(name)
     material.use_nodes = True
+    material.use_backface_culling = False
     bsdf = material.node_tree.nodes.get("Principled BSDF")
     bsdf.inputs["Base Color"].default_value = (color[0], color[1], color[2], 1.0)
     bsdf.inputs["Roughness"].default_value = roughness
     tex = material.node_tree.nodes.new("ShaderNodeTexImage")
     tex.image = bpy.data.images.load(str(image_path))
     material.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    if emission_strength > 0:
+        set_emission(bsdf, color, emission_strength)
     return material
 
 
@@ -78,6 +100,100 @@ def create_floor_texture():
 
     image.pixels = pixels
     image.filepath_raw = str(OUT_FLOOR_TEXTURE)
+    image.file_format = "PNG"
+    image.save()
+
+
+def create_ceiling_texture():
+    OUT_CEILING_TEXTURE.parent.mkdir(parents=True, exist_ok=True)
+    width = 512
+    height = 128
+    pixels = [0.045, 0.065, 0.072, 1.0] * width * height
+
+    def put_pixel(x, y, color):
+        if x < 0 or x >= width or y < 0 or y >= height:
+            return
+        i = (y * width + x) * 4
+        pixels[i:i + 4] = color
+
+    panel = [0.058, 0.085, 0.092, 1.0]
+    beam = [0.018, 0.028, 0.032, 1.0]
+    thin_beam = [0.028, 0.048, 0.054, 1.0]
+
+    for y in range(height):
+        shade = 0.88 + y / height * 0.14
+        for x in range(width):
+            base = [0.045 * shade, 0.065 * shade, 0.072 * shade, 1.0]
+            put_pixel(x, y, base)
+
+    for stripe in range(8):
+        x0 = int((stripe + 0.5) / 8 * width)
+        for x in range(x0 - 3, x0 + 4):
+            for y in range(height):
+                put_pixel(x, y, beam)
+
+    for y0 in (18, 46, 74, 102):
+        for y in range(y0 - 2, y0 + 3):
+            for x in range(width):
+                put_pixel(x, y, panel)
+
+    for offset in (-42, 42):
+        for x in range(width):
+            y0 = int(height * 0.5 + (x - width * 0.5) * 0.18 + offset)
+            for y in range(y0 - 1, y0 + 2):
+                put_pixel(x, y, thin_beam)
+        for x in range(width):
+            y0 = int(height * 0.5 - (x - width * 0.5) * 0.18 + offset)
+            for y in range(y0 - 1, y0 + 2):
+                put_pixel(x, y, thin_beam)
+
+    image = bpy.data.images.new("IndoorCeilingTexture", width, height, alpha=True)
+    image.pixels = pixels
+    image.filepath_raw = str(OUT_CEILING_TEXTURE)
+    image.file_format = "PNG"
+    image.save()
+
+
+def create_night_sky_texture():
+    OUT_NIGHT_SKY_TEXTURE.parent.mkdir(parents=True, exist_ok=True)
+    width = 512
+    height = 256
+    pixels = [0.0, 0.0, 0.0, 1.0] * width * height
+
+    def put_pixel(x, y, color):
+        if x < 0 or x >= width or y < 0 or y >= height:
+            return
+        i = (y * width + x) * 4
+        pixels[i:i + 4] = color
+
+    for y in range(height):
+        t = y / max(1, height - 1)
+        r = 0.018 + 0.035 * t
+        g = 0.035 + 0.055 * t
+        b = 0.055 + 0.08 * t
+        for x in range(width):
+            put_pixel(x, y, [r, g, b, 1.0])
+
+    mullion = [0.012, 0.022, 0.03, 1.0]
+    window = [0.035, 0.07, 0.105, 1.0]
+    glow = [0.055, 0.095, 0.125, 1.0]
+    for x0 in range(0, width, 64):
+        for x in range(x0, min(width, x0 + 3)):
+            for y in range(height):
+                put_pixel(x, y, mullion)
+        for y in range(44, height - 34):
+            for x in range(x0 + 8, min(width, x0 + 58)):
+                shade = glow if y % 38 < 3 else window
+                put_pixel(x, y, shade)
+
+    for y0 in (34, height - 30):
+        for y in range(y0 - 2, y0 + 3):
+            for x in range(width):
+                put_pixel(x, y, mullion)
+
+    image = bpy.data.images.new("IndoorNightSkyTexture", width, height, alpha=True)
+    image.pixels = pixels
+    image.filepath_raw = str(OUT_NIGHT_SKY_TEXTURE)
     image.file_format = "PNG"
     image.save()
 
@@ -114,6 +230,33 @@ def add_lowpoly_cylinder(name, location, radius, depth, material, vertices=8, ro
     return obj
 
 
+def add_inward_cylinder_wall(name, center_x, center_z, radius, min_y, max_y, material, segments=24):
+    vertices = []
+    faces = []
+    for i in range(segments):
+        angle = i / segments * math.tau
+        game_x = center_x + math.cos(angle) * radius
+        game_z = center_z + math.sin(angle) * radius
+        vertices.append((game_x, game_z, min_y))
+        vertices.append((game_x, game_z, max_y))
+
+    for i in range(segments):
+        j = (i + 1) % segments
+        bottom_i = i * 2
+        top_i = bottom_i + 1
+        bottom_j = j * 2
+        top_j = bottom_j + 1
+        faces.append((bottom_i, top_i, top_j, bottom_j))
+
+    mesh = bpy.data.meshes.new(f"{name}_mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(material)
+    return obj
+
+
 def optimize_static_meshes():
     material_groups = {}
     for obj in list(bpy.context.scene.objects):
@@ -144,6 +287,8 @@ def lane_center_z(index):
 
 def build_pool():
     create_floor_texture()
+    create_ceiling_texture()
+    create_night_sky_texture()
     water = mat("water_clear_blue", (0.08, 0.68, 1.0), roughness=0.18, alpha=0.24)
     floor = textured_mat("pool_floor_light_blue_texture", OUT_FLOOR_TEXTURE, roughness=0.82)
     wall = mat("pool_wall_white_blue", (0.82, 0.94, 0.98), roughness=0.78)
@@ -156,6 +301,8 @@ def build_pool():
     block_top = mat("block_top_blue", (0.08, 0.36, 0.78), roughness=0.58)
     block_face = mat("block_face_white", (0.94, 0.96, 0.97), roughness=0.75)
     stand = mat("simple_light_gray_stands", (0.68, 0.71, 0.72), roughness=0.9)
+    night_sky = textured_mat("indoor_high_window_texture", OUT_NIGHT_SKY_TEXTURE, (0.05, 0.09, 0.13), roughness=0.9, emission_strength=0.06)
+    ceiling = textured_mat("indoor_ceiling_texture", OUT_CEILING_TEXTURE, (0.09, 0.12, 0.13), roughness=0.9, emission_strength=0.02)
 
     pool_center_x = RACE_LENGTH / 2
     deck_width = POOL_WIDTH + 64.0
@@ -194,6 +341,24 @@ def build_pool():
         cube(f"{label}_audience_middle_tier", (base_x + side * 21.0, 4.55, 0), (8.0, 2.9, end_stand_width), stand)
         cube(f"{label}_audience_upper_tier", (base_x + side * 30.0, 6.9, 0), (9.0, 3.2, end_stand_width), stand)
         cube(f"{label}_audience_back_wall", (base_x + side * 35.1, 8.35, 0), (0.7, 2.7, end_stand_width), stand)
+
+    building_length = deck_length + 78.0
+    building_width = deck_width + 76.0
+    building_center_x = pool_center_x
+
+    add_inward_cylinder_wall(
+        "indoor_far_night_window_cylinder",
+        building_center_x,
+        0,
+        max(building_length, building_width) * 0.56,
+        9.4,
+        52.0,
+        night_sky,
+        segments=24,
+    )
+
+    ceiling_y = 16.2
+    cube("indoor_ceiling_textured_slab", (building_center_x, ceiling_y, 0), (building_length, 0.55, building_width), ceiling)
 
     cube("flat_transparent_water_plane", (pool_center_x, 0.405, 0), (POOL_LENGTH, 0.035, POOL_WIDTH), water)
 
@@ -238,12 +403,12 @@ def setup_camera_and_light():
     sun.data.energy = 3.0
     sun.rotation_euler = (math.radians(45), 0, math.radians(35))
 
-    bpy.ops.object.camera_add(location=(52, -34, 34))
+    bpy.ops.object.camera_add(location=(52, -42, 15))
     camera = bpy.context.object
     bpy.context.scene.camera = camera
     camera.data.type = "ORTHO"
-    camera.data.ortho_scale = 64
-    direction = mathutils.Vector((50, 0, 0.2)) - camera.location
+    camera.data.ortho_scale = 58
+    direction = mathutils.Vector((50, 0, 2.4)) - camera.location
     camera.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
 
     bpy.context.scene.render.engine = "BLENDER_EEVEE"
