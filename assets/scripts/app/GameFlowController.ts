@@ -216,11 +216,14 @@ export class GameFlowController {
             return;
         }
         const playerDistance = playerSwimmer.distance;
+        const placement = this.calculatePlayerPlacement();
         this._refs.raceCameraDirector.update(dt, {
             playerX: playerSwimmer.node.position.x,
             playerY: playerSwimmer.node.position.y,
             playerDistance,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
+            playerPlacement: placement.placement,
+            racerCount: placement.racerCount,
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
         });
