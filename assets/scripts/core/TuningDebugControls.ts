@@ -1,6 +1,6 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
-import { SWIMMER_BALANCE } from './GameBalance';
+import { DIVE_BALANCE, SWIMMER_BALANCE } from './GameBalance';
 import { INPUT_TUNING, MOTION_TUNING, STABILITY_TUNING } from './InputTuning';
 
 export type TuningControl = {
@@ -58,6 +58,13 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
     {
+        name: '跳水',
+        controls: [
+            control('dive.minPower', '最低跳水', '没有蓄力或蓄力条很低时保留的最低跳水力度。数值越高，失误跳水也会更快。', () => DIVE_BALANCE.minPower, (v) => DIVE_BALANCE.minPower = v, 0.02, 0, 0.8, 2),
+            control('dive.chargeCycleSeconds', '蓄力周期', '蓄力条从 0 到 1 再回到 0 的完整周期。值越小，顶点更难抓；值越大，蓄力节奏更宽松。', () => DIVE_BALANCE.chargeCycleSeconds, (v) => DIVE_BALANCE.chargeCycleSeconds = v, 0.05, 0.4, 4, 2, 's'),
+        ],
+    },
+    {
         name: '速度',
         controls: [
             control('speed.baseSpeed', '基础速度', '进入游泳阶段时的初始速度。跳水入水速度仍由跳水参数决定。', () => SWIMMER_BALANCE.baseSpeed, (v) => SWIMMER_BALANCE.baseSpeed = v, 0.05, 0, 2, 2, 'm/s'),
@@ -71,6 +78,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.poolDeceleration', '泳池减速', '泳池或场景提供的固定减速度。未来不同泳池可以配置不同数值。', () => SWIMMER_BALANCE.poolDeceleration, (v) => SWIMMER_BALANCE.poolDeceleration = v, 0.02, 0, 2, 2),
             control('speed.baseDrag', '基础阻力', '速度越高越明显的线性阻力。', () => SWIMMER_BALANCE.baseDrag, (v) => SWIMMER_BALANCE.baseDrag = v, 0.02, 0, 2, 2),
             control('speed.highSpeedDrag', '高速阻力', '接近最高速度时增加的额外阻力，用来压住最高速附近的加速。', () => SWIMMER_BALANCE.highSpeedDrag, (v) => SWIMMER_BALANCE.highSpeedDrag = v, 0.02, 0, 2.5, 2),
+            control('speed.aiCruiseAccel', 'AI巡航加速', 'AI 对手独立于玩家输入评分的持续推进加速度。值越高，AI 越容易保持速度；只影响 AI。', () => SWIMMER_BALANCE.aiCruiseAccel, (v) => SWIMMER_BALANCE.aiCruiseAccel = v, 0.05, 0, 6, 2),
+            control('speed.perfectComboBoostInterval', 'P连击间隔', '每累计多少个 Perfect combo 触发一次超速奖励。设为 0 可以关闭这个奖励。', () => SWIMMER_BALANCE.perfectComboBoostInterval, (v) => SWIMMER_BALANCE.perfectComboBoostInterval = v, 1, 0, 50, 0),
+            control('speed.perfectComboSpeedBonus', 'P奖励速度', 'Perfect combo 达到间隔时，直接加到当前速度上的奖励值。可以把速度推到最高速度以上。', () => SWIMMER_BALANCE.perfectComboSpeedBonus, (v) => SWIMMER_BALANCE.perfectComboSpeedBonus = v, 0.05, 0, 2, 2, 'm/s'),
+            control('speed.perfectComboMaxOvercap', 'P超速上限', 'Perfect combo 奖励最多允许当前速度超出最高速度多少。值越高，连击爆发越明显。', () => SWIMMER_BALANCE.perfectComboMaxOvercap, (v) => SWIMMER_BALANCE.perfectComboMaxOvercap = v, 0.05, 0, 3, 2, 'm/s'),
+            control('speed.perfectComboOvercapDecay', 'P超速衰减', 'Perfect combo 临时超速上限每秒下降的速度。值越高，超过最高速后的回落越快。', () => SWIMMER_BALANCE.perfectComboOvercapDecay, (v) => SWIMMER_BALANCE.perfectComboOvercapDecay = v, 0.05, 0, 3, 2, 'm/s/s'),
         ],
     },
     {

@@ -11,15 +11,17 @@ export type SwimPhysicsInput = {
     aiPower: number;
     aiMaxSpeedScale: number;
     strokeAcceleration: number;
+    speedCapBonus: number;
 };
 
 export class SwimPhysicsModel {
     step(state: SwimPhysicsState, input: SwimPhysicsInput): SwimPhysicsState {
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (input.isAI ? input.aiMaxSpeedScale : 1);
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (input.isAI ? input.aiMaxSpeedScale : 1) + Math.max(0, input.speedCapBonus);
         const aiPower = input.isAI ? input.aiPower : 1;
         const speedRatio = clamp01(state.currentSpeed / maxSpeed);
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
-        const accel = input.strokeAcceleration * accelLimit * aiPower;
+        const aiCruiseAccel = input.isAI ? SWIMMER_BALANCE.aiCruiseAccel : 0;
+        const accel = (input.strokeAcceleration + aiCruiseAccel) * accelLimit * aiPower;
         const aiDragScale = input.isAI ? Math.max(0.7, 1 - (aiPower - 1) * 0.32) : 1;
         const drag = (
             SWIMMER_BALANCE.poolDeceleration

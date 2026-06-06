@@ -71,6 +71,14 @@ export class RaceHudBuilder {
         const countdownLabel = makeLabel('CountdownLabel', countdownOverlay, '3', 96, uiColor(255, 255, 255));
         countdownLabel.getComponent(UITransform).setContentSize(720, 220);
         countdownLabel.getComponent(Label).lineHeight = 140;
+        const diveChargeTrack = makeRect('DiveChargeTrack', countdownOverlay, 34, 180, uiColor(4, 18, 28, 220));
+        diveChargeTrack.setPosition(300, -34, 0);
+        const diveChargeFill = makeUiNode('DiveChargeFill', countdownOverlay);
+        diveChargeFill.getComponent(UITransform).setContentSize(28, 172);
+        diveChargeFill.addComponent(Graphics);
+        diveChargeFill.setPosition(300, -34, 0);
+        diveChargeTrack.active = false;
+        diveChargeFill.active = false;
 
         const resultPanel = makeUiNode('ResultPanel', parent);
         resultPanel.active = false;
@@ -94,6 +102,8 @@ export class RaceHudBuilder {
         ui.hintLabel = hintLabel.getComponent(Label);
         ui.countdownOverlay = countdownOverlay;
         ui.countdownLabel = countdownLabel.getComponent(Label);
+        ui.diveChargeTrack = diveChargeTrack;
+        ui.diveChargeFill = diveChargeFill.getComponent(Graphics);
         ui.resultPanel = resultPanel;
         ui.resultTitle = resultTitle.getComponent(Label);
         ui.resultTime = resultTime.getComponent(Label);

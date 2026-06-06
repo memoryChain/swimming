@@ -173,6 +173,13 @@ export class Swimmer extends Component {
         return held ? null : this.makeStabilityResult(type, stability);
     }
 
+    playAiStrokeVisual(type: StrokeType) {
+        if (!this.isAI) {
+            return;
+        }
+        this.cartoonRig?.triggerStroke(type, false);
+    }
+
     playFinishRagdoll() {
         this.playFinishTouch();
     }
@@ -240,7 +247,14 @@ export class Swimmer extends Component {
             this._missStabilityCount += 1;
         }
         this._maxStabilityCombo = Math.max(this._maxStabilityCombo, this._stabilityCombo);
-        return rhythmResultFromStability(stability, this._stabilityCombo);
+        const result = rhythmResultFromStability(stability, this._stabilityCombo);
+        if (rating === Rating.PERFECT) {
+            const comboSpeedBonus = this._motor.applyPerfectComboBoost(this._stabilityCombo);
+            if (comboSpeedBonus > 0) {
+                result.comboSpeedBonus = comboSpeedBonus;
+            }
+        }
+        return result;
     }
 
     private freestyleArmPull(target: Node, catchPos: Vec3, catchAngle: number, pullPos: Vec3, pullAngle: number, duration: number) {

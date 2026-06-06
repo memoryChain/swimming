@@ -81,6 +81,10 @@ export class UIFlowController {
         this._refs.uiController?.showDiveRelease(power);
     }
 
+    updateDiveCharge(power: number, visible: boolean) {
+        this._refs.uiController?.updateDiveCharge(power, visible);
+    }
+
     showGliding() {
         this._refs.uiController?.showGliding();
     }

@@ -76,6 +76,7 @@ export class SwimmerMotor {
     private readonly _pendingStabilityResults: StrokeStabilityResult[] = [];
     private _strokeAcceleration = 0;
     private _strokeAccelerationSeconds = 0;
+    private _speedCapBonus = 0;
     private _lastStability = 0;
     private _lastInputFreshness = 1;
     private _currentAcceleration = 0;
@@ -161,12 +162,14 @@ export class SwimmerMotor {
                 aiPower: options.aiPower,
                 aiMaxSpeedScale: options.aiMaxSpeedScale,
                 strokeAcceleration,
+                speedCapBonus: this._speedCapBonus,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
+        this.decaySpeedCapBonus(dt);
         this._distance = Math.min(RACE_DISTANCE, this._distance + this._currentSpeed * dt);
-        this.updateMotionCycles(dt);
+        this.updateMotionCycles(dt, options);
 
         if (this._distance >= RACE_DISTANCE) {
             this._isRacing = false;
@@ -200,12 +203,46 @@ export class SwimmerMotor {
         this._pendingStabilityResults.length = 0;
         this._strokeAcceleration = 0;
         this._strokeAccelerationSeconds = 0;
+        this._speedCapBonus = 0;
         this._lastStability = 0;
         this._lastInputFreshness = 1;
         this._currentAcceleration = 0;
     }
 
-    private updateMotionCycles(dt: number) {
+    applyPerfectComboBoost(combo: number): number {
+        const interval = Math.round(SWIMMER_BALANCE.perfectComboBoostInterval);
+        if (interval <= 0 || combo <= 0 || combo % interval !== 0) {
+            return 0;
+        }
+        return this.addSpeedBonus(SWIMMER_BALANCE.perfectComboSpeedBonus);
+    }
+
+    private addSpeedBonus(amount: number): number {
+        const bonus = Math.max(0, amount);
+        const maxOvercap = Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap);
+        if (bonus <= 0 || maxOvercap <= 0) {
+            return 0;
+        }
+        const before = this._currentSpeed;
+        const maxBoostedSpeed = SWIMMER_BALANCE.maxSpeed + maxOvercap;
+        this._currentSpeed = clamp(this._currentSpeed + bonus, SWIMMER_BALANCE.minSpeed, maxBoostedSpeed);
+        const awarded = Math.max(0, this._currentSpeed - before);
+        this._speedCapBonus = Math.max(this._speedCapBonus, Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed));
+        this._speedCapBonus = clamp(this._speedCapBonus, 0, maxOvercap);
+        return awarded;
+    }
+
+    private decaySpeedCapBonus(dt: number) {
+        if (this._speedCapBonus <= 0) {
+            return;
+        }
+        const decay = Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay) * Math.max(0, dt);
+        const neededForCurrentSpeed = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
+        this._speedCapBonus = Math.max(neededForCurrentSpeed, this._speedCapBonus - decay);
+        this._speedCapBonus = clamp(this._speedCapBonus, 0, Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap));
+    }
+
+    private updateMotionCycles(dt: number, options: SwimmerMotorOptions) {
         const speedRatio = this.speedRatio();
         const armCycleSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.armMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, speedRatio);
         const kickCycleSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.kickMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, speedRatio);
@@ -216,6 +253,16 @@ export class SwimmerMotor {
         );
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
+        if (options.isAI) {
+            const aiCycleStep = actionCycleSpeed * MOTION_TUNING.animationSpeedScale * dt * Math.max(0.7, options.aiPower);
+            this._leftArmCycle += aiCycleStep;
+            this._rightArmCycle = this._leftArmCycle + Math.PI;
+            this._leftKickCycle += aiCycleStep * 1.18;
+            this._rightKickCycle = this._leftKickCycle + Math.PI;
+            this._armAction = Math.max(this._armAction, 0.35);
+            this._kickAction = Math.max(this._kickAction, 0.35);
+            return;
+        }
         this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
         this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.RIGHT));
         this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', this.motionSpeedScaleForSide(StrokeType.RIGHT));
@@ -609,8 +656,12 @@ function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * clamp01(t);
 }
 
+function clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+}
+
 function clamp01(value: number): number {
-    return Math.max(0, Math.min(1, value));
+    return clamp(value, 0, 1);
 }
 
 function strongerStability(a: StrokeStabilityResult | null, b: StrokeStabilityResult | null): StrokeStabilityResult | null {

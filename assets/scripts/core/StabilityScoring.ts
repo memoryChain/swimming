@@ -46,5 +46,6 @@ export function rhythmResultFromStability(stability: StrokeStabilityResult, comb
 }
 
 export function formatStabilityLog(prefix: string, result: RhythmResult): string {
-    return `${prefix} rating=${result.rating} badReason=${result.badReason ?? 'none'} hold=${(result.holdSeconds ?? 0).toFixed(2)} holdOk=${result.holdTimeValid !== false} action=${(result.actionSeconds ?? 0).toFixed(2)} ratio=${((result.holdRatio ?? 0) * 100).toFixed(0)}% fresh=${((result.inputFreshness ?? 1) * 100).toFixed(0)}% std=${(result.ratioStdDev ?? 0).toFixed(3)} samples=${result.sampleCount ?? 0} combo=${result.combo}`;
+    const comboBoost = result.comboSpeedBonus && result.comboSpeedBonus > 0 ? ` comboBoost=+${result.comboSpeedBonus.toFixed(2)}m/s` : '';
+    return `${prefix} rating=${result.rating} badReason=${result.badReason ?? 'none'} hold=${(result.holdSeconds ?? 0).toFixed(2)} holdOk=${result.holdTimeValid !== false} action=${(result.actionSeconds ?? 0).toFixed(2)} ratio=${((result.holdRatio ?? 0) * 100).toFixed(0)}% fresh=${((result.inputFreshness ?? 1) * 100).toFixed(0)}% std=${(result.ratioStdDev ?? 0).toFixed(3)} samples=${result.sampleCount ?? 0} combo=${result.combo}${comboBoost}`;
 }

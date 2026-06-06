@@ -44,7 +44,7 @@ const POOL_WIDTH = LANE_LAYOUT.poolWidth;
 const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
 const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
-const RACE_OPPONENTS_ENABLED = false;
+const RACE_OPPONENTS_ENABLED = true;
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;

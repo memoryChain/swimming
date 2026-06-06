@@ -1,5 +1,5 @@
 import { _decorator, Component } from 'cc';
-import { COUNTDOWN_SECONDS, GLIDE_SECONDS, RACE_DISTANCE } from './GameBalance';
+import { COUNTDOWN_SECONDS, RACE_DISTANCE } from './GameBalance';
 import { GameState } from './GameConstants';
 import { Swimmer } from '../entity/Swimmer';
 
@@ -92,12 +92,7 @@ export class RaceManager extends Component {
         const playerDuration = this.playerSwimmer?.performDive(playerDivePower) ?? 0;
         this.scheduleOnce(() => {
             if (this._state === GameState.DIVING && this._diveResolved) {
-                this.setState(GameState.GLIDING);
-                this.scheduleOnce(() => {
-                    if (this._state === GameState.GLIDING) {
-                        this.setState(GameState.RACING);
-                    }
-                }, GLIDE_SECONDS);
+                this.setState(GameState.RACING);
             }
         }, playerDuration);
     }

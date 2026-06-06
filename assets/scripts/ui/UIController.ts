@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Label, Node, Tween, tween, UITransform, Vec3 } from 'cc';
+import { _decorator, Color, Component, Graphics, Label, Node, Tween, tween, UITransform, Vec3 } from 'cc';
 import { RACE_DISTANCE, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -26,6 +26,8 @@ export class UIController extends Component {
     @property(Label) public hintLabel: Label = null;
     @property(Node) public countdownOverlay: Node = null;
     @property(Label) public countdownLabel: Label = null;
+    @property(Node) public diveChargeTrack: Node = null;
+    @property(Graphics) public diveChargeFill: Graphics = null;
     @property(Node) public resultPanel: Node = null;
     @property(Label) public resultTitle: Label = null;
     @property(Label) public resultTime: Label = null;
@@ -101,10 +103,21 @@ export class UIController extends Component {
         }
     }
 
+    updateDiveCharge(power: number, visible: boolean) {
+        if (this.diveChargeTrack) {
+            this.diveChargeTrack.active = visible;
+        }
+        if (this.diveChargeFill) {
+            this.diveChargeFill.node.active = visible;
+            drawChargeFill(this.diveChargeFill, clamp01(power));
+        }
+    }
+
     hideCountdown() {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;
         }
+        this.updateDiveCharge(0, false);
         if (this.hintLabel) {
             this.hintLabel.string = 'A: left hand + right foot   D: right hand + left foot';
         }
@@ -123,6 +136,7 @@ export class UIController extends Component {
         if (this.hintLabel) {
             this.hintLabel.string = 'Hold both sides to load the dive, release to enter the water';
         }
+        this.updateDiveCharge(0, true);
     }
 
     showDiveCharging() {
@@ -141,6 +155,7 @@ export class UIController extends Component {
             this.countdownLabel.string = `DIVE ${Math.round(power * 100)}%`;
             this.pulse(this.countdownLabel.node, 1.18);
         }
+        this.updateDiveCharge(power, true);
     }
 
     showGliding() {
@@ -193,6 +208,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;
         }
+        this.updateDiveCharge(0, false);
         if (this.resultPanel) {
             this.resultPanel.active = false;
         }
@@ -227,4 +243,17 @@ function signed(value: number): string {
 
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
+}
+
+function drawChargeFill(gfx: Graphics, ratio: number) {
+    const w = 28;
+    const h = 172;
+    gfx.clear();
+    gfx.fillColor = ratio > 0.82
+        ? new Color(255, 224, 89, 255)
+        : ratio > 0.45
+            ? new Color(80, 242, 161, 255)
+            : new Color(87, 196, 255, 255);
+    gfx.rect(-w / 2, -h / 2, w, h * ratio);
+    gfx.fill();
 }

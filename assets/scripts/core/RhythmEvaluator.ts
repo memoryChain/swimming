@@ -24,6 +24,7 @@ export interface RhythmResult {
     meanRatio?: number;
     ratioStdDev?: number;
     sampleCount?: number;
+    comboSpeedBonus?: number;
 }
 
 export interface RhythmStats {

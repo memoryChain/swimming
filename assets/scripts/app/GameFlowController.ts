@@ -24,6 +24,8 @@ export type GameFlowRefs = {
 
 export class GameFlowController {
     private _diveChargeStarted = false;
+    private _diveChargeElapsed = 0;
+    private _diveChargePower = 0;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
 
     constructor(private readonly _refs: GameFlowRefs) {}
@@ -31,6 +33,7 @@ export class GameFlowController {
     startGame() {
         this._refs.debug('startGame');
         this.clearAiDiveTimers();
+        this.resetDiveCharge();
         this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
@@ -48,6 +51,7 @@ export class GameFlowController {
     showStartScreen() {
         this._refs.debug('showStartScreen');
         this._refs.setState(GameState.READY);
+        this.resetDiveCharge();
         this.stopAllAi();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
@@ -99,6 +103,9 @@ export class GameFlowController {
             return;
         }
         this._diveChargeStarted = true;
+        this._diveChargeElapsed = 0;
+        this._diveChargePower = 0;
+        this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
         this._refs.debug('dive charging');
         if (state === GameState.DIVING) {
             this._refs.uiFlow.showDiveCharging();
@@ -107,18 +114,19 @@ export class GameFlowController {
 
     handleDiveRelease(holdSeconds: number) {
         if (this._refs.getState() === GameState.COUNTDOWN) {
-            this._diveChargeStarted = false;
+            this.resetDiveCharge();
             this._refs.debug('dive charge cancelled before start');
             return;
         }
         if (this._refs.getState() !== GameState.DIVING) {
             return;
         }
-        const effectiveHold = this._diveChargeStarted ? holdSeconds : DIVE_BALANCE.defaultFallbackHoldSeconds;
-        const power = this.calculateDivePower(effectiveHold);
+        const charge = this._diveChargeStarted ? this._diveChargePower : 0;
+        const power = this.calculateDivePower(charge);
         this._diveChargeStarted = false;
-        this._refs.debug(`dive release hold=${effectiveHold.toFixed(2)} power=${power.toFixed(2)}`);
+        this._refs.debug(`dive release charge=${charge.toFixed(2)} power=${power.toFixed(2)} hold=${holdSeconds.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
+        this._refs.raceCameraDirector.startDiveShot();
         this._refs.raceManager?.startFromDive(power);
     }
 
@@ -132,7 +140,7 @@ export class GameFlowController {
             this._refs.setState(state);
             this._refs.debug(`state=${state}`);
             if (state === GameState.COUNTDOWN) {
-                this._diveChargeStarted = false;
+                this.resetDiveCharge();
                 this._refs.raceCameraDirector.resetCountdownTimers();
             }
             if (state === GameState.DIVING) {
@@ -202,6 +210,7 @@ export class GameFlowController {
     }
 
     updateRaceCamera(dt: number) {
+        this.updateDiveCharge(dt);
         const playerSwimmer = this._refs.playerSwimmer;
         if (!playerSwimmer) {
             return;
@@ -209,6 +218,7 @@ export class GameFlowController {
         const playerDistance = playerSwimmer.distance;
         this._refs.raceCameraDirector.update(dt, {
             playerX: playerSwimmer.node.position.x,
+            playerY: playerSwimmer.node.position.y,
             playerDistance,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
@@ -284,13 +294,25 @@ export class GameFlowController {
         return Math.max(DIVE_BALANCE.aiPowerMin, Math.min(DIVE_BALANCE.aiPowerMax, basePower + variance));
     }
 
-    private calculateDivePower(holdSeconds: number): number {
-        const minHold = DIVE_BALANCE.minHoldSeconds;
-        const maxHold = DIVE_BALANCE.maxHoldSeconds;
-        if (holdSeconds <= minHold) {
-            return DIVE_BALANCE.minPower;
+    private updateDiveCharge(dt: number) {
+        const state = this._refs.getState();
+        if (!this._diveChargeStarted || (state !== GameState.COUNTDOWN && state !== GameState.DIVING)) {
+            return;
         }
-        return Math.max(DIVE_BALANCE.minPower, Math.min(1, (holdSeconds - minHold) / (maxHold - minHold)));
+        this._diveChargeElapsed += Math.max(0, dt);
+        this._diveChargePower = diveChargePingPong(this._diveChargeElapsed);
+        this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
+    }
+
+    private resetDiveCharge() {
+        this._diveChargeStarted = false;
+        this._diveChargeElapsed = 0;
+        this._diveChargePower = 0;
+        this._refs.uiFlow.updateDiveCharge(0, false);
+    }
+
+    private calculateDivePower(charge: number): number {
+        return Math.max(DIVE_BALANCE.minPower, Math.min(1, DIVE_BALANCE.minPower + clamp01(charge) * (1 - DIVE_BALANCE.minPower)));
     }
 
     private calculatePlayerPlacement(): { placement: number; racerCount: number } {
@@ -308,4 +330,14 @@ export class GameFlowController {
             racerCount: racers.length,
         };
     }
+}
+
+function diveChargePingPong(seconds: number): number {
+    const cycle = Math.max(0.1, DIVE_BALANCE.chargeCycleSeconds);
+    const phase = (seconds % cycle) / cycle;
+    return phase <= 0.5 ? phase * 2 : (1 - phase) * 2;
+}
+
+function clamp01(value: number): number {
+    return Math.max(0, Math.min(1, value));
 }

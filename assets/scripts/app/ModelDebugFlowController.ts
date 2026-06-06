@@ -284,7 +284,14 @@ export class ModelDebugFlowController {
         }
         const rating = ratingForStability(stability.stability);
         this._lastCombo = nextStabilityCombo(this._lastCombo, rating);
-        return rhythmResultFromStability(stability, this._lastCombo);
+        const result = rhythmResultFromStability(stability, this._lastCombo);
+        if (rating === Rating.PERFECT) {
+            const comboSpeedBonus = this._debugMotor.applyPerfectComboBoost(this._lastCombo);
+            if (comboSpeedBonus > 0) {
+                result.comboSpeedBonus = comboSpeedBonus;
+            }
+        }
+        return result;
     }
 
     private updateDebugHud() {

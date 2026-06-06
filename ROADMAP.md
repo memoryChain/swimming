@@ -49,12 +49,14 @@
 - 基础动作加速度倍率：`alternationBaseMinScale + (1 - alternationBaseMinScale) * balance`。默认只按单侧仍保留 25% 基础动作加速。
 - 稳定加速度倍率：`alternationStabilityMinScale + (1 - alternationStabilityMinScale) * balance`。默认只按单侧只保留 10% 稳定加速。
 - 加速度持续时间为当前动作一轮时间乘 `SWIMMER_BALANCE.strokeAccelDurationRatio`。
+- `PERFECT` 会累计稳定性 combo；当 combo 达到 `SWIMMER_BALANCE.perfectComboBoostInterval` 的整数倍时，会触发一次里程碑奖励，把当前速度直接增加 `perfectComboSpeedBonus`。
+- 这个里程碑奖励允许速度短暂超过 `SWIMMER_BALANCE.maxSpeed`，但最多只超出 `perfectComboMaxOvercap`；超速上限会按 `perfectComboOvercapDecay` 回落，实际速度还会继续受水阻和泳池减速影响。
 - `SwimPhysicsModel` 每帧用动作加速度减去三类减速：`SWIMMER_BALANCE.poolDeceleration`、`baseDrag * currentSpeed`、`highSpeedDrag * speedRatio * currentSpeed`。
 - `poolDeceleration` 是泳池/场景固定减速度，后续不同泳池可以用它做场景手感差异。
 
 ### Debug Model 调参
 
-- Debug model 左侧面板现在只展示当前规则实际读取的参数组：`输入`、`速度`、`稳定性`、`动作`。输入组只保留触摸去重，不再暴露双键合并参数。
+- Debug model 左侧面板现在只展示当前规则实际读取的参数组：`输入`、`跳水`、`速度`、`稳定性`、`动作`。输入组只保留触摸去重，不再暴露双键合并参数。
 - 每个参数都有中文名称、中文说明、步进、范围和单位。
 - 顶部会显示当前稳定性评分和模拟速度，便于直接对照比赛内 HUD。
 - 比赛 HUD 和 debug model HUD 都实时显示 `STB`、`ACC`、`SPD`：
@@ -146,12 +148,14 @@
   - `READY`：开始界面。
   - `COUNTDOWN`：5 秒倒计时，玩家可按住 `A + D` 提前蓄力。
   - `DIVING`：倒计时结束后的出发阶段，玩家松开 `A/D` 后跳水，AI 会按各自反应时间自动跳水。
-  - `GLIDING`：入水后的短暂流线型滑行阶段，速度会自然衰减，普通划水输入暂不生效。
-  - `RACING`：玩家和 AI 开始前进。
+  - `GLIDING`：保留的滑行状态；当前默认跳水完成后不再主动进入该状态，避免入水后还要等待才能划水。
+  - `RACING`：玩家和 AI 开始前进，普通划水输入立即生效。
   - `FINISHED`：展示结果，支持重新开始。
 - 跳水阶段当前由 `GameFlowController` 协调：
   - 玩家蓄力由 `InputManager` 发出 `dive-charge-start` / `dive-release` 事件。
-  - `RaceManager.startFromDive()` 负责玩家跳水完成后切入 `GLIDING`，滑行结束后进入 `RACING`。
+  - 倒计时期间按住 `A + D` 会显示跳水蓄力条。蓄力条在倒计时文字右侧竖向显示，从下到上填充；数值按三角波从 0 涨到 1，再从 1 降回 0，循环往复；松开时使用当前蓄力条值计算跳水力度。
+  - 跳水力度由 `DIVE_BALANCE.minPower + charge * (1 - minPower)` 得到，因此蓄力条越接近顶部，起跳距离和入水速度越高。
+  - `RaceManager.startFromDive()` 负责玩家跳水完成后直接切入 `RACING`，让入水并启动 `SwimmerMotor` 后立刻可以划水。
   - 所有 AI 由 `GameFlowController.prepareAndScheduleAiDives()` 独立调度，基于 AI profile 中的 `diveReaction`、`divePower` 和少量随机波动计算反应时间与跳水能力。
 - 比赛距离固定为 `RACE_DISTANCE = 100`。
 - 目标帧率当前在 `GameManager.onLoad()` 中设置为 `game.frameRate = 60`，用于排查和避免低帧率锁定。
@@ -189,7 +193,7 @@
     - `BOTH` 不吃交替输入的“过快宽容”窗口，乱按或狂按会更容易判 `BAD`。
     - `BOTH` 判 `BAD` 时仍播放弱动作反馈，但不会写入推进频率统计，避免靠高频双键刷速度。
   - 当前游泳主路径不再使用这套旧的松键时长评分。旧 `RhythmEvaluator` 仍保留在工程中作为历史/兼容代码，但比赛和 debug model 的稳定性已经改为“松开时预测结算，或未松开时动作完成结算最近 5 轮按住比例标准差”。
-  - `PERFECT` 会累计 combo，combo 转化为速度倍率。
+  - `PERFECT` 会累计稳定性 combo；combo 不再转化为持续速度倍率，而是在达到固定间隔时触发一次临时超速奖励。
 
 ### 游泳速度模型
 
@@ -208,7 +212,7 @@
   - 同步度：手和腿输入频率越接近越好。
   - 起步阶段：前 15 到 18 米给腿部启动辅助。
   - 高速阻力：速度越接近最大速度，阻力越强。
-  - combo：玩家节奏奖励会提高最大速度和加速度。
+  - combo：玩家稳定性 combo 达到里程碑时，会直接奖励一段可超出最高速度的临时速度。
 - 当前关键速度参数集中在 `core/GameBalance.ts`：
   - `SWIMMER_BALANCE.baseSpeed = 0.8`
   - `SWIMMER_BALANCE.maxSpeed = 3.2`
@@ -220,16 +224,15 @@
 ### AI 选手
 
 - `competitor/CompetitorManager.ts` 创建 8 条泳道中的 1 名玩家和 7 名 AI。
-- 当前比赛对手临时屏蔽：`GameManager` 内 `RACE_OPPONENTS_ENABLED = false`，AI 节点会保持 inactive，AI controller 不进入比赛流程，`RaceManager` 在无 AI 时玩家完赛即结束。
+- 当前比赛对手已恢复：`GameManager` 内 `RACE_OPPONENTS_ENABLED = true`，AI 节点会参与倒计时、跳水、游泳和主 AI 胜负判定。
 - `competitor/SwimmerFactory.ts` 创建单个泳手节点、绑定 `CartoonSwimmerRig` 和 `Swimmer`。
 - `competitor/CompetitorConfig.ts` 保存默认 AI profile 和泳衣/泳帽颜色。
-- `AISwimmerController` 现在不再只按目标 BPM 触发一次划水，而是模拟和玩家一致的输入流：
-  - 到达下一拍时先调用 `handleStrokeHeld(type, true)`，再调用 `handleStroke(type)`，确保动作开始时能记录本轮按住起点。
-  - 长按时间按“当前速度下动作一轮时间 * 目标长按比例”计算，再根据 `difficulty` 加入比例抖动和偶发失误。
-  - 长按计时结束后调用 `handleStrokeHeld(type, false)`，让 AI 也通过松开预测结算稳定性，并获得同一套稳定加速度。
-  - 开始下一轮前会用 `Swimmer.canAcceptStroke(type)` 检查当前侧是否还能进入“当前动作 + 一个缓存动作”的队列；队列满时只短暂重试，不会污染当前动作的 held 状态。
-  - `difficulty` 越高，AI 的长按比例越稳定、节奏抖动越小、左右重复或提前/滞后松开的概率越低。
-  - `bpmOffset` 仍然影响 AI 计划输入间隔，但最终速度由同一套 `SwimmerMotor` 动作队列、稳定性、交替质量、加速度和水阻逻辑决定。
+- `AISwimmerController` 不再模拟玩家输入，不调用 `handleStroke()` / `handleStrokeHeld()`，因此 AI 不再进入玩家的动作队列、长按预测、稳定性评分和 badReason 链路。
+- AI 游泳拆成两层：
+  - 速度层：`SwimPhysicsModel` 检测 `input.isAI` 后使用 `SWIMMER_BALANCE.aiCruiseAccel` 给 AI 持续推进，并继续受 `aiPower`、`aiMaxSpeedScale`、泳池减速和阻力影响。
+  - 表现层：`AISwimmerController` 按 AI profile 的 `targetBpm + bpmOffset` 和 `difficulty` 生成视觉划水节奏，只调用 `Swimmer.playAiStrokeVisual(type)` 触发水花和肢体表现。
+- `difficulty` 现在主要影响视觉节奏的抖动和偶发左右错误，不再直接影响稳定性得分。
+- `bpmOffset` 现在主要影响 AI 动作表现频率，不再作为速度结算的输入节奏。
 - AI 跳水不是由 `AISwimmerController` 触发，而是在 `GameFlowController` 的 `DIVING` 阶段统一调度：
   - `diveReaction` 越低，反应延迟越短。
   - `divePower` 越高，跳水 power 越高。
@@ -237,10 +240,12 @@
 - 每条 AI 泳道配置了不同参数：
   - `difficulty`
   - `bpmOffset`
-  - `aiPower`，当前只作为轻微推进倍率补偿，不再承担旧版主要提速职责。
+  - `aiPower`，作为 AI 独立推进和阻力的倍率补偿。
   - `aiMaxSpeedScale`，当前只作为轻微最高速差异，不应大幅高于玩家上限。
   - `divePower`
   - `diveReaction`
+- 当前 AI 水平差距已经拉大：最强档仍保持 `aiPower = 1.05`、`aiMaxSpeedScale = 1.03` 的上限不变；最低档下调到 `aiPower = 0.75`、`aiMaxSpeedScale = 0.82`、`divePower = 0.42`、`diveReaction = 0.42`，用于营造明显落后选手。
+- AI 独立推进的全局强度暴露在 debug model 调参面板里：`AI巡航加速` / `SWIMMER_BALANCE.aiCruiseAccel` / `speed.aiCruiseAccel`。
 - 当前 AI 与玩家使用相同肤色，不同泳衣和泳帽颜色；主角通过描边和泳道视觉识别。
 
 ### 角色模型、蒙皮与特效
@@ -325,7 +330,12 @@
   - 顶视镜头。
   - 第一人称镜头。
   - 自由镜头。
-- 自动转播镜头会在倒计时和比赛中切换机位，并在玩家和 AI 接近时进入对抗镜头。
+- 自动镜头现在按比赛阶段组织：
+  - 倒计时开始时，相机以主角为圆心，从当前面向运动员的机位绕到运动员背后，过程中始终看向主角，并逐步缩短距离。
+  - 玩家松开起跳后，`GameFlowController` 会调用 `RaceCameraDirector.startDiveShot()`，自动镜头切入第一人称，视线朝向泳池终点，并持续约 2-3 秒。
+  - 第一人称结束后，镜头从主角正后方开始，一边拉远，一边沿弧线平滑转到正侧视角。
+  - 正式游泳过程默认保持正侧视跟随，便于看清划水节奏和前进速度。
+  - 临近终点时保留当前俯视终点逻辑，帮助观察触壁和完赛。
 - `GameManager` 每帧只向 `RaceCameraDirector` 提供比赛快照：
   - 玩家 x 坐标。
   - 玩家距离。
@@ -390,33 +400,27 @@
 
 #### 参数分组
 
-`TuningDebugControls.ts` 当前把可调参数分为 6 组，每组都通过统一的 `TuningControl` 描述：
+`TuningDebugControls.ts` 当前把可调参数分为 5 组，每组都通过统一的 `TuningControl` 描述：
 
 - `输入`
-  - `目标节奏`：`RHYTHM_BALANCE.targetBpm`。决定目标划水节拍，所有节奏间隔和长按目标都受它影响。
-  - `频率统计窗`：`INPUT_TUNING.inputRateWindowSeconds`。决定最近多少秒的输入被用于计算手/脚输入频率。
-  - `触摸去重`：`INPUT_TUNING.padStrokeDedupeMs`。过滤同侧 touch/mouse 重复派发。
-  - `双键合并`：`INPUT_TUNING.chordMergeWindowMs`。决定 A+D 间隔多短会合成一次 `StrokeType.BOTH`。
-  - `双键松开`：`INPUT_TUNING.chordReleaseWindowMs`。决定双键长按奖励允许左右释放相差多少毫秒。
-- `节奏`
-  - `完美窗口`：`INPUT_TUNING.rhythmPerfectWindowSeconds`。普通左右交替输入的 Perfect 判定窗口。
-  - `良好窗口`：`INPUT_TUNING.rhythmGoodWindowSeconds`。普通左右交替输入的 Good 判定窗口。
-  - `过快宽容`：`INPUT_TUNING.rhythmLooseWindowSeconds`。普通交替输入过快时仍可算 Good 的宽容上限。
-  - `双键完美`：`INPUT_TUNING.bothRhythmPerfectWindowSeconds`。A+D 同按模式的 Perfect 窗口。
-  - `双键良好`：`INPUT_TUNING.bothRhythmGoodWindowSeconds`。A+D 同按模式的 Good 窗口。
-  - `最高加成`：`RHYTHM_BALANCE.maxComboBonus`。combo、Good 和长按奖励叠加后的最大速度倍率上限。
-  - `完美加成`：`RHYTHM_BALANCE.comboPerfectBonus`。每个 Perfect combo 增加的速度收益。
-  - `良好加成`：`RHYTHM_BALANCE.comboGoodBonus`。Good 当次给的速度收益。
-  - `失误惩罚`：`RHYTHM_BALANCE.comboMissPenalty`。普通 BAD 扣掉的 combo 数。
-- `长按`
-  - `长按完美`：`INPUT_TUNING.holdPerfectWindowSeconds`。普通左右输入长按时长的 Perfect 窗口。
-  - `长按良好`：`INPUT_TUNING.holdGoodWindowSeconds`。普通左右输入长按时长的 Good 窗口。
-  - `长按宽容`：`INPUT_TUNING.holdLooseWindowSeconds`。长按偏差超过此值才扣 combo。
-  - `双键长按P`：`INPUT_TUNING.bothHoldPerfectWindowSeconds`。A+D 双键长按 Perfect 窗口。
-  - `双键长按G`：`INPUT_TUNING.bothHoldGoodWindowSeconds`。A+D 双键长按 Good 窗口。
-  - `长按P加成`：`RHYTHM_BALANCE.holdPerfectBonus`。长按 Perfect 的额外速度收益。
-  - `长按G加成`：`RHYTHM_BALANCE.holdGoodBonus`。长按 Good 的额外速度收益。
-  - `长按失误`：`RHYTHM_BALANCE.holdMissPenalty`。长按 BAD 扣掉的 combo 数。
+  - `触摸防连点`：`INPUT_TUNING.padStrokeDedupeMs`。过滤同侧 touch/mouse 重复派发。
+- `跳水`
+  - `最低跳水`：`DIVE_BALANCE.minPower`。没有蓄力或蓄力条很低时保留的最低跳水力度。
+  - `蓄力周期`：`DIVE_BALANCE.chargeCycleSeconds`。蓄力条从 0 到 1 再回到 0 的完整周期。
+- `速度`
+  - `基础速度`：`SWIMMER_BALANCE.baseSpeed`。进入游泳阶段时的初始速度。
+  - `最高速度`：`SWIMMER_BALANCE.maxSpeed`。玩家常规游泳速度上限，也用于计算当前速度比例。
+  - `基础动作加速`：`SWIMMER_BALANCE.strokeBaseAccel`。每轮动作真正开始播放时给的基础加速度。
+  - `稳定加速`：`SWIMMER_BALANCE.strokeStabilityAccel`。稳定性为 1 时额外附加的加速度。
+  - `加速持续`：`SWIMMER_BALANCE.strokeAccelDurationRatio`。一次动作加速度持续时间，占当前动作一轮时间的比例。
+  - `交替样本轮数`：`SWIMMER_BALANCE.alternationWindowSize`。用于计算左右交替质量的最近动作轮数。
+  - `单侧基础保底` / `单侧稳定保底`：只按单侧时基础动作加速和稳定加速保留的比例。
+  - `泳池减速`、`基础阻力`、`高速阻力`：当前速度模型中的三类减速参数。
+  - `AI巡航加速`：`SWIMMER_BALANCE.aiCruiseAccel`。AI 对手独立于玩家输入评分的持续推进加速度，只影响 AI。
+  - `P连击间隔`：`SWIMMER_BALANCE.perfectComboBoostInterval`。每多少个 Perfect combo 触发一次超速奖励，0 表示关闭。
+  - `P奖励速度`：`SWIMMER_BALANCE.perfectComboSpeedBonus`。触发里程碑时直接加到当前速度上的奖励。
+  - `P超速上限`：`SWIMMER_BALANCE.perfectComboMaxOvercap`。Perfect combo 奖励最多允许超出最高速度多少。
+  - `P超速衰减`：`SWIMMER_BALANCE.perfectComboOvercapDecay`。临时超速上限每秒下降多少。
 - `稳定性`
   - `样本轮数`：`STABILITY_TUNING.sampleWindowSize`。稳定性计算使用最近多少轮动作的按住比例。
   - `完美波动`：`STABILITY_TUNING.perfectStdDev`。最近样本按住比例标准差小于等于此值时，波动评分为满分。
@@ -427,20 +431,6 @@
   - `提前惩罚`：`STABILITY_TUNING.inputFreshnessPenaltyRatio`。超过提前宽容后，新鲜度从 1 平滑降到最低值所需的额外比例。
   - `最低新鲜度`：`STABILITY_TUNING.inputFreshnessMinScale`。输入过早缓存时仍保留的最低收益比例。
   - 当前默认 `提前宽容 = 0.08`、`提前惩罚 = 0.35`、`最低新鲜度 = 0.05`；这是为了让快速 AD 连打更快暴露为低新鲜度。
-- `速度`
-  - `基础速度`：`SWIMMER_BALANCE.baseSpeed`。开游或 debug 速度模拟的基础速度。
-  - `最高速度`：`SWIMMER_BALANCE.maxSpeed`。没有节奏加成时的速度上限。
-  - `划水加速`：`SWIMMER_BALANCE.maxSwimAccel`。稳定手脚节奏提供的主要推进加速度。
-  - `起步腿力`：`SWIMMER_BALANCE.kickStartAccel`。低速和起步阶段打腿给的加速度。
-  - `基础阻力`：`SWIMMER_BALANCE.baseDrag`。任何速度下都会产生的阻力。
-  - `高速阻力`：`SWIMMER_BALANCE.highSpeedDrag`。速度接近上限后额外增加的阻力。
-  - `失衡阻力`：`SWIMMER_BALANCE.highSpeedDesyncPenalty`。手脚不同步时高速阶段的额外惩罚。
-  - `节奏提速`：`SWIMMER_BALANCE.playerRhythmMaxSpeedScale`。节奏奖励对最高速度上限的提升比例。
-  - `combo加速`：`SWIMMER_BALANCE.comboAccelScale`。节奏奖励对加速度的提升比例。
-- `起步`
-  - `起步开始`：`SWIMMER_BALANCE.kickLaunchDistanceStart`。起步辅助开始衰减的距离。
-  - `起步结束`：`SWIMMER_BALANCE.kickLaunchDistanceEnd`。起步辅助完全结束的距离。
-  - `早期同步`：`SWIMMER_BALANCE.earlySyncPenaltyDuringKickLaunch`。起步阶段手脚不同步的惩罚比例。
 - `动作`
   - `按住速度`：`MOTION_TUNING.heldMotionSpeedScale`。按键按住时动作播放倍率。
   - `松开速度`：`MOTION_TUNING.releasedMotionSpeedScale`。松开按键后剩余动作追完的倍率。
@@ -453,7 +443,7 @@
 
 - `GameBalance.ts` 中保留历史 `TARGET_INTERVAL` 常量，但动态逻辑应优先使用 `getTargetInterval()`，这样 `targetBpm` 调整后能实时生效。
 - `InputTuning.ts` 中保留历史 `TARGET_LIMB_RATE` 常量，但动态逻辑应优先使用 `getTargetLimbRate()`。
-- `SwimmerMotor`、`SwimPhysicsModel`、`AISwimmerController`、`CharacterDebugController` 和 debug model 评分日志当前都已经改为读取运行时参数。
+- `SwimmerMotor`、`SwimPhysicsModel`、`AISwimmerController`、`CharacterDebugController` 和 debug model 评分日志当前都已经改为读取运行时参数；AI 速度层现在读取 `SWIMMER_BALANCE.aiCruiseAccel`，不读取玩家稳定性评分。
 - 新增手感参数时应优先：
   1. 放入 `GameBalance.ts`、`InputTuning.ts` 或相关专门配置对象。
   2. 确保逻辑代码读取运行时对象或 getter，而不是在模块顶部缓存派生值。
@@ -605,7 +595,7 @@ ui -> Cocos UI details
 当前状态：
 
 - 已经建立 debug model 手感调参面板，入口在开始页 `MODEL DEBUG`。
-- 可调参数已按 `输入 / 速度 / 稳定性 / 动作` 分组，并带中文名称和说明。
+- 可调参数已按 `输入 / 跳水 / 速度 / 稳定性 / 动作` 分组，并带中文名称和说明。
 - 调参时当前运行时立即生效，便于看动作、评分和模拟速度反馈。
 - `重置` 可恢复代码默认值，`应用` 会优先写入项目配置 `assets/resources/config/tuning.json`，游戏启动时由 `GameManager.onLoad()` 读取保存值；无法写项目文件时会明确提示 fallback 到 localStorage。
 - Debug model 中已显示比赛口径的 `PERFECT / GOOD / BAD`、combo 和模拟泳速。
@@ -712,9 +702,9 @@ ui -> Cocos UI details
 
 - AI 参数已经从 `GameManager` 提取到 `competitor/CompetitorConfig.ts`，后续继续扩展为难度配置表。
 - 增加难度等级：
-  - Easy：AI 长按比例抖动大，偶尔重复同侧或过早/过晚松开，最高速度略低。
+  - Easy：AI 视觉节奏抖动较大，偶尔重复同侧，`aiPower` / `aiMaxSpeedScale` 略低。
   - Normal：当前参数附近。
-  - Hard：AI 接近稳定长按比例和左右交替，但仍有随机失误。
+  - Hard：AI 视觉节奏更稳定，`aiPower` / `aiMaxSpeedScale` 略高，但仍保留随机表现失误。
 - 主要 AI 与其他 AI 区分：
   - 主要 AI 用于胜负判定和 HUD。
   - 其他 AI 用于营造比赛氛围。
