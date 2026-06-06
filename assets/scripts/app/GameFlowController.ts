@@ -4,6 +4,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, RACE_DISTANCE } from '../core/GameBalance';
 import { GameState, StrokeType } from '../core/GameConstants';
 import { RaceManager } from '../core/RaceManager';
+import { formatStabilityLog } from '../core/StabilityScoring';
 import { UIFlowController } from '../ui/UIFlowController';
 
 export type GameFlowRefs = {
@@ -73,7 +74,7 @@ export class GameFlowController {
         }
         const result = this._refs.playerSwimmer?.handleStroke(type);
         if (result) {
-            this._refs.debug(`stroke=${type} rating=${result.rating} combo=${result.combo}`);
+            this._refs.debug(`stroke=${type} rating=${result.rating} badReason=${result.badReason ?? 'none'} combo=${result.combo}`);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -87,9 +88,7 @@ export class GameFlowController {
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
         if (result) {
-            this._refs.debug(
-                `hold=${type} rating=${result.rating} hold=${(result.holdSeconds ?? 0).toFixed(2)} target=${(result.targetHoldSeconds ?? 0).toFixed(2)} combo=${result.combo}`,
-            );
+            this._refs.debug(formatStabilityLog(`hold=${type}`, result));
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }

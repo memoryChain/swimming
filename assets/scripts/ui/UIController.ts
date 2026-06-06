@@ -22,6 +22,7 @@ export class UIController extends Component {
     @property(Label) public aiDistanceLabel: Label = null;
     @property(Label) public timerLabel: Label = null;
     @property(Label) public speedLabel: Label = null;
+    @property(Label) public telemetryLabel: Label = null;
     @property(Label) public hintLabel: Label = null;
     @property(Node) public countdownOverlay: Node = null;
     @property(Label) public countdownLabel: Label = null;
@@ -61,6 +62,12 @@ export class UIController extends Component {
     updateSpeed(speed: number) {
         if (this.speedLabel) {
             this.speedLabel.string = `${speed.toFixed(2)} m/s  ${Math.round((speed / SWIMMER_BALANCE.maxSpeed) * 100)}%`;
+        }
+    }
+
+    updateSwimTelemetry(stability: number, acceleration: number, speed: number) {
+        if (this.telemetryLabel) {
+            this.telemetryLabel.string = `STB ${Math.round(clamp01(stability) * 100)}%   ACC ${signed(acceleration)}   SPD ${speed.toFixed(2)} m/s`;
         }
     }
 
@@ -146,20 +153,23 @@ export class UIController extends Component {
     }
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
+        const soloRace = (stats?.racerCount ?? 2) <= 1;
         if (this.resultPanel) {
             this.resultPanel.active = true;
         }
         if (this.resultTitle) {
-            this.resultTitle.string = isWin ? 'YOU WIN' : 'AI WINS';
-            this.resultTitle.color = isWin ? new Color(255, 224, 89, 255) : new Color(255, 112, 112, 255);
+            this.resultTitle.string = soloRace ? 'FINISHED' : isWin ? 'YOU WIN' : 'AI WINS';
+            this.resultTitle.color = (soloRace || isWin) ? new Color(255, 224, 89, 255) : new Color(255, 112, 112, 255);
         }
         if (this.resultTime) {
-            const base = `Your time ${playerTime.toFixed(2)}s  |  AI ${aiTime.toFixed(2)}s`;
-            const placement = stats?.placement && stats?.racerCount
+            const base = soloRace
+                ? `Your time ${playerTime.toFixed(2)}s`
+                : `Your time ${playerTime.toFixed(2)}s  |  AI ${aiTime.toFixed(2)}s`;
+            const placement = !soloRace && stats?.placement && stats?.racerCount
                 ? `\nPLACE #${stats.placement}/${stats.racerCount}`
                 : '';
             const details = stats
-                ? `${placement}\nAVG ${stats.averageSpeed.toFixed(2)} m/s  MAX ${stats.maxCombo} combo\nP/G/M ${stats.perfectCount}/${stats.goodCount}/${stats.missCount}`
+                ? `${placement}\nAVG ${stats.averageSpeed.toFixed(2)} m/s  MAX ${stats.maxCombo} combo\nP/G/B ${stats.perfectCount}/${stats.goodCount}/${stats.missCount}`
                 : '';
             this.resultTime.string = `${base}${details}`;
             this.resultTime.lineHeight = 28;
@@ -173,6 +183,7 @@ export class UIController extends Component {
         this.updateTimer(0);
         this.updateProgress(0, 0);
         this.updateSpeed(0);
+        this.updateSwimTelemetry(0, 0, 0);
         if (this.ratingLabel) {
             this.ratingLabel.string = '';
         }
@@ -208,4 +219,12 @@ export class UIController extends Component {
             .to(0.12, { scale: new Vec3(1, 1, 1) })
             .start();
     }
+}
+
+function signed(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
+}
+
+function clamp01(value: number): number {
+    return Math.max(0, Math.min(1, value));
 }

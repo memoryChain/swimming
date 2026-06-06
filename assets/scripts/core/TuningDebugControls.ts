@@ -1,8 +1,10 @@
-import { sys } from 'cc';
-import { RHYTHM_BALANCE, SWIMMER_BALANCE } from './GameBalance';
-import { INPUT_TUNING, MOTION_TUNING } from './InputTuning';
+import { JsonAsset, native, resources, sys } from 'cc';
+import { NATIVE } from 'cc/env';
+import { SWIMMER_BALANCE } from './GameBalance';
+import { INPUT_TUNING, MOTION_TUNING, STABILITY_TUNING } from './InputTuning';
 
 export type TuningControl = {
+    id: string;
     label: string;
     description: string;
     get: () => number;
@@ -19,82 +21,82 @@ export type TuningGroup = {
     controls: TuningControl[];
 };
 
+export type TuningSaveResult = {
+    ok: boolean;
+    storage: 'project' | 'native' | 'localStorage' | 'failed';
+    path?: string;
+    message: string;
+};
+
 const TUNING_STORAGE_KEY = 'SpeedSwimming.Tuning.v1';
+const PROJECT_TUNING_RESOURCE = 'config/tuning';
+const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
+const TUNING_FILE_DIR = 'SpeedSwimming';
+const TUNING_FILE_NAME = 'tuning.json';
+const TUNING_FILE_VERSION = 3;
+
+type TuningFileData = {
+    version: number;
+    updatedAt?: string;
+    values?: Record<string, number>;
+    controls?: Record<string, {
+        group: string;
+        label: string;
+        description: string;
+        min: number;
+        max: number;
+        step: number;
+        suffix?: string;
+    }>;
+};
 
 export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '输入',
         controls: [
-            control('目标节奏', '每分钟划水节拍，越高要求输入越快', () => RHYTHM_BALANCE.targetBpm, (v) => RHYTHM_BALANCE.targetBpm = v, 2, 90, 220, 0),
-            control('频率统计窗', '计算当前手脚输入频率的时间范围', () => INPUT_TUNING.inputRateWindowSeconds, (v) => INPUT_TUNING.inputRateWindowSeconds = v, 0.05, 0.4, 2.4, 2, 's'),
-            control('触摸去重', '同侧触摸/鼠标重复触发的过滤时间', () => INPUT_TUNING.padStrokeDedupeMs, (v) => INPUT_TUNING.padStrokeDedupeMs = v, 5, 0, 180, 0, 'ms'),
-            control('双键合并', 'A 和 D 间隔多短会合成一次双侧划水', () => INPUT_TUNING.chordMergeWindowMs, (v) => INPUT_TUNING.chordMergeWindowMs = v, 5, 0, 180, 0, 'ms'),
-            control('双键松开', '双侧长按奖励允许的左右松开误差', () => INPUT_TUNING.chordReleaseWindowMs, (v) => INPUT_TUNING.chordReleaseWindowMs = v, 5, 0, 220, 0, 'ms'),
-        ],
-    },
-    {
-        name: '节奏',
-        controls: [
-            control('完美窗口', '交替输入偏离目标节奏多少秒内算 PERFECT', () => INPUT_TUNING.rhythmPerfectWindowSeconds, (v) => INPUT_TUNING.rhythmPerfectWindowSeconds = v, 0.005, 0.01, 0.2, 3, 's'),
-            control('良好窗口', '交替输入偏离目标节奏多少秒内算 GOOD', () => INPUT_TUNING.rhythmGoodWindowSeconds, (v) => INPUT_TUNING.rhythmGoodWindowSeconds = v, 0.005, 0.03, 0.35, 3, 's'),
-            control('过快宽容', '交替模式下过快输入仍可算 GOOD 的上限', () => INPUT_TUNING.rhythmLooseWindowSeconds, (v) => INPUT_TUNING.rhythmLooseWindowSeconds = v, 0.02, 0.08, 0.8, 2, 's'),
-            control('双键完美', 'A+D 双侧模式的 PERFECT 节奏窗口', () => INPUT_TUNING.bothRhythmPerfectWindowSeconds, (v) => INPUT_TUNING.bothRhythmPerfectWindowSeconds = v, 0.005, 0.005, 0.18, 3, 's'),
-            control('双键良好', 'A+D 双侧模式的 GOOD 节奏窗口', () => INPUT_TUNING.bothRhythmGoodWindowSeconds, (v) => INPUT_TUNING.bothRhythmGoodWindowSeconds = v, 0.005, 0.02, 0.3, 3, 's'),
-            control('最高加成', 'combo 和长按奖励能达到的速度倍率上限', () => RHYTHM_BALANCE.maxComboBonus, (v) => RHYTHM_BALANCE.maxComboBonus = v, 0.05, 1, 2.5, 2),
-            control('完美加成', '每个 PERFECT combo 增加的节奏收益', () => RHYTHM_BALANCE.comboPerfectBonus, (v) => RHYTHM_BALANCE.comboPerfectBonus = v, 0.005, 0, 0.12, 3),
-            control('良好加成', 'GOOD 当次提供的节奏收益', () => RHYTHM_BALANCE.comboGoodBonus, (v) => RHYTHM_BALANCE.comboGoodBonus = v, 0.005, 0, 0.08, 3),
-            control('失误惩罚', 'MISS 时扣掉的 combo 数', () => RHYTHM_BALANCE.comboMissPenalty, (v) => RHYTHM_BALANCE.comboMissPenalty = v, 1, 0, 10, 0),
-        ],
-    },
-    {
-        name: '长按',
-        controls: [
-            control('长按完美', '松开时长接近目标多少秒内算 PERFECT', () => INPUT_TUNING.holdPerfectWindowSeconds, (v) => INPUT_TUNING.holdPerfectWindowSeconds = v, 0.005, 0.005, 0.16, 3, 's'),
-            control('长按良好', '松开时长接近目标多少秒内算 GOOD', () => INPUT_TUNING.holdGoodWindowSeconds, (v) => INPUT_TUNING.holdGoodWindowSeconds = v, 0.005, 0.02, 0.28, 3, 's'),
-            control('长按宽容', '长按偏差超过此值才扣 combo', () => INPUT_TUNING.holdLooseWindowSeconds, (v) => INPUT_TUNING.holdLooseWindowSeconds = v, 0.01, 0.04, 0.5, 2, 's'),
-            control('双键长按P', 'A+D 双侧长按 PERFECT 窗口', () => INPUT_TUNING.bothHoldPerfectWindowSeconds, (v) => INPUT_TUNING.bothHoldPerfectWindowSeconds = v, 0.005, 0.005, 0.14, 3, 's'),
-            control('双键长按G', 'A+D 双侧长按 GOOD 窗口', () => INPUT_TUNING.bothHoldGoodWindowSeconds, (v) => INPUT_TUNING.bothHoldGoodWindowSeconds = v, 0.005, 0.015, 0.24, 3, 's'),
-            control('长按P加成', '长按 PERFECT 额外提供的速度收益', () => RHYTHM_BALANCE.holdPerfectBonus, (v) => RHYTHM_BALANCE.holdPerfectBonus = v, 0.005, 0, 0.2, 3),
-            control('长按G加成', '长按 GOOD 额外提供的速度收益', () => RHYTHM_BALANCE.holdGoodBonus, (v) => RHYTHM_BALANCE.holdGoodBonus = v, 0.005, 0, 0.14, 3),
-            control('长按失误', '长按 MISS 时扣掉的 combo 数', () => RHYTHM_BALANCE.holdMissPenalty, (v) => RHYTHM_BALANCE.holdMissPenalty = v, 1, 0, 8, 0),
+            control('input.padStrokeDedupeMs', '触摸防连点', '同一侧触摸或屏幕按钮重复触发的过滤时间。只影响触摸/按钮输入，不影响键盘 A/D。', () => INPUT_TUNING.padStrokeDedupeMs, (v) => INPUT_TUNING.padStrokeDedupeMs = v, 5, 0, 180, 0, 'ms'),
         ],
     },
     {
         name: '速度',
         controls: [
-            control('基础速度', '开始游泳时的基础速度', () => SWIMMER_BALANCE.baseSpeed, (v) => SWIMMER_BALANCE.baseSpeed = v, 0.05, 0, 2, 2),
-            control('最高速度', '没有节奏加成时的速度上限', () => SWIMMER_BALANCE.maxSpeed, (v) => SWIMMER_BALANCE.maxSpeed = v, 0.05, 1, 6, 2),
-            control('划水加速', '手脚节奏稳定时的主要加速度', () => SWIMMER_BALANCE.maxSwimAccel, (v) => SWIMMER_BALANCE.maxSwimAccel = v, 0.05, 0, 5, 2),
-            control('起步腿力', '低速和起步阶段打腿提供的加速', () => SWIMMER_BALANCE.kickStartAccel, (v) => SWIMMER_BALANCE.kickStartAccel = v, 0.05, 0, 6, 2),
-            control('基础阻力', '任何速度下都会产生的减速阻力', () => SWIMMER_BALANCE.baseDrag, (v) => SWIMMER_BALANCE.baseDrag = v, 0.02, 0, 2, 2),
-            control('高速阻力', '速度接近上限时额外增加的阻力', () => SWIMMER_BALANCE.highSpeedDrag, (v) => SWIMMER_BALANCE.highSpeedDrag = v, 0.02, 0, 2.5, 2),
-            control('失衡阻力', '手脚不同步时高速阶段的额外惩罚', () => SWIMMER_BALANCE.highSpeedDesyncPenalty, (v) => SWIMMER_BALANCE.highSpeedDesyncPenalty = v, 0.05, 0, 3, 2),
-            control('疲劳上限', '长距离游泳累计疲劳的最大影响', () => SWIMMER_BALANCE.fatigueLimit, (v) => SWIMMER_BALANCE.fatigueLimit = v, 0.01, 0, 0.6, 2),
-            control('疲劳速度', '比赛中疲劳积累的速度', () => SWIMMER_BALANCE.fatigueRate, (v) => SWIMMER_BALANCE.fatigueRate = v, 0.001, 0, 0.04, 3),
-            control('节奏提速', '节奏奖励对最高速度的提升比例', () => SWIMMER_BALANCE.playerRhythmMaxSpeedScale, (v) => SWIMMER_BALANCE.playerRhythmMaxSpeedScale = v, 0.01, 0, 0.6, 2),
-            control('combo加速', '节奏奖励对加速度的提升比例', () => SWIMMER_BALANCE.comboAccelScale, (v) => SWIMMER_BALANCE.comboAccelScale = v, 0.05, 0, 2, 2),
+            control('speed.baseSpeed', '基础速度', '进入游泳阶段时的初始速度。跳水入水速度仍由跳水参数决定。', () => SWIMMER_BALANCE.baseSpeed, (v) => SWIMMER_BALANCE.baseSpeed = v, 0.05, 0, 2, 2, 'm/s'),
+            control('speed.maxSpeed', '最高速度', '玩家常规游泳速度上限，也用于计算当前速度比例。', () => SWIMMER_BALANCE.maxSpeed, (v) => SWIMMER_BALANCE.maxSpeed = v, 0.05, 1, 6, 2, 'm/s'),
+            control('speed.strokeBaseAccel', '基础动作加速', '每轮动作真正开始播放时给的基础加速度。缓存输入要等开始播放时才给。', () => SWIMMER_BALANCE.strokeBaseAccel, (v) => SWIMMER_BALANCE.strokeBaseAccel = v, 0.05, 0, 5, 2),
+            control('speed.strokeStabilityAccel', '稳定加速', '稳定性为 1 时额外附加的加速度，稳定性较低时按比例减少。', () => SWIMMER_BALANCE.strokeStabilityAccel, (v) => SWIMMER_BALANCE.strokeStabilityAccel = v, 0.05, 0, 8, 2),
+            control('speed.strokeAccelDurationRatio', '加速持续', '一次动作加速度持续时间，占当前动作一轮时间的比例。', () => SWIMMER_BALANCE.strokeAccelDurationRatio, (v) => SWIMMER_BALANCE.strokeAccelDurationRatio = v, 0.02, 0.05, 1.5, 2),
+            control('speed.alternationWindowSize', '交替样本轮数', '用于计算左右交替质量的最近动作轮数。窗口越大，越看长期左右均衡。', () => SWIMMER_BALANCE.alternationWindowSize, (v) => SWIMMER_BALANCE.alternationWindowSize = v, 1, 2, 12, 0),
+            control('speed.alternationBaseMinScale', '单侧基础保底', '只按单侧时基础动作加速保留的比例。值越低，单侧输入越难提速。', () => SWIMMER_BALANCE.alternationBaseMinScale, (v) => SWIMMER_BALANCE.alternationBaseMinScale = v, 0.05, 0, 1, 2),
+            control('speed.alternationStabilityMinScale', '单侧稳定保底', '只按单侧时稳定加速保留的比例。值越低，单侧稳定短按越难获得高收益。', () => SWIMMER_BALANCE.alternationStabilityMinScale, (v) => SWIMMER_BALANCE.alternationStabilityMinScale = v, 0.05, 0, 1, 2),
+            control('speed.poolDeceleration', '泳池减速', '泳池或场景提供的固定减速度。未来不同泳池可以配置不同数值。', () => SWIMMER_BALANCE.poolDeceleration, (v) => SWIMMER_BALANCE.poolDeceleration = v, 0.02, 0, 2, 2),
+            control('speed.baseDrag', '基础阻力', '速度越高越明显的线性阻力。', () => SWIMMER_BALANCE.baseDrag, (v) => SWIMMER_BALANCE.baseDrag = v, 0.02, 0, 2, 2),
+            control('speed.highSpeedDrag', '高速阻力', '接近最高速度时增加的额外阻力，用来压住最高速附近的加速。', () => SWIMMER_BALANCE.highSpeedDrag, (v) => SWIMMER_BALANCE.highSpeedDrag = v, 0.02, 0, 2.5, 2),
         ],
     },
     {
-        name: '起步',
+        name: '稳定性',
         controls: [
-            control('起步开始', '起步辅助开始衰减的距离', () => SWIMMER_BALANCE.kickLaunchDistanceStart, (v) => SWIMMER_BALANCE.kickLaunchDistanceStart = v, 0.5, 0, 40, 1, 'm'),
-            control('起步结束', '起步辅助完全结束的距离', () => SWIMMER_BALANCE.kickLaunchDistanceEnd, (v) => SWIMMER_BALANCE.kickLaunchDistanceEnd = v, 0.5, 0, 45, 1, 'm'),
-            control('早期同步', '起步阶段手脚不同步的惩罚比例', () => SWIMMER_BALANCE.earlySyncPenaltyDuringKickLaunch, (v) => SWIMMER_BALANCE.earlySyncPenaltyDuringKickLaunch = v, 0.02, 0, 1, 2),
+            control('stability.sampleWindowSize', '样本轮数', '稳定性计算使用最近多少轮动作的按住比例。窗口越大越看长期平稳，窗口越小反馈越敏感。', () => STABILITY_TUNING.sampleWindowSize, (v) => STABILITY_TUNING.sampleWindowSize = v, 1, 2, 8, 0),
+            control('stability.perfectStdDev', '完美波动', '最近样本按住比例的标准差小于等于这个值时，波动评分为满分。', () => STABILITY_TUNING.perfectStdDev, (v) => STABILITY_TUNING.perfectStdDev = v, 0.005, 0, 0.2, 3),
+            control('stability.badStdDev', '失稳波动', '最近样本按住比例的标准差达到这个值时，波动评分降到 0。', () => STABILITY_TUNING.badStdDev, (v) => STABILITY_TUNING.badStdDev = v, 0.005, 0.01, 0.5, 3),
+            control('stability.minHoldSeconds', '最短长按', '本轮按住时间低于这个秒数时，稳定性直接算 0。用于防止极短快速连点也被算作有效稳定节奏。', () => STABILITY_TUNING.minHoldSeconds, (v) => STABILITY_TUNING.minHoldSeconds = v, 0.01, 0, 0.6, 2, 's'),
+            control('stability.minUsefulRatio', '最低有效比例', '最近平均按住比例低于这个值时，认为虽然平稳但动作太短，不给稳定性奖励。', () => STABILITY_TUNING.minUsefulRatio, (v) => STABILITY_TUNING.minUsefulRatio = v, 0.02, 0, 0.8, 2),
+            control('stability.maxUsefulRatio', '最高有效比例', '最近平均按住比例高于这个值时，认为动作几乎全程按住，不给完整稳定性奖励。', () => STABILITY_TUNING.maxUsefulRatio, (v) => STABILITY_TUNING.maxUsefulRatio = v, 0.02, 0.2, 1, 2),
+            control('stability.usefulRatioEdgeWindow', '边缘过渡', '平均按住比例靠近有效区间边缘时的渐变宽度，避免奖励突然从 0 跳到 1。', () => STABILITY_TUNING.usefulRatioEdgeWindow, (v) => STABILITY_TUNING.usefulRatioEdgeWindow = v, 0.01, 0.01, 0.4, 2),
+            control('stability.inputFreshnessGraceRatio', '提前宽容', '输入进入缓存后，等待时间占本轮动作时间低于这个比例时不惩罚。正常提前一点缓存仍可拿满收益。', () => STABILITY_TUNING.inputFreshnessGraceRatio, (v) => STABILITY_TUNING.inputFreshnessGraceRatio = v, 0.02, 0, 1, 2),
+            control('stability.inputFreshnessPenaltyRatio', '提前惩罚', '超过提前宽容后，新鲜度从 1 平滑降到最低值所需的额外比例。值越小，狂按塞缓存越快被压收益。', () => STABILITY_TUNING.inputFreshnessPenaltyRatio, (v) => STABILITY_TUNING.inputFreshnessPenaltyRatio = v, 0.02, 0.05, 2, 2),
+            control('stability.inputFreshnessMinScale', '最低新鲜度', '输入过早缓存时仍保留的最低收益比例。值越低，快速 AD 连打越难靠缓存刷到高速。', () => STABILITY_TUNING.inputFreshnessMinScale, (v) => STABILITY_TUNING.inputFreshnessMinScale = v, 0.05, 0, 1, 2),
         ],
     },
     {
         name: '动作',
         controls: [
-            control('按住速度', '按键按住时动作播放速度倍率', () => MOTION_TUNING.heldMotionSpeedScale, (v) => MOTION_TUNING.heldMotionSpeedScale = v, 0.05, 0.1, 3, 2),
-            control('松开速度', '松开按键后动作追完的速度倍率', () => MOTION_TUNING.releasedMotionSpeedScale, (v) => MOTION_TUNING.releasedMotionSpeedScale = v, 0.05, 0.2, 6, 2),
-            control('手臂最低', '比赛中手臂动作最低每秒循环数', () => MOTION_TUNING.armMinCyclesPerSecond, (v) => MOTION_TUNING.armMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
-            control('腿部最低', '比赛中打腿动作最低每秒循环数', () => MOTION_TUNING.kickMinCyclesPerSecond, (v) => MOTION_TUNING.kickMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
-            control('动作上限', '比赛中手脚动作最高每秒循环数', () => MOTION_TUNING.maxCyclesPerSecond, (v) => MOTION_TUNING.maxCyclesPerSecond = v, 0.1, 1, 10, 1),
-            control('调试手臂', 'debug model 手臂动作最低循环数', () => MOTION_TUNING.debugArmMinCyclesPerSecond, (v) => MOTION_TUNING.debugArmMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
-            control('调试腿部', 'debug model 腿部动作最低循环数', () => MOTION_TUNING.debugKickMinCyclesPerSecond, (v) => MOTION_TUNING.debugKickMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
-            control('调试上限', 'debug model 动作最高每秒循环数', () => MOTION_TUNING.debugMaxCyclesPerSecond, (v) => MOTION_TUNING.debugMaxCyclesPerSecond = v, 0.1, 1, 10, 1),
-            control('动画倍率', '比赛和 debug model 共用的整体动画倍率', () => MOTION_TUNING.animationSpeedScale, (v) => MOTION_TUNING.animationSpeedScale = v, 0.05, 0.1, 1.5, 2),
+            control('motion.heldMotionSpeedScale', '按住速度', '按住 A 或 D 时，对应手脚动作播放的速度倍率。', () => MOTION_TUNING.heldMotionSpeedScale, (v) => MOTION_TUNING.heldMotionSpeedScale = v, 0.05, 0.1, 3, 2),
+            control('motion.releasedMotionSpeedScale', '松开速度', '松开 A 或 D 后，对应手脚把这一轮动作追完的速度倍率。', () => MOTION_TUNING.releasedMotionSpeedScale, (v) => MOTION_TUNING.releasedMotionSpeedScale = v, 0.05, 0.2, 6, 2),
+            control('motion.armMinCyclesPerSecond', '手臂最低轮速', '低速时手臂动作每秒循环数。当前速度越高，会越接近动作轮速上限。', () => MOTION_TUNING.armMinCyclesPerSecond, (v) => MOTION_TUNING.armMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
+            control('motion.kickMinCyclesPerSecond', '腿部最低轮速', '低速时腿部动作每秒循环数。当前速度越高，会越接近动作轮速上限。', () => MOTION_TUNING.kickMinCyclesPerSecond, (v) => MOTION_TUNING.kickMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
+            control('motion.maxCyclesPerSecond', '动作轮速上限', '达到高速度时手脚动作每秒循环数的上限。数值越低，高速时一轮动作越长。', () => MOTION_TUNING.maxCyclesPerSecond, (v) => MOTION_TUNING.maxCyclesPerSecond = v, 0.1, 1, 5, 1),
+            control('motion.animationSpeedScale', '动画倍率', '比赛和 debug model 共用的整体动作倍率，用来统一放慢或加快动作表现。', () => MOTION_TUNING.animationSpeedScale, (v) => MOTION_TUNING.animationSpeedScale = v, 0.05, 0.1, 1.5, 2),
         ],
     },
 ];
@@ -103,25 +105,58 @@ export function resetTuningToDefaults() {
     applyTuningSnapshot(defaultTuningSnapshot());
 }
 
-export function saveCurrentTuning(): boolean {
-    try {
-        sys.localStorage.setItem(TUNING_STORAGE_KEY, JSON.stringify(createTuningSnapshot()));
-        return true;
-    } catch (error) {
-        console.warn('[SpeedSwimming] failed to save tuning settings', error);
-        return false;
+export function saveCurrentTuning(): TuningSaveResult {
+    const fileData = createTuningFileData();
+    const projectPath = saveProjectTuningFile(fileData);
+    const localStorageSaved = saveLocalStorageBackup(fileData);
+    if (projectPath) {
+        return {
+            ok: true,
+            storage: 'project',
+            path: projectPath,
+            message: `已保存到项目配置: ${projectPath}`,
+        };
     }
+
+    const nativePath = saveNativeTuningFile(fileData);
+    if (nativePath) {
+        return {
+            ok: true,
+            storage: 'native',
+            path: nativePath,
+            message: `已保存到运行目录: ${nativePath}`,
+        };
+    }
+
+    if (localStorageSaved) {
+        return {
+            ok: true,
+            storage: 'localStorage',
+            message: '当前预览环境不能写项目文件，已临时保存到 localStorage',
+        };
+    }
+
+    return {
+        ok: false,
+        storage: 'failed',
+        message: '保存失败：当前环境不能写项目文件，也不能写 localStorage',
+    };
 }
 
 export function loadSavedTuning(): boolean {
     try {
         defaultTuningSnapshot();
+        const fileData = loadNativeTuningFile();
+        if (fileData) {
+            applyTuningSnapshot(getValuesFromTuningData(fileData));
+            return true;
+        }
         const raw = sys.localStorage.getItem(TUNING_STORAGE_KEY);
         if (!raw) {
             return false;
         }
-        const snapshot = JSON.parse(raw) as Record<string, number>;
-        applyTuningSnapshot(snapshot);
+        const data = JSON.parse(raw) as TuningFileData | Record<string, number>;
+        applyTuningSnapshot(getValuesFromTuningData(data));
         return true;
     } catch (error) {
         console.warn('[SpeedSwimming] failed to load tuning settings', error);
@@ -129,7 +164,35 @@ export function loadSavedTuning(): boolean {
     }
 }
 
+export function loadSavedTuningAsync(onComplete: () => void) {
+    defaultTuningSnapshot();
+    resources.load(PROJECT_TUNING_RESOURCE, JsonAsset, (err, asset) => {
+        if (!err && asset?.json) {
+            applyTuningSnapshot(getValuesFromTuningData(asset.json as TuningFileData));
+            console.log(`[SpeedSwimming] tuning loaded from project resource ${PROJECT_TUNING_ASSET_PATH}`);
+            onComplete();
+            return;
+        }
+        loadSavedTuning();
+        onComplete();
+    });
+}
+
+export function getProjectTuningAssetPath(): string {
+    return PROJECT_TUNING_ASSET_PATH;
+}
+
+export function getNativeTuningFilePath(): string | null {
+    if (!NATIVE) {
+        return null;
+    }
+    const writablePath = native.fileUtils.getWritablePath();
+    const dirPath = joinPath(writablePath, TUNING_FILE_DIR);
+    return joinPath(dirPath, TUNING_FILE_NAME);
+}
+
 function control(
+    id: string,
     label: string,
     description: string,
     get: () => number,
@@ -141,6 +204,7 @@ function control(
     suffix = '',
 ): TuningControl {
     return {
+        id,
         label,
         description,
         get,
@@ -173,26 +237,158 @@ function defaultTuningSnapshot(): Record<string, number> {
 
 function createTuningSnapshot(): Record<string, number> {
     const snapshot: Record<string, number> = {};
-    forEachControl((control, key) => {
-        snapshot[key] = control.get();
+    forEachControl((control) => {
+        snapshot[control.id] = control.get();
     });
     return snapshot;
 }
 
+function createTuningFileData(): TuningFileData {
+    return {
+        version: TUNING_FILE_VERSION,
+        updatedAt: new Date().toISOString(),
+        values: createTuningSnapshot(),
+    };
+}
+
 function applyTuningSnapshot(snapshot: Record<string, number>) {
-    forEachControl((control, key) => {
-        const value = snapshot[key];
+    forEachControl((control, group) => {
+        const value = snapshot[control.id] ?? snapshot[`${group.name}.${control.label}`];
         if (typeof value === 'number' && Number.isFinite(value)) {
             control.set(value);
         }
     });
 }
 
-function forEachControl(callback: (control: TuningControl, key: string) => void) {
-    for (let groupIndex = 0; groupIndex < TUNING_GROUPS.length; groupIndex++) {
-        const controls = TUNING_GROUPS[groupIndex].controls;
-        for (let controlIndex = 0; controlIndex < controls.length; controlIndex++) {
-            callback(controls[controlIndex], `${groupIndex}.${controlIndex}`);
+function getValuesFromTuningData(data: TuningFileData | Record<string, number>): Record<string, number> {
+    const values = (data as TuningFileData).values;
+    if (values && typeof values === 'object') {
+        return values;
+    }
+    return data as Record<string, number>;
+}
+
+function saveProjectTuningFile(data: TuningFileData): string | null {
+    const projectRoot = getEditorProjectPath();
+    const fs = getNodeModule('fs');
+    const path = getNodeModule('path');
+    if (!projectRoot || !fs || !path) {
+        return null;
+    }
+    try {
+        const filePath = path.join(projectRoot, PROJECT_TUNING_ASSET_PATH);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+        refreshEditorAsset(PROJECT_TUNING_ASSET_PATH);
+        console.log(`[SpeedSwimming] tuning saved to project config ${filePath}`);
+        return filePath;
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to save project tuning file', error);
+        return null;
+    }
+}
+
+function saveNativeTuningFile(data: TuningFileData): string | null {
+    if (!NATIVE) {
+        return null;
+    }
+    try {
+        const filePath = getNativeTuningFilePath();
+        if (!filePath) {
+            return null;
+        }
+        const dirPath = joinPath(native.fileUtils.getWritablePath(), TUNING_FILE_DIR);
+        native.fileUtils.createDirectory(dirPath);
+        const saved = native.fileUtils.writeStringToFile(JSON.stringify(data, null, 2), filePath);
+        if (saved) {
+            console.log(`[SpeedSwimming] tuning saved to native writable path ${filePath}`);
+            return filePath;
+        }
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to save native tuning file', error);
+    }
+    return null;
+}
+
+function saveLocalStorageBackup(data: TuningFileData): boolean {
+    try {
+        sys.localStorage.setItem(TUNING_STORAGE_KEY, JSON.stringify(data));
+        return true;
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to save tuning settings backup', error);
+        return false;
+    }
+}
+
+function loadNativeTuningFile(): TuningFileData | null {
+    if (!NATIVE) {
+        return null;
+    }
+    try {
+        const filePath = getNativeTuningFilePath();
+        if (!filePath || !native.fileUtils.isFileExist(filePath)) {
+            return null;
+        }
+        const raw = native.fileUtils.getStringFromFile(filePath);
+        if (!raw) {
+            return null;
+        }
+        console.log(`[SpeedSwimming] tuning loaded from native writable path ${filePath}`);
+        return JSON.parse(raw) as TuningFileData;
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to load native tuning file', error);
+        return null;
+    }
+}
+
+function getEditorProjectPath(): string | null {
+    const globalAny = globalThis as Record<string, any>;
+    const parentAny = globalAny.parent as Record<string, any> | undefined;
+    return globalAny.Editor?.Project?.path
+        ?? globalAny.Editor?.projectPath
+        ?? globalAny.__projectPath
+        ?? parentAny?.Editor?.Project?.path
+        ?? parentAny?.Editor?.projectPath
+        ?? null;
+}
+
+function getNodeModule(name: string): any | null {
+    const globalAny = globalThis as Record<string, any>;
+    const parentAny = globalAny.parent as Record<string, any> | undefined;
+    const requireFn = globalAny.require ?? globalAny.window?.require ?? parentAny?.require ?? parentAny?.window?.require;
+    if (!requireFn) {
+        return null;
+    }
+    try {
+        return requireFn(name);
+    } catch {
+        return null;
+    }
+}
+
+function refreshEditorAsset(assetPath: string) {
+    const globalAny = globalThis as Record<string, any>;
+    const parentAny = globalAny.parent as Record<string, any> | undefined;
+    const dbPath = `db://assets/${assetPath.replace(/^assets\//, '')}`;
+    try {
+        (globalAny.Editor ?? parentAny?.Editor)?.Message?.send?.('asset-db', 'refresh-asset', dbPath);
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to refresh tuning asset', error);
+    }
+}
+
+function joinPath(left: string, right: string): string {
+    if (!left) {
+        return right;
+    }
+    const normalized = left.replace(/\\/g, '/');
+    return `${normalized.endsWith('/') ? normalized.slice(0, -1) : normalized}/${right}`;
+}
+
+function forEachControl(callback: (control: TuningControl, group: TuningGroup) => void) {
+    for (const group of TUNING_GROUPS) {
+        for (const control of group.controls) {
+            callback(control, group);
         }
     }
 }

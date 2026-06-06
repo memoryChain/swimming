@@ -1,5 +1,4 @@
 import { Color, Layers, Node } from 'cc';
-import { RhythmEvaluator } from '../core/RhythmEvaluator';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 
@@ -31,7 +30,6 @@ export class SwimmerFactory {
         const swimmer = node.addComponent(Swimmer);
         swimmer.cartoonRig = rig;
         swimmer.splashNode = rig.splashNode;
-        swimmer.rhythmEvaluator = node.addComponent(RhythmEvaluator);
         swimmer.isAI = options.isAI;
         swimmer.swimmerName = options.isAI ? 'AI' : 'Player';
         this._debug?.(`${options.name} uses CartoonSwimmerRig`);

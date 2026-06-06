@@ -4,8 +4,9 @@ import {
     StrokeType,
 } from '../core/GameConstants';
 import { DIVE_BALANCE } from '../core/GameBalance';
-import { RhythmEvaluator, RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
-import { SwimmerMotor } from '../swimmer/SwimmerMotor';
+import type { RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
+import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
+import { StrokeStabilityResult, SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
@@ -32,7 +33,6 @@ export class Swimmer extends Component {
     @property(Node) public modelRightLeg: Node = null;
     @property public boundModelBoneCount = 0;
     @property(CartoonSwimmerRig) public cartoonRig: CartoonSwimmerRig = null;
-    @property(RhythmEvaluator) public rhythmEvaluator: RhythmEvaluator = null;
     @property public isAI = false;
     @property public aiPower = 1;
     @property public aiMaxSpeedScale = 1;
@@ -41,7 +41,12 @@ export class Swimmer extends Component {
     private readonly _motor = new SwimmerMotor();
     private _startPosition = new Vec3();
     private _hasStartPosition = false;
-    private _comboSpeedBonus = 0;
+    private _stabilityCombo = 0;
+    private _maxStabilityCombo = 0;
+    private _perfectStabilityCount = 0;
+    private _goodStabilityCount = 0;
+    private _missStabilityCount = 0;
+    private readonly _pendingRhythmResults: RhythmResult[] = [];
     private _modelBaseRootEuler = new Vec3(90, 0, -90);
     private _modelBaseRootPos = new Vec3(0, 0.1, 0);
     private _boneBaseEuler = new Map<Node, Vec3>();
@@ -53,7 +58,6 @@ export class Swimmer extends Component {
     startRace(initialDistance = 0, initialSpeed = DIVE_BALANCE.minSpeed) {
         this.captureStartPosition();
         this._motor.startRace(initialDistance, initialSpeed);
-        this._comboSpeedBonus = 0;
         this.node.setPosition(this._startPosition.x + initialDistance, this._startPosition.y, this._startPosition.z);
         this.node.setRotationFromEuler(0, 0, 0);
         this.cartoonRig?.setPreRaceStanding(false);
@@ -65,8 +69,6 @@ export class Swimmer extends Component {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
-        this._comboSpeedBonus = 0;
-        this.rhythmEvaluator?.reset();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, 0, 0);
         this.resetPose();
@@ -109,7 +111,7 @@ export class Swimmer extends Component {
             })
             .call(() => {
                 this.startRace(distance, entrySpeed);
-                this.flashSplash(divePower > 0.72 ? Rating.PERFECT : divePower > 0.42 ? Rating.GOOD : Rating.MISS);
+                this.flashSplash(divePower > 0.72 ? Rating.PERFECT : divePower > 0.42 ? Rating.GOOD : Rating.BAD);
             })
             .start();
 
@@ -131,11 +133,17 @@ export class Swimmer extends Component {
             isAI: this.isAI,
             aiPower: this.aiPower,
             aiMaxSpeedScale: this.aiMaxSpeedScale,
-            rhythmBonus: this._comboSpeedBonus,
         });
         const x = this._startPosition.x + this._motor.distance;
         this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
         this.updateBodyMotion(dt);
+        for (const stability of this._motor.consumeStabilityResults()) {
+            const result = this.makeStabilityResult(stability.type, stability);
+            if (result) {
+                this._pendingRhythmResults.push(result);
+                this.flashSplash(result.rating);
+            }
+        }
 
         if (finished) {
             this.node.emit('swimmer-finished', this);
@@ -143,31 +151,26 @@ export class Swimmer extends Component {
     }
 
     handleStroke(type: StrokeType): RhythmResult | null {
-        if (!this._motor.isRacing || !this.rhythmEvaluator) {
+        if (!this._motor.isRacing) {
             return null;
         }
 
-        const result = this.rhythmEvaluator.evaluate(type);
-        this._comboSpeedBonus = Math.max(0, result.speedMultiplier - 1);
-        this.playStroke(type, result.rating);
-        return result;
+        const queued = this._motor.recordStroke(type);
+        if (!queued) {
+            return null;
+        }
+        this.playStroke(type, Rating.GOOD);
+        return null;
+    }
+
+    canAcceptStroke(type: StrokeType): boolean {
+        return this._motor.isRacing && this._motor.canRecordStroke(type);
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
-        this._motor.setStrokeHeld(type, held);
+        const stability = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
-        if (!this.rhythmEvaluator) {
-            return null;
-        }
-        if (held) {
-            this.rhythmEvaluator.beginHold(type);
-            return null;
-        }
-        const result = this.rhythmEvaluator.endHold(type);
-        if (result) {
-            this._comboSpeedBonus = Math.max(0, result.speedMultiplier - 1);
-        }
-        return result;
+        return held ? null : this.makeStabilityResult(type, stability);
     }
 
     playFinishRagdoll() {
@@ -188,8 +191,12 @@ export class Swimmer extends Component {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
-        this._comboSpeedBonus = 0;
-        this.rhythmEvaluator?.reset();
+        this._stabilityCombo = 0;
+        this._maxStabilityCombo = 0;
+        this._perfectStabilityCount = 0;
+        this._goodStabilityCount = 0;
+        this._missStabilityCount = 0;
+        this._pendingRhythmResults.length = 0;
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, 0, 0);
         this.resetPose();
@@ -198,10 +205,7 @@ export class Swimmer extends Component {
     }
 
     private playStroke(type: StrokeType, rating: Rating) {
-        const powerScale = rating === Rating.PERFECT ? 1.18 : rating === Rating.MISS ? 0.72 : 1;
-        if (type !== StrokeType.BOTH || rating !== Rating.MISS) {
-            this._motor.recordStroke(type);
-        }
+        const powerScale = rating === Rating.PERFECT ? 1.18 : rating === Rating.BAD ? 0.72 : 1;
         this.cartoonRig?.triggerStroke(type);
         if (type === StrokeType.LEFT) {
             this.pulseModel(-8, 0.16 / powerScale);
@@ -219,6 +223,24 @@ export class Swimmer extends Component {
             this.flutterKick(this.rearLegNode, new Vec3(-1.02, 0.18, 0.25), 198, 0.12 / powerScale);
         }
         this.flashSplash(rating);
+    }
+
+    private makeStabilityResult(type: StrokeType, stability: StrokeStabilityResult | null): RhythmResult | null {
+        if (!stability) {
+            return null;
+        }
+        const rating = ratingForStability(stability.stability);
+        if (rating === Rating.PERFECT) {
+            this._stabilityCombo += 1;
+            this._perfectStabilityCount += 1;
+        } else if (rating === Rating.GOOD) {
+            this._goodStabilityCount += 1;
+        } else {
+            this._stabilityCombo = 0;
+            this._missStabilityCount += 1;
+        }
+        this._maxStabilityCombo = Math.max(this._maxStabilityCombo, this._stabilityCombo);
+        return rhythmResultFromStability(stability, this._stabilityCombo);
     }
 
     private freestyleArmPull(target: Node, catchPos: Vec3, catchAngle: number, pullPos: Vec3, pullAngle: number, duration: number) {
@@ -270,14 +292,14 @@ export class Swimmer extends Component {
 
     private flashSplash(rating: Rating) {
         if (this.cartoonRig) {
-            const scale = rating === Rating.PERFECT ? 1.15 : rating === Rating.MISS ? 0.55 : 0.85;
+            const scale = rating === Rating.PERFECT ? 1.15 : rating === Rating.BAD ? 0.55 : 0.85;
             this.cartoonRig.triggerSplashBurst(scale);
             return;
         }
         if (!this.splashNode) {
             return;
         }
-        const scale = rating === Rating.PERFECT ? 1.45 : rating === Rating.MISS ? 0.75 : 1;
+        const scale = rating === Rating.PERFECT ? 1.45 : rating === Rating.BAD ? 0.75 : 1;
         this.splashNode.active = true;
         this.splashNode.setScale(scale, scale, scale);
         tween(this.splashNode)
@@ -527,6 +549,18 @@ export class Swimmer extends Component {
         return this._motor.currentSpeed;
     }
 
+    get currentAcceleration(): number {
+        return this._motor.currentAcceleration;
+    }
+
+    get currentStability(): number {
+        return this._motor.lastStability;
+    }
+
+    get actionCycleSeconds(): number {
+        return this._motor.actionCycleSeconds;
+    }
+
     get distance(): number {
         return this._motor.distance;
     }
@@ -536,12 +570,19 @@ export class Swimmer extends Component {
     }
 
     get rhythmStats(): RhythmStats {
-        return this.rhythmEvaluator?.stats ?? {
-            maxCombo: 0,
-            perfectCount: 0,
-            goodCount: 0,
-            missCount: 0,
+        return {
+            maxCombo: this._maxStabilityCombo,
+            perfectCount: this._perfectStabilityCount,
+            goodCount: this._goodStabilityCount,
+            missCount: this._missStabilityCount,
         };
+    }
+
+    consumeRhythmResults(): RhythmResult[] {
+        if (this._pendingRhythmResults.length === 0) {
+            return [];
+        }
+        return this._pendingRhythmResults.splice(0);
     }
 }
 

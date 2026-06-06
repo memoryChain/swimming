@@ -1,7 +1,7 @@
 export enum Rating {
     PERFECT = 'perfect',
     GOOD = 'good',
-    MISS = 'miss',
+    BAD = 'bad',
 }
 
 export enum GameState {

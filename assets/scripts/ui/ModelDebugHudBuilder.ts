@@ -50,7 +50,7 @@ export class ModelDebugHudBuilder {
         ratingLabel.getComponent(UITransform).setContentSize(280, 32);
         ratingLabel.setPosition(0, h / 2 - 104, 0);
         const swimSpeedLabel = makeLabel('ModelDebugSwimSpeed', hud, '0.00 m/s', 18, uiColor(150, 235, 255));
-        swimSpeedLabel.getComponent(UITransform).setContentSize(280, 30);
+        swimSpeedLabel.getComponent(UITransform).setContentSize(520, 30);
         swimSpeedLabel.setPosition(0, h / 2 - 134, 0);
         this.buildTuningPanel(hud, w, h);
         return {
@@ -87,33 +87,45 @@ export class ModelDebugHudBuilder {
         const rowCount = 11;
         const rowHeight = 37;
         const firstY = panelHeight / 2 - 82;
+        const controlValueX = panelWidth / 2 - 76;
+        const controlMinusX = panelWidth / 2 - 122;
+        const controlPlusX = panelWidth / 2 - 30;
+        const textLeft = -panelWidth / 2 + 16;
+        const textRight = controlMinusX - 24;
+        const textWidth = Math.max(150, textRight - textLeft);
+        const textX = textLeft + textWidth / 2;
         for (let i = 0; i < rowCount; i++) {
             const row = makeUiNode(`TuneRow${i}`, panel);
             row.setPosition(0, firstY - i * rowHeight, 0);
             makeRect('RowBack', row, panelWidth - 22, 34, i % 2 === 0 ? uiColor(12, 34, 48, 130) : uiColor(10, 28, 42, 90));
 
             const nameNode = makeLabel('Name', row, '', 14, uiColor(185, 225, 238));
-            nameNode.getComponent(UITransform).setContentSize(panelWidth - 202, 18);
-            nameNode.setPosition(-70, 6, 0);
+            nameNode.getComponent(UITransform).setContentSize(textWidth, 16);
+            nameNode.setPosition(textX, 8, 0);
             const nameLabel = nameNode.getComponent(Label);
             nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+            nameLabel.overflow = Label.Overflow.CLAMP;
 
             const descriptionNode = makeLabel('Description', row, '', 11, uiColor(124, 178, 196));
-            descriptionNode.getComponent(UITransform).setContentSize(panelWidth - 202, 16);
-            descriptionNode.setPosition(-70, -9, 0);
+            descriptionNode.getComponent(UITransform).setContentSize(textWidth, 22);
+            descriptionNode.setPosition(textX, -8, 0);
             const descriptionLabel = descriptionNode.getComponent(Label);
             descriptionLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+            descriptionLabel.verticalAlign = Label.VerticalAlign.TOP;
+            descriptionLabel.fontSize = 9;
+            descriptionLabel.enableWrapText = true;
+            descriptionLabel.overflow = Label.Overflow.CLAMP;
 
-            const minus = makeButton('Minus', row, 32, 28, uiColor(36, 106, 160), '-');
-            minus.setPosition(panelWidth / 2 - 160, 0, 0);
+            const minus = makeButton('Minus', row, 30, 28, uiColor(36, 106, 160), '-');
+            minus.setPosition(controlMinusX, 0, 0);
             minus.on(Node.EventType.TOUCH_END, () => this.adjustControl(i, -1));
 
             const valueNode = makeLabel('Value', row, '', 14, uiColor(255, 255, 255));
-            valueNode.getComponent(UITransform).setContentSize(92, 28);
-            valueNode.setPosition(panelWidth / 2 - 103, 0, 0);
+            valueNode.getComponent(UITransform).setContentSize(72, 28);
+            valueNode.setPosition(controlValueX, 0, 0);
 
-            const plus = makeButton('Plus', row, 32, 28, uiColor(36, 106, 160), '+');
-            plus.setPosition(panelWidth / 2 - 44, 0, 0);
+            const plus = makeButton('Plus', row, 30, 28, uiColor(36, 106, 160), '+');
+            plus.setPosition(controlPlusX, 0, 0);
             plus.on(Node.EventType.TOUCH_END, () => this.adjustControl(i, 1));
 
             this._tuningRows.push({
@@ -172,12 +184,12 @@ export class ModelDebugHudBuilder {
         const apply = makeButton('TuneApply', parent, 76, 28, uiColor(28, 148, 124), '应用');
         apply.setPosition(74, -panelHeight / 2 + 24, 0);
         apply.on(Node.EventType.TOUCH_END, () => {
-            this.setStatus(saveCurrentTuning() ? '已应用' : '保存失败');
+            this.setStatus(saveCurrentTuning().message);
             this.renderTuningRows();
         });
 
         const statusNode = makeLabel('TuneStatus', parent, '', 12, uiColor(150, 235, 255));
-        statusNode.getComponent(UITransform).setContentSize(panelWidth - 200, 18);
+        statusNode.getComponent(UITransform).setContentSize(panelWidth - 32, 18);
         statusNode.setPosition(0, -panelHeight / 2 + 52, 0);
         this._statusLabel = statusNode.getComponent(Label);
     }

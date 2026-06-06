@@ -33,7 +33,7 @@ export class RaceManager extends Component {
         this._countdownTimer = this.countdownSeconds;
         this._raceTimer = 0;
         this._playerFinished = false;
-        this._aiFinished = false;
+        this._aiFinished = !this.aiSwimmer;
         this._playerFinishTime = 0;
         this._aiFinishTime = 0;
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
@@ -60,7 +60,7 @@ export class RaceManager extends Component {
         this._countdownTimer = 0;
         this._raceTimer = 0;
         this._playerFinished = false;
-        this._aiFinished = false;
+        this._aiFinished = !this.aiSwimmer;
         this._lastCountdownValue = -1;
         this._diveResolved = false;
         this.playerSwimmer?.reset();
@@ -127,7 +127,7 @@ export class RaceManager extends Component {
             this._playerFinishTime = this._raceTimer;
             this.playerSwimmer?.playFinishTouch();
         }
-        if (!this._aiFinished && aiDist >= RACE_DISTANCE) {
+        if (this.aiSwimmer && !this._aiFinished && aiDist >= RACE_DISTANCE) {
             this._aiFinished = true;
             this._aiFinishTime = this._raceTimer;
             this.aiSwimmer?.stopRace();
@@ -136,7 +136,7 @@ export class RaceManager extends Component {
         if (this._playerFinished && this._aiFinished) {
             this.setState(GameState.FINISHED);
             this.onRaceFinished?.(
-                this._playerFinishTime <= this._aiFinishTime,
+                !this.aiSwimmer || this._playerFinishTime <= this._aiFinishTime,
                 this._playerFinishTime,
                 this._aiFinishTime,
             );

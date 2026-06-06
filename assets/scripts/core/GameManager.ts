@@ -30,7 +30,8 @@ import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { SWIMMER_BALANCE } from './GameBalance';
 import { GameState, StrokeType } from './GameConstants';
-import { loadSavedTuning } from './TuningDebugControls';
+import { formatStabilityLog } from './StabilityScoring';
+import { loadSavedTuningAsync } from './TuningDebugControls';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -43,6 +44,7 @@ const POOL_WIDTH = LANE_LAYOUT.poolWidth;
 const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
 const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
+const RACE_OPPONENTS_ENABLED = false;
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -74,11 +76,10 @@ export class GameManager extends Component {
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
     onLoad() {
-        loadSavedTuning();
         game.frameRate = 60;
         console.log(`[SpeedSwimming] target frameRate=${game.frameRate}`);
         this.node.layer = Layers.Enum.UI_2D;
-        this.scheduleOnce(() => {
+        loadSavedTuningAsync(() => this.scheduleOnce(() => {
             try {
                 this.buildScene();
                 this.registerEvents();
@@ -87,7 +88,7 @@ export class GameManager extends Component {
             } catch (error) {
                 this.paintError(error);
             }
-        }, 0);
+        }, 0));
     }
 
     onDestroy() {
@@ -101,6 +102,12 @@ export class GameManager extends Component {
             return;
         }
         this._uiFlow?.updateSpeed(this._playerSwimmer.currentSpeed);
+        this._uiFlow?.updateSwimTelemetry(
+            this._playerSwimmer.currentStability,
+            this._playerSwimmer.currentAcceleration,
+            this._playerSwimmer.currentSpeed,
+        );
+        this.consumePlayerRhythmResults();
         this.drawSpeedBar(this._playerSwimmer.currentSpeed / SWIMMER_BALANCE.maxSpeed);
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.update(dt);
@@ -224,6 +231,21 @@ export class GameManager extends Component {
             debug: (message) => this.debug(message),
         }).build(root);
         this._playerSwimmer = competitors.playerSwimmer;
+        if (!RACE_OPPONENTS_ENABLED) {
+            for (const swimmer of competitors.aiSwimmers) {
+                swimmer.stopRace();
+                swimmer.node.active = false;
+            }
+            for (const controller of competitors.aiControllers) {
+                controller.stopSwimming();
+            }
+            this._aiController = null;
+            this._aiControllers = [];
+            this._aiSwimmers = [];
+            this.debug('race opponents disabled');
+            return;
+        }
+
         this._aiController = competitors.primaryAiController;
         this._aiControllers = competitors.aiControllers;
         this._aiSwimmers = competitors.aiSwimmers;
@@ -287,6 +309,16 @@ export class GameManager extends Component {
 
     private handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
         this._gameFlow?.handlePlayerStrokeHeld(type, held);
+    }
+
+    private consumePlayerRhythmResults() {
+        if (this._state !== GameState.RACING) {
+            return;
+        }
+        for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
+            this.debug(formatStabilityLog('stability', result));
+            this._uiFlow?.showRating(result.rating, result.combo);
+        }
     }
 
     private cycleRaceCamera() {

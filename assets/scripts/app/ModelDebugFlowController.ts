@@ -7,7 +7,9 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
-import { RhythmResult } from '../core/RhythmEvaluator';
+import type { RhythmResult } from '../core/RhythmEvaluator';
+import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
+import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
 
@@ -40,9 +42,9 @@ export class ModelDebugFlowController {
     private _cameraDistance = 3.2;
     private _speedScale = MOTION_TUNING.animationSpeedScale;
     private readonly _debugMotor = new SwimmerMotor();
-    private _debugRhythmBonus = 0;
     private _lastRating: Rating | null = null;
     private _lastCombo = 0;
+    private _lastStability = 0;
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
 
@@ -58,9 +60,9 @@ export class ModelDebugFlowController {
         this._cameraDistance = 3.2;
         this._cameraDragging = false;
         this._speedScale = MOTION_TUNING.animationSpeedScale;
-        this._debugRhythmBonus = 0;
         this._lastRating = null;
         this._lastCombo = 0;
+        this._lastStability = 0;
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
 
         if (this._refs.cameraNode) {
@@ -85,6 +87,7 @@ export class ModelDebugFlowController {
             this._refs.playerSwimmer.node.setPosition(12, 0.24, this._refs.playerLaneZ);
             this._refs.playerSwimmer.cartoonRig?.setModelDebugMode(true);
             this._refs.playerSwimmer.cartoonRig?.setModelDebugSpeedScale(this._speedScale);
+            this._refs.playerSwimmer.cartoonRig?.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
         }
         this.updateCamera(1);
         const camera = this._refs.cameraNode?.getComponent(Camera);
@@ -125,10 +128,9 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        const result = this.evaluateDebugStroke(type);
-        this._refs.playerSwimmer?.cartoonRig?.triggerStroke(type);
-        if (!result || type !== StrokeType.BOTH || result.rating !== Rating.MISS) {
-            this._debugMotor.recordStroke(type);
+        const queued = this._debugMotor.recordStroke(type);
+        if (queued) {
+            this._refs.playerSwimmer?.cartoonRig?.triggerStroke(type, true);
         }
         if (type === StrokeType.LEFT) {
             this._refs.debug('model debug: left hand + right foot');
@@ -146,14 +148,9 @@ export class ModelDebugFlowController {
             return false;
         }
         this._refs.playerSwimmer?.cartoonRig?.setStrokeHeld(type, held);
-        this._debugMotor.setStrokeHeld(type, held);
-        const evaluator = this._refs.playerSwimmer?.rhythmEvaluator;
-        if (evaluator) {
-            if (held) {
-                evaluator.beginHold(type);
-            } else {
-                this.applyDebugRhythmResult(evaluator.endHold(type));
-            }
+        const stability = this._debugMotor.setStrokeHeld(type, held);
+        if (!held) {
+            this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
         }
         this.updateDebugHud();
         return true;
@@ -168,11 +165,14 @@ export class ModelDebugFlowController {
             isAI: false,
             aiPower: 1,
             aiMaxSpeedScale: 1,
-            rhythmBonus: this._debugRhythmBonus,
         });
+        for (const stability of this._debugMotor.consumeStabilityResults()) {
+            this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
+        }
         if (finished) {
             this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
         }
+        this._refs.playerSwimmer?.cartoonRig?.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
         this.updateDebugHud();
     }
 
@@ -267,36 +267,43 @@ export class ModelDebugFlowController {
         this.applySpeed();
     }
 
-    private evaluateDebugStroke(type: StrokeType): RhythmResult | null {
-        const evaluator = this._refs.playerSwimmer?.rhythmEvaluator;
-        if (!evaluator) {
-            return null;
-        }
-        return this.applyDebugRhythmResult(evaluator.evaluate(type));
-    }
-
-    private applyDebugRhythmResult(result: RhythmResult | null): RhythmResult | null {
+    private applyDebugStabilityResult(result: RhythmResult | null): RhythmResult | null {
         if (!result) {
             return null;
         }
-        this._debugRhythmBonus = Math.max(0, result.speedMultiplier - 1);
+        this._refs.debug(formatStabilityLog('model stability', result));
         this._lastRating = result.rating;
         this._lastCombo = result.combo;
+        this._lastStability = Math.max(0, result.speedMultiplier - 1);
         return result;
+    }
+
+    private makeDebugStabilityResult(stability: StrokeStabilityResult | null): RhythmResult | null {
+        if (!stability) {
+            return null;
+        }
+        const rating = ratingForStability(stability.stability);
+        this._lastCombo = nextStabilityCombo(this._lastCombo, rating);
+        return rhythmResultFromStability(stability, this._lastCombo);
     }
 
     private updateDebugHud() {
         if (this._refs.ratingLabel) {
             this._refs.ratingLabel.string = this._lastRating
-                ? `${this._lastRating.toUpperCase()}  ${this._lastCombo} COMBO`
+                ? `${this._lastRating.toUpperCase()}  S${Math.round(this._lastStability * 100)}  ${this._lastCombo} COMBO`
                 : 'READY';
             this._refs.ratingLabel.color = this.ratingColor(this._lastRating);
         }
         if (this._refs.swimSpeedLabel) {
             const speed = this._debugMotor.currentSpeed;
-            const ratio = SWIMMER_BALANCE.maxSpeed > 0 ? Math.round((speed / SWIMMER_BALANCE.maxSpeed) * 100) : 0;
-            this._refs.swimSpeedLabel.string = `${speed.toFixed(2)} m/s  ${ratio}%`;
+            const stability = Math.round(clamp(this._debugMotor.lastStability, 0, 1) * 100);
+            const freshness = Math.round(clamp(this._debugMotor.lastInputFreshness, 0, 1) * 100);
+            this._refs.swimSpeedLabel.string = `STB ${stability}%   FRS ${freshness}%   ACC ${signed(this._debugMotor.currentAcceleration)}   SPD ${speed.toFixed(2)} m/s`;
         }
+    }
+
+    private debugSwimSpeedRatio(): number {
+        return SWIMMER_BALANCE.maxSpeed > 0 ? clamp(this._debugMotor.currentSpeed / SWIMMER_BALANCE.maxSpeed, 0, 1) : 0;
     }
 
     private ratingColor(rating: Rating | null): Color {
@@ -306,7 +313,7 @@ export class ModelDebugFlowController {
         if (rating === Rating.GOOD) {
             return new Color(80, 242, 161, 255);
         }
-        if (rating === Rating.MISS) {
+        if (rating === Rating.BAD) {
             return new Color(255, 92, 92, 255);
         }
         return new Color(230, 244, 250, 255);
@@ -321,4 +328,8 @@ export class ModelDebugFlowController {
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
+}
+
+function signed(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
 }

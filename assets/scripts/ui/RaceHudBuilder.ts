@@ -56,11 +56,14 @@ export class RaceHudBuilder {
         const speedLabel = makeLabel('SpeedValue', parent, '0.00 m/s  0%', 16, uiColor(255, 255, 255));
         speedLabel.getComponent(UITransform).setContentSize(180, 26);
         speedLabel.setPosition(164, h / 2 - 92, 0);
+        const telemetryLabel = makeLabel('SwimTelemetry', parent, 'STB 0%   ACC +0.00   SPD 0.00 m/s', 15, uiColor(150, 235, 255));
+        telemetryLabel.getComponent(UITransform).setContentSize(430, 24);
+        telemetryLabel.setPosition(0, h / 2 - 118, 0);
 
         const ratingLabel = makeLabel('Rating', parent, '', 34, uiColor(255, 255, 255));
-        ratingLabel.setPosition(0, h / 2 - 142, 0);
+        ratingLabel.setPosition(0, h / 2 - 152, 0);
         const comboLabel = makeLabel('Combo', parent, '', 20, uiColor(255, 255, 255));
-        comboLabel.setPosition(0, h / 2 - 176, 0);
+        comboLabel.setPosition(0, h / 2 - 186, 0);
 
         const countdownOverlay = makeUiNode('CountdownOverlay', parent);
         countdownOverlay.active = false;
@@ -87,6 +90,7 @@ export class RaceHudBuilder {
         const ui = makeUiNode('UIController', parent).addComponent(UIController);
         ui.timerLabel = timerLabel.getComponent(Label);
         ui.speedLabel = speedLabel.getComponent(Label);
+        ui.telemetryLabel = telemetryLabel.getComponent(Label);
         ui.hintLabel = hintLabel.getComponent(Label);
         ui.countdownOverlay = countdownOverlay;
         ui.countdownLabel = countdownLabel.getComponent(Label);

@@ -197,9 +197,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    triggerStroke(type: StrokeType) {
+    triggerStroke(type: StrokeType, countsForMotionRate = true) {
         if (this._modelDebugMode) {
-            this._debug.triggerStroke(type);
+            this._debug.triggerStroke(type, countsForMotionRate);
             return;
         }
         this._armAction = 1;
@@ -308,6 +308,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     setModelDebugSpeedScale(scale: number) {
         this._debug.setSpeedScale(scale);
+    }
+
+    setModelDebugSwimSpeedRatio(ratio: number) {
+        this._debug.setSwimSpeedRatio(ratio);
     }
 
     get modelDebugSpeedScale(): number {

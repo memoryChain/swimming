@@ -7,12 +7,23 @@ const { ccclass } = _decorator;
 
 export interface RhythmResult {
     rating: Rating;
+    badReason?: string;
     speedMultiplier: number;
     combo: number;
     interval: number;
     expectedNext: StrokeType;
     holdSeconds?: number;
     targetHoldSeconds?: number;
+    minHoldSeconds?: number;
+    holdTimeValid?: boolean;
+    actionSeconds?: number;
+    holdRatio?: number;
+    inputFreshness?: number;
+    inputLeadSeconds?: number;
+    inputLeadRatio?: number;
+    meanRatio?: number;
+    ratioStdDev?: number;
+    sampleCount?: number;
 }
 
 export interface RhythmStats {
@@ -47,8 +58,10 @@ export class RhythmEvaluator extends Component {
         const repeatedSide = type !== StrokeType.BOTH && this._lastStrokeType === type;
 
         let rating = Rating.GOOD;
+        let badReason: string | undefined;
         if (repeatedSide) {
-            rating = Rating.MISS;
+            rating = Rating.BAD;
+            badReason = 'repeat_side';
         } else if (this._strokeCount > 0) {
             const deviation = Math.abs(interval - getTargetInterval());
             const perfectWindow = type === StrokeType.BOTH ? INPUT_TUNING.bothRhythmPerfectWindowSeconds : INPUT_TUNING.rhythmPerfectWindowSeconds;
@@ -58,7 +71,8 @@ export class RhythmEvaluator extends Component {
             } else if (deviation <= goodWindow || (type !== StrokeType.BOTH && interval <= INPUT_TUNING.rhythmLooseWindowSeconds)) {
                 rating = Rating.GOOD;
             } else {
-                rating = Rating.MISS;
+                rating = Rating.BAD;
+                badReason = `rhythm_window(interval=${interval.toFixed(2)})`;
             }
         }
 
@@ -66,7 +80,7 @@ export class RhythmEvaluator extends Component {
             this._lastStrokeType = type;
             this._strokeCount++;
         }
-        this.setHoldEligible(type, rating !== Rating.MISS);
+        this.setHoldEligible(type, rating !== Rating.BAD);
         this._lastStrokeTime = now;
 
         if (rating === Rating.PERFECT) {
@@ -85,7 +99,7 @@ export class RhythmEvaluator extends Component {
         this._speedMultiplier = speedMultiplier;
         const expectedNext = this.expectedNextFor(type);
 
-        return { rating, speedMultiplier, combo: this._combo, interval, expectedNext };
+        return { rating, badReason, speedMultiplier, combo: this._combo, interval, expectedNext };
     }
 
     beginHold(type: StrokeType) {
@@ -225,9 +239,10 @@ export class RhythmEvaluator extends Component {
             Math.min(this._leftHoldReleasedAt, this._rightHoldReleasedAt) - Math.max(this._leftHoldStartedAt, this._rightHoldStartedAt),
         );
         const releaseSpread = Math.abs(this._leftHoldReleasedAt - this._rightHoldReleasedAt);
-        const forcedRating = releaseSpread <= INPUT_TUNING.chordReleaseWindowMs / 1000 ? null : Rating.MISS;
+        const forcedRating = releaseSpread <= INPUT_TUNING.chordReleaseWindowMs / 1000 ? null : Rating.BAD;
+        const forcedBadReason = forcedRating === Rating.BAD ? `chord_release_spread(${releaseSpread.toFixed(2)})` : undefined;
         this.clearBothHold();
-        return this.scoreHold(StrokeType.BOTH, holdSeconds, forcedRating);
+        return this.scoreHold(StrokeType.BOTH, holdSeconds, forcedRating, forcedBadReason);
     }
 
     private clearBothHold() {
@@ -245,12 +260,13 @@ export class RhythmEvaluator extends Component {
         return Math.abs(this._leftHoldStartedAt - this._rightHoldStartedAt) <= INPUT_TUNING.chordMergeWindowMs / 1000;
     }
 
-    private scoreHold(type: StrokeType, holdSeconds: number, forcedRating: Rating | null = null): RhythmResult {
+    private scoreHold(type: StrokeType, holdSeconds: number, forcedRating: Rating | null = null, forcedBadReason?: string): RhythmResult {
         const targetHoldSeconds = getTargetInterval() * 0.5;
         const deviation = Math.abs(holdSeconds - targetHoldSeconds);
         const perfectWindow = type === StrokeType.BOTH ? INPUT_TUNING.bothHoldPerfectWindowSeconds : INPUT_TUNING.holdPerfectWindowSeconds;
         const goodWindow = type === StrokeType.BOTH ? INPUT_TUNING.bothHoldGoodWindowSeconds : INPUT_TUNING.holdGoodWindowSeconds;
-        let rating = forcedRating ?? Rating.MISS;
+        let rating = forcedRating ?? Rating.BAD;
+        let badReason = forcedBadReason;
         if (forcedRating === null && deviation <= perfectWindow) {
             rating = Rating.PERFECT;
             this._perfectCount += 1;
@@ -259,7 +275,8 @@ export class RhythmEvaluator extends Component {
             this._goodCount += 1;
         } else {
             this._missCount += 1;
-            if (forcedRating === Rating.MISS || deviation > INPUT_TUNING.holdLooseWindowSeconds) {
+            badReason = badReason ?? `hold_timing(hold=${holdSeconds.toFixed(2)} target=${targetHoldSeconds.toFixed(2)})`;
+            if (forcedRating === Rating.BAD || deviation > INPUT_TUNING.holdLooseWindowSeconds) {
                 this._combo = Math.max(0, this._combo - RHYTHM_BALANCE.holdMissPenalty);
             }
         }
@@ -268,6 +285,7 @@ export class RhythmEvaluator extends Component {
         this._maxCombo = Math.max(this._maxCombo, this._combo);
         return {
             rating,
+            badReason,
             speedMultiplier: this._speedMultiplier,
             combo: this._combo,
             interval: holdSeconds,

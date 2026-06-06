@@ -22,9 +22,6 @@ export type InputRouterCallbacks = {
 export class InputRouter {
     private _lastPadStrokeMs = 0;
     private _lastPadStrokeType: StrokeType | null = null;
-    private _pendingStrokeType: StrokeType | null = null;
-    private _pendingStrokeMs = 0;
-    private _pendingStrokeTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor(
         private readonly _target: Node,
@@ -52,7 +49,6 @@ export class InputRouter {
     }
 
     unbind() {
-        this.clearPendingStroke();
         this._target.off('left-stroke', this.onLeftStroke, this);
         this._target.off('right-stroke', this.onRightStroke, this);
         this._target.off('left-stroke-held', this.onLeftStrokeHeld, this);
@@ -79,7 +75,7 @@ export class InputRouter {
         this._lastPadStrokeType = type;
         this._lastPadStrokeMs = now;
         this._callbacks.onStrokeHeld(type, true);
-        this.queueStroke(type);
+        this._callbacks.onStroke(type);
     }
 
     handlePadStrokeEnd(type: StrokeType) {
@@ -87,56 +83,11 @@ export class InputRouter {
     }
 
     private onLeftStroke() {
-        this.queueStroke(StrokeType.LEFT);
+        this._callbacks.onStroke(StrokeType.LEFT);
     }
 
     private onRightStroke() {
-        this.queueStroke(StrokeType.RIGHT);
-    }
-
-    private queueStroke(type: StrokeType) {
-        if (type === StrokeType.BOTH) {
-            this.clearPendingStroke();
-            this._callbacks.onStroke(StrokeType.BOTH);
-            return;
-        }
-
-        const now = Date.now();
-        if (this._pendingStrokeType) {
-            const pending = this._pendingStrokeType;
-            const withinChordWindow = now - this._pendingStrokeMs <= INPUT_TUNING.chordMergeWindowMs;
-            if (pending !== type && withinChordWindow) {
-                this.clearPendingStroke();
-                this._callbacks.onStroke(StrokeType.BOTH);
-                return;
-            }
-            if (pending === type && withinChordWindow) {
-                return;
-            }
-            this.flushPendingStroke();
-        }
-
-        this._pendingStrokeType = type;
-        this._pendingStrokeMs = now;
-        this._pendingStrokeTimer = setTimeout(() => this.flushPendingStroke(), INPUT_TUNING.chordMergeWindowMs);
-    }
-
-    private flushPendingStroke() {
-        if (!this._pendingStrokeType) {
-            return;
-        }
-        const type = this._pendingStrokeType;
-        this.clearPendingStroke();
-        this._callbacks.onStroke(type);
-    }
-
-    private clearPendingStroke() {
-        if (this._pendingStrokeTimer) {
-            clearTimeout(this._pendingStrokeTimer);
-            this._pendingStrokeTimer = null;
-        }
-        this._pendingStrokeType = null;
-        this._pendingStrokeMs = 0;
+        this._callbacks.onStroke(StrokeType.RIGHT);
     }
 
     private onLeftStrokeHeld(held: boolean) {

@@ -2,6 +2,9 @@ import { FreestylePoseController } from './FreestylePoseController';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
 
+const CYCLE_AMOUNT = Math.PI * 2;
+const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
+
 export class CharacterDebugController {
     private _enabled = false;
     private _leftArmPhase = 0;
@@ -18,8 +21,11 @@ export class CharacterDebugController {
     private _rightKickCycleRemaining = 0;
     private _leftStrokeHeld = false;
     private _rightStrokeHeld = false;
+    private _leftReleaseLockUntilRemaining = -1;
+    private _rightReleaseLockUntilRemaining = -1;
     private _motionClock = 0;
     private _speedScale = 1;
+    private _swimSpeedRatio = 0;
     private _logTimer = 0;
     private readonly _armInputTimes: number[] = [];
     private readonly _kickInputTimes: number[] = [];
@@ -39,28 +45,64 @@ export class CharacterDebugController {
         this.triggerStroke(StrokeType.RIGHT);
     }
 
-    triggerStroke(type: StrokeType) {
-        this.queueInput(this._armInputTimes);
-        this.queueInput(this._kickInputTimes);
+    triggerStroke(type: StrokeType, countsForMotionRate = true) {
+        let armQueued = false;
+        let kickQueued = false;
         if (type === StrokeType.LEFT) {
-            this._leftArmCycleRemaining += Math.PI * 2;
-            this._rightKickCycleRemaining += Math.PI * 2;
-            this._leftArmPower = 1;
-            this._rightKickPower = 1;
+            armQueued = this.queueMotionCycle('_leftArmCycleRemaining');
+            kickQueued = this.queueMotionCycle('_rightKickCycleRemaining');
+            if (armQueued || kickQueued) {
+                this.extendReleaseLockForQueuedInput(StrokeType.LEFT);
+            }
+            if (armQueued) {
+                this._leftArmPower = 1;
+            }
+            if (kickQueued) {
+                this._rightKickPower = 1;
+            }
         } else if (type === StrokeType.RIGHT) {
-            this._rightArmCycleRemaining += Math.PI * 2;
-            this._leftKickCycleRemaining += Math.PI * 2;
-            this._rightArmPower = 1;
-            this._leftKickPower = 1;
+            armQueued = this.queueMotionCycle('_rightArmCycleRemaining');
+            kickQueued = this.queueMotionCycle('_leftKickCycleRemaining');
+            if (armQueued || kickQueued) {
+                this.extendReleaseLockForQueuedInput(StrokeType.RIGHT);
+            }
+            if (armQueued) {
+                this._rightArmPower = 1;
+            }
+            if (kickQueued) {
+                this._leftKickPower = 1;
+            }
         } else {
-            this._leftArmCycleRemaining += Math.PI * 2;
-            this._rightArmCycleRemaining += Math.PI * 2;
-            this._leftKickCycleRemaining += Math.PI * 2;
-            this._rightKickCycleRemaining += Math.PI * 2;
-            this._leftArmPower = 1;
-            this._rightArmPower = 1;
-            this._leftKickPower = 1;
-            this._rightKickPower = 1;
+            const leftArmQueued = this.queueMotionCycle('_leftArmCycleRemaining');
+            const rightArmQueued = this.queueMotionCycle('_rightArmCycleRemaining');
+            const leftKickQueued = this.queueMotionCycle('_leftKickCycleRemaining');
+            const rightKickQueued = this.queueMotionCycle('_rightKickCycleRemaining');
+            armQueued = leftArmQueued || rightArmQueued;
+            kickQueued = leftKickQueued || rightKickQueued;
+            if (leftArmQueued || rightKickQueued) {
+                this.extendReleaseLockForQueuedInput(StrokeType.LEFT);
+            }
+            if (rightArmQueued || leftKickQueued) {
+                this.extendReleaseLockForQueuedInput(StrokeType.RIGHT);
+            }
+            if (leftArmQueued) {
+                this._leftArmPower = 1;
+            }
+            if (rightArmQueued) {
+                this._rightArmPower = 1;
+            }
+            if (leftKickQueued) {
+                this._leftKickPower = 1;
+            }
+            if (rightKickQueued) {
+                this._rightKickPower = 1;
+            }
+        }
+        if (countsForMotionRate && armQueued) {
+            this.queueInput(this._armInputTimes);
+        }
+        if (countsForMotionRate && kickQueued) {
+            this.queueInput(this._kickInputTimes);
         }
         console.log(`[SpeedSwimming] model debug arm stroke trigger rate=${this.inputRatePerSecond(this._armInputTimes).toFixed(1)}/s`);
         console.log(`[SpeedSwimming] model debug leg kick trigger rate=${this.inputRatePerSecond(this._kickInputTimes).toFixed(1)}/s`);
@@ -69,11 +111,21 @@ export class CharacterDebugController {
     setStrokeHeld(type: StrokeType, held: boolean) {
         if (type === StrokeType.LEFT) {
             this._leftStrokeHeld = held;
+            if (!held) {
+                this._leftReleaseLockUntilRemaining = this.currentActionEndRemaining(StrokeType.LEFT);
+            }
         } else if (type === StrokeType.RIGHT) {
             this._rightStrokeHeld = held;
+            if (!held) {
+                this._rightReleaseLockUntilRemaining = this.currentActionEndRemaining(StrokeType.RIGHT);
+            }
         } else {
             this._leftStrokeHeld = held;
             this._rightStrokeHeld = held;
+            if (!held) {
+                this._leftReleaseLockUntilRemaining = this.currentActionEndRemaining(StrokeType.LEFT);
+                this._rightReleaseLockUntilRemaining = this.currentActionEndRemaining(StrokeType.RIGHT);
+            }
         }
     }
 
@@ -86,10 +138,8 @@ export class CharacterDebugController {
         this.pruneInputTimes(this._armInputTimes);
         this.pruneInputTimes(this._kickInputTimes);
 
-        const armRate = this.inputRatePerSecond(this._armInputTimes);
-        const kickRate = this.inputRatePerSecond(this._kickInputTimes);
-        const armSpeed = this.motionSpeedForRate(armRate, Math.PI * 2, MOTION_TUNING.debugArmMinCyclesPerSecond, MOTION_TUNING.debugMaxCyclesPerSecond);
-        const kickSpeed = this.motionSpeedForRate(kickRate, Math.PI * 2, MOTION_TUNING.debugKickMinCyclesPerSecond, MOTION_TUNING.debugMaxCyclesPerSecond);
+        const armSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.armMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, this._swimSpeedRatio);
+        const kickSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.kickMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, this._swimSpeedRatio);
         this._leftArmPower = this.advanceMotion(actionDt, armSpeed, '_leftArmCycleRemaining', '_leftArmPhase', 0, this.motionSpeedScaleForSide(StrokeType.LEFT));
         this._rightArmPower = this.advanceMotion(actionDt, armSpeed, '_rightArmCycleRemaining', '_rightArmPhase', 0, this.motionSpeedScaleForSide(StrokeType.RIGHT));
         this._leftKickPower = this.advanceMotion(actionDt, kickSpeed, '_leftKickCycleRemaining', '_leftKickPhase', 0, this.motionSpeedScaleForSide(StrokeType.RIGHT));
@@ -135,6 +185,10 @@ export class CharacterDebugController {
         console.log(`[SpeedSwimming] model debug speed=${this._speedScale.toFixed(2)}x`);
     }
 
+    setSwimSpeedRatio(ratio: number) {
+        this._swimSpeedRatio = Math.max(0, Math.min(1, ratio));
+    }
+
     get speedScale(): number {
         return this._speedScale;
     }
@@ -154,7 +208,10 @@ export class CharacterDebugController {
         this._rightKickCycleRemaining = 0;
         this._leftStrokeHeld = false;
         this._rightStrokeHeld = false;
+        this._leftReleaseLockUntilRemaining = -1;
+        this._rightReleaseLockUntilRemaining = -1;
         this._motionClock = 0;
+        this._swimSpeedRatio = 0;
         this._logTimer = 0;
         this._armInputTimes.length = 0;
         this._kickInputTimes.length = 0;
@@ -163,6 +220,17 @@ export class CharacterDebugController {
     private queueInput(times: number[]) {
         times.push(this._motionClock);
         this.pruneInputTimes(times);
+    }
+
+    private queueMotionCycle(
+        remainingKey: '_leftArmCycleRemaining' | '_rightArmCycleRemaining' | '_leftKickCycleRemaining' | '_rightKickCycleRemaining',
+    ): boolean {
+        const next = Math.min(MAX_QUEUED_MOTION, this[remainingKey] + CYCLE_AMOUNT);
+        if (next <= this[remainingKey]) {
+            return false;
+        }
+        this[remainingKey] = next;
+        return true;
     }
 
     private advanceMotion(
@@ -184,13 +252,57 @@ export class CharacterDebugController {
     }
 
     private motionSpeedScaleForSide(type: StrokeType): number {
+        if (this.isReleaseLocked(type)) {
+            return MOTION_TUNING.releasedMotionSpeedScale;
+        }
         const held = type === StrokeType.LEFT ? this._leftStrokeHeld : this._rightStrokeHeld;
         return held ? MOTION_TUNING.heldMotionSpeedScale : MOTION_TUNING.releasedMotionSpeedScale;
     }
 
-    private motionSpeedForRate(ratePerSecond: number, cycleAmount: number, minCyclesPerSecond: number, maxCyclesPerSecond: number): number {
-        const cyclesPerSecond = Math.max(minCyclesPerSecond, Math.min(maxCyclesPerSecond, ratePerSecond));
-        return cycleAmount * cyclesPerSecond;
+    private isReleaseLocked(type: StrokeType): boolean {
+        const totalRemaining = this.sideMotionRemaining(type);
+        if (type === StrokeType.LEFT) {
+            if (this._leftReleaseLockUntilRemaining < 0) {
+                return false;
+            }
+            if (totalRemaining > this._leftReleaseLockUntilRemaining + 0.0001) {
+                return true;
+            }
+            this._leftReleaseLockUntilRemaining = -1;
+            return false;
+        }
+
+        if (this._rightReleaseLockUntilRemaining < 0) {
+            return false;
+        }
+        if (totalRemaining > this._rightReleaseLockUntilRemaining + 0.0001) {
+            return true;
+        }
+        this._rightReleaseLockUntilRemaining = -1;
+        return false;
+    }
+
+    private currentActionEndRemaining(type: StrokeType): number {
+        const totalRemaining = this.sideMotionRemaining(type);
+        if (totalRemaining <= 0) {
+            return -1;
+        }
+        return totalRemaining > CYCLE_AMOUNT ? CYCLE_AMOUNT : 0;
+    }
+
+    private extendReleaseLockForQueuedInput(type: StrokeType) {
+        if (type === StrokeType.LEFT && this._leftReleaseLockUntilRemaining >= 0) {
+            this._leftReleaseLockUntilRemaining += CYCLE_AMOUNT;
+        } else if (type === StrokeType.RIGHT && this._rightReleaseLockUntilRemaining >= 0) {
+            this._rightReleaseLockUntilRemaining += CYCLE_AMOUNT;
+        }
+    }
+
+    private sideMotionRemaining(type: StrokeType): number {
+        if (type === StrokeType.LEFT) {
+            return Math.max(this._leftArmCycleRemaining, this._rightKickCycleRemaining);
+        }
+        return Math.max(this._rightArmCycleRemaining, this._leftKickCycleRemaining);
     }
 
     private inputRatePerSecond(times: number[]): number {
@@ -216,4 +328,8 @@ export class CharacterDebugController {
             `leftArmEuler=${this._pose.leftArmEuler} leftLegEuler=${this._pose.leftLegEuler}`,
         );
     }
+}
+
+function lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * Math.max(0, Math.min(1, t));
 }

@@ -18,15 +18,25 @@ export const INPUT_TUNING = {
 };
 
 export const MOTION_TUNING = {
-    animationSpeedScale: 1,
+    animationSpeedScale: 0.8,
     heldMotionSpeedScale: 1,
-    releasedMotionSpeedScale: 2.6,
+    releasedMotionSpeedScale: 2,
     armMinCyclesPerSecond: 0.82,
     kickMinCyclesPerSecond: 0.82,
-    maxCyclesPerSecond: 5.2,
-    debugArmMinCyclesPerSecond: 0.7,
-    debugKickMinCyclesPerSecond: 0.82,
-    debugMaxCyclesPerSecond: 5.2,
+    maxCyclesPerSecond: 2.8,
+};
+
+export const STABILITY_TUNING = {
+    sampleWindowSize: 5,
+    perfectStdDev: 0.09,
+    badStdDev: 0.185,
+    minHoldSeconds: 0.16,
+    minUsefulRatio: 0.28,
+    maxUsefulRatio: 0.9,
+    usefulRatioEdgeWindow: 0.08,
+    inputFreshnessGraceRatio: 0.08,
+    inputFreshnessPenaltyRatio: 0.35,
+    inputFreshnessMinScale: 0.05,
 };
 
 export const TARGET_LIMB_RATE = 1 / TARGET_INTERVAL;

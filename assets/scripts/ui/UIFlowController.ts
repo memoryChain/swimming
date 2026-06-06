@@ -45,6 +45,10 @@ export class UIFlowController {
         this._refs.uiController?.updateSpeed(speed);
     }
 
+    updateSwimTelemetry(stability: number, acceleration: number, speed: number) {
+        this._refs.uiController?.updateSwimTelemetry(stability, acceleration, speed);
+    }
+
     updateTimer(time: number) {
         this._refs.uiController?.updateTimer(time);
     }
