@@ -1,11 +1,10 @@
 import { EventMouse, Graphics, Label, Node, UITransform } from 'cc';
-import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
 import { makeButton, makeLabel, makeLeftRect, makeRect, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type RaceHudCallbacks = {
-    onStroke: (type: StrokeType) => void;
-    onStrokeEnd: (type: StrokeType) => void;
+    onStroke: () => void;
+    onStrokeEnd: () => void;
     onDiveHoldStart: () => void;
     onDiveHoldEnd: (holdSeconds: number) => void;
     onRestart: () => void;
@@ -23,52 +22,14 @@ export class RaceHudBuilder {
     constructor(private readonly _callbacks: RaceHudCallbacks) {}
 
     build(parent: Node, w: number, h: number): RaceHudRefs {
-        const leftPad = makeTouchArea('LeftInput', parent, w / 2, h);
-        leftPad.setPosition(-w / 4, 0, 0);
-        leftPad.on(Node.EventType.TOUCH_START, () => {
-            this.beginDiveHold();
-            this._callbacks.onStroke(StrokeType.LEFT);
-        });
-        leftPad.on(Node.EventType.TOUCH_END, () => {
-            this._callbacks.onStrokeEnd(StrokeType.LEFT);
-            this.endDiveHold();
-        });
-        leftPad.on(Node.EventType.TOUCH_CANCEL, () => {
-            this._callbacks.onStrokeEnd(StrokeType.LEFT);
-            this.endDiveHold();
-        });
-        leftPad.on(Node.EventType.MOUSE_UP, () => {
-            this._callbacks.onStrokeEnd(StrokeType.LEFT);
-            this.endDiveHold();
-        });
-        leftPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
-            if (event.getButton() === EventMouse.BUTTON_LEFT) {
-                this.beginDiveHold();
-                this._callbacks.onStroke(StrokeType.LEFT);
-            }
-        });
-        const rightPad = makeTouchArea('RightInput', parent, w / 2, h);
-        rightPad.setPosition(w / 4, 0, 0);
-        rightPad.on(Node.EventType.TOUCH_START, () => {
-            this.beginDiveHold();
-            this._callbacks.onStroke(StrokeType.RIGHT);
-        });
-        rightPad.on(Node.EventType.TOUCH_END, () => {
-            this._callbacks.onStrokeEnd(StrokeType.RIGHT);
-            this.endDiveHold();
-        });
-        rightPad.on(Node.EventType.TOUCH_CANCEL, () => {
-            this._callbacks.onStrokeEnd(StrokeType.RIGHT);
-            this.endDiveHold();
-        });
-        rightPad.on(Node.EventType.MOUSE_UP, () => {
-            this._callbacks.onStrokeEnd(StrokeType.RIGHT);
-            this.endDiveHold();
-        });
-        rightPad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
+        const strokePad = makeTouchArea('StrokeInput', parent, w, h);
+        strokePad.on(Node.EventType.TOUCH_START, () => this.beginStrokeHold());
+        strokePad.on(Node.EventType.TOUCH_END, () => this.endStrokeHold());
+        strokePad.on(Node.EventType.TOUCH_CANCEL, () => this.endStrokeHold());
+        strokePad.on(Node.EventType.MOUSE_UP, () => this.endStrokeHold());
+        strokePad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT || event.getButton() === EventMouse.BUTTON_RIGHT) {
-                this.beginDiveHold();
-                this._callbacks.onStroke(StrokeType.RIGHT);
+                this.beginStrokeHold();
             }
         });
 
@@ -175,5 +136,15 @@ export class RaceHudBuilder {
         const holdSeconds = Math.max(0, Date.now() / 1000 - this._diveHoldStartedAt);
         this._diveHoldStartedAt = 0;
         this._callbacks.onDiveHoldEnd(holdSeconds);
+    }
+
+    private beginStrokeHold() {
+        this.beginDiveHold();
+        this._callbacks.onStroke();
+    }
+
+    private endStrokeHold() {
+        this._callbacks.onStrokeEnd();
+        this.endDiveHold();
     }
 }

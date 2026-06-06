@@ -58,7 +58,7 @@ function makeFittedLabel(name: string, parent: Node, text: string, fontSize: num
 
 function controlText(isPortrait: boolean): string {
     if (isPortrait) {
-        return '左侧屏幕：左手 + 右脚\n右侧屏幕：右手 + 左脚';
+        return '点击/长按屏幕：自动交替划水\n掌握松手节奏获得更高稳定性';
     }
-    return '左侧屏幕：左手 + 右脚    右侧屏幕：右手 + 左脚    C: camera';
+    return '点击/长按屏幕：自动交替划水    C: camera';
 }

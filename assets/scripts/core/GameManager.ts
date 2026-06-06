@@ -122,6 +122,7 @@ export class GameManager extends Component {
     }
 
     startGame() {
+        this._inputRouter?.resetAutoPadSequence();
         this._gameFlow?.startGame();
     }
 
@@ -273,8 +274,8 @@ export class GameManager extends Component {
         this._raceHud = makeUiNode('RaceHUD', uiRoot);
         this._raceHud.active = false;
         const raceHud = new RaceHudBuilder({
-            onStroke: (type) => this._inputRouter?.handlePadStroke(type),
-            onStrokeEnd: (type) => this._inputRouter?.handlePadStrokeEnd(type),
+            onStroke: () => this._inputRouter?.handleAutoPadStroke(),
+            onStrokeEnd: () => this._inputRouter?.handleAutoPadStrokeEnd(),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),

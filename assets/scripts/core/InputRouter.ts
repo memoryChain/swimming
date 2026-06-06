@@ -22,6 +22,8 @@ export type InputRouterCallbacks = {
 export class InputRouter {
     private _lastPadStrokeMs = 0;
     private _lastPadStrokeType: StrokeType | null = null;
+    private _nextAutoPadStrokeType = StrokeType.LEFT;
+    private _activeAutoPadStrokeType: StrokeType | null = null;
 
     constructor(
         private readonly _target: Node,
@@ -80,6 +82,34 @@ export class InputRouter {
 
     handlePadStrokeEnd(type: StrokeType) {
         this._callbacks.onStrokeHeld(type, false);
+    }
+
+    handleAutoPadStroke() {
+        if (this._activeAutoPadStrokeType !== null) {
+            return;
+        }
+        const type = this._nextAutoPadStrokeType;
+        this._nextAutoPadStrokeType = type === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
+        this._activeAutoPadStrokeType = type;
+        this.handlePadStroke(type);
+    }
+
+    handleAutoPadStrokeEnd() {
+        if (this._activeAutoPadStrokeType === null) {
+            return;
+        }
+        this.handlePadStrokeEnd(this._activeAutoPadStrokeType);
+        this._activeAutoPadStrokeType = null;
+    }
+
+    resetAutoPadSequence() {
+        if (this._activeAutoPadStrokeType !== null) {
+            this.handlePadStrokeEnd(this._activeAutoPadStrokeType);
+        }
+        this._activeAutoPadStrokeType = null;
+        this._nextAutoPadStrokeType = StrokeType.LEFT;
+        this._lastPadStrokeType = null;
+        this._lastPadStrokeMs = 0;
     }
 
     private onLeftStroke() {
