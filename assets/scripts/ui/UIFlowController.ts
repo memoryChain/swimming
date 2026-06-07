@@ -57,6 +57,10 @@ export class UIFlowController {
         this._refs.uiController?.updateProgress(playerDistance, aiDistance);
     }
 
+    updatePlacement(placement: number, racerCount: number) {
+        this._refs.uiController?.updatePlacement(placement, racerCount);
+    }
+
     showRating(rating: Rating, combo: number) {
         this._refs.uiController?.showRating(rating, combo);
     }

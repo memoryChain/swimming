@@ -201,13 +201,14 @@ export class RaceCameraDirector {
         if (!camera) {
             return;
         }
-        camera.fov = this._mode === RaceCameraMode.Broadcast
+        const baseFov = this._mode === RaceCameraMode.Broadcast
             ? this._broadcastCameraFov
             : this._mode === RaceCameraMode.Top
                 ? 44
                 : this._mode === RaceCameraMode.FirstPerson
                     ? 62
                     : this._mode === RaceCameraMode.Free ? 38 : 36;
+        camera.fov = Math.max(18, baseFov);
     }
 
     resetBroadcastCamera() {
@@ -345,8 +346,7 @@ export class RaceCameraDirector {
             this._cameraPos.set(desiredPos);
             this._cameraTarget.set(desiredTarget);
             this._broadcastCameraFov = this._broadcastDesiredFov;
-            this._cameraNode.setPosition(this._cameraPos);
-            this._cameraNode.lookAt(this._cameraTarget, new Vec3(0, 0, -1));
+            this.applyCameraTransform(new Vec3(0, 0, -1));
             this.applyFov();
             return;
         }
@@ -356,8 +356,7 @@ export class RaceCameraDirector {
         Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
         Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
         this._broadcastCameraFov += (this._broadcastDesiredFov - this._broadcastCameraFov) * smooth;
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
+        this.applyCameraTransform();
         this.applyFov();
     }
 
@@ -409,8 +408,7 @@ export class RaceCameraDirector {
         const smooth = snapshot.raceActive ? 0.1 : 0.2;
         Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
         Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
+        this.applyCameraTransform();
         this.applyFov();
     }
 
@@ -420,8 +418,7 @@ export class RaceCameraDirector {
         const desiredTarget = new Vec3(playerX + 9.0, 0.58, this._playerLaneZ);
         this._cameraPos.set(desiredPos);
         this._cameraTarget.set(desiredTarget);
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
+        this.applyCameraTransform();
         this.applyFov();
     }
 
@@ -436,9 +433,13 @@ export class RaceCameraDirector {
         );
         Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, 0.18);
         Vec3.lerp(this._cameraTarget, this._cameraTarget, target, 0.18);
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
+        this.applyCameraTransform();
         this.applyFov();
+    }
+
+    private applyCameraTransform(up?: Vec3) {
+        this._cameraNode.setPosition(this._cameraPos);
+        this._cameraNode.lookAt(this._cameraTarget, up);
     }
 
     private resetBroadcastDirector() {
@@ -517,6 +518,15 @@ function swimRaceView(snapshot: RaceCameraSnapshot): SwimRaceView {
             zOffset: 0,
             height: 4.8,
             fov: 46,
+        };
+    }
+    if (snapshot.playerPlacement === 1) {
+        return {
+            targetXOffset: 0.75,
+            cameraXOffset: 12.8,
+            zOffset: 17.6,
+            height: 2.85,
+            fov: 48,
         };
     }
     if (snapshot.playerPlacement > 0 && snapshot.playerPlacement <= SWIM_ANGLE_VIEW_FRONT_RANK) {

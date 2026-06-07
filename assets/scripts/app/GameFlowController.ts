@@ -2,8 +2,8 @@ import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, RACE_DISTANCE } from '../core/GameBalance';
-import { GameState, StrokeType } from '../core/GameConstants';
-import { RaceManager } from '../core/RaceManager';
+import { GameState, Rating, StrokeType } from '../core/GameConstants';
+import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { formatStabilityLog } from '../core/StabilityScoring';
 import { UIFlowController } from '../ui/UIFlowController';
 
@@ -19,6 +19,8 @@ export type GameFlowRefs = {
     handleModelDebugStrokeHeld: (type: StrokeType, held: boolean) => boolean;
     setState: (state: GameState) => void;
     getState: () => GameState;
+    clearFinishRanks: () => void;
+    showFinishRank: (result: RaceFinishResult) => void;
     debug: (message: string) => void;
 };
 
@@ -35,6 +37,7 @@ export class GameFlowController {
         this._refs.debug('startGame');
         this.clearAiDiveTimers();
         this.resetDiveCharge();
+        this._refs.clearFinishRanks();
         this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
@@ -55,6 +58,7 @@ export class GameFlowController {
         this._refs.setState(GameState.READY);
         this.resetDiveCharge();
         this.stopAllAi();
+        this._refs.clearFinishRanks();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
         this._refs.uiFlow.resetSpeedBar();
@@ -81,6 +85,7 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStroke(type);
         if (result) {
             this._refs.debug(`stroke=${type} rating=${result.rating} badReason=${result.badReason ?? 'none'} combo=${result.combo}`);
+            this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -95,6 +100,7 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
         if (result) {
             this._refs.debug(formatStabilityLog(`hold=${type}`, result));
+            this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -164,6 +170,10 @@ export class GameFlowController {
         raceManager.onProgressUpdate = (playerDist, aiDist) => {
             this._refs.uiFlow.updateProgress(playerDist, aiDist);
         };
+        raceManager.onSwimmerFinished = (result) => {
+            this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
+            this._refs.showFinishRank(result);
+        };
         raceManager.onRaceFinished = (playerWin, playerTime, aiTime, placementSummary) => {
             this._refs.debug(`finished win=${playerWin} player=${playerTime.toFixed(2)} ai=${aiTime.toFixed(2)}`);
             this.stopAllAi();
@@ -177,6 +187,7 @@ export class GameFlowController {
                 missCount: rhythm?.missCount ?? 0,
                 placement: placement.placement,
                 racerCount: placement.racerCount,
+                leaderboard: placement.leaderboard,
             });
         };
         raceManager.onDiveReady = () => {
@@ -197,6 +208,7 @@ export class GameFlowController {
         raceManager.onStateChange = null;
         raceManager.onRaceTimerUpdate = null;
         raceManager.onProgressUpdate = null;
+        raceManager.onSwimmerFinished = null;
         raceManager.onRaceFinished = null;
         raceManager.onDiveReady = null;
     }
@@ -217,6 +229,7 @@ export class GameFlowController {
         }
         const playerDistance = playerSwimmer.distance;
         const placement = this.calculatePlayerPlacement();
+        this._refs.uiFlow.updatePlacement(placement.placement, placement.racerCount);
         this._refs.raceCameraDirector.update(dt, {
             playerX: playerSwimmer.node.position.x,
             playerY: playerSwimmer.node.position.y,
@@ -336,7 +349,13 @@ export class GameFlowController {
         return Math.max(DIVE_BALANCE.minPower, Math.min(1, DIVE_BALANCE.minPower + clamp01(charge) * (1 - DIVE_BALANCE.minPower)));
     }
 
-    private calculatePlayerPlacement(): { placement: number; racerCount: number } {
+    private triggerPerfectFeedback(rating: Rating) {
+        if (rating === Rating.PERFECT) {
+            this._refs.playerSwimmer?.playPerfectFlash();
+        }
+    }
+
+    private calculatePlayerPlacement(): RacePlacementSummary {
         const player = this._refs.playerSwimmer;
         const racers = [
             { isPlayer: true, distance: player?.distance ?? 0 },

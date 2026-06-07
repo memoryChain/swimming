@@ -205,6 +205,26 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._rightLeg, -2, 0, 0);
     }
 
+    applyFinishFloatingPose() {
+        this.restoreBasePose();
+        this.applyBoneOffset(this._spine, -2, 0, 0);
+        this.applyBoneOffset(this._spine1, -3, 0, 0);
+        this.applyBoneOffset(this._neck, -4, 0, 0);
+        this.applyBoneOffset(this._head, -6, 0, 0);
+        this.applyBoneOffset(this._leftShoulder, 2, -2, -4);
+        this.applyBoneOffset(this._rightShoulder, 2, 2, 4);
+        this.applyBoneOffset(this._leftArm, 8, 0, -22);
+        this.applyBoneOffset(this._rightArm, 8, 0, 22);
+        this.applyBoneOffset(this._leftForeArm, 0, 0, -18);
+        this.applyBoneOffset(this._rightForeArm, 0, 0, 18);
+        this.applyBoneOffset(this._leftUpLeg, -4, 0, -4);
+        this.applyBoneOffset(this._rightUpLeg, 4, 0, 4);
+        this.applyBoneOffset(this._leftLeg, 8, 0, 0);
+        this.applyBoneOffset(this._rightLeg, -8, 0, 0);
+        this.applyBoneOffset(this._leftFoot, 8, 0, 0);
+        this.applyBoneOffset(this._rightFoot, 8, 0, 0);
+    }
+
     handWaterContact(cycle: number): number {
         const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
         const catchToPull = smoothPulse(phase, 0.10, 0.20, 0.46, 0.58);

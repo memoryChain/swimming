@@ -35,6 +35,9 @@ export class RaceHudBuilder {
 
         const timerLabel = makeLabel('Timer', parent, '0:00.00', 30, uiColor(255, 255, 255));
         timerLabel.setPosition(w / 2 - 118, h / 2 - 38, 0);
+        const placementLabel = makeLabel('Placement', parent, 'POS --/--', 20, uiColor(255, 244, 142));
+        placementLabel.getComponent(UITransform).setContentSize(150, 30);
+        placementLabel.setPosition(-w / 2 + 86, h / 2 - 38, 0);
 
         makeLabel('ProgressText', parent, 'RACE', 16, uiColor(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);
         const progressTrack = makeRect('ProgressTrack', parent, 240, 12, uiColor(190, 230, 235, 190));
@@ -104,21 +107,34 @@ export class RaceHudBuilder {
 
         const resultPanel = makeUiNode('ResultPanel', parent);
         resultPanel.active = false;
-        makeRect('ResultBg', resultPanel, 540, 316, uiColor(8, 22, 34, 240));
-        const resultTitle = makeLabel('ResultTitle', resultPanel, 'YOU WIN', 42, uiColor(255, 224, 89));
-        resultTitle.setPosition(0, 104, 0);
-        const resultTime = makeLabel('ResultTime', resultPanel, '', 20, uiColor(255, 255, 255));
-        resultTime.getComponent(UITransform).setContentSize(500, 132);
-        resultTime.setPosition(0, 12, 0);
+        makeRect('ResultBg', resultPanel, 540, 500, uiColor(8, 22, 34, 242));
+        const resultTitle = makeLabel('ResultTitle', resultPanel, 'RESULTS', 38, uiColor(255, 224, 89));
+        resultTitle.setPosition(0, 206, 0);
+        const resultTime = makeLabel('ResultTime', resultPanel, '', 17, uiColor(215, 235, 245));
+        resultTime.getComponent(UITransform).setContentSize(500, 36);
+        resultTime.setPosition(0, 168, 0);
+        const resultRows: Label[] = [];
+        const resultRowBacks: Node[] = [];
+        for (let i = 0; i < 8; i++) {
+            const rowBack = makeRect(`ResultRowBack${i}`, resultPanel, 472, 34, uiColor(255, 255, 255, 0));
+            rowBack.setPosition(0, 128 - i * 39, 0);
+            const row = makeLabel(`ResultRow${i}`, resultPanel, '', 18, uiColor(236, 246, 252));
+            row.getComponent(UITransform).setContentSize(454, 34);
+            row.getComponent(Label).lineHeight = 26;
+            row.setPosition(0, 128 - i * 39, 0);
+            resultRowBacks.push(rowBack);
+            resultRows.push(row.getComponent(Label));
+        }
         const restart = makeButton('RestartButton', resultPanel, 178, 44, uiColor(38, 116, 190), 'RACE AGAIN');
-        restart.setPosition(-98, -112, 0);
+        restart.setPosition(-98, -216, 0);
         restart.on(Node.EventType.TOUCH_END, () => this._callbacks.onRestart());
         const menu = makeButton('MenuButton', resultPanel, 150, 44, uiColor(232, 68, 72), 'MENU');
-        menu.setPosition(104, -112, 0);
+        menu.setPosition(104, -216, 0);
         menu.on(Node.EventType.TOUCH_END, () => this._callbacks.onMenu());
 
         const ui = makeUiNode('UIController', parent).addComponent(UIController);
         ui.timerLabel = timerLabel.getComponent(Label);
+        ui.placementLabel = placementLabel.getComponent(Label);
         ui.distanceLabel = progressLabel.getComponent(Label);
         ui.progressDot = progressDot;
         ui.progressTrackWidth = 240;
@@ -132,6 +148,8 @@ export class RaceHudBuilder {
         ui.resultPanel = resultPanel;
         ui.resultTitle = resultTitle.getComponent(Label);
         ui.resultTime = resultTime.getComponent(Label);
+        ui.resultRows = resultRows;
+        ui.resultRowBacks = resultRowBacks;
         ui.ratingLabel = ratingLabel.getComponent(Label);
         ui.comboLabel = comboLabel.getComponent(Label);
 

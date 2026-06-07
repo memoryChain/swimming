@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, instantiate, Layers, Node, SkeletalAnimation, SkinnedMeshRenderer, Vec3 } from 'cc';
+import { _decorator, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import { CharacterDebugController } from '../character/CharacterDebugController';
 import { CharacterRig } from '../character/CharacterRig';
@@ -7,10 +7,14 @@ import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loa
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const { ccclass } = _decorator;
 
 const SPLASH_WATER_Y = 0.408;
+const FINISH_FLOAT_BASE_Y = -0.42;
+const FINISH_FLOAT_BOB_AMPLITUDE = 0.035;
+const FINISH_FLOAT_BOB_SPEED = 2.6;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -42,12 +46,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _debugTimer = 0;
     private _modelDebugMode = false;
     private _preRaceStanding = false;
+    private _finishFloating = false;
     private _skinColor = new Color(246, 176, 118);
     private _suitColor = new Color(245, 42, 64);
     private _capColor = new Color(255, 220, 72);
     private _robotStyle = false;
     private _playerOutline = false;
     private _skinOutfit: CharacterSkinOutfit = 'default';
+    private _perfectGlowIntensity = 0;
+    private _perfectGlowShellRoot: Node = null;
+    private _perfectGlowMaterial: Material = null;
+    private _perfectGlowLoading = false;
     private readonly _tmpSplashWorld = new Vec3();
 
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
@@ -143,6 +152,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._active = active;
         if (active) {
             this._preRaceStanding = false;
+            this._finishFloating = false;
             this.applyRaceModelSetup();
             this._animationPlayer.stop();
         } else {
@@ -176,6 +186,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._preRaceStanding = active;
+        this._finishFloating = false;
         this._active = false;
         this._animationPlayer.stop();
         if (!this._loaded || !this._model || !this.root) {
@@ -189,11 +200,26 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
+    setFinishFloating() {
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._preRaceStanding = false;
+        this._finishFloating = true;
+        this._active = false;
+        this._animationPlayer.stop();
+        if (!this._loaded || !this._model || !this.root) {
+            return;
+        }
+        this.applyFinishFloatingSetup();
+    }
+
     setDiveStreamlinePose() {
         if (this._modelDebugMode) {
             return;
         }
         this._preRaceStanding = false;
+        this._finishFloating = false;
         this._active = true;
         this._animationPlayer.stop();
         if (!this._loaded || !this._model || !this.root) {
@@ -284,6 +310,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
+        this.updatePerfectGlow(dt);
+
+        if (this._finishFloating) {
+            this.updateFinishFloating();
+            return;
+        }
+
         if (!this._active && !this._animationPlayer.hasAnimation) {
             this._pose.applyPreviewPose(this._selfTime);
         }
@@ -313,6 +346,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._kickCycleMotion = 0;
         this._lastKickCycle = 0;
         this._hasLastKickCycle = false;
+        this._finishFloating = false;
         this._splashEmitter?.reset();
         this._pose.restoreBasePose();
         this.updateSplashSurface(0);
@@ -354,8 +388,29 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.triggerBurst(scale);
     }
 
+    triggerPerfectGlow() {
+        if (!this.node?.isValid || !this._loaded || !this._model || !this.root) {
+            return;
+        }
+        this._perfectGlowIntensity = 1;
+        this.ensurePerfectGlowShells();
+        this.updatePerfectGlowMaterial();
+    }
+
     private updateModelDebug(dt: number) {
         this._debug.update(dt);
+    }
+
+    private updatePerfectGlow(dt: number) {
+        if (this._perfectGlowIntensity <= 0) {
+            this.updatePerfectGlowMaterial();
+            return;
+        }
+        if (!this._perfectGlowMaterial || !this._perfectGlowShellRoot?.isValid) {
+            return;
+        }
+        this._perfectGlowIntensity = Math.max(0, this._perfectGlowIntensity - dt * 5.8);
+        this.updatePerfectGlowMaterial();
     }
 
     private applyLaneMaterials(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
@@ -423,6 +478,27 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._pose.applyPreRaceStandingPose();
         this.updateSplashSurface(0);
         this._splashEmitter?.setVisible(false);
+    }
+
+    private applyFinishFloatingSetup() {
+        if (!this._model || !this.root) {
+            return;
+        }
+        this._model.setPosition(0, FINISH_FLOAT_BASE_Y, 0);
+        this._model.setScale(0.82, 0.82, 0.82);
+        this._model.setRotationFromEuler(0, 90, 0);
+        this._pose.applyFinishFloatingPose();
+        this.updateSplashSurface(0);
+        this._splashEmitter?.setVisible(false);
+    }
+
+    private updateFinishFloating() {
+        if (!this._model || !this.root) {
+            return;
+        }
+        const bob = Math.sin(this._selfTime * FINISH_FLOAT_BOB_SPEED) * FINISH_FLOAT_BOB_AMPLITUDE;
+        this._model.setPosition(0, FINISH_FLOAT_BASE_Y + bob, 0);
+        this._pose.applyFinishFloatingPose();
     }
 
     private updateSplashSurface(speed: number) {
@@ -493,6 +569,74 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             console.log(`[SpeedSwimming] skinned mesh realtime enabled count=${this._skinnedRenderers.length} roots=${roots}`);
         } else {
             console.warn('[SpeedSwimming] no SkinnedMeshRenderer found on swimmer prefab');
+        }
+    }
+
+    private ensurePerfectGlowShells() {
+        if (this._perfectGlowShellRoot?.isValid || this._perfectGlowLoading) {
+            return;
+        }
+        if (!this._model || this._skinnedRenderers.length <= 0) {
+            return;
+        }
+        this._perfectGlowLoading = true;
+        resources.load(RESOURCE_PATHS.swimmerPerfectGlowEffect, EffectAsset, (err, effect) => {
+            this._perfectGlowLoading = false;
+            if (err || !effect || !this.node?.isValid || !this._model?.isValid) {
+                console.warn('[SpeedSwimming] failed to load perfect glow effect', err);
+                return;
+            }
+            const material = new Material();
+            material.initialize({ effectAsset: effect });
+            material.name = 'SwimmerPerfectGlow';
+            material.setProperty('lineWidth', 6);
+            material.setProperty('flashStrength', this._perfectGlowIntensity);
+            material.setProperty('baseColor', new Color(255, 198, 38, 255));
+            this._perfectGlowMaterial = material;
+
+            const root = new Node('SwimmerPerfectGlowShell');
+            root.setParent(this._model);
+            root.layer = Layers.Enum.DEFAULT;
+            root.setPosition(0, 0, 0);
+            root.setRotationFromEuler(0, 0, 0);
+            root.setScale(1, 1, 1);
+            this._perfectGlowShellRoot = root;
+
+            for (const source of this._skinnedRenderers) {
+                if (!source.node?.isValid || !source.mesh) {
+                    continue;
+                }
+                const shellNode = new Node(`${source.node.name || 'Skin'}PerfectGlow`);
+                const worldPosition = new Vec3();
+                const worldRotation = new Quat();
+                const worldScale = new Vec3();
+                source.node.getWorldPosition(worldPosition);
+                source.node.getWorldRotation(worldRotation);
+                source.node.getWorldScale(worldScale);
+                shellNode.setParent(root);
+                shellNode.layer = Layers.Enum.DEFAULT;
+                shellNode.setWorldPosition(worldPosition);
+                shellNode.setWorldRotation(worldRotation);
+                shellNode.setWorldScale(worldScale);
+                const shell = shellNode.addComponent(SkinnedMeshRenderer);
+                shell.mesh = source.mesh;
+                shell.skeleton = source.skeleton;
+                shell.skinningRoot = source.skinningRoot || this._model;
+                shell.setUseBakedAnimation(false, true);
+                shell.uploadAnimation(null);
+                shell.setMaterial(material, 0);
+            }
+            this.updatePerfectGlowMaterial();
+        });
+    }
+
+    private updatePerfectGlowMaterial() {
+        if (this._perfectGlowShellRoot?.isValid) {
+            this._perfectGlowShellRoot.active = this._perfectGlowIntensity > 0.001;
+        }
+        if (this._perfectGlowMaterial) {
+            const pulse = this._perfectGlowIntensity * (0.72 + Math.sin(this._perfectGlowIntensity * Math.PI * 5.0) * 0.28);
+            this._perfectGlowMaterial.setProperty('flashStrength', Math.max(0, Math.min(1, pulse)));
         }
     }
 

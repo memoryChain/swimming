@@ -12,6 +12,14 @@ export type RaceResultStats = {
     missCount: number;
     placement?: number;
     racerCount?: number;
+    leaderboard?: RaceLeaderboardRow[];
+};
+
+export type RaceLeaderboardRow = {
+    name: string;
+    placement: number;
+    time: number;
+    isPlayer: boolean;
 };
 
 @ccclass('UIController')
@@ -21,6 +29,7 @@ export class UIController extends Component {
     @property(Label) public distanceLabel: Label = null;
     @property(Label) public aiDistanceLabel: Label = null;
     @property(Label) public timerLabel: Label = null;
+    @property(Label) public placementLabel: Label = null;
     @property(Label) public speedLabel: Label = null;
     @property(Label) public telemetryLabel: Label = null;
     @property(Label) public hintLabel: Label = null;
@@ -34,6 +43,8 @@ export class UIController extends Component {
     @property(Node) public resultPanel: Node = null;
     @property(Label) public resultTitle: Label = null;
     @property(Label) public resultTime: Label = null;
+    public resultRows: Label[] = [];
+    public resultRowBacks: Node[] = [];
     @property(Label) public ratingLabel: Label = null;
     @property(Label) public comboLabel: Label = null;
 
@@ -68,6 +79,17 @@ export class UIController extends Component {
         }
     }
 
+    updatePlacement(placement: number, racerCount: number) {
+        if (!this.placementLabel) {
+            return;
+        }
+        if (placement <= 0 || racerCount <= 0) {
+            this.placementLabel.string = 'POS --/--';
+            return;
+        }
+        this.placementLabel.string = `POS ${placement}/${racerCount}`;
+    }
+
     updateSpeed(speed: number) {
         if (this.speedLabel) {
             this.speedLabel.string = `${speed.toFixed(2)}\nm/s`;
@@ -100,6 +122,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        this.setSpeedBarVisible(false);
         if (this.hintLabel) {
             this.hintLabel.string = 'Hold A+D during countdown, auto dive on GO';
         }
@@ -113,9 +136,7 @@ export class UIController extends Component {
     }
 
     updateDiveCharge(power: number, visible: boolean) {
-        if (this.speedBarRoot) {
-            this.speedBarRoot.active = !visible;
-        }
+        this.setSpeedBarVisible(!visible && !this.countdownOverlay?.active);
         if (this.diveChargeTrack) {
             this.diveChargeTrack.active = visible;
         }
@@ -188,23 +209,18 @@ export class UIController extends Component {
             this.resultPanel.active = true;
         }
         if (this.resultTitle) {
-            this.resultTitle.string = soloRace ? 'FINISHED' : isWin ? 'YOU WIN' : 'AI WINS';
+            this.resultTitle.string = 'RESULTS';
             this.resultTitle.color = (soloRace || isWin) ? new Color(255, 224, 89, 255) : new Color(255, 112, 112, 255);
         }
         if (this.resultTime) {
-            const aiTimeText = aiTime > 0 ? `${aiTime.toFixed(2)}s` : '--';
-            const base = soloRace
-                ? `Your time ${playerTime.toFixed(2)}s`
-                : `Your time ${playerTime.toFixed(2)}s  |  Best AI ${aiTimeText}`;
-            const placement = !soloRace && stats?.placement && stats?.racerCount
-                ? `\nPLACE #${stats.placement}/${stats.racerCount}`
-                : '';
-            const details = stats
-                ? `${placement}\nAVG ${stats.averageSpeed.toFixed(2)} m/s  MAX ${stats.maxCombo} combo\nP/G/B ${stats.perfectCount}/${stats.goodCount}/${stats.missCount}`
-                : '';
-            this.resultTime.string = `${base}${details}`;
-            this.resultTime.lineHeight = 28;
+            const placement = stats?.placement && stats?.racerCount ? `PLACE #${stats.placement}/${stats.racerCount}` : '';
+            const details = stats ? `AVG ${stats.averageSpeed.toFixed(2)} m/s   MAX ${stats.maxCombo} combo` : '';
+            this.resultTime.string = [placement, details].filter(Boolean).join('   ');
+            this.resultTime.lineHeight = 22;
         }
+        this.updateLeaderboard(stats?.leaderboard, playerTime);
+        void aiTime;
+        void soloRace;
         if (this.hintLabel) {
             this.hintLabel.string = 'Press Space or tap Restart';
         }
@@ -213,6 +229,7 @@ export class UIController extends Component {
     resetAll() {
         this.updateTimer(0);
         this.updateProgress(0, 0);
+        this.updatePlacement(0, 0);
         this.updateSpeed(0);
         this.updateSwimTelemetry(0, 0, 0);
         if (this.ratingLabel) {
@@ -228,8 +245,33 @@ export class UIController extends Component {
         if (this.resultPanel) {
             this.resultPanel.active = false;
         }
+        this.updateLeaderboard([], 0);
         if (this.hintLabel) {
             this.hintLabel.string = 'Get ready';
+        }
+    }
+
+    private updateLeaderboard(rows: RaceLeaderboardRow[] | undefined, playerTime: number) {
+        const leaderboard = rows && rows.length > 0
+            ? rows
+            : playerTime > 0 ? [{ name: 'YOU', placement: 1, time: playerTime, isPlayer: true }] : [];
+        for (let i = 0; i < this.resultRows.length; i++) {
+            const label = this.resultRows[i];
+            const back = this.resultRowBacks[i];
+            const row = leaderboard[i];
+            if (!row) {
+                if (label) {
+                    label.string = '';
+                }
+                setRowBack(back, new Color(255, 255, 255, 0));
+                continue;
+            }
+            if (label) {
+                label.string = `${padLeft(`${row.placement}.`, 3)}  ${padRight(fitName(row.name), 12)}  ${padLeft(`${row.time.toFixed(2)}s`, 7)}`;
+                label.color = row.isPlayer ? new Color(255, 244, 142, 255) : new Color(236, 246, 252, 255);
+                label.fontSize = row.isPlayer ? 20 : 18;
+            }
+            setRowBack(back, row.isPlayer ? new Color(255, 224, 89, 44) : new Color(255, 255, 255, 12));
         }
     }
 
@@ -251,6 +293,12 @@ export class UIController extends Component {
             .to(0.12, { scale: new Vec3(1, 1, 1) })
             .start();
     }
+
+    private setSpeedBarVisible(visible: boolean) {
+        if (this.speedBarRoot) {
+            this.speedBarRoot.active = visible;
+        }
+    }
 }
 
 function signed(value: number): string {
@@ -271,5 +319,32 @@ function drawChargeFill(gfx: Graphics, ratio: number) {
             ? new Color(80, 242, 161, 255)
             : new Color(87, 196, 255, 255);
     gfx.rect(-w / 2, -h / 2, w, h * ratio);
+    gfx.fill();
+}
+
+function fitName(name: string): string {
+    const value = name || 'AI';
+    return value.length > 12 ? value.slice(0, 12) : value;
+}
+
+function padRight(value: string, length: number): string {
+    return value.length >= length ? value : `${value}${' '.repeat(length - value.length)}`;
+}
+
+function padLeft(value: string, length: number): string {
+    return value.length >= length ? value : `${' '.repeat(length - value.length)}${value}`;
+}
+
+function setRowBack(node: Node | undefined, color: Color) {
+    const gfx = node?.getComponent(Graphics);
+    if (!gfx) {
+        return;
+    }
+    gfx.clear();
+    if (color.a <= 0) {
+        return;
+    }
+    gfx.fillColor = color;
+    gfx.rect(-236, -17, 472, 34);
     gfx.fill();
 }

@@ -29,7 +29,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { SWIMMER_BALANCE } from './GameBalance';
-import { GameState, StrokeType } from './GameConstants';
+import { GameState, Rating, StrokeType } from './GameConstants';
 import { formatStabilityLog } from './StabilityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
@@ -37,6 +37,7 @@ import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
+import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
 
 const { ccclass } = _decorator;
 
@@ -72,6 +73,7 @@ export class GameManager extends Component {
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z);
+    private readonly _finishRankMarkers = new FinishRankMarkerBuilder();
     private _ceilingHiddenForTopView = false;
 
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
@@ -138,6 +140,7 @@ export class GameManager extends Component {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
+        this._finishRankMarkers.bind(this._worldRoot);
         this.buildPool3D(this._worldRoot);
         this.buildSwimmers3D(this._worldRoot);
         this.buildUi(scene.canvasNode, scene.width, scene.height);
@@ -176,6 +179,8 @@ export class GameManager extends Component {
                 this._state = state;
             },
             getState: () => this._state,
+            clearFinishRanks: () => this._finishRankMarkers.clear(),
+            showFinishRank: (result) => this._finishRankMarkers.show(result),
             debug: (message) => this.debug(message),
         });
     }
@@ -333,6 +338,9 @@ export class GameManager extends Component {
         }
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
             this.debug(formatStabilityLog('stability', result));
+            if (result.rating === Rating.PERFECT) {
+                this._playerSwimmer?.playPerfectFlash();
+            }
             this._uiFlow?.showRating(result.rating, result.combo);
         }
     }

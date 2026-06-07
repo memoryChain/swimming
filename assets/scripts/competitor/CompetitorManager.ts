@@ -2,7 +2,7 @@ import { Node } from 'cc';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
-import { DEFAULT_AI_PROFILES, randomPlayerVisualProfile, shuffledAiVisualProfiles } from './CompetitorConfig';
+import { DEFAULT_AI_PROFILES, randomPlayerVisualProfile, shuffledAiCompetitorNames, shuffledAiVisualProfiles } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
@@ -33,7 +33,9 @@ export class CompetitorManager {
         let playerSwimmer: Swimmer = null;
         let primaryAiController: AISwimmerController | null = null;
         const aiVisuals = shuffledAiVisualProfiles();
+        const aiNames = shuffledAiCompetitorNames();
         let aiVisualIndex = 0;
+        let aiNameIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             const isPlayer = lane === this._options.playerLaneIndex;
@@ -47,6 +49,7 @@ export class CompetitorManager {
                 isAI: !isPlayer,
                 suitColor: visual.suitColor,
                 capColor: visual.capColor,
+                displayName: isPlayer ? 'YOU' : aiNames[aiNameIndex++ % aiNames.length],
             });
             if (isPlayer) {
                 playerSwimmer = swimmer;

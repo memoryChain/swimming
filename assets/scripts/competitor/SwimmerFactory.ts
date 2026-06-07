@@ -9,6 +9,7 @@ export type CreateSwimmerOptions = {
     isAI: boolean;
     suitColor?: Color;
     capColor?: Color;
+    displayName?: string;
 };
 
 export class SwimmerFactory {
@@ -34,7 +35,7 @@ export class SwimmerFactory {
         swimmer.cartoonRig = rig;
         swimmer.splashNode = rig.splashNode;
         swimmer.isAI = options.isAI;
-        swimmer.swimmerName = options.isAI ? 'AI' : 'Player';
+        swimmer.swimmerName = options.displayName || (options.isAI ? 'AI' : 'YOU');
         this._debug?.(`${options.name} uses CartoonSwimmerRig`);
         return swimmer;
     }

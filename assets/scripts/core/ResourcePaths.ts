@@ -7,6 +7,7 @@ export const RESOURCE_PATHS = {
     poolWaterMaterial: 'pool/RagingPoolWater',
     swimmerSplashMaterial: 'pool/SwimmerSplash',
     playerOutlineEffect: 'effects/PlayerOutline',
+    swimmerPerfectGlowEffect: 'effects/SwimmerPerfectGlow',
 };
 
 export const ANIMATION_CLIPS = {

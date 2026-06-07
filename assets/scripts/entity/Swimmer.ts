@@ -11,6 +11,8 @@ import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
 
+const FINISH_FLOAT_X_OFFSET = 0.72;
+
 @ccclass('Swimmer')
 export class Swimmer extends Component {
     @property(Node) public bodyNode: Node = null;
@@ -181,16 +183,29 @@ export class Swimmer extends Component {
         }
     }
 
+    playPerfectFlash() {
+        if (!this.isAI) {
+            this.cartoonRig?.triggerPerfectGlow();
+        }
+    }
+
     playFinishRagdoll() {
         this.playFinishTouch();
     }
 
     playFinishTouch() {
+        const finishPosition = this.node.position.clone();
+        Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
-        this.cartoonRig?.setActiveSwimming(false);
+        this.node.setRotationFromEuler(0, 0, 0);
+        if (this.cartoonRig) {
+            this.cartoonRig.setFinishFloating();
+            this.node.setPosition(finishPosition.x + FINISH_FLOAT_X_OFFSET, finishPosition.y + 0.01, finishPosition.z);
+            return;
+        }
         tween(this.node)
-            .to(0.12, { eulerAngles: new Vec3(0, 0, -5), position: new Vec3(this.node.position.x + 0.42, this.node.position.y, this.node.position.z) })
-            .to(0.16, { eulerAngles: new Vec3(0, 0, 6), position: new Vec3(this.node.position.x + 0.64, this.node.position.y - 0.05, this.node.position.z) })
+            .to(0.12, { eulerAngles: new Vec3(0, 0, -5), position: new Vec3(finishPosition.x + 0.42, finishPosition.y, finishPosition.z) })
+            .to(0.16, { eulerAngles: new Vec3(0, 0, 6), position: new Vec3(finishPosition.x + 0.64, finishPosition.y - 0.05, finishPosition.z) })
             .to(0.18, { eulerAngles: new Vec3(0, 0, 0) })
             .start();
     }

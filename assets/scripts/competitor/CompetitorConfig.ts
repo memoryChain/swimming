@@ -45,12 +45,42 @@ export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
     { difficulty: 0.96, bpmOffset: 10, power: 1.05, maxSpeed: 1.03, divePower: 0.94, diveReaction: 0.04 },
 ];
 
+export const AI_COMPETITOR_NAMES = [
+    'Liam',
+    'Noah',
+    'Oliver',
+    'James',
+    'Lucas',
+    'Mason',
+    'Ethan',
+    'Logan',
+    'Henry',
+    'Jack',
+    'Owen',
+    'Leo',
+    'Miles',
+    'Caleb',
+    'Dylan',
+    'Finn',
+];
+
 export function randomPlayerVisualProfile(): CompetitorVisualProfile {
     const visual = PLAYER_COMPETITOR_VISUALS[Math.floor(Math.random() * PLAYER_COMPETITOR_VISUALS.length)];
     return {
         suitColor: visual.suitColor.clone(),
         capColor: visual.capColor.clone(),
     };
+}
+
+export function shuffledAiCompetitorNames(): string[] {
+    const names = AI_COMPETITOR_NAMES.slice();
+    for (let i = names.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = names[i];
+        names[i] = names[j];
+        names[j] = temp;
+    }
+    return names;
 }
 
 export function shuffledAiVisualProfiles(): CompetitorVisualProfile[] {
