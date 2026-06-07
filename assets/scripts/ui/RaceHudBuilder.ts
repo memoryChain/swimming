@@ -1,4 +1,4 @@
-import { EventMouse, Graphics, Label, Node, UITransform } from 'cc';
+import { EventMouse, Graphics, Label, Node, UITransform, view } from 'cc';
 import { UIController } from './UIController';
 import { makeBottomRect, makeButton, makeLabel, makeRect, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 
@@ -22,6 +22,15 @@ export class RaceHudBuilder {
     constructor(private readonly _callbacks: RaceHudCallbacks) {}
 
     build(parent: Node, w: number, h: number): RaceHudRefs {
+        const safeW = visibleUiWidth(w, h);
+        const safeH = visibleUiHeight(w, h);
+        const leftX = -safeW / 2;
+        const rightX = safeW / 2;
+        const topY = safeH / 2;
+        const portrait = safeH > safeW;
+        const sidePad = portrait ? 18 : 24;
+        const topPad = portrait ? 34 : 28;
+
         const strokePad = makeTouchArea('StrokeInput', parent, w, h);
         strokePad.on(Node.EventType.TOUCH_START, () => this.beginStrokeHold());
         strokePad.on(Node.EventType.TOUCH_END, () => this.endStrokeHold());
@@ -34,21 +43,23 @@ export class RaceHudBuilder {
         });
 
         const timerLabel = makeLabel('Timer', parent, '0:00.00', 30, uiColor(255, 255, 255));
-        timerLabel.setPosition(w / 2 - 118, h / 2 - 38, 0);
+        timerLabel.setPosition(rightX - 92, topY - topPad, 0);
         const placementLabel = makeLabel('Placement', parent, 'POS --/--', 20, uiColor(255, 244, 142));
         placementLabel.getComponent(UITransform).setContentSize(150, 30);
-        placementLabel.setPosition(-w / 2 + 86, h / 2 - 38, 0);
+        placementLabel.setPosition(leftX + 86, topY - topPad, 0);
 
-        makeLabel('ProgressText', parent, 'RACE', 16, uiColor(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);
-        const progressTrack = makeRect('ProgressTrack', parent, 240, 12, uiColor(190, 230, 235, 190));
-        progressTrack.setPosition(0, h / 2 - 92, 0);
+        const progressTrackWidth = Math.min(240, Math.max(172, safeW - 300));
+        const progressY = topY - (portrait ? 88 : 92);
+        makeLabel('ProgressText', parent, 'RACE', 16, uiColor(210, 240, 250)).setPosition(-(progressTrackWidth / 2 + 48), progressY, 0);
+        const progressTrack = makeRect('ProgressTrack', parent, progressTrackWidth, 12, uiColor(190, 230, 235, 190));
+        progressTrack.setPosition(0, progressY, 0);
         const progressDot = makeRect('ProgressDot', progressTrack, 14, 14, uiColor(255, 54, 70));
-        progressDot.setPosition(-120, 0, 0);
+        progressDot.setPosition(-progressTrackWidth / 2, 0, 0);
         const progressLabel = makeLabel('ProgressValue', parent, '0%', 16, uiColor(255, 255, 255));
         progressLabel.getComponent(UITransform).setContentSize(90, 26);
-        progressLabel.setPosition(146, h / 2 - 92, 0);
+        progressLabel.setPosition(progressTrackWidth / 2 + 42, progressY, 0);
 
-        const speedTrackX = w / 2 - 34;
+        const speedTrackX = rightX - sidePad - 16;
         const speedBarRoot = makeUiNode('SpeedBarRoot', parent);
         makeLabel('SpeedText', speedBarRoot, 'SPD', 15, uiColor(210, 240, 250)).setPosition(speedTrackX, 124, 0);
         makeRect('SpeedTrack', speedBarRoot, 16, 220, uiColor(5, 18, 30, 210)).setPosition(speedTrackX, 0, 0);
@@ -57,19 +68,19 @@ export class RaceHudBuilder {
         const speedLabel = makeLabel('SpeedValue', speedBarRoot, '0.00\nm/s', 14, uiColor(255, 255, 255));
         speedLabel.getComponent(UITransform).setContentSize(72, 42);
         speedLabel.getComponent(Label).lineHeight = 18;
-        speedLabel.setPosition(speedTrackX - 42, 92, 0);
+        speedLabel.setPosition(speedTrackX - 46, 92, 0);
         const telemetryLabel = makeLabel('SwimTelemetry', parent, 'STB 0%   ACC +0.00   SPD 0.00 m/s', 15, uiColor(150, 235, 255));
-        telemetryLabel.getComponent(UITransform).setContentSize(430, 24);
-        telemetryLabel.setPosition(0, h / 2 - 118, 0);
+        telemetryLabel.getComponent(UITransform).setContentSize(Math.min(430, safeW - 72), 24);
+        telemetryLabel.setPosition(0, progressY - 26, 0);
 
         const ratingLabel = makeLabel('Rating', parent, '', 46, uiColor(255, 255, 255));
-        ratingLabel.getComponent(UITransform).setContentSize(380, 60);
+        ratingLabel.getComponent(UITransform).setContentSize(Math.min(380, safeW - 48), 60);
         ratingLabel.getComponent(Label).lineHeight = 54;
-        ratingLabel.setPosition(0, h / 2 - 164, 0);
+        ratingLabel.setPosition(0, progressY - 72, 0);
         const comboLabel = makeLabel('Combo', parent, '', 24, uiColor(255, 255, 255));
-        comboLabel.getComponent(UITransform).setContentSize(300, 34);
+        comboLabel.getComponent(UITransform).setContentSize(Math.min(300, safeW - 80), 34);
         comboLabel.getComponent(Label).lineHeight = 30;
-        comboLabel.setPosition(0, h / 2 - 204, 0);
+        comboLabel.setPosition(0, progressY - 112, 0);
 
         const countdownOverlay = makeUiNode('CountdownOverlay', parent);
         countdownOverlay.getComponent(UITransform).setContentSize(w, h);
@@ -137,7 +148,7 @@ export class RaceHudBuilder {
         ui.placementLabel = placementLabel.getComponent(Label);
         ui.distanceLabel = progressLabel.getComponent(Label);
         ui.progressDot = progressDot;
-        ui.progressTrackWidth = 240;
+        ui.progressTrackWidth = progressTrackWidth;
         ui.speedBarRoot = speedBarRoot;
         ui.speedLabel = speedLabel.getComponent(Label);
         ui.telemetryLabel = telemetryLabel.getComponent(Label);
@@ -185,4 +196,18 @@ export class RaceHudBuilder {
         this._callbacks.onStrokeEnd();
         this.endDiveHold();
     }
+}
+
+function visibleUiWidth(designW: number, designH: number): number {
+    const frame = view.getFrameSize();
+    const frameAspect = frame.height > 0 ? frame.width / frame.height : designW / Math.max(1, designH);
+    const widthFromHeight = designH * frameAspect;
+    return Math.max(320, Math.min(designW, widthFromHeight || designW));
+}
+
+function visibleUiHeight(designW: number, designH: number): number {
+    const frame = view.getFrameSize();
+    const frameAspect = frame.height > 0 ? frame.width / frame.height : designW / Math.max(1, designH);
+    const heightFromWidth = frameAspect > 0 ? designW / frameAspect : designH;
+    return Math.max(480, Math.min(designH, heightFromWidth || designH));
 }
