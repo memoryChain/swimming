@@ -177,7 +177,9 @@ export class Swimmer extends Component {
         if (!this.isAI) {
             return;
         }
-        this.cartoonRig?.triggerStroke(type, false);
+        if (this._motor.recordAiVisualStroke(type)) {
+            this.cartoonRig?.triggerStroke(type, false);
+        }
     }
 
     playFinishRagdoll() {

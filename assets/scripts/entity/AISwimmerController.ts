@@ -1,11 +1,13 @@
 import { _decorator, Component } from 'cc';
-import { DIVE_BALANCE, RHYTHM_BALANCE, getTargetInterval } from '../core/GameBalance';
+import { DIVE_BALANCE, RHYTHM_BALANCE, SWIMMER_BALANCE, getTargetInterval } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
 
 const MIN_VISUAL_STROKE_INTERVAL = 0.18;
+const LOW_SPEED_INTERVAL_SCALE = 1.34;
+const HIGH_SPEED_INTERVAL_SCALE = 0.76;
 
 @ccclass('AISwimmerController')
 export class AISwimmerController extends Component {
@@ -59,11 +61,21 @@ export class AISwimmerController extends Component {
     private nextStrokeInterval(): number {
         const jitter = lerp(0.24, 0.025, this.difficulty);
         const mistakeChance = lerp(0.12, 0.01, this.difficulty);
-        let interval = this._baseInterval * (1 + randomRange(-jitter, jitter));
+        const speedRatio = this.currentSpeedRatio();
+        const speedIntervalScale = lerp(LOW_SPEED_INTERVAL_SCALE, HIGH_SPEED_INTERVAL_SCALE, smoothStep(speedRatio));
+        let interval = this._baseInterval * speedIntervalScale * (1 + randomRange(-jitter, jitter));
         if (Math.random() < mistakeChance) {
             interval *= randomRange(0.78, 1.28);
         }
         return Math.max(MIN_VISUAL_STROKE_INTERVAL, interval);
+    }
+
+    private currentSpeedRatio(): number {
+        if (!this.swimmer) {
+            return 0;
+        }
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed * Math.max(0.1, this.swimmer.aiMaxSpeedScale);
+        return maxSpeed > 0 ? clamp(this.swimmer.currentSpeed / maxSpeed, 0, 1) : 0;
     }
 }
 
@@ -77,4 +89,9 @@ function lerp(a: number, b: number, t: number): number {
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
+}
+
+function smoothStep(value: number): number {
+    const t = clamp(value, 0, 1);
+    return t * t * (3 - 2 * t);
 }

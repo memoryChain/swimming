@@ -128,6 +128,23 @@ export class SwimmerMotor {
         return this.canQueueSideStroke(StrokeType.LEFT) || this.canQueueSideStroke(StrokeType.RIGHT);
     }
 
+    recordAiVisualStroke(type: StrokeType): boolean {
+        let queued = false;
+        if (type === StrokeType.LEFT) {
+            queued = this.queueVisualSideStroke(StrokeType.LEFT) || queued;
+        } else if (type === StrokeType.RIGHT) {
+            queued = this.queueVisualSideStroke(StrokeType.RIGHT) || queued;
+        } else {
+            queued = this.queueVisualSideStroke(StrokeType.LEFT) || queued;
+            queued = this.queueVisualSideStroke(StrokeType.RIGHT) || queued;
+        }
+        if (queued) {
+            this._armAction = 1;
+            this._kickAction = 1;
+        }
+        return queued;
+    }
+
     setStrokeHeld(type: StrokeType, held: boolean): StrokeStabilityResult | null {
         let result: StrokeStabilityResult | null = null;
         if (type === StrokeType.LEFT) {
@@ -254,13 +271,11 @@ export class SwimmerMotor {
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
         if (options.isAI) {
-            const aiCycleStep = actionCycleSpeed * MOTION_TUNING.animationSpeedScale * dt * Math.max(0.7, options.aiPower);
-            this._leftArmCycle += aiCycleStep;
-            this._rightArmCycle = this._leftArmCycle + Math.PI;
-            this._leftKickCycle += aiCycleStep * 1.18;
-            this._rightKickCycle = this._leftKickCycle + Math.PI;
-            this._armAction = Math.max(this._armAction, 0.35);
-            this._kickAction = Math.max(this._kickAction, 0.35);
+            const visualSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
+            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', visualSpeedScale);
+            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', visualSpeedScale);
+            this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', visualSpeedScale);
+            this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', visualSpeedScale);
             return;
         }
         this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
@@ -473,6 +488,18 @@ export class SwimmerMotor {
         const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
         const kickKey = isLeft ? '_rightKickMotionRemaining' : '_leftKickMotionRemaining';
         return actions.length < 2 && this.canQueueMotionCycle(armKey) && this.canQueueMotionCycle(kickKey);
+    }
+
+    private queueVisualSideStroke(type: StrokeType): boolean {
+        const isLeft = type === StrokeType.LEFT;
+        const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
+        const kickKey = isLeft ? '_rightKickMotionRemaining' : '_leftKickMotionRemaining';
+        if (!this.canQueueMotionCycle(armKey) || !this.canQueueMotionCycle(kickKey)) {
+            return false;
+        }
+        const armQueued = this.queueMotionCycle(armKey);
+        const kickQueued = this.queueMotionCycle(kickKey);
+        return armQueued || kickQueued;
     }
 
     private canQueueMotionCycle(
