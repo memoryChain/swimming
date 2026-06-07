@@ -1,4 +1,4 @@
-import { Camera, Color, EventMouse, Label, Node, Vec3 } from 'cc';
+import { Camera, Color, EventMouse, Label, Node, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -14,6 +14,7 @@ import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
 
 export type ModelDebugFlowRefs = {
+    worldRoot: Node | null;
     cameraNode: Node | null;
     cameraPos: Vec3;
     cameraTarget: Vec3;
@@ -45,6 +46,7 @@ export class ModelDebugFlowController {
     private _lastRating: Rating | null = null;
     private _lastCombo = 0;
     private _lastStability = 0;
+    private readonly _hiddenDebugSceneNodes = new Map<Node, boolean>();
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
 
@@ -57,7 +59,7 @@ export class ModelDebugFlowController {
         this._active = true;
         this._cameraYaw = Math.PI / 2;
         this._cameraPitch = 0.04;
-        this._cameraDistance = 3.2;
+        this._cameraDistance = this.isPortraitViewport() ? 4.2 : 3.2;
         this._cameraDragging = false;
         this._speedScale = MOTION_TUNING.animationSpeedScale;
         this._lastRating = null;
@@ -85,14 +87,16 @@ export class ModelDebugFlowController {
             this._refs.playerSwimmer.node.active = true;
             this._refs.playerSwimmer.reset();
             this._refs.playerSwimmer.node.setPosition(12, 0.24, this._refs.playerLaneZ);
+            this._refs.playerSwimmer.cartoonRig?.setSkinOutfit('trunksA');
             this._refs.playerSwimmer.cartoonRig?.setModelDebugMode(true);
             this._refs.playerSwimmer.cartoonRig?.setModelDebugSpeedScale(this._speedScale);
             this._refs.playerSwimmer.cartoonRig?.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
         }
+        this.hideNonPlayerWorldNodes(true);
         this.updateCamera(1);
         const camera = this._refs.cameraNode?.getComponent(Camera);
         if (camera) {
-            camera.fov = 28;
+            camera.fov = this.isPortraitViewport() ? 34 : 28;
         }
     }
 
@@ -106,10 +110,12 @@ export class ModelDebugFlowController {
         if (this._refs.inputManager) {
             this._refs.inputManager.modelDebugMode = false;
         }
+        this.restoreHiddenDebugSceneNodes();
         this._refs.uiFlow.hideModelDebugHud();
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = true;
         }
+        this._refs.playerSwimmer?.cartoonRig?.setSkinOutfit('default');
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugMode(false);
         this._debugMotor.stopRace();
         this._refs.playerSwimmer?.reset();
@@ -160,6 +166,7 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return;
         }
+        this.hideNonPlayerWorldNodes(false);
         this.syncSpeedFromTuning();
         const finished = this._debugMotor.update(dt, {
             isAI: false,
@@ -180,7 +187,7 @@ export class ModelDebugFlowController {
         if (!this._refs.cameraNode) {
             return;
         }
-        const target = new Vec3(12, 0.54, this._refs.playerLaneZ);
+        const target = new Vec3(12, this.isPortraitViewport() ? 0.88 : 0.54, this._refs.playerLaneZ);
         const cosPitch = Math.cos(this._cameraPitch);
         const desiredPos = new Vec3(
             target.x + Math.cos(this._cameraYaw) * cosPitch * this._cameraDistance,
@@ -330,6 +337,62 @@ export class ModelDebugFlowController {
         for (const controller of this._refs.aiControllers) {
             controller.stopSwimming();
         }
+    }
+
+    private hideNonPlayerWorldNodes(resetExisting: boolean) {
+        const worldRoot = this._refs.worldRoot;
+        const playerNode = this._refs.playerSwimmer?.node;
+        if (!worldRoot || !playerNode) {
+            return;
+        }
+        if (resetExisting) {
+            this.restoreHiddenDebugSceneNodes();
+        }
+        for (const child of worldRoot.children) {
+            if (this.shouldKeepDebugWorldNode(child, playerNode)) {
+                continue;
+            }
+            if (this._hiddenDebugSceneNodes.has(child)) {
+                child.active = false;
+                continue;
+            }
+            this._hiddenDebugSceneNodes.set(child, child.active);
+            child.active = false;
+        }
+    }
+
+    private restoreHiddenDebugSceneNodes() {
+        for (const [node, active] of this._hiddenDebugSceneNodes) {
+            if (node?.isValid) {
+                node.active = active;
+            }
+        }
+        this._hiddenDebugSceneNodes.clear();
+    }
+
+    private shouldKeepDebugWorldNode(node: Node, playerNode: Node): boolean {
+        if (node === playerNode || this.isAncestorOf(node, playerNode)) {
+            return true;
+        }
+        return node.name === 'StadiumSun'
+            || node.name === 'CartoonFillLight'
+            || node.name === 'CartoonTopLight';
+    }
+
+    private isAncestorOf(candidate: Node, node: Node): boolean {
+        let current: Node | null = node;
+        while (current) {
+            if (current === candidate) {
+                return true;
+            }
+            current = current.parent;
+        }
+        return false;
+    }
+
+    private isPortraitViewport(): boolean {
+        const visibleSize = view.getVisibleSize();
+        return visibleSize.height > visibleSize.width;
     }
 }
 

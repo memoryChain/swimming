@@ -4,6 +4,8 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 const SWIMMER_TEXTURE_SIZE = 128;
 const OUTLINE_SHELL_WIDTH = 18;
 
+export type CharacterSkinOutfit = 'default' | 'trunksA';
+
 export type CharacterSkinOptions = {
     root: Node;
     model: Node;
@@ -13,6 +15,7 @@ export type CharacterSkinOptions = {
     capColor: Color;
     robotStyle: boolean;
     playerOutline: boolean;
+    outfit?: CharacterSkinOutfit;
     outlineRoot: Node | null;
     setOutlineRoot: (root: Node | null) => void;
 };
@@ -55,7 +58,7 @@ export function applyCharacterSkin(options: CharacterSkinOptions) {
 }
 
 function applyLowSwimmerTextureMaterial(options: CharacterSkinOptions): boolean {
-    const { skinnedRenderers, skinColor, suitColor, capColor, robotStyle, playerOutline } = options;
+    const { skinnedRenderers, skinColor, suitColor, capColor, robotStyle, playerOutline, outfit = 'default' } = options;
     if (skinnedRenderers.length !== 1) {
         return false;
     }
@@ -68,8 +71,8 @@ function applyLowSwimmerTextureMaterial(options: CharacterSkinOptions): boolean 
 
     const tintSuit = suitColor;
     const tintCap = robotStyle ? blendColor(capColor, new Color(175, 245, 255, 255), 0.18) : capColor;
-    renderer.setMaterial(makeSwimmerTextureMaterial(skinColor, tintSuit, tintCap, robotStyle), 0);
-    console.log(`[SpeedSwimming] applied low swimmer texture material suit=${tintSuit.r},${tintSuit.g},${tintSuit.b} cap=${tintCap.r},${tintCap.g},${tintCap.b} outline=${playerOutline}`);
+    renderer.setMaterial(makeSwimmerTextureMaterial(skinColor, tintSuit, tintCap, robotStyle, outfit), 0);
+    console.log(`[SpeedSwimming] applied low swimmer texture material outfit=${outfit} suit=${tintSuit.r},${tintSuit.g},${tintSuit.b} cap=${tintCap.r},${tintCap.g},${tintCap.b} outline=${playerOutline}`);
     return true;
 }
 
@@ -157,8 +160,8 @@ function makeMaterial(name: string, albedo: Color, roughness = 0.58, metallic = 
     return material;
 }
 
-function makeSwimmerTextureMaterial(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean): Material {
-    const texture = makeSwimmerClothesTexture(skinColor, suitColor, capColor);
+function makeSwimmerTextureMaterial(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, outfit: CharacterSkinOutfit): Material {
+    const texture = makeSwimmerClothesTexture(skinColor, suitColor, capColor, outfit);
     const material = new Material();
     material.initialize({ effectName: 'builtin-standard', defines: { USE_ALBEDO_MAP: true } });
     material.name = 'RuntimeLowSwimmerTexture';
@@ -216,7 +219,7 @@ function loadOutlineShellMaterial(done: (material: Material | null) => void) {
     });
 }
 
-function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor: Color): Texture2D {
+function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor: Color, outfit: CharacterSkinOutfit): Texture2D {
     const data = new Uint8Array(SWIMMER_TEXTURE_SIZE * SWIMMER_TEXTURE_SIZE * 4);
     const suitEdge = darkenColor(suitColor, 0.48);
 
@@ -225,7 +228,9 @@ function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor:
         for (let x = 0; x < SWIMMER_TEXTURE_SIZE; x++) {
             const u = (x + 0.5) / SWIMMER_TEXTURE_SIZE;
             const nx = (u - 0.5) * 2;
-            const color = swimmerTextureColor(nx, v, skinColor, suitColor, capColor, suitEdge);
+            const color = outfit === 'trunksA'
+                ? swimmerTrunksTextureColor(nx, v, skinColor, suitColor, suitEdge)
+                : swimmerTextureColor(nx, v, skinColor, suitColor, capColor, suitEdge);
             const index = (y * SWIMMER_TEXTURE_SIZE + x) * 4;
             data[index] = color.r;
             data[index + 1] = color.g;
@@ -240,6 +245,21 @@ function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor:
     texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
     texture.uploadData(data);
     return texture;
+}
+
+function swimmerTrunksTextureColor(nx: number, v: number, skin: Color, suit: Color, suitEdge: Color): Color {
+    const ax = Math.abs(nx);
+    let color = skin;
+    void suitEdge;
+
+    if (v >= 0.520 && v < 0.665 && ax <= 0.38) {
+        color = suit;
+    }
+    if (v >= 0.300 && v < 0.560 && ax <= 0.43) {
+        color = suit;
+    }
+
+    return color;
 }
 
 function swimmerTextureColor(nx: number, v: number, skin: Color, suit: Color, cap: Color, suitEdge: Color): Color {

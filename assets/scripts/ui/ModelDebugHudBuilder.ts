@@ -31,11 +31,17 @@ export class ModelDebugHudBuilder {
 
     build(parent: Node, w: number, h: number): ModelDebugHudRefs {
         const hud = makeUiNode('ModelDebugHUD', parent);
-        makeRect('ModelDebugTop', hud, w, 76, uiColor(5, 16, 26, 190)).setPosition(0, h / 2 - 38, 0);
-        makeLabel('ModelDebugTitle', hud, 'MODEL ACTION DEBUG', 24, uiColor(255, 255, 255)).setPosition(-w / 2 + 190, h / 2 - 38, 0);
-        makeLabel('ModelDebugHint', hud, 'A: left hand/right foot    D: right hand/left foot    Q/E: speed    Drag: orbit    Wheel: zoom', 16, uiColor(150, 235, 255)).setPosition(0, h / 2 - 38, 0);
-        const exit = makeButton('ModelDebugExit', hud, 130, 42, uiColor(232, 68, 72), 'EXIT');
-        exit.setPosition(w / 2 - 86, h / 2 - 38, 0);
+        const portrait = h > w;
+        const topHeight = portrait ? 56 : 76;
+        makeRect('ModelDebugTop', hud, w, topHeight, uiColor(5, 16, 26, 190)).setPosition(0, h / 2 - topHeight / 2, 0);
+        const title = makeLabel('ModelDebugTitle', hud, portrait ? 'MODEL DEBUG' : 'MODEL ACTION DEBUG', portrait ? 16 : 24, uiColor(255, 255, 255));
+        title.getComponent(UITransform).setContentSize(portrait ? 160 : 300, topHeight);
+        title.setPosition(-w / 2 + (portrait ? 84 : 190), h / 2 - topHeight / 2, 0);
+        const hint = makeLabel('ModelDebugHint', hud, 'A: left hand/right foot    D: right hand/left foot    Q/E: speed    Drag: orbit    Wheel: zoom', 16, uiColor(150, 235, 255));
+        hint.active = !portrait;
+        hint.setPosition(0, h / 2 - topHeight / 2, 0);
+        const exit = makeButton('ModelDebugExit', hud, portrait ? 76 : 130, portrait ? 36 : 42, uiColor(232, 68, 72), 'EXIT');
+        exit.setPosition(w / 2 - (portrait ? 48 : 86), h / 2 - topHeight / 2, 0);
         exit.on(Node.EventType.TOUCH_END, () => this._callbacks.onExit());
         makeRect('ModelDebugBottom', hud, w, 54, uiColor(5, 16, 26, 120)).setPosition(0, -h / 2 + 27, 0);
         const slower = makeButton('ModelDebugSlow', hud, 54, 36, uiColor(38, 116, 190), '-');
@@ -48,10 +54,10 @@ export class ModelDebugHudBuilder {
         speedLabel.setPosition(0, -h / 2 + 27, 0);
         const ratingLabel = makeLabel('ModelDebugRating', hud, 'READY', 20, uiColor(230, 244, 250));
         ratingLabel.getComponent(UITransform).setContentSize(280, 32);
-        ratingLabel.setPosition(0, h / 2 - 104, 0);
+        ratingLabel.setPosition(0, h / 2 - (portrait ? 84 : 104), 0);
         const swimSpeedLabel = makeLabel('ModelDebugSwimSpeed', hud, '0.00 m/s', 18, uiColor(150, 235, 255));
-        swimSpeedLabel.getComponent(UITransform).setContentSize(520, 30);
-        swimSpeedLabel.setPosition(0, h / 2 - 134, 0);
+        swimSpeedLabel.getComponent(UITransform).setContentSize(portrait ? w - 28 : 520, 30);
+        swimSpeedLabel.setPosition(0, h / 2 - (portrait ? 112 : 134), 0);
         this.buildTuningPanel(hud, w, h);
         return {
             root: hud,
@@ -63,10 +69,11 @@ export class ModelDebugHudBuilder {
 
     private buildTuningPanel(parent: Node, w: number, h: number) {
         this._tuningRows.length = 0;
-        const panelWidth = Math.min(460, Math.max(410, w * 0.34));
-        const panelHeight = Math.min(548, h - 116);
-        const panelX = -w / 2 + panelWidth / 2 + 18;
-        const panelY = -6;
+        const portrait = h > w;
+        const panelWidth = portrait ? Math.min(300, w - 32) : Math.min(460, Math.max(410, w * 0.34));
+        const panelHeight = portrait ? Math.min(420, h * 0.46) : Math.min(548, h - 116);
+        const panelX = -w / 2 + panelWidth / 2 + (portrait ? 8 : 18);
+        const panelY = portrait ? -h / 2 + 64 + panelHeight / 2 : -6;
         const panel = makeUiNode('ModelDebugTuningPanel', parent);
         panel.setPosition(panelX, panelY, 0);
         makeRect('Back', panel, panelWidth, panelHeight, uiColor(6, 18, 28, 205));
@@ -84,9 +91,9 @@ export class ModelDebugHudBuilder {
         groupLabelNode.setPosition(0, panelHeight / 2 - 28, 0);
         this._groupLabel = groupLabelNode.getComponent(Label);
 
-        const rowCount = 11;
-        const rowHeight = 37;
-        const firstY = panelHeight / 2 - 82;
+        const rowCount = portrait ? 9 : 11;
+        const rowHeight = portrait ? 34 : 37;
+        const firstY = panelHeight / 2 - (portrait ? 72 : 82);
         const controlValueX = panelWidth / 2 - 76;
         const controlMinusX = panelWidth / 2 - 122;
         const controlPlusX = panelWidth / 2 - 30;

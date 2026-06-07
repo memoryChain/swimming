@@ -2,7 +2,7 @@ import { _decorator, Color, Component, instantiate, Layers, Node, SkeletalAnimat
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import { CharacterDebugController } from '../character/CharacterDebugController';
 import { CharacterRig } from '../character/CharacterRig';
-import { applyCharacterSkin } from '../character/CharacterSkinApplier';
+import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
@@ -42,12 +42,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _debugTimer = 0;
     private _modelDebugMode = false;
     private _preRaceStanding = false;
+    private _skinColor = new Color(246, 176, 118);
+    private _suitColor = new Color(245, 42, 64);
+    private _capColor = new Color(255, 220, 72);
+    private _robotStyle = false;
+    private _playerOutline = false;
+    private _skinOutfit: CharacterSkinOutfit = 'default';
     private readonly _tmpSplashWorld = new Vec3();
 
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
         if (this._loaded || this._model) {
             return;
         }
+        this.storeSkinSettings(skinColor, suitColor, capColor, robotStyle, playerOutline);
 
         this._splashEmitter = new SplashEmitter({
             owner: this.node,
@@ -149,10 +156,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setSwimmerColors(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
+        this.storeSkinSettings(skinColor, suitColor, capColor, robotStyle, playerOutline);
         if (!this._loaded || !this.root) {
             return;
         }
         this.applyLaneMaterials(skinColor, suitColor, capColor, robotStyle, playerOutline);
+    }
+
+    setSkinOutfit(outfit: CharacterSkinOutfit) {
+        if (this._skinOutfit === outfit) {
+            return;
+        }
+        this._skinOutfit = outfit;
+        this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
     }
 
     setPreRaceStanding(active: boolean) {
@@ -339,11 +355,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             capColor,
             robotStyle,
             playerOutline,
+            outfit: this._skinOutfit,
             outlineRoot: this._outlineRoot,
             setOutlineRoot: (root) => {
                 this._outlineRoot = root;
             },
         });
+    }
+
+    private storeSkinSettings(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
+        this._skinColor = skinColor.clone();
+        this._suitColor = suitColor.clone();
+        this._capColor = capColor.clone();
+        this._robotStyle = robotStyle;
+        this._playerOutline = playerOutline;
     }
 
     private applyModelDebugSetup() {

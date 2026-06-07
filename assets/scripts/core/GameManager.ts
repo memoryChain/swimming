@@ -182,6 +182,7 @@ export class GameManager extends Component {
 
     private createModelDebugFlow(): ModelDebugFlowController {
         return new ModelDebugFlowController({
+            worldRoot: this._worldRoot,
             cameraNode: this._cameraNode,
             cameraPos: this._cameraPos,
             cameraTarget: this._cameraTarget,

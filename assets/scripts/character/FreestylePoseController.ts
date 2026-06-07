@@ -183,11 +183,14 @@ export class FreestylePoseController {
 
     applyModelDebugPose() {
         this.restoreBasePose();
-        this.applyUpperBodyRoll(0, 1);
-        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(0), 1);
-        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(0), 1);
-        this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, 0, 1);
-        this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, 0, 1);
+        this.applyBoneOffset(this._leftShoulder, -1, -1.5, -1);
+        this.applyBoneOffset(this._rightShoulder, -1, 1.5, 1);
+        this.applyBoneOffset(this._leftArm, 0, 0, -8);
+        this.applyBoneOffset(this._rightArm, 0, 0, 8);
+        this.applyBoneOffset(this._leftForeArm, 0, 0, -4);
+        this.applyBoneOffset(this._rightForeArm, 0, 0, 4);
+        this.applyBoneOffset(this._leftUpLeg, -1, 0, -1);
+        this.applyBoneOffset(this._rightUpLeg, 1, 0, 1);
     }
 
     applyPreRaceStandingPose() {
@@ -333,16 +336,39 @@ export class FreestylePoseController {
         const c = Math.cos(wheel);
         const s = Math.sin(wheel);
         const armPower = 0.92 + Math.min(2, Math.max(0.8, power)) * 0.08;
+        const forwardReach = smoothRange(c, 0.20, 0.96);
+        const sideClearance = lerp(0.52, 0.08, forwardReach);
 
-        const shoulderLift = (-1 - 2 * c) * armPower;
-        const shoulderOpen = side * 6 * armPower;
-        const shoulderRoll = side * 2 * armPower;
-        const elbowStraight = (-6 + 2 * c) * armPower;
-        const handNeutral = -2 * c * armPower;
-        const sideClearance = 0.58;
+        const shoulderLift = lerp(-1 - 2 * c, -7.2, forwardReach) * armPower;
+        const shoulderOpen = side * lerp(6, 1.2, forwardReach) * armPower;
+        const shoulderRoll = side * lerp(2, 0.35, forwardReach) * armPower;
+        const elbowStraight = lerp(-6 + 2 * c, 0.2, forwardReach) * armPower;
+        const foreArmOpen = side * lerp(3, 0.15, forwardReach) * armPower;
+        const foreArmRoll = side * lerp(2, 0.1, forwardReach) * armPower;
+        const handNeutral = lerp(-2 * c, -0.1, forwardReach) * armPower;
+        const handOpen = side * lerp(2, 0.1, forwardReach) * armPower;
+        const handRoll = side * lerp(1.5, 0.1, forwardReach) * armPower;
 
-        this.applyBoneOffset(shoulder, shoulderLift, shoulderOpen, shoulderRoll);
         this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        if (forwardReach > 0.02) {
+            const shoulderSideClearance = lerp(0.38, 0.14, forwardReach);
+            this._tmpDirection.set(
+                side * shoulderSideClearance + this._tmpMovementForwardRoot.x * forwardReach,
+                this._tmpMovementForwardRoot.y * forwardReach,
+                s * 0.12 + this._tmpMovementForwardRoot.z * forwardReach,
+            );
+            Vec3.normalize(this._tmpDirection, this._tmpDirection);
+            this.applyBoneDirectionFromRootWithOffset(
+                shoulder,
+                arm,
+                this._tmpDirection,
+                shoulderLift * 0.45,
+                shoulderOpen * 0.35,
+                shoulderRoll * 0.35,
+            );
+        } else {
+            this.applyBoneOffset(shoulder, shoulderLift, shoulderOpen, shoulderRoll);
+        }
         this._tmpDirection.set(
             side * sideClearance + this._tmpMovementForwardRoot.x * c,
             this._tmpMovementForwardRoot.y * c,
@@ -350,8 +376,18 @@ export class FreestylePoseController {
         );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
         this.applyBoneDirectionFromRoot(arm, foreArm, this._tmpDirection);
-        this.applyBoneOffset(foreArm, elbowStraight, side * 3 * armPower, side * 2 * armPower);
-        this.applyBoneOffset(hand, handNeutral, side * 2 * armPower, side * 1.5 * armPower);
+        if (forwardReach > 0.02) {
+            this._tmpDirection.set(
+                side * sideClearance * 0.25 + this._tmpMovementForwardRoot.x,
+                this._tmpMovementForwardRoot.y,
+                s * 0.04 + this._tmpMovementForwardRoot.z,
+            );
+            Vec3.normalize(this._tmpDirection, this._tmpDirection);
+            this.applyBoneDirectionFromRootWithOffset(foreArm, hand, this._tmpDirection, elbowStraight, foreArmOpen, foreArmRoll);
+        } else {
+            this.applyBoneOffset(foreArm, elbowStraight, foreArmOpen, foreArmRoll);
+        }
+        this.applyBoneOffset(hand, handNeutral, handOpen, handRoll);
     }
 
     private applyUpperBodyRoll(phase: number, power: number) {
@@ -447,6 +483,43 @@ export class FreestylePoseController {
         this.applyBoneDirection(bone, child, this._tmpParentDirection);
     }
 
+    private applyBoneDirectionFromRootWithOffset(bone: Node, child: Node, directionInRoot: Vec3, x: number, y: number, z: number) {
+        if (!this.root || !bone?.parent) {
+            return;
+        }
+
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        bone.parent.getWorldRotation(this._tmpParentWorldRotation);
+        Vec3.transformQuat(this._tmpWorldDirection, directionInRoot, this._tmpRootWorldRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpParentWorldRotation);
+        Vec3.transformQuat(this._tmpParentDirection, this._tmpWorldDirection, this._tmpInverseParentWorldRotation);
+        Vec3.normalize(this._tmpParentDirection, this._tmpParentDirection);
+        this.applyBoneDirectionWithOffset(bone, child, this._tmpParentDirection, x, y, z);
+    }
+
+    private applyBoneDirectionWithOffset(bone: Node, child: Node, directionInParent: Vec3, x: number, y: number, z: number) {
+        if (!bone || !child) {
+            return;
+        }
+        const base = this._boneBaseRotation.get(bone);
+        if (!base) {
+            return;
+        }
+
+        Vec3.copy(this._tmpBaseDirection, child.position);
+        if (this._tmpBaseDirection.lengthSqr() <= 0.000001) {
+            return;
+        }
+        Vec3.normalize(this._tmpBaseDirection, this._tmpBaseDirection);
+        Vec3.transformQuat(this._tmpBaseDirection, this._tmpBaseDirection, base);
+        Vec3.normalize(this._tmpBaseDirection, this._tmpBaseDirection);
+        Quat.rotationTo(this._tmpDeltaRotation, this._tmpBaseDirection, directionInParent);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, base);
+        Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
+        Quat.multiply(this._tmpResultRotation, this._tmpResultRotation, this._tmpOffsetRotation);
+        bone.setRotation(this._tmpResultRotation);
+    }
+
     private movementForwardInRoot(out: Vec3): Vec3 {
         if (!this.root) {
             out.set(0, 1, 0);
@@ -466,6 +539,10 @@ function positiveMod(value: number, divisor: number): number {
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
+}
+
+function lerp(from: number, to: number, t: number): number {
+    return from + (to - from) * clamp(t, 0, 1);
 }
 
 function smoothRange(value: number, start: number, end: number): number {
