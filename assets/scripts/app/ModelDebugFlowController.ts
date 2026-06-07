@@ -115,7 +115,7 @@ export class ModelDebugFlowController {
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = true;
         }
-        this._refs.playerSwimmer?.cartoonRig?.setSkinOutfit('default');
+        this._refs.playerSwimmer?.cartoonRig?.setSkinOutfit('trunksA');
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugMode(false);
         this._debugMotor.stopRace();
         this._refs.playerSwimmer?.reset();
@@ -187,7 +187,7 @@ export class ModelDebugFlowController {
         if (!this._refs.cameraNode) {
             return;
         }
-        const target = new Vec3(12, this.isPortraitViewport() ? 0.88 : 0.54, this._refs.playerLaneZ);
+        const target = this.debugCameraTarget();
         const cosPitch = Math.cos(this._cameraPitch);
         const desiredPos = new Vec3(
             target.x + Math.cos(this._cameraYaw) * cosPitch * this._cameraDistance,
@@ -218,7 +218,7 @@ export class ModelDebugFlowController {
         }
         this._cameraYaw -= event.getDeltaX() * 0.008;
         this._cameraPitch += event.getDeltaY() * 0.006;
-        this._cameraPitch = clamp(this._cameraPitch, -0.85, 0.85);
+        this._cameraPitch = clamp(this._cameraPitch, -1.35, 1.35);
         return true;
     }
 
@@ -234,7 +234,7 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        this._cameraDistance = clamp(this._cameraDistance - event.getScrollY() * 0.004, 1.45, 7.5);
+        this._cameraDistance = clamp(this._cameraDistance - event.getScrollY() * 0.004, 0.85, 10.5);
         return true;
     }
 
@@ -337,6 +337,14 @@ export class ModelDebugFlowController {
         for (const controller of this._refs.aiControllers) {
             controller.stopSwimming();
         }
+    }
+
+    private debugCameraTarget(): Vec3 {
+        const playerPosition = this._refs.playerSwimmer?.node.position;
+        const baseX = playerPosition?.x ?? 12;
+        const baseY = playerPosition?.y ?? 0.24;
+        const baseZ = playerPosition?.z ?? this._refs.playerLaneZ;
+        return new Vec3(baseX + 0.42, baseY + 0.76, baseZ);
     }
 
     private hideNonPlayerWorldNodes(resetExisting: boolean) {

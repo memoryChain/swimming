@@ -30,6 +30,14 @@ export function makeLeftRect(name: string, parent: Node, w: number, h: number, f
     return node;
 }
 
+export function makeBottomRect(name: string, parent: Node, w: number, h: number, fill: Color): Node {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform).setContentSize(w, h);
+    const gfx = node.addComponent(Graphics);
+    drawBottomFill(gfx, w, h, 1, fill);
+    return node;
+}
+
 export function makeTouchArea(name: string, parent: Node, w: number, h: number): Node {
     const node = makeUiNode(name, parent);
     node.getComponent(UITransform).setContentSize(w, h);
@@ -68,5 +76,16 @@ export function drawLeftFill(gfx: Graphics, w: number, h: number, ratio: number,
     gfx.clear();
     gfx.fillColor = fill;
     gfx.rect(0, -h / 2, w * ratio, h);
+    gfx.fill();
+}
+
+export function drawBottomFill(gfx: Graphics, w: number, h: number, ratio: number, fill: Color) {
+    if (!gfx) {
+        return;
+    }
+    const clamped = Math.max(0, Math.min(1, ratio));
+    gfx.clear();
+    gfx.fillColor = fill;
+    gfx.rect(-w / 2, -h / 2, w, h * clamped);
     gfx.fill();
 }

@@ -91,7 +91,7 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
         this.node.setRotationFromEuler(0, 0, 0);
-        this.cartoonRig?.setPreRaceStanding(true);
+        this.cartoonRig?.setDiveStreamlinePose();
         tween(this.node)
             .to(crouchDuration, {
                 position: new Vec3(start.x - 0.06, start.y - 0.04, start.z),
@@ -102,8 +102,7 @@ export class Swimmer extends Component {
                 eulerAngles: new Vec3(0, 0, -12),
             })
             .call(() => {
-                this.cartoonRig?.setPreRaceStanding(false);
-                this.resetPose();
+                this.cartoonRig?.setDiveStreamlinePose();
             })
             .to(flightDuration * 0.58, {
                 position: entry,

@@ -25,6 +25,15 @@ export const DEFAULT_COMPETITOR_VISUALS: CompetitorVisualProfile[] = [
     { suitColor: color(20, 220, 230), capColor: color(255, 255, 255) },
 ];
 
+export const PLAYER_COMPETITOR_VISUALS: CompetitorVisualProfile[] = [
+    { suitColor: color(255, 75, 94), capColor: color(35, 235, 255) },
+    { suitColor: color(34, 158, 255), capColor: color(255, 239, 65) },
+    { suitColor: color(47, 213, 125), capColor: color(255, 96, 209) },
+    { suitColor: color(255, 128, 42), capColor: color(79, 119, 255) },
+    { suitColor: color(164, 90, 255), capColor: color(102, 255, 151) },
+    { suitColor: color(20, 214, 230), capColor: color(255, 255, 255) },
+];
+
 export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
     { difficulty: 0.62, bpmOffset: -18, power: 0.82, maxSpeed: 0.88, divePower: 0.48, diveReaction: 0.32 },
     { difficulty: 0.74, bpmOffset: -10, power: 0.9, maxSpeed: 0.93, divePower: 0.6, diveReaction: 0.22 },
@@ -35,6 +44,28 @@ export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
     { difficulty: 0.88, bpmOffset: 2, power: 1.0, maxSpeed: 1.0, divePower: 0.8, diveReaction: 0.09 },
     { difficulty: 0.96, bpmOffset: 10, power: 1.05, maxSpeed: 1.03, divePower: 0.94, diveReaction: 0.04 },
 ];
+
+export function randomPlayerVisualProfile(): CompetitorVisualProfile {
+    const visual = PLAYER_COMPETITOR_VISUALS[Math.floor(Math.random() * PLAYER_COMPETITOR_VISUALS.length)];
+    return {
+        suitColor: visual.suitColor.clone(),
+        capColor: visual.capColor.clone(),
+    };
+}
+
+export function shuffledAiVisualProfiles(): CompetitorVisualProfile[] {
+    const visuals = DEFAULT_COMPETITOR_VISUALS.map((visual) => ({
+        suitColor: visual.suitColor.clone(),
+        capColor: visual.capColor.clone(),
+    }));
+    for (let i = visuals.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const temp = visuals[i];
+        visuals[i] = visuals[j];
+        visuals[j] = temp;
+    }
+    return visuals;
+}
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);

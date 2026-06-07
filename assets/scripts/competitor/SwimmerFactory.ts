@@ -27,6 +27,9 @@ export class SwimmerFactory {
             options.isAI,
             !options.isAI,
         );
+        if (!options.isAI || shouldUseAiTrunks(options.name, options.z)) {
+            rig.setSkinOutfit('trunksA');
+        }
         const swimmer = node.addComponent(Swimmer);
         swimmer.cartoonRig = rig;
         swimmer.splashNode = rig.splashNode;
@@ -39,6 +42,14 @@ export class SwimmerFactory {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
+}
+
+function shouldUseAiTrunks(name: string, z: number): boolean {
+    let hash = Math.floor(Math.abs(z) * 1000);
+    for (let i = 0; i < name.length; i++) {
+        hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+    }
+    return (hash % 100) < 50;
 }
 
 function makeWorldNode(name: string, parent: Node): Node {

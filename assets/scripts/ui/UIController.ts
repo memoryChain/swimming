@@ -1,5 +1,5 @@
 import { _decorator, Color, Component, Graphics, Label, Node, Tween, tween, UITransform, Vec3 } from 'cc';
-import { RACE_DISTANCE, SWIMMER_BALANCE } from '../core/GameBalance';
+import { RACE_DISTANCE } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
 const { ccclass, property } = _decorator;
@@ -24,6 +24,9 @@ export class UIController extends Component {
     @property(Label) public speedLabel: Label = null;
     @property(Label) public telemetryLabel: Label = null;
     @property(Label) public hintLabel: Label = null;
+    @property(Node) public progressDot: Node = null;
+    @property public progressTrackWidth = 240;
+    @property(Node) public speedBarRoot: Node = null;
     @property(Node) public countdownOverlay: Node = null;
     @property(Label) public countdownLabel: Label = null;
     @property(Node) public diveChargeTrack: Node = null;
@@ -53,8 +56,12 @@ export class UIController extends Component {
     }
 
     updateProgress(playerDist: number, aiDist: number) {
+        const ratio = clamp01(playerDist / RACE_DISTANCE);
         if (this.distanceLabel) {
-            this.distanceLabel.string = `YOU ${Math.min(RACE_DISTANCE, playerDist).toFixed(1)}m`;
+            this.distanceLabel.string = `${Math.round(ratio * 100)}%`;
+        }
+        if (this.progressDot) {
+            this.progressDot.setPosition(-this.progressTrackWidth / 2 + this.progressTrackWidth * ratio, 0, 0);
         }
         if (this.aiDistanceLabel) {
             this.aiDistanceLabel.string = `AI ${Math.min(RACE_DISTANCE, aiDist).toFixed(1)}m`;
@@ -63,7 +70,7 @@ export class UIController extends Component {
 
     updateSpeed(speed: number) {
         if (this.speedLabel) {
-            this.speedLabel.string = `${speed.toFixed(2)} m/s  ${Math.round((speed / SWIMMER_BALANCE.maxSpeed) * 100)}%`;
+            this.speedLabel.string = `${speed.toFixed(2)}\nm/s`;
         }
     }
 
@@ -85,6 +92,7 @@ export class UIController extends Component {
         }
         if (this.comboLabel) {
             this.comboLabel.string = combo > 0 ? `${combo} COMBO` : '';
+            this.comboLabel.fontSize = combo >= 10 ? 25 : 24;
         }
     }
 
@@ -105,6 +113,9 @@ export class UIController extends Component {
     }
 
     updateDiveCharge(power: number, visible: boolean) {
+        if (this.speedBarRoot) {
+            this.speedBarRoot.active = !visible;
+        }
         if (this.diveChargeTrack) {
             this.diveChargeTrack.active = visible;
         }
@@ -251,8 +262,8 @@ function clamp01(value: number): number {
 }
 
 function drawChargeFill(gfx: Graphics, ratio: number) {
-    const w = 28;
-    const h = 172;
+    const w = 12;
+    const h = 216;
     gfx.clear();
     gfx.fillColor = ratio > 0.82
         ? new Color(255, 224, 89, 255)

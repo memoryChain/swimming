@@ -20,7 +20,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { RaceHudBuilder } from '../ui/RaceHudBuilder';
-import { makeUiNode, makeRect, makeLabel, drawLeftFill } from '../ui/RuntimeUiFactory';
+import { makeUiNode, makeRect, makeLabel, drawBottomFill } from '../ui/RuntimeUiFactory';
 import { StartScreenBuilder } from '../ui/StartScreenBuilder';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -411,7 +411,7 @@ export class GameManager extends Component {
     }
 
     private drawSpeedBar(ratio: number) {
-        drawLeftFill(this._speedFill, 240, 10, Math.max(0, Math.min(1, ratio)), color(89, 234, 160));
+        drawBottomFill(this._speedFill, 12, 216, Math.max(0, Math.min(1, ratio)), color(89, 234, 160));
     }
 
     private paintError(error: unknown) {

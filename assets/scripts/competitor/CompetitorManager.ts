@@ -2,7 +2,7 @@ import { Node } from 'cc';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
-import { DEFAULT_AI_PROFILES, DEFAULT_COMPETITOR_VISUALS } from './CompetitorConfig';
+import { DEFAULT_AI_PROFILES, randomPlayerVisualProfile, shuffledAiVisualProfiles } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
@@ -32,10 +32,14 @@ export class CompetitorManager {
         const aiSwimmers: Swimmer[] = [];
         let playerSwimmer: Swimmer = null;
         let primaryAiController: AISwimmerController | null = null;
+        const aiVisuals = shuffledAiVisualProfiles();
+        let aiVisualIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             const isPlayer = lane === this._options.playerLaneIndex;
-            const visual = DEFAULT_COMPETITOR_VISUALS[lane % DEFAULT_COMPETITOR_VISUALS.length];
+            const visual = isPlayer
+                ? randomPlayerVisualProfile()
+                : aiVisuals[aiVisualIndex++ % aiVisuals.length];
             const swimmer = this._factory.create(group, {
                 name: isPlayer ? 'PlayerSwimmer3D' : `AISwimmerLane${lane + 1}`,
                 x: 0,

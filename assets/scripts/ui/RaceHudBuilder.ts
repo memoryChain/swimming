@@ -1,6 +1,6 @@
 import { EventMouse, Graphics, Label, Node, UITransform } from 'cc';
 import { UIController } from './UIController';
-import { makeButton, makeLabel, makeLeftRect, makeRect, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeBottomRect, makeButton, makeLabel, makeRect, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type RaceHudCallbacks = {
     onStroke: () => void;
@@ -36,21 +36,37 @@ export class RaceHudBuilder {
         const timerLabel = makeLabel('Timer', parent, '0:00.00', 30, uiColor(255, 255, 255));
         timerLabel.setPosition(w / 2 - 118, h / 2 - 38, 0);
 
-        makeLabel('SpeedText', parent, 'PACE', 16, uiColor(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);
-        makeRect('SpeedTrack', parent, 240, 12, uiColor(5, 18, 30, 210)).setPosition(0, h / 2 - 92, 0);
-        const speedFillNode = makeLeftRect('SpeedFill', parent, 240, 10, uiColor(89, 234, 160));
-        speedFillNode.setPosition(-120, h / 2 - 92, 0);
-        const speedLabel = makeLabel('SpeedValue', parent, '0.00 m/s  0%', 16, uiColor(255, 255, 255));
-        speedLabel.getComponent(UITransform).setContentSize(180, 26);
-        speedLabel.setPosition(164, h / 2 - 92, 0);
+        makeLabel('ProgressText', parent, 'RACE', 16, uiColor(210, 240, 250)).setPosition(-168, h / 2 - 92, 0);
+        const progressTrack = makeRect('ProgressTrack', parent, 240, 12, uiColor(190, 230, 235, 190));
+        progressTrack.setPosition(0, h / 2 - 92, 0);
+        const progressDot = makeRect('ProgressDot', progressTrack, 14, 14, uiColor(255, 54, 70));
+        progressDot.setPosition(-120, 0, 0);
+        const progressLabel = makeLabel('ProgressValue', parent, '0%', 16, uiColor(255, 255, 255));
+        progressLabel.getComponent(UITransform).setContentSize(90, 26);
+        progressLabel.setPosition(146, h / 2 - 92, 0);
+
+        const speedTrackX = w / 2 - 34;
+        const speedBarRoot = makeUiNode('SpeedBarRoot', parent);
+        makeLabel('SpeedText', speedBarRoot, 'SPD', 15, uiColor(210, 240, 250)).setPosition(speedTrackX, 124, 0);
+        makeRect('SpeedTrack', speedBarRoot, 16, 220, uiColor(5, 18, 30, 210)).setPosition(speedTrackX, 0, 0);
+        const speedFillNode = makeBottomRect('SpeedFill', speedBarRoot, 12, 216, uiColor(89, 234, 160));
+        speedFillNode.setPosition(speedTrackX, 0, 0);
+        const speedLabel = makeLabel('SpeedValue', speedBarRoot, '0.00\nm/s', 14, uiColor(255, 255, 255));
+        speedLabel.getComponent(UITransform).setContentSize(72, 42);
+        speedLabel.getComponent(Label).lineHeight = 18;
+        speedLabel.setPosition(speedTrackX - 42, 92, 0);
         const telemetryLabel = makeLabel('SwimTelemetry', parent, 'STB 0%   ACC +0.00   SPD 0.00 m/s', 15, uiColor(150, 235, 255));
         telemetryLabel.getComponent(UITransform).setContentSize(430, 24);
         telemetryLabel.setPosition(0, h / 2 - 118, 0);
 
-        const ratingLabel = makeLabel('Rating', parent, '', 34, uiColor(255, 255, 255));
-        ratingLabel.setPosition(0, h / 2 - 152, 0);
-        const comboLabel = makeLabel('Combo', parent, '', 20, uiColor(255, 255, 255));
-        comboLabel.setPosition(0, h / 2 - 186, 0);
+        const ratingLabel = makeLabel('Rating', parent, '', 46, uiColor(255, 255, 255));
+        ratingLabel.getComponent(UITransform).setContentSize(380, 60);
+        ratingLabel.getComponent(Label).lineHeight = 54;
+        ratingLabel.setPosition(0, h / 2 - 164, 0);
+        const comboLabel = makeLabel('Combo', parent, '', 24, uiColor(255, 255, 255));
+        comboLabel.getComponent(UITransform).setContentSize(300, 34);
+        comboLabel.getComponent(Label).lineHeight = 30;
+        comboLabel.setPosition(0, h / 2 - 204, 0);
 
         const countdownOverlay = makeUiNode('CountdownOverlay', parent);
         countdownOverlay.getComponent(UITransform).setContentSize(w, h);
@@ -67,12 +83,12 @@ export class RaceHudBuilder {
         const countdownLabel = makeLabel('CountdownLabel', countdownOverlay, '3', 96, uiColor(255, 255, 255));
         countdownLabel.getComponent(UITransform).setContentSize(720, 220);
         countdownLabel.getComponent(Label).lineHeight = 140;
-        const diveChargeTrack = makeRect('DiveChargeTrack', countdownOverlay, 34, 180, uiColor(4, 18, 28, 220));
-        diveChargeTrack.setPosition(300, -34, 0);
+        const diveChargeTrack = makeRect('DiveChargeTrack', countdownOverlay, 16, 220, uiColor(28, 18, 6, 225));
+        diveChargeTrack.setPosition(speedTrackX, 0, 0);
         const diveChargeFill = makeUiNode('DiveChargeFill', countdownOverlay);
-        diveChargeFill.getComponent(UITransform).setContentSize(28, 172);
+        diveChargeFill.getComponent(UITransform).setContentSize(12, 216);
         diveChargeFill.addComponent(Graphics);
-        diveChargeFill.setPosition(300, -34, 0);
+        diveChargeFill.setPosition(speedTrackX, 0, 0);
         diveChargeTrack.active = false;
         diveChargeFill.active = false;
         const diveTouchArea = makeTouchArea('DiveTouchArea', countdownOverlay, w, h);
@@ -103,6 +119,10 @@ export class RaceHudBuilder {
 
         const ui = makeUiNode('UIController', parent).addComponent(UIController);
         ui.timerLabel = timerLabel.getComponent(Label);
+        ui.distanceLabel = progressLabel.getComponent(Label);
+        ui.progressDot = progressDot;
+        ui.progressTrackWidth = 240;
+        ui.speedBarRoot = speedBarRoot;
         ui.speedLabel = speedLabel.getComponent(Label);
         ui.telemetryLabel = telemetryLabel.getComponent(Label);
         ui.countdownOverlay = countdownOverlay;

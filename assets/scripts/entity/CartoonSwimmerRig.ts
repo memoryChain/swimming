@@ -189,6 +189,22 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
+    setDiveStreamlinePose() {
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._preRaceStanding = false;
+        this._active = true;
+        this._animationPlayer.stop();
+        if (!this._loaded || !this._model || !this.root) {
+            return;
+        }
+        this.applyRaceModelSetup();
+        this.resetPose();
+        this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+        this._splashEmitter?.setVisible(false);
+    }
+
     triggerArmStroke() {
         if (this._modelDebugMode) {
             this._debug.triggerArmStroke();

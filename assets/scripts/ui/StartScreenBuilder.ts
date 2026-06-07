@@ -33,12 +33,8 @@ export class StartScreenBuilder {
         start.on(Node.EventType.TOUCH_END, () => this._callbacks.onStart());
 
         if (EDITOR) {
-            const debug = makeButton('DebugButton', screen, buttonW, 52, uiColor(38, 116, 190), 'DEBUG');
-            debug.setPosition(0, -120, 0);
-            debug.on(Node.EventType.TOUCH_END, () => this._callbacks.onToggleDebug());
-
             const modelDebug = makeButton('ModelDebugButton', screen, buttonW, 52, uiColor(28, 148, 124), 'MODEL DEBUG');
-            modelDebug.setPosition(0, -182, 0);
+            modelDebug.setPosition(0, -120, 0);
             modelDebug.on(Node.EventType.TOUCH_END, () => this._callbacks.onModelDebug());
         }
 

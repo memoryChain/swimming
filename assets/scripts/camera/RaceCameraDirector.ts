@@ -6,8 +6,9 @@ const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
 const FIRST_PERSON_SHOT_SECONDS = 6.8;
 const FIRST_PERSON_MIN_SECONDS = 5.8;
-const DIVE_FIRST_PERSON_SECONDS = 2.45;
-const DIVE_SIDE_TRANSITION_SECONDS = 1.65;
+const DIVE_FIRST_PERSON_SECONDS = 0.72;
+const DIVE_PULLBACK_SECONDS = 2.25;
+const DIVE_SIDE_TRANSITION_SECONDS = 1.35;
 const COUNTDOWN_ATHLETE_TARGET_X_OFFSET = 0;
 const COUNTDOWN_ATHLETE_TARGET_Y_OFFSET = 1.25;
 const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
@@ -124,8 +125,8 @@ export class RaceCameraDirector {
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
         this._diveShotElapsed = -1;
-        this._broadcastCameraFov = 42;
-        this._broadcastDesiredFov = 42;
+        this._broadcastCameraFov = 52;
+        this._broadcastDesiredFov = 52;
         this.resetBroadcastCamera();
     }
 
@@ -211,7 +212,7 @@ export class RaceCameraDirector {
 
     resetBroadcastCamera() {
         this._cameraTarget.set(countdownAthleteTargetX(DIVE_BALANCE.platformNodeOffset.x), countdownAthleteTargetY(DIVE_BALANCE.platformNodeOffset.y), this._playerLaneZ);
-        this._cameraPos.set(4.8, 2.1, this._playerLaneZ);
+        this._cameraPos.set(7.2, 3.15, this._playerLaneZ + 0.8);
         this.applyFov();
         if (this._cameraNode) {
             this._cameraNode.setPosition(this._cameraPos);
@@ -258,31 +259,46 @@ export class RaceCameraDirector {
             const target = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
             desiredTarget = target;
             desiredPos = countdownOrbitCameraPosition(target, ratio);
-            this._broadcastDesiredFov = lerp(42, 34, ratio);
+            this._broadcastDesiredFov = lerp(52, 42, ratio);
             if (ratio >= 1) {
                 this._preCountdownActive = false;
                 this._preCountdownReady = true;
             }
         } else if (!raceActive && !countdownActive) {
             desiredTarget = new Vec3(countdownAthleteTargetX(DIVE_BALANCE.platformNodeOffset.x), countdownAthleteTargetY(DIVE_BALANCE.platformNodeOffset.y), this._playerLaneZ);
-            desiredPos = new Vec3(4.8, 2.1, this._playerLaneZ);
-            this._broadcastDesiredFov = 42;
+            desiredPos = new Vec3(7.2, 3.15, this._playerLaneZ + 0.8);
+            this._broadcastDesiredFov = 52;
         } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS) {
             desiredPos = firstPersonCameraPos(playerX, this._playerLaneZ);
             desiredTarget = new Vec3(RACE_DISTANCE + 4, 0.58, this._playerLaneZ);
             this._broadcastDesiredFov = 64;
-        } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS + DIVE_SIDE_TRANSITION_SECONDS) {
-            const ratio = smoothStep((this._diveShotElapsed - DIVE_FIRST_PERSON_SECONDS) / DIVE_SIDE_TRANSITION_SECONDS);
-            const radius = lerp(2.2, SWIM_SIDE_CAMERA_DISTANCE, ratio);
-            const angle = lerp(Math.PI, Math.PI / 2, ratio);
-            const targetX = playerX + lerp(0.8, SWIM_SIDE_TARGET_X_OFFSET, ratio);
-            desiredTarget = new Vec3(targetX, lerp(0.58, 0.42, ratio), this._playerLaneZ);
-            desiredPos = new Vec3(
-                desiredTarget.x + Math.cos(angle) * radius,
-                lerp(1.1, SWIM_SIDE_CAMERA_HEIGHT, ratio),
-                this._playerLaneZ + Math.sin(angle) * radius,
+        } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS + DIVE_PULLBACK_SECONDS) {
+            const ratio = smoothStep((this._diveShotElapsed - DIVE_FIRST_PERSON_SECONDS) / DIVE_PULLBACK_SECONDS);
+            desiredTarget = divePullbackTarget(playerX, this._playerLaneZ, ratio);
+            desiredPos = divePullbackCameraPos(playerX, this._playerLaneZ, ratio);
+            this._broadcastDesiredFov = lerp(64, 50, ratio);
+        } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS + DIVE_PULLBACK_SECONDS + DIVE_SIDE_TRANSITION_SECONDS) {
+            const ratio = smoothStep((this._diveShotElapsed - DIVE_FIRST_PERSON_SECONDS - DIVE_PULLBACK_SECONDS) / DIVE_SIDE_TRANSITION_SECONDS);
+            const view = swimRaceView(snapshot);
+            const pullbackTarget = divePullbackTarget(playerX, this._playerLaneZ, 1);
+            const pullbackPos = divePullbackCameraPos(playerX, this._playerLaneZ, 1);
+            const finalTarget = new Vec3(playerX + view.targetXOffset, 0.42, this._playerLaneZ);
+            const finalPos = new Vec3(
+                playerX + view.cameraXOffset,
+                view.height,
+                this._playerLaneZ + view.zOffset,
             );
-            this._broadcastDesiredFov = lerp(58, SWIM_SIDE_FOV, ratio);
+            desiredTarget = new Vec3(
+                lerp(pullbackTarget.x, finalTarget.x, ratio),
+                lerp(pullbackTarget.y, finalTarget.y, ratio),
+                lerp(pullbackTarget.z, finalTarget.z, ratio),
+            );
+            desiredPos = new Vec3(
+                lerp(pullbackPos.x, finalPos.x, ratio),
+                lerp(pullbackPos.y, finalPos.y, ratio),
+                lerp(pullbackPos.z, finalPos.z, ratio),
+            );
+            this._broadcastDesiredFov = lerp(50, view.fov, ratio);
         } else if (countdownActive && this._diveShotElapsed < 0) {
             const target = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
             const ratio = smoothStep(clamp(this._broadcastCountdownElapsed / Math.max(0.1, COUNTDOWN_SECONDS), 0, 1));
@@ -295,7 +311,7 @@ export class RaceCameraDirector {
                 desiredPos.y,
                 desiredPos.z,
             );
-            this._broadcastDesiredFov = 34;
+            this._broadcastDesiredFov = 42;
         } else if (playerDistance >= RACE_DISTANCE - 8) {
             const finishAnchorX = RACE_DISTANCE - 7.5;
             const playerFollowX = playerX + 3.4;
@@ -430,8 +446,8 @@ export class RaceCameraDirector {
         this._broadcastDuelTimer = 0;
         this._broadcastDuelCooldown = 0;
         this._broadcastDuelShotIndex = 1;
-        this._broadcastCameraFov = 42;
-        this._broadcastDesiredFov = 42;
+        this._broadcastCameraFov = 52;
+        this._broadcastDesiredFov = 52;
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
         this._diveShotElapsed = -1;
@@ -494,6 +510,15 @@ type SwimRaceView = {
 };
 
 function swimRaceView(snapshot: RaceCameraSnapshot): SwimRaceView {
+    if (snapshot.racerCount > 0 && snapshot.playerPlacement === snapshot.racerCount) {
+        return {
+            targetXOffset: 8.0,
+            cameraXOffset: -6.8,
+            zOffset: 0,
+            height: 4.8,
+            fov: 46,
+        };
+    }
     if (snapshot.playerPlacement > 0 && snapshot.playerPlacement <= SWIM_ANGLE_VIEW_FRONT_RANK) {
         return {
             targetXOffset: 0.85,
@@ -545,15 +570,33 @@ function firstPersonCameraPos(playerX: number, playerLaneZ: number): Vec3 {
     return new Vec3(playerX + 0.95, 0.74, playerLaneZ + 0.04);
 }
 
+function divePullbackTarget(playerX: number, playerLaneZ: number, ratio: number): Vec3 {
+    const t = clamp(ratio, 0, 1);
+    return new Vec3(
+        playerX + lerp(1.05, 1.35, t),
+        lerp(0.58, 0.54, t),
+        playerLaneZ,
+    );
+}
+
+function divePullbackCameraPos(playerX: number, playerLaneZ: number, ratio: number): Vec3 {
+    const t = clamp(ratio, 0, 1);
+    return new Vec3(
+        playerX + lerp(0.95, -7.4, t),
+        lerp(0.74, 4.35, t),
+        playerLaneZ + lerp(0.04, 10.8, t),
+    );
+}
+
 function countdownOrbitCameraPosition(target: Vec3, ratio: number): Vec3 {
     const t = clamp(ratio, 0, 1);
     const angle = Math.PI * t;
-    const radius = lerp(6.2, 3.65, t);
-    const height = lerp(2.15, 1.95, t);
+    const radius = lerp(8.4, 5.75, t);
+    const height = lerp(3.15, 2.55, t);
     return new Vec3(
         target.x + Math.cos(angle) * radius,
         height,
-        target.z + Math.sin(angle) * radius * 0.16,
+        target.z + Math.sin(angle) * radius * 0.22,
     );
 }
 

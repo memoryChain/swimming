@@ -229,7 +229,7 @@ function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor:
             const u = (x + 0.5) / SWIMMER_TEXTURE_SIZE;
             const nx = (u - 0.5) * 2;
             const color = outfit === 'trunksA'
-                ? swimmerTrunksTextureColor(nx, v, skinColor, suitColor, suitEdge)
+                ? swimmerTrunksTextureColor(nx, v, skinColor, suitColor, capColor, suitEdge)
                 : swimmerTextureColor(nx, v, skinColor, suitColor, capColor, suitEdge);
             const index = (y * SWIMMER_TEXTURE_SIZE + x) * 4;
             data[index] = color.r;
@@ -247,16 +247,24 @@ function makeSwimmerClothesTexture(skinColor: Color, suitColor: Color, capColor:
     return texture;
 }
 
-function swimmerTrunksTextureColor(nx: number, v: number, skin: Color, suit: Color, suitEdge: Color): Color {
+function swimmerTrunksTextureColor(nx: number, v: number, skin: Color, suit: Color, cap: Color, suitEdge: Color): Color {
     const ax = Math.abs(nx);
     let color = skin;
-    void suitEdge;
 
-    if (v >= 0.520 && v < 0.665 && ax <= 0.38) {
+    if (v >= 0.520 && v < 0.625 && ax <= 0.38) {
         color = suit;
     }
-    if (v >= 0.300 && v < 0.560 && ax <= 0.43) {
+    if (v >= 0.617 && v < 0.632 && ax <= 0.40) {
+        color = suitEdge;
+    }
+    if (v >= 0.380 && v < 0.560 && ax <= 0.43) {
         color = suit;
+    }
+    if (v >= 0.376 && v < 0.394 && ax <= 0.45) {
+        color = suitEdge;
+    }
+    if (v >= 0.965 && v <= 1 && ax <= 0.78) {
+        color = cap;
     }
 
     return color;
