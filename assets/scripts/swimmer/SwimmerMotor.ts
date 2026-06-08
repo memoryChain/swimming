@@ -1,5 +1,5 @@
 import { RACE_DISTANCE, SWIMMER_BALANCE } from '../core/GameBalance';
-import { StrokeType } from '../core/GameConstants';
+import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STABILITY_TUNING } from '../core/InputTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 
@@ -46,6 +46,21 @@ export type SwimmerMotorOptions = {
     isAI: boolean;
     aiPower: number;
     aiMaxSpeedScale: number;
+};
+
+export type StrokeTimingGuideInterval = {
+    rating: Rating;
+    startRatio: number;
+    endRatio: number;
+};
+
+export type StrokeTimingGuide = {
+    active: boolean;
+    currentRatio: number;
+    holdSeconds: number;
+    actionSeconds: number;
+    minHoldRatio: number;
+    intervals: StrokeTimingGuideInterval[];
 };
 
 export class SwimmerMotor {
@@ -671,11 +686,88 @@ export class SwimmerMotor {
         return this.currentCycleSeconds();
     }
 
+    get strokeTimingGuide(): StrokeTimingGuide {
+        const action = this.currentGuideAction();
+        const actionSeconds = action ? this.predictedActionSecondsAfterRelease(action) : this.currentCycleSeconds();
+        const holdSeconds = action ? this.currentHoldSeconds(action) : 0;
+        return {
+            active: !!action && action.releasedAt < 0,
+            currentRatio: clamp01(holdSeconds / Math.max(0.001, actionSeconds)),
+            holdSeconds,
+            actionSeconds,
+            minHoldRatio: clamp01(STABILITY_TUNING.minHoldSeconds / Math.max(0.001, actionSeconds)),
+            intervals: this.timingGuideIntervals(action, actionSeconds),
+        };
+    }
+
     consumeStabilityResults(): StrokeStabilityResult[] {
         if (this._pendingStabilityResults.length === 0) {
             return [];
         }
         return this._pendingStabilityResults.splice(0);
+    }
+
+    private currentGuideAction(): StrokeAction | null {
+        const left = this._leftActions[0];
+        const right = this._rightActions[0];
+        const candidates = [left, right].filter((action) => action && action.startedAt >= 0 && !action.stabilitySettled);
+        if (candidates.length === 0) {
+            return null;
+        }
+        candidates.sort((a, b) => a.startedAt - b.startedAt);
+        return candidates[0];
+    }
+
+    private currentHoldSeconds(action: StrokeAction): number {
+        if (action.pressedAt < 0 || action.startedAt < 0) {
+            return 0;
+        }
+        const holdStart = Math.max(action.pressedAt, action.startedAt);
+        const holdEnd = action.releasedAt >= 0 ? Math.min(action.releasedAt, this._motionClock) : this._motionClock;
+        return Math.max(0, holdEnd - holdStart);
+    }
+
+    private timingGuideIntervals(action: StrokeAction | null, actionSeconds: number): StrokeTimingGuideInterval[] {
+        const intervals: StrokeTimingGuideInterval[] = [];
+        const steps = 96;
+        let openRating = this.ratingForGuideRatio(0.5 / steps, action, actionSeconds);
+        let openStart = 0;
+        for (let i = 1; i <= steps; i++) {
+            const start = i / steps;
+            const end = Math.min(1, (i + 1) / steps);
+            const rating = i < steps ? this.ratingForGuideRatio((start + end) * 0.5, action, actionSeconds) : openRating;
+            if (i >= steps || rating !== openRating) {
+                intervals.push({
+                    rating: openRating,
+                    startRatio: openStart,
+                    endRatio: start,
+                });
+                openRating = rating;
+                openStart = start;
+            }
+        }
+        return intervals;
+    }
+
+    private ratingForGuideRatio(holdRatio: number, action: StrokeAction | null, actionSeconds: number): Rating {
+        const holdSeconds = clamp01(holdRatio) * Math.max(0.001, actionSeconds);
+        if (holdSeconds < STABILITY_TUNING.minHoldSeconds) {
+            return Rating.BAD;
+        }
+        const ratios = this._holdRatioHistory.slice();
+        ratios.push(clamp01(holdRatio));
+        while (ratios.length > Math.max(1, Math.round(STABILITY_TUNING.sampleWindowSize))) {
+            ratios.shift();
+        }
+        const stats = stabilityFromRatios(ratios);
+        const freshness = action ? this.guideInputFreshness(action, actionSeconds) : 1;
+        return ratingForGuideStability(clamp01(stats.stability * freshness));
+    }
+
+    private guideInputFreshness(action: StrokeAction, actionSeconds: number): number {
+        const leadSeconds = Math.max(0, action.startedAt - action.queuedAt);
+        const leadRatio = leadSeconds / Math.max(0.001, actionSeconds);
+        return inputFreshnessWeight(leadRatio);
     }
 }
 
@@ -707,19 +799,23 @@ function stabilityFromRatios(ratios: number[]): { stability: number; meanRatio: 
         return { stability: 0, meanRatio: 0, ratioStdDev: 0, sampleCount: 0 };
     }
 
+    const currentRatio = ratios[ratios.length - 1];
     const meanRatio = ratios.reduce((sum, value) => sum + value, 0) / sampleCount;
-    const variance = ratios.reduce((sum, value) => sum + Math.pow(value - meanRatio, 2), 0) / sampleCount;
+    const varianceSamples = ratios.filter((ratio) => usefulRatioWeight(ratio) > 0);
+    const consistencyRatios = varianceSamples.length > 0 ? varianceSamples : [currentRatio];
+    const consistencyMean = consistencyRatios.reduce((sum, value) => sum + value, 0) / consistencyRatios.length;
+    const variance = consistencyRatios.reduce((sum, value) => sum + Math.pow(value - consistencyMean, 2), 0) / consistencyRatios.length;
     const ratioStdDev = Math.sqrt(variance);
     const badStdDev = Math.max(STABILITY_TUNING.badStdDev, STABILITY_TUNING.perfectStdDev + 0.001);
     const stdDevRange = badStdDev - STABILITY_TUNING.perfectStdDev;
     const stdDevT = clamp01((ratioStdDev - STABILITY_TUNING.perfectStdDev) / stdDevRange);
     const consistency = 1 - smoothstep(stdDevT);
-    const validity = usefulRatioWeight(meanRatio);
+    const validity = usefulRatioWeight(currentRatio);
     return {
         stability: clamp01(consistency * validity),
         meanRatio,
         ratioStdDev,
-        sampleCount,
+        sampleCount: consistencyRatios.length,
     };
 }
 
@@ -772,4 +868,14 @@ function describeBadReason(data: {
 function smoothstep(value: number): number {
     const t = clamp01(value);
     return t * t * (3 - 2 * t);
+}
+
+function ratingForGuideStability(stability: number): Rating {
+    if (stability >= 0.999) {
+        return Rating.PERFECT;
+    }
+    if (stability > 0) {
+        return Rating.GOOD;
+    }
+    return Rating.BAD;
 }

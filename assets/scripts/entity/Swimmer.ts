@@ -6,7 +6,7 @@ import {
 import { DIVE_BALANCE } from '../core/GameBalance';
 import type { RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
 import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
-import { StrokeStabilityResult, SwimmerMotor } from '../swimmer/SwimmerMotor';
+import { StrokeStabilityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
@@ -589,6 +589,10 @@ export class Swimmer extends Component {
 
     get actionCycleSeconds(): number {
         return this._motor.actionCycleSeconds;
+    }
+
+    get strokeTimingGuide(): StrokeTimingGuide {
+        return this._motor.strokeTimingGuide;
     }
 
     get distance(): number {

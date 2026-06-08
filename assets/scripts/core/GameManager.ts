@@ -20,7 +20,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { RaceHudBuilder } from '../ui/RaceHudBuilder';
-import { makeUiNode, makeRect, makeLabel, drawBottomFill } from '../ui/RuntimeUiFactory';
+import { makeUiNode, makeRect, makeLabel } from '../ui/RuntimeUiFactory';
 import { StartScreenBuilder } from '../ui/StartScreenBuilder';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -28,7 +28,6 @@ import { DebugLogController } from './DebugLogController';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
-import { SWIMMER_BALANCE } from './GameBalance';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { formatStabilityLog } from './StabilityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -38,6 +37,7 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
+import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
 
@@ -67,7 +67,8 @@ export class GameManager extends Component {
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
-    private _speedFill: Graphics = null;
+    private _timingGuideFill: Graphics = null;
+    private _timingGuideMarker: Node = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -112,7 +113,7 @@ export class GameManager extends Component {
             this._playerSwimmer.currentSpeed,
         );
         this.consumePlayerRhythmResults();
-        this.drawSpeedBar(this._playerSwimmer.currentSpeed / SWIMMER_BALANCE.maxSpeed);
+        this.drawStrokeTimingGuide(this._playerSwimmer.strokeTimingGuide, this._state === GameState.RACING);
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
@@ -288,7 +289,8 @@ export class GameManager extends Component {
             onMenu: () => this.showStartScreen(),
         }).build(this._raceHud, w, h);
         this._uiController = raceHud.uiController;
-        this._speedFill = raceHud.speedFill;
+        this._timingGuideFill = raceHud.timingGuideFill;
+        this._timingGuideMarker = raceHud.timingGuideMarker;
 
         this._startScreen = new StartScreenBuilder({
             onStart: () => this.startGame(),
@@ -418,8 +420,44 @@ export class GameManager extends Component {
         setCeilingNodesVisible(this._worldRoot, !topViewActive);
     }
 
-    private drawSpeedBar(ratio: number) {
-        drawBottomFill(this._speedFill, 12, 216, Math.max(0, Math.min(1, ratio)), color(89, 234, 160));
+    private drawSpeedBar(_ratio: number) {
+        this.drawStrokeTimingGuide(null, false);
+    }
+
+    private drawStrokeTimingGuide(guide: StrokeTimingGuide | null, active: boolean) {
+        const gfx = this._timingGuideFill;
+        if (!gfx) {
+            return;
+        }
+        const w = 12;
+        const h = 216;
+        gfx.clear();
+        const intervals = guide?.intervals ?? [];
+        if (intervals.length <= 0) {
+            gfx.fillColor = color(255, 92, 92, 180);
+            gfx.rect(-w / 2, -h / 2, w, h);
+            gfx.fill();
+        } else {
+            for (const interval of intervals) {
+                const start = Math.max(0, Math.min(1, interval.startRatio));
+                const end = Math.max(start, Math.min(1, interval.endRatio));
+                gfx.fillColor = interval.rating === Rating.PERFECT
+                    ? color(255, 224, 89, 245)
+                    : interval.rating === Rating.GOOD
+                        ? color(80, 242, 161, 225)
+                        : color(255, 92, 92, 190);
+                gfx.rect(-w / 2, -h / 2 + start * h, w, Math.max(1, (end - start) * h));
+                gfx.fill();
+            }
+        }
+        if (this._timingGuideMarker) {
+            const markerVisible = active && !!guide?.active;
+            this._timingGuideMarker.active = markerVisible;
+            if (markerVisible) {
+                const y = -h / 2 + Math.max(0, Math.min(1, guide.currentRatio)) * h;
+                this._timingGuideMarker.setPosition(this._timingGuideMarker.position.x, y, 0);
+            }
+        }
     }
 
     private paintError(error: unknown) {

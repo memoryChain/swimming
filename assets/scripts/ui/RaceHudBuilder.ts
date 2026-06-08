@@ -13,7 +13,8 @@ export type RaceHudCallbacks = {
 
 export type RaceHudRefs = {
     uiController: UIController;
-    speedFill: Graphics;
+    timingGuideFill: Graphics;
+    timingGuideMarker: Node;
 };
 
 export class RaceHudBuilder {
@@ -61,10 +62,13 @@ export class RaceHudBuilder {
 
         const speedTrackX = rightX - sidePad - 16;
         const speedBarRoot = makeUiNode('SpeedBarRoot', parent);
-        makeLabel('SpeedText', speedBarRoot, 'SPD', 15, uiColor(210, 240, 250)).setPosition(speedTrackX, 124, 0);
+        makeLabel('SpeedText', speedBarRoot, 'HOLD', 15, uiColor(210, 240, 250)).setPosition(speedTrackX, 124, 0);
         makeRect('SpeedTrack', speedBarRoot, 16, 220, uiColor(5, 18, 30, 210)).setPosition(speedTrackX, 0, 0);
         const speedFillNode = makeBottomRect('SpeedFill', speedBarRoot, 12, 216, uiColor(89, 234, 160));
         speedFillNode.setPosition(speedTrackX, 0, 0);
+        const timingMarker = makeRect('TimingMarker', speedBarRoot, 24, 4, uiColor(255, 255, 255, 245));
+        timingMarker.setPosition(speedTrackX, -108, 0);
+        timingMarker.active = false;
         const speedLabel = makeLabel('SpeedValue', speedBarRoot, '0.00\nm/s', 14, uiColor(255, 255, 255));
         speedLabel.getComponent(UITransform).setContentSize(72, 42);
         speedLabel.getComponent(Label).lineHeight = 18;
@@ -166,7 +170,8 @@ export class RaceHudBuilder {
 
         return {
             uiController: ui,
-            speedFill: speedFillNode.getComponent(Graphics),
+            timingGuideFill: speedFillNode.getComponent(Graphics),
+            timingGuideMarker: timingMarker,
         };
     }
 

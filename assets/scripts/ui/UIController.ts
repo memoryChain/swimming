@@ -198,6 +198,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;
         }
+        this.setSpeedBarVisible(false);
         if (this.hintLabel) {
             this.hintLabel.string = 'Streamline glide... get ready to stroke';
         }
@@ -205,6 +206,7 @@ export class UIController extends Component {
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
         const soloRace = (stats?.racerCount ?? 2) <= 1;
+        this.setSpeedBarVisible(false);
         if (this.resultPanel) {
             this.resultPanel.active = true;
         }
@@ -242,6 +244,7 @@ export class UIController extends Component {
             this.countdownOverlay.active = false;
         }
         this.updateDiveCharge(0, false);
+        this.setSpeedBarVisible(false);
         if (this.resultPanel) {
             this.resultPanel.active = false;
         }
