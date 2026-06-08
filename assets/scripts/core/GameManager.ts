@@ -67,6 +67,7 @@ export class GameManager extends Component {
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
+    private _modelDebugModelLabel: Label = null;
     private _timingGuideFill: Graphics = null;
     private _timingGuideMarker: Node = null;
     private _gameFlow: GameFlowController = null;
@@ -203,6 +204,7 @@ export class GameManager extends Component {
             speedLabel: this._modelDebugSpeedLabel,
             ratingLabel: this._modelDebugRatingLabel,
             swimSpeedLabel: this._modelDebugSwimSpeedLabel,
+            modelLabel: this._modelDebugModelLabel,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
             showStartScreen: () => this.showStartScreen(),
             setState: (state) => {
@@ -302,11 +304,13 @@ export class GameManager extends Component {
             onExit: () => this.exitModelDebug(true),
             onSlow: () => this.slowModelDebugMotion(),
             onFast: () => this.speedUpModelDebugMotion(),
+            onSwitchModel: () => this.switchModelDebugVariant(),
         }).build(uiRoot, w, h);
         this._modelDebugHud = modelDebugHud.root;
         this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
         this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
         this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
+        this._modelDebugModelLabel = modelDebugHud.modelLabel;
         this._modelDebugHud.active = false;
 
         const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
@@ -406,6 +410,10 @@ export class GameManager extends Component {
 
     private speedUpModelDebugMotion() {
         this._modelDebugFlow?.speedUpMotion();
+    }
+
+    private switchModelDebugVariant() {
+        this._modelDebugFlow?.switchModelVariant();
     }
 
     private toggleDebug() {

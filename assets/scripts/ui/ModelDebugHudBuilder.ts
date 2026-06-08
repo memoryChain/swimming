@@ -7,6 +7,7 @@ export type ModelDebugHudCallbacks = {
     onExit: () => void;
     onSlow: () => void;
     onFast: () => void;
+    onSwitchModel: () => void;
 };
 
 export type ModelDebugHudRefs = {
@@ -14,6 +15,7 @@ export type ModelDebugHudRefs = {
     speedLabel: Label;
     ratingLabel: Label;
     swimSpeedLabel: Label;
+    modelLabel: Label;
 };
 
 export class ModelDebugHudBuilder {
@@ -33,41 +35,52 @@ export class ModelDebugHudBuilder {
     build(parent: Node, w: number, h: number): ModelDebugHudRefs {
         const hud = makeUiNode('ModelDebugHUD', parent);
         const portrait = h > w;
-        const topHeight = portrait ? 56 : 76;
-        makeRect('ModelDebugTop', hud, w, topHeight, uiColor(5, 16, 26, 190)).setPosition(0, h / 2 - topHeight / 2, 0);
+        const topHeight = portrait ? 86 : 76;
+        const bottomHeight = portrait ? 74 : 54;
+        const topY = h / 2 - topHeight / 2;
+        const bottomY = -h / 2 + bottomHeight / 2;
+        makeRect('ModelDebugTop', hud, w, topHeight, uiColor(5, 16, 26, 190)).setPosition(0, topY, 0);
         const title = makeLabel('ModelDebugTitle', hud, portrait ? 'MODEL DEBUG' : 'MODEL ACTION DEBUG', portrait ? 16 : 24, uiColor(255, 255, 255));
-        title.getComponent(UITransform).setContentSize(portrait ? 160 : 300, topHeight);
-        title.setPosition(-w / 2 + (portrait ? 84 : 190), h / 2 - topHeight / 2, 0);
+        title.getComponent(UITransform).setContentSize(portrait ? w - 36 : 300, portrait ? 30 : topHeight);
+        title.setPosition(portrait ? 0 : -w / 2 + 190, portrait ? h / 2 - 18 : topY, 0);
         const hint = makeLabel('ModelDebugHint', hud, 'A: left hand/right foot    D: right hand/left foot    Q/E: speed    Drag: orbit    Wheel: zoom', 16, uiColor(150, 235, 255));
         hint.active = !portrait;
-        hint.setPosition(0, h / 2 - topHeight / 2, 0);
+        hint.setPosition(0, topY, 0);
         const exit = makeButton('ModelDebugExit', hud, portrait ? 76 : 130, portrait ? 36 : 42, uiColor(232, 68, 72), 'EXIT');
-        exit.setPosition(w / 2 - (portrait ? 48 : 86), h / 2 - topHeight / 2, 0);
+        exit.setPosition(portrait ? 48 : w / 2 - 86, portrait ? h / 2 - 60 : topY, 0);
         exit.on(Node.EventType.TOUCH_END, () => this._callbacks.onExit());
         const tuning = makeButton('ModelDebugTuningOpen', hud, portrait ? 76 : 110, portrait ? 36 : 42, uiColor(34, 96, 146), '参数');
-        tuning.setPosition(w / 2 - (portrait ? 130 : 206), h / 2 - topHeight / 2, 0);
+        tuning.setPosition(portrait ? -48 : w / 2 - 206, portrait ? h / 2 - 60 : topY, 0);
         tuning.on(Node.EventType.TOUCH_END, () => this.setTuningOverlayVisible(true));
-        makeRect('ModelDebugBottom', hud, w, 54, uiColor(5, 16, 26, 120)).setPosition(0, -h / 2 + 27, 0);
+        makeRect('ModelDebugBottom', hud, w, bottomHeight, uiColor(5, 16, 26, 135)).setPosition(0, bottomY, 0);
+        const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 76 : 96, 36, uiColor(92, 76, 170), 'MODEL');
+        model.setPosition(portrait ? -118 : -214, portrait ? -h / 2 + 24 : bottomY, 0);
+        model.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchModel());
         const slower = makeButton('ModelDebugSlow', hud, 54, 36, uiColor(38, 116, 190), '-');
-        slower.setPosition(-88, -h / 2 + 27, 0);
+        slower.setPosition(portrait ? -34 : -88, portrait ? -h / 2 + 24 : bottomY, 0);
         slower.on(Node.EventType.TOUCH_END, () => this._callbacks.onSlow());
         const faster = makeButton('ModelDebugFast', hud, 54, 36, uiColor(38, 116, 190), '+');
-        faster.setPosition(88, -h / 2 + 27, 0);
+        faster.setPosition(portrait ? 118 : 88, portrait ? -h / 2 + 24 : bottomY, 0);
         faster.on(Node.EventType.TOUCH_END, () => this._callbacks.onFast());
         const speedLabel = makeLabel('ModelDebugStatus', hud, `Speed ${MOTION_TUNING.animationSpeedScale.toFixed(2)}x`, 18, uiColor(230, 244, 250));
-        speedLabel.setPosition(0, -h / 2 + 27, 0);
+        speedLabel.getComponent(UITransform).setContentSize(portrait ? 92 : 180, 30);
+        speedLabel.setPosition(portrait ? 42 : 0, portrait ? -h / 2 + 24 : bottomY, 0);
+        const modelLabel = makeLabel('ModelDebugModelLabel', hud, 'Model Default', portrait ? 12 : 14, uiColor(205, 220, 255));
+        modelLabel.getComponent(UITransform).setContentSize(portrait ? w - 40 : 180, 22);
+        modelLabel.setPosition(portrait ? 0 : -214, -h / 2 + 58, 0);
         const ratingLabel = makeLabel('ModelDebugRating', hud, 'READY', 20, uiColor(230, 244, 250));
         ratingLabel.getComponent(UITransform).setContentSize(280, 32);
-        ratingLabel.setPosition(0, h / 2 - (portrait ? 84 : 104), 0);
+        ratingLabel.setPosition(0, h / 2 - (portrait ? 112 : 104), 0);
         const swimSpeedLabel = makeLabel('ModelDebugSwimSpeed', hud, '0.00 m/s', 18, uiColor(150, 235, 255));
         swimSpeedLabel.getComponent(UITransform).setContentSize(portrait ? w - 28 : 520, 30);
-        swimSpeedLabel.setPosition(0, h / 2 - (portrait ? 112 : 134), 0);
+        swimSpeedLabel.setPosition(0, h / 2 - (portrait ? 140 : 134), 0);
         this.buildTuningPanel(hud, w, h);
         return {
             root: hud,
             speedLabel: speedLabel.getComponent(Label),
             ratingLabel: ratingLabel.getComponent(Label),
             swimSpeedLabel: swimSpeedLabel.getComponent(Label),
+            modelLabel: modelLabel.getComponent(Label),
         };
     }
 

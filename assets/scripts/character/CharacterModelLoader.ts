@@ -6,13 +6,16 @@ export type SwimmerPrefabLoadResult = {
     path: string;
 };
 
-export function loadSwimmerPrefab(done: (err: Error | null, result: SwimmerPrefabLoadResult | null) => void) {
+export function loadSwimmerPrefab(
+    done: (err: Error | null, result: SwimmerPrefabLoadResult | null) => void,
+    candidates = RESOURCE_PATHS.swimmerPrefabCandidates,
+) {
     const tryPath = (index: number) => {
-        if (index >= RESOURCE_PATHS.swimmerPrefabCandidates.length) {
+        if (index >= candidates.length) {
             done(new Error('swimmer prefab not imported yet'), null);
             return;
         }
-        const path = RESOURCE_PATHS.swimmerPrefabCandidates[index];
+        const path = candidates[index];
         resources.load(path, Prefab, (err, prefab) => {
             if (!err && prefab) {
                 done(null, { prefab, path });

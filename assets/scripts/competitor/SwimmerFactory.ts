@@ -2,6 +2,8 @@ import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 
+const RACE_SWIMMER_MODEL_VARIANT = 'newMan01';
+
 export type CreateSwimmerOptions = {
     name: string;
     x: number;
@@ -21,6 +23,7 @@ export class SwimmerFactory {
 
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
+        rig.setModelVariant(RACE_SWIMMER_MODEL_VARIANT);
         rig.build(
             sharedSkin,
             options.suitColor || (options.isAI ? color(58, 92, 128) : color(245, 42, 64)),

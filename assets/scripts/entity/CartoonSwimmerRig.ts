@@ -7,7 +7,7 @@ import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loa
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
-import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { defaultSwimmerModelVariant, findSwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const { ccclass } = _decorator;
 
@@ -57,6 +57,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowShellRoot: Node = null;
     private _perfectGlowMaterial: Material = null;
     private _perfectGlowLoading = false;
+    private _modelVariantId = defaultSwimmerModelVariant().id;
+    private _modelLoadToken = 0;
     private readonly _tmpSplashWorld = new Vec3();
 
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
@@ -75,9 +77,44 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.splashNode = this._splashEmitter.node;
         this._splashEmitter.build();
 
+        this.loadModelForCurrentVariant();
+    }
+
+    setModelVariant(variantId: string): boolean {
+        const variant = findSwimmerModelVariant(variantId);
+        if (!variant) {
+            console.warn(`[SpeedSwimming] unknown swimmer model variant=${variantId}`);
+            return false;
+        }
+        if (this._modelVariantId === variant.id && (this._loaded || this._model)) {
+            return true;
+        }
+
+        this._modelVariantId = variant.id;
+        if (!this._splashEmitter) {
+            return true;
+        }
+
+        this.clearLoadedModel();
+        this.loadModelForCurrentVariant();
+        return true;
+    }
+
+    get modelVariantId(): string {
+        return this._modelVariantId;
+    }
+
+    private loadModelForCurrentVariant() {
+        const variant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
+        this._modelVariantId = variant.id;
+        const token = ++this._modelLoadToken;
+
         loadSwimmerPrefab((err, result) => {
+            if (token !== this._modelLoadToken) {
+                return;
+            }
             if (err || !result?.prefab || !this.node?.isValid) {
-                console.error('[SpeedSwimming] failed to load swimmer prefab', err);
+                console.error(`[SpeedSwimming] failed to load swimmer prefab variant=${variant.id}`, err);
                 return;
             }
 
@@ -102,23 +139,46 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this.root = findNode(this._model, 'Armature') || this._model;
             this._pose.bind(this.root);
             this.configureSkinnedRenderers();
-            this.applyLaneMaterials(skinColor, suitColor, capColor, robotStyle, playerOutline);
+            this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation));
             this._pose.captureBasePose();
             this._loaded = true;
             this.resetPose();
             if (this._modelDebugMode) {
                 this.applyModelDebugSetup();
+            } else if (this._finishFloating) {
+                this.applyFinishFloatingSetup();
             } else if (this._preRaceStanding) {
                 this.applyPreRaceStandingSetup();
             } else {
                 this.setActiveSwimming(this._active);
             }
             console.log(
-                `[SpeedSwimming] loaded athlete prefab=${result.path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
+                `[SpeedSwimming] loaded athlete variant=${variant.id} prefab=${result.path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
                 `skinned=${this._skinnedRenderers.length} baseEuler=${this._pose.rootBaseEuler.x.toFixed(1)},${this._pose.rootBaseEuler.y.toFixed(1)},${this._pose.rootBaseEuler.z.toFixed(1)}`,
             );
-        });
+        }, variant.candidates);
+    }
+
+    private clearLoadedModel() {
+        this._modelLoadToken++;
+        this._loaded = false;
+        this.root = null;
+        this._skinnedRenderers.length = 0;
+        this._animationPlayer.disable();
+        this._animationPlayer.bind(null);
+        this._perfectGlowIntensity = 0;
+        this._perfectGlowLoading = false;
+        this._perfectGlowMaterial = null;
+        this._outlineRoot = null;
+        if (this._perfectGlowShellRoot?.isValid) {
+            this._perfectGlowShellRoot.destroy();
+        }
+        this._perfectGlowShellRoot = null;
+        if (this._model?.isValid) {
+            this._model.destroy();
+        }
+        this._model = null;
     }
 
     private attachModelToSwimmerNode(): boolean {
@@ -427,6 +487,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             robotStyle,
             playerOutline,
             outfit: this._skinOutfit,
+            preserveImportedMaterial: this.usesImportedSwimmerMaterial(),
+            outlineWidth: this.usesImportedSwimmerMaterial() ? 10 : undefined,
             outlineRoot: this._outlineRoot,
             setOutlineRoot: (root) => {
                 this._outlineRoot = root;
@@ -440,6 +502,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._capColor = capColor.clone();
         this._robotStyle = robotStyle;
         this._playerOutline = playerOutline;
+    }
+
+    private usesImportedSwimmerMaterial(): boolean {
+        return this._modelVariantId !== defaultSwimmerModelVariant().id;
     }
 
     private applyModelDebugSetup() {
@@ -472,7 +538,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this.applyRaceModelSetup();
-        this._model.setPosition(-1.65, 0.42, 0);
+        this._model.setPosition(-1.65, 0.55, 0);
         this._model.setScale(0.82, 0.82, 0.82);
         this._model.setRotationFromEuler(0, 90, 0);
         this._pose.applyPreRaceStandingPose();

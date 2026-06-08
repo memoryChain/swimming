@@ -16,11 +16,19 @@ export type CharacterSkinOptions = {
     robotStyle: boolean;
     playerOutline: boolean;
     outfit?: CharacterSkinOutfit;
+    preserveImportedMaterial?: boolean;
+    outlineWidth?: number;
     outlineRoot: Node | null;
     setOutlineRoot: (root: Node | null) => void;
 };
 
 export function applyCharacterSkin(options: CharacterSkinOptions) {
+    if (options.preserveImportedMaterial) {
+        applyImportedSwimmerSlotMaterials(options);
+        configureOutlineShells(options);
+        return;
+    }
+
     if (applyLowSwimmerTextureMaterial(options)) {
         configureOutlineShells(options);
         return;
@@ -55,6 +63,25 @@ export function applyCharacterSkin(options: CharacterSkinOptions) {
     }
 
     configureOutlineShells(options);
+}
+
+function applyImportedSwimmerSlotMaterials(options: CharacterSkinOptions) {
+    const skin = makeMaterial('ImportedSwimmerSkin', options.skinColor, options.robotStyle ? 0.34 : 0.56, options.robotStyle ? 0.12 : 0);
+    const suit = makeUnlitMaterial('ImportedSwimmerSuit', boostColor(options.suitColor, 1.45, 1.18));
+    const cap = makeUnlitMaterial('ImportedSwimmerCap', boostColor(options.capColor, 1.4, 1.18));
+    const goggle = makeUnlitMaterial('ImportedSwimmerGoggle', options.robotStyle ? new Color(175, 245, 255, 255) : new Color(16, 34, 48, 255));
+    for (const renderer of options.skinnedRenderers) {
+        const name = renderer.node.name;
+        if (name.indexOf('SuitImported') >= 0) {
+            renderer.setMaterial(suit, 0);
+        } else if (name.indexOf('CapImported') >= 0) {
+            renderer.setMaterial(cap, 0);
+        } else if (name.indexOf('GoggleImported') >= 0) {
+            renderer.setMaterial(goggle, 0);
+        } else {
+            renderer.setMaterial(skin, 0);
+        }
+    }
 }
 
 function applyLowSwimmerTextureMaterial(options: CharacterSkinOptions): boolean {
@@ -100,7 +127,7 @@ function configureOutlineShells(options: CharacterSkinOptions) {
     root.layer = Layers.Enum.DEFAULT;
     setOutlineRoot(root);
 
-    loadOutlineShellMaterial((material) => {
+    loadOutlineShellMaterial(options.outlineWidth ?? OUTLINE_SHELL_WIDTH, (material) => {
         if (!material || !model?.isValid || !root.isValid) {
             root.destroy();
             setOutlineRoot(null);
@@ -160,6 +187,14 @@ function makeMaterial(name: string, albedo: Color, roughness = 0.58, metallic = 
     return material;
 }
 
+function makeUnlitMaterial(name: string, color: Color): Material {
+    const material = new Material();
+    material.initialize({ effectName: 'builtin-unlit' });
+    material.name = name;
+    material.setProperty('mainColor', color);
+    return material;
+}
+
 function makeSwimmerTextureMaterial(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, outfit: CharacterSkinOutfit): Material {
     const texture = makeSwimmerClothesTexture(skinColor, suitColor, capColor, outfit);
     const material = new Material();
@@ -176,7 +211,7 @@ let outlineShellEffect: EffectAsset | null = null;
 let outlineShellLoading = false;
 const outlineShellCallbacks: ((effect: EffectAsset | null) => void)[] = [];
 
-function loadOutlineShellMaterial(done: (material: Material | null) => void) {
+function loadOutlineShellMaterial(lineWidth: number, done: (material: Material | null) => void) {
     const make = (effect: EffectAsset | null) => {
         if (!effect) {
             done(null);
@@ -185,7 +220,7 @@ function loadOutlineShellMaterial(done: (material: Material | null) => void) {
         const material = new Material();
         material.initialize({ effectAsset: effect });
         material.name = 'CharacterInvertedHullOutline';
-        material.setProperty('lineWidth', OUTLINE_SHELL_WIDTH);
+        material.setProperty('lineWidth', lineWidth);
         material.setProperty('depthBias', 0.08);
         material.setProperty('baseColor', new Color(3, 5, 8, 255));
         done(material);
@@ -324,6 +359,64 @@ function darkenColor(color: Color, amount: number): Color {
         Math.round(color.b * t),
         color.a,
     );
+}
+
+function boostColor(color: Color, saturationScale: number, valueScale: number): Color {
+    const r = color.r / 255;
+    const g = color.g / 255;
+    const b = color.b / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const value = clamp(max * valueScale, 0, 1);
+    const saturation = max <= 0 ? 0 : clamp(((max - min) / max) * saturationScale, 0, 1);
+    if (saturation <= 0) {
+        const gray = Math.round(value * 255);
+        return new Color(gray, gray, gray, color.a);
+    }
+    const hue = colorHue(r, g, b, max, min);
+    const chroma = value * saturation;
+    const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const m = value - chroma;
+    let rr = 0;
+    let gg = 0;
+    let bb = 0;
+    if (hue < 60) {
+        rr = chroma; gg = x;
+    } else if (hue < 120) {
+        rr = x; gg = chroma;
+    } else if (hue < 180) {
+        gg = chroma; bb = x;
+    } else if (hue < 240) {
+        gg = x; bb = chroma;
+    } else if (hue < 300) {
+        rr = x; bb = chroma;
+    } else {
+        rr = chroma; bb = x;
+    }
+    return new Color(
+        Math.round((rr + m) * 255),
+        Math.round((gg + m) * 255),
+        Math.round((bb + m) * 255),
+        color.a,
+    );
+}
+
+function colorHue(r: number, g: number, b: number, max: number, min: number): number {
+    const delta = max - min;
+    if (delta <= 0) {
+        return 0;
+    }
+    if (max === r) {
+        return positiveHue(60 * (((g - b) / delta) % 6));
+    }
+    if (max === g) {
+        return 60 * ((b - r) / delta + 2);
+    }
+    return 60 * ((r - g) / delta + 4);
+}
+
+function positiveHue(value: number): number {
+    return value < 0 ? value + 360 : value;
 }
 
 function applyMaterialByName(root: Node, names: string[], material: Material): number {

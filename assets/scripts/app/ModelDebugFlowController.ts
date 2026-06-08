@@ -7,6 +7,7 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
+import { SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmEvaluator';
 import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
@@ -29,6 +30,7 @@ export type ModelDebugFlowRefs = {
     speedLabel: Label | null;
     ratingLabel: Label | null;
     swimSpeedLabel: Label | null;
+    modelLabel: Label | null;
     resetExtraAiSwimmers: () => void;
     showStartScreen: () => void;
     setState: (state: GameState) => void;
@@ -46,6 +48,7 @@ export class ModelDebugFlowController {
     private _lastRating: Rating | null = null;
     private _lastCombo = 0;
     private _lastStability = 0;
+    private _modelVariantIndex = 0;
     private readonly _hiddenDebugSceneNodes = new Map<Node, boolean>();
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
@@ -65,6 +68,7 @@ export class ModelDebugFlowController {
         this._lastRating = null;
         this._lastCombo = 0;
         this._lastStability = 0;
+        this._modelVariantIndex = Math.max(0, SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
 
         if (this._refs.cameraNode) {
@@ -88,6 +92,7 @@ export class ModelDebugFlowController {
             this._refs.playerSwimmer.reset();
             this._refs.playerSwimmer.node.setPosition(12, 0.24, this._refs.playerLaneZ);
             this._refs.playerSwimmer.cartoonRig?.setSkinOutfit('trunksA');
+            this.applyCurrentModelVariant();
             this._refs.playerSwimmer.cartoonRig?.setModelDebugMode(true);
             this._refs.playerSwimmer.cartoonRig?.setModelDebugSpeedScale(this._speedScale);
             this._refs.playerSwimmer.cartoonRig?.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
@@ -256,6 +261,32 @@ export class ModelDebugFlowController {
         this.applySpeed();
     }
 
+    switchModelVariant() {
+        if (!this._active || SWIMMER_MODEL_VARIANTS.length <= 0) {
+            return;
+        }
+        this._modelVariantIndex = positiveMod(this._modelVariantIndex + 1, SWIMMER_MODEL_VARIANTS.length);
+        this.applyCurrentModelVariant();
+    }
+
+    private applyCurrentModelVariant() {
+        const variant = SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? SWIMMER_MODEL_VARIANTS[0];
+        if (!variant) {
+            return;
+        }
+        const rig = this._refs.playerSwimmer?.cartoonRig;
+        if (rig?.setModelVariant(variant.id)) {
+            rig.setSkinOutfit('trunksA');
+            rig.setModelDebugMode(true);
+            rig.setModelDebugSpeedScale(this._speedScale);
+            rig.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
+            this._refs.debug(`model debug variant=${variant.label}`);
+        }
+        if (this._refs.modelLabel) {
+            this._refs.modelLabel.string = `Model ${variant.label}`;
+        }
+    }
+
     private applySpeed() {
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugSpeedScale(this._speedScale);
         if (this._refs.speedLabel) {
@@ -410,4 +441,8 @@ function clamp(value: number, min: number, max: number): number {
 
 function signed(value: number): string {
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
+}
+
+function positiveMod(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
 }

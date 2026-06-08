@@ -14,24 +14,15 @@ export type CompetitorVisualProfile = {
     capColor: Color;
 };
 
-export const DEFAULT_COMPETITOR_VISUALS: CompetitorVisualProfile[] = [
+export const RACE_COMPETITOR_VISUALS: CompetitorVisualProfile[] = [
     { suitColor: color(255, 75, 94), capColor: color(35, 235, 255) },
-    { suitColor: color(26, 152, 255), capColor: color(255, 246, 64) },
+    { suitColor: color(30, 125, 255), capColor: color(255, 246, 64) },
     { suitColor: color(255, 205, 38), capColor: color(255, 90, 220) },
-    { suitColor: color(255, 40, 58), capColor: color(255, 242, 52) },
     { suitColor: color(36, 214, 116), capColor: color(250, 250, 255) },
     { suitColor: color(168, 82, 255), capColor: color(94, 255, 130) },
     { suitColor: color(255, 126, 42), capColor: color(70, 110, 255) },
-    { suitColor: color(20, 220, 230), capColor: color(255, 255, 255) },
-];
-
-export const PLAYER_COMPETITOR_VISUALS: CompetitorVisualProfile[] = [
-    { suitColor: color(255, 75, 94), capColor: color(35, 235, 255) },
-    { suitColor: color(34, 158, 255), capColor: color(255, 239, 65) },
-    { suitColor: color(47, 213, 125), capColor: color(255, 96, 209) },
-    { suitColor: color(255, 128, 42), capColor: color(79, 119, 255) },
-    { suitColor: color(164, 90, 255), capColor: color(102, 255, 151) },
-    { suitColor: color(20, 214, 230), capColor: color(255, 255, 255) },
+    { suitColor: color(20, 220, 230), capColor: color(255, 40, 58) },
+    { suitColor: color(255, 80, 180), capColor: color(255, 154, 36) },
 ];
 
 export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
@@ -64,14 +55,6 @@ export const AI_COMPETITOR_NAMES = [
     'Finn',
 ];
 
-export function randomPlayerVisualProfile(): CompetitorVisualProfile {
-    const visual = PLAYER_COMPETITOR_VISUALS[Math.floor(Math.random() * PLAYER_COMPETITOR_VISUALS.length)];
-    return {
-        suitColor: visual.suitColor.clone(),
-        capColor: visual.capColor.clone(),
-    };
-}
-
 export function shuffledAiCompetitorNames(): string[] {
     const names = AI_COMPETITOR_NAMES.slice();
     for (let i = names.length - 1; i > 0; i--) {
@@ -83,8 +66,8 @@ export function shuffledAiCompetitorNames(): string[] {
     return names;
 }
 
-export function shuffledAiVisualProfiles(): CompetitorVisualProfile[] {
-    const visuals = DEFAULT_COMPETITOR_VISUALS.map((visual) => ({
+export function shuffledRaceVisualProfiles(): CompetitorVisualProfile[] {
+    const visuals = RACE_COMPETITOR_VISUALS.map((visual) => ({
         suitColor: visual.suitColor.clone(),
         capColor: visual.capColor.clone(),
     }));
