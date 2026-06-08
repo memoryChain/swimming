@@ -335,11 +335,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number) {
+    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1) {
         if (!this._loaded || !this._active || !this.root) {
             return;
         }
 
+        this._pose.setMovementDirection(movementDirection);
         this._armAction = Math.max(0, this._armAction - dt * 4.8);
         this._kickAction = Math.max(0, this._kickAction - dt * 7);
         this._splashEmitter?.decay(dt);

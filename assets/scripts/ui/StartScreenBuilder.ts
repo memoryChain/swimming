@@ -1,9 +1,11 @@
-import { Color, Label, Node, UITransform } from 'cc';
+import { Color, Graphics, Label, Node, UITransform } from 'cc';
 import { EDITOR } from 'cc/env';
+import { getRaceDistance, RaceDistanceMode, RACE_DISTANCE_OPTIONS } from '../core/GameBalance';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type StartScreenCallbacks = {
     onStart: () => void;
+    onDistanceSelect: (distance: RaceDistanceMode) => void;
     onToggleDebug: () => void;
     onModelDebug: () => void;
 };
@@ -24,17 +26,38 @@ export class StartScreenBuilder {
         const coverH = h * 1.2;
         makeRect('StartShade', screen, coverW, coverH, uiColor(4, 12, 22, 125));
         makeRect('TopAccent', screen, coverW, 12, uiColor(255, 224, 89)).setPosition(0, h / 2 - 6, 0);
-        makeFittedLabel('Kicker', screen, '100M FREESTYLE RHYTHM', isPortrait ? 14 : 18, safeW, 30, uiColor(128, 225, 235)).setPosition(0, contentY, 0);
+        makeFittedLabel('Kicker', screen, 'FREESTYLE RHYTHM', isPortrait ? 14 : 18, safeW, 30, uiColor(128, 225, 235)).setPosition(0, contentY, 0);
         makeFittedLabel('Logo', screen, 'SPEED SWIMMING 3D', titleSize, safeW, titleSize + 14, uiColor(255, 255, 255)).setPosition(0, contentY - (isPortrait ? 44 : 54), 0);
         makeFittedLabel('SubTitle', screen, '交替控制左右划水，掌握长按节奏。', subtitleSize, safeW, subtitleSize + 18, uiColor(224, 235, 235)).setPosition(0, contentY - (isPortrait ? 88 : 108), 0);
 
+        const distanceLabel = makeLabel('DistanceModeLabel', screen, distanceLabelText(), isPortrait ? 15 : 17, uiColor(255, 244, 150));
+        distanceLabel.getComponent(UITransform).setContentSize(safeW, 26);
+        distanceLabel.setPosition(0, EDITOR ? -6 : (isPortrait ? 0 : -4), 0);
+
+        const optionWidth = isPortrait ? 68 : 78;
+        const optionGap = isPortrait ? 76 : 88;
+        const optionY = EDITOR ? -38 : (isPortrait ? -34 : -40);
+        const distanceButtons: { distance: RaceDistanceMode; node: Node }[] = [];
+        for (let i = 0; i < RACE_DISTANCE_OPTIONS.length; i++) {
+            const distance = RACE_DISTANCE_OPTIONS[i];
+            const option = makeButton(`Distance${distance}Button`, screen, optionWidth, 34, uiColor(30, 92, 138), `${distance}M`);
+            option.setPosition((i - 1) * optionGap, optionY, 0);
+            distanceButtons.push({ distance, node: option });
+            option.on(Node.EventType.TOUCH_END, () => {
+                this._callbacks.onDistanceSelect(distance);
+                distanceLabel.getComponent(Label).string = distanceLabelText();
+                updateDistanceButtons(distanceButtons);
+            });
+        }
+        updateDistanceButtons(distanceButtons);
+
         const start = makeButton('StartButton', screen, buttonW, 52, uiColor(255, 224, 89), 'START RACE');
-        start.setPosition(0, EDITOR ? -58 : (isPortrait ? -52 : -68), 0);
+        start.setPosition(0, EDITOR ? -88 : (isPortrait ? -86 : -94), 0);
         start.on(Node.EventType.TOUCH_END, () => this._callbacks.onStart());
 
         if (EDITOR) {
             const modelDebug = makeButton('ModelDebugButton', screen, buttonW, 52, uiColor(28, 148, 124), 'MODEL DEBUG');
-            modelDebug.setPosition(0, -120, 0);
+            modelDebug.setPosition(0, -150, 0);
             modelDebug.on(Node.EventType.TOUCH_END, () => this._callbacks.onModelDebug());
         }
 
@@ -50,6 +73,36 @@ function makeFittedLabel(name: string, parent: Node, text: string, fontSize: num
     label.overflow = Label.Overflow.SHRINK;
     label.lineHeight = Math.round(fontSize * 1.35);
     return node;
+}
+
+function distanceLabelText(): string {
+    return `DISTANCE ${getRaceDistance()}M`;
+}
+
+function updateDistanceButtons(buttons: { distance: RaceDistanceMode; node: Node }[]) {
+    const selected = getRaceDistance();
+    for (const button of buttons) {
+        const active = button.distance === selected;
+        setButtonFill(button.node, active ? uiColor(255, 184, 54) : uiColor(30, 92, 138));
+        const label = button.node.getChildByName('Label')?.getComponent(Label);
+        if (label) {
+            label.color = active ? uiColor(18, 38, 56, 255) : uiColor(255, 255, 255, 235);
+            label.fontSize = active ? 19 : 18;
+        }
+    }
+}
+
+function setButtonFill(node: Node, fill: Color) {
+    const transform = node.getComponent(UITransform);
+    const gfx = node.getComponent(Graphics);
+    if (!transform || !gfx) {
+        return;
+    }
+    const size = transform.contentSize;
+    gfx.clear();
+    gfx.fillColor = fill;
+    gfx.rect(-size.width / 2, -size.height / 2, size.width, size.height);
+    gfx.fill();
 }
 
 function controlText(isPortrait: boolean): string {

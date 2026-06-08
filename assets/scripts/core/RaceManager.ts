@@ -1,5 +1,5 @@
 import { _decorator, Component } from 'cc';
-import { COUNTDOWN_SECONDS, RACE_DISTANCE } from './GameBalance';
+import { COUNTDOWN_SECONDS, getRaceDistance } from './GameBalance';
 import { GameState } from './GameConstants';
 import { Swimmer } from '../entity/Swimmer';
 
@@ -142,7 +142,7 @@ export class RaceManager extends Component {
         this.onProgressUpdate?.(playerDist, aiDist);
 
         for (const swimmer of aiSwimmers) {
-            if (!this._aiFinishTimes.has(swimmer) && swimmer.distance >= RACE_DISTANCE) {
+            if (!this._aiFinishTimes.has(swimmer) && swimmer.distance >= getRaceDistance()) {
                 this._aiFinishTimes.set(swimmer, this._raceTimer);
                 swimmer.playFinishTouch();
                 this.emitSwimmerFinished(swimmer, this._raceTimer);
@@ -150,7 +150,7 @@ export class RaceManager extends Component {
         }
         this._aiFinishTime = this.bestAiFinishTime();
 
-        if (!this._playerFinished && playerDist >= RACE_DISTANCE) {
+        if (!this._playerFinished && playerDist >= getRaceDistance()) {
             this._playerFinished = true;
             this._playerFinishTime = this._raceTimer;
             this.playerSwimmer?.playFinishTouch();

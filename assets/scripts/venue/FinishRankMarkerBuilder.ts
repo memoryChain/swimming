@@ -1,5 +1,5 @@
 import { Color, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
-import { RACE_DISTANCE } from '../core/GameBalance';
+import { getRaceDistance, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
 import type { RaceFinishResult } from '../core/RaceManager';
 
 const DIGIT_SEGMENTS: Record<string, string[]> = {
@@ -47,7 +47,9 @@ export class FinishRankMarkerBuilder {
             return;
         }
         const marker = makeWorldNode(`Rank${result.placement}_${result.name}`, this._root);
-        const x = clamp(result.swimmer.node.position.x - 0.25, RACE_DISTANCE - 2.1, RACE_DISTANCE - 0.72);
+        const finishX = raceDistanceToCourseX(getRaceDistance());
+        const direction = raceFinishDirection(getRaceDistance());
+        const x = clamp(result.swimmer.node.position.x - 0.25 * direction, finishX - 2.1, finishX + 2.1);
         marker.setPosition(x, 0.9, result.swimmer.node.position.z);
         this._markers.set(result.swimmer.node, marker);
 

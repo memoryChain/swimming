@@ -3,7 +3,7 @@ import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
-import { DIVE_BALANCE } from '../core/GameBalance';
+import { DIVE_BALANCE, getRaceDistance, raceDistanceDirection, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
 import type { RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
 import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -60,8 +60,7 @@ export class Swimmer extends Component {
     startRace(initialDistance = 0, initialSpeed = DIVE_BALANCE.minSpeed) {
         this.captureStartPosition();
         this._motor.startRace(initialDistance, initialSpeed);
-        this.node.setPosition(this._startPosition.x + initialDistance, this._startPosition.y, this._startPosition.z);
-        this.node.setRotationFromEuler(0, 0, 0);
+        this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setPreRaceStanding(false);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(true);
@@ -135,8 +134,7 @@ export class Swimmer extends Component {
             aiPower: this.aiPower,
             aiMaxSpeedScale: this.aiMaxSpeedScale,
         });
-        const x = this._startPosition.x + this._motor.distance;
-        this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
+        this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
         for (const stability of this._motor.consumeStabilityResults()) {
             const result = this.makeStabilityResult(stability.type, stability);
@@ -195,18 +193,19 @@ export class Swimmer extends Component {
 
     playFinishTouch() {
         const finishPosition = this.node.position.clone();
+        const direction = raceFinishDirection(getRaceDistance());
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
-        this.node.setRotationFromEuler(0, 0, 0);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
         if (this.cartoonRig) {
             this.cartoonRig.setFinishFloating();
-            this.node.setPosition(finishPosition.x + FINISH_FLOAT_X_OFFSET, finishPosition.y + 0.01, finishPosition.z);
+            this.node.setPosition(finishPosition.x + FINISH_FLOAT_X_OFFSET * direction, finishPosition.y + 0.01, finishPosition.z);
             return;
         }
         tween(this.node)
-            .to(0.12, { eulerAngles: new Vec3(0, 0, -5), position: new Vec3(finishPosition.x + 0.42, finishPosition.y, finishPosition.z) })
-            .to(0.16, { eulerAngles: new Vec3(0, 0, 6), position: new Vec3(finishPosition.x + 0.64, finishPosition.y - 0.05, finishPosition.z) })
-            .to(0.18, { eulerAngles: new Vec3(0, 0, 0) })
+            .to(0.12, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5), position: new Vec3(finishPosition.x + 0.42 * direction, finishPosition.y, finishPosition.z) })
+            .to(0.16, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 6), position: new Vec3(finishPosition.x + 0.64 * direction, finishPosition.y - 0.05, finishPosition.z) })
+            .to(0.18, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 0) })
             .start();
     }
 
@@ -308,6 +307,7 @@ export class Swimmer extends Component {
                 this._motor.rightKickCycle,
                 this._motor.bodyPhase,
                 this._motor.currentSpeed,
+                this.raceDirection,
             );
             return;
         }
@@ -575,6 +575,13 @@ export class Swimmer extends Component {
         );
     }
 
+    private applyCoursePosition(distance: number) {
+        const direction = raceDistanceDirection(distance);
+        const x = this._startPosition.x + raceDistanceToCourseX(distance);
+        this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
+    }
+
     get currentSpeed(): number {
         return this._motor.currentSpeed;
     }
@@ -597,6 +604,10 @@ export class Swimmer extends Component {
 
     get distance(): number {
         return this._motor.distance;
+    }
+
+    get raceDirection(): number {
+        return raceDistanceDirection(this._motor.distance);
     }
 
     get isRacing(): boolean {

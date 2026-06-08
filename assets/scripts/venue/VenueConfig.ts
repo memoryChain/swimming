@@ -1,4 +1,4 @@
-import { RACE_DISTANCE } from '../core/GameBalance';
+import { RACE_COURSE_LENGTH } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 export type PoolDefinition = {
@@ -18,7 +18,7 @@ export const DEFAULT_POOL_DEFINITION: PoolDefinition = {
     waterMaterialPath: RESOURCE_PATHS.poolWaterMaterial,
     laneCount: 8,
     laneWidth: 2.05,
-    raceDistance: RACE_DISTANCE,
+    raceDistance: RACE_COURSE_LENGTH,
     startX: 0,
-    finishX: RACE_DISTANCE,
+    finishX: RACE_COURSE_LENGTH,
 };

@@ -1,7 +1,7 @@
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
-import { DIVE_BALANCE, RACE_DISTANCE } from '../core/GameBalance';
+import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
 import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { formatStabilityLog } from '../core/StabilityScoring';
@@ -180,7 +180,7 @@ export class GameFlowController {
             const rhythm = this._refs.playerSwimmer?.rhythmStats;
             const placement = placementSummary ?? this.calculatePlayerPlacement();
             this._refs.uiFlow.showResult(playerWin, playerTime, aiTime, {
-                averageSpeed: playerTime > 0 ? RACE_DISTANCE / playerTime : 0,
+                averageSpeed: playerTime > 0 ? getRaceDistance() / playerTime : 0,
                 maxCombo: rhythm?.maxCombo ?? 0,
                 perfectCount: rhythm?.perfectCount ?? 0,
                 goodCount: rhythm?.goodCount ?? 0,

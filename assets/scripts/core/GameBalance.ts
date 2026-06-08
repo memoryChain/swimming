@@ -1,6 +1,35 @@
 import { Vec3 } from 'cc';
 
-export const RACE_DISTANCE = 100;
+export const RACE_DISTANCE_OPTIONS = [100, 200, 500] as const;
+export type RaceDistanceMode = typeof RACE_DISTANCE_OPTIONS[number];
+export const RACE_DISTANCE: RaceDistanceMode = 100;
+export const RACE_COURSE_LENGTH = 100;
+let currentRaceDistance: RaceDistanceMode = RACE_DISTANCE;
+
+export function getRaceDistance(): RaceDistanceMode {
+    return currentRaceDistance;
+}
+
+export function setRaceDistance(distance: number): RaceDistanceMode {
+    const supported = RACE_DISTANCE_OPTIONS.find((value) => value === distance) ?? RACE_DISTANCE;
+    currentRaceDistance = supported;
+    return currentRaceDistance;
+}
+
+export function raceDistanceToCourseX(distance: number): number {
+    const lap = Math.floor(Math.max(0, distance) / RACE_COURSE_LENGTH);
+    const lapDistance = Math.max(0, distance) % RACE_COURSE_LENGTH;
+    return lap % 2 === 0 ? lapDistance : RACE_COURSE_LENGTH - lapDistance;
+}
+
+export function raceDistanceDirection(distance: number): number {
+    const lap = Math.floor(Math.max(0, distance) / RACE_COURSE_LENGTH);
+    return lap % 2 === 0 ? 1 : -1;
+}
+
+export function raceFinishDirection(distance: number): number {
+    return raceDistanceDirection(Math.max(0, distance - 0.001));
+}
 export const COUNTDOWN_SECONDS = 3;
 export const GLIDE_SECONDS = 0.72;
 

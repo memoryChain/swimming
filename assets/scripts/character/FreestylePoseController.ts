@@ -3,7 +3,6 @@ import { findNode } from './CharacterModelLoader';
 
 const SIDE_BODY_ROLL_DEGREES = 28;
 const ARM_FORWARD_CYCLE_OFFSET = 0;
-const MOVEMENT_FORWARD_WORLD = new Vec3(1, 0, 0);
 
 export class FreestylePoseController {
     public root: Node = null;
@@ -46,6 +45,7 @@ export class FreestylePoseController {
     private readonly _tmpInverseParentWorldRotation = new Quat();
     private readonly _tmpSplashWorldB = new Vec3();
     private readonly _tmpMovementForwardRoot = new Vec3();
+    private readonly _movementForwardWorld = new Vec3(1, 0, 0);
 
     bind(root: Node) {
         this.root = root;
@@ -96,6 +96,10 @@ export class FreestylePoseController {
                 bone.setRotation(rotation);
             }
         }
+    }
+
+    setMovementDirection(direction: number) {
+        this._movementForwardWorld.set(direction >= 0 ? 1 : -1, 0, 0);
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
@@ -547,7 +551,7 @@ export class FreestylePoseController {
         }
         this.root.getWorldRotation(this._tmpRootWorldRotation);
         Quat.invert(this._tmpInverseParentWorldRotation, this._tmpRootWorldRotation);
-        Vec3.transformQuat(out, MOVEMENT_FORWARD_WORLD, this._tmpInverseParentWorldRotation);
+        Vec3.transformQuat(out, this._movementForwardWorld, this._tmpInverseParentWorldRotation);
         Vec3.normalize(out, out);
         return out;
     }

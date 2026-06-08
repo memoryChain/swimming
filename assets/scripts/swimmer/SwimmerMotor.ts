@@ -1,4 +1,4 @@
-import { RACE_DISTANCE, SWIMMER_BALANCE } from '../core/GameBalance';
+import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STABILITY_TUNING } from '../core/InputTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
@@ -200,10 +200,11 @@ export class SwimmerMotor {
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
         this.decaySpeedCapBonus(dt);
-        this._distance = Math.min(RACE_DISTANCE, this._distance + this._currentSpeed * dt);
+        const raceDistance = getRaceDistance();
+        this._distance = Math.min(raceDistance, this._distance + this._currentSpeed * dt);
         this.updateMotionCycles(dt, options);
 
-        if (this._distance >= RACE_DISTANCE) {
+        if (this._distance >= raceDistance) {
             this._isRacing = false;
             return true;
         }

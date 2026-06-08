@@ -25,6 +25,7 @@ import { StartScreenBuilder } from '../ui/StartScreenBuilder';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
+import { RaceDistanceMode, setRaceDistance } from './GameBalance';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
@@ -136,6 +137,11 @@ export class GameManager extends Component {
 
     private showStartScreen() {
         this._gameFlow?.showStartScreen();
+    }
+
+    private selectRaceDistance(distance: RaceDistanceMode) {
+        const selected = setRaceDistance(distance);
+        this.debug(`race distance=${selected}m`);
     }
 
     private buildScene() {
@@ -296,6 +302,7 @@ export class GameManager extends Component {
 
         this._startScreen = new StartScreenBuilder({
             onStart: () => this.startGame(),
+            onDistanceSelect: (distance) => this.selectRaceDistance(distance),
             onToggleDebug: () => this.toggleDebug(),
             onModelDebug: () => this.enterModelDebug(),
         }).build(uiRoot, w, h);

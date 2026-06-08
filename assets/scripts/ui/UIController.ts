@@ -1,5 +1,5 @@
 import { _decorator, Color, Component, Graphics, Label, Node, Tween, tween, UITransform, Vec3 } from 'cc';
-import { RACE_DISTANCE } from '../core/GameBalance';
+import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
 const { ccclass, property } = _decorator;
@@ -67,7 +67,8 @@ export class UIController extends Component {
     }
 
     updateProgress(playerDist: number, aiDist: number) {
-        const ratio = clamp01(playerDist / RACE_DISTANCE);
+        const raceDistance = getRaceDistance();
+        const ratio = clamp01(playerDist / raceDistance);
         if (this.distanceLabel) {
             this.distanceLabel.string = `${Math.round(ratio * 100)}%`;
         }
@@ -75,7 +76,7 @@ export class UIController extends Component {
             this.progressDot.setPosition(-this.progressTrackWidth / 2 + this.progressTrackWidth * ratio, 0, 0);
         }
         if (this.aiDistanceLabel) {
-            this.aiDistanceLabel.string = `AI ${Math.min(RACE_DISTANCE, aiDist).toFixed(1)}m`;
+            this.aiDistanceLabel.string = `AI ${Math.min(raceDistance, aiDist).toFixed(1)}m`;
         }
     }
 

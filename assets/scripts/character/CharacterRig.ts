@@ -11,7 +11,7 @@ export interface CharacterRig {
     triggerKick(): void;
     triggerStroke(type: StrokeType): void;
     setStrokeHeld(type: StrokeType, held: boolean): void;
-    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number): void;
+    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection?: number): void;
     resetPose(): void;
     triggerSplashBurst(scale?: number): void;
 }
