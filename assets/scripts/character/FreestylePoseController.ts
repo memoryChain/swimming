@@ -3,6 +3,30 @@ import { findNode } from './CharacterModelLoader';
 
 const SIDE_BODY_ROLL_DEGREES = 28;
 const ARM_FORWARD_CYCLE_OFFSET = 0;
+const DEFAULT_SWIM_HEAD_LIFT_DEGREES = -14;
+const BONE_ALIASES: Record<string, string[]> = {
+    Hips: ['Hip', 'Pelvis'],
+    Spine: ['Waist', 'Spine01'],
+    Spine1: ['Spine01', 'Spine02'],
+    Spine2: ['Spine02'],
+    Neck: ['NeckTwist01', 'NeckTwist02'],
+    LeftShoulder: ['L_Clavicle'],
+    LeftArm: ['L_Upperarm'],
+    LeftForeArm: ['L_Forearm'],
+    LeftHand: ['L_Hand'],
+    RightShoulder: ['R_Clavicle'],
+    RightArm: ['R_Upperarm'],
+    RightForeArm: ['R_Forearm'],
+    RightHand: ['R_Hand'],
+    LeftUpLeg: ['L_Thigh'],
+    LeftLeg: ['L_Calf'],
+    LeftFoot: ['L_Foot'],
+    LeftToeBase: ['L_ToeBase'],
+    RightUpLeg: ['R_Thigh'],
+    RightLeg: ['R_Calf'],
+    RightFoot: ['R_Foot'],
+    RightToeBase: ['R_ToeBase'],
+};
 
 export class FreestylePoseController {
     public root: Node = null;
@@ -46,31 +70,32 @@ export class FreestylePoseController {
     private readonly _tmpSplashWorldB = new Vec3();
     private readonly _tmpMovementForwardRoot = new Vec3();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
+    private _swimHeadLiftDegrees = DEFAULT_SWIM_HEAD_LIFT_DEGREES;
 
     bind(root: Node) {
         this.root = root;
-        this._spine = findNode(root, 'Spine');
-        this._spine1 = findNode(root, 'Spine1');
-        this._torso = findNode(root, 'Spine2') || this._spine1 || this._spine || findNode(root, 'TorsoMesh');
-        this._hips = findNode(root, 'Hips') || findNode(root, 'HipsMesh');
-        this._neck = findNode(root, 'Neck');
-        this._head = findNode(root, 'Head');
-        this._leftShoulder = findNode(root, 'LeftShoulder');
-        this._leftArm = findNode(root, 'LeftArm');
-        this._leftForeArm = findNode(root, 'LeftForeArm');
-        this._leftHand = findNode(root, 'LeftHand');
-        this._rightShoulder = findNode(root, 'RightShoulder');
-        this._rightArm = findNode(root, 'RightArm');
-        this._rightForeArm = findNode(root, 'RightForeArm');
-        this._rightHand = findNode(root, 'RightHand');
-        this._leftUpLeg = findNode(root, 'LeftUpLeg');
-        this._leftLeg = findNode(root, 'LeftLeg');
-        this._leftFoot = findNode(root, 'LeftFoot');
-        this._leftToe = findNode(root, 'LeftToeBase');
-        this._rightUpLeg = findNode(root, 'RightUpLeg');
-        this._rightLeg = findNode(root, 'RightLeg');
-        this._rightFoot = findNode(root, 'RightFoot');
-        this._rightToe = findNode(root, 'RightToeBase');
+        this._spine = findBoneNode(root, 'Spine');
+        this._spine1 = findBoneNode(root, 'Spine1');
+        this._torso = findBoneNode(root, 'Spine2') || this._spine1 || this._spine || findNode(root, 'TorsoMesh');
+        this._hips = findBoneNode(root, 'Hips') || findNode(root, 'HipsMesh');
+        this._neck = findBoneNode(root, 'Neck');
+        this._head = findBoneNode(root, 'Head');
+        this._leftShoulder = findBoneNode(root, 'LeftShoulder');
+        this._leftArm = findBoneNode(root, 'LeftArm');
+        this._leftForeArm = findBoneNode(root, 'LeftForeArm');
+        this._leftHand = findBoneNode(root, 'LeftHand');
+        this._rightShoulder = findBoneNode(root, 'RightShoulder');
+        this._rightArm = findBoneNode(root, 'RightArm');
+        this._rightForeArm = findBoneNode(root, 'RightForeArm');
+        this._rightHand = findBoneNode(root, 'RightHand');
+        this._leftUpLeg = findBoneNode(root, 'LeftUpLeg');
+        this._leftLeg = findBoneNode(root, 'LeftLeg');
+        this._leftFoot = findBoneNode(root, 'LeftFoot');
+        this._leftToe = findBoneNode(root, 'LeftToeBase');
+        this._rightUpLeg = findBoneNode(root, 'RightUpLeg');
+        this._rightLeg = findBoneNode(root, 'RightLeg');
+        this._rightFoot = findBoneNode(root, 'RightFoot');
+        this._rightToe = findBoneNode(root, 'RightToeBase');
     }
 
     captureBasePose() {
@@ -100,6 +125,10 @@ export class FreestylePoseController {
 
     setMovementDirection(direction: number) {
         this._movementForwardWorld.set(direction >= 0 ? 1 : -1, 0, 0);
+    }
+
+    setSwimHeadLift(degrees: number | undefined) {
+        this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : DEFAULT_SWIM_HEAD_LIFT_DEGREES;
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
@@ -361,7 +390,7 @@ export class FreestylePoseController {
         const s = Math.sin(wheel);
         const armPower = 0.92 + Math.min(2, Math.max(0.8, power)) * 0.08;
         const forwardReach = smoothRange(c, 0.20, 0.96);
-        const sideClearance = lerp(0.52, 0.08, forwardReach);
+        const sideClearance = lerp(0.56, 0.18, forwardReach);
 
         const shoulderLift = lerp(-1 - 2 * c, -7.2, forwardReach) * armPower;
         const shoulderOpen = side * lerp(6, 1.2, forwardReach) * armPower;
@@ -375,7 +404,7 @@ export class FreestylePoseController {
 
         this.movementForwardInRoot(this._tmpMovementForwardRoot);
         if (forwardReach > 0.02) {
-            const shoulderSideClearance = lerp(0.38, 0.14, forwardReach);
+            const shoulderSideClearance = lerp(0.54, 0.46, forwardReach);
             this._tmpDirection.set(
                 side * shoulderSideClearance + this._tmpMovementForwardRoot.x * forwardReach,
                 this._tmpMovementForwardRoot.y * forwardReach,
@@ -402,7 +431,7 @@ export class FreestylePoseController {
         this.applyBoneDirectionFromRoot(arm, foreArm, this._tmpDirection);
         if (forwardReach > 0.02) {
             this._tmpDirection.set(
-                side * sideClearance * 0.25 + this._tmpMovementForwardRoot.x,
+                side * sideClearance * 0.34 + this._tmpMovementForwardRoot.x,
                 this._tmpMovementForwardRoot.y,
                 s * 0.04 + this._tmpMovementForwardRoot.z,
             );
@@ -423,7 +452,7 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._hips, 0, roll * 2.2, 0);
         this.applyBoneOffset(this._spine, 0, roll * 5.5, roll * 0.5);
         this.applyBoneOffset(this._spine1, 0, roll * 8.2, roll * 0.8);
-        const swimHeadLift = -14;
+        const swimHeadLift = this._swimHeadLiftDegrees;
         this.applyBoneOffset(this._torso, swimHeadLift * 0.18, roll * 10.5, roll * 1.1);
         this.applyBoneOffset(this._neck, swimHeadLift * 0.72, roll * 6.2, -roll * 0.6);
         this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15, roll * 7.5, -roll * 0.8);
@@ -559,6 +588,17 @@ export class FreestylePoseController {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function findBoneNode(root: Node, name: string): Node | null {
+    const candidates = [name, ...(BONE_ALIASES[name] ?? [])];
+    for (const candidate of candidates) {
+        const node = findNode(root, candidate);
+        if (node) {
+            return node;
+        }
+    }
+    return null;
 }
 
 function clamp(value: number, min: number, max: number): number {

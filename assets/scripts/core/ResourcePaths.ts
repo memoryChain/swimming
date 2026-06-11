@@ -2,6 +2,9 @@ export type SwimmerModelVariant = {
     id: string;
     label: string;
     candidates: string[];
+    preserveOriginalMaterial?: boolean;
+    raceModelYOffset?: number;
+    swimHeadLiftDegrees?: number;
 };
 
 const DEFAULT_SWIMMER_PREFAB_CANDIDATES = [
@@ -22,6 +25,25 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
             'models/UserSwimmerNewMan01',
             'models/UserSwimmerNewMan01/UserSwimmerNewMan01',
         ],
+    },
+    {
+        id: 'swimmer04',
+        label: 'Swimmer 04',
+        candidates: [
+            'models/UserSwimmer04',
+            'models/UserSwimmer04/UserSwimmer04',
+        ],
+        swimHeadLiftDegrees: 4,
+    },
+    {
+        id: 'swimmer04Original',
+        label: 'Swimmer 04 Original',
+        candidates: [
+            'models/UserSwimmer04Original',
+            'models/UserSwimmer04Original/UserSwimmer04Original',
+        ],
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
     },
 ];
 

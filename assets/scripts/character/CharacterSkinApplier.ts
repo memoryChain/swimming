@@ -16,6 +16,7 @@ export type CharacterSkinOptions = {
     robotStyle: boolean;
     playerOutline: boolean;
     outfit?: CharacterSkinOutfit;
+    preserveOriginalMaterial?: boolean;
     preserveImportedMaterial?: boolean;
     outlineWidth?: number;
     outlineRoot: Node | null;
@@ -23,6 +24,12 @@ export type CharacterSkinOptions = {
 };
 
 export function applyCharacterSkin(options: CharacterSkinOptions) {
+    if (options.preserveOriginalMaterial) {
+        applyBrightenedOriginalMaterials(options);
+        configureOutlineShells(options);
+        return;
+    }
+
     if (options.preserveImportedMaterial) {
         applyImportedSwimmerSlotMaterials(options);
         configureOutlineShells(options);
@@ -72,7 +79,11 @@ function applyImportedSwimmerSlotMaterials(options: CharacterSkinOptions) {
     const goggle = makeUnlitMaterial('ImportedSwimmerGoggle', options.robotStyle ? new Color(175, 245, 255, 255) : new Color(16, 34, 48, 255));
     for (const renderer of options.skinnedRenderers) {
         const name = renderer.node.name;
-        if (name.indexOf('SuitImported') >= 0) {
+        if (name.indexOf('Swimmer04Imported') >= 0) {
+            renderer.setMaterial(skin, 0);
+            renderer.setMaterial(suit, 1);
+            renderer.setMaterial(cap, 2);
+        } else if (name.indexOf('SuitImported') >= 0) {
             renderer.setMaterial(suit, 0);
         } else if (name.indexOf('CapImported') >= 0) {
             renderer.setMaterial(cap, 0);
@@ -82,6 +93,40 @@ function applyImportedSwimmerSlotMaterials(options: CharacterSkinOptions) {
             renderer.setMaterial(skin, 0);
         }
     }
+}
+
+function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
+    let applied = 0;
+    for (const renderer of options.skinnedRenderers) {
+        for (let i = 0; i < 8; i++) {
+            const original = renderer.getMaterial(i);
+            if (!original) {
+                continue;
+            }
+            renderer.setMaterial(makeBrightenedOriginalMaterial(original), i);
+            applied++;
+        }
+    }
+    if (applied <= 0) {
+        for (const renderer of options.skinnedRenderers) {
+            renderer.setMaterial(makeUnlitMaterial('BrightOriginalFallback', new Color(255, 255, 255, 255)), 0);
+        }
+    }
+}
+
+function makeBrightenedOriginalMaterial(original: Material): Material {
+    const texture = findMaterialTexture(original);
+    const color = boostColor(findMaterialColor(original), 1.12, 1.14);
+    const material = new Material();
+    material.initialize(texture
+        ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
+        : { effectName: 'builtin-unlit' });
+    material.name = `${original.name || 'Original'}BrightUnlit`;
+    material.setProperty('mainColor', color);
+    if (texture) {
+        material.setProperty('mainTexture', texture);
+    }
+    return material;
 }
 
 function applyLowSwimmerTextureMaterial(options: CharacterSkinOptions): boolean {
@@ -101,6 +146,36 @@ function applyLowSwimmerTextureMaterial(options: CharacterSkinOptions): boolean 
     renderer.setMaterial(makeSwimmerTextureMaterial(skinColor, tintSuit, tintCap, robotStyle, outfit), 0);
     console.log(`[SpeedSwimming] applied low swimmer texture material outfit=${outfit} suit=${tintSuit.r},${tintSuit.g},${tintSuit.b} cap=${tintCap.r},${tintCap.g},${tintCap.b} outline=${playerOutline}`);
     return true;
+}
+
+function findMaterialTexture(material: Material): Texture2D | null {
+    const textureNames = ['albedoMap', 'mainTexture', 'baseColorMap', 'baseColorTexture'];
+    for (const name of textureNames) {
+        const value = getMaterialProperty(material, name);
+        if (value instanceof Texture2D) {
+            return value;
+        }
+    }
+    return null;
+}
+
+function findMaterialColor(material: Material): Color {
+    const colorNames = ['albedo', 'mainColor', 'baseColor'];
+    for (const name of colorNames) {
+        const value = getMaterialProperty(material, name);
+        if (value instanceof Color) {
+            return value;
+        }
+    }
+    return new Color(255, 255, 255, 255);
+}
+
+function getMaterialProperty(material: Material, name: string): unknown {
+    try {
+        return material.getProperty(name);
+    } catch {
+        return null;
+    }
 }
 
 function configureOutlineShells(options: CharacterSkinOptions) {
@@ -161,7 +236,7 @@ function configureOutlineShells(options: CharacterSkinOptions) {
                 outline.skinningRoot = source.skinningRoot || model;
                 outline.setUseBakedAnimation(false, true);
                 outline.uploadAnimation(null);
-                outline.setMaterial(material, 0);
+                setAllRendererMaterialSlots(source, outline, material);
                 shellCount++;
             } catch (error) {
                 console.warn('[SpeedSwimming] skipped character outline shell', source.node?.name, error);
@@ -437,6 +512,19 @@ function applyMaterialByName(root: Node, names: string[], material: Material): n
         count += applyMaterialByName(child, names, material);
     }
     return count;
+}
+
+function setAllRendererMaterialSlots(source: SkinnedMeshRenderer, target: SkinnedMeshRenderer, material: Material) {
+    let applied = false;
+    for (let i = 0; i < 8; i++) {
+        if (source.getMaterial(i)) {
+            target.setMaterial(material, i);
+            applied = true;
+        }
+    }
+    if (!applied) {
+        target.setMaterial(material, 0);
+    }
 }
 
 function clamp(value: number, min: number, max: number): number {

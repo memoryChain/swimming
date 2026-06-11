@@ -2,7 +2,8 @@ import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 
-const RACE_SWIMMER_MODEL_VARIANT = 'newMan01';
+const PLAYER_SWIMMER_MODEL_VARIANT = 'swimmer04Original';
+const AI_SWIMMER_MODEL_VARIANT = 'swimmer04';
 
 export type CreateSwimmerOptions = {
     name: string;
@@ -23,7 +24,7 @@ export class SwimmerFactory {
 
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
-        rig.setModelVariant(RACE_SWIMMER_MODEL_VARIANT);
+        rig.setModelVariant(options.isAI ? AI_SWIMMER_MODEL_VARIANT : PLAYER_SWIMMER_MODEL_VARIANT);
         rig.build(
             sharedSkin,
             options.suitColor || (options.isAI ? color(58, 92, 128) : color(245, 42, 64)),

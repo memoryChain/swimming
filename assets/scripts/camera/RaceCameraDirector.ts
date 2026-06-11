@@ -1,5 +1,5 @@
 import { Camera, Node, Vec3 } from 'cc';
-import { COUNTDOWN_SECONDS, DIVE_BALANCE, getRaceDistance, raceDistanceDirection, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
+import { COUNTDOWN_SECONDS, DIVE_BALANCE, getRaceDistance, RACE_COURSE_LENGTH, raceDistanceDirection, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
 
 const PRE_COUNTDOWN_CAMERA_SECONDS = 2.35;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
@@ -17,6 +17,7 @@ const SWIM_SIDE_CAMERA_HEIGHT = 1.7;
 const SWIM_SIDE_FOV = 35;
 const SWIM_ANGLE_VIEW_FRONT_RANK = 3;
 const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
+const TOP_VIEW_COURSE_END_DISTANCE = 8;
 
 export enum RaceCameraMode {
     Broadcast = 0,
@@ -315,9 +316,10 @@ export class RaceCameraDirector {
                 desiredPos.z,
             );
             this._broadcastDesiredFov = 42;
-        } else if (playerDistance >= raceDistance - 8) {
-            const finishDirection = raceFinishDirection(raceDistance);
-            const finishAnchorX = raceDistanceToCourseX(raceDistance) - 7.5 * finishDirection;
+        } else if (distanceToCurrentCourseEnd(playerDistance, raceDistance) <= TOP_VIEW_COURSE_END_DISTANCE) {
+            const courseEndDistance = currentCourseEndDistance(playerDistance, raceDistance);
+            const finishDirection = raceFinishDirection(courseEndDistance);
+            const finishAnchorX = raceDistanceToCourseX(courseEndDistance) - 7.5 * finishDirection;
             const playerFollowX = playerX + 3.4 * finishDirection;
             const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
             desiredTarget = new Vec3(targetX, 0.18, 0);
@@ -561,6 +563,16 @@ function swimRaceView(snapshot: RaceCameraSnapshot): SwimRaceView {
         height: SWIM_SIDE_CAMERA_HEIGHT,
         fov: SWIM_SIDE_FOV,
     };
+}
+
+function currentCourseEndDistance(playerDistance: number, raceDistance: number): number {
+    const distance = Math.max(0, playerDistance);
+    const nextCourseEnd = (Math.floor(distance / RACE_COURSE_LENGTH) + 1) * RACE_COURSE_LENGTH;
+    return Math.min(raceDistance, nextCourseEnd);
+}
+
+function distanceToCurrentCourseEnd(playerDistance: number, raceDistance: number): number {
+    return Math.max(0, currentCourseEndDistance(playerDistance, raceDistance) - playerDistance);
 }
 
 function clamp(value: number, min: number, max: number): number {

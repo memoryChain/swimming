@@ -15,6 +15,7 @@ const SPLASH_WATER_Y = 0.408;
 const FINISH_FLOAT_BASE_Y = -0.42;
 const FINISH_FLOAT_BOB_AMPLITUDE = 0.035;
 const FINISH_FLOAT_BOB_SPEED = 2.6;
+const RACE_MODEL_BASE_Y = 0.18;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -138,6 +139,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
             this.root = findNode(this._model, 'Armature') || this._model;
             this._pose.bind(this.root);
+            this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
             this.configureSkinnedRenderers();
             this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation));
@@ -488,6 +490,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             robotStyle,
             playerOutline,
             outfit: this._skinOutfit,
+            preserveOriginalMaterial: this.preserveOriginalMaterial(),
             preserveImportedMaterial: this.usesImportedSwimmerMaterial(),
             outlineWidth: this.usesImportedSwimmerMaterial() ? 10 : undefined,
             outlineRoot: this._outlineRoot,
@@ -507,6 +510,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private usesImportedSwimmerMaterial(): boolean {
         return this._modelVariantId !== defaultSwimmerModelVariant().id;
+    }
+
+    private preserveOriginalMaterial(): boolean {
+        return findSwimmerModelVariant(this._modelVariantId)?.preserveOriginalMaterial === true;
     }
 
     private applyModelDebugSetup() {
@@ -529,7 +536,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._model) {
             return;
         }
-        this._model.setPosition(0, 0.18, 0);
+        this._model.setPosition(0, RACE_MODEL_BASE_Y + this.raceModelYOffset(), 0);
         this._model.setScale(0.82, 0.82, 0.82);
         this._model.setRotationFromEuler(90, 90, 0);
     }
@@ -571,6 +578,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private updateSplashSurface(speed: number) {
         this.syncSplashState();
         this._splashEmitter?.update(speed);
+    }
+
+    private raceModelYOffset(): number {
+        return findSwimmerModelVariant(this._modelVariantId)?.raceModelYOffset ?? 0;
+    }
+
+    private swimHeadLiftDegrees(): number | undefined {
+        return findSwimmerModelVariant(this._modelVariantId)?.swimHeadLiftDegrees;
     }
 
     private updateArmCycleMotion(dt: number, leftArmCycle: number, rightArmCycle: number) {
@@ -691,7 +706,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 shell.skinningRoot = source.skinningRoot || this._model;
                 shell.setUseBakedAnimation(false, true);
                 shell.uploadAnimation(null);
-                shell.setMaterial(material, 0);
+                setAllRendererMaterialSlots(source, shell, material);
             }
             this.updatePerfectGlowMaterial();
         });
@@ -717,5 +732,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private get animationClipNames(): string {
         return this._animationPlayer.clipNames;
+    }
+}
+
+function setAllRendererMaterialSlots(source: SkinnedMeshRenderer, target: SkinnedMeshRenderer, material: Material) {
+    let applied = false;
+    for (let i = 0; i < 8; i++) {
+        if (source.getMaterial(i)) {
+            target.setMaterial(material, i);
+            applied = true;
+        }
+    }
+    if (!applied) {
+        target.setMaterial(material, 0);
     }
 }
