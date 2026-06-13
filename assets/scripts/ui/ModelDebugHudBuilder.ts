@@ -8,6 +8,7 @@ export type ModelDebugHudCallbacks = {
     onSlow: () => void;
     onFast: () => void;
     onSwitchModel: () => void;
+    onSwitchSkybox: () => void;
 };
 
 export type ModelDebugHudRefs = {
@@ -16,6 +17,7 @@ export type ModelDebugHudRefs = {
     ratingLabel: Label;
     swimSpeedLabel: Label;
     modelLabel: Label;
+    skyboxLabel: Label;
 };
 
 export class ModelDebugHudBuilder {
@@ -53,21 +55,31 @@ export class ModelDebugHudBuilder {
         tuning.setPosition(portrait ? -48 : w / 2 - 206, portrait ? h / 2 - 60 : topY, 0);
         tuning.on(Node.EventType.TOUCH_END, () => this.setTuningOverlayVisible(true));
         makeRect('ModelDebugBottom', hud, w, bottomHeight, uiColor(5, 16, 26, 135)).setPosition(0, bottomY, 0);
+        const portraitStatusWidth = Math.max(86, Math.min(112, w / 3 - 14));
         const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 76 : 96, 36, uiColor(92, 76, 170), 'MODEL');
-        model.setPosition(portrait ? -118 : -214, portrait ? -h / 2 + 24 : bottomY, 0);
+        model.setPosition(portrait ? -118 : -304, portrait ? -h / 2 + 26 : bottomY, 0);
         model.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchModel());
+        const sky = makeButton('ModelDebugSwitchSkybox', hud, portrait ? 64 : 76, 36, uiColor(42, 128, 132), 'SKY');
+        sky.setPosition(portrait ? -42 : -204, portrait ? -h / 2 + 26 : bottomY, 0);
+        sky.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchSkybox());
         const slower = makeButton('ModelDebugSlow', hud, 54, 36, uiColor(38, 116, 190), '-');
-        slower.setPosition(portrait ? -34 : -88, portrait ? -h / 2 + 24 : bottomY, 0);
+        slower.setPosition(portrait ? 46 : -88, portrait ? -h / 2 + 26 : bottomY, 0);
         slower.on(Node.EventType.TOUCH_END, () => this._callbacks.onSlow());
         const faster = makeButton('ModelDebugFast', hud, 54, 36, uiColor(38, 116, 190), '+');
-        faster.setPosition(portrait ? 118 : 88, portrait ? -h / 2 + 24 : bottomY, 0);
+        faster.setPosition(portrait ? 116 : 88, portrait ? -h / 2 + 26 : bottomY, 0);
         faster.on(Node.EventType.TOUCH_END, () => this._callbacks.onFast());
         const speedLabel = makeLabel('ModelDebugStatus', hud, `Speed ${MOTION_TUNING.animationSpeedScale.toFixed(2)}x`, 18, uiColor(230, 244, 250));
-        speedLabel.getComponent(UITransform).setContentSize(portrait ? 92 : 180, 30);
-        speedLabel.setPosition(portrait ? 42 : 0, portrait ? -h / 2 + 24 : bottomY, 0);
+        speedLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 180, 30);
+        speedLabel.setPosition(portrait ? w / 3 : 0, portrait ? -h / 2 + 58 : bottomY, 0);
+        speedLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
         const modelLabel = makeLabel('ModelDebugModelLabel', hud, 'Model Default', portrait ? 12 : 14, uiColor(205, 220, 255));
-        modelLabel.getComponent(UITransform).setContentSize(portrait ? w - 40 : 180, 22);
-        modelLabel.setPosition(portrait ? 0 : -214, -h / 2 + 58, 0);
+        modelLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 220, 22);
+        modelLabel.setPosition(portrait ? -w / 3 : -260, -h / 2 + 58, 0);
+        modelLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
+        const skyboxLabel = makeLabel('ModelDebugSkyboxLabel', hud, 'Sky Default', portrait ? 12 : 14, uiColor(175, 232, 232));
+        skyboxLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 260, 22);
+        skyboxLabel.setPosition(portrait ? 0 : 64, -h / 2 + 58, 0);
+        skyboxLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
         const ratingLabel = makeLabel('ModelDebugRating', hud, 'READY', 20, uiColor(230, 244, 250));
         ratingLabel.getComponent(UITransform).setContentSize(280, 32);
         ratingLabel.setPosition(0, h / 2 - (portrait ? 112 : 104), 0);
@@ -81,6 +93,7 @@ export class ModelDebugHudBuilder {
             ratingLabel: ratingLabel.getComponent(Label),
             swimSpeedLabel: swimSpeedLabel.getComponent(Label),
             modelLabel: modelLabel.getComponent(Label),
+            skyboxLabel: skyboxLabel.getComponent(Label),
         };
     }
 

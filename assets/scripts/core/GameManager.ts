@@ -14,6 +14,7 @@ import {
 import { GameFlowController } from '../app/GameFlowController';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
+import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
 import { CompetitorManager } from '../competitor/CompetitorManager';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -71,6 +72,8 @@ export class GameManager extends Component {
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
     private _modelDebugModelLabel: Label = null;
+    private _modelDebugSkyboxLabel: Label = null;
+    private _skyboxApplier: StandardSkyboxApplier = null;
     private _timingGuideFill: Graphics = null;
     private _timingGuideMarker: Node = null;
     private _gameFlow: GameFlowController = null;
@@ -156,6 +159,7 @@ export class GameManager extends Component {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
+        this._skyboxApplier = scene.skyboxApplier;
         this._finishRankMarkers.bind(this._worldRoot);
         this.buildPool3D(this._worldRoot, () => {
             if (!this.node?.isValid || !this._worldRoot?.isValid) {
@@ -186,6 +190,7 @@ export class GameManager extends Component {
             initialCameraPosition: this._cameraPos,
             initialCameraTarget: this._cameraTarget,
             poolWidth: POOL_WIDTH,
+            debug: (message) => this.debug(message),
         });
     }
 
@@ -228,6 +233,8 @@ export class GameManager extends Component {
             ratingLabel: this._modelDebugRatingLabel,
             swimSpeedLabel: this._modelDebugSwimSpeedLabel,
             modelLabel: this._modelDebugModelLabel,
+            skyboxLabel: this._modelDebugSkyboxLabel,
+            skyboxApplier: this._skyboxApplier,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
             showStartScreen: () => this.showStartScreen(),
             setState: (state) => {
@@ -352,12 +359,14 @@ export class GameManager extends Component {
             onSlow: () => this.slowModelDebugMotion(),
             onFast: () => this.speedUpModelDebugMotion(),
             onSwitchModel: () => this.switchModelDebugVariant(),
+            onSwitchSkybox: () => this.switchModelDebugSkybox(),
         }).build(uiRoot, w, h);
         this._modelDebugHud = modelDebugHud.root;
         this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
         this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
         this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
         this._modelDebugModelLabel = modelDebugHud.modelLabel;
+        this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
         this._modelDebugHud.active = false;
 
         const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
@@ -461,6 +470,10 @@ export class GameManager extends Component {
 
     private switchModelDebugVariant() {
         this._modelDebugFlow?.switchModelVariant();
+    }
+
+    private switchModelDebugSkybox() {
+        this._modelDebugFlow?.switchSkyboxVariant();
     }
 
     private toggleDebug() {

@@ -1,11 +1,13 @@
 import { Camera, Canvas, Color, Component, DirectionalLight, Layers, Node, Vec3, Vec4, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { StandardSkyboxApplier } from './StandardSkyboxApplier';
 
 export type RuntimeSceneRefs = {
     canvasNode: Node;
     sceneRoot: Node;
     worldRoot: Node;
     cameraNode: Node;
+    skyboxApplier: StandardSkyboxApplier;
     width: number;
     height: number;
 };
@@ -16,6 +18,7 @@ export type RuntimeSceneBuilderOptions = {
     initialCameraPosition: Readonly<{ x: number; y: number; z: number }>;
     initialCameraTarget: Readonly<{ x: number; y: number; z: number }>;
     poolWidth: number;
+    debug?: (message: string) => void;
 };
 
 export class RuntimeSceneBuilder {
@@ -36,6 +39,12 @@ export class RuntimeSceneBuilder {
         const worldRoot = makeWorldNode('Runtime3DWorld', sceneRoot);
         const cameraNode = this.setupWorldCamera(sceneRoot);
         this.setupEnvironment(sceneRoot);
+        const worldCamera = cameraNode.getComponent(Camera);
+        const skyboxApplier = new StandardSkyboxApplier();
+        if (worldCamera) {
+            skyboxApplier.bind(sceneRoot, worldCamera, this._options.debug);
+            skyboxApplier.applyDefault();
+        }
         this.buildLights(worldRoot);
 
         return {
@@ -43,6 +52,7 @@ export class RuntimeSceneBuilder {
             sceneRoot,
             worldRoot,
             cameraNode,
+            skyboxApplier,
             width,
             height,
         };

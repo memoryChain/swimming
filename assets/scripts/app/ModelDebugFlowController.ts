@@ -7,12 +7,13 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
-import { SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
+import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmEvaluator';
 import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
+import { StandardSkyboxApplier } from './StandardSkyboxApplier';
 
 export type ModelDebugFlowRefs = {
     worldRoot: Node | null;
@@ -31,6 +32,8 @@ export type ModelDebugFlowRefs = {
     ratingLabel: Label | null;
     swimSpeedLabel: Label | null;
     modelLabel: Label | null;
+    skyboxLabel: Label | null;
+    skyboxApplier: StandardSkyboxApplier | null;
     resetExtraAiSwimmers: () => void;
     showStartScreen: () => void;
     setState: (state: GameState) => void;
@@ -49,6 +52,7 @@ export class ModelDebugFlowController {
     private _lastCombo = 0;
     private _lastStability = 0;
     private _modelVariantIndex = 0;
+    private _skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === DEFAULT_SKYBOX_VARIANT.id));
     private readonly _hiddenDebugSceneNodes = new Map<Node, boolean>();
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
@@ -69,12 +73,14 @@ export class ModelDebugFlowController {
         this._lastCombo = 0;
         this._lastStability = 0;
         this._modelVariantIndex = Math.max(0, SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
+        this._skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === this._refs.skyboxApplier?.currentVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
 
         if (this._refs.cameraNode) {
             this._refs.cameraPos.set(this._refs.cameraNode.position);
         }
         this.applySpeed();
+        this.updateSkyboxLabel();
         this.updateDebugHud();
 
         if (this._refs.inputManager) {
@@ -269,6 +275,14 @@ export class ModelDebugFlowController {
         this.applyCurrentModelVariant();
     }
 
+    switchSkyboxVariant() {
+        if (!this._active || SKYBOX_VARIANTS.length <= 0) {
+            return;
+        }
+        this._skyboxVariantIndex = positiveMod(this._skyboxVariantIndex + 1, SKYBOX_VARIANTS.length);
+        this.applyCurrentSkyboxVariant();
+    }
+
     private applyCurrentModelVariant() {
         const variant = SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? SWIMMER_MODEL_VARIANTS[0];
         if (!variant) {
@@ -284,6 +298,23 @@ export class ModelDebugFlowController {
         }
         if (this._refs.modelLabel) {
             this._refs.modelLabel.string = `Model ${variant.label}`;
+        }
+    }
+
+    private applyCurrentSkyboxVariant() {
+        const variant = SKYBOX_VARIANTS[this._skyboxVariantIndex] ?? DEFAULT_SKYBOX_VARIANT;
+        if (!variant) {
+            return;
+        }
+        this._refs.skyboxApplier?.apply(variant.id);
+        this.updateSkyboxLabel();
+        this._refs.debug(`model debug skybox=${variant.label}`);
+    }
+
+    private updateSkyboxLabel() {
+        const variant = SKYBOX_VARIANTS[this._skyboxVariantIndex] ?? DEFAULT_SKYBOX_VARIANT;
+        if (this._refs.skyboxLabel && variant) {
+            this._refs.skyboxLabel.string = `Sky ${variant.label}`;
         }
     }
 

@@ -7,6 +7,14 @@ export type SwimmerModelVariant = {
     swimHeadLiftDegrees?: number;
 };
 
+export type SkyboxFaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
+
+export type SkyboxVariant = {
+    id: string;
+    label: string;
+    paths: Record<SkyboxFaceName, string>;
+};
+
 const DEFAULT_SWIMMER_PREFAB_CANDIDATES = [
     'models/UserSwimmerLow',
     'models/UserSwimmerLow/UserSwimmerLow',
@@ -47,12 +55,73 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     },
 ];
 
+const SKYBOX_FACE_NAMES: SkyboxFaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
+
+function makeSkyboxPaths(folder: string): Record<SkyboxFaceName, string> {
+    const paths = {} as Record<SkyboxFaceName, string>;
+    for (const faceName of SKYBOX_FACE_NAMES) {
+        paths[faceName] = `skybox/${folder}/${faceName}/texture`;
+    }
+    return paths;
+}
+
+export const SKYBOX_VARIANTS: SkyboxVariant[] = [
+    {
+        id: 'cartoonBaseBlueSky',
+        label: 'Cartoon Base Blue',
+        paths: makeSkyboxPaths('CartoonBaseBlueSky'),
+    },
+    {
+        id: 'cartoonBaseNightSky',
+        label: 'Cartoon Base Night',
+        paths: makeSkyboxPaths('CartoonBaseNightSky'),
+    },
+    {
+        id: 'cloudyCrownDaybreak',
+        label: 'CloudyCrown Daybreak',
+        paths: makeSkyboxPaths('CloudyCrownDaybreak'),
+    },
+    {
+        id: 'cloudyCrownEvening',
+        label: 'CloudyCrown Evening',
+        paths: makeSkyboxPaths('CloudyCrownEvening'),
+    },
+    {
+        id: 'cloudyCrownMidday',
+        label: 'CloudyCrown Midday',
+        paths: makeSkyboxPaths('CloudyCrownMidday'),
+    },
+    {
+        id: 'cloudyCrownMidnight',
+        label: 'CloudyCrown Midnight',
+        paths: makeSkyboxPaths('CloudyCrownMidnight'),
+    },
+    {
+        id: 'cloudyCrownSunset',
+        label: 'CloudyCrown Sunset',
+        paths: makeSkyboxPaths('CloudyCrownSunset'),
+    },
+    {
+        id: 'nightMoonBurst',
+        label: 'Night MoonBurst',
+        paths: makeSkyboxPaths('NightMoonBurst'),
+    },
+    {
+        id: 'epicBlueSunset',
+        label: 'Epic Blue Sunset',
+        paths: makeSkyboxPaths('EpicBlueSunset'),
+    },
+];
+
+export const DEFAULT_SKYBOX_VARIANT: SkyboxVariant = SKYBOX_VARIANTS.find((variant) => variant.id === 'epicBlueSunset') ?? SKYBOX_VARIANTS[0];
+
 export const RESOURCE_PATHS = {
     swimmerPrefabCandidates: DEFAULT_SWIMMER_PREFAB_CANDIDATES,
     swimmerModelVariants: SWIMMER_MODEL_VARIANTS,
     poolPrefab: 'pool/PoolScene',
     poolWaterMaterial: 'pool/RagingPoolWater',
     swimmerSplashMaterial: 'pool/SwimmerSplash',
+    skyboxVariants: SKYBOX_VARIANTS,
     playerOutlineEffect: 'effects/PlayerOutline',
     swimmerPerfectGlowEffect: 'effects/SwimmerPerfectGlow',
 };

@@ -2,6 +2,7 @@ import { Node } from 'cc';
 import { PoolFallbackBuilder } from './PoolFallbackBuilder';
 import { PoolSceneLoader } from './PoolSceneLoader';
 import { PoolDefinition } from './VenueConfig';
+import { brightenVenueMaterials } from './VenueVisualEnhancer';
 import { WaterSurfaceBinder } from './WaterSurfaceBinder';
 
 export type VenueManagerOptions = {
@@ -35,8 +36,32 @@ export class VenueManager {
             if (definition.waterMaterialPath) {
                 this._waterBinder.bind(pool, definition.waterMaterialPath, this._debug);
             }
+            const brightenedMaterials = brightenVenueMaterials(pool);
+            if (brightenedMaterials > 0) {
+                this._debug?.(`venue color boost materials=${brightenedMaterials}`);
+                console.log(`[SpeedSwimming] venue color boost materials=${brightenedMaterials}`);
+            }
+            const hiddenSkyOccluders = hideLegacySkyOccluders(pool);
+            if (hiddenSkyOccluders > 0) {
+                this._debug?.(`legacy fake sky hidden nodes=${hiddenSkyOccluders}`);
+                console.log(`[SpeedSwimming] legacy fake sky hidden nodes=${hiddenSkyOccluders}`);
+            }
             this._debug?.(`pool prefab loaded: ${definition.prefabPath}`);
             done?.({ pool, error: null });
         });
     }
+}
+
+function hideLegacySkyOccluders(root: Node): number {
+    let hidden = 0;
+    const normalized = root.name.toLowerCase();
+    if (normalized.includes('night_window') || normalized.includes('deck_sky')) {
+        root.active = false;
+        hidden += 1;
+    }
+
+    for (const child of root.children) {
+        hidden += hideLegacySkyOccluders(child);
+    }
+    return hidden;
 }
