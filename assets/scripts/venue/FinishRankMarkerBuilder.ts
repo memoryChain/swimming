@@ -1,6 +1,7 @@
 import { Color, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
-import { getRaceDistance, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
+import { getRaceDistance } from '../core/GameBalance';
 import type { RaceFinishResult } from '../core/RaceManager';
+import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from './RaceCourseLayout';
 
 const DIGIT_SEGMENTS: Record<string, string[]> = {
     '0': ['a', 'b', 'c', 'd', 'e', 'f'],
@@ -21,6 +22,8 @@ export class FinishRankMarkerBuilder {
     private readonly _baseMaterial = makeMaterial('FinishRankBase', color(246, 252, 255, 255));
     private readonly _playerBaseMaterial = makeMaterial('FinishRankPlayerBase', color(255, 234, 106, 255));
     private readonly _digitMaterial = makeMaterial('FinishRankDigit', color(12, 28, 46, 255));
+
+    constructor(private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {}
 
     bind(parent: Node) {
         if (this._root?.isValid) {
@@ -47,8 +50,8 @@ export class FinishRankMarkerBuilder {
             return;
         }
         const marker = makeWorldNode(`Rank${result.placement}_${result.name}`, this._root);
-        const finishX = raceDistanceToCourseX(getRaceDistance());
-        const direction = raceFinishDirection(getRaceDistance());
+        const finishX = this._courseLayout.distanceToWorldX(getRaceDistance());
+        const direction = this._courseLayout.finishDirectionAtDistance(getRaceDistance());
         const x = clamp(result.swimmer.node.position.x - 0.25 * direction, finishX - 2.1, finishX + 2.1);
         marker.setPosition(x, 0.9, result.swimmer.node.position.z);
         this._markers.set(result.swimmer.node, marker);

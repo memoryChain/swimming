@@ -1,5 +1,23 @@
 # Speed Swimming 3D Roadmap
 
+## 2026-06-13 新泳池资源恢复与当前来源
+- 当前新泳池源文件已经恢复到 `tools/LowPolyPool.blend`；`tools/LowPolySwimVenue.blend` 是同一份恢复来源备份。
+- 当前运行时资产 `assets/resources/pool/LowPolyPool.glb` 已从 `tools/LowPolyPool.blend` 重新导出，包含环绕式 bowl 看台、`PoolWaterSurface`、8 条泳道、近/远端跳台和细化后的泳道浮漂。
+- `tools/build-lowpoly-pool.py` 不再作为当前新泳池的导出来源，避免旧脚本再次覆盖环绕看台版本。
+- 运行时代码已经移除动态生成的 `RuntimeCeilingLights` 天花板/灯条；观众由 `SpectatorCrowdBuilder.ts` 按新场馆中心生成环形低模观众带。
+
+## 2026-06-13 50m 泳池、动态赛道布局与水面状态
+
+- 当前物理泳池按标准 50m 赛道实现：`assets/scripts/venue/VenueConfig.ts` 中 `DEFAULT_POOL_DEFINITION.startX = 0`、`finishX = 50`，8 条泳道宽度为 `2.625m`，总宽约 `21m`。
+- 比赛总距离仍由 `GameBalance.ts` 的 `RACE_DISTANCE_OPTIONS` 和 `getRaceDistance()` 控制，默认 100m；100m、200m、500m 等比赛不再依赖 100m 模型，而是通过 50m 泳池折返完成。
+- 运行时世界坐标映射集中到 `venue/RaceCourseLayout.ts`：它根据泳池定义计算赛道方向、赛道长度、跳台位置、入水点、泳者游泳基准点、折返方向、当前池端距离和任意比赛距离对应的世界 X 坐标。
+- `GameManager.ts` 在装配阶段从 `DEFAULT_POOL_DEFINITION` 创建统一的 `RaceCourseLayout`，并传给 `CompetitorManager`、`RaceCameraDirector` 和 `FinishRankMarkerBuilder`。
+- `Swimmer.configureCourse()` 会把泳者基准点绑定到当前泳池起点和泳道中心；`prepareDive()` 使用布局计算跳台站位，`performDive()` 使用布局计算入水点，`applyCoursePosition()` 使用布局把 `SwimmerMotor.distance` 映射到世界坐标。以后修改泳池 `startX/finishX/swimY/platform*` 配置时，不需要再改运动员起点和入水代码。
+- 当前游戏内泳池以 `LowPolySwimVenue.blend` 可见场景导出的 `LowPolyPool.glb` 为准：可见水面按 `waterY = 0.055` 校准，泳者游泳节点高度为 `swimY = 0`，近端跳台顶面中心在 `x = -1.07`，跳台站位通过 `platformBackOffset = 1.07` 和 `platformYOffset = 0.23` 校准到起跳台顶面。
+- `RaceManager` 和 `SwimmerMotor` 保持按“已游距离 >= 当前比赛总距离”判定完赛；比赛长度逻辑与物理泳池长度解耦，由 `RaceCourseLayout` 负责 50m 池内折返位置。
+- 名次牌和比赛镜头也改为读取 `RaceCourseLayout`：终点牌会出现在当前比赛距离对应的池端，镜头临近池端时使用同一套折返方向和世界坐标。
+- 当前水面节点为 `PoolWaterSurface`，旧 `flat_transparent_water_plane` 已弃用；`WaterSurfaceBinder` 只绑定活动水面节点并套用 `pool/RagingPoolWater`，`WaterSurface` 负责轻量水面动画。导出的水面高度低于泳道浮漂，避免遮盖泳道线。
+
 ## 2026-06-06 输入、动作、稳定性与速度模型重设计
 
 这一版把游泳主规则收敛为一条更简单的运行路径：输入只负责触发动作，动作队列只保留“当前动作 + 一个缓存动作”，速度由“动作加速度 - 泳池/水阻减速度”推进，评分只看长按稳定性。
@@ -72,7 +90,7 @@
 
 ## 当前定位
 
-`Speed Swimming 3D` 是一个 100 米自由泳节奏竞速原型。玩家通过左右输入交替控制对角肢体：A/左侧驱动左手和右脚，D/右侧驱动右手和左脚；系统根据节奏、交替关系、输入频率和同步度驱动速度。当前核心已经是 3D 比赛场景，包含 8 条泳道、低模泳池、低模带骨骼泳者、AI 对手、动态镜头、HUD、模型调试模式和角色描边。
+`Speed Swimming 3D` 是一个基于 50m 泳池的自由泳节奏竞速原型。玩家通过左右输入交替控制对角肢体：A/左侧驱动左手和右脚，D/右侧驱动右手和左脚；系统根据节奏、交替关系、输入频率和同步度驱动速度。当前比赛距离可选，100m 等长距离通过 50m 泳池折返完成。当前核心已经是 3D 比赛场景，包含 8 条泳道、低模泳池、低模带骨骼泳者、AI 对手、动态镜头、HUD、模型调试模式和角色描边。
 
 ### 2026-06-06 输入、动作与稳定性规则
 
@@ -145,8 +163,8 @@
 - `RaceManager` 负责倒计时、玩家跳水、开赛、计时、进度、AI 完赛时间记录和完赛回调。
 - `GameManager` 会把 `RaceManager` 的状态和计时回调转发给 UI、摄像机和 AI 控制。
 - 场馆背景不再通过运行时代码硬造天空盒；室内游泳馆的深蓝灰上墙、顶棚、横梁和灯带已经写入 `tools/build-lowpoly-pool.py`，随 `assets/resources/pool/LowPolyPool.glb` 一起由 Blender 导出。这样背景属于低模场馆资产本身，不依赖 Cocos 原生 skybox 贴图，也避免运行时用大面片临时拼背景导致观感割裂。
-- 面向微信小游戏的场馆背景会优先使用贴图而不是堆几何体：天花板现在是一块正常高度的低面数 slab，细节来自 `assets/resources/pool/IndoorCeiling.png` 的深色顶棚和交错条纹贴图；泳池、看台和天花板之间的空隙用一个远距离 24 段圆筒背景承接，贴图来自 `assets/resources/pool/IndoorNightSky.png`，表现为克制的深色夜窗/上墙，而不是贴近镜头的四面大墙。顶棚灯光不再写进 Blender 模型，改由 `RuntimeSceneBuilder.buildCeilingLightStrips()` 在运行时生成较细的暖色/冷色 `builtin-unlit` 发光长条，并按材质合并成 2 个 mesh，避免大量 draw call；灯条不依赖场景光照，低角度镜头也应该清晰可见。顶棚还会由 `RuntimeSceneBuilder.buildCeilingSparkBulbs()` 生成一批闪光灯式小灯泡亮点，每个灯泡由中心点和横竖光芒三段组成，按 4 个 mesh/材质分组，由 `CeilingLightSparkle` 用不同相位做短促爆闪。比赛进入手动 TOP 镜头或临近终点自动俯视镜头时，`GameManager.updateTopViewCeilingVisibility()` 会隐藏名字包含 `ceiling` 的顶棚节点和运行时灯带/灯泡，离开俯视后恢复，避免顶棚挡住俯视视角。导出前会把同材质静态 mesh 合并，避免天花板和背景给面数带来明显压力。
-- 场馆当前会在泳池四周灰色看台上生成简单观众：`venue/SpectatorCrowdBuilder.ts` 使用高饱和多色 plane primitive，按低模泳池的 lower/middle/upper tier 坐标分别摆到左右两侧、起点端和终点端；每层看台有多条不规则观众带，包含少量空位、错列、随机旋转和尺寸变化。观众不再是每个人一个 `MeshRenderer`，而是先按颜色分桶，再把同色观众合并成一份运行时 mesh，最终只创建十几个渲染组件；`SpectatorGroupWobble` 给每个颜色组添加轻微上下/侧向晃动。观众 mesh 会为每个面片写入正反两套三角形，材质使用高饱和 `albedo` 加轻量 `emissive` 自发光，避免 Web 上背面剔除或光照偏暗导致观众不可见，同时避免整片看台过曝。这个实现用于避免 Web 预览中动态创建和销毁大量 mesh/renderer 时出现空 pass 的 `localSetLayout`、半初始化 submodel 销毁等渲染错误；如果观众构建失败，只跳过观众，不中断比赛场景。
+- 面向微信小游戏的场馆背景会优先使用低面数资源和少量贴图。当前 `LowPolyPool.glb` 已移除天花板 slab，`RuntimeSceneBuilder` 也不再动态生成 `RuntimeCeilingLights`、灯条或闪光灯泡；场馆上方由远距离 24 段圆筒背景承接，贴图来自 `assets/resources/pool/IndoorNightSky.png`，表现为克制的深色夜窗/上墙，避免顶棚遮挡俯视镜头并减少运行时 mesh。
+- 场馆当前会在泳池四周灰色看台上生成简单观众：`venue/SpectatorCrowdBuilder.ts` 使用高饱和多色 plane primitive，按 50m 低模泳池的 lower/middle/upper tier 坐标重新收窄到左右两侧、起点端和终点端看台范围内，给池端和侧边留出边距；每层看台有多条不规则观众带，包含少量空位、错列、随机旋转和尺寸变化。观众不再是每个人一个 `MeshRenderer`，而是先按颜色分桶，再把同色观众合并成一份运行时 mesh，最终只创建十几个渲染组件；`SpectatorGroupWobble` 给每个颜色组添加轻微上下/侧向晃动。观众 mesh 会为每个面片写入正反两套三角形，材质使用高饱和 `builtin-unlit` 颜色，避免 Web 上背面剔除或光照偏暗导致观众不可见；如果观众构建失败，只跳过观众，不中断比赛场景。
 - 运行时灯光在 `RuntimeSceneBuilder.buildLights()` 和 `setupEnvironment()` 中走卡通但不过曝的室内馆方案：暖色主方向光、低强度偏中性的反向补光、暖色顶部方向光、偏灰绿的环境清屏色，并显式设置 sky/ground 环境光颜色和 sky illuminance。整体目标是让场景从冷蓝环境转成更接近室内游泳馆灯光的暖白基调，同时保留水面的清爽感；Web 预览不再动态创建 `SphereLight` 本地光源，避免登录场景切到比赛场景时触发 local light descriptor 报错。
 - 状态流：
   - `READY`：开始界面。
@@ -166,7 +184,7 @@
   - `RaceManager.startFromDive()` 负责玩家跳水完成后直接切入 `RACING`，让入水并启动 `SwimmerMotor` 后立刻可以划水。
   - 所有 AI 由 `GameFlowController.prepareAndScheduleAiDives()` 独立调度，基于 AI profile 中的 `diveReaction`、`divePower` 和少量随机波动计算反应时间与跳水能力。
 - 比赛距离固定为 `RACE_DISTANCE = 100`。
-- 结算排名不再按结算瞬间的距离排序。玩家到达 100m 后立即结算；所有早于玩家完赛的 AI 计入玩家前方，未完赛 AI 计入玩家后方，避免多个选手都停在 100m 时排名错误。
+- 结算排名不再按结算瞬间的距离排序。玩家到达当前选择的比赛总距离后立即结算；所有早于玩家完赛的 AI 计入玩家前方，未完赛 AI 计入玩家后方，避免多个选手都停在终点距离时排名错误。
 - 结算面板中的 `PLACE #x/y` 来自 `RaceManager` 的完赛时间统计；`Best AI` 显示最早完赛 AI 的时间，如果玩家第一且没有 AI 完赛则显示 `--`。
 - 目标帧率当前在 `GameManager.onLoad()` 中设置为 `game.frameRate = 60`，用于排查和避免低帧率锁定。
 

@@ -8,6 +8,7 @@ const AI_SWIMMER_MODEL_VARIANT = 'swimmer04';
 export type CreateSwimmerOptions = {
     name: string;
     x: number;
+    y?: number;
     z: number;
     isAI: boolean;
     suitColor?: Color;
@@ -20,7 +21,7 @@ export class SwimmerFactory {
 
     create(parent: Node, options: CreateSwimmerOptions): Swimmer {
         const node = makeWorldNode(options.name, parent);
-        node.setPosition(options.x, 0.22, options.z);
+        node.setPosition(options.x, options.y ?? 0.22, options.z);
 
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);

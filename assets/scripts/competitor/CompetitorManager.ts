@@ -2,11 +2,13 @@ import { Node } from 'cc';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
+import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { DEFAULT_AI_PROFILES, shuffledAiCompetitorNames, shuffledRaceVisualProfiles } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
     laneLayout: LaneLayout;
+    courseLayout: RaceCourseLayout;
     playerLaneIndex: number;
     primaryAiLaneIndex: number;
     debug?: (message: string) => void;
@@ -41,13 +43,15 @@ export class CompetitorManager {
             const visual = raceVisuals[lane % raceVisuals.length];
             const swimmer = this._factory.create(group, {
                 name: isPlayer ? 'PlayerSwimmer3D' : `AISwimmerLane${lane + 1}`,
-                x: 0,
+                x: this._options.courseLayout.startX,
+                y: this._options.courseLayout.swimY,
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: !isPlayer,
                 suitColor: visual.suitColor,
                 capColor: visual.capColor,
                 displayName: isPlayer ? 'YOU' : aiNames[aiNameIndex++ % aiNames.length],
             });
+            swimmer.configureCourse(this._options.courseLayout);
             if (isPlayer) {
                 playerSwimmer = swimmer;
                 continue;

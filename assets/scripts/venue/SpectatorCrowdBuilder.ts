@@ -20,16 +20,12 @@ const SPECTATOR_COLORS = [
 
 const WOBBLE_GROUP_COUNT = 4;
 
-const SIDE_TIER_SPECS = [
-    { y: 3.65, zOffset: 12.4, zSpan: 5.1, columns: 26, bands: 2 },
-    { y: 6.0, zOffset: 19.2, zSpan: 5.4, columns: 28, bands: 2 },
-    { y: 8.5, zOffset: 27.0, zSpan: 6.0, columns: 30, bands: 2 },
-];
-
-const END_TIER_SPECS = [
-    { y: 3.65, xOffset: 13.0, xSpan: 6.2, columns: 18, bands: 2 },
-    { y: 6.0, xOffset: 21.0, xSpan: 7.0, columns: 20, bands: 2 },
-    { y: 8.5, xOffset: 30.0, xSpan: 8.0, columns: 22, bands: 2 },
+const BOWL_RING_SPECS = [
+    { y: 1.05, xPadding: 10.0, zPadding: 4.8, columns: 48 },
+    { y: 1.85, xPadding: 15.8, zPadding: 8.1, columns: 56 },
+    { y: 2.75, xPadding: 22.2, zPadding: 11.7, columns: 64 },
+    { y: 3.75, xPadding: 29.0, zPadding: 15.0, columns: 72 },
+    { y: 4.8, xPadding: 36.2, zPadding: 18.5, columns: 80 },
 ];
 
 type SpectatorSpec = {
@@ -70,8 +66,7 @@ export class SpectatorCrowdBuilder {
             const materials = SPECTATOR_COLORS.map((c, i) => makeMaterial(`SpectatorColor${i}`, c));
             const buckets = Array.from({ length: SPECTATOR_COLORS.length * WOBBLE_GROUP_COUNT }, () => [] as SpectatorSpec[]);
             const poolWidth = definition.laneCount * definition.laneWidth;
-            this.collectSideStands(buckets, definition, poolWidth);
-            this.collectEndStands(buckets, definition, poolWidth);
+            this.collectBowlStands(buckets, definition, poolWidth);
             let groupCount = 0;
             let spectatorCount = 0;
             for (let i = 0; i < buckets.length; i++) {
@@ -92,62 +87,34 @@ export class SpectatorCrowdBuilder {
         }
     }
 
-    private collectSideStands(buckets: SpectatorSpec[][], definition: PoolDefinition, poolWidth: number) {
-        const startX = definition.startX - 14;
-        const endX = definition.finishX + 14;
-        for (let side = -1; side <= 1; side += 2) {
-            for (let tier = 0; tier < SIDE_TIER_SPECS.length; tier++) {
-                const spec = SIDE_TIER_SPECS[tier];
-                for (let band = 0; band < spec.bands; band++) {
-                    for (let col = 0; col < spec.columns; col++) {
-                        const t = spec.columns > 1 ? col / (spec.columns - 1) : 0;
-                        const x = lerp(startX, endX, t) + jitter(col, tier + band * 3, side, 1.45);
-                        const bandT = spec.bands > 1 ? (band / (spec.bands - 1) - 0.5) : 0;
-                        const z = side * (poolWidth * 0.5 + spec.zOffset + bandT * spec.zSpan + jitter(tier, col + band * 11, side, 0.82));
-                        this.addSpectator(buckets, {
-                            pos: this.spectatorPosition(x, spec.y, z, col, tier * 3 + band, side),
-                            widthSeed: col,
-                            heightSeed: tier + band,
-                            colorSeed: side + band * 7,
-                            row: tier * 3 + band,
-                            col,
-                            side,
-                            yaw: side > 0 ? 0 : 180,
-                        });
-                    }
-                }
-            }
-        }
-    }
+    private collectBowlStands(buckets: SpectatorSpec[][], definition: PoolDefinition, poolWidth: number) {
+        const centerX = (definition.startX + definition.finishX) * 0.5;
+        const centerZ = 0;
+        const halfCourseLength = Math.abs(definition.finishX - definition.startX) * 0.5;
+        const halfPoolWidth = poolWidth * 0.5;
 
-    private collectEndStands(buckets: SpectatorSpec[][], definition: PoolDefinition, poolWidth: number) {
-        const zMin = -poolWidth * 0.5 - 28;
-        const zMax = poolWidth * 0.5 + 28;
-        for (let end = -1; end <= 1; end += 2) {
-            const baseX = end < 0 ? definition.startX : definition.finishX;
-            for (let tier = 0; tier < END_TIER_SPECS.length; tier++) {
-                const spec = END_TIER_SPECS[tier];
-                for (let band = 0; band < spec.bands; band++) {
-                    for (let col = 0; col < spec.columns; col++) {
-                        if (random01(col, tier + band * 5, end, 53) < 0.14) {
-                            continue;
-                        }
-                        const t = spec.columns > 1 ? col / (spec.columns - 1) : 0;
-                        const bandT = spec.bands > 1 ? (band / (spec.bands - 1) - 0.5) : 0;
-                        const x = baseX + end * (spec.xOffset + bandT * spec.xSpan + jitter(tier + band * 13, col, end, 0.9));
-                        const z = lerp(zMin, zMax, t) + jitter(col, tier + band * 2, end, 1.8);
-                        this.addSpectator(buckets, {
-                            pos: this.spectatorPosition(x, spec.y, z, col, tier * 3 + band, end),
-                            widthSeed: tier + band,
-                            heightSeed: col,
-                            colorSeed: end + 5 + band * 7,
-                            row: tier * 3 + band,
-                            col,
-                            side: end,
-                            yaw: end < 0 ? -90 : 90,
-                        });
-                    }
+        for (let row = 0; row < BOWL_RING_SPECS.length; row++) {
+            const spec = BOWL_RING_SPECS[row];
+            const radiusX = halfCourseLength + spec.xPadding;
+            const radiusZ = halfPoolWidth + spec.zPadding;
+            for (let col = 0; col < spec.columns; col++) {
+                if (random01(col, row, spec.columns, 53) < 0.11) {
+                    continue;
                 }
+                const baseAngle = Math.PI * 2 * (col / spec.columns);
+                const angle = baseAngle + jitter(col, row, spec.columns, 0.055);
+                const x = centerX + Math.cos(angle) * (radiusX + jitter(row, col, 2, 0.55));
+                const z = centerZ + Math.sin(angle) * (radiusZ + jitter(col, row, 7, 0.45));
+                this.addSpectator(buckets, {
+                    pos: this.spectatorPosition(x, spec.y, z, col, row, spec.columns),
+                    widthSeed: col,
+                    heightSeed: row,
+                    colorSeed: row * 17,
+                    row,
+                    col,
+                    side: spec.columns,
+                    yaw: radiansToDegrees(Math.atan2(x - centerX, z - centerZ)),
+                });
             }
         }
     }
@@ -172,8 +139,8 @@ export class SpectatorCrowdBuilder {
         const wobbleIndex = Math.floor(random01(options.row, options.col, options.side, 71) * WOBBLE_GROUP_COUNT) % WOBBLE_GROUP_COUNT;
         buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
             pos: options.pos,
-            width: 0.28 + random01(options.widthSeed, options.row, options.side, 31) * 0.26,
-            height: 0.42 + random01(options.heightSeed, options.side, options.col, 37) * 0.38 + options.row * 0.012,
+            width: 0.24 + random01(options.widthSeed, options.row, options.side, 31) * 0.22,
+            height: 0.34 + random01(options.heightSeed, options.side, options.col, 37) * 0.3 + options.row * 0.01,
             row: options.row,
             col: options.col,
             side: options.side,
@@ -182,7 +149,7 @@ export class SpectatorCrowdBuilder {
     }
 
     private spectatorPosition(x: number, standTopY: number, z: number, col: number, row: number, side: number): Vec3 {
-        const bodyHeight = 0.38 + random01(row, side, col, 37) * 0.28 + row * 0.02;
+        const bodyHeight = 0.34 + random01(row, side, col, 37) * 0.24 + row * 0.018;
         return new Vec3(
             x,
             standTopY + bodyHeight * 0.5 + random01(row, col, side, 19) * 0.08,
@@ -298,8 +265,8 @@ function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
 }
 
-function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t;
+function radiansToDegrees(value: number): number {
+    return value * 180 / Math.PI;
 }
 
 function jitter(a: number, b: number, c: number, scale: number): number {

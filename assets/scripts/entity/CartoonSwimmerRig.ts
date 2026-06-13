@@ -60,6 +60,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowLoading = false;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
+    private _waterY = SPLASH_WATER_Y;
     private readonly _tmpSplashWorld = new Vec3();
 
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
@@ -72,7 +73,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             owner: this.node,
             parent: this.node.parent || this.node,
             name: `${this.node.name || 'Swimmer'}Splash`,
-            waterY: SPLASH_WATER_Y,
+            waterY: this._waterY,
             getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
         });
         this.splashNode = this._splashEmitter.node;
@@ -241,6 +242,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._skinOutfit = outfit;
         this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
+    }
+
+    setWaterY(waterY: number) {
+        this._waterY = waterY;
+        this._splashEmitter?.setWaterY(waterY);
+        this.updateSplashSurface(0);
     }
 
     setPreRaceStanding(active: boolean) {
@@ -546,7 +553,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this.applyRaceModelSetup();
-        this._model.setPosition(-1.65, 0.55, 0);
+        this._model.setPosition(0, 0.55, 0);
         this._model.setScale(0.82, 0.82, 0.82);
         this._model.setRotationFromEuler(0, 90, 0);
         this._pose.applyPreRaceStandingPose();

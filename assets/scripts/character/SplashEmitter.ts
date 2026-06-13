@@ -56,11 +56,13 @@ export class SplashEmitter {
     private _splashBurst = 0;
     private _armSplashBurst = 0;
     private _kickSplashBurst = 0;
+    private _waterY: number;
 
     constructor(private readonly _options: SplashEmitterOptions) {
+        this._waterY = _options.waterY;
         this.node = new Node(_options.name);
         this.node.setParent(_options.parent);
-        this.node.setPosition(_options.owner.position.x, _options.waterY, _options.owner.position.z);
+        this.node.setPosition(_options.owner.position.x, this._waterY, _options.owner.position.z);
         this.node.setScale(1, 1, 1);
         this.node.active = true;
     }
@@ -119,13 +121,17 @@ export class SplashEmitter {
         this._state = state;
     }
 
+    setWaterY(waterY: number) {
+        this._waterY = waterY;
+    }
+
     update(speed: number) {
         if (!this.node || this._parts.length === 0) {
             return;
         }
 
         const speedRatio = clamp(speed / 3.2, 0, 1);
-        this.node.setPosition(this._options.owner.position.x, this._options.waterY, this._options.owner.position.z);
+        this.node.setPosition(this._options.owner.position.x, this._waterY, this._options.owner.position.z);
         this.node.setRotationFromEuler(0, 0, 0);
         this.node.setScale(1, 1, 1);
         let anyActive = false;
@@ -262,7 +268,7 @@ export class SplashEmitter {
 
         const hasBonePosition = this._options.getBoneWorldPosition(part.node.name, this._tmpWorld);
         if (hasBonePosition) {
-            this._tmpWorld.y = this._options.waterY + part.basePosition.y + surge * 0.004;
+            this._tmpWorld.y = this._waterY + part.basePosition.y + surge * 0.004;
             this._tmpWorld.x -= speedRatio * (isFoot ? 0.34 : 0.08);
             this.node.inverseTransformPoint(this._tmpLocal, this._tmpWorld);
             part.node.setPosition(this._tmpLocal);

@@ -2,7 +2,7 @@ import { Material, MeshRenderer, Node, resources } from 'cc';
 import { WaterSurface } from '../core/WaterSurface';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
-const ACTIVE_WATER_NODE_NAMES = new Set(['flat_transparent_water_plane']);
+const ACTIVE_WATER_NODE_NAMES = new Set(['PoolWaterSurface']);
 
 export class WaterSurfaceBinder {
     bind(pool: Node, waterMaterialPath: string, debug?: (message: string) => void) {
@@ -16,6 +16,11 @@ export class WaterSurfaceBinder {
         collectNodesByName(pool, ACTIVE_WATER_NODE_NAMES, activeWaterNodes);
         for (const node of activeWaterNodes) {
             node.active = true;
+        }
+
+        if (activeWaterNodes.length <= 0) {
+            debug?.('transparent low-poly water skipped: no water nodes');
+            return;
         }
 
         if (!pool.getComponent(WaterSurface)) {

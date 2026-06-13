@@ -1,5 +1,6 @@
 import { Camera, Node, Vec3 } from 'cc';
-import { COUNTDOWN_SECONDS, DIVE_BALANCE, getRaceDistance, RACE_COURSE_LENGTH, raceDistanceDirection, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
+import { COUNTDOWN_SECONDS, getRaceDistance } from '../core/GameBalance';
+import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 
 const PRE_COUNTDOWN_CAMERA_SECONDS = 2.35;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
@@ -67,7 +68,7 @@ export class RaceCameraDirector {
     private _preCountdownActive = false;
     private _preCountdownReady = false;
 
-    constructor(private readonly _playerLaneZ: number) {
+    constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
         this.pickBroadcastShotSequence();
     }
@@ -213,8 +214,9 @@ export class RaceCameraDirector {
     }
 
     resetBroadcastCamera() {
-        this._cameraTarget.set(countdownAthleteTargetX(DIVE_BALANCE.platformNodeOffset.x), countdownAthleteTargetY(DIVE_BALANCE.platformNodeOffset.y), this._playerLaneZ);
-        this._cameraPos.set(7.2, 3.15, this._playerLaneZ + 0.8);
+        const platform = this._courseLayout.platformPosition(this._playerLaneZ);
+        this._cameraTarget.set(countdownAthleteTargetX(platform.x), countdownAthleteTargetY(platform.y), this._playerLaneZ);
+        this._cameraPos.set(platform.x + 8.57 * this._courseLayout.direction, 3.15, this._playerLaneZ + 0.8);
         this.applyFov();
         if (this._cameraNode) {
             this._cameraNode.setPosition(this._cameraPos);
@@ -227,7 +229,7 @@ export class RaceCameraDirector {
         const playerY = snapshot.playerY;
         const playerDistance = snapshot.playerDistance;
         const raceDistance = getRaceDistance();
-        const direction = raceDistanceDirection(playerDistance);
+        const direction = this._courseLayout.directionAtDistance(playerDistance);
         const raceRatio = Math.max(0, Math.min(1, playerDistance / raceDistance));
         const raceActive = snapshot.raceActive;
         const countdownActive = snapshot.countdownActive;
@@ -269,8 +271,9 @@ export class RaceCameraDirector {
                 this._preCountdownReady = true;
             }
         } else if (!raceActive && !countdownActive) {
-            desiredTarget = new Vec3(countdownAthleteTargetX(DIVE_BALANCE.platformNodeOffset.x), countdownAthleteTargetY(DIVE_BALANCE.platformNodeOffset.y), this._playerLaneZ);
-            desiredPos = new Vec3(7.2, 3.15, this._playerLaneZ + 0.8);
+            const platform = this._courseLayout.platformPosition(this._playerLaneZ);
+            desiredTarget = new Vec3(countdownAthleteTargetX(platform.x), countdownAthleteTargetY(platform.y), this._playerLaneZ);
+            desiredPos = new Vec3(platform.x + 8.57 * this._courseLayout.direction, 3.15, this._playerLaneZ + 0.8);
             this._broadcastDesiredFov = 52;
         } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS) {
             desiredPos = firstPersonCameraPos(playerX, this._playerLaneZ, direction);
@@ -278,14 +281,14 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = 64;
         } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS + DIVE_PULLBACK_SECONDS) {
             const ratio = smoothStep((this._diveShotElapsed - DIVE_FIRST_PERSON_SECONDS) / DIVE_PULLBACK_SECONDS);
-            desiredTarget = divePullbackTarget(playerX, this._playerLaneZ, ratio);
-            desiredPos = divePullbackCameraPos(playerX, this._playerLaneZ, ratio);
+            desiredTarget = divePullbackTarget(playerX, this._playerLaneZ, ratio, direction);
+            desiredPos = divePullbackCameraPos(playerX, this._playerLaneZ, ratio, direction);
             this._broadcastDesiredFov = lerp(64, 50, ratio);
         } else if (this._diveShotElapsed >= 0 && this._diveShotElapsed < DIVE_FIRST_PERSON_SECONDS + DIVE_PULLBACK_SECONDS + DIVE_SIDE_TRANSITION_SECONDS) {
             const ratio = smoothStep((this._diveShotElapsed - DIVE_FIRST_PERSON_SECONDS - DIVE_PULLBACK_SECONDS) / DIVE_SIDE_TRANSITION_SECONDS);
             const view = swimRaceView(snapshot);
-            const pullbackTarget = divePullbackTarget(playerX, this._playerLaneZ, 1);
-            const pullbackPos = divePullbackCameraPos(playerX, this._playerLaneZ, 1);
+            const pullbackTarget = divePullbackTarget(playerX, this._playerLaneZ, 1, direction);
+            const pullbackPos = divePullbackCameraPos(playerX, this._playerLaneZ, 1, direction);
             const finalTarget = new Vec3(playerX + view.targetXOffset * direction, 0.42, this._playerLaneZ);
             const finalPos = new Vec3(
                 playerX + view.cameraXOffset * direction,
@@ -316,10 +319,10 @@ export class RaceCameraDirector {
                 desiredPos.z,
             );
             this._broadcastDesiredFov = 42;
-        } else if (distanceToCurrentCourseEnd(playerDistance, raceDistance) <= TOP_VIEW_COURSE_END_DISTANCE) {
-            const courseEndDistance = currentCourseEndDistance(playerDistance, raceDistance);
-            const finishDirection = raceFinishDirection(courseEndDistance);
-            const finishAnchorX = raceDistanceToCourseX(courseEndDistance) - 7.5 * finishDirection;
+        } else if (this._courseLayout.distanceToCurrentCourseEnd(playerDistance, raceDistance) <= TOP_VIEW_COURSE_END_DISTANCE) {
+            const courseEndDistance = this._courseLayout.currentCourseEndDistance(playerDistance, raceDistance);
+            const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
+            const finishAnchorX = this._courseLayout.distanceToWorldX(courseEndDistance) - 7.5 * finishDirection;
             const playerFollowX = playerX + 3.4 * finishDirection;
             const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
             desiredTarget = new Vec3(targetX, 0.18, 0);
@@ -396,7 +399,7 @@ export class RaceCameraDirector {
 
     private updatePresetCamera(snapshot: RaceCameraSnapshot) {
         const playerX = snapshot.playerX;
-        const direction = raceDistanceDirection(snapshot.playerDistance);
+        const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         let desiredPos: Vec3;
         let desiredTarget: Vec3;
         if (this._mode === RaceCameraMode.Side) {
@@ -421,7 +424,7 @@ export class RaceCameraDirector {
 
     private updateFirstPersonCamera(snapshot: RaceCameraSnapshot) {
         const playerX = snapshot.playerX;
-        const direction = raceDistanceDirection(snapshot.playerDistance);
+        const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const desiredPos = firstPersonCameraPos(playerX, this._playerLaneZ, direction);
         const desiredTarget = new Vec3(playerX + 9.0 * direction, 0.58, this._playerLaneZ);
         this._cameraPos.set(desiredPos);
@@ -432,7 +435,7 @@ export class RaceCameraDirector {
 
     private updateFreeCamera(snapshot: RaceCameraSnapshot) {
         const playerX = snapshot.playerX;
-        const direction = raceDistanceDirection(snapshot.playerDistance);
+        const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const target = new Vec3(playerX + 1.2 * direction, 0.55, this._playerLaneZ);
         const cosPitch = Math.cos(this._freePitch);
         const desiredPos = new Vec3(
@@ -565,16 +568,6 @@ function swimRaceView(snapshot: RaceCameraSnapshot): SwimRaceView {
     };
 }
 
-function currentCourseEndDistance(playerDistance: number, raceDistance: number): number {
-    const distance = Math.max(0, playerDistance);
-    const nextCourseEnd = (Math.floor(distance / RACE_COURSE_LENGTH) + 1) * RACE_COURSE_LENGTH;
-    return Math.min(raceDistance, nextCourseEnd);
-}
-
-function distanceToCurrentCourseEnd(playerDistance: number, raceDistance: number): number {
-    return Math.max(0, currentCourseEndDistance(playerDistance, raceDistance) - playerDistance);
-}
-
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
@@ -599,19 +592,19 @@ function firstPersonCameraPos(playerX: number, playerLaneZ: number, direction = 
     return new Vec3(playerX + 0.95 * direction, 0.74, playerLaneZ + 0.04);
 }
 
-function divePullbackTarget(playerX: number, playerLaneZ: number, ratio: number): Vec3 {
+function divePullbackTarget(playerX: number, playerLaneZ: number, ratio: number, direction = 1): Vec3 {
     const t = clamp(ratio, 0, 1);
     return new Vec3(
-        playerX + lerp(1.05, 1.35, t),
+        playerX + lerp(1.05, 1.35, t) * direction,
         lerp(0.58, 0.54, t),
         playerLaneZ,
     );
 }
 
-function divePullbackCameraPos(playerX: number, playerLaneZ: number, ratio: number): Vec3 {
+function divePullbackCameraPos(playerX: number, playerLaneZ: number, ratio: number, direction = 1): Vec3 {
     const t = clamp(ratio, 0, 1);
     return new Vec3(
-        playerX + lerp(0.95, -7.4, t),
+        playerX + lerp(0.95, -7.4, t) * direction,
         lerp(0.74, 4.35, t),
         playerLaneZ + lerp(0.04, 10.8, t),
     );

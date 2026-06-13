@@ -38,11 +38,13 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
+import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
 
 const LANE_LAYOUT = new LaneLayout(DEFAULT_POOL_DEFINITION.laneCount, DEFAULT_POOL_DEFINITION.laneWidth);
+const COURSE_LAYOUT = new RaceCourseLayout(DEFAULT_POOL_DEFINITION);
 const POOL_WIDTH = LANE_LAYOUT.poolWidth;
 const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
@@ -75,9 +77,8 @@ export class GameManager extends Component {
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
-    private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z);
-    private readonly _finishRankMarkers = new FinishRankMarkerBuilder();
-    private _ceilingHiddenForTopView = false;
+    private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
+    private readonly _finishRankMarkers = new FinishRankMarkerBuilder(COURSE_LAYOUT);
 
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -119,11 +120,9 @@ export class GameManager extends Component {
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
-            this.updateTopViewCeilingVisibility(false);
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
-        this.updateTopViewCeilingVisibility(this._raceCameraDirector.topViewActive);
     }
 
     startGame() {
@@ -254,6 +253,7 @@ export class GameManager extends Component {
     private buildSwimmers3D(root: Node) {
         const competitors = new CompetitorManager({
             laneLayout: LANE_LAYOUT,
+            courseLayout: COURSE_LAYOUT,
             playerLaneIndex: PLAYER_LANE_INDEX,
             primaryAiLaneIndex: PRIMARY_AI_LANE_INDEX,
             debug: (message) => this.debug(message),
@@ -427,14 +427,6 @@ export class GameManager extends Component {
         this._debugLog.toggle();
     }
 
-    private updateTopViewCeilingVisibility(topViewActive: boolean) {
-        if (!this._worldRoot || this._ceilingHiddenForTopView === topViewActive) {
-            return;
-        }
-        this._ceilingHiddenForTopView = topViewActive;
-        setCeilingNodesVisible(this._worldRoot, !topViewActive);
-    }
-
     private drawSpeedBar(_ratio: number) {
         this.drawStrokeTimingGuide(null, false);
     }
@@ -494,15 +486,4 @@ export class GameManager extends Component {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
-}
-
-function setCeilingNodesVisible(root: Node, visible: boolean) {
-    const lowerName = root.name.toLowerCase();
-    if (lowerName.includes('ceiling')) {
-        root.active = visible;
-        return;
-    }
-    for (const child of root.children) {
-        setCeilingNodesVisible(child, visible);
-    }
 }

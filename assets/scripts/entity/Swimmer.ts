@@ -3,10 +3,11 @@ import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
-import { DIVE_BALANCE, getRaceDistance, raceDistanceDirection, raceDistanceToCourseX, raceFinishDirection } from '../core/GameBalance';
+import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
 import type { RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
 import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
+import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
@@ -52,9 +53,18 @@ export class Swimmer extends Component {
     private _modelBaseRootEuler = new Vec3(90, 0, -90);
     private _modelBaseRootPos = new Vec3(0, 0.1, 0);
     private _boneBaseEuler = new Map<Node, Vec3>();
+    private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
 
     start() {
         this.captureStartPosition();
+    }
+
+    configureCourse(courseLayout: RaceCourseLayout) {
+        this._courseLayout = courseLayout;
+        this._startPosition = this._courseLayout.swimPosition(0, this.node.position.z);
+        this._hasStartPosition = true;
+        this.node.setPosition(this._startPosition);
+        this.cartoonRig?.setWaterY(this._courseLayout.waterY);
     }
 
     startRace(initialDistance = 0, initialSpeed = DIVE_BALANCE.minSpeed) {
@@ -71,7 +81,7 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
         this.node.setPosition(this.divePlatformPosition());
-        this.node.setRotationFromEuler(0, 0, 0);
+        this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setPreRaceStanding(true);
@@ -86,28 +96,29 @@ export class Swimmer extends Component {
         const flightDuration = lerp(0.5, 0.38, divePower);
         const arcHeight = lerp(0.1, 0.22, divePower);
         const totalDuration = crouchDuration + flightDuration;
+        const direction = this._courseLayout.direction;
         const start = this.divePlatformPosition();
-        const entry = new Vec3(this._startPosition.x + distance, this._startPosition.y + 0.02, this._startPosition.z);
+        const entry = this._courseLayout.entryPosition(distance, this._startPosition.z);
 
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
-        this.node.setRotationFromEuler(0, 0, 0);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
         this.cartoonRig?.setDiveStreamlinePose();
         tween(this.node)
             .to(crouchDuration, {
-                position: new Vec3(start.x - 0.06, start.y - 0.04, start.z),
-                eulerAngles: new Vec3(0, 0, -5),
+                position: new Vec3(start.x - 0.06 * direction, start.y - 0.04, start.z),
+                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5),
             })
             .to(flightDuration * 0.42, {
-                position: new Vec3(start.x + distance * 0.42, start.y + arcHeight, start.z),
-                eulerAngles: new Vec3(0, 0, -12),
+                position: new Vec3(start.x + distance * 0.42 * direction, start.y + arcHeight, start.z),
+                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -12),
             })
             .call(() => {
                 this.cartoonRig?.setDiveStreamlinePose();
             })
             .to(flightDuration * 0.58, {
                 position: entry,
-                eulerAngles: new Vec3(0, 0, 0),
+                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 0),
             })
             .call(() => {
                 this.startRace(distance, entrySpeed);
@@ -193,7 +204,7 @@ export class Swimmer extends Component {
 
     playFinishTouch() {
         const finishPosition = this.node.position.clone();
-        const direction = raceFinishDirection(getRaceDistance());
+        const direction = this._courseLayout.finishDirectionAtDistance(getRaceDistance());
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
@@ -220,7 +231,7 @@ export class Swimmer extends Component {
         this._missStabilityCount = 0;
         this._pendingRhythmResults.length = 0;
         this.node.setPosition(this.divePlatformPosition());
-        this.node.setRotationFromEuler(0, 0, 0);
+        this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setPreRaceStanding(true);
@@ -563,21 +574,18 @@ export class Swimmer extends Component {
         if (this._hasStartPosition) {
             return;
         }
-        this._startPosition = this.node.position.clone();
+        this._startPosition = this._courseLayout.swimPosition(0, this.node.position.z);
+        this.node.setPosition(this._startPosition);
         this._hasStartPosition = true;
     }
 
     private divePlatformPosition(): Vec3 {
-        return new Vec3(
-            this._startPosition.x + DIVE_BALANCE.platformNodeOffset.x,
-            this._startPosition.y + DIVE_BALANCE.platformNodeOffset.y,
-            this._startPosition.z + DIVE_BALANCE.platformNodeOffset.z,
-        );
+        return this._courseLayout.platformPosition(this._startPosition.z);
     }
 
     private applyCoursePosition(distance: number) {
-        const direction = raceDistanceDirection(distance);
-        const x = this._startPosition.x + raceDistanceToCourseX(distance);
+        const direction = this._courseLayout.directionAtDistance(distance);
+        const x = this._courseLayout.distanceToWorldX(distance);
         this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
     }
@@ -607,7 +615,7 @@ export class Swimmer extends Component {
     }
 
     get raceDirection(): number {
-        return raceDistanceDirection(this._motor.distance);
+        return this._courseLayout.directionAtDistance(this._motor.distance);
     }
 
     get isRacing(): boolean {

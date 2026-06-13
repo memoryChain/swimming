@@ -55,7 +55,6 @@ export class WaterSurface extends Component {
 
     private isWaterMotionNode(node: Node): boolean {
         return node.name === 'PoolWaterSurface'
-            || node.name === 'flat_transparent_water_plane'
             || node.name === 'WaterCenterReflection'
             || node.name === 'WaterGlint'
             || node.name === 'WaterGlintShort'
@@ -66,6 +65,6 @@ export class WaterSurface extends Component {
     }
 
     private isMainWaterPlane(node: Node): boolean {
-        return node.name === 'PoolWaterSurface' || node.name === 'flat_transparent_water_plane';
+        return node.name === 'PoolWaterSurface';
     }
 }
