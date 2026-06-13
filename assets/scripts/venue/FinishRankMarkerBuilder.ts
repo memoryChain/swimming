@@ -1,5 +1,4 @@
 import { Color, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
-import { getRaceDistance } from '../core/GameBalance';
 import type { RaceFinishResult } from '../core/RaceManager';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from './RaceCourseLayout';
 
@@ -15,6 +14,7 @@ const DIGIT_SEGMENTS: Record<string, string[]> = {
     '8': ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
     '9': ['a', 'b', 'c', 'd', 'f', 'g'],
 };
+const RANK_MARKER_PLATFORM_Y_OFFSET = 0.56;
 
 export class FinishRankMarkerBuilder {
     private _root: Node | null = null;
@@ -50,10 +50,8 @@ export class FinishRankMarkerBuilder {
             return;
         }
         const marker = makeWorldNode(`Rank${result.placement}_${result.name}`, this._root);
-        const finishX = this._courseLayout.distanceToWorldX(getRaceDistance());
-        const direction = this._courseLayout.finishDirectionAtDistance(getRaceDistance());
-        const x = clamp(result.swimmer.node.position.x - 0.25 * direction, finishX - 2.1, finishX + 2.1);
-        marker.setPosition(x, 0.9, result.swimmer.node.position.z);
+        const platform = this._courseLayout.platformPosition(result.swimmer.node.position.z);
+        marker.setPosition(platform.x, platform.y + RANK_MARKER_PLATFORM_Y_OFFSET, platform.z);
         this._markers.set(result.swimmer.node, marker);
 
         addBox(
@@ -141,8 +139,4 @@ function makeMaterial(name: string, albedo: Color): Material {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
 }

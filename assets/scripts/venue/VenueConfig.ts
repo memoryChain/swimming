@@ -30,6 +30,6 @@ export const DEFAULT_POOL_DEFINITION: PoolDefinition = {
     waterY: 0.055,
     swimY: 0,
     platformBackOffset: 1.07,
-    platformYOffset: 0.23,
+    platformYOffset: 0.25,
     entryYOffset: 0.04,
 };

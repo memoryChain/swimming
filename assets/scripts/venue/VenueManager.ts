@@ -8,6 +8,11 @@ export type VenueManagerOptions = {
     debug?: (message: string) => void;
 };
 
+export type VenueBuildResult = {
+    pool: Node | null;
+    error: Error | null;
+};
+
 export class VenueManager {
     private readonly _loader = new PoolSceneLoader();
     private readonly _fallbackBuilder = new PoolFallbackBuilder();
@@ -18,11 +23,12 @@ export class VenueManager {
         this._debug = options.debug;
     }
 
-    buildPool(root: Node, definition: PoolDefinition) {
+    buildPool(root: Node, definition: PoolDefinition, done?: (result: VenueBuildResult) => void) {
         this._loader.load(root, definition, ({ pool, error }) => {
             if (!pool) {
                 console.warn(`[SpeedSwimming] failed to load ${definition.prefabPath}, using line-only fallback`, error);
                 this._fallbackBuilder.build(root, definition);
+                done?.({ pool: null, error });
                 return;
             }
 
@@ -30,6 +36,7 @@ export class VenueManager {
                 this._waterBinder.bind(pool, definition.waterMaterialPath, this._debug);
             }
             this._debug?.(`pool prefab loaded: ${definition.prefabPath}`);
+            done?.({ pool, error: null });
         });
     }
 }

@@ -89,10 +89,19 @@ export class GameManager extends Component {
         this.node.layer = Layers.Enum.UI_2D;
         loadSavedTuningAsync(() => this.scheduleOnce(() => {
             try {
-                this.buildScene();
-                this.registerEvents();
-                this.showStartScreen();
-                this.debug('3D runtime initialized');
+                this.buildScene((error) => {
+                    if (error) {
+                        this.paintError(error);
+                        return;
+                    }
+                    try {
+                        this.registerEvents();
+                        this.showStartScreen();
+                        this.debug('3D runtime initialized');
+                    } catch (setupError) {
+                        this.paintError(setupError);
+                    }
+                });
             } catch (error) {
                 this.paintError(error);
             }
@@ -143,22 +152,31 @@ export class GameManager extends Component {
         this.debug(`race distance=${selected}m`);
     }
 
-    private buildScene() {
+    private buildScene(done: (error?: unknown) => void) {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
         this._finishRankMarkers.bind(this._worldRoot);
-        this.buildPool3D(this._worldRoot);
-        this.buildSwimmers3D(this._worldRoot);
-        this.buildUi(scene.canvasNode, scene.width, scene.height);
+        this.buildPool3D(this._worldRoot, () => {
+            if (!this.node?.isValid || !this._worldRoot?.isValid) {
+                return;
+            }
+            try {
+                this.buildSwimmers3D(this._worldRoot);
+                this.buildUi(scene.canvasNode, scene.width, scene.height);
 
-        this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
-        this._raceManager.playerSwimmer = this._playerSwimmer;
-        this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
-        this._raceManager.aiSwimmers = this._aiSwimmers;
-        this._gameFlow = this.createGameFlow();
-        this._modelDebugFlow = this.createModelDebugFlow();
-        this._inputRouter = this.createInputRouter();
+                this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
+                this._raceManager.playerSwimmer = this._playerSwimmer;
+                this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
+                this._raceManager.aiSwimmers = this._aiSwimmers;
+                this._gameFlow = this.createGameFlow();
+                this._modelDebugFlow = this.createModelDebugFlow();
+                this._inputRouter = this.createInputRouter();
+                done();
+            } catch (error) {
+                done(error);
+            }
+        });
     }
 
     private createRuntimeSceneBuilder(): RuntimeSceneBuilder {
@@ -238,11 +256,33 @@ export class GameManager extends Component {
         });
     }
 
-    private buildPool3D(root: Node) {
+    private buildPool3D(root: Node, done: () => void) {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
-        venue.buildPool(root, DEFAULT_POOL_DEFINITION);
+        venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool }) => {
+            if (!pool?.isValid) {
+                this.buildSpectatorCrowd(root, null);
+                done();
+                return;
+            }
+            this.scheduleOnce(() => {
+                if (!pool.isValid) {
+                    this.buildSpectatorCrowd(root, null);
+                    done();
+                    return;
+                }
+                const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
+                if (calibrated) {
+                    this._raceCameraDirector.resetToBroadcast();
+                }
+                this.buildSpectatorCrowd(root, pool);
+                done();
+            }, 0);
+        });
+    }
+
+    private buildSpectatorCrowd(root: Node, pool: Node | null) {
         try {
-            new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
+            new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION, COURSE_LAYOUT, pool, (message) => this.debug(message));
         } catch (error) {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);

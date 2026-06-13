@@ -16,6 +16,7 @@ const FINISH_FLOAT_BASE_Y = -0.42;
 const FINISH_FLOAT_BOB_AMPLITUDE = 0.035;
 const FINISH_FLOAT_BOB_SPEED = 2.6;
 const RACE_MODEL_BASE_Y = 0.18;
+const SWIMMER_MODEL_SCALE = 1.5;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -529,7 +530,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this.configureSkinnedRenderers();
         this._model.setPosition(0, 0.34, 0);
-        this._model.setScale(0.92, 0.92, 0.92);
+        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
         this._model.setRotationFromEuler(90, 90, 0);
         this._pose.applyModelDebugPose();
         console.log(
@@ -544,7 +545,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._model.setPosition(0, RACE_MODEL_BASE_Y + this.raceModelYOffset(), 0);
-        this._model.setScale(0.82, 0.82, 0.82);
+        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
         this._model.setRotationFromEuler(90, 90, 0);
     }
 
@@ -554,7 +555,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this.applyRaceModelSetup();
         this._model.setPosition(0, 0.55, 0);
-        this._model.setScale(0.82, 0.82, 0.82);
+        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
         this._model.setRotationFromEuler(0, 90, 0);
         this._pose.applyPreRaceStandingPose();
         this.updateSplashSurface(0);
@@ -566,7 +567,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._model.setPosition(0, FINISH_FLOAT_BASE_Y, 0);
-        this._model.setScale(0.82, 0.82, 0.82);
+        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
         this._model.setRotationFromEuler(0, 90, 0);
         this._pose.applyFinishFloatingPose();
         this.updateSplashSurface(0);

@@ -12,7 +12,7 @@ import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
 
-const FINISH_FLOAT_X_OFFSET = 0.72;
+const FINISH_FLOAT_INWARD_OFFSET = 0.18;
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -210,12 +210,13 @@ export class Swimmer extends Component {
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
         if (this.cartoonRig) {
             this.cartoonRig.setFinishFloating();
-            this.node.setPosition(finishPosition.x + FINISH_FLOAT_X_OFFSET * direction, finishPosition.y + 0.01, finishPosition.z);
+            const x = this._courseLayout.clampSwimWorldX(finishPosition.x - FINISH_FLOAT_INWARD_OFFSET * direction);
+            this.node.setPosition(x, finishPosition.y + 0.01, finishPosition.z);
             return;
         }
         tween(this.node)
-            .to(0.12, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5), position: new Vec3(finishPosition.x + 0.42 * direction, finishPosition.y, finishPosition.z) })
-            .to(0.16, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 6), position: new Vec3(finishPosition.x + 0.64 * direction, finishPosition.y - 0.05, finishPosition.z) })
+            .to(0.12, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5), position: new Vec3(this._courseLayout.clampSwimWorldX(finishPosition.x - 0.08 * direction), finishPosition.y, finishPosition.z) })
+            .to(0.16, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 6), position: new Vec3(this._courseLayout.clampSwimWorldX(finishPosition.x - FINISH_FLOAT_INWARD_OFFSET * direction), finishPosition.y - 0.05, finishPosition.z) })
             .to(0.18, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 0) })
             .start();
     }
@@ -585,7 +586,7 @@ export class Swimmer extends Component {
 
     private applyCoursePosition(distance: number) {
         const direction = this._courseLayout.directionAtDistance(distance);
-        const x = this._courseLayout.distanceToWorldX(distance);
+        const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(distance));
         this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
     }
