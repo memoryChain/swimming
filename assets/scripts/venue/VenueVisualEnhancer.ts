@@ -1,7 +1,8 @@
 import { Color, Material, MeshRenderer, Node } from 'cc';
 
-const VENUE_SATURATION_SCALE = 1.16;
-const VENUE_VALUE_SCALE = 1.0;
+const VENUE_SATURATION_SCALE = 1.34;
+const VENUE_VALUE_SCALE = 0.96;
+const VENUE_CONTRAST_SCALE = 1.1;
 const WATER_NODE_NAMES = new Set(['PoolWaterSurface', 'PoolWater_0_50', 'PoolWater_50_100']);
 const COLOR_PROPERTIES = ['albedo', 'mainColor', 'baseColor'];
 
@@ -51,7 +52,7 @@ function makeBoostedMaterial(source: Material): Material {
     for (const property of COLOR_PROPERTIES) {
         const color = getColorProperty(material, property);
         if (color) {
-            material.setProperty(property, boostColor(color, VENUE_SATURATION_SCALE, VENUE_VALUE_SCALE));
+            material.setProperty(property, boostColor(color, VENUE_SATURATION_SCALE, VENUE_VALUE_SCALE, VENUE_CONTRAST_SCALE));
         }
     }
 
@@ -67,7 +68,7 @@ function getColorProperty(material: Material, property: string): Color | null {
     }
 }
 
-function boostColor(color: Color, saturationScale: number, valueScale: number): Color {
+function boostColor(color: Color, saturationScale: number, valueScale: number, contrastScale: number): Color {
     const r = color.r / 255;
     const g = color.g / 255;
     const b = color.b / 255;
@@ -77,7 +78,7 @@ function boostColor(color: Color, saturationScale: number, valueScale: number): 
     const saturation = max <= 0 ? 0 : clamp(((max - min) / max) * saturationScale, 0, 1);
     if (saturation <= 0) {
         const gray = Math.round(value * 255);
-        return new Color(gray, gray, gray, color.a);
+        return contrastColor(new Color(gray, gray, gray, color.a), contrastScale);
     }
 
     const hue = colorHue(r, g, b, max, min);
@@ -101,12 +102,25 @@ function boostColor(color: Color, saturationScale: number, valueScale: number): 
         rr = chroma; bb = x;
     }
 
-    return new Color(
+    return contrastColor(new Color(
         Math.round((rr + m) * 255),
         Math.round((gg + m) * 255),
         Math.round((bb + m) * 255),
         color.a,
+    ), contrastScale);
+}
+
+function contrastColor(color: Color, scale: number): Color {
+    return new Color(
+        contrastChannel(color.r, scale),
+        contrastChannel(color.g, scale),
+        contrastChannel(color.b, scale),
+        color.a,
     );
+}
+
+function contrastChannel(value: number, scale: number): number {
+    return Math.round(clamp(((value / 255 - 0.5) * scale + 0.5) * 255, 0, 255));
 }
 
 function colorHue(r: number, g: number, b: number, max: number, min: number): number {

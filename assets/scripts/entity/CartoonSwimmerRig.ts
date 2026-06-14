@@ -16,7 +16,7 @@ const FINISH_FLOAT_BASE_Y = -0.42;
 const FINISH_FLOAT_BOB_AMPLITUDE = 0.035;
 const FINISH_FLOAT_BOB_SPEED = 2.6;
 const RACE_MODEL_BASE_Y = 0.18;
-const SWIMMER_MODEL_SCALE = 1.5;
+const SWIMMER_MODEL_SCALE = 1.35;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
