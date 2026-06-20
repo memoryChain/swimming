@@ -188,7 +188,7 @@ export class Swimmer extends Component {
             return;
         }
         if (this._motor.recordAiVisualStroke(type)) {
-            this.cartoonRig?.triggerStroke(type, false);
+            this.cartoonRig?.triggerStroke(type);
         }
     }
 
@@ -311,16 +311,7 @@ export class Swimmer extends Component {
         const bob = Math.sin(this._motor.bodyPhase) * 0.045;
         const sideRoll = sideBodyRollSignal(this._motor.leftArmCycle, this._motor.rightArmCycle);
         if (this.cartoonRig) {
-            this.cartoonRig.updateFreestyle(
-                dt,
-                this._motor.leftArmCycle,
-                this._motor.rightArmCycle,
-                this._motor.leftKickCycle,
-                this._motor.rightKickCycle,
-                this._motor.bodyPhase,
-                this._motor.currentSpeed,
-                this.raceDirection,
-            );
+            this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection);
             return;
         }
         this.bodyNode?.setPosition(0, 0.18 + bob, 0);

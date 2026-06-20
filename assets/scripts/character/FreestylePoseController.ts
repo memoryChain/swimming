@@ -166,66 +166,6 @@ export class FreestylePoseController {
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, previewKickCycle, 1.05);
     }
 
-    applyDebugPose(
-        armReach: number,
-        upperBodyPower: number,
-        leftArmCycle: number,
-        rightArmCycle: number,
-        leftArmPower: number,
-        rightArmPower: number,
-        leftKickCycle: number,
-        rightKickCycle: number,
-        leftKickPower: number,
-        rightKickPower: number,
-    ) {
-        if (!this.root) {
-            return;
-        }
-        this.restoreBasePose();
-        this.root.setPosition(this.rootBasePos.x, this.rootBasePos.y, this.rootBasePos.z);
-        this.root.setRotationFromEuler(
-            this.rootBaseEuler.x,
-            this.rootBaseEuler.y + this.sideBodyRollSignal(leftArmCycle, rightArmCycle) * SIDE_BODY_ROLL_DEGREES,
-            this.rootBaseEuler.z,
-        );
-        void armReach;
-        void upperBodyPower;
-        this.applyArm(
-            this._leftShoulder,
-            this._leftArm,
-            this._leftForeArm,
-            this._leftHand,
-            this.armPoseCycle(leftArmPower > 1.001 ? leftArmCycle : 0),
-            leftArmPower > 1.001 ? leftArmPower : 1,
-        );
-        this.applyArm(
-            this._rightShoulder,
-            this._rightArm,
-            this._rightForeArm,
-            this._rightHand,
-            this.armPoseCycle(rightArmPower > 1.001 ? rightArmCycle : 0),
-            rightArmPower > 1.001 ? rightArmPower : 1,
-        );
-        if (leftKickPower > 1.001) {
-            this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, leftKickPower);
-        }
-        if (rightKickPower > 1.001) {
-            this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, rightKickPower);
-        }
-    }
-
-    applyModelDebugPose() {
-        this.restoreBasePose();
-        this.applyBoneOffset(this._leftShoulder, -1, -1.5, -1);
-        this.applyBoneOffset(this._rightShoulder, -1, 1.5, 1);
-        this.applyBoneOffset(this._leftArm, 0, 0, -8);
-        this.applyBoneOffset(this._rightArm, 0, 0, 8);
-        this.applyBoneOffset(this._leftForeArm, 0, 0, -4);
-        this.applyBoneOffset(this._rightForeArm, 0, 0, 4);
-        this.applyBoneOffset(this._leftUpLeg, -1, 0, -1);
-        this.applyBoneOffset(this._rightUpLeg, 1, 0, 1);
-    }
-
     applyPreRaceStandingPose() {
         this.restoreBasePose();
         this.applyBoneOffset(this._leftArm, 0, 0, -10);

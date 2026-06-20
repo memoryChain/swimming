@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $uiRoot = Join-Path $projectRoot 'assets/resources/ui'
 $scanRoot = Join-Path $projectRoot 'assets'
+$imageExtensions = '.png', '.jpg', '.jpeg'
 
 if (-not (Test-Path -LiteralPath $uiRoot)) {
     throw "UI resource directory does not exist: $uiRoot"
@@ -18,8 +19,8 @@ $referenceText = ($referenceFiles | ForEach-Object {
     Get-Content -LiteralPath $_.FullName -Raw -ErrorAction SilentlyContinue
 }) -join "`n"
 
-$results = foreach ($png in Get-ChildItem -LiteralPath $uiRoot -Recurse -Filter '*.png' -File) {
-    $metaPath = "$($png.FullName).meta"
+$results = foreach ($image in Get-ChildItem -LiteralPath $uiRoot -Recurse -File | Where-Object Extension -in $imageExtensions) {
+    $metaPath = "$($image.FullName).meta"
     $uuids = @()
     if (Test-Path -LiteralPath $metaPath) {
         $meta = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json
@@ -35,7 +36,7 @@ $results = foreach ($png in Get-ChildItem -LiteralPath $uiRoot -Recurse -Filter 
         }
     }
 
-    $relativePath = (Resolve-Path -LiteralPath $png.FullName -Relative).TrimStart('.', '\').Replace('\', '/')
+    $relativePath = (Resolve-Path -LiteralPath $image.FullName -Relative).TrimStart('.', '\').Replace('\', '/')
     $used = $false
     foreach ($uuid in $uuids) {
         if ($referenceText.Contains($uuid)) {
@@ -52,7 +53,7 @@ $results = foreach ($png in Get-ChildItem -LiteralPath $uiRoot -Recurse -Filter 
 
 $results | Sort-Object Status, Path | Format-Table -AutoSize
 $unused = @($results | Where-Object Status -eq 'UNUSED')
-Write-Host "UI PNG files: $($results.Count), unused: $($unused.Count)"
+Write-Host "UI image files: $($results.Count), unused: $($unused.Count)"
 
 if ($FailOnUnused -and $unused.Count -gt 0) {
     exit 1

@@ -1,6 +1,5 @@
 import { _decorator, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
-import { CharacterDebugController } from '../character/CharacterDebugController';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
@@ -8,6 +7,7 @@ import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
 import { defaultSwimmerModelVariant, findSwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
+import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
 
@@ -27,7 +27,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _splashEmitter: SplashEmitter = null;
     private readonly _pose = new FreestylePoseController();
     private readonly _animationPlayer = new CharacterAnimationPlayer();
-    private readonly _debug = new CharacterDebugController(this._pose);
     private _skinnedRenderers: SkinnedMeshRenderer[] = [];
     private _outlineRoot: Node = null;
     private _active = false;
@@ -302,10 +301,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     triggerArmStroke() {
-        if (this._modelDebugMode) {
-            this._debug.triggerArmStroke();
-            return;
-        }
         this._armAction = 1;
         this._splashEmitter?.triggerArmStroke();
         if (this._loaded) {
@@ -314,10 +309,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     triggerKick() {
-        if (this._modelDebugMode) {
-            this._debug.triggerKick();
-            return;
-        }
         this._kickAction = 1;
         this._splashEmitter?.triggerKick();
         if (this._loaded) {
@@ -325,11 +316,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    triggerStroke(type: StrokeType, countsForMotionRate = true) {
-        if (this._modelDebugMode) {
-            this._debug.triggerStroke(type, countsForMotionRate);
-            return;
-        }
+    triggerStroke(type: StrokeType) {
         this._armAction = 1;
         this._kickAction = 1;
         this._splashEmitter?.triggerArmStroke();
@@ -339,10 +326,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    setStrokeHeld(type: StrokeType, held: boolean) {
-        if (this._modelDebugMode) {
-            this._debug.setStrokeHeld(type, held);
-        }
+    setStrokeHeld(_type: StrokeType, _held: boolean) {
+    }
+
+    updateFreestyleFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
+        this.updateFreestyle(
+            dt,
+            motor.leftArmCycle,
+            motor.rightArmCycle,
+            motor.leftKickCycle,
+            motor.rightKickCycle,
+            motor.bodyPhase,
+            motor.currentSpeed,
+            movementDirection,
+        );
     }
 
     updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1) {
@@ -377,7 +374,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._debugTimer += dt;
 
         if (this._modelDebugMode) {
-            this.updateModelDebug(dt);
             return;
         }
 
@@ -425,8 +421,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     setModelDebugMode(active: boolean) {
         this._modelDebugMode = active;
-        this._active = false;
-        this._debug.setEnabled(active);
+        this._active = active;
         this._animationPlayer.disable();
         for (const renderer of this._skinnedRenderers) {
             renderer.setUseBakedAnimation(false, true);
@@ -443,18 +438,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    setModelDebugSpeedScale(scale: number) {
-        this._debug.setSpeedScale(scale);
-    }
-
-    setModelDebugSwimSpeedRatio(ratio: number) {
-        this._debug.setSwimSpeedRatio(ratio);
-    }
-
-    get modelDebugSpeedScale(): number {
-        return this._debug.speedScale;
-    }
-
     triggerSplashBurst(scale = 1) {
         this._splashEmitter?.triggerBurst(scale);
     }
@@ -466,10 +449,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._perfectGlowIntensity = 1;
         this.ensurePerfectGlowShells();
         this.updatePerfectGlowMaterial();
-    }
-
-    private updateModelDebug(dt: number) {
-        this._debug.update(dt);
     }
 
     private updatePerfectGlow(dt: number) {
@@ -529,12 +508,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this.configureSkinnedRenderers();
-        this._model.setPosition(0, 0.34, 0);
-        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
-        this._model.setRotationFromEuler(90, 90, 0);
-        this._pose.applyModelDebugPose();
+        this.applyRaceModelSetup();
+        this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
         console.log(
-            `[SpeedSwimming] model debug pose applied horizontalSide=true modelEuler=90,90,0 ` +
+            `[SpeedSwimming] model debug uses race freestyle pipeline ` +
             `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length} ` +
             `leftArm=${this._pose.leftArmPresent} rightArm=${this._pose.rightArmPresent} leftLeg=${this._pose.leftLegPresent} rightLeg=${this._pose.rightLegPresent}`,
         );

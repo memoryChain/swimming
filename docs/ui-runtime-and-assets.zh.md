@@ -19,7 +19,7 @@
 
 `assets/resources/ui` 只保留游戏实际引用的资源：
 
-- `paddle-master-imagegen`：登录界面的标题、赛程按钮、开始按钮和说明条。
+- `paddle-master-imagegen`：登录界面背景、标题、赛程按钮、开始按钮和说明条。
 - `race-hud`：赛程进度中的游泳选手图标。
 - `results-v2`：结算面板、排名行、按钮和头像。
 - `speed-stars`：HUD 与调试界面仍在使用的通用底板、进度条和计量条。
@@ -29,14 +29,14 @@
 
 ## 资源约束
 
-- 运行时 PNG 一张只放一个元素，必须带透明通道，不保留图集源图。
+- 透明 UI 元素使用独立 PNG；全屏不透明背景可使用压缩 JPG，不保留图集源图。
 - 固定装饰文字可以烘焙到图片；赛程、成绩、计时等动态或需本地化的文字使用 Cocos `Label`。
 - 微信小游戏优先使用小尺寸纹理、少量材质和可复用组件；新增图片前先确认 prefab 或代码确实引用它。
-- 替换 PNG 后在 Cocos Creator 中刷新资源目录，确认仍生成 `cc.Texture2D` 与 `cc.SpriteFrame`。
+- 替换运行时图片后在 Cocos Creator 中刷新资源目录，确认仍生成 `cc.Texture2D` 与 `cc.SpriteFrame`。
 
 ## 检查命令
 
-检查 `assets/resources/ui` 中是否存在没有被项目引用的 PNG：
+检查 `assets/resources/ui` 中是否存在没有被项目引用的 PNG/JPG：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/audit-runtime-ui-assets.ps1 -FailOnUnused

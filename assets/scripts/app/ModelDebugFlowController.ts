@@ -100,8 +100,6 @@ export class ModelDebugFlowController {
             this._refs.playerSwimmer.cartoonRig?.setSkinOutfit('trunksA');
             this.applyCurrentModelVariant();
             this._refs.playerSwimmer.cartoonRig?.setModelDebugMode(true);
-            this._refs.playerSwimmer.cartoonRig?.setModelDebugSpeedScale(this._speedScale);
-            this._refs.playerSwimmer.cartoonRig?.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
         }
         this.hideNonPlayerWorldNodes(true);
         this.updateCamera(1);
@@ -147,7 +145,7 @@ export class ModelDebugFlowController {
         }
         const queued = this._debugMotor.recordStroke(type);
         if (queued) {
-            this._refs.playerSwimmer?.cartoonRig?.triggerStroke(type, true);
+            this._refs.playerSwimmer?.cartoonRig?.triggerStroke(type);
         }
         if (type === StrokeType.LEFT) {
             this._refs.debug('model debug: left hand + right foot');
@@ -164,7 +162,6 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        this._refs.playerSwimmer?.cartoonRig?.setStrokeHeld(type, held);
         const stability = this._debugMotor.setStrokeHeld(type, held);
         if (!held) {
             this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
@@ -190,7 +187,7 @@ export class ModelDebugFlowController {
         if (finished) {
             this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
         }
-        this._refs.playerSwimmer?.cartoonRig?.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
+        this._refs.playerSwimmer?.cartoonRig?.updateFreestyleFromMotor(dt, this._debugMotor);
         this.updateDebugHud();
     }
 
@@ -292,8 +289,6 @@ export class ModelDebugFlowController {
         if (rig?.setModelVariant(variant.id)) {
             rig.setSkinOutfit('trunksA');
             rig.setModelDebugMode(true);
-            rig.setModelDebugSpeedScale(this._speedScale);
-            rig.setModelDebugSwimSpeedRatio(this.debugSwimSpeedRatio());
             this._refs.debug(`model debug variant=${variant.label}`);
         }
         if (this._refs.modelLabel) {
@@ -319,7 +314,6 @@ export class ModelDebugFlowController {
     }
 
     private applySpeed() {
-        this._refs.playerSwimmer?.cartoonRig?.setModelDebugSpeedScale(this._speedScale);
         if (this._refs.speedLabel) {
             this._refs.speedLabel.string = `Speed ${this._speedScale.toFixed(2)}x`;
         }
@@ -376,10 +370,6 @@ export class ModelDebugFlowController {
             const freshness = Math.round(clamp(this._debugMotor.lastInputFreshness, 0, 1) * 100);
             this._refs.swimSpeedLabel.string = `STB ${stability}%   FRS ${freshness}%   ACC ${signed(this._debugMotor.currentAcceleration)}   SPD ${speed.toFixed(2)} m/s`;
         }
-    }
-
-    private debugSwimSpeedRatio(): number {
-        return SWIMMER_BALANCE.maxSpeed > 0 ? clamp(this._debugMotor.currentSpeed / SWIMMER_BALANCE.maxSpeed, 0, 1) : 0;
     }
 
     private ratingColor(rating: Rating | null): Color {
