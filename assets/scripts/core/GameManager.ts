@@ -2,12 +2,13 @@ import {
     _decorator,
     Color,
     Component,
+    director,
     EventMouse,
     game,
-    Graphics,
     Label,
     Layers,
     Node,
+    Sprite,
     UITransform,
     Vec3,
 } from 'cc';
@@ -20,13 +21,12 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
-import { RaceHudBuilder } from '../ui/RaceHudBuilder';
 import { makeUiNode, makeRect, makeLabel } from '../ui/RuntimeUiFactory';
-import { StartScreenBuilder } from '../ui/StartScreenBuilder';
+import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { RaceDistanceMode, setRaceDistance } from './GameBalance';
+import { consumeMainGameLaunchMode } from './GameLaunchOptions';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
@@ -63,7 +63,6 @@ export class GameManager extends Component {
     private _uiFlow: UIFlowController = null;
     private _inputManager: InputManager = null;
 
-    private _startScreen: Node = null;
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
     private _worldRoot: Node = null;
@@ -74,7 +73,7 @@ export class GameManager extends Component {
     private _modelDebugModelLabel: Label = null;
     private _modelDebugSkyboxLabel: Label = null;
     private _skyboxApplier: StandardSkyboxApplier = null;
-    private _timingGuideFill: Graphics = null;
+    private _timingGuideFillNode: Node = null;
     private _timingGuideMarker: Node = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
@@ -99,8 +98,12 @@ export class GameManager extends Component {
                     }
                     try {
                         this.registerEvents();
-                        this.showStartScreen();
                         this.debug('3D runtime initialized');
+                        if (consumeMainGameLaunchMode() === 'model-debug') {
+                            this.enterModelDebug();
+                        } else {
+                            this.startGame();
+                        }
                     } catch (setupError) {
                         this.paintError(setupError);
                     }
@@ -146,13 +149,8 @@ export class GameManager extends Component {
         this._gameFlow?.restartGame();
     }
 
-    private showStartScreen() {
-        this._gameFlow?.showStartScreen();
-    }
-
-    private selectRaceDistance(distance: RaceDistanceMode) {
-        const selected = setRaceDistance(distance);
-        this.debug(`race distance=${selected}m`);
+    private returnToLogin() {
+        director.loadScene('Login');
     }
 
     private buildScene(done: (error?: unknown) => void) {
@@ -167,16 +165,20 @@ export class GameManager extends Component {
             }
             try {
                 this.buildSwimmers3D(this._worldRoot);
-                this.buildUi(scene.canvasNode, scene.width, scene.height);
-
-                this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
-                this._raceManager.playerSwimmer = this._playerSwimmer;
-                this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
-                this._raceManager.aiSwimmers = this._aiSwimmers;
-                this._gameFlow = this.createGameFlow();
-                this._modelDebugFlow = this.createModelDebugFlow();
-                this._inputRouter = this.createInputRouter();
-                done();
+                this.buildUi(scene.canvasNode, scene.width, scene.height, (uiError) => {
+                    if (uiError) {
+                        done(uiError);
+                        return;
+                    }
+                    this._raceManager = this.node.getComponent(RaceManager) || this.node.addComponent(RaceManager);
+                    this._raceManager.playerSwimmer = this._playerSwimmer;
+                    this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
+                    this._raceManager.aiSwimmers = this._aiSwimmers;
+                    this._gameFlow = this.createGameFlow();
+                    this._modelDebugFlow = this.createModelDebugFlow();
+                    this._inputRouter = this.createInputRouter();
+                    done();
+                });
             } catch (error) {
                 done(error);
             }
@@ -236,7 +238,7 @@ export class GameManager extends Component {
             skyboxLabel: this._modelDebugSkyboxLabel,
             skyboxApplier: this._skyboxApplier,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
-            showStartScreen: () => this.showStartScreen(),
+            returnToLogin: () => this.returnToLogin(),
             setState: (state) => {
                 this._state = state;
             },
@@ -326,58 +328,56 @@ export class GameManager extends Component {
         this._aiSwimmers = competitors.aiSwimmers;
     }
 
-    private buildUi(root: Node, w: number, h: number) {
+    private buildUi(root: Node, w: number, h: number, done: (error?: unknown) => void) {
         const uiRoot = makeUiNode('RuntimeUIRoot', root);
         const input = uiRoot.addComponent(InputManager);
         input.strokeTarget = this.node;
         input.pointerInputEnabled = false;
         this._inputManager = input;
 
-        this._raceHud = makeUiNode('RaceHUD', uiRoot);
-        this._raceHud.active = false;
-        const raceHud = new RaceHudBuilder({
+        new SpeedStarsUiPrefabBuilder({
             onStroke: () => this._inputRouter?.handleAutoPadStroke(),
             onStrokeEnd: () => this._inputRouter?.handleAutoPadStrokeEnd(),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),
-            onMenu: () => this.showStartScreen(),
-        }).build(this._raceHud, w, h);
-        this._uiController = raceHud.uiController;
-        this._timingGuideFill = raceHud.timingGuideFill;
-        this._timingGuideMarker = raceHud.timingGuideMarker;
+            onMenu: () => this.returnToLogin(),
+        }).build(uiRoot, w, h, (error, refs) => {
+            if (error || !refs) {
+                done(error ?? new Error('SpeedStars UI prefab build failed'));
+                return;
+            }
 
-        this._startScreen = new StartScreenBuilder({
-            onStart: () => this.startGame(),
-            onDistanceSelect: (distance) => this.selectRaceDistance(distance),
-            onToggleDebug: () => this.toggleDebug(),
-            onModelDebug: () => this.enterModelDebug(),
-        }).build(uiRoot, w, h);
+            this._raceHud = refs.raceHud;
+            this._uiController = refs.uiController;
+            this._timingGuideFillNode = refs.timingGuideFillNode;
+            this._timingGuideMarker = refs.timingGuideMarker;
 
-        const modelDebugHud = new ModelDebugHudBuilder({
-            onExit: () => this.exitModelDebug(true),
-            onSlow: () => this.slowModelDebugMotion(),
-            onFast: () => this.speedUpModelDebugMotion(),
-            onSwitchModel: () => this.switchModelDebugVariant(),
-            onSwitchSkybox: () => this.switchModelDebugSkybox(),
-        }).build(uiRoot, w, h);
-        this._modelDebugHud = modelDebugHud.root;
-        this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
-        this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
-        this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
-        this._modelDebugModelLabel = modelDebugHud.modelLabel;
-        this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
-        this._modelDebugHud.active = false;
+            const modelDebugHud = new ModelDebugHudBuilder({
+                onExit: () => this.exitModelDebug(true),
+                onSlow: () => this.slowModelDebugMotion(),
+                onFast: () => this.speedUpModelDebugMotion(),
+                onSwitchModel: () => this.switchModelDebugVariant(),
+                onSwitchSkybox: () => this.switchModelDebugSkybox(),
+            }).build(uiRoot, w, h);
+            this._modelDebugHud = modelDebugHud.root;
+            this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
+            this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
+            this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
+            this._modelDebugModelLabel = modelDebugHud.modelLabel;
+            this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
+            this._modelDebugHud.active = false;
 
-        const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
-        this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
+            const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
+            this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
 
-        this._uiFlow = new UIFlowController({
-            startScreen: this._startScreen,
-            raceHud: this._raceHud,
-            modelDebugHud: this._modelDebugHud,
-            uiController: this._uiController,
-            drawSpeedBar: (ratio) => this.drawSpeedBar(ratio),
+            this._uiFlow = new UIFlowController({
+                raceHud: this._raceHud,
+                modelDebugHud: this._modelDebugHud,
+                uiController: this._uiController,
+                drawSpeedBar: (ratio) => this.drawSpeedBar(ratio),
+            });
+            done();
         });
     }
 
@@ -485,29 +485,32 @@ export class GameManager extends Component {
     }
 
     private drawStrokeTimingGuide(guide: StrokeTimingGuide | null, active: boolean) {
-        const gfx = this._timingGuideFill;
-        if (!gfx) {
+        const fillNode = this._timingGuideFillNode;
+        if (!fillNode) {
             return;
         }
-        const w = 12;
         const h = 216;
-        gfx.clear();
         const intervals = guide?.intervals ?? [];
+        const sprite = fillNode.getComponent(Sprite);
+        const transform = fillNode.getComponent(UITransform);
+        if (transform) {
+            transform.setContentSize(transform.contentSize.width, h);
+            fillNode.setPosition(fillNode.position.x, -3, fillNode.position.z);
+        }
         if (intervals.length <= 0) {
-            gfx.fillColor = color(255, 92, 92, 180);
-            gfx.rect(-w / 2, -h / 2, w, h);
-            gfx.fill();
+            if (sprite) {
+                sprite.color = color(255, 82, 91, 180);
+            }
         } else {
-            for (const interval of intervals) {
-                const start = Math.max(0, Math.min(1, interval.startRatio));
-                const end = Math.max(start, Math.min(1, interval.endRatio));
-                gfx.fillColor = interval.rating === Rating.PERFECT
-                    ? color(255, 224, 89, 245)
-                    : interval.rating === Rating.GOOD
-                        ? color(80, 242, 161, 225)
-                        : color(255, 92, 92, 190);
-                gfx.rect(-w / 2, -h / 2 + start * h, w, Math.max(1, (end - start) * h));
-                gfx.fill();
+            const best = intervals.find((interval) => interval.rating === Rating.PERFECT)
+                ?? intervals.find((interval) => interval.rating === Rating.GOOD)
+                ?? intervals[0];
+            if (sprite) {
+                sprite.color = best.rating === Rating.PERFECT
+                    ? color(255, 214, 64, 245)
+                    : best.rating === Rating.GOOD
+                        ? color(76, 216, 235, 225)
+                        : color(255, 82, 91, 190);
             }
         }
         if (this._timingGuideMarker) {

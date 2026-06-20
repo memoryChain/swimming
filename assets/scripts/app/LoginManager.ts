@@ -1,5 +1,7 @@
-import { _decorator, Camera, Canvas, Component, director, Layers, Node, UITransform, view } from 'cc';
-import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
+import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, view } from 'cc';
+import { setRaceDistance } from '../core/GameBalance';
+import { setMainGameLaunchMode } from '../core/GameLaunchOptions';
+import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 
 const { ccclass } = _decorator;
 
@@ -18,6 +20,12 @@ export class LoginManager extends Component {
     }
 
     startGame() {
+        setMainGameLaunchMode('race');
+        director.loadScene('MainGame');
+    }
+
+    startModelDebug() {
+        setMainGameLaunchMode('model-debug');
         director.loadScene('MainGame');
     }
 
@@ -45,28 +53,22 @@ export class LoginManager extends Component {
         const camera = cameraNode.getComponent(Camera) || cameraNode.addComponent(Camera);
         camera.visibility = Layers.BitMask.UI_2D;
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
-        camera.clearColor = uiColor(8, 25, 42);
+        camera.clearColor = new Color(8, 25, 42, 255);
         camera.priority = 0;
         camera.orthoHeight = height / 2;
         canvas.cameraComponent = camera;
     }
 
     private buildLoginScreen(canvasNode: Node, width: number, height: number) {
-        canvasNode.getChildByName('LoginRoot')?.destroy();
-
-        const root = makeUiNode('LoginRoot', canvasNode);
-        root.getComponent(UITransform).setContentSize(width, height);
-
-        makeRect('Backdrop', root, width, height, uiColor(8, 25, 42));
-        makeRect('WaterBand', root, width, 130, uiColor(16, 132, 174)).setPosition(0, -height / 2 + 65, 0);
-        makeRect('StartBlock', root, 290, 58, uiColor(255, 222, 82)).setPosition(0, -64, 0);
-
-        makeLabel('Kicker', root, 'RACE LOGIN', 18, uiColor(127, 226, 236)).setPosition(0, 112, 0);
-        makeLabel('Title', root, 'SPEED SWIMMING', 56, uiColor(255, 255, 255)).setPosition(0, 56, 0);
-        makeLabel('Subtitle', root, 'Ready when you are.', 22, uiColor(218, 235, 238)).setPosition(0, 4, 0);
-
-        const start = makeButton('EnterRaceButton', root, 220, 52, uiColor(38, 116, 190), 'START');
-        start.setPosition(0, -64, 0);
-        start.on(Node.EventType.TOUCH_END, () => this.startGame(), this);
+        canvasNode.getChildByName('SpeedStarsUI')?.destroy();
+        new SpeedStarsStartUiPrefabBuilder({
+            onStart: () => this.startGame(),
+            onDistanceSelect: (distance) => setRaceDistance(distance),
+            onModelDebug: () => this.startModelDebug(),
+        }).build(canvasNode, width, height, (error) => {
+            if (error) {
+                console.error('[SpeedSwimming] Login UI failed to load', error);
+            }
+        });
     }
 }

@@ -1,6 +1,6 @@
 import { Vec3 } from 'cc';
 
-export const RACE_DISTANCE_OPTIONS = [100, 200, 500] as const;
+export const RACE_DISTANCE_OPTIONS = [50, 100, 200] as const;
 export type RaceDistanceMode = typeof RACE_DISTANCE_OPTIONS[number];
 export const RACE_DISTANCE: RaceDistanceMode = 100;
 export const RACE_COURSE_LENGTH = 50;

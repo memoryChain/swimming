@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, Node, Tween, tween, UITransform, Vec3 } from 'cc';
+import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, Tween, tween, UITransform, Vec3 } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -37,14 +37,25 @@ export class UIController extends Component {
     @property public progressTrackWidth = 240;
     @property(Node) public speedBarRoot: Node = null;
     @property(Node) public countdownOverlay: Node = null;
+    @property(Node) public countdownShade: Node = null;
     @property(Label) public countdownLabel: Label = null;
     @property(Node) public diveChargeTrack: Node = null;
     @property(Graphics) public diveChargeFill: Graphics = null;
+    @property(Node) public diveChargeFillNode: Node = null;
     @property(Node) public resultPanel: Node = null;
     @property(Label) public resultTitle: Label = null;
     @property(Label) public resultTime: Label = null;
+    @property(Label) public resultPlacementStat: Label = null;
+    @property(Label) public resultSpeedStat: Label = null;
     public resultRows: Label[] = [];
+    public resultRankLabels: Label[] = [];
+    public resultTimeLabels: Label[] = [];
+    public resultSpeedLabels: Label[] = [];
     public resultRowBacks: Node[] = [];
+    public resultAvatars: Sprite[] = [];
+    public resultAvatarFrames: SpriteFrame[] = [];
+    public resultRowNormalFrame: SpriteFrame = null;
+    public resultRowPlayerFrame: SpriteFrame = null;
     @property(Label) public ratingLabel: Label = null;
     @property(Label) public comboLabel: Label = null;
 
@@ -85,10 +96,10 @@ export class UIController extends Component {
             return;
         }
         if (placement <= 0 || racerCount <= 0) {
-            this.placementLabel.string = 'POS --/--';
+            this.placementLabel.string = '名次 --/--';
             return;
         }
-        this.placementLabel.string = `POS ${placement}/${racerCount}`;
+        this.placementLabel.string = `名次 ${placement}/${racerCount}`;
     }
 
     updateSpeed(speed: number) {
@@ -99,13 +110,13 @@ export class UIController extends Component {
 
     updateSwimTelemetry(stability: number, acceleration: number, speed: number) {
         if (this.telemetryLabel) {
-            this.telemetryLabel.string = `STB ${Math.round(clamp01(stability) * 100)}%   ACC ${signed(acceleration)}   SPD ${speed.toFixed(2)} m/s`;
+            this.telemetryLabel.string = `稳定 ${Math.round(clamp01(stability) * 100)}%   加速 ${signed(acceleration)}   速度 ${speed.toFixed(2)} m/s`;
         }
     }
 
     showRating(rating: Rating, combo: number) {
         if (this.ratingLabel) {
-            this.ratingLabel.string = rating.toUpperCase();
+            this.ratingLabel.string = ratingText(rating);
             this.ratingLabel.color = rating === Rating.PERFECT
                 ? new Color(255, 224, 89, 255)
                 : rating === Rating.GOOD
@@ -114,7 +125,7 @@ export class UIController extends Component {
             this.pulse(this.ratingLabel.node, 1.18);
         }
         if (this.comboLabel) {
-            this.comboLabel.string = combo > 0 ? `${combo} COMBO` : '';
+            this.comboLabel.string = combo > 0 ? `${combo} 连击` : '';
             this.comboLabel.fontSize = combo >= 10 ? 25 : 24;
         }
     }
@@ -124,14 +135,15 @@ export class UIController extends Component {
             this.countdownOverlay.active = true;
         }
         this.setSpeedBarVisible(false);
+        this.resizeCountdownShade(190, 160);
         if (this.hintLabel) {
-            this.hintLabel.string = 'Hold A+D during countdown, auto dive on GO';
+            this.hintLabel.string = '倒计时长按蓄力，听令出发';
         }
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(720, 220);
             this.countdownLabel.fontSize = 96;
             this.countdownLabel.lineHeight = 140;
-            this.countdownLabel.string = value > 0 ? `${value}` : 'GO';
+            this.countdownLabel.string = value > 0 ? `${value}` : '冲';
             this.pulse(this.countdownLabel.node, 1.25);
         }
     }
@@ -145,6 +157,10 @@ export class UIController extends Component {
             this.diveChargeFill.node.active = visible;
             drawChargeFill(this.diveChargeFill, clamp01(power));
         }
+        if (this.diveChargeFillNode) {
+            this.diveChargeFillNode.active = visible;
+            setVerticalFill(this.diveChargeFillNode, clamp01(power), chargeColor(power));
+        }
     }
 
     hideCountdown() {
@@ -153,7 +169,7 @@ export class UIController extends Component {
         }
         this.updateDiveCharge(0, false);
         if (this.hintLabel) {
-            this.hintLabel.string = 'A: left hand + right foot   D: right hand + left foot';
+            this.hintLabel.string = '全屏点击 / 长按蓄力';
         }
     }
 
@@ -161,35 +177,38 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
             this.countdownLabel.fontSize = 58;
             this.countdownLabel.lineHeight = 72;
-            this.countdownLabel.string = '双指按住屏幕蓄力';
+            this.countdownLabel.string = '长按蓄力';
             this.pulse(this.countdownLabel.node, 1.08);
         }
         if (this.hintLabel) {
-            this.hintLabel.string = '双指按住屏幕蓄力，倒计时结束自动起跳';
+            this.hintLabel.string = '倒计时按住屏幕，出发时释放';
         }
         this.updateDiveCharge(0, true);
     }
 
     showDiveCharging() {
+        this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
             this.countdownLabel.fontSize = 64;
             this.countdownLabel.lineHeight = 64;
-            this.countdownLabel.string = 'CHARGING';
+            this.countdownLabel.string = '蓄力中';
             this.pulse(this.countdownLabel.node, 1.12);
         }
     }
 
     showDiveRelease(power: number) {
+        this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
             this.countdownLabel.fontSize = 64;
             this.countdownLabel.lineHeight = 64;
-            this.countdownLabel.string = `DIVE ${Math.round(power * 100)}%`;
+            this.countdownLabel.string = `出发 ${Math.round(power * 100)}%`;
             this.pulse(this.countdownLabel.node, 1.18);
         }
         this.updateDiveCharge(power, true);
@@ -201,7 +220,7 @@ export class UIController extends Component {
         }
         this.setSpeedBarVisible(false);
         if (this.hintLabel) {
-            this.hintLabel.string = 'Streamline glide... get ready to stroke';
+            this.hintLabel.string = '滑行中，准备划水';
         }
     }
 
@@ -212,20 +231,25 @@ export class UIController extends Component {
             this.resultPanel.active = true;
         }
         if (this.resultTitle) {
-            this.resultTitle.string = 'RESULTS';
-            this.resultTitle.color = (soloRace || isWin) ? new Color(255, 224, 89, 255) : new Color(255, 112, 112, 255);
+            this.resultTitle.string = '比赛成绩';
+            this.resultTitle.color = new Color(247, 250, 255, 255);
         }
         if (this.resultTime) {
-            const placement = stats?.placement && stats?.racerCount ? `PLACE #${stats.placement}/${stats.racerCount}` : '';
-            const details = stats ? `AVG ${stats.averageSpeed.toFixed(2)} m/s   MAX ${stats.maxCombo} combo` : '';
-            this.resultTime.string = [placement, details].filter(Boolean).join('   ');
-            this.resultTime.lineHeight = 22;
+            this.resultTime.string = playerTime > 0 ? `个人成绩  ${playerTime.toFixed(2)} 秒` : '个人成绩  --.-- 秒';
+        }
+        if (this.resultPlacementStat) {
+            this.resultPlacementStat.string = stats?.placement
+                ? `名次  ${stats.placement}/${stats.racerCount ?? '--'}`
+                : '名次  --/--';
+        }
+        if (this.resultSpeedStat) {
+            this.resultSpeedStat.string = stats ? `平均速度  ${stats.averageSpeed.toFixed(2)} m/s` : '平均速度  -- m/s';
         }
         this.updateLeaderboard(stats?.leaderboard, playerTime);
         void aiTime;
         void soloRace;
         if (this.hintLabel) {
-            this.hintLabel.string = 'Press Space or tap Restart';
+            this.hintLabel.string = '按空格或点击再赛一次';
         }
     }
 
@@ -251,31 +275,46 @@ export class UIController extends Component {
         }
         this.updateLeaderboard([], 0);
         if (this.hintLabel) {
-            this.hintLabel.string = 'Get ready';
+            this.hintLabel.string = '准备开始';
         }
     }
 
     private updateLeaderboard(rows: RaceLeaderboardRow[] | undefined, playerTime: number) {
         const leaderboard = rows && rows.length > 0
             ? rows
-            : playerTime > 0 ? [{ name: 'YOU', placement: 1, time: playerTime, isPlayer: true }] : [];
+            : playerTime > 0 ? [{ name: '你', placement: 1, time: playerTime, isPlayer: true }] : [];
         for (let i = 0; i < this.resultRows.length; i++) {
-            const label = this.resultRows[i];
+            const nameLabel = this.resultRows[i];
+            const rankLabel = this.resultRankLabels[i];
+            const timeLabel = this.resultTimeLabels[i];
+            const speedLabel = this.resultSpeedLabels[i];
             const back = this.resultRowBacks[i];
+            const avatar = this.resultAvatars[i];
             const row = leaderboard[i];
             if (!row) {
-                if (label) {
-                    label.string = '';
+                setLabelText(nameLabel, '');
+                setLabelText(rankLabel, '');
+                setLabelText(timeLabel, '');
+                setLabelText(speedLabel, '');
+                setRowBack(back, null);
+                if (avatar) {
+                    avatar.node.active = false;
                 }
-                setRowBack(back, new Color(255, 255, 255, 0));
                 continue;
             }
-            if (label) {
-                label.string = `${padLeft(`${row.placement}.`, 3)}  ${padRight(fitName(row.name), 12)}  ${padLeft(`${row.time.toFixed(2)}s`, 7)}`;
-                label.color = row.isPlayer ? new Color(255, 244, 142, 255) : new Color(236, 246, 252, 255);
-                label.fontSize = row.isPlayer ? 20 : 18;
+            const displayName = row.isPlayer ? '你' : fitName(row.name);
+            const averageSpeed = row.time > 0 ? getRaceDistance() / row.time : 0;
+            const color = row.isPlayer ? new Color(255, 214, 44, 255) : new Color(218, 230, 246, 255);
+            setResultLabel(nameLabel, displayName, color, row.isPlayer);
+            setResultLabel(rankLabel, `${row.placement}`, color, row.isPlayer);
+            setResultLabel(timeLabel, `${row.time.toFixed(2)} 秒`, color, row.isPlayer);
+            setResultLabel(speedLabel, `${averageSpeed.toFixed(2)} m/s`, color, row.isPlayer);
+            setRowBack(back, row.isPlayer ? this.resultRowPlayerFrame : this.resultRowNormalFrame);
+            if (avatar) {
+                avatar.node.active = true;
+                avatar.spriteFrame = this.resultAvatarFrames[avatarFrameIndex(row)] ?? avatar.spriteFrame;
+                avatar.color = Color.WHITE;
             }
-            setRowBack(back, row.isPlayer ? new Color(255, 224, 89, 44) : new Color(255, 255, 255, 12));
         }
     }
 
@@ -303,10 +342,25 @@ export class UIController extends Component {
             this.speedBarRoot.active = visible;
         }
     }
+
+    private resizeCountdownShade(width: number, height: number) {
+        this.countdownShade?.getComponent(UITransform)?.setContentSize(width, height);
+        this.countdownShade?.setPosition(0, 44, 0);
+    }
 }
 
 function signed(value: number): string {
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
+}
+
+function ratingText(rating: Rating): string {
+    if (rating === Rating.PERFECT) {
+        return '完美';
+    }
+    if (rating === Rating.GOOD) {
+        return '良好';
+    }
+    return '失误';
 }
 
 function clamp01(value: number): number {
@@ -326,29 +380,71 @@ function drawChargeFill(gfx: Graphics, ratio: number) {
     gfx.fill();
 }
 
+function setVerticalFill(node: Node, ratio: number, color: Color) {
+    const transform = node.getComponent(UITransform);
+    const sprite = node.getComponent(Sprite);
+    if (sprite) {
+        sprite.color = color;
+    }
+    if (!transform) {
+        node.setScale(1, Math.max(0.001, ratio), 1);
+        return;
+    }
+    const originalHeight = 212;
+    const height = Math.max(1, originalHeight * ratio);
+    transform.setContentSize(transform.contentSize.width, height);
+    node.setPosition(node.position.x, -originalHeight / 2 + height / 2, node.position.z);
+}
+
+function chargeColor(power: number): Color {
+    return power > 0.82
+        ? new Color(255, 214, 64, 255)
+        : power > 0.45
+            ? new Color(76, 216, 235, 255)
+            : new Color(255, 82, 91, 255);
+}
+
 function fitName(name: string): string {
     const value = name || 'AI';
     return value.length > 12 ? value.slice(0, 12) : value;
 }
 
-function padRight(value: string, length: number): string {
-    return value.length >= length ? value : `${value}${' '.repeat(length - value.length)}`;
-}
-
-function padLeft(value: string, length: number): string {
-    return value.length >= length ? value : `${' '.repeat(length - value.length)}${value}`;
-}
-
-function setRowBack(node: Node | undefined, color: Color) {
-    const gfx = node?.getComponent(Graphics);
-    if (!gfx) {
+function setRowBack(node: Node | undefined, frame: SpriteFrame | null) {
+    if (!node) {
         return;
     }
-    gfx.clear();
-    if (color.a <= 0) {
+    const sprite = node.getComponent(Sprite);
+    if (!sprite || !frame) {
+        node.active = false;
         return;
     }
-    gfx.fillColor = color;
-    gfx.rect(-236, -17, 472, 34);
-    gfx.fill();
+    node.active = true;
+    sprite.spriteFrame = frame;
+    sprite.color = Color.WHITE;
+}
+
+function setLabelText(label: Label | undefined, value: string) {
+    if (label) {
+        label.string = value;
+    }
+}
+
+function setResultLabel(label: Label | undefined, value: string, color: Color, highlighted: boolean) {
+    if (!label) {
+        return;
+    }
+    label.string = value;
+    label.color = color;
+    label.fontSize = highlighted ? 17 : 16;
+}
+
+function avatarFrameIndex(row: RaceLeaderboardRow): number {
+    if (row.isPlayer) {
+        return 0;
+    }
+    let hash = 0;
+    for (const char of row.name || 'AI') {
+        hash = ((hash * 31) + char.charCodeAt(0)) >>> 0;
+    }
+    return 1 + (hash % 7);
 }

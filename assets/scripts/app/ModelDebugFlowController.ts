@@ -35,7 +35,7 @@ export type ModelDebugFlowRefs = {
     skyboxLabel: Label | null;
     skyboxApplier: StandardSkyboxApplier | null;
     resetExtraAiSwimmers: () => void;
-    showStartScreen: () => void;
+    returnToLogin: () => void;
     setState: (state: GameState) => void;
     debug: (message: string) => void;
 };
@@ -137,7 +137,7 @@ export class ModelDebugFlowController {
             camera.fov = 36;
         }
         if (showStart) {
-            this._refs.showStartScreen();
+            this._refs.returnToLogin();
         }
     }
 

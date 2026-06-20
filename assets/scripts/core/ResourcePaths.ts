@@ -84,6 +84,7 @@ export const RESOURCE_PATHS = {
     skyboxVariants: SKYBOX_VARIANTS,
     playerOutlineEffect: 'effects/PlayerOutline',
     swimmerPerfectGlowEffect: 'effects/SwimmerPerfectGlow',
+    speedStarsUiPrefab: 'ui/SpeedStarsUI',
 };
 
 export function findSwimmerModelVariant(id: string): SwimmerModelVariant | null {

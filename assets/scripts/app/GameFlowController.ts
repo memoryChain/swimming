@@ -53,19 +53,6 @@ export class GameFlowController {
         this.startGame();
     }
 
-    showStartScreen() {
-        this._refs.debug('showStartScreen');
-        this._refs.setState(GameState.READY);
-        this.resetDiveCharge();
-        this.stopAllAi();
-        this._refs.clearFinishRanks();
-        this._refs.raceManager?.resetRace();
-        this.resetExtraAiSwimmers();
-        this._refs.uiFlow.resetSpeedBar();
-        this._refs.raceCameraDirector.resetToBroadcast();
-        this._refs.uiFlow.showStartScreen();
-    }
-
     handlePrimaryAction() {
         const state = this._refs.getState();
         if (state === GameState.READY) {

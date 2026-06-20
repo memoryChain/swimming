@@ -3,7 +3,6 @@ import { Rating } from '../core/GameConstants';
 import { RaceResultStats, UIController } from './UIController';
 
 export type UIFlowRefs = {
-    startScreen: Node | null;
     raceHud: Node | null;
     modelDebugHud: Node | null;
     uiController: UIController | null;
@@ -13,14 +12,7 @@ export type UIFlowRefs = {
 export class UIFlowController {
     constructor(private readonly _refs: UIFlowRefs) {}
 
-    showStartScreen() {
-        setActive(this._refs.raceHud, false);
-        setActive(this._refs.modelDebugHud, false);
-        setActive(this._refs.startScreen, true);
-    }
-
     showRaceHud() {
-        setActive(this._refs.startScreen, false);
         setActive(this._refs.modelDebugHud, false);
         setActive(this._refs.raceHud, true);
         this._refs.uiController?.resetAll();
@@ -28,7 +20,6 @@ export class UIFlowController {
     }
 
     showModelDebugHud() {
-        setActive(this._refs.startScreen, false);
         setActive(this._refs.raceHud, false);
         setActive(this._refs.modelDebugHud, true);
     }

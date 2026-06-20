@@ -15,6 +15,7 @@ node_modules/
 
 # Local tooling downloads
 tools/blender-portable/
+extensions/cocos-code-mode/
 
 #//////////////////////////
 # VSCode
