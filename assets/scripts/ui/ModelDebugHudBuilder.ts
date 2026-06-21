@@ -8,6 +8,7 @@ export type ModelDebugHudCallbacks = {
     onSlow: () => void;
     onFast: () => void;
     onSwitchModel: () => void;
+    onSwitchTexture: () => void;
     onSwitchSkybox: () => void;
 };
 
@@ -56,17 +57,20 @@ export class ModelDebugHudBuilder {
         tuning.on(Node.EventType.TOUCH_END, () => this.setTuningOverlayVisible(true));
         makeRect('ModelDebugBottom', hud, w, bottomHeight, uiColor(5, 16, 26, 135)).setPosition(0, bottomY, 0);
         const portraitStatusWidth = Math.max(86, Math.min(112, w / 3 - 14));
-        const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 76 : 96, 36, uiColor(92, 76, 170), '模型');
-        model.setPosition(portrait ? -118 : -304, portrait ? -h / 2 + 26 : bottomY, 0);
+        const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 68 : 88, 36, uiColor(92, 76, 170), '模型');
+        model.setPosition(portrait ? -150 : -340, portrait ? -h / 2 + 26 : bottomY, 0);
         model.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchModel());
+        const texture = makeButton('ModelDebugSwitchTexture', hud, portrait ? 68 : 88, 36, uiColor(168, 82, 126), '配色');
+        texture.setPosition(portrait ? -74 : -244, portrait ? -h / 2 + 26 : bottomY, 0);
+        texture.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchTexture());
         const sky = makeButton('ModelDebugSwitchSkybox', hud, portrait ? 64 : 76, 36, uiColor(42, 128, 132), '天空');
-        sky.setPosition(portrait ? -42 : -204, portrait ? -h / 2 + 26 : bottomY, 0);
+        sky.setPosition(portrait ? 0 : -150, portrait ? -h / 2 + 26 : bottomY, 0);
         sky.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchSkybox());
         const slower = makeButton('ModelDebugSlow', hud, 54, 36, uiColor(38, 116, 190), '-');
-        slower.setPosition(portrait ? 46 : -88, portrait ? -h / 2 + 26 : bottomY, 0);
+        slower.setPosition(portrait ? 72 : -54, portrait ? -h / 2 + 26 : bottomY, 0);
         slower.on(Node.EventType.TOUCH_END, () => this._callbacks.onSlow());
         const faster = makeButton('ModelDebugFast', hud, 54, 36, uiColor(38, 116, 190), '+');
-        faster.setPosition(portrait ? 116 : 88, portrait ? -h / 2 + 26 : bottomY, 0);
+        faster.setPosition(portrait ? 142 : 54, portrait ? -h / 2 + 26 : bottomY, 0);
         faster.on(Node.EventType.TOUCH_END, () => this._callbacks.onFast());
         const speedLabel = makeLabel('ModelDebugStatus', hud, `速度 ${MOTION_TUNING.animationSpeedScale.toFixed(2)}x`, 18, uiColor(230, 244, 250));
         speedLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 180, 30);

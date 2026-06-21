@@ -7,7 +7,7 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
-import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
+import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SWIMMER_0621_2_TEXTURE_VARIANTS, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmEvaluator';
 import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
@@ -52,6 +52,7 @@ export class ModelDebugFlowController {
     private _lastCombo = 0;
     private _lastStability = 0;
     private _modelVariantIndex = 0;
+    private _textureVariantIndex = 0;
     private _skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === DEFAULT_SKYBOX_VARIANT.id));
     private readonly _hiddenDebugSceneNodes = new Map<Node, boolean>();
 
@@ -73,6 +74,7 @@ export class ModelDebugFlowController {
         this._lastCombo = 0;
         this._lastStability = 0;
         this._modelVariantIndex = Math.max(0, SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
+        this._textureVariantIndex = Math.max(0, SWIMMER_0621_2_TEXTURE_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.textureVariantId));
         this._skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === this._refs.skyboxApplier?.currentVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
 
@@ -272,6 +274,14 @@ export class ModelDebugFlowController {
         this.applyCurrentModelVariant();
     }
 
+    switchTextureVariant() {
+        if (!this._active || SWIMMER_0621_2_TEXTURE_VARIANTS.length <= 0) {
+            return;
+        }
+        this._textureVariantIndex = positiveMod(this._textureVariantIndex + 1, SWIMMER_0621_2_TEXTURE_VARIANTS.length);
+        this.applyCurrentTextureVariant();
+    }
+
     switchSkyboxVariant() {
         if (!this._active || SKYBOX_VARIANTS.length <= 0) {
             return;
@@ -288,12 +298,35 @@ export class ModelDebugFlowController {
         const rig = this._refs.playerSwimmer?.cartoonRig;
         if (rig?.setModelVariant(variant.id)) {
             rig.setSkinOutfit('trunksA');
+            if (variant.id === 'swimmer0621_2') {
+                this.applyCurrentTextureVariant();
+            }
             rig.setModelDebugMode(true);
             this._refs.debug(`model debug variant=${variant.label}`);
         }
-        if (this._refs.modelLabel) {
-            this._refs.modelLabel.string = `Model ${variant.label}`;
+        this.updateModelLabel();
+    }
+
+    private applyCurrentTextureVariant() {
+        const variant = SWIMMER_0621_2_TEXTURE_VARIANTS[this._textureVariantIndex] ?? SWIMMER_0621_2_TEXTURE_VARIANTS[0];
+        if (!variant) {
+            return;
         }
+        if (this._refs.playerSwimmer?.cartoonRig?.setTextureVariant(variant.id)) {
+            this._refs.debug(`model debug texture=${variant.label}`);
+        }
+        this.updateModelLabel();
+    }
+
+    private updateModelLabel() {
+        if (!this._refs.modelLabel) {
+            return;
+        }
+        const model = SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? SWIMMER_MODEL_VARIANTS[0];
+        const texture = SWIMMER_0621_2_TEXTURE_VARIANTS[this._textureVariantIndex] ?? SWIMMER_0621_2_TEXTURE_VARIANTS[0];
+        this._refs.modelLabel.string = model?.id === 'swimmer0621_2' && texture
+            ? `S2 ${texture.label}`
+            : `Model ${model?.label ?? '-'}`;
     }
 
     private applyCurrentSkyboxVariant() {

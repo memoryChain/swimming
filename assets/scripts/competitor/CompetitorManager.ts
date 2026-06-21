@@ -3,7 +3,8 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
-import { DEFAULT_AI_PROFILES, shuffledAiCompetitorNames, shuffledRaceVisualProfiles } from './CompetitorConfig';
+import { SWIMMER_0621_2_TEXTURE_VARIANTS } from '../core/ResourcePaths';
+import { DEFAULT_AI_PROFILES, shuffledAiCompetitorNames } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
@@ -34,21 +35,23 @@ export class CompetitorManager {
         const aiSwimmers: Swimmer[] = [];
         let playerSwimmer: Swimmer = null;
         let primaryAiController: AISwimmerController | null = null;
-        const raceVisuals = shuffledRaceVisualProfiles();
+        const playerTextureVariantId = 'redBlue';
+        const aiTextureVariantIds = shuffledAiTextureVariantIds(playerTextureVariantId);
         const aiNames = shuffledAiCompetitorNames();
         let aiNameIndex = 0;
+        let aiTextureIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             const isPlayer = lane === this._options.playerLaneIndex;
-            const visual = raceVisuals[lane % raceVisuals.length];
             const swimmer = this._factory.create(group, {
                 name: isPlayer ? 'PlayerSwimmer3D' : `AISwimmerLane${lane + 1}`,
                 x: this._options.courseLayout.startX,
                 y: this._options.courseLayout.swimY,
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: !isPlayer,
-                suitColor: visual.suitColor,
-                capColor: visual.capColor,
+                textureVariantId: isPlayer
+                    ? playerTextureVariantId
+                    : aiTextureVariantIds[aiTextureIndex++ % aiTextureVariantIds.length],
                 displayName: isPlayer ? 'YOU' : aiNames[aiNameIndex++ % aiNames.length],
             });
             swimmer.configureCourse(this._options.courseLayout);
@@ -80,6 +83,19 @@ export class CompetitorManager {
             aiSwimmers,
         };
     }
+}
+
+function shuffledAiTextureVariantIds(playerVariantId: string): string[] {
+    const ids = SWIMMER_0621_2_TEXTURE_VARIANTS
+        .map((variant) => variant.id)
+        .filter((id) => id !== playerVariantId);
+    for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const value = ids[i];
+        ids[i] = ids[j];
+        ids[j] = value;
+    }
+    return ids;
 }
 
 function makeWorldNode(name: string, parent: Node): Node {

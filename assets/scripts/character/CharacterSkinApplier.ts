@@ -17,6 +17,7 @@ export type CharacterSkinOptions = {
     playerOutline: boolean;
     outfit?: CharacterSkinOutfit;
     preserveOriginalMaterial?: boolean;
+    originalTextureOverride?: Texture2D | null;
     preserveImportedMaterial?: boolean;
     outlineWidth?: number;
     outlineRoot: Node | null;
@@ -103,7 +104,7 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
             if (!original) {
                 continue;
             }
-            renderer.setMaterial(makeBrightenedOriginalMaterial(original), i);
+            renderer.setMaterial(makeBrightenedOriginalMaterial(original, options.originalTextureOverride), i);
             applied++;
         }
     }
@@ -114,8 +115,8 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     }
 }
 
-function makeBrightenedOriginalMaterial(original: Material): Material {
-    const texture = findMaterialTexture(original);
+function makeBrightenedOriginalMaterial(original: Material, textureOverride?: Texture2D | null): Material {
+    const texture = textureOverride ?? findMaterialTexture(original);
     const color = boostColor(findMaterialColor(original), 1.12, 1.14);
     const material = new Material();
     material.initialize(texture

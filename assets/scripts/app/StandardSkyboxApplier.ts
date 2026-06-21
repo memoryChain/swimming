@@ -1,4 +1,4 @@
-import { Camera, Node, resources, Texture2D, TextureCube } from 'cc';
+import { Camera, Color, Node, resources, Texture2D, TextureCube } from 'cc';
 import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SkyboxFaceName, SkyboxVariant } from '../core/ResourcePaths';
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = [
@@ -26,6 +26,21 @@ export class StandardSkyboxApplier {
 
     applyDefault() {
         this.apply(DEFAULT_SKYBOX_VARIANT.id);
+    }
+
+    disable(clearColor?: Color) {
+        this._applyRevision += 1;
+        const skybox = this._sceneRoot?.scene?.globals?.skybox;
+        if (skybox) {
+            skybox.enabled = false;
+        }
+        if (this._camera) {
+            this._camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
+            if (clearColor) {
+                this._camera.clearColor = clearColor;
+            }
+        }
+        this._currentVariantId = '';
     }
 
     apply(variantId: string) {

@@ -1,5 +1,3 @@
-import { Color } from 'cc';
-
 export type AICompetitorProfile = {
     difficulty: number;
     bpmOffset: number;
@@ -8,22 +6,6 @@ export type AICompetitorProfile = {
     divePower: number;
     diveReaction: number;
 };
-
-export type CompetitorVisualProfile = {
-    suitColor: Color;
-    capColor: Color;
-};
-
-export const RACE_COMPETITOR_VISUALS: CompetitorVisualProfile[] = [
-    { suitColor: color(255, 75, 94), capColor: color(35, 235, 255) },
-    { suitColor: color(30, 125, 255), capColor: color(255, 246, 64) },
-    { suitColor: color(255, 205, 38), capColor: color(255, 90, 220) },
-    { suitColor: color(36, 214, 116), capColor: color(250, 250, 255) },
-    { suitColor: color(168, 82, 255), capColor: color(94, 255, 130) },
-    { suitColor: color(255, 126, 42), capColor: color(70, 110, 255) },
-    { suitColor: color(20, 220, 230), capColor: color(255, 40, 58) },
-    { suitColor: color(255, 80, 180), capColor: color(255, 154, 36) },
-];
 
 export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
     { difficulty: 0.62, bpmOffset: -18, power: 0.82, maxSpeed: 0.88, divePower: 0.48, diveReaction: 0.32 },
@@ -64,22 +46,4 @@ export function shuffledAiCompetitorNames(): string[] {
         names[j] = temp;
     }
     return names;
-}
-
-export function shuffledRaceVisualProfiles(): CompetitorVisualProfile[] {
-    const visuals = RACE_COMPETITOR_VISUALS.map((visual) => ({
-        suitColor: visual.suitColor.clone(),
-        capColor: visual.capColor.clone(),
-    }));
-    for (let i = visuals.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const temp = visuals[i];
-        visuals[i] = visuals[j];
-        visuals[j] = temp;
-    }
-    return visuals;
-}
-
-function color(r: number, g: number, b: number, a = 255): Color {
-    return new Color(r, g, b, a);
 }

@@ -509,7 +509,7 @@
     "_diffuseMapHDR": null,
     "_diffuseMapLDR": null,
     "_enabled": false,
-    "_useHDR": true,
+    "_useHDR": false,
     "_editableMaterial": null,
     "_reflectionHDR": null,
     "_reflectionLDR": null,

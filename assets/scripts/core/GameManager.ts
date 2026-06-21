@@ -358,6 +358,7 @@ export class GameManager extends Component {
                 onSlow: () => this.slowModelDebugMotion(),
                 onFast: () => this.speedUpModelDebugMotion(),
                 onSwitchModel: () => this.switchModelDebugVariant(),
+                onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
             }).build(uiRoot, w, h);
             this._modelDebugHud = modelDebugHud.root;
@@ -470,6 +471,10 @@ export class GameManager extends Component {
 
     private switchModelDebugVariant() {
         this._modelDebugFlow?.switchModelVariant();
+    }
+
+    private switchModelDebugTexture() {
+        this._modelDebugFlow?.switchTextureVariant();
     }
 
     private switchModelDebugSkybox() {

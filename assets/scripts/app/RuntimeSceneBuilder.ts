@@ -43,7 +43,7 @@ export class RuntimeSceneBuilder {
         const skyboxApplier = new StandardSkyboxApplier();
         if (worldCamera) {
             skyboxApplier.bind(sceneRoot, worldCamera, this._options.debug);
-            skyboxApplier.applyDefault();
+            skyboxApplier.disable(color(74, 158, 224));
         }
         this.buildLights(worldRoot);
 
@@ -96,7 +96,7 @@ export class RuntimeSceneBuilder {
         camera.projection = Camera.ProjectionType.PERSPECTIVE;
         camera.visibility = Layers.BitMask.DEFAULT;
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
-        camera.clearColor = color(38, 48, 48);
+        camera.clearColor = color(74, 158, 224);
         camera.fov = 36;
         camera.near = 0.1;
         camera.far = 260;
@@ -110,21 +110,8 @@ export class RuntimeSceneBuilder {
         const sunNode = makeWorldNode('StadiumSun', root);
         sunNode.setRotationFromEuler(-46, 24, 0);
         const sun = sunNode.addComponent(DirectionalLight);
-        sun.color = color(255, 226, 184);
-        sun.illuminance = 148000;
-
-        const fillNode = makeWorldNode('CartoonFillLight', root);
-        fillNode.setRotationFromEuler(-58, -142, 0);
-        const fill = fillNode.addComponent(DirectionalLight);
-        fill.color = color(156, 190, 205);
-        fill.illuminance = 34000;
-
-        const topNode = makeWorldNode('CartoonTopLight', root);
-        topNode.setRotationFromEuler(-88, 12, 0);
-        const top = topNode.addComponent(DirectionalLight);
-        top.color = color(255, 232, 196);
-        top.illuminance = 42000;
-
+        sun.color = color(255, 238, 210);
+        sun.illuminance = 1.35;
     }
 
     private setupEnvironment(sceneRoot: Node) {
@@ -132,11 +119,15 @@ export class RuntimeSceneBuilder {
         if (!ambient) {
             return;
         }
-        ambient.skyLightingColor = color(226, 220, 198);
-        ambient.groundLightingColor = color(108, 174, 172);
-        ambient.skyColor = new Vec4(0.34, 0.45, 0.46, 1);
-        ambient.groundAlbedo = new Vec4(0.32, 0.58, 0.56, 1);
-        ambient.skyIllum = 30000;
+        const skybox = sceneRoot.scene?.globals?.skybox;
+        if (skybox) {
+            skybox.useHDR = false;
+        }
+        ambient.skyLightingColor = color(194, 228, 255);
+        ambient.groundLightingColor = color(82, 164, 178);
+        ambient.skyColor = new Vec4(0.48, 0.72, 0.92, 1);
+        ambient.groundAlbedo = new Vec4(0.25, 0.52, 0.56, 1);
+        ambient.skyIllum = 0.8;
     }
 
     private cleanRuntimeChildren(canvasNode: Node, sceneRoot: Node) {

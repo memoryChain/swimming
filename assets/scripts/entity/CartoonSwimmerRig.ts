@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Vec3 } from 'cc';
+import { _decorator, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
@@ -6,7 +6,7 @@ import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loa
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
-import { defaultSwimmerModelVariant, findSwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
+import { defaultSwimmer0621TextureVariant, defaultSwimmerModelVariant, findSwimmer0621TextureVariant, findSwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
@@ -60,6 +60,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowLoading = false;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
+    private _textureVariantId = defaultSwimmer0621TextureVariant().id;
+    private _textureOverride: Texture2D = null;
+    private _textureLoadToken = 0;
     private _waterY = SPLASH_WATER_Y;
     private readonly _tmpSplashWorld = new Vec3();
 
@@ -93,6 +96,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
 
         this._modelVariantId = variant.id;
+        this._textureLoadToken += 1;
+        this._textureOverride = null;
+        if (variant.id === 'swimmer0621_2') {
+            this.loadTextureVariant();
+        }
         if (!this._splashEmitter) {
             return true;
         }
@@ -104,6 +112,22 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     get modelVariantId(): string {
         return this._modelVariantId;
+    }
+
+    get textureVariantId(): string {
+        return this._textureVariantId;
+    }
+
+    setTextureVariant(variantId: string): boolean {
+        const variant = findSwimmer0621TextureVariant(variantId);
+        if (!variant) {
+            return false;
+        }
+        this._textureVariantId = variant.id;
+        if (this._modelVariantId === 'swimmer0621_2') {
+            this.loadTextureVariant();
+        }
+        return true;
     }
 
     private loadModelForCurrentVariant() {
@@ -477,6 +501,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             playerOutline,
             outfit: this._skinOutfit,
             preserveOriginalMaterial: this.preserveOriginalMaterial(),
+            originalTextureOverride: this._textureOverride,
             preserveImportedMaterial: this.usesImportedSwimmerMaterial(),
             outlineWidth: this.usesImportedSwimmerMaterial() ? 10 : undefined,
             outlineRoot: this._outlineRoot,
@@ -500,6 +525,26 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private preserveOriginalMaterial(): boolean {
         return findSwimmerModelVariant(this._modelVariantId)?.preserveOriginalMaterial === true;
+    }
+
+    private loadTextureVariant() {
+        const variant = findSwimmer0621TextureVariant(this._textureVariantId) ?? defaultSwimmer0621TextureVariant();
+        this._textureVariantId = variant.id;
+        const token = ++this._textureLoadToken;
+        resources.load(variant.path, Texture2D, (error, texture) => {
+            if (token !== this._textureLoadToken || this._modelVariantId !== 'swimmer0621_2') {
+                return;
+            }
+            if (error || !texture) {
+                console.error(`[SpeedSwimming] failed to load swimmer texture variant=${variant.id}`, error);
+                return;
+            }
+            this._textureOverride = texture;
+            if (this._loaded && this.root) {
+                this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
+            }
+            console.log(`[SpeedSwimming] loaded swimmer texture variant=${variant.id} path=${variant.path}`);
+        });
     }
 
     private applyModelDebugSetup() {

@@ -2,7 +2,6 @@ import { Node } from 'cc';
 import { PoolFallbackBuilder } from './PoolFallbackBuilder';
 import { PoolSceneLoader } from './PoolSceneLoader';
 import { PoolDefinition } from './VenueConfig';
-import { brightenVenueMaterials } from './VenueVisualEnhancer';
 import { WaterSurfaceBinder } from './WaterSurfaceBinder';
 
 export type VenueManagerOptions = {
@@ -35,11 +34,6 @@ export class VenueManager {
 
             if (definition.waterMaterialPath) {
                 this._waterBinder.bind(pool, definition.waterMaterialPath, this._debug);
-            }
-            const brightenedMaterials = brightenVenueMaterials(pool);
-            if (brightenedMaterials > 0) {
-                this._debug?.(`venue color boost materials=${brightenedMaterials}`);
-                console.log(`[SpeedSwimming] venue color boost materials=${brightenedMaterials}`);
             }
             const hiddenSkyOccluders = hideLegacySkyOccluders(pool);
             if (hiddenSkyOccluders > 0) {

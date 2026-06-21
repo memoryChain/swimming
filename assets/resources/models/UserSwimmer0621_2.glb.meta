@@ -1,0 +1,162 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb",
+  "files": [],
+  "subMetas": {
+    "7cddb": {
+      "importer": "gltf-embeded-image",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@7cddb",
+      "displayName": "",
+      "id": "7cddb",
+      "name": "swimer0621_2_basecolor_no_armpit_shadow.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "659ef": {
+      "importer": "gltf-mesh",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@659ef",
+      "displayName": "",
+      "id": "659ef",
+      "name": "UserSwimmer0621_2ImportedMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 3020
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@7cddb"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d56de": {
+      "importer": "gltf-material",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@d56de",
+      "displayName": "",
+      "id": "d56de",
+      "name": "UserSwimmer0621_2ImportedMaterial.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "da1b6": {
+      "importer": "gltf-scene",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@da1b6",
+      "displayName": "",
+      "id": "da1b6",
+      "name": "UserSwimmer0621_2.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "swimer0621_2_basecolor_no_armpit_shadow",
+        "uri": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@7cddb"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@659ef"
+      ],
+      "skeletons": [
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@f9d1d"
+      ],
+      "textures": [
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@e39f7"
+      ],
+      "materials": [
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@d56de"
+      ],
+      "scenes": [
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@da1b6"
+      ]
+    }
+  }
+}

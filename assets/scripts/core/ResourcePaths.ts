@@ -7,6 +7,12 @@ export type SwimmerModelVariant = {
     swimHeadLiftDegrees?: number;
 };
 
+export type SwimmerTextureVariant = {
+    id: string;
+    label: string;
+    path: string;
+};
+
 export type SkyboxFaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
 
 export type SkyboxVariant = {
@@ -53,6 +59,29 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
     },
+    {
+        id: 'swimmer0621_2',
+        label: 'Swimmer 0621-2',
+        candidates: [
+            'models/UserSwimmer0621_2',
+            'models/UserSwimmer0621_2/UserSwimmer0621_2',
+        ],
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+    },
+];
+
+export const SWIMMER_0621_2_TEXTURE_VARIANTS: SwimmerTextureVariant[] = [
+    { id: 'redBlue', label: 'Red / Blue', path: 'models/UserSwimmer0621_2Skins/red-blue/texture' },
+    { id: 'blueWhite', label: 'Blue / White', path: 'models/UserSwimmer0621_2Skins/blue-white/texture' },
+    { id: 'blackYellow', label: 'Black / Yellow', path: 'models/UserSwimmer0621_2Skins/black-yellow/texture' },
+    { id: 'greenOrange', label: 'Green / Orange', path: 'models/UserSwimmer0621_2Skins/green-orange/texture' },
+    { id: 'purpleCyan', label: 'Purple / Cyan', path: 'models/UserSwimmer0621_2Skins/purple-cyan/texture' },
+    { id: 'orangeNavy', label: 'Orange / Navy', path: 'models/UserSwimmer0621_2Skins/orange-navy/texture' },
+    { id: 'pinkMint', label: 'Pink / Mint', path: 'models/UserSwimmer0621_2Skins/pink-mint/texture' },
+    { id: 'cyanRed', label: 'Cyan / Red', path: 'models/UserSwimmer0621_2Skins/cyan-red/texture' },
+    { id: 'yellowPurple', label: 'Yellow / Purple', path: 'models/UserSwimmer0621_2Skins/yellow-purple/texture' },
+    { id: 'whiteRed', label: 'White / Red', path: 'models/UserSwimmer0621_2Skins/white-red/texture' },
 ];
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
@@ -93,6 +122,14 @@ export function findSwimmerModelVariant(id: string): SwimmerModelVariant | null 
 
 export function defaultSwimmerModelVariant(): SwimmerModelVariant {
     return SWIMMER_MODEL_VARIANTS[0];
+}
+
+export function findSwimmer0621TextureVariant(id: string): SwimmerTextureVariant | null {
+    return SWIMMER_0621_2_TEXTURE_VARIANTS.find((variant) => variant.id === id) ?? null;
+}
+
+export function defaultSwimmer0621TextureVariant(): SwimmerTextureVariant {
+    return SWIMMER_0621_2_TEXTURE_VARIANTS[0];
 }
 
 export const ANIMATION_CLIPS = {
