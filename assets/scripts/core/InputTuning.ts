@@ -24,6 +24,7 @@ export const MOTION_TUNING = {
     armMinCyclesPerSecond: 0.82,
     kickMinCyclesPerSecond: 0.82,
     maxCyclesPerSecond: 2.8,
+    handPalmTurnDegrees: 130,
 };
 
 export const STABILITY_TUNING = {

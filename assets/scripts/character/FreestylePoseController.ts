@@ -1,4 +1,5 @@
 import { Node, Quat, Vec3 } from 'cc';
+import { MOTION_TUNING } from '../core/InputTuning';
 import { findNode } from './CharacterModelLoader';
 
 const SIDE_BODY_ROLL_DEGREES = 28;
@@ -331,6 +332,9 @@ export class FreestylePoseController {
         const armPower = 0.92 + Math.min(2, Math.max(0.8, power)) * 0.08;
         const forwardReach = smoothRange(c, 0.20, 0.96);
         const sideClearance = lerp(0.56, 0.18, forwardReach);
+        const underwaterPull = smoothPulse(normalized, 0.08, 0.18, 0.48, 0.62);
+        const recovery = smoothPulse(normalized, 0.56, 0.66, 0.82, 0.94);
+        const palmFacingWeight = Math.max(forwardReach, underwaterPull * 0.62, recovery * 0.18);
 
         const shoulderLift = lerp(-1 - 2 * c, -7.2, forwardReach) * armPower;
         const shoulderOpen = side * lerp(6, 1.2, forwardReach) * armPower;
@@ -339,7 +343,11 @@ export class FreestylePoseController {
         const foreArmOpen = side * lerp(3, 0.15, forwardReach) * armPower;
         const foreArmRoll = side * lerp(2, 0.1, forwardReach) * armPower;
         const handNeutral = lerp(-2 * c, -0.1, forwardReach) * armPower;
-        const handOpen = side * lerp(2, 0.1, forwardReach) * armPower;
+        const palmTurn = -side * MOTION_TUNING.handPalmTurnDegrees * palmFacingWeight;
+        const upperArmPalmTurn = palmTurn * 0.25;
+        const foreArmPalmTurn = palmTurn * 0.58;
+        const handPalmTurn = palmTurn - upperArmPalmTurn - foreArmPalmTurn;
+        const handOpen = side * lerp(2, 0.1, forwardReach) * armPower + handPalmTurn;
         const handRoll = side * lerp(1.5, 0.1, forwardReach) * armPower;
 
         this.movementForwardInRoot(this._tmpMovementForwardRoot);
@@ -368,7 +376,7 @@ export class FreestylePoseController {
             s + this._tmpMovementForwardRoot.z * c,
         );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
-        this.applyBoneDirectionFromRoot(arm, foreArm, this._tmpDirection);
+        this.applyBoneDirectionFromRootWithOffset(arm, foreArm, this._tmpDirection, 0, upperArmPalmTurn, 0);
         if (forwardReach > 0.02) {
             this._tmpDirection.set(
                 side * sideClearance * 0.34 + this._tmpMovementForwardRoot.x,
@@ -376,9 +384,9 @@ export class FreestylePoseController {
                 s * 0.04 + this._tmpMovementForwardRoot.z,
             );
             Vec3.normalize(this._tmpDirection, this._tmpDirection);
-            this.applyBoneDirectionFromRootWithOffset(foreArm, hand, this._tmpDirection, elbowStraight, foreArmOpen, foreArmRoll);
+            this.applyBoneDirectionFromRootWithOffset(foreArm, hand, this._tmpDirection, elbowStraight, foreArmOpen + foreArmPalmTurn, foreArmRoll);
         } else {
-            this.applyBoneOffset(foreArm, elbowStraight, foreArmOpen, foreArmRoll);
+            this.applyBoneOffset(foreArm, elbowStraight, foreArmOpen + foreArmPalmTurn, foreArmRoll);
         }
         this.applyBoneOffset(hand, handNeutral, handOpen, handRoll);
     }
