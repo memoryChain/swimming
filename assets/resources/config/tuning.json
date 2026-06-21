@@ -37,6 +37,8 @@
     "motion.kickMinCyclesPerSecond": 0.82,
     "motion.maxCyclesPerSecond": 2.8,
     "motion.animationSpeedScale": 0.8,
-    "motion.handPalmTurnDegrees": 130
+    "motion.handPalmTurnDegrees": 130,
+    "motion.rightBreathTurnDegrees": 70,
+    "motion.rightBreathBodyRollDegrees": 18
   }
 }

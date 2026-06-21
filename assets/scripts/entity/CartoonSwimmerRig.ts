@@ -360,7 +360,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.syncSplashState();
 
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
-        this._pose.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase);
         this._pose.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, drive + this._armAction * 0.45, drive + this._armAction * 0.7, drive + this._kickAction * 0.8);
         this.updateSplashSurface(speed);
     }

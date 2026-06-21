@@ -25,6 +25,8 @@ export const MOTION_TUNING = {
     kickMinCyclesPerSecond: 0.82,
     maxCyclesPerSecond: 2.8,
     handPalmTurnDegrees: 130,
+    rightBreathTurnDegrees: 70,
+    rightBreathBodyRollDegrees: 18,
 };
 
 export const STABILITY_TUNING = {

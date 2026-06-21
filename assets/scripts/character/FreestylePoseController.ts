@@ -133,26 +133,32 @@ export class FreestylePoseController {
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
-        this.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase);
-        this.applyUpperBodyRoll(this.armReachSignal(leftArmCycle, rightArmCycle), upperBodyPower);
+        const rightBreath = this.rightBreathSignal(rightArmCycle);
+        this.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, rightBreath);
+        this.applyUpperBodyRoll(
+            this.armReachSignal(leftArmCycle, rightArmCycle),
+            upperBodyPower,
+            rightBreath,
+        );
         this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), armPower);
         this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
     }
 
-    applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number) {
+    applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, rightBreath = 0) {
         if (!this.root) {
             return;
         }
         const bob = Math.sin(bodyPhase) * 0.045;
         const armReach = this.armReachSignal(leftArmCycle, rightArmCycle);
         const sideRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle);
+        const breathBodyRoll = -clamp(rightBreath, 0, 1) * MOTION_TUNING.rightBreathBodyRollDegrees;
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
         this.root.setPosition(this.rootBasePos.x + armReach * 0.03, this.rootBasePos.y + bob, this.rootBasePos.z);
         this.root.setRotationFromEuler(
             this.rootBaseEuler.x + kickSignal * 1.5,
-            this.rootBaseEuler.y + sideRoll * SIDE_BODY_ROLL_DEGREES,
+            this.rootBaseEuler.y + sideRoll * SIDE_BODY_ROLL_DEGREES + breathBodyRoll,
             this.rootBaseEuler.z + armReach * 1.2,
         );
     }
@@ -222,6 +228,14 @@ export class FreestylePoseController {
 
     sideBodyRollSignal(leftCycle: number, rightCycle = leftCycle): number {
         return -this.armReachSignal(leftCycle, rightCycle);
+    }
+
+    private rightBreathSignal(rightCycle: number): number {
+        const phase = positiveMod(-this.armPoseCycle(rightCycle), Math.PI * 2) / (Math.PI * 2);
+        // Arm pose phase runs from 1 toward 0 while the motor cycle advances.
+        const turnInAfterExtension = 1 - smoothRange(phase, 0.82, 0.94);
+        const returnNearFullExtension = smoothRange(phase, 0.04, 0.16);
+        return clamp(turnInAfterExtension * returnNearFullExtension, 0, 1);
     }
 
     private armPoseCycle(cycle: number): number {
@@ -391,19 +405,20 @@ export class FreestylePoseController {
         this.applyBoneOffset(hand, handNeutral, handOpen, handRoll);
     }
 
-    private applyUpperBodyRoll(phase: number, power: number) {
+    private applyUpperBodyRoll(phase: number, power: number, rightBreath = 0) {
         const reach = Math.max(-1, Math.min(1, phase));
         const roll = reach * Math.min(1.25, power);
         const leftReach = Math.max(0, reach);
         const rightReach = Math.max(0, -reach);
+        const breathTurn = -MOTION_TUNING.rightBreathTurnDegrees * clamp(rightBreath, 0, 1);
 
         this.applyBoneOffset(this._hips, 0, roll * 2.2, 0);
         this.applyBoneOffset(this._spine, 0, roll * 5.5, roll * 0.5);
         this.applyBoneOffset(this._spine1, 0, roll * 8.2, roll * 0.8);
         const swimHeadLift = this._swimHeadLiftDegrees;
-        this.applyBoneOffset(this._torso, swimHeadLift * 0.18, roll * 10.5, roll * 1.1);
-        this.applyBoneOffset(this._neck, swimHeadLift * 0.72, roll * 6.2, -roll * 0.6);
-        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15, roll * 7.5, -roll * 0.8);
+        this.applyBoneOffset(this._torso, swimHeadLift * 0.18, roll * 10.5 + breathTurn * 0.1, roll * 1.1);
+        this.applyBoneOffset(this._neck, swimHeadLift * 0.72, roll * 6.2 + breathTurn * 0.3, -roll * 0.6);
+        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15, roll * 7.5 + breathTurn * 0.6, -roll * 0.8);
         this.applyBoneOffset(this._leftShoulder, leftReach * -2, roll * 5.5, leftReach * -3);
         this.applyBoneOffset(this._rightShoulder, rightReach * -2, roll * 5.5, rightReach * 3);
     }

@@ -110,6 +110,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('motion.maxCyclesPerSecond', '动作轮速上限', '达到高速度时手脚动作每秒循环数的上限。数值越低，高速时一轮动作越长。', () => MOTION_TUNING.maxCyclesPerSecond, (v) => MOTION_TUNING.maxCyclesPerSecond = v, 0.1, 1, 5, 1),
             control('motion.animationSpeedScale', '动画倍率', '比赛和 debug model 共用的整体动作倍率，用来统一放慢或加快动作表现。', () => MOTION_TUNING.animationSpeedScale, (v) => MOTION_TUNING.animationSpeedScale = v, 0.05, 0.1, 1.5, 2),
             control('motion.handPalmTurnDegrees', '手臂旋前', '前伸入水时让掌心朝向池底的总旋前角度；旋转会分配到大臂、小臂和手腕，并在抱水和移臂阶段自动减弱。', () => MOTION_TUNING.handPalmTurnDegrees, (v) => MOTION_TUNING.handPalmTurnDegrees = v, 1, 0, 180, 0, '°'),
+            control('motion.rightBreathTurnDegrees', '右侧换气转角', '右手离水移臂时躯干、颈部和头部向右侧旋转的总角度。', () => MOTION_TUNING.rightBreathTurnDegrees, (v) => MOTION_TUNING.rightBreathTurnDegrees = v, 1, 0, 90, 0, '°'),
+            control('motion.rightBreathBodyRollDegrees', '右侧换气身体滚转', '右手离水移臂时身体额外向右侧滚转的角度，与普通划水滚转叠加。', () => MOTION_TUNING.rightBreathBodyRollDegrees, (v) => MOTION_TUNING.rightBreathBodyRollDegrees = v, 1, 0, 45, 0, '°'),
         ],
     },
 ];
