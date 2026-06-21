@@ -345,7 +345,8 @@ export class FreestylePoseController {
         const s = Math.sin(wheel);
         const armPower = 0.92 + Math.min(2, Math.max(0.8, power)) * 0.08;
         const forwardReach = smoothRange(c, 0.20, 0.96);
-        const sideClearance = lerp(0.56, 0.18, forwardReach);
+        const forwardSideClearance = MOTION_TUNING.forwardArmSideClearance;
+        const sideClearance = lerp(0.56, forwardSideClearance, forwardReach);
         const underwaterPull = smoothPulse(normalized, 0.08, 0.18, 0.48, 0.62);
         const recovery = smoothPulse(normalized, 0.56, 0.66, 0.82, 0.94);
         const palmFacingWeight = Math.max(forwardReach, underwaterPull * 0.62, recovery * 0.18);
@@ -366,7 +367,8 @@ export class FreestylePoseController {
 
         this.movementForwardInRoot(this._tmpMovementForwardRoot);
         if (forwardReach > 0.02) {
-            const shoulderSideClearance = lerp(0.54, 0.46, forwardReach);
+            const forwardShoulderClearance = Math.max(0.46, forwardSideClearance + 0.25);
+            const shoulderSideClearance = lerp(0.54, forwardShoulderClearance, forwardReach);
             this._tmpDirection.set(
                 side * shoulderSideClearance + this._tmpMovementForwardRoot.x * forwardReach,
                 this._tmpMovementForwardRoot.y * forwardReach,
