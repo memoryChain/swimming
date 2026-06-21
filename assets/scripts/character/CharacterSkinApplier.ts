@@ -17,7 +17,8 @@ export type CharacterSkinOptions = {
     playerOutline: boolean;
     outfit?: CharacterSkinOutfit;
     preserveOriginalMaterial?: boolean;
-    originalTextureOverride?: Texture2D | null;
+    dynamicColorEffect?: EffectAsset | null;
+    colorMask?: Texture2D | null;
     preserveImportedMaterial?: boolean;
     outlineWidth?: number;
     outlineRoot: Node | null;
@@ -104,7 +105,10 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
             if (!original) {
                 continue;
             }
-            renderer.setMaterial(makeBrightenedOriginalMaterial(original, options.originalTextureOverride), i);
+            const material = options.dynamicColorEffect && options.colorMask
+                ? makeDynamicColorMaterial(original, options.dynamicColorEffect, options.colorMask, options.suitColor, options.capColor)
+                : makeBrightenedOriginalMaterial(original);
+            renderer.setMaterial(material, i);
             applied++;
         }
     }
@@ -115,8 +119,8 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     }
 }
 
-function makeBrightenedOriginalMaterial(original: Material, textureOverride?: Texture2D | null): Material {
-    const texture = textureOverride ?? findMaterialTexture(original);
+function makeBrightenedOriginalMaterial(original: Material): Material {
+    const texture = findMaterialTexture(original);
     const color = boostColor(findMaterialColor(original), 1.12, 1.14);
     const material = new Material();
     material.initialize(texture
@@ -127,6 +131,22 @@ function makeBrightenedOriginalMaterial(original: Material, textureOverride?: Te
     if (texture) {
         material.setProperty('mainTexture', texture);
     }
+    return material;
+}
+
+function makeDynamicColorMaterial(original: Material, effect: EffectAsset, colorMask: Texture2D, suitColor: Color, capColor: Color): Material {
+    const texture = findMaterialTexture(original);
+    if (!texture) {
+        return makeBrightenedOriginalMaterial(original);
+    }
+    const material = new Material();
+    material.initialize({ effectAsset: effect });
+    material.name = 'Swimmer0621DynamicColor';
+    material.setProperty('mainTexture', texture);
+    material.setProperty('colorMask', colorMask);
+    material.setProperty('mainColor', new Color(255, 255, 255, 255));
+    material.setProperty('suitColor', suitColor);
+    material.setProperty('capColor', capColor);
     return material;
 }
 

@@ -474,7 +474,7 @@ export class GameManager extends Component {
     }
 
     private switchModelDebugTexture() {
-        this._modelDebugFlow?.switchTextureVariant();
+        this._modelDebugFlow?.switchColorVariant();
     }
 
     private switchModelDebugSkybox() {

@@ -7,10 +7,11 @@ export type SwimmerModelVariant = {
     swimHeadLiftDegrees?: number;
 };
 
-export type SwimmerTextureVariant = {
+export type SwimmerColorVariant = {
     id: string;
     label: string;
-    path: string;
+    suit?: readonly [number, number, number];
+    cap?: readonly [number, number, number];
 };
 
 export type SkyboxFaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
@@ -71,17 +72,18 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     },
 ];
 
-export const SWIMMER_0621_2_TEXTURE_VARIANTS: SwimmerTextureVariant[] = [
-    { id: 'redBlue', label: 'Red / Blue', path: 'models/UserSwimmer0621_2Skins/red-blue/texture' },
-    { id: 'blueWhite', label: 'Blue / White', path: 'models/UserSwimmer0621_2Skins/blue-white/texture' },
-    { id: 'blackYellow', label: 'Black / Yellow', path: 'models/UserSwimmer0621_2Skins/black-yellow/texture' },
-    { id: 'greenOrange', label: 'Green / Orange', path: 'models/UserSwimmer0621_2Skins/green-orange/texture' },
-    { id: 'purpleCyan', label: 'Purple / Cyan', path: 'models/UserSwimmer0621_2Skins/purple-cyan/texture' },
-    { id: 'orangeNavy', label: 'Orange / Navy', path: 'models/UserSwimmer0621_2Skins/orange-navy/texture' },
-    { id: 'pinkMint', label: 'Pink / Mint', path: 'models/UserSwimmer0621_2Skins/pink-mint/texture' },
-    { id: 'cyanRed', label: 'Cyan / Red', path: 'models/UserSwimmer0621_2Skins/cyan-red/texture' },
-    { id: 'yellowPurple', label: 'Yellow / Purple', path: 'models/UserSwimmer0621_2Skins/yellow-purple/texture' },
-    { id: 'whiteRed', label: 'White / Red', path: 'models/UserSwimmer0621_2Skins/white-red/texture' },
+export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
+    { id: 'original', label: 'Original' },
+    { id: 'redBlue', label: 'Red / Blue', suit: [240, 68, 58], cap: [22, 119, 232] },
+    { id: 'blueWhite', label: 'Blue / White', suit: [23, 109, 218], cap: [245, 238, 220] },
+    { id: 'blackYellow', label: 'Black / Yellow', suit: [36, 42, 53], cap: [255, 209, 42] },
+    { id: 'greenOrange', label: 'Green / Orange', suit: [32, 196, 106], cap: [255, 121, 38] },
+    { id: 'purpleCyan', label: 'Purple / Cyan', suit: [139, 77, 255], cap: [35, 220, 232] },
+    { id: 'orangeNavy', label: 'Orange / Navy', suit: [255, 137, 38], cap: [24, 60, 143] },
+    { id: 'pinkMint', label: 'Pink / Mint', suit: [240, 59, 168], cap: [98, 237, 178] },
+    { id: 'cyanRed', label: 'Cyan / Red', suit: [24, 199, 216], cap: [240, 68, 80] },
+    { id: 'yellowPurple', label: 'Yellow / Purple', suit: [244, 201, 54], cap: [120, 71, 216] },
+    { id: 'whiteRed', label: 'White / Red', suit: [241, 238, 227], cap: [217, 49, 73] },
 ];
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
@@ -113,6 +115,8 @@ export const RESOURCE_PATHS = {
     skyboxVariants: SKYBOX_VARIANTS,
     playerOutlineEffect: 'effects/PlayerOutline',
     swimmerPerfectGlowEffect: 'effects/SwimmerPerfectGlow',
+    swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
+    swimmer0621ColorMask: 'models/UserSwimmer0621_2ColorMask/texture',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
 };
 
@@ -124,12 +128,12 @@ export function defaultSwimmerModelVariant(): SwimmerModelVariant {
     return SWIMMER_MODEL_VARIANTS[0];
 }
 
-export function findSwimmer0621TextureVariant(id: string): SwimmerTextureVariant | null {
-    return SWIMMER_0621_2_TEXTURE_VARIANTS.find((variant) => variant.id === id) ?? null;
+export function findSwimmer0621ColorVariant(id: string): SwimmerColorVariant | null {
+    return SWIMMER_0621_2_COLOR_VARIANTS.find((variant) => variant.id === id) ?? null;
 }
 
-export function defaultSwimmer0621TextureVariant(): SwimmerTextureVariant {
-    return SWIMMER_0621_2_TEXTURE_VARIANTS[0];
+export function defaultSwimmer0621ColorVariant(): SwimmerColorVariant {
+    return SWIMMER_0621_2_COLOR_VARIANTS[0];
 }
 
 export const ANIMATION_CLIPS = {

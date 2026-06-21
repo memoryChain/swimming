@@ -3,7 +3,7 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
-import { SWIMMER_0621_2_TEXTURE_VARIANTS } from '../core/ResourcePaths';
+import { SWIMMER_0621_2_COLOR_VARIANTS } from '../core/ResourcePaths';
 import { DEFAULT_AI_PROFILES, shuffledAiCompetitorNames } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
@@ -35,11 +35,11 @@ export class CompetitorManager {
         const aiSwimmers: Swimmer[] = [];
         let playerSwimmer: Swimmer = null;
         let primaryAiController: AISwimmerController | null = null;
-        const playerTextureVariantId = 'redBlue';
-        const aiTextureVariantIds = shuffledAiTextureVariantIds(playerTextureVariantId);
+        const playerColorVariantId = 'original';
+        const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
         const aiNames = shuffledAiCompetitorNames();
         let aiNameIndex = 0;
-        let aiTextureIndex = 0;
+        let aiColorIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             const isPlayer = lane === this._options.playerLaneIndex;
@@ -49,9 +49,9 @@ export class CompetitorManager {
                 y: this._options.courseLayout.swimY,
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: !isPlayer,
-                textureVariantId: isPlayer
-                    ? playerTextureVariantId
-                    : aiTextureVariantIds[aiTextureIndex++ % aiTextureVariantIds.length],
+                colorVariantId: isPlayer
+                    ? playerColorVariantId
+                    : aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
                 displayName: isPlayer ? 'YOU' : aiNames[aiNameIndex++ % aiNames.length],
             });
             swimmer.configureCourse(this._options.courseLayout);
@@ -85,8 +85,8 @@ export class CompetitorManager {
     }
 }
 
-function shuffledAiTextureVariantIds(playerVariantId: string): string[] {
-    const ids = SWIMMER_0621_2_TEXTURE_VARIANTS
+function shuffledAiColorVariantIds(playerVariantId: string): string[] {
+    const ids = SWIMMER_0621_2_COLOR_VARIANTS
         .map((variant) => variant.id)
         .filter((id) => id !== playerVariantId);
     for (let i = ids.length - 1; i > 0; i--) {

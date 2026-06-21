@@ -2,16 +2,16 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "cf3828a5-b6f0-4a2a-b64d-bfa4b7653928",
+  "uuid": "bf19937c-f5f6-4a90-b645-6ca38b5feccd",
   "files": [
-    ".jpg",
-    ".json"
+    ".json",
+    ".png"
   ],
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "cf3828a5-b6f0-4a2a-b64d-bfa4b7653928@6c48a",
-      "displayName": "white-red",
+      "uuid": "bf19937c-f5f6-4a90-b645-6ca38b5feccd@6c48a",
+      "displayName": "UserSwimmer0621_2ColorMask",
       "id": "6c48a",
       "name": "texture",
       "userData": {
@@ -22,7 +22,7 @@
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "cf3828a5-b6f0-4a2a-b64d-bfa4b7653928",
+        "imageUuidOrDatabaseUri": "bf19937c-f5f6-4a90-b645-6ca38b5feccd",
         "visible": false
       },
       "ver": "1.0.22",
@@ -37,6 +37,6 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": false,
-    "redirect": "cf3828a5-b6f0-4a2a-b64d-bfa4b7653928@6c48a"
+    "redirect": "bf19937c-f5f6-4a90-b645-6ca38b5feccd@6c48a"
   }
 }

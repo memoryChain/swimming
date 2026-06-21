@@ -5,26 +5,6 @@
   "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb",
   "files": [],
   "subMetas": {
-    "7cddb": {
-      "importer": "gltf-embeded-image",
-      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@7cddb",
-      "displayName": "",
-      "id": "7cddb",
-      "name": "swimer0621_2_basecolor_no_armpit_shadow.image",
-      "userData": {
-        "gltfIndex": 0,
-        "fixAlphaTransparencyArtifacts": true,
-        "hasAlpha": false,
-        "type": "texture"
-      },
-      "ver": "1.0.3",
-      "imported": true,
-      "files": [
-        ".jpg",
-        ".json"
-      ],
-      "subMetas": {}
-    },
     "659ef": {
       "importer": "gltf-mesh",
       "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@659ef",
@@ -56,6 +36,26 @@
       "ver": "1.0.1",
       "imported": true,
       "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7cddb": {
+      "importer": "gltf-embeded-image",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@7cddb",
+      "displayName": "",
+      "id": "7cddb",
+      "name": "swimer0621_2_basecolor_no_armpit_shadow.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
         ".json"
       ],
       "subMetas": {}

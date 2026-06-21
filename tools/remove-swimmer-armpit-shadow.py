@@ -10,6 +10,7 @@ ARM_GROUPS = {
     'L_Clavicle', 'L_Upperarm', 'L_UpperarmTwist01', 'L_UpperarmTwist02',
     'R_Clavicle', 'R_Upperarm', 'R_UpperarmTwist01', 'R_UpperarmTwist02',
 }
+TORSO_GROUPS = {'Spine01', 'Spine02', 'Waist'}
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,6 +19,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--input', required=True)
     parser.add_argument('--output-texture')
     parser.add_argument('--audit-only', action='store_true')
+    parser.add_argument('--topology-rings', type=int, default=3)
+    parser.add_argument('--extended-threshold-ratio', type=float, default=0.80)
     return parser.parse_args(argv)
 
 
@@ -27,6 +30,22 @@ def arm_weight(mesh: bpy.types.Object, polygon: bpy.types.MeshPolygon, group_nam
             weight.weight
             for weight in mesh.data.vertices[vertex_index].groups
             if group_names.get(weight.group) in ARM_GROUPS
+        )
+        for vertex_index in polygon.vertices
+    )
+
+
+def group_weight(
+    mesh: bpy.types.Object,
+    polygon: bpy.types.MeshPolygon,
+    group_names: dict[int, str],
+    target_groups: set[str],
+) -> float:
+    return max(
+        sum(
+            weight.weight
+            for weight in mesh.data.vertices[vertex_index].groups
+            if group_names.get(weight.group) in target_groups
         )
         for vertex_index in polygon.vertices
     )
@@ -63,6 +82,59 @@ def rasterized_pixels(
     return result
 
 
+def rasterized_pixel_weights(
+    mesh: bpy.types.Object,
+    polygon_weights: dict[int, float],
+    width: int,
+    height: int,
+) -> list[float]:
+    result = [0.0] * (width * height)
+    for polygon_index, weight in polygon_weights.items():
+        polygon = mesh.data.polygons[polygon_index]
+        for pixel_index in rasterized_pixels(mesh, [polygon], width, height):
+            result[pixel_index] = max(result[pixel_index], weight)
+    return result
+
+
+def expand_target_polygons(
+    mesh: bpy.types.Object,
+    seeds: list[bpy.types.MeshPolygon],
+    group_names: dict[int, str],
+    rings: int,
+) -> dict[int, float]:
+    vertex_to_polygons: dict[int, set[int]] = {}
+    for polygon in mesh.data.polygons:
+        for vertex_index in polygon.vertices:
+            vertex_to_polygons.setdefault(vertex_index, set()).add(polygon.index)
+
+    distances = {polygon.index: 0 for polygon in seeds}
+    frontier = set(distances)
+    allowed_groups = ARM_GROUPS | TORSO_GROUPS
+    for distance in range(1, rings + 1):
+        next_frontier: set[int] = set()
+        for polygon_index in frontier:
+            polygon = mesh.data.polygons[polygon_index]
+            for vertex_index in polygon.vertices:
+                for neighbor_index in vertex_to_polygons.get(vertex_index, ()):
+                    if neighbor_index in distances:
+                        continue
+                    neighbor = mesh.data.polygons[neighbor_index]
+                    if not 0.60 <= neighbor.center.z <= 0.82:
+                        continue
+                    if group_weight(mesh, neighbor, group_names, allowed_groups) < 0.05:
+                        continue
+                    distances[neighbor_index] = distance
+                    next_frontier.add(neighbor_index)
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    weights: dict[int, float] = {}
+    for polygon_index, distance in distances.items():
+        weights[polygon_index] = max(0.28, 1.0 - distance / max(rings + 1, 1) * 0.72)
+    return weights
+
+
 def percentile(values: list[float], ratio: float) -> float:
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * ratio))]
@@ -93,7 +165,9 @@ def main() -> None:
         elif 0.115 <= lateral <= 0.18 and weight >= 0.75:
             reference_polygons.append(polygon)
 
-    target_pixels = rasterized_pixels(mesh, target_polygons, width, height)
+    target_polygon_weights = expand_target_polygons(mesh, target_polygons, group_names, args.topology_rings)
+    target_pixel_weights = rasterized_pixel_weights(mesh, target_polygon_weights, width, height)
+    target_pixels = {index for index, weight in enumerate(target_pixel_weights) if weight > 0}
     reference_pixels = rasterized_pixels(mesh, reference_polygons, width, height)
     pixels = list(image.pixels)
 
@@ -110,6 +184,7 @@ def main() -> None:
         target_luminance.append(0.2126 * r + 0.7152 * g + 0.0722 * b)
     print(
         f'target_faces={len(target_polygons)} target_pixels={len(target_pixels)} '
+        f'expanded_faces={len(target_polygon_weights)} rings={args.topology_rings} '
         f'reference_faces={len(reference_polygons)} reference_pixels={len(reference_pixels)}'
     )
     print(
@@ -123,11 +198,14 @@ def main() -> None:
         raise RuntimeError('--output-texture is required unless --audit-only is set')
 
     corrected = 0
-    threshold = skin_luminance * 0.94
+    core_threshold_ratio = 0.94
     for index in target_pixels:
         offset = index * 4
         color = pixels[offset:offset + 3]
         luminance = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]
+        topology_weight = target_pixel_weights[index]
+        threshold_ratio = args.extended_threshold_ratio + (core_threshold_ratio - args.extended_threshold_ratio) * topology_weight
+        threshold = skin_luminance * threshold_ratio
         if luminance >= threshold:
             continue
         amount = min(1.0, (threshold - luminance) / max(threshold * 0.38, 1e-6))

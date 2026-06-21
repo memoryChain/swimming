@@ -1,7 +1,7 @@
 import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
-import { defaultSwimmer0621TextureVariant } from '../core/ResourcePaths';
+import { defaultSwimmer0621ColorVariant } from '../core/ResourcePaths';
 
 const SWIMMER_MODEL_VARIANT = 'swimmer0621_2';
 
@@ -11,7 +11,7 @@ export type CreateSwimmerOptions = {
     y?: number;
     z: number;
     isAI: boolean;
-    textureVariantId?: string;
+    colorVariantId?: string;
     displayName?: string;
 };
 
@@ -25,7 +25,7 @@ export class SwimmerFactory {
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
         rig.setModelVariant(SWIMMER_MODEL_VARIANT);
-        rig.setTextureVariant(options.textureVariantId ?? defaultSwimmer0621TextureVariant().id);
+        rig.setColorVariant(options.colorVariantId ?? defaultSwimmer0621ColorVariant().id);
         rig.build(
             sharedSkin,
             color(245, 42, 64),

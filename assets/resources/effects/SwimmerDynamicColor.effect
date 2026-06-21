@@ -1,0 +1,63 @@
+CCEffect %{
+  techniques:
+  - name: opaque
+    passes:
+    - vert: swimmer-color-vs:vert
+      frag: swimmer-color-fs:frag
+      properties:
+        mainTexture: { value: grey }
+        colorMask:   { value: black }
+        mainColor:   { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
+        suitColor:   { value: [0.87, 0.058, 0.043, 1], linear: true, editor: { type: color } }
+        capColor:    { value: [0.008, 0.184, 0.807, 1], linear: true, editor: { type: color } }
+}%
+
+CCProgram swimmer-color-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+  #include <legacy/fog-vs>
+
+  out vec2 v_uv;
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    v_uv = a_texCoord;
+    CC_TRANSFER_FOG(matWorld * position);
+    return cc_matProj * (cc_matView * matWorld) * position;
+  }
+}%
+
+CCProgram swimmer-color-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+  #include <legacy/fog-fs>
+
+  in vec2 v_uv;
+  uniform sampler2D mainTexture;
+  uniform sampler2D colorMask;
+
+  uniform SwimmerColor {
+    vec4 mainColor;
+    vec4 suitColor;
+    vec4 capColor;
+  };
+
+  vec4 frag () {
+    vec4 baseSample = texture(mainTexture, v_uv);
+    vec3 base = SRGBToLinear(baseSample.rgb) * mainColor.rgb;
+    vec2 mask = clamp(texture(colorMask, v_uv).rg, 0.0, 1.0);
+    float garmentMask = max(mask.r, mask.g);
+    float luminance = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    float brightness = clamp(0.34 + sqrt(clamp(luminance / 0.42, 0.0, 1.0)) * 0.76, 0.34, 1.08);
+    vec3 garment = mix(suitColor.rgb, capColor.rgb, mask.g) * brightness;
+    vec4 outputColor = vec4(mix(base, garment, garmentMask), baseSample.a * mainColor.a);
+    CC_APPLY_FOG(outputColor);
+    return CCFragOutput(outputColor);
+  }
+}%

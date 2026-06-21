@@ -228,7 +228,18 @@ def main() -> None:
 
     if args.base_color_texture:
         replacement = bpy.data.images.load(os.path.abspath(args.base_color_texture), check_existing=False)
-        replacement.name = f'{args.mesh_name or "Swimmer"}BaseColor'
+        original_image_name = next(
+            (
+                node.image.name
+                for mesh in meshes
+                for material in mesh.data.materials
+                if material and material.use_nodes
+                for node in material.node_tree.nodes
+                if node.type == 'TEX_IMAGE' and node.image
+            ),
+            None,
+        )
+        replacement.name = original_image_name or f'{args.mesh_name or "Swimmer"}BaseColor'
         replaced = 0
         for mesh in meshes:
             for material in mesh.data.materials:
