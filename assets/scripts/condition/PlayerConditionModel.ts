@@ -91,7 +91,7 @@ export class PlayerConditionModel {
         // Strokes refresh the *sustained effort* sample (0..~1) instead of directly
         // adding HR. tick() then eases HR toward a target derived from this sample,
         // so a steady rhythm reaches an equilibrium rather than ratcheting to 100.
-        const effort = clamp(input.pressureScore * wobble, 0, 1.2);
+        const effort = clamp(input.pressureScore * wobble, 0, 1.8);
         this._effortSample = Math.max(this._effortSample, effort);
 
         this.drainEnergyForStroke();
@@ -111,7 +111,7 @@ export class PlayerConditionModel {
 
         // Target HR is interpolated from sustained effort; phase push-scale biases
         // it upward (SPRINT runs hotter).
-        const effort = clamp(this._effortSample * phaseTuning.hrPushScale, 0, 1.2);
+        const effort = clamp(this._effortSample * phaseTuning.hrPushScale, 0, 1.8);
         const target = clamp(
             hr.restTargetHr + (hr.maxEffortTargetHr - hr.restTargetHr) * effort,
             HEART_RATE_BOUNDS.min,

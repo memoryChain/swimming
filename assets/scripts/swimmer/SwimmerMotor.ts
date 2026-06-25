@@ -93,6 +93,7 @@ export class SwimmerMotor {
     private _strokeAccelerationSeconds = 0;
     private _speedCapBonus = 0;
     private _conditionSpeedScale = 1;
+    private _conditionQualityScale = 1;
     private _lastStability = 0;
     private _lastInputFreshness = 1;
     private _currentAcceleration = 0;
@@ -239,6 +240,7 @@ export class SwimmerMotor {
         this._strokeAccelerationSeconds = 0;
         this._speedCapBonus = 0;
         this._conditionSpeedScale = 1;
+        this._conditionQualityScale = 1;
         this._lastStability = 0;
         this._lastInputFreshness = 1;
         this._currentAcceleration = 0;
@@ -248,12 +250,16 @@ export class SwimmerMotor {
         this._conditionSpeedScale = clamp(scale, 0, 2);
     }
 
+    setConditionQualityScale(scale: number) {
+        this._conditionQualityScale = clamp(scale, 0, 2);
+    }
+
     applyPerfectComboBoost(combo: number): number {
         const interval = Math.round(SWIMMER_BALANCE.perfectComboBoostInterval);
         if (interval <= 0 || combo <= 0 || combo % interval !== 0) {
             return 0;
         }
-        return this.addSpeedBonus(SWIMMER_BALANCE.perfectComboSpeedBonus);
+        return this.addSpeedBonus(SWIMMER_BALANCE.perfectComboSpeedBonus * this._conditionQualityScale);
     }
 
     private addSpeedBonus(amount: number): number {

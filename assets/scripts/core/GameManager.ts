@@ -16,7 +16,7 @@ import { GameFlowController } from '../app/GameFlowController';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
-import { RacePhase } from '../condition/ConditionTypes';
+import { RacePhase, SprintTier } from '../condition/ConditionTypes';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
@@ -241,6 +241,10 @@ export class GameManager extends Component {
                 }
                 this._raceContext.setPhase(RacePhase.SPRINT);
             },
+            updateSprintTier: (tier) => {
+                this._playerCondition.updateSprintState({ sprintTier: tier });
+                this._raceContext.sprintActive = tier !== SprintTier.STEADY;
+            },
             debug: (message) => this.debug(message),
         });
     }
@@ -434,6 +438,7 @@ export class GameManager extends Component {
         }
         this._playerCondition.tick(dt);
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
+        this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
         this._uiFlow?.updateConditionReadout(
             this._playerCondition.heartRate,
             this._playerCondition.heartRateZone,
@@ -463,6 +468,7 @@ export class GameManager extends Component {
                 dt,
             });
             swimmer.applyConditionSpeedScale(this._aiConditions[i].efficiencyModifier);
+            swimmer.applyConditionQualityScale(this._aiConditions[i].qualityModifier);
         }
     }
 

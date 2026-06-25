@@ -33,15 +33,15 @@ export const CONDITION_BALANCE = {
     },
 
     heartRate: {
-        // Equilibrium model (0..100 scale): HR continuously eases toward a target
-        // determined by sustained effort. Steady controlled effort settles in OPTIMAL
-        // and stays there; only over-driving climbs into HIGH_PRESSURE / OVERLOAD.
-        // Replaces the old one-way ratchet that only fell when fully idle.
-        restTargetHr: 30,         // HR target with no effort (drifts down to here)
-        maxEffortTargetHr: 90,    // HR target at max sustained effort
+        // Equilibrium model (physiological 0..200 scale): HR continuously eases
+        // toward a target driven by sustained effort. Steady controlled effort settles
+        // in the OPTIMAL sweet zone (110-150); only over-driving climbs into
+        // HIGH_PRESSURE / OVERLOAD. Replaces the old one-way ratchet.
+        restTargetHr: 70,         // resting HR with no effort (drifts down to here)
+        maxEffortTargetHr: 140,   // perfect steady effort settles high in OPTIMAL (sweet zone)
         effortDecayPerSecond: 1.1, // sustained-effort sample fade rate when not stroking
-        easeUpPerSecond: 18,      // climb rate when HR is below target
-        easeDownPerSecond: 12,    // recovery rate when HR is above target
+        easeUpPerSecond: 42,      // climb rate when HR is below target (HR points/sec)
+        easeDownPerSecond: 26,    // recovery rate when HR is above target
 
         // Startup wobble window: first N strokes use DiveResult.heartRateStabilityModifier.
         startupStrokeWindow: 5,
@@ -51,20 +51,20 @@ export const CONDITION_BALANCE = {
         // qualityModifier by zone: OPTIMAL gives the best ceiling/tolerance,
         // LOW is soft, OVERLOAD trades ceiling for risk (doc 11.6).
         zoneModifier: {
-            [HeartRateZone.LOW]: 0.85,
-            [HeartRateZone.OPTIMAL]: 1.1,
+            [HeartRateZone.LOW]: 0.7,
+            [HeartRateZone.OPTIMAL]: 1.25,
             [HeartRateZone.HIGH_PRESSURE]: 1.0,
-            [HeartRateZone.OVERLOAD]: 0.9,
+            [HeartRateZone.OVERLOAD]: 0.8,
         } as Record<HeartRateZone, number>,
     },
 
     efficiency: {
         // efficiencyModifier by zone: OPTIMAL is the most cost-effective (doc 11.5).
         zoneModifier: {
-            [HeartRateZone.LOW]: 0.8,
-            [HeartRateZone.OPTIMAL]: 1.0,
-            [HeartRateZone.HIGH_PRESSURE]: 0.85,
-            [HeartRateZone.OVERLOAD]: 0.7,
+            [HeartRateZone.LOW]: 0.65,
+            [HeartRateZone.OPTIMAL]: 1.2,
+            [HeartRateZone.HIGH_PRESSURE]: 0.95,
+            [HeartRateZone.OVERLOAD]: 0.78,
         } as Record<HeartRateZone, number>,
     },
 };
@@ -74,6 +74,6 @@ export const CONDITION_BALANCE = {
 export const CONDITION_PHASE_TUNING: Record<RacePhase, { hrPushScale: number; hrDriftScale: number }> = {
     [RacePhase.START]: { hrPushScale: 1.0, hrDriftScale: 0.8 },
     [RacePhase.PACE]: { hrPushScale: 1.0, hrDriftScale: 1.0 },
-    [RacePhase.SPRINT]: { hrPushScale: 1.4, hrDriftScale: 0.6 },
+    [RacePhase.SPRINT]: { hrPushScale: 1.5, hrDriftScale: 0.6 },
     [RacePhase.RESULT]: { hrPushScale: 0.0, hrDriftScale: 1.5 },
 };

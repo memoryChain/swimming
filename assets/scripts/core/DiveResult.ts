@@ -27,7 +27,7 @@ export interface DiveResult {
     entryStyle: DiveEntryStyle;
 
     // Condition-layer (heart-rate) startup modifiers. No-op for AI swimmers.
-    // Starting heart-rate value, absolute on the 0..100 scale (range ~10..45).
+    // Starting heart-rate value, absolute on the 0..200 scale (range ~75..108).
     heartRateStartModifier: number;
     // First-strokes wobble multiplier (0..1); higher means noisier startup.
     heartRateStabilityModifier: number;

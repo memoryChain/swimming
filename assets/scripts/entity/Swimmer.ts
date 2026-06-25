@@ -616,6 +616,11 @@ export class Swimmer extends Component {
         return this._motor.lastStability;
     }
 
+    // Sustained limb effort (0..1), used by the flow layer to read sprint intent.
+    get effortScore(): number {
+        return this._strokeMetrics.effortScore;
+    }
+
     get actionCycleSeconds(): number {
         return this._motor.actionCycleSeconds;
     }
@@ -647,6 +652,10 @@ export class Swimmer extends Component {
 
     applyConditionSpeedScale(scale: number) {
         this._motor.setConditionSpeedScale(scale);
+    }
+
+    applyConditionQualityScale(scale: number) {
+        this._motor.setConditionQualityScale(scale);
     }
 
     consumeConditionInputs(): StrokeConditionInput[] {

@@ -121,7 +121,7 @@ export class UIController extends Component {
     }
 
     updateHeartRateBar(heartRate: number, zone: string) {
-        const ratio = clamp01(heartRate / 100);
+        const ratio = clamp01(heartRate / 200);
         if (this.heartRateBarFill) {
             drawHeartRateFill(this.heartRateBarFill, ratio, heartRateZoneColor(zone));
         }

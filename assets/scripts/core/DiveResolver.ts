@@ -10,9 +10,9 @@ import { DiveEntryStyle, DiveQualityTier, DiveResult } from './DiveResult';
 const HIGH_POWER_THRESHOLD = 0.72;
 const OK_POWER_THRESHOLD = 0.42;
 
-// Heart-rate startup range (absolute, 0..100 scale). See design doc 29.3.
-const HEART_RATE_START_MIN = 10;
-const HEART_RATE_START_MAX = 45;
+// Heart-rate startup range (absolute, 0..200 scale). resting ~70, OPTIMAL starts at 110.
+const HEART_RATE_START_MIN = 75;  // low-power dive: near resting HR
+const HEART_RATE_START_MAX = 108; // clean dive: just under OPTIMAL (110), still needs a few strokes
 
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));

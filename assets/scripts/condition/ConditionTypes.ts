@@ -11,7 +11,7 @@ export enum RacePhase {
     RESULT = 'RESULT',
 }
 
-// Heart-rate zones on the 0..100 scale (design doc 29.1).
+// Heart-rate zones on the physiological 0..200 scale.
 export enum HeartRateZone {
     LOW = 'LOW',
     OPTIMAL = 'OPTIMAL',
@@ -26,14 +26,14 @@ export enum SprintTier {
     GAMBLE = 'GAMBLE',
 }
 
-// Heart-rate zone boundaries on the 0..100 scale (design doc 29.1).
-// LOW: 0-50, OPTIMAL: 50-80, HIGH_PRESSURE: 80-92, OVERLOAD: 92-100.
+// Heart-rate zone boundaries on a physiological 0..200 scale.
+// LOW: 0-110, OPTIMAL (sweet zone): 110-150, HIGH_PRESSURE: 150-175, OVERLOAD: 175-200.
 export const HEART_RATE_BOUNDS = {
     min: 0,
-    max: 100,
-    optimalLower: 50,
-    highPressureLower: 80,
-    overloadLower: 92,
+    max: 200,
+    optimalLower: 110,
+    highPressureLower: 150,
+    overloadLower: 175,
 };
 
 export function zoneForHeartRate(heartRate: number): HeartRateZone {
