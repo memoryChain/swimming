@@ -8,7 +8,7 @@ import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
 import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
-import type { RhythmResult } from '../core/RhythmEvaluator';
+import type { RhythmResult } from '../core/RhythmTypes';
 import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';

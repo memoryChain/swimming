@@ -4,7 +4,10 @@ import {
     StrokeType,
 } from '../core/GameConstants';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
-import type { RhythmResult, RhythmStats } from '../core/RhythmEvaluator';
+import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
+import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
+import { StrokeMetrics } from '../swimmer/StrokeMetrics';
+import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -50,6 +53,8 @@ export class Swimmer extends Component {
     private _goodStabilityCount = 0;
     private _missStabilityCount = 0;
     private readonly _pendingRhythmResults: RhythmResult[] = [];
+    private readonly _strokeMetrics = new StrokeMetrics();
+    private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private _modelBaseRootEuler = new Vec3(90, 0, -90);
     private _modelBaseRootPos = new Vec3(0, 0.1, 0);
     private _boneBaseEuler = new Map<Node, Vec3>();
@@ -87,11 +92,11 @@ export class Swimmer extends Component {
         this.cartoonRig?.setPreRaceStanding(true);
     }
 
-    performDive(power: number): number {
+    performDive(result: DiveResult): number {
         this.captureStartPosition();
-        const divePower = clamp01(power);
-        const distance = lerp(DIVE_BALANCE.minDistance, DIVE_BALANCE.maxDistance, divePower);
-        const entrySpeed = lerp(DIVE_BALANCE.minSpeed, DIVE_BALANCE.maxSpeed, divePower);
+        const divePower = result.power;
+        const distance = result.entryDistance;
+        const entrySpeed = result.entrySpeed;
         const crouchDuration = lerp(0.16, 0.1, divePower);
         const flightDuration = lerp(0.5, 0.38, divePower);
         const arcHeight = lerp(0.1, 0.22, divePower);
@@ -122,7 +127,7 @@ export class Swimmer extends Component {
             })
             .call(() => {
                 this.startRace(distance, entrySpeed);
-                this.flashSplash(divePower > 0.72 ? Rating.PERFECT : divePower > 0.42 ? Rating.GOOD : Rating.BAD);
+                this.flashSplash(splashRatingForEntryStyle(result.entryStyle));
             })
             .start();
 
@@ -145,6 +150,9 @@ export class Swimmer extends Component {
             aiPower: this.aiPower,
             aiMaxSpeedScale: this.aiMaxSpeedScale,
         });
+        if (!this.isAI) {
+            this._strokeMetrics.update(dt);
+        }
         this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
         for (const stability of this._motor.consumeStabilityResults()) {
@@ -169,6 +177,7 @@ export class Swimmer extends Component {
         if (!queued) {
             return null;
         }
+        this._strokeMetrics.recordStroke(type);
         this.playStroke(type, Rating.GOOD);
         return null;
     }
@@ -180,6 +189,9 @@ export class Swimmer extends Component {
     handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
         const stability = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
+        if (held) {
+            this._strokeMetrics.recordStroke(type);
+        }
         return held ? null : this.makeStabilityResult(type, stability);
     }
 
@@ -231,6 +243,8 @@ export class Swimmer extends Component {
         this._goodStabilityCount = 0;
         this._missStabilityCount = 0;
         this._pendingRhythmResults.length = 0;
+        this._pendingConditionInputs.length = 0;
+        this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
@@ -274,6 +288,14 @@ export class Swimmer extends Component {
             this._missStabilityCount += 1;
         }
         this._maxStabilityCombo = Math.max(this._maxStabilityCombo, this._stabilityCombo);
+        if (!this.isAI) {
+            this._pendingConditionInputs.push({
+                strokeAccepted: true,
+                qualityScore: stability.stability,
+                pressureScore: this._strokeMetrics.effortScore,
+                dt: 0,
+            });
+        }
         const result = rhythmResultFromStability(stability, this._stabilityCombo);
         if (rating === Rating.PERFECT) {
             const comboSpeedBonus = this._motor.applyPerfectComboBoost(this._stabilityCombo);
@@ -623,6 +645,17 @@ export class Swimmer extends Component {
         };
     }
 
+    applyConditionSpeedScale(scale: number) {
+        this._motor.setConditionSpeedScale(scale);
+    }
+
+    consumeConditionInputs(): StrokeConditionInput[] {
+        if (this._pendingConditionInputs.length === 0) {
+            return [];
+        }
+        return this._pendingConditionInputs.splice(0);
+    }
+
     consumeRhythmResults(): RhythmResult[] {
         if (this._pendingRhythmResults.length === 0) {
             return [];
@@ -635,8 +668,14 @@ function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
 }
 
-function clamp01(value: number): number {
-    return Math.max(0, Math.min(1, value));
+function splashRatingForEntryStyle(style: DiveEntryStyle): Rating {
+    if (style === DiveEntryStyle.CLEAN) {
+        return Rating.PERFECT;
+    }
+    if (style === DiveEntryStyle.NORMAL) {
+        return Rating.GOOD;
+    }
+    return Rating.BAD;
 }
 
 function sideBodyRollSignal(leftCycle: number, rightCycle: number): number {

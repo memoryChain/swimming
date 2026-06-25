@@ -4,6 +4,8 @@ import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
 import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
+import { resolveDiveResult } from '../core/DiveResolver';
+import { DiveResult } from '../core/DiveResult';
 import { formatStabilityLog } from '../core/StabilityScoring';
 import { UIFlowController } from '../ui/UIFlowController';
 
@@ -21,14 +23,19 @@ export type GameFlowRefs = {
     getState: () => GameState;
     clearFinishRanks: () => void;
     showFinishRank: (result: RaceFinishResult) => void;
+    applyPlayerDive: (result: DiveResult) => void;
+    enterSprint: () => void;
     debug: (message: string) => void;
 };
+
+const SPRINT_TRIGGER_FRACTION = 0.85;
 
 export class GameFlowController {
     private _diveChargeStarted = false;
     private _diveChargeElapsed = 0;
     private _diveChargePower = 0;
     private _diveCommitted = false;
+    private _sprintTriggered = false;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
 
     constructor(private readonly _refs: GameFlowRefs) {}
@@ -37,6 +44,7 @@ export class GameFlowController {
         this._refs.debug('startGame');
         this.clearAiDiveTimers();
         this.resetDiveCharge();
+        this._sprintTriggered = false;
         this._refs.clearFinishRanks();
         this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
@@ -215,6 +223,13 @@ export class GameFlowController {
             return;
         }
         const playerDistance = playerSwimmer.distance;
+        if (!this._sprintTriggered
+            && this._refs.getState() === GameState.RACING
+            && playerDistance >= getRaceDistance() * SPRINT_TRIGGER_FRACTION) {
+            this._sprintTriggered = true;
+            this._refs.enterSprint();
+            this._refs.debug('sprint phase entered');
+        }
         const placement = this.calculatePlayerPlacement();
         this._refs.uiFlow.updatePlacement(placement.placement, placement.racerCount);
         this._refs.raceCameraDirector.update(dt, {
@@ -272,12 +287,13 @@ export class GameFlowController {
             const controller = this._refs.aiControllers[i];
             const delayMs = Math.round(this.aiDiveReactionDelay(controller) * 1000);
             const power = this.aiDivePower(swimmer, controller);
+            const diveResult = resolveDiveResult(power);
             const timerId = setTimeout(() => {
                 const state = this._refs.getState();
                 if (state !== GameState.DIVING && state !== GameState.GLIDING && state !== GameState.RACING) {
                     return;
                 }
-                swimmer.performDive(power);
+                swimmer.performDive(diveResult);
                 this._refs.debug(`ai dive ${swimmer.swimmerName} power=${power.toFixed(2)} delay=${(delayMs / 1000).toFixed(2)}`);
             }, delayMs);
             this._aiDiveTimerIds.push(timerId);
@@ -329,7 +345,9 @@ export class GameFlowController {
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
-        this._refs.raceManager?.startFromDive(power);
+        const diveResult = resolveDiveResult(power);
+        this._refs.applyPlayerDive(diveResult);
+        this._refs.raceManager?.startFromDive(diveResult);
     }
 
     private calculateDivePower(charge: number): number {

@@ -92,6 +92,7 @@ export class SwimmerMotor {
     private _strokeAcceleration = 0;
     private _strokeAccelerationSeconds = 0;
     private _speedCapBonus = 0;
+    private _conditionSpeedScale = 1;
     private _lastStability = 0;
     private _lastInputFreshness = 1;
     private _currentAcceleration = 0;
@@ -237,9 +238,14 @@ export class SwimmerMotor {
         this._strokeAcceleration = 0;
         this._strokeAccelerationSeconds = 0;
         this._speedCapBonus = 0;
+        this._conditionSpeedScale = 1;
         this._lastStability = 0;
         this._lastInputFreshness = 1;
         this._currentAcceleration = 0;
+    }
+
+    setConditionSpeedScale(scale: number) {
+        this._conditionSpeedScale = clamp(scale, 0, 2);
     }
 
     applyPerfectComboBoost(combo: number): number {
@@ -409,7 +415,7 @@ export class SwimmerMotor {
             return;
         }
         const scale = lerp(SWIMMER_BALANCE.alternationStabilityMinScale, 1, action.alternationQuality);
-        this.startStrokeAcceleration(stability * SWIMMER_BALANCE.strokeStabilityAccel * scale, true);
+        this.startStrokeAcceleration(stability * SWIMMER_BALANCE.strokeStabilityAccel * scale * this._conditionSpeedScale, true);
     }
 
     private updateActionInputFreshness(action: StrokeAction, actionSeconds: number): number {

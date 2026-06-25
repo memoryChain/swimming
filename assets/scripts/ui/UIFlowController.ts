@@ -40,6 +40,26 @@ export class UIFlowController {
         this._refs.uiController?.updateSwimTelemetry(stability, acceleration, speed);
     }
 
+    updateConditionReadout(heartRate: number, zone: string, energy: number) {
+        this._refs.uiController?.updateConditionReadout(heartRate, zone, energy);
+    }
+
+    updateHeartRateBar(heartRate: number, zone: string) {
+        this._refs.uiController?.updateHeartRateBar(heartRate, zone);
+    }
+
+    setHeartRateBarVisible(visible: boolean) {
+        this._refs.uiController?.setHeartRateBarVisible(visible);
+    }
+
+    updateEnergyBar(energy: number, depleted: boolean) {
+        this._refs.uiController?.updateEnergyBar(energy, depleted);
+    }
+
+    setEnergyBarVisible(visible: boolean) {
+        this._refs.uiController?.setEnergyBarVisible(visible);
+    }
+
     updateTimer(time: number) {
         this._refs.uiController?.updateTimer(time);
     }

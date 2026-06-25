@@ -328,58 +328,7 @@ export interface DiveResult {
 - 驱动 `playerCondition.updateSprintState(...)`
 
 
-## 12.6 动手前需要先确认的三件事
-
-前面几节描述的是目标接入方式。但在真正落第一刀之前，有三个现有代码里的事实必须先处理，否则第一刀就会撞上。
-
-### 12.6.1 `RhythmEvaluator` 是被忽略的第二套判定
-
-当前项目里存在两套并行的节奏判定：
-
-- `SwimmerMotor` 里基于 `holdRatio` 的稳定性判定，产出 `stability`，再映射成 `Rating`
-- `RhythmEvaluator`（`core/RhythmEvaluator.ts`）是一个独立 `Component`，自己维护 combo、`speedMultiplier`、`perfectWindow / goodWindow`，也产出 `RhythmResult`
-
-也就是说，`PERFECT / GOOD / BAD` 这条链不止来自 `SwimmerMotor`。
-
-而新设计里“用心率替代 `PERFECT / GOOD / BAD` 作为主反馈”这句话，在落地时必须先回答：
-
-- `RhythmEvaluator` 这一层是删、是降级、还是只保留给 ModelDebug
-
-如果不先定，会出现两套 combo 逻辑同时跑、同时抢主反馈位置的情况。
-
-### 12.6.2 AI 跳水链路比假设的更碎
-
-玩家跳水链路：
-
-- `GameFlowController.commitDive -> RaceManager.startFromDive(power) -> Swimmer.performDive(power)`
-- `RaceManager` 还负责按 `performDive` 返回的动画时长调度切 `RACING`
-
-AI 跳水链路：
-
-- `GameFlowController` 里 `setTimeout` 后直接 `swimmer.performDive(power)`
-- 完全不经过 `RaceManager`，也不触发 `onDiveReady`
-
-后果有两个：
-
-1. 如果 `DiveResult` 只在 `RaceManager` 里产，AI 这条链根本收不到
-2. `RaceManager.startFromDive` 现在还承担“按 `performDive` 返回的动画时长调度切 `RACING`”这个副作用，一旦 `performDive` 改吃 `DiveResult`，这个调度时长的来源也要一起定，不能只改入参类型
-
-所以 `DiveResult` 改造必须同时覆盖玩家和 AI 两条链，建议由一个共享的 `DiveResolver` 统一产出，再分别分发。
-
-### 12.6.3 `GLIDING` 状态是死的，不是现成可用的
-
-`GLIDING` 在 `GameConstants` 里有枚举，`RaceManager.updateGliding` 有分支，`GameFlowController` 里也有一行处理。
-
-但实际上：
-
-- `startFromDive` 直接从 `DIVING` 调度到 `RACING`，从不进入 `GLIDING`
-- 没有任何代码路径会把状态切到 `GLIDING`
-
-所以它不是“现成可用”，而是“预留了枚举但没接通”。
-
-如果第一版要复用 `GLIDING` 做起步阶段，需要自己接通 `DIVING -> GLIDING -> RACING` 的转移，而不是假设它已经能用。
-
-### 12.6 动手前必须先确认的三件事
+## 12.6 动手前必须先确认的三件事
 
 上面是把新状态层接进现有主循环的落点。但在真正动刀之前，有三个和现有代码强相关的坑必须先定下来，否则第一刀下去就会撞到。
 
@@ -2409,13 +2358,13 @@ AI 路径：
 - 输入经过 playAiStrokeVisual -> recordAiVisualStroke，只排队动画，不触发稳定性结算
 - 不产出 StrokeStabilityResult，不经过 makeStabilityResult
 - 不走 updateFromStroke，不接 StrokeMetrics
-- AI 的 PlayerConditionModel 只用 tick(dt) 更新
+- AI 的 AiConditionModel 只用 tickAi 更新（不走 tick/updateFromStroke）
 - AI 的心率/体能由 aiPower、difficulty、距离进度直接推导
 - AI 的 pressureScore 固定为基于 difficulty 的常量
 
 ### 26.2 AI 状态层的推导逻辑
 
-AI 的 PlayerConditionModel.tick(dt) 内部不依赖 qualityScore 和 timeSinceLastStroke，而是依赖：
+AI 的 AiConditionModel.tickAi 内部不依赖 qualityScore 和 timeSinceLastStroke，而是依赖：
 
 - difficulty：决定 AI 的整体表现水平
 - aiPower：决定 AI 的推进强度
@@ -2430,12 +2379,9 @@ AI 的 PlayerConditionModel.tick(dt) 内部不依赖 qualityScore 和 timeSinceL
 
 ### 26.3 AI 心率条是否显示
 
-AI 的心率是否显示给玩家看，不影响状态层的设计。AI 的心率区间语义和玩家一致（LOW/OPTIMAL/HIGH_PRESSURE/OVERLOAD），但驱动方式不同。
+用户确认：AI 的心率条不显示给玩家看。AI 的心率纯粹是内部状态，只用于 AI 自己的表现层驱动（比如高心率时动画更激烈、终盘时体能消耗表现），不对 UI 暴露。
 
-如果显示：AI 心率条作为对手状态的视觉提示，让玩家判断对手状态。
-如果不显示：AI 心率纯内部状态，只用于 AI 自己的表现层（比如高心率时动画更激烈）。
-
-第一版建议：AI 心率条可以显示，但以简化形式呈现（比如只显示区间颜色，不显示精确数值），避免让玩家误以为 AI 也在做和玩家一样的博弈。
+AI 的心率区间语义和玩家一致（LOW/OPTIMAL/HIGH_PRESSURE/OVERLOAD），但驱动方式不同（见 26.2）。区间只服务于 AI 表现层，不显示精确数值，也不显示区间颜色给玩家。
 
 ### 26.4 AI 终盘表现
 
@@ -2449,38 +2395,22 @@ AI 的终盘冲刺不需要玩家那套 sprintTier 博弈（STEADY/PUSH/GAMBLE�
 
 ### 26.5 对接口设计的影响
 
-AI 简化路径对接口设计的影响：
+AI 简化路径对接口设计的影响（最终结论见第 27.6 / 28.5 节）：
 
-1. PlayerConditionModel 需要支持两种初始化模式：
-   - 玩家模式：接 updateFromStroke + tick(dt)
-   - AI 模式：只接 tick(dt)，内部用 aiPower/difficulty 推导
+1. 玩家和 AI 不共用一个类，分成两个独立类：PlayerConditionModel（玩家用）和 AiConditionModel（AI 用）。两者实现相同的只读 getter 接口，但方法集不同。
 
-2. 第一版建议用同一个 PlayerConditionModel 类，通过 isAI 标志区分内部逻辑，而不是分成两个类。因为字段集是一样的（phase/heartRate/heartRateZone/energy/energyDepleted/sprintTier/qualityModifier/efficiencyModifier），只是更新方式不同。
+2. AI 版只暴露 reset / setPhase / tickAi，不提供 updateFromStroke / applyDiveResult / updateSprintState；AI 不接 StrokeMetrics，不产出 StrokeStabilityResult。
 
-3. AI 模式下，qualityModifier 和 efficiencyModifier 由 difficulty 和距离进度直接推导，不由 qualityScore 和 pressureScore 驱动。
+3. AI 版的心率、体能、qualityModifier、efficiencyModifier 全部由 aiPower / difficulty / 距离进度在 tickAi 内直接推导，不由 qualityScore / pressureScore 驱动。
+
+4. AI 的状态输出只服务于 AI 表现层，不进 UI；玩家心率条只读玩家自己的 PlayerConditionModel。
 
 ### 26.6 下一步建议
 
-AI 简化路径确认后，下一步最值得讨论的是：
-- PlayerConditionModel 的完整接口签名（reset / setPhase / applyDiveResult / updateFromStroke / tick / updateSprintState）
-- DiveResolver 的产出逻辑和放置位置
-- 第一版代码的文件结构：新增哪些文件，每个文件放什么
-
-
-### 26.1 AI 心率条不显示给玩家看
-
-用户确认：AI 的心率条不显示给玩家看。
-
-这意味着 AI 的心率纯粹是内部状态，只用于 AI 自己的表现层驱动（比如高心率时动画更激烈、终盘时体能消耗表现）。
-
-对接口的影响：
-
-- AI 的 PlayerConditionModel 不需要对外暴露 heartRate / heartRateZone 给 UI 层
-- AI 的心率只需要被 AISwimmerController 和 Swimmer 的表现层读取
-- 玩家的心率条只读玩家自己的 PlayerConditionModel
-- AI 和玩家共用同一个 PlayerConditionModel 类，但 AI 实例的输出只服务于 AI 表现，不服务于 UI
-
-结论：PlayerConditionModel 的接口不需要为 AI 做特殊分支。AI 和玩家用同一套接口，区别只在谁创建它、谁驱动它、谁读它的输出。
+AI 简化路径确认后，本节涉及的接口已在后续小节定稿：
+- PlayerConditionModel / AiConditionModel 的完整接口签名见第 27 节
+- DiveResolver 的产出逻辑和放置位置见第 28 节
+- 第一版文件结构和落地顺序见第 28.5 / 28.8 节
 ## 27. PlayerConditionModel 完整接口签名
 
 这一节把前面散落在各处的接口片段收拢成一份完整签名，和第 10/16/22/24/25/26 节的结论对齐。
@@ -2791,10 +2721,11 @@ GameManager.ts：
 
 ### 28.9 下一步建议
 
-文件结构和落地顺序定下来后，下一步最值得讨论的是：
-- PlayerConditionModel 内部的心率数值模型：心率用 0..100 的绝对值还是 0..1 的归一化值
-- 体能数值模型：体能用 0..1 的归一化值还是 0..100
-- heartRateZone 的边界值：四个区间的分界点定在哪里
+文件结构和落地顺序定下来后，原本待定的三个数值口径已在第 29 节定稿：
+- 心率用 0..100 绝对值；四区间分界点见第 29.1 节
+- 体能用总量 100 的绝对值；逐拍消耗与终盘倍率见技术笔记
+- 终盘触发与 DiveResult 修正字段见第 29.2 / 29.3 节
+
 ## 29. 三个规则参数的最终定值
 
 ### 29.1 心率四区间分界点

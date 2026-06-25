@@ -42,6 +42,12 @@ export class UIController extends Component {
     @property(Node) public diveChargeTrack: Node = null;
     @property(Graphics) public diveChargeFill: Graphics = null;
     @property(Node) public diveChargeFillNode: Node = null;
+    public heartRateBarRoot: Node = null;
+    public heartRateBarFill: Graphics = null;
+    public heartRateLabel: Label = null;
+    public energyBarRoot: Node = null;
+    public energyBarFill: Graphics = null;
+    public energyLabel: Label = null;
     @property(Node) public resultPanel: Node = null;
     @property(Label) public resultTitle: Label = null;
     @property(Label) public resultTime: Label = null;
@@ -111,6 +117,46 @@ export class UIController extends Component {
     updateSwimTelemetry(stability: number, acceleration: number, speed: number) {
         if (this.telemetryLabel) {
             this.telemetryLabel.string = `稳定 ${Math.round(clamp01(stability) * 100)}%   加速 ${signed(acceleration)}   速度 ${speed.toFixed(2)} m/s`;
+        }
+    }
+
+    updateHeartRateBar(heartRate: number, zone: string) {
+        const ratio = clamp01(heartRate / 100);
+        if (this.heartRateBarFill) {
+            drawHeartRateFill(this.heartRateBarFill, ratio, heartRateZoneColor(zone));
+        }
+        if (this.heartRateLabel) {
+            this.heartRateLabel.string = `心率 ${Math.round(heartRate)}`;
+            this.heartRateLabel.color = heartRateZoneColor(zone);
+        }
+    }
+
+    setHeartRateBarVisible(visible: boolean) {
+        if (this.heartRateBarRoot) {
+            this.heartRateBarRoot.active = visible;
+        }
+    }
+
+    updateEnergyBar(energy: number, depleted: boolean) {
+        const ratio = clamp01(energy / 100);
+        if (this.energyBarFill) {
+            drawEnergyFill(this.energyBarFill, ratio, energyColor(ratio, depleted));
+        }
+        if (this.energyLabel) {
+            this.energyLabel.string = `体能 ${Math.round(energy)}`;
+            this.energyLabel.color = energyColor(ratio, depleted);
+        }
+    }
+
+    setEnergyBarVisible(visible: boolean) {
+        if (this.energyBarRoot) {
+            this.energyBarRoot.active = visible;
+        }
+    }
+
+    updateConditionReadout(heartRate: number, zone: string, energy: number) {
+        if (this.telemetryLabel) {
+            this.telemetryLabel.string += `   HR ${Math.round(heartRate)} ${zone}   EN ${Math.round(energy)}`;
         }
     }
 
@@ -365,6 +411,56 @@ function ratingText(rating: Rating): string {
 
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
+}
+
+function drawHeartRateFill(gfx: Graphics, ratio: number, color: Color) {
+    const w = 220;
+    const h = 16;
+    gfx.clear();
+    gfx.fillColor = new Color(20, 24, 34, 180);
+    gfx.rect(-w / 2, -h / 2, w, h);
+    gfx.fill();
+    gfx.fillColor = color;
+    gfx.rect(-w / 2, -h / 2, w * clamp01(ratio), h);
+    gfx.fill();
+}
+
+function heartRateZoneColor(zone: string): Color {
+    switch (zone) {
+        case 'OPTIMAL':
+            return new Color(80, 242, 161, 255);
+        case 'HIGH_PRESSURE':
+            return new Color(255, 184, 77, 255);
+        case 'OVERLOAD':
+            return new Color(255, 92, 92, 255);
+        default:
+            return new Color(120, 196, 255, 255);
+    }
+}
+
+function drawEnergyFill(gfx: Graphics, ratio: number, color: Color) {
+    const w = 220;
+    const h = 16;
+    gfx.clear();
+    gfx.fillColor = new Color(20, 24, 34, 180);
+    gfx.rect(-w / 2, -h / 2, w, h);
+    gfx.fill();
+    gfx.fillColor = color;
+    gfx.rect(-w / 2, -h / 2, w * clamp01(ratio), h);
+    gfx.fill();
+}
+
+function energyColor(ratio: number, depleted: boolean): Color {
+    if (depleted || ratio <= 0.0001) {
+        return new Color(120, 120, 130, 255);
+    }
+    if (ratio < 0.25) {
+        return new Color(255, 92, 92, 255);
+    }
+    if (ratio < 0.5) {
+        return new Color(255, 184, 77, 255);
+    }
+    return new Color(120, 220, 255, 255);
 }
 
 function drawChargeFill(gfx: Graphics, ratio: number) {

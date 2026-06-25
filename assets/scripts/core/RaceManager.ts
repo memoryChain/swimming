@@ -2,6 +2,7 @@ import { _decorator, Component } from 'cc';
 import { COUNTDOWN_SECONDS, getRaceDistance } from './GameBalance';
 import { GameState } from './GameConstants';
 import { Swimmer } from '../entity/Swimmer';
+import { DiveResult } from './DiveResult';
 
 const { ccclass, property } = _decorator;
 
@@ -106,12 +107,12 @@ export class RaceManager extends Component {
         }
     }
 
-    startFromDive(playerDivePower: number) {
+    startFromDive(result: DiveResult) {
         if (this._state !== GameState.DIVING || this._diveResolved) {
             return;
         }
         this._diveResolved = true;
-        const playerDuration = this.playerSwimmer?.performDive(playerDivePower) ?? 0;
+        const playerDuration = this.playerSwimmer?.performDive(result) ?? 0;
         this.scheduleOnce(() => {
             if (this._state === GameState.DIVING && this._diveResolved) {
                 this.setState(GameState.RACING);

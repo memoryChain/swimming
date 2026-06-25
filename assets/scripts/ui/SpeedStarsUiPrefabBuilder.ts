@@ -1,8 +1,9 @@
-import { Color, EventMouse, instantiate, Label, Node, Prefab, resources, Sprite, SpriteFrame, UITransform, view } from 'cc';
+import { Color, EventMouse, Graphics, instantiate, Label, Node, Prefab, resources, Sprite, SpriteFrame, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { getRaceDistance, RaceDistanceMode, RACE_DISTANCE_OPTIONS } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { UIController } from './UIController';
+import { makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
@@ -118,6 +119,8 @@ export class SpeedStarsUiPrefabBuilder {
         ui.countdownLabel = requireLabel(raceHud, 'CountdownLabel');
         ui.diveChargeTrack = requireNode(raceHud, 'DiveChargeTrack');
         ui.diveChargeFillNode = requireNode(raceHud, 'DiveChargeFill');
+        this.buildHeartRateBar(raceHud, ui);
+        this.buildEnergyBar(raceHud, ui);
         ui.resultPanel = requireNode(raceHud, 'ResultPanel');
         ui.resultTitle = requireLabel(raceHud, 'ResultTitle');
         ui.resultTime = requireLabel(raceHud, 'ResultTime');
@@ -201,6 +204,50 @@ export class SpeedStarsUiPrefabBuilder {
         reparentAt(requireNode(raceHud, 'TimingMarker'), speedBarRoot, 0, -108);
         reparentAt(requireNode(raceHud, 'SpeedText'), speedBarRoot, -56, 118);
         return { speedBarRoot };
+    }
+
+    private buildHeartRateBar(raceHud: Node, ui: UIController) {
+        const visibleSize = view.getVisibleSize();
+        const root = makeUiNode('HeartRateBar', raceHud);
+        // Anchor near the top-left of the HUD.
+        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - 60, 0);
+
+        const label = makeLabel('HeartRateLabel', root, '心率 0', 20, uiColor(120, 196, 255, 255));
+        label.getComponent(UITransform).setContentSize(220, 26);
+        label.setPosition(0, 20, 0);
+        label.getComponent(Label).horizontalAlign = Label.HorizontalAlign.LEFT;
+
+        const fillNode = makeUiNode('HeartRateFill', root);
+        fillNode.getComponent(UITransform).setContentSize(220, 16);
+        const fillGfx = fillNode.addComponent(Graphics);
+
+        ui.heartRateBarRoot = root;
+        ui.heartRateBarFill = fillGfx;
+        ui.heartRateLabel = label.getComponent(Label);
+        ui.updateHeartRateBar(0, 'LOW');
+        ui.setHeartRateBarVisible(false);
+    }
+
+    private buildEnergyBar(raceHud: Node, ui: UIController) {
+        const visibleSize = view.getVisibleSize();
+        const root = makeUiNode('EnergyBar', raceHud);
+        // Anchor just below the heart-rate bar.
+        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - 108, 0);
+
+        const label = makeLabel('EnergyLabel', root, '体能 0', 20, uiColor(120, 220, 255, 255));
+        label.getComponent(UITransform).setContentSize(220, 26);
+        label.setPosition(0, 20, 0);
+        label.getComponent(Label).horizontalAlign = Label.HorizontalAlign.LEFT;
+
+        const fillNode = makeUiNode('EnergyFill', root);
+        fillNode.getComponent(UITransform).setContentSize(220, 16);
+        const fillGfx = fillNode.addComponent(Graphics);
+
+        ui.energyBarRoot = root;
+        ui.energyBarFill = fillGfx;
+        ui.energyLabel = label.getComponent(Label);
+        ui.updateEnergyBar(100, false);
+        ui.setEnergyBarVisible(false);
     }
 
     private layoutRaceProgress(raceHud: Node) {

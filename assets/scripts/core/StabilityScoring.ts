@@ -1,5 +1,5 @@
 import { Rating, StrokeType } from './GameConstants';
-import type { RhythmResult } from './RhythmEvaluator';
+import type { RhythmResult } from './RhythmTypes';
 import type { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
 
 export function ratingForStability(stability: number): Rating {

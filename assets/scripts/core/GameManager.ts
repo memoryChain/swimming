@@ -13,6 +13,10 @@ import {
     Vec3,
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
+import { PlayerConditionModel } from '../condition/PlayerConditionModel';
+import { AiConditionModel } from '../condition/AiConditionModel';
+import { RaceContext } from '../condition/RaceContext';
+import { RacePhase } from '../condition/ConditionTypes';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
@@ -31,6 +35,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
+import { getRaceDistance } from './GameBalance';
 import { formatStabilityLog } from './StabilityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
@@ -56,6 +61,9 @@ export class GameManager extends Component {
     private _state = GameState.READY;
     private _raceManager: RaceManager = null;
     private _playerSwimmer: Swimmer = null;
+    private readonly _playerCondition = new PlayerConditionModel();
+    private _aiConditions: AiConditionModel[] = [];
+    private readonly _raceContext = new RaceContext(this._playerCondition);
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
@@ -131,6 +139,7 @@ export class GameManager extends Component {
             this._playerSwimmer.currentSpeed,
         );
         this.consumePlayerRhythmResults();
+        this.updatePlayerCondition(dt);
         this.drawStrokeTimingGuide(this._playerSwimmer.strokeTimingGuide, this._state === GameState.RACING);
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.update(dt);
@@ -209,10 +218,29 @@ export class GameManager extends Component {
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
             setState: (state) => {
                 this._state = state;
+                this.syncConditionPhase(state);
             },
             getState: () => this._state,
             clearFinishRanks: () => this._finishRankMarkers.clear(),
             showFinishRank: (result) => this._finishRankMarkers.show(result),
+            applyPlayerDive: (result) => {
+                this._playerCondition.reset();
+                this._playerCondition.setPhase(RacePhase.START);
+                this._playerCondition.applyDiveResult(result);
+                for (const aiCondition of this._aiConditions) {
+                    aiCondition.reset();
+                    aiCondition.setPhase(RacePhase.START);
+                }
+                this._raceContext.reset();
+                this._raceContext.latestDiveResult = result;
+            },
+            enterSprint: () => {
+                this._playerCondition.setPhase(RacePhase.SPRINT);
+                for (const aiCondition of this._aiConditions) {
+                    aiCondition.setPhase(RacePhase.SPRINT);
+                }
+                this._raceContext.setPhase(RacePhase.SPRINT);
+            },
             debug: (message) => this.debug(message),
         });
     }
@@ -319,6 +347,7 @@ export class GameManager extends Component {
             this._aiController = null;
             this._aiControllers = [];
             this._aiSwimmers = [];
+            this._aiConditions = [];
             this.debug('race opponents disabled');
             return;
         }
@@ -326,6 +355,7 @@ export class GameManager extends Component {
         this._aiController = competitors.primaryAiController;
         this._aiControllers = competitors.aiControllers;
         this._aiSwimmers = competitors.aiSwimmers;
+        this._aiConditions = this._aiSwimmers.map(() => new AiConditionModel());
     }
 
     private buildUi(root: Node, w: number, h: number, done: (error?: unknown) => void) {
@@ -393,6 +423,77 @@ export class GameManager extends Component {
 
     private handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
         this._gameFlow?.handlePlayerStrokeHeld(type, held);
+    }
+
+    private updatePlayerCondition(dt: number) {
+        if (this._state !== GameState.RACING) {
+            return;
+        }
+        for (const input of this._playerSwimmer?.consumeConditionInputs() ?? []) {
+            this._playerCondition.updateFromStroke(input);
+        }
+        this._playerCondition.tick(dt);
+        this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
+        this._uiFlow?.updateConditionReadout(
+            this._playerCondition.heartRate,
+            this._playerCondition.heartRateZone,
+            this._playerCondition.energy,
+        );
+        this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
+        this._uiFlow?.setHeartRateBarVisible(true);
+        this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
+        this._uiFlow?.setEnergyBarVisible(true);
+        this._raceContext.setPhase(this._playerCondition.phase);
+        this.updateAiConditions(dt);
+    }
+
+    private updateAiConditions(dt: number) {
+        const raceDistance = getRaceDistance();
+        for (let i = 0; i < this._aiConditions.length; i++) {
+            const swimmer = this._aiSwimmers[i];
+            const controller = this._aiControllers[i];
+            if (!swimmer || !controller) {
+                continue;
+            }
+            const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
+            this._aiConditions[i].tickAi({
+                aiPower: swimmer.aiPower,
+                difficulty: controller.difficulty,
+                progress,
+                dt,
+            });
+            swimmer.applyConditionSpeedScale(this._aiConditions[i].efficiencyModifier);
+        }
+    }
+
+    private syncConditionPhase(state: GameState) {
+        const phase = this.phaseForState(state);
+        if (phase === null) {
+            return;
+        }
+        if (phase === RacePhase.PACE && this._playerCondition.phase !== RacePhase.START) {
+            return;
+        }
+        this._playerCondition.setPhase(phase);
+        for (const aiCondition of this._aiConditions) {
+            aiCondition.setPhase(phase);
+        }
+        this._raceContext.setPhase(phase);
+    }
+
+    private phaseForState(state: GameState): RacePhase | null {
+        switch (state) {
+            case GameState.COUNTDOWN:
+            case GameState.DIVING:
+            case GameState.GLIDING:
+                return RacePhase.START;
+            case GameState.RACING:
+                return RacePhase.PACE;
+            case GameState.FINISHED:
+                return RacePhase.RESULT;
+            default:
+                return null;
+        }
     }
 
     private consumePlayerRhythmResults() {
