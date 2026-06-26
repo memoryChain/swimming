@@ -157,6 +157,25 @@ def validate_armature_symmetry(armature: bpy.types.Object, tolerance: float = 1e
             f'{left_name}/{right_name}: length={left.length:.6f} '
             f'head_error={head_error:.8f} tail_error={tail_error:.8f}'
         )
+    validate_arm_chain_lengths(armature)
+
+
+def validate_arm_chain_lengths(armature: bpy.types.Object) -> None:
+    for prefix in ('L_', 'R_'):
+        upper = armature.data.bones[f'{prefix}Upperarm']
+        forearm = armature.data.bones[f'{prefix}Forearm']
+        hand = armature.data.bones[f'{prefix}Hand']
+        if upper.length < 0.08 or upper.length < forearm.length * 0.72:
+            raise RuntimeError(
+                f'{prefix}Upperarm length looks broken: '
+                f'upper={upper.length:.6f} forearm={forearm.length:.6f}. '
+                'Use the original source GLB, not an already processed runtime GLB.'
+            )
+        if forearm.length < 0.08 or hand.length < 0.08:
+            raise RuntimeError(
+                f'{prefix}arm chain length looks broken: '
+                f'forearm={forearm.length:.6f} hand={hand.length:.6f}'
+            )
 
 
 def export_runtime_glb(filepath: str, armature: bpy.types.Object) -> None:
