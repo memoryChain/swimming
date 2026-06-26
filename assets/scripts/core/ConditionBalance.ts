@@ -16,15 +16,15 @@ export const CONDITION_BALANCE = {
         drainPerStroke: {
             [HeartRateZone.LOW]: 0.3,
             [HeartRateZone.OPTIMAL]: 1.0,
-            [HeartRateZone.HIGH_PRESSURE]: 2.5,
-            [HeartRateZone.OVERLOAD]: 5.0,
+            [HeartRateZone.HIGH_PRESSURE]: 1.5,
+            [HeartRateZone.OVERLOAD]: 2.5,
         } as Record<HeartRateZone, number>,
 
         // Sprint-phase multipliers applied on top of the per-stroke drain.
         sprintTierMultiplier: {
             [SprintTier.STEADY]: 1.0,
-            [SprintTier.PUSH]: 2.0,
-            [SprintTier.GAMBLE]: 4.0,
+            [SprintTier.PUSH]: 1.6,
+            [SprintTier.GAMBLE]: 2.5,
         } as Record<SprintTier, number>,
 
         // When energy is empty: quality/efficiency penalties (doc: no loss of control).
