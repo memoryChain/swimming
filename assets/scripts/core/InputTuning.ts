@@ -24,6 +24,8 @@ export const MOTION_TUNING = {
     armMinCyclesPerSecond: 0.82,
     kickMinCyclesPerSecond: 0.82,
     maxCyclesPerSecond: 2.8,
+    swimBodyPitchDegrees: -3,
+    swimBodyYOffset: -0.08,
     handPalmTurnDegrees: 130,
     forwardArmSideClearance: 0.3,
     rightBreathTurnDegrees: 70,

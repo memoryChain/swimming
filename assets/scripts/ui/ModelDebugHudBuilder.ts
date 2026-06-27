@@ -107,37 +107,40 @@ export class ModelDebugHudBuilder {
         const overlay = makeUiNode('ModelDebugTuningOverlay', parent);
         overlay.active = false;
         this._tuningOverlay = overlay;
-        makeRect('OverlayBack', overlay, w, h, uiColor(2, 8, 14, 232));
+        makeRect('OverlayBack', overlay, w, h, uiColor(2, 8, 14, 72));
 
-        const panelWidth = Math.max(320, w - (portrait ? 24 : 72));
-        const panelHeight = Math.max(440, h - (portrait ? 104 : 128));
+        const panelWidth = Math.max(320, Math.min(w - (portrait ? 24 : 112), portrait ? w - 24 : 620));
+        const panelHeight = Math.max(440, h - (portrait ? 92 : 104));
         const panel = makeUiNode('ModelDebugTuningPanel', overlay);
         panel.setPosition(0, -8, 0);
-        makeRect('Back', panel, panelWidth, panelHeight, uiColor(6, 18, 28, 205));
+        makeRect('Back', panel, panelWidth, panelHeight, uiColor(6, 18, 28, 132));
 
-        const previous = makeButton('TunePrev', panel, 54, 40, uiColor(34, 96, 146), '<');
+        const previous = makeButton('TunePrev', panel, 58, 46, uiColor(34, 112, 174, 230), '<');
+        setButtonLabelFontSize(previous, 22);
         previous.setPosition(-panelWidth / 2 + 42, panelHeight / 2 - 34, 0);
         previous.on(Node.EventType.TOUCH_END, () => this.changeGroup(-1));
 
-        const next = makeButton('TuneNext', panel, 54, 40, uiColor(34, 96, 146), '>');
+        const next = makeButton('TuneNext', panel, 58, 46, uiColor(34, 112, 174, 230), '>');
+        setButtonLabelFontSize(next, 22);
         next.setPosition(panelWidth / 2 - 42, panelHeight / 2 - 34, 0);
         next.on(Node.EventType.TOUCH_END, () => this.changeGroup(1));
 
-        const close = makeButton('TuneClose', overlay, 88, 40, uiColor(232, 68, 72), '关闭');
+        const close = makeButton('TuneClose', overlay, 96, 48, uiColor(232, 68, 72, 235), '关闭');
+        setButtonLabelFontSize(close, 20);
         close.setPosition(w / 2 - 58, h / 2 - 34, 0);
         close.on(Node.EventType.TOUCH_END, () => this.setTuningOverlayVisible(false));
 
-        const groupLabelNode = makeLabel('TuneGroup', panel, '', portrait ? 20 : 22, uiColor(235, 248, 255));
+        const groupLabelNode = makeLabel('TuneGroup', panel, '', portrait ? 23 : 25, uiColor(245, 252, 255));
         groupLabelNode.getComponent(UITransform).setContentSize(panelWidth - 144, 42);
         groupLabelNode.setPosition(0, panelHeight / 2 - 34, 0);
         this._groupLabel = groupLabelNode.getComponent(Label);
 
-        const rowHeight = portrait ? 58 : 54;
+        const rowHeight = portrait ? 64 : 58;
         const rowCount = Math.max(6, Math.min(12, Math.floor((panelHeight - 150) / rowHeight)));
         const firstY = panelHeight / 2 - 92;
-        const controlValueX = panelWidth / 2 - 88;
-        const controlMinusX = panelWidth / 2 - 154;
-        const controlPlusX = panelWidth / 2 - 26;
+        const controlValueX = panelWidth / 2 - 96;
+        const controlMinusX = panelWidth / 2 - 176;
+        const controlPlusX = panelWidth / 2 - 28;
         const textLeft = -panelWidth / 2 + 22;
         const textRight = controlMinusX - 28;
         const textWidth = Math.max(180, textRight - textLeft);
@@ -145,33 +148,35 @@ export class ModelDebugHudBuilder {
         for (let i = 0; i < rowCount; i++) {
             const row = makeUiNode(`TuneRow${i}`, panel);
             row.setPosition(0, firstY - i * rowHeight, 0);
-            makeRect('RowBack', row, panelWidth - 30, rowHeight - 6, i % 2 === 0 ? uiColor(12, 34, 48, 150) : uiColor(10, 28, 42, 110));
+            makeRect('RowBack', row, panelWidth - 30, rowHeight - 6, i % 2 === 0 ? uiColor(12, 34, 48, 118) : uiColor(10, 28, 42, 88));
 
-            const nameNode = makeLabel('Name', row, '', portrait ? 16 : 18, uiColor(212, 238, 246));
-            nameNode.getComponent(UITransform).setContentSize(textWidth, 22);
-            nameNode.setPosition(textX, 12, 0);
+            const nameNode = makeLabel('Name', row, '', portrait ? 18 : 20, uiColor(238, 252, 255));
+            nameNode.getComponent(UITransform).setContentSize(textWidth, 26);
+            nameNode.setPosition(textX, 13, 0);
             const nameLabel = nameNode.getComponent(Label);
             nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
             nameLabel.overflow = Label.Overflow.CLAMP;
 
-            const descriptionNode = makeLabel('Description', row, '', portrait ? 12 : 13, uiColor(144, 198, 214));
-            descriptionNode.getComponent(UITransform).setContentSize(textWidth, 30);
-            descriptionNode.setPosition(textX, -13, 0);
+            const descriptionNode = makeLabel('Description', row, '', portrait ? 14 : 15, uiColor(184, 226, 238));
+            descriptionNode.getComponent(UITransform).setContentSize(textWidth, 34);
+            descriptionNode.setPosition(textX, -14, 0);
             const descriptionLabel = descriptionNode.getComponent(Label);
             descriptionLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
             descriptionLabel.verticalAlign = Label.VerticalAlign.TOP;
             descriptionLabel.enableWrapText = true;
             descriptionLabel.overflow = Label.Overflow.CLAMP;
 
-            const minus = makeButton('Minus', row, 42, 36, uiColor(36, 106, 160), '-');
+            const minus = makeButton('Minus', row, 52, 42, uiColor(36, 118, 184, 232), '-');
+            setButtonLabelFontSize(minus, 24);
             minus.setPosition(controlMinusX, 0, 0);
             minus.on(Node.EventType.TOUCH_END, () => this.adjustControl(i, -1));
 
-            const valueNode = makeLabel('Value', row, '', portrait ? 16 : 18, uiColor(255, 255, 255));
-            valueNode.getComponent(UITransform).setContentSize(86, 36);
+            const valueNode = makeLabel('Value', row, '', portrait ? 18 : 20, uiColor(255, 255, 255));
+            valueNode.getComponent(UITransform).setContentSize(98, 40);
             valueNode.setPosition(controlValueX, 0, 0);
 
-            const plus = makeButton('Plus', row, 42, 36, uiColor(36, 106, 160), '+');
+            const plus = makeButton('Plus', row, 52, 42, uiColor(36, 118, 184, 232), '+');
+            setButtonLabelFontSize(plus, 24);
             plus.setPosition(controlPlusX, 0, 0);
             plus.on(Node.EventType.TOUCH_END, () => this.adjustControl(i, 1));
 
@@ -220,8 +225,9 @@ export class ModelDebugHudBuilder {
     }
 
     private buildApplyControls(parent: Node, panelWidth: number, panelHeight: number) {
-        const reset = makeButton('TuneReset', parent, 100, 38, uiColor(86, 98, 112), '重置');
-        reset.getComponent(UITransform).setContentSize(100, 38);
+        const reset = makeButton('TuneReset', parent, 112, 44, uiColor(86, 98, 112, 230), '重置');
+        setButtonLabelFontSize(reset, 20);
+        reset.getComponent(UITransform).setContentSize(112, 44);
         reset.setPosition(-92, -panelHeight / 2 + 34, 0);
         reset.on(Node.EventType.TOUCH_END, () => {
             resetTuningToDefaults();
@@ -229,17 +235,18 @@ export class ModelDebugHudBuilder {
             this.renderTuningRows();
         });
 
-        const apply = makeButton('TuneApply', parent, 100, 38, uiColor(28, 148, 124), '应用');
-        apply.getComponent(UITransform).setContentSize(100, 38);
+        const apply = makeButton('TuneApply', parent, 112, 44, uiColor(28, 164, 136, 235), '应用');
+        setButtonLabelFontSize(apply, 20);
+        apply.getComponent(UITransform).setContentSize(112, 44);
         apply.setPosition(92, -panelHeight / 2 + 34, 0);
         apply.on(Node.EventType.TOUCH_END, () => {
             this.setStatus(saveCurrentTuning().message);
             this.renderTuningRows();
         });
 
-        const statusNode = makeLabel('TuneStatus', parent, '', 12, uiColor(150, 235, 255));
-        statusNode.getComponent(UITransform).setContentSize(panelWidth - 32, 24);
-        statusNode.setPosition(0, -panelHeight / 2 + 72, 0);
+        const statusNode = makeLabel('TuneStatus', parent, '', 15, uiColor(190, 244, 255));
+        statusNode.getComponent(UITransform).setContentSize(panelWidth - 32, 28);
+        statusNode.setPosition(0, -panelHeight / 2 + 78, 0);
         this._statusLabel = statusNode.getComponent(Label);
     }
 
@@ -258,4 +265,11 @@ export class ModelDebugHudBuilder {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function setButtonLabelFontSize(button: Node, fontSize: number) {
+    const label = button.getChildByName('Label')?.getComponent(Label);
+    if (label) {
+        label.fontSize = fontSize;
+    }
 }

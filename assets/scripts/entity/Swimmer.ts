@@ -621,6 +621,10 @@ export class Swimmer extends Component {
         return this._strokeMetrics.effortScore;
     }
 
+    get swimWorldY(): number {
+        return this._courseLayout.swimY;
+    }
+
     get actionCycleSeconds(): number {
         return this._motor.actionCycleSeconds;
     }

@@ -1,4 +1,4 @@
-import { Camera, Color, EventMouse, Label, Node, Vec3, view } from 'cc';
+import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -55,6 +55,7 @@ export class ModelDebugFlowController {
     private _colorVariantIndex = 0;
     private _skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === DEFAULT_SKYBOX_VARIANT.id));
     private readonly _hiddenDebugSceneNodes = new Map<Node, boolean>();
+    private _debugWaterRoot: Node | null = null;
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
 
@@ -98,12 +99,13 @@ export class ModelDebugFlowController {
         if (this._refs.playerSwimmer) {
             this._refs.playerSwimmer.node.active = true;
             this._refs.playerSwimmer.reset();
-            this._refs.playerSwimmer.node.setPosition(12, 0.24, this._refs.playerLaneZ);
+            this._refs.playerSwimmer.node.setPosition(12, this._refs.playerSwimmer.swimWorldY, this._refs.playerLaneZ);
             this._refs.playerSwimmer.cartoonRig?.setSkinOutfit('trunksA');
             this.applyCurrentModelVariant();
             this._refs.playerSwimmer.cartoonRig?.setModelDebugMode(true);
         }
         this.hideNonPlayerWorldNodes(true);
+        this.updateDebugWaterReference();
         this.updateCamera(1);
         const camera = this._refs.cameraNode?.getComponent(Camera);
         if (camera) {
@@ -122,6 +124,7 @@ export class ModelDebugFlowController {
             this._refs.inputManager.modelDebugMode = false;
         }
         this.restoreHiddenDebugSceneNodes();
+        this.destroyDebugWaterReference();
         this._refs.uiFlow.hideModelDebugHud();
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = true;
@@ -189,7 +192,9 @@ export class ModelDebugFlowController {
         if (finished) {
             this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
         }
+        this._refs.playerSwimmer?.cartoonRig?.refreshModelDebugSetup();
         this._refs.playerSwimmer?.cartoonRig?.updateFreestyleFromMotor(dt, this._debugMotor);
+        this.updateDebugWaterReference();
         this.updateDebugHud();
     }
 
@@ -469,7 +474,8 @@ export class ModelDebugFlowController {
         }
         return node.name === 'StadiumSun'
             || node.name === 'CartoonFillLight'
-            || node.name === 'CartoonTopLight';
+            || node.name === 'CartoonTopLight'
+            || node.name === 'ModelDebugWaterReference';
     }
 
     private isAncestorOf(candidate: Node, node: Node): boolean {
@@ -487,6 +493,48 @@ export class ModelDebugFlowController {
         const visibleSize = view.getVisibleSize();
         return visibleSize.height > visibleSize.width;
     }
+
+    private updateDebugWaterReference() {
+        const worldRoot = this._refs.worldRoot;
+        const player = this._refs.playerSwimmer;
+        if (!worldRoot || !player?.node?.isValid) {
+            return;
+        }
+        const water = this.ensureDebugWaterReference(worldRoot);
+        const playerPosition = player.node.position;
+        const waterY = player.cartoonRig?.waterY ?? playerPosition.y;
+        water.active = true;
+        water.setPosition(playerPosition.x + 0.42, waterY, playerPosition.z);
+    }
+
+    private ensureDebugWaterReference(parent: Node): Node {
+        if (this._debugWaterRoot?.isValid) {
+            return this._debugWaterRoot;
+        }
+
+        const root = new Node('ModelDebugWaterReference');
+        root.setParent(parent);
+        root.layer = Layers.Enum.DEFAULT;
+
+        const water = makeDebugMaterial('ModelDebugWater', new Color(42, 208, 232, 145));
+        const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 220));
+        const lane = makeDebugMaterial('ModelDebugWaterLane', new Color(30, 142, 218, 185));
+
+        addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(5.2, 0.018, 1.8));
+        addDebugBox(root, 'ModelDebugWaterNearEdge', edge, new Vec3(0, 0.014, -0.92), new Vec3(5.2, 0.012, 0.018));
+        addDebugBox(root, 'ModelDebugWaterFarEdge', edge, new Vec3(0, 0.014, 0.92), new Vec3(5.2, 0.012, 0.018));
+        addDebugBox(root, 'ModelDebugWaterCenterLine', lane, new Vec3(0, 0.016, 0), new Vec3(5.2, 0.01, 0.012));
+
+        this._debugWaterRoot = root;
+        return root;
+    }
+
+    private destroyDebugWaterReference() {
+        if (this._debugWaterRoot?.isValid) {
+            this._debugWaterRoot.destroy();
+        }
+        this._debugWaterRoot = null;
+    }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -499,4 +547,23 @@ function signed(value: number): string {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function makeDebugMaterial(name: string, color: Color): Material {
+    const material = new Material();
+    material.initialize({ effectName: 'builtin-unlit' });
+    material.name = name;
+    material.setProperty('mainColor', color);
+    return material;
+}
+
+function addDebugBox(parent: Node, name: string, material: Material, position: Vec3, scale: Vec3) {
+    const node = new Node(name);
+    node.setParent(parent);
+    node.layer = Layers.Enum.DEFAULT;
+    node.setPosition(position);
+    node.setScale(scale);
+    const renderer = node.addComponent(MeshRenderer);
+    renderer.mesh = utils.createMesh(primitives.box());
+    renderer.setMaterial(material, 0);
 }

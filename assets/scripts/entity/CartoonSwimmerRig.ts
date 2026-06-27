@@ -6,6 +6,7 @@ import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loa
 import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
+import { MOTION_TUNING } from '../core/InputTuning';
 import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
@@ -118,6 +119,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     get colorVariantId(): string {
         return this._colorVariantId;
+    }
+
+    get waterY(): number {
+        return this._waterY;
     }
 
     setColorVariant(variantId: string): boolean {
@@ -481,6 +486,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updatePerfectGlowMaterial();
     }
 
+    refreshModelDebugSetup() {
+        if (!this._modelDebugMode || !this._loaded || !this._model || !this.root) {
+            return;
+        }
+        this.applyRaceModelSetup();
+    }
+
     private updatePerfectGlow(dt: number) {
         if (this._perfectGlowIntensity <= 0) {
             this.updatePerfectGlowMaterial();
@@ -600,7 +612,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._model) {
             return;
         }
-        this._model.setPosition(0, RACE_MODEL_BASE_Y + this.raceModelYOffset(), 0);
+        this._model.setPosition(0, RACE_MODEL_BASE_Y + this.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset, 0);
         this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
         this._model.setRotationFromEuler(90, 90, 0);
     }

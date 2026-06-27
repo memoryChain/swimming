@@ -157,7 +157,7 @@ export class FreestylePoseController {
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
         this.root.setPosition(this.rootBasePos.x + armReach * 0.03, this.rootBasePos.y + bob, this.rootBasePos.z);
         this.root.setRotationFromEuler(
-            this.rootBaseEuler.x + kickSignal * 1.5,
+            this.rootBaseEuler.x + MOTION_TUNING.swimBodyPitchDegrees + kickSignal * 1.5,
             this.rootBaseEuler.y + sideRoll * SIDE_BODY_ROLL_DEGREES + breathBodyRoll,
             this.rootBaseEuler.z + armReach * 1.2,
         );
