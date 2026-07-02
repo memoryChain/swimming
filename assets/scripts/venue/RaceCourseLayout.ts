@@ -9,6 +9,7 @@ const SWIMMER_CENTER_EDGE_INSET = 0.45;
 const SWIMMER_FRONT_BOUNDARY_CLEARANCE = 2.35;
 const STANDING_MODEL_LOCAL_Y = 0.55;
 const PLATFORM_STANDING_LIFT = 0.04;
+const PLATFORM_STANDING_FORWARD_OFFSET = 0.22;
 const WATER_NODE_NAMES = ['poolwatersurface'];
 const FLOOR_NODE_NAMES = ['pool_floor'];
 const START_BLOCK_NODE_NAMES = ['start_block_top_near'];
@@ -161,6 +162,12 @@ export class RaceCourseLayout {
             this.platformY,
             z + this.platformZOffset,
         );
+    }
+
+    platformStandingPosition(z: number): Vec3 {
+        const platform = this.platformPosition(z);
+        platform.x += this.direction * PLATFORM_STANDING_FORWARD_OFFSET;
+        return platform;
     }
 
     clampSwimWorldX(x: number): number {

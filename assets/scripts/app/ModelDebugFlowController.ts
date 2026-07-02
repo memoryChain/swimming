@@ -1,4 +1,4 @@
-import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3, view } from 'cc';
+import { Camera, Color, EventMouse, gfx, Label, Layers, Material, MeshRenderer, Node, primitives, resources, utils, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -7,7 +7,7 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
-import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
+import { DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
 import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
 import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
@@ -74,7 +74,7 @@ export class ModelDebugFlowController {
         this._lastRating = null;
         this._lastCombo = 0;
         this._lastStability = 0;
-        this._modelVariantIndex = Math.max(0, SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
+        this._modelVariantIndex = Math.max(0, DEBUG_SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
         this._colorVariantIndex = Math.max(0, SWIMMER_0621_2_COLOR_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.colorVariantId));
         this._skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === this._refs.skyboxApplier?.currentVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
@@ -130,6 +130,9 @@ export class ModelDebugFlowController {
             swimmer.node.active = true;
         }
         this._refs.playerSwimmer?.cartoonRig?.setSkinOutfit('trunksA');
+        if (this._refs.playerSwimmer?.cartoonRig && isDebugOnlySwimmerModelVariant(this._refs.playerSwimmer.cartoonRig.modelVariantId)) {
+            this._refs.playerSwimmer.cartoonRig.setModelVariant('swimmer0621_2');
+        }
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugMode(false);
         this._debugMotor.stopRace();
         this._refs.playerSwimmer?.reset();
@@ -192,8 +195,13 @@ export class ModelDebugFlowController {
         if (finished) {
             this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
         }
-        this._refs.playerSwimmer?.cartoonRig?.refreshModelDebugSetup();
-        this._refs.playerSwimmer?.cartoonRig?.updateFreestyleFromMotor(dt, this._debugMotor);
+        const rig = this._refs.playerSwimmer?.cartoonRig;
+        rig?.refreshModelDebugSetup();
+        if (rig?.usesDebugProceduralPose) {
+            rig.updateBreaststrokePreview(dt);
+        } else if (!rig?.usesDebugAnimationClip) {
+            rig?.updateFreestyleFromMotor(dt, this._debugMotor);
+        }
         this.updateDebugWaterReference();
         this.updateDebugHud();
     }
@@ -272,10 +280,10 @@ export class ModelDebugFlowController {
     }
 
     switchModelVariant() {
-        if (!this._active || SWIMMER_MODEL_VARIANTS.length <= 0) {
+        if (!this._active || DEBUG_SWIMMER_MODEL_VARIANTS.length <= 0) {
             return;
         }
-        this._modelVariantIndex = positiveMod(this._modelVariantIndex + 1, SWIMMER_MODEL_VARIANTS.length);
+        this._modelVariantIndex = positiveMod(this._modelVariantIndex + 1, DEBUG_SWIMMER_MODEL_VARIANTS.length);
         this.applyCurrentModelVariant();
     }
 
@@ -296,7 +304,7 @@ export class ModelDebugFlowController {
     }
 
     private applyCurrentModelVariant() {
-        const variant = SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? SWIMMER_MODEL_VARIANTS[0];
+        const variant = DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? DEBUG_SWIMMER_MODEL_VARIANTS[0];
         if (!variant) {
             return;
         }
@@ -327,7 +335,7 @@ export class ModelDebugFlowController {
         if (!this._refs.modelLabel) {
             return;
         }
-        const model = SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? SWIMMER_MODEL_VARIANTS[0];
+        const model = DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? DEBUG_SWIMMER_MODEL_VARIANTS[0];
         const color = SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex] ?? SWIMMER_0621_2_COLOR_VARIANTS[0];
         this._refs.modelLabel.string = model?.id === 'swimmer0621_2' && color
             ? `S2 ${color.label}`
@@ -516,17 +524,34 @@ export class ModelDebugFlowController {
         root.setParent(parent);
         root.layer = Layers.Enum.DEFAULT;
 
-        const water = makeDebugMaterial('ModelDebugWater', new Color(42, 208, 232, 145));
-        const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 220));
-        const lane = makeDebugMaterial('ModelDebugWaterLane', new Color(30, 142, 218, 185));
+        const water = makeDebugMaterial('ModelDebugWater', new Color(42, 208, 232, 72), true);
+        const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 150), true);
+        const lane = makeDebugMaterial('ModelDebugWaterLane', new Color(30, 142, 218, 120), true);
 
-        addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(5.2, 0.018, 1.8));
+        const waterRenderer = addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(5.2, 0.018, 1.8));
         addDebugBox(root, 'ModelDebugWaterNearEdge', edge, new Vec3(0, 0.014, -0.92), new Vec3(5.2, 0.012, 0.018));
         addDebugBox(root, 'ModelDebugWaterFarEdge', edge, new Vec3(0, 0.014, 0.92), new Vec3(5.2, 0.012, 0.018));
         addDebugBox(root, 'ModelDebugWaterCenterLine', lane, new Vec3(0, 0.016, 0), new Vec3(5.2, 0.01, 0.012));
+        this.applyTransparentDebugWaterMaterial(waterRenderer);
 
         this._debugWaterRoot = root;
         return root;
+    }
+
+    private applyTransparentDebugWaterMaterial(renderer: MeshRenderer) {
+        resources.load(RESOURCE_PATHS.poolWaterMaterial, Material, (err, sourceMaterial) => {
+            if (err || !sourceMaterial || !renderer?.node?.isValid) {
+                console.warn('[SpeedSwimming] model debug transparent water material load failed', err);
+                return;
+            }
+            const material = new Material();
+            material.copy(sourceMaterial);
+            material.name = 'ModelDebugTransparentWater';
+            material.setProperty('deepColor', new Color(0, 92, 178, 42));
+            material.setProperty('shallowColor', new Color(42, 208, 232, 54));
+            material.setProperty('foamColor', new Color(196, 248, 255, 76));
+            renderer.setMaterial(material, 0);
+        });
     }
 
     private destroyDebugWaterReference() {
@@ -549,15 +574,32 @@ function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
 }
 
-function makeDebugMaterial(name: string, color: Color): Material {
+function makeDebugMaterial(name: string, color: Color, transparent = false): Material {
     const material = new Material();
     material.initialize({ effectName: 'builtin-unlit' });
     material.name = name;
     material.setProperty('mainColor', color);
+    if (transparent) {
+        material.overridePipelineStates({
+            blendState: {
+                targets: [{
+                    blend: true,
+                    blendSrc: gfx.BlendFactor.SRC_ALPHA,
+                    blendDst: gfx.BlendFactor.ONE_MINUS_SRC_ALPHA,
+                    blendSrcAlpha: gfx.BlendFactor.SRC_ALPHA,
+                    blendDstAlpha: gfx.BlendFactor.ONE_MINUS_SRC_ALPHA,
+                }],
+            },
+            depthStencilState: {
+                depthTest: true,
+                depthWrite: false,
+            },
+        });
+    }
     return material;
 }
 
-function addDebugBox(parent: Node, name: string, material: Material, position: Vec3, scale: Vec3) {
+function addDebugBox(parent: Node, name: string, material: Material, position: Vec3, scale: Vec3): MeshRenderer {
     const node = new Node(name);
     node.setParent(parent);
     node.layer = Layers.Enum.DEFAULT;
@@ -566,4 +608,5 @@ function addDebugBox(parent: Node, name: string, material: Material, position: V
     const renderer = node.addComponent(MeshRenderer);
     renderer.mesh = utils.createMesh(primitives.box());
     renderer.setMaterial(material, 0);
+    return renderer;
 }

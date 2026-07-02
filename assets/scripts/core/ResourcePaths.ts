@@ -2,8 +2,11 @@ export type SwimmerModelVariant = {
     id: string;
     label: string;
     candidates: string[];
+    debugOnly?: boolean;
     preserveOriginalMaterial?: boolean;
     raceModelYOffset?: number;
+    raceModelEulerDegrees?: readonly [number, number, number];
+    debugPose?: 'breaststroke' | 'divePrep';
     swimHeadLiftDegrees?: number;
 };
 
@@ -70,7 +73,50 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
     },
+    {
+        id: 'swimmer0621_2_mixamoSwimming',
+        label: 'Mixamo Swimming',
+        candidates: [
+            'models/UserSwimmer0621_2MixamoSwimming',
+            'models/UserSwimmer0621_2MixamoSwimming/UserSwimmer0621_2MixamoSwimming',
+        ],
+        debugOnly: true,
+        preserveOriginalMaterial: true,
+        raceModelEulerDegrees: [0, 90, 0],
+        swimHeadLiftDegrees: 4,
+    },
+    {
+        id: 'swimmer0621_2_breaststrokeProc',
+        label: 'Tread Water Proc',
+        candidates: [
+            'models/UserSwimmer0621_2',
+            'models/UserSwimmer0621_2/UserSwimmer0621_2',
+        ],
+        debugOnly: true,
+        preserveOriginalMaterial: true,
+        debugPose: 'breaststroke',
+        raceModelYOffset: -0.88,
+        raceModelEulerDegrees: [0, 90, 0],
+        swimHeadLiftDegrees: 6,
+    },
+    {
+        id: 'swimmer0621_2_divePrepPose',
+        label: 'Dive Prep Pose',
+        candidates: [
+            'models/UserSwimmer0621_2',
+            'models/UserSwimmer0621_2/UserSwimmer0621_2',
+        ],
+        debugOnly: true,
+        preserveOriginalMaterial: true,
+        debugPose: 'divePrep',
+        raceModelEulerDegrees: [0, 90, 0],
+        swimHeadLiftDegrees: 4,
+    },
 ];
+
+export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS.filter((variant) =>
+    variant.id === 'swimmer0621_2' || variant.id === 'swimmer0621_2_breaststrokeProc' || variant.id === 'swimmer0621_2_divePrepPose'
+);
 
 export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
     { id: 'original', label: 'Original' },
@@ -122,6 +168,10 @@ export const RESOURCE_PATHS = {
 
 export function findSwimmerModelVariant(id: string): SwimmerModelVariant | null {
     return SWIMMER_MODEL_VARIANTS.find((variant) => variant.id === id) ?? null;
+}
+
+export function isDebugOnlySwimmerModelVariant(id: string): boolean {
+    return findSwimmerModelVariant(id)?.debugOnly === true;
 }
 
 export function defaultSwimmerModelVariant(): SwimmerModelVariant {

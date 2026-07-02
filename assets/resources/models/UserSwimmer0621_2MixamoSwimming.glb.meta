@@ -1,0 +1,203 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8",
+  "files": [
+    "__original-animation-0.bin"
+  ],
+  "subMetas": {
+    "9f25a": {
+      "importer": "gltf-mesh",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@9f25a",
+      "displayName": "",
+      "id": "9f25a",
+      "name": "UserSwimmer0621_2Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 3020
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "fdfc8": {
+      "importer": "gltf-animation",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@fdfc8",
+      "displayName": "",
+      "id": "fdfc8",
+      "name": "Swimming.animation",
+      "userData": {
+        "gltfIndex": 0,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 3.0333333015441895
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7cddb": {
+      "importer": "gltf-embeded-image",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@7cddb",
+      "displayName": "",
+      "id": "7cddb",
+      "name": "swimer0621_2_basecolor_no_armpit_shadow.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@7cddb"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f68a7": {
+      "importer": "gltf-material",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@f68a7",
+      "displayName": "",
+      "id": "f68a7",
+      "name": "UserSwimmer0621_2Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "0075a": {
+      "importer": "gltf-scene",
+      "uuid": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@0075a",
+      "displayName": "",
+      "id": "0075a",
+      "name": "UserSwimmer0621_2MixamoSwimming.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "swimer0621_2_basecolor_no_armpit_shadow",
+        "uri": "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@7cddb"
+      }
+    ],
+    "animationImportSettings": [
+      {
+        "name": "Swimming",
+        "duration": 3.0333333015441895,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "Swimming",
+            "from": 0,
+            "to": 3.0333333015441895,
+            "wrapMode": 2,
+            "previousId": "fdfc8"
+          }
+        ]
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@9f25a"
+      ],
+      "skeletons": [
+        "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@f9d1d"
+      ],
+      "textures": [
+        "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@e39f7"
+      ],
+      "materials": [
+        "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@f68a7"
+      ],
+      "scenes": [
+        "8af34a8f-1181-41ab-9ddd-f8a04035b3a8@0075a"
+      ]
+    }
+  }
+}

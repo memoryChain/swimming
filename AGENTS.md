@@ -39,6 +39,7 @@
 ## Blender MCP
 
 - Blender MCP may be used for inspecting and editing Blender scenes/assets, especially low-poly venue work under `tools/`.
+- For any model sampling, retargeting, rig inspection, animation baking, GLB export, or Blender scene/asset modification, try Blender MCP first. Do not repeatedly search for or invoke a local `blender.exe` unless Blender MCP is unavailable or explicitly unsuitable.
 - Before large Blender edits, save the `.blend` file or confirm the intended source file with the user.
 - Keep generated geometry suitable for WeChat Mini Game: low face count, few materials, small textures, and merged/static batches where practical.
 - Do not enable or rely on PolyHaven/Hyper3D assets unless the user explicitly asks. External assets can easily add excessive texture size, material count, or geometry.

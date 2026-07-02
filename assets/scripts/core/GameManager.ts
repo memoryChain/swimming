@@ -1,5 +1,6 @@
 import {
     _decorator,
+    Camera,
     Color,
     Component,
     director,
@@ -7,10 +8,15 @@ import {
     game,
     Label,
     Layers,
+    Material,
+    MeshRenderer,
     Node,
+    primitives,
     Sprite,
     UITransform,
+    utils,
     Vec3,
+    view,
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
@@ -56,6 +62,9 @@ const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
 const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
 const RACE_OPPONENTS_ENABLED = true;
+const UNDERWATER_TINT_DISTANCE = 1.2;
+const UNDERWATER_TINT_DEPTH = 0.002;
+const UNDERWATER_TINT_MARGIN = 1.45;
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -73,6 +82,7 @@ export class GameManager extends Component {
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
+    private _underwaterCameraTint: Node = null;
     private _worldRoot: Node = null;
     private _cameraNode: Node = null;
     private _modelDebugSpeedLabel: Label = null;
@@ -142,11 +152,13 @@ export class GameManager extends Component {
         this.updatePlayerCondition(dt);
         this.drawStrokeTimingGuide(this._playerSwimmer.strokeTimingGuide, this._state === GameState.RACING);
         if (this._modelDebugFlow?.active) {
+            this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
+        this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
     }
 
     startGame() {
@@ -166,6 +178,7 @@ export class GameManager extends Component {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
+        this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
         this._finishRankMarkers.bind(this._worldRoot);
         this.buildPool3D(this._worldRoot, () => {
@@ -596,6 +609,47 @@ export class GameManager extends Component {
         this.drawStrokeTimingGuide(null, false);
     }
 
+    private setUnderwaterOverlayVisible(visible: boolean) {
+        if (this._underwaterCameraTint) {
+            this._underwaterCameraTint.active = visible;
+            if (visible) {
+                this.resizeUnderwaterCameraTint();
+            }
+        }
+    }
+
+    private buildUnderwaterCameraTint(cameraNode: Node, width: number, height: number): Node {
+        const tint = new Node('UnderwaterCameraTint3D');
+        tint.setParent(cameraNode);
+        tint.layer = Layers.Enum.DEFAULT;
+        tint.setPosition(0, 0, -UNDERWATER_TINT_DISTANCE);
+        tint.setScale(this.underwaterTintScale(width, height));
+        tint.active = false;
+        const renderer = tint.addComponent(MeshRenderer);
+        renderer.mesh = utils.createMesh(primitives.box());
+        renderer.setMaterial(makeUnderwaterTintMaterial(), 0);
+        return tint;
+    }
+
+    private resizeUnderwaterCameraTint() {
+        if (!this._underwaterCameraTint) {
+            return;
+        }
+        const design = view.getDesignResolutionSize();
+        const visible = view.getVisibleSize();
+        const width = visible.width || design.width || 1280;
+        const height = visible.height || design.height || 720;
+        this._underwaterCameraTint.setScale(this.underwaterTintScale(width, height));
+    }
+
+    private underwaterTintScale(width: number, height: number): Vec3 {
+        const camera = this._cameraNode?.getComponent(Camera);
+        const fov = camera?.fov ?? 36;
+        const aspect = height > 0 ? width / height : 16 / 9;
+        const planeHeight = Math.tan(fov * Math.PI / 360) * UNDERWATER_TINT_DISTANCE * 2 * UNDERWATER_TINT_MARGIN;
+        return new Vec3(planeHeight * aspect, planeHeight, UNDERWATER_TINT_DEPTH);
+    }
+
     private drawStrokeTimingGuide(guide: StrokeTimingGuide | null, active: boolean) {
         const fillNode = this._timingGuideFillNode;
         if (!fillNode) {
@@ -654,4 +708,18 @@ export class GameManager extends Component {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
+}
+
+function makeUnderwaterTintMaterial(): Material {
+    const material = new Material();
+    material.initialize({ effectName: 'builtin-unlit', technique: 1 });
+    material.name = 'UnderwaterCameraTint';
+    material.setProperty('mainColor', new Color(10, 140, 215, 78));
+    material.overridePipelineStates({
+        depthStencilState: {
+            depthTest: false,
+            depthWrite: false,
+        },
+    });
+    return material;
 }

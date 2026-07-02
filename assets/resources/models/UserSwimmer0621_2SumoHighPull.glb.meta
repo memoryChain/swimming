@@ -1,0 +1,203 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4",
+  "files": [
+    "__original-animation-0.bin"
+  ],
+  "subMetas": {
+    "fa0ad": {
+      "importer": "gltf-mesh",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@fa0ad",
+      "displayName": "",
+      "id": "fa0ad",
+      "name": "UserSwimmer0621_2Mesh.003.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 3020
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "5e6b4": {
+      "importer": "gltf-animation",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@5e6b4",
+      "displayName": "",
+      "id": "5e6b4",
+      "name": "SumoHighPull.002.animation",
+      "userData": {
+        "gltfIndex": 0,
+        "wrapMode": 2,
+        "sample": 30,
+        "span": {
+          "from": 0,
+          "to": 4.233333110809326
+        },
+        "events": []
+      },
+      "ver": "1.0.18",
+      "imported": true,
+      "files": [
+        ".bin"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7cddb": {
+      "importer": "gltf-embeded-image",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@7cddb",
+      "displayName": "",
+      "id": "7cddb",
+      "name": "swimer0621_2_basecolor_no_armpit_shadow.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@7cddb"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "13e0d": {
+      "importer": "gltf-material",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@13e0d",
+      "displayName": "",
+      "id": "13e0d",
+      "name": "UserSwimmer0621_2Material.003.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e1853": {
+      "importer": "gltf-scene",
+      "uuid": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@e1853",
+      "displayName": "",
+      "id": "e1853",
+      "name": "UserSwimmer0621_2SumoHighPull.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "swimer0621_2_basecolor_no_armpit_shadow",
+        "uri": "d240d82d-2c5c-42e9-aff6-0648a1448aa4@7cddb"
+      }
+    ],
+    "animationImportSettings": [
+      {
+        "name": "SumoHighPull.002",
+        "duration": 4.233333110809326,
+        "fps": 30,
+        "splits": [
+          {
+            "name": "SumoHighPull.002",
+            "from": 0,
+            "to": 4.233333110809326,
+            "wrapMode": 2,
+            "previousId": "5e6b4"
+          }
+        ]
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "d240d82d-2c5c-42e9-aff6-0648a1448aa4@fa0ad"
+      ],
+      "skeletons": [
+        "d240d82d-2c5c-42e9-aff6-0648a1448aa4@f9d1d"
+      ],
+      "textures": [
+        "d240d82d-2c5c-42e9-aff6-0648a1448aa4@e39f7"
+      ],
+      "materials": [
+        "d240d82d-2c5c-42e9-aff6-0648a1448aa4@13e0d"
+      ],
+      "scenes": [
+        "d240d82d-2c5c-42e9-aff6-0648a1448aa4@e1853"
+      ]
+    }
+  }
+}

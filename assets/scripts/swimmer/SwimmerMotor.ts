@@ -299,11 +299,12 @@ export class SwimmerMotor {
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
         if (options.isAI) {
-            const visualSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
-            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', visualSpeedScale);
-            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', visualSpeedScale);
-            this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', visualSpeedScale);
-            this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', visualSpeedScale);
+            const visualSpeedScale = MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
+            const releasedSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * visualSpeedScale;
+            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', releasedSpeedScale);
+            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', releasedSpeedScale);
+            this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', releasedSpeedScale);
+            this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', releasedSpeedScale);
             return;
         }
         this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));

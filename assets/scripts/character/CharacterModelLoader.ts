@@ -80,14 +80,21 @@ export function isInsideNodeNamed(node: Node, name: string): boolean {
     return false;
 }
 
-export function configureSwimmerSkinnedRenderers(model: Node): SkinnedMeshRenderer[] {
+export type SwimmerSkinnedRendererOptions = {
+    useBakedAnimation?: boolean;
+};
+
+export function configureSwimmerSkinnedRenderers(model: Node, options: SwimmerSkinnedRendererOptions = {}): SkinnedMeshRenderer[] {
     const renderers: SkinnedMeshRenderer[] = [];
     collectComponentsRecursive(model, SkinnedMeshRenderer, renderers);
     const skinnedRenderers = renderers.filter((renderer) => !isInsideNodeNamed(renderer.node, 'CharacterOutlineShell'));
+    const useBakedAnimation = options.useBakedAnimation === true;
     for (const renderer of skinnedRenderers) {
         renderer.skinningRoot = model;
-        renderer.setUseBakedAnimation(false, true);
-        renderer.uploadAnimation(null);
+        renderer.setUseBakedAnimation(useBakedAnimation, true);
+        if (!useBakedAnimation) {
+            renderer.uploadAnimation(null);
+        }
     }
     return skinnedRenderers;
 }

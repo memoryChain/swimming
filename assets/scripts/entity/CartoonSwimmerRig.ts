@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
@@ -7,17 +7,27 @@ import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
-import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
+import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
 
 const SPLASH_WATER_Y = 0.408;
-const FINISH_FLOAT_BASE_Y = -0.42;
-const FINISH_FLOAT_BOB_AMPLITUDE = 0.035;
+const FINISH_FLOAT_BASE_Y = -0.78;
+const FINISH_FLOAT_BOB_AMPLITUDE = 0.018;
 const FINISH_FLOAT_BOB_SPEED = 2.6;
+const FINISH_TREAD_WATER_CYCLE_SECONDS = 2.25;
+const DIVE_STREAMLINE_TRANSITION_SECONDS = 0.22;
+const DIVE_PREP_MODEL_BACK_OFFSET = -0.24;
+const DIVE_PREP_MODEL_Y = 0.26;
+const DIVE_PREP_MODEL_EULER = [0, 90, 0] as const;
 const RACE_MODEL_BASE_Y = 0.18;
 const SWIMMER_MODEL_SCALE = 1.35;
+const MIXAMO_SWIMMING_CLIP_PATHS = [
+    'models/UserSwimmer0621_2MixamoSwimming/Swimming',
+    'models/UserSwimmer0621_2MixamoSwimming/Swimming.004',
+    'models/UserSwimmer0621_2MixamoSwimming/Armature|mixamo.com|Layer0',
+];
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -49,6 +59,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _modelDebugMode = false;
     private _preRaceStanding = false;
     private _finishFloating = false;
+    private _finishTreadWaterStartTime = 0;
+    private _diveStreamlineTransitionActive = false;
+    private _diveStreamlineTransitionElapsed = 0;
+    private _diveStreamlineTransitionDuration = DIVE_STREAMLINE_TRANSITION_SECONDS;
     private _skinColor = new Color(246, 176, 118);
     private _suitColor = new Color(245, 42, 64);
     private _capColor = new Color(255, 220, 72);
@@ -67,6 +81,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _colorAssetLoadToken = 0;
     private _waterY = SPLASH_WATER_Y;
     private readonly _tmpSplashWorld = new Vec3();
+    private _mixamoDebugTimer = 0;
+    private _lastMixamoDebugLeftArm = '';
+    private _lastMixamoDebugLeftLeg = '';
 
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
         if (this._loaded || this._model) {
@@ -119,6 +136,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     get colorVariantId(): string {
         return this._colorVariantId;
+    }
+
+    get usesDebugAnimationClip(): boolean {
+        return this.isMixamoSwimmingDebugVariant();
+    }
+
+    get usesDebugProceduralPose(): boolean {
+        return this.isBreaststrokeDebugVariant() || this.isDivePrepDebugVariant();
     }
 
     get waterY(): number {
@@ -179,7 +204,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
             this.configureSkinnedRenderers();
             this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
-            this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation));
+            this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), this.isMixamoSwimmingDebugVariant());
+            this.ensureMixamoAnimationComponent();
             this._pose.captureBasePose();
             this._loaded = true;
             this.resetPose();
@@ -292,6 +318,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._preRaceStanding = active;
         this._finishFloating = false;
+        this._diveStreamlineTransitionActive = false;
         this._active = false;
         this._animationPlayer.stop();
         if (!this._loaded || !this._model || !this.root) {
@@ -311,6 +338,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._preRaceStanding = false;
         this._finishFloating = true;
+        this._finishTreadWaterStartTime = this._selfTime;
         this._active = false;
         this._animationPlayer.stop();
         if (!this._loaded || !this._model || !this.root) {
@@ -325,6 +353,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._preRaceStanding = false;
         this._finishFloating = false;
+        this._diveStreamlineTransitionActive = false;
         this._active = true;
         this._animationPlayer.stop();
         if (!this._loaded || !this._model || !this.root) {
@@ -333,6 +362,25 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.applyRaceModelSetup();
         this.resetPose();
         this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+        this._splashEmitter?.setVisible(false);
+    }
+
+    startDiveStreamlineTransition(duration = DIVE_STREAMLINE_TRANSITION_SECONDS) {
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._preRaceStanding = false;
+        this._finishFloating = false;
+        this._active = true;
+        this._diveStreamlineTransitionActive = true;
+        this._diveStreamlineTransitionElapsed = 0;
+        this._diveStreamlineTransitionDuration = Math.max(0.01, duration);
+        this._animationPlayer.stop();
+        if (!this._loaded || !this._model || !this.root) {
+            return;
+        }
+        this.applyDivePrepModelSetup();
+        this._pose.applyDivePrepToStreamlinePose(0);
         this._splashEmitter?.setVisible(false);
     }
 
@@ -378,6 +426,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
     }
 
+    updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
+        this.updateFreestyle(
+            dt,
+            0,
+            0,
+            motor.leftKickCycle,
+            motor.rightKickCycle,
+            motor.bodyPhase,
+            motor.currentSpeed,
+            movementDirection,
+        );
+    }
+
     updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1) {
         if (!this._loaded || !this._active || !this.root) {
             return;
@@ -400,6 +461,32 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updateSplashSurface(speed);
     }
 
+    updateBreaststrokePreview(dt: number) {
+        if (!this._loaded || !this._modelDebugMode) {
+            return;
+        }
+        if (this.isDivePrepDebugVariant()) {
+            this._pose.applyDivePrepPose(1);
+            this._armAction = 0;
+            this._kickAction = 0;
+            this.syncSplashState();
+            this.updateSplashSurface(0);
+            return;
+        }
+        if (!this.isBreaststrokeDebugVariant()) {
+            return;
+        }
+        const cycleSeconds = 2.25 / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
+        const phase = positiveMod(this._selfTime / cycleSeconds, 1);
+        this._pose.setMovementDirection(1);
+        this._pose.applyBreaststrokePose(phase, 1);
+        const action = Math.max(0, Math.sin(phase * Math.PI * 2 - Math.PI * 0.25));
+        this._armAction = Math.max(this._armAction - dt * 2.4, action * 0.35);
+        this._kickAction = Math.max(this._kickAction - dt * 2.8, Math.max(0, Math.sin(phase * Math.PI * 2 - Math.PI * 1.25)) * 0.55);
+        this.syncSplashState();
+        this.updateSplashSurface(0.8);
+    }
+
     update(dt: number) {
         if (!this._loaded || !this.root) {
             return;
@@ -409,10 +496,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._debugTimer += dt;
 
         if (this._modelDebugMode) {
+            if (this.isMixamoSwimmingDebugVariant()) {
+                this.updateMixamoDebugProbe(dt);
+            }
             return;
         }
 
         this.updatePerfectGlow(dt);
+
+        if (this._diveStreamlineTransitionActive) {
+            this.updateDiveStreamlineTransition(dt);
+            return;
+        }
 
         if (this._finishFloating) {
             this.updateFinishFloating();
@@ -448,7 +543,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._kickCycleMotion = 0;
         this._lastKickCycle = 0;
         this._hasLastKickCycle = false;
+        this._mixamoDebugTimer = 0;
+        this._lastMixamoDebugLeftArm = '';
+        this._lastMixamoDebugLeftLeg = '';
         this._finishFloating = false;
+        this._finishTreadWaterStartTime = 0;
+        this._diveStreamlineTransitionActive = false;
+        this._diveStreamlineTransitionElapsed = 0;
         this._splashEmitter?.reset();
         this._pose.restoreBasePose();
         this.updateSplashSurface(0);
@@ -458,9 +559,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._modelDebugMode = active;
         this._active = active;
         this._animationPlayer.disable();
+        const useBakedAnimation = active && this.isMixamoSwimmingDebugVariant();
         for (const renderer of this._skinnedRenderers) {
-            renderer.setUseBakedAnimation(false, true);
-            renderer.uploadAnimation(null);
+            renderer.setUseBakedAnimation(useBakedAnimation, true);
+            if (!useBakedAnimation) {
+                renderer.uploadAnimation(null);
+            }
         }
         if (!this._loaded || !this._model || !this.root) {
             return;
@@ -491,6 +595,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this.applyRaceModelSetup();
+        if (this.isMixamoSwimmingDebugVariant()) {
+            this._animationPlayer.setSpeed(MOTION_TUNING.animationSpeedScale);
+        }
     }
 
     private updatePerfectGlow(dt: number) {
@@ -594,12 +701,176 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return !!variant?.suit && !!variant.cap;
     }
 
+    private isMixamoSwimmingDebugVariant(): boolean {
+        return this._modelVariantId === 'swimmer0621_2_mixamoSwimming'
+            && isDebugOnlySwimmerModelVariant(this._modelVariantId);
+    }
+
+    private isBreaststrokeDebugVariant(): boolean {
+        return findSwimmerModelVariant(this._modelVariantId)?.debugPose === 'breaststroke'
+            && isDebugOnlySwimmerModelVariant(this._modelVariantId);
+    }
+
+    private isDivePrepDebugVariant(): boolean {
+        return findSwimmerModelVariant(this._modelVariantId)?.debugPose === 'divePrep'
+            && isDebugOnlySwimmerModelVariant(this._modelVariantId);
+    }
+
+    private ensureMixamoDebugAnimationPlaying() {
+        if (!this._animationPlayer.hasAnimation) {
+            this.ensureMixamoAnimationComponent();
+        }
+        if (!this._animationPlayer.hasAnimation) {
+            return;
+        }
+        const played = this._animationPlayer.playClip('Swimming', true, MOTION_TUNING.animationSpeedScale)
+            || this._animationPlayer.playFirstClip(true, MOTION_TUNING.animationSpeedScale);
+        if (!played) {
+            console.warn(`[SpeedSwimming] Mixamo debug animation missing clips=${this.animationClipNames}`);
+        }
+    }
+
+    private ensureMixamoAnimationComponent() {
+        if (!this.isMixamoSwimmingDebugVariant() || !this._model) {
+            return;
+        }
+        let animation = this._model.getComponent(SkeletalAnimation);
+        if (!animation) {
+            animation = this._model.addComponent(SkeletalAnimation);
+            console.log(`[SpeedSwimming] Mixamo debug added SkeletalAnimation on model root ${this.nodePath(this._model)}`);
+        } else {
+            console.log(`[SpeedSwimming] Mixamo debug found SkeletalAnimation on model root ${this.nodePath(animation.node)} clips=${animation.clips.map((clip) => clip?.name || '-').join('|') || 'empty'}`);
+        }
+        this.logMixamoPathProbe();
+        this._animationPlayer.bind(animation, true);
+        this.loadMixamoClipByPath(0);
+    }
+
+    private loadMixamoClipByPath(index: number) {
+        if (index >= MIXAMO_SWIMMING_CLIP_PATHS.length) {
+            this.loadMixamoClipFromDirectory();
+            return;
+        }
+        const path = MIXAMO_SWIMMING_CLIP_PATHS[index];
+        resources.load(path, AnimationClip, (error, clip) => {
+            if (!this.isMixamoSwimmingDebugVariant() || !this._model?.isValid) {
+                return;
+            }
+            if (!error && clip) {
+                console.log(`[SpeedSwimming] Mixamo loaded clip path=${path}`);
+                this.bindMixamoClip(clip);
+                return;
+            }
+            console.log(`[SpeedSwimming] Mixamo clip path skipped path=${path} reason=${error}`);
+            this.loadMixamoClipByPath(index + 1);
+        });
+    }
+
+    private loadMixamoClipFromDirectory() {
+        resources.loadDir('models/UserSwimmer0621_2MixamoSwimming', AnimationClip, (dirError, clips) => {
+            if (!this.isMixamoSwimmingDebugVariant() || !this._model?.isValid) {
+                return;
+            }
+            const clipNames = clips?.map((item) => item?.name || '-').join('|') || 'empty';
+            console.log(`[SpeedSwimming] Mixamo loadDir clips=${clipNames}`);
+            const fallback = clips?.find((item) => item?.name === 'Swimming')
+                || clips?.find((item) => item?.name?.startsWith('Swimming'))
+                || clips?.[0]
+                || null;
+            if (!fallback) {
+                console.warn('[SpeedSwimming] failed to load Mixamo Swimming clip subasset from paths and directory', dirError);
+                return;
+            }
+            this.bindMixamoClip(fallback);
+        });
+    }
+
+    private bindMixamoClip(clip: AnimationClip) {
+        console.log(`[SpeedSwimming] Mixamo debug bind clip=${clip.name} duration=${clip.duration.toFixed(2)}`);
+        this._animationPlayer.addClip(clip);
+        if (this._modelDebugMode) {
+            this.ensureMixamoDebugAnimationPlaying();
+        }
+    }
+
+    private logMixamoPathProbe() {
+        if (!this._model) {
+            return;
+        }
+        const paths = [
+            'Armature',
+            'Armature/Root',
+            'Armature/Root/Hip',
+            'Armature/Root/Hip/Waist/Spine01/Spine02/R_Clavicle/R_Upperarm/R_Forearm/R_ForearmTwist01',
+            'Armature/UserSwimmer0621_2',
+        ];
+        const result = paths.map((path) => `${path}=${!!findNodeByPath(this._model, path)}`).join(' ');
+        console.log(`[SpeedSwimming] Mixamo path probe from model root ${result}`);
+    }
+
+    private updateMixamoDebugProbe(dt: number) {
+        this._mixamoDebugTimer += dt;
+        if (this._mixamoDebugTimer < 1) {
+            return;
+        }
+        this._mixamoDebugTimer = 0;
+        const leftArm = this._pose.leftArmEuler;
+        const leftLeg = this._pose.leftLegEuler;
+        const leftArmChanged = this._lastMixamoDebugLeftArm !== '' && this._lastMixamoDebugLeftArm !== leftArm;
+        const leftLegChanged = this._lastMixamoDebugLeftLeg !== '' && this._lastMixamoDebugLeftLeg !== leftLeg;
+        this._lastMixamoDebugLeftArm = leftArm;
+        this._lastMixamoDebugLeftLeg = leftLeg;
+        console.log(
+            `[SpeedSwimming] Mixamo debug probe variant=${this._modelVariantId} ` +
+            `${this._animationPlayer.getStateSummary()} ` +
+            `leftArm=${leftArm} leftArmChanged=${leftArmChanged} ` +
+            `leftLeg=${leftLeg} leftLegChanged=${leftLegChanged} ` +
+            `model=${this._model ? this.nodePath(this._model) : '-'} root=${this.root ? this.nodePath(this.root) : '-'}`,
+        );
+    }
+
+    private nodePath(node: Node): string {
+        const names: string[] = [];
+        for (let current: Node | null = node; current; current = current.parent) {
+            names.push(current.name || '-');
+        }
+        return names.reverse().join('/');
+    }
+
     private applyModelDebugSetup() {
         if (!this._model || !this.root) {
             return;
         }
-        this.configureSkinnedRenderers();
+        const useBakedAnimation = this.isMixamoSwimmingDebugVariant();
+        this.configureSkinnedRenderers(useBakedAnimation);
         this.applyRaceModelSetup();
+        if (this.isMixamoSwimmingDebugVariant()) {
+            this._animationPlayer.setUseBakedAnimation(true);
+            this.ensureMixamoDebugAnimationPlaying();
+            console.log(
+                `[SpeedSwimming] model debug uses imported Mixamo clip ` +
+                `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length} clips=${this.animationClipNames}`,
+            );
+            return;
+        }
+        if (this.isBreaststrokeDebugVariant()) {
+            this._pose.applyBreaststrokePose(0, 1);
+            console.log(
+                `[SpeedSwimming] model debug uses procedural breaststroke ` +
+                `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length}`,
+            );
+            return;
+        }
+        if (this.isDivePrepDebugVariant()) {
+            this._pose.applyDivePrepPose(1);
+            this.updateSplashSurface(0);
+            this._splashEmitter?.setVisible(false);
+            console.log(
+                `[SpeedSwimming] model debug uses sampled dive prep pose ` +
+                `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length}`,
+            );
+            return;
+        }
         this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
         console.log(
             `[SpeedSwimming] model debug uses race freestyle pipeline ` +
@@ -614,20 +885,43 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._model.setPosition(0, RACE_MODEL_BASE_Y + this.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset, 0);
         this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
-        this._model.setRotationFromEuler(90, 90, 0);
+        const euler = this.raceModelEulerDegrees();
+        this._model.setRotationFromEuler(euler[0], euler[1], euler[2]);
     }
 
     private applyPreRaceStandingSetup() {
         if (!this._model || !this.root) {
             return;
         }
-        this.applyRaceModelSetup();
-        this._model.setPosition(0, 0.55, 0);
-        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
-        this._model.setRotationFromEuler(0, 90, 0);
-        this._pose.applyPreRaceStandingPose();
+        this.applyDivePrepModelSetup();
+        this._pose.applyDivePrepPose(1);
         this.updateSplashSurface(0);
         this._splashEmitter?.setVisible(false);
+    }
+
+    private updateDiveStreamlineTransition(dt: number) {
+        if (!this._model || !this.root) {
+            return;
+        }
+        this._diveStreamlineTransitionElapsed += dt;
+        const t = Math.min(1, this._diveStreamlineTransitionElapsed / this._diveStreamlineTransitionDuration);
+        const prepWeight = 1 - smoothStep(t);
+        const raceY = RACE_MODEL_BASE_Y + this.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset;
+        this._model.setPosition(DIVE_PREP_MODEL_BACK_OFFSET * prepWeight, lerp(raceY, DIVE_PREP_MODEL_Y, prepWeight), 0);
+        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
+        const euler = this.raceModelEulerDegrees();
+        this._model.setRotationFromEuler(
+            lerp(euler[0], DIVE_PREP_MODEL_EULER[0], prepWeight),
+            lerp(euler[1], DIVE_PREP_MODEL_EULER[1], prepWeight),
+            lerp(euler[2], DIVE_PREP_MODEL_EULER[2], prepWeight),
+        );
+        this._pose.applyDivePrepToStreamlinePose(smoothStep(t));
+        this.updateSplashSurface(0);
+        this._splashEmitter?.setVisible(false);
+        if (t >= 1) {
+            this._diveStreamlineTransitionActive = false;
+            this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+        }
     }
 
     private applyFinishFloatingSetup() {
@@ -637,9 +931,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._model.setPosition(0, FINISH_FLOAT_BASE_Y, 0);
         this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
         this._model.setRotationFromEuler(0, 90, 0);
-        this._pose.applyFinishFloatingPose();
+        this.applyFinishTreadWaterPose();
         this.updateSplashSurface(0);
         this._splashEmitter?.setVisible(false);
+    }
+
+    private applyDivePrepModelSetup() {
+        if (!this._model) {
+            return;
+        }
+        this._model.setPosition(DIVE_PREP_MODEL_BACK_OFFSET, DIVE_PREP_MODEL_Y, 0);
+        this._model.setScale(SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE, SWIMMER_MODEL_SCALE);
+        this._model.setRotationFromEuler(DIVE_PREP_MODEL_EULER[0], DIVE_PREP_MODEL_EULER[1], DIVE_PREP_MODEL_EULER[2]);
     }
 
     private updateFinishFloating() {
@@ -648,7 +951,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         const bob = Math.sin(this._selfTime * FINISH_FLOAT_BOB_SPEED) * FINISH_FLOAT_BOB_AMPLITUDE;
         this._model.setPosition(0, FINISH_FLOAT_BASE_Y + bob, 0);
-        this._pose.applyFinishFloatingPose();
+        this.applyFinishTreadWaterPose();
+    }
+
+    private applyFinishTreadWaterPose() {
+        const elapsed = Math.max(0, this._selfTime - this._finishTreadWaterStartTime);
+        const cycleSeconds = FINISH_TREAD_WATER_CYCLE_SECONDS / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
+        const phase = positiveMod(elapsed / cycleSeconds, 1);
+        this._pose.setMovementDirection(1);
+        this._pose.applyBreaststrokePose(phase, 1);
     }
 
     private updateSplashSurface(speed: number) {
@@ -658,6 +969,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private raceModelYOffset(): number {
         return findSwimmerModelVariant(this._modelVariantId)?.raceModelYOffset ?? 0;
+    }
+
+    private raceModelEulerDegrees(): readonly [number, number, number] {
+        return findSwimmerModelVariant(this._modelVariantId)?.raceModelEulerDegrees ?? [90, 90, 0];
     }
 
     private swimHeadLiftDegrees(): number | undefined {
@@ -717,14 +1032,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._pose.getSplashBoneWorldPosition(name, out);
     }
 
-    private configureSkinnedRenderers() {
+    private configureSkinnedRenderers(useBakedAnimation = false) {
         if (!this._model) {
             return;
         }
-        this._skinnedRenderers = configureSwimmerSkinnedRenderers(this._model);
+        this._skinnedRenderers = configureSwimmerSkinnedRenderers(this._model, { useBakedAnimation });
         if (this._skinnedRenderers.length > 0) {
             const roots = this._skinnedRenderers.map((renderer) => renderer.skinningRoot?.name || 'none').join('|');
-            console.log(`[SpeedSwimming] skinned mesh realtime enabled count=${this._skinnedRenderers.length} roots=${roots}`);
+            console.log(`[SpeedSwimming] skinned mesh ${useBakedAnimation ? 'baked animation' : 'realtime'} enabled count=${this._skinnedRenderers.length} roots=${roots}`);
         } else {
             console.warn('[SpeedSwimming] no SkinnedMeshRenderer found on swimmer prefab');
         }
@@ -822,4 +1137,28 @@ function setAllRendererMaterialSlots(source: SkinnedMeshRenderer, target: Skinne
     if (!applied) {
         target.setMaterial(material, 0);
     }
+}
+
+function findNodeByPath(root: Node, path: string): Node | null {
+    let current: Node | null = root;
+    for (const part of path.split('/')) {
+        if (!current) {
+            return null;
+        }
+        current = current.children.find((child) => child.name === part) ?? null;
+    }
+    return current;
+}
+
+function positiveMod(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
+}
+
+function smoothStep(value: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    return t * t * (3 - 2 * t);
+}
+
+function lerp(from: number, to: number, t: number): number {
+    return from + (to - from) * Math.max(0, Math.min(1, t));
 }
