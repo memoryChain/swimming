@@ -1,17 +1,10 @@
 import { Node, Quat, Vec3 } from 'cc';
+import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { BREASTSTROKE_MOTION_SAMPLES, BreaststrokeBoneName, BreaststrokeMotionSample } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
 import { DIVE_PREP_POSE_SAMPLE, DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
 
-const ARM_FORWARD_CYCLE_OFFSET = 0;
-const DEFAULT_SWIM_HEAD_LIFT_DEGREES = -14;
-const FREESTYLE_INTERNAL_BODY_ROLL_DEGREES = 22;
-const FREESTYLE_AXIS_CENTERING_OFFSET = 0.075;
-const TREAD_WATER_BODY_FORWARD_DEGREES = 24;
-const TREAD_WATER_STRAIGHTEN_YAW_DEGREES = 0;
-const TREAD_WATER_STRAIGHTEN_ROLL_DEGREES = 0;
-const DIVE_PREP_ARM_FORWARD_DEGREES = 7;
 const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new Set([
     'L_Clavicle',
     'L_Upperarm',
@@ -101,7 +94,7 @@ export class FreestylePoseController {
     private readonly _tmpSplashWorldB = new Vec3();
     private readonly _tmpMovementForwardRoot = new Vec3();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
-    private _swimHeadLiftDegrees = DEFAULT_SWIM_HEAD_LIFT_DEGREES;
+    private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
 
     bind(root: Node) {
@@ -163,7 +156,7 @@ export class FreestylePoseController {
     }
 
     setSwimHeadLift(degrees: number | undefined) {
-        this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : DEFAULT_SWIM_HEAD_LIFT_DEGREES;
+        this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
@@ -186,10 +179,11 @@ export class FreestylePoseController {
         }
         const bob = Math.sin(bodyPhase) * 0.045;
         const armReach = this.armReachSignal(leftArmCycle, rightArmCycle);
-        const bodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle) * FREESTYLE_INTERNAL_BODY_ROLL_DEGREES
-            - clamp(rightBreath, 0, 1) * MOTION_TUNING.rightBreathBodyRollDegrees;
+        const breathRatio = clamp(rightBreath, 0, 1);
+        const baseBodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle) * FREESTYLE_POSE_TUNING.freestyleInternalBodyRollDegrees;
+        const bodyRoll = baseBodyRoll - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees;
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
-        const axisCenteringOffset = this.freestyleAxisCenteringOffset(bodyRoll);
+        const axisCenteringOffset = this.freestyleAxisCenteringOffset(baseBodyRoll, breathRatio);
         this.laneSideInRootParent(this._tmpParentDirection);
         this.root.setPosition(
             this.rootBasePos.x + armReach * 0.03 + this._tmpParentDirection.x * axisCenteringOffset,
@@ -233,9 +227,9 @@ export class FreestylePoseController {
 
         this.root.setPosition(this.rootBasePos.x + recover * 0.018, this.rootBasePos.y + lift, this.rootBasePos.z);
         this.root.setRotationFromEuler(
-            this.rootBaseEuler.x + TREAD_WATER_BODY_FORWARD_DEGREES + pull * 0.8 - kick * 0.3,
-            this.rootBaseEuler.y + TREAD_WATER_STRAIGHTEN_YAW_DEGREES,
-            this.rootBaseEuler.z + TREAD_WATER_STRAIGHTEN_ROLL_DEGREES,
+            this.rootBaseEuler.x + FREESTYLE_POSE_TUNING.treadWaterBodyForwardDegrees + pull * 0.8 - kick * 0.3,
+            this.rootBaseEuler.y + FREESTYLE_POSE_TUNING.treadWaterStraightenYawDegrees,
+            this.rootBaseEuler.z + FREESTYLE_POSE_TUNING.treadWaterStraightenRollDegrees,
         );
         this.applyBoneOffset(this._hips, -kick * 1.0, 0, 0);
         this.applyBoneOffset(this._spine, 4 + pull * 0.4, 0, 0);
@@ -359,7 +353,7 @@ export class FreestylePoseController {
     }
 
     private armPoseCycle(cycle: number): number {
-        return cycle + ARM_FORWARD_CYCLE_OFFSET;
+        return cycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset;
     }
 
     getSplashBoneWorldPosition(name: string, out: Vec3): boolean {
@@ -617,7 +611,7 @@ export class FreestylePoseController {
     }
 
     private applyDivePrepArmReach(power: number) {
-        const reach = DIVE_PREP_ARM_FORWARD_DEGREES * clamp(power, 0, 1);
+        const reach = FREESTYLE_POSE_TUNING.divePrepArmForwardDegrees * clamp(power, 0, 1);
         this.applyCurrentBoneOffset(this._leftArm, -reach, -reach * 0.2, -reach * 0.15);
         this.applyCurrentBoneOffset(this._rightArm, -reach, reach * 0.2, reach * 0.15);
         this.applyCurrentBoneOffset(this._leftForeArm, -reach * 0.45, 0, -reach * 0.1);
@@ -694,12 +688,13 @@ export class FreestylePoseController {
         const rightReach = Math.max(0, -reach);
         const breathRatio = clamp(rightBreath, 0, 1);
         const breathTurn = -MOTION_TUNING.rightBreathTurnDegrees * breathRatio * 0.18;
+        const headBreathTurn = breathTurn * FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale;
         const breathLift = smoothRange(breathRatio, 0.08, 0.82);
 
         const swimHeadLift = this._swimHeadLiftDegrees;
         this.applyBoneOffset(this._torso, swimHeadLift * 0.18 + breathLift * 1.6, breathTurn * 0.1, 0);
-        this.applyBoneOffset(this._neck, swimHeadLift * 0.72 + breathLift * 3.0, breathTurn * 0.28, 0);
-        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15 + breathLift * 2.1, breathTurn * 0.5, 0);
+        this.applyBoneOffset(this._neck, swimHeadLift * 0.72 + breathLift * 3.0, headBreathTurn * 0.28, 0);
+        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15 + breathLift * 2.1, headBreathTurn * 0.5, 0);
         this.applyBoneOffset(this._leftShoulder, leftReach * -2, 0, leftReach * -3);
         this.applyBoneOffset(this._rightShoulder, rightReach * -2 - breathLift * 3.2, 0, rightReach * 3 - breathLift * 1.8);
     }
@@ -721,9 +716,11 @@ export class FreestylePoseController {
         Quat.multiply(this._tmpResultRotation, this._tmpResultRotation, this._tmpAxisRotation);
     }
 
-    private freestyleAxisCenteringOffset(bodyRollDegrees: number): number {
-        const rollRatio = clamp(bodyRollDegrees / FREESTYLE_INTERNAL_BODY_ROLL_DEGREES, -1, 1);
-        return -Math.sin(rollRatio * Math.PI * 0.5) * FREESTYLE_AXIS_CENTERING_OFFSET * this._movementDirectionSign;
+    private freestyleAxisCenteringOffset(baseBodyRollDegrees: number, rightBreath: number): number {
+        const rollRatio = clamp(baseBodyRollDegrees / FREESTYLE_POSE_TUNING.freestyleInternalBodyRollDegrees, -1, 1);
+        const rollOffset = -Math.sin(rollRatio * Math.PI * 0.5) * FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset;
+        const breathOffset = clamp(rightBreath, 0, 1) * FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset;
+        return (rollOffset + breathOffset) * this._movementDirectionSign;
     }
 
     private laneSideInRootParent(out: Vec3): Vec3 {

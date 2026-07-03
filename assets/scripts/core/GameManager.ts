@@ -84,6 +84,8 @@ export class GameManager extends Component {
     private _modelDebugHud: Node = null;
     private _underwaterCameraTint: Node = null;
     private _worldRoot: Node = null;
+    private _swimmersRoot: Node = null;
+    private _poolNode: Node = null;
     private _cameraNode: Node = null;
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
@@ -181,12 +183,12 @@ export class GameManager extends Component {
         this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
         this._finishRankMarkers.bind(this._worldRoot);
-        this.buildPool3D(this._worldRoot, () => {
+        this.buildPool3D(this._worldRoot, (pool) => {
             if (!this.node?.isValid || !this._worldRoot?.isValid) {
                 return;
             }
             try {
-                this.buildSwimmers3D(this._worldRoot);
+                this.buildPlayerSwimmer3D(this._worldRoot);
                 this.buildUi(scene.canvasNode, scene.width, scene.height, (uiError) => {
                     if (uiError) {
                         done(uiError);
@@ -200,6 +202,7 @@ export class GameManager extends Component {
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
                     done();
+                    this.scheduleDeferredSceneExtras(pool);
                 });
             } catch (error) {
                 done(error);
@@ -310,26 +313,26 @@ export class GameManager extends Component {
         });
     }
 
-    private buildPool3D(root: Node, done: () => void) {
+    private buildPool3D(root: Node, done: (pool: Node | null) => void) {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
         venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool }) => {
             if (!pool?.isValid) {
-                this.buildSpectatorCrowd(root, null);
-                done();
+                this._poolNode = null;
+                done(null);
                 return;
             }
             this.scheduleOnce(() => {
                 if (!pool.isValid) {
-                    this.buildSpectatorCrowd(root, null);
-                    done();
+                    this._poolNode = null;
+                    done(null);
                     return;
                 }
                 const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
                 if (calibrated) {
                     this._raceCameraDirector.resetToBroadcast();
                 }
-                this.buildSpectatorCrowd(root, pool);
-                done();
+                this._poolNode = pool;
+                done(pool);
             }, 0);
         });
     }
@@ -344,35 +347,63 @@ export class GameManager extends Component {
         }
     }
 
-    private buildSwimmers3D(root: Node) {
-        const competitors = new CompetitorManager({
+    private createCompetitorManager(): CompetitorManager {
+        return new CompetitorManager({
             laneLayout: LANE_LAYOUT,
             courseLayout: COURSE_LAYOUT,
             playerLaneIndex: PLAYER_LANE_INDEX,
             primaryAiLaneIndex: PRIMARY_AI_LANE_INDEX,
             debug: (message) => this.debug(message),
-        }).build(root);
+        });
+    }
+
+    private buildPlayerSwimmer3D(root: Node) {
+        const competitors = this.createCompetitorManager().buildPlayer(root);
+        this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
+        this._aiController = null;
+        this._aiControllers = [];
+        this._aiSwimmers = [];
+        this._aiConditions = [];
+    }
+
+    private buildDeferredAiSwimmers() {
         if (!RACE_OPPONENTS_ENABLED) {
-            for (const swimmer of competitors.aiSwimmers) {
-                swimmer.stopRace();
-                swimmer.node.active = false;
-            }
-            for (const controller of competitors.aiControllers) {
-                controller.stopSwimming();
-            }
             this._aiController = null;
-            this._aiControllers = [];
-            this._aiSwimmers = [];
-            this._aiConditions = [];
             this.debug('race opponents disabled');
             return;
         }
+        if (!this._swimmersRoot?.isValid) {
+            return;
+        }
 
+        const competitors = this.createCompetitorManager().buildAi(this._swimmersRoot);
         this._aiController = competitors.primaryAiController;
-        this._aiControllers = competitors.aiControllers;
-        this._aiSwimmers = competitors.aiSwimmers;
-        this._aiConditions = this._aiSwimmers.map(() => new AiConditionModel());
+        this._aiControllers.splice(0, this._aiControllers.length, ...competitors.aiControllers);
+        this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
+        this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
+        for (const swimmer of this._aiSwimmers) {
+            swimmer.reset();
+        }
+        if (this._raceManager) {
+            this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
+            this._raceManager.aiSwimmers = this._aiSwimmers;
+        }
+        this.debug(`deferred AI swimmers loaded count=${this._aiSwimmers.length}`);
+    }
+
+    private scheduleDeferredSceneExtras(pool: Node | null) {
+        this.scheduleOnce(() => {
+            if (!this.node?.isValid) {
+                return;
+            }
+            this.buildDeferredAiSwimmers();
+            this.scheduleOnce(() => {
+                if (this.node?.isValid && this._worldRoot?.isValid) {
+                    this.buildSpectatorCrowd(this._worldRoot, pool?.isValid ? pool : this._poolNode);
+                }
+            }, 0);
+        }, 0);
     }
 
     private buildUi(root: Node, w: number, h: number, done: (error?: unknown) => void) {

@@ -31,9 +31,25 @@ export class CompetitorManager {
 
     build(root: Node): CompetitorSet {
         const group = makeWorldNode('Swimmers3D', root);
+        const competitors = this.buildPlayerAndAi(group);
+
+        return {
+            playerSwimmer: competitors.playerSwimmer,
+            primaryAiController: competitors.primaryAiController,
+            aiControllers: competitors.aiControllers,
+            aiSwimmers: competitors.aiSwimmers,
+        };
+    }
+
+    buildPlayer(root: Node): { group: Node; playerSwimmer: Swimmer } {
+        const group = makeWorldNode('Swimmers3D', root);
+        const playerSwimmer = this.createPlayer(group);
+        return { group, playerSwimmer };
+    }
+
+    buildAi(group: Node): Omit<CompetitorSet, 'playerSwimmer'> {
         const aiControllers: AISwimmerController[] = [];
         const aiSwimmers: Swimmer[] = [];
-        let playerSwimmer: Swimmer = null;
         let primaryAiController: AISwimmerController | null = null;
         const playerColorVariantId = 'original';
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
@@ -42,24 +58,67 @@ export class CompetitorManager {
         let aiColorIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
-            const isPlayer = lane === this._options.playerLaneIndex;
+            if (lane === this._options.playerLaneIndex) {
+                continue;
+            }
             const swimmer = this._factory.create(group, {
-                name: isPlayer ? 'PlayerSwimmer3D' : `AISwimmerLane${lane + 1}`,
+                name: `AISwimmerLane${lane + 1}`,
                 x: this._options.courseLayout.startX,
                 y: this._options.courseLayout.swimY,
                 z: this._options.laneLayout.centerZ(lane),
-                isAI: !isPlayer,
-                colorVariantId: isPlayer
-                    ? playerColorVariantId
-                    : aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
-                displayName: isPlayer ? 'YOU' : aiNames[aiNameIndex++ % aiNames.length],
+                isAI: true,
+                colorVariantId: aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
+                displayName: aiNames[aiNameIndex++ % aiNames.length],
             });
             swimmer.configureCourse(this._options.courseLayout);
-            if (isPlayer) {
-                playerSwimmer = swimmer;
+            const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
+            const controller = swimmer.node.addComponent(AISwimmerController);
+            controller.swimmer = swimmer;
+            controller.difficulty = profile.difficulty;
+            controller.bpmOffset = profile.bpmOffset;
+            controller.divePower = profile.divePower;
+            controller.diveReaction = profile.diveReaction;
+            swimmer.aiPower = profile.power;
+            swimmer.aiMaxSpeedScale = profile.maxSpeed;
+            aiSwimmers.push(swimmer);
+            aiControllers.push(controller);
+            if (lane === this._options.primaryAiLaneIndex) {
+                primaryAiController = controller;
+            }
+        }
+
+        return {
+            primaryAiController,
+            aiControllers,
+            aiSwimmers,
+        };
+    }
+
+    private buildPlayerAndAi(group: Node): CompetitorSet {
+        const aiControllers: AISwimmerController[] = [];
+        const aiSwimmers: Swimmer[] = [];
+        let primaryAiController: AISwimmerController | null = null;
+        const playerSwimmer = this.createPlayer(group);
+        const playerColorVariantId = 'original';
+        const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
+        const aiNames = shuffledAiCompetitorNames();
+        let aiNameIndex = 0;
+        let aiColorIndex = 0;
+
+        for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
+            if (lane === this._options.playerLaneIndex) {
                 continue;
             }
-
+            const swimmer = this._factory.create(group, {
+                name: `AISwimmerLane${lane + 1}`,
+                x: this._options.courseLayout.startX,
+                y: this._options.courseLayout.swimY,
+                z: this._options.laneLayout.centerZ(lane),
+                isAI: true,
+                colorVariantId: aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
+                displayName: aiNames[aiNameIndex++ % aiNames.length],
+            });
+            swimmer.configureCourse(this._options.courseLayout);
             const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
             const controller = swimmer.node.addComponent(AISwimmerController);
             controller.swimmer = swimmer;
@@ -82,6 +141,20 @@ export class CompetitorManager {
             aiControllers,
             aiSwimmers,
         };
+    }
+
+    private createPlayer(group: Node): Swimmer {
+        const swimmer = this._factory.create(group, {
+            name: 'PlayerSwimmer3D',
+            x: this._options.courseLayout.startX,
+            y: this._options.courseLayout.swimY,
+            z: this._options.laneLayout.centerZ(this._options.playerLaneIndex),
+            isAI: false,
+            colorVariantId: 'original',
+            displayName: 'YOU',
+        });
+        swimmer.configureCourse(this._options.courseLayout);
+        return swimmer;
     }
 }
 
