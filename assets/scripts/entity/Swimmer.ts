@@ -711,6 +711,10 @@ export class Swimmer extends Component {
         return this._courseLayout.swimY;
     }
 
+    get waterWorldY(): number {
+        return this._courseLayout.waterY;
+    }
+
     get actionCycleSeconds(): number {
         return this._motor.actionCycleSeconds;
     }

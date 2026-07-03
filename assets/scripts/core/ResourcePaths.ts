@@ -17,6 +17,14 @@ export type SwimmerColorVariant = {
     cap?: readonly [number, number, number];
 };
 
+export type DebugSwimmerActionPose = 'divePrep' | 'freestyle' | 'breaststroke';
+
+export type DebugSwimmerActionPreview = {
+    id: string;
+    label: string;
+    pose: DebugSwimmerActionPose;
+};
+
 export type SkyboxFaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
 
 export type SkyboxVariant = {
@@ -115,8 +123,26 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
 ];
 
 export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS.filter((variant) =>
-    variant.id === 'swimmer0621_2' || variant.id === 'swimmer0621_2_breaststrokeProc' || variant.id === 'swimmer0621_2_divePrepPose'
+    variant.id === 'swimmer0621_2'
 );
+
+export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
+    {
+        id: 'divePrep',
+        label: 'Dive Prep',
+        pose: 'divePrep',
+    },
+    {
+        id: 'freestyle',
+        label: 'Freestyle',
+        pose: 'freestyle',
+    },
+    {
+        id: 'treadWater',
+        label: 'Tread Water',
+        pose: 'breaststroke',
+    },
+];
 
 export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
     { id: 'original', label: 'Original' },

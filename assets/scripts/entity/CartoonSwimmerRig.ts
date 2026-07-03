@@ -10,6 +10,7 @@ import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
+import type { DebugSwimmerActionPose } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
@@ -74,6 +75,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _dynamicColorEffect: EffectAsset = null;
     private _colorAssetLoadToken = 0;
     private _waterY = CHARACTER_POSE_TUNING.splashWaterY;
+    private _debugActionPose: DebugSwimmerActionPose = 'freestyle';
     private readonly _tmpSplashWorld = new Vec3();
     private _mixamoDebugTimer = 0;
     private _lastMixamoDebugLeftArm = '';
@@ -137,7 +139,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     get usesDebugProceduralPose(): boolean {
-        return this.isBreaststrokeDebugVariant() || this.isDivePrepDebugVariant();
+        return this.isBreaststrokeDebugPose() || this.isDivePrepDebugPose();
     }
 
     get waterY(): number {
@@ -159,6 +161,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             }
         }
         return true;
+    }
+
+    setDebugActionPose(pose: DebugSwimmerActionPose) {
+        if (this._debugActionPose === pose) {
+            return;
+        }
+        this._debugActionPose = pose;
+        if (this._modelDebugMode) {
+            this.setModelDebugMode(true);
+        }
     }
 
     private loadModelForCurrentVariant() {
@@ -413,7 +425,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._loaded || !this._modelDebugMode) {
             return;
         }
-        if (this.isDivePrepDebugVariant()) {
+        if (this.isDivePrepDebugPose()) {
             this._pose.applyDivePrepPose(1);
             this._armAction = 0;
             this._kickAction = 0;
@@ -421,7 +433,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this.updateSplashSurface(0);
             return;
         }
-        if (!this.isBreaststrokeDebugVariant()) {
+        if (!this.isBreaststrokeDebugPose()) {
             return;
         }
         const cycleSeconds = CHARACTER_POSE_TUNING.breaststrokePreviewCycleSeconds / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
@@ -503,6 +515,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._loaded || !this._model || !this.root) {
             return;
         }
+        this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
         this.resetPose();
         if (active) {
             this.applyModelDebugSetup();
@@ -640,12 +653,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             && isDebugOnlySwimmerModelVariant(this._modelVariantId);
     }
 
-    private isBreaststrokeDebugVariant(): boolean {
+    private isBreaststrokeDebugPose(): boolean {
+        if (this._modelDebugMode) {
+            return this._debugActionPose === 'breaststroke';
+        }
         return findSwimmerModelVariant(this._modelVariantId)?.debugPose === 'breaststroke'
             && isDebugOnlySwimmerModelVariant(this._modelVariantId);
     }
 
-    private isDivePrepDebugVariant(): boolean {
+    private isDivePrepDebugPose(): boolean {
+        if (this._modelDebugMode) {
+            return this._debugActionPose === 'divePrep';
+        }
         return findSwimmerModelVariant(this._modelVariantId)?.debugPose === 'divePrep'
             && isDebugOnlySwimmerModelVariant(this._modelVariantId);
     }
@@ -787,7 +806,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             );
             return;
         }
-        if (this.isBreaststrokeDebugVariant()) {
+        if (this.isBreaststrokeDebugPose()) {
             this._pose.applyBreaststrokePose(0, 1);
             console.log(
                 `[SpeedSwimming] model debug uses procedural breaststroke ` +
@@ -795,7 +814,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             );
             return;
         }
-        if (this.isDivePrepDebugVariant()) {
+        if (this.isDivePrepDebugPose()) {
             this._pose.applyDivePrepPose(1);
             this.updateSplashSurface(0);
             this._splashEmitter?.setVisible(false);
@@ -820,14 +839,23 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private raceModelYOffset(): number {
+        if (this._modelDebugMode && this._debugActionPose === 'breaststroke') {
+            return -0.88;
+        }
         return findSwimmerModelVariant(this._modelVariantId)?.raceModelYOffset ?? 0;
     }
 
     private raceModelEulerDegrees(): readonly [number, number, number] {
+        if (this._modelDebugMode && (this._debugActionPose === 'breaststroke' || this._debugActionPose === 'divePrep')) {
+            return [0, 90, 0];
+        }
         return findSwimmerModelVariant(this._modelVariantId)?.raceModelEulerDegrees ?? [90, 90, 0];
     }
 
     private swimHeadLiftDegrees(): number | undefined {
+        if (this._modelDebugMode && this._debugActionPose === 'breaststroke') {
+            return 6;
+        }
         return findSwimmerModelVariant(this._modelVariantId)?.swimHeadLiftDegrees;
     }
 

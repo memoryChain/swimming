@@ -7,13 +7,21 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
-import { DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
+import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
+import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
 import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
+import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
+import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { StandardSkyboxApplier } from './StandardSkyboxApplier';
+
+const DEBUG_WATER_LENGTH = 8.8;
+const DEBUG_ACTION_LANE_WIDTH = DEFAULT_POOL_DEFINITION.laneWidth;
+const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, DEBUG_ACTION_LANE_WIDTH * DEBUG_SWIMMER_ACTION_PREVIEWS.length);
+const DEBUG_WATER_HALF_WIDTH = DEBUG_WATER_WIDTH * 0.5;
 
 export type ModelDebugFlowRefs = {
     worldRoot: Node | null;
@@ -32,12 +40,20 @@ export type ModelDebugFlowRefs = {
     ratingLabel: Label | null;
     swimSpeedLabel: Label | null;
     modelLabel: Label | null;
+    actionLabel: Label | null;
     skyboxLabel: Label | null;
     skyboxApplier: StandardSkyboxApplier | null;
     resetExtraAiSwimmers: () => void;
     returnToLogin: () => void;
     setState: (state: GameState) => void;
     debug: (message: string) => void;
+};
+
+type ModelDebugActionPreviewInstance = {
+    config: DebugSwimmerActionPreview;
+    laneIndex: number;
+    node: Node;
+    rig: CartoonSwimmerRig;
 };
 
 export class ModelDebugFlowController {
@@ -52,10 +68,13 @@ export class ModelDebugFlowController {
     private _lastCombo = 0;
     private _lastStability = 0;
     private _modelVariantIndex = 0;
+    private _actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === 'freestyle'));
     private _colorVariantIndex = 0;
     private _skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === DEFAULT_SKYBOX_VARIANT.id));
     private readonly _hiddenDebugSceneNodes = new Map<Node, boolean>();
     private _debugWaterRoot: Node | null = null;
+    private _actionPreviewRoot: Node | null = null;
+    private readonly _actionPreviews: ModelDebugActionPreviewInstance[] = [];
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
 
@@ -75,6 +94,7 @@ export class ModelDebugFlowController {
         this._lastCombo = 0;
         this._lastStability = 0;
         this._modelVariantIndex = Math.max(0, DEBUG_SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
+        this._actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === 'freestyle'));
         this._colorVariantIndex = Math.max(0, SWIMMER_0621_2_COLOR_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.colorVariantId));
         this._skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === this._refs.skyboxApplier?.currentVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
@@ -82,9 +102,6 @@ export class ModelDebugFlowController {
         if (this._refs.cameraNode) {
             this._refs.cameraPos.set(this._refs.cameraNode.position);
         }
-        this.applySpeed();
-        this.updateSkyboxLabel();
-        this.updateDebugHud();
 
         if (this._refs.inputManager) {
             this._refs.inputManager.modelDebugMode = true;
@@ -97,14 +114,18 @@ export class ModelDebugFlowController {
             swimmer.node.active = false;
         }
         if (this._refs.playerSwimmer) {
-            this._refs.playerSwimmer.node.active = true;
             this._refs.playerSwimmer.reset();
-            this._refs.playerSwimmer.node.setPosition(12, this._refs.playerSwimmer.swimWorldY, this._refs.playerLaneZ);
             this._refs.playerSwimmer.cartoonRig?.setSkinOutfit('trunksA');
-            this.applyCurrentModelVariant();
-            this._refs.playerSwimmer.cartoonRig?.setModelDebugMode(true);
+            this._refs.playerSwimmer.node.active = false;
         }
         this.hideNonPlayerWorldNodes(true);
+        this.ensureActionPreviews();
+        this.applyCurrentModelVariant();
+        this.applyCurrentColorVariant();
+        this.updateActionLabel();
+        this.applySpeed();
+        this.updateSkyboxLabel();
+        this.updateDebugHud();
         this.updateDebugWaterReference();
         this.updateCamera(1);
         const camera = this._refs.cameraNode?.getComponent(Camera);
@@ -125,6 +146,7 @@ export class ModelDebugFlowController {
         }
         this.restoreHiddenDebugSceneNodes();
         this.destroyDebugWaterReference();
+        this.destroyActionPreviews();
         this._refs.uiFlow.hideModelDebugHud();
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = true;
@@ -134,6 +156,9 @@ export class ModelDebugFlowController {
             this._refs.playerSwimmer.cartoonRig.setModelVariant('swimmer0621_2');
         }
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugMode(false);
+        if (this._refs.playerSwimmer?.node) {
+            this._refs.playerSwimmer.node.active = true;
+        }
         this._debugMotor.stopRace();
         this._refs.playerSwimmer?.reset();
         this._refs.resetExtraAiSwimmers();
@@ -153,7 +178,7 @@ export class ModelDebugFlowController {
         }
         const queued = this._debugMotor.recordStroke(type);
         if (queued) {
-            this._refs.playerSwimmer?.cartoonRig?.triggerStroke(type);
+            this.freestylePreview()?.rig.triggerStroke(type);
         }
         if (type === StrokeType.LEFT) {
             this._refs.debug('model debug: left hand + right foot');
@@ -195,12 +220,13 @@ export class ModelDebugFlowController {
         if (finished) {
             this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
         }
-        const rig = this._refs.playerSwimmer?.cartoonRig;
-        rig?.refreshModelDebugSetup();
-        if (rig?.usesDebugProceduralPose) {
-            rig.updateBreaststrokePreview(dt);
-        } else if (!rig?.usesDebugAnimationClip) {
-            rig?.updateFreestyleFromMotor(dt, this._debugMotor);
+        for (const preview of this._actionPreviews) {
+            preview.rig.refreshModelDebugSetup();
+            if (preview.config.pose === 'freestyle') {
+                preview.rig.updateFreestyleFromMotor(dt, this._debugMotor);
+            } else {
+                preview.rig.updateBreaststrokePreview(dt);
+            }
         }
         this.updateDebugWaterReference();
         this.updateDebugHud();
@@ -287,6 +313,18 @@ export class ModelDebugFlowController {
         this.applyCurrentModelVariant();
     }
 
+    switchActionPreview() {
+        if (!this._active || DEBUG_SWIMMER_ACTION_PREVIEWS.length <= 0) {
+            return;
+        }
+        this._actionPreviewIndex = positiveMod(this._actionPreviewIndex + 1, DEBUG_SWIMMER_ACTION_PREVIEWS.length);
+        this.updateActionLabel();
+        const preview = this.currentActionPreview();
+        if (preview) {
+            this._refs.debug(`model debug action=${preview.config.label}`);
+        }
+    }
+
     switchColorVariant() {
         if (!this._active || SWIMMER_0621_2_COLOR_VARIANTS.length <= 0) {
             return;
@@ -308,13 +346,19 @@ export class ModelDebugFlowController {
         if (!variant) {
             return;
         }
-        const rig = this._refs.playerSwimmer?.cartoonRig;
-        if (rig?.setModelVariant(variant.id)) {
-            rig.setSkinOutfit('trunksA');
+        let applied = false;
+        for (const preview of this._actionPreviews) {
+            if (preview.rig.setModelVariant(variant.id)) {
+                preview.rig.setSkinOutfit('trunksA');
+                preview.rig.setDebugActionPose(preview.config.pose);
+                preview.rig.setModelDebugMode(true);
+                applied = true;
+            }
+        }
+        if (applied) {
             if (variant.id === 'swimmer0621_2') {
                 this.applyCurrentColorVariant();
             }
-            rig.setModelDebugMode(true);
             this._refs.debug(`model debug variant=${variant.label}`);
         }
         this.updateModelLabel();
@@ -325,7 +369,13 @@ export class ModelDebugFlowController {
         if (!variant) {
             return;
         }
-        if (this._refs.playerSwimmer?.cartoonRig?.setColorVariant(variant.id)) {
+        let applied = false;
+        for (const preview of this._actionPreviews) {
+            if (preview.rig.setColorVariant(variant.id)) {
+                applied = true;
+            }
+        }
+        if (applied) {
             this._refs.debug(`model debug color=${variant.label}`);
         }
         this.updateModelLabel();
@@ -340,6 +390,13 @@ export class ModelDebugFlowController {
         this._refs.modelLabel.string = model?.id === 'swimmer0621_2' && color
             ? `S2 ${color.label}`
             : `Model ${model?.label ?? '-'}`;
+    }
+
+    private updateActionLabel() {
+        const preview = DEBUG_SWIMMER_ACTION_PREVIEWS[this._actionPreviewIndex] ?? DEBUG_SWIMMER_ACTION_PREVIEWS[0];
+        if (this._refs.actionLabel) {
+            this._refs.actionLabel.string = `Action ${preview?.label ?? '-'}`;
+        }
     }
 
     private applyCurrentSkyboxVariant() {
@@ -438,11 +495,96 @@ export class ModelDebugFlowController {
     }
 
     private debugCameraTarget(): Vec3 {
-        const playerPosition = this._refs.playerSwimmer?.node.position;
-        const baseX = playerPosition?.x ?? 12;
-        const baseY = playerPosition?.y ?? 0.24;
-        const baseZ = playerPosition?.z ?? this._refs.playerLaneZ;
+        const previewPosition = this.currentActionPreview()?.node.position;
+        const baseX = previewPosition?.x ?? 12;
+        const baseY = previewPosition?.y ?? this._refs.playerSwimmer?.swimWorldY ?? 0.24;
+        const baseZ = previewPosition?.z ?? this._refs.playerLaneZ;
         return new Vec3(baseX + 0.42, baseY + 0.76, baseZ);
+    }
+
+    private ensureActionPreviews() {
+        const worldRoot = this._refs.worldRoot;
+        if (!worldRoot) {
+            return;
+        }
+        if (!this._actionPreviewRoot?.isValid) {
+            this._actionPreviewRoot = new Node('ModelDebugActionPreviewRoot');
+            this._actionPreviewRoot.setParent(worldRoot);
+            this._actionPreviewRoot.layer = Layers.Enum.DEFAULT;
+        }
+        this._actionPreviewRoot.active = true;
+        const baseY = this._refs.playerSwimmer?.swimWorldY ?? 0;
+        const waterY = this._refs.playerSwimmer?.waterWorldY ?? baseY;
+        for (let laneIndex = 0; laneIndex < DEBUG_SWIMMER_ACTION_PREVIEWS.length; laneIndex++) {
+            const config = DEBUG_SWIMMER_ACTION_PREVIEWS[laneIndex];
+            let preview = this._actionPreviews.find((item) => item.config.id === config.id);
+            if (!preview) {
+                const node = new Node(`ModelDebugAction_${config.id}`);
+                node.setParent(this._actionPreviewRoot);
+                node.layer = Layers.Enum.DEFAULT;
+                const rig = node.addComponent(CartoonSwimmerRig);
+                preview = { config, laneIndex, node, rig };
+                this._actionPreviews.push(preview);
+                rig.setModelVariant(DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex]?.id ?? 'swimmer0621_2');
+                rig.setColorVariant(SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex]?.id ?? 'original');
+                rig.setDebugActionPose(config.pose);
+                rig.build(
+                    new Color(246, 176, 118),
+                    new Color(245, 42, 64),
+                    new Color(255, 220, 72),
+                    false,
+                    true,
+                );
+                rig.setSkinOutfit('trunksA');
+                rig.setModelDebugMode(true);
+            }
+            preview.laneIndex = laneIndex;
+            preview.node.active = true;
+            preview.rig.setDebugActionPose(config.pose);
+            preview.rig.setWaterY(waterY);
+            preview.rig.setModelDebugMode(true);
+            preview.node.setPosition(
+                this.debugActionPreviewX(),
+                baseY,
+                this.debugActionLaneZ(laneIndex),
+            );
+            preview.node.setRotationFromEuler(0, 0, 0);
+        }
+    }
+
+    private destroyActionPreviews() {
+        for (const preview of this._actionPreviews) {
+            if (preview.node?.isValid) {
+                preview.node.destroy();
+            }
+        }
+        this._actionPreviews.length = 0;
+        if (this._actionPreviewRoot?.isValid) {
+            this._actionPreviewRoot.destroy();
+        }
+        this._actionPreviewRoot = null;
+    }
+
+    private debugActionPreviewX(): number {
+        return 12;
+    }
+
+    private debugActionLaneZ(laneIndex: number): number {
+        const centerIndex = (DEBUG_SWIMMER_ACTION_PREVIEWS.length - 1) * 0.5;
+        return this._refs.playerLaneZ + (laneIndex - centerIndex) * DEBUG_ACTION_LANE_WIDTH;
+    }
+
+    private debugActionLaneGroupCenterZ(): number {
+        return this._refs.playerLaneZ;
+    }
+
+    private currentActionPreview(): ModelDebugActionPreviewInstance | null {
+        const config = DEBUG_SWIMMER_ACTION_PREVIEWS[this._actionPreviewIndex] ?? DEBUG_SWIMMER_ACTION_PREVIEWS[0];
+        return this._actionPreviews.find((preview) => preview.config.id === config?.id) ?? this._actionPreviews[0] ?? null;
+    }
+
+    private freestylePreview(): ModelDebugActionPreviewInstance | null {
+        return this._actionPreviews.find((preview) => preview.config.pose === 'freestyle') ?? null;
     }
 
     private hideNonPlayerWorldNodes(resetExisting: boolean) {
@@ -483,6 +625,7 @@ export class ModelDebugFlowController {
         return node.name === 'StadiumSun'
             || node.name === 'CartoonFillLight'
             || node.name === 'CartoonTopLight'
+            || node.name === 'ModelDebugActionPreviewRoot'
             || node.name === 'ModelDebugWaterReference';
     }
 
@@ -504,15 +647,15 @@ export class ModelDebugFlowController {
 
     private updateDebugWaterReference() {
         const worldRoot = this._refs.worldRoot;
-        const player = this._refs.playerSwimmer;
-        if (!worldRoot || !player?.node?.isValid) {
+        const preview = this.currentActionPreview();
+        if (!worldRoot || !preview?.node?.isValid) {
             return;
         }
         const water = this.ensureDebugWaterReference(worldRoot);
-        const playerPosition = player.node.position;
-        const waterY = player.cartoonRig?.waterY ?? playerPosition.y;
+        const previewPosition = preview.node.position;
+        const waterY = preview.rig.waterY ?? previewPosition.y;
         water.active = true;
-        water.setPosition(playerPosition.x + 0.42, waterY, playerPosition.z);
+        water.setPosition(previewPosition.x + 0.42, waterY, this.debugActionLaneGroupCenterZ());
     }
 
     private ensureDebugWaterReference(parent: Node): Node {
@@ -528,10 +671,13 @@ export class ModelDebugFlowController {
         const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 150), true);
         const lane = makeDebugMaterial('ModelDebugWaterLane', new Color(30, 142, 218, 120), true);
 
-        const waterRenderer = addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(5.2, 0.018, 1.8));
-        addDebugBox(root, 'ModelDebugWaterNearEdge', edge, new Vec3(0, 0.014, -0.92), new Vec3(5.2, 0.012, 0.018));
-        addDebugBox(root, 'ModelDebugWaterFarEdge', edge, new Vec3(0, 0.014, 0.92), new Vec3(5.2, 0.012, 0.018));
-        addDebugBox(root, 'ModelDebugWaterCenterLine', lane, new Vec3(0, 0.016, 0), new Vec3(5.2, 0.01, 0.012));
+        const waterRenderer = addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(DEBUG_WATER_LENGTH, 0.018, DEBUG_WATER_WIDTH));
+        addDebugBox(root, 'ModelDebugWaterNearEdge', edge, new Vec3(0, 0.014, -DEBUG_WATER_HALF_WIDTH - 0.02), new Vec3(DEBUG_WATER_LENGTH, 0.012, 0.018));
+        addDebugBox(root, 'ModelDebugWaterFarEdge', edge, new Vec3(0, 0.014, DEBUG_WATER_HALF_WIDTH + 0.02), new Vec3(DEBUG_WATER_LENGTH, 0.012, 0.018));
+        for (let i = 1; i < DEBUG_SWIMMER_ACTION_PREVIEWS.length; i++) {
+            const z = -DEBUG_WATER_HALF_WIDTH + DEBUG_ACTION_LANE_WIDTH * i;
+            addDebugBox(root, `ModelDebugWaterLaneLine${i}`, lane, new Vec3(0, 0.016, z), new Vec3(DEBUG_WATER_LENGTH, 0.01, 0.012));
+        }
         this.applyTransparentDebugWaterMaterial(waterRenderer);
 
         this._debugWaterRoot = root;

@@ -91,6 +91,7 @@ export class GameManager extends Component {
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
     private _modelDebugModelLabel: Label = null;
+    private _modelDebugActionLabel: Label = null;
     private _modelDebugSkyboxLabel: Label = null;
     private _skyboxApplier: StandardSkyboxApplier = null;
     private _timingGuideFillNode: Node = null;
@@ -283,6 +284,7 @@ export class GameManager extends Component {
             ratingLabel: this._modelDebugRatingLabel,
             swimSpeedLabel: this._modelDebugSwimSpeedLabel,
             modelLabel: this._modelDebugModelLabel,
+            actionLabel: this._modelDebugActionLabel,
             skyboxLabel: this._modelDebugSkyboxLabel,
             skyboxApplier: this._skyboxApplier,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
@@ -368,6 +370,11 @@ export class GameManager extends Component {
     }
 
     private buildDeferredAiSwimmers() {
+        if (this._modelDebugFlow?.active) {
+            this._aiController = null;
+            this.debug('deferred AI swimmers skipped for model debug');
+            return;
+        }
         if (!RACE_OPPONENTS_ENABLED) {
             this._aiController = null;
             this.debug('race opponents disabled');
@@ -436,6 +443,7 @@ export class GameManager extends Component {
                 onSlow: () => this.slowModelDebugMotion(),
                 onFast: () => this.speedUpModelDebugMotion(),
                 onSwitchModel: () => this.switchModelDebugVariant(),
+                onSwitchAction: () => this.switchModelDebugAction(),
                 onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
             }).build(uiRoot, w, h);
@@ -444,6 +452,7 @@ export class GameManager extends Component {
             this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
             this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
             this._modelDebugModelLabel = modelDebugHud.modelLabel;
+            this._modelDebugActionLabel = modelDebugHud.actionLabel;
             this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
             this._modelDebugHud.active = false;
 
@@ -622,6 +631,10 @@ export class GameManager extends Component {
 
     private switchModelDebugVariant() {
         this._modelDebugFlow?.switchModelVariant();
+    }
+
+    private switchModelDebugAction() {
+        this._modelDebugFlow?.switchActionPreview();
     }
 
     private switchModelDebugTexture() {

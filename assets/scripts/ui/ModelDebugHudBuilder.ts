@@ -8,6 +8,7 @@ export type ModelDebugHudCallbacks = {
     onSlow: () => void;
     onFast: () => void;
     onSwitchModel: () => void;
+    onSwitchAction: () => void;
     onSwitchTexture: () => void;
     onSwitchSkybox: () => void;
 };
@@ -18,6 +19,7 @@ export type ModelDebugHudRefs = {
     ratingLabel: Label;
     swimSpeedLabel: Label;
     modelLabel: Label;
+    actionLabel: Label;
     skyboxLabel: Label;
 };
 
@@ -39,7 +41,7 @@ export class ModelDebugHudBuilder {
         const hud = makeUiNode('ModelDebugHUD', parent);
         const portrait = h > w;
         const topHeight = portrait ? 86 : 76;
-        const bottomHeight = portrait ? 74 : 54;
+        const bottomHeight = portrait ? 86 : 58;
         const topY = h / 2 - topHeight / 2;
         const bottomY = -h / 2 + bottomHeight / 2;
         makeRect('ModelDebugTop', hud, w, topHeight, uiColor(5, 16, 26, 190)).setPosition(0, topY, 0);
@@ -56,33 +58,40 @@ export class ModelDebugHudBuilder {
         tuning.setPosition(portrait ? -48 : w / 2 - 206, portrait ? h / 2 - 60 : topY, 0);
         tuning.on(Node.EventType.TOUCH_END, () => this.setTuningOverlayVisible(true));
         makeRect('ModelDebugBottom', hud, w, bottomHeight, uiColor(5, 16, 26, 135)).setPosition(0, bottomY, 0);
-        const portraitStatusWidth = Math.max(86, Math.min(112, w / 3 - 14));
-        const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 68 : 88, 36, uiColor(92, 76, 170), '模型');
-        model.setPosition(portrait ? -150 : -340, portrait ? -h / 2 + 26 : bottomY, 0);
+        const portraitStatusWidth = Math.max(68, Math.min(92, w / 4 - 10));
+        const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 54 : 88, 36, uiColor(92, 76, 170), '模型');
+        model.setPosition(portrait ? -138 : -340, portrait ? -h / 2 + 26 : bottomY, 0);
         model.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchModel());
-        const texture = makeButton('ModelDebugSwitchTexture', hud, portrait ? 68 : 88, 36, uiColor(168, 82, 126), '配色');
-        texture.setPosition(portrait ? -74 : -244, portrait ? -h / 2 + 26 : bottomY, 0);
+        const action = makeButton('ModelDebugSwitchAction', hud, portrait ? 54 : 88, 36, uiColor(76, 118, 188), 'Action');
+        action.setPosition(portrait ? -82 : -244, portrait ? -h / 2 + 26 : bottomY, 0);
+        action.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchAction());
+        const texture = makeButton('ModelDebugSwitchTexture', hud, portrait ? 54 : 88, 36, uiColor(168, 82, 126), '配色');
+        texture.setPosition(portrait ? -26 : -148, portrait ? -h / 2 + 26 : bottomY, 0);
         texture.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchTexture());
-        const sky = makeButton('ModelDebugSwitchSkybox', hud, portrait ? 64 : 76, 36, uiColor(42, 128, 132), '天空');
-        sky.setPosition(portrait ? 0 : -150, portrait ? -h / 2 + 26 : bottomY, 0);
+        const sky = makeButton('ModelDebugSwitchSkybox', hud, portrait ? 54 : 76, 36, uiColor(42, 128, 132), '天空');
+        sky.setPosition(portrait ? 30 : -52, portrait ? -h / 2 + 26 : bottomY, 0);
         sky.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchSkybox());
-        const slower = makeButton('ModelDebugSlow', hud, 54, 36, uiColor(38, 116, 190), '-');
-        slower.setPosition(portrait ? 72 : -54, portrait ? -h / 2 + 26 : bottomY, 0);
+        const slower = makeButton('ModelDebugSlow', hud, portrait ? 42 : 54, 36, uiColor(38, 116, 190), '-');
+        slower.setPosition(portrait ? 86 : 42, portrait ? -h / 2 + 26 : bottomY, 0);
         slower.on(Node.EventType.TOUCH_END, () => this._callbacks.onSlow());
-        const faster = makeButton('ModelDebugFast', hud, 54, 36, uiColor(38, 116, 190), '+');
-        faster.setPosition(portrait ? 142 : 54, portrait ? -h / 2 + 26 : bottomY, 0);
+        const faster = makeButton('ModelDebugFast', hud, portrait ? 42 : 54, 36, uiColor(38, 116, 190), '+');
+        faster.setPosition(portrait ? 136 : 104, portrait ? -h / 2 + 26 : bottomY, 0);
         faster.on(Node.EventType.TOUCH_END, () => this._callbacks.onFast());
         const speedLabel = makeLabel('ModelDebugStatus', hud, `速度 ${MOTION_TUNING.animationSpeedScale.toFixed(2)}x`, 18, uiColor(230, 244, 250));
-        speedLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 180, 30);
-        speedLabel.setPosition(portrait ? w / 3 : 0, portrait ? -h / 2 + 58 : bottomY, 0);
+        speedLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 150, 30);
+        speedLabel.setPosition(portrait ? w * 0.375 : 270, -h / 2 + 58, 0);
         speedLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
         const modelLabel = makeLabel('ModelDebugModelLabel', hud, '模型 默认', portrait ? 12 : 14, uiColor(205, 220, 255));
-        modelLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 220, 22);
-        modelLabel.setPosition(portrait ? -w / 3 : -260, -h / 2 + 58, 0);
+        modelLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 170, 22);
+        modelLabel.setPosition(portrait ? -w * 0.375 : -300, -h / 2 + 58, 0);
         modelLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
+        const actionLabel = makeLabel('ModelDebugActionLabel', hud, 'Action -', portrait ? 12 : 14, uiColor(190, 222, 255));
+        actionLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 170, 22);
+        actionLabel.setPosition(portrait ? -w * 0.125 : -110, -h / 2 + 58, 0);
+        actionLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
         const skyboxLabel = makeLabel('ModelDebugSkyboxLabel', hud, '天空 默认', portrait ? 12 : 14, uiColor(175, 232, 232));
-        skyboxLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 260, 22);
-        skyboxLabel.setPosition(portrait ? 0 : 64, -h / 2 + 58, 0);
+        skyboxLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 160, 22);
+        skyboxLabel.setPosition(portrait ? w * 0.125 : 80, -h / 2 + 58, 0);
         skyboxLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;
         const ratingLabel = makeLabel('ModelDebugRating', hud, '准备', 20, uiColor(230, 244, 250));
         ratingLabel.getComponent(UITransform).setContentSize(280, 32);
@@ -97,6 +106,7 @@ export class ModelDebugHudBuilder {
             ratingLabel: ratingLabel.getComponent(Label),
             swimSpeedLabel: swimSpeedLabel.getComponent(Label),
             modelLabel: modelLabel.getComponent(Label),
+            actionLabel: actionLabel.getComponent(Label),
             skyboxLabel: skyboxLabel.getComponent(Label),
         };
     }
