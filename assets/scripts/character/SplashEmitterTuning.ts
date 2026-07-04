@@ -33,7 +33,7 @@ export const SPLASH_EMITTER_TUNING = {
     // 水花粒子美术风格开关：
     //   'streak' = 柔和圆点沿速度拉伸成细长水条（当前）。
     //   'blocky' = 硬边方块贴图，普通广告牌（不拉伸），靠随机旋转呈现方块。
-    style: 'blocky' as 'streak' | 'blocky',
+    style: 'streak' as 'streak' | 'blocky',
 
     // Highest renderer priority so splashes draw after transparent water.
     // 最高渲染优先级，确保水花绘制在透明水面之后。
@@ -321,6 +321,25 @@ export const SPLASH_EMITTER_TUNING = {
         enableHand: true,
         enableLeg: true,
         enableBody: true,
+
+        // Reduced splash LOD for background AI swimmers. The player always stays framed and keeps the
+        // full emitter set; distant AI swimmers only need a hint of spray. Cutting particle systems per
+        // AI from 14 -> a few is the single biggest WeChat Mini Game draw-call/CPU win here.
+        // 背景 AI 选手的精简水花 LOD。玩家始终在画面中央、保留全套发射器；远处 AI 只需一点飞溅暗示。
+        // 把每个 AI 的粒子系统从 14 个降到少数几个，是这里对微信小游戏 draw call / CPU 最大的单项优化。
+        reduced: {
+            // How many emitters (from the front of each cluster) to keep per hand / per lower-leg.
+            // 每只手 / 每条小腿保留的发射器数量（取各 cluster 前 N 个）。
+            handCount: 1,
+            legCount: 1,
+            // Body emitters are ambient-only; drop them entirely for reduced swimmers.
+            // 身体发射器纯属氛围，精简选手直接去掉。
+            enableBody: false,
+            // Keep surface foam meshes so AI still visibly disturb the water; only the heavy CPU
+            // particle spray is trimmed. Set true to also skip foam for even fewer draw calls.
+            // 保留水面泡沫网格，让 AI 仍能看出扰动水面；只削减昂贵的 CPU 粒子飞溅。置 true 可连泡沫一并跳过。
+            disableFoam: false,
+        },
 
         // Side lane offsets for left/right hand, lower-leg and body emitters.
         // 左右手、左右小腿和身体发射器的侧向偏移。

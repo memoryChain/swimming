@@ -56,6 +56,9 @@ export type SplashEmitterOptions = {
     name: string;
     waterY: number;
     getBoneWorldPosition: (name: string, out: Vec3) => boolean;
+    // Reduced LOD: background AI swimmers create only a few particle systems instead of the full set.
+    // 精简 LOD：背景 AI 选手只创建少量粒子系统，而非整套。
+    reduced?: boolean;
 };
 
 const EMPTY_STATE: SplashEmitterState = {
@@ -90,9 +93,11 @@ export class SplashEmitter {
     private _lastDt = TUNING.initialDt;
     private _waterY: number;
     private _culled = false;
+    private readonly _reduced: boolean;
 
     constructor(private readonly _options: SplashEmitterOptions) {
         this._waterY = _options.waterY;
+        this._reduced = _options.reduced === true;
         this.node = new Node(_options.name);
         this.node.setParent(_options.parent);
         this.node.setPosition(_options.owner.position.x, this._waterY, _options.owner.position.z);
@@ -107,15 +112,20 @@ export class SplashEmitter {
                 return;
             }
             this._parts.length = 0;
-            for (const part of TUNING.foam.parts) {
-                this.createPart(material, part);
+            const reduced = this._reduced;
+            if (!(reduced && TUNING.particleEmitters.reduced.disableFoam)) {
+                for (const part of TUNING.foam.parts) {
+                    this.createPart(material, part);
+                }
             }
             this.createParticleEmitterCluster('LeftHandSplashParticles', 'left', TUNING.particleEmitters.leftHandZ);
             this.createParticleEmitterCluster('RightHandSplashParticles', 'right', TUNING.particleEmitters.rightHandZ);
             this.createLegParticleEmitter('LeftLowerLegSplashParticles', 'left', TUNING.particleEmitters.leftLegZ);
             this.createLegParticleEmitter('RightLowerLegSplashParticles', 'right', TUNING.particleEmitters.rightLegZ);
-            this.createBodyParticleEmitter('LeftBodySplashParticles', 'left', TUNING.particleEmitters.leftBodyZ);
-            this.createBodyParticleEmitter('RightBodySplashParticles', 'right', TUNING.particleEmitters.rightBodyZ);
+            if (!(reduced && !TUNING.particleEmitters.reduced.enableBody)) {
+                this.createBodyParticleEmitter('LeftBodySplashParticles', 'left', TUNING.particleEmitters.leftBodyZ);
+                this.createBodyParticleEmitter('RightBodySplashParticles', 'right', TUNING.particleEmitters.rightBodyZ);
+            }
             this.update(0);
         });
     }
@@ -217,7 +227,7 @@ export class SplashEmitter {
     }
 
     update(speed: number) {
-        if (!this.node || this._parts.length === 0) {
+        if (!this.node || (this._parts.length === 0 && this._particleEmitters.length === 0)) {
             return;
         }
         if (this._culled) {
@@ -338,7 +348,10 @@ export class SplashEmitter {
 
     private createParticleEmitterCluster(name: string, side: 'left' | 'right', sideZ: number) {
         const sideSign = side === 'left' ? -1 : 1;
-        for (const emitter of TUNING.particleEmitters.handCluster) {
+        const cluster = this._reduced
+            ? TUNING.particleEmitters.handCluster.slice(0, Math.max(1, TUNING.particleEmitters.reduced.handCount))
+            : TUNING.particleEmitters.handCluster;
+        for (const emitter of cluster) {
             this.createParticleEmitter(
                 `${name}${emitter.nameSuffix}`,
                 side,
@@ -351,7 +364,10 @@ export class SplashEmitter {
 
     private createLegParticleEmitter(name: string, side: 'left' | 'right', sideZ: number) {
         const sideSign = side === 'left' ? -1 : 1;
-        for (const emitter of TUNING.particleEmitters.legCluster) {
+        const cluster = this._reduced
+            ? TUNING.particleEmitters.legCluster.slice(0, Math.max(1, TUNING.particleEmitters.reduced.legCount))
+            : TUNING.particleEmitters.legCluster;
+        for (const emitter of cluster) {
             this.createParticleEmitter(
                 `${name}${emitter.nameSuffix}`,
                 side,

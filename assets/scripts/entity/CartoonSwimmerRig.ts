@@ -87,7 +87,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _lastMixamoDebugLeftArm = '';
     private _lastMixamoDebugLeftLeg = '';
 
-    build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false) {
+    build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false, reducedSplash = false) {
         if (this._loaded || this._model) {
             return;
         }
@@ -99,6 +99,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             name: `${this.node.name || 'Swimmer'}Splash`,
             waterY: this._waterY,
             getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
+            reduced: reducedSplash,
         });
         this.splashNode = this._splashEmitter.node;
         this._splashEmitter.build();

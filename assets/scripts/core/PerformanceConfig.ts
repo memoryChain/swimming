@@ -17,6 +17,6 @@ export const PERFORMANCE_CONFIG = {
         // pop-in while still skipping work once the field spreads out.
         // 玩家两侧的在屏 X 半窗宽度（米）。沿游泳轴超出此范围的 AI 选手视为离屏。取值偏宽松以避免
         // 明显弹出，同时在选手拉开后仍能省下开销。
-        cullingDistanceX: 16,
+        cullingDistanceX: 11,
     },
 } as const;
