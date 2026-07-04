@@ -273,7 +273,7 @@ export const SPLASH_EMITTER_TUNING = {
                 role: 'hand',
                 sideOffsetZ: 0,
                 basePosition: [0.46, 0.08, 0],
-                palmOffset: [0.1, 0.06, 0],
+                palmOffset: [0.1, -0.06, 0],
                 forwardTilt: -6,
                 lateralTilt: 0,
                 countScale: 0.28,
@@ -283,7 +283,7 @@ export const SPLASH_EMITTER_TUNING = {
                 role: 'hand',
                 sideOffsetZ: -0.055,
                 basePosition: [0.49, 0.075, 0],
-                palmOffset: [0.12, 0.055, -0.055],
+                palmOffset: [0.12, -0.055, -0.055],
                 forwardTilt: -12,
                 lateralTilt: -13,
                 countScale: 0.2,
@@ -293,7 +293,7 @@ export const SPLASH_EMITTER_TUNING = {
                 role: 'hand',
                 sideOffsetZ: 0.07,
                 basePosition: [0.51, 0.085, 0],
-                palmOffset: [0.13, 0.065, 0.07],
+                palmOffset: [0.13, -0.065, 0.07],
                 forwardTilt: 10,
                 lateralTilt: 18,
                 countScale: 0.2,
@@ -303,7 +303,7 @@ export const SPLASH_EMITTER_TUNING = {
                 role: 'hand',
                 sideOffsetZ: 0.025,
                 basePosition: [0.43, 0.11, 0],
-                palmOffset: [0.06, 0.08, 0.025],
+                palmOffset: [0.06, -0.08, 0.025],
                 forwardTilt: 16,
                 lateralTilt: 8,
                 countScale: 0.12,
@@ -412,9 +412,9 @@ export const SPLASH_EMITTER_TUNING = {
 
         // A small part of hand droplets splashes forward for a natural look.
         // 少量手部水滴向前飞溅，让效果更自然。
-        forwardSplashChance: 0.18,
+        forwardSplashChance: 0.28,
         forwardOffsetMin: 0.018,
-        forwardOffsetMax: 0.052,
+        forwardOffsetMax: 0.152,
         forwardTurnMin: 118,
         forwardTurnMax: 164,
 
