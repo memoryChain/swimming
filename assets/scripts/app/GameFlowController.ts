@@ -85,7 +85,7 @@ export class GameFlowController {
         if (this._refs.handleModelDebugStroke(type)) {
             return;
         }
-        if (this._refs.getState() !== GameState.RACING) {
+        if (!this.isStrokeInputActive()) {
             return;
         }
         const result = this._refs.playerSwimmer?.handleStroke(type);
@@ -100,7 +100,7 @@ export class GameFlowController {
         if (this._refs.handleModelDebugStrokeHeld(type, held)) {
             return;
         }
-        if (this._refs.getState() !== GameState.RACING) {
+        if (!this.isStrokeInputActive()) {
             return;
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
@@ -109,6 +109,11 @@ export class GameFlowController {
             this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
+    }
+
+    private isStrokeInputActive(): boolean {
+        const state = this._refs.getState();
+        return state === GameState.RACING || state === GameState.GLIDING;
     }
 
     handleDiveChargeStart() {
