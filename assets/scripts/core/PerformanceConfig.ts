@@ -5,6 +5,10 @@
 // 只放渲染/特效开销相关的取舍项，方便按机型分级或做 A/B 测试。此处为默认值，部分可运行时切换。
 export const PERFORMANCE_CONFIG = {
     splash: {
+        // Runtime particle spray switch. Turn this off to keep surface foam but stop/clear ParticleSystem
+        // spray for all swimmers, useful for quick performance A/B tests. Press L in preview to toggle.
+        particleEmittersEnabled: true,
+
         // Cull splash for AI swimmers that are off-screen along the swim (X) axis.
         // The 2.5D side view keeps the player framed, so far-away swimmers can skip all
         // particle/foam updates. This is the startup default; press K in a preview to toggle live.

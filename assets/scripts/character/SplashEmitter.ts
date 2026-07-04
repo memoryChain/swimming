@@ -93,6 +93,7 @@ export class SplashEmitter {
     private _lastDt = TUNING.initialDt;
     private _waterY: number;
     private _culled = false;
+    private _particleEffectsEnabled = true;
     private readonly _reduced: boolean;
 
     constructor(private readonly _options: SplashEmitterOptions) {
@@ -177,14 +178,11 @@ export class SplashEmitter {
         this._kickSplashBurst = 0;
         this._state = EMPTY_STATE;
         for (const emitter of this._particleEmitters) {
-            emitter.lastContact = 0;
-            emitter.cooldown = 0;
-            emitter.keepAlive = 0;
-            emitter.sprayTime = 0;
-            emitter.sprayRate = 0;
-            emitter.sprayCarry = 0;
-            emitter.system.clear();
-            emitter.system.play();
+            this.clearParticleEmitter(emitter);
+            if (this._particleEffectsEnabled) {
+                emitter.node.active = true;
+                emitter.system.play();
+            }
         }
         this.update(0);
     }
@@ -214,6 +212,20 @@ export class SplashEmitter {
             }
             if (this.node?.isValid) {
                 this.node.active = false;
+            }
+        }
+    }
+
+    setParticleEffectsEnabled(enabled: boolean) {
+        if (this._particleEffectsEnabled === enabled) {
+            return;
+        }
+        this._particleEffectsEnabled = enabled;
+        for (const emitter of this._particleEmitters) {
+            this.clearParticleEmitter(emitter);
+            emitter.node.active = enabled;
+            if (enabled) {
+                emitter.system.play();
             }
         }
     }
@@ -296,9 +308,11 @@ export class SplashEmitter {
             part.params.set(intensity, speedRatio, Math.min(TUNING.foam.maxIntensity, burst), part.seed);
             part.material.setProperty('splashParams', part.params);
         }
-        this.updateParticleEmitters(speedRatio);
-        for (const emitter of this._particleEmitters) {
-            anyActive = anyActive || emitter.keepAlive > 0;
+        if (this._particleEffectsEnabled) {
+            this.updateParticleEmitters(speedRatio);
+            for (const emitter of this._particleEmitters) {
+                anyActive = anyActive || emitter.keepAlive > 0;
+            }
         }
         this.node.active = anyActive;
     }
@@ -460,7 +474,11 @@ export class SplashEmitter {
 
         system.bursts = [];
         system.clear();
-        system.play();
+        if (this._particleEffectsEnabled) {
+            system.play();
+        } else {
+            node.active = false;
+        }
         applyParticleTexture(system);
 
         this._particleEmitters.push({
@@ -585,6 +603,7 @@ export class SplashEmitter {
         emitter.sprayTime = 0;
         emitter.sprayRate = 0;
         emitter.sprayCarry = 0;
+        emitter.system.stop();
         emitter.system.clear();
     }
 

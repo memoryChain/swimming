@@ -78,6 +78,7 @@ export class GameManager extends Component {
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
+    private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
     private _inputManager: InputManager = null;
@@ -207,6 +208,19 @@ export class GameManager extends Component {
             }
         }
         this.debug(`splash culling=${this._splashCullingEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private toggleSplashParticles() {
+        this._splashParticlesEnabled = !this._splashParticlesEnabled;
+        this.applySplashParticlesEnabled();
+        this.debug(`splash particles=${this._splashParticlesEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private applySplashParticlesEnabled() {
+        this._playerSwimmer?.setSplashParticlesEnabled(this._splashParticlesEnabled);
+        for (const swimmer of this._aiSwimmers) {
+            swimmer?.setSplashParticlesEnabled(this._splashParticlesEnabled);
+        }
     }
 
     startGame() {
@@ -352,6 +366,7 @@ export class GameManager extends Component {
             onCycleRaceCamera: () => this.cycleRaceCamera(),
             onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
             onToggleSplashCulling: () => this.toggleSplashCulling(),
+            onToggleSplashParticles: () => this.toggleSplashParticles(),
             onModelDebugSpeedDown: () => this.slowModelDebugMotion(),
             onModelDebugSpeedUp: () => this.speedUpModelDebugMotion(),
             onDebugCameraMouseDown: (event) => this.onDebugCameraMouseDown(event),
@@ -413,6 +428,7 @@ export class GameManager extends Component {
         this._aiControllers = [];
         this._aiSwimmers = [];
         this._aiConditions = [];
+        this.applySplashParticlesEnabled();
     }
 
     private buildDeferredAiSwimmers() {
@@ -438,6 +454,7 @@ export class GameManager extends Component {
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
         }
+        this.applySplashParticlesEnabled();
         if (this._raceManager) {
             this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
             this._raceManager.aiSwimmers = this._aiSwimmers;

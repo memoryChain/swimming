@@ -257,6 +257,10 @@ export class Swimmer extends Component {
         this.cartoonRig?.setSplashCulled(culled);
     }
 
+    setSplashParticlesEnabled(enabled: boolean) {
+        this.cartoonRig?.setSplashParticlesEnabled(enabled);
+    }
+
     playAiStrokeVisual(type: StrokeType) {
         if (!this.isAI) {
             return;
