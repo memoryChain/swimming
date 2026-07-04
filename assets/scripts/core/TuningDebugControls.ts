@@ -1,6 +1,6 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
-import { FREESTYLE_POSE_TUNING } from '../character/CharacterMotionTuning';
+import { FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import { DIVE_BALANCE, SWIMMER_BALANCE } from './GameBalance';
 import { INPUT_TUNING, MOTION_TUNING, STABILITY_TUNING } from './InputTuning';
 
@@ -63,6 +63,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('dive.minPower', '最低跳水', '没有蓄力或蓄力条很低时保留的最低跳水力度。数值越高，失误跳水也会更快。', () => DIVE_BALANCE.minPower, (v) => DIVE_BALANCE.minPower = v, 0.02, 0, 0.8, 2),
             control('dive.chargeCycleSeconds', '蓄力周期', '蓄力条从 0 到 1 再回到 0 的完整周期。值越小，顶点更难抓；值越大，蓄力节奏更宽松。', () => DIVE_BALANCE.chargeCycleSeconds, (v) => DIVE_BALANCE.chargeCycleSeconds = v, 0.05, 0.4, 4, 2, 's'),
+            control('dive.underwaterHoldSeconds', '水下保持时间', '跳水入水后保持水下深度、只允许踢腿推进的时间。', () => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
+            control('dive.underwaterRiseSeconds', '水下上浮时间', '水下阶段从深度回升到水面的时间。上浮结束后才恢复手臂划水。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
         ],
     },
     {
@@ -73,6 +75,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.strokeBaseAccel', '基础动作加速', '每轮动作真正开始播放时给的基础加速度。缓存输入要等开始播放时才给。', () => SWIMMER_BALANCE.strokeBaseAccel, (v) => SWIMMER_BALANCE.strokeBaseAccel = v, 0.05, 0, 5, 2),
             control('speed.strokeStabilityAccel', '稳定加速', '稳定性为 1 时额外附加的加速度，稳定性较低时按比例减少。', () => SWIMMER_BALANCE.strokeStabilityAccel, (v) => SWIMMER_BALANCE.strokeStabilityAccel = v, 0.05, 0, 8, 2),
             control('speed.strokeAccelDurationRatio', '加速持续', '一次动作加速度持续时间，占当前动作一轮时间的比例。', () => SWIMMER_BALANCE.strokeAccelDurationRatio, (v) => SWIMMER_BALANCE.strokeAccelDurationRatio = v, 0.02, 0.05, 1.5, 2),
+            control('speed.diveUnderwaterKickAccel', '水下踢腿加速', '跳水入水后的潜水阶段，每次输入只触发腿部踢水时给的推进加速度。', () => SWIMMER_BALANCE.diveUnderwaterKickAccel, (v) => SWIMMER_BALANCE.diveUnderwaterKickAccel = v, 0.02, 0, 3, 2),
             control('speed.alternationWindowSize', '交替样本轮数', '用于计算左右交替质量的最近动作轮数。窗口越大，越看长期左右均衡。', () => SWIMMER_BALANCE.alternationWindowSize, (v) => SWIMMER_BALANCE.alternationWindowSize = v, 1, 2, 12, 0),
             control('speed.alternationBaseMinScale', '单侧基础保底', '只按单侧时基础动作加速保留的比例。值越低，单侧输入越难提速。', () => SWIMMER_BALANCE.alternationBaseMinScale, (v) => SWIMMER_BALANCE.alternationBaseMinScale = v, 0.05, 0, 1, 2),
             control('speed.alternationStabilityMinScale', '单侧稳定保底', '只按单侧时稳定加速保留的比例。值越低，单侧稳定短按越难获得高收益。', () => SWIMMER_BALANCE.alternationStabilityMinScale, (v) => SWIMMER_BALANCE.alternationStabilityMinScale = v, 0.05, 0, 1, 2),

@@ -10,11 +10,9 @@ const FIRST_PERSON_MIN_SECONDS = 5.8;
 const DIVE_SIDE_MIN_SECONDS = 0.58;
 const DIVE_SIDE_MAX_SECONDS = 1.55;
 const DIVE_UNDERWATER_MIN_SECONDS = 1.15;
-const DIVE_UNDERWATER_MAX_DISTANCE = 8.9;
 const COUNTDOWN_ATHLETE_TARGET_X_OFFSET = 0;
 const COUNTDOWN_ATHLETE_TARGET_Y_OFFSET = 1.25;
 const DIVE_ENTRY_WATER_Y_THRESHOLD = 0.16;
-const DIVE_SURFACE_Y_THRESHOLD = 0.06;
 const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
 const SWIM_SIDE_CAMERA_DISTANCE = 11.2;
 const SWIM_SIDE_CAMERA_HEIGHT = 1.7;
@@ -41,6 +39,7 @@ export type RaceCameraSnapshot = {
     playerX: number;
     playerY: number;
     playerDistance: number;
+    playerUnderwater: boolean;
     closestAiDistanceGap: number;
     playerPlacement: number;
     racerCount: number;
@@ -478,10 +477,7 @@ export class RaceCameraDirector {
         if (this._diveShotElapsed < DIVE_SIDE_MIN_SECONDS + DIVE_UNDERWATER_MIN_SECONDS) {
             return true;
         }
-        if (snapshot.playerDistance >= DIVE_UNDERWATER_MAX_DISTANCE) {
-            return false;
-        }
-        return snapshot.playerY < this._courseLayout.swimY - DIVE_SURFACE_Y_THRESHOLD;
+        return snapshot.playerUnderwater;
     }
 
     private finishDiveShotIfNeeded() {

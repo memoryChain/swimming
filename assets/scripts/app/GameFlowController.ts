@@ -249,6 +249,7 @@ export class GameFlowController {
             playerX: playerSwimmer.node.position.x,
             playerY: playerSwimmer.node.position.y,
             playerDistance,
+            playerUnderwater: playerSwimmer.isUnderwater,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,
             racerCount: placement.racerCount,

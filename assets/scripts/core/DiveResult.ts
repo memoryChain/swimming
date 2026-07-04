@@ -21,9 +21,6 @@ export interface DiveResult {
     // Initial velocity used by the visual projectile dive.
     launchSpeed: number;
 
-    // Race speed consumed after the swimmer enters water.
-    entrySpeed: number;
-
     // Quality classification (reuses the existing power thresholds).
     qualityTier: DiveQualityTier;
     entryStyle: DiveEntryStyle;

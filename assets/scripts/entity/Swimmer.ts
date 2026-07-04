@@ -4,7 +4,7 @@ import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
-import { DIVE_BALANCE, GLIDE_SECONDS, getRaceDistance } from '../core/GameBalance';
+import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
@@ -60,13 +60,8 @@ export class Swimmer extends Component {
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private _diveUnderwaterActive = false;
     private _diveGlidePoseActive = false;
-    private _diveUnderwaterRiseStartDistance = 0;
-    private _diveUnderwaterEndDistance = 0;
-    private _diveEntryDistance = 0;
+    private _diveUnderwaterElapsed = 0;
     private _diveEntryLeanDegrees = 0;
-    private readonly _finishDiveGlide = () => {
-        this.beginSurfaceSwimming();
-    };
 
     start() {
         this.captureStartPosition();
@@ -80,16 +75,16 @@ export class Swimmer extends Component {
         this.cartoonRig?.setWaterY(this._courseLayout.waterY);
     }
 
-    startRace(initialDistance = 0, initialSpeed = DIVE_BALANCE.minSpeed, fromDiveEntry = false) {
+    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.captureStartPosition();
-        this.unschedule(this._finishDiveGlide);
         if (fromDiveEntry) {
             this.startDiveUnderwaterPhase(initialDistance);
-            this.scheduleOnce(this._finishDiveGlide, GLIDE_SECONDS);
         } else {
             this.clearDiveUnderwaterPhase();
         }
-        this._motor.startRace(initialDistance, initialSpeed);
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (this.isAI ? this.aiMaxSpeedScale : 1);
+        const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
+        this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setPreRaceStanding(false);
         if (fromDiveEntry) {
@@ -120,7 +115,6 @@ export class Swimmer extends Component {
         this.captureStartPosition();
         const divePower = result.power;
         const launchSpeed = result.launchSpeed;
-        const entrySpeed = result.entrySpeed;
         const crouchDuration = lerp(SWIMMER_ACTION_TUNING.diveCrouchSecondsMax, SWIMMER_ACTION_TUNING.diveCrouchSecondsMin, divePower);
         const direction = this._courseLayout.direction;
         const start = this.divePlatformPosition();
@@ -163,7 +157,7 @@ export class Swimmer extends Component {
                 this._diveEntryLeanDegrees = this.diveProjectileLean(horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, projectileFlightDuration);
                 this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, 1, projectileFlightDuration);
                 this.cartoonRig?.setDiveStreamlinePose();
-                this.startRace(distance, entrySpeed, true);
+                this.startRace(distance, horizontalSpeed, true);
                 this.flashSplash(splashRatingForEntryStyle(result.entryStyle));
             })
             .start();
@@ -189,7 +183,6 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
         this.clearDiveUnderwaterPhase();
-        this.unschedule(this._finishDiveGlide);
         this.cartoonRig?.setActiveSwimming(false);
     }
 
@@ -206,6 +199,7 @@ export class Swimmer extends Component {
         if (!this.isAI) {
             this._strokeMetrics.update(dt);
         }
+        this.updateDiveUnderwaterTimer(dt);
         this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
         for (const stability of this._motor.consumeStabilityResults()) {
@@ -225,6 +219,12 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return null;
         }
+        if (this._diveGlidePoseActive) {
+            if (this._motor.recordKickOnly(type)) {
+                this.cartoonRig?.triggerKick();
+            }
+            return null;
+        }
 
         const queued = this._motor.recordStroke(type);
         if (!queued) {
@@ -236,10 +236,13 @@ export class Swimmer extends Component {
     }
 
     canAcceptStroke(type: StrokeType): boolean {
-        return this._motor.isRacing && this._motor.canRecordStroke(type);
+        return this._motor.isRacing && (this._diveGlidePoseActive || this._motor.canRecordStroke(type));
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
+        if (this._diveGlidePoseActive) {
+            return null;
+        }
         const stability = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
         if (held) {
@@ -250,6 +253,12 @@ export class Swimmer extends Component {
 
     playAiStrokeVisual(type: StrokeType) {
         if (!this.isAI) {
+            return;
+        }
+        if (this._diveGlidePoseActive) {
+            if (this._motor.recordKickOnly(type)) {
+                this.cartoonRig?.triggerKick();
+            }
             return;
         }
         if (this._motor.recordAiVisualStroke(type)) {
@@ -677,21 +686,16 @@ export class Swimmer extends Component {
         return Math.max(poolMinX, Math.min(poolMaxX, closerThanSwimEdgeX));
     }
 
-    private startDiveUnderwaterPhase(initialDistance: number) {
+    private startDiveUnderwaterPhase(_initialDistance: number) {
         this._diveUnderwaterActive = true;
         this._diveGlidePoseActive = true;
-        this._diveEntryDistance = initialDistance;
-        this._diveUnderwaterRiseStartDistance = initialDistance + SWIMMER_ACTION_TUNING.diveUnderwaterHoldDistance;
-        this._diveUnderwaterEndDistance = this._diveUnderwaterRiseStartDistance + SWIMMER_ACTION_TUNING.diveUnderwaterRiseDistance;
+        this._diveUnderwaterElapsed = 0;
     }
 
     private clearDiveUnderwaterPhase() {
         this._diveUnderwaterActive = false;
         this._diveGlidePoseActive = false;
-        this.unschedule(this._finishDiveGlide);
-        this._diveEntryDistance = 0;
-        this._diveUnderwaterRiseStartDistance = 0;
-        this._diveUnderwaterEndDistance = 0;
+        this._diveUnderwaterElapsed = 0;
         this._diveEntryLeanDegrees = 0;
     }
 
@@ -702,17 +706,27 @@ export class Swimmer extends Component {
         }
     }
 
-    private visualSwimY(distance: number): number {
+    private updateDiveUnderwaterTimer(dt: number) {
+        if (!this._diveUnderwaterActive) {
+            return;
+        }
+        this._diveUnderwaterElapsed += Math.max(0, dt);
+    }
+
+    private visualSwimY(_distance: number): number {
         if (!this._diveUnderwaterActive) {
             return this._startPosition.y;
         }
         const underwaterY = this._courseLayout.swimY - SWIMMER_ACTION_TUNING.diveEntryDepth;
-        if (distance <= this._diveUnderwaterRiseStartDistance) {
+        const holdSeconds = Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
+        if (this._diveUnderwaterElapsed <= holdSeconds) {
             return underwaterY;
         }
-        const ratio = (distance - this._diveUnderwaterRiseStartDistance) / SWIMMER_ACTION_TUNING.diveUnderwaterRiseDistance;
+        const riseSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+        const ratio = (this._diveUnderwaterElapsed - holdSeconds) / riseSeconds;
         if (ratio >= 1) {
             this.clearDiveUnderwaterPhase();
+            this.beginSurfaceSwimming();
             return this._startPosition.y;
         }
         return lerp(underwaterY, this._startPosition.y, smoothStep(ratio));
@@ -722,13 +736,17 @@ export class Swimmer extends Component {
         if (!this._diveUnderwaterActive) {
             return 0;
         }
-        const recoverDistance = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterHoldDistance);
-        const ratio = Math.max(0, Math.min(1, (distance - this._diveEntryDistance) / recoverDistance));
+        const totalSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds + SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+        const ratio = Math.max(0, Math.min(1, this._diveUnderwaterElapsed / totalSeconds));
         return lerp(this._diveEntryLeanDegrees, 0, smoothStep(ratio));
     }
 
     get currentSpeed(): number {
         return this._motor.currentSpeed;
+    }
+
+    get isUnderwater(): boolean {
+        return this._diveUnderwaterActive;
     }
 
     get currentAcceleration(): number {

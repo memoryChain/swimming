@@ -2615,6 +2615,78 @@
       ],
       "subMetas": {}
     },
+    "f42bf": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@f42bf",
+      "displayName": "",
+      "id": "f42bf",
+      "name": "pool_inner_wall_deep_north_mesh.mesh",
+      "userData": {
+        "gltfIndex": 145,
+        "triangleCount": 12
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "820bb": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@820bb",
+      "displayName": "",
+      "id": "820bb",
+      "name": "pool_inner_wall_deep_south_mesh.mesh",
+      "userData": {
+        "gltfIndex": 146,
+        "triangleCount": 12
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "043ed": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@043ed",
+      "displayName": "",
+      "id": "043ed",
+      "name": "pool_inner_wall_deep_west_mesh.mesh",
+      "userData": {
+        "gltfIndex": 147,
+        "triangleCount": 12
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "42a2c": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@42a2c",
+      "displayName": "",
+      "id": "42a2c",
+      "name": "pool_inner_wall_deep_east_mesh.mesh",
+      "userData": {
+        "gltfIndex": 148,
+        "triangleCount": 12
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "a9518": {
       "importer": "gltf-material",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@a9518",
@@ -3134,7 +3206,11 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@fd791",
         "a751d540-5ebd-4868-a41a-334975b3aed3@1140f",
         "a751d540-5ebd-4868-a41a-334975b3aed3@85d13",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@269ca"
+        "a751d540-5ebd-4868-a41a-334975b3aed3@269ca",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@f42bf",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@820bb",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@043ed",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@42a2c"
       ],
       "skeletons": [],
       "textures": [],
