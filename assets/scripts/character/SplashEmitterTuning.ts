@@ -27,6 +27,14 @@ export type SplashParticleEmitterTuning = {
 };
 
 export const SPLASH_EMITTER_TUNING = {
+    // Splash particle art style switch:
+    //   'streak' = soft round droplet stretched along velocity into thin water streaks (current).
+    //   'blocky' = hard-edged square sprites, billboard (no stretch), spun by random rotation.
+    // 水花粒子美术风格开关：
+    //   'streak' = 柔和圆点沿速度拉伸成细长水条（当前）。
+    //   'blocky' = 硬边方块贴图，普通广告牌（不拉伸），靠随机旋转呈现方块。
+    style: 'blocky' as 'streak' | 'blocky',
+
     // Highest renderer priority so splashes draw after transparent water.
     // 最高渲染优先级，确保水花绘制在透明水面之后。
     renderPriority: 255,
@@ -241,6 +249,10 @@ export const SPLASH_EMITTER_TUNING = {
         stretchVelocityScale: 0.018,
         stretchLengthScale: 0.12,
 
+        // Plain billboard render mode used by the 'blocky' style (no velocity stretch).
+        // 'blocky' 风格使用的普通广告牌渲染模式（不做速度拉伸）。
+        blockyRenderMode: 0,
+
         // Lifetime alpha fade: hold visible, then fade out near end of life.
         // 生命周期透明度：先保持可见，接近生命末尾淡出。
         fadeHoldAlpha: 1,
@@ -270,6 +282,22 @@ export const SPLASH_EMITTER_TUNING = {
         // Safety feather so alpha reaches zero before the border.
         // 安全羽化，确保 alpha 在边界前归零。
         featherStart: 0.5,
+    },
+
+    blockyTexture: {
+        // Hard-edged square splash sprite for the 'blocky' style. Fills most of the tile with a
+        // near-solid square, small soft rim so it doesn't alias too hard on WeChat.
+        // 'blocky' 风格的硬边方块贴图；方块几乎填满贴图，仅留很窄的柔和边，避免真机上锯齿过硬。
+        size: 16,
+        // Half-extent of the solid square in normalized [0,1] (1 = fills to border).
+        // 实心方块的半边长，归一化 [0,1]（1 = 填满到边界）。
+        halfExtent: 0.82,
+        // Edge softness band width (0 = perfectly hard pixel edge).
+        // 边缘柔化带宽度（0 = 完全硬像素边）。
+        edgeSoftness: 0.12,
+        // Blocky sprites usually look better a bit bigger; multiplies particle size.
+        // 方块贴图通常稍大更好看；对粒子尺寸的整体倍率。
+        sizeMultiplier: 0.3,
     },
 
     particleEmitters: {

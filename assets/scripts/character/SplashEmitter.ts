@@ -401,9 +401,15 @@ export class SplashEmitter {
             // Stretched billboard: each particle elongates along its velocity into a water streak.
             // This is what makes the spray read as flying water droplets instead of round bubbles.
             // 拉伸广告牌：每颗粒子沿速度方向拉长成水条。这正是让飞溅读作水滴而非圆泡泡的关键。
-            renderer.renderMode = TUNING.particleSystem.stretchedRenderMode;
-            renderer.velocityScale = TUNING.particleSystem.stretchVelocityScale;
-            renderer.lengthScale = TUNING.particleSystem.stretchLengthScale;
+            // Blocky style uses a plain billboard (no stretch); squares are spun by random rotation.
+            // 方块风格用普通广告牌（不拉伸）；方块靠随机旋转呈现。
+            if (TUNING.style === 'blocky') {
+                renderer.renderMode = TUNING.particleSystem.blockyRenderMode;
+            } else {
+                renderer.renderMode = TUNING.particleSystem.stretchedRenderMode;
+                renderer.velocityScale = TUNING.particleSystem.stretchVelocityScale;
+                renderer.lengthScale = TUNING.particleSystem.stretchLengthScale;
+            }
         }
         system.setSharedMaterial(null, 0);
 
@@ -606,9 +612,10 @@ export class SplashEmitter {
                 : lerp(TUNING.behavior.handLifetimeMaxLowSpeed, TUNING.behavior.handLifetimeMaxHighSpeed, speedRatio),
         );
         setCurveRange(emitter.system.gravityModifier, !isHand ? TUNING.particleSystem.legGravity : TUNING.particleSystem.handGravity);
-        const size = !isHand
+        const styleSizeScale = TUNING.style === 'blocky' ? TUNING.blockyTexture.sizeMultiplier : 1;
+        const size = (!isHand
             ? lerp(TUNING.behavior.legSizeMin, TUNING.behavior.legSizeMax, speedRatio)
-            : lerp(TUNING.behavior.handSizeMin, TUNING.behavior.handSizeMax, speedRatio);
+            : lerp(TUNING.behavior.handSizeMin, TUNING.behavior.handSizeMax, speedRatio)) * styleSizeScale;
         setCurveRangeTwoConstants(emitter.system.startSizeX, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
         setCurveRangeTwoConstants(emitter.system.startSizeY, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
         setCurveRangeTwoConstants(emitter.system.startSizeZ, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
@@ -859,9 +866,14 @@ function getSplashParticleTexture(): Texture2D {
         return _splashParticleTexture;
     }
 
-    // Single soft droplet. Stretched-billboard rendering elongates it along velocity into a
-    // water streak, so the sprite itself only needs to be a soft round blob with a bright core.
-    // 单张柔和水滴。拉伸广告牌会沿速度方向把它拉成水条，所以贴图本身只需一个带亮核的柔和圆团。
+    _splashParticleTexture = TUNING.style === 'blocky' ? buildBlockyTexture() : buildDropletTexture();
+    return _splashParticleTexture;
+}
+
+// Soft round droplet. Stretched-billboard rendering elongates it along velocity into a water streak,
+// so the sprite itself only needs to be a soft round blob with a bright core.
+// 柔和圆点水滴。拉伸广告牌会沿速度方向拉成水条，所以贴图本身只需一个带亮核的柔和圆团。
+function buildDropletTexture(): Texture2D {
     const size = TUNING.dropletTexture.size;
     const center = (size - 1) * 0.5;
     const radius = center;
@@ -892,7 +904,39 @@ function getSplashParticleTexture(): Texture2D {
     texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
     texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
     texture.uploadData(data);
-    _splashParticleTexture = texture;
+    return texture;
+}
+
+// Hard-edged square sprite for the 'blocky' style. Nearly solid square with a narrow soft rim.
+// 'blocky' 风格的硬边方块贴图；近乎实心的方块，仅留很窄的柔和边。
+function buildBlockyTexture(): Texture2D {
+    const size = TUNING.blockyTexture.size;
+    const center = (size - 1) * 0.5;
+    const radius = center;
+    const halfExtent = TUNING.blockyTexture.halfExtent;
+    const edgeSoftness = TUNING.blockyTexture.edgeSoftness;
+    const data = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const nx = Math.abs((x - center) / radius);
+            const ny = Math.abs((y - center) / radius);
+            // Square field via Chebyshev distance; hard edge with a narrow smooth band.
+            // 用切比雪夫距离得到方形；硬边加一条很窄的过渡带。
+            const cheb = Math.max(nx, ny);
+            const alpha = 1 - smoothRange(cheb, halfExtent, Math.min(1, halfExtent + edgeSoftness));
+            const index = (y * size + x) * 4;
+            data[index] = 255;
+            data[index + 1] = 255;
+            data[index + 2] = 255;
+            data[index + 3] = Math.round(255 * clamp(alpha, 0, 1));
+        }
+    }
+
+    const texture = new Texture2D('RuntimeSplashBlock');
+    texture.create(size, size, Texture2D.PixelFormat.RGBA8888);
+    texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
+    texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
+    texture.uploadData(data);
     return texture;
 }
 
