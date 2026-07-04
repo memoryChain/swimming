@@ -137,4 +137,13 @@ export const SWIMMER_ACTION_TUNING = {
     // Seconds used to rise from underwater glide back to surface height.
     // 从水下滑行高度回升到水面高度的时间。
     diveUnderwaterRiseSeconds: 1.35,
+
+    // Portion of the underwater hold used to straighten from the head-down entry
+    // lean back to horizontal. Smaller values level the body out sooner.
+    // 水下保持阶段中用于把入水斜下姿态拉回水平的时间占比，越小越早变水平。
+    diveStraightenRatio: 0.35,
+
+    // Peak head-up tilt (degrees) while the body ascends toward the surface.
+    // 上浮阶段身体斜上抬头的最大角度。
+    diveUnderwaterRiseTiltDegrees: 12,
 };

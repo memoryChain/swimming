@@ -757,9 +757,19 @@ export class Swimmer extends Component {
         if (!this._diveUnderwaterActive) {
             return 0;
         }
-        const totalSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds + SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
-        const ratio = Math.max(0, Math.min(1, this._diveUnderwaterElapsed / totalSeconds));
-        return lerp(this._diveEntryLeanDegrees, 0, smoothStep(ratio));
+        const holdSeconds = Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
+        const riseSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+        const elapsed = this._diveUnderwaterElapsed;
+        if (elapsed <= holdSeconds) {
+            // Straighten from the head-down entry lean to horizontal early in the hold,
+            // so the body does not linger in the diagonal-down pose.
+            const straightenSeconds = Math.max(0.01, holdSeconds * SWIMMER_ACTION_TUNING.diveStraightenRatio);
+            const ratio = Math.max(0, Math.min(1, elapsed / straightenSeconds));
+            return lerp(this._diveEntryLeanDegrees, 0, smoothStep(ratio));
+        }
+        // Ascent: tilt head-up toward the surface, then level out as it breaks the surface.
+        const riseRatio = Math.max(0, Math.min(1, (elapsed - holdSeconds) / riseSeconds));
+        return SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees * Math.sin(Math.PI * riseRatio);
     }
 
     get currentSpeed(): number {
