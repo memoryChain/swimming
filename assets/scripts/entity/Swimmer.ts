@@ -257,6 +257,10 @@ export class Swimmer extends Component {
         this.cartoonRig?.setSplashCulled(culled);
     }
 
+    setMotionThrottleStride(stride: number) {
+        this.cartoonRig?.setMotionThrottleStride(stride);
+    }
+
     setSplashParticlesEnabled(enabled: boolean) {
         this.cartoonRig?.setSplashParticlesEnabled(enabled);
     }

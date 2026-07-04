@@ -6,6 +6,7 @@ import {
     director,
     EventMouse,
     game,
+    geometry,
     Label,
     Layers,
     Material,
@@ -90,6 +91,8 @@ export class GameManager extends Component {
     private _swimmersRoot: Node = null;
     private _poolNode: Node = null;
     private _cameraNode: Node = null;
+    private readonly _splashCullAabb = new geometry.AABB();
+    private readonly _tmpSplashCullCenter = new Vec3();
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
@@ -105,7 +108,6 @@ export class GameManager extends Component {
     private readonly _debugLog = new DebugLogController();
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankMarkers = new FinishRankMarkerBuilder(COURSE_LAYOUT);
-
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
@@ -168,11 +170,11 @@ export class GameManager extends Component {
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
     }
 
-    // Side-scrolling 2.5D view: visibility is essentially a 1D check along the swim (X) axis.
-    // Cull splash for AI swimmers whose X is far ahead/behind the player (camera keeps the player framed),
-    // so off-screen swimmers skip all particle/foam updates. Cheap and safe for WeChat Mini Game.
-    // 2.5D 横版视角：可见性本质上就是沿游泳（X）轴的一维判断。
-    // 玩家始终在画面内，AI 选手 X 距玩家太远即离屏，直接裁掉水花，跳过全部粒子/泡沫更新；对微信小游戏省而稳。
+    // Cull splash + freeze pose for AI swimmers that are outside the camera frustum. Testing against the
+    // real camera frustum (instead of a 1D X-distance guess) correctly handles zoom and any camera mode
+    // (broadcast / top / underwater / free). Off-screen swimmers skip all particle/foam and pose work.
+    // 对相机视锥体之外的 AI 选手裁剪水花并冻结姿态。用真实视锥（而非一维 X 距离估算）能正确处理缩放和任意
+    // 机位（转播/俯视/水下/自由）。离屏选手跳过全部粒子/泡沫与姿态计算。
     private updateSplashCulling() {
         if (this._modelDebugFlow?.active) {
             return;
@@ -189,15 +191,49 @@ export class GameManager extends Component {
             }
             return;
         }
+        const frustum = this._cameraNode?.getComponent(Camera)?.camera?.frustum ?? null;
+        const marginXZ = PERFORMANCE_CONFIG.splash.visibilityMarginXZ;
+        const marginY = PERFORMANCE_CONFIG.splash.visibilityMarginY;
         const playerX = playerNode.position.x;
         for (const swimmer of this._aiSwimmers) {
             const node = swimmer?.node;
             if (!node?.isValid) {
                 continue;
             }
-            const culled = Math.abs(node.position.x - playerX) > PERFORMANCE_CONFIG.splash.cullingDistanceX;
+            let culled: boolean;
+            if (frustum) {
+                const pos = node.position;
+                this._tmpSplashCullCenter.set(pos.x, pos.y, pos.z);
+                geometry.AABB.set(
+                    this._splashCullAabb,
+                    this._tmpSplashCullCenter.x, this._tmpSplashCullCenter.y, this._tmpSplashCullCenter.z,
+                    marginXZ, marginY, marginXZ,
+                );
+                culled = geometry.intersect.aabbFrustum(this._splashCullAabb, frustum) === 0;
+            } else {
+                // Fallback before the camera frustum is available: 1D X-distance window.
+                // 相机视锥不可用时的回退：一维 X 距离窗口。
+                culled = Math.abs(node.position.x - playerX) > PERFORMANCE_CONFIG.splash.cullingDistanceX;
+            }
             swimmer.setSplashCulled(culled);
+            if (!culled) {
+                // On-screen AI: pick a pose-update stride from distance-based LOD tiers (nearer = higher fps).
+                // 屏内 AI：按距离分级选姿态更新 stride（越近帧率越高）。
+                swimmer.setMotionThrottleStride(this.motionStrideForDistance(Math.abs(node.position.x - playerX)));
+            }
         }
+    }
+
+    // Map an AI swimmer's swim-axis distance to the player to a pose-update stride using the configured
+    // distance tiers (nearest tier first). Beyond every tier -> farTierStride.
+    // 用配置的距离分级（从近到远）把 AI 沿游泳轴到玩家的距离映射到姿态更新 stride。超出全部分级 -> farTierStride。
+    private motionStrideForDistance(distanceX: number): number {
+        for (const tier of PERFORMANCE_CONFIG.motion.aiPoseDistanceTiers) {
+            if (distanceX <= tier.maxDistanceX) {
+                return tier.stride;
+            }
+        }
+        return PERFORMANCE_CONFIG.motion.farTierStride;
     }
 
     private toggleSplashCulling() {

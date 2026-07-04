@@ -9,11 +9,17 @@ import { FreestylePoseController } from '../character/FreestylePoseController';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
+import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPose } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
 const { ccclass } = _decorator;
+
+// Spreads background-AI pose updates across frames so throttled swimmers don't all recompute their
+// skeleton on the same frame (avoids a periodic per-frame spike). Incremented once per AI rig.
+// 让背景 AI 的姿态更新错峰分布到不同帧，避免降频选手在同一帧集中重算骨骼（消除周期性的单帧尖峰）。每个 AI rig 自增一次。
+let _backgroundMotionPhaseSeed = 0;
 
 const MIXAMO_SWIMMING_CLIP_PATHS = [
     'models/UserSwimmer0621_2MixamoSwimming/Swimming',
@@ -87,11 +93,28 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _lastMixamoDebugLeftArm = '';
     private _lastMixamoDebugLeftLeg = '';
 
+    // Background AI motion throttling: reduce how often the heavy procedural pose is recomputed.
+    // Stride is set per-frame by GameManager based on distance to the player (distance-based LOD).
+    // 背景 AI 动作降频：降低昂贵程序化姿态的重算频率。stride 由 GameManager 每帧按到玩家的距离设置（距离分级 LOD）。
+    private _backgroundSwimmer = false;
+    private _splashCulled = false;
+    private _motionThrottleStride = 1;
+    private _motionThrottleCountdown = 0;
+    private _motionThrottleAccumDt = 0;
+
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false, reducedSplash = false) {
         if (this._loaded || this._model) {
             return;
         }
         this.storeSkinSettings(skinColor, suitColor, capColor, robotStyle, playerOutline);
+
+        this._backgroundSwimmer = reducedSplash;
+        this._motionThrottleStride = 1;
+        // Stagger the initial countdown so AI swimmers don't all recompute pose on the same frame once
+        // GameManager starts assigning distance-based strides.
+        // 错开初始倒计时，等 GameManager 开始按距离分配 stride 后，AI 也不会在同一帧集中重算姿态。
+        this._motionThrottleCountdown = reducedSplash ? (_backgroundMotionPhaseSeed++ & 3) : 0;
+        this._motionThrottleAccumDt = 0;
 
         this._splashEmitter = new SplashEmitter({
             owner: this.node,
@@ -324,7 +347,29 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setSplashCulled(culled: boolean) {
+        this._splashCulled = culled;
         this._splashEmitter?.setCulled(culled);
+    }
+
+    // Set how many frames elapse between procedural-pose rebuilds for this background AI swimmer.
+    // GameManager drives this per-frame from distance-based LOD (nearer AI = smaller stride = higher fps).
+    // Player swimmers keep stride 1. Clamps the pending countdown so a stride change never stalls or
+    // double-updates the pose.
+    // 设置该背景 AI 每隔几帧重算一次程序化姿态。GameManager 按距离分级每帧驱动（越近 stride 越小、帧率越高）。
+    // 玩家保持 stride 1。切换时夹紧待定倒计时，避免卡顿或重复更新。
+    setMotionThrottleStride(stride: number) {
+        if (!this._backgroundSwimmer || !PERFORMANCE_CONFIG.motion.aiPoseThrottleEnabled) {
+            this._motionThrottleStride = 1;
+            return;
+        }
+        const next = Math.max(1, Math.floor(stride));
+        if (next === this._motionThrottleStride) {
+            return;
+        }
+        this._motionThrottleStride = next;
+        if (this._motionThrottleCountdown > next - 1) {
+            this._motionThrottleCountdown = next - 1;
+        }
     }
 
     setSplashParticlesEnabled(enabled: boolean) {
@@ -398,8 +443,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     updateFreestyleFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
+        const useDt = this.consumeThrottledMotionDt(dt);
+        if (useDt < 0) {
+            return;
+        }
         this.updateFreestyle(
-            dt,
+            useDt,
             motor.leftArmCycle,
             motor.rightArmCycle,
             motor.leftKickCycle,
@@ -411,8 +460,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
+        const useDt = this.consumeThrottledMotionDt(dt);
+        if (useDt < 0) {
+            return;
+        }
         this.updateFreestyle(
-            dt,
+            useDt,
             0,
             0,
             motor.leftKickCycle,
@@ -421,6 +474,34 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.currentSpeed,
             movementDirection,
         );
+    }
+
+    // Decide whether the heavy procedural pose runs this frame for a background AI swimmer.
+    // Returns the delta time to apply (accumulated across skipped frames) or -1 to skip this frame.
+    // Off-screen culled AI freeze entirely; on-screen background AI update every N frames; the player
+    // (stride 1, never culled) always runs with the raw dt.
+    // 决定本帧是否为背景 AI 运行昂贵的程序化姿态。返回应使用的 dt（累计跳过的帧）或 -1 表示本帧跳过。
+    // 离屏被裁的 AI 完全冻结；屏内背景 AI 每 N 帧更新；玩家（stride=1、永不裁剪）始终用原始 dt 运行。
+    private consumeThrottledMotionDt(dt: number): number {
+        if (this._splashCulled && PERFORMANCE_CONFIG.motion.freezePoseWhenCulled) {
+            this._motionThrottleAccumDt = 0;
+            this._motionThrottleCountdown = 0;
+            return -1;
+        }
+        this._motionThrottleAccumDt += dt;
+        if (this._motionThrottleStride <= 1) {
+            const used = this._motionThrottleAccumDt;
+            this._motionThrottleAccumDt = 0;
+            return used;
+        }
+        if (this._motionThrottleCountdown > 0) {
+            this._motionThrottleCountdown--;
+            return -1;
+        }
+        this._motionThrottleCountdown = this._motionThrottleStride - 1;
+        const used = this._motionThrottleAccumDt;
+        this._motionThrottleAccumDt = 0;
+        return used;
     }
 
     updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1) {
