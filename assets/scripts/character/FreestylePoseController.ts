@@ -320,8 +320,13 @@ export class FreestylePoseController {
     handWaterContact(cycle: number): number {
         const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
         const catchToPull = smoothPulse(phase, 0.10, 0.20, 0.46, 0.58);
-        const entry = smoothPulse(phase, 0.90, 0.96, 1.0, 1.0) + smoothPulse(phase, 0.0, 0.0, 0.035, 0.09);
+        const entry = this.handWaterEntry(cycle);
         return Math.max(catchToPull, Math.min(1, entry * 0.65));
+    }
+
+    handWaterEntry(cycle: number): number {
+        const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
+        return smoothPulse(phase, 0.90, 0.96, 1.0, 1.0) + smoothPulse(phase, 0.0, 0.0, 0.035, 0.09);
     }
 
     handWaterProgress(cycle: number): number {
@@ -366,6 +371,28 @@ export class FreestylePoseController {
         if (name.indexOf('RightHand') >= 0 && this._rightHand) {
             this._rightHand.getWorldPosition(out);
             return true;
+        }
+        if (name.indexOf('LeftLeg') >= 0 && this._leftLeg) {
+            this._leftLeg.getWorldPosition(out);
+            return true;
+        }
+        if (name.indexOf('RightLeg') >= 0 && this._rightLeg) {
+            this._rightLeg.getWorldPosition(out);
+            return true;
+        }
+        if (name.indexOf('LeftFoot') >= 0) {
+            const left = this._leftToe || this._leftFoot;
+            if (left) {
+                left.getWorldPosition(out);
+                return true;
+            }
+        }
+        if (name.indexOf('RightFoot') >= 0) {
+            const right = this._rightToe || this._rightFoot;
+            if (right) {
+                right.getWorldPosition(out);
+                return true;
+            }
         }
         if (name.indexOf('Foot') >= 0) {
             const left = this._leftToe || this._leftFoot;

@@ -1,4 +1,4 @@
-import { Camera, Color, EventMouse, gfx, Label, Layers, Material, MeshRenderer, Node, primitives, resources, utils, Vec3, view } from 'cc';
+import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, resources, utils, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -725,23 +725,6 @@ function makeDebugMaterial(name: string, color: Color, transparent = false): Mat
     material.initialize({ effectName: 'builtin-unlit' });
     material.name = name;
     material.setProperty('mainColor', color);
-    if (transparent) {
-        material.overridePipelineStates({
-            blendState: {
-                targets: [{
-                    blend: true,
-                    blendSrc: gfx.BlendFactor.SRC_ALPHA,
-                    blendDst: gfx.BlendFactor.ONE_MINUS_SRC_ALPHA,
-                    blendSrcAlpha: gfx.BlendFactor.SRC_ALPHA,
-                    blendDstAlpha: gfx.BlendFactor.ONE_MINUS_SRC_ALPHA,
-                }],
-            },
-            depthStencilState: {
-                depthTest: true,
-                depthWrite: false,
-            },
-        });
-    }
     return material;
 }
 

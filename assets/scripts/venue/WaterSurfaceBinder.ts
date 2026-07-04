@@ -3,6 +3,8 @@ import { WaterSurface } from '../core/WaterSurface';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
 const ACTIVE_WATER_NODE_NAMES = new Set(['PoolWaterSurface']);
+const WATER_RENDER_PRIORITY = 0;
+const WATER_PASS_PRIORITY = 1;
 
 export class WaterSurfaceBinder {
     bind(pool: Node, waterMaterialPath: string, debug?: (message: string) => void) {
@@ -38,12 +40,23 @@ export class WaterSurfaceBinder {
                 }
                 const renderer = node.getComponent(MeshRenderer);
                 if (renderer) {
-                    renderer.setMaterial(material, 0);
+                    renderer.priority = WATER_RENDER_PRIORITY;
+                    renderer.setMaterial(makeRuntimeWaterMaterial(material), 0);
                 }
             }
             debug?.(`transparent low-poly water bound nodes=${activeWaterNodes.length}`);
         });
     }
+}
+
+function makeRuntimeWaterMaterial(source: Material): Material {
+    const material = new Material();
+    material.copy(source);
+    material.name = 'RuntimePoolWater';
+    for (const pass of material.passes ?? []) {
+        (pass as any).setPriority?.(WATER_PASS_PRIORITY);
+    }
+    return material;
 }
 
 function collectNodesByName(root: Node, names: Set<string>, out: Node[]) {

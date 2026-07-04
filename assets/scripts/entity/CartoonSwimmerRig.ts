@@ -48,8 +48,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _armCycleMotion = 0;
     private _leftHandWaterContact = 0;
     private _rightHandWaterContact = 0;
+    private _leftHandWaterEntry = 0;
+    private _rightHandWaterEntry = 0;
     private _leftHandWaterProgress = 0;
     private _rightHandWaterProgress = 0;
+    private _splashMovementDirection = 1;
     private _lastArmCycle = 0;
     private _hasLastArmCycle = false;
     private _kickCycleMotion = 0;
@@ -77,6 +80,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _waterY = CHARACTER_POSE_TUNING.splashWaterY;
     private _debugActionPose: DebugSwimmerActionPose = 'freestyle';
     private readonly _tmpSplashWorld = new Vec3();
+    private readonly _tmpSplashHeadWorld = new Vec3();
+    private readonly _tmpSplashHandWorld = new Vec3();
     private _mixamoDebugTimer = 0;
     private _lastMixamoDebugLeftArm = '';
     private _lastMixamoDebugLeftLeg = '';
@@ -409,19 +414,22 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
 
         this._pose.setMovementDirection(movementDirection);
+        this._splashMovementDirection = movementDirection >= 0 ? 1 : -1;
         this._armAction = Math.max(0, this._armAction - dt * 4.8);
         this._kickAction = Math.max(0, this._kickAction - dt * 7);
         this._splashEmitter?.decay(dt);
         this.updateArmCycleMotion(dt, leftArmCycle, rightArmCycle);
         this.updateKickCycleMotion(dt, leftKickCycle, rightKickCycle);
-        this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle);
-        this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle);
-        this._leftHandWaterProgress = this._pose.handWaterProgress(leftArmCycle);
-        this._rightHandWaterProgress = this._pose.handWaterProgress(rightArmCycle);
-        this.syncSplashState();
 
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
         this._pose.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, drive + this._armAction * 0.45, drive + this._armAction * 0.7, drive + this._kickAction * 0.8);
+
+        this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle);
+        this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle);
+        this._leftHandWaterEntry = this.visualHandWaterEntry('left', this._pose.handWaterEntry(leftArmCycle));
+        this._rightHandWaterEntry = this.visualHandWaterEntry('right', this._pose.handWaterEntry(rightArmCycle));
+        this._leftHandWaterProgress = this._pose.handWaterProgress(leftArmCycle);
+        this._rightHandWaterProgress = this._pose.handWaterProgress(rightArmCycle);
         this.updateSplashSurface(speed);
     }
 
@@ -490,8 +498,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._armCycleMotion = 0;
         this._leftHandWaterContact = 0;
         this._rightHandWaterContact = 0;
+        this._leftHandWaterEntry = 0;
+        this._rightHandWaterEntry = 0;
         this._leftHandWaterProgress = 0;
         this._rightHandWaterProgress = 0;
+        this._splashMovementDirection = 1;
         this._lastArmCycle = 0;
         this._hasLastArmCycle = false;
         this._kickCycleMotion = 0;
@@ -905,8 +916,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             kickAction: this._kickAction,
             armCycleMotion: this._armCycleMotion,
             kickCycleMotion: this._kickCycleMotion,
+            movementDirection: this._splashMovementDirection,
             leftHandWaterContact: this._leftHandWaterContact,
             rightHandWaterContact: this._rightHandWaterContact,
+            leftHandWaterEntry: this._leftHandWaterEntry,
+            rightHandWaterEntry: this._rightHandWaterEntry,
             leftHandWaterProgress: this._leftHandWaterProgress,
             rightHandWaterProgress: this._rightHandWaterProgress,
         });
@@ -914,6 +928,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private getSplashBoneWorldPosition(name: string, out: Vec3): boolean {
         return this._pose.getSplashBoneWorldPosition(name, out);
+    }
+
+    private visualHandWaterEntry(side: 'left' | 'right', fallback: number): number {
+        const handName = side === 'left' ? 'LeftHand' : 'RightHand';
+        if (!this._pose.getSplashBoneWorldPosition('Head', this._tmpSplashHeadWorld)
+            || !this._pose.getSplashBoneWorldPosition(handName, this._tmpSplashHandWorld)) {
+            return fallback;
+        }
+
+        const direction = this._splashMovementDirection >= 0 ? 1 : -1;
+        const handAheadOfHead = direction * (this._tmpSplashHandWorld.x - this._tmpSplashHeadWorld.x);
+        const handAheadOfBody = direction * (this._tmpSplashHandWorld.x - this.node.worldPosition.x);
+        const visuallyForward = smoothRange(handAheadOfHead, -0.04, 0.24);
+        const nearHeadFront = smoothRange(handAheadOfBody, 0.42, 0.92);
+        return clamp01(Math.max(fallback * visuallyForward, visuallyForward * nearHeadFront));
     }
 
     private configureSkinnedRenderers(useBakedAnimation = false) {
@@ -1036,4 +1065,16 @@ function findNodeByPath(root: Node, path: string): Node | null {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function clamp01(value: number): number {
+    return Math.max(0, Math.min(1, value));
+}
+
+function smoothRange(value: number, start: number, end: number): number {
+    if (end <= start) {
+        return value >= end ? 1 : 0;
+    }
+    const t = clamp01((value - start) / (end - start));
+    return t * t * (3 - 2 * t);
 }
