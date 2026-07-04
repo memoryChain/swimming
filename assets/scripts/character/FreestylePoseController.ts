@@ -386,6 +386,25 @@ export class FreestylePoseController {
         return false;
     }
 
+    getUpperBodyWorldPosition(out: Vec3): boolean {
+        const upper = this._torso || this._spine1 || this._spine;
+        if (upper && this._head) {
+            upper.getWorldPosition(out);
+            this._head.getWorldPosition(this._tmpSplashWorldB);
+            Vec3.lerp(out, out, this._tmpSplashWorldB, 0.28);
+            return true;
+        }
+        if (upper) {
+            upper.getWorldPosition(out);
+            return true;
+        }
+        if (this._head) {
+            this._head.getWorldPosition(out);
+            return true;
+        }
+        return false;
+    }
+
     get boundJointCount(): number {
         return this.manualBones.filter(Boolean).length;
     }

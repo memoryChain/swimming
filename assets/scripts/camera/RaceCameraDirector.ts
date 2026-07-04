@@ -14,12 +14,9 @@ const COUNTDOWN_ATHLETE_TARGET_X_OFFSET = 0;
 const COUNTDOWN_ATHLETE_TARGET_Y_OFFSET = 1.25;
 const DIVE_ENTRY_WATER_Y_THRESHOLD = 0.16;
 const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
-const SWIM_SIDE_CAMERA_DISTANCE = 11.2;
+const SWIM_SIDE_CAMERA_DISTANCE = 10.5;
 const SWIM_SIDE_CAMERA_HEIGHT = 1.7;
-const SWIM_SIDE_FOV = 35;
-const SURFACE_HEAD_FORWARD_BONUS = 1.15;
-const SURFACE_HEAD_TARGET_Y = 0.72;
-const SURFACE_HEAD_TARGET_Z_OFFSET = -0.06;
+const SWIM_SIDE_FOV = 27;
 const SWIM_ANGLE_VIEW_FRONT_RANK = 3;
 const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
 const TOP_VIEW_COURSE_END_DISTANCE = 8;
@@ -38,6 +35,7 @@ export const RACE_CAMERA_MODE_NAMES = ['AUTO', 'SIDE', 'CHASE', 'TOP', 'FIRST', 
 export type RaceCameraSnapshot = {
     playerX: number;
     playerY: number;
+    playerUpperBodyWorldPosition?: Vec3;
     playerDistance: number;
     playerUnderwater: boolean;
     closestAiDistanceGap: number;
@@ -326,18 +324,18 @@ export class RaceCameraDirector {
             this.finishDiveShotIfNeeded();
             if (this._broadcastDuelShotIndex === 0) {
                 desiredPos = new Vec3(playerX - 4.1 * direction, 2.05, this._playerLaneZ + 3.5);
-                desiredTarget = surfaceHeadTarget(playerX, this._playerLaneZ, direction, 1.85);
+                desiredTarget = surfaceUpperBodyTarget(snapshot, direction, 1.85);
             } else {
-                desiredTarget = surfaceHeadTarget(playerX, this._playerLaneZ, direction, 0.9);
+                desiredTarget = surfaceUpperBodyTarget(snapshot, direction, 0.9);
                 desiredPos = new Vec3(desiredTarget.x, 1.95, this._playerLaneZ + 4.4);
             }
             this._broadcastDesiredFov = 28;
         } else {
             this.finishDiveShotIfNeeded();
             const view = swimRaceView(snapshot);
-            desiredTarget = surfaceHeadTarget(playerX, this._playerLaneZ, direction, view.targetXOffset);
+            desiredTarget = surfaceUpperBodyTarget(snapshot, direction, view.targetXOffset);
             desiredPos = new Vec3(
-                playerX + view.cameraXOffset * direction,
+                desiredTarget.x + view.cameraXOffset * direction,
                 view.height,
                 this._playerLaneZ + view.zOffset,
             );
@@ -364,7 +362,7 @@ export class RaceCameraDirector {
             return;
         }
 
-        const smoothSpeed = this._diveShotElapsed >= 0 ? 4.6 : this._diveSurfaceRestoreSeconds > 0 ? 10.5 : raceActive ? 2.7 : 5.8;
+        const smoothSpeed = this._diveShotElapsed >= 0 ? 4.6 : this._diveSurfaceRestoreSeconds > 0 ? 10.5 : raceActive ? 12.5 : 5.8;
         const smooth = cameraBlend(dt, smoothSpeed);
         Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
         Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
@@ -380,20 +378,20 @@ export class RaceCameraDirector {
         const direction = 1;
         const shot = this._broadcastShotIndex;
         if (shot === 0) {
-            this._shotDesiredTarget.set(surfaceHeadTarget(playerX, this._playerLaneZ, direction, 3.2));
+            this._shotDesiredTarget.set(surfaceUpperBodyTarget({ playerX, playerY: 0, playerDistance: 0, playerUnderwater: false, closestAiDistanceGap: 0, playerPlacement: 0, racerCount: 0, raceActive: true, countdownActive: false }, direction, 3.2));
             this._shotDesiredPos.set(this._shotDesiredTarget.x, 1.55, this._playerLaneZ + 9.2);
             this._broadcastDesiredFov = 33;
         } else if (shot === 1) {
             this._shotDesiredPos.set(playerX - 7.2, 2.75, this._playerLaneZ + 3.3);
-            this._shotDesiredTarget.set(surfaceHeadTarget(playerX, this._playerLaneZ, direction, 3.6));
+            this._shotDesiredTarget.set(surfaceUpperBodyTarget({ playerX, playerY: 0, playerDistance: 0, playerUnderwater: false, closestAiDistanceGap: 0, playerPlacement: 0, racerCount: 0, raceActive: true, countdownActive: false }, direction, 3.6));
             this._broadcastDesiredFov = 34;
         } else if (shot === 2) {
             this._shotDesiredPos.set(playerX - 5.7, 4.25, this._playerLaneZ + 11.8);
-            this._shotDesiredTarget.set(surfaceHeadTarget(playerX, this._playerLaneZ, direction, 5.0));
+            this._shotDesiredTarget.set(surfaceUpperBodyTarget({ playerX, playerY: 0, playerDistance: 0, playerUnderwater: false, closestAiDistanceGap: 0, playerPlacement: 0, racerCount: 0, raceActive: true, countdownActive: false }, direction, 5.0));
             this._broadcastDesiredFov = 36;
         } else if (shot === 3) {
             this._shotDesiredPos.set(playerX - 3.9, 2.35, this._playerLaneZ + 7.6);
-            this._shotDesiredTarget.set(surfaceHeadTarget(playerX, this._playerLaneZ, direction, 2.0));
+            this._shotDesiredTarget.set(surfaceUpperBodyTarget({ playerX, playerY: 0, playerDistance: 0, playerUnderwater: false, closestAiDistanceGap: 0, playerPlacement: 0, racerCount: 0, raceActive: true, countdownActive: false }, direction, 2.0));
             this._broadcastDesiredFov = 33;
         } else if (shot === 4) {
             this._shotDesiredPos.set(firstPersonCameraPos(playerX, this._playerLaneZ, direction));
@@ -410,18 +408,18 @@ export class RaceCameraDirector {
         if (this._mode === RaceCameraMode.Side) {
             this._topViewActive = false;
             this._underwaterViewActive = false;
-            desiredTarget = surfaceHeadTarget(playerX, this._playerLaneZ, direction, SWIM_SIDE_TARGET_X_OFFSET);
+            desiredTarget = surfaceUpperBodyTarget(snapshot, direction, SWIM_SIDE_TARGET_X_OFFSET);
             desiredPos = new Vec3(desiredTarget.x, SWIM_SIDE_CAMERA_HEIGHT, this._playerLaneZ + SWIM_SIDE_CAMERA_DISTANCE);
         } else if (this._mode === RaceCameraMode.Chase) {
             this._topViewActive = false;
             this._underwaterViewActive = false;
             desiredPos = new Vec3(playerX - 7.2 * direction, 2.55, this._playerLaneZ + 2.9);
-            desiredTarget = surfaceHeadTarget(playerX, this._playerLaneZ, direction, 3.6);
+            desiredTarget = surfaceUpperBodyTarget(snapshot, direction, 3.6);
         } else {
             this._topViewActive = true;
             this._underwaterViewActive = false;
             desiredPos = new Vec3(playerX + 1.8 * direction, 17.5, this._playerLaneZ + 0.1);
-            desiredTarget = surfaceHeadTarget(playerX, this._playerLaneZ, direction, 2.6);
+            desiredTarget = surfaceUpperBodyTarget(snapshot, direction, 2.6);
         }
         const smooth = snapshot.raceActive ? 0.1 : 0.2;
         Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
@@ -569,55 +567,56 @@ type SwimRaceView = {
 function swimRaceView(snapshot: RaceCameraSnapshot): SwimRaceView {
     if (snapshot.racerCount > 0 && snapshot.playerPlacement === snapshot.racerCount) {
         return {
-            targetXOffset: 8.0,
-            cameraXOffset: -6.8,
-            zOffset: 0,
-            height: 4.8,
-            fov: 46,
+            targetXOffset: 0,
+            cameraXOffset: 0,
+            zOffset: SWIM_SIDE_CAMERA_DISTANCE,
+            height: SWIM_SIDE_CAMERA_HEIGHT,
+            fov: SWIM_SIDE_FOV,
         };
     }
     if (snapshot.playerPlacement === 1) {
         return {
-            targetXOffset: 0.75,
-            cameraXOffset: 12.8,
-            zOffset: 17.6,
-            height: 2.85,
-            fov: 48,
+            targetXOffset: 0,
+            cameraXOffset: 0,
+            zOffset: SWIM_SIDE_CAMERA_DISTANCE,
+            height: SWIM_SIDE_CAMERA_HEIGHT,
+            fov: SWIM_SIDE_FOV,
         };
     }
     if (snapshot.playerPlacement > 0 && snapshot.playerPlacement <= SWIM_ANGLE_VIEW_FRONT_RANK) {
         return {
-            targetXOffset: 0.85,
-            cameraXOffset: 6.6,
-            zOffset: 13.8,
-            height: 2.0,
-            fov: 42,
+            targetXOffset: 0,
+            cameraXOffset: 0,
+            zOffset: SWIM_SIDE_CAMERA_DISTANCE,
+            height: SWIM_SIDE_CAMERA_HEIGHT,
+            fov: SWIM_SIDE_FOV,
         };
     }
     if (snapshot.racerCount > 0 && snapshot.playerPlacement >= Math.max(1, snapshot.racerCount - SWIM_ANGLE_VIEW_BACK_RANK_FROM_END + 1)) {
         return {
-            targetXOffset: 2.35,
-            cameraXOffset: -4.6,
-            zOffset: 13.6,
-            height: 2.05,
-            fov: 42,
+            targetXOffset: 0,
+            cameraXOffset: 0,
+            zOffset: SWIM_SIDE_CAMERA_DISTANCE,
+            height: SWIM_SIDE_CAMERA_HEIGHT,
+            fov: SWIM_SIDE_FOV,
         };
     }
     return {
-        targetXOffset: SWIM_SIDE_TARGET_X_OFFSET,
-        cameraXOffset: SWIM_SIDE_TARGET_X_OFFSET,
+        targetXOffset: 0,
+        cameraXOffset: 0,
         zOffset: SWIM_SIDE_CAMERA_DISTANCE,
         height: SWIM_SIDE_CAMERA_HEIGHT,
         fov: SWIM_SIDE_FOV,
     };
 }
 
-function surfaceHeadTarget(playerX: number, playerLaneZ: number, direction: number, forwardOffset: number): Vec3 {
-    return new Vec3(
-        playerX + (forwardOffset + SURFACE_HEAD_FORWARD_BONUS) * direction,
-        SURFACE_HEAD_TARGET_Y,
-        playerLaneZ + SURFACE_HEAD_TARGET_Z_OFFSET,
-    );
+function surfaceUpperBodyTarget(snapshot: RaceCameraSnapshot, direction: number, forwardOffset: number): Vec3 {
+    void direction;
+    void forwardOffset;
+    if (snapshot.playerUpperBodyWorldPosition) {
+        return snapshot.playerUpperBodyWorldPosition.clone();
+    }
+    return new Vec3(snapshot.playerX, snapshot.playerY + 0.54, 0);
 }
 
 function clamp(value: number, min: number, max: number): number {

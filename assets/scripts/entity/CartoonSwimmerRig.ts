@@ -146,6 +146,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._waterY;
     }
 
+    getUpperBodyWorldPosition(out: Vec3): boolean {
+        return this._pose.getUpperBodyWorldPosition(out);
+    }
+
     setColorVariant(variantId: string): boolean {
         const variant = findSwimmer0621ColorVariant(variantId);
         if (!variant) {

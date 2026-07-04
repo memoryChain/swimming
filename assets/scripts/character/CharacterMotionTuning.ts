@@ -132,7 +132,7 @@ export const SWIMMER_ACTION_TUNING = {
 
     // Seconds to hold the underwater glide depth after dive entry.
     // 入水后保持水下滑行深度的时间。
-    diveUnderwaterHoldSeconds: 1.25,
+    diveUnderwaterHoldSeconds: 2.0,
 
     // Seconds used to rise from underwater glide back to surface height.
     // 从水下滑行高度回升到水面高度的时间。

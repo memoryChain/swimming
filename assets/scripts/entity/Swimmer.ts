@@ -62,6 +62,8 @@ export class Swimmer extends Component {
     private _diveGlidePoseActive = false;
     private _diveUnderwaterElapsed = 0;
     private _diveEntryLeanDegrees = 0;
+    private readonly _cameraUpperBodyA = new Vec3();
+    private readonly _cameraUpperBodyB = new Vec3();
 
     start() {
         this.captureStartPosition();
@@ -784,6 +786,31 @@ export class Swimmer extends Component {
 
     get raceDirection(): number {
         return this._courseLayout.directionAtDistance(this._motor.distance);
+    }
+
+    getCameraUpperBodyWorldPosition(out: Vec3): Vec3 {
+        if (this.cartoonRig?.getUpperBodyWorldPosition(out)) {
+            return out;
+        }
+        if (this.modelSpine?.isValid && this.modelHead?.isValid) {
+            this.modelSpine.getWorldPosition(this._cameraUpperBodyA);
+            this.modelHead.getWorldPosition(this._cameraUpperBodyB);
+            Vec3.lerp(out, this._cameraUpperBodyA, this._cameraUpperBodyB, 0.42);
+            return out;
+        }
+        if (this.modelSpine?.isValid) {
+            this.modelSpine.getWorldPosition(out);
+            return out;
+        }
+        if (this.bodyNode?.isValid && this.headNode?.isValid) {
+            this.bodyNode.getWorldPosition(this._cameraUpperBodyA);
+            this.headNode.getWorldPosition(this._cameraUpperBodyB);
+            Vec3.lerp(out, this._cameraUpperBodyA, this._cameraUpperBodyB, 0.55);
+            return out;
+        }
+        out.set(this.node.worldPosition);
+        out.y += 0.54;
+        return out;
     }
 
     get isRacing(): boolean {

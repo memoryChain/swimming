@@ -1,3 +1,4 @@
+import { Vec3 } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -45,6 +46,7 @@ export class GameFlowController {
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
+    private readonly _playerUpperBodyWorldPosition = new Vec3();
 
     constructor(private readonly _refs: GameFlowRefs) {}
 
@@ -248,6 +250,7 @@ export class GameFlowController {
         this._refs.raceCameraDirector.update(dt, {
             playerX: playerSwimmer.node.position.x,
             playerY: playerSwimmer.node.position.y,
+            playerUpperBodyWorldPosition: playerSwimmer.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance,
             playerUnderwater: playerSwimmer.isUnderwater,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
