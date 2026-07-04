@@ -29,11 +29,11 @@ export const CHARACTER_POSE_TUNING = {
 
     // Backward local X offset for the model while standing on the start block.
     // 跳台预备姿态下模型在本地 X 方向向后的偏移。
-    divePrepModelBackOffset: -0.24,
+    divePrepModelBackOffset: -0.08,
 
     // Local Y offset for the model while standing on the start block.
     // 跳台预备姿态下模型本地 Y 高度。
-    divePrepModelY: 0.26,
+    divePrepModelY: 0.44,
 
     // Model Euler rotation for the start-block dive-prep pose.
     // 跳台预备姿态下模型欧拉角。
@@ -115,25 +115,16 @@ export const SWIMMER_ACTION_TUNING = {
     // 低质量跳水时较长的下蹲蓄势时长。
     diveCrouchSecondsMax: 0.26,
 
-    // Minimum airborne flight duration for low-power dives.
-    // 低质量跳水的最短腾空时长。
-    diveFlightSecondsMin: 0.72,
-
-    // Maximum airborne flight duration for high-power dives.
-    // 高质量跳水的最长腾空时长。
-    diveFlightSecondsMax: 0.88,
-
-    // Minimum dive arc height for low-power dives.
-    // 低质量跳水的最低抛物线高度。
-    diveArcHeightMin: 0.42,
-
-    // Maximum dive arc height for high-power dives.
-    // 高质量跳水的最高抛物线高度。
-    diveArcHeightMax: 0.72,
-
     // Ratio of flight time spent extending into streamline.
     // 腾空阶段中用于伸展到流线型姿态的时间占比。
     diveExtensionRatio: 0.52,
+
+    // Portion of the dive pose transition that plays before the root leaves the block.
+    diveLaunchDelayRatio: 0.25,
+
+    // Start-block compression before launch.
+    diveCrouchBackOffset: 0.1,
+    diveCrouchDrop: 0.06,
 
     // Underwater visual depth at dive entry.
     // 入水瞬间角色视觉上沉入水下的深度。

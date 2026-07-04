@@ -62,6 +62,8 @@ export class Swimmer extends Component {
     private _diveGlidePoseActive = false;
     private _diveUnderwaterRiseStartDistance = 0;
     private _diveUnderwaterEndDistance = 0;
+    private _diveEntryDistance = 0;
+    private _diveEntryLeanDegrees = 0;
     private readonly _finishDiveGlide = () => {
         this.beginSurfaceSwimming();
     };
@@ -117,16 +119,27 @@ export class Swimmer extends Component {
     performDive(result: DiveResult): number {
         this.captureStartPosition();
         const divePower = result.power;
-        const distance = result.entryDistance;
+        const launchSpeed = result.launchSpeed;
         const entrySpeed = result.entrySpeed;
         const crouchDuration = lerp(SWIMMER_ACTION_TUNING.diveCrouchSecondsMax, SWIMMER_ACTION_TUNING.diveCrouchSecondsMin, divePower);
-        const flightDuration = lerp(SWIMMER_ACTION_TUNING.diveFlightSecondsMin, SWIMMER_ACTION_TUNING.diveFlightSecondsMax, divePower);
-        const arcHeight = lerp(SWIMMER_ACTION_TUNING.diveArcHeightMin, SWIMMER_ACTION_TUNING.diveArcHeightMax, divePower);
-        const totalDuration = crouchDuration + flightDuration;
         const direction = this._courseLayout.direction;
         const start = this.divePlatformPosition();
+        const launchStart = new Vec3(
+            start.x - SWIMMER_ACTION_TUNING.diveCrouchBackOffset * direction,
+            start.y - SWIMMER_ACTION_TUNING.diveCrouchDrop,
+            start.z,
+        );
+        const entryY = this._courseLayout.swimY - SWIMMER_ACTION_TUNING.diveEntryDepth;
+        const launchAngle = degreesToRadians(DIVE_BALANCE.launchAngleDegrees);
+        const horizontalSpeed = launchSpeed * Math.cos(launchAngle);
+        const verticalSpeed = launchSpeed * Math.sin(launchAngle);
+        const projectileFlightDuration = projectileTimeToY(launchStart.y, entryY, verticalSpeed, DIVE_BALANCE.launchGravity);
+        const distance = horizontalSpeed * projectileFlightDuration;
         const entry = this._courseLayout.entryPosition(distance, this._startPosition.z);
-        entry.y = this._courseLayout.swimY - SWIMMER_ACTION_TUNING.diveEntryDepth;
+        entry.y = entryY;
+        const poseTransitionDuration = projectileFlightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio;
+        const launchDelayDuration = poseTransitionDuration * SWIMMER_ACTION_TUNING.diveLaunchDelayRatio;
+        const totalDuration = crouchDuration + launchDelayDuration + projectileFlightDuration;
 
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
@@ -134,30 +147,42 @@ export class Swimmer extends Component {
         this.cartoonRig?.setPreRaceStanding(true);
         tween(this.node)
             .to(crouchDuration, {
-                position: new Vec3(start.x - 0.06 * direction, start.y - 0.04, start.z),
+                position: launchStart,
                 eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5),
+            }, { easing: 'quadIn' })
+            .call(() => {
+                this.cartoonRig?.startDiveStreamlineTransition(poseTransitionDuration);
+            })
+            .delay(launchDelayDuration)
+            .to(projectileFlightDuration, {}, {
+                onUpdate: (_target?: Node, ratio = 0) => {
+                    this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, ratio, projectileFlightDuration);
+                },
             })
             .call(() => {
-                this.cartoonRig?.startDiveStreamlineTransition(flightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio);
-            })
-            .to(flightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio, {
-                position: new Vec3(start.x + distance * 0.48 * direction, start.y + arcHeight, start.z),
-                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -12),
-            })
-            .call(() => {
+                this._diveEntryLeanDegrees = this.diveProjectileLean(horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, projectileFlightDuration);
+                this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, 1, projectileFlightDuration);
                 this.cartoonRig?.setDiveStreamlinePose();
-            })
-            .to(flightDuration * (1 - SWIMMER_ACTION_TUNING.diveExtensionRatio), {
-                position: entry,
-                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 0),
-            })
-            .call(() => {
                 this.startRace(distance, entrySpeed, true);
                 this.flashSplash(splashRatingForEntryStyle(result.entryStyle));
             })
             .start();
 
         return totalDuration;
+    }
+
+    private applyDiveProjectile(start: Vec3, horizontalSpeed: number, verticalSpeed: number, gravity: number, direction: number, ratio: number, duration: number) {
+        const t = Math.max(0, Math.min(1, ratio));
+        const seconds = duration * t;
+        const x = start.x + horizontalSpeed * seconds * direction;
+        const y = start.y + verticalSpeed * seconds - gravity * seconds * seconds * 0.5;
+        const lean = this.diveProjectileLean(horizontalSpeed, verticalSpeed, gravity, seconds);
+        this.node.setPosition(x, y, start.z);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, lean);
+    }
+
+    private diveProjectileLean(horizontalSpeed: number, verticalSpeed: number, gravity: number, seconds: number): number {
+        return radiansToDegrees(Math.atan2(verticalSpeed - gravity * seconds, horizontalSpeed));
     }
 
     stopRace() {
@@ -635,7 +660,7 @@ export class Swimmer extends Component {
         const direction = this._courseLayout.directionAtDistance(distance);
         const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(distance));
         this.node.setPosition(x, this.visualSwimY(distance), this._startPosition.z);
-        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, this.diveRecoveryLean(distance));
     }
 
     private finishFloatX(direction: number): number {
@@ -655,6 +680,7 @@ export class Swimmer extends Component {
     private startDiveUnderwaterPhase(initialDistance: number) {
         this._diveUnderwaterActive = true;
         this._diveGlidePoseActive = true;
+        this._diveEntryDistance = initialDistance;
         this._diveUnderwaterRiseStartDistance = initialDistance + SWIMMER_ACTION_TUNING.diveUnderwaterHoldDistance;
         this._diveUnderwaterEndDistance = this._diveUnderwaterRiseStartDistance + SWIMMER_ACTION_TUNING.diveUnderwaterRiseDistance;
     }
@@ -663,8 +689,10 @@ export class Swimmer extends Component {
         this._diveUnderwaterActive = false;
         this._diveGlidePoseActive = false;
         this.unschedule(this._finishDiveGlide);
+        this._diveEntryDistance = 0;
         this._diveUnderwaterRiseStartDistance = 0;
         this._diveUnderwaterEndDistance = 0;
+        this._diveEntryLeanDegrees = 0;
     }
 
     private beginSurfaceSwimming() {
@@ -688,6 +716,15 @@ export class Swimmer extends Component {
             return this._startPosition.y;
         }
         return lerp(underwaterY, this._startPosition.y, smoothStep(ratio));
+    }
+
+    private diveRecoveryLean(distance: number): number {
+        if (!this._diveUnderwaterActive) {
+            return 0;
+        }
+        const recoverDistance = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterHoldDistance);
+        const ratio = Math.max(0, Math.min(1, (distance - this._diveEntryDistance) / recoverDistance));
+        return lerp(this._diveEntryLeanDegrees, 0, smoothStep(ratio));
     }
 
     get currentSpeed(): number {
@@ -769,6 +806,20 @@ export class Swimmer extends Component {
 
 function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
+}
+
+function degreesToRadians(degrees: number): number {
+    return degrees * Math.PI / 180;
+}
+
+function radiansToDegrees(radians: number): number {
+    return radians * 180 / Math.PI;
+}
+
+function projectileTimeToY(startY: number, targetY: number, initialVerticalSpeed: number, gravity: number): number {
+    const drop = startY - targetY;
+    const safeGravity = Math.max(0.01, gravity);
+    return Math.max(0.01, (initialVerticalSpeed + Math.sqrt(initialVerticalSpeed * initialVerticalSpeed + 2 * safeGravity * drop)) / safeGravity);
 }
 
 function splashRatingForEntryStyle(style: DiveEntryStyle): Rating {

@@ -246,8 +246,6 @@ export class FreestylePoseController {
         }
         this.restoreBasePose();
         this.applySampleRotations(DIVE_PREP_POSE_SAMPLE, power);
-        this.applyDivePrepArmReach(power);
-        this.applyDivePrepFootLeveling(power);
     }
 
     applyDivePrepToStreamlinePose(blend: number) {

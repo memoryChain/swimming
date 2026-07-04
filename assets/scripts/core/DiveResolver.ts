@@ -74,7 +74,7 @@ export function resolveDiveResult(power: number): DiveResult {
 
     return {
         power: divePower,
-        entryDistance: lerp(DIVE_BALANCE.minDistance, DIVE_BALANCE.maxDistance, divePower),
+        launchSpeed: lerp(DIVE_BALANCE.minLaunchSpeed, DIVE_BALANCE.maxLaunchSpeed, divePower),
         entrySpeed: lerp(DIVE_BALANCE.minSpeed, DIVE_BALANCE.maxSpeed, divePower),
         qualityTier: tier,
         entryStyle,

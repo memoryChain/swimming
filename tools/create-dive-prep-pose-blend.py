@@ -1,10 +1,13 @@
 import os
+import json
+import re
 
 import bpy
 
 
 PROJECT_ROOT = r"F:\myworkspace\cocosProjects\SpeedSwimming"
-SOURCE_GLB = os.path.join(PROJECT_ROOT, "assets", "resources", "models", "UserSwimmer0621_2SumoHighPull.glb")
+SOURCE_GLB = os.path.join(PROJECT_ROOT, "assets", "resources", "models", "UserSwimmer0621_2.glb")
+POSE_TS = os.path.join(PROJECT_ROOT, "assets", "scripts", "character", "DivePrepPoseCurve.ts")
 OUTPUT_BLEND = os.path.join(PROJECT_ROOT, "tools", "UserSwimmer0621_2DivePrepPose.blend")
 
 
@@ -32,27 +35,49 @@ def make_reference_plane(name, location, scale, color):
     return obj
 
 
+def load_current_pose_sample():
+    with open(POSE_TS, "r", encoding="utf-8") as file:
+        source = file.read()
+    match = re.search(
+        r"export const DIVE_PREP_POSE_SAMPLE: DivePrepPoseSample = (\{.*?\}) as const;",
+        source,
+        re.DOTALL,
+    )
+    if not match:
+        raise RuntimeError(f"Could not parse dive prep sample from {POSE_TS}")
+    return json.loads(match.group(1))
+
+
+def apply_pose_sample(armature):
+    sample = load_current_pose_sample()
+    bpy.context.view_layer.objects.active = armature
+    armature.select_set(True)
+    bpy.ops.object.mode_set(mode="POSE")
+
+    for bone in armature.pose.bones:
+        bone.rotation_mode = "QUATERNION"
+
+    for bone_name, rotation in sample["rotations"].items():
+        bone = armature.pose.bones.get(bone_name)
+        if not bone:
+            continue
+        x, y, z, w = rotation
+        bone.rotation_quaternion = (w, x, y, z)
+
+    armature.animation_data_clear()
+    bpy.context.scene.frame_start = int(sample["sampleFrame"])
+    bpy.context.scene.frame_end = int(sample["sampleFrame"])
+    bpy.context.scene.frame_set(int(sample["sampleFrame"]))
+    bpy.context.view_layer.update()
+
+
 def main():
     clear_scene()
     bpy.ops.import_scene.gltf(filepath=SOURCE_GLB)
     armature = find_armature()
     armature.name = "DivePrepPose_Armature"
     armature.data.name = "DivePrepPose_ArmatureData"
-
-    action = armature.animation_data.action if armature.animation_data else None
-    if not action:
-        raise RuntimeError("Imported source action is missing")
-    sample_frame = int(action.frame_range[1])
-    bpy.context.scene.frame_start = sample_frame
-    bpy.context.scene.frame_end = sample_frame
-    bpy.context.scene.frame_set(sample_frame)
-
-    for bone in armature.pose.bones:
-        bone.rotation_mode = "QUATERNION"
-
-    bpy.context.view_layer.objects.active = armature
-    armature.select_set(True)
-    bpy.ops.object.mode_set(mode="POSE")
+    apply_pose_sample(armature)
 
     make_reference_plane("DivePrepWaterPlane", (0, 0, -0.02), (2.2, 1.35, 0.01), (0.1, 0.6, 1.0, 0.25))
     make_reference_plane("DivePrepCenterLine", (0, 0, 0.002), (2.2, 0.015, 0.012), (1, 1, 1, 0.8))
@@ -77,10 +102,14 @@ def main():
     note.write(
         "Adjust the swimmer in Pose Mode on DivePrepPose_Armature.\n"
         "Keep pose bones in QUATERNION mode.\n"
-        "When done, run tools/export-dive-prep-pose-from-blend.py from Blender to update assets/scripts/character/DivePrepPoseCurve.ts.\n"
+        "This file starts from the current game sample on the aligned UserSwimmer0621_2 rig.\n"
+        "When done, ask Codex to export this pose back into the game.\n"
         "Useful bones: L_Clavicle/R_Clavicle, L_Upperarm/R_Upperarm, L_Forearm/R_Forearm, Hip, Waist, Spine01, Spine02, Head.\n"
     )
 
+    bpy.context.view_layer.objects.active = armature
+    armature.select_set(True)
+    bpy.ops.object.mode_set(mode="POSE")
     bpy.ops.wm.save_as_mainfile(filepath=OUTPUT_BLEND)
     print(f"Saved {OUTPUT_BLEND}")
 

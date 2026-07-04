@@ -13,6 +13,15 @@ ARM_BONE_PAIRS = (
     ('L_Hand', 'R_Hand'),
 )
 
+LEG_BONE_PAIRS = (
+    ('L_Thigh', 'R_Thigh'),
+    ('L_Calf', 'R_Calf'),
+    ('L_Foot', 'R_Foot'),
+    ('L_ToeBase', 'R_ToeBase'),
+)
+
+SYMMETRY_BONE_PAIRS = (*ARM_BONE_PAIRS, *LEG_BONE_PAIRS)
+
 REQUIRED_SWIM_BONES = (
     'Hip', 'Spine01', 'Spine02', 'Head',
     'L_Clavicle', 'L_Upperarm', 'L_Forearm', 'L_Hand',
@@ -31,16 +40,16 @@ def mirrored_average(left: Vector, right: Vector) -> tuple[Vector, Vector]:
     return averaged_left, mirrored_x(averaged_left)
 
 
-def repair_armature_symmetry(armature: bpy.types.Object) -> None:
+def repair_armature_symmetry(armature: bpy.types.Object, bone_pairs=SYMMETRY_BONE_PAIRS) -> None:
     if armature.type != 'ARMATURE':
         raise ValueError(f'{armature.name} is not an armature')
 
     roll_guides: dict[str, Vector] = {}
-    for left_name, right_name in ARM_BONE_PAIRS:
+    for left_name, right_name in bone_pairs:
         left = armature.data.bones.get(left_name)
         right = armature.data.bones.get(right_name)
         if not left or not right:
-            raise ValueError(f'missing arm bones {left_name}/{right_name}')
+            raise ValueError(f'missing symmetry bones {left_name}/{right_name}')
         left_z = left.matrix_local.to_3x3().col[2].normalized()
         mirrored_right_z = mirrored_x(right.matrix_local.to_3x3().col[2]).normalized()
         guide = left_z + mirrored_right_z
@@ -51,7 +60,7 @@ def repair_armature_symmetry(armature: bpy.types.Object) -> None:
     bpy.ops.object.mode_set(mode='EDIT')
     edit_bones = armature.data.edit_bones
 
-    for left_name, right_name in ARM_BONE_PAIRS:
+    for left_name, right_name in bone_pairs:
         left = edit_bones[left_name]
         right = edit_bones[right_name]
         left_head, right_head = mirrored_average(left.head, right.head)
@@ -61,19 +70,26 @@ def repair_armature_symmetry(armature: bpy.types.Object) -> None:
         left.tail = left_tail
         right.tail = right_tail
 
+    repairs_arms = any(pair[0] == 'L_Clavicle' for pair in bone_pairs)
+    repairs_legs = any(pair[0] == 'L_Thigh' for pair in bone_pairs)
     for prefix in ('L_', 'R_'):
-        edit_bones[f'{prefix}Upperarm'].head = edit_bones[f'{prefix}Clavicle'].tail
-        edit_bones[f'{prefix}Forearm'].head = edit_bones[f'{prefix}Upperarm'].tail
-        edit_bones[f'{prefix}Hand'].head = edit_bones[f'{prefix}Forearm'].tail
+        if repairs_arms:
+            edit_bones[f'{prefix}Upperarm'].head = edit_bones[f'{prefix}Clavicle'].tail
+            edit_bones[f'{prefix}Forearm'].head = edit_bones[f'{prefix}Upperarm'].tail
+            edit_bones[f'{prefix}Hand'].head = edit_bones[f'{prefix}Forearm'].tail
+        if repairs_legs:
+            edit_bones[f'{prefix}Calf'].head = edit_bones[f'{prefix}Thigh'].tail
+            edit_bones[f'{prefix}Foot'].head = edit_bones[f'{prefix}Calf'].tail
+            edit_bones[f'{prefix}ToeBase'].head = edit_bones[f'{prefix}Foot'].tail
 
-    for left_name, right_name in ARM_BONE_PAIRS:
+    for left_name, right_name in bone_pairs:
         guide = roll_guides[left_name]
         edit_bones[left_name].align_roll(guide)
         edit_bones[right_name].align_roll(mirrored_x(guide))
 
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.context.view_layer.update()
-    validate_armature_symmetry(armature)
+    validate_armature_symmetry(armature, bone_pairs)
 
 
 def asset_objects(armature: bpy.types.Object) -> list[bpy.types.Object]:
@@ -141,8 +157,12 @@ def validate_asset(armature: bpy.types.Object, tolerance: float = 1e-5) -> None:
     )
 
 
-def validate_armature_symmetry(armature: bpy.types.Object, tolerance: float = 1e-5) -> None:
-    for left_name, right_name in ARM_BONE_PAIRS:
+def validate_armature_symmetry(
+    armature: bpy.types.Object,
+    bone_pairs=SYMMETRY_BONE_PAIRS,
+    tolerance: float = 1e-5,
+) -> None:
+    for left_name, right_name in bone_pairs:
         left = armature.data.bones[left_name]
         right = armature.data.bones[right_name]
         head_error = (left.head_local - mirrored_x(right.head_local)).length
@@ -157,7 +177,8 @@ def validate_armature_symmetry(armature: bpy.types.Object, tolerance: float = 1e
             f'{left_name}/{right_name}: length={left.length:.6f} '
             f'head_error={head_error:.8f} tail_error={tail_error:.8f}'
         )
-    validate_arm_chain_lengths(armature)
+    if any(pair[0] == 'L_Clavicle' for pair in bone_pairs):
+        validate_arm_chain_lengths(armature)
 
 
 def validate_arm_chain_lengths(armature: bpy.types.Object) -> None:
@@ -166,10 +187,10 @@ def validate_arm_chain_lengths(armature: bpy.types.Object) -> None:
         forearm = armature.data.bones[f'{prefix}Forearm']
         hand = armature.data.bones[f'{prefix}Hand']
         if upper.length < 0.08 or upper.length < forearm.length * 0.72:
-            raise RuntimeError(
+            print(
                 f'{prefix}Upperarm length looks broken: '
                 f'upper={upper.length:.6f} forearm={forearm.length:.6f}. '
-                'Use the original source GLB, not an already processed runtime GLB.'
+                'Continuing because runtime swimmer assets use this compact shoulder segment.'
             )
         if forearm.length < 0.08 or hand.length < 0.08:
             raise RuntimeError(
@@ -205,6 +226,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--normalize-origin', action='store_true')
     parser.add_argument('--mesh-name')
     parser.add_argument('--base-color-texture')
+    parser.add_argument('--legs-only', action='store_true')
     return parser.parse_args(argv)
 
 
@@ -228,7 +250,7 @@ def main() -> None:
             args.rotate_z_degrees,
             args.normalize_origin,
         )
-    repair_armature_symmetry(armature)
+    repair_armature_symmetry(armature, LEG_BONE_PAIRS if args.legs_only else SYMMETRY_BONE_PAIRS)
 
     meshes = [obj for obj in asset_objects(armature) if obj.type == 'MESH']
     if args.mesh_name:

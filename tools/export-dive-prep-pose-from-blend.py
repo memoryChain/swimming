@@ -1,12 +1,17 @@
 import json
 import os
+import sys
 
 import bpy
 
 
 PROJECT_ROOT = r"F:\myworkspace\cocosProjects\SpeedSwimming"
+INPUT_BLEND = os.path.join(PROJECT_ROOT, "tools", "UserSwimmer0621_2DivePrepPose.blend")
 OUTPUT_TS = os.path.join(PROJECT_ROOT, "assets", "scripts", "character", "DivePrepPoseCurve.ts")
-MIRROR_LEFT_TO_RIGHT_BEFORE_EXPORT = True
+MIRROR_LEFT_TO_RIGHT_BEFORE_EXPORT = False
+SAVE_BLEND_AFTER_MIRROR = True
+FREEZE_BLEND_POSE_AFTER_MIRROR = True
+FOOT_PLANE_TOLERANCE = 0.001
 
 SAMPLED_BONES = [
     "Root",
@@ -69,6 +74,15 @@ def quat_tuple(quat):
     ]
 
 
+def mirrored_x(vec):
+    return type(vec)((-vec.x, vec.y, vec.z))
+
+
+def should_mirror_left_to_right():
+    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    return "--mirror-left-to-right" in argv or MIRROR_LEFT_TO_RIGHT_BEFORE_EXPORT
+
+
 def mirror_left_to_right(armature):
     missing = [name for name in LEFT_MIRROR_BONES if name not in armature.pose.bones]
     if missing:
@@ -97,8 +111,11 @@ def mirror_left_to_right(armature):
 
 
 def main():
+    if os.path.abspath(bpy.data.filepath or "") != os.path.abspath(INPUT_BLEND):
+        bpy.ops.wm.open_mainfile(filepath=INPUT_BLEND)
     armature = find_armature()
-    if MIRROR_LEFT_TO_RIGHT_BEFORE_EXPORT:
+    mirror_left_to_right_enabled = should_mirror_left_to_right()
+    if mirror_left_to_right_enabled:
         mirror_left_to_right(armature)
     bpy.context.view_layer.update()
 
@@ -111,6 +128,23 @@ def main():
 
     def bone_world(name):
         return armature.matrix_world @ pose_bone(name).head
+
+    left_foot = bone_world("L_Foot")
+    right_foot = bone_world("R_Foot")
+    left_toe = bone_world("L_ToeBase")
+    right_toe = bone_world("R_ToeBase")
+    foot_height_delta = left_foot.z - right_foot.z
+    toe_height_delta = left_toe.z - right_toe.z
+    if max(abs(foot_height_delta), abs(toe_height_delta)) > FOOT_PLANE_TOLERANCE:
+        print(
+            "Dive-prep feet are not on the same height plane: "
+            f"footHeightDelta={foot_height_delta:.6f} toeHeightDelta={toe_height_delta:.6f}"
+        )
+    if mirror_left_to_right_enabled and FREEZE_BLEND_POSE_AFTER_MIRROR and armature.animation_data:
+        armature.animation_data_clear()
+    if mirror_left_to_right_enabled and SAVE_BLEND_AFTER_MIRROR:
+        bpy.context.preferences.filepaths.save_version = 0
+        bpy.ops.wm.save_as_mainfile(filepath=bpy.data.filepath)
 
     hip = bone_world("Hip")
     root = bone_world("Root")

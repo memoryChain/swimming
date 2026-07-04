@@ -63,8 +63,10 @@ export const SWIMMER_BALANCE = {
 
 export const DIVE_BALANCE = {
     platformNodeOffset: new Vec3(-1.37, 0.53, 0),
-    minDistance: 0.55,
-    maxDistance: 1.85,
+    minLaunchSpeed: 4.2,
+    maxLaunchSpeed: 8.2,
+    launchAngleDegrees: 16,
+    launchGravity: 6.2,
     minSpeed: 0.85,
     maxSpeed: 2.35,
     minHoldSeconds: 0.08,
