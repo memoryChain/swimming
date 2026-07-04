@@ -17,7 +17,7 @@ export type SplashFoamPartTuning = {
 
 export type SplashParticleEmitterTuning = {
     nameSuffix: string;
-    role: 'hand' | 'leg';
+    role: 'hand' | 'leg' | 'body';
     sideOffsetZ: number;
     basePosition: SplashVec3;
     palmOffset: SplashVec3;
@@ -31,9 +31,9 @@ export const SPLASH_EMITTER_TUNING = {
     // 最高渲染优先级，确保水花绘制在透明水面之后。
     renderPriority: 255,
 
-    // Runtime particle alpha, 0-255. Lower values make droplets softer.
-    // 运行时粒子透明度，范围 0-255；数值越低水滴越柔和。
-    particleAlpha: 185,
+    // Runtime particle alpha, 0-255. Translucent so streaks read as water spray, not solid white.
+    // 运行时粒子透明度，范围 0-255；偏透使水条读作水花飞溅，而非实白。
+    particleAlpha: 120,
 
     // Maximum swim speed used to normalize splash intensity.
     // 用于归一化水花强度的最大游泳速度。
@@ -179,9 +179,9 @@ export const SPLASH_EMITTER_TUNING = {
     },
 
     particleSystem: {
-        // Particle capacity per emitter.
-        // 每个发射器的粒子容量。
-        capacity: 120,
+        // Particle capacity per emitter. Fewer, bigger cartoon clumps need far less capacity.
+        // 每个发射器的粒子容量；更少、更大的卡通团块需要的容量小得多。
+        capacity: 56,
 
         // Particle system playback duration; emissions are manual bursts.
         // 粒子系统播放时长；实际发射由代码手动 burst 控制。
@@ -203,10 +203,11 @@ export const SPLASH_EMITTER_TUNING = {
         defaultLifetime: [0.22, 0.4] as const,
         defaultSpeed: [1.7, 3.1] as const,
         defaultSize: [0.04, 0.085] as const,
-        startRotationZ: 0,
+        startRotationZMin: 0,
+        startRotationZMax: 6.2831853,
         startDelay: 0,
-        handGravity: 2.25,
-        legGravity: 0.55,
+        handGravity: 1.4,
+        legGravity: 0.5,
         rateOverTime: 0,
         rateOverDistance: 0,
 
@@ -219,10 +220,10 @@ export const SPLASH_EMITTER_TUNING = {
         coneShapeType: 2,
         emitFromBase: 0,
 
-        // Cone emitter settings for hand and leg particles.
-        // 手部和腿部粒子圆锥发射器设置。
-        handShapeAngle: 58,
-        legShapeAngle: 24,
+        // Wider cone so droplets spray outward/sideways in a fan, not a narrow upward column.
+        // 更宽的圆锥，让水滴向外/侧向扭开成扇形，而非窄窄向上的柱。
+        handShapeAngle: 78,
+        legShapeAngle: 34,
         handShapeRadius: 0.055,
         legShapeRadius: 0.035,
         shapeArc: 360,
@@ -233,40 +234,58 @@ export const SPLASH_EMITTER_TUNING = {
         handSphericalDirection: 0.1,
         legSphericalDirection: 0.03,
 
-        // Lifetime alpha fade: particles stay visible, then fade before impact.
-        // 生命周期透明度淡出：粒子先保持可见，接近落水时淡出。
-        fadeHoldAlpha: 0.92,
-        fadeHoldTime: 0.58,
+        // Stretched-billboard renderer: slight elongation along velocity. Keep low so droplets stay
+        // dabs, not long flame-like tongues.
+        // 拉伸广告牌渲染：沿速度方向轻微拉长。保持较低，让水滴是短块而非火苗长舔。
+        stretchedRenderMode: 1,
+        stretchVelocityScale: 0.018,
+        stretchLengthScale: 0.12,
+
+        // Lifetime alpha fade: hold visible, then fade out near end of life.
+        // 生命周期透明度：先保持可见，接近生命末尾淡出。
+        fadeHoldAlpha: 1,
+        fadeHoldTime: 0.4,
         fadeEndAlpha: 0,
 
-        // Size-over-lifetime curve. Starts fuller, shrinks near disappearance.
-        // 生命周期尺寸曲线：出生时略大，消失前缩小。
+        // Size-over-lifetime curve: pop full, then shrink/thin as the droplet falls.
+        // 生命周期尺寸曲线：先饱满弹出，随水滴下落再缩小变细。
         sizeOverLifetime: [
-            [0, 1.18],
-            [0.55, 0.92],
-            [1, 0.16],
+            [0, 1],
+            [0.6, 0.9],
+            [1, 0.3],
         ] as const,
     },
 
-    particleTexture: {
-        // Runtime droplet texture size. Small to keep memory and upload cheap.
-        // 运行时水滴贴图大小；保持较小以节省内存和上传成本。
-        size: 16,
-        coreRadius: 0.28,
-        highlightRadius: 0.42,
-        highlightAlphaScale: 0.72,
+    dropletTexture: {
+        // Soft round droplet sprite. Stretched billboard turns it into a water streak at runtime.
+        // 柔和圆形水滴贴图；拉伸广告牌在运行时把它变成水条。
+        size: 32,
+        // Gaussian body softness (smaller = softer/wider).
+        // 高斯主体柔度（越小越柔越宽）。
+        softness: 3.2,
+        // Bright tight core for a wet highlight.
+        // 明亮紧致的核心，形成湿润高光。
+        coreBoost: 0.32,
+        coreSoftness: 12,
+        // Safety feather so alpha reaches zero before the border.
+        // 安全羽化，确保 alpha 在边界前归零。
+        featherStart: 0.5,
     },
 
     particleEmitters: {
-        // Side lane offsets for left/right hand and lower-leg emitters.
-        // 左右手和左右小腿发射器的侧向偏移。
+        // Side lane offsets for left/right hand, lower-leg and body emitters.
+        // 左右手、左右小腿和身体发射器的侧向偏移。
         leftHandZ: -0.38,
         rightHandZ: 0.38,
         leftLegZ: -0.24,
         rightLegZ: 0.24,
+        leftBodyZ: -0.26,
+        rightBodyZ: 0.26,
 
         // Hand emitter cluster. Tune palmOffset[1] to change emission height.
+        // Kept to 3 emitters per hand for WeChat: fewer particle systems and less overdraw.
         // 手部发射器组；调 palmOffset[1] 可以改变发射高度。
+        // 微信小游戏下每只手保留 3 个发射器：更少粒子系统、更少透明叠绘。
         handCluster: [
             {
                 nameSuffix: 'Core',
@@ -276,7 +295,7 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.1, -0.06, 0],
                 forwardTilt: -6,
                 lateralTilt: 0,
-                countScale: 0.28,
+                countScale: 0.34,
             },
             {
                 nameSuffix: 'Inner',
@@ -286,7 +305,7 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.12, -0.055, -0.055],
                 forwardTilt: -12,
                 lateralTilt: -13,
-                countScale: 0.2,
+                countScale: 0.22,
             },
             {
                 nameSuffix: 'Outer',
@@ -296,17 +315,7 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.13, -0.065, 0.07],
                 forwardTilt: 10,
                 lateralTilt: 18,
-                countScale: 0.2,
-            },
-            {
-                nameSuffix: 'Mist',
-                role: 'hand',
-                sideOffsetZ: 0.025,
-                basePosition: [0.43, 0.11, 0],
-                palmOffset: [0.06, -0.08, 0.025],
-                forwardTilt: 16,
-                lateralTilt: 8,
-                countScale: 0.12,
+                countScale: 0.22,
             },
         ] satisfies SplashParticleEmitterTuning[],
 
@@ -318,8 +327,22 @@ export const SPLASH_EMITTER_TUNING = {
             sideOffsetZ: 0,
             basePosition: [-0.72, 0.018, 0],
             palmOffset: [-0.1, 0.012, 0.035],
-            forwardTilt: 90,
+            forwardTilt: 10,
             lateralTilt: 4,
+            countScale: 0.24,
+        } satisfies SplashParticleEmitterTuning,
+
+        // Body emitter: ambient foam churn alongside the torso, positioned near mid-body at water level.
+        // Follows the 'Body' bone (torso). palmOffset[2] is mirrored per side.
+        // 身体发射器：躯干两侧的环境泡沫翻涌，位于身体中段水面处；跟随 'Body'（躯干）骨骼，palmOffset[2] 按左右镜像。
+        body: {
+            nameSuffix: '',
+            role: 'body',
+            sideOffsetZ: 0,
+            basePosition: [-0.1, 0.012, 0],
+            palmOffset: [-0.05, -0.01, 0.06],
+            forwardTilt: 0,
+            lateralTilt: 12,
             countScale: 0.12,
         } satisfies SplashParticleEmitterTuning,
     },
@@ -332,11 +355,11 @@ export const SPLASH_EMITTER_TUNING = {
         handProgressWindow: 0.26,
         handEntryScaleMin: 0.9,
         handEntryScaleMax: 1.18,
-        handBurstCountMin: 30,
-        handBurstCountMax: 86,
-        handBurstExtraCount: 18,
-        handBurstCountClampMin: 20,
-        handBurstCountClampMax: 104,
+        handBurstCountMin: 8,
+        handBurstCountMax: 20,
+        handBurstExtraCount: 5,
+        handBurstCountClampMin: 6,
+        handBurstCountClampMax: 26,
         handBurstArmWeight: 0.75,
         handBurstGenericWeight: 0.35,
 
@@ -352,56 +375,73 @@ export const SPLASH_EMITTER_TUNING = {
         legSignalCycleWeight: 0.42,
         legSignalActionWeight: 0.18,
         legSignalBurstWeight: 0.12,
-        legSignalMax: 0.9,
-        legEmitThreshold: 0.28,
-        legBurstCountMin: 4,
-        legBurstCountMax: 13,
-        legBurstSpeedScale: 0.46,
-        legBurstPullScale: 0.34,
-        legCooldownMin: 0.095,
-        legCooldownMax: 0.18,
+        legSignalMax: 0.95,
+        legEmitThreshold: 0.24,
+        legPulseThreshold: 0.3,
+        legBurstCountMin: 7,
+        legBurstCountMax: 18,
+        legBurstSpeedScale: 0.5,
+        legBurstPullScale: 1.0,
+        legCooldownMin: 0.06,
+        legCooldownMax: 0.14,
+
+        // Body splash: continuous low churn alongside the torso, scaled by speed.
+        // 身体水花：躯干两侧随速度增强的持续低量翻涌。
+        bodySignalSpeedWeight: 0.85,
+        bodySignalCycleWeight: 0.35,
+        bodySignalBurstWeight: 0.18,
+        bodySignalMax: 0.9,
+        bodyEmitThreshold: 0.16,
+        bodyPulseThreshold: 0.3,
+        bodyBurstCountMin: 3,
+        bodyBurstCountMax: 8,
+        bodyBurstSpeedScale: 0.42,
+        bodyBurstPullScale: 0.82,
+        bodyCooldownMin: 0.05,
+        bodyCooldownMax: 0.12,
+        bodySpeedBack: 0.12,
 
         // Particle burst physics and size ranges.
         // 粒子爆发的速度、生命周期和尺寸范围。
-        handSpeedMin: 1.7,
-        handSpeedMax: 3.0,
-        legSpeedMin: 0.45,
-        legSpeedMax: 1.15,
+        handSpeedMin: 1.8,
+        handSpeedMax: 3.2,
+        legSpeedMin: 1.7,
+        legSpeedMax: 3.0,
         speedRangeMinScale: 0.58,
         speedRangeMaxScale: 1.08,
-        handLifetimeMin: 0.15,
-        handLifetimeMaxLowSpeed: 0.24,
-        handLifetimeMaxHighSpeed: 0.32,
-        legLifetimeMin: 0.1,
-        legLifetimeMaxLowSpeed: 0.18,
-        legLifetimeMaxHighSpeed: 0.26,
-        handSizeMin: 0.045,
-        handSizeMax: 0.085,
-        legSizeMin: 0.025,
-        legSizeMax: 0.045,
-        sizeRangeMinScale: 0.55,
-        sizeRangeMaxScale: 1.12,
-        minimumScaledCount: 10,
-        handSpraySeconds: 0.085,
-        legSpraySeconds: 0.045,
-        initialEmitScale: 0.22,
-        handInitialEmitMin: 4,
-        legInitialEmitMin: 2,
+        handLifetimeMin: 0.24,
+        handLifetimeMaxLowSpeed: 0.36,
+        handLifetimeMaxHighSpeed: 0.46,
+        legLifetimeMin: 0.22,
+        legLifetimeMaxLowSpeed: 0.32,
+        legLifetimeMaxHighSpeed: 0.42,
+        handSizeMin: 0.12,
+        handSizeMax: 0.22,
+        legSizeMin: 0.16,
+        legSizeMax: 0.28,
+        sizeRangeMinScale: 0.82,
+        sizeRangeMaxScale: 1.14,
+        minimumScaledCount: 3,
+        handSpraySeconds: 0.03,
+        legSpraySeconds: 0.02,
+        initialEmitScale: 0.72,
+        handInitialEmitMin: 3,
+        legInitialEmitMin: 1,
         burstCooldownMin: 0.018,
         burstCooldownMax: 0.04,
-        keepAliveMin: 0.36,
-        keepAliveMax: 0.58,
+        keepAliveMin: 0.24,
+        keepAliveMax: 0.36,
 
         // Frame spray accumulation and per-particle jitter.
         // 连续发射累计与单粒子抖动。
         minSprayDt: 1 / 240,
         maxSprayDt: 1 / 20,
-        handJitterX: 0.055,
-        handJitterY: 0.018,
-        handJitterZ: 0.075,
-        legJitterX: 0.035,
+        handJitterX: 0.04,
+        handJitterY: 0.014,
+        handJitterZ: 0.05,
+        legJitterX: 0.026,
         legJitterY: 0.006,
-        legJitterZ: 0.04,
+        legJitterZ: 0.03,
         baseJitterYDown: -0.006,
         handRotationJitterX: 10,
         handRotationJitterY: 18,

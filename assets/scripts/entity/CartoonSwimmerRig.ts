@@ -316,6 +316,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updateSplashSurface(0);
     }
 
+    setSplashCulled(culled: boolean) {
+        this._splashEmitter?.setCulled(culled);
+    }
+
     setPreRaceStanding(active: boolean) {
         if (this._modelDebugMode) {
             return;

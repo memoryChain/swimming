@@ -364,6 +364,13 @@ export class FreestylePoseController {
             this._head.getWorldPosition(out);
             return true;
         }
+        if (name.indexOf('Body') >= 0) {
+            const body = this._torso || this._spine1 || this._spine;
+            if (body) {
+                body.getWorldPosition(out);
+                return true;
+            }
+        }
         if (name.indexOf('LeftHand') >= 0 && this._leftHand) {
             this._leftHand.getWorldPosition(out);
             return true;

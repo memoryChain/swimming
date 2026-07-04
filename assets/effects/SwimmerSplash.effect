@@ -104,9 +104,11 @@ CCProgram splash-fs %{
     vec2 uv = v_uv;
     vec2 center = uv - vec2(0.5);
     float ellipse = length(center * vec2(1.2, 1.45));
-    float coreMask = 1.0 - smoothstep(0.08, 0.44, ellipse);
-    float outerMask = 1.0 - smoothstep(0.34, 0.78, ellipse);
+    float coreMask = 1.0 - smoothstep(0.06, 0.52, ellipse);
+    float outerMask = 1.0 - smoothstep(0.30, 0.94, ellipse);
     float wakeMask = outerMask * v_sideFade;
+    // Gentle global feather so foam always dissolves into the water instead of a hard rim.
+    float edgeFeather = 1.0 - smoothstep(0.60, 1.02, ellipse);
 
     float cloud = blob(uv, vec2(0.40, 0.50), vec2(0.26, 0.18), 0.42);
     cloud += blob(uv, vec2(0.55, 0.42), vec2(0.18, 0.13), 0.42);
@@ -116,7 +118,9 @@ CCProgram splash-fs %{
 
     float edgeWave = 0.5 + 0.5 * sin(uv.x * 18.0 - t * 2.6 + sin(uv.y * 9.0) * 1.2 + splashParams.w);
     float fineWave = 0.5 + 0.5 * sin((uv.x + uv.y) * 31.0 + t * 1.7 + splashParams.w * 0.7);
-    float edgeBreakup = smoothstep(0.28, 0.84, edgeWave * 0.68 + fineWave * 0.24 + outerMask * 0.18);
+    // Softer, wider breakup keeps a foam base so edges look frothy instead of chopped.
+    float edgeBreakup = smoothstep(0.16, 0.92, edgeWave * 0.6 + fineWave * 0.3 + outerMask * 0.28);
+    edgeBreakup = mix(0.55, 1.0, edgeBreakup);
     float ring = 1.0 - smoothstep(0.035, 0.12, abs(ellipse - (0.28 + fract(t * 0.45) * 0.22)));
     ring *= 1.0 - flowStrength * 0.65;
     vec2 local = fract((uv + vec2(t * 0.06, -t * 0.04)) * vec2(10.0, 8.0)) - 0.5;
@@ -130,13 +134,16 @@ CCProgram splash-fs %{
     float centerWake = 1.0 - smoothstep(0.05, 0.46, abs(uv.y - 0.5));
     float flowFoam = smoothstep(0.38, 0.82, ribbonA * 0.62 + ribbonB * 0.28);
     flowFoam *= trailMask * centerWake * flowStrength * trailStrength;
-    float foamBody = cloud * edgeBreakup * smoothstep(0.22, 0.82, fineWave + cloud * 0.48);
+    float foamBody = cloud * edgeBreakup * smoothstep(0.16, 0.86, fineWave + cloud * 0.48);
     float spray = clamp(foamBody * (0.42 + intensity * 0.55) + ring * burst * 0.35 + droplets * (0.45 + burst * 0.45) + flowFoam * (0.7 + intensity * 0.34), 0.0, 1.0);
     float thinRipples = (1.0 - smoothstep(0.02, 0.09, abs(ellipse - 0.62))) * wakeMask * (0.4 + speedRatio * 0.6);
 
-    vec3 color = mix(rippleColor.rgb, foamColor.rgb, spray);
+    // Only the dense core reads as white foam; thin/outer areas stay water-tinted so it blends in.
+    float foamDensity = smoothstep(0.12, 0.86, spray);
+    vec3 color = mix(rippleColor.rgb, foamColor.rgb, foamDensity);
     float alpha = (thinRipples * rippleColor.a * 0.55 + spray * foamColor.a + flowFoam * foamColor.a * 0.42) * max(wakeMask, coreMask * 0.65);
     alpha *= clamp(0.18 + intensity * 0.82 + burst * 0.48, 0.0, 1.0);
+    alpha *= edgeFeather;
 
     vec4 o = vec4(color, alpha);
     return CCFragOutput(o);

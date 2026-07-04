@@ -20,7 +20,7 @@ type SplashPart = {
 type SplashParticleEmitter = {
     node: Node;
     system: ParticleSystem;
-    role: 'hand' | 'leg';
+    role: 'hand' | 'leg' | 'body';
     side: 'left' | 'right';
     basePosition: Vec3;
     palmOffset: Vec3;
@@ -88,6 +88,7 @@ export class SplashEmitter {
     private _kickSplashBurst = 0;
     private _lastDt = TUNING.initialDt;
     private _waterY: number;
+    private _culled = false;
 
     constructor(private readonly _options: SplashEmitterOptions) {
         this._waterY = _options.waterY;
@@ -112,21 +113,32 @@ export class SplashEmitter {
             this.createParticleEmitterCluster('RightHandSplashParticles', 'right', TUNING.particleEmitters.rightHandZ);
             this.createLegParticleEmitter('LeftLowerLegSplashParticles', 'left', TUNING.particleEmitters.leftLegZ);
             this.createLegParticleEmitter('RightLowerLegSplashParticles', 'right', TUNING.particleEmitters.rightLegZ);
+            this.createBodyParticleEmitter('LeftBodySplashParticles', 'left', TUNING.particleEmitters.leftBodyZ);
+            this.createBodyParticleEmitter('RightBodySplashParticles', 'right', TUNING.particleEmitters.rightBodyZ);
             this.update(0);
         });
     }
 
     triggerArmStroke() {
+        if (this._culled) {
+            return;
+        }
         this._armSplashBurst = Math.max(this._armSplashBurst, TUNING.burst.armStroke);
         this._splashBurst = Math.max(this._splashBurst, TUNING.burst.armGeneric);
     }
 
     triggerKick() {
+        if (this._culled) {
+            return;
+        }
         this._kickSplashBurst = Math.max(this._kickSplashBurst, TUNING.burst.kick);
         this._splashBurst = Math.max(this._splashBurst, TUNING.burst.kickGeneric);
     }
 
     triggerBurst(scale = 1) {
+        if (this._culled) {
+            return;
+        }
         const safeScale = Math.max(0, scale);
         this._splashBurst = Math.max(this._splashBurst, safeScale);
         this._armSplashBurst = Math.max(this._armSplashBurst, safeScale * TUNING.burst.armScale);
@@ -135,6 +147,9 @@ export class SplashEmitter {
     }
 
     decay(dt: number) {
+        if (this._culled) {
+            return;
+        }
         this._lastDt = dt > 0 ? dt : this._lastDt;
         this._splashBurst = Math.max(0, this._splashBurst - dt * TUNING.burst.genericDecay);
         this._armSplashBurst = Math.max(0, this._armSplashBurst - dt * TUNING.burst.armDecay);
@@ -167,6 +182,31 @@ export class SplashEmitter {
         this.node.active = active;
     }
 
+    setCulled(culled: boolean) {
+        if (this._culled === culled) {
+            return;
+        }
+        this._culled = culled;
+        if (culled) {
+            // Off-screen: stop simulating and clear residual particles/burst so nothing pops on return.
+            // 离屏：停止模拟并清空残留粒子/爆发值，避免回到画面时突然爆水花。
+            this._splashBurst = 0;
+            this._armSplashBurst = 0;
+            this._kickSplashBurst = 0;
+            for (const emitter of this._particleEmitters) {
+                emitter.cooldown = 0;
+                emitter.keepAlive = 0;
+                emitter.sprayTime = 0;
+                emitter.sprayRate = 0;
+                emitter.sprayCarry = 0;
+                emitter.system.clear();
+            }
+            if (this.node?.isValid) {
+                this.node.active = false;
+            }
+        }
+    }
+
     setState(state: SplashEmitterState) {
         this._state = state;
     }
@@ -177,6 +217,12 @@ export class SplashEmitter {
 
     update(speed: number) {
         if (!this.node || this._parts.length === 0) {
+            return;
+        }
+        if (this._culled) {
+            if (this.node.active) {
+                this.node.active = false;
+            }
             return;
         }
 
@@ -307,6 +353,11 @@ export class SplashEmitter {
         this.createParticleEmitter(name, side, TUNING.particleEmitters.leg, sideZ, sideSign);
     }
 
+    private createBodyParticleEmitter(name: string, side: 'left' | 'right', sideZ: number) {
+        const sideSign = side === 'left' ? -1 : 1;
+        this.createParticleEmitter(name, side, TUNING.particleEmitters.body, sideZ, sideSign);
+    }
+
     private createParticleEmitter(name: string, side: 'left' | 'right', tuning: SplashParticleEmitterTuning, sideZ: number, sideSign: number) {
         const basePosition = emitterBaseVec3(tuning.basePosition, sideZ, sideSign * tuning.sideOffsetZ);
         const palmOffset = new Vec3(tuning.palmOffset[0], tuning.palmOffset[1], sideSign * tuning.palmOffset[2]);
@@ -333,7 +384,7 @@ export class SplashEmitter {
         setCurveRangeTwoConstants(system.startSizeX, TUNING.particleSystem.defaultSize[0], TUNING.particleSystem.defaultSize[1]);
         setCurveRangeTwoConstants(system.startSizeY, TUNING.particleSystem.defaultSize[0], TUNING.particleSystem.defaultSize[1]);
         setCurveRangeTwoConstants(system.startSizeZ, TUNING.particleSystem.defaultSize[0], TUNING.particleSystem.defaultSize[1]);
-        setCurveRange(system.startRotationZ, TUNING.particleSystem.startRotationZ);
+        setCurveRangeTwoConstants(system.startRotationZ, TUNING.particleSystem.startRotationZMin, TUNING.particleSystem.startRotationZMax);
         setCurveRange(system.startDelay, TUNING.particleSystem.startDelay);
         setCurveRange(system.gravityModifier, TUNING.particleSystem.handGravity);
         setCurveRange(system.rateOverTime, TUNING.particleSystem.rateOverTime);
@@ -347,6 +398,12 @@ export class SplashEmitter {
             renderer.particleMaterial = null;
             renderer.cpuMaterial = null;
             renderer.mainTexture = getSplashParticleTexture();
+            // Stretched billboard: each particle elongates along its velocity into a water streak.
+            // This is what makes the spray read as flying water droplets instead of round bubbles.
+            // 拉伸广告牌：每颗粒子沿速度方向拉长成水条。这正是让飞溅读作水滴而非圆泡泡的关键。
+            renderer.renderMode = TUNING.particleSystem.stretchedRenderMode;
+            renderer.velocityScale = TUNING.particleSystem.stretchVelocityScale;
+            renderer.lengthScale = TUNING.particleSystem.stretchLengthScale;
         }
         system.setSharedMaterial(null, 0);
 
@@ -361,6 +418,13 @@ export class SplashEmitter {
             shape.randomDirectionAmount = tuning.role === 'leg' ? TUNING.particleSystem.legRandomDirection : TUNING.particleSystem.handRandomDirection;
             shape.randomPositionAmount = tuning.role === 'leg' ? TUNING.particleSystem.legRandomPosition : TUNING.particleSystem.handRandomPosition;
             shape.sphericalDirectionAmount = tuning.role === 'leg' ? TUNING.particleSystem.legSphericalDirection : TUNING.particleSystem.handSphericalDirection;
+        }
+
+        // Texture animation disabled for stretched droplets: a single soft droplet sprite is used.
+        // 拉伸水滴模式下关闭序列帧：使用单张柔和水滴贴图。
+        const texAnim = system.textureAnimationModule as any;
+        if (texAnim) {
+            texAnim.enable = false;
         }
 
         system.bursts = [];
@@ -391,6 +455,10 @@ export class SplashEmitter {
         for (const emitter of this._particleEmitters) {
             if (emitter.role === 'leg') {
                 this.updateLegParticleEmitter(emitter, speedRatio);
+                continue;
+            }
+            if (emitter.role === 'body') {
+                this.updateBodyParticleEmitter(emitter, speedRatio);
                 continue;
             }
 
@@ -442,13 +510,53 @@ export class SplashEmitter {
             TUNING.behavior.legSignalMax,
         );
         this.positionParticleEmitter(emitter, speedRatio, 0, kickSignal);
-        if (kickSignal > TUNING.behavior.legEmitThreshold && emitter.cooldown <= 0) {
+        // Rhythmic: fire once on the rising edge of each kick pulse (like the hands react to strokes),
+        // instead of a continuous cooldown-driven stream. lastContact stores the previous kick burst.
+        // 有节奏：在每次踢腿脉冲的上升沿只触发一次（像手部对划水的反应），而不是靠 cooldown 连续喷；
+        // lastContact 记录上一帧的踢腿 burst 值。
+        const kickPulse = this._kickSplashBurst;
+        const risingEdge = emitter.lastContact <= TUNING.behavior.legPulseThreshold
+            && kickPulse > TUNING.behavior.legPulseThreshold;
+        if (risingEdge && kickSignal > TUNING.behavior.legEmitThreshold) {
             const count = Math.round(lerp(TUNING.behavior.legBurstCountMin, TUNING.behavior.legBurstCountMax, clamp(kickSignal, 0, 1)));
             this.playParticleBurst(emitter, count, speedRatio * TUNING.behavior.legBurstSpeedScale, TUNING.behavior.legBurstPullScale);
-            emitter.cooldown = lerp(TUNING.behavior.legCooldownMax, TUNING.behavior.legCooldownMin, clamp(kickSignal, 0, 1));
         }
         this.emitSprayFrame(emitter);
-        emitter.lastContact = kickSignal;
+        emitter.lastContact = kickPulse;
+    }
+
+    private updateBodyParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
+        // Torso foam that pulses with the arm stroke rhythm (not a continuous faucet).
+        // 躯干泡沫，跟随手臂划水节奏脉冲（不是持续水龙头）。
+        this.positionBodyParticleEmitter(emitter, speedRatio);
+        const strokePulse = this._armSplashBurst;
+        const risingEdge = emitter.lastContact <= TUNING.behavior.bodyPulseThreshold
+            && strokePulse > TUNING.behavior.bodyPulseThreshold;
+        if (risingEdge && speedRatio > TUNING.behavior.bodyEmitThreshold) {
+            const strength = clamp(speedRatio + this._splashBurst * TUNING.behavior.bodySignalBurstWeight, 0, 1);
+            const count = Math.round(lerp(TUNING.behavior.bodyBurstCountMin, TUNING.behavior.bodyBurstCountMax, strength));
+            this.playParticleBurst(emitter, count, speedRatio * TUNING.behavior.bodyBurstSpeedScale, TUNING.behavior.bodyBurstPullScale);
+        }
+        this.emitSprayFrame(emitter);
+        emitter.lastContact = strokePulse;
+    }
+
+    private positionBodyParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        if (this._options.getBoneWorldPosition('Body', this._tmpWorld)) {
+            this._tmpWorld.x += direction * (emitter.palmOffset.x - speedRatio * TUNING.behavior.bodySpeedBack);
+            this._tmpWorld.y = this._waterY + emitter.palmOffset.y;
+            this._tmpWorld.z += emitter.palmOffset.z;
+            this.node.inverseTransformPoint(this._tmpLocal, this._tmpWorld);
+            emitter.node.setPosition(this._tmpLocal);
+        } else {
+            emitter.node.setPosition(
+                direction * (emitter.basePosition.x - speedRatio * TUNING.behavior.bodySpeedBack),
+                emitter.basePosition.y,
+                emitter.basePosition.z,
+            );
+        }
+        emitter.node.setRotationFromEuler(TUNING.particleSystem.emitterEulerX, direction * emitter.forwardTilt, emitter.lateralTilt);
     }
 
     private positionParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number, progress: number, contact: number) {
@@ -466,11 +574,9 @@ export class SplashEmitter {
             this._tmpWorld.z += emitter.palmOffset.z;
             this.node.inverseTransformPoint(this._tmpLocal, this._tmpWorld);
             emitter.node.setPosition(this._tmpLocal);
-            if (emitter.role === 'leg') {
-                emitter.node.setRotationFromEuler(0, direction * emitter.forwardTilt, emitter.lateralTilt);
-            } else {
-                emitter.node.setRotationFromEuler(TUNING.particleSystem.emitterEulerX, direction * emitter.forwardTilt, emitter.lateralTilt);
-            }
+            // All roles emit upward (cone along local -Z pitched up) so splash rises out of the water.
+            // 所有角色都朝上发射（cone 本地 -Z 上仰），让水花冒出水面。
+            emitter.node.setRotationFromEuler(TUNING.particleSystem.emitterEulerX, direction * emitter.forwardTilt, emitter.lateralTilt);
             return;
         }
 
@@ -487,19 +593,20 @@ export class SplashEmitter {
     }
 
     private playParticleBurst(emitter: SplashParticleEmitter, count: number, speedRatio: number, pullScale: number) {
-        const speed = emitter.role === 'leg'
+        const isHand = emitter.role === 'hand';
+        const speed = !isHand
             ? lerp(TUNING.behavior.legSpeedMin, TUNING.behavior.legSpeedMax, speedRatio) * pullScale
             : lerp(TUNING.behavior.handSpeedMin, TUNING.behavior.handSpeedMax, speedRatio) * pullScale;
         setCurveRangeTwoConstants(emitter.system.startSpeed, speed * TUNING.behavior.speedRangeMinScale, speed * TUNING.behavior.speedRangeMaxScale);
         setCurveRangeTwoConstants(
             emitter.system.startLifetime,
-            emitter.role === 'leg' ? TUNING.behavior.legLifetimeMin : TUNING.behavior.handLifetimeMin,
-            emitter.role === 'leg'
+            !isHand ? TUNING.behavior.legLifetimeMin : TUNING.behavior.handLifetimeMin,
+            !isHand
                 ? lerp(TUNING.behavior.legLifetimeMaxLowSpeed, TUNING.behavior.legLifetimeMaxHighSpeed, speedRatio)
                 : lerp(TUNING.behavior.handLifetimeMaxLowSpeed, TUNING.behavior.handLifetimeMaxHighSpeed, speedRatio),
         );
-        setCurveRange(emitter.system.gravityModifier, emitter.role === 'leg' ? TUNING.particleSystem.legGravity : TUNING.particleSystem.handGravity);
-        const size = emitter.role === 'leg'
+        setCurveRange(emitter.system.gravityModifier, !isHand ? TUNING.particleSystem.legGravity : TUNING.particleSystem.handGravity);
+        const size = !isHand
             ? lerp(TUNING.behavior.legSizeMin, TUNING.behavior.legSizeMax, speedRatio)
             : lerp(TUNING.behavior.handSizeMin, TUNING.behavior.handSizeMax, speedRatio);
         setCurveRangeTwoConstants(emitter.system.startSizeX, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
@@ -509,11 +616,11 @@ export class SplashEmitter {
         emitter.system.play();
         applyParticleTexture(emitter.system);
         const scaledCount = Math.max(TUNING.behavior.minimumScaledCount, Math.round(count * emitter.countScale));
-        const spraySeconds = emitter.role === 'leg' ? TUNING.behavior.legSpraySeconds : TUNING.behavior.handSpraySeconds;
+        const spraySeconds = !isHand ? TUNING.behavior.legSpraySeconds : TUNING.behavior.handSpraySeconds;
         this.emitJitteredParticles(
             emitter,
             Math.max(
-                emitter.role === 'leg' ? TUNING.behavior.legInitialEmitMin : TUNING.behavior.handInitialEmitMin,
+                !isHand ? TUNING.behavior.legInitialEmitMin : TUNING.behavior.handInitialEmitMin,
                 Math.round(scaledCount * TUNING.behavior.initialEmitScale),
             ),
             0,
@@ -547,12 +654,13 @@ export class SplashEmitter {
     private emitJitteredParticles(emitter: SplashParticleEmitter, count: number, dt: number) {
         const basePosition = emitter.node.position.clone();
         const baseEuler = emitter.node.eulerAngles.clone();
-        const positionJitterX = emitter.role === 'leg' ? TUNING.behavior.legJitterX : TUNING.behavior.handJitterX;
-        const positionJitterY = emitter.role === 'leg' ? TUNING.behavior.legJitterY : TUNING.behavior.handJitterY;
-        const positionJitterZ = emitter.role === 'leg' ? TUNING.behavior.legJitterZ : TUNING.behavior.handJitterZ;
-        const rotationJitterX = emitter.role === 'leg' ? TUNING.behavior.legRotationJitterX : TUNING.behavior.handRotationJitterX;
-        const rotationJitterY = emitter.role === 'leg' ? TUNING.behavior.legRotationJitterY : TUNING.behavior.handRotationJitterY;
-        const rotationJitterZ = emitter.role === 'leg' ? TUNING.behavior.legRotationJitterZ : TUNING.behavior.handRotationJitterZ;
+        const isHand = emitter.role === 'hand';
+        const positionJitterX = !isHand ? TUNING.behavior.legJitterX : TUNING.behavior.handJitterX;
+        const positionJitterY = !isHand ? TUNING.behavior.legJitterY : TUNING.behavior.handJitterY;
+        const positionJitterZ = !isHand ? TUNING.behavior.legJitterZ : TUNING.behavior.handJitterZ;
+        const rotationJitterX = !isHand ? TUNING.behavior.legRotationJitterX : TUNING.behavior.handRotationJitterX;
+        const rotationJitterY = !isHand ? TUNING.behavior.legRotationJitterY : TUNING.behavior.handRotationJitterY;
+        const rotationJitterZ = !isHand ? TUNING.behavior.legRotationJitterZ : TUNING.behavior.handRotationJitterZ;
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
         for (let i = 0; i < count; i++) {
             const forwardSplash = emitter.role === 'hand' && Math.random() < TUNING.behavior.forwardSplashChance;
@@ -680,6 +788,19 @@ function setCurveRangeTwoConstants(range: CurveRange, min: number, max: number) 
     range.constantMax = max;
 }
 
+// Linear 0->1 curve, used to drive flipbook frameOverTime across a particle's lifetime.
+// 线性 0->1 曲线，用于驱动序列帧 frameOverTime 贯穿粒子生命周期。
+function setCurveRangeLinear01(range: CurveRange) {
+    if (!range) {
+        return;
+    }
+    const curve = new RealCurve();
+    curve.assignSorted([[0, 0], [1, 1]]);
+    range.mode = CurveRange.Mode.Curve;
+    range.spline = curve;
+    range.multiplier = 1;
+}
+
 function setGradientColor(range: GradientRange, color: Color) {
     if (!range) {
         return;
@@ -738,27 +859,35 @@ function getSplashParticleTexture(): Texture2D {
         return _splashParticleTexture;
     }
 
-    const size = TUNING.particleTexture.size;
+    // Single soft droplet. Stretched-billboard rendering elongates it along velocity into a
+    // water streak, so the sprite itself only needs to be a soft round blob with a bright core.
+    // 单张柔和水滴。拉伸广告牌会沿速度方向把它拉成水条，所以贴图本身只需一个带亮核的柔和圆团。
+    const size = TUNING.dropletTexture.size;
     const center = (size - 1) * 0.5;
     const radius = center;
+    const softness = TUNING.dropletTexture.softness;
+    const coreBoost = TUNING.dropletTexture.coreBoost;
+    const coreSoftness = TUNING.dropletTexture.coreSoftness;
+    const featherStart = TUNING.dropletTexture.featherStart;
     const data = new Uint8Array(size * size * 4);
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
-            const dx = (x - center) / radius;
-            const dy = (y - center) / radius;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            const core = 1 - smoothRange(distance, TUNING.particleTexture.coreRadius, 1);
-            const highlight = 1 - smoothRange(distance, 0, TUNING.particleTexture.highlightRadius);
-            const alpha = Math.round(255 * clamp(Math.max(core, highlight * TUNING.particleTexture.highlightAlphaScale), 0, 1));
+            const nx = (x - center) / radius;
+            const ny = (y - center) / radius;
+            const d2 = nx * nx + ny * ny;
+            const body = Math.exp(-d2 * softness);
+            const core = Math.exp(-d2 * coreSoftness) * coreBoost;
+            let alpha = clamp(body + core, 0, 1);
+            alpha *= 1 - smoothRange(Math.sqrt(d2), featherStart, 1);
             const index = (y * size + x) * 4;
             data[index] = 255;
             data[index + 1] = 255;
             data[index + 2] = 255;
-            data[index + 3] = alpha;
+            data[index + 3] = Math.round(255 * alpha);
         }
     }
 
-    const texture = new Texture2D('RuntimeSplashParticleDot');
+    const texture = new Texture2D('RuntimeSplashDroplet');
     texture.create(size, size, Texture2D.PixelFormat.RGBA8888);
     texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
     texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);

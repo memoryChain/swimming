@@ -44,6 +44,7 @@ import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDistance } from './GameBalance';
 import { formatStabilityLog } from './StabilityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
+import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -76,6 +77,7 @@ export class GameManager extends Component {
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
+    private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
     private _inputManager: InputManager = null;
@@ -154,6 +156,7 @@ export class GameManager extends Component {
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
         this.drawStrokeTimingGuide(this._playerSwimmer.strokeTimingGuide, this._state === GameState.RACING);
+        this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
             this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
@@ -162,6 +165,48 @@ export class GameManager extends Component {
         }
         this._gameFlow?.updateRaceCamera(dt);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
+    }
+
+    // Side-scrolling 2.5D view: visibility is essentially a 1D check along the swim (X) axis.
+    // Cull splash for AI swimmers whose X is far ahead/behind the player (camera keeps the player framed),
+    // so off-screen swimmers skip all particle/foam updates. Cheap and safe for WeChat Mini Game.
+    // 2.5D 横版视角：可见性本质上就是沿游泳（X）轴的一维判断。
+    // 玩家始终在画面内，AI 选手 X 距玩家太远即离屏，直接裁掉水花，跳过全部粒子/泡沫更新；对微信小游戏省而稳。
+    private updateSplashCulling() {
+        if (this._modelDebugFlow?.active) {
+            return;
+        }
+        const playerNode = this._playerSwimmer?.node;
+        if (!playerNode?.isValid) {
+            return;
+        }
+        if (!this._splashCullingEnabled) {
+            // Toggle off: make sure no swimmer stays culled so we can A/B compare performance.
+            // 关闭裁剪：确保没有选手仍处于裁剪状态，方便对比开/关的性能差异。
+            for (const swimmer of this._aiSwimmers) {
+                swimmer?.setSplashCulled(false);
+            }
+            return;
+        }
+        const playerX = playerNode.position.x;
+        for (const swimmer of this._aiSwimmers) {
+            const node = swimmer?.node;
+            if (!node?.isValid) {
+                continue;
+            }
+            const culled = Math.abs(node.position.x - playerX) > PERFORMANCE_CONFIG.splash.cullingDistanceX;
+            swimmer.setSplashCulled(culled);
+        }
+    }
+
+    private toggleSplashCulling() {
+        this._splashCullingEnabled = !this._splashCullingEnabled;
+        if (!this._splashCullingEnabled) {
+            for (const swimmer of this._aiSwimmers) {
+                swimmer?.setSplashCulled(false);
+            }
+        }
+        this.debug(`splash culling=${this._splashCullingEnabled ? 'ON' : 'OFF'}`);
     }
 
     startGame() {
@@ -306,6 +351,7 @@ export class GameManager extends Component {
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
             onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
+            onToggleSplashCulling: () => this.toggleSplashCulling(),
             onModelDebugSpeedDown: () => this.slowModelDebugMotion(),
             onModelDebugSpeedUp: () => this.speedUpModelDebugMotion(),
             onDebugCameraMouseDown: (event) => this.onDebugCameraMouseDown(event),

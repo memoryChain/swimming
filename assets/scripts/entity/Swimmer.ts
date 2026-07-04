@@ -253,6 +253,10 @@ export class Swimmer extends Component {
         return held ? null : this.makeStabilityResult(type, stability);
     }
 
+    setSplashCulled(culled: boolean) {
+        this.cartoonRig?.setSplashCulled(culled);
+    }
+
     playAiStrokeVisual(type: StrokeType) {
         if (!this.isAI) {
             return;

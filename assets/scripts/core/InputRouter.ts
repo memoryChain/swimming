@@ -11,6 +11,7 @@ export type InputRouterCallbacks = {
     onToggleDebug: () => void;
     onCycleRaceCamera: () => void;
     onToggleFreeRaceCamera: () => void;
+    onToggleSplashCulling: () => void;
     onModelDebugSpeedDown: () => void;
     onModelDebugSpeedUp: () => void;
     onDebugCameraMouseDown: (event: EventMouse) => void;
@@ -42,6 +43,7 @@ export class InputRouter {
         this._target.on('toggle-debug', this.onToggleDebug, this);
         this._target.on('cycle-race-camera', this.onCycleRaceCamera, this);
         this._target.on('toggle-free-race-camera', this.onToggleFreeRaceCamera, this);
+        this._target.on('toggle-splash-culling', this.onToggleSplashCulling, this);
         this._target.on('model-debug-speed-down', this.onModelDebugSpeedDown, this);
         this._target.on('model-debug-speed-up', this.onModelDebugSpeedUp, this);
         input.on(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
@@ -61,6 +63,7 @@ export class InputRouter {
         this._target.off('toggle-debug', this.onToggleDebug, this);
         this._target.off('cycle-race-camera', this.onCycleRaceCamera, this);
         this._target.off('toggle-free-race-camera', this.onToggleFreeRaceCamera, this);
+        this._target.off('toggle-splash-culling', this.onToggleSplashCulling, this);
         this._target.off('model-debug-speed-down', this.onModelDebugSpeedDown, this);
         this._target.off('model-debug-speed-up', this.onModelDebugSpeedUp, this);
         input.off(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
@@ -150,6 +153,10 @@ export class InputRouter {
 
     private onToggleFreeRaceCamera() {
         this._callbacks.onToggleFreeRaceCamera();
+    }
+
+    private onToggleSplashCulling() {
+        this._callbacks.onToggleSplashCulling();
     }
 
     private onModelDebugSpeedDown() {

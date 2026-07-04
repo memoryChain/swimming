@@ -25,17 +25,17 @@
     {
       "foamColor": {
         "__type__": "cc.Color",
-        "r": 219,
-        "g": 250,
+        "r": 212,
+        "g": 245,
         "b": 255,
-        "a": 188
+        "a": 168
       },
       "rippleColor": {
         "__type__": "cc.Color",
-        "r": 38,
-        "g": 194,
-        "b": 245,
-        "a": 112
+        "r": 62,
+        "g": 178,
+        "b": 224,
+        "a": 128
       },
       "splashParams": {
         "__type__": "cc.Vec4",
