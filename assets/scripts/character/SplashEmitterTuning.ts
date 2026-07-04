@@ -66,18 +66,18 @@ export const SPLASH_EMITTER_TUNING = {
 
         // Kick burst strength injected when a kick is triggered.
         // 打腿触发时注入的水花爆发强度。
-        kick: 1.25,
+        kick: 1.7,
 
         // Generic splash strength added by arm and kick triggers.
         // 手臂/打腿触发时叠加的通用水花强度。
         armGeneric: 1,
-        kickGeneric: 0.65,
+        kickGeneric: 0.72,
 
         // Burst decay rates per second.
         // 每秒衰减速度。
         genericDecay: 2.8,
         armDecay: 3.2,
-        kickDecay: 3.8,
+        kickDecay: 3.1,
 
         // Generic burst split when triggerBurst(scale) is used.
         // triggerBurst(scale) 调用时拆分到手臂/腿部的比例。
@@ -215,7 +215,7 @@ export const SPLASH_EMITTER_TUNING = {
         startRotationZMax: 6.2831853,
         startDelay: 0,
         handGravity: 1.4,
-        legGravity: 0.5,
+        legGravity: 0.75,
         rateOverTime: 0,
         rateOverDistance: 0,
 
@@ -231,16 +231,16 @@ export const SPLASH_EMITTER_TUNING = {
         // Wider cone so droplets spray outward/sideways in a fan, not a narrow upward column.
         // 更宽的圆锥，让水滴向外/侧向扭开成扇形，而非窄窄向上的柱。
         handShapeAngle: 78,
-        legShapeAngle: 34,
+        legShapeAngle: 62,
         handShapeRadius: 0.055,
-        legShapeRadius: 0.035,
+        legShapeRadius: 0.07,
         shapeArc: 360,
         handRandomDirection: 0,
-        legRandomDirection: 0.18,
+        legRandomDirection: 0.38,
         handRandomPosition: 0.035,
-        legRandomPosition: 0.02,
+        legRandomPosition: 0.055,
         handSphericalDirection: 0.1,
-        legSphericalDirection: 0.03,
+        legSphericalDirection: 0.14,
 
         // Stretched-billboard renderer: slight elongation along velocity. Keep low so droplets stay
         // dabs, not long flame-like tongues.
@@ -257,7 +257,19 @@ export const SPLASH_EMITTER_TUNING = {
         // 生命周期透明度：先保持可见，接近生命末尾淡出。
         fadeHoldAlpha: 1,
         fadeHoldTime: 0.4,
+        fadeEndTime: 1,
         fadeEndAlpha: 0,
+        waterlineLifetimeCap: 0.38,
+        roleWaterlineLifetimeCap: {
+            hand: 0.32,
+            leg: 0.5,
+            body: 0.26,
+        },
+        roleFade: {
+            hand: { holdTime: 0.32, endTime: 0.72 },
+            leg: { holdTime: 0.45, endTime: 0.88 },
+            body: { holdTime: 0.28, endTime: 0.66 },
+        },
 
         // Size-over-lifetime curve: pop full, then shrink/thin as the droplet falls.
         // 生命周期尺寸曲线：先饱满弹出，随水滴下落再缩小变细。
@@ -266,6 +278,11 @@ export const SPLASH_EMITTER_TUNING = {
             [0.6, 0.9],
             [1, 0.3],
         ] as const,
+        roleSizeOverLifetime: {
+            hand: [[0, 1], [0.38, 0.95], [0.72, 0], [1, 0]],
+            leg: [[0, 1], [0.5, 0.95], [0.88, 0], [1, 0]],
+            body: [[0, 1], [0.32, 0.9], [0.66, 0], [1, 0]],
+        } as const,
     },
 
     dropletTexture: {
@@ -301,6 +318,10 @@ export const SPLASH_EMITTER_TUNING = {
     },
 
     particleEmitters: {
+        enableHand: true,
+        enableLeg: true,
+        enableBody: true,
+
         // Side lane offsets for left/right hand, lower-leg and body emitters.
         // 左右手、左右小腿和身体发射器的侧向偏移。
         leftHandZ: -0.38,
@@ -323,7 +344,7 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.1, -0.06, 0],
                 forwardTilt: -6,
                 lateralTilt: 0,
-                countScale: 0.34,
+                countScale: 0.26,
             },
             {
                 nameSuffix: 'Inner',
@@ -333,7 +354,7 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.12, -0.055, -0.055],
                 forwardTilt: -12,
                 lateralTilt: -13,
-                countScale: 0.22,
+                countScale: 0.17,
             },
             {
                 nameSuffix: 'Outer',
@@ -343,22 +364,54 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.13, -0.065, 0.07],
                 forwardTilt: 10,
                 lateralTilt: 18,
-                countScale: 0.22,
+                countScale: 0.17,
             },
         ] satisfies SplashParticleEmitterTuning[],
 
         // Lower-leg emitter. Tune palmOffset[1] to change kick splash height.
         // 小腿发射器；调 palmOffset[1] 可以改变打腿水花高度。
-        leg: {
-            nameSuffix: '',
-            role: 'leg',
-            sideOffsetZ: 0,
-            basePosition: [-0.72, 0.018, 0],
-            palmOffset: [-0.1, 0.012, 0.035],
-            forwardTilt: 10,
-            lateralTilt: 4,
-            countScale: 0.24,
-        } satisfies SplashParticleEmitterTuning,
+        legCluster: [
+            {
+                nameSuffix: 'Toe',
+                role: 'leg',
+                sideOffsetZ: 0.02,
+                basePosition: [-0.7, 0.018, 0],
+                palmOffset: [0.08, 0.018, 0.035],
+                forwardTilt: 18,
+                lateralTilt: 10,
+                countScale: 0.13,
+            },
+            {
+                nameSuffix: 'Sole',
+                role: 'leg',
+                sideOffsetZ: -0.015,
+                basePosition: [-0.74, 0.014, 0],
+                palmOffset: [-0.02, 0.015, -0.015],
+                forwardTilt: 4,
+                lateralTilt: -8,
+                countScale: 0.15,
+            },
+            {
+                nameSuffix: 'Heel',
+                role: 'leg',
+                sideOffsetZ: -0.055,
+                basePosition: [-0.78, 0.012, 0],
+                palmOffset: [-0.09, 0.012, -0.05],
+                forwardTilt: -12,
+                lateralTilt: -18,
+                countScale: 0.1,
+            },
+            {
+                nameSuffix: 'Backwash',
+                role: 'leg',
+                sideOffsetZ: 0.035,
+                basePosition: [-0.84, 0.01, 0],
+                palmOffset: [-0.18, 0.006, 0.02],
+                forwardTilt: -30,
+                lateralTilt: 4,
+                countScale: 0.1,
+            },
+        ] satisfies SplashParticleEmitterTuning[],
 
         // Body emitter: ambient foam churn alongside the torso, positioned near mid-body at water level.
         // Follows the 'Body' bone (torso). palmOffset[2] is mirrored per side.
@@ -383,35 +436,30 @@ export const SPLASH_EMITTER_TUNING = {
         handProgressWindow: 0.26,
         handEntryScaleMin: 0.9,
         handEntryScaleMax: 1.18,
-        handBurstCountMin: 8,
-        handBurstCountMax: 20,
-        handBurstExtraCount: 5,
-        handBurstCountClampMin: 6,
-        handBurstCountClampMax: 26,
+        handBurstCountMin: 6,
+        handBurstCountMax: 16,
+        handBurstExtraCount: 4,
+        handBurstCountClampMin: 4,
+        handBurstCountClampMax: 20,
         handBurstArmWeight: 0.75,
         handBurstGenericWeight: 0.35,
 
-        // Leg splash only appears near water surface.
-        // 腿部水花只在接近水面时出现。
-        legSurfaceContactThreshold: 0.04,
-        legSurfaceMaxDepth: 0.2,
-        legSurfaceMaxAbove: -0.12,
-        legSurfaceSoftStart: 0.025,
-        legSurfaceSoftEnd: 0.2,
-        legSurfaceYBlend: 0.72,
         legSignalSpeedWeight: 0.2,
-        legSignalCycleWeight: 0.42,
-        legSignalActionWeight: 0.18,
-        legSignalBurstWeight: 0.12,
-        legSignalMax: 0.95,
-        legEmitThreshold: 0.24,
-        legPulseThreshold: 0.3,
+        legSignalCycleWeight: 0.52,
+        legSignalActionWeight: 0.24,
+        legSignalBurstWeight: 0.2,
+        legSignalMax: 1.15,
+        legEntryThreshold: 0.18,
+        legLastEntryThreshold: 0.08,
+        legEntryScaleMin: 0.9,
+        legEntryScaleMax: 1.16,
+        legEmitThreshold: 0.08,
         legBurstCountMin: 7,
         legBurstCountMax: 18,
-        legBurstSpeedScale: 0.5,
-        legBurstPullScale: 1.0,
-        legCooldownMin: 0.06,
-        legCooldownMax: 0.14,
+        legBurstSpeedScale: 0.42,
+        legBurstPullScale: 0.86,
+        legCooldownMin: 0.07,
+        legCooldownMax: 0.16,
 
         // Body splash: continuous low churn alongside the torso, scaled by speed.
         // 身体水花：躯干两侧随速度增强的持续低量翻涌。
@@ -423,38 +471,38 @@ export const SPLASH_EMITTER_TUNING = {
         bodyPulseThreshold: 0.3,
         bodyBurstCountMin: 3,
         bodyBurstCountMax: 8,
-        bodyBurstSpeedScale: 0.42,
-        bodyBurstPullScale: 0.82,
+        bodyBurstSpeedScale: 0.3,
+        bodyBurstPullScale: 0.58,
         bodyCooldownMin: 0.05,
         bodyCooldownMax: 0.12,
         bodySpeedBack: 0.12,
 
         // Particle burst physics and size ranges.
         // 粒子爆发的速度、生命周期和尺寸范围。
-        handSpeedMin: 1.8,
-        handSpeedMax: 3.2,
+        handSpeedMin: 1.3,
+        handSpeedMax: 2.3,
         legSpeedMin: 1.7,
-        legSpeedMax: 3.0,
+        legSpeedMax: 2.9,
         speedRangeMinScale: 0.58,
         speedRangeMaxScale: 1.08,
         handLifetimeMin: 0.24,
         handLifetimeMaxLowSpeed: 0.36,
         handLifetimeMaxHighSpeed: 0.46,
-        legLifetimeMin: 0.22,
-        legLifetimeMaxLowSpeed: 0.32,
-        legLifetimeMaxHighSpeed: 0.42,
+        legLifetimeMin: 0.28,
+        legLifetimeMaxLowSpeed: 0.44,
+        legLifetimeMaxHighSpeed: 0.58,
         handSizeMin: 0.12,
         handSizeMax: 0.22,
-        legSizeMin: 0.16,
-        legSizeMax: 0.28,
+        legSizeMin: 0.19,
+        legSizeMax: 0.36,
         sizeRangeMinScale: 0.82,
         sizeRangeMaxScale: 1.14,
         minimumScaledCount: 3,
         handSpraySeconds: 0.03,
-        legSpraySeconds: 0.02,
+        legSpraySeconds: 0.04,
         initialEmitScale: 0.72,
         handInitialEmitMin: 3,
-        legInitialEmitMin: 1,
+        legInitialEmitMin: 2,
         burstCooldownMin: 0.018,
         burstCooldownMax: 0.04,
         keepAliveMin: 0.24,
@@ -467,16 +515,16 @@ export const SPLASH_EMITTER_TUNING = {
         handJitterX: 0.04,
         handJitterY: 0.014,
         handJitterZ: 0.05,
-        legJitterX: 0.026,
-        legJitterY: 0.006,
-        legJitterZ: 0.03,
+        legJitterX: 0.11,
+        legJitterY: 0.025,
+        legJitterZ: 0.105,
         baseJitterYDown: -0.006,
         handRotationJitterX: 10,
         handRotationJitterY: 18,
         handRotationJitterZ: 24,
-        legRotationJitterX: 4,
-        legRotationJitterY: 7,
-        legRotationJitterZ: 8,
+        legRotationJitterX: 18,
+        legRotationJitterY: 28,
+        legRotationJitterZ: 34,
 
         // A small part of hand droplets splashes forward for a natural look.
         // 少量手部水滴向前飞溅，让效果更自然。

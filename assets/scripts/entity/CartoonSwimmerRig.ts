@@ -53,6 +53,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _leftHandWaterProgress = 0;
     private _rightHandWaterProgress = 0;
     private _splashMovementDirection = 1;
+    private _legSplashSuppressed = false;
     private _lastArmCycle = 0;
     private _hasLastArmCycle = false;
     private _kickCycleMotion = 0;
@@ -316,6 +317,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updateSplashSurface(0);
     }
 
+    setLegSplashSuppressed(suppressed: boolean) {
+        this._legSplashSuppressed = suppressed;
+        this.syncSplashState();
+    }
+
     setSplashCulled(culled: boolean) {
         this._splashEmitter?.setCulled(culled);
     }
@@ -507,6 +513,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._leftHandWaterProgress = 0;
         this._rightHandWaterProgress = 0;
         this._splashMovementDirection = 1;
+        this._legSplashSuppressed = false;
         this._lastArmCycle = 0;
         this._hasLastArmCycle = false;
         this._kickCycleMotion = 0;
@@ -921,6 +928,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             armCycleMotion: this._armCycleMotion,
             kickCycleMotion: this._kickCycleMotion,
             movementDirection: this._splashMovementDirection,
+            legSplashSuppressed: this._legSplashSuppressed,
             leftHandWaterContact: this._leftHandWaterContact,
             rightHandWaterContact: this._rightHandWaterContact,
             leftHandWaterEntry: this._leftHandWaterEntry,

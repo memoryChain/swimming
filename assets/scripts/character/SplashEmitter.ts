@@ -41,6 +41,7 @@ export type SplashEmitterState = {
     armCycleMotion: number;
     kickCycleMotion: number;
     movementDirection: number;
+    legSplashSuppressed: boolean;
     leftHandWaterContact: number;
     rightHandWaterContact: number;
     leftHandWaterEntry: number;
@@ -63,6 +64,7 @@ const EMPTY_STATE: SplashEmitterState = {
     armCycleMotion: 0,
     kickCycleMotion: 0,
     movementDirection: 1,
+    legSplashSuppressed: false,
     leftHandWaterContact: 0,
     rightHandWaterContact: 0,
     leftHandWaterEntry: 0,
@@ -80,7 +82,6 @@ export class SplashEmitter {
     private readonly _parts: SplashPart[] = [];
     private readonly _particleEmitters: SplashParticleEmitter[] = [];
     private readonly _tmpWorld = new Vec3();
-    private readonly _tmpEmitterWorld = new Vec3();
     private readonly _tmpLocal = new Vec3();
     private _state: SplashEmitterState = EMPTY_STATE;
     private _splashBurst = 0;
@@ -350,7 +351,15 @@ export class SplashEmitter {
 
     private createLegParticleEmitter(name: string, side: 'left' | 'right', sideZ: number) {
         const sideSign = side === 'left' ? -1 : 1;
-        this.createParticleEmitter(name, side, TUNING.particleEmitters.leg, sideZ, sideSign);
+        for (const emitter of TUNING.particleEmitters.legCluster) {
+            this.createParticleEmitter(
+                `${name}${emitter.nameSuffix}`,
+                side,
+                emitter,
+                sideZ,
+                sideSign,
+            );
+        }
     }
 
     private createBodyParticleEmitter(name: string, side: 'left' | 'right', sideZ: number) {
@@ -390,8 +399,8 @@ export class SplashEmitter {
         setCurveRange(system.rateOverTime, TUNING.particleSystem.rateOverTime);
         setCurveRange(system.rateOverDistance, TUNING.particleSystem.rateOverDistance);
         setGradientColor(system.startColor, new Color(255, 255, 255, TUNING.particleAlpha));
-        setParticleFadeOut(system);
-        setParticleSizeOverLifetime(system);
+        setParticleFadeOut(system, tuning.role);
+        setParticleSizeOverLifetime(system, tuning.role);
         const renderer = system.renderer as any;
         if (renderer) {
             renderer.useGPU = false;
@@ -460,11 +469,23 @@ export class SplashEmitter {
     private updateParticleEmitters(speedRatio: number) {
         for (const emitter of this._particleEmitters) {
             if (emitter.role === 'leg') {
-                this.updateLegParticleEmitter(emitter, speedRatio);
+                if (TUNING.particleEmitters.enableLeg) {
+                    this.updateLegParticleEmitter(emitter, speedRatio);
+                } else {
+                    this.clearParticleEmitter(emitter);
+                }
                 continue;
             }
             if (emitter.role === 'body') {
-                this.updateBodyParticleEmitter(emitter, speedRatio);
+                if (TUNING.particleEmitters.enableBody) {
+                    this.updateBodyParticleEmitter(emitter, speedRatio);
+                } else {
+                    this.clearParticleEmitter(emitter);
+                }
+                continue;
+            }
+            if (!TUNING.particleEmitters.enableHand) {
+                this.clearParticleEmitter(emitter);
                 continue;
             }
 
@@ -496,39 +517,33 @@ export class SplashEmitter {
     }
 
     private updateLegParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
-        const waterContact = this.legSurfaceContact(emitter);
-        if (waterContact <= TUNING.behavior.legSurfaceContactThreshold) {
+        if (this._state.legSplashSuppressed) {
             emitter.lastContact = 0;
             emitter.sprayTime = 0;
             emitter.sprayRate = 0;
             emitter.sprayCarry = 0;
-            emitter.system.clear();
             return;
         }
         const kickSignal = clamp(
-            (
-                speedRatio * TUNING.behavior.legSignalSpeedWeight
-                + this._state.kickCycleMotion * TUNING.behavior.legSignalCycleWeight
-                + this._state.kickAction * TUNING.behavior.legSignalActionWeight
-                + this._kickSplashBurst * TUNING.behavior.legSignalBurstWeight
-            ) * waterContact,
+            speedRatio * TUNING.behavior.legSignalSpeedWeight
+            + this._state.kickCycleMotion * TUNING.behavior.legSignalCycleWeight
+            + this._state.kickAction * TUNING.behavior.legSignalActionWeight
+            + this._kickSplashBurst * TUNING.behavior.legSignalBurstWeight,
             0,
             TUNING.behavior.legSignalMax,
         );
         this.positionParticleEmitter(emitter, speedRatio, 0, kickSignal);
-        // Rhythmic: fire once on the rising edge of each kick pulse (like the hands react to strokes),
-        // instead of a continuous cooldown-driven stream. lastContact stores the previous kick burst.
-        // 有节奏：在每次踢腿脉冲的上升沿只触发一次（像手部对划水的反应），而不是靠 cooldown 连续喷；
-        // lastContact 记录上一帧的踢腿 burst 值。
-        const kickPulse = this._kickSplashBurst;
-        const risingEdge = emitter.lastContact <= TUNING.behavior.legPulseThreshold
-            && kickPulse > TUNING.behavior.legPulseThreshold;
-        if (risingEdge && kickSignal > TUNING.behavior.legEmitThreshold) {
-            const count = Math.round(lerp(TUNING.behavior.legBurstCountMin, TUNING.behavior.legBurstCountMax, clamp(kickSignal, 0, 1)));
-            this.playParticleBurst(emitter, count, speedRatio * TUNING.behavior.legBurstSpeedScale, TUNING.behavior.legBurstPullScale);
+        const entry = this.legEntryForEmitter(emitter);
+        const entering = entry > TUNING.behavior.legEntryThreshold
+            && emitter.lastContact <= TUNING.behavior.legLastEntryThreshold;
+        if (entering) {
+            const entryScale = lerp(TUNING.behavior.legEntryScaleMin, TUNING.behavior.legEntryScaleMax, clamp(entry, 0, 1));
+            const strength = Math.max(kickSignal, entry);
+            const count = Math.round(lerp(TUNING.behavior.legBurstCountMin, TUNING.behavior.legBurstCountMax, clamp(strength, 0, 1)));
+            this.playParticleBurst(emitter, count, speedRatio * TUNING.behavior.legBurstSpeedScale, TUNING.behavior.legBurstPullScale * entryScale);
         }
         this.emitSprayFrame(emitter);
-        emitter.lastContact = kickPulse;
+        emitter.lastContact = entry;
     }
 
     private updateBodyParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
@@ -545,6 +560,16 @@ export class SplashEmitter {
         }
         this.emitSprayFrame(emitter);
         emitter.lastContact = strokePulse;
+    }
+
+    private clearParticleEmitter(emitter: SplashParticleEmitter) {
+        emitter.lastContact = 0;
+        emitter.cooldown = 0;
+        emitter.keepAlive = 0;
+        emitter.sprayTime = 0;
+        emitter.sprayRate = 0;
+        emitter.sprayCarry = 0;
+        emitter.system.clear();
     }
 
     private positionBodyParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
@@ -568,12 +593,12 @@ export class SplashEmitter {
     private positionParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number, progress: number, contact: number) {
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
         const boneName = emitter.role === 'leg'
-            ? emitter.side === 'left' ? 'LeftLeg' : 'RightLeg'
+            ? this.legSplashBoneName(emitter)
             : emitter.side === 'left' ? 'LeftHand' : 'RightHand';
         if (this._options.getBoneWorldPosition(boneName, this._tmpWorld)) {
             this._tmpWorld.x += direction * (emitter.palmOffset.x + speedRatio * TUNING.behavior.boneSpeedLead);
             if (emitter.role === 'leg') {
-                this._tmpWorld.y = lerp(this._tmpWorld.y, this._waterY + emitter.palmOffset.y, this.legSurfaceContact(emitter) * TUNING.behavior.legSurfaceYBlend);
+                this._tmpWorld.y = this._waterY + emitter.palmOffset.y;
             } else {
                 this._tmpWorld.y = this._waterY + emitter.palmOffset.y;
             }
@@ -606,10 +631,8 @@ export class SplashEmitter {
         setCurveRangeTwoConstants(emitter.system.startSpeed, speed * TUNING.behavior.speedRangeMinScale, speed * TUNING.behavior.speedRangeMaxScale);
         setCurveRangeTwoConstants(
             emitter.system.startLifetime,
-            !isHand ? TUNING.behavior.legLifetimeMin : TUNING.behavior.handLifetimeMin,
-            !isHand
-                ? lerp(TUNING.behavior.legLifetimeMaxLowSpeed, TUNING.behavior.legLifetimeMaxHighSpeed, speedRatio)
-                : lerp(TUNING.behavior.handLifetimeMaxLowSpeed, TUNING.behavior.handLifetimeMaxHighSpeed, speedRatio),
+            this.particleLifetimeMin(emitter),
+            this.particleLifetimeMax(emitter, speedRatio),
         );
         setCurveRange(emitter.system.gravityModifier, !isHand ? TUNING.particleSystem.legGravity : TUNING.particleSystem.handGravity);
         const styleSizeScale = TUNING.style === 'blocky' ? TUNING.blockyTexture.sizeMultiplier : 1;
@@ -637,6 +660,22 @@ export class SplashEmitter {
         emitter.sprayCarry = 0;
         emitter.cooldown = lerp(TUNING.behavior.burstCooldownMax, TUNING.behavior.burstCooldownMin, speedRatio);
         emitter.keepAlive = lerp(TUNING.behavior.keepAliveMin, TUNING.behavior.keepAliveMax, speedRatio);
+    }
+
+    private particleLifetimeMin(emitter: SplashParticleEmitter): number {
+        const base = emitter.role === 'leg' ? TUNING.behavior.legLifetimeMin : TUNING.behavior.handLifetimeMin;
+        return Math.min(base, this.particleLifetimeCap(emitter));
+    }
+
+    private particleLifetimeMax(emitter: SplashParticleEmitter, speedRatio: number): number {
+        const base = emitter.role === 'leg'
+            ? lerp(TUNING.behavior.legLifetimeMaxLowSpeed, TUNING.behavior.legLifetimeMaxHighSpeed, speedRatio)
+            : lerp(TUNING.behavior.handLifetimeMaxLowSpeed, TUNING.behavior.handLifetimeMaxHighSpeed, speedRatio);
+        return Math.min(base, this.particleLifetimeCap(emitter));
+    }
+
+    private particleLifetimeCap(emitter: SplashParticleEmitter): number {
+        return TUNING.particleSystem.roleWaterlineLifetimeCap[emitter.role] ?? TUNING.particleSystem.waterlineLifetimeCap;
     }
 
     private emitSprayFrame(emitter: SplashParticleEmitter) {
@@ -693,20 +732,12 @@ export class SplashEmitter {
         emitter.node.setRotationFromEuler(baseEuler.x, baseEuler.y, baseEuler.z);
     }
 
-    private legSurfaceContact(emitter: SplashParticleEmitter): number {
-        const boneName = emitter.side === 'left' ? 'LeftLeg' : 'RightLeg';
-        if (!this._options.getBoneWorldPosition(boneName, this._tmpEmitterWorld)) {
-            return 0;
-        }
+    private legSplashBoneName(emitter: SplashParticleEmitter): string {
+        return emitter.side === 'left' ? 'LeftFoot' : 'RightFoot';
+    }
 
-        const depthBelowSurface = this._waterY - this._tmpEmitterWorld.y;
-        if (depthBelowSurface > TUNING.behavior.legSurfaceMaxDepth) {
-            return 0;
-        }
-        if (depthBelowSurface < TUNING.behavior.legSurfaceMaxAbove) {
-            return 0;
-        }
-        return 1 - smoothRange(Math.abs(depthBelowSurface), TUNING.behavior.legSurfaceSoftStart, TUNING.behavior.legSurfaceSoftEnd);
+    private legEntryForEmitter(emitter: SplashParticleEmitter): number {
+        return emitter.side === 'left' ? this._state.rightHandWaterEntry : this._state.leftHandWaterEntry;
     }
 
     private handContactForPart(name: string): number {
@@ -816,11 +847,12 @@ function setGradientColor(range: GradientRange, color: Color) {
     range.color = color;
 }
 
-function setParticleFadeOut(system: ParticleSystem) {
+function setParticleFadeOut(system: ParticleSystem, role: SplashParticleEmitterTuning['role']) {
     const module = system.colorOverLifetimeModule;
     if (!module?.color) {
         return;
     }
+    const fade = TUNING.particleSystem.roleFade[role];
 
     const startColor = new ColorKey();
     startColor.color = new Color(255, 255, 255, 255);
@@ -833,26 +865,30 @@ function setParticleFadeOut(system: ParticleSystem) {
     startAlpha.time = 0;
     const holdAlpha = new AlphaKey();
     holdAlpha.alpha = TUNING.particleSystem.fadeHoldAlpha;
-    holdAlpha.time = TUNING.particleSystem.fadeHoldTime;
+    holdAlpha.time = fade?.holdTime ?? TUNING.particleSystem.fadeHoldTime;
     const endAlpha = new AlphaKey();
     endAlpha.alpha = TUNING.particleSystem.fadeEndAlpha;
-    endAlpha.time = 1;
+    endAlpha.time = fade?.endTime ?? TUNING.particleSystem.fadeEndTime;
+    const invisibleAlpha = new AlphaKey();
+    invisibleAlpha.alpha = TUNING.particleSystem.fadeEndAlpha;
+    invisibleAlpha.time = 1;
     const gradient = new Gradient();
-    gradient.setKeys([startColor, endColor], [startAlpha, holdAlpha, endAlpha]);
+    gradient.setKeys([startColor, endColor], [startAlpha, holdAlpha, endAlpha, invisibleAlpha]);
 
     module.enable = true;
     module.color.mode = GradientRange.Mode.Gradient;
     module.color.gradient = gradient;
 }
 
-function setParticleSizeOverLifetime(system: ParticleSystem) {
+function setParticleSizeOverLifetime(system: ParticleSystem, role: SplashParticleEmitterTuning['role']) {
     const module = system.sizeOvertimeModule;
     if (!module?.size) {
         return;
     }
 
     const curve = new RealCurve();
-    curve.assignSorted(TUNING.particleSystem.sizeOverLifetime.map(([time, value]) => [time, value]));
+    const samples: ReadonlyArray<readonly [number, number]> = TUNING.particleSystem.roleSizeOverLifetime[role] ?? TUNING.particleSystem.sizeOverLifetime;
+    curve.assignSorted(samples.map(([time, value]) => [time, value]));
 
     module.enable = true;
     module.separateAxes = false;
