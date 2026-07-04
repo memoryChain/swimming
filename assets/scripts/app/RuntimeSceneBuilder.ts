@@ -123,10 +123,10 @@ export class RuntimeSceneBuilder {
         if (skybox) {
             skybox.useHDR = false;
         }
-        ambient.skyLightingColor = color(194, 228, 255);
-        ambient.groundLightingColor = color(82, 164, 178);
-        ambient.skyColor = new Vec4(0.48, 0.72, 0.92, 1);
-        ambient.groundAlbedo = new Vec4(0.25, 0.52, 0.56, 1);
+        ambient.skyLightingColor = color(255, 241, 219);
+        ambient.groundLightingColor = color(168, 150, 126);
+        ambient.skyColor = new Vec4(0.74, 0.68, 0.57, 1);
+        ambient.groundAlbedo = new Vec4(0.42, 0.38, 0.32, 1);
         ambient.skyIllum = 0.8;
     }
 
