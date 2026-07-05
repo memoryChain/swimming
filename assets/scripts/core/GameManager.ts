@@ -1,16 +1,23 @@
 import {
     _decorator,
+    Camera,
     Color,
     Component,
     director,
     EventMouse,
     game,
+    geometry,
     Label,
     Layers,
+    Material,
+    MeshRenderer,
     Node,
+    primitives,
     Sprite,
     UITransform,
+    utils,
     Vec3,
+    view,
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
@@ -38,6 +45,7 @@ import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDistance } from './GameBalance';
 import { formatStabilityLog } from './StabilityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
+import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -56,6 +64,9 @@ const PLAYER_LANE_INDEX = 3;
 const PRIMARY_AI_LANE_INDEX = 4;
 const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
 const RACE_OPPONENTS_ENABLED = true;
+const UNDERWATER_TINT_DISTANCE = 1.2;
+const UNDERWATER_TINT_DEPTH = 0.002;
+const UNDERWATER_TINT_MARGIN = 1.45;
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -67,18 +78,26 @@ export class GameManager extends Component {
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
+    private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
+    private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
     private _inputManager: InputManager = null;
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
+    private _underwaterCameraTint: Node = null;
     private _worldRoot: Node = null;
+    private _swimmersRoot: Node = null;
+    private _poolNode: Node = null;
     private _cameraNode: Node = null;
+    private readonly _splashCullAabb = new geometry.AABB();
+    private readonly _tmpSplashCullCenter = new Vec3();
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
     private _modelDebugModelLabel: Label = null;
+    private _modelDebugActionLabel: Label = null;
     private _modelDebugSkyboxLabel: Label = null;
     private _skyboxApplier: StandardSkyboxApplier = null;
     private _timingGuideFillNode: Node = null;
@@ -89,7 +108,6 @@ export class GameManager extends Component {
     private readonly _debugLog = new DebugLogController();
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankMarkers = new FinishRankMarkerBuilder(COURSE_LAYOUT);
-
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
@@ -141,12 +159,104 @@ export class GameManager extends Component {
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
         this.drawStrokeTimingGuide(this._playerSwimmer.strokeTimingGuide, this._state === GameState.RACING);
+        this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
+            this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
+        this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
+    }
+
+    // Cull splash + freeze pose for AI swimmers that are outside the camera frustum. Testing against the
+    // real camera frustum (instead of a 1D X-distance guess) correctly handles zoom and any camera mode
+    // (broadcast / top / underwater / free). Off-screen swimmers skip all particle/foam and pose work.
+    // 对相机视锥体之外的 AI 选手裁剪水花并冻结姿态。用真实视锥（而非一维 X 距离估算）能正确处理缩放和任意
+    // 机位（转播/俯视/水下/自由）。离屏选手跳过全部粒子/泡沫与姿态计算。
+    private updateSplashCulling() {
+        if (this._modelDebugFlow?.active) {
+            return;
+        }
+        const playerNode = this._playerSwimmer?.node;
+        if (!playerNode?.isValid) {
+            return;
+        }
+        if (!this._splashCullingEnabled) {
+            // Toggle off: make sure no swimmer stays culled so we can A/B compare performance.
+            // 关闭裁剪：确保没有选手仍处于裁剪状态，方便对比开/关的性能差异。
+            for (const swimmer of this._aiSwimmers) {
+                swimmer?.setSplashCulled(false);
+            }
+            return;
+        }
+        const frustum = this._cameraNode?.getComponent(Camera)?.camera?.frustum ?? null;
+        const marginXZ = PERFORMANCE_CONFIG.splash.visibilityMarginXZ;
+        const marginY = PERFORMANCE_CONFIG.splash.visibilityMarginY;
+        const playerX = playerNode.position.x;
+        for (const swimmer of this._aiSwimmers) {
+            const node = swimmer?.node;
+            if (!node?.isValid) {
+                continue;
+            }
+            let culled: boolean;
+            if (frustum) {
+                const pos = node.position;
+                this._tmpSplashCullCenter.set(pos.x, pos.y, pos.z);
+                geometry.AABB.set(
+                    this._splashCullAabb,
+                    this._tmpSplashCullCenter.x, this._tmpSplashCullCenter.y, this._tmpSplashCullCenter.z,
+                    marginXZ, marginY, marginXZ,
+                );
+                culled = geometry.intersect.aabbFrustum(this._splashCullAabb, frustum) === 0;
+            } else {
+                // Fallback before the camera frustum is available: 1D X-distance window.
+                // 相机视锥不可用时的回退：一维 X 距离窗口。
+                culled = Math.abs(node.position.x - playerX) > PERFORMANCE_CONFIG.splash.cullingDistanceX;
+            }
+            swimmer.setSplashCulled(culled);
+            if (!culled) {
+                // On-screen AI: pick a pose-update stride from distance-based LOD tiers (nearer = higher fps).
+                // 屏内 AI：按距离分级选姿态更新 stride（越近帧率越高）。
+                swimmer.setMotionThrottleStride(this.motionStrideForDistance(Math.abs(node.position.x - playerX)));
+            }
+        }
+    }
+
+    // Map an AI swimmer's swim-axis distance to the player to a pose-update stride using the configured
+    // distance tiers (nearest tier first). Beyond every tier -> farTierStride.
+    // 用配置的距离分级（从近到远）把 AI 沿游泳轴到玩家的距离映射到姿态更新 stride。超出全部分级 -> farTierStride。
+    private motionStrideForDistance(distanceX: number): number {
+        for (const tier of PERFORMANCE_CONFIG.motion.aiPoseDistanceTiers) {
+            if (distanceX <= tier.maxDistanceX) {
+                return tier.stride;
+            }
+        }
+        return PERFORMANCE_CONFIG.motion.farTierStride;
+    }
+
+    private toggleSplashCulling() {
+        this._splashCullingEnabled = !this._splashCullingEnabled;
+        if (!this._splashCullingEnabled) {
+            for (const swimmer of this._aiSwimmers) {
+                swimmer?.setSplashCulled(false);
+            }
+        }
+        this.debug(`splash culling=${this._splashCullingEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private toggleSplashParticles() {
+        this._splashParticlesEnabled = !this._splashParticlesEnabled;
+        this.applySplashParticlesEnabled();
+        this.debug(`splash particles=${this._splashParticlesEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private applySplashParticlesEnabled() {
+        this._playerSwimmer?.setSplashParticlesEnabled(this._splashParticlesEnabled);
+        for (const swimmer of this._aiSwimmers) {
+            swimmer?.setSplashParticlesEnabled(this._splashParticlesEnabled);
+        }
     }
 
     startGame() {
@@ -166,14 +276,15 @@ export class GameManager extends Component {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
+        this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
         this._finishRankMarkers.bind(this._worldRoot);
-        this.buildPool3D(this._worldRoot, () => {
+        this.buildPool3D(this._worldRoot, (pool) => {
             if (!this.node?.isValid || !this._worldRoot?.isValid) {
                 return;
             }
             try {
-                this.buildSwimmers3D(this._worldRoot);
+                this.buildPlayerSwimmer3D(this._worldRoot);
                 this.buildUi(scene.canvasNode, scene.width, scene.height, (uiError) => {
                     if (uiError) {
                         done(uiError);
@@ -187,6 +298,7 @@ export class GameManager extends Component {
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
                     done();
+                    this.scheduleDeferredSceneExtras(pool);
                 });
             } catch (error) {
                 done(error);
@@ -267,6 +379,7 @@ export class GameManager extends Component {
             ratingLabel: this._modelDebugRatingLabel,
             swimSpeedLabel: this._modelDebugSwimSpeedLabel,
             modelLabel: this._modelDebugModelLabel,
+            actionLabel: this._modelDebugActionLabel,
             skyboxLabel: this._modelDebugSkyboxLabel,
             skyboxApplier: this._skyboxApplier,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
@@ -288,6 +401,8 @@ export class GameManager extends Component {
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
             onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
+            onToggleSplashCulling: () => this.toggleSplashCulling(),
+            onToggleSplashParticles: () => this.toggleSplashParticles(),
             onModelDebugSpeedDown: () => this.slowModelDebugMotion(),
             onModelDebugSpeedUp: () => this.speedUpModelDebugMotion(),
             onDebugCameraMouseDown: (event) => this.onDebugCameraMouseDown(event),
@@ -297,26 +412,26 @@ export class GameManager extends Component {
         });
     }
 
-    private buildPool3D(root: Node, done: () => void) {
+    private buildPool3D(root: Node, done: (pool: Node | null) => void) {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
         venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool }) => {
             if (!pool?.isValid) {
-                this.buildSpectatorCrowd(root, null);
-                done();
+                this._poolNode = null;
+                done(null);
                 return;
             }
             this.scheduleOnce(() => {
                 if (!pool.isValid) {
-                    this.buildSpectatorCrowd(root, null);
-                    done();
+                    this._poolNode = null;
+                    done(null);
                     return;
                 }
                 const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
                 if (calibrated) {
                     this._raceCameraDirector.resetToBroadcast();
                 }
-                this.buildSpectatorCrowd(root, pool);
-                done();
+                this._poolNode = pool;
+                done(pool);
             }, 0);
         });
     }
@@ -331,35 +446,70 @@ export class GameManager extends Component {
         }
     }
 
-    private buildSwimmers3D(root: Node) {
-        const competitors = new CompetitorManager({
+    private createCompetitorManager(): CompetitorManager {
+        return new CompetitorManager({
             laneLayout: LANE_LAYOUT,
             courseLayout: COURSE_LAYOUT,
             playerLaneIndex: PLAYER_LANE_INDEX,
             primaryAiLaneIndex: PRIMARY_AI_LANE_INDEX,
             debug: (message) => this.debug(message),
-        }).build(root);
+        });
+    }
+
+    private buildPlayerSwimmer3D(root: Node) {
+        const competitors = this.createCompetitorManager().buildPlayer(root);
+        this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
-        if (!RACE_OPPONENTS_ENABLED) {
-            for (const swimmer of competitors.aiSwimmers) {
-                swimmer.stopRace();
-                swimmer.node.active = false;
-            }
-            for (const controller of competitors.aiControllers) {
-                controller.stopSwimming();
-            }
+        this._aiController = null;
+        this._aiControllers = [];
+        this._aiSwimmers = [];
+        this._aiConditions = [];
+        this.applySplashParticlesEnabled();
+    }
+
+    private buildDeferredAiSwimmers() {
+        if (this._modelDebugFlow?.active) {
             this._aiController = null;
-            this._aiControllers = [];
-            this._aiSwimmers = [];
-            this._aiConditions = [];
+            this.debug('deferred AI swimmers skipped for model debug');
+            return;
+        }
+        if (!RACE_OPPONENTS_ENABLED) {
+            this._aiController = null;
             this.debug('race opponents disabled');
             return;
         }
+        if (!this._swimmersRoot?.isValid) {
+            return;
+        }
 
+        const competitors = this.createCompetitorManager().buildAi(this._swimmersRoot);
         this._aiController = competitors.primaryAiController;
-        this._aiControllers = competitors.aiControllers;
-        this._aiSwimmers = competitors.aiSwimmers;
-        this._aiConditions = this._aiSwimmers.map(() => new AiConditionModel());
+        this._aiControllers.splice(0, this._aiControllers.length, ...competitors.aiControllers);
+        this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
+        this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
+        for (const swimmer of this._aiSwimmers) {
+            swimmer.reset();
+        }
+        this.applySplashParticlesEnabled();
+        if (this._raceManager) {
+            this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
+            this._raceManager.aiSwimmers = this._aiSwimmers;
+        }
+        this.debug(`deferred AI swimmers loaded count=${this._aiSwimmers.length}`);
+    }
+
+    private scheduleDeferredSceneExtras(pool: Node | null) {
+        this.scheduleOnce(() => {
+            if (!this.node?.isValid) {
+                return;
+            }
+            this.buildDeferredAiSwimmers();
+            this.scheduleOnce(() => {
+                if (this.node?.isValid && this._worldRoot?.isValid) {
+                    this.buildSpectatorCrowd(this._worldRoot, pool?.isValid ? pool : this._poolNode);
+                }
+            }, 0);
+        }, 0);
     }
 
     private buildUi(root: Node, w: number, h: number, done: (error?: unknown) => void) {
@@ -392,6 +542,7 @@ export class GameManager extends Component {
                 onSlow: () => this.slowModelDebugMotion(),
                 onFast: () => this.speedUpModelDebugMotion(),
                 onSwitchModel: () => this.switchModelDebugVariant(),
+                onSwitchAction: () => this.switchModelDebugAction(),
                 onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
             }).build(uiRoot, w, h);
@@ -400,6 +551,7 @@ export class GameManager extends Component {
             this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
             this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
             this._modelDebugModelLabel = modelDebugHud.modelLabel;
+            this._modelDebugActionLabel = modelDebugHud.actionLabel;
             this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
             this._modelDebugHud.active = false;
 
@@ -580,6 +732,10 @@ export class GameManager extends Component {
         this._modelDebugFlow?.switchModelVariant();
     }
 
+    private switchModelDebugAction() {
+        this._modelDebugFlow?.switchActionPreview();
+    }
+
     private switchModelDebugTexture() {
         this._modelDebugFlow?.switchColorVariant();
     }
@@ -594,6 +750,47 @@ export class GameManager extends Component {
 
     private drawSpeedBar(_ratio: number) {
         this.drawStrokeTimingGuide(null, false);
+    }
+
+    private setUnderwaterOverlayVisible(visible: boolean) {
+        if (this._underwaterCameraTint) {
+            this._underwaterCameraTint.active = visible;
+            if (visible) {
+                this.resizeUnderwaterCameraTint();
+            }
+        }
+    }
+
+    private buildUnderwaterCameraTint(cameraNode: Node, width: number, height: number): Node {
+        const tint = new Node('UnderwaterCameraTint3D');
+        tint.setParent(cameraNode);
+        tint.layer = Layers.Enum.DEFAULT;
+        tint.setPosition(0, 0, -UNDERWATER_TINT_DISTANCE);
+        tint.setScale(this.underwaterTintScale(width, height));
+        tint.active = false;
+        const renderer = tint.addComponent(MeshRenderer);
+        renderer.mesh = utils.createMesh(primitives.box());
+        renderer.setMaterial(makeUnderwaterTintMaterial(), 0);
+        return tint;
+    }
+
+    private resizeUnderwaterCameraTint() {
+        if (!this._underwaterCameraTint) {
+            return;
+        }
+        const design = view.getDesignResolutionSize();
+        const visible = view.getVisibleSize();
+        const width = visible.width || design.width || 1280;
+        const height = visible.height || design.height || 720;
+        this._underwaterCameraTint.setScale(this.underwaterTintScale(width, height));
+    }
+
+    private underwaterTintScale(width: number, height: number): Vec3 {
+        const camera = this._cameraNode?.getComponent(Camera);
+        const fov = camera?.fov ?? 36;
+        const aspect = height > 0 ? width / height : 16 / 9;
+        const planeHeight = Math.tan(fov * Math.PI / 360) * UNDERWATER_TINT_DISTANCE * 2 * UNDERWATER_TINT_MARGIN;
+        return new Vec3(planeHeight * aspect, planeHeight, UNDERWATER_TINT_DEPTH);
     }
 
     private drawStrokeTimingGuide(guide: StrokeTimingGuide | null, active: boolean) {
@@ -654,4 +851,18 @@ export class GameManager extends Component {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
+}
+
+function makeUnderwaterTintMaterial(): Material {
+    const material = new Material();
+    material.initialize({ effectName: 'builtin-unlit', technique: 1 });
+    material.name = 'UnderwaterCameraTint';
+    material.setProperty('mainColor', new Color(10, 140, 215, 78));
+    material.overridePipelineStates({
+        depthStencilState: {
+            depthTest: false,
+            depthWrite: false,
+        },
+    });
+    return material;
 }

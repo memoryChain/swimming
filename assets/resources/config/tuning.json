@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "updatedAt": "2026-06-07T16:54:13.647Z",
+  "updatedAt": "2026-07-03T10:25:33.353Z",
   "values": {
     "input.padStrokeDedupeMs": 45,
     "dive.minPower": 0.3,
@@ -37,9 +37,13 @@
     "motion.kickMinCyclesPerSecond": 0.82,
     "motion.maxCyclesPerSecond": 2.8,
     "motion.animationSpeedScale": 0.8,
+    "motion.swimBodyPitchDegrees": -8,
+    "motion.swimBodyYOffset": -0.14,
     "motion.handPalmTurnDegrees": 130,
     "motion.forwardArmSideClearance": 0.3,
     "motion.rightBreathTurnDegrees": 70,
-    "motion.rightBreathBodyRollDegrees": 18
+    "motion.rightBreathBodyRollDegrees": 4,
+    "motion.freestyleAxisCenteringOffset": 0.075,
+    "motion.freestyleRightBreathAxisCenteringOffset": -0.028
   }
 }

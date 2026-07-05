@@ -1,3 +1,4 @@
+import { Vec3 } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -45,6 +46,7 @@ export class GameFlowController {
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
+    private readonly _playerUpperBodyWorldPosition = new Vec3();
 
     constructor(private readonly _refs: GameFlowRefs) {}
 
@@ -83,7 +85,7 @@ export class GameFlowController {
         if (this._refs.handleModelDebugStroke(type)) {
             return;
         }
-        if (this._refs.getState() !== GameState.RACING) {
+        if (!this.isStrokeInputActive()) {
             return;
         }
         const result = this._refs.playerSwimmer?.handleStroke(type);
@@ -98,7 +100,7 @@ export class GameFlowController {
         if (this._refs.handleModelDebugStrokeHeld(type, held)) {
             return;
         }
-        if (this._refs.getState() !== GameState.RACING) {
+        if (!this.isStrokeInputActive()) {
             return;
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
@@ -107,6 +109,11 @@ export class GameFlowController {
             this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
+    }
+
+    private isStrokeInputActive(): boolean {
+        const state = this._refs.getState();
+        return state === GameState.RACING || state === GameState.GLIDING;
     }
 
     handleDiveChargeStart() {
@@ -248,7 +255,9 @@ export class GameFlowController {
         this._refs.raceCameraDirector.update(dt, {
             playerX: playerSwimmer.node.position.x,
             playerY: playerSwimmer.node.position.y,
+            playerUpperBodyWorldPosition: playerSwimmer.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance,
+            playerUnderwater: playerSwimmer.isUnderwater,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,
             racerCount: placement.racerCount,

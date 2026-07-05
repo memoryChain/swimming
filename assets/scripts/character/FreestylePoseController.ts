@@ -1,10 +1,28 @@
 import { Node, Quat, Vec3 } from 'cc';
+import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
+import { BREASTSTROKE_MOTION_SAMPLES, BreaststrokeBoneName, BreaststrokeMotionSample } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
+import { DIVE_PREP_POSE_SAMPLE, DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
 
-const SIDE_BODY_ROLL_DEGREES = 28;
-const ARM_FORWARD_CYCLE_OFFSET = 0;
-const DEFAULT_SWIM_HEAD_LIFT_DEGREES = -14;
+const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new Set([
+    'L_Clavicle',
+    'L_Upperarm',
+    'L_Forearm',
+    'L_Hand',
+    'R_Clavicle',
+    'R_Upperarm',
+    'R_Forearm',
+    'R_Hand',
+    'L_Thigh',
+    'L_Calf',
+    'L_Foot',
+    'L_ToeBase',
+    'R_Thigh',
+    'R_Calf',
+    'R_Foot',
+    'R_ToeBase',
+]);
 const BONE_ALIASES: Record<string, string[]> = {
     Hips: ['Hip', 'Pelvis'],
     Spine: ['Waist', 'Spine01'],
@@ -36,6 +54,7 @@ export class FreestylePoseController {
     public readonly rootBaseRotation = new Quat();
 
     private _torso: Node = null;
+    private _rootBone: Node = null;
     private _hips: Node = null;
     private _spine: Node = null;
     private _spine1: Node = null;
@@ -57,9 +76,13 @@ export class FreestylePoseController {
     private _rightLeg: Node = null;
     private _rightFoot: Node = null;
     private _rightToe: Node = null;
+    private readonly _breaststrokeBones = new Map<BreaststrokeBoneName, Node>();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
     private readonly _tmpOffsetRotation = new Quat();
     private readonly _tmpResultRotation = new Quat();
+    private readonly _tmpAxisRotation = new Quat();
+    private readonly _tmpBlendRotation = new Quat();
+    private readonly _tmpBlendPosition = new Vec3();
     private readonly _tmpDirection = new Vec3();
     private readonly _tmpWorldDirection = new Vec3();
     private readonly _tmpParentDirection = new Vec3();
@@ -71,10 +94,12 @@ export class FreestylePoseController {
     private readonly _tmpSplashWorldB = new Vec3();
     private readonly _tmpMovementForwardRoot = new Vec3();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
-    private _swimHeadLiftDegrees = DEFAULT_SWIM_HEAD_LIFT_DEGREES;
+    private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
+    private _movementDirectionSign = 1;
 
     bind(root: Node) {
         this.root = root;
+        this._rootBone = findNode(root, 'Root');
         this._spine = findBoneNode(root, 'Spine');
         this._spine1 = findBoneNode(root, 'Spine1');
         this._torso = findBoneNode(root, 'Spine2') || this._spine1 || this._spine || findNode(root, 'TorsoMesh');
@@ -97,6 +122,7 @@ export class FreestylePoseController {
         this._rightLeg = findBoneNode(root, 'RightLeg');
         this._rightFoot = findBoneNode(root, 'RightFoot');
         this._rightToe = findBoneNode(root, 'RightToeBase');
+        this.bindBreaststrokeBones();
     }
 
     captureBasePose() {
@@ -125,11 +151,12 @@ export class FreestylePoseController {
     }
 
     setMovementDirection(direction: number) {
-        this._movementForwardWorld.set(direction >= 0 ? 1 : -1, 0, 0);
+        this._movementDirectionSign = direction >= 0 ? 1 : -1;
+        this._movementForwardWorld.set(this._movementDirectionSign, 0, 0);
     }
 
     setSwimHeadLift(degrees: number | undefined) {
-        this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : DEFAULT_SWIM_HEAD_LIFT_DEGREES;
+        this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
@@ -152,15 +179,25 @@ export class FreestylePoseController {
         }
         const bob = Math.sin(bodyPhase) * 0.045;
         const armReach = this.armReachSignal(leftArmCycle, rightArmCycle);
-        const sideRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle);
-        const breathBodyRoll = -clamp(rightBreath, 0, 1) * MOTION_TUNING.rightBreathBodyRollDegrees;
+        const breathRatio = clamp(rightBreath, 0, 1);
+        const baseBodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle) * FREESTYLE_POSE_TUNING.freestyleInternalBodyRollDegrees;
+        const bodyRoll = baseBodyRoll - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees;
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
-        this.root.setPosition(this.rootBasePos.x + armReach * 0.03, this.rootBasePos.y + bob, this.rootBasePos.z);
-        this.root.setRotationFromEuler(
-            this.rootBaseEuler.x + kickSignal * 1.5,
-            this.rootBaseEuler.y + sideRoll * SIDE_BODY_ROLL_DEGREES + breathBodyRoll,
-            this.rootBaseEuler.z + armReach * 1.2,
+        const axisCenteringOffset = this.freestyleAxisCenteringOffset(baseBodyRoll, breathRatio);
+        this.laneSideInRootParent(this._tmpParentDirection);
+        this.root.setPosition(
+            this.rootBasePos.x + armReach * 0.03 + this._tmpParentDirection.x * axisCenteringOffset,
+            this.rootBasePos.y + bob + this._tmpParentDirection.y * axisCenteringOffset,
+            this.rootBasePos.z + this._tmpParentDirection.z * axisCenteringOffset,
         );
+        Quat.fromEuler(
+            this._tmpResultRotation,
+            this.rootBaseEuler.x + MOTION_TUNING.swimBodyPitchDegrees + kickSignal * 1.5,
+            this.rootBaseEuler.y,
+            this.rootBaseEuler.z,
+        );
+        this.applyRootRollAroundMovementAxis(bodyRoll);
+        this.root.setRotation(this._tmpResultRotation);
     }
 
     applyPreviewPose(selfTime: number) {
@@ -171,6 +208,81 @@ export class FreestylePoseController {
         this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(previewArmCycle), 1.05);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, previewKickCycle, 1.05);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, previewKickCycle, 1.05);
+    }
+
+    applyBreaststrokePose(phase: number, power = 1) {
+        if (!this.root) {
+            return;
+        }
+        const p = positiveMod(phase, 1);
+        const sample = sampleBreaststrokeMotion(1 - p);
+        const hand = sample.hand;
+        const foot = sample.foot;
+        const head = sample.head;
+        const pull = smoothPulse(p, 0.06, 0.14, 0.26, 0.36) + smoothPulse(p, 0.58, 0.66, 0.78, 0.88);
+        const recover = smoothPulse(p, 0.28, 0.38, 0.48, 0.58) + smoothPulse(p, 0.80, 0.88, 0.94, 1.0);
+        const kick = smoothPulse(p, 0.14, 0.22, 0.36, 0.48) + smoothPulse(p, 0.66, 0.74, 0.88, 0.98);
+        const glide = 1 - Math.max(pull, recover, kick);
+        const lift = (head[2] - 0.1) * 0.18 + pull * 0.025 - glide * 0.008;
+
+        this.root.setPosition(this.rootBasePos.x + recover * 0.018, this.rootBasePos.y + lift, this.rootBasePos.z);
+        this.root.setRotationFromEuler(
+            this.rootBaseEuler.x + FREESTYLE_POSE_TUNING.treadWaterBodyForwardDegrees + pull * 0.8 - kick * 0.3,
+            this.rootBaseEuler.y + FREESTYLE_POSE_TUNING.treadWaterStraightenYawDegrees,
+            this.rootBaseEuler.z + FREESTYLE_POSE_TUNING.treadWaterStraightenRollDegrees,
+        );
+        this.applyBoneOffset(this._hips, -kick * 1.0, 0, 0);
+        this.applyBoneOffset(this._spine, 4 + pull * 0.4, 0, 0);
+        this.applyBoneOffset(this._spine1, 6 + pull * 0.6, 0, 0);
+        this.applyBoneOffset(this._torso, 5 + this._swimHeadLiftDegrees * 0.04 + pull * 0.8, 0, 0);
+        this.applyBoneOffset(this._neck, -1 + this._swimHeadLiftDegrees * 0.2 + pull * 1.0, 0, 0);
+        this.applyBoneOffset(this._head, -3 + this._swimHeadLiftDegrees * 0.36 + pull * 1.2, 0, 0);
+        this.applyBreaststrokeSampleRotations(sample, power);
+    }
+
+    applyDivePrepPose(power = 1) {
+        if (!this.root) {
+            return;
+        }
+        this.restoreBasePose();
+        this.applySampleRotations(DIVE_PREP_POSE_SAMPLE, power);
+    }
+
+    applyDivePrepToStreamlinePose(blend: number) {
+        if (!this.root) {
+            return;
+        }
+        const t = clamp(blend, 0, 1);
+        if (t <= 0) {
+            this.applyDivePrepPose(1);
+            return;
+        }
+        if (t >= 1) {
+            this.restoreBasePose();
+            this.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+            return;
+        }
+
+        const bones = this.manualBones.filter((bone): bone is Node => !!bone);
+        this.applyDivePrepPose(1);
+        const prepRootPosition = this.root.position.clone();
+        const prepRootRotation = this.root.rotation.clone();
+        const prepRotations = bones.map((bone) => bone.rotation.clone());
+
+        this.restoreBasePose();
+        this.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+        const streamlineRootPosition = this.root.position.clone();
+        const streamlineRootRotation = this.root.rotation.clone();
+        const streamlineRotations = bones.map((bone) => bone.rotation.clone());
+
+        Vec3.lerp(this._tmpBlendPosition, prepRootPosition, streamlineRootPosition, t);
+        this.root.setPosition(this._tmpBlendPosition);
+        Quat.slerp(this._tmpBlendRotation, prepRootRotation, streamlineRootRotation, t);
+        this.root.setRotation(this._tmpBlendRotation);
+        for (let i = 0; i < bones.length; i++) {
+            Quat.slerp(this._tmpBlendRotation, prepRotations[i], streamlineRotations[i], t);
+            bones[i].setRotation(this._tmpBlendRotation);
+        }
     }
 
     applyPreRaceStandingPose() {
@@ -208,8 +320,13 @@ export class FreestylePoseController {
     handWaterContact(cycle: number): number {
         const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
         const catchToPull = smoothPulse(phase, 0.10, 0.20, 0.46, 0.58);
-        const entry = smoothPulse(phase, 0.90, 0.96, 1.0, 1.0) + smoothPulse(phase, 0.0, 0.0, 0.035, 0.09);
+        const entry = this.handWaterEntry(cycle);
         return Math.max(catchToPull, Math.min(1, entry * 0.65));
+    }
+
+    handWaterEntry(cycle: number): number {
+        const phase = positiveMod(-this.armPoseCycle(cycle), Math.PI * 2) / (Math.PI * 2);
+        return smoothPulse(phase, 0.90, 0.96, 1.0, 1.0) + smoothPulse(phase, 0.0, 0.0, 0.035, 0.09);
     }
 
     handWaterProgress(cycle: number): number {
@@ -239,13 +356,20 @@ export class FreestylePoseController {
     }
 
     private armPoseCycle(cycle: number): number {
-        return cycle + ARM_FORWARD_CYCLE_OFFSET;
+        return cycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset;
     }
 
     getSplashBoneWorldPosition(name: string, out: Vec3): boolean {
         if (name.indexOf('Head') >= 0 && this._head) {
             this._head.getWorldPosition(out);
             return true;
+        }
+        if (name.indexOf('Body') >= 0) {
+            const body = this._torso || this._spine1 || this._spine;
+            if (body) {
+                body.getWorldPosition(out);
+                return true;
+            }
         }
         if (name.indexOf('LeftHand') >= 0 && this._leftHand) {
             this._leftHand.getWorldPosition(out);
@@ -254,6 +378,28 @@ export class FreestylePoseController {
         if (name.indexOf('RightHand') >= 0 && this._rightHand) {
             this._rightHand.getWorldPosition(out);
             return true;
+        }
+        if (name.indexOf('LeftLeg') >= 0 && this._leftLeg) {
+            this._leftLeg.getWorldPosition(out);
+            return true;
+        }
+        if (name.indexOf('RightLeg') >= 0 && this._rightLeg) {
+            this._rightLeg.getWorldPosition(out);
+            return true;
+        }
+        if (name.indexOf('LeftFoot') >= 0) {
+            const left = this._leftToe || this._leftFoot;
+            if (left) {
+                left.getWorldPosition(out);
+                return true;
+            }
+        }
+        if (name.indexOf('RightFoot') >= 0) {
+            const right = this._rightToe || this._rightFoot;
+            if (right) {
+                right.getWorldPosition(out);
+                return true;
+            }
         }
         if (name.indexOf('Foot') >= 0) {
             const left = this._leftToe || this._leftFoot;
@@ -270,6 +416,25 @@ export class FreestylePoseController {
                 (left || right).getWorldPosition(out);
                 return true;
             }
+        }
+        return false;
+    }
+
+    getUpperBodyWorldPosition(out: Vec3): boolean {
+        const upper = this._torso || this._spine1 || this._spine;
+        if (upper && this._head) {
+            upper.getWorldPosition(out);
+            this._head.getWorldPosition(this._tmpSplashWorldB);
+            Vec3.lerp(out, out, this._tmpSplashWorldB, 0.28);
+            return true;
+        }
+        if (upper) {
+            upper.getWorldPosition(out);
+            return true;
+        }
+        if (this._head) {
+            this._head.getWorldPosition(out);
+            return true;
         }
         return false;
     }
@@ -309,6 +474,7 @@ export class FreestylePoseController {
     private get manualBones(): Array<Node | null> {
         return [
             this._torso,
+            this._rootBone,
             this._hips,
             this._spine,
             this._spine1,
@@ -331,6 +497,40 @@ export class FreestylePoseController {
             this._rightFoot,
             this._rightToe,
         ];
+    }
+
+    private bindBreaststrokeBones() {
+        this._breaststrokeBones.clear();
+        const entries: Array<[BreaststrokeBoneName, Node | null]> = [
+            ['Root', this._rootBone],
+            ['Hip', this._hips],
+            ['Waist', this._spine],
+            ['Spine01', this._spine1],
+            ['Spine02', this._torso],
+            ['NeckTwist01', this._neck],
+            ['Head', this._head],
+            ['L_Clavicle', this._leftShoulder],
+            ['L_Upperarm', this._leftArm],
+            ['L_Forearm', this._leftForeArm],
+            ['L_Hand', this._leftHand],
+            ['R_Clavicle', this._rightShoulder],
+            ['R_Upperarm', this._rightArm],
+            ['R_Forearm', this._rightForeArm],
+            ['R_Hand', this._rightHand],
+            ['L_Thigh', this._leftUpLeg],
+            ['L_Calf', this._leftLeg],
+            ['L_Foot', this._leftFoot],
+            ['L_ToeBase', this._leftToe],
+            ['R_Thigh', this._rightUpLeg],
+            ['R_Calf', this._rightLeg],
+            ['R_Foot', this._rightFoot],
+            ['R_ToeBase', this._rightToe],
+        ];
+        for (const [name, node] of entries) {
+            if (node) {
+                this._breaststrokeBones.set(name, node);
+            }
+        }
     }
 
     private applyArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, cycle: number, power: number) {
@@ -407,22 +607,183 @@ export class FreestylePoseController {
         this.applyBoneOffset(hand, handNeutral, handOpen, handRoll);
     }
 
+    private applyBreaststrokeSampleRotations(sample: BreaststrokeMotionSample, power: number) {
+        const blend = clamp(power, 0, 1);
+        for (const name of Object.keys(sample.rotations) as BreaststrokeBoneName[]) {
+            if (!BREASTSTROKE_SAMPLED_LIMB_BONES.has(name)) {
+                continue;
+            }
+            const rotation = sample.rotations[name];
+            if (!rotation) {
+                continue;
+            }
+            const bone = this._breaststrokeBones.get(name);
+            if (!bone) {
+                continue;
+            }
+            const base = this._boneBaseRotation.get(bone);
+            if (base) {
+                this.setQuatFromTuple(this._tmpOffsetRotation, rotation);
+                if (blend < 0.999) {
+                    Quat.slerp(this._tmpOffsetRotation, Quat.IDENTITY, this._tmpOffsetRotation, blend);
+                }
+                Quat.multiply(this._tmpResultRotation, base, this._tmpOffsetRotation);
+                bone.setRotation(this._tmpResultRotation);
+            } else {
+                this.setQuatFromTuple(this._tmpOffsetRotation, rotation);
+                bone.setRotation(this._tmpOffsetRotation);
+            }
+        }
+    }
+
+    private applySampleRotations(sample: DivePrepPoseSample, power: number) {
+        const blend = clamp(power, 0, 1);
+        for (const name of Object.keys(sample.rotations) as DivePrepBoneName[]) {
+            const rotation = sample.rotations[name];
+            if (!rotation) {
+                continue;
+            }
+            const bone = this._breaststrokeBones.get(name as BreaststrokeBoneName);
+            if (!bone) {
+                continue;
+            }
+            const base = this._boneBaseRotation.get(bone);
+            this.setQuatFromTuple(this._tmpOffsetRotation, rotation);
+            if (blend < 0.999) {
+                Quat.slerp(this._tmpOffsetRotation, Quat.IDENTITY, this._tmpOffsetRotation, blend);
+            }
+            if (base) {
+                Quat.multiply(this._tmpResultRotation, base, this._tmpOffsetRotation);
+                bone.setRotation(this._tmpResultRotation);
+            } else {
+                bone.setRotation(this._tmpOffsetRotation);
+            }
+        }
+    }
+
+    private applyDivePrepArmReach(power: number) {
+        const reach = FREESTYLE_POSE_TUNING.divePrepArmForwardDegrees * clamp(power, 0, 1);
+        this.applyCurrentBoneOffset(this._leftArm, -reach, -reach * 0.2, -reach * 0.15);
+        this.applyCurrentBoneOffset(this._rightArm, -reach, reach * 0.2, reach * 0.15);
+        this.applyCurrentBoneOffset(this._leftForeArm, -reach * 0.45, 0, -reach * 0.1);
+        this.applyCurrentBoneOffset(this._rightForeArm, -reach * 0.45, 0, reach * 0.1);
+    }
+
+    private applyDivePrepFootLeveling(power: number) {
+        const blend = clamp(power, 0, 1);
+        this.levelFootToeDirectionToWorldHorizontal(this._leftFoot, this._leftToe, blend);
+        this.levelFootToeDirectionToWorldHorizontal(this._rightFoot, this._rightToe, blend);
+    }
+
+    private setQuatFromTuple(out: Quat, value: readonly [number, number, number, number]) {
+        out.x = value[0];
+        out.y = value[1];
+        out.z = value[2];
+        out.w = value[3];
+    }
+
+    private applyBreaststrokeArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, side: number, handTarget: readonly [number, number, number], pull: number, recover: number, power: number) {
+        if (!arm || !foreArm) {
+            return;
+        }
+        const handSide = Math.abs(handTarget[0]) * 2.0;
+        const handForward = clamp(-handTarget[1] * 2.1, 0.18, 1.05);
+        const handVertical = handTarget[2] * 1.55;
+        const active = Math.max(pull, recover, handSide);
+        const elbowSide = lerp(0.18, handSide * 0.78, 0.82);
+        const elbowForward = lerp(0.52, handForward * 0.72, 0.72);
+        const elbowVertical = lerp(-0.02, handVertical * 0.45, 0.6) - pull * 0.06;
+        const foreSide = handSide - elbowSide;
+        const foreForward = handForward - elbowForward;
+        const foreVertical = handVertical - elbowVertical;
+        const elbowBend = pull * 22 + (1 - handForward) * 26 - recover * 18;
+        const handCup = pull * 32 + handSide * 14 - recover * 12;
+
+        this.applyBoneOffset(shoulder, pull * -2 + recover * 1.5, side * (handSide * 4 + pull * 2), side * (-2 - handSide * 4));
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        this._tmpDirection.set(
+            side * elbowSide + this._tmpMovementForwardRoot.x * elbowForward,
+            this._tmpMovementForwardRoot.y * elbowForward,
+            elbowVertical + this._tmpMovementForwardRoot.z * elbowForward,
+        );
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        this.applyBoneDirectionFromRootWithOffset(
+            arm,
+            foreArm,
+            this._tmpDirection,
+            -active * 1.4 * power,
+            side * (handSide * 2 - pull * 4) * power,
+            side * (pull * 3 - recover * 2) * power,
+        );
+
+        this._tmpDirection.set(
+            side * foreSide + this._tmpMovementForwardRoot.x * foreForward,
+            this._tmpMovementForwardRoot.y * foreForward,
+            foreVertical + this._tmpMovementForwardRoot.z * foreForward,
+        );
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        this.applyBoneDirectionFromRootWithOffset(
+            foreArm,
+            hand,
+            this._tmpDirection,
+            -elbowBend * power,
+            side * (handSide * 8 + pull * 3) * power,
+            side * (pull * 7 - recover * 4) * power,
+        );
+        this.applyBoneOffset(hand, -pull * 7, side * handCup * power, side * (pull * 5 - recover * 4) * power);
+    }
+
     private applyUpperBodyRoll(phase: number, power: number, rightBreath = 0) {
         const reach = Math.max(-1, Math.min(1, phase));
-        const roll = reach * Math.min(1.25, power);
         const leftReach = Math.max(0, reach);
         const rightReach = Math.max(0, -reach);
-        const breathTurn = -MOTION_TUNING.rightBreathTurnDegrees * clamp(rightBreath, 0, 1);
+        const breathRatio = clamp(rightBreath, 0, 1);
+        const breathTurn = -MOTION_TUNING.rightBreathTurnDegrees * breathRatio * 0.18;
+        const headBreathTurn = breathTurn * FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale;
+        const breathLift = smoothRange(breathRatio, 0.08, 0.82);
 
-        this.applyBoneOffset(this._hips, 0, roll * 2.2, 0);
-        this.applyBoneOffset(this._spine, 0, roll * 5.5, roll * 0.5);
-        this.applyBoneOffset(this._spine1, 0, roll * 8.2, roll * 0.8);
         const swimHeadLift = this._swimHeadLiftDegrees;
-        this.applyBoneOffset(this._torso, swimHeadLift * 0.18, roll * 10.5 + breathTurn * 0.1, roll * 1.1);
-        this.applyBoneOffset(this._neck, swimHeadLift * 0.72, roll * 6.2 + breathTurn * 0.3, -roll * 0.6);
-        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15, roll * 7.5 + breathTurn * 0.6, -roll * 0.8);
-        this.applyBoneOffset(this._leftShoulder, leftReach * -2, roll * 5.5, leftReach * -3);
-        this.applyBoneOffset(this._rightShoulder, rightReach * -2, roll * 5.5, rightReach * 3);
+        this.applyBoneOffset(this._torso, swimHeadLift * 0.18 + breathLift * 1.6, breathTurn * 0.1, 0);
+        this.applyBoneOffset(this._neck, swimHeadLift * 0.72 + breathLift * 3.0, headBreathTurn * 0.28, 0);
+        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15 + breathLift * 2.1, headBreathTurn * 0.5, 0);
+        this.applyBoneOffset(this._leftShoulder, leftReach * -2, 0, leftReach * -3);
+        this.applyBoneOffset(this._rightShoulder, rightReach * -2 - breathLift * 3.2, 0, rightReach * 3 - breathLift * 1.8);
+    }
+
+    private applyRootRollAroundMovementAxis(degrees: number) {
+        if (!this.root) {
+            return;
+        }
+        if (this.root.parent) {
+            this.root.parent.getWorldRotation(this._tmpParentWorldRotation);
+        } else {
+            Quat.copy(this._tmpParentWorldRotation, Quat.IDENTITY);
+        }
+        Quat.multiply(this._tmpRootWorldRotation, this._tmpParentWorldRotation, this._tmpResultRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpRootWorldRotation);
+        Vec3.transformQuat(this._tmpDirection, this._movementForwardWorld, this._tmpInverseParentWorldRotation);
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpDirection, degrees * Math.PI / 180);
+        Quat.multiply(this._tmpResultRotation, this._tmpResultRotation, this._tmpAxisRotation);
+    }
+
+    private freestyleAxisCenteringOffset(baseBodyRollDegrees: number, rightBreath: number): number {
+        const rollRatio = clamp(baseBodyRollDegrees / FREESTYLE_POSE_TUNING.freestyleInternalBodyRollDegrees, -1, 1);
+        const rollOffset = -Math.sin(rollRatio * Math.PI * 0.5) * FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset;
+        const breathOffset = clamp(rightBreath, 0, 1) * FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset;
+        return (rollOffset + breathOffset) * this._movementDirectionSign;
+    }
+
+    private laneSideInRootParent(out: Vec3): Vec3 {
+        out.set(0, 0, 1);
+        if (!this.root?.parent) {
+            return out;
+        }
+        this.root.parent.getWorldRotation(this._tmpParentWorldRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpParentWorldRotation);
+        Vec3.transformQuat(out, out, this._tmpInverseParentWorldRotation);
+        Vec3.normalize(out, out);
+        return out;
     }
 
     private applyLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, cycle: number, power: number) {
@@ -452,6 +813,43 @@ export class FreestylePoseController {
         this.applyBoneOffset(toe, toePitch, toeSoleUpTwist, toeOutRoll);
     }
 
+    private applyBreaststrokeLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, side: number, footTarget: readonly [number, number, number], kick: number, power: number) {
+        if (!upLeg || !leg) {
+            return;
+        }
+        const footSide = Math.abs(footTarget[0]) * 2.0;
+        const footBack = clamp(footTarget[1] * 2.0, 0.18, 1.15);
+        const footVertical = footTarget[2] * 1.7;
+        const thighSide = footSide * 0.36;
+        const thighBack = footBack * 0.46;
+        const thighVertical = footVertical * 0.35;
+        const calfSide = footSide - thighSide;
+        const calfBack = footBack - thighBack;
+        const calfVertical = footVertical - thighVertical;
+
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        this._tmpDirection.set(
+            side * thighSide - this._tmpMovementForwardRoot.x * thighBack,
+            -this._tmpMovementForwardRoot.y * thighBack,
+            thighVertical - this._tmpMovementForwardRoot.z * thighBack,
+        );
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        this.applyBoneDirectionFromRootWithOffset(upLeg, leg, this._tmpDirection, kick * -4 * power, side * footSide * 4 * power, side * kick * 4 * power);
+
+        this._tmpDirection.set(
+            side * calfSide - this._tmpMovementForwardRoot.x * calfBack,
+            -this._tmpMovementForwardRoot.y * calfBack,
+            calfVertical - this._tmpMovementForwardRoot.z * calfBack,
+        );
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        this.applyBoneDirectionFromRootWithOffset(leg, foot, this._tmpDirection, kick * -18 * power, side * footSide * 6 * power, side * kick * 5 * power);
+
+        const ankleOut = side * (footSide * 30 + kick * 14);
+        const footPitch = -14 - kick * 22 + footVertical * 16;
+        this.applyBoneOffset(foot, footPitch * power, ankleOut * power, side * (kick * -6 + footSide * 4) * power);
+        this.applyBoneOffset(toe, footPitch * 0.48 * power, ankleOut * 0.48 * power, side * (kick * -3) * power);
+    }
+
     private applyBoneOffset(bone: Node, x: number, y: number, z: number) {
         if (!bone) {
             return;
@@ -464,6 +862,48 @@ export class FreestylePoseController {
         Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
         Quat.multiply(this._tmpResultRotation, base, this._tmpOffsetRotation);
         bone.setRotation(this._tmpResultRotation);
+    }
+
+    private applyCurrentBoneOffset(bone: Node, x: number, y: number, z: number) {
+        if (!bone) {
+            return;
+        }
+        Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
+        Quat.multiply(this._tmpResultRotation, bone.rotation, this._tmpOffsetRotation);
+        bone.setRotation(this._tmpResultRotation);
+    }
+
+    private levelFootToeDirectionToWorldHorizontal(foot: Node, toe: Node, power: number) {
+        if (!foot || !toe || !foot.parent) {
+            return;
+        }
+
+        Vec3.copy(this._tmpBaseDirection, toe.position);
+        if (this._tmpBaseDirection.lengthSqr() <= 0.000001) {
+            return;
+        }
+        Vec3.normalize(this._tmpBaseDirection, this._tmpBaseDirection);
+
+        foot.getWorldRotation(this._tmpRootWorldRotation);
+        Vec3.transformQuat(this._tmpWorldDirection, this._tmpBaseDirection, this._tmpRootWorldRotation);
+        Vec3.normalize(this._tmpWorldDirection, this._tmpWorldDirection);
+
+        this._tmpDirection.set(this._tmpWorldDirection.x, 0, this._tmpWorldDirection.z);
+        if (this._tmpDirection.lengthSqr() <= 0.000001) {
+            return;
+        }
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+
+        Quat.rotationTo(this._tmpDeltaRotation, this._tmpWorldDirection, this._tmpDirection);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpRootWorldRotation);
+
+        foot.parent.getWorldRotation(this._tmpParentWorldRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpParentWorldRotation);
+        Quat.multiply(this._tmpResultRotation, this._tmpInverseParentWorldRotation, this._tmpResultRotation);
+        if (power < 0.999) {
+            Quat.slerp(this._tmpResultRotation, foot.rotation, this._tmpResultRotation, power);
+        }
+        foot.setRotation(this._tmpResultRotation);
     }
 
     private applyBoneDirection(bone: Node, child: Node, directionInParent: Vec3) {
@@ -572,6 +1012,101 @@ function clamp(value: number, min: number, max: number): number {
 
 function lerp(from: number, to: number, t: number): number {
     return from + (to - from) * clamp(t, 0, 1);
+}
+
+function sampleBreaststrokeMotion(phase: number): BreaststrokeMotionSample {
+    const samples = BREASTSTROKE_MOTION_SAMPLES;
+    if (samples.length <= 1) {
+        return samples[0];
+    }
+    const p = positiveMod(phase, 1);
+    for (let i = 0; i < samples.length - 1; i++) {
+        const current = samples[i];
+        const next = samples[i + 1];
+        if (p >= current.phase && p <= next.phase) {
+            const t = smoothRange(p, current.phase, next.phase);
+            return {
+                phase: p,
+                root: lerpVectorTuple(current.root, next.root, t),
+                head: lerpVectorTuple(current.head, next.head, t),
+                hand: lerpVectorTuple(current.hand, next.hand, t),
+                foot: lerpVectorTuple(current.foot, next.foot, t),
+                rotations: slerpBreaststrokeRotations(current.rotations, next.rotations, t),
+            };
+        }
+    }
+    return samples[samples.length - 1];
+}
+
+function lerpVectorTuple(from: readonly [number, number, number], to: readonly [number, number, number], t: number): readonly [number, number, number] {
+    return [
+        lerp(from[0], to[0], t),
+        lerp(from[1], to[1], t),
+        lerp(from[2], to[2], t),
+    ];
+}
+
+function slerpBreaststrokeRotations(
+    from: BreaststrokeMotionSample['rotations'],
+    to: BreaststrokeMotionSample['rotations'],
+    t: number,
+): BreaststrokeMotionSample['rotations'] {
+    const rotations: Partial<Record<BreaststrokeBoneName, readonly [number, number, number, number]>> = {};
+    for (const name of Object.keys(from) as BreaststrokeBoneName[]) {
+        const fromRotation = from[name];
+        const toRotation = to[name];
+        if (!fromRotation || !toRotation) {
+            continue;
+        }
+        const ax = fromRotation[0];
+        const ay = fromRotation[1];
+        const az = fromRotation[2];
+        const aw = fromRotation[3];
+        let bx = toRotation[0];
+        let by = toRotation[1];
+        let bz = toRotation[2];
+        let bw = toRotation[3];
+        let dot = ax * bx + ay * by + az * bz + aw * bw;
+        if (dot < 0) {
+            dot = -dot;
+            bx = -bx;
+            by = -by;
+            bz = -bz;
+            bw = -bw;
+        }
+        if (dot > 0.9995) {
+            rotations[name] = normalizeQuatTuple([
+                lerp(ax, bx, t),
+                lerp(ay, by, t),
+                lerp(az, bz, t),
+                lerp(aw, bw, t),
+            ]);
+            continue;
+        }
+        const theta0 = Math.acos(clamp(dot, -1, 1));
+        const theta = theta0 * t;
+        const sinTheta = Math.sin(theta);
+        const sinTheta0 = Math.sin(theta0);
+        const s0 = Math.cos(theta) - dot * sinTheta / sinTheta0;
+        const s1 = sinTheta / sinTheta0;
+        rotations[name] = [
+            ax * s0 + bx * s1,
+            ay * s0 + by * s1,
+            az * s0 + bz * s1,
+            aw * s0 + bw * s1,
+        ];
+    }
+    return rotations;
+}
+
+function normalizeQuatTuple(value: readonly [number, number, number, number]): readonly [number, number, number, number] {
+    const length = Math.sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2] + value[3] * value[3]) || 1;
+    return [
+        value[0] / length,
+        value[1] / length,
+        value[2] / length,
+        value[3] / length,
+    ];
 }
 
 function smoothRange(value: number, start: number, end: number): number {

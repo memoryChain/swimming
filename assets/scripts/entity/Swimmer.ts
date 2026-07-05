@@ -1,9 +1,10 @@
 import { _decorator, Component, Node, Tween, Vec3, tween } from 'cc';
+import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
-import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
+import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
@@ -14,8 +15,6 @@ import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCours
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
-
-const FINISH_FLOAT_INWARD_OFFSET = 0.18;
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -59,6 +58,12 @@ export class Swimmer extends Component {
     private _modelBaseRootPos = new Vec3(0, 0.1, 0);
     private _boneBaseEuler = new Map<Node, Vec3>();
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
+    private _diveUnderwaterActive = false;
+    private _diveGlidePoseActive = false;
+    private _diveUnderwaterElapsed = 0;
+    private _diveEntryLeanDegrees = 0;
+    private readonly _cameraUpperBodyA = new Vec3();
+    private readonly _cameraUpperBodyB = new Vec3();
 
     start() {
         this.captureStartPosition();
@@ -72,19 +77,35 @@ export class Swimmer extends Component {
         this.cartoonRig?.setWaterY(this._courseLayout.waterY);
     }
 
-    startRace(initialDistance = 0, initialSpeed = DIVE_BALANCE.minSpeed) {
+    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.captureStartPosition();
-        this._motor.startRace(initialDistance, initialSpeed);
+        if (fromDiveEntry) {
+            this.startDiveUnderwaterPhase(initialDistance);
+        } else {
+            this.clearDiveUnderwaterPhase();
+        }
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (this.isAI ? this.aiMaxSpeedScale : 1);
+        const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
+        this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setPreRaceStanding(false);
-        this.resetPose();
-        this.cartoonRig?.setActiveSwimming(true);
+        if (fromDiveEntry) {
+            if (this.cartoonRig) {
+                this.cartoonRig.setDiveStreamlinePose();
+            } else {
+                this.resetPose();
+            }
+        } else {
+            this.resetPose();
+            this.cartoonRig?.setActiveSwimming(true);
+        }
     }
 
     prepareDive() {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
+        this.clearDiveUnderwaterPhase();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
@@ -95,38 +116,50 @@ export class Swimmer extends Component {
     performDive(result: DiveResult): number {
         this.captureStartPosition();
         const divePower = result.power;
-        const distance = result.entryDistance;
-        const entrySpeed = result.entrySpeed;
-        const crouchDuration = lerp(0.16, 0.1, divePower);
-        const flightDuration = lerp(0.5, 0.38, divePower);
-        const arcHeight = lerp(0.1, 0.22, divePower);
-        const totalDuration = crouchDuration + flightDuration;
+        const launchSpeed = result.launchSpeed;
+        const crouchDuration = lerp(SWIMMER_ACTION_TUNING.diveCrouchSecondsMax, SWIMMER_ACTION_TUNING.diveCrouchSecondsMin, divePower);
         const direction = this._courseLayout.direction;
         const start = this.divePlatformPosition();
+        const launchStart = new Vec3(
+            start.x - SWIMMER_ACTION_TUNING.diveCrouchBackOffset * direction,
+            start.y - SWIMMER_ACTION_TUNING.diveCrouchDrop,
+            start.z,
+        );
+        const entryY = this._courseLayout.swimY - SWIMMER_ACTION_TUNING.diveEntryDepth;
+        const launchAngle = degreesToRadians(DIVE_BALANCE.launchAngleDegrees);
+        const horizontalSpeed = launchSpeed * Math.cos(launchAngle);
+        const verticalSpeed = launchSpeed * Math.sin(launchAngle);
+        const projectileFlightDuration = projectileTimeToY(launchStart.y, entryY, verticalSpeed, DIVE_BALANCE.launchGravity);
+        const distance = horizontalSpeed * projectileFlightDuration;
         const entry = this._courseLayout.entryPosition(distance, this._startPosition.z);
+        entry.y = entryY;
+        const poseTransitionDuration = projectileFlightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio;
+        const launchDelayDuration = poseTransitionDuration * SWIMMER_ACTION_TUNING.diveLaunchDelayRatio;
+        const totalDuration = crouchDuration + launchDelayDuration + projectileFlightDuration;
 
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
-        this.cartoonRig?.setDiveStreamlinePose();
+        this.cartoonRig?.setPreRaceStanding(true);
         tween(this.node)
             .to(crouchDuration, {
-                position: new Vec3(start.x - 0.06 * direction, start.y - 0.04, start.z),
+                position: launchStart,
                 eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5),
+            }, { easing: 'quadIn' })
+            .call(() => {
+                this.cartoonRig?.startDiveStreamlineTransition(poseTransitionDuration);
             })
-            .to(flightDuration * 0.42, {
-                position: new Vec3(start.x + distance * 0.42 * direction, start.y + arcHeight, start.z),
-                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -12),
+            .delay(launchDelayDuration)
+            .to(projectileFlightDuration, {}, {
+                onUpdate: (_target?: Node, ratio = 0) => {
+                    this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, ratio, projectileFlightDuration);
+                },
             })
             .call(() => {
+                this._diveEntryLeanDegrees = this.diveProjectileLean(horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, projectileFlightDuration);
+                this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, 1, projectileFlightDuration);
                 this.cartoonRig?.setDiveStreamlinePose();
-            })
-            .to(flightDuration * 0.58, {
-                position: entry,
-                eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 0),
-            })
-            .call(() => {
-                this.startRace(distance, entrySpeed);
+                this.startRace(distance, horizontalSpeed, true);
                 this.flashSplash(splashRatingForEntryStyle(result.entryStyle));
             })
             .start();
@@ -134,9 +167,24 @@ export class Swimmer extends Component {
         return totalDuration;
     }
 
+    private applyDiveProjectile(start: Vec3, horizontalSpeed: number, verticalSpeed: number, gravity: number, direction: number, ratio: number, duration: number) {
+        const t = Math.max(0, Math.min(1, ratio));
+        const seconds = duration * t;
+        const x = start.x + horizontalSpeed * seconds * direction;
+        const y = start.y + verticalSpeed * seconds - gravity * seconds * seconds * 0.5;
+        const lean = this.diveProjectileLean(horizontalSpeed, verticalSpeed, gravity, seconds);
+        this.node.setPosition(x, y, start.z);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, lean);
+    }
+
+    private diveProjectileLean(horizontalSpeed: number, verticalSpeed: number, gravity: number, seconds: number): number {
+        return radiansToDegrees(Math.atan2(verticalSpeed - gravity * seconds, horizontalSpeed));
+    }
+
     stopRace() {
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
+        this.clearDiveUnderwaterPhase();
         this.cartoonRig?.setActiveSwimming(false);
     }
 
@@ -153,6 +201,7 @@ export class Swimmer extends Component {
         if (!this.isAI) {
             this._strokeMetrics.update(dt);
         }
+        this.updateDiveUnderwaterTimer(dt);
         this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
         for (const stability of this._motor.consumeStabilityResults()) {
@@ -172,6 +221,12 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return null;
         }
+        if (this._diveGlidePoseActive) {
+            if (this._motor.recordKickOnly(type)) {
+                this.cartoonRig?.triggerKick();
+            }
+            return null;
+        }
 
         const queued = this._motor.recordStroke(type);
         if (!queued) {
@@ -183,10 +238,13 @@ export class Swimmer extends Component {
     }
 
     canAcceptStroke(type: StrokeType): boolean {
-        return this._motor.isRacing && this._motor.canRecordStroke(type);
+        return this._motor.isRacing && (this._diveGlidePoseActive || this._motor.canRecordStroke(type));
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
+        if (this._diveGlidePoseActive) {
+            return null;
+        }
         const stability = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
         if (held) {
@@ -195,8 +253,26 @@ export class Swimmer extends Component {
         return held ? null : this.makeStabilityResult(type, stability);
     }
 
+    setSplashCulled(culled: boolean) {
+        this.cartoonRig?.setSplashCulled(culled);
+    }
+
+    setMotionThrottleStride(stride: number) {
+        this.cartoonRig?.setMotionThrottleStride(stride);
+    }
+
+    setSplashParticlesEnabled(enabled: boolean) {
+        this.cartoonRig?.setSplashParticlesEnabled(enabled);
+    }
+
     playAiStrokeVisual(type: StrokeType) {
         if (!this.isAI) {
+            return;
+        }
+        if (this._diveGlidePoseActive) {
+            if (this._motor.recordKickOnly(type)) {
+                this.cartoonRig?.triggerKick();
+            }
             return;
         }
         if (this._motor.recordAiVisualStroke(type)) {
@@ -217,19 +293,21 @@ export class Swimmer extends Component {
     playFinishTouch() {
         const finishPosition = this.node.position.clone();
         const direction = this._courseLayout.finishDirectionAtDistance(getRaceDistance());
+        const inwardDirection = -direction;
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
-        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
         if (this.cartoonRig) {
+            this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
             this.cartoonRig.setFinishFloating();
-            const x = this._courseLayout.clampSwimWorldX(finishPosition.x - FINISH_FLOAT_INWARD_OFFSET * direction);
+            const x = this.finishFloatX(direction);
             this.node.setPosition(x, finishPosition.y + 0.01, finishPosition.z);
             return;
         }
+        this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
         tween(this.node)
-            .to(0.12, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, -5), position: new Vec3(this._courseLayout.clampSwimWorldX(finishPosition.x - 0.08 * direction), finishPosition.y, finishPosition.z) })
-            .to(0.16, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 6), position: new Vec3(this._courseLayout.clampSwimWorldX(finishPosition.x - FINISH_FLOAT_INWARD_OFFSET * direction), finishPosition.y - 0.05, finishPosition.z) })
-            .to(0.18, { eulerAngles: new Vec3(0, direction > 0 ? 0 : 180, 0) })
+            .to(0.12, { eulerAngles: new Vec3(0, inwardDirection > 0 ? 0 : 180, -5), position: new Vec3(this._courseLayout.clampSwimWorldX(finishPosition.x - 0.08 * direction), finishPosition.y, finishPosition.z) })
+            .to(0.16, { eulerAngles: new Vec3(0, inwardDirection > 0 ? 0 : 180, 6), position: new Vec3(this.finishFloatX(direction), finishPosition.y - 0.05, finishPosition.z) })
+            .to(0.18, { eulerAngles: new Vec3(0, inwardDirection > 0 ? 0 : 180, 0) })
             .start();
     }
 
@@ -237,6 +315,7 @@ export class Swimmer extends Component {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
+        this.clearDiveUnderwaterPhase();
         this._stabilityCombo = 0;
         this._maxStabilityCombo = 0;
         this._perfectStabilityCount = 0;
@@ -333,7 +412,13 @@ export class Swimmer extends Component {
         const bob = Math.sin(this._motor.bodyPhase) * 0.045;
         const sideRoll = sideBodyRollSignal(this._motor.leftArmCycle, this._motor.rightArmCycle);
         if (this.cartoonRig) {
-            this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection);
+            if (this._diveGlidePoseActive) {
+                this.cartoonRig.setLegSplashSuppressed(true);
+                this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection);
+            } else {
+                this.cartoonRig.setLegSplashSuppressed(false);
+                this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection);
+            }
             return;
         }
         this.bodyNode?.setPosition(0, 0.18 + bob, 0);
@@ -594,18 +679,105 @@ export class Swimmer extends Component {
     }
 
     private divePlatformPosition(): Vec3 {
-        return this._courseLayout.platformPosition(this._startPosition.z);
+        return this._courseLayout.platformStandingPosition(this._startPosition.z);
     }
 
     private applyCoursePosition(distance: number) {
-        const direction = this._courseLayout.directionAtDistance(distance);
-        const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(distance));
-        this.node.setPosition(x, this._startPosition.y, this._startPosition.z);
-        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
+        const visualDistance = Math.min(distance, getRaceDistance());
+        const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
+        const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
+        this.node.setPosition(x, this.visualSwimY(visualDistance), this._startPosition.z);
+        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, this.diveRecoveryLean(visualDistance));
+    }
+
+    private finishFloatX(direction: number): number {
+        const edgeX = direction > 0 ? this._courseLayout.poolFinishX : this._courseLayout.poolStartX;
+        const poolMinX = Math.min(this._courseLayout.poolStartX, this._courseLayout.poolFinishX);
+        const poolMaxX = Math.max(this._courseLayout.poolStartX, this._courseLayout.poolFinishX);
+        const nearEdgeX = edgeX - direction * SWIMMER_ACTION_TUNING.finishFloatPoolEdgeClearance;
+        const swimEdgeX = direction > 0
+            ? Math.max(this._courseLayout.startX, this._courseLayout.finishX)
+            : Math.min(this._courseLayout.startX, this._courseLayout.finishX);
+        const closerThanSwimEdgeX = direction > 0
+            ? Math.max(swimEdgeX, nearEdgeX)
+            : Math.min(swimEdgeX, nearEdgeX);
+        return Math.max(poolMinX, Math.min(poolMaxX, closerThanSwimEdgeX));
+    }
+
+    private startDiveUnderwaterPhase(_initialDistance: number) {
+        this._diveUnderwaterActive = true;
+        this._diveGlidePoseActive = true;
+        this._diveUnderwaterElapsed = 0;
+        this.cartoonRig?.setLegSplashSuppressed(true);
+    }
+
+    private clearDiveUnderwaterPhase() {
+        this._diveUnderwaterActive = false;
+        this._diveGlidePoseActive = false;
+        this._diveUnderwaterElapsed = 0;
+        this._diveEntryLeanDegrees = 0;
+        this.cartoonRig?.setLegSplashSuppressed(false);
+    }
+
+    private beginSurfaceSwimming() {
+        this._diveGlidePoseActive = false;
+        this.cartoonRig?.setLegSplashSuppressed(false);
+        if (this._motor.isRacing) {
+            this.cartoonRig?.setActiveSwimming(true);
+        }
+    }
+
+    private updateDiveUnderwaterTimer(dt: number) {
+        if (!this._diveUnderwaterActive) {
+            return;
+        }
+        this._diveUnderwaterElapsed += Math.max(0, dt);
+    }
+
+    private visualSwimY(_distance: number): number {
+        if (!this._diveUnderwaterActive) {
+            return this._startPosition.y;
+        }
+        const underwaterY = this._courseLayout.swimY - SWIMMER_ACTION_TUNING.diveEntryDepth;
+        const holdSeconds = Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
+        if (this._diveUnderwaterElapsed <= holdSeconds) {
+            return underwaterY;
+        }
+        const riseSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+        const ratio = (this._diveUnderwaterElapsed - holdSeconds) / riseSeconds;
+        if (ratio >= 1) {
+            this.clearDiveUnderwaterPhase();
+            this.beginSurfaceSwimming();
+            return this._startPosition.y;
+        }
+        return lerp(underwaterY, this._startPosition.y, smoothStep(ratio));
+    }
+
+    private diveRecoveryLean(distance: number): number {
+        if (!this._diveUnderwaterActive) {
+            return 0;
+        }
+        const holdSeconds = Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
+        const riseSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+        const elapsed = this._diveUnderwaterElapsed;
+        if (elapsed <= holdSeconds) {
+            // Straighten from the head-down entry lean to horizontal early in the hold,
+            // so the body does not linger in the diagonal-down pose.
+            const straightenSeconds = Math.max(0.01, holdSeconds * SWIMMER_ACTION_TUNING.diveStraightenRatio);
+            const ratio = Math.max(0, Math.min(1, elapsed / straightenSeconds));
+            return lerp(this._diveEntryLeanDegrees, 0, smoothStep(ratio));
+        }
+        // Ascent: tilt head-up toward the surface, then level out as it breaks the surface.
+        const riseRatio = Math.max(0, Math.min(1, (elapsed - holdSeconds) / riseSeconds));
+        return SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees * Math.sin(Math.PI * riseRatio);
     }
 
     get currentSpeed(): number {
         return this._motor.currentSpeed;
+    }
+
+    get isUnderwater(): boolean {
+        return this._diveUnderwaterActive;
     }
 
     get currentAcceleration(): number {
@@ -619,6 +791,14 @@ export class Swimmer extends Component {
     // Sustained limb effort (0..1), used by the flow layer to read sprint intent.
     get effortScore(): number {
         return this._strokeMetrics.effortScore;
+    }
+
+    get swimWorldY(): number {
+        return this._courseLayout.swimY;
+    }
+
+    get waterWorldY(): number {
+        return this._courseLayout.waterY;
     }
 
     get actionCycleSeconds(): number {
@@ -635,6 +815,31 @@ export class Swimmer extends Component {
 
     get raceDirection(): number {
         return this._courseLayout.directionAtDistance(this._motor.distance);
+    }
+
+    getCameraUpperBodyWorldPosition(out: Vec3): Vec3 {
+        if (this.cartoonRig?.getUpperBodyWorldPosition(out)) {
+            return out;
+        }
+        if (this.modelSpine?.isValid && this.modelHead?.isValid) {
+            this.modelSpine.getWorldPosition(this._cameraUpperBodyA);
+            this.modelHead.getWorldPosition(this._cameraUpperBodyB);
+            Vec3.lerp(out, this._cameraUpperBodyA, this._cameraUpperBodyB, 0.42);
+            return out;
+        }
+        if (this.modelSpine?.isValid) {
+            this.modelSpine.getWorldPosition(out);
+            return out;
+        }
+        if (this.bodyNode?.isValid && this.headNode?.isValid) {
+            this.bodyNode.getWorldPosition(this._cameraUpperBodyA);
+            this.headNode.getWorldPosition(this._cameraUpperBodyB);
+            Vec3.lerp(out, this._cameraUpperBodyA, this._cameraUpperBodyB, 0.55);
+            return out;
+        }
+        out.set(this.node.worldPosition);
+        out.y += 0.54;
+        return out;
     }
 
     get isRacing(): boolean {
@@ -677,6 +882,20 @@ function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
 }
 
+function degreesToRadians(degrees: number): number {
+    return degrees * Math.PI / 180;
+}
+
+function radiansToDegrees(radians: number): number {
+    return radians * 180 / Math.PI;
+}
+
+function projectileTimeToY(startY: number, targetY: number, initialVerticalSpeed: number, gravity: number): number {
+    const drop = startY - targetY;
+    const safeGravity = Math.max(0.01, gravity);
+    return Math.max(0.01, (initialVerticalSpeed + Math.sqrt(initialVerticalSpeed * initialVerticalSpeed + 2 * safeGravity * drop)) / safeGravity);
+}
+
 function splashRatingForEntryStyle(style: DiveEntryStyle): Rating {
     if (style === DiveEntryStyle.CLEAN) {
         return Rating.PERFECT;
@@ -695,4 +914,9 @@ function sideBodyRollSignal(leftCycle: number, rightCycle: number): number {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function smoothStep(value: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    return t * t * (3 - 2 * t);
 }

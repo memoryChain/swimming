@@ -41,6 +41,7 @@ export const SWIMMER_BALANCE = {
     strokeBaseAccel: 0.05,
     strokeStabilityAccel: 1.6,
     strokeAccelDurationRatio: 0.4,
+    diveUnderwaterKickAccel: 0.18,
     alternationWindowSize: 6,
     alternationBaseMinScale: 0.25,
     alternationStabilityMinScale: 0.1,
@@ -63,10 +64,10 @@ export const SWIMMER_BALANCE = {
 
 export const DIVE_BALANCE = {
     platformNodeOffset: new Vec3(-1.37, 0.53, 0),
-    minDistance: 0.55,
-    maxDistance: 1.85,
-    minSpeed: 0.85,
-    maxSpeed: 2.35,
+    minLaunchSpeed: 4.2,
+    maxLaunchSpeed: 8.2,
+    launchAngleDegrees: 16,
+    launchGravity: 6.2,
     minHoldSeconds: 0.08,
     maxHoldSeconds: 1.1,
     minPower: 0.18,

@@ -32,6 +32,7 @@ export class SwimmerFactory {
             color(255, 220, 72),
             options.isAI,
             !options.isAI,
+            options.isAI,
         );
         rig.setSkinOutfit('trunksA');
         const swimmer = node.addComponent(Swimmer);

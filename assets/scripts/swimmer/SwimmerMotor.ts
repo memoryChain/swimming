@@ -98,10 +98,11 @@ export class SwimmerMotor {
     private _lastInputFreshness = 1;
     private _currentAcceleration = 0;
 
-    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed) {
+    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, initialSpeedCapBonus = 0) {
         this._isRacing = true;
         this._currentSpeed = initialSpeed;
         this.resetRaceState(initialDistance);
+        this._speedCapBonus = Math.max(0, initialSpeedCapBonus);
     }
 
     stopRace() {
@@ -162,6 +163,16 @@ export class SwimmerMotor {
         return queued;
     }
 
+    recordKickOnly(type: StrokeType): boolean {
+        const queued = this.queueKickOnly(type);
+        if (!queued) {
+            return false;
+        }
+        this._kickAction = 1;
+        this.startStrokeAcceleration(SWIMMER_BALANCE.diveUnderwaterKickAccel, false);
+        return true;
+    }
+
     setStrokeHeld(type: StrokeType, held: boolean): StrokeStabilityResult | null {
         let result: StrokeStabilityResult | null = null;
         if (type === StrokeType.LEFT) {
@@ -201,7 +212,7 @@ export class SwimmerMotor {
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
-        this.decaySpeedCapBonus(dt);
+        this.decaySpeedCapBonus(dt, options);
         const raceDistance = getRaceDistance();
         this._distance = Math.min(raceDistance, this._distance + this._currentSpeed * dt);
         this.updateMotionCycles(dt, options);
@@ -277,14 +288,16 @@ export class SwimmerMotor {
         return awarded;
     }
 
-    private decaySpeedCapBonus(dt: number) {
+    private decaySpeedCapBonus(dt: number, options: SwimmerMotorOptions) {
         if (this._speedCapBonus <= 0) {
             return;
         }
         const decay = Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay) * Math.max(0, dt);
-        const neededForCurrentSpeed = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
-        this._speedCapBonus = Math.max(neededForCurrentSpeed, this._speedCapBonus - decay);
-        this._speedCapBonus = clamp(this._speedCapBonus, 0, Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap));
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (options.isAI ? options.aiMaxSpeedScale : 1);
+        const neededForCurrentSpeed = Math.max(0, this._currentSpeed - maxSpeed);
+        const comboMax = Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap);
+        const decayedBonus = Math.max(0, this._speedCapBonus - decay);
+        this._speedCapBonus = Math.max(neededForCurrentSpeed, Math.min(decayedBonus, comboMax));
     }
 
     private updateMotionCycles(dt: number, options: SwimmerMotorOptions) {
@@ -299,11 +312,12 @@ export class SwimmerMotor {
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
         if (options.isAI) {
-            const visualSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
-            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', visualSpeedScale);
-            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', visualSpeedScale);
-            this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', visualSpeedScale);
-            this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', visualSpeedScale);
+            const visualSpeedScale = MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
+            const releasedSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * visualSpeedScale;
+            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', releasedSpeedScale);
+            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', releasedSpeedScale);
+            this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', releasedSpeedScale);
+            this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', releasedSpeedScale);
             return;
         }
         this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
@@ -528,6 +542,18 @@ export class SwimmerMotor {
         const armQueued = this.queueMotionCycle(armKey);
         const kickQueued = this.queueMotionCycle(kickKey);
         return armQueued || kickQueued;
+    }
+
+    private queueKickOnly(type: StrokeType): boolean {
+        if (type === StrokeType.LEFT) {
+            return this.queueMotionCycle('_rightKickMotionRemaining');
+        }
+        if (type === StrokeType.RIGHT) {
+            return this.queueMotionCycle('_leftKickMotionRemaining');
+        }
+        const leftQueued = this.queueMotionCycle('_leftKickMotionRemaining');
+        const rightQueued = this.queueMotionCycle('_rightKickMotionRemaining');
+        return leftQueued || rightQueued;
     }
 
     private canQueueMotionCycle(

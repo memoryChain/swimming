@@ -51,10 +51,6 @@ export class AISwimmerController extends Component {
     }
 
     private chooseStrokeType(): StrokeType {
-        const mistakeChance = lerp(0.08, 0.005, this.difficulty);
-        if (Math.random() < mistakeChance) {
-            return this._nextStroke === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
-        }
         return this._nextStroke;
     }
 

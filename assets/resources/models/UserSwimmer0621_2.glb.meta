@@ -5,12 +5,12 @@
   "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb",
   "files": [],
   "subMetas": {
-    "659ef": {
+    "9f25a": {
       "importer": "gltf-mesh",
-      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@659ef",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@9f25a",
       "displayName": "",
-      "id": "659ef",
-      "name": "UserSwimmer0621_2ImportedMesh.mesh",
+      "id": "9f25a",
+      "name": "UserSwimmer0621_2Mesh.mesh",
       "userData": {
         "gltfIndex": 0,
         "triangleCount": 3020
@@ -83,12 +83,12 @@
       ],
       "subMetas": {}
     },
-    "d56de": {
+    "f68a7": {
       "importer": "gltf-material",
-      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@d56de",
+      "uuid": "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@f68a7",
       "displayName": "",
-      "id": "d56de",
-      "name": "UserSwimmer0621_2ImportedMaterial.material",
+      "id": "f68a7",
+      "name": "UserSwimmer0621_2Material.material",
       "userData": {
         "gltfIndex": 0
       },
@@ -143,7 +143,7 @@
     },
     "assetFinder": {
       "meshes": [
-        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@659ef"
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@9f25a"
       ],
       "skeletons": [
         "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@f9d1d"
@@ -152,7 +152,7 @@
         "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@e39f7"
       ],
       "materials": [
-        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@d56de"
+        "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@f68a7"
       ],
       "scenes": [
         "e3b1da5b-2e05-49a8-b7a8-005d3c9458cb@da1b6"

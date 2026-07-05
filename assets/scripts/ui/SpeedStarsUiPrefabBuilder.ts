@@ -87,6 +87,7 @@ export class SpeedStarsUiPrefabBuilder {
         this.layoutRaceProgress(raceHud);
 
         const refs = this.bindRaceHud(raceHud);
+        this.hideRaceOverlayReadouts(raceHud);
 
         const uiNode = new Node('UIController');
         uiNode.setParent(raceHud);
@@ -111,7 +112,7 @@ export class SpeedStarsUiPrefabBuilder {
         progressDot.getComponent(UITransform)?.setContentSize(60, 18);
         ui.progressDot = progressDot;
         ui.progressTrackWidth = Math.max(0, progressTrack.getComponent(UITransform).contentSize.width - 60);
-        ui.speedBarRoot = refs.speedBarRoot;
+        ui.speedBarRoot = null;
         ui.speedLabel = requireLabel(raceHud, 'SpeedValue');
         ui.telemetryLabel = requireLabel(raceHud, 'SwimTelemetry');
         ui.countdownOverlay = requireNode(raceHud, 'CountdownOverlay');
@@ -204,6 +205,12 @@ export class SpeedStarsUiPrefabBuilder {
         reparentAt(requireNode(raceHud, 'TimingMarker'), speedBarRoot, 0, -108);
         reparentAt(requireNode(raceHud, 'SpeedText'), speedBarRoot, -56, 118);
         return { speedBarRoot };
+    }
+
+    private hideRaceOverlayReadouts(raceHud: Node) {
+        for (const name of ['TopLeftPlate', 'Placement', 'TimerPlate', 'Timer', 'SpeedValue', 'SpeedBarRoot']) {
+            requireNode(raceHud, name).active = false;
+        }
     }
 
     private buildHeartRateBar(raceHud: Node, ui: UIController) {

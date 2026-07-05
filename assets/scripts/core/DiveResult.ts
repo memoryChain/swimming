@@ -18,9 +18,8 @@ export interface DiveResult {
     // Raw normalized charge power in 0..1 that produced this dive.
     power: number;
 
-    // Physical launch fields (same lerp sources Swimmer.performDive already uses).
-    entryDistance: number;
-    entrySpeed: number;
+    // Initial velocity used by the visual projectile dive.
+    launchSpeed: number;
 
     // Quality classification (reuses the existing power thresholds).
     qualityTier: DiveQualityTier;

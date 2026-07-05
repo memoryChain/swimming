@@ -1,5 +1,6 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
+import { FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import { DIVE_BALANCE, SWIMMER_BALANCE } from './GameBalance';
 import { INPUT_TUNING, MOTION_TUNING, STABILITY_TUNING } from './InputTuning';
 
@@ -62,6 +63,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('dive.minPower', '最低跳水', '没有蓄力或蓄力条很低时保留的最低跳水力度。数值越高，失误跳水也会更快。', () => DIVE_BALANCE.minPower, (v) => DIVE_BALANCE.minPower = v, 0.02, 0, 0.8, 2),
             control('dive.chargeCycleSeconds', '蓄力周期', '蓄力条从 0 到 1 再回到 0 的完整周期。值越小，顶点更难抓；值越大，蓄力节奏更宽松。', () => DIVE_BALANCE.chargeCycleSeconds, (v) => DIVE_BALANCE.chargeCycleSeconds = v, 0.05, 0.4, 4, 2, 's'),
+            control('dive.underwaterHoldSeconds', '水下保持时间', '跳水入水后保持水下深度、只允许踢腿推进的时间。', () => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
+            control('dive.underwaterRiseSeconds', '水下上浮时间', '水下阶段从深度回升到水面的时间。上浮结束后才恢复手臂划水。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
+            control('dive.straightenRatio', '斜下拉平占比', '水下保持阶段里，把入水斜下姿态拉回水平所用时间占比。越小越早变水平。', () => SWIMMER_ACTION_TUNING.diveStraightenRatio, (v) => SWIMMER_ACTION_TUNING.diveStraightenRatio = v, 0.05, 0.05, 1, 2),
+            control('dive.underwaterRiseTilt', '上浮抬头角度', '上浮阶段身体斜上抬头的最大角度，到达水面时回到水平。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
         ],
     },
     {
@@ -72,6 +77,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.strokeBaseAccel', '基础动作加速', '每轮动作真正开始播放时给的基础加速度。缓存输入要等开始播放时才给。', () => SWIMMER_BALANCE.strokeBaseAccel, (v) => SWIMMER_BALANCE.strokeBaseAccel = v, 0.05, 0, 5, 2),
             control('speed.strokeStabilityAccel', '稳定加速', '稳定性为 1 时额外附加的加速度，稳定性较低时按比例减少。', () => SWIMMER_BALANCE.strokeStabilityAccel, (v) => SWIMMER_BALANCE.strokeStabilityAccel = v, 0.05, 0, 8, 2),
             control('speed.strokeAccelDurationRatio', '加速持续', '一次动作加速度持续时间，占当前动作一轮时间的比例。', () => SWIMMER_BALANCE.strokeAccelDurationRatio, (v) => SWIMMER_BALANCE.strokeAccelDurationRatio = v, 0.02, 0.05, 1.5, 2),
+            control('speed.diveUnderwaterKickAccel', '水下踢腿加速', '跳水入水后的潜水阶段，每次输入只触发腿部踢水时给的推进加速度。', () => SWIMMER_BALANCE.diveUnderwaterKickAccel, (v) => SWIMMER_BALANCE.diveUnderwaterKickAccel = v, 0.02, 0, 3, 2),
             control('speed.alternationWindowSize', '交替样本轮数', '用于计算左右交替质量的最近动作轮数。窗口越大，越看长期左右均衡。', () => SWIMMER_BALANCE.alternationWindowSize, (v) => SWIMMER_BALANCE.alternationWindowSize = v, 1, 2, 12, 0),
             control('speed.alternationBaseMinScale', '单侧基础保底', '只按单侧时基础动作加速保留的比例。值越低，单侧输入越难提速。', () => SWIMMER_BALANCE.alternationBaseMinScale, (v) => SWIMMER_BALANCE.alternationBaseMinScale = v, 0.05, 0, 1, 2),
             control('speed.alternationStabilityMinScale', '单侧稳定保底', '只按单侧时稳定加速保留的比例。值越低，单侧稳定短按越难获得高收益。', () => SWIMMER_BALANCE.alternationStabilityMinScale, (v) => SWIMMER_BALANCE.alternationStabilityMinScale = v, 0.05, 0, 1, 2),
@@ -109,10 +115,15 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('motion.kickMinCyclesPerSecond', '腿部最低轮速', '低速时腿部动作每秒循环数。当前速度越高，会越接近动作轮速上限。', () => MOTION_TUNING.kickMinCyclesPerSecond, (v) => MOTION_TUNING.kickMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
             control('motion.maxCyclesPerSecond', '动作轮速上限', '达到高速度时手脚动作每秒循环数的上限。数值越低，高速时一轮动作越长。', () => MOTION_TUNING.maxCyclesPerSecond, (v) => MOTION_TUNING.maxCyclesPerSecond = v, 0.1, 1, 5, 1),
             control('motion.animationSpeedScale', '动画倍率', '比赛和 debug model 共用的整体动作倍率，用来统一放慢或加快动作表现。', () => MOTION_TUNING.animationSpeedScale, (v) => MOTION_TUNING.animationSpeedScale = v, 0.05, 0.1, 1.5, 2),
+            control('motion.swimBodyPitchDegrees', '游泳俯仰', '自由泳静止和游动时整个人的基础俯仰角，用来微调头肩与腿在水里的整体角度。', () => MOTION_TUNING.swimBodyPitchDegrees, (v) => MOTION_TUNING.swimBodyPitchDegrees = v, 0.5, -12, 12, 1, '°'),
+            control('motion.swimBodyYOffset', '身体入水高度', '自由泳模型相对水面的整体高度补偿；负数会让身体更沉入水中，配合游泳俯仰一起调。', () => MOTION_TUNING.swimBodyYOffset, (v) => MOTION_TUNING.swimBodyYOffset = v, 0.02, -0.65, 0.16, 2),
             control('motion.handPalmTurnDegrees', '手臂旋前', '前伸入水时让掌心朝向池底的总旋前角度；旋转会分配到大臂、小臂和手腕，并在抱水和移臂阶段自动减弱。', () => MOTION_TUNING.handPalmTurnDegrees, (v) => MOTION_TUNING.handPalmTurnDegrees = v, 1, 0, 180, 0, '°'),
             control('motion.forwardArmSideClearance', '前伸手臂间距', '手臂前伸时上臂向身体外侧展开的幅度；小臂只继承少量外偏并继续主要朝前。', () => MOTION_TUNING.forwardArmSideClearance, (v) => MOTION_TUNING.forwardArmSideClearance = v, 0.01, 0.12, 0.7, 2),
             control('motion.rightBreathTurnDegrees', '右侧换气转角', '右手离水移臂时躯干、颈部和头部向右侧旋转的总角度。', () => MOTION_TUNING.rightBreathTurnDegrees, (v) => MOTION_TUNING.rightBreathTurnDegrees = v, 1, 0, 90, 0, '°'),
             control('motion.rightBreathBodyRollDegrees', '右侧换气身体滚转', '右手离水移臂时身体额外向右侧滚转的角度，与普通划水滚转叠加。', () => MOTION_TUNING.rightBreathBodyRollDegrees, (v) => MOTION_TUNING.rightBreathBodyRollDegrees = v, 1, 0, 45, 0, '°'),
+            control('motion.freestyleAxisCenteringOffset', '轴线居中补偿', '自由泳身体左右滚转时给根骨的侧向补偿，主要用于俯视角下保持人物轴线贴近泳道中心。', () => FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset, (v) => FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset = v, 0.005, 0, 0.16, 3),
+            control('motion.freestyleRightBreathAxisCenteringOffset', '右手轴线补偿', '右侧换气/右手移臂时额外叠加的侧向补偿；负值会把当前截图里偏左的身体往反方向拉回。', () => FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset, (v) => FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset = v, 0.005, -0.12, 0.12, 3),
+            control('motion.freestyleRightBreathHeadTurnScale', '换气头颈强调', '右侧换气时只放大头颈扭动表现，不影响身体根骨轴线和泳道居中补偿。', () => FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale, (v) => FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale = v, 0.05, 0.5, 2.5, 2),
         ],
     },
 ];
