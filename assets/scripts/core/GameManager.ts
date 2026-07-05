@@ -32,8 +32,9 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
-import { makeUiNode, makeRect, makeLabel } from '../ui/RuntimeUiFactory';
+import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
+import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
@@ -46,6 +47,7 @@ import { getRaceDistance } from './GameBalance';
 import { formatStabilityLog } from './StabilityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
+import { setTimeScale, scaledDelta } from './TimeScale';
 import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -67,6 +69,8 @@ const RACE_OPPONENTS_ENABLED = true;
 const UNDERWATER_TINT_DISTANCE = 1.2;
 const UNDERWATER_TINT_DEPTH = 0.002;
 const UNDERWATER_TINT_MARGIN = 1.45;
+// Debug bullet-time cycle (B key): full speed -> slower stages -> back to full.
+const BULLET_TIME_SCALES = [1, 0.5, 0.25, 0.1];
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -78,7 +82,8 @@ export class GameManager extends Component {
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
-    private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
+    // Free-swim debug mode: single player, no AI, endless back-and-forth swim.
+    private _freeSwimMode = false;    private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
@@ -102,10 +107,17 @@ export class GameManager extends Component {
     private _skyboxApplier: StandardSkyboxApplier = null;
     private _timingGuideFillNode: Node = null;
     private _timingGuideMarker: Node = null;
+    private readonly _sweetZoneBar = new SweetZoneBar();
+    private _freeSwimButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
+    // Debug bullet-time: cycles the global scheduler time scale so the whole
+    // race (movement, limb motion, splashes, camera) can be observed in slow
+    // motion while tuning feel. Input classification uses wall-clock, so key
+    // presses stay responsive. Toggle with the B key.
+    private _bulletTimeIndex = 0;
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankMarkers = new FinishRankMarkerBuilder(COURSE_LAYOUT);
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
@@ -125,9 +137,11 @@ export class GameManager extends Component {
                     try {
                         this.registerEvents();
                         this.debug('3D runtime initialized');
-                        if (consumeMainGameLaunchMode() === 'model-debug') {
+                        const launchMode = consumeMainGameLaunchMode();
+                        if (launchMode === 'model-debug') {
                             this.enterModelDebug();
                         } else {
+                            this._freeSwimMode = launchMode === 'free-swim';
                             this.startGame();
                         }
                     } catch (setupError) {
@@ -150,6 +164,10 @@ export class GameManager extends Component {
         if (!this._playerSwimmer) {
             return;
         }
+        // Bullet-time: everything GameManager drives (camera, model debug, etc.)
+        // runs on the scaled delta. Input classification stays on wall-clock.
+        dt = scaledDelta(dt);
+        this._inputRouter?.tick();
         this._uiFlow?.updateSpeed(this._playerSwimmer.currentSpeed);
         this._uiFlow?.updateSwimTelemetry(
             this._playerSwimmer.currentStability,
@@ -158,7 +176,11 @@ export class GameManager extends Component {
         );
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
-        this.drawStrokeTimingGuide(this._playerSwimmer.strokeTimingGuide, this._state === GameState.RACING);
+        const timingGuide = this._playerSwimmer.strokeTimingGuide;
+        const raceActive = this._state === GameState.RACING;
+        this.drawStrokeTimingGuide(timingGuide, raceActive);
+        this._sweetZoneBar.setVisible(raceActive);
+        this._sweetZoneBar.update(raceActive ? timingGuide : null);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
             this.setUnderwaterOverlayVisible(false);
@@ -261,6 +283,7 @@ export class GameManager extends Component {
 
     startGame() {
         this._inputRouter?.resetAutoPadSequence();
+        this.applyFreeSwimMode();
         this._gameFlow?.startGame();
     }
 
@@ -268,7 +291,37 @@ export class GameManager extends Component {
         this._gameFlow?.restartGame();
     }
 
+    // Free-swim debug mode: single player, no AI, endless back-and-forth swim.
+    // Toggled from the race HUD button; restarts the run into/out of the mode.
+    private toggleFreeSwim() {
+        this._freeSwimMode = !this._freeSwimMode;
+        this.debug(`free-swim mode ${this._freeSwimMode ? 'ON' : 'OFF'}`);
+        if (this._freeSwimButtonLabel) {
+            this._freeSwimButtonLabel.string = this._freeSwimMode ? '退出自由游泳' : '自由游泳';
+        }
+        this.restartGame();
+    }
+
+    // Apply the current free-swim mode to AI visibility and endless flags. Called
+    // on every game start so it survives restarts.
+    private applyFreeSwimMode() {
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer?.node?.isValid) {
+                swimmer.node.active = !this._freeSwimMode;
+            }
+        }
+        if (this._freeSwimMode) {
+            this._gameFlow?.stopAllAi();
+        }
+        if (this._raceManager) {
+            this._raceManager.endlessMode = this._freeSwimMode;
+        }
+        this._playerSwimmer?.setEndless(this._freeSwimMode);
+    }
+
     private returnToLogin() {
+        director.getScheduler().setTimeScale(1);
+        setTimeScale(1);
         director.loadScene('Login');
     }
 
@@ -328,6 +381,7 @@ export class GameManager extends Component {
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
+            handleModelDebugKickStroke: (type) => this._modelDebugFlow?.handleKickStroke(type) ?? false,
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
@@ -395,6 +449,7 @@ export class GameManager extends Component {
         return new InputRouter(this.node, {
             onStroke: (type) => this.handlePlayerStroke(type),
             onStrokeHeld: (type, held) => this.handlePlayerStrokeHeld(type, held),
+            onKickStroke: (type) => this.handlePlayerKickStroke(type),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
@@ -403,6 +458,7 @@ export class GameManager extends Component {
             onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
             onToggleSplashCulling: () => this.toggleSplashCulling(),
             onToggleSplashParticles: () => this.toggleSplashParticles(),
+            onCycleBulletTime: () => this.cycleBulletTime(),
             onModelDebugSpeedDown: () => this.slowModelDebugMotion(),
             onModelDebugSpeedUp: () => this.speedUpModelDebugMotion(),
             onDebugCameraMouseDown: (event) => this.onDebugCameraMouseDown(event),
@@ -478,6 +534,11 @@ export class GameManager extends Component {
             this.debug('race opponents disabled');
             return;
         }
+        if (this._freeSwimMode) {
+            this._aiController = null;
+            this.debug('free-swim mode: AI opponents skipped');
+            return;
+        }
         if (!this._swimmersRoot?.isValid) {
             return;
         }
@@ -536,6 +597,10 @@ export class GameManager extends Component {
             this._uiController = refs.uiController;
             this._timingGuideFillNode = refs.timingGuideFillNode;
             this._timingGuideMarker = refs.timingGuideMarker;
+            // Debug sweet-zone bar: bottom-center of the HUD.
+            const visibleSize = view.getVisibleSize();
+            this._sweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 70);
+            this.buildFreeSwimButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
                 onExit: () => this.exitModelDebug(true),
@@ -579,6 +644,10 @@ export class GameManager extends Component {
 
     private handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
         this._gameFlow?.handlePlayerStrokeHeld(type, held);
+    }
+
+    private handlePlayerKickStroke(type: StrokeType) {
+        this._gameFlow?.handlePlayerKickStroke(type);
     }
 
     private updatePlayerCondition(dt: number) {
@@ -726,6 +795,32 @@ export class GameManager extends Component {
 
     private speedUpModelDebugMotion() {
         this._modelDebugFlow?.speedUpMotion();
+    }
+
+    private cycleBulletTime() {
+        this._bulletTimeIndex = (this._bulletTimeIndex + 1) % BULLET_TIME_SCALES.length;
+        const scale = BULLET_TIME_SCALES[this._bulletTimeIndex];
+        setTimeScale(scale);
+        this.debug(`bullet-time x${scale.toFixed(2)}`);
+    }
+
+    // Race HUD debug button: toggle single-player endless free-swim mode.
+    private buildFreeSwimButton(raceHud: Node, width: number, height: number) {
+        const button = makeButton(
+            'FreeSwimButton',
+            raceHud,
+            170,
+            56,
+            new Color(20, 130, 90, 235),
+            this._freeSwimMode ? '退出自由游泳' : '自由游泳',
+        );
+        // Bottom-right, above the sweet-zone bar (a known-visible band). Forced to
+        // the front so nothing in the prefab HUD covers it.
+        button.setPosition(width / 2 - 105, -height / 2 + 140, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        this._freeSwimButtonLabel = button.getChildByName('Label')?.getComponent(Label) ?? null;
+        button.on(Node.EventType.TOUCH_END, () => this.toggleFreeSwim());
+        this.debug(`free-swim button built at (${(width / 2 - 105).toFixed(0)}, ${(-height / 2 + 140).toFixed(0)})`);
     }
 
     private switchModelDebugVariant() {

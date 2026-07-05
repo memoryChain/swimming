@@ -1,6 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { COUNTDOWN_SECONDS, GLIDE_SECONDS, getRaceDistance } from './GameBalance';
 import { GameState } from './GameConstants';
+import { scaledDelta } from './TimeScale';
 import { Swimmer } from '../entity/Swimmer';
 import { DiveResult } from './DiveResult';
 
@@ -26,6 +27,8 @@ export class RaceManager extends Component {
     @property(Swimmer) public aiSwimmer: Swimmer = null;
     @property([Swimmer]) public aiSwimmers: Swimmer[] = [];
     @property public countdownSeconds = COUNTDOWN_SECONDS;
+    // Free-swim debug mode: no finish, swim endlessly back and forth.
+    public endlessMode = false;
 
     public onCountdownTick: (value: number) => void = null;
     public onStateChange: (state: GameState) => void = null;
@@ -61,6 +64,7 @@ export class RaceManager extends Component {
     }
 
     update(dt: number) {
+        dt = scaledDelta(dt);
         if (this._state === GameState.COUNTDOWN) {
             this.updateCountdown(dt);
         } else if (this._state === GameState.DIVING) {
@@ -156,7 +160,7 @@ export class RaceManager extends Component {
         }
         this._aiFinishTime = this.bestAiFinishTime();
 
-        if (!this._playerFinished && playerDist >= getRaceDistance()) {
+        if (!this.endlessMode && !this._playerFinished && playerDist >= getRaceDistance()) {
             this._playerFinished = true;
             this._playerFinishTime = this._raceTimer;
             this.playerSwimmer?.playFinishTouch();
@@ -165,7 +169,7 @@ export class RaceManager extends Component {
             }
         }
 
-        if (this._playerFinished && this._finishTimes.size >= activeRacers.length) {
+        if (!this.endlessMode && this._playerFinished && this._finishTimes.size >= activeRacers.length) {
             this.finishRace();
         }
     }

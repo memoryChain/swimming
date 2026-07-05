@@ -240,6 +240,56 @@ export class FreestylePoseController {
         this.applyBreaststrokeSampleRotations(sample, power);
     }
 
+    // Blend between the freestyle stroke pose and the tread-water pose so the swimmer
+    // can smoothly settle into treading water when it stops mid-race and swim again
+    // when it speeds back up. treadWeight 0 = full freestyle, 1 = full tread-water.
+    // 在自由泳姿态与踩水姿态之间平滑过渡：比赛途中停下时自然进入踩水，重新加速时切回自由泳。
+    // treadWeight 0 = 完全自由泳，1 = 完全踩水。
+    applyFreestyleTreadBlendPose(
+        leftArmCycle: number,
+        rightArmCycle: number,
+        leftKickCycle: number,
+        rightKickCycle: number,
+        bodyPhase: number,
+        upperBodyPower: number,
+        armPower: number,
+        kickPower: number,
+        treadPhase: number,
+        treadWeight: number,
+    ) {
+        if (!this.root) {
+            return;
+        }
+        const weight = clamp(treadWeight, 0, 1);
+        if (weight <= 0.001) {
+            this.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, upperBodyPower, armPower, kickPower);
+            return;
+        }
+        if (weight >= 0.999) {
+            this.restoreBasePose();
+            this.applyBreaststrokePose(treadPhase, 1);
+            return;
+        }
+
+        const bones = this.manualBones.filter((bone): bone is Node => !!bone);
+        this.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, upperBodyPower, armPower, kickPower);
+        const freestyleRootPosition = this.root.position.clone();
+        const freestyleRootRotation = this.root.rotation.clone();
+        const freestyleRotations = bones.map((bone) => bone.rotation.clone());
+
+        this.restoreBasePose();
+        this.applyBreaststrokePose(treadPhase, 1);
+
+        Vec3.lerp(this._tmpBlendPosition, freestyleRootPosition, this.root.position, weight);
+        this.root.setPosition(this._tmpBlendPosition);
+        Quat.slerp(this._tmpBlendRotation, freestyleRootRotation, this.root.rotation, weight);
+        this.root.setRotation(this._tmpBlendRotation);
+        for (let i = 0; i < bones.length; i++) {
+            Quat.slerp(this._tmpBlendRotation, freestyleRotations[i], bones[i].rotation, weight);
+            bones[i].setRotation(this._tmpBlendRotation);
+        }
+    }
+
     applyDivePrepPose(power = 1) {
         if (!this.root) {
             return;

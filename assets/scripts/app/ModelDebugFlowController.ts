@@ -197,8 +197,24 @@ export class ModelDebugFlowController {
         }
         const stability = this._debugMotor.setStrokeHeld(type, held);
         if (!held) {
-            this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
+            if (stability?.downgradedToKick) {
+                this.freestylePreview()?.rig.triggerKick();
+            } else {
+                this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
+            }
         }
+        this.updateDebugHud();
+        return true;
+    }
+
+    handleKickStroke(type: StrokeType): boolean {
+        if (!this._active) {
+            return false;
+        }
+        if (this._debugMotor.recordKickTap(type)) {
+            this.freestylePreview()?.rig.triggerKick();
+        }
+        this._refs.debug(`model debug: kick tap ${type}`);
         this.updateDebugHud();
         return true;
     }
@@ -451,12 +467,6 @@ export class ModelDebugFlowController {
         const rating = ratingForStability(stability.stability);
         this._lastCombo = nextStabilityCombo(this._lastCombo, rating);
         const result = rhythmResultFromStability(stability, this._lastCombo);
-        if (rating === Rating.PERFECT) {
-            const comboSpeedBonus = this._debugMotor.applyPerfectComboBoost(this._lastCombo);
-            if (comboSpeedBonus > 0) {
-                result.comboSpeedBonus = comboSpeedBonus;
-            }
-        }
         return result;
     }
 
@@ -470,8 +480,7 @@ export class ModelDebugFlowController {
         if (this._refs.swimSpeedLabel) {
             const speed = this._debugMotor.currentSpeed;
             const stability = Math.round(clamp(this._debugMotor.lastStability, 0, 1) * 100);
-            const freshness = Math.round(clamp(this._debugMotor.lastInputFreshness, 0, 1) * 100);
-            this._refs.swimSpeedLabel.string = `STB ${stability}%   FRS ${freshness}%   ACC ${signed(this._debugMotor.currentAcceleration)}   SPD ${speed.toFixed(2)} m/s`;
+            this._refs.swimSpeedLabel.string = `STB ${stability}%   ACC ${signed(this._debugMotor.currentAcceleration)}   SPD ${speed.toFixed(2)} m/s`;
         }
     }
 

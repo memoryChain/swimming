@@ -37,29 +37,46 @@ export const SWIMMER_BALANCE = {
     baseSpeed: 0.8,
     maxSpeed: 4,
     minSpeed: 0,
-    maxSwimAccel: 1.85,
     strokeBaseAccel: 0.05,
     strokeStabilityAccel: 1.6,
     strokeAccelDurationRatio: 0.4,
+    // Stroke impulse punchiness (redesign, "冲刺感"): 0 = flat accel over the
+    // whole pulse (smooth). Higher = the accel is front-loaded into a spike right
+    // after the stroke, then fades — so the swimmer lunges forward and drag pulls
+    // it back. Same total momentum; only the feel changes.
+    strokeImpulseSharpness: 0,
     diveUnderwaterKickAccel: 0.18,
-    alternationWindowSize: 6,
-    alternationBaseMinScale: 0.25,
-    alternationStabilityMinScale: 0.1,
-    poolDeceleration: 0.1,
-    kickStartAccel: 2.45,
-    baseDrag: 0.1,
-    highSpeedDrag: 0.04,
+    // Kick propulsion (redesign): kicking no longer gives a per-tap impulse.
+    // Instead the legs produce a CONTINUOUS acceleration proportional to the
+    // current kick frequency (taps/sec), so fast tapping accelerates fast and
+    // slow tapping accelerates slowly. Kicking alone tops out at kickMaxSpeed
+    // (well below the arm-driven maxSpeed) — arms remain the true engine.
+    // 踢腿推进（重构）：不再按次给脉冲，而是按当前踢腿频率（次/秒）产生连续加速度——
+    // 点得快加速快、点得慢加速慢。单靠踢腿速度封顶在 kickMaxSpeed（远低于手臂的 maxSpeed），
+    // 手臂才是真正的发动机。
+    // Acceleration per Hz of kick cadence (m/s² per tap/second).
+    kickAccelPerHz: 0.34,
+    // PROPULSION cadence cap: kick frequency above this doesn't add more speed, so
+    // a burst of extremely fast taps can't spike the pace. Only limits propulsion;
+    // the leg animation tracks the raw finger rhythm (see kickCadenceMeasureMaxHz).
+    kickCadenceMaxHz: 8,
+    // SAFETY cap applied when measuring cadence (1/interval), high enough that real
+    // tapping never reaches it — it only stops a near-zero gap between two taps from
+    // blowing the value up. The leg animation uses this (effectively uncapped).
+    kickCadenceMeasureMaxHz: 20,
+    // Speed ceiling reachable by kicking alone.
+    kickMaxSpeed: 2.1,
+    // Speed band below kickMaxSpeed over which the kick acceleration fades to 0,
+    // so kicking eases into its ceiling instead of hard-clamping.
+    kickCeilingBand: 0.5,
+    poolDeceleration: 0.06,
+    baseDrag: 0.03,
+    highSpeedDrag: 0.03,
     aiCruiseAccel: 2.2,
-    perfectComboBoostInterval: 10,
-    perfectComboSpeedBonus: 0.35,
+    // Overspeed cap/decay: a strong dive can launch above maxSpeed; these clamp
+    // how far over and how fast it bleeds back down. (Legacy name kept.)
     perfectComboMaxOvercap: 0.9,
     perfectComboOvercapDecay: 0.45,
-    highSpeedDesyncPenalty: 1.15,
-    playerRhythmMaxSpeedScale: 0.18,
-    comboAccelScale: 0.7,
-    kickLaunchDistanceStart: 15,
-    kickLaunchDistanceEnd: 18,
-    earlySyncPenaltyDuringKickLaunch: 0.72,
 };
 
 export const DIVE_BALANCE = {

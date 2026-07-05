@@ -65,6 +65,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _kickCycleMotion = 0;
     private _lastKickCycle = 0;
     private _hasLastKickCycle = false;
+    private _treadWaterWeight = 0;
+    private _treadWaterPhase = 0;
+    private _treadExitHold = 0;
     private _selfTime = 0;
     private _debugTimer = 0;
     private _modelDebugMode = false;
@@ -415,6 +418,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     triggerArmStroke() {
         this._armAction = 1;
+        this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
         this._splashEmitter?.triggerArmStroke();
         if (this._loaded) {
             console.log('[SpeedSwimming] rig arm stroke trigger');
@@ -423,6 +427,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     triggerKick() {
         this._kickAction = 1;
+        this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
         this._splashEmitter?.triggerKick();
         if (this._loaded) {
             console.log('[SpeedSwimming] rig kick trigger');
@@ -432,6 +437,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     triggerStroke(type: StrokeType) {
         this._armAction = 1;
         this._kickAction = 1;
+        this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
         this._splashEmitter?.triggerArmStroke();
         this._splashEmitter?.triggerKick();
         if (this._loaded) {
@@ -440,6 +446,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setStrokeHeld(_type: StrokeType, _held: boolean) {
+        if (_held) {
+            this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
+        }
     }
 
     updateFreestyleFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
@@ -517,16 +526,83 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updateArmCycleMotion(dt, leftArmCycle, rightArmCycle);
         this.updateKickCycleMotion(dt, leftKickCycle, rightKickCycle);
 
+        const treadWeight = this.updateTreadWaterBlend(dt, speed);
+        this.applyTreadBlendModelPlacement(treadWeight);
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
-        this._pose.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, drive + this._armAction * 0.45, drive + this._armAction * 0.7, drive + this._kickAction * 0.8);
+        this._pose.applyFreestyleTreadBlendPose(
+            leftArmCycle,
+            rightArmCycle,
+            leftKickCycle,
+            rightKickCycle,
+            bodyPhase,
+            drive + this._armAction * 0.45,
+            drive + this._armAction * 0.7,
+            drive + this._kickAction * 0.8,
+            this._treadWaterPhase,
+            treadWeight,
+        );
 
-        this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle);
-        this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle);
-        this._leftHandWaterEntry = this.visualHandWaterEntry('left', this._pose.handWaterEntry(leftArmCycle));
-        this._rightHandWaterEntry = this.visualHandWaterEntry('right', this._pose.handWaterEntry(rightArmCycle));
+        const splashWeight = 1 - treadWeight;
+        this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle) * splashWeight;
+        this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle) * splashWeight;
+        this._leftHandWaterEntry = this.visualHandWaterEntry('left', this._pose.handWaterEntry(leftArmCycle)) * splashWeight;
+        this._rightHandWaterEntry = this.visualHandWaterEntry('right', this._pose.handWaterEntry(rightArmCycle)) * splashWeight;
         this._leftHandWaterProgress = this._pose.handWaterProgress(leftArmCycle);
         this._rightHandWaterProgress = this._pose.handWaterProgress(rightArmCycle);
         this.updateSplashSurface(speed);
+    }
+
+    // Advance the mid-race tread-water phase and ease the freestyle<->tread blend weight toward
+    // the target implied by the current race speed. Enter/exit speeds use hysteresis so the pose
+    // does not flicker while the swimmer hovers near the threshold. Returns the eased weight.
+    // 推进比赛途中的踩水相位，并把自由泳<->踩水权重缓动到当前速度对应的目标。进入/退出速度带迟滞，
+    // 避免临界抖动。返回缓动后的权重。
+    private updateTreadWaterBlend(dt: number, speed: number): number {
+        const cycleSeconds = CHARACTER_POSE_TUNING.raceTreadWaterCycleSeconds / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
+        this._treadWaterPhase = positiveMod(this._treadWaterPhase + dt / Math.max(0.05, cycleSeconds), 1);
+        this._treadExitHold = Math.max(0, this._treadExitHold - dt);
+
+        let target = this._treadWaterWeight >= 0.5 ? 1 : 0;
+        if (this._treadExitHold > 0 || speed >= CHARACTER_POSE_TUNING.raceTreadExitSpeed) {
+            target = 0;
+        } else if (speed <= CHARACTER_POSE_TUNING.raceTreadEnterSpeed) {
+            target = 1;
+        }
+
+        const step = CHARACTER_POSE_TUNING.raceTreadBlendRate * dt;
+        if (this._treadWaterWeight < target) {
+            this._treadWaterWeight = Math.min(target, this._treadWaterWeight + step);
+        } else if (this._treadWaterWeight > target) {
+            this._treadWaterWeight = Math.max(target, this._treadWaterWeight - step);
+        }
+        return this._treadWaterWeight;
+    }
+
+    // Interpolate the model node's water height and facing between the prone freestyle placement and
+    // the upright tread-water placement (the same target used at the finish), so the swimmer rises and
+    // turns upright as it slows to a stop and lies back down as it speeds up. weight 0 = freestyle.
+    // 在俯卧的自由泳摆位与竖直的踩水摆位（与完赛踩水一致的目标）之间插值模型节点的水面高度和朝向，
+    // 让泳手减速停下时抬起并转为竖直、加速时重新趴下。weight 0 = 自由泳。
+    private applyTreadBlendModelPlacement(weight: number) {
+        if (!this._model) {
+            return;
+        }
+        const raceY = CHARACTER_POSE_TUNING.raceModelBaseY + this.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset;
+        const raceEuler = this.raceModelEulerDegrees();
+        if (weight <= 0.001) {
+            this._model.setPosition(0, raceY, 0);
+            this._model.setRotationFromEuler(raceEuler[0], raceEuler[1], raceEuler[2]);
+            return;
+        }
+        const treadY = CHARACTER_POSE_TUNING.raceModelBaseY + CHARACTER_POSE_TUNING.raceTreadModelYOffset + MOTION_TUNING.swimBodyYOffset;
+        const treadEuler = CHARACTER_POSE_TUNING.raceTreadModelEuler;
+        const w = Math.max(0, Math.min(1, weight));
+        this._model.setPosition(0, lerpScalar(raceY, treadY, w), 0);
+        this._model.setRotationFromEuler(
+            lerpScalar(raceEuler[0], treadEuler[0], w),
+            lerpScalar(raceEuler[1], treadEuler[1], w),
+            lerpScalar(raceEuler[2], treadEuler[2], w),
+        );
     }
 
     updateBreaststrokePreview(dt: number) {
@@ -605,6 +681,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._kickCycleMotion = 0;
         this._lastKickCycle = 0;
         this._hasLastKickCycle = false;
+        this._treadWaterWeight = 0;
+        this._treadWaterPhase = 0;
+        this._treadExitHold = 0;
         this._mixamoDebugTimer = 0;
         this._lastMixamoDebugLeftArm = '';
         this._lastMixamoDebugLeftLeg = '';
@@ -1163,6 +1242,10 @@ function findNodeByPath(root: Node, path: string): Node | null {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function lerpScalar(from: number, to: number, t: number): number {
+    return from + (to - from) * t;
 }
 
 function clamp01(value: number): number {

@@ -21,6 +21,10 @@ export type StrokeStabilityResult = {
     meanRatio: number;
     ratioStdDev: number;
     sampleCount: number;
+    // Redesign: set when a released press was too short to be a real arm stroke
+    // and was reinterpreted as a leg-kick tap. The flow layer suppresses the
+    // miss feedback and plays a kick instead of scoring this as a bad stroke.
+    downgradedToKick?: boolean;
 };
 
 type StrokeAction = {
@@ -86,17 +90,27 @@ export class SwimmerMotor {
     private _rightPressStartedAt = -1;
     private readonly _leftActions: StrokeAction[] = [];
     private readonly _rightActions: StrokeAction[] = [];
-    private readonly _holdRatioHistory: number[] = [];
-    private readonly _alternationHistory: StrokeType[] = [];
     private readonly _pendingStabilityResults: StrokeStabilityResult[] = [];
     private _strokeAcceleration = 0;
     private _strokeAccelerationSeconds = 0;
+    private _strokeAccelerationTotalSeconds = 0;
     private _speedCapBonus = 0;
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
     private _lastStability = 0;
-    private _lastInputFreshness = 1;
     private _currentAcceleration = 0;
+    // Kick propulsion is driven by the CURRENT tap frequency, not per-tap pulses.
+    // _kickCadenceHz is estimated from the interval between taps (and decays when
+    // tapping stops); each frame it produces a continuous acceleration that fades
+    // into the kickMaxSpeed ceiling. So fast tapping accelerates fast, slow
+    // tapping accelerates slowly, and legs alone can't exceed the kick ceiling.
+    private _kickCadenceHz = 0;
+    private _lastKickTapClock = -1;
+    // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
+    // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
+    // input tops these up; the leg sweeps through them at a fixed fast cadence.
+    // Free-swim debug mode: never clamp distance to the race distance nor finish.
+    private _endless = false;
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, initialSpeedCapBonus = 0) {
         this._isRacing = true;
@@ -173,6 +187,75 @@ export class SwimmerMotor {
         return true;
     }
 
+    // Redesign: a race-time leg-kick tap (short press) gives a capped propulsion
+    // pulse. Distinct from recordKickOnly (used by the underwater dive glide) so
+    // the two can be tuned independently.
+    recordKickTap(type: StrokeType): boolean {
+        const queued = this.queueKickOnly(type);
+        if (!queued) {
+            return false;
+        }
+        this._kickAction = 1;
+        // queueKickOnly already added one kick pulse of budget to the
+        // contralateral leg; it sweeps through it at the fixed pulse cadence, so
+        // rapid taps whip the legs at the player's finger rhythm. Propulsion comes
+        // from the resulting kick FREQUENCY (registerKickCadence), not this tap.
+        this.registerKickCadence();
+        return true;
+    }
+
+    // Estimate the current kick frequency from the interval since the last tap.
+    // instHz = 1/interval is exactly the tapping rate. It is clamped only by a
+    // high SAFETY cap (kickCadenceMeasureMaxHz) so a near-zero gap between two taps
+    // can't blow the value up — real human tapping never reaches it, so the leg
+    // animation is effectively uncapped. Propulsion applies its own, lower cap
+    // (kickCadenceMaxHz) separately in computeKickAcceleration.
+    private registerKickCadence() {
+        const now = this._motionClock;
+        if (this._lastKickTapClock >= 0) {
+            const interval = now - this._lastKickTapClock;
+            const instHz = interval > 0
+                ? clamp(1 / interval, 0, SWIMMER_BALANCE.kickCadenceMeasureMaxHz)
+                : SWIMMER_BALANCE.kickCadenceMeasureMaxHz;
+            this._kickCadenceHz = instHz;
+        }
+        this._lastKickTapClock = now;
+    }
+
+    // Each frame, if no tap arrived by the time the current cadence implies one,
+    // the player has slowed or stopped tapping — ramp the cadence down toward the
+    // fastest rate still consistent with the silence (1/sinceTap → 0 over time).
+    private updateKickCadence() {
+        if (this._lastKickTapClock < 0) {
+            this._kickCadenceHz = 0;
+            return;
+        }
+        const sinceTap = Math.max(0, this._motionClock - this._lastKickTapClock);
+        const impliedInterval = this._kickCadenceHz > 0 ? 1 / this._kickCadenceHz : Infinity;
+        if (sinceTap > impliedInterval) {
+            this._kickCadenceHz = Math.min(this._kickCadenceHz, 1 / Math.max(sinceTap, 0.0001));
+        }
+    }
+
+    // Continuous kick acceleration = per-Hz gain × current cadence, faded to 0 as
+    // speed approaches the kick-only ceiling so legs alone can't exceed it. The
+    // cadence feeding PROPULSION is capped at kickCadenceMaxHz (lower than the
+    // animation's safety cap) so a burst of very fast taps can't spike the speed —
+    // only the leg visuals track the raw finger rhythm.
+    private computeKickAcceleration(): number {
+        if (this._kickCadenceHz <= 0) {
+            return 0;
+        }
+        const ceiling = SWIMMER_BALANCE.kickMaxSpeed;
+        const band = Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand);
+        const fade = clamp01((ceiling - this._currentSpeed) / band);
+        if (fade <= 0) {
+            return 0;
+        }
+        const propulsionHz = Math.min(this._kickCadenceHz, SWIMMER_BALANCE.kickCadenceMaxHz);
+        return SWIMMER_BALANCE.kickAccelPerHz * propulsionHz * fade;
+    }
+
     setStrokeHeld(type: StrokeType, held: boolean): StrokeStabilityResult | null {
         let result: StrokeStabilityResult | null = null;
         if (type === StrokeType.LEFT) {
@@ -196,6 +279,12 @@ export class SwimmerMotor {
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
         const strokeAcceleration = this.consumeStrokeAcceleration(dt);
+        // Player kick propulsion is frequency-driven and continuous; AI never taps.
+        let kickAcceleration = 0;
+        if (!options.isAI) {
+            this.updateKickCadence();
+            kickAcceleration = this.computeKickAcceleration();
+        }
         const next = this._physics.step(
             {
                 currentSpeed: this._currentSpeed,
@@ -207,6 +296,7 @@ export class SwimmerMotor {
                 aiPower: options.aiPower,
                 aiMaxSpeedScale: options.aiMaxSpeedScale,
                 strokeAcceleration,
+                kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
             },
         );
@@ -214,10 +304,17 @@ export class SwimmerMotor {
         this._currentSpeed = next.currentSpeed;
         this.decaySpeedCapBonus(dt, options);
         const raceDistance = getRaceDistance();
-        this._distance = Math.min(raceDistance, this._distance + this._currentSpeed * dt);
+        // Endless (free-swim debug) mode: distance keeps growing so the course
+        // layout folds it back and forth across laps; the race never finishes.
+        this._distance = this._endless
+            ? this._distance + this._currentSpeed * dt
+            : Math.min(raceDistance, this._distance + this._currentSpeed * dt);
         this.updateMotionCycles(dt, options);
+        if (!options.isAI) {
+            this.checkArmStrokeTimeout();
+        }
 
-        if (this._distance >= raceDistance) {
+        if (!this._endless && this._distance >= raceDistance) {
             this._isRacing = false;
             return true;
         }
@@ -230,7 +327,9 @@ export class SwimmerMotor {
         this._leftArmCycle = 0;
         this._rightArmCycle = 0;
         this._leftKickCycle = 0;
-        this._rightKickCycle = 0;
+        // Start the right leg half a cycle out of phase so the continuous flutter
+        // alternates (one leg up while the other is down).
+        this._rightKickCycle = Math.PI;
         this._leftArmMotionRemaining = 0;
         this._rightArmMotionRemaining = 0;
         this._leftKickMotionRemaining = 0;
@@ -244,17 +343,17 @@ export class SwimmerMotor {
         this._rightPressStartedAt = -1;
         this._leftActions.length = 0;
         this._rightActions.length = 0;
-        this._holdRatioHistory.length = 0;
-        this._alternationHistory.length = 0;
         this._pendingStabilityResults.length = 0;
         this._strokeAcceleration = 0;
         this._strokeAccelerationSeconds = 0;
+        this._strokeAccelerationTotalSeconds = 0;
         this._speedCapBonus = 0;
         this._conditionSpeedScale = 1;
         this._conditionQualityScale = 1;
         this._lastStability = 0;
-        this._lastInputFreshness = 1;
         this._currentAcceleration = 0;
+        this._kickCadenceHz = 0;
+        this._lastKickTapClock = -1;
     }
 
     setConditionSpeedScale(scale: number) {
@@ -265,27 +364,14 @@ export class SwimmerMotor {
         this._conditionQualityScale = clamp(scale, 0, 2);
     }
 
-    applyPerfectComboBoost(combo: number): number {
-        const interval = Math.round(SWIMMER_BALANCE.perfectComboBoostInterval);
-        if (interval <= 0 || combo <= 0 || combo % interval !== 0) {
-            return 0;
-        }
-        return this.addSpeedBonus(SWIMMER_BALANCE.perfectComboSpeedBonus * this._conditionQualityScale);
+    // Free-swim debug mode: kept out of resetRaceState so it persists across
+    // dive/start resets. When on, update() never clamps distance or finishes.
+    setEndless(endless: boolean) {
+        this._endless = endless;
     }
 
-    private addSpeedBonus(amount: number): number {
-        const bonus = Math.max(0, amount);
-        const maxOvercap = Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap);
-        if (bonus <= 0 || maxOvercap <= 0) {
-            return 0;
-        }
-        const before = this._currentSpeed;
-        const maxBoostedSpeed = SWIMMER_BALANCE.maxSpeed + maxOvercap;
-        this._currentSpeed = clamp(this._currentSpeed + bonus, SWIMMER_BALANCE.minSpeed, maxBoostedSpeed);
-        const awarded = Math.max(0, this._currentSpeed - before);
-        this._speedCapBonus = Math.max(this._speedCapBonus, Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed));
-        this._speedCapBonus = clamp(this._speedCapBonus, 0, maxOvercap);
-        return awarded;
+    get endless(): boolean {
+        return this._endless;
     }
 
     private decaySpeedCapBonus(dt: number, options: SwimmerMotorOptions) {
@@ -303,7 +389,6 @@ export class SwimmerMotor {
     private updateMotionCycles(dt: number, options: SwimmerMotorOptions) {
         const speedRatio = this.speedRatio();
         const armCycleSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.armMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, speedRatio);
-        const kickCycleSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.kickMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, speedRatio);
         const actionCycleSpeed = CYCLE_AMOUNT * lerp(
             (MOTION_TUNING.armMinCyclesPerSecond + MOTION_TUNING.kickMinCyclesPerSecond) * 0.5,
             MOTION_TUNING.maxCyclesPerSecond,
@@ -312,20 +397,121 @@ export class SwimmerMotor {
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
         if (options.isAI) {
+            // AI has no discrete taps: legs use the speed-driven continuous flutter.
+            this.advanceAiFlutter(dt, speedRatio);
             const visualSpeedScale = MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
             const releasedSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * visualSpeedScale;
             this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', releasedSpeedScale);
             this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', releasedSpeedScale);
-            this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', releasedSpeedScale);
-            this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', releasedSpeedScale);
             return;
         }
-        this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
-        this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.RIGHT));
-        this._leftKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_leftKickMotionRemaining', this.motionSpeedScaleForSide(StrokeType.RIGHT));
-        this._rightKickCycle += this.advanceQueuedMotion(dt, kickCycleSpeed, '_rightKickMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
+        const leftArmDelta = this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
+        const rightArmDelta = this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.RIGHT));
+        this._leftArmCycle += leftArmDelta;
+        this._rightArmCycle += rightArmDelta;
         this.advanceSideActions(dt, actionCycleSpeed, StrokeType.LEFT, this.motionSpeedScaleForSide(StrokeType.LEFT));
         this.advanceSideActions(dt, actionCycleSpeed, StrokeType.RIGHT, this.motionSpeedScaleForSide(StrokeType.RIGHT));
+        // Legs are contralateral: the left leg mirrors the RIGHT arm, the right
+        // leg mirrors the LEFT arm. Each follows its arm's motion while that arm
+        // is stroking, otherwise sweeps through discrete tap pulses, otherwise
+        // settles to a straight glide.
+        this.advancePlayerKicks(dt, leftArmDelta, rightArmDelta);
+    }
+
+    // AI-only continuous flutter, driven purely by swim speed (kept from the old
+    // model so AI swimmers keep flutter-kicking as they move). Both legs advance
+    // by the same step to preserve their π phase offset set at reset.
+    private advanceAiFlutter(dt: number, speedRatio: number) {
+        const idle = clamp01(MOTION_TUNING.kickFlutterIdleFraction);
+        const cadenceFraction = idle + (1 - idle) * clamp01(speedRatio);
+        const cadence = CYCLE_AMOUNT * MOTION_TUNING.kickFlutterMaxCyclesPerSecond * cadenceFraction * MOTION_TUNING.animationSpeedScale;
+        const step = cadence * dt;
+        this._leftKickCycle += step;
+        this._rightKickCycle += step;
+        this._leftKickMotionRemaining = 0;
+        this._rightKickMotionRemaining = 0;
+    }
+
+    // Player legs (contralateral): the left leg mirrors the RIGHT arm, the right
+    // leg mirrors the LEFT arm. While the arm is stroking the leg eases to finish
+    // its current cycle exactly when the arm finishes this stroke (no drift, no
+    // extra cycle); otherwise it sweeps queued tap pulses at the finger rhythm, or
+    // settles to a straight-leg glide when idle.
+    private advancePlayerKicks(dt: number, leftArmDelta: number, rightArmDelta: number) {
+        const leftArmStroking = this._leftActions.length > 0;
+        const rightArmStroking = this._rightActions.length > 0;
+        // Left leg ↔ right arm
+        this._leftKickCycle += this.advancePlayerLeg(
+            dt, '_leftKickMotionRemaining', this._leftKickCycle, rightArmStroking, this._rightArmCycle, rightArmDelta,
+        );
+        // Right leg ↔ left arm
+        this._rightKickCycle += this.advancePlayerLeg(
+            dt, '_rightKickMotionRemaining', this._rightKickCycle, leftArmStroking, this._leftArmCycle, leftArmDelta,
+        );
+    }
+
+    private advancePlayerLeg(
+        dt: number,
+        budgetKey: '_leftKickMotionRemaining' | '_rightKickMotionRemaining',
+        cycle: number,
+        armStroking: boolean,
+        armCycle: number,
+        armDelta: number,
+    ): number {
+        if (armStroking) {
+            // The contralateral arm is mid-stroke. The tap that started this stroke
+            // already moved the leg a little; the leg now EASES so it finishes its
+            // current cycle exactly when the arm finishes this stroke's cycle. Each
+            // frame the leg advances its remaining-to-cycle-end by the same fraction
+            // the arm advances of ITS remaining-to-cycle-end (visual-phase remainder,
+            // measured at frame start). Because that fraction integrates to 1 at the
+            // boundary, both hit the cycle end together, then realign at 0 — so
+            // consecutive strokes never drift, and the arm speeding up on release
+            // (releasedMotionSpeedScale) is followed automatically with no special
+            // case. Kick budget is NOT dropped here: extra taps during the stroke
+            // stay queued and play as kicks once the stroke completes (input queue),
+            // instead of restarting the leg mid-cycle.
+            if (armDelta <= 0) {
+                return 0;
+            }
+            // Frame-start phases: armCycle already includes this frame's delta, so
+            // subtract it back out; cycle is the leg phase before this frame's step.
+            const armPhaseStart = positiveMod(armCycle - armDelta, CYCLE_AMOUNT);
+            const legPhaseStart = positiveMod(cycle, CYCLE_AMOUNT);
+            const armRemaining = CYCLE_AMOUNT - armPhaseStart;
+            const legRemaining = CYCLE_AMOUNT - legPhaseStart;
+            if (armRemaining <= 0.0001) {
+                return legRemaining;
+            }
+            const fraction = Math.min(1, armDelta / armRemaining);
+            return legRemaining * fraction;
+        }
+        const budget = this[budgetKey];
+        if (budget > 0) {
+            // Discrete tap pulse: the sweep cadence TRACKS the player's actual tap
+            // frequency (_kickCadenceHz), so tapping faster whips the legs faster
+            // with no fixed ceiling other than kickCadenceMaxHz. Floored so a
+            // single/slow tap still plays a visibly quick kick. animationSpeedScale
+            // is intentionally NOT applied here so the legs match the finger rhythm
+            // one-to-one instead of lagging behind it.
+            const cyclesPerSecond = Math.max(MOTION_TUNING.kickPulseMinCyclesPerSecond, this._kickCadenceHz);
+            const cadence = CYCLE_AMOUNT * cyclesPerSecond;
+            const step = Math.min(budget, cadence * dt);
+            this[budgetKey] = budget - step;
+            return step;
+        }
+        // Idle (no input, no stroke): finish the current partial kick to the next
+        // neutral (hip-level, straight-ish) pose, then hold still — a pure glide.
+        // The kick pose returns to hip=0 every half cycle (π), so settle to the
+        // next multiple of π regardless of which leg's rest phase (0 or π) it is.
+        const half = Math.PI;
+        const frac = cycle - Math.floor(cycle / half) * half;
+        if (frac <= 0.0001) {
+            return 0;
+        }
+        const toNeutral = half - frac;
+        const settle = CYCLE_AMOUNT * MOTION_TUNING.kickSettleCyclesPerSecond * MOTION_TUNING.animationSpeedScale;
+        return Math.min(toNeutral, settle * dt);
     }
 
     private setSideHeld(type: StrokeType, held: boolean): StrokeStabilityResult | null {
@@ -361,35 +547,102 @@ export class SwimmerMotor {
         this.settleActionStability(type, action, actionSeconds, true);
     }
 
+    // Redesign: while a stroke is still held and the pull has progressed past the
+    // timeout fraction (hand out of the water), auto-end it as a timeout miss.
+    // Non-destructive: routes a dedicated miss result instead of the normal
+    // hold-ratio settlement, and does not pollute the consistency history.
+    private checkArmStrokeTimeout() {
+        this.checkSideArmStrokeTimeout(StrokeType.LEFT);
+        this.checkSideArmStrokeTimeout(StrokeType.RIGHT);
+    }
+
+    private checkSideArmStrokeTimeout(type: StrokeType) {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        if (!action || action.stabilitySettled || action.startedAt < 0) {
+            return;
+        }
+        // Only held strokes (never released) can time out.
+        if (action.releasedAt >= 0 || action.pressedAt < 0) {
+            return;
+        }
+        const timeoutProgress = clamp01(STABILITY_TUNING.armStrokeTimeoutProgress) * CYCLE_AMOUNT;
+        if (action.progress < timeoutProgress) {
+            return;
+        }
+        this.forceArmStrokeTimeout(type, action);
+    }
+
+    private forceArmStrokeTimeout(type: StrokeType, action: StrokeAction) {
+        action.releasedAt = this._motionClock;
+        action.stabilitySettled = true;
+        this._lastStability = 0;
+        this.startStrokeAcceleration(Math.max(0, STABILITY_TUNING.armStrokeTimeoutAccel), false);
+        const actionSeconds = this.predictedActionSecondsAfterRelease(action);
+        this._pendingStabilityResults.push({
+            type,
+            stability: 0,
+            badReason: 'timeout',
+            holdSeconds: this.currentHoldSeconds(action),
+            actionSeconds,
+            minHoldSeconds: Math.max(0, STABILITY_TUNING.minHoldSeconds),
+            holdTimeValid: true,
+            holdRatio: 1,
+            inputFreshness: 1,
+            inputLeadSeconds: 0,
+            inputLeadRatio: 0,
+            meanRatio: 1,
+            ratioStdDev: 0,
+            sampleCount: 0,
+        });
+    }
+
     private settleActionStability(type: StrokeType, action: StrokeAction, actionSeconds: number, queueResult: boolean): StrokeStabilityResult {
         const completedAt = action.startedAt + actionSeconds;
         const releasedAt = action.releasedAt >= 0 ? action.releasedAt : completedAt;
         const holdStart = Math.max(action.pressedAt, action.startedAt);
         const holdEnd = Math.min(releasedAt, completedAt);
         const holdSeconds = action.pressedAt >= 0 ? Math.max(0, holdEnd - holdStart) : 0;
-        const holdRatio = clamp01(holdSeconds / actionSeconds);
         const minHoldSeconds = Math.max(0, STABILITY_TUNING.minHoldSeconds);
         const holdTimeValid = holdSeconds >= minHoldSeconds;
-        this._holdRatioHistory.push(holdRatio);
-        while (this._holdRatioHistory.length > Math.max(1, Math.round(STABILITY_TUNING.sampleWindowSize))) {
-            this._holdRatioHistory.shift();
+        // Release progress = how far the pull arc had advanced when released,
+        // as a fraction of a full cycle. This is the axis the sweet zone lives on.
+        const releaseProgress = clamp01(action.progress / CYCLE_AMOUNT);
+
+        // Redesign: an active release (queueResult === false) that is too short to
+        // be a real arm stroke is reinterpreted as a leg-kick tap — the player is
+        // tapping, not stroking. Give kick-tap propulsion and flag it so the flow
+        // layer suppresses the miss feedback. Auto-completed strokes never downgrade.
+        if (!holdTimeValid && !queueResult) {
+            action.stabilitySettled = true;
+            this._lastStability = 0;
+            // Propulsion for this reinterpreted kick comes from the kick-cadence
+            // system (the press already registered a tap), not a one-off pulse.
+            return {
+                type,
+                stability: 0,
+                badReason: undefined,
+                holdSeconds,
+                actionSeconds,
+                minHoldSeconds,
+                holdTimeValid: false,
+                holdRatio: releaseProgress,
+                inputFreshness: 1,
+                inputLeadSeconds: 0,
+                inputLeadRatio: 0,
+                meanRatio: releaseProgress,
+                ratioStdDev: 0,
+                sampleCount: 0,
+                downgradedToKick: true,
+            };
         }
 
-        const stats = stabilityFromRatios(this._holdRatioHistory);
-        const freshness = this.updateActionInputFreshness(action, actionSeconds);
-        const stability = holdTimeValid ? clamp01(stats.stability * freshness) : 0;
-        const badReason = stability <= 0 ? describeBadReason({
-            holdTimeValid,
-            holdSeconds,
-            minHoldSeconds,
-            meanRatio: stats.meanRatio,
-            ratioStdDev: stats.ratioStdDev,
-            sampleCount: stats.sampleCount,
-            inputFreshness: freshness,
-            inputLeadRatio: action.inputLeadRatio,
-        }) : undefined;
+        // Single-stroke quality is purely the release-timing sweet zone now
+        // (no cross-stroke consistency, no alternation, no input-freshness).
+        const stability = holdTimeValid ? strokeQualityFromReleaseProgress(releaseProgress) : 0;
+        const badReason = stability <= 0
+            ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds)
+            : undefined;
         this._lastStability = stability;
-        this._lastInputFreshness = freshness;
         this.startStabilityAcceleration(stability, action);
         action.stabilitySettled = true;
         const result = {
@@ -400,13 +653,13 @@ export class SwimmerMotor {
             actionSeconds,
             minHoldSeconds,
             holdTimeValid,
-            holdRatio,
-            inputFreshness: freshness,
-            inputLeadSeconds: action.inputLeadSeconds,
-            inputLeadRatio: action.inputLeadRatio,
-            meanRatio: stats.meanRatio,
-            ratioStdDev: stats.ratioStdDev,
-            sampleCount: stats.sampleCount,
+            holdRatio: releaseProgress,
+            inputFreshness: 1,
+            inputLeadSeconds: 0,
+            inputLeadRatio: 0,
+            meanRatio: releaseProgress,
+            ratioStdDev: 0,
+            sampleCount: 0,
         };
         if (queueResult) {
             this._pendingStabilityResults.push(result);
@@ -423,28 +676,19 @@ export class SwimmerMotor {
     }
 
     private startActionBaseAcceleration(type: StrokeType, action: StrokeAction) {
-        action.alternationQuality = this.recordAlternation(type);
         action.baseAccelerationStarted = true;
-        this.updateActionInputFreshness(action, this.currentCycleSeconds());
-        const scale = lerp(SWIMMER_BALANCE.alternationBaseMinScale, 1, action.alternationQuality);
-        this.startStrokeAcceleration(SWIMMER_BALANCE.strokeBaseAccel * scale * action.inputFreshness, false);
+        // Redesign: every stroke gets the same base pulse when it starts playing.
+        // No alternation scaling, no input-freshness penalty (kicks/taps are now
+        // a separate action, so the old anti-spam補丁 is unnecessary).
+        this.startStrokeAcceleration(SWIMMER_BALANCE.strokeBaseAccel, false);
     }
 
     private startStabilityAcceleration(stability: number, action: StrokeAction) {
         if (stability <= 0) {
             return;
         }
-        const scale = lerp(SWIMMER_BALANCE.alternationStabilityMinScale, 1, action.alternationQuality);
-        this.startStrokeAcceleration(stability * SWIMMER_BALANCE.strokeStabilityAccel * scale * this._conditionSpeedScale, true);
-    }
-
-    private updateActionInputFreshness(action: StrokeAction, actionSeconds: number): number {
-        const leadSeconds = Math.max(0, action.startedAt - action.queuedAt);
-        const leadRatio = leadSeconds / Math.max(0.001, actionSeconds);
-        action.inputLeadSeconds = leadSeconds;
-        action.inputLeadRatio = leadRatio;
-        action.inputFreshness = inputFreshnessWeight(leadRatio);
-        return action.inputFreshness;
+        // Redesign: propulsion scales purely with the release-timing quality.
+        this.startStrokeAcceleration(stability * SWIMMER_BALANCE.strokeStabilityAccel * this._conditionSpeedScale, true);
     }
 
     private startStrokeAcceleration(accel: number, additive: boolean) {
@@ -460,17 +704,29 @@ export class SwimmerMotor {
             this._strokeAccelerationSeconds,
             this.currentCycleSeconds() * SWIMMER_BALANCE.strokeAccelDurationRatio,
         );
+        this._strokeAccelerationTotalSeconds = this._strokeAccelerationSeconds;
     }
 
     private consumeStrokeAcceleration(dt: number): number {
         if (this._strokeAccelerationSeconds <= 0) {
             this._strokeAcceleration = 0;
+            this._strokeAccelerationTotalSeconds = 0;
             return 0;
         }
+        // Impulse shape: distribute the same total momentum as a front-loaded
+        // spike (redesign, "冲刺感"). remainingRatio goes 1→0 over the pulse.
+        // shape = 1 + sharpness*(2r-1): peaks at 1+sharpness right after the
+        // stroke, fades to 1-sharpness at the end, mean stays 1 so overall speed
+        // is unchanged — only the punchiness changes. 0 = flat (old behavior).
+        const total = Math.max(0.0001, this._strokeAccelerationTotalSeconds);
+        const remainingRatio = clamp01(this._strokeAccelerationSeconds / total);
         this._strokeAccelerationSeconds = Math.max(0, this._strokeAccelerationSeconds - dt);
-        const acceleration = this._strokeAcceleration;
+        const sharpness = clamp01(SWIMMER_BALANCE.strokeImpulseSharpness);
+        const shape = Math.max(0, 1 + sharpness * (2 * remainingRatio - 1));
+        const acceleration = this._strokeAcceleration * shape;
         if (this._strokeAccelerationSeconds <= 0) {
             this._strokeAcceleration = 0;
+            this._strokeAccelerationTotalSeconds = 0;
         }
         return acceleration;
     }
@@ -480,10 +736,15 @@ export class SwimmerMotor {
     }
 
     private currentActionCycleSpeed(): number {
+        // Redesign: arm-stroke cadence uses its own speed→cadence curve so the
+        // real-time release window can be tuned to shrink at high speed. The
+        // sweet zone stays a fixed fraction of a cycle, so a faster cycle = a
+        // tighter timing window.
+        const t = Math.pow(this.speedRatio(), Math.max(0.05, STABILITY_TUNING.armCycleSpeedCurve));
         return CYCLE_AMOUNT * lerp(
-            (MOTION_TUNING.armMinCyclesPerSecond + MOTION_TUNING.kickMinCyclesPerSecond) * 0.5,
-            MOTION_TUNING.maxCyclesPerSecond,
-            this.speedRatio(),
+            STABILITY_TUNING.armCycleLowSpeedPerSecond,
+            STABILITY_TUNING.armCycleHighSpeedPerSecond,
+            t,
         );
     }
 
@@ -495,13 +756,13 @@ export class SwimmerMotor {
         const isLeft = type === StrokeType.LEFT;
         const actions = isLeft ? this._leftActions : this._rightActions;
         const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
-        const kickKey = isLeft ? '_rightKickMotionRemaining' : '_leftKickMotionRemaining';
         if (!this.canQueueSideStroke(type)) {
             return { queued: false, startedImmediately: false };
         }
 
+        // Only the arm is queued here; the contralateral leg follows this arm's
+        // motion automatically (see advancePlayerKicks), so no separate kick queue.
         this.queueMotionCycle(armKey);
-        this.queueMotionCycle(kickKey);
         const held = isLeft ? this._leftStrokeHeld : this._rightStrokeHeld;
         const pressedAt = held ? Math.max(0, isLeft ? this._leftPressStartedAt : this._rightPressStartedAt) : -1;
         const startedImmediately = actions.length === 0;
@@ -520,6 +781,13 @@ export class SwimmerMotor {
         });
         if (startedImmediately) {
             this.startActionBaseAcceleration(type, actions[actions.length - 1]);
+            // This press became an arm stroke, so its contralateral leg is now
+            // driven by the arm. Drop the tap pulse this same press added to that
+            // leg (via beginPress→recordKickTap) so it isn't replayed as an extra
+            // kick after the stroke — one press = exactly one kick. Later taps
+            // during the stroke keep their budget and play once the stroke ends.
+            const contraLegKey = isLeft ? '_rightKickMotionRemaining' : '_leftKickMotionRemaining';
+            this[contraLegKey] = 0;
         }
         return { queued: true, startedImmediately };
     }
@@ -528,32 +796,44 @@ export class SwimmerMotor {
         const isLeft = type === StrokeType.LEFT;
         const actions = isLeft ? this._leftActions : this._rightActions;
         const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
-        const kickKey = isLeft ? '_rightKickMotionRemaining' : '_leftKickMotionRemaining';
-        return actions.length < 2 && this.canQueueMotionCycle(armKey) && this.canQueueMotionCycle(kickKey);
+        // Input queue disabled (试): only the currently-playing stroke is allowed
+        // per side; a new press while one is still playing is rejected instead of
+        // queued behind it. (Was `< 2` to allow one queued stroke.)
+        return actions.length < 1 && this.canQueueMotionCycle(armKey);
     }
 
     private queueVisualSideStroke(type: StrokeType): boolean {
         const isLeft = type === StrokeType.LEFT;
         const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
-        const kickKey = isLeft ? '_rightKickMotionRemaining' : '_leftKickMotionRemaining';
-        if (!this.canQueueMotionCycle(armKey) || !this.canQueueMotionCycle(kickKey)) {
+        if (!this.canQueueMotionCycle(armKey)) {
             return false;
         }
-        const armQueued = this.queueMotionCycle(armKey);
-        const kickQueued = this.queueMotionCycle(kickKey);
-        return armQueued || kickQueued;
+        return this.queueMotionCycle(armKey);
     }
 
+    // A leg-kick tap adds one kick pulse of budget to the CONTRALATERAL leg
+    // (LEFT input → right leg, RIGHT input → left leg), capped so rapid taps only
+    // buffer a few pulses and the legs stop quickly once tapping stops.
     private queueKickOnly(type: StrokeType): boolean {
         if (type === StrokeType.LEFT) {
-            return this.queueMotionCycle('_rightKickMotionRemaining');
+            return this.addKickPulse('_rightKickMotionRemaining');
         }
         if (type === StrokeType.RIGHT) {
-            return this.queueMotionCycle('_leftKickMotionRemaining');
+            return this.addKickPulse('_leftKickMotionRemaining');
         }
-        const leftQueued = this.queueMotionCycle('_leftKickMotionRemaining');
-        const rightQueued = this.queueMotionCycle('_rightKickMotionRemaining');
+        const leftQueued = this.addKickPulse('_leftKickMotionRemaining');
+        const rightQueued = this.addKickPulse('_rightKickMotionRemaining');
         return leftQueued || rightQueued;
+    }
+
+    private addKickPulse(key: '_leftKickMotionRemaining' | '_rightKickMotionRemaining'): boolean {
+        const cap = Math.max(1, MOTION_TUNING.kickPulseMaxCycles) * CYCLE_AMOUNT;
+        const next = Math.min(cap, this[key] + CYCLE_AMOUNT);
+        if (next <= this[key]) {
+            return false;
+        }
+        this[key] = next;
+        return true;
     }
 
     private canQueueMotionCycle(
@@ -633,34 +913,6 @@ export class SwimmerMotor {
         return sideScale * MOTION_TUNING.animationSpeedScale;
     }
 
-    private recordAlternation(type: StrokeType): number {
-        if (type !== StrokeType.LEFT && type !== StrokeType.RIGHT) {
-            return 1;
-        }
-
-        this._alternationHistory.push(type);
-        const windowSize = Math.max(2, Math.round(SWIMMER_BALANCE.alternationWindowSize));
-        while (this._alternationHistory.length > windowSize) {
-            this._alternationHistory.shift();
-        }
-
-        let leftCount = 0;
-        let rightCount = 0;
-        for (const side of this._alternationHistory) {
-            if (side === StrokeType.LEFT) {
-                leftCount += 1;
-            } else if (side === StrokeType.RIGHT) {
-                rightCount += 1;
-            }
-        }
-
-        const count = leftCount + rightCount;
-        if (count <= 0) {
-            return 1;
-        }
-        return clamp01(1 - Math.abs(leftCount - rightCount) / count);
-    }
-
     get currentSpeed(): number {
         return this._currentSpeed;
     }
@@ -713,10 +965,6 @@ export class SwimmerMotor {
         return this._lastStability;
     }
 
-    get lastInputFreshness(): number {
-        return this._lastInputFreshness;
-    }
-
     get currentAcceleration(): number {
         return this._currentAcceleration;
     }
@@ -729,9 +977,13 @@ export class SwimmerMotor {
         const action = this.currentGuideAction();
         const actionSeconds = action ? this.predictedActionSecondsAfterRelease(action) : this.currentCycleSeconds();
         const holdSeconds = action ? this.currentHoldSeconds(action) : 0;
+        // Redesign: the guide axis is the pull-arc progress (release progress),
+        // i.e. how far the stroke has pulled as a fraction of a full cycle. The
+        // sweet zone and the moving marker both live on this axis now.
+        const releaseProgress = action ? clamp01(action.progress / CYCLE_AMOUNT) : 0;
         return {
             active: !!action && action.releasedAt < 0,
-            currentRatio: clamp01(holdSeconds / Math.max(0.001, actionSeconds)),
+            currentRatio: releaseProgress,
             holdSeconds,
             actionSeconds,
             minHoldRatio: clamp01(STABILITY_TUNING.minHoldSeconds / Math.max(0.001, actionSeconds)),
@@ -789,24 +1041,15 @@ export class SwimmerMotor {
     }
 
     private ratingForGuideRatio(holdRatio: number, action: StrokeAction | null, actionSeconds: number): Rating {
-        const holdSeconds = clamp01(holdRatio) * Math.max(0.001, actionSeconds);
-        if (holdSeconds < STABILITY_TUNING.minHoldSeconds) {
+        // The guide axis is release progress (fraction of a full cycle). Map it
+        // through the same release-timing sweet zone used for scoring so the
+        // on-screen guide shows exactly where PERFECT / GOOD land. Progress past
+        // the overhold-timeout point can never be a valid release (auto miss).
+        const progress = clamp01(holdRatio);
+        if (progress >= clamp01(STABILITY_TUNING.armStrokeTimeoutProgress)) {
             return Rating.BAD;
         }
-        const ratios = this._holdRatioHistory.slice();
-        ratios.push(clamp01(holdRatio));
-        while (ratios.length > Math.max(1, Math.round(STABILITY_TUNING.sampleWindowSize))) {
-            ratios.shift();
-        }
-        const stats = stabilityFromRatios(ratios);
-        const freshness = action ? this.guideInputFreshness(action, actionSeconds) : 1;
-        return ratingForGuideStability(clamp01(stats.stability * freshness));
-    }
-
-    private guideInputFreshness(action: StrokeAction, actionSeconds: number): number {
-        const leadSeconds = Math.max(0, action.startedAt - action.queuedAt);
-        const leadRatio = leadSeconds / Math.max(0.001, actionSeconds);
-        return inputFreshnessWeight(leadRatio);
+        return ratingForGuideStability(strokeQualityFromReleaseProgress(progress));
     }
 }
 
@@ -822,6 +1065,15 @@ function clamp01(value: number): number {
     return clamp(value, 0, 1);
 }
 
+// Map a value into [0, modulo) with a proper positive remainder, used to read a
+// cycle's phase (0..2π) out of a continuously accumulating cycle counter.
+function positiveMod(value: number, modulo: number): number {
+    if (modulo <= 0) {
+        return 0;
+    }
+    return value - Math.floor(value / modulo) * modulo;
+}
+
 function strongerStability(a: StrokeStabilityResult | null, b: StrokeStabilityResult | null): StrokeStabilityResult | null {
     if (!a) {
         return b;
@@ -832,81 +1084,29 @@ function strongerStability(a: StrokeStabilityResult | null, b: StrokeStabilityRe
     return a.stability >= b.stability ? a : b;
 }
 
-function stabilityFromRatios(ratios: number[]): { stability: number; meanRatio: number; ratioStdDev: number; sampleCount: number } {
-    const sampleCount = ratios.length;
-    if (sampleCount === 0) {
-        return { stability: 0, meanRatio: 0, ratioStdDev: 0, sampleCount: 0 };
+function strokeQualityFromReleaseProgress(progress: number): number {
+    const center = STABILITY_TUNING.armReleaseSweetCenter;
+    const perfectHW = Math.max(0.001, STABILITY_TUNING.armReleasePerfectHalfWidth);
+    const goodHW = Math.max(perfectHW + 0.001, STABILITY_TUNING.armReleaseGoodHalfWidth);
+    const d = Math.abs(clamp01(progress) - center);
+    if (d <= perfectHW) {
+        return 1;
     }
-
-    const currentRatio = ratios[ratios.length - 1];
-    const meanRatio = ratios.reduce((sum, value) => sum + value, 0) / sampleCount;
-    const varianceSamples = ratios.filter((ratio) => usefulRatioWeight(ratio) > 0);
-    const consistencyRatios = varianceSamples.length > 0 ? varianceSamples : [currentRatio];
-    const consistencyMean = consistencyRatios.reduce((sum, value) => sum + value, 0) / consistencyRatios.length;
-    const variance = consistencyRatios.reduce((sum, value) => sum + Math.pow(value - consistencyMean, 2), 0) / consistencyRatios.length;
-    const ratioStdDev = Math.sqrt(variance);
-    const badStdDev = Math.max(STABILITY_TUNING.badStdDev, STABILITY_TUNING.perfectStdDev + 0.001);
-    const stdDevRange = badStdDev - STABILITY_TUNING.perfectStdDev;
-    const stdDevT = clamp01((ratioStdDev - STABILITY_TUNING.perfectStdDev) / stdDevRange);
-    const consistency = 1 - smoothstep(stdDevT);
-    const validity = usefulRatioWeight(currentRatio);
-    return {
-        stability: clamp01(consistency * validity),
-        meanRatio,
-        ratioStdDev,
-        sampleCount: consistencyRatios.length,
-    };
+    if (d <= goodHW) {
+        // Cap below the PERFECT threshold (0.999) so this band always reads GOOD.
+        return clamp01(1 - (d - perfectHW) / (goodHW - perfectHW)) * 0.98;
+    }
+    return 0;
 }
 
-function usefulRatioWeight(meanRatio: number): number {
-    const edge = Math.max(0.001, STABILITY_TUNING.usefulRatioEdgeWindow);
-    const low = smoothstep(clamp01((meanRatio - STABILITY_TUNING.minUsefulRatio) / edge));
-    const high = 1 - smoothstep(clamp01((meanRatio - STABILITY_TUNING.maxUsefulRatio) / edge));
-    return clamp01(low * high);
-}
-
-function inputFreshnessWeight(leadRatio: number): number {
-    const grace = Math.max(0, STABILITY_TUNING.inputFreshnessGraceRatio);
-    const penalty = Math.max(0.001, STABILITY_TUNING.inputFreshnessPenaltyRatio);
-    const minScale = clamp01(STABILITY_TUNING.inputFreshnessMinScale);
-    const t = smoothstep(clamp01((leadRatio - grace) / penalty));
-    return lerp(1, minScale, t);
-}
-
-function describeBadReason(data: {
-    holdTimeValid: boolean;
-    holdSeconds: number;
-    minHoldSeconds: number;
-    meanRatio: number;
-    ratioStdDev: number;
-    sampleCount: number;
-    inputFreshness: number;
-    inputLeadRatio: number;
-}): string {
-    const reasons: string[] = [];
-    if (!data.holdTimeValid) {
-        reasons.push(`hold_too_short(${data.holdSeconds.toFixed(2)}<${data.minHoldSeconds.toFixed(2)})`);
+function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolean, holdSeconds: number, minHoldSeconds: number): string {
+    if (!holdTimeValid) {
+        return `hold_too_short(${holdSeconds.toFixed(2)}<${minHoldSeconds.toFixed(2)})`;
     }
-    if (data.sampleCount <= 0) {
-        reasons.push('no_samples');
+    if (releaseProgress < STABILITY_TUNING.armReleaseSweetCenter) {
+        return `released_early(${(releaseProgress * 100).toFixed(0)}%)`;
     }
-    if (data.meanRatio < STABILITY_TUNING.minUsefulRatio) {
-        reasons.push(`hold_ratio_low(${(data.meanRatio * 100).toFixed(0)}%<${(STABILITY_TUNING.minUsefulRatio * 100).toFixed(0)}%)`);
-    } else if (data.meanRatio > STABILITY_TUNING.maxUsefulRatio) {
-        reasons.push(`hold_ratio_high(${(data.meanRatio * 100).toFixed(0)}%>${(STABILITY_TUNING.maxUsefulRatio * 100).toFixed(0)}%)`);
-    }
-    if (data.ratioStdDev >= Math.max(STABILITY_TUNING.badStdDev, STABILITY_TUNING.perfectStdDev + 0.001)) {
-        reasons.push(`ratio_unstable(std=${data.ratioStdDev.toFixed(3)})`);
-    }
-    if (data.inputFreshness <= 0 && data.inputLeadRatio > STABILITY_TUNING.inputFreshnessGraceRatio) {
-        reasons.push(`input_too_early(lead=${(data.inputLeadRatio * 100).toFixed(0)}%)`);
-    }
-    return reasons.length > 0 ? reasons.join('|') : 'stability_zero';
-}
-
-function smoothstep(value: number): number {
-    const t = clamp01(value);
-    return t * t * (3 - 2 * t);
+    return `released_late(${(releaseProgress * 100).toFixed(0)}%)`;
 }
 
 function ratingForGuideStability(stability: number): Rating {

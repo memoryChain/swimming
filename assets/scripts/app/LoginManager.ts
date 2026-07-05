@@ -29,6 +29,11 @@ export class LoginManager extends Component {
         director.loadScene('MainGame');
     }
 
+    startFreeSwim() {
+        setMainGameLaunchMode('free-swim');
+        director.loadScene('MainGame');
+    }
+
     private findCanvasNode(): Node {
         if (this.node.getComponent(Canvas)) {
             return this.node;
@@ -65,6 +70,7 @@ export class LoginManager extends Component {
             onStart: () => this.startGame(),
             onDistanceSelect: (distance) => setRaceDistance(distance),
             onModelDebug: () => this.startModelDebug(),
+            onFreeSwim: () => this.startFreeSwim(),
         }).build(canvasNode, width, height, (error) => {
             if (error) {
                 console.error('[SpeedSwimming] Login UI failed to load', error);

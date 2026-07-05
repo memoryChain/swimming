@@ -16,7 +16,7 @@ export class InputManager extends Component {
     private _diveChargeStartedAt = 0;
     private _leftMouseStrokeType: StrokeType | null = null;
     private _touchStrokeType: StrokeType | null = null;
-
+    private _singleTapHeld = false;
     onEnable() {
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -64,6 +64,12 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('model-debug-speed-down');
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_E) {
             this.strokeTarget?.emit('model-debug-speed-up');
+        } else if (event.keyCode === KeyCode.KEY_S) {
+            // Single-tap: simulate a mobile single touch (auto-alternating side).
+            if (!this._singleTapHeld) {
+                this._singleTapHeld = true;
+                this.strokeTarget?.emit('pad-stroke');
+            }
         } else if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.ENTER) {
             this.strokeTarget?.emit('primary-action');
         } else if (event.keyCode === KeyCode.F3 || event.keyCode === KeyCode.BACK_QUOTE) {
@@ -76,6 +82,8 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('toggle-splash-culling');
         } else if (event.keyCode === KeyCode.KEY_L) {
             this.strokeTarget?.emit('toggle-splash-particles');
+        } else if (event.keyCode === KeyCode.KEY_B) {
+            this.strokeTarget?.emit('cycle-bullet-time');
         }
     }
 
@@ -84,6 +92,11 @@ export class InputManager extends Component {
             this.setInputHeld(StrokeType.LEFT, false);
         } else if (event.keyCode === KeyCode.KEY_D || event.keyCode === KeyCode.ARROW_RIGHT) {
             this.setInputHeld(StrokeType.RIGHT, false);
+        } else if (event.keyCode === KeyCode.KEY_S) {
+            if (this._singleTapHeld) {
+                this._singleTapHeld = false;
+                this.strokeTarget?.emit('pad-stroke-end');
+            }
         }
     }
 

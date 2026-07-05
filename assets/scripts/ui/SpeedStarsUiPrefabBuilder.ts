@@ -3,12 +3,13 @@ import { EDITOR } from 'cc/env';
 import { getRaceDistance, RaceDistanceMode, RACE_DISTANCE_OPTIONS } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { UIController } from './UIController';
-import { makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
     onDistanceSelect: (distance: RaceDistanceMode) => void;
     onModelDebug: () => void;
+    onFreeSwim: () => void;
 };
 
 export type SpeedStarsUiCallbacks = {
@@ -369,6 +370,14 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     const modelDebug = requireNode(startScreen, 'ModelDebugButton');
     modelDebug.active = EDITOR;
     modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
+
+    // Free-swim (single-player, no AI, endless) entry. Built in code and anchored
+    // below the model-debug button (when shown) or the start button, so it never
+    // overlaps existing buttons and needs no prefab change.
+    const anchor = EDITOR ? modelDebug : requireNode(startScreen, 'StartButton');
+    const freeSwim = makeButton('FreeSwimStartButton', startScreen, 260, 64, uiColor(20, 130, 90, 235), '自由游泳（无对手）');
+    freeSwim.setPosition(anchor.position.x, anchor.position.y - 84, 0);
+    freeSwim.on(Node.EventType.TOUCH_END, callbacks.onFreeSwim);
 }
 
 type DistanceButtonSkins = {

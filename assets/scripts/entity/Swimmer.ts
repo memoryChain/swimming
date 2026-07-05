@@ -10,6 +10,7 @@ import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
+import { scaledDelta } from '../core/TimeScale';
 import { StrokeStabilityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
@@ -46,11 +47,11 @@ export class Swimmer extends Component {
     private readonly _motor = new SwimmerMotor();
     private _startPosition = new Vec3();
     private _hasStartPosition = false;
-    private _stabilityCombo = 0;
-    private _maxStabilityCombo = 0;
+    private _stabilityCombo = 0;    private _maxStabilityCombo = 0;
     private _perfectStabilityCount = 0;
     private _goodStabilityCount = 0;
     private _missStabilityCount = 0;
+    private _endless = false;
     private readonly _pendingRhythmResults: RhythmResult[] = [];
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
@@ -193,6 +194,8 @@ export class Swimmer extends Component {
             return;
         }
 
+        // Bullet-time: swimmer simulation + motion run on the scaled delta.
+        dt = scaledDelta(dt);
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
             aiPower: this.aiPower,
@@ -241,6 +244,15 @@ export class Swimmer extends Component {
         return this._motor.isRacing && (this._diveGlidePoseActive || this._motor.canRecordStroke(type));
     }
 
+    handleKickStroke(type: StrokeType): void {
+        if (!this._motor.isRacing) {
+            return;
+        }
+        if (this._motor.recordKickTap(type)) {
+            this.cartoonRig?.triggerKick();
+        }
+    }
+
     handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
         if (this._diveGlidePoseActive) {
             return null;
@@ -249,8 +261,15 @@ export class Swimmer extends Component {
         this.cartoonRig?.setStrokeHeld(type, held);
         if (held) {
             this._strokeMetrics.recordStroke(type);
+            return null;
         }
-        return held ? null : this.makeStabilityResult(type, stability);
+        // A press too short to be a real stroke was reinterpreted as a leg-kick
+        // tap by the motor: play a kick, don't surface a miss rating.
+        if (stability?.downgradedToKick) {
+            this.cartoonRig?.triggerKick();
+            return null;
+        }
+        return this.makeStabilityResult(type, stability);
     }
 
     setSplashCulled(culled: boolean) {
@@ -376,12 +395,6 @@ export class Swimmer extends Component {
             });
         }
         const result = rhythmResultFromStability(stability, this._stabilityCombo);
-        if (rating === Rating.PERFECT) {
-            const comboSpeedBonus = this._motor.applyPerfectComboBoost(this._stabilityCombo);
-            if (comboSpeedBonus > 0) {
-                result.comboSpeedBonus = comboSpeedBonus;
-            }
-        }
         return result;
     }
 
@@ -683,7 +696,9 @@ export class Swimmer extends Component {
     }
 
     private applyCoursePosition(distance: number) {
-        const visualDistance = Math.min(distance, getRaceDistance());
+        // Endless free-swim: don't clamp to the race distance so the course layout
+        // keeps folding the position back and forth across laps.
+        const visualDistance = this._endless ? Math.max(0, distance) : Math.min(distance, getRaceDistance());
         const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
         const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
         this.node.setPosition(x, this.visualSwimY(visualDistance), this._startPosition.z);
@@ -857,6 +872,11 @@ export class Swimmer extends Component {
 
     applyConditionSpeedScale(scale: number) {
         this._motor.setConditionSpeedScale(scale);
+    }
+
+    setEndless(endless: boolean) {
+        this._endless = endless;
+        this._motor.setEndless(endless);
     }
 
     applyConditionQualityScale(scale: number) {

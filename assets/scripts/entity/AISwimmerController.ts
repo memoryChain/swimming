@@ -1,6 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { DIVE_BALANCE, RHYTHM_BALANCE, SWIMMER_BALANCE, getTargetInterval } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
+import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
@@ -39,7 +40,7 @@ export class AISwimmerController extends Component {
             return;
         }
 
-        this._strokeTimer -= dt;
+        this._strokeTimer -= scaledDelta(dt);
         if (this._strokeTimer > 0) {
             return;
         }

@@ -58,6 +58,38 @@ export const CHARACTER_POSE_TUNING = {
     // Procedural breaststroke preview cycle duration before animation speed scaling.
     // Debug 预览里的程序化蛙泳/踩水动作在动画倍率前的一整轮周期。
     breaststrokePreviewCycleSeconds: 2.25,
+
+    // At or below this race speed the swimmer blends toward the tread-water pose.
+    // 比赛速度低于该值时，泳手向踩水姿态过渡。
+    raceTreadEnterSpeed: 0.42,
+
+    // At or above this race speed the swimmer blends back to freestyle. The gap
+    // between enter/exit gives hysteresis so the pose does not flicker near the edge.
+    // 比赛速度高于该值时，泳手切回自由泳。进入/退出阈值之间留出迟滞，避免临界抖动。
+    raceTreadExitSpeed: 0.9,
+
+    // Crossfade rate (weight units per second) between freestyle and tread-water.
+    // 自由泳与踩水之间的过渡速率（每秒权重变化量），越大切换越快。
+    raceTreadBlendRate: 2.6,
+
+    // Full mid-race tread-water cycle duration before animation speed scaling.
+    // 比赛途中踩水动作在动画倍率前的一整轮周期。
+    raceTreadWaterCycleSeconds: 2.25,
+
+    // Model root Y offset (added on top of raceModelBaseY) at full mid-race tread-water.
+    // Matches the finish tread/breaststroke reference so the body sits at the right water height.
+    // 比赛途中完全踩水时模型根节点在 raceModelBaseY 之上叠加的 Y 偏移。与完赛踩水/蛙泳参考一致，
+    // 让身体停在正确的水面高度。
+    raceTreadModelYOffset: -0.88,
+
+    // Model Euler rotation at full mid-race tread-water (upright), blended from the prone race euler.
+    // 比赛途中完全踩水时模型欧拉角（竖直），从俯卧的比赛欧拉角过渡而来。
+    raceTreadModelEuler: [0, 90, 0] as const,
+
+    // After any stroke input, keep targeting freestyle for this long so re-inputting always pulls the
+    // swimmer out of tread-water immediately, even before race speed climbs back past the exit speed.
+    // 任一次划水输入后，在这段时间内持续以自由泳为目标，让重新输入立即把泳手拉出踩水，无需等速度重新爬过退出阈值。
+    raceTreadStrokeExitHoldSeconds: 0.6,
 };
 
 export const FREESTYLE_POSE_TUNING = {

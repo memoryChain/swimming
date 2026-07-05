@@ -1,6 +1,7 @@
 import { _decorator, Color, Component, Layers, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from './RaceCourseLayout';
 import { PoolDefinition } from './VenueConfig';
+import { scaledDelta } from '../core/TimeScale';
 
 const { ccclass, property } = _decorator;
 
@@ -73,7 +74,7 @@ export class SpectatorGroupWobble extends Component {
     }
 
     update(dt: number) {
-        this.phase += dt * this.speed;
+        this.phase += scaledDelta(dt) * this.speed;
         const lift = Math.sin(this.phase) * this.amplitude;
         const sway = Math.cos(this.phase * 0.73) * this.sideAmplitude;
         this.node.setPosition(this._base.x + sway, this._base.y + lift, this._base.z);

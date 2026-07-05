@@ -1,4 +1,4 @@
-export type MainGameLaunchMode = 'race' | 'model-debug';
+export type MainGameLaunchMode = 'race' | 'model-debug' | 'free-swim';
 
 let pendingLaunchMode: MainGameLaunchMode = 'race';
 

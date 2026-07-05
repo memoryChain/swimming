@@ -1,4 +1,5 @@
 import { _decorator, Component, Node, Vec3 } from 'cc';
+import { scaledDelta } from './TimeScale';
 
 const { ccclass } = _decorator;
 
@@ -23,7 +24,7 @@ export class WaterSurface extends Component {
     }
 
     update(dt: number) {
-        this._time += dt;
+        this._time += scaledDelta(dt);
         for (const wave of this._waves) {
             if (!wave.transformMotion) {
                 continue;

@@ -21,6 +21,7 @@ export type GameFlowRefs = {
     exitModelDebug: (showStart: boolean) => void;
     handleModelDebugStroke: (type: StrokeType) => boolean;
     handleModelDebugStrokeHeld: (type: StrokeType, held: boolean) => boolean;
+    handleModelDebugKickStroke: (type: StrokeType) => boolean;
     setState: (state: GameState) => void;
     getState: () => GameState;
     clearFinishRanks: () => void;
@@ -109,6 +110,16 @@ export class GameFlowController {
             this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
+    }
+
+    handlePlayerKickStroke(type: StrokeType) {
+        if (this._refs.handleModelDebugKickStroke(type)) {
+            return;
+        }
+        if (!this.isStrokeInputActive()) {
+            return;
+        }
+        this._refs.playerSwimmer?.handleKickStroke(type);
     }
 
     private isStrokeInputActive(): boolean {
