@@ -1,5 +1,4 @@
 import { Label, Node, UITransform } from 'cc';
-import { MOTION_TUNING } from '../core/InputTuning';
 import { resetTuningToDefaults, saveCurrentTuning, TUNING_GROUPS } from '../core/TuningDebugControls';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 
@@ -77,7 +76,7 @@ export class ModelDebugHudBuilder {
         const faster = makeButton('ModelDebugFast', hud, portrait ? 42 : 54, 36, uiColor(38, 116, 190), '+');
         faster.setPosition(portrait ? 136 : 104, portrait ? -h / 2 + 26 : bottomY, 0);
         faster.on(Node.EventType.TOUCH_END, () => this._callbacks.onFast());
-        const speedLabel = makeLabel('ModelDebugStatus', hud, `速度 ${MOTION_TUNING.animationSpeedScale.toFixed(2)}x`, 18, uiColor(230, 244, 250));
+        const speedLabel = makeLabel('ModelDebugStatus', hud, '速度 1.00x', 18, uiColor(230, 244, 250));
         speedLabel.getComponent(UITransform).setContentSize(portrait ? portraitStatusWidth : 150, 30);
         speedLabel.setPosition(portrait ? w * 0.375 : 270, -h / 2 + 58, 0);
         speedLabel.getComponent(Label).overflow = Label.Overflow.CLAMP;

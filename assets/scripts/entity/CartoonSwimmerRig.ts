@@ -71,6 +71,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _selfTime = 0;
     private _debugTimer = 0;
     private _modelDebugMode = false;
+    private _debugMotionSpeedScale = 1;
     private _skinColor = new Color(246, 176, 118);
     private _suitColor = new Color(245, 42, 64);
     private _capColor = new Color(255, 220, 72);
@@ -558,7 +559,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // 推进比赛途中的踩水相位，并把自由泳<->踩水权重缓动到当前速度对应的目标。进入/退出速度带迟滞，
     // 避免临界抖动。返回缓动后的权重。
     private updateTreadWaterBlend(dt: number, speed: number): number {
-        const cycleSeconds = CHARACTER_POSE_TUNING.raceTreadWaterCycleSeconds / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
+        const cycleSeconds = CHARACTER_POSE_TUNING.raceTreadWaterCycleSeconds / Math.max(0.25, this.motionPreviewSpeedScale());
         this._treadWaterPhase = positiveMod(this._treadWaterPhase + dt / Math.max(0.05, cycleSeconds), 1);
         this._treadExitHold = Math.max(0, this._treadExitHold - dt);
 
@@ -620,7 +621,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this.isBreaststrokeDebugPose()) {
             return;
         }
-        const cycleSeconds = CHARACTER_POSE_TUNING.breaststrokePreviewCycleSeconds / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
+        const cycleSeconds = CHARACTER_POSE_TUNING.breaststrokePreviewCycleSeconds / Math.max(0.25, this.motionPreviewSpeedScale());
         const phase = positiveMod(this._selfTime / cycleSeconds, 1);
         this._pose.setMovementDirection(1);
         this._pose.applyBreaststrokePose(phase, 1);
@@ -734,7 +735,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._poseState.applyRaceModelSetup();
         if (this.isMixamoSwimmingDebugVariant()) {
-            this._animationPlayer.setSpeed(MOTION_TUNING.animationSpeedScale);
+            this._animationPlayer.setSpeed(this.motionPreviewSpeedScale());
+        }
+    }
+
+    setDebugMotionSpeedScale(scale: number) {
+        this._debugMotionSpeedScale = Math.max(0.1, Math.min(1.5, scale));
+        if (this._modelDebugMode && this.isMixamoSwimmingDebugVariant()) {
+            this._animationPlayer.setSpeed(this.motionPreviewSpeedScale());
         }
     }
 
@@ -867,8 +875,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._animationPlayer.hasAnimation) {
             return;
         }
-        const played = this._animationPlayer.playClip('Swimming', true, MOTION_TUNING.animationSpeedScale)
-            || this._animationPlayer.playFirstClip(true, MOTION_TUNING.animationSpeedScale);
+        const speed = this.motionPreviewSpeedScale();
+        const played = this._animationPlayer.playClip('Swimming', true, speed)
+            || this._animationPlayer.playFirstClip(true, speed);
         if (!played) {
             console.warn(`[SpeedSwimming] Mixamo debug animation missing clips=${this.animationClipNames}`);
         }
@@ -888,6 +897,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.logMixamoPathProbe();
         this._animationPlayer.bind(animation, true);
         this.loadMixamoClipByPath(0);
+    }
+
+    private motionPreviewSpeedScale(): number {
+        return this._modelDebugMode ? this._debugMotionSpeedScale : 1;
     }
 
     private loadMixamoClipByPath(index: number) {

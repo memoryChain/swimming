@@ -1,6 +1,6 @@
 import { EventMouse, input, Input, Node } from 'cc';
 import { StrokeType } from './GameConstants';
-import { INPUT_TUNING } from './InputTuning';
+import { INPUT_TUNING, STABILITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
@@ -31,7 +31,7 @@ export class InputRouter {
 
     // Press classification (shared by touch pad, single-tap S key and keyboard
     // A/D): the contralateral leg kick fires immediately on press. If the press is
-    // then held longer than armStrokeMinHoldSeconds it is promoted to an arm
+    // then held longer than the minimum hold threshold it is promoted to an arm
     // stroke (which the leg then follows). Tracked per side so A and D can be held
     // independently in the editor.
     private readonly _leftPress = { active: false, startedMs: 0, promoted: false };
@@ -107,7 +107,7 @@ export class InputRouter {
 
     // Begin classifying a press. The leg kick fires right away so the legs react
     // to the player's tap rhythm instantly. If the press is held past
-    // armStrokeMinHoldSeconds, tick() promotes it to an arm stroke.
+    // STABILITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
         const press = this.pressState(type);
         press.active = true;
@@ -137,7 +137,7 @@ export class InputRouter {
     // Per-frame: promote a still-held press to an arm stroke once it has been
     // held long enough. Called from the game update loop.
     tick() {
-        const thresholdMs = INPUT_TUNING.armStrokeMinHoldSeconds * 1000;
+        const thresholdMs = Math.max(0, STABILITY_TUNING.minHoldSeconds) * 1000;
         const now = Date.now();
         this.promoteIfDue(StrokeType.LEFT, now, thresholdMs);
         this.promoteIfDue(StrokeType.RIGHT, now, thresholdMs);

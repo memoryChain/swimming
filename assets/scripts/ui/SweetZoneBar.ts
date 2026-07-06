@@ -1,4 +1,4 @@
-import { Color, Graphics, Node, UITransform } from 'cc';
+import { Color, Graphics, Label, Node, UITransform } from 'cc';
 import { Rating } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { makeUiNode } from './RuntimeUiFactory';
@@ -10,23 +10,39 @@ import { makeUiNode } from './RuntimeUiFactory';
 // it makes the redesign's hidden timing readable while tuning feel.
 const BAR_WIDTH = 360;
 const BAR_HEIGHT = 26;
+const SPEED_LABEL_WIDTH = 360;
+const SPEED_LABEL_HEIGHT = 38;
 
 const COLOR_BG = new Color(20, 26, 34, 210);
 const COLOR_BAD = new Color(150, 60, 66, 150);
 const COLOR_GOOD = new Color(70, 170, 200, 200);
 const COLOR_PERFECT = new Color(255, 205, 70, 235);
 const COLOR_MARKER = new Color(255, 255, 255, 245);
+const COLOR_MARKER_BACK = new Color(0, 0, 0, 190);
 const COLOR_MARKER_IDLE = new Color(150, 160, 170, 130);
+const COLOR_SPEED = new Color(255, 255, 255, 255);
 
 export class SweetZoneBar {
     private _root: Node = null;
     private _bandGfx: Graphics = null;
     private _markerGfx: Graphics = null;
+    private _speedLabel: Label = null;
     private _lastSignature = '';
 
     build(parent: Node, x: number, y: number) {
         this._root = makeUiNode('SweetZoneBar', parent);
         this._root.setPosition(x, y, 0);
+
+        const speedNode = makeUiNode('SweetZoneSpeedLabel', this._root);
+        speedNode.setPosition(0, BAR_HEIGHT / 2 + SPEED_LABEL_HEIGHT / 2 + 8, 0);
+        speedNode.getComponent(UITransform).setContentSize(SPEED_LABEL_WIDTH, SPEED_LABEL_HEIGHT);
+        this._speedLabel = speedNode.addComponent(Label);
+        this._speedLabel.string = 'SPD 0.00 m/s';
+        this._speedLabel.fontSize = 28;
+        this._speedLabel.lineHeight = 34;
+        this._speedLabel.color = COLOR_SPEED;
+        this._speedLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        this._speedLabel.verticalAlign = Label.VerticalAlign.CENTER;
 
         const bandNode = makeUiNode('SweetZoneBands', this._root);
         bandNode.getComponent(UITransform).setContentSize(BAR_WIDTH, BAR_HEIGHT);
@@ -48,9 +64,12 @@ export class SweetZoneBar {
     // Redraw from the current stroke timing guide. Bands are only redrawn when
     // the zone layout actually changes (cheap steady-state); the marker follows
     // every frame while a stroke is active.
-    update(guide: StrokeTimingGuide | null) {
+    update(guide: StrokeTimingGuide | null, speed = 0) {
         if (!this._bandGfx || !this._markerGfx) {
             return;
+        }
+        if (this._speedLabel) {
+            this._speedLabel.string = `SPD ${Math.max(0, speed).toFixed(2)} m/s`;
         }
         const intervals = guide?.intervals ?? [];
         const signature = intervals.map((i) => `${i.rating}:${i.startRatio.toFixed(3)}-${i.endRatio.toFixed(3)}`).join('|');
@@ -95,8 +114,13 @@ export class SweetZoneBar {
         const active = !!guide?.active;
         const ratio = clamp01(guide?.currentRatio ?? 0);
         const x = -BAR_WIDTH / 2 + ratio * BAR_WIDTH;
+        g.strokeColor = COLOR_MARKER_BACK;
+        g.lineWidth = active ? 10 : 5;
+        g.moveTo(x, -BAR_HEIGHT / 2 - 4);
+        g.lineTo(x, BAR_HEIGHT / 2 + 4);
+        g.stroke();
         g.strokeColor = active ? COLOR_MARKER : COLOR_MARKER_IDLE;
-        g.lineWidth = active ? 4 : 2;
+        g.lineWidth = active ? 7 : 3;
         g.moveTo(x, -BAR_HEIGHT / 2 - 3);
         g.lineTo(x, BAR_HEIGHT / 2 + 3);
         g.stroke();

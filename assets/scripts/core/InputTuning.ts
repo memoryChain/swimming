@@ -3,10 +3,6 @@ import { TARGET_INTERVAL, getTargetInterval } from './GameBalance';
 export const INPUT_TUNING = {
     padStrokeDedupeMs: 45,
     chordMergeWindowMs: 70,
-    // Minimum press duration (seconds) before a touch is treated as an arm stroke.
-    // Releasing earlier than this counts as a quick leg-kick tap instead.
-    // 触摸按住多久(秒)才判定为划水;比这更早松手算一次踢腿点击。
-    armStrokeMinHoldSeconds: 0.14,
     inputRateWindowSeconds: 1.2,
     rhythmPerfectWindowSeconds: 0.08,
     rhythmGoodWindowSeconds: 0.18,
@@ -22,10 +18,6 @@ export const INPUT_TUNING = {
 };
 
 export const MOTION_TUNING = {
-    // Global visual animation speed multiplier shared by race and model debug.
-    // 比赛和模型调试共用的整体动作表现倍率。
-    animationSpeedScale: 0.8,
-
     // Motion speed multiplier while a stroke side is held.
     // 单侧划水按住期间的动作速度倍率。
     heldMotionSpeedScale: 1,
@@ -33,18 +25,6 @@ export const MOTION_TUNING = {
     // Motion speed multiplier after a stroke side is released.
     // 单侧划水松开后的动作释放速度倍率。
     releasedMotionSpeedScale: 2,
-
-    // Minimum arm cycle speed at low swim speed.
-    // 低游速时手臂循环的最低频率。
-    armMinCyclesPerSecond: 0.82,
-
-    // Minimum kick cycle speed at low swim speed.
-    // 低游速时腿部打水循环的最低频率。
-    kickMinCyclesPerSecond: 0.82,
-
-    // Maximum limb cycle speed at high swim speed.
-    // 高游速时肢体循环的最高频率。
-    maxCyclesPerSecond: 2.8,
 
     // AI-only continuous flutter-kick cadence at max swim speed (cycles/sec). AI
     // swimmers don't tap, so their legs still use a speed-driven flutter. The
@@ -112,14 +92,12 @@ export const STABILITY_TUNING = {
     // propulsion (armStrokeTimeoutAccel). 0.5 = half circle (end of the pull).
     armStrokeTimeoutProgress: 0.5,
     armStrokeTimeoutAccel: 0.08,
-    // Release-timing sweet zone (redesign): the quality of a single arm stroke is
-    // based on where in the pull arc the player releases, measured as a fraction
-    // of a full cycle (0 = just entered, 0.5 = end of pull / timeout). Releasing
-    // near the center is a perfect pull; too early is a weak stroke. This replaces
-    // the old hold-ratio-consistency ("rhythm") scoring.
-    armReleaseSweetCenter: 0.42,
-    armReleasePerfectHalfWidth: 0.06,
-    armReleaseGoodHalfWidth: 0.18,
+    // Release-timing sweet zones use explicit progress ranges on 0..1. If GOOD
+    // and PERFECT overlap, the overlap scores as PERFECT.
+    goodStart: 0.22,
+    goodEnd: 0.5,
+    perfectStart: 0.34,
+    perfectEnd: 0.46,
     // Arm-stroke cycle speed vs. swim speed (redesign): the pull cadence is
     // interpolated between these two cycles-per-second values as current speed
     // goes from 0 to maxSpeed. Because the sweet zone is a fixed *fraction* of a

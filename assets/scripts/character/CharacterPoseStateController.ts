@@ -225,7 +225,7 @@ export class CharacterPoseStateController {
 
     private applyTreadWaterPose() {
         const elapsed = Math.max(0, this._options.getSelfTime() - this._treadWaterStartTime);
-        const cycleSeconds = CHARACTER_POSE_TUNING.finishTreadWaterCycleSeconds / Math.max(0.25, MOTION_TUNING.animationSpeedScale);
+        const cycleSeconds = CHARACTER_POSE_TUNING.finishTreadWaterCycleSeconds;
         const phase = positiveMod(elapsed / cycleSeconds, 1);
         this._options.pose.setMovementDirection(1);
         this._options.pose.applyBreaststrokePose(phase, 1);

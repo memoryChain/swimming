@@ -180,7 +180,7 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         this.drawStrokeTimingGuide(timingGuide, raceActive);
         this._sweetZoneBar.setVisible(raceActive);
-        this._sweetZoneBar.update(raceActive ? timingGuide : null);
+        this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
             this.setUnderwaterOverlayVisible(false);

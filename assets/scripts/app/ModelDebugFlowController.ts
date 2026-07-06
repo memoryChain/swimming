@@ -5,7 +5,6 @@ import { Swimmer } from '../entity/Swimmer';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
-import { MOTION_TUNING } from '../core/InputTuning';
 import { RaceManager } from '../core/RaceManager';
 import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
@@ -22,6 +21,7 @@ const DEBUG_WATER_LENGTH = 8.8;
 const DEBUG_ACTION_LANE_WIDTH = DEFAULT_POOL_DEFINITION.laneWidth;
 const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, DEBUG_ACTION_LANE_WIDTH * DEBUG_SWIMMER_ACTION_PREVIEWS.length);
 const DEBUG_WATER_HALF_WIDTH = DEBUG_WATER_WIDTH * 0.5;
+const DEFAULT_MODEL_DEBUG_SPEED_SCALE = 1;
 
 export type ModelDebugFlowRefs = {
     worldRoot: Node | null;
@@ -62,7 +62,7 @@ export class ModelDebugFlowController {
     private _cameraYaw = Math.PI / 2;
     private _cameraPitch = 0.04;
     private _cameraDistance = 3.2;
-    private _speedScale = MOTION_TUNING.animationSpeedScale;
+    private _speedScale = DEFAULT_MODEL_DEBUG_SPEED_SCALE;
     private readonly _debugMotor = new SwimmerMotor();
     private _lastRating: Rating | null = null;
     private _lastCombo = 0;
@@ -89,7 +89,7 @@ export class ModelDebugFlowController {
         this._cameraPitch = 0.04;
         this._cameraDistance = this.isPortraitViewport() ? 4.2 : 3.2;
         this._cameraDragging = false;
-        this._speedScale = MOTION_TUNING.animationSpeedScale;
+        this._speedScale = DEFAULT_MODEL_DEBUG_SPEED_SCALE;
         this._lastRating = null;
         this._lastCombo = 0;
         this._lastStability = 0;
@@ -224,7 +224,6 @@ export class ModelDebugFlowController {
             return;
         }
         this.hideNonPlayerWorldNodes(false);
-        this.syncSpeedFromTuning();
         const finished = this._debugMotor.update(dt, {
             isAI: false,
             aiPower: 1,
@@ -308,7 +307,6 @@ export class ModelDebugFlowController {
             return;
         }
         this._speedScale = clamp(this._speedScale - 0.1, 0.1, 1.5);
-        MOTION_TUNING.animationSpeedScale = this._speedScale;
         this.applySpeed();
     }
 
@@ -317,7 +315,6 @@ export class ModelDebugFlowController {
             return;
         }
         this._speedScale = clamp(this._speedScale + 0.1, 0.1, 1.5);
-        MOTION_TUNING.animationSpeedScale = this._speedScale;
         this.applySpeed();
     }
 
@@ -433,20 +430,17 @@ export class ModelDebugFlowController {
     }
 
     private applySpeed() {
+        this.applySpeedToPreviews();
         if (this._refs.speedLabel) {
             this._refs.speedLabel.string = `Speed ${this._speedScale.toFixed(2)}x`;
         }
         this._refs.debug(`model debug speed=${this._speedScale.toFixed(2)}x`);
     }
 
-    private syncSpeedFromTuning() {
-        const next = clamp(MOTION_TUNING.animationSpeedScale, 0.1, 1.5);
-        if (Math.abs(next - this._speedScale) < 0.001) {
-            return;
+    private applySpeedToPreviews() {
+        for (const preview of this._actionPreviews) {
+            preview.rig.setDebugMotionSpeedScale(this._speedScale);
         }
-        this._speedScale = next;
-        MOTION_TUNING.animationSpeedScale = next;
-        this.applySpeed();
     }
 
     private applyDebugStabilityResult(result: RhythmResult | null): RhythmResult | null {

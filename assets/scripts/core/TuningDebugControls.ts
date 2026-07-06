@@ -93,14 +93,14 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '划水',
         controls: [
-            control('gesture.armStrokeMinHoldSeconds', '起手判定', '触摸/按键按住多久才开始播放划水动作；比这更短的按压直接算一次踢腿点击。建议 ≤「踢腿降级门槛」。', () => INPUT_TUNING.armStrokeMinHoldSeconds, (v) => INPUT_TUNING.armStrokeMinHoldSeconds = v, 0.01, 0.02, 0.6, 2, 's'),
-            control('stability.minHoldSeconds', '踢腿降级门槛', '松手时若按住时间短于这个秒数，本次划水降级为一次踢腿点击（不算划水、不判失误）。用于兜住「起手判定」到此之间的过短按压。', () => STABILITY_TUNING.minHoldSeconds, (v) => STABILITY_TUNING.minHoldSeconds = v, 0.01, 0, 0.6, 2, 's'),
-            control('stability.armReleaseSweetCenter', '甜区中心', '划水松手时机的最佳位置，用拉水弧线占整圈的比例表示（0.5≈半圈末尾/出水）。在这里松手推进最大。', () => STABILITY_TUNING.armReleaseSweetCenter, (v) => STABILITY_TUNING.armReleaseSweetCenter = v, 0.01, 0.1, 0.5, 2),
-            control('stability.armReleasePerfectHalfWidth', '完美半宽', '松手位置距甜区中心在这个范围内算 PERFECT。值越大 PERFECT 越好打，动作快时可适当调大。', () => STABILITY_TUNING.armReleasePerfectHalfWidth, (v) => STABILITY_TUNING.armReleasePerfectHalfWidth = v, 0.01, 0.01, 0.3, 2),
-            control('stability.armReleaseGoodHalfWidth', 'GOOD半宽', '松手位置距甜区中心在这个范围内算 GOOD（超出完美半宽的部分）。再远则推进很弱。', () => STABILITY_TUNING.armReleaseGoodHalfWidth, (v) => STABILITY_TUNING.armReleaseGoodHalfWidth = v, 0.01, 0.02, 0.5, 2),
+            control('stability.minHoldSeconds', '划水起手门槛', '触摸/按键按住多久才从踢腿点击升级为手臂划水；短于这个秒数会保持为一次踢腿点击，不算划水、不判失误。', () => STABILITY_TUNING.minHoldSeconds, (v) => STABILITY_TUNING.minHoldSeconds = v, 0.01, 0, 0.6, 2, 's'),
+            control('stability.goodStart', 'GOOD起点', 'GOOD 区间起点，范围 0..1。和 PERFECT 重叠的部分按 PERFECT 计算。', () => STABILITY_TUNING.goodStart, (v) => STABILITY_TUNING.goodStart = v, 0.01, 0, 1, 2),
+            control('stability.goodEnd', 'GOOD终点', 'GOOD 区间终点，范围 0..1。终点必须大于起点。', () => STABILITY_TUNING.goodEnd, (v) => STABILITY_TUNING.goodEnd = v, 0.01, 0, 1, 2),
+            control('stability.perfectStart', 'PERFECT起点', 'PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。', () => STABILITY_TUNING.perfectStart, (v) => STABILITY_TUNING.perfectStart = v, 0.01, 0, 1, 2),
+            control('stability.perfectEnd', 'PERFECT终点', 'PERFECT 区间终点，范围 0..1。终点必须大于起点。', () => STABILITY_TUNING.perfectEnd, (v) => STABILITY_TUNING.perfectEnd = v, 0.01, 0, 1, 2),
             control('gesture.armStrokeTimeoutProgress', '超时圈数', '一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束（手已出水），判为超时失误。0.5=半圈。', () => STABILITY_TUNING.armStrokeTimeoutProgress, (v) => STABILITY_TUNING.armStrokeTimeoutProgress = v, 0.05, 0.2, 1, 2),
             control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STABILITY_TUNING.armStrokeTimeoutAccel, (v) => STABILITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
-            control('stability.armCycleLowSpeedPerSecond', '低速划水轮速', '速度为 0 时手臂划水每秒的圈数。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STABILITY_TUNING.armCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.2, 3, 2),
+            control('stability.armCycleLowSpeedPerSecond', '低速划水轮速', '速度为 0 时手臂划水每秒的圈数。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STABILITY_TUNING.armCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
             control('stability.armCycleHighSpeedPerSecond', '高速划水轮速', '达到最高速时手臂划水每秒的圈数。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打），速度起来后对操作要求更高。', () => STABILITY_TUNING.armCycleHighSpeedPerSecond, (v) => STABILITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
             control('stability.armCycleSpeedCurve', '轮速曲线', '低速轮速到高速轮速的过渡曲线。1=线性；>1 让窗口在中低速保持宽松、临近最高速才快速收紧。', () => STABILITY_TUNING.armCycleSpeedCurve, (v) => STABILITY_TUNING.armCycleSpeedCurve = v, 0.1, 0.2, 4, 1),
         ],
@@ -110,15 +110,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('motion.heldMotionSpeedScale', '按住速度', '按住 A 或 D 时，对应手脚动作播放的速度倍率。', () => MOTION_TUNING.heldMotionSpeedScale, (v) => MOTION_TUNING.heldMotionSpeedScale = v, 0.05, 0.1, 3, 2),
             control('motion.releasedMotionSpeedScale', '松开速度', '松开 A 或 D 后，对应手脚把这一轮动作追完的速度倍率。', () => MOTION_TUNING.releasedMotionSpeedScale, (v) => MOTION_TUNING.releasedMotionSpeedScale = v, 0.05, 0.2, 6, 2),
-            control('motion.armMinCyclesPerSecond', '手臂最低轮速', '低速时手臂动作每秒循环数。当前速度越高，会越接近动作轮速上限。', () => MOTION_TUNING.armMinCyclesPerSecond, (v) => MOTION_TUNING.armMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
-            control('motion.kickMinCyclesPerSecond', '腿部最低轮速', '低速时腿部动作每秒循环数。当前速度越高，会越接近动作轮速上限。', () => MOTION_TUNING.kickMinCyclesPerSecond, (v) => MOTION_TUNING.kickMinCyclesPerSecond = v, 0.05, 0.1, 3, 2),
-            control('motion.maxCyclesPerSecond', '动作轮速上限', '达到高速度时手脚动作每秒循环数的上限。数值越低，高速时一轮动作越长。', () => MOTION_TUNING.maxCyclesPerSecond, (v) => MOTION_TUNING.maxCyclesPerSecond = v, 0.1, 1, 5, 1),
             control('motion.kickFlutterMaxCyclesPerSecond', 'AI打腿最高频率', '仅 AI：连续打腿在最高速时每秒的圈数。AI 腿频率随其速度缩放。（玩家腿已改为点击脉冲驱动，不受此影响）', () => MOTION_TUNING.kickFlutterMaxCyclesPerSecond, (v) => MOTION_TUNING.kickFlutterMaxCyclesPerSecond = v, 0.1, 0.5, 6, 1),
             control('motion.kickFlutterIdleFraction', 'AI打腿最低频率', '仅 AI：接近停止时保留的最低打腿频率（占最高频率的比例）。（玩家腿不受此影响）', () => MOTION_TUNING.kickFlutterIdleFraction, (v) => MOTION_TUNING.kickFlutterIdleFraction = v, 0.02, 0, 0.5, 2),
             control('motion.kickPulseMinCyclesPerSecond', '踢腿最低脉冲频率', '玩家踢腿的最低扫描频率（圈/秒）。腿会跟随你实际的点击频率抖动（点得越快越快，上限见 speed.踢腿频率上限），但不低于这个下限，保证单点/慢点也有明显快踢。', () => MOTION_TUNING.kickPulseMinCyclesPerSecond, (v) => MOTION_TUNING.kickPulseMinCyclesPerSecond = v, 0.1, 1, 12, 1),
             control('motion.kickPulseMaxCycles', '踢腿缓冲上限', '每条腿最多缓冲的踢腿次数。快速连点超过后会被丢弃，越小=停点后腿停得越干脆，越大=能囤更多下连续踢。', () => MOTION_TUNING.kickPulseMaxCycles, (v) => MOTION_TUNING.kickPulseMaxCycles = v, 1, 1, 5, 0),
             control('motion.kickSettleCyclesPerSecond', '踢腿收腿速度', '无输入、无划水时，腿把当前这半下补完回到直腿滑行姿势的速度（圈/秒）。越高=收腿越快回到滑行。', () => MOTION_TUNING.kickSettleCyclesPerSecond, (v) => MOTION_TUNING.kickSettleCyclesPerSecond = v, 0.1, 0.2, 4, 1),
-            control('motion.animationSpeedScale', '动画倍率', '比赛和 debug model 共用的整体动作倍率，用来统一放慢或加快动作表现。', () => MOTION_TUNING.animationSpeedScale, (v) => MOTION_TUNING.animationSpeedScale = v, 0.05, 0.1, 1.5, 2),
             control('motion.swimBodyPitchDegrees', '游泳俯仰', '自由泳静止和游动时整个人的基础俯仰角，用来微调头肩与腿在水里的整体角度。', () => MOTION_TUNING.swimBodyPitchDegrees, (v) => MOTION_TUNING.swimBodyPitchDegrees = v, 0.5, -12, 12, 1, '°'),
             control('motion.swimBodyYOffset', '身体入水高度', '自由泳模型相对水面的整体高度补偿；负数会让身体更沉入水中，配合游泳俯仰一起调。', () => MOTION_TUNING.swimBodyYOffset, (v) => MOTION_TUNING.swimBodyYOffset = v, 0.02, -0.65, 0.16, 2),
             control('motion.handPalmTurnDegrees', '手臂旋前', '前伸入水时让掌心朝向池底的总旋前角度；旋转会分配到大臂、小臂和手腕，并在抱水和移臂阶段自动减弱。', () => MOTION_TUNING.handPalmTurnDegrees, (v) => MOTION_TUNING.handPalmTurnDegrees = v, 1, 0, 180, 0, '°'),
@@ -283,12 +279,64 @@ function createTuningFileData(): TuningFileData {
 }
 
 function applyTuningSnapshot(snapshot: Record<string, number>) {
+    snapshot = migrateTuningSnapshot(snapshot);
     forEachControl((control, group) => {
         const value = snapshot[control.id] ?? snapshot[`${group.name}.${control.label}`];
         if (typeof value === 'number' && Number.isFinite(value)) {
             control.set(value);
         }
     });
+    validateTuningRelations();
+}
+
+function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string, number> {
+    const migrated = { ...snapshot };
+    const center = snapshot['stability.armReleaseSweetCenter'];
+    const perfectHalf = snapshot['stability.armReleasePerfectHalfWidth'];
+    const goodHalf = snapshot['stability.armReleaseGoodHalfWidth'];
+    if (typeof center === 'number' && Number.isFinite(center)) {
+        if (typeof goodHalf === 'number' && Number.isFinite(goodHalf)) {
+            migrated['stability.goodStart'] ??= center - goodHalf;
+            migrated['stability.goodEnd'] ??= center + goodHalf;
+        }
+        if (typeof perfectHalf === 'number' && Number.isFinite(perfectHalf)) {
+            migrated['stability.perfectStart'] ??= center - perfectHalf;
+            migrated['stability.perfectEnd'] ??= center + perfectHalf;
+        }
+    }
+    return migrated;
+}
+
+function validateTuningRelations() {
+    const timeoutProgress = clamp(STABILITY_TUNING.armStrokeTimeoutProgress, 0.05, 1);
+    const good = normalizeRange(STABILITY_TUNING.goodStart, STABILITY_TUNING.goodEnd, timeoutProgress, 'stability.good');
+    STABILITY_TUNING.goodStart = good.start;
+    STABILITY_TUNING.goodEnd = good.end;
+    const perfect = normalizeRange(STABILITY_TUNING.perfectStart, STABILITY_TUNING.perfectEnd, timeoutProgress, 'stability.perfect');
+    STABILITY_TUNING.perfectStart = perfect.start;
+    STABILITY_TUNING.perfectEnd = perfect.end;
+
+    if (STABILITY_TUNING.armCycleHighSpeedPerSecond < STABILITY_TUNING.armCycleLowSpeedPerSecond) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: stability.armCycleHighSpeedPerSecond ` +
+            `${STABILITY_TUNING.armCycleHighSpeedPerSecond.toFixed(3)} was below low-speed cycle ` +
+            `${STABILITY_TUNING.armCycleLowSpeedPerSecond.toFixed(3)}`,
+        );
+        STABILITY_TUNING.armCycleHighSpeedPerSecond = STABILITY_TUNING.armCycleLowSpeedPerSecond;
+    }
+}
+
+function normalizeRange(startValue: number, endValue: number, maxEnd: number, label: string): { start: number; end: number } {
+    let start = clamp(Math.min(startValue, endValue), 0, maxEnd);
+    let end = clamp(Math.max(startValue, endValue), 0, maxEnd);
+    if (end - start < 0.001) {
+        end = clamp(start + 0.001, 0, maxEnd);
+        start = Math.min(start, Math.max(0, end - 0.001));
+    }
+    if (Math.abs(start - startValue) > 0.0001 || Math.abs(end - endValue) > 0.0001) {
+        console.warn(`[SpeedSwimming] tuning adjusted: ${label} range -> ${start.toFixed(3)}..${end.toFixed(3)}`);
+    }
+    return { start, end };
 }
 
 function getValuesFromTuningData(data: TuningFileData | Record<string, number>): Record<string, number> {

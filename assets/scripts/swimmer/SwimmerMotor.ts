@@ -388,18 +388,14 @@ export class SwimmerMotor {
 
     private updateMotionCycles(dt: number, options: SwimmerMotorOptions) {
         const speedRatio = this.speedRatio();
-        const armCycleSpeed = CYCLE_AMOUNT * lerp(MOTION_TUNING.armMinCyclesPerSecond, MOTION_TUNING.maxCyclesPerSecond, speedRatio);
-        const actionCycleSpeed = CYCLE_AMOUNT * lerp(
-            (MOTION_TUNING.armMinCyclesPerSecond + MOTION_TUNING.kickMinCyclesPerSecond) * 0.5,
-            MOTION_TUNING.maxCyclesPerSecond,
-            speedRatio,
-        );
+        const armCycleSpeed = this.currentActionCycleSpeed();
+        const actionCycleSpeed = armCycleSpeed;
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
         if (options.isAI) {
             // AI has no discrete taps: legs use the speed-driven continuous flutter.
             this.advanceAiFlutter(dt, speedRatio);
-            const visualSpeedScale = MOTION_TUNING.animationSpeedScale * Math.max(0.7, options.aiPower);
+            const visualSpeedScale = Math.max(0.7, options.aiPower);
             const releasedSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * visualSpeedScale;
             this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', releasedSpeedScale);
             this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', releasedSpeedScale);
@@ -424,7 +420,7 @@ export class SwimmerMotor {
     private advanceAiFlutter(dt: number, speedRatio: number) {
         const idle = clamp01(MOTION_TUNING.kickFlutterIdleFraction);
         const cadenceFraction = idle + (1 - idle) * clamp01(speedRatio);
-        const cadence = CYCLE_AMOUNT * MOTION_TUNING.kickFlutterMaxCyclesPerSecond * cadenceFraction * MOTION_TUNING.animationSpeedScale;
+        const cadence = CYCLE_AMOUNT * MOTION_TUNING.kickFlutterMaxCyclesPerSecond * cadenceFraction;
         const step = cadence * dt;
         this._leftKickCycle += step;
         this._rightKickCycle += step;
@@ -491,9 +487,8 @@ export class SwimmerMotor {
             // Discrete tap pulse: the sweep cadence TRACKS the player's actual tap
             // frequency (_kickCadenceHz), so tapping faster whips the legs faster
             // with no fixed ceiling other than kickCadenceMaxHz. Floored so a
-            // single/slow tap still plays a visibly quick kick. animationSpeedScale
-            // is intentionally NOT applied here so the legs match the finger rhythm
-            // one-to-one instead of lagging behind it.
+            // single/slow tap still plays a visibly quick kick. The legs match the
+            // finger rhythm one-to-one instead of lagging behind it.
             const cyclesPerSecond = Math.max(MOTION_TUNING.kickPulseMinCyclesPerSecond, this._kickCadenceHz);
             const cadence = CYCLE_AMOUNT * cyclesPerSecond;
             const step = Math.min(budget, cadence * dt);
@@ -510,7 +505,7 @@ export class SwimmerMotor {
             return 0;
         }
         const toNeutral = half - frac;
-        const settle = CYCLE_AMOUNT * MOTION_TUNING.kickSettleCyclesPerSecond * MOTION_TUNING.animationSpeedScale;
+        const settle = CYCLE_AMOUNT * MOTION_TUNING.kickSettleCyclesPerSecond;
         return Math.min(toNeutral, settle * dt);
     }
 
@@ -643,7 +638,7 @@ export class SwimmerMotor {
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds)
             : undefined;
         this._lastStability = stability;
-        this.startStabilityAcceleration(stability, action);
+        this.startSettledStrokeAcceleration(stability, actionSeconds);
         action.stabilitySettled = true;
         const result = {
             type,
@@ -670,25 +665,39 @@ export class SwimmerMotor {
     private predictedActionSecondsAfterRelease(action: StrokeAction): number {
         const elapsed = Math.max(0, this._motionClock - action.startedAt);
         const remainingProgress = Math.max(0, CYCLE_AMOUNT - action.progress);
-        const releaseSpeed = this.currentActionCycleSpeed() * MOTION_TUNING.releasedMotionSpeedScale * MOTION_TUNING.animationSpeedScale;
+        const releaseSpeed = this.currentActionCycleSpeed() * MOTION_TUNING.releasedMotionSpeedScale;
         const remainingSeconds = releaseSpeed > 0 ? remainingProgress / releaseSpeed : 0;
         return Math.max(0.001, elapsed + remainingSeconds);
     }
 
     private startActionBaseAcceleration(type: StrokeType, action: StrokeAction) {
         action.baseAccelerationStarted = true;
-        // Redesign: every stroke gets the same base pulse when it starts playing.
-        // No alternation scaling, no input-freshness penalty (kicks/taps are now
-        // a separate action, so the old anti-spam補丁 is unnecessary).
-        this.startStrokeAcceleration(SWIMMER_BALANCE.strokeBaseAccel, false);
+        // Base propulsion is paid when the stroke settles, after release timing is
+        // known, so it can be normalized by the stroke's occupied action time.
     }
 
-    private startStabilityAcceleration(stability: number, action: StrokeAction) {
-        if (stability <= 0) {
+    private startSettledStrokeAcceleration(stability: number, actionSeconds: number) {
+        const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
+        const stabilityAccel = Math.max(0, stability) * SWIMMER_BALANCE.strokeStabilityAccel * this._conditionSpeedScale;
+        const accel = (baseAccel + stabilityAccel) * this.strokeActionTimeScale(actionSeconds);
+        if (accel <= 0) {
             return;
         }
-        // Redesign: propulsion scales purely with the release-timing quality.
-        this.startStrokeAcceleration(stability * SWIMMER_BALANCE.strokeStabilityAccel * this._conditionSpeedScale, true);
+        this.startStrokeAcceleration(accel, false);
+    }
+
+    private strokeActionTimeScale(actionSeconds: number): number {
+        const referenceSeconds = this.referenceSweetCenterActionSeconds();
+        return referenceSeconds > 0 ? Math.max(0, actionSeconds) / referenceSeconds : 1;
+    }
+
+    private referenceSweetCenterActionSeconds(): number {
+        const cycleSpeed = Math.max(0.0001, this.currentActionCycleSpeed());
+        const heldScale = Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
+        const releaseScale = Math.max(0.0001, MOTION_TUNING.releasedMotionSpeedScale);
+        const center = perfectReleaseCenter();
+        return (CYCLE_AMOUNT * center) / (cycleSpeed * heldScale)
+            + (CYCLE_AMOUNT * (1 - center)) / (cycleSpeed * releaseScale);
     }
 
     private startStrokeAcceleration(accel: number, additive: boolean) {
@@ -732,7 +741,7 @@ export class SwimmerMotor {
     }
 
     private currentCycleSeconds(): number {
-        return CYCLE_AMOUNT / Math.max(0.05, this.currentActionCycleSpeed() * MOTION_TUNING.animationSpeedScale);
+        return CYCLE_AMOUNT / Math.max(0.05, this.currentActionCycleSpeed());
     }
 
     private currentActionCycleSpeed(): number {
@@ -906,11 +915,11 @@ export class SwimmerMotor {
     private motionSpeedScaleForSide(type: StrokeType): number {
         const activeAction = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
         if (activeAction && activeAction.releasedAt >= 0) {
-            return MOTION_TUNING.releasedMotionSpeedScale * MOTION_TUNING.animationSpeedScale;
+            return MOTION_TUNING.releasedMotionSpeedScale;
         }
         const held = type === StrokeType.LEFT ? this._leftStrokeHeld : this._rightStrokeHeld;
         const sideScale = held ? MOTION_TUNING.heldMotionSpeedScale : MOTION_TUNING.releasedMotionSpeedScale;
-        return sideScale * MOTION_TUNING.animationSpeedScale;
+        return sideScale;
     }
 
     get currentSpeed(): number {
@@ -1085,28 +1094,47 @@ function strongerStability(a: StrokeStabilityResult | null, b: StrokeStabilityRe
 }
 
 function strokeQualityFromReleaseProgress(progress: number): number {
-    const center = STABILITY_TUNING.armReleaseSweetCenter;
-    const perfectHW = Math.max(0.001, STABILITY_TUNING.armReleasePerfectHalfWidth);
-    const goodHW = Math.max(perfectHW + 0.001, STABILITY_TUNING.armReleaseGoodHalfWidth);
-    const d = Math.abs(clamp01(progress) - center);
-    if (d <= perfectHW) {
+    const p = clamp01(progress);
+    const perfect = normalizedReleaseRange(STABILITY_TUNING.perfectStart, STABILITY_TUNING.perfectEnd);
+    if (p >= perfect.start && p <= perfect.end) {
         return 1;
     }
-    if (d <= goodHW) {
-        // Cap below the PERFECT threshold (0.999) so this band always reads GOOD.
-        return clamp01(1 - (d - perfectHW) / (goodHW - perfectHW)) * 0.98;
+    const good = normalizedReleaseRange(STABILITY_TUNING.goodStart, STABILITY_TUNING.goodEnd);
+    if (p < good.start || p > good.end) {
+        return 0;
     }
-    return 0;
+    // GOOD ramps up toward the nearest PERFECT edge, but remains below PERFECT.
+    if (p < perfect.start) {
+        const span = Math.max(0.001, perfect.start - good.start);
+        return clamp01((p - good.start) / span) * 0.98;
+    }
+    if (p > perfect.end) {
+        const span = Math.max(0.001, good.end - perfect.end);
+        return clamp01((good.end - p) / span) * 0.98;
+    }
+    return 0.98;
 }
 
 function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolean, holdSeconds: number, minHoldSeconds: number): string {
     if (!holdTimeValid) {
         return `hold_too_short(${holdSeconds.toFixed(2)}<${minHoldSeconds.toFixed(2)})`;
     }
-    if (releaseProgress < STABILITY_TUNING.armReleaseSweetCenter) {
+    if (releaseProgress < perfectReleaseCenter()) {
         return `released_early(${(releaseProgress * 100).toFixed(0)}%)`;
     }
     return `released_late(${(releaseProgress * 100).toFixed(0)}%)`;
+}
+
+function normalizedReleaseRange(startValue: number, endValue: number): { start: number; end: number } {
+    return {
+        start: clamp01(Math.min(startValue, endValue)),
+        end: clamp01(Math.max(startValue, endValue)),
+    };
+}
+
+function perfectReleaseCenter(): number {
+    const perfect = normalizedReleaseRange(STABILITY_TUNING.perfectStart, STABILITY_TUNING.perfectEnd);
+    return clamp01((perfect.start + perfect.end) * 0.5);
 }
 
 function ratingForGuideStability(stability: number): Rating {
