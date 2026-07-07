@@ -712,6 +712,7 @@ export class Swimmer extends Component {
         this._diveUnderwaterActive = true;
         this._diveGlidePoseActive = true;
         this._diveUnderwaterElapsed = 0;
+        this._motor.setGlidePhase(true);
         this.cartoonRig?.setLegSplashSuppressed(true);
     }
 
@@ -720,11 +721,13 @@ export class Swimmer extends Component {
         this._diveGlidePoseActive = false;
         this._diveUnderwaterElapsed = 0;
         this._diveEntryLeanDegrees = 0;
+        this._motor.setGlidePhase(false);
         this.cartoonRig?.setLegSplashSuppressed(false);
     }
 
     private beginSurfaceSwimming() {
         this._diveGlidePoseActive = false;
+        this._motor.setGlidePhase(false);
         this.cartoonRig?.setLegSplashSuppressed(false);
         if (this._motor.isRacing) {
             this.cartoonRig?.setActiveSwimming(true);
@@ -811,6 +814,10 @@ export class Swimmer extends Component {
 
     get strokeTimingGuide(): StrokeTimingGuide {
         return this._motor.strokeTimingGuide;
+    }
+
+    strokeTimingGuideForSide(type: StrokeType): StrokeTimingGuide {
+        return this._motor.strokeTimingGuideForSide(type);
     }
 
     get distance(): number {

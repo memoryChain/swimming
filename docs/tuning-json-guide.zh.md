@@ -79,7 +79,7 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 | `stability.perfectEnd` | `0.46` | 比例 | PERFECT 区间终点，范围 0..1。 |
 | `gesture.armStrokeTimeoutProgress` | `0.5` | 比例 | 一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束并判为超时失误。`0.5` 表示半圈。 |
 | `gesture.armStrokeTimeoutAccel` | `0.08` | m/s² | 划水超时失误时给的很小推进加速度，用来惩罚一直按住不松手。 |
-| `stability.armCycleLowSpeedPerSecond` | `0.1` | 圈/s | 速度为 0 时，手臂划水每秒转几圈。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越低，低速时一圈越慢，甜区实际时间窗口越宽。 |
+| `stability.armCycleLowSpeedPerSecond` | `0.3` | 圈/s | 速度为 0 时，手臂划水每秒转几圈。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越低，低速时一圈越慢，甜区实际时间窗口越宽。 |
 | `stability.armCycleHighSpeedPerSecond` | `2` | 圈/s | 达到最高速度时，手臂划水每秒转几圈。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越高，高速时一圈越快，甜区实际时间窗口越短。 |
 | `stability.armCycleSpeedCurve` | `1` | 曲线 | 低速轮速到高速轮速的过渡曲线。`1` 是线性；大于 `1` 会让中低速窗口保持宽松，临近最高速才快速收紧。 |
 

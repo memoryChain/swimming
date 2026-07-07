@@ -107,6 +107,19 @@ export const STABILITY_TUNING = {
     armCycleLowSpeedPerSecond: 0.82,
     armCycleHighSpeedPerSecond: 2.8,
     armCycleSpeedCurve: 1,
+    // AI-only low-speed arm-cycle floor (cycles/sec). The AI has no leg-kick
+    // propulsion, so at low swim speed the player's slow low-speed cadence
+    // (armCycleLowSpeedPerSecond) traps it: slow cycle → infrequent strokes → weak
+    // propulsion → speed stays low. AI swimmers use THIS higher low-speed cadence
+    // instead so they stroke briskly from a slow start and can accelerate up to
+    // cruise; both curves converge to armCycleHighSpeedPerSecond at high speed, so
+    // AI high-speed behavior still matches the player. The sweet zone stays a fixed
+    // fraction of a cycle, so AI release accuracy (set by difficulty) is unaffected.
+    // 仅 AI 用的低速手臂周期下限（圈/秒）。AI 没有踢腿推进，玩家那套很慢的低速节奏会把它困住
+    // （慢周期→划水稀疏→推进弱→速度上不去）。AI 改用这个更高的低速节奏，慢起步也能密集划水
+    // 顶起速度；两条曲线在高速时都收敛到 armCycleHighSpeedPerSecond，所以 AI 高速表现仍与玩家一致。
+    // 甜区仍是周期的固定比例，AI 的松手精度（由难度决定）不受影响。
+    aiArmCycleLowSpeedPerSecond: 1.9,
 };
 
 export const TARGET_LIMB_RATE = 1 / TARGET_INTERVAL;

@@ -88,6 +88,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.poolDeceleration', '泳池减速', '泳池或场景提供的固定减速度。未来不同泳池可以配置不同数值。', () => SWIMMER_BALANCE.poolDeceleration, (v) => SWIMMER_BALANCE.poolDeceleration = v, 0.02, 0, 2, 2),
             control('speed.baseDrag', '基础阻力', '与速度成正比的线性阻力（∝ v）。', () => SWIMMER_BALANCE.baseDrag, (v) => SWIMMER_BALANCE.baseDrag = v, 0.02, 0, 2, 2),
             control('speed.highSpeedDrag', '高速阻力', '与速度平方成正比的二次阻力（∝ v²）。值越高，速度越快阻力增长越剧烈，低速时几乎没有影响。', () => SWIMMER_BALANCE.highSpeedDrag, (v) => SWIMMER_BALANCE.highSpeedDrag = v, 0.01, 0, 2.5, 2),
+            control('speed.glideDrag', '潜水滑行阻力', '仅在跳水入水后的潜水滑行阶段叠加的额外阻力（∝ v）。越大越迫使玩家靠抖腿踢水维持速度，不踢就很快掉速；设 0 关闭。', () => SWIMMER_BALANCE.glideDrag, (v) => SWIMMER_BALANCE.glideDrag = v, 0.02, 0, 3, 2),
         ],
     },
     {
@@ -102,6 +103,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STABILITY_TUNING.armStrokeTimeoutAccel, (v) => STABILITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
             control('stability.armCycleLowSpeedPerSecond', '低速划水轮速', '速度为 0 时手臂划水每秒的圈数。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STABILITY_TUNING.armCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
             control('stability.armCycleHighSpeedPerSecond', '高速划水轮速', '达到最高速时手臂划水每秒的圈数。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打），速度起来后对操作要求更高。', () => STABILITY_TUNING.armCycleHighSpeedPerSecond, (v) => STABILITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
+            control('stability.aiArmCycleLowSpeedPerSecond', 'AI低速划水轮速', '仅 AI：速度为 0 时手臂划水每秒的圈数（比玩家的低速轮速高）。AI 没有踢腿推进，低速时靠这个更快的划频冲出慢起步、把速度顶起来；高速时与玩家一致。调低会让 AI 慢起步更吃力。', () => STABILITY_TUNING.aiArmCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.aiArmCycleLowSpeedPerSecond = v, 0.05, 0.3, 4, 2),
             control('stability.armCycleSpeedCurve', '轮速曲线', '低速轮速到高速轮速的过渡曲线。1=线性；>1 让窗口在中低速保持宽松、临近最高速才快速收紧。', () => STABILITY_TUNING.armCycleSpeedCurve, (v) => STABILITY_TUNING.armCycleSpeedCurve = v, 0.1, 0.2, 4, 1),
         ],
     },

@@ -32,6 +32,7 @@ export class SweetZoneBar {
     private _speedLabel: Label = null;
     private _lastSignature = '';
     private _tag = '';
+    private _showSpeed = true;
     // Swim direction sign: +1 outbound (hand starts at 3 o'clock, sweeps CW),
     // -1 after a lap turn (hand starts at 9 o'clock, sweeps CCW). Mirrors the dial
     // so the pointer matches the character's hand once they fold back.
@@ -39,8 +40,11 @@ export class SweetZoneBar {
 
     // `tag` prefixes the speed readout (e.g. "AI") so multiple dials are
     // distinguishable when both the player and an opponent dial are on screen.
-    build(parent: Node, x: number, y: number, tag = '') {
+    // `showSpeed=false` shows just the static tag (used by the second per-hand dial
+    // so the swimmer's speed isn't printed twice).
+    build(parent: Node, x: number, y: number, tag = '', showSpeed = true) {
         this._tag = tag;
+        this._showSpeed = showSpeed;
         this._root = makeUiNode('SweetZoneDial', parent);
         this._root.setPosition(x, y, 0);
 
@@ -48,7 +52,7 @@ export class SweetZoneBar {
         speedNode.setPosition(0, DIAL_OUTER_RADIUS + SPEED_LABEL_HEIGHT / 2 + 6, 0);
         speedNode.getComponent(UITransform).setContentSize(SPEED_LABEL_WIDTH, SPEED_LABEL_HEIGHT);
         this._speedLabel = speedNode.addComponent(Label);
-        this._speedLabel.string = tag ? `${tag} 0.00 m/s` : 'SPD 0.00 m/s';
+        this._speedLabel.string = showSpeed ? (tag ? `${tag} 0.00 m/s` : 'SPD 0.00 m/s') : tag;
         this._speedLabel.fontSize = 26;
         this._speedLabel.lineHeight = 32;
         this._speedLabel.color = COLOR_SPEED;
@@ -81,7 +85,7 @@ export class SweetZoneBar {
             return;
         }
         this._direction = direction < 0 ? -1 : 1;
-        if (this._speedLabel) {
+        if (this._speedLabel && this._showSpeed) {
             const prefix = this._tag || 'SPD';
             this._speedLabel.string = `${prefix} ${Math.max(0, speed).toFixed(2)} m/s`;
         }

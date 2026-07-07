@@ -72,6 +72,16 @@ export const SWIMMER_BALANCE = {
     poolDeceleration: 0.06,
     baseDrag: 0.03,
     highSpeedDrag: 0.03,
+    // Underwater-glide drag (redesign): while the swimmer is still in the
+    // post-dive underwater glide (before surfacing), an EXTRA drag proportional to
+    // current speed is applied on top of the normal drag. So a fast dive entry
+    // bleeds off quickly unless the player keeps flutter-kicking (each glide kick
+    // adds diveUnderwaterKickAccel). Only affects the glide phase; surface swimming
+    // is unchanged. Set to 0 to disable.
+    // 水下滑行阻力（重构）：跳水入水后、露出水面前的潜水滑行阶段，在常规阻力之外再叠加一份
+    // 与当前速度成正比的额外阻力。于是入水速度很快就会衰减，除非玩家持续抖腿踢水（每次潜水
+    // 踢腿加 diveUnderwaterKickAccel）。只作用于滑行阶段，水面游泳不受影响；设 0 关闭。
+    glideDrag: 0.35,
     // Overspeed cap/decay: a strong dive can launch above maxSpeed; these clamp
     // how far over and how fast it bleeds back down. (Legacy name kept.)
     perfectComboMaxOvercap: 0.9,

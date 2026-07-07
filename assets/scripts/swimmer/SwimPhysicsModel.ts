@@ -10,6 +10,9 @@ export type SwimPhysicsInput = {
     strokeAcceleration: number;
     kickAcceleration: number;
     speedCapBonus: number;
+    // Extra drag coefficient (per m/s) active only during the underwater glide.
+    // Added on top of the normal drag so an un-kicked glide bleeds off fast.
+    glideDrag?: number;
 };
 
 export class SwimPhysicsModel {
@@ -28,6 +31,7 @@ export class SwimPhysicsModel {
             SWIMMER_BALANCE.poolDeceleration
             + SWIMMER_BALANCE.baseDrag * speed
             + SWIMMER_BALANCE.highSpeedDrag * speed * speed
+            + Math.max(0, input.glideDrag ?? 0) * speed
         );
         const currentSpeed = clamp(state.currentSpeed + (accel - drag) * input.dt, SWIMMER_BALANCE.minSpeed, maxSpeed);
 

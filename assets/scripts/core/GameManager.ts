@@ -112,10 +112,14 @@ export class GameManager extends Component {
     private _skyboxApplier: StandardSkyboxApplier = null;
     private _timingGuideFillNode: Node = null;
     private _timingGuideMarker: Node = null;
-    private readonly _sweetZoneBar = new SweetZoneBar();
-    // 100m AI-debug 1v1 extras: a second sweet-zone bar for the opponent and a
-    // camera-follow-AI toggle button. Built always but only shown in ai-debug.
-    private readonly _aiSweetZoneBar = new SweetZoneBar();
+    // Left and right arms are independent stroke queues, so each hand gets its own
+    // sweet-zone dial (left dial shows the swimmer's speed; right dial omits it).
+    private readonly _sweetZoneBarLeft = new SweetZoneBar();
+    private readonly _sweetZoneBarRight = new SweetZoneBar();
+    // 100m AI-debug 1v1 extras: a second pair of sweet-zone dials for the opponent
+    // and a camera-follow-AI toggle button. Built always but only shown in ai-debug.
+    private readonly _aiSweetZoneBarLeft = new SweetZoneBar();
+    private readonly _aiSweetZoneBarRight = new SweetZoneBar();
     private _cameraFollowsAi = false;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
@@ -194,8 +198,12 @@ export class GameManager extends Component {
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
         const raceActive = this._state === GameState.RACING;
         this.drawStrokeTimingGuide(timingGuide, raceActive);
-        this._sweetZoneBar.setVisible(raceActive);
-        this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed, this.dialFacingSign(this._playerSwimmer));
+        const playerFacing = this.dialFacingSign(this._playerSwimmer);
+        const playerSpeed = this._playerSwimmer.currentSpeed;
+        this._sweetZoneBarLeft.setVisible(raceActive);
+        this._sweetZoneBarRight.setVisible(raceActive);
+        this._sweetZoneBarLeft.update(raceActive ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
+        this._sweetZoneBarRight.update(raceActive ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
@@ -599,12 +607,17 @@ export class GameManager extends Component {
             this._uiController = refs.uiController;
             this._timingGuideFillNode = refs.timingGuideFillNode;
             this._timingGuideMarker = refs.timingGuideMarker;
-            // Debug sweet-zone bar: bottom-center of the HUD.
+            // Debug sweet-zone dials: bottom-center of the HUD, one per hand.
             const visibleSize = view.getVisibleSize();
-            this._sweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 90, 'YOU');
-            // AI opponent dial stacked just above the player dial (still lower
+            const playerDialY = -visibleSize.height / 2 + 90;
+            const aiDialY = -visibleSize.height / 2 + 260;
+            const dialSpread = 78;
+            this._sweetZoneBarLeft.build(this._raceHud, -dialSpread, playerDialY, '左', true);
+            this._sweetZoneBarRight.build(this._raceHud, dialSpread, playerDialY, '右', false);
+            // AI opponent dials stacked just above the player dials (still lower
             // area) + camera-follow button (bottom-right), shown only in AI-debug.
-            this._aiSweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 260, 'AI');
+            this._aiSweetZoneBarLeft.build(this._raceHud, -dialSpread, aiDialY, 'AI左', true);
+            this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
@@ -783,17 +796,22 @@ export class GameManager extends Component {
         if (!this._aiDebugMode) {
             this._cameraFollowsAi = false;
             this._gameFlow?.setCameraFollowAi(false);
-            this._aiSweetZoneBar.setVisible(false);
+            this._aiSweetZoneBarLeft.setVisible(false);
+            this._aiSweetZoneBarRight.setVisible(false);
         }
     }
 
-    // Drive the opponent's sweet-zone bar from the single AI swimmer (AI-debug).
+    // Drive the opponent's sweet-zone dials from the single AI swimmer (AI-debug).
     private updateAiSweetZoneBar(raceActive: boolean) {
         const aiSwimmer = this._aiDebugMode ? this._aiSwimmers[0] : null;
         const show = raceActive && !!aiSwimmer;
-        this._aiSweetZoneBar.setVisible(show);
+        this._aiSweetZoneBarLeft.setVisible(show);
+        this._aiSweetZoneBarRight.setVisible(show);
         if (aiSwimmer) {
-            this._aiSweetZoneBar.update(show ? aiSwimmer.strokeTimingGuide : null, aiSwimmer.currentSpeed, this.dialFacingSign(aiSwimmer));
+            const facing = this.dialFacingSign(aiSwimmer);
+            const speed = aiSwimmer.currentSpeed;
+            this._aiSweetZoneBarLeft.update(show ? aiSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, speed, facing);
+            this._aiSweetZoneBarRight.update(show ? aiSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, speed, facing);
         }
     }
 

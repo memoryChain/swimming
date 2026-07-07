@@ -70,6 +70,9 @@ export class SwimmerMotor {
     private _currentSpeed = 0;
     private _distance = 0;
     private _isRacing = false;
+    // Set from update() options each frame. AI swimmers use a higher low-speed
+    // arm-cycle floor so they aren't trapped at low speed (they have no leg kicks).
+    private _isAI = false;
     private _bodyPhase = 0;
     private _leftArmCycle = 0;
     private _rightArmCycle = 0;
@@ -97,6 +100,9 @@ export class SwimmerMotor {
     private _conditionQualityScale = 1;
     private _lastStability = 0;
     private _currentAcceleration = 0;
+    // Underwater-glide flag: while true (post-dive, before surfacing) the physics
+    // step applies SWIMMER_BALANCE.glideDrag so an un-kicked glide bleeds off fast.
+    private _glidePhaseActive = false;
     // Kick propulsion is driven by the CURRENT tap frequency, not per-tap pulses.
     // _kickCadenceHz is estimated from the interval between taps (and decays when
     // tapping stops); each frame it produces a continuous acceleration that fades
@@ -117,11 +123,18 @@ export class SwimmerMotor {
 
     stopRace() {
         this._isRacing = false;
+        this._glidePhaseActive = false;
+    }
+
+    // Toggled by the Swimmer as it enters/leaves the post-dive underwater glide.
+    setGlidePhase(active: boolean) {
+        this._glidePhaseActive = active;
     }
 
     reset() {
         this._currentSpeed = 0;
         this._isRacing = false;
+        this._glidePhaseActive = false;
         this.resetRaceState();
     }
 
@@ -265,6 +278,7 @@ export class SwimmerMotor {
         if (!this._isRacing) {
             return false;
         }
+        this._isAI = options.isAI;
 
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
@@ -286,6 +300,7 @@ export class SwimmerMotor {
                 strokeAcceleration,
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
+                glideDrag: this._glidePhaseActive ? SWIMMER_BALANCE.glideDrag : 0,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
@@ -730,8 +745,14 @@ export class SwimmerMotor {
         // sweet zone stays a fixed fraction of a cycle, so a faster cycle = a
         // tighter timing window.
         const t = Math.pow(this.speedRatio(), Math.max(0.05, STABILITY_TUNING.armCycleSpeedCurve));
+        // AI swimmers use a higher low-speed cadence floor so a slow start doesn't
+        // trap them (they have no leg-kick propulsion). Both curves share the same
+        // high-speed value, so AI and player converge at speed.
+        const lowSpeedPerSecond = this._isAI
+            ? STABILITY_TUNING.aiArmCycleLowSpeedPerSecond
+            : STABILITY_TUNING.armCycleLowSpeedPerSecond;
         return CYCLE_AMOUNT * lerp(
-            STABILITY_TUNING.armCycleLowSpeedPerSecond,
+            lowSpeedPerSecond,
             STABILITY_TUNING.armCycleHighSpeedPerSecond,
             t,
         );
@@ -954,7 +975,20 @@ export class SwimmerMotor {
     }
 
     get strokeTimingGuide(): StrokeTimingGuide {
-        const action = this.currentGuideAction();
+        return this.buildGuideFromAction(this.currentGuideAction());
+    }
+
+    // Per-side timing guide: left and right arms are independent stroke queues,
+    // so each hand has its own release-progress marker. The combined getter above
+    // still returns whichever side is currently active (earliest-started); this
+    // one is scoped to a single hand so the UI can show one dial per hand.
+    strokeTimingGuideForSide(type: StrokeType): StrokeTimingGuide {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        const usable = action && action.startedAt >= 0 && !action.stabilitySettled ? action : null;
+        return this.buildGuideFromAction(usable);
+    }
+
+    private buildGuideFromAction(action: StrokeAction | null): StrokeTimingGuide {
         const actionSeconds = action ? this.predictedActionSecondsAfterRelease(action) : this.currentCycleSeconds();
         const holdSeconds = action ? this.currentHoldSeconds(action) : 0;
         // Redesign: the guide axis is the pull-arc progress (release progress),
