@@ -194,7 +194,7 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         this.drawStrokeTimingGuide(timingGuide, raceActive);
         this._sweetZoneBar.setVisible(raceActive);
-        this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed);
+        this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed, this._playerSwimmer.raceDirection);
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
@@ -600,10 +600,10 @@ export class GameManager extends Component {
             this._timingGuideMarker = refs.timingGuideMarker;
             // Debug sweet-zone bar: bottom-center of the HUD.
             const visibleSize = view.getVisibleSize();
-            this._sweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 70, 'YOU');
-            // AI opponent bar stacked just above the player bar (still lower area)
-            // + camera-follow button (bottom-right), shown only in 100m AI-debug.
-            this._aiSweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 190, 'AI');
+            this._sweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 90, 'YOU');
+            // AI opponent dial stacked just above the player dial (still lower
+            // area) + camera-follow button (bottom-right), shown only in AI-debug.
+            this._aiSweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 260, 'AI');
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
@@ -792,7 +792,7 @@ export class GameManager extends Component {
         const show = raceActive && !!aiSwimmer;
         this._aiSweetZoneBar.setVisible(show);
         if (aiSwimmer) {
-            this._aiSweetZoneBar.update(show ? aiSwimmer.strokeTimingGuide : null, aiSwimmer.currentSpeed);
+            this._aiSweetZoneBar.update(show ? aiSwimmer.strokeTimingGuide : null, aiSwimmer.currentSpeed, aiSwimmer.raceDirection);
         }
     }
 

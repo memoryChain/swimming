@@ -37,6 +37,12 @@ export class AISwimmerController extends Component {
     private _holdElapsed = 0;
 
     startSwimming() {
+        // Idempotent: an AI that already began swimming (e.g. right after its own
+        // dive) keeps its rhythm instead of being reset when the race-wide start
+        // fires. Only a fresh (inactive) controller initializes its schedule.
+        if (this._active) {
+            return;
+        }
         this._active = true;
         this._phase = 'gap';
         this._nextSide = StrokeType.LEFT;

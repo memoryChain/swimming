@@ -341,6 +341,10 @@ export class GameFlowController {
                     return;
                 }
                 swimmer.performDive(diveResult);
+                // Start this AI swimming the moment it enters the water, so it races
+                // on its own reaction time even if the player stalls on the block
+                // (the race-wide RACING transition is gated on the player's dive).
+                controller?.startSwimming();
                 this._refs.debug(`ai dive ${swimmer.swimmerName} power=${power.toFixed(2)} delay=${(delayMs / 1000).toFixed(2)}`);
             }, delayMs);
             this._aiDiveTimerIds.push(timerId);
