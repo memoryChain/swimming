@@ -40,8 +40,6 @@ export class Swimmer extends Component {
     @property public boundModelBoneCount = 0;
     @property(CartoonSwimmerRig) public cartoonRig: CartoonSwimmerRig = null;
     @property public isAI = false;
-    @property public aiPower = 1;
-    @property public aiMaxSpeedScale = 1;
     @property public swimmerName = 'Swimmer';
 
     private readonly _motor = new SwimmerMotor();
@@ -51,7 +49,6 @@ export class Swimmer extends Component {
     private _perfectStabilityCount = 0;
     private _goodStabilityCount = 0;
     private _missStabilityCount = 0;
-    private _endless = false;
     private readonly _pendingRhythmResults: RhythmResult[] = [];
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
@@ -85,7 +82,7 @@ export class Swimmer extends Component {
         } else {
             this.clearDiveUnderwaterPhase();
         }
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (this.isAI ? this.aiMaxSpeedScale : 1);
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed;
         const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
         this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.applyCoursePosition(initialDistance);
@@ -198,8 +195,6 @@ export class Swimmer extends Component {
         dt = scaledDelta(dt);
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
-            aiPower: this.aiPower,
-            aiMaxSpeedScale: this.aiMaxSpeedScale,
         });
         if (!this.isAI) {
             this._strokeMetrics.update(dt);
@@ -235,7 +230,9 @@ export class Swimmer extends Component {
         if (!queued) {
             return null;
         }
-        this._strokeMetrics.recordStroke(type);
+        if (!this.isAI) {
+            this._strokeMetrics.recordStroke(type);
+        }
         this.playStroke(type, Rating.GOOD);
         return null;
     }
@@ -260,7 +257,9 @@ export class Swimmer extends Component {
         const stability = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
         if (held) {
-            this._strokeMetrics.recordStroke(type);
+            if (!this.isAI) {
+                this._strokeMetrics.recordStroke(type);
+            }
             return null;
         }
         // A press too short to be a real stroke was reinterpreted as a leg-kick
@@ -284,19 +283,11 @@ export class Swimmer extends Component {
         this.cartoonRig?.setSplashParticlesEnabled(enabled);
     }
 
-    playAiStrokeVisual(type: StrokeType) {
-        if (!this.isAI) {
-            return;
-        }
-        if (this._diveGlidePoseActive) {
-            if (this._motor.recordKickOnly(type)) {
-                this.cartoonRig?.triggerKick();
-            }
-            return;
-        }
-        if (this._motor.recordAiVisualStroke(type)) {
-            this.cartoonRig?.triggerStroke(type);
-        }
+    // Release progress (0..1) of the AI's active arm stroke on a side, or -1 when
+    // none is active. The simulated-input AI polls this to time its release the
+    // same way a player watches the on-screen pull. Drives nothing on its own.
+    aiActiveStrokeProgress(type: StrokeType): number {
+        return this._motor.activeStrokeReleaseProgress(type);
     }
 
     playPerfectFlash() {
@@ -696,9 +687,7 @@ export class Swimmer extends Component {
     }
 
     private applyCoursePosition(distance: number) {
-        // Endless free-swim: don't clamp to the race distance so the course layout
-        // keeps folding the position back and forth across laps.
-        const visualDistance = this._endless ? Math.max(0, distance) : Math.min(distance, getRaceDistance());
+        const visualDistance = Math.min(distance, getRaceDistance());
         const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
         const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
         this.node.setPosition(x, this.visualSwimY(visualDistance), this._startPosition.z);
@@ -872,11 +861,6 @@ export class Swimmer extends Component {
 
     applyConditionSpeedScale(scale: number) {
         this._motor.setConditionSpeedScale(scale);
-    }
-
-    setEndless(endless: boolean) {
-        this._endless = endless;
-        this._motor.setEndless(endless);
     }
 
     applyConditionQualityScale(scale: number) {

@@ -9,7 +9,7 @@ export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
     onDistanceSelect: (distance: RaceDistanceMode) => void;
     onModelDebug: () => void;
-    onFreeSwim: () => void;
+    onAiDebug: () => void;
 };
 
 export type SpeedStarsUiCallbacks = {
@@ -371,13 +371,13 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     modelDebug.active = EDITOR;
     modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
 
-    // Free-swim (single-player, no AI, endless) entry. Built in code and anchored
-    // below the model-debug button (when shown) or the start button, so it never
-    // overlaps existing buttons and needs no prefab change.
+    // 100m AI-debug 1v1 entry. Built in code and anchored below the model-debug
+    // button (when shown) or the start button, so it never overlaps existing
+    // buttons and needs no prefab change. Opens a difficulty picker first.
     const anchor = EDITOR ? modelDebug : requireNode(startScreen, 'StartButton');
-    const freeSwim = makeButton('FreeSwimStartButton', startScreen, 260, 64, uiColor(20, 130, 90, 235), '自由游泳（无对手）');
-    freeSwim.setPosition(anchor.position.x, anchor.position.y - 84, 0);
-    freeSwim.on(Node.EventType.TOUCH_END, callbacks.onFreeSwim);
+    const aiDebug = makeButton('AiDebugStartButton', startScreen, 260, 64, uiColor(60, 110, 180, 235), '100m AI 调试');
+    aiDebug.setPosition(anchor.position.x, anchor.position.y - 84, 0);
+    aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
 }
 
 type DistanceButtonSkins = {

@@ -12,6 +12,7 @@ export type InputRouterCallbacks = {
     onToggleDebug: () => void;
     onCycleRaceCamera: () => void;
     onToggleFreeRaceCamera: () => void;
+    onToggleCameraFollowAi: () => void;
     onToggleSplashCulling: () => void;
     onToggleSplashParticles: () => void;
     onCycleBulletTime: () => void;
@@ -56,6 +57,7 @@ export class InputRouter {
         this._target.on('toggle-debug', this.onToggleDebug, this);
         this._target.on('cycle-race-camera', this.onCycleRaceCamera, this);
         this._target.on('toggle-free-race-camera', this.onToggleFreeRaceCamera, this);
+        this._target.on('toggle-camera-follow-ai', this.onToggleCameraFollowAi, this);
         this._target.on('toggle-splash-culling', this.onToggleSplashCulling, this);
         this._target.on('toggle-splash-particles', this.onToggleSplashParticles, this);
         this._target.on('cycle-bullet-time', this.onCycleBulletTime, this);
@@ -80,6 +82,7 @@ export class InputRouter {
         this._target.off('toggle-debug', this.onToggleDebug, this);
         this._target.off('cycle-race-camera', this.onCycleRaceCamera, this);
         this._target.off('toggle-free-race-camera', this.onToggleFreeRaceCamera, this);
+        this._target.off('toggle-camera-follow-ai', this.onToggleCameraFollowAi, this);
         this._target.off('toggle-splash-culling', this.onToggleSplashCulling, this);
         this._target.off('toggle-splash-particles', this.onToggleSplashParticles, this);
         this._target.off('cycle-bullet-time', this.onCycleBulletTime, this);
@@ -241,6 +244,10 @@ export class InputRouter {
 
     private onToggleFreeRaceCamera() {
         this._callbacks.onToggleFreeRaceCamera();
+    }
+
+    private onToggleCameraFollowAi() {
+        this._callbacks.onToggleCameraFollowAi();
     }
 
     private onToggleSplashCulling() {

@@ -27,8 +27,6 @@ export class RaceManager extends Component {
     @property(Swimmer) public aiSwimmer: Swimmer = null;
     @property([Swimmer]) public aiSwimmers: Swimmer[] = [];
     @property public countdownSeconds = COUNTDOWN_SECONDS;
-    // Free-swim debug mode: no finish, swim endlessly back and forth.
-    public endlessMode = false;
 
     public onCountdownTick: (value: number) => void = null;
     public onStateChange: (state: GameState) => void = null;
@@ -160,7 +158,7 @@ export class RaceManager extends Component {
         }
         this._aiFinishTime = this.bestAiFinishTime();
 
-        if (!this.endlessMode && !this._playerFinished && playerDist >= getRaceDistance()) {
+        if (!this._playerFinished && playerDist >= getRaceDistance()) {
             this._playerFinished = true;
             this._playerFinishTime = this._raceTimer;
             this.playerSwimmer?.playFinishTouch();
@@ -169,7 +167,7 @@ export class RaceManager extends Component {
             }
         }
 
-        if (!this.endlessMode && this._playerFinished && this._finishTimes.size >= activeRacers.length) {
+        if (this._playerFinished && this._finishTimes.size >= activeRacers.length) {
             this.finishRace();
         }
     }

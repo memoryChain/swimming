@@ -66,7 +66,6 @@ export interface SprintConditionInput {
 
 // Per-frame input for the AI condition model (design doc 27.3).
 export interface AiConditionInput {
-    aiPower: number;
     difficulty: number;
     progress: number;
     dt: number;

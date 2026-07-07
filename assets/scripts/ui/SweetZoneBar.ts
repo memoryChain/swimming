@@ -28,8 +28,12 @@ export class SweetZoneBar {
     private _markerGfx: Graphics = null;
     private _speedLabel: Label = null;
     private _lastSignature = '';
+    private _tag = '';
 
-    build(parent: Node, x: number, y: number) {
+    // `tag` prefixes the speed readout (e.g. "AI") so multiple bars are
+    // distinguishable when both the player and an opponent bar are on screen.
+    build(parent: Node, x: number, y: number, tag = '') {
+        this._tag = tag;
         this._root = makeUiNode('SweetZoneBar', parent);
         this._root.setPosition(x, y, 0);
 
@@ -37,7 +41,7 @@ export class SweetZoneBar {
         speedNode.setPosition(0, BAR_HEIGHT / 2 + SPEED_LABEL_HEIGHT / 2 + 8, 0);
         speedNode.getComponent(UITransform).setContentSize(SPEED_LABEL_WIDTH, SPEED_LABEL_HEIGHT);
         this._speedLabel = speedNode.addComponent(Label);
-        this._speedLabel.string = 'SPD 0.00 m/s';
+        this._speedLabel.string = tag ? `${tag} 0.00 m/s` : 'SPD 0.00 m/s';
         this._speedLabel.fontSize = 28;
         this._speedLabel.lineHeight = 34;
         this._speedLabel.color = COLOR_SPEED;
@@ -69,7 +73,8 @@ export class SweetZoneBar {
             return;
         }
         if (this._speedLabel) {
-            this._speedLabel.string = `SPD ${Math.max(0, speed).toFixed(2)} m/s`;
+            const prefix = this._tag || 'SPD';
+            this._speedLabel.string = `${prefix} ${Math.max(0, speed).toFixed(2)} m/s`;
         }
         const intervals = guide?.intervals ?? [];
         const signature = intervals.map((i) => `${i.rating}:${i.startRatio.toFixed(3)}-${i.endRatio.toFixed(3)}`).join('|');

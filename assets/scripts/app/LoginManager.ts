@@ -1,12 +1,18 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, view } from 'cc';
 import { setRaceDistance } from '../core/GameBalance';
-import { setMainGameLaunchMode } from '../core/GameLaunchOptions';
+import { setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
+import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
+import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 
 const { ccclass } = _decorator;
 
 @ccclass('LoginManager')
 export class LoginManager extends Component {
+    private _canvasNode: Node = null;
+    private _designWidth = 1280;
+    private _designHeight = 720;
+
     onLoad() {
         const canvasNode = this.findCanvasNode();
         canvasNode.layer = Layers.Enum.UI_2D;
@@ -14,6 +20,9 @@ export class LoginManager extends Component {
         const design = view.getDesignResolutionSize();
         const width = design.width || 1280;
         const height = design.height || 720;
+        this._canvasNode = canvasNode;
+        this._designWidth = width;
+        this._designHeight = height;
 
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
@@ -29,8 +38,12 @@ export class LoginManager extends Component {
         director.loadScene('MainGame');
     }
 
-    startFreeSwim() {
-        setMainGameLaunchMode('free-swim');
+    // 100m AI-debug 1v1: lock distance to 100m, store the chosen difficulty, and
+    // launch straight into a single-opponent race.
+    startAiDebug(difficulty: number) {
+        setRaceDistance(100);
+        setAiDebugDifficulty(difficulty);
+        setMainGameLaunchMode('ai-debug');
         director.loadScene('MainGame');
     }
 
@@ -70,11 +83,37 @@ export class LoginManager extends Component {
             onStart: () => this.startGame(),
             onDistanceSelect: (distance) => setRaceDistance(distance),
             onModelDebug: () => this.startModelDebug(),
-            onFreeSwim: () => this.startFreeSwim(),
+            onAiDebug: () => this.showAiDebugPicker(),
         }).build(canvasNode, width, height, (error) => {
             if (error) {
                 console.error('[SpeedSwimming] Login UI failed to load', error);
             }
         });
+    }
+
+    // Overlay that lets the tester pick the single opponent's difficulty before a
+    // 100m 1v1 debug race. Built in code on the canvas so it needs no prefab.
+    private showAiDebugPicker() {
+        if (!this._canvasNode) {
+            return;
+        }
+        this._canvasNode.getChildByName('AiDebugPicker')?.destroy();
+        const overlay = makeUiNode('AiDebugPicker', this._canvasNode);
+        overlay.layer = Layers.Enum.UI_2D;
+        makeRect('Dim', overlay, this._designWidth, this._designHeight, uiColor(2, 8, 14, 210));
+        makeLabel('Title', overlay, '选择 AI 难度', 30, uiColor(240, 250, 255)).setPosition(0, 190, 0);
+
+        const tiers = AI_DEBUG_DIFFICULTY_TIERS;
+        const spacing = 74;
+        const firstY = ((tiers.length - 1) * spacing) / 2 + 10;
+        tiers.forEach((tier, i) => {
+            const button = makeButton(`Tier${i}`, overlay, 300, 60, uiColor(40, 96, 168, 240), tier.label);
+            button.setPosition(0, firstY - i * spacing, 0);
+            button.on(Node.EventType.TOUCH_END, () => this.startAiDebug(tier.value));
+        });
+
+        const cancel = makeButton('Cancel', overlay, 200, 52, uiColor(90, 96, 104, 235), '返回');
+        cancel.setPosition(0, firstY - tiers.length * spacing - 6, 0);
+        cancel.on(Node.EventType.TOUCH_END, () => overlay.destroy());
     }
 }

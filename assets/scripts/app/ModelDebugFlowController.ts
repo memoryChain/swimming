@@ -226,8 +226,6 @@ export class ModelDebugFlowController {
         this.hideNonPlayerWorldNodes(false);
         const finished = this._debugMotor.update(dt, {
             isAI: false,
-            aiPower: 1,
-            aiMaxSpeedScale: 1,
         });
         for (const stability of this._debugMotor.consumeStabilityResults()) {
             this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));

@@ -46,6 +46,7 @@ export class GameFlowController {
     private _diveCommitted = false;
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
+    private _cameraFollowAi = false;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
@@ -243,6 +244,13 @@ export class GameFlowController {
         return this._refs.raceCameraDirector.toggleFreeMode();
     }
 
+    // Debug (100m AI-debug mode): make the race camera frame the AI opponent
+    // instead of the player. Only the visual follow position changes; race logic,
+    // placement, and sprint pacing stay anchored to the real player.
+    setCameraFollowAi(followAi: boolean) {
+        this._cameraFollowAi = followAi;
+    }
+
     updateRaceCamera(dt: number) {
         this.updateDiveCharge(dt);
         const playerSwimmer = this._refs.playerSwimmer;
@@ -263,12 +271,18 @@ export class GameFlowController {
         }
         const placement = this.calculatePlayerPlacement();
         this._refs.uiFlow.updatePlacement(placement.placement, placement.racerCount);
+        // The camera frames this swimmer's position. Normally the player; in
+        // AI-debug follow mode it's the opponent, while all race logic above still
+        // uses the real player.
+        const focus = this._cameraFollowAi && this._refs.aiSwimmers[0]?.node?.isValid
+            ? this._refs.aiSwimmers[0]
+            : playerSwimmer;
         this._refs.raceCameraDirector.update(dt, {
-            playerX: playerSwimmer.node.position.x,
-            playerY: playerSwimmer.node.position.y,
-            playerUpperBodyWorldPosition: playerSwimmer.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
-            playerDistance,
-            playerUnderwater: playerSwimmer.isUnderwater,
+            playerX: focus.node.position.x,
+            playerY: focus.node.position.y,
+            playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
+            playerDistance: focus.distance,
+            playerUnderwater: focus.isUnderwater,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,
             racerCount: placement.racerCount,

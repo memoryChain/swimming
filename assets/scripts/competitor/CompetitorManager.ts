@@ -22,6 +22,13 @@ export type CompetitorSet = {
     aiSwimmers: Swimmer[];
 };
 
+// Options for building AI opponents. Used by the 100m AI-debug 1v1 mode to spawn
+// a single opponent in one lane with a chosen difficulty.
+export type AiBuildOptions = {
+    soloLane?: number;
+    difficultyOverride?: number;
+};
+
 export class CompetitorManager {
     private readonly _factory: SwimmerFactory;
 
@@ -47,7 +54,7 @@ export class CompetitorManager {
         return { group, playerSwimmer };
     }
 
-    buildAi(group: Node): Omit<CompetitorSet, 'playerSwimmer'> {
+    buildAi(group: Node, options?: AiBuildOptions): Omit<CompetitorSet, 'playerSwimmer'> {
         const aiControllers: AISwimmerController[] = [];
         const aiSwimmers: Swimmer[] = [];
         let primaryAiController: AISwimmerController | null = null;
@@ -59,6 +66,10 @@ export class CompetitorManager {
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             if (lane === this._options.playerLaneIndex) {
+                continue;
+            }
+            // Solo mode (100m AI debug): build only the one opponent lane.
+            if (options?.soloLane !== undefined && lane !== options.soloLane) {
                 continue;
             }
             const swimmer = this._factory.create(group, {
@@ -74,15 +85,13 @@ export class CompetitorManager {
             const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
             const controller = swimmer.node.addComponent(AISwimmerController);
             controller.swimmer = swimmer;
-            controller.difficulty = profile.difficulty;
+            controller.difficulty = options?.difficultyOverride ?? profile.difficulty;
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
-            swimmer.aiPower = profile.power;
-            swimmer.aiMaxSpeedScale = profile.maxSpeed;
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
-            if (lane === this._options.primaryAiLaneIndex) {
+            if (lane === this._options.primaryAiLaneIndex || options?.soloLane !== undefined) {
                 primaryAiController = controller;
             }
         }
@@ -126,8 +135,6 @@ export class CompetitorManager {
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
-            swimmer.aiPower = profile.power;
-            swimmer.aiMaxSpeedScale = profile.maxSpeed;
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
             if (lane === this._options.primaryAiLaneIndex) {

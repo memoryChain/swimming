@@ -78,6 +78,8 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('cycle-race-camera');
         } else if (event.keyCode === KeyCode.KEY_V) {
             this.strokeTarget?.emit('toggle-free-race-camera');
+        } else if (event.keyCode === KeyCode.KEY_X) {
+            this.strokeTarget?.emit('toggle-camera-follow-ai');
         } else if (event.keyCode === KeyCode.KEY_K) {
             this.strokeTarget?.emit('toggle-splash-culling');
         } else if (event.keyCode === KeyCode.KEY_L) {

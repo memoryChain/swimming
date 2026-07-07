@@ -31,6 +31,7 @@ import { CompetitorManager } from '../competitor/CompetitorManager';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
+import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
@@ -38,7 +39,7 @@ import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, getAiDebugDifficulty } from './GameLaunchOptions';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
@@ -82,8 +83,11 @@ export class GameManager extends Component {
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
-    // Free-swim debug mode: single player, no AI, endless back-and-forth swim.
-    private _freeSwimMode = false;    private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
+    // 100m AI-debug 1v1 mode: a single opponent at PRIMARY_AI_LANE_INDEX whose
+    // difficulty is chosen from the login picker.
+    private _aiDebugMode = false;
+    private _aiDebugDifficulty = 0.8;
+    private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
@@ -108,11 +112,17 @@ export class GameManager extends Component {
     private _timingGuideFillNode: Node = null;
     private _timingGuideMarker: Node = null;
     private readonly _sweetZoneBar = new SweetZoneBar();
-    private _freeSwimButtonLabel: Label = null;
+    // 100m AI-debug 1v1 extras: a second sweet-zone bar for the opponent and a
+    // camera-follow-AI toggle button. Built always but only shown in ai-debug.
+    private readonly _aiSweetZoneBar = new SweetZoneBar();
+    private _cameraFollowsAi = false;
+    private _aiDebugCameraButton: Node = null;
+    private _aiDebugCameraButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
+    private readonly _aiDifficultyPanel = new AiDifficultyPanel();
     // Debug bullet-time: cycles the global scheduler time scale so the whole
     // race (movement, limb motion, splashes, camera) can be observed in slow
     // motion while tuning feel. Input classification uses wall-clock, so key
@@ -141,7 +151,11 @@ export class GameManager extends Component {
                         if (launchMode === 'model-debug') {
                             this.enterModelDebug();
                         } else {
-                            this._freeSwimMode = launchMode === 'free-swim';
+                            this._aiDebugMode = launchMode === 'ai-debug';
+                            if (this._aiDebugMode) {
+                                this._aiDebugDifficulty = getAiDebugDifficulty();
+                            }
+                            this.applyAiDebugHud();
                             this.startGame();
                         }
                     } catch (setupError) {
@@ -181,6 +195,7 @@ export class GameManager extends Component {
         this.drawStrokeTimingGuide(timingGuide, raceActive);
         this._sweetZoneBar.setVisible(raceActive);
         this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed);
+        this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
             this.setUnderwaterOverlayVisible(false);
@@ -283,40 +298,11 @@ export class GameManager extends Component {
 
     startGame() {
         this._inputRouter?.resetAutoPadSequence();
-        this.applyFreeSwimMode();
         this._gameFlow?.startGame();
     }
 
     restartGame() {
         this._gameFlow?.restartGame();
-    }
-
-    // Free-swim debug mode: single player, no AI, endless back-and-forth swim.
-    // Toggled from the race HUD button; restarts the run into/out of the mode.
-    private toggleFreeSwim() {
-        this._freeSwimMode = !this._freeSwimMode;
-        this.debug(`free-swim mode ${this._freeSwimMode ? 'ON' : 'OFF'}`);
-        if (this._freeSwimButtonLabel) {
-            this._freeSwimButtonLabel.string = this._freeSwimMode ? '退出自由游泳' : '自由游泳';
-        }
-        this.restartGame();
-    }
-
-    // Apply the current free-swim mode to AI visibility and endless flags. Called
-    // on every game start so it survives restarts.
-    private applyFreeSwimMode() {
-        for (const swimmer of this._aiSwimmers) {
-            if (swimmer?.node?.isValid) {
-                swimmer.node.active = !this._freeSwimMode;
-            }
-        }
-        if (this._freeSwimMode) {
-            this._gameFlow?.stopAllAi();
-        }
-        if (this._raceManager) {
-            this._raceManager.endlessMode = this._freeSwimMode;
-        }
-        this._playerSwimmer?.setEndless(this._freeSwimMode);
     }
 
     private returnToLogin() {
@@ -456,6 +442,7 @@ export class GameManager extends Component {
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
             onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
+            onToggleCameraFollowAi: () => this.toggleCameraFollowAi(),
             onToggleSplashCulling: () => this.toggleSplashCulling(),
             onToggleSplashParticles: () => this.toggleSplashParticles(),
             onCycleBulletTime: () => this.cycleBulletTime(),
@@ -521,6 +508,7 @@ export class GameManager extends Component {
         this._aiSwimmers = [];
         this._aiConditions = [];
         this.applySplashParticlesEnabled();
+        this.refreshAiDifficultyPanel();
     }
 
     private buildDeferredAiSwimmers() {
@@ -534,16 +522,16 @@ export class GameManager extends Component {
             this.debug('race opponents disabled');
             return;
         }
-        if (this._freeSwimMode) {
-            this._aiController = null;
-            this.debug('free-swim mode: AI opponents skipped');
-            return;
-        }
         if (!this._swimmersRoot?.isValid) {
             return;
         }
 
-        const competitors = this.createCompetitorManager().buildAi(this._swimmersRoot);
+        const competitors = this.createCompetitorManager().buildAi(
+            this._swimmersRoot,
+            this._aiDebugMode
+                ? { soloLane: PRIMARY_AI_LANE_INDEX, difficultyOverride: this._aiDebugDifficulty }
+                : undefined,
+        );
         this._aiController = competitors.primaryAiController;
         this._aiControllers.splice(0, this._aiControllers.length, ...competitors.aiControllers);
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
@@ -556,7 +544,20 @@ export class GameManager extends Component {
             this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
             this._raceManager.aiSwimmers = this._aiSwimmers;
         }
+        this.refreshAiDifficultyPanel();
         this.debug(`deferred AI swimmers loaded count=${this._aiSwimmers.length}`);
+    }
+
+    // Rebuild the AI difficulty panel rows from the current roster. Lane index is
+    // reconstructed from the AI array order (AI lanes are pushed in ascending lane
+    // order, skipping the player lane).
+    private refreshAiDifficultyPanel() {
+        const entries = this._aiControllers.map((controller, i) => ({
+            lane: i < PLAYER_LANE_INDEX ? i : i + 1,
+            name: this._aiSwimmers[i]?.swimmerName ?? 'AI',
+            difficulty: controller.difficulty,
+        }));
+        this._aiDifficultyPanel.populate(entries);
     }
 
     private scheduleDeferredSceneExtras(pool: Node | null) {
@@ -599,8 +600,11 @@ export class GameManager extends Component {
             this._timingGuideMarker = refs.timingGuideMarker;
             // Debug sweet-zone bar: bottom-center of the HUD.
             const visibleSize = view.getVisibleSize();
-            this._sweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 70);
-            this.buildFreeSwimButton(this._raceHud, visibleSize.width, visibleSize.height);
+            this._sweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 70, 'YOU');
+            // AI opponent bar stacked just above the player bar (still lower area)
+            // + camera-follow button (bottom-right), shown only in 100m AI-debug.
+            this._aiSweetZoneBar.build(this._raceHud, 0, -visibleSize.height / 2 + 190, 'AI');
+            this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
                 onExit: () => this.exitModelDebug(true),
@@ -622,6 +626,8 @@ export class GameManager extends Component {
 
             const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
             this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
+            this._aiDifficultyPanel.build(uiRoot, w, h);
+            this.refreshAiDifficultyPanel();
 
             this._uiFlow = new UIFlowController({
                 raceHud: this._raceHud,
@@ -683,7 +689,6 @@ export class GameManager extends Component {
             }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
             this._aiConditions[i].tickAi({
-                aiPower: swimmer.aiPower,
                 difficulty: controller.difficulty,
                 progress,
                 dt,
@@ -750,6 +755,60 @@ export class GameManager extends Component {
         this.debug(`race camera=${this._gameFlow?.toggleFreeRaceCamera()}`);
     }
 
+    // Race HUD button (AI-debug mode only): toggle whether the race camera frames
+    // the player or the AI opponent. Built hidden; shown by applyAiDebugHud().
+    private buildAiDebugCameraButton(raceHud: Node, width: number, height: number) {
+        const button = makeButton(
+            'AiDebugCameraButton',
+            raceHud,
+            190,
+            56,
+            new Color(40, 96, 168, 235),
+            '跟随AI',
+        );
+        button.setPosition(width / 2 - 115, -height / 2 + 140, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        button.active = false;
+        this._aiDebugCameraButton = button;
+        this._aiDebugCameraButtonLabel = button.getChildByName('Label')?.getComponent(Label) ?? null;
+        button.on(Node.EventType.TOUCH_END, () => this.toggleCameraFollowAi());
+    }
+
+    // Show/hide the AI-debug HUD extras based on the active mode.
+    private applyAiDebugHud() {
+        if (this._aiDebugCameraButton?.isValid) {
+            this._aiDebugCameraButton.active = this._aiDebugMode;
+        }
+        if (!this._aiDebugMode) {
+            this._cameraFollowsAi = false;
+            this._gameFlow?.setCameraFollowAi(false);
+            this._aiSweetZoneBar.setVisible(false);
+        }
+    }
+
+    // Drive the opponent's sweet-zone bar from the single AI swimmer (AI-debug).
+    private updateAiSweetZoneBar(raceActive: boolean) {
+        const aiSwimmer = this._aiDebugMode ? this._aiSwimmers[0] : null;
+        const show = raceActive && !!aiSwimmer;
+        this._aiSweetZoneBar.setVisible(show);
+        if (aiSwimmer) {
+            this._aiSweetZoneBar.update(show ? aiSwimmer.strokeTimingGuide : null, aiSwimmer.currentSpeed);
+        }
+    }
+
+    // Toggle the race camera between the player and the AI opponent (AI-debug).
+    private toggleCameraFollowAi() {
+        if (!this._aiDebugMode) {
+            return;
+        }
+        this._cameraFollowsAi = !this._cameraFollowsAi;
+        this._gameFlow?.setCameraFollowAi(this._cameraFollowsAi);
+        if (this._aiDebugCameraButtonLabel) {
+            this._aiDebugCameraButtonLabel.string = this._cameraFollowsAi ? '跟随玩家' : '跟随AI';
+        }
+        this.debug(`camera follow=${this._cameraFollowsAi ? 'AI' : 'player'}`);
+    }
+
     private enterModelDebug() {
         this._modelDebugFlow?.enter();
     }
@@ -804,25 +863,6 @@ export class GameManager extends Component {
         this.debug(`bullet-time x${scale.toFixed(2)}`);
     }
 
-    // Race HUD debug button: toggle single-player endless free-swim mode.
-    private buildFreeSwimButton(raceHud: Node, width: number, height: number) {
-        const button = makeButton(
-            'FreeSwimButton',
-            raceHud,
-            170,
-            56,
-            new Color(20, 130, 90, 235),
-            this._freeSwimMode ? '退出自由游泳' : '自由游泳',
-        );
-        // Bottom-right, above the sweet-zone bar (a known-visible band). Forced to
-        // the front so nothing in the prefab HUD covers it.
-        button.setPosition(width / 2 - 105, -height / 2 + 140, 0);
-        button.setSiblingIndex(raceHud.children.length - 1);
-        this._freeSwimButtonLabel = button.getChildByName('Label')?.getComponent(Label) ?? null;
-        button.on(Node.EventType.TOUCH_END, () => this.toggleFreeSwim());
-        this.debug(`free-swim button built at (${(width / 2 - 105).toFixed(0)}, ${(-height / 2 + 140).toFixed(0)})`);
-    }
-
     private switchModelDebugVariant() {
         this._modelDebugFlow?.switchModelVariant();
     }
@@ -840,7 +880,8 @@ export class GameManager extends Component {
     }
 
     private toggleDebug() {
-        this._debugLog.toggle();
+        const visible = this._debugLog.toggle();
+        this._aiDifficultyPanel.setVisible(visible);
     }
 
     private drawSpeedBar(_ratio: number) {

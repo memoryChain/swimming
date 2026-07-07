@@ -72,7 +72,6 @@ export const SWIMMER_BALANCE = {
     poolDeceleration: 0.06,
     baseDrag: 0.03,
     highSpeedDrag: 0.03,
-    aiCruiseAccel: 2.2,
     // Overspeed cap/decay: a strong dive can launch above maxSpeed; these clamp
     // how far over and how fast it bleeds back down. (Legacy name kept.)
     perfectComboMaxOvercap: 0.9,

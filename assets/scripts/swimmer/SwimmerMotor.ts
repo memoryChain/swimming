@@ -48,8 +48,6 @@ type QueueSideStrokeResult = {
 
 export type SwimmerMotorOptions = {
     isAI: boolean;
-    aiPower: number;
-    aiMaxSpeedScale: number;
 };
 
 export type StrokeTimingGuideInterval = {
@@ -109,8 +107,6 @@ export class SwimmerMotor {
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
     // input tops these up; the leg sweeps through them at a fixed fast cadence.
-    // Free-swim debug mode: never clamp distance to the race distance nor finish.
-    private _endless = false;
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, initialSpeedCapBonus = 0) {
         this._isRacing = true;
@@ -160,21 +156,16 @@ export class SwimmerMotor {
         return this.canQueueSideStroke(StrokeType.LEFT) || this.canQueueSideStroke(StrokeType.RIGHT);
     }
 
-    recordAiVisualStroke(type: StrokeType): boolean {
-        let queued = false;
-        if (type === StrokeType.LEFT) {
-            queued = this.queueVisualSideStroke(StrokeType.LEFT) || queued;
-        } else if (type === StrokeType.RIGHT) {
-            queued = this.queueVisualSideStroke(StrokeType.RIGHT) || queued;
-        } else {
-            queued = this.queueVisualSideStroke(StrokeType.LEFT) || queued;
-            queued = this.queueVisualSideStroke(StrokeType.RIGHT) || queued;
+    // The active (front-of-queue) arm StrokeAction's release progress for a side,
+    // as a fraction of a full cycle (0..1), or -1 when no stroke is active/started.
+    // The simulated-input AI watches this to decide when to release, exactly the
+    // way a player watches the on-screen pull to time a release.
+    activeStrokeReleaseProgress(type: StrokeType): number {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        if (!action || action.startedAt < 0) {
+            return -1;
         }
-        if (queued) {
-            this._armAction = 1;
-            this._kickAction = 1;
-        }
-        return queued;
+        return clamp01(action.progress / CYCLE_AMOUNT);
     }
 
     recordKickOnly(type: StrokeType): boolean {
@@ -292,9 +283,6 @@ export class SwimmerMotor {
             },
             {
                 dt,
-                isAI: options.isAI,
-                aiPower: options.aiPower,
-                aiMaxSpeedScale: options.aiMaxSpeedScale,
                 strokeAcceleration,
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
@@ -304,17 +292,13 @@ export class SwimmerMotor {
         this._currentSpeed = next.currentSpeed;
         this.decaySpeedCapBonus(dt, options);
         const raceDistance = getRaceDistance();
-        // Endless (free-swim debug) mode: distance keeps growing so the course
-        // layout folds it back and forth across laps; the race never finishes.
-        this._distance = this._endless
-            ? this._distance + this._currentSpeed * dt
-            : Math.min(raceDistance, this._distance + this._currentSpeed * dt);
+        this._distance = Math.min(raceDistance, this._distance + this._currentSpeed * dt);
         this.updateMotionCycles(dt, options);
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
         }
 
-        if (!this._endless && this._distance >= raceDistance) {
+        if (this._distance >= raceDistance) {
             this._isRacing = false;
             return true;
         }
@@ -364,22 +348,12 @@ export class SwimmerMotor {
         this._conditionQualityScale = clamp(scale, 0, 2);
     }
 
-    // Free-swim debug mode: kept out of resetRaceState so it persists across
-    // dive/start resets. When on, update() never clamps distance or finishes.
-    setEndless(endless: boolean) {
-        this._endless = endless;
-    }
-
-    get endless(): boolean {
-        return this._endless;
-    }
-
     private decaySpeedCapBonus(dt: number, options: SwimmerMotorOptions) {
         if (this._speedCapBonus <= 0) {
             return;
         }
         const decay = Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay) * Math.max(0, dt);
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed * (options.isAI ? options.aiMaxSpeedScale : 1);
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed;
         const neededForCurrentSpeed = Math.max(0, this._currentSpeed - maxSpeed);
         const comboMax = Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap);
         const decayedBonus = Math.max(0, this._speedCapBonus - decay);
@@ -393,12 +367,18 @@ export class SwimmerMotor {
 
         this._bodyPhase += dt * Math.max(6, this._currentSpeed * 1.2);
         if (options.isAI) {
-            // AI has no discrete taps: legs use the speed-driven continuous flutter.
+            // AI has no discrete kick taps: its legs still use the speed-driven
+            // continuous flutter. Its ARMS, however, now run the exact same path as
+            // the player — queued arm motion plus real StrokeActions that advance
+            // through the cycle and settle stability — so AI propulsion comes from
+            // the same release-timing sweet zone the player uses.
             this.advanceAiFlutter(dt, speedRatio);
-            const visualSpeedScale = Math.max(0.7, options.aiPower);
-            const releasedSpeedScale = MOTION_TUNING.releasedMotionSpeedScale * visualSpeedScale;
-            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', releasedSpeedScale);
-            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', releasedSpeedScale);
+            const leftScale = this.motionSpeedScaleForSide(StrokeType.LEFT);
+            const rightScale = this.motionSpeedScaleForSide(StrokeType.RIGHT);
+            this._leftArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', leftScale);
+            this._rightArmCycle += this.advanceQueuedMotion(dt, armCycleSpeed, '_rightArmMotionRemaining', rightScale);
+            this.advanceSideActions(dt, actionCycleSpeed, StrokeType.LEFT, leftScale);
+            this.advanceSideActions(dt, actionCycleSpeed, StrokeType.RIGHT, rightScale);
             return;
         }
         const leftArmDelta = this.advanceQueuedMotion(dt, armCycleSpeed, '_leftArmMotionRemaining', this.motionSpeedScaleForSide(StrokeType.LEFT));
@@ -809,15 +789,6 @@ export class SwimmerMotor {
         // per side; a new press while one is still playing is rejected instead of
         // queued behind it. (Was `< 2` to allow one queued stroke.)
         return actions.length < 1 && this.canQueueMotionCycle(armKey);
-    }
-
-    private queueVisualSideStroke(type: StrokeType): boolean {
-        const isLeft = type === StrokeType.LEFT;
-        const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
-        if (!this.canQueueMotionCycle(armKey)) {
-            return false;
-        }
-        return this.queueMotionCycle(armKey);
     }
 
     // A leg-kick tap adds one kick pulse of budget to the CONTRALATERAL leg
