@@ -102,6 +102,7 @@ export class GameManager extends Component {
     private _cameraNode: Node = null;
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
+    private readonly _tmpDialRight = new Vec3();
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
@@ -194,7 +195,7 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         this.drawStrokeTimingGuide(timingGuide, raceActive);
         this._sweetZoneBar.setVisible(raceActive);
-        this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed, this._playerSwimmer.raceDirection);
+        this._sweetZoneBar.update(raceActive ? timingGuide : null, this._playerSwimmer.currentSpeed, this.dialFacingSign(this._playerSwimmer));
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
@@ -792,8 +793,23 @@ export class GameManager extends Component {
         const show = raceActive && !!aiSwimmer;
         this._aiSweetZoneBar.setVisible(show);
         if (aiSwimmer) {
-            this._aiSweetZoneBar.update(show ? aiSwimmer.strokeTimingGuide : null, aiSwimmer.currentSpeed, aiSwimmer.raceDirection);
+            this._aiSweetZoneBar.update(show ? aiSwimmer.strokeTimingGuide : null, aiSwimmer.currentSpeed, this.dialFacingSign(aiSwimmer));
         }
+    }
+
+    // On-screen swim direction of a swimmer for its sweet-zone dial: the swimmer's
+    // world facing (raceDirection along +X) projected onto the camera's screen-X
+    // axis. This makes each dial's pointer spin the same way the character's hand
+    // visually spins under the CURRENT camera — correct per-swimmer and for any
+    // camera side (including the follow-AI view), instead of a raw world sign that
+    // fights the camera flipping sides on the return lap.
+    private dialFacingSign(swimmer: Swimmer): number {
+        const facing = swimmer.raceDirection >= 0 ? 1 : -1;
+        if (!this._cameraNode?.isValid) {
+            return facing;
+        }
+        const right = Vec3.transformQuat(this._tmpDialRight, Vec3.RIGHT, this._cameraNode.worldRotation);
+        return right.x * facing >= 0 ? 1 : -1;
     }
 
     // Toggle the race camera between the player and the AI opponent (AI-debug).
