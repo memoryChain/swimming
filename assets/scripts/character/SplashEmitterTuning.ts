@@ -47,6 +47,24 @@ export const SPLASH_EMITTER_TUNING = {
     // 用于归一化水花强度的最大游泳速度。
     speedNormalize: 3.2,
 
+    // Overall particle count scaling by swim speed. The multiplier ramps from
+    // minScale to maxScale as speed crosses the arm-cycle speed window
+    // [STABILITY_TUNING.armCycleSpeedStart, STABILITY_TUNING.armCycleSpeedFull],
+    // clamped at both ends. This only changes how MANY particles each burst
+    // emits — never when bursts trigger. Below the start speed the count stays
+    // at minScale (few splashes); at/above the full speed it stays at maxScale
+    // (most splashes).
+    // 粒子数量随游泳速度整体缩放。倍率在手臂轮速的速度窗口
+    // [STABILITY_TUNING.armCycleSpeedStart, STABILITY_TUNING.armCycleSpeedFull]
+    // 内从 minScale 线性升到 maxScale，两端夹住。它只改变每次爆发发射多少粒子，
+    // 绝不改变爆发的触发时机。低于起始速度恒为 minScale（水花少），
+    // 达到顶速及以上恒为 maxScale（水花最多）。
+    speedCountScale: {
+        enabled: true,
+        minScale: 0.2,
+        maxScale: 1,
+    },
+
     // Fallback delta time before the first real update.
     // 第一次真实 update 到来前使用的备用帧间隔。
     initialDt: 1 / 60,

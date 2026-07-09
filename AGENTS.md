@@ -1,5 +1,9 @@
 # Agent Notes
 
+## Communication
+
+- Prefer replying in Chinese (中文) in conversations with the user, unless the user writes in another language or asks otherwise.
+
 ## Project Context
 
 - This is a Cocos Creator 3.8.8 project for a lightweight 3D swimming rhythm game.
@@ -50,10 +54,12 @@
 After modifying TypeScript/Cocos runtime code, run:
 
 ```powershell
-npx.cmd --yes --package typescript tsc --noEmit --ignoreDeprecations 6.0 --skipLibCheck
+npx.cmd --yes --package typescript@5.4.5 tsc --noEmit --ignoreDeprecations 5.0 --skipLibCheck
 ```
 
 This is the lightweight compile/type check used during development in this project. It does not build the Cocos project or export platform packages.
+
+Pin `typescript@5.4.5`: the project's `tsconfig.json` uses `moduleResolution=node10`, which newer TypeScript (5.5+) removed, so an unpinned `npx typescript` fails with `TS5108` before it type-checks. TypeScript 5.4.x also only accepts `--ignoreDeprecations 5.0` (not `6.0`).
 
 ## Git And Local Files
 

@@ -103,6 +103,31 @@ export class GameManager extends Component {
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
     private readonly _tmpDialRight = new Vec3();
+    // Sweet-zone dials float above each swimmer's head and follow them. World Y
+    // offset lifts the anchor above the (roughly water-level, horizontal) body;
+    // the screen-space spread keeps the two hand dials side by side and the extra
+    // screen Y nudge pushes the pair above the projected head point.
+    // Sweet-zone dials float above each swimmer's head and follow them. The world
+    // anchor sits just above the (roughly water-level, horizontal) body; the gap
+    // above the head and the side-by-side spread are screen-space and scale with
+    // the dial so it keeps a consistent look as it grows/shrinks with distance.
+    private readonly _dialHeadWorldOffsetY = 0.4;
+    private readonly _dialScreenSpread = 88;
+    private readonly _dialScreenOffsetY = 66;
+    // Perspective scaling: scale = refDistance / cameraDistance, clamped. At the
+    // reference distance the dial is drawn at 1:1; nearer swimmers get a bigger
+    // dial, farther ones a smaller one.
+    private readonly _dialRefDistance = 11;
+    private readonly _dialMinScale = 0.5;
+    private readonly _dialMaxScale = 1.5;
+    private readonly _tmpDialAnchorWorld = new Vec3();
+    private readonly _tmpDialAnchorUi = new Vec3();
+    private readonly _tmpDialScreen = new Vec3();
+    private _uiCamera: Camera = null;
+    // Overhead readout centered between the player's two dials: the stroke rating
+    // (reuses the prefab rating/combo labels) plus the current speed underneath.
+    private _overheadReadout: Node = null;
+    private _overheadSpeedLabel: Label = null;
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
@@ -204,6 +229,15 @@ export class GameManager extends Component {
         this._sweetZoneBarRight.setVisible(raceActive);
         this._sweetZoneBarLeft.update(raceActive ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
         this._sweetZoneBarRight.update(raceActive ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
+        if (this._overheadReadout) {
+            this._overheadReadout.active = raceActive;
+        }
+        if (raceActive) {
+            this.positionSweetZoneDialsAbove(this._playerSwimmer, this._sweetZoneBarLeft, this._sweetZoneBarRight, this._overheadReadout);
+            if (this._overheadSpeedLabel) {
+                this._overheadSpeedLabel.string = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
+            }
+        }
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         if (this._modelDebugFlow?.active) {
@@ -584,6 +618,9 @@ export class GameManager extends Component {
     }
 
     private buildUi(root: Node, w: number, h: number, done: (error?: unknown) => void) {
+        // Cache the 2D UI camera so world-anchored HUD elements (e.g. the sweet-zone
+        // dials) can map a swimmer's world position back into HUD-local space.
+        this._uiCamera = root.getChildByName('Camera')?.getComponent(Camera) ?? null;
         const uiRoot = makeUiNode('RuntimeUIRoot', root);
         const input = uiRoot.addComponent(InputManager);
         input.strokeTarget = this.node;
@@ -618,6 +655,7 @@ export class GameManager extends Component {
             // area) + camera-follow button (bottom-right), shown only in AI-debug.
             this._aiSweetZoneBarLeft.build(this._raceHud, -dialSpread, aiDialY, 'AI左', true);
             this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
+            this.buildOverheadReadout();
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
@@ -812,7 +850,111 @@ export class GameManager extends Component {
             const speed = aiSwimmer.currentSpeed;
             this._aiSweetZoneBarLeft.update(show ? aiSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, speed, facing);
             this._aiSweetZoneBarRight.update(show ? aiSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, speed, facing);
+            if (show) {
+                this.positionSweetZoneDialsAbove(aiSwimmer, this._aiSweetZoneBarLeft, this._aiSweetZoneBarRight);
+            }
         }
+    }
+
+    // Project a point above the swimmer's head into HUD-local space and pin the
+    // swimmer's two hand dials there so they hover overhead and follow the
+    // character as the camera moves. Left/right dials keep their side-by-side
+    // screen spread. Falls back silently if the camera/HUD aren't ready.
+    private positionSweetZoneDialsAbove(swimmer: Swimmer | null, leftBar: SweetZoneBar, rightBar: SweetZoneBar, readout: Node | null = null) {
+        const node = swimmer?.node;
+        const worldCamera = this._cameraNode?.getComponent(Camera);
+        const hudTransform = this._raceHud?.getComponent(UITransform);
+        if (!node?.isValid || !worldCamera || !this._uiCamera || !hudTransform) {
+            return;
+        }
+        // Anchor to the swimmer's upper body / head (same point the camera tracks)
+        // instead of the node origin, which sits mid/rear of the horizontal body.
+        swimmer.getCameraUpperBodyWorldPosition(this._tmpDialAnchorWorld);
+        this._tmpDialAnchorWorld.y += this._dialHeadWorldOffsetY;
+        // Perspective scale from the camera's distance to the swimmer.
+        const camDistance = Vec3.distance(this._cameraNode.worldPosition, this._tmpDialAnchorWorld);
+        const scale = Math.max(
+            this._dialMinScale,
+            Math.min(this._dialMaxScale, this._dialRefDistance / Math.max(camDistance, 0.001)),
+        );
+        // World camera -> screen pixels -> UI camera world -> HUD-local. Going
+        // through the actual UI camera (instead of Camera.convertToUINode's
+        // design-scale math) keeps the anchor correct when the runtime viewport
+        // differs from the design resolution.
+        worldCamera.worldToScreen(this._tmpDialAnchorWorld, this._tmpDialScreen);
+        this._uiCamera.screenToWorld(this._tmpDialScreen, this._tmpDialAnchorWorld);
+        hudTransform.convertToNodeSpaceAR(this._tmpDialAnchorWorld, this._tmpDialAnchorUi);
+        const cx = this._tmpDialAnchorUi.x;
+        const cy = this._tmpDialAnchorUi.y + this._dialScreenOffsetY * scale;
+        const spread = this._dialScreenSpread * scale;
+        leftBar.setAnchorPosition(cx - spread, cy);
+        rightBar.setAnchorPosition(cx + spread, cy);
+        leftBar.setScale(scale);
+        rightBar.setScale(scale);
+        // Rating + speed readout sits centered between the two dials.
+        if (readout?.isValid) {
+            readout.setPosition(cx, cy, 0);
+            readout.setScale(scale, scale, 1);
+        }
+    }
+
+    // Build the overhead readout that floats between the player's two dials: it
+    // reparents the prefab rating/combo labels here and adds a speed line so all
+    // the stroke feedback reads in one place above the swimmer's head.
+    private buildOverheadReadout() {
+        if (!this._raceHud?.isValid) {
+            return;
+        }
+        const readout = makeUiNode('SweetZoneReadout', this._raceHud);
+        readout.setPosition(0, 0, 0);
+        readout.active = false;
+        // Render above the dials so the centered text is never occluded.
+        readout.setSiblingIndex(this._raceHud.children.length - 1);
+
+        const ratingNode = this._uiController?.ratingLabel?.node;
+        if (ratingNode?.isValid) {
+            ratingNode.setParent(readout, false);
+            ratingNode.setPosition(0, 20, 0);
+            const ratingLabel = this._uiController?.ratingLabel;
+            if (ratingLabel) {
+                // Smaller than the prefab's 44px so "完美" fits in the gap between
+                // the two dials without overlapping them.
+                ratingLabel.fontSize = 30;
+                ratingLabel.lineHeight = 34;
+                this.addReadoutOutline(ratingLabel);
+            }
+        }
+        const speedNode = makeUiNode('SweetZoneReadoutSpeed', readout);
+        speedNode.setPosition(0, -6, 0);
+        speedNode.getComponent(UITransform).setContentSize(200, 28);
+        const speedLabel = speedNode.addComponent(Label);
+        speedLabel.string = '0.00 m/s';
+        speedLabel.fontSize = 22;
+        speedLabel.lineHeight = 26;
+        speedLabel.color = new Color(255, 255, 255, 255);
+        speedLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        speedLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        this.addReadoutOutline(speedLabel);
+        const comboNode = this._uiController?.comboLabel?.node;
+        if (comboNode?.isValid) {
+            comboNode.setParent(readout, false);
+            comboNode.setPosition(0, -30, 0);
+            const comboLabel = this._uiController?.comboLabel;
+            if (comboLabel) {
+                comboLabel.color = new Color(255, 236, 150, 255);
+                this.addReadoutOutline(comboLabel);
+            }
+        }
+        this._overheadReadout = readout;
+        this._overheadSpeedLabel = speedLabel;
+    }
+
+    // Dark outline so overhead readout text stays legible over the bright,
+    // varied pool background (plain white text washes out).
+    private addReadoutOutline(label: Label) {
+        label.enableOutline = true;
+        label.outlineColor = new Color(0, 0, 0, 205);
+        label.outlineWidth = 3;
     }
 
     // On-screen swim direction of a swimmer for its sweet-zone dial: the swimmer's

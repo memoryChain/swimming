@@ -1,4 +1,4 @@
-import { Color, Graphics, Label, Node, UITransform } from 'cc';
+import { Color, Graphics, Node, UITransform } from 'cc';
 import { Rating } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { makeUiNode } from './RuntimeUiFactory';
@@ -8,31 +8,27 @@ import { makeUiNode } from './RuntimeUiFactory';
 // direction (matching the character's hand at cycle 0) and sweeps clockwise as
 // the stroke progresses. Colored arcs show where BAD / GOOD / PERFECT releases
 // land. Debug-only: it makes the redesign's hidden timing readable while tuning.
-const DIAL_OUTER_RADIUS = 56;
+const DIAL_OUTER_RADIUS = 36;
 const DIAL_RING_WIDTH = 26;
 const DIAL_INNER_RADIUS = DIAL_OUTER_RADIUS - DIAL_RING_WIDTH;
 const DIAL_BOX = DIAL_OUTER_RADIUS * 2 + 12;
 const ARC_STEPS = 48;
-const SPEED_LABEL_WIDTH = 200;
-const SPEED_LABEL_HEIGHT = 34;
 
-const COLOR_BG = new Color(20, 26, 34, 210);
-const COLOR_BAD = new Color(150, 60, 66, 150);
-const COLOR_GOOD = new Color(70, 170, 200, 200);
-const COLOR_PERFECT = new Color(255, 205, 70, 235);
+// Palette: neutral translucent ring, cyan GOOD band, warm gold PERFECT band.
+// The BAD area is a soft slate so only the sweet bands read as "aim here".
+const COLOR_BG = new Color(26, 32, 44, 150);
+const COLOR_BAD = new Color(96, 108, 128, 150);
+const COLOR_GOOD = new Color(94, 200, 214, 215);
+const COLOR_PERFECT = new Color(255, 208, 96, 240);
 const COLOR_MARKER = new Color(255, 255, 255, 245);
 const COLOR_MARKER_BACK = new Color(0, 0, 0, 190);
 const COLOR_MARKER_IDLE = new Color(150, 160, 170, 130);
-const COLOR_SPEED = new Color(255, 255, 255, 255);
 
 export class SweetZoneBar {
     private _root: Node = null;
     private _bandGfx: Graphics = null;
     private _markerGfx: Graphics = null;
-    private _speedLabel: Label = null;
     private _lastSignature = '';
-    private _tag = '';
-    private _showSpeed = true;
     // Swim direction sign: +1 outbound (hand starts at 3 o'clock, sweeps CW),
     // -1 after a lap turn (hand starts at 9 o'clock, sweeps CCW). Mirrors the dial
     // so the pointer matches the character's hand once they fold back.
@@ -43,21 +39,8 @@ export class SweetZoneBar {
     // `showSpeed=false` shows just the static tag (used by the second per-hand dial
     // so the swimmer's speed isn't printed twice).
     build(parent: Node, x: number, y: number, tag = '', showSpeed = true) {
-        this._tag = tag;
-        this._showSpeed = showSpeed;
         this._root = makeUiNode('SweetZoneDial', parent);
         this._root.setPosition(x, y, 0);
-
-        const speedNode = makeUiNode('SweetZoneSpeedLabel', this._root);
-        speedNode.setPosition(0, DIAL_OUTER_RADIUS + SPEED_LABEL_HEIGHT / 2 + 6, 0);
-        speedNode.getComponent(UITransform).setContentSize(SPEED_LABEL_WIDTH, SPEED_LABEL_HEIGHT);
-        this._speedLabel = speedNode.addComponent(Label);
-        this._speedLabel.string = showSpeed ? (tag ? `${tag} 0.00 m/s` : 'SPD 0.00 m/s') : tag;
-        this._speedLabel.fontSize = 26;
-        this._speedLabel.lineHeight = 32;
-        this._speedLabel.color = COLOR_SPEED;
-        this._speedLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
-        this._speedLabel.verticalAlign = Label.VerticalAlign.CENTER;
 
         const bandNode = makeUiNode('SweetZoneBands', this._root);
         bandNode.getComponent(UITransform).setContentSize(DIAL_BOX, DIAL_BOX);
@@ -76,6 +59,23 @@ export class SweetZoneBar {
         }
     }
 
+    // Move the whole dial to a HUD-local position. Used to make the dial hover
+    // above its swimmer's head and follow them, instead of sitting at a fixed
+    // spot in the HUD. Coordinates are relative to the dial's parent node.
+    setAnchorPosition(x: number, y: number) {
+        if (this._root) {
+            this._root.setPosition(x, y, 0);
+        }
+    }
+
+    // Uniformly scale the dial so it can shrink/grow with the swimmer's distance
+    // to the camera, giving the overhead marker a sense of perspective.
+    setScale(scale: number) {
+        if (this._root) {
+            this._root.setScale(scale, scale, 1);
+        }
+    }
+
     // Redraw from the current stroke timing guide. Bands are only redrawn when
     // the zone layout (or swim direction) actually changes; the pointer follows
     // every frame while a stroke is active. `direction` is the swimmer's current
@@ -85,10 +85,6 @@ export class SweetZoneBar {
             return;
         }
         this._direction = direction < 0 ? -1 : 1;
-        if (this._speedLabel && this._showSpeed) {
-            const prefix = this._tag || 'SPD';
-            this._speedLabel.string = `${prefix} ${Math.max(0, speed).toFixed(2)} m/s`;
-        }
         const intervals = guide?.intervals ?? [];
         const signature = `${this._direction}|` + intervals.map((i) => `${i.rating}:${i.startRatio.toFixed(3)}-${i.endRatio.toFixed(3)}`).join('|');
         if (signature !== this._lastSignature) {

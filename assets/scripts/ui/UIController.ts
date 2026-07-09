@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, Tween, tween, UITransform, Vec3 } from 'cc';
+import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -174,6 +174,25 @@ export class UIController extends Component {
             this.comboLabel.string = combo > 0 ? `${combo} 连击` : '';
             this.comboLabel.fontSize = combo >= 10 ? 25 : 24;
         }
+        this.fadeRatingReadout();
+    }
+
+    // Hold the rating/combo readout briefly, then fade it out so it does not
+    // linger over the swimmer until the next stroke.
+    private fadeRatingReadout() {
+        for (const label of [this.ratingLabel, this.comboLabel]) {
+            const node = label?.node;
+            if (!node?.isValid) {
+                continue;
+            }
+            const opacity = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+            Tween.stopAllByTarget(opacity);
+            opacity.opacity = 255;
+            tween(opacity)
+                .delay(0.7)
+                .to(0.35, { opacity: 0 })
+                .start();
+        }
     }
 
     showCountdown(value: number) {
@@ -310,6 +329,13 @@ export class UIController extends Component {
         }
         if (this.comboLabel) {
             this.comboLabel.string = '';
+        }
+        for (const label of [this.ratingLabel, this.comboLabel]) {
+            const opacity = label?.node?.getComponent(UIOpacity);
+            if (opacity) {
+                Tween.stopAllByTarget(opacity);
+                opacity.opacity = 255;
+            }
         }
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;

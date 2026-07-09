@@ -1,5 +1,6 @@
 import { AlphaKey, Color, ColorKey, CurveRange, Gradient, GradientRange, Material, MeshRenderer, Node, ParticleSystem, primitives, RealCurve, resources, Texture2D, utils, Vec3, Vec4 } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { STABILITY_TUNING } from '../core/InputTuning';
 import { SplashFoamPartTuning, SplashParticleEmitterTuning, SPLASH_EMITTER_TUNING, SplashVec3 } from './SplashEmitterTuning';
 
 type SplashPart = {
@@ -94,6 +95,7 @@ export class SplashEmitter {
     private _waterY: number;
     private _culled = false;
     private _particleEffectsEnabled = true;
+    private _countSpeedFactor = 1;
     private readonly _reduced: boolean;
 
     constructor(private readonly _options: SplashEmitterOptions) {
@@ -250,6 +252,7 @@ export class SplashEmitter {
         }
 
         const speedRatio = clamp(speed / TUNING.speedNormalize, 0, 1);
+        this._countSpeedFactor = this.computeCountSpeedFactor(speed);
         this.node.setPosition(this._options.owner.position.x, this._waterY, this._options.owner.position.z);
         this.node.setRotationFromEuler(0, 0, 0);
         this.node.setScale(1, 1, 1);
@@ -315,6 +318,23 @@ export class SplashEmitter {
             }
         }
         this.node.active = anyActive;
+    }
+
+    // Map raw swim speed to an overall particle-count multiplier across the arm-cycle
+    // speed window: minScale at/below armCycleSpeedStart, maxScale at/above armCycleSpeedFull.
+    // This scales how many particles a burst emits without touching burst timing.
+    // 将原始游泳速度映射为整体粒子数量倍率，覆盖手臂轮速的速度窗口：低于 armCycleSpeedStart 恒为
+    // minScale，达到 armCycleSpeedFull 及以上恒为 maxScale。只缩放爆发的粒子数量，不改动爆发时机。
+    private computeCountSpeedFactor(speed: number): number {
+        const config = TUNING.speedCountScale;
+        if (!config.enabled) {
+            return 1;
+        }
+        const start = STABILITY_TUNING.armCycleSpeedStart;
+        const full = STABILITY_TUNING.armCycleSpeedFull;
+        const span = full - start;
+        const t = span > 1e-4 ? clamp((speed - start) / span, 0, 1) : (speed >= full ? 1 : 0);
+        return lerp(config.minScale, config.maxScale, t);
     }
 
     private createPart(
@@ -680,7 +700,7 @@ export class SplashEmitter {
         this.node.active = true;
         emitter.system.play();
         applyParticleTexture(emitter.system);
-        const scaledCount = Math.max(TUNING.behavior.minimumScaledCount, Math.round(count * emitter.countScale));
+        const scaledCount = Math.max(TUNING.behavior.minimumScaledCount, Math.round(count * emitter.countScale * this._countSpeedFactor));
         const spraySeconds = !isHand ? TUNING.behavior.legSpraySeconds : TUNING.behavior.handSpraySeconds;
         this.emitJitteredParticles(
             emitter,
