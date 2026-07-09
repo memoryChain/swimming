@@ -70,9 +70,6 @@ export class SwimmerMotor {
     private _currentSpeed = 0;
     private _distance = 0;
     private _isRacing = false;
-    // Set from update() options each frame. AI swimmers use a higher low-speed
-    // arm-cycle floor so they aren't trapped at low speed (they have no leg kicks).
-    private _isAI = false;
     private _bodyPhase = 0;
     private _leftArmCycle = 0;
     private _rightArmCycle = 0;
@@ -278,7 +275,6 @@ export class SwimmerMotor {
         if (!this._isRacing) {
             return false;
         }
-        this._isAI = options.isAI;
 
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
@@ -740,19 +736,17 @@ export class SwimmerMotor {
     }
 
     private currentActionCycleSpeed(): number {
-        // Redesign: arm-stroke cadence uses its own speed→cadence curve so the
-        // real-time release window can be tuned to shrink at high speed. The
-        // sweet zone stays a fixed fraction of a cycle, so a faster cycle = a
-        // tighter timing window.
-        const t = Math.pow(this.speedRatio(), Math.max(0.05, STABILITY_TUNING.armCycleSpeedCurve));
-        // AI swimmers use a higher low-speed cadence floor so a slow start doesn't
-        // trap them (they have no leg-kick propulsion). Both curves share the same
-        // high-speed value, so AI and player converge at speed.
-        const lowSpeedPerSecond = this._isAI
-            ? STABILITY_TUNING.aiArmCycleLowSpeedPerSecond
-            : STABILITY_TUNING.armCycleLowSpeedPerSecond;
+        // Redesign: arm-stroke cadence ramps linearly from the low-speed floor to
+        // the high-speed ceiling as current speed crosses the window
+        // [armCycleSpeedStart, armCycleSpeedFull], clamped at both ends. The sweet
+        // zone stays a fixed fraction of a cycle, so a faster cycle = a tighter
+        // timing window. AI shares these values; it only differs in input timing.
+        const start = STABILITY_TUNING.armCycleSpeedStart;
+        const full = STABILITY_TUNING.armCycleSpeedFull;
+        const span = Math.max(0.01, full - start);
+        const t = clamp01((this._currentSpeed - start) / span);
         return CYCLE_AMOUNT * lerp(
-            lowSpeedPerSecond,
+            STABILITY_TUNING.armCycleLowSpeedPerSecond,
             STABILITY_TUNING.armCycleHighSpeedPerSecond,
             t,
         );
@@ -800,6 +794,48 @@ export class SwimmerMotor {
             this[contraLegKey] = 0;
         }
         return { queued: true, startedImmediately };
+    }
+
+    // Continuation stroke: called when a stroke's cycle finishes while its key is
+    // still held. Starts the next stroke right away, timing its hold from the
+    // completion moment (atTime) instead of the earlier press that arrived while
+    // the previous stroke was still playing. Returns true if a stroke was started.
+    private tryStartHeldStroke(type: StrokeType, atTime: number): boolean {
+        const isLeft = type === StrokeType.LEFT;
+        const held = isLeft ? this._leftStrokeHeld : this._rightStrokeHeld;
+        if (!held) {
+            return false;
+        }
+        const actions = isLeft ? this._leftActions : this._rightActions;
+        const armKey = isLeft ? '_leftArmMotionRemaining' : '_rightArmMotionRemaining';
+        if (actions.length >= 1 || !this.canQueueMotionCycle(armKey)) {
+            return false;
+        }
+        // Reset this side's press start so hold duration is measured from now.
+        if (isLeft) {
+            this._leftPressStartedAt = atTime;
+        } else {
+            this._rightPressStartedAt = atTime;
+        }
+        this.queueMotionCycle(armKey);
+        const action: StrokeAction = {
+            queuedAt: atTime,
+            startedAt: atTime,
+            pressedAt: atTime,
+            releasedAt: -1,
+            progress: 0,
+            baseAccelerationStarted: false,
+            stabilitySettled: false,
+            alternationQuality: 0,
+            inputFreshness: 1,
+            inputLeadSeconds: 0,
+            inputLeadRatio: 0,
+        };
+        actions.push(action);
+        this.startActionBaseAcceleration(type, action);
+        this._armAction = 1;
+        this._kickAction = 1;
+        return true;
     }
 
     private canQueueSideStroke(type: StrokeType): boolean {
@@ -900,6 +936,14 @@ export class SwimmerMotor {
             if (action.progress >= CYCLE_AMOUNT - 0.00001) {
                 actions.shift();
                 this.finishAction(type, action, frameStartedAt + elapsed);
+                // Continuation: if the key is still held when this stroke's cycle
+                // completes, start the next stroke immediately (its hold is timed
+                // from this moment). This rescues a press that arrived slightly
+                // early — while the previous stroke was still finishing — which
+                // would otherwise be dropped and stall the arm for a full cycle.
+                if (this.tryStartHeldStroke(type, frameStartedAt + elapsed)) {
+                    break;
+                }
             }
         }
     }

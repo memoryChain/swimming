@@ -70,6 +70,16 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 
 甜区位置使用“手臂拉水弧线占整圈的比例”表示。`0` 是刚开始，`0.5` 大约是半圈末尾/出水附近。
 
+手臂划水的每秒圈数（轮速）由当前速度在一个速度窗口内线性映射得到，两端夹住：
+
+```text
+t = clamp01((speed - armCycleSpeedStart) / (armCycleSpeedFull - armCycleSpeedStart))
+cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
+一圈时长 = 1 / cyclesPerSecond
+```
+
+速度 ≤ `armCycleSpeedStart` 时恒为下限，≥ `armCycleSpeedFull` 时恒为上限。速度上限 `speed.maxSpeed` 通常比 `armCycleSpeedFull` 更高，所以顶速之后继续加速不会再改变轮速。玩家和 AI 共用这套参数，AI 只是输入节奏不同。
+
 | 键 | 当前值 | 单位 | 含义 |
 | --- | ---: | --- | --- |
 | `stability.minHoldSeconds` | `0.12` | s | 触摸/按键按住多久才从踢腿点击升级为手臂划水。短于这个值会保持为一次踢腿点击，不算划水，也不判失误。 |
@@ -79,9 +89,10 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 | `stability.perfectEnd` | `0.46` | 比例 | PERFECT 区间终点，范围 0..1。 |
 | `gesture.armStrokeTimeoutProgress` | `0.5` | 比例 | 一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束并判为超时失误。`0.5` 表示半圈。 |
 | `gesture.armStrokeTimeoutAccel` | `0.08` | m/s² | 划水超时失误时给的很小推进加速度，用来惩罚一直按住不松手。 |
-| `stability.armCycleLowSpeedPerSecond` | `0.3` | 圈/s | 速度为 0 时，手臂划水每秒转几圈。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越低，低速时一圈越慢，甜区实际时间窗口越宽。 |
-| `stability.armCycleHighSpeedPerSecond` | `2` | 圈/s | 达到最高速度时，手臂划水每秒转几圈。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越高，高速时一圈越快，甜区实际时间窗口越短。 |
-| `stability.armCycleSpeedCurve` | `1` | 曲线 | 低速轮速到高速轮速的过渡曲线。`1` 是线性；大于 `1` 会让中低速窗口保持宽松，临近最高速才快速收紧。 |
+| `stability.armCycleLowSpeedPerSecond` | `0.8` | 圈/s | 速度低于 `armCycleSpeedStart` 时，手臂划水每秒转几圈（下限）。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越低，低速时一圈越慢，甜区实际时间窗口越宽。 |
+| `stability.armCycleHighSpeedPerSecond` | `2.5` | 圈/s | 速度到达 `armCycleSpeedFull` 后，手臂划水每秒转几圈（上限）。越高，高速时一圈越快，甜区实际时间窗口越短。 |
+| `stability.armCycleSpeedStart` | `1.0` | m/s | 起爬速度。低于这个速度，轮速恒为下限；到达后才开始随速度线性加快。 |
+| `stability.armCycleSpeedFull` | `4.5` | m/s | 顶速速度。到达这个速度轮速升到上限，再快也不再变化。必须大于 `armCycleSpeedStart`。 |
 
 ## 动作播放与姿态
 
@@ -112,7 +123,7 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 - 想让速度更快掉下来：调高 `speed.baseDrag` 会影响全速段，调高 `speed.highSpeedDrag` 主要压高速段。
 - 想让甜区更好打：拉宽 `stability.goodStart/goodEnd` 或 `stability.perfectStart/perfectEnd`，或降低 `stability.armCycleHighSpeedPerSecond`。
 - 想让按住不松更快失败：降低 `gesture.armStrokeTimeoutProgress`。
-- 想让手臂动作和甜区一起变快/变慢：调 `stability.armCycleLowSpeedPerSecond`、`stability.armCycleHighSpeedPerSecond`。
+- 想让手臂动作和甜区一起变快/变慢：调 `stability.armCycleLowSpeedPerSecond`、`stability.armCycleHighSpeedPerSecond`；想改变“从慢到快”发生在哪个速度段：调 `stability.armCycleSpeedStart`、`stability.armCycleSpeedFull`。
 - 想让踢腿不抢手臂主导：保持 `speed.kickMaxSpeed` 明显低于 `speed.maxSpeed`，必要时降低 `speed.kickAccelPerHz`。
 
 ## 配置校正
@@ -123,5 +134,6 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 - GOOD/PERFECT 区间不能越过起点或超时点。
 - GOOD 和 PERFECT 可以重叠，重叠部分按 PERFECT 计算。
 - `stability.armCycleHighSpeedPerSecond` 不能低于 `stability.armCycleLowSpeedPerSecond`。
+- `stability.armCycleSpeedFull` 必须大于 `stability.armCycleSpeedStart`，否则会被自动上移。
 
 如果手写 JSON 配出矛盾值，运行时会自动修正并输出 `[SpeedSwimming] tuning adjusted` warning。

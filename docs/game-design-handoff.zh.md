@@ -111,7 +111,7 @@ flowchart LR
 | **BAD 偏差** | 区间外 / 超时 | 0 | 只有极小推进，combo 归零 |
 
 - 甜区是**周期的固定比例**，不是固定毫秒。所以**速度越快 → 手臂划水周期越短 → 甜区的实际时间窗越窄 → 越难踩准**。
-  - 低速周期 ≈ 0.82 圈/秒（甜区窗 ~150ms）；高速 ≈ 2.8 圈/秒（甜区窗 ~43ms）。见 `STABILITY_TUNING.armCycleLowSpeedPerSecond / armCycleHighSpeedPerSecond`。
+  - 低速周期 ≈ 0.8 圈/秒（甜区窗较宽）；高速 ≈ 2.5 圈/秒（甜区窗较窄）。轮速在速度窗口 `armCycleSpeedStart..armCycleSpeedFull` 内线性从下限爬到上限，两端夹住。见 `STABILITY_TUNING.armCycleLowSpeedPerSecond / armCycleHighSpeedPerSecond / armCycleSpeedStart / armCycleSpeedFull`。
 - 按住太久不放（划过 0.5 周期）会**超时判负**，只给一点点推进 `armStrokeTimeoutAccel = 0.08`。
 
 **跳水（COUNTDOWN→DIVING）也是同一套“时机”思想**：蓄力条来回摆动（`chargeCycleSeconds = 1.6`），松手瞬间的力度 `power`(0.18–1.0) 决定：

@@ -101,10 +101,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('stability.perfectEnd', 'PERFECT终点', 'PERFECT 区间终点，范围 0..1。终点必须大于起点。', () => STABILITY_TUNING.perfectEnd, (v) => STABILITY_TUNING.perfectEnd = v, 0.01, 0, 1, 2),
             control('gesture.armStrokeTimeoutProgress', '超时圈数', '一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束（手已出水），判为超时失误。0.5=半圈。', () => STABILITY_TUNING.armStrokeTimeoutProgress, (v) => STABILITY_TUNING.armStrokeTimeoutProgress = v, 0.05, 0.2, 1, 2),
             control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STABILITY_TUNING.armStrokeTimeoutAccel, (v) => STABILITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
-            control('stability.armCycleLowSpeedPerSecond', '低速划水轮速', '速度为 0 时手臂划水每秒的圈数。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STABILITY_TUNING.armCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
-            control('stability.armCycleHighSpeedPerSecond', '高速划水轮速', '达到最高速时手臂划水每秒的圈数。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打），速度起来后对操作要求更高。', () => STABILITY_TUNING.armCycleHighSpeedPerSecond, (v) => STABILITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
-            control('stability.aiArmCycleLowSpeedPerSecond', 'AI低速划水轮速', '仅 AI：速度为 0 时手臂划水每秒的圈数（比玩家的低速轮速高）。AI 没有踢腿推进，低速时靠这个更快的划频冲出慢起步、把速度顶起来；高速时与玩家一致。调低会让 AI 慢起步更吃力。', () => STABILITY_TUNING.aiArmCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.aiArmCycleLowSpeedPerSecond = v, 0.05, 0.3, 4, 2),
-            control('stability.armCycleSpeedCurve', '轮速曲线', '低速轮速到高速轮速的过渡曲线。1=线性；>1 让窗口在中低速保持宽松、临近最高速才快速收紧。', () => STABILITY_TUNING.armCycleSpeedCurve, (v) => STABILITY_TUNING.armCycleSpeedCurve = v, 0.1, 0.2, 4, 1),
+            control('stability.armCycleLowSpeedPerSecond', '低速划水轮速', '速度低于“起爬速度”时手臂划水每秒的圈数（下限）。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STABILITY_TUNING.armCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
+            control('stability.armCycleHighSpeedPerSecond', '高速划水轮速', '速度达到“顶速速度”后手臂划水每秒的圈数（上限）。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打）。', () => STABILITY_TUNING.armCycleHighSpeedPerSecond, (v) => STABILITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
+            control('stability.armCycleSpeedStart', '起爬速度', '低于这个速度时轮速恒为下限；到达后才开始随速度加快。单位 m/s。', () => STABILITY_TUNING.armCycleSpeedStart, (v) => STABILITY_TUNING.armCycleSpeedStart = v, 0.1, 0, 6, 2, 'm/s'),
+            control('stability.armCycleSpeedFull', '顶速速度', '到达这个速度时轮速升到上限；再快也不变。应大于“起爬速度”。单位 m/s。', () => STABILITY_TUNING.armCycleSpeedFull, (v) => STABILITY_TUNING.armCycleSpeedFull = v, 0.1, 0.1, 8, 2, 'm/s'),
         ],
     },
     {
@@ -339,6 +339,16 @@ function validateTuningRelations() {
             `${STABILITY_TUNING.armCycleLowSpeedPerSecond.toFixed(3)}`,
         );
         STABILITY_TUNING.armCycleHighSpeedPerSecond = STABILITY_TUNING.armCycleLowSpeedPerSecond;
+    }
+
+    if (STABILITY_TUNING.armCycleSpeedFull <= STABILITY_TUNING.armCycleSpeedStart) {
+        const fixed = STABILITY_TUNING.armCycleSpeedStart + 0.1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: stability.armCycleSpeedFull ` +
+            `${STABILITY_TUNING.armCycleSpeedFull.toFixed(3)} must be above stability.armCycleSpeedStart ` +
+            `${STABILITY_TUNING.armCycleSpeedStart.toFixed(3)}; set to ${fixed.toFixed(3)}`,
+        );
+        STABILITY_TUNING.armCycleSpeedFull = fixed;
     }
 }
 
