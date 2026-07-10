@@ -222,17 +222,23 @@ export class GameManager extends Component {
         this.updatePlayerCondition(dt);
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
         const raceActive = this._state === GameState.RACING;
-        this.drawStrokeTimingGuide(timingGuide, raceActive);
+        const raceDistance = getRaceDistance();
+        const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
+        // The player can finish before the last AI swimmer. Hide the overhead
+        // feedback as soon as the player's own distance reaches the wall rather
+        // than waiting for the whole race to enter FINISHED.
+        const playerFeedbackVisible = raceActive && playerBeforeFinish;
+        this.drawStrokeTimingGuide(timingGuide, playerFeedbackVisible);
         const playerFacing = this.dialFacingSign(this._playerSwimmer);
         const playerSpeed = this._playerSwimmer.currentSpeed;
-        this._sweetZoneBarLeft.setVisible(raceActive);
-        this._sweetZoneBarRight.setVisible(raceActive);
-        this._sweetZoneBarLeft.update(raceActive ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
-        this._sweetZoneBarRight.update(raceActive ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
+        this._sweetZoneBarLeft.setVisible(playerFeedbackVisible);
+        this._sweetZoneBarRight.setVisible(playerFeedbackVisible);
+        this._sweetZoneBarLeft.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
+        this._sweetZoneBarRight.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
         if (this._overheadReadout) {
-            this._overheadReadout.active = raceActive;
+            this._overheadReadout.active = playerFeedbackVisible;
         }
-        if (raceActive) {
+        if (playerFeedbackVisible) {
             this.positionSweetZoneDialsAbove(this._playerSwimmer, this._sweetZoneBarLeft, this._sweetZoneBarRight, this._overheadReadout);
             if (this._overheadSpeedLabel) {
                 this._overheadSpeedLabel.string = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
@@ -784,12 +790,15 @@ export class GameManager extends Component {
         if (this._state !== GameState.RACING) {
             return;
         }
+        const showFeedback = (this._playerSwimmer?.distance ?? 0) < getRaceDistance();
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
             this.debug(formatStabilityLog('stability', result));
-            if (result.rating === Rating.PERFECT) {
+            if (showFeedback && result.rating === Rating.PERFECT) {
                 this._playerSwimmer?.playPerfectFlash();
             }
-            this._uiFlow?.showRating(result.rating, result.combo);
+            if (showFeedback) {
+                this._uiFlow?.showRating(result.rating, result.combo);
+            }
         }
     }
 
@@ -842,7 +851,7 @@ export class GameManager extends Component {
     // Drive the opponent's sweet-zone dials from the single AI swimmer (AI-debug).
     private updateAiSweetZoneBar(raceActive: boolean) {
         const aiSwimmer = this._aiDebugMode ? this._aiSwimmers[0] : null;
-        const show = raceActive && !!aiSwimmer;
+        const show = raceActive && !!aiSwimmer && aiSwimmer.distance < getRaceDistance();
         this._aiSweetZoneBarLeft.setVisible(show);
         this._aiSweetZoneBarRight.setVisible(show);
         if (aiSwimmer) {
