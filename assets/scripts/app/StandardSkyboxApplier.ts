@@ -1,4 +1,5 @@
-import { Camera, Color, Node, resources, Texture2D, TextureCube } from 'cc';
+import { Camera, Color, Node, Texture2D, TextureCube } from 'cc';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SkyboxFaceName, SkyboxVariant } from '../core/ResourcePaths';
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = [
@@ -137,14 +138,14 @@ function loadSkyboxFaceTextures(variant: SkyboxVariant, done: (textures: Texture
 
 function loadSkyboxFaceTexture(path: string, done: (err: Error | null, texture: Texture2D | null, loadedPath: string) => void) {
     const fallbackPath = path.endsWith('/texture') ? path.slice(0, -'/texture'.length) : `${path}/texture`;
-    resources.load(path, Texture2D, (err, texture) => {
+    loadRaceAsset(path, Texture2D, (err, texture) => {
         if (!err && texture) {
             done(null, texture, path);
             return;
         }
 
         console.warn(`[SpeedSwimming] skybox face load failed path=${path}`, err);
-        resources.load(fallbackPath, Texture2D, (fallbackErr, fallbackTexture) => {
+        loadRaceAsset(fallbackPath, Texture2D, (fallbackErr, fallbackTexture) => {
             if (!fallbackErr && fallbackTexture) {
                 console.log(`[SpeedSwimming] skybox face loaded with fallback path=${fallbackPath}`);
                 done(null, fallbackTexture, fallbackPath);

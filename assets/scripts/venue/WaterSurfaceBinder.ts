@@ -1,4 +1,5 @@
-import { Color, Material, MeshRenderer, Node, Vec3, Vec4, resources } from 'cc';
+import { Color, Material, MeshRenderer, Node, Vec3, Vec4 } from 'cc';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
@@ -36,7 +37,7 @@ export class WaterSurfaceBinder {
             pool.addComponent(WaterSurface);
         }
 
-        resources.load(waterMaterialPath, Material, (err, material) => {
+        loadRaceAsset(waterMaterialPath, Material, (err, material) => {
             if (err || !material || !pool.isValid) {
                 console.warn('[SpeedSwimming] failed to load transparent pool water material', err);
                 return;

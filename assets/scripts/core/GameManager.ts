@@ -634,8 +634,8 @@ export class GameManager extends Component {
         this._inputManager = input;
 
         new SpeedStarsUiPrefabBuilder({
-            onStroke: () => this._inputRouter?.handleAutoPadStroke(),
-            onStrokeEnd: () => this._inputRouter?.handleAutoPadStrokeEnd(),
+            onStroke: (type) => this._inputRouter?.handleScreenPadStroke(type),
+            onStrokeEnd: (type) => this._inputRouter?.handleScreenPadStrokeEnd(type),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),

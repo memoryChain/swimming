@@ -1,4 +1,4 @@
-import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, resources, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
@@ -10,6 +10,7 @@ import { SplashEmitter } from '../character/SplashEmitter';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
+import { loadRaceAsset, loadRaceAssetDir } from '../core/RaceBundleLoader';
 import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPose } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -818,7 +819,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             }
         };
-        resources.load(RESOURCE_PATHS.swimmer0621ColorMask, Texture2D, (error, texture) => {
+        loadRaceAsset(RESOURCE_PATHS.swimmer0621ColorMask, Texture2D, (error, texture) => {
             if (token !== this._colorAssetLoadToken || this._modelVariantId !== 'swimmer0621_2') {
                 return;
             }
@@ -829,7 +830,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._colorMask = texture;
             applyWhenReady();
         });
-        resources.load(RESOURCE_PATHS.swimmerDynamicColorEffect, EffectAsset, (error, effect) => {
+        loadRaceAsset(RESOURCE_PATHS.swimmerDynamicColorEffect, EffectAsset, (error, effect) => {
             if (token !== this._colorAssetLoadToken || this._modelVariantId !== 'swimmer0621_2') {
                 return;
             }
@@ -909,7 +910,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         const path = MIXAMO_SWIMMING_CLIP_PATHS[index];
-        resources.load(path, AnimationClip, (error, clip) => {
+        loadRaceAsset(path, AnimationClip, (error, clip) => {
             if (!this.isMixamoSwimmingDebugVariant() || !this._model?.isValid) {
                 return;
             }
@@ -924,7 +925,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private loadMixamoClipFromDirectory() {
-        resources.loadDir('models/UserSwimmer0621_2MixamoSwimming', AnimationClip, (dirError, clips) => {
+        loadRaceAssetDir('models/UserSwimmer0621_2MixamoSwimming', AnimationClip, (dirError, clips) => {
             if (!this.isMixamoSwimmingDebugVariant() || !this._model?.isValid) {
                 return;
             }
@@ -1156,7 +1157,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._perfectGlowLoading = true;
-        resources.load(RESOURCE_PATHS.swimmerPerfectGlowEffect, EffectAsset, (err, effect) => {
+        loadRaceAsset(RESOURCE_PATHS.swimmerPerfectGlowEffect, EffectAsset, (err, effect) => {
             this._perfectGlowLoading = false;
             if (err || !effect || !this.node?.isValid || !this._model?.isValid) {
                 console.warn('[SpeedSwimming] failed to load perfect glow effect', err);

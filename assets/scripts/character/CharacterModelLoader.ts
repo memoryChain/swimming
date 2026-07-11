@@ -1,4 +1,5 @@
-import { Component, Node, Prefab, resources, SkinnedMeshRenderer } from 'cc';
+import { Component, Node, Prefab, SkinnedMeshRenderer } from 'cc';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 export type SwimmerPrefabLoadResult = {
@@ -16,7 +17,7 @@ export function loadSwimmerPrefab(
             return;
         }
         const path = candidates[index];
-        resources.load(path, Prefab, (err, prefab) => {
+        loadRaceAsset(path, Prefab, (err, prefab) => {
             if (!err && prefab) {
                 done(null, { prefab, path });
                 return;

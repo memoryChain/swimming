@@ -1,5 +1,6 @@
-import { instantiate, Node, Prefab, resources, Vec3 } from 'cc';
+import { instantiate, Node, Prefab, Vec3 } from 'cc';
 import { pruneNullComponentsInParentChain, pruneNullComponentsRecursive } from '../character/CharacterModelLoader';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { PoolDefinition } from './VenueConfig';
 
 export type PoolSceneLoadResult = {
@@ -14,7 +15,7 @@ export class PoolSceneLoader {
             return;
         }
 
-        resources.load(definition.prefabPath, Prefab, (err, prefab) => {
+        loadRaceAsset(definition.prefabPath, Prefab, (err, prefab) => {
             if (err || !prefab || !root.isValid) {
                 done({ pool: null, error: err || new Error(`failed to load ${definition.prefabPath}`) });
                 return;

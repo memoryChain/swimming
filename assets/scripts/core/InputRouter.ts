@@ -29,6 +29,7 @@ export class InputRouter {
     private _lastPadStrokeType: StrokeType | null = null;
     private _nextAutoPadStrokeType = StrokeType.LEFT;
     private _activeAutoPadStrokeType: StrokeType | null = null;
+    private _activeAutoPadPointerCount = 0;
 
     // Press classification (shared by touch pad, single-tap S key and keyboard
     // A/D): the contralateral leg kick fires immediately on press. If the press is
@@ -176,11 +177,37 @@ export class InputRouter {
         this._activeAutoPadStrokeType = null;
     }
 
+    handleScreenPadStroke(type: StrokeType) {
+        if (INPUT_TUNING.singleTapAutoAlternateEnabled) {
+            this._activeAutoPadPointerCount += 1;
+            if (this._activeAutoPadPointerCount === 1) {
+                this.handleAutoPadStroke();
+            }
+            return;
+        }
+        this.handlePadStroke(type);
+    }
+
+    handleScreenPadStrokeEnd(type: StrokeType) {
+        if (INPUT_TUNING.singleTapAutoAlternateEnabled) {
+            if (this._activeAutoPadPointerCount <= 0) {
+                return;
+            }
+            this._activeAutoPadPointerCount -= 1;
+            if (this._activeAutoPadPointerCount === 0) {
+                this.handleAutoPadStrokeEnd();
+            }
+            return;
+        }
+        this.handlePadStrokeEnd(type);
+    }
+
     resetAutoPadSequence() {
         if (this._activeAutoPadStrokeType !== null) {
             this.handlePadStrokeEnd(this._activeAutoPadStrokeType);
         }
         this._activeAutoPadStrokeType = null;
+        this._activeAutoPadPointerCount = 0;
         this._nextAutoPadStrokeType = StrokeType.LEFT;
         this._lastPadStrokeType = null;
         this._lastPadStrokeMs = 0;
@@ -215,10 +242,16 @@ export class InputRouter {
 
     // S key: single-tap that simulates a mobile single touch (auto-alternating side).
     private onPadStroke() {
+        if (!INPUT_TUNING.singleTapAutoAlternateEnabled) {
+            return;
+        }
         this.handleAutoPadStroke();
     }
 
     private onPadStrokeEnd() {
+        if (!INPUT_TUNING.singleTapAutoAlternateEnabled) {
+            return;
+        }
         this.handleAutoPadStrokeEnd();
     }
 

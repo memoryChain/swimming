@@ -1,5 +1,6 @@
 import { _decorator, Component, EventKeyboard, EventMouse, EventTouch, input, Input, KeyCode, Node, view } from 'cc';
 import { StrokeType } from './GameConstants';
+import { INPUT_TUNING } from './InputTuning';
 
 const { ccclass, property } = _decorator;
 
@@ -15,7 +16,11 @@ export class InputManager extends Component {
     private _diveCharging = false;
     private _diveChargeStartedAt = 0;
     private _leftMouseStrokeType: StrokeType | null = null;
-    private _touchStrokeType: StrokeType | null = null;
+    private readonly _touchStrokeTypes = new Map<number, StrokeType.LEFT | StrokeType.RIGHT>();
+    private readonly _touchStrokeCounts: Record<StrokeType.LEFT | StrokeType.RIGHT, number> = {
+        [StrokeType.LEFT]: 0,
+        [StrokeType.RIGHT]: 0,
+    };
     private _singleTapHeld = false;
     onEnable() {
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
@@ -35,6 +40,7 @@ export class InputManager extends Component {
         input.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
         input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
         input.off(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
+        this.clearTouchInputs();
     }
 
     onDestroy() {
@@ -64,7 +70,7 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('model-debug-speed-down');
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_E) {
             this.strokeTarget?.emit('model-debug-speed-up');
-        } else if (event.keyCode === KeyCode.KEY_S) {
+        } else if (event.keyCode === KeyCode.KEY_S && INPUT_TUNING.singleTapAutoAlternateEnabled) {
             // Single-tap: simulate a mobile single touch (auto-alternating side).
             if (!this._singleTapHeld) {
                 this._singleTapHeld = true;
@@ -94,7 +100,7 @@ export class InputManager extends Component {
             this.setInputHeld(StrokeType.LEFT, false);
         } else if (event.keyCode === KeyCode.KEY_D || event.keyCode === KeyCode.ARROW_RIGHT) {
             this.setInputHeld(StrokeType.RIGHT, false);
-        } else if (event.keyCode === KeyCode.KEY_S) {
+        } else if (event.keyCode === KeyCode.KEY_S && INPUT_TUNING.singleTapAutoAlternateEnabled) {
             if (this._singleTapHeld) {
                 this._singleTapHeld = false;
                 this.strokeTarget?.emit('pad-stroke-end');
@@ -136,21 +142,47 @@ export class InputManager extends Component {
         if (this.modelDebugMode || !this.pointerInputEnabled) {
             return;
         }
+        const touchId = event.getID();
+        if (touchId === null || this._touchStrokeTypes.has(touchId)) {
+            return;
+        }
         const touchPos = event.getUILocation();
         const halfX = view.getVisibleSize().width / 2;
         const type = touchPos.x < halfX ? StrokeType.LEFT : StrokeType.RIGHT;
-        this._touchStrokeType = type;
-        this.setInputHeld(type, true);
-        this.emitStroke(type);
+        this._touchStrokeTypes.set(touchId, type);
+        const count = this._touchStrokeCounts[type];
+        this._touchStrokeCounts[type] = count + 1;
+        if (count === 0) {
+            this.setInputHeld(type, true);
+            this.emitStroke(type);
+        }
     }
 
-    private onTouchEnd() {
-        if (this._touchStrokeType) {
-            this.setInputHeld(this._touchStrokeType, false);
-            this._touchStrokeType = null;
+    private onTouchEnd(event: EventTouch) {
+        const touchId = event.getID();
+        if (touchId === null) {
             return;
         }
-        this.releaseDiveInput();
+        const type = this._touchStrokeTypes.get(touchId);
+        if (type !== undefined) {
+            this._touchStrokeTypes.delete(touchId);
+            const nextCount = Math.max(0, this._touchStrokeCounts[type] - 1);
+            this._touchStrokeCounts[type] = nextCount;
+            if (nextCount === 0) {
+                this.setInputHeld(type, false);
+            }
+            return;
+        }
+    }
+
+    private clearTouchInputs() {
+        this._touchStrokeTypes.clear();
+        for (const type of [StrokeType.LEFT, StrokeType.RIGHT] as const) {
+            if (this._touchStrokeCounts[type] > 0) {
+                this._touchStrokeCounts[type] = 0;
+                this.setInputHeld(type, false);
+            }
+        }
     }
 
     private emitStroke(type: StrokeType) {
@@ -175,11 +207,11 @@ export class InputManager extends Component {
         if (!this.diveInputEnabled || this.modelDebugMode) {
             return;
         }
-        if (this._leftHeld && this._rightHeld && !this._diveCharging) {
+        if ((this._leftHeld || this._rightHeld) && !this._diveCharging) {
             this._diveCharging = true;
             this._diveChargeStartedAt = Date.now() / 1000;
             this.emitDiveChargeStart();
-        } else if (!held && this._diveCharging) {
+        } else if (!held && !this._leftHeld && !this._rightHeld && this._diveCharging) {
             this.emitDiveRelease();
         }
     }

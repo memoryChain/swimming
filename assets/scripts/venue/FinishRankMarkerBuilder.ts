@@ -19,13 +19,14 @@ const RANK_MARKER_PLATFORM_Y_OFFSET = 0.56;
 export class FinishRankMarkerBuilder {
     private _root: Node | null = null;
     private readonly _markers = new Map<Node, Node>();
-    private readonly _baseMaterial = makeMaterial('FinishRankBase', color(246, 252, 255, 255));
-    private readonly _playerBaseMaterial = makeMaterial('FinishRankPlayerBase', color(255, 234, 106, 255));
-    private readonly _digitMaterial = makeMaterial('FinishRankDigit', color(12, 28, 46, 255));
+    private _baseMaterial: Material | null = null;
+    private _playerBaseMaterial: Material | null = null;
+    private _digitMaterial: Material | null = null;
 
     constructor(private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {}
 
     bind(parent: Node) {
+        this.ensureMaterials();
         if (this._root?.isValid) {
             return;
         }
@@ -46,7 +47,14 @@ export class FinishRankMarkerBuilder {
     }
 
     show(result: RaceFinishResult) {
-        if (!this._root?.isValid || !result.swimmer?.node?.isValid || this._markers.has(result.swimmer.node)) {
+        if (
+            !this._root?.isValid
+            || !this._baseMaterial
+            || !this._playerBaseMaterial
+            || !this._digitMaterial
+            || !result.swimmer?.node?.isValid
+            || this._markers.has(result.swimmer.node)
+        ) {
             return;
         }
         const marker = makeWorldNode(`Rank${result.placement}_${result.name}`, this._root);
@@ -62,6 +70,12 @@ export class FinishRankMarkerBuilder {
             new Vec3(1.05, 0.05, 0.72),
         );
         addDigitNumber(marker, `${result.placement}`, this._digitMaterial);
+    }
+
+    private ensureMaterials() {
+        this._baseMaterial ??= makeMaterial('FinishRankBase', color(246, 252, 255, 255));
+        this._playerBaseMaterial ??= makeMaterial('FinishRankPlayerBase', color(255, 234, 106, 255));
+        this._digitMaterial ??= makeMaterial('FinishRankDigit', color(12, 28, 46, 255));
     }
 }
 

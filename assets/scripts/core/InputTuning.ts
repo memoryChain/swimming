@@ -1,6 +1,9 @@
 import { TARGET_INTERVAL, getTargetInterval } from './GameBalance';
 
 export const INPUT_TUNING = {
+    // When enabled, every full-screen tap alternates LEFT/RIGHT automatically.
+    // Keep disabled to map the left/right screen halves directly to keyboard A/D.
+    singleTapAutoAlternateEnabled: false,
     padStrokeDedupeMs: 45,
     chordMergeWindowMs: 70,
     inputRateWindowSeconds: 1.2,

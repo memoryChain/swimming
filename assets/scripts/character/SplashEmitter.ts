@@ -1,4 +1,5 @@
-import { AlphaKey, Color, ColorKey, CurveRange, Gradient, GradientRange, Material, MeshRenderer, Node, ParticleSystem, primitives, RealCurve, resources, Texture2D, utils, Vec3, Vec4 } from 'cc';
+import { AlphaKey, Color, ColorKey, CurveRange, Gradient, GradientRange, Material, MeshRenderer, Node, ParticleSystem, primitives, RealCurve, Texture2D, utils, Vec3, Vec4 } from 'cc';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { STABILITY_TUNING } from '../core/InputTuning';
 import { SplashFoamPartTuning, SplashParticleEmitterTuning, SPLASH_EMITTER_TUNING, SplashVec3 } from './SplashEmitterTuning';
@@ -109,7 +110,7 @@ export class SplashEmitter {
     }
 
     build() {
-        resources.load(RESOURCE_PATHS.swimmerSplashMaterial, Material, (err, material) => {
+        loadRaceAsset(RESOURCE_PATHS.swimmerSplashMaterial, Material, (err, material) => {
             if (err || !material || !this.node?.isValid) {
                 console.warn('[SpeedSwimming] failed to load swimmer splash material', err);
                 return;

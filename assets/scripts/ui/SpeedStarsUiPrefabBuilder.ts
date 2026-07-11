@@ -1,7 +1,8 @@
-import { Color, EventMouse, Graphics, instantiate, Label, Node, Prefab, resources, Sprite, SpriteFrame, UITransform, view } from 'cc';
+import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { getRaceDistance, RaceDistanceMode, RACE_DISTANCE_OPTIONS } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
 import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
@@ -13,8 +14,8 @@ export type SpeedStarsStartUiCallbacks = {
 };
 
 export type SpeedStarsUiCallbacks = {
-    onStroke: () => void;
-    onStrokeEnd: () => void;
+    onStroke: (type: StrokeType) => void;
+    onStrokeEnd: (type: StrokeType) => void;
     onDiveHoldStart: () => void;
     onDiveHoldEnd: (holdSeconds: number) => void;
     onRestart: () => void;
@@ -60,6 +61,15 @@ export class SpeedStarsStartUiPrefabBuilder {
 
 export class SpeedStarsUiPrefabBuilder {
     private _diveHoldStartedAt = 0;
+    private readonly _activeStrokeTouches = new Map<number, StrokeType>();
+    private readonly _activeDiveTouches = new Set<number>();
+    private readonly _activeStrokeCounts: Record<StrokeType.LEFT | StrokeType.RIGHT, number> = {
+        [StrokeType.LEFT]: 0,
+        [StrokeType.RIGHT]: 0,
+    };
+    private _activePointerHoldCount = 0;
+    private _activeMouseStrokeType: StrokeType | null = null;
+    private _activeDiveMouse = false;
 
     constructor(private readonly _callbacks: SpeedStarsUiCallbacks) {}
 
@@ -166,37 +176,40 @@ export class SpeedStarsUiPrefabBuilder {
 
     private bindRaceHud(raceHud: Node): { speedBarRoot: Node } {
         const strokePad = requireNode(raceHud, 'StrokeInput');
-        strokePad.on(Node.EventType.TOUCH_START, () => this.beginStrokeHold());
-        strokePad.on(Node.EventType.TOUCH_END, () => this.endStrokeHold());
-        strokePad.on(Node.EventType.TOUCH_CANCEL, () => this.endStrokeHold());
-        strokePad.on(Node.EventType.MOUSE_UP, () => this.endStrokeHold());
+        fitInputNodeToVisibleScreen(strokePad);
+        strokePad.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginTouchStroke(event));
+        strokePad.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.endTouchStroke(event));
+        strokePad.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.endTouchStroke(event));
+        strokePad.on(Node.EventType.MOUSE_UP, () => this.endMouseStroke());
         strokePad.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT || event.getButton() === EventMouse.BUTTON_RIGHT) {
-                this.beginStrokeHold();
+                this.beginMouseStroke(event.getUILocation().x);
             }
         });
 
         const countdownOverlay = requireNode(raceHud, 'CountdownOverlay');
-        countdownOverlay.on(Node.EventType.TOUCH_START, () => this.beginDiveHold());
-        countdownOverlay.on(Node.EventType.TOUCH_END, () => this.endDiveHold());
-        countdownOverlay.on(Node.EventType.TOUCH_CANCEL, () => this.endDiveHold());
+        fitInputNodeToVisibleScreen(countdownOverlay);
+        countdownOverlay.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginDiveTouch(event));
+        countdownOverlay.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.endDiveTouch(event));
+        countdownOverlay.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.endDiveTouch(event));
         countdownOverlay.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT) {
-                this.beginDiveHold();
+                this.beginDiveMouse();
             }
         });
-        countdownOverlay.on(Node.EventType.MOUSE_UP, () => this.endDiveHold());
+        countdownOverlay.on(Node.EventType.MOUSE_UP, () => this.endDiveMouse());
 
         const diveTouchArea = requireNode(raceHud, 'DiveTouchArea');
-        diveTouchArea.on(Node.EventType.TOUCH_START, () => this.beginDiveHold());
-        diveTouchArea.on(Node.EventType.TOUCH_END, () => this.endDiveHold());
-        diveTouchArea.on(Node.EventType.TOUCH_CANCEL, () => this.endDiveHold());
+        fitInputNodeToVisibleScreen(diveTouchArea);
+        diveTouchArea.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginDiveTouch(event));
+        diveTouchArea.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.endDiveTouch(event));
+        diveTouchArea.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.endDiveTouch(event));
         diveTouchArea.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => {
             if (event.getButton() === EventMouse.BUTTON_LEFT) {
-                this.beginDiveHold();
+                this.beginDiveMouse();
             }
         });
-        diveTouchArea.on(Node.EventType.MOUSE_UP, () => this.endDiveHold());
+        diveTouchArea.on(Node.EventType.MOUSE_UP, () => this.endDiveMouse());
 
         requireNode(raceHud, 'RestartButton').on(Node.EventType.TOUCH_END, () => this._callbacks.onRestart());
         requireNode(raceHud, 'MenuButton').on(Node.EventType.TOUCH_END, () => this._callbacks.onMenu());
@@ -216,9 +229,10 @@ export class SpeedStarsUiPrefabBuilder {
 
     private buildHeartRateBar(raceHud: Node, ui: UIController) {
         const visibleSize = view.getVisibleSize();
+        const safeTop = raceSafeTopInset();
         const root = makeUiNode('HeartRateBar', raceHud);
         // Anchor near the top-left of the HUD.
-        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - 60, 0);
+        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - safeTop - 60, 0);
 
         const label = makeLabel('HeartRateLabel', root, '心率 0', 20, uiColor(120, 196, 255, 255));
         label.getComponent(UITransform).setContentSize(220, 26);
@@ -238,9 +252,10 @@ export class SpeedStarsUiPrefabBuilder {
 
     private buildEnergyBar(raceHud: Node, ui: UIController) {
         const visibleSize = view.getVisibleSize();
+        const safeTop = raceSafeTopInset();
         const root = makeUiNode('EnergyBar', raceHud);
         // Anchor just below the heart-rate bar.
-        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - 108, 0);
+        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - safeTop - 108, 0);
 
         const label = makeLabel('EnergyLabel', root, '体能 0', 20, uiColor(120, 220, 255, 255));
         label.getComponent(UITransform).setContentSize(220, 26);
@@ -260,7 +275,7 @@ export class SpeedStarsUiPrefabBuilder {
 
     private layoutRaceProgress(raceHud: Node) {
         const visibleSize = view.getVisibleSize();
-        const topY = visibleSize.height / 2 - 28;
+        const topY = visibleSize.height / 2 - raceSafeTopInset() - 28;
         for (const name of ['ProgressTrack', 'ProgressValue']) {
             const node = requireNode(raceHud, name);
             node.setPosition(node.position.x, topY, node.position.z);
@@ -287,15 +302,133 @@ export class SpeedStarsUiPrefabBuilder {
         this._callbacks.onDiveHoldEnd(holdSeconds);
     }
 
-    private beginStrokeHold() {
-        this.beginDiveHold();
-        this._callbacks.onStroke();
+    private beginTouchStroke(event: EventTouch) {
+        const touchId = event.getID();
+        if (touchId === null || this._activeStrokeTouches.has(touchId)) {
+            return;
+        }
+        const type = strokeTypeForScreenX(event.getUILocation().x);
+        this._activeStrokeTouches.set(touchId, type);
+        this.beginStrokeInput(type);
     }
 
-    private endStrokeHold() {
-        this._callbacks.onStrokeEnd();
-        this.endDiveHold();
+    private endTouchStroke(event: EventTouch) {
+        const touchId = event.getID();
+        if (touchId === null) {
+            return;
+        }
+        const type = this._activeStrokeTouches.get(touchId);
+        if (type === undefined) {
+            return;
+        }
+        this._activeStrokeTouches.delete(touchId);
+        this.endStrokeInput(type);
     }
+
+    private beginMouseStroke(screenX: number) {
+        if (this._activeMouseStrokeType !== null) {
+            return;
+        }
+        this._activeMouseStrokeType = strokeTypeForScreenX(screenX);
+        this.beginStrokeInput(this._activeMouseStrokeType);
+    }
+
+    private endMouseStroke() {
+        if (this._activeMouseStrokeType === null) {
+            return;
+        }
+        const type = this._activeMouseStrokeType;
+        this._activeMouseStrokeType = null;
+        this.endStrokeInput(type);
+    }
+
+    private beginStrokeInput(type: StrokeType) {
+        const count = this._activeStrokeCounts[type];
+        this._activeStrokeCounts[type] = count + 1;
+        this.beginPointerHold();
+        if (count === 0) {
+            this._callbacks.onStroke(type);
+        }
+    }
+
+    private endStrokeInput(type: StrokeType) {
+        const count = this._activeStrokeCounts[type];
+        if (count <= 0) {
+            return;
+        }
+        const nextCount = count - 1;
+        this._activeStrokeCounts[type] = nextCount;
+        if (nextCount === 0) {
+            this._callbacks.onStrokeEnd(type);
+        }
+        this.endPointerHold();
+    }
+
+    private beginDiveTouch(event: EventTouch) {
+        const touchId = event.getID();
+        if (touchId === null || this._activeDiveTouches.has(touchId)) {
+            return;
+        }
+        this._activeDiveTouches.add(touchId);
+        this.beginPointerHold();
+    }
+
+    private endDiveTouch(event: EventTouch) {
+        const touchId = event.getID();
+        if (touchId === null || !this._activeDiveTouches.delete(touchId)) {
+            return;
+        }
+        this.endPointerHold();
+    }
+
+    private beginDiveMouse() {
+        if (this._activeDiveMouse) {
+            return;
+        }
+        this._activeDiveMouse = true;
+        this.beginPointerHold();
+    }
+
+    private endDiveMouse() {
+        if (!this._activeDiveMouse) {
+            return;
+        }
+        this._activeDiveMouse = false;
+        this.endPointerHold();
+    }
+
+    private beginPointerHold() {
+        this._activePointerHoldCount += 1;
+        if (this._activePointerHoldCount === 1) {
+            this.beginDiveHold();
+        }
+    }
+
+    private endPointerHold() {
+        if (this._activePointerHoldCount <= 0) {
+            return;
+        }
+        this._activePointerHoldCount -= 1;
+        if (this._activePointerHoldCount === 0) {
+            this.endDiveHold();
+        }
+    }
+}
+
+function strokeTypeForScreenX(screenX: number): StrokeType {
+    return screenX < view.getVisibleSize().width / 2 ? StrokeType.LEFT : StrokeType.RIGHT;
+}
+
+function fitInputNodeToVisibleScreen(node: Node) {
+    const visibleSize = view.getVisibleSize();
+    node.setPosition(0, 0, node.position.z);
+    node.getComponent(UITransform)?.setContentSize(visibleSize.width, visibleSize.height);
+}
+
+function raceSafeTopInset(): number {
+    const visibleSize = view.getVisibleSize();
+    const safeArea = sys.getSafeAreaRect(false);
+    return Math.max(0, visibleSize.height - safeArea.y - safeArea.height);
 }
 
 function requireNode(root: Node, name: string): Node {

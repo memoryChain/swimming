@@ -1,4 +1,4 @@
-import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, resources, utils, Vec3, view } from 'cc';
+import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -6,6 +6,7 @@ import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { RaceManager } from '../core/RaceManager';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
@@ -686,7 +687,7 @@ export class ModelDebugFlowController {
     }
 
     private applyTransparentDebugWaterMaterial(renderer: MeshRenderer) {
-        resources.load(RESOURCE_PATHS.poolWaterMaterial, Material, (err, sourceMaterial) => {
+        loadRaceAsset(RESOURCE_PATHS.poolWaterMaterial, Material, (err, sourceMaterial) => {
             if (err || !sourceMaterial || !renderer?.node?.isValid) {
                 console.warn('[SpeedSwimming] model debug transparent water material load failed', err);
                 return;

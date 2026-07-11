@@ -1,6 +1,7 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, view } from 'cc';
 import { setRaceDistance } from '../core/GameBalance';
-import { setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
+import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
+import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
@@ -12,6 +13,7 @@ export class LoginManager extends Component {
     private _canvasNode: Node = null;
     private _designWidth = 1280;
     private _designHeight = 720;
+    private _loadingRace = false;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -29,13 +31,11 @@ export class LoginManager extends Component {
     }
 
     startGame() {
-        setMainGameLaunchMode('race');
-        director.loadScene('MainGame');
+        this.launchMainGame('race');
     }
 
     startModelDebug() {
-        setMainGameLaunchMode('model-debug');
-        director.loadScene('MainGame');
+        this.launchMainGame('model-debug');
     }
 
     // 100m AI-debug 1v1: lock distance to 100m, store the chosen difficulty, and
@@ -43,8 +43,31 @@ export class LoginManager extends Component {
     startAiDebug(difficulty: number) {
         setRaceDistance(100);
         setAiDebugDifficulty(difficulty);
-        setMainGameLaunchMode('ai-debug');
-        director.loadScene('MainGame');
+        this.launchMainGame('ai-debug');
+    }
+
+    private launchMainGame(mode: MainGameLaunchMode) {
+        if (this._loadingRace) {
+            return;
+        }
+        this._loadingRace = true;
+        setMainGameLaunchMode(mode);
+
+        loadRaceBundle((bundleError, bundle) => {
+            if (bundleError || !bundle) {
+                this._loadingRace = false;
+                console.error('[SpeedSwimming] race bundle failed to load', bundleError);
+                return;
+            }
+            bundle.loadScene('MainGame', (sceneError, scene) => {
+                if (sceneError || !scene) {
+                    this._loadingRace = false;
+                    console.error('[SpeedSwimming] MainGame scene failed to load', sceneError);
+                    return;
+                }
+                director.runScene(scene);
+            });
+        });
     }
 
     private findCanvasNode(): Node {
