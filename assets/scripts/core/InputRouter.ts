@@ -1,6 +1,6 @@
 import { EventMouse, input, Input, Node } from 'cc';
 import { StrokeType } from './GameConstants';
-import { INPUT_TUNING, STABILITY_TUNING } from './InputTuning';
+import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
@@ -27,11 +27,8 @@ export type InputRouterCallbacks = {
 export class InputRouter {
     private _lastPadStrokeMs = 0;
     private _lastPadStrokeType: StrokeType | null = null;
-    private _nextAutoPadStrokeType = StrokeType.LEFT;
-    private _activeAutoPadStrokeType: StrokeType | null = null;
-    private _activeAutoPadPointerCount = 0;
 
-    // Press classification (shared by touch pad, single-tap S key and keyboard
+    // Press classification (shared by the invisible screen halves and keyboard
     // A/D): the contralateral leg kick fires immediately on press. If the press is
     // then held longer than the minimum hold threshold it is promoted to an arm
     // stroke (which the leg then follows). Tracked per side so A and D can be held
@@ -50,8 +47,6 @@ export class InputRouter {
         this._target.on('right-stroke', this.onRightStroke, this);
         this._target.on('left-stroke-held', this.onLeftStrokeHeld, this);
         this._target.on('right-stroke-held', this.onRightStrokeHeld, this);
-        this._target.on('pad-stroke', this.onPadStroke, this);
-        this._target.on('pad-stroke-end', this.onPadStrokeEnd, this);
         this._target.on('dive-charge-start', this.onDiveChargeStart, this);
         this._target.on('dive-release', this.onDiveRelease, this);
         this._target.on('primary-action', this.onPrimaryAction, this);
@@ -75,8 +70,6 @@ export class InputRouter {
         this._target.off('right-stroke', this.onRightStroke, this);
         this._target.off('left-stroke-held', this.onLeftStrokeHeld, this);
         this._target.off('right-stroke-held', this.onRightStrokeHeld, this);
-        this._target.off('pad-stroke', this.onPadStroke, this);
-        this._target.off('pad-stroke-end', this.onPadStrokeEnd, this);
         this._target.off('dive-charge-start', this.onDiveChargeStart, this);
         this._target.off('dive-release', this.onDiveRelease, this);
         this._target.off('primary-action', this.onPrimaryAction, this);
@@ -111,7 +104,7 @@ export class InputRouter {
 
     // Begin classifying a press. The leg kick fires right away so the legs react
     // to the player's tap rhythm instantly. If the press is held past
-    // STABILITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
+    // STROKE_QUALITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
         const press = this.pressState(type);
         press.active = true;
@@ -141,7 +134,7 @@ export class InputRouter {
     // Per-frame: promote a still-held press to an arm stroke once it has been
     // held long enough. Called from the game update loop.
     tick() {
-        const thresholdMs = Math.max(0, STABILITY_TUNING.minHoldSeconds) * 1000;
+        const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
         const now = Date.now();
         this.promoteIfDue(StrokeType.LEFT, now, thresholdMs);
         this.promoteIfDue(StrokeType.RIGHT, now, thresholdMs);
@@ -159,56 +152,15 @@ export class InputRouter {
         }
     }
 
-    handleAutoPadStroke() {
-        if (this._activeAutoPadStrokeType !== null) {
-            return;
-        }
-        const type = this._nextAutoPadStrokeType;
-        this._nextAutoPadStrokeType = type === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
-        this._activeAutoPadStrokeType = type;
+    handleScreenStroke(type: StrokeType) {
         this.handlePadStroke(type);
     }
 
-    handleAutoPadStrokeEnd() {
-        if (this._activeAutoPadStrokeType === null) {
-            return;
-        }
-        this.handlePadStrokeEnd(this._activeAutoPadStrokeType);
-        this._activeAutoPadStrokeType = null;
-    }
-
-    handleScreenPadStroke(type: StrokeType) {
-        if (INPUT_TUNING.singleTapAutoAlternateEnabled) {
-            this._activeAutoPadPointerCount += 1;
-            if (this._activeAutoPadPointerCount === 1) {
-                this.handleAutoPadStroke();
-            }
-            return;
-        }
-        this.handlePadStroke(type);
-    }
-
-    handleScreenPadStrokeEnd(type: StrokeType) {
-        if (INPUT_TUNING.singleTapAutoAlternateEnabled) {
-            if (this._activeAutoPadPointerCount <= 0) {
-                return;
-            }
-            this._activeAutoPadPointerCount -= 1;
-            if (this._activeAutoPadPointerCount === 0) {
-                this.handleAutoPadStrokeEnd();
-            }
-            return;
-        }
+    handleScreenStrokeEnd(type: StrokeType) {
         this.handlePadStrokeEnd(type);
     }
 
-    resetAutoPadSequence() {
-        if (this._activeAutoPadStrokeType !== null) {
-            this.handlePadStrokeEnd(this._activeAutoPadStrokeType);
-        }
-        this._activeAutoPadStrokeType = null;
-        this._activeAutoPadPointerCount = 0;
-        this._nextAutoPadStrokeType = StrokeType.LEFT;
+    resetStrokeInput() {
         this._lastPadStrokeType = null;
         this._lastPadStrokeMs = 0;
         this._leftPress.active = false;
@@ -238,21 +190,6 @@ export class InputRouter {
         } else {
             this.endPress(StrokeType.RIGHT);
         }
-    }
-
-    // S key: single-tap that simulates a mobile single touch (auto-alternating side).
-    private onPadStroke() {
-        if (!INPUT_TUNING.singleTapAutoAlternateEnabled) {
-            return;
-        }
-        this.handleAutoPadStroke();
-    }
-
-    private onPadStrokeEnd() {
-        if (!INPUT_TUNING.singleTapAutoAlternateEnabled) {
-            return;
-        }
-        this.handleAutoPadStrokeEnd();
     }
 
     private onDiveChargeStart() {

@@ -13,7 +13,8 @@
 
 ## Mobile Input
 
-- The current mobile race input is full-screen tap/hold. `InputRouter` automatically alternates `LEFT` and `RIGHT` strokes for game logic.
+- The current mobile race input is full-screen tap/hold. The invisible left and right screen halves map directly to `LEFT` and `RIGHT` strokes.
+- Do not add automatic left/right stroke alternation; the player chooses the stroke side by touch position.
 - Do not reintroduce visible left/right touch zones unless the user explicitly asks. Touch hit areas should remain invisible.
 - Keyboard `A` / `D` still maps to explicit left/right strokes for editor/debug workflows.
 
@@ -28,7 +29,7 @@
 ## Gameplay Module Boundaries
 
 - Core balance values belong in `assets/scripts/core/GameBalance.ts`, `assets/scripts/core/InputTuning.ts`, or a similarly focused config file.
-- `SwimmerMotor` and `SwimPhysicsModel` own movement, stroke queues, stability rewards, acceleration, drag, and speed.
+- `SwimmerMotor` and `SwimPhysicsModel` own movement, stroke queues, strokeQuality rewards, acceleration, drag, and speed.
 - `RaceCameraDirector` owns race camera behavior. Pass it compact race snapshots; do not make it query game objects directly.
 - `RaceManager` owns countdown, dive-to-race transition, race timing, progress, finish, and placement callbacks.
 - AI behavior/config should stay in `entity/AISwimmerController.ts` and `competitor/CompetitorConfig.ts`, not in player input code.

@@ -10,9 +10,9 @@ import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
-import { formatStabilityLog, nextStabilityCombo, ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
+import { formatStrokeQualityLog, nextStrokeQualityCombo, ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
-import { StrokeStabilityResult } from '../swimmer/SwimmerMotor';
+import { StrokeQualityResult } from '../swimmer/SwimmerMotor';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
@@ -67,7 +67,7 @@ export class ModelDebugFlowController {
     private readonly _debugMotor = new SwimmerMotor();
     private _lastRating: Rating | null = null;
     private _lastCombo = 0;
-    private _lastStability = 0;
+    private _lastStrokeQuality = 0;
     private _modelVariantIndex = 0;
     private _actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === 'freestyle'));
     private _colorVariantIndex = 0;
@@ -93,7 +93,7 @@ export class ModelDebugFlowController {
         this._speedScale = DEFAULT_MODEL_DEBUG_SPEED_SCALE;
         this._lastRating = null;
         this._lastCombo = 0;
-        this._lastStability = 0;
+        this._lastStrokeQuality = 0;
         this._modelVariantIndex = Math.max(0, DEBUG_SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
         this._actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === 'freestyle'));
         this._colorVariantIndex = Math.max(0, SWIMMER_0621_2_COLOR_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.colorVariantId));
@@ -196,12 +196,12 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        const stability = this._debugMotor.setStrokeHeld(type, held);
+        const strokeQualityResult = this._debugMotor.setStrokeHeld(type, held);
         if (!held) {
-            if (stability?.downgradedToKick) {
+            if (strokeQualityResult?.downgradedToKick) {
                 this.freestylePreview()?.rig.triggerKick();
             } else {
-                this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
+                this.applyDebugStrokeQualityResult(this.makeDebugStrokeQualityResult(strokeQualityResult));
             }
         }
         this.updateDebugHud();
@@ -228,8 +228,8 @@ export class ModelDebugFlowController {
         const finished = this._debugMotor.update(dt, {
             isAI: false,
         });
-        for (const stability of this._debugMotor.consumeStabilityResults()) {
-            this.applyDebugStabilityResult(this.makeDebugStabilityResult(stability));
+        for (const strokeQualityResult of this._debugMotor.consumeStrokeQualityResults()) {
+            this.applyDebugStrokeQualityResult(this.makeDebugStrokeQualityResult(strokeQualityResult));
         }
         if (finished) {
             this._debugMotor.startRace(0, Math.max(SWIMMER_BALANCE.baseSpeed, this._debugMotor.currentSpeed));
@@ -442,38 +442,38 @@ export class ModelDebugFlowController {
         }
     }
 
-    private applyDebugStabilityResult(result: RhythmResult | null): RhythmResult | null {
+    private applyDebugStrokeQualityResult(result: RhythmResult | null): RhythmResult | null {
         if (!result) {
             return null;
         }
-        this._refs.debug(formatStabilityLog('model stability', result));
+        this._refs.debug(formatStrokeQualityLog('model strokeQuality', result));
         this._lastRating = result.rating;
         this._lastCombo = result.combo;
-        this._lastStability = Math.max(0, result.speedMultiplier - 1);
+        this._lastStrokeQuality = Math.max(0, result.speedMultiplier - 1);
         return result;
     }
 
-    private makeDebugStabilityResult(stability: StrokeStabilityResult | null): RhythmResult | null {
-        if (!stability) {
+    private makeDebugStrokeQualityResult(strokeQualityResult: StrokeQualityResult | null): RhythmResult | null {
+        if (!strokeQualityResult) {
             return null;
         }
-        const rating = ratingForStability(stability.stability);
-        this._lastCombo = nextStabilityCombo(this._lastCombo, rating);
-        const result = rhythmResultFromStability(stability, this._lastCombo);
+        const rating = ratingForStrokeQuality(strokeQualityResult.strokeQuality);
+        this._lastCombo = nextStrokeQualityCombo(this._lastCombo, rating);
+        const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._lastCombo);
         return result;
     }
 
     private updateDebugHud() {
         if (this._refs.ratingLabel) {
             this._refs.ratingLabel.string = this._lastRating
-                ? `${this._lastRating.toUpperCase()}  S${Math.round(this._lastStability * 100)}  ${this._lastCombo} COMBO`
+                ? `${this._lastRating.toUpperCase()}  Q${Math.round(this._lastStrokeQuality * 100)}  ${this._lastCombo} COMBO`
                 : 'READY';
             this._refs.ratingLabel.color = this.ratingColor(this._lastRating);
         }
         if (this._refs.swimSpeedLabel) {
             const speed = this._debugMotor.currentSpeed;
-            const stability = Math.round(clamp(this._debugMotor.lastStability, 0, 1) * 100);
-            this._refs.swimSpeedLabel.string = `STB ${stability}%   ACC ${signed(this._debugMotor.currentAcceleration)}   SPD ${speed.toFixed(2)} m/s`;
+            const strokeQuality = Math.round(clamp(this._debugMotor.lastStrokeQuality, 0, 1) * 100);
+            this._refs.swimSpeedLabel.string = `QUALITY ${strokeQuality}%   ACC ${signed(this._debugMotor.currentAcceleration)}   SPD ${speed.toFixed(2)} m/s`;
         }
     }
 

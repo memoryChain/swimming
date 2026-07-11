@@ -32,18 +32,6 @@ export class UIFlowController {
         this._refs.drawSpeedBar(0);
     }
 
-    updateSpeed(speed: number) {
-        this._refs.uiController?.updateSpeed(speed);
-    }
-
-    updateSwimTelemetry(stability: number, acceleration: number, speed: number) {
-        this._refs.uiController?.updateSwimTelemetry(stability, acceleration, speed);
-    }
-
-    updateConditionReadout(heartRate: number, zone: string, energy: number) {
-        this._refs.uiController?.updateConditionReadout(heartRate, zone, energy);
-    }
-
     updateHeartRateBar(heartRate: number, zone: string) {
         this._refs.uiController?.updateHeartRateBar(heartRate, zone);
     }
@@ -60,16 +48,8 @@ export class UIFlowController {
         this._refs.uiController?.setEnergyBarVisible(visible);
     }
 
-    updateTimer(time: number) {
-        this._refs.uiController?.updateTimer(time);
-    }
-
     updateProgress(playerDistance: number, aiDistance: number) {
         this._refs.uiController?.updateProgress(playerDistance, aiDistance);
-    }
-
-    updatePlacement(placement: number, racerCount: number) {
-        this._refs.uiController?.updatePlacement(placement, racerCount);
     }
 
     showRating(rating: Rating, combo: number) {

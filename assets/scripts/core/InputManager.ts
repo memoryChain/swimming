@@ -1,6 +1,5 @@
 import { _decorator, Component, EventKeyboard, EventMouse, EventTouch, input, Input, KeyCode, Node, view } from 'cc';
 import { StrokeType } from './GameConstants';
-import { INPUT_TUNING } from './InputTuning';
 
 const { ccclass, property } = _decorator;
 
@@ -21,7 +20,6 @@ export class InputManager extends Component {
         [StrokeType.LEFT]: 0,
         [StrokeType.RIGHT]: 0,
     };
-    private _singleTapHeld = false;
     onEnable() {
         input.on(Input.EventType.KEY_DOWN, this.onKeyDown, this);
         input.on(Input.EventType.KEY_UP, this.onKeyUp, this);
@@ -70,12 +68,6 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('model-debug-speed-down');
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_E) {
             this.strokeTarget?.emit('model-debug-speed-up');
-        } else if (event.keyCode === KeyCode.KEY_S && INPUT_TUNING.singleTapAutoAlternateEnabled) {
-            // Single-tap: simulate a mobile single touch (auto-alternating side).
-            if (!this._singleTapHeld) {
-                this._singleTapHeld = true;
-                this.strokeTarget?.emit('pad-stroke');
-            }
         } else if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.ENTER) {
             this.strokeTarget?.emit('primary-action');
         } else if (event.keyCode === KeyCode.F3 || event.keyCode === KeyCode.BACK_QUOTE) {
@@ -100,11 +92,6 @@ export class InputManager extends Component {
             this.setInputHeld(StrokeType.LEFT, false);
         } else if (event.keyCode === KeyCode.KEY_D || event.keyCode === KeyCode.ARROW_RIGHT) {
             this.setInputHeld(StrokeType.RIGHT, false);
-        } else if (event.keyCode === KeyCode.KEY_S && INPUT_TUNING.singleTapAutoAlternateEnabled) {
-            if (this._singleTapHeld) {
-                this._singleTapHeld = false;
-                this.strokeTarget?.emit('pad-stroke-end');
-            }
         }
     }
 

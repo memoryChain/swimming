@@ -1,9 +1,6 @@
 import { TARGET_INTERVAL, getTargetInterval } from './GameBalance';
 
 export const INPUT_TUNING = {
-    // When enabled, every full-screen tap alternates LEFT/RIGHT automatically.
-    // Keep disabled to map the left/right screen halves directly to keyboard A/D.
-    singleTapAutoAlternateEnabled: false,
     padStrokeDedupeMs: 45,
     chordMergeWindowMs: 70,
     inputRateWindowSeconds: 1.2,
@@ -87,7 +84,7 @@ export const MOTION_TUNING = {
     rightBreathBodyRollDegrees: 18,
 };
 
-export const STABILITY_TUNING = {
+export const STROKE_QUALITY_TUNING = {
     minHoldSeconds: 0.16,
     // Arm-stroke overhold timeout (redesign): while a stroke is still held and
     // its pull progresses past this fraction of a full cycle, the hand has left

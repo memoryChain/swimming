@@ -9,9 +9,9 @@ import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
-import { ratingForStability, rhythmResultFromStability } from '../core/StabilityScoring';
+import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { scaledDelta } from '../core/TimeScale';
-import { StrokeStabilityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
+import { StrokeQualityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
@@ -45,10 +45,10 @@ export class Swimmer extends Component {
     private readonly _motor = new SwimmerMotor();
     private _startPosition = new Vec3();
     private _hasStartPosition = false;
-    private _stabilityCombo = 0;    private _maxStabilityCombo = 0;
-    private _perfectStabilityCount = 0;
-    private _goodStabilityCount = 0;
-    private _missStabilityCount = 0;
+    private _strokeQualityCombo = 0;    private _maxStrokeQualityCombo = 0;
+    private _perfectStrokeQualityCount = 0;
+    private _goodStrokeQualityCount = 0;
+    private _missStrokeQualityCount = 0;
     private readonly _pendingRhythmResults: RhythmResult[] = [];
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
@@ -202,8 +202,8 @@ export class Swimmer extends Component {
         this.updateDiveUnderwaterTimer(dt);
         this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
-        for (const stability of this._motor.consumeStabilityResults()) {
-            const result = this.makeStabilityResult(stability.type, stability);
+        for (const strokeQualityResult of this._motor.consumeStrokeQualityResults()) {
+            const result = this.makeStrokeQualityResult(strokeQualityResult.type, strokeQualityResult);
             if (result) {
                 this._pendingRhythmResults.push(result);
                 this.flashSplash(result.rating);
@@ -254,7 +254,7 @@ export class Swimmer extends Component {
         if (this._diveGlidePoseActive) {
             return null;
         }
-        const stability = this._motor.setStrokeHeld(type, held);
+        const strokeQualityResult = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
         if (held) {
             if (!this.isAI) {
@@ -264,11 +264,11 @@ export class Swimmer extends Component {
         }
         // A press too short to be a real stroke was reinterpreted as a leg-kick
         // tap by the motor: play a kick, don't surface a miss rating.
-        if (stability?.downgradedToKick) {
+        if (strokeQualityResult?.downgradedToKick) {
             this.cartoonRig?.triggerKick();
             return null;
         }
-        return this.makeStabilityResult(type, stability);
+        return this.makeStrokeQualityResult(type, strokeQualityResult);
     }
 
     setSplashCulled(culled: boolean) {
@@ -326,11 +326,11 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
         this.clearDiveUnderwaterPhase();
-        this._stabilityCombo = 0;
-        this._maxStabilityCombo = 0;
-        this._perfectStabilityCount = 0;
-        this._goodStabilityCount = 0;
-        this._missStabilityCount = 0;
+        this._strokeQualityCombo = 0;
+        this._maxStrokeQualityCombo = 0;
+        this._perfectStrokeQualityCount = 0;
+        this._goodStrokeQualityCount = 0;
+        this._missStrokeQualityCount = 0;
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
         this._strokeMetrics.reset();
@@ -362,30 +362,30 @@ export class Swimmer extends Component {
         this.flashSplash(rating);
     }
 
-    private makeStabilityResult(type: StrokeType, stability: StrokeStabilityResult | null): RhythmResult | null {
-        if (!stability) {
+    private makeStrokeQualityResult(type: StrokeType, strokeQualityResult: StrokeQualityResult | null): RhythmResult | null {
+        if (!strokeQualityResult) {
             return null;
         }
-        const rating = ratingForStability(stability.stability);
+        const rating = ratingForStrokeQuality(strokeQualityResult.strokeQuality);
         if (rating === Rating.PERFECT) {
-            this._stabilityCombo += 1;
-            this._perfectStabilityCount += 1;
+            this._strokeQualityCombo += 1;
+            this._perfectStrokeQualityCount += 1;
         } else if (rating === Rating.GOOD) {
-            this._goodStabilityCount += 1;
+            this._goodStrokeQualityCount += 1;
         } else {
-            this._stabilityCombo = 0;
-            this._missStabilityCount += 1;
+            this._strokeQualityCombo = 0;
+            this._missStrokeQualityCount += 1;
         }
-        this._maxStabilityCombo = Math.max(this._maxStabilityCombo, this._stabilityCombo);
+        this._maxStrokeQualityCombo = Math.max(this._maxStrokeQualityCombo, this._strokeQualityCombo);
         if (!this.isAI) {
             this._pendingConditionInputs.push({
                 strokeAccepted: true,
-                qualityScore: stability.stability,
+                qualityScore: strokeQualityResult.strokeQuality,
                 pressureScore: this._strokeMetrics.effortScore,
                 dt: 0,
             });
         }
-        const result = rhythmResultFromStability(stability, this._stabilityCombo);
+        const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._strokeQualityCombo);
         return result;
     }
 
@@ -787,14 +787,6 @@ export class Swimmer extends Component {
         return this._diveUnderwaterActive;
     }
 
-    get currentAcceleration(): number {
-        return this._motor.currentAcceleration;
-    }
-
-    get currentStability(): number {
-        return this._motor.lastStability;
-    }
-
     // Sustained limb effort (0..1), used by the flow layer to read sprint intent.
     get effortScore(): number {
         return this._strokeMetrics.effortScore;
@@ -859,10 +851,10 @@ export class Swimmer extends Component {
 
     get rhythmStats(): RhythmStats {
         return {
-            maxCombo: this._maxStabilityCombo,
-            perfectCount: this._perfectStabilityCount,
-            goodCount: this._goodStabilityCount,
-            missCount: this._missStabilityCount,
+            maxCombo: this._maxStrokeQualityCombo,
+            perfectCount: this._perfectStrokeQualityCount,
+            goodCount: this._goodStrokeQualityCount,
+            missCount: this._missStrokeQualityCount,
         };
     }
 

@@ -28,10 +28,6 @@ export class UIController extends Component {
     @property(Node) public btnLeg: Node = null;
     @property(Label) public distanceLabel: Label = null;
     @property(Label) public aiDistanceLabel: Label = null;
-    @property(Label) public timerLabel: Label = null;
-    @property(Label) public placementLabel: Label = null;
-    @property(Label) public speedLabel: Label = null;
-    @property(Label) public telemetryLabel: Label = null;
     @property(Label) public hintLabel: Label = null;
     @property(Node) public progressDot: Node = null;
     @property public progressTrackWidth = 240;
@@ -71,18 +67,6 @@ export class UIController extends Component {
         this.resetAll();
     }
 
-    updateTimer(time: number) {
-        if (!this.timerLabel) {
-            return;
-        }
-        const mins = Math.floor(time / 60);
-        let secs = (time % 60).toFixed(2);
-        while (secs.length < 5) {
-            secs = `0${secs}`;
-        }
-        this.timerLabel.string = `${mins}:${secs}`;
-    }
-
     updateProgress(playerDist: number, aiDist: number) {
         const raceDistance = getRaceDistance();
         const ratio = clamp01(playerDist / raceDistance);
@@ -94,29 +78,6 @@ export class UIController extends Component {
         }
         if (this.aiDistanceLabel) {
             this.aiDistanceLabel.string = `AI ${Math.min(raceDistance, aiDist).toFixed(1)}m`;
-        }
-    }
-
-    updatePlacement(placement: number, racerCount: number) {
-        if (!this.placementLabel) {
-            return;
-        }
-        if (placement <= 0 || racerCount <= 0) {
-            this.placementLabel.string = '名次 --/--';
-            return;
-        }
-        this.placementLabel.string = `名次 ${placement}/${racerCount}`;
-    }
-
-    updateSpeed(speed: number) {
-        if (this.speedLabel) {
-            this.speedLabel.string = `${speed.toFixed(2)}\nm/s`;
-        }
-    }
-
-    updateSwimTelemetry(stability: number, acceleration: number, speed: number) {
-        if (this.telemetryLabel) {
-            this.telemetryLabel.string = `稳定 ${Math.round(clamp01(stability) * 100)}%   加速 ${signed(acceleration)}   速度 ${speed.toFixed(2)} m/s`;
         }
     }
 
@@ -151,12 +112,6 @@ export class UIController extends Component {
     setEnergyBarVisible(visible: boolean) {
         if (this.energyBarRoot) {
             this.energyBarRoot.active = visible;
-        }
-    }
-
-    updateConditionReadout(heartRate: number, zone: string, energy: number) {
-        if (this.telemetryLabel) {
-            this.telemetryLabel.string += `   HR ${Math.round(heartRate)} ${zone}   EN ${Math.round(energy)}`;
         }
     }
 
@@ -319,11 +274,7 @@ export class UIController extends Component {
     }
 
     resetAll() {
-        this.updateTimer(0);
         this.updateProgress(0, 0);
-        this.updatePlacement(0, 0);
-        this.updateSpeed(0);
-        this.updateSwimTelemetry(0, 0, 0);
         if (this.ratingLabel) {
             this.ratingLabel.string = '';
         }
@@ -419,10 +370,6 @@ export class UIController extends Component {
         this.countdownShade?.getComponent(UITransform)?.setContentSize(width, height);
         this.countdownShade?.setPosition(0, 44, 0);
     }
-}
-
-function signed(value: number): string {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
 }
 
 function ratingText(rating: Rating): string {

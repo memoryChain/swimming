@@ -29,7 +29,7 @@ export interface DiveResult {
     // Starting heart-rate value, absolute on the 0..200 scale (range ~75..108).
     heartRateStartModifier: number;
     // First-strokes wobble multiplier (0..1); higher means noisier startup.
-    heartRateStabilityModifier: number;
+    heartRateStartupWobbleModifier: number;
     // Number of strokes required to reach the OPTIMAL zone.
     optimalZoneEntryModifier: number;
 }

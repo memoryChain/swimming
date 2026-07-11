@@ -1,7 +1,7 @@
 import { AlphaKey, Color, ColorKey, CurveRange, Gradient, GradientRange, Material, MeshRenderer, Node, ParticleSystem, primitives, RealCurve, Texture2D, utils, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { STABILITY_TUNING } from '../core/InputTuning';
+import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { SplashFoamPartTuning, SplashParticleEmitterTuning, SPLASH_EMITTER_TUNING, SplashVec3 } from './SplashEmitterTuning';
 
 type SplashPart = {
@@ -331,8 +331,8 @@ export class SplashEmitter {
         if (!config.enabled) {
             return 1;
         }
-        const start = STABILITY_TUNING.armCycleSpeedStart;
-        const full = STABILITY_TUNING.armCycleSpeedFull;
+        const start = STROKE_QUALITY_TUNING.armCycleSpeedStart;
+        const full = STROKE_QUALITY_TUNING.armCycleSpeedFull;
         const span = full - start;
         const t = span > 1e-4 ? clamp((speed - start) / span, 0, 1) : (speed >= full ? 1 : 0);
         return lerp(config.minScale, config.maxScale, t);

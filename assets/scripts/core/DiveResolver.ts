@@ -44,7 +44,7 @@ function styleForTier(tier: DiveQualityTier): DiveEntryStyle {
 }
 
 // First-strokes wobble multiplier by tier (design doc 29.3).
-function stabilityModifierForTier(tier: DiveQualityTier): number {
+function startupWobbleModifierForTier(tier: DiveQualityTier): number {
     switch (tier) {
         case DiveQualityTier.HIGH:
             return 0.3;
@@ -78,7 +78,7 @@ export function resolveDiveResult(power: number): DiveResult {
         qualityTier: tier,
         entryStyle,
         heartRateStartModifier: lerp(HEART_RATE_START_MIN, HEART_RATE_START_MAX, divePower),
-        heartRateStabilityModifier: stabilityModifierForTier(tier),
+        heartRateStartupWobbleModifier: startupWobbleModifierForTier(tier),
         optimalZoneEntryModifier: optimalEntryStrokesForTier(tier),
     };
 }

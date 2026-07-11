@@ -50,7 +50,7 @@ export function zoneForHeartRate(heartRate: number): HeartRateZone {
 }
 
 // Event-driven input produced at each stroke settlement (design doc 24.6).
-// qualityScore = StrokeStabilityResult.stability (0..1).
+// qualityScore = StrokeQualityResult.strokeQuality (0..1).
 // pressureScore = StrokeMetrics.effortScore (0..1).
 export interface StrokeConditionInput {
     strokeAccepted: boolean;

@@ -38,7 +38,7 @@ export const SWIMMER_BALANCE = {
     maxSpeed: 4,
     minSpeed: 0,
     strokeBaseAccel: 0.05,
-    strokeStabilityAccel: 1.6,
+    strokeQualityAccel: 1.6,
     strokeAccelDurationRatio: 0.4,
     // Stroke impulse punchiness (redesign, "冲刺感"): 0 = flat accel over the
     // whole pulse (smooth). Higher = the accel is front-loaded into a spike right

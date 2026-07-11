@@ -32,9 +32,9 @@ export const AI_DEBUG_DIFFICULTY_TIERS: { label: string; value: number }[] = [
 
 // Tuning for the simulated-input AI. The AI now drives the SAME stroke path as
 // the player (press → hold → release), so its propulsion comes entirely from the
-// release-timing sweet zone (see STABILITY_TUNING). These values only control how
+// release-timing sweet zone (see STROKE_QUALITY_TUNING). These values only control how
 // the AI *simulates* that input as a function of difficulty; the actual sweet-zone
-// bounds live in STABILITY_TUNING and stay shared with the player.
+// bounds live in STROKE_QUALITY_TUNING and stay shared with the player.
 export const AI_STROKE_TUNING = {
     // Release-progress noise (std dev, in cycle fractions) around the sweet-zone
     // center. Bigger spread = both less-perfect hits and more full misses. Scales
@@ -42,7 +42,7 @@ export const AI_STROKE_TUNING = {
     timingSigmaLow: 0.12,
     timingSigmaHigh: 0.004,
     // Safety ceiling on the simulated release progress. Must stay below the
-    // arm-stroke timeout (STABILITY_TUNING.armStrokeTimeoutProgress) so a held
+    // arm-stroke timeout (STROKE_QUALITY_TUNING.armStrokeTimeoutProgress) so a held
     // stroke is always released before the motor force-times-it-out.
     maxReleaseProgress: 0.48,
     // Gap (seconds) between releasing one arm and pressing the opposite arm.

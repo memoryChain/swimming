@@ -279,7 +279,7 @@ export interface DiveResult {
   entryDistance: number;
   entrySpeed: number;
   heartRateStartModifier: number;
-  heartRateStabilityModifier: number;
+  heartRateStartupWobbleModifier: number;
   optimalZoneEntryModifier: number;
 }
 ```
@@ -336,7 +336,7 @@ export interface DiveResult {
 
 项目里现在存在两套并行的节奏判定：
 
-- `SwimmerMotor` 里基于 `holdRatio` 的稳定性判定，产出 `stability` 再映射成 `Rating`
+- `SwimmerMotor` 里基于 `holdRatio` 的稳定性判定，产出 `strokeQuality` 再映射成 `Rating`
 - `RhythmEvaluator` 是一个独立的 `Component`，自己维护 `combo`、`speedMultiplier`、`perfectWindow / goodWindow`，也产出 `RhythmResult`
 
 也就是说，`PERFECT / GOOD / BAD` 这条链不止来自 `SwimmerMotor`。文档里一直说“用心率替代 PERFECT / GOOD / BAD 作为主反馈”，但落地时必须先回答：`RhythmEvaluator` 这一层是删、是降级、还是只保留给 `ModelDebug`。否则会出现两套 combo 逻辑同时跑、互相打架。
@@ -1934,9 +1934,9 @@ export interface DiveResult {
 
 文档之前说 PlayerConditionModel 要吃一个连续的 qualityScore（0..1）。看代码后，它的天然来源已经存在：
 
-SwimmerMotor.settleActionStability(...) 会产出 StrokeStabilityResult，字段包括：
+SwimmerMotor.settleActionStrokeQuality(...) 会产出 StrokeQualityResult，字段包括：
 
-- stability（0..1，已经过 freshness 加权）
+- strokeQuality（0..1，已经过 freshness 加权）
 - holdRatio
 - meanRatio
 - ratioStdDev
@@ -1946,9 +1946,9 @@ SwimmerMotor.settleActionStability(...) 会产出 StrokeStabilityResult，字段
 - holdTimeValid
 - badReason
 
-也就是说，qualityScore 最直接的定义就是 stability 字段。第一版不需要新造一套质量评分，直接用 stability 映射即可。
+也就是说，qualityScore 最直接的定义就是 strokeQuality 字段。第一版不需要新造一套质量评分，直接用 strokeQuality 映射即可。
 
-修正点：文档之前把 qualityScore 描述为需要单独生产的连续值。实际上它就是 StrokeStabilityResult.stability，不需要 SwimmerMotor 再额外产出一个新字段。
+修正点：文档之前把 qualityScore 描述为需要单独生产的连续值。实际上它就是 StrokeQualityResult.strokeQuality，不需要 SwimmerMotor 再额外产出一个新字段。
 
 ### 22.2 pressureScore 有现成来源，但它当前是废弃的
 
@@ -1965,18 +1965,18 @@ SwimmerMotor.settleActionStability(...) 会产出 StrokeStabilityResult，字段
 
 修正点：pressureScore 的第一版来源建议直接复用 StrokeMetrics.effortScore，而不是让 SwimmerMotor 从零再造一个短窗平滑值。但需要先把 StrokeMetrics 接进 SwimmerMotor 或 Swimmer 的 update 路径，否则它没有数据。
 
-### 22.3 StrokeStabilityResult 是事件型，不是连续型
+### 22.3 StrokeQualityResult 是事件型，不是连续型
 
 文档之前在描述 updateFromStroke(...) 时，隐含假设动作结果是每帧可读的。看代码后需要修正：
 
 SwimmerMotor 的稳定性结算只在动作结束时触发一次：
 
-- 主动松手时：setStrokeHeld(type, false) -> setSideHeld -> settleActionStability，立即返回
-- 动作自然完成时：dvanceSideActions -> inishAction -> settleActionStability，结果进 _pendingStabilityResults 队列
+- 主动松手时：setStrokeHeld(type, false) -> setSideHeld -> settleActionStrokeQuality，立即返回
+- 动作自然完成时：dvanceSideActions -> inishAction -> settleActionStrokeQuality，结果进 _pendingStrokeQualityResults 队列
 
-也就是说，StrokeStabilityResult 是事件型产出，不是每帧可读的连续值。
+也就是说，StrokeQualityResult 是事件型产出，不是每帧可读的连续值。
 
-修正点：updateFromStroke(...) 的调用时机不是每帧一次，而是每次有 StrokeStabilityResult 产出时一次。第一版的接口语义应该是事件驱动，而不是每帧轮询。tick(dt) 才是每帧调用，用于心率/体能的自然衰减和区间漂移。
+修正点：updateFromStroke(...) 的调用时机不是每帧一次，而是每次有 StrokeQualityResult 产出时一次。第一版的接口语义应该是事件驱动，而不是每帧轮询。tick(dt) 才是每帧调用，用于心率/体能的自然衰减和区间漂移。
 
 ### 22.4 DiveResult 物理字段的来源已完全明确
 
@@ -1986,7 +1986,7 @@ SwimmerMotor 的稳定性结算只在动作结束时触发一次：
 - entrySpeed：lerp(DIVE_BALANCE.minSpeed, DIVE_BALANCE.maxSpeed, power)，现成
 - entryStyle：当前代码里不存在，现在只是 power > 0.72 ? PERFECT : power > 0.42 ? GOOD : BAD 这个三元映射，用于 splash 表现。DiveResult 里的 entryStyle 需要从这个映射新造，建议第一版先定 CLEAN / NORMAL / MESSY 三档，直接复用现有阈值
 - qualityTier：当前没有独立的质量分级，只有 power 本身。第一版可以先用 power 映射成 LOW / OK / HIGH 三档，或者直接复用 entryStyle 的三档
-- heartRateStartModifier / heartRateStabilityModifier / optimalZoneEntryModifier：这三个是全新字段，当前代码完全没有对应物，需要新造，由 DiveResolver 根据 qualityTier 和 entryStyle 推导
+- heartRateStartModifier / heartRateStartupWobbleModifier / optimalZoneEntryModifier：这三个是全新字段，当前代码完全没有对应物，需要新造，由 DiveResolver 根据 qualityTier 和 entryStyle 推导
 
 ### 22.5 跳水动画时长调度是 RaceManager 的副作用，不是 Swimmer 的
 
@@ -2012,7 +2012,7 @@ SWIMMER_BALANCE 里有 kickLaunchDistanceStart = 15 和 kickLaunchDistanceEnd = 
 
 基于以上发现，对前面几节做如下修正：
 
-1. updateFromStroke(...) 的输入里，qualityScore 应直接对应 StrokeStabilityResult.stability，不需要新造字段
+1. updateFromStroke(...) 的输入里，qualityScore 应直接对应 StrokeQualityResult.strokeQuality，不需要新造字段
 2. pressureScore 第一版应复用 StrokeMetrics.effortScore，但需要先把 StrokeMetrics 接入运行时
 3. updateFromStroke(...) 是事件驱动调用，不是每帧调用；每帧的心率漂移走 tick(dt)
 4. performDive 改吃 DiveResult 后，仍需返回动画时长给 RaceManager 调度
@@ -2039,7 +2039,7 @@ RhythmEvaluator 类（core/RhythmEvaluator.ts）虽然有自己的 combo、speed
 
 - 没有任何代码实例化或调用 RhythmEvaluator
 - 它被引用的部分只有类型 RhythmResult 和 RhythmStats
-- 实际运行时的节奏判定完全来自 SwimmerMotor 的 StrokeStabilityResult
+- 实际运行时的节奏判定完全来自 SwimmerMotor 的 StrokeQualityResult
 
 也就是说，RhythmEvaluator 是一个纯死类，只贡献类型定义。它不是"第二套并行判定系统"，而是"一套已经废弃的旧判定逻辑，只留下了类型外壳"。
 
@@ -2053,19 +2053,19 @@ RhythmEvaluator 类（core/RhythmEvaluator.ts）虽然有自己的 combo、speed
 
 - InputRouter -> GameFlowController.handlePlayerStrokeHeld(type, false)
 - -> Swimmer.handleStrokeHeld(type, false)
-- -> SwimmerMotor.setStrokeHeld(type, false) -> setSideHeld -> settleActionStability
-- -> 立即返回 StrokeStabilityResult
-- -> Swimmer.makeStabilityResult 翻译成 RhythmResult
+- -> SwimmerMotor.setStrokeHeld(type, false) -> setSideHeld -> settleActionStrokeQuality
+- -> 立即返回 StrokeQualityResult
+- -> Swimmer.makeStrokeQualityResult 翻译成 RhythmResult
 - -> GameFlowController 收到后直接 showRating + triggerPerfectFeedback
 - -> 不进 _pendingRhythmResults 队列
 
 路径 B：动作自然完成时
 
 - Swimmer.update(dt) -> SwimmerMotor.update(dt)
-- -> SwimmerMotor 内部 advanceSideActions -> finishAction -> settleActionStability
-- -> 结果进 _pendingStabilityResults 队列
-- -> Swimmer.update 里 consumeStabilityResults 拉出
-- -> makeStabilityResult 翻译成 RhythmResult
+- -> SwimmerMotor 内部 advanceSideActions -> finishAction -> settleActionStrokeQuality
+- -> 结果进 _pendingStrokeQualityResults 队列
+- -> Swimmer.update 里 consumeStrokeQualityResults 拉出
+- -> makeStrokeQualityResult 翻译成 RhythmResult
 - -> 进 _pendingRhythmResults 队列
 - -> GameManager.update 里 consumePlayerRhythmResults 拉出
 - -> showRating + playPerfectFlash + flashSplash
@@ -2075,38 +2075,38 @@ RhythmEvaluator 类（core/RhythmEvaluator.ts）虽然有自己的 combo、speed
 - 路径 A 的结果不经过队列，直接同步返回给 GameFlowController
 - 路径 B 的结果经过两层队列异步消费
 - 路径 A 不会触发 flashSplash，路径 B 会
-- 两条路径都会触发 makeStabilityResult，但调用者不同
+- 两条路径都会触发 makeStrokeQualityResult，但调用者不同
 
-修正点：如果 PlayerConditionModel 只挂在其中一条路径上，会漏掉另一条的动作结算。第一版必须确保两条路径的 StrokeStabilityResult 都能到达状态层。
+修正点：如果 PlayerConditionModel 只挂在其中一条路径上，会漏掉另一条的动作结算。第一版必须确保两条路径的 StrokeQualityResult 都能到达状态层。
 
-建议方案：在 Swimmer.makeStabilityResult 里统一截取。因为两条路径都会经过这个方法，在这里截取 StrokeStabilityResult 是唯一不会漏的点。具体做法是让 makeStabilityResult 在翻译成 RhythmResult 之前，先把原始的 stability 等字段摘要出来，交给 PlayerConditionModel。
+建议方案：在 Swimmer.makeStrokeQualityResult 里统一截取。因为两条路径都会经过这个方法，在这里截取 StrokeQualityResult 是唯一不会漏的点。具体做法是让 makeStrokeQualityResult 在翻译成 RhythmResult 之前，先把原始的 strokeQuality 等字段摘要出来，交给 PlayerConditionModel。
 
-### 23.3 Swimmer 丢弃了原始 stability，只保留 Rating
+### 23.3 Swimmer 丢弃了原始 strokeQuality，只保留 Rating
 
-Swimmer.makeStabilityResult 做的事情是：
+Swimmer.makeStrokeQualityResult 做的事情是：
 
-- 拿到 StrokeStabilityResult（包含 stability: number 0..1）
-- 通过 ratingForStability(stability.stability) 映射成 Rating.PERFECT / GOOD / BAD
-- 通过 rhythmResultFromStability 构造 RhythmResult
-- 丢弃原始的 StrokeStabilityResult 引用
+- 拿到 StrokeQualityResult（包含 strokeQuality: number 0..1）
+- 通过 ratingForStrokeQuality(strokeQuality.strokeQuality) 映射成 Rating.PERFECT / GOOD / BAD
+- 通过 rhythmResultFromStrokeQuality 构造 RhythmResult
+- 丢弃原始的 StrokeQualityResult 引用
 
-也就是说，RhythmResult 里虽然保留了 holdRatio、inputFreshness 等字段，但 stability 这个连续值被压成了三档 Rating。
+也就是说，RhythmResult 里虽然保留了 holdRatio、inputFreshness 等字段，但 strokeQuality 这个连续值被压成了三档 Rating。
 
-修正点：PlayerConditionModel 需要的 qualityScore 是连续值（0..1），不能从 RhythmResult 里取。必须在 makeStabilityResult 把 stability 压成 Rating 之前截取。
+修正点：PlayerConditionModel 需要的 qualityScore 是连续值（0..1），不能从 RhythmResult 里取。必须在 makeStrokeQualityResult 把 strokeQuality 压成 Rating 之前截取。
 
-这和 23.2 的建议方案是同一个点：makeStabilityResult 是唯一同时拿到连续 stability 和两条路径的交汇点。
+这和 23.2 的建议方案是同一个点：makeStrokeQualityResult 是唯一同时拿到连续 strokeQuality 和两条路径的交汇点。
 
-### 23.4 lastStability 是快照不是结算值
+### 23.4 lastStrokeQuality 是快照不是结算值
 
-SwimmerMotor 暴露的 lastStability getter 容易被误用。
+SwimmerMotor 暴露的 lastStrokeQuality getter 容易被误用。
 
-- 它在 settleActionStability 里被赋值为本次结算的 stability
+- 它在 settleActionStrokeQuality 里被赋值为本次结算的 strokeQuality
 - 但它不会在动作之间归零，下一次结算前它一直保持上一次的值
-- GameManager.update 里读 currentStability 就是读这个值，用于 UI telemetry
+- GameManager.update 里读 currentStrokeQuality 就是读这个值，用于 UI telemetry
 
-也就是说，lastStability 是"上一次结算的快照"，不是"当前帧的实时稳定性"。如果 PlayerConditionModel 的 tick(dt) 需要知道当前稳定性来做心率漂移，它不能用 lastStability，因为两次动作之间这个值不变。
+也就是说，lastStrokeQuality 是"上一次结算的快照"，不是"当前帧的实时稳定性"。如果 PlayerConditionModel 的 tick(dt) 需要知道当前稳定性来做心率漂移，它不能用 lastStrokeQuality，因为两次动作之间这个值不变。
 
-修正点：tick(dt) 不应依赖 lastStability 做实时心率计算。心率漂移应该基于"距离上次结算的时间"和"上次结算的 stability"来推导，而不是假设 lastStability 是连续变化的。
+修正点：tick(dt) 不应依赖 lastStrokeQuality 做实时心率计算。心率漂移应该基于"距离上次结算的时间"和"上次结算的 strokeQuality"来推导，而不是假设 lastStrokeQuality 是连续变化的。
 
 ### 23.5 Swimmer 对外暴露的 getter 清单
 
@@ -2119,29 +2119,29 @@ SwimmerMotor 暴露的 lastStability getter 容易被误用。
 - armCycle / kickCycle（整体循环相位）
 - leftArmCycle / rightArmCycle / leftKickCycle / rightKickCycle（分侧循环相位）
 - armAction / kickAction（动作强度衰减值，用于表现层放大）
-- lastStability（上一次结算的稳定性快照）
+- lastStrokeQuality（上一次结算的稳定性快照）
 - lastInputFreshness（上一次结算的输入新鲜度）
 - currentAcceleration（当前加速度）
 - actionCycleSeconds（当前动作周期时长）
 - strokeTimingGuide（节奏引导信息，用于 UI）
 
-修正点：第一版 PlayerConditionModel 不需要直接读这些 getter。它应该通过 makeStabilityResult 的截取点拿到 qualityScore，通过 StrokeMetrics 拿到 pressureScore，通过 tick(dt) 做自然漂移。这些 getter 主要服务表现层。
+修正点：第一版 PlayerConditionModel 不需要直接读这些 getter。它应该通过 makeStrokeQualityResult 的截取点拿到 qualityScore，通过 StrokeMetrics 拿到 pressureScore，通过 tick(dt) 做自然漂移。这些 getter 主要服务表现层。
 
 ### 23.6 对接口设计的进一步修正
 
 基于以上发现，对 updateFromStroke(...) 的接入方案做如下修正：
 
-1. qualityScore 的截取点不在 SwimmerMotor 里，而在 Swimmer.makeStabilityResult 里，因为它才是两条产出路径的交汇点
-2. 不需要让 SwimmerMotor 额外产出新字段，StrokeStabilityResult.stability 已经够用
+1. qualityScore 的截取点不在 SwimmerMotor 里，而在 Swimmer.makeStrokeQualityResult 里，因为它才是两条产出路径的交汇点
+2. 不需要让 SwimmerMotor 额外产出新字段，StrokeQualityResult.strokeQuality 已经够用
 3. pressureScore 仍然建议复用 StrokeMetrics.effortScore，但需要先把 StrokeMetrics 接进 Swimmer.update 路径
-4. tick(dt) 不能依赖 lastStability 做实时心率漂移，应基于"上次结算值 + 距上次结算时间"推导
+4. tick(dt) 不能依赖 lastStrokeQuality 做实时心率漂移，应基于"上次结算值 + 距上次结算时间"推导
 5. RhythmEvaluator 不需要处理，它是死类，继续复用 RhythmResult 类型即可
 
 ### 23.7 下一步建议
 
 如果继续往下推，下一步最值得讨论的是：
 
-- makeStabilityResult 截取 qualityScore 后，通过什么方式传给 PlayerConditionModel：是回调、是队列、还是直接持有引用
+- makeStrokeQualityResult 截取 qualityScore 后，通过什么方式传给 PlayerConditionModel：是回调、是队列、还是直接持有引用
 - StrokeMetrics 接进 Swimmer.update 后，pressureScore 的更新频率是每帧还是每次动作结算
 - Swimmer 是否需要新增一个对外的 consumeConditionInputs() 方法，类似现有的 consumeRhythmResults() 模式
 ## 24. 三个接入问题的判断
@@ -2156,13 +2156,13 @@ SwimmerMotor 暴露的 lastStability getter 容易被误用。
 
 理由：
 
-现有代码里 Swimmer 已经有一个成熟的队列模式：makeStabilityResult 产出的 RhythmResult 进 _pendingRhythmResults，然后 GameManager.update 里通过 consumePlayerRhythmResults() 拉取。这个模式已经验证过，两条路径都能覆盖。
+现有代码里 Swimmer 已经有一个成熟的队列模式：makeStrokeQualityResult 产出的 RhythmResult 进 _pendingRhythmResults，然后 GameManager.update 里通过 consumePlayerRhythmResults() 拉取。这个模式已经验证过，两条路径都能覆盖。
 
 但有个关键问题：handleStrokeHeld 松手时（路径 A）返回的 RhythmResult 没有进队列，而是直接返回给了 GameFlowController。如果只加一个 _pendingConditionInputs 队列，路径 A 还是会漏。
 
-所以更精确的方案是：在 Swimmer.makeStabilityResult 里，翻译成 RhythmResult 之前，先截取一份摘要进 _pendingConditionInputs 队列。这样两条路径都经过 makeStabilityResult，都不会漏。然后 Swimmer 新增一个 consumeConditionInputs() 方法，和 consumeRhythmResults() 对称，由 GameManager.update 在同一帧拉取。
+所以更精确的方案是：在 Swimmer.makeStrokeQualityResult 里，翻译成 RhythmResult 之前，先截取一份摘要进 _pendingConditionInputs 队列。这样两条路径都经过 makeStrokeQualityResult，都不会漏。然后 Swimmer 新增一个 consumeConditionInputs() 方法，和 consumeRhythmResults() 对称，由 GameManager.update 在同一帧拉取。
 
-不用回调的原因：makeStabilityResult 的调用者之一是 GameFlowController.handlePlayerStrokeHeld，它已经在同步处理返回值。如果再加回调，调用链会变成同步返回加异步回调混合，调试时很难追踪。
+不用回调的原因：makeStrokeQualityResult 的调用者之一是 GameFlowController.handlePlayerStrokeHeld，它已经在同步处理返回值。如果再加回调，调用链会变成同步返回加异步回调混合，调试时很难追踪。
 
 不用直接持有引用的原因：Swimmer 是 Cocos 的 Component，生命周期挂在节点上；PlayerConditionModel 是纯数据对象，不应该被 Component 直接持有反向引用。这会把生命周期耦合在一起。
 
@@ -2178,7 +2178,7 @@ StrokeMetrics 的设计本身就是基于时间窗口的（inputRateWindowSecond
 
 但 PlayerConditionModel 不需要每帧都读 effortScore。心率漂移走 tick(dt)，而 tick(dt) 不需要精确到每帧的 pressureScore，它只需要知道最近一段时间的压力趋势。所以 pressureScore 在每次动作结算时（和 qualityScore 同一个节点）被读一次就够了。
 
-这样做的结果是：StrokeMetrics 在 Swimmer.update 里每帧调 update(dt) 加 recordStroke(type)，但它的 effortScore 只在 makeStabilityResult 被调用时才被截取进 _pendingConditionInputs。tick(dt) 不读 StrokeMetrics。
+这样做的结果是：StrokeMetrics 在 Swimmer.update 里每帧调 update(dt) 加 recordStroke(type)，但它的 effortScore 只在 makeStrokeQualityResult 被调用时才被截取进 _pendingConditionInputs。tick(dt) 不读 StrokeMetrics。
 
 ### 24.3 Swimmer 是否需要新增 consumeConditionInputs()
 
@@ -2193,7 +2193,7 @@ StrokeMetrics 的设计本身就是基于时间窗口的（inputRateWindowSecond
 新增 consumeConditionInputs() 后，GameManager.update 的流程变成：
 
 1. Swimmer.update(dt) 里 SwimmerMotor 跑动作结算，StrokeMetrics 每帧更新
-2. makeStabilityResult 截取 qualityScore 加 pressureScore 进 _pendingConditionInputs
+2. makeStrokeQualityResult 截取 qualityScore 加 pressureScore 进 _pendingConditionInputs
 3. GameManager.update 里调 consumeConditionInputs() 拉取，喂给 PlayerConditionModel.updateFromStroke(...)
 4. GameManager.update 里调 consumeRhythmResults() 拉取，喂给 UI（和现在一样）
 5. PlayerConditionModel.tick(dt) 做心率/体能自然漂移
@@ -2208,7 +2208,7 @@ StrokeMetrics 的设计本身就是基于时间窗口的（inputRateWindowSecond
 
 SwimmerMotor 的职责是动作判定和原始推进，它已经够重了（882 行）。StrokeMetrics 是输入频率统计，它的 recordStroke 和 SwimmerMotor.recordStroke 是同源事件但不同关注点。如果把 StrokeMetrics 塞进 SwimmerMotor，会让 SwimmerMotor 同时承担判定和统计两个职责。
 
-挂在 Swimmer 上更自然：Swimmer.update 里每帧调 strokeMetrics.update(dt)，Swimmer.handleStroke 和 handleStrokeHeld 里调 strokeMetrics.recordStroke(type)。然后 makeStabilityResult 里读 strokeMetrics.effortScore 作为 pressureScore。
+挂在 Swimmer 上更自然：Swimmer.update 里每帧调 strokeMetrics.update(dt)，Swimmer.handleStroke 和 handleStrokeHeld 里调 strokeMetrics.recordStroke(type)。然后 makeStrokeQualityResult 里读 strokeMetrics.effortScore 作为 pressureScore。
 
 ### 24.5 一帧内的完整数据流
 
@@ -2219,9 +2219,9 @@ SwimmerMotor 的职责是动作判定和原始推进，它已经够重了（882 
 1. Swimmer.update(dt)
    - SwimmerMotor.update(dt) 跑动作结算和推进
    - StrokeMetrics.update(dt) 每帧更新频率统计
-   - SwimmerMotor.consumeStabilityResults() 拉出结算结果（路径 B）
-   - 对每个结果调用 makeStabilityResult
-     a. 截取 qualityScore = stability.stability
+   - SwimmerMotor.consumeStrokeQualityResults() 拉出结算结果（路径 B）
+   - 对每个结果调用 makeStrokeQualityResult
+     a. 截取 qualityScore = strokeQuality.strokeQuality
      b. 截取 pressureScore = strokeMetrics.effortScore
      c. 两者一起进 _pendingConditionInputs 队列
      d. 翻译成 RhythmResult 进 _pendingRhythmResults 队列
@@ -2236,8 +2236,8 @@ SwimmerMotor 的职责是动作判定和原始推进，它已经够重了（882 
 
 1. GameFlowController.handlePlayerStrokeHeld(type, false)
 2. Swimmer.handleStrokeHeld(type, false)
-3. SwimmerMotor.setStrokeHeld 产出 StrokeStabilityResult
-4. Swimmer.makeStabilityResult
+3. SwimmerMotor.setStrokeHeld 产出 StrokeQualityResult
+4. Swimmer.makeStrokeQualityResult
    a. 截取 qualityScore 加 pressureScore 进 _pendingConditionInputs
    b. 翻译成 RhythmResult 同步返回给 GameFlowController
 5. GameManager.update 下一帧拉取 _pendingConditionInputs（和路径 B 一样）
@@ -2250,7 +2250,7 @@ SwimmerMotor 的职责是动作判定和原始推进，它已经够重了（882 
 
 输入：
 - strokeAccepted: boolean（是否成功结算）
-- qualityScore: number（0..1，来自 StrokeStabilityResult.stability）
+- qualityScore: number（0..1，来自 StrokeQualityResult.strokeQuality）
 - pressureScore: number（0..1，来自 StrokeMetrics.effortScore）
 - dt: number（距上次结算的时间间隔）
 
@@ -2268,18 +2268,18 @@ SwimmerMotor 的职责是动作判定和原始推进，它已经够重了（882 
 
 以下几个问题仍需后续讨论：
 
-- _pendingConditionInputs 队列里存的是完整 StrokeStabilityResult 还是精简后的 StrokeConditionInput
+- _pendingConditionInputs 队列里存的是完整 StrokeQualityResult 还是精简后的 StrokeConditionInput
 - PlayerConditionModel.tick(dt) 的大致逻辑：是否需要 qualityScore 加距上次结算时间来推导心率漂移，还是纯靠 heartRateZone 做自然衰减
 - AI swimmer 是否也需要接 StrokeMetrics：如果接，AI 的 pressureScore 是否有实际意义（AI 的输入是自动生成的）
 ## 25. 第 24.7 节三个待确认问题的判断
 
-### 25.1 队列里存完整 StrokeStabilityResult 还是精简后的 StrokeConditionInput
+### 25.1 队列里存完整 StrokeQualityResult 还是精简后的 StrokeConditionInput
 
 判断：精简后的 StrokeConditionInput。
 
 理由：
 
-StrokeStabilityResult 有 15 个字段，状态层只需要其中 3 个（stability、holdTimeValid、badReason 的有无）。把完整结构体塞进队列会让状态层意外暴露给动作层的内部细节，而且 StrokeStabilityResult 的类型定义在 SwimmerMotor 里，状态层不应该直接依赖它。
+StrokeQualityResult 有 15 个字段，状态层只需要其中 3 个（strokeQuality、holdTimeValid、badReason 的有无）。把完整结构体塞进队列会让状态层意外暴露给动作层的内部细节，而且 StrokeQualityResult 的类型定义在 SwimmerMotor 里，状态层不应该直接依赖它。
 
 精简后的 StrokeConditionInput 只需要：
 - strokeAccepted: boolean
@@ -2310,11 +2310,11 @@ tick(dt) 内部应维护：
 
 关键发现：AI 的动作路径和玩家完全不同。
 
-AI 通过 playAiStrokeVisual -> recordAiVisualStroke -> queueVisualSideStroke 只排队动画周期，不创建 StrokeAction，不触发 settleActionStability，不产出 StrokeStabilityResult。AI 的推进完全靠 SwimmerMotor.update 里的 aiPower 和 aiCruiseAccel 参数。
+AI 通过 playAiStrokeVisual -> recordAiVisualStroke -> queueVisualSideStroke 只排队动画周期，不创建 StrokeAction，不触发 settleActionStrokeQuality，不产出 StrokeQualityResult。AI 的推进完全靠 SwimmerMotor.update 里的 aiPower 和 aiCruiseAccel 参数。
 
 这意味着两个后果：
 
-1. AI 不会经过 makeStabilityResult，所以 AI 的 _pendingConditionInputs 队列永远是空的。如果 AI 也要有 PlayerConditionModel，它的状态更新不能靠 updateFromStroke，只能靠 tick(dt) 加 aiPower 等参数。
+1. AI 不会经过 makeStrokeQualityResult，所以 AI 的 _pendingConditionInputs 队列永远是空的。如果 AI 也要有 PlayerConditionModel，它的状态更新不能靠 updateFromStroke，只能靠 tick(dt) 加 aiPower 等参数。
 
 2. 如果给 AI 接 StrokeMetrics，它的 recordStroke 只会在 playAiStrokeVisual 时被调用，effortScore 会反映 AI 的划水频率。但 AI 的划水频率是由 AISwimmerController 的 _baseInterval 和 difficulty 决定的，是预设的，不是博弈出来的。所以 AI 的 pressureScore 有值但没有策略意义。
 
@@ -2328,7 +2328,7 @@ AI 通过 playAiStrokeVisual -> recordAiVisualStroke -> queueVisualSideStroke �
 
 需要用户判断的点：AI 是否也需要完整的状态博弈（比如 AI 也会在终盘消耗体能冲刺），还是第一版 AI 只需要一个简化的状态用于表现层（比如 AI 也要显示心率条）？
 
-如果 AI 也要有完整的状态博弈，那 AI 的输入路径需要改造，让 AI 的动作也经过 settleActionStability。这是一个比较大的改动。
+如果 AI 也要有完整的状态博弈，那 AI 的输入路径需要改造，让 AI 的动作也经过 settleActionStrokeQuality。这是一个比较大的改动。
 
 如果 AI 只是表现层需要（心率条显示），那简化路径就够了。
 
@@ -2349,14 +2349,14 @@ AI 通过 playAiStrokeVisual -> recordAiVisualStroke -> queueVisualSideStroke �
 
 玩家路径：
 - 输入经过 SwimmerMotor 的完整动作判定
-- 产出 StrokeStabilityResult，经 makeStabilityResult 截取 qualityScore + pressureScore
+- 产出 StrokeQualityResult，经 makeStrokeQualityResult 截取 qualityScore + pressureScore
 - 通过 consumeConditionInputs() 喂给 PlayerConditionModel.updateFromStroke(...)
 - tick(dt) 做心率漂移
 - 玩家通过输入质量博弈心率区间和体能消耗
 
 AI 路径：
 - 输入经过 playAiStrokeVisual -> recordAiVisualStroke，只排队动画，不触发稳定性结算
-- 不产出 StrokeStabilityResult，不经过 makeStabilityResult
+- 不产出 StrokeQualityResult，不经过 makeStrokeQualityResult
 - 不走 updateFromStroke，不接 StrokeMetrics
 - AI 的 AiConditionModel 只用 tickAi 更新（不走 tick/updateFromStroke）
 - AI 的心率/体能由 aiPower、difficulty、距离进度直接推导
@@ -2399,7 +2399,7 @@ AI 简化路径对接口设计的影响（最终结论见第 27.6 / 28.5 节）�
 
 1. 玩家和 AI 不共用一个类，分成两个独立类：PlayerConditionModel（玩家用）和 AiConditionModel（AI 用）。两者实现相同的只读 getter 接口，但方法集不同。
 
-2. AI 版只暴露 reset / setPhase / tickAi，不提供 updateFromStroke / applyDiveResult / updateSprintState；AI 不接 StrokeMetrics，不产出 StrokeStabilityResult。
+2. AI 版只暴露 reset / setPhase / tickAi，不提供 updateFromStroke / applyDiveResult / updateSprintState；AI 不接 StrokeMetrics，不产出 StrokeQualityResult。
 
 3. AI 版的心率、体能、qualityModifier、efficiencyModifier 全部由 aiPower / difficulty / 距离进度在 tickAi 内直接推导，不由 qualityScore / pressureScore 驱动。
 
@@ -2423,7 +2423,7 @@ RacePhase、HeartRateZone、SprintTier 在第 7/9 节已定义，不重复。
 
 StrokeConditionInput（玩家用，事件驱动）：
 - strokeAccepted: boolean
-- qualityScore: number（0..1，来自 StrokeStabilityResult.stability）
+- qualityScore: number（0..1，来自 StrokeQualityResult.strokeQuality）
 - pressureScore: number（0..1，来自 StrokeMetrics.effortScore）
 - dt: number（距上次结算的时间间隔）
 
@@ -2456,12 +2456,12 @@ setPhase(phase: RacePhase): void
 applyDiveResult(result: DiveResult): void
 - 把跳水结果映射到开局状态
 - 读 heartRateStartModifier 调整心率起点
-- 读 heartRateStabilityModifier 调整前几拍稳定度
+- 读 heartRateStartupWobbleModifier 调整前几拍稳定度
 - 读 optimalZoneEntryModifier 调整进入 OPTIMAL 的难度
 - 这个方法只在跳水结束时调一次
 
 updateFromStroke(input: StrokeConditionInput): void
-- 事件驱动，每次 makeStabilityResult 产出时调用
+- 事件驱动，每次 makeStrokeQualityResult 产出时调用
 - 更新 _lastQualityScore = input.qualityScore
 - 归零 _timeSinceLastStroke
 - 根据 qualityScore + pressureScore + 当前 phase 推动心率和体能变化
@@ -2523,7 +2523,7 @@ PlayerConditionModel 对外暴露的只读 getter：
 玩家版一帧内的调用顺序：
 
 1. Swimmer.update(dt) -> SwimmerMotor 跑动作结算
-2. makeStabilityResult 截取 qualityScore + pressureScore 进 _pendingConditionInputs
+2. makeStrokeQualityResult 截取 qualityScore + pressureScore 进 _pendingConditionInputs
 3. GameManager.update 拉取 consumeConditionInputs()
 4. 对每个 input 调 playerCondition.updateFromStroke(input)
 5. playerCondition.tick(dt)
@@ -2532,7 +2532,7 @@ PlayerConditionModel 对外暴露的只读 getter：
 AI 版一帧内的调用顺序：
 
 1. AISwimmerController.update(dt) -> swimmer.playAiStrokeVisual(type)
-2. Swimmer.update(dt) -> SwimmerMotor.update 推进（不产出 StrokeStabilityResult）
+2. Swimmer.update(dt) -> SwimmerMotor.update 推进（不产出 StrokeQualityResult）
 3. GameManager.update 调 aiCondition.tickAi({ aiPower, difficulty, progress, dt })
 4. GameManager 读 aiCondition 的 getter 做 AI 表现层
 
@@ -2589,7 +2589,7 @@ DiveResolver 的职责是：把 power -> DiveResult 这一步解释统一收口�
 
 状态修正字段（全新，由 DiveResolver 根据 qualityTier 推导）：
 - heartRateStartModifier：高质量跳水把心率起点推向 OPTIMAL 下沿，低质量保持在 LOW
-- heartRateStabilityModifier：高质量跳水让前几拍更稳定，低质量更抖
+- heartRateStartupWobbleModifier：高质量跳水让前几拍更稳定，低质量更抖
 - optimalZoneEntryModifier：高质量跳水让进入 OPTIMAL 更快，低质量需要更多拍数
 
 第一版推导规则建议：
@@ -2606,7 +2606,7 @@ DiveResolver 的职责是：把 power -> DiveResult 这一步解释统一收口�
 理由：
 - DiveResolver 是纯函数或纯类，不依赖 Cocos Component 生命周期
 - 它的输入是 power（数值），产出是 DiveResult（纯数据结构）
-- core/ 目录已经有 GameBalance.ts（纯数值配置）和 StabilityScoring.ts（纯函数），DiveResolver 和它们同类
+- core/ 目录已经有 GameBalance.ts（纯数值配置）和 StrokeQualityScoring.ts（纯函数），DiveResolver 和它们同类
 - 不放 swimmer/ 目录，因为 swimmer/ 目录的东西都和 SwimmerMotor 强相关
 - 不放 app/ 目录，因为 app/ 目录的东西都和流程编排强相关
 
@@ -2681,7 +2681,7 @@ Swimmer.ts：
 - performDive 签名改为 (result: DiveResult)
 - 内部读 result 的字段替代 power lerp
 - 新增 _strokeMetrics 字段和 update 路径接入
-- makeStabilityResult 里截取 qualityScore + pressureScore 进 _pendingConditionInputs
+- makeStrokeQualityResult 里截取 qualityScore + pressureScore 进 _pendingConditionInputs
 - 新增 consumeConditionInputs() 方法
 
 GameManager.ts：
@@ -2711,7 +2711,7 @@ GameManager.ts：
 4. 新增 condition/ConditionTypes.ts（共享类型）
 5. 新增 condition/PlayerConditionModel.ts
 6. 接 StrokeMetrics 进 Swimmer.update
-7. 改 Swimmer.makeStabilityResult 截取 + 新增 consumeConditionInputs
+7. 改 Swimmer.makeStrokeQualityResult 截取 + 新增 consumeConditionInputs
 8. 改 GameManager.update 接入状态层
 9. 新增 condition/AiConditionModel.ts
 10. 新增 condition/RaceContext.ts
@@ -2776,7 +2776,7 @@ heartRateStartModifier（开局心率起点，10..45）：
 
 好跳水让玩家开局接近 OPTIMAL，但仍需几拍才能进入。
 
-heartRateStabilityModifier（开局前几拍波动乘数，0..1）：
+heartRateStartupWobbleModifier（开局前几拍波动乘数，0..1）：
 
 - HIGH / CLEAN -> 0.3（波动很小，心率平稳爬升）
 - OK / NORMAL -> 0.6（中等波动）

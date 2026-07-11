@@ -1,14 +1,14 @@
 import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
-import { MOTION_TUNING, STABILITY_TUNING } from '../core/InputTuning';
+import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
 
-export type StrokeStabilityResult = {
+export type StrokeQualityResult = {
     type: StrokeType;
-    stability: number;
+    strokeQuality: number;
     badReason?: string;
     holdSeconds: number;
     actionSeconds: number;
@@ -34,7 +34,7 @@ type StrokeAction = {
     releasedAt: number;
     progress: number;
     baseAccelerationStarted: boolean;
-    stabilitySettled: boolean;
+    strokeQualitySettled: boolean;
     alternationQuality: number;
     inputFreshness: number;
     inputLeadSeconds: number;
@@ -88,14 +88,14 @@ export class SwimmerMotor {
     private _rightPressStartedAt = -1;
     private readonly _leftActions: StrokeAction[] = [];
     private readonly _rightActions: StrokeAction[] = [];
-    private readonly _pendingStabilityResults: StrokeStabilityResult[] = [];
+    private readonly _pendingStrokeQualityResults: StrokeQualityResult[] = [];
     private _strokeAcceleration = 0;
     private _strokeAccelerationSeconds = 0;
     private _strokeAccelerationTotalSeconds = 0;
     private _speedCapBonus = 0;
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
-    private _lastStability = 0;
+    private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
     // step applies SWIMMER_BALANCE.glideDrag so an un-kicked glide bleeds off fast.
@@ -257,8 +257,8 @@ export class SwimmerMotor {
         return SWIMMER_BALANCE.kickAccelPerHz * propulsionHz * fade;
     }
 
-    setStrokeHeld(type: StrokeType, held: boolean): StrokeStabilityResult | null {
-        let result: StrokeStabilityResult | null = null;
+    setStrokeHeld(type: StrokeType, held: boolean): StrokeQualityResult | null {
+        let result: StrokeQualityResult | null = null;
         if (type === StrokeType.LEFT) {
             result = this.setSideHeld(StrokeType.LEFT, held);
         } else if (type === StrokeType.RIGHT) {
@@ -266,7 +266,7 @@ export class SwimmerMotor {
         } else {
             const left = this.setSideHeld(StrokeType.LEFT, held);
             const right = this.setSideHeld(StrokeType.RIGHT, held);
-            result = strongerStability(left, right);
+            result = strongerStrokeQuality(left, right);
         }
         return result;
     }
@@ -338,14 +338,14 @@ export class SwimmerMotor {
         this._rightPressStartedAt = -1;
         this._leftActions.length = 0;
         this._rightActions.length = 0;
-        this._pendingStabilityResults.length = 0;
+        this._pendingStrokeQualityResults.length = 0;
         this._strokeAcceleration = 0;
         this._strokeAccelerationSeconds = 0;
         this._strokeAccelerationTotalSeconds = 0;
         this._speedCapBonus = 0;
         this._conditionSpeedScale = 1;
         this._conditionQualityScale = 1;
-        this._lastStability = 0;
+        this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
         this._lastKickTapClock = -1;
@@ -381,7 +381,7 @@ export class SwimmerMotor {
             // AI has no discrete kick taps: its legs still use the speed-driven
             // continuous flutter. Its ARMS, however, now run the exact same path as
             // the player — queued arm motion plus real StrokeActions that advance
-            // through the cycle and settle stability — so AI propulsion comes from
+            // through the cycle and settle stroke quality — so AI propulsion comes from
             // the same release-timing sweet zone the player uses.
             this.advanceAiFlutter(dt, speedRatio);
             const leftScale = this.motionSpeedScaleForSide(StrokeType.LEFT);
@@ -500,7 +500,7 @@ export class SwimmerMotor {
         return Math.min(toNeutral, settle * dt);
     }
 
-    private setSideHeld(type: StrokeType, held: boolean): StrokeStabilityResult | null {
+    private setSideHeld(type: StrokeType, held: boolean): StrokeQualityResult | null {
         const isLeft = type === StrokeType.LEFT;
         const actions = isLeft ? this._leftActions : this._rightActions;
         if (isLeft) {
@@ -518,8 +518,8 @@ export class SwimmerMotor {
                 }
             }
             const activeAction = actions[0];
-            if (activeAction?.startedAt >= 0 && !activeAction.stabilitySettled) {
-                return this.settleActionStability(type, activeAction, this.predictedActionSecondsAfterRelease(activeAction), false);
+            if (activeAction?.startedAt >= 0 && !activeAction.strokeQualitySettled) {
+                return this.settleActionStrokeQuality(type, activeAction, this.predictedActionSecondsAfterRelease(activeAction), false);
             }
         }
         return null;
@@ -527,10 +527,10 @@ export class SwimmerMotor {
 
     private finishAction(type: StrokeType, action: StrokeAction, completedAt: number) {
         const actionSeconds = Math.max(0.001, completedAt - action.startedAt);
-        if (action.stabilitySettled) {
+        if (action.strokeQualitySettled) {
             return;
         }
-        this.settleActionStability(type, action, actionSeconds, true);
+        this.settleActionStrokeQuality(type, action, actionSeconds, true);
     }
 
     // Redesign: while a stroke is still held and the pull has progressed past the
@@ -544,14 +544,14 @@ export class SwimmerMotor {
 
     private checkSideArmStrokeTimeout(type: StrokeType) {
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
-        if (!action || action.stabilitySettled || action.startedAt < 0) {
+        if (!action || action.strokeQualitySettled || action.startedAt < 0) {
             return;
         }
         // Only held strokes (never released) can time out.
         if (action.releasedAt >= 0 || action.pressedAt < 0) {
             return;
         }
-        const timeoutProgress = clamp01(STABILITY_TUNING.armStrokeTimeoutProgress) * CYCLE_AMOUNT;
+        const timeoutProgress = clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress) * CYCLE_AMOUNT;
         if (action.progress < timeoutProgress) {
             return;
         }
@@ -560,17 +560,17 @@ export class SwimmerMotor {
 
     private forceArmStrokeTimeout(type: StrokeType, action: StrokeAction) {
         action.releasedAt = this._motionClock;
-        action.stabilitySettled = true;
-        this._lastStability = 0;
-        this.startStrokeAcceleration(Math.max(0, STABILITY_TUNING.armStrokeTimeoutAccel), false);
+        action.strokeQualitySettled = true;
+        this._lastStrokeQuality = 0;
+        this.startStrokeAcceleration(Math.max(0, STROKE_QUALITY_TUNING.armStrokeTimeoutAccel), false);
         const actionSeconds = this.predictedActionSecondsAfterRelease(action);
-        this._pendingStabilityResults.push({
+        this._pendingStrokeQualityResults.push({
             type,
-            stability: 0,
+            strokeQuality: 0,
             badReason: 'timeout',
             holdSeconds: this.currentHoldSeconds(action),
             actionSeconds,
-            minHoldSeconds: Math.max(0, STABILITY_TUNING.minHoldSeconds),
+            minHoldSeconds: Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds),
             holdTimeValid: true,
             holdRatio: 1,
             inputFreshness: 1,
@@ -582,13 +582,13 @@ export class SwimmerMotor {
         });
     }
 
-    private settleActionStability(type: StrokeType, action: StrokeAction, actionSeconds: number, queueResult: boolean): StrokeStabilityResult {
+    private settleActionStrokeQuality(type: StrokeType, action: StrokeAction, actionSeconds: number, queueResult: boolean): StrokeQualityResult {
         const completedAt = action.startedAt + actionSeconds;
         const releasedAt = action.releasedAt >= 0 ? action.releasedAt : completedAt;
         const holdStart = Math.max(action.pressedAt, action.startedAt);
         const holdEnd = Math.min(releasedAt, completedAt);
         const holdSeconds = action.pressedAt >= 0 ? Math.max(0, holdEnd - holdStart) : 0;
-        const minHoldSeconds = Math.max(0, STABILITY_TUNING.minHoldSeconds);
+        const minHoldSeconds = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
         const holdTimeValid = holdSeconds >= minHoldSeconds;
         // Release progress = how far the pull arc had advanced when released,
         // as a fraction of a full cycle. This is the axis the sweet zone lives on.
@@ -599,13 +599,13 @@ export class SwimmerMotor {
         // tapping, not stroking. Give kick-tap propulsion and flag it so the flow
         // layer suppresses the miss feedback. Auto-completed strokes never downgrade.
         if (!holdTimeValid && !queueResult) {
-            action.stabilitySettled = true;
-            this._lastStability = 0;
+            action.strokeQualitySettled = true;
+            this._lastStrokeQuality = 0;
             // Propulsion for this reinterpreted kick comes from the kick-cadence
             // system (the press already registered a tap), not a one-off pulse.
             return {
                 type,
-                stability: 0,
+                strokeQuality: 0,
                 badReason: undefined,
                 holdSeconds,
                 actionSeconds,
@@ -624,16 +624,16 @@ export class SwimmerMotor {
 
         // Single-stroke quality is purely the release-timing sweet zone now
         // (no cross-stroke consistency, no alternation, no input-freshness).
-        const stability = holdTimeValid ? strokeQualityFromReleaseProgress(releaseProgress) : 0;
-        const badReason = stability <= 0
+        const strokeQuality = holdTimeValid ? strokeQualityFromReleaseProgress(releaseProgress) : 0;
+        const badReason = strokeQuality <= 0
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds)
             : undefined;
-        this._lastStability = stability;
-        this.startSettledStrokeAcceleration(stability, actionSeconds);
-        action.stabilitySettled = true;
+        this._lastStrokeQuality = strokeQuality;
+        this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
+        action.strokeQualitySettled = true;
         const result = {
             type,
-            stability,
+            strokeQuality,
             badReason,
             holdSeconds,
             actionSeconds,
@@ -648,7 +648,7 @@ export class SwimmerMotor {
             sampleCount: 0,
         };
         if (queueResult) {
-            this._pendingStabilityResults.push(result);
+            this._pendingStrokeQualityResults.push(result);
         }
         return result;
     }
@@ -667,10 +667,10 @@ export class SwimmerMotor {
         // known, so it can be normalized by the stroke's occupied action time.
     }
 
-    private startSettledStrokeAcceleration(stability: number, actionSeconds: number) {
+    private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
-        const stabilityAccel = Math.max(0, stability) * SWIMMER_BALANCE.strokeStabilityAccel * this._conditionSpeedScale;
-        const accel = (baseAccel + stabilityAccel) * this.strokeActionTimeScale(actionSeconds);
+        const qualityAccel = Math.max(0, strokeQuality) * SWIMMER_BALANCE.strokeQualityAccel * this._conditionSpeedScale;
+        const accel = (baseAccel + qualityAccel) * this.strokeActionTimeScale(actionSeconds);
         if (accel <= 0) {
             return;
         }
@@ -741,13 +741,13 @@ export class SwimmerMotor {
         // [armCycleSpeedStart, armCycleSpeedFull], clamped at both ends. The sweet
         // zone stays a fixed fraction of a cycle, so a faster cycle = a tighter
         // timing window. AI shares these values; it only differs in input timing.
-        const start = STABILITY_TUNING.armCycleSpeedStart;
-        const full = STABILITY_TUNING.armCycleSpeedFull;
+        const start = STROKE_QUALITY_TUNING.armCycleSpeedStart;
+        const full = STROKE_QUALITY_TUNING.armCycleSpeedFull;
         const span = Math.max(0.01, full - start);
         const t = clamp01((this._currentSpeed - start) / span);
         return CYCLE_AMOUNT * lerp(
-            STABILITY_TUNING.armCycleLowSpeedPerSecond,
-            STABILITY_TUNING.armCycleHighSpeedPerSecond,
+            STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond,
+            STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond,
             t,
         );
     }
@@ -777,7 +777,7 @@ export class SwimmerMotor {
             releasedAt: held ? -1 : this._motionClock,
             progress: 0,
             baseAccelerationStarted: false,
-            stabilitySettled: false,
+            strokeQualitySettled: false,
             alternationQuality: 0,
             inputFreshness: 1,
             inputLeadSeconds: 0,
@@ -825,7 +825,7 @@ export class SwimmerMotor {
             releasedAt: -1,
             progress: 0,
             baseAccelerationStarted: false,
-            stabilitySettled: false,
+            strokeQualitySettled: false,
             alternationQuality: 0,
             inputFreshness: 1,
             inputLeadSeconds: 0,
@@ -1006,8 +1006,8 @@ export class SwimmerMotor {
         return this._kickAction;
     }
 
-    get lastStability(): number {
-        return this._lastStability;
+    get lastStrokeQuality(): number {
+        return this._lastStrokeQuality;
     }
 
     get currentAcceleration(): number {
@@ -1028,7 +1028,7 @@ export class SwimmerMotor {
     // one is scoped to a single hand so the UI can show one dial per hand.
     strokeTimingGuideForSide(type: StrokeType): StrokeTimingGuide {
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
-        const usable = action && action.startedAt >= 0 && !action.stabilitySettled ? action : null;
+        const usable = action && action.startedAt >= 0 && !action.strokeQualitySettled ? action : null;
         return this.buildGuideFromAction(usable);
     }
 
@@ -1044,22 +1044,22 @@ export class SwimmerMotor {
             currentRatio: releaseProgress,
             holdSeconds,
             actionSeconds,
-            minHoldRatio: clamp01(STABILITY_TUNING.minHoldSeconds / Math.max(0.001, actionSeconds)),
+            minHoldRatio: clamp01(STROKE_QUALITY_TUNING.minHoldSeconds / Math.max(0.001, actionSeconds)),
             intervals: this.timingGuideIntervals(action, actionSeconds),
         };
     }
 
-    consumeStabilityResults(): StrokeStabilityResult[] {
-        if (this._pendingStabilityResults.length === 0) {
+    consumeStrokeQualityResults(): StrokeQualityResult[] {
+        if (this._pendingStrokeQualityResults.length === 0) {
             return [];
         }
-        return this._pendingStabilityResults.splice(0);
+        return this._pendingStrokeQualityResults.splice(0);
     }
 
     private currentGuideAction(): StrokeAction | null {
         const left = this._leftActions[0];
         const right = this._rightActions[0];
-        const candidates = [left, right].filter((action) => action && action.startedAt >= 0 && !action.stabilitySettled);
+        const candidates = [left, right].filter((action) => action && action.startedAt >= 0 && !action.strokeQualitySettled);
         if (candidates.length === 0) {
             return null;
         }
@@ -1104,10 +1104,10 @@ export class SwimmerMotor {
         // on-screen guide shows exactly where PERFECT / GOOD land. Progress past
         // the overhold-timeout point can never be a valid release (auto miss).
         const progress = clamp01(holdRatio);
-        if (progress >= clamp01(STABILITY_TUNING.armStrokeTimeoutProgress)) {
+        if (progress >= clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)) {
             return Rating.BAD;
         }
-        return ratingForGuideStability(strokeQualityFromReleaseProgress(progress));
+        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress));
     }
 }
 
@@ -1132,23 +1132,23 @@ function positiveMod(value: number, modulo: number): number {
     return value - Math.floor(value / modulo) * modulo;
 }
 
-function strongerStability(a: StrokeStabilityResult | null, b: StrokeStabilityResult | null): StrokeStabilityResult | null {
+function strongerStrokeQuality(a: StrokeQualityResult | null, b: StrokeQualityResult | null): StrokeQualityResult | null {
     if (!a) {
         return b;
     }
     if (!b) {
         return a;
     }
-    return a.stability >= b.stability ? a : b;
+    return a.strokeQuality >= b.strokeQuality ? a : b;
 }
 
 function strokeQualityFromReleaseProgress(progress: number): number {
     const p = clamp01(progress);
-    const perfect = normalizedReleaseRange(STABILITY_TUNING.perfectStart, STABILITY_TUNING.perfectEnd);
+    const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
     if (p >= perfect.start && p <= perfect.end) {
         return 1;
     }
-    const good = normalizedReleaseRange(STABILITY_TUNING.goodStart, STABILITY_TUNING.goodEnd);
+    const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
     if (p < good.start || p > good.end) {
         return 0;
     }
@@ -1182,15 +1182,15 @@ function normalizedReleaseRange(startValue: number, endValue: number): { start: 
 }
 
 function perfectReleaseCenter(): number {
-    const perfect = normalizedReleaseRange(STABILITY_TUNING.perfectStart, STABILITY_TUNING.perfectEnd);
+    const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
     return clamp01((perfect.start + perfect.end) * 0.5);
 }
 
-function ratingForGuideStability(stability: number): Rating {
-    if (stability >= 0.999) {
+function ratingForGuideStrokeQuality(strokeQuality: number): Rating {
+    if (strokeQuality >= 0.999) {
         return Rating.PERFECT;
     }
-    if (stability > 0) {
+    if (strokeQuality > 0) {
         return Rating.GOOD;
     }
     return Rating.BAD;

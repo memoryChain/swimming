@@ -40,8 +40,8 @@
 同样在 [SwimmerMotor.ts](F:\cocos create\swimming\assets\scripts\swimmer\SwimmerMotor.ts) 中，相关结构包括：
 
 - `_holdRatioHistory`
-- `stabilityFromRatios(...)`
-- `lastStability`
+- `strokeQualityFromRatios(...)`
+- `lastStrokeQuality`
 - `applyPerfectComboBoost(...)`
 
 这层规则的本质是：
@@ -401,7 +401,7 @@
 - 心率偏低时，动作可能偏软，收益不够高
 - 心率过高时，动作可能开始发飘，容错下降
 
-这样可以让心率和当前 `stability` 系统自然耦合，而不需要立刻重写全部输入逻辑。
+这样可以让心率和当前 `strokeQuality` 系统自然耦合，而不需要立刻重写全部输入逻辑。
 
 ### 11.7 心率如何影响终盘冲刺
 
@@ -2039,7 +2039,7 @@
 
 ## 18.9 对当前代码的落地启发
 
-如果结合当前代码，我最推荐的做法不是直接替换 `stability` 逻辑，而是：
+如果结合当前代码，我最推荐的做法不是直接替换 `strokeQuality` 逻辑，而是：
 
 - 保留现有局部动作质量判断
 - 在结果出炉后，加一层基于心率区间的修正
@@ -3556,7 +3556,7 @@
 - `entryDistance`
 - `entrySpeed`
 - `heartRateStartModifier`
-- `heartRateStabilityModifier`
+- `heartRateStartupWobbleModifier`
 - `optimalZoneEntryModifier`
 
 这 7 个字段已经足够支撑第一版从跳水到开局状态的传递。
@@ -3649,7 +3649,7 @@
 
 - 因为你已经明确：跳水不应只影响速度，还应影响开局进入状态的难易度
 
-### `heartRateStabilityModifier`
+### `heartRateStartupWobbleModifier`
 
 建议含义：
 
@@ -3744,7 +3744,7 @@
 
 - `qualityTier`
 - `heartRateStartModifier`
-- `heartRateStabilityModifier`
+- `heartRateStartupWobbleModifier`
 
 共同推导出来。
 
@@ -3797,7 +3797,7 @@
   - `entryDistance`
   - `entrySpeed`
   - `heartRateStartModifier`
-  - `heartRateStabilityModifier`
+  - `heartRateStartupWobbleModifier`
   - `optimalZoneEntryModifier`
 - 跳水必须同时影响：
   - 物理开局

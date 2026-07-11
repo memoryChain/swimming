@@ -35,7 +35,7 @@ export class PlayerConditionModel {
     private _timeSinceLastStroke = 0;
     private _effortSample = 0;
     private _strokesSinceDive = 0;
-    private _startupStabilityModifier = 1;
+    private _startupWobbleModifier = 1;
     private _optimalEntryStrokes = 0;
 
     reset() {
@@ -51,7 +51,7 @@ export class PlayerConditionModel {
         this._timeSinceLastStroke = 0;
         this._effortSample = 0;
         this._strokesSinceDive = 0;
-        this._startupStabilityModifier = 1;
+        this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
     }
 
@@ -66,7 +66,7 @@ export class PlayerConditionModel {
     applyDiveResult(result: DiveResult) {
         this._heartRate = clamp(result.heartRateStartModifier, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
         this._heartRateZone = zoneForHeartRate(this._heartRate);
-        this._startupStabilityModifier = result.heartRateStabilityModifier;
+        this._startupWobbleModifier = result.heartRateStartupWobbleModifier;
         this._optimalEntryStrokes = result.optimalZoneEntryModifier;
         this._strokesSinceDive = 0;
         this.refreshModifiers();
@@ -83,10 +83,10 @@ export class PlayerConditionModel {
 
         const hr = CONDITION_BALANCE.heartRate;
 
-        // Startup wobble: first strokes after a dive use the dive stability modifier,
+        // Startup wobble: first strokes after a dive use the dive wobble modifier,
         // which inflates the effort sample so HR is jittery right after entry.
         const inStartupWindow = this._strokesSinceDive <= hr.startupStrokeWindow;
-        const wobble = inStartupWindow ? this._startupStabilityModifier : 1;
+        const wobble = inStartupWindow ? this._startupWobbleModifier : 1;
 
         // Strokes refresh the *sustained effort* sample (0..~1) instead of directly
         // adding HR. tick() then eases HR toward a target derived from this sample,

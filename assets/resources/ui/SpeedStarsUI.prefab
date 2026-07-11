@@ -4762,7 +4762,7 @@
       "__id__": 124
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 186
@@ -4853,7 +4853,7 @@
       "b": 244,
       "a": 220
     },
-    "_string": "稳定 0%   加速 +0.00   速度 0.00 m/s",
+    "_string": "",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 15,

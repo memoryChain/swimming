@@ -52,7 +52,7 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 | `speed.baseSpeed` | `0.8` | m/s | 进入正常游泳阶段时的初始速度。跳水入水速度由跳水结果决定，不直接用这个值。 |
 | `speed.maxSpeed` | `6` | m/s | 玩家常规游泳速度上限，也用于计算当前速度比例。速度越接近这个值，手臂推进越会被压低。 |
 | `speed.strokeBaseAccel` | `0.5` | m/s² | 每次手臂划水动作开始播放时给的基础推进加速度，与松手时机无关。它不是直接增加速度，而是一段持续的加速度脉冲。 |
-| `speed.strokeStabilityAccel` | `3` | m/s² | 甜区评分带来的额外推进加速度。松手正中甜区时接近满值，偏离中心会按评分比例减少，并受体能效率倍率影响。 |
+| `speed.strokeQualityAccel` | `3` | m/s² | 甜区评分带来的额外推进加速度。松手正中甜区时接近满值，偏离中心会按评分比例减少，并受体能效率倍率影响。 |
 | `speed.strokeAccelDurationRatio` | `0.35` | 比例 | 一次划水加速度脉冲持续时间，占当前动作一轮时间的比例。越短越像瞬间窜一下，越长越像持续推水。 |
 | `speed.strokeImpulseSharpness` | `0.6` | 0-1 | 划水脉冲的前置锐度。`0` 表示加速度平均分布；越高表示划水刚触发时更猛、后段回落更快。总推进量大体不变，主要改变手感。 |
 | `speed.diveUnderwaterKickAccel` | `0.4` | m/s² | 跳水入水后的潜水阶段，每次输入只触发腿部踢水时给的推进加速度。和正常比赛里的踢腿频率推进分开调。 |
@@ -82,17 +82,17 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 
 | 键 | 当前值 | 单位 | 含义 |
 | --- | ---: | --- | --- |
-| `stability.minHoldSeconds` | `0.12` | s | 触摸/按键按住多久才从踢腿点击升级为手臂划水。短于这个值会保持为一次踢腿点击，不算划水，也不判失误。 |
-| `stability.goodStart` | `0.22` | 比例 | GOOD 区间起点，范围 0..1。想让 GOOD 更早出现，就调小这个值。 |
-| `stability.goodEnd` | `0.5` | 比例 | GOOD 区间终点，范围 0..1。和 PERFECT 重叠的部分按 PERFECT 计算。 |
-| `stability.perfectStart` | `0.34` | 比例 | PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。 |
-| `stability.perfectEnd` | `0.46` | 比例 | PERFECT 区间终点，范围 0..1。 |
+| `strokeQuality.minHoldSeconds` | `0.12` | s | 触摸/按键按住多久才从踢腿点击升级为手臂划水。短于这个值会保持为一次踢腿点击，不算划水，也不判失误。 |
+| `strokeQuality.goodStart` | `0.22` | 比例 | GOOD 区间起点，范围 0..1。想让 GOOD 更早出现，就调小这个值。 |
+| `strokeQuality.goodEnd` | `0.5` | 比例 | GOOD 区间终点，范围 0..1。和 PERFECT 重叠的部分按 PERFECT 计算。 |
+| `strokeQuality.perfectStart` | `0.34` | 比例 | PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。 |
+| `strokeQuality.perfectEnd` | `0.46` | 比例 | PERFECT 区间终点，范围 0..1。 |
 | `gesture.armStrokeTimeoutProgress` | `0.5` | 比例 | 一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束并判为超时失误。`0.5` 表示半圈。 |
 | `gesture.armStrokeTimeoutAccel` | `0.08` | m/s² | 划水超时失误时给的很小推进加速度，用来惩罚一直按住不松手。 |
-| `stability.armCycleLowSpeedPerSecond` | `0.8` | 圈/s | 速度低于 `armCycleSpeedStart` 时，手臂划水每秒转几圈（下限）。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越低，低速时一圈越慢，甜区实际时间窗口越宽。 |
-| `stability.armCycleHighSpeedPerSecond` | `2.5` | 圈/s | 速度到达 `armCycleSpeedFull` 后，手臂划水每秒转几圈（上限）。越高，高速时一圈越快，甜区实际时间窗口越短。 |
-| `stability.armCycleSpeedStart` | `1.0` | m/s | 起爬速度。低于这个速度，轮速恒为下限；到达后才开始随速度线性加快。 |
-| `stability.armCycleSpeedFull` | `4.5` | m/s | 顶速速度。到达这个速度轮速升到上限，再快也不再变化。必须大于 `armCycleSpeedStart`。 |
+| `strokeQuality.armCycleLowSpeedPerSecond` | `0.8` | 圈/s | 速度低于 `armCycleSpeedStart` 时，手臂划水每秒转几圈（下限）。甜区判定、甜区刻度线、玩家手臂视觉动作共用这一套轮速。越低，低速时一圈越慢，甜区实际时间窗口越宽。 |
+| `strokeQuality.armCycleHighSpeedPerSecond` | `2.5` | 圈/s | 速度到达 `armCycleSpeedFull` 后，手臂划水每秒转几圈（上限）。越高，高速时一圈越快，甜区实际时间窗口越短。 |
+| `strokeQuality.armCycleSpeedStart` | `1.0` | m/s | 起爬速度。低于这个速度，轮速恒为下限；到达后才开始随速度线性加快。 |
+| `strokeQuality.armCycleSpeedFull` | `4.5` | m/s | 顶速速度。到达这个速度轮速升到上限，再快也不再变化。必须大于 `armCycleSpeedStart`。 |
 
 ## 动作播放与姿态
 
@@ -119,11 +119,11 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 
 ## 常见联动
 
-- 想让玩家更容易提速：优先调高 `speed.strokeStabilityAccel` 或降低 `speed.baseDrag` / `speed.highSpeedDrag`。
+- 想让玩家更容易提速：优先调高 `speed.strokeQualityAccel` 或降低 `speed.baseDrag` / `speed.highSpeedDrag`。
 - 想让速度更快掉下来：调高 `speed.baseDrag` 会影响全速段，调高 `speed.highSpeedDrag` 主要压高速段。
-- 想让甜区更好打：拉宽 `stability.goodStart/goodEnd` 或 `stability.perfectStart/perfectEnd`，或降低 `stability.armCycleHighSpeedPerSecond`。
+- 想让甜区更好打：拉宽 `strokeQuality.goodStart/goodEnd` 或 `strokeQuality.perfectStart/perfectEnd`，或降低 `strokeQuality.armCycleHighSpeedPerSecond`。
 - 想让按住不松更快失败：降低 `gesture.armStrokeTimeoutProgress`。
-- 想让手臂动作和甜区一起变快/变慢：调 `stability.armCycleLowSpeedPerSecond`、`stability.armCycleHighSpeedPerSecond`；想改变“从慢到快”发生在哪个速度段：调 `stability.armCycleSpeedStart`、`stability.armCycleSpeedFull`。
+- 想让手臂动作和甜区一起变快/变慢：调 `strokeQuality.armCycleLowSpeedPerSecond`、`strokeQuality.armCycleHighSpeedPerSecond`；想改变“从慢到快”发生在哪个速度段：调 `strokeQuality.armCycleSpeedStart`、`strokeQuality.armCycleSpeedFull`。
 - 想让踢腿不抢手臂主导：保持 `speed.kickMaxSpeed` 明显低于 `speed.maxSpeed`，必要时降低 `speed.kickAccelPerHz`。
 
 ## 配置校正
@@ -133,7 +133,7 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 - GOOD/PERFECT 区间会自动整理为 `start <= end`。
 - GOOD/PERFECT 区间不能越过起点或超时点。
 - GOOD 和 PERFECT 可以重叠，重叠部分按 PERFECT 计算。
-- `stability.armCycleHighSpeedPerSecond` 不能低于 `stability.armCycleLowSpeedPerSecond`。
-- `stability.armCycleSpeedFull` 必须大于 `stability.armCycleSpeedStart`，否则会被自动上移。
+- `strokeQuality.armCycleHighSpeedPerSecond` 不能低于 `strokeQuality.armCycleLowSpeedPerSecond`。
+- `strokeQuality.armCycleSpeedFull` 必须大于 `strokeQuality.armCycleSpeedStart`，否则会被自动上移。
 
 如果手写 JSON 配出矛盾值，运行时会自动修正并输出 `[SpeedSwimming] tuning adjusted` warning。

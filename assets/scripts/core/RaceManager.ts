@@ -30,7 +30,6 @@ export class RaceManager extends Component {
 
     public onCountdownTick: (value: number) => void = null;
     public onStateChange: (state: GameState) => void = null;
-    public onRaceTimerUpdate: (time: number) => void = null;
     public onProgressUpdate: (playerDist: number, aiDist: number) => void = null;
     public onRaceFinished: (playerWin: boolean, playerTime: number, aiTime: number, placement?: RacePlacementSummary) => void = null;
     public onSwimmerFinished: (result: RaceFinishResult) => void = null;
@@ -91,7 +90,6 @@ export class RaceManager extends Component {
             swimmer.reset();
         }
         this.onProgressUpdate?.(0, 0);
-        this.onRaceTimerUpdate?.(0);
     }
 
     private updateCountdown(dt: number) {
@@ -129,13 +127,11 @@ export class RaceManager extends Component {
 
     private updateDiving(dt: number) {
         this._raceTimer += dt;
-        this.onRaceTimerUpdate?.(this._raceTimer);
         this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
     }
 
     private updateGliding(dt: number) {
         this._raceTimer += dt;
-        this.onRaceTimerUpdate?.(this._raceTimer);
         this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
     }
 
@@ -146,7 +142,6 @@ export class RaceManager extends Component {
         const aiSwimmers = this.activeAiSwimmers();
         const activeRacers = this.activeRacers();
 
-        this.onRaceTimerUpdate?.(this._raceTimer);
         this.onProgressUpdate?.(playerDist, aiDist);
 
         for (const swimmer of aiSwimmers) {

@@ -45,7 +45,7 @@ import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDistance } from './GameBalance';
-import { formatStabilityLog } from './StabilityScoring';
+import { formatStrokeQualityLog } from './StrokeQualityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { setTimeScale, scaledDelta } from './TimeScale';
@@ -212,12 +212,6 @@ export class GameManager extends Component {
         // runs on the scaled delta. Input classification stays on wall-clock.
         dt = scaledDelta(dt);
         this._inputRouter?.tick();
-        this._uiFlow?.updateSpeed(this._playerSwimmer.currentSpeed);
-        this._uiFlow?.updateSwimTelemetry(
-            this._playerSwimmer.currentStability,
-            this._playerSwimmer.currentAcceleration,
-            this._playerSwimmer.currentSpeed,
-        );
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
@@ -346,7 +340,7 @@ export class GameManager extends Component {
     }
 
     startGame() {
-        this._inputRouter?.resetAutoPadSequence();
+        this._inputRouter?.resetStrokeInput();
         this._gameFlow?.startGame();
     }
 
@@ -634,8 +628,8 @@ export class GameManager extends Component {
         this._inputManager = input;
 
         new SpeedStarsUiPrefabBuilder({
-            onStroke: (type) => this._inputRouter?.handleScreenPadStroke(type),
-            onStrokeEnd: (type) => this._inputRouter?.handleScreenPadStrokeEnd(type),
+            onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
+            onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),
@@ -724,11 +718,6 @@ export class GameManager extends Component {
         this._playerCondition.tick(dt);
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
-        this._uiFlow?.updateConditionReadout(
-            this._playerCondition.heartRate,
-            this._playerCondition.heartRateZone,
-            this._playerCondition.energy,
-        );
         this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
         this._uiFlow?.setHeartRateBarVisible(true);
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
@@ -792,7 +781,7 @@ export class GameManager extends Component {
         }
         const showFeedback = (this._playerSwimmer?.distance ?? 0) < getRaceDistance();
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
-            this.debug(formatStabilityLog('stability', result));
+            this.debug(formatStrokeQualityLog('strokeQuality', result));
             if (showFeedback && result.rating === Rating.PERFECT) {
                 this._playerSwimmer?.playPerfectFlash();
             }

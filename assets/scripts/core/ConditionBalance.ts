@@ -43,7 +43,7 @@ export const CONDITION_BALANCE = {
         easeUpPerSecond: 42,      // climb rate when HR is below target (HR points/sec)
         easeDownPerSecond: 26,    // recovery rate when HR is above target
 
-        // Startup wobble window: first N strokes use DiveResult.heartRateStabilityModifier.
+        // Startup wobble window: first N strokes use DiveResult.heartRateStartupWobbleModifier.
         startupStrokeWindow: 5,
     },
 

@@ -8,7 +8,7 @@ import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/Rac
 import { resolveDiveResult } from '../core/DiveResolver';
 import { DiveResult } from '../core/DiveResult';
 import { SprintTier } from '../condition/ConditionTypes';
-import { formatStabilityLog } from '../core/StabilityScoring';
+import { formatStrokeQualityLog } from '../core/StrokeQualityScoring';
 import { UIFlowController } from '../ui/UIFlowController';
 
 export type GameFlowRefs = {
@@ -107,7 +107,7 @@ export class GameFlowController {
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
         if (result) {
-            this._refs.debug(formatStabilityLog(`hold=${type}`, result));
+            this._refs.debug(formatStrokeQualityLog(`hold=${type}`, result));
             this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
@@ -189,7 +189,6 @@ export class GameFlowController {
                 this.startAllAi();
             }
         };
-        raceManager.onRaceTimerUpdate = (time) => this._refs.uiFlow.updateTimer(time);
         raceManager.onProgressUpdate = (playerDist, aiDist) => {
             this._refs.uiFlow.updateProgress(playerDist, aiDist);
         };
@@ -229,7 +228,6 @@ export class GameFlowController {
         }
         raceManager.onCountdownTick = null;
         raceManager.onStateChange = null;
-        raceManager.onRaceTimerUpdate = null;
         raceManager.onProgressUpdate = null;
         raceManager.onSwimmerFinished = null;
         raceManager.onRaceFinished = null;
@@ -270,7 +268,6 @@ export class GameFlowController {
             this.updateSprintTier(playerSwimmer.effortScore);
         }
         const placement = this.calculatePlayerPlacement();
-        this._refs.uiFlow.updatePlacement(placement.placement, placement.racerCount);
         // The camera frames this swimmer's position. Normally the player; in
         // AI-debug follow mode it's the opponent, while all race logic above still
         // uses the real player.

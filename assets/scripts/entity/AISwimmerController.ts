@@ -1,7 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { DIVE_BALANCE, RHYTHM_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
-import { STABILITY_TUNING } from '../core/InputTuning';
+import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
@@ -14,8 +14,8 @@ type AiStrokePhase = 'gap' | 'stroke';
 // the SAME stroke path as the player: it "presses" (handleStrokeHeld true +
 // handleStroke), holds while watching the arm-pull progress, then "releases"
 // (handleStrokeHeld false) at a target release progress. That release timing lands
-// in the shared sweet zone (STABILITY_TUNING), so AI propulsion comes from the
-// exact same stability→acceleration path the player uses. `difficulty` is the one
+// in the shared sweet zone (STROKE_QUALITY_TUNING), so AI propulsion comes from the
+// exact same stroke-quality-to-acceleration path the player uses. `difficulty` is the one
 // competitiveness axis: it sharpens the release accuracy (higher = closer to the
 // perfect center every stroke) AND tightens the stroke cadence (higher = faster).
 @ccclass('AISwimmerController')
@@ -101,7 +101,7 @@ export class AISwimmerController extends Component {
             this.scheduleGap();
             return;
         }
-        const minHold = Math.max(0, STABILITY_TUNING.minHoldSeconds);
+        const minHold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
         const reachedTarget = progress >= this._targetProgress && this._holdElapsed >= minHold;
         const safetyRelease = progress >= AI_STROKE_TUNING.maxReleaseProgress
             || this._holdElapsed >= AI_STROKE_TUNING.maxHoldSeconds;
@@ -117,7 +117,7 @@ export class AISwimmerController extends Component {
     // produces less-perfect hits and occasional full misses (tail below the good
     // zone), exactly like a shaky player.
     private pickTargetProgress(): number {
-        const center = (STABILITY_TUNING.perfectStart + STABILITY_TUNING.perfectEnd) * 0.5;
+        const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
         const sigma = lerp(AI_STROKE_TUNING.timingSigmaLow, AI_STROKE_TUNING.timingSigmaHigh, this.difficulty);
         const target = center + gaussian() * sigma;
         return clamp(target, 0.05, AI_STROKE_TUNING.maxReleaseProgress);
@@ -157,4 +157,3 @@ function gaussian(): number {
     }
     return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
-

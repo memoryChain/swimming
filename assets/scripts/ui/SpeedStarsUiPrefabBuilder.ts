@@ -47,6 +47,7 @@ export class SpeedStarsStartUiPrefabBuilder {
             try {
                 const root = instantiateRoot(parent, prefab);
                 const startScreen = requireNode(root, 'StartScreen');
+                layoutStartScreen(root, startScreen);
                 const raceHud = requireNode(root, 'RaceHUD');
                 raceHud.active = false;
                 raceHud.destroy();
@@ -92,6 +93,9 @@ export class SpeedStarsUiPrefabBuilder {
 
         const startScreen = requireNode(root, 'StartScreen');
         const raceHud = requireNode(root, 'RaceHUD');
+        fitNodeToVisibleScreen(raceHud);
+        fitNodeToVisibleScreen(requireNode(raceHud, 'CountdownOverlay'));
+        fitNodeToVisibleScreen(requireNode(raceHud, 'CountdownShade'));
         startScreen.active = false;
         startScreen.destroy();
         raceHud.active = false;
@@ -104,8 +108,6 @@ export class SpeedStarsUiPrefabBuilder {
         uiNode.setParent(raceHud);
         uiNode.addComponent(UITransform);
         const ui = uiNode.addComponent(UIController);
-        ui.timerLabel = requireLabel(raceHud, 'Timer');
-        ui.placementLabel = requireLabel(raceHud, 'Placement');
         ui.distanceLabel = requireLabel(raceHud, 'ProgressValue');
         const progressTrack = requireNode(raceHud, 'ProgressTrack');
         const progressTrackTransform = progressTrack.getComponent(UITransform);
@@ -124,8 +126,6 @@ export class SpeedStarsUiPrefabBuilder {
         ui.progressDot = progressDot;
         ui.progressTrackWidth = Math.max(0, progressTrack.getComponent(UITransform).contentSize.width - 60);
         ui.speedBarRoot = null;
-        ui.speedLabel = requireLabel(raceHud, 'SpeedValue');
-        ui.telemetryLabel = requireLabel(raceHud, 'SwimTelemetry');
         ui.countdownOverlay = requireNode(raceHud, 'CountdownOverlay');
         ui.countdownShade = requireNode(raceHud, 'CountdownShade');
         ui.countdownLabel = requireLabel(raceHud, 'CountdownLabel');
@@ -280,8 +280,6 @@ export class SpeedStarsUiPrefabBuilder {
             const node = requireNode(raceHud, name);
             node.setPosition(node.position.x, topY, node.position.z);
         }
-        const telemetry = requireNode(raceHud, 'SwimTelemetry');
-        telemetry.setPosition(telemetry.position.x, topY - 34, telemetry.position.z);
         requireNode(raceHud, 'ProgressText').active = false;
     }
 
@@ -420,9 +418,33 @@ function strokeTypeForScreenX(screenX: number): StrokeType {
 }
 
 function fitInputNodeToVisibleScreen(node: Node) {
+    fitNodeToVisibleScreen(node);
+}
+
+function fitNodeToVisibleScreen(node: Node) {
     const visibleSize = view.getVisibleSize();
     node.setPosition(0, 0, node.position.z);
     node.getComponent(UITransform)?.setContentSize(visibleSize.width, visibleSize.height);
+}
+
+function layoutStartScreen(root: Node, startScreen: Node) {
+    fitNodeToVisibleScreen(root);
+    fitNodeToVisibleScreen(startScreen);
+
+    // The current start artwork was authored as a portrait texture. Scale it
+    // uniformly like CSS `cover` so landscape screens are filled without
+    // stretching swimmers or venue details. The excess top/bottom is cropped.
+    const background = requireNode(startScreen, 'StartShade');
+    const transform = background.getComponent(UITransform);
+    const visibleSize = view.getVisibleSize();
+    if (transform && transform.contentSize.width > 0 && transform.contentSize.height > 0) {
+        const coverScale = Math.max(
+            visibleSize.width / transform.contentSize.width,
+            visibleSize.height / transform.contentSize.height,
+        );
+        background.setPosition(0, 0, background.position.z);
+        background.setScale(coverScale, coverScale, background.scale.z);
+    }
 }
 
 function raceSafeTopInset(): number {
@@ -482,6 +504,7 @@ function instantiateRoot(parent: Node, prefab: Prefab): Node {
     root.active = true;
     root.setParent(parent);
     root.setPosition(0, 0, 0);
+    fitNodeToVisibleScreen(root);
     return root;
 }
 

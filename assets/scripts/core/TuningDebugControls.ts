@@ -3,7 +3,7 @@ import { NATIVE } from 'cc/env';
 import { FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
 import { DIVE_BALANCE, SWIMMER_BALANCE } from './GameBalance';
-import { INPUT_TUNING, MOTION_TUNING, STABILITY_TUNING } from './InputTuning';
+import { INPUT_TUNING, MOTION_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type TuningControl = {
     id: string;
@@ -35,7 +35,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 3;
+const TUNING_FILE_VERSION = 4;
 
 type TuningFileData = {
     version: number;
@@ -76,7 +76,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.baseSpeed', '基础速度', '进入游泳阶段时的初始速度。跳水入水速度仍由跳水参数决定。', () => SWIMMER_BALANCE.baseSpeed, (v) => SWIMMER_BALANCE.baseSpeed = v, 0.05, 0, 2, 2, 'm/s'),
             control('speed.maxSpeed', '最高速度', '玩家常规游泳速度上限，也用于计算当前速度比例。', () => SWIMMER_BALANCE.maxSpeed, (v) => SWIMMER_BALANCE.maxSpeed = v, 0.05, 1, 6, 2, 'm/s'),
             control('speed.strokeBaseAccel', '基础动作加速', '每次划水动作开始播放时给的基础推进加速度（与松手时机无关的保底部分）。', () => SWIMMER_BALANCE.strokeBaseAccel, (v) => SWIMMER_BALANCE.strokeBaseAccel = v, 0.05, 0, 5, 2),
-            control('speed.strokeStabilityAccel', '划水质量加速', '松手时机质量为满分（落在甜区中心）时附加的推进加速度；质量越低按比例减少。这是划水的主要推进来源。', () => SWIMMER_BALANCE.strokeStabilityAccel, (v) => SWIMMER_BALANCE.strokeStabilityAccel = v, 0.05, 0, 8, 2),
+            control('speed.strokeQualityAccel', '划水质量加速', '松手时机质量为满分（落在甜区中心）时附加的推进加速度；质量越低按比例减少。这是划水的主要推进来源。', () => SWIMMER_BALANCE.strokeQualityAccel, (v) => SWIMMER_BALANCE.strokeQualityAccel = v, 0.05, 0, 8, 2),
             control('speed.strokeAccelDurationRatio', '加速持续', '一次动作加速度持续时间，占当前动作一轮时间的比例。越短越像“窜一下”，越长越像“持续推”。', () => SWIMMER_BALANCE.strokeAccelDurationRatio, (v) => SWIMMER_BALANCE.strokeAccelDurationRatio = v, 0.02, 0.05, 1.5, 2),
             control('speed.strokeImpulseSharpness', '冲刺锐度', '0=加速平均分布（顺滑）；越高=划水瞬间加速越猛、随后迅速回落，形成“窜出去再被水拖慢”的冲刺感。不改变整体速度，只改手感。', () => SWIMMER_BALANCE.strokeImpulseSharpness, (v) => SWIMMER_BALANCE.strokeImpulseSharpness = v, 0.05, 0, 1, 2),
             control('speed.diveUnderwaterKickAccel', '水下踢腿加速', '跳水入水后的潜水阶段，每次输入只触发腿部踢水时给的推进加速度。', () => SWIMMER_BALANCE.diveUnderwaterKickAccel, (v) => SWIMMER_BALANCE.diveUnderwaterKickAccel = v, 0.02, 0, 3, 2),
@@ -94,17 +94,17 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '划水',
         controls: [
-            control('stability.minHoldSeconds', '划水起手门槛', '触摸/按键按住多久才从踢腿点击升级为手臂划水；短于这个秒数会保持为一次踢腿点击，不算划水、不判失误。', () => STABILITY_TUNING.minHoldSeconds, (v) => STABILITY_TUNING.minHoldSeconds = v, 0.01, 0, 0.6, 2, 's'),
-            control('stability.goodStart', 'GOOD起点', 'GOOD 区间起点，范围 0..1。和 PERFECT 重叠的部分按 PERFECT 计算。', () => STABILITY_TUNING.goodStart, (v) => STABILITY_TUNING.goodStart = v, 0.01, 0, 1, 2),
-            control('stability.goodEnd', 'GOOD终点', 'GOOD 区间终点，范围 0..1。终点必须大于起点。', () => STABILITY_TUNING.goodEnd, (v) => STABILITY_TUNING.goodEnd = v, 0.01, 0, 1, 2),
-            control('stability.perfectStart', 'PERFECT起点', 'PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。', () => STABILITY_TUNING.perfectStart, (v) => STABILITY_TUNING.perfectStart = v, 0.01, 0, 1, 2),
-            control('stability.perfectEnd', 'PERFECT终点', 'PERFECT 区间终点，范围 0..1。终点必须大于起点。', () => STABILITY_TUNING.perfectEnd, (v) => STABILITY_TUNING.perfectEnd = v, 0.01, 0, 1, 2),
-            control('gesture.armStrokeTimeoutProgress', '超时圈数', '一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束（手已出水），判为超时失误。0.5=半圈。', () => STABILITY_TUNING.armStrokeTimeoutProgress, (v) => STABILITY_TUNING.armStrokeTimeoutProgress = v, 0.05, 0.2, 1, 2),
-            control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STABILITY_TUNING.armStrokeTimeoutAccel, (v) => STABILITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
-            control('stability.armCycleLowSpeedPerSecond', '低速划水轮速', '速度低于“起爬速度”时手臂划水每秒的圈数（下限）。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STABILITY_TUNING.armCycleLowSpeedPerSecond, (v) => STABILITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
-            control('stability.armCycleHighSpeedPerSecond', '高速划水轮速', '速度达到“顶速速度”后手臂划水每秒的圈数（上限）。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打）。', () => STABILITY_TUNING.armCycleHighSpeedPerSecond, (v) => STABILITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
-            control('stability.armCycleSpeedStart', '起爬速度', '低于这个速度时轮速恒为下限；到达后才开始随速度加快。单位 m/s。', () => STABILITY_TUNING.armCycleSpeedStart, (v) => STABILITY_TUNING.armCycleSpeedStart = v, 0.1, 0, 6, 2, 'm/s'),
-            control('stability.armCycleSpeedFull', '顶速速度', '到达这个速度时轮速升到上限；再快也不变。应大于“起爬速度”。单位 m/s。', () => STABILITY_TUNING.armCycleSpeedFull, (v) => STABILITY_TUNING.armCycleSpeedFull = v, 0.1, 0.1, 8, 2, 'm/s'),
+            control('strokeQuality.minHoldSeconds', '划水起手门槛', '触摸/按键按住多久才从踢腿点击升级为手臂划水；短于这个秒数会保持为一次踢腿点击，不算划水、不判失误。', () => STROKE_QUALITY_TUNING.minHoldSeconds, (v) => STROKE_QUALITY_TUNING.minHoldSeconds = v, 0.01, 0, 0.6, 2, 's'),
+            control('strokeQuality.goodStart', 'GOOD起点', 'GOOD 区间起点，范围 0..1。和 PERFECT 重叠的部分按 PERFECT 计算。', () => STROKE_QUALITY_TUNING.goodStart, (v) => STROKE_QUALITY_TUNING.goodStart = v, 0.01, 0, 1, 2),
+            control('strokeQuality.goodEnd', 'GOOD终点', 'GOOD 区间终点，范围 0..1。终点必须大于起点。', () => STROKE_QUALITY_TUNING.goodEnd, (v) => STROKE_QUALITY_TUNING.goodEnd = v, 0.01, 0, 1, 2),
+            control('strokeQuality.perfectStart', 'PERFECT起点', 'PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。', () => STROKE_QUALITY_TUNING.perfectStart, (v) => STROKE_QUALITY_TUNING.perfectStart = v, 0.01, 0, 1, 2),
+            control('strokeQuality.perfectEnd', 'PERFECT终点', 'PERFECT 区间终点，范围 0..1。终点必须大于起点。', () => STROKE_QUALITY_TUNING.perfectEnd, (v) => STROKE_QUALITY_TUNING.perfectEnd = v, 0.01, 0, 1, 2),
+            control('gesture.armStrokeTimeoutProgress', '超时圈数', '一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束（手已出水），判为超时失误。0.5=半圈。', () => STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, (v) => STROKE_QUALITY_TUNING.armStrokeTimeoutProgress = v, 0.05, 0.2, 1, 2),
+            control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STROKE_QUALITY_TUNING.armStrokeTimeoutAccel, (v) => STROKE_QUALITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
+            control('strokeQuality.armCycleLowSpeedPerSecond', '低速划水轮速', '速度低于“起爬速度”时手臂划水每秒的圈数（下限）。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
+            control('strokeQuality.armCycleHighSpeedPerSecond', '高速划水轮速', '速度达到“顶速速度”后手臂划水每秒的圈数（上限）。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打）。', () => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
+            control('strokeQuality.armCycleSpeedStart', '起爬速度', '低于这个速度时轮速恒为下限；到达后才开始随速度加快。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedStart, (v) => STROKE_QUALITY_TUNING.armCycleSpeedStart = v, 0.1, 0, 6, 2, 'm/s'),
+            control('strokeQuality.armCycleSpeedFull', '顶速速度', '到达这个速度时轮速升到上限；再快也不变。应大于“起爬速度”。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedFull, (v) => STROKE_QUALITY_TUNING.armCycleSpeedFull = v, 0.1, 0.1, 8, 2, 'm/s'),
         ],
     },
     {
@@ -307,48 +307,70 @@ function applyTuningSnapshot(snapshot: Record<string, number>) {
 
 function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string, number> {
     const migrated = { ...snapshot };
+    // Keep legacy ids only at this compatibility boundary so existing saved
+    // tuning files load after the strokeQuality terminology migration.
+    const renameLegacyKey = (legacyId: string, currentId: string) => {
+        const value = snapshot[legacyId];
+        if (migrated[currentId] === undefined && typeof value === 'number' && Number.isFinite(value)) {
+            migrated[currentId] = value;
+        }
+    };
+    renameLegacyKey('speed.strokeStabilityAccel', 'speed.strokeQualityAccel');
+    for (const suffix of [
+        'minHoldSeconds',
+        'goodStart',
+        'goodEnd',
+        'perfectStart',
+        'perfectEnd',
+        'armCycleLowSpeedPerSecond',
+        'armCycleHighSpeedPerSecond',
+        'armCycleSpeedStart',
+        'armCycleSpeedFull',
+    ]) {
+        renameLegacyKey(`stability.${suffix}`, `strokeQuality.${suffix}`);
+    }
     const center = snapshot['stability.armReleaseSweetCenter'];
     const perfectHalf = snapshot['stability.armReleasePerfectHalfWidth'];
     const goodHalf = snapshot['stability.armReleaseGoodHalfWidth'];
     if (typeof center === 'number' && Number.isFinite(center)) {
         if (typeof goodHalf === 'number' && Number.isFinite(goodHalf)) {
-            migrated['stability.goodStart'] ??= center - goodHalf;
-            migrated['stability.goodEnd'] ??= center + goodHalf;
+            migrated['strokeQuality.goodStart'] ??= center - goodHalf;
+            migrated['strokeQuality.goodEnd'] ??= center + goodHalf;
         }
         if (typeof perfectHalf === 'number' && Number.isFinite(perfectHalf)) {
-            migrated['stability.perfectStart'] ??= center - perfectHalf;
-            migrated['stability.perfectEnd'] ??= center + perfectHalf;
+            migrated['strokeQuality.perfectStart'] ??= center - perfectHalf;
+            migrated['strokeQuality.perfectEnd'] ??= center + perfectHalf;
         }
     }
     return migrated;
 }
 
 function validateTuningRelations() {
-    const timeoutProgress = clamp(STABILITY_TUNING.armStrokeTimeoutProgress, 0.05, 1);
-    const good = normalizeRange(STABILITY_TUNING.goodStart, STABILITY_TUNING.goodEnd, timeoutProgress, 'stability.good');
-    STABILITY_TUNING.goodStart = good.start;
-    STABILITY_TUNING.goodEnd = good.end;
-    const perfect = normalizeRange(STABILITY_TUNING.perfectStart, STABILITY_TUNING.perfectEnd, timeoutProgress, 'stability.perfect');
-    STABILITY_TUNING.perfectStart = perfect.start;
-    STABILITY_TUNING.perfectEnd = perfect.end;
+    const timeoutProgress = clamp(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, 0.05, 1);
+    const good = normalizeRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd, timeoutProgress, 'strokeQuality.good');
+    STROKE_QUALITY_TUNING.goodStart = good.start;
+    STROKE_QUALITY_TUNING.goodEnd = good.end;
+    const perfect = normalizeRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd, timeoutProgress, 'strokeQuality.perfect');
+    STROKE_QUALITY_TUNING.perfectStart = perfect.start;
+    STROKE_QUALITY_TUNING.perfectEnd = perfect.end;
 
-    if (STABILITY_TUNING.armCycleHighSpeedPerSecond < STABILITY_TUNING.armCycleLowSpeedPerSecond) {
+    if (STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond < STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond) {
         console.warn(
-            `[SpeedSwimming] tuning adjusted: stability.armCycleHighSpeedPerSecond ` +
-            `${STABILITY_TUNING.armCycleHighSpeedPerSecond.toFixed(3)} was below low-speed cycle ` +
-            `${STABILITY_TUNING.armCycleLowSpeedPerSecond.toFixed(3)}`,
+            `[SpeedSwimming] tuning adjusted: strokeQuality.armCycleHighSpeedPerSecond ` +
+            `${STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond.toFixed(3)} was below low-speed cycle ` +
+            `${STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond.toFixed(3)}`,
         );
-        STABILITY_TUNING.armCycleHighSpeedPerSecond = STABILITY_TUNING.armCycleLowSpeedPerSecond;
+        STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond = STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond;
     }
 
-    if (STABILITY_TUNING.armCycleSpeedFull <= STABILITY_TUNING.armCycleSpeedStart) {
-        const fixed = STABILITY_TUNING.armCycleSpeedStart + 0.1;
+    if (STROKE_QUALITY_TUNING.armCycleSpeedFull <= STROKE_QUALITY_TUNING.armCycleSpeedStart) {
+        const fixed = STROKE_QUALITY_TUNING.armCycleSpeedStart + 0.1;
         console.warn(
-            `[SpeedSwimming] tuning adjusted: stability.armCycleSpeedFull ` +
-            `${STABILITY_TUNING.armCycleSpeedFull.toFixed(3)} must be above stability.armCycleSpeedStart ` +
-            `${STABILITY_TUNING.armCycleSpeedStart.toFixed(3)}; set to ${fixed.toFixed(3)}`,
+            `[SpeedSwimming] tuning adjusted: strokeQuality.armCycleSpeedFull ` +
+            `${STROKE_QUALITY_TUNING.armCycleSpeedFull.toFixed(3)} must be above strokeQuality.armCycleSpeedStart ` +
+            `${STROKE_QUALITY_TUNING.armCycleSpeedStart.toFixed(3)}; set to ${fixed.toFixed(3)}`,
         );
-        STABILITY_TUNING.armCycleSpeedFull = fixed;
+        STROKE_QUALITY_TUNING.armCycleSpeedFull = fixed;
     }
 }
 
