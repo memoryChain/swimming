@@ -4,6 +4,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SWIMMER_0621_2_COLOR_VARIANTS } from '../core/ResourcePaths';
+import { getRaceDifficultyConfig } from '../core/GameBalance';
 import { DEFAULT_AI_PROFILES, shuffledAiCompetitorNames } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
@@ -85,7 +86,7 @@ export class CompetitorManager {
             const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
             const controller = swimmer.node.addComponent(AISwimmerController);
             controller.swimmer = swimmer;
-            controller.difficulty = options?.difficultyOverride ?? profile.difficulty;
+            controller.difficulty = options?.difficultyOverride ?? scaledRaceDifficulty(profile.difficulty);
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
@@ -131,7 +132,7 @@ export class CompetitorManager {
             const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
             const controller = swimmer.node.addComponent(AISwimmerController);
             controller.swimmer = swimmer;
-            controller.difficulty = profile.difficulty;
+            controller.difficulty = scaledRaceDifficulty(profile.difficulty);
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
@@ -163,6 +164,11 @@ export class CompetitorManager {
         swimmer.configureCourse(this._options.courseLayout);
         return swimmer;
     }
+}
+
+function scaledRaceDifficulty(baseDifficulty: number): number {
+    const scale = getRaceDifficultyConfig().aiDifficultyScale;
+    return Math.max(0, Math.min(1, baseDifficulty * scale));
 }
 
 function shuffledAiColorVariantIds(playerVariantId: string): string[] {

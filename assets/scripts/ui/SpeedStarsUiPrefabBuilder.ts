@@ -1,6 +1,6 @@
 import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
-import { getRaceDistance, RaceDistanceMode, RACE_DISTANCE_OPTIONS } from '../core/GameBalance';
+import { getRaceDifficulty, RaceDifficulty, RACE_DIFFICULTY_OPTIONS } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
@@ -8,7 +8,7 @@ import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
-    onDistanceSelect: (distance: RaceDistanceMode) => void;
+    onDifficultySelect: (difficulty: RaceDifficulty) => void;
     onModelDebug: () => void;
     onAiDebug: () => void;
 };
@@ -509,18 +509,24 @@ function instantiateRoot(parent: Node, prefab: Prefab): Node {
 }
 
 function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallbacks) {
-    const distanceButtons: { distance: RaceDistanceMode; node: Node }[] = [];
-    for (const distance of RACE_DISTANCE_OPTIONS) {
-        distanceButtons.push({ distance, node: requireNode(startScreen, `Distance${distance}Button`) });
-    }
-    const skins = distanceButtonSkins(distanceButtons);
-    for (const button of distanceButtons) {
+    const legacyButtonNames = ['Distance50Button', 'Distance100Button', 'Distance200Button'];
+    const difficultyButtons = RACE_DIFFICULTY_OPTIONS.map((option, index) => ({
+        difficulty: option.id,
+        node: requireNode(startScreen, legacyButtonNames[index]),
+    }));
+    requireLabel(startScreen, 'DistanceModeLabel').string = '赛程 100米 · 选择难度';
+    const skins = difficultyButtonSkins(difficultyButtons);
+    for (const [index, button] of difficultyButtons.entries()) {
+        const label = button.node.getChildByName('Label')?.getComponent(Label);
+        if (label) {
+            label.string = RACE_DIFFICULTY_OPTIONS[index].label;
+        }
         button.node.on(Node.EventType.TOUCH_END, () => {
-            callbacks.onDistanceSelect(button.distance);
-            updateDistanceButtons(distanceButtons, skins);
+            callbacks.onDifficultySelect(button.difficulty);
+            updateDifficultyButtons(difficultyButtons, skins);
         });
     }
-    updateDistanceButtons(distanceButtons, skins);
+    updateDifficultyButtons(difficultyButtons, skins);
 
     requireNode(startScreen, 'StartButton').on(Node.EventType.TOUCH_END, callbacks.onStart);
     const modelDebug = requireNode(startScreen, 'ModelDebugButton');
@@ -536,22 +542,22 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
 }
 
-type DistanceButtonSkins = {
+type DifficultyButtonSkins = {
     normal: SpriteFrame | null;
     selected: SpriteFrame | null;
 };
 
-function distanceButtonSkins(buttons: { distance: RaceDistanceMode; node: Node }[]): DistanceButtonSkins {
+function difficultyButtonSkins(buttons: { difficulty: RaceDifficulty; node: Node }[]): DifficultyButtonSkins {
     return {
-        normal: buttons.find((button) => button.distance === 50)?.node.getComponent(Sprite)?.spriteFrame ?? null,
-        selected: buttons.find((button) => button.distance === 100)?.node.getComponent(Sprite)?.spriteFrame ?? null,
+        normal: buttons[0]?.node.getComponent(Sprite)?.spriteFrame ?? null,
+        selected: buttons[1]?.node.getComponent(Sprite)?.spriteFrame ?? null,
     };
 }
 
-function updateDistanceButtons(buttons: { distance: RaceDistanceMode; node: Node }[], skins: DistanceButtonSkins) {
-    const selected = getRaceDistance();
+function updateDifficultyButtons(buttons: { difficulty: RaceDifficulty; node: Node }[], skins: DifficultyButtonSkins) {
+    const selected = getRaceDifficulty();
     for (const button of buttons) {
-        const active = button.distance === selected;
+        const active = button.difficulty === selected;
         const sprite = button.node.getComponent(Sprite);
         if (sprite) {
             sprite.spriteFrame = active ? skins.selected : skins.normal;

@@ -85,6 +85,7 @@ export class Swimmer extends Component {
         const maxSpeed = SWIMMER_BALANCE.maxSpeed;
         const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
         this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
+        this.cartoonRig?.setPerfectGlowActive(false);
         this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setPreRaceStanding(false);
         if (fromDiveEntry) {
@@ -103,6 +104,7 @@ export class Swimmer extends Component {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
+        this.cartoonRig?.setPerfectGlowActive(false);
         this.clearDiveUnderwaterPhase();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
@@ -184,6 +186,7 @@ export class Swimmer extends Component {
         this._motor.stopRace();
         this.clearDiveUnderwaterPhase();
         this.cartoonRig?.setActiveSwimming(false);
+        this.cartoonRig?.setPerfectGlowActive(false);
     }
 
     update(dt: number) {
@@ -196,6 +199,7 @@ export class Swimmer extends Component {
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
         });
+        this.updatePerfectZoneGlow();
         if (!this.isAI) {
             this._strokeMetrics.update(dt);
         }
@@ -256,6 +260,7 @@ export class Swimmer extends Component {
         }
         const strokeQualityResult = this._motor.setStrokeHeld(type, held);
         this.cartoonRig?.setStrokeHeld(type, held);
+        this.updatePerfectZoneGlow();
         if (held) {
             if (!this.isAI) {
                 this._strokeMetrics.recordStroke(type);
@@ -290,12 +295,6 @@ export class Swimmer extends Component {
         return this._motor.activeStrokeReleaseProgress(type);
     }
 
-    playPerfectFlash() {
-        if (!this.isAI) {
-            this.cartoonRig?.triggerPerfectGlow();
-        }
-    }
-
     playFinishRagdoll() {
         this.playFinishTouch();
     }
@@ -306,6 +305,7 @@ export class Swimmer extends Component {
         const inwardDirection = -direction;
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
+        this.cartoonRig?.setPerfectGlowActive(false);
         if (this.cartoonRig) {
             this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
             this.cartoonRig.setFinishFloating();
@@ -339,6 +339,16 @@ export class Swimmer extends Component {
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setPreRaceStanding(true);
+        this.cartoonRig?.setPerfectGlowActive(false);
+    }
+
+    private updatePerfectZoneGlow() {
+        if (this.isAI) {
+            return;
+        }
+        const active = this._motor.isActiveStrokeInPerfectZone(StrokeType.LEFT)
+            || this._motor.isActiveStrokeInPerfectZone(StrokeType.RIGHT);
+        this.cartoonRig?.setPerfectGlowActive(active);
     }
 
     private playStroke(type: StrokeType, rating: Rating) {

@@ -50,6 +50,7 @@ export class AiConditionModel {
         if (phase !== RacePhase.SPRINT) {
             this._sprintTier = SprintTier.STEADY;
         }
+        this.refreshModifiers();
     }
 
     // Per-frame derivation. No input judging; pure curve over difficulty/progress.
@@ -104,7 +105,7 @@ export class AiConditionModel {
     private refreshModifiers() {
         let quality = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
         let efficiency = CONDITION_BALANCE.efficiency.zoneModifier[this._heartRateZone];
-        if (this._energyDepleted) {
+        if (this._energyDepleted && this._phase !== RacePhase.SPRINT) {
             quality -= CONDITION_BALANCE.energy.depletedQualityPenalty;
             efficiency -= CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
         }

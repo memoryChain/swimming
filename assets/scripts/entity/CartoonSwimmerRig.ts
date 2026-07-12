@@ -648,8 +648,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
-        this.updatePerfectGlow(dt);
-
         if (this._poseState.update(dt, this._animationPlayer.hasAnimation)) {
             return;
         }
@@ -721,13 +719,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.triggerBurst(scale);
     }
 
-    triggerPerfectGlow() {
-        if (!this.node?.isValid || !this._loaded || !this._model || !this.root) {
-            return;
+    setPerfectGlowActive(active: boolean) {
+        const intensity = active ? 1 : 0;
+        const changed = this._perfectGlowIntensity !== intensity;
+        this._perfectGlowIntensity = intensity;
+        if (active && this.node?.isValid && this._loaded && this._model && this.root) {
+            this.ensurePerfectGlowShells();
         }
-        this._perfectGlowIntensity = 1;
-        this.ensurePerfectGlowShells();
-        this.updatePerfectGlowMaterial();
+        if (changed) {
+            this.updatePerfectGlowMaterial();
+        }
     }
 
     refreshModelDebugSetup() {
@@ -745,18 +746,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (this._modelDebugMode && this.isMixamoSwimmingDebugVariant()) {
             this._animationPlayer.setSpeed(this.motionPreviewSpeedScale());
         }
-    }
-
-    private updatePerfectGlow(dt: number) {
-        if (this._perfectGlowIntensity <= 0) {
-            this.updatePerfectGlowMaterial();
-            return;
-        }
-        if (!this._perfectGlowMaterial || !this._perfectGlowShellRoot?.isValid) {
-            return;
-        }
-        this._perfectGlowIntensity = Math.max(0, this._perfectGlowIntensity - dt * 5.8);
-        this.updatePerfectGlowMaterial();
     }
 
     private applyLaneMaterials(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
@@ -1212,8 +1201,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._perfectGlowShellRoot.active = this._perfectGlowIntensity > 0.001;
         }
         if (this._perfectGlowMaterial) {
-            const pulse = this._perfectGlowIntensity * (0.72 + Math.sin(this._perfectGlowIntensity * Math.PI * 5.0) * 0.28);
-            this._perfectGlowMaterial.setProperty('flashStrength', Math.max(0, Math.min(1, pulse)));
+            this._perfectGlowMaterial.setProperty('flashStrength', this._perfectGlowIntensity);
         }
     }
 

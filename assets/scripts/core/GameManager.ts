@@ -7,6 +7,7 @@ import {
     EventMouse,
     game,
     geometry,
+    Graphics,
     Label,
     Layers,
     Material,
@@ -23,7 +24,7 @@ import { GameFlowController } from '../app/GameFlowController';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
-import { RacePhase, SprintTier } from '../condition/ConditionTypes';
+import { RacePhase } from '../condition/ConditionTypes';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
@@ -114,6 +115,8 @@ export class GameManager extends Component {
     private readonly _dialHeadWorldOffsetY = 0.4;
     private readonly _dialScreenSpread = 88;
     private readonly _dialScreenOffsetY = 66;
+    private readonly _playerSpeedScreenOffsetY = 52;
+    private readonly _playerSpeedTopViewOffsetY = 80;
     // Perspective scaling: scale = refDistance / cameraDistance, clamped. At the
     // reference distance the dial is drawn at 1:1; nearer swimmers get a bigger
     // dial, farther ones a smaller one.
@@ -124,10 +127,11 @@ export class GameManager extends Component {
     private readonly _tmpDialAnchorUi = new Vec3();
     private readonly _tmpDialScreen = new Vec3();
     private _uiCamera: Camera = null;
-    // Overhead readout centered between the player's two dials: the stroke rating
-    // (reuses the prefab rating/combo labels) plus the current speed underneath.
+    // Player identification stays a constant screen size so it remains readable
+    // when the race camera pulls far back.
     private _overheadReadout: Node = null;
     private _overheadSpeedLabel: Label = null;
+    private _playerOverheadMarker: Node = null;
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
@@ -148,6 +152,8 @@ export class GameManager extends Component {
     private _cameraFollowsAi = false;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
+    private _raceCameraButton: Node = null;
+    private _raceCameraButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -218,10 +224,22 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
         const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
-        // The player can finish before the last AI swimmer. Hide the overhead
-        // feedback as soon as the player's own distance reaches the wall rather
-        // than waiting for the whole race to enter FINISHED.
-        const playerFeedbackVisible = raceActive && playerBeforeFinish;
+        // The player can finish before the last AI swimmer. Hide player-specific
+        // overhead UI as soon as the player's own distance reaches the wall.
+        const playerIndicatorVisible = this._state !== GameState.READY
+            && this._state !== GameState.FINISHED
+            && playerBeforeFinish
+            && !this._modelDebugFlow?.active;
+        if (this._raceCameraButton?.isValid) {
+            this._raceCameraButton.active = playerIndicatorVisible && raceActive;
+        }
+        // Motor speed becomes meaningful after the dive has entered its glide.
+        // Keep the player marker visible before takeoff, but hide the speed text.
+        const playerSpeedVisible = playerIndicatorVisible
+            && (this._state === GameState.GLIDING || this._state === GameState.RACING);
+        // Sweet-zone timing feedback is a tuning aid. Keep it out of normal
+        // races and only expose it in the dedicated AI-difficulty debug race.
+        const playerFeedbackVisible = this._aiDebugMode && raceActive && playerBeforeFinish;
         this.drawStrokeTimingGuide(timingGuide, playerFeedbackVisible);
         const playerFacing = this.dialFacingSign(this._playerSwimmer);
         const playerSpeed = this._playerSwimmer.currentSpeed;
@@ -230,10 +248,19 @@ export class GameManager extends Component {
         this._sweetZoneBarLeft.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
         this._sweetZoneBarRight.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
         if (this._overheadReadout) {
-            this._overheadReadout.active = playerFeedbackVisible;
+            this._overheadReadout.active = playerSpeedVisible;
         }
-        if (playerFeedbackVisible) {
-            this.positionSweetZoneDialsAbove(this._playerSwimmer, this._sweetZoneBarLeft, this._sweetZoneBarRight, this._overheadReadout);
+        if (this._playerOverheadMarker) {
+            this._playerOverheadMarker.active = playerIndicatorVisible;
+        }
+        if (playerIndicatorVisible) {
+            this.positionSweetZoneDialsAbove(
+                this._playerSwimmer,
+                this._sweetZoneBarLeft,
+                this._sweetZoneBarRight,
+                this._overheadReadout,
+                this._playerOverheadMarker,
+            );
             if (this._overheadSpeedLabel) {
                 this._overheadSpeedLabel.string = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
             }
@@ -342,10 +369,12 @@ export class GameManager extends Component {
     startGame() {
         this._inputRouter?.resetStrokeInput();
         this._gameFlow?.startGame();
+        this.updateRaceCameraButtonLabel();
     }
 
     restartGame() {
         this._gameFlow?.restartGame();
+        this.updateRaceCameraButtonLabel();
     }
 
     private returnToLogin() {
@@ -438,7 +467,9 @@ export class GameManager extends Component {
             },
             updateSprintTier: (tier) => {
                 this._playerCondition.updateSprintState({ sprintTier: tier });
-                this._raceContext.sprintActive = tier !== SprintTier.STEADY;
+                // Sprint activity belongs to the race phase, not the current
+                // effort tier. STEADY/PUSH/GAMBLE only tunes intensity.
+                this._raceContext.sprintActive = this._playerCondition.phase === RacePhase.SPRINT;
             },
             debug: (message) => this.debug(message),
         });
@@ -656,6 +687,8 @@ export class GameManager extends Component {
             this._aiSweetZoneBarLeft.build(this._raceHud, -dialSpread, aiDialY, 'AI左', true);
             this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
             this.buildOverheadReadout();
+            this.buildPlayerOverheadMarker();
+            this.buildRaceCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
@@ -782,9 +815,6 @@ export class GameManager extends Component {
         const showFeedback = (this._playerSwimmer?.distance ?? 0) < getRaceDistance();
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
             this.debug(formatStrokeQualityLog('strokeQuality', result));
-            if (showFeedback && result.rating === Rating.PERFECT) {
-                this._playerSwimmer?.playPerfectFlash();
-            }
             if (showFeedback) {
                 this._uiFlow?.showRating(result.rating, result.combo);
             }
@@ -795,14 +825,48 @@ export class GameManager extends Component {
         if (this._modelDebugFlow?.active) {
             return;
         }
-        this.debug(`race camera=${this._gameFlow?.cycleRaceCamera()}`);
+        const modeName = this._gameFlow?.cycleRaceCamera();
+        if (modeName) {
+            this.updateRaceCameraButtonLabel(modeName);
+        }
+        this.debug(`race camera=${modeName}`);
     }
 
     private toggleFreeRaceCamera() {
         if (this._modelDebugFlow?.active) {
             return;
         }
-        this.debug(`race camera=${this._gameFlow?.toggleFreeRaceCamera()}`);
+        const modeName = this._gameFlow?.toggleFreeRaceCamera();
+        if (modeName) {
+            this.updateRaceCameraButtonLabel(modeName);
+        }
+        this.debug(`race camera=${modeName}`);
+    }
+
+    private buildRaceCameraButton(raceHud: Node, width: number, height: number) {
+        const button = makeButton(
+            'RaceCameraButton',
+            raceHud,
+            210,
+            54,
+            new Color(24, 82, 142, 238),
+            '',
+        );
+        button.setPosition(width / 2 - 122, height / 2 - 68, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        const labelNode = makeLabel('Label', button, '', 17, new Color(245, 252, 255, 255));
+        labelNode.getComponent(UITransform).setContentSize(200, 50);
+        this._raceCameraButton = button;
+        this._raceCameraButtonLabel = labelNode.getComponent(Label);
+        this.updateRaceCameraButtonLabel();
+        button.active = false;
+        button.on(Node.EventType.TOUCH_END, () => this.cycleRaceCamera());
+    }
+
+    private updateRaceCameraButtonLabel(modeName = this._raceCameraDirector.currentModeName) {
+        if (this._raceCameraButtonLabel?.isValid) {
+            this._raceCameraButtonLabel.string = `相机：${modeName}`;
+        }
     }
 
     // Race HUD button (AI-debug mode only): toggle whether the race camera frames
@@ -858,7 +922,13 @@ export class GameManager extends Component {
     // swimmer's two hand dials there so they hover overhead and follow the
     // character as the camera moves. Left/right dials keep their side-by-side
     // screen spread. Falls back silently if the camera/HUD aren't ready.
-    private positionSweetZoneDialsAbove(swimmer: Swimmer | null, leftBar: SweetZoneBar, rightBar: SweetZoneBar, readout: Node | null = null) {
+    private positionSweetZoneDialsAbove(
+        swimmer: Swimmer | null,
+        leftBar: SweetZoneBar,
+        rightBar: SweetZoneBar,
+        readout: Node | null = null,
+        playerMarker: Node | null = null,
+    ) {
         const node = swimmer?.node;
         const worldCamera = this._cameraNode?.getComponent(Camera);
         const hudTransform = this._raceHud?.getComponent(UITransform);
@@ -889,16 +959,26 @@ export class GameManager extends Component {
         rightBar.setAnchorPosition(cx + spread, cy);
         leftBar.setScale(scale);
         rightBar.setScale(scale);
-        // Rating + speed readout sits centered between the two dials.
+        // Speed and player marker stay at fixed screen size so the main character
+        // remains identifiable in the widest camera shots.
         if (readout?.isValid) {
-            readout.setPosition(cx, cy, 0);
-            readout.setScale(scale, scale, 1);
+            const speedOffsetY = this._raceCameraDirector.topViewActive
+                ? this._playerSpeedTopViewOffsetY
+                : this._playerSpeedScreenOffsetY;
+            readout.setPosition(cx, this._tmpDialAnchorUi.y + speedOffsetY, 0);
+            readout.setScale(1, 1, 1);
+        }
+        if (playerMarker?.isValid) {
+            // In top view the swimmer is visually very thin, so leave a larger
+            // gap to keep the triangle tip from covering the character model.
+            const markerOffsetY = this._raceCameraDirector.topViewActive ? 14 : -8;
+            playerMarker.setPosition(cx, this._tmpDialAnchorUi.y + markerOffsetY, 0);
+            playerMarker.setScale(1, 1, 1);
         }
     }
 
-    // Build the overhead readout that floats between the player's two dials: it
-    // reparents the prefab rating/combo labels here and adds a speed line so all
-    // the stroke feedback reads in one place above the swimmer's head.
+    // Build a speed-only readout above the player. Stroke rating and combo remain
+    // in their normal HUD positions and are deliberately not reparented here.
     private buildOverheadReadout() {
         if (!this._raceHud?.isValid) {
             return;
@@ -906,45 +986,54 @@ export class GameManager extends Component {
         const readout = makeUiNode('SweetZoneReadout', this._raceHud);
         readout.setPosition(0, 0, 0);
         readout.active = false;
-        // Render above the dials so the centered text is never occluded.
+        // Render above the dials so the speed text is never occluded.
         readout.setSiblingIndex(this._raceHud.children.length - 1);
-
-        const ratingNode = this._uiController?.ratingLabel?.node;
-        if (ratingNode?.isValid) {
-            ratingNode.setParent(readout, false);
-            ratingNode.setPosition(0, 20, 0);
-            const ratingLabel = this._uiController?.ratingLabel;
-            if (ratingLabel) {
-                // Smaller than the prefab's 44px so "完美" fits in the gap between
-                // the two dials without overlapping them.
-                ratingLabel.fontSize = 30;
-                ratingLabel.lineHeight = 34;
-                this.addReadoutOutline(ratingLabel);
-            }
-        }
         const speedNode = makeUiNode('SweetZoneReadoutSpeed', readout);
-        speedNode.setPosition(0, -6, 0);
-        speedNode.getComponent(UITransform).setContentSize(200, 28);
+        speedNode.setPosition(0, 0, 0);
+        speedNode.getComponent(UITransform).setContentSize(200, 32);
         const speedLabel = speedNode.addComponent(Label);
         speedLabel.string = '0.00 m/s';
-        speedLabel.fontSize = 22;
-        speedLabel.lineHeight = 26;
+        speedLabel.fontSize = 24;
+        speedLabel.lineHeight = 30;
         speedLabel.color = new Color(255, 255, 255, 255);
         speedLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         speedLabel.verticalAlign = Label.VerticalAlign.CENTER;
         this.addReadoutOutline(speedLabel);
-        const comboNode = this._uiController?.comboLabel?.node;
-        if (comboNode?.isValid) {
-            comboNode.setParent(readout, false);
-            comboNode.setPosition(0, -30, 0);
-            const comboLabel = this._uiController?.comboLabel;
-            if (comboLabel) {
-                comboLabel.color = new Color(255, 236, 150, 255);
-                this.addReadoutOutline(comboLabel);
-            }
-        }
         this._overheadReadout = readout;
         this._overheadSpeedLabel = speedLabel;
+    }
+
+    private buildPlayerOverheadMarker() {
+        if (!this._raceHud?.isValid) {
+            return;
+        }
+        const marker = makeUiNode('PlayerOverheadMarker', this._raceHud);
+        marker.getComponent(UITransform).setContentSize(48, 42);
+        marker.active = false;
+        marker.setSiblingIndex(this._raceHud.children.length - 1);
+
+        const glowNode = makeUiNode('Glow', marker);
+        const glow = glowNode.addComponent(Graphics);
+        glow.fillColor = new Color(255, 24, 24, 100);
+        glow.moveTo(-20, 38);
+        glow.lineTo(20, 38);
+        glow.lineTo(0, 2);
+        glow.close();
+        glow.fill();
+
+        const coreNode = makeUiNode('Core', marker);
+        const core = coreNode.addComponent(Graphics);
+        core.fillColor = new Color(255, 36, 36, 255);
+        core.strokeColor = new Color(255, 225, 225, 255);
+        core.lineWidth = 2;
+        core.moveTo(-13, 33);
+        core.lineTo(13, 33);
+        core.lineTo(0, 8);
+        core.close();
+        core.fill();
+        core.stroke();
+
+        this._playerOverheadMarker = marker;
     }
 
     // Dark outline so overhead readout text stays legible over the bright,

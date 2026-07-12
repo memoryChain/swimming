@@ -1,19 +1,42 @@
 import { Vec3 } from 'cc';
 
-export const RACE_DISTANCE_OPTIONS = [50, 100, 200] as const;
-export type RaceDistanceMode = typeof RACE_DISTANCE_OPTIONS[number];
-export const RACE_DISTANCE: RaceDistanceMode = 100;
+export const RACE_DISTANCE = 100 as const;
 export const RACE_COURSE_LENGTH = 50;
-let currentRaceDistance: RaceDistanceMode = RACE_DISTANCE;
 
-export function getRaceDistance(): RaceDistanceMode {
-    return currentRaceDistance;
+export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
+
+export type RaceDifficultyConfig = {
+    id: RaceDifficulty;
+    label: string;
+    aiDifficultyScale: number;
+};
+
+export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
+    { id: 'beginner', label: '入门', aiDifficultyScale: 0.62 },
+    { id: 'competitive', label: '竞技', aiDifficultyScale: 0.82 },
+    { id: 'championship', label: '世锦赛', aiDifficultyScale: 1 },
+];
+
+let currentRaceDifficulty: RaceDifficulty = 'competitive';
+
+export function getRaceDistance(): typeof RACE_DISTANCE {
+    return RACE_DISTANCE;
 }
 
-export function setRaceDistance(distance: number): RaceDistanceMode {
-    const supported = RACE_DISTANCE_OPTIONS.find((value) => value === distance) ?? RACE_DISTANCE;
-    currentRaceDistance = supported;
-    return currentRaceDistance;
+export function getRaceDifficulty(): RaceDifficulty {
+    return currentRaceDifficulty;
+}
+
+export function setRaceDifficulty(difficulty: RaceDifficulty): RaceDifficulty {
+    currentRaceDifficulty = RACE_DIFFICULTY_OPTIONS.some((option) => option.id === difficulty)
+        ? difficulty
+        : 'competitive';
+    return currentRaceDifficulty;
+}
+
+export function getRaceDifficultyConfig(difficulty = currentRaceDifficulty): RaceDifficultyConfig {
+    return RACE_DIFFICULTY_OPTIONS.find((option) => option.id === difficulty)
+        ?? RACE_DIFFICULTY_OPTIONS[1];
 }
 
 export function raceDistanceToCourseX(distance: number): number {

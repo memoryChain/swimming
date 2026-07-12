@@ -1,6 +1,6 @@
 import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
-import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
+import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 
 const CYCLE_AMOUNT = Math.PI * 2;
@@ -176,6 +176,19 @@ export class SwimmerMotor {
             return -1;
         }
         return clamp01(action.progress / CYCLE_AMOUNT);
+    }
+
+    // True only while this hand is still held and its pull progress is currently
+    // inside the shared PERFECT release window. Keeping this per-hand lets visual
+    // feedback combine both hands without one hand turning it off for the other.
+    isActiveStrokeInPerfectZone(type: StrokeType): boolean {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        if (!action || action.startedAt < 0 || action.releasedAt >= 0 || action.strokeQualitySettled) {
+            return false;
+        }
+        const progress = clamp01(action.progress / CYCLE_AMOUNT);
+        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        return progress >= perfect.start && progress <= perfect.end;
     }
 
     recordKickOnly(type: StrokeType): boolean {
@@ -740,12 +753,13 @@ export class SwimmerMotor {
         // the high-speed ceiling as current speed crosses the window
         // [armCycleSpeedStart, armCycleSpeedFull], clamped at both ends. The sweet
         // zone stays a fixed fraction of a cycle, so a faster cycle = a tighter
-        // timing window. AI shares these values; it only differs in input timing.
+        // timing window. The selected race difficulty scales the whole cadence
+        // range, so easier races provide wider real-time release windows.
         const start = STROKE_QUALITY_TUNING.armCycleSpeedStart;
         const full = STROKE_QUALITY_TUNING.armCycleSpeedFull;
         const span = Math.max(0.01, full - start);
         const t = clamp01((this._currentSpeed - start) / span);
-        return CYCLE_AMOUNT * lerp(
+        return CYCLE_AMOUNT * getRaceArmCycleSpeedScale() * lerp(
             STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond,
             STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond,
             t,

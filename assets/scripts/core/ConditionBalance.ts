@@ -6,6 +6,12 @@
 
 import { HeartRateZone, RacePhase, SprintTier } from '../condition/ConditionTypes';
 
+export const RACE_PHASE_BALANCE = {
+    // Enter SPRINT when this many metres remain. The finish top-view camera is a
+    // nested presentation beat and does not end the sprint phase.
+    sprintDistanceFromFinish: 25,
+};
+
 export const CONDITION_BALANCE = {
     energy: {
         // Total energy pool (absolute, 0..total). Doc 29 / dev-alignment: 100.

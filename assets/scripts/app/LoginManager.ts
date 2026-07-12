@@ -1,5 +1,5 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, view } from 'cc';
-import { setRaceDistance } from '../core/GameBalance';
+import { setRaceDifficulty } from '../core/GameBalance';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
@@ -38,10 +38,9 @@ export class LoginManager extends Component {
         this.launchMainGame('model-debug');
     }
 
-    // 100m AI-debug 1v1: lock distance to 100m, store the chosen difficulty, and
-    // launch straight into a single-opponent race.
+    // 100m AI-debug 1v1: store the chosen difficulty and launch straight into a
+    // single-opponent race. All race modes now use the fixed 100m distance.
     startAiDebug(difficulty: number) {
-        setRaceDistance(100);
         setAiDebugDifficulty(difficulty);
         this.launchMainGame('ai-debug');
     }
@@ -104,7 +103,7 @@ export class LoginManager extends Component {
         canvasNode.getChildByName('SpeedStarsUI')?.destroy();
         new SpeedStarsStartUiPrefabBuilder({
             onStart: () => this.startGame(),
-            onDistanceSelect: (distance) => setRaceDistance(distance),
+            onDifficultySelect: (difficulty) => setRaceDifficulty(difficulty),
             onModelDebug: () => this.startModelDebug(),
             onAiDebug: () => this.showAiDebugPicker(),
         }).build(canvasNode, width, height, (error) => {

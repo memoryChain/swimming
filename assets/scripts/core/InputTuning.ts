@@ -1,4 +1,4 @@
-import { TARGET_INTERVAL, getTargetInterval } from './GameBalance';
+import { RaceDifficulty, TARGET_INTERVAL, getRaceDifficulty, getTargetInterval } from './GameBalance';
 
 export const INPUT_TUNING = {
     padStrokeDedupeMs: 45,
@@ -113,6 +113,19 @@ export const STROKE_QUALITY_TUNING = {
     armCycleSpeedStart: 1.0,
     armCycleSpeedFull: 4.5,
 };
+
+// Per-race difficulty multipliers applied to both ends of the arm-cycle speed
+// range. The existing strokeQuality values remain the shared tuning baseline;
+// lower scales widen the real-time GOOD/PERFECT release windows.
+export const RACE_DIFFICULTY_TUNING: Record<RaceDifficulty, { armCycleSpeedScale: number }> = {
+    beginner: { armCycleSpeedScale: 0.68 },
+    competitive: { armCycleSpeedScale: 0.84 },
+    championship: { armCycleSpeedScale: 1 },
+};
+
+export function getRaceArmCycleSpeedScale(): number {
+    return Math.max(0.1, Math.min(1.5, RACE_DIFFICULTY_TUNING[getRaceDifficulty()].armCycleSpeedScale));
+}
 
 export const TARGET_LIMB_RATE = 1 / TARGET_INTERVAL;
 

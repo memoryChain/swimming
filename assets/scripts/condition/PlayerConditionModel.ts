@@ -60,6 +60,7 @@ export class PlayerConditionModel {
         if (phase !== RacePhase.SPRINT) {
             this._sprintTier = SprintTier.STEADY;
         }
+        this.refreshModifiers();
     }
 
     // Maps the dive outcome onto the opening heart-rate state (doc 24.4 / 29.3).
@@ -149,7 +150,9 @@ export class PlayerConditionModel {
     private refreshModifiers() {
         let quality = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
         let efficiency = CONDITION_BALANCE.efficiency.zoneModifier[this._heartRateZone];
-        if (this._energyDepleted) {
+        // The final sprint is an all-out push: energy may remain visibly empty,
+        // but its quality/efficiency debuffs no longer limit the swimmer.
+        if (this._energyDepleted && this._phase !== RacePhase.SPRINT) {
             quality -= CONDITION_BALANCE.energy.depletedQualityPenalty;
             efficiency -= CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
         }

@@ -3,12 +3,13 @@ import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
-import { GameState, Rating, StrokeType } from '../core/GameConstants';
+import { GameState, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { resolveDiveResult } from '../core/DiveResolver';
 import { DiveResult } from '../core/DiveResult';
 import { SprintTier } from '../condition/ConditionTypes';
 import { formatStrokeQualityLog } from '../core/StrokeQualityScoring';
+import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
 
 export type GameFlowRefs = {
@@ -31,8 +32,6 @@ export type GameFlowRefs = {
     updateSprintTier: (tier: SprintTier) => void;
     debug: (message: string) => void;
 };
-
-const SPRINT_TRIGGER_FRACTION = 0.85;
 
 // Sprint effort -> tier thresholds (doc 19.8). The flow layer reads the player's
 // sustained effort during SPRINT and interprets it as STEADY / PUSH / GAMBLE.
@@ -93,7 +92,6 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStroke(type);
         if (result) {
             this._refs.debug(`stroke=${type} rating=${result.rating} badReason=${result.badReason ?? 'none'} combo=${result.combo}`);
-            this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -108,7 +106,6 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
         if (result) {
             this._refs.debug(formatStrokeQualityLog(`hold=${type}`, result));
-            this.triggerPerfectFeedback(result.rating);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -256,12 +253,13 @@ export class GameFlowController {
             return;
         }
         const playerDistance = playerSwimmer.distance;
+        const distanceToFinish = Math.max(0, getRaceDistance() - playerDistance);
         if (!this._sprintTriggered
             && this._refs.getState() === GameState.RACING
-            && playerDistance >= getRaceDistance() * SPRINT_TRIGGER_FRACTION) {
+            && distanceToFinish <= RACE_PHASE_BALANCE.sprintDistanceFromFinish) {
             this._sprintTriggered = true;
             this._refs.enterSprint();
-            this._refs.debug('sprint phase entered');
+            this._refs.debug(`sprint phase entered remaining=${distanceToFinish.toFixed(1)}m`);
         }
 
         if (this._sprintTriggered && this._refs.getState() === GameState.RACING) {
@@ -285,6 +283,7 @@ export class GameFlowController {
             racerCount: placement.racerCount,
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
+            sprintActive: this._sprintTriggered,
         });
         if (this._refs.getState() === GameState.PRECOUNTDOWN && this._refs.raceCameraDirector.consumePreCountdownReady()) {
             this._refs.debug('pre-countdown camera ready');
@@ -400,12 +399,6 @@ export class GameFlowController {
 
     private calculateDivePower(charge: number): number {
         return Math.max(DIVE_BALANCE.minPower, Math.min(1, DIVE_BALANCE.minPower + clamp01(charge) * (1 - DIVE_BALANCE.minPower)));
-    }
-
-    private triggerPerfectFeedback(rating: Rating) {
-        if (rating === Rating.PERFECT) {
-            this._refs.playerSwimmer?.playPerfectFlash();
-        }
     }
 
     // Interpret sustained sprint effort into a tier and push it only on change

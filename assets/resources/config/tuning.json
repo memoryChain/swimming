@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 7,
   "updatedAt": "2026-07-06T16:13:54.501Z",
   "values": {
     "input.padStrokeDedupeMs": 5,
@@ -9,6 +9,12 @@
     "dive.underwaterRiseSeconds": 1.35,
     "dive.straightenRatio": 0.35,
     "dive.underwaterRiseTilt": 12,
+    "race.sprintDistanceFromFinish": 25,
+    "camera.finishTopViewDistance": 8,
+    "camera.sprintBackDistance": 1.1,
+    "camera.sprintHeight": 0.52,
+    "camera.sprintLookAhead": 0.8,
+    "camera.sprintFov": 58,
     "speed.baseSpeed": 0.8,
     "speed.maxSpeed": 6,
     "speed.strokeBaseAccel": 0.5,
@@ -36,6 +42,9 @@
     "strokeQuality.armCycleHighSpeedPerSecond": 2.0,
     "strokeQuality.armCycleSpeedStart": 1.0,
     "strokeQuality.armCycleSpeedFull": 3.0,
+    "difficulty.beginner.armCycleSpeedScale": 0.68,
+    "difficulty.competitive.armCycleSpeedScale": 0.84,
+    "difficulty.championship.armCycleSpeedScale": 1.0,
     "motion.heldMotionSpeedScale": 1,
     "motion.releasedMotionSpeedScale": 2,
     "motion.kickFlutterMaxCyclesPerSecond": 3.2,
@@ -51,6 +60,9 @@
     "motion.rightBreathBodyRollDegrees": 4,
     "motion.freestyleAxisCenteringOffset": 0.075,
     "motion.freestyleRightBreathAxisCenteringOffset": -0.028,
-    "motion.freestyleRightBreathHeadTurnScale": 1.45
+    "motion.freestyleRightBreathHeadTurnScale": 1.45,
+    "difficulty.beginner.aiDifficultyScale": 0.62,
+    "difficulty.competitive.aiDifficultyScale": 0.82,
+    "difficulty.championship.aiDifficultyScale": 1.0
   }
 }
