@@ -377,17 +377,25 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.setParticleEffectsEnabled(enabled);
     }
 
-    setPreRaceStanding(active: boolean) {
+    setDiveReady(active: boolean, transitionSeconds = CHARACTER_POSE_TUNING.defaultPoseTransitionSeconds) {
         if (this._modelDebugMode) {
             return;
         }
         this._animationPlayer.stop();
         if (active) {
-            this._poseState.enterDiveReady();
+            this._poseState.enterDiveReady(transitionSeconds);
         } else {
             this._poseState.enterPreview();
             this.resetPose();
         }
+    }
+
+    setShowcaseStanding(transitionSeconds = 0) {
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._animationPlayer.stop();
+        this._poseState.enterShowcaseStanding(transitionSeconds);
     }
 
     setFinishFloating() {

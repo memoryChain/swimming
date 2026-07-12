@@ -5,7 +5,8 @@ export interface CharacterRig {
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle?: boolean, playerOutline?: boolean): void;
     setActiveSwimming(active: boolean): void;
     setSwimmerColors(skinColor: Color, suitColor: Color, capColor: Color, robotStyle?: boolean, playerOutline?: boolean): void;
-    setPreRaceStanding(active: boolean): void;
+    setShowcaseStanding(transitionSeconds?: number): void;
+    setDiveReady(active: boolean, transitionSeconds?: number): void;
     setFinishFloating(): void;
     triggerArmStroke(): void;
     triggerKick(): void;

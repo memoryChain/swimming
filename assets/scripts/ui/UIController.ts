@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc';
+import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -246,6 +246,7 @@ export class UIController extends Component {
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
         const soloRace = (stats?.racerCount ?? 2) <= 1;
+        this.layoutResultPanelForAwards();
         this.setSpeedBarVisible(false);
         if (this.resultPanel) {
             this.resultPanel.active = true;
@@ -349,6 +350,15 @@ export class UIController extends Component {
         btn.on(Node.EventType.TOUCH_START, () => tween(btn).to(0.04, { scale: new Vec3(base.x * 0.94, base.y * 0.94, 1) }).start(), this);
         btn.on(Node.EventType.TOUCH_END, () => tween(btn).to(0.06, { scale: base }).start(), this);
         btn.on(Node.EventType.TOUCH_CANCEL, () => tween(btn).to(0.06, { scale: base }).start(), this);
+    }
+
+    private layoutResultPanelForAwards() {
+        if (!this.resultPanel) {
+            return;
+        }
+        const visibleSize = view.getVisibleSize();
+        this.resultPanel.setScale(0.52, 0.52, 1);
+        this.resultPanel.setPosition(visibleSize.width * 0.24, 0, this.resultPanel.position.z);
     }
 
     private pulse(node: Node, scale: number) {

@@ -87,7 +87,7 @@ export class Swimmer extends Component {
         this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.cartoonRig?.setPerfectGlowActive(false);
         this.applyCoursePosition(initialDistance);
-        this.cartoonRig?.setPreRaceStanding(false);
+        this.cartoonRig?.setDiveReady(false);
         if (fromDiveEntry) {
             if (this.cartoonRig) {
                 this.cartoonRig.setDiveStreamlinePose();
@@ -108,9 +108,23 @@ export class Swimmer extends Component {
         this.clearDiveUnderwaterPhase();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
+        // Preserve the currently displayed procedural pose so the rig can blend
+        // from showcase standing into dive-ready instead of snapping via base pose.
+        this.resetPose(true);
+        this.cartoonRig?.setDiveReady(true);
+    }
+
+    prepareShowcaseStanding() {
+        this.captureStartPosition();
+        Tween.stopAllByTarget(this.node);
+        this._motor.reset();
+        this.cartoonRig?.setPerfectGlowActive(false);
+        this.clearDiveUnderwaterPhase();
+        this.node.setPosition(this.divePlatformPosition());
+        this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
-        this.cartoonRig?.setPreRaceStanding(true);
+        this.cartoonRig?.setShowcaseStanding();
     }
 
     performDive(result: DiveResult): number {
@@ -140,7 +154,7 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
-        this.cartoonRig?.setPreRaceStanding(true);
+        this.cartoonRig?.setDiveReady(true);
         tween(this.node)
             .to(crouchDuration, {
                 position: launchStart,
@@ -338,7 +352,19 @@ export class Swimmer extends Component {
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
-        this.cartoonRig?.setPreRaceStanding(true);
+        this.cartoonRig?.setDiveReady(true);
+        this.cartoonRig?.setPerfectGlowActive(false);
+    }
+
+    presentStanding(position: Vec3, facingY: number) {
+        Tween.stopAllByTarget(this.node);
+        this._motor.reset();
+        this.clearDiveUnderwaterPhase();
+        this.node.setPosition(position);
+        this.node.setRotationFromEuler(0, facingY, 0);
+        this.resetPose();
+        this.cartoonRig?.setActiveSwimming(false);
+        this.cartoonRig?.setShowcaseStanding();
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
@@ -466,7 +492,7 @@ export class Swimmer extends Component {
             .start();
     }
 
-    private resetPose() {
+    private resetPose(preserveCartoonPose = false) {
         this.bodyNode?.setPosition(0, 0.18, 0);
         this.bodyNode?.setRotationFromEuler(0, 0, 0);
         this.headNode?.setPosition(1.23, 0.28, 0);
@@ -482,7 +508,9 @@ export class Swimmer extends Component {
         this.resetArmSegments(this.rearArmNode, true);
         this.resetLegSegments(this.legNode);
         this.resetLegSegments(this.rearLegNode);
-        this.cartoonRig?.resetPose();
+        if (!preserveCartoonPose) {
+            this.cartoonRig?.resetPose();
+        }
         if (this.splashNode) {
             this.splashNode.active = false;
         }

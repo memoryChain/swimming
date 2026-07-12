@@ -26,6 +26,7 @@ export type GameFlowRefs = {
     getState: () => GameState;
     clearFinishRanks: () => void;
     showFinishRank: (result: RaceFinishResult) => void;
+    showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
@@ -61,9 +62,26 @@ export class GameFlowController {
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
+        this._refs.playerSwimmer?.prepareShowcaseStanding();
+        this.prepareAiShowcaseStanding();
         this._refs.raceCameraDirector.resetToBroadcast();
-        this._refs.raceCameraDirector.startPreCountdownOrbit();
+        this._refs.raceCameraDirector.startPreCountdownOrbit([
+            this._refs.playerSwimmer?.node.position.z,
+            ...this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).map((swimmer) => swimmer.node.position.z),
+        ].filter((laneZ): laneZ is number => laneZ !== undefined));
         this._refs.setState(GameState.PRECOUNTDOWN);
+    }
+
+    refreshPreRaceShowcaseRoster() {
+        if (this._refs.getState() !== GameState.PRECOUNTDOWN) {
+            return;
+        }
+        this.prepareAiShowcaseStanding();
+        this._refs.raceCameraDirector.updatePreCountdownRacerLanes([
+            this._refs.playerSwimmer?.node.position.z,
+            ...this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).map((swimmer) => swimmer.node.position.z),
+        ].filter((laneZ): laneZ is number => laneZ !== undefined));
+        this._refs.debug(`pre-race showcase roster refreshed racers=${1 + this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).length}`);
     }
 
     restartGame() {
@@ -76,7 +94,7 @@ export class GameFlowController {
         const state = this._refs.getState();
         if (state === GameState.READY) {
             this.startGame();
-        } else if (state === GameState.FINISHED) {
+        } else if (state === GameState.FINISHED || state === GameState.AWARDS) {
             this.restartGame();
         }
     }
@@ -164,6 +182,12 @@ export class GameFlowController {
             this._refs.debug(`state=${state}`);
             if (state === GameState.COUNTDOWN) {
                 this.resetDiveCharge();
+                this._refs.playerSwimmer?.prepareDive();
+                for (const swimmer of this._refs.aiSwimmers) {
+                    if (swimmer.node.active) {
+                        swimmer.prepareDive();
+                    }
+                }
                 this._refs.raceCameraDirector.resetCountdownTimers();
             }
             if (state === GameState.DIVING) {
@@ -205,6 +229,9 @@ export class GameFlowController {
                 racerCount: placement.racerCount,
                 leaderboard: placement.leaderboard,
             });
+            this._refs.clearFinishRanks();
+            this._refs.showAwards(placement.leaderboard ?? []);
+            this._refs.setState(GameState.AWARDS);
         };
         raceManager.onDiveReady = () => {
             if (this._diveChargeStarted) {
@@ -288,6 +315,14 @@ export class GameFlowController {
         for (const swimmer of this._refs.aiSwimmers) {
             if (swimmer !== this._refs.raceManager?.aiSwimmer) {
                 swimmer.reset();
+            }
+        }
+    }
+
+    private prepareAiShowcaseStanding() {
+        for (const swimmer of this._refs.aiSwimmers) {
+            if (swimmer.node.active) {
+                swimmer.prepareShowcaseStanding();
             }
         }
     }

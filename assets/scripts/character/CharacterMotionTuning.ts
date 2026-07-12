@@ -11,6 +11,9 @@
  */
 
 export const CHARACTER_POSE_TUNING = {
+    // Default blend used when switching between static procedural poses.
+    defaultPoseTransitionSeconds: 0.42,
+
     // Default model scale applied to runtime swimmer GLB.
     // 运行时泳手 GLB 的默认模型缩放。
     modelScale: 1.35,

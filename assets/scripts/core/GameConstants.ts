@@ -12,6 +12,7 @@ export enum GameState {
     GLIDING = 'gliding',
     RACING = 'racing',
     FINISHED = 'finished',
+    AWARDS = 'awards',
 }
 
 export enum StrokeType {

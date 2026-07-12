@@ -55,6 +55,7 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
+import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 
@@ -165,6 +166,7 @@ export class GameManager extends Component {
     private _bulletTimeIndex = 0;
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankMarkers = new FinishRankMarkerBuilder(COURSE_LAYOUT);
+    private readonly _awardsPresentation = new AwardsPresentation(COURSE_LAYOUT);
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
@@ -227,6 +229,7 @@ export class GameManager extends Component {
         // overhead UI as soon as the player's own distance reaches the wall.
         const playerIndicatorVisible = this._state !== GameState.READY
             && this._state !== GameState.FINISHED
+            && this._state !== GameState.AWARDS
             && playerBeforeFinish
             && !this._modelDebugFlow?.active;
         if (this._raceCameraButton?.isValid) {
@@ -446,6 +449,10 @@ export class GameManager extends Component {
             getState: () => this._state,
             clearFinishRanks: () => this._finishRankMarkers.clear(),
             showFinishRank: (result) => this._finishRankMarkers.show(result),
+            showAwards: (leaderboard) => {
+                const center = this._awardsPresentation.show(leaderboard);
+                this._raceCameraDirector.startAwardsPresentation(center);
+            },
             applyPlayerDive: (result) => {
                 this._playerCondition.reset();
                 this._playerCondition.setPhase(RacePhase.START);
@@ -611,6 +618,7 @@ export class GameManager extends Component {
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
         }
+        this._gameFlow?.refreshPreRaceShowcaseRoster();
         this.applySplashParticlesEnabled();
         if (this._raceManager) {
             this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
@@ -800,6 +808,7 @@ export class GameManager extends Component {
             case GameState.RACING:
                 return RacePhase.PACE;
             case GameState.FINISHED:
+            case GameState.AWARDS:
                 return RacePhase.RESULT;
             default:
                 return null;
