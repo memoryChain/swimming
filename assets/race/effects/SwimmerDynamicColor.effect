@@ -69,11 +69,11 @@ CCProgram swimmer-color-fs %{
     float brightness = clamp(0.34 + sqrt(clamp(luminance / 0.42, 0.0, 1.0)) * 0.76, 0.34, 1.08);
     vec3 garment = mix(suitColor.rgb, capColor.rgb, mask.g) * brightness;
     vec3 bodyColor = mix(base, garment, garmentMask);
-    // World-space waterline: below the surface the body reads clearly submerged
-    // (blends toward the underwater blue); above stays normal. waterLine.y is the
-    // fade depth, kept small so the boundary is a crisp colour division rather
-    // than a soft gradient. Correct from any camera angle.
-    float belowness = clamp((waterLine.x - v_worldPos.y) / max(waterLine.y, 1e-4), 0.0, 1.0);
+    // World-space waterline as a HARD boundary: every fragment below waterLine.x
+    // is the submerged colour, everything above is normal, with a single sharp
+    // division line (no gradient/blur). underwaterColor.a controls how different
+    // the submerged colour is. Correct from any camera angle.
+    float belowness = step(v_worldPos.y, waterLine.x);
     vec3 submerged = mix(bodyColor, underwaterColor.rgb, 0.66);
     bodyColor = mix(bodyColor, submerged, belowness * underwaterColor.a);
     vec4 outputColor = vec4(bodyColor, baseSample.a * mainColor.a);
