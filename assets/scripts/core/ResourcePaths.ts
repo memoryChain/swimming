@@ -1,3 +1,5 @@
+import type { SampledActionId } from '../character/SampledActionMotionCurve';
+
 export type SwimmerModelVariant = {
     id: string;
     label: string;
@@ -17,12 +19,13 @@ export type SwimmerColorVariant = {
     cap?: readonly [number, number, number];
 };
 
-export type DebugSwimmerActionPose = 'divePrep' | 'freestyle' | 'breaststroke';
+export type DebugSwimmerActionPose = 'divePrep' | 'freestyle' | 'breaststroke' | 'sampledAction';
 
 export type DebugSwimmerActionPreview = {
     id: string;
     label: string;
     pose: DebugSwimmerActionPose;
+    sampledActionId?: SampledActionId;
 };
 
 export type SkyboxFaceName = 'right' | 'left' | 'top' | 'bottom' | 'front' | 'back';
@@ -127,21 +130,7 @@ export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL
 );
 
 export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
-    {
-        id: 'divePrep',
-        label: 'Dive Prep',
-        pose: 'divePrep',
-    },
-    {
-        id: 'freestyle',
-        label: 'Freestyle',
-        pose: 'freestyle',
-    },
-    {
-        id: 'treadWater',
-        label: 'Tread Water',
-        pose: 'breaststroke',
-    },
+    { id: 'waving', label: 'Waving', pose: 'sampledAction', sampledActionId: 'waving' },
 ];
 
 export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [

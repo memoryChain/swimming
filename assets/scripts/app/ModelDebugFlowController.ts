@@ -18,9 +18,11 @@ import { UIFlowController } from '../ui/UIFlowController';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { StandardSkyboxApplier } from './StandardSkyboxApplier';
 
-const DEBUG_WATER_LENGTH = 8.8;
 const DEBUG_ACTION_LANE_WIDTH = DEFAULT_POOL_DEFINITION.laneWidth;
-const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, DEBUG_ACTION_LANE_WIDTH * DEBUG_SWIMMER_ACTION_PREVIEWS.length);
+const DEBUG_ACTION_SPACING = 1.65;
+const DEBUG_ACTION_GROUP_CENTER_X = 12;
+const DEBUG_WATER_LENGTH = 8.8;
+const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, (DEBUG_SWIMMER_ACTION_PREVIEWS.length - 1) * DEBUG_ACTION_SPACING + 2.4);
 const DEBUG_WATER_HALF_WIDTH = DEBUG_WATER_WIDTH * 0.5;
 const DEFAULT_MODEL_DEBUG_SPEED_SCALE = 1;
 
@@ -60,7 +62,7 @@ type ModelDebugActionPreviewInstance = {
 export class ModelDebugFlowController {
     private _active = false;
     private _cameraDragging = false;
-    private _cameraYaw = Math.PI / 2;
+    private _cameraYaw = 0;
     private _cameraPitch = 0.04;
     private _cameraDistance = 3.2;
     private _speedScale = DEFAULT_MODEL_DEBUG_SPEED_SCALE;
@@ -86,9 +88,9 @@ export class ModelDebugFlowController {
     enter() {
         this._refs.debug('enterModelDebug');
         this._active = true;
-        this._cameraYaw = Math.PI / 2;
+        this._cameraYaw = 0;
         this._cameraPitch = 0.04;
-        this._cameraDistance = this.isPortraitViewport() ? 4.2 : 3.2;
+        this._cameraDistance = this.isPortraitViewport() ? 6.5 : 5.5;
         this._cameraDragging = false;
         this._speedScale = DEFAULT_MODEL_DEBUG_SPEED_SCALE;
         this._lastRating = null;
@@ -239,7 +241,7 @@ export class ModelDebugFlowController {
             if (preview.config.pose === 'freestyle') {
                 preview.rig.updateFreestyleFromMotor(dt, this._debugMotor);
             } else {
-                preview.rig.updateBreaststrokePreview(dt);
+                preview.rig.updateDebugActionPreview(dt);
             }
         }
         this.updateDebugWaterReference();
@@ -297,7 +299,7 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        this._cameraDistance = clamp(this._cameraDistance - event.getScrollY() * 0.004, 0.85, 10.5);
+        this._cameraDistance = clamp(this._cameraDistance - event.getScrollY() * 0.004, 0.85, 20);
         return true;
     }
 
@@ -330,10 +332,12 @@ export class ModelDebugFlowController {
             return;
         }
         this._actionPreviewIndex = positiveMod(this._actionPreviewIndex + 1, DEBUG_SWIMMER_ACTION_PREVIEWS.length);
+        this.refreshActionPreviewVisibility();
         this.updateActionLabel();
         const preview = this.currentActionPreview();
         if (preview) {
             this._refs.debug(`model debug action=${preview.config.label}`);
+            this.updateCamera(0.32);
         }
     }
 
@@ -362,7 +366,7 @@ export class ModelDebugFlowController {
         for (const preview of this._actionPreviews) {
             if (preview.rig.setModelVariant(variant.id)) {
                 preview.rig.setSkinOutfit('trunksA');
-                preview.rig.setDebugActionPose(preview.config.pose);
+                preview.rig.setDebugActionPose(preview.config.pose, preview.config.sampledActionId);
                 preview.rig.setModelDebugMode(true);
                 applied = true;
             }
@@ -498,7 +502,7 @@ export class ModelDebugFlowController {
 
     private debugCameraTarget(): Vec3 {
         const previewPosition = this.currentActionPreview()?.node.position;
-        const baseX = previewPosition?.x ?? 12;
+        const baseX = previewPosition?.x ?? DEBUG_ACTION_GROUP_CENTER_X;
         const baseY = previewPosition?.y ?? this._refs.playerSwimmer?.swimWorldY ?? 0.24;
         const baseZ = previewPosition?.z ?? this._refs.playerLaneZ;
         return new Vec3(baseX + 0.42, baseY + 0.76, baseZ);
@@ -517,19 +521,19 @@ export class ModelDebugFlowController {
         this._actionPreviewRoot.active = true;
         const baseY = this._refs.playerSwimmer?.swimWorldY ?? 0;
         const waterY = this._refs.playerSwimmer?.waterWorldY ?? baseY;
-        for (let laneIndex = 0; laneIndex < DEBUG_SWIMMER_ACTION_PREVIEWS.length; laneIndex++) {
-            const config = DEBUG_SWIMMER_ACTION_PREVIEWS[laneIndex];
+        for (let actionIndex = 0; actionIndex < DEBUG_SWIMMER_ACTION_PREVIEWS.length; actionIndex++) {
+            const config = DEBUG_SWIMMER_ACTION_PREVIEWS[actionIndex];
             let preview = this._actionPreviews.find((item) => item.config.id === config.id);
             if (!preview) {
                 const node = new Node(`ModelDebugAction_${config.id}`);
                 node.setParent(this._actionPreviewRoot);
                 node.layer = Layers.Enum.DEFAULT;
                 const rig = node.addComponent(CartoonSwimmerRig);
-                preview = { config, laneIndex, node, rig };
+                preview = { config, laneIndex: actionIndex, node, rig };
                 this._actionPreviews.push(preview);
                 rig.setModelVariant(DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex]?.id ?? 'swimmer0621_2');
                 rig.setColorVariant(SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex]?.id ?? 'original');
-                rig.setDebugActionPose(config.pose);
+                rig.setDebugActionPose(config.pose, config.sampledActionId);
                 rig.build(
                     new Color(246, 176, 118),
                     new Color(245, 42, 64),
@@ -538,18 +542,13 @@ export class ModelDebugFlowController {
                     true,
                 );
                 rig.setSkinOutfit('trunksA');
-                rig.setModelDebugMode(true);
             }
-            preview.laneIndex = laneIndex;
+            preview.laneIndex = actionIndex;
             preview.node.active = true;
-            preview.rig.setDebugActionPose(config.pose);
+            preview.rig.setDebugActionPose(config.pose, config.sampledActionId);
             preview.rig.setWaterY(waterY);
             preview.rig.setModelDebugMode(true);
-            preview.node.setPosition(
-                this.debugActionPreviewX(),
-                baseY,
-                this.debugActionLaneZ(laneIndex),
-            );
+            preview.node.setPosition(this.debugActionPreviewX(), baseY, this.debugActionLaneZ(actionIndex));
             preview.node.setRotationFromEuler(0, 0, 0);
         }
     }
@@ -568,12 +567,18 @@ export class ModelDebugFlowController {
     }
 
     private debugActionPreviewX(): number {
-        return 12;
+        return DEBUG_ACTION_GROUP_CENTER_X;
     }
 
-    private debugActionLaneZ(laneIndex: number): number {
+    private debugActionLaneZ(actionIndex: number): number {
         const centerIndex = (DEBUG_SWIMMER_ACTION_PREVIEWS.length - 1) * 0.5;
-        return this._refs.playerLaneZ + (laneIndex - centerIndex) * DEBUG_ACTION_LANE_WIDTH;
+        return this._refs.playerLaneZ + (actionIndex - centerIndex) * DEBUG_ACTION_SPACING;
+    }
+
+    private refreshActionPreviewVisibility() {
+        for (const preview of this._actionPreviews) {
+            preview.node.active = true;
+        }
     }
 
     private debugActionLaneGroupCenterZ(): number {
@@ -657,7 +662,7 @@ export class ModelDebugFlowController {
         const previewPosition = preview.node.position;
         const waterY = preview.rig.waterY ?? previewPosition.y;
         water.active = true;
-        water.setPosition(previewPosition.x + 0.42, waterY, this.debugActionLaneGroupCenterZ());
+        water.setPosition(DEBUG_ACTION_GROUP_CENTER_X + 0.42, waterY, this.debugActionLaneGroupCenterZ());
     }
 
     private ensureDebugWaterReference(parent: Node): Node {
@@ -671,15 +676,10 @@ export class ModelDebugFlowController {
 
         const water = makeDebugMaterial('ModelDebugWater', new Color(42, 208, 232, 72), true);
         const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 150), true);
-        const lane = makeDebugMaterial('ModelDebugWaterLane', new Color(30, 142, 218, 120), true);
 
         const waterRenderer = addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(DEBUG_WATER_LENGTH, 0.018, DEBUG_WATER_WIDTH));
         addDebugBox(root, 'ModelDebugWaterNearEdge', edge, new Vec3(0, 0.014, -DEBUG_WATER_HALF_WIDTH - 0.02), new Vec3(DEBUG_WATER_LENGTH, 0.012, 0.018));
         addDebugBox(root, 'ModelDebugWaterFarEdge', edge, new Vec3(0, 0.014, DEBUG_WATER_HALF_WIDTH + 0.02), new Vec3(DEBUG_WATER_LENGTH, 0.012, 0.018));
-        for (let i = 1; i < DEBUG_SWIMMER_ACTION_PREVIEWS.length; i++) {
-            const z = -DEBUG_WATER_HALF_WIDTH + DEBUG_ACTION_LANE_WIDTH * i;
-            addDebugBox(root, `ModelDebugWaterLaneLine${i}`, lane, new Vec3(0, 0.016, z), new Vec3(DEBUG_WATER_LENGTH, 0.01, 0.012));
-        }
         this.applyTransparentDebugWaterMaterial(waterRenderer);
 
         this._debugWaterRoot = root;

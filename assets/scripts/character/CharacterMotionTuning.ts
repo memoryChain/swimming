@@ -38,6 +38,10 @@ export const CHARACTER_POSE_TUNING = {
     // 跳台预备姿态下模型本地 Y 高度。
     divePrepModelY: 0.44,
 
+    // Straight showcase stance uses the full standing height from venue calibration.
+    // The crouched dive-ready pose intentionally remains lower.
+    showcaseStandingModelY: 0.55,
+
     // Model Euler rotation for the start-block dive-prep pose.
     // 跳台预备姿态下模型欧拉角。
     divePrepModelEuler: [0, 90, 0] as const,

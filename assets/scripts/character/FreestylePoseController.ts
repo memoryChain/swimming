@@ -4,6 +4,7 @@ import { MOTION_TUNING } from '../core/InputTuning';
 import { BREASTSTROKE_MOTION_SAMPLES, BreaststrokeBoneName, BreaststrokeMotionSample } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
 import { DIVE_PREP_POSE_SAMPLE, DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
+import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotionSample } from './SampledActionMotionCurve';
 
 const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new Set([
     'L_Clavicle',
@@ -84,6 +85,7 @@ export class FreestylePoseController {
     private _rightToe: Node = null;
     private readonly _breaststrokeBones = new Map<BreaststrokeBoneName, Node>();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
+    private readonly _boneBasePosition = new Map<Node, Vec3>();
     private readonly _tmpOffsetRotation = new Quat();
     private readonly _tmpResultRotation = new Quat();
     private readonly _tmpAxisRotation = new Quat();
@@ -139,9 +141,11 @@ export class FreestylePoseController {
         Vec3.copy(this.rootBaseEuler, this.root.eulerAngles);
         Quat.copy(this.rootBaseRotation, this.root.rotation);
         this._boneBaseRotation.clear();
+        this._boneBasePosition.clear();
         for (const bone of this.manualBones) {
             if (bone) {
                 this._boneBaseRotation.set(bone, Quat.clone(bone.rotation));
+                this._boneBasePosition.set(bone, Vec3.clone(bone.position));
             }
         }
     }
@@ -152,6 +156,11 @@ export class FreestylePoseController {
         for (const [bone, rotation] of this._boneBaseRotation) {
             if (bone?.isValid) {
                 bone.setRotation(rotation);
+            }
+        }
+        for (const [bone, position] of this._boneBasePosition) {
+            if (bone?.isValid) {
+                bone.setPosition(position);
             }
         }
     }
@@ -351,6 +360,20 @@ export class FreestylePoseController {
         }
         this.restoreBasePose();
         this.applySampleRotations(DIVE_PREP_POSE_SAMPLE, power);
+    }
+
+    applySampledActionPose(actionId: SampledActionId, phase: number, power = 1) {
+        if (!this.root) {
+            return;
+        }
+        const action = findSampledDebugAction(actionId);
+        if (!action) {
+            return;
+        }
+        this.restoreBasePose();
+        const sample = sampleDebugActionMotion(action.samples, phase);
+        this.applySampledActionTranslation(sample, power);
+        this.applySampledActionRotations(sample, power);
     }
 
     applyDivePrepToStreamlinePose(blend: number) {
@@ -742,6 +765,7 @@ export class FreestylePoseController {
     }
 
     private applySampleRotations(sample: DivePrepPoseSample, power: number) {
+        // DivePrepPoseCurve stores offsets relative to the captured model base pose.
         const blend = clamp(power, 0, 1);
         for (const name of Object.keys(sample.rotations) as DivePrepBoneName[]) {
             const rotation = sample.rotations[name];
@@ -764,6 +788,43 @@ export class FreestylePoseController {
                 bone.setRotation(this._tmpOffsetRotation);
             }
         }
+    }
+
+    private applySampledActionRotations(sample: SampledActionMotionSample, power: number) {
+        // SampledActionMotionCurve stores absolute local rotations exported by glTF.
+        const blend = clamp(power, 0, 1);
+        for (const name of Object.keys(sample.rotations) as SampledActionBoneName[]) {
+            const rotation = sample.rotations[name];
+            if (!rotation) {
+                continue;
+            }
+            const bone = this._breaststrokeBones.get(name as BreaststrokeBoneName);
+            if (!bone) {
+                continue;
+            }
+            const base = this._boneBaseRotation.get(bone);
+            this.setQuatFromTuple(this._tmpOffsetRotation, rotation);
+            if (base) {
+                Quat.slerp(this._tmpResultRotation, base, this._tmpOffsetRotation, blend);
+                bone.setRotation(this._tmpResultRotation);
+            } else {
+                bone.setRotation(this._tmpOffsetRotation);
+            }
+        }
+    }
+
+    private applySampledActionTranslation(sample: SampledActionMotionSample, power: number) {
+        if (!this._hips) {
+            return;
+        }
+        const base = this._boneBasePosition.get(this._hips);
+        if (!base) {
+            return;
+        }
+        const blend = clamp(power, 0, 1);
+        this._tmpBlendPosition.set(sample.hipTranslation[0], sample.hipTranslation[1], sample.hipTranslation[2]);
+        Vec3.lerp(this._tmpBlendPosition, base, this._tmpBlendPosition, blend);
+        this._hips.setPosition(this._tmpBlendPosition);
     }
 
     private applyDivePrepArmReach(power: number) {
@@ -1141,6 +1202,34 @@ function sampleBreaststrokeMotion(phase: number): BreaststrokeMotionSample {
         }
     }
     return samples[samples.length - 1];
+}
+
+function sampleDebugActionMotion(samples: readonly SampledActionMotionSample[], phase: number): SampledActionMotionSample {
+    if (samples.length <= 1) {
+        return samples[0];
+    }
+    const p = positiveMod(phase, 1);
+    for (let i = 0; i < samples.length - 1; i++) {
+        const current = samples[i];
+        const next = samples[i + 1];
+        if (p >= current.phase && p <= next.phase) {
+            const t = smoothRange(p, current.phase, next.phase);
+            return {
+                phase: p,
+                hipTranslation: lerpVectorTuple(current.hipTranslation, next.hipTranslation, t),
+                rotations: slerpSampledActionRotations(current.rotations, next.rotations, t),
+            };
+        }
+    }
+    return samples[samples.length - 1];
+}
+
+function slerpSampledActionRotations(
+    from: SampledActionMotionSample['rotations'],
+    to: SampledActionMotionSample['rotations'],
+    t: number,
+): SampledActionMotionSample['rotations'] {
+    return slerpBreaststrokeRotations(from, to, t);
 }
 
 function lerpVectorTuple(from: readonly [number, number, number], to: readonly [number, number, number], t: number): readonly [number, number, number] {

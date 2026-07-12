@@ -2,6 +2,9 @@ import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { FreestylePoseController, ProceduralPoseSnapshot } from './FreestylePoseController';
+import { findSampledDebugAction } from './SampledActionMotionCurve';
+
+const SHOWCASE_ACTION = findSampledDebugAction('waving');
 
 export enum CharacterPoseState {
     Preview = 'preview',
@@ -44,6 +47,7 @@ export class CharacterPoseStateController {
     private _diveTransitionElapsed = 0;
     private _diveTransitionDuration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds;
     private _treadWaterStartTime = 0;
+    private _showcaseStartTime = 0;
     private _poseTransition: PoseTransition | null = null;
     private readonly _transitionPosition = new Vec3();
     private readonly _transitionRotation = new Quat();
@@ -64,6 +68,7 @@ export class CharacterPoseStateController {
     }
 
     enterShowcaseStanding(transitionSeconds = 0) {
+        this._showcaseStartTime = this._options.getSelfTime();
         this.transitionTo(CharacterPoseState.ShowcaseStanding, transitionSeconds);
     }
 
@@ -93,6 +98,7 @@ export class CharacterPoseStateController {
     reset() {
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
+        this._showcaseStartTime = 0;
         this._state = CharacterPoseState.Preview;
         this._poseTransition = null;
     }
@@ -114,6 +120,10 @@ export class CharacterPoseStateController {
         }
         if (this._state === CharacterPoseState.DiveFlight) {
             this.updateDiveFlight(dt);
+            return true;
+        }
+        if (this._state === CharacterPoseState.ShowcaseStanding) {
+            this.updateShowcaseStanding();
             return true;
         }
         if (this._state === CharacterPoseState.TreadWater) {
@@ -244,8 +254,8 @@ export class CharacterPoseStateController {
         if (!this._options.getRoot()) {
             return;
         }
-        this.applyDivePrepModelSetup();
-        this._options.pose.applyPreRaceStandingPose();
+        this.applyShowcaseStandingModelSetup();
+        this.applyShowcasePose(0);
         this._options.updateSplashSurface(0);
         this._options.setSplashVisible(false);
     }
@@ -318,6 +328,16 @@ export class CharacterPoseStateController {
         model.setRotationFromEuler(CHARACTER_POSE_TUNING.divePrepModelEuler[0], CHARACTER_POSE_TUNING.divePrepModelEuler[1], CHARACTER_POSE_TUNING.divePrepModelEuler[2]);
     }
 
+    private applyShowcaseStandingModelSetup() {
+        const model = this._options.getModel();
+        if (!model) {
+            return;
+        }
+        model.setPosition(CHARACTER_POSE_TUNING.divePrepModelBackOffset, CHARACTER_POSE_TUNING.showcaseStandingModelY, 0);
+        model.setScale(CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale);
+        model.setRotationFromEuler(CHARACTER_POSE_TUNING.divePrepModelEuler[0], CHARACTER_POSE_TUNING.divePrepModelEuler[1], CHARACTER_POSE_TUNING.divePrepModelEuler[2]);
+    }
+
     private updateTreadWater() {
         const model = this._options.getModel();
         if (!model || !this._options.getRoot()) {
@@ -326,6 +346,24 @@ export class CharacterPoseStateController {
         const bob = Math.sin(this._options.getSelfTime() * CHARACTER_POSE_TUNING.finishFloatBobSpeed) * CHARACTER_POSE_TUNING.finishFloatBobAmplitude;
         model.setPosition(0, CHARACTER_POSE_TUNING.finishFloatBaseY + bob, 0);
         this.applyTreadWaterPose();
+    }
+
+    private updateShowcaseStanding() {
+        const elapsed = Math.max(0, this._options.getSelfTime() - this._showcaseStartTime);
+        const phase = SHOWCASE_ACTION
+            ? positiveMod(elapsed / Math.max(0.1, SHOWCASE_ACTION.durationSeconds), 1)
+            : 0;
+        this.applyShowcasePose(phase);
+        this._options.updateSplashSurface(0);
+        this._options.setSplashVisible(false);
+    }
+
+    private applyShowcasePose(phase: number) {
+        if (SHOWCASE_ACTION) {
+            this._options.pose.applySampledActionPose(SHOWCASE_ACTION.id, phase, 1);
+            return;
+        }
+        this._options.pose.applyPreRaceStandingPose();
     }
 
     private applyTreadWaterPose() {

@@ -5,7 +5,7 @@ import bpy
 
 
 PROJECT_ROOT = r"F:\myworkspace\cocosProjects\SpeedSwimming"
-SOURCE_GLB = os.path.join(PROJECT_ROOT, "assets", "resources", "models", "UserSwimmer0621_2MixamoSwimming.glb")
+SOURCE_GLB = os.path.join(PROJECT_ROOT, "assets", "race", "models", "UserSwimmer0621_2MixamoSwimming.glb")
 OUTPUT_TS = os.path.join(PROJECT_ROOT, "assets", "scripts", "character", "BreaststrokeMotionCurve.ts")
 
 

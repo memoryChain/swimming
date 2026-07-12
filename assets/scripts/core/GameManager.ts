@@ -117,6 +117,7 @@ export class GameManager extends Component {
     private readonly _dialScreenOffsetY = 66;
     private readonly _playerSpeedScreenOffsetY = 52;
     private readonly _playerSpeedTopViewOffsetY = 80;
+    private readonly _playerPreRaceMarkerScreenOffsetY = 18;
     // Perspective scaling: scale = refDistance / cameraDistance, clamped. At the
     // reference distance the dial is drawn at 1:1; nearer swimmers get a bigger
     // dial, farther ones a smaller one.
@@ -225,13 +226,17 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
         const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
+        const presentationIndicatorVisible = this._state === GameState.PRECOUNTDOWN
+            || this._state === GameState.AWARDS;
         // The player can finish before the last AI swimmer. Hide player-specific
-        // overhead UI as soon as the player's own distance reaches the wall.
-        const playerIndicatorVisible = this._state !== GameState.READY
-            && this._state !== GameState.FINISHED
-            && this._state !== GameState.AWARDS
-            && playerBeforeFinish
-            && !this._modelDebugFlow?.active;
+        // overhead UI as soon as the player's own distance reaches the wall during
+        // the race, but always identify the protagonist in presentation stages.
+        const playerIndicatorVisible = !this._modelDebugFlow?.active
+            && (presentationIndicatorVisible || (
+                this._state !== GameState.READY
+                && this._state !== GameState.FINISHED
+                && playerBeforeFinish
+            ));
         if (this._raceCameraButton?.isValid) {
             this._raceCameraButton.active = playerIndicatorVisible && raceActive;
         }
@@ -966,7 +971,9 @@ export class GameManager extends Component {
         if (playerMarker?.isValid) {
             // In top view the swimmer is visually very thin, so leave a larger
             // gap to keep the triangle tip from covering the character model.
-            const markerOffsetY = this._raceCameraDirector.topViewActive ? 14 : -8;
+            const markerOffsetY = this._state === GameState.PRECOUNTDOWN
+                ? this._playerPreRaceMarkerScreenOffsetY
+                : this._raceCameraDirector.topViewActive ? 14 : -8;
             playerMarker.setPosition(cx, this._tmpDialAnchorUi.y + markerOffsetY, 0);
             playerMarker.setScale(1, 1, 1);
         }
