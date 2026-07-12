@@ -1,10 +1,11 @@
-import { Node } from 'cc';
+import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
-import { FreestylePoseController } from './FreestylePoseController';
+import { FreestylePoseController, ProceduralPoseSnapshot } from './FreestylePoseController';
 
 export enum CharacterPoseState {
     Preview = 'preview',
+    ShowcaseStanding = 'showcase-standing',
     DiveReady = 'dive-ready',
     DiveFlight = 'dive-flight',
     Glide = 'glide',
@@ -23,11 +24,30 @@ export type CharacterPoseStateControllerOptions = {
     raceModelEulerDegrees: () => readonly [number, number, number];
 };
 
+type ModelTransformSnapshot = {
+    position: Vec3;
+    rotation: Quat;
+    scale: Vec3;
+};
+
+type PoseTransition = {
+    fromPose: ProceduralPoseSnapshot;
+    toPose: ProceduralPoseSnapshot;
+    fromModel: ModelTransformSnapshot;
+    toModel: ModelTransformSnapshot;
+    elapsed: number;
+    duration: number;
+};
+
 export class CharacterPoseStateController {
     private _state = CharacterPoseState.Preview;
     private _diveTransitionElapsed = 0;
     private _diveTransitionDuration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds;
     private _treadWaterStartTime = 0;
+    private _poseTransition: PoseTransition | null = null;
+    private readonly _transitionPosition = new Vec3();
+    private readonly _transitionRotation = new Quat();
+    private readonly _transitionScale = new Vec3();
 
     constructor(private readonly _options: CharacterPoseStateControllerOptions) {}
 
@@ -43,8 +63,12 @@ export class CharacterPoseStateController {
         this.setState(CharacterPoseState.Preview);
     }
 
-    enterDiveReady() {
-        this.setState(CharacterPoseState.DiveReady);
+    enterShowcaseStanding(transitionSeconds = 0) {
+        this.transitionTo(CharacterPoseState.ShowcaseStanding, transitionSeconds);
+    }
+
+    enterDiveReady(transitionSeconds = 0) {
+        this.transitionTo(CharacterPoseState.DiveReady, transitionSeconds);
     }
 
     enterDiveFlight(duration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds) {
@@ -70,11 +94,13 @@ export class CharacterPoseStateController {
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
         this._state = CharacterPoseState.Preview;
+        this._poseTransition = null;
     }
 
     resetRuntime() {
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
+        this._poseTransition = null;
     }
 
     reapplyCurrentState() {
@@ -82,6 +108,10 @@ export class CharacterPoseStateController {
     }
 
     update(dt: number, hasAnimation: boolean): boolean {
+        if (this._poseTransition) {
+            this.updatePoseTransition(dt);
+            return true;
+        }
         if (this._state === CharacterPoseState.DiveFlight) {
             this.updateDiveFlight(dt);
             return true;
@@ -97,12 +127,77 @@ export class CharacterPoseStateController {
     }
 
     private setState(state: CharacterPoseState) {
+        this._poseTransition = null;
         this._state = state;
         this.applyStateSetup(state);
     }
 
+    transitionTo(state: CharacterPoseState, transitionSeconds: number) {
+        const duration = Math.max(0, transitionSeconds);
+        const model = this._options.getModel();
+        if (duration <= 0 || !model || !this._options.getRoot()) {
+            this.setState(state);
+            return;
+        }
+        if (state === this._state && !this._poseTransition) {
+            return;
+        }
+
+        const fromPose = this._options.pose.capturePoseSnapshot();
+        const fromModel = captureModelTransform(model);
+        if (!fromPose) {
+            this.setState(state);
+            return;
+        }
+
+        this._state = state;
+        this.applyStateSetup(state);
+        const toPose = this._options.pose.capturePoseSnapshot();
+        const toModel = captureModelTransform(model);
+        if (!toPose) {
+            this._poseTransition = null;
+            return;
+        }
+
+        this._options.pose.applyPoseSnapshot(fromPose);
+        applyModelTransform(model, fromModel);
+        this._poseTransition = {
+            fromPose,
+            toPose,
+            fromModel,
+            toModel,
+            elapsed: 0,
+            duration,
+        };
+    }
+
+    private updatePoseTransition(dt: number) {
+        const transition = this._poseTransition;
+        const model = this._options.getModel();
+        if (!transition || !model) {
+            this._poseTransition = null;
+            return;
+        }
+        transition.elapsed += Math.max(0, dt);
+        const ratio = Math.min(1, transition.elapsed / transition.duration);
+        const eased = smoothStep(ratio);
+        Vec3.lerp(this._transitionPosition, transition.fromModel.position, transition.toModel.position, eased);
+        Quat.slerp(this._transitionRotation, transition.fromModel.rotation, transition.toModel.rotation, eased);
+        Vec3.lerp(this._transitionScale, transition.fromModel.scale, transition.toModel.scale, eased);
+        model.setPosition(this._transitionPosition);
+        model.setRotation(this._transitionRotation);
+        model.setScale(this._transitionScale);
+        this._options.pose.blendPoseSnapshots(transition.fromPose, transition.toPose, eased);
+        if (ratio >= 1) {
+            this._poseTransition = null;
+        }
+    }
+
     private applyStateSetup(state: CharacterPoseState) {
         switch (state) {
+            case CharacterPoseState.ShowcaseStanding:
+                this.applyShowcaseStandingSetup();
+                break;
             case CharacterPoseState.DiveReady:
                 this.applyDiveReadySetup();
                 break;
@@ -141,6 +236,16 @@ export class CharacterPoseStateController {
         }
         this.applyDivePrepModelSetup();
         this._options.pose.applyDivePrepPose(1);
+        this._options.updateSplashSurface(0);
+        this._options.setSplashVisible(false);
+    }
+
+    private applyShowcaseStandingSetup() {
+        if (!this._options.getRoot()) {
+            return;
+        }
+        this.applyDivePrepModelSetup();
+        this._options.pose.applyPreRaceStandingPose();
         this._options.updateSplashSurface(0);
         this._options.setSplashVisible(false);
     }
@@ -243,4 +348,18 @@ function smoothStep(value: number): number {
 
 function lerp(from: number, to: number, t: number): number {
     return from + (to - from) * Math.max(0, Math.min(1, t));
+}
+
+function captureModelTransform(model: Node): ModelTransformSnapshot {
+    return {
+        position: model.position.clone(),
+        rotation: Quat.clone(model.rotation),
+        scale: model.scale.clone(),
+    };
+}
+
+function applyModelTransform(model: Node, transform: ModelTransformSnapshot) {
+    model.setPosition(transform.position);
+    model.setRotation(transform.rotation);
+    model.setScale(transform.scale);
 }

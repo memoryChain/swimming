@@ -47,6 +47,12 @@ const BONE_ALIASES: Record<string, string[]> = {
     RightToeBase: ['R_ToeBase'],
 };
 
+export type ProceduralPoseSnapshot = {
+    rootPosition: Vec3;
+    rootRotation: Quat;
+    boneRotations: Map<Node, Quat>;
+};
+
 export class FreestylePoseController {
     public root: Node = null;
     public readonly rootBasePos = new Vec3();
@@ -147,6 +153,55 @@ export class FreestylePoseController {
             if (bone?.isValid) {
                 bone.setRotation(rotation);
             }
+        }
+    }
+
+    capturePoseSnapshot(): ProceduralPoseSnapshot | null {
+        if (!this.root) {
+            return null;
+        }
+        const boneRotations = new Map<Node, Quat>();
+        for (const bone of this.manualBones) {
+            if (bone?.isValid) {
+                boneRotations.set(bone, Quat.clone(bone.rotation));
+            }
+        }
+        return {
+            rootPosition: this.root.position.clone(),
+            rootRotation: Quat.clone(this.root.rotation),
+            boneRotations,
+        };
+    }
+
+    applyPoseSnapshot(snapshot: ProceduralPoseSnapshot) {
+        if (!this.root) {
+            return;
+        }
+        this.root.setPosition(snapshot.rootPosition);
+        this.root.setRotation(snapshot.rootRotation);
+        for (const [bone, rotation] of snapshot.boneRotations) {
+            if (bone.isValid) {
+                bone.setRotation(rotation);
+            }
+        }
+    }
+
+    blendPoseSnapshots(from: ProceduralPoseSnapshot, to: ProceduralPoseSnapshot, ratio: number) {
+        if (!this.root) {
+            return;
+        }
+        const t = clamp(ratio, 0, 1);
+        Vec3.lerp(this._tmpBlendPosition, from.rootPosition, to.rootPosition, t);
+        this.root.setPosition(this._tmpBlendPosition);
+        Quat.slerp(this._tmpBlendRotation, from.rootRotation, to.rootRotation, t);
+        this.root.setRotation(this._tmpBlendRotation);
+        for (const [bone, fromRotation] of from.boneRotations) {
+            const toRotation = to.boneRotations.get(bone);
+            if (!toRotation || !bone.isValid) {
+                continue;
+            }
+            Quat.slerp(this._tmpBlendRotation, fromRotation, toRotation, t);
+            bone.setRotation(this._tmpBlendRotation);
         }
     }
 

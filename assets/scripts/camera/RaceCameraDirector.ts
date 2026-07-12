@@ -2,7 +2,10 @@ import { Camera, Node, Vec3 } from 'cc';
 import { COUNTDOWN_SECONDS, getRaceDistance } from '../core/GameBalance';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 
-const PRE_COUNTDOWN_CAMERA_SECONDS = 2.35;
+const PRE_RACE_HERO_SECONDS = 2.2;
+const PRE_RACE_RIVALS_SECONDS = 2.8;
+const PRE_RACE_RETURN_SECONDS = 0.75;
+const PRE_COUNTDOWN_CAMERA_SECONDS = PRE_RACE_HERO_SECONDS + PRE_RACE_RIVALS_SECONDS + PRE_RACE_RETURN_SECONDS;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
 const DIVE_SIDE_MIN_SECONDS = 0.58;
@@ -85,6 +88,9 @@ export class RaceCameraDirector {
     private _preCountdownElapsed = 0;
     private _preCountdownActive = false;
     private _preCountdownReady = false;
+    private _preCountdownLaneZs: number[] = [];
+    private _preCountdownShotIndex = -1;
+    private _awardsCenter: Vec3 | null = null;
 
     constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
@@ -116,6 +122,7 @@ export class RaceCameraDirector {
     }
 
     resetToBroadcast() {
+        this._awardsCenter = null;
         this.selectMode(RaceCameraMode.Broadcast);
         this.resetBroadcastCamera();
     }
@@ -129,12 +136,15 @@ export class RaceCameraDirector {
         this._underwaterViewActive = false;
     }
 
-    startPreCountdownOrbit() {
+    startPreCountdownOrbit(laneZs: number[] = []) {
         this._mode = RaceCameraMode.Broadcast;
         this._topViewActive = false;
+        this._awardsCenter = null;
         this._preCountdownElapsed = 0;
         this._preCountdownActive = true;
         this._preCountdownReady = false;
+        this.updatePreCountdownRacerLanes(laneZs);
+        this._preCountdownShotIndex = -1;
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
         this._diveShotElapsed = -1;
@@ -143,6 +153,25 @@ export class RaceCameraDirector {
         this._broadcastCameraFov = 52;
         this._broadcastDesiredFov = 52;
         this.resetBroadcastCamera();
+    }
+
+    updatePreCountdownRacerLanes(laneZs: number[]) {
+        this._preCountdownLaneZs = laneZs
+            .filter((laneZ) => Number.isFinite(laneZ))
+            .filter((laneZ) => Math.abs(laneZ - this._playerLaneZ) > 0.001)
+            .sort((a, b) => a - b);
+    }
+
+    startAwardsPresentation(center: Vec3) {
+        this._mode = RaceCameraMode.Broadcast;
+        this._topViewActive = false;
+        this._underwaterViewActive = false;
+        this._preCountdownActive = false;
+        this._preCountdownReady = false;
+        this._awardsCenter = center.clone();
+        this._broadcastCameraFov = 38;
+        this._broadcastDesiredFov = 38;
+        this.applyFov();
     }
 
     consumePreCountdownReady(): boolean {
@@ -248,14 +277,39 @@ export class RaceCameraDirector {
         let desiredTarget: Vec3;
         let fixedTopView = false;
         let underwaterView = false;
+        let hardCameraCut = false;
         const wasUnderwaterView = this._underwaterViewActive;
-        if (this._preCountdownActive) {
-            const ratio = smoothStep(clamp(this._preCountdownElapsed / PRE_COUNTDOWN_CAMERA_SECONDS, 0, 1));
-            const target = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
+        if (this._awardsCenter) {
+            // Aim to the right of the temporary podium so the winners occupy the
+            // left half of the screen and leave room for the result panel.
+            desiredTarget = new Vec3(this._awardsCenter.x + 2.35, this._awardsCenter.y + 1.05, this._awardsCenter.z);
+            desiredPos = new Vec3(desiredTarget.x, desiredTarget.y + 2.35, desiredTarget.z + 9.4);
+            this._broadcastDesiredFov = 38;
+        } else if (this._preCountdownActive) {
+            const elapsed = this._preCountdownElapsed;
+            let showcaseLaneZ = this._playerLaneZ;
+            let shotIndex = 0;
+            if (elapsed >= PRE_RACE_HERO_SECONDS && elapsed < PRE_RACE_HERO_SECONDS + PRE_RACE_RIVALS_SECONDS && this._preCountdownLaneZs.length > 0) {
+                const rivalProgress = clamp((elapsed - PRE_RACE_HERO_SECONDS) / PRE_RACE_RIVALS_SECONDS, 0, 0.9999);
+                const rivalIndex = Math.min(
+                    this._preCountdownLaneZs.length - 1,
+                    Math.floor(rivalProgress * this._preCountdownLaneZs.length),
+                );
+                showcaseLaneZ = this._preCountdownLaneZs[rivalIndex];
+                shotIndex = rivalIndex + 1;
+            } else if (elapsed >= PRE_RACE_HERO_SECONDS + PRE_RACE_RIVALS_SECONDS) {
+                shotIndex = this._preCountdownLaneZs.length + 1;
+            }
+            hardCameraCut = shotIndex !== this._preCountdownShotIndex;
+            this._preCountdownShotIndex = shotIndex;
+            const target = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), showcaseLaneZ);
             desiredTarget = target;
-            desiredPos = countdownFrontCameraPosition(target, direction, ratio);
-            this._broadcastDesiredFov = lerp(52, 42, ratio);
-            if (ratio >= 1) {
+            const rivalShot = shotIndex > 0 && shotIndex <= this._preCountdownLaneZs.length;
+            desiredPos = rivalShot
+                ? new Vec3(target.x + 4.75 * direction, target.y + 0.85, target.z + (shotIndex % 2 === 0 ? 2.2 : -2.2))
+                : countdownFrontCameraPosition(target, direction, 1);
+            this._broadcastDesiredFov = rivalShot ? 37 : shotIndex === 0 ? 34 : 40;
+            if (elapsed >= PRE_COUNTDOWN_CAMERA_SECONDS) {
                 this._preCountdownActive = false;
                 this._preCountdownReady = true;
             }
@@ -338,6 +392,15 @@ export class RaceCameraDirector {
             this._cameraTarget.set(desiredTarget);
             this._broadcastCameraFov = this._broadcastDesiredFov;
             this.applyCameraTransform(new Vec3(0, 0, -1));
+            this.applyFov();
+            return;
+        }
+
+        if (hardCameraCut) {
+            this._cameraPos.set(desiredPos);
+            this._cameraTarget.set(desiredTarget);
+            this._broadcastCameraFov = this._broadcastDesiredFov;
+            this.applyCameraTransform();
             this.applyFov();
             return;
         }

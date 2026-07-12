@@ -19,6 +19,7 @@ const KEY_1 = 49;
 const KEY_2 = 50;
 const KEY_3 = 51;
 const KEY_P = 80;
+const KEY_T = 84;
 const CAPTURE_WIDTH = 1280;
 const CAPTURE_HEIGHT = 720;
 const DEFAULT_CAPTURE_DIRECTORY = 'F:/myworkspace/cocosProjects/SpeedSwimming/tools/pose-preview-captures';
@@ -87,7 +88,14 @@ export class PosePreviewController extends Component {
             this.setView('threeQuarter');
         } else if (event.keyCode === KEY_P) {
             this.captureCurrentView();
+        } else if (event.keyCode === KEY_T) {
+            this.previewShowcaseToDiveReadyTransition();
         }
+    }
+
+    private previewShowcaseToDiveReadyTransition() {
+        this._rig?.setShowcaseStanding();
+        this.scheduleOnce(() => this._rig?.setDiveReady(true), 0.8);
     }
 
     captureCurrentView(download = this.downloadCapture) {
@@ -188,9 +196,9 @@ export class PosePreviewController extends Component {
             false,
             true,
         );
-        rig.setPreRaceStanding(true);
+        rig.setDiveReady(true);
         this._rig = rig;
-        this.scheduleOnce(() => this._rig?.setPreRaceStanding(true), MODEL_LOAD_DELAY_SECONDS);
+        this.scheduleOnce(() => this._rig?.setDiveReady(true), MODEL_LOAD_DELAY_SECONDS);
     }
 
     private buildCamera(parent: Node): Node {
