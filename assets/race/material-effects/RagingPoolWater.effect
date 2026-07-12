@@ -17,12 +17,16 @@ CCEffect %{
           blendSrcAlpha: src_alpha
           blendDstAlpha: one_minus_src_alpha
       properties:
-        deepColor:    { value: [0.02, 0.30, 0.58, 0.44], linear: true, editor: { type: color } }
-        shallowColor: { value: [0.08, 0.70, 0.94, 0.38], linear: true, editor: { type: color } }
-        foamColor:    { value: [0.84, 0.98, 1.00, 0.42], linear: true, editor: { type: color } }
-        waveA:        { value: [0.020, 0.45, 0.80, 1.00] }
-        waveB:        { value: [0.012, 1.20, 1.15, 0.58] }
-        foamParams:   { value: [0.78, 1.35, 0.10, 0.20] }
+        deepColor:       { value: [0.03, 0.42, 0.74, 0.60], linear: true, editor: { type: color } }
+        shallowColor:    { value: [0.14, 0.78, 0.94, 0.30], linear: true, editor: { type: color } }
+        foamColor:       { value: [0.92, 1.00, 1.00, 0.60], linear: true, editor: { type: color } }
+        causticColor:    { value: [0.70, 1.00, 1.00, 1.00], linear: true, editor: { type: color } }
+        waveA:           { value: [0.018, 0.45, 0.80, 1.00] }
+        waveB:           { value: [0.011, 1.20, 1.15, 0.58] }
+        foamParams:      { value: [0.80, 1.35, 0.10, 0.22] }
+        causticParams:   { value: [7.00, 0.35, 2.60, 0.55] }
+        refractionParams: { value: [0.006, 0.00, 0.32, 5.50] }
+        refractionMap:   { value: grey }
 }%
 
 CCProgram water-vs %{
@@ -37,14 +41,18 @@ CCProgram water-vs %{
   out vec3 v_worldPos;
   out vec2 v_waterUv;
   out float v_wave;
+  out vec4 v_screenPos;
 
   uniform WaterParams {
     vec4 deepColor;
     vec4 shallowColor;
     vec4 foamColor;
+    vec4 causticColor;
     vec4 waveA;
     vec4 waveB;
     vec4 foamParams;
+    vec4 causticParams;
+    vec4 refractionParams;
   };
 
   vec4 vert () {
@@ -65,8 +73,11 @@ CCProgram water-vs %{
     v_waterUv = position.xz * 0.05;
     v_wave = wave;
 
+    vec4 clip = cc_matProj * (cc_matView * world);
+    v_screenPos = clip;
+
     CC_TRANSFER_FOG(world);
-    return cc_matProj * (cc_matView * world);
+    return clip;
   }
 }%
 
@@ -80,15 +91,25 @@ CCProgram water-fs %{
   in vec3 v_worldPos;
   in vec2 v_waterUv;
   in float v_wave;
+  in vec4 v_screenPos;
 
   uniform WaterParams {
     vec4 deepColor;
     vec4 shallowColor;
     vec4 foamColor;
+    vec4 causticColor;
     vec4 waveA;
     vec4 waveB;
     vec4 foamParams;
+    vec4 causticParams;
+    vec4 refractionParams;
   };
+
+  // Underwater scene (pool floor) rendered by the refraction camera into a
+  // RenderTexture, sampled with a wave-driven offset so the floor wobbles.
+  // Swimmers are drawn by a separate on-top camera, so this water is fully
+  // opaque and only refracts the floor.
+  uniform sampler2D refractionMap;
 
   float waveLine(vec2 p, float speed, float freq, float width) {
     float n = sin(p.x * freq + p.y * (freq * 0.73) + cc_time.x * speed);
@@ -96,34 +117,75 @@ CCProgram water-fs %{
     return smoothstep(1.0 - width, 1.0, ridge);
   }
 
+  // Cheap animated pool caustic web: two perpendicular sets of moving sine
+  // bands multiplied into a bright diamond mesh, then sharpened into thin
+  // glowing lines. This is the dancing light network you see on real pool water.
+  float causticWeb(vec2 uv, float t) {
+    float scale = causticParams.x;
+    float speed = causticParams.y;
+    vec2 p1 = uv * scale + vec2(t * speed, t * speed * 0.6);
+    vec2 p2 = uv.yx * (scale * 1.37) + vec2(-t * speed * 0.8, t * speed * 1.1);
+    float a = (1.0 - abs(sin(p1.x))) * (1.0 - abs(sin(p1.y)));
+    float b = (1.0 - abs(sin(p2.x))) * (1.0 - abs(sin(p2.y)));
+    float web = max(a, b);
+    return pow(clamp(web, 0.0, 1.0), causticParams.z);
+  }
+
   vec4 frag () {
     vec2 uv = v_waterUv;
     float t = cc_time.x;
 
+    // Broad rolling swell that gently varies the base tone across the pool.
     float large = sin(v_worldPos.x * waveA.y + t * waveA.z)
                 + sin(v_worldPos.z * waveB.y - t * waveB.z)
                 + sin((v_worldPos.x - v_worldPos.z) * 0.16 + t * 0.9);
     large *= 0.3333;
 
+    // Surface chop for the crisp cartoon ripples.
     float chop = waveLine(uv + vec2(t * 0.055, -t * 0.02), foamParams.y, 22.0, foamParams.z);
     chop += waveLine(uv.yx + vec2(-t * 0.035, t * 0.025), foamParams.y * 1.15, 34.0, foamParams.z * 0.55);
     chop = clamp(chop, 0.0, 1.0);
 
-    float laneGlint = sin(v_worldPos.x * 2.35 - t * 2.4) * sin(v_worldPos.z * 0.72 + t * 0.35);
-    float laneHighlight = smoothstep(0.82, 1.0, laneGlint);
-    float causticA = waveLine(uv + vec2(t * 0.025, t * 0.010), 0.75, 46.0, 0.045);
-    float causticB = waveLine(uv.yx + vec2(-t * 0.018, t * 0.018), 0.95, 58.0, 0.035);
-    float caustic = clamp(causticA * 0.55 + causticB * 0.38, 0.0, 1.0);
-    float foam = smoothstep(foamParams.x, 1.0, chop * 0.52 + laneHighlight * 0.18 + abs(large) * 0.25);
+    // Bright dancing caustic network (two octaves for a livelier mesh).
+    float caustic = causticWeb(uv, t);
+    float caustic2 = causticWeb(uv * 1.9 + vec2(3.1, 1.7), t * 1.35);
+    caustic = clamp(caustic * 0.75 + caustic2 * 0.45, 0.0, 1.0);
 
-    vec3 water = mix(deepColor.rgb, shallowColor.rgb, 0.58 + large * 0.12 + chop * 0.16);
-    water += vec3(0.10, 0.22, 0.24) * laneHighlight * 0.18;
-    water += vec3(0.11, 0.22, 0.20) * caustic * 0.13;
-    water += vec3(0.03, 0.08, 0.10) * max(v_wave, 0.0) * 0.9;
-    vec3 color = mix(water, foamColor.rgb, foam * foamParams.w);
+    // Grazing-angle brightening so the far end reads as a lighter sky-cyan,
+    // like the reference where distant water glows brighter.
+    vec3 viewDir = normalize(cc_cameraPos.xyz - v_worldPos);
+    float fresnel = pow(1.0 - clamp(viewDir.y, 0.0, 1.0), 3.0);
 
-    float alpha = mix(deepColor.a, shallowColor.a, 0.55 + large * 0.08);
-    alpha = max(alpha, foam * foamColor.a * 0.75);
+    float foam = smoothstep(foamParams.x, 1.0, chop * 0.5 + abs(large) * 0.28);
+
+    // Real refraction: sample the underwater floor from the RT at this pixel's
+    // screen position, offset by a wave-driven distortion so the floor wobbles.
+    // refractionParams.y toggles the Y-flip (RT is flipped on some backends).
+    vec2 ndc = v_screenPos.xy / max(abs(v_screenPos.w), 1e-4);
+    vec2 screenUV = ndc * 0.5 + 0.5;
+    if (refractionParams.y > 0.5) {
+      screenUV.y = 1.0 - screenUV.y;
+    }
+    vec2 dudv = vec2(
+      sin(v_worldPos.z * refractionParams.w + t * 1.4) + 0.6 * sin(v_worldPos.x * (refractionParams.w * 0.7) - t * 1.1),
+      sin(v_worldPos.x * refractionParams.w - t * 1.2) + 0.6 * sin(v_worldPos.z * (refractionParams.w * 0.8) + t * 0.9)
+    );
+    vec2 refractUV = clamp(screenUV + dudv * refractionParams.x, vec2(0.001), vec2(0.999));
+    vec3 background = texture(refractionMap, refractUV).rgb;
+
+    // Tint the refracted floor toward the pool's cyan; caustics, fresnel and
+    // foam add surface life on top.
+    vec3 waterTint = mix(deepColor.rgb, shallowColor.rgb, 0.6 + large * 0.14 + chop * 0.12);
+    vec3 color = mix(background, waterTint, refractionParams.z);
+    color += causticColor.rgb * caustic * causticParams.w;
+    color = mix(color, shallowColor.rgb * 1.12, fresnel * 0.22);
+    color *= 1.12;
+    color += vec3(0.05, 0.10, 0.12) * max(v_wave, 0.0) * 0.9;
+    color = mix(color, foamColor.rgb, foam * foamParams.w);
+
+    // Opaque: we composite the refracted floor ourselves. Swimmers are drawn on
+    // top by a separate camera, so the water no longer needs to be see-through.
+    float alpha = 1.0;
 
     vec4 o = vec4(color, alpha);
     CC_APPLY_FOG(o);

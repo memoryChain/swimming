@@ -148,7 +148,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._colorAssetLoadToken += 1;
         this._colorMask = null;
         this._dynamicColorEffect = null;
-        if (variant.id === 'swimmer0621_2' && this.hasDynamicColorVariant()) {
+        if (variant.id === 'swimmer0621_2') {
             this.loadDynamicColorAssets();
         }
         if (!this._splashEmitter) {
@@ -342,9 +342,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setWaterY(waterY: number) {
+        const changed = this._waterY !== waterY;
         this._waterY = waterY;
         this._splashEmitter?.setWaterY(waterY);
         this.updateSplashSurface(0);
+        // Rebind body materials so their world-space waterline tint sits at the
+        // real water surface (materials may have been built before the course
+        // supplied waterY).
+        if (changed && this._loaded && this.root) {
+            this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
+        }
     }
 
     setLegSplashSuppressed(suppressed: boolean) {
@@ -774,8 +781,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             playerOutline,
             outfit: this._skinOutfit,
             preserveOriginalMaterial: this.preserveOriginalMaterial(),
-            dynamicColorEffect: usesDynamicColor ? this._dynamicColorEffect : null,
+            dynamicColorEffect: this._dynamicColorEffect,
             colorMask: usesDynamicColor ? this._colorMask : null,
+            waterLine: this._waterY,
             preserveImportedMaterial: this.usesImportedSwimmerMaterial(),
             outlineWidth: this.usesImportedSwimmerMaterial() ? 10 : undefined,
             outlineRoot: this._outlineRoot,
@@ -804,7 +812,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private loadDynamicColorAssets() {
         const token = ++this._colorAssetLoadToken;
         const applyWhenReady = () => {
-            if (token !== this._colorAssetLoadToken || !this._colorMask || !this._dynamicColorEffect) {
+            if (token !== this._colorAssetLoadToken || !this._dynamicColorEffect) {
                 return;
             }
             if (this._loaded && this.root) {

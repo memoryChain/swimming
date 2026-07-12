@@ -1,6 +1,7 @@
 import { Camera, Canvas, Color, Component, DirectionalLight, Layers, Node, Vec3, Vec4, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { StandardSkyboxApplier } from './StandardSkyboxApplier';
+import { WATER_SURFACE_LAYER, UNDERWATER_LAYER } from '../venue/WaterSurfaceBinder';
 
 export type RuntimeSceneRefs = {
     canvasNode: Node;
@@ -94,7 +95,10 @@ export class RuntimeSceneBuilder {
         cameraNode.setPosition(start.x, start.y, start.z);
         const camera = cameraNode.addComponent(Camera);
         camera.projection = Camera.ProjectionType.PERSPECTIVE;
-        camera.visibility = Layers.BitMask.DEFAULT;
+        // Render the DEFAULT scene plus the water surface and underwater layers.
+        // The refraction camera renders only the underwater layer (pool bottom)
+        // into its RenderTexture.
+        camera.visibility = Layers.BitMask.DEFAULT | WATER_SURFACE_LAYER | UNDERWATER_LAYER;
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
         camera.clearColor = color(74, 158, 224);
         camera.fov = 36;

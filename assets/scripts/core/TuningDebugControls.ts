@@ -6,6 +6,7 @@ import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
+import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 
 export type TuningControl = {
     id: string;
@@ -161,6 +162,22 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('difficulty.championship.aiDifficultyScale', '世锦赛AI倍率', '世锦赛对每条泳道原始 AI 难度的倍率。1 表示完全使用原始 AI 阵容难度。', () => getRaceDifficultyConfig('championship').aiDifficultyScale, (v) => getRaceDifficultyConfig('championship').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
         ],
     },
+    {
+        name: '水色',
+        controls: [
+            waterControl('water.deepR', '深水色 R', '泳池水面基础色（深）的红通道，0-255。', () => WATER_COLOR_TUNING.deepR, (v) => WATER_COLOR_TUNING.deepR = v),
+            waterControl('water.deepG', '深水色 G', '泳池水面基础色（深）的绿通道，0-255。绿偏高更偏青，偏低更偏蓝/紫。', () => WATER_COLOR_TUNING.deepG, (v) => WATER_COLOR_TUNING.deepG = v),
+            waterControl('water.deepB', '深水色 B', '泳池水面基础色（深）的蓝通道，0-255。', () => WATER_COLOR_TUNING.deepB, (v) => WATER_COLOR_TUNING.deepB = v),
+            waterControl('water.shallowR', '浅水色 R', '泳池水面高光色（浅）的红通道，0-255。', () => WATER_COLOR_TUNING.shallowR, (v) => WATER_COLOR_TUNING.shallowR = v),
+            waterControl('water.shallowG', '浅水色 G', '泳池水面高光色（浅）的绿通道，0-255。', () => WATER_COLOR_TUNING.shallowG, (v) => WATER_COLOR_TUNING.shallowG = v),
+            waterControl('water.shallowB', '浅水色 B', '泳池水面高光色（浅）的蓝通道，0-255。', () => WATER_COLOR_TUNING.shallowB, (v) => WATER_COLOR_TUNING.shallowB = v),
+            control('water.tintStrength', '水色浓度', '水色盖在折射池底上的浓度：0=清透见底，1=纯水色几乎盖住池底。', () => WATER_COLOR_TUNING.tintStrength, (v) => { WATER_COLOR_TUNING.tintStrength = v; applyWaterColorTuning(); }, 0.02, 0, 1, 2),
+            waterControl('water.bodyR', '入水身体蓝 R', '泳者水面以下身体染色的红通道，0-255。', () => WATER_COLOR_TUNING.bodyR, (v) => WATER_COLOR_TUNING.bodyR = v),
+            waterControl('water.bodyG', '入水身体蓝 G', '泳者水面以下身体染色的绿通道，0-255。', () => WATER_COLOR_TUNING.bodyG, (v) => WATER_COLOR_TUNING.bodyG = v),
+            waterControl('water.bodyB', '入水身体蓝 B', '泳者水面以下身体染色的蓝通道，0-255。', () => WATER_COLOR_TUNING.bodyB, (v) => WATER_COLOR_TUNING.bodyB = v),
+            control('water.bodyStrength', '入水身体蓝浓度', '泳者水面以下身体染蓝的强度：0=不染，1=完全变成水下蓝色。', () => WATER_COLOR_TUNING.bodyStrength, (v) => { WATER_COLOR_TUNING.bodyStrength = v; applyWaterColorTuning(); }, 0.02, 0, 1, 2),
+        ],
+    },
 ];
 
 export function resetTuningToDefaults() {
@@ -277,6 +294,21 @@ function control(
         precision,
         suffix,
     };
+}
+
+// A 0-255 colour-channel slider that pushes the change to the live water/
+// swimmer materials after every edit.
+function waterControl(
+    id: string,
+    label: string,
+    description: string,
+    get: () => number,
+    set: (value: number) => void,
+): TuningControl {
+    return control(id, label, description, get, (value) => {
+        set(value);
+        applyWaterColorTuning();
+    }, 1, 0, 255, 0);
 }
 
 function roundTo(value: number, precision: number): number {

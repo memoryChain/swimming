@@ -1,11 +1,29 @@
 import { Color, Material, MeshRenderer, Node, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
+import { registerWaterMaterial } from './WaterColorTuning';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
 const ACTIVE_WATER_NODE_NAMES = new Set(['PoolWaterSurface']);
 const WATER_RENDER_PRIORITY = 0;
 const WATER_PASS_PRIORITY = 1;
+// Dedicated layer bit for the water surface so the refraction camera can render
+// everything under the water WITHOUT drawing the water itself (which would
+// self-sample). Bit 8 is a free user layer (Cocos reserves bits 20+).
+export const WATER_SURFACE_LAYER = 1 << 8;
+// The refraction camera renders ONLY this layer into its RenderTexture: the pool
+// floor, bottom lane lines and inner walls. Keeping the deck, starting blocks,
+// spectators, lane float ropes and swimmers OUT of the refraction avoids ugly
+// double images (those are drawn on top by the main camera) and leaves a clean
+// pool bottom to wobble. The main camera renders this layer too, so the floor
+// still shows normally.
+export const UNDERWATER_LAYER = 1 << 9;
+// Swimmers are moved onto this layer so a dedicated "swimmer camera" can draw
+// them on top of the opaque refracting water (they'd otherwise be hidden by it).
+// The main camera does NOT render this layer; the swimmer camera renders only it.
+export const SWIMMER_LAYER = 1 << 10;
+// Node-name prefixes of the pool geometry that lives under the water surface.
+const UNDERWATER_NODE_PREFIXES = ['pool_floor', 'lane_floor_line', 'lane_t_end', 'pool_tile_grout', 'pool_inner_wall'];
 // Lane floats sit above the water line, so the water never actually covers them. Their
 // blue cast comes from the lit GLB materials picking up the scene's blue ambient sky
 // light. Swap them to unlit materials that keep the original albedo so they render as
@@ -21,11 +39,13 @@ export class WaterSurfaceBinder {
         }
 
         this.unlitLaneFloats(pool, debug);
+        this.assignUnderwaterLayer(pool, debug);
 
         const activeWaterNodes: Node[] = [];
         collectNodesByName(pool, ACTIVE_WATER_NODE_NAMES, activeWaterNodes);
         for (const node of activeWaterNodes) {
             node.active = true;
+            node.layer = WATER_SURFACE_LAYER;
         }
 
         if (activeWaterNodes.length <= 0) {
@@ -49,7 +69,9 @@ export class WaterSurfaceBinder {
                 const renderer = node.getComponent(MeshRenderer);
                 if (renderer) {
                     renderer.priority = WATER_RENDER_PRIORITY;
-                    renderer.setMaterial(makeRuntimeWaterMaterial(material), 0);
+                    const runtimeWater = makeRuntimeWaterMaterial(material);
+                    registerWaterMaterial(runtimeWater);
+                    renderer.setMaterial(runtimeWater, 0);
                 }
             }
             debug?.(`transparent low-poly water bound nodes=${activeWaterNodes.length}`);
@@ -77,6 +99,26 @@ export class WaterSurfaceBinder {
         }
         if (boundRenderers > 0) {
             debug?.(`lane floats set unlit renderers=${boundRenderers}`);
+        }
+    }
+
+    // Move the pool-bottom geometry onto the underwater layer so the refraction
+    // camera can render just this content into its RenderTexture.
+    private assignUnderwaterLayer(pool: Node, debug?: (message: string) => void) {
+        let moved = 0;
+        const walk = (node: Node) => {
+            const name = node.name.toLowerCase();
+            if (UNDERWATER_NODE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+                node.layer = UNDERWATER_LAYER;
+                moved += 1;
+            }
+            for (const child of node.children) {
+                walk(child);
+            }
+        };
+        walk(pool);
+        if (moved > 0) {
+            debug?.(`underwater layer assigned nodes=${moved}`);
         }
     }
 }

@@ -1,6 +1,7 @@
-import { Color, EffectAsset, Layers, Material, MeshRenderer, Node, Quat, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { Color, EffectAsset, Layers, Material, MeshRenderer, Node, Quat, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
 
 const SWIMMER_TEXTURE_SIZE = 128;
 const OUTLINE_SHELL_WIDTH = 18;
@@ -21,6 +22,10 @@ export type CharacterSkinOptions = {
     dynamicColorEffect?: EffectAsset | null;
     colorMask?: Texture2D | null;
     preserveImportedMaterial?: boolean;
+    // Water surface world Y. When provided together with dynamicColorEffect, the
+    // swimmer body materials tint fragments below this height toward underwater
+    // blue (see SwimmerDynamicColor.effect waterLine).
+    waterLine?: number;
     outlineWidth?: number;
     outlineRoot: Node | null;
     setOutlineRoot: (root: Node | null) => void;
@@ -107,8 +112,8 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
                 continue;
             }
             const material = options.dynamicColorEffect && options.colorMask
-                ? makeDynamicColorMaterial(original, options.dynamicColorEffect, options.colorMask, options.suitColor, options.capColor)
-                : makeBrightenedOriginalMaterial(original);
+                ? makeDynamicColorMaterial(original, options.dynamicColorEffect, options.colorMask, options.suitColor, options.capColor, options.waterLine)
+                : makeBrightenedOriginalMaterial(original, options.dynamicColorEffect ?? null, options.waterLine);
             renderer.setMaterial(material, i);
             applied++;
         }
@@ -120,25 +125,10 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     }
 }
 
-function makeBrightenedOriginalMaterial(original: Material): Material {
-    const texture = findMaterialTexture(original);
-    const color = boostColor(findMaterialColor(original), 1.12, 1.14);
-    const material = new Material();
-    material.initialize(texture
-        ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
-        : { effectName: 'builtin-unlit' });
-    material.name = `${original.name || 'Original'}BrightUnlit`;
-    material.setProperty('mainColor', color);
-    if (texture) {
-        material.setProperty('mainTexture', texture);
-    }
-    return material;
-}
-
-function makeDynamicColorMaterial(original: Material, effect: EffectAsset, colorMask: Texture2D, suitColor: Color, capColor: Color): Material {
+function makeDynamicColorMaterial(original: Material, effect: EffectAsset, colorMask: Texture2D, suitColor: Color, capColor: Color, waterLine?: number): Material {
     const texture = findMaterialTexture(original);
     if (!texture) {
-        return makeBrightenedOriginalMaterial(original);
+        return makeBrightenedOriginalMaterial(original, effect, waterLine);
     }
     const material = new Material();
     material.initialize({ effectAsset: effect });
@@ -148,6 +138,51 @@ function makeDynamicColorMaterial(original: Material, effect: EffectAsset, color
     material.setProperty('mainColor', new Color(255, 255, 255, 255));
     material.setProperty('suitColor', suitColor);
     material.setProperty('capColor', capColor);
+    applyWaterLine(material, waterLine);
+    registerSwimmerBodyMaterial(material);
+    return material;
+}
+
+// Feed the swimmer body effect's world-space waterline: x = water surface Y,
+// y = fade depth. Skipped silently for materials whose effect lacks the uniform
+// (e.g. the builtin-unlit fallback).
+function applyWaterLine(material: Material, waterLine?: number) {
+    if (typeof waterLine !== 'number') {
+        return;
+    }
+    try {
+        material.setProperty('waterLine', new Vec4(waterLine, 0.04, 0.02, 0.45));
+    } catch {
+        // Effect has no waterLine uniform; nothing to tint.
+    }
+}
+
+function makeBrightenedOriginalMaterial(original: Material, waterlineEffect: EffectAsset | null = null, waterLine?: number): Material {
+    const texture = findMaterialTexture(original);
+    const color = boostColor(findMaterialColor(original), 1.12, 1.14);
+    // Prefer the custom swimmer body effect (with the world-space waterline tint)
+    // whenever it is loaded and the material has an albedo texture. A black
+    // colorMask (the effect default) means no garment recolour, so it just shows
+    // the original baked texture, plus the submerged-body blue below the surface.
+    if (waterlineEffect && texture) {
+        const material = new Material();
+        material.initialize({ effectAsset: waterlineEffect });
+        material.name = `${original.name || 'Original'}WaterlineUnlit`;
+        material.setProperty('mainTexture', texture);
+        material.setProperty('mainColor', color);
+        applyWaterLine(material, waterLine);
+        registerSwimmerBodyMaterial(material);
+        return material;
+    }
+    const material = new Material();
+    material.initialize(texture
+        ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
+        : { effectName: 'builtin-unlit' });
+    material.name = `${original.name || 'Original'}BrightUnlit`;
+    material.setProperty('mainColor', color);
+    if (texture) {
+        material.setProperty('mainTexture', texture);
+    }
     return material;
 }
 

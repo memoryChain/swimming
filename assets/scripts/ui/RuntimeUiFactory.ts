@@ -1,4 +1,4 @@
-import { Button, Color, Graphics, Label, Layers, Node, UITransform } from 'cc';
+import { Button, Camera, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3 } from 'cc';
 
 export function uiColor(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
@@ -88,4 +88,69 @@ export function drawBottomFill(gfx: Graphics, w: number, h: number, ratio: numbe
     gfx.fillColor = fill;
     gfx.rect(-w / 2, -h / 2, w, h * clamped);
     gfx.fill();
+}
+
+export type DragSlider = {
+    node: Node;
+    // Redraw the slider to a 0..1 ratio without firing onChange (for external sync).
+    setRatio: (ratio: number) => void;
+};
+
+// A self-drawn horizontal drag slider (Graphics track + fill + handle) that
+// reports a 0..1 ratio on touch/drag. Avoids the Slider component's SpriteFrame
+// dependency and matches the project's Graphics-based UI. Pass the UI camera so
+// the touch point is converted screen->world correctly even when the runtime
+// viewport differs from the design resolution.
+export function makeDragSlider(
+    name: string,
+    parent: Node,
+    w: number,
+    h: number,
+    initialRatio: number,
+    onChange: (ratio: number) => void,
+    camera: Camera | null = null,
+): DragSlider {
+    const node = makeUiNode(name, parent);
+    const uiTransform = node.getComponent(UITransform)!;
+    uiTransform.setContentSize(w, h + 16);
+    const track = node.addComponent(Graphics);
+    const handleNode = makeUiNode('Handle', node);
+    handleNode.getComponent(UITransform).setContentSize(14, h + 12);
+    const handle = handleNode.addComponent(Graphics);
+
+    const draw = (ratio: number) => {
+        const r = Math.max(0, Math.min(1, ratio));
+        track.clear();
+        track.fillColor = uiColor(28, 48, 66, 235);
+        track.rect(-w / 2, -h / 2, w, h);
+        track.fill();
+        track.fillColor = uiColor(72, 162, 222, 245);
+        track.rect(-w / 2, -h / 2, w * r, h);
+        track.fill();
+        handle.clear();
+        handle.fillColor = uiColor(248, 252, 255);
+        handle.rect(-7, -(h + 12) / 2, 14, h + 12);
+        handle.fill();
+        handleNode.setPosition(-w / 2 + w * r, 0, 0);
+    };
+    draw(initialRatio);
+
+    const worldPoint = new Vec3();
+    const onTouch = (event: EventTouch) => {
+        const loc = event.getLocation();
+        if (camera) {
+            camera.screenToWorld(new Vec3(loc.x, loc.y, 0), worldPoint);
+        } else {
+            const ui = event.getUILocation();
+            worldPoint.set(ui.x, ui.y, 0);
+        }
+        const local = uiTransform.convertToNodeSpaceAR(worldPoint);
+        const ratio = Math.max(0, Math.min(1, (local.x + w / 2) / w));
+        draw(ratio);
+        onChange(ratio);
+    };
+    node.on(Node.EventType.TOUCH_START, onTouch);
+    node.on(Node.EventType.TOUCH_MOVE, onTouch);
+
+    return { node, setRatio: draw };
 }

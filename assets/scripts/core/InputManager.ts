@@ -1,4 +1,4 @@
-import { _decorator, Component, EventKeyboard, EventMouse, EventTouch, input, Input, KeyCode, Node, view } from 'cc';
+import { _decorator, Camera, Component, EventKeyboard, EventMouse, EventTouch, input, Input, KeyCode, Node, UITransform, Vec2, Vec3, view } from 'cc';
 import { StrokeType } from './GameConstants';
 
 const { ccclass, property } = _decorator;
@@ -9,6 +9,17 @@ export class InputManager extends Component {
     public modelDebugMode = false;
     public pointerInputEnabled = true;
     public diveInputEnabled = true;
+    // Active UI nodes whose screen rect should swallow touches: a touch landing on
+    // one of these (e.g. the water-colour slider panel) must NOT trigger a swim
+    // stroke. Needed because strokes come from a GLOBAL touch listener, so UI
+    // z-order alone can't block them.
+    public readonly uiBlockers: Node[] = [];
+    // UI camera used to convert a screen touch into UI world space so blocker
+    // hit-testing is correct even when the runtime viewport differs from the
+    // design resolution.
+    public uiBlockerCamera: Camera | null = null;
+    private readonly _blockerWorld = new Vec3();
+    private readonly _blockerPoint = new Vec2();
 
     private _leftHeld = false;
     private _rightHeld = false;
@@ -127,6 +138,9 @@ export class InputManager extends Component {
         if (this.modelDebugMode || !this.pointerInputEnabled) {
             return;
         }
+        if (this.isTouchOverBlocker(event)) {
+            return;
+        }
         const touchId = event.getID();
         if (touchId === null || this._touchStrokeTypes.has(touchId)) {
             return;
@@ -168,6 +182,31 @@ export class InputManager extends Component {
                 this.setInputHeld(type, false);
             }
         }
+    }
+
+    // True when the touch point falls inside any active UI blocker's screen rect.
+    private isTouchOverBlocker(event: EventTouch): boolean {
+        if (this.uiBlockers.length <= 0) {
+            return false;
+        }
+        const loc = event.getLocation();
+        if (this.uiBlockerCamera) {
+            this.uiBlockerCamera.screenToWorld(new Vec3(loc.x, loc.y, 0), this._blockerWorld);
+        } else {
+            const ui = event.getUILocation();
+            this._blockerWorld.set(ui.x, ui.y, 0);
+        }
+        this._blockerPoint.set(this._blockerWorld.x, this._blockerWorld.y);
+        for (const node of this.uiBlockers) {
+            if (!node?.isValid || !node.activeInHierarchy) {
+                continue;
+            }
+            const transform = node.getComponent(UITransform);
+            if (transform && transform.getBoundingBoxToWorld().contains(this._blockerPoint)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private emitStroke(type: StrokeType) {
