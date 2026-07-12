@@ -8,7 +8,6 @@ import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/Rac
 import { resolveDiveResult } from '../core/DiveResolver';
 import { DiveResult } from '../core/DiveResult';
 import { SprintTier } from '../condition/ConditionTypes';
-import { formatStrokeQualityLog } from '../core/StrokeQualityScoring';
 import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
 
@@ -91,7 +90,6 @@ export class GameFlowController {
         }
         const result = this._refs.playerSwimmer?.handleStroke(type);
         if (result) {
-            this._refs.debug(`stroke=${type} rating=${result.rating} badReason=${result.badReason ?? 'none'} combo=${result.combo}`);
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -105,7 +103,6 @@ export class GameFlowController {
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
         if (result) {
-            this._refs.debug(formatStrokeQualityLog(`hold=${type}`, result));
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
     }
@@ -233,10 +230,6 @@ export class GameFlowController {
 
     cycleRaceCamera(): string {
         return this._refs.raceCameraDirector.cycleMode();
-    }
-
-    toggleFreeRaceCamera(): string {
-        return this._refs.raceCameraDirector.toggleFreeMode();
     }
 
     // Debug (100m AI-debug mode): make the race camera frame the AI opponent

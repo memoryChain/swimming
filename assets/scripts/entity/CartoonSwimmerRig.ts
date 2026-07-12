@@ -70,7 +70,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _treadWaterPhase = 0;
     private _treadExitHold = 0;
     private _selfTime = 0;
-    private _debugTimer = 0;
     private _modelDebugMode = false;
     private _debugMotionSpeedScale = 1;
     private _skinColor = new Color(246, 176, 118);
@@ -94,9 +93,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _tmpSplashWorld = new Vec3();
     private readonly _tmpSplashHeadWorld = new Vec3();
     private readonly _tmpSplashHandWorld = new Vec3();
-    private _mixamoDebugTimer = 0;
-    private _lastMixamoDebugLeftArm = '';
-    private _lastMixamoDebugLeftLeg = '';
 
     // Background AI motion throttling: reduce how often the heavy procedural pose is recomputed.
     // Stride is set per-frame by GameManager based on distance to the player (distance-based LOD).
@@ -422,29 +418,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._armAction = 1;
         this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
         this._splashEmitter?.triggerArmStroke();
-        if (this._loaded) {
-            console.log('[SpeedSwimming] rig arm stroke trigger');
-        }
     }
 
     triggerKick() {
         this._kickAction = 1;
         this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
         this._splashEmitter?.triggerKick();
-        if (this._loaded) {
-            console.log('[SpeedSwimming] rig kick trigger');
-        }
     }
 
-    triggerStroke(type: StrokeType) {
+    triggerStroke(_type: StrokeType) {
         this._armAction = 1;
         this._kickAction = 1;
         this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
         this._splashEmitter?.triggerArmStroke();
         this._splashEmitter?.triggerKick();
-        if (this._loaded) {
-            console.log(`[SpeedSwimming] rig ${type} diagonal stroke trigger`);
-        }
     }
 
     setStrokeHeld(_type: StrokeType, _held: boolean) {
@@ -639,12 +626,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
 
         this._selfTime += dt;
-        this._debugTimer += dt;
-
         if (this._modelDebugMode) {
-            if (this.isMixamoSwimmingDebugVariant()) {
-                this.updateMixamoDebugProbe(dt);
-            }
             return;
         }
 
@@ -652,13 +634,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
-        if (this._debugTimer >= 1) {
-            this._debugTimer = 0;
-            const leftArmY = this._pose.leftArmEuler;
-            const leftLegX = this._pose.leftLegEuler;
-            const animState = this._animationPlayer.getFreestyleState();
-            console.log(`[SpeedSwimming] rig pose sample state=${this._poseState.state} anim=${!!animState} animTime=${animState ? animState.time.toFixed(2) : '-'} leftArmY=${leftArmY} leftLegX=${leftLegX}`);
-        }
     }
 
     resetPose() {
@@ -684,9 +659,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._treadWaterWeight = 0;
         this._treadWaterPhase = 0;
         this._treadExitHold = 0;
-        this._mixamoDebugTimer = 0;
-        this._lastMixamoDebugLeftArm = '';
-        this._lastMixamoDebugLeftLeg = '';
         this._poseState.resetRuntime();
         this._splashEmitter?.reset();
         this._pose.restoreBasePose();
@@ -953,27 +925,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         ];
         const result = paths.map((path) => `${path}=${!!findNodeByPath(this._model, path)}`).join(' ');
         console.log(`[SpeedSwimming] Mixamo path probe from model root ${result}`);
-    }
-
-    private updateMixamoDebugProbe(dt: number) {
-        this._mixamoDebugTimer += dt;
-        if (this._mixamoDebugTimer < 1) {
-            return;
-        }
-        this._mixamoDebugTimer = 0;
-        const leftArm = this._pose.leftArmEuler;
-        const leftLeg = this._pose.leftLegEuler;
-        const leftArmChanged = this._lastMixamoDebugLeftArm !== '' && this._lastMixamoDebugLeftArm !== leftArm;
-        const leftLegChanged = this._lastMixamoDebugLeftLeg !== '' && this._lastMixamoDebugLeftLeg !== leftLeg;
-        this._lastMixamoDebugLeftArm = leftArm;
-        this._lastMixamoDebugLeftLeg = leftLeg;
-        console.log(
-            `[SpeedSwimming] Mixamo debug probe variant=${this._modelVariantId} ` +
-            `${this._animationPlayer.getStateSummary()} ` +
-            `leftArm=${leftArm} leftArmChanged=${leftArmChanged} ` +
-            `leftLeg=${leftLeg} leftLegChanged=${leftLegChanged} ` +
-            `model=${this._model ? this.nodePath(this._model) : '-'} root=${this.root ? this.nodePath(this.root) : '-'}`,
-        );
     }
 
     private nodePath(node: Node): string {

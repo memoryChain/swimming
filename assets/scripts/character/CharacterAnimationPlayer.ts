@@ -54,7 +54,6 @@ export class CharacterAnimationPlayer {
             state.repeatCount = Infinity;
             state.speed = 1;
         }
-        console.log(`[SpeedSwimming] playing freestyle clip=${clip.name}`);
         return true;
     }
 
@@ -117,33 +116,6 @@ export class CharacterAnimationPlayer {
         return clip ? this._animation.getState(clip.name) : null;
     }
 
-    getStateSummary(): string {
-        if (!this._animation) {
-            return 'animation=missing';
-        }
-        const clips = this._animation.clips.filter(Boolean);
-        const stateParts = clips.map((clip) => {
-            const state = this._animation!.getState(clip.name);
-            if (!state) {
-                return `${clip.name}:state=missing`;
-            }
-            const raw = state as unknown as {
-                time?: number;
-                duration?: number;
-                speed?: number;
-                isPlaying?: boolean;
-                isMotionless?: boolean;
-            };
-            const time = typeof raw.time === 'number' ? raw.time.toFixed(2) : '-';
-            const duration = typeof raw.duration === 'number' ? raw.duration.toFixed(2) : '-';
-            const speed = typeof raw.speed === 'number' ? raw.speed.toFixed(2) : '-';
-            const playing = typeof raw.isPlaying === 'boolean' ? raw.isPlaying : '-';
-            const motionless = typeof raw.isMotionless === 'boolean' ? raw.isMotionless : '-';
-            return `${clip.name}:t=${time}/${duration} speed=${speed} playing=${playing} motionless=${motionless}`;
-        });
-        return `animation=ok enabled=${this._animation.enabled} baked=${this._animation.useBakedAnimation} default=${this._animation.defaultClip?.name ?? '-'} clips=${this.clipNames} states=[${stateParts.join('; ')}]`;
-    }
-
     get hasAnimation(): boolean {
         return !!this._animation;
     }
@@ -178,7 +150,6 @@ export class CharacterAnimationPlayer {
             const raw = state as unknown as { sample?: () => void };
             raw.sample?.();
         }
-        console.log(`[SpeedSwimming] playing animation clip=${name} loop=${loop} speed=${speed.toFixed(2)}`);
         return true;
     }
 }

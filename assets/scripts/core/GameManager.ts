@@ -46,11 +46,10 @@ import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDistance } from './GameBalance';
-import { formatStrokeQualityLog } from './StrokeQualityScoring';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { setTimeScale, scaledDelta } from './TimeScale';
-import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
+import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
@@ -279,7 +278,7 @@ export class GameManager extends Component {
 
     // Cull splash + freeze pose for AI swimmers that are outside the camera frustum. Testing against the
     // real camera frustum (instead of a 1D X-distance guess) correctly handles zoom and any camera mode
-    // (broadcast / top / underwater / free). Off-screen swimmers skip all particle/foam and pose work.
+    // (broadcast / top / underwater). Off-screen swimmers skip all particle/foam and pose work.
     // 对相机视锥体之外的 AI 选手裁剪水花并冻结姿态。用真实视锥（而非一维 X 距离估算）能正确处理缩放和任意
     // 机位（转播/俯视/水下/自由）。离屏选手跳过全部粒子/泡沫与姿态计算。
     private updateSplashCulling() {
@@ -515,7 +514,6 @@ export class GameManager extends Component {
             onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
-            onToggleFreeRaceCamera: () => this.toggleFreeRaceCamera(),
             onToggleCameraFollowAi: () => this.toggleCameraFollowAi(),
             onToggleSplashCulling: () => this.toggleSplashCulling(),
             onToggleSplashParticles: () => this.toggleSplashParticles(),
@@ -814,7 +812,6 @@ export class GameManager extends Component {
         }
         const showFeedback = (this._playerSwimmer?.distance ?? 0) < getRaceDistance();
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
-            this.debug(formatStrokeQualityLog('strokeQuality', result));
             if (showFeedback) {
                 this._uiFlow?.showRating(result.rating, result.combo);
             }
@@ -826,17 +823,6 @@ export class GameManager extends Component {
             return;
         }
         const modeName = this._gameFlow?.cycleRaceCamera();
-        if (modeName) {
-            this.updateRaceCameraButtonLabel(modeName);
-        }
-        this.debug(`race camera=${modeName}`);
-    }
-
-    private toggleFreeRaceCamera() {
-        if (this._modelDebugFlow?.active) {
-            return;
-        }
-        const modeName = this._gameFlow?.toggleFreeRaceCamera();
         if (modeName) {
             this.updateRaceCameraButtonLabel(modeName);
         }
@@ -1081,34 +1067,19 @@ export class GameManager extends Component {
     }
 
     private onDebugCameraMouseDown(event: EventMouse) {
-        const button = event.getButton();
-        if (this._modelDebugFlow?.onMouseDown(event)) {
-            return;
-        }
-        if (this._raceCameraDirector.mode === RaceCameraMode.Free && this._state === GameState.RACING && button === EventMouse.BUTTON_MIDDLE) {
-            this._raceCameraDirector.startFreeDrag();
-        }
+        this._modelDebugFlow?.onMouseDown(event);
     }
 
     private onDebugCameraMouseMove(event: EventMouse) {
-        if (this._modelDebugFlow?.onMouseMove(event)) {
-            return;
-        }
-        this._raceCameraDirector.dragFreeCamera(event.getDeltaX(), event.getDeltaY());
+        this._modelDebugFlow?.onMouseMove(event);
     }
 
     private onDebugCameraMouseUp() {
         this._modelDebugFlow?.onMouseUp();
-        this._raceCameraDirector.stopFreeDrag();
     }
 
     private onDebugCameraWheel(event: EventMouse) {
-        if (this._modelDebugFlow?.onMouseWheel(event)) {
-            return;
-        }
-        if (this._state === GameState.RACING) {
-            this._raceCameraDirector.zoomFreeCamera(event.getScrollY());
-        }
+        this._modelDebugFlow?.onMouseWheel(event);
     }
 
     private slowModelDebugMotion() {

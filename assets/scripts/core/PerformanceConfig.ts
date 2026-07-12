@@ -10,7 +10,7 @@ export const PERFORMANCE_CONFIG = {
         particleEmittersEnabled: true,
 
         // Cull splash + freeze pose for AI swimmers that are off-screen. Visibility is tested against
-        // the actual camera frustum (works for broadcast / top / underwater / free views alike), so
+        // the actual camera frustum (works for broadcast / top / underwater views alike), so
         // this correctly handles zoom and non-side-on shots instead of a crude X-distance guess.
         // This is the startup default; press K in a preview to toggle live.
         // 对离屏 AI 选手裁剪水花并冻结姿态。可见性用真实相机视锥体判断（转播/俯视/水下/自由视角都适用），
