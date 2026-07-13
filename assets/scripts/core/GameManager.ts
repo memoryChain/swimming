@@ -37,6 +37,7 @@ import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
+import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
@@ -94,6 +95,7 @@ export class GameManager extends Component {
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
+    private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
 
     private _raceHud: Node = null;
@@ -288,6 +290,13 @@ export class GameManager extends Component {
         }
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
+        // Roster info panel only during pre-race stage 1 (the wide overview shot);
+        // it fades out as the per-lane close-up sweep begins.
+        this._preRaceIntroPanel.setVisible(
+            !this._modelDebugFlow?.active
+            && this._state === GameState.PRECOUNTDOWN
+            && this._raceCameraDirector.preRacePhase === 'overview',
+        );
         if (this._modelDebugFlow?.active) {
             this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
@@ -464,6 +473,9 @@ export class GameManager extends Component {
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
+                if (state === GameState.PRECOUNTDOWN) {
+                    this.refreshPreRaceIntroRoster();
+                }
             },
             getState: () => this._state,
             clearFinishRanks: () => this._finishRankMarkers.clear(),
@@ -670,6 +682,10 @@ export class GameManager extends Component {
             swimmer.reset();
         }
         this._gameFlow?.refreshPreRaceShowcaseRoster();
+        // AI swimmers load one frame after startGame(), so the pre-race roster
+        // panel was first populated with only the player. Repopulate it now that
+        // the full lineup exists.
+        this.refreshPreRaceIntroRoster();
         this.applySplashParticlesEnabled();
         if (this._raceManager) {
             this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
@@ -689,6 +705,26 @@ export class GameManager extends Component {
             difficulty: controller.difficulty,
         }));
         this._aiDifficultyPanel.populate(entries);
+    }
+
+    // Rebuild the pre-race stage 1 roster info panel (lane number + avatar + name)
+    // from the current roster, ordered by lane (ascending Z). Reuses the results
+    // panel avatar/row-back sprite frames.
+    private refreshPreRaceIntroRoster() {
+        const avatarFrames = this._uiController?.resultAvatarFrames ?? [];
+        const normalRowFrame = this._uiController?.resultRowNormalFrame ?? null;
+        const playerRowFrame = this._uiController?.resultRowPlayerFrame ?? null;
+        const swimmers = [this._playerSwimmer, ...this._aiSwimmers]
+            .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.active))
+            .sort((left, right) => left.node.position.z - right.node.position.z);
+        const entries: PreRaceIntroEntry[] = swimmers.map((swimmer, index) => ({
+            lane: index + 1,
+            name: swimmer === this._playerSwimmer ? '你' : swimmer.swimmerName,
+            isPlayer: swimmer === this._playerSwimmer,
+            avatar: avatarFrames[index] ?? null,
+            rowBack: swimmer === this._playerSwimmer ? playerRowFrame : normalRowFrame,
+        }));
+        this._preRaceIntroPanel.populate(entries);
     }
 
     private scheduleDeferredSceneExtras(pool: Node | null) {
@@ -745,6 +781,7 @@ export class GameManager extends Component {
             this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
+            this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildRaceCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
