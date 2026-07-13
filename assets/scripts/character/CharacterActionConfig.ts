@@ -62,6 +62,7 @@ export const CHARACTER_ACTION_CONFIG: CharacterActionConfig = {
             CharacterAction.SillyDancing,
             CharacterAction.TwistDance,
             CharacterAction.WavingGesture,
+            CharacterAction.YmcaDance,
         ],
     },
     awards: {
