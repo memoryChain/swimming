@@ -34,7 +34,6 @@ import { Swimmer } from '../entity/Swimmer';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
-import { WaterColorPanelBuilder } from '../ui/WaterColorPanelBuilder';
 import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
@@ -98,7 +97,6 @@ export class GameManager extends Component {
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
-    private _waterColorPanel: WaterColorPanelBuilder | null = null;
     private _underwaterCameraTint: Node = null;
     private _worldRoot: Node = null;
     private _swimmersRoot: Node = null;
@@ -766,14 +764,6 @@ export class GameManager extends Component {
             this._aiDifficultyPanel.build(uiRoot, w, h);
             this.refreshAiDifficultyPanel();
 
-            this._waterColorPanel = new WaterColorPanelBuilder();
-            const waterColorPanelNode = this._waterColorPanel.build(uiRoot, w, h, this._uiCamera);
-            if (this._inputManager) {
-                this._inputManager.uiBlockerCamera = this._uiCamera;
-                this._inputManager.uiBlockers.push(waterColorPanelNode);
-            }
-            this.buildWaterColorButton(this._raceHud, w, h);
-
             this._uiFlow = new UIFlowController({
                 raceHud: this._raceHud,
                 modelDebugHud: this._modelDebugHud,
@@ -916,23 +906,6 @@ export class GameManager extends Component {
         if (this._raceCameraButtonLabel?.isValid) {
             this._raceCameraButtonLabel.string = `相机：${modeName}`;
         }
-    }
-
-    // Race HUD button: toggle the in-race water colour slider panel so colours can
-    // be tuned live during an actual race.
-    private buildWaterColorButton(raceHud: Node, width: number, height: number) {
-        const button = makeButton(
-            'WaterColorButton',
-            raceHud,
-            120,
-            48,
-            new Color(28, 118, 150, 235),
-            '水色',
-        );
-        button.setPosition(width / 2 - 78, height / 2 - 128, 0);
-        button.setSiblingIndex(raceHud.children.length - 1);
-        this._inputManager?.uiBlockers.push(button);
-        button.on(Node.EventType.TOUCH_END, () => this._waterColorPanel?.toggle());
     }
 
     // Race HUD button (AI-debug mode only): toggle whether the race camera frames
