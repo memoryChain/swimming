@@ -21,6 +21,12 @@ export class WaterSurface extends Component {
     start() {
         this._waves.length = 0;
         this.collect(this.node);
+        // The main water plane animates in the vertex shader, so it is collected
+        // with transformMotion=false. If no decoration node needs CPU transform
+        // motion, disable the component so update() stops being ticked every frame.
+        if (!this._waves.some((wave) => wave.transformMotion)) {
+            this.enabled = false;
+        }
     }
 
     update(dt: number) {

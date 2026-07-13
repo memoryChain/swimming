@@ -25,7 +25,7 @@ CCEffect %{
         waveB:           { value: [0.011, 1.20, 1.15, 0.58] }
         foamParams:      { value: [0.80, 1.35, 0.10, 0.22] }
         causticParams:   { value: [7.00, 0.35, 2.60, 0.55] }
-        refractionParams: { value: [0.006, 0.00, 0.32, 5.50] }
+        refractionParams: { value: [0.0003, 0.00, 0.32, 25.50] }
         refractionMap:   { value: grey }
 }%
 
@@ -111,6 +111,20 @@ CCProgram water-fs %{
   // opaque and only refracts the floor.
   uniform sampler2D refractionMap;
 
+  #define MAX_DISTURB 8
+  // Local turbulence sources (the swimmers). Each active slot: xy = world XZ,
+  // z = strength (0 = inactive slot). disturbParams: x = influence radius,
+  // y = chaotic ripple frequency, z = churn strength added to the refraction
+  // offset, w = churn animation speed. WaterRefractionController writes the
+  // swimmer slots every frame; an all-zero array (no controller) leaves the
+  // whole surface on the calm two-octave distortion.
+  // NOTE: the array length must be a literal (Cocos EFX rejects a #define here);
+  // keep it equal to MAX_DISTURB above.
+  uniform WaterDisturb {
+    vec4 disturbParams;
+    vec4 swimmerDisturb[8];
+  };
+
   float waveLine(vec2 p, float speed, float freq, float width) {
     float n = sin(p.x * freq + p.y * (freq * 0.73) + cc_time.x * speed);
     float ridge = 1.0 - abs(n);
@@ -131,6 +145,20 @@ CCProgram water-fs %{
     return pow(clamp(web, 0.0, 1.0), causticParams.z);
   }
 
+  // Irregular water wobble: several sine waves at NON-harmonic frequencies and
+  // varied propagation directions summed together. Because the frequencies are
+  // not integer multiples, the pattern never lines up into a regular sine
+  // zigzag, so the refracted floor ripples like real water instead. p is world
+  // XZ pre-scaled by the frequency knob.
+  vec2 waterWobble(vec2 p, float t) {
+    vec2 d = vec2(0.0);
+    d += vec2( 0.70,  0.25) * sin(dot(p, vec2( 1.00,  0.55))        + t * 1.30);
+    d += vec2(-0.55,  0.80) * sin(dot(p, vec2(-0.70,  1.10)) * 1.73 - t * 1.10);
+    d += vec2( 0.60, -0.50) * sin(dot(p, vec2( 1.30, -0.85)) * 2.61 + t * 1.90);
+    d += vec2( 0.40,  0.50) * sin(dot(p, vec2( 0.45,  1.60)) * 3.79 - t * 2.40);
+    return d;
+  }
+
   vec4 frag () {
     vec2 uv = v_waterUv;
     float t = cc_time.x;
@@ -141,15 +169,14 @@ CCProgram water-fs %{
                 + sin((v_worldPos.x - v_worldPos.z) * 0.16 + t * 0.9);
     large *= 0.3333;
 
-    // Surface chop for the crisp cartoon ripples.
-    float chop = waveLine(uv + vec2(t * 0.055, -t * 0.02), foamParams.y, 22.0, foamParams.z);
-    chop += waveLine(uv.yx + vec2(-t * 0.035, t * 0.025), foamParams.y * 1.15, 34.0, foamParams.z * 0.55);
-    chop = clamp(chop, 0.0, 1.0);
+    // Surface chop for the crisp cartoon ripples. Single band only: the second
+    // higher-frequency waveLine was dropped to save mobile ALU; foam + wobble
+    // hide the reduced detail.
+    float chop = clamp(waveLine(uv + vec2(t * 0.055, -t * 0.02), foamParams.y, 22.0, foamParams.z), 0.0, 1.0);
 
-    // Bright dancing caustic network (two octaves for a livelier mesh).
-    float caustic = causticWeb(uv, t);
-    float caustic2 = causticWeb(uv * 1.9 + vec2(3.1, 1.7), t * 1.35);
-    caustic = clamp(caustic * 0.75 + caustic2 * 0.45, 0.0, 1.0);
+    // Bright dancing caustic network. Single octave (the second octave was
+    // dropped to save mobile ALU) with a small brightness lift to compensate.
+    float caustic = clamp(causticWeb(uv, t) * 1.15, 0.0, 1.0);
 
     // Grazing-angle brightening so the far end reads as a lighter sky-cyan,
     // like the reference where distant water glows brighter.
@@ -157,6 +184,26 @@ CCProgram water-fs %{
     float fresnel = pow(1.0 - clamp(viewDir.y, 0.0, 1.0), 3.0);
 
     float foam = smoothstep(foamParams.x, 1.0, chop * 0.5 + abs(large) * 0.28);
+
+    // Underwater-looking-up view: when the camera is below the surface, drop the
+    // opaque floor compositing (which is meaningless from below and reads as a
+    // white wash) and instead render the surface as a semi-transparent tint so
+    // the real above-water scene the main camera already drew shows THROUGH it.
+    // Snell's-window feel: clearer looking straight up (see the world above),
+    // tinting toward deep blue and turning opaque at grazing angles (total
+    // internal reflection). Caustics + foam add rippling surface life.
+    if (cc_cameraPos.y < v_worldPos.y) {
+      float upness = clamp(-viewDir.y, 0.0, 1.0);
+      float windowMask = smoothstep(0.12, 0.62, upness);
+      vec3 underTint = mix(deepColor.rgb, shallowColor.rgb, windowMask);
+      underTint += causticColor.rgb * caustic * causticParams.w * 0.5;
+      underTint += foamColor.rgb * foam * foamParams.w * (1.0 - windowMask) * 0.6;
+      // See-through inside the window (small alpha), opaque tint at grazing.
+      float underAlpha = mix(0.9, 0.2, windowMask);
+      vec4 uo = vec4(underTint, underAlpha);
+      CC_APPLY_FOG(uo);
+      return CCFragOutput(uo);
+    }
 
     // Real refraction: sample the underwater floor from the RT at this pixel's
     // screen position, offset by a wave-driven distortion so the floor wobbles.
@@ -166,10 +213,26 @@ CCProgram water-fs %{
     if (refractionParams.y > 0.5) {
       screenUV.y = 1.0 - screenUV.y;
     }
-    vec2 dudv = vec2(
-      sin(v_worldPos.z * refractionParams.w + t * 1.4) + 0.6 * sin(v_worldPos.x * (refractionParams.w * 0.7) - t * 1.1),
-      sin(v_worldPos.x * refractionParams.w - t * 1.2) + 0.6 * sin(v_worldPos.z * (refractionParams.w * 0.8) + t * 0.9)
-    );
+    // Open-water refraction: an irregular, small-amplitude wobble (see
+    // waterWobble) instead of a regular sine, so the refracted lane lines ripple
+    // naturally. A slowly-varying amplitude makes the lines look thick in some
+    // stretches and thin in others, like real refracted pool markings.
+    float fw = refractionParams.w;
+    float ampVar = 0.7 + 0.3 * sin(dot(v_worldPos.xz, vec2(0.7, 0.45)) + t * 0.35);
+    vec2 baseWobble = waterWobble(v_worldPos.xz * fw, t) * (0.34 * ampVar);
+    // Local wake: sum how close this water pixel is to each swimmer, then layer
+    // high-frequency chaotic ripples weighted by that proximity, so the water
+    // churns finely around swimmers while the open pool keeps the calm wobble.
+    float disturb = 0.0;
+    for (int i = 0; i < MAX_DISTURB; i++) {
+      vec2 sd = v_worldPos.xz - swimmerDisturb[i].xy;
+      float r2 = max(disturbParams.x * disturbParams.x, 1e-4);
+      float prox = 1.0 - clamp(dot(sd, sd) / r2, 0.0, 1.0);
+      disturb += prox * prox * swimmerDisturb[i].z;
+    }
+    disturb = clamp(disturb, 0.0, 1.5);
+    vec2 chaos = waterWobble(v_worldPos.xz * (fw * 2.7) + vec2(11.3, 4.1), t * 2.1);
+    vec2 dudv = baseWobble + chaos * (disturb * disturbParams.z * 0.5);
     vec2 refractUV = clamp(screenUV + dudv * refractionParams.x, vec2(0.001), vec2(0.999));
     vec3 background = texture(refractionMap, refractUV).rgb;
 

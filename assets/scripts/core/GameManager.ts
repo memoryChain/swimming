@@ -579,14 +579,10 @@ export class GameManager extends Component {
         }
         this._waterRefraction?.dispose();
         this._waterRefraction = new WaterRefractionController((message) => this.debug(message));
-        const waterY = COURSE_LAYOUT.waterY;
-        const poolCenterX = (COURSE_LAYOUT.poolStartX + COURSE_LAYOUT.poolFinishX) * 0.5;
         const ok = this._waterRefraction.setup(
             this._cameraNode,
             pool,
             () => this.collectSwimmerNodes(),
-            waterY,
-            poolCenterX,
         );
         if (!ok) {
             this._waterRefraction = null;

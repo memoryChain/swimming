@@ -1,20 +1,33 @@
-import { Camera, Color, Layers, Material, MeshRenderer, Node, primitives, RenderTexture, utils, Vec3, view } from 'cc';
+import { Camera, Layers, Material, MeshRenderer, Node, RenderTexture, Vec3, Vec4, view } from 'cc';
 import { SWIMMER_LAYER, UNDERWATER_LAYER } from './WaterSurfaceBinder';
 
 const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
 const SWIMMER_CAMERA_NAME = 'SwimmerOverlayCamera';
-const TINT_PLANE_NAME = 'UnderwaterTintPlane';
 const WATER_SURFACE_NODE_NAME = 'PoolWaterSurface';
-// Half-resolution refraction target: the wobble hides the softness and it keeps
-// the extra render pass cheap enough for WeChat Mini Game.
+// Name of the runtime water material created by WaterSurfaceBinder. Only this
+// material's effect carries the refraction/disturbance uniforms, so we gate
+// per-frame uniform writes on it (the GLB placeholder material lacks them).
+const RUNTIME_WATER_MATERIAL_NAME = 'RuntimePoolWater';
+// Refraction target resolution scale. Lower saves fill/bandwidth but the pool
+// floor's thin lane lines alias badly below ~0.75, so keep it here; the
+// wave-driven UV offset hides the remaining softness.
 const REFRACTION_RT_SCALE = 0.75;
 const MIN_RT_SIZE = 16;
 // Re-tag swimmer subtrees onto SWIMMER_LAYER periodically to catch async-loaded
 // character models and rebuilt rosters.
 const SWIMMER_TAG_INTERVAL = 20;
-
-// Reused scratch vector so per-frame tint-plane positioning allocates nothing.
-const _tmpTintPos = new Vec3();
+// Frames to keep re-applying the RT to the water material after it is (re)created
+// or resized, covering the GPU texture handle changing on the first real render.
+const REBIND_WARMUP_FRAMES = 4;
+// Local-turbulence: must match MAX_DISTURB in RagingPoolWater.effect. Each slot
+// is a swimmer's world XZ (xy) + strength (z). disturbParams: x = influence
+// radius (world units of churn around a swimmer), y = chaotic ripple frequency,
+// z = churn strength added to the refraction offset, w = churn animation speed.
+const MAX_DISTURB = 8;
+const DISTURB_RADIUS = 1.7;
+const DISTURB_FREQUENCY = 9.0;
+const DISTURB_STRENGTH = 1.15;
+const DISTURB_SPEED = 4.2;
 
 // Drives real screen-space refraction for the pool water. A second camera mirrors
 // the active main camera every frame and renders only the underwater scene (pool
@@ -25,9 +38,6 @@ const _tmpTintPos = new Vec3();
 export class WaterRefractionController {
     private _refractionCamera: Camera | null = null;
     private _swimmerCamera: Camera | null = null;
-    private _tintPlanes: Node[] = [];
-    private _sceneParent: Node | null = null;
-    private _waterY = 0;
     private _renderTexture: RenderTexture | null = null;
     private _mainCamera: Camera | null = null;
     private _pool: Node | null = null;
@@ -36,17 +46,28 @@ export class WaterRefractionController {
     private _getSwimmerNodes: (() => Node[]) | null = null;
     private _rtWidth = 0;
     private _rtHeight = 0;
+    // Frames to keep re-applying the RT after (re)creation. The RT can recreate
+    // its underlying GPU texture on its first real render, so we rebind for a few
+    // frames instead of every frame; steady state does no per-frame rebinding.
+    private _rebindFrames = 0;
     private _frame = 0;
+    // Reused local-turbulence buffers so the per-frame uniform write allocates
+    // nothing. _disturb is uploaded to the water shader's swimmerDisturb[] array.
+    private readonly _disturb: Vec4[] = [];
+    private readonly _disturbParams = new Vec4(DISTURB_RADIUS, DISTURB_FREQUENCY, DISTURB_STRENGTH, DISTURB_SPEED);
+    private readonly _tmpPos = new Vec3();
     private readonly _debug?: (message: string) => void;
 
     constructor(debug?: (message: string) => void) {
         this._debug = debug;
+        for (let i = 0; i < MAX_DISTURB; i++) {
+            this._disturb.push(new Vec4(0, 0, 0, 0));
+        }
     }
 
     // mainCameraNode: the single camera the director drives. getSwimmerNodes:
     // returns the current swimmer root nodes to re-tag onto SWIMMER_LAYER.
-    // waterY / poolCenterX: place the underwater tint plane at the surface.
-    setup(mainCameraNode: Node, pool: Node, getSwimmerNodes: () => Node[], waterY: number, poolCenterX: number): boolean {
+    setup(mainCameraNode: Node, pool: Node, getSwimmerNodes: () => Node[]): boolean {
         const mainCamera = mainCameraNode?.getComponent(Camera);
         if (!mainCamera || !pool?.isValid) {
             return false;
@@ -61,6 +82,7 @@ export class WaterRefractionController {
         const rt = new RenderTexture('PoolWaterRefraction');
         rt.reset({ width: this._rtWidth, height: this._rtHeight });
         this._renderTexture = rt;
+        this._rebindFrames = REBIND_WARMUP_FRAMES;
 
         // Create the refraction camera as an INDEPENDENT top-level camera (a
         // sibling of the main camera under sceneRoot), NOT nested under the main
@@ -107,15 +129,6 @@ export class WaterRefractionController {
         swimmerCamera.priority = mainCamera.priority + 1;
         this._swimmerCamera = swimmerCamera;
 
-        // Underwater tint quads: one small horizontal blue plane PER swimmer,
-        // repositioned every frame to sit at the water surface directly above
-        // that swimmer (see syncTintPlanes). A single pool-wide plane was wrong:
-        // rendered by the swimmer camera over the whole final image, it darkened
-        // ALL the water and dimmed the splash particles. Per-swimmer quads tint
-        // only each swimmer's submerged body and leave the rest of the pool clear.
-        this._sceneParent = parent;
-        this._waterY = waterY;
-
         this.syncCamera();
 
         this._debug?.(`water refraction ready rt=${this._rtWidth}x${this._rtHeight}`);
@@ -147,35 +160,6 @@ export class WaterRefractionController {
         }
     }
 
-    // Keep one small tint quad per swimmer, parked at the water surface directly
-    // above each swimmer so it tints only that swimmer's submerged body.
-    private syncTintPlanes() {
-        const parent = this._sceneParent;
-        if (!parent?.isValid) {
-            return;
-        }
-        const nodes = this._getSwimmerNodes?.() ?? [];
-        while (this._tintPlanes.length < nodes.length) {
-            this._tintPlanes.push(buildTintPlane(parent));
-        }
-        for (let i = 0; i < this._tintPlanes.length; i++) {
-            const plane = this._tintPlanes[i];
-            if (!plane?.isValid) {
-                continue;
-            }
-            const swimmer = nodes[i];
-            if (swimmer?.isValid) {
-                swimmer.getWorldPosition(_tmpTintPos);
-                plane.setWorldPosition(_tmpTintPos.x, this._waterY - 0.02, _tmpTintPos.z);
-                if (!plane.active) {
-                    plane.active = true;
-                }
-            } else if (plane.active) {
-                plane.active = false;
-            }
-        }
-    }
-
     dispose() {
         if (this._refractionCamera?.isValid) {
             this._refractionCamera.targetTexture = null;
@@ -186,16 +170,9 @@ export class WaterRefractionController {
         if (this._swimmerCamera?.node?.isValid) {
             this._swimmerCamera.node.destroy();
         }
-        for (const plane of this._tintPlanes) {
-            if (plane?.isValid) {
-                plane.destroy();
-            }
-        }
-        this._tintPlanes = [];
         this._renderTexture?.destroy();
         this._refractionCamera = null;
         this._swimmerCamera = null;
-        this._sceneParent = null;
         this._renderTexture = null;
         this._mainCamera = null;
         this._pool = null;
@@ -233,6 +210,7 @@ export class WaterRefractionController {
         this._renderTexture?.resize(width, height);
         // Rebind so the sampler points at the resized window's texture.
         this._boundMaterial = null;
+        this._rebindFrames = REBIND_WARMUP_FRAMES;
     }
 
     // The runtime water material is created asynchronously by WaterSurfaceBinder,
@@ -254,16 +232,46 @@ export class WaterRefractionController {
         if (!material) {
             return;
         }
-        // Re-apply the RenderTexture every frame. This is cheap and guards against
-        // two things: (1) the runtime material replacing the GLB placeholder
-        // asynchronously, and (2) the RT recreating its underlying GPU texture on
-        // its first real render, which would otherwise leave the sampler pointing
-        // at a stale (frozen) texture handle.
-        material.setProperty('refractionMap', this._renderTexture);
-        if (material !== this._boundMaterial) {
+        // Rebind the RenderTexture only when the material instance changes (the
+        // runtime material replaces the GLB placeholder asynchronously) or during
+        // the short warmup after (re)creating the RT, whose GPU texture handle can
+        // change on its first real render. Steady state does no per-frame rebind.
+        const changed = material !== this._boundMaterial;
+        if (changed || this._rebindFrames > 0) {
+            material.setProperty('refractionMap', this._renderTexture);
+            if (this._rebindFrames > 0) {
+                this._rebindFrames -= 1;
+            }
+        }
+        if (changed) {
             this._boundMaterial = material;
             this._debug?.('water refraction map bound to material');
         }
+        this.updateSwimmerDisturbance(material, changed);
+    }
+
+    // Feed each swimmer's world XZ into the water shader's swimmerDisturb[] so the
+    // surface churns finely around them (see RagingPoolWater.effect). Gated on the
+    // runtime water material, which is the only one carrying these uniforms.
+    private updateSwimmerDisturbance(material: Material, justBound: boolean) {
+        if (material.name !== RUNTIME_WATER_MATERIAL_NAME) {
+            return;
+        }
+        if (justBound) {
+            material.setProperty('disturbParams', this._disturbParams);
+        }
+        const nodes = this._getSwimmerNodes?.() ?? [];
+        for (let i = 0; i < MAX_DISTURB; i++) {
+            const slot = this._disturb[i];
+            const node = nodes[i];
+            if (node?.isValid) {
+                node.getWorldPosition(this._tmpPos);
+                slot.set(this._tmpPos.x, this._tmpPos.z, 1.0, 0.0);
+            } else {
+                slot.set(0, 0, 0, 0);
+            }
+        }
+        material.setProperty('swimmerDisturb', this._disturb);
     }
 }
 
@@ -299,21 +307,4 @@ function mirrorCamera(main: Camera, target: Camera | null) {
     target.orthoHeight = main.orthoHeight;
     target.near = main.near;
     target.far = main.far;
-}
-
-// A small horizontal semi-transparent blue quad. One is parked at the water
-// surface directly above each swimmer (positioned every frame by
-// syncTintPlanes), so depth testing tints only that swimmer's submerged body
-// blue while leaving the rest of the pool water and splash particles untouched.
-function buildTintPlane(parent: Node): Node {
-    const node = new Node(TINT_PLANE_NAME);
-    node.setParent(parent);
-    node.layer = SWIMMER_LAYER;
-    const renderer = node.addComponent(MeshRenderer);
-    renderer.mesh = utils.createMesh(primitives.plane({ width: 3.0, length: 1.6, widthSegments: 1, lengthSegments: 1 }));
-    const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit', technique: 1 });
-    material.setProperty('mainColor', new Color(36, 126, 210, 132));
-    renderer.setMaterial(material, 0);
-    return node;
 }
