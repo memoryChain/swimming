@@ -138,6 +138,17 @@ export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
     { id: 'twist_dance', label: 'Twist Dance', pose: 'sampledAction', sampledActionId: 'twist_dance' },
     { id: 'waving_gesture', label: 'Waving Gesture', pose: 'sampledAction', sampledActionId: 'waving_gesture' },
     { id: 'ymca_dance', label: 'Ymca Dance', pose: 'sampledAction', sampledActionId: 'ymca_dance' },
+    { id: 'dancing_twerk', label: 'Dancing Twerk', pose: 'sampledAction', sampledActionId: 'dancing_twerk' },
+    { id: 'joyful_jump', label: 'Joyful Jump', pose: 'sampledAction', sampledActionId: 'joyful_jump' },
+    { id: 'victory_idle', label: 'Victory Idle', pose: 'sampledAction', sampledActionId: 'victory_idle' },
+    { id: 'victory', label: 'Victory', pose: 'sampledAction', sampledActionId: 'victory' },
+    { id: 'angry', label: 'Angry', pose: 'sampledAction', sampledActionId: 'angry' },
+    { id: 'defeated', label: 'Defeated', pose: 'sampledAction', sampledActionId: 'defeated' },
+    { id: 'loser', label: 'Loser', pose: 'sampledAction', sampledActionId: 'loser' },
+    { id: 'clapping', label: 'Clapping', pose: 'sampledAction', sampledActionId: 'clapping' },
+    { id: 'excited', label: 'Excited', pose: 'sampledAction', sampledActionId: 'excited' },
+    { id: 'happy', label: 'Happy', pose: 'sampledAction', sampledActionId: 'happy' },
+    { id: 'waving_0713', label: 'Waving 0713', pose: 'sampledAction', sampledActionId: 'waving_0713' },
 ];
 
 export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
@@ -186,6 +197,7 @@ export const RESOURCE_PATHS = {
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     swimmer0621ColorMask: 'models/UserSwimmer0621_2ColorMask/texture',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
+    sampledActionsDir: 'sampled-actions',
 };
 
 export function findSwimmerModelVariant(id: string): SwimmerModelVariant | null {

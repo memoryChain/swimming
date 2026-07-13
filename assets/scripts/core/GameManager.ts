@@ -59,6 +59,7 @@ import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
+import { loadSampledActionsForRace } from '../character/SampledActionLoader';
 
 const { ccclass } = _decorator;
 
@@ -178,33 +179,39 @@ export class GameManager extends Component {
         console.log(`[SpeedSwimming] target frameRate=${game.frameRate}`);
         this.node.layer = Layers.Enum.UI_2D;
         loadSavedTuningAsync(() => this.scheduleOnce(() => {
-            try {
-                this.buildScene((error) => {
-                    if (error) {
-                        this.paintError(error);
-                        return;
-                    }
-                    try {
-                        this.registerEvents();
-                        this.debug('3D runtime initialized');
-                        const launchMode = consumeMainGameLaunchMode();
-                        if (launchMode === 'model-debug') {
-                            this.enterModelDebug();
-                        } else {
-                            this._aiDebugMode = launchMode === 'ai-debug';
-                            if (this._aiDebugMode) {
-                                this._aiDebugDifficulty = getAiDebugDifficulty();
-                            }
-                            this.applyAiDebugHud();
-                            this.startGame();
+            loadSampledActionsForRace((actionError) => {
+                if (actionError) {
+                    this.paintError(actionError);
+                    return;
+                }
+                try {
+                    this.buildScene((error) => {
+                        if (error) {
+                            this.paintError(error);
+                            return;
                         }
-                    } catch (setupError) {
-                        this.paintError(setupError);
-                    }
-                });
-            } catch (error) {
-                this.paintError(error);
-            }
+                        try {
+                            this.registerEvents();
+                            this.debug('3D runtime initialized');
+                            const launchMode = consumeMainGameLaunchMode();
+                            if (launchMode === 'model-debug') {
+                                this.enterModelDebug();
+                            } else {
+                                this._aiDebugMode = launchMode === 'ai-debug';
+                                if (this._aiDebugMode) {
+                                    this._aiDebugDifficulty = getAiDebugDifficulty();
+                                }
+                                this.applyAiDebugHud();
+                                this.startGame();
+                            }
+                        } catch (setupError) {
+                            this.paintError(setupError);
+                        }
+                    });
+                } catch (error) {
+                    this.paintError(error);
+                }
+            });
         }, 0));
     }
 

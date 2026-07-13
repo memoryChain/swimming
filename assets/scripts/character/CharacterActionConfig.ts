@@ -11,6 +11,17 @@ export enum CharacterAction {
     TwistDance = 'twist_dance',
     WavingGesture = 'waving_gesture',
     YmcaDance = 'ymca_dance',
+    DancingTwerk = 'dancing_twerk',
+    JoyfulJump = 'joyful_jump',
+    VictoryIdle = 'victory_idle',
+    Victory = 'victory',
+    Angry = 'angry',
+    Defeated = 'defeated',
+    Loser = 'loser',
+    Clapping = 'clapping',
+    Excited = 'excited',
+    Happy = 'happy',
+    Waving0713 = 'waving_0713',
 }
 
 export const CHARACTER_ACTION_SAMPLE_IDS: Readonly<Record<CharacterAction, SampledActionId>> = {
@@ -22,6 +33,17 @@ export const CHARACTER_ACTION_SAMPLE_IDS: Readonly<Record<CharacterAction, Sampl
     [CharacterAction.TwistDance]: 'twist_dance',
     [CharacterAction.WavingGesture]: 'waving_gesture',
     [CharacterAction.YmcaDance]: 'ymca_dance',
+    [CharacterAction.DancingTwerk]: 'dancing_twerk',
+    [CharacterAction.JoyfulJump]: 'joyful_jump',
+    [CharacterAction.VictoryIdle]: 'victory_idle',
+    [CharacterAction.Victory]: 'victory',
+    [CharacterAction.Angry]: 'angry',
+    [CharacterAction.Defeated]: 'defeated',
+    [CharacterAction.Loser]: 'loser',
+    [CharacterAction.Clapping]: 'clapping',
+    [CharacterAction.Excited]: 'excited',
+    [CharacterAction.Happy]: 'happy',
+    [CharacterAction.Waving0713]: 'waving_0713',
 };
 
 // The inverse record makes a newly generated SampledActionId a compile error
@@ -35,6 +57,17 @@ export const CHARACTER_ACTIONS_BY_SAMPLE_ID: Readonly<Record<SampledActionId, Ch
     twist_dance: CharacterAction.TwistDance,
     waving_gesture: CharacterAction.WavingGesture,
     ymca_dance: CharacterAction.YmcaDance,
+    dancing_twerk: CharacterAction.DancingTwerk,
+    joyful_jump: CharacterAction.JoyfulJump,
+    victory_idle: CharacterAction.VictoryIdle,
+    victory: CharacterAction.Victory,
+    angry: CharacterAction.Angry,
+    defeated: CharacterAction.Defeated,
+    loser: CharacterAction.Loser,
+    clapping: CharacterAction.Clapping,
+    excited: CharacterAction.Excited,
+    happy: CharacterAction.Happy,
+    waving_0713: CharacterAction.Waving0713,
 };
 
 export type CharacterActionPoolConfig = {

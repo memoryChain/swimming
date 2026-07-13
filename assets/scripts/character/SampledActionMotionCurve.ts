@@ -1,12 +1,3 @@
-import { WAVING_SAMPLED_ACTION } from './sampled-actions/waving';
-import { ARM_STRETCHING_SAMPLED_ACTION } from './sampled-actions/arm_stretching';
-import { CHICKEN_DANCE_SAMPLED_ACTION } from './sampled-actions/chicken_dance';
-import { NECK_STRETCHING_SAMPLED_ACTION } from './sampled-actions/neck_stretching';
-import { SILLY_DANCING_SAMPLED_ACTION } from './sampled-actions/silly_dancing';
-import { TWIST_DANCE_SAMPLED_ACTION } from './sampled-actions/twist_dance';
-import { WAVING_GESTURE_SAMPLED_ACTION } from './sampled-actions/waving_gesture';
-import { YMCA_DANCE_SAMPLED_ACTION } from './sampled-actions/ymca_dance';
-
 export type SampledActionBoneName =
     | 'Root'
     | 'Hip'
@@ -33,7 +24,29 @@ export type SampledActionBoneName =
     | 'R_ToeBase'
 ;
 
-export type SampledActionId = 'waving' | 'arm_stretching' | 'chicken_dance' | 'neck_stretching' | 'silly_dancing' | 'twist_dance' | 'waving_gesture' | 'ymca_dance';
+export const SAMPLED_ACTION_IDS = [
+    'waving',
+    'arm_stretching',
+    'chicken_dance',
+    'neck_stretching',
+    'silly_dancing',
+    'twist_dance',
+    'waving_gesture',
+    'ymca_dance',
+    'dancing_twerk',
+    'joyful_jump',
+    'victory_idle',
+    'victory',
+    'angry',
+    'defeated',
+    'loser',
+    'clapping',
+    'excited',
+    'happy',
+    'waving_0713',
+] as const;
+
+export type SampledActionId = typeof SAMPLED_ACTION_IDS[number];
 
 export type SampledActionMotionSample = {
     phase: number;
@@ -52,28 +65,23 @@ export type SampledActionMotion = {
     samples: readonly SampledActionMotionSample[];
 };
 
-// Generated index. Each action's samples live in its own file under sampled-actions/.
-export const SAMPLED_DEBUG_ACTIONS: readonly SampledActionMotion[] = [
-    WAVING_SAMPLED_ACTION,
-    ARM_STRETCHING_SAMPLED_ACTION,
-    CHICKEN_DANCE_SAMPLED_ACTION,
-    NECK_STRETCHING_SAMPLED_ACTION,
-    SILLY_DANCING_SAMPLED_ACTION,
-    TWIST_DANCE_SAMPLED_ACTION,
-    WAVING_GESTURE_SAMPLED_ACTION,
-    YMCA_DANCE_SAMPLED_ACTION,
-];
+// The large sampled curves are race-bundle JSON assets. Keeping this module as a
+// small type/registry index prevents them from entering the WeChat startup script.
+const SAMPLED_DEBUG_ACTIONS_BY_ID: Partial<Record<SampledActionId, SampledActionMotion>> = {};
 
-const SAMPLED_DEBUG_ACTIONS_BY_ID: Readonly<Record<SampledActionId, SampledActionMotion>> = {
-    waving: WAVING_SAMPLED_ACTION,
-    arm_stretching: ARM_STRETCHING_SAMPLED_ACTION,
-    chicken_dance: CHICKEN_DANCE_SAMPLED_ACTION,
-    neck_stretching: NECK_STRETCHING_SAMPLED_ACTION,
-    silly_dancing: SILLY_DANCING_SAMPLED_ACTION,
-    twist_dance: TWIST_DANCE_SAMPLED_ACTION,
-    waving_gesture: WAVING_GESTURE_SAMPLED_ACTION,
-    ymca_dance: YMCA_DANCE_SAMPLED_ACTION,
-};
+export function registerSampledDebugAction(action: SampledActionMotion) {
+    SAMPLED_DEBUG_ACTIONS_BY_ID[action.id] = action;
+}
+
+export function haveAllSampledDebugActions(): boolean {
+    return SAMPLED_ACTION_IDS.every((id) => Boolean(SAMPLED_DEBUG_ACTIONS_BY_ID[id]));
+}
+
+export function getLoadedSampledDebugActions(): readonly SampledActionMotion[] {
+    return SAMPLED_ACTION_IDS
+        .map((id) => SAMPLED_DEBUG_ACTIONS_BY_ID[id])
+        .filter((action): action is SampledActionMotion => Boolean(action));
+}
 
 export function findSampledDebugAction(id: SampledActionId): SampledActionMotion | null {
     return SAMPLED_DEBUG_ACTIONS_BY_ID[id] ?? null;
