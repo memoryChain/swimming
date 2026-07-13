@@ -131,26 +131,6 @@ CCProgram water-fs %{
     vec4 swimmerDisturb[8];
   };
 
-  float waveLine(vec2 p, float speed, float freq, float width) {
-    float n = sin(p.x * freq + p.y * (freq * 0.73) + cc_time.x * speed);
-    float ridge = 1.0 - abs(n);
-    return smoothstep(1.0 - width, 1.0, ridge);
-  }
-
-  // Cheap animated pool caustic web: two perpendicular sets of moving sine
-  // bands multiplied into a bright diamond mesh, then sharpened into thin
-  // glowing lines. This is the dancing light network you see on real pool water.
-  float causticWeb(vec2 uv, float t) {
-    float scale = causticParams.x;
-    float speed = causticParams.y;
-    vec2 p1 = uv * scale + vec2(t * speed, t * speed * 0.6);
-    vec2 p2 = uv.yx * (scale * 1.37) + vec2(-t * speed * 0.8, t * speed * 1.1);
-    float a = (1.0 - abs(sin(p1.x))) * (1.0 - abs(sin(p1.y)));
-    float b = (1.0 - abs(sin(p2.x))) * (1.0 - abs(sin(p2.y)));
-    float web = max(a, b);
-    return pow(clamp(web, 0.0, 1.0), causticParams.z);
-  }
-
   // Irregular water wobble: several sine waves at NON-harmonic frequencies and
   // varied propagation directions summed together. Because the frequencies are
   // not integer multiples, the pattern never lines up into a regular sine
@@ -166,30 +146,11 @@ CCProgram water-fs %{
   }
 
   vec4 frag () {
-    vec2 uv = v_waterUv;
     float t = cc_time.x;
 
-    // Broad rolling swell that gently varies the base tone across the pool.
-    float large = sin(v_worldPos.x * waveA.y + t * waveA.z)
-                + sin(v_worldPos.z * waveB.y - t * waveB.z)
-                + sin((v_worldPos.x - v_worldPos.z) * 0.16 + t * 0.9);
-    large *= 0.3333;
-
-    // Surface chop for the crisp cartoon ripples. Single band only: the second
-    // higher-frequency waveLine was dropped to save mobile ALU; foam + wobble
-    // hide the reduced detail.
-    float chop = clamp(waveLine(uv + vec2(t * 0.055, -t * 0.02), foamParams.y, 22.0, foamParams.z), 0.0, 1.0);
-
-    // Bright dancing caustic network. Single octave (the second octave was
-    // dropped to save mobile ALU) with a small brightness lift to compensate.
-    float caustic = clamp(causticWeb(uv, t) * 1.15, 0.0, 1.0);
-
-    // Grazing-angle brightening so the far end reads as a lighter sky-cyan,
-    // like the reference where distant water glows brighter.
+    // Grazing-angle brightening so the far end reads as a lighter sky-cyan.
     vec3 viewDir = normalize(cc_cameraPos.xyz - v_worldPos);
     float fresnel = pow(1.0 - clamp(viewDir.y, 0.0, 1.0), 3.0);
-
-    float foam = smoothstep(foamParams.x, 1.0, chop * 0.5 + abs(large) * 0.28);
 
     // Underwater-looking-up view: when the camera is below the surface, drop the
     // opaque floor compositing (which is meaningless from below and reads as a
@@ -202,8 +163,6 @@ CCProgram water-fs %{
       float upness = clamp(-viewDir.y, 0.0, 1.0);
       float windowMask = smoothstep(0.12, 0.62, upness);
       vec3 underTint = mix(deepColor.rgb, shallowColor.rgb, windowMask);
-      underTint += causticColor.rgb * caustic * causticParams.w * 0.5;
-      underTint += foamColor.rgb * foam * foamParams.w * (1.0 - windowMask) * 0.6;
       // See-through inside the window (small alpha), opaque tint at grazing.
       float underAlpha = mix(0.9, 0.2, windowMask);
       vec4 uo = vec4(underTint, underAlpha);
@@ -261,11 +220,12 @@ CCProgram water-fs %{
     float tintAmt = clamp(waterColor.a * grazeFactor + 0.26, 0.0, 1.0);
     vec3 color = mix(floorSeen, waterColor.rgb, tintAmt);
 
-    // Surface life on top: dancing caustics, grazing sky glint, wave sheen, foam.
-    color += causticColor.rgb * caustic * causticParams.w;
+    // Surface life on top: grazing sky glint + subtle wave sheen. (Caustics and
+    // foam were removed — caustic strength is forced to 0 at runtime and foam
+    // never crossed its threshold, so both were pure wasted ALU on this large
+    // water plane.)
     color = mix(color, shallowColor.rgb * 1.15, fresnel * 0.20);
     color += vec3(0.05, 0.10, 0.12) * max(v_wave, 0.0) * 0.9;
-    color = mix(color, foamColor.rgb, foam * foamParams.w);
     // Mild overall lift so the surface reads bright and sunlit rather than dull.
     color *= 1.05;
 

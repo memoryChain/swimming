@@ -76,6 +76,14 @@ function applyWaterMaterial(material: Material) {
             WATER_COLOR_TUNING.surfaceB,
             Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.surfaceStrength * 255))),
         ));
+        // Keep the animated caustic light blobs OFF. The shipped shader has the
+        // caustic code removed, but the editor preview may still run a stale build
+        // that includes it, so force causticParams.w = 0 here too (uniform, applies
+        // without an effect recompile) to avoid the drifting white smudges.
+        const caustic = material.getProperty('causticParams') as Vec4 | null;
+        if (caustic) {
+            material.setProperty('causticParams', new Vec4(caustic.x, caustic.y, caustic.z, 0));
+        }
     } catch {
         // Material's effect lacks these uniforms; ignore.
     }
