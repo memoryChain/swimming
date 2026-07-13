@@ -107,7 +107,7 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     let applied = 0;
     for (const renderer of options.skinnedRenderers) {
         for (let i = 0; i < 8; i++) {
-            const original = renderer.getMaterial(i);
+            const original = renderer.getSharedMaterial(i);
             if (!original) {
                 continue;
             }
@@ -574,7 +574,7 @@ function applyMaterialByName(root: Node, names: string[], material: Material): n
 function setAllRendererMaterialSlots(source: SkinnedMeshRenderer, target: SkinnedMeshRenderer, material: Material) {
     let applied = false;
     for (let i = 0; i < 8; i++) {
-        if (source.getMaterial(i)) {
+        if (source.getSharedMaterial(i)) {
             target.setMaterial(material, i);
             applied = true;
         }

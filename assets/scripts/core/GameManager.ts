@@ -1307,14 +1307,20 @@ function color(r: number, g: number, b: number, a = 255): Color {
 
 function makeUnderwaterTintMaterial(): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit', technique: 1 });
-    material.name = 'UnderwaterCameraTint';
-    material.setProperty('mainColor', new Color(10, 140, 215, 78));
-    material.overridePipelineStates({
-        depthStencilState: {
-            depthTest: false,
-            depthWrite: false,
+    // Set the depth pipeline states at initialize time. Calling
+    // overridePipelineStates() afterwards on a base Material (asset) warns
+    // "Pipeline states ... cannot be modified at runtime, instantiate first".
+    material.initialize({
+        effectName: 'builtin-unlit',
+        technique: 1,
+        states: {
+            depthStencilState: {
+                depthTest: false,
+                depthWrite: false,
+            },
         },
     });
+    material.name = 'UnderwaterCameraTint';
+    material.setProperty('mainColor', new Color(10, 140, 215, 78));
     return material;
 }

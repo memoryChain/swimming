@@ -1,4 +1,5 @@
 import { Camera, Layers, Material, MeshRenderer, Node, RenderTexture, Vec3, Vec4, view } from 'cc';
+import { EDITOR } from 'cc/env';
 import { SWIMMER_LAYER, UNDERWATER_LAYER } from './WaterSurfaceBinder';
 
 const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
@@ -142,10 +143,41 @@ export class WaterRefractionController {
         this.resizeIfNeeded();
         this.syncCamera();
         this.ensureMaterialBound();
+        this.forceEditorPreviewRefresh();
         this._frame += 1;
         if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
         }
+    }
+
+    // The editor preview panel (EDITOR=true, PREVIEW=false) renders an off-screen
+    // (targetTexture) camera only ONCE, when its RenderTexture window is created,
+    // and never ticks it again — so the RT freezes on frame 1 while update() keeps
+    // running. Re-assigning the target, resizing, or clearing the SAME window does
+    // nothing (the camera is not in the editor preview's per-frame render list).
+    // The only lever that yields a fresh render is a brand-new RenderTexture
+    // window, so in the editor we recreate it every frame — each frame gets its
+    // own "first render". Gated to EDITOR so the browser preview (which renders
+    // off-screen cameras normally) and real device builds never pay for it.
+    private forceEditorPreviewRefresh() {
+        if (!EDITOR) {
+            return;
+        }
+        const camera = this._refractionCamera;
+        if (!camera?.isValid || this._rtWidth <= 0 || this._rtHeight <= 0) {
+            return;
+        }
+        const old = this._renderTexture;
+        const fresh = new RenderTexture('PoolWaterRefractionPreview');
+        fresh.reset({ width: this._rtWidth, height: this._rtHeight });
+        camera.targetTexture = fresh;
+        this._renderTexture = fresh;
+        // Re-point the live water material at the fresh RT before freeing the old
+        // one, so the sampler never references a destroyed texture.
+        if (this._boundMaterial?.isValid) {
+            this._boundMaterial.setProperty('refractionMap', fresh);
+        }
+        old?.destroy();
     }
 
     // Move swimmer subtrees onto SWIMMER_LAYER so only the swimmer camera draws
@@ -229,20 +261,22 @@ export class WaterRefractionController {
             }
         }
         const material = this._waterNode.getComponent(MeshRenderer)?.getSharedMaterial(0) ?? null;
-        if (!material) {
+        // Only the runtime water material (RuntimePoolWater) carries the
+        // refractionMap sampler. Skip the GLB placeholder that ships on the node
+        // before WaterSurfaceBinder swaps the real material in, otherwise
+        // setProperty logs "illegal property name: refractionMap" every frame.
+        if (!material || material.name !== RUNTIME_WATER_MATERIAL_NAME) {
             return;
         }
-        // Rebind the RenderTexture only when the material instance changes (the
-        // runtime material replaces the GLB placeholder asynchronously) or during
-        // the short warmup after (re)creating the RT, whose GPU texture handle can
-        // change on its first real render. Steady state does no per-frame rebind.
+        // Re-apply the RenderTexture EVERY frame. This is cheap and is required to
+        // keep the water live in the editor's Preview: there the RT recreates its
+        // underlying GPU texture handle after the first render, so a one-time bind
+        // leaves the sampler pointing at a stale (frozen) texture — the classic
+        // "RT only shows the first frame" symptom. The external browser keeps a
+        // stable handle so it survives either way, but rebinding every frame makes
+        // both environments behave the same.
+        material.setProperty('refractionMap', this._renderTexture);
         const changed = material !== this._boundMaterial;
-        if (changed || this._rebindFrames > 0) {
-            material.setProperty('refractionMap', this._renderTexture);
-            if (this._rebindFrames > 0) {
-                this._rebindFrames -= 1;
-            }
-        }
         if (changed) {
             this._boundMaterial = material;
             this._debug?.('water refraction map bound to material');

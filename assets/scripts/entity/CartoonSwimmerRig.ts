@@ -1225,7 +1225,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 function setAllRendererMaterialSlots(source: SkinnedMeshRenderer, target: SkinnedMeshRenderer, material: Material) {
     let applied = false;
     for (let i = 0; i < 8; i++) {
-        if (source.getMaterial(i)) {
+        if (source.getSharedMaterial(i)) {
             target.setMaterial(material, i);
             applied = true;
         }
