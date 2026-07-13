@@ -1,5 +1,6 @@
 import { _decorator, Component, Node, Tween, Vec3, tween } from 'cc';
 import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
+import type { CharacterAction } from '../character/CharacterActionConfig';
 import {
     Rating,
     StrokeType,
@@ -125,6 +126,10 @@ export class Swimmer extends Component {
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setShowcaseStanding();
+    }
+
+    setShowcaseAction(action: CharacterAction): boolean {
+        return this.cartoonRig?.setShowcaseAction(action) ?? false;
     }
 
     performDive(result: DiveResult): number {

@@ -1,5 +1,7 @@
 import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
+import { sampledActionIdFor } from '../character/CharacterActionConfig';
+import type { CharacterAction } from '../character/CharacterActionConfig';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
@@ -408,6 +410,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._animationPlayer.stop();
         this._poseState.enterShowcaseStanding(transitionSeconds);
+    }
+
+    setShowcaseAction(action: CharacterAction): boolean {
+        return this._poseState.setShowcaseAction(sampledActionIdFor(action));
     }
 
     setFinishFloating() {

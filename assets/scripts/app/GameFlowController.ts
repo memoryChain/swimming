@@ -8,6 +8,7 @@ import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/Rac
 import { resolveDiveResult } from '../core/DiveResolver';
 import { DiveResult } from '../core/DiveResult';
 import { SprintTier } from '../condition/ConditionTypes';
+import { CHARACTER_ACTION_CONFIG, selectAdjacentDistinctActions } from '../character/CharacterActionConfig';
 import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
 
@@ -62,8 +63,7 @@ export class GameFlowController {
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
-        this._refs.playerSwimmer?.prepareShowcaseStanding();
-        this.prepareAiShowcaseStanding();
+        this.prepareShowcaseRoster();
         this._refs.raceCameraDirector.resetToBroadcast();
         this._refs.raceCameraDirector.startPreCountdownOrbit([
             this._refs.playerSwimmer?.node.position.z,
@@ -76,7 +76,7 @@ export class GameFlowController {
         if (this._refs.getState() !== GameState.PRECOUNTDOWN) {
             return;
         }
-        this.prepareAiShowcaseStanding();
+        this.prepareShowcaseRoster();
         this._refs.raceCameraDirector.updatePreCountdownRacerLanes([
             this._refs.playerSwimmer?.node.position.z,
             ...this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).map((swimmer) => swimmer.node.position.z),
@@ -319,12 +319,21 @@ export class GameFlowController {
         }
     }
 
-    private prepareAiShowcaseStanding() {
-        for (const swimmer of this._refs.aiSwimmers) {
-            if (swimmer.node.active) {
-                swimmer.prepareShowcaseStanding();
-            }
+    private prepareShowcaseRoster() {
+        const swimmers = [this._refs.playerSwimmer, ...this._refs.aiSwimmers]
+            .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.active))
+            .sort((left, right) => left.node.position.z - right.node.position.z);
+        const actions = selectAdjacentDistinctActions(
+            swimmers.length,
+            CHARACTER_ACTION_CONFIG.showcase.actions,
+        );
+        for (let index = 0; index < swimmers.length; index++) {
+            const swimmer = swimmers[index];
+            const action = actions[index];
+            swimmer.setShowcaseAction(action);
+            swimmer.prepareShowcaseStanding();
         }
+        this._refs.debug(`showcase actions=${actions.join(',')}`);
     }
 
     startAllAi() {

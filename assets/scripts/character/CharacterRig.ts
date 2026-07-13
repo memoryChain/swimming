@@ -1,10 +1,12 @@
 import { Color } from 'cc';
 import { StrokeType } from '../core/GameConstants';
+import type { CharacterAction } from './CharacterActionConfig';
 
 export interface CharacterRig {
     build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle?: boolean, playerOutline?: boolean): void;
     setActiveSwimming(active: boolean): void;
     setSwimmerColors(skinColor: Color, suitColor: Color, capColor: Color, robotStyle?: boolean, playerOutline?: boolean): void;
+    setShowcaseAction(action: CharacterAction): boolean;
     setShowcaseStanding(transitionSeconds?: number): void;
     setDiveReady(active: boolean, transitionSeconds?: number): void;
     setFinishFloating(): void;

@@ -3,8 +3,7 @@ import { CHARACTER_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { FreestylePoseController, ProceduralPoseSnapshot } from './FreestylePoseController';
 import { findSampledDebugAction } from './SampledActionMotionCurve';
-
-const SHOWCASE_ACTION = findSampledDebugAction('waving');
+import type { SampledActionId, SampledActionMotion } from './SampledActionMotionCurve';
 
 export enum CharacterPoseState {
     Preview = 'preview',
@@ -48,6 +47,7 @@ export class CharacterPoseStateController {
     private _diveTransitionDuration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds;
     private _treadWaterStartTime = 0;
     private _showcaseStartTime = 0;
+    private _showcaseAction: SampledActionMotion | null = findSampledDebugAction('waving');
     private _poseTransition: PoseTransition | null = null;
     private readonly _transitionPosition = new Vec3();
     private readonly _transitionRotation = new Quat();
@@ -61,6 +61,15 @@ export class CharacterPoseStateController {
 
     get isFreestyleActive(): boolean {
         return this._state === CharacterPoseState.Freestyle || this._state === CharacterPoseState.Glide;
+    }
+
+    setShowcaseAction(actionId: SampledActionId): boolean {
+        const action = findSampledDebugAction(actionId);
+        if (!action) {
+            return false;
+        }
+        this._showcaseAction = action;
+        return true;
     }
 
     enterPreview() {
@@ -350,8 +359,8 @@ export class CharacterPoseStateController {
 
     private updateShowcaseStanding() {
         const elapsed = Math.max(0, this._options.getSelfTime() - this._showcaseStartTime);
-        const phase = SHOWCASE_ACTION
-            ? positiveMod(elapsed / Math.max(0.1, SHOWCASE_ACTION.durationSeconds), 1)
+        const phase = this._showcaseAction
+            ? positiveMod(elapsed / Math.max(0.1, this._showcaseAction.durationSeconds), 1)
             : 0;
         this.applyShowcasePose(phase);
         this._options.updateSplashSurface(0);
@@ -359,8 +368,8 @@ export class CharacterPoseStateController {
     }
 
     private applyShowcasePose(phase: number) {
-        if (SHOWCASE_ACTION) {
-            this._options.pose.applySampledActionPose(SHOWCASE_ACTION.id, phase, 1);
+        if (this._showcaseAction) {
+            this._options.pose.applySampledActionPose(this._showcaseAction.id, phase, 1);
             return;
         }
         this._options.pose.applyPreRaceStandingPose();
