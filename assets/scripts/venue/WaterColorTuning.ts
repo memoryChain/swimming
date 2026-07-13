@@ -14,6 +14,12 @@ export const WATER_COLOR_TUNING = {
     // refractionParams.z: how strongly the flat water colour tints the refracted
     // floor (0 = clear floor, 1 = solid water colour).
     tintStrength: 0.5,
+    // Explicit flat water surface colour that overrides the refraction detail.
+    // surfaceStrength = how strongly this exact colour wins (0 = pure refraction
+    // look, 1 = solid obvious colour). This is the direct "just set the water
+    // colour" knob. Default = the bright azure pool blue from Mario & Sonic 2020.
+    surfaceR: 16, surfaceG: 112, surfaceB: 206,
+    surfaceStrength: 0.32,
     // Swimmer submerged-body blue (SwimmerDynamicColor waterLine tint) + strength.
     bodyR: 40, bodyG: 150, bodyB: 226,
     bodyStrength: 0.8,
@@ -63,6 +69,13 @@ function applyWaterMaterial(material: Material) {
         const y = current?.y ?? 0;
         const w = current?.w ?? 5.5;
         material.setProperty('refractionParams', new Vec4(x, y, WATER_COLOR_TUNING.tintStrength, w));
+        // Explicit flat surface colour: rgb = colour, a = override strength.
+        material.setProperty('waterColor', new Color(
+            WATER_COLOR_TUNING.surfaceR,
+            WATER_COLOR_TUNING.surfaceG,
+            WATER_COLOR_TUNING.surfaceB,
+            Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.surfaceStrength * 255))),
+        ));
     } catch {
         // Material's effect lacks these uniforms; ignore.
     }

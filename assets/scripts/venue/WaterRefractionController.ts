@@ -1,4 +1,4 @@
-import { Camera, Layers, Material, MeshRenderer, Node, RenderTexture, Vec3, Vec4, view } from 'cc';
+import { Camera, Color, Layers, Material, MeshRenderer, Node, RenderTexture, Vec3, Vec4, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { SWIMMER_LAYER, UNDERWATER_LAYER } from './WaterSurfaceBinder';
 
@@ -29,6 +29,17 @@ const DISTURB_RADIUS = 1.7;
 const DISTURB_FREQUENCY = 9.0;
 const DISTURB_STRENGTH = 1.15;
 const DISTURB_SPEED = 4.2;
+// Pool-bottom recolour that swaps with the camera: ABOVE water the floor/walls are
+// deep pool BLUE (so the surface reads as rich blue water); UNDER water they turn
+// light/WHITE so the submerged view stays a legible natural pool instead of a blue
+// blur. Lane lines stay dark in both. First matching prefix wins.
+const FLOOR_TINT: { prefix: string; above: Color; below: Color }[] = [
+    { prefix: 'lane_floor_line', above: new Color(8, 12, 20, 255), below: new Color(26, 32, 42, 255) },
+    { prefix: 'lane_t_end', above: new Color(8, 12, 20, 255), below: new Color(26, 32, 42, 255) },
+    { prefix: 'pool_tile_grout', above: new Color(18, 100, 182, 255), below: new Color(176, 198, 216, 255) },
+    { prefix: 'pool_inner_wall', above: new Color(38, 146, 222, 255), below: new Color(220, 234, 246, 255) },
+    { prefix: 'pool_floor', above: new Color(24, 126, 210, 255), below: new Color(232, 242, 249, 255) },
+];
 
 // Drives real screen-space refraction for the pool water. A second camera mirrors
 // the active main camera every frame and renders only the underwater scene (pool
@@ -57,6 +68,11 @@ export class WaterRefractionController {
     private readonly _disturb: Vec4[] = [];
     private readonly _disturbParams = new Vec4(DISTURB_RADIUS, DISTURB_FREQUENCY, DISTURB_STRENGTH, DISTURB_SPEED);
     private readonly _tmpPos = new Vec3();
+    // Pool-bottom materials whose colour swaps with the camera crossing the water
+    // line (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
+    private readonly _floorTints: { material: Material; above: Color; below: Color }[] = [];
+    private _waterY = 0;
+    private _floorUnderwater: boolean | null = null;
     private readonly _debug?: (message: string) => void;
 
     constructor(debug?: (message: string) => void) {
@@ -76,6 +92,10 @@ export class WaterRefractionController {
         this._mainCamera = mainCamera;
         this._pool = pool;
         this._getSwimmerNodes = getSwimmerNodes;
+
+        const waterNode = findNodeByName(pool, WATER_SURFACE_NODE_NAME);
+        this._waterY = waterNode?.isValid ? waterNode.worldPosition.y : 0.1;
+        this.collectFloorTints(pool);
 
         const size = view.getVisibleSize();
         this._rtWidth = Math.max(MIN_RT_SIZE, Math.round(size.width * REFRACTION_RT_SCALE));
@@ -144,9 +164,58 @@ export class WaterRefractionController {
         this.syncCamera();
         this.ensureMaterialBound();
         this.forceEditorPreviewRefresh();
+        this.updateFloorTint();
         this._frame += 1;
         if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
+        }
+    }
+
+    // Collect the pool-bottom renderers matching FLOOR_TINT, give each an unlit
+    // material initialised to the ABOVE-water (blue) colour, and remember the
+    // material + both colours so updateFloorTint() can swap them per frame.
+    private collectFloorTints(pool: Node) {
+        this._floorTints.length = 0;
+        const walk = (node: Node) => {
+            const name = node.name.toLowerCase();
+            const match = FLOOR_TINT.find((entry) => name.startsWith(entry.prefix));
+            if (match) {
+                const renderer = node.getComponent(MeshRenderer);
+                if (renderer) {
+                    const slots = renderer.sharedMaterials.length || 1;
+                    for (let i = 0; i < slots; i++) {
+                        const material = new Material();
+                        material.initialize({ effectName: 'builtin-unlit' });
+                        material.name = `RuntimeFloor_${node.name}`;
+                        material.setProperty('mainColor', match.above.clone());
+                        renderer.setMaterial(material, i);
+                        this._floorTints.push({ material, above: match.above, below: match.below });
+                    }
+                }
+            }
+            for (const child of node.children) {
+                walk(child);
+            }
+        };
+        walk(pool);
+        this._floorUnderwater = null;
+    }
+
+    // Swap the pool-bottom colours when the camera crosses the water line: blue
+    // above (rich water look), light/white below (legible underwater view).
+    private updateFloorTint() {
+        if (this._floorTints.length <= 0 || !this._mainCamera?.node?.isValid) {
+            return;
+        }
+        const underwater = this._mainCamera.node.worldPosition.y < this._waterY;
+        if (underwater === this._floorUnderwater) {
+            return;
+        }
+        this._floorUnderwater = underwater;
+        for (const tint of this._floorTints) {
+            if (tint.material?.isValid) {
+                tint.material.setProperty('mainColor', underwater ? tint.below : tint.above);
+            }
         }
     }
 
@@ -211,6 +280,8 @@ export class WaterRefractionController {
         this._waterNode = null;
         this._boundMaterial = null;
         this._getSwimmerNodes = null;
+        this._floorTints.length = 0;
+        this._floorUnderwater = null;
     }
 
     // Copy the main camera's world transform and projection every frame so both

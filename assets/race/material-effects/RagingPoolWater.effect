@@ -26,6 +26,10 @@ CCEffect %{
         foamParams:      { value: [0.80, 1.35, 0.10, 0.22] }
         causticParams:   { value: [7.00, 0.35, 2.60, 0.55] }
         refractionParams: { value: [0.0003, 0.00, 0.32, 25.50] }
+        # rgb = a flat, explicit water surface colour; a = how strongly it overrides
+        # the refraction/caustic/foam detail (0 = pure refraction, 1 = solid colour).
+        # Default = bright azure pool blue (Mario & Sonic 2020 reference).
+        waterColor:      { value: [0.011, 0.27, 0.71, 0.72], linear: true, editor: { type: color } }
         refractionMap:   { value: grey }
 }%
 
@@ -53,6 +57,7 @@ CCProgram water-vs %{
     vec4 foamParams;
     vec4 causticParams;
     vec4 refractionParams;
+    vec4 waterColor;
   };
 
   vec4 vert () {
@@ -103,6 +108,7 @@ CCProgram water-fs %{
     vec4 foamParams;
     vec4 causticParams;
     vec4 refractionParams;
+    vec4 waterColor;
   };
 
   // Underwater scene (pool floor) rendered by the refraction camera into a
@@ -236,15 +242,32 @@ CCProgram water-fs %{
     vec2 refractUV = clamp(screenUV + dudv * refractionParams.x, vec2(0.001), vec2(0.999));
     vec3 background = texture(refractionMap, refractUV).rgb;
 
-    // Tint the refracted floor toward the pool's cyan; caustics, fresnel and
-    // foam add surface life on top.
-    vec3 waterTint = mix(deepColor.rgb, shallowColor.rgb, 0.6 + large * 0.14 + chop * 0.12);
-    vec3 color = mix(background, waterTint, refractionParams.z);
+    // Start from the crisp refracted floor so the pool bottom (lane lines, tiles)
+    // stays visible THROUGH the water — that legibility is what makes water read as
+    // clear/transparent instead of a flat blue wash.
+    vec3 floorSeen = background;
+    // Brighten + add contrast to the refracted floor so the pool bottom reads as
+    // bright tiles + crisp lane lines (like Mario's white-tiled pool). This is what
+    // makes the transparent water look luminous instead of dull/dark — the water
+    // is only as bright as the floor seen through it.
+    floorSeen = clamp((floorSeen - 0.5) * 1.35 + 0.5, 0.0, 1.0) * 1.08;
+
+    // Depth-style blue absorption: the more grazing the view, the longer the sight
+    // line travels through water, so it tints bluer (far/grazing = blue, looking
+    // straight down = clear to the floor). waterColor.rgb = the pool blue,
+    // waterColor.a = tint strength (the "water colour strength" knob).
+    float viewUp = clamp(viewDir.y, 0.0, 1.0);
+    float grazeFactor = mix(1.0, 0.34, viewUp);
+    float tintAmt = clamp(waterColor.a * grazeFactor + 0.26, 0.0, 1.0);
+    vec3 color = mix(floorSeen, waterColor.rgb, tintAmt);
+
+    // Surface life on top: dancing caustics, grazing sky glint, wave sheen, foam.
     color += causticColor.rgb * caustic * causticParams.w;
-    color = mix(color, shallowColor.rgb * 1.12, fresnel * 0.22);
-    color *= 1.12;
+    color = mix(color, shallowColor.rgb * 1.15, fresnel * 0.20);
     color += vec3(0.05, 0.10, 0.12) * max(v_wave, 0.0) * 0.9;
     color = mix(color, foamColor.rgb, foam * foamParams.w);
+    // Mild overall lift so the surface reads bright and sunlit rather than dull.
+    color *= 1.05;
 
     // Opaque: we composite the refracted floor ourselves. Swimmers are drawn on
     // top by a separate camera, so the water no longer needs to be see-through.
