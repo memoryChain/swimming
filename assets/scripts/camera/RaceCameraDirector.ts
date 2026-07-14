@@ -15,9 +15,9 @@ const PRE_RACE_CLOSEUP_FOV = 30;
 // looking down the lanes so all eight lanes read on screen.
 const PRE_RACE_OVERVIEW_TARGET_AHEAD = 0.32; // fraction of course length ahead of the start edge
 const PRE_RACE_OVERVIEW_TARGET_Y = 1.1;
-const PRE_RACE_OVERVIEW_BACK = 9.5;   // camera pulled back behind the blocks
+const PRE_RACE_OVERVIEW_BACK = 6.0;   // camera pulled back behind the blocks (kept inside the near hall wall at X=-8)
 const PRE_RACE_OVERVIEW_HEIGHT = 8.2; // elevated
-const PRE_RACE_OVERVIEW_SIDE = 7.5;   // pushed off to one pool side for the angle
+const PRE_RACE_OVERVIEW_SIDE = 4.5;   // pushed off to one pool side (kept inside the grandstand which starts ~7m off-center)
 // Close-up shot: framed in front of each standing swimmer (down-pool, looking
 // back at the front of the athlete) with a slight 3/4 angle, aimed at the
 // upper body / head so the athlete sits high in frame.
@@ -106,6 +106,10 @@ export class RaceCameraDirector {
     private _diveShotElapsed = -1;
     private _diveSurfaceRestoreSeconds = 0;
     private _topViewActive = false;
+    // When true this director drives the venue jumbotron feed camera and keeps the classic
+    // in-race side-tracking broadcast view. The main-camera director (feedMode=false) shows
+    // the sprint chase during the swim instead.
+    private _feedMode = false;
     private _underwaterViewActive = false;
     private _preCountdownElapsed = 0;
     private _preCountdownActive = false;
@@ -125,6 +129,10 @@ export class RaceCameraDirector {
         this._cameraNode.setPosition(this._cameraPos);
         this._cameraNode.lookAt(this._cameraTarget);
         this.applyFov();
+    }
+
+    setFeedMode(enabled: boolean) {
+        this._feedMode = enabled;
     }
 
     cycleMode(): string {
@@ -338,10 +346,11 @@ export class RaceCameraDirector {
         let hardCameraCut = false;
         const wasUnderwaterView = this._underwaterViewActive;
         if (this._awardsCenter) {
-            // Aim to the right of the temporary podium so the winners occupy the
-            // left half of the screen and leave room for the result panel.
-            desiredTarget = new Vec3(this._awardsCenter.x + 2.35, this._awardsCenter.y + 1.05, this._awardsCenter.z);
-            desiredPos = new Vec3(desiredTarget.x, desiredTarget.y + 2.35, desiredTarget.z + 9.4);
+            // The podium sits at the far end of the hall. View it from the pool
+            // side looking down-pool, and shift the aim toward +Z so the three
+            // winners occupy the left half, leaving room for the result panel.
+            desiredTarget = new Vec3(this._awardsCenter.x, this._awardsCenter.y + 0.95, this._awardsCenter.z + 1.6);
+            desiredPos = new Vec3(desiredTarget.x - 7.0, desiredTarget.y + 1.9, desiredTarget.z);
             this._broadcastDesiredFov = 38;
         } else if (this._preCountdownActive) {
             const elapsed = this._preCountdownElapsed;
@@ -412,8 +421,11 @@ export class RaceCameraDirector {
             desiredPos = underwaterDiveCameraPos(playerX, playerY, this._playerLaneZ, direction);
             this._broadcastDesiredFov = 43;
             underwaterView = true;
-        } else if (snapshot.sprintActive
+        } else if (this._feedMode
+            && snapshot.sprintActive
             && raceDistance - playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance) {
+            // Finish-line top view now plays ONLY on the venue jumbotron (feed). The main
+            // camera stays in the sprint chase all the way to the wall.
             this.finishDiveShotIfNeeded();
             const courseEndDistance = this._courseLayout.currentCourseEndDistance(playerDistance, raceDistance);
             const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
@@ -425,6 +437,15 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = 46;
             fixedTopView = true;
         } else if (snapshot.sprintActive) {
+            this.finishDiveShotIfNeeded();
+            const sprintView = sprintCameraView(snapshot, direction);
+            desiredPos = sprintView.position;
+            desiredTarget = sprintView.target;
+            this._broadcastDesiredFov = RACE_CAMERA_TUNING.sprintFov;
+        } else if (!this._feedMode) {
+            // Main camera during the swim: sprint chase. The classic side-tracking
+            // broadcast view is now shown on the venue jumbotron (the feed director,
+            // feedMode=true, falls through to the side shots below).
             this.finishDiveShotIfNeeded();
             const sprintView = sprintCameraView(snapshot, direction);
             desiredPos = sprintView.position;

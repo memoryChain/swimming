@@ -55,6 +55,7 @@ import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { WaterRefractionController } from '../venue/WaterRefractionController';
+import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
@@ -106,6 +107,7 @@ export class GameManager extends Component {
     private _poolNode: Node = null;
     private _cameraNode: Node = null;
     private _waterRefraction: WaterRefractionController | null = null;
+    private _scoreboardFeed: ScoreboardFeedCamera | null = null;
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
     private readonly _tmpDialRight = new Vec3();
@@ -160,6 +162,8 @@ export class GameManager extends Component {
     private _aiDebugCameraButtonLabel: Label = null;
     private _raceCameraButton: Node = null;
     private _raceCameraButtonLabel: Label = null;
+    private _scoreboardViewButton: Node = null;
+    private _scoreboardViewButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -223,6 +227,8 @@ export class GameManager extends Component {
         this._gameFlow?.clearRaceManagerCallbacks();
         this._waterRefraction?.dispose();
         this._waterRefraction = null;
+        this._scoreboardFeed?.dispose();
+        this._scoreboardFeed = null;
     }
 
     update(dt: number) {
@@ -255,6 +261,9 @@ export class GameManager extends Component {
             ));
         if (this._raceCameraButton?.isValid) {
             this._raceCameraButton.active = playerIndicatorVisible && raceActive;
+        }
+        if (this._scoreboardViewButton?.isValid) {
+            this._scoreboardViewButton.active = playerIndicatorVisible && raceActive;
         }
         // Motor speed becomes meaningful after the dive has entered its glide.
         // Keep the player marker visible before takeoff, but hide the speed text.
@@ -466,6 +475,7 @@ export class GameManager extends Component {
             aiControllers: this._aiControllers,
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
+            updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
@@ -481,7 +491,7 @@ export class GameManager extends Component {
             clearFinishRanks: () => this._finishRankMarkers.clear(),
             showFinishRank: (result) => this._finishRankMarkers.show(result),
             showAwards: (leaderboard) => {
-                const center = this._awardsPresentation.show(leaderboard);
+                const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);
             },
             applyPlayerDive: (result) => {
@@ -622,6 +632,13 @@ export class GameManager extends Component {
     }
 
     private buildSpectatorCrowd(root: Node, pool: Node | null) {
+        // Spectators are intentionally disabled for now: the venue is being rebuilt to the
+        // rectangular AQUA-CUP layout with empty stands. Re-enable once the grandstand
+        // crowd (stand-slope crowd texture + a few near-row silhouettes) is authored.
+        const SPECTATORS_ENABLED = false;
+        if (!SPECTATORS_ENABLED) {
+            return;
+        }
         try {
             new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION, COURSE_LAYOUT, pool, (message) => this.debug(message));
         } catch (error) {
@@ -629,6 +646,29 @@ export class GameManager extends Component {
             this.debug(`spectator crowd skipped: ${message}`);
             console.warn('[SpeedSwimming] spectator crowd skipped', error);
         }
+    }
+
+    private setupScoreboardFeed(pool: Node | null) {
+        if (!PERFORMANCE_CONFIG.scoreboardFeed.enabled) {
+            return;
+        }
+        if (!pool?.isValid || !this._worldRoot?.isValid) {
+            return;
+        }
+        const mainCamera = this._cameraNode?.getComponent(Camera);
+        if (!mainCamera) {
+            return;
+        }
+        this._scoreboardFeed?.dispose();
+        this._scoreboardFeed = new ScoreboardFeedCamera({
+            worldRoot: this._worldRoot,
+            mainCamera,
+            pool,
+            courseLayout: COURSE_LAYOUT,
+            playerLaneZ: PLAYER_LANE_Z,
+            debug: (message) => this.debug(message),
+        });
+        this.updateScoreboardViewButtonLabel();
     }
 
     private createCompetitorManager(): CompetitorManager {
@@ -736,6 +776,7 @@ export class GameManager extends Component {
             this.scheduleOnce(() => {
                 if (this.node?.isValid && this._worldRoot?.isValid) {
                     this.buildSpectatorCrowd(this._worldRoot, pool?.isValid ? pool : this._poolNode);
+                    this.setupScoreboardFeed(pool?.isValid ? pool : this._poolNode);
                 }
             }, 0);
         }, 0);
@@ -783,6 +824,7 @@ export class GameManager extends Component {
             this.buildPlayerOverheadMarker();
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildRaceCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
+            this.buildScoreboardViewButton(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
@@ -949,6 +991,40 @@ export class GameManager extends Component {
     private updateRaceCameraButtonLabel(modeName = this._raceCameraDirector.currentModeName) {
         if (this._raceCameraButtonLabel?.isValid) {
             this._raceCameraButtonLabel.string = `相机：${modeName}`;
+        }
+    }
+
+    private buildScoreboardViewButton(raceHud: Node, width: number, height: number) {
+        const button = makeButton(
+            'ScoreboardViewButton',
+            raceHud,
+            210,
+            54,
+            new Color(24, 82, 142, 238),
+            '',
+        );
+        button.setPosition(width / 2 - 122, height / 2 - 130, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        const labelNode = makeLabel('Label', button, '', 17, new Color(245, 252, 255, 255));
+        labelNode.getComponent(UITransform).setContentSize(200, 50);
+        this._scoreboardViewButton = button;
+        this._scoreboardViewButtonLabel = labelNode.getComponent(Label);
+        this.updateScoreboardViewButtonLabel();
+        button.active = false;
+        button.on(Node.EventType.TOUCH_END, () => this.cycleScoreboardView());
+    }
+
+    private cycleScoreboardView() {
+        const name = this._scoreboardFeed?.cyclePreset();
+        if (name) {
+            this.updateScoreboardViewButtonLabel(name);
+            this.debug(`scoreboard feed view=${name}`);
+        }
+    }
+
+    private updateScoreboardViewButtonLabel(presetName = this._scoreboardFeed?.currentPresetName ?? '侧视') {
+        if (this._scoreboardViewButtonLabel?.isValid) {
+            this._scoreboardViewButtonLabel.string = `大屏：${presetName}`;
         }
     }
 

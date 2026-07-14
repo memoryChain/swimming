@@ -275,7 +275,9 @@ export class SpeedStarsUiPrefabBuilder {
 
     private layoutRaceProgress(raceHud: Node) {
         const visibleSize = view.getVisibleSize();
-        const topY = visibleSize.height / 2 - raceSafeTopInset() - 28;
+        // Sit lower than the very top edge so the top-of-frame jumbotron screen no longer
+        // overlaps the progress bar.
+        const topY = visibleSize.height / 2 - raceSafeTopInset() - 84;
         for (const name of ['ProgressTrack', 'ProgressValue']) {
             const node = requireNode(raceHud, name);
             node.setPosition(node.position.x, topY, node.position.z);

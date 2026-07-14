@@ -1,7 +1,8 @@
-import { Color, Material, MeshRenderer, Node, Vec3, Vec4 } from 'cc';
+import { Color, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
 import { registerWaterMaterial } from './WaterColorTuning';
+import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
 const ACTIVE_WATER_NODE_NAMES = new Set(['PoolWaterSurface']);
@@ -29,6 +30,24 @@ const UNDERWATER_NODE_PREFIXES = ['pool_floor', 'lane_floor_line', 'lane_t_end',
 // light. Swap them to unlit materials that keep the original albedo so they render as
 // their true red/white/blue/yellow colors.
 const LANE_FLOAT_NODE_PREFIX = 'lane_float_rope';
+// Small tiling grayscale texture that fakes the row of round beads/discs of a real lane
+// rope. It is multiplied by each rope's flat color on an unlit material, so we get the
+// beaded, shaded Mario-style look without lighting (no blue ambient tint) and without
+// the geometry cost of modelling every bead. The rope UVs already repeat this along the
+// length, so the texture just needs REPEAT wrapping.
+const LANE_FLOAT_BEAD_TEXTURE_PATH = 'pool/LaneFloatBeads/texture';
+// The rope UVs already bake the bead count into U (6 beads per color segment, aligned to
+// color edges), so no extra tiling scale is needed.
+const LANE_FLOAT_BEAD_TILING = 1.0;
+
+// Venue branding is applied at runtime by texture path so the art can be swapped just by
+// replacing the PNG file (no GLB re-import). Each spec maps a venue node-name prefix to a
+// swappable texture under the race bundle.
+type BrandingSpec = { prefix: string; texturePath: string; repeat: boolean };
+const BRANDING_SPECS: BrandingSpec[] = [
+    { prefix: 'fascia_wall', texturePath: 'pool/PoolFasciaBrand/texture', repeat: true },
+    { prefix: 'banner_', texturePath: 'pool/PoolBanner/texture', repeat: false },
+];
 
 export class WaterSurfaceBinder {
     bind(pool: Node, waterMaterialPath: string, debug?: (message: string) => void) {
@@ -38,7 +57,8 @@ export class WaterSurfaceBinder {
             node.active = false;
         }
 
-        this.unlitLaneFloats(pool, debug);
+        this.loadBeadTextureThenUnlitFloats(pool, debug);
+        this.bindBranding(pool, debug);
         this.assignUnderwaterLayer(pool, debug);
 
         const activeWaterNodes: Node[] = [];
@@ -78,7 +98,60 @@ export class WaterSurfaceBinder {
         });
     }
 
-    private unlitLaneFloats(pool: Node, debug?: (message: string) => void) {
+    private loadBeadTextureThenUnlitFloats(pool: Node, debug?: (message: string) => void) {
+        loadRaceAsset(LANE_FLOAT_BEAD_TEXTURE_PATH, Texture2D, (err, texture) => {
+            if (!pool.isValid) {
+                return;
+            }
+            if (err || !texture) {
+                console.warn('[SpeedSwimming] lane float bead texture load failed; floats stay flat unlit', err);
+                this.unlitLaneFloats(pool, null, debug);
+                return;
+            }
+            texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
+            this.unlitLaneFloats(pool, texture, debug);
+        });
+    }
+
+    private bindBranding(pool: Node, debug?: (message: string) => void) {
+        // When the jumbotron feed is ON it renders the live view onto the screens; when it
+        // is OFF, fall back to a static scoreboard image so the screens aren't blank.
+        const specs = PERFORMANCE_CONFIG.scoreboardFeed.enabled
+            ? BRANDING_SPECS
+            : [...BRANDING_SPECS, { prefix: 'scoreboard_screen', texturePath: 'pool/PoolScoreboard/texture', repeat: false }];
+        for (const spec of specs) {
+            loadRaceAsset(spec.texturePath, Texture2D, (err, texture) => {
+                if (!pool.isValid) {
+                    return;
+                }
+                if (err || !texture) {
+                    console.warn(`[SpeedSwimming] branding texture load failed: ${spec.texturePath}`, err);
+                    return;
+                }
+                const wrap = spec.repeat ? Texture2D.WrapMode.REPEAT : Texture2D.WrapMode.CLAMP_TO_EDGE;
+                texture.setWrapMode(wrap, wrap);
+                const nodes: Node[] = [];
+                collectNodesByNamePrefix(pool, spec.prefix, nodes);
+                let applied = 0;
+                for (const node of nodes) {
+                    const renderer = node.getComponent(MeshRenderer);
+                    if (!renderer) {
+                        continue;
+                    }
+                    const count = Math.max(1, renderer.sharedMaterials.length);
+                    for (let i = 0; i < count; i++) {
+                        renderer.setMaterial(makeUnlitBrandingMaterial(texture, node.name), i);
+                    }
+                    applied += 1;
+                }
+                if (applied > 0) {
+                    debug?.(`branding applied prefix=${spec.prefix} nodes=${applied}`);
+                }
+            });
+        }
+    }
+
+    private unlitLaneFloats(pool: Node, beadTexture: Texture2D | null, debug?: (message: string) => void) {
         const floatNodes: Node[] = [];
         collectNodesByNamePrefix(pool, LANE_FLOAT_NODE_PREFIX, floatNodes);
         let boundRenderers = 0;
@@ -93,12 +166,12 @@ export class WaterSurfaceBinder {
                 if (!source) {
                     continue;
                 }
-                renderer.setMaterial(makeUnlitLaneFloatMaterial(source), i);
+                renderer.setMaterial(makeUnlitLaneFloatMaterial(source, beadTexture), i);
             }
             boundRenderers += 1;
         }
         if (boundRenderers > 0) {
-            debug?.(`lane floats set unlit renderers=${boundRenderers}`);
+            debug?.(`lane floats set unlit renderers=${boundRenderers} beaded=${beadTexture ? 'yes' : 'no'}`);
         }
     }
 
@@ -123,11 +196,30 @@ export class WaterSurfaceBinder {
     }
 }
 
+// Apply a swappable branding texture on an unlit material so venue signage (fascia logos,
+// scoreboards, hanging banners) shows at full color regardless of the dark stand lighting.
+function makeUnlitBrandingMaterial(texture: Texture2D, nodeName: string): Material {
+    const material = new Material();
+    material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
+    material.name = `RuntimeBranding_${nodeName}`;
+    material.setProperty('mainTexture', texture);
+    material.setProperty('mainColor', new Color(255, 255, 255, 255));
+    return material;
+}
+
 // Convert a lit GLB float material into an unlit one that keeps its albedo, so the blue
 // ambient sky light no longer tints the lane floats.
-function makeUnlitLaneFloatMaterial(source: Material): Material {
+function makeUnlitLaneFloatMaterial(source: Material, beadTexture: Texture2D | null): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit' });
+    if (beadTexture) {
+        material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
+        material.setProperty('mainTexture', beadTexture);
+        // The rope UVs pack ~247 bead tiles along the length; scale U down so the beads
+        // read as bigger, cleaner discs (~124 beads instead of a muddy fine stripe).
+        material.setProperty('tilingOffset', new Vec4(LANE_FLOAT_BEAD_TILING, 1, 0, 0));
+    } else {
+        material.initialize({ effectName: 'builtin-unlit' });
+    }
     material.name = `RuntimeLaneFloat_${source.name || 'Float'}`;
     material.setProperty('mainColor', findMaterialColor(source));
     return material;

@@ -1,5 +1,5 @@
 import { Vec3 } from 'cc';
-import { RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { RaceCameraDirector, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
@@ -31,6 +31,7 @@ export type GameFlowRefs = {
     applyPlayerDive: (result: DiveResult) => void;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
+    updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
     debug: (message: string) => void;
 };
 
@@ -292,7 +293,7 @@ export class GameFlowController {
         const focus = this._cameraFollowAi && this._refs.aiSwimmers[0]?.node?.isValid
             ? this._refs.aiSwimmers[0]
             : playerSwimmer;
-        this._refs.raceCameraDirector.update(dt, {
+        const cameraSnapshot: RaceCameraSnapshot = {
             playerX: focus.node.position.x,
             playerY: focus.node.position.y,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
@@ -304,7 +305,10 @@ export class GameFlowController {
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
             sprintActive: this._sprintTriggered,
-        });
+        };
+        this._refs.raceCameraDirector.update(dt, cameraSnapshot);
+        // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
+        this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);
         if (this._refs.getState() === GameState.PRECOUNTDOWN && this._refs.raceCameraDirector.consumePreCountdownReady()) {
             this._refs.debug('pre-countdown camera ready');
             this._refs.raceManager?.startRace();

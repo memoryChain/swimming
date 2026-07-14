@@ -111,11 +111,16 @@ export class RuntimeSceneBuilder {
     }
 
     private buildLights(root: Node) {
+        // Single directional key light only. The forward pipeline culls extra dynamic
+        // (point/sphere) lights per-object, which makes lit surfaces flicker frame to
+        // frame, so we keep just the sun and lift the rest with ambient. Kept dim so the
+        // LIT venue surfaces (stands, walls, roof, deck) fall into shadow while the UNLIT
+        // pool (water, floor, floats, swimmers) stays bright -> "spotlit pool" contrast.
         const sunNode = makeWorldNode('StadiumSun', root);
-        sunNode.setRotationFromEuler(-46, 24, 0);
+        sunNode.setRotationFromEuler(-58, 18, 0);
         const sun = sunNode.addComponent(DirectionalLight);
-        sun.color = color(255, 238, 210);
-        sun.illuminance = 1.35;
+        sun.color = color(238, 246, 255);
+        sun.illuminance = 0.85;
     }
 
     private setupEnvironment(sceneRoot: Node) {
@@ -127,11 +132,14 @@ export class RuntimeSceneBuilder {
         if (skybox) {
             skybox.useHDR = false;
         }
-        ambient.skyLightingColor = color(255, 241, 219);
-        ambient.groundLightingColor = color(168, 150, 126);
-        ambient.skyColor = new Vec4(0.74, 0.68, 0.57, 1);
-        ambient.groundAlbedo = new Vec4(0.42, 0.38, 0.32, 1);
-        ambient.skyIllum = 0.8;
+        // Low, cool ambient: keeps the lit grandstands/walls/roof dark so the unlit pool
+        // reads as brightly lit by contrast (broadcast "pool spotlight" look). Tune these
+        // down for darker stands / up for a more evenly lit hall.
+        ambient.skyLightingColor = color(150, 168, 200);
+        ambient.groundLightingColor = color(64, 78, 98);
+        ambient.skyColor = new Vec4(0.30, 0.38, 0.50, 1);
+        ambient.groundAlbedo = new Vec4(0.14, 0.18, 0.24, 1);
+        ambient.skyIllum = 0.34;
     }
 
     private cleanRuntimeChildren(canvasNode: Node, sceneRoot: Node) {

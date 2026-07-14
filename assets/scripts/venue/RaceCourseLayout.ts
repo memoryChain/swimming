@@ -7,8 +7,8 @@ const DEFAULT_WATER_Y = 0.055;
 const DEFAULT_SWIM_Y = 0;
 const SWIMMER_CENTER_EDGE_INSET = 0.45;
 const SWIMMER_FRONT_BOUNDARY_CLEARANCE = 2.35;
-const STANDING_MODEL_LOCAL_Y = 0.55;
-const PLATFORM_STANDING_LIFT = 0.04;
+export const STANDING_MODEL_LOCAL_Y = 0.55;
+export const PLATFORM_STANDING_LIFT = 0.04;
 const PLATFORM_STANDING_FORWARD_OFFSET = 0.22;
 const WATER_NODE_NAMES = ['poolwatersurface'];
 const FLOOR_NODE_NAMES = ['pool_floor'];
@@ -16,7 +16,7 @@ const START_BLOCK_NODE_NAMES = ['start_block_top_near'];
 const COURSE_START_MARKER_NAMES = ['racecoursestartmarker', 'poolracestart'];
 const COURSE_FINISH_MARKER_NAMES = ['racecoursefinishmarker', 'poolracefinish'];
 
-type SceneBounds = {
+export type SceneBounds = {
     minX: number;
     maxX: number;
     minY: number;
@@ -213,7 +213,7 @@ function validCourseBounds(bounds: SceneBounds | null): bounds is SceneBounds {
     return !!bounds && Math.abs(bounds.maxX - bounds.minX) >= MIN_COURSE_LENGTH;
 }
 
-function collectNamedBounds(root: Node, names: string[]): SceneBounds | null {
+export function collectNamedBounds(root: Node, names: string[]): SceneBounds | null {
     let bounds: SceneBounds | null = null;
     visit(root, (node) => {
         if (!matchesAnyName(node.name, names)) {
