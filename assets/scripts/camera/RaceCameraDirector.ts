@@ -28,6 +28,24 @@ const PRE_RACE_CLOSEUP_CAM_Y = 1.55;
 const PRE_RACE_CLOSEUP_CAM_SIDE = 1.15;
 
 export type PreRacePhase = 'none' | 'overview' | 'closeup';
+// Awards free-look orbit: the camera circles the podium centre and the player can
+// drag to rotate / wheel to zoom. When left idle it drifts slowly for a ceremony feel.
+const AWARDS_TARGET_Y = 1.2;          // aim a bit above the podium top so the winners sit centred
+const AWARDS_DEFAULT_DISTANCE = 8.5;
+const AWARDS_MIN_DISTANCE = 3.5;
+// Cap the pull-back so the camera stays inside the hall; larger values clip through the
+// venue walls and reveal the void outside.
+// 限制最大拉远距离，让相机留在场馆内；更大的值会穿过场馆墙壁、露出馆外的空洞。
+const AWARDS_MAX_DISTANCE = 12;
+const AWARDS_DEFAULT_YAW = Math.PI;   // start on the pool side (-X), same look direction as before
+const AWARDS_DEFAULT_PITCH = 0.24;    // slightly elevated
+const AWARDS_MIN_PITCH = 0.02;        // stay above horizontal so the camera never dips under the floor
+const AWARDS_MAX_PITCH = 1.3;
+const AWARDS_AUTO_ROTATE_SPEED = 0.16; // rad/s idle drift
+const AWARDS_AUTO_ROTATE_IDLE = 1.5;   // seconds of no input before the idle drift resumes
+const AWARDS_YAW_DRAG_SCALE = 0.008;
+const AWARDS_PITCH_DRAG_SCALE = 0.006;
+const AWARDS_ZOOM_SCALE = 0.006;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
 const DIVE_SIDE_MIN_SECONDS = 0.58;
@@ -118,6 +136,10 @@ export class RaceCameraDirector {
     private _preCountdownShotIndex = -1;
     private _preRacePhase: PreRacePhase = 'none';
     private _awardsCenter: Vec3 | null = null;
+    private _awardsYaw = AWARDS_DEFAULT_YAW;
+    private _awardsPitch = AWARDS_DEFAULT_PITCH;
+    private _awardsDistance = AWARDS_DEFAULT_DISTANCE;
+    private _awardsIdleSeconds = 0;
 
     constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
@@ -218,9 +240,38 @@ export class RaceCameraDirector {
         this._preCountdownActive = false;
         this._preCountdownReady = false;
         this._awardsCenter = center.clone();
+        this._awardsYaw = AWARDS_DEFAULT_YAW;
+        this._awardsPitch = AWARDS_DEFAULT_PITCH;
+        this._awardsDistance = AWARDS_DEFAULT_DISTANCE;
+        this._awardsIdleSeconds = 0;
         this._broadcastCameraFov = 38;
         this._broadcastDesiredFov = 38;
         this.applyFov();
+    }
+
+    // True while the awards ceremony free-look is active (podium centre is set).
+    isAwardsFreeLookActive(): boolean {
+        return !!this._awardsCenter;
+    }
+
+    // Drag to orbit the awards camera around the podium. deltaX/deltaY are raw pointer
+    // deltas (pixels); positive deltaX rotates the view, positive deltaY tilts it up.
+    orbitAwardsCamera(deltaX: number, deltaY: number) {
+        if (!this._awardsCenter) {
+            return;
+        }
+        this._awardsYaw -= deltaX * AWARDS_YAW_DRAG_SCALE;
+        this._awardsPitch = clamp(this._awardsPitch + deltaY * AWARDS_PITCH_DRAG_SCALE, AWARDS_MIN_PITCH, AWARDS_MAX_PITCH);
+        this._awardsIdleSeconds = 0;
+    }
+
+    // Wheel / pinch to zoom the awards camera. Positive scroll pulls the camera in.
+    zoomAwardsCamera(scroll: number) {
+        if (!this._awardsCenter) {
+            return;
+        }
+        this._awardsDistance = clamp(this._awardsDistance - scroll * AWARDS_ZOOM_SCALE, AWARDS_MIN_DISTANCE, AWARDS_MAX_DISTANCE);
+        this._awardsIdleSeconds = 0;
     }
 
     consumePreCountdownReady(): boolean {
@@ -360,11 +411,22 @@ export class RaceCameraDirector {
         let hardCameraCut = false;
         const wasUnderwaterView = this._underwaterViewActive;
         if (this._awardsCenter) {
-            // The podium sits at the far end of the hall. View it from the pool
-            // side looking down-pool, and shift the aim toward +Z so the three
-            // winners occupy the left half, leaving room for the result panel.
-            desiredTarget = new Vec3(this._awardsCenter.x, this._awardsCenter.y + 0.95, this._awardsCenter.z + 1.6);
-            desiredPos = new Vec3(desiredTarget.x - 7.0, desiredTarget.y + 1.9, desiredTarget.z);
+            // Free-look ceremony orbit: the camera circles the podium centre. The player
+            // drags to rotate and wheels/pinches to zoom (see orbit/zoomAwardsCamera). When
+            // left idle for a moment it drifts slowly so the ceremony still feels alive.
+            this._awardsIdleSeconds += dt;
+            if (this._awardsIdleSeconds > AWARDS_AUTO_ROTATE_IDLE) {
+                this._awardsYaw += AWARDS_AUTO_ROTATE_SPEED * dt;
+            }
+            const center = this._awardsCenter;
+            const cosPitch = Math.cos(this._awardsPitch);
+            const targetY = center.y + AWARDS_TARGET_Y;
+            desiredTarget = new Vec3(center.x, targetY, center.z);
+            desiredPos = new Vec3(
+                center.x + Math.cos(this._awardsYaw) * cosPitch * this._awardsDistance,
+                targetY + Math.sin(this._awardsPitch) * this._awardsDistance,
+                center.z + Math.sin(this._awardsYaw) * cosPitch * this._awardsDistance,
+            );
             this._broadcastDesiredFov = 38;
         } else if (this._preCountdownActive) {
             const elapsed = this._preCountdownElapsed;

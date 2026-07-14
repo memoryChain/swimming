@@ -44,6 +44,13 @@ export class UIController extends Component {
     public energyBarRoot: Node = null;
     public energyBarFill: Graphics = null;
     public energyLabel: Label = null;
+    // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
+    // receive drag/zoom via the global input listeners instead of this pad swallowing them.
+    // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
+    public strokeInput: Node = null;
+    // Full-screen dive touch overlay. Also disabled during awards for the same reason.
+    // 全屏跳水触摸层。同样原因，颁奖时一并禁用。
+    public diveTouchArea: Node = null;
     @property(Node) public resultPanel: Node = null;
     @property(Label) public resultTitle: Label = null;
     @property(Label) public resultTime: Label = null;
@@ -248,6 +255,15 @@ export class UIController extends Component {
         const soloRace = (stats?.racerCount ?? 2) <= 1;
         this.layoutResultPanelForAwards();
         this.setSpeedBarVisible(false);
+        // Awards ceremony: disable the full-screen swim pad so its node-level touch handlers stop
+        // swallowing pointer events, letting the global input listeners drive the free-look camera.
+        // 颁奖仪式：禁用全屏划水板，使其节点级触摸不再吞掉指针事件，让全局输入监听驱动自由视角相机。
+        if (this.strokeInput) {
+            this.strokeInput.active = false;
+        }
+        if (this.diveTouchArea) {
+            this.diveTouchArea.active = false;
+        }
         if (this.resultPanel) {
             this.resultPanel.active = true;
         }
@@ -294,6 +310,14 @@ export class UIController extends Component {
         }
         this.updateDiveCharge(0, false);
         this.setSpeedBarVisible(false);
+        // Restore the swim pad for the next race (it is hidden during the awards ceremony).
+        // 为下一场比赛恢复划水板（颁奖仪式期间被隐藏）。
+        if (this.strokeInput) {
+            this.strokeInput.active = true;
+        }
+        if (this.diveTouchArea) {
+            this.diveTouchArea.active = true;
+        }
         if (this.resultPanel) {
             this.resultPanel.active = false;
         }

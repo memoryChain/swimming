@@ -1,6 +1,5 @@
 import { Node, Vec3 } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
-import { AwardsConfetti } from './AwardsConfetti';
 import {
     collectNamedBounds,
     DEFAULT_RACE_COURSE_LAYOUT,
@@ -22,8 +21,6 @@ const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
 ]);
 
 export class AwardsPresentation {
-    private readonly _confetti = new AwardsConfetti();
-
     constructor(private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {}
 
     show(leaderboard: RaceFinishResult[], poolNode?: Node | null): Vec3 {
@@ -31,14 +28,12 @@ export class AwardsPresentation {
             .filter((row) => row.placement >= 1 && row.placement <= 3 && row.swimmer?.node?.isValid)
             .sort((a, b) => a.placement - b.placement);
 
-        const center = this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
-        const parent = poolNode?.parent ?? winners[0]?.swimmer.node.parent ?? null;
-        this._confetti.show(parent, center);
-        return center;
+        // Confetti particles removed for now (looked like fog); to be reworked later.
+        // 礼花粒子暂时移除（之前像一团雾），后续重做。
+        return this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
     }
 
     hide() {
-        this._confetti.hide();
     }
 
     // Stand each medallist on their podium step, located from the venue meshes.

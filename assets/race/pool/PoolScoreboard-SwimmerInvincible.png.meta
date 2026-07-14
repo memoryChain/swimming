@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "273cefb5-3d22-40b4-99c2-58804377c809",
+  "uuid": "f50a0fe3-397d-4262-b4a0-1a9c1d340620",
   "files": [
     ".json",
     ".png"
@@ -10,8 +10,8 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "273cefb5-3d22-40b4-99c2-58804377c809@6c48a",
-      "displayName": "PoolFasciaBrand",
+      "uuid": "f50a0fe3-397d-4262-b4a0-1a9c1d340620@6c48a",
+      "displayName": "PoolScoreboard-SwimmerInvincible",
       "id": "6c48a",
       "name": "texture",
       "userData": {
@@ -22,7 +22,7 @@
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "273cefb5-3d22-40b4-99c2-58804377c809",
+        "imageUuidOrDatabaseUri": "f50a0fe3-397d-4262-b4a0-1a9c1d340620",
         "visible": false
       },
       "ver": "1.0.22",
@@ -37,6 +37,6 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": false,
-    "redirect": "273cefb5-3d22-40b4-99c2-58804377c809@6c48a"
+    "redirect": "f50a0fe3-397d-4262-b4a0-1a9c1d340620@6c48a"
   }
 }

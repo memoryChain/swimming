@@ -1,4 +1,4 @@
-import { EventMouse, input, Input, Node } from 'cc';
+import { EventMouse, EventTouch, input, Input, Node, Vec2 } from 'cc';
 import { StrokeType } from './GameConstants';
 import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
@@ -21,6 +21,10 @@ export type InputRouterCallbacks = {
     onDebugCameraMouseMove: (event: EventMouse) => void;
     onDebugCameraMouseUp: () => void;
     onDebugCameraWheel: (event: EventMouse) => void;
+    // Touch drag / pinch, used by the awards free-look camera. deltaX/deltaY are raw
+    // pointer deltas; scroll is a pinch-distance delta (positive = fingers spreading = zoom in).
+    onCameraOrbit: (deltaX: number, deltaY: number) => void;
+    onCameraZoom: (scroll: number) => void;
 };
 
 export class InputRouter {
@@ -34,6 +38,10 @@ export class InputRouter {
     // independently in the editor.
     private readonly _leftPress = { active: false, startedMs: 0, promoted: false };
     private readonly _rightPress = { active: false, startedMs: 0, promoted: false };
+    // Awards free-look touch state: whether a multi-finger pinch is in progress and the
+    // last measured distance between the first two touch points.
+    private _cameraMultiTouch = false;
+    private _cameraPinchDistance = 0;
 
     constructor(
         private readonly _target: Node,
@@ -61,6 +69,10 @@ export class InputRouter {
         input.on(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
         input.on(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
         input.on(Input.EventType.MOUSE_WHEEL, this.onDebugCameraWheel, this);
+        input.on(Input.EventType.TOUCH_START, this.onCameraTouchStart, this);
+        input.on(Input.EventType.TOUCH_MOVE, this.onCameraTouchMove, this);
+        input.on(Input.EventType.TOUCH_END, this.onCameraTouchEnd, this);
+        input.on(Input.EventType.TOUCH_CANCEL, this.onCameraTouchEnd, this);
     }
 
     unbind() {
@@ -83,6 +95,10 @@ export class InputRouter {
         input.off(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
         input.off(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
         input.off(Input.EventType.MOUSE_WHEEL, this.onDebugCameraWheel, this);
+        input.off(Input.EventType.TOUCH_START, this.onCameraTouchStart, this);
+        input.off(Input.EventType.TOUCH_MOVE, this.onCameraTouchMove, this);
+        input.off(Input.EventType.TOUCH_END, this.onCameraTouchEnd, this);
+        input.off(Input.EventType.TOUCH_CANCEL, this.onCameraTouchEnd, this);
     }
 
     handlePadStroke(type: StrokeType) {
@@ -248,4 +264,40 @@ export class InputRouter {
     private onDebugCameraWheel(event: EventMouse) {
         this._callbacks.onDebugCameraWheel(event);
     }
+
+    // Awards free-look touch control: one finger orbits, two fingers pinch-zoom. Gating on the
+    // actual awards state happens in the GameManager callback, so this stays a no-op otherwise.
+    private onCameraTouchStart(event: EventTouch) {
+        const touches = event.getAllTouches();
+        this._cameraMultiTouch = touches.length >= 2;
+        this._cameraPinchDistance = this._cameraMultiTouch ? touchPairDistance(touches) : 0;
+    }
+
+    private onCameraTouchMove(event: EventTouch) {
+        const touches = event.getAllTouches();
+        if (touches.length >= 2) {
+            const distance = touchPairDistance(touches);
+            if (this._cameraMultiTouch && this._cameraPinchDistance > 0) {
+                this._callbacks.onCameraZoom(distance - this._cameraPinchDistance);
+            }
+            this._cameraPinchDistance = distance;
+            this._cameraMultiTouch = true;
+            return;
+        }
+        this._cameraMultiTouch = false;
+        const delta = event.getDelta();
+        this._callbacks.onCameraOrbit(delta.x, delta.y);
+    }
+
+    private onCameraTouchEnd(event: EventTouch) {
+        const touches = event.getAllTouches();
+        this._cameraMultiTouch = touches.length >= 2;
+        this._cameraPinchDistance = 0;
+    }
+}
+
+function touchPairDistance(touches: ReadonlyArray<{ getLocation(): Vec2 }>): number {
+    const a = touches[0].getLocation();
+    const b = touches[1].getLocation();
+    return Vec2.distance(a, b);
 }

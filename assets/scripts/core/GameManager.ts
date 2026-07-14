@@ -35,6 +35,7 @@ import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
+import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
@@ -99,6 +100,8 @@ export class GameManager extends Component {
     private _uiFlow: UIFlowController = null;
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
+    // True while a pointer is dragging to orbit the awards free-look camera.
+    private _awardsCameraDragging = false;
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
@@ -212,6 +215,10 @@ export class GameManager extends Component {
                                 this.applyAiDebugHud();
                                 this.startGame();
                             }
+                            // Race scene is fully built and its initial camera /
+                            // state are set: reveal it by dropping the loading
+                            // cover that spanned the scene switch.
+                            LoadingOverlay.hide();
                         } catch (setupError) {
                             this.paintError(setupError);
                         }
@@ -581,6 +588,8 @@ export class GameManager extends Component {
             onDebugCameraMouseMove: (event) => this.onDebugCameraMouseMove(event),
             onDebugCameraMouseUp: () => this.onDebugCameraMouseUp(),
             onDebugCameraWheel: (event) => this.onDebugCameraWheel(event),
+            onCameraOrbit: (deltaX, deltaY) => this.onAwardsCameraOrbit(deltaX, deltaY),
+            onCameraZoom: (scroll) => this.onAwardsCameraZoom(scroll),
         });
     }
 
@@ -1259,19 +1268,63 @@ export class GameManager extends Component {
     }
 
     private onDebugCameraMouseDown(event: EventMouse) {
-        this._modelDebugFlow?.onMouseDown(event);
+        if (this._modelDebugFlow?.active) {
+            this._modelDebugFlow.onMouseDown(event);
+            return;
+        }
+        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
+            const button = event.getButton();
+            this._awardsCameraDragging = button === EventMouse.BUTTON_LEFT
+                || button === EventMouse.BUTTON_RIGHT
+                || button === EventMouse.BUTTON_MIDDLE;
+        }
     }
 
     private onDebugCameraMouseMove(event: EventMouse) {
-        this._modelDebugFlow?.onMouseMove(event);
+        if (this._modelDebugFlow?.active) {
+            this._modelDebugFlow.onMouseMove(event);
+            return;
+        }
+        if (this._awardsCameraDragging && this._raceCameraDirector.isAwardsFreeLookActive()) {
+            this._raceCameraDirector.orbitAwardsCamera(event.getDeltaX(), event.getDeltaY());
+        }
     }
 
     private onDebugCameraMouseUp() {
-        this._modelDebugFlow?.onMouseUp();
+        if (this._modelDebugFlow?.active) {
+            this._modelDebugFlow.onMouseUp();
+            return;
+        }
+        this._awardsCameraDragging = false;
     }
 
     private onDebugCameraWheel(event: EventMouse) {
-        this._modelDebugFlow?.onMouseWheel(event);
+        if (this._modelDebugFlow?.active) {
+            this._modelDebugFlow.onMouseWheel(event);
+            return;
+        }
+        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
+            this._raceCameraDirector.zoomAwardsCamera(event.getScrollY());
+        }
+    }
+
+    // Touch orbit / pinch-zoom for the awards ceremony free-look camera (mobile).
+    private onAwardsCameraOrbit(deltaX: number, deltaY: number) {
+        if (this._modelDebugFlow?.active) {
+            return;
+        }
+        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
+            this._raceCameraDirector.orbitAwardsCamera(deltaX, deltaY);
+        }
+    }
+
+    private onAwardsCameraZoom(scroll: number) {
+        if (this._modelDebugFlow?.active) {
+            return;
+        }
+        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
+            this._raceCameraDirector.zoomAwardsCamera(scroll);
+        }
     }
 
     private slowModelDebugMotion() {
@@ -1395,6 +1448,8 @@ export class GameManager extends Component {
     }
 
     private paintError(error: unknown) {
+        // Drop the loading cover so the error panel below is actually visible.
+        LoadingOverlay.hide();
         const canvasNode = this.createRuntimeSceneBuilder().findCanvasNode();
         const panel = makeUiNode('RuntimeErrorPanel', canvasNode);
         panel.setPosition(0, 0, 0);

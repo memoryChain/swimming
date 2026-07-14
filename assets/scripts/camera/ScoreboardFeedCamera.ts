@@ -189,8 +189,12 @@ export class ScoreboardFeedCamera {
             material.name = `ScoreboardFeed_${node.name}`;
             material.setProperty('mainTexture', rt);
             material.setProperty('mainColor', new Color(255, 255, 255, 255));
-            // RenderTextures sample bottom-up, so flip V to show the feed upright.
-            material.setProperty('tilingOffset', new Vec4(1, -1, 0, 1));
+            // RenderTextures sample bottom-up, so flip V to show the feed upright. The screen
+            // also faces the crowd/player, so the feed reads mirrored (as if seen from behind);
+            // flip U as well so text/racers appear the right way round.
+            // RenderTexture 自下而上采样，翻 V 让画面正立；大屏又朝向观众，直贴会左右镜像（像看到背面），
+            // 故同时翻 U，让画面左右方向正确。
+            material.setProperty('tilingOffset', new Vec4(-1, -1, 1, 1));
             renderer.setMaterial(material, 0);
             this._screenMaterials.push(material);
         }

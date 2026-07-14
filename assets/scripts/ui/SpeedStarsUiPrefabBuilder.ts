@@ -133,6 +133,11 @@ export class SpeedStarsUiPrefabBuilder {
         ui.diveChargeFillNode = requireNode(raceHud, 'DiveChargeFill');
         this.buildHeartRateBar(raceHud, ui);
         this.buildEnergyBar(raceHud, ui);
+        // Full-screen swim-input pad. Hidden during the awards ceremony so pointer events fall
+        // through to the global input listeners that drive the free-look podium camera.
+        // 全屏划水输入板。颁奖仪式时隐藏，让指针事件穿透到驱动颁奖自由视角相机的全局输入监听。
+        ui.strokeInput = requireNode(raceHud, 'StrokeInput');
+        ui.diveTouchArea = requireNode(raceHud, 'DiveTouchArea');
         ui.resultPanel = requireNode(raceHud, 'ResultPanel');
         ui.resultTitle = requireLabel(raceHud, 'ResultTitle');
         ui.resultTime = requireLabel(raceHud, 'ResultTime');

@@ -3,6 +3,7 @@ import { setRaceDifficulty } from '../core/GameBalance';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
+import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 
@@ -52,15 +53,23 @@ export class LoginManager extends Component {
         this._loadingRace = true;
         setMainGameLaunchMode(mode);
 
+        // Cover the whole Login -> MainGame switch with a persistent loading
+        // screen so the new scene's blue world-camera clear color never shows
+        // while the pool, swimmers and tuning stream in. GameManager removes it
+        // once the race scene is built.
+        LoadingOverlay.show();
+
         loadRaceBundle((bundleError, bundle) => {
             if (bundleError || !bundle) {
                 this._loadingRace = false;
+                LoadingOverlay.hide();
                 console.error('[SpeedSwimming] race bundle failed to load', bundleError);
                 return;
             }
             bundle.loadScene('MainGame', (sceneError, scene) => {
                 if (sceneError || !scene) {
                     this._loadingRace = false;
+                    LoadingOverlay.hide();
                     console.error('[SpeedSwimming] MainGame scene failed to load', sceneError);
                     return;
                 }
