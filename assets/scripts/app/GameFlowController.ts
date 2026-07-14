@@ -95,6 +95,8 @@ export class GameFlowController {
         const state = this._refs.getState();
         if (state === GameState.READY) {
             this.startGame();
+        } else if (state === GameState.PRECOUNTDOWN) {
+            this.skipPreRaceShowcase();
         } else if (state === GameState.FINISHED || state === GameState.AWARDS) {
             this.restartGame();
         }
@@ -143,6 +145,13 @@ export class GameFlowController {
 
     handleDiveChargeStart() {
         const state = this._refs.getState();
+        // Race HUD routes every full-screen press through this callback. During
+        // the showcase that first press is consumed only as "skip"; charging
+        // starts from the player's next press after COUNTDOWN is active.
+        if (state === GameState.PRECOUNTDOWN) {
+            this.skipPreRaceShowcase();
+            return;
+        }
         if ((state !== GameState.COUNTDOWN && state !== GameState.DIVING) || this._diveChargeStarted) {
             return;
         }
@@ -154,6 +163,17 @@ export class GameFlowController {
         if (state === GameState.DIVING) {
             this._refs.uiFlow.showDiveCharging();
         }
+    }
+
+    private skipPreRaceShowcase() {
+        if (this._refs.getState() !== GameState.PRECOUNTDOWN) {
+            return;
+        }
+        if (!this._refs.raceCameraDirector.skipPreCountdownShowcase()) {
+            return;
+        }
+        this._refs.debug('pre-race showcase skipped by player');
+        this._refs.raceManager?.startRace();
     }
 
     handleDiveRelease(holdSeconds: number) {

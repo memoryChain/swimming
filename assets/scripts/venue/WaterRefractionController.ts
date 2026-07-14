@@ -150,6 +150,9 @@ export class WaterRefractionController {
         swimmerCamera.priority = mainCamera.priority + 1;
         this._swimmerCamera = swimmerCamera;
 
+        // Tag the already-created player/effects immediately. The periodic pass
+        // below still catches deferred AI and asynchronously-created children.
+        this.tagSwimmers();
         this.syncCamera();
 
         this._debug?.(`water refraction ready rt=${this._rtWidth}x${this._rtHeight}`);
@@ -249,9 +252,9 @@ export class WaterRefractionController {
         old?.destroy();
     }
 
-    // Move swimmer subtrees onto SWIMMER_LAYER so only the swimmer camera draws
-    // them. Re-run periodically because character models load asynchronously and
-    // the roster can rebuild (restart).
+    // Move swimmer body and splash subtrees onto SWIMMER_LAYER so only the same
+    // overlay camera draws them. Re-run periodically because character models,
+    // splash particles and the roster can all be created asynchronously.
     private tagSwimmers() {
         const nodes = this._getSwimmerNodes?.() ?? [];
         for (const node of nodes) {

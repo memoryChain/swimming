@@ -45,7 +45,7 @@ const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
 export const RACE_CAMERA_TUNING = {
     // Remaining distance at which the sprint chase camera gives way to the
     // existing finish-line top view.
-    finishTopViewDistance: 8,
+    finishTopViewDistance: 5,
     // Close third-person sprint view, above and behind the player's upper body.
     sprintBackDistance: 1.1,
     sprintHeight: 0.52,
@@ -195,6 +195,20 @@ export class RaceCameraDirector {
         this._preCountdownLaneZs = laneZs
             .filter((laneZ) => Number.isFinite(laneZ))
             .sort((a, b) => a - b);
+    }
+
+    // Stop the showcase immediately without setting the normal completion flag.
+    // The next camera update sees COUNTDOWN and blends from the current showcase
+    // framing into the existing dive-prep/countdown shot.
+    skipPreCountdownShowcase(): boolean {
+        if (!this._preCountdownActive) {
+            return false;
+        }
+        this._preCountdownActive = false;
+        this._preCountdownReady = false;
+        this._preRacePhase = 'none';
+        this._preCountdownShotIndex = -1;
+        return true;
     }
 
     startAwardsPresentation(center: Vec3) {
@@ -421,11 +435,10 @@ export class RaceCameraDirector {
             desiredPos = underwaterDiveCameraPos(playerX, playerY, this._playerLaneZ, direction);
             this._broadcastDesiredFov = 43;
             underwaterView = true;
-        } else if (this._feedMode
-            && snapshot.sprintActive
+        } else if (snapshot.sprintActive
             && raceDistance - playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance) {
-            // Finish-line top view now plays ONLY on the venue jumbotron (feed). The main
-            // camera stays in the sprint chase all the way to the wall.
+            // Both the main broadcast camera and the venue feed settle into the
+            // finish-line top view for the final approach to the wall.
             this.finishDiveShotIfNeeded();
             const courseEndDistance = this._courseLayout.currentCourseEndDistance(playerDistance, raceDistance);
             const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);

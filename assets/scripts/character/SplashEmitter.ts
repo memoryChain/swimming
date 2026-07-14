@@ -344,6 +344,11 @@ export class SplashEmitter {
     ) {
         const node = new Node(tuning.name);
         node.setParent(this.node);
+        // The splash root may already have been moved to the dedicated swimmer
+        // overlay layer before this async material callback completes. New Cocos
+        // nodes default to DEFAULT rather than inheriting their parent's layer,
+        // so copy it explicitly to avoid one-frame/camera-pass mismatches.
+        node.layer = this.node.layer;
         const basePosition = toVec3(tuning.basePosition);
         const baseEuler = toVec3(tuning.baseEuler);
         const baseScale = toVec3(tuning.baseScale);
@@ -424,6 +429,7 @@ export class SplashEmitter {
         const lateralTilt = sideSign * tuning.lateralTilt;
         const node = new Node(name);
         node.setParent(this.node);
+        node.layer = this.node.layer;
         node.setPosition(basePosition);
         node.setRotationFromEuler(TUNING.particleSystem.emitterEulerX, 0, 0);
 

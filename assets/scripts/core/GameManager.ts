@@ -60,6 +60,7 @@ import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
+import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
 
@@ -108,6 +109,7 @@ export class GameManager extends Component {
     private _cameraNode: Node = null;
     private _waterRefraction: WaterRefractionController | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
+    private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
     private readonly _tmpDialRight = new Vec3();
@@ -229,6 +231,8 @@ export class GameManager extends Component {
         this._waterRefraction = null;
         this._scoreboardFeed?.dispose();
         this._scoreboardFeed = null;
+        this._awardsPresentation.hide();
+        this._topViewCeiling.dispose();
     }
 
     update(dt: number) {
@@ -307,12 +311,14 @@ export class GameManager extends Component {
             && this._raceCameraDirector.preRacePhase === 'overview',
         );
         if (this._modelDebugFlow?.active) {
+            this._topViewCeiling.update(false);
             this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
+        this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
     }
 
@@ -483,6 +489,9 @@ export class GameManager extends Component {
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
+                if (state !== GameState.AWARDS) {
+                    this._awardsPresentation.hide();
+                }
                 if (state === GameState.PRECOUNTDOWN) {
                     this.refreshPreRaceIntroRoster();
                 }
@@ -594,6 +603,8 @@ export class GameManager extends Component {
                     this._raceCameraDirector.resetToBroadcast();
                 }
                 this._poolNode = pool;
+                const ceilingCount = this._topViewCeiling.bind(pool);
+                this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);
                 done(pool);
             }, 0);
@@ -616,31 +627,37 @@ export class GameManager extends Component {
         }
     }
 
-    // Current swimmer root nodes (player + AI) for the refraction controller to
-    // re-tag onto the swimmer layer so the swimmer overlay camera draws them.
+    // Current swimmer render roots (body + sibling splash effect nodes) for the
+    // refraction controller to re-tag onto the swimmer layer. Keeping the body,
+    // foam planes and spray particles in the SAME overlay-camera pass lets the
+    // transparent splashes render after the opaque character instead of being
+    // covered by a later camera pass.
     private collectSwimmerNodes(): Node[] {
         const nodes: Node[] = [];
         if (this._playerSwimmer?.node?.isValid) {
             nodes.push(this._playerSwimmer.node);
+            if (this._playerSwimmer.splashNode?.isValid) {
+                nodes.push(this._playerSwimmer.splashNode);
+            }
         }
         for (const swimmer of this._aiSwimmers) {
             if (swimmer?.node?.isValid) {
                 nodes.push(swimmer.node);
+                if (swimmer.splashNode?.isValid) {
+                    nodes.push(swimmer.splashNode);
+                }
             }
         }
         return nodes;
     }
 
     private buildSpectatorCrowd(root: Node, pool: Node | null) {
-        // Spectators are intentionally disabled for now: the venue is being rebuilt to the
-        // rectangular AQUA-CUP layout with empty stands. Re-enable once the grandstand
-        // crowd (stand-slope crowd texture + a few near-row silhouettes) is authored.
-        const SPECTATORS_ENABLED = false;
-        if (!SPECTATORS_ENABLED) {
+        if (!pool?.isValid) {
+            this.debug('spectator crowd skipped: pool unavailable');
             return;
         }
         try {
-            new SpectatorCrowdBuilder().build(root, DEFAULT_POOL_DEFINITION, COURSE_LAYOUT, pool, (message) => this.debug(message));
+            new SpectatorCrowdBuilder().build(root, pool, (message) => this.debug(message));
         } catch (error) {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);
