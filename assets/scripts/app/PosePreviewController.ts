@@ -14,7 +14,10 @@ type PosePreviewCapture = {
 };
 
 const MODEL_LOAD_DELAY_SECONDS = 0.15;
-const PREVIEW_SWIMMER_ROOT_Y = -0.42;
+const PREVIEW_SWIMMER_ROOT_Y = 0;
+const PREVIEW_START_BLOCK_CENTER_X = -0.22;
+const PREVIEW_START_BLOCK_SURFACE_Y = 0.51;
+const PREVIEW_START_BLOCK_SIZE = new Vec3(0.831, 0.1, 0.555);
 const KEY_1 = 49;
 const KEY_2 = 50;
 const KEY_3 = 51;
@@ -175,11 +178,21 @@ export class PosePreviewController extends Component {
         const waterMaterial = this.makeMaterial('PosePreviewWater', new Color(42, 208, 232, 140));
         const lineMaterial = this.makeMaterial('PosePreviewLine', new Color(242, 255, 255, 230));
 
-        this.addBox(parent, 'PosePreviewStartBlock', platformMaterial, new Vec3(0, 0.26, 0), new Vec3(1.35, 0.18, 1.12));
-        this.addBox(parent, 'PosePreviewPoolDeck', platformMaterial, new Vec3(0.36, 0.04, 0), new Vec3(2.8, 0.08, 1.45));
-        this.addBox(parent, 'PosePreviewWaterPlane', waterMaterial, new Vec3(1.55, -0.03, 0), new Vec3(3.2, 0.018, 1.45));
-        this.addBox(parent, 'PosePreviewWaterLineNear', lineMaterial, new Vec3(1.55, -0.005, -0.72), new Vec3(3.2, 0.012, 0.018));
-        this.addBox(parent, 'PosePreviewWaterLineFar', lineMaterial, new Vec3(1.55, -0.005, 0.72), new Vec3(3.2, 0.012, 0.018));
+        this.addBox(
+            parent,
+            'PosePreviewStartBlock',
+            platformMaterial,
+            new Vec3(
+                PREVIEW_START_BLOCK_CENTER_X,
+                PREVIEW_START_BLOCK_SURFACE_Y - PREVIEW_START_BLOCK_SIZE.y * 0.5,
+                0,
+            ),
+            PREVIEW_START_BLOCK_SIZE,
+        );
+        this.addBox(parent, 'PosePreviewPoolDeck', platformMaterial, new Vec3(0.36, 0.003, 0), new Vec3(2.8, 0.08, 1.45));
+        this.addBox(parent, 'PosePreviewWaterPlane', waterMaterial, new Vec3(1.55, -0.132, 0), new Vec3(3.2, 0.018, 1.45));
+        this.addBox(parent, 'PosePreviewWaterLineNear', lineMaterial, new Vec3(1.55, -0.107, -0.72), new Vec3(3.2, 0.012, 0.018));
+        this.addBox(parent, 'PosePreviewWaterLineFar', lineMaterial, new Vec3(1.55, -0.107, 0.72), new Vec3(3.2, 0.012, 0.018));
     }
 
     private buildSwimmer(parent: Node) {

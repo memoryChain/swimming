@@ -32,7 +32,9 @@ export const CHARACTER_POSE_TUNING = {
 
     // Backward local X offset for the model while standing on the start block.
     // 跳台预备姿态下模型在本地 X 方向向后的偏移。
-    divePrepModelBackOffset: -0.08,
+    // Tuned for the compact replacement start block so the fingertips meet
+    // the pool-side lip instead of hanging past it.
+    divePrepModelBackOffset: -0.26,
 
     // Local Y offset for the model while standing on the start block.
     // 跳台预备姿态下模型本地 Y 高度。
