@@ -28,6 +28,8 @@ const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
 
 export class AwardsPresentation {
     private readonly _confetti = new AwardsConfettiEmitter();
+    // Swimmers hidden during the ceremony (placements outside the top three).
+    private readonly _hiddenSwimmers: Node[] = [];
 
     constructor(private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {}
 
@@ -35,6 +37,10 @@ export class AwardsPresentation {
         const winners = leaderboard
             .filter((row) => row.placement >= 1 && row.placement <= 3 && row.swimmer?.node?.isValid)
             .sort((a, b) => a.placement - b.placement);
+
+        // Only the medallists take part in the ceremony; hide everyone else so
+        // the settlement stage stays focused on the top three.
+        this.hideNonWinners(leaderboard);
 
         this.assignAwardsActions(winners);
 
@@ -48,6 +54,33 @@ export class AwardsPresentation {
 
     hide() {
         this._confetti.hide();
+        this.restoreHiddenSwimmers();
+    }
+
+    private hideNonWinners(leaderboard: RaceFinishResult[]) {
+        this.restoreHiddenSwimmers();
+        for (const row of leaderboard) {
+            const node = row.swimmer?.node;
+            if (!node?.isValid) {
+                continue;
+            }
+            if (row.placement >= 1 && row.placement <= 3) {
+                continue;
+            }
+            if (node.active) {
+                node.active = false;
+                this._hiddenSwimmers.push(node);
+            }
+        }
+    }
+
+    private restoreHiddenSwimmers() {
+        for (const node of this._hiddenSwimmers) {
+            if (node?.isValid) {
+                node.active = true;
+            }
+        }
+        this._hiddenSwimmers.length = 0;
     }
 
     update(dt: number) {
