@@ -110,6 +110,7 @@ export class SpeedStarsUiPrefabBuilder {
         const ui = uiNode.addComponent(UIController);
         ui.distanceLabel = requireLabel(raceHud, 'ProgressValue');
         const progressTrack = requireNode(raceHud, 'ProgressTrack');
+        ui.progressTrackRoot = progressTrack;
         const progressTrackTransform = progressTrack.getComponent(UITransform);
         progressTrackTransform?.setContentSize(progressTrackTransform.contentSize.width, 8);
         const progressTrackSprite = progressTrack.getComponent(Sprite);

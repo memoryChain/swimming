@@ -30,6 +30,7 @@ export class UIController extends Component {
     @property(Label) public aiDistanceLabel: Label = null;
     @property(Label) public hintLabel: Label = null;
     @property(Node) public progressDot: Node = null;
+    public progressTrackRoot: Node = null;
     @property public progressTrackWidth = 240;
     @property(Node) public speedBarRoot: Node = null;
     @property(Node) public countdownOverlay: Node = null;
@@ -86,6 +87,21 @@ export class UIController extends Component {
         if (this.aiDistanceLabel) {
             this.aiDistanceLabel.string = `AI ${Math.min(raceDistance, aiDist).toFixed(1)}m`;
         }
+    }
+
+    setProgressVisible(visible: boolean) {
+        if (this.progressTrackRoot) {
+            this.progressTrackRoot.active = visible;
+        }
+        if (this.distanceLabel?.node) {
+            this.distanceLabel.node.active = visible;
+        }
+    }
+
+    setRaceStatusVisible(visible: boolean) {
+        this.setProgressVisible(visible);
+        this.setHeartRateBarVisible(visible);
+        this.setEnergyBarVisible(visible);
     }
 
     updateHeartRateBar(heartRate: number, zone: string) {
@@ -255,6 +271,7 @@ export class UIController extends Component {
         const soloRace = (stats?.racerCount ?? 2) <= 1;
         this.layoutResultPanelForAwards();
         this.setSpeedBarVisible(false);
+        this.setRaceStatusVisible(false);
         // Awards ceremony: disable the full-screen swim pad so its node-level touch handlers stop
         // swallowing pointer events, letting the global input listeners drive the free-look camera.
         // 颁奖仪式：禁用全屏划水板，使其节点级触摸不再吞掉指针事件，让全局输入监听驱动自由视角相机。
@@ -292,6 +309,7 @@ export class UIController extends Component {
 
     resetAll() {
         this.updateProgress(0, 0);
+        this.setRaceStatusVisible(false);
         if (this.ratingLabel) {
             this.ratingLabel.string = '';
         }

@@ -52,6 +52,10 @@ export class UIFlowController {
         this._refs.uiController?.updateProgress(playerDistance, aiDistance);
     }
 
+    setRaceStatusVisible(visible: boolean) {
+        this._refs.uiController?.setRaceStatusVisible(visible);
+    }
+
     showRating(rating: Rating, combo: number) {
         this._refs.uiController?.showRating(rating, combo);
     }

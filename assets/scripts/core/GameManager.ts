@@ -260,6 +260,10 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
         const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
+        const raceStatusVisible = !this._modelDebugFlow?.active
+            && playerBeforeFinish
+            && (this._state === GameState.GLIDING || this._state === GameState.RACING);
+        this._uiFlow?.setRaceStatusVisible(raceStatusVisible);
         const presentationIndicatorVisible = this._state === GameState.PRECOUNTDOWN
             || this._state === GameState.AWARDS;
         // The player can finish before the last AI swimmer. Hide player-specific
@@ -515,6 +519,14 @@ export class GameManager extends Component {
                 this._playerCondition.reset();
                 this._playerCondition.setPhase(RacePhase.START);
                 this._playerCondition.applyDiveResult(result);
+                this._uiFlow?.updateHeartRateBar(
+                    this._playerCondition.heartRate,
+                    this._playerCondition.heartRateZone,
+                );
+                this._uiFlow?.updateEnergyBar(
+                    this._playerCondition.energy,
+                    this._playerCondition.energyDepleted,
+                );
                 for (const aiCondition of this._aiConditions) {
                     aiCondition.reset();
                     aiCondition.setPhase(RacePhase.START);
@@ -915,9 +927,7 @@ export class GameManager extends Component {
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
         this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
-        this._uiFlow?.setHeartRateBarVisible(true);
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
-        this._uiFlow?.setEnergyBarVisible(true);
         this._raceContext.setPhase(this._playerCondition.phase);
         this.updateAiConditions(dt);
     }
