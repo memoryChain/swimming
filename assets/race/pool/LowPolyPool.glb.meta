@@ -2209,24 +2209,6 @@
       ],
       "subMetas": {}
     },
-    "d2e7e": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@d2e7e",
-      "displayName": "",
-      "id": "d2e7e",
-      "name": "backstroke_flags_near_mesh.001.mesh",
-      "userData": {
-        "gltfIndex": 118,
-        "triangleCount": 66
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
     "6bedb": {
       "importer": "gltf-mesh",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@6bedb",
@@ -2234,7 +2216,7 @@
       "id": "6bedb",
       "name": "backstroke_flags_far_mesh.001.mesh",
       "userData": {
-        "gltfIndex": 119,
+        "gltfIndex": 118,
         "triangleCount": 66
       },
       "ver": "1.1.1",
@@ -2252,7 +2234,7 @@
       "id": "44edf",
       "name": "ceiling_arch_rib_far_mesh.mesh",
       "userData": {
-        "gltfIndex": 120,
+        "gltfIndex": 119,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -2270,7 +2252,7 @@
       "id": "7686d",
       "name": "hall_wall_podium_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 121,
+        "gltfIndex": 120,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2288,7 +2270,7 @@
       "id": "374b2",
       "name": "hall_wall_podium_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 122,
+        "gltfIndex": 121,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2306,7 +2288,7 @@
       "id": "4e6af",
       "name": "hall_floor.mesh",
       "userData": {
-        "gltfIndex": 123,
+        "gltfIndex": 122,
         "triangleCount": 8
       },
       "ver": "1.1.1",
@@ -2324,7 +2306,7 @@
       "id": "40c90",
       "name": "award_podium_1.002.mesh",
       "userData": {
-        "gltfIndex": 124,
+        "gltfIndex": 123,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -2342,7 +2324,7 @@
       "id": "c375b",
       "name": "award_podium_2.002.mesh",
       "userData": {
-        "gltfIndex": 125,
+        "gltfIndex": 124,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -2360,7 +2342,7 @@
       "id": "82b4a",
       "name": "award_podium_3.002.mesh",
       "userData": {
-        "gltfIndex": 126,
+        "gltfIndex": 125,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -2928,7 +2910,6 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@1abb5",
         "a751d540-5ebd-4868-a41a-334975b3aed3@f38ca",
         "a751d540-5ebd-4868-a41a-334975b3aed3@fa178",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@d2e7e",
         "a751d540-5ebd-4868-a41a-334975b3aed3@6bedb",
         "a751d540-5ebd-4868-a41a-334975b3aed3@44edf",
         "a751d540-5ebd-4868-a41a-334975b3aed3@7686d",
