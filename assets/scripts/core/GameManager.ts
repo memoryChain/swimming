@@ -238,7 +238,7 @@ export class GameManager extends Component {
         this._waterRefraction = null;
         this._scoreboardFeed?.dispose();
         this._scoreboardFeed = null;
-        this._awardsPresentation.hide();
+        this._awardsPresentation.dispose();
         this._topViewCeiling.dispose();
     }
 
@@ -249,6 +249,7 @@ export class GameManager extends Component {
         // Bullet-time: everything GameManager drives (camera, model debug, etc.)
         // runs on the scaled delta. Input classification stays on wall-clock.
         dt = scaledDelta(dt);
+        this._awardsPresentation.update(dt);
         this._inputRouter?.tick();
         // Keep the refraction camera locked to the current view every frame so the
         // water bends whatever is beneath it from any camera mode.

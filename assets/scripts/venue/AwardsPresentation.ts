@@ -5,6 +5,7 @@ import {
 } from '../character/CharacterActionConfig';
 import type { CharacterActionPoolConfig } from '../character/CharacterActionConfig';
 import type { RaceFinishResult } from '../core/RaceManager';
+import { AwardsConfettiEmitter } from './AwardsConfettiEmitter';
 import {
     collectNamedBounds,
     DEFAULT_RACE_COURSE_LAYOUT,
@@ -26,6 +27,8 @@ const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
 ]);
 
 export class AwardsPresentation {
+    private readonly _confetti = new AwardsConfettiEmitter();
+
     constructor(private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {}
 
     show(leaderboard: RaceFinishResult[], poolNode?: Node | null): Vec3 {
@@ -35,12 +38,24 @@ export class AwardsPresentation {
 
         this.assignAwardsActions(winners);
 
-        // Confetti particles removed for now (looked like fog); to be reworked later.
-        // 礼花粒子暂时移除（之前像一团雾），后续重做。
-        return this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
+        const center = this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
+        const effectParent = poolNode?.isValid ? poolNode : winners[0]?.swimmer.node.parent;
+        if (effectParent?.isValid) {
+            this._confetti.show(effectParent, center);
+        }
+        return center;
     }
 
     hide() {
+        this._confetti.hide();
+    }
+
+    update(dt: number) {
+        this._confetti.update(dt);
+    }
+
+    dispose() {
+        this._confetti.dispose();
     }
 
     private assignAwardsActions(winners: RaceFinishResult[]) {
