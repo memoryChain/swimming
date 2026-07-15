@@ -168,8 +168,6 @@ export class GameManager extends Component {
     private _aiDebugCameraButtonLabel: Label = null;
     private _raceCameraButton: Node = null;
     private _raceCameraButtonLabel: Label = null;
-    private _scoreboardViewButton: Node = null;
-    private _scoreboardViewButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -279,9 +277,6 @@ export class GameManager extends Component {
             ));
         if (this._raceCameraButton?.isValid) {
             this._raceCameraButton.active = playerIndicatorVisible && raceActive;
-        }
-        if (this._scoreboardViewButton?.isValid) {
-            this._scoreboardViewButton.active = playerIndicatorVisible && raceActive;
         }
         // Motor speed becomes meaningful after the dive has entered its glide.
         // Keep the player marker visible before takeoff, but hide the speed text.
@@ -712,7 +707,6 @@ export class GameManager extends Component {
             playerLaneZ: PLAYER_LANE_Z,
             debug: (message) => this.debug(message),
         });
-        this.updateScoreboardViewButtonLabel();
     }
 
     private createCompetitorManager(): CompetitorManager {
@@ -868,7 +862,6 @@ export class GameManager extends Component {
             this.buildPlayerOverheadMarker();
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildRaceCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
-            this.buildScoreboardViewButton(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
 
             const modelDebugHud = new ModelDebugHudBuilder({
@@ -1033,40 +1026,6 @@ export class GameManager extends Component {
     private updateRaceCameraButtonLabel(modeName = this._raceCameraDirector.currentModeName) {
         if (this._raceCameraButtonLabel?.isValid) {
             this._raceCameraButtonLabel.string = `相机：${modeName}`;
-        }
-    }
-
-    private buildScoreboardViewButton(raceHud: Node, width: number, height: number) {
-        const button = makeButton(
-            'ScoreboardViewButton',
-            raceHud,
-            210,
-            54,
-            new Color(24, 82, 142, 238),
-            '',
-        );
-        button.setPosition(width / 2 - 122, height / 2 - 130, 0);
-        button.setSiblingIndex(raceHud.children.length - 1);
-        const labelNode = makeLabel('Label', button, '', 17, new Color(245, 252, 255, 255));
-        labelNode.getComponent(UITransform).setContentSize(200, 50);
-        this._scoreboardViewButton = button;
-        this._scoreboardViewButtonLabel = labelNode.getComponent(Label);
-        this.updateScoreboardViewButtonLabel();
-        button.active = false;
-        button.on(Node.EventType.TOUCH_END, () => this.cycleScoreboardView());
-    }
-
-    private cycleScoreboardView() {
-        const name = this._scoreboardFeed?.cyclePreset();
-        if (name) {
-            this.updateScoreboardViewButtonLabel(name);
-            this.debug(`scoreboard feed view=${name}`);
-        }
-    }
-
-    private updateScoreboardViewButtonLabel(presetName = this._scoreboardFeed?.currentPresetName ?? '侧视') {
-        if (this._scoreboardViewButtonLabel?.isValid) {
-            this._scoreboardViewButtonLabel.string = `大屏：${presetName}`;
         }
     }
 
