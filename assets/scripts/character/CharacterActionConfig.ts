@@ -99,14 +99,53 @@ export const CHARACTER_ACTION_CONFIG: CharacterActionConfig = {
         ],
     },
     awards: {
-        champion: { targetSize: 7, actions: [] },
-        runnerUp: { targetSize: 3, actions: [] },
-        third: { targetSize: 4, actions: [] },
+        // Segment 2 podium orbit and segment 3 champion close-up share the
+        // champion action selected when the awards presentation begins.
+        champion: {
+            targetSize: 7,
+            actions: [
+                CharacterAction.JoyfulJump,
+                CharacterAction.Victory,
+                CharacterAction.VictoryIdle,
+                CharacterAction.ChickenDance,
+                CharacterAction.YmcaDance,
+                CharacterAction.SillyDancing,
+                CharacterAction.DancingTwerk,
+            ],
+        },
+        runnerUp: {
+            targetSize: 3,
+            actions: [
+                CharacterAction.Defeated,
+                CharacterAction.Angry,
+                CharacterAction.Loser,
+            ],
+        },
+        third: {
+            targetSize: 4,
+            actions: [
+                CharacterAction.Happy,
+                CharacterAction.Waving0713,
+                CharacterAction.Clapping,
+                CharacterAction.Excited,
+            ],
+        },
     },
 };
 
 export function sampledActionIdFor(action: CharacterAction): SampledActionId {
     return CHARACTER_ACTION_SAMPLE_IDS[action];
+}
+
+export function selectActionFromPool(
+    pool: readonly CharacterAction[],
+    random: () => number = Math.random,
+): CharacterAction | null {
+    if (pool.length <= 0) {
+        return null;
+    }
+    const roll = Math.max(0, Math.min(0.999999999, random()));
+    return pool[Math.floor(roll * pool.length)] ?? pool[0];
 }
 
 export function selectAdjacentDistinctActions(

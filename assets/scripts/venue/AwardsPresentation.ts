@@ -1,4 +1,9 @@
 import { Node, Vec3 } from 'cc';
+import {
+    CHARACTER_ACTION_CONFIG,
+    selectActionFromPool,
+} from '../character/CharacterActionConfig';
+import type { CharacterActionPoolConfig } from '../character/CharacterActionConfig';
 import type { RaceFinishResult } from '../core/RaceManager';
 import {
     collectNamedBounds,
@@ -28,12 +33,24 @@ export class AwardsPresentation {
             .filter((row) => row.placement >= 1 && row.placement <= 3 && row.swimmer?.node?.isValid)
             .sort((a, b) => a.placement - b.placement);
 
+        this.assignAwardsActions(winners);
+
         // Confetti particles removed for now (looked like fog); to be reworked later.
         // 礼花粒子暂时移除（之前像一团雾），后续重做。
         return this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
     }
 
     hide() {
+    }
+
+    private assignAwardsActions(winners: RaceFinishResult[]) {
+        for (const row of winners) {
+            const pool = awardsActionPool(row.placement);
+            const action = pool ? selectActionFromPool(pool.actions) : null;
+            if (action) {
+                row.swimmer.setShowcaseAction(action);
+            }
+        }
     }
 
     // Stand each medallist on their podium step, located from the venue meshes.
@@ -97,4 +114,17 @@ function standingOnBounds(bounds: SceneBounds): Vec3 {
         bounds.maxY - STANDING_MODEL_LOCAL_Y + PLATFORM_STANDING_LIFT,
         (bounds.minZ + bounds.maxZ) * 0.5,
     );
+}
+
+function awardsActionPool(placement: number): CharacterActionPoolConfig | null {
+    if (placement === 1) {
+        return CHARACTER_ACTION_CONFIG.awards.champion;
+    }
+    if (placement === 2) {
+        return CHARACTER_ACTION_CONFIG.awards.runnerUp;
+    }
+    if (placement === 3) {
+        return CHARACTER_ACTION_CONFIG.awards.third;
+    }
+    return null;
 }

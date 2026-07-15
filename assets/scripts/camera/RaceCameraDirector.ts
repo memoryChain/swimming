@@ -44,8 +44,8 @@ const AWARDS_DEFAULT_YAW = 0;         // start beyond the podium (+X), looking b
 // 72 degrees gives a strong three-quarter view without reaching a rear angle.
 const AWARDS_MIN_YAW = -Math.PI * 0.4;
 const AWARDS_MAX_YAW = Math.PI * 0.4;
-const AWARDS_DEFAULT_PITCH = 0.24;    // slightly elevated
-const AWARDS_MIN_PITCH = 0.02;        // stay above horizontal so the camera never dips under the floor
+const AWARDS_MIN_PITCH = 0.02;        // stay just above horizontal so the camera never dips under the floor
+const AWARDS_DEFAULT_PITCH = AWARDS_MIN_PITCH;
 const AWARDS_MAX_PITCH = 1.3;
 const AWARDS_AUTO_ROTATE_SPEED = 0.16; // rad/s idle drift
 const AWARDS_AUTO_ROTATE_IDLE = 1.5;   // seconds of no input before the idle drift resumes
