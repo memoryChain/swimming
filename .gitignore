@@ -26,3 +26,4 @@ extensions/cocos-code-mode/
 # WebStorm
 #//////////////////////////
 .idea/
+/tools

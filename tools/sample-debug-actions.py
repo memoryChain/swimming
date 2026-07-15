@@ -13,11 +13,71 @@ TARGET_GLB = os.path.join(PROJECT_ROOT, "assets", "race", "models", "UserSwimmer
 RAW_DIR = os.path.join(PROJECT_ROOT, "tools", "mixamo_raw")
 RETARGETED_DIR = os.path.join(PROJECT_ROOT, "tools", "retargeted_actions")
 OUTPUT_TS = os.path.join(PROJECT_ROOT, "assets", "scripts", "character", "SampledActionMotionCurve.ts")
+OUTPUT_ACTION_DIR = os.path.join(PROJECT_ROOT, "assets", "race", "sampled-actions")
 SOURCE_FPS = 30
 
 ACTION_DEFINITIONS = [
     ("waving", "Waving", "Waving.fbx"),
+    ("arm_stretching", "Arm Stretching", "Arm Stretching.fbx"),
+    ("chicken_dance", "Chicken Dance", "Chicken Dance.fbx"),
+    ("neck_stretching", "Neck Stretching", "Neck Stretching.fbx"),
+    ("silly_dancing", "Silly Dancing", "Silly Dancing.fbx"),
+    ("twist_dance", "Twist Dance", "Twist Dance.fbx"),
+    ("waving_gesture", "Waving Gesture", "Waving Gesture.fbx"),
+    ("ymca_dance", "Ymca Dance", "Ymca Dance.fbx"),
+    ("dancing_twerk", "Dancing Twerk", "Dancing Twerk.fbx"),
+    ("joyful_jump", "Joyful Jump", "Joyful Jump.fbx"),
+    ("victory_idle", "Victory Idle", "Victory Idle.fbx"),
+    ("victory", "Victory", "Victory.fbx"),
+    ("angry", "Angry", "Angry.fbx"),
+    ("defeated", "Defeated", "Defeated.fbx"),
+    ("loser", "Loser", "Loser.fbx"),
+    ("clapping", "Clapping", "Clapping.fbx"),
+    ("excited", "Excited", "Excited.fbx"),
+    ("happy", "Happy", "Happy.fbx"),
+    ("waving_0713", "Waving 0713", "Waving 0713.fbx"),
 ]
+
+# Arm Stretching deliberately crosses both arms. Its clavicles match the source
+# horizontal direction while retaining the target rig's own vertical shoulder
+# slope. The remaining ordering differences are crossing-boundary frames caused
+# by different shoulder width and limb ratios. The Blender front silhouette and
+# multi-frame side chest-clearance checks must pass before this exact exception
+# is updated or retained.
+EXPLAINED_HAND_ORDER_MISMATCH_COUNTS = {
+    "arm_stretching": 8,
+    # The source hands cross for exactly F111; the target hands only touch at
+    # that instant because its shoulder width and hand spacing differ.
+    "chicken_dance": 1,
+    # The source hands cross from F161-F170. With the target swimmer's shoulder
+    # width and limb ratios they cross from F162-F169; the two boundary frames
+    # only touch. The Blender critical-frame strip confirms the same motion and
+    # no left/right inversion.
+    "twist_dance": 2,
+    # Angry crosses its arms for F17-F236 in the source and F20-F233 on the
+    # narrower target. The six boundary frames preserve the same gesture and
+    # were checked from front/side/three-quarter views.
+    "angry": 6,
+    # The source hands barely cross at F28 while the target hands touch without
+    # reversing. Adjacent F27-F29 silhouettes confirm the clap stays correct.
+    "clapping": 1,
+}
+
+# Chicken Dance contains intentionally snappy wrist flicks. The worst target
+# delta is 35.97 degrees at F104->F105 and the source hand direction already
+# changes 30.78 degrees there; the critical-frame Blender strip shows no flip.
+MAX_ADJACENT_QUATERNION_DEGREES = {
+    "chicken_dance": 40.0,
+    # Source world rotation changes 38.98 degrees at F15->F16. The target's
+    # 34.35-degree local change follows the same raised-arm silhouette.
+    "victory_idle": 35.0,
+    # Source local/world hand rotation changes 34.71/38.58 degrees at
+    # F542->F543; the target changes 33.90 degrees without a visible flip.
+    "angry": 35.0,
+    # The source right hand changes 30.22 degrees in world space at F26->F27.
+    # The 36.06-degree target change preserves the same wave arc in all views.
+    "waving_0713": 37.0,
+}
 
 SAMPLED_BONES = [
     "Root", "Hip", "Waist", "Spine01", "Spine02", "NeckTwist01", "Head",
@@ -230,13 +290,38 @@ def extract_exported_action(action_id, label, source_file, output_glb, diagnosti
     }
 
 
+def action_output_path(action_id):
+    return os.path.join(OUTPUT_ACTION_DIR, f"{action_id}.json")
+
+
+def write_text_if_changed(path, content):
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as file:
+            if file.read() == content:
+                return False
+    with open(path, "w", encoding="utf-8", newline="\n") as file:
+        file.write(content)
+    return True
+
+
 def write_typescript(actions):
+    os.makedirs(OUTPUT_ACTION_DIR, exist_ok=True)
+    for action in actions:
+        write_text_if_changed(
+            action_output_path(action["id"]),
+            json.dumps(action, separators=(',', ':')),
+        )
+
     content = [
         "export type SampledActionBoneName =",
         *[f"    | '{bone_name}'" for bone_name in SAMPLED_BONES],
         ";",
         "",
-        "export type SampledActionId = " + " | ".join(f"'{item[0]}'" for item in ACTION_DEFINITIONS) + ";",
+        "export const SAMPLED_ACTION_IDS = [",
+        *[f"    '{action_id}'," for action_id, _label, _source_file in ACTION_DEFINITIONS],
+        "] as const;",
+        "",
+        "export type SampledActionId = typeof SAMPLED_ACTION_IDS[number];",
         "",
         "export type SampledActionMotionSample = {",
         "    phase: number;",
@@ -255,34 +340,141 @@ def write_typescript(actions):
         "    samples: readonly SampledActionMotionSample[];",
         "};",
         "",
-        "// Generated by tools/sample-debug-actions.py. Source asymmetry is preserved.",
-        f"export const SAMPLED_DEBUG_ACTIONS: readonly SampledActionMotion[] = {json.dumps(actions, separators=(',', ':'))} as const;",
+        "// The large sampled curves are race-bundle JSON assets. Keeping this module as a",
+        "// small type/registry index prevents them from entering the WeChat startup script.",
+        "const SAMPLED_DEBUG_ACTIONS_BY_ID: Partial<Record<SampledActionId, SampledActionMotion>> = {};",
+        "",
+        "export function registerSampledDebugAction(action: SampledActionMotion) {",
+        "    SAMPLED_DEBUG_ACTIONS_BY_ID[action.id] = action;",
+        "}",
+        "",
+        "export function haveAllSampledDebugActions(): boolean {",
+        "    return SAMPLED_ACTION_IDS.every((id) => Boolean(SAMPLED_DEBUG_ACTIONS_BY_ID[id]));",
+        "}",
+        "",
+        "export function getLoadedSampledDebugActions(): readonly SampledActionMotion[] {",
+        "    return SAMPLED_ACTION_IDS",
+        "        .map((id) => SAMPLED_DEBUG_ACTIONS_BY_ID[id])",
+        "        .filter((action): action is SampledActionMotion => Boolean(action));",
+        "}",
         "",
         "export function findSampledDebugAction(id: SampledActionId): SampledActionMotion | null {",
-        "    return SAMPLED_DEBUG_ACTIONS.find((action) => action.id === id) ?? null;",
+        "    return SAMPLED_DEBUG_ACTIONS_BY_ID[id] ?? null;",
         "}",
         "",
     ]
-    with open(OUTPUT_TS, "w", encoding="utf-8", newline="\n") as file:
-        file.write("\n".join(content))
+    write_text_if_changed(OUTPUT_TS, "\n".join(content))
 
 
-def main():
+def read_existing_actions():
+    split_actions = []
+    for action_id, _label, _source_file in ACTION_DEFINITIONS:
+        path = action_output_path(action_id)
+        if not os.path.exists(path):
+            continue
+        with open(path, "r", encoding="utf-8") as file:
+            split_actions.append(json.load(file))
+    if split_actions:
+        return split_actions
+
+    # One-time migration fallback for the former monolithic generated file.
+    if not os.path.exists(OUTPUT_TS):
+        return []
+    with open(OUTPUT_TS, "r", encoding="utf-8") as file:
+        content = file.read()
+    prefix = "export const SAMPLED_DEBUG_ACTIONS: readonly SampledActionMotion[] = "
+    suffix = " as const;"
+    start = content.find(prefix)
+    if start < 0:
+        return []
+    start += len(prefix)
+    end = content.find(suffix, start)
+    if end < 0:
+        return []
+    return json.loads(content[start:end])
+
+
+def validate_retarget_diagnostics(action_id, source_file, retarget, result):
+    diagnostics = result["diagnostics"]
+    failures = []
+    if result["mapped_bones"] != len(retarget.BONE_MAP):
+        failures.append(f"mapped {result['mapped_bones']} of {len(retarget.BONE_MAP)} bones")
+    if diagnostics.get("missing_source_bones"):
+        failures.append(f"missing source bones {diagnostics['missing_source_bones']}")
+    if diagnostics.get("missing_target_bones"):
+        failures.append(f"missing target bones {diagnostics['missing_target_bones']}")
+    if diagnostics.get("max_target_root_rotation_degrees", 0.0) > 0.0001:
+        failures.append(f"Root rotated {diagnostics['max_target_root_rotation_degrees']} degrees")
+    if diagnostics.get("contact_mismatch_count", 0) != 0:
+        failures.append(f"contact mismatches {diagnostics['contact_mismatch_ranges']}")
+    if diagnostics.get("max_direction_error_degrees", 0.0) > 0.001:
+        failures.append(f"direction error {diagnostics['max_direction_error_degrees']} degrees")
+    if diagnostics.get("max_relative_swing_error_degrees", 0.0) > 0.001:
+        failures.append(f"relative swing error {diagnostics['max_relative_swing_error_degrees']} degrees")
+    if diagnostics.get("max_horizontal_direction_error_degrees", 0.0) > 0.001:
+        failures.append(f"horizontal shoulder direction error {diagnostics['max_horizontal_direction_error_degrees']} degrees")
+    if diagnostics.get("max_relative_horizontal_direction_error_degrees", 0.0) > 0.001:
+        failures.append(
+            "relative horizontal shoulder direction error "
+            f"{diagnostics['max_relative_horizontal_direction_error_degrees']} degrees"
+        )
+    if diagnostics.get("max_relative_horizontal_slope_deviation_degrees", 0.0) > 0.001:
+        failures.append(
+            "relative shoulder slope drift "
+            f"{diagnostics['max_relative_horizontal_slope_deviation_degrees']} degrees"
+        )
+    if diagnostics.get("max_preserved_bone_rotation_degrees", 0.0) > 0.001:
+        failures.append(f"preserved shoulder rotation {diagnostics['max_preserved_bone_rotation_degrees']} degrees")
+    if diagnostics.get("non_finite_value_count", 0) != 0:
+        failures.append(f"non-finite values {diagnostics['non_finite_value_count']}")
+    continuity_limit = MAX_ADJACENT_QUATERNION_DEGREES.get(action_id, 30.0)
+    if diagnostics.get("max_adjacent_quaternion_degrees", 0.0) > continuity_limit:
+        failures.append(f"unexplained adjacent rotation jump {diagnostics['max_adjacent_quaternion_degrees']} degrees")
+
+    mismatch_count = diagnostics.get("hand_order_mismatch_count", 0)
+    explained_count = EXPLAINED_HAND_ORDER_MISMATCH_COUNTS.get(action_id, 0)
+    if mismatch_count != explained_count:
+        failures.append(
+            f"hand-order mismatch count {mismatch_count}; expected documented count {explained_count} "
+            f"at {diagnostics.get('hand_order_mismatch_ranges', [])}"
+        )
+    if failures:
+        raise RuntimeError(f"retarget validation failed for {source_file}: " + "; ".join(failures))
+
+
+def main(action_ids=None):
     os.makedirs(RETARGETED_DIR, exist_ok=True)
     retarget = load_retarget_module()
+    selected_ids = set(action_ids) if action_ids is not None else None
+    existing_actions = {action["id"]: action for action in read_existing_actions()}
     actions = []
     results = []
     for action_id, label, source_file in ACTION_DEFINITIONS:
+        if selected_ids is not None and action_id not in selected_ids:
+            existing = existing_actions.get(action_id)
+            if not existing:
+                raise RuntimeError(f"cannot preserve missing generated action: {action_id}")
+            actions.append(existing)
+            results.append({
+                "id": action_id,
+                "source": source_file,
+                "reused": True,
+                "frameStart": existing["frameStart"],
+                "frameEnd": existing["frameEnd"],
+                "sampleCount": len(existing["samples"]),
+                "durationSeconds": existing["durationSeconds"],
+            })
+            continue
         source_fbx = os.path.join(RAW_DIR, source_file)
         output_glb = os.path.join(RETARGETED_DIR, f"{action_id}.glb")
         result = retarget.main(TARGET_GLB, source_fbx, output_glb)
-        if result["mapped_bones"] != len(retarget.BONE_MAP):
-            raise RuntimeError(f"incomplete bone mapping for {source_file}: {result['mapped_bones']}")
+        validate_retarget_diagnostics(action_id, source_file, retarget, result)
         action = extract_exported_action(action_id, label, source_file, output_glb, result["diagnostics"])
         actions.append(action)
         results.append({
             "id": action_id,
             "source": source_file,
+            "reused": False,
             "mappedBones": result["mapped_bones"],
             "frameStart": action["frameStart"],
             "frameEnd": action["frameEnd"],

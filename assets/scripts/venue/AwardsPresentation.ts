@@ -11,9 +11,9 @@ import {
 
 const AWARDS_DECK_MARGIN = 2.4;
 const AWARDS_RACER_SPACING = 1.45;
-// Winners face back toward the pool (-X) so they look at the awards camera.
-// The model's forward is +X at euler Y=0, so -X is a 180° turn.
-const AWARDS_FACING_Y = 180;
+// The podium is beyond the pool's +X finish end. The model's forward is +X at
+// euler Y=0, so winners face away from the pool and toward the awards camera.
+const AWARDS_FACING_Y = 0;
 const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
     [1, 'award_podium_1'],
     [2, 'award_podium_2'],
@@ -83,7 +83,9 @@ export class AwardsPresentation {
         for (const row of winners) {
             const position = center.clone();
             position.x += xOffsetByPlacement.get(row.placement) ?? 0;
-            row.swimmer.presentStanding(position, -90);
+            // This fallback line-up is on the pool's -Z side, so +Z faces the
+            // pool and -Z faces away from it.
+            row.swimmer.presentStanding(position, 90);
         }
         return center;
     }

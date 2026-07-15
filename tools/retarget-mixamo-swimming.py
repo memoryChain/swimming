@@ -3,7 +3,7 @@ import math
 import os
 
 import bpy
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 
 PROJECT_ROOT = r"F:\myworkspace\cocosProjects\SpeedSwimming"
@@ -65,6 +65,12 @@ TARGET_HIP = "Hip"
 SOURCE_CONTACT_BONES = ["mixamorig:LeftFoot", "mixamorig:LeftToeBase", "mixamorig:RightFoot", "mixamorig:RightToeBase"]
 TARGET_CONTACT_BONES = ["L_Foot", "L_ToeBase", "R_Foot", "R_ToeBase"]
 PRESERVE_TARGET_ROLL_BONES = {"L_Clavicle", "R_Clavicle"}
+ANIMATE_CLAVICLE_SOURCE_FILES = {"Arm Stretching.fbx", "Twist Dance.fbx"}
+# YMCA needs shoulder motion, but its source shoulder elevation deforms this
+# swimmer's neck-to-shoulder silhouette. Transfer only the source-relative yaw
+# around each posed target parent's local up axis so the target shoulder slope
+# stays identical to its normal rig while the clavicles still move in depth.
+RELATIVE_HORIZONTAL_CLAVICLE_SOURCE_FILES = {"Ymca Dance.fbx"}
 
 
 def world_rest_matrix(armature, bone_name):
@@ -81,10 +87,104 @@ def bone_head_world(armature, bone_name, posed):
     return armature.matrix_world @ head
 
 
+def source_relative_direction_swing(source, bone_name):
+    rest_bone = source.data.bones[bone_name]
+    pose_bone = source.pose.bones[bone_name]
+    rest_direction = source.matrix_world.to_3x3() @ (rest_bone.tail_local - rest_bone.head_local)
+    pose_direction = source.matrix_world.to_3x3() @ (pose_bone.tail - pose_bone.head)
+    rest_direction.normalize()
+    pose_direction.normalize()
+
+    if rest_bone.parent and pose_bone.parent:
+        parent_rest_rotation = world_rest_matrix(source, rest_bone.parent.name).to_quaternion()
+        parent_pose_rotation = world_pose_matrix(source, pose_bone.parent.name).to_quaternion()
+        parent_motion = parent_pose_rotation @ parent_rest_rotation.inverted()
+        pose_direction = parent_motion.inverted() @ pose_direction
+        pose_direction.normalize()
+    return rest_direction.rotation_difference(pose_direction)
+
+
+def source_relative_horizontal_angle(source, bone_name):
+    rest_bone = source.data.bones[bone_name]
+    pose_bone = source.pose.bones[bone_name]
+    rest_direction = source.matrix_world.to_3x3() @ (rest_bone.tail_local - rest_bone.head_local)
+    pose_direction = source.matrix_world.to_3x3() @ (pose_bone.tail - pose_bone.head)
+    rest_direction.normalize()
+    pose_direction.normalize()
+
+    if rest_bone.parent and pose_bone.parent:
+        parent_rest_rotation = world_rest_matrix(source, rest_bone.parent.name).to_quaternion()
+        parent_pose_rotation = world_pose_matrix(source, pose_bone.parent.name).to_quaternion()
+        parent_motion = parent_pose_rotation @ parent_rest_rotation.inverted()
+        pose_direction = parent_motion.inverted() @ pose_direction
+        pose_direction.normalize()
+
+    rest_horizontal = Vector((rest_direction.x, rest_direction.y, 0.0))
+    pose_horizontal = Vector((pose_direction.x, pose_direction.y, 0.0))
+    if rest_horizontal.length <= 0.000001 or pose_horizontal.length <= 0.000001:
+        return 0.0
+    rest_horizontal.normalize()
+    pose_horizontal.normalize()
+    cross_z = rest_horizontal.x * pose_horizontal.y - rest_horizontal.y * pose_horizontal.x
+    dot = max(-1.0, min(1.0, rest_horizontal.dot(pose_horizontal)))
+    return math.atan2(cross_z, dot)
+
+
+def target_parent_up_axis(target, bone_name):
+    pose_bone = target.pose.bones[bone_name]
+    if not pose_bone.parent:
+        return Vector((0.0, 0.0, 1.0))
+    parent_pose_rotation = world_pose_matrix(target, pose_bone.parent.name).to_quaternion()
+    up_axis = parent_pose_rotation @ Vector((0.0, 0.0, 1.0))
+    up_axis.normalize()
+    return up_axis
+
+
+def parent_local_bone_elevation_degrees(armature, bone_name, posed):
+    if posed:
+        bone = armature.pose.bones[bone_name]
+        direction = bone.tail - bone.head
+        if bone.parent:
+            direction = bone.parent.matrix.inverted().to_3x3() @ direction
+    else:
+        bone = armature.data.bones[bone_name]
+        direction = bone.tail_local - bone.head_local
+        if bone.parent:
+            direction = bone.parent.matrix_local.inverted().to_3x3() @ direction
+    direction.normalize()
+    return math.degrees(math.asin(max(-1.0, min(1.0, direction.z))))
+
+
 def retarget_scale(target, source):
     target_length = (bone_head_world(target, TARGET_HIP, False) - bone_head_world(target, "L_Foot", False)).length
     source_length = (bone_head_world(source, SOURCE_HIPS, False) - bone_head_world(source, "mixamorig:LeftFoot", False)).length
     return target_length / max(0.000001, source_length)
+
+
+def quaternion_delta_degrees(left, right):
+    left = left.normalized()
+    right = right.normalized()
+    dot = abs(sum(a * b for a, b in zip(left, right)))
+    return math.degrees(2.0 * math.acos(max(0.0, min(1.0, dot))))
+
+
+def quaternion_identity_degrees(quaternion):
+    quaternion = quaternion.normalized()
+    return math.degrees(2.0 * math.acos(max(0.0, min(1.0, abs(quaternion.w)))))
+
+
+def compact_frame_ranges(frames):
+    if not frames:
+        return []
+    ranges = []
+    start = previous = frames[0]
+    for frame in frames[1:]:
+        if frame != previous + 1:
+            ranges.append([start, previous])
+            start = frame
+        previous = frame
+    ranges.append([start, previous])
+    return ranges
 
 
 def reset_target_pose(target):
@@ -95,7 +195,16 @@ def reset_target_pose(target):
         pose_bone.rotation_quaternion = (1, 0, 0, 0)
 
 
-def apply_world_space_pose(target, source, mapped, scale_ratio):
+def apply_world_space_pose(
+    target,
+    source,
+    mapped,
+    scale_ratio,
+    preserved_bones,
+    relative_swing_bones,
+    horizontal_direction_bones,
+    relative_horizontal_direction_bones,
+):
     reset_target_pose(target)
     bpy.context.view_layer.update()
 
@@ -105,9 +214,12 @@ def apply_world_space_pose(target, source, mapped, scale_ratio):
     target_rest_hip_world = bone_head_world(target, TARGET_HIP, False)
     target_hip_armature = target.matrix_world.inverted() @ (target_rest_hip_world + hip_displacement_world)
 
+    max_relative_swing_error_degrees = 0.0
+    max_horizontal_direction_error_degrees = 0.0
+    max_relative_horizontal_direction_error_degrees = 0.0
     ordered = sorted(mapped, key=lambda pair: len(target.data.bones[pair[1]].parent_recursive))
     for src_name, dst_name in ordered:
-        if dst_name in PRESERVE_TARGET_ROLL_BONES:
+        if dst_name in preserved_bones:
             continue
         source_bone = source.pose.bones[src_name]
         target_bone = target.pose.bones[dst_name]
@@ -115,7 +227,32 @@ def apply_world_space_pose(target, source, mapped, scale_ratio):
         target_direction = target.matrix_world.to_3x3() @ (target_bone.tail - target_bone.head)
         source_direction.normalize()
         target_direction.normalize()
-        swing = target_direction.rotation_difference(source_direction)
+        if dst_name in relative_horizontal_direction_bones:
+            horizontal_angle = source_relative_horizontal_angle(source, src_name)
+            up_axis = target_parent_up_axis(target, dst_name)
+            desired_target_direction = Quaternion(up_axis, horizontal_angle) @ target_direction
+            desired_target_direction.normalize()
+            swing = target_direction.rotation_difference(desired_target_direction)
+        elif dst_name in horizontal_direction_bones:
+            source_horizontal = Vector((source_direction.x, source_direction.y, 0.0))
+            if source_horizontal.length <= 0.000001:
+                desired_target_direction = target_direction.copy()
+            else:
+                source_horizontal.normalize()
+                target_vertical = max(-0.999999, min(0.999999, target_direction.z))
+                target_horizontal_length = math.sqrt(max(0.0, 1.0 - target_vertical * target_vertical))
+                desired_target_direction = source_horizontal * target_horizontal_length
+                desired_target_direction.z = target_vertical
+                desired_target_direction.normalize()
+            swing = target_direction.rotation_difference(desired_target_direction)
+        elif dst_name in relative_swing_bones:
+            motion_swing = source_relative_direction_swing(source, src_name)
+            desired_target_direction = motion_swing @ target_direction
+            desired_target_direction.normalize()
+            swing = target_direction.rotation_difference(desired_target_direction)
+        else:
+            desired_target_direction = source_direction
+            swing = target_direction.rotation_difference(source_direction)
         desired_world_rotation = swing @ world_pose_matrix(target, dst_name).to_quaternion()
         desired_armature_rotation = target.matrix_world.to_quaternion().inverted() @ desired_world_rotation
 
@@ -124,10 +261,36 @@ def apply_world_space_pose(target, source, mapped, scale_ratio):
         pose_matrix.translation = target_hip_armature if dst_name == TARGET_HIP else pose_bone.head.copy()
         pose_bone.matrix = pose_matrix
         bpy.context.view_layer.update()
+        if dst_name in relative_swing_bones:
+            applied_direction = target.matrix_world.to_3x3() @ (target_bone.tail - target_bone.head)
+            applied_direction.normalize()
+            max_relative_swing_error_degrees = max(
+                max_relative_swing_error_degrees,
+                math.degrees(applied_direction.angle(desired_target_direction, 0.0)),
+            )
+        elif dst_name in horizontal_direction_bones:
+            applied_direction = target.matrix_world.to_3x3() @ (target_bone.tail - target_bone.head)
+            applied_direction.normalize()
+            max_horizontal_direction_error_degrees = max(
+                max_horizontal_direction_error_degrees,
+                math.degrees(applied_direction.angle(desired_target_direction, 0.0)),
+            )
+        elif dst_name in relative_horizontal_direction_bones:
+            applied_direction = target.matrix_world.to_3x3() @ (target_bone.tail - target_bone.head)
+            applied_direction.normalize()
+            max_relative_horizontal_direction_error_degrees = max(
+                max_relative_horizontal_direction_error_degrees,
+                math.degrees(applied_direction.angle(desired_target_direction, 0.0)),
+            )
 
     max_direction_error_degrees = 0.0
     for src_name, dst_name in mapped:
-        if dst_name in PRESERVE_TARGET_ROLL_BONES:
+        if (
+            dst_name in preserved_bones
+            or dst_name in relative_swing_bones
+            or dst_name in horizontal_direction_bones
+            or dst_name in relative_horizontal_direction_bones
+        ):
             continue
         source_bone = source.pose.bones[src_name]
         target_bone = target.pose.bones[dst_name]
@@ -138,27 +301,59 @@ def apply_world_space_pose(target, source, mapped, scale_ratio):
         angle = source_direction.angle(target_direction, 0.0)
         max_direction_error_degrees = max(max_direction_error_degrees, angle * 180.0 / 3.141592653589793)
     max_preserved_bone_rotation_degrees = 0.0
-    for bone_name in PRESERVE_TARGET_ROLL_BONES:
+    for bone_name in preserved_bones:
         quaternion = target.pose.bones[bone_name].rotation_quaternion.normalized()
         angle = 2.0 * math.acos(max(-1.0, min(1.0, abs(quaternion.w))))
         max_preserved_bone_rotation_degrees = max(max_preserved_bone_rotation_degrees, math.degrees(angle))
+    max_relative_horizontal_slope_deviation_degrees = 0.0
+    for bone_name in relative_horizontal_direction_bones:
+        rest_elevation = parent_local_bone_elevation_degrees(target, bone_name, False)
+        pose_elevation = parent_local_bone_elevation_degrees(target, bone_name, True)
+        max_relative_horizontal_slope_deviation_degrees = max(
+            max_relative_horizontal_slope_deviation_degrees,
+            abs(pose_elevation - rest_elevation),
+        )
 
     source_ground = min(bone_head_world(source, name, False).z for name in SOURCE_CONTACT_BONES)
     source_min_foot = min(bone_head_world(source, name, True).z for name in SOURCE_CONTACT_BONES)
     target_ground = min(bone_head_world(target, name, False).z for name in TARGET_CONTACT_BONES)
     target_min_foot = min(bone_head_world(target, name, True).z for name in TARGET_CONTACT_BONES)
-    grounded = source_min_foot <= source_ground + 0.025
-    correction_world = target_ground - target_min_foot if grounded else 0.0
-    if grounded and abs(correction_world) > 0.000001:
+    source_clearance = source_min_foot - source_ground
+    source_grounded = source_clearance <= 0.025
+    target_clearance_before_correction = target_min_foot - target_ground
+    desired_target_clearance = 0.0 if source_grounded else source_clearance * scale_ratio
+    correction_world = desired_target_clearance - target_clearance_before_correction
+    if abs(correction_world) > 0.000001:
         correction_armature = target.matrix_world.inverted().to_3x3() @ Vector((0, 0, correction_world))
         hip_matrix = target.pose.bones[TARGET_HIP].matrix.copy()
         hip_matrix.translation += correction_armature
         target.pose.bones[TARGET_HIP].matrix = hip_matrix
         bpy.context.view_layer.update()
-    return grounded, correction_world, max_direction_error_degrees, max_preserved_bone_rotation_degrees
+    corrected_target_min_foot = min(bone_head_world(target, name, True).z for name in TARGET_CONTACT_BONES)
+    target_clearance = corrected_target_min_foot - target_ground
+    target_grounded = target_clearance <= 0.001
+    return {
+        "source_grounded": source_grounded,
+        "target_grounded": target_grounded,
+        "target_clearance": target_clearance,
+        "ground_correction": correction_world,
+        "max_direction_error_degrees": max_direction_error_degrees,
+        "max_relative_swing_error_degrees": max_relative_swing_error_degrees,
+        "max_horizontal_direction_error_degrees": max_horizontal_direction_error_degrees,
+        "max_relative_horizontal_direction_error_degrees": max_relative_horizontal_direction_error_degrees,
+        "max_relative_horizontal_slope_deviation_degrees": max_relative_horizontal_slope_deviation_degrees,
+        "max_preserved_bone_rotation_degrees": max_preserved_bone_rotation_degrees,
+    }
 
 
-def bake_target_action(target, source):
+def bake_target_action(
+    target,
+    source,
+    preserved_bones=PRESERVE_TARGET_ROLL_BONES,
+    relative_swing_bones=frozenset(),
+    horizontal_direction_bones=frozenset(),
+    relative_horizontal_direction_bones=frozenset(),
+):
     source_action = source.animation_data.action if source.animation_data and source.animation_data.action else None
     if not source_action:
         raise RuntimeError("Mixamo source action missing")
@@ -181,18 +376,120 @@ def bake_target_action(target, source):
     target.animation_data_create()
     target.animation_data.action = action
     scale_ratio = retarget_scale(target, source)
-    grounded_frames = 0
+    source_grounded_frames = 0
+    target_grounded_frames = 0
+    contact_mismatch_frames = []
     max_ground_correction = 0.0
+    worst_grounded_penetration = 0.0
+    worst_grounded_hover = 0.0
     max_direction_error_degrees = 0.0
+    max_relative_swing_error_degrees = 0.0
+    max_horizontal_direction_error_degrees = 0.0
+    max_relative_horizontal_direction_error_degrees = 0.0
+    max_relative_horizontal_slope_deviation_degrees = 0.0
     max_preserved_bone_rotation_degrees = 0.0
+    max_target_root_rotation_degrees = 0.0
+    continuity_bones = ["Root", *[dst_name for _src_name, dst_name in mapped]]
+    previous_rotations = {}
+    max_adjacent_quaternion_degrees = {bone_name: 0.0 for bone_name in continuity_bones}
+    source_rest_hand_delta = (
+        bone_head_world(source, "mixamorig:LeftHand", False).x
+        - bone_head_world(source, "mixamorig:RightHand", False).x
+    )
+    target_rest_hand_delta = (
+        bone_head_world(target, "L_Hand", False).x
+        - bone_head_world(target, "R_Hand", False).x
+    )
+    source_hand_axis = 1.0 if source_rest_hand_delta >= 0.0 else -1.0
+    target_hand_axis = 1.0 if target_rest_hand_delta >= 0.0 else -1.0
+    source_crossing_frames = []
+    target_crossing_frames = []
+    hand_order_mismatch_frames = []
+    non_finite_value_count = 0
 
     for frame in range(bpy.context.scene.frame_start, bpy.context.scene.frame_end + 1):
         bpy.context.scene.frame_set(frame)
-        grounded, correction, direction_error, preserved_rotation_error = apply_world_space_pose(target, source, mapped, scale_ratio)
-        grounded_frames += 1 if grounded else 0
-        max_ground_correction = max(max_ground_correction, abs(correction))
-        max_direction_error_degrees = max(max_direction_error_degrees, direction_error)
-        max_preserved_bone_rotation_degrees = max(max_preserved_bone_rotation_degrees, preserved_rotation_error)
+        frame_metrics = apply_world_space_pose(
+            target,
+            source,
+            mapped,
+            scale_ratio,
+            preserved_bones,
+            relative_swing_bones,
+            horizontal_direction_bones,
+            relative_horizontal_direction_bones,
+        )
+        source_grounded = frame_metrics["source_grounded"]
+        target_grounded = frame_metrics["target_grounded"]
+        source_grounded_frames += 1 if source_grounded else 0
+        target_grounded_frames += 1 if target_grounded else 0
+        if source_grounded != target_grounded:
+            contact_mismatch_frames.append(frame)
+        max_ground_correction = max(max_ground_correction, abs(frame_metrics["ground_correction"]))
+        if source_grounded:
+            worst_grounded_penetration = max(worst_grounded_penetration, -frame_metrics["target_clearance"])
+            worst_grounded_hover = max(worst_grounded_hover, frame_metrics["target_clearance"])
+        max_direction_error_degrees = max(
+            max_direction_error_degrees,
+            frame_metrics["max_direction_error_degrees"],
+        )
+        max_relative_swing_error_degrees = max(
+            max_relative_swing_error_degrees,
+            frame_metrics["max_relative_swing_error_degrees"],
+        )
+        max_horizontal_direction_error_degrees = max(
+            max_horizontal_direction_error_degrees,
+            frame_metrics["max_horizontal_direction_error_degrees"],
+        )
+        max_relative_horizontal_direction_error_degrees = max(
+            max_relative_horizontal_direction_error_degrees,
+            frame_metrics["max_relative_horizontal_direction_error_degrees"],
+        )
+        max_relative_horizontal_slope_deviation_degrees = max(
+            max_relative_horizontal_slope_deviation_degrees,
+            frame_metrics["max_relative_horizontal_slope_deviation_degrees"],
+        )
+        max_preserved_bone_rotation_degrees = max(
+            max_preserved_bone_rotation_degrees,
+            frame_metrics["max_preserved_bone_rotation_degrees"],
+        )
+        max_target_root_rotation_degrees = max(
+            max_target_root_rotation_degrees,
+            quaternion_identity_degrees(target.pose.bones["Root"].rotation_quaternion),
+        )
+
+        for bone_name in continuity_bones:
+            quaternion = target.pose.bones[bone_name].rotation_quaternion.copy().normalized()
+            previous = previous_rotations.get(bone_name)
+            if previous is not None:
+                max_adjacent_quaternion_degrees[bone_name] = max(
+                    max_adjacent_quaternion_degrees[bone_name],
+                    quaternion_delta_degrees(previous, quaternion),
+                )
+            previous_rotations[bone_name] = quaternion
+
+        source_hand_delta = source_hand_axis * (
+            bone_head_world(source, "mixamorig:LeftHand", True).x
+            - bone_head_world(source, "mixamorig:RightHand", True).x
+        )
+        target_hand_delta = target_hand_axis * (
+            bone_head_world(target, "L_Hand", True).x
+            - bone_head_world(target, "R_Hand", True).x
+        )
+        source_order = source_hand_delta > 0.0
+        target_order = target_hand_delta > 0.0
+        if not source_order:
+            source_crossing_frames.append(frame)
+        if not target_order:
+            target_crossing_frames.append(frame)
+        if source_order != target_order:
+            hand_order_mismatch_frames.append(frame)
+
+        numeric_values = [
+            *target.pose.bones[TARGET_HIP].location,
+            *(component for bone_name in continuity_bones for component in target.pose.bones[bone_name].rotation_quaternion),
+        ]
+        non_finite_value_count += sum(1 for value in numeric_values if not math.isfinite(value))
         for src_name, dst_name in mapped:
             pose_bone = target.pose.bones[dst_name]
             pose_bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
@@ -204,10 +501,38 @@ def bake_target_action(target, source):
         "frame_end": bpy.context.scene.frame_end,
         "sample_count": bpy.context.scene.frame_end - bpy.context.scene.frame_start + 1,
         "scale_ratio": scale_ratio,
-        "grounded_frames": grounded_frames,
+        "mapped_bones": len(mapped),
+        "animated_clavicles": not bool(PRESERVE_TARGET_ROLL_BONES & set(preserved_bones)),
+        "preserved_bones": sorted(preserved_bones),
+        "relative_swing_bones": sorted(relative_swing_bones),
+        "horizontal_direction_bones": sorted(horizontal_direction_bones),
+        "relative_horizontal_direction_bones": sorted(relative_horizontal_direction_bones),
+        "missing_source_bones": [name for name in BONE_MAP if name not in source.pose.bones],
+        "missing_target_bones": [name for name in BONE_MAP.values() if name not in target.pose.bones],
+        "source_grounded_frames": source_grounded_frames,
+        "target_grounded_frames": target_grounded_frames,
+        "grounded_frames": source_grounded_frames,
+        "contact_mismatch_count": len(contact_mismatch_frames),
+        "contact_mismatch_ranges": compact_frame_ranges(contact_mismatch_frames),
         "max_ground_correction": max_ground_correction,
+        "worst_grounded_penetration": worst_grounded_penetration,
+        "worst_grounded_hover": worst_grounded_hover,
+        "max_target_root_rotation_degrees": max_target_root_rotation_degrees,
+        "max_adjacent_quaternion_degrees": max(max_adjacent_quaternion_degrees.values(), default=0.0),
+        "max_adjacent_quaternion_degrees_by_bone": max_adjacent_quaternion_degrees,
         "max_direction_error_degrees": max_direction_error_degrees,
+        "max_relative_swing_error_degrees": max_relative_swing_error_degrees,
+        "max_horizontal_direction_error_degrees": max_horizontal_direction_error_degrees,
+        "max_relative_horizontal_direction_error_degrees": max_relative_horizontal_direction_error_degrees,
+        "max_relative_horizontal_slope_deviation_degrees": max_relative_horizontal_slope_deviation_degrees,
         "max_preserved_bone_rotation_degrees": max_preserved_bone_rotation_degrees,
+        "source_crossing_count": len(source_crossing_frames),
+        "source_crossing_ranges": compact_frame_ranges(source_crossing_frames),
+        "target_crossing_count": len(target_crossing_frames),
+        "target_crossing_ranges": compact_frame_ranges(target_crossing_frames),
+        "hand_order_mismatch_count": len(hand_order_mismatch_frames),
+        "hand_order_mismatch_ranges": compact_frame_ranges(hand_order_mismatch_frames),
+        "non_finite_value_count": non_finite_value_count,
     }
 
 
@@ -244,7 +569,20 @@ def main(target_glb=TARGET_GLB, mixamo_fbx=MIXAMO_FBX, output_glb=OUTPUT_GLB):
     clear_scene()
     import_inputs(target_glb, mixamo_fbx)
     target, source = find_armatures()
-    mapped, diagnostics = bake_target_action(target, source)
+    animate_clavicles = os.path.basename(mixamo_fbx) in ANIMATE_CLAVICLE_SOURCE_FILES
+    relative_horizontal_clavicles = os.path.basename(mixamo_fbx) in RELATIVE_HORIZONTAL_CLAVICLE_SOURCE_FILES
+    preserved_bones = set() if animate_clavicles or relative_horizontal_clavicles else PRESERVE_TARGET_ROLL_BONES
+    relative_swing_bones = set()
+    horizontal_direction_bones = PRESERVE_TARGET_ROLL_BONES if animate_clavicles else set()
+    relative_horizontal_direction_bones = PRESERVE_TARGET_ROLL_BONES if relative_horizontal_clavicles else set()
+    mapped, diagnostics = bake_target_action(
+        target,
+        source,
+        preserved_bones,
+        relative_swing_bones,
+        horizontal_direction_bones,
+        relative_horizontal_direction_bones,
+    )
     cleanup_and_export(target, source, output_glb)
     print(json.dumps({
         "source": mixamo_fbx,

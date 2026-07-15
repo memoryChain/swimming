@@ -28,16 +28,22 @@ const PRE_RACE_CLOSEUP_CAM_Y = 1.55;
 const PRE_RACE_CLOSEUP_CAM_SIDE = 1.15;
 
 export type PreRacePhase = 'none' | 'overview' | 'closeup';
-// Awards free-look orbit: the camera circles the podium centre and the player can
-// drag to rotate / wheel to zoom. When left idle it drifts slowly for a ceremony feel.
+// Awards free-look orbit: the camera moves along a front-facing arc around the
+// podium and the player can drag to rotate / wheel to zoom. When left idle it
+// sweeps back and forth slowly for a ceremony feel.
 const AWARDS_TARGET_Y = 1.2;          // aim a bit above the podium top so the winners sit centred
+// Aim to the camera-right of the podium so the winners occupy the left side of
+// the frame. The offset rotates with the orbit to preserve that composition.
+const AWARDS_TARGET_SCREEN_RIGHT_OFFSET = 2.0;
 const AWARDS_DEFAULT_DISTANCE = 8.5;
 const AWARDS_MIN_DISTANCE = 3.5;
-// Cap the pull-back so the camera stays inside the hall; larger values clip through the
-// venue walls and reveal the void outside.
-// 限制最大拉远距离，让相机留在场馆内；更大的值会穿过场馆墙壁、露出馆外的空洞。
-const AWARDS_MAX_DISTANCE = 12;
-const AWARDS_DEFAULT_YAW = Math.PI;   // start on the pool side (-X), same look direction as before
+// The ceremony may zoom in, but never pull farther back than its opening shot.
+const AWARDS_MAX_DISTANCE = AWARDS_DEFAULT_DISTANCE;
+const AWARDS_DEFAULT_YAW = 0;         // start beyond the podium (+X), looking back toward the pool
+// Keep both automatic motion and free dragging on the athletes' front side.
+// 72 degrees gives a strong three-quarter view without reaching a rear angle.
+const AWARDS_MIN_YAW = -Math.PI * 0.4;
+const AWARDS_MAX_YAW = Math.PI * 0.4;
 const AWARDS_DEFAULT_PITCH = 0.24;    // slightly elevated
 const AWARDS_MIN_PITCH = 0.02;        // stay above horizontal so the camera never dips under the floor
 const AWARDS_MAX_PITCH = 1.3;
@@ -140,6 +146,7 @@ export class RaceCameraDirector {
     private _awardsPitch = AWARDS_DEFAULT_PITCH;
     private _awardsDistance = AWARDS_DEFAULT_DISTANCE;
     private _awardsIdleSeconds = 0;
+    private _awardsAutoRotateDirection = 1;
 
     constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
@@ -244,6 +251,7 @@ export class RaceCameraDirector {
         this._awardsPitch = AWARDS_DEFAULT_PITCH;
         this._awardsDistance = AWARDS_DEFAULT_DISTANCE;
         this._awardsIdleSeconds = 0;
+        this._awardsAutoRotateDirection = 1;
         this._broadcastCameraFov = 38;
         this._broadcastDesiredFov = 38;
         this.applyFov();
@@ -260,7 +268,16 @@ export class RaceCameraDirector {
         if (!this._awardsCenter) {
             return;
         }
-        this._awardsYaw -= deltaX * AWARDS_YAW_DRAG_SCALE;
+        this._awardsYaw = clamp(
+            this._awardsYaw - deltaX * AWARDS_YAW_DRAG_SCALE,
+            AWARDS_MIN_YAW,
+            AWARDS_MAX_YAW,
+        );
+        if (this._awardsYaw <= AWARDS_MIN_YAW) {
+            this._awardsAutoRotateDirection = 1;
+        } else if (this._awardsYaw >= AWARDS_MAX_YAW) {
+            this._awardsAutoRotateDirection = -1;
+        }
         this._awardsPitch = clamp(this._awardsPitch + deltaY * AWARDS_PITCH_DRAG_SCALE, AWARDS_MIN_PITCH, AWARDS_MAX_PITCH);
         this._awardsIdleSeconds = 0;
     }
@@ -411,17 +428,28 @@ export class RaceCameraDirector {
         let hardCameraCut = false;
         const wasUnderwaterView = this._underwaterViewActive;
         if (this._awardsCenter) {
-            // Free-look ceremony orbit: the camera circles the podium centre. The player
+            // Free-look ceremony arc: the camera stays in front of the winners. The player
             // drags to rotate and wheels/pinches to zoom (see orbit/zoomAwardsCamera). When
-            // left idle for a moment it drifts slowly so the ceremony still feels alive.
+            // left idle it sweeps between the two side limits instead of circling behind.
             this._awardsIdleSeconds += dt;
             if (this._awardsIdleSeconds > AWARDS_AUTO_ROTATE_IDLE) {
-                this._awardsYaw += AWARDS_AUTO_ROTATE_SPEED * dt;
+                this._awardsYaw += AWARDS_AUTO_ROTATE_SPEED * this._awardsAutoRotateDirection * dt;
+                if (this._awardsYaw >= AWARDS_MAX_YAW) {
+                    this._awardsYaw = AWARDS_MAX_YAW;
+                    this._awardsAutoRotateDirection = -1;
+                } else if (this._awardsYaw <= AWARDS_MIN_YAW) {
+                    this._awardsYaw = AWARDS_MIN_YAW;
+                    this._awardsAutoRotateDirection = 1;
+                }
             }
             const center = this._awardsCenter;
             const cosPitch = Math.cos(this._awardsPitch);
             const targetY = center.y + AWARDS_TARGET_Y;
-            desiredTarget = new Vec3(center.x, targetY, center.z);
+            desiredTarget = new Vec3(
+                center.x + Math.sin(this._awardsYaw) * AWARDS_TARGET_SCREEN_RIGHT_OFFSET,
+                targetY,
+                center.z - Math.cos(this._awardsYaw) * AWARDS_TARGET_SCREEN_RIGHT_OFFSET,
+            );
             desiredPos = new Vec3(
                 center.x + Math.cos(this._awardsYaw) * cosPitch * this._awardsDistance,
                 targetY + Math.sin(this._awardsPitch) * this._awardsDistance,
