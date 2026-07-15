@@ -325,6 +325,7 @@ export class GameFlowController {
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
             sprintActive: this._sprintTriggered,
+            playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
         };
         this._refs.raceCameraDirector.update(dt, cameraSnapshot);
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.

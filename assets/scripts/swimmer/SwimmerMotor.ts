@@ -100,6 +100,7 @@ export class SwimmerMotor {
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
     // step applies SWIMMER_BALANCE.glideDrag so an un-kicked glide bleeds off fast.
     private _glidePhaseActive = false;
+    private _glideDrag = SWIMMER_BALANCE.glideDrag;
     // Kick propulsion is driven by the CURRENT tap frequency, not per-tap pulses.
     // _kickCadenceHz is estimated from the interval between taps (and decays when
     // tapping stops); each frame it produces a continuous acceleration that fades
@@ -121,17 +122,69 @@ export class SwimmerMotor {
     stopRace() {
         this._isRacing = false;
         this._glidePhaseActive = false;
+        this._glideDrag = SWIMMER_BALANCE.glideDrag;
     }
 
-    // Toggled by the Swimmer as it enters/leaves the post-dive underwater glide.
-    setGlidePhase(active: boolean) {
+    // Toggled by the Swimmer for post-dive and post-turn underwater glides.
+    setGlidePhase(
+        active: boolean,
+        glideDrag = SWIMMER_BALANCE.glideDrag,
+    ) {
         this._glidePhaseActive = active;
+        this._glideDrag = active ? Math.max(0, glideDrag) : SWIMMER_BALANCE.glideDrag;
+    }
+
+    beginFlipTurnPhase() {
+        // The flip turn is an input-locked movement phase. Discard any held or
+        // queued stroke so it cannot resume halfway through the wall push.
+        this._leftStrokeHeld = false;
+        this._rightStrokeHeld = false;
+        this._leftPressStartedAt = -1;
+        this._rightPressStartedAt = -1;
+        this._leftActions.length = 0;
+        this._rightActions.length = 0;
+        // Do not let visual motion queued before the wall survive until the
+        // post-turn underwater update. It would overwrite the completed return
+        // pose on its first frame and make the transition appear truncated.
+        this._leftArmMotionRemaining = 0;
+        this._rightArmMotionRemaining = 0;
+        this._leftKickMotionRemaining = 0;
+        this._rightKickMotionRemaining = 0;
+        this._leftArmCycle = 0;
+        this._rightArmCycle = 0;
+        this._leftKickCycle = 0;
+        this._rightKickCycle = Math.PI;
+        this._bodyPhase = 0;
+        this._armAction = 0;
+        this._kickAction = 0;
+        this._strokeAcceleration = 0;
+        this._strokeAccelerationSeconds = 0;
+        this._strokeAccelerationTotalSeconds = 0;
+        this._kickCadenceHz = 0;
+        this._lastKickTapClock = -1;
+        this._currentAcceleration = 0;
+    }
+
+    setFlipTurnSpeed(speed: number) {
+        this._currentSpeed = Math.max(0, speed);
+        this._currentAcceleration = 0;
+        this._speedCapBonus = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
+    }
+
+    setFlipTurnDistance(distance: number) {
+        this._distance = Math.max(0, Math.min(getRaceDistance(), distance));
+    }
+
+    completeFlipTurnPhase(distance: number, speed: number) {
+        this.setFlipTurnDistance(distance);
+        this.setFlipTurnSpeed(speed);
     }
 
     reset() {
         this._currentSpeed = 0;
         this._isRacing = false;
         this._glidePhaseActive = false;
+        this._glideDrag = SWIMMER_BALANCE.glideDrag;
         this.resetRaceState();
     }
 
@@ -191,19 +244,8 @@ export class SwimmerMotor {
         return progress >= perfect.start && progress <= perfect.end;
     }
 
-    recordKickOnly(type: StrokeType): boolean {
-        const queued = this.queueKickOnly(type);
-        if (!queued) {
-            return false;
-        }
-        this._kickAction = 1;
-        this.startStrokeAcceleration(SWIMMER_BALANCE.diveUnderwaterKickAccel, false);
-        return true;
-    }
-
-    // Redesign: a race-time leg-kick tap (short press) gives a capped propulsion
-    // pulse. Distinct from recordKickOnly (used by the underwater dive glide) so
-    // the two can be tuned independently.
+    // A leg-kick tap adds visual kick budget and registers cadence. During
+    // underwater glide the same cadence propulsion runs without the surface cap.
     recordKickTap(type: StrokeType): boolean {
         const queued = this.queueKickOnly(type);
         if (!queued) {
@@ -251,18 +293,20 @@ export class SwimmerMotor {
         }
     }
 
-    // Continuous kick acceleration = per-Hz gain × current cadence, faded to 0 as
-    // speed approaches the kick-only ceiling so legs alone can't exceed it. The
-    // cadence feeding PROPULSION is capped at kickCadenceMaxHz (lower than the
-    // animation's safety cap) so a burst of very fast taps can't spike the speed —
-    // only the leg visuals track the raw finger rhythm.
+    // Continuous kick acceleration = per-Hz gain × current cadence. Surface
+    // swimming fades it at the kick-only ceiling; an underwater dive already
+    // enters above that ceiling, so applying the surface fade there would make
+    // every kick produce exactly zero propulsion.
     private computeKickAcceleration(): number {
         if (this._kickCadenceHz <= 0) {
             return 0;
         }
-        const ceiling = SWIMMER_BALANCE.kickMaxSpeed;
-        const band = Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand);
-        const fade = clamp01((ceiling - this._currentSpeed) / band);
+        const fade = this._glidePhaseActive
+            ? 1
+            : clamp01(
+                (SWIMMER_BALANCE.kickMaxSpeed - this._currentSpeed)
+                    / Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand),
+            );
         if (fade <= 0) {
             return 0;
         }
@@ -293,12 +337,11 @@ export class SwimmerMotor {
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
         const strokeAcceleration = this.consumeStrokeAcceleration(dt);
-        // Player kick propulsion is frequency-driven and continuous; AI never taps.
-        let kickAcceleration = 0;
-        if (!options.isAI) {
-            this.updateKickCadence();
-            kickAcceleration = this.computeKickAcceleration();
-        }
+        // Normal-dive player and AI inputs both register discrete kick taps. AI
+        // uses the same cadence-derived underwater propulsion instead of a tiny
+        // one-off pulse that cannot overcome glide drag.
+        this.updateKickCadence();
+        const kickAcceleration = this.computeKickAcceleration();
         const next = this._physics.step(
             {
                 currentSpeed: this._currentSpeed,
@@ -309,7 +352,7 @@ export class SwimmerMotor {
                 strokeAcceleration,
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
-                glideDrag: this._glidePhaseActive ? SWIMMER_BALANCE.glideDrag : 0,
+                glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;

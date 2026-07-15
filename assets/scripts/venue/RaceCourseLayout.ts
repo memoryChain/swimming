@@ -3,6 +3,7 @@ import { DIVE_BALANCE } from '../core/GameBalance';
 import { DEFAULT_POOL_DEFINITION, PoolDefinition } from './VenueConfig';
 
 const MIN_COURSE_LENGTH = 1;
+export const COURSE_DISTANCE_EPSILON = 0.001;
 const DEFAULT_WATER_Y = 0.055;
 const DEFAULT_SWIM_Y = 0;
 const SWIMMER_CENTER_EDGE_INSET = 0.45;
@@ -135,17 +136,41 @@ export class RaceCourseLayout {
     }
 
     finishDirectionAtDistance(distance: number): number {
-        return this.directionAtDistance(Math.max(0, distance - 0.001));
+        return this.directionAtDistance(Math.max(0, distance - COURSE_DISTANCE_EPSILON));
     }
 
     currentCourseEndDistance(playerDistance: number, raceDistance: number): number {
-        const distance = Math.max(0, playerDistance);
+        const distance = finiteNonNegative(playerDistance);
+        const finishDistance = finiteNonNegative(raceDistance);
+        if (finishDistance <= 0) {
+            return 0;
+        }
         const nextCourseEnd = (Math.floor(distance / this.courseLength) + 1) * this.courseLength;
-        return Math.min(raceDistance, nextCourseEnd);
+        return Math.min(finishDistance, nextCourseEnd);
+    }
+
+    /** Returns the next pool wall that needs a turn, excluding the race finish. */
+    nextInternalTurnDistance(playerDistance: number, raceDistance: number): number | null {
+        const distance = finiteNonNegative(playerDistance);
+        const finishDistance = finiteNonNegative(raceDistance);
+        if (distance >= finishDistance - COURSE_DISTANCE_EPSILON) {
+            return null;
+        }
+        const wallDistance = this.currentCourseEndDistance(distance, finishDistance);
+        return wallDistance < finishDistance - COURSE_DISTANCE_EPSILON
+            ? wallDistance
+            : null;
+    }
+
+    wallWorldXAtDistance(wallDistance: number): number {
+        return this.finishDirectionAtDistance(wallDistance) > 0
+            ? this.poolFinishX
+            : this.poolStartX;
     }
 
     distanceToCurrentCourseEnd(playerDistance: number, raceDistance: number): number {
-        return Math.max(0, this.currentCourseEndDistance(playerDistance, raceDistance) - playerDistance);
+        const distance = finiteNonNegative(playerDistance);
+        return Math.max(0, this.currentCourseEndDistance(distance, raceDistance) - distance);
     }
 
     swimPosition(distance: number, z: number): Vec3 {
@@ -211,6 +236,10 @@ export const DEFAULT_RACE_COURSE_LAYOUT = new RaceCourseLayout(DEFAULT_POOL_DEFI
 
 function validCourseBounds(bounds: SceneBounds | null): bounds is SceneBounds {
     return !!bounds && Math.abs(bounds.maxX - bounds.minX) >= MIN_COURSE_LENGTH;
+}
+
+function finiteNonNegative(value: number): number {
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 export function collectNamedBounds(root: Node, names: string[]): SceneBounds | null {

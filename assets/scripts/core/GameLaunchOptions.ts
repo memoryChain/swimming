@@ -1,4 +1,4 @@
-export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug';
+export type MainGameLaunchMode = 'race' | 'model-debug' | 'flipturn-debug' | 'ai-debug';
 
 let pendingLaunchMode: MainGameLaunchMode = 'race';
 // Difficulty (0..1) chosen for the 100m AI-debug 1v1 mode. Set from the login

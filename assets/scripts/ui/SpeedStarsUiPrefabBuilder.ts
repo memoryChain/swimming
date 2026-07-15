@@ -10,6 +10,7 @@ export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
     onDifficultySelect: (difficulty: RaceDifficulty) => void;
     onModelDebug: () => void;
+    onFlipTurnDebug: () => void;
     onAiDebug: () => void;
 };
 
@@ -541,10 +542,15 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     modelDebug.active = EDITOR;
     modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
 
+    const flipTurnDebug = makeButton('FlipTurnDebugStartButton', startScreen, 260, 64, uiColor(224, 118, 42, 235), '翻滚调试');
+    flipTurnDebug.setPosition(modelDebug.position.x, modelDebug.position.y - 84, 0);
+    flipTurnDebug.active = EDITOR;
+    flipTurnDebug.on(Node.EventType.TOUCH_END, callbacks.onFlipTurnDebug);
+
     // 100m AI-debug 1v1 entry. Built in code and anchored below the model-debug
     // button (when shown) or the start button, so it never overlaps existing
     // buttons and needs no prefab change. Opens a difficulty picker first.
-    const anchor = EDITOR ? modelDebug : requireNode(startScreen, 'StartButton');
+    const anchor = EDITOR ? flipTurnDebug : requireNode(startScreen, 'StartButton');
     const aiDebug = makeButton('AiDebugStartButton', startScreen, 260, 64, uiColor(60, 110, 180, 235), '100m AI 调试');
     aiDebug.setPosition(anchor.position.x, anchor.position.y - 84, 0);
     aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);

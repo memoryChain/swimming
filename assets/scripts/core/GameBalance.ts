@@ -19,7 +19,7 @@ export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
 
 let currentRaceDifficulty: RaceDifficulty = 'competitive';
 
-export function getRaceDistance(): typeof RACE_DISTANCE {
+export function getRaceDistance(): number {
     return RACE_DISTANCE;
 }
 
@@ -60,6 +60,18 @@ export const SWIMMER_BALANCE = {
     baseSpeed: 0.8,
     maxSpeed: 4,
     minSpeed: 0,
+    // Initial burst produced by pushing off the wall. This is intentionally
+    // independent of entry speed and decays during underwater glide like a dive.
+    flipTurnPushLaunchSpeed: 5.2,
+    // Streamlined wall-push glide has much less extra drag than the normal dive
+    // phase. Base/high-speed water drag still slows the burst naturally.
+    flipTurnUnderwaterGlideDrag: 0.05,
+    // Power used by the normalized approach ease-out curve. 1 is linear;
+    // higher values shed speed earlier and settle more gently into the wall.
+    flipTurnDecelerationExponent: 2,
+    // Wall-push speed uses the same front-loaded power shape: accelerate strongly
+    // just after wall contact, then ease gently into the launch burst.
+    flipTurnAccelerationExponent: 2,
     strokeBaseAccel: 0.05,
     strokeQualityAccel: 1.6,
     strokeAccelDurationRatio: 0.4,
@@ -68,7 +80,6 @@ export const SWIMMER_BALANCE = {
     // after the stroke, then fades — so the swimmer lunges forward and drag pulls
     // it back. Same total momentum; only the feel changes.
     strokeImpulseSharpness: 0,
-    diveUnderwaterKickAccel: 0.18,
     // Kick propulsion (redesign): kicking no longer gives a per-tap impulse.
     // Instead the legs produce a CONTINUOUS acceleration proportional to the
     // current kick frequency (taps/sec), so fast tapping accelerates fast and
@@ -98,12 +109,12 @@ export const SWIMMER_BALANCE = {
     // Underwater-glide drag (redesign): while the swimmer is still in the
     // post-dive underwater glide (before surfacing), an EXTRA drag proportional to
     // current speed is applied on top of the normal drag. So a fast dive entry
-    // bleeds off quickly unless the player keeps flutter-kicking (each glide kick
-    // adds diveUnderwaterKickAccel). Only affects the glide phase; surface swimming
-    // is unchanged. Set to 0 to disable.
+    // bleeds off quickly unless the player keeps flutter-kicking. Underwater kick
+    // propulsion uses the same cadence gain above without the surface speed ceiling.
+    // Only affects the glide phase; surface swimming is unchanged. Set to 0 to disable.
     // 水下滑行阻力（重构）：跳水入水后、露出水面前的潜水滑行阶段，在常规阻力之外再叠加一份
     // 与当前速度成正比的额外阻力。于是入水速度很快就会衰减，除非玩家持续抖腿踢水（每次潜水
-    // 踢腿加 diveUnderwaterKickAccel）。只作用于滑行阶段，水面游泳不受影响；设 0 关闭。
+    // 踢腿推进由上面的点击频率参数计算）。只作用于滑行阶段，水面游泳不受影响；设 0 关闭。
     glideDrag: 0.35,
     // Overspeed cap/decay: a strong dive can launch above maxSpeed; these clamp
     // how far over and how fast it bleeds back down. (Legacy name kept.)

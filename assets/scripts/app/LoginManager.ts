@@ -39,6 +39,10 @@ export class LoginManager extends Component {
         this.launchMainGame('model-debug');
     }
 
+    startFlipTurnDebug() {
+        this.launchMainGame('flipturn-debug');
+    }
+
     // 100m AI-debug 1v1: store the chosen difficulty and launch straight into a
     // single-opponent race. All race modes now use the fixed 100m distance.
     startAiDebug(difficulty: number) {
@@ -114,6 +118,7 @@ export class LoginManager extends Component {
             onStart: () => this.startGame(),
             onDifficultySelect: (difficulty) => setRaceDifficulty(difficulty),
             onModelDebug: () => this.startModelDebug(),
+            onFlipTurnDebug: () => this.startFlipTurnDebug(),
             onAiDebug: () => this.showAiDebugPicker(),
         }).build(canvasNode, width, height, (error) => {
             if (error) {

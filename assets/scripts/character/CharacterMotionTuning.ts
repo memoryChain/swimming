@@ -14,6 +14,32 @@ export const CHARACTER_POSE_TUNING = {
     // Default blend used when switching between static procedural poses.
     defaultPoseTransitionSeconds: 0.42,
 
+    // Flip-turn segment durations shared by debug preview and formal races. The
+    // 180-degree model rotation ends with keyframe 2; the final segment restores swim.
+    flipTurnToKeyframe1Seconds: 0.25,
+    flipTurnToKeyframe2Seconds: 0.45,
+    flipTurnReturnToSwimSeconds: 0.7,
+    // Arms recover early during the final segment while the torso and legs keep
+    // using flipTurnReturnToSwimSeconds for the full-body transition.
+    flipTurnArmReturnSeconds: 0.2,
+    flipTurnUnderwaterDepth: 0.55,
+    // The wall push continues downward before the swimmer settles into the
+    // post-turn underwater glide. Keep this at least as deep as the turn pose.
+    flipTurnUnderwaterGlideDepth: 0.82,
+    flipTurnUnderwaterDiveSeconds: 0.45,
+    flipTurnUnderwaterDiveTiltDegrees: 8,
+    // After the pose has returned to streamline, stay underwater for a short
+    // kick-only glide before rising back to surface freestyle.
+    flipTurnUnderwaterHoldSeconds: 0.8,
+    flipTurnUnderwaterRiseSeconds: 1.3,
+    flipTurnUnderwaterRiseTiltDegrees: 10,
+    // Extra early approach distance before the wall turn begins. This covers
+    // the gap between the normal swim-root boundary and the actual wall contact.
+    flipTurnApproachExtraDistance: 1.35,
+    // Visual extension from sampled foot/toe bone centers to the front surface
+    // of the sole. The current mesh needs roughly 0.5 m to stay visibly clear.
+    flipTurnWallContactPadding: 0.5,
+
     // Default model scale applied to runtime swimmer GLB.
     // 运行时泳手 GLB 的默认模型缩放。
     modelScale: 1.35,

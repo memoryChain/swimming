@@ -44,6 +44,7 @@ export type ModelDebugFlowRefs = {
     swimSpeedLabel: Label | null;
     modelLabel: Label | null;
     actionLabel: Label | null;
+    flipTurnButton: Node | null;
     skyboxLabel: Label | null;
     skyboxApplier: StandardSkyboxApplier | null;
     resetExtraAiSwimmers: () => void;
@@ -85,7 +86,7 @@ export class ModelDebugFlowController {
         return this._active;
     }
 
-    enter() {
+    enter(initialActionId = 'freestyle') {
         this._refs.debug('enterModelDebug');
         this._active = true;
         this._cameraYaw = 0;
@@ -97,7 +98,7 @@ export class ModelDebugFlowController {
         this._lastCombo = 0;
         this._lastStrokeQuality = 0;
         this._modelVariantIndex = Math.max(0, DEBUG_SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
-        this._actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === 'freestyle'));
+        this._actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === initialActionId));
         this._colorVariantIndex = Math.max(0, SWIMMER_0621_2_COLOR_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.colorVariantId));
         this._skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === this._refs.skyboxApplier?.currentVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
@@ -341,6 +342,19 @@ export class ModelDebugFlowController {
         }
     }
 
+    triggerFlipTurn() {
+        if (!this._active) {
+            return;
+        }
+        const preview = this.currentActionPreview();
+        if (preview?.config.pose !== 'flipTurn') {
+            return;
+        }
+        if (preview.rig.triggerDebugFlipTurn()) {
+            this._refs.debug('model debug flip turn triggered');
+        }
+    }
+
     switchColorVariant() {
         if (!this._active || SWIMMER_0621_2_COLOR_VARIANTS.length <= 0) {
             return;
@@ -412,6 +426,9 @@ export class ModelDebugFlowController {
         const preview = DEBUG_SWIMMER_ACTION_PREVIEWS[this._actionPreviewIndex] ?? DEBUG_SWIMMER_ACTION_PREVIEWS[0];
         if (this._refs.actionLabel) {
             this._refs.actionLabel.string = `Action ${preview?.label ?? '-'}`;
+        }
+        if (this._refs.flipTurnButton) {
+            this._refs.flipTurnButton.active = preview?.pose === 'flipTurn';
         }
     }
 

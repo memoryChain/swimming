@@ -1,5 +1,5 @@
 import { _decorator, Component, Node, Tween, Vec3, tween } from 'cc';
-import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import {
     Rating,
@@ -13,10 +13,15 @@ import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { scaledDelta } from '../core/TimeScale';
 import { StrokeQualityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
-import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
+import {
+    COURSE_DISTANCE_EPSILON,
+    DEFAULT_RACE_COURSE_LAYOUT,
+    RaceCourseLayout,
+} from '../venue/RaceCourseLayout';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 const { ccclass, property } = _decorator;
+type UnderwaterPhaseKind = 'none' | 'dive' | 'flipTurn';
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -61,6 +66,17 @@ export class Swimmer extends Component {
     private _diveGlidePoseActive = false;
     private _diveUnderwaterElapsed = 0;
     private _diveEntryLeanDegrees = 0;
+    private _underwaterPhaseKind: UnderwaterPhaseKind = 'none';
+    private _flipTurnActive = false;
+    private _flipTurnWallDistance = 0;
+    private _flipTurnStartDistance = 0;
+    private _flipTurnIncomingDirection = 1;
+    private _flipTurnStartX = 0;
+    private _flipTurnContactX = 0;
+    private _flipTurnExitX = 0;
+    private _flipTurnEntrySpeed = 0;
+    private _flipTurnPushSpeed = 0;
+    private _lastCompletedFlipTurnWallDistance = Number.NEGATIVE_INFINITY;
     private readonly _cameraUpperBodyA = new Vec3();
     private readonly _cameraUpperBodyB = new Vec3();
 
@@ -78,6 +94,7 @@ export class Swimmer extends Component {
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.captureStartPosition();
+        this.clearFlipTurnPhase(true);
         if (fromDiveEntry) {
             this.startDiveUnderwaterPhase(initialDistance);
         } else {
@@ -202,6 +219,7 @@ export class Swimmer extends Component {
 
     stopRace() {
         Tween.stopAllByTarget(this.node);
+        this.clearFlipTurnPhase(true);
         this._motor.stopRace();
         this.clearDiveUnderwaterPhase();
         this.cartoonRig?.setActiveSwimming(false);
@@ -215,6 +233,14 @@ export class Swimmer extends Component {
 
         // Bullet-time: swimmer simulation + motion run on the scaled delta.
         dt = scaledDelta(dt);
+        if (this._flipTurnActive) {
+            this.updateFlipTurnPhase(dt);
+            return;
+        }
+        if (this.tryStartFlipTurnPhase(dt)) {
+            this.updateFlipTurnPhase(dt);
+            return;
+        }
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
         });
@@ -242,8 +268,16 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return null;
         }
+        if (this._flipTurnActive) {
+            // Keep the complete pose sequence input-locked, including the
+            // keyframe-2-to-swim recovery blend.
+            return null;
+        }
         if (this._diveGlidePoseActive) {
-            if (this._motor.recordKickOnly(type)) {
+            // Player presses already kick on key/touch down. AI input enters here
+            // directly, so register the same cadence-based underwater kick.
+            const recorded = this.isAI ? this._motor.recordKickTap(type) : false;
+            if (recorded) {
                 this.cartoonRig?.triggerKick();
             }
             return null;
@@ -261,11 +295,27 @@ export class Swimmer extends Component {
     }
 
     canAcceptStroke(type: StrokeType): boolean {
-        return this._motor.isRacing && (this._diveGlidePoseActive || this._motor.canRecordStroke(type));
+        if (!this._motor.isRacing) {
+            return false;
+        }
+        if (this._flipTurnActive) {
+            return false;
+        }
+        return this._diveGlidePoseActive || this._motor.canRecordStroke(type);
     }
 
     handleKickStroke(type: StrokeType): void {
         if (!this._motor.isRacing) {
+            return;
+        }
+        if (this._flipTurnActive) {
+            return;
+        }
+        if (this._diveGlidePoseActive) {
+            const recorded = this._motor.recordKickTap(type);
+            if (recorded) {
+                this.cartoonRig?.triggerKick();
+            }
             return;
         }
         if (this._motor.recordKickTap(type)) {
@@ -274,6 +324,9 @@ export class Swimmer extends Component {
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
+        if (this._flipTurnActive) {
+            return null;
+        }
         if (this._diveGlidePoseActive) {
             return null;
         }
@@ -343,6 +396,7 @@ export class Swimmer extends Component {
     reset() {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
+        this.clearFlipTurnPhase(true);
         this._motor.reset();
         this.clearDiveUnderwaterPhase();
         this._strokeQualityCombo = 0;
@@ -729,6 +783,135 @@ export class Swimmer extends Component {
         return this._courseLayout.platformStandingPosition(this._startPosition.z);
     }
 
+    private tryStartFlipTurnPhase(dt: number): boolean {
+        if (!this.cartoonRig || this._diveUnderwaterActive) {
+            return false;
+        }
+        const distance = this._motor.distance;
+        const raceDistance = getRaceDistance();
+        const wallDistance = this._courseLayout.nextInternalTurnDistance(distance, raceDistance);
+        // The final wall is intentionally excluded: the swimmer touches it and
+        // transitions to the finish floating/treading pose instead of turning.
+        if (wallDistance === null
+            || wallDistance <= this._lastCompletedFlipTurnWallDistance + COURSE_DISTANCE_EPSILON) {
+            return false;
+        }
+        const remaining = wallDistance - distance;
+        const keyframe2Seconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
+            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        const entrySpeed = finiteNonNegative(this._motor.currentSpeed);
+        const decelerationExponent = finitePower(SWIMMER_BALANCE.flipTurnDecelerationExponent);
+        // Integral of v(t)=entrySpeed*(1-t/T)^power over the complete approach.
+        // Using entrySpeed*T here starts the turn much too early once the speed
+        // curve is front-loaded, forcing the pose to cover a fixed long distance.
+        const integratedDecelerationDistance = entrySpeed * keyframe2Seconds
+            / (decelerationExponent + 1);
+        const configuredApproachDistance = integratedDecelerationDistance
+            + finiteNonNegative(CHARACTER_POSE_TUNING.flipTurnApproachExtraDistance);
+        // Never let extreme tuning make the next turn start on the previous wall.
+        const approachDistance = Math.min(
+            Math.max(0.1, configuredApproachDistance),
+            Math.max(0.1, this._courseLayout.courseLength - COURSE_DISTANCE_EPSILON),
+        );
+        // Include this frame's possible travel so a low frame rate or a temporary
+        // speed spike cannot step across an internal wall before the next check.
+        const projectedFrameTravel = entrySpeed * finiteNonNegative(dt);
+        if (remaining > approachDistance
+            && remaining > projectedFrameTravel + COURSE_DISTANCE_EPSILON) {
+            return false;
+        }
+
+        const footContactOffset = this.cartoonRig.startRaceFlipTurn();
+        if (footContactOffset === null || !Number.isFinite(footContactOffset) || footContactOffset < 0) {
+            this.cartoonRig.finishRaceFlipTurn();
+            return false;
+        }
+        const incomingDirection = this._courseLayout.finishDirectionAtDistance(wallDistance);
+        const wallX = this._courseLayout.wallWorldXAtDistance(wallDistance);
+        this._flipTurnActive = true;
+        this._flipTurnWallDistance = wallDistance;
+        this._flipTurnStartDistance = distance;
+        this._flipTurnIncomingDirection = incomingDirection;
+        this._flipTurnStartX = this.node.position.x;
+        this._flipTurnContactX = wallX - incomingDirection * footContactOffset;
+        this._flipTurnExitX = this._courseLayout.distanceToWorldX(wallDistance);
+        this._flipTurnEntrySpeed = entrySpeed;
+        this._flipTurnPushSpeed = finiteNonNegative(SWIMMER_BALANCE.flipTurnPushLaunchSpeed);
+        this._motor.beginFlipTurnPhase();
+        this.cartoonRig.setStrokeHeld(StrokeType.LEFT, false);
+        this.cartoonRig.setStrokeHeld(StrokeType.RIGHT, false);
+        this.cartoonRig.setPerfectGlowActive(false);
+        return true;
+    }
+
+    private updateFlipTurnPhase(dt: number) {
+        const state = this.cartoonRig?.updateRaceFlipTurn(dt);
+        if (!state) {
+            this.clearFlipTurnPhase();
+            return;
+        }
+        const approachSpeedLossRatio = easeOutPower(
+            state.approachTimeRatio,
+            SWIMMER_BALANCE.flipTurnDecelerationExponent,
+        );
+        // This is the normalized integral of the remaining-speed curve. Position
+        // must follow it instead of reusing the speed-loss ratio directly.
+        const approachDistanceRatio = integratedDecaySpeedRatio(
+            state.approachTimeRatio,
+            SWIMMER_BALANCE.flipTurnDecelerationExponent,
+        );
+        const exitSpeedRatio = easeOutPower(
+            state.returnTimeRatio,
+            SWIMMER_BALANCE.flipTurnAccelerationExponent,
+        );
+        // Position must be the integral of the increasing speed curve. Reusing
+        // exitSpeedRatio directly would move the swimmer fastest immediately
+        // after wall contact and then visually slow down, opposite to acceleration.
+        const exitDistanceRatio = integratedEaseOutSpeedRatio(
+            state.returnTimeRatio,
+            SWIMMER_BALANCE.flipTurnAccelerationExponent,
+        );
+        const x = state.keyframe2Reached
+            ? lerp(this._flipTurnContactX, this._flipTurnExitX, exitDistanceRatio)
+            : lerp(this._flipTurnStartX, this._flipTurnContactX, approachDistanceRatio);
+        this.node.setPosition(x, this._courseLayout.swimY, this._startPosition.z);
+        this.node.setRotationFromEuler(0, this._flipTurnIncomingDirection > 0 ? 0 : 180, 0);
+        this._motor.setFlipTurnDistance(state.keyframe2Reached
+            ? this._flipTurnWallDistance
+            : lerp(this._flipTurnStartDistance, this._flipTurnWallDistance, approachDistanceRatio));
+        // Decelerate continuously into wall contact. Keyframe 2 is the exact
+        // zero-speed point; the wall push then accelerates to an independent
+        // underwater launch burst, just like a dive start beneath the surface.
+        this._motor.setFlipTurnSpeed(state.keyframe2Reached
+            ? lerp(0, this._flipTurnPushSpeed, exitSpeedRatio)
+            : lerp(this._flipTurnEntrySpeed, 0, approachSpeedLossRatio));
+        if (!state.complete) {
+            return;
+        }
+
+        const outgoingDirection = -this._flipTurnIncomingDirection;
+        const underwaterY = this._courseLayout.swimY
+            - Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth);
+        this.node.setPosition(this._flipTurnExitX, underwaterY, this._startPosition.z);
+        this.node.setRotationFromEuler(0, outgoingDirection > 0 ? 0 : 180, 0);
+        this.cartoonRig?.finishRaceFlipTurn();
+        this._motor.completeFlipTurnPhase(this._flipTurnWallDistance, this._flipTurnPushSpeed);
+        this._lastCompletedFlipTurnWallDistance = this._flipTurnWallDistance;
+        this._flipTurnActive = false;
+        this.startFlipTurnUnderwaterPhase();
+    }
+
+    private clearFlipTurnPhase(resetCompletedWalls = false) {
+        this._flipTurnActive = false;
+        this._flipTurnEntrySpeed = 0;
+        this._flipTurnPushSpeed = 0;
+        this._motor.setGlidePhase(false);
+        if (resetCompletedWalls) {
+            this._lastCompletedFlipTurnWallDistance = Number.NEGATIVE_INFINITY;
+        }
+        this.cartoonRig?.finishRaceFlipTurn();
+    }
+
     private applyCoursePosition(distance: number) {
         const visualDistance = Math.min(distance, getRaceDistance());
         const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
@@ -752,10 +935,24 @@ export class Swimmer extends Component {
     }
 
     private startDiveUnderwaterPhase(_initialDistance: number) {
+        this._underwaterPhaseKind = 'dive';
         this._diveUnderwaterActive = true;
         this._diveGlidePoseActive = true;
         this._diveUnderwaterElapsed = 0;
         this._motor.setGlidePhase(true);
+        this.cartoonRig?.setLegSplashSuppressed(true);
+    }
+
+    private startFlipTurnUnderwaterPhase() {
+        this._underwaterPhaseKind = 'flipTurn';
+        this._diveUnderwaterActive = true;
+        this._diveGlidePoseActive = true;
+        this._diveUnderwaterElapsed = 0;
+        this._diveEntryLeanDegrees = 0;
+        this._motor.setGlidePhase(
+            true,
+            SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag,
+        );
         this.cartoonRig?.setLegSplashSuppressed(true);
     }
 
@@ -764,6 +961,7 @@ export class Swimmer extends Component {
         this._diveGlidePoseActive = false;
         this._diveUnderwaterElapsed = 0;
         this._diveEntryLeanDegrees = 0;
+        this._underwaterPhaseKind = 'none';
         this._motor.setGlidePhase(false);
         this.cartoonRig?.setLegSplashSuppressed(false);
     }
@@ -788,13 +986,20 @@ export class Swimmer extends Component {
         if (!this._diveUnderwaterActive) {
             return this._startPosition.y;
         }
-        const underwaterY = this._courseLayout.swimY - SWIMMER_ACTION_TUNING.diveEntryDepth;
-        const holdSeconds = Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
-        if (this._diveUnderwaterElapsed <= holdSeconds) {
+        const descentSeconds = this.underwaterDescentSeconds();
+        const startUnderwaterY = this._courseLayout.swimY - this.underwaterStartDepth();
+        const underwaterY = this._courseLayout.swimY - this.underwaterDepth();
+        const elapsed = this._diveUnderwaterElapsed;
+        if (descentSeconds > 0 && elapsed < descentSeconds) {
+            return lerp(startUnderwaterY, underwaterY, smoothStep(elapsed / descentSeconds));
+        }
+        const phaseElapsed = Math.max(0, elapsed - descentSeconds);
+        const holdSeconds = this.underwaterHoldSeconds();
+        if (phaseElapsed <= holdSeconds) {
             return underwaterY;
         }
-        const riseSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
-        const ratio = (this._diveUnderwaterElapsed - holdSeconds) / riseSeconds;
+        const riseSeconds = this.underwaterRiseSeconds();
+        const ratio = (phaseElapsed - holdSeconds) / riseSeconds;
         if (ratio >= 1) {
             this.clearDiveUnderwaterPhase();
             this.beginSurfaceSwimming();
@@ -807,10 +1012,20 @@ export class Swimmer extends Component {
         if (!this._diveUnderwaterActive) {
             return 0;
         }
-        const holdSeconds = Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
-        const riseSeconds = Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+        const descentSeconds = this.underwaterDescentSeconds();
         const elapsed = this._diveUnderwaterElapsed;
-        if (elapsed <= holdSeconds) {
+        if (descentSeconds > 0 && elapsed < descentSeconds) {
+            const descentRatio = Math.max(0, Math.min(1, elapsed / descentSeconds));
+            return -Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees)
+                * Math.sin(Math.PI * descentRatio);
+        }
+        const phaseElapsed = Math.max(0, elapsed - descentSeconds);
+        const holdSeconds = this.underwaterHoldSeconds();
+        const riseSeconds = this.underwaterRiseSeconds();
+        if (phaseElapsed <= holdSeconds) {
+            if (this._underwaterPhaseKind === 'flipTurn') {
+                return 0;
+            }
             // Straighten from the head-down entry lean to horizontal early in the hold,
             // so the body does not linger in the diagonal-down pose.
             const straightenSeconds = Math.max(0.01, holdSeconds * SWIMMER_ACTION_TUNING.diveStraightenRatio);
@@ -818,8 +1033,47 @@ export class Swimmer extends Component {
             return lerp(this._diveEntryLeanDegrees, 0, smoothStep(ratio));
         }
         // Ascent: tilt head-up toward the surface, then level out as it breaks the surface.
-        const riseRatio = Math.max(0, Math.min(1, (elapsed - holdSeconds) / riseSeconds));
-        return SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees * Math.sin(Math.PI * riseRatio);
+        const riseRatio = Math.max(0, Math.min(1, (phaseElapsed - holdSeconds) / riseSeconds));
+        return this.underwaterRiseTiltDegrees() * Math.sin(Math.PI * riseRatio);
+    }
+
+    private underwaterStartDepth(): number {
+        return this._underwaterPhaseKind === 'flipTurn'
+            ? Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth)
+            : Math.max(0, SWIMMER_ACTION_TUNING.diveEntryDepth);
+    }
+
+    private underwaterDepth(): number {
+        return this._underwaterPhaseKind === 'flipTurn'
+            ? Math.max(
+                this.underwaterStartDepth(),
+                Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth),
+            )
+            : Math.max(0, SWIMMER_ACTION_TUNING.diveEntryDepth);
+    }
+
+    private underwaterDescentSeconds(): number {
+        return this._underwaterPhaseKind === 'flipTurn'
+            ? Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds)
+            : 0;
+    }
+
+    private underwaterHoldSeconds(): number {
+        return this._underwaterPhaseKind === 'flipTurn'
+            ? Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds)
+            : Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
+    }
+
+    private underwaterRiseSeconds(): number {
+        return this._underwaterPhaseKind === 'flipTurn'
+            ? Math.max(0.01, CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds)
+            : Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
+    }
+
+    private underwaterRiseTiltDegrees(): number {
+        return this._underwaterPhaseKind === 'flipTurn'
+            ? Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees)
+            : Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees);
     }
 
     get currentSpeed(): number {
@@ -892,6 +1146,14 @@ export class Swimmer extends Component {
         return this._motor.isRacing;
     }
 
+    get isFlipTurning(): boolean {
+        return this._flipTurnActive;
+    }
+
+    get isFlipTurnCameraActive(): boolean {
+        return this._flipTurnActive || this._underwaterPhaseKind === 'flipTurn';
+    }
+
     get rhythmStats(): RhythmStats {
         return {
             maxCombo: this._maxStrokeQualityCombo,
@@ -926,6 +1188,36 @@ export class Swimmer extends Component {
 
 function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
+}
+
+function finiteNonNegative(value: number): number {
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function easeOutPower(value: number, exponent: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    const power = finitePower(exponent);
+    return 1 - Math.pow(1 - t, power);
+}
+
+function integratedDecaySpeedRatio(value: number, exponent: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    const power = finitePower(exponent);
+    // Integral from 0..t of (1-u)^power, normalized by its total integral
+    // 1/(power+1), so the ratio reaches exactly 1 at keyframe 2.
+    return 1 - Math.pow(1 - t, power + 1);
+}
+
+function integratedEaseOutSpeedRatio(value: number, exponent: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    const power = finitePower(exponent);
+    const totalArea = power / (power + 1);
+    const area = t - (1 - Math.pow(1 - t, power + 1)) / (power + 1);
+    return totalArea > 0 ? Math.max(0, Math.min(1, area / totalArea)) : t;
+}
+
+function finitePower(value: number): number {
+    return Number.isFinite(value) ? Math.max(1, value) : 1;
 }
 
 function degreesToRadians(degrees: number): number {

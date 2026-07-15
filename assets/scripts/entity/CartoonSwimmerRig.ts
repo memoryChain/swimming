@@ -7,10 +7,12 @@ import { CharacterPoseStateController } from '../character/CharacterPoseStateCon
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
-import { FreestylePoseController } from '../character/FreestylePoseController';
+import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
+import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
 import { findSampledDebugAction } from '../character/SampledActionMotionCurve';
 import type { SampledActionId } from '../character/SampledActionMotionCurve';
 import { SplashEmitter } from '../character/SplashEmitter';
+import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
@@ -31,6 +33,13 @@ const MIXAMO_SWIMMING_CLIP_PATHS = [
     'models/UserSwimmer0621_2MixamoSwimming/Swimming.004',
     'models/UserSwimmer0621_2MixamoSwimming/Armature|mixamo.com|Layer0',
 ];
+
+export type RaceFlipTurnUpdate = {
+    approachTimeRatio: number;
+    returnTimeRatio: number;
+    keyframe2Reached: boolean;
+    complete: boolean;
+};
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -95,6 +104,29 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _waterY = CHARACTER_POSE_TUNING.splashWaterY;
     private _debugActionPose: DebugSwimmerActionPose = 'freestyle';
     private _debugSampledActionId: SampledActionId | null = null;
+    private _flipTurnSwimPose: ProceduralPoseSnapshot | null = null;
+    private _flipTurnExitSwimPose: ProceduralPoseSnapshot | null = null;
+    private _flipTurnKeyframe1Pose: ProceduralPoseSnapshot | null = null;
+    private _flipTurnKeyframe2Pose: ProceduralPoseSnapshot | null = null;
+    private _debugFlipTurnPlaying = false;
+    private _debugFlipTurnElapsed = 0;
+    private _debugFlipTurnAccumulatedDegrees = 0;
+    private _debugFlipTurnStartDegrees = 0;
+    private _debugFlipTurnAccumulatedAxisDegrees = 0;
+    private _debugFlipTurnStartAxisDegrees = 0;
+    private _debugFlipTurnRotationDeltaDegrees = -180;
+    private _raceFlipTurnActive = false;
+    private readonly _flipTurnModelBasePosition = new Vec3();
+    private readonly _flipTurnModelBaseRotation = new Quat();
+    private readonly _flipTurnWaistPivot = new Vec3();
+    private readonly _tmpFlipTurnWorldPivot = new Vec3();
+    private readonly _tmpFlipTurnOffset = new Vec3();
+    private readonly _tmpFlipTurnRotation = new Quat();
+    private readonly _tmpFlipTurnAxisRotation = new Quat();
+    private readonly _tmpFlipTurnCombinedRotation = new Quat();
+    private readonly _tmpFlipTurnModelRotation = new Quat();
+    private readonly _tmpFlipTurnContactLocal = new Vec3();
+    private readonly _tmpFlipTurnContactWorld = [new Vec3(), new Vec3(), new Vec3(), new Vec3()];
     private readonly _tmpSplashWorld = new Vec3();
     private readonly _tmpSplashHeadWorld = new Vec3();
     private readonly _tmpSplashHandWorld = new Vec3();
@@ -175,7 +207,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     get usesDebugProceduralPose(): boolean {
-        return this.isBreaststrokeDebugPose() || this.isDivePrepDebugPose() || this.isSampledActionDebugPose();
+        return this.isBreaststrokeDebugPose() || this.isDivePrepDebugPose() || this.isSampledActionDebugPose() || this.isFlipTurnDebugPose();
     }
 
     get waterY(): number {
@@ -210,9 +242,85 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._debugActionPose = pose;
         this._debugSampledActionId = nextSampledActionId;
+        this.resetDebugFlipTurnState();
         if (this._modelDebugMode) {
             this.setModelDebugMode(true);
         }
+    }
+
+    triggerDebugFlipTurn(): boolean {
+        if (
+            !this._loaded
+            || !this.isFlipTurnDebugPose()
+            || !this._flipTurnSwimPose
+            || !this._flipTurnExitSwimPose
+            || this._debugFlipTurnPlaying
+        ) {
+            return false;
+        }
+        this._debugFlipTurnPlaying = true;
+        this._debugFlipTurnElapsed = 0;
+        this._debugFlipTurnStartDegrees = this._debugFlipTurnAccumulatedDegrees;
+        this._debugFlipTurnStartAxisDegrees = this._debugFlipTurnAccumulatedAxisDegrees;
+        // The world-space somersault sign follows the swimmer's head direction.
+        // Left-to-right (+X) uses the observed clockwise turn; right-to-left
+        // (-X) mirrors it so the athlete still flips forward toward the wall.
+        this._debugFlipTurnRotationDeltaDegrees = this._splashMovementDirection >= 0 ? -180 : 180;
+        return true;
+    }
+
+    get debugFlipTurnPlaying(): boolean {
+        return this._debugFlipTurnPlaying;
+    }
+
+    startRaceFlipTurn(): number | null {
+        if (!this._loaded || !this._model || !this.root || this._modelDebugMode || this._raceFlipTurnActive) {
+            return null;
+        }
+        this._poseState.applyRaceModelSetup();
+        this.setupDebugFlipTurn(true);
+        const footContactOffset = this.measureFlipTurnFootContactOffset();
+        this._debugFlipTurnPlaying = true;
+        this._debugFlipTurnElapsed = 0;
+        this._debugFlipTurnStartDegrees = 0;
+        this._debugFlipTurnStartAxisDegrees = 0;
+        // The swimmer node already faces along its incoming lane direction, so
+        // the production turn always uses the same local forward-flip sign.
+        this._debugFlipTurnRotationDeltaDegrees = -180;
+        this._raceFlipTurnActive = true;
+        return footContactOffset;
+    }
+
+    updateRaceFlipTurn(dt: number): RaceFlipTurnUpdate | null {
+        if (!this._raceFlipTurnActive) {
+            return null;
+        }
+        this.updateDebugFlipTurn(dt);
+        const keyframe2Time = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
+            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        const totalDuration = keyframe2Time + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds);
+        return {
+            approachTimeRatio: linearRange(this._debugFlipTurnElapsed, 0, keyframe2Time),
+            returnTimeRatio: linearRange(this._debugFlipTurnElapsed, keyframe2Time, totalDuration),
+            keyframe2Reached: this._debugFlipTurnElapsed >= keyframe2Time,
+            complete: !this._debugFlipTurnPlaying,
+        };
+    }
+
+    finishRaceFlipTurn() {
+        if (!this._raceFlipTurnActive) {
+            return;
+        }
+        const swimPose = this._flipTurnExitSwimPose;
+        this._poseState.applyRaceModelSetup();
+        if (swimPose) {
+            this._pose.applyPoseSnapshot(swimPose);
+        }
+        this._raceFlipTurnActive = false;
+        this.resetDebugFlipTurnState();
+        this._poseState.enterFreestyle();
+        this._splashEmitter?.setVisible(true);
+        this.updateSplashSurface(0);
     }
 
     private loadModelForCurrentVariant() {
@@ -624,6 +732,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._loaded || !this._modelDebugMode) {
             return;
         }
+        if (this.isFlipTurnDebugPose()) {
+            this.updateDebugFlipTurn(dt);
+            return;
+        }
         if (this.isDivePrepDebugPose()) {
             this._pose.applyDivePrepPose(1);
             this._armAction = 0;
@@ -685,6 +797,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._armAction = 0;
+        this._raceFlipTurnActive = false;
+        this.resetDebugFlipTurnState();
         this._kickAction = 0;
         this._armCycleMotion = 0;
         this._leftHandWaterContact = 0;
@@ -879,6 +993,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._modelDebugMode && this._debugActionPose === 'sampledAction';
     }
 
+    private isFlipTurnDebugPose(): boolean {
+        return this._modelDebugMode && this._debugActionPose === 'flipTurn';
+    }
+
     private ensureMixamoDebugAnimationPlaying() {
         if (!this._animationPlayer.hasAnimation) {
             this.ensureMixamoAnimationComponent();
@@ -984,6 +1102,183 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return names.reverse().join('/');
     }
 
+    private setupDebugFlipTurn(captureCurrentSwimPose = false) {
+        if (!this._model || !this.root) {
+            return;
+        }
+        this.resetDebugFlipTurnState();
+        Vec3.copy(this._flipTurnModelBasePosition, this._model.position);
+        Quat.copy(this._flipTurnModelBaseRotation, this._model.rotation);
+
+        if (captureCurrentSwimPose) {
+            this._flipTurnSwimPose = this._pose.capturePoseSnapshot();
+            // The race may enter the turn at any point in the freestyle cycle.
+            // Keep that live pose only as the entry pose; the return transition
+            // must finish on the same neutral underwater pose used after the push.
+            this._pose.restoreBasePose();
+            const exitDrive = Math.max(
+                0.85,
+                Math.min(1.45, 0.9 + Math.max(0, SWIMMER_BALANCE.flipTurnPushLaunchSpeed) * 0.16),
+            );
+            this._pose.applyFreestylePose(0, 0, 0, Math.PI, 0, exitDrive, exitDrive, exitDrive);
+            this._flipTurnExitSwimPose = this._pose.capturePoseSnapshot();
+        } else {
+            this._pose.restoreBasePose();
+            this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+            this._flipTurnSwimPose = this._pose.capturePoseSnapshot();
+            this._flipTurnExitSwimPose = this._pose.capturePoseSnapshot();
+        }
+
+        this._pose.applyFlipTurnKeyPose(FLIP_TURN_KEYFRAME_1);
+        this._flipTurnKeyframe1Pose = this._pose.capturePoseSnapshot();
+        this._pose.applyFlipTurnKeyPose(FLIP_TURN_KEYFRAME_2);
+        this._flipTurnKeyframe2Pose = this._pose.capturePoseSnapshot();
+
+        if (this._flipTurnSwimPose) {
+            this._pose.applyPoseSnapshot(this._flipTurnSwimPose);
+        }
+        if (this._pose.getHipWorldPosition(this._tmpFlipTurnWorldPivot)) {
+            this.node.inverseTransformPoint(this._flipTurnWaistPivot, this._tmpFlipTurnWorldPivot);
+        } else {
+            Vec3.copy(this._flipTurnWaistPivot, this._flipTurnModelBasePosition);
+        }
+        this.applyDebugFlipTurnRotation(0, 0, 0);
+        this.updateSplashSurface(0);
+        this._splashEmitter?.setVisible(false);
+    }
+
+    private measureFlipTurnFootContactOffset(): number {
+        const swim = this._flipTurnSwimPose;
+        const keyframe2 = this._flipTurnKeyframe2Pose;
+        if (!swim || !keyframe2) {
+            return 1;
+        }
+        this._pose.applyPoseSnapshot(keyframe2);
+        this.applyDebugFlipTurnRotation(-180, 0, -Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth));
+        const count = this._pose.getFlipTurnFootContactWorldPositions(this._tmpFlipTurnContactWorld);
+        let forward = 0;
+        for (let i = 0; i < count; i++) {
+            this.node.inverseTransformPoint(this._tmpFlipTurnContactLocal, this._tmpFlipTurnContactWorld[i]);
+            forward = Math.max(forward, this._tmpFlipTurnContactLocal.x);
+        }
+        this._pose.applyPoseSnapshot(swim);
+        this.applyDebugFlipTurnRotation(0, 0, 0);
+        return Math.max(0.1, forward + CHARACTER_POSE_TUNING.flipTurnWallContactPadding);
+    }
+
+    private updateDebugFlipTurn(dt: number) {
+        const swim = this._flipTurnSwimPose;
+        const exitSwim = this._flipTurnExitSwimPose;
+        const keyframe1 = this._flipTurnKeyframe1Pose;
+        const keyframe2 = this._flipTurnKeyframe2Pose;
+        if (!swim || !exitSwim || !keyframe1 || !keyframe2) {
+            return;
+        }
+        if (!this._debugFlipTurnPlaying) {
+            this._pose.applyPoseSnapshot(swim);
+            this.applyDebugFlipTurnRotation(this._debugFlipTurnAccumulatedDegrees, this._debugFlipTurnAccumulatedAxisDegrees, 0);
+            return;
+        }
+
+        this._debugFlipTurnElapsed += Math.max(0, dt) * this.motionPreviewSpeedScale();
+        const firstDuration = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds);
+        const secondDuration = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        const returnDuration = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds);
+        const keyframe2Time = firstDuration + secondDuration;
+        const totalDuration = keyframe2Time + returnDuration;
+
+        if (this._debugFlipTurnElapsed < firstDuration) {
+            this._pose.blendPoseSnapshots(swim, keyframe1, smoothRange(this._debugFlipTurnElapsed, 0, firstDuration));
+        } else if (this._debugFlipTurnElapsed < keyframe2Time) {
+            this._pose.blendPoseSnapshots(keyframe1, keyframe2, smoothRange(this._debugFlipTurnElapsed, firstDuration, keyframe2Time));
+        } else if (this._debugFlipTurnElapsed < totalDuration) {
+            const bodyRatio = smoothRange(this._debugFlipTurnElapsed, keyframe2Time, totalDuration);
+            const armReturnDuration = Math.min(
+                returnDuration,
+                Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds),
+            );
+            const armRatio = smoothRange(
+                this._debugFlipTurnElapsed,
+                keyframe2Time,
+                keyframe2Time + armReturnDuration,
+            );
+            this._pose.blendPoseSnapshotsWithArmRatio(keyframe2, exitSwim, bodyRatio, armRatio);
+        } else {
+            this._pose.applyPoseSnapshot(exitSwim);
+            this._debugFlipTurnPlaying = false;
+            this._debugFlipTurnAccumulatedDegrees = this._debugFlipTurnStartDegrees + this._debugFlipTurnRotationDeltaDegrees;
+            this._debugFlipTurnAccumulatedAxisDegrees = this._debugFlipTurnStartAxisDegrees + 180;
+            this._splashMovementDirection *= -1;
+            this._pose.setMovementDirection(this._splashMovementDirection);
+        }
+
+        const rotationRatio = smoothRange(this._debugFlipTurnElapsed, 0, keyframe2Time);
+        const rotationDegrees = this._debugFlipTurnPlaying
+            ? this._debugFlipTurnStartDegrees + rotationRatio * this._debugFlipTurnRotationDeltaDegrees
+            : this._debugFlipTurnAccumulatedDegrees;
+        const axisRotationRatio = smoothRange(this._debugFlipTurnElapsed, keyframe2Time, totalDuration);
+        const axisRotationDegrees = this._debugFlipTurnPlaying
+            ? this._debugFlipTurnStartAxisDegrees + axisRotationRatio * 180
+            : this._debugFlipTurnAccumulatedAxisDegrees;
+        const underwaterDepth = Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth);
+        let verticalOffset = 0;
+        if (this._debugFlipTurnPlaying) {
+            if (this._debugFlipTurnElapsed < firstDuration) {
+                verticalOffset = -underwaterDepth * smoothRange(this._debugFlipTurnElapsed, 0, firstDuration);
+            } else if (this._debugFlipTurnElapsed < keyframe2Time) {
+                verticalOffset = -underwaterDepth;
+            } else if (this._raceFlipTurnActive) {
+                // Formal races transfer this depth to the swimmer root when the
+                // pose transition ends, then continue in a kick-only glide phase.
+                verticalOffset = -underwaterDepth;
+            } else {
+                verticalOffset = -underwaterDepth * (1 - smoothRange(this._debugFlipTurnElapsed, keyframe2Time, totalDuration));
+            }
+        }
+        this.applyDebugFlipTurnRotation(rotationDegrees, axisRotationDegrees, verticalOffset);
+        this._armAction = 0;
+        this._kickAction = 0;
+        this.syncSplashState();
+        this.updateSplashSurface(0);
+    }
+
+    private applyDebugFlipTurnRotation(degrees: number, axisDegrees: number, verticalOffset: number) {
+        if (!this._model) {
+            return;
+        }
+        this._model.setPosition(this._flipTurnModelBasePosition);
+        this._model.setRotation(this._flipTurnModelBaseRotation);
+        let currentWaist = this._flipTurnWaistPivot;
+        if (this._pose.getHipWorldPosition(this._tmpFlipTurnWorldPivot)) {
+            this.node.inverseTransformPoint(this._tmpFlipTurnOffset, this._tmpFlipTurnWorldPivot);
+            currentWaist = this._tmpFlipTurnOffset;
+        }
+        Quat.fromAxisAngle(this._tmpFlipTurnRotation, Vec3.UNIT_Z, degrees * Math.PI / 180);
+        Quat.fromAxisAngle(this._tmpFlipTurnAxisRotation, Vec3.UNIT_X, axisDegrees * Math.PI / 180);
+        Quat.multiply(this._tmpFlipTurnCombinedRotation, this._tmpFlipTurnRotation, this._tmpFlipTurnAxisRotation);
+        Quat.multiply(this._tmpFlipTurnModelRotation, this._tmpFlipTurnCombinedRotation, this._flipTurnModelBaseRotation);
+        Vec3.subtract(this._tmpFlipTurnOffset, this._flipTurnModelBasePosition, currentWaist);
+        Vec3.transformQuat(this._tmpFlipTurnOffset, this._tmpFlipTurnOffset, this._tmpFlipTurnCombinedRotation);
+        Vec3.add(this._tmpFlipTurnOffset, this._flipTurnWaistPivot, this._tmpFlipTurnOffset);
+        this._tmpFlipTurnOffset.y += verticalOffset;
+        this._model.setPosition(this._tmpFlipTurnOffset);
+        this._model.setRotation(this._tmpFlipTurnModelRotation);
+    }
+
+    private resetDebugFlipTurnState() {
+        this._debugFlipTurnPlaying = false;
+        this._debugFlipTurnElapsed = 0;
+        this._debugFlipTurnAccumulatedDegrees = 0;
+        this._debugFlipTurnStartDegrees = 0;
+        this._debugFlipTurnAccumulatedAxisDegrees = 0;
+        this._debugFlipTurnStartAxisDegrees = 0;
+        this._debugFlipTurnRotationDeltaDegrees = -180;
+        this._flipTurnSwimPose = null;
+        this._flipTurnExitSwimPose = null;
+        this._flipTurnKeyframe1Pose = null;
+        this._flipTurnKeyframe2Pose = null;
+    }
+
     private applyModelDebugSetup() {
         if (!this._model || !this.root) {
             return;
@@ -991,6 +1286,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const useBakedAnimation = this.isMixamoSwimmingDebugVariant();
         this.configureSkinnedRenderers(useBakedAnimation);
         this._poseState.applyRaceModelSetup();
+        if (this.isFlipTurnDebugPose()) {
+            this.setupDebugFlipTurn();
+            console.log(
+                `[SpeedSwimming] model debug uses sampled flip-turn keyframes ` +
+                `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length}`,
+            );
+            return;
+        }
         if (this.isMixamoSwimmingDebugVariant()) {
             this._animationPlayer.setUseBakedAnimation(true);
             this.ensureMixamoDebugAnimationPlaying();
@@ -1270,4 +1573,11 @@ function smoothRange(value: number, start: number, end: number): number {
     }
     const t = clamp01((value - start) / (end - start));
     return t * t * (3 - 2 * t);
+}
+
+function linearRange(value: number, start: number, end: number): number {
+    if (end <= start) {
+        return value >= end ? 1 : 0;
+    }
+    return clamp01((value - start) / (end - start));
 }

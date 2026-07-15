@@ -1,6 +1,6 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
-import { FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
@@ -38,7 +38,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 7;
+const TUNING_FILE_VERSION = 19;
 
 type TuningFileData = {
     version: number;
@@ -56,6 +56,32 @@ type TuningFileData = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: 'Flip Turn',
+        controls: [
+            control('motion.flipTurnToKeyframe1Seconds', 'To Keyframe 1', 'Seconds from the swim pose to flip-turn keyframe 1.', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds = v, 0.05, 0.05, 2, 2, 's'),
+            control('motion.flipTurnToKeyframe2Seconds', 'To Keyframe 2', 'Seconds from keyframe 1 to keyframe 2. The 180-degree rotation ends here.', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds = v, 0.05, 0.05, 2, 2, 's'),
+            control('motion.flipTurnReturnToSwimSeconds', 'Return To Swim', 'Seconds from keyframe 2 back to the normal swim pose.', () => CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds = v, 0.05, 0.05, 2, 2, 's'),
+            control('motion.flipTurnArmReturnSeconds', 'Arm Return', 'Seconds for shoulders and arms to reach the swim pose during the final transition.', () => CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds = v, 0.05, 0.05, 1, 2, 's'),
+            control('motion.flipTurnUnderwaterDepth', 'Underwater Depth', 'Depth reached at keyframe 1 and carried through the pose return into the post-turn underwater glide.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth = v, 0.05, 0, 1.5, 2, 'm'),
+            control('motion.flipTurnUnderwaterGlideDepth', 'Glide Depth', 'Target depth reached by continuing downward after the wall push.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth = v, 0.05, 0, 2.5, 2, 'm'),
+            control('motion.flipTurnUnderwaterDiveSeconds', 'Push Dive Time', 'Seconds spent moving downward from the turn pose into the deeper underwater glide.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds = v, 0.05, 0, 2, 2, 's'),
+            control('motion.flipTurnUnderwaterDiveTiltDegrees', 'Push Dive Tilt', 'Maximum head-down body tilt while continuing downward after the wall push.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees = v, 0.5, 0, 30, 1, '°'),
+            control('motion.flipTurnUnderwaterHoldSeconds', 'Underwater Hold', 'Seconds to remain at the deeper glide depth before rising. Only kicks are accepted.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
+            control('motion.flipTurnUnderwaterRiseSeconds', 'Underwater Rise', 'Seconds used to rise from the deeper glide depth to surface freestyle after the hold.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
+            control('motion.flipTurnUnderwaterRiseTiltDegrees', 'Rise Tilt', 'Maximum head-up body tilt during the post-turn ascent.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
+            control('motion.flipTurnApproachExtraDistance', 'Turn Approach', 'Extra distance before the wall used to begin the flip-turn approach.', () => CHARACTER_POSE_TUNING.flipTurnApproachExtraDistance, (v) => CHARACTER_POSE_TUNING.flipTurnApproachExtraDistance = v, 0.05, 0, 3, 2, 'm'),
+            control('motion.flipTurnWallContactPadding', 'Wall Contact', 'Clearance from sampled foot/toe bone centers to the visible sole surface. Higher values keep both feet farther inside the pool.', () => CHARACTER_POSE_TUNING.flipTurnWallContactPadding, (v) => CHARACTER_POSE_TUNING.flipTurnWallContactPadding = v, 0.01, 0, 1, 2, 'm'),
+            control('speed.flipTurnPushLaunchSpeed', 'Push Launch Speed', 'Initial speed reached by the wall push before underwater drag settles toward the restored cruise speed.', () => SWIMMER_BALANCE.flipTurnPushLaunchSpeed, (v) => SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v, 0.1, 0, 10, 1, 'm/s'),
+            control('speed.flipTurnUnderwaterGlideDrag', 'Push Glide Drag', 'Extra speed-proportional drag during the post-turn underwater glide. Normal water drag still applies.', () => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag, (v) => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag = v, 0.01, 0, 1, 2),
+            control('speed.flipTurnDecelerationExponent', 'Deceleration Curve', 'Approach ease-out power. 1 is linear; higher values decelerate earlier and settle more slowly near keyframe 2.', () => SWIMMER_BALANCE.flipTurnDecelerationExponent, (v) => SWIMMER_BALANCE.flipTurnDecelerationExponent = v, 0.1, 1, 5, 1),
+            control('speed.flipTurnAccelerationExponent', 'Acceleration Curve', 'Exit ease-out power. 1 is linear; higher values accelerate earlier and approach the target speed more gently.', () => SWIMMER_BALANCE.flipTurnAccelerationExponent, (v) => SWIMMER_BALANCE.flipTurnAccelerationExponent = v, 0.1, 1, 5, 1),
+            control('camera.flipTurnBackDistance', 'Camera Back', 'Underwater flip-turn camera distance behind the incoming swimmer.', () => RACE_CAMERA_TUNING.flipTurnBackDistance, (v) => RACE_CAMERA_TUNING.flipTurnBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
+            control('camera.flipTurnSideDistance', 'Camera Side', 'Side offset of the underwater flip-turn camera, clamped inside the pool.', () => RACE_CAMERA_TUNING.flipTurnSideDistance, (v) => RACE_CAMERA_TUNING.flipTurnSideDistance = v, 0.1, 0.5, 8, 1, 'm'),
+            control('camera.flipTurnBelowDistance', 'Camera Below', 'Vertical distance below the swimmer target for the underwater flip-turn camera.', () => RACE_CAMERA_TUNING.flipTurnBelowDistance, (v) => RACE_CAMERA_TUNING.flipTurnBelowDistance = v, 0.05, 0.1, 1, 2, 'm'),
+            control('camera.flipTurnFov', 'Camera FOV', 'Vertical field of view used while observing the complete flip turn underwater.', () => RACE_CAMERA_TUNING.flipTurnFov, (v) => RACE_CAMERA_TUNING.flipTurnFov = v, 1, 25, 80, 0, '°'),
+        ],
+    },
     {
         name: '输入',
         controls: [
@@ -93,7 +119,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.strokeQualityAccel', '划水质量加速', '松手时机质量为满分（落在甜区中心）时附加的推进加速度；质量越低按比例减少。这是划水的主要推进来源。', () => SWIMMER_BALANCE.strokeQualityAccel, (v) => SWIMMER_BALANCE.strokeQualityAccel = v, 0.05, 0, 8, 2),
             control('speed.strokeAccelDurationRatio', '加速持续', '一次动作加速度持续时间，占当前动作一轮时间的比例。越短越像“窜一下”，越长越像“持续推”。', () => SWIMMER_BALANCE.strokeAccelDurationRatio, (v) => SWIMMER_BALANCE.strokeAccelDurationRatio = v, 0.02, 0.05, 1.5, 2),
             control('speed.strokeImpulseSharpness', '冲刺锐度', '0=加速平均分布（顺滑）；越高=划水瞬间加速越猛、随后迅速回落，形成“窜出去再被水拖慢”的冲刺感。不改变整体速度，只改手感。', () => SWIMMER_BALANCE.strokeImpulseSharpness, (v) => SWIMMER_BALANCE.strokeImpulseSharpness = v, 0.05, 0, 1, 2),
-            control('speed.diveUnderwaterKickAccel', '水下踢腿加速', '跳水入水后的潜水阶段，每次输入只触发腿部踢水时给的推进加速度。', () => SWIMMER_BALANCE.diveUnderwaterKickAccel, (v) => SWIMMER_BALANCE.diveUnderwaterKickAccel = v, 0.02, 0, 3, 2),
             control('speed.kickAccelPerHz', '踢腿每频加速', '踢腿推进：每 1Hz 踢腿频率产生的加速度。点得越快频率越高、加速越快；点得慢加速慢。', () => SWIMMER_BALANCE.kickAccelPerHz, (v) => SWIMMER_BALANCE.kickAccelPerHz = v, 0.02, 0, 2, 2),
             control('speed.kickMaxSpeed', '踢腿速度上限', '单靠踢腿能达到的最高速度上限。应低于手臂 maxSpeed，让手臂才是主发动机。', () => SWIMMER_BALANCE.kickMaxSpeed, (v) => SWIMMER_BALANCE.kickMaxSpeed = v, 0.1, 0, 4, 1),
             control('speed.kickCeilingBand', '踢腿封顶缓冲', '接近踢腿速度上限前多大速度区间内加速度渐渐衰减到 0，让踢腿平滑贴近上限而不是硬顶。', () => SWIMMER_BALANCE.kickCeilingBand, (v) => SWIMMER_BALANCE.kickCeilingBand = v, 0.05, 0.05, 2, 2),

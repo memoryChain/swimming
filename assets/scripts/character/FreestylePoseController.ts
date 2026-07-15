@@ -4,6 +4,7 @@ import { MOTION_TUNING } from '../core/InputTuning';
 import { BREASTSTROKE_MOTION_SAMPLES, BreaststrokeBoneName, BreaststrokeMotionSample } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
 import { DIVE_PREP_POSE_SAMPLE, DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
+import { FLIP_TURN_KEYFRAME_1, FlipTurnBoneName, FlipTurnPoseSample } from './FlipTurnPoseCurve';
 import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotionSample } from './SampledActionMotionCurve';
 
 const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new Set([
@@ -84,6 +85,7 @@ export class FreestylePoseController {
     private _rightFoot: Node = null;
     private _rightToe: Node = null;
     private readonly _breaststrokeBones = new Map<BreaststrokeBoneName, Node>();
+    private readonly _flipTurnBones = new Map<FlipTurnBoneName, Node>();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
     private readonly _boneBasePosition = new Map<Node, Vec3>();
     private readonly _tmpOffsetRotation = new Quat();
@@ -131,6 +133,7 @@ export class FreestylePoseController {
         this._rightFoot = findBoneNode(root, 'RightFoot');
         this._rightToe = findBoneNode(root, 'RightToeBase');
         this.bindBreaststrokeBones();
+        this.bindFlipTurnBones(root);
     }
 
     captureBasePose() {
@@ -196,20 +199,31 @@ export class FreestylePoseController {
     }
 
     blendPoseSnapshots(from: ProceduralPoseSnapshot, to: ProceduralPoseSnapshot, ratio: number) {
+        this.blendPoseSnapshotsWithArmRatio(from, to, ratio, ratio);
+    }
+
+    blendPoseSnapshotsWithArmRatio(
+        from: ProceduralPoseSnapshot,
+        to: ProceduralPoseSnapshot,
+        bodyRatio: number,
+        armRatio: number,
+    ) {
         if (!this.root) {
             return;
         }
-        const t = clamp(ratio, 0, 1);
-        Vec3.lerp(this._tmpBlendPosition, from.rootPosition, to.rootPosition, t);
+        const bodyT = clamp(bodyRatio, 0, 1);
+        const armT = clamp(armRatio, 0, 1);
+        Vec3.lerp(this._tmpBlendPosition, from.rootPosition, to.rootPosition, bodyT);
         this.root.setPosition(this._tmpBlendPosition);
-        Quat.slerp(this._tmpBlendRotation, from.rootRotation, to.rootRotation, t);
+        Quat.slerp(this._tmpBlendRotation, from.rootRotation, to.rootRotation, bodyT);
         this.root.setRotation(this._tmpBlendRotation);
         for (const [bone, fromRotation] of from.boneRotations) {
             const toRotation = to.boneRotations.get(bone);
             if (!toRotation || !bone.isValid) {
                 continue;
             }
-            Quat.slerp(this._tmpBlendRotation, fromRotation, toRotation, t);
+            const boneT = this.isArmBone(bone) ? armT : bodyT;
+            Quat.slerp(this._tmpBlendRotation, fromRotation, toRotation, boneT);
             bone.setRotation(this._tmpBlendRotation);
         }
     }
@@ -360,6 +374,41 @@ export class FreestylePoseController {
         }
         this.restoreBasePose();
         this.applySampleRotations(DIVE_PREP_POSE_SAMPLE, power);
+    }
+
+    applyFlipTurnKeyPose(sample: FlipTurnPoseSample, power = 1) {
+        if (!this.root) {
+            return;
+        }
+        this.restoreBasePose();
+        const blend = clamp(power, 0, 1);
+        this.root.setPosition(
+            this.rootBasePos.x + sample.rootOffset[0] * blend,
+            this.rootBasePos.y + sample.rootOffset[1] * blend,
+            this.rootBasePos.z + sample.rootOffset[2] * blend,
+        );
+        this.applyFlipTurnRotations(sample, blend);
+    }
+
+    getHipWorldPosition(out: Vec3): boolean {
+        if (!this._hips) {
+            return false;
+        }
+        this._hips.getWorldPosition(out);
+        return true;
+    }
+
+    getFlipTurnFootContactWorldPositions(outputs: Vec3[]): number {
+        const bones = [this._leftFoot, this._leftToe, this._rightFoot, this._rightToe];
+        let count = 0;
+        for (const bone of bones) {
+            if (!bone || count >= outputs.length) {
+                continue;
+            }
+            bone.getWorldPosition(outputs[count]);
+            count += 1;
+        }
+        return count;
     }
 
     applySampledActionPose(actionId: SampledActionId, phase: number, power = 1) {
@@ -600,7 +649,7 @@ export class FreestylePoseController {
     }
 
     private get manualBones(): Array<Node | null> {
-        return [
+        const bones: Array<Node | null> = [
             this._torso,
             this._rootBone,
             this._hips,
@@ -625,6 +674,33 @@ export class FreestylePoseController {
             this._rightFoot,
             this._rightToe,
         ];
+        for (const bone of this._flipTurnBones.values()) {
+            if (bones.indexOf(bone) < 0) {
+                bones.push(bone);
+            }
+        }
+        return bones;
+    }
+
+    private isArmBone(bone: Node): boolean {
+        return bone === this._leftShoulder
+            || bone === this._leftArm
+            || bone === this._leftForeArm
+            || bone === this._leftHand
+            || bone === this._rightShoulder
+            || bone === this._rightArm
+            || bone === this._rightForeArm
+            || bone === this._rightHand;
+    }
+
+    private bindFlipTurnBones(root: Node) {
+        this._flipTurnBones.clear();
+        for (const name of Object.keys(FLIP_TURN_KEYFRAME_1.rotations) as FlipTurnBoneName[]) {
+            const bone = findNode(root, name);
+            if (bone) {
+                this._flipTurnBones.set(name, bone);
+            }
+        }
     }
 
     private bindBreaststrokeBones() {
@@ -774,6 +850,28 @@ export class FreestylePoseController {
             }
             const bone = this._breaststrokeBones.get(name as BreaststrokeBoneName);
             if (!bone) {
+                continue;
+            }
+            const base = this._boneBaseRotation.get(bone);
+            this.setQuatFromTuple(this._tmpOffsetRotation, rotation);
+            if (blend < 0.999) {
+                Quat.slerp(this._tmpOffsetRotation, Quat.IDENTITY, this._tmpOffsetRotation, blend);
+            }
+            if (base) {
+                Quat.multiply(this._tmpResultRotation, base, this._tmpOffsetRotation);
+                bone.setRotation(this._tmpResultRotation);
+            } else {
+                bone.setRotation(this._tmpOffsetRotation);
+            }
+        }
+    }
+
+    private applyFlipTurnRotations(sample: FlipTurnPoseSample, power: number) {
+        const blend = clamp(power, 0, 1);
+        for (const name of Object.keys(sample.rotations) as FlipTurnBoneName[]) {
+            const rotation = sample.rotations[name];
+            const bone = this._flipTurnBones.get(name);
+            if (!rotation || !bone) {
                 continue;
             }
             const base = this._boneBaseRotation.get(bone);

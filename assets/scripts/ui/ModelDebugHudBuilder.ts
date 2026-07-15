@@ -8,6 +8,7 @@ export type ModelDebugHudCallbacks = {
     onFast: () => void;
     onSwitchModel: () => void;
     onSwitchAction: () => void;
+    onPlayFlipTurn: () => void;
     onSwitchTexture: () => void;
     onSwitchSkybox: () => void;
 };
@@ -19,6 +20,7 @@ export type ModelDebugHudRefs = {
     swimSpeedLabel: Label;
     modelLabel: Label;
     actionLabel: Label;
+    flipTurnButton: Node;
     skyboxLabel: Label;
 };
 
@@ -64,6 +66,10 @@ export class ModelDebugHudBuilder {
         const action = makeButton('ModelDebugSwitchAction', hud, portrait ? 54 : 88, 36, uiColor(76, 118, 188), 'Action');
         action.setPosition(portrait ? -82 : -244, portrait ? -h / 2 + 26 : bottomY, 0);
         action.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchAction());
+        const flipTurnButton = makeButton('ModelDebugPlayFlipTurn', hud, portrait ? 150 : 180, 44, uiColor(236, 126, 42), 'Play Flip Turn');
+        flipTurnButton.setPosition(0, bottomY + (portrait ? 78 : 62), 0);
+        flipTurnButton.active = false;
+        flipTurnButton.on(Node.EventType.TOUCH_END, () => this._callbacks.onPlayFlipTurn());
         const texture = makeButton('ModelDebugSwitchTexture', hud, portrait ? 54 : 88, 36, uiColor(168, 82, 126), '配色');
         texture.setPosition(portrait ? -26 : -148, portrait ? -h / 2 + 26 : bottomY, 0);
         texture.on(Node.EventType.TOUCH_END, () => this._callbacks.onSwitchTexture());
@@ -106,6 +112,7 @@ export class ModelDebugHudBuilder {
             swimSpeedLabel: swimSpeedLabel.getComponent(Label),
             modelLabel: modelLabel.getComponent(Label),
             actionLabel: actionLabel.getComponent(Label),
+            flipTurnButton,
             skyboxLabel: skyboxLabel.getComponent(Label),
         };
     }

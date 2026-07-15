@@ -151,6 +151,7 @@ export class GameManager extends Component {
     private _modelDebugSwimSpeedLabel: Label = null;
     private _modelDebugModelLabel: Label = null;
     private _modelDebugActionLabel: Label = null;
+    private _modelDebugFlipTurnButton: Node = null;
     private _modelDebugSkyboxLabel: Label = null;
     private _skyboxApplier: StandardSkyboxApplier = null;
     private _timingGuideFillNode: Node = null;
@@ -204,8 +205,8 @@ export class GameManager extends Component {
                             this.registerEvents();
                             this.debug('3D runtime initialized');
                             const launchMode = consumeMainGameLaunchMode();
-                            if (launchMode === 'model-debug') {
-                                this.enterModelDebug();
+                            if (launchMode === 'model-debug' || launchMode === 'flipturn-debug') {
+                                this.enterModelDebug(launchMode === 'flipturn-debug' ? 'flip_turn' : 'freestyle');
                             } else {
                                 this._aiDebugMode = launchMode === 'ai-debug';
                                 if (this._aiDebugMode) {
@@ -570,6 +571,7 @@ export class GameManager extends Component {
             swimSpeedLabel: this._modelDebugSwimSpeedLabel,
             modelLabel: this._modelDebugModelLabel,
             actionLabel: this._modelDebugActionLabel,
+            flipTurnButton: this._modelDebugFlipTurnButton,
             skyboxLabel: this._modelDebugSkyboxLabel,
             skyboxApplier: this._skyboxApplier,
             resetExtraAiSwimmers: () => this._gameFlow?.resetExtraAiSwimmers(),
@@ -870,6 +872,7 @@ export class GameManager extends Component {
                 onFast: () => this.speedUpModelDebugMotion(),
                 onSwitchModel: () => this.switchModelDebugVariant(),
                 onSwitchAction: () => this.switchModelDebugAction(),
+                onPlayFlipTurn: () => this._modelDebugFlow?.triggerFlipTurn(),
                 onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
             }).build(uiRoot, w, h);
@@ -879,6 +882,7 @@ export class GameManager extends Component {
             this._modelDebugSwimSpeedLabel = modelDebugHud.swimSpeedLabel;
             this._modelDebugModelLabel = modelDebugHud.modelLabel;
             this._modelDebugActionLabel = modelDebugHud.actionLabel;
+            this._modelDebugFlipTurnButton = modelDebugHud.flipTurnButton;
             this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
             this._modelDebugHud.active = false;
 
@@ -1234,8 +1238,8 @@ export class GameManager extends Component {
         this.debug(`camera follow=${this._cameraFollowsAi ? 'AI' : 'player'}`);
     }
 
-    private enterModelDebug() {
-        this._modelDebugFlow?.enter();
+    private enterModelDebug(initialActionId = 'freestyle') {
+        this._modelDebugFlow?.enter(initialActionId);
     }
 
     private exitModelDebug(showStart: boolean) {
