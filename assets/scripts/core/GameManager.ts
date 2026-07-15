@@ -102,6 +102,7 @@ export class GameManager extends Component {
     private _inputManager: InputManager = null;
     // True while a pointer is dragging to orbit the awards free-look camera.
     private _awardsCameraDragging = false;
+    private _playerOnAwardsPodium = false;
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
@@ -265,10 +266,11 @@ export class GameManager extends Component {
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
         this._uiFlow?.setRaceStatusVisible(raceStatusVisible);
         const presentationIndicatorVisible = this._state === GameState.PRECOUNTDOWN
-            || this._state === GameState.AWARDS;
+            || (this._state === GameState.AWARDS && this._playerOnAwardsPodium);
         // The player can finish before the last AI swimmer. Hide player-specific
         // overhead UI as soon as the player's own distance reaches the wall during
-        // the race, but always identify the protagonist in presentation stages.
+        // the race. Identify the protagonist before the start and, during awards,
+        // only when the player is actually one of the three podium finishers.
         const playerIndicatorVisible = !this._modelDebugFlow?.active
             && (presentationIndicatorVisible || (
                 this._state !== GameState.READY
@@ -512,6 +514,9 @@ export class GameManager extends Component {
             clearFinishRanks: () => this._finishRankMarkers.clear(),
             showFinishRank: (result) => this._finishRankMarkers.show(result),
             showAwards: (leaderboard) => {
+                this._playerOnAwardsPodium = leaderboard.some((row) =>
+                    row.isPlayer && row.placement >= 1 && row.placement <= 3,
+                );
                 const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);
             },
