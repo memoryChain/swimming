@@ -306,7 +306,10 @@ export class SwimmerRacePhases {
         }
         const baseX = courseLayout.distanceToWorldX(distance);
         const x = baseX + this._flipTurnIncomingDirection * this._flipTurnMaxReach * reachRatio;
-        node.setPosition(x, courseLayout.swimY, this._host.startPosition.z);
+        // Keep the current lateral drift so the swimmer does not snap back to the
+        // lane centre when the turn begins/ends (heading itself is reset to 0).
+        const z = this._host.startPosition.z + motor.lateralOffset;
+        node.setPosition(x, courseLayout.swimY, z);
         node.setRotationFromEuler(0, this._flipTurnIncomingDirection > 0 ? 0 : 180, 0);
         motor.setFlipTurnDistance(distance);
         motor.setFlipTurnSpeed(laneSpeed);

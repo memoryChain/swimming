@@ -6,6 +6,7 @@ import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
+import { STEERING_TUNING } from './SteeringTuning';
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 
 export type TuningControl = {
@@ -107,6 +108,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('camera.sprintHeight', '冲刺镜头高度', '冲刺镜头相对主角上半身的向上高度。', () => RACE_CAMERA_TUNING.sprintHeight, (v) => RACE_CAMERA_TUNING.sprintHeight = v, 0.05, 0.2, 5, 2, 'm'),
             control('camera.sprintLookAhead', '冲刺镜头前看', '以主角上半身骨骼为基准，镜头目标向终点方向前移的距离。越小越聚焦上半身。', () => RACE_CAMERA_TUNING.sprintLookAhead, (v) => RACE_CAMERA_TUNING.sprintLookAhead = v, 0.1, 0, 6, 1, 'm'),
             control('camera.sprintFov', '冲刺镜头视野', '冲刺跟随镜头的垂直视野角度。越大画面越广，越小主角越大。', () => RACE_CAMERA_TUNING.sprintFov, (v) => RACE_CAMERA_TUNING.sprintFov = v, 1, 25, 80, 0, '°'),
+            control('camera.sprintFollowSpeed', '冲刺前向跟随', '冲刺镜头前进/高度方向的跟随速度（每秒）。越高越紧跟，越低越拖影。', () => RACE_CAMERA_TUNING.sprintFollowSpeed, (v) => RACE_CAMERA_TUNING.sprintFollowSpeed = v, 0.5, 2, 30, 1, '/s'),
+            control('camera.sprintLateralFollowSpeed', '冲刺横向跟随', '冲刺镜头左右(横向)跟随速度（每秒）。故意调慢，让人物蛇形偏移时先在画面里滑出去、相机再缓缓追上，玩家才感受得到偏移。越低偏移越明显、越拖。', () => RACE_CAMERA_TUNING.sprintLateralFollowSpeed, (v) => RACE_CAMERA_TUNING.sprintLateralFollowSpeed = v, 0.2, 0.5, 15, 1, '/s'),
         ],
     },
     {
@@ -184,6 +187,21 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('difficulty.beginner.aiDifficultyScale', '入门AI倍率', '入门比赛对每条泳道原始 AI 难度的倍率。越低，AI 松手更不稳定且划水间隔更长。', () => getRaceDifficultyConfig('beginner').aiDifficultyScale, (v) => getRaceDifficultyConfig('beginner').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
             control('difficulty.competitive.aiDifficultyScale', '竞技AI倍率', '竞技比赛对每条泳道原始 AI 难度的倍率。', () => getRaceDifficultyConfig('competitive').aiDifficultyScale, (v) => getRaceDifficultyConfig('competitive').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
             control('difficulty.championship.aiDifficultyScale', '世锦赛AI倍率', '世锦赛对每条泳道原始 AI 难度的倍率。1 表示完全使用原始 AI 阵容难度。', () => getRaceDifficultyConfig('championship').aiDifficultyScale, (v) => getRaceDifficultyConfig('championship').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
+        ],
+    },
+    {
+        name: '转向',
+        controls: [
+            control('steer.turnPerStroke', '单手转向', '每次单手划水把身体偏转的角度。右手→往左偏，左手→往右偏；左右交替或双手同划会抵消保持直线。越大越容易蛇形。', () => STEERING_TUNING.turnPerStroke, (v) => STEERING_TUNING.turnPerStroke = v, 1, 0, 40, 0, '°'),
+            control('steer.maxHeading', '最大偏航', '身体相对泳道前进方向的最大偏转角。越大能歪得越狠；65°时前进速度约剩四成，不会横游或倒游。', () => STEERING_TUNING.maxHeading, (v) => STEERING_TUNING.maxHeading = v, 1, 10, 85, 0, '°'),
+
+            control('steer.turnEaseRate', '转向平滑', '实际朝向向目标靠拢的速率（每秒）。划水在"松手"时改变转向目标，身体随后逐渐转过去而非瞬间硬转。越低转得越慢越懒，越高越干脆。', () => STEERING_TUNING.turnEaseRate, (v) => STEERING_TUNING.turnEaseRate = v, 0.1, 0.5, 12, 1, '/s'),
+            control('steer.turnPowerMinFactor', '最弱转向倍率', '转向角与划水发力挂钩：按得越久、拉水行程越长偏得越多。这是最短划水的转向倍率（拉满=1.0）。1=不按力度缩放，每次都满角；越小轻点与重划的转向差别越大。', () => STEERING_TUNING.turnPowerMinFactor, (v) => STEERING_TUNING.turnPowerMinFactor = v, 0.05, 0, 1, 2),
+            control('steer.bankScale', '入弯侧倾', '转弯时身体向内侧倾的幅度（占朝向角的比例），仅为观感。0=不侧倾。', () => STEERING_TUNING.bankScale, (v) => STEERING_TUNING.bankScale = v, 0.05, 0, 1, 2),
+            control('steer.aiWobbleAmount', 'AI蛇形幅度', 'AI 对手的蛇形摆动基础幅度。0=笔直（像旧版那么精确），越大越摆。AI 不靠划水转向，而是平滑有界的随机摆动（不会卡墙）。', () => STEERING_TUNING.aiWobbleAmount, (v) => STEERING_TUNING.aiWobbleAmount = v, 0.05, 0, 1, 2),
+            control('steer.aiWobbleVariation', 'AI蛇形差异', '每个 AI 摆动幅度的随机差异（±基础值的比例），让不同对手摆得不一样。0=大家摆得一样。', () => STEERING_TUNING.aiWobbleVariation, (v) => STEERING_TUNING.aiWobbleVariation = v, 0.05, 0, 1, 2),
+            control('steer.aiWobbleMaxHeadingFraction', 'AI蛇形上限', 'AI 摆动封顶在“最大偏航”的这个比例，避免 AI 摆得像乱点的玩家那么狂。', () => STEERING_TUNING.aiWobbleMaxHeadingFraction, (v) => STEERING_TUNING.aiWobbleMaxHeadingFraction = v, 0.05, 0, 1, 2),
+            control('steer.poolWallClearance', '撞墙余量', '泳者根节点与泳池侧墙之间保留的最小距离（米），横向漂移到此就贴墙滑行。', () => STEERING_TUNING.poolWallClearance, (v) => STEERING_TUNING.poolWallClearance = v, 0.05, 0, 1.5, 2, 'm'),
         ],
     },
     {

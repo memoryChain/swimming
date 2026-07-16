@@ -1,8 +1,9 @@
 import { Vec3 } from 'cc';
-import { RaceCameraDirector, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
+import { RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
+import { STEERING_TUNING } from '../core/SteeringTuning';
 import { GameState, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { resolveDiveResult } from '../core/DiveResolver';
@@ -48,6 +49,9 @@ export class GameFlowController {
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
+    // Once the player surfaces after the dive, switch the swim view to the
+    // behind-the-swimmer sprint chase so the steering weave reads clearly.
+    private _swimSprintViewApplied = false;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
@@ -59,8 +63,8 @@ export class GameFlowController {
         this.resetDiveCharge();
         this._sprintTriggered = false;
         this._lastSprintTier = SprintTier.STEADY;
-        this._refs.clearFinishRanks();
-        this._refs.exitModelDebug(false);
+        this._swimSprintViewApplied = false;
+        this._refs.clearFinishRanks();        this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
@@ -327,6 +331,17 @@ export class GameFlowController {
             sprintActive: this._sprintTriggered,
             playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
         };
+        // Switch to the behind-the-swimmer sprint chase once the player has
+        // surfaced from the dive, so the steering weave is clearly visible. Done
+        // once; the player can still cycle camera modes manually afterwards.
+        if (STEERING_TUNING.useSprintSwimView
+            && !this._swimSprintViewApplied
+            && this._refs.getState() === GameState.RACING
+            && !playerSwimmer.isUnderwater
+            && !playerSwimmer.isFlipTurnCameraActive) {
+            this._swimSprintViewApplied = true;
+            this._refs.raceCameraDirector.selectMode(RaceCameraMode.Sprint);
+        }
         this._refs.raceCameraDirector.update(dt, cameraSnapshot);
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);

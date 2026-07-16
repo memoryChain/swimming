@@ -1,10 +1,12 @@
 import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
+import { STEERING_TUNING } from '../core/SteeringTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
+const DEG2RAD = Math.PI / 180;
 
 export type StrokeQualityResult = {
     type: StrokeType;
@@ -108,6 +110,20 @@ export class SwimmerMotor {
     // tapping accelerates slowly, and legs alone can't exceed the kick ceiling.
     private _kickCadenceHz = 0;
     private _lastKickTapClock = -1;
+    // Steering (蛇形转向): heading is the yaw offset from straight-ahead, in
+    // radians. A stroke nudges it left/right; forward progress is speed*cos and
+    // the lateral offset accumulates speed*sin. Only the player steers (AI keeps
+    // heading 0 and thus swims straight). See core/SteeringTuning.ts.
+    private _heading = 0;
+    private _headingTarget = 0;
+    private _courseDirection = 1;
+    private _aiWobbleAmount = 0;
+    private _aiWobbleClock = 0;
+    private readonly _aiWobblePhase = Math.random() * Math.PI * 2;
+    private _lateralOffset = 0;
+    private _lateralOffsetMin = -1000;
+    private _lateralOffsetMax = 1000;
+    private _steeringEnabled = false;
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
     // input tops these up; the leg sweeps through them at a fixed fast cadence.
@@ -163,6 +179,9 @@ export class SwimmerMotor {
         this._kickCadenceHz = 0;
         this._lastKickTapClock = -1;
         this._currentAcceleration = 0;
+        // Push off the wall straight ahead; the player steers again after the turn.
+        this._heading = 0;
+        this._headingTarget = 0;
     }
 
     setFlipTurnSpeed(speed: number) {
@@ -358,8 +377,18 @@ export class SwimmerMotor {
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
         this.decaySpeedCapBonus(dt, options);
+        this.updateSteering(dt);
         const raceDistance = getRaceDistance();
-        this._distance = Math.min(raceDistance, this._distance + this._currentSpeed * dt);
+        // Forward race progress uses only the along-lane component; veering with a
+        // large heading is naturally slower (this is the whole steering cost).
+        const forwardSpeed = this._currentSpeed * Math.cos(this._heading);
+        this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
+        // Lateral drift accumulates the sideways component, clamped to the pool.
+        this._lateralOffset = clamp(
+            this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt,
+            this._lateralOffsetMin,
+            this._lateralOffsetMax,
+        );
         this.updateMotionCycles(dt, options);
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
@@ -405,6 +434,9 @@ export class SwimmerMotor {
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
         this._lastKickTapClock = -1;
+        this._heading = 0;
+        this._headingTarget = 0;
+        this._lateralOffset = 0;
     }
 
     setConditionSpeedScale(scale: number) {
@@ -687,6 +719,11 @@ export class SwimmerMotor {
         this._lastStrokeQuality = strokeQuality;
         this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
         action.strokeQualitySettled = true;
+        // Steering nudge fires when a real stroke settles (“松手” for a tap, or a
+        // held cycle completing). The turn scales with pull strength: the further
+        // the pull travelled before release (longer hold), the bigger the turn.
+        const turnPower = clamp01(releaseProgress / Math.max(0.01, STROKE_QUALITY_TUNING.armStrokeTimeoutProgress));
+        this.applyStrokeSteering(type, turnPower);
         const result = {
             type,
             strokeQuality,
@@ -811,6 +848,83 @@ export class SwimmerMotor {
 
     private speedRatio(): number {
         return SWIMMER_BALANCE.maxSpeed > 0 ? clamp01(this._currentSpeed / SWIMMER_BALANCE.maxSpeed) : 0;
+    }
+
+    // Steering is enabled for the player only; AI alternates strokes perfectly and
+    // keeps heading 0 (straight). Set once by the owning Swimmer.
+    setSteeringEnabled(enabled: boolean) {
+        this._steeringEnabled = enabled;
+    }
+
+    // Lateral offset bounds (relative to the swimmer's lane centre) so the drift
+    // clamps at the pool side walls. Set by the owning Swimmer from the course.
+    setLateralOffsetBounds(min: number, max: number) {
+        this._lateralOffsetMin = Math.min(min, max);
+        this._lateralOffsetMax = Math.max(min, max);
+    }
+
+    // Current lap travel direction (+1 outbound, -1 on the return lap). Steering
+    // is flipped by this so "right hand -> screen-left" stays consistent after the
+    // turn, when the chase camera is facing the other way.
+    setCourseDirection(direction: number) {
+        this._courseDirection = direction >= 0 ? 1 : -1;
+    }
+
+    // AI-only: smooth, bounded random weave amount (0 = straight, 1 = very wavy).
+    // The player leaves this at 0 and steers via strokes instead.
+    setAiSteeringWobble(amount: number) {
+        this._aiWobbleAmount = clamp01(amount);
+    }
+
+    get heading(): number {
+        return this._heading;
+    }
+
+    get lateralOffset(): number {
+        return this._lateralOffset;
+    }
+
+    // Ease the actual heading toward the stroke-set target so a stroke turns the
+    // body GRADUALLY after release. No auto-recenter: heading only returns toward
+    // straight when the player strokes the other side (pure manual steering).
+    private updateSteering(dt: number) {
+        // AI opponents weave via a smooth, bounded, mean-reverting wander instead
+        // of stroke steering, so they don't look robotically precise.
+        if (this._aiWobbleAmount > 0) {
+            this._aiWobbleClock += dt;
+            const maxHeading = STEERING_TUNING.maxHeading * DEG2RAD;
+            const cap = maxHeading
+                * clamp01(STEERING_TUNING.aiWobbleMaxHeadingFraction)
+                * clamp01(this._aiWobbleAmount);
+            const t = this._aiWobbleClock;
+            const p = this._aiWobblePhase;
+            const wander = Math.sin(t * 0.7 + p) * 0.62 + Math.sin(t * 1.63 + p * 1.7) * 0.38;
+            this._headingTarget = clamp(cap * wander, -maxHeading, maxHeading);
+        }
+        const ease = Math.max(0, STEERING_TUNING.turnEaseRate);
+        this._heading += ease > 0
+            ? (this._headingTarget - this._heading) * Math.min(1, ease * dt)
+            : (this._headingTarget - this._heading);
+        if (Math.abs(this._heading - this._headingTarget) < 1e-4) {
+            this._heading = this._headingTarget;
+        }
+    }
+
+    // A settled arm stroke nudges the heading TARGET; the actual heading eases
+    // toward it (see updateSteering) so the body turns gradually AFTER release,
+    // not on press. RIGHT hand -> drift toward screen-left; LEFT -> screen-right.
+    // The sign is flipped by lap direction so it stays consistent after the turn.
+    // powerFactor (0..1) scales the turn by how hard/long the stroke was pulled.
+    private applyStrokeSteering(type: StrokeType, powerFactor: number) {
+        if (!this._steeringEnabled) {
+            return;
+        }
+        const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
+        const factor = minFactor + (1 - minFactor) * clamp01(powerFactor);
+        const turn = STEERING_TUNING.turnPerStroke * DEG2RAD * factor;
+        const maxHeading = STEERING_TUNING.maxHeading * DEG2RAD;
+        const dir = (type === StrokeType.LEFT ? 1 : -1) * this._courseDirection;
+        this._headingTarget = clamp(this._headingTarget + dir * turn, -maxHeading, maxHeading);
     }
 
     private queueSideStroke(type: StrokeType): QueueSideStrokeResult {

@@ -6,6 +6,7 @@ import {
     StrokeType,
 } from '../core/GameConstants';
 import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
+import { STEERING_TUNING } from '../core/SteeringTuning';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
@@ -64,6 +65,42 @@ export class Swimmer extends Component {
         this._hasStartPosition = true;
         this.node.setPosition(this._startPosition);
         this.cartoonRig?.setWaterY(this._courseLayout.waterY);
+        this.configureSteering();
+    }
+
+    // Steering is a player-only comedy mechanic: enable it for the human swimmer
+    // and clamp its lateral drift to the pool side walls (lane ropes have no
+    // collision, so the whole pool width is traversable). AI opponents don't
+    // steer by strokes; they get a smooth random weave so they also drift a bit
+    // instead of tracking a robotically perfect straight line.
+    private configureSteering() {
+        this._motor.setSteeringEnabled(!this.isAI);
+        if (this.isAI) {
+            const base = Math.max(0, STEERING_TUNING.aiWobbleAmount);
+            const variation = Math.max(0, STEERING_TUNING.aiWobbleVariation);
+            const varied = base * (1 + (Math.random() * 2 - 1) * variation);
+            this._motor.setAiSteeringWobble(Math.max(0, Math.min(1, varied)));
+        }
+        const halfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - STEERING_TUNING.poolWallClearance);
+        const laneZ = this._startPosition.z;
+        this._motor.setLateralOffsetBounds(-halfWidth - laneZ, halfWidth - laneZ);
+    }
+
+    // Scale this AI's weave by its competitiveness: strong opponents (high
+    // difficulty) swim almost straight, weak ones wander more. Called by the
+    // competitor manager once each lane's difficulty is assigned.
+    applyAiSteeringDifficulty(difficulty: number) {
+        if (!this.isAI) {
+            return;
+        }
+        const d = Math.max(0, Math.min(1, difficulty));
+        const base = Math.max(0, STEERING_TUNING.aiWobbleAmount);
+        const variation = Math.max(0, STEERING_TUNING.aiWobbleVariation);
+        // (1 - d) * 2: a mid AI (d=0.5) weaves at the full base amount, a top AI
+        // (d>=1) is basically straight, a weak AI (d<0.5) weaves even more.
+        const skillFactor = Math.max(0, Math.min(1, (1 - d) * 2));
+        const amount = base * skillFactor * (1 + (Math.random() * 2 - 1) * variation);
+        this._motor.setAiSteeringWobble(Math.max(0, Math.min(1, amount)));
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
@@ -464,9 +501,17 @@ export class Swimmer extends Component {
     private applyCoursePosition(distance: number) {
         const visualDistance = Math.min(distance, getRaceDistance());
         const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
+        this._motor.setCourseDirection(direction);
         const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
-        this.node.setPosition(x, this._phases.visualSwimY(), this._startPosition.z);
-        this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, this._phases.diveRecoveryLean());
+        // Lateral steering drift (player only; AI keeps 0). Yaw the whole body to
+        // face the direction it is actually travelling, and bank slightly into it.
+        const z = this._startPosition.z + this._motor.lateralOffset;
+        const headingDegrees = this._motor.heading * 180 / Math.PI;
+        const baseYaw = direction > 0 ? 0 : 180;
+        const yaw = baseYaw - direction * headingDegrees;
+        const roll = this._phases.diveRecoveryLean() - headingDegrees * STEERING_TUNING.bankScale;
+        this.node.setPosition(x, this._phases.visualSwimY(), z);
+        this.node.setRotationFromEuler(0, yaw, roll);
     }
 
     private finishFloatX(direction: number): number {

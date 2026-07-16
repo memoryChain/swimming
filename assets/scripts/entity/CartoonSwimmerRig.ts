@@ -579,6 +579,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (useDt < 0) {
             return;
         }
+        // Arms reach along the actual swim heading so they follow the body when it
+        // steers, instead of staying pinned to the lane axis.
+        this._pose.setMovementHeadingRadians(motor.heading);
         this.updateFreestyle(
             useDt,
             motor.leftArmCycle,
@@ -596,6 +599,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (useDt < 0) {
             return;
         }
+        this._pose.setMovementHeadingRadians(motor.heading);
         this.updateFreestyle(
             useDt,
             0,

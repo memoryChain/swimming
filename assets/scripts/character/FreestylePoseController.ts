@@ -106,6 +106,7 @@ export class FreestylePoseController {
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
+    private _movementHeadingRadians = 0;
 
     bind(root: Node) {
         this.root = root;
@@ -230,7 +231,22 @@ export class FreestylePoseController {
 
     setMovementDirection(direction: number) {
         this._movementDirectionSign = direction >= 0 ? 1 : -1;
-        this._movementForwardWorld.set(this._movementDirectionSign, 0, 0);
+        this.updateMovementForwardWorld();
+    }
+
+    // Steering heading (radians): the arms reach along the swimmer's ACTUAL
+    // travel direction, not a fixed lane axis. Without this the arm-forward is
+    // pinned to world X and the arms keep pointing down the lane after the body
+    // yaws. World forward = lane axis (by lap sign) rotated by heading about Y.
+    setMovementHeadingRadians(headingRadians: number) {
+        this._movementHeadingRadians = Number.isFinite(headingRadians) ? headingRadians : 0;
+        this.updateMovementForwardWorld();
+    }
+
+    private updateMovementForwardWorld() {
+        const d = this._movementDirectionSign;
+        const h = this._movementHeadingRadians;
+        this._movementForwardWorld.set(d * Math.cos(h), 0, Math.sin(h));
     }
 
     setSwimHeadLift(degrees: number | undefined) {

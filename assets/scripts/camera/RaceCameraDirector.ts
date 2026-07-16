@@ -75,6 +75,12 @@ export const RACE_CAMERA_TUNING = {
     sprintHeight: 0.52,
     sprintLookAhead: 0.8,
     sprintFov: 58,
+    // Sprint chase follow smoothing (per second, dt-based). Forward/height track
+    // tightly; the LATERAL (Z) follow is deliberately slower so the swimmer
+    // visibly slides sideways in frame when steering, then the camera eases
+    // across to catch up. Lower lateral = more visible weave / more lag.
+    sprintFollowSpeed: 14,
+    sprintLateralFollowSpeed: 3.2,
     // Underwater side/rear view held from flip entry through the complete
     // post-turn underwater descent, hold, and ascent.
     flipTurnBackDistance: 2.8,
@@ -346,7 +352,7 @@ export class RaceCameraDirector {
         if (this._mode === RaceCameraMode.Sprint) {
             this._topViewActive = false;
             this._underwaterViewActive = false;
-            this.updateSprintCamera(snapshot, leavingFlipTurnView);
+            this.updateSprintCamera(dt, snapshot, leavingFlipTurnView);
             return;
         }
         if (this._mode === RaceCameraMode.Broadcast) {
@@ -672,15 +678,23 @@ export class RaceCameraDirector {
         this.applyFov();
     }
 
-    private updateSprintCamera(snapshot: RaceCameraSnapshot, immediate = false) {
+    private updateSprintCamera(dt: number, snapshot: RaceCameraSnapshot, immediate = false) {
         const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const view = sprintCameraView(snapshot, direction);
         if (immediate) {
             this._cameraPos.set(view.position);
             this._cameraTarget.set(view.target);
         } else {
-            Vec3.lerp(this._cameraPos, this._cameraPos, view.position, 0.18);
-            Vec3.lerp(this._cameraTarget, this._cameraTarget, view.target, 0.18);
+            // Forward/height track tightly; lateral (Z) lags so the swimmer's
+            // steering weave reads on screen instead of staying dead-centre.
+            const follow = cameraBlend(dt, RACE_CAMERA_TUNING.sprintFollowSpeed);
+            const lateral = clamp(1 - Math.exp(-Math.max(0, dt) * RACE_CAMERA_TUNING.sprintLateralFollowSpeed), 0.01, 0.5);
+            this._cameraPos.x += (view.position.x - this._cameraPos.x) * follow;
+            this._cameraPos.y += (view.position.y - this._cameraPos.y) * follow;
+            this._cameraPos.z += (view.position.z - this._cameraPos.z) * lateral;
+            this._cameraTarget.x += (view.target.x - this._cameraTarget.x) * follow;
+            this._cameraTarget.y += (view.target.y - this._cameraTarget.y) * follow;
+            this._cameraTarget.z += (view.target.z - this._cameraTarget.z) * lateral;
         }
         this.applyCameraTransform();
         this.applyFov();
