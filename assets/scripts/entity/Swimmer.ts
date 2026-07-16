@@ -71,9 +71,9 @@ export class Swimmer extends Component {
     private _flipTurnWallDistance = 0;
     private _flipTurnStartDistance = 0;
     private _flipTurnIncomingDirection = 1;
-    private _flipTurnStartX = 0;
-    private _flipTurnContactX = 0;
-    private _flipTurnExitX = 0;
+    // Extra world-X the root reaches past the swim boundary so the tucked feet
+    // touch the actual pool wall at keyframe 2. Eased back to 0 during the push.
+    private _flipTurnMaxReach = 0;
     private _flipTurnEntrySpeed = 0;
     private _flipTurnPushSpeed = 0;
     private _lastCompletedFlipTurnWallDistance = Number.NEGATIVE_INFINITY;
@@ -800,17 +800,19 @@ export class Swimmer extends Component {
         const keyframe2Seconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
             + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
         const entrySpeed = finiteNonNegative(this._motor.currentSpeed);
-        const decelerationExponent = finitePower(SWIMMER_BALANCE.flipTurnDecelerationExponent);
-        // Integral of v(t)=entrySpeed*(1-t/T)^power over the complete approach.
-        // Using entrySpeed*T here starts the turn much too early once the speed
-        // curve is front-loaded, forcing the pose to cover a fixed long distance.
+        // The approach distance is exactly the integral of the decelerating lane
+        // speed, so the wall push starts with zero velocity discontinuity and the
+        // lane speed reaches 0 precisely when the feet plant. The reach offset
+        // (below) covers the beyond-boundary distance to the wall instead of
+        // padding the approach, so no fixed extra distance is added here. Clamp
+        // the effective exponent to [1, 2] so the cubic Hermite approach curve
+        // stays monotonic (no backward drift near the wall).
+        const decelerationExponent = Math.min(2, Math.max(1, finitePower(SWIMMER_BALANCE.flipTurnDecelerationExponent)));
         const integratedDecelerationDistance = entrySpeed * keyframe2Seconds
             / (decelerationExponent + 1);
-        const configuredApproachDistance = integratedDecelerationDistance
-            + finiteNonNegative(CHARACTER_POSE_TUNING.flipTurnApproachExtraDistance);
         // Never let extreme tuning make the next turn start on the previous wall.
         const approachDistance = Math.min(
-            Math.max(0.1, configuredApproachDistance),
+            Math.max(0.1, integratedDecelerationDistance),
             Math.max(0.1, this._courseLayout.courseLength - COURSE_DISTANCE_EPSILON),
         );
         // Include this frame's possible travel so a low frame rate or a temporary
@@ -828,13 +830,13 @@ export class Swimmer extends Component {
         }
         const incomingDirection = this._courseLayout.finishDirectionAtDistance(wallDistance);
         const wallX = this._courseLayout.wallWorldXAtDistance(wallDistance);
+        const contactX = wallX - incomingDirection * footContactOffset;
+        const exitX = this._courseLayout.distanceToWorldX(wallDistance);
         this._flipTurnActive = true;
         this._flipTurnWallDistance = wallDistance;
         this._flipTurnStartDistance = distance;
         this._flipTurnIncomingDirection = incomingDirection;
-        this._flipTurnStartX = this.node.position.x;
-        this._flipTurnContactX = wallX - incomingDirection * footContactOffset;
-        this._flipTurnExitX = this._courseLayout.distanceToWorldX(wallDistance);
+        this._flipTurnMaxReach = incomingDirection * (contactX - exitX);
         this._flipTurnEntrySpeed = entrySpeed;
         this._flipTurnPushSpeed = finiteNonNegative(SWIMMER_BALANCE.flipTurnPushLaunchSpeed);
         this._motor.beginFlipTurnPhase();
@@ -850,55 +852,70 @@ export class Swimmer extends Component {
             this.clearFlipTurnPhase();
             return;
         }
-        const approachSpeedLossRatio = easeOutPower(
-            state.approachTimeRatio,
-            SWIMMER_BALANCE.flipTurnDecelerationExponent,
-        );
-        // This is the normalized integral of the remaining-speed curve. Position
-        // must follow it instead of reusing the speed-loss ratio directly.
-        const approachDistanceRatio = integratedDecaySpeedRatio(
-            state.approachTimeRatio,
-            SWIMMER_BALANCE.flipTurnDecelerationExponent,
-        );
-        const exitSpeedRatio = easeOutPower(
-            state.returnTimeRatio,
-            SWIMMER_BALANCE.flipTurnAccelerationExponent,
-        );
-        // Position must be the integral of the increasing speed curve. Reusing
-        // exitSpeedRatio directly would move the swimmer fastest immediately
-        // after wall contact and then visually slow down, opposite to acceleration.
-        const exitDistanceRatio = integratedEaseOutSpeedRatio(
-            state.returnTimeRatio,
-            SWIMMER_BALANCE.flipTurnAccelerationExponent,
-        );
-        const x = state.keyframe2Reached
-            ? lerp(this._flipTurnContactX, this._flipTurnExitX, exitDistanceRatio)
-            : lerp(this._flipTurnStartX, this._flipTurnContactX, approachDistanceRatio);
+        const keyframe2Seconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
+            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        const returnSeconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds);
+        // The wall push accelerates 0 -> pushSpeed and travels the integral of that
+        // curve, so the launch flows seamlessly into the post-turn underwater glide
+        // with no stall-then-rocket. Clamp the exponent to [1, 2] so the cubic
+        // Hermite push curve stays monotonic (no backward drift off the wall).
+        const accelerationExponent = Math.min(2, Math.max(1, finitePower(SWIMMER_BALANCE.flipTurnAccelerationExponent)));
+        const pushDistance = this._flipTurnPushSpeed * returnSeconds / (accelerationExponent + 1);
+
+        let distance: number;
+        let laneSpeed: number;
+        let reachRatio: number;
+        if (!state.keyframe2Reached) {
+            // Approach: decelerate from the real entry speed to exactly 0 at the
+            // wall. Cubic Hermite keeps velocity continuous at the turn onset and
+            // guarantees zero lane speed the instant the feet plant.
+            const tau = Math.max(0, Math.min(1, state.approachTimeRatio));
+            const span = this._flipTurnWallDistance - this._flipTurnStartDistance;
+            const motion = cubicHermitePosition(this._flipTurnEntrySpeed, 0, span, keyframe2Seconds, tau);
+            distance = this._flipTurnStartDistance + Math.min(span, motion.position);
+            laneSpeed = motion.speed;
+            // Reach eases in with zero initial slope so the world-X velocity at the
+            // turn onset stays exactly the incoming lane speed (no lurch).
+            reachRatio = smoothStep(tau);
+        } else {
+            // Wall push: accelerate from 0 to the launch burst, advancing into the
+            // new lap while the reach offset eases back to the swim line.
+            const tau = Math.max(0, Math.min(1, state.returnTimeRatio));
+            const motion = cubicHermitePosition(0, this._flipTurnPushSpeed, pushDistance, returnSeconds, tau);
+            distance = this._flipTurnWallDistance + motion.position;
+            laneSpeed = motion.speed;
+            reachRatio = 1 - smoothStep(tau);
+        }
+        const baseX = this._courseLayout.distanceToWorldX(distance);
+        const x = baseX + this._flipTurnIncomingDirection * this._flipTurnMaxReach * reachRatio;
         this.node.setPosition(x, this._courseLayout.swimY, this._startPosition.z);
         this.node.setRotationFromEuler(0, this._flipTurnIncomingDirection > 0 ? 0 : 180, 0);
-        this._motor.setFlipTurnDistance(state.keyframe2Reached
-            ? this._flipTurnWallDistance
-            : lerp(this._flipTurnStartDistance, this._flipTurnWallDistance, approachDistanceRatio));
-        // Decelerate continuously into wall contact. Keyframe 2 is the exact
-        // zero-speed point; the wall push then accelerates to an independent
-        // underwater launch burst, just like a dive start beneath the surface.
-        this._motor.setFlipTurnSpeed(state.keyframe2Reached
-            ? lerp(0, this._flipTurnPushSpeed, exitSpeedRatio)
-            : lerp(this._flipTurnEntrySpeed, 0, approachSpeedLossRatio));
+        this._motor.setFlipTurnDistance(distance);
+        this._motor.setFlipTurnSpeed(laneSpeed);
         if (!state.complete) {
             return;
         }
 
+        // Hand off to the underwater dive at the launch speed and depth, so the
+        // wall push continues like a race-start entry: descend to the glide point
+        // then rise back to the surface. The camera stays underwater throughout
+        // because the flip-turn underwater phase keeps isFlipTurnCameraActive true.
         const outgoingDirection = -this._flipTurnIncomingDirection;
+        const handoffDistance = this._flipTurnWallDistance + pushDistance;
         const underwaterY = this._courseLayout.swimY
             - Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth);
-        this.node.setPosition(this._flipTurnExitX, underwaterY, this._startPosition.z);
+        this.node.setPosition(this._courseLayout.distanceToWorldX(handoffDistance), underwaterY, this._startPosition.z);
         this.node.setRotationFromEuler(0, outgoingDirection > 0 ? 0 : 180, 0);
         this.cartoonRig?.finishRaceFlipTurn();
-        this._motor.completeFlipTurnPhase(this._flipTurnWallDistance, this._flipTurnPushSpeed);
+        this._motor.completeFlipTurnPhase(handoffDistance, this._flipTurnPushSpeed);
         this._lastCompletedFlipTurnWallDistance = this._flipTurnWallDistance;
         this._flipTurnActive = false;
         this.startFlipTurnUnderwaterPhase();
+        // Drive the underwater glide pose on this same frame. Without it the rig
+        // would render one frame frozen on the static exit-swim snapshot before
+        // the normal update path takes over next frame, which reads as a hitch
+        // right as the push-off recovers into the underwater glide.
+        this.updateBodyMotion(dt);
     }
 
     private clearFlipTurnPhase(resetCompletedWalls = false) {
@@ -1194,26 +1211,27 @@ function finiteNonNegative(value: number): number {
     return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
-function easeOutPower(value: number, exponent: number): number {
-    const t = Math.max(0, Math.min(1, value));
-    const power = finitePower(exponent);
-    return 1 - Math.pow(1 - t, power);
-}
-
-function integratedDecaySpeedRatio(value: number, exponent: number): number {
-    const t = Math.max(0, Math.min(1, value));
-    const power = finitePower(exponent);
-    // Integral from 0..t of (1-u)^power, normalized by its total integral
-    // 1/(power+1), so the ratio reaches exactly 1 at keyframe 2.
-    return 1 - Math.pow(1 - t, power + 1);
-}
-
-function integratedEaseOutSpeedRatio(value: number, exponent: number): number {
-    const t = Math.max(0, Math.min(1, value));
-    const power = finitePower(exponent);
-    const totalArea = power / (power + 1);
-    const area = t - (1 - Math.pow(1 - t, power + 1)) / (power + 1);
-    return totalArea > 0 ? Math.max(0, Math.min(1, area / totalArea)) : t;
+function cubicHermitePosition(
+    startSpeed: number,
+    endSpeed: number,
+    distance: number,
+    seconds: number,
+    tau: number,
+): { position: number; speed: number } {
+    const duration = Math.max(0.001, seconds);
+    const t = Math.max(0, Math.min(1, tau));
+    // Cubic s(t) with s(0)=0, s(1)=distance, s'(0)=startSpeed, s'(1)=endSpeed.
+    // Endpoint speeds are per second, converted into the normalized t domain via
+    // the segment duration. This guarantees the lane velocity is continuous at
+    // both ends (entry speed into the turn, launch speed out of it).
+    const v0 = startSpeed * duration;
+    const v1 = endSpeed * duration;
+    const c1 = v0;
+    const c2 = 3 * distance - 2 * v0 - v1;
+    const c3 = v0 + v1 - 2 * distance;
+    const position = c1 * t + c2 * t * t + c3 * t * t * t;
+    const speed = (c1 + 2 * c2 * t + 3 * c3 * t * t) / duration;
+    return { position, speed: Math.max(0, speed) };
 }
 
 function finitePower(value: number): number {

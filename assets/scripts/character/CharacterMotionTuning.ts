@@ -33,9 +33,6 @@ export const CHARACTER_POSE_TUNING = {
     flipTurnUnderwaterHoldSeconds: 0.8,
     flipTurnUnderwaterRiseSeconds: 1.3,
     flipTurnUnderwaterRiseTiltDegrees: 10,
-    // Extra early approach distance before the wall turn begins. This covers
-    // the gap between the normal swim-root boundary and the actual wall contact.
-    flipTurnApproachExtraDistance: 1.35,
     // Visual extension from sampled foot/toe bone centers to the front surface
     // of the sole. The current mesh needs roughly 0.5 m to stay visibly clear.
     flipTurnWallContactPadding: 0.5,
