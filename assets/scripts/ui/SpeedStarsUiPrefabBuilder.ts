@@ -1,4 +1,4 @@
-import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view } from 'cc';
+import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, Layout, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view, Widget } from 'cc';
 import { EDITOR } from 'cc/env';
 import { getRaceDifficulty, RaceDifficulty, RACE_DIFFICULTY_OPTIONS } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
@@ -537,23 +537,89 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     }
     updateDifficultyButtons(difficultyButtons, skins);
 
-    requireNode(startScreen, 'StartButton').on(Node.EventType.TOUCH_END, callbacks.onStart);
+    const startButton = requireNode(startScreen, 'StartButton');
+    startButton.on(Node.EventType.TOUCH_END, callbacks.onStart);
+
     const modelDebug = requireNode(startScreen, 'ModelDebugButton');
     modelDebug.active = EDITOR;
     modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
 
     const flipTurnDebug = makeButton('FlipTurnDebugStartButton', startScreen, 260, 64, uiColor(224, 118, 42, 235), '翻滚调试');
-    flipTurnDebug.setPosition(modelDebug.position.x, modelDebug.position.y - 84, 0);
     flipTurnDebug.active = EDITOR;
     flipTurnDebug.on(Node.EventType.TOUCH_END, callbacks.onFlipTurnDebug);
 
-    // 100m AI-debug 1v1 entry. Built in code and anchored below the model-debug
-    // button (when shown) or the start button, so it never overlaps existing
-    // buttons and needs no prefab change. Opens a difficulty picker first.
-    const anchor = EDITOR ? flipTurnDebug : requireNode(startScreen, 'StartButton');
+    // 100m AI-debug 1v1 entry. Built in code so it needs no prefab change. Opens
+    // a difficulty picker first.
     const aiDebug = makeButton('AiDebugStartButton', startScreen, 260, 64, uiColor(60, 110, 180, 235), '100m AI 调试');
-    aiDebug.setPosition(anchor.position.x, anchor.position.y - 84, 0);
     aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
+
+    // Arrange the difficulty row and the action buttons with Layout + Widget so the
+    // engine handles spacing, centring and screen-fit instead of hand-written
+    // coordinates. Editor-only debug buttons are inactive off-editor and Layout
+    // skips them automatically.
+    applyResponsiveStartMenu(
+        startScreen,
+        difficultyButtons.map((button) => button.node),
+        [startButton, modelDebug, flipTurnDebug, aiDebug],
+    );
+}
+
+// Build Layout containers for the start-menu buttons: a horizontal difficulty row
+// stacked above a vertical action column, wrapped in one vertical block that a
+// Widget keeps horizontally centred and that is uniformly scaled to fit the
+// visible area. This keeps every button on screen for any aspect ratio without
+// per-button coordinates.
+function applyResponsiveStartMenu(startScreen: Node, difficultyNodes: Node[], actionNodes: Node[]) {
+    const menu = makeUiNode('StartMenu', startScreen);
+    const menuLayout = menu.addComponent(Layout);
+    menuLayout.type = Layout.Type.VERTICAL;
+    menuLayout.resizeMode = Layout.ResizeMode.CONTAINER;
+    menuLayout.spacingY = 26;
+
+    const difficultyRow = makeUiNode('DifficultyRow', menu);
+    const rowLayout = difficultyRow.addComponent(Layout);
+    rowLayout.type = Layout.Type.HORIZONTAL;
+    rowLayout.resizeMode = Layout.ResizeMode.CONTAINER;
+    rowLayout.spacingX = 22;
+    for (const node of difficultyNodes) {
+        node.setParent(difficultyRow);
+        node.setPosition(0, 0, 0);
+    }
+
+    const actionColumn = makeUiNode('ActionColumn', menu);
+    const columnLayout = actionColumn.addComponent(Layout);
+    columnLayout.type = Layout.Type.VERTICAL;
+    columnLayout.resizeMode = Layout.ResizeMode.CONTAINER;
+    columnLayout.spacingY = 16;
+    for (const node of actionNodes) {
+        node.setParent(actionColumn);
+        node.setPosition(0, 0, 0);
+    }
+
+    const widget = menu.addComponent(Widget);
+    widget.isAlignHorizontalCenter = true;
+    widget.horizontalCenter = 0;
+
+    // Force an immediate pass so container sizes are known before we fit them.
+    rowLayout.updateLayout();
+    columnLayout.updateLayout();
+    menuLayout.updateLayout();
+
+    const visibleSize = view.getVisibleSize();
+    const halfH = visibleSize.height / 2;
+    // Reserve the top for the title art and leave a little room at the bottom.
+    const topBound = Math.min(120, halfH - 20);
+    const bottomBound = -halfH + 48;
+    const areaWidth = Math.max(1, visibleSize.width - 40);
+    const areaHeight = Math.max(1, topBound - bottomBound);
+
+    const menuTransform = menu.getComponent(UITransform);
+    const menuWidth = Math.max(1, menuTransform?.contentSize.width ?? 1);
+    const menuHeight = Math.max(1, menuTransform?.contentSize.height ?? 1);
+    const fit = Math.min(1, areaWidth / menuWidth, areaHeight / menuHeight);
+    menu.setScale(fit, fit, 1);
+    menu.setPosition(0, (topBound + bottomBound) / 2, menu.position.z);
+    widget.updateAlignment();
 }
 
 type DifficultyButtonSkins = {
