@@ -37,7 +37,6 @@ export class SwimmerFactory {
         rig.setSkinOutfit('trunksA');
         const swimmer = node.addComponent(Swimmer);
         swimmer.cartoonRig = rig;
-        swimmer.splashNode = rig.splashNode;
         swimmer.isAI = options.isAI;
         swimmer.swimmerName = options.displayName || (options.isAI ? 'AI' : 'YOU');
         this._debug?.(`${options.name} uses CartoonSwimmerRig`);

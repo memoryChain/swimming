@@ -1,7 +1,7 @@
 import { Node, Quat, Vec3 } from 'cc';
 import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
-import { BREASTSTROKE_MOTION_SAMPLES, BreaststrokeBoneName, BreaststrokeMotionSample } from './BreaststrokeMotionCurve';
+import { BreaststrokeBoneName, BreaststrokeMotionSample, getBreaststrokeSamples } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
 import { DIVE_PREP_POSE_SAMPLE, DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
 import { FLIP_TURN_KEYFRAME_1, FlipTurnBoneName, FlipTurnPoseSample } from './FlipTurnPoseCurve';
@@ -1278,9 +1278,23 @@ function lerp(from: number, to: number, t: number): number {
     return from + (to - from) * clamp(t, 0, 1);
 }
 
+const NEUTRAL_BREASTSTROKE_SAMPLE: BreaststrokeMotionSample = {
+    phase: 0,
+    root: [0, 0, 0],
+    head: [0, 0, 0],
+    hand: [0, 0, 0],
+    foot: [0, 0, 0],
+    rotations: {},
+};
+
 function sampleBreaststrokeMotion(phase: number): BreaststrokeMotionSample {
-    const samples = BREASTSTROKE_MOTION_SAMPLES;
-    if (samples.length <= 1) {
+    const samples = getBreaststrokeSamples();
+    if (samples.length === 0) {
+        // Not yet loaded from the race bundle: hold a neutral pose so the tread-water
+        // blend has no effect instead of crashing on an empty sample list.
+        return NEUTRAL_BREASTSTROKE_SAMPLE;
+    }
+    if (samples.length === 1) {
         return samples[0];
     }
     const p = positiveMod(phase, 1);
