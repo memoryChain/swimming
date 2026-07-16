@@ -98,6 +98,7 @@ export class GameManager extends Component {
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
+    private _raceUiBuilder: SpeedStarsUiPrefabBuilder = null;
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
     // True while a pointer is dragging to orbit the awards free-look camera.
@@ -112,6 +113,7 @@ export class GameManager extends Component {
     private _poolNode: Node = null;
     private _cameraNode: Node = null;
     private _waterRefraction: WaterRefractionController | null = null;
+    private _venueManager: VenueManager | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
     private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
@@ -255,6 +257,19 @@ export class GameManager extends Component {
         this.updatePlayerCondition(dt);
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
         const raceActive = this._state === GameState.RACING;
+        const laneClipActive = this._state === GameState.DIVING
+            || this._state === GameState.GLIDING
+            || this._state === GameState.RACING;
+        const playerWorld = this._playerSwimmer.node.worldPosition;
+        const playerHeading = this._playerSwimmer.movementHeading;
+        const playerDirection = this._playerSwimmer.raceDirection;
+        this._venueManager?.updateLaneFloatClip(
+            playerWorld.x,
+            playerWorld.z,
+            playerDirection * Math.cos(playerHeading),
+            Math.sin(playerHeading),
+            laneClipActive,
+        );
         const raceDistance = getRaceDistance();
         const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
         const raceStatusVisible = !this._modelDebugFlow?.active
@@ -424,12 +439,15 @@ export class GameManager extends Component {
     }
 
     startGame() {
+        this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this._gameFlow?.startGame();
         this.updateRaceCameraButtonLabel();
     }
 
     restartGame() {
+        this._raceUiBuilder?.resetInputState();
+        this._inputRouter?.resetStrokeInput();
         this._gameFlow?.restartGame();
         this.updateRaceCameraButtonLabel();
     }
@@ -612,6 +630,7 @@ export class GameManager extends Component {
 
     private buildPool3D(root: Node, done: (pool: Node | null) => void) {
         const venue = new VenueManager({ debug: (message) => this.debug(message) });
+        this._venueManager = venue;
         venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool }) => {
             if (!pool?.isValid) {
                 this._poolNode = null;
@@ -834,14 +853,16 @@ export class GameManager extends Component {
         input.pointerInputEnabled = false;
         this._inputManager = input;
 
-        new SpeedStarsUiPrefabBuilder({
+        const raceUiBuilder = new SpeedStarsUiPrefabBuilder({
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),
             onMenu: () => this.returnToLogin(),
-        }).build(uiRoot, w, h, (error, refs) => {
+        });
+        this._raceUiBuilder = raceUiBuilder;
+        raceUiBuilder.build(uiRoot, w, h, (error, refs) => {
             if (error || !refs) {
                 done(error ?? new Error('SpeedStars UI prefab build failed'));
                 return;

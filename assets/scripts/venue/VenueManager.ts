@@ -25,6 +25,10 @@ export class VenueManager {
         this._debug = options.debug;
     }
 
+    updateLaneFloatClip(centerX: number, centerZ: number, axisX: number, axisZ: number, enabled: boolean) {
+        this._waterBinder.updateLaneFloatClip(centerX, centerZ, axisX, axisZ, enabled);
+    }
+
     buildPool(root: Node, definition: PoolDefinition, done?: (result: VenueBuildResult) => void) {
         this._loader.load(root, definition, ({ pool, error }) => {
             if (!pool) {

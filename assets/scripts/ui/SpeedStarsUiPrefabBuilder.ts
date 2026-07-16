@@ -75,6 +75,23 @@ export class SpeedStarsUiPrefabBuilder {
 
     constructor(private readonly _callbacks: SpeedStarsUiCallbacks) {}
 
+    /**
+     * Clear pointer bookkeeping when a race UI lifecycle ends. Cocos does not
+     * guarantee TOUCH_END/TOUCH_CANCEL after an input node is deactivated, so a
+     * swimmer can otherwise carry a held touch (and its reused mobile touch id)
+     * into the next race.
+     */
+    resetInputState() {
+        this._activeStrokeTouches.clear();
+        this._activeDiveTouches.clear();
+        this._activeStrokeCounts[StrokeType.LEFT] = 0;
+        this._activeStrokeCounts[StrokeType.RIGHT] = 0;
+        this._activePointerHoldCount = 0;
+        this._activeMouseStrokeType = null;
+        this._activeDiveMouse = false;
+        this._diveHoldStartedAt = 0;
+    }
+
     build(parent: Node, _w: number, _h: number, done: (error: Error | null, refs?: SpeedStarsUiRefs) => void) {
         loadSpeedStarsPrefab((error, prefab) => {
             if (error || !prefab) {

@@ -1,4 +1,4 @@
-import { Camera, Color, Layers, Material, MeshRenderer, Node, RenderTexture, Vec3, Vec4, view } from 'cc';
+import { Camera, Color, Layers, Material, MeshRenderer, Node, RenderTexture, Texture2D, Vec3, Vec4, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { SWIMMER_LAYER, UNDERWATER_LAYER } from './WaterSurfaceBinder';
 
@@ -233,10 +233,19 @@ export class WaterRefractionController {
                 if (renderer) {
                     const slots = renderer.sharedMaterials.length || 1;
                     for (let i = 0; i < slots; i++) {
+                        const source = renderer.getSharedMaterial(i);
+                        const usesPoolTileTexture = name.startsWith('pool_inner_wall') || name.startsWith('pool_floor');
+                        const texture = usesPoolTileTexture ? findMaterialTexture(source) : null;
                         const material = new Material();
-                        material.initialize({ effectName: 'builtin-unlit' });
+                        material.initialize(texture
+                            ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
+                            : { effectName: 'builtin-unlit' });
                         material.name = `RuntimeFloor_${node.name}`;
                         material.setProperty('mainColor', match.above.clone());
+                        if (texture) {
+                            texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
+                            material.setProperty('mainTexture', texture);
+                        }
                         renderer.setMaterial(material, i);
                         this._floorTints.push({ material, above: match.above, below: match.below });
                     }
@@ -398,6 +407,23 @@ export class WaterRefractionController {
         }
         material.setProperty('swimmerDisturb', this._disturb);
     }
+}
+
+function findMaterialTexture(material: Material | null): Texture2D | null {
+    if (!material) {
+        return null;
+    }
+    for (const property of ['albedoMap', 'mainTexture', 'baseColorMap', 'baseColorTexture']) {
+        try {
+            const value = material.getProperty(property);
+            if (value instanceof Texture2D) {
+                return value;
+            }
+        } catch {
+            // The imported effect does not expose this property name.
+        }
+    }
+    return null;
 }
 
 function findNodeByName(root: Node, name: string): Node | null {

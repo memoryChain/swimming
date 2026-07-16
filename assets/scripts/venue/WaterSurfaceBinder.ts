@@ -1,6 +1,7 @@
-import { Color, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
+import { Color, EffectAsset, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
 import { EDITOR } from 'cc/env';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { WaterSurface } from '../core/WaterSurface';
 import { registerWaterMaterial } from './WaterColorTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
@@ -40,6 +41,11 @@ const LANE_FLOAT_BEAD_TEXTURE_PATH = 'pool/LaneFloatBeads/texture';
 // The rope UVs already bake the bead count into U (6 beads per color segment, aligned to
 // color edges), so no extra tiling scale is needed.
 const LANE_FLOAT_BEAD_TILING = 1.0;
+// World-space capsule around the protagonist. Lane-float fragments inside it are
+// discarded, avoiding the rope visually cutting through the swimmer without
+// adding colliders or splitting each 50 m rope into many renderers.
+const LANE_FLOAT_CLIP_HALF_LENGTH = 1.2;
+const LANE_FLOAT_CLIP_RADIUS = 0.52;
 
 // Venue branding is applied at runtime by texture path so the art can be swapped just by
 // replacing the PNG file (no GLB re-import). Each spec maps a venue node-name prefix to a
@@ -51,6 +57,11 @@ const BRANDING_SPECS: BrandingSpec[] = [
 ];
 
 export class WaterSurfaceBinder {
+    private readonly _laneFloatMaterials: Material[] = [];
+    private readonly _laneClipCenter = new Vec4(0, 0, 0, 0);
+    private readonly _laneClipAxis = new Vec4(1, 0, LANE_FLOAT_CLIP_HALF_LENGTH, LANE_FLOAT_CLIP_RADIUS);
+    private _laneClipEnabled = false;
+
     bind(pool: Node, waterMaterialPath: string, debug?: (message: string) => void) {
         const oldWaterNodes: Node[] = [];
         collectNodesByName(pool, LEGACY_WATER_NODE_NAMES, oldWaterNodes);
@@ -58,7 +69,7 @@ export class WaterSurfaceBinder {
             node.active = false;
         }
 
-        this.loadBeadTextureThenUnlitFloats(pool, debug);
+        this.loadLaneFloatAssets(pool, debug);
         this.bindBranding(pool, debug);
         this.assignUnderwaterLayer(pool, debug);
 
@@ -108,18 +119,62 @@ export class WaterSurfaceBinder {
         });
     }
 
-    private loadBeadTextureThenUnlitFloats(pool: Node, debug?: (message: string) => void) {
+    updateLaneFloatClip(centerX: number, centerZ: number, axisX: number, axisZ: number, enabled: boolean) {
+        if (!enabled) {
+            if (!this._laneClipEnabled) {
+                return;
+            }
+            this._laneClipEnabled = false;
+            this._laneClipCenter.w = 0;
+            this.applyLaneClipUniforms(false);
+            return;
+        }
+
+        const length = Math.hypot(axisX, axisZ);
+        this._laneClipEnabled = true;
+        this._laneClipCenter.set(centerX, 0, centerZ, 1);
+        this._laneClipAxis.set(
+            length > 1e-5 ? axisX / length : 1,
+            length > 1e-5 ? axisZ / length : 0,
+            LANE_FLOAT_CLIP_HALF_LENGTH,
+            LANE_FLOAT_CLIP_RADIUS,
+        );
+        this.applyLaneClipUniforms(true);
+    }
+
+    private applyLaneClipUniforms(includeAxis: boolean) {
+        for (const material of this._laneFloatMaterials) {
+            if (!material?.isValid) {
+                continue;
+            }
+            material.setProperty('laneClipCenter', this._laneClipCenter);
+            if (includeAxis) {
+                material.setProperty('laneClipAxis', this._laneClipAxis);
+            }
+        }
+    }
+
+    private loadLaneFloatAssets(pool: Node, debug?: (message: string) => void) {
         loadRaceAsset(LANE_FLOAT_BEAD_TEXTURE_PATH, Texture2D, (err, texture) => {
             if (!pool.isValid) {
                 return;
             }
+            const beadTexture = err || !texture ? null : texture;
             if (err || !texture) {
                 console.warn('[SpeedSwimming] lane float bead texture load failed; floats stay flat unlit', err);
-                this.unlitLaneFloats(pool, null, debug);
-                return;
+            } else {
+                texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
             }
-            texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
-            this.unlitLaneFloats(pool, texture, debug);
+
+            loadRaceAsset(RESOURCE_PATHS.laneFloatClipEffect, EffectAsset, (effectError, effect) => {
+                if (!pool.isValid) {
+                    return;
+                }
+                if (effectError || !effect) {
+                    console.warn('[SpeedSwimming] lane float clip effect unavailable; using unclipped floats', effectError);
+                }
+                this.unlitLaneFloats(pool, beadTexture, effect ?? null, debug);
+            });
         });
     }
 
@@ -169,9 +224,11 @@ export class WaterSurfaceBinder {
         }
     }
 
-    private unlitLaneFloats(pool: Node, beadTexture: Texture2D | null, debug?: (message: string) => void) {
+    private unlitLaneFloats(pool: Node, beadTexture: Texture2D | null, clipEffect: EffectAsset | null, debug?: (message: string) => void) {
         const floatNodes: Node[] = [];
         collectNodesByNamePrefix(pool, LANE_FLOAT_NODE_PREFIX, floatNodes);
+        this._laneFloatMaterials.length = 0;
+        const materialCache = new Map<Material, Material>();
         let boundRenderers = 0;
         for (const node of floatNodes) {
             const renderer = node.getComponent(MeshRenderer);
@@ -184,12 +241,21 @@ export class WaterSurfaceBinder {
                 if (!source) {
                     continue;
                 }
-                renderer.setMaterial(makeUnlitLaneFloatMaterial(source, beadTexture), i);
+                let runtime = materialCache.get(source);
+                if (!runtime) {
+                    runtime = makeUnlitLaneFloatMaterial(source, beadTexture, clipEffect);
+                    materialCache.set(source, runtime);
+                    if (clipEffect) {
+                        this._laneFloatMaterials.push(runtime);
+                    }
+                }
+                renderer.setMaterial(runtime, i);
             }
             boundRenderers += 1;
         }
         if (boundRenderers > 0) {
-            debug?.(`lane floats set unlit renderers=${boundRenderers} beaded=${beadTexture ? 'yes' : 'no'}`);
+            this.applyLaneClipUniforms(true);
+            debug?.(`lane floats set unlit renderers=${boundRenderers} materials=${materialCache.size} beaded=${beadTexture ? 'yes' : 'no'} clipped=${clipEffect ? 'yes' : 'no'}`);
         }
     }
 
@@ -232,19 +298,23 @@ function makeUnlitBrandingMaterial(texture: Texture2D, nodeName: string, flipU =
 
 // Convert a lit GLB float material into an unlit one that keeps its albedo, so the blue
 // ambient sky light no longer tints the lane floats.
-function makeUnlitLaneFloatMaterial(source: Material, beadTexture: Texture2D | null): Material {
+function makeUnlitLaneFloatMaterial(source: Material, beadTexture: Texture2D | null, clipEffect: EffectAsset | null): Material {
     const material = new Material();
-    if (beadTexture) {
+    if (clipEffect) {
+        material.initialize({ effectAsset: clipEffect });
+    } else if (beadTexture) {
         material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
-        material.setProperty('mainTexture', beadTexture);
-        // The rope UVs pack ~247 bead tiles along the length; scale U down so the beads
-        // read as bigger, cleaner discs (~124 beads instead of a muddy fine stripe).
-        material.setProperty('tilingOffset', new Vec4(LANE_FLOAT_BEAD_TILING, 1, 0, 0));
     } else {
         material.initialize({ effectName: 'builtin-unlit' });
     }
     material.name = `RuntimeLaneFloat_${source.name || 'Float'}`;
     material.setProperty('mainColor', findMaterialColor(source));
+    if (beadTexture) {
+        material.setProperty('mainTexture', beadTexture);
+        // The rope UVs pack ~247 bead tiles along the length; scale U down so the beads
+        // read as bigger, cleaner discs (~124 beads instead of a muddy fine stripe).
+        material.setProperty('tilingOffset', new Vec4(LANE_FLOAT_BEAD_TILING, 1, 0, 0));
+    }
     return material;
 }
 
