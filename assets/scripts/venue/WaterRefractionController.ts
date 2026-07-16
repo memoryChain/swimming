@@ -85,6 +85,14 @@ export class WaterRefractionController {
     // mainCameraNode: the single camera the director drives. getSwimmerNodes:
     // returns the current swimmer root nodes to re-tag onto SWIMMER_LAYER.
     setup(mainCameraNode: Node, pool: Node, getSwimmerNodes: () => Node[]): boolean {
+        // WaterSurfaceBinder hides the pool surface in the editor because its
+        // embedded preview does not refresh off-screen cameras reliably. Skip the
+        // whole refraction stack as well, so no RenderTexture or extra cameras are
+        // created and swimmers remain on the main camera's default layer.
+        if (EDITOR) {
+            this._debug?.('water refraction skipped in editor');
+            return false;
+        }
         const mainCamera = mainCameraNode?.getComponent(Camera);
         if (!mainCamera || !pool?.isValid) {
             return false;
@@ -166,7 +174,6 @@ export class WaterRefractionController {
         this.resizeIfNeeded();
         this.syncCamera();
         this.ensureMaterialBound();
-        this.forceEditorPreviewRefresh();
         this.updateFloorTint();
         this._frame += 1;
         if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
@@ -220,36 +227,6 @@ export class WaterRefractionController {
                 tint.material.setProperty('mainColor', underwater ? tint.below : tint.above);
             }
         }
-    }
-
-    // The editor preview panel (EDITOR=true, PREVIEW=false) renders an off-screen
-    // (targetTexture) camera only ONCE, when its RenderTexture window is created,
-    // and never ticks it again — so the RT freezes on frame 1 while update() keeps
-    // running. Re-assigning the target, resizing, or clearing the SAME window does
-    // nothing (the camera is not in the editor preview's per-frame render list).
-    // The only lever that yields a fresh render is a brand-new RenderTexture
-    // window, so in the editor we recreate it every frame — each frame gets its
-    // own "first render". Gated to EDITOR so the browser preview (which renders
-    // off-screen cameras normally) and real device builds never pay for it.
-    private forceEditorPreviewRefresh() {
-        if (!EDITOR) {
-            return;
-        }
-        const camera = this._refractionCamera;
-        if (!camera?.isValid || this._rtWidth <= 0 || this._rtHeight <= 0) {
-            return;
-        }
-        const old = this._renderTexture;
-        const fresh = new RenderTexture('PoolWaterRefractionPreview');
-        fresh.reset({ width: this._rtWidth, height: this._rtHeight });
-        camera.targetTexture = fresh;
-        this._renderTexture = fresh;
-        // Re-point the live water material at the fresh RT before freeing the old
-        // one, so the sampler never references a destroyed texture.
-        if (this._boundMaterial?.isValid) {
-            this._boundMaterial.setProperty('refractionMap', fresh);
-        }
-        old?.destroy();
     }
 
     // Move swimmer body and splash subtrees onto SWIMMER_LAYER so only the same
@@ -342,13 +319,8 @@ export class WaterRefractionController {
         if (!material || material.name !== RUNTIME_WATER_MATERIAL_NAME) {
             return;
         }
-        // Re-apply the RenderTexture EVERY frame. This is cheap and is required to
-        // keep the water live in the editor's Preview: there the RT recreates its
-        // underlying GPU texture handle after the first render, so a one-time bind
-        // leaves the sampler pointing at a stale (frozen) texture — the classic
-        // "RT only shows the first frame" symptom. The external browser keeps a
-        // stable handle so it survives either way, but rebinding every frame makes
-        // both environments behave the same.
+        // Re-apply the RenderTexture every frame so runtime resize or GPU texture
+        // handle changes cannot leave the sampler pointing at a stale texture.
         material.setProperty('refractionMap', this._renderTexture);
         const changed = material !== this._boundMaterial;
         if (changed) {

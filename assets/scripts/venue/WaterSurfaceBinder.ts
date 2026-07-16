@@ -1,4 +1,5 @@
 import { Color, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
+import { EDITOR } from 'cc/env';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
 import { registerWaterMaterial } from './WaterColorTuning';
@@ -64,12 +65,21 @@ export class WaterSurfaceBinder {
         const activeWaterNodes: Node[] = [];
         collectNodesByName(pool, ACTIVE_WATER_NODE_NAMES, activeWaterNodes);
         for (const node of activeWaterNodes) {
-            node.active = true;
+            // The editor's embedded game preview does not refresh an off-screen
+            // camera reliably. Keeping refraction live there required recreating
+            // its RenderTexture every frame, which is far too expensive. Hide the
+            // surface entirely in the editor; browser/device builds keep water.
+            node.active = !EDITOR;
             node.layer = WATER_SURFACE_LAYER;
         }
 
         if (activeWaterNodes.length <= 0) {
             debug?.('transparent low-poly water skipped: no water nodes');
+            return;
+        }
+
+        if (EDITOR) {
+            debug?.(`pool water hidden in editor nodes=${activeWaterNodes.length}`);
             return;
         }
 

@@ -325,7 +325,7 @@ export class SwimmerRacePhases {
         const handoffDistance = this._flipTurnWallDistance + pushDistance;
         const underwaterY = courseLayout.swimY
             - Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth);
-        node.setPosition(courseLayout.distanceToWorldX(handoffDistance), underwaterY, this._host.startPosition.z);
+        node.setPosition(courseLayout.distanceToWorldX(handoffDistance), underwaterY, z);
         node.setRotationFromEuler(0, outgoingDirection > 0 ? 0 : 180, 0);
         rig?.finishRaceFlipTurn();
         motor.completeFlipTurnPhase(handoffDistance, this._flipTurnPushSpeed);

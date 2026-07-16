@@ -1,7 +1,7 @@
 import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
-import { STEERING_TUNING } from '../core/SteeringTuning';
+import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 
 const CYCLE_AMOUNT = Math.PI * 2;
@@ -381,7 +381,10 @@ export class SwimmerMotor {
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
         // large heading is naturally slower (this is the whole steering cost).
-        const forwardSpeed = this._currentSpeed * Math.cos(this._heading);
+        // Race distance is monotonic by contract. The steering hard cap keeps
+        // cos(heading) positive; max(0, ...) is a second line of defence so even
+        // corrupted runtime state can never make the swimmer turn back.
+        const forwardSpeed = this._currentSpeed * Math.max(0, Math.cos(this._heading));
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
         this._lateralOffset = clamp(
@@ -884,15 +887,23 @@ export class SwimmerMotor {
         return this._lateralOffset;
     }
 
+    setLateralOffset(offset: number) {
+        this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
+    }
+
     // Ease the actual heading toward the stroke-set target so a stroke turns the
     // body GRADUALLY after release. No auto-recenter: heading only returns toward
     // straight when the player strokes the other side (pure manual steering).
     private updateSteering(dt: number) {
+        const maxHeading = safeMaxHeadingRadians();
+        // Re-clamp every frame because debug tuning can change while racing and
+        // persisted JSON bypasses the UI slider's min/max metadata.
+        this._headingTarget = clamp(finiteOr(this._headingTarget, 0), -maxHeading, maxHeading);
+        this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
         // AI opponents weave via a smooth, bounded, mean-reverting wander instead
         // of stroke steering, so they don't look robotically precise.
         if (this._aiWobbleAmount > 0) {
             this._aiWobbleClock += dt;
-            const maxHeading = STEERING_TUNING.maxHeading * DEG2RAD;
             const cap = maxHeading
                 * clamp01(STEERING_TUNING.aiWobbleMaxHeadingFraction)
                 * clamp01(this._aiWobbleAmount);
@@ -901,10 +912,11 @@ export class SwimmerMotor {
             const wander = Math.sin(t * 0.7 + p) * 0.62 + Math.sin(t * 1.63 + p * 1.7) * 0.38;
             this._headingTarget = clamp(cap * wander, -maxHeading, maxHeading);
         }
-        const ease = Math.max(0, STEERING_TUNING.turnEaseRate);
+        const ease = Math.max(0, finiteOr(STEERING_TUNING.turnEaseRate, 0));
         this._heading += ease > 0
             ? (this._headingTarget - this._heading) * Math.min(1, ease * dt)
             : (this._headingTarget - this._heading);
+        this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
         if (Math.abs(this._heading - this._headingTarget) < 1e-4) {
             this._heading = this._headingTarget;
         }
@@ -921,10 +933,10 @@ export class SwimmerMotor {
         }
         const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
         const factor = minFactor + (1 - minFactor) * clamp01(powerFactor);
-        const turn = STEERING_TUNING.turnPerStroke * DEG2RAD * factor;
-        const maxHeading = STEERING_TUNING.maxHeading * DEG2RAD;
+        const turn = Math.max(0, finiteOr(STEERING_TUNING.turnPerStroke, 0)) * DEG2RAD * factor;
+        const maxHeading = safeMaxHeadingRadians();
         const dir = (type === StrokeType.LEFT ? 1 : -1) * this._courseDirection;
-        this._headingTarget = clamp(this._headingTarget + dir * turn, -maxHeading, maxHeading);
+        this._headingTarget = clamp(finiteOr(this._headingTarget, 0) + dir * turn, -maxHeading, maxHeading);
     }
 
     private queueSideStroke(type: StrokeType): QueueSideStrokeResult {
@@ -1292,6 +1304,15 @@ function clamp(value: number, min: number, max: number): number {
 
 function clamp01(value: number): number {
     return clamp(value, 0, 1);
+}
+
+function finiteOr(value: number, fallback: number): number {
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function safeMaxHeadingRadians(): number {
+    const configuredDegrees = Math.max(0, finiteOr(STEERING_TUNING.maxHeading, 65));
+    return Math.min(configuredDegrees, MAX_STEERING_HEADING_DEGREES) * DEG2RAD;
 }
 
 // Map a value into [0, modulo) with a proper positive remainder, used to read a

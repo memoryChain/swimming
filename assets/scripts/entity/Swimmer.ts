@@ -41,6 +41,10 @@ export class Swimmer extends Component {
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
+    private readonly _swimBoundaryWorldPositions = [
+        new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
+        new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
+    ];
 
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
@@ -253,6 +257,7 @@ export class Swimmer extends Component {
         this._phases.updateDiveUnderwaterTimer(dt);
         this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
+        this.enforcePoolWallBoundary();
         for (const strokeQualityResult of this._motor.consumeStrokeQualityResults()) {
             const result = this.makeStrokeQualityResult(strokeQualityResult.type, strokeQualityResult);
             if (result) {
@@ -514,6 +519,45 @@ export class Swimmer extends Component {
         this.node.setRotationFromEuler(0, yaw, roll);
     }
 
+    // Root-only clamping is insufficient once the swimmer yaws: the long body
+    // axis and animated arms project sideways and can cross the pool wall while
+    // the root is still inside. Sample the current pose and shift the root just
+    // enough to keep every boundary joint inside both walls.
+    private enforcePoolWallBoundary() {
+        const count = this.cartoonRig?.getSwimBoundaryWorldPositions(this._swimBoundaryWorldPositions) ?? 0;
+        if (count <= 0) {
+            return;
+        }
+
+        let minZ = Number.POSITIVE_INFINITY;
+        let maxZ = Number.NEGATIVE_INFINITY;
+        for (let index = 0; index < count; index++) {
+            const z = this._swimBoundaryWorldPositions[index].z;
+            minZ = Math.min(minZ, z);
+            maxZ = Math.max(maxZ, z);
+        }
+
+        const wallClearance = Math.max(0, STEERING_TUNING.poolWallClearance);
+        const innerHalfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - wallClearance);
+        let correctionZ = 0;
+        if (minZ < -innerHalfWidth) {
+            correctionZ = -innerHalfWidth - minZ;
+        }
+        if (maxZ + correctionZ > innerHalfWidth) {
+            correctionZ += innerHalfWidth - (maxZ + correctionZ);
+        }
+        if (Math.abs(correctionZ) <= 1e-5) {
+            return;
+        }
+
+        this._motor.setLateralOffset(this._motor.lateralOffset + correctionZ);
+        this.node.setPosition(
+            this.node.position.x,
+            this.node.position.y,
+            this._startPosition.z + this._motor.lateralOffset,
+        );
+    }
+
     private finishFloatX(direction: number): number {
         const edgeX = direction > 0 ? this._courseLayout.poolFinishX : this._courseLayout.poolStartX;
         const poolMinX = Math.min(this._courseLayout.poolStartX, this._courseLayout.poolFinishX);
@@ -573,6 +617,12 @@ export class Swimmer extends Component {
 
     get raceDirection(): number {
         return this._courseLayout.directionAtDistance(this._motor.distance);
+    }
+
+    // Radians away from the current lane direction. Combined with raceDirection,
+    // this is the swimmer's actual world-space movement direction.
+    get movementHeading(): number {
+        return this._motor.heading;
     }
 
     getCameraUpperBodyWorldPosition(out: Vec3): Vec3 {

@@ -258,7 +258,10 @@ def add_wall(
 
 def add_inner_walls(gltf: dict[str, Any], binary: bytes) -> bytes:
     material = material_index(gltf, WALL_MATERIAL_NAME)
-    wall_top_y = 0.02
+    # Stop just below the pool-edge inner face, whose bottom is at Y=0.01.
+    # Extending above that creates a coplanar overlap and visible Z-fighting
+    # around all four pool sides.
+    wall_top_y = 0.009
     wall_bottom_y = TARGET_FLOOR_TOP_Y
     wall_height = wall_top_y - wall_bottom_y
     wall_center_y = (wall_top_y + wall_bottom_y) * 0.5

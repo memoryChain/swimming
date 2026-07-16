@@ -11,6 +11,8 @@
 // 核心：划手不再只是加速，还会给一个转向冲量。右手 → 身体偏向 +Z（"左"），左手 → 偏向
 // -Z（"右"）。左右交替（或同时双划）相互抵消保持直线；连点一侧就画弧。名次进度按
 // speed*cos(heading)，所以歪着游天然更慢，无需额外惩罚。泳道绳无碰撞，只有池壁钳制。
+export const MAX_STEERING_HEADING_DEGREES = 85;
+
 export const STEERING_TUNING = {
     // Heading change (degrees) applied by a single arm stroke.
     // 单手划水施加的转向角（度）。
@@ -19,7 +21,8 @@ export const STEERING_TUNING = {
     // Maximum |heading| (degrees). At 65° cos≈0.42, so the swimmer still moves
     // forward (~40% speed) while looking hilariously crooked; it never swims
     // sideways or backward.
-    // 朝向角上限（度）。65° 时 cos≈0.42，仍向前（约四成速度）但已明显歪斜；不会横游或倒游。
+    // 朝向角上限（度）。65° 时 cos≈0.42，仍向前（约四成速度）但已明显歪斜；运行时还有
+    // MAX_STEERING_HEADING_DEGREES 硬上限，保证存档或调参异常也不能横游或倒游。
     maxHeading: 65,
 
 

@@ -121,6 +121,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _flipTurnWaistPivot = new Vec3();
     private readonly _tmpFlipTurnWorldPivot = new Vec3();
     private readonly _tmpFlipTurnOffset = new Vec3();
+    private readonly _tmpFlipTurnTransferPosition = new Vec3();
     private readonly _tmpFlipTurnRotation = new Quat();
     private readonly _tmpFlipTurnAxisRotation = new Quat();
     private readonly _tmpFlipTurnCombinedRotation = new Quat();
@@ -216,6 +217,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     getUpperBodyWorldPosition(out: Vec3): boolean {
         return this._pose.getUpperBodyWorldPosition(out);
+    }
+
+    getSwimBoundaryWorldPositions(outputs: Vec3[]): number {
+        return this._pose.getSwimBoundaryWorldPositions(outputs);
     }
 
     setColorVariant(variantId: string): boolean {
@@ -1226,27 +1231,43 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             : this._debugFlipTurnAccumulatedAxisDegrees;
         const underwaterDepth = Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth);
         let verticalOffset = 0;
-        if (this._debugFlipTurnPlaying) {
+        if (this._raceFlipTurnActive && this._debugFlipTurnElapsed >= firstDuration) {
+            // Race mode transfers this local depth to the swimmer node when the
+            // turn completes. Keep it active on the completion tick as well so
+            // the model/root handoff represents the same world transform.
+            verticalOffset = -underwaterDepth;
+        } else if (this._debugFlipTurnPlaying) {
             if (this._debugFlipTurnElapsed < firstDuration) {
                 verticalOffset = -underwaterDepth * smoothRange(this._debugFlipTurnElapsed, 0, firstDuration);
             } else if (this._debugFlipTurnElapsed < keyframe2Time) {
-                verticalOffset = -underwaterDepth;
-            } else if (this._raceFlipTurnActive) {
-                // Formal races transfer this depth to the swimmer root when the
-                // pose transition ends, then continue in a kick-only glide phase.
                 verticalOffset = -underwaterDepth;
             } else {
                 verticalOffset = -underwaterDepth * (1 - smoothRange(this._debugFlipTurnElapsed, keyframe2Time, totalDuration));
             }
         }
-        this.applyDebugFlipTurnRotation(rotationDegrees, axisRotationDegrees, verticalOffset);
+        // During the return segment, race mode moves the rotation pivot from the
+        // waist to the swimmer-node origin. At ratio 1 the model transform is
+        // exactly equivalent to a 180-degree parent-node turn, so handing the
+        // rotation to SwimmerRacePhases cannot move the athlete in world space.
+        const parentRotationTransferRatio = this._raceFlipTurnActive ? axisRotationRatio : 0;
+        this.applyDebugFlipTurnRotation(
+            rotationDegrees,
+            axisRotationDegrees,
+            verticalOffset,
+            parentRotationTransferRatio,
+        );
         this._armAction = 0;
         this._kickAction = 0;
         this.syncSplashState();
         this.updateSplashSurface(0);
     }
 
-    private applyDebugFlipTurnRotation(degrees: number, axisDegrees: number, verticalOffset: number) {
+    private applyDebugFlipTurnRotation(
+        degrees: number,
+        axisDegrees: number,
+        verticalOffset: number,
+        parentRotationTransferRatio = 0,
+    ) {
         if (!this._model) {
             return;
         }
@@ -1265,6 +1286,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         Vec3.transformQuat(this._tmpFlipTurnOffset, this._tmpFlipTurnOffset, this._tmpFlipTurnCombinedRotation);
         Vec3.add(this._tmpFlipTurnOffset, this._flipTurnWaistPivot, this._tmpFlipTurnOffset);
         this._tmpFlipTurnOffset.y += verticalOffset;
+        const transferRatio = Math.max(0, Math.min(1, parentRotationTransferRatio));
+        if (transferRatio > 0) {
+            this._tmpFlipTurnTransferPosition.set(this._flipTurnModelBasePosition);
+            // The parent handoff changes the swimmer's yaw, so only the lane-plane
+            // (X/Z) pivot needs transferring. Preserve the waist-pivoted Y path;
+            // blending Y toward the model origin makes the athlete visibly sink
+            // while uncurling even though the final vertical handoff is continuous.
+            this._tmpFlipTurnTransferPosition.y = this._tmpFlipTurnOffset.y;
+            Vec3.lerp(
+                this._tmpFlipTurnOffset,
+                this._tmpFlipTurnOffset,
+                this._tmpFlipTurnTransferPosition,
+                transferRatio,
+            );
+        }
         this._model.setPosition(this._tmpFlipTurnOffset);
         this._model.setRotation(this._tmpFlipTurnModelRotation);
     }

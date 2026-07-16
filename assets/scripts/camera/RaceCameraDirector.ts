@@ -64,6 +64,7 @@ const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
 const SWIM_SIDE_CAMERA_DISTANCE = 10.5;
 const SWIM_SIDE_CAMERA_HEIGHT = 1.7;
 const SWIM_SIDE_FOV = 27;
+const FINISH_TOP_FOV = 46;
 const SWIM_ANGLE_VIEW_FRONT_RANK = 3;
 const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
 export const RACE_CAMERA_TUNING = {
@@ -114,6 +115,9 @@ export type RaceCameraSnapshot = {
     playerY: number;
     playerUpperBodyWorldPosition?: Vec3;
     playerDistance: number;
+    // Radians away from the current lane direction. Used by the sprint chase so
+    // it follows the swimmer's actual travel direction while steering.
+    playerHeading?: number;
     playerUnderwater: boolean;
     closestAiDistanceGap: number;
     playerPlacement: number;
@@ -350,6 +354,10 @@ export class RaceCameraDirector {
         const leavingFlipTurnView = this._flipTurnViewActive;
         this._flipTurnViewActive = false;
         if (this._mode === RaceCameraMode.Sprint) {
+            if (this.shouldUseFinishTopView(snapshot)) {
+                this.updateFinishTopCamera(snapshot);
+                return;
+            }
             this._topViewActive = false;
             this._underwaterViewActive = false;
             this.updateSprintCamera(dt, snapshot, leavingFlipTurnView);
@@ -374,6 +382,9 @@ export class RaceCameraDirector {
             baseFov = 44;
         } else if (this._mode === RaceCameraMode.Sprint) {
             baseFov = RACE_CAMERA_TUNING.sprintFov;
+        }
+        if (this._topViewActive && this._mode !== RaceCameraMode.Top) {
+            baseFov = FINISH_TOP_FOV;
         }
         if (this._flipTurnViewActive) {
             baseFov = RACE_CAMERA_TUNING.flipTurnFov;
@@ -561,19 +572,14 @@ export class RaceCameraDirector {
             desiredPos = underwaterDiveCameraPos(playerX, playerY, this._playerLaneZ, direction);
             this._broadcastDesiredFov = 43;
             underwaterView = true;
-        } else if (snapshot.sprintActive
-            && raceDistance - playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance) {
+        } else if (this.shouldUseFinishTopView(snapshot)) {
             // Both the main broadcast camera and the venue feed settle into the
             // finish-line top view for the final approach to the wall.
             this.finishDiveShotIfNeeded();
-            const courseEndDistance = this._courseLayout.currentCourseEndDistance(playerDistance, raceDistance);
-            const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
-            const finishAnchorX = this._courseLayout.distanceToWorldX(courseEndDistance) - 7.5 * finishDirection;
-            const playerFollowX = playerX + 3.4 * finishDirection;
-            const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
-            desiredTarget = new Vec3(targetX, 0.18, 0);
-            desiredPos = new Vec3(desiredTarget.x, 22.5, 0);
-            this._broadcastDesiredFov = 46;
+            const finishView = this.finishTopCameraView(snapshot);
+            desiredTarget = finishView.target;
+            desiredPos = finishView.position;
+            this._broadcastDesiredFov = FINISH_TOP_FOV;
             fixedTopView = true;
         } else if (snapshot.sprintActive) {
             this.finishDiveShotIfNeeded();
@@ -674,6 +680,35 @@ export class RaceCameraDirector {
         // and -Z is locked as screen-up so world-X lanes are horizontal.
         this._cameraTarget.set(playerX, 0.18, 0);
         this._cameraPos.set(this._cameraTarget.x, 17.5, this._cameraTarget.z);
+        this.applyCameraTransform(new Vec3(0, 0, -1));
+        this.applyFov();
+    }
+
+    private shouldUseFinishTopView(snapshot: RaceCameraSnapshot): boolean {
+        return snapshot.sprintActive
+            && getRaceDistance() - snapshot.playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance;
+    }
+
+    private finishTopCameraView(snapshot: RaceCameraSnapshot): { position: Vec3; target: Vec3 } {
+        const raceDistance = getRaceDistance();
+        const courseEndDistance = this._courseLayout.currentCourseEndDistance(snapshot.playerDistance, raceDistance);
+        const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
+        const finishAnchorX = this._courseLayout.distanceToWorldX(courseEndDistance) - 7.5 * finishDirection;
+        const playerFollowX = snapshot.playerX + 3.4 * finishDirection;
+        const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
+        const target = new Vec3(targetX, 0.18, 0);
+        return {
+            position: new Vec3(target.x, 22.5, 0),
+            target,
+        };
+    }
+
+    private updateFinishTopCamera(snapshot: RaceCameraSnapshot) {
+        const view = this.finishTopCameraView(snapshot);
+        this._cameraPos.set(view.position);
+        this._cameraTarget.set(view.target);
+        this._topViewActive = true;
+        this._underwaterViewActive = false;
         this.applyCameraTransform(new Vec3(0, 0, -1));
         this.applyFov();
     }
@@ -950,16 +985,21 @@ function sprintCameraView(snapshot: RaceCameraSnapshot, direction: number): { po
     // toward the head), not from the swimmer root at the hips/feet.
     const upperBody = snapshot.playerUpperBodyWorldPosition?.clone()
         ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.54, 0);
+    const heading = snapshot.playerHeading ?? 0;
+    // Heading is relative to the current pool-leg direction. Lateral movement
+    // always uses world Z, while the along-lane component flips after a turn.
+    const movementX = direction * Math.cos(heading);
+    const movementZ = Math.sin(heading);
     return {
         position: new Vec3(
-            upperBody.x - RACE_CAMERA_TUNING.sprintBackDistance * direction,
+            upperBody.x - RACE_CAMERA_TUNING.sprintBackDistance * movementX,
             upperBody.y + RACE_CAMERA_TUNING.sprintHeight,
-            upperBody.z,
+            upperBody.z - RACE_CAMERA_TUNING.sprintBackDistance * movementZ,
         ),
         target: new Vec3(
-            upperBody.x + RACE_CAMERA_TUNING.sprintLookAhead * direction,
+            upperBody.x + RACE_CAMERA_TUNING.sprintLookAhead * movementX,
             upperBody.y + 0.08,
-            upperBody.z,
+            upperBody.z + RACE_CAMERA_TUNING.sprintLookAhead * movementZ,
         ),
     };
 }

@@ -632,6 +632,32 @@ export class FreestylePoseController {
         return false;
     }
 
+    // Writes the current world positions of the joints that define the swimmer's
+    // lateral footprint. The caller owns/reuses the output vectors, so this is
+    // safe to sample every frame without creating garbage.
+    getSwimBoundaryWorldPositions(outputs: Vec3[]): number {
+        let count = 0;
+        count = this.writeBoundaryWorldPosition(this._head, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._torso || this._spine1 || this._spine, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._leftArm, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._leftForeArm, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._leftHand, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._rightArm, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._rightForeArm, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._rightHand, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._leftToe || this._leftFoot, outputs, count);
+        count = this.writeBoundaryWorldPosition(this._rightToe || this._rightFoot, outputs, count);
+        return count;
+    }
+
+    private writeBoundaryWorldPosition(bone: Node | null, outputs: Vec3[], index: number): number {
+        if (!bone || !outputs[index]) {
+            return index;
+        }
+        bone.getWorldPosition(outputs[index]);
+        return index + 1;
+    }
+
     get boundJointCount(): number {
         return this.manualBones.filter(Boolean).length;
     }

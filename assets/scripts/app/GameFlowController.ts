@@ -92,6 +92,11 @@ export class GameFlowController {
     restartGame() {
         this._refs.debug('restartGame');
         this.stopAllAi();
+        // Leave the awards state before rebuilding the race. Exiting AWARDS
+        // restores the non-podium swimmers, so resetRace() and the showcase
+        // roster below can initialize every racer instead of only the three
+        // nodes that remained active on the podium.
+        this._refs.setState(GameState.READY);
         this.startGame();
     }
 
@@ -322,6 +327,7 @@ export class GameFlowController {
             playerY: focus.node.position.y,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,
+            playerHeading: focus.movementHeading,
             playerUnderwater: focus.isUnderwater,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,
