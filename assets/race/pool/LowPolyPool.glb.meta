@@ -12,7 +12,7 @@
       "id": "20089",
       "name": "lane_floor_line_04_mesh.mesh",
       "userData": {
-        "gltfIndex": 18,
+        "gltfIndex": 10,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -30,7 +30,7 @@
       "id": "20123",
       "name": "pool_tile_grout_long_01_mesh.mesh",
       "userData": {
-        "gltfIndex": 66,
+        "gltfIndex": 58,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -48,7 +48,7 @@
       "id": "26594",
       "name": "lane_t_end_far_05_mesh.mesh",
       "userData": {
-        "gltfIndex": 27,
+        "gltfIndex": 19,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -66,7 +66,7 @@
       "id": "29632",
       "name": "ceiling_arch_rib_3_mesh.mesh",
       "userData": {
-        "gltfIndex": 83,
+        "gltfIndex": 73,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -84,7 +84,7 @@
       "id": "29994",
       "name": "LPVenue_cartoon_podium_red.material",
       "userData": {
-        "gltfIndex": 26
+        "gltfIndex": 25
       },
       "ver": "1.0.14",
       "imported": true,
@@ -100,7 +100,7 @@
       "id": "43407",
       "name": "LPVenue_cartoon_screen_bezel.material",
       "userData": {
-        "gltfIndex": 24
+        "gltfIndex": 23
       },
       "ver": "1.0.14",
       "imported": true,
@@ -116,7 +116,7 @@
       "id": "51884",
       "name": "banner_far_0_mesh.mesh",
       "userData": {
-        "gltfIndex": 111,
+        "gltfIndex": 101,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -134,7 +134,7 @@
       "id": "69124",
       "name": "LPVenue_cartoon_banner.material",
       "userData": {
-        "gltfIndex": 23
+        "gltfIndex": 22
       },
       "ver": "1.0.14",
       "imported": true,
@@ -150,7 +150,7 @@
       "id": "70560",
       "name": "pool_tile_grout_long_05_mesh.mesh",
       "userData": {
-        "gltfIndex": 70,
+        "gltfIndex": 62,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -168,7 +168,7 @@
       "id": "77075",
       "name": "LPVenue_cartoon_stand_riser.material",
       "userData": {
-        "gltfIndex": 19
+        "gltfIndex": 18
       },
       "ver": "1.0.14",
       "imported": true,
@@ -184,7 +184,7 @@
       "id": "77250",
       "name": "lane_t_end_near_01_mesh.mesh",
       "userData": {
-        "gltfIndex": 31,
+        "gltfIndex": 23,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -202,7 +202,7 @@
       "id": "82610",
       "name": "LPVenue_cartoon_roof_light.material",
       "userData": {
-        "gltfIndex": 25
+        "gltfIndex": 24
       },
       "ver": "1.0.14",
       "imported": true,
@@ -218,7 +218,7 @@
       "id": "88816",
       "name": "lane_t_end_far_01_mesh.mesh",
       "userData": {
-        "gltfIndex": 23,
+        "gltfIndex": 15,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -236,7 +236,7 @@
       "id": "92811",
       "name": "banner_north_2_mesh.mesh",
       "userData": {
-        "gltfIndex": 103,
+        "gltfIndex": 93,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -254,7 +254,7 @@
       "id": "95129",
       "name": "banner_north_3_mesh.mesh",
       "userData": {
-        "gltfIndex": 105,
+        "gltfIndex": 95,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -272,7 +272,7 @@
       "id": "96821",
       "name": "lane_t_end_near_05_mesh.mesh",
       "userData": {
-        "gltfIndex": 35,
+        "gltfIndex": 27,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -290,151 +290,7 @@
       "id": "99195",
       "name": "lane_t_end_far_03_mesh.mesh",
       "userData": {
-        "gltfIndex": 25,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "16f61": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@16f61",
-      "displayName": "",
-      "id": "16f61",
-      "name": "deck_light_panel_n_-18_mesh.mesh",
-      "userData": {
-        "gltfIndex": 0,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "0af52": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@0af52",
-      "displayName": "",
-      "id": "0af52",
-      "name": "deck_light_panel_n_-9_mesh.mesh",
-      "userData": {
-        "gltfIndex": 1,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "62aea": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@62aea",
-      "displayName": "",
-      "id": "62aea",
-      "name": "deck_light_panel_n_18_mesh.mesh",
-      "userData": {
-        "gltfIndex": 2,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "7695a": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@7695a",
-      "displayName": "",
-      "id": "7695a",
-      "name": "deck_light_panel_n_9_mesh.mesh",
-      "userData": {
-        "gltfIndex": 3,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "cfc20": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@cfc20",
-      "displayName": "",
-      "id": "cfc20",
-      "name": "deck_light_panel_s_-18_mesh.mesh",
-      "userData": {
-        "gltfIndex": 4,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "387eb": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@387eb",
-      "displayName": "",
-      "id": "387eb",
-      "name": "deck_light_panel_s_-9_mesh.mesh",
-      "userData": {
-        "gltfIndex": 5,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "8299f": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@8299f",
-      "displayName": "",
-      "id": "8299f",
-      "name": "deck_light_panel_s_18_mesh.mesh",
-      "userData": {
-        "gltfIndex": 6,
-        "triangleCount": 12
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "e821a": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@e821a",
-      "displayName": "",
-      "id": "e821a",
-      "name": "deck_light_panel_s_9_mesh.mesh",
-      "userData": {
-        "gltfIndex": 7,
+        "gltfIndex": 17,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -452,7 +308,7 @@
       "id": "f5921",
       "name": "lane_float_rope_01_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 8,
+        "gltfIndex": 0,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -470,7 +326,7 @@
       "id": "b137a",
       "name": "lane_float_rope_02_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 9,
+        "gltfIndex": 1,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -488,7 +344,7 @@
       "id": "9bcb0",
       "name": "lane_float_rope_03_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 10,
+        "gltfIndex": 2,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -506,7 +362,7 @@
       "id": "20d1d",
       "name": "lane_float_rope_04_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 11,
+        "gltfIndex": 3,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -524,7 +380,7 @@
       "id": "29fe9",
       "name": "lane_float_rope_05_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 12,
+        "gltfIndex": 4,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -542,7 +398,7 @@
       "id": "28cc3",
       "name": "lane_float_rope_06_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 13,
+        "gltfIndex": 5,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -560,7 +416,7 @@
       "id": "1aabf",
       "name": "lane_float_rope_07_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 14,
+        "gltfIndex": 6,
         "triangleCount": 544
       },
       "ver": "1.1.1",
@@ -578,7 +434,7 @@
       "id": "e5e76",
       "name": "lane_floor_line_01_mesh.mesh",
       "userData": {
-        "gltfIndex": 15,
+        "gltfIndex": 7,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -596,7 +452,7 @@
       "id": "7ce9e",
       "name": "lane_floor_line_02_mesh.mesh",
       "userData": {
-        "gltfIndex": 16,
+        "gltfIndex": 8,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -614,7 +470,7 @@
       "id": "dc73e",
       "name": "lane_floor_line_03_mesh.mesh",
       "userData": {
-        "gltfIndex": 17,
+        "gltfIndex": 9,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -632,7 +488,7 @@
       "id": "7b7d4",
       "name": "lane_floor_line_05_mesh.mesh",
       "userData": {
-        "gltfIndex": 19,
+        "gltfIndex": 11,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -650,7 +506,7 @@
       "id": "053ee",
       "name": "lane_floor_line_06_mesh.mesh",
       "userData": {
-        "gltfIndex": 20,
+        "gltfIndex": 12,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -668,7 +524,7 @@
       "id": "8d8f9",
       "name": "lane_floor_line_07_mesh.mesh",
       "userData": {
-        "gltfIndex": 21,
+        "gltfIndex": 13,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -686,7 +542,7 @@
       "id": "e736b",
       "name": "lane_floor_line_08_mesh.mesh",
       "userData": {
-        "gltfIndex": 22,
+        "gltfIndex": 14,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -704,7 +560,7 @@
       "id": "c614a",
       "name": "lane_t_end_far_02_mesh.mesh",
       "userData": {
-        "gltfIndex": 24,
+        "gltfIndex": 16,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -722,7 +578,7 @@
       "id": "56ea4",
       "name": "lane_t_end_far_04_mesh.mesh",
       "userData": {
-        "gltfIndex": 26,
+        "gltfIndex": 18,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -740,7 +596,7 @@
       "id": "6d136",
       "name": "lane_t_end_far_06_mesh.mesh",
       "userData": {
-        "gltfIndex": 28,
+        "gltfIndex": 20,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -758,7 +614,7 @@
       "id": "a44f3",
       "name": "lane_t_end_far_07_mesh.mesh",
       "userData": {
-        "gltfIndex": 29,
+        "gltfIndex": 21,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -776,7 +632,7 @@
       "id": "169c8",
       "name": "lane_t_end_far_08_mesh.mesh",
       "userData": {
-        "gltfIndex": 30,
+        "gltfIndex": 22,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -794,7 +650,7 @@
       "id": "736cd",
       "name": "lane_t_end_near_02_mesh.mesh",
       "userData": {
-        "gltfIndex": 32,
+        "gltfIndex": 24,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -812,7 +668,7 @@
       "id": "dc015",
       "name": "lane_t_end_near_03_mesh.mesh",
       "userData": {
-        "gltfIndex": 33,
+        "gltfIndex": 25,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -830,7 +686,7 @@
       "id": "5d87f",
       "name": "lane_t_end_near_04_mesh.mesh",
       "userData": {
-        "gltfIndex": 34,
+        "gltfIndex": 26,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -848,7 +704,7 @@
       "id": "4bba8",
       "name": "lane_t_end_near_06_mesh.mesh",
       "userData": {
-        "gltfIndex": 36,
+        "gltfIndex": 28,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -866,7 +722,7 @@
       "id": "7b90e",
       "name": "lane_t_end_near_07_mesh.mesh",
       "userData": {
-        "gltfIndex": 37,
+        "gltfIndex": 29,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -884,7 +740,7 @@
       "id": "38c87",
       "name": "lane_t_end_near_08_mesh.mesh",
       "userData": {
-        "gltfIndex": 38,
+        "gltfIndex": 30,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -902,7 +758,7 @@
       "id": "accf2",
       "name": "lifeguard_ladder_north_1_mesh.mesh",
       "userData": {
-        "gltfIndex": 39,
+        "gltfIndex": 31,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -920,7 +776,7 @@
       "id": "b4d7c",
       "name": "lifeguard_ladder_north_2_mesh.mesh",
       "userData": {
-        "gltfIndex": 40,
+        "gltfIndex": 32,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -938,7 +794,7 @@
       "id": "1bf57",
       "name": "lifeguard_ladder_south_1_mesh.mesh",
       "userData": {
-        "gltfIndex": 41,
+        "gltfIndex": 33,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -956,7 +812,7 @@
       "id": "5d390",
       "name": "lifeguard_ladder_south_2_mesh.mesh",
       "userData": {
-        "gltfIndex": 42,
+        "gltfIndex": 34,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -974,7 +830,7 @@
       "id": "ed239",
       "name": "lifeguard_platform_base_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 43,
+        "gltfIndex": 35,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -992,7 +848,7 @@
       "id": "31c4b",
       "name": "lifeguard_platform_base_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 44,
+        "gltfIndex": 36,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1010,7 +866,7 @@
       "id": "48bfb",
       "name": "lifeguard_platform_post_north_a_mesh.mesh",
       "userData": {
-        "gltfIndex": 45,
+        "gltfIndex": 37,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1028,7 +884,7 @@
       "id": "b0933",
       "name": "lifeguard_platform_post_north_b_mesh.mesh",
       "userData": {
-        "gltfIndex": 46,
+        "gltfIndex": 38,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1046,7 +902,7 @@
       "id": "a60d6",
       "name": "lifeguard_platform_post_south_a_mesh.mesh",
       "userData": {
-        "gltfIndex": 47,
+        "gltfIndex": 39,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1064,7 +920,7 @@
       "id": "428f5",
       "name": "lifeguard_platform_post_south_b_mesh.mesh",
       "userData": {
-        "gltfIndex": 48,
+        "gltfIndex": 40,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1082,7 +938,7 @@
       "id": "57b0d",
       "name": "lifeguard_platform_top_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 49,
+        "gltfIndex": 41,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1100,7 +956,7 @@
       "id": "9f03f",
       "name": "lifeguard_platform_top_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 50,
+        "gltfIndex": 42,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1118,7 +974,7 @@
       "id": "e98da",
       "name": "pool_edge_east_mesh.mesh",
       "userData": {
-        "gltfIndex": 51,
+        "gltfIndex": 43,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1136,7 +992,7 @@
       "id": "78bf9",
       "name": "pool_edge_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 52,
+        "gltfIndex": 44,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1154,7 +1010,7 @@
       "id": "9e9d6",
       "name": "pool_edge_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 53,
+        "gltfIndex": 45,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1172,7 +1028,7 @@
       "id": "bdddd",
       "name": "pool_edge_west_mesh.mesh",
       "userData": {
-        "gltfIndex": 54,
+        "gltfIndex": 46,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1190,7 +1046,7 @@
       "id": "944c0",
       "name": "pool_floor_mesh.mesh",
       "userData": {
-        "gltfIndex": 55,
+        "gltfIndex": 47,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1208,7 +1064,7 @@
       "id": "6237e",
       "name": "pool_tile_grout_cross_00_mesh.mesh",
       "userData": {
-        "gltfIndex": 56,
+        "gltfIndex": 48,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1226,7 +1082,7 @@
       "id": "a31a1",
       "name": "pool_tile_grout_cross_01_mesh.mesh",
       "userData": {
-        "gltfIndex": 57,
+        "gltfIndex": 49,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1244,7 +1100,7 @@
       "id": "902c6",
       "name": "pool_tile_grout_cross_02_mesh.mesh",
       "userData": {
-        "gltfIndex": 58,
+        "gltfIndex": 50,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1262,7 +1118,7 @@
       "id": "00112",
       "name": "pool_tile_grout_cross_03_mesh.mesh",
       "userData": {
-        "gltfIndex": 59,
+        "gltfIndex": 51,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1280,7 +1136,7 @@
       "id": "8afab",
       "name": "pool_tile_grout_cross_04_mesh.mesh",
       "userData": {
-        "gltfIndex": 60,
+        "gltfIndex": 52,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1298,7 +1154,7 @@
       "id": "80d94",
       "name": "pool_tile_grout_cross_05_mesh.mesh",
       "userData": {
-        "gltfIndex": 61,
+        "gltfIndex": 53,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1316,7 +1172,7 @@
       "id": "054c1",
       "name": "pool_tile_grout_cross_06_mesh.mesh",
       "userData": {
-        "gltfIndex": 62,
+        "gltfIndex": 54,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1334,7 +1190,7 @@
       "id": "11a22",
       "name": "pool_tile_grout_cross_07_mesh.mesh",
       "userData": {
-        "gltfIndex": 63,
+        "gltfIndex": 55,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1352,7 +1208,7 @@
       "id": "c62d0",
       "name": "pool_tile_grout_cross_08_mesh.mesh",
       "userData": {
-        "gltfIndex": 64,
+        "gltfIndex": 56,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1370,7 +1226,7 @@
       "id": "094ea",
       "name": "pool_tile_grout_long_00_mesh.mesh",
       "userData": {
-        "gltfIndex": 65,
+        "gltfIndex": 57,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1388,7 +1244,7 @@
       "id": "5356a",
       "name": "pool_tile_grout_long_02_mesh.mesh",
       "userData": {
-        "gltfIndex": 67,
+        "gltfIndex": 59,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1406,7 +1262,7 @@
       "id": "38f3f",
       "name": "pool_tile_grout_long_03_mesh.mesh",
       "userData": {
-        "gltfIndex": 68,
+        "gltfIndex": 60,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1424,7 +1280,7 @@
       "id": "7d876",
       "name": "pool_tile_grout_long_04_mesh.mesh",
       "userData": {
-        "gltfIndex": 69,
+        "gltfIndex": 61,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1442,7 +1298,7 @@
       "id": "a4120",
       "name": "pool_tile_grout_long_06_mesh.mesh",
       "userData": {
-        "gltfIndex": 71,
+        "gltfIndex": 63,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1460,7 +1316,7 @@
       "id": "a1e82",
       "name": "立方体.1259.mesh",
       "userData": {
-        "gltfIndex": 72,
+        "gltfIndex": 64,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -1478,44 +1334,8 @@
       "id": "8f5ce",
       "name": "rounded_blue_pool_deck_mesh.mesh",
       "userData": {
-        "gltfIndex": 73,
+        "gltfIndex": 65,
         "triangleCount": 200
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "05ce7": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@05ce7",
-      "displayName": "",
-      "id": "05ce7",
-      "name": "start_block_model_far_mesh.mesh",
-      "userData": {
-        "gltfIndex": 74,
-        "triangleCount": 4464
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "c423f": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@c423f",
-      "displayName": "",
-      "id": "c423f",
-      "name": "start_block_model_near_mesh.mesh",
-      "userData": {
-        "gltfIndex": 75,
-        "triangleCount": 4464
       },
       "ver": "1.1.1",
       "imported": true,
@@ -1532,7 +1352,7 @@
       "id": "e17fb",
       "name": "fascia_wall_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 76,
+        "gltfIndex": 66,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1550,7 +1370,7 @@
       "id": "072e6",
       "name": "fascia_wall_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 77,
+        "gltfIndex": 67,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1568,7 +1388,7 @@
       "id": "87c13",
       "name": "fascia_wall_far_mesh.mesh",
       "userData": {
-        "gltfIndex": 78,
+        "gltfIndex": 68,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1586,7 +1406,7 @@
       "id": "2a0de",
       "name": "ceiling_vault_mesh.mesh",
       "userData": {
-        "gltfIndex": 79,
+        "gltfIndex": 69,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1604,7 +1424,7 @@
       "id": "2f6b8",
       "name": "ceiling_arch_rib_0_mesh.mesh",
       "userData": {
-        "gltfIndex": 80,
+        "gltfIndex": 70,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1622,7 +1442,7 @@
       "id": "2761f",
       "name": "ceiling_arch_rib_1_mesh.mesh",
       "userData": {
-        "gltfIndex": 81,
+        "gltfIndex": 71,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1640,7 +1460,7 @@
       "id": "d685a",
       "name": "ceiling_arch_rib_2_mesh.mesh",
       "userData": {
-        "gltfIndex": 82,
+        "gltfIndex": 72,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1658,7 +1478,7 @@
       "id": "b2d90",
       "name": "ceiling_arch_rib_4_mesh.mesh",
       "userData": {
-        "gltfIndex": 84,
+        "gltfIndex": 74,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1676,7 +1496,7 @@
       "id": "e7358",
       "name": "hall_wall_north_mesh.001.mesh",
       "userData": {
-        "gltfIndex": 85,
+        "gltfIndex": 75,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1694,7 +1514,7 @@
       "id": "012f6",
       "name": "hall_wall_south_mesh.001.mesh",
       "userData": {
-        "gltfIndex": 86,
+        "gltfIndex": 76,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1712,7 +1532,7 @@
       "id": "dada6",
       "name": "hall_wall_far_mesh.001.mesh",
       "userData": {
-        "gltfIndex": 87,
+        "gltfIndex": 77,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1730,7 +1550,7 @@
       "id": "c6fdd",
       "name": "hall_wall_near_mesh.mesh",
       "userData": {
-        "gltfIndex": 88,
+        "gltfIndex": 78,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -1748,7 +1568,7 @@
       "id": "6f892",
       "name": "grandstand_north_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 89,
+        "gltfIndex": 79,
         "triangleCount": 426
       },
       "ver": "1.1.1",
@@ -1766,7 +1586,7 @@
       "id": "90bf6",
       "name": "grandstand_south_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 90,
+        "gltfIndex": 80,
         "triangleCount": 426
       },
       "ver": "1.1.1",
@@ -1784,7 +1604,7 @@
       "id": "0894e",
       "name": "scoreboard_screen_mesh.001.mesh",
       "userData": {
-        "gltfIndex": 91,
+        "gltfIndex": 81,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1802,7 +1622,7 @@
       "id": "28e6b",
       "name": "scoreboard_screen_near_mesh.mesh",
       "userData": {
-        "gltfIndex": 92,
+        "gltfIndex": 82,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1820,7 +1640,7 @@
       "id": "043ed",
       "name": "pool_inner_wall_deep_west_mesh.mesh",
       "userData": {
-        "gltfIndex": 93,
+        "gltfIndex": 83,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1838,7 +1658,7 @@
       "id": "42a2c",
       "name": "pool_inner_wall_deep_east_mesh.mesh",
       "userData": {
-        "gltfIndex": 94,
+        "gltfIndex": 84,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1856,7 +1676,7 @@
       "id": "820bb",
       "name": "pool_inner_wall_deep_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 95,
+        "gltfIndex": 85,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1874,7 +1694,7 @@
       "id": "f42bf",
       "name": "pool_inner_wall_deep_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 96,
+        "gltfIndex": 86,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1892,7 +1712,7 @@
       "id": "b3f6b",
       "name": "grandstand_north_base_mesh.mesh",
       "userData": {
-        "gltfIndex": 97,
+        "gltfIndex": 87,
         "triangleCount": 6
       },
       "ver": "1.1.1",
@@ -1910,7 +1730,7 @@
       "id": "1fe43",
       "name": "grandstand_south_base_mesh.mesh",
       "userData": {
-        "gltfIndex": 98,
+        "gltfIndex": 88,
         "triangleCount": 6
       },
       "ver": "1.1.1",
@@ -1928,7 +1748,7 @@
       "id": "ec0bc",
       "name": "banner_north_0_mesh.mesh",
       "userData": {
-        "gltfIndex": 99,
+        "gltfIndex": 89,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1946,7 +1766,7 @@
       "id": "ce1b8",
       "name": "banner_south_0_mesh.mesh",
       "userData": {
-        "gltfIndex": 100,
+        "gltfIndex": 90,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1964,7 +1784,7 @@
       "id": "2ade2",
       "name": "banner_north_1_mesh.mesh",
       "userData": {
-        "gltfIndex": 101,
+        "gltfIndex": 91,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -1982,7 +1802,7 @@
       "id": "56c0d",
       "name": "banner_south_1_mesh.mesh",
       "userData": {
-        "gltfIndex": 102,
+        "gltfIndex": 92,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2000,7 +1820,7 @@
       "id": "d8a59",
       "name": "banner_south_2_mesh.mesh",
       "userData": {
-        "gltfIndex": 104,
+        "gltfIndex": 94,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2018,7 +1838,7 @@
       "id": "16ee8",
       "name": "banner_south_3_mesh.mesh",
       "userData": {
-        "gltfIndex": 106,
+        "gltfIndex": 96,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2036,7 +1856,7 @@
       "id": "c32f2",
       "name": "banner_north_4_mesh.mesh",
       "userData": {
-        "gltfIndex": 107,
+        "gltfIndex": 97,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2054,7 +1874,7 @@
       "id": "870a7",
       "name": "banner_south_4_mesh.mesh",
       "userData": {
-        "gltfIndex": 108,
+        "gltfIndex": 98,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2072,7 +1892,7 @@
       "id": "6b95f",
       "name": "banner_north_5_mesh.mesh",
       "userData": {
-        "gltfIndex": 109,
+        "gltfIndex": 99,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2090,7 +1910,7 @@
       "id": "f4f81",
       "name": "banner_south_5_mesh.mesh",
       "userData": {
-        "gltfIndex": 110,
+        "gltfIndex": 100,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2108,7 +1928,7 @@
       "id": "3d74d",
       "name": "banner_far_1_mesh.mesh",
       "userData": {
-        "gltfIndex": 112,
+        "gltfIndex": 102,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2126,7 +1946,7 @@
       "id": "1abb5",
       "name": "scoreboard_frame_far_mesh.mesh",
       "userData": {
-        "gltfIndex": 113,
+        "gltfIndex": 103,
         "triangleCount": 16
       },
       "ver": "1.1.1",
@@ -2144,7 +1964,7 @@
       "id": "f38ca",
       "name": "scoreboard_frame_near_mesh.mesh",
       "userData": {
-        "gltfIndex": 114,
+        "gltfIndex": 104,
         "triangleCount": 16
       },
       "ver": "1.1.1",
@@ -2162,7 +1982,7 @@
       "id": "fa178",
       "name": "ceiling_spotlights_mesh.mesh",
       "userData": {
-        "gltfIndex": 115,
+        "gltfIndex": 105,
         "triangleCount": 80
       },
       "ver": "1.1.1",
@@ -2180,7 +2000,7 @@
       "id": "6bedb",
       "name": "backstroke_flags_far_mesh.001.mesh",
       "userData": {
-        "gltfIndex": 116,
+        "gltfIndex": 106,
         "triangleCount": 66
       },
       "ver": "1.1.1",
@@ -2198,7 +2018,7 @@
       "id": "44edf",
       "name": "ceiling_arch_rib_far_mesh.mesh",
       "userData": {
-        "gltfIndex": 117,
+        "gltfIndex": 107,
         "triangleCount": 24
       },
       "ver": "1.1.1",
@@ -2216,7 +2036,7 @@
       "id": "7686d",
       "name": "hall_wall_podium_north_mesh.mesh",
       "userData": {
-        "gltfIndex": 118,
+        "gltfIndex": 108,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2234,7 +2054,7 @@
       "id": "374b2",
       "name": "hall_wall_podium_south_mesh.mesh",
       "userData": {
-        "gltfIndex": 119,
+        "gltfIndex": 109,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -2252,7 +2072,7 @@
       "id": "4e6af",
       "name": "hall_floor.mesh",
       "userData": {
-        "gltfIndex": 120,
+        "gltfIndex": 110,
         "triangleCount": 8
       },
       "ver": "1.1.1",
@@ -2270,7 +2090,7 @@
       "id": "40c90",
       "name": "award_podium_1.002.mesh",
       "userData": {
-        "gltfIndex": 121,
+        "gltfIndex": 111,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -2288,7 +2108,7 @@
       "id": "c375b",
       "name": "award_podium_2.002.mesh",
       "userData": {
-        "gltfIndex": 122,
+        "gltfIndex": 112,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -2306,7 +2126,7 @@
       "id": "82b4a",
       "name": "award_podium_3.002.mesh",
       "userData": {
-        "gltfIndex": 123,
+        "gltfIndex": 113,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -2317,12 +2137,12 @@
       ],
       "subMetas": {}
     },
-    "18b88": {
+    "0f0b2": {
       "importer": "gltf-embeded-image",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@18b88",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@0f0b2",
       "displayName": "",
-      "id": "18b88",
-      "name": "跳台_basecolor.image",
+      "id": "0f0b2",
+      "name": "VenueFloorTilePoolBlue.image",
       "userData": {
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
@@ -2351,25 +2171,9 @@
         "mipfilter": "linear",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@18b88"
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@0f0b2"
       },
       "ver": "1.0.22",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "a9518": {
-      "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@a9518",
-      "displayName": "",
-      "id": "a9518",
-      "name": "LPVenue_cartoon_deck_sky_panels.material",
-      "userData": {
-        "gltfIndex": 0
-      },
-      "ver": "1.0.14",
       "imported": true,
       "files": [
         ".json"
@@ -2383,7 +2187,7 @@
       "id": "c3802",
       "name": "LPVenue_cartoon_float_blue.material",
       "userData": {
-        "gltfIndex": 1
+        "gltfIndex": 0
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2399,7 +2203,7 @@
       "id": "3271b",
       "name": "LPVenue_cartoon_float_white.material",
       "userData": {
-        "gltfIndex": 2
+        "gltfIndex": 1
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2415,7 +2219,7 @@
       "id": "bdbbf",
       "name": "LPVenue_cartoon_float_red.material",
       "userData": {
-        "gltfIndex": 3
+        "gltfIndex": 2
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2431,7 +2235,7 @@
       "id": "7137e",
       "name": "LPVenue_cartoon_float_yellow.material",
       "userData": {
-        "gltfIndex": 4
+        "gltfIndex": 3
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2447,7 +2251,7 @@
       "id": "973fd",
       "name": "LPVenue_cartoon_lane_floor_navy.material",
       "userData": {
-        "gltfIndex": 5
+        "gltfIndex": 4
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2463,7 +2267,7 @@
       "id": "e76ac",
       "name": "LPVenue_cartoon_glass_rail_light.material",
       "userData": {
-        "gltfIndex": 6
+        "gltfIndex": 5
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2479,7 +2283,7 @@
       "id": "03bac",
       "name": "LPVenue_cartoon_start_block_cream.material",
       "userData": {
-        "gltfIndex": 7
+        "gltfIndex": 6
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2495,7 +2299,7 @@
       "id": "5dcc0",
       "name": "LPVenue_cartoon_pool_edge_white.material",
       "userData": {
-        "gltfIndex": 8
+        "gltfIndex": 7
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2511,7 +2315,7 @@
       "id": "2416b",
       "name": "LPVenue_cartoon_pool_tile_white.material",
       "userData": {
-        "gltfIndex": 9
+        "gltfIndex": 8
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2527,7 +2331,7 @@
       "id": "28a11",
       "name": "LPVenue_cartoon_pool_tile_grout.material",
       "userData": {
-        "gltfIndex": 10
+        "gltfIndex": 9
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2543,7 +2347,7 @@
       "id": "86ba8",
       "name": "LPVenue_runtime_water_placeholder.material",
       "userData": {
-        "gltfIndex": 11
+        "gltfIndex": 10
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2559,7 +2363,7 @@
       "id": "2371a",
       "name": "LPVenue_cartoon_deck_cobalt.material",
       "userData": {
-        "gltfIndex": 12
+        "gltfIndex": 11
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2568,14 +2372,14 @@
       ],
       "subMetas": {}
     },
-    "217f0": {
+    "beb96": {
       "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@217f0",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@beb96",
       "displayName": "",
-      "id": "217f0",
-      "name": "LPVenue_new_start_block.material",
+      "id": "beb96",
+      "name": "LPVenue_floor_tile_textured.material",
       "userData": {
-        "gltfIndex": 13
+        "gltfIndex": 12
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2591,7 +2395,7 @@
       "id": "d24bb",
       "name": "LPVenue_cartoon_fascia_wall.material",
       "userData": {
-        "gltfIndex": 14
+        "gltfIndex": 13
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2607,7 +2411,7 @@
       "id": "787ee",
       "name": "LPVenue_cartoon_roof.material",
       "userData": {
-        "gltfIndex": 15
+        "gltfIndex": 14
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2623,7 +2427,7 @@
       "id": "92fad",
       "name": "LPVenue_cartoon_truss.material",
       "userData": {
-        "gltfIndex": 16
+        "gltfIndex": 15
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2639,7 +2443,7 @@
       "id": "d780a",
       "name": "LPVenue_cartoon_hall_wall.material",
       "userData": {
-        "gltfIndex": 17
+        "gltfIndex": 16
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2655,7 +2459,7 @@
       "id": "e9829",
       "name": "LPVenue_cartoon_stand_seat.material",
       "userData": {
-        "gltfIndex": 18
+        "gltfIndex": 17
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2671,7 +2475,7 @@
       "id": "336cb",
       "name": "LPVenue_cartoon_stand_aisle.material",
       "userData": {
-        "gltfIndex": 20
+        "gltfIndex": 19
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2687,7 +2491,7 @@
       "id": "27ae0",
       "name": "LPVenue_cartoon_scoreboard.material",
       "userData": {
-        "gltfIndex": 21
+        "gltfIndex": 20
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2703,7 +2507,7 @@
       "id": "65c37",
       "name": "LPVenue_cartoon_inner_wall_navy.material",
       "userData": {
-        "gltfIndex": 22
+        "gltfIndex": 21
       },
       "ver": "1.0.14",
       "imported": true,
@@ -2732,8 +2536,8 @@
   "userData": {
     "imageMetas": [
       {
-        "name": "跳台_basecolor",
-        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@18b88"
+        "name": "VenueFloorTilePoolBlue",
+        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@0f0b2"
       }
     ],
     "lods": {
@@ -2756,14 +2560,6 @@
     },
     "assetFinder": {
       "meshes": [
-        "a751d540-5ebd-4868-a41a-334975b3aed3@16f61",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@0af52",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@62aea",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@7695a",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@cfc20",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@387eb",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@8299f",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@e821a",
         "a751d540-5ebd-4868-a41a-334975b3aed3@f5921",
         "a751d540-5ebd-4868-a41a-334975b3aed3@b137a",
         "a751d540-5ebd-4868-a41a-334975b3aed3@9bcb0",
@@ -2830,8 +2626,6 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@a4120",
         "a751d540-5ebd-4868-a41a-334975b3aed3@a1e82",
         "a751d540-5ebd-4868-a41a-334975b3aed3@8f5ce",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@05ce7",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@c423f",
         "a751d540-5ebd-4868-a41a-334975b3aed3@e17fb",
         "a751d540-5ebd-4868-a41a-334975b3aed3@072e6",
         "a751d540-5ebd-4868-a41a-334975b3aed3@87c13",
@@ -2886,7 +2680,6 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@e39f7"
       ],
       "materials": [
-        "a751d540-5ebd-4868-a41a-334975b3aed3@a9518",
         "a751d540-5ebd-4868-a41a-334975b3aed3@c3802",
         "a751d540-5ebd-4868-a41a-334975b3aed3@3271b",
         "a751d540-5ebd-4868-a41a-334975b3aed3@bdbbf",
@@ -2899,7 +2692,7 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@28a11",
         "a751d540-5ebd-4868-a41a-334975b3aed3@86ba8",
         "a751d540-5ebd-4868-a41a-334975b3aed3@2371a",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@217f0",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@beb96",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d24bb",
         "a751d540-5ebd-4868-a41a-334975b3aed3@787ee",
         "a751d540-5ebd-4868-a41a-334975b3aed3@92fad",

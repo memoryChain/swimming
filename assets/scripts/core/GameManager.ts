@@ -251,9 +251,6 @@ export class GameManager extends Component {
         dt = scaledDelta(dt);
         this._awardsPresentation.update(dt);
         this._inputRouter?.tick();
-        // Keep the refraction camera locked to the current view every frame so the
-        // water bends whatever is beneath it from any camera mode.
-        this._waterRefraction?.update();
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
@@ -325,11 +322,16 @@ export class GameManager extends Component {
             this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
+            this._waterRefraction?.update();
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
+        // Update after the race camera so the refraction camera uses this frame's
+        // final transform. Underwater shots keep the swimmer overlay camera synced
+        // while the water surface and refraction RenderTexture camera stay off.
+        this._waterRefraction?.update();
     }
 
     // Cull splash + freeze pose for AI swimmers that are outside the camera frustum. Testing against the
@@ -1347,6 +1349,7 @@ export class GameManager extends Component {
     }
 
     private setUnderwaterOverlayVisible(visible: boolean) {
+        this._waterRefraction?.setUnderwaterViewActive(visible);
         if (this._underwaterCameraTint) {
             this._underwaterCameraTint.active = visible;
             if (visible) {

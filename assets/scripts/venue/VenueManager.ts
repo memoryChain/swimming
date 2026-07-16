@@ -1,6 +1,7 @@
 import { Node } from 'cc';
 import { PoolFallbackBuilder } from './PoolFallbackBuilder';
 import { PoolSceneLoader } from './PoolSceneLoader';
+import { StartBlockInstancer } from './StartBlockInstancer';
 import { PoolDefinition } from './VenueConfig';
 import { WaterSurfaceBinder } from './WaterSurfaceBinder';
 
@@ -16,6 +17,7 @@ export type VenueBuildResult = {
 export class VenueManager {
     private readonly _loader = new PoolSceneLoader();
     private readonly _fallbackBuilder = new PoolFallbackBuilder();
+    private readonly _startBlocks = new StartBlockInstancer();
     private readonly _waterBinder = new WaterSurfaceBinder();
     private readonly _debug?: (message: string) => void;
 
@@ -40,8 +42,16 @@ export class VenueManager {
                 this._debug?.(`legacy fake sky hidden nodes=${hiddenSkyOccluders}`);
                 console.log(`[SpeedSwimming] legacy fake sky hidden nodes=${hiddenSkyOccluders}`);
             }
-            this._debug?.(`pool prefab loaded: ${definition.prefabPath}`);
-            done?.({ pool, error: null });
+            this._startBlocks.build(pool, (result) => {
+                if (result.error) {
+                    console.warn('[SpeedSwimming] dynamic start blocks unavailable', result.error);
+                    this._debug?.(`dynamic start blocks unavailable: ${result.error.message}`);
+                } else {
+                    this._debug?.(`dynamic start blocks=${result.count} batched=${result.batched ? 'yes' : 'no'}`);
+                }
+                this._debug?.(`pool prefab loaded: ${definition.prefabPath}`);
+                done?.({ pool, error: null });
+            });
         });
     }
 }

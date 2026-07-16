@@ -191,6 +191,10 @@ export const RESOURCE_PATHS = {
     swimmerPrefabCandidates: DEFAULT_SWIMMER_PREFAB_CANDIDATES,
     swimmerModelVariants: SWIMMER_MODEL_VARIANTS,
     poolPrefab: 'pool/PoolScene',
+    startBlockPrefabCandidates: [
+        'pool/StartBlock/StartBlock',
+        'pool/StartBlock',
+    ],
     poolWaterMaterial: 'pool/RagingPoolWater',
     swimmerSplashMaterial: 'pool/SwimmerSplash',
     skyboxVariants: SKYBOX_VARIANTS,

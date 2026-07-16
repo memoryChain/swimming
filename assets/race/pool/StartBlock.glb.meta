@@ -1,0 +1,143 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586",
+  "files": [],
+  "subMetas": {
+    "1ab25": {
+      "importer": "gltf-mesh",
+      "uuid": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@1ab25",
+      "displayName": "",
+      "id": "1ab25",
+      "name": "StartBlockMesh.002.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 558
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8fd34": {
+      "importer": "gltf-embeded-image",
+      "uuid": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@8fd34",
+      "displayName": "",
+      "id": "8fd34",
+      "name": "StartBlockBaseColor-256.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@8fd34"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e3cc3": {
+      "importer": "gltf-material",
+      "uuid": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@e3cc3",
+      "displayName": "",
+      "id": "e3cc3",
+      "name": "StartBlockRuntimeUnlit.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1c483": {
+      "importer": "gltf-scene",
+      "uuid": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@1c483",
+      "displayName": "",
+      "id": "1c483",
+      "name": "StartBlock.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "StartBlockBaseColor-256",
+        "uri": "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@8fd34"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@1ab25"
+      ],
+      "skeletons": [],
+      "textures": [
+        "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@e39f7"
+      ],
+      "materials": [
+        "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@e3cc3"
+      ],
+      "scenes": [
+        "f87c8d5f-a6ab-49ba-8d93-7595dc5d3586@1c483"
+      ]
+    }
+  }
+}

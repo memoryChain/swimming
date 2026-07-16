@@ -73,6 +73,8 @@ export class WaterRefractionController {
     private readonly _floorTints: { material: Material; above: Color; below: Color }[] = [];
     private _waterY = 0;
     private _floorUnderwater: boolean | null = null;
+    private _underwaterViewActive = false;
+    private _waterActiveBeforeUnderwater = true;
     private readonly _debug?: (message: string) => void;
 
     constructor(debug?: (message: string) => void) {
@@ -102,6 +104,8 @@ export class WaterRefractionController {
         this._getSwimmerNodes = getSwimmerNodes;
 
         const waterNode = findNodeByName(pool, WATER_SURFACE_NODE_NAME);
+        this._waterNode = waterNode;
+        this._waterActiveBeforeUnderwater = waterNode?.active ?? true;
         this._waterY = waterNode?.isValid ? waterNode.worldPosition.y : 0.1;
         this.collectFloorTints(pool);
 
@@ -171,14 +175,49 @@ export class WaterRefractionController {
         if (!this._refractionCamera || !this._mainCamera) {
             return;
         }
-        this.resizeIfNeeded();
         this.syncCamera();
-        this.ensureMaterialBound();
+        if (!this._underwaterViewActive) {
+            this.resizeIfNeeded();
+            this.ensureMaterialBound();
+        }
         this.updateFloorTint();
         this._frame += 1;
         if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
         }
+    }
+
+    // The refracting surface is only meaningful when viewed from above. Hide it
+    // for dedicated underwater camera shots so it cannot cut across the view,
+    // and pause the now-unused refraction RenderTexture camera. The swimmer
+    // overlay camera deliberately stays enabled because swimmer render roots live
+    // on its private layer in both above-water and underwater shots.
+    setUnderwaterViewActive(active: boolean) {
+        if (active === this._underwaterViewActive) {
+            return;
+        }
+        if (active) {
+            if (this._waterNode?.isValid) {
+                this._waterActiveBeforeUnderwater = this._waterNode.active;
+                this._waterNode.active = false;
+            }
+            if (this._refractionCamera?.isValid) {
+                this._refractionCamera.enabled = false;
+            }
+        } else {
+            if (this._waterNode?.isValid) {
+                this._waterNode.active = this._waterActiveBeforeUnderwater;
+            }
+            if (this._refractionCamera?.isValid) {
+                this._refractionCamera.enabled = true;
+            }
+            // Force a short rebind after the off-screen camera resumes so a
+            // resized or recreated GPU texture cannot leave a stale sampler.
+            this._boundMaterial = null;
+            this._rebindFrames = REBIND_WARMUP_FRAMES;
+        }
+        this._underwaterViewActive = active;
+        this._debug?.(`water surface ${active ? 'hidden for underwater camera' : 'restored above water'}`);
     }
 
     // Collect the pool-bottom renderers matching FLOOR_TINT, give each an unlit
@@ -242,7 +281,11 @@ export class WaterRefractionController {
     }
 
     dispose() {
+        if (this._underwaterViewActive && this._waterNode?.isValid) {
+            this._waterNode.active = this._waterActiveBeforeUnderwater;
+        }
         if (this._refractionCamera?.isValid) {
+            this._refractionCamera.enabled = true;
             this._refractionCamera.targetTexture = null;
         }
         if (this._refractionCamera?.node?.isValid) {
@@ -262,6 +305,8 @@ export class WaterRefractionController {
         this._getSwimmerNodes = null;
         this._floorTints.length = 0;
         this._floorUnderwater = null;
+        this._underwaterViewActive = false;
+        this._waterActiveBeforeUnderwater = true;
     }
 
     // Copy the main camera's world transform and projection every frame so both
