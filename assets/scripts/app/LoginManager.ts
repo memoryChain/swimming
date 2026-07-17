@@ -6,6 +6,7 @@ import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
+import { MusicManager } from './MusicManager';
 
 const { ccclass } = _decorator;
 
@@ -29,6 +30,12 @@ export class LoginManager extends Component {
 
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
+        MusicManager.playLogin();
+        canvasNode.on(Node.EventType.TOUCH_START, this.unlockMusic, this);
+    }
+
+    onDestroy() {
+        this._canvasNode?.off(Node.EventType.TOUCH_START, this.unlockMusic, this);
     }
 
     startGame() {
@@ -80,6 +87,10 @@ export class LoginManager extends Component {
                 director.runScene(scene);
             });
         });
+    }
+
+    private unlockMusic() {
+        MusicManager.unlock();
     }
 
     private findCanvasNode(): Node {

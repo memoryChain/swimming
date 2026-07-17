@@ -1,9 +1,9 @@
 {
   "name": "wechat-race-subpackage",
-  "title": "WeChat Race Subpackage",
+  "title": "WeChat Race and Music Subpackages",
   "package_version": 2,
-  "version": "1.1.2",
-  "description": "Generates and verifies the race Asset Bundle as a WeChat Mini Game subpackage.",
+  "version": "1.2.0",
+  "description": "Generates and verifies the race and music Asset Bundles as WeChat Mini Game subpackages.",
   "contributions": {
     "builder": "./builder.js"
   }

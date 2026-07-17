@@ -21,6 +21,7 @@ import {
     view,
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
+import { MusicManager } from '../app/MusicManager';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
@@ -534,6 +535,11 @@ export class GameManager extends Component {
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
+                if (state === GameState.PRECOUNTDOWN) {
+                    MusicManager.playRace();
+                } else if (state === GameState.AWARDS) {
+                    MusicManager.playResult();
+                }
                 // The start blocks are a statically batched, non-cullable mesh only
                 // seen at the dive end. Hide them once the swimmer leaves the wall
                 // (gliding/racing) so their vertices aren't processed every frame.

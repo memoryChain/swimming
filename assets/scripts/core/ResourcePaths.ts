@@ -204,6 +204,12 @@ export const RESOURCE_PATHS = {
     swimmer0621ColorMask: 'models/UserSwimmer0621_2ColorMask/texture',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
     sampledActionsDir: 'sampled-actions',
+    music: {
+        bundle: 'music',
+        login: 'login_ripples',
+        race: 'race_current',
+        result: 'result_sunlit_podium',
+    },
 };
 
 export function findSwimmerModelVariant(id: string): SwimmerModelVariant | null {

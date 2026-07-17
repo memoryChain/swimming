@@ -337,7 +337,7 @@
             "_value": false
           },
           "audio": {
-            "_value": false
+            "_value": true
           },
           "video": {
             "_value": false
@@ -414,6 +414,7 @@
           "2d",
           "3d",
           "animation",
+          "audio",
           "base",
           "custom-pipeline",
           "gfx-webgl",

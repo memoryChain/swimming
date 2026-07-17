@@ -7,7 +7,11 @@ const LOGIN_SCENE = {
     url: 'db://assets/scenes/Login.scene',
     uuid: '074665cc-6b6a-4138-bf91-410cd0b70e4d',
 };
-const RACE_GAME_ENTRY = "'use strict';\nrequire('./index.js');\n";
+const SUBPACKAGE_GAME_ENTRY = "'use strict';\nrequire('./index.js');\n";
+const SUBPACKAGE_BUNDLES = [
+    { name: 'race', root: 'db://assets/race', priority: 7 },
+    { name: 'music', root: 'db://assets/music', priority: 6 },
+];
 
 exports.throwError = true;
 
@@ -21,14 +25,15 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
     options.scenes = [LOGIN_SCENE];
     options.mainBundleCompressionType = 'merge_dep';
     const bundleConfigs = Array.isArray(options.bundleConfigs) ? options.bundleConfigs : [];
-    options.bundleConfigs = bundleConfigs.filter((bundle) => bundle.root !== 'db://assets/race');
-    options.bundleConfigs.push({
-        root: 'db://assets/race',
-        name: 'race',
-        priority: 7,
-        compressionType: 'subpackage',
-        isRemote: false,
-    });
+    const configuredRoots = new Set(SUBPACKAGE_BUNDLES.map((bundle) => bundle.root));
+    options.bundleConfigs = bundleConfigs.filter((bundle) => !configuredRoots.has(bundle.root));
+    for (const bundle of SUBPACKAGE_BUNDLES) {
+        options.bundleConfigs.push({
+            ...bundle,
+            compressionType: 'subpackage',
+            isRemote: false,
+        });
+    }
 };
 
 exports.onBeforeCompressSettings = async function onBeforeCompressSettings(options, result) {
@@ -37,7 +42,7 @@ exports.onBeforeCompressSettings = async function onBeforeCompressSettings(optio
     }
     const assets = result.settings.assets || (result.settings.assets = {});
     const subpackages = Array.isArray(assets.subpackages) ? assets.subpackages : [];
-    assets.subpackages = [...new Set([...subpackages, 'race'])];
+    assets.subpackages = [...new Set([...subpackages, ...SUBPACKAGE_BUNDLES.map((bundle) => bundle.name)])];
 };
 
 exports.onAfterBuild = async function onAfterBuild(options, result) {
@@ -49,58 +54,74 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const settingsAssets = settings.assets || (settings.assets = {});
     const cocosSubpackages = Array.isArray(settingsAssets.subpackages) ? settingsAssets.subpackages : [];
-    settingsAssets.subpackages = [...new Set([...cocosSubpackages, 'race'])];
+    settingsAssets.subpackages = [
+        ...new Set([...cocosSubpackages, ...SUBPACKAGE_BUNDLES.map((bundle) => bundle.name)]),
+    ];
     fs.writeFileSync(settingsPath, `${JSON.stringify(settings)}\n`, 'utf8');
 
     const gameJsonPath = path.join(result.dest, 'game.json');
     const gameConfig = JSON.parse(fs.readFileSync(gameJsonPath, 'utf8'));
     const subpackages = Array.isArray(gameConfig.subpackages) ? gameConfig.subpackages : [];
-    const generatedBundleRoot = path.resolve(result.dest, 'assets', 'race');
-    const generatedRaceRoot = 'subpackages/race/';
-    const raceRoot = path.resolve(result.dest, generatedRaceRoot);
     const outputRoot = path.resolve(result.dest);
-    for (const candidate of [generatedBundleRoot, raceRoot]) {
-        if (!candidate.startsWith(`${outputRoot}${path.sep}`)) {
-            throw new Error(`[wechat-race-subpackage] Refusing to modify path outside build output: ${candidate}`);
+    const generatedSubpackages = [];
+    for (const bundle of SUBPACKAGE_BUNDLES) {
+        const generatedBundleRoot = path.resolve(result.dest, 'assets', bundle.name);
+        const generatedSubpackageRoot = `subpackages/${bundle.name}/`;
+        const subpackageRoot = path.resolve(result.dest, generatedSubpackageRoot);
+        for (const candidate of [generatedBundleRoot, subpackageRoot]) {
+            if (!candidate.startsWith(`${outputRoot}${path.sep}`)) {
+                throw new Error(`[wechat-race-subpackage] Refusing to modify path outside build output: ${candidate}`);
+            }
         }
+
+        // Creator 3.8.8 can emit subpackage Bundles under assets/<name>.
+        // Move instead of copy so no duplicate remains in the main package.
+        if (fs.existsSync(generatedBundleRoot)) {
+            fs.mkdirSync(path.dirname(subpackageRoot), { recursive: true });
+            fs.rmSync(subpackageRoot, { recursive: true, force: true });
+            fs.renameSync(generatedBundleRoot, subpackageRoot);
+        }
+        if (!fs.existsSync(subpackageRoot)) {
+            throw new Error(
+                `[wechat-race-subpackage] Generated ${bundle.name} Asset Bundle root does not exist: ${generatedSubpackageRoot}`,
+            );
+        }
+        for (const requiredFile of ['config.json', 'index.js']) {
+            if (!fs.existsSync(path.join(subpackageRoot, requiredFile))) {
+                throw new Error(`[wechat-race-subpackage] ${bundle.name} Bundle is missing ${requiredFile}`);
+            }
+        }
+        const gameEntryPath = path.join(subpackageRoot, 'game.js');
+        fs.writeFileSync(gameEntryPath, SUBPACKAGE_GAME_ENTRY, 'utf8');
+        generatedSubpackages.push({
+            name: bundle.name,
+            root: generatedSubpackageRoot,
+            generatedBundleRoot,
+            gameEntryPath,
+        });
     }
 
-    // Creator 3.8.8 may emit the bundle under assets/race even though its
-    // runtime loader resolves registered subpackages from subpackages/race.
-    // Move instead of copy so the race resources do not remain in the main package.
-    if (fs.existsSync(generatedBundleRoot)) {
-        fs.mkdirSync(path.dirname(raceRoot), { recursive: true });
-        fs.rmSync(raceRoot, { recursive: true, force: true });
-        fs.renameSync(generatedBundleRoot, raceRoot);
-    }
-    if (!fs.existsSync(raceRoot)) {
-        throw new Error(`[wechat-race-subpackage] Generated race Asset Bundle root does not exist: ${generatedRaceRoot}`);
-    }
-
+    const generatedNames = new Set(generatedSubpackages.map((subpackage) => subpackage.name));
     gameConfig.subpackages = [
-        { name: 'race', root: generatedRaceRoot },
-        ...subpackages.filter((subpackage) => subpackage.name !== 'race'),
+        ...generatedSubpackages.map(({ name, root }) => ({ name, root })),
+        ...subpackages.filter((subpackage) => !generatedNames.has(subpackage.name)),
     ];
     fs.writeFileSync(gameJsonPath, `${JSON.stringify(gameConfig, null, 4)}\n`, 'utf8');
 
-    for (const requiredFile of ['config.json', 'index.js']) {
-        if (!fs.existsSync(path.join(raceRoot, requiredFile))) {
-            throw new Error(`[wechat-race-subpackage] race Bundle is missing ${requiredFile}`);
-        }
-    }
-    const raceGameEntryPath = path.join(raceRoot, 'game.js');
-    fs.writeFileSync(raceGameEntryPath, RACE_GAME_ENTRY, 'utf8');
-
     const verifiedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const verifiedGameConfig = JSON.parse(fs.readFileSync(gameJsonPath, 'utf8'));
-    const settingsReady = verifiedSettings?.assets?.subpackages?.includes('race');
-    const manifestReady = verifiedGameConfig.subpackages?.some(
-        (subpackage) => subpackage.name === 'race' && subpackage.root === generatedRaceRoot,
-    );
-    const bundleMovedOutOfMain = !fs.existsSync(generatedBundleRoot);
-    const entryReady = fs.readFileSync(raceGameEntryPath, 'utf8') === RACE_GAME_ENTRY;
-    if (!settingsReady || !manifestReady || !bundleMovedOutOfMain || !entryReady) {
-        throw new Error('[wechat-race-subpackage] race subpackage verification failed after generation.');
+    for (const generated of generatedSubpackages) {
+        const settingsReady = verifiedSettings?.assets?.subpackages?.includes(generated.name);
+        const manifestReady = verifiedGameConfig.subpackages?.some(
+            (subpackage) => subpackage.name === generated.name && subpackage.root === generated.root,
+        );
+        const bundleMovedOutOfMain = !fs.existsSync(generated.generatedBundleRoot);
+        const entryReady = fs.readFileSync(generated.gameEntryPath, 'utf8') === SUBPACKAGE_GAME_ENTRY;
+        if (!settingsReady || !manifestReady || !bundleMovedOutOfMain || !entryReady) {
+            throw new Error(
+                `[wechat-race-subpackage] ${generated.name} subpackage verification failed after generation.`,
+            );
+        }
     }
-    console.log(`[wechat-race-subpackage] generated and verified race subpackage at ${generatedRaceRoot}`);
+    console.log('[wechat-race-subpackage] generated and verified race and music subpackages.');
 };
