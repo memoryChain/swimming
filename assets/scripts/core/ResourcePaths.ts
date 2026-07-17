@@ -201,7 +201,6 @@ export const RESOURCE_PATHS = {
     playerOutlineEffect: 'effects/PlayerOutline',
     swimmerPerfectGlowEffect: 'effects/SwimmerPerfectGlow',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
-    laneFloatClipEffect: 'effects/LaneFloatClip',
     swimmer0621ColorMask: 'models/UserSwimmer0621_2ColorMask/texture',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
     sampledActionsDir: 'sampled-actions',

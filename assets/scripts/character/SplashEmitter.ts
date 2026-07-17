@@ -43,6 +43,9 @@ export type SplashEmitterState = {
     armCycleMotion: number;
     kickCycleMotion: number;
     movementDirection: number;
+    // Steering heading in radians (0 = straight down the lane). The splash rig yaws
+    // by this so the foam and spray follow where the swimmer actually points.
+    movementHeadingRadians: number;
     legSplashSuppressed: boolean;
     leftHandWaterContact: number;
     rightHandWaterContact: number;
@@ -69,6 +72,7 @@ const EMPTY_STATE: SplashEmitterState = {
     armCycleMotion: 0,
     kickCycleMotion: 0,
     movementDirection: 1,
+    movementHeadingRadians: 0,
     legSplashSuppressed: false,
     leftHandWaterContact: 0,
     rightHandWaterContact: 0,
@@ -255,7 +259,13 @@ export class SplashEmitter {
         const speedRatio = clamp(speed / TUNING.speedNormalize, 0, 1);
         this._countSpeedFactor = this.computeCountSpeedFactor(speed);
         this.node.setPosition(this._options.owner.position.x, this._waterY, this._options.owner.position.z);
-        this.node.setRotationFromEuler(0, 0, 0);
+        // Yaw the whole splash rig to the swimmer's travel heading. The internal foam
+        // and particle layout is built along the local lane axis (flipped by
+        // movementDirection); rotating the root about Y aligns that local forward with
+        // the actual world heading so splashes trail the body when it steers off-lane.
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        const yawDegrees = -direction * this._state.movementHeadingRadians * 180 / Math.PI;
+        this.node.setRotationFromEuler(0, yawDegrees, 0);
         this.node.setScale(1, 1, 1);
         let anyActive = false;
         for (const part of this._parts) {

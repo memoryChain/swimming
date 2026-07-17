@@ -90,7 +90,6 @@ export class CompetitorManager {
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
-            swimmer.applyAiSteeringDifficulty(controller.difficulty);
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
             if (lane === this._options.primaryAiLaneIndex || options?.soloLane !== undefined) {
@@ -137,7 +136,6 @@ export class CompetitorManager {
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
-            swimmer.applyAiSteeringDifficulty(controller.difficulty);
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
             if (lane === this._options.primaryAiLaneIndex) {

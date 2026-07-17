@@ -72,39 +72,26 @@ export class Swimmer extends Component {
         this.configureSteering();
     }
 
-    // Steering is a player-only comedy mechanic: enable it for the human swimmer
-    // and clamp its lateral drift to the pool side walls (lane ropes have no
-    // collision, so the whole pool width is traversable). AI opponents don't
-    // steer by strokes; they get a smooth random weave so they also drift a bit
-    // instead of tracking a robotically perfect straight line.
+    // Steering is a shared mechanic: enable it for player AND AI (the AI drives
+    // it through the same stroke path, only choosing which side to stroke). Clamp
+    // lateral drift to the pool side walls (lane ropes have no collision, so the
+    // whole pool width is traversable).
     private configureSteering() {
-        this._motor.setSteeringEnabled(!this.isAI);
-        if (this.isAI) {
-            const base = Math.max(0, STEERING_TUNING.aiWobbleAmount);
-            const variation = Math.max(0, STEERING_TUNING.aiWobbleVariation);
-            const varied = base * (1 + (Math.random() * 2 - 1) * variation);
-            this._motor.setAiSteeringWobble(Math.max(0, Math.min(1, varied)));
-        }
+        this._motor.setSteeringEnabled(true);
         const halfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - STEERING_TUNING.poolWallClearance);
         const laneZ = this._startPosition.z;
         this._motor.setLateralOffsetBounds(-halfWidth - laneZ, halfWidth - laneZ);
     }
 
-    // Scale this AI's weave by its competitiveness: strong opponents (high
-    // difficulty) swim almost straight, weak ones wander more. Called by the
-    // competitor manager once each lane's difficulty is assigned.
-    applyAiSteeringDifficulty(difficulty: number) {
-        if (!this.isAI) {
-            return;
-        }
-        const d = Math.max(0, Math.min(1, difficulty));
-        const base = Math.max(0, STEERING_TUNING.aiWobbleAmount);
-        const variation = Math.max(0, STEERING_TUNING.aiWobbleVariation);
-        // (1 - d) * 2: a mid AI (d=0.5) weaves at the full base amount, a top AI
-        // (d>=1) is basically straight, a weak AI (d<0.5) weaves even more.
-        const skillFactor = Math.max(0, Math.min(1, (1 - d) * 2));
-        const amount = base * skillFactor * (1 + (Math.random() * 2 - 1) * variation);
-        this._motor.setAiSteeringWobble(Math.max(0, Math.min(1, amount)));
+    // Signed steering heading as a fraction of maxHeading (-1..1). The AI reads
+    // this to sense how far off course it is.
+    get steeringHeadingRatio(): number {
+        return this._motor.steeringHeadingRatio;
+    }
+
+    // The stroke side that pulls the heading back toward straight (lap-aware).
+    correctiveStrokeSide(): StrokeType {
+        return this._motor.correctiveStrokeSide();
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {

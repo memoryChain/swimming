@@ -5,7 +5,10 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const ANCHOR_ROOT_NAME = 'start_block_anchor_root';
 const ANCHOR_PREFIX = 'start_block_anchor_';
-const ANCHOR_NAME_PATTERN = /^start_block_anchor_(?:near|far)_\d{2}$/;
+// Only the near (starting) end is instanced. The far end is never approached by
+// swimmers in a one-way sprint, so those 8 blocks are dropped to halve the
+// start-block vertex load.
+const ANCHOR_NAME_PATTERN = /^start_block_anchor_near_\d{2}$/;
 // Keep rendered instances out of RaceCourseLayout's contact-surface lookup.
 // Their highest vertex is a raised rear detail, not the deck where swimmers
 // plant their feet. The dedicated start_block_top_near_marker owns that height.
@@ -23,6 +26,18 @@ export type StartBlockBuildResult = {
 // material and texture assets. Static batching then folds the 16 renderers into
 // one runtime draw while preserving every anchor's world transform.
 export class StartBlockInstancer {
+    // The node that actually holds the rendered start-block geometry: the static
+    // batch root when batching succeeded, otherwise the anchor root that still
+    // parents the per-anchor instances. Toggling it lets the race hide the whole
+    // set (they are only visible at the dive end and never seen mid-race).
+    private _renderRoot: Node | null = null;
+
+    setVisible(visible: boolean) {
+        if (this._renderRoot?.isValid) {
+            this._renderRoot.active = visible;
+        }
+    }
+
     build(pool: Node, done: (result: StartBlockBuildResult) => void) {
         const anchorRoot = findNodeByName(pool, ANCHOR_ROOT_NAME);
         if (!anchorRoot) {
@@ -63,7 +78,9 @@ export class StartBlockInstancer {
                 count += 1;
             }
 
-            const batched = count > 0 && batchStartBlocks(anchorRoot, pool);
+            const batchRoot = count > 0 ? batchStartBlocks(anchorRoot, pool) : null;
+            const batched = batchRoot !== null;
+            this._renderRoot = batchRoot ?? anchorRoot;
             console.log(`[SpeedSwimming] dynamic start blocks=${count} batched=${batched ? 'yes' : 'no'} prefab=${loadedPath}`);
             done({ count, batched, error: null });
         });
@@ -94,7 +111,7 @@ function loadFirstStartBlockPrefab(
     tryNext();
 }
 
-function batchStartBlocks(anchorRoot: Node, pool: Node): boolean {
+function batchStartBlocks(anchorRoot: Node, pool: Node): Node | null {
     const batchRoot = new Node(BATCH_ROOT_NAME);
     batchRoot.layer = anchorRoot.layer;
     batchRoot.setParent(anchorRoot.parent ?? pool);
@@ -103,13 +120,13 @@ function batchStartBlocks(anchorRoot: Node, pool: Node): boolean {
     batchRoot.setScale(Vec3.ONE);
     try {
         if (BatchingUtility.batchStaticModel(anchorRoot, batchRoot)) {
-            return true;
+            return batchRoot;
         }
     } catch (error) {
         console.warn('[SpeedSwimming] start-block static batching failed; keeping shared instances', error);
     }
     batchRoot.destroy();
-    return false;
+    return null;
 }
 
 function findNodeByName(root: Node, name: string): Node | null {

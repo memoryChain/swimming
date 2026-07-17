@@ -45,23 +45,18 @@ export const STEERING_TUNING = {
     // 入弯身体侧倾（占朝向角的比例），仅为观感。0 = 不侧倾。
     bankScale: 0.25,
 
-    // AI steering: opponents also weave, so they don't look robotically precise.
-    // The player steers by strokes; AI instead does a smooth, bounded random
-    // wander of its heading (mean-reverting, never sticks to a wall). This is the
-    // base weave amount (0 = perfectly straight, 1 = very wavy).
-    // AI 转向：对手也会蛇形，不至于像机器一样精确。玩家靠划水转向；AI 则对朝向做
-    // 平滑、有界的随机摆动（均值回归，不会卡墙）。这是基础摆动幅度（0=笔直，1=很蛇形）。
-    aiWobbleAmount: 0.5,
-
-    // Per-swimmer random variation of the weave amount, so different AIs weave
-    // differently (± this fraction of the base).
-    // 每个 AI 摆动幅度的随机差异（±基础值的这个比例），让不同 AI 摆得不一样。
-    aiWobbleVariation: 0.35,
-
-    // AI weave caps at this fraction of maxHeading (keeps opponents from swinging
-    // as wildly as a spamming player).
-    // AI 摆动封顶在 maxHeading 的这个比例（避免 AI 摆得像乱点的玩家那么狂）。
-    aiWobbleMaxHeadingFraction: 0.7,
+    // AI steering: opponents share the SAME stroke-steering as the player and
+    // weave purely through imperfect input (the AI controller only decides which
+    // side to stroke). aiCorrectHeadingRatio = how far off course (fraction of
+    // maxHeading) before the AI tries to steer back. aiWanderChance = base chance
+    // a sloppy AI breaks clean alternation (repeats a side) to start a drift;
+    // scaled by (1 - difficulty) so strong AI almost never wanders and stays
+    // straight, weak AI weaves a lot. No separate wobble system.
+    // AI 转向：对手与玩家共用同一套划水转向，完全靠不完美的输入蛇形（AI 控制器
+    // 只决定划哪一侧）。aiCorrectHeadingRatio = 偏离多少（占 maxHeading 比例）后 AI 开始纠偏；
+    // aiWanderChance = 跟 AI 打破整齐交替（重复同侧）开始飘的基础概率，按 (1-难度) 缩放。
+    aiCorrectHeadingRatio: 0.3,
+    aiWanderChance: 0.5,
 
     // Pool-wall clearance (metres) kept between the swimmer root and the pool's
     // side walls when clamping the lateral offset.

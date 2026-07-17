@@ -33,7 +33,7 @@ export const SPLASH_EMITTER_TUNING = {
     // 水花粒子美术风格开关：
     //   'streak' = 柔和圆点沿速度拉伸成细长水条（当前）。
     //   'blocky' = 硬边方块贴图，普通广告牌（不拉伸），靠随机旋转呈现方块。
-    style: 'streak' as 'streak' | 'blocky',
+    style: 'blocky' as 'streak' | 'blocky',
 
     // Highest renderer priority so splashes draw after transparent water.
     // 最高渲染优先级，确保水花绘制在透明水面之后。

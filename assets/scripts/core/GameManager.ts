@@ -257,19 +257,6 @@ export class GameManager extends Component {
         this.updatePlayerCondition(dt);
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
         const raceActive = this._state === GameState.RACING;
-        const laneClipActive = this._state === GameState.DIVING
-            || this._state === GameState.GLIDING
-            || this._state === GameState.RACING;
-        const playerWorld = this._playerSwimmer.node.worldPosition;
-        const playerHeading = this._playerSwimmer.movementHeading;
-        const playerDirection = this._playerSwimmer.raceDirection;
-        this._venueManager?.updateLaneFloatClip(
-            playerWorld.x,
-            playerWorld.z,
-            playerDirection * Math.cos(playerHeading),
-            Math.sin(playerHeading),
-            laneClipActive,
-        );
         const raceDistance = getRaceDistance();
         const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
         const raceStatusVisible = !this._modelDebugFlow?.active
@@ -519,6 +506,12 @@ export class GameManager extends Component {
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
+                // The start blocks are a statically batched, non-cullable mesh only
+                // seen at the dive end. Hide them once the swimmer leaves the wall
+                // (gliding/racing) so their vertices aren't processed every frame.
+                this._venueManager?.setStartBlocksVisible(
+                    state !== GameState.GLIDING && state !== GameState.RACING,
+                );
                 if (state !== GameState.AWARDS) {
                     this._awardsPresentation.hide();
                 }

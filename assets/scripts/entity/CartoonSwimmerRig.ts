@@ -73,6 +73,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _leftHandWaterProgress = 0;
     private _rightHandWaterProgress = 0;
     private _splashMovementDirection = 1;
+    private _splashMovementHeadingRadians = 0;
     private _legSplashSuppressed = false;
     private _lastArmCycle = 0;
     private _hasLastArmCycle = false;
@@ -587,6 +588,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         // Arms reach along the actual swim heading so they follow the body when it
         // steers, instead of staying pinned to the lane axis.
         this._pose.setMovementHeadingRadians(motor.heading);
+        this._splashMovementHeadingRadians = motor.heading;
         this.updateFreestyle(
             useDt,
             motor.leftArmCycle,
@@ -605,6 +607,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._pose.setMovementHeadingRadians(motor.heading);
+        this._splashMovementHeadingRadians = motor.heading;
         this.updateFreestyle(
             useDt,
             0,
@@ -817,6 +820,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._leftHandWaterProgress = 0;
         this._rightHandWaterProgress = 0;
         this._splashMovementDirection = 1;
+        this._splashMovementHeadingRadians = 0;
         this._legSplashSuppressed = false;
         this._lastArmCycle = 0;
         this._hasLastArmCycle = false;
@@ -1449,6 +1453,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             armCycleMotion: this._armCycleMotion,
             kickCycleMotion: this._kickCycleMotion,
             movementDirection: this._splashMovementDirection,
+            movementHeadingRadians: this._splashMovementHeadingRadians,
             legSplashSuppressed: this._legSplashSuppressed,
             leftHandWaterContact: this._leftHandWaterContact,
             rightHandWaterContact: this._rightHandWaterContact,

@@ -25,8 +25,11 @@ export class VenueManager {
         this._debug = options.debug;
     }
 
-    updateLaneFloatClip(centerX: number, centerZ: number, axisX: number, axisZ: number, enabled: boolean) {
-        this._waterBinder.updateLaneFloatClip(centerX, centerZ, axisX, axisZ, enabled);
+    // The 16 start blocks are statically batched into one mesh, so they cannot be
+    // frustum-culled per instance. They are only ever seen at the dive end, so the
+    // race hides the whole batch while swimming to drop their vertex load.
+    setStartBlocksVisible(visible: boolean) {
+        this._startBlocks.setVisible(visible);
     }
 
     buildPool(root: Node, definition: PoolDefinition, done?: (result: VenueBuildResult) => void) {

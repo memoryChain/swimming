@@ -3,6 +3,7 @@ import { DIVE_BALANCE, RHYTHM_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
+import { STEERING_TUNING } from '../core/SteeringTuning';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
 
@@ -83,7 +84,6 @@ export class AISwimmerController extends Component {
             return;
         }
         this._side = side;
-        this._nextSide = side === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
         this._targetProgress = this.pickTargetProgress();
         this._holdElapsed = 0;
         // Replicate the player's promote sequence: mark held first (captures the
@@ -91,6 +91,28 @@ export class AISwimmerController extends Component {
         this.swimmer.handleStrokeHeld(side, true);
         this.swimmer.handleStroke(side);
         this._phase = 'stroke';
+    }
+
+    // Choose the next stroke side. This is the ONLY place the AI "steers": it
+    // shares the player's stroke-driven steering, so imperfect side choices make
+    // it weave. When off course a disciplined (high-difficulty) AI takes the
+    // corrective side; a sloppy one sometimes keeps drifting. When near straight
+    // it mostly alternates, but a sloppy AI occasionally repeats a side to start
+    // a drift. Strong AI therefore swims nearly straight, weak AI weaves.
+    private pickNextSide(justUsed: StrokeType): StrokeType {
+        const opposite = justUsed === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
+        if (!this.swimmer) {
+            return opposite;
+        }
+        const discipline = clamp(this.difficulty, 0, 1);
+        const drift = Math.abs(this.swimmer.steeringHeadingRatio);
+        if (drift >= clamp(STEERING_TUNING.aiCorrectHeadingRatio, 0, 1)) {
+            const corrective = this.swimmer.correctiveStrokeSide();
+            const wrong = corrective === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
+            return Math.random() < discipline ? corrective : wrong;
+        }
+        const wanderChance = (1 - discipline) * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
+        return Math.random() < wanderChance ? justUsed : opposite;
     }
 
     private updateStroke(sdt: number) {
@@ -124,6 +146,9 @@ export class AISwimmerController extends Component {
     }
 
     private scheduleGap() {
+        // Decide the next side now that this stroke has settled (its steering has
+        // been applied, so the heading reflects it).
+        this._nextSide = this.pickNextSide(this._side);
         const base = lerp(AI_STROKE_TUNING.gapSecondsSlow, AI_STROKE_TUNING.gapSecondsFast, this.difficulty);
         // bpmOffset nudges cadence a little: higher offset = slightly tighter gap.
         const flavor = clamp(1 - this.bpmOffset * 0.002, 0.85, 1.15);

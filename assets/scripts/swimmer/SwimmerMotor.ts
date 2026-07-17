@@ -112,14 +112,12 @@ export class SwimmerMotor {
     private _lastKickTapClock = -1;
     // Steering (蛇形转向): heading is the yaw offset from straight-ahead, in
     // radians. A stroke nudges it left/right; forward progress is speed*cos and
-    // the lateral offset accumulates speed*sin. Only the player steers (AI keeps
-    // heading 0 and thus swims straight). See core/SteeringTuning.ts.
+    // the lateral offset accumulates speed*sin. Player AND AI use the same
+    // stroke-driven steering (AI just controls which side it strokes). See
+    // core/SteeringTuning.ts.
     private _heading = 0;
     private _headingTarget = 0;
     private _courseDirection = 1;
-    private _aiWobbleAmount = 0;
-    private _aiWobbleClock = 0;
-    private readonly _aiWobblePhase = Math.random() * Math.PI * 2;
     private _lateralOffset = 0;
     private _lateralOffsetMin = -1000;
     private _lateralOffsetMax = 1000;
@@ -853,8 +851,8 @@ export class SwimmerMotor {
         return SWIMMER_BALANCE.maxSpeed > 0 ? clamp01(this._currentSpeed / SWIMMER_BALANCE.maxSpeed) : 0;
     }
 
-    // Steering is enabled for the player only; AI alternates strokes perfectly and
-    // keeps heading 0 (straight). Set once by the owning Swimmer.
+    // Steering is enabled for both the player and AI; both drive it through the
+    // same stroke path (the AI controller only decides which side to stroke).
     setSteeringEnabled(enabled: boolean) {
         this._steeringEnabled = enabled;
     }
@@ -873,10 +871,21 @@ export class SwimmerMotor {
         this._courseDirection = direction >= 0 ? 1 : -1;
     }
 
-    // AI-only: smooth, bounded random weave amount (0 = straight, 1 = very wavy).
-    // The player leaves this at 0 and steers via strokes instead.
-    setAiSteeringWobble(amount: number) {
-        this._aiWobbleAmount = clamp01(amount);
+    // Signed steering heading as a fraction of the maximum (-1..1). Used by the
+    // AI to sense how far off course it is and decide which side to stroke.
+    get steeringHeadingRatio(): number {
+        const maxHeading = safeMaxHeadingRadians();
+        return maxHeading > 0 ? clamp(this._headingTarget / maxHeading, -1, 1) : 0;
+    }
+
+    // The stroke side whose steering nudge pulls the heading back toward straight.
+    // Depends on lap direction (dir(LEFT) = +courseDirection). When already
+    // straight either side works; returns the alternation-neutral LEFT.
+    correctiveStrokeSide(): StrokeType {
+        const targetSign = this._headingTarget >= 0 ? 1 : -1;
+        const leftDirSign = this._courseDirection >= 0 ? 1 : -1;
+        // We want a stroke whose dir sign is the opposite of the current target.
+        return leftDirSign === -targetSign ? StrokeType.LEFT : StrokeType.RIGHT;
     }
 
     get heading(): number {
@@ -893,25 +902,13 @@ export class SwimmerMotor {
 
     // Ease the actual heading toward the stroke-set target so a stroke turns the
     // body GRADUALLY after release. No auto-recenter: heading only returns toward
-    // straight when the player strokes the other side (pure manual steering).
+    // straight when the swimmer strokes the other side (player and AI alike).
     private updateSteering(dt: number) {
         const maxHeading = safeMaxHeadingRadians();
         // Re-clamp every frame because debug tuning can change while racing and
         // persisted JSON bypasses the UI slider's min/max metadata.
         this._headingTarget = clamp(finiteOr(this._headingTarget, 0), -maxHeading, maxHeading);
         this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
-        // AI opponents weave via a smooth, bounded, mean-reverting wander instead
-        // of stroke steering, so they don't look robotically precise.
-        if (this._aiWobbleAmount > 0) {
-            this._aiWobbleClock += dt;
-            const cap = maxHeading
-                * clamp01(STEERING_TUNING.aiWobbleMaxHeadingFraction)
-                * clamp01(this._aiWobbleAmount);
-            const t = this._aiWobbleClock;
-            const p = this._aiWobblePhase;
-            const wander = Math.sin(t * 0.7 + p) * 0.62 + Math.sin(t * 1.63 + p * 1.7) * 0.38;
-            this._headingTarget = clamp(cap * wander, -maxHeading, maxHeading);
-        }
         const ease = Math.max(0, finiteOr(STEERING_TUNING.turnEaseRate, 0));
         this._heading += ease > 0
             ? (this._headingTarget - this._heading) * Math.min(1, ease * dt)
