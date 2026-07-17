@@ -7,19 +7,19 @@
 
 已落地（见各模块）：
 
-- `core/SteeringTuning.ts`（新）：`STEERING_TUNING` = turnPerStroke 14° / maxHeading 65° / turnEaseRate 3.5 / turnPowerMinFactor 0.35 / bankScale 0.25 / poolWallClearance 0.4m / aiCorrectHeadingRatio 0.3 / aiWanderChance 0.5 / useSprintSwimView(布尔)。
+- `core/SteeringTuning.ts`（新）：`STEERING_TUNING` = turnPerStroke 14° / maxHeading 65° / turnEaseRate 3.5 / turnPowerMinFactor 0.35 / poolWallClearance 0.4m / aiCorrectHeadingRatio 0.3 / aiWanderChance 0.5 / useSprintSwimView(布尔)。
 - `swimmer/SwimmerMotor.ts`：`_heading`/`_headingTarget` 朝向角 + `_lateralOffset` 横向偏移；`update()` 用 `forward=speed·cos` 推进、`lateral=speed·sin` 积分并钳制；`updateSteering()` 把 `heading` 平滑追 `headingTarget`（**无自动回正**）；划水**结算时**按 side×lap方向×力度施加转向（**玩家与 AI 共用同一路径**）；新增 `steeringHeadingRatio` / `correctiveStrokeSide()` 供 AI 感知偏差。
-- `entity/Swimmer.ts`：`configureSteering` 对**所有人**启用转向并配泳池横向内壁范围；转发 `steeringHeadingRatio` / `correctiveStrokeSide()`；`applyCoursePosition` 每帧 前进→X + 横向→Z（钳制）+ 整体 yaw 面朝行进方向 + 入弯侧倾，并 `setCourseDirection`。
+- `entity/Swimmer.ts`：`configureSteering` 对**所有人**启用转向并配泳池横向内壁范围；转发 `steeringHeadingRatio` / `correctiveStrokeSide()`；`applyCoursePosition` 每帧 前进→X + 横向→Z（钳制）+ 整体 yaw 面朝行进方向，并 `setCourseDirection`。
 - `character/FreestylePoseController.ts` + `entity/CartoonSwimmerRig.ts`：手臂前伸方向 `_movementForwardWorld` 跟随 `heading`，不再锁死泳道方向。
 - `entity/SwimmerRacePhases.ts`：翻滚转身定位带上横向偏移，避免回中心的 Z 跳变。
 - `camera/RaceCameraDirector.ts` + `app/GameFlowController.ts`：玩家出水后自动切到冲刺视角（可再手动切）；冲刺相机前向紧跟、**横向慢跟**（逐轴缓动）让蛇形看得出来。
 - `competitor/CompetitorManager.ts`：给每道分配 `difficulty`（AI 转向强弱由控制器按 difficulty 自行决策）。
 - `entity/AISwimmerController.ts`：`pickNextSide` 按 difficulty 决定下一划水侧（AI 只控制输入，走玩家同一转向路径）。
-- `core/TuningDebugControls.ts`：新增"转向"组（turnPerStroke/maxHeading/turnEaseRate/turnPowerMinFactor/bankScale/poolWallClearance/aiCorrectHeadingRatio/aiWanderChance）+ "冲刺与终点相机"组新增 sprintFollowSpeed/sprintLateralFollowSpeed；随 tuning.json 持久化。
+- `core/TuningDebugControls.ts`：新增"转向"组（turnPerStroke/maxHeading/turnEaseRate/turnPowerMinFactor/poolWallClearance/aiCorrectHeadingRatio/aiWanderChance）+ "冲刺与终点相机"组新增 sprintFollowSpeed/sprintLateralFollowSpeed；随 tuning.json 持久化。
 
 **本版未做（待拍板）**：`bothStraightBonus`（双手同划直行强推，现在双划只是转向相互抵消=直行，不给额外推进）；撞墙只钳制不反弹（无额外反馈）；AI 选手个性的更细分支；结算彩蛋（P3）。
 
-**待验证观感（只能编辑器预览/web 看）**：冲刺相机横向慢跟的幅度是否合适；返程 lap 左右手方向一致性；yaw/bank 正负号。
+**待验证观感（只能编辑器预览/web 看）**：冲刺相机横向慢跟的幅度是否合适；返程 lap 左右手方向一致性；yaw 正负号。
 
 ---
 
@@ -100,7 +100,6 @@ heading += (headingTarget - heading) * turnEaseRate * dt   // 实际朝向平滑
 | `steer.maxHeading` | `65°` | 朝向角上限（避免横着甚至倒游；65° 时 `cos≈0.42`，前进只剩四成，够慢够歪但仍向前） |
 | `steer.turnEaseRate` | `3.5` /s | 实际朝向追目标的平滑速率（越低转得越慢越懒） |
 | `steer.turnPowerMinFactor` | `0.35` | 最短划水的转向倍率（拉满=1.0）；越小轻点与重划差别越大 |
-| `steer.bankScale` | `0.25` | 入弯侧倾幅度（占朝向角比例） |
 
 > 无自动回正：想直行就得主动左右交替。想更蛇形就调大 `turnPerStroke`。
 
@@ -132,12 +131,12 @@ heading += (headingTarget - heading) * turnEaseRate * dt   // 实际朝向平滑
 - **泳道绳无碰撞**：可自由穿越（现状本就无碰撞，保持即可）。
 
 ### 4.2 身体转向姿态（复用现有，极轻量）
-表现的核心只有一条：**整个人体模型绕竖直轴 yaw 到 `heading` 方向**（它就是朝那边游），再叠加一点点**入弯侧倾 bank**（转弯时身体微微向内倾，像转向的鱼）。
+表现的核心只有一条：**整个人体模型绕竖直轴 yaw 到 `heading` 方向**（它就是朝那边游）。
 
-- 在 `CartoonSwimmerRig` / `FreestylePoseController` 把模型根节点的 yaw 设为 `heading`，bank = `heading * bankScale`。
+- 在 `CartoonSwimmerRig` / `FreestylePoseController` 把模型根节点的 yaw 设为 `heading`。
 - **手臂前伸方向要跟随 heading**（已修）：`FreestylePoseController._movementForwardWorld` 原为固定泳道轴 `(±1,0,0)`，`movementForwardInRoot` 会把根节点世界旋转（含身体 yaw）除掉，导致身体转了手臂还锁着泳道方向。现在 `_movementForwardWorld` = 泳道轴绕 Y 旋转 `heading`（`setMovementHeadingRadians`，由 `updateFreestyleFromMotor` 每帧喂 `motor.heading`），手臂便沿实际游动方向前伸。
 - 现有自由泳划水姿态**照常播放**，不需要新动作。喜感来自"斜着的身体 + 蛇形轨迹 + 从背后看的冲刺视角"。
-- 平滑：yaw/bank 对 `heading` 做低通，避免抖动。性能瓶颈是程序化姿态（见 repo memory），这里只多两个旋转量，开销可忽略；AI 仍走姿态节流。
+- 平滑：yaw 对 `heading` 做低通，避免抖动。性能瓶颈是程序化姿态（见 repo memory），这里只多一个旋转量，开销可忽略；AI 仍走姿态节流。
 
 ### 4.3 冲刺视角（游泳阶段主视角）
 - 玩家出水后主相机自动切到 `RaceCameraMode.Sprint`（`GameFlowController` 里一次性 `selectMode`，之后玩家可手动循环切回）。由 `STEERING_TUNING.useSprintSwimView` 开关。
@@ -174,9 +173,9 @@ AI 与玩家**共用同一套划水转向逻辑**：`applyStrokeSteering` 对所
 
 | 模块 / 文件 | 改动 |
 |---|---|
-| `core/SteeringTuning.ts`（新） | `STEERING_TUNING`：turnPerStroke / maxHeading / turnEaseRate / turnPowerMinFactor / bankScale / poolWallClearance / aiCorrectHeadingRatio / aiWanderChance / useSprintSwimView |
+| `core/SteeringTuning.ts`（新） | `STEERING_TUNING`：turnPerStroke / maxHeading / turnEaseRate / turnPowerMinFactor / poolWallClearance / aiCorrectHeadingRatio / aiWanderChance / useSprintSwimView |
 | `swimmer/SwimmerMotor.ts` | `_heading`/`_headingTarget`/`_lateralOffset`/`_courseDirection`；`update()` 拆 forward=cos/lateral=sin 并积分钳制；`updateSteering()` ease 追目标（无自动回正）；`applyStrokeSteering(type, power)` 在划水结算时调（side×lap×力度，玩家+AI 共用）；`beginFlipTurnPhase` 归正对墙；getter `heading`/`lateralOffset`/`steeringHeadingRatio`；`correctiveStrokeSide()`；setter `setSteeringEnabled`/`setLateralOffsetBounds`/`setCourseDirection` |
-| `entity/Swimmer.ts` | `configureSteering`（**所有人**启用+泳池偏移上下限）；`steeringHeadingRatio`/`correctiveStrokeSide()` 转发 motor；`applyCoursePosition` 前进→X + 横向→Z + yaw 面朝行进 + 入弯侧倾 + `setCourseDirection` |
+| `entity/Swimmer.ts` | `configureSteering`（**所有人**启用+泳池偏移上下限）；`steeringHeadingRatio`/`correctiveStrokeSide()` 转发 motor；`applyCoursePosition` 前进→X + 横向→Z + yaw 面朝行进 + `setCourseDirection` |
 | `entity/AISwimmerController.ts` | `pickNextSide` 按 difficulty 决定下一划水侧（偏离则纠偏、接近直行则可能乱划），AI 只控制输入、走玩家同一转向路径 |
 | `entity/SwimmerRacePhases.ts` | 翻滚转身定位带上 `motor.lateralOffset`（防 Z 跳变） |
 | `character/FreestylePoseController.ts` | `_movementForwardWorld` 随 `heading` 旋转（`setMovementHeadingRadians`/`updateMovementForwardWorld`），手臂沿实际游动方向前伸 |
@@ -199,7 +198,6 @@ steer.turnPerStroke              默认 14     单手划水施加的转向角（
 steer.maxHeading                 默认 65     朝向角上限（度）
 steer.turnEaseRate               默认 3.5    实际朝向追目标的平滑速率（/s）
 steer.turnPowerMinFactor         默认 0.35   最短划水的转向倍率（拉满=1.0）
-steer.bankScale                  默认 0.25   入弯侧倾幅度
 steer.poolWallClearance          默认 0.4    撞墙余量（米）
 steer.aiCorrectHeadingRatio      默认 0.3    AI 偏离多少（占 maxHeading）后开始纠偏
 steer.aiWanderChance             默认 0.5    AI 直行时打破交替开始蛇形的基础概率（按 1-难度 缩放）
@@ -219,7 +217,7 @@ camera.sprintLateralFollowSpeed  默认 3.2    冲刺相机横向跟随速度（
 ## 8. 落地节奏
 
 - **已完成**：朝向角转向模型（§2，含发力缩放、无自动回正、方向随 lap 翻转）+ 2D 位置与池壁钳制（§4.1）+ 身体/手臂随 heading 转向（§4.2）+ 冲刺视角与横向缓动（§4.3）+ AI 按难度蛇形（§4.4）+ tuning 面板。
-- **待做**：`bothStraightBonus`（双划直行强推，若需要）；撞墙反馈打磨（现在只钳制贴滑）；AI 选手个性细分；入弯侧倾观感微调；结算"最会蛇形/撞墙次数"评选或滑稽回放（P3，§5）。
+- **待做**：`bothStraightBonus`（双划直行强推，若需要）；撞墙反馈打磨（现在只钳制贴滑）；AI 选手个性细分；结算"最会蛇形/撞墙次数"评选或滑稽回放（P3，§5）。
 
 ---
 

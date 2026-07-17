@@ -40,10 +40,6 @@ export const STEERING_TUNING = {
     // 转向角与划水“发力”挂钩：按得越久（松手前拉水行程越长）偏得越多。这是最弱（最
     // 短）真实划水的转向倍率，拉满一次划水 = 1.0。轻点几乎不拐，重划狠拐。1 = 不按力度缩放。
     turnPowerMinFactor: 0.35,
-    // Whole-body bank/roll (as a fraction of heading) leaned into the turn, for
-    // readability. 0 = no bank.
-    // 入弯身体侧倾（占朝向角的比例），仅为观感。0 = 不侧倾。
-    bankScale: 0.25,
 
     // AI steering: opponents share the SAME stroke-steering as the player and
     // weave purely through imperfect input (the AI controller only decides which

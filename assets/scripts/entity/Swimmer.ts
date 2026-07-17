@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Tween, Vec3, tween } from 'cc';
+import { _decorator, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import {
@@ -45,7 +45,7 @@ export class Swimmer extends Component {
         new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
         new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
     ];
-
+    private readonly _tmpCourseRotation = new Quat();
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
@@ -501,9 +501,18 @@ export class Swimmer extends Component {
         const headingDegrees = this._motor.heading * 180 / Math.PI;
         const baseYaw = direction > 0 ? 0 : 180;
         const yaw = baseYaw - direction * headingDegrees;
-        const roll = this._phases.diveRecoveryLean() - headingDegrees * STEERING_TUNING.bankScale;
+        // Compose the orientation as explicit quaternion steps instead of one
+        // setRotationFromEuler call: feeding a large steering yaw together with
+        // the dive-recovery pitch into a single Euler conversion gimbal-couples
+        // them and tilts the body's forward axis far out of horizontal. Here we
+        // yaw about world up, then apply the dive-recovery pitch about the body's
+        // lateral axis.
+        const pitch = this._phases.diveRecoveryLean();
+        const deg2rad = Math.PI / 180;
+        Quat.fromEuler(this._tmpCourseRotation, 0, yaw, 0);
+        Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, pitch * deg2rad);
         this.node.setPosition(x, this._phases.visualSwimY(), z);
-        this.node.setRotationFromEuler(0, yaw, roll);
+        this.node.setRotation(this._tmpCourseRotation);
     }
 
     // Root-only clamping is insufficient once the swimmer yaws: the long body

@@ -197,7 +197,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
 
             control('steer.turnEaseRate', '转向平滑', '实际朝向向目标靠拢的速率（每秒）。划水在"松手"时改变转向目标，身体随后逐渐转过去而非瞬间硬转。越低转得越慢越懒，越高越干脆。', () => STEERING_TUNING.turnEaseRate, (v) => STEERING_TUNING.turnEaseRate = v, 0.1, 0.5, 12, 1, '/s'),
             control('steer.turnPowerMinFactor', '最弱转向倍率', '转向角与划水发力挂钩：按得越久、拉水行程越长偏得越多。这是最短划水的转向倍率（拉满=1.0）。1=不按力度缩放，每次都满角；越小轻点与重划的转向差别越大。', () => STEERING_TUNING.turnPowerMinFactor, (v) => STEERING_TUNING.turnPowerMinFactor = v, 0.05, 0, 1, 2),
-            control('steer.bankScale', '入弯侧倾', '转弯时身体向内侧倾的幅度（占朝向角的比例），仅为观感。0=不侧倾。', () => STEERING_TUNING.bankScale, (v) => STEERING_TUNING.bankScale = v, 0.05, 0, 1, 2),
             control('steer.aiCorrectHeadingRatio', 'AI纠偏阈值', 'AI 偏离多少（占“最大偏航”的比例）后开始主动往回划纠偏。越小 AI 越早纠偏、游得越直；越大越放任、蛇形越大。AI 与玩家共用同一套划水转向，只是自己决定划哪一侧。', () => STEERING_TUNING.aiCorrectHeadingRatio, (v) => STEERING_TUNING.aiCorrectHeadingRatio = v, 0.05, 0, 1, 2),
             control('steer.aiWanderChance', 'AI乱划概率', 'AI 接近直行时，打破整齐左右交替、重复同一侧（从而开始蛇形）的基础概率，实际按 (1-难度) 缩放：强对手几乎不乱划走直线，弱对手常乱划乱窜。', () => STEERING_TUNING.aiWanderChance, (v) => STEERING_TUNING.aiWanderChance = v, 0.05, 0, 1, 2),
             control('steer.poolWallClearance', '撞墙余量', '人物头、躯干、手臂和脚部关键关节与泳池侧墙之间保留的最小距离（米），横向漂移到此就贴墙滑行。', () => STEERING_TUNING.poolWallClearance, (v) => STEERING_TUNING.poolWallClearance = v, 0.05, 0, 1.5, 2, 'm'),

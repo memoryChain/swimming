@@ -92,13 +92,17 @@ export const CHARACTER_POSE_TUNING = {
     breaststrokePreviewCycleSeconds: 2.25,
 
     // At or below this race speed the swimmer blends toward the tread-water pose.
-    // 比赛速度低于该值时，泳手向踩水姿态过渡。
-    raceTreadEnterSpeed: 0.42,
+    // Kept very low so it only triggers when genuinely stalled to a near-stop:
+    // steering hard to one side legitimately slows the swimmer, and it should stay
+    // prone (still swimming) rather than stand upright while veering.
+    // 比赛速度低于该值时，泳手向踩水姿态过渡。设得很低，只在真正几乎停住时才触发：
+    // 用力偏向一侧转向会合理地降速，此时应保持俯卧（仍在游）而不是歪着一侧就竖起来。
+    raceTreadEnterSpeed: 0.15,
 
     // At or above this race speed the swimmer blends back to freestyle. The gap
     // between enter/exit gives hysteresis so the pose does not flicker near the edge.
     // 比赛速度高于该值时，泳手切回自由泳。进入/退出阈值之间留出迟滞，避免临界抖动。
-    raceTreadExitSpeed: 0.9,
+    raceTreadExitSpeed: 0.45,
 
     // Crossfade rate (weight units per second) between freestyle and tread-water.
     // 自由泳与踩水之间的过渡速率（每秒权重变化量），越大切换越快。
