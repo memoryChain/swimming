@@ -38,6 +38,7 @@ import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFact
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
+import { FinishRankOverlay } from '../ui/FinishRankOverlay';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -58,7 +59,6 @@ import { VenueManager } from '../venue/VenueManager';
 import { WaterRefractionController } from '../venue/WaterRefractionController';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
-import { FinishRankMarkerBuilder } from '../venue/FinishRankMarkerBuilder';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
@@ -182,7 +182,7 @@ export class GameManager extends Component {
     // presses stay responsive. Toggle with the B key.
     private _bulletTimeIndex = 0;
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
-    private readonly _finishRankMarkers = new FinishRankMarkerBuilder(COURSE_LAYOUT);
+    private readonly _finishRankOverlay = new FinishRankOverlay();
     private readonly _awardsPresentation = new AwardsPresentation(COURSE_LAYOUT);
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -330,6 +330,11 @@ export class GameManager extends Component {
         this._gameFlow?.updateRaceCamera(dt);
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
+        // Pin the finish-line rank badges above each finished swimmer using this
+        // frame's final camera transform.
+        if (this._finishRankOverlay.hasResults()) {
+            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera);
+        }
         // Update after the race camera so the refraction camera uses this frame's
         // final transform. Underwater shots keep the swimmer overlay camera synced
         // while the water surface and refraction RenderTexture camera stay off.
@@ -451,7 +456,6 @@ export class GameManager extends Component {
         this._cameraNode = scene.cameraNode;
         this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
-        this._finishRankMarkers.bind(this._worldRoot);
         this.buildPool3D(this._worldRoot, (pool) => {
             if (!this.node?.isValid || !this._worldRoot?.isValid) {
                 return;
@@ -520,8 +524,8 @@ export class GameManager extends Component {
                 }
             },
             getState: () => this._state,
-            clearFinishRanks: () => this._finishRankMarkers.clear(),
-            showFinishRank: (result) => this._finishRankMarkers.show(result),
+            clearFinishRanks: () => this._finishRankOverlay.clear(),
+            showFinishRank: (result) => this._finishRankOverlay.addResult(result),
             showAwards: (leaderboard) => {
                 this._playerOnAwardsPodium = leaderboard.some((row) =>
                     row.isPlayer && row.placement >= 1 && row.placement <= 3,
@@ -878,6 +882,7 @@ export class GameManager extends Component {
             this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
+            this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildRaceCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
