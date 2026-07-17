@@ -27,10 +27,18 @@ export const SWIMMER_COLLISION = {
     // Gauss-Seidel passes let chains of 3+ stacked swimmers settle with no
     // residual overlap. 8 swimmers -> a handful of passes is plenty.
     separationIterations: 4,
+    // AI-vs-AI pairs only separate SIDEWAYS (lateral / Z), never along the swim
+    // axis (X / distance). Background swimmers are "acting" — they should spread
+    // out so they never clump into a blob, but they must never block each other's
+    // forward progress or pile up behind a slow lane. Any pair involving the
+    // PLAYER still resolves fully on both axes (the impassable "hold your line"
+    // racing feel that actually matters to the player).
+    aiVsAiLateralOnly: true as boolean,
 };
 
 // Reused module-scope buffers keep this allocation-free each frame.
 const _active: Swimmer[] = [];
+const _isAi: boolean[] = [];
 const _origX: number[] = [];
 const _origZ: number[] = [];
 const _posX: number[] = [];
@@ -60,6 +68,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const pos = _active[i].node.position;
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
+        _isAi[i] = _active[i].isAI;
         _hit[i] = false;
     }
 
@@ -79,6 +88,10 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 if (distSq >= minDistSq) {
                     continue;
                 }
+                // Two AI bodies never block each other on the swim axis: they
+                // only get nudged sideways so the pack spreads out instead of
+                // piling up. Player pairs resolve on both axes.
+                const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
                 anyOverlap = true;
                 _hit[i] = true;
                 _hit[j] = true;
@@ -97,9 +110,11 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     nz = dz / dist;
                 }
                 const half = (minDist - dist) * 0.5;
-                _posX[i] += nx * half;
+                if (!lateralOnly) {
+                    _posX[i] += nx * half;
+                    _posX[j] -= nx * half;
+                }
                 _posZ[i] += nz * half;
-                _posX[j] -= nx * half;
                 _posZ[j] -= nz * half;
             }
         }

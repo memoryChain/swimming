@@ -5,7 +5,7 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SWIMMER_0621_2_COLOR_VARIANTS } from '../core/ResourcePaths';
 import { getRaceDifficultyConfig } from '../core/GameBalance';
-import { DEFAULT_AI_PROFILES, shuffledAiCompetitorNames } from './CompetitorConfig';
+import { DEFAULT_AI_PROFILES, getAiPersonality, shuffledAiCompetitorNames } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
@@ -90,6 +90,7 @@ export class CompetitorManager {
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
+            controller.personality = getAiPersonality(profile.personalityId);
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
             if (lane === this._options.primaryAiLaneIndex || options?.soloLane !== undefined) {
@@ -136,6 +137,7 @@ export class CompetitorManager {
             controller.bpmOffset = profile.bpmOffset;
             controller.divePower = profile.divePower;
             controller.diveReaction = profile.diveReaction;
+            controller.personality = getAiPersonality(profile.personalityId);
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
             if (lane === this._options.primaryAiLaneIndex) {

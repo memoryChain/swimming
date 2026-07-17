@@ -1,8 +1,9 @@
 import { _decorator, Component } from 'cc';
-import { DIVE_BALANCE, RHYTHM_BALANCE } from '../core/GameBalance';
+import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceDifficultyConfig } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
-import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
+import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
+import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
@@ -16,9 +17,15 @@ type AiStrokePhase = 'gap' | 'stroke';
 // handleStroke), holds while watching the arm-pull progress, then "releases"
 // (handleStrokeHeld false) at a target release progress. That release timing lands
 // in the shared sweet zone (STROKE_QUALITY_TUNING), so AI propulsion comes from the
-// exact same stroke-quality-to-acceleration path the player uses. `difficulty` is the one
-// competitiveness axis: it sharpens the release accuracy (higher = closer to the
+// exact same stroke-quality-to-acceleration path the player uses. `difficulty` is the
+// competitiveness baseline: it sharpens the release accuracy (higher = closer to the
 // perfect center every stroke) AND tightens the stroke cadence (higher = faster).
+//
+// On top of that baseline sits a STRATEGY layer (see AI_STRATEGY_TUNING +
+// AI_PERSONALITIES): each AI spends its effort with a purpose (pacing by
+// personality) and reacts to the race (subtle rubber-band + duel surge measured
+// against the player). Strategy is applied as a small, smoothed EFFORT MODIFIER
+// added to `difficulty` — it never overrides difficulty, so catch-up stays hidden.
 @ccclass('AISwimmerController')
 export class AISwimmerController extends Component {
     @property(Swimmer) public swimmer: Swimmer = null;
@@ -29,6 +36,13 @@ export class AISwimmerController extends Component {
     @property({ range: [0, 1, 0.01] }) public divePower = DIVE_BALANCE.defaultAiPower;
     @property public diveReaction = DIVE_BALANCE.defaultAiReactionSeconds;
 
+    // Stable racing style. Assigned from the lane's AICompetitorProfile at build
+    // time; defaults to a neutral steady pacer for safety.
+    public personality: AIPersonality = getAiPersonality('steady');
+    // Shared race view used for rank/gap-based strategy. Null before it is wired
+    // (or in isolated tests), in which case strategy falls back to pacing only.
+    public raceObserver: AIRaceObserver | null = null;
+
     private _active = false;
     private _phase: AiStrokePhase = 'gap';
     private _timer = 0;
@@ -36,6 +50,9 @@ export class AISwimmerController extends Component {
     private _nextSide: StrokeType = StrokeType.LEFT;
     private _targetProgress = 0;
     private _holdElapsed = 0;
+    // Smoothed strategy effort added to `difficulty`. Eased every frame toward the
+    // live target so rank/gap swings translate into gradual, invisible changes.
+    private _effortModifier = 0;
 
     startSwimming() {
         // Idempotent: an AI that already began swimming (e.g. right after its own
@@ -48,6 +65,7 @@ export class AISwimmerController extends Component {
         this._phase = 'gap';
         this._nextSide = StrokeType.LEFT;
         this._holdElapsed = 0;
+        this._effortModifier = 0;
         this._timer = randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
     }
 
@@ -65,6 +83,7 @@ export class AISwimmerController extends Component {
             return;
         }
         const sdt = scaledDelta(dt);
+        this.updateEffortModifier(sdt);
         if (this._phase === 'gap') {
             this._timer -= sdt;
             if (this._timer <= 0) {
@@ -73,6 +92,60 @@ export class AISwimmerController extends Component {
             return;
         }
         this.updateStroke(sdt);
+    }
+
+    // Effective competitiveness for THIS moment: the baseline difficulty plus the
+    // smoothed strategy effort, clamped so strategy never reaches a trivial or
+    // hopeless extreme. Everything downstream (accuracy, cadence, steering
+    // discipline) reads this instead of raw `difficulty`.
+    private effectiveDifficulty(): number {
+        return clamp(
+            this.difficulty + this._effortModifier,
+            AI_STRATEGY_TUNING.minEffective,
+            AI_STRATEGY_TUNING.maxEffective,
+        );
+    }
+
+    // Ease the effort modifier toward the strategy target every frame. Keeping the
+    // easing on the modifier (not on the raw signals) is what makes rubber-band
+    // catch-up feel like a natural push rather than a visible speed snap.
+    private updateEffortModifier(sdt: number) {
+        const target = this.computeStrategyTarget();
+        const t = clamp(sdt * AI_STRATEGY_TUNING.effortEaseRate, 0, 1);
+        this._effortModifier += (target - this._effortModifier) * t;
+    }
+
+    // Combine the three strategy sources into a single (small, capped) effort
+    // delta: personality pacing over the race, a rubber-band toward the player,
+    // and a neck-and-neck duel surge. Rubber-band and duel need the shared
+    // observer; without it only pacing applies.
+    private computeStrategyTarget(): number {
+        const distance = this.swimmer.distance;
+        const raceDistance = this.raceObserver?.raceDistance ?? 0;
+        const progress = raceDistance > 0 ? clamp(distance / raceDistance, 0, 1) : 0;
+
+        const startWeight = clamp(1 - progress / Math.max(0.05, AI_STRATEGY_TUNING.startFadeProgress), 0, 1);
+        const finishSpan = Math.max(0.05, 1 - AI_STRATEGY_TUNING.finishRampStartProgress);
+        const finishWeight = clamp((progress - AI_STRATEGY_TUNING.finishRampStartProgress) / finishSpan, 0, 1);
+        const pacing = this.personality.startEffort * startWeight + this.personality.finishEffort * finishWeight;
+
+        let rubber = 0;
+        let duel = 0;
+        if (this.raceObserver) {
+            // Per-tier strategy scaling: 入门 barely chases, 世锦赛 clings hard.
+            const tier = getRaceDifficultyConfig();
+            const competitiveness = clamp(this.personality.competitiveness, 0, 1);
+            const gap = this.raceObserver.gapToPlayer(distance); // + = ahead of player
+            const normalized = clamp(gap / Math.max(0.5, AI_STRATEGY_TUNING.rubberBandRange), -1, 1);
+            // Trailing (gap < 0) → positive effort; leading (gap > 0) → ease off.
+            rubber = -normalized * AI_STRATEGY_TUNING.rubberBandStrength * competitiveness * tier.rubberBandScale;
+            const absGap = Math.abs(gap);
+            if (absGap < AI_STRATEGY_TUNING.duelRange) {
+                duel = AI_STRATEGY_TUNING.duelBoost * (1 - absGap / AI_STRATEGY_TUNING.duelRange) * competitiveness * tier.duelScale;
+            }
+        }
+
+        return clamp(pacing + rubber + duel, -AI_STRATEGY_TUNING.maxModifier, AI_STRATEGY_TUNING.maxModifier);
     }
 
     private beginStroke() {
@@ -95,23 +168,28 @@ export class AISwimmerController extends Component {
 
     // Choose the next stroke side. This is the ONLY place the AI "steers": it
     // shares the player's stroke-driven steering, so imperfect side choices make
-    // it weave. When off course a disciplined (high-difficulty) AI takes the
-    // corrective side; a sloppy one sometimes keeps drifting. When near straight
-    // it mostly alternates, but a sloppy AI occasionally repeats a side to start
-    // a drift. Strong AI therefore swims nearly straight, weak AI weaves.
+    // it weave. When off course, effort (effective difficulty) decides whether it
+    // takes the corrective side. Its baseline weaving is now a PERSONALITY trait
+    // (weaveTendency) rather than pure difficulty noise, dampened as it pushes
+    // harder — so a steady AI swims straight with purpose while a weaver flails.
     private pickNextSide(justUsed: StrokeType): StrokeType {
         const opposite = justUsed === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
         if (!this.swimmer) {
             return opposite;
         }
-        const discipline = clamp(this.difficulty, 0, 1);
+        const discipline = clamp(this.effectiveDifficulty(), 0, 1);
         const drift = Math.abs(this.swimmer.steeringHeadingRatio);
         if (drift >= clamp(STEERING_TUNING.aiCorrectHeadingRatio, 0, 1)) {
             const corrective = this.swimmer.correctiveStrokeSide();
             const wrong = corrective === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
             return Math.random() < discipline ? corrective : wrong;
         }
-        const wanderChance = (1 - discipline) * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
+        // Personality weave, thinned out the harder this AI is currently pushing
+        // (so a surging fighter tightens up), scaled by the difficulty tier
+        // (入门 wobbles more, 世锦赛 swims cleaner), and bounded by the global cap.
+        const weaveScale = getRaceDifficultyConfig().weaveScale;
+        const weave = clamp(this.personality.weaveTendency * weaveScale * (1 - discipline * 0.6), 0, 1);
+        const wanderChance = weave * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
         return Math.random() < wanderChance ? justUsed : opposite;
     }
 
@@ -134,13 +212,13 @@ export class AISwimmerController extends Component {
     }
 
     // Target release progress for this stroke: the shared sweet-zone center plus
-    // difficulty-scaled noise. At difficulty 1 the noise collapses to ~0 so the AI
-    // hits the perfect center every stroke; at low difficulty the wide spread
-    // produces less-perfect hits and occasional full misses (tail below the good
-    // zone), exactly like a shaky player.
+    // effort-scaled noise. At high effective difficulty the noise collapses to ~0
+    // so the AI hits the perfect center every stroke; at low effort the wide
+    // spread produces less-perfect hits and occasional full misses (tail below the
+    // good zone), exactly like a shaky player.
     private pickTargetProgress(): number {
         const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
-        const sigma = lerp(AI_STROKE_TUNING.timingSigmaLow, AI_STROKE_TUNING.timingSigmaHigh, this.difficulty);
+        const sigma = lerp(AI_STROKE_TUNING.timingSigmaLow, AI_STROKE_TUNING.timingSigmaHigh, this.effectiveDifficulty());
         const target = center + gaussian() * sigma;
         return clamp(target, 0.05, AI_STROKE_TUNING.maxReleaseProgress);
     }
@@ -149,7 +227,7 @@ export class AISwimmerController extends Component {
         // Decide the next side now that this stroke has settled (its steering has
         // been applied, so the heading reflects it).
         this._nextSide = this.pickNextSide(this._side);
-        const base = lerp(AI_STROKE_TUNING.gapSecondsSlow, AI_STROKE_TUNING.gapSecondsFast, this.difficulty);
+        const base = lerp(AI_STROKE_TUNING.gapSecondsSlow, AI_STROKE_TUNING.gapSecondsFast, this.effectiveDifficulty());
         // bpmOffset nudges cadence a little: higher offset = slightly tighter gap.
         const flavor = clamp(1 - this.bpmOffset * 0.002, 0.85, 1.15);
         const jitter = 1 + randomRange(-AI_STROKE_TUNING.gapJitter, AI_STROKE_TUNING.gapJitter);

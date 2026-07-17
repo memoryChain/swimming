@@ -1,7 +1,7 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
-import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
+import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
@@ -184,9 +184,26 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('ai.startDelayMin', '起步延迟下限', 'AI 进入游泳阶段后，第一次划水前随机延迟的最小秒数。', () => AI_STROKE_TUNING.startDelayMin, (v) => AI_STROKE_TUNING.startDelayMin = v, 0.01, 0, 0.6, 2, 's'),
             control('ai.startDelayMax', '起步延迟上限', 'AI 进入游泳阶段后，第一次划水前随机延迟的最大秒数。', () => AI_STROKE_TUNING.startDelayMax, (v) => AI_STROKE_TUNING.startDelayMax = v, 0.01, 0, 0.8, 2, 's'),
             control('ai.maxHoldSeconds', 'AI保底松手时间', '兜底：AI 按住超过这个秒数还没等到目标进度就强制松手，防止卡住。', () => AI_STROKE_TUNING.maxHoldSeconds, (v) => AI_STROKE_TUNING.maxHoldSeconds = v, 0.05, 0.2, 1.5, 2, 's'),
+            control('aiStrategy.effortEaseRate', '策略反应速度', 'AI 策略发力向目标靠拢的速率（每秒）。越低橡皮筋/追赶越隐形、越平滑；越高反应越快越明显。', () => AI_STRATEGY_TUNING.effortEaseRate, (v) => AI_STRATEGY_TUNING.effortEaseRate = v, 0.05, 0.1, 4, 2, '/s'),
+            control('aiStrategy.rubberBandStrength', '橡皮筋强度', '落后玩家时 AI 额外发力的最大幅度（叠加到难度上）。越大追赶越猛、越容易被你甩不掉；0=完全不追赶。会按对手性格的竞争性缩放。', () => AI_STRATEGY_TUNING.rubberBandStrength, (v) => AI_STRATEGY_TUNING.rubberBandStrength = v, 0.01, 0, 0.4, 2),
+            control('aiStrategy.rubberBandRange', '橡皮筋范围', '橡皮筋饱和所需的领先/落后米数。领先或落后玩家超过这个距离后追赶/收力达到最大。越大追赶越"温柔"。', () => AI_STRATEGY_TUNING.rubberBandRange, (v) => AI_STRATEGY_TUNING.rubberBandRange = v, 0.5, 2, 40, 1, 'm'),
+            control('aiStrategy.duelBoost', '贴身缠斗强度', '玩家就在身边（缠斗范围内）时 AI 额外发力的最大幅度，制造你追我赶。越大贴身时越拼。', () => AI_STRATEGY_TUNING.duelBoost, (v) => AI_STRATEGY_TUNING.duelBoost = v, 0.01, 0, 0.3, 2),
+            control('aiStrategy.duelRange', '缠斗触发距离', '与玩家的距离小于这个米数时进入贴身缠斗、额外发力。越大越早开始"较劲"。', () => AI_STRATEGY_TUNING.duelRange, (v) => AI_STRATEGY_TUNING.duelRange = v, 0.5, 0.5, 15, 1, 'm'),
+            control('aiStrategy.maxModifier', '策略发力上限', '所有策略（配速+橡皮筋+缠斗）叠加后对难度的最大偏移。越小越"隐形"、越接近纯难度；越大策略影响越强。', () => AI_STRATEGY_TUNING.maxModifier, (v) => AI_STRATEGY_TUNING.maxModifier = v, 0.02, 0, 0.5, 2),
+            control('aiStrategy.startFadeProgress', '起步发力衰减点', '性格里的"起步发力"在赛程进行到这个比例时衰减为 0。越大起步优势维持越久。', () => AI_STRATEGY_TUNING.startFadeProgress, (v) => AI_STRATEGY_TUNING.startFadeProgress = v, 0.02, 0.05, 0.6, 2),
+            control('aiStrategy.finishRampStartProgress', '冲刺发力起点', '性格里的"后程冲刺"从赛程这个比例开始逐渐加满。越小冲刺发力开始得越早。', () => AI_STRATEGY_TUNING.finishRampStartProgress, (v) => AI_STRATEGY_TUNING.finishRampStartProgress = v, 0.02, 0.4, 0.95, 2),
             control('difficulty.beginner.aiDifficultyScale', '入门AI倍率', '入门比赛对每条泳道原始 AI 难度的倍率。越低，AI 松手更不稳定且划水间隔更长。', () => getRaceDifficultyConfig('beginner').aiDifficultyScale, (v) => getRaceDifficultyConfig('beginner').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
             control('difficulty.competitive.aiDifficultyScale', '竞技AI倍率', '竞技比赛对每条泳道原始 AI 难度的倍率。', () => getRaceDifficultyConfig('competitive').aiDifficultyScale, (v) => getRaceDifficultyConfig('competitive').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
             control('difficulty.championship.aiDifficultyScale', '世锦赛AI倍率', '世锦赛对每条泳道原始 AI 难度的倍率。1 表示完全使用原始 AI 阵容难度。', () => getRaceDifficultyConfig('championship').aiDifficultyScale, (v) => getRaceDifficultyConfig('championship').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
+            control('difficulty.beginner.rubberBandScale', '入门追赶倍率', '入门比赛对橡皮筋追赶强度的倍率。越低 AI 越不咬人、你越容易甩开。', () => getRaceDifficultyConfig('beginner').rubberBandScale, (v) => getRaceDifficultyConfig('beginner').rubberBandScale = v, 0.05, 0, 2, 2),
+            control('difficulty.beginner.duelScale', '入门缠斗倍率', '入门比赛对贴身缠斗发力的倍率。越低 AI 贴身时越不较劲。', () => getRaceDifficultyConfig('beginner').duelScale, (v) => getRaceDifficultyConfig('beginner').duelScale = v, 0.05, 0, 2, 2),
+            control('difficulty.beginner.weaveScale', '入门蛇形倍率', '入门比赛对 AI 蛇形/犯错倾向的倍率。越高对手越爱划歪、越好赢。', () => getRaceDifficultyConfig('beginner').weaveScale, (v) => getRaceDifficultyConfig('beginner').weaveScale = v, 0.05, 0, 3, 2),
+            control('difficulty.competitive.rubberBandScale', '竞技追赶倍率', '竞技比赛对橡皮筋追赶强度的倍率。', () => getRaceDifficultyConfig('competitive').rubberBandScale, (v) => getRaceDifficultyConfig('competitive').rubberBandScale = v, 0.05, 0, 2, 2),
+            control('difficulty.competitive.duelScale', '竞技缠斗倍率', '竞技比赛对贴身缠斗发力的倍率。', () => getRaceDifficultyConfig('competitive').duelScale, (v) => getRaceDifficultyConfig('competitive').duelScale = v, 0.05, 0, 2, 2),
+            control('difficulty.competitive.weaveScale', '竞技蛇形倍率', '竞技比赛对 AI 蛇形/犯错倾向的倍率。', () => getRaceDifficultyConfig('competitive').weaveScale, (v) => getRaceDifficultyConfig('competitive').weaveScale = v, 0.05, 0, 3, 2),
+            control('difficulty.championship.rubberBandScale', '世锦赛追赶倍率', '世锦赛对橡皮筋追赶强度的倍率。越高越甩不掉、领先也被反复追平。', () => getRaceDifficultyConfig('championship').rubberBandScale, (v) => getRaceDifficultyConfig('championship').rubberBandScale = v, 0.05, 0, 2.5, 2),
+            control('difficulty.championship.duelScale', '世锦赛缠斗倍率', '世锦赛对贴身缠斗发力的倍率。越高贴身时越死拼。', () => getRaceDifficultyConfig('championship').duelScale, (v) => getRaceDifficultyConfig('championship').duelScale = v, 0.05, 0, 2.5, 2),
+            control('difficulty.championship.weaveScale', '世锦赛蛇形倍率', '世锦赛对 AI 蛇形/犯错倾向的倍率。越低对手路线越干净专业。', () => getRaceDifficultyConfig('championship').weaveScale, (v) => getRaceDifficultyConfig('championship').weaveScale = v, 0.05, 0, 3, 2),
         ],
     },
     {

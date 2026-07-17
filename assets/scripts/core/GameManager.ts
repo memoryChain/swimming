@@ -29,6 +29,7 @@ import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
 import { CompetitorManager } from '../competitor/CompetitorManager';
+import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
@@ -801,6 +802,16 @@ export class GameManager extends Component {
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
+        }
+        // Give every AI a shared read-only view of the race so its strategy layer
+        // (rubber-band toward the player + neck-and-neck duel surge) can measure
+        // gaps and rank. The player anchors the strategy, so it must be included.
+        const raceObserver = new AIRaceObserver(
+            this._playerSwimmer,
+            [this._playerSwimmer, ...this._aiSwimmers].filter((s): s is Swimmer => !!s),
+        );
+        for (const controller of this._aiControllers) {
+            controller.raceObserver = raceObserver;
         }
         this._gameFlow?.refreshPreRaceShowcaseRoster();
         // AI swimmers load one frame after startGame(), so the pre-race roster
