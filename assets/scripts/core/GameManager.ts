@@ -193,7 +193,7 @@ export class GameManager extends Component {
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
     onLoad() {
-        game.frameRate = 60;
+        game.frameRate = 45;
         console.log(`[SpeedSwimming] target frameRate=${game.frameRate}`);
         this.node.layer = Layers.Enum.UI_2D;
         loadSavedTuningAsync(() => this.scheduleOnce(() => {
