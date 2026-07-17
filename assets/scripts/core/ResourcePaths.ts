@@ -209,6 +209,9 @@ export const RESOURCE_PATHS = {
         login: 'login_ripples',
         race: 'race_current',
         result: 'result_sunlit_podium',
+        strokeSfx: [
+            'sfx/stroke_water_01',
+        ],
     },
 };
 

@@ -12,6 +12,7 @@ import { SprintTier } from '../condition/ConditionTypes';
 import { CHARACTER_ACTION_CONFIG, selectAdjacentDistinctActions } from '../character/CharacterActionConfig';
 import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
+import { StrokeSfxManager } from './StrokeSfxManager';
 
 export type GameFlowRefs = {
     raceManager: RaceManager;
@@ -59,6 +60,7 @@ export class GameFlowController {
 
     startGame() {
         this._refs.debug('startGame');
+        StrokeSfxManager.preload();
         this.clearAiDiveTimers();
         this.resetDiveCharge();
         this._sprintTriggered = false;
@@ -118,7 +120,12 @@ export class GameFlowController {
         if (!this.isStrokeInputActive()) {
             return;
         }
+        const playStrokeSfx = this._refs.getState() === GameState.RACING
+            && (this._refs.playerSwimmer?.canAcceptStroke(type) ?? false);
         const result = this._refs.playerSwimmer?.handleStroke(type);
+        if (playStrokeSfx) {
+            StrokeSfxManager.playStroke();
+        }
         if (result) {
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
