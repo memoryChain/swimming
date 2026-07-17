@@ -900,6 +900,12 @@ export class SwimmerMotor {
         this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
     }
 
+    // Shift race progress by a small amount (used by swimmer-vs-swimmer collision
+    // to push bodies apart along the swim axis). Clamped to the race bounds.
+    nudgeDistance(delta: number) {
+        this._distance = Math.max(0, Math.min(getRaceDistance(), this._distance + delta));
+    }
+
     // Ease the actual heading toward the stroke-set target so a stroke turns the
     // body GRADUALLY after release. No auto-recenter: heading only returns toward
     // straight when the swimmer strokes the other side (player and AI alike).

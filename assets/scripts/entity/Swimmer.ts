@@ -59,6 +59,42 @@ export class Swimmer extends Component {
         return this._startPosition;
     }
 
+    // True while this swimmer should take part in swimmer-vs-swimmer collision:
+    // racing, on-screen, and not in a phase (flip turn / dive-underwater glide)
+    // that scripts its own position and race distance. See
+    // entity/SwimmerCollisionResolver.ts.
+    get isCollisionActive(): boolean {
+        return this._motor.isRacing
+            && this.node.active
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isUnderwater;
+    }
+
+    // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
+    // Bodies are impassable, so both axes move: Z via the motor lateral offset
+    // (clamped to the pool walls) and X via race distance (X is derived from
+    // distance, so nudging distance is the only push that survives the next
+    // frame). Both mutate the motor so the separation persists, and the node is
+    // repositioned for same-frame consistency.
+    applyCollisionPush(pushX: number, pushZ: number) {
+        if (Math.abs(pushZ) > 1e-6) {
+            this._motor.setLateralOffset(this._motor.lateralOffset + pushZ);
+        }
+        if (Math.abs(pushX) > 1e-6) {
+            const direction = this._courseLayout.finishDirectionAtDistance(this._motor.distance);
+            this._motor.nudgeDistance(pushX * direction);
+        }
+        const visualDistance = Math.min(this._motor.distance, getRaceDistance());
+        const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
+        const pos = this.node.position;
+        this.node.setPosition(x, pos.y, this._startPosition.z + this._motor.lateralOffset);
+    }
+
+    // Flash the body red for a moment when bumping into another swimmer.
+    flashCollision() {
+        this.cartoonRig?.flashCollision();
+    }
+
     start() {
         this.captureStartPosition();
     }

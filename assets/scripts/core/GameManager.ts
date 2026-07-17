@@ -31,6 +31,7 @@ import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
 import { CompetitorManager } from '../competitor/CompetitorManager';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
+import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
@@ -90,6 +91,8 @@ export class GameManager extends Component {
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
+    // Reused each frame for the swimmer-vs-swimmer collision pass (no per-frame allocation).
+    private readonly _collisionSwimmers: Swimmer[] = [];
     // 100m AI-debug 1v1 mode: a single opponent at PRIMARY_AI_LANE_INDEX whose
     // difficulty is chosen from the login picker.
     private _aiDebugMode = false;
@@ -312,6 +315,7 @@ export class GameManager extends Component {
         }
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
+        this.updateSwimmerCollisions();
         // Roster info panel only during pre-race stage 1 (the wide overview shot);
         // it fades out as the per-lane close-up sweep begins.
         this._preRaceIntroPanel.setVisible(
@@ -405,6 +409,25 @@ export class GameManager extends Component {
             }
         }
         return PERFORMANCE_CONFIG.motion.farTierStride;
+    }
+
+    // Push overlapping swimmers apart on the lateral (Z) axis. Manual XZ overlap
+    // test over up to 8 swimmers — no physics engine needed. Per-swimmer gating
+    // lives in Swimmer.isCollisionActive (only racing, on-screen, non-flip-turn).
+    private updateSwimmerCollisions() {
+        if (this._modelDebugFlow?.active) {
+            return;
+        }
+        this._collisionSwimmers.length = 0;
+        if (this._playerSwimmer) {
+            this._collisionSwimmers.push(this._playerSwimmer);
+        }
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer) {
+                this._collisionSwimmers.push(swimmer);
+            }
+        }
+        resolveSwimmerCollisions(this._collisionSwimmers);
     }
 
     private toggleSplashCulling() {

@@ -41,6 +41,15 @@ export type RaceFlipTurnUpdate = {
     complete: boolean;
 };
 
+// Reuse the perfect-zone glow shell to also flash red on a swimmer-vs-swimmer
+// collision. The flash intensity decays back to zero (or to the steady yellow
+// perfect-zone glow if that is active) over COLLISION_FLASH_SECONDS.
+const COLLISION_FLASH_SECONDS = 0.35;
+const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
+const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
+// Silhouette-edge outline width for the glow shell (effect glowParams.x, ×0.001m).
+const GLOW_SHELL_LINE_WIDTH = 6;
+
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
     public root: Node = null;
@@ -96,6 +105,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowShellRoot: Node = null;
     private _perfectGlowMaterial: Material = null;
     private _perfectGlowLoading = false;
+    private _collisionFlashTimer = 0;
+    private _glowPrewarmRequested = false;
+    private _glowDiagActive = false;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmer0621ColorVariant().id;
@@ -793,6 +805,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
+        if (this._collisionFlashTimer > 0) {
+            this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
+            this.updatePerfectGlowMaterial();
+        }
+
         this._selfTime += dt;
         if (this._modelDebugMode) {
             return;
@@ -870,8 +887,32 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this.ensurePerfectGlowShells();
         }
         if (changed) {
+            console.log('[glow-diag] setActive', active, 'loaded', this._loaded, 'model', !!this._model, 'shellValid', this._perfectGlowShellRoot?.isValid, 'mat', !!this._perfectGlowMaterial, 'ai', this._backgroundSwimmer, 'node', this.node?.name);
             this.updatePerfectGlowMaterial();
         }
+    }
+
+    // Build the glow shell ahead of time (e.g. at race start) so the very first
+    // perfect-zone or collision flash shows immediately instead of waiting on the
+    // async effect/mesh setup. Safe to call before the model finishes loading:
+    // the request is remembered and honoured once the model is ready.
+    prewarmGlow() {
+        this._glowPrewarmRequested = true;
+        if (this._loaded && this._model?.isValid && this.root && !this._modelDebugMode) {
+            this.ensurePerfectGlowShells();
+        }
+    }
+
+    // Flash the body red for a moment (reuses the perfect-glow shell) when this
+    // swimmer bumps into another. Called each frame contact persists; the timer
+    // resets to full so it stays red while touching, then fades after separation.
+    flashCollision() {
+        if (!this.node?.isValid || !this._loaded || !this._model || !this.root) {
+            return;
+        }
+        this.ensurePerfectGlowShells();
+        this._collisionFlashTimer = COLLISION_FLASH_SECONDS;
+        this.updatePerfectGlowMaterial();
     }
 
     refreshModelDebugSetup() {
@@ -1501,6 +1542,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         if (!this._model || this._skinnedRenderers.length <= 0) {
+            console.log('[glow-diag] ensureShells skipped model=', !!this._model, 'skinned=', this._skinnedRenderers.length);
             return;
         }
         this._perfectGlowLoading = true;
@@ -1513,9 +1555,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             const material = new Material();
             material.initialize({ effectAsset: effect });
             material.name = 'SwimmerPerfectGlow';
-            material.setProperty('lineWidth', 6);
+            // lineWidth is the silhouette-edge expansion (glowParams.x * 0.001 m).
+            // The effect defaults to 6 (=6mm), which is far too thin to notice on
+            // the bright pool. Bump it via setProperty (a reliable uniform change;
+            // editing the .effect recompile is unreliable in the editor).
+            material.setProperty('lineWidth', GLOW_SHELL_LINE_WIDTH);
             material.setProperty('flashStrength', this._perfectGlowIntensity);
-            material.setProperty('baseColor', new Color(255, 198, 38, 255));
+            material.setProperty('baseColor', PERFECT_GLOW_COLOR);
             this._perfectGlowMaterial = material;
 
             const root = new Node('SwimmerPerfectGlowShell');
@@ -1550,16 +1596,33 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 shell.uploadAnimation(null);
                 setAllRendererMaterialSlots(source, shell, material);
             }
+            console.log('[glow-diag] shell built children=', this._perfectGlowShellRoot?.children.length, 'modelLayer=', this._model?.layer, 'node', this.node?.name);
             this.updatePerfectGlowMaterial();
         });
     }
 
     private updatePerfectGlowMaterial() {
+        // Collision flash (red) takes priority over the steady perfect-zone glow
+        // (yellow) while it is stronger, then fades back to whatever glow remains.
+        const collisionFlash = this._collisionFlashTimer > 0
+            ? this._collisionFlashTimer / COLLISION_FLASH_SECONDS
+            : 0;
+        const intensity = Math.max(this._perfectGlowIntensity, collisionFlash);
         if (this._perfectGlowShellRoot?.isValid) {
-            this._perfectGlowShellRoot.active = this._perfectGlowIntensity > 0.001;
+            this._perfectGlowShellRoot.active = intensity > 0.001;
         }
         if (this._perfectGlowMaterial) {
-            this._perfectGlowMaterial.setProperty('flashStrength', this._perfectGlowIntensity);
+            this._perfectGlowMaterial.setProperty('flashStrength', intensity);
+            this._perfectGlowMaterial.setProperty(
+                'baseColor',
+                collisionFlash > this._perfectGlowIntensity ? COLLISION_FLASH_COLOR : PERFECT_GLOW_COLOR,
+            );
+        }
+        if (intensity > 0.001 && !this._glowDiagActive) {
+            this._glowDiagActive = true;
+            console.log('[glow-diag] SHOW intensity', intensity.toFixed(2), 'shellValid', this._perfectGlowShellRoot?.isValid, 'shellActive', this._perfectGlowShellRoot?.active, 'shellLayer', this._perfectGlowShellRoot?.layer, 'modelLayer', this._model?.layer, 'mat', !!this._perfectGlowMaterial, 'node', this.node?.name);
+        } else if (intensity <= 0.001) {
+            this._glowDiagActive = false;
         }
     }
 
