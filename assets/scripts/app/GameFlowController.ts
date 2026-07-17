@@ -244,6 +244,9 @@ export class GameFlowController {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
         };
+        raceManager.onFinishCountdownTick = (value) => {
+            this._refs.uiFlow.showFinishCountdown(value);
+        };
         raceManager.onRaceFinished = (playerWin, playerTime, aiTime, placementSummary) => {
             this._refs.debug(`finished win=${playerWin} player=${playerTime.toFixed(2)} ai=${aiTime.toFixed(2)}`);
             this.stopAllAi();
@@ -281,6 +284,7 @@ export class GameFlowController {
         raceManager.onStateChange = null;
         raceManager.onProgressUpdate = null;
         raceManager.onSwimmerFinished = null;
+        raceManager.onFinishCountdownTick = null;
         raceManager.onRaceFinished = null;
         raceManager.onDiveReady = null;
     }

@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
+import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -20,6 +20,7 @@ export type RaceLeaderboardRow = {
     placement: number;
     time: number;
     isPlayer: boolean;
+    finished?: boolean;
 };
 
 @ccclass('UIController')
@@ -68,6 +69,12 @@ export class UIController extends Component {
     public resultRowPlayerFrame: SpriteFrame = null;
     @property(Label) public ratingLabel: Label = null;
     @property(Label) public comboLabel: Label = null;
+
+    // Dedicated finish (straggler) countdown: a big centred number with no dark
+    // plate, built lazily. Intensifies + recolours in the last few seconds.
+    private _finishCountdownRoot: Node = null;
+    private _finishCountdownLabel: Label = null;
+    private _finishCountdownHint: Label = null;
 
     start() {
         this.setupButtonFeedback(this.btnArm);
@@ -206,6 +213,105 @@ export class UIController extends Component {
         }
     }
 
+    // Straggler countdown after the first racer finishes: swimmers still in the
+    // water have this many seconds to touch the wall before being marked 未完成.
+    // A bespoke big centred number (no dark plate); the last few seconds punch
+    // harder and turn red for urgency.
+    showFinishCountdown(value: number) {
+        this.ensureFinishCountdown();
+        if (this._finishCountdownRoot) {
+            this._finishCountdownRoot.active = true;
+        }
+        this.setSpeedBarVisible(false);
+        const label = this._finishCountdownLabel;
+        if (label) {
+            const urgent = value > 0 && value <= 3;
+            label.string = value > 0 ? `${value}` : '到达';
+            if (value <= 0) {
+                label.color = new Color(120, 240, 170, 255); // settle green
+                label.fontSize = 132;
+            } else if (urgent) {
+                label.color = new Color(255, 66, 66, 255); // final-seconds red
+                label.fontSize = 220;
+            } else {
+                label.color = new Color(255, 214, 44, 255); // amber
+                label.fontSize = 150;
+            }
+            label.lineHeight = Math.round(label.fontSize * 1.2);
+            this.punchFinishNumber(label.node, urgent);
+        }
+        if (this._finishCountdownHint) {
+            this._finishCountdownHint.string = value > 0 ? '等待其他选手到达终点' : '结算中…';
+        }
+        if (this.hintLabel) {
+            this.hintLabel.string = value > 0 ? '等待其他选手到达终点' : '结算中…';
+        }
+    }
+
+    hideFinishCountdown() {
+        if (this._finishCountdownRoot?.isValid) {
+            this._finishCountdownRoot.active = false;
+        }
+    }
+
+    // Scale punch for the countdown number. Urgent (≤ 3s) overshoots harder and
+    // snaps back faster so the final seconds feel tense.
+    private punchFinishNumber(node: Node, urgent: boolean) {
+        Tween.stopAllByTarget(node);
+        const peak = urgent ? 1.65 : 1.22;
+        node.setScale(peak, peak, 1);
+        tween(node)
+            .to(urgent ? 0.16 : 0.22, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+            .start();
+    }
+
+    private ensureFinishCountdown() {
+        if (this._finishCountdownRoot?.isValid) {
+            return;
+        }
+        const root = new Node('FinishCountdown');
+        root.layer = Layers.Enum.UI_2D;
+        root.setParent(this.node);
+        root.addComponent(UITransform).setContentSize(640, 320);
+        root.setPosition(0, 60, 0);
+
+        const numberNode = new Node('Number');
+        numberNode.layer = Layers.Enum.UI_2D;
+        numberNode.setParent(root);
+        numberNode.addComponent(UITransform).setContentSize(640, 260);
+        numberNode.setPosition(0, 24, 0);
+        const number = numberNode.addComponent(Label);
+        number.fontSize = 150;
+        number.lineHeight = 180;
+        number.isBold = true;
+        number.color = new Color(255, 214, 44, 255);
+        number.horizontalAlign = Label.HorizontalAlign.CENTER;
+        number.verticalAlign = Label.VerticalAlign.CENTER;
+        const numberOutline = numberNode.addComponent(LabelOutline);
+        numberOutline.color = new Color(6, 16, 30, 235);
+        numberOutline.width = 7;
+
+        const hintNode = new Node('Hint');
+        hintNode.layer = Layers.Enum.UI_2D;
+        hintNode.setParent(root);
+        hintNode.addComponent(UITransform).setContentSize(640, 56);
+        hintNode.setPosition(0, -118, 0);
+        const hint = hintNode.addComponent(Label);
+        hint.fontSize = 28;
+        hint.lineHeight = 36;
+        hint.isBold = true;
+        hint.color = new Color(238, 246, 255, 255);
+        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
+        hint.verticalAlign = Label.VerticalAlign.CENTER;
+        const hintOutline = hintNode.addComponent(LabelOutline);
+        hintOutline.color = new Color(6, 16, 30, 220);
+        hintOutline.width = 4;
+
+        this._finishCountdownRoot = root;
+        this._finishCountdownLabel = number;
+        this._finishCountdownHint = hint;
+    }
+
     hideCountdown() {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;
@@ -292,9 +398,13 @@ export class UIController extends Component {
             this.resultTime.string = playerTime > 0 ? `个人成绩  ${playerTime.toFixed(2)} 秒` : '个人成绩  --.-- 秒';
         }
         if (this.resultPlacementStat) {
-            this.resultPlacementStat.string = stats?.placement
-                ? `名次  ${stats.placement}/${stats.racerCount ?? '--'}`
-                : '名次  --/--';
+            if (playerTime <= 0) {
+                this.resultPlacementStat.string = '名次  未完成';
+            } else {
+                this.resultPlacementStat.string = stats?.placement
+                    ? `名次  ${stats.placement}/${stats.racerCount ?? '--'}`
+                    : '名次  --/--';
+            }
         }
         if (this.resultSpeedStat) {
             this.resultSpeedStat.string = stats ? `平均速度  ${stats.averageSpeed.toFixed(2)} m/s` : '平均速度  -- m/s';
@@ -302,6 +412,7 @@ export class UIController extends Component {
         this.updateLeaderboard(stats?.leaderboard, playerTime);
         void aiTime;
         void soloRace;
+        this.hideFinishCountdown();
         if (this.hintLabel) {
             this.hintLabel.string = '按空格或点击再赛一次';
         }
@@ -326,6 +437,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;
         }
+        this.hideFinishCountdown();
         this.updateDiveCharge(0, false);
         this.setSpeedBarVisible(false);
         // Restore the swim pad for the next race (it is hidden during the awards ceremony).
@@ -369,12 +481,13 @@ export class UIController extends Component {
                 continue;
             }
             const displayName = row.isPlayer ? '你' : fitName(row.name);
-            const averageSpeed = row.time > 0 ? getRaceDistance() / row.time : 0;
+            const finished = row.time > 0;
+            const averageSpeed = finished ? getRaceDistance() / row.time : 0;
             const color = row.isPlayer ? new Color(255, 214, 44, 255) : new Color(218, 230, 246, 255);
             setResultLabel(nameLabel, displayName, color, row.isPlayer);
             setResultLabel(rankLabel, `${row.placement}`, color, row.isPlayer);
-            setResultLabel(timeLabel, `${row.time.toFixed(2)} 秒`, color, row.isPlayer);
-            setResultLabel(speedLabel, `${averageSpeed.toFixed(2)} m/s`, color, row.isPlayer);
+            setResultLabel(timeLabel, finished ? `${row.time.toFixed(2)} 秒` : '未完成', color, row.isPlayer);
+            setResultLabel(speedLabel, finished ? `${averageSpeed.toFixed(2)} m/s` : '--', color, row.isPlayer);
             setRowBack(back, row.isPlayer ? this.resultRowPlayerFrame : this.resultRowNormalFrame);
             if (avatar) {
                 avatar.node.active = true;

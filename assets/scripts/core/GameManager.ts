@@ -551,7 +551,7 @@ export class GameManager extends Component {
             showFinishRank: (result) => this._finishRankOverlay.addResult(result),
             showAwards: (leaderboard) => {
                 this._playerOnAwardsPodium = leaderboard.some((row) =>
-                    row.isPlayer && row.placement >= 1 && row.placement <= 3,
+                    row.isPlayer && row.finished && row.placement >= 1 && row.placement <= 3,
                 );
                 const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);

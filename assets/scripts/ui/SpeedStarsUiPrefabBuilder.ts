@@ -540,7 +540,7 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
         difficulty: option.id,
         node: requireNode(startScreen, legacyButtonNames[index]),
     }));
-    requireLabel(startScreen, 'DistanceModeLabel').string = '赛程 100米 · 选择难度';
+    requireLabel(startScreen, 'DistanceModeLabel').string = '赛程 200米 · 选择难度';
     const skins = difficultyButtonSkins(difficultyButtons);
     for (const [index, button] of difficultyButtons.entries()) {
         const label = button.node.getChildByName('Label')?.getComponent(Label);

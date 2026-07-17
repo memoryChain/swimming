@@ -1,5 +1,5 @@
 import { _decorator, Component } from 'cc';
-import { COUNTDOWN_SECONDS, GLIDE_SECONDS, getRaceDistance } from './GameBalance';
+import { COUNTDOWN_SECONDS, FINISH_STRAGGLER_COUNTDOWN_SECONDS, GLIDE_SECONDS, getRaceDistance } from './GameBalance';
 import { GameState } from './GameConstants';
 import { scaledDelta } from './TimeScale';
 import { Swimmer } from '../entity/Swimmer';
@@ -19,6 +19,9 @@ export type RaceFinishResult = {
     placement: number;
     time: number;
     isPlayer: boolean;
+    // false when the swimmer never reached the wall before the straggler
+    // countdown ended (未完成 / DNF, sharing the last placement).
+    finished: boolean;
 };
 
 @ccclass('RaceManager')
@@ -33,6 +36,7 @@ export class RaceManager extends Component {
     public onProgressUpdate: (playerDist: number, aiDist: number) => void = null;
     public onRaceFinished: (playerWin: boolean, playerTime: number, aiTime: number, placement?: RacePlacementSummary) => void = null;
     public onSwimmerFinished: (result: RaceFinishResult) => void = null;
+    public onFinishCountdownTick: (value: number) => void = null;
     public onDiveReady: () => void = null;
 
     private _state = GameState.READY;
@@ -44,6 +48,9 @@ export class RaceManager extends Component {
     private readonly _aiFinishTimes = new Map<Swimmer, number>();
     private _lastCountdownValue = -1;
     private _diveResolved = false;
+    private _finishCountdownActive = false;
+    private _finishCountdownTimer = 0;
+    private _lastFinishCountdownValue = -1;
 
     startRace() {
         this.unscheduleAllCallbacks();
@@ -56,6 +63,9 @@ export class RaceManager extends Component {
         this._finishTimes.clear();
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
         this._diveResolved = false;
+        this._finishCountdownActive = false;
+        this._finishCountdownTimer = 0;
+        this._lastFinishCountdownValue = -1;
         this.setState(GameState.COUNTDOWN);
         this.onCountdownTick?.(this._lastCountdownValue);
     }
@@ -85,6 +95,9 @@ export class RaceManager extends Component {
         this._finishTimes.clear();
         this._lastCountdownValue = -1;
         this._diveResolved = false;
+        this._finishCountdownActive = false;
+        this._finishCountdownTimer = 0;
+        this._lastFinishCountdownValue = -1;
         this.playerSwimmer?.reset();
         for (const swimmer of this.activeAiSwimmers()) {
             swimmer.reset();
@@ -162,19 +175,43 @@ export class RaceManager extends Component {
             }
         }
 
-        if (this._playerFinished && this._finishTimes.size >= activeRacers.length) {
+        // The moment the first racer touches the wall, give everyone else a
+        // fixed window to also finish.
+        if (!this._finishCountdownActive && this._finishTimes.size >= 1) {
+            this.startFinishCountdown();
+        }
+        if (this._finishCountdownActive) {
+            this._finishCountdownTimer -= dt;
+            const value = Math.max(0, Math.ceil(this._finishCountdownTimer));
+            if (value !== this._lastFinishCountdownValue) {
+                this._lastFinishCountdownValue = value;
+                this.onFinishCountdownTick?.(value);
+            }
+        }
+
+        const everyoneFinished = this._finishTimes.size >= activeRacers.length;
+        const countdownExpired = this._finishCountdownActive && this._finishCountdownTimer <= 0;
+        if (everyoneFinished || countdownExpired) {
             this.finishRace();
         }
     }
 
+    private startFinishCountdown() {
+        this._finishCountdownActive = true;
+        this._finishCountdownTimer = FINISH_STRAGGLER_COUNTDOWN_SECONDS;
+        this._lastFinishCountdownValue = Math.ceil(this._finishCountdownTimer);
+        this.onFinishCountdownTick?.(this._lastFinishCountdownValue);
+    }
+
     private finishRace() {
-        if (!this._playerFinished || this._state === GameState.FINISHED) {
+        if (this._state === GameState.FINISHED) {
             return;
         }
+        this._finishCountdownActive = false;
         const placement = this.calculatePlayerPlacement();
         this.setState(GameState.FINISHED);
         this.onRaceFinished?.(
-            placement.placement === 1,
+            this._playerFinished && placement.placement === 1,
             this._playerFinishTime,
             this._aiFinishTime,
             placement,
@@ -239,30 +276,34 @@ export class RaceManager extends Component {
             placement: this.finishLeaderboard().find((row) => row.swimmer === swimmer)?.placement ?? this._finishTimes.size,
             time,
             isPlayer: swimmer === this.playerSwimmer,
+            finished: true,
         };
         this.onSwimmerFinished?.(result);
     }
 
     private finishLeaderboard(): RaceFinishResult[] {
-        const rows: RaceFinishResult[] = [];
+        const finishers: RaceFinishResult[] = [];
+        const unfinished: RaceFinishResult[] = [];
         for (const swimmer of this.activeRacers()) {
             const time = this._finishTimes.get(swimmer) ?? (swimmer === this.playerSwimmer ? this._playerFinishTime : this._aiFinishTimes.get(swimmer)) ?? 0;
-            if (time <= 0) {
-                continue;
+            const isPlayer = swimmer === this.playerSwimmer;
+            if (time > 0) {
+                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, finished: true });
+            } else {
+                unfinished.push({ swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, finished: false });
             }
-            rows.push({
-                swimmer,
-                name: swimmer.swimmerName,
-                placement: 0,
-                time,
-                isPlayer: swimmer === this.playerSwimmer,
-            });
         }
-        rows.sort((a, b) => a.time - b.time);
-        for (let i = 0; i < rows.length; i++) {
-            rows[i].placement = i + 1;
+        finishers.sort((a, b) => a.time - b.time);
+        for (let i = 0; i < finishers.length; i++) {
+            finishers[i].placement = i + 1;
         }
-        return rows;
+        // Swimmers still in the water when the countdown ended are 未完成 and share
+        // the single placement right after the last finisher.
+        const lastPlacement = finishers.length + 1;
+        for (const row of unfinished) {
+            row.placement = lastPlacement;
+        }
+        return [...finishers, ...unfinished];
     }
 
     private setState(state: GameState) {

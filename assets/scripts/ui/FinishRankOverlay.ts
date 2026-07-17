@@ -1,4 +1,4 @@
-import { Camera, Color, Graphics, Label, Node, UITransform, Vec3 } from 'cc';
+import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
 import { makeUiNode, uiColor } from './RuntimeUiFactory';
 
@@ -33,6 +33,10 @@ const PANEL_WIDTH = 184;
 const PANEL_TITLE_H = 30;
 const PANEL_ROW_H = 30;
 
+// Slack (in UI px) allowed past the HUD edge before a head badge is culled, so a
+// swimmer right at the screen border does not pop in/out.
+const BADGE_OFF_SCREEN_MARGIN = 70;
+
 type BadgeEntry = {
     swimmerNode: Node;
     getHead: (out: Vec3) => Vec3;
@@ -56,6 +60,8 @@ export class FinishRankOverlay {
     private readonly _screen = new Vec3();
     private readonly _uiWorld = new Vec3();
     private readonly _uiLocal = new Vec3();
+    private readonly _camForward = new Vec3();
+    private readonly _camToHead = new Vec3();
     private readonly _placed: { x: number; y: number }[] = [];
 
     bind(hud: Node, width: number, height: number) {
@@ -150,11 +156,29 @@ export class FinishRankOverlay {
         // worse ranks get pushed upward when they collide with it.
         entries.sort((a, b) => a.placement - b.placement);
         this._placed.length = 0;
+        const size = view.getVisibleSize();
+        const halfW = (hudTransform.width || size.width) / 2 + BADGE_OFF_SCREEN_MARGIN;
+        const halfH = (hudTransform.height || size.height) / 2 + BADGE_OFF_SCREEN_MARGIN;
+        // Camera forward (the -Z axis of the camera node) used to reject swimmers
+        // that are behind the camera, e.g. when facing away from the finish wall.
+        Vec3.transformQuat(this._camForward, Vec3.FORWARD, worldCamera.node.worldRotation);
         for (const entry of entries) {
             entry.getHead(this._worldPos);
+            // Behind the camera -> hide instead of projecting a mirrored ghost.
+            Vec3.subtract(this._camToHead, this._worldPos, worldCamera.node.worldPosition);
+            if (Vec3.dot(this._camToHead, this._camForward) <= 0) {
+                entry.root.active = false;
+                continue;
+            }
             worldCamera.worldToScreen(this._worldPos, this._screen);
             uiCamera.screenToWorld(this._screen, this._uiWorld);
             hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
+            // Off the visible HUD area -> hide.
+            if (Math.abs(this._uiLocal.x) > halfW || Math.abs(this._uiLocal.y) > halfH) {
+                entry.root.active = false;
+                continue;
+            }
+            entry.root.active = true;
             const x = this._uiLocal.x;
             let y = this._uiLocal.y + BADGE_HEAD_OFFSET_Y;
             for (let guard = 0; guard < entries.length; guard++) {

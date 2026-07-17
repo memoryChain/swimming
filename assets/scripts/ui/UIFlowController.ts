@@ -68,6 +68,10 @@ export class UIFlowController {
         this._refs.uiController?.hideCountdown();
     }
 
+    showFinishCountdown(value: number) {
+        this._refs.uiController?.showFinishCountdown(value);
+    }
+
     showDivePrompt() {
         this._refs.uiController?.showDivePrompt();
     }

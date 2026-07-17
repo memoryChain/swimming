@@ -976,7 +976,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "赛程 100米",
+    "_string": "赛程 200米",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 0,
@@ -1550,7 +1550,7 @@
       "b": 14,
       "a": 255
     },
-    "_string": "100米",
+    "_string": "200米",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,

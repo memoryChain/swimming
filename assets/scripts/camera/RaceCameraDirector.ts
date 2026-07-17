@@ -64,7 +64,10 @@ const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
 const SWIM_SIDE_CAMERA_DISTANCE = 10.5;
 const SWIM_SIDE_CAMERA_HEIGHT = 1.7;
 const SWIM_SIDE_FOV = 27;
-const FINISH_TOP_FOV = 46;
+// Finish top-down view. Widened so the full 8-lane pool (Z from ~-10.5 to
+// +10.5) stays in frame from the fixed 22.5m camera height; the previous 46
+// clipped lanes 1 and 8 off the top and bottom of the screen.
+const FINISH_TOP_FOV = 56;
 const SWIM_ANGLE_VIEW_FRONT_RANK = 3;
 const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
 export const RACE_CAMERA_TUNING = {
@@ -337,6 +340,17 @@ export class RaceCameraDirector {
 
     update(dt: number, snapshot: RaceCameraSnapshot) {
         if (!this._cameraNode) {
+            return;
+        }
+        // Once the awards ceremony is armed it overrides every in-race view. This
+        // matters when the race force-finishes on the straggler countdown while a
+        // swimmer is still underwater / mid flip-turn: without this the snapshot's
+        // playerFlipTurnCameraActive would keep the camera stuck underwater.
+        if (this._awardsCenter) {
+            this._flipTurnViewActive = false;
+            this._underwaterViewActive = false;
+            this._topViewActive = false;
+            this.updateBroadcastCamera(dt, snapshot);
             return;
         }
         const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive && !this._feedMode;

@@ -35,7 +35,7 @@ export class AwardsPresentation {
 
     show(leaderboard: RaceFinishResult[], poolNode?: Node | null): Vec3 {
         const winners = leaderboard
-            .filter((row) => row.placement >= 1 && row.placement <= 3 && row.swimmer?.node?.isValid)
+            .filter((row) => row.finished && row.placement >= 1 && row.placement <= 3 && row.swimmer?.node?.isValid)
             .sort((a, b) => a.placement - b.placement);
 
         // Only the medallists take part in the ceremony; hide everyone else so
@@ -64,7 +64,7 @@ export class AwardsPresentation {
             if (!node?.isValid) {
                 continue;
             }
-            if (row.placement >= 1 && row.placement <= 3) {
+            if (row.placement >= 1 && row.placement <= 3 && row.finished) {
                 continue;
             }
             if (node.active) {
