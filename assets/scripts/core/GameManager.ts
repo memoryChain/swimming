@@ -42,6 +42,7 @@ import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
+import { SwimmerNameOverlay } from '../ui/SwimmerNameOverlay';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -168,15 +169,12 @@ export class GameManager extends Component {
     // sweet-zone dial (left dial shows the swimmer's speed; right dial omits it).
     private readonly _sweetZoneBarLeft = new SweetZoneBar();
     private readonly _sweetZoneBarRight = new SweetZoneBar();
-    // 100m AI-debug 1v1 extras: a second pair of sweet-zone dials for the opponent
-    // and a camera-follow-AI toggle button. Built always but only shown in ai-debug.
+    // 100m AI-debug 1v1 extras: opponent sweet-zone dials and a camera target toggle.
     private readonly _aiSweetZoneBarLeft = new SweetZoneBar();
     private readonly _aiSweetZoneBarRight = new SweetZoneBar();
     private _cameraFollowsAi = false;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
-    private _raceCameraButton: Node = null;
-    private _raceCameraButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -189,6 +187,7 @@ export class GameManager extends Component {
     private _bulletTimeIndex = 0;
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankOverlay = new FinishRankOverlay();
+    private readonly _swimmerNameOverlay = new SwimmerNameOverlay();
     private readonly _awardsPresentation = new AwardsPresentation(COURSE_LAYOUT);
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -213,8 +212,8 @@ export class GameManager extends Component {
                             this.registerEvents();
                             this.debug('3D runtime initialized');
                             const launchMode = consumeMainGameLaunchMode();
-                            if (launchMode === 'model-debug' || launchMode === 'flipturn-debug') {
-                                this.enterModelDebug(launchMode === 'flipturn-debug' ? 'flip_turn' : 'freestyle');
+                            if (launchMode === 'model-debug') {
+                                this.enterModelDebug('freestyle');
                             } else {
                                 this._aiDebugMode = launchMode === 'ai-debug';
                                 if (this._aiDebugMode) {
@@ -292,9 +291,6 @@ export class GameManager extends Component {
                 && this._state !== GameState.FINISHED
                 && playerBeforeFinish
             ));
-        if (this._raceCameraButton?.isValid) {
-            this._raceCameraButton.active = playerIndicatorVisible && raceActive;
-        }
         // Motor speed becomes meaningful after the dive has entered its glide.
         // Keep the player marker visible before takeoff, but hide the speed text.
         const playerSpeedVisible = playerIndicatorVisible
@@ -337,6 +333,15 @@ export class GameManager extends Component {
             && this._state === GameState.PRECOUNTDOWN
             && this._raceCameraDirector.preRacePhase === 'overview',
         );
+        const awardsActive = this._state === GameState.AWARDS;
+        const standingPresentation = this._state === GameState.PRECOUNTDOWN || awardsActive;
+        const swimmerNamesVisible = !this._modelDebugFlow?.active
+            && this._state !== GameState.READY
+            && this._state !== GameState.FINISHED;
+        this._swimmerNameOverlay.setVisible(swimmerNamesVisible);
+        // The podium uses the same quiet name labels as the pool. Hide the larger
+        // finish rank chips there so both styles do not cover the standing faces.
+        this._finishRankOverlay.setHeadBadgesVisible(!awardsActive);
         if (this._modelDebugFlow?.active) {
             this._topViewCeiling.update(false);
             this.setUnderwaterOverlayVisible(false);
@@ -348,6 +353,13 @@ export class GameManager extends Component {
         this._gameFlow?.updateRaceCamera(dt);
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
+        this._swimmerNameOverlay.update(
+            this._cameraNode?.getComponent(Camera) ?? null,
+            this._uiCamera,
+            raceDistance,
+            awardsActive,
+            standingPresentation ? 72 : 30,
+        );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
         if (this._finishRankOverlay.hasResults()) {
@@ -471,14 +483,12 @@ export class GameManager extends Component {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this._gameFlow?.startGame();
-        this.updateRaceCameraButtonLabel();
     }
 
     restartGame() {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this._gameFlow?.restartGame();
-        this.updateRaceCameraButtonLabel();
     }
 
     private returnToLogin() {
@@ -836,6 +846,7 @@ export class GameManager extends Component {
         // panel was first populated with only the player. Repopulate it now that
         // the full lineup exists.
         this.refreshPreRaceIntroRoster();
+        this.refreshSwimmerNameRoster();
         this.applySplashParticlesEnabled();
         if (this._raceManager) {
             this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
@@ -855,6 +866,12 @@ export class GameManager extends Component {
             difficulty: controller.difficulty,
         }));
         this._aiDifficultyPanel.populate(entries);
+    }
+
+    private refreshSwimmerNameRoster() {
+        const swimmers = [this._playerSwimmer, ...this._aiSwimmers]
+            .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.isValid));
+        this._swimmerNameOverlay.setSwimmers(swimmers, this._playerSwimmer);
     }
 
     // Rebuild the pre-race stage 1 roster info panel (lane number + avatar + name)
@@ -934,11 +951,11 @@ export class GameManager extends Component {
             this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
+            this._swimmerNameOverlay.bind(this._raceHud);
+            this.refreshSwimmerNameRoster();
             this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
-            this.buildRaceCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
-
             const modelDebugHud = new ModelDebugHudBuilder({
                 onExit: () => this.exitModelDebug(true),
                 onSlow: () => this.slowModelDebugMotion(),
@@ -1074,40 +1091,11 @@ export class GameManager extends Component {
             return;
         }
         const modeName = this._gameFlow?.cycleRaceCamera();
-        if (modeName) {
-            this.updateRaceCameraButtonLabel(modeName);
-        }
         this.debug(`race camera=${modeName}`);
     }
 
-    private buildRaceCameraButton(raceHud: Node, width: number, height: number) {
-        const button = makeButton(
-            'RaceCameraButton',
-            raceHud,
-            210,
-            54,
-            new Color(24, 82, 142, 238),
-            '',
-        );
-        button.setPosition(width / 2 - 122, height / 2 - 68, 0);
-        button.setSiblingIndex(raceHud.children.length - 1);
-        const labelNode = makeLabel('Label', button, '', 17, new Color(245, 252, 255, 255));
-        labelNode.getComponent(UITransform).setContentSize(200, 50);
-        this._raceCameraButton = button;
-        this._raceCameraButtonLabel = labelNode.getComponent(Label);
-        this.updateRaceCameraButtonLabel();
-        button.active = false;
-        button.on(Node.EventType.TOUCH_END, () => this.cycleRaceCamera());
-    }
-
-    private updateRaceCameraButtonLabel(modeName = this._raceCameraDirector.currentModeName) {
-        if (this._raceCameraButtonLabel?.isValid) {
-            this._raceCameraButtonLabel.string = `相机：${modeName}`;
-        }
-    }
-
-    // Race HUD button (AI-debug mode only): toggle whether the race camera frames
-    // the player or the AI opponent. Built hidden; shown by applyAiDebugHud().
+    // AI-debug-only camera target button. It is built with the race HUD but stays
+    // hidden in every regular game mode.
     private buildAiDebugCameraButton(raceHud: Node, width: number, height: number) {
         const button = makeButton(
             'AiDebugCameraButton',
@@ -1125,7 +1113,6 @@ export class GameManager extends Component {
         button.on(Node.EventType.TOUCH_END, () => this.toggleCameraFollowAi());
     }
 
-    // Show/hide the AI-debug HUD extras based on the active mode.
     private applyAiDebugHud() {
         if (this._aiDebugCameraButton?.isValid) {
             this._aiDebugCameraButton.active = this._aiDebugMode;
@@ -1305,7 +1292,7 @@ export class GameManager extends Component {
         }
         this._cameraFollowsAi = !this._cameraFollowsAi;
         this._gameFlow?.setCameraFollowAi(this._cameraFollowsAi);
-        if (this._aiDebugCameraButtonLabel) {
+        if (this._aiDebugCameraButtonLabel?.isValid) {
             this._aiDebugCameraButtonLabel.string = this._cameraFollowsAi ? '跟随玩家' : '跟随AI';
         }
         this.debug(`camera follow=${this._cameraFollowsAi ? 'AI' : 'player'}`);

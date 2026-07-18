@@ -142,6 +142,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('strokeQuality.goodEnd', 'GOOD终点', 'GOOD 区间终点，范围 0..1。终点必须大于起点。', () => STROKE_QUALITY_TUNING.goodEnd, (v) => STROKE_QUALITY_TUNING.goodEnd = v, 0.01, 0, 1, 2),
             control('strokeQuality.perfectStart', 'PERFECT起点', 'PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。', () => STROKE_QUALITY_TUNING.perfectStart, (v) => STROKE_QUALITY_TUNING.perfectStart = v, 0.01, 0, 1, 2),
             control('strokeQuality.perfectEnd', 'PERFECT终点', 'PERFECT 区间终点，范围 0..1。终点必须大于起点。', () => STROKE_QUALITY_TUNING.perfectEnd, (v) => STROKE_QUALITY_TUNING.perfectEnd = v, 0.01, 0, 1, 2),
+            control('strokeQuality.perfectVisualReleaseGraceSeconds', '黄色松手宽容', '角色确实显示过黄色后，补偿画面显示、玩家松手和触摸事件进入游戏的延迟；不会扩大提前松手的 PERFECT 区。', () => STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds, (v) => STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds = v, 0.01, 0, 0.2, 2, 's'),
             control('gesture.armStrokeTimeoutProgress', '超时圈数', '一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束（手已出水），判为超时失误。0.5=半圈。', () => STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, (v) => STROKE_QUALITY_TUNING.armStrokeTimeoutProgress = v, 0.05, 0.2, 1, 2),
             control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STROKE_QUALITY_TUNING.armStrokeTimeoutAccel, (v) => STROKE_QUALITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
             control('strokeQuality.armCycleLowSpeedPerSecond', '低速划水轮速', '速度低于“起爬速度”时手臂划水每秒的圈数（下限）。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
@@ -476,6 +477,11 @@ function validateTuningRelations() {
     const perfect = normalizeRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd, timeoutProgress, 'strokeQuality.perfect');
     STROKE_QUALITY_TUNING.perfectStart = perfect.start;
     STROKE_QUALITY_TUNING.perfectEnd = perfect.end;
+    STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds = clamp(
+        STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds,
+        0,
+        0.2,
+    );
 
     if (STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond < STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond) {
         console.warn(

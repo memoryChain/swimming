@@ -98,6 +98,11 @@ export const STROKE_QUALITY_TUNING = {
     goodEnd: 0.5,
     perfectStart: 0.34,
     perfectEnd: 0.46,
+    // A player releases after seeing a rendered yellow frame, while the input
+    // reaches gameplay a few frames later. This grace only applies when that
+    // exact held stroke was actually presented as yellow; it does not widen the
+    // ordinary PERFECT range for blind/early releases.
+    perfectVisualReleaseGraceSeconds: 0.08,
     // Arm-stroke cadence vs. swim speed (redesign): the pull cadence ramps
     // linearly from armCycleLowSpeedPerSecond to armCycleHighSpeedPerSecond as
     // current speed crosses the window [armCycleSpeedStart, armCycleSpeedFull],

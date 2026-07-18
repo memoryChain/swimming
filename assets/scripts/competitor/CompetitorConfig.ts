@@ -143,22 +143,22 @@ export const AI_STRATEGY_TUNING = {
 };
 
 export const AI_COMPETITOR_NAMES = [
-    'Liam',
-    'Noah',
-    'Oliver',
-    'James',
-    'Lucas',
-    'Mason',
-    'Ethan',
-    'Logan',
-    'Henry',
-    'Jack',
-    'Owen',
-    'Leo',
-    'Miles',
-    'Caleb',
-    'Dylan',
-    'Finn',
+    '王铁柱',
+    '刘二狗',
+    '张翠花',
+    '赵大壮',
+    '孙富贵',
+    '李来福',
+    '牛建国',
+    '马根生',
+    '托尼老师',
+    '凯文公子',
+    '杰克马',
+    '露西姐',
+    '安吉拉铁蛋',
+    '欧阳霸总',
+    '慕容翠花',
+    '亚历山大强',
 ];
 
 export function shuffledAiCompetitorNames(): string[] {

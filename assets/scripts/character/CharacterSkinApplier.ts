@@ -1,4 +1,4 @@
-import { Color, EffectAsset, Layers, Material, MeshRenderer, Node, Quat, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
+import { Color, EffectAsset, Material, MeshRenderer, Node, Quat, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
@@ -256,7 +256,7 @@ function configureOutlineShells(options: CharacterSkinOptions) {
     root.setPosition(0, 0, 0);
     root.setRotationFromEuler(0, 0, 0);
     root.setScale(1, 1, 1);
-    root.layer = Layers.Enum.DEFAULT;
+    root.layer = model.layer;
     setOutlineRoot(root);
 
     loadOutlineShellMaterial(options.outlineWidth ?? OUTLINE_SHELL_WIDTH, (material) => {
@@ -282,7 +282,7 @@ function configureOutlineShells(options: CharacterSkinOptions) {
                 source.node.getWorldScale(worldScale);
 
                 shellNode.setParent(root);
-                shellNode.layer = Layers.Enum.DEFAULT;
+                shellNode.layer = source.node.layer;
                 shellNode.setWorldPosition(worldPosition);
                 shellNode.setWorldRotation(worldRotation);
                 shellNode.setWorldScale(worldScale);

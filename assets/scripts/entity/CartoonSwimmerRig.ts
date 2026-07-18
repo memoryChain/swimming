@@ -1,4 +1,4 @@
-import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Layers, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
@@ -41,14 +41,18 @@ export type RaceFlipTurnUpdate = {
     complete: boolean;
 };
 
-// Reuse the perfect-zone glow shell to also flash red on a swimmer-vs-swimmer
+type FlashRestoreSlot = {
+    renderer: SkinnedMeshRenderer;
+    index: number;
+    material: Material;
+};
+
+// Reuse the body-material flash to also show red on a swimmer-vs-swimmer
 // collision. The flash intensity decays back to zero (or to the steady yellow
 // perfect-zone glow if that is active) over COLLISION_FLASH_SECONDS.
 const COLLISION_FLASH_SECONDS = 0.35;
 const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
 const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
-// Silhouette-edge outline width for the glow shell (effect glowParams.x, ×0.001m).
-const GLOW_SHELL_LINE_WIDTH = 6;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -102,12 +106,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _playerOutline = false;
     private _skinOutfit: CharacterSkinOutfit = 'default';
     private _perfectGlowIntensity = 0;
-    private _perfectGlowShellRoot: Node = null;
     private _perfectGlowMaterial: Material = null;
-    private _perfectGlowLoading = false;
+    private readonly _perfectGlowRestoreSlots: FlashRestoreSlot[] = [];
     private _collisionFlashTimer = 0;
-    private _glowPrewarmRequested = false;
-    private _glowDiagActive = false;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmer0621ColorVariant().id;
@@ -370,7 +371,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this._model = null;
                 return;
             }
-            setLayerRecursive(this._model, Layers.Enum.DEFAULT);
+            // The water/refraction stack may already have moved the swimmer root
+            // onto its dedicated overlay-camera layer before this async model
+            // finishes loading. Inherit that layer instead of forcing the new
+            // subtree back to DEFAULT, where the main water pass can cover it.
+            setLayerRecursive(this._model, this.node.layer);
             this._poseState.applyRaceModelSetup();
 
             this.root = findNode(this._model, 'Armature') || this._model;
@@ -396,6 +401,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private clearLoadedModel() {
+        this.restorePerfectGlowMaterials();
         this._modelLoadToken++;
         this._loaded = false;
         this.root = null;
@@ -403,13 +409,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._animationPlayer.disable();
         this._animationPlayer.bind(null);
         this._perfectGlowIntensity = 0;
-        this._perfectGlowLoading = false;
-        this._perfectGlowMaterial = null;
+        this._collisionFlashTimer = 0;
         this._outlineRoot = null;
-        if (this._perfectGlowShellRoot?.isValid) {
-            this._perfectGlowShellRoot.destroy();
-        }
-        this._perfectGlowShellRoot = null;
         if (this._model?.isValid) {
             this._model.destroy();
         }
@@ -805,7 +806,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
-        if (this._collisionFlashTimer > 0) {
+        if (this._perfectGlowIntensity > 0 || this._collisionFlashTimer > 0) {
             this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
             this.updatePerfectGlowMaterial();
         }
@@ -819,6 +820,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
+    }
+
+    onDestroy() {
+        this.restorePerfectGlowMaterials();
+        if (this._perfectGlowMaterial?.isValid) {
+            this._perfectGlowMaterial.destroy();
+        }
+        this._perfectGlowMaterial = null;
     }
 
     resetPose() {
@@ -883,34 +892,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const intensity = active ? 1 : 0;
         const changed = this._perfectGlowIntensity !== intensity;
         this._perfectGlowIntensity = intensity;
-        if (active && this.node?.isValid && this._loaded && this._model && this.root) {
-            this.ensurePerfectGlowShells();
-        }
         if (changed) {
-            console.log('[glow-diag] setActive', active, 'loaded', this._loaded, 'model', !!this._model, 'shellValid', this._perfectGlowShellRoot?.isValid, 'mat', !!this._perfectGlowMaterial, 'ai', this._backgroundSwimmer, 'node', this.node?.name);
             this.updatePerfectGlowMaterial();
         }
     }
 
-    // Build the glow shell ahead of time (e.g. at race start) so the very first
-    // perfect-zone or collision flash shows immediately instead of waiting on the
-    // async effect/mesh setup. Safe to call before the model finishes loading:
-    // the request is remembered and honoured once the model is ready.
-    prewarmGlow() {
-        this._glowPrewarmRequested = true;
-        if (this._loaded && this._model?.isValid && this.root && !this._modelDebugMode) {
-            this.ensurePerfectGlowShells();
-        }
-    }
-
-    // Flash the body red for a moment (reuses the perfect-glow shell) when this
+    // Flash the body red for a moment (reuses the body material) when this
     // swimmer bumps into another. Called each frame contact persists; the timer
     // resets to full so it stays red while touching, then fades after separation.
     flashCollision() {
         if (!this.node?.isValid || !this._loaded || !this._model || !this.root) {
             return;
         }
-        this.ensurePerfectGlowShells();
         this._collisionFlashTimer = COLLISION_FLASH_SECONDS;
         this.updatePerfectGlowMaterial();
     }
@@ -936,6 +929,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._model || !this.root) {
             return;
         }
+        this.restorePerfectGlowMaterials();
         const colorVariant = findSwimmer0621ColorVariant(this._colorVariantId) ?? defaultSwimmer0621ColorVariant();
         const usesDynamicColor = this._modelVariantId === 'swimmer0621_2' && !!colorVariant.suit && !!colorVariant.cap;
         const resolvedSuitColor = usesDynamicColor
@@ -965,6 +959,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this._outlineRoot = root;
             },
         });
+        this.updatePerfectGlowMaterial();
     }
 
     private storeSkinSettings(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
@@ -1537,93 +1532,82 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    private ensurePerfectGlowShells() {
-        if (this._perfectGlowShellRoot?.isValid || this._perfectGlowLoading) {
+    private updatePerfectGlowMaterial() {
+        const collisionFlash = this.currentCollisionFlashIntensity();
+        const yellowGlow = this._perfectGlowIntensity;
+        const intensity = Math.max(yellowGlow, collisionFlash);
+        if (intensity <= 0.001) {
+            this.restorePerfectGlowMaterials();
             return;
         }
-        if (!this._model || this._skinnedRenderers.length <= 0) {
-            console.log('[glow-diag] ensureShells skipped model=', !!this._model, 'skinned=', this._skinnedRenderers.length);
-            return;
-        }
-        this._perfectGlowLoading = true;
-        loadRaceAsset(RESOURCE_PATHS.swimmerPerfectGlowEffect, EffectAsset, (err, effect) => {
-            this._perfectGlowLoading = false;
-            if (err || !effect || !this.node?.isValid || !this._model?.isValid) {
-                console.warn('[SpeedSwimming] failed to load perfect glow effect', err);
-                return;
-            }
-            const material = new Material();
-            material.initialize({ effectAsset: effect });
-            material.name = 'SwimmerPerfectGlow';
-            // lineWidth is the silhouette-edge expansion (glowParams.x * 0.001 m).
-            // The effect defaults to 6 (=6mm), which is far too thin to notice on
-            // the bright pool. Bump it via setProperty (a reliable uniform change;
-            // editing the .effect recompile is unreliable in the editor).
-            material.setProperty('lineWidth', GLOW_SHELL_LINE_WIDTH);
-            material.setProperty('flashStrength', this._perfectGlowIntensity);
-            material.setProperty('baseColor', PERFECT_GLOW_COLOR);
-            this._perfectGlowMaterial = material;
 
-            const root = new Node('SwimmerPerfectGlowShell');
-            root.setParent(this._model);
-            root.layer = Layers.Enum.DEFAULT;
-            root.setPosition(0, 0, 0);
-            root.setRotationFromEuler(0, 0, 0);
-            root.setScale(1, 1, 1);
-            this._perfectGlowShellRoot = root;
+        // Collision feedback has explicit priority over the sweet-zone guide.
+        // Both effects start at intensity 1, so comparing their magnitudes made
+        // the tie select yellow; as the red timer decayed it could then never win.
+        // Once the red timer expires, an active sweet zone naturally shows again.
+        const color = collisionFlash > 0 ? COLLISION_FLASH_COLOR : PERFECT_GLOW_COLOR;
+        const flashMaterial = this.ensurePerfectGlowMaterial();
+        flashMaterial.setProperty('mainColor', color);
 
-            for (const source of this._skinnedRenderers) {
-                if (!source.node?.isValid || !source.mesh) {
+        if (this._perfectGlowRestoreSlots.length <= 0) {
+            for (const renderer of this._skinnedRenderers) {
+                if (!renderer?.isValid || !renderer.node?.isValid) {
                     continue;
                 }
-                const shellNode = new Node(`${source.node.name || 'Skin'}PerfectGlow`);
-                const worldPosition = new Vec3();
-                const worldRotation = new Quat();
-                const worldScale = new Vec3();
-                source.node.getWorldPosition(worldPosition);
-                source.node.getWorldRotation(worldRotation);
-                source.node.getWorldScale(worldScale);
-                shellNode.setParent(root);
-                shellNode.layer = Layers.Enum.DEFAULT;
-                shellNode.setWorldPosition(worldPosition);
-                shellNode.setWorldRotation(worldRotation);
-                shellNode.setWorldScale(worldScale);
-                const shell = shellNode.addComponent(SkinnedMeshRenderer);
-                shell.mesh = source.mesh;
-                shell.skeleton = source.skeleton;
-                shell.skinningRoot = source.skinningRoot || this._model;
-                shell.setUseBakedAnimation(false, true);
-                shell.uploadAnimation(null);
-                setAllRendererMaterialSlots(source, shell, material);
+                const slotCount = Math.max(1, renderer.sharedMaterials.length);
+                for (let index = 0; index < slotCount; index++) {
+                    const material = renderer.getSharedMaterial(index);
+                    if (!material || material === flashMaterial) {
+                        continue;
+                    }
+                    this._perfectGlowRestoreSlots.push({ renderer, index, material });
+                    renderer.setMaterial(flashMaterial, index);
+                }
             }
-            console.log('[glow-diag] shell built children=', this._perfectGlowShellRoot?.children.length, 'modelLayer=', this._model?.layer, 'node', this.node?.name);
-            this.updatePerfectGlowMaterial();
-        });
+            return;
+        }
+
+        for (const slot of this._perfectGlowRestoreSlots) {
+            if (!slot.renderer?.isValid || !slot.renderer.node?.isValid) {
+                continue;
+            }
+            const current = slot.renderer.getSharedMaterial(slot.index);
+            if (current && current !== flashMaterial) {
+                slot.material = current;
+                slot.renderer.setMaterial(flashMaterial, slot.index);
+            }
+        }
     }
 
-    private updatePerfectGlowMaterial() {
-        // Collision flash (red) takes priority over the steady perfect-zone glow
-        // (yellow) while it is stronger, then fades back to whatever glow remains.
-        const collisionFlash = this._collisionFlashTimer > 0
+    private ensurePerfectGlowMaterial(): Material {
+        if (this._perfectGlowMaterial?.isValid) {
+            return this._perfectGlowMaterial;
+        }
+        const material = new Material();
+        material.initialize({ effectName: 'builtin-unlit' });
+        material.name = 'SwimmerBodyFlashUnlit';
+        material.setProperty('mainColor', PERFECT_GLOW_COLOR);
+        this._perfectGlowMaterial = material;
+        return material;
+    }
+
+    private restorePerfectGlowMaterials() {
+        const flashMaterial = this._perfectGlowMaterial;
+        for (const slot of this._perfectGlowRestoreSlots) {
+            if (!slot.renderer?.isValid || !slot.renderer.node?.isValid || !slot.material?.isValid) {
+                continue;
+            }
+            if (!flashMaterial || slot.renderer.getSharedMaterial(slot.index) === flashMaterial) {
+                slot.renderer.setMaterial(slot.material, slot.index);
+            }
+        }
+        this._perfectGlowRestoreSlots.length = 0;
+    }
+
+    private currentCollisionFlashIntensity(): number {
+        return this._collisionFlashTimer > 0
             ? this._collisionFlashTimer / COLLISION_FLASH_SECONDS
             : 0;
-        const intensity = Math.max(this._perfectGlowIntensity, collisionFlash);
-        if (this._perfectGlowShellRoot?.isValid) {
-            this._perfectGlowShellRoot.active = intensity > 0.001;
-        }
-        if (this._perfectGlowMaterial) {
-            this._perfectGlowMaterial.setProperty('flashStrength', intensity);
-            this._perfectGlowMaterial.setProperty(
-                'baseColor',
-                collisionFlash > this._perfectGlowIntensity ? COLLISION_FLASH_COLOR : PERFECT_GLOW_COLOR,
-            );
-        }
-        if (intensity > 0.001 && !this._glowDiagActive) {
-            this._glowDiagActive = true;
-            console.log('[glow-diag] SHOW intensity', intensity.toFixed(2), 'shellValid', this._perfectGlowShellRoot?.isValid, 'shellActive', this._perfectGlowShellRoot?.active, 'shellLayer', this._perfectGlowShellRoot?.layer, 'modelLayer', this._model?.layer, 'mat', !!this._perfectGlowMaterial, 'node', this.node?.name);
-        } else if (intensity <= 0.001) {
-            this._glowDiagActive = false;
-        }
     }
 
     private get boundJointCount(): number {
@@ -1636,19 +1620,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private get animationClipNames(): string {
         return this._animationPlayer.clipNames;
-    }
-}
-
-function setAllRendererMaterialSlots(source: SkinnedMeshRenderer, target: SkinnedMeshRenderer, material: Material) {
-    let applied = false;
-    for (let i = 0; i < 8; i++) {
-        if (source.getSharedMaterial(i)) {
-            target.setMaterial(material, i);
-            applied = true;
-        }
-    }
-    if (!applied) {
-        target.setMaterial(material, 0);
     }
 }
 

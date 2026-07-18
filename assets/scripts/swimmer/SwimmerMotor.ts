@@ -41,6 +41,9 @@ type StrokeAction = {
     inputFreshness: number;
     inputLeadSeconds: number;
     inputLeadRatio: number;
+    // Last simulation time at which this exact action contributed to a visible
+    // whole-body yellow guide. -1 means the player was never shown PERFECT for it.
+    perfectGuidePresentedAt: number;
 };
 
 type QueueSideStrokeResult = {
@@ -259,6 +262,21 @@ export class SwimmerMotor {
         const progress = clamp01(action.progress / CYCLE_AMOUNT);
         const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
         return progress >= perfect.start && progress <= perfect.end;
+    }
+
+    isActiveStrokeHeld(type: StrokeType): boolean {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        return !!action && action.startedAt >= 0 && action.releasedAt < 0 && !action.strokeQualitySettled;
+    }
+
+    // Called only after the player model has actually been told to show yellow.
+    // Recording presentation separately from the zone query prevents an unseen
+    // hand (or the other hand) from receiving visual-latency forgiveness.
+    markPerfectGuidePresented(type: StrokeType) {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        if (action && action.startedAt >= 0 && action.releasedAt < 0 && !action.strokeQualitySettled) {
+            action.perfectGuidePresentedAt = this._motionClock;
+        }
     }
 
     // A leg-kick tap adds visual kick budget and registers cadence. During
@@ -713,7 +731,15 @@ export class SwimmerMotor {
 
         // Single-stroke quality is purely the release-timing sweet zone now
         // (no cross-stroke consistency, no alternation, no input-freshness).
-        const strokeQuality = holdTimeValid ? strokeQualityFromReleaseProgress(releaseProgress) : 0;
+        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        const secondsSinceYellow = releasedAt - action.perfectGuidePresentedAt;
+        const releasedJustAfterVisiblePerfect = releaseProgress > perfect.end
+            && action.perfectGuidePresentedAt >= 0
+            && secondsSinceYellow >= 0
+            && secondsSinceYellow <= Math.max(0, STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds);
+        const strokeQuality = holdTimeValid
+            ? (releasedJustAfterVisiblePerfect ? 1 : strokeQualityFromReleaseProgress(releaseProgress))
+            : 0;
         const badReason = strokeQuality <= 0
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds)
             : undefined;
@@ -968,6 +994,7 @@ export class SwimmerMotor {
             inputFreshness: 1,
             inputLeadSeconds: 0,
             inputLeadRatio: 0,
+            perfectGuidePresentedAt: -1,
         });
         if (startedImmediately) {
             this.startActionBaseAcceleration(type, actions[actions.length - 1]);
@@ -1016,6 +1043,7 @@ export class SwimmerMotor {
             inputFreshness: 1,
             inputLeadSeconds: 0,
             inputLeadRatio: 0,
+            perfectGuidePresentedAt: -1,
         };
         actions.push(action);
         this.startActionBaseAcceleration(type, action);

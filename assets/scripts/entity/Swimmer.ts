@@ -452,8 +452,23 @@ export class Swimmer extends Component {
         if (this.isAI) {
             return;
         }
-        const active = this._motor.isActiveStrokeInPerfectZone(StrokeType.LEFT)
-            || this._motor.isActiveStrokeInPerfectZone(StrokeType.RIGHT);
+        const leftHeld = this._motor.isActiveStrokeHeld(StrokeType.LEFT);
+        const rightHeld = this._motor.isActiveStrokeHeld(StrokeType.RIGHT);
+        const leftPerfect = leftHeld && this._motor.isActiveStrokeInPerfectZone(StrokeType.LEFT);
+        const rightPerfect = rightHeld && this._motor.isActiveStrokeInPerfectZone(StrokeType.RIGHT);
+        // The body is a shared guide for both hands. If both are held, yellow is
+        // only truthful when releasing either one would currently score PERFECT.
+        const active = (leftHeld || rightHeld)
+            && (!leftHeld || leftPerfect)
+            && (!rightHeld || rightPerfect);
+        if (active) {
+            if (leftHeld) {
+                this._motor.markPerfectGuidePresented(StrokeType.LEFT);
+            }
+            if (rightHeld) {
+                this._motor.markPerfectGuidePresented(StrokeType.RIGHT);
+            }
+        }
         this.cartoonRig?.setPerfectGlowActive(active);
     }
 

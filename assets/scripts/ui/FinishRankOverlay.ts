@@ -54,6 +54,7 @@ export class FinishRankOverlay {
     private _panelHeight = 0;
     private readonly _badges = new Map<Node, BadgeEntry>();
     private readonly _results: RaceFinishResult[] = [];
+    private _headBadgesVisible = true;
 
     // Reused scratch vectors so per-frame projection allocates nothing.
     private readonly _worldPos = new Vec3();
@@ -99,6 +100,13 @@ export class FinishRankOverlay {
         return this._results.length > 0;
     }
 
+    setHeadBadgesVisible(visible: boolean) {
+        this._headBadgesVisible = visible;
+        if (this._badgeRoot?.isValid) {
+            this._badgeRoot.active = visible && this._badges.size > 0;
+        }
+    }
+
     clear() {
         for (const entry of this._badges.values()) {
             if (entry.root?.isValid) {
@@ -131,7 +139,7 @@ export class FinishRankOverlay {
             root: this.buildBadge(result),
             placement: result.placement,
         });
-        this._badgeRoot.active = true;
+        this._badgeRoot.active = this._headBadgesVisible;
         this.rebuildPanel();
     }
 
