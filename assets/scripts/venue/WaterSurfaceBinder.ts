@@ -1,9 +1,10 @@
-import { Color, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
+import { Color, EffectAsset, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
 import { EDITOR } from 'cc/env';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
 import { registerWaterMaterial } from './WaterColorTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
 const ACTIVE_WATER_NODE_NAMES = new Set(['PoolWaterSurface']);
@@ -51,6 +52,10 @@ const BRANDING_SPECS: BrandingSpec[] = [
 ];
 
 export class WaterSurfaceBinder {
+    private readonly _laneFloatMaterials: Material[] = [];
+    private readonly _laneFloatPlayerCutout = new Vec4(0, 0, 0, 0.72);
+    private readonly _laneFloatCutoutShape = new Vec4(1, 0, 1.05, 0.55);
+
     bind(pool: Node, waterMaterialPath: string, debug?: (message: string) => void) {
         const oldWaterNodes: Node[] = [];
         collectNodesByName(pool, LEGACY_WATER_NODE_NAMES, oldWaterNodes);
@@ -58,7 +63,7 @@ export class WaterSurfaceBinder {
             node.active = false;
         }
 
-        this.loadBeadTextureThenUnlitFloats(pool, debug);
+        this.loadLaneFloatAssetsThenBind(pool, debug);
         this.bindBranding(pool, debug);
         this.assignUnderwaterLayer(pool, debug);
 
@@ -108,18 +113,62 @@ export class WaterSurfaceBinder {
         });
     }
 
-    private loadBeadTextureThenUnlitFloats(pool: Node, debug?: (message: string) => void) {
-        loadRaceAsset(LANE_FLOAT_BEAD_TEXTURE_PATH, Texture2D, (err, texture) => {
-            if (!pool.isValid) {
+    updateLaneFloatCutout(
+        playerWorldPosition: Readonly<{ x: number; z: number }> | null,
+        forwardX: number,
+        forwardZ: number,
+        active: boolean,
+    ) {
+        const directionLength = Math.hypot(forwardX, forwardZ);
+        const enabled = active && !!playerWorldPosition && directionLength > 0.0001;
+        if (enabled) {
+            this._laneFloatPlayerCutout.set(playerWorldPosition.x, playerWorldPosition.z, 1, 0.72);
+            this._laneFloatCutoutShape.set(
+                forwardX / directionLength,
+                forwardZ / directionLength,
+                1.05,
+                0.55,
+            );
+        } else {
+            this._laneFloatPlayerCutout.z = 0;
+        }
+        for (const material of this._laneFloatMaterials) {
+            this.applyLaneFloatCutout(material);
+        }
+    }
+
+    private loadLaneFloatAssetsThenBind(pool: Node, debug?: (message: string) => void) {
+        let beadTexture: Texture2D | null = null;
+        let cutoutEffect: EffectAsset | null = null;
+        let textureReady = false;
+        let effectReady = false;
+        const finish = () => {
+            if (!textureReady || !effectReady || !pool.isValid) {
                 return;
             }
+            if (beadTexture) {
+                beadTexture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
+            }
+            this.unlitLaneFloats(pool, beadTexture, cutoutEffect, debug);
+        };
+
+        loadRaceAsset(LANE_FLOAT_BEAD_TEXTURE_PATH, Texture2D, (err, texture) => {
             if (err || !texture) {
                 console.warn('[SpeedSwimming] lane float bead texture load failed; floats stay flat unlit', err);
-                this.unlitLaneFloats(pool, null, debug);
-                return;
+            } else {
+                beadTexture = texture;
             }
-            texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
-            this.unlitLaneFloats(pool, texture, debug);
+            textureReady = true;
+            finish();
+        });
+        loadRaceAsset(RESOURCE_PATHS.laneFloatCutoutEffect, EffectAsset, (err, effect) => {
+            if (err || !effect) {
+                console.warn('[SpeedSwimming] lane float cutout effect load failed; using regular unlit floats', err);
+            } else {
+                cutoutEffect = effect;
+            }
+            effectReady = true;
+            finish();
         });
     }
 
@@ -169,10 +218,11 @@ export class WaterSurfaceBinder {
         }
     }
 
-    private unlitLaneFloats(pool: Node, beadTexture: Texture2D | null, debug?: (message: string) => void) {
+    private unlitLaneFloats(pool: Node, beadTexture: Texture2D | null, cutoutEffect: EffectAsset | null, debug?: (message: string) => void) {
         const floatNodes: Node[] = [];
         collectNodesByNamePrefix(pool, LANE_FLOAT_NODE_PREFIX, floatNodes);
         const materialCache = new Map<Material, Material>();
+        this._laneFloatMaterials.length = 0;
         let boundRenderers = 0;
         for (const node of floatNodes) {
             const renderer = node.getComponent(MeshRenderer);
@@ -187,8 +237,10 @@ export class WaterSurfaceBinder {
                 }
                 let runtime = materialCache.get(source);
                 if (!runtime) {
-                    runtime = makeUnlitLaneFloatMaterial(source, beadTexture);
+                    runtime = makeUnlitLaneFloatMaterial(source, beadTexture, cutoutEffect);
                     materialCache.set(source, runtime);
+                    this._laneFloatMaterials.push(runtime);
+                    this.applyLaneFloatCutout(runtime);
                 }
                 renderer.setMaterial(runtime, i);
             }
@@ -197,6 +249,14 @@ export class WaterSurfaceBinder {
         if (boundRenderers > 0) {
             debug?.(`lane floats set unlit renderers=${boundRenderers} materials=${materialCache.size} beaded=${beadTexture ? 'yes' : 'no'}`);
         }
+    }
+
+    private applyLaneFloatCutout(material: Material) {
+        if (!material.name.startsWith('RuntimeLaneFloatCutout_')) {
+            return;
+        }
+        material.setProperty('playerCutout', this._laneFloatPlayerCutout);
+        material.setProperty('cutoutShape', this._laneFloatCutoutShape);
     }
 
     // Move the pool-bottom geometry onto the underwater layer so the refraction
@@ -238,14 +298,16 @@ function makeUnlitBrandingMaterial(texture: Texture2D, nodeName: string, flipU =
 
 // Convert a lit GLB float material into an unlit one that keeps its albedo, so the blue
 // ambient sky light no longer tints the lane floats.
-function makeUnlitLaneFloatMaterial(source: Material, beadTexture: Texture2D | null): Material {
+function makeUnlitLaneFloatMaterial(source: Material, beadTexture: Texture2D | null, cutoutEffect: EffectAsset | null): Material {
     const material = new Material();
-    if (beadTexture) {
+    if (cutoutEffect) {
+        material.initialize({ effectAsset: cutoutEffect });
+    } else if (beadTexture) {
         material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
     } else {
         material.initialize({ effectName: 'builtin-unlit' });
     }
-    material.name = `RuntimeLaneFloat_${source.name || 'Float'}`;
+    material.name = `${cutoutEffect ? 'RuntimeLaneFloatCutout' : 'RuntimeLaneFloat'}_${source.name || 'Float'}`;
     material.setProperty('mainColor', findMaterialColor(source));
     if (beadTexture) {
         material.setProperty('mainTexture', beadTexture);

@@ -1,0 +1,89 @@
+CCEffect %{
+  techniques:
+  - name: opaque
+    passes:
+    - vert: lane-float-cutout-vs:vert
+      frag: lane-float-cutout-fs:frag
+      depthStencilState:
+        depthTest: true
+        depthWrite: true
+      properties:
+        mainTexture:   { value: white }
+        mainColor:     { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
+        tilingOffset:  { value: [1, 1, 0, 0] }
+        # xy = player upper-body world XZ, z = enabled, w = solid-cutout radius ratio.
+        playerCutout:  { value: [0, 0, 0, 0.72] }
+        # xy = player forward direction XZ, z = along-body radius, w = side radius.
+        cutoutShape:   { value: [1, 0, 1.05, 0.55] }
+}%
+
+CCProgram lane-float-cutout-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+  #include <legacy/fog-vs>
+
+  out vec2 v_uv;
+  out vec3 v_worldPos;
+
+  uniform LaneFloatCutoutVert {
+    vec4 tilingOffset;
+  };
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    v_uv = a_texCoord * tilingOffset.xy + tilingOffset.zw;
+    vec4 worldPos = matWorld * position;
+    v_worldPos = worldPos.xyz;
+    CC_TRANSFER_FOG(worldPos);
+    return cc_matProj * (cc_matView * worldPos);
+  }
+}%
+
+CCProgram lane-float-cutout-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+  #include <legacy/fog-fs>
+
+  in vec2 v_uv;
+  in vec3 v_worldPos;
+  uniform sampler2D mainTexture;
+
+  uniform LaneFloatCutoutFrag {
+    vec4 mainColor;
+    vec4 playerCutout;
+    vec4 cutoutShape;
+  };
+
+  // Stable screen-space noise used as a tiny screen-door transition. The core
+  // of the ellipse is fully discarded; only its narrow rim uses this pattern.
+  float screenDoor(vec2 pixel) {
+    vec2 cell = floor(pixel);
+    return fract(52.9829189 * fract(dot(cell, vec2(0.06711056, 0.00583715))));
+  }
+
+  vec4 frag () {
+    if (playerCutout.z > 0.5) {
+      vec2 delta = v_worldPos.xz - playerCutout.xy;
+      vec2 forward = normalize(cutoutShape.xy);
+      vec2 side = vec2(-forward.y, forward.x);
+      float along = dot(delta, forward) / max(0.01, cutoutShape.z);
+      float across = dot(delta, side) / max(0.01, cutoutShape.w);
+      float ellipseDistance = length(vec2(along, across));
+      float visibility = smoothstep(playerCutout.w, 1.0, ellipseDistance);
+      if (visibility <= 0.001 || visibility < screenDoor(gl_FragCoord.xy)) {
+        discard;
+      }
+    }
+
+    vec4 sampleColor = texture(mainTexture, v_uv);
+    vec4 outputColor = vec4(SRGBToLinear(sampleColor.rgb) * mainColor.rgb, sampleColor.a * mainColor.a);
+    CC_APPLY_FOG(outputColor);
+    return CCFragOutput(outputColor);
+  }
+}%

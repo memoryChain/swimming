@@ -123,6 +123,7 @@ export class GameManager extends Component {
     private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
+    private readonly _tmpLaneFloatCutoutCenter = new Vec3();
     private readonly _tmpDialRight = new Vec3();
     // Sweet-zone dials float above each swimmer's head and follow them. World Y
     // offset lifts the anchor above the (roughly water-level, horizontal) body;
@@ -264,6 +265,17 @@ export class GameManager extends Component {
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
         const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
+        const laneFloatCutoutActive = !this._modelDebugFlow?.active
+            && playerBeforeFinish
+            && (this._state === GameState.GLIDING || this._state === GameState.RACING);
+        const laneFloatCutoutCenter = this._playerSwimmer.getCameraUpperBodyWorldPosition(this._tmpLaneFloatCutoutCenter);
+        const playerHeading = this._playerSwimmer.movementHeading;
+        this._venueManager?.updateLaneFloatCutout(
+            laneFloatCutoutCenter,
+            this._playerSwimmer.raceDirection * Math.cos(playerHeading),
+            Math.sin(playerHeading),
+            laneFloatCutoutActive,
+        );
         const raceStatusVisible = !this._modelDebugFlow?.active
             && playerBeforeFinish
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);

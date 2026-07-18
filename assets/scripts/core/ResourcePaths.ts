@@ -199,6 +199,7 @@ export const RESOURCE_PATHS = {
     swimmerSplashMaterial: 'pool/SwimmerSplash',
     skyboxVariants: SKYBOX_VARIANTS,
     playerOutlineEffect: 'effects/PlayerOutline',
+    laneFloatCutoutEffect: 'effects/LaneFloatCutout',
     swimmerPerfectGlowEffect: 'effects/SwimmerPerfectGlow',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     swimmer0621ColorMask: 'models/UserSwimmer0621_2ColorMask/texture',

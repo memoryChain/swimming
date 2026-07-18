@@ -32,6 +32,15 @@ export class VenueManager {
         this._startBlocks.setVisible(visible);
     }
 
+    updateLaneFloatCutout(
+        playerWorldPosition: Readonly<{ x: number; z: number }> | null,
+        forwardX: number,
+        forwardZ: number,
+        active: boolean,
+    ) {
+        this._waterBinder.updateLaneFloatCutout(playerWorldPosition, forwardX, forwardZ, active);
+    }
+
     buildPool(root: Node, definition: PoolDefinition, done?: (result: VenueBuildResult) => void) {
         this._loader.load(root, definition, ({ pool, error }) => {
             if (!pool) {
