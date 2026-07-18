@@ -3,7 +3,12 @@ import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 import { defaultSwimmer0621ColorVariant } from '../core/ResourcePaths';
 
-const SWIMMER_MODEL_VARIANT = 'swimmer0621_2';
+const ORIGINAL_SWIMMER_MODEL_VARIANT = 'swimmer0621_2';
+const DIVER_SWIMMER_MODEL_VARIANT = 'diver';
+
+// TEMP: Race-only model sampling until the out-of-race character selection
+// flow owns this choice. Each competitor rolls independently when it is built.
+const TEMPORARY_DIVER_SELECTION_CHANCE = 0.5;
 
 export type CreateSwimmerOptions = {
     name: string;
@@ -24,7 +29,8 @@ export class SwimmerFactory {
 
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
-        rig.setModelVariant(SWIMMER_MODEL_VARIANT);
+        const modelVariantId = pickTemporaryRaceModelVariant();
+        rig.setModelVariant(modelVariantId);
         rig.setColorVariant(options.colorVariantId ?? defaultSwimmer0621ColorVariant().id);
         rig.build(
             sharedSkin,
@@ -39,9 +45,15 @@ export class SwimmerFactory {
         swimmer.cartoonRig = rig;
         swimmer.isAI = options.isAI;
         swimmer.swimmerName = options.displayName || (options.isAI ? 'AI' : 'YOU');
-        this._debug?.(`${options.name} uses CartoonSwimmerRig`);
+        this._debug?.(`${options.name} uses CartoonSwimmerRig model=${modelVariantId}`);
         return swimmer;
     }
+}
+
+function pickTemporaryRaceModelVariant(): string {
+    return Math.random() < TEMPORARY_DIVER_SELECTION_CHANCE
+        ? DIVER_SWIMMER_MODEL_VARIANT
+        : ORIGINAL_SWIMMER_MODEL_VARIANT;
 }
 
 function color(r: number, g: number, b: number, a = 255): Color {
