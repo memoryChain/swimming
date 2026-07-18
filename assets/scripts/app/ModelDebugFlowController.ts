@@ -24,6 +24,7 @@ const DEBUG_ACTION_GROUP_CENTER_X = 12;
 const DEBUG_WATER_LENGTH = 8.8;
 const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, (DEBUG_SWIMMER_ACTION_PREVIEWS.length - 1) * DEBUG_ACTION_SPACING + 2.4);
 const DEBUG_WATER_HALF_WIDTH = DEBUG_WATER_WIDTH * 0.5;
+const DEBUG_STANDING_WATER_CLEARANCE = 0.03;
 const DEFAULT_MODEL_DEBUG_SPEED_SCALE = 1;
 
 export type ModelDebugFlowRefs = {
@@ -386,7 +387,7 @@ export class ModelDebugFlowController {
             }
         }
         if (applied) {
-            if (variant.id === 'swimmer0621_2') {
+            if (variant.dynamicColor) {
                 this.applyCurrentColorVariant();
             }
             this._refs.debug(`model debug variant=${variant.label}`);
@@ -417,9 +418,14 @@ export class ModelDebugFlowController {
         }
         const model = DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? DEBUG_SWIMMER_MODEL_VARIANTS[0];
         const color = SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex] ?? SWIMMER_0621_2_COLOR_VARIANTS[0];
-        this._refs.modelLabel.string = model?.id === 'swimmer0621_2' && color
-            ? `S2 ${color.label}`
-            : `Model ${model?.label ?? '-'}`;
+        if (model?.dynamicColor && color) {
+            const colorLabel = model.dynamicColor.usesCapChannel
+                ? color.label
+                : color.suitLabel ?? color.label;
+            this._refs.modelLabel.string = `${model.dynamicColor.labelPrefix} ${colorLabel}`;
+            return;
+        }
+        this._refs.modelLabel.string = `Model ${model?.label ?? '-'}`;
     }
 
     private updateActionLabel() {
@@ -565,7 +571,10 @@ export class ModelDebugFlowController {
             preview.rig.setDebugActionPose(config.pose, config.sampledActionId);
             preview.rig.setWaterY(waterY);
             preview.rig.setModelDebugMode(true);
-            preview.node.setPosition(this.debugActionPreviewX(), baseY, this.debugActionLaneZ(actionIndex));
+            const previewY = config.pose === 'sampledAction'
+                ? Math.max(baseY, waterY + DEBUG_STANDING_WATER_CLEARANCE)
+                : baseY;
+            preview.node.setPosition(this.debugActionPreviewX(), previewY, this.debugActionLaneZ(actionIndex));
             preview.node.setRotationFromEuler(0, 0, 0);
         }
     }

@@ -10,11 +10,17 @@ export type SwimmerModelVariant = {
     raceModelEulerDegrees?: readonly [number, number, number];
     debugPose?: 'breaststroke' | 'divePrep';
     swimHeadLiftDegrees?: number;
+    dynamicColor?: {
+        maskPath: string;
+        labelPrefix: string;
+        usesCapChannel: boolean;
+    };
 };
 
 export type SwimmerColorVariant = {
     id: string;
     label: string;
+    suitLabel?: string;
     suit?: readonly [number, number, number];
     cap?: readonly [number, number, number];
 };
@@ -83,6 +89,27 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         ],
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
+        dynamicColor: {
+            maskPath: 'models/UserSwimmer0621_2ColorMask/texture',
+            labelPrefix: 'S2',
+            usesCapChannel: true,
+        },
+    },
+    {
+        id: 'diver',
+        label: 'Diver',
+        candidates: [
+            'models/UserDiver',
+            'models/UserDiver/UserDiver',
+        ],
+        debugOnly: true,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        dynamicColor: {
+            maskPath: 'models/UserDiverFinColorMask/texture',
+            labelPrefix: 'Diver Fins + Tank',
+            usesCapChannel: false,
+        },
     },
     {
         id: 'swimmer0621_2_mixamoSwimming',
@@ -125,8 +152,10 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     },
 ];
 
+const DEBUG_SWIMMER_MODEL_IDS = new Set(['swimmer0621_2', 'diver']);
+
 export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS.filter((variant) =>
-    variant.id === 'swimmer0621_2'
+    DEBUG_SWIMMER_MODEL_IDS.has(variant.id)
 );
 
 export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
@@ -154,17 +183,17 @@ export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
 ];
 
 export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
-    { id: 'original', label: 'Original' },
-    { id: 'redBlue', label: 'Red / Blue', suit: [240, 68, 58], cap: [22, 119, 232] },
-    { id: 'blueWhite', label: 'Blue / White', suit: [23, 109, 218], cap: [245, 238, 220] },
-    { id: 'blackYellow', label: 'Black / Yellow', suit: [36, 42, 53], cap: [255, 209, 42] },
-    { id: 'greenOrange', label: 'Green / Orange', suit: [32, 196, 106], cap: [255, 121, 38] },
-    { id: 'purpleCyan', label: 'Purple / Cyan', suit: [139, 77, 255], cap: [35, 220, 232] },
-    { id: 'orangeNavy', label: 'Orange / Navy', suit: [255, 137, 38], cap: [24, 60, 143] },
-    { id: 'pinkMint', label: 'Pink / Mint', suit: [240, 59, 168], cap: [98, 237, 178] },
-    { id: 'cyanRed', label: 'Cyan / Red', suit: [24, 199, 216], cap: [240, 68, 80] },
-    { id: 'yellowPurple', label: 'Yellow / Purple', suit: [244, 201, 54], cap: [120, 71, 216] },
-    { id: 'whiteRed', label: 'White / Red', suit: [241, 238, 227], cap: [217, 49, 73] },
+    { id: 'original', label: 'Original', suitLabel: 'Original' },
+    { id: 'redBlue', label: 'Red / Blue', suitLabel: 'Red', suit: [240, 68, 58], cap: [22, 119, 232] },
+    { id: 'blueWhite', label: 'Blue / White', suitLabel: 'Blue', suit: [23, 109, 218], cap: [245, 238, 220] },
+    { id: 'blackYellow', label: 'Black / Yellow', suitLabel: 'Black', suit: [36, 42, 53], cap: [255, 209, 42] },
+    { id: 'greenOrange', label: 'Green / Orange', suitLabel: 'Green', suit: [32, 196, 106], cap: [255, 121, 38] },
+    { id: 'purpleCyan', label: 'Purple / Cyan', suitLabel: 'Purple', suit: [139, 77, 255], cap: [35, 220, 232] },
+    { id: 'orangeNavy', label: 'Orange / Navy', suitLabel: 'Orange', suit: [255, 137, 38], cap: [24, 60, 143] },
+    { id: 'pinkMint', label: 'Pink / Mint', suitLabel: 'Pink', suit: [240, 59, 168], cap: [98, 237, 178] },
+    { id: 'cyanRed', label: 'Cyan / Red', suitLabel: 'Cyan', suit: [24, 199, 216], cap: [240, 68, 80] },
+    { id: 'yellowPurple', label: 'Yellow / Purple', suitLabel: 'Yellow', suit: [244, 201, 54], cap: [120, 71, 216] },
+    { id: 'whiteRed', label: 'White / Red', suitLabel: 'White', suit: [241, 238, 227], cap: [217, 49, 73] },
 ];
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
@@ -201,7 +230,6 @@ export const RESOURCE_PATHS = {
     playerOutlineEffect: 'effects/PlayerOutline',
     laneFloatCutoutEffect: 'effects/LaneFloatCutout',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
-    swimmer0621ColorMask: 'models/UserSwimmer0621_2ColorMask/texture',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
     sampledActionsDir: 'sampled-actions',
     music: {

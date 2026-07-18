@@ -11,9 +11,11 @@ export function loadSwimmerPrefab(
     done: (err: Error | null, result: SwimmerPrefabLoadResult | null) => void,
     candidates = RESOURCE_PATHS.swimmerPrefabCandidates,
 ) {
+    const failedAttempts: string[] = [];
     const tryPath = (index: number) => {
         if (index >= candidates.length) {
-            done(new Error('swimmer prefab not imported yet'), null);
+            const details = failedAttempts.length > 0 ? `; ${failedAttempts.join(' | ')}` : '';
+            done(new Error(`swimmer prefab not imported yet; candidates=${candidates.join(', ')}${details}`), null);
             return;
         }
         const path = candidates[index];
@@ -22,6 +24,7 @@ export function loadSwimmerPrefab(
                 done(null, { prefab, path });
                 return;
             }
+            failedAttempts.push(`${path}: ${err?.message ?? 'Prefab asset missing'}`);
             tryPath(index + 1);
         });
     };

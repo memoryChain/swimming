@@ -197,7 +197,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._colorAssetLoadToken += 1;
         this._colorMask = null;
         this._dynamicColorEffect = null;
-        if (variant.id === 'swimmer0621_2') {
+        if (variant.dynamicColor) {
             this.loadDynamicColorAssets();
         }
         if (!this._splashEmitter) {
@@ -243,7 +243,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return false;
         }
         this._colorVariantId = variant.id;
-        if (this._modelVariantId === 'swimmer0621_2') {
+        if (this.supportsDynamicColor()) {
             if (this.hasDynamicColorVariant() && (!this._colorMask || !this._dynamicColorEffect)) {
                 this.loadDynamicColorAssets();
             }
@@ -378,7 +378,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             setLayerRecursive(this._model, this.node.layer);
             this._poseState.applyRaceModelSetup();
 
-            this.root = findNode(this._model, 'Armature') || this._model;
+            // Imported GLBs wrap their actual armature in a prefab scene root. The
+            // original swimmer names that child `Armature`, while other valid rigs
+            // (for example the diver) may use a model-specific name. Falling back
+            // to the prefab wrapper makes tread water write its pose rotation onto
+            // the same node used for upright model placement, so the pose update
+            // immediately overwrites the upright rotation. Resolve the armature
+            // generically from the parent of the canonical `Root` bone instead.
+            const rootBone = findNode(this._model, 'Root');
+            this.root = findNode(this._model, 'Armature') || rootBone?.parent || this._model;
             this._pose.bind(this.root);
             this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
             this.configureSkinnedRenderers();
@@ -395,7 +403,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             }
             console.log(
                 `[SpeedSwimming] loaded athlete variant=${variant.id} prefab=${result.path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
-                `skinned=${this._skinnedRenderers.length} baseEuler=${this._pose.rootBaseEuler.x.toFixed(1)},${this._pose.rootBaseEuler.y.toFixed(1)},${this._pose.rootBaseEuler.z.toFixed(1)}`,
+                `skinned=${this._skinnedRenderers.length} rigRoot=${this.root.name} ` +
+                `baseEuler=${this._pose.rootBaseEuler.x.toFixed(1)},${this._pose.rootBaseEuler.y.toFixed(1)},${this._pose.rootBaseEuler.z.toFixed(1)}`,
             );
         }, variant.candidates);
     }
@@ -930,8 +939,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this.restorePerfectGlowMaterials();
+        const modelVariant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
         const colorVariant = findSwimmer0621ColorVariant(this._colorVariantId) ?? defaultSwimmer0621ColorVariant();
-        const usesDynamicColor = this._modelVariantId === 'swimmer0621_2' && !!colorVariant.suit && !!colorVariant.cap;
+        const usesDynamicColor = !!modelVariant.dynamicColor
+            && !!colorVariant.suit
+            && (!modelVariant.dynamicColor.usesCapChannel || !!colorVariant.cap);
         const resolvedSuitColor = usesDynamicColor
             ? new Color(...colorVariant.suit, 255)
             : suitColor;
@@ -979,6 +991,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private loadDynamicColorAssets() {
+        const modelVariant = findSwimmerModelVariant(this._modelVariantId);
+        const dynamicColor = modelVariant?.dynamicColor;
+        if (!modelVariant || !dynamicColor) {
+            return;
+        }
+        const expectedModelVariantId = modelVariant.id;
         const token = ++this._colorAssetLoadToken;
         const applyWhenReady = () => {
             if (token !== this._colorAssetLoadToken || !this._dynamicColorEffect) {
@@ -988,19 +1006,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             }
         };
-        loadRaceAsset(RESOURCE_PATHS.swimmer0621ColorMask, Texture2D, (error, texture) => {
-            if (token !== this._colorAssetLoadToken || this._modelVariantId !== 'swimmer0621_2') {
+        loadRaceAsset(dynamicColor.maskPath, Texture2D, (error, texture) => {
+            if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
                 return;
             }
             if (error || !texture) {
-                console.error('[SpeedSwimming] failed to load swimmer color mask', error);
+                console.error(`[SpeedSwimming] failed to load swimmer color mask variant=${expectedModelVariantId}`, error);
                 return;
             }
             this._colorMask = texture;
             applyWhenReady();
         });
         loadRaceAsset(RESOURCE_PATHS.swimmerDynamicColorEffect, EffectAsset, (error, effect) => {
-            if (token !== this._colorAssetLoadToken || this._modelVariantId !== 'swimmer0621_2') {
+            if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
                 return;
             }
             if (error || !effect) {
@@ -1013,8 +1031,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private hasDynamicColorVariant(): boolean {
+        const dynamicColor = findSwimmerModelVariant(this._modelVariantId)?.dynamicColor;
+        if (!dynamicColor) {
+            return false;
+        }
         const variant = findSwimmer0621ColorVariant(this._colorVariantId);
-        return !!variant?.suit && !!variant.cap;
+        return !!variant?.suit && (!dynamicColor.usesCapChannel || !!variant.cap);
+    }
+
+    private supportsDynamicColor(): boolean {
+        return !!findSwimmerModelVariant(this._modelVariantId)?.dynamicColor;
     }
 
     private isMixamoSwimmingDebugVariant(): boolean {

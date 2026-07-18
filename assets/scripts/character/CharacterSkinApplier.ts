@@ -132,7 +132,7 @@ function makeDynamicColorMaterial(original: Material, effect: EffectAsset, color
     }
     const material = new Material();
     material.initialize({ effectAsset: effect });
-    material.name = 'Swimmer0621DynamicColor';
+    material.name = 'SwimmerDynamicColor';
     material.setProperty('mainTexture', texture);
     material.setProperty('colorMask', colorMask);
     material.setProperty('mainColor', new Color(255, 255, 255, 255));
