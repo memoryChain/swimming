@@ -1192,6 +1192,18 @@ export class SwimmerMotor {
         return this._kickAction;
     }
 
+    // Camera/read-only presentation signal. The cadence is established by the
+    // interval between kick taps and decays after tapping stops.
+    get kickCadenceHz(): number {
+        return this._kickCadenceHz;
+    }
+
+    // Keep the full queued arm motion classified as a stroke, including its
+    // released follow-through, so the camera does not pull back mid-recovery.
+    get isArmStrokeActive(): boolean {
+        return this._leftActions.length > 0 || this._rightActions.length > 0;
+    }
+
     get lastStrokeQuality(): number {
         return this._lastStrokeQuality;
     }

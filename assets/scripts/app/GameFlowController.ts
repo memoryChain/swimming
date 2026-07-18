@@ -339,6 +339,8 @@ export class GameFlowController {
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,
             playerHeading: focus.movementHeading,
+            playerKickCadenceHz: focus.kickCadenceHz,
+            playerArmStrokeActive: focus.isArmStrokeActive,
             playerUnderwater: focus.isUnderwater,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,

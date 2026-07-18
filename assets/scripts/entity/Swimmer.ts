@@ -623,6 +623,14 @@ export class Swimmer extends Component {
         return this._strokeMetrics.effortScore;
     }
 
+    get kickCadenceHz(): number {
+        return this._motor.kickCadenceHz;
+    }
+
+    get isArmStrokeActive(): boolean {
+        return this._motor.isArmStrokeActive;
+    }
+
     get swimWorldY(): number {
         return this._courseLayout.swimY;
     }

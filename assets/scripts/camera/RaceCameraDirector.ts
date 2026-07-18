@@ -82,6 +82,10 @@ export const RACE_CAMERA_TUNING = {
     finishTopViewDistance: 5,
     // Close third-person sprint view, above and behind the player's upper body.
     sprintBackDistance: 1.1,
+    // Extra pullback while the player is chaining kick-only taps. A promoted arm
+    // stroke immediately removes this offset and restores sprintBackDistance.
+    sprintKickPullbackDistance: 0.9,
+    sprintKickPullbackMinCadenceHz: 2.5,
     sprintHeight: 0.52,
     sprintLookAhead: 0.8,
     sprintFov: 58,
@@ -127,6 +131,11 @@ export type RaceCameraSnapshot = {
     // Radians away from the current lane direction. Used by the sprint chase so
     // it follows the swimmer's actual travel direction while steering.
     playerHeading?: number;
+    // Kick cadence stays at zero until a second tap establishes a rhythm. The
+    // sprint camera uses it only while no arm stroke is active, so long presses
+    // restore the normal close chase framing as soon as they become strokes.
+    playerKickCadenceHz?: number;
+    playerArmStrokeActive?: boolean;
     playerUnderwater: boolean;
     closestAiDistanceGap: number;
     playerPlacement: number;
@@ -1019,11 +1028,15 @@ function sprintCameraView(snapshot: RaceCameraSnapshot, direction: number): { po
     // always uses world Z, while the along-lane component flips after a turn.
     const movementX = direction * Math.cos(heading);
     const movementZ = Math.sin(heading);
+    const continuousKickActive = !snapshot.playerArmStrokeActive
+        && (snapshot.playerKickCadenceHz ?? 0) >= RACE_CAMERA_TUNING.sprintKickPullbackMinCadenceHz;
+    const backDistance = RACE_CAMERA_TUNING.sprintBackDistance
+        + (continuousKickActive ? RACE_CAMERA_TUNING.sprintKickPullbackDistance : 0);
     return {
         position: new Vec3(
-            upperBody.x - RACE_CAMERA_TUNING.sprintBackDistance * movementX,
+            upperBody.x - backDistance * movementX,
             upperBody.y + RACE_CAMERA_TUNING.sprintHeight,
-            upperBody.z - RACE_CAMERA_TUNING.sprintBackDistance * movementZ,
+            upperBody.z - backDistance * movementZ,
         ),
         target: new Vec3(
             upperBody.x + RACE_CAMERA_TUNING.sprintLookAhead * movementX,
