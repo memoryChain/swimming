@@ -2,7 +2,7 @@ import { assetManager, AssetManager, AudioClip, AudioSource, director, game, Nod
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const SFX_NODE_NAME = 'SpeedSwimmingStrokeSfx';
-const STROKE_VOLUME = 0.48;
+const STROKE_VOLUME = 0.28;
 
 // A single persistent source uses playOneShot so rapid left/right strokes may
 // overlap naturally without creating an AudioSource or allocation per input.
