@@ -1,4 +1,4 @@
-import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
+import { Camera, Color, Graphics, Label, Node, sys, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
 import { makeButton, makeUiNode, uiColor } from './RuntimeUiFactory';
 
@@ -32,6 +32,7 @@ const PANEL_MARGIN = 14;
 const PANEL_WIDTH = 184;
 const PANEL_TITLE_H = 30;
 const PANEL_ROW_H = 30;
+const PANEL_SAFE_TOP_GAP = 8;
 const EXIT_BUTTON_H = 36;
 const EXIT_BUTTON_GAP = 8;
 
@@ -96,7 +97,11 @@ export class FinishRankOverlay {
         // Top-right standing corner (the finish line sits on the left in the
         // final top-view framing, so the board reads better opposite it).
         // makeUiNode anchors at centre so offset by half.
-        this._panel!.setPosition(width / 2 - PANEL_MARGIN - PANEL_WIDTH / 2, height / 2 - PANEL_MARGIN, 0);
+        this._panel!.setPosition(
+            width / 2 - PANEL_MARGIN - PANEL_WIDTH / 2,
+            height / 2 - panelSafeTopInset() - PANEL_SAFE_TOP_GAP - PANEL_MARGIN,
+            0,
+        );
         this._panel!.active = false;
         this._badgeRoot!.active = false;
     }
@@ -367,6 +372,12 @@ function displayName(result: RaceFinishResult): string {
     }
     const name = result.name || 'AI';
     return name.length > 6 ? `${name.slice(0, 6)}…` : name;
+}
+
+function panelSafeTopInset(): number {
+    const visibleSize = view.getVisibleSize();
+    const safeArea = sys.getSafeAreaRect(false);
+    return Math.max(0, visibleSize.height - safeArea.y - safeArea.height);
 }
 
 // Rough CJK-aware width estimate so the badge pill hugs the name without a
