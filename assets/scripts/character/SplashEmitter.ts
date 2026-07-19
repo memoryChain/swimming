@@ -1,4 +1,4 @@
-import { AlphaKey, Color, ColorKey, CurveRange, Gradient, GradientRange, Material, MeshRenderer, Node, ParticleSystem, primitives, RealCurve, Texture2D, utils, Vec3, Vec4 } from 'cc';
+import { AlphaKey, builtinResMgr, Color, ColorKey, CurveRange, Gradient, GradientRange, Material, MeshRenderer, Node, ParticleSystem, primitives, RealCurve, Texture2D, utils, Vec3, Vec4 } from 'cc';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
@@ -23,12 +23,15 @@ type SplashParticleEmitter = {
     node: Node;
     system: ParticleSystem;
     role: 'hand' | 'leg' | 'body';
+    visual: SplashParticleEmitterTuning['visual'];
     side: 'left' | 'right';
     basePosition: Vec3;
     palmOffset: Vec3;
     forwardTilt: number;
     lateralTilt: number;
     countScale: number;
+    sizeScale: number;
+    heightScale: number;
     sprayTime: number;
     sprayRate: number;
     sprayCarry: number;
@@ -83,6 +86,8 @@ const EMPTY_STATE: SplashEmitterState = {
 };
 
 let _splashParticleTexture: Texture2D | null = null;
+let _splashSprayTexture: Texture2D | null = null;
+const _splashParticleMaterials: Partial<Record<SplashParticleEmitterTuning['visual'], Material>> = {};
 const TUNING = SPLASH_EMITTER_TUNING;
 
 export class SplashEmitter {
@@ -120,22 +125,36 @@ export class SplashEmitter {
                 console.warn('[SpeedSwimming] failed to load swimmer splash material', err);
                 return;
             }
-            this._parts.length = 0;
-            const reduced = this._reduced;
-            if (!(reduced && TUNING.particleEmitters.reduced.disableFoam)) {
-                for (const part of TUNING.foam.parts) {
-                    this.createPart(material, part);
+            loadRaceAsset(RESOURCE_PATHS.swimmerSplashParticleTexture, Texture2D, (textureError, texture) => {
+                if (textureError || !texture || !this.node?.isValid) {
+                    console.warn('[SpeedSwimming] failed to load swimmer splash particle texture', textureError);
+                    return;
                 }
-            }
-            this.createParticleEmitterCluster('LeftHandSplashParticles', 'left', TUNING.particleEmitters.leftHandZ);
-            this.createParticleEmitterCluster('RightHandSplashParticles', 'right', TUNING.particleEmitters.rightHandZ);
-            this.createLegParticleEmitter('LeftLowerLegSplashParticles', 'left', TUNING.particleEmitters.leftLegZ);
-            this.createLegParticleEmitter('RightLowerLegSplashParticles', 'right', TUNING.particleEmitters.rightLegZ);
-            if (!(reduced && !TUNING.particleEmitters.reduced.enableBody)) {
-                this.createBodyParticleEmitter('LeftBodySplashParticles', 'left', TUNING.particleEmitters.leftBodyZ);
-                this.createBodyParticleEmitter('RightBodySplashParticles', 'right', TUNING.particleEmitters.rightBodyZ);
-            }
-            this.update(0);
+                _splashParticleTexture = texture;
+                loadRaceAsset(RESOURCE_PATHS.swimmerSplashSprayTexture, Texture2D, (sprayTextureError, sprayTexture) => {
+                    if (sprayTextureError || !sprayTexture || !this.node?.isValid) {
+                        console.warn('[SpeedSwimming] failed to load swimmer splash spray texture', sprayTextureError);
+                        return;
+                    }
+                    _splashSprayTexture = sprayTexture;
+                    this._parts.length = 0;
+                    const reduced = this._reduced;
+                    if (!(reduced && TUNING.particleEmitters.reduced.disableFoam)) {
+                        for (const part of TUNING.foam.parts) {
+                            this.createPart(material, part);
+                        }
+                    }
+                    this.createParticleEmitterCluster('LeftHandSplashParticles', 'left', TUNING.particleEmitters.leftHandZ);
+                    this.createParticleEmitterCluster('RightHandSplashParticles', 'right', TUNING.particleEmitters.rightHandZ);
+                    this.createLegParticleEmitter('LeftLowerLegSplashParticles', 'left', TUNING.particleEmitters.leftLegZ);
+                    this.createLegParticleEmitter('RightLowerLegSplashParticles', 'right', TUNING.particleEmitters.rightLegZ);
+                    if (!(reduced && !TUNING.particleEmitters.reduced.enableBody)) {
+                        this.createBodyParticleEmitter('LeftBodySplashParticles', 'left', TUNING.particleEmitters.leftBodyZ);
+                        this.createBodyParticleEmitter('RightBodySplashParticles', 'right', TUNING.particleEmitters.rightBodyZ);
+                    }
+                    this.update(0);
+                });
+            });
         });
     }
 
@@ -469,15 +488,14 @@ export class SplashEmitter {
         setCurveRange(system.gravityModifier, TUNING.particleSystem.handGravity);
         setCurveRange(system.rateOverTime, TUNING.particleSystem.rateOverTime);
         setCurveRange(system.rateOverDistance, TUNING.particleSystem.rateOverDistance);
-        setGradientColor(system.startColor, new Color(255, 255, 255, TUNING.particleAlpha));
+        const alpha = tuning.visual === 'plume' ? TUNING.plumeAlpha : TUNING.particleAlpha;
+        setGradientColor(system.startColor, new Color(255, 255, 255, alpha));
         setParticleFadeOut(system, tuning.role);
         setParticleSizeOverLifetime(system, tuning.role);
         const renderer = system.renderer as any;
         if (renderer) {
             renderer.useGPU = false;
-            renderer.particleMaterial = null;
-            renderer.cpuMaterial = null;
-            renderer.mainTexture = getSplashParticleTexture();
+            renderer.mainTexture = getSplashParticleTexture(tuning.visual);
             // Stretched billboard: each particle elongates along its velocity into a water streak.
             // This is what makes the spray read as flying water droplets instead of round bubbles.
             // 拉伸广告牌：每颗粒子沿速度方向拉长成水条。这正是让飞溅读作水滴而非圆泡泡的关键。
@@ -491,19 +509,19 @@ export class SplashEmitter {
                 renderer.lengthScale = TUNING.particleSystem.stretchLengthScale;
             }
         }
-        system.setSharedMaterial(null, 0);
-
         const shape = system.shapeModule as any;
         if (shape) {
             shape.enable = true;
             shape.shapeType = TUNING.particleSystem.coneShapeType;
             shape.emitFrom = TUNING.particleSystem.emitFromBase;
-            shape.angle = tuning.role === 'leg' ? TUNING.particleSystem.legShapeAngle : TUNING.particleSystem.handShapeAngle;
-            shape.radius = tuning.role === 'leg' ? TUNING.particleSystem.legShapeRadius : TUNING.particleSystem.handShapeRadius;
+            const useHandSprayProfile = tuning.role === 'leg' && tuning.visual === 'spray';
+            const useLegShape = tuning.role === 'leg' && !useHandSprayProfile;
+            shape.angle = useLegShape ? TUNING.particleSystem.legShapeAngle : TUNING.particleSystem.handShapeAngle;
+            shape.radius = useLegShape ? TUNING.particleSystem.legShapeRadius : TUNING.particleSystem.handShapeRadius;
             shape.arc = TUNING.particleSystem.shapeArc;
-            shape.randomDirectionAmount = tuning.role === 'leg' ? TUNING.particleSystem.legRandomDirection : TUNING.particleSystem.handRandomDirection;
-            shape.randomPositionAmount = tuning.role === 'leg' ? TUNING.particleSystem.legRandomPosition : TUNING.particleSystem.handRandomPosition;
-            shape.sphericalDirectionAmount = tuning.role === 'leg' ? TUNING.particleSystem.legSphericalDirection : TUNING.particleSystem.handSphericalDirection;
+            shape.randomDirectionAmount = useLegShape ? TUNING.particleSystem.legRandomDirection : TUNING.particleSystem.handRandomDirection;
+            shape.randomPositionAmount = useLegShape ? TUNING.particleSystem.legRandomPosition : TUNING.particleSystem.handRandomPosition;
+            shape.sphericalDirectionAmount = useLegShape ? TUNING.particleSystem.legSphericalDirection : TUNING.particleSystem.handSphericalDirection;
         }
 
         // Texture animation disabled for stretched droplets: a single soft droplet sprite is used.
@@ -520,18 +538,21 @@ export class SplashEmitter {
         } else {
             node.active = false;
         }
-        applyParticleTexture(system);
+        applyParticleTexture(system, tuning.visual);
 
         this._particleEmitters.push({
             node,
             system,
             role: tuning.role,
+            visual: tuning.visual,
             side,
             basePosition: basePosition.clone(),
             palmOffset: palmOffset.clone(),
             forwardTilt: tuning.forwardTilt,
             lateralTilt,
             countScale: tuning.countScale,
+            sizeScale: tuning.sizeScale,
+            heightScale: tuning.heightScale,
             sprayTime: 0,
             sprayRate: 0,
             sprayCarry: 0,
@@ -619,7 +640,13 @@ export class SplashEmitter {
             const entryScale = lerp(TUNING.behavior.legEntryScaleMin, TUNING.behavior.legEntryScaleMax, clamp(entry, 0, 1));
             const strength = Math.max(kickSignal, entry);
             const count = Math.round(lerp(TUNING.behavior.legBurstCountMin, TUNING.behavior.legBurstCountMax, clamp(strength, 0, 1)));
-            this.playParticleBurst(emitter, count, speedRatio * TUNING.behavior.legBurstSpeedScale, TUNING.behavior.legBurstPullScale * entryScale);
+            const useHandSprayProfile = emitter.visual === 'spray';
+            this.playParticleBurst(
+                emitter,
+                count,
+                useHandSprayProfile ? speedRatio : speedRatio * TUNING.behavior.legBurstSpeedScale,
+                useHandSprayProfile ? entryScale : TUNING.behavior.legBurstPullScale * entryScale,
+            );
         }
         this.emitSprayFrame(emitter);
         emitter.lastContact = entry;
@@ -705,32 +732,41 @@ export class SplashEmitter {
 
     private playParticleBurst(emitter: SplashParticleEmitter, count: number, speedRatio: number, pullScale: number) {
         const isHand = emitter.role === 'hand';
-        const speed = !isHand
+        const isPlume = emitter.visual === 'plume';
+        const useHandSprayProfile = emitter.role === 'leg' && emitter.visual === 'spray';
+        const baseSpeed = !isHand && !useHandSprayProfile
             ? lerp(TUNING.behavior.legSpeedMin, TUNING.behavior.legSpeedMax, speedRatio) * pullScale
             : lerp(TUNING.behavior.handSpeedMin, TUNING.behavior.handSpeedMax, speedRatio) * pullScale;
+        const speed = baseSpeed * (isPlume ? TUNING.behavior.plumeSpeedScale : 1);
         setCurveRangeTwoConstants(emitter.system.startSpeed, speed * TUNING.behavior.speedRangeMinScale, speed * TUNING.behavior.speedRangeMaxScale);
+        const lifetimeScale = isPlume ? TUNING.behavior.plumeLifetimeScale : 1;
         setCurveRangeTwoConstants(
             emitter.system.startLifetime,
-            this.particleLifetimeMin(emitter),
-            this.particleLifetimeMax(emitter, speedRatio),
+            this.particleLifetimeMin(emitter) * lifetimeScale,
+            this.particleLifetimeMax(emitter, speedRatio) * lifetimeScale,
         );
-        setCurveRange(emitter.system.gravityModifier, !isHand ? TUNING.particleSystem.legGravity : TUNING.particleSystem.handGravity);
+        setCurveRange(
+            emitter.system.gravityModifier,
+            isPlume ? TUNING.behavior.plumeGravity : !isHand && !useHandSprayProfile ? TUNING.particleSystem.legGravity : TUNING.particleSystem.handGravity,
+        );
         const styleSizeScale = TUNING.style === 'blocky' ? TUNING.blockyTexture.sizeMultiplier : 1;
-        const size = (!isHand
+        const size = (!isHand && !useHandSprayProfile
             ? lerp(TUNING.behavior.legSizeMin, TUNING.behavior.legSizeMax, speedRatio)
             : lerp(TUNING.behavior.handSizeMin, TUNING.behavior.handSizeMax, speedRatio)) * styleSizeScale;
-        setCurveRangeTwoConstants(emitter.system.startSizeX, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
-        setCurveRangeTwoConstants(emitter.system.startSizeY, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
-        setCurveRangeTwoConstants(emitter.system.startSizeZ, size * TUNING.behavior.sizeRangeMinScale, size * TUNING.behavior.sizeRangeMaxScale);
+        const width = size * emitter.sizeScale;
+        const height = width * emitter.heightScale;
+        setCurveRangeTwoConstants(emitter.system.startSizeX, width * TUNING.behavior.sizeRangeMinScale, width * TUNING.behavior.sizeRangeMaxScale);
+        setCurveRangeTwoConstants(emitter.system.startSizeY, height * TUNING.behavior.sizeRangeMinScale, height * TUNING.behavior.sizeRangeMaxScale);
+        setCurveRangeTwoConstants(emitter.system.startSizeZ, width * TUNING.behavior.sizeRangeMinScale, width * TUNING.behavior.sizeRangeMaxScale);
         this.node.active = true;
         emitter.system.play();
-        applyParticleTexture(emitter.system);
+        applyParticleTexture(emitter.system, emitter.visual);
         const scaledCount = Math.max(TUNING.behavior.minimumScaledCount, Math.round(count * emitter.countScale * this._countSpeedFactor));
-        const spraySeconds = !isHand ? TUNING.behavior.legSpraySeconds : TUNING.behavior.handSpraySeconds;
+        const spraySeconds = !isHand && !useHandSprayProfile ? TUNING.behavior.legSpraySeconds : TUNING.behavior.handSpraySeconds;
         this.emitJitteredParticles(
             emitter,
             Math.max(
-                !isHand ? TUNING.behavior.legInitialEmitMin : TUNING.behavior.handInitialEmitMin,
+                !isHand && !useHandSprayProfile ? TUNING.behavior.legInitialEmitMin : TUNING.behavior.handInitialEmitMin,
                 Math.round(scaledCount * TUNING.behavior.initialEmitScale),
             ),
             0,
@@ -743,12 +779,12 @@ export class SplashEmitter {
     }
 
     private particleLifetimeMin(emitter: SplashParticleEmitter): number {
-        const base = emitter.role === 'leg' ? TUNING.behavior.legLifetimeMin : TUNING.behavior.handLifetimeMin;
+        const base = emitter.role === 'leg' && emitter.visual !== 'spray' ? TUNING.behavior.legLifetimeMin : TUNING.behavior.handLifetimeMin;
         return Math.min(base, this.particleLifetimeCap(emitter));
     }
 
     private particleLifetimeMax(emitter: SplashParticleEmitter, speedRatio: number): number {
-        const base = emitter.role === 'leg'
+        const base = emitter.role === 'leg' && emitter.visual !== 'spray'
             ? lerp(TUNING.behavior.legLifetimeMaxLowSpeed, TUNING.behavior.legLifetimeMaxHighSpeed, speedRatio)
             : lerp(TUNING.behavior.handLifetimeMaxLowSpeed, TUNING.behavior.handLifetimeMaxHighSpeed, speedRatio);
         return Math.min(base, this.particleLifetimeCap(emitter));
@@ -773,14 +809,14 @@ export class SplashEmitter {
 
         emitter.sprayCarry -= emitCount;
         emitter.system.play();
-        applyParticleTexture(emitter.system);
+        applyParticleTexture(emitter.system, emitter.visual);
         this.emitJitteredParticles(emitter, emitCount, dt);
     }
 
     private emitJitteredParticles(emitter: SplashParticleEmitter, count: number, dt: number) {
         const basePosition = emitter.node.position.clone();
         const baseEuler = emitter.node.eulerAngles.clone();
-        const isHand = emitter.role === 'hand';
+        const isHand = emitter.role === 'hand' || emitter.visual === 'spray';
         const positionJitterX = !isHand ? TUNING.behavior.legJitterX : TUNING.behavior.handJitterX;
         const positionJitterY = !isHand ? TUNING.behavior.legJitterY : TUNING.behavior.handJitterY;
         const positionJitterZ = !isHand ? TUNING.behavior.legJitterZ : TUNING.behavior.handJitterZ;
@@ -978,103 +1014,49 @@ function setParticleSizeOverLifetime(system: ParticleSystem, role: SplashParticl
     module.size.multiplier = 1;
 }
 
-function getSplashParticleTexture(): Texture2D {
-    if (_splashParticleTexture) {
-        return _splashParticleTexture;
+function getSplashParticleTexture(visual: SplashParticleEmitterTuning['visual']): Texture2D {
+    const texture = visual === 'plume' ? _splashParticleTexture : _splashSprayTexture;
+    if (!texture) {
+        throw new Error(`Swimmer ${visual} particle texture has not loaded.`);
     }
-
-    _splashParticleTexture = TUNING.style === 'blocky' ? buildBlockyTexture() : buildDropletTexture();
-    return _splashParticleTexture;
-}
-
-// Soft round droplet. Stretched-billboard rendering elongates it along velocity into a water streak,
-// so the sprite itself only needs to be a soft round blob with a bright core.
-// 柔和圆点水滴。拉伸广告牌会沿速度方向拉成水条，所以贴图本身只需一个带亮核的柔和圆团。
-function buildDropletTexture(): Texture2D {
-    const size = TUNING.dropletTexture.size;
-    const center = (size - 1) * 0.5;
-    const radius = center;
-    const softness = TUNING.dropletTexture.softness;
-    const coreBoost = TUNING.dropletTexture.coreBoost;
-    const coreSoftness = TUNING.dropletTexture.coreSoftness;
-    const featherStart = TUNING.dropletTexture.featherStart;
-    const data = new Uint8Array(size * size * 4);
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            const nx = (x - center) / radius;
-            const ny = (y - center) / radius;
-            const d2 = nx * nx + ny * ny;
-            const body = Math.exp(-d2 * softness);
-            const core = Math.exp(-d2 * coreSoftness) * coreBoost;
-            let alpha = clamp(body + core, 0, 1);
-            alpha *= 1 - smoothRange(Math.sqrt(d2), featherStart, 1);
-            const index = (y * size + x) * 4;
-            data[index] = 255;
-            data[index + 1] = 255;
-            data[index + 2] = 255;
-            data[index + 3] = Math.round(255 * alpha);
-        }
-    }
-
-    const texture = new Texture2D('RuntimeSplashDroplet');
-    texture.create(size, size, Texture2D.PixelFormat.RGBA8888);
-    texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
-    texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
-    texture.uploadData(data);
     return texture;
 }
 
-// Hard-edged square sprite for the 'blocky' style. Nearly solid square with a narrow soft rim.
-// 'blocky' 风格的硬边方块贴图；近乎实心的方块，仅留很窄的柔和边。
-function buildBlockyTexture(): Texture2D {
-    const size = TUNING.blockyTexture.size;
-    const center = (size - 1) * 0.5;
-    const radius = center;
-    const halfExtent = TUNING.blockyTexture.halfExtent;
-    const edgeSoftness = TUNING.blockyTexture.edgeSoftness;
-    const data = new Uint8Array(size * size * 4);
-    for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-            const nx = Math.abs((x - center) / radius);
-            const ny = Math.abs((y - center) / radius);
-            // Square field via Chebyshev distance; hard edge with a narrow smooth band.
-            // 用切比雪夫距离得到方形；硬边加一条很窄的过渡带。
-            const cheb = Math.max(nx, ny);
-            const alpha = 1 - smoothRange(cheb, halfExtent, Math.min(1, halfExtent + edgeSoftness));
-            const index = (y * size + x) * 4;
-            data[index] = 255;
-            data[index + 1] = 255;
-            data[index + 2] = 255;
-            data[index + 3] = Math.round(255 * clamp(alpha, 0, 1));
-        }
-    }
-
-    const texture = new Texture2D('RuntimeSplashBlock');
-    texture.create(size, size, Texture2D.PixelFormat.RGBA8888);
-    texture.setFilters(Texture2D.Filter.LINEAR, Texture2D.Filter.LINEAR);
-    texture.setWrapMode(Texture2D.WrapMode.CLAMP_TO_EDGE, Texture2D.WrapMode.CLAMP_TO_EDGE);
-    texture.uploadData(data);
-    return texture;
-}
-
-function applyParticleTexture(system: ParticleSystem) {
-    const texture = getSplashParticleTexture();
+function applyParticleTexture(system: ParticleSystem, visual: SplashParticleEmitterTuning['visual']) {
+    const texture = getSplashParticleTexture(visual);
+    const particleMaterial = getSplashParticleMaterial(texture, visual);
     system.priority = TUNING.renderPriority;
-    system.setSharedMaterial(null, 0);
     const renderer = system.renderer as any;
     if (renderer) {
-        renderer.particleMaterial = null;
-        renderer.cpuMaterial = null;
+        renderer.cpuMaterial = particleMaterial;
         renderer.mainTexture = texture;
+        if (TUNING.style === 'blocky' || visual === 'plume') {
+            renderer.renderMode = TUNING.particleSystem.blockyRenderMode;
+        } else {
+            renderer.renderMode = TUNING.particleSystem.stretchedRenderMode;
+            renderer.velocityScale = TUNING.particleSystem.stretchVelocityScale;
+            renderer.lengthScale = TUNING.particleSystem.stretchLengthScale;
+        }
+        // Cocos only copies renderer.mainTexture while constructing its default CPU
+        // material. The renderer's particle-material setter updates the active pass.
+        system.processor?.updateMaterialParams();
     }
 }
 
-function smoothRange(value: number, start: number, end: number): number {
-    if (end <= start) {
-        return value >= end ? 1 : 0;
+function getSplashParticleMaterial(texture: Texture2D, visual: SplashParticleEmitterTuning['visual']): Material {
+    let particleMaterial = _splashParticleMaterials[visual];
+    if (!particleMaterial || !particleMaterial.isValid) {
+        const defaultParticleMaterial = builtinResMgr.get<Material>('default-particle-material');
+        if (!defaultParticleMaterial) {
+            throw new Error('Cocos default particle material is unavailable.');
+        }
+        particleMaterial = new Material();
+        particleMaterial.copy(defaultParticleMaterial);
+        particleMaterial.name = `RuntimeSwimmer${visual === 'plume' ? 'Plume' : 'Spray'}Particle`;
+        _splashParticleMaterials[visual] = particleMaterial;
     }
-    const t = clamp((value - start) / (end - start), 0, 1);
-    return t * t * (3 - 2 * t);
+    particleMaterial.setProperty('mainTexture', texture);
+    return particleMaterial;
 }
 
 function randomRange(min: number, max: number): number {

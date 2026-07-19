@@ -226,6 +226,8 @@ export const RESOURCE_PATHS = {
     ],
     poolWaterMaterial: 'pool/RagingPoolWater',
     swimmerSplashMaterial: 'pool/SwimmerSplash',
+    swimmerSplashParticleTexture: 'pool/SwimmerSplashDroplet/texture',
+    swimmerSplashSprayTexture: 'pool/SwimmerSplashSpray/texture',
     skyboxVariants: SKYBOX_VARIANTS,
     playerOutlineEffect: 'effects/PlayerOutline',
     laneFloatCutoutEffect: 'effects/LaneFloatCutout',

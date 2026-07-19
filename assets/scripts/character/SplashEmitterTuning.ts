@@ -18,22 +18,25 @@ export type SplashFoamPartTuning = {
 export type SplashParticleEmitterTuning = {
     nameSuffix: string;
     role: 'hand' | 'leg' | 'body';
+    visual: 'plume' | 'spray';
     sideOffsetZ: number;
     basePosition: SplashVec3;
     palmOffset: SplashVec3;
     forwardTilt: number;
     lateralTilt: number;
     countScale: number;
+    sizeScale: number;
+    heightScale: number;
 };
 
 export const SPLASH_EMITTER_TUNING = {
     // Splash particle art style switch:
-    //   'streak' = soft round droplet stretched along velocity into thin water streaks (current).
+    //   'streak' = soft round droplet stretched along velocity into thin water streaks.
     //   'blocky' = hard-edged square sprites, billboard (no stretch), spun by random rotation.
     // 水花粒子美术风格开关：
     //   'streak' = 柔和圆点沿速度拉伸成细长水条（当前）。
     //   'blocky' = 硬边方块贴图，普通广告牌（不拉伸），靠随机旋转呈现方块。
-    style: 'blocky' as 'streak' | 'blocky',
+    style: 'streak' as 'streak' | 'blocky',
 
     // Highest renderer priority so splashes draw after transparent water.
     // 最高渲染优先级，确保水花绘制在透明水面之后。
@@ -41,7 +44,8 @@ export const SPLASH_EMITTER_TUNING = {
 
     // Runtime particle alpha, 0-255. Translucent so streaks read as water spray, not solid white.
     // 运行时粒子透明度，范围 0-255；偏透使水条读作水花飞溅，而非实白。
-    particleAlpha: 120,
+    particleAlpha: 182,
+    plumeAlpha: 158,
 
     // Maximum swim speed used to normalize splash intensity.
     // 用于归一化水花强度的最大游泳速度。
@@ -205,9 +209,10 @@ export const SPLASH_EMITTER_TUNING = {
     },
 
     particleSystem: {
-        // Particle capacity per emitter. Fewer, bigger cartoon clumps need far less capacity.
-        // 每个发射器的粒子容量；更少、更大的卡通团块需要的容量小得多。
-        capacity: 56,
+        // Particle capacity per emitter. Short-lived streaks stay sparse to contain CPU simulation
+        // and transparent overdraw on WeChat Mini Game.
+        // 每个发射器的粒子容量。细短水丝保持稀疏，控制微信小游戏的 CPU 模拟和透明叠绘。
+        capacity: 32,
 
         // Particle system playback duration; emissions are manual bursts.
         // 粒子系统播放时长；实际发射由代码手动 burst 控制。
@@ -226,11 +231,11 @@ export const SPLASH_EMITTER_TUNING = {
 
         // Default values before role-specific burst tuning is applied.
         // 角色特定 burst 参数生效前的默认粒子值。
-        defaultLifetime: [0.22, 0.4] as const,
-        defaultSpeed: [1.7, 3.1] as const,
-        defaultSize: [0.04, 0.085] as const,
+        defaultLifetime: [0.16, 0.3] as const,
+        defaultSpeed: [2, 3.5] as const,
+        defaultSize: [0.04, 0.09] as const,
         startRotationZMin: 0,
-        startRotationZMax: 6.2831853,
+        startRotationZMax: 0,
         startDelay: 0,
         handGravity: 1.4,
         legGravity: 0.75,
@@ -246,26 +251,26 @@ export const SPLASH_EMITTER_TUNING = {
         coneShapeType: 2,
         emitFromBase: 0,
 
-        // Wider cone so droplets spray outward/sideways in a fan, not a narrow upward column.
-        // 更宽的圆锥，让水滴向外/侧向扭开成扇形，而非窄窄向上的柱。
-        handShapeAngle: 78,
-        legShapeAngle: 62,
+        // A medium cone branches into a flame-like white spray without becoming a broad square cloud.
+        // 中等圆锥角把水滴分成白色火焰般的细支，同时避免变成宽大的方块云团。
+        handShapeAngle: 64,
+        legShapeAngle: 32,
         handShapeRadius: 0.055,
         legShapeRadius: 0.07,
         shapeArc: 360,
         handRandomDirection: 0,
-        legRandomDirection: 0.38,
+        legRandomDirection: 0,
         handRandomPosition: 0.035,
         legRandomPosition: 0.055,
         handSphericalDirection: 0.1,
-        legSphericalDirection: 0.14,
+        legSphericalDirection: 0,
 
-        // Stretched-billboard renderer: slight elongation along velocity. Keep low so droplets stay
-        // dabs, not long flame-like tongues.
-        // 拉伸广告牌渲染：沿速度方向轻微拉长。保持较低，让水滴是短块而非火苗长舔。
+        // Stretched-billboard renderer: elongate the small droplets along their velocity so each
+        // particle reads as a fine white water filament from every camera angle.
+        // 拉伸广告牌渲染：把小水滴沿速度拉长，使每颗粒子在任何相机角度都读作细白水丝。
         stretchedRenderMode: 1,
-        stretchVelocityScale: 0.018,
-        stretchLengthScale: 0.12,
+        stretchVelocityScale: 0.085,
+        stretchLengthScale: 0.68,
 
         // Plain billboard render mode used by the 'blocky' style (no velocity stretch).
         // 'blocky' 风格使用的普通广告牌渲染模式（不做速度拉伸）。
@@ -279,13 +284,13 @@ export const SPLASH_EMITTER_TUNING = {
         fadeEndAlpha: 0,
         waterlineLifetimeCap: 0.38,
         roleWaterlineLifetimeCap: {
-            hand: 0.32,
-            leg: 0.5,
+            hand: 0.28,
+            leg: 0.4,
             body: 0.26,
         },
         roleFade: {
-            hand: { holdTime: 0.32, endTime: 0.72 },
-            leg: { holdTime: 0.45, endTime: 0.88 },
+            hand: { holdTime: 0.26, endTime: 0.64 },
+            leg: { holdTime: 0.32, endTime: 0.76 },
             body: { holdTime: 0.28, endTime: 0.66 },
         },
 
@@ -338,7 +343,7 @@ export const SPLASH_EMITTER_TUNING = {
     particleEmitters: {
         enableHand: true,
         enableLeg: true,
-        enableBody: true,
+        enableBody: false,
 
         // Reduced splash LOD for background AI swimmers. The player always stays framed and keeps the
         // full emitter set; distant AI swimmers only need a hint of spray. Cutting particle systems per
@@ -376,32 +381,41 @@ export const SPLASH_EMITTER_TUNING = {
             {
                 nameSuffix: 'Core',
                 role: 'hand',
+                visual: 'plume',
                 sideOffsetZ: 0,
                 basePosition: [0.46, 0.08, 0],
-                palmOffset: [0.1, -0.06, 0],
-                forwardTilt: -6,
+                palmOffset: [0.28, 0.018, 0],
+                forwardTilt: 0,
                 lateralTilt: 0,
-                countScale: 0.26,
+                countScale: 0.68,
+                sizeScale: 2.55,
+                heightScale: 3.1,
             },
             {
                 nameSuffix: 'Inner',
                 role: 'hand',
-                sideOffsetZ: -0.055,
+                visual: 'plume',
+                sideOffsetZ: -0.14,
                 basePosition: [0.49, 0.075, 0],
-                palmOffset: [0.12, -0.055, -0.055],
-                forwardTilt: -12,
-                lateralTilt: -13,
-                countScale: 0.17,
+                palmOffset: [0.3, 0.014, -0.14],
+                forwardTilt: 0,
+                lateralTilt: 0,
+                countScale: 0.34,
+                sizeScale: 1.8,
+                heightScale: 2.35,
             },
             {
                 nameSuffix: 'Outer',
                 role: 'hand',
-                sideOffsetZ: 0.07,
+                visual: 'spray',
+                sideOffsetZ: 0.16,
                 basePosition: [0.51, 0.085, 0],
-                palmOffset: [0.13, -0.065, 0.07],
+                palmOffset: [0.13, -0.035, 0.16],
                 forwardTilt: 10,
                 lateralTilt: 18,
-                countScale: 0.17,
+                countScale: 0.52,
+                sizeScale: 0.7,
+                heightScale: 0.82,
             },
         ] satisfies SplashParticleEmitterTuning[],
 
@@ -411,42 +425,54 @@ export const SPLASH_EMITTER_TUNING = {
             {
                 nameSuffix: 'Toe',
                 role: 'leg',
+                visual: 'plume',
                 sideOffsetZ: 0.02,
                 basePosition: [-0.7, 0.018, 0],
                 palmOffset: [0.08, 0.018, 0.035],
-                forwardTilt: 18,
-                lateralTilt: 10,
-                countScale: 0.13,
+                forwardTilt: 0,
+                lateralTilt: 0,
+                countScale: 0.46,
+                sizeScale: 2.15,
+                heightScale: 2.75,
             },
             {
                 nameSuffix: 'Sole',
                 role: 'leg',
+                visual: 'plume',
                 sideOffsetZ: -0.015,
                 basePosition: [-0.74, 0.014, 0],
-                palmOffset: [-0.02, 0.015, -0.015],
-                forwardTilt: 4,
-                lateralTilt: -8,
-                countScale: 0.15,
+                palmOffset: [-0.02, 0.015, -0.09],
+                forwardTilt: 0,
+                lateralTilt: 0,
+                countScale: 0.28,
+                sizeScale: 1.55,
+                heightScale: 2.05,
             },
             {
                 nameSuffix: 'Heel',
                 role: 'leg',
+                visual: 'spray',
                 sideOffsetZ: -0.055,
                 basePosition: [-0.78, 0.012, 0],
                 palmOffset: [-0.09, 0.012, -0.05],
-                forwardTilt: -12,
-                lateralTilt: -18,
-                countScale: 0.1,
+                forwardTilt: 10,
+                lateralTilt: 18,
+                countScale: 0.24,
+                sizeScale: 0.72,
+                heightScale: 0.8,
             },
             {
                 nameSuffix: 'Backwash',
                 role: 'leg',
+                visual: 'spray',
                 sideOffsetZ: 0.035,
                 basePosition: [-0.84, 0.01, 0],
                 palmOffset: [-0.18, 0.006, 0.02],
-                forwardTilt: -30,
-                lateralTilt: 4,
-                countScale: 0.1,
+                forwardTilt: -12,
+                lateralTilt: -13,
+                countScale: 0.18,
+                sizeScale: 0.68,
+                heightScale: 0.75,
             },
         ] satisfies SplashParticleEmitterTuning[],
 
@@ -456,12 +482,15 @@ export const SPLASH_EMITTER_TUNING = {
         body: {
             nameSuffix: '',
             role: 'body',
+            visual: 'spray',
             sideOffsetZ: 0,
             basePosition: [-0.1, 0.012, 0],
             palmOffset: [-0.05, -0.01, 0.06],
             forwardTilt: 0,
             lateralTilt: 12,
             countScale: 0.12,
+            sizeScale: 0.7,
+            heightScale: 0.8,
         } satisfies SplashParticleEmitterTuning,
     },
 
@@ -473,11 +502,11 @@ export const SPLASH_EMITTER_TUNING = {
         handProgressWindow: 0.26,
         handEntryScaleMin: 0.9,
         handEntryScaleMax: 1.18,
-        handBurstCountMin: 6,
-        handBurstCountMax: 16,
-        handBurstExtraCount: 4,
-        handBurstCountClampMin: 4,
-        handBurstCountClampMax: 20,
+        handBurstCountMin: 4,
+        handBurstCountMax: 10,
+        handBurstExtraCount: 2,
+        handBurstCountClampMin: 3,
+        handBurstCountClampMax: 12,
         handBurstArmWeight: 0.75,
         handBurstGenericWeight: 0.35,
 
@@ -491,8 +520,8 @@ export const SPLASH_EMITTER_TUNING = {
         legEntryScaleMin: 0.9,
         legEntryScaleMax: 1.16,
         legEmitThreshold: 0.08,
-        legBurstCountMin: 7,
-        legBurstCountMax: 18,
+        legBurstCountMin: 4,
+        legBurstCountMax: 11,
         legBurstSpeedScale: 0.42,
         legBurstPullScale: 0.86,
         legCooldownMin: 0.07,
@@ -516,34 +545,37 @@ export const SPLASH_EMITTER_TUNING = {
 
         // Particle burst physics and size ranges.
         // 粒子爆发的速度、生命周期和尺寸范围。
-        handSpeedMin: 1.3,
-        handSpeedMax: 2.3,
-        legSpeedMin: 1.7,
-        legSpeedMax: 2.9,
+        handSpeedMin: 2,
+        handSpeedMax: 3.4,
+        legSpeedMin: 2.2,
+        legSpeedMax: 3.6,
+        plumeSpeedScale: 0,
+        plumeLifetimeScale: 0.58,
+        plumeGravity: 0,
         speedRangeMinScale: 0.58,
         speedRangeMaxScale: 1.08,
-        handLifetimeMin: 0.24,
-        handLifetimeMaxLowSpeed: 0.36,
-        handLifetimeMaxHighSpeed: 0.46,
-        legLifetimeMin: 0.28,
-        legLifetimeMaxLowSpeed: 0.44,
-        legLifetimeMaxHighSpeed: 0.58,
-        handSizeMin: 0.12,
-        handSizeMax: 0.22,
-        legSizeMin: 0.19,
-        legSizeMax: 0.36,
+        handLifetimeMin: 0.16,
+        handLifetimeMaxLowSpeed: 0.24,
+        handLifetimeMaxHighSpeed: 0.28,
+        legLifetimeMin: 0.2,
+        legLifetimeMaxLowSpeed: 0.3,
+        legLifetimeMaxHighSpeed: 0.36,
+        handSizeMin: 0.045,
+        handSizeMax: 0.1,
+        legSizeMin: 0.06,
+        legSizeMax: 0.13,
         sizeRangeMinScale: 0.82,
         sizeRangeMaxScale: 1.14,
-        minimumScaledCount: 3,
-        handSpraySeconds: 0.03,
-        legSpraySeconds: 0.04,
+        minimumScaledCount: 1,
+        handSpraySeconds: 0.035,
+        legSpraySeconds: 0.045,
         initialEmitScale: 0.72,
-        handInitialEmitMin: 3,
-        legInitialEmitMin: 2,
+        handInitialEmitMin: 2,
+        legInitialEmitMin: 1,
         burstCooldownMin: 0.018,
         burstCooldownMax: 0.04,
-        keepAliveMin: 0.24,
-        keepAliveMax: 0.36,
+        keepAliveMin: 0.2,
+        keepAliveMax: 0.32,
 
         // Frame spray accumulation and per-particle jitter.
         // 连续发射累计与单粒子抖动。
@@ -559,9 +591,9 @@ export const SPLASH_EMITTER_TUNING = {
         handRotationJitterX: 10,
         handRotationJitterY: 18,
         handRotationJitterZ: 24,
-        legRotationJitterX: 18,
-        legRotationJitterY: 28,
-        legRotationJitterZ: 34,
+        legRotationJitterX: 0,
+        legRotationJitterY: 0,
+        legRotationJitterZ: 0,
 
         // A small part of hand droplets splashes forward for a natural look.
         // 少量手部水滴向前飞溅，让效果更自然。
