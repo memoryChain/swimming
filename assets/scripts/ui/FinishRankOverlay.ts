@@ -131,7 +131,7 @@ export class FinishRankOverlay {
         if (!node?.isValid || this._badges.has(node) || !this._badgeRoot?.isValid) {
             return;
         }
-        this._results.push(result);
+        this.replaceResult(result);
         const swimmer = result.swimmer;
         this._badges.set(node, {
             swimmerNode: node,
@@ -141,6 +141,21 @@ export class FinishRankOverlay {
         });
         this._badgeRoot.active = this._headBadgesVisible;
         this.rebuildPanel();
+    }
+
+    // The panel is also the in-race standing board. Only rebuild its UI when
+    // order or placement changes; distances update every frame but do not need
+    // to recreate labels while the order is stable.
+    showLiveResults(results: RaceFinishResult[]) {
+        if (!this._panel?.isValid || !this._panelRows?.isValid) {
+            return;
+        }
+        const changed = !sameStanding(this._results, results);
+        this._results.length = 0;
+        this._results.push(...results);
+        if (changed) {
+            this.rebuildPanel();
+        }
     }
 
     // Reproject every head badge into HUD-local space and de-overlap them so
@@ -296,6 +311,27 @@ export class FinishRankOverlay {
         }
         this._panel.active = true;
     }
+
+    private replaceResult(result: RaceFinishResult) {
+        const index = this._results.findIndex((row) => row.swimmer === result.swimmer);
+        if (index >= 0) {
+            this._results[index] = result;
+        } else {
+            this._results.push(result);
+        }
+    }
+}
+
+function sameStanding(previous: RaceFinishResult[], next: RaceFinishResult[]): boolean {
+    if (previous.length !== next.length) {
+        return false;
+    }
+    const sortedPrevious = [...previous].sort((a, b) => a.placement - b.placement);
+    const sortedNext = [...next].sort((a, b) => a.placement - b.placement);
+    return sortedPrevious.every((result, index) =>
+        result.swimmer === sortedNext[index].swimmer
+        && result.placement === sortedNext[index].placement,
+    );
 }
 
 function addRowLabel(

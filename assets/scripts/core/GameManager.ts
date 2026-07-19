@@ -577,6 +577,7 @@ export class GameManager extends Component {
             },
             getState: () => this._state,
             clearFinishRanks: () => this._finishRankOverlay.clear(),
+            showLiveRanks: (results) => this._finishRankOverlay.showLiveResults(results),
             showFinishRank: (result) => this._finishRankOverlay.addResult(result),
             showAwards: (leaderboard) => {
                 this._playerOnAwardsPodium = leaderboard.some((row) =>

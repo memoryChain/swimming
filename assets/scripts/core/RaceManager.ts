@@ -228,6 +228,32 @@ export class RaceManager extends Component {
         };
     }
 
+    // Finished swimmers keep their touch order; everyone else is ordered by
+    // current course distance so the HUD can show the live standing.
+    public getLiveLeaderboard(): RaceFinishResult[] {
+        const finished: RaceFinishResult[] = [];
+        const racing: RaceFinishResult[] = [];
+        for (const swimmer of this.activeRacers()) {
+            const time = this._finishTimes.get(swimmer) ?? 0;
+            const result: RaceFinishResult = {
+                swimmer,
+                name: swimmer.swimmerName,
+                placement: 0,
+                time,
+                isPlayer: swimmer === this.playerSwimmer,
+                finished: time > 0,
+            };
+            (result.finished ? finished : racing).push(result);
+        }
+        finished.sort((a, b) => a.time - b.time);
+        racing.sort((a, b) => b.swimmer.distance - a.swimmer.distance);
+        const leaderboard = [...finished, ...racing];
+        for (let i = 0; i < leaderboard.length; i++) {
+            leaderboard[i].placement = i + 1;
+        }
+        return leaderboard;
+    }
+
     private bestAiFinishTime(): number {
         let best = Number.POSITIVE_INFINITY;
         for (const time of this._aiFinishTimes.values()) {
