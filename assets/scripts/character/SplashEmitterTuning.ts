@@ -2,6 +2,8 @@ export type SplashVec3 = readonly [number, number, number];
 
 export type SplashFoamPartTuning = {
     name: string;
+    mesh: 'wake' | 'ripple';
+    ripple: boolean;
     basePosition: SplashVec3;
     baseEuler: SplashVec3;
     baseScale: SplashVec3;
@@ -45,7 +47,7 @@ export const SPLASH_EMITTER_TUNING = {
     // Runtime particle alpha, 0-255. Translucent so streaks read as water spray, not solid white.
     // 运行时粒子透明度，范围 0-255；偏透使水条读作水花飞溅，而非实白。
     particleAlpha: 182,
-    plumeAlpha: 158,
+    plumeAlpha: 100,
 
     // Maximum swim speed used to normalize splash intensity.
     // 用于归一化水花强度的最大游泳速度。
@@ -145,6 +147,7 @@ export const SPLASH_EMITTER_TUNING = {
         otherSpeedMotionWeight: 0.16,
         handBurstGenericWeight: 0.28,
         handArmCycleBurstWeight: 0.45,
+        handRippleLifetime: 0.34,
 
         // Small vertical lift for foam during burst.
         // 爆发时泡沫片的轻微上抬。
@@ -164,35 +167,41 @@ export const SPLASH_EMITTER_TUNING = {
         // 水面泡沫定义；需要左右区分时直接配置不同 Z。
         parts: [
             {
-                name: 'LeftHandFoam',
-                basePosition: [0.28, 0.004, -0.38],
-                baseEuler: [0, 0, -8],
-                baseScale: [0.42, 1, 0.32],
-                speedWeight: 0.3,
-                armWeight: 1.35,
+                name: 'LeftHandRipple',
+                mesh: 'ripple',
+                ripple: true,
+                basePosition: [0.38, 0.003, -0.38],
+                baseEuler: [0, 0, 0],
+                baseScale: [0.62, 1, 0.54],
+                speedWeight: 0.42,
+                armWeight: 1.55,
                 kickWeight: 0.04,
-                burstWeight: 0.95,
-                width: 0.82,
-                length: 0.68,
-                flowStrength: 0.18,
-                trailStrength: 0.45,
+                burstWeight: 1.1,
+                width: 1.02,
+                length: 0.76,
+                flowStrength: 0.68,
+                trailStrength: 1.22,
             },
             {
-                name: 'RightHandFoam',
-                basePosition: [0.28, 0.004, 0.38],
-                baseEuler: [0, 0, 8],
-                baseScale: [0.42, 1, 0.32],
-                speedWeight: 0.3,
-                armWeight: 1.35,
+                name: 'RightHandRipple',
+                mesh: 'ripple',
+                ripple: true,
+                basePosition: [0.38, 0.003, 0.38],
+                baseEuler: [0, 0, 0],
+                baseScale: [0.62, 1, 0.54],
+                speedWeight: 0.42,
+                armWeight: 1.55,
                 kickWeight: 0.04,
-                burstWeight: 0.95,
-                width: 0.82,
-                length: 0.68,
-                flowStrength: 0.18,
-                trailStrength: 0.45,
+                burstWeight: 1.1,
+                width: 1.02,
+                length: 0.76,
+                flowStrength: 0.68,
+                trailStrength: 1.22,
             },
             {
                 name: 'FootFoam',
+                mesh: 'wake',
+                ripple: false,
                 basePosition: [-0.94, 0.005, 0],
                 baseEuler: [0, 0, 0],
                 baseScale: [0.72, 1, 0.48],
@@ -255,12 +264,12 @@ export const SPLASH_EMITTER_TUNING = {
         // 中等圆锥角把水滴分成白色火焰般的细支，同时避免变成宽大的方块云团。
         handShapeAngle: 64,
         legShapeAngle: 32,
-        handShapeRadius: 0.055,
+        handShapeRadius: 0.15,
         legShapeRadius: 0.07,
         shapeArc: 360,
         handRandomDirection: 0,
         legRandomDirection: 0,
-        handRandomPosition: 0.035,
+        handRandomPosition: 0.11,
         legRandomPosition: 0.055,
         handSphericalDirection: 0.1,
         legSphericalDirection: 0,
@@ -387,21 +396,21 @@ export const SPLASH_EMITTER_TUNING = {
                 palmOffset: [0.28, 0.018, 0],
                 forwardTilt: 0,
                 lateralTilt: 0,
-                countScale: 0.68,
-                sizeScale: 2.55,
+                countScale: 0.9,
+                sizeScale: 2.8,
                 heightScale: 3.1,
             },
             {
                 nameSuffix: 'Inner',
                 role: 'hand',
                 visual: 'plume',
-                sideOffsetZ: -0.14,
+                sideOffsetZ: -0.2,
                 basePosition: [0.49, 0.075, 0],
-                palmOffset: [0.3, 0.014, -0.14],
+                palmOffset: [0.3, 0.014, -0.2],
                 forwardTilt: 0,
                 lateralTilt: 0,
-                countScale: 0.34,
-                sizeScale: 1.8,
+                countScale: 0.55,
+                sizeScale: 2.05,
                 heightScale: 2.35,
             },
             {
@@ -502,11 +511,11 @@ export const SPLASH_EMITTER_TUNING = {
         handProgressWindow: 0.26,
         handEntryScaleMin: 0.9,
         handEntryScaleMax: 1.18,
-        handBurstCountMin: 4,
-        handBurstCountMax: 10,
+        handBurstCountMin: 6,
+        handBurstCountMax: 15,
         handBurstExtraCount: 2,
-        handBurstCountClampMin: 3,
-        handBurstCountClampMax: 12,
+        handBurstCountClampMin: 5,
+        handBurstCountClampMax: 18,
         handBurstArmWeight: 0.75,
         handBurstGenericWeight: 0.35,
 
@@ -581,9 +590,9 @@ export const SPLASH_EMITTER_TUNING = {
         // 连续发射累计与单粒子抖动。
         minSprayDt: 1 / 240,
         maxSprayDt: 1 / 20,
-        handJitterX: 0.04,
+        handJitterX: 0.11,
         handJitterY: 0.014,
-        handJitterZ: 0.05,
+        handJitterZ: 0.14,
         legJitterX: 0.11,
         legJitterY: 0.025,
         legJitterZ: 0.105,

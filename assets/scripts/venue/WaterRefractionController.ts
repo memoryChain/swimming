@@ -1,6 +1,6 @@
 import { Camera, Color, Layers, Material, MeshRenderer, Node, RenderTexture, Texture2D, Vec3, Vec4, view } from 'cc';
 import { EDITOR } from 'cc/env';
-import { SWIMMER_LAYER, UNDERWATER_LAYER } from './WaterSurfaceBinder';
+import { SWIMMER_LAYER, UNDERWATER_LAYER, WATER_SURFACE_LAYER } from './WaterSurfaceBinder';
 
 const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
 const SWIMMER_CAMERA_NAME = 'SwimmerOverlayCamera';
@@ -440,6 +440,9 @@ function findNodeByName(root: Node, name: string): Node | null {
 }
 
 function setLayerRecursive(node: Node, layer: number) {
+    if (node.layer === WATER_SURFACE_LAYER) {
+        return;
+    }
     node.layer = layer;
     for (const child of node.children) {
         setLayerRecursive(child, layer);

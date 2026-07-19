@@ -84,7 +84,7 @@ export const RACE_CAMERA_TUNING = {
     sprintBackDistance: 1.1,
     // Extra pullback while the player is chaining kick-only taps. A promoted arm
     // stroke immediately removes this offset and restores sprintBackDistance.
-    sprintKickPullbackDistance: 0.9,
+    sprintKickPullbackDistance: 1.4,
     sprintKickPullbackMinCadenceHz: 2.5,
     sprintHeight: 0.52,
     sprintLookAhead: 0.8,

@@ -2,6 +2,7 @@ import { AlphaKey, builtinResMgr, Color, ColorKey, CurveRange, Gradient, Gradien
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
+import { WATER_SURFACE_LAYER } from '../venue/WaterSurfaceBinder';
 import { SplashFoamPartTuning, SplashParticleEmitterTuning, SPLASH_EMITTER_TUNING, SplashVec3 } from './SplashEmitterTuning';
 
 type SplashPart = {
@@ -17,6 +18,9 @@ type SplashPart = {
     armWeight: number;
     kickWeight: number;
     burstWeight: number;
+    rippleTime: number;
+    lastHandEntry: number;
+    frozenWorldPosition: Vec3;
 };
 
 type SplashParticleEmitter = {
@@ -141,6 +145,9 @@ export class SplashEmitter {
                     const reduced = this._reduced;
                     if (!(reduced && TUNING.particleEmitters.reduced.disableFoam)) {
                         for (const part of TUNING.foam.parts) {
+                            if (reduced && part.ripple) {
+                                continue;
+                            }
                             this.createPart(material, part);
                         }
                     }
@@ -294,9 +301,26 @@ export class SplashEmitter {
         for (const part of this._parts) {
             const isHand = part.node.name.indexOf('Hand') >= 0;
             const isFoot = part.node.name.indexOf('Foot') >= 0;
+            const isHandRipple = part.node.name.indexOf('HandRipple') >= 0;
             const handContact = this.handContactForPart(part.node.name);
+            const handEntry = this.handEntryForPart(part.node.name);
+            if (isHandRipple) {
+                const enteredWater = handEntry > TUNING.foam.handContactThreshold
+                    && part.lastHandEntry <= TUNING.foam.handContactThreshold;
+                if (enteredWater) {
+                    this.freezeHandRippleAtPalm(part);
+                    part.rippleTime = TUNING.foam.handRippleLifetime;
+                } else {
+                    part.rippleTime = Math.max(0, part.rippleTime - this._lastDt);
+                }
+                part.lastHandEntry = handEntry;
+                this.keepHandRippleFrozen(part);
+            }
+            const handSignal = isHandRipple
+                ? clamp(part.rippleTime / TUNING.foam.handRippleLifetime, 0, 1)
+                : handContact;
             const rawAction = isHand
-                ? handContact * (
+                ? handSignal * (
                     speedRatio * part.speedWeight * TUNING.foam.handSpeedActionWeight
                     + this._state.armAction * part.armWeight
                     + this._splashBurst * part.burstWeight * TUNING.foam.handGenericBurstWeight
@@ -311,12 +335,12 @@ export class SplashEmitter {
             const motionFloor = isFoot
                 ? speedRatio * TUNING.foam.footSpeedMotionWeight + this._state.kickCycleMotion * TUNING.foam.footKickMotionWeight
                 : isHand
-                    ? handContact * (speedRatio * TUNING.foam.handSpeedMotionWeight + this._state.armCycleMotion * TUNING.foam.handArmMotionWeight)
+                    ? handSignal * (speedRatio * TUNING.foam.handSpeedMotionWeight + this._state.armCycleMotion * TUNING.foam.handArmMotionWeight)
                     : speedRatio * TUNING.foam.otherSpeedMotionWeight;
             const action = Math.max(rawAction, motionFloor);
             const intensity = clamp(action, 0, TUNING.foam.maxIntensity);
             const burst = isHand
-                ? handContact * Math.max(
+                ? handSignal * Math.max(
                     this._splashBurst * part.burstWeight * TUNING.foam.handBurstGenericWeight,
                     this._armSplashBurst * part.armWeight,
                     this._state.armCycleMotion * TUNING.foam.handArmCycleBurstWeight,
@@ -326,8 +350,10 @@ export class SplashEmitter {
                     this._armSplashBurst * part.armWeight,
                     this._kickSplashBurst * part.kickWeight,
                 );
-            const active = isHand
-                ? handContact > TUNING.foam.handContactThreshold
+            const active = isHandRipple
+                ? part.rippleTime > 0
+                : isHand
+                ? handSignal > TUNING.foam.handContactThreshold
                     && (intensity > TUNING.foam.actionThreshold || burst > TUNING.foam.burstThreshold)
                 : intensity > TUNING.foam.actionThreshold || burst > TUNING.foam.burstThreshold;
             part.node.active = active;
@@ -335,8 +361,10 @@ export class SplashEmitter {
 
             const surge = Math.min(1, burst * TUNING.foam.surgeScaleX);
             const footBoost = isFoot ? TUNING.foam.footBoost : 1;
-            this.resolvePartPosition(part, speedRatio, surge, isFoot, isHand, handContact);
-            part.node.setRotationFromEuler(part.baseEuler.x, part.baseEuler.y, part.baseEuler.z);
+            if (!isHandRipple) {
+                this.resolvePartPosition(part, speedRatio, surge, isFoot, isHand, handContact);
+            }
+            part.node.setRotationFromEuler(isHandRipple ? 0 : part.baseEuler.x, isHandRipple ? 0 : part.baseEuler.y, isHandRipple ? 0 : part.baseEuler.z);
             part.node.setScale(
                 part.baseScale.x * footBoost * (1 + speedRatio * TUNING.foam.speedScaleX + surge * TUNING.foam.surgeScaleX),
                 1,
@@ -344,6 +372,10 @@ export class SplashEmitter {
             );
             part.params.set(intensity, speedRatio, Math.min(TUNING.foam.maxIntensity, burst), part.seed);
             part.material.setProperty('splashParams', part.params);
+            if (isHandRipple) {
+                part.shapeParams.w = 1 - clamp(part.rippleTime / TUNING.foam.handRippleLifetime, 0, 1);
+                part.material.setProperty('shapeParams', part.shapeParams);
+            }
         }
         if (this._particleEffectsEnabled) {
             this.updateParticleEmitters(speedRatio);
@@ -381,7 +413,7 @@ export class SplashEmitter {
         // overlay layer before this async material callback completes. New Cocos
         // nodes default to DEFAULT rather than inheriting their parent's layer,
         // so copy it explicitly to avoid one-frame/camera-pass mismatches.
-        node.layer = this.node.layer;
+        node.layer = tuning.ripple ? WATER_SURFACE_LAYER : this.node.layer;
         const basePosition = toVec3(tuning.basePosition);
         const baseEuler = toVec3(tuning.baseEuler);
         const baseScale = toVec3(tuning.baseScale);
@@ -390,24 +422,26 @@ export class SplashEmitter {
         node.setScale(baseScale);
 
         const renderer = node.addComponent(MeshRenderer);
-        renderer.mesh = utils.createMesh(primitives.plane({
-            width: tuning.width,
-            length: tuning.length,
-            widthSegments: TUNING.foam.widthSegments,
-            lengthSegments: TUNING.foam.lengthSegments,
-        }));
+        renderer.mesh = tuning.mesh === 'ripple'
+            ? utils.createMesh(createEllipticalRippleGeometry(tuning.width, tuning.length))
+            : utils.createMesh(primitives.plane({
+                width: tuning.width,
+                length: tuning.length,
+                widthSegments: TUNING.foam.widthSegments,
+                lengthSegments: TUNING.foam.lengthSegments,
+            }));
 
         const runtimeMaterial = new Material();
         runtimeMaterial.copy(sourceMaterial);
         runtimeMaterial.name = `Runtime${tuning.name}`;
-        runtimeMaterial.setProperty('shapeParams', new Vec4(tuning.flowStrength, tuning.trailStrength, 0, 0));
+        runtimeMaterial.setProperty('shapeParams', new Vec4(tuning.flowStrength, tuning.trailStrength, tuning.ripple ? 1 : 0, 0));
         renderer.setMaterial(runtimeMaterial, 0);
 
         this._parts.push({
             node,
             material: runtimeMaterial,
             params: new Vec4(),
-            shapeParams: new Vec4(tuning.flowStrength, tuning.trailStrength, 0, 0),
+            shapeParams: new Vec4(tuning.flowStrength, tuning.trailStrength, tuning.ripple ? 1 : 0, 0),
             seed: Math.random() * TUNING.foamSeedRange,
             basePosition: basePosition.clone(),
             baseEuler: baseEuler.clone(),
@@ -416,6 +450,9 @@ export class SplashEmitter {
             armWeight: tuning.armWeight,
             kickWeight: tuning.kickWeight,
             burstWeight: tuning.burstWeight,
+            rippleTime: 0,
+            lastHandEntry: 0,
+            frozenWorldPosition: new Vec3(),
         });
     }
 
@@ -877,6 +914,16 @@ export class SplashEmitter {
         return 0;
     }
 
+    private handEntryForPart(name: string): number {
+        if (name.indexOf('LeftHand') >= 0) {
+            return this._state.leftHandWaterEntry;
+        }
+        if (name.indexOf('RightHand') >= 0) {
+            return this._state.rightHandWaterEntry;
+        }
+        return 0;
+    }
+
     private resolvePartPosition(part: SplashPart, speedRatio: number, surge: number, isFoot: boolean, isHand: boolean, handContact: number) {
         if (isHand) {
             this.resolveHandPartPosition(part, speedRatio, surge, handContact);
@@ -908,6 +955,27 @@ export class SplashEmitter {
         const baseZ = part.basePosition.z;
         part.node.setPosition(direction * baseX, baseY, baseZ);
     }
+
+    private freezeHandRippleAtPalm(part: SplashPart) {
+        const boneName = part.node.name.indexOf('Left') >= 0 ? 'LeftHand' : 'RightHand';
+        if (this._options.getBoneWorldPosition(boneName, this._tmpWorld)) {
+            this._tmpWorld.y = this._waterY + part.basePosition.y;
+            part.frozenWorldPosition.set(this._tmpWorld);
+            this.keepHandRippleFrozen(part);
+            return;
+        }
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        this._tmpLocal.set(direction * part.basePosition.x, part.basePosition.y, part.basePosition.z);
+        Vec3.transformMat4(part.frozenWorldPosition, this._tmpLocal, this.node.worldMatrix);
+        this.keepHandRippleFrozen(part);
+    }
+
+    private keepHandRippleFrozen(part: SplashPart) {
+        // Ripple nodes remain under the moving splash root, so transform the saved
+        // water-entry point back to local space every frame to cancel parent motion.
+        this.node.inverseTransformPoint(this._tmpLocal, part.frozenWorldPosition);
+        part.node.setPosition(this._tmpLocal);
+    }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -924,6 +992,28 @@ function toVec3(value: SplashVec3): Vec3 {
 
 function emitterBaseVec3(value: SplashVec3, baseZ: number, mirrorZOffset: number): Vec3 {
     return new Vec3(value[0], value[1], baseZ + value[2] + mirrorZOffset);
+}
+
+function createEllipticalRippleGeometry(width: number, length: number) {
+    const segments = 12;
+    const positions = [0, 0, 0];
+    const normals = [0, 1, 0];
+    const uvs = [0.5, 0.5];
+    const indices: number[] = [];
+    const radiusX = width * 0.5;
+    const radiusZ = length * 0.5;
+    for (let index = 0; index < segments; index++) {
+        const angle = index / segments * Math.PI * 2;
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+        positions.push(cosine * radiusX, 0, sine * radiusZ);
+        normals.push(0, 1, 0);
+        uvs.push(0.5 + cosine * 0.5, 0.5 + sine * 0.5);
+    }
+    for (let index = 0; index < segments; index++) {
+        indices.push(0, index + 1, (index + 1) % segments + 1);
+    }
+    return { positions, normals, uvs, indices };
 }
 
 function setCurveRange(range: CurveRange, value: number) {
