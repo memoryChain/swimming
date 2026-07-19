@@ -1,6 +1,6 @@
 import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
-import { makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeButton, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 // Screen-space finish-line ranking display. Replaces the old 3D digit placards
 // that were welded to lane positions (and overlapped once swimmers stopped being
@@ -32,6 +32,8 @@ const PANEL_MARGIN = 14;
 const PANEL_WIDTH = 184;
 const PANEL_TITLE_H = 30;
 const PANEL_ROW_H = 30;
+const EXIT_BUTTON_H = 36;
+const EXIT_BUTTON_GAP = 8;
 
 // Slack (in UI px) allowed past the HUD edge before a head badge is culled, so a
 // swimmer right at the screen border does not pop in/out.
@@ -50,6 +52,7 @@ export class FinishRankOverlay {
     private _panel: Node | null = null;
     private _panelBg: Graphics | null = null;
     private _panelRows: Node | null = null;
+    private _exitButton: Node | null = null;
     private _panelWidth = 0;
     private _panelHeight = 0;
     private readonly _badges = new Map<Node, BadgeEntry>();
@@ -65,7 +68,7 @@ export class FinishRankOverlay {
     private readonly _camToHead = new Vec3();
     private readonly _placed: { x: number; y: number }[] = [];
 
-    bind(hud: Node, width: number, height: number) {
+    bind(hud: Node, width: number, height: number, onExitRace: () => void) {
         if (!hud?.isValid) {
             return;
         }
@@ -85,6 +88,8 @@ export class FinishRankOverlay {
             titleLabel.verticalAlign = Label.VerticalAlign.CENTER;
             title.getComponent(UITransform)!.setContentSize(PANEL_WIDTH, PANEL_TITLE_H);
             this._panelRows = makeUiNode('Rows', panel);
+            this._exitButton = makeButton('ExitRaceButton', panel, PANEL_WIDTH, EXIT_BUTTON_H, uiColor(190, 64, 72, 238), '退出比赛');
+            this._exitButton.on(Node.EventType.TOUCH_END, onExitRace);
             this._panel = panel;
             this._panelBg = bg;
         }
@@ -289,6 +294,8 @@ export class FinishRankOverlay {
         this._panelBg.fillColor = PANEL_BG;
         this._panelBg.roundRect(-PANEL_WIDTH / 2, -this._panelHeight, PANEL_WIDTH, this._panelHeight, 10);
         this._panelBg.fill();
+
+        this._exitButton?.setPosition(0, -this._panelHeight - EXIT_BUTTON_GAP - EXIT_BUTTON_H / 2, 0);
 
         // Title sits at the top of the (downward-growing) panel.
         const title = this._panel.getChildByName('Title');

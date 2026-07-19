@@ -107,6 +107,7 @@ export class GameManager extends Component {
     private _raceUiBuilder: SpeedStarsUiPrefabBuilder = null;
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
+    private _isReturningToLogin = false;
     // True while a pointer is dragging to orbit the awards free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
@@ -238,6 +239,7 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
+        this._raceUiBuilder?.resetInputState();
         this._inputRouter?.unbind();
         this._gameFlow?.stopAllAi();
         this._gameFlow?.clearRaceManagerCallbacks();
@@ -492,6 +494,14 @@ export class GameManager extends Component {
     }
 
     private returnToLogin() {
+        if (this._isReturningToLogin) {
+            return;
+        }
+        this._isReturningToLogin = true;
+        this._raceUiBuilder?.resetInputState();
+        this._inputRouter?.unbind();
+        this._gameFlow?.stopAllAi();
+        this._gameFlow?.clearRaceManagerCallbacks();
         director.getScheduler().setTimeScale(1);
         setTimeScale(1);
         director.loadScene('Login');
@@ -954,7 +964,7 @@ export class GameManager extends Component {
             this.buildPlayerOverheadMarker();
             this._swimmerNameOverlay.bind(this._raceHud);
             this.refreshSwimmerNameRoster();
-            this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height);
+            this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height, () => this.returnToLogin());
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
             const modelDebugHud = new ModelDebugHudBuilder({
