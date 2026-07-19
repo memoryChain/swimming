@@ -112,6 +112,22 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         },
     },
     {
+        id: 'gundam',
+        label: 'Armored Mecha',
+        candidates: [
+            'models/Gundam',
+            'models/Gundam/Gundam',
+        ],
+        debugOnly: true,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        dynamicColor: {
+            maskPath: 'models/GundamChestColorMask/texture',
+            labelPrefix: 'Mecha Chest',
+            usesCapChannel: true,
+        },
+    },
+    {
         id: 'swimmer0621_2_mixamoSwimming',
         label: 'Mixamo Swimming',
         candidates: [
@@ -152,7 +168,7 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     },
 ];
 
-const DEBUG_SWIMMER_MODEL_IDS = new Set(['swimmer0621_2', 'diver']);
+const DEBUG_SWIMMER_MODEL_IDS = new Set(['swimmer0621_2', 'diver', 'gundam']);
 
 export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS.filter((variant) =>
     DEBUG_SWIMMER_MODEL_IDS.has(variant.id)

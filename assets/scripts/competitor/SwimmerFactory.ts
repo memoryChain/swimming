@@ -5,10 +5,15 @@ import { defaultSwimmer0621ColorVariant } from '../core/ResourcePaths';
 
 const ORIGINAL_SWIMMER_MODEL_VARIANT = 'swimmer0621_2';
 const DIVER_SWIMMER_MODEL_VARIANT = 'diver';
+const GUNDAM_SWIMMER_MODEL_VARIANT = 'gundam';
 
 // TEMP: Race-only model sampling until the out-of-race character selection
 // flow owns this choice. Each competitor rolls independently when it is built.
-const TEMPORARY_DIVER_SELECTION_CHANCE = 0.5;
+const TEMPORARY_RACE_MODEL_VARIANTS = [
+    ORIGINAL_SWIMMER_MODEL_VARIANT,
+    DIVER_SWIMMER_MODEL_VARIANT,
+    GUNDAM_SWIMMER_MODEL_VARIANT,
+] as const;
 
 export type CreateSwimmerOptions = {
     name: string;
@@ -51,9 +56,8 @@ export class SwimmerFactory {
 }
 
 function pickTemporaryRaceModelVariant(): string {
-    return Math.random() < TEMPORARY_DIVER_SELECTION_CHANCE
-        ? DIVER_SWIMMER_MODEL_VARIANT
-        : ORIGINAL_SWIMMER_MODEL_VARIANT;
+    const index = Math.floor(Math.random() * TEMPORARY_RACE_MODEL_VARIANTS.length);
+    return TEMPORARY_RACE_MODEL_VARIANTS[index];
 }
 
 function color(r: number, g: number, b: number, a = 255): Color {

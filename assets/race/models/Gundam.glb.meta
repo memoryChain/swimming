@@ -1,0 +1,162 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9",
+  "files": [],
+  "subMetas": {
+    "551db": {
+      "importer": "gltf-mesh",
+      "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@551db",
+      "displayName": "",
+      "id": "551db",
+      "name": "Mesh_0.001.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 5645
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7265a": {
+      "importer": "gltf-embeded-image",
+      "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@7265a",
+      "displayName": "",
+      "id": "7265a",
+      "name": "GundamAtlas-temp.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "linear",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@7265a"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "13f57": {
+      "importer": "gltf-material",
+      "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@13f57",
+      "displayName": "",
+      "id": "13f57",
+      "name": "GundamAtlasMaterial.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b918f": {
+      "importer": "gltf-scene",
+      "uuid": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@b918f",
+      "displayName": "",
+      "id": "b918f",
+      "name": "Gundam.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "GundamAtlas-temp",
+        "uri": "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@7265a"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@551db"
+      ],
+      "skeletons": [
+        "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@f9d1d"
+      ],
+      "textures": [
+        "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@e39f7"
+      ],
+      "materials": [
+        "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@13f57"
+      ],
+      "scenes": [
+        "4a47a5e7-2da9-44c4-9de8-13e6d986fcc9@b918f"
+      ]
+    }
+  }
+}
