@@ -128,6 +128,19 @@ export class PlayerConditionModel {
         }
         this._heartRate = clamp(this._heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
 
+        // Energy recovery: when the swimmer has not stroked for a short while,
+        // energy slowly regenerates (doc 3.3 / 5.8). Normal stroking neither
+        // drains nor recovers - only idle time recovers.
+        const energyCfg = CONDITION_BALANCE.energy;
+        if (this._timeSinceLastStroke > energyCfg.recoveryIdleThreshold
+            && this._energy < energyCfg.total) {
+            this._energy = Math.min(
+                energyCfg.total,
+                this._energy + energyCfg.recoveryPerSecond * dt,
+            );
+            this._energyDepleted = this._energy <= 0;
+        }
+
         this._heartRateZone = zoneForHeartRate(this._heartRate);
         this.refreshModifiers();
     }

@@ -7,6 +7,7 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
+import { SHARK_TUNING } from './SharkTuning';
 
 const { ccclass, property } = _decorator;
 
@@ -53,6 +54,9 @@ export class AISwimmerController extends Component {
     // Smoothed strategy effort added to `difficulty`. Eased every frame toward the
     // live target so rank/gap swings translate into gradual, invisible changes.
     private _effortModifier = 0;
+    // Shark threat for light evasion (set by GameFlowController each frame when
+    // this AI is the shark's current hunt target).
+    private _sharkThreat: { active: boolean; sharkZ: number } | null = null;
 
     startSwimming() {
         // Idempotent: an AI that already began swimming (e.g. right after its own
@@ -66,6 +70,7 @@ export class AISwimmerController extends Component {
         this._nextSide = StrokeType.LEFT;
         this._holdElapsed = 0;
         this._effortModifier = 0;
+        this._sharkThreat = null;
         this._timer = randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
     }
 
@@ -76,6 +81,13 @@ export class AISwimmerController extends Component {
         }
         this._active = false;
         this._phase = 'gap';
+        this._sharkThreat = null;
+    }
+
+    // Called every frame by the flow layer with the shark's Z when this AI is the
+    // current hunt target (null otherwise). Drives light evasion in pickNextSide.
+    setSharkThreat(threat: { active: boolean; sharkZ: number } | null) {
+        this._sharkThreat = threat;
     }
 
     update(dt: number) {
@@ -177,6 +189,12 @@ export class AISwimmerController extends Component {
         if (!this.swimmer) {
             return opposite;
         }
+        // Light shark evasion: if this AI is the shark's current target, with
+        // some probability steer away from the shark laterally instead of
+        // following normal steering (not guaranteed, so some AI still get eaten).
+        if (this._sharkThreat?.active && Math.random() < SHARK_TUNING.aiEvasionChance) {
+            return this.evadeStrokeSide();
+        }
         const discipline = clamp(this.effectiveDifficulty(), 0, 1);
         const drift = Math.abs(this.swimmer.steeringHeadingRatio);
         if (drift >= clamp(STEERING_TUNING.aiCorrectHeadingRatio, 0, 1)) {
@@ -216,6 +234,18 @@ export class AISwimmerController extends Component {
     // so the AI hits the perfect center every stroke; at low effort the wide
     // spread produces less-perfect hits and occasional full misses (tail below the
     // good zone), exactly like a shaky player.
+    // Pick the stroke side that drifts this AI away from the shark in Z.
+    // Steering sign (SwimmerMotor.applyStrokeSteering): a LEFT stroke pushes
+    // heading by +courseDirection (-> +Z lateral drift), RIGHT by -courseDirection.
+    private evadeStrokeSide(): StrokeType {
+        const swimmer = this.swimmer!;
+        const sharkZ = this._sharkThreat?.sharkZ ?? 0;
+        const myZ = swimmer.node.position.z;
+        const courseDir = swimmer.raceDirection >= 0 ? 1 : -1;
+        const evadeZ = myZ >= sharkZ ? 1 : -1;
+        return evadeZ === courseDir ? StrokeType.LEFT : StrokeType.RIGHT;
+    }
+
     private pickTargetProgress(): number {
         const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
         const sigma = lerp(AI_STROKE_TUNING.timingSigmaLow, AI_STROKE_TUNING.timingSigmaHigh, this.effectiveDifficulty());

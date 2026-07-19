@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
+﻿import { _decorator, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import {
@@ -46,6 +46,7 @@ export class Swimmer extends Component {
         new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
     ];
     private readonly _tmpCourseRotation = new Quat();
+    private _eliminated = false;
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
@@ -68,6 +69,39 @@ export class Swimmer extends Component {
             && this.node.active
             && !this._phases.isFlipTurnActive
             && !this._phases.isUnderwater;
+    }
+
+    // True while this swimmer can be targeted and caught by the shark: racing,
+    // on-screen, not in a scripted phase, and not already eliminated.
+    get isSharkTargetable(): boolean {
+        return this._motor.isRacing
+            && this.node.active
+            && !this._eliminated
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isUnderwater;
+    }
+
+    get isEliminated(): boolean {
+        return this._eliminated;
+    }
+
+    // Called by RaceManager when the shark catches this swimmer. Stops the
+    // motor, plays a quick sink-and-hide tween, and marks the swimmer
+    // eliminated so it drops out of collision, shark targeting, and placement.
+    eliminateByShark() {
+        if (this._eliminated) {
+            return;
+        }
+        this._eliminated = true;
+        this.stopRace();
+        const start = this.node.position;
+        const sinkY = start.y - 1.5;
+        tween(this.node)
+            .to(0.3, { position: new Vec3(start.x, sinkY, start.z) })
+            .call(() => {
+                this.node.active = false;
+            })
+            .start();
     }
 
     // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
@@ -417,6 +451,10 @@ export class Swimmer extends Component {
     reset() {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
+        // Clear shark-elimination state so an eaten swimmer is alive again for
+        // the next race (eliminateByShark hides the node and sets _eliminated).
+        this._eliminated = false;
+        this.node.active = true;
         this._phases.clearFlipTurnPhase(true);
         this._motor.reset();
         this._phases.clearDiveUnderwaterPhase();

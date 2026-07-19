@@ -1,4 +1,4 @@
-import { _decorator, Component } from 'cc';
+﻿import { _decorator, Component } from 'cc';
 import { COUNTDOWN_SECONDS, FINISH_STRAGGLER_COUNTDOWN_SECONDS, GLIDE_SECONDS, getRaceDistance } from './GameBalance';
 import { GameState } from './GameConstants';
 import { scaledDelta } from './TimeScale';
@@ -11,6 +11,7 @@ export type RacePlacementSummary = {
     placement: number;
     racerCount: number;
     leaderboard?: RaceFinishResult[];
+    playerEliminatedByShark?: boolean;
 };
 
 export type RaceFinishResult = {
@@ -38,6 +39,7 @@ export class RaceManager extends Component {
     public onSwimmerFinished: (result: RaceFinishResult) => void = null;
     public onFinishCountdownTick: (value: number) => void = null;
     public onDiveReady: () => void = null;
+    public onSwimmerEliminated: ((swimmer: Swimmer) => void) | null = null;
 
     private _state = GameState.READY;
     private _countdownTimer = 0;
@@ -51,6 +53,8 @@ export class RaceManager extends Component {
     private _finishCountdownActive = false;
     private _finishCountdownTimer = 0;
     private _lastFinishCountdownValue = -1;
+    private readonly _eliminatedSwimmers = new Set<Swimmer>();
+    private _playerEliminatedByShark = false;
 
     startRace() {
         this.unscheduleAllCallbacks();
@@ -66,8 +70,30 @@ export class RaceManager extends Component {
         this._finishCountdownActive = false;
         this._finishCountdownTimer = 0;
         this._lastFinishCountdownValue = -1;
+        this._eliminatedSwimmers.clear();
+        this._playerEliminatedByShark = false;
         this.setState(GameState.COUNTDOWN);
         this.onCountdownTick?.(this._lastCountdownValue);
+    }
+
+    // Called when the shark catches a swimmer. Removes the swimmer from the
+    // active race, fires onSwimmerEliminated, and - when the player was eaten -
+    // ends the race immediately so the player can restart without waiting.
+    eliminateSwimmer(swimmer: Swimmer) {
+        if (this._state === GameState.FINISHED) {
+            return;
+        }
+        if (this._eliminatedSwimmers.has(swimmer)) {
+            return;
+        }
+        this._eliminatedSwimmers.add(swimmer);
+        swimmer.eliminateByShark();
+        this.onSwimmerEliminated?.(swimmer);
+
+        if (swimmer === this.playerSwimmer) {
+            this._playerEliminatedByShark = true;
+            this.finishRace();
+        }
     }
 
     update(dt: number) {
@@ -98,6 +124,8 @@ export class RaceManager extends Component {
         this._finishCountdownActive = false;
         this._finishCountdownTimer = 0;
         this._lastFinishCountdownValue = -1;
+        this._eliminatedSwimmers.clear();
+        this._playerEliminatedByShark = false;
         this.playerSwimmer?.reset();
         for (const swimmer of this.activeAiSwimmers()) {
             swimmer.reset();
@@ -158,6 +186,9 @@ export class RaceManager extends Component {
         this.onProgressUpdate?.(playerDist, aiDist);
 
         for (const swimmer of aiSwimmers) {
+            if (this._eliminatedSwimmers.has(swimmer)) {
+                continue;
+            }
             if (!this._aiFinishTimes.has(swimmer) && swimmer.distance >= getRaceDistance()) {
                 this._aiFinishTimes.set(swimmer, this._raceTimer);
                 swimmer.playFinishTouch();
@@ -225,6 +256,7 @@ export class RaceManager extends Component {
             placement: playerRow?.placement ?? leaderboard.length,
             racerCount: leaderboard.length,
             leaderboard,
+            playerEliminatedByShark: this._playerEliminatedByShark,
         };
     }
 
@@ -254,10 +286,25 @@ export class RaceManager extends Component {
 
     private activeRacers(): Swimmer[] {
         const racers: Swimmer[] = [];
-        if (this.playerSwimmer?.node.active) {
+        if (this.playerSwimmer?.node.active && !this._eliminatedSwimmers.has(this.playerSwimmer)) {
             racers.push(this.playerSwimmer);
         }
         for (const swimmer of this.activeAiSwimmers()) {
+            if (this._eliminatedSwimmers.has(swimmer)) {
+                continue;
+            }
+            if (racers.indexOf(swimmer) < 0) {
+                racers.push(swimmer);
+            }
+        }
+        return racers;
+    }
+
+    // All racers including eliminated ones. Used for the final leaderboard so an
+    // eliminated swimmer still appears in the standings (marked DNF).
+    private allRacers(): Swimmer[] {
+        const racers = this.activeRacers();
+        for (const swimmer of this._eliminatedSwimmers) {
             if (racers.indexOf(swimmer) < 0) {
                 racers.push(swimmer);
             }
@@ -284,7 +331,7 @@ export class RaceManager extends Component {
     private finishLeaderboard(): RaceFinishResult[] {
         const finishers: RaceFinishResult[] = [];
         const unfinished: RaceFinishResult[] = [];
-        for (const swimmer of this.activeRacers()) {
+        for (const swimmer of this.allRacers()) {
             const time = this._finishTimes.get(swimmer) ?? (swimmer === this.playerSwimmer ? this._playerFinishTime : this._aiFinishTimes.get(swimmer)) ?? 0;
             const isPlayer = swimmer === this.playerSwimmer;
             if (time > 0) {

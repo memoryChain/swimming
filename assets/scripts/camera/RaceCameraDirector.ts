@@ -185,6 +185,15 @@ export class RaceCameraDirector {
     private _awardsIdleSeconds = 0;
     private _awardsAutoRotateDirection = 1;
 
+    // Shark drop-in reveal: when active, the camera temporarily moves to a
+    // top-down view over the random landing point so the player can watch the
+    // shark fall regardless of where it lands. Lasts until endSharkRevealShot().
+    private _sharkRevealActive = false;
+    private _sharkRevealLandX = 0;
+    private _sharkRevealLandZ = 0;
+    private _sharkRevealElapsed = 0;
+    private _sharkRevealDuration = 1.4;
+
     constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
         this.pickBroadcastShotSequence();
@@ -353,6 +362,24 @@ export class RaceCameraDirector {
         this._broadcastShotTimer = 0;
     }
 
+    // Arm a temporary top-down shot framing the shark's landing point so the
+    // player sees the drop-in no matter where in the pool it lands. The director
+    // re-takes the normal in-race view when the reveal duration elapses.
+    startSharkRevealShot(landX: number, landZ: number) {
+        this._sharkRevealActive = true;
+        this._sharkRevealLandX = landX;
+        this._sharkRevealLandZ = landZ;
+        this._sharkRevealElapsed = 0;
+        this._topViewActive = true;
+        this._underwaterViewActive = false;
+        this._flipTurnViewActive = false;
+    }
+
+    endSharkRevealShot() {
+        this._sharkRevealActive = false;
+        this._topViewActive = this._mode === RaceCameraMode.Top;
+    }
+
     update(dt: number, snapshot: RaceCameraSnapshot) {
         if (!this._cameraNode) {
             return;
@@ -366,6 +393,10 @@ export class RaceCameraDirector {
             this._underwaterViewActive = false;
             this._topViewActive = false;
             this.updateBroadcastCamera(dt, snapshot);
+            return;
+        }
+        if (this._sharkRevealActive) {
+            this.updateSharkRevealCamera(dt);
             return;
         }
         const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive && !this._feedMode;
@@ -845,6 +876,30 @@ export class RaceCameraDirector {
         if (this._diveShotElapsed >= 0) {
             this._diveShotElapsed = -1;
             this._diveSurfaceRestoreSeconds = 1.05;
+        }
+    }
+
+    // Top-down framing of the shark landing point. Eases the camera in from its
+    // current position so the cut is not jarring, holds, then auto-clears.
+    private updateSharkRevealCamera(dt: number) {
+        this._sharkRevealElapsed += dt;
+        const desiredTarget = new Vec3(this._sharkRevealLandX, 0.18, this._sharkRevealLandZ);
+        const desiredPos = new Vec3(this._sharkRevealLandX, 13.0, this._sharkRevealLandZ);
+        // Ease toward the reveal framing so the hand-off from the in-race view
+        // is smooth rather than a hard cut.
+        const ease = Math.min(1, dt * 6.0);
+        Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, ease);
+        Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, ease);
+        this._topViewActive = true;
+        this._underwaterViewActive = false;
+        const cam = this._cameraNode?.getComponent(Camera);
+        if (cam) {
+            cam.fov = 44;
+        }
+        this.applyCameraTransform(new Vec3(0, 0, -1));
+
+        if (this._sharkRevealElapsed >= this._sharkRevealDuration) {
+            this.endSharkRevealShot();
         }
     }
 

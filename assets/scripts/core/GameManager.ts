@@ -1,4 +1,4 @@
-import {
+﻿import {
     _decorator,
     Camera,
     Color,
@@ -15,12 +15,16 @@ import {
     Node,
     primitives,
     Sprite,
+    Tween,
+    tween,
     UITransform,
     utils,
     Vec3,
     view,
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
+import { SharkController } from '../entity/SharkController';
+import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { MusicManager } from '../app/MusicManager';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
@@ -43,6 +47,14 @@ import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
 import { SwimmerNameOverlay } from '../ui/SwimmerNameOverlay';
+import { SharkLockOnOverlay } from '../ui/SharkLockOnOverlay';
+import {
+    SHARK_BANNER_COLORS,
+    hungerLineColor,
+    pickHungerLine,
+    pickSatiatedLine,
+    pickSafeLine,
+} from '../ui/SharkBannerCopy';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -176,6 +188,8 @@ export class GameManager extends Component {
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
     private _gameFlow: GameFlowController = null;
+    private _shark: SharkController | null = null;
+    private _sharkNode: Node = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
@@ -188,6 +202,7 @@ export class GameManager extends Component {
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankOverlay = new FinishRankOverlay();
     private readonly _swimmerNameOverlay = new SwimmerNameOverlay();
+    private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
     private readonly _awardsPresentation = new AwardsPresentation(COURSE_LAYOUT);
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -351,6 +366,7 @@ export class GameManager extends Component {
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
+        this._gameFlow?.updateShark(dt);
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
         this._swimmerNameOverlay.update(
@@ -359,6 +375,11 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             standingPresentation ? 72 : 30,
+        );
+        this._sharkLockOnOverlay.update(
+            this._shark,
+            this._cameraNode?.getComponent(Camera) ?? null,
+            this._uiCamera,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
@@ -519,6 +540,7 @@ export class GameManager extends Component {
                     this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
                     this._raceManager.aiSwimmers = this._aiSwimmers;
                     this._gameFlow = this.createGameFlow();
+                    this.createShark();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
                     done();
@@ -619,6 +641,209 @@ export class GameManager extends Component {
             },
             debug: (message) => this.debug(message),
         });
+    }
+
+    private createShark(): void {
+        // Shark node is an unscaled container; body/fin/eyes are children so each
+        // keeps its own scale (eyes stay spherical, not stretched by the body).
+        this._sharkNode = new Node('Shark');
+        this._sharkNode.layer = Layers.Enum.DEFAULT;
+        this._sharkNode.parent = this._worldRoot;
+
+        // Box-built placeholder shark (swap for a real model later). Each part
+        // is a stretched box so the silhouette reads as a chunky cartoon shark
+        // without the flat-ellipse look that produced a harsh rim.
+        // Body: long in X (forward), modest in Y (depth), narrow in Z (width).
+        const bodyNode = new Node('SharkBody');
+        bodyNode.layer = Layers.Enum.DEFAULT;
+        bodyNode.parent = this._sharkNode;
+        const bodyRenderer = bodyNode.addComponent(MeshRenderer);
+        bodyRenderer.mesh = utils.createMesh(primitives.box());
+        const bodyMat = new Material();
+        bodyMat.initialize({ effectName: 'builtin-unlit' });
+        bodyMat.setProperty('mainColor', new Color(78, 90, 102, 255));
+        bodyRenderer.setMaterial(bodyMat, 0);
+        bodyNode.setScale(1.5, 0.55, 0.45);
+
+        // Dorsal fin: thin tall slab on top.
+        const finNode = new Node('SharkFin');
+        finNode.layer = Layers.Enum.DEFAULT;
+        finNode.parent = this._sharkNode;
+        const finRenderer = finNode.addComponent(MeshRenderer);
+        finRenderer.mesh = utils.createMesh(primitives.box());
+        const finMat = new Material();
+        finMat.initialize({ effectName: 'builtin-unlit' });
+        finMat.setProperty('mainColor', new Color(60, 70, 82, 255));
+        finRenderer.setMaterial(finMat, 0);
+        finNode.setScale(0.3, 0.6, 0.08);
+        finNode.setPosition(0, 0.55, 0);
+
+        // Tail fin: thin slab at the rear (-X) standing vertically.
+        const tailNode = new Node('SharkTail');
+        tailNode.layer = Layers.Enum.DEFAULT;
+        tailNode.parent = this._sharkNode;
+        const tailRenderer = tailNode.addComponent(MeshRenderer);
+        tailRenderer.mesh = utils.createMesh(primitives.box());
+        const tailMat = new Material();
+        tailMat.initialize({ effectName: 'builtin-unlit' });
+        tailMat.setProperty('mainColor', new Color(60, 70, 82, 255));
+        tailRenderer.setMaterial(tailMat, 0);
+        tailNode.setScale(0.08, 0.5, 0.4);
+        tailNode.setPosition(-0.85, 0.1, 0);
+
+        // Eyes: two small spheres whose color signals mood (white = wandering,
+        // red = hunting, dark = satiated).
+        const eyeMats: Material[] = [];
+        const eyeOffsets: ReadonlyArray<readonly [number, number, number]> = [[0.72, 0.12, 0.28], [0.72, 0.12, -0.28]];
+        for (const off of eyeOffsets) {
+            const eyeNode = new Node('SharkEye');
+            eyeNode.layer = Layers.Enum.DEFAULT;
+            eyeNode.parent = this._sharkNode;
+            const eyeRenderer = eyeNode.addComponent(MeshRenderer);
+            eyeRenderer.mesh = utils.createMesh(primitives.sphere(0.14));
+            const eyeMat = new Material();
+            eyeMat.initialize({ effectName: 'builtin-unlit' });
+            eyeMat.setProperty('mainColor', new Color(235, 240, 245, 255));
+            eyeRenderer.setMaterial(eyeMat, 0);
+            eyeNode.setPosition(off[0], off[1], off[2]);
+            eyeMats.push(eyeMat);
+        }
+
+        // Tail wake: a translucent white ripple plane trailing behind the body
+        // (-X = tail). Faces up so it reads as a surface foam patch; visible only
+        // while the shark is actively moving (hidden when satiated).
+        const wakeNode = new Node('SharkWake');
+        wakeNode.layer = Layers.Enum.DEFAULT;
+        wakeNode.parent = this._sharkNode;
+        const wakeRenderer = wakeNode.addComponent(MeshRenderer);
+        wakeRenderer.mesh = utils.createMesh(primitives.plane({ width: 1.0, length: 1.5, widthSegments: 1, lengthSegments: 1 }));
+        const wakeMat = new Material();
+        wakeMat.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
+        wakeMat.setProperty('mainColor', new Color(220, 235, 245, 90));
+        wakeRenderer.setMaterial(wakeMat, 0);
+        wakeNode.setPosition(-1.1, 0.0, 0);
+        wakeNode.setRotationFromEuler(-Math.PI / 2, 0, 0);
+
+        const layout = COURSE_LAYOUT;
+        this._sharkNode.setPosition(
+            (layout.poolStartX + layout.poolFinishX) * 0.5,
+            layout.waterY - 0.3,
+            0,
+        );
+
+        const setEyeColor = (color: Color) => {
+            for (const m of eyeMats) {
+                m.setProperty('mainColor', color);
+            }
+        };
+
+        this._shark = new SharkController({
+            getNode: () => this._sharkNode,
+            getSwimmers: () => {
+                const all = [this._playerSwimmer, ...this._aiSwimmers];
+                return all.filter((s) => s && s.node.active);
+            },
+            getCourseLayout: () => COURSE_LAYOUT,
+            onEliminate: (swimmer) => {
+                this._raceManager?.eliminateSwimmer(swimmer);
+                this.debug(`shark eliminated ${swimmer.swimmerName}`);
+            },
+            onSatiated: () => {
+                this.debug('shark satiated');
+                bodyMat.setProperty('mainColor', new Color(54, 60, 70, 255));
+                setEyeColor(new Color(40, 44, 52, 255));
+                wakeNode.active = false;
+                this._uiFlow?.showSharkBanner(pickSatiatedLine(), 2000, SHARK_BANNER_COLORS.satiated);
+            },
+            onWarning: (huntIndex) => {
+                // Each hunger beat pulls a random deadpan broadcaster line; the
+                // colour escalates amber -> orange -> blood red across beats.
+                this._uiFlow?.showSharkBanner(pickHungerLine(huntIndex), 1800, hungerLineColor(huntIndex));
+            },
+            onReveal: () => {
+                // Fake-safety turn: the shark drops from above into the pool.
+                this.dropSharkIntoPool(this._sharkNode, wakeNode);
+            },
+            onStateChange: (state) => {
+                switch (state) {
+                    case SharkState.WANDER:
+                        setEyeColor(new Color(235, 240, 245, 255));
+                        break;
+                    case SharkState.WARNING:
+                    case SharkState.HUNT:
+                        setEyeColor(new Color(255, 60, 50, 255));
+                        break;
+                    case SharkState.SATIATED:
+                        // Tint + eye darkening applied in onSatiated.
+                        break;
+                }
+            },
+        });
+
+        this._gameFlow?.setShark(this._shark);
+    }
+
+    // Drop-in reveal: the shark falls from above the pool, splashes on entry,
+    // then starts wandering. Pure visual; the state machine is paused until
+    // finishReveal() so the shark does not move during the drop.
+    private dropSharkIntoPool(sharkNode: Node, wakeNode: Node): void {
+        const layout = COURSE_LAYOUT;
+        const landY = layout.waterY - 0.3;
+        const dropHeight = 9.0;
+        // Land at a fully random spot in the pool (decoupled from the player so
+        // the shark does not reliably land on / ahead of the player). A temporary
+        // top-down reveal shot frames the landing point so the drop is visible.
+        const minX = Math.min(layout.poolStartX, layout.poolFinishX) + 2;
+        const maxX = Math.max(layout.poolStartX, layout.poolFinishX) - 2;
+        const halfZ = layout.poolWidth * 0.5 - 1;
+        const landX = minX + Math.random() * (maxX - minX);
+        const landZ = (Math.random() * 2 - 1) * halfZ;
+
+        sharkNode.active = true;
+        sharkNode.setPosition(landX, landY + dropHeight, landZ);
+        wakeNode.active = false;
+
+        // Cut to a top-down view over the landing point so the player can watch
+        // the shark fall no matter where it lands.
+        this._raceCameraDirector.startSharkRevealShot(landX, landZ);
+
+        Tween.stopAllByTarget(sharkNode);
+        tween(sharkNode)
+            .to(0.55, { position: new Vec3(landX, landY, landZ) }, { easing: 'quadIn' })
+            .call(() => {
+                this.spawnSharkSplash(landX, layout.waterY, landZ);
+                wakeNode.active = true;
+                this._shark?.finishReveal();
+                // Hand the camera back to the normal in-race view shortly after
+                // impact so the splash is visible before the cut back.
+                this.scheduleOnce(() => {
+                    this._raceCameraDirector.endSharkRevealShot();
+                }, 0.6);
+            })
+            .start();
+    }
+
+    // Impact splash: a quick expanding translucent ring at the landing point.
+    private spawnSharkSplash(x: number, y: number, z: number): void {
+        const splash = new Node('SharkSplash');
+        splash.layer = Layers.Enum.DEFAULT;
+        splash.parent = this._worldRoot;
+        const renderer = splash.addComponent(MeshRenderer);
+        renderer.mesh = utils.createMesh(primitives.plane({ width: 1, length: 1, widthSegments: 1, lengthSegments: 1 }));
+        const mat = new Material();
+        mat.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
+        mat.setProperty('mainColor', new Color(230, 245, 255, 200));
+        renderer.setMaterial(mat, 0);
+        splash.setPosition(x, y, z);
+        splash.setRotationFromEuler(-Math.PI / 2, 0, 0);
+        splash.setScale(0.5, 0.5, 0.5);
+        tween(splash)
+            .to(0.45, { scale: new Vec3(5, 5, 5) }, { easing: 'quadOut' })
+            .to(0.25, { scale: new Vec3(6, 6, 6) })
+            .call(() => {
+                splash.destroy();
+            })
+            .start();
     }
 
     private createModelDebugFlow(): ModelDebugFlowController {
@@ -952,6 +1177,7 @@ export class GameManager extends Component {
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
             this._swimmerNameOverlay.bind(this._raceHud);
+            this._sharkLockOnOverlay.bind(this._raceHud);
             this.refreshSwimmerNameRoster();
             this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);

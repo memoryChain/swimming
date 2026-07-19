@@ -36,6 +36,11 @@ export const CONDITION_BALANCE = {
         // When energy is empty: quality/efficiency penalties (doc: no loss of control).
         depletedQualityPenalty: 0.3,
         depletedEfficiencyPenalty: 0.5,
+        // Energy recovery when not stroking (per second). Very slow: 80s of
+        // idling recovers ~32 out of 100. Normal stroking does NOT recover.
+        recoveryPerSecond: 0.4,
+        // Seconds without a stroke before recovery kicks in.
+        recoveryIdleThreshold: 0.5,
     },
 
     heartRate: {

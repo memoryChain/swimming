@@ -1,4 +1,5 @@
-import type { Swimmer } from './Swimmer';
+﻿import type { Swimmer } from './Swimmer';
+import { SHARK_TUNING, SharkState } from './SharkTuning';
 
 // Swimmer-vs-swimmer collision. The race only ever has up to 8 swimmers moving
 // kinematically (position is driven by SwimPhysicsModel, not a physics engine),
@@ -134,5 +135,56 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         if (_hit[i]) {
             _active[i].flashCollision();
         }
+    }
+}
+// Shark-vs-swimmer collision. The shark is impassable and heavier than a
+// swimmer: it shoves swimmers away (single-sided, the shark does not move).
+// Only active during WANDER and WARNING states. During HUNT the shark
+// eliminates on contact (handled by SharkController), and during SATIATED the
+// shark is sunk and inert.
+export function resolveSharkCollisions(
+    sharkState: SharkState,
+    sharkPosX: number,
+    sharkPosZ: number,
+    swimmers: readonly Swimmer[],
+): void {
+    if (sharkState === SharkState.SATIATED || sharkState === SharkState.HUNT) {
+        return;
+    }
+
+    const sharkRadius = SHARK_TUNING.collisionRadius;
+    const swimmerRadius = SWIMMER_COLLISION.radius;
+    const minDist = sharkRadius + swimmerRadius;
+    const minDistSq = minDist * minDist;
+    const pushScale = SHARK_TUNING.collisionPushScale;
+
+    for (const swimmer of swimmers) {
+        if (!swimmer.isCollisionActive) continue;
+
+        const sp = swimmer.node.position;
+        const dx = sp.x - sharkPosX;
+        const dz = sp.z - sharkPosZ;
+        const distSq = dx * dx + dz * dz;
+
+        if (distSq >= minDistSq) continue;
+
+        let nx: number;
+        let nz: number;
+        let dist: number;
+        if (distSq < 1e-8) {
+            nx = 0;
+            nz = 1;
+            dist = 0;
+        } else {
+            dist = Math.sqrt(distSq);
+            nx = dx / dist;
+            nz = dz / dist;
+        }
+
+        // Single-sided push: only the swimmer moves. Push scale > 1 makes the
+        // shark shove harder than a swimmer-vs-swimmer collision.
+        const pushDist = (minDist - dist) * pushScale;
+        swimmer.applyCollisionPush(nx * pushDist, nz * pushDist);
+        swimmer.flashCollision();
     }
 }

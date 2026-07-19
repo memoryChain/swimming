@@ -1,4 +1,4 @@
-import { Vec3 } from 'cc';
+﻿import { Color, Vec3 } from 'cc';
 import { RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -13,6 +13,10 @@ import { CHARACTER_ACTION_CONFIG, selectAdjacentDistinctActions } from '../chara
 import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
 import { StrokeSfxManager } from './StrokeSfxManager';
+import { SharkController } from '../entity/SharkController';
+import { SharkState } from '../entity/SharkTuning';
+import { resolveSharkCollisions } from '../entity/SwimmerCollisionResolver';
+import { SHARK_BANNER_COLORS, pickSafeLine } from '../ui/SharkBannerCopy';
 
 export type GameFlowRefs = {
     raceManager: RaceManager;
@@ -53,10 +57,54 @@ export class GameFlowController {
     // Once the player surfaces after the dive, switch the swim view to the
     // behind-the-swimmer sprint chase so the steering weave reads clearly.
     private _swimSprintViewApplied = false;
+    private _shark: SharkController | null = null;
+    private readonly _sharkPos = new Vec3();
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
     constructor(private readonly _refs: GameFlowRefs) {}
+
+    setShark(shark: SharkController | null) {
+        this._shark = shark;
+    }
+
+    // Per-frame shark update. Runs only during RACING so the shark's wander
+    // timer (and therefore the first hunt) starts counting from race start.
+    updateShark(dt: number) {
+        const shark = this._shark;
+        const racing = this._refs.getState() === GameState.RACING;
+        // Clear AI shark-threat whenever we are not actively racing, so a prior
+        // hunt's evasion bias cannot leak into the next race.
+        if (!shark || !racing) {
+            for (const controller of this._refs.aiControllers) {
+                controller?.setSharkThreat(null);
+            }
+            return;
+        }
+        shark.update(dt);
+
+        shark.getSharkPosition(this._sharkPos);
+        const swimmers = [this._refs.playerSwimmer, ...this._refs.aiSwimmers]
+            .filter((s): s is Swimmer => Boolean(s && s.node.active));
+        resolveSharkCollisions(shark.state, this._sharkPos.x, this._sharkPos.z, swimmers);
+
+        // Push the shark threat to each AI for light evasion: only the currently
+        // targeted AI gets a threat, and only while the shark is actually hunting
+        // (warning + hunt). Everyone else swims normally.
+        const hunting = shark.state === SharkState.WARNING || shark.state === SharkState.HUNT;
+        const target = shark.target;
+        for (const controller of this._refs.aiControllers) {
+            const swimmer = controller?.swimmer;
+            if (!controller || !swimmer) {
+                continue;
+            }
+            if (hunting && target === swimmer) {
+                controller.setSharkThreat({ active: true, sharkZ: this._sharkPos.z });
+            } else {
+                controller.setSharkThreat(null);
+            }
+        }
+    }
 
     startGame() {
         this._refs.debug('startGame');
@@ -66,6 +114,7 @@ export class GameFlowController {
         this._sprintTriggered = false;
         this._lastSprintTier = SprintTier.STEADY;
         this._swimSprintViewApplied = false;
+        this._shark?.reset();
         this._refs.clearFinishRanks();        this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
@@ -242,6 +291,9 @@ export class GameFlowController {
             if (state === GameState.RACING) {
                 this._refs.uiFlow.hideCountdown();
                 this.startAllAi();
+                // Fake-safety intro (doc 2.5): the shark is already wandering but
+                // the water reads as safe until the first hunger beat fires.
+                this._refs.uiFlow.showSharkBanner(pickSafeLine(), 2500, SHARK_BANNER_COLORS.safe);
             }
         };
         raceManager.onProgressUpdate = (playerDist, aiDist) => {
@@ -251,6 +303,15 @@ export class GameFlowController {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
         };
+        raceManager.onSwimmerEliminated = (swimmer) => {
+            const isPlayer = swimmer === this._refs.playerSwimmer;
+            this._refs.debug(`eliminated ${swimmer.swimmerName} player=${isPlayer}`);
+            // The player's elimination is surfaced via onRaceFinished ->
+            // showEliminatedResult; for AI just flash a quick toast.
+            if (!isPlayer) {
+                this._refs.uiFlow.showSharkBanner(swimmer.swimmerName + " " + "被鲨鱼拖走了", 1800);
+            }
+        };
         raceManager.onFinishCountdownTick = (value) => {
             this._refs.uiFlow.showFinishCountdown(value);
         };
@@ -259,6 +320,25 @@ export class GameFlowController {
             this.stopAllAi();
             const rhythm = this._refs.playerSwimmer?.rhythmStats;
             const placement = placementSummary ?? this.calculatePlayerPlacement();
+            if (placement.playerEliminatedByShark) {
+                // Player was eaten: show the eliminated result, skip the awards
+                // ceremony, and stay in FINISHED so a tap restarts the next race.
+                // Placement is re-derived from current distance (where the player
+                // was when caught), since nobody has officially finished yet.
+                const eaten = this.calculatePlayerPlacement();
+                this._refs.uiFlow.showEliminatedResult(eaten.placement, eaten.racerCount, {
+                    averageSpeed: 0,
+                    maxCombo: rhythm?.maxCombo ?? 0,
+                    perfectCount: rhythm?.perfectCount ?? 0,
+                    goodCount: rhythm?.goodCount ?? 0,
+                    missCount: rhythm?.missCount ?? 0,
+                    placement: eaten.placement,
+                    racerCount: eaten.racerCount,
+                });
+                this._refs.clearFinishRanks();
+                this._refs.setState(GameState.FINISHED);
+                return;
+            }
             this._refs.uiFlow.showResult(playerWin, playerTime, aiTime, {
                 averageSpeed: playerTime > 0 ? getRaceDistance() / playerTime : 0,
                 maxCombo: rhythm?.maxCombo ?? 0,
@@ -293,6 +373,7 @@ export class GameFlowController {
         raceManager.onSwimmerFinished = null;
         raceManager.onFinishCountdownTick = null;
         raceManager.onRaceFinished = null;
+        raceManager.onSwimmerEliminated = null;
         raceManager.onDiveReady = null;
     }
 

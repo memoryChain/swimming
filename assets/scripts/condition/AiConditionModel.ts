@@ -93,6 +93,18 @@ export class AiConditionModel {
         // AI energy is a preset curve, not a gameplay result (doc 26.2).
         // Burn scales with current zone and is heavier in SPRINT for aggressive AI.
         const energyCfg = CONDITION_BALANCE.energy;
+
+        // Low-effort (LOW zone) AI is effectively idling: recover energy slowly,
+        // mirroring the player's idle recovery (doc 5.8).
+        if (this._heartRateZone === HeartRateZone.LOW && this._energy < energyCfg.total) {
+            this._energy = Math.min(
+                energyCfg.total,
+                this._energy + energyCfg.recoveryPerSecond * dt,
+            );
+            this._energyDepleted = this._energy <= 0;
+            return;
+        }
+
         const perSecond = energyCfg.drainPerStroke[this._heartRateZone] * 2;
         let drain = perSecond * dt;
         if (this._phase === RacePhase.SPRINT) {

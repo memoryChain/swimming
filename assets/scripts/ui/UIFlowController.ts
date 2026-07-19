@@ -1,4 +1,4 @@
-import { Node } from 'cc';
+import { Color, Node } from 'cc';
 import { Rating } from '../core/GameConstants';
 import { RaceResultStats, UIController } from './UIController';
 
@@ -94,6 +94,14 @@ export class UIFlowController {
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
         this._refs.uiController?.showResult(isWin, playerTime, aiTime, stats);
+    }
+
+    showEliminatedResult(placement: number, racerCount: number, stats?: RaceResultStats) {
+        this._refs.uiController?.showEliminatedResult(placement, racerCount, stats);
+    }
+
+    showSharkBanner(message: string, duration = 2000, color?: Color) {
+        this._refs.uiController?.showSharkBanner(message, duration, color);
     }
 }
 

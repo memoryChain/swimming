@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
+﻿import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -75,6 +75,16 @@ export class UIController extends Component {
     private _finishCountdownRoot: Node = null;
     private _finishCountdownLabel: Label = null;
     private _finishCountdownHint: Label = null;
+
+    // Transient centred banner for shark events (shark warning, AI elimination
+    // toast, satiated hint). Lazily built, fades out on its own.
+    private _sharkBannerRoot: Node = null;
+    private _sharkBannerLabel: Label = null;
+    // Queue of pending banner messages so a new banner (e.g. "eaten" + "satiated"
+    // fired on the same frame) does not overwrite one still showing. Each entry
+    // plays to completion (show -> hold -> fade) before the next is shown.
+    private readonly _sharkBannerQueue: { message: string; duration: number; color?: Color }[] = [];
+    private _sharkBannerPlaying = false;
 
     start() {
         this.setupButtonFeedback(this.btnArm);
@@ -371,6 +381,105 @@ export class UIController extends Component {
         if (this.hintLabel) {
             this.hintLabel.string = '滑行中，准备划水';
         }
+    }
+
+    // Called when the player is eliminated by the shark. Reuses the existing
+    // result panel layout but changes the title and marks the time as
+    // "eliminated" instead of showing a finish time.
+    showEliminatedResult(placement: number, racerCount: number, stats?: RaceResultStats) {
+        this.layoutResultPanelForAwards();
+        this.setSpeedBarVisible(false);
+        this.setRaceStatusVisible(false);
+        if (this.strokeInput) { this.strokeInput.active = false; }
+        if (this.diveTouchArea) { this.diveTouchArea.active = false; }
+        if (this.resultPanel) { this.resultPanel.active = true; }
+        if (this.resultTitle) {
+            this.resultTitle.string = '你被鲨鱼拖走了';
+            this.resultTitle.color = new Color(255, 92, 92, 255);
+        }
+        if (this.resultTime) {
+            this.resultTime.string = '个人成绩  被鲨鱼拖走';
+        }
+        if (this.resultPlacementStat) {
+            this.resultPlacementStat.string = `名次  ${placement}/${racerCount}`;
+        }
+        if (this.resultSpeedStat) {
+            this.resultSpeedStat.string = stats ? `平均速度  ${stats.averageSpeed.toFixed(2)} m/s` : '平均速度  -- m/s';
+        }
+        this.updateLeaderboard(stats?.leaderboard, 0);
+        this.hideFinishCountdown();
+        if (this.hintLabel) {
+            this.hintLabel.string = '按空格或点击再赛一次';
+        }
+    }
+    showSharkBanner(message: string, duration = 2000, color?: Color) {
+        this._sharkBannerQueue.push({ message, duration, color });
+        if (!this._sharkBannerPlaying) {
+            this.drainSharkBannerQueue();
+        }
+    }
+
+    private drainSharkBannerQueue() {
+        const entry = this._sharkBannerQueue.shift();
+        if (!entry) {
+            this._sharkBannerPlaying = false;
+            if (this._sharkBannerRoot) {
+                this._sharkBannerRoot.active = false;
+            }
+            return;
+        }
+        this._sharkBannerPlaying = true;
+        this.ensureSharkBanner();
+        const label = this._sharkBannerLabel;
+        if (label) {
+            label.string = entry.message;
+            if (entry.color) {
+                label.color = entry.color;
+            }
+        }
+        const opacity = this._sharkBannerRoot?.getComponent(UIOpacity);
+        if (opacity) {
+            Tween.stopAllByTarget(opacity);
+            opacity.opacity = 255;
+            tween(opacity)
+                .delay(entry.duration / 1000)
+                .to(0.4, { opacity: 0 })
+                .call(() => this.drainSharkBannerQueue())
+                .start();
+        }
+        if (this._sharkBannerRoot) {
+            this._sharkBannerRoot.active = true;
+        }
+    }
+
+    private ensureSharkBanner() {
+        if (this._sharkBannerRoot?.isValid) {
+            return;
+        }
+        const root = new Node('SharkBanner');
+        root.layer = Layers.Enum.UI_2D;
+        root.setParent(this.node);
+        root.addComponent(UITransform).setContentSize(720, 120);
+        root.setPosition(0, 180, 0);
+        root.addComponent(UIOpacity).opacity = 0;
+
+        const labelNode = new Node('Label');
+        labelNode.layer = Layers.Enum.UI_2D;
+        labelNode.setParent(root);
+        labelNode.addComponent(UITransform).setContentSize(720, 100);
+        const label = labelNode.addComponent(Label);
+        label.fontSize = 40;
+        label.lineHeight = 50;
+        label.isBold = true;
+        label.color = new Color(255, 92, 92, 255);
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        const outline = labelNode.addComponent(LabelOutline);
+        outline.color = new Color(6, 16, 30, 235);
+        outline.width = 6;
+
+        this._sharkBannerRoot = root;
+        this._sharkBannerLabel = label;
     }
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
