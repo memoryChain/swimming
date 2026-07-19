@@ -1,0 +1,30 @@
+{
+  "exportedAt": "2026-07-19",
+  "source": "C:\\Users\\maxiaojun\\.codex\\skills",
+  "excluded": [
+    ".system",
+    "plugin-bundled skills"
+  ],
+  "skills": [
+    {
+      "name": "blender-superskill",
+      "fileCount": 9,
+      "bytes": 75153
+    },
+    {
+      "name": "cocos-ui-asset-pipeline",
+      "fileCount": 11,
+      "bytes": 30749
+    },
+    {
+      "name": "repair-swimmer-textures",
+      "fileCount": 6,
+      "bytes": 59562
+    },
+    {
+      "name": "speed-swimming-action-sampling",
+      "fileCount": 3,
+      "bytes": 19843
+    }
+  ]
+}

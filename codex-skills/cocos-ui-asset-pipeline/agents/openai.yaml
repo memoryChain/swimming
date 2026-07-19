@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cocos UI Asset Pipeline"
+  short_description: "Build optimized Cocos UI from design references"
+  default_prompt: "Use $cocos-ui-asset-pipeline to turn this UI reference into isolated, optimized Cocos Creator assets and verify the assembled prefab."
