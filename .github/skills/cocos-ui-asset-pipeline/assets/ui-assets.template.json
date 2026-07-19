@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "jobName": "replace-with-job-name",
+  "runtimeRoot": "assets/resources/ui/replace-with-feature",
+  "budgets": {
+    "spriteMaxBytes": 131072,
+    "iconMaxBytes": 32768,
+    "backgroundMaxBytes": 262144,
+    "totalMaxBytes": 1572864,
+    "spriteMaxEdge": 1024,
+    "iconMaxEdge": 256
+  },
+  "assets": [
+    {
+      "id": "portrait-background",
+      "category": "background",
+      "sourcePath": "temp/ui-pipeline/replace-with-job-name/source/background.png",
+      "outputPath": "assets/resources/ui/replace-with-feature/background.jpg",
+      "width": 720,
+      "height": 1280,
+      "format": "jpg",
+      "textMode": "none",
+      "reuse": "unique",
+      "fitMode": "cover",
+      "edgePolicy": "allow-opaque",
+      "budgetOverride": false
+    },
+    {
+      "id": "blank-button",
+      "category": "sprite",
+      "sourcePath": "temp/ui-pipeline/replace-with-job-name/source/blank-button.png",
+      "outputPath": "assets/resources/ui/replace-with-feature/blank-button.png",
+      "width": 512,
+      "height": 160,
+      "format": "png",
+      "textMode": "label",
+      "reuse": "shared",
+      "fitMode": "custom",
+      "edgePolicy": "transparent",
+      "budgetOverride": false
+    }
+  ]
+}

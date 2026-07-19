@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repair Swimmer Textures"
+  short_description: "Remove baked shadows and enable runtime swimmer recoloring"
+  default_prompt: "Use $repair-swimmer-textures to clean baked armpit shadows and add runtime cap and swimsuit recoloring to a swimmer model."

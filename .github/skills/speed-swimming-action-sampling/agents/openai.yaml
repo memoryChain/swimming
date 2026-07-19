@@ -1,0 +1,4 @@
+interface:
+  display_name: "SpeedSwimming Action Sampling"
+  short_description: "Retarget and sample FBX actions for SpeedSwimming debug preview."
+  default_prompt: "Use $speed-swimming-action-sampling to import a new FBX action into SpeedSwimming debug model."
