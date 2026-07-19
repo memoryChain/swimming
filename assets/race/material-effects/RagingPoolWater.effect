@@ -30,6 +30,10 @@ CCEffect %{
         # the refraction/caustic/foam detail (0 = pure refraction, 1 = solid colour).
         # Default = bright azure pool blue (Mario & Sonic 2020 reference).
         waterColor:      { value: [0.011, 0.27, 0.71, 0.72], linear: true, editor: { type: color } }
+        # Fake reflections of individual ceiling lamps. x/y = X/Z spacing,
+        # z = spot radius, w = intensity (0 disables it on lower tiers).
+        roofReflectionParams: { value: [6.20, 5.00, 0.42, 0.26] }
+        roofReflectionColor: { value: [0.72, 0.92, 1.00, 1.00], linear: true, editor: { type: color } }
         refractionMap:   { value: grey }
 }%
 
@@ -58,6 +62,8 @@ CCProgram water-vs %{
     vec4 causticParams;
     vec4 refractionParams;
     vec4 waterColor;
+    vec4 roofReflectionParams;
+    vec4 roofReflectionColor;
   };
 
   vec4 vert () {
@@ -109,6 +115,8 @@ CCProgram water-fs %{
     vec4 causticParams;
     vec4 refractionParams;
     vec4 waterColor;
+    vec4 roofReflectionParams;
+    vec4 roofReflectionColor;
   };
 
   // Underwater scene (pool floor) rendered by the refraction camera into a
@@ -226,6 +234,23 @@ CCProgram water-fs %{
     // water plane.)
     color = mix(color, shallowColor.rgb * 1.15, fresnel * 0.20);
     color += vec3(0.05, 0.10, 0.12) * max(v_wave, 0.0) * 0.9;
+
+    // The camera never sees the roof in normal race views, so do not pay for a
+    // second camera or planar reflection. Instead, repeat small, cold-white
+    // spots in world space, matching the sparse ceiling lamp grid rather than
+    // implying a large mirrored roof. The existing refraction wobble bends the
+    // spots without more texture samples, draw calls, or allocations.
+    if (roofReflectionParams.w > 0.001) {
+      vec2 lampSpacing = max(roofReflectionParams.xy, vec2(0.1));
+      vec2 lampOffset = baseWobble * 3.4;
+      vec2 lampDistance = abs(fract((v_worldPos.xz + lampOffset) / lampSpacing) - 0.5) * lampSpacing;
+      // A slightly long X profile suggests a wavering reflected point of light,
+      // while remaining far smaller than the old pool-length light strips.
+      vec2 lampShape = lampDistance / vec2(roofReflectionParams.z * 1.9, roofReflectionParams.z);
+      float lampMask = 1.0 - smoothstep(0.55, 1.0, dot(lampShape, lampShape));
+      float reflection = lampMask * roofReflectionParams.w;
+      color += roofReflectionColor.rgb * reflection * (0.55 + fresnel * 0.45);
+    }
     // Mild overall lift so the surface reads bright and sunlit rather than dull.
     color *= 1.05;
 

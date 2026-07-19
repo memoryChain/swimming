@@ -96,6 +96,7 @@ export class SplashEmitter {
     private _splashBurst = 0;
     private _armSplashBurst = 0;
     private _kickSplashBurst = 0;
+    private _kickParticleBurstPending = false;
     private _lastDt = TUNING.initialDt;
     private _waterY: number;
     private _culled = false;
@@ -152,6 +153,7 @@ export class SplashEmitter {
         }
         this._kickSplashBurst = Math.max(this._kickSplashBurst, TUNING.burst.kick);
         this._splashBurst = Math.max(this._splashBurst, TUNING.burst.kickGeneric);
+        this._kickParticleBurstPending = true;
     }
 
     triggerBurst(scale = 1) {
@@ -183,6 +185,7 @@ export class SplashEmitter {
         this._splashBurst = 0;
         this._armSplashBurst = 0;
         this._kickSplashBurst = 0;
+        this._kickParticleBurstPending = false;
         this._state = EMPTY_STATE;
         for (const emitter of this._particleEmitters) {
             this.clearParticleEmitter(emitter);
@@ -209,6 +212,7 @@ export class SplashEmitter {
             this._splashBurst = 0;
             this._armSplashBurst = 0;
             this._kickSplashBurst = 0;
+            this._kickParticleBurstPending = false;
             for (const emitter of this._particleEmitters) {
                 emitter.cooldown = 0;
                 emitter.keepAlive = 0;
@@ -538,10 +542,11 @@ export class SplashEmitter {
     }
 
     private updateParticleEmitters(speedRatio: number) {
+        const kickParticleBurstPending = this._kickParticleBurstPending;
         for (const emitter of this._particleEmitters) {
             if (emitter.role === 'leg') {
                 if (TUNING.particleEmitters.enableLeg) {
-                    this.updateLegParticleEmitter(emitter, speedRatio);
+                    this.updateLegParticleEmitter(emitter, speedRatio, kickParticleBurstPending);
                 } else {
                     this.clearParticleEmitter(emitter);
                 }
@@ -585,9 +590,10 @@ export class SplashEmitter {
             this.emitSprayFrame(emitter);
             emitter.lastContact = entry;
         }
+        this._kickParticleBurstPending = false;
     }
 
-    private updateLegParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number) {
+    private updateLegParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number, kickParticleBurstPending: boolean) {
         if (this._state.legSplashSuppressed) {
             emitter.lastContact = 0;
             emitter.sprayTime = 0;
@@ -605,8 +611,10 @@ export class SplashEmitter {
         );
         this.positionParticleEmitter(emitter, speedRatio, 0, kickSignal);
         const entry = this.legEntryForEmitter(emitter);
-        const entering = entry > TUNING.behavior.legEntryThreshold
-            && emitter.lastContact <= TUNING.behavior.legLastEntryThreshold;
+        const entering = kickParticleBurstPending || (
+            entry > TUNING.behavior.legEntryThreshold
+            && emitter.lastContact <= TUNING.behavior.legLastEntryThreshold
+        );
         if (entering) {
             const entryScale = lerp(TUNING.behavior.legEntryScaleMin, TUNING.behavior.legEntryScaleMax, clamp(entry, 0, 1));
             const strength = Math.max(kickSignal, entry);
@@ -809,7 +817,8 @@ export class SplashEmitter {
     }
 
     private legEntryForEmitter(emitter: SplashParticleEmitter): number {
-        return emitter.side === 'left' ? this._state.rightHandWaterEntry : this._state.leftHandWaterEntry;
+        const oppositeHandEntry = emitter.side === 'left' ? this._state.rightHandWaterEntry : this._state.leftHandWaterEntry;
+        return Math.max(oppositeHandEntry, this._kickSplashBurst);
     }
 
     private handContactForPart(name: string): number {

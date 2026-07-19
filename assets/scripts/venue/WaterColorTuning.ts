@@ -1,4 +1,5 @@
 import { Color, Material, Vec4 } from 'cc';
+import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 
 // Runtime-tunable water/underwater colours. The debug tuning panel writes these
 // fields (see TuningDebugControls '水色' group) and calls applyWaterColorTuning()
@@ -75,6 +76,14 @@ function applyWaterMaterial(material: Material) {
             WATER_COLOR_TUNING.surfaceG,
             WATER_COLOR_TUNING.surfaceB,
             Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.surfaceStrength * 255))),
+        ));
+        material.setProperty('roofReflectionParams', new Vec4(
+            6.2,
+            5.0,
+            0.42,
+            PERFORMANCE_CONFIG.water.roofLightReflectionEnabled
+                ? PERFORMANCE_CONFIG.water.roofLightReflectionStrength
+                : 0,
         ));
         // Keep the animated caustic light blobs OFF. The shipped shader has the
         // caustic code removed, but the editor preview may still run a stale build

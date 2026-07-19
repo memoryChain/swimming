@@ -4,6 +4,14 @@
 // 面向微信小游戏的轻量运行时性能开关。
 // 只放渲染/特效开销相关的取舍项，方便按机型分级或做 A/B 测试。此处为默认值，部分可运行时切换。
 export const PERFORMANCE_CONFIG = {
+    water: {
+        // World-space fake ceiling-light reflections on the pool water. This is
+        // shader-only: no reflection camera, RenderTexture, texture, geometry,
+        // or extra draw call. Disable it for a lowest-tier visual preset.
+        roofLightReflectionEnabled: true,
+        roofLightReflectionStrength: 0.26,
+    },
+
     // Venue jumbotron: the big-screen "broadcast side view" feed. When false the whole
     // feature is skipped (no extra feed camera / RenderTexture / feed water+floor), and
     // the screens just keep their static material. Turn off if the extra render pass is
