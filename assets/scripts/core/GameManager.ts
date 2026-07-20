@@ -44,6 +44,7 @@ import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
 import { SwimmerNameOverlay } from '../ui/SwimmerNameOverlay';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
+import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
@@ -52,7 +53,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDistance } from './GameBalance';
+import { getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { setTimeScale, scaledDelta } from './TimeScale';
@@ -150,6 +151,7 @@ export class GameManager extends Component {
     private readonly _tmpDialAnchorWorld = new Vec3();
     private readonly _tmpDialAnchorUi = new Vec3();
     private readonly _tmpDialScreen = new Vec3();
+    private readonly _tmpSpeedLineVanishWorld = new Vec3();
     private _uiCamera: Camera = null;
     // Player identification stays a constant screen size so it remains readable
     // when the race camera pulls far back.
@@ -189,6 +191,7 @@ export class GameManager extends Component {
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _finishRankOverlay = new FinishRankOverlay();
     private readonly _swimmerNameOverlay = new SwimmerNameOverlay();
+    private readonly _cameraSpeedLines = new CameraSpeedLineOverlay();
     private readonly _awardsPresentation = new AwardsPresentation(COURSE_LAYOUT);
     private _cameraPos = new Vec3(-6, 4.7, 10.5);
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
@@ -353,6 +356,7 @@ export class GameManager extends Component {
             return;
         }
         this._gameFlow?.updateRaceCamera(dt);
+        this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
         this._swimmerNameOverlay.update(
@@ -560,6 +564,7 @@ export class GameManager extends Component {
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
+            updateCameraSpeedLines: (dt, speed, visible) => this._cameraSpeedLines.update(dt, speed, visible),
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
@@ -946,6 +951,7 @@ export class GameManager extends Component {
             }
 
             this._raceHud = refs.raceHud;
+            this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
             this._timingGuideFillNode = refs.timingGuideFillNode;
             this._timingGuideMarker = refs.timingGuideMarker;
@@ -1212,6 +1218,27 @@ export class GameManager extends Component {
             playerMarker.setPosition(cx, this._tmpDialAnchorUi.y + markerOffsetY, 0);
             playerMarker.setScale(1, 1, 1);
         }
+    }
+
+    // Project a distant point along the swimmer's actual travel direction. This
+    // is the lane's visual vanishing point for the current camera composition,
+    // so screen-space speed lines converge with the scene instead of HUD centre.
+    private updateSpeedLineVanishingPoint() {
+        const swimmer = this._playerSwimmer;
+        const worldCamera = this._cameraNode?.getComponent(Camera);
+        const hudTransform = this._raceHud?.getComponent(UITransform);
+        if (!swimmer?.node?.isValid || !worldCamera || !this._uiCamera || !hudTransform) {
+            return;
+        }
+        const heading = swimmer.movementHeading;
+        this._tmpSpeedLineVanishWorld.set(swimmer.node.worldPosition);
+        this._tmpSpeedLineVanishWorld.x += swimmer.raceDirection * Math.cos(heading) * 32;
+        this._tmpSpeedLineVanishWorld.z += Math.sin(heading) * 32;
+        this._tmpSpeedLineVanishWorld.y = swimmer.swimWorldY;
+        worldCamera.worldToScreen(this._tmpSpeedLineVanishWorld, this._tmpDialScreen);
+        this._uiCamera.screenToWorld(this._tmpDialScreen, this._tmpSpeedLineVanishWorld);
+        hudTransform.convertToNodeSpaceAR(this._tmpSpeedLineVanishWorld, this._tmpDialAnchorUi);
+        this._cameraSpeedLines.setVanishingPoint(this._tmpDialAnchorUi.x, this._tmpDialAnchorUi.y);
     }
 
     // Build a speed-only readout above the player. Stroke rating and combo remain

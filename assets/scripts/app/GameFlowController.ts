@@ -35,6 +35,7 @@ export type GameFlowRefs = {
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
+    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean) => void;
     debug: (message: string) => void;
 };
 
@@ -340,6 +341,7 @@ export class GameFlowController {
         const cameraSnapshot: RaceCameraSnapshot = {
             playerX: focus.node.position.x,
             playerY: focus.node.position.y,
+            playerSpeed: focus.currentSpeed,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,
             playerHeading: focus.movementHeading,
@@ -366,6 +368,13 @@ export class GameFlowController {
             this._refs.raceCameraDirector.selectMode(RaceCameraMode.Sprint);
         }
         this._refs.raceCameraDirector.update(dt, cameraSnapshot);
+        this._refs.updateCameraSpeedLines?.(
+            dt,
+            cameraSnapshot.playerSpeed,
+            this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
+                && !this._refs.raceCameraDirector.topViewActive
+                && !this._refs.raceCameraDirector.underwaterViewActive,
+        );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);
         if (this._refs.getState() === GameState.PRECOUNTDOWN && this._refs.raceCameraDirector.consumePreCountdownReady()) {

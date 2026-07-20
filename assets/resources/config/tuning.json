@@ -1,6 +1,6 @@
 {
-  "version": 7,
-  "updatedAt": "2026-07-06T16:13:54.501Z",
+  "version": 8,
+  "updatedAt": "2026-07-21T00:00:00.000Z",
   "values": {
     "input.padStrokeDedupeMs": 5,
     "dive.minPower": 0.3,
@@ -15,6 +15,7 @@
     "camera.sprintHeight": 0.52,
     "camera.sprintLookAhead": 0.8,
     "camera.sprintFov": 58,
+    "camera.speedLineThreshold": 3.0,
     "speed.baseSpeed": 0.8,
     "speed.maxSpeed": 6,
     "speed.strokeBaseAccel": 2.5,

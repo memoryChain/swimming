@@ -126,6 +126,7 @@ export const RACE_CAMERA_MODE_OPTIONS: readonly RaceCameraModeOption[] = [
 export type RaceCameraSnapshot = {
     playerX: number;
     playerY: number;
+    playerSpeed?: number;
     playerUpperBodyWorldPosition?: Vec3;
     playerDistance: number;
     // Radians away from the current lane direction. Used by the sprint chase so
