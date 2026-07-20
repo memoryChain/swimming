@@ -32,6 +32,14 @@ export const STEERING_TUNING = {
     // 实际朝向向目标靠拢的速率（每秒）。划水在“松手”时改变目标，身体随后逐渐转过去而非瞬间硬转。
     // 越低转得越慢越懒，越高越干脆。
     turnEaseRate: 3.5,
+
+    // Sustained player kicking offers a forgiving way to recover from a bad
+    // heading. Once kick cadence reaches this frequency, the target heading
+    // gradually returns to the lane axis. The body still follows it through
+    // turnEaseRate, so correction never snaps.
+    kickStraightenMinCadenceHz: 2.5,
+    kickStraightenRate: 1.5,
+
     // Turn scales with stroke POWER: the longer a stroke is held (the further the
     // pull travels before release), the bigger the turn. This is the multiplier
     // for the weakest (shortest) real stroke; a full-length pull turns at 1.0.

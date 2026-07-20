@@ -393,6 +393,7 @@ export class SwimmerMotor {
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
         this._currentSpeed = next.currentSpeed;
         this.decaySpeedCapBonus(dt, options);
+        this.updateKickSteeringCorrection(dt, options);
         this.updateSteering(dt);
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
@@ -960,6 +961,24 @@ export class SwimmerMotor {
         if (Math.abs(this._heading - this._headingTarget) < 1e-4) {
             this._heading = this._headingTarget;
         }
+    }
+
+    // Rapid player kick taps act as a gradual recovery aid: they pull only the
+    // steering target back toward the lane. updateSteering then eases the body
+    // after it, preserving the existing smooth turn and avoiding a snap.
+    private updateKickSteeringCorrection(dt: number, options: SwimmerMotorOptions) {
+        if (options.isAI) {
+            return;
+        }
+        if (this._kickCadenceHz <= 0) {
+            return;
+        }
+        const minCadence = Math.max(0, finiteOr(STEERING_TUNING.kickStraightenMinCadenceHz, 0));
+        if (this._kickCadenceHz < minCadence) {
+            return;
+        }
+        const correctionRate = Math.max(0, finiteOr(STEERING_TUNING.kickStraightenRate, 0));
+        this._headingTarget += (0 - this._headingTarget) * Math.min(1, correctionRate * Math.max(0, dt));
     }
 
     // A settled arm stroke nudges the heading TARGET; the actual heading eases
