@@ -17,7 +17,7 @@
     "camera.sprintFov": 58,
     "speed.baseSpeed": 0.8,
     "speed.maxSpeed": 6,
-    "speed.strokeBaseAccel": 1.5,
+    "speed.strokeBaseAccel": 2.5,
     "speed.strokeQualityAccel": 3,
     "speed.strokeAccelDurationRatio": 0.35,
     "speed.strokeImpulseSharpness": 0.6,

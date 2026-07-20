@@ -598,6 +598,7 @@ export class Swimmer extends Component {
         }
 
         this._motor.setLateralOffset(this._motor.lateralOffset + correctionZ);
+        this._motor.returnToLaneFromPoolWall();
         this.node.setPosition(
             this.node.position.x,
             this.node.position.y,

@@ -403,11 +403,11 @@ export class SwimmerMotor {
         const forwardSpeed = this._currentSpeed * Math.max(0, Math.cos(this._heading));
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
-        this._lateralOffset = clamp(
-            this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt,
-            this._lateralOffsetMin,
-            this._lateralOffsetMax,
-        );
+        const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
+        this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
+        if (Math.abs(this._lateralOffset - requestedLateralOffset) > 1e-6) {
+            this.returnToLaneFromPoolWall();
+        }
         this.updateMotionCycles(dt, options);
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
@@ -924,6 +924,12 @@ export class SwimmerMotor {
 
     setLateralOffset(offset: number) {
         this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
+    }
+
+    // A pool wall absorbs lateral motion. Clearing the target lets the existing
+    // steering easing return the swimmer to the lane without a visual snap.
+    returnToLaneFromPoolWall() {
+        this._headingTarget = 0;
     }
 
     // Shift race progress by a small amount (used by swimmer-vs-swimmer collision
