@@ -4,7 +4,7 @@ import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
-    onStrokeHeld: (type: StrokeType, held: boolean) => void;
+    onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => void;
     onKickStroke: (type: StrokeType) => void;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
@@ -160,7 +160,7 @@ export class InputRouter {
         }
         if (now - press.startedMs >= thresholdMs) {
             press.promoted = true;
-            this._callbacks.onStrokeHeld(type, true);
+            this._callbacks.onStrokeHeld(type, true, (now - press.startedMs) / 1000);
             this._callbacks.onStroke(type);
         }
     }

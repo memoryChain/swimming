@@ -542,7 +542,7 @@ function ratingText(rating: Rating): string {
         return '完美';
     }
     if (rating === Rating.GOOD) {
-        return '良好';
+        return '不错';
     }
     return '失误';
 }

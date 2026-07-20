@@ -22,6 +22,7 @@ import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 import { SwimmerRacePhases } from './SwimmerRacePhases';
 
 const { ccclass, property } = _decorator;
+const PERFECT_COMBO_IDLE_SECONDS = 1;
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -33,6 +34,7 @@ export class Swimmer extends Component {
     private _startPosition = new Vec3();
     private _hasStartPosition = false;
     private _strokeQualityCombo = 0;    private _maxStrokeQualityCombo = 0;
+    private _perfectComboIdleSeconds = 0;
     private _perfectStrokeQualityCount = 0;
     private _goodStrokeQualityCount = 0;
     private _missStrokeQualityCount = 0;
@@ -270,6 +272,7 @@ export class Swimmer extends Component {
         if (this._phases.tick(dt)) {
             return;
         }
+        this.updatePerfectComboIdle(dt);
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
         });
@@ -353,14 +356,14 @@ export class Swimmer extends Component {
         }
     }
 
-    handleStrokeHeld(type: StrokeType, held: boolean): RhythmResult | null {
+    handleStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): RhythmResult | null {
         if (this._phases.isFlipTurnActive) {
             return null;
         }
         if (this._phases.isDiveGlidePoseActive) {
             return null;
         }
-        const strokeQualityResult = this._motor.setStrokeHeld(type, held);
+        const strokeQualityResult = this._motor.setStrokeHeld(type, held, preHeldSeconds);
         this.cartoonRig?.setStrokeHeld(type, held);
         this.updatePerfectZoneGlow();
         if (held) {
@@ -422,6 +425,7 @@ export class Swimmer extends Component {
         this._phases.clearDiveUnderwaterPhase();
         this._strokeQualityCombo = 0;
         this._maxStrokeQualityCombo = 0;
+        this._perfectComboIdleSeconds = 0;
         this._perfectStrokeQualityCount = 0;
         this._goodStrokeQualityCount = 0;
         this._missStrokeQualityCount = 0;
@@ -484,12 +488,16 @@ export class Swimmer extends Component {
         const rating = ratingForStrokeQuality(strokeQualityResult.strokeQuality);
         if (rating === Rating.PERFECT) {
             this._strokeQualityCombo += 1;
+            this._perfectComboIdleSeconds = 0;
             this._perfectStrokeQualityCount += 1;
-        } else if (rating === Rating.GOOD) {
-            this._goodStrokeQualityCount += 1;
         } else {
             this._strokeQualityCombo = 0;
-            this._missStrokeQualityCount += 1;
+            this._perfectComboIdleSeconds = 0;
+            if (rating === Rating.GOOD) {
+                this._goodStrokeQualityCount += 1;
+            } else {
+                this._missStrokeQualityCount += 1;
+            }
         }
         this._maxStrokeQualityCombo = Math.max(this._maxStrokeQualityCombo, this._strokeQualityCombo);
         if (!this.isAI) {
@@ -502,6 +510,22 @@ export class Swimmer extends Component {
         }
         const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._strokeQualityCombo);
         return result;
+    }
+
+    private updatePerfectComboIdle(dt: number) {
+        if (this._strokeQualityCombo <= 0) {
+            return;
+        }
+        const holdingArmStroke = this._motor.isActiveStrokeHeld(StrokeType.LEFT)
+            || this._motor.isActiveStrokeHeld(StrokeType.RIGHT);
+        if (holdingArmStroke) {
+            return;
+        }
+        this._perfectComboIdleSeconds += Math.max(0, dt);
+        if (this._perfectComboIdleSeconds >= PERFECT_COMBO_IDLE_SECONDS) {
+            this._strokeQualityCombo = 0;
+            this._perfectComboIdleSeconds = 0;
+        }
     }
 
     updateBodyMotion(dt: number) {

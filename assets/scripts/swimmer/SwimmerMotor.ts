@@ -349,15 +349,15 @@ export class SwimmerMotor {
         return SWIMMER_BALANCE.kickAccelPerHz * propulsionHz * fade;
     }
 
-    setStrokeHeld(type: StrokeType, held: boolean): StrokeQualityResult | null {
+    setStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): StrokeQualityResult | null {
         let result: StrokeQualityResult | null = null;
         if (type === StrokeType.LEFT) {
-            result = this.setSideHeld(StrokeType.LEFT, held);
+            result = this.setSideHeld(StrokeType.LEFT, held, preHeldSeconds);
         } else if (type === StrokeType.RIGHT) {
-            result = this.setSideHeld(StrokeType.RIGHT, held);
+            result = this.setSideHeld(StrokeType.RIGHT, held, preHeldSeconds);
         } else {
-            const left = this.setSideHeld(StrokeType.LEFT, held);
-            const right = this.setSideHeld(StrokeType.RIGHT, held);
+            const left = this.setSideHeld(StrokeType.LEFT, held, preHeldSeconds);
+            const right = this.setSideHeld(StrokeType.RIGHT, held, preHeldSeconds);
             result = strongerStrokeQuality(left, right);
         }
         return result;
@@ -607,15 +607,18 @@ export class SwimmerMotor {
         return Math.min(toNeutral, settle * dt);
     }
 
-    private setSideHeld(type: StrokeType, held: boolean): StrokeQualityResult | null {
+    private setSideHeld(type: StrokeType, held: boolean, preHeldSeconds: number): StrokeQualityResult | null {
         const isLeft = type === StrokeType.LEFT;
         const actions = isLeft ? this._leftActions : this._rightActions;
+        const pressStartedAt = held
+            ? this._motionClock - Math.max(0, preHeldSeconds)
+            : -1;
         if (isLeft) {
             this._leftStrokeHeld = held;
-            this._leftPressStartedAt = held ? this._motionClock : -1;
+            this._leftPressStartedAt = pressStartedAt;
         } else {
             this._rightStrokeHeld = held;
-            this._rightPressStartedAt = held ? this._motionClock : -1;
+            this._rightPressStartedAt = pressStartedAt;
         }
 
         if (!held) {
@@ -692,7 +695,7 @@ export class SwimmerMotor {
     private settleActionStrokeQuality(type: StrokeType, action: StrokeAction, actionSeconds: number, queueResult: boolean): StrokeQualityResult {
         const completedAt = action.startedAt + actionSeconds;
         const releasedAt = action.releasedAt >= 0 ? action.releasedAt : completedAt;
-        const holdStart = Math.max(action.pressedAt, action.startedAt);
+        const holdStart = action.pressedAt >= 0 ? action.pressedAt : action.startedAt;
         const holdEnd = Math.min(releasedAt, completedAt);
         const holdSeconds = action.pressedAt >= 0 ? Math.max(0, holdEnd - holdStart) : 0;
         const minHoldSeconds = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
@@ -732,8 +735,10 @@ export class SwimmerMotor {
         // Single-stroke quality is purely the release-timing sweet zone now
         // (no cross-stroke consistency, no alternation, no input-freshness).
         const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
         const secondsSinceYellow = releasedAt - action.perfectGuidePresentedAt;
         const releasedJustAfterVisiblePerfect = releaseProgress > perfect.end
+            && releaseProgress <= Math.min(good.end, perfect.end + 0.03)
             && action.perfectGuidePresentedAt >= 0
             && secondsSinceYellow >= 0
             && secondsSinceYellow <= Math.max(0, STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds);

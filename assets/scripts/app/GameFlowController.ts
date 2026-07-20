@@ -132,14 +132,14 @@ export class GameFlowController {
         }
     }
 
-    handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
+    handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0) {
         if (this._refs.handleModelDebugStrokeHeld(type, held)) {
             return;
         }
         if (!this.isStrokeInputActive()) {
             return;
         }
-        const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held);
+        const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held, preHeldSeconds);
         if (result) {
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }

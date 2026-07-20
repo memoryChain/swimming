@@ -16,10 +16,7 @@ export function nextStrokeQualityCombo(combo: number, rating: Rating): number {
     if (rating === Rating.PERFECT) {
         return combo + 1;
     }
-    if (rating === Rating.BAD) {
-        return 0;
-    }
-    return combo;
+    return 0;
 }
 
 export function rhythmResultFromStrokeQuality(result: StrokeQualityResult, combo: number): RhythmResult {

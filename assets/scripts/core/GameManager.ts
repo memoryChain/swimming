@@ -666,7 +666,7 @@ export class GameManager extends Component {
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
             onStroke: (type) => this.handlePlayerStroke(type),
-            onStrokeHeld: (type, held) => this.handlePlayerStrokeHeld(type, held),
+            onStrokeHeld: (type, held, preHeldSeconds) => this.handlePlayerStrokeHeld(type, held, preHeldSeconds),
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
@@ -1011,8 +1011,8 @@ export class GameManager extends Component {
         this._gameFlow?.handlePlayerStroke(type);
     }
 
-    private handlePlayerStrokeHeld(type: StrokeType, held: boolean) {
-        this._gameFlow?.handlePlayerStrokeHeld(type, held);
+    private handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0) {
+        this._gameFlow?.handlePlayerStrokeHeld(type, held, preHeldSeconds);
     }
 
     private handlePlayerKickStroke(type: StrokeType) {
