@@ -101,6 +101,8 @@ export class SplashEmitter {
     private readonly _particleEmitters: SplashParticleEmitter[] = [];
     private readonly _tmpWorld = new Vec3();
     private readonly _tmpLocal = new Vec3();
+    private readonly _tmpEmitPosition = new Vec3();
+    private readonly _tmpEmitEuler = new Vec3();
     private _state: SplashEmitterState = EMPTY_STATE;
     private _splashBurst = 0;
     private _armSplashBurst = 0;
@@ -851,8 +853,8 @@ export class SplashEmitter {
     }
 
     private emitJitteredParticles(emitter: SplashParticleEmitter, count: number, dt: number) {
-        const basePosition = emitter.node.position.clone();
-        const baseEuler = emitter.node.eulerAngles.clone();
+        const basePosition = this._tmpEmitPosition.set(emitter.node.position);
+        const baseEuler = this._tmpEmitEuler.set(emitter.node.eulerAngles);
         const isHand = emitter.role === 'hand' || emitter.visual === 'spray';
         const positionJitterX = !isHand ? TUNING.behavior.legJitterX : TUNING.behavior.handJitterX;
         const positionJitterY = !isHand ? TUNING.behavior.legJitterY : TUNING.behavior.handJitterY;

@@ -17,6 +17,10 @@ const MIN_RT_SIZE = 16;
 // Re-tag swimmer subtrees onto SWIMMER_LAYER periodically to catch async-loaded
 // character models and rebuilt rosters.
 const SWIMMER_TAG_INTERVAL = 20;
+// Async swimmer models and splash nodes arrive during scene startup. Once that
+// window closes, the roster is stable across race restarts, so recursive layer
+// tagging must stop instead of producing a periodic JS spike throughout a race.
+const SWIMMER_TAG_WARMUP_FRAMES = 90;
 // Frames to keep re-applying the RT to the water material after it is (re)created
 // or resized, covering the GPU texture handle changing on the first real render.
 const REBIND_WARMUP_FRAMES = 4;
@@ -73,6 +77,7 @@ export class WaterRefractionController {
     // A pending corridor is rendered independently so its warning boundary does
     // not remove the closed-water mask from an earlier lock stage.
     private readonly _laneLockdownWarningParams = new Vec4(0, 0, 0.075, 0);
+    private _laneLockdownParamsDirty = true;
     private readonly _tmpPos = new Vec3();
     // Pool-bottom materials whose colour swaps with the camera crossing the water
     // line (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
@@ -188,7 +193,7 @@ export class WaterRefractionController {
         }
         this.updateFloorTint();
         this._frame += 1;
-        if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
+        if (this._frame <= SWIMMER_TAG_WARMUP_FRAMES && this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
         }
     }
@@ -234,6 +239,7 @@ export class WaterRefractionController {
             1,
         );
         this._laneLockdownWarningParams.w = 0;
+        this._laneLockdownParamsDirty = true;
     }
 
     setLaneLockdownWarning(safeMinZ: number, safeMaxZ: number) {
@@ -243,11 +249,13 @@ export class WaterRefractionController {
             0.075,
             1,
         );
+        this._laneLockdownParamsDirty = true;
     }
 
     clearLaneLockdownMask() {
         this._laneLockdownParams.w = 0;
         this._laneLockdownWarningParams.w = 0;
+        this._laneLockdownParamsDirty = true;
     }
 
     // Collect the pool-bottom renderers matching FLOOR_TINT, give each an unlit
@@ -403,12 +411,15 @@ export class WaterRefractionController {
         if (!material || material.name !== RUNTIME_WATER_MATERIAL_NAME) {
             return;
         }
+        const changed = material !== this._boundMaterial;
         // Re-apply the RenderTexture every frame so runtime resize or GPU texture
         // handle changes cannot leave the sampler pointing at a stale texture.
         material.setProperty('refractionMap', this._renderTexture);
-        material.setProperty('laneLockdownParams', this._laneLockdownParams);
-        material.setProperty('laneLockdownWarningParams', this._laneLockdownWarningParams);
-        const changed = material !== this._boundMaterial;
+        if (changed || this._laneLockdownParamsDirty) {
+            material.setProperty('laneLockdownParams', this._laneLockdownParams);
+            material.setProperty('laneLockdownWarningParams', this._laneLockdownWarningParams);
+            this._laneLockdownParamsDirty = false;
+        }
         if (changed) {
             this._boundMaterial = material;
             this._debug?.('water refraction map bound to material');
