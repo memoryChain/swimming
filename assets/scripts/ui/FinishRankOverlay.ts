@@ -60,6 +60,9 @@ export class FinishRankOverlay {
     private _panelHeight = 0;
     private readonly _badges = new Map<Node, BadgeEntry>();
     private readonly _results: RaceFinishResult[] = [];
+    private readonly _standingSwimmers: Array<Node | null> = [];
+    private readonly _standingLanes: number[] = [];
+    private readonly _standingEliminated: boolean[] = [];
     private _headBadgesVisible = true;
 
     // Reused scratch vectors so per-frame projection allocates nothing.
@@ -136,6 +139,9 @@ export class FinishRankOverlay {
         }
         this._badges.clear();
         this._results.length = 0;
+        this._standingSwimmers.length = 0;
+        this._standingLanes.length = 0;
+        this._standingEliminated.length = 0;
         if (this._panelRows?.isValid) {
             this._panelRows.removeAllChildren();
         }
@@ -171,11 +177,41 @@ export class FinishRankOverlay {
         if (!this._panel?.isValid || !this._panelRows?.isValid) {
             return;
         }
-        const changed = !sameStanding(this._results, results);
+        const changed = this.standingChanged(results);
         this._results.length = 0;
-        this._results.push(...results);
+        for (const result of results) {
+            this._results.push(result);
+        }
         if (changed) {
+            this.captureStanding(results);
             this.rebuildPanel();
+        }
+    }
+
+    private standingChanged(results: RaceFinishResult[]): boolean {
+        if (this._standingSwimmers.length !== results.length) {
+            return true;
+        }
+        for (let index = 0; index < results.length; index++) {
+            const result = results[index];
+            if (this._standingSwimmers[index] !== result.swimmer?.node
+                || this._standingLanes[index] !== result.lane
+                || this._standingEliminated[index] !== result.eliminated) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private captureStanding(results: RaceFinishResult[]) {
+        this._standingSwimmers.length = results.length;
+        this._standingLanes.length = results.length;
+        this._standingEliminated.length = results.length;
+        for (let index = 0; index < results.length; index++) {
+            const result = results[index];
+            this._standingSwimmers[index] = result.swimmer?.node ?? null;
+            this._standingLanes[index] = result.lane;
+            this._standingEliminated[index] = result.eliminated === true;
         }
     }
 
@@ -352,20 +388,6 @@ export class FinishRankOverlay {
             this._results.push(result);
         }
     }
-}
-
-function sameStanding(previous: RaceFinishResult[], next: RaceFinishResult[]): boolean {
-    if (previous.length !== next.length) {
-        return false;
-    }
-    const sortedPrevious = [...previous].sort((a, b) => a.placement - b.placement);
-    const sortedNext = [...next].sort((a, b) => a.placement - b.placement);
-    return sortedPrevious.every((result, index) =>
-        result.swimmer === sortedNext[index].swimmer
-        && result.placement === sortedNext[index].placement
-        && result.lane === sortedNext[index].lane
-        && result.eliminated === sortedNext[index].eliminated,
-    );
 }
 
 function addRowLabel(

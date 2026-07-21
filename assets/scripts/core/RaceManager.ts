@@ -36,7 +36,7 @@ export class RaceManager extends Component {
 
     public onCountdownTick: (value: number) => void = null;
     public onStateChange: (state: GameState) => void = null;
-    public onProgressUpdate: (playerDist: number, aiDist: number) => void = null;
+    public onProgressUpdate: (playerDist: number, aiDist: number, dt: number) => void = null;
     public onRaceFinished: (playerWin: boolean, playerTime: number, aiTime: number, placement?: RacePlacementSummary) => void = null;
     public onSwimmerFinished: (result: RaceFinishResult) => void = null;
     public onSwimmerEliminated: (swimmer: Swimmer) => void = null;
@@ -57,6 +57,11 @@ export class RaceManager extends Component {
     private _lastFinishCountdownValue = -1;
     private readonly _raceRoster: Swimmer[] = [];
     private readonly _eliminated = new Set<Swimmer>();
+    private readonly _liveRowsBySwimmer = new Map<Swimmer, RaceFinishResult>();
+    private readonly _liveLeaderboard: RaceFinishResult[] = [];
+    private readonly _liveFinished: RaceFinishResult[] = [];
+    private readonly _liveRacing: RaceFinishResult[] = [];
+    private readonly _liveEliminated: RaceFinishResult[] = [];
 
     startRace() {
         this.unscheduleAllCallbacks();
@@ -118,7 +123,7 @@ export class RaceManager extends Component {
             swimmer.node.active = true;
             swimmer.reset();
         }
-        this.onProgressUpdate?.(0, 0);
+        this.onProgressUpdate?.(0, 0, 0);
     }
 
     private updateCountdown(dt: number) {
@@ -156,12 +161,12 @@ export class RaceManager extends Component {
 
     private updateDiving(dt: number) {
         this._raceTimer += dt;
-        this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
+        this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0, dt);
     }
 
     private updateGliding(dt: number) {
         this._raceTimer += dt;
-        this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0);
+        this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0, dt);
     }
 
     private updateRacing(dt: number) {
@@ -171,7 +176,7 @@ export class RaceManager extends Component {
         const aiSwimmers = this.activeAiSwimmers();
         const activeRacers = this.activeRacers();
 
-        this.onProgressUpdate?.(playerDist, aiDist);
+        this.onProgressUpdate?.(playerDist, aiDist, dt);
 
         for (const swimmer of aiSwimmers) {
             if (!this._aiFinishTimes.has(swimmer) && swimmer.distance >= getRaceDistance()) {
@@ -254,37 +259,87 @@ export class RaceManager extends Component {
     }
 
     // Finished swimmers keep their touch order; everyone else is ordered by
-    // current course distance so the HUD can show the live standing.
+    // current course distance so the HUD can show the live standing. The returned
+    // array and rows are stable buffers: this hot UI path creates no new objects.
     public getLiveLeaderboard(): RaceFinishResult[] {
-        const finished: RaceFinishResult[] = [];
-        const racing: RaceFinishResult[] = [];
-        const eliminated: RaceFinishResult[] = [];
+        this._liveLeaderboard.length = 0;
+        this._liveFinished.length = 0;
+        this._liveRacing.length = 0;
+        this._liveEliminated.length = 0;
         for (const swimmer of this.allRaceRacers()) {
             const time = this._finishTimes.get(swimmer) ?? 0;
             const isEliminated = this._eliminated.has(swimmer);
-            const result: RaceFinishResult = {
+            const result = this.liveRowFor(swimmer);
+            result.name = swimmer.swimmerName;
+            result.placement = 0;
+            result.time = time;
+            result.isPlayer = swimmer === this.playerSwimmer;
+            result.lane = laneForSwimmer(swimmer);
+            result.eliminated = isEliminated;
+            result.finished = time > 0;
+            if (isEliminated) {
+                this._liveEliminated.push(result);
+            } else {
+                (result.finished ? this._liveFinished : this._liveRacing).push(result);
+            }
+        }
+        this.sortLiveRowsByTime(this._liveFinished);
+        this.sortLiveRowsByDistance(this._liveRacing);
+        this.appendLiveRows(this._liveFinished);
+        this.appendLiveRows(this._liveRacing);
+        this.appendLiveRows(this._liveEliminated);
+        for (let i = 0; i < this._liveLeaderboard.length; i++) {
+            this._liveLeaderboard[i].placement = i + 1;
+        }
+        return this._liveLeaderboard;
+    }
+
+    private liveRowFor(swimmer: Swimmer): RaceFinishResult {
+        let row = this._liveRowsBySwimmer.get(swimmer);
+        if (!row) {
+            row = {
                 swimmer,
                 name: swimmer.swimmerName,
                 placement: 0,
-                time,
+                time: 0,
                 isPlayer: swimmer === this.playerSwimmer,
                 lane: laneForSwimmer(swimmer),
-                eliminated: isEliminated,
-                finished: time > 0,
+                eliminated: false,
+                finished: false,
             };
-            if (isEliminated) {
-                eliminated.push(result);
-            } else {
-                (result.finished ? finished : racing).push(result);
+            this._liveRowsBySwimmer.set(swimmer, row);
+        }
+        return row;
+    }
+
+    private sortLiveRowsByTime(rows: RaceFinishResult[]) {
+        for (let index = 1; index < rows.length; index++) {
+            const row = rows[index];
+            let insertionIndex = index - 1;
+            while (insertionIndex >= 0 && rows[insertionIndex].time > row.time) {
+                rows[insertionIndex + 1] = rows[insertionIndex];
+                insertionIndex -= 1;
             }
+            rows[insertionIndex + 1] = row;
         }
-        finished.sort((a, b) => a.time - b.time);
-        racing.sort((a, b) => b.swimmer.distance - a.swimmer.distance);
-        const leaderboard = [...finished, ...racing, ...eliminated];
-        for (let i = 0; i < leaderboard.length; i++) {
-            leaderboard[i].placement = i + 1;
+    }
+
+    private sortLiveRowsByDistance(rows: RaceFinishResult[]) {
+        for (let index = 1; index < rows.length; index++) {
+            const row = rows[index];
+            let insertionIndex = index - 1;
+            while (insertionIndex >= 0 && rows[insertionIndex].swimmer.distance < row.swimmer.distance) {
+                rows[insertionIndex + 1] = rows[insertionIndex];
+                insertionIndex -= 1;
+            }
+            rows[insertionIndex + 1] = row;
         }
-        return leaderboard;
+    }
+
+    private appendLiveRows(rows: RaceFinishResult[]) {
+        for (const row of rows) {
+            this._liveLeaderboard.push(row);
+        }
     }
 
     private bestAiFinishTime(): number {

@@ -45,6 +45,7 @@ export type GameFlowRefs = {
 // sustained effort during SPRINT and interprets it as STEADY / PUSH / GAMBLE.
 const SPRINT_PUSH_EFFORT = 0.6;
 const SPRINT_GAMBLE_EFFORT = 0.85;
+const LIVE_RANK_REFRESH_SECONDS = 0.2;
 
 export class GameFlowController {
     private _diveChargeStarted = false;
@@ -54,6 +55,7 @@ export class GameFlowController {
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
+    private _liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
     // Once the player surfaces after the dive, switch the swim view to the
     // behind-the-swimmer sprint chase so the steering weave reads clearly.
     private _swimSprintViewApplied = false;
@@ -70,6 +72,7 @@ export class GameFlowController {
         this._sprintTriggered = false;
         this._lastSprintTier = SprintTier.STEADY;
         this._swimSprintViewApplied = false;
+        this._liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
         this._refs.clearFinishRanks();        this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
         this._refs.raceManager?.resetRace();
@@ -253,9 +256,15 @@ export class GameFlowController {
                 this.startAllAi();
             }
         };
-        raceManager.onProgressUpdate = (playerDist, aiDist) => {
+        raceManager.onProgressUpdate = (playerDist, aiDist, dt) => {
             this._refs.uiFlow.updateProgress(playerDist, aiDist);
-            if (this._refs.getState() === GameState.RACING && this._refs.isLiveRanksEnabled()) {
+            if (this._refs.getState() !== GameState.RACING) {
+                this._liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
+                return;
+            }
+            this._liveRankRefreshElapsed += Math.max(0, dt);
+            if (this._refs.isLiveRanksEnabled() && this._liveRankRefreshElapsed >= LIVE_RANK_REFRESH_SECONDS) {
+                this._liveRankRefreshElapsed = 0;
                 this._refs.showLiveRanks(raceManager.getLiveLeaderboard());
             }
         };
