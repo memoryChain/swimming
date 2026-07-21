@@ -28,6 +28,7 @@ export type GameFlowRefs = {
     setState: (state: GameState) => void;
     getState: () => GameState;
     clearFinishRanks: () => void;
+    isLiveRanksEnabled: () => boolean;
     showLiveRanks: (results: RaceFinishResult[]) => void;
     showFinishRank: (result: RaceFinishResult) => void;
     onSwimmerEliminated: (swimmer: Swimmer) => void;
@@ -254,7 +255,7 @@ export class GameFlowController {
         };
         raceManager.onProgressUpdate = (playerDist, aiDist) => {
             this._refs.uiFlow.updateProgress(playerDist, aiDist);
-            if (this._refs.getState() === GameState.RACING) {
+            if (this._refs.getState() === GameState.RACING && this._refs.isLiveRanksEnabled()) {
                 this._refs.showLiveRanks(raceManager.getLiveLeaderboard());
             }
         };

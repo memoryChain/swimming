@@ -67,8 +67,12 @@ export class CameraSpeedLineOverlay {
         const halfHeight = this._height * 0.5;
         this._vanishingX = clamp(x, -halfWidth * 0.82, halfWidth * 0.82);
         this._vanishingY = clamp(y, -halfHeight * 0.82, halfHeight * 0.82);
-        if (this._root?.active) {
-            this.draw();
+    }
+
+    setEnabled(enabled: boolean) {
+        if (!enabled && this._root?.isValid) {
+            this._root.active = false;
+            this._graphics?.clear();
         }
     }
 
