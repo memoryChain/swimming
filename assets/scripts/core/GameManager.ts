@@ -603,6 +603,10 @@ export class GameManager extends Component {
                     this._laneLockdownRace?.reset();
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
+                    this._laneLockdownVisuals?.clear();
+                    if (this._laneLockdownStatusLabel) {
+                        this._laneLockdownStatusLabel.node.active = false;
+                    }
                     this._spectating = false;
                     this._spectatorTarget = null;
                     if (this._eliminationDialog) {

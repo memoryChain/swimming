@@ -7,14 +7,14 @@
 难度开关统一定义在 `GameBalance.ts` 的 `RaceDifficultyConfig.laneLockdownEnabled`：
 
 - 入门：关闭。
-- 竞技：关闭。
+- 竞技：开启。
 - 世锦赛：开启。
 
 后续赛事配置也应复用该开关，不能在 UI 或 `GameManager` 内硬编码难度名。
 
 ## 走廊规则
 
-- 初始 8 道，安全走廊依次收缩为 `8 -> 6 -> 4 -> 2` 道。
+- 初始 8 道，安全走廊依次收缩为 `8 -> 6 -> 4 -> 1` 道。
 - 每次封道由首位触发选手的位置确定嵌套走廊，避免固定从两侧机械收缩。
 - 启用该赛制时，玩家起跑道随机分配，主要 AI 保证不与玩家同道；未启用时沿用常规固定分道。
 - 走廊范围用包含端点的一基泳道编号表示，例如首轮 `2..7`。
@@ -26,7 +26,7 @@
 | 参数 | 当前值 | 含义 |
 | --- | ---: | --- |
 | `LOCK_DISTANCES` | `50, 100, 150` m | 由领先者触发每一轮收缩的赛程距离 |
-| `SAFE_LANE_COUNTS` | `6, 4, 2` | 三轮收缩后的安全泳道数 |
+| `SAFE_LANE_COUNTS` | `6, 4, 1` | 三轮收缩后的安全泳道数 |
 | `WARNING_SECONDS` | `3` s | 从目标走廊锁定到正式淘汰的警示时长 |
 | `COLLIDER_CLEARANCE` | `0.04` m | 判定时在安全边界内额外保留的碰撞体余量 |
 | 水面边界半宽 | `0.075` m | 水材质中青白边界和范围过渡的半宽 |
@@ -140,11 +140,11 @@ AI 在尚未注意到当前走廊时，会在**每次选择下一划水侧**时�
 
 ### 代码边界
 
-- `GameBalance.ts`：按难度启用规则；目前仅世锦赛 `laneLockdownEnabled = true`。
+- `GameBalance.ts`：按难度启用规则；竞技和世锦赛的 `laneLockdownEnabled = true`。
 - `LaneLockdownRaceController.ts`：触发、预测、预警、淘汰、锁定边界和状态发布。
 - `AISwimmerController.ts`：基于共享划水转向的预测观察与避让，不直接控制位置。
 - `LaneLockdownVisuals.ts` / `WaterRefractionController.ts` / `RagingPoolWater.effect`：水面范围换算、uniform 写入和材质合成。
 - `RaceManager.ts`：淘汰记录、活动选手集合、终点倒计时与最终结果。
 - `GameManager.ts`：系统接线、HUD、玩家淘汰对话框、观战目标和镜头更新。
 
-当 `laneLockdownEnabled` 为真时，玩家起跑道会随机分配，AI 填充其余泳道，保证每局唯一占道；当前仅世锦赛难度开启该赛制。
+当 `laneLockdownEnabled` 为真时，玩家起跑道会随机分配，AI 填充其余泳道，保证每局唯一占道；当前竞技和世锦赛难度开启该赛制。

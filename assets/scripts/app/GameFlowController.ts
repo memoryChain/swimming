@@ -74,6 +74,7 @@ export class GameFlowController {
         this._refs.raceManager?.resetRace();
         this.resetExtraAiSwimmers();
         this.prepareShowcaseRoster();
+        this._refs.raceCameraDirector.setPlayerLaneZ(this._refs.playerSwimmer?.node.position.z ?? 0);
         this._refs.raceCameraDirector.resetToBroadcast();
         this._refs.raceCameraDirector.startPreCountdownOrbit([
             this._refs.playerSwimmer?.node.position.z,

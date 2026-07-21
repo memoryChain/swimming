@@ -4,7 +4,7 @@ import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 
 const LOCK_DISTANCES = [50, 100, 150];
-const SAFE_LANE_COUNTS = [6, 4, 2];
+const SAFE_LANE_COUNTS = [6, 4, 1];
 const WARNING_SECONDS = 3;
 const COLLIDER_CLEARANCE = 0.04;
 

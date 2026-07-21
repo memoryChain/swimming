@@ -32,8 +32,8 @@ export type RaceDifficultyConfig = {
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
     // 入门：整体慢、几乎不追赶、对手爱蛇形犯错 → 玩家轻松领先并甩开。
     { id: 'beginner', label: '入门', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
-    // 竞技：均衡基准，策略参数原样。
-    { id: 'competitive', label: '竞技', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: false },
+    // 竞技：均衡基准，策略参数原样；启用动态封道。
+    { id: 'competitive', label: '竞技', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: true },
     // 世锦赛：快、咬得死、路线干净专业 → 领先也会被反复追平、缠斗。
     { id: 'championship', label: '世锦赛', aiDifficultyScale: 1, rubberBandScale: 1.6, duelScale: 1.7, weaveScale: 0.45, laneLockdownEnabled: true },
 ];

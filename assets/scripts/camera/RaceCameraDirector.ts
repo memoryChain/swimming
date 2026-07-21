@@ -86,6 +86,7 @@ const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
 const SWIM_SIDE_CAMERA_DISTANCE = 10.5;
 const SWIM_SIDE_CAMERA_HEIGHT = 1.7;
 const SWIM_SIDE_FOV = 27;
+const SPRINT_KICK_VIEW_CONFIRM_SECONDS = 0.24;
 // Finish top-down view. Widened so the full 8-lane pool (Z from ~-10.5 to
 // +10.5) stays in frame from the fixed 22.5m camera height; the previous 46
 // clipped lanes 1 and 8 off the top and bottom of the screen.
@@ -189,6 +190,7 @@ export class RaceCameraDirector {
     private _underwaterViewActive = false;
     private _flipTurnViewActive = false;
     private _flipTurnViewDirection = 1;
+    private _continuousKickViewSeconds = 0;
     private _preCountdownElapsed = 0;
     private _preCountdownActive = false;
     private _preCountdownReady = false;
@@ -208,9 +210,18 @@ export class RaceCameraDirector {
     private _spectatorPitch = SPECTATOR_DEFAULT_PITCH;
     private _spectatorDistance = SPECTATOR_DEFAULT_DISTANCE;
 
-    constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
-        this._cameraTarget.set(8, 0.25, _playerLaneZ);
+    private _playerLaneZ: number;
+
+    constructor(playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
+        this._playerLaneZ = playerLaneZ;
+        this._cameraTarget.set(8, 0.25, playerLaneZ);
         this.pickBroadcastShotSequence();
+    }
+
+    setPlayerLaneZ(laneZ: number) {
+        if (Number.isFinite(laneZ)) {
+            this._playerLaneZ = laneZ;
+        }
     }
 
     bindCamera(cameraNode: Node) {
@@ -439,6 +450,7 @@ export class RaceCameraDirector {
     resetRaceTimers() {
         this._broadcastRaceElapsed = 0;
         this._broadcastShotTimer = 0;
+        this._continuousKickViewSeconds = 0;
     }
 
     startDiveShot() {
@@ -584,20 +596,16 @@ export class RaceCameraDirector {
 
     // Continuous descend-and-orbit shot for pre-race stage 2. As progress goes
     // 0 -> 1 the camera spirals from a near top-down view down to a low front
-    // three-quarter angle, circling the standing racers once and always aiming at
-    // the centre of the group. `progress` is the raw 0..1 stage progress; easing
+    // three-quarter angle, circling the player once and always aiming at that
+    // player's randomized starting lane. `progress` is the raw 0..1 stage progress; easing
     // is applied internally so the motion accelerates and settles smoothly.
-    private preRaceOrbitShot(progress: number, laneZs: number[], direction: number): { position: Vec3; target: Vec3; fov: number } {
+    private preRaceOrbitShot(progress: number, direction: number): { position: Vec3; target: Vec3; fov: number } {
         const eased = smoothStep(clamp(progress, 0, 1));
-        const midLaneZ = laneZs.length > 0 ? laneZs[(laneZs.length - 1) >> 1] : this._playerLaneZ;
-        const stand = this._courseLayout.platformStandingPosition(midLaneZ);
-        const centerZ = laneZs.length > 0
-            ? laneZs.reduce((sum, z) => sum + z, 0) / laneZs.length
-            : this._playerLaneZ;
+        const stand = this._courseLayout.platformStandingPosition(this._playerLaneZ);
         const center = new Vec3(
             stand.x + direction * PRE_RACE_ORBIT_CENTER_AHEAD,
             stand.y + PRE_RACE_ORBIT_TARGET_Y,
-            centerZ,
+            this._playerLaneZ,
         );
         // Rotate a full turn, ending at yaw 0 (camera on the athletes' front /
         // down-pool side) so the hand-off to the countdown front view is short.
@@ -701,7 +709,7 @@ export class RaceCameraDirector {
                 this._preRacePhase = 'orbit';
                 shotIndex = 0;
                 const progress = clamp((elapsed - PRE_RACE_OVERVIEW_SECONDS) / PRE_RACE_ORBIT_SECONDS, 0, 1);
-                const shot = this.preRaceOrbitShot(progress, lanes, direction);
+                const shot = this.preRaceOrbitShot(progress, direction);
                 desiredTarget = shot.target;
                 desiredPos = shot.position;
                 this._broadcastDesiredFov = shot.fov;
@@ -757,7 +765,7 @@ export class RaceCameraDirector {
             fixedTopView = true;
         } else if (snapshot.sprintActive) {
             this.finishDiveShotIfNeeded();
-            const sprintView = sprintCameraView(snapshot, direction);
+            const sprintView = sprintCameraView(snapshot, direction, this.updateContinuousKickView(dt, snapshot));
             desiredPos = sprintView.position;
             desiredTarget = sprintView.target;
             this._broadcastDesiredFov = RACE_CAMERA_TUNING.sprintFov;
@@ -889,7 +897,8 @@ export class RaceCameraDirector {
 
     private updateSprintCamera(dt: number, snapshot: RaceCameraSnapshot, immediate = false) {
         const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
-        const view = sprintCameraView(snapshot, direction);
+        const continuousKickViewActive = this.updateContinuousKickView(dt, snapshot);
+        const view = sprintCameraView(snapshot, direction, continuousKickViewActive);
         if (immediate) {
             this._cameraPos.set(view.position);
             this._cameraTarget.set(view.target);
@@ -907,6 +916,17 @@ export class RaceCameraDirector {
         }
         this.applyCameraTransform();
         this.applyFov();
+    }
+
+    private updateContinuousKickView(dt: number, snapshot: RaceCameraSnapshot): boolean {
+        const kickOnlyCandidate = !snapshot.playerArmStrokeActive
+            && (snapshot.playerKickCadenceHz ?? 0) >= RACE_CAMERA_TUNING.sprintKickPullbackMinCadenceHz;
+        if (!kickOnlyCandidate) {
+            this._continuousKickViewSeconds = 0;
+            return false;
+        }
+        this._continuousKickViewSeconds += Math.max(0, dt);
+        return this._continuousKickViewSeconds >= SPRINT_KICK_VIEW_CONFIRM_SECONDS;
     }
 
     private updateFlipTurnCamera(dt: number, snapshot: RaceCameraSnapshot, immediate: boolean) {
@@ -1003,6 +1023,7 @@ export class RaceCameraDirector {
         this._topViewActive = false;
         this._underwaterViewActive = false;
         this._flipTurnViewActive = false;
+        this._continuousKickViewSeconds = 0;
         this._preCountdownElapsed = 0;
         this._preCountdownActive = false;
         this._preCountdownReady = false;
@@ -1154,7 +1175,11 @@ function lerpVec3(a: Vec3, b: Vec3, t: number): Vec3 {
     );
 }
 
-function sprintCameraView(snapshot: RaceCameraSnapshot, direction: number): { position: Vec3; target: Vec3 } {
+function sprintCameraView(
+    snapshot: RaceCameraSnapshot,
+    direction: number,
+    continuousKickViewActive: boolean,
+): { position: Vec3; target: Vec3 } {
     // This anchor is sampled from the rig's torso/spine chain (blended slightly
     // toward the head), not from the swimmer root at the hips/feet.
     const upperBody = snapshot.playerUpperBodyWorldPosition?.clone()
@@ -1164,10 +1189,8 @@ function sprintCameraView(snapshot: RaceCameraSnapshot, direction: number): { po
     // always uses world Z, while the along-lane component flips after a turn.
     const movementX = direction * Math.cos(heading);
     const movementZ = Math.sin(heading);
-    const continuousKickActive = !snapshot.playerArmStrokeActive
-        && (snapshot.playerKickCadenceHz ?? 0) >= RACE_CAMERA_TUNING.sprintKickPullbackMinCadenceHz;
     const backDistance = RACE_CAMERA_TUNING.sprintBackDistance
-        + (continuousKickActive ? RACE_CAMERA_TUNING.sprintKickPullbackDistance : 0);
+        + (continuousKickViewActive ? RACE_CAMERA_TUNING.sprintKickPullbackDistance : 0);
     return {
         position: new Vec3(
             upperBody.x - backDistance * movementX,
