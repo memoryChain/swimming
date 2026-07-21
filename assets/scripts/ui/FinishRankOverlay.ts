@@ -49,6 +49,20 @@ type BadgeEntry = {
     placement: number;
 };
 
+type PanelRow = {
+    root: Node;
+    highlight: Graphics;
+    rankLabel: Label;
+    nameLabel: Label;
+    laneLabel: Label;
+    swimmerNode: Node | null;
+    placement: number;
+    lane: number;
+    eliminated: boolean;
+    isPlayer: boolean;
+    name: string;
+};
+
 export class FinishRankOverlay {
     private _hud: Node | null = null;
     private _badgeRoot: Node | null = null;
@@ -60,9 +74,7 @@ export class FinishRankOverlay {
     private _panelHeight = 0;
     private readonly _badges = new Map<Node, BadgeEntry>();
     private readonly _results: RaceFinishResult[] = [];
-    private readonly _standingSwimmers: Array<Node | null> = [];
-    private readonly _standingLanes: number[] = [];
-    private readonly _standingEliminated: boolean[] = [];
+    private readonly _panelRowPool: PanelRow[] = [];
     private _headBadgesVisible = true;
 
     // Reused scratch vectors so per-frame projection allocates nothing.
@@ -139,11 +151,8 @@ export class FinishRankOverlay {
         }
         this._badges.clear();
         this._results.length = 0;
-        this._standingSwimmers.length = 0;
-        this._standingLanes.length = 0;
-        this._standingEliminated.length = 0;
-        if (this._panelRows?.isValid) {
-            this._panelRows.removeAllChildren();
+        for (const row of this._panelRowPool) {
+            row.root.active = false;
         }
         if (this._panel?.isValid) {
             this._panel.active = false;
@@ -177,42 +186,11 @@ export class FinishRankOverlay {
         if (!this._panel?.isValid || !this._panelRows?.isValid) {
             return;
         }
-        const changed = this.standingChanged(results);
         this._results.length = 0;
         for (const result of results) {
             this._results.push(result);
         }
-        if (changed) {
-            this.captureStanding(results);
-            this.rebuildPanel();
-        }
-    }
-
-    private standingChanged(results: RaceFinishResult[]): boolean {
-        if (this._standingSwimmers.length !== results.length) {
-            return true;
-        }
-        for (let index = 0; index < results.length; index++) {
-            const result = results[index];
-            if (this._standingSwimmers[index] !== result.swimmer?.node
-                || this._standingLanes[index] !== result.lane
-                || this._standingEliminated[index] !== result.eliminated) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private captureStanding(results: RaceFinishResult[]) {
-        this._standingSwimmers.length = results.length;
-        this._standingLanes.length = results.length;
-        this._standingEliminated.length = results.length;
-        for (let index = 0; index < results.length; index++) {
-            const result = results[index];
-            this._standingSwimmers[index] = result.swimmer?.node ?? null;
-            this._standingLanes[index] = result.lane;
-            this._standingEliminated[index] = result.eliminated === true;
-        }
+        this.rebuildPanel();
     }
 
     // Reproject every head badge into HUD-local space and de-overlap them so
@@ -336,48 +314,89 @@ export class FinishRankOverlay {
         if (!this._panel?.isValid || !this._panelRows?.isValid || !this._panelBg) {
             return;
         }
-        this._panelRows.removeAllChildren();
-        const sorted = [...this._results].sort((a, b) => a.placement - b.placement);
-        const rowsHeight = sorted.length * PANEL_ROW_H;
-        this._panelWidth = PANEL_WIDTH;
-        this._panelHeight = PANEL_TITLE_H + rowsHeight + 12;
+        this.ensurePanelRows(this._results.length);
+        const rowsHeight = this._results.length * PANEL_ROW_H;
+        const panelHeight = PANEL_TITLE_H + rowsHeight + 12;
+        if (panelHeight !== this._panelHeight) {
+            this._panelWidth = PANEL_WIDTH;
+            this._panelHeight = panelHeight;
+            this._panelBg.clear();
+            this._panelBg.fillColor = PANEL_BG;
+            this._panelBg.roundRect(-PANEL_WIDTH / 2, -this._panelHeight, PANEL_WIDTH, this._panelHeight, 10);
+            this._panelBg.fill();
+            this._exitButton?.setPosition(0, -this._panelHeight - EXIT_BUTTON_GAP - EXIT_BUTTON_H / 2, 0);
+            this._panel.getChildByName('Title')?.setPosition(0, -PANEL_TITLE_H / 2, 0);
+        }
 
-        this._panelBg.clear();
-        this._panelBg.fillColor = PANEL_BG;
-        this._panelBg.roundRect(-PANEL_WIDTH / 2, -this._panelHeight, PANEL_WIDTH, this._panelHeight, 10);
-        this._panelBg.fill();
-
-        this._exitButton?.setPosition(0, -this._panelHeight - EXIT_BUTTON_GAP - EXIT_BUTTON_H / 2, 0);
-
-        // Title sits at the top of the (downward-growing) panel.
-        const title = this._panel.getChildByName('Title');
-        title?.setPosition(0, -PANEL_TITLE_H / 2, 0);
-
-        for (let i = 0; i < sorted.length; i++) {
-            const result = sorted[i];
-            const rowY = -PANEL_TITLE_H - i * PANEL_ROW_H - PANEL_ROW_H / 2;
-            const row = makeUiNode(`Row_${result.placement}`, this._panelRows);
-            row.setPosition(0, rowY, 0);
-            if (result.isPlayer) {
-                const highlight = row.addComponent(Graphics);
-                highlight.fillColor = uiColor(255, 214, 44, 34);
-                highlight.rect(-PANEL_WIDTH / 2 + 4, -PANEL_ROW_H / 2 + 2, PANEL_WIDTH - 8, PANEL_ROW_H - 4);
-                highlight.fill();
+        for (let index = 0; index < this._panelRowPool.length; index++) {
+            const row = this._panelRowPool[index];
+            const result = this._results[index];
+            row.root.active = !!result;
+            if (result) {
+                this.updatePanelRow(row, result);
             }
-            const accent = result.eliminated ? ELIMINATED_TEXT : (result.isPlayer ? PLAYER_ACCENT : NAME_TEXT);
-            addRowLabel(row, `${result.placement}`, -PANEL_WIDTH / 2 + 26, 34, accent, false, 17);
-            addRowLabel(row, displayName(result), -PANEL_WIDTH / 2 + 52, PANEL_WIDTH - 60 - PANEL_LANE_WIDTH, accent, true, 16);
-            addRowLabel(
-                row,
-                result.eliminated ? '已淘汰' : `${result.lane}`,
-                PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8,
-                PANEL_LANE_WIDTH,
-                result.eliminated ? ELIMINATED_TEXT : PANEL_TITLE,
-                false,
-                result.eliminated ? 13 : 16,
-            );
         }
         this._panel.active = true;
+    }
+
+    private ensurePanelRows(count: number) {
+        while (this._panelRowPool.length < count) {
+            const row = makeUiNode(`Row_${this._panelRowPool.length + 1}`, this._panelRows!);
+            const highlight = row.addComponent(Graphics);
+            const rankLabel = addRowLabel(row, -PANEL_WIDTH / 2 + 26, 34, false, 17);
+            const nameLabel = addRowLabel(row, -PANEL_WIDTH / 2 + 52, PANEL_WIDTH - 60 - PANEL_LANE_WIDTH, true, 16);
+            const laneLabel = addRowLabel(row, PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8, PANEL_LANE_WIDTH, false, 16);
+            row.setPosition(0, -PANEL_TITLE_H - this._panelRowPool.length * PANEL_ROW_H - PANEL_ROW_H / 2, 0);
+            this._panelRowPool.push({
+                root: row,
+                highlight,
+                rankLabel,
+                nameLabel,
+                laneLabel,
+                swimmerNode: null,
+                placement: -1,
+                lane: -1,
+                eliminated: false,
+                isPlayer: false,
+                name: '',
+            });
+        }
+    }
+
+    private updatePanelRow(row: PanelRow, result: RaceFinishResult) {
+        const swimmerNode = result.swimmer?.node ?? null;
+        const eliminated = result.eliminated === true;
+        const presentationChanged = row.swimmerNode !== swimmerNode
+            || row.eliminated !== eliminated
+            || row.isPlayer !== result.isPlayer;
+        if (presentationChanged) {
+            row.highlight.clear();
+            if (result.isPlayer) {
+                row.highlight.fillColor = uiColor(255, 214, 44, 34);
+                row.highlight.rect(-PANEL_WIDTH / 2 + 4, -PANEL_ROW_H / 2 + 2, PANEL_WIDTH - 8, PANEL_ROW_H - 4);
+                row.highlight.fill();
+            }
+            const accent = eliminated ? ELIMINATED_TEXT : (result.isPlayer ? PLAYER_ACCENT : NAME_TEXT);
+            row.rankLabel.color = accent;
+            row.nameLabel.color = accent;
+            row.laneLabel.color = eliminated ? ELIMINATED_TEXT : PANEL_TITLE;
+            row.laneLabel.fontSize = eliminated ? 13 : 16;
+        }
+        if (row.placement !== result.placement) {
+            row.rankLabel.string = `${result.placement}`;
+        }
+        if (row.name !== result.name || row.isPlayer !== result.isPlayer) {
+            row.nameLabel.string = displayName(result);
+        }
+        if (row.lane !== result.lane || row.eliminated !== eliminated) {
+            row.laneLabel.string = eliminated ? '已淘汰' : `${result.lane}`;
+        }
+        row.swimmerNode = swimmerNode;
+        row.placement = result.placement;
+        row.lane = result.lane;
+        row.eliminated = eliminated;
+        row.isPlayer = result.isPlayer;
+        row.name = result.name;
     }
 
     private replaceResult(result: RaceFinishResult) {
@@ -392,22 +411,19 @@ export class FinishRankOverlay {
 
 function addRowLabel(
     parent: Node,
-    text: string,
     centerX: number,
     width: number,
-    color: Color,
     leftAlign: boolean,
     fontSize: number,
-): void {
+): Label {
     const node = makeUiNode('L', parent);
     node.setPosition(leftAlign ? centerX + width / 2 : centerX, 0, 0);
     node.getComponent(UITransform)!.setContentSize(width, PANEL_ROW_H);
     const label = node.addComponent(Label);
-    label.string = text;
     label.fontSize = fontSize;
-    label.color = color;
     label.horizontalAlign = leftAlign ? Label.HorizontalAlign.LEFT : Label.HorizontalAlign.CENTER;
     label.verticalAlign = Label.VerticalAlign.CENTER;
+    return label;
 }
 
 function displayName(result: RaceFinishResult): string {
