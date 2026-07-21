@@ -21,6 +21,7 @@ export type RaceFinishResult = {
     time: number;
     isPlayer: boolean;
     lane: number;
+    eliminated?: boolean;
     // false when the swimmer never reached the wall before the straggler
     // countdown ended (未完成 / DNF, sharing the last placement).
     finished: boolean;
@@ -107,8 +108,14 @@ export class RaceManager extends Component {
         this._finishCountdownActive = false;
         this._finishCountdownTimer = 0;
         this._lastFinishCountdownValue = -1;
-        this.playerSwimmer?.reset();
-        for (const swimmer of this.activeAiSwimmers()) {
+        const racers: Swimmer[] = [];
+        for (const swimmer of [this.playerSwimmer, this.aiSwimmer, ...this.aiSwimmers]) {
+            if (swimmer && racers.indexOf(swimmer) === -1) {
+                racers.push(swimmer);
+            }
+        }
+        for (const swimmer of racers) {
+            swimmer.node.active = true;
             swimmer.reset();
         }
         this.onProgressUpdate?.(0, 0);
@@ -251,8 +258,10 @@ export class RaceManager extends Component {
     public getLiveLeaderboard(): RaceFinishResult[] {
         const finished: RaceFinishResult[] = [];
         const racing: RaceFinishResult[] = [];
-        for (const swimmer of this.activeRacers()) {
+        const eliminated: RaceFinishResult[] = [];
+        for (const swimmer of this.allRaceRacers()) {
             const time = this._finishTimes.get(swimmer) ?? 0;
+            const isEliminated = this._eliminated.has(swimmer);
             const result: RaceFinishResult = {
                 swimmer,
                 name: swimmer.swimmerName,
@@ -260,13 +269,18 @@ export class RaceManager extends Component {
                 time,
                 isPlayer: swimmer === this.playerSwimmer,
                 lane: laneForSwimmer(swimmer),
+                eliminated: isEliminated,
                 finished: time > 0,
             };
-            (result.finished ? finished : racing).push(result);
+            if (isEliminated) {
+                eliminated.push(result);
+            } else {
+                (result.finished ? finished : racing).push(result);
+            }
         }
         finished.sort((a, b) => a.time - b.time);
         racing.sort((a, b) => b.swimmer.distance - a.swimmer.distance);
-        const leaderboard = [...finished, ...racing];
+        const leaderboard = [...finished, ...racing, ...eliminated];
         for (let i = 0; i < leaderboard.length; i++) {
             leaderboard[i].placement = i + 1;
         }

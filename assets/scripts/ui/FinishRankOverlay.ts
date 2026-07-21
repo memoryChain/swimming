@@ -18,6 +18,7 @@ const CHIP_TEXT = uiColor(10, 22, 38, 255);
 const BADGE_BG = uiColor(10, 24, 40, 224);
 const BADGE_BG_PLAYER = uiColor(58, 40, 6, 236);
 const NAME_TEXT = uiColor(238, 246, 255, 255);
+const ELIMINATED_TEXT = uiColor(132, 147, 162, 255);
 const PANEL_BG = uiColor(9, 22, 38, 206);
 const PANEL_TITLE = uiColor(150, 214, 255, 255);
 
@@ -327,10 +328,18 @@ export class FinishRankOverlay {
                 highlight.rect(-PANEL_WIDTH / 2 + 4, -PANEL_ROW_H / 2 + 2, PANEL_WIDTH - 8, PANEL_ROW_H - 4);
                 highlight.fill();
             }
-            const accent = result.isPlayer ? PLAYER_ACCENT : NAME_TEXT;
+            const accent = result.eliminated ? ELIMINATED_TEXT : (result.isPlayer ? PLAYER_ACCENT : NAME_TEXT);
             addRowLabel(row, `${result.placement}`, -PANEL_WIDTH / 2 + 26, 34, accent, false, 17);
             addRowLabel(row, displayName(result), -PANEL_WIDTH / 2 + 52, PANEL_WIDTH - 60 - PANEL_LANE_WIDTH, accent, true, 16);
-            addRowLabel(row, `${result.lane}`, PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8, PANEL_LANE_WIDTH, PANEL_TITLE, false, 16);
+            addRowLabel(
+                row,
+                result.eliminated ? '已淘汰' : `${result.lane}`,
+                PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8,
+                PANEL_LANE_WIDTH,
+                result.eliminated ? ELIMINATED_TEXT : PANEL_TITLE,
+                false,
+                result.eliminated ? 13 : 16,
+            );
         }
         this._panel.active = true;
     }
@@ -354,7 +363,8 @@ function sameStanding(previous: RaceFinishResult[], next: RaceFinishResult[]): b
     return sortedPrevious.every((result, index) =>
         result.swimmer === sortedNext[index].swimmer
         && result.placement === sortedNext[index].placement
-        && result.lane === sortedNext[index].lane,
+        && result.lane === sortedNext[index].lane
+        && result.eliminated === sortedNext[index].eliminated,
     );
 }
 
