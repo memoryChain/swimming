@@ -112,7 +112,7 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
                 continue;
             }
             const material = options.dynamicColorEffect && options.colorMask
-                ? makeDynamicColorMaterial(original, options.dynamicColorEffect, options.colorMask, options.suitColor, options.capColor, options.waterLine)
+                ? makeDynamicColorMaterial(original, options.dynamicColorEffect, options.colorMask, options.skinColor, options.suitColor, options.capColor, options.waterLine)
                 : makeBrightenedOriginalMaterial(original, options.dynamicColorEffect ?? null, options.waterLine);
             renderer.setMaterial(material, i);
             applied++;
@@ -125,7 +125,7 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     }
 }
 
-function makeDynamicColorMaterial(original: Material, effect: EffectAsset, colorMask: Texture2D, suitColor: Color, capColor: Color, waterLine?: number): Material {
+function makeDynamicColorMaterial(original: Material, effect: EffectAsset, colorMask: Texture2D, skinColor: Color, suitColor: Color, capColor: Color, waterLine?: number): Material {
     const texture = findMaterialTexture(original);
     if (!texture) {
         return makeBrightenedOriginalMaterial(original, effect, waterLine);
@@ -136,6 +136,7 @@ function makeDynamicColorMaterial(original: Material, effect: EffectAsset, color
     material.setProperty('mainTexture', texture);
     material.setProperty('colorMask', colorMask);
     material.setProperty('mainColor', new Color(255, 255, 255, 255));
+    material.setProperty('skinColor', skinColor);
     material.setProperty('suitColor', suitColor);
     material.setProperty('capColor', capColor);
     applyWaterLine(material, waterLine);

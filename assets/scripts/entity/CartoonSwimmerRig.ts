@@ -942,19 +942,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const modelVariant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
         const colorVariant = findSwimmer0621ColorVariant(this._colorVariantId) ?? defaultSwimmer0621ColorVariant();
         const usesDynamicColor = !!modelVariant.dynamicColor
-            && !!colorVariant.suit
-            && (!modelVariant.dynamicColor.usesCapChannel || !!colorVariant.cap);
-        const resolvedSuitColor = usesDynamicColor
+            && (!!colorVariant.skin || !!colorVariant.suit || (modelVariant.dynamicColor.usesCapChannel && !!colorVariant.cap));
+        const resolvedSkinColor = colorVariant.skin
+            ? new Color(...colorVariant.skin, 255)
+            : new Color(skinColor.r, skinColor.g, skinColor.b, 0);
+        const resolvedSuitColor = colorVariant.suit
             ? new Color(...colorVariant.suit, 255)
             : suitColor;
-        const resolvedCapColor = usesDynamicColor
+        const resolvedCapColor = colorVariant.cap
             ? new Color(...colorVariant.cap, 255)
             : capColor;
         applyCharacterSkin({
             root: this.root,
             model: this._model,
             skinnedRenderers: this._skinnedRenderers,
-            skinColor,
+            skinColor: resolvedSkinColor,
             suitColor: resolvedSuitColor,
             capColor: resolvedCapColor,
             robotStyle,
@@ -1036,7 +1038,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return false;
         }
         const variant = findSwimmer0621ColorVariant(this._colorVariantId);
-        return !!variant?.suit && (!dynamicColor.usesCapChannel || !!variant.cap);
+        return !!variant?.skin
+            || !!variant?.suit
+            || (dynamicColor.usesCapChannel && !!variant?.cap);
     }
 
     private supportsDynamicColor(): boolean {

@@ -20,6 +20,7 @@ export type SwimmerModelVariant = {
 export type SwimmerColorVariant = {
     id: string;
     label: string;
+    skin?: readonly [number, number, number];
     suitLabel?: string;
     suit?: readonly [number, number, number];
     cap?: readonly [number, number, number];
@@ -210,6 +211,9 @@ export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
     { id: 'cyanRed', label: 'Cyan / Red', suitLabel: 'Cyan', suit: [24, 199, 216], cap: [240, 68, 80] },
     { id: 'yellowPurple', label: 'Yellow / Purple', suitLabel: 'Yellow', suit: [244, 201, 54], cap: [120, 71, 216] },
     { id: 'whiteRed', label: 'White / Red', suitLabel: 'White', suit: [241, 238, 227], cap: [217, 49, 73] },
+    { id: 'fairSkin', label: 'Fair Skin', skin: [255, 214, 190], suitLabel: 'Red', suit: [240, 68, 58], cap: [22, 119, 232] },
+    { id: 'warmSkin', label: 'Warm Skin', skin: [218, 163, 110], suitLabel: 'Blue', suit: [23, 109, 218], cap: [245, 238, 220] },
+    { id: 'deepSkin', label: 'Deep Skin', skin: [97, 55, 39], suitLabel: 'Green', suit: [32, 196, 106], cap: [255, 121, 38] },
 ];
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
