@@ -48,6 +48,8 @@ export class Swimmer extends Component {
         new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
     ];
     private readonly _tmpCourseRotation = new Quat();
+    private _lateralMinWorld = Number.NEGATIVE_INFINITY;
+    private _lateralMaxWorld = Number.POSITIVE_INFINITY;
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
@@ -117,8 +119,36 @@ export class Swimmer extends Component {
     private configureSteering() {
         this._motor.setSteeringEnabled(true);
         const halfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - STEERING_TUNING.poolWallClearance);
-        const laneZ = this._startPosition.z;
-        this._motor.setLateralOffsetBounds(-halfWidth - laneZ, halfWidth - laneZ);
+        this.setLateralWorldBounds(-halfWidth, halfWidth);
+    }
+
+    setLaneLockdownBounds(safeMinZ: number, safeMaxZ: number) {
+        this.setLateralWorldBounds(safeMinZ, safeMaxZ);
+    }
+
+    clearLaneLockdownBounds() {
+        const halfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - STEERING_TUNING.poolWallClearance);
+        this.setLateralWorldBounds(-halfWidth, halfWidth);
+    }
+
+    swimBoundaryZRange() {
+        const count = this.cartoonRig?.getSwimBoundaryWorldPositions(this._swimBoundaryWorldPositions) ?? 0;
+        if (count <= 0) {
+            return { min: this.node.position.z - 0.9, max: this.node.position.z + 0.9 };
+        }
+        let min = Number.POSITIVE_INFINITY;
+        let max = Number.NEGATIVE_INFINITY;
+        for (let index = 0; index < count; index++) {
+            const z = this._swimBoundaryWorldPositions[index].z;
+            min = Math.min(min, z);
+            max = Math.max(max, z);
+        }
+        return { min, max };
+    }
+
+    eliminate() {
+        this.stopRace();
+        this.node.active = false;
     }
 
     // Signed steering heading as a fraction of maxHeading (-1..1). The AI reads
@@ -595,27 +625,15 @@ export class Swimmer extends Component {
     // the root is still inside. Sample the current pose and shift the root just
     // enough to keep every boundary joint inside both walls.
     private enforcePoolWallBoundary() {
-        const count = this.cartoonRig?.getSwimBoundaryWorldPositions(this._swimBoundaryWorldPositions) ?? 0;
-        if (count <= 0) {
-            return;
-        }
-
-        let minZ = Number.POSITIVE_INFINITY;
-        let maxZ = Number.NEGATIVE_INFINITY;
-        for (let index = 0; index < count; index++) {
-            const z = this._swimBoundaryWorldPositions[index].z;
-            minZ = Math.min(minZ, z);
-            maxZ = Math.max(maxZ, z);
-        }
-
-        const wallClearance = Math.max(0, STEERING_TUNING.poolWallClearance);
-        const innerHalfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - wallClearance);
+        const bounds = this.swimBoundaryZRange();
+        const minZ = bounds.min;
+        const maxZ = bounds.max;
         let correctionZ = 0;
-        if (minZ < -innerHalfWidth) {
-            correctionZ = -innerHalfWidth - minZ;
+        if (minZ < this._lateralMinWorld) {
+            correctionZ = this._lateralMinWorld - minZ;
         }
-        if (maxZ + correctionZ > innerHalfWidth) {
-            correctionZ += innerHalfWidth - (maxZ + correctionZ);
+        if (maxZ + correctionZ > this._lateralMaxWorld) {
+            correctionZ += this._lateralMaxWorld - (maxZ + correctionZ);
         }
         if (Math.abs(correctionZ) <= 1e-5) {
             return;
@@ -627,6 +645,15 @@ export class Swimmer extends Component {
             this.node.position.x,
             this.node.position.y,
             this._startPosition.z + this._motor.lateralOffset,
+        );
+    }
+
+    private setLateralWorldBounds(minZ: number, maxZ: number) {
+        this._lateralMinWorld = Math.min(minZ, maxZ);
+        this._lateralMaxWorld = Math.max(minZ, maxZ);
+        this._motor.setLateralOffsetBounds(
+            this._lateralMinWorld - this._startPosition.z,
+            this._lateralMaxWorld - this._startPosition.z,
         );
     }
 

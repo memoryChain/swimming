@@ -67,6 +67,12 @@ export class WaterRefractionController {
     // nothing. _disturb is uploaded to the water shader's swimmerDisturb[] array.
     private readonly _disturb: Vec4[] = [];
     private readonly _disturbParams = new Vec4(DISTURB_RADIUS, DISTURB_FREQUENCY, DISTURB_STRENGTH, DISTURB_SPEED);
+    // x/y are the safe corridor's world-Z edges, z is the boundary half-width,
+    // and w enables the material-side locked lane mask.
+    private readonly _laneLockdownParams = new Vec4(0, 0, 0.075, 0);
+    // A pending corridor is rendered independently so its warning boundary does
+    // not remove the closed-water mask from an earlier lock stage.
+    private readonly _laneLockdownWarningParams = new Vec4(0, 0, 0.075, 0);
     private readonly _tmpPos = new Vec3();
     // Pool-bottom materials whose colour swaps with the camera crossing the water
     // line (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
@@ -218,6 +224,30 @@ export class WaterRefractionController {
         }
         this._underwaterViewActive = active;
         this._debug?.(`water surface ${active ? 'hidden for underwater camera' : 'restored above water'}`);
+    }
+
+    setLaneLockdownMask(safeMinZ: number, safeMaxZ: number) {
+        this._laneLockdownParams.set(
+            Math.min(safeMinZ, safeMaxZ),
+            Math.max(safeMinZ, safeMaxZ),
+            0.075,
+            1,
+        );
+        this._laneLockdownWarningParams.w = 0;
+    }
+
+    setLaneLockdownWarning(safeMinZ: number, safeMaxZ: number) {
+        this._laneLockdownWarningParams.set(
+            Math.min(safeMinZ, safeMaxZ),
+            Math.max(safeMinZ, safeMaxZ),
+            0.075,
+            1,
+        );
+    }
+
+    clearLaneLockdownMask() {
+        this._laneLockdownParams.w = 0;
+        this._laneLockdownWarningParams.w = 0;
     }
 
     // Collect the pool-bottom renderers matching FLOOR_TINT, give each an unlit
@@ -376,6 +406,8 @@ export class WaterRefractionController {
         // Re-apply the RenderTexture every frame so runtime resize or GPU texture
         // handle changes cannot leave the sampler pointing at a stale texture.
         material.setProperty('refractionMap', this._renderTexture);
+        material.setProperty('laneLockdownParams', this._laneLockdownParams);
+        material.setProperty('laneLockdownWarningParams', this._laneLockdownWarningParams);
         const changed = material !== this._boundMaterial;
         if (changed) {
             this._boundMaterial = material;

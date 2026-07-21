@@ -30,6 +30,7 @@ export type GameFlowRefs = {
     clearFinishRanks: () => void;
     showLiveRanks: (results: RaceFinishResult[]) => void;
     showFinishRank: (result: RaceFinishResult) => void;
+    onSwimmerEliminated: (swimmer: Swimmer) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
     enterSprint: () => void;
@@ -256,6 +257,10 @@ export class GameFlowController {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
         };
+        raceManager.onSwimmerEliminated = (swimmer) => {
+            this._refs.debug(`eliminated ${swimmer.swimmerName}`);
+            this._refs.onSwimmerEliminated(swimmer);
+        };
         raceManager.onFinishCountdownTick = (value) => {
             this._refs.uiFlow.showFinishCountdown(value);
         };
@@ -296,6 +301,7 @@ export class GameFlowController {
         raceManager.onStateChange = null;
         raceManager.onProgressUpdate = null;
         raceManager.onSwimmerFinished = null;
+        raceManager.onSwimmerEliminated = null;
         raceManager.onFinishCountdownTick = null;
         raceManager.onRaceFinished = null;
         raceManager.onDiveReady = null;

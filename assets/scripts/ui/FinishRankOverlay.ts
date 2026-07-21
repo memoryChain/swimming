@@ -29,9 +29,10 @@ const BADGE_STACK_GAP = 33;
 const BADGE_CLUSTER_X = 110;
 
 const PANEL_MARGIN = 14;
-const PANEL_WIDTH = 184;
+const PANEL_WIDTH = 218;
 const PANEL_TITLE_H = 30;
 const PANEL_ROW_H = 30;
+const PANEL_LANE_WIDTH = 40;
 const PANEL_TOP_CLEARANCE = PANEL_TITLE_H + PANEL_ROW_H;
 const EXIT_BUTTON_H = 36;
 const EXIT_BUTTON_GAP = 8;
@@ -82,12 +83,21 @@ export class FinishRankOverlay {
             const bg = panel.addComponent(Graphics);
             const title = makeUiNode('Title', panel);
             const titleLabel = title.addComponent(Label);
-            titleLabel.string = '名次';
+            titleLabel.string = '实时名次';
             titleLabel.fontSize = 18;
             titleLabel.color = PANEL_TITLE;
             titleLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
             titleLabel.verticalAlign = Label.VerticalAlign.CENTER;
             title.getComponent(UITransform)!.setContentSize(PANEL_WIDTH, PANEL_TITLE_H);
+            const laneHeader = makeUiNode('LaneHeader', panel);
+            laneHeader.setPosition(PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8, -PANEL_TITLE_H / 2, 0);
+            laneHeader.getComponent(UITransform)!.setContentSize(PANEL_LANE_WIDTH, PANEL_TITLE_H);
+            const laneHeaderLabel = laneHeader.addComponent(Label);
+            laneHeaderLabel.string = '泳道';
+            laneHeaderLabel.fontSize = 13;
+            laneHeaderLabel.color = PANEL_TITLE;
+            laneHeaderLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+            laneHeaderLabel.verticalAlign = Label.VerticalAlign.CENTER;
             this._panelRows = makeUiNode('Rows', panel);
             this._exitButton = makeButton('ExitRaceButton', panel, PANEL_WIDTH, EXIT_BUTTON_H, uiColor(190, 64, 72, 238), '退出比赛');
             this._exitButton.on(Node.EventType.TOUCH_END, onExitRace);
@@ -319,7 +329,8 @@ export class FinishRankOverlay {
             }
             const accent = result.isPlayer ? PLAYER_ACCENT : NAME_TEXT;
             addRowLabel(row, `${result.placement}`, -PANEL_WIDTH / 2 + 26, 34, accent, false, 17);
-            addRowLabel(row, displayName(result), -PANEL_WIDTH / 2 + 52, PANEL_WIDTH - 60, accent, true, 16);
+            addRowLabel(row, displayName(result), -PANEL_WIDTH / 2 + 52, PANEL_WIDTH - 60 - PANEL_LANE_WIDTH, accent, true, 16);
+            addRowLabel(row, `${result.lane}`, PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8, PANEL_LANE_WIDTH, PANEL_TITLE, false, 16);
         }
         this._panel.active = true;
     }
@@ -342,7 +353,8 @@ function sameStanding(previous: RaceFinishResult[], next: RaceFinishResult[]): b
     const sortedNext = [...next].sort((a, b) => a.placement - b.placement);
     return sortedPrevious.every((result, index) =>
         result.swimmer === sortedNext[index].swimmer
-        && result.placement === sortedNext[index].placement,
+        && result.placement === sortedNext[index].placement
+        && result.lane === sortedNext[index].lane,
     );
 }
 

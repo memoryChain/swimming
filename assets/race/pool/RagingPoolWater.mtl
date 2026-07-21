@@ -86,6 +86,34 @@
         "y": 0,
         "z": 0.50,
         "w": 5.5
+      },
+      "laneLockdownParams": {
+        "__type__": "cc.Vec4",
+        "x": 0,
+        "y": 0,
+        "z": 0.075,
+        "w": 0
+      },
+      "laneLockdownWarningParams": {
+        "__type__": "cc.Vec4",
+        "x": 0,
+        "y": 0,
+        "z": 0.075,
+        "w": 0
+      },
+      "laneLockdownClosedColor": {
+        "__type__": "cc.Color",
+        "r": 41,
+        "g": 52,
+        "b": 77,
+        "a": 224
+      },
+      "laneLockdownBoundaryColor": {
+        "__type__": "cc.Color",
+        "r": 185,
+        "g": 230,
+        "b": 242,
+        "a": 255
       }
     }
   ]

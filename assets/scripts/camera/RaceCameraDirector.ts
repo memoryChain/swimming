@@ -58,6 +58,22 @@ const AWARDS_AUTO_ROTATE_IDLE = 1.5;   // seconds of no input before the idle dr
 const AWARDS_YAW_DRAG_SCALE = 0.008;
 const AWARDS_PITCH_DRAG_SCALE = 0.006;
 const AWARDS_ZOOM_SCALE = 0.006;
+// Spectator free-look follows an active swimmer from behind. Its yaw is relative
+// to the swimmer's race direction, so flip turns automatically move the camera
+// to the new trailing side without discarding the player's orbit adjustment.
+const SPECTATOR_TARGET_Y = 0.72;
+const SPECTATOR_LOOK_AHEAD = 0.9;
+const SPECTATOR_DEFAULT_DISTANCE = 6.5;
+const SPECTATOR_MIN_DISTANCE = 2.8;
+const SPECTATOR_MAX_DISTANCE = 12.0;
+const SPECTATOR_DEFAULT_PITCH = 0.24;
+const SPECTATOR_MIN_PITCH = 0.06;
+const SPECTATOR_MAX_PITCH = 1.1;
+const SPECTATOR_MIN_YAW = -Math.PI * 0.42;
+const SPECTATOR_MAX_YAW = Math.PI * 0.42;
+const SPECTATOR_YAW_DRAG_SCALE = 0.008;
+const SPECTATOR_PITCH_DRAG_SCALE = 0.006;
+const SPECTATOR_ZOOM_SCALE = 0.008;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
 const DIVE_SIDE_MIN_SECONDS = 0.58;
@@ -185,6 +201,12 @@ export class RaceCameraDirector {
     private _awardsDistance = AWARDS_DEFAULT_DISTANCE;
     private _awardsIdleSeconds = 0;
     private _awardsAutoRotateDirection = 1;
+    private _spectatorFreeLookActive = false;
+    private _spectatorCenter: Vec3 | null = null;
+    private _spectatorDirection = 1;
+    private _spectatorYaw = 0;
+    private _spectatorPitch = SPECTATOR_DEFAULT_PITCH;
+    private _spectatorDistance = SPECTATOR_DEFAULT_DISTANCE;
 
     constructor(private readonly _playerLaneZ: number, private readonly _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT) {
         this._cameraTarget.set(8, 0.25, _playerLaneZ);
@@ -221,6 +243,8 @@ export class RaceCameraDirector {
 
     resetToBroadcast() {
         this._awardsCenter = null;
+        this._spectatorFreeLookActive = false;
+        this._spectatorCenter = null;
         this.selectMode(RaceCameraMode.Broadcast);
         this.resetBroadcastCamera();
     }
@@ -239,6 +263,8 @@ export class RaceCameraDirector {
         this._mode = RaceCameraMode.Broadcast;
         this._topViewActive = false;
         this._awardsCenter = null;
+        this._spectatorFreeLookActive = false;
+        this._spectatorCenter = null;
         this._preCountdownElapsed = 0;
         this._preCountdownActive = true;
         this._preCountdownReady = false;
@@ -287,6 +313,8 @@ export class RaceCameraDirector {
         this._flipTurnViewActive = false;
         this._preCountdownActive = false;
         this._preCountdownReady = false;
+        this._spectatorFreeLookActive = false;
+        this._spectatorCenter = null;
         this._awardsCenter = center.clone();
         this._awardsYaw = AWARDS_DEFAULT_YAW;
         this._awardsPitch = AWARDS_DEFAULT_PITCH;
@@ -298,9 +326,50 @@ export class RaceCameraDirector {
         this.applyFov();
     }
 
+    startSpectatorFreeLook(center: Vec3, direction: number) {
+        this._mode = RaceCameraMode.Broadcast;
+        this._topViewActive = false;
+        this._underwaterViewActive = false;
+        this._flipTurnViewActive = false;
+        this._awardsCenter = null;
+        this._spectatorFreeLookActive = true;
+        this._spectatorCenter = center.clone();
+        this._spectatorDirection = direction >= 0 ? 1 : -1;
+        this._spectatorYaw = 0;
+        this._spectatorPitch = SPECTATOR_DEFAULT_PITCH;
+        this._spectatorDistance = SPECTATOR_DEFAULT_DISTANCE;
+        this._broadcastCameraFov = 44;
+        this._broadcastDesiredFov = 44;
+        this.applyFov();
+    }
+
+    updateSpectatorFreeLookTarget(center: Vec3, direction: number) {
+        if (this._spectatorFreeLookActive && this._spectatorCenter) {
+            this._spectatorCenter.set(center);
+            this._spectatorDirection = direction >= 0 ? 1 : -1;
+        }
+    }
+
+    stopSpectatorFreeLook() {
+        if (!this._spectatorFreeLookActive) {
+            return;
+        }
+        this._spectatorFreeLookActive = false;
+        this._spectatorCenter = null;
+        this.resetBroadcastCamera();
+    }
+
+    get spectatorFreeLookActive(): boolean {
+        return this._spectatorFreeLookActive;
+    }
+
     // True while the awards ceremony free-look is active (podium centre is set).
     isAwardsFreeLookActive(): boolean {
         return !!this._awardsCenter;
+    }
+
+    isFreeLookActive(): boolean {
+        return this.isAwardsFreeLookActive() || this._spectatorFreeLookActive;
     }
 
     // Drag to orbit the awards camera around the podium. deltaX/deltaY are raw pointer
@@ -330,6 +399,33 @@ export class RaceCameraDirector {
         }
         this._awardsDistance = clamp(this._awardsDistance - scroll * AWARDS_ZOOM_SCALE, AWARDS_MIN_DISTANCE, AWARDS_MAX_DISTANCE);
         this._awardsIdleSeconds = 0;
+    }
+
+    orbitSpectatorCamera(deltaX: number, deltaY: number) {
+        if (!this._spectatorFreeLookActive) {
+            return;
+        }
+        this._spectatorYaw = clamp(
+            this._spectatorYaw - deltaX * SPECTATOR_YAW_DRAG_SCALE,
+            SPECTATOR_MIN_YAW,
+            SPECTATOR_MAX_YAW,
+        );
+        this._spectatorPitch = clamp(
+            this._spectatorPitch + deltaY * SPECTATOR_PITCH_DRAG_SCALE,
+            SPECTATOR_MIN_PITCH,
+            SPECTATOR_MAX_PITCH,
+        );
+    }
+
+    zoomSpectatorCamera(scroll: number) {
+        if (!this._spectatorFreeLookActive) {
+            return;
+        }
+        this._spectatorDistance = clamp(
+            this._spectatorDistance - scroll * SPECTATOR_ZOOM_SCALE,
+            SPECTATOR_MIN_DISTANCE,
+            SPECTATOR_MAX_DISTANCE,
+        );
     }
 
     consumePreCountdownReady(): boolean {
@@ -369,6 +465,13 @@ export class RaceCameraDirector {
             this.updateBroadcastCamera(dt, snapshot);
             return;
         }
+        if (this._spectatorFreeLookActive && this._spectatorCenter) {
+            this._flipTurnViewActive = false;
+            this._underwaterViewActive = false;
+            this._topViewActive = false;
+            this.updateSpectatorCamera(dt);
+            return;
+        }
         const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive && !this._feedMode;
         if (flipTurnViewRequested) {
             const enteringFlipTurnView = !this._flipTurnViewActive;
@@ -398,6 +501,33 @@ export class RaceCameraDirector {
             return;
         }
         this.updateTopCamera(snapshot);
+    }
+
+    private updateSpectatorCamera(dt: number) {
+        const center = this._spectatorCenter;
+        if (!center) {
+            return;
+        }
+        const cosPitch = Math.cos(this._spectatorPitch);
+        const horizontalDistance = cosPitch * this._spectatorDistance;
+        const targetY = center.y + SPECTATOR_TARGET_Y;
+        const desiredTarget = new Vec3(
+            center.x + this._spectatorDirection * SPECTATOR_LOOK_AHEAD,
+            targetY,
+            center.z,
+        );
+        const desiredPos = new Vec3(
+            center.x - this._spectatorDirection * Math.cos(this._spectatorYaw) * horizontalDistance,
+            targetY + Math.sin(this._spectatorPitch) * this._spectatorDistance,
+            center.z + Math.sin(this._spectatorYaw) * horizontalDistance,
+        );
+        const smooth = cameraBlend(dt, 10.5);
+        Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
+        Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
+        this._broadcastCameraFov += (44 - this._broadcastCameraFov) * smooth;
+        this._broadcastDesiredFov = 44;
+        this.applyCameraTransform();
+        this.applyFov();
     }
 
     applyFov() {

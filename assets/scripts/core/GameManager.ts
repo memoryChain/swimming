@@ -1,5 +1,6 @@
 import {
     _decorator,
+    Button,
     Camera,
     Color,
     Component,
@@ -53,7 +54,8 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { setTimeScale, scaledDelta } from './TimeScale';
@@ -66,6 +68,7 @@ import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
+import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
@@ -109,7 +112,7 @@ export class GameManager extends Component {
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
     private _isReturningToLogin = false;
-    // True while a pointer is dragging to orbit the awards free-look camera.
+    // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
 
@@ -120,13 +123,24 @@ export class GameManager extends Component {
     private _swimmersRoot: Node = null;
     private _poolNode: Node = null;
     private _cameraNode: Node = null;
+    private _playerLaneIndex = PLAYER_LANE_INDEX;
+    private _primaryAiLaneIndex = PRIMARY_AI_LANE_INDEX;
     private _waterRefraction: WaterRefractionController | null = null;
+    private _laneLockdownVisuals: LaneLockdownVisuals | null = null;
+    private _laneLockdownRace: LaneLockdownRaceController | null = null;
+    private _laneLockdownStatusLabel: Label | null = null;
+    private _eliminationDialog: Node | null = null;
+    private _spectatorHud: Node | null = null;
+    private _spectatorTargetLabel: Label | null = null;
+    private _spectatorTarget: Swimmer | null = null;
+    private _spectating = false;
     private _venueManager: VenueManager | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
     private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
     private readonly _tmpLaneFloatCutoutCenter = new Vec3();
+    private readonly _tmpSpectatorTarget = new Vec3();
     private readonly _tmpDialRight = new Vec3();
     // Sweet-zone dials float above each swimmer's head and follow them. World Y
     // offset lifts the anchor above the (roughly water-level, horizontal) body;
@@ -246,6 +260,9 @@ export class GameManager extends Component {
         this._inputRouter?.unbind();
         this._gameFlow?.stopAllAi();
         this._gameFlow?.clearRaceManagerCallbacks();
+        this._laneLockdownVisuals?.dispose();
+        this._laneLockdownVisuals = null;
+        this._laneLockdownRace = null;
         this._waterRefraction?.dispose();
         this._waterRefraction = null;
         this._scoreboardFeed?.dispose();
@@ -268,7 +285,8 @@ export class GameManager extends Component {
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
-        const playerBeforeFinish = this._playerSwimmer.distance < raceDistance;
+        const playerAlive = this._playerSwimmer.node.active;
+        const playerBeforeFinish = playerAlive && this._playerSwimmer.distance < raceDistance;
         const laneFloatCutoutActive = !this._modelDebugFlow?.active
             && playerBeforeFinish
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
@@ -331,6 +349,7 @@ export class GameManager extends Component {
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         this.updateSwimmerCollisions();
+        this.updateLaneLockdown(dt);
         // Roster info panel only during pre-race stage 1 (the wide overview shot);
         // it fades out as the per-lane close-up sweep begins.
         this._preRaceIntroPanel.setVisible(
@@ -355,6 +374,7 @@ export class GameManager extends Component {
             this._waterRefraction?.update();
             return;
         }
+        this.updateSpectatorCameraTarget();
         this._gameFlow?.updateRaceCamera(dt);
         this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
@@ -532,6 +552,7 @@ export class GameManager extends Component {
                     this._raceManager.playerSwimmer = this._playerSwimmer;
                     this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
                     this._raceManager.aiSwimmers = this._aiSwimmers;
+                    this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
@@ -574,8 +595,22 @@ export class GameManager extends Component {
                 this.syncConditionPhase(state);
                 if (state === GameState.PRECOUNTDOWN) {
                     MusicManager.playRace();
+                    this.hideEliminationAndSpectatorUi();
+                    this._playerSwimmer?.clearLaneLockdownBounds();
+                    for (const swimmer of this._aiSwimmers) {
+                        swimmer.clearLaneLockdownBounds();
+                    }
+                    this._laneLockdownRace?.reset();
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
+                    this._spectating = false;
+                    this._spectatorTarget = null;
+                    if (this._eliminationDialog) {
+                        this._eliminationDialog.active = false;
+                    }
+                    if (this._spectatorHud) {
+                        this._spectatorHud.active = false;
+                    }
                 }
                 // The start blocks are a statically batched, non-cullable mesh only
                 // seen at the dive end. Hide them once the swimmer leaves the wall
@@ -594,6 +629,7 @@ export class GameManager extends Component {
             clearFinishRanks: () => this._finishRankOverlay.clear(),
             showLiveRanks: (results) => this._finishRankOverlay.showLiveResults(results),
             showFinishRank: (result) => this._finishRankOverlay.addResult(result),
+            onSwimmerEliminated: (swimmer) => this.handleSwimmerEliminated(swimmer),
             showAwards: (leaderboard) => {
                 this._playerOnAwardsPodium = leaderboard.some((row) =>
                     row.isPlayer && row.finished && row.placement >= 1 && row.placement <= 3,
@@ -716,6 +752,7 @@ export class GameManager extends Component {
                 const ceilingCount = this._topViewCeiling.bind(pool);
                 this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);
+                this.setupLaneLockdownVisualPreview();
                 done(pool);
             }, 0);
         });
@@ -735,6 +772,55 @@ export class GameManager extends Component {
         if (!ok) {
             this._waterRefraction = null;
         }
+    }
+
+    private setupLaneLockdownVisualPreview() {
+        this._laneLockdownVisuals?.dispose();
+        this._laneLockdownVisuals = null;
+        if (!getRaceDifficultyConfig().laneLockdownEnabled || !this._waterRefraction) {
+            return;
+        }
+        this._laneLockdownVisuals = new LaneLockdownVisuals(this._waterRefraction, COURSE_LAYOUT);
+        this._laneLockdownVisuals.clear();
+    }
+
+    private setupLaneLockdownRace() {
+        this._laneLockdownRace = null;
+        if (!getRaceDifficultyConfig().laneLockdownEnabled || !this._raceManager) {
+            return;
+        }
+        this._laneLockdownRace = new LaneLockdownRaceController(
+            COURSE_LAYOUT,
+            this._laneLockdownVisuals,
+            (swimmer) => this._raceManager?.eliminateSwimmer(swimmer),
+            (status) => this.updateLaneLockdownStatus(status),
+        );
+        this._laneLockdownRace.reset();
+    }
+
+    private updateLaneLockdown(dt: number) {
+        if (!this._laneLockdownRace || this._modelDebugFlow?.active) {
+            return;
+        }
+        const racers = [this._playerSwimmer, ...this._aiSwimmers]
+            .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.active));
+        this._laneLockdownRace.update(dt, this._state, racers);
+    }
+
+    private updateLaneLockdownStatus(status: LaneLockdownStatus | null) {
+        const label = this._laneLockdownStatusLabel;
+        if (!label) {
+            return;
+        }
+        if (!status) {
+            label.node.active = false;
+            return;
+        }
+        label.node.active = this._state === GameState.RACING;
+        label.string = status.locked
+            ? `安全泳道 ${status.firstSafeLane}-${status.lastSafeLane}`
+            : `泳道收缩 ${status.warningSeconds}s  前往 ${status.firstSafeLane}-${status.lastSafeLane} 道`;
+        label.color = status.locked ? new Color(185, 230, 242, 255) : new Color(255, 244, 188, 255);
     }
 
     // Current swimmer render roots (body + sibling splash effect nodes) for the
@@ -792,7 +878,7 @@ export class GameManager extends Component {
             mainCamera,
             pool,
             courseLayout: COURSE_LAYOUT,
-            playerLaneZ: PLAYER_LANE_Z,
+            playerLaneZ: LANE_LAYOUT.centerZ(this._playerLaneIndex),
             debug: (message) => this.debug(message),
         });
     }
@@ -801,13 +887,14 @@ export class GameManager extends Component {
         return new CompetitorManager({
             laneLayout: LANE_LAYOUT,
             courseLayout: COURSE_LAYOUT,
-            playerLaneIndex: PLAYER_LANE_INDEX,
-            primaryAiLaneIndex: PRIMARY_AI_LANE_INDEX,
+            playerLaneIndex: this._playerLaneIndex,
+            primaryAiLaneIndex: this._primaryAiLaneIndex,
             debug: (message) => this.debug(message),
         });
     }
 
     private buildPlayerSwimmer3D(root: Node) {
+        this.assignRaceLanes();
         const competitors = this.createCompetitorManager().buildPlayer(root);
         this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
@@ -817,6 +904,20 @@ export class GameManager extends Component {
         this._aiConditions = [];
         this.applySplashParticlesEnabled();
         this.refreshAiDifficultyPanel();
+    }
+
+    private assignRaceLanes() {
+        this._playerLaneIndex = PLAYER_LANE_INDEX;
+        this._primaryAiLaneIndex = PRIMARY_AI_LANE_INDEX;
+        if (!getRaceDifficultyConfig().laneLockdownEnabled) {
+            return;
+        }
+        this._playerLaneIndex = Math.floor(Math.random() * LANE_LAYOUT.laneCount);
+        this._primaryAiLaneIndex = this._playerLaneIndex === PRIMARY_AI_LANE_INDEX
+            ? (PRIMARY_AI_LANE_INDEX + 1) % LANE_LAYOUT.laneCount
+            : PRIMARY_AI_LANE_INDEX;
+        this._cameraTarget.z = LANE_LAYOUT.centerZ(this._playerLaneIndex);
+        this.debug(`lane-lockdown start lane=${this._playerLaneIndex + 1}`);
     }
 
     private buildDeferredAiSwimmers() {
@@ -837,7 +938,7 @@ export class GameManager extends Component {
         const competitors = this.createCompetitorManager().buildAi(
             this._swimmersRoot,
             this._aiDebugMode
-                ? { soloLane: PRIMARY_AI_LANE_INDEX, difficultyOverride: this._aiDebugDifficulty }
+                ? { soloLane: this._primaryAiLaneIndex, difficultyOverride: this._aiDebugDifficulty }
                 : undefined,
         );
         this._aiController = competitors.primaryAiController;
@@ -877,7 +978,7 @@ export class GameManager extends Component {
     // order, skipping the player lane).
     private refreshAiDifficultyPanel() {
         const entries = this._aiControllers.map((controller, i) => ({
-            lane: i < PLAYER_LANE_INDEX ? i : i + 1,
+            lane: i < this._playerLaneIndex ? i : i + 1,
             name: this._aiSwimmers[i]?.swimmerName ?? 'AI',
             difficulty: controller.difficulty,
         }));
@@ -951,6 +1052,8 @@ export class GameManager extends Component {
             }
 
             this._raceHud = refs.raceHud;
+            this.buildLaneLockdownStatus(this._raceHud, w, h);
+            this.buildEliminationSpectatorUi(this._raceHud, w, h);
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
             this._timingGuideFillNode = refs.timingGuideFillNode;
@@ -1006,6 +1109,125 @@ export class GameManager extends Component {
             });
             done();
         });
+    }
+
+    private buildLaneLockdownStatus(raceHud: Node, width: number, height: number) {
+        if (!getRaceDifficultyConfig().laneLockdownEnabled) {
+            return;
+        }
+        const labelNode = makeLabel('LaneLockdownStatus', raceHud, '', 22, new Color(185, 230, 242, 255));
+        labelNode.setPosition(0, height * 0.5 - 120, 0);
+        labelNode.getComponent(UITransform)?.setContentSize(Math.min(width - 40, 560), 44);
+        labelNode.active = false;
+        const label = labelNode.getComponent(Label);
+        this._laneLockdownStatusLabel = label;
+    }
+
+    private buildEliminationSpectatorUi(raceHud: Node, width: number, height: number) {
+        const dialog = makeUiNode('EliminationDialog', raceHud);
+        dialog.getComponent(UITransform)?.setContentSize(width, height);
+        makeRect('Shade', dialog, width, height, new Color(5, 14, 26, 188));
+        const panel = makeRect('Panel', dialog, 470, 242, new Color(19, 42, 66, 248));
+        const title = makeLabel('Title', panel, '你已被淘汰', 30, new Color(255, 244, 188, 255));
+        title.setPosition(0, 70, 0);
+        const detail = makeLabel('Detail', panel, '本局仍在进行，选择接下来的观看方式', 18, new Color(220, 236, 248, 255));
+        detail.setPosition(0, 28, 0);
+        const exitButton = makeButton('ExitRace', panel, 170, 52, new Color(61, 81, 99, 255), '退出游戏');
+        exitButton.setPosition(-96, -64, 0);
+        exitButton.on(Button.EventType.CLICK, this.returnToLogin, this);
+        const spectateButton = makeButton('SpectateRace', panel, 170, 52, new Color(26, 131, 170, 255), '观战');
+        spectateButton.setPosition(96, -64, 0);
+        spectateButton.on(Button.EventType.CLICK, this.startSpectating, this);
+        dialog.active = false;
+        this._eliminationDialog = dialog;
+
+        const spectatorHud = makeUiNode('SpectatorHud', raceHud);
+        spectatorHud.getComponent(UITransform)?.setContentSize(width, height);
+        const targetLabelNode = makeLabel('SpectatorTarget', spectatorHud, '', 20, new Color(220, 244, 255, 255));
+        targetLabelNode.setPosition(0, height * 0.5 - 170, 0);
+        this._spectatorTargetLabel = targetLabelNode.getComponent(Label);
+        const switchButton = makeButton('SwitchSpectatorTarget', spectatorHud, 180, 48, new Color(26, 131, 170, 245), '切换观战目标');
+        switchButton.setPosition(width * 0.5 - 120, -height * 0.5 + 100, 0);
+        switchButton.on(Button.EventType.CLICK, this.cycleSpectatorTarget, this);
+        spectatorHud.active = false;
+        this._spectatorHud = spectatorHud;
+    }
+
+    private handleSwimmerEliminated(swimmer: Swimmer) {
+        if (swimmer === this._spectatorTarget) {
+            this.selectSpectatorTarget(false);
+        }
+        if (swimmer !== this._playerSwimmer) {
+            return;
+        }
+        if (this._eliminationDialog) {
+            this._eliminationDialog.active = true;
+        }
+        if (this._spectatorHud) {
+            this._spectatorHud.active = false;
+        }
+    }
+
+    private startSpectating() {
+        if (this._eliminationDialog) {
+            this._eliminationDialog.active = false;
+        }
+        this._spectating = true;
+        if (this._spectatorHud) {
+            this._spectatorHud.active = true;
+        }
+        this.selectSpectatorTarget(true);
+    }
+
+    private cycleSpectatorTarget() {
+        this.selectSpectatorTarget(false);
+    }
+
+    private selectSpectatorTarget(randomize: boolean) {
+        const candidates = this._aiSwimmers.filter((swimmer) => swimmer?.node?.active);
+        if (candidates.length <= 0) {
+            this._spectating = false;
+            this._spectatorTarget = null;
+            if (this._spectatorHud) {
+                this._spectatorHud.active = false;
+            }
+            this._raceCameraDirector.stopSpectatorFreeLook();
+            return;
+        }
+        const currentIndex = candidates.indexOf(this._spectatorTarget);
+        const index = randomize
+            ? Math.floor(Math.random() * candidates.length)
+            : (currentIndex + 1 + candidates.length) % candidates.length;
+        this._spectatorTarget = candidates[index];
+        this._spectatorTarget.node.getWorldPosition(this._tmpSpectatorTarget);
+        this._raceCameraDirector.startSpectatorFreeLook(this._tmpSpectatorTarget, this._spectatorTarget.raceDirection);
+        if (this._spectatorTargetLabel) {
+            this._spectatorTargetLabel.string = `观战：${this._spectatorTarget.swimmerName}`;
+        }
+    }
+
+    private updateSpectatorCameraTarget() {
+        if (!this._spectating) {
+            return;
+        }
+        if (!this._spectatorTarget?.node?.active) {
+            this.selectSpectatorTarget(false);
+            return;
+        }
+        this._spectatorTarget.node.getWorldPosition(this._tmpSpectatorTarget);
+        this._raceCameraDirector.updateSpectatorFreeLookTarget(this._tmpSpectatorTarget, this._spectatorTarget.raceDirection);
+    }
+
+    private hideEliminationAndSpectatorUi() {
+        if (this._eliminationDialog) {
+            this._eliminationDialog.active = false;
+        }
+        if (this._spectatorHud) {
+            this._spectatorHud.active = false;
+        }
+        this._spectating = false;
+        this._spectatorTarget = null;
+        this._raceCameraDirector.stopSpectatorFreeLook();
     }
 
     private registerEvents() {
@@ -1349,7 +1571,7 @@ export class GameManager extends Component {
             this._modelDebugFlow.onMouseDown(event);
             return;
         }
-        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
+        if (this._raceCameraDirector.isFreeLookActive()) {
             const button = event.getButton();
             this._awardsCameraDragging = button === EventMouse.BUTTON_LEFT
                 || button === EventMouse.BUTTON_RIGHT
@@ -1362,8 +1584,8 @@ export class GameManager extends Component {
             this._modelDebugFlow.onMouseMove(event);
             return;
         }
-        if (this._awardsCameraDragging && this._raceCameraDirector.isAwardsFreeLookActive()) {
-            this._raceCameraDirector.orbitAwardsCamera(event.getDeltaX(), event.getDeltaY());
+        if (this._awardsCameraDragging && this._raceCameraDirector.isFreeLookActive()) {
+            this.orbitFreeLookCamera(event.getDeltaX(), event.getDeltaY());
         }
     }
 
@@ -1380,18 +1602,18 @@ export class GameManager extends Component {
             this._modelDebugFlow.onMouseWheel(event);
             return;
         }
-        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
-            this._raceCameraDirector.zoomAwardsCamera(event.getScrollY());
+        if (this._raceCameraDirector.isFreeLookActive()) {
+            this.zoomFreeLookCamera(event.getScrollY());
         }
     }
 
-    // Touch orbit / pinch-zoom for the awards ceremony free-look camera (mobile).
+    // Touch orbit / pinch-zoom for the active free-look camera (mobile).
     private onAwardsCameraOrbit(deltaX: number, deltaY: number) {
         if (this._modelDebugFlow?.active) {
             return;
         }
-        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
-            this._raceCameraDirector.orbitAwardsCamera(deltaX, deltaY);
+        if (this._raceCameraDirector.isFreeLookActive()) {
+            this.orbitFreeLookCamera(deltaX, deltaY);
         }
     }
 
@@ -1399,7 +1621,23 @@ export class GameManager extends Component {
         if (this._modelDebugFlow?.active) {
             return;
         }
-        if (this._raceCameraDirector.isAwardsFreeLookActive()) {
+        if (this._raceCameraDirector.isFreeLookActive()) {
+            this.zoomFreeLookCamera(scroll);
+        }
+    }
+
+    private orbitFreeLookCamera(deltaX: number, deltaY: number) {
+        if (this._raceCameraDirector.spectatorFreeLookActive) {
+            this._raceCameraDirector.orbitSpectatorCamera(deltaX, deltaY);
+        } else {
+            this._raceCameraDirector.orbitAwardsCamera(deltaX, deltaY);
+        }
+    }
+
+    private zoomFreeLookCamera(scroll: number) {
+        if (this._raceCameraDirector.spectatorFreeLookActive) {
+            this._raceCameraDirector.zoomSpectatorCamera(scroll);
+        } else {
             this._raceCameraDirector.zoomAwardsCamera(scroll);
         }
     }

@@ -34,6 +34,11 @@ CCEffect %{
         # z = spot radius, w = intensity (0 disables it on lower tiers).
         roofReflectionParams: { value: [6.20, 5.00, 0.42, 0.26] }
         roofReflectionColor: { value: [0.72, 0.92, 1.00, 1.00], linear: true, editor: { type: color } }
+        # x/y = safe world-Z bounds, z = boundary half-width, w = enabled.
+        laneLockdownParams: { value: [0.00, 0.00, 0.075, 0.00] }
+        laneLockdownWarningParams: { value: [0.00, 0.00, 0.075, 0.00] }
+        laneLockdownClosedColor: { value: [0.025, 0.034, 0.074, 0.88], linear: true, editor: { type: color } }
+        laneLockdownBoundaryColor: { value: [0.485, 0.791, 0.888, 1.00], linear: true, editor: { type: color } }
         refractionMap:   { value: grey }
 }%
 
@@ -64,6 +69,10 @@ CCProgram water-vs %{
     vec4 waterColor;
     vec4 roofReflectionParams;
     vec4 roofReflectionColor;
+    vec4 laneLockdownParams;
+    vec4 laneLockdownWarningParams;
+    vec4 laneLockdownClosedColor;
+    vec4 laneLockdownBoundaryColor;
   };
 
   vec4 vert () {
@@ -117,6 +126,10 @@ CCProgram water-fs %{
     vec4 waterColor;
     vec4 roofReflectionParams;
     vec4 roofReflectionColor;
+    vec4 laneLockdownParams;
+    vec4 laneLockdownWarningParams;
+    vec4 laneLockdownClosedColor;
+    vec4 laneLockdownBoundaryColor;
   };
 
   // Underwater scene (pool floor) rendered by the refraction camera into a
@@ -234,6 +247,68 @@ CCProgram water-fs %{
     // water plane.)
     color = mix(color, shallowColor.rgb * 1.15, fresnel * 0.20);
     color += vec3(0.05, 0.10, 0.12) * max(v_wave, 0.0) * 0.9;
+
+    // Keep the lockdown treatment in this material rather than adding world
+    // meshes: it then survives the same refraction, water tint, and camera-layer
+    // path as the rest of the pool surface.
+    if (laneLockdownParams.w > 0.5) {
+      float lowerSafe = smoothstep(
+        laneLockdownParams.x - laneLockdownParams.z,
+        laneLockdownParams.x + laneLockdownParams.z,
+        v_worldPos.z
+      );
+      float upperSafe = 1.0 - smoothstep(
+        laneLockdownParams.y - laneLockdownParams.z,
+        laneLockdownParams.y + laneLockdownParams.z,
+        v_worldPos.z
+      );
+      float safeMask = lowerSafe * upperSafe;
+      float closedMask = 1.0 - safeMask;
+      float edgeDistance = min(
+        abs(v_worldPos.z - laneLockdownParams.x),
+        abs(v_worldPos.z - laneLockdownParams.y)
+      );
+      float boundaryMask = 1.0 - smoothstep(
+        laneLockdownParams.z,
+        laneLockdownParams.z + 0.065,
+        edgeDistance
+      );
+      color = mix(color, laneLockdownClosedColor.rgb, closedMask * laneLockdownClosedColor.a);
+      color = mix(color, laneLockdownBoundaryColor.rgb, boundaryMask);
+    }
+    // The next contraction keeps the prior locked corridor visible and turns
+    // every soon-to-close lane into a yellow-white flashing water mask.
+    if (laneLockdownWarningParams.w > 0.5) {
+      float pendingLowerSafe = smoothstep(
+        laneLockdownWarningParams.x - laneLockdownWarningParams.z,
+        laneLockdownWarningParams.x + laneLockdownWarningParams.z,
+        v_worldPos.z
+      );
+      float pendingUpperSafe = 1.0 - smoothstep(
+        laneLockdownWarningParams.y - laneLockdownWarningParams.z,
+        laneLockdownWarningParams.y + laneLockdownWarningParams.z,
+        v_worldPos.z
+      );
+      float pendingSafeMask = pendingLowerSafe * pendingUpperSafe;
+      float currentSafeMask = 1.0;
+      if (laneLockdownParams.w > 0.5) {
+        float currentLowerSafe = smoothstep(
+          laneLockdownParams.x - laneLockdownParams.z,
+          laneLockdownParams.x + laneLockdownParams.z,
+          v_worldPos.z
+        );
+        float currentUpperSafe = 1.0 - smoothstep(
+          laneLockdownParams.y - laneLockdownParams.z,
+          laneLockdownParams.y + laneLockdownParams.z,
+          v_worldPos.z
+        );
+        currentSafeMask = currentLowerSafe * currentUpperSafe;
+      }
+      float closingLaneMask = (1.0 - pendingSafeMask) * currentSafeMask;
+      float warningPulse = 0.5 + 0.5 * sin(t * 7.0);
+      vec3 warningColor = mix(vec3(1.0, 0.72, 0.22), vec3(1.0, 0.98, 0.80), warningPulse);
+      color = mix(color, warningColor, closingLaneMask * 0.82);
+    }
 
     // The camera never sees the roof in normal race views, so do not pay for a
     // second camera or planar reflection. Instead, repeat small, cold-white

@@ -4,6 +4,7 @@ import { GameState } from './GameConstants';
 import { scaledDelta } from './TimeScale';
 import { Swimmer } from '../entity/Swimmer';
 import { DiveResult } from './DiveResult';
+import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 
 const { ccclass, property } = _decorator;
 
@@ -19,6 +20,7 @@ export type RaceFinishResult = {
     placement: number;
     time: number;
     isPlayer: boolean;
+    lane: number;
     // false when the swimmer never reached the wall before the straggler
     // countdown ended (未完成 / DNF, sharing the last placement).
     finished: boolean;
@@ -36,6 +38,7 @@ export class RaceManager extends Component {
     public onProgressUpdate: (playerDist: number, aiDist: number) => void = null;
     public onRaceFinished: (playerWin: boolean, playerTime: number, aiTime: number, placement?: RacePlacementSummary) => void = null;
     public onSwimmerFinished: (result: RaceFinishResult) => void = null;
+    public onSwimmerEliminated: (swimmer: Swimmer) => void = null;
     public onFinishCountdownTick: (value: number) => void = null;
     public onDiveReady: () => void = null;
 
@@ -51,6 +54,8 @@ export class RaceManager extends Component {
     private _finishCountdownActive = false;
     private _finishCountdownTimer = 0;
     private _lastFinishCountdownValue = -1;
+    private readonly _raceRoster: Swimmer[] = [];
+    private readonly _eliminated = new Set<Swimmer>();
 
     startRace() {
         this.unscheduleAllCallbacks();
@@ -61,6 +66,8 @@ export class RaceManager extends Component {
         this._aiFinishTime = 0;
         this._aiFinishTimes.clear();
         this._finishTimes.clear();
+        this.captureRaceRoster();
+        this._eliminated.clear();
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -93,6 +100,8 @@ export class RaceManager extends Component {
         this._aiFinishTime = 0;
         this._aiFinishTimes.clear();
         this._finishTimes.clear();
+        this._raceRoster.length = 0;
+        this._eliminated.clear();
         this._lastCountdownValue = -1;
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -196,6 +205,15 @@ export class RaceManager extends Component {
         }
     }
 
+    public eliminateSwimmer(swimmer: Swimmer) {
+        if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
+            return;
+        }
+        this._eliminated.add(swimmer);
+        swimmer.eliminate();
+        this.onSwimmerEliminated?.(swimmer);
+    }
+
     private startFinishCountdown() {
         this._finishCountdownActive = true;
         this._finishCountdownTimer = FINISH_STRAGGLER_COUNTDOWN_SECONDS;
@@ -241,6 +259,7 @@ export class RaceManager extends Component {
                 placement: 0,
                 time,
                 isPlayer: swimmer === this.playerSwimmer,
+                lane: laneForSwimmer(swimmer),
                 finished: time > 0,
             };
             (result.finished ? finished : racing).push(result);
@@ -279,16 +298,27 @@ export class RaceManager extends Component {
     private readonly _finishTimes = new Map<Swimmer, number>();
 
     private activeRacers(): Swimmer[] {
+        const source = this._raceRoster.length > 0 ? this._raceRoster : [this.playerSwimmer, ...this.activeAiSwimmers()];
         const racers: Swimmer[] = [];
-        if (this.playerSwimmer?.node.active) {
-            racers.push(this.playerSwimmer);
-        }
-        for (const swimmer of this.activeAiSwimmers()) {
-            if (racers.indexOf(swimmer) < 0) {
+        for (const swimmer of source) {
+            if (swimmer?.node.active && !this._eliminated.has(swimmer) && racers.indexOf(swimmer) < 0) {
                 racers.push(swimmer);
             }
         }
         return racers;
+    }
+
+    private allRaceRacers(): Swimmer[] {
+        return this._raceRoster.length > 0 ? this._raceRoster : this.activeRacers();
+    }
+
+    private captureRaceRoster() {
+        this._raceRoster.length = 0;
+        for (const swimmer of [this.playerSwimmer, ...this.activeAiSwimmers()]) {
+            if (swimmer?.node.active && this._raceRoster.indexOf(swimmer) < 0) {
+                this._raceRoster.push(swimmer);
+            }
+        }
     }
 
     private emitSwimmerFinished(swimmer: Swimmer, time: number) {
@@ -302,6 +332,7 @@ export class RaceManager extends Component {
             placement: this.finishLeaderboard().find((row) => row.swimmer === swimmer)?.placement ?? this._finishTimes.size,
             time,
             isPlayer: swimmer === this.playerSwimmer,
+            lane: laneForSwimmer(swimmer),
             finished: true,
         };
         this.onSwimmerFinished?.(result);
@@ -310,13 +341,14 @@ export class RaceManager extends Component {
     private finishLeaderboard(): RaceFinishResult[] {
         const finishers: RaceFinishResult[] = [];
         const unfinished: RaceFinishResult[] = [];
-        for (const swimmer of this.activeRacers()) {
+        for (const swimmer of this.allRaceRacers()) {
             const time = this._finishTimes.get(swimmer) ?? (swimmer === this.playerSwimmer ? this._playerFinishTime : this._aiFinishTimes.get(swimmer)) ?? 0;
             const isPlayer = swimmer === this.playerSwimmer;
+            const lane = laneForSwimmer(swimmer);
             if (time > 0) {
-                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, finished: true });
+                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, finished: true });
             } else {
-                unfinished.push({ swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, finished: false });
+                unfinished.push({ swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, finished: false });
             }
         }
         finishers.sort((a, b) => a.time - b.time);
@@ -340,4 +372,11 @@ export class RaceManager extends Component {
     get state(): GameState {
         return this._state;
     }
+}
+
+function laneForSwimmer(swimmer: Swimmer): number {
+    const { laneCount, laneWidth } = DEFAULT_POOL_DEFINITION;
+    const poolWidth = laneCount * laneWidth;
+    const lane = Math.floor((swimmer.node.position.z + poolWidth * 0.5) / laneWidth) + 1;
+    return Math.max(1, Math.min(laneCount, lane));
 }
