@@ -1252,8 +1252,8 @@ export class GameManager extends Component {
         this._gameFlow?.handlePlayerStroke(type);
     }
 
-    private handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0) {
-        this._gameFlow?.handlePlayerStrokeHeld(type, held, preHeldSeconds);
+    private handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): boolean {
+        return this._gameFlow?.handlePlayerStrokeHeld(type, held, preHeldSeconds) ?? false;
     }
 
     private handlePlayerKickStroke(type: StrokeType) {

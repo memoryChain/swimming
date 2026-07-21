@@ -135,17 +135,21 @@ export class GameFlowController {
         }
     }
 
-    handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0) {
+    handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): boolean {
         if (this._refs.handleModelDebugStrokeHeld(type, held)) {
-            return;
+            return true;
         }
         if (!this.isStrokeInputActive()) {
-            return;
+            return false;
+        }
+        if (held && this._refs.playerSwimmer?.isUnderwater) {
+            return false;
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held, preHeldSeconds);
         if (result) {
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
+        return true;
     }
 
     handlePlayerKickStroke(type: StrokeType) {

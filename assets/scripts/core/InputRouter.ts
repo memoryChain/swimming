@@ -4,7 +4,7 @@ import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
-    onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => void;
+    onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
     onKickStroke: (type: StrokeType) => void;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
@@ -159,8 +159,16 @@ export class InputRouter {
             return;
         }
         if (now - press.startedMs >= thresholdMs) {
+            // A held press may still be in the dive-underwater phase, where arm
+            // strokes are intentionally unavailable. Keep it promotable so the
+            // same press becomes an arm stroke on the first surfaced frame.
+            // Cap the carried hold time: underwater waiting must not turn into a
+            // pre-held multi-second stroke when it is finally accepted.
+            const accepted = this._callbacks.onStrokeHeld(type, true, thresholdMs / 1000);
+            if (!accepted) {
+                return;
+            }
             press.promoted = true;
-            this._callbacks.onStrokeHeld(type, true, (now - press.startedMs) / 1000);
             this._callbacks.onStroke(type);
         }
     }
