@@ -103,10 +103,10 @@
       },
       "laneLockdownClosedColor": {
         "__type__": "cc.Color",
-        "r": 41,
-        "g": 52,
-        "b": 77,
-        "a": 224
+        "r": 12,
+        "g": 56,
+        "b": 160,
+        "a": 185
       },
       "laneLockdownBoundaryColor": {
         "__type__": "cc.Color",

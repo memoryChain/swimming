@@ -241,10 +241,12 @@ export class RaceCameraDirector {
         return this.selectMode(RACE_CAMERA_MODE_OPTIONS[nextIndex].mode);
     }
 
-    selectMode(mode: RaceCameraMode): string {
+    selectMode(mode: RaceCameraMode, preserveUnderwaterExit = false): string {
         this._mode = mode;
         this._topViewActive = this._mode === RaceCameraMode.Top;
-        this._underwaterViewActive = false;
+        if (!preserveUnderwaterExit) {
+            this._underwaterViewActive = false;
+        }
         if (this._mode === RaceCameraMode.Broadcast) {
             this.resetBroadcastDirector();
         }
@@ -751,7 +753,13 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = 36;
         } else if (this.shouldHoldUnderwaterDiveShot(snapshot)) {
             desiredTarget = underwaterDiveTarget(playerX, playerY, this._playerLaneZ, direction);
-            desiredPos = underwaterDiveCameraPos(playerX, playerY, this._playerLaneZ, direction);
+            desiredPos = underwaterDiveCameraPos(
+                playerX,
+                playerY,
+                this._playerLaneZ,
+                direction,
+                this._courseLayout.poolWidth * 0.5,
+            );
             this._broadcastDesiredFov = 43;
             underwaterView = true;
         } else if (this.shouldUseFinishTopView(snapshot)) {
@@ -1229,11 +1237,18 @@ function underwaterDiveTarget(playerX: number, playerY: number, playerLaneZ: num
     );
 }
 
-function underwaterDiveCameraPos(playerX: number, playerY: number, playerLaneZ: number, direction = 1): Vec3 {
+function underwaterDiveCameraPos(
+    playerX: number,
+    playerY: number,
+    playerLaneZ: number,
+    direction = 1,
+    poolHalfWidth = Number.POSITIVE_INFINITY,
+): Vec3 {
+    const wallClearance = 0.45;
     return new Vec3(
         playerX + 4.25 * direction,
         Math.min(playerY + 0.44, 0.08),
-        playerLaneZ + 4.65,
+        clamp(playerLaneZ + 4.65, -poolHalfWidth + wallClearance, poolHalfWidth - wallClearance),
     );
 }
 

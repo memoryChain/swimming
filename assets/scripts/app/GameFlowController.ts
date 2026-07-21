@@ -376,7 +376,7 @@ export class GameFlowController {
             && !playerSwimmer.isUnderwater
             && !playerSwimmer.isFlipTurnCameraActive) {
             this._swimSprintViewApplied = true;
-            this._refs.raceCameraDirector.selectMode(RaceCameraMode.Sprint);
+            this._refs.raceCameraDirector.selectMode(RaceCameraMode.Sprint, true);
         }
         this._refs.raceCameraDirector.update(dt, cameraSnapshot);
         this._refs.updateCameraSpeedLines?.(
