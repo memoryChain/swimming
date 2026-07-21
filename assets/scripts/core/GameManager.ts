@@ -23,6 +23,7 @@ import {
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
 import { MusicManager } from '../app/MusicManager';
+import { StrokeSfxManager } from '../app/StrokeSfxManager';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
@@ -106,6 +107,8 @@ export class GameManager extends Component {
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
+    private _strokeSfxEnabled = true;
+    private _bodyFeedbackEnabled = true;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
     private _raceUiBuilder: SpeedStarsUiPrefabBuilder = null;
@@ -192,6 +195,9 @@ export class GameManager extends Component {
     private _cameraFollowsAi = false;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
+    private _bodyFeedbackToggleLabel: Label | null = null;
+    private _strokeSfxToggleLabel: Label | null = null;
+    private _splashParticlesToggleLabel: Label | null = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -495,13 +501,35 @@ export class GameManager extends Component {
     private toggleSplashParticles() {
         this._splashParticlesEnabled = !this._splashParticlesEnabled;
         this.applySplashParticlesEnabled();
+        this.refreshRaceDiagnosticsToggleLabels();
         this.debug(`splash particles=${this._splashParticlesEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private toggleStrokeSfx() {
+        this._strokeSfxEnabled = !this._strokeSfxEnabled;
+        StrokeSfxManager.setEnabled(this._strokeSfxEnabled);
+        this.refreshRaceDiagnosticsToggleLabels();
+        this.debug(`stroke sfx=${this._strokeSfxEnabled ? 'ON' : 'OFF'}`);
     }
 
     private applySplashParticlesEnabled() {
         this._playerSwimmer?.setSplashParticlesEnabled(this._splashParticlesEnabled);
         for (const swimmer of this._aiSwimmers) {
             swimmer?.setSplashParticlesEnabled(this._splashParticlesEnabled);
+        }
+    }
+
+    private toggleBodyFeedback() {
+        this._bodyFeedbackEnabled = !this._bodyFeedbackEnabled;
+        this.applyBodyFeedbackEnabled();
+        this.refreshRaceDiagnosticsToggleLabels();
+        this.debug(`body feedback=${this._bodyFeedbackEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private applyBodyFeedbackEnabled() {
+        this._playerSwimmer?.setBodyFeedbackEnabled(this._bodyFeedbackEnabled);
+        for (const swimmer of this._aiSwimmers) {
+            swimmer?.setBodyFeedbackEnabled(this._bodyFeedbackEnabled);
         }
     }
 
@@ -916,6 +944,7 @@ export class GameManager extends Component {
         this._aiSwimmers = [];
         this._aiConditions = [];
         this.applySplashParticlesEnabled();
+        this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
     }
 
@@ -978,6 +1007,7 @@ export class GameManager extends Component {
         this.refreshPreRaceIntroRoster();
         this.refreshSwimmerNameRoster();
         this.applySplashParticlesEnabled();
+        this.applyBodyFeedbackEnabled();
         if (this._raceManager) {
             this._raceManager.aiSwimmer = this._aiController?.swimmer ?? null;
             this._raceManager.aiSwimmers = this._aiSwimmers;
@@ -1067,6 +1097,7 @@ export class GameManager extends Component {
             this._raceHud = refs.raceHud;
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
+            this.buildRaceDiagnosticsToggles(this._raceHud, w, h);
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
             this._timingGuideFillNode = refs.timingGuideFillNode;
@@ -1363,6 +1394,47 @@ export class GameManager extends Component {
         this._aiDebugCameraButton = button;
         this._aiDebugCameraButtonLabel = button.getChildByName('Label')?.getComponent(Label) ?? null;
         button.on(Node.EventType.TOUCH_END, () => this.toggleCameraFollowAi());
+    }
+
+    private buildRaceDiagnosticsToggles(raceHud: Node, width: number, height: number) {
+        const buttonWidth = 148;
+        const buttonHeight = 40;
+        const rightX = width / 2 - buttonWidth / 2 - 16;
+        // Keep these above the AI-debug camera control, which occupies the lower-right corner.
+        const topY = -height / 2 + 290;
+        const bodyFeedbackButton = makeButton('BodyFeedbackToggle', raceHud, buttonWidth, buttonHeight, new Color(190, 126, 42, 235), '黄红反馈：开');
+        bodyFeedbackButton.setPosition(rightX, topY, 0);
+        bodyFeedbackButton.setSiblingIndex(raceHud.children.length - 1);
+        bodyFeedbackButton.on(Node.EventType.TOUCH_END, () => this.toggleBodyFeedback());
+        this._bodyFeedbackToggleLabel = bodyFeedbackButton.getChildByName('Label')?.getComponent(Label) ?? null;
+
+        const strokeSfxButton = makeButton('StrokeSfxToggle', raceHud, buttonWidth, buttonHeight, new Color(36, 118, 184, 235), '音效：开');
+        strokeSfxButton.setPosition(rightX, topY - buttonHeight - 10, 0);
+        strokeSfxButton.setSiblingIndex(raceHud.children.length - 1);
+        strokeSfxButton.on(Node.EventType.TOUCH_END, () => this.toggleStrokeSfx());
+        this._strokeSfxToggleLabel = strokeSfxButton.getChildByName('Label')?.getComponent(Label) ?? null;
+
+        const splashButton = makeButton('SplashParticlesToggle', raceHud, buttonWidth, buttonHeight, new Color(26, 131, 170, 235), '水花：开');
+        splashButton.setPosition(rightX, topY - (buttonHeight + 10) * 2, 0);
+        splashButton.setSiblingIndex(raceHud.children.length - 1);
+        splashButton.on(Node.EventType.TOUCH_END, () => this.toggleSplashParticles());
+        this._splashParticlesToggleLabel = splashButton.getChildByName('Label')?.getComponent(Label) ?? null;
+
+        StrokeSfxManager.setEnabled(this._strokeSfxEnabled);
+        this.applyBodyFeedbackEnabled();
+        this.refreshRaceDiagnosticsToggleLabels();
+    }
+
+    private refreshRaceDiagnosticsToggleLabels() {
+        if (this._bodyFeedbackToggleLabel?.isValid) {
+            this._bodyFeedbackToggleLabel.string = `黄红反馈：${this._bodyFeedbackEnabled ? '开' : '关'}`;
+        }
+        if (this._strokeSfxToggleLabel?.isValid) {
+            this._strokeSfxToggleLabel.string = `音效：${this._strokeSfxEnabled ? '开' : '关'}`;
+        }
+        if (this._splashParticlesToggleLabel?.isValid) {
+            this._splashParticlesToggleLabel.string = `水花：${this._splashParticlesEnabled ? '开' : '关'}`;
+        }
     }
 
     private applyAiDebugHud() {

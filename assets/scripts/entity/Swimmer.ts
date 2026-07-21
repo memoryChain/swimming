@@ -423,6 +423,10 @@ export class Swimmer extends Component {
         this.cartoonRig?.setSplashParticlesEnabled(enabled);
     }
 
+    setBodyFeedbackEnabled(enabled: boolean) {
+        this.cartoonRig?.setBodyFeedbackEnabled(enabled);
+    }
+
     // Release progress (0..1) of the AI's active arm stroke on a side, or -1 when
     // none is active. The simulated-input AI polls this to time its release the
     // same way a player watches the on-screen pull. Drives nothing on its own.

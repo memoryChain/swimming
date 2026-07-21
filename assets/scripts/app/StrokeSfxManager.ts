@@ -3,23 +3,17 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const SFX_NODE_NAME = 'SpeedSwimmingStrokeSfx';
 const STROKE_VOLUME = 0.28;
-const STROKE_VOICE_COUNT = 2;
-const MIN_STROKE_SFX_INTERVAL_SECONDS = 0.08;
 
-// Reuse a small fixed voice pool. The stroke clip is longer than a normal stroke
-// cadence, and unbounded playOneShot overlap can periodically stall WeChat's
-// audio backend while it allocates or reclaims temporary voices.
 export class StrokeSfxManager {
     private static _node: Node | null = null;
-    private static _sources: AudioSource[] = [];
+    private static _source: AudioSource | null = null;
     private static readonly _clips: Array<AudioClip | null> = RESOURCE_PATHS.music.strokeSfx.map(() => null);
     private static _loading = false;
     private static _nextClip = 0;
-    private static _nextVoice = 0;
-    private static _lastPlaySeconds = -Infinity;
+    private static _enabled = true;
 
     static preload() {
-        this.ensureSources();
+        this.ensureSource();
         if (this._loading || this.hasEveryClip()) {
             return;
         }
@@ -40,9 +34,11 @@ export class StrokeSfxManager {
     }
 
     static playStroke() {
-        const sources = this.ensureSources();
-        const nowSeconds = performance.now() * 0.001;
-        if (sources.length === 0 || nowSeconds - this._lastPlaySeconds < MIN_STROKE_SFX_INTERVAL_SECONDS) {
+        if (!this._enabled) {
+            return;
+        }
+        const source = this.ensureSource();
+        if (!source) {
             return;
         }
         for (let offset = 0; offset < this._clips.length; offset++) {
@@ -52,16 +48,14 @@ export class StrokeSfxManager {
                 continue;
             }
             this._nextClip = (index + 1) % this._clips.length;
-            const source = sources[this._nextVoice];
-            this._nextVoice = (this._nextVoice + 1) % sources.length;
-            source.stop();
-            source.clip = clip;
-            source.volume = STROKE_VOLUME;
-            source.play();
-            this._lastPlaySeconds = nowSeconds;
+            source.playOneShot(clip, STROKE_VOLUME);
             return;
         }
         this.preload();
+    }
+
+    static setEnabled(enabled: boolean) {
+        this._enabled = enabled;
     }
 
     private static loadClips(bundle: AssetManager.Bundle) {
@@ -90,25 +84,19 @@ export class StrokeSfxManager {
         return true;
     }
 
-    private static ensureSources(): AudioSource[] {
-        if (this._node?.isValid && this._sources.length === STROKE_VOICE_COUNT
-            && this._sources.every((source) => source?.isValid)) {
-            return this._sources;
+    private static ensureSource(): AudioSource | null {
+        if (this._node?.isValid && this._source?.isValid) {
+            return this._source;
         }
         const scene = director.getScene();
         if (!scene) {
-            return [];
+            return null;
         }
         const node = new Node(SFX_NODE_NAME);
         scene.addChild(node);
         game.addPersistRootNode(node);
         this._node = node;
-        this._sources = [];
-        for (let index = 0; index < STROKE_VOICE_COUNT; index++) {
-            const voiceNode = new Node(`${SFX_NODE_NAME}_${index + 1}`);
-            voiceNode.setParent(node);
-            this._sources.push(voiceNode.addComponent(AudioSource));
-        }
-        return this._sources;
+        this._source = node.addComponent(AudioSource);
+        return this._source;
     }
 }

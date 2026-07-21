@@ -106,6 +106,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _playerOutline = false;
     private _skinOutfit: CharacterSkinOutfit = 'default';
     private _perfectGlowIntensity = 0;
+    private _bodyFeedbackEnabled = true;
     private _perfectGlowMaterial: Material = null;
     private readonly _perfectGlowRestoreSlots: FlashRestoreSlot[] = [];
     private _collisionFlashTimer = 0;
@@ -815,7 +816,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
-        if (this._perfectGlowIntensity > 0 || this._collisionFlashTimer > 0) {
+        if (this._bodyFeedbackEnabled && (this._perfectGlowIntensity > 0 || this._collisionFlashTimer > 0)) {
             this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
             this.updatePerfectGlowMaterial();
         }
@@ -901,16 +902,29 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const intensity = active ? 1 : 0;
         const changed = this._perfectGlowIntensity !== intensity;
         this._perfectGlowIntensity = intensity;
-        if (changed) {
+        if (changed && this._bodyFeedbackEnabled) {
             this.updatePerfectGlowMaterial();
         }
+    }
+
+    setBodyFeedbackEnabled(enabled: boolean) {
+        if (this._bodyFeedbackEnabled === enabled) {
+            return;
+        }
+        this._bodyFeedbackEnabled = enabled;
+        if (!enabled) {
+            this._collisionFlashTimer = 0;
+            this.restorePerfectGlowMaterials();
+            return;
+        }
+        this.updatePerfectGlowMaterial();
     }
 
     // Flash the body red for a moment (reuses the body material) when this
     // swimmer bumps into another. Called each frame contact persists; the timer
     // resets to full so it stays red while touching, then fades after separation.
     flashCollision() {
-        if (!this.node?.isValid || !this._loaded || !this._model || !this.root) {
+        if (!this._bodyFeedbackEnabled || !this.node?.isValid || !this._loaded || !this._model || !this.root) {
             return;
         }
         this._collisionFlashTimer = COLLISION_FLASH_SECONDS;
