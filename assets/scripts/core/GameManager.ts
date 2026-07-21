@@ -23,7 +23,6 @@ import {
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
 import { MusicManager } from '../app/MusicManager';
-import { StrokeSfxManager } from '../app/StrokeSfxManager';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
@@ -107,11 +106,6 @@ export class GameManager extends Component {
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
-    private _strokeSfxEnabled = true;
-    private _bodyFeedbackEnabled = true;
-    private _liveRanksEnabled = true;
-    private _laneLockdownEnabled = true;
-    private _speedLinesEnabled = true;
     private _uiController: UIController = null;
     private _uiFlow: UIFlowController = null;
     private _raceUiBuilder: SpeedStarsUiPrefabBuilder = null;
@@ -198,12 +192,6 @@ export class GameManager extends Component {
     private _cameraFollowsAi = false;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
-    private _speedLinesToggleLabel: Label | null = null;
-    private _laneLockdownToggleLabel: Label | null = null;
-    private _liveRanksToggleLabel: Label | null = null;
-    private _bodyFeedbackToggleLabel: Label | null = null;
-    private _strokeSfxToggleLabel: Label | null = null;
-    private _splashParticlesToggleLabel: Label | null = null;
     private _gameFlow: GameFlowController = null;
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
@@ -388,9 +376,7 @@ export class GameManager extends Component {
         }
         this.updateSpectatorCameraTarget();
         this._gameFlow?.updateRaceCamera(dt);
-        if (this._speedLinesEnabled) {
-            this.updateSpeedLineVanishingPoint();
-        }
+        this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
         this._swimmerNameOverlay.update(
@@ -509,15 +495,7 @@ export class GameManager extends Component {
     private toggleSplashParticles() {
         this._splashParticlesEnabled = !this._splashParticlesEnabled;
         this.applySplashParticlesEnabled();
-        this.refreshRaceDiagnosticsToggleLabels();
         this.debug(`splash particles=${this._splashParticlesEnabled ? 'ON' : 'OFF'}`);
-    }
-
-    private toggleStrokeSfx() {
-        this._strokeSfxEnabled = !this._strokeSfxEnabled;
-        StrokeSfxManager.setEnabled(this._strokeSfxEnabled);
-        this.refreshRaceDiagnosticsToggleLabels();
-        this.debug(`stroke sfx=${this._strokeSfxEnabled ? 'ON' : 'OFF'}`);
     }
 
     private applySplashParticlesEnabled() {
@@ -527,34 +505,11 @@ export class GameManager extends Component {
         }
     }
 
-    private toggleBodyFeedback() {
-        this._bodyFeedbackEnabled = !this._bodyFeedbackEnabled;
-        this.applyBodyFeedbackEnabled();
-        this.refreshRaceDiagnosticsToggleLabels();
-        this.debug(`body feedback=${this._bodyFeedbackEnabled ? 'ON' : 'OFF'}`);
-    }
-
     private applyBodyFeedbackEnabled() {
-        this._playerSwimmer?.setBodyFeedbackEnabled(this._bodyFeedbackEnabled);
+        this._playerSwimmer?.setBodyFeedbackEnabled(true);
         for (const swimmer of this._aiSwimmers) {
-            swimmer?.setBodyFeedbackEnabled(this._bodyFeedbackEnabled);
+            swimmer?.setBodyFeedbackEnabled(true);
         }
-    }
-
-    private toggleLiveRanks() {
-        this._liveRanksEnabled = !this._liveRanksEnabled;
-        if (!this._liveRanksEnabled) {
-            this._finishRankOverlay.clear();
-        }
-        this.refreshRaceDiagnosticsToggleLabels();
-        this.debug(`live ranks=${this._liveRanksEnabled ? 'ON' : 'OFF'}`);
-    }
-
-    private toggleSpeedLines() {
-        this._speedLinesEnabled = !this._speedLinesEnabled;
-        this._cameraSpeedLines.setEnabled(this._speedLinesEnabled);
-        this.refreshRaceDiagnosticsToggleLabels();
-        this.debug(`speed lines=${this._speedLinesEnabled ? 'ON' : 'OFF'}`);
     }
 
     startGame() {
@@ -638,9 +593,7 @@ export class GameManager extends Component {
             raceCameraDirector: this._raceCameraDirector,
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
             updateCameraSpeedLines: (dt, speed, visible) => {
-                if (this._speedLinesEnabled) {
-                    this._cameraSpeedLines.update(dt, speed, visible);
-                }
+                this._cameraSpeedLines.update(dt, speed, visible);
             },
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
@@ -687,7 +640,7 @@ export class GameManager extends Component {
             },
             getState: () => this._state,
             clearFinishRanks: () => this._finishRankOverlay.clear(),
-            isLiveRanksEnabled: () => this._liveRanksEnabled,
+            isLiveRanksEnabled: () => true,
             showLiveRanks: (results) => this._finishRankOverlay.showLiveResults(results),
             showFinishRank: (result) => this._finishRankOverlay.addResult(result),
             onSwimmerEliminated: (swimmer) => this.handleSwimmerEliminated(swimmer),
@@ -869,25 +822,12 @@ export class GameManager extends Component {
     }
 
     private updateLaneLockdown(dt: number) {
-        if (!this._laneLockdownEnabled || !this._laneLockdownRace || this._modelDebugFlow?.active) {
+        if (!this._laneLockdownRace || this._modelDebugFlow?.active) {
             return;
         }
         const racers = [this._playerSwimmer, ...this._aiSwimmers]
             .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.active));
         this._laneLockdownRace.update(dt, this._state, racers);
-    }
-
-    private toggleLaneLockdown() {
-        this._laneLockdownEnabled = !this._laneLockdownEnabled;
-        if (!this._laneLockdownEnabled) {
-            this._laneLockdownRace?.reset();
-            this._playerSwimmer?.clearLaneLockdownBounds();
-            for (const swimmer of this._aiSwimmers) {
-                swimmer.clearLaneLockdownBounds();
-            }
-        }
-        this.refreshRaceDiagnosticsToggleLabels();
-        this.debug(`lane lockdown=${this._laneLockdownEnabled ? 'ON' : 'OFF'}`);
     }
 
     private updateLaneLockdownStatus(status: LaneLockdownStatus | null) {
@@ -1139,7 +1079,6 @@ export class GameManager extends Component {
             this._raceHud = refs.raceHud;
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
-            this.buildRaceDiagnosticsToggles(this._raceHud, w, h);
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
             this._timingGuideFillNode = refs.timingGuideFillNode;
@@ -1436,75 +1375,6 @@ export class GameManager extends Component {
         this._aiDebugCameraButton = button;
         this._aiDebugCameraButtonLabel = button.getChildByName('Label')?.getComponent(Label) ?? null;
         button.on(Node.EventType.TOUCH_END, () => this.toggleCameraFollowAi());
-    }
-
-    private buildRaceDiagnosticsToggles(raceHud: Node, width: number, height: number) {
-        const buttonWidth = 148;
-        const buttonHeight = 40;
-        const rightX = width / 2 - buttonWidth / 2 - 16;
-        // Keep these above the AI-debug camera control, which occupies the lower-right corner.
-        const topY = -height / 2 + 440;
-        const speedLinesButton = makeButton('SpeedLinesToggle', raceHud, buttonWidth, buttonHeight, new Color(42, 132, 180, 235), '速度线：开');
-        speedLinesButton.setPosition(rightX, topY, 0);
-        speedLinesButton.setSiblingIndex(raceHud.children.length - 1);
-        speedLinesButton.on(Node.EventType.TOUCH_END, () => this.toggleSpeedLines());
-        this._speedLinesToggleLabel = speedLinesButton.getChildByName('Label')?.getComponent(Label) ?? null;
-
-        const laneLockdownButton = makeButton('LaneLockdownToggle', raceHud, buttonWidth, buttonHeight, new Color(58, 128, 104, 235), '锁道判断：开');
-        laneLockdownButton.setPosition(rightX, topY - buttonHeight - 10, 0);
-        laneLockdownButton.setSiblingIndex(raceHud.children.length - 1);
-        laneLockdownButton.on(Node.EventType.TOUCH_END, () => this.toggleLaneLockdown());
-        this._laneLockdownToggleLabel = laneLockdownButton.getChildByName('Label')?.getComponent(Label) ?? null;
-
-        const liveRanksButton = makeButton('LiveRanksToggle', raceHud, buttonWidth, buttonHeight, new Color(92, 90, 158, 235), '实时名次：开');
-        liveRanksButton.setPosition(rightX, topY - (buttonHeight + 10) * 2, 0);
-        liveRanksButton.setSiblingIndex(raceHud.children.length - 1);
-        liveRanksButton.on(Node.EventType.TOUCH_END, () => this.toggleLiveRanks());
-        this._liveRanksToggleLabel = liveRanksButton.getChildByName('Label')?.getComponent(Label) ?? null;
-
-        const bodyFeedbackButton = makeButton('BodyFeedbackToggle', raceHud, buttonWidth, buttonHeight, new Color(190, 126, 42, 235), '黄红反馈：开');
-        bodyFeedbackButton.setPosition(rightX, topY - (buttonHeight + 10) * 3, 0);
-        bodyFeedbackButton.setSiblingIndex(raceHud.children.length - 1);
-        bodyFeedbackButton.on(Node.EventType.TOUCH_END, () => this.toggleBodyFeedback());
-        this._bodyFeedbackToggleLabel = bodyFeedbackButton.getChildByName('Label')?.getComponent(Label) ?? null;
-
-        const strokeSfxButton = makeButton('StrokeSfxToggle', raceHud, buttonWidth, buttonHeight, new Color(36, 118, 184, 235), '音效：开');
-        strokeSfxButton.setPosition(rightX, topY - (buttonHeight + 10) * 4, 0);
-        strokeSfxButton.setSiblingIndex(raceHud.children.length - 1);
-        strokeSfxButton.on(Node.EventType.TOUCH_END, () => this.toggleStrokeSfx());
-        this._strokeSfxToggleLabel = strokeSfxButton.getChildByName('Label')?.getComponent(Label) ?? null;
-
-        const splashButton = makeButton('SplashParticlesToggle', raceHud, buttonWidth, buttonHeight, new Color(26, 131, 170, 235), '水花：开');
-        splashButton.setPosition(rightX, topY - (buttonHeight + 10) * 5, 0);
-        splashButton.setSiblingIndex(raceHud.children.length - 1);
-        splashButton.on(Node.EventType.TOUCH_END, () => this.toggleSplashParticles());
-        this._splashParticlesToggleLabel = splashButton.getChildByName('Label')?.getComponent(Label) ?? null;
-
-        StrokeSfxManager.setEnabled(this._strokeSfxEnabled);
-        this._cameraSpeedLines.setEnabled(this._speedLinesEnabled);
-        this.applyBodyFeedbackEnabled();
-        this.refreshRaceDiagnosticsToggleLabels();
-    }
-
-    private refreshRaceDiagnosticsToggleLabels() {
-        if (this._speedLinesToggleLabel?.isValid) {
-            this._speedLinesToggleLabel.string = `速度线：${this._speedLinesEnabled ? '开' : '关'}`;
-        }
-        if (this._laneLockdownToggleLabel?.isValid) {
-            this._laneLockdownToggleLabel.string = `锁道判断：${this._laneLockdownEnabled ? '开' : '关'}`;
-        }
-        if (this._liveRanksToggleLabel?.isValid) {
-            this._liveRanksToggleLabel.string = `实时名次：${this._liveRanksEnabled ? '开' : '关'}`;
-        }
-        if (this._bodyFeedbackToggleLabel?.isValid) {
-            this._bodyFeedbackToggleLabel.string = `黄红反馈：${this._bodyFeedbackEnabled ? '开' : '关'}`;
-        }
-        if (this._strokeSfxToggleLabel?.isValid) {
-            this._strokeSfxToggleLabel.string = `音效：${this._strokeSfxEnabled ? '开' : '关'}`;
-        }
-        if (this._splashParticlesToggleLabel?.isValid) {
-            this._splashParticlesToggleLabel.string = `水花：${this._splashParticlesEnabled ? '开' : '关'}`;
-        }
     }
 
     private applyAiDebugHud() {
