@@ -794,6 +794,15 @@ export class GameManager extends Component {
             this._laneLockdownVisuals,
             (swimmer) => this._raceManager?.eliminateSwimmer(swimmer),
             (status) => this.updateLaneLockdownStatus(status),
+            (target) => {
+                for (const controller of this._aiControllers) {
+                    controller.setLaneLockdownSafeZRange(
+                        target?.safeMinZ ?? null,
+                        target?.safeMaxZ ?? null,
+                        target?.warning ?? false,
+                    );
+                }
+            },
         );
         this._laneLockdownRace.reset();
     }

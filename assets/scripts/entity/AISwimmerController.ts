@@ -53,6 +53,30 @@ export class AISwimmerController extends Component {
     // Smoothed strategy effort added to `difficulty`. Eased every frame toward the
     // live target so rank/gap swings translate into gradual, invisible changes.
     private _effortModifier = 0;
+    // World-Z bounds of a pending lane-lockdown corridor. Null outside its
+    // warning window, so ordinary personality weaving remains unchanged.
+    private _laneLockdownSafeMinZ: number | null = null;
+    private _laneLockdownSafeMaxZ: number | null = null;
+    private _laneLockdownWarning = false;
+    private _laneLockdownAware = false;
+
+    setLaneLockdownSafeZRange(minZ: number | null, maxZ: number | null, warning: boolean) {
+        if (!Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
+            this._laneLockdownSafeMinZ = null;
+            this._laneLockdownSafeMaxZ = null;
+            this._laneLockdownWarning = false;
+            this._laneLockdownAware = false;
+            return;
+        }
+        const safeMin = Math.min(minZ, maxZ);
+        const safeMax = Math.max(minZ, maxZ);
+        if (safeMin !== this._laneLockdownSafeMinZ || safeMax !== this._laneLockdownSafeMaxZ) {
+            this._laneLockdownAware = false;
+        }
+        this._laneLockdownSafeMinZ = safeMin;
+        this._laneLockdownSafeMaxZ = safeMax;
+        this._laneLockdownWarning = warning;
+    }
 
     startSwimming() {
         // Idempotent: an AI that already began swimming (e.g. right after its own
@@ -177,6 +201,10 @@ export class AISwimmerController extends Component {
         if (!this.swimmer) {
             return opposite;
         }
+        const lockdownSide = this.laneLockdownSteeringSide(justUsed, opposite);
+        if (lockdownSide) {
+            return lockdownSide;
+        }
         const discipline = clamp(this.effectiveDifficulty(), 0, 1);
         const drift = Math.abs(this.swimmer.steeringHeadingRatio);
         if (drift >= clamp(STEERING_TUNING.aiCorrectHeadingRatio, 0, 1)) {
@@ -191,6 +219,46 @@ export class AISwimmerController extends Component {
         const weave = clamp(this.personality.weaveTendency * weaveScale * (1 - discipline * 0.6), 0, 1);
         const wanderChance = weave * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
         return Math.random() < wanderChance ? justUsed : opposite;
+    }
+
+    private laneLockdownSteeringSide(justUsed: StrokeType, opposite: StrokeType): StrokeType | null {
+        if (this._laneLockdownSafeMinZ === null || this._laneLockdownSafeMaxZ === null || !this.swimmer) {
+            return null;
+        }
+        // The controller always predicts from the leader's current lane, but
+        // only sharp AI notices and trusts that prediction before the visible
+        // warning. A warning makes everyone more likely to notice, while still
+        // letting low-difficulty racers make late mistakes.
+        if (!this._laneLockdownAware) {
+            const difficulty = clamp(this.effectiveDifficulty(), 0, 1);
+            const awareness = this._laneLockdownWarning
+                ? 0.2 + 0.8 * difficulty
+                : clamp((difficulty - 0.58) / 0.32, 0, 1);
+            if (Math.random() >= awareness) {
+                return null;
+            }
+            this._laneLockdownAware = true;
+        }
+        const inset = 0.22;
+        const safeMin = this._laneLockdownSafeMinZ + inset;
+        const safeMax = this._laneLockdownSafeMaxZ - inset;
+        const currentZ = this.swimmer.node.position.z;
+        let targetZ: number | null = null;
+        if (currentZ < safeMin) {
+            targetZ = safeMin;
+        } else if (currentZ > safeMax) {
+            targetZ = safeMax;
+        }
+        // Once inside the pending corridor, stop personality wandering from
+        // throwing the AI back into a marked-for-closure lane.
+        if (targetZ === null) {
+            const drift = Math.abs(this.swimmer.steeringHeadingRatio);
+            return drift > 0.08 ? this.swimmer.correctiveStrokeSide() : opposite;
+        }
+        const targetSign = targetZ > currentZ ? 1 : -1;
+        // LEFT turns toward +Z on the outbound lap and -Z after the flip turn.
+        const leftTurnSign = this.swimmer.raceDirection >= 0 ? 1 : -1;
+        return leftTurnSign === targetSign ? StrokeType.LEFT : StrokeType.RIGHT;
     }
 
     private updateStroke(sdt: number) {

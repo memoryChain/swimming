@@ -15,6 +15,12 @@ export type LaneLockdownStatus = {
     locked: boolean;
 };
 
+export type LaneLockdownAiTarget = {
+    safeMinZ: number;
+    safeMaxZ: number;
+    warning: boolean;
+} | null;
+
 /** Owns the high-difficulty warning, elimination, and corridor-boundary loop. */
 export class LaneLockdownRaceController {
     private _nextLockIndex = 0;
@@ -23,12 +29,16 @@ export class LaneLockdownRaceController {
     private _pendingLastSafeLane = 0;
     private _activeFirstSafeLane = 1;
     private _activeLastSafeLane = 0;
+    private _lastAiTargetFirstSafeLane = 0;
+    private _lastAiTargetLastSafeLane = 0;
+    private _lastAiTargetWarning = false;
 
     constructor(
         private readonly _layout: RaceCourseLayout,
         private readonly _visuals: LaneLockdownVisuals | null,
         private readonly _eliminate: (swimmer: Swimmer) => void,
         private readonly _onStatus: (status: LaneLockdownStatus | null) => void,
+        private readonly _onAiTarget: (target: LaneLockdownAiTarget) => void,
     ) {
         this._activeLastSafeLane = _layout.laneCount;
     }
@@ -42,6 +52,7 @@ export class LaneLockdownRaceController {
         this._activeLastSafeLane = this._layout.laneCount;
         this._visuals?.clear();
         this._onStatus(null);
+        this.clearAiTarget();
     }
 
     update(dt: number, state: GameState, racers: readonly Swimmer[]) {
@@ -59,9 +70,12 @@ export class LaneLockdownRaceController {
         }
 
         if (this._nextLockIndex >= LOCK_DISTANCES.length) {
+            this.clearAiTarget();
             return;
         }
         const leader = racers.reduce((current, swimmer) => swimmer.distance > current.distance ? swimmer : current);
+        const predicted = this.safeLaneRangeForLeader(leader, SAFE_LANE_COUNTS[this._nextLockIndex]);
+        this.publishAiTarget(predicted.first, predicted.last, false);
         if (leader.distance < LOCK_DISTANCES[this._nextLockIndex]) {
             return;
         }
@@ -70,14 +84,12 @@ export class LaneLockdownRaceController {
 
     private beginWarning(leader: Swimmer) {
         const safeLaneCount = SAFE_LANE_COUNTS[this._nextLockIndex];
-        const leaderLane = laneForZ(leader.node.position.z, this._layout);
-        const minFirst = this._activeFirstSafeLane;
-        const maxFirst = this._activeLastSafeLane - safeLaneCount + 1;
-        const centeredFirst = leaderLane - Math.floor((safeLaneCount - 1) * 0.5);
-        this._pendingFirstSafeLane = clampInt(centeredFirst, minFirst, maxFirst);
-        this._pendingLastSafeLane = this._pendingFirstSafeLane + safeLaneCount - 1;
+        const pending = this.safeLaneRangeForLeader(leader, safeLaneCount);
+        this._pendingFirstSafeLane = pending.first;
+        this._pendingLastSafeLane = pending.last;
         this._warningTimer = WARNING_SECONDS;
         this._visuals?.setWarningLanes(this._pendingFirstSafeLane, this._pendingLastSafeLane);
+        this.publishAiTarget(this._pendingFirstSafeLane, this._pendingLastSafeLane, true);
         this.publishStatus(true);
     }
 
@@ -94,6 +106,7 @@ export class LaneLockdownRaceController {
         this._activeLastSafeLane = this._pendingLastSafeLane;
         this._nextLockIndex += 1;
         this._visuals?.setSafeLanes(this._activeFirstSafeLane, this._activeLastSafeLane);
+        this.clearAiTarget();
         for (const swimmer of racers) {
             if (swimmer.node.active) {
                 swimmer.setLaneLockdownBounds(safeMinZ, safeMaxZ);
@@ -109,6 +122,41 @@ export class LaneLockdownRaceController {
             warningSeconds: warning ? Math.ceil(this._warningTimer) : 0,
             locked: !warning,
         });
+    }
+
+    private safeLaneRangeForLeader(leader: Swimmer, safeLaneCount: number) {
+        const leaderLane = laneForZ(leader.node.position.z, this._layout);
+        const minFirst = this._activeFirstSafeLane;
+        const maxFirst = this._activeLastSafeLane - safeLaneCount + 1;
+        const centeredFirst = leaderLane - Math.floor((safeLaneCount - 1) * 0.5);
+        const first = clampInt(centeredFirst, minFirst, maxFirst);
+        return { first, last: first + safeLaneCount - 1 };
+    }
+
+    private publishAiTarget(firstSafeLane: number, lastSafeLane: number, warning: boolean) {
+        if (firstSafeLane === this._lastAiTargetFirstSafeLane
+            && lastSafeLane === this._lastAiTargetLastSafeLane
+            && warning === this._lastAiTargetWarning) {
+            return;
+        }
+        this._lastAiTargetFirstSafeLane = firstSafeLane;
+        this._lastAiTargetLastSafeLane = lastSafeLane;
+        this._lastAiTargetWarning = warning;
+        this._onAiTarget({
+            safeMinZ: laneEdgeZ(firstSafeLane, this._layout),
+            safeMaxZ: laneEdgeZ(lastSafeLane + 1, this._layout),
+            warning,
+        });
+    }
+
+    private clearAiTarget() {
+        if (this._lastAiTargetFirstSafeLane === 0) {
+            return;
+        }
+        this._lastAiTargetFirstSafeLane = 0;
+        this._lastAiTargetLastSafeLane = 0;
+        this._lastAiTargetWarning = false;
+        this._onAiTarget(null);
     }
 }
 
