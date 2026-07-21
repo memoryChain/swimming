@@ -491,9 +491,14 @@ export class RaceCameraDirector {
                 this.updateFinishTopCamera(snapshot);
                 return;
             }
+            // GameFlow promotes the camera to Sprint on the first surfaced frame.
+            // The broadcast-only underwater exit hard-cut below is therefore not
+            // reached; preserve the same immediate hand-off for this dive ->
+            // first-person transition instead of blending across the pool.
+            const leavingUnderwaterDiveView = this._underwaterViewActive;
             this._topViewActive = false;
             this._underwaterViewActive = false;
-            this.updateSprintCamera(dt, snapshot, leavingFlipTurnView);
+            this.updateSprintCamera(dt, snapshot, leavingFlipTurnView || leavingUnderwaterDiveView);
             return;
         }
         if (this._mode === RaceCameraMode.Broadcast) {
