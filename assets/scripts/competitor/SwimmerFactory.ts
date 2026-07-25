@@ -2,6 +2,7 @@ import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 import { defaultSwimmer0621ColorVariant } from '../core/ResourcePaths';
+import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from '../app/PlayerCharacterConfig';
 
 const ORIGINAL_SWIMMER_MODEL_VARIANT = 'swimmer0621_2';
 const DIVER_SWIMMER_MODEL_VARIANT = 'diver';
@@ -34,22 +35,35 @@ export class SwimmerFactory {
 
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
-        const modelVariantId = pickTemporaryRaceModelVariant();
+        const selectedPlayer = options.isAI ? null : findPlayerCharacter();
+        const modelVariantId = selectedPlayer?.modelVariantId ?? pickTemporaryRaceModelVariant();
+        const robotStyle = options.isAI || selectedPlayer?.robotStyle === true;
         rig.setModelVariant(modelVariantId);
         rig.setColorVariant(options.colorVariantId ?? defaultSwimmer0621ColorVariant().id);
         rig.build(
             sharedSkin,
             color(245, 42, 64),
             color(255, 220, 72),
-            options.isAI,
+            robotStyle,
             !options.isAI,
             options.isAI,
         );
+        if (selectedPlayer) {
+            const skinTone = selectedPlayerSkinTone();
+            const colorScheme = selectedPlayerColorScheme();
+            rig.setColorOverride(skinTone.preserveOriginal && colorScheme.preserveOriginal
+                ? null
+                : {
+                    skin: skinTone.preserveOriginal ? undefined : color(...skinTone.color),
+                    suit: colorScheme.preserveOriginal ? undefined : color(...colorScheme.suit),
+                    cap: colorScheme.preserveOriginal ? undefined : color(...colorScheme.cap),
+                });
+        }
         rig.setSkinOutfit('trunksA');
         const swimmer = node.addComponent(Swimmer);
         swimmer.cartoonRig = rig;
         swimmer.isAI = options.isAI;
-        swimmer.swimmerName = options.displayName || (options.isAI ? 'AI' : 'YOU');
+        swimmer.swimmerName = options.displayName || (selectedPlayer?.name ?? (options.isAI ? 'AI' : 'YOU'));
         this._debug?.(`${options.name} uses CartoonSwimmerRig model=${modelVariantId}`);
         return swimmer;
     }

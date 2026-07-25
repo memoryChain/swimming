@@ -1,5 +1,5 @@
 import { JsonAsset } from 'cc';
-import { loadRaceAssetDir } from '../core/RaceBundleLoader';
+import { loadRaceAsset, loadRaceAssetDir } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
     haveAllSampledDebugActions,
@@ -12,9 +12,48 @@ import { haveBreaststrokeSamples, registerBreaststrokeSamples } from './Breastst
 import type { BreaststrokeMotionSample } from './BreaststrokeMotionCurve';
 
 type LoadCallback = (error: Error | null) => void;
+type ActionLoadCallback = (error: Error | null) => void;
 
 let loading = false;
 const pendingCallbacks: LoadCallback[] = [];
+const pendingActionCallbacks = new Map<SampledActionId, ActionLoadCallback[]>();
+
+// The character-select screen needs one presentation action, while the race
+// itself needs the complete set. Keep this targeted path so opening the
+// preparation screen does not eagerly deserialize every emote curve.
+export function loadSampledAction(actionId: SampledActionId, done: ActionLoadCallback) {
+    if (findSampledDebugAction(actionId)) {
+        done(null);
+        return;
+    }
+    const pending = pendingActionCallbacks.get(actionId);
+    if (pending) {
+        pending.push(done);
+        return;
+    }
+    pendingActionCallbacks.set(actionId, [done]);
+    loadRaceAsset(`${RESOURCE_PATHS.sampledActionsDir}/${actionId}`, JsonAsset, (error, asset) => {
+        let resultError = error ?? null;
+        if (!resultError && asset) {
+            try {
+                const action = parseSampledAction(asset.json);
+                if (action.id !== actionId) {
+                    throw new Error(`Sampled action id mismatch: expected ${actionId}, got ${action.id}`);
+                }
+                registerSampledDebugAction(action);
+            } catch (parseError) {
+                resultError = parseError instanceof Error ? parseError : new Error(String(parseError));
+            }
+        } else if (!resultError) {
+            resultError = new Error(`Sampled action is unavailable: ${actionId}`);
+        }
+        const callbacks = pendingActionCallbacks.get(actionId) ?? [];
+        pendingActionCallbacks.delete(actionId);
+        for (const callback of callbacks) {
+            callback(resultError);
+        }
+    });
+}
 
 export function loadSampledActionsForRace(done: LoadCallback) {
     if (haveAllSampledDebugActions() && haveBreaststrokeSamples()) {

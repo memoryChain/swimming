@@ -148,11 +148,17 @@ function makeDynamicColorMaterial(original: Material, effect: EffectAsset, color
 // y = fade depth. Skipped silently for materials whose effect lacks the uniform
 // (e.g. the builtin-unlit fallback).
 function applyWaterLine(material: Material, waterLine?: number) {
-    if (typeof waterLine !== 'number') {
-        return;
-    }
     try {
-        material.setProperty('waterLine', new Vec4(waterLine, 0.04, 0.02, 0.45));
+        // The custom swimmer effect has a serialized default waterline. Merely
+        // omitting this uniform therefore still leaves a visible underwater
+        // band in dry presentation scenes. Put the line far below the world
+        // whenever no pool surface is supplied.
+        material.setProperty('waterLine', new Vec4(
+            typeof waterLine === 'number' ? waterLine : -10000,
+            0.04,
+            0.02,
+            0.45,
+        ));
     } catch {
         // Effect has no waterLine uniform; nothing to tint.
     }

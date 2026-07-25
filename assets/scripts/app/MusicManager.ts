@@ -37,22 +37,15 @@ export class MusicManager {
         this.play('result');
     }
 
-    // Mobile browsers and WeChat can suspend audio until the first gesture.
-    // Calling play again from that gesture resumes the already loaded clip.
-    static unlock() {
-        this.ensureSource();
-        if (this._source?.clip) {
-            this._source.play();
-        }
-    }
-
     private static play(track: MusicTrack) {
         const source = this.ensureSource();
         if (!source) {
             return;
         }
         if (this._track === track && source.clip) {
-            source.play();
+            // The persistent source is already playing this track. Calling
+            // play() again restarts it, which previously happened on every
+            // login-screen tap because the whole canvas used an unlock handler.
             return;
         }
 

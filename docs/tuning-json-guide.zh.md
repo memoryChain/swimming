@@ -102,6 +102,9 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 | --- | ---: | --- | --- |
 | `motion.heldMotionSpeedScale` | `1` | 倍率 | 按住 `A` 或 `D` 时，对应手脚动作播放的速度倍率。 |
 | `motion.releasedMotionSpeedScale` | `2` | 倍率 | 松开 `A` 或 `D` 后，对应手脚把当前这一轮动作追完的速度倍率。调大后松手收动作更快。 |
+| `motion.flipTurnUnderwaterDiveSeconds` | `0.45` | s | 折返蹬墙后，角色从翻滚姿态继续下潜到水下滑行深度所用的时间。 |
+| `motion.flipTurnUnderwaterHoldSeconds` | `0.8` | s | 到达水下滑行深度后保持的时间；此阶段仅接受踢腿推进。 |
+| `motion.flipTurnUnderwaterRiseSeconds` | `1.3` | s | 水下保持结束后上浮并回到水面自由泳所用的时间。三项之和即折返后潜水阶段总时长。 |
 | `motion.kickFlutterMaxCyclesPerSecond` | `3.2` | 圈/s | 仅 AI 使用。AI 连续打腿在最高速时的频率，AI 腿频率会随速度缩放。玩家腿已改为点击脉冲驱动。 |
 | `motion.kickFlutterIdleFraction` | `0.08` | 比例 | 仅 AI 使用。AI 接近停止时保留的最低打腿频率，占最高频率的比例。 |
 | `motion.kickPulseMinCyclesPerSecond` | `3.5` | 圈/s | 玩家踢腿脉冲的最低扫描频率。单点或慢点也会有一次明显快踢；连续点更快时会跟随实际频率。 |

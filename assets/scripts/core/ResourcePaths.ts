@@ -253,6 +253,7 @@ export const RESOURCE_PATHS = {
     laneFloatCutoutEffect: 'effects/LaneFloatCutout',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
+  prepareRaceBackground: 'ui/prepare-race/locker-room-lowpoly-bg/texture',
     sampledActionsDir: 'sampled-actions',
     music: {
         bundle: 'music',

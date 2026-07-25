@@ -42,6 +42,8 @@ export function makeTouchArea(name: string, parent: Node, w: number, h: number):
     const node = makeUiNode(name, parent);
     node.getComponent(UITransform).setContentSize(w, h);
     const button = node.addComponent(Button);
+    button.target = node;
+    button.interactable = true;
     button.transition = Button.Transition.NONE;
     return node;
 }
@@ -61,6 +63,10 @@ export function makeLabel(name: string, parent: Node, text: string, fontSize: nu
 export function makeButton(name: string, parent: Node, w: number, h: number, fill: Color, text: string): Node {
     const node = makeRect(name, parent, w, h, fill);
     const button = node.addComponent(Button);
+    // Make the node's full UITransform the authoritative Cocos Button hit box.
+    // Text is presentation only; it must never define the clickable region.
+    button.target = node;
+    button.interactable = true;
     button.transition = Button.Transition.NONE;
     if (text) {
         const labelNode = makeLabel('Label', node, text, 18, uiColor(255, 255, 255, 235));

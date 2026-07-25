@@ -1,6 +1,6 @@
 {
   "version": 8,
-  "updatedAt": "2026-07-21T00:00:00.000Z",
+  "updatedAt": "2026-07-25T00:00:00.000Z",
   "values": {
     "input.padStrokeDedupeMs": 5,
     "dive.minPower": 0.3,
@@ -48,6 +48,9 @@
     "difficulty.championship.armCycleSpeedScale": 1.0,
     "motion.heldMotionSpeedScale": 1,
     "motion.releasedMotionSpeedScale": 2,
+    "motion.flipTurnUnderwaterDiveSeconds": 0.25,
+    "motion.flipTurnUnderwaterHoldSeconds": 0.2,
+    "motion.flipTurnUnderwaterRiseSeconds": 0.3,
     "motion.kickFlutterMaxCyclesPerSecond": 3.2,
     "motion.kickFlutterIdleFraction": 0.08,
     "motion.kickPulseMinCyclesPerSecond": 3.5,

@@ -1,6 +1,5 @@
 import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, Layout, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view, Widget } from 'cc';
 import { EDITOR } from 'cc/env';
-import { getRaceDifficulty, RaceDifficulty, RACE_DIFFICULTY_OPTIONS } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
@@ -8,7 +7,6 @@ import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
-    onDifficultySelect: (difficulty: RaceDifficulty) => void;
     onModelDebug: () => void;
     onAiDebug: () => void;
 };
@@ -535,25 +533,14 @@ function instantiateRoot(parent: Node, prefab: Prefab): Node {
 
 function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallbacks) {
     const legacyButtonNames = ['Distance50Button', 'Distance100Button', 'Distance200Button'];
-    const difficultyButtons = RACE_DIFFICULTY_OPTIONS.map((option, index) => ({
-        difficulty: option.id,
-        node: requireNode(startScreen, legacyButtonNames[index]),
-    }));
-    requireLabel(startScreen, 'DistanceModeLabel').string = '赛程 200米 · 选择难度';
-    const skins = difficultyButtonSkins(difficultyButtons);
-    for (const [index, button] of difficultyButtons.entries()) {
-        const label = button.node.getChildByName('Label')?.getComponent(Label);
-        if (label) {
-            label.string = RACE_DIFFICULTY_OPTIONS[index].label;
-        }
-        button.node.on(Node.EventType.TOUCH_END, () => {
-            callbacks.onDifficultySelect(button.difficulty);
-            updateDifficultyButtons(difficultyButtons, skins);
-        });
+    for (const buttonName of legacyButtonNames) {
+        requireNode(startScreen, buttonName).active = false;
     }
-    updateDifficultyButtons(difficultyButtons, skins);
+    requireNode(startScreen, 'DistanceModeLabel').active = false;
 
     const startButton = requireNode(startScreen, 'StartButton');
+    const startLabel = startButton.getChildByName('Label')?.getComponent(Label);
+    if (startLabel) startLabel.string = '准备比赛';
     startButton.on(Node.EventType.TOUCH_END, callbacks.onStart);
 
     const modelDebug = requireNode(startScreen, 'ModelDebugButton');
@@ -571,7 +558,7 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     // skips them automatically.
     applyResponsiveStartMenu(
         startScreen,
-        difficultyButtons.map((button) => button.node),
+        [],
         [startButton, modelDebug, aiDebug],
     );
 }
@@ -632,41 +619,4 @@ function applyResponsiveStartMenu(startScreen: Node, difficultyNodes: Node[], ac
     menu.setScale(fit, fit, 1);
     menu.setPosition(0, (topBound + bottomBound) / 2, menu.position.z);
     widget.updateAlignment();
-}
-
-type DifficultyButtonSkins = {
-    normal: SpriteFrame | null;
-    selected: SpriteFrame | null;
-};
-
-function difficultyButtonSkins(buttons: { difficulty: RaceDifficulty; node: Node }[]): DifficultyButtonSkins {
-    return {
-        normal: buttons[0]?.node.getComponent(Sprite)?.spriteFrame ?? null,
-        selected: buttons[1]?.node.getComponent(Sprite)?.spriteFrame ?? null,
-    };
-}
-
-function updateDifficultyButtons(buttons: { difficulty: RaceDifficulty; node: Node }[], skins: DifficultyButtonSkins) {
-    const selected = getRaceDifficulty();
-    for (const button of buttons) {
-        const active = button.difficulty === selected;
-        const sprite = button.node.getComponent(Sprite);
-        if (sprite) {
-            sprite.spriteFrame = active ? skins.selected : skins.normal;
-            sprite.color = Color.WHITE;
-        }
-        const label = button.node.getChildByName('Label')?.getComponent(Label);
-        if (label) {
-            label.color = active
-                ? new Color(12, 16, 24, 255)
-                : new Color(12, 16, 24, 230);
-            label.fontFamily = 'Microsoft YaHei';
-            label.isBold = true;
-            label.isItalic = false;
-            label.enableOutline = false;
-            label.enableShadow = false;
-            label.fontSize = active ? 29 : 27;
-            label.lineHeight = active ? 33 : 31;
-        }
-    }
 }

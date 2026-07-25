@@ -74,6 +74,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         raceModelEulerDegrees: () => this.raceModelEulerDegrees(),
     });
     private _skinnedRenderers: SkinnedMeshRenderer[] = [];
+    private _castsShadow = false;
     private _outlineRoot: Node = null;
     private _loaded = false;
     private _armAction = 0;
@@ -113,10 +114,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmer0621ColorVariant().id;
+    private _colorOverride: { skin?: Color; suit?: Color; cap?: Color } | null = null;
     private _colorMask: Texture2D = null;
     private _dynamicColorEffect: EffectAsset = null;
     private _colorAssetLoadToken = 0;
     private _waterY = CHARACTER_POSE_TUNING.splashWaterY;
+    private _waterlineEffectEnabled = true;
     private _debugActionPose: DebugSwimmerActionPose = 'freestyle';
     private _debugSampledActionId: SampledActionId | null = null;
     private _flipTurnSwimPose: ProceduralPoseSnapshot | null = null;
@@ -156,7 +159,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _motionThrottleCountdown = 0;
     private _motionThrottleAccumDt = 0;
 
-    build(skinColor: Color, suitColor: Color, capColor: Color, robotStyle = false, playerOutline = false, reducedSplash = false) {
+    build(
+        skinColor: Color,
+        suitColor: Color,
+        capColor: Color,
+        robotStyle = false,
+        playerOutline = false,
+        reducedSplash = false,
+        enableSplash = true,
+    ) {
         if (this._loaded || this._model) {
             return;
         }
@@ -170,16 +181,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._motionThrottleCountdown = reducedSplash ? (_backgroundMotionPhaseSeed++ & 3) : 0;
         this._motionThrottleAccumDt = 0;
 
-        this._splashEmitter = new SplashEmitter({
-            owner: this.node,
-            parent: this.node.parent || this.node,
-            name: `${this.node.name || 'Swimmer'}Splash`,
-            waterY: this._waterY,
-            getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
-            reduced: reducedSplash,
-        });
-        this.splashNode = this._splashEmitter.node;
-        this._splashEmitter.build();
+        if (enableSplash) {
+            this._splashEmitter = new SplashEmitter({
+                owner: this.node,
+                parent: this.node.parent || this.node,
+                name: `${this.node.name || 'Swimmer'}Splash`,
+                waterY: this._waterY,
+                getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
+                reduced: reducedSplash,
+            });
+            this.splashNode = this._splashEmitter.node;
+            this._splashEmitter.build();
+        }
 
         this.loadModelForCurrentVariant();
     }
@@ -218,6 +231,70 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._colorVariantId;
     }
 
+    getModelWorldPivot(out: Vec3): boolean {
+        // Imported armature roots are commonly offset behind the character.
+        // Prefer the hip for presentation rotation: it lies on the body's
+        // vertical centreline and stays stable while a showcase action moves
+        // the head and arms.
+        if (this._pose.getHipWorldPosition(out)) {
+            return true;
+        }
+        if (!this.root?.isValid) {
+            return false;
+        }
+        this.root.getWorldPosition(out);
+        return true;
+    }
+
+    getGroundContactWorldPosition(out: Vec3): boolean {
+        const count = this._pose.getFlipTurnFootContactWorldPositions(this._tmpFlipTurnContactWorld);
+        if (count <= 0) {
+            return false;
+        }
+        let x = 0;
+        let z = 0;
+        let lowestY = Number.POSITIVE_INFINITY;
+        for (let index = 0; index < count; index++) {
+            const contact = this._tmpFlipTurnContactWorld[index];
+            x += contact.x;
+            z += contact.z;
+            lowestY = Math.min(lowestY, contact.y);
+        }
+        out.set(x / count, lowestY - 0.012, z / count);
+        return true;
+    }
+
+    // A presentation-only render proxy reuses this rig's live skeleton. The
+    // locker-room UI renders it into a RenderTexture as a real-time silhouette.
+    createShadowSilhouetteProxy(parent: Node, material: Material, layer: number): Node | null {
+        if (!this._model || this._skinnedRenderers.length <= 0) {
+            return null;
+        }
+        const root = new Node('SwimmerPlanarShadowProxy');
+        root.layer = layer;
+        root.setParent(parent);
+        for (const source of this._skinnedRenderers) {
+            if (!source.node?.isValid || !source.mesh) {
+                continue;
+            }
+            const shadowNode = new Node(`${source.node.name || 'Skin'}PlanarShadow`);
+            shadowNode.layer = layer;
+            shadowNode.setParent(root);
+            shadowNode.setWorldPosition(source.node.worldPosition);
+            shadowNode.setWorldRotation(source.node.worldRotation);
+            shadowNode.setWorldScale(source.node.worldScale);
+            const renderer = shadowNode.addComponent(SkinnedMeshRenderer);
+            renderer.mesh = source.mesh;
+            renderer.skeleton = source.skeleton;
+            renderer.skinningRoot = source.skinningRoot || this._model;
+            renderer.setUseBakedAnimation(false, true);
+            renderer.uploadAnimation(null);
+            renderer.shadowCastingMode = 0;
+            renderer.setMaterial(material, 0);
+        }
+        return root;
+    }
+
     get usesDebugAnimationClip(): boolean {
         return this.isMixamoSwimmingDebugVariant();
     }
@@ -253,6 +330,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             }
         }
         return true;
+    }
+
+    setColorOverride(override: { skin?: Color; suit?: Color; cap?: Color } | null) {
+        this._colorOverride = override
+            ? { skin: override.skin?.clone(), suit: override.suit?.clone(), cap: override.cap?.clone() }
+            : null;
+        if (this._loaded && this.root) {
+            this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
+        }
     }
 
     setDebugActionPose(pose: DebugSwimmerActionPose, sampledActionId?: SampledActionId) {
@@ -501,6 +587,26 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     setSplashCulled(culled: boolean) {
         this._splashCulled = culled;
         this._splashEmitter?.setCulled(culled);
+    }
+
+    // The race uses a world-space waterline shader, while presentation spaces
+    // such as the locker room reuse the same character rig without any pool.
+    // Keep that material effect independent from splash visibility.
+    setWaterlineEffectEnabled(enabled: boolean) {
+        if (this._waterlineEffectEnabled === enabled) {
+            return;
+        }
+        this._waterlineEffectEnabled = enabled;
+        if (this._loaded && this.root) {
+            this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
+        }
+    }
+
+    setCastShadow(enabled: boolean) {
+        this._castsShadow = enabled;
+        for (const renderer of this._skinnedRenderers) {
+            renderer.shadowCastingMode = enabled ? 1 : 0;
+        }
     }
 
     // Set how many frames elapse between procedural-pose rebuilds for this background AI swimmer.
@@ -833,6 +939,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._modelLoadToken += 1;
+        this._colorAssetLoadToken += 1;
         this.restorePerfectGlowMaterials();
         if (this._perfectGlowMaterial?.isValid) {
             this._perfectGlowMaterial.destroy();
@@ -955,17 +1063,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.restorePerfectGlowMaterials();
         const modelVariant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
         const colorVariant = findSwimmer0621ColorVariant(this._colorVariantId) ?? defaultSwimmer0621ColorVariant();
+        const override = this._colorOverride;
         const usesDynamicColor = !!modelVariant.dynamicColor
-            && (!!colorVariant.skin || !!colorVariant.suit || (modelVariant.dynamicColor.usesCapChannel && !!colorVariant.cap));
-        const resolvedSkinColor = colorVariant.skin
+            && (!!override?.skin || !!override?.suit || (modelVariant.dynamicColor.usesCapChannel && !!override?.cap)
+                || !!colorVariant.skin || !!colorVariant.suit || (modelVariant.dynamicColor.usesCapChannel && !!colorVariant.cap));
+        const resolvedSkinColor = override?.skin ?? (colorVariant.skin
             ? new Color(...colorVariant.skin, 255)
-            : new Color(skinColor.r, skinColor.g, skinColor.b, 0);
-        const resolvedSuitColor = colorVariant.suit
+            : new Color(skinColor.r, skinColor.g, skinColor.b, 0));
+        const resolvedSuitColor = override?.suit ?? (colorVariant.suit
             ? new Color(...colorVariant.suit, 255)
-            : suitColor;
-        const resolvedCapColor = colorVariant.cap
+            : new Color(suitColor.r, suitColor.g, suitColor.b, 0));
+        const resolvedCapColor = override?.cap ?? (colorVariant.cap
             ? new Color(...colorVariant.cap, 255)
-            : capColor;
+            : new Color(capColor.r, capColor.g, capColor.b, 0));
         applyCharacterSkin({
             root: this.root,
             model: this._model,
@@ -979,7 +1089,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             preserveOriginalMaterial: this.preserveOriginalMaterial(),
             dynamicColorEffect: this._dynamicColorEffect,
             colorMask: usesDynamicColor ? this._colorMask : null,
-            waterLine: this._waterY,
+            waterLine: this._waterlineEffectEnabled ? this._waterY : undefined,
             preserveImportedMaterial: this.usesImportedSwimmerMaterial(),
             outlineWidth: this.usesImportedSwimmerMaterial() ? 10 : undefined,
             outlineRoot: this._outlineRoot,
@@ -1568,6 +1678,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._skinnedRenderers = configureSwimmerSkinnedRenderers(this._model, { useBakedAnimation });
+        for (const renderer of this._skinnedRenderers) {
+            renderer.shadowCastingMode = this._castsShadow ? 1 : 0;
+        }
         if (this._skinnedRenderers.length > 0) {
             const roots = this._skinnedRenderers.map((renderer) => renderer.skinningRoot?.name || 'none').join('|');
             console.log(`[SpeedSwimming] skinned mesh ${useBakedAnimation ? 'baked animation' : 'realtime'} enabled count=${this._skinnedRenderers.length} roots=${roots}`);

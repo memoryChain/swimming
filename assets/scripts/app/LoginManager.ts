@@ -1,5 +1,4 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, view } from 'cc';
-import { setRaceDifficulty } from '../core/GameBalance';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
@@ -7,6 +6,7 @@ import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { MusicManager } from './MusicManager';
+import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 
 const { ccclass } = _decorator;
 
@@ -16,6 +16,8 @@ export class LoginManager extends Component {
     private _designWidth = 1280;
     private _designHeight = 720;
     private _loadingRace = false;
+    private _loginUiRoot: Node | null = null;
+    private _prepareRaceFlow: PrepareRaceFlow | null = null;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -31,15 +33,32 @@ export class LoginManager extends Component {
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
         MusicManager.playLogin();
-        canvasNode.on(Node.EventType.TOUCH_START, this.unlockMusic, this);
     }
 
     onDestroy() {
-        this._canvasNode?.off(Node.EventType.TOUCH_START, this.unlockMusic, this);
+        this._prepareRaceFlow?.dispose();
     }
 
     startGame() {
+        this._prepareRaceFlow?.dispose();
+        this._prepareRaceFlow = null;
         this.launchMainGame('race');
+    }
+
+    private openPrepareRace() {
+        if (this._prepareRaceFlow || !this._loginUiRoot) {
+            return;
+        }
+        this._loginUiRoot.active = false;
+        this._prepareRaceFlow = new PrepareRaceFlow(this._canvasNode, this._designWidth, this._designHeight, {
+            onBack: () => {
+                this._prepareRaceFlow?.dispose();
+                this._prepareRaceFlow = null;
+                if (this._loginUiRoot?.isValid) this._loginUiRoot.active = true;
+            },
+            onStartRace: () => this.startGame(),
+        });
+        this._prepareRaceFlow.showCharacterSelect();
     }
 
     startModelDebug() {
@@ -85,10 +104,6 @@ export class LoginManager extends Component {
         });
     }
 
-    private unlockMusic() {
-        MusicManager.unlock();
-    }
-
     private findCanvasNode(): Node {
         if (this.node.getComponent(Canvas)) {
             return this.node;
@@ -122,14 +137,15 @@ export class LoginManager extends Component {
     private buildLoginScreen(canvasNode: Node, width: number, height: number) {
         canvasNode.getChildByName('SpeedStarsUI')?.destroy();
         new SpeedStarsStartUiPrefabBuilder({
-            onStart: () => this.startGame(),
-            onDifficultySelect: (difficulty) => setRaceDifficulty(difficulty),
+            onStart: () => this.openPrepareRace(),
             onModelDebug: () => this.startModelDebug(),
             onAiDebug: () => this.showAiDebugPicker(),
-        }).build(canvasNode, width, height, (error) => {
+        }).build(canvasNode, width, height, (error, refs) => {
             if (error) {
                 console.error('[SpeedSwimming] Login UI failed to load', error);
+                return;
             }
+            this._loginUiRoot = refs?.root ?? null;
         });
     }
 

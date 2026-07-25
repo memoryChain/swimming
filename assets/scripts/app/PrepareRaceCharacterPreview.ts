@@ -1,0 +1,238 @@
+import { _decorator, Camera, Color, Component, DirectionalLight, Layers, Material, Node, RenderTexture, Vec3 } from 'cc';
+import { CharacterAction } from '../character/CharacterActionConfig';
+import { loadSampledAction } from '../character/SampledActionLoader';
+import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
+import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from './PlayerCharacterConfig';
+
+const { ccclass } = _decorator;
+const PREVIEW_CHARACTER_SCALE = 1.15;
+const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
+const SHADOW_SILHOUETTE_LAYER = 1 << 22;
+const SHADOW_TEXTURE_SIZE = 192;
+
+// Lightweight 3D showcase rendered over the 2D prepare-race UI. It deliberately
+// uses the production rig/model loader so a choice made here has the same visual
+// identity as the swimmer that enters the race.
+@ccclass('PrepareRaceCharacterPreview')
+export class PrepareRaceCharacterPreview extends Component {
+    private _cameraNode: Node | null = null;
+    private _lightNode: Node | null = null;
+    private _pivotNode: Node | null = null;
+    private _swimmerNode: Node | null = null;
+    private _shadowSilhouetteProxy: Node | null = null;
+    private _shadowCameraNode: Node | null = null;
+    private _shadowCamera: Camera | null = null;
+    private _shadowTexture: RenderTexture | null = null;
+    private _rig: CartoonSwimmerRig | null = null;
+    private _yawDegrees = 0;
+    private _centered = false;
+    private _showcaseActionLoadToken = 0;
+    private readonly _modelPivot = new Vec3();
+    private readonly _groundShadowPosition = new Vec3();
+
+    get shadowTexture(): RenderTexture | null {
+        return this._shadowTexture;
+    }
+
+    onLoad() {
+        this.node.layer = Layers.Enum.DEFAULT;
+        this.buildCameraAndLight();
+    }
+
+    refresh() {
+        const character = findPlayerCharacter();
+        if (!character) return;
+        this._shadowSilhouetteProxy?.destroy();
+        this._shadowSilhouetteProxy = null;
+        this._pivotNode?.destroy();
+        const pivot = new Node('PrepareRaceCharacterPivot');
+        pivot.layer = Layers.Enum.DEFAULT;
+        pivot.setParent(this.node);
+        // The flat locker-room backdrop reads its foreground floor near the
+        // rotation hint. Place the preview there and scale it up so the
+        // character feels present in the room instead of far away in the door.
+        pivot.setScale(PREVIEW_CHARACTER_SCALE, PREVIEW_CHARACTER_SCALE, PREVIEW_CHARACTER_SCALE);
+        const swimmer = new Node('PrepareRaceSelectedCharacter');
+        swimmer.layer = Layers.Enum.DEFAULT;
+        swimmer.setParent(pivot);
+        swimmer.setPosition(0, 0, 0);
+
+        const rig = swimmer.addComponent(CartoonSwimmerRig);
+        const skin = selectedPlayerSkinTone();
+        const palette = selectedPlayerColorScheme();
+        rig.setModelVariant(character.modelVariantId);
+        rig.build(
+            new Color(...skin.color, 255),
+            new Color(...palette.suit, 255),
+            new Color(...palette.cap, 255),
+            character.robotStyle === true,
+            true,
+            true,
+            false,
+        );
+        rig.setSplashCulled(true);
+        rig.setWaterlineEffectEnabled(false);
+        rig.setCastShadow(false);
+        rig.setShowcaseStanding();
+        this._pivotNode = pivot;
+        this._swimmerNode = swimmer;
+        this._rig = rig;
+        this.applyAppearance();
+        this.ensureShadowCapture();
+        this._centered = false;
+        this.loadShowcaseAction(rig);
+    }
+
+    rotateBy(deltaDegrees: number) {
+        this._yawDegrees += deltaDegrees;
+        this._pivotNode?.setRotationFromEuler(0, this._yawDegrees, 0);
+    }
+
+    // Material updates are intentionally separate from refresh(): the latter
+    // rebuilds the model and restarts its showcase animation, while choosing a
+    // skin tone or outfit palette should leave the current action uninterrupted.
+    applyAppearance() {
+        if (!this._rig) {
+            return;
+        }
+        const skin = selectedPlayerSkinTone();
+        const palette = selectedPlayerColorScheme();
+        if (skin.preserveOriginal && palette.preserveOriginal) {
+            this._rig.setColorOverride(null);
+            return;
+        }
+        this._rig.setColorOverride({
+            skin: skin.preserveOriginal ? undefined : new Color(...skin.color, 255),
+            suit: palette.preserveOriginal ? undefined : new Color(...palette.suit, 255),
+            cap: palette.preserveOriginal ? undefined : new Color(...palette.cap, 255),
+        });
+    }
+
+    update() {
+        if (!this._pivotNode || !this._swimmerNode || !this._rig) return;
+        if (!this._centered) {
+            // Use the rig's hip-centred presentation pivot rather than a renderer
+            // bounding box. Bounds move with poses, while imported armature roots
+            // can be offset behind the character's body.
+            this._pivotNode.setRotationFromEuler(0, 0, 0);
+            if (!this._rig.getModelWorldPivot(this._modelPivot)) return;
+            // The camera looks at world origin. Move the authored armature pivot to
+            // that point (rather than preserving its imported X/Z offset) so the
+            // selected character is visually centred in the prepare-race screen.
+            this._pivotNode.setPosition(0, PREVIEW_CHARACTER_Y_OFFSET, 0);
+            this._swimmerNode.setPosition(-this._modelPivot.x, 0, -this._modelPivot.z);
+            this._pivotNode.setRotationFromEuler(0, this._yawDegrees, 0);
+            this._centered = true;
+        }
+        this.updateShadowCapture();
+    }
+
+    private buildCameraAndLight() {
+        const light = new Node('PrepareRacePreviewLight');
+        light.layer = Layers.Enum.DEFAULT;
+        light.setParent(this.node);
+        // Overhead changing-room light: its planar shadow drops straight below
+        // the standing character instead of stretching across the floor.
+        light.setRotationFromEuler(-90, 0, 0);
+        const directional = light.addComponent(DirectionalLight);
+        directional.color = new Color(230, 245, 255, 255);
+        directional.illuminance = 1.5;
+        directional.shadowEnabled = true;
+        this._lightNode = light;
+
+        const cameraNode = new Node('PrepareRacePreviewCamera');
+        cameraNode.layer = Layers.Enum.DEFAULT;
+        cameraNode.setParent(this.node);
+        cameraNode.setPosition(3.5, 1.5, 4.6);
+        cameraNode.lookAt(new Vec3(0, 0.88, 0));
+        const camera = cameraNode.addComponent(Camera);
+        camera.projection = Camera.ProjectionType.PERSPECTIVE;
+        camera.visibility = Layers.BitMask.DEFAULT;
+        camera.clearFlags = Camera.ClearFlag.DEPTH_ONLY;
+        camera.fov = 34;
+        camera.near = 0.05;
+        camera.far = 40;
+        // Login's UI camera draws first; this camera then overlays only the
+        // central 3D character without clearing the generated locker-room image.
+        camera.priority = 1;
+        this._cameraNode = cameraNode;
+    }
+
+    onDestroy() {
+        this._showcaseActionLoadToken += 1;
+        this._cameraNode?.destroy();
+        this._lightNode?.destroy();
+        this._shadowCameraNode?.destroy();
+        this._shadowTexture?.destroy();
+    }
+
+    private ensureShadowCapture() {
+        if (!this._shadowTexture) {
+            const texture = new RenderTexture('PrepareRaceShadowRT');
+            texture.reset({ width: SHADOW_TEXTURE_SIZE, height: SHADOW_TEXTURE_SIZE });
+            this._shadowTexture = texture;
+        }
+        if (this._shadowCamera) {
+            return;
+        }
+        const cameraNode = new Node('PrepareRaceShadowCamera');
+        cameraNode.layer = Layers.Enum.DEFAULT;
+        cameraNode.setParent(this.node);
+        const camera = cameraNode.addComponent(Camera);
+        camera.projection = Camera.ProjectionType.ORTHO;
+        camera.orthoHeight = 2.8;
+        camera.visibility = SHADOW_SILHOUETTE_LAYER;
+        camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
+        camera.clearColor = new Color(0, 0, 0, 0);
+        camera.near = 0.05;
+        camera.far = 20;
+        // Capture before the UI camera samples this texture in the same frame.
+        camera.priority = -1;
+        camera.targetTexture = this._shadowTexture;
+        this._shadowCameraNode = cameraNode;
+        this._shadowCamera = camera;
+    }
+
+    private updateShadowCapture() {
+        if (!this._rig?.getGroundContactWorldPosition(this._groundShadowPosition)) {
+            return;
+        }
+        const cameraNode = this._shadowCameraNode;
+        if (cameraNode) {
+            cameraNode.setPosition(
+                this._groundShadowPosition.x,
+                this._groundShadowPosition.y + 4.5,
+                this._groundShadowPosition.z,
+            );
+            cameraNode.lookAt(this._groundShadowPosition);
+        }
+        if (!this._shadowSilhouetteProxy?.isValid && this._pivotNode) {
+            const material = new Material();
+            material.initialize({ effectName: 'builtin-unlit', technique: 1 });
+            material.name = 'PrepareRaceRealtimeShadowSilhouette';
+            material.setProperty('mainColor', new Color(0, 0, 0, 142));
+            this._shadowSilhouetteProxy = this._rig.createShadowSilhouetteProxy(
+                this._pivotNode,
+                material,
+                SHADOW_SILHOUETTE_LAYER,
+            );
+        }
+    }
+
+    private loadShowcaseAction(rig: CartoonSwimmerRig) {
+        const token = ++this._showcaseActionLoadToken;
+        loadSampledAction('arm_stretching', (error) => {
+            if (error) {
+                console.warn('[SpeedSwimming] prepare-race arm stretching action failed to load', error);
+                return;
+            }
+            // Character switching can replace the rig while the race bundle is
+            // streaming. Only apply the action to the still-visible preview.
+            if (token !== this._showcaseActionLoadToken || this._rig !== rig || !rig.node?.isValid) {
+                return;
+            }
+            rig.setShowcaseAction(CharacterAction.ArmStretching);
+            rig.setShowcaseStanding();
+        });
+    }
+}
