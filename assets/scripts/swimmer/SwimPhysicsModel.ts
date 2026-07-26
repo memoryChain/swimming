@@ -1,4 +1,4 @@
-import { SWIMMER_BALANCE } from '../core/GameBalance';
+﻿import { SWIMMER_BALANCE } from '../core/GameBalance';
 
 export type SwimPhysicsState = {
     currentSpeed: number;
@@ -11,20 +11,18 @@ export type SwimPhysicsInput = {
     kickAcceleration: number;
     speedCapBonus: number;
     // Extra drag coefficient (per m/s) active only during the underwater glide.
-    // Added on top of the normal drag so an un-kicked glide bleeds off fast.
     glideDrag?: number;
+    // Player-only override for the speed ceiling. When set, replaces
+    // SWIMMER_BALANCE.maxSpeed so progression can raise the player's top speed
+    // without affecting AI swimmers.
+    maxSpeedOverride?: number;
 };
 
 export class SwimPhysicsModel {
     step(state: SwimPhysicsState, input: SwimPhysicsInput): SwimPhysicsState {
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed + Math.max(0, input.speedCapBonus);
+        const maxSpeed = (input.maxSpeedOverride ?? SWIMMER_BALANCE.maxSpeed) + Math.max(0, input.speedCapBonus);
         const speedRatio = clamp01(state.currentSpeed / maxSpeed);
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
-        // Arm-stroke pulses taper off toward maxSpeed via accelLimit. Kick
-        // acceleration is already frequency-scaled and fades into its own ceiling
-        // (kickMaxSpeed) in the motor, so it is added directly here. AI and player
-        // share this exact model now — the AI drives real stroke acceleration
-        // through the same path instead of a separate cruise constant.
         const accel = input.strokeAcceleration * accelLimit + Math.max(0, input.kickAcceleration);
         const speed = state.currentSpeed;
         const drag = (

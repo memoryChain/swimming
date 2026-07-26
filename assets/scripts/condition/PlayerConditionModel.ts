@@ -29,6 +29,9 @@ export class PlayerConditionModel {
     private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
+    private _energyTotalOverride: number | null = null;
+    private _depletedQualityPenaltyOverride: number | null = null;
+    private _depletedEfficiencyPenaltyOverride: number | null = null;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
@@ -42,7 +45,7 @@ export class PlayerConditionModel {
         this._phase = RacePhase.START;
         this._heartRate = HEART_RATE_BOUNDS.min;
         this._heartRateZone = HeartRateZone.LOW;
-        this._energy = CONDITION_BALANCE.energy.total;
+        this._energy = this._effectiveEnergyTotal;
         this._energyDepleted = false;
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
@@ -53,6 +56,16 @@ export class PlayerConditionModel {
         this._strokesSinceDive = 0;
         this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
+    }
+
+    setProgressionOverrides(opts: { energyTotal?: number; depletedQualityPenalty?: number; depletedEfficiencyPenalty?: number } | null) {
+        this._energyTotalOverride = opts?.energyTotal ?? null;
+        this._depletedQualityPenaltyOverride = opts?.depletedQualityPenalty ?? null;
+        this._depletedEfficiencyPenaltyOverride = opts?.depletedEfficiencyPenalty ?? null;
+    }
+
+    private get _effectiveEnergyTotal(): number {
+        return this._energyTotalOverride ?? CONDITION_BALANCE.energy.total;
     }
 
     setPhase(phase: RacePhase) {
@@ -143,7 +156,7 @@ export class PlayerConditionModel {
         if (this._phase === RacePhase.SPRINT) {
             drain *= energyCfg.sprintTierMultiplier[this._sprintTier];
         }
-        this._energy = clamp(this._energy - drain, 0, energyCfg.total);
+        this._energy = clamp(this._energy - drain, 0, this._effectiveEnergyTotal);
         this._energyDepleted = this._energy <= 0;
     }
 
@@ -153,8 +166,8 @@ export class PlayerConditionModel {
         // The final sprint is an all-out push: energy may remain visibly empty,
         // but its quality/efficiency debuffs no longer limit the swimmer.
         if (this._energyDepleted && this._phase !== RacePhase.SPRINT) {
-            quality -= CONDITION_BALANCE.energy.depletedQualityPenalty;
-            efficiency -= CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
+            quality -= this._depletedQualityPenaltyOverride ?? CONDITION_BALANCE.energy.depletedQualityPenalty;
+            efficiency -= this._depletedEfficiencyPenaltyOverride ?? CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
         }
         this._qualityModifier = Math.max(0, quality);
         this._efficiencyModifier = Math.max(0, efficiency);

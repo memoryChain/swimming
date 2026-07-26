@@ -1,8 +1,9 @@
-import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
+﻿import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
+import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -98,6 +99,7 @@ export class SwimmerMotor {
     private _strokeAccelerationSeconds = 0;
     private _strokeAccelerationTotalSeconds = 0;
     private _speedCapBonus = 0;
+    private _playerBalance: PlayerBalanceOverrides | null = null;
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
     private _lastStrokeQuality = 0;
@@ -339,7 +341,7 @@ export class SwimmerMotor {
         const fade = this._glidePhaseActive
             ? 1
             : clamp01(
-                (SWIMMER_BALANCE.kickMaxSpeed - this._currentSpeed)
+                (this._effectiveKickMaxSpeed - this._currentSpeed)
                     / Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand),
             );
         if (fade <= 0) {
@@ -388,6 +390,7 @@ export class SwimmerMotor {
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
                 glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
+                maxSpeedOverride: this._playerBalance?.maxSpeed,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
@@ -463,6 +466,30 @@ export class SwimmerMotor {
         this._conditionSpeedScale = clamp(scale, 0, 2);
     }
 
+    setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
+        this._playerBalance = overrides;
+    }
+
+    private get _effectiveMaxSpeed(): number {
+        return this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed;
+    }
+
+    private get _effectiveKickMaxSpeed(): number {
+        return this._playerBalance?.kickMaxSpeed ?? SWIMMER_BALANCE.kickMaxSpeed;
+    }
+
+    private get _effectiveComboMaxOvercap(): number {
+        return this._playerBalance?.perfectComboMaxOvercap ?? SWIMMER_BALANCE.perfectComboMaxOvercap;
+    }
+
+    private get _effectiveComboOvercapDecay(): number {
+        return this._playerBalance?.perfectComboMaxOvercap ?? SWIMMER_BALANCE.perfectComboMaxOvercap;
+    }
+
+    private get _effectiveStrokeQualityAccel(): number {
+        return this._playerBalance?.strokeQualityAccel ?? SWIMMER_BALANCE.strokeQualityAccel;
+    }
+
     setConditionQualityScale(scale: number) {
         this._conditionQualityScale = clamp(scale, 0, 2);
     }
@@ -471,10 +498,10 @@ export class SwimmerMotor {
         if (this._speedCapBonus <= 0) {
             return;
         }
-        const decay = Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay) * Math.max(0, dt);
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed;
+        const decay = Math.max(0, this._effectiveComboOvercapDecay) * Math.max(0, dt);
+        const maxSpeed = this._effectiveMaxSpeed;
         const neededForCurrentSpeed = Math.max(0, this._currentSpeed - maxSpeed);
-        const comboMax = Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap);
+        const comboMax = Math.max(0, this._effectiveComboMaxOvercap);
         const decayedBonus = Math.max(0, this._speedCapBonus - decay);
         this._speedCapBonus = Math.max(neededForCurrentSpeed, Math.min(decayedBonus, comboMax));
     }
@@ -795,7 +822,7 @@ export class SwimmerMotor {
 
     private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
-        const qualityAccel = Math.max(0, strokeQuality) * SWIMMER_BALANCE.strokeQualityAccel * this._conditionSpeedScale;
+        const qualityAccel = Math.max(0, strokeQuality) * this._effectiveStrokeQualityAccel * this._conditionSpeedScale;
         const accel = (baseAccel + qualityAccel) * this.strokeActionTimeScale(actionSeconds);
         if (accel <= 0) {
             return;
@@ -880,7 +907,7 @@ export class SwimmerMotor {
     }
 
     private speedRatio(): number {
-        return SWIMMER_BALANCE.maxSpeed > 0 ? clamp01(this._currentSpeed / SWIMMER_BALANCE.maxSpeed) : 0;
+        const ms = this._effectiveMaxSpeed; return ms > 0 ? clamp01(this._currentSpeed / ms) : 0;
     }
 
     // Steering is enabled for both the player and AI; both drive it through the

@@ -1,4 +1,4 @@
-import { Button, EventTouch, Graphics, Label, Mask, Node, resources, ScrollView, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+﻿import { Button, EventTouch, Graphics, Label, Mask, Node, resources, ScrollView, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
 import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, setRaceDifficulty } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
@@ -15,6 +15,8 @@ import {
     setSelectedRaceDifficulty,
 } from '../app/PlayerCharacterConfig';
 import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
+import { getProgressionManager } from '../progression/ProgressionManager';
+import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type PrepareRaceFlowCallbacks = {
@@ -282,6 +284,27 @@ export class PrepareRaceFlow {
         const panel = makeRect('CharacterDetailPanel', parent, panelWidth, panelHeight, PANEL);
         panel.setPosition(this._width / 2 - panelWidth / 2 - 32, 51, 2);
         makeLabel('CharacterName', panel, character.name, 32, WHITE).setPosition(0, panelHeight / 2 - 42, 1);
+        // Progression: show current level and XP progress for this character.
+        const progression = getProgressionManager();
+        const level = progression.getCharacterLevel(character.id);
+        const xp = progression.getCharacterXp(character.id);
+        const xpNeeded = level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(level);
+        makeLabel('LevelLabel', panel, 'Lv.' + level + (level >= PROGRESSION_BALANCE.maxLevel ? ' (满级)' : ''), 18, uiColor(150, 200, 255)).setPosition(0, panelHeight / 2 - 70, 1);
+        if (xpNeeded > 0) {
+            const xpBarWidth = 188;
+            const xpBar = makeUiNode('XpBar', panel);
+            xpBar.getComponent(UITransform)!.setContentSize(xpBarWidth, 8);
+            xpBar.setPosition(18, panelHeight / 2 - 88, 1);
+            const xpGfx = xpBar.addComponent(Graphics);
+            const xpRatio = Math.max(0, Math.min(1, xp / xpNeeded));
+            xpGfx.fillColor = uiColor(24, 55, 90, 255);
+            xpGfx.rect(-xpBarWidth / 2, -4, xpBarWidth, 8);
+            xpGfx.fill();
+            xpGfx.fillColor = uiColor(120, 220, 130, 255);
+            xpGfx.rect(-xpBarWidth / 2, -4, xpBarWidth * xpRatio, 8);
+            xpGfx.fill();
+            makeLabel('XpText', panel, 'XP ' + xp + '/' + xpNeeded, 13, uiColor(140, 160, 180)).setPosition(18, panelHeight / 2 - 100, 1);
+        }
         // Pull the compact three-row attribute block up below the name. This
         // removes the old empty band at the top of the panel and reserves its
         // lower-right area for the race-selection button.

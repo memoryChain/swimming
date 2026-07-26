@@ -1,4 +1,4 @@
-import {
+﻿import {
     _decorator,
     Button,
     Camera,
@@ -50,11 +50,14 @@ import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, getAiDebugDifficulty } from './GameLaunchOptions';
+import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
+import { getProgressionManager } from '../progression/ProgressionManager';
+import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
@@ -93,6 +96,7 @@ export class GameManager extends Component {
     private _raceManager: RaceManager = null;
     private _playerSwimmer: Swimmer = null;
     private readonly _playerCondition = new PlayerConditionModel();
+    private _playerBalanceOverrides: PlayerBalanceOverrides | null = null;
     private _aiConditions: AiConditionModel[] = [];
     private readonly _raceContext = new RaceContext(this._playerCondition);
     private _aiController: AISwimmerController = null;
@@ -521,6 +525,7 @@ export class GameManager extends Component {
     restartGame() {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
+        this.applyPlayerProgression();
         this._gameFlow?.restartGame();
     }
 
@@ -650,6 +655,14 @@ export class GameManager extends Component {
                 );
                 const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);
+            },
+            playerDiveSpeedScale: this._playerBalanceOverrides
+                ? this._playerBalanceOverrides.diveMaxLaunchSpeed / DIVE_BALANCE.maxLaunchSpeed
+                : 1,
+            awardProgression: (input) => {
+                const progression = getProgressionManager();
+                const characterId = getPlayerCharacterSelection().characterId;
+                return progression.awardRace(characterId, input);
             },
             applyPlayerDive: (result) => {
                 this._playerCondition.reset();
@@ -928,6 +941,26 @@ export class GameManager extends Component {
         this.applySplashParticlesEnabled();
         this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
+        this.applyPlayerProgression();
+    }
+
+    private applyPlayerProgression() {
+        const progression = getProgressionManager();
+        const characterId = getPlayerCharacterSelection().characterId;
+        const level = progression.getCharacterLevel(characterId);
+        const overrides = progression.resolveBalance(characterId);
+        this._playerBalanceOverrides = overrides;
+        if (overrides && this._playerSwimmer) {
+            this._playerSwimmer.motor.setPlayerBalance(overrides);
+        }
+        if (overrides) {
+            this._playerCondition.setProgressionOverrides({
+                energyTotal: overrides.energyTotal,
+                depletedQualityPenalty: overrides.depletedQualityPenalty,
+                depletedEfficiencyPenalty: overrides.depletedEfficiencyPenalty,
+            });
+        }
+        this.debug('progression character=' + characterId + ' level=' + level);
     }
 
     private assignRaceLanes() {

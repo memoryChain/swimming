@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
+﻿import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { Rating } from '../core/GameConstants';
 
@@ -418,7 +418,101 @@ export class UIController extends Component {
         }
     }
 
+    private _progressionNode: Node | null = null;
+
+    showProgressionResult(result: {
+        characterName: string;
+        xpGained: number;
+        previousLevel: number;
+        newLevel: number;
+        leveledUp: boolean;
+        newXp: number;
+        xpForNextLevel: number;
+    } | null) {
+        this.hideProgressionResult();
+        if (!result || result.xpGained <= 0 || !this.resultPanel) {
+            return;
+        }
+
+        const panel = this.resultPanel;
+        const xpNode = new Node('ProgressionResult');
+        xpNode.layer = panel.layer;
+        xpNode.setParent(panel);
+        xpNode.addComponent(UITransform).setContentSize(400, 120);
+        xpNode.setPosition(0, -260, 0);
+
+        const headerLabel = xpNode.addComponent(Label);
+        headerLabel.string = result.characterName + '  Lv.' + result.newLevel;
+        headerLabel.fontSize = 20;
+        headerLabel.color = new Color(150, 200, 255, 255);
+        headerLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        headerLabel.node.getComponent(UITransform)!.setContentSize(400, 28);
+        headerLabel.node.setPosition(0, 44, 0);
+
+        const xpLabelNode = new Node('XpGained');
+        xpLabelNode.layer = panel.layer;
+        xpLabelNode.setParent(xpNode);
+        xpLabelNode.addComponent(UITransform).setContentSize(400, 32);
+        const xpLabel = xpLabelNode.addComponent(Label);
+        if (result.leveledUp) {
+            xpLabel.string = '+' + result.xpGained + ' XP   Lv.' + result.previousLevel + ' -> Lv.' + result.newLevel;
+            xpLabel.color = new Color(255, 209, 42, 255);
+        } else {
+            xpLabel.string = '+' + result.xpGained + ' XP';
+            xpLabel.color = new Color(120, 220, 130, 255);
+        }
+        xpLabel.fontSize = 22;
+        xpLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        xpLabelNode.setPosition(0, 10, 0);
+
+        if (result.xpForNextLevel > 0) {
+            const barWidth = 320;
+            const barNode = new Node('XpBar');
+            barNode.layer = panel.layer;
+            barNode.setParent(xpNode);
+            barNode.addComponent(UITransform).setContentSize(barWidth, 10);
+            barNode.setPosition(0, -20, 0);
+            const gfx = barNode.addComponent(Graphics);
+            const ratio = Math.max(0, Math.min(1, result.newXp / result.xpForNextLevel));
+            gfx.fillColor = new Color(28, 42, 60, 255);
+            gfx.rect(-barWidth / 2, -5, barWidth, 10);
+            gfx.fill();
+            gfx.fillColor = new Color(120, 220, 130, 255);
+            gfx.rect(-barWidth / 2, -5, barWidth * ratio, 10);
+            gfx.fill();
+
+            const barLabelNode = new Node('XpBarText');
+            barLabelNode.layer = panel.layer;
+            barLabelNode.setParent(xpNode);
+            barLabelNode.addComponent(UITransform).setContentSize(400, 20);
+            const barLabel = barLabelNode.addComponent(Label);
+            barLabel.string = result.newXp + ' / ' + result.xpForNextLevel;
+            barLabel.fontSize = 13;
+            barLabel.color = new Color(140, 160, 180, 255);
+            barLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+            barLabelNode.setPosition(0, -40, 0);
+        }
+
+        this._progressionNode = xpNode;
+
+        if (result.leveledUp) {
+            Tween.stopAllByTarget(xpLabelNode);
+            xpLabelNode.setScale(1.3, 1.3, 1);
+            tween(xpLabelNode)
+                .to(0.3, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .start();
+        }
+    }
+
+    hideProgressionResult() {
+        if (this._progressionNode) {
+            this._progressionNode.destroy();
+            this._progressionNode = null;
+        }
+    }
+
     resetAll() {
+        this.hideProgressionResult();
         this.updateProgress(0, 0);
         this.setRaceStatusVisible(false);
         if (this.ratingLabel) {

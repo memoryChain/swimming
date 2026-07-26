@@ -1,4 +1,4 @@
-import { Vec3 } from 'cc';
+﻿import { Vec3 } from 'cc';
 import { RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -34,6 +34,9 @@ export type GameFlowRefs = {
     onSwimmerEliminated: (swimmer: Swimmer) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
+    playerDiveSpeedScale: number;
+    awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
+        { characterId: string; characterName: string; xpGained: number; previousLevel: number; newLevel: number; leveledUp: boolean; newXp: number; xpForNextLevel: number } | null;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
@@ -294,6 +297,15 @@ export class GameFlowController {
                 racerCount: placement.racerCount,
                 leaderboard: placement.leaderboard,
             });
+            const progressionResult = this._refs.awardProgression({
+                placement: placement.placement,
+                racerCount: placement.racerCount,
+                maxCombo: rhythm?.maxCombo ?? 0,
+                perfectCount: rhythm?.perfectCount ?? 0,
+                goodCount: rhythm?.goodCount ?? 0,
+                finished: playerTime > 0,
+            });
+            this._refs.uiFlow.showProgressionResult(progressionResult);
             this._refs.clearFinishRanks();
             this._refs.showAwards(placement.leaderboard ?? []);
             this._refs.setState(GameState.AWARDS);
@@ -523,6 +535,9 @@ export class GameFlowController {
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
         const diveResult = resolveDiveResult(power);
+        if (this._refs.playerDiveSpeedScale !== 1) {
+            diveResult.launchSpeed *= this._refs.playerDiveSpeedScale;
+        }
         this._refs.applyPlayerDive(diveResult);
         this._refs.raceManager?.startFromDive(diveResult);
     }
