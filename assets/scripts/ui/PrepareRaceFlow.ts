@@ -291,19 +291,19 @@ export class PrepareRaceFlow {
         const xpNeeded = level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(level);
         makeLabel('LevelLabel', panel, 'Lv.' + level + (level >= PROGRESSION_BALANCE.maxLevel ? ' (满级)' : ''), 18, uiColor(150, 200, 255)).setPosition(0, panelHeight / 2 - 70, 1);
         if (xpNeeded > 0) {
-            const xpBarWidth = 188;
+            const xpBarWidth = 220;
             const xpBar = makeUiNode('XpBar', panel);
-            xpBar.getComponent(UITransform)!.setContentSize(xpBarWidth, 8);
-            xpBar.setPosition(18, panelHeight / 2 - 88, 1);
+            xpBar.getComponent(UITransform)!.setContentSize(xpBarWidth, 10);
+            xpBar.setPosition(18, panelHeight / 2 - 90, 1);
             const xpGfx = xpBar.addComponent(Graphics);
             const xpRatio = Math.max(0, Math.min(1, xp / xpNeeded));
             xpGfx.fillColor = uiColor(24, 55, 90, 255);
-            xpGfx.rect(-xpBarWidth / 2, -4, xpBarWidth, 8);
+            xpGfx.rect(-xpBarWidth / 2, -5, xpBarWidth, 10);
             xpGfx.fill();
             xpGfx.fillColor = uiColor(120, 220, 130, 255);
-            xpGfx.rect(-xpBarWidth / 2, -4, xpBarWidth * xpRatio, 8);
+            xpGfx.rect(-xpBarWidth / 2, -5, xpBarWidth * xpRatio, 10);
             xpGfx.fill();
-            makeLabel('XpText', panel, 'XP ' + xp + '/' + xpNeeded, 13, uiColor(140, 160, 180)).setPosition(18, panelHeight / 2 - 100, 1);
+            makeLabel('XpText', panel, xp + ' / ' + xpNeeded, 15, uiColor(180, 230, 190)).setPosition(18, panelHeight / 2 - 108, 1);
         }
         // Pull the compact three-row attribute block up below the name. This
         // removes the old empty band at the top of the panel and reserves its
