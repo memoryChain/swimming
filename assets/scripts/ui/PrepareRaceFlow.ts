@@ -341,12 +341,12 @@ export class PrepareRaceFlow {
         const currentIndex = Math.max(0, RACE_DIFFICULTY_OPTIONS.findIndex((o) => o.id === difficulty));
         const currentOption = RACE_DIFFICULTY_OPTIONS[currentIndex];
 
-        // Label + current difficulty + left/right arrows, inline at bottom-right.
-        const switcherY = -this._height / 2 + 64;
-        const switcherRight = this._width / 2 - 32;
+        // Vertical stack at bottom-right: switcher on top, description middle, start button bottom.
+        const baseY = -this._height / 2 + 110;
+        const centerX = this._width / 2 - 160;
 
-        const prevBtn = makeButton('DifficultyPrev', parent, 48, 48, PANEL_ALT, '<');
-        prevBtn.setPosition(switcherRight - 300, switcherY, 3);
+        const prevBtn = makeButton('DifficultyPrev', parent, 44, 44, PANEL_ALT, '<');
+        prevBtn.setPosition(centerX - 80, baseY, 3);
         prevBtn.on(Button.EventType.CLICK, () => {
             const prevIndex = (currentIndex - 1 + RACE_DIFFICULTY_OPTIONS.length) % RACE_DIFFICULTY_OPTIONS.length;
             setSelectedRaceDifficulty(RACE_DIFFICULTY_OPTIONS[prevIndex].id);
@@ -354,19 +354,21 @@ export class PrepareRaceFlow {
         });
 
         const diffLabel = makeLabel('DifficultyLabel', parent, currentOption.label, 24, CYAN);
-        diffLabel.getComponent(UITransform)!.setContentSize(140, 40);
-        diffLabel.setPosition(switcherRight - 215, switcherY, 3);
+        diffLabel.getComponent(UITransform)!.setContentSize(120, 36);
+        diffLabel.setPosition(centerX, baseY, 3);
 
-        const nextBtn = makeButton('DifficultyNext', parent, 48, 48, PANEL_ALT, '>');
-        nextBtn.setPosition(switcherRight - 130, switcherY, 3);
+        const nextBtn = makeButton('DifficultyNext', parent, 44, 44, PANEL_ALT, '>');
+        nextBtn.setPosition(centerX + 80, baseY, 3);
         nextBtn.on(Button.EventType.CLICK, () => {
             const nextIndex = (currentIndex + 1) % RACE_DIFFICULTY_OPTIONS.length;
             setSelectedRaceDifficulty(RACE_DIFFICULTY_OPTIONS[nextIndex].id);
             this.showCharacterSelect();
         });
 
-        const start = makeButton('StartRaceButton', parent, 180, 56, CYAN, '开始比赛');
-        start.setPosition(switcherRight - 40, switcherY, 3);
+        makeLabel('DifficultyDesc', parent, raceDifficultyDescription(currentOption.id), 14, uiColor(180, 200, 220)).setPosition(centerX, baseY - 30, 3);
+
+        const start = makeButton('StartRaceButton', parent, 200, 56, CYAN, '开始比赛');
+        start.setPosition(centerX, baseY - 68, 3);
         start.on(Button.EventType.CLICK, () => {
             const chosen = getSelectedRaceDifficulty();
             setRaceDifficulty(chosen);
