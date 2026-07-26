@@ -291,19 +291,18 @@ export class PrepareRaceFlow {
         const xpNeeded = level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(level);
         makeLabel('LevelLabel', panel, 'Lv.' + level + (level >= PROGRESSION_BALANCE.maxLevel ? ' (满级)' : ''), 18, uiColor(150, 200, 255)).setPosition(0, panelHeight / 2 - 70, 1);
         if (xpNeeded > 0) {
-            const xpBarWidth = 220;
-            const xpBar = makeUiNode('XpBar', panel);
-            xpBar.getComponent(UITransform)!.setContentSize(xpBarWidth, 10);
-            xpBar.setPosition(18, panelHeight / 2 - 92, 1);
-            const xpGfx = xpBar.addComponent(Graphics);
+            const xpLabel = makeLabel('XpLabel', panel, 'XP', 20, WHITE);
+            xpLabel.getComponent(UITransform)!.setContentSize(72, 28);
+            xpLabel.setPosition(-118, panelHeight / 2 - 92, 1);
+            const xpBarWidth = 188;
+            const xpTrack = makeRect('XpTrack', panel, xpBarWidth, 16, uiColor(24, 55, 90, 255));
+            xpTrack.setPosition(18, panelHeight / 2 - 92, 1);
             const xpRatio = Math.max(0, Math.min(1, xp / xpNeeded));
-            xpGfx.fillColor = uiColor(24, 55, 90, 255);
-            xpGfx.rect(-xpBarWidth / 2, -5, xpBarWidth, 10);
-            xpGfx.fill();
-            xpGfx.fillColor = uiColor(120, 220, 130, 255);
-            xpGfx.rect(-xpBarWidth / 2, -5, xpBarWidth * xpRatio, 10);
-            xpGfx.fill();
-            makeLabel('XpText', panel, 'XP ' + xp + '/' + xpNeeded, 13, uiColor(140, 160, 180)).setPosition(18, panelHeight / 2 - 112, 1);
+            const xpFill = makeRect('XpFill', xpTrack, 184 * xpRatio, 10, uiColor(120, 220, 130, 255));
+            xpFill.setPosition(-92 + (184 * xpRatio) / 2, 0, 2);
+            const xpValueLabel = makeLabel('XpValue', panel, xp + '/' + xpNeeded, 16, WHITE);
+            xpValueLabel.getComponent(UITransform)!.setContentSize(72, 24);
+            xpValueLabel.setPosition(132, panelHeight / 2 - 92, 1);
         }
         // Pull the compact three-row attribute block up below the name. This
         // removes the old empty band at the top of the panel and reserves its
