@@ -121,9 +121,7 @@ export class PrepareRaceFlow {
         // Keep the central foreground clear for the larger character preview.
         // The action belongs with the selected character's information, at the
         // lower-right edge of that panel.
-        const chooseRace = makeButton('ChooseRaceButton', parent, 278, 62, CYAN, '选择比赛');
-        chooseRace.setPosition(this._width / 2 - 197, -this._height / 2 + 64, 3);
-        chooseRace.on(Button.EventType.CLICK, () => this.showRaceSelect());
+        this.buildDifficultySwitcher(parent);
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
         // Keep the drag surface strictly inside the central character area so
         // it cannot intercept the skin/palette buttons at either edge.
@@ -336,6 +334,44 @@ export class PrepareRaceFlow {
         const valueLabel = makeLabel(`${name}Value`, panel, `${value}`, 16, WHITE);
         valueLabel.getComponent(UITransform)!.setContentSize(44, 24);
         valueLabel.setPosition(132, y, 2);
+    }
+
+    private buildDifficultySwitcher(parent: Node) {
+        const difficulty = getSelectedRaceDifficulty();
+        const currentIndex = Math.max(0, RACE_DIFFICULTY_OPTIONS.findIndex((o) => o.id === difficulty));
+        const currentOption = RACE_DIFFICULTY_OPTIONS[currentIndex];
+
+        // Label + current difficulty + left/right arrows, inline at bottom-right.
+        const switcherY = -this._height / 2 + 64;
+        const switcherRight = this._width / 2 - 32;
+
+        const prevBtn = makeButton('DifficultyPrev', parent, 48, 48, PANEL_ALT, '<');
+        prevBtn.setPosition(switcherRight - 300, switcherY, 3);
+        prevBtn.on(Button.EventType.CLICK, () => {
+            const prevIndex = (currentIndex - 1 + RACE_DIFFICULTY_OPTIONS.length) % RACE_DIFFICULTY_OPTIONS.length;
+            setSelectedRaceDifficulty(RACE_DIFFICULTY_OPTIONS[prevIndex].id);
+            this.showCharacterSelect();
+        });
+
+        const diffLabel = makeLabel('DifficultyLabel', parent, currentOption.label, 24, CYAN);
+        diffLabel.getComponent(UITransform)!.setContentSize(140, 40);
+        diffLabel.setPosition(switcherRight - 215, switcherY, 3);
+
+        const nextBtn = makeButton('DifficultyNext', parent, 48, 48, PANEL_ALT, '>');
+        nextBtn.setPosition(switcherRight - 130, switcherY, 3);
+        nextBtn.on(Button.EventType.CLICK, () => {
+            const nextIndex = (currentIndex + 1) % RACE_DIFFICULTY_OPTIONS.length;
+            setSelectedRaceDifficulty(RACE_DIFFICULTY_OPTIONS[nextIndex].id);
+            this.showCharacterSelect();
+        });
+
+        const start = makeButton('StartRaceButton', parent, 180, 56, CYAN, '开始比赛');
+        start.setPosition(switcherRight - 40, switcherY, 3);
+        start.on(Button.EventType.CLICK, () => {
+            const chosen = getSelectedRaceDifficulty();
+            setRaceDifficulty(chosen);
+            this._callbacks.onStartRace();
+        });
     }
 
     private showRaceSelect() {
