@@ -70,6 +70,7 @@ export class AiConditionModel {
         this._heartRateZone = zoneForHeartRate(this._heartRate);
 
         this.drainEnergy(difficulty, input.dt);
+        this.regenEnergy(input.dt);
         this.refreshModifiers();
     }
 
@@ -102,15 +103,26 @@ export class AiConditionModel {
         this._energyDepleted = this._energy <= 0;
     }
 
-    private refreshModifiers() {
-        let quality = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
-        let efficiency = CONDITION_BALANCE.efficiency.zoneModifier[this._heartRateZone];
-        if (this._energyDepleted && this._phase !== RacePhase.SPRINT) {
-            quality -= CONDITION_BALANCE.energy.depletedQualityPenalty;
-            efficiency -= CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
+    // Energy regen: same model as the player. All zones regen (LOW strongest);
+    // SPRINT boosts all zones so AI also peaks at the finish instead of stalling.
+    private regenEnergy(dt: number) {
+        const energyCfg = CONDITION_BALANCE.energy;
+        let rate = energyCfg.regenPerZone[this._heartRateZone];
+        if (this._phase === RacePhase.SPRINT) {
+            rate += energyCfg.regenSprintBoost;
         }
-        this._qualityModifier = Math.max(0, quality);
-        this._efficiencyModifier = Math.max(0, efficiency);
+        this._energy = clamp(this._energy + rate * dt, 0, energyCfg.total);
+        this._energyDepleted = this._energy <= 0;
+    }
+
+    private refreshModifiers() {
+        // Quality axis: driven ONLY by heart-rate zone (hand stability).
+        this._qualityModifier = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
+
+        // Efficiency axis: energy curve, same formula as the player.
+        const eff = CONDITION_BALANCE.efficiency;
+        const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
+        this._efficiencyModifier = eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
     }
 
     // --- Readonly getters (same surface as PlayerConditionModel) ---

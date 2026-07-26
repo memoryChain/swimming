@@ -55,6 +55,10 @@ export class UIFlowController {
         this._refs.uiController?.updateEnergyBar(energy, depleted);
     }
 
+    setSprintActive(active: boolean) {
+        this._refs.uiController?.setSprintActive(active);
+    }
+
     setEnergyBarVisible(visible: boolean) {
         this._refs.uiController?.setEnergyBarVisible(visible);
     }

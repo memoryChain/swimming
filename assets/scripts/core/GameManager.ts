@@ -689,6 +689,7 @@ export class GameManager extends Component {
                     aiCondition.setPhase(RacePhase.SPRINT);
                 }
                 this._raceContext.setPhase(RacePhase.SPRINT);
+                this._uiFlow?.setSprintActive(true);
             },
             updateSprintTier: (tier) => {
                 this._playerCondition.updateSprintState({ sprintTier: tier });
@@ -956,8 +957,6 @@ export class GameManager extends Component {
         if (overrides) {
             this._playerCondition.setProgressionOverrides({
                 energyTotal: overrides.energyTotal,
-                depletedQualityPenalty: overrides.depletedQualityPenalty,
-                depletedEfficiencyPenalty: overrides.depletedEfficiencyPenalty,
             });
         }
         this.debug('progression character=' + characterId + ' level=' + level);
@@ -1348,11 +1347,15 @@ export class GameManager extends Component {
         if (phase === RacePhase.PACE && this._playerCondition.phase !== RacePhase.START) {
             return;
         }
+        const wasSprint = this._playerCondition.phase === RacePhase.SPRINT;
         this._playerCondition.setPhase(phase);
         for (const aiCondition of this._aiConditions) {
             aiCondition.setPhase(phase);
         }
         this._raceContext.setPhase(phase);
+        if (wasSprint && phase !== RacePhase.SPRINT) {
+            this._uiFlow?.setSprintActive(false);
+        }
     }
 
     private phaseForState(state: GameState): RacePhase | null {

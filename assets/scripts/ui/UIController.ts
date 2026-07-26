@@ -46,6 +46,8 @@ export class UIController extends Component {
     public energyBarRoot: Node = null;
     public energyBarFill: Graphics = null;
     public energyLabel: Label = null;
+    public sprintLabel: Label | null = null;
+    private _sprintActive = false;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -130,12 +132,52 @@ export class UIController extends Component {
 
     updateEnergyBar(energy: number, depleted: boolean) {
         const ratio = clamp01(energy / 100);
+        const color = this._sprintActive
+            ? sprintEnergyColor(ratio, depleted)
+            : energyColor(ratio, depleted);
         if (this.energyBarFill) {
-            drawEnergyFill(this.energyBarFill, ratio, energyColor(ratio, depleted));
+            drawEnergyFill(this.energyBarFill, ratio, color);
         }
         if (this.energyLabel) {
             this.energyLabel.string = `体能 ${Math.round(energy)}`;
-            this.energyLabel.color = energyColor(ratio, depleted);
+            this.energyLabel.color = color;
+        }
+    }
+
+    setSprintActive(active: boolean) {
+        this._sprintActive = active;
+        if (!this.sprintLabel) {
+            return;
+        }
+        const node = this.sprintLabel.node;
+        if (active) {
+            node.active = true;
+            node.setScale(0.3, 0.3, 1);
+            let opacity = node.getComponent(UIOpacity);
+            if (!opacity) {
+                opacity = node.addComponent(UIOpacity);
+            }
+            opacity.opacity = 0;
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(opacity);
+            tween(node)
+                .to(0.18, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'backOut' })
+                .to(0.08, { scale: new Vec3(1, 1, 1) })
+                .start();
+            tween(opacity)
+                .to(0.15, { opacity: 255 })
+                .start();
+        } else {
+            let opacity = node.getComponent(UIOpacity);
+            if (!opacity) {
+                opacity = node.addComponent(UIOpacity);
+            }
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(opacity);
+            tween(opacity)
+                .to(0.25, { opacity: 0 })
+                .call(() => { node.active = false; })
+                .start();
         }
     }
 
@@ -534,6 +576,7 @@ export class UIController extends Component {
         this.hideFinishCountdown();
         this.updateDiveCharge(0, false);
         this.setSpeedBarVisible(false);
+        this.setSprintActive(false);
         // Restore the swim pad for the next race (it is hidden during the awards ceremony).
         // 为下一场比赛恢复划水板（颁奖仪式期间被隐藏）。
         if (this.strokeInput) {
@@ -693,6 +736,20 @@ function energyColor(ratio: number, depleted: boolean): Color {
         return new Color(255, 184, 77, 255);
     }
     return new Color(120, 220, 255, 255);
+}
+
+// Fiery palette during sprint: warm oranges replace the normal blue/teal.
+function sprintEnergyColor(ratio: number, depleted: boolean): Color {
+    if (depleted || ratio <= 0.0001) {
+        return new Color(180, 80, 30, 255);
+    }
+    if (ratio < 0.25) {
+        return new Color(255, 100, 30, 255);
+    }
+    if (ratio < 0.5) {
+        return new Color(255, 160, 40, 255);
+    }
+    return new Color(255, 210, 70, 255);
 }
 
 function drawChargeFill(gfx: Graphics, ratio: number) {

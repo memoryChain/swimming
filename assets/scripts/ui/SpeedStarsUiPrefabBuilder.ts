@@ -1,4 +1,4 @@
-import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, Layout, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view, Widget } from 'cc';
+import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Layout, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view, Widget } from 'cc';
 import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
@@ -186,6 +186,25 @@ export class SpeedStarsUiPrefabBuilder {
         ui.resultRowNormalFrame = ui.resultRowBacks[0]?.getComponent(Sprite)?.spriteFrame ?? null;
         ui.resultRowPlayerFrame = ui.resultRowBacks[7]?.getComponent(Sprite)?.spriteFrame ?? null;
 
+        // Sprint indicator: large centered label near the top of the screen,
+        // hidden until the sprint phase begins. Has a glowing outline for impact.
+        const sprintNode = makeUiNode('SprintLabel', raceHud);
+        sprintNode.getComponent(UITransform).setContentSize(400, 100);
+        const sprintLabel = sprintNode.addComponent(Label);
+        sprintLabel.string = '冲刺';
+        sprintLabel.fontSize = 72;
+        sprintLabel.color = uiColor(255, 210, 90, 255);
+        sprintLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        sprintLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        // Position at the top center of the screen.
+        const vs = view.getVisibleSize();
+        sprintNode.setPosition(0, vs.height / 2 - 80, 0);
+        sprintNode.active = false;
+        const sprintOutline = sprintNode.addComponent(LabelOutline);
+        sprintOutline.color = new Color(255, 120, 30, 220);
+        sprintOutline.width = 5;
+        ui.sprintLabel = sprintLabel;
+
         return {
             root,
             raceHud,
@@ -291,7 +310,7 @@ export class SpeedStarsUiPrefabBuilder {
         ui.energyBarFill = fillGfx;
         ui.energyLabel = label.getComponent(Label);
         ui.updateEnergyBar(100, false);
-        ui.setEnergyBarVisible(false);
+
     }
 
     private layoutRaceProgress(raceHud: Node) {

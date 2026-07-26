@@ -71,6 +71,8 @@ export type StrokeTimingGuide = {
     intervals: StrokeTimingGuideInterval[];
 };
 
+type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
+
 export class SwimmerMotor {
     private readonly _physics = new SwimPhysicsModel();
     private _currentSpeed = 0;
@@ -262,7 +264,7 @@ export class SwimmerMotor {
             return false;
         }
         const progress = clamp01(action.progress / CYCLE_AMOUNT);
-        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        const perfect = this._effectiveReleaseRanges.perfect;
         return progress >= perfect.start && progress <= perfect.end;
     }
 
@@ -483,11 +485,31 @@ export class SwimmerMotor {
     }
 
     private get _effectiveComboOvercapDecay(): number {
-        return this._playerBalance?.perfectComboMaxOvercap ?? SWIMMER_BALANCE.perfectComboMaxOvercap;
+        return Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay);
     }
 
     private get _effectiveStrokeQualityAccel(): number {
         return this._playerBalance?.strokeQualityAccel ?? SWIMMER_BALANCE.strokeQualityAccel;
+    }
+
+    // Quality-axis sweet-zone scaling: the heart-rate zone modifier widens or
+    // narrows the PERFECT release window. Only PERFECT width is scaled (relative
+    // to its center, clamped inside the GOOD window); GOOD stays fixed so the
+    // invariant good.start <= perfect.start <= perfect.end <= good.end holds.
+    private get _effectiveReleaseRanges(): ReleaseRanges {
+        const strength = clamp01(STROKE_QUALITY_TUNING.qualityZoneScaleStrength);
+        const scale = 1 + (clamp(this._conditionQualityScale, 0, 2) - 1) * strength;
+        const perfectBase = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        const goodBase = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
+        const pCenter = (perfectBase.start + perfectBase.end) * 0.5;
+        const pHalf = (perfectBase.end - perfectBase.start) * 0.5 * scale;
+        return {
+            perfect: {
+                start: clamp(Math.max(goodBase.start, pCenter - pHalf), 0, 1),
+                end: clamp(Math.min(goodBase.end, pCenter + pHalf), 0, 1),
+            },
+            good: goodBase,
+        };
     }
 
     setConditionQualityScale(scale: number) {
@@ -762,8 +784,9 @@ export class SwimmerMotor {
 
         // Single-stroke quality is purely the release-timing sweet zone now
         // (no cross-stroke consistency, no alternation, no input-freshness).
-        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
-        const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
+        const ranges = this._effectiveReleaseRanges;
+        const perfect = ranges.perfect;
+        const good = ranges.good;
         const secondsSinceYellow = releasedAt - action.perfectGuidePresentedAt;
         const releasedJustAfterVisiblePerfect = releaseProgress > perfect.end
             && releaseProgress <= Math.min(good.end, perfect.end + 0.03)
@@ -771,10 +794,10 @@ export class SwimmerMotor {
             && secondsSinceYellow >= 0
             && secondsSinceYellow <= Math.max(0, STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds);
         const strokeQuality = holdTimeValid
-            ? (releasedJustAfterVisiblePerfect ? 1 : strokeQualityFromReleaseProgress(releaseProgress))
+            ? (releasedJustAfterVisiblePerfect ? 1 : strokeQualityFromReleaseProgress(releaseProgress, ranges))
             : 0;
         const badReason = strokeQuality <= 0
-            ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds)
+            ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds, ranges)
             : undefined;
         this._lastStrokeQuality = strokeQuality;
         this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
@@ -839,7 +862,7 @@ export class SwimmerMotor {
         const cycleSpeed = Math.max(0.0001, this.currentActionCycleSpeed());
         const heldScale = Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
         const releaseScale = Math.max(0.0001, MOTION_TUNING.releasedMotionSpeedScale);
-        const center = perfectReleaseCenter();
+        const center = perfectReleaseCenter(this._effectiveReleaseRanges);
         return (CYCLE_AMOUNT * center) / (cycleSpeed * heldScale)
             + (CYCLE_AMOUNT * (1 - center)) / (cycleSpeed * releaseScale);
     }
@@ -1390,7 +1413,7 @@ export class SwimmerMotor {
         if (progress >= clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)) {
             return Rating.BAD;
         }
-        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress));
+        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress, this._effectiveReleaseRanges));
     }
 }
 
@@ -1434,13 +1457,13 @@ function strongerStrokeQuality(a: StrokeQualityResult | null, b: StrokeQualityRe
     return a.strokeQuality >= b.strokeQuality ? a : b;
 }
 
-function strokeQualityFromReleaseProgress(progress: number): number {
+function strokeQualityFromReleaseProgress(progress: number, ranges: ReleaseRanges): number {
     const p = clamp01(progress);
-    const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+    const perfect = ranges.perfect;
     if (p >= perfect.start && p <= perfect.end) {
         return 1;
     }
-    const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
+    const good = ranges.good;
     if (p < good.start || p > good.end) {
         return 0;
     }
@@ -1456,11 +1479,11 @@ function strokeQualityFromReleaseProgress(progress: number): number {
     return 0.98;
 }
 
-function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolean, holdSeconds: number, minHoldSeconds: number): string {
+function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolean, holdSeconds: number, minHoldSeconds: number, ranges: ReleaseRanges): string {
     if (!holdTimeValid) {
         return `hold_too_short(${holdSeconds.toFixed(2)}<${minHoldSeconds.toFixed(2)})`;
     }
-    if (releaseProgress < perfectReleaseCenter()) {
+    if (releaseProgress < perfectReleaseCenter(ranges)) {
         return `released_early(${(releaseProgress * 100).toFixed(0)}%)`;
     }
     return `released_late(${(releaseProgress * 100).toFixed(0)}%)`;
@@ -1473,9 +1496,8 @@ function normalizedReleaseRange(startValue: number, endValue: number): { start: 
     };
 }
 
-function perfectReleaseCenter(): number {
-    const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
-    return clamp01((perfect.start + perfect.end) * 0.5);
+function perfectReleaseCenter(ranges: ReleaseRanges): number {
+    return clamp01((ranges.perfect.start + ranges.perfect.end) * 0.5);
 }
 
 function ratingForGuideStrokeQuality(strokeQuality: number): Rating {

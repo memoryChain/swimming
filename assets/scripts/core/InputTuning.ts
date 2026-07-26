@@ -117,6 +117,11 @@ export const STROKE_QUALITY_TUNING = {
     armCycleHighSpeedPerSecond: 2.5,
     armCycleSpeedStart: 1.0,
     armCycleSpeedFull: 4.5,
+    // Heart-rate quality modifier -> PERFECT window width scale strength.
+    // 0 = quality axis off (PERFECT width fixed). 1 = full effect
+    // (OPTIMAL widens PERFECT by 25%, LOW narrows it by 30%). 0.5 is noticeable
+    // but not auto-aiming (heart-rate notes sec 18).
+    qualityZoneScaleStrength: 0.5,
 };
 
 // Per-race difficulty multipliers applied to both ends of the arm-cycle speed

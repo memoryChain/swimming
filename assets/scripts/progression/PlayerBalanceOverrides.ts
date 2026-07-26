@@ -19,8 +19,6 @@ export type PlayerBalanceOverrides = {
     strokeQualityAccel: number;
     kickMaxSpeed: number;
     diveMaxLaunchSpeed: number;
-    depletedQualityPenalty: number;
-    depletedEfficiencyPenalty: number;
 };
 
 export type CharacterStats = {
@@ -68,11 +66,6 @@ export function resolvePlayerBalance(
     const diveMaxLaunchSpeed = DIVE_BALANCE.maxLaunchSpeed * attributeMultiplier(stats.burst)
         + per.diveMaxLaunchSpeed * levelsAbove1;
 
-    // Skill: reduced depletion penalties for high-stamina characters.
-    const staminaSkill = stats.stamina >= 80 ? 0.5 : 1.0;
-    const depletedQualityPenalty = CONDITION_BALANCE.energy.depletedQualityPenalty * staminaSkill;
-    const depletedEfficiencyPenalty = CONDITION_BALANCE.energy.depletedEfficiencyPenalty * staminaSkill;
-
     return {
         maxSpeed,
         energyTotal,
@@ -80,7 +73,5 @@ export function resolvePlayerBalance(
         strokeQualityAccel,
         kickMaxSpeed,
         diveMaxLaunchSpeed,
-        depletedQualityPenalty,
-        depletedEfficiencyPenalty,
     };
 }

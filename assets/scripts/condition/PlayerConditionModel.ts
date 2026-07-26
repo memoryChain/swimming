@@ -30,8 +30,6 @@ export class PlayerConditionModel {
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
     private _energyTotalOverride: number | null = null;
-    private _depletedQualityPenaltyOverride: number | null = null;
-    private _depletedEfficiencyPenaltyOverride: number | null = null;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
@@ -58,10 +56,8 @@ export class PlayerConditionModel {
         this._optimalEntryStrokes = 0;
     }
 
-    setProgressionOverrides(opts: { energyTotal?: number; depletedQualityPenalty?: number; depletedEfficiencyPenalty?: number } | null) {
+    setProgressionOverrides(opts: { energyTotal?: number } | null) {
         this._energyTotalOverride = opts?.energyTotal ?? null;
-        this._depletedQualityPenaltyOverride = opts?.depletedQualityPenalty ?? null;
-        this._depletedEfficiencyPenaltyOverride = opts?.depletedEfficiencyPenalty ?? null;
     }
 
     private get _effectiveEnergyTotal(): number {
@@ -142,6 +138,10 @@ export class PlayerConditionModel {
         this._heartRate = clamp(this._heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
 
         this._heartRateZone = zoneForHeartRate(this._heartRate);
+
+        // Energy regeneration: only in the LOW heart-rate zone (a recovery rhythm).
+        // SPRINT boosts the rate so the finish is an all-out peak, not a crawl.
+        this.regenEnergy(dt);
         this.refreshModifiers();
     }
 
@@ -161,16 +161,28 @@ export class PlayerConditionModel {
     }
 
     private refreshModifiers() {
-        let quality = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
-        let efficiency = CONDITION_BALANCE.efficiency.zoneModifier[this._heartRateZone];
-        // The final sprint is an all-out push: energy may remain visibly empty,
-        // but its quality/efficiency debuffs no longer limit the swimmer.
-        if (this._energyDepleted && this._phase !== RacePhase.SPRINT) {
-            quality -= this._depletedQualityPenaltyOverride ?? CONDITION_BALANCE.energy.depletedQualityPenalty;
-            efficiency -= this._depletedEfficiencyPenaltyOverride ?? CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
+        // Quality axis: driven ONLY by heart-rate zone (hand stability).
+        // Energy depletion does NOT affect quality - the two axes are orthogonal.
+        this._qualityModifier = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
+
+        // Efficiency axis: driven by ENERGY (muscle fuel), not heart rate.
+        // Slow-start curve: efficiency = floor + (1-floor) * ratio^exponent.
+        const eff = CONDITION_BALANCE.efficiency;
+        const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
+        this._efficiencyModifier = eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
+    }
+
+    // Energy regen: LOW heart-rate zone regenerates, SPRINT boosts the rate.
+    private regenEnergy(dt: number) {
+        const energyCfg = CONDITION_BALANCE.energy;
+        // All zones regen, but LOW regenerates the most. SPRINT boosts all zones
+        // so the finish feels like an all-out peak regardless of how hard you push.
+        let rate = energyCfg.regenPerZone[this._heartRateZone];
+        if (this._phase === RacePhase.SPRINT) {
+            rate += energyCfg.regenSprintBoost;
         }
-        this._qualityModifier = Math.max(0, quality);
-        this._efficiencyModifier = Math.max(0, efficiency);
+        this._energy = clamp(this._energy + rate * dt, 0, this._effectiveEnergyTotal);
+        this._energyDepleted = this._energy <= 0;
     }
 
     // --- Query getters (doc 27.4) ---
