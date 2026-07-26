@@ -58,6 +58,11 @@ export type SampledActionMotion = {
     id: SampledActionId;
     label: string;
     sourceFile: string;
+    // Legacy curves contain absolute glTF node rotations/translations. Shared
+    // T-pose curves contain base-relative rotations and normalized Hip deltas,
+    // so characters may keep different bone lengths and rest translations.
+    rotationSpace?: 'absolute-local' | 'base-relative';
+    hipTranslationSpace?: 'absolute-local' | 'base-relative-normalized';
     durationSeconds: number;
     frameStart: number;
     frameEnd: number;

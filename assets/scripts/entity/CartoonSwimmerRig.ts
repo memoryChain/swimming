@@ -1,5 +1,6 @@
-import { _decorator, AnimationClip, Color, Component, EffectAsset, instantiate, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { _decorator, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
+import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
@@ -7,17 +8,18 @@ import { CharacterPoseStateController } from '../character/CharacterPoseStateCon
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
+import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
-import { findSampledDebugAction } from '../character/SampledActionMotionCurve';
-import type { SampledActionId } from '../character/SampledActionMotionCurve';
+import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/SampledActionMotionCurve';
+import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
 import { SplashEmitter } from '../character/SplashEmitter';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
-import { loadRaceAsset, loadRaceAssetDir } from '../core/RaceBundleLoader';
-import { defaultSwimmer0621ColorVariant, defaultSwimmerModelVariant, findSwimmer0621ColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { defaultSwimmerColorVariant, defaultSwimmerModelVariant, findSwimmerColorVariant, findSwimmerModelVariant, isDebugOnlySwimmerModelVariant, RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPose } from '../core/ResourcePaths';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 
@@ -28,11 +30,76 @@ const { ccclass } = _decorator;
 // 让背景 AI 的姿态更新错峰分布到不同帧，避免降频选手在同一帧集中重算骨骼（消除周期性的单帧尖峰）。每个 AI rig 自增一次。
 let _backgroundMotionPhaseSeed = 0;
 
-const MIXAMO_SWIMMING_CLIP_PATHS = [
-    'models/UserSwimmer0621_2MixamoSwimming/Swimming',
-    'models/UserSwimmer0621_2MixamoSwimming/Swimming.004',
-    'models/UserSwimmer0621_2MixamoSwimming/Armature|mixamo.com|Layer0',
+const TREAD_WATER_OVERRIDE_BONES: readonly BreaststrokeBoneName[] = [
+    'Root', 'Hip', 'Waist', 'Spine01', 'Spine02', 'NeckTwist01', 'Head',
+    'L_Clavicle', 'L_Upperarm', 'L_Forearm', 'L_Hand',
+    'R_Clavicle', 'R_Upperarm', 'R_Forearm', 'R_Hand',
+    'L_Thigh', 'L_Calf', 'L_Foot', 'L_ToeBase',
+    'R_Thigh', 'R_Calf', 'R_Foot', 'R_ToeBase',
 ];
+
+const DIVE_PREP_OVERRIDE_BONES: readonly DivePrepBoneName[] = [
+    'Root', 'Hip', 'Waist', 'Spine01', 'Spine02', 'NeckTwist01', 'Head',
+    'L_Clavicle', 'L_Upperarm', 'L_Forearm', 'L_Hand',
+    'R_Clavicle', 'R_Upperarm', 'R_Forearm', 'R_Hand',
+    'L_Thigh', 'L_Calf', 'L_Foot', 'L_ToeBase',
+    'R_Thigh', 'R_Calf', 'R_Foot', 'R_ToeBase',
+];
+
+const finiteTuple = (tuple: unknown, length: number): boolean =>
+    Array.isArray(tuple)
+    && tuple.length === length
+    && tuple.every((component) => typeof component === 'number' && Number.isFinite(component));
+
+function parseTreadWaterOverride(value: unknown): readonly BreaststrokeMotionSample[] | null {
+    const data = value as { id?: unknown; samples?: unknown } | null;
+    if (!data || data.id !== 'breaststroke' || !Array.isArray(data.samples) || data.samples.length === 0) {
+        return null;
+    }
+    for (const sampleValue of data.samples) {
+        const sample = sampleValue as {
+            phase?: unknown;
+            root?: unknown;
+            head?: unknown;
+            hand?: unknown;
+            foot?: unknown;
+            rotations?: Record<string, unknown>;
+        } | null;
+        if (!sample
+            || typeof sample.phase !== 'number'
+            || !Number.isFinite(sample.phase)
+            || !finiteTuple(sample.root, 3)
+            || !finiteTuple(sample.head, 3)
+            || !finiteTuple(sample.hand, 3)
+            || !finiteTuple(sample.foot, 3)
+            || !sample.rotations
+            || TREAD_WATER_OVERRIDE_BONES.some((boneName) => !finiteTuple(sample.rotations?.[boneName], 4))) {
+            return null;
+        }
+    }
+    return data.samples as BreaststrokeMotionSample[];
+}
+
+function parseDivePrepOverride(value: unknown): DivePrepPoseSample | null {
+    const data = value as (DivePrepPoseSample & {
+        id?: unknown;
+        rotationSpace?: unknown;
+    }) | null;
+    if (!data
+        || data.id !== 'divePrep'
+        || data.rotationSpace !== 'base-relative'
+        || !finiteTuple(data.root, 3)
+        || !finiteTuple(data.head, 3)
+        || !finiteTuple(data.leftHand, 3)
+        || !finiteTuple(data.rightHand, 3)
+        || !finiteTuple(data.leftFoot, 3)
+        || !finiteTuple(data.rightFoot, 3)
+        || !data.rotations
+        || DIVE_PREP_OVERRIDE_BONES.some((boneName) => !finiteTuple(data.rotations[boneName], 4))) {
+        return null;
+    }
+    return data;
+}
 
 export type RaceFlipTurnUpdate = {
     approachTimeRatio: number;
@@ -113,7 +180,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _collisionFlashTimer = 0;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
-    private _colorVariantId = defaultSwimmer0621ColorVariant().id;
+    private _colorVariantId = defaultSwimmerColorVariant().id;
     private _colorOverride: { skin?: Color; suit?: Color; cap?: Color } | null = null;
     private _colorMask: Texture2D = null;
     private _dynamicColorEffect: EffectAsset = null;
@@ -122,6 +189,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _waterlineEffectEnabled = true;
     private _debugActionPose: DebugSwimmerActionPose = 'freestyle';
     private _debugSampledActionId: SampledActionId | null = null;
+    private readonly _sampledActionOverrides = new Map<SampledActionId, SampledActionMotion>();
+    private _sampledActionOverrideLoadToken = 0;
+    private _showcaseActionId: SampledActionId = 'waving';
     private _flipTurnSwimPose: ProceduralPoseSnapshot | null = null;
     private _flipTurnExitSwimPose: ProceduralPoseSnapshot | null = null;
     private _flipTurnKeyframe1Pose: ProceduralPoseSnapshot | null = null;
@@ -296,7 +366,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     get usesDebugAnimationClip(): boolean {
-        return this.isMixamoSwimmingDebugVariant();
+        return false;
     }
 
     get usesDebugProceduralPose(): boolean {
@@ -316,7 +386,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setColorVariant(variantId: string): boolean {
-        const variant = findSwimmer0621ColorVariant(variantId);
+        const variant = findSwimmerColorVariant(variantId);
         if (!variant) {
             return false;
         }
@@ -466,9 +536,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._poseState.applyRaceModelSetup();
 
             // Imported GLBs wrap their actual armature in a prefab scene root. The
-            // original swimmer names that child `Armature`, while other valid rigs
-            // (for example the diver) may use a model-specific name. Falling back
-            // to the prefab wrapper makes tread water write its pose rotation onto
+            // Most canonical T-pose exports name that child `Armature`, but a valid
+            // export may use another armature name. Falling back to the prefab
+            // wrapper makes tread water write its pose rotation onto
             // the same node used for upright model placement, so the pose update
             // immediately overwrites the upright rotation. Resolve the armature
             // generically from the parent of the canonical `Root` bone instead.
@@ -478,9 +548,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
             this.configureSkinnedRenderers();
             this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
-            this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), this.isMixamoSwimmingDebugVariant());
-            this.ensureMixamoAnimationComponent();
+            this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), false);
             this._pose.captureBasePose();
+            this.refreshShowcaseAction();
+            this.loadSampledActionOverrides(variant, token);
             this._loaded = true;
             this.resetPose();
             if (this._modelDebugMode) {
@@ -499,6 +570,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private clearLoadedModel() {
         this.restorePerfectGlowMaterials();
         this._modelLoadToken++;
+        this._sampledActionOverrideLoadToken++;
+        this._sampledActionOverrides.clear();
+        this._pose.setBreaststrokeSamplesOverride(null);
+        this._pose.setDivePrepPoseOverride(null);
+        this._poseState.setShowcaseAction(this._showcaseActionId, null);
         this._loaded = false;
         this.root = null;
         this._skinnedRenderers.length = 0;
@@ -511,6 +587,137 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._model.destroy();
         }
         this._model = null;
+    }
+
+    private sampledDebugAction(actionId: SampledActionId): SampledActionMotion | null {
+        const variant = findSwimmerModelVariant(this._modelVariantId);
+        if (variant?.sampledActionOverrideDir) {
+            // A rig with its own bind basis must never silently fall back to the
+            // canonical curve: that is exactly how flipped forearms/hands are
+            // introduced while the asynchronous override load is still pending.
+            return this._sampledActionOverrides.get(actionId) ?? null;
+        }
+        return findSampledDebugAction(actionId);
+    }
+
+    private refreshShowcaseAction(): boolean {
+        return this._poseState.setShowcaseAction(
+            this._showcaseActionId,
+            this.sampledDebugAction(this._showcaseActionId),
+        );
+    }
+
+    private loadSampledActionOverrides(variant: ReturnType<typeof defaultSwimmerModelVariant>, modelLoadToken: number) {
+        this._sampledActionOverrides.clear();
+        this._pose.setBreaststrokeSamplesOverride(null);
+        this._pose.setDivePrepPoseOverride(null);
+        const directory = variant.sampledActionOverrideDir;
+        const filePrefix = variant.sampledActionOverrideFilePrefix;
+        const divePrepPath = variant.divePrepOverridePath;
+        if (!directory || !filePrefix) {
+            return;
+        }
+        // This rig cannot safely use the canonical tread-water local rotations.
+        // Hold its captured base pose until the rig-profile curves arrive.
+        this._pose.setBreaststrokeSamplesOverride([]);
+        this._pose.setDivePrepPoseOverride(null);
+        const overrideToken = ++this._sampledActionOverrideLoadToken;
+        let remaining = SAMPLED_ACTION_IDS.length + 1 + (divePrepPath ? 1 : 0);
+        let failed = false;
+        let treadWaterSampleCount = 0;
+        let divePrepLoaded = false;
+        const finishOne = () => {
+            remaining -= 1;
+            if (remaining > 0) {
+                return;
+            }
+            if (failed
+                || this._sampledActionOverrides.size !== SAMPLED_ACTION_IDS.length
+                || treadWaterSampleCount <= 0
+                || (!!divePrepPath && !divePrepLoaded)) {
+                console.error(
+                    `[SpeedSwimming] sampled action overrides incomplete variant=${variant.id} ` +
+                    `emotes=${this._sampledActionOverrides.size}/${SAMPLED_ACTION_IDS.length} ` +
+                    `treadWaterSamples=${treadWaterSampleCount} ` +
+                    `divePrep=${divePrepPath ? divePrepLoaded : 'default'}`,
+                );
+                return;
+            }
+            console.log(
+                `[SpeedSwimming] sampled action overrides loaded variant=${variant.id} ` +
+                `emotes=${this._sampledActionOverrides.size} treadWaterSamples=${treadWaterSampleCount} ` +
+                `divePrep=${divePrepPath ? divePrepLoaded : 'default'}`,
+            );
+            this.refreshShowcaseAction();
+            if (this._modelDebugMode) {
+                if (this._debugActionPose === 'sampledAction'
+                    || this._debugActionPose === 'breaststroke'
+                    || this._debugActionPose === 'divePrep') {
+                    this.applyModelDebugSetup();
+                }
+            } else {
+                this._poseState.reapplyCurrentState();
+            }
+        };
+        for (const actionId of SAMPLED_ACTION_IDS) {
+            loadRaceAsset(`${directory}/${filePrefix}${actionId}`, JsonAsset, (error, asset) => {
+                if (overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
+                    return;
+                }
+                if (error || !asset) {
+                    failed = true;
+                    console.error(`[SpeedSwimming] sampled action override load failed variant=${variant.id} action=${actionId}`, error);
+                } else {
+                    const action = asset.json as SampledActionMotion;
+                    if (action && SAMPLED_ACTION_IDS.indexOf(action.id) >= 0 && Array.isArray(action.samples) && action.samples.length > 0) {
+                        this._sampledActionOverrides.set(action.id, action);
+                        if (action.id === this._showcaseActionId) {
+                            this.refreshShowcaseAction();
+                        }
+                    } else {
+                        failed = true;
+                        console.error(`[SpeedSwimming] sampled action override is invalid variant=${variant.id} action=${actionId}`);
+                    }
+                }
+                finishOne();
+            });
+        }
+        loadRaceAsset(`${directory}/${filePrefix}breaststroke`, JsonAsset, (error, asset) => {
+            if (overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
+                return;
+            }
+            const samples = !error && asset ? parseTreadWaterOverride(asset.json) : null;
+            if (!samples) {
+                failed = true;
+                console.error(
+                    `[SpeedSwimming] tread-water override load failed variant=${variant.id}`,
+                    error,
+                );
+            } else {
+                treadWaterSampleCount = samples.length;
+                this._pose.setBreaststrokeSamplesOverride(samples);
+            }
+            finishOne();
+        });
+        if (divePrepPath) {
+            loadRaceAsset(divePrepPath, JsonAsset, (error, asset) => {
+                if (overrideToken !== this._sampledActionOverrideLoadToken || modelLoadToken !== this._modelLoadToken) {
+                    return;
+                }
+                const sample = !error && asset ? parseDivePrepOverride(asset.json) : null;
+                if (!sample) {
+                    failed = true;
+                    console.error(
+                        `[SpeedSwimming] dive-prep override load failed variant=${variant.id}`,
+                        error,
+                    );
+                } else {
+                    divePrepLoaded = true;
+                    this._pose.setDivePrepPoseOverride(sample);
+                }
+                finishOne();
+            });
+        }
     }
 
     private attachModelToSwimmerNode(): boolean {
@@ -656,7 +863,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setShowcaseAction(action: CharacterAction): boolean {
-        return this._poseState.setShowcaseAction(sampledActionIdFor(action));
+        this._showcaseActionId = sampledActionIdFor(action);
+        return this.refreshShowcaseAction();
     }
 
     setFinishFloating() {
@@ -886,13 +1094,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         if (this.isSampledActionDebugPose() && this._debugSampledActionId) {
-            const action = findSampledDebugAction(this._debugSampledActionId);
+            const action = this.sampledDebugAction(this._debugSampledActionId);
             if (!action) {
                 return;
             }
             const cycleSeconds = action.durationSeconds / Math.max(0.25, this.motionPreviewSpeedScale());
             const phase = positiveMod(this._selfTime / Math.max(0.1, cycleSeconds), 1);
-            this._pose.applySampledActionPose(action.id, phase, 1);
+            this._pose.applySampledActionPose(action.id, phase, 1, action);
             this._armAction = 0;
             this._kickAction = 0;
             this.syncSplashState();
@@ -983,7 +1191,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     setModelDebugMode(active: boolean) {
         this._modelDebugMode = active;
         this._animationPlayer.disable();
-        const useBakedAnimation = active && this.isMixamoSwimmingDebugVariant();
+        const useBakedAnimation = false;
         for (const renderer of this._skinnedRenderers) {
             renderer.setUseBakedAnimation(useBakedAnimation, true);
             if (!useBakedAnimation) {
@@ -1044,16 +1252,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._poseState.applyRaceModelSetup();
-        if (this.isMixamoSwimmingDebugVariant()) {
-            this._animationPlayer.setSpeed(this.motionPreviewSpeedScale());
-        }
     }
 
     setDebugMotionSpeedScale(scale: number) {
         this._debugMotionSpeedScale = Math.max(0.1, Math.min(1.5, scale));
-        if (this._modelDebugMode && this.isMixamoSwimmingDebugVariant()) {
-            this._animationPlayer.setSpeed(this.motionPreviewSpeedScale());
-        }
     }
 
     private applyLaneMaterials(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {
@@ -1062,14 +1264,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this.restorePerfectGlowMaterials();
         const modelVariant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
-        const colorVariant = findSwimmer0621ColorVariant(this._colorVariantId) ?? defaultSwimmer0621ColorVariant();
+        const colorVariant = findSwimmerColorVariant(this._colorVariantId) ?? defaultSwimmerColorVariant();
         const override = this._colorOverride;
         const usesDynamicColor = !!modelVariant.dynamicColor
             && (!!override?.skin || !!override?.suit || (modelVariant.dynamicColor.usesCapChannel && !!override?.cap)
-                || !!colorVariant.skin || !!colorVariant.suit || (modelVariant.dynamicColor.usesCapChannel && !!colorVariant.cap));
-        const resolvedSkinColor = override?.skin ?? (colorVariant.skin
-            ? new Color(...colorVariant.skin, 255)
-            : new Color(skinColor.r, skinColor.g, skinColor.b, 0));
+                || !!colorVariant.suit || (modelVariant.dynamicColor.usesCapChannel && !!colorVariant.cap));
+        const resolvedSkinColor = override?.skin ?? new Color(skinColor.r, skinColor.g, skinColor.b, 0);
         const resolvedSuitColor = override?.suit ?? (colorVariant.suit
             ? new Color(...colorVariant.suit, 255)
             : new Color(suitColor.r, suitColor.g, suitColor.b, 0));
@@ -1089,9 +1289,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             preserveOriginalMaterial: this.preserveOriginalMaterial(),
             dynamicColorEffect: this._dynamicColorEffect,
             colorMask: usesDynamicColor ? this._colorMask : null,
+            dynamicColorMode: modelVariant.dynamicColor?.mode ?? 'mask',
             waterLine: this._waterlineEffectEnabled ? this._waterY : undefined,
-            preserveImportedMaterial: this.usesImportedSwimmerMaterial(),
-            outlineWidth: this.usesImportedSwimmerMaterial() ? 10 : undefined,
             outlineRoot: this._outlineRoot,
             setOutlineRoot: (root) => {
                 this._outlineRoot = root;
@@ -1106,10 +1305,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._capColor = capColor.clone();
         this._robotStyle = robotStyle;
         this._playerOutline = playerOutline;
-    }
-
-    private usesImportedSwimmerMaterial(): boolean {
-        return this._modelVariantId !== defaultSwimmerModelVariant().id;
     }
 
     private preserveOriginalMaterial(): boolean {
@@ -1132,17 +1327,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             }
         };
-        loadRaceAsset(dynamicColor.maskPath, Texture2D, (error, texture) => {
-            if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
-                return;
-            }
-            if (error || !texture) {
-                console.error(`[SpeedSwimming] failed to load swimmer color mask variant=${expectedModelVariantId}`, error);
-                return;
-            }
-            this._colorMask = texture;
-            applyWhenReady();
-        });
+        if (dynamicColor.mode !== 'whiteKey' && dynamicColor.maskPath) {
+            loadRaceAsset(dynamicColor.maskPath, Texture2D, (error, texture) => {
+                if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
+                    return;
+                }
+                if (error || !texture) {
+                    console.error(`[SpeedSwimming] failed to load swimmer color mask variant=${expectedModelVariantId}`, error);
+                    return;
+                }
+                this._colorMask = texture;
+                applyWhenReady();
+            });
+        }
         loadRaceAsset(RESOURCE_PATHS.swimmerDynamicColorEffect, EffectAsset, (error, effect) => {
             if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
                 return;
@@ -1161,19 +1358,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!dynamicColor) {
             return false;
         }
-        const variant = findSwimmer0621ColorVariant(this._colorVariantId);
-        return !!variant?.skin
-            || !!variant?.suit
+        const variant = findSwimmerColorVariant(this._colorVariantId);
+        return !!variant?.suit
             || (dynamicColor.usesCapChannel && !!variant?.cap);
     }
 
     private supportsDynamicColor(): boolean {
         return !!findSwimmerModelVariant(this._modelVariantId)?.dynamicColor;
-    }
-
-    private isMixamoSwimmingDebugVariant(): boolean {
-        return this._modelVariantId === 'swimmer0621_2_mixamoSwimming'
-            && isDebugOnlySwimmerModelVariant(this._modelVariantId);
     }
 
     private isBreaststrokeDebugPose(): boolean {
@@ -1200,109 +1391,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._modelDebugMode && this._debugActionPose === 'flipTurn';
     }
 
-    private ensureMixamoDebugAnimationPlaying() {
-        if (!this._animationPlayer.hasAnimation) {
-            this.ensureMixamoAnimationComponent();
-        }
-        if (!this._animationPlayer.hasAnimation) {
-            return;
-        }
-        const speed = this.motionPreviewSpeedScale();
-        const played = this._animationPlayer.playClip('Swimming', true, speed)
-            || this._animationPlayer.playFirstClip(true, speed);
-        if (!played) {
-            console.warn(`[SpeedSwimming] Mixamo debug animation missing clips=${this.animationClipNames}`);
-        }
-    }
-
-    private ensureMixamoAnimationComponent() {
-        if (!this.isMixamoSwimmingDebugVariant() || !this._model) {
-            return;
-        }
-        let animation = this._model.getComponent(SkeletalAnimation);
-        if (!animation) {
-            animation = this._model.addComponent(SkeletalAnimation);
-            console.log(`[SpeedSwimming] Mixamo debug added SkeletalAnimation on model root ${this.nodePath(this._model)}`);
-        } else {
-            console.log(`[SpeedSwimming] Mixamo debug found SkeletalAnimation on model root ${this.nodePath(animation.node)} clips=${animation.clips.map((clip) => clip?.name || '-').join('|') || 'empty'}`);
-        }
-        this.logMixamoPathProbe();
-        this._animationPlayer.bind(animation, true);
-        this.loadMixamoClipByPath(0);
-    }
-
     private motionPreviewSpeedScale(): number {
         return this._modelDebugMode ? this._debugMotionSpeedScale : 1;
-    }
-
-    private loadMixamoClipByPath(index: number) {
-        if (index >= MIXAMO_SWIMMING_CLIP_PATHS.length) {
-            this.loadMixamoClipFromDirectory();
-            return;
-        }
-        const path = MIXAMO_SWIMMING_CLIP_PATHS[index];
-        loadRaceAsset(path, AnimationClip, (error, clip) => {
-            if (!this.isMixamoSwimmingDebugVariant() || !this._model?.isValid) {
-                return;
-            }
-            if (!error && clip) {
-                console.log(`[SpeedSwimming] Mixamo loaded clip path=${path}`);
-                this.bindMixamoClip(clip);
-                return;
-            }
-            console.log(`[SpeedSwimming] Mixamo clip path skipped path=${path} reason=${error}`);
-            this.loadMixamoClipByPath(index + 1);
-        });
-    }
-
-    private loadMixamoClipFromDirectory() {
-        loadRaceAssetDir('models/UserSwimmer0621_2MixamoSwimming', AnimationClip, (dirError, clips) => {
-            if (!this.isMixamoSwimmingDebugVariant() || !this._model?.isValid) {
-                return;
-            }
-            const clipNames = clips?.map((item) => item?.name || '-').join('|') || 'empty';
-            console.log(`[SpeedSwimming] Mixamo loadDir clips=${clipNames}`);
-            const fallback = clips?.find((item) => item?.name === 'Swimming')
-                || clips?.find((item) => item?.name?.startsWith('Swimming'))
-                || clips?.[0]
-                || null;
-            if (!fallback) {
-                console.warn('[SpeedSwimming] failed to load Mixamo Swimming clip subasset from paths and directory', dirError);
-                return;
-            }
-            this.bindMixamoClip(fallback);
-        });
-    }
-
-    private bindMixamoClip(clip: AnimationClip) {
-        console.log(`[SpeedSwimming] Mixamo debug bind clip=${clip.name} duration=${clip.duration.toFixed(2)}`);
-        this._animationPlayer.addClip(clip);
-        if (this._modelDebugMode) {
-            this.ensureMixamoDebugAnimationPlaying();
-        }
-    }
-
-    private logMixamoPathProbe() {
-        if (!this._model) {
-            return;
-        }
-        const paths = [
-            'Armature',
-            'Armature/Root',
-            'Armature/Root/Hip',
-            'Armature/Root/Hip/Waist/Spine01/Spine02/R_Clavicle/R_Upperarm/R_Forearm/R_ForearmTwist01',
-            'Armature/UserSwimmer0621_2',
-        ];
-        const result = paths.map((path) => `${path}=${!!findNodeByPath(this._model, path)}`).join(' ');
-        console.log(`[SpeedSwimming] Mixamo path probe from model root ${result}`);
-    }
-
-    private nodePath(node: Node): string {
-        const names: string[] = [];
-        for (let current: Node | null = node; current; current = current.parent) {
-            names.push(current.name || '-');
-        }
-        return names.reverse().join('/');
     }
 
     private setupDebugFlipTurn(captureCurrentSwimPose = false) {
@@ -1517,23 +1607,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._model || !this.root) {
             return;
         }
-        const useBakedAnimation = this.isMixamoSwimmingDebugVariant();
-        this.configureSkinnedRenderers(useBakedAnimation);
+        this.configureSkinnedRenderers(false);
         this._poseState.applyRaceModelSetup();
         if (this.isFlipTurnDebugPose()) {
             this.setupDebugFlipTurn();
             console.log(
                 `[SpeedSwimming] model debug uses sampled flip-turn keyframes ` +
                 `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length}`,
-            );
-            return;
-        }
-        if (this.isMixamoSwimmingDebugVariant()) {
-            this._animationPlayer.setUseBakedAnimation(true);
-            this.ensureMixamoDebugAnimationPlaying();
-            console.log(
-                `[SpeedSwimming] model debug uses imported Mixamo clip ` +
-                `bones=${this.manualBoneCount} skinned=${this._skinnedRenderers.length} clips=${this.animationClipNames}`,
             );
             return;
         }
@@ -1556,7 +1636,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         if (this.isSampledActionDebugPose() && this._debugSampledActionId) {
-            this._pose.applySampledActionPose(this._debugSampledActionId, 0, 1);
+            const action = this.sampledDebugAction(this._debugSampledActionId);
+            if (action) {
+                this._pose.applySampledActionPose(action.id, 0, 1, action);
+            }
             this.updateSplashSurface(0);
             this._splashEmitter?.setVisible(false);
             console.log(
@@ -1778,17 +1861,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private get animationClipNames(): string {
         return this._animationPlayer.clipNames;
     }
-}
-
-function findNodeByPath(root: Node, path: string): Node | null {
-    let current: Node | null = root;
-    for (const part of path.split('/')) {
-        if (!current) {
-            return null;
-        }
-        current = current.children.find((child) => child.name === part) ?? null;
-    }
-    return current;
 }
 
 function positiveMod(value: number, divisor: number): number {

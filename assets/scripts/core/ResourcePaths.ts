@@ -10,8 +10,16 @@ export type SwimmerModelVariant = {
     raceModelEulerDegrees?: readonly [number, number, number];
     debugPose?: 'breaststroke' | 'divePrep';
     swimHeadLiftDegrees?: number;
+    // Rig-profile emote and tread-water curves. Characters normalized to the
+    // same T-pose skeleton should point at one shared profile directory.
+    sampledActionOverrideDir?: string;
+    sampledActionOverrideFilePrefix?: string;
+    // A static rig-profile pose can be shared even when a character keeps
+    // geometry-specific emote curves for foot contact.
+    divePrepOverridePath?: string;
     dynamicColor?: {
-        maskPath: string;
+        mode?: 'mask' | 'whiteKey';
+        maskPath?: string;
         labelPrefix: string;
         usesCapChannel: boolean;
     };
@@ -20,7 +28,6 @@ export type SwimmerModelVariant = {
 export type SwimmerColorVariant = {
     id: string;
     label: string;
-    skin?: readonly [number, number, number];
     suitLabel?: string;
     suit?: readonly [number, number, number];
     cap?: readonly [number, number, number];
@@ -43,137 +50,31 @@ export type SkyboxVariant = {
     paths: Record<SkyboxFaceName, string>;
 };
 
-const DEFAULT_SWIMMER_PREFAB_CANDIDATES = [
-    'models/UserSwimmerLow',
-    'models/UserSwimmerLow/UserSwimmerLow',
+const TPOSE_ACTION_PROFILE_DIR = 'model-actions/tPose';
+const MUSCLE_MAN_PREFAB_CANDIDATES = [
+    'models/MuscleMan',
+    'models/MuscleMan/MuscleMan',
 ];
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     {
-        id: 'default',
-        label: 'Default',
-        candidates: DEFAULT_SWIMMER_PREFAB_CANDIDATES,
-    },
-    {
-        id: 'newMan01',
-        label: 'New Man 01',
-        candidates: [
-            'models/UserSwimmerNewMan01',
-            'models/UserSwimmerNewMan01/UserSwimmerNewMan01',
-        ],
-    },
-    {
-        id: 'swimmer04',
-        label: 'Swimmer 04',
-        candidates: [
-            'models/UserSwimmer04',
-            'models/UserSwimmer04/UserSwimmer04',
-        ],
-        swimHeadLiftDegrees: 4,
-    },
-    {
-        id: 'swimmer04Original',
-        label: 'Swimmer 04 Original',
-        candidates: [
-            'models/UserSwimmer04Original',
-            'models/UserSwimmer04Original/UserSwimmer04Original',
-        ],
+        id: 'muscleMan',
+        label: 'Muscle Man',
+        candidates: MUSCLE_MAN_PREFAB_CANDIDATES,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
-    },
-    {
-        id: 'swimmer0621_2',
-        label: 'Swimmer 0621-2',
-        candidates: [
-            'models/UserSwimmer0621_2',
-            'models/UserSwimmer0621_2/UserSwimmer0621_2',
-        ],
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
         dynamicColor: {
-            maskPath: 'models/UserSwimmer0621_2ColorMask/texture',
-            labelPrefix: 'S2',
-            usesCapChannel: true,
-        },
-    },
-    {
-        id: 'diver',
-        label: 'Diver',
-        candidates: [
-            'models/UserDiver',
-            'models/UserDiver/UserDiver',
-        ],
-        debugOnly: true,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        dynamicColor: {
-            maskPath: 'models/UserDiverFinColorMask/texture',
-            labelPrefix: 'Diver Fins + Tank',
+            mode: 'whiteKey',
+            labelPrefix: 'Muscle Man',
             usesCapChannel: false,
         },
     },
-    {
-        id: 'gundam',
-        label: 'Armored Mecha',
-        candidates: [
-            'models/Gundam',
-            'models/Gundam/Gundam',
-        ],
-        debugOnly: true,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        dynamicColor: {
-            maskPath: 'models/GundamChestColorMask/texture',
-            labelPrefix: 'Mecha Chest',
-            usesCapChannel: true,
-        },
-    },
-    {
-        id: 'swimmer0621_2_mixamoSwimming',
-        label: 'Mixamo Swimming',
-        candidates: [
-            'models/UserSwimmer0621_2MixamoSwimming',
-            'models/UserSwimmer0621_2MixamoSwimming/UserSwimmer0621_2MixamoSwimming',
-        ],
-        debugOnly: true,
-        preserveOriginalMaterial: true,
-        raceModelEulerDegrees: [0, 90, 0],
-        swimHeadLiftDegrees: 4,
-    },
-    {
-        id: 'swimmer0621_2_breaststrokeProc',
-        label: 'Tread Water Proc',
-        candidates: [
-            'models/UserSwimmer0621_2',
-            'models/UserSwimmer0621_2/UserSwimmer0621_2',
-        ],
-        debugOnly: true,
-        preserveOriginalMaterial: true,
-        debugPose: 'breaststroke',
-        raceModelYOffset: -0.88,
-        raceModelEulerDegrees: [0, 90, 0],
-        swimHeadLiftDegrees: 6,
-    },
-    {
-        id: 'swimmer0621_2_divePrepPose',
-        label: 'Dive Prep Pose',
-        candidates: [
-            'models/UserSwimmer0621_2',
-            'models/UserSwimmer0621_2/UserSwimmer0621_2',
-        ],
-        debugOnly: true,
-        preserveOriginalMaterial: true,
-        debugPose: 'divePrep',
-        raceModelEulerDegrees: [0, 90, 0],
-        swimHeadLiftDegrees: 4,
-    },
 ];
 
-const DEBUG_SWIMMER_MODEL_IDS = new Set(['swimmer0621_2', 'diver', 'gundam']);
-
-export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS.filter((variant) =>
-    DEBUG_SWIMMER_MODEL_IDS.has(variant.id)
-);
+export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS;
 
 export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
     { id: 'freestyle', label: 'Freestyle', pose: 'freestyle' },
@@ -199,8 +100,7 @@ export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
     { id: 'waving_0713', label: 'Waving 0713', pose: 'sampledAction', sampledActionId: 'waving_0713' },
 ];
 
-export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
-    { id: 'original', label: 'Original', suitLabel: 'Original' },
+export const SWIMMER_COLOR_VARIANTS: SwimmerColorVariant[] = [
     { id: 'redBlue', label: 'Red / Blue', suitLabel: 'Red', suit: [240, 68, 58], cap: [22, 119, 232] },
     { id: 'blueWhite', label: 'Blue / White', suitLabel: 'Blue', suit: [23, 109, 218], cap: [245, 238, 220] },
     { id: 'blackYellow', label: 'Black / Yellow', suitLabel: 'Black', suit: [36, 42, 53], cap: [255, 209, 42] },
@@ -210,10 +110,6 @@ export const SWIMMER_0621_2_COLOR_VARIANTS: SwimmerColorVariant[] = [
     { id: 'pinkMint', label: 'Pink / Mint', suitLabel: 'Pink', suit: [240, 59, 168], cap: [98, 237, 178] },
     { id: 'cyanRed', label: 'Cyan / Red', suitLabel: 'Cyan', suit: [24, 199, 216], cap: [240, 68, 80] },
     { id: 'yellowPurple', label: 'Yellow / Purple', suitLabel: 'Yellow', suit: [244, 201, 54], cap: [120, 71, 216] },
-    { id: 'whiteRed', label: 'White / Red', suitLabel: 'White', suit: [241, 238, 227], cap: [217, 49, 73] },
-    { id: 'fairSkin', label: 'Fair Skin', skin: [255, 214, 190], suitLabel: 'Red', suit: [240, 68, 58], cap: [22, 119, 232] },
-    { id: 'warmSkin', label: 'Warm Skin', skin: [218, 163, 110], suitLabel: 'Blue', suit: [23, 109, 218], cap: [245, 238, 220] },
-    { id: 'deepSkin', label: 'Deep Skin', skin: [97, 55, 39], suitLabel: 'Green', suit: [32, 196, 106], cap: [255, 121, 38] },
 ];
 
 const SKYBOX_FACE_NAMES: SkyboxFaceName[] = ['right', 'left', 'top', 'bottom', 'front', 'back'];
@@ -237,7 +133,7 @@ export const SKYBOX_VARIANTS: SkyboxVariant[] = [
 export const DEFAULT_SKYBOX_VARIANT: SkyboxVariant = SKYBOX_VARIANTS[0];
 
 export const RESOURCE_PATHS = {
-    swimmerPrefabCandidates: DEFAULT_SWIMMER_PREFAB_CANDIDATES,
+    swimmerPrefabCandidates: MUSCLE_MAN_PREFAB_CANDIDATES,
     swimmerModelVariants: SWIMMER_MODEL_VARIANTS,
     poolPrefab: 'pool/PoolScene',
     startBlockPrefabCandidates: [
@@ -253,8 +149,9 @@ export const RESOURCE_PATHS = {
     laneFloatCutoutEffect: 'effects/LaneFloatCutout',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
-  prepareRaceBackground: 'ui/prepare-race/locker-room-lowpoly-bg/texture',
-    sampledActionsDir: 'sampled-actions',
+    prepareRaceBackground: 'ui/prepare-race/locker-room-lowpoly-bg/texture',
+    sampledActionsDir: TPOSE_ACTION_PROFILE_DIR,
+    sampledActionsFilePrefix: 'Tpose_',
     music: {
         bundle: 'music',
         login: 'login_ripples',
@@ -278,12 +175,12 @@ export function defaultSwimmerModelVariant(): SwimmerModelVariant {
     return SWIMMER_MODEL_VARIANTS[0];
 }
 
-export function findSwimmer0621ColorVariant(id: string): SwimmerColorVariant | null {
-    return SWIMMER_0621_2_COLOR_VARIANTS.find((variant) => variant.id === id) ?? null;
+export function findSwimmerColorVariant(id: string): SwimmerColorVariant | null {
+    return SWIMMER_COLOR_VARIANTS.find((variant) => variant.id === id) ?? null;
 }
 
-export function defaultSwimmer0621ColorVariant(): SwimmerColorVariant {
-    return SWIMMER_0621_2_COLOR_VARIANTS[0];
+export function defaultSwimmerColorVariant(): SwimmerColorVariant {
+    return SWIMMER_COLOR_VARIANTS[0];
 }
 
 export const ANIMATION_CLIPS = {

@@ -3,9 +3,9 @@ import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { BreaststrokeBoneName, BreaststrokeMotionSample, getBreaststrokeSamples } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
-import { DIVE_PREP_POSE_SAMPLE, DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
+import type { DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
 import { FLIP_TURN_KEYFRAME_1, FlipTurnBoneName, FlipTurnPoseSample } from './FlipTurnPoseCurve';
-import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotionSample } from './SampledActionMotionCurve';
+import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotion, SampledActionMotionSample } from './SampledActionMotionCurve';
 
 const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new Set([
     'L_Clavicle',
@@ -85,6 +85,9 @@ export class FreestylePoseController {
     private _rightFoot: Node = null;
     private _rightToe: Node = null;
     private readonly _breaststrokeBones = new Map<BreaststrokeBoneName, Node>();
+    private _breaststrokeSamplesOverride: readonly BreaststrokeMotionSample[] | null = null;
+    private _divePrepPoseOverride: DivePrepPoseSample | null = null;
+    private readonly _sampledActionNodes = new Map<string, Node>();
     private readonly _flipTurnBones = new Map<FlipTurnBoneName, Node>();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
     private readonly _boneBasePosition = new Map<Node, Vec3>();
@@ -135,6 +138,7 @@ export class FreestylePoseController {
         this._rightToe = findBoneNode(root, 'RightToeBase');
         this.bindBreaststrokeBones();
         this.bindFlipTurnBones(root);
+        this.bindSampledActionNodes(root);
     }
 
     captureBasePose() {
@@ -152,6 +156,20 @@ export class FreestylePoseController {
                 this._boneBasePosition.set(bone, Vec3.clone(bone.position));
             }
         }
+        for (const bone of this._sampledActionNodes.values()) {
+            if (!this._boneBaseRotation.has(bone)) {
+                this._boneBaseRotation.set(bone, Quat.clone(bone.rotation));
+                this._boneBasePosition.set(bone, Vec3.clone(bone.position));
+            }
+        }
+    }
+
+    setBreaststrokeSamplesOverride(samples: readonly BreaststrokeMotionSample[] | null) {
+        this._breaststrokeSamplesOverride = samples;
+    }
+
+    setDivePrepPoseOverride(sample: DivePrepPoseSample | null) {
+        this._divePrepPoseOverride = sample;
     }
 
     restoreBasePose() {
@@ -309,7 +327,7 @@ export class FreestylePoseController {
             return;
         }
         const p = positiveMod(phase, 1);
-        const sample = sampleBreaststrokeMotion(1 - p);
+        const sample = sampleBreaststrokeMotion(1 - p, this._breaststrokeSamplesOverride);
         const hand = sample.hand;
         const foot = sample.foot;
         const head = sample.head;
@@ -389,7 +407,10 @@ export class FreestylePoseController {
             return;
         }
         this.restoreBasePose();
-        this.applySampleRotations(DIVE_PREP_POSE_SAMPLE, power);
+        const sample = this._divePrepPoseOverride;
+        if (sample) {
+            this.applySampleRotations(sample, power);
+        }
     }
 
     applyFlipTurnKeyPose(sample: FlipTurnPoseSample, power = 1) {
@@ -427,18 +448,18 @@ export class FreestylePoseController {
         return count;
     }
 
-    applySampledActionPose(actionId: SampledActionId, phase: number, power = 1) {
+    applySampledActionPose(actionId: SampledActionId, phase: number, power = 1, actionOverride?: SampledActionMotion) {
         if (!this.root) {
             return;
         }
-        const action = findSampledDebugAction(actionId);
+        const action = actionOverride ?? findSampledDebugAction(actionId);
         if (!action) {
             return;
         }
         this.restoreBasePose();
         const sample = sampleDebugActionMotion(action.samples, phase);
-        this.applySampledActionTranslation(sample, power);
-        this.applySampledActionRotations(sample, power);
+        this.applySampledActionTranslation(sample, power, action);
+        this.applySampledActionRotations(sample, power, action);
     }
 
     applyDivePrepToStreamlinePose(blend: number) {
@@ -779,6 +800,17 @@ export class FreestylePoseController {
         }
     }
 
+    private bindSampledActionNodes(root: Node) {
+        this._sampledActionNodes.clear();
+        const visit = (node: Node) => {
+            this._sampledActionNodes.set(node.name, node);
+            for (const child of node.children) {
+                visit(child);
+            }
+        };
+        visit(root);
+    }
+
     private applyArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, cycle: number, power: number) {
         if (!arm || !foreArm) {
             return;
@@ -890,7 +922,7 @@ export class FreestylePoseController {
             if (!rotation) {
                 continue;
             }
-            const bone = this._breaststrokeBones.get(name as BreaststrokeBoneName);
+            const bone = this._sampledActionNodes.get(name) ?? this._breaststrokeBones.get(name as BreaststrokeBoneName);
             if (!bone) {
                 continue;
             }
@@ -930,9 +962,9 @@ export class FreestylePoseController {
         }
     }
 
-    private applySampledActionRotations(sample: SampledActionMotionSample, power: number) {
-        // SampledActionMotionCurve stores absolute local rotations exported by glTF.
+    private applySampledActionRotations(sample: SampledActionMotionSample, power: number, action: SampledActionMotion) {
         const blend = clamp(power, 0, 1);
+        const baseRelative = action.rotationSpace === 'base-relative';
         for (const name of Object.keys(sample.rotations) as SampledActionBoneName[]) {
             const rotation = sample.rotations[name];
             if (!rotation) {
@@ -944,7 +976,21 @@ export class FreestylePoseController {
             }
             const base = this._boneBaseRotation.get(bone);
             this.setQuatFromTuple(this._tmpOffsetRotation, rotation);
-            if (base) {
+            if (baseRelative) {
+                // Shared T-pose curves store a local delta from each model's
+                // captured bind pose. Different bone lengths remain untouched.
+                if (blend < 0.999) {
+                    Quat.slerp(this._tmpOffsetRotation, Quat.IDENTITY, this._tmpOffsetRotation, blend);
+                }
+                if (base) {
+                    Quat.multiply(this._tmpResultRotation, base, this._tmpOffsetRotation);
+                    bone.setRotation(this._tmpResultRotation);
+                } else {
+                    bone.setRotation(this._tmpOffsetRotation);
+                }
+            } else if (base) {
+                // Backward-compatible path for the original absolute glTF
+                // curves used by non-T-pose characters.
                 Quat.slerp(this._tmpResultRotation, base, this._tmpOffsetRotation, blend);
                 bone.setRotation(this._tmpResultRotation);
             } else {
@@ -953,7 +999,7 @@ export class FreestylePoseController {
         }
     }
 
-    private applySampledActionTranslation(sample: SampledActionMotionSample, power: number) {
+    private applySampledActionTranslation(sample: SampledActionMotionSample, power: number, action: SampledActionMotion) {
         if (!this._hips) {
             return;
         }
@@ -962,7 +1008,16 @@ export class FreestylePoseController {
             return;
         }
         const blend = clamp(power, 0, 1);
-        this._tmpBlendPosition.set(sample.hipTranslation[0], sample.hipTranslation[1], sample.hipTranslation[2]);
+        if (action.hipTranslationSpace === 'base-relative-normalized') {
+            const scale = Math.sqrt(base.x * base.x + base.y * base.y + base.z * base.z);
+            this._tmpBlendPosition.set(
+                base.x + sample.hipTranslation[0] * scale,
+                base.y + sample.hipTranslation[1] * scale,
+                base.z + sample.hipTranslation[2] * scale,
+            );
+        } else {
+            this._tmpBlendPosition.set(sample.hipTranslation[0], sample.hipTranslation[1], sample.hipTranslation[2]);
+        }
         Vec3.lerp(this._tmpBlendPosition, base, this._tmpBlendPosition, blend);
         this._hips.setPosition(this._tmpBlendPosition);
     }
@@ -1329,8 +1384,11 @@ const NEUTRAL_BREASTSTROKE_SAMPLE: BreaststrokeMotionSample = {
     rotations: {},
 };
 
-function sampleBreaststrokeMotion(phase: number): BreaststrokeMotionSample {
-    const samples = getBreaststrokeSamples();
+function sampleBreaststrokeMotion(
+    phase: number,
+    samplesOverride: readonly BreaststrokeMotionSample[] | null = null,
+): BreaststrokeMotionSample {
+    const samples = samplesOverride ?? getBreaststrokeSamples();
     if (samples.length === 0) {
         // Not yet loaded from the race bundle: hold a neutral pose so the tread-water
         // blend has no effect instead of crashing on an empty sample list.

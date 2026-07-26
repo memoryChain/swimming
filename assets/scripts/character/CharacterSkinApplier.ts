@@ -21,7 +21,7 @@ export type CharacterSkinOptions = {
     preserveOriginalMaterial?: boolean;
     dynamicColorEffect?: EffectAsset | null;
     colorMask?: Texture2D | null;
-    preserveImportedMaterial?: boolean;
+    dynamicColorMode?: 'mask' | 'whiteKey';
     // Water surface world Y. When provided together with dynamicColorEffect, the
     // swimmer body materials tint fragments below this height toward underwater
     // blue (see SwimmerDynamicColor.effect waterLine).
@@ -34,12 +34,6 @@ export type CharacterSkinOptions = {
 export function applyCharacterSkin(options: CharacterSkinOptions) {
     if (options.preserveOriginalMaterial) {
         applyBrightenedOriginalMaterials(options);
-        configureOutlineShells(options);
-        return;
-    }
-
-    if (options.preserveImportedMaterial) {
-        applyImportedSwimmerSlotMaterials(options);
         configureOutlineShells(options);
         return;
     }
@@ -80,29 +74,6 @@ export function applyCharacterSkin(options: CharacterSkinOptions) {
     configureOutlineShells(options);
 }
 
-function applyImportedSwimmerSlotMaterials(options: CharacterSkinOptions) {
-    const skin = makeMaterial('ImportedSwimmerSkin', options.skinColor, options.robotStyle ? 0.34 : 0.56, options.robotStyle ? 0.12 : 0);
-    const suit = makeUnlitMaterial('ImportedSwimmerSuit', boostColor(options.suitColor, 1.45, 1.18));
-    const cap = makeUnlitMaterial('ImportedSwimmerCap', boostColor(options.capColor, 1.4, 1.18));
-    const goggle = makeUnlitMaterial('ImportedSwimmerGoggle', options.robotStyle ? new Color(175, 245, 255, 255) : new Color(16, 34, 48, 255));
-    for (const renderer of options.skinnedRenderers) {
-        const name = renderer.node.name;
-        if (name.indexOf('Swimmer04Imported') >= 0) {
-            renderer.setMaterial(skin, 0);
-            renderer.setMaterial(suit, 1);
-            renderer.setMaterial(cap, 2);
-        } else if (name.indexOf('SuitImported') >= 0) {
-            renderer.setMaterial(suit, 0);
-        } else if (name.indexOf('CapImported') >= 0) {
-            renderer.setMaterial(cap, 0);
-        } else if (name.indexOf('GoggleImported') >= 0) {
-            renderer.setMaterial(goggle, 0);
-        } else {
-            renderer.setMaterial(skin, 0);
-        }
-    }
-}
-
 function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     let applied = 0;
     for (const renderer of options.skinnedRenderers) {
@@ -111,8 +82,18 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
             if (!original) {
                 continue;
             }
-            const material = options.dynamicColorEffect && options.colorMask
-                ? makeDynamicColorMaterial(original, options.dynamicColorEffect, options.colorMask, options.skinColor, options.suitColor, options.capColor, options.waterLine)
+            const material = options.dynamicColorEffect
+                && (options.colorMask || options.dynamicColorMode === 'whiteKey')
+                ? makeDynamicColorMaterial(
+                    original,
+                    options.dynamicColorEffect,
+                    options.colorMask ?? null,
+                    options.dynamicColorMode ?? 'mask',
+                    options.skinColor,
+                    options.suitColor,
+                    options.capColor,
+                    options.waterLine,
+                )
                 : makeBrightenedOriginalMaterial(original, options.dynamicColorEffect ?? null, options.waterLine);
             renderer.setMaterial(material, i);
             applied++;
@@ -125,7 +106,16 @@ function applyBrightenedOriginalMaterials(options: CharacterSkinOptions) {
     }
 }
 
-function makeDynamicColorMaterial(original: Material, effect: EffectAsset, colorMask: Texture2D, skinColor: Color, suitColor: Color, capColor: Color, waterLine?: number): Material {
+function makeDynamicColorMaterial(
+    original: Material,
+    effect: EffectAsset,
+    colorMask: Texture2D | null,
+    colorMode: 'mask' | 'whiteKey',
+    skinColor: Color,
+    suitColor: Color,
+    capColor: Color,
+    waterLine?: number,
+): Material {
     const texture = findMaterialTexture(original);
     if (!texture) {
         return makeBrightenedOriginalMaterial(original, effect, waterLine);
@@ -134,7 +124,10 @@ function makeDynamicColorMaterial(original: Material, effect: EffectAsset, color
     material.initialize({ effectAsset: effect });
     material.name = 'SwimmerDynamicColor';
     material.setProperty('mainTexture', texture);
-    material.setProperty('colorMask', colorMask);
+    if (colorMask) {
+        material.setProperty('colorMask', colorMask);
+    }
+    material.setProperty('recolorParams', new Vec4(colorMode === 'whiteKey' ? 1 : 0, 0, 0, 0));
     material.setProperty('mainColor', new Color(255, 255, 255, 255));
     material.setProperty('skinColor', skinColor);
     material.setProperty('suitColor', suitColor);

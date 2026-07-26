@@ -3,8 +3,9 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
-import { SWIMMER_0621_2_COLOR_VARIANTS } from '../core/ResourcePaths';
+import { defaultSwimmerColorVariant, SWIMMER_COLOR_VARIANTS } from '../core/ResourcePaths';
 import { getRaceDifficultyConfig } from '../core/GameBalance';
+import { PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
 import { DEFAULT_AI_PROFILES, getAiPersonality, shuffledAiCompetitorNames } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
@@ -59,11 +60,13 @@ export class CompetitorManager {
         const aiControllers: AISwimmerController[] = [];
         const aiSwimmers: Swimmer[] = [];
         let primaryAiController: AISwimmerController | null = null;
-        const playerColorVariantId = 'original';
+        const playerColorVariantId = defaultSwimmerColorVariant().id;
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
+        const aiSkinColors = shuffledAiSkinColors();
         const aiNames = shuffledAiCompetitorNames();
         let aiNameIndex = 0;
         let aiColorIndex = 0;
+        let aiSkinIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             if (lane === this._options.playerLaneIndex) {
@@ -80,6 +83,7 @@ export class CompetitorManager {
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: true,
                 colorVariantId: aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
+                skinColor: aiSkinColors[aiSkinIndex++ % aiSkinColors.length],
                 displayName: aiNames[aiNameIndex++ % aiNames.length],
             });
             swimmer.configureCourse(this._options.courseLayout);
@@ -110,11 +114,13 @@ export class CompetitorManager {
         const aiSwimmers: Swimmer[] = [];
         let primaryAiController: AISwimmerController | null = null;
         const playerSwimmer = this.createPlayer(group);
-        const playerColorVariantId = 'original';
+        const playerColorVariantId = defaultSwimmerColorVariant().id;
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
+        const aiSkinColors = shuffledAiSkinColors();
         const aiNames = shuffledAiCompetitorNames();
         let aiNameIndex = 0;
         let aiColorIndex = 0;
+        let aiSkinIndex = 0;
 
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             if (lane === this._options.playerLaneIndex) {
@@ -127,6 +133,7 @@ export class CompetitorManager {
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: true,
                 colorVariantId: aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
+                skinColor: aiSkinColors[aiSkinIndex++ % aiSkinColors.length],
                 displayName: aiNames[aiNameIndex++ % aiNames.length],
             });
             swimmer.configureCourse(this._options.courseLayout);
@@ -160,7 +167,7 @@ export class CompetitorManager {
             y: this._options.courseLayout.swimY,
             z: this._options.laneLayout.centerZ(this._options.playerLaneIndex),
             isAI: false,
-            colorVariantId: 'original',
+            colorVariantId: defaultSwimmerColorVariant().id,
             displayName: 'YOU',
         });
         swimmer.configureCourse(this._options.courseLayout);
@@ -174,7 +181,7 @@ function scaledRaceDifficulty(baseDifficulty: number): number {
 }
 
 function shuffledAiColorVariantIds(playerVariantId: string): string[] {
-    const ids = SWIMMER_0621_2_COLOR_VARIANTS
+    const ids = SWIMMER_COLOR_VARIANTS
         .map((variant) => variant.id)
         .filter((id) => id !== playerVariantId);
     for (let i = ids.length - 1; i > 0; i--) {
@@ -184,6 +191,17 @@ function shuffledAiColorVariantIds(playerVariantId: string): string[] {
         ids[j] = value;
     }
     return ids;
+}
+
+function shuffledAiSkinColors(): Array<readonly [number, number, number]> {
+    const colors = PLAYER_SKIN_TONES.map((tone) => tone.color);
+    for (let i = colors.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const value = colors[i];
+        colors[i] = colors[j];
+        colors[j] = value;
+    }
+    return colors;
 }
 
 function makeWorldNode(name: string, parent: Node): Node {
