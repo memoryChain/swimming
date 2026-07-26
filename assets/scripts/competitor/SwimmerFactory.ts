@@ -1,7 +1,7 @@
 import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
-import { defaultSwimmerColorVariant, defaultSwimmerModelVariant } from '../core/ResourcePaths';
+import { defaultSwimmerColorVariant, defaultSwimmerModelVariant, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
 import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from '../app/PlayerCharacterConfig';
 
 export type CreateSwimmerOptions = {
@@ -25,7 +25,10 @@ export class SwimmerFactory {
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
         const selectedPlayer = options.isAI ? null : findPlayerCharacter();
-        const modelVariantId = selectedPlayer?.modelVariantId ?? defaultSwimmerModelVariant().id;
+        // Roll once while creating the opponent so a lane keeps the same
+        // available production model for the entire race.
+        const modelVariantId = selectedPlayer?.modelVariantId
+            ?? (options.isAI ? randomAiModelVariantId() : defaultSwimmerModelVariant().id);
         const robotStyle = selectedPlayer?.robotStyle === true;
         rig.setModelVariant(modelVariantId);
         rig.setColorVariant(options.colorVariantId ?? defaultSwimmerColorVariant().id);
@@ -58,6 +61,15 @@ export class SwimmerFactory {
         this._debug?.(`${options.name} uses CartoonSwimmerRig model=${modelVariantId}`);
         return swimmer;
     }
+}
+
+function randomAiModelVariantId(): string {
+    const availableVariants = SWIMMER_MODEL_VARIANTS.filter((variant) => !variant.debugOnly);
+    if (availableVariants.length <= 0) {
+        return defaultSwimmerModelVariant().id;
+    }
+    const index = Math.min(availableVariants.length - 1, Math.floor(Math.random() * availableVariants.length));
+    return availableVariants[index].id;
 }
 
 function color(r: number, g: number, b: number, a = 255): Color {

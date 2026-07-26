@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan';
+export type PlayerCharacterId = 'muscleMan' | 'women2';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -40,6 +40,12 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 88, technique: 70, burst: 82,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
+    },
+    {
+        id: 'women2', name: '浪花飞鱼', modelVariantId: 'women2', unlocked: true,
+        stamina: 82, technique: 91, burst: 76,
+        description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
+        skillName: '水感节奏', skillDescription: '精准把握节奏时，更容易维持稳定的连续推进。',
     },
 ];
 
