@@ -294,7 +294,7 @@ export class PrepareRaceFlow {
             const xpBarWidth = 220;
             const xpBar = makeUiNode('XpBar', panel);
             xpBar.getComponent(UITransform)!.setContentSize(xpBarWidth, 10);
-            xpBar.setPosition(18, panelHeight / 2 - 90, 1);
+            xpBar.setPosition(18, panelHeight / 2 - 92, 1);
             const xpGfx = xpBar.addComponent(Graphics);
             const xpRatio = Math.max(0, Math.min(1, xp / xpNeeded));
             xpGfx.fillColor = uiColor(24, 55, 90, 255);
@@ -303,22 +303,22 @@ export class PrepareRaceFlow {
             xpGfx.fillColor = uiColor(120, 220, 130, 255);
             xpGfx.rect(-xpBarWidth / 2, -5, xpBarWidth * xpRatio, 10);
             xpGfx.fill();
-            makeLabel('XpText', panel, xp + ' / ' + xpNeeded, 15, uiColor(180, 230, 190)).setPosition(18, panelHeight / 2 - 108, 1);
+            makeLabel('XpText', panel, 'XP ' + xp + '/' + xpNeeded, 13, uiColor(140, 160, 180)).setPosition(18, panelHeight / 2 - 112, 1);
         }
         // Pull the compact three-row attribute block up below the name. This
         // removes the old empty band at the top of the panel and reserves its
         // lower-right area for the race-selection button.
-        this.makeStat(panel, '体力', character.stamina, 152);
-        this.makeStat(panel, '技巧', character.technique, 112);
-        this.makeStat(panel, '爆发力', character.burst, 72);
-        makeLabel('DescriptionHeading', panel, '角色介绍', 22, CYAN).setPosition(-106, 20, 1);
+        this.makeStat(panel, '体力', character.stamina, 130);
+        this.makeStat(panel, '技巧', character.technique, 90);
+        this.makeStat(panel, '爆发力', character.burst, 50);
+        makeLabel('DescriptionHeading', panel, '角色介绍', 22, CYAN).setPosition(-106, 0, 1);
         const description = makeLabel('Description', panel, character.description, 17, WHITE);
         description.getComponent(UITransform)!.setContentSize(278, 76);
         description.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
-        description.setPosition(0, -30, 1);
-        makeLabel('SkillHeading', panel, '技能', 22, CYAN).setPosition(-128, -92, 1);
+        description.setPosition(0, -50, 1);
+        makeLabel('SkillHeading', panel, '技能', 22, CYAN).setPosition(-128, -112, 1);
         const skill = makeRect('SkillCard', panel, 278, 72, PANEL_ALT);
-        skill.setPosition(0, -148, 1);
+        skill.setPosition(0, -168, 1);
         makeLabel('SkillName', skill, character.skillName, 19, WHITE).setPosition(-44, 14, 1);
         const skillDesc = makeLabel('SkillDescription', skill, character.skillDescription, 14, uiColor(214, 234, 246));
         skillDesc.getComponent(UITransform)!.setContentSize(246, 30);
