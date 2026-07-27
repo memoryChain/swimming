@@ -12,6 +12,10 @@ CCEffect %{
         capColor:    { value: [0.008, 0.184, 0.807, 1], linear: true, editor: { type: color } }
         # RGB = target skin tone; alpha = whether the blue color-mask channel applies it.
         skinColor:   { value: [1, 1, 1, 0], linear: true, editor: { type: color } }
+        # x = 0: RGB mask recolour, x = 1: recolour neutral white pixels in
+        # mainTexture. The white-key path lets clean white garments share one
+        # colour without a UV-derived mask.
+        recolorParams: { value: [0, 0, 0, 0] }
         # x = water surface world Y, y = tint fade depth (small = crisp edge).
         # z/w unused.
         waterLine:       { value: [0.055, 0.04, 0, 0] }
@@ -59,6 +63,7 @@ CCProgram swimmer-color-fs %{
     vec4 suitColor;
     vec4 capColor;
     vec4 skinColor;
+    vec4 recolorParams;
     vec4 waterLine;
     vec4 underwaterColor;
   };
@@ -67,14 +72,32 @@ CCProgram swimmer-color-fs %{
     vec4 baseSample = texture(mainTexture, v_uv);
     vec3 base = SRGBToLinear(baseSample.rgb) * mainColor.rgb;
     vec3 mask = clamp(texture(colorMask, v_uv).rgb, 0.0, 1.0);
-    float garmentMask = max(mask.r, mask.g);
+    float whiteMin = min(baseSample.r, min(baseSample.g, baseSample.b));
+    float whiteMax = max(baseSample.r, max(baseSample.g, baseSample.b));
+    float whiteNeutral = 1.0 - smoothstep(0.08, 0.24, whiteMax - whiteMin);
+    float whiteKey = smoothstep(0.70, 0.91, whiteMin) * whiteNeutral;
+    float whiteKeyMode = step(0.5, recolorParams.x);
+    float suitMask = mix(mask.r, whiteKey, whiteKeyMode);
+    float capMask = mix(mask.g, 0.0, whiteKeyMode);
+    float skinMask = mix(mask.b, 1.0 - whiteKey, whiteKeyMode);
+    float capBlend = capMask / max(suitMask + capMask, 0.0001);
     float luminance = dot(base, vec3(0.2126, 0.7152, 0.0722));
     float brightness = clamp(0.34 + sqrt(clamp(luminance / 0.42, 0.0, 1.0)) * 0.76, 0.34, 1.08);
-    vec3 garment = mix(suitColor.rgb, capColor.rgb, mask.g) * brightness;
-    float garmentOverride = max(mask.r * suitColor.a, mask.g * capColor.a);
-    vec3 bodyColor = mix(base, garment, garmentMask * garmentOverride);
+    // AI-authored garment textures contain dark painted fold/triangle lines.
+    // Preserve only a very small amount of that luminance so recolouring does
+    // not amplify those lines into a visible polygonal web.
+    float garmentBrightness = mix(1.0, brightness, 0.10);
+    vec3 garment = mix(suitColor.rgb, capColor.rgb, capBlend) * garmentBrightness;
+    // Do not multiply by garmentMask a second time: that squared fractional
+    // UV-edge coverage and exposed the dark source atlas between triangles.
+    float garmentOverride = smoothstep(
+        0.04,
+        0.40,
+        max(suitMask * suitColor.a, capMask * capColor.a)
+    );
+    vec3 bodyColor = mix(base, garment, garmentOverride);
     vec3 skin = skinColor.rgb * brightness;
-    bodyColor = mix(bodyColor, skin, mask.b * skinColor.a);
+    bodyColor = mix(bodyColor, skin, skinMask * skinColor.a);
     // World-space waterline as a HARD boundary: every fragment below waterLine.x
     // is the submerged colour, everything above is normal, with a single sharp
     // division line (no gradient/blur). underwaterColor.a controls how different

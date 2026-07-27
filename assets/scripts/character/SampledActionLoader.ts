@@ -32,27 +32,31 @@ export function loadSampledAction(actionId: SampledActionId, done: ActionLoadCal
         return;
     }
     pendingActionCallbacks.set(actionId, [done]);
-    loadRaceAsset(`${RESOURCE_PATHS.sampledActionsDir}/${actionId}`, JsonAsset, (error, asset) => {
-        let resultError = error ?? null;
-        if (!resultError && asset) {
-            try {
-                const action = parseSampledAction(asset.json);
-                if (action.id !== actionId) {
-                    throw new Error(`Sampled action id mismatch: expected ${actionId}, got ${action.id}`);
+    loadRaceAsset(
+        `${RESOURCE_PATHS.sampledActionsDir}/${RESOURCE_PATHS.sampledActionsFilePrefix}${actionId}`,
+        JsonAsset,
+        (error, asset) => {
+            let resultError = error ?? null;
+            if (!resultError && asset) {
+                try {
+                    const action = parseSampledAction(asset.json);
+                    if (action.id !== actionId) {
+                        throw new Error(`Sampled action id mismatch: expected ${actionId}, got ${action.id}`);
+                    }
+                    registerSampledDebugAction(action);
+                } catch (parseError) {
+                    resultError = parseError instanceof Error ? parseError : new Error(String(parseError));
                 }
-                registerSampledDebugAction(action);
-            } catch (parseError) {
-                resultError = parseError instanceof Error ? parseError : new Error(String(parseError));
+            } else if (!resultError) {
+                resultError = new Error(`Sampled action is unavailable: ${actionId}`);
             }
-        } else if (!resultError) {
-            resultError = new Error(`Sampled action is unavailable: ${actionId}`);
-        }
-        const callbacks = pendingActionCallbacks.get(actionId) ?? [];
-        pendingActionCallbacks.delete(actionId);
-        for (const callback of callbacks) {
-            callback(resultError);
-        }
-    });
+            const callbacks = pendingActionCallbacks.get(actionId) ?? [];
+            pendingActionCallbacks.delete(actionId);
+            for (const callback of callbacks) {
+                callback(resultError);
+            }
+        },
+    );
 }
 
 export function loadSampledActionsForRace(done: LoadCallback) {
@@ -73,6 +77,9 @@ export function loadSampledActionsForRace(done: LoadCallback) {
                 for (const asset of assets ?? []) {
                     if (isBreaststrokeMotionJson(asset.json)) {
                         registerBreaststrokeSamples(parseBreaststrokeMotion(asset.json));
+                        continue;
+                    }
+                    if (isDivePrepPoseJson(asset.json)) {
                         continue;
                     }
                     const action = parseSampledAction(asset.json);
@@ -98,11 +105,16 @@ export function loadSampledActionsForRace(done: LoadCallback) {
     });
 }
 
+function isDivePrepPoseJson(value: unknown): boolean {
+    const data = value as { id?: unknown } | null;
+    return !!data && data.id === 'divePrep';
+}
+
 function findLoadedAction(id: SampledActionId): boolean {
     return Boolean(findSampledDebugAction(id));
 }
 
-// The breaststroke tread-water curve shares the sampled-actions folder but uses a
+// The breaststroke tread-water curve shares the T-pose profile folder but uses a
 // different per-sample schema (root/head/hand/foot vectors) from the emote actions
 // (hipTranslation). Detect it by shape so the directory scan can route it here.
 function isBreaststrokeMotionJson(value: unknown): boolean {

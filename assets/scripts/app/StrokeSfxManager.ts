@@ -2,7 +2,7 @@ import { assetManager, AssetManager, AudioClip, AudioSource, director, game, Nod
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const SFX_NODE_NAME = 'SpeedSwimmingStrokeSfx';
-const STROKE_VOLUME = 0.28;
+const STROKE_VOLUME = 0.23;
 
 export class StrokeSfxManager {
     private static _node: Node | null = null;

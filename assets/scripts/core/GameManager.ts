@@ -707,7 +707,7 @@ export class GameManager extends Component {
             cameraNode: this._cameraNode,
             cameraPos: this._cameraPos,
             cameraTarget: this._cameraTarget,
-            playerLaneZ: PLAYER_LANE_Z,
+            playerLaneZ: LANE_LAYOUT.centerZ(this._playerLaneIndex),
             inputManager: this._inputManager,
             raceManager: this._raceManager,
             raceCameraDirector: this._raceCameraDirector,
@@ -963,17 +963,14 @@ export class GameManager extends Component {
     }
 
     private assignRaceLanes() {
-        this._playerLaneIndex = PLAYER_LANE_INDEX;
-        this._primaryAiLaneIndex = PRIMARY_AI_LANE_INDEX;
-        if (!getRaceDifficultyConfig().laneLockdownEnabled) {
-            return;
-        }
         this._playerLaneIndex = Math.floor(Math.random() * LANE_LAYOUT.laneCount);
         this._primaryAiLaneIndex = this._playerLaneIndex === PRIMARY_AI_LANE_INDEX
             ? (PRIMARY_AI_LANE_INDEX + 1) % LANE_LAYOUT.laneCount
             : PRIMARY_AI_LANE_INDEX;
-        this._cameraTarget.z = LANE_LAYOUT.centerZ(this._playerLaneIndex);
-        this.debug(`lane-lockdown start lane=${this._playerLaneIndex + 1}`);
+        const playerLaneZ = LANE_LAYOUT.centerZ(this._playerLaneIndex);
+        this._raceCameraDirector.setPlayerLaneZ(playerLaneZ);
+        this._cameraTarget.z = playerLaneZ;
+        this.debug(`race start lane=${this._playerLaneIndex + 1}`);
     }
 
     private buildDeferredAiSwimmers() {

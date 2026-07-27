@@ -1,20 +1,8 @@
 import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
-import { defaultSwimmer0621ColorVariant } from '../core/ResourcePaths';
+import { defaultSwimmerColorVariant, defaultSwimmerModelVariant, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
 import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from '../app/PlayerCharacterConfig';
-
-const ORIGINAL_SWIMMER_MODEL_VARIANT = 'swimmer0621_2';
-const DIVER_SWIMMER_MODEL_VARIANT = 'diver';
-const GUNDAM_SWIMMER_MODEL_VARIANT = 'gundam';
-
-// TEMP: Race-only model sampling until the out-of-race character selection
-// flow owns this choice. Each competitor rolls independently when it is built.
-const TEMPORARY_RACE_MODEL_VARIANTS = [
-    ORIGINAL_SWIMMER_MODEL_VARIANT,
-    DIVER_SWIMMER_MODEL_VARIANT,
-    GUNDAM_SWIMMER_MODEL_VARIANT,
-] as const;
 
 export type CreateSwimmerOptions = {
     name: string;
@@ -23,6 +11,7 @@ export type CreateSwimmerOptions = {
     z: number;
     isAI: boolean;
     colorVariantId?: string;
+    skinColor?: readonly [number, number, number];
     displayName?: string;
 };
 
@@ -36,10 +25,13 @@ export class SwimmerFactory {
         const rig = node.addComponent(CartoonSwimmerRig);
         const sharedSkin = color(246, 176, 118);
         const selectedPlayer = options.isAI ? null : findPlayerCharacter();
-        const modelVariantId = selectedPlayer?.modelVariantId ?? pickTemporaryRaceModelVariant();
-        const robotStyle = options.isAI || selectedPlayer?.robotStyle === true;
+        // Roll once while creating the opponent so a lane keeps the same
+        // available production model for the entire race.
+        const modelVariantId = selectedPlayer?.modelVariantId
+            ?? (options.isAI ? randomAiModelVariantId() : defaultSwimmerModelVariant().id);
+        const robotStyle = selectedPlayer?.robotStyle === true;
         rig.setModelVariant(modelVariantId);
-        rig.setColorVariant(options.colorVariantId ?? defaultSwimmer0621ColorVariant().id);
+        rig.setColorVariant(options.colorVariantId ?? defaultSwimmerColorVariant().id);
         rig.build(
             sharedSkin,
             color(245, 42, 64),
@@ -51,13 +43,15 @@ export class SwimmerFactory {
         if (selectedPlayer) {
             const skinTone = selectedPlayerSkinTone();
             const colorScheme = selectedPlayerColorScheme();
-            rig.setColorOverride(skinTone.preserveOriginal && colorScheme.preserveOriginal
-                ? null
-                : {
-                    skin: skinTone.preserveOriginal ? undefined : color(...skinTone.color),
-                    suit: colorScheme.preserveOriginal ? undefined : color(...colorScheme.suit),
-                    cap: colorScheme.preserveOriginal ? undefined : color(...colorScheme.cap),
-                });
+            rig.setColorOverride({
+                skin: skinTone.preserveOriginal ? undefined : color(...skinTone.color),
+                suit: color(...colorScheme.suit),
+                cap: color(...colorScheme.cap),
+            });
+        } else if (options.skinColor) {
+            rig.setColorOverride({
+                skin: color(...options.skinColor),
+            });
         }
         rig.setSkinOutfit('trunksA');
         const swimmer = node.addComponent(Swimmer);
@@ -69,9 +63,13 @@ export class SwimmerFactory {
     }
 }
 
-function pickTemporaryRaceModelVariant(): string {
-    const index = Math.floor(Math.random() * TEMPORARY_RACE_MODEL_VARIANTS.length);
-    return TEMPORARY_RACE_MODEL_VARIANTS[index];
+function randomAiModelVariantId(): string {
+    const availableVariants = SWIMMER_MODEL_VARIANTS.filter((variant) => !variant.debugOnly);
+    if (availableVariants.length <= 0) {
+        return defaultSwimmerModelVariant().id;
+    }
+    const index = Math.min(availableVariants.length - 1, Math.floor(Math.random() * availableVariants.length));
+    return availableVariants[index].id;
 }
 
 function color(r: number, g: number, b: number, a = 255): Color {
