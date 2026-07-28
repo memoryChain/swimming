@@ -40,9 +40,9 @@ const DISTURB_SPEED = 4.2;
 const FLOOR_TINT: { prefix: string; above: Color; below: Color }[] = [
     { prefix: 'lane_floor_line', above: new Color(8, 12, 20, 255), below: new Color(26, 32, 42, 255) },
     { prefix: 'lane_t_end', above: new Color(8, 12, 20, 255), below: new Color(26, 32, 42, 255) },
-    { prefix: 'pool_tile_grout', above: new Color(18, 100, 182, 255), below: new Color(176, 198, 216, 255) },
-    { prefix: 'pool_inner_wall', above: new Color(38, 146, 222, 255), below: new Color(220, 234, 246, 255) },
-    { prefix: 'pool_floor', above: new Color(24, 126, 210, 255), below: new Color(232, 242, 249, 255) },
+    { prefix: 'pool_tile_grout', above: new Color(88, 181, 160, 255), below: new Color(176, 198, 216, 255) },
+    { prefix: 'pool_inner_wall', above: new Color(126, 208, 182, 255), below: new Color(220, 234, 246, 255) },
+    { prefix: 'pool_floor', above: new Color(118, 202, 174, 255), below: new Color(232, 242, 249, 255) },
 ];
 
 // Drives real screen-space refraction for the pool water. A second camera mirrors

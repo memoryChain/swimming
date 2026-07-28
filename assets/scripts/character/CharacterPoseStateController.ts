@@ -63,13 +63,15 @@ export class CharacterPoseStateController {
         return this._state === CharacterPoseState.Freestyle || this._state === CharacterPoseState.Glide;
     }
 
-    setShowcaseAction(actionId: SampledActionId): boolean {
-        const action = findSampledDebugAction(actionId);
-        if (!action) {
-            return false;
-        }
+    setShowcaseAction(
+        actionId: SampledActionId,
+        actionOverride?: SampledActionMotion | null,
+    ): boolean {
+        const action = actionOverride === undefined
+            ? findSampledDebugAction(actionId)
+            : actionOverride;
         this._showcaseAction = action;
-        return true;
+        return Boolean(action);
     }
 
     enterPreview() {

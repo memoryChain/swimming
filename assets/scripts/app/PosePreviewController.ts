@@ -199,8 +199,8 @@ export class PosePreviewController extends Component {
         const swimmerNode = this.makeNode('PosePreviewSwimmer', parent);
         swimmerNode.setPosition(0, PREVIEW_SWIMMER_ROOT_Y, 0);
         const rig = swimmerNode.addComponent(CartoonSwimmerRig);
-        rig.setModelVariant('swimmer0621_2');
-        rig.setColorVariant('original');
+        rig.setModelVariant('muscleMan');
+        rig.setColorVariant('redBlue');
         rig.setWaterY(-0.03);
         rig.build(
             new Color(246, 176, 118, 255),

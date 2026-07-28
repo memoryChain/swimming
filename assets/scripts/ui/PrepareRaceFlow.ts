@@ -1,5 +1,6 @@
-﻿import { Button, EventTouch, Graphics, Label, Mask, Node, resources, ScrollView, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+import { Button, EventTouch, Graphics, Label, Mask, Node, resources, ScrollView, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
 import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, setRaceDifficulty } from '../core/GameBalance';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
     cyclePlayerColorScheme,
@@ -90,7 +91,9 @@ export class PrepareRaceFlow {
         const image = makeUiNode('PrepareRaceBackgroundImage', root);
         image.getComponent(UITransform)!.setContentSize(this._width, this._height);
         image.setPosition(0, 0, 1);
-        resources.load(RESOURCE_PATHS.prepareRaceBackground, Texture2D, (error, texture) => {
+        // The locker-room artwork is only needed after the player opens character
+        // selection, so keep it out of the WeChat main package with the race assets.
+        loadRaceAsset(RESOURCE_PATHS.prepareRaceBackground, Texture2D, (error, texture) => {
             if (error || !texture || !image.isValid) {
                 console.warn('[SpeedSwimming] prepare-race background texture failed to load', error);
                 return;

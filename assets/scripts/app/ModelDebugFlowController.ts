@@ -7,7 +7,7 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { RaceManager } from '../core/RaceManager';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
-import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_0621_2_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
+import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
 import { formatStrokeQualityLog, nextStrokeQualityCombo, ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
@@ -100,7 +100,7 @@ export class ModelDebugFlowController {
         this._lastStrokeQuality = 0;
         this._modelVariantIndex = Math.max(0, DEBUG_SWIMMER_MODEL_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.modelVariantId));
         this._actionPreviewIndex = Math.max(0, DEBUG_SWIMMER_ACTION_PREVIEWS.findIndex((preview) => preview.id === initialActionId));
-        this._colorVariantIndex = Math.max(0, SWIMMER_0621_2_COLOR_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.colorVariantId));
+        this._colorVariantIndex = Math.max(0, SWIMMER_COLOR_VARIANTS.findIndex((variant) => variant.id === this._refs.playerSwimmer?.cartoonRig?.colorVariantId));
         this._skyboxVariantIndex = Math.max(0, SKYBOX_VARIANTS.findIndex((variant) => variant.id === this._refs.skyboxApplier?.currentVariantId));
         this._debugMotor.startRace(0, SWIMMER_BALANCE.baseSpeed);
 
@@ -158,7 +158,7 @@ export class ModelDebugFlowController {
         }
         this._refs.playerSwimmer?.cartoonRig?.setSkinOutfit('trunksA');
         if (this._refs.playerSwimmer?.cartoonRig && isDebugOnlySwimmerModelVariant(this._refs.playerSwimmer.cartoonRig.modelVariantId)) {
-            this._refs.playerSwimmer.cartoonRig.setModelVariant('swimmer0621_2');
+            this._refs.playerSwimmer.cartoonRig.setModelVariant('muscleMan');
         }
         this._refs.playerSwimmer?.cartoonRig?.setModelDebugMode(false);
         if (this._refs.playerSwimmer?.node) {
@@ -357,10 +357,10 @@ export class ModelDebugFlowController {
     }
 
     switchColorVariant() {
-        if (!this._active || SWIMMER_0621_2_COLOR_VARIANTS.length <= 0) {
+        if (!this._active || SWIMMER_COLOR_VARIANTS.length <= 0) {
             return;
         }
-        this._colorVariantIndex = positiveMod(this._colorVariantIndex + 1, SWIMMER_0621_2_COLOR_VARIANTS.length);
+        this._colorVariantIndex = positiveMod(this._colorVariantIndex + 1, SWIMMER_COLOR_VARIANTS.length);
         this.applyCurrentColorVariant();
     }
 
@@ -396,7 +396,7 @@ export class ModelDebugFlowController {
     }
 
     private applyCurrentColorVariant() {
-        const variant = SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex] ?? SWIMMER_0621_2_COLOR_VARIANTS[0];
+        const variant = SWIMMER_COLOR_VARIANTS[this._colorVariantIndex] ?? SWIMMER_COLOR_VARIANTS[0];
         if (!variant) {
             return;
         }
@@ -417,7 +417,7 @@ export class ModelDebugFlowController {
             return;
         }
         const model = DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? DEBUG_SWIMMER_MODEL_VARIANTS[0];
-        const color = SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex] ?? SWIMMER_0621_2_COLOR_VARIANTS[0];
+        const color = SWIMMER_COLOR_VARIANTS[this._colorVariantIndex] ?? SWIMMER_COLOR_VARIANTS[0];
         if (model?.dynamicColor && color) {
             const colorLabel = model.dynamicColor.usesCapChannel
                 ? color.label
@@ -554,8 +554,8 @@ export class ModelDebugFlowController {
                 const rig = node.addComponent(CartoonSwimmerRig);
                 preview = { config, laneIndex: actionIndex, node, rig };
                 this._actionPreviews.push(preview);
-                rig.setModelVariant(DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex]?.id ?? 'swimmer0621_2');
-                rig.setColorVariant(SWIMMER_0621_2_COLOR_VARIANTS[this._colorVariantIndex]?.id ?? 'original');
+                rig.setModelVariant(DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex]?.id ?? 'muscleMan');
+                rig.setColorVariant(SWIMMER_COLOR_VARIANTS[this._colorVariantIndex]?.id ?? 'redBlue');
                 rig.setDebugActionPose(config.pose, config.sampledActionId);
                 rig.build(
                     new Color(246, 176, 118),

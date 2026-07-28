@@ -97,14 +97,10 @@ export class PrepareRaceCharacterPreview extends Component {
         }
         const skin = selectedPlayerSkinTone();
         const palette = selectedPlayerColorScheme();
-        if (skin.preserveOriginal && palette.preserveOriginal) {
-            this._rig.setColorOverride(null);
-            return;
-        }
         this._rig.setColorOverride({
             skin: skin.preserveOriginal ? undefined : new Color(...skin.color, 255),
-            suit: palette.preserveOriginal ? undefined : new Color(...palette.suit, 255),
-            cap: palette.preserveOriginal ? undefined : new Color(...palette.cap, 255),
+            suit: new Color(...palette.suit, 255),
+            cap: new Color(...palette.cap, 255),
         });
     }
 

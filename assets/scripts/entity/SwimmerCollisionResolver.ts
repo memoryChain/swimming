@@ -43,7 +43,6 @@ const _origX: number[] = [];
 const _origZ: number[] = [];
 const _posX: number[] = [];
 const _posZ: number[] = [];
-const _hit: boolean[] = [];
 
 // Fully separate overlapping swimmers so no two bodies interpenetrate. Call once
 // per frame after the swimmers have updated their own positions.
@@ -69,7 +68,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
         _isAi[i] = _active[i].isAI;
-        _hit[i] = false;
     }
 
     const minDist = SWIMMER_COLLISION.radius * 2;
@@ -93,8 +91,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 // piling up. Player pairs resolve on both axes.
                 const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
                 anyOverlap = true;
-                _hit[i] = true;
-                _hit[j] = true;
 
                 let nx: number;
                 let nz: number;
@@ -123,16 +119,14 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         }
     }
 
-    // Apply the net displacement of each swimmer once (X -> distance, Z -> lateral
-    // offset) and flash any swimmer that took part in a collision this frame.
+    // Apply the net displacement once (X -> distance, Z -> lateral offset).
+    // Collision feedback intentionally stays motion-only; flashing the full
+    // character material made close racing harder to read.
     for (let i = 0; i < count; i++) {
         const dX = _posX[i] - _origX[i];
         const dZ = _posZ[i] - _origZ[i];
         if (dX !== 0 || dZ !== 0) {
             _active[i].applyCollisionPush(dX, dZ);
-        }
-        if (_hit[i]) {
-            _active[i].flashCollision();
         }
     }
 }
