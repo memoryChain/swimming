@@ -11,6 +11,7 @@ import {
     PLAYER_CHARACTER_DEFINITIONS,
     PLAYER_CHARACTER_SLOT_COUNT,
     selectPlayerCharacter,
+    selectedPlayerCharacterSupportsSkinTone,
     selectedPlayerColorScheme,
     selectedPlayerSkinTone,
     setSelectedRaceDifficulty,
@@ -246,14 +247,25 @@ export class PrepareRaceFlow {
     private buildCharacterControls(parent: Node) {
         const skin = selectedPlayerSkinTone();
         const palette = selectedPlayerColorScheme();
-        const skinButton = makeButton('SkinToneButton', parent, 170, 50, PANEL_ALT, `肤色：${skin.label}`);
+        const supportsSkinTone = selectedPlayerCharacterSupportsSkinTone();
+        const skinButton = makeButton(
+            'SkinToneButton',
+            parent,
+            170,
+            50,
+            supportsSkinTone ? PANEL_ALT : MUTED,
+            supportsSkinTone ? `肤色：${skin.label}` : '肤色：固定',
+        );
         skinButton.setPosition(-208, this._height / 2 - 140, 2);
         this._skinToneButtonLabel = skinButton.getChildByName('Label')?.getComponent(Label) ?? null;
-        skinButton.on(Button.EventType.CLICK, () => {
-            cyclePlayerSkinTone();
-            this.refreshAppearanceControls();
-            this._preview?.applyAppearance();
-        });
+        skinButton.getComponent(Button)!.interactable = supportsSkinTone;
+        if (supportsSkinTone) {
+            skinButton.on(Button.EventType.CLICK, () => {
+                cyclePlayerSkinTone();
+                this.refreshAppearanceControls();
+                this._preview?.applyAppearance();
+            });
+        }
         const colorButton = makeButton('PaletteButton', parent, 170, 50, PANEL_ALT, `配色：${palette.label}`);
         colorButton.setPosition(-208, this._height / 2 - 202, 2);
         this._paletteButtonLabel = colorButton.getChildByName('Label')?.getComponent(Label) ?? null;
@@ -268,7 +280,9 @@ export class PrepareRaceFlow {
         const skin = selectedPlayerSkinTone();
         const palette = selectedPlayerColorScheme();
         if (this._skinToneButtonLabel?.isValid) {
-            this._skinToneButtonLabel.string = `肤色：${skin.label}`;
+            this._skinToneButtonLabel.string = selectedPlayerCharacterSupportsSkinTone()
+                ? `肤色：${skin.label}`
+                : '肤色：固定';
         }
         if (this._paletteButtonLabel?.isValid) {
             this._paletteButtonLabel.string = `配色：${palette.label}`;

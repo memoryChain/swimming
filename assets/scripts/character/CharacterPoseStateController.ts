@@ -371,7 +371,12 @@ export class CharacterPoseStateController {
 
     private applyShowcasePose(phase: number) {
         if (this._showcaseAction) {
-            this._options.pose.applySampledActionPose(this._showcaseAction.id, phase, 1);
+            this._options.pose.applySampledActionPose(
+                this._showcaseAction.id,
+                phase,
+                1,
+                this._showcaseAction,
+            );
             return;
         }
         this._options.pose.applyPreRaceStandingPose();

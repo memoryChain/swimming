@@ -7,7 +7,7 @@ import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
-import { configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
+import { collectComponentsRecursive, configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
 import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTurnPoseCurve';
@@ -141,6 +141,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         raceModelEulerDegrees: () => this.raceModelEulerDegrees(),
     });
     private _skinnedRenderers: SkinnedMeshRenderer[] = [];
+    // A freshly instantiated skinned GLB can render its bind pose for one frame
+    // before Cocos uploads the joint matrices written by the procedural pose.
+    // Keep its renderers hidden through one complete update/late-update cycle.
+    private _rendererRevealFramesRemaining = 0;
     private _castsShadow = false;
     private _outlineRoot: Node = null;
     private _loaded = false;
@@ -547,6 +551,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._pose.bind(this.root);
             this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
             this.configureSkinnedRenderers();
+            this.setSkinnedRenderersEnabled(false);
             this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), false);
             this._pose.captureBasePose();
@@ -559,6 +564,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             } else {
                 this._poseState.reapplyCurrentState();
             }
+            this._rendererRevealFramesRemaining = 2;
             console.log(
                 `[SpeedSwimming] loaded athlete variant=${variant.id} prefab=${result.path} joints=${this.boundJointCount} manualBones=${this.manualBoneCount} clips=${this.animationClipNames} ` +
                 `skinned=${this._skinnedRenderers.length} rigRoot=${this.root.name} ` +
@@ -576,6 +582,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._pose.setDivePrepPoseOverride(null);
         this._poseState.setShowcaseAction(this._showcaseActionId, null);
         this._loaded = false;
+        this._rendererRevealFramesRemaining = 0;
         this.root = null;
         this._skinnedRenderers.length = 0;
         this._animationPlayer.disable();
@@ -1146,6 +1153,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     }
 
+    lateUpdate() {
+        if (this._rendererRevealFramesRemaining <= 0 || !this._loaded || !this._model?.isValid) {
+            return;
+        }
+        this._rendererRevealFramesRemaining--;
+        if (this._rendererRevealFramesRemaining <= 0) {
+            this.setSkinnedRenderersEnabled(true);
+        }
+    }
+
     onDestroy() {
         this._modelLoadToken += 1;
         this._colorAssetLoadToken += 1;
@@ -1327,7 +1344,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             }
         };
-        if (dynamicColor.mode !== 'whiteKey' && dynamicColor.maskPath) {
+        if (dynamicColor.mode === 'mask' && dynamicColor.maskPath) {
             loadRaceAsset(dynamicColor.maskPath, Texture2D, (error, texture) => {
                 if (token !== this._colorAssetLoadToken || this._modelVariantId !== expectedModelVariantId) {
                     return;
@@ -1769,6 +1786,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             console.log(`[SpeedSwimming] skinned mesh ${useBakedAnimation ? 'baked animation' : 'realtime'} enabled count=${this._skinnedRenderers.length} roots=${roots}`);
         } else {
             console.warn('[SpeedSwimming] no SkinnedMeshRenderer found on swimmer prefab');
+        }
+    }
+
+    private setSkinnedRenderersEnabled(enabled: boolean) {
+        if (!this._model?.isValid) {
+            return;
+        }
+        const renderers: SkinnedMeshRenderer[] = [];
+        collectComponentsRecursive(this._model, SkinnedMeshRenderer, renderers);
+        for (const renderer of renderers) {
+            if (renderer?.isValid) {
+                renderer.enabled = enabled;
+            }
         }
     }
 

@@ -106,7 +106,20 @@ export class FreestylePoseController {
     private readonly _tmpInverseParentWorldRotation = new Quat();
     private readonly _tmpSplashWorldB = new Vec3();
     private readonly _tmpMovementForwardRoot = new Vec3();
+    private readonly _tmpGroundHip = new Vec3();
+    private readonly _tmpGroundKnee = new Vec3();
+    private readonly _tmpGroundAnkle = new Vec3();
+    private readonly _tmpGroundTarget = new Vec3();
+    private readonly _tmpGroundAxis = new Vec3();
+    private readonly _tmpGroundKneeOffset = new Vec3();
+    private readonly _tmpGroundDesiredKnee = new Vec3();
+    private readonly _tmpGroundFootRotation = new Quat();
+    private readonly _tmpGroundToeRotation = new Quat();
+    private readonly _tmpGroundBoneRotation = new Quat();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
+    private _sampledActionRestLeftContactOffsetY = 0;
+    private _sampledActionRestRightContactOffsetY = 0;
+    private _sampledActionHipTranslationScale = 1;
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
     private _movementHeadingRadians = 0;
@@ -162,6 +175,7 @@ export class FreestylePoseController {
                 this._boneBasePosition.set(bone, Vec3.clone(bone.position));
             }
         }
+        this.captureSampledActionGroundPlane();
     }
 
     setBreaststrokeSamplesOverride(samples: readonly BreaststrokeMotionSample[] | null) {
@@ -460,6 +474,7 @@ export class FreestylePoseController {
         const sample = sampleDebugActionMotion(action.samples, phase);
         this.applySampledActionTranslation(sample, power, action);
         this.applySampledActionRotations(sample, power, action);
+        this.applySampledActionGrounding(sample, power);
     }
 
     applyDivePrepToStreamlinePose(blend: number) {
@@ -1022,6 +1037,217 @@ export class FreestylePoseController {
         this._hips.setPosition(this._tmpBlendPosition);
     }
 
+    private captureSampledActionGroundPlane() {
+        if (!this.root) {
+            this._sampledActionRestLeftContactOffsetY = 0;
+            this._sampledActionRestRightContactOffsetY = 0;
+            this._sampledActionHipTranslationScale = 1;
+            return;
+        }
+        this.root.getWorldPosition(this._tmpGroundHip);
+        const rootY = this._tmpGroundHip.y;
+        const leftY = this.sampledFootContactWorldY(this._leftFoot, this._leftToe);
+        const rightY = this.sampledFootContactWorldY(this._rightFoot, this._rightToe);
+        this._sampledActionRestLeftContactOffsetY = Number.isFinite(leftY) ? leftY - rootY : 0;
+        this._sampledActionRestRightContactOffsetY = Number.isFinite(rightY) ? rightY - rootY : 0;
+        const hipBase = this._hips ? this._boneBasePosition.get(this._hips) : null;
+        this._sampledActionHipTranslationScale = hipBase
+            ? Math.max(0.000001, Math.sqrt(
+                hipBase.x * hipBase.x
+                + hipBase.y * hipBase.y
+                + hipBase.z * hipBase.z
+            ))
+            : 1;
+    }
+
+    private applySampledActionGrounding(sample: SampledActionMotionSample, power: number) {
+        if (!this.root || !this._hips) {
+            return;
+        }
+        const contactMask = sample.groundedFeet ?? 0;
+        const leftGrounded = (contactMask & 1) !== 0;
+        const rightGrounded = (contactMask & 2) !== 0;
+        if (!leftGrounded && !rightGrounded) {
+            return;
+        }
+        const blend = clamp(power, 0, 1);
+        this.root.getWorldPosition(this._tmpGroundHip);
+        const contactHeights = sample.footContactHeights;
+        const leftTargetY = (
+            this._tmpGroundHip.y
+            + this._sampledActionRestLeftContactOffsetY
+            + (contactHeights?.[0] ?? 0) * this._sampledActionHipTranslationScale
+        );
+        const rightTargetY = (
+            this._tmpGroundHip.y
+            + this._sampledActionRestRightContactOffsetY
+            + (contactHeights?.[1] ?? 0) * this._sampledActionHipTranslationScale
+        );
+        const leftY = leftGrounded
+            ? this.sampledFootContactWorldY(this._leftFoot, this._leftToe)
+            : Number.NEGATIVE_INFINITY;
+        const rightY = rightGrounded
+            ? this.sampledFootContactWorldY(this._rightFoot, this._rightToe)
+            : Number.NEGATIVE_INFINITY;
+        const leftCorrection = leftTargetY - leftY;
+        const rightCorrection = rightTargetY - rightY;
+        const anchorCorrection = leftGrounded && rightGrounded
+            ? Math.min(leftCorrection, rightCorrection)
+            : (leftGrounded ? leftCorrection : rightCorrection);
+        this._hips.getWorldPosition(this._tmpGroundHip);
+        this._tmpGroundHip.y += anchorCorrection * blend;
+        this._hips.setWorldPosition(this._tmpGroundHip);
+
+        // A shared Hip shift plants one support foot. When both feet support
+        // the body, solve the remaining height difference using this model's
+        // own thigh/calf lengths instead of per-character action data.
+        if (leftGrounded && rightGrounded) {
+            for (let iteration = 0; iteration < 2; iteration++) {
+                this.solveSampledLegGroundContact(
+                    this._leftUpLeg,
+                    this._leftLeg,
+                    this._leftFoot,
+                    this._leftToe,
+                    leftTargetY,
+                    blend,
+                );
+                this.solveSampledLegGroundContact(
+                    this._rightUpLeg,
+                    this._rightLeg,
+                    this._rightFoot,
+                    this._rightToe,
+                    rightTargetY,
+                    blend,
+                );
+            }
+        }
+    }
+
+    private sampledFootContactWorldY(foot: Node, toe: Node): number {
+        if (!foot && !toe) {
+            return Number.POSITIVE_INFINITY;
+        }
+        let contactY = Number.POSITIVE_INFINITY;
+        if (foot) {
+            foot.getWorldPosition(this._tmpGroundAnkle);
+            contactY = Math.min(contactY, this._tmpGroundAnkle.y);
+        }
+        if (toe) {
+            toe.getWorldPosition(this._tmpGroundTarget);
+            contactY = Math.min(contactY, this._tmpGroundTarget.y);
+        }
+        return contactY;
+    }
+
+    private solveSampledLegGroundContact(
+        thigh: Node,
+        calf: Node,
+        foot: Node,
+        toe: Node,
+        groundY: number,
+        power: number,
+    ) {
+        if (!thigh || !calf || !foot) {
+            return;
+        }
+        const contactError = groundY - this.sampledFootContactWorldY(foot, toe);
+        if (Math.abs(contactError) <= 0.0005) {
+            return;
+        }
+
+        foot.getWorldRotation(this._tmpGroundFootRotation);
+        toe?.getWorldRotation(this._tmpGroundToeRotation);
+        thigh.getWorldPosition(this._tmpGroundHip);
+        calf.getWorldPosition(this._tmpGroundKnee);
+        foot.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.copy(this._tmpGroundTarget, this._tmpGroundAnkle);
+        this._tmpGroundTarget.y += contactError * power;
+
+        const firstLength = Vec3.distance(this._tmpGroundHip, this._tmpGroundKnee);
+        const secondLength = Vec3.distance(this._tmpGroundKnee, this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpGroundAxis, this._tmpGroundTarget, this._tmpGroundHip);
+        const targetDistance = this._tmpGroundAxis.length();
+        if (firstLength <= 0.000001 || secondLength <= 0.000001 || targetDistance <= 0.000001) {
+            return;
+        }
+        Vec3.multiplyScalar(this._tmpGroundAxis, this._tmpGroundAxis, 1 / targetDistance);
+        const reachableDistance = Math.min(
+            firstLength + secondLength - 0.000001,
+            Math.max(Math.abs(firstLength - secondLength) + 0.000001, targetDistance),
+        );
+
+        Vec3.subtract(this._tmpGroundKneeOffset, this._tmpGroundKnee, this._tmpGroundHip);
+        const kneeAlongAxis = Vec3.dot(this._tmpGroundKneeOffset, this._tmpGroundAxis);
+        Vec3.scaleAndAdd(
+            this._tmpGroundKneeOffset,
+            this._tmpGroundKneeOffset,
+            this._tmpGroundAxis,
+            -kneeAlongAxis,
+        );
+        if (this._tmpGroundKneeOffset.lengthSqr() <= 0.00000001) {
+            if (Math.abs(this._tmpGroundAxis.x) < 0.9) {
+                this._tmpGroundKneeOffset.set(
+                    0,
+                    this._tmpGroundAxis.z,
+                    -this._tmpGroundAxis.y,
+                );
+            } else {
+                this._tmpGroundKneeOffset.set(
+                    this._tmpGroundAxis.y,
+                    -this._tmpGroundAxis.x,
+                    0,
+                );
+            }
+        }
+        Vec3.normalize(this._tmpGroundKneeOffset, this._tmpGroundKneeOffset);
+
+        const along = (
+            firstLength * firstLength
+            - secondLength * secondLength
+            + reachableDistance * reachableDistance
+        ) / (2 * reachableDistance);
+        const bendHeight = Math.sqrt(Math.max(0, firstLength * firstLength - along * along));
+        Vec3.scaleAndAdd(
+            this._tmpGroundDesiredKnee,
+            this._tmpGroundHip,
+            this._tmpGroundAxis,
+            along,
+        );
+        Vec3.scaleAndAdd(
+            this._tmpGroundDesiredKnee,
+            this._tmpGroundDesiredKnee,
+            this._tmpGroundKneeOffset,
+            bendHeight,
+        );
+
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        Vec3.subtract(this._tmpDirection, this._tmpGroundDesiredKnee, this._tmpGroundHip);
+        this.rotateWorldBoneDirection(thigh, this._tmpWorldDirection, this._tmpDirection);
+
+        calf.getWorldPosition(this._tmpGroundKnee);
+        foot.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundAnkle, this._tmpGroundKnee);
+        Vec3.subtract(this._tmpDirection, this._tmpGroundTarget, this._tmpGroundKnee);
+        this.rotateWorldBoneDirection(calf, this._tmpWorldDirection, this._tmpDirection);
+
+        // IK changes parent transforms, so restore the choreography's ankle
+        // and toe orientation after correcting contact height.
+        foot.setWorldRotation(this._tmpGroundFootRotation);
+        toe?.setWorldRotation(this._tmpGroundToeRotation);
+    }
+
+    private rotateWorldBoneDirection(bone: Node, current: Vec3, desired: Vec3) {
+        if (current.lengthSqr() <= 0.00000001 || desired.lengthSqr() <= 0.00000001) {
+            return;
+        }
+        Vec3.normalize(current, current);
+        Vec3.normalize(desired, desired);
+        bone.getWorldRotation(this._tmpGroundBoneRotation);
+        Quat.rotationTo(this._tmpDeltaRotation, current, desired);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundBoneRotation);
+        bone.setWorldRotation(this._tmpResultRotation);
+    }
+
     private applyDivePrepArmReach(power: number) {
         const reach = FREESTYLE_POSE_TUNING.divePrepArmForwardDegrees * clamp(power, 0, 1);
         this.applyCurrentBoneOffset(this._leftArm, -reach, -reach * 0.2, -reach * 0.15);
@@ -1430,6 +1656,13 @@ function sampleDebugActionMotion(samples: readonly SampledActionMotionSample[], 
                 phase: p,
                 hipTranslation: lerpVectorTuple(current.hipTranslation, next.hipTranslation, t),
                 rotations: slerpSampledActionRotations(current.rotations, next.rotations, t),
+                // Only keep a planted foot when both adjacent source samples
+                // agree, preventing a one-frame ground snap at takeoff/landing.
+                groundedFeet: (current.groundedFeet ?? 0) & (next.groundedFeet ?? 0),
+                footContactHeights: [
+                    lerp(current.footContactHeights?.[0] ?? 0, next.footContactHeights?.[0] ?? 0, t),
+                    lerp(current.footContactHeights?.[1] ?? 0, next.footContactHeights?.[1] ?? 0, t),
+                ],
             };
         }
     }

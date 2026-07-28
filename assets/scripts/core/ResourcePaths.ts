@@ -59,6 +59,14 @@ const WOMEN2_PREFAB_CANDIDATES = [
     'models/Women2',
     'models/Women2/Women2',
 ];
+const LOW_POLY_HUMAN2_PREFAB_CANDIDATES = [
+    'models/LowPolyHuman2',
+    'models/LowPolyHuman2/LowPolyHuman2',
+];
+const DIVER_PREFAB_CANDIDATES = [
+    'models/Diver',
+    'models/Diver/Diver',
+];
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     {
@@ -80,17 +88,44 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         id: 'women2',
         label: 'Women 2',
         candidates: WOMEN2_PREFAB_CANDIDATES,
-        // The source material is intentionally retained until a dedicated
-        // low-cost recolor mask is approved for this character.
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
         sampledActionOverrideFilePrefix: 'Tpose_',
         divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
         dynamicColor: {
-            mode: 'mask',
-            maskPath: 'models/Women2ColorMask/texture',
+            mode: 'whiteKey',
             labelPrefix: 'Women 2',
+            usesCapChannel: false,
+        },
+    },
+    {
+        id: 'lowPolyHuman2',
+        label: 'Low Poly Human 2',
+        candidates: LOW_POLY_HUMAN2_PREFAB_CANDIDATES,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'whiteKey',
+            labelPrefix: 'Low Poly Human 2',
+            usesCapChannel: false,
+        },
+    },
+    {
+        id: 'diver',
+        label: 'Diver',
+        candidates: DIVER_PREFAB_CANDIDATES,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'whiteKey',
+            labelPrefix: 'Diver',
             usesCapChannel: false,
         },
     },

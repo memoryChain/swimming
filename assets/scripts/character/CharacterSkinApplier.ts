@@ -291,6 +291,10 @@ function configureOutlineShells(options: CharacterSkinOptions) {
                 outline.mesh = source.mesh;
                 outline.skeleton = source.skeleton;
                 outline.skinningRoot = source.skinningRoot || model;
+                // Match the source renderer's load-time visibility. Character
+                // switching keeps newly instantiated skins hidden until their
+                // first posed joint matrices have reached the renderer.
+                outline.enabled = source.enabled;
                 outline.setUseBakedAnimation(false, true);
                 outline.uploadAnimation(null);
                 setAllRendererMaterialSlots(source, outline, material);
