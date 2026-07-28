@@ -485,6 +485,9 @@ export class SwimmerMotor {
     }
 
     private get _effectiveComboOvercapDecay(): number {
+        // Intentionally not progression-overridable: the overcap AMOUNT scales
+        // with character burst (see _effectiveComboMaxOvercap), but the DECAY rate
+        // is a global physics constant shared by player and AI.
         return Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay);
     }
 

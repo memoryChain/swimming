@@ -48,6 +48,7 @@ export class UIController extends Component {
     public energyLabel: Label = null;
     public sprintLabel: Label | null = null;
     private _sprintActive = false;
+    private _energyTotal = 100;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -131,7 +132,7 @@ export class UIController extends Component {
     }
 
     updateEnergyBar(energy: number, depleted: boolean) {
-        const ratio = clamp01(energy / 100);
+        const ratio = clamp01(energy / this._energyTotal);
         const color = this._sprintActive
             ? sprintEnergyColor(ratio, depleted)
             : energyColor(ratio, depleted);
@@ -179,6 +180,10 @@ export class UIController extends Component {
                 .call(() => { node.active = false; })
                 .start();
         }
+    }
+
+    setEnergyTotal(total: number) {
+        this._energyTotal = Math.max(1, total);
     }
 
     setEnergyBarVisible(visible: boolean) {

@@ -34,7 +34,7 @@ export type GameFlowRefs = {
     onSwimmerEliminated: (swimmer: Swimmer) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
-    playerDiveSpeedScale: number;
+    playerDiveSpeedScale: () => number;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
         { characterId: string; characterName: string; xpGained: number; previousLevel: number; newLevel: number; leveledUp: boolean; newXp: number; xpForNextLevel: number } | null;
     enterSprint: () => void;
@@ -535,8 +535,9 @@ export class GameFlowController {
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
         const diveResult = resolveDiveResult(power);
-        if (this._refs.playerDiveSpeedScale !== 1) {
-            diveResult.launchSpeed *= this._refs.playerDiveSpeedScale;
+        const diveSpeedScale = this._refs.playerDiveSpeedScale();
+        if (diveSpeedScale !== 1) {
+            diveResult.launchSpeed *= diveSpeedScale;
         }
         this._refs.applyPlayerDive(diveResult);
         this._refs.raceManager?.startFromDive(diveResult);

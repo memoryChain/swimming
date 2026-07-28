@@ -4,9 +4,8 @@ import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } f
 import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
-import { RACE_PHASE_BALANCE } from './ConditionBalance';
+import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
-import { CONDITION_BALANCE } from './ConditionBalance';
 import { HeartRateZone } from '../condition/ConditionTypes';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';

@@ -139,8 +139,8 @@ export class PlayerConditionModel {
 
         this._heartRateZone = zoneForHeartRate(this._heartRate);
 
-        // Energy regeneration: only in the LOW heart-rate zone (a recovery rhythm).
-        // SPRINT boosts the rate so the finish is an all-out peak, not a crawl.
+        // Energy regeneration: all heart-rate zones regen (LOW strongest).
+        // SPRINT boosts all zones so the finish is an all-out peak, not a crawl.
         this.regenEnergy(dt);
         this.refreshModifiers();
     }
@@ -172,7 +172,7 @@ export class PlayerConditionModel {
         this._efficiencyModifier = eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
     }
 
-    // Energy regen: LOW heart-rate zone regenerates, SPRINT boosts the rate.
+    // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
     private regenEnergy(dt: number) {
         const energyCfg = CONDITION_BALANCE.energy;
         // All zones regen, but LOW regenerates the most. SPRINT boosts all zones

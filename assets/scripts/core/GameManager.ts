@@ -656,7 +656,7 @@ export class GameManager extends Component {
                 const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);
             },
-            playerDiveSpeedScale: this._playerBalanceOverrides
+            playerDiveSpeedScale: () => this._playerBalanceOverrides
                 ? this._playerBalanceOverrides.diveMaxLaunchSpeed / DIVE_BALANCE.maxLaunchSpeed
                 : 1,
             awardProgression: (input) => {
@@ -958,6 +958,7 @@ export class GameManager extends Component {
             this._playerCondition.setProgressionOverrides({
                 energyTotal: overrides.energyTotal,
             });
+            this._uiFlow?.setEnergyTotal(overrides.energyTotal);
         }
         this.debug('progression character=' + characterId + ' level=' + level);
     }

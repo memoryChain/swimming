@@ -17,7 +17,8 @@ export const CONDITION_BALANCE = {
         // Total energy pool (absolute, 0..total). Doc 29 / dev-alignment: 100.
         total: 100,
 
-        // Per-stroke energy drain by current heart-rate zone (during PACE).
+        // Per-stroke energy drain by current heart-rate zone (all phases;
+        // SPRINT multiplies this by sprintTierMultiplier).
         // OPTIMAL is the most efficient sustained zone; higher zones cost more.
         drainPerStroke: {
             [HeartRateZone.LOW]: 0.5,

@@ -63,6 +63,10 @@ export class UIFlowController {
         this._refs.uiController?.setEnergyBarVisible(visible);
     }
 
+    setEnergyTotal(total: number) {
+        this._refs.uiController?.setEnergyTotal(total);
+    }
+
     updateProgress(playerDistance: number, aiDistance: number) {
         this._refs.uiController?.updateProgress(playerDistance, aiDistance);
     }
