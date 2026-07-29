@@ -5,6 +5,7 @@ import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
+import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
 
@@ -210,7 +211,7 @@ export class AISwimmerController extends Component {
         if (drift >= clamp(STEERING_TUNING.aiCorrectHeadingRatio, 0, 1)) {
             const corrective = this.swimmer.correctiveStrokeSide();
             const wrong = corrective === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
-            return Math.random() < discipline ? corrective : wrong;
+            return randomFloat() < discipline ? corrective : wrong;
         }
         // Personality weave, thinned out the harder this AI is currently pushing
         // (so a surging fighter tightens up), scaled by the difficulty tier
@@ -218,7 +219,7 @@ export class AISwimmerController extends Component {
         const weaveScale = getRaceDifficultyConfig().weaveScale;
         const weave = clamp(this.personality.weaveTendency * weaveScale * (1 - discipline * 0.6), 0, 1);
         const wanderChance = weave * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
-        return Math.random() < wanderChance ? justUsed : opposite;
+        return randomFloat() < wanderChance ? justUsed : opposite;
     }
 
     private laneLockdownSteeringSide(justUsed: StrokeType, opposite: StrokeType): StrokeType | null {
@@ -234,7 +235,7 @@ export class AISwimmerController extends Component {
             const awareness = this._laneLockdownWarning
                 ? 0.2 + 0.8 * difficulty
                 : clamp((difficulty - 0.58) / 0.32, 0, 1);
-            if (Math.random() >= awareness) {
+            if (randomFloat() >= awareness) {
                 return null;
             }
             this._laneLockdownAware = true;
@@ -287,7 +288,7 @@ export class AISwimmerController extends Component {
     private pickTargetProgress(): number {
         const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
         const sigma = lerp(AI_STROKE_TUNING.timingSigmaLow, AI_STROKE_TUNING.timingSigmaHigh, this.effectiveDifficulty());
-        const target = center + gaussian() * sigma;
+        const target = center + randomGaussian() * sigma;
         return clamp(target, 0.05, AI_STROKE_TUNING.maxReleaseProgress);
     }
 
@@ -304,27 +305,10 @@ export class AISwimmerController extends Component {
     }
 }
 
-function randomRange(min: number, max: number): number {
-    return min + Math.random() * (max - min);
-}
-
 function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * clamp(t, 0, 1);
 }
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
-}
-
-// Standard normal sample (Box-Muller). Mean 0, std 1.
-function gaussian(): number {
-    let u = 0;
-    let v = 0;
-    while (u === 0) {
-        u = Math.random();
-    }
-    while (v === 0) {
-        v = Math.random();
-    }
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }

@@ -58,6 +58,7 @@ import { getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './Gam
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
+import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta } from './TimeScale';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
@@ -521,7 +522,25 @@ export class GameManager extends Component {
     restartGame() {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
+        this.randomizeAiRosterForRestart();
         this._gameFlow?.restartGame();
+    }
+
+    // Re-roll the AI lineup before each replay so tapping "再来一次" faces a freshly
+    // shuffled set of opponents (names + difficulty) in new lane positions. Skipped
+    // for the 100m AI-debug 1v1, where the opponent is intentionally fixed.
+    private randomizeAiRosterForRestart() {
+        if (this._aiDebugMode || this._modelDebugFlow?.active) {
+            return;
+        }
+        if (this._aiSwimmers.length === 0 || this._aiControllers.length === 0) {
+            return;
+        }
+        this.createCompetitorManager().reassignAiRoster(this._aiSwimmers, this._aiControllers);
+        this.refreshPreRaceIntroRoster();
+        this.refreshSwimmerNameRoster();
+        this.refreshAiDifficultyPanel();
+        this.debug('restart AI roster reshuffled');
     }
 
     private returnToLogin() {
@@ -931,7 +950,7 @@ export class GameManager extends Component {
     }
 
     private assignRaceLanes() {
-        this._playerLaneIndex = Math.floor(Math.random() * LANE_LAYOUT.laneCount);
+        this._playerLaneIndex = randomInt(LANE_LAYOUT.laneCount);
         this._primaryAiLaneIndex = this._playerLaneIndex === PRIMARY_AI_LANE_INDEX
             ? (PRIMARY_AI_LANE_INDEX + 1) % LANE_LAYOUT.laneCount
             : PRIMARY_AI_LANE_INDEX;

@@ -5,6 +5,7 @@ import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
+import { ensureLogin } from '../platform/PlatformSession';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 
@@ -33,6 +34,10 @@ export class LoginManager extends Component {
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
         MusicManager.playLogin();
+        // Log in as soon as the entry scene opens. On WeChat/Douyin this fetches a
+        // login code (to later exchange on a server); in the editor/web build it is a
+        // harmless mock. Fire-and-forget: the result is cached in PlatformSession.
+        void ensureLogin();
     }
 
     onDestroy() {
