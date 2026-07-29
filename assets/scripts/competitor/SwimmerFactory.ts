@@ -2,6 +2,7 @@ import { Color, Layers, Node } from 'cc';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 import { defaultSwimmerColorVariant, defaultSwimmerModelVariant, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
+import { randomInt } from '../core/SharedRNG';
 import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from '../app/PlayerCharacterConfig';
 
 export type CreateSwimmerOptions = {
@@ -63,12 +64,14 @@ export class SwimmerFactory {
     }
 }
 
-function randomAiModelVariantId(): string {
+// Pick a random production (non-debug) model for an AI opponent. Exported so a
+// race restart can re-roll each AI's model without going through the full factory.
+export function randomAiModelVariantId(): string {
     const availableVariants = SWIMMER_MODEL_VARIANTS.filter((variant) => !variant.debugOnly);
     if (availableVariants.length <= 0) {
         return defaultSwimmerModelVariant().id;
     }
-    const index = Math.min(availableVariants.length - 1, Math.floor(Math.random() * availableVariants.length));
+    const index = Math.min(availableVariants.length - 1, randomInt(availableVariants.length));
     return availableVariants[index].id;
 }
 

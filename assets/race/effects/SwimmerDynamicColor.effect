@@ -12,9 +12,8 @@ CCEffect %{
         capColor:    { value: [0.008, 0.184, 0.807, 1], linear: true, editor: { type: color } }
         # RGB = target skin tone; alpha = whether the blue color-mask channel applies it.
         skinColor:   { value: [1, 1, 1, 0], linear: true, editor: { type: color } }
-        # x = 0: RGB mask recolour, x = 1: recolour neutral white pixels in
-        # mainTexture. The white-key path lets clean white garments share one
-        # colour without a UV-derived mask.
+        # x = 0: RGB mask recolour, x = 1: recolour neutral-white equipment,
+        # including the slightly darker fold texels authored into the source.
         recolorParams: { value: [0, 0, 0, 0] }
         # x = water surface world Y, y = tint fade depth (small = crisp edge).
         # z/w unused.
@@ -74,8 +73,8 @@ CCProgram swimmer-color-fs %{
     vec3 mask = clamp(texture(colorMask, v_uv).rgb, 0.0, 1.0);
     float whiteMin = min(baseSample.r, min(baseSample.g, baseSample.b));
     float whiteMax = max(baseSample.r, max(baseSample.g, baseSample.b));
-    float whiteNeutral = 1.0 - smoothstep(0.08, 0.24, whiteMax - whiteMin);
-    float whiteKey = smoothstep(0.70, 0.91, whiteMin) * whiteNeutral;
+    float whiteNeutral = 1.0 - smoothstep(0.08, 0.32, whiteMax - whiteMin);
+    float whiteKey = smoothstep(0.52, 0.82, whiteMin) * whiteNeutral;
     float whiteKeyMode = step(0.5, recolorParams.x);
     float suitMask = mix(mask.r, whiteKey, whiteKeyMode);
     float capMask = mix(mask.g, 0.0, whiteKeyMode);
@@ -91,8 +90,8 @@ CCProgram swimmer-color-fs %{
     // Do not multiply by garmentMask a second time: that squared fractional
     // UV-edge coverage and exposed the dark source atlas between triangles.
     float garmentOverride = smoothstep(
-        0.04,
-        0.40,
+        0.015,
+        0.12,
         max(suitMask * suitColor.a, capMask * capColor.a)
     );
     vec3 bodyColor = mix(base, garment, garmentOverride);

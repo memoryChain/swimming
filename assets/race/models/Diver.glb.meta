@@ -1,0 +1,162 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "de987234-da52-47b1-9255-f0796186d3dc",
+  "files": [],
+  "subMetas": {
+    "69271": {
+      "importer": "gltf-embeded-image",
+      "uuid": "de987234-da52-47b1-9255-f0796186d3dc@69271",
+      "displayName": "",
+      "id": "69271",
+      "name": "diver_3d_model_basecolor.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture"
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "1496f": {
+      "importer": "gltf-mesh",
+      "uuid": "de987234-da52-47b1-9255-f0796186d3dc@1496f",
+      "displayName": "",
+      "id": "1496f",
+      "name": "tripo_mesh_2c38573d-7559-4893-aa9f-3be4e9399222.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 3082
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "de987234-da52-47b1-9255-f0796186d3dc@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "de987234-da52-47b1-9255-f0796186d3dc@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "de987234-da52-47b1-9255-f0796186d3dc@69271"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "197ba": {
+      "importer": "gltf-material",
+      "uuid": "de987234-da52-47b1-9255-f0796186d3dc@197ba",
+      "displayName": "",
+      "id": "197ba",
+      "name": "tripo_mat_2c38573d-7559-4893-aa9f-3be4e9399222.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8f203": {
+      "importer": "gltf-scene",
+      "uuid": "de987234-da52-47b1-9255-f0796186d3dc@8f203",
+      "displayName": "",
+      "id": "8f203",
+      "name": "Diver.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "diver_3d_model_basecolor",
+        "uri": "de987234-da52-47b1-9255-f0796186d3dc@69271"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "de987234-da52-47b1-9255-f0796186d3dc@1496f"
+      ],
+      "skeletons": [
+        "de987234-da52-47b1-9255-f0796186d3dc@f9d1d"
+      ],
+      "textures": [
+        "de987234-da52-47b1-9255-f0796186d3dc@e39f7"
+      ],
+      "materials": [
+        "de987234-da52-47b1-9255-f0796186d3dc@197ba"
+      ],
+      "scenes": [
+        "de987234-da52-47b1-9255-f0796186d3dc@8f203"
+      ]
+    }
+  }
+}

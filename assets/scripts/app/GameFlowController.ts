@@ -4,6 +4,7 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
 import { STEERING_TUNING } from '../core/SteeringTuning';
+import { randomFloat } from '../core/SharedRNG';
 import { GameState, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { resolveDiveResult } from '../core/DiveResolver';
@@ -497,12 +498,12 @@ export class GameFlowController {
 
     private aiDiveReactionDelay(controller: AISwimmerController | null): number {
         const baseReaction = controller?.diveReaction ?? DIVE_BALANCE.defaultAiReactionSeconds;
-        return Math.max(0.03, baseReaction + Math.random() * DIVE_BALANCE.aiReactionRandomSeconds);
+        return Math.max(0.03, baseReaction + randomFloat() * DIVE_BALANCE.aiReactionRandomSeconds);
     }
 
     private aiDivePower(swimmer: Swimmer, controller: AISwimmerController | null): number {
         const basePower = controller?.divePower ?? DIVE_BALANCE.defaultAiPower;
-        const variance = (Math.random() * 2 - 1) * DIVE_BALANCE.aiPowerVariance;
+        const variance = (randomFloat() * 2 - 1) * DIVE_BALANCE.aiPowerVariance;
         return Math.max(DIVE_BALANCE.aiPowerMin, Math.min(DIVE_BALANCE.aiPowerMax, basePower + variance));
     }
 

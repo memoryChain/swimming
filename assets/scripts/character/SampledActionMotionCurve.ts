@@ -52,6 +52,13 @@ export type SampledActionMotionSample = {
     phase: number;
     hipTranslation: readonly [number, number, number];
     rotations: Readonly<Partial<Record<SampledActionBoneName, readonly [number, number, number, number]>>>;
+    // Shared choreography metadata: bit 0 plants the left foot and bit 1
+    // plants the right foot. Runtime solves that intent against each
+    // canonicalized character's actual leg proportions.
+    groundedFeet?: number;
+    // Left/right support target relative to this character's own rest contact
+    // plane. Shared actions currently use zero for planted feet.
+    footContactHeights?: readonly [number, number];
 };
 
 export type SampledActionMotion = {

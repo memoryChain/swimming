@@ -22,3 +22,29 @@ export function setAiDebugDifficulty(difficulty: number) {
 export function getAiDebugDifficulty(): number {
     return pendingAiDebugDifficulty;
 }
+
+// Room mode: the next race was launched from the online room. GameManager reads it
+// to show only an "exit" action (no replay) on the finish screen.
+let pendingRoomMode = false;
+// Set when a room-mode race exits back to Login, so LoginManager re-opens the room.
+let pendingReturnToRoom = false;
+
+export function setRoomMode(value: boolean) {
+    pendingRoomMode = value;
+}
+
+export function consumeRoomMode(): boolean {
+    const value = pendingRoomMode;
+    pendingRoomMode = false;
+    return value;
+}
+
+export function setReturnToRoom(value: boolean) {
+    pendingReturnToRoom = value;
+}
+
+export function consumeReturnToRoom(): boolean {
+    const value = pendingReturnToRoom;
+    pendingReturnToRoom = false;
+    return value;
+}

@@ -1,5 +1,6 @@
 ﻿import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
+import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
 
 const { ccclass, property } = _decorator;
@@ -602,7 +603,7 @@ export class UIController extends Component {
     private updateLeaderboard(rows: RaceLeaderboardRow[] | undefined, playerTime: number) {
         const leaderboard = rows && rows.length > 0
             ? rows
-            : playerTime > 0 ? [{ name: '你', placement: 1, time: playerTime, isPlayer: true }] : [];
+            : playerTime > 0 ? [{ name: PlayerData.nickName, placement: 1, time: playerTime, isPlayer: true }] : [];
         for (let i = 0; i < this.resultRows.length; i++) {
             const nameLabel = this.resultRows[i];
             const rankLabel = this.resultRankLabels[i];
@@ -622,7 +623,7 @@ export class UIController extends Component {
                 }
                 continue;
             }
-            const displayName = row.isPlayer ? '你' : fitName(row.name);
+            const displayName = row.isPlayer ? fitName(row.name || PlayerData.nickName) : fitName(row.name);
             const finished = row.time > 0;
             const averageSpeed = finished ? getRaceDistance() / row.time : 0;
             const color = row.isPlayer ? new Color(255, 214, 44, 255) : new Color(218, 230, 246, 255);

@@ -7,6 +7,7 @@ import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
+    onRoom: () => void;
     onModelDebug: () => void;
     onAiDebug: () => void;
 };
@@ -562,6 +563,10 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     if (startLabel) startLabel.string = '准备比赛';
     startButton.on(Node.EventType.TOUCH_END, callbacks.onStart);
 
+    // Online room entry, sitting next to the start button.
+    const roomButton = makeButton('RoomButton', startScreen, 260, 64, uiColor(38, 150, 96, 235), '联机房间');
+    roomButton.on(Node.EventType.TOUCH_END, callbacks.onRoom);
+
     const modelDebug = requireNode(startScreen, 'ModelDebugButton');
     modelDebug.active = EDITOR;
     modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
@@ -578,7 +583,7 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     applyResponsiveStartMenu(
         startScreen,
         [],
-        [startButton, modelDebug, aiDebug],
+        [startButton, roomButton, modelDebug, aiDebug],
     );
 }
 

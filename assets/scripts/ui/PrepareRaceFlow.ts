@@ -11,6 +11,7 @@ import {
     PLAYER_CHARACTER_DEFINITIONS,
     PLAYER_CHARACTER_SLOT_COUNT,
     selectPlayerCharacter,
+    selectedPlayerCharacterSupportsSkinTone,
     selectedPlayerColorScheme,
     selectedPlayerSkinTone,
     setSelectedRaceDifficulty,
@@ -19,6 +20,7 @@ import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview'
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
 
 export type PrepareRaceFlowCallbacks = {
     onBack: () => void;
@@ -112,11 +114,8 @@ export class PrepareRaceFlow {
 
     private buildCharacterSelect(parent: Node) {
         makeLabel('PrepareRaceTitle', parent, '准备比赛', 42, WHITE).setPosition(0, this._height / 2 - 52, 2);
-        const back = makeButton('PrepareRaceBackButton', parent, 112, 42, PANEL_ALT, '返回');
-        // Reserve a real top-left safe area for navigation. The roster begins
-        // below this band, so these two interactive regions never overlap.
-        back.setPosition(-this._width / 2 + 92, this._height / 2 - 42, 2);
-        back.on(Button.EventType.CLICK, () => this._callbacks.onBack());
+        // Back navigation lives in the unified resource headbar (top-left) now, so
+        // this screen no longer draws its own back button.
         this.buildRealtimeCharacterShadow(parent);
         this.buildRoster(parent);
         this.buildCharacterControls(parent);
@@ -145,7 +144,7 @@ export class PrepareRaceFlow {
         // RenderTexture contains a top-down black silhouette of the live
         // skinned model.  Compressing it vertically makes it read as the
         // overhead locker-room light's floor shadow, while keeping the exact
-        // current pose (including the arm-stretching action).
+        // current pose (including the randomly selected showcase action).
         // A soft contact shadow guarantees a visible grounding cue under the
         // overhead changing-room light. The RenderTexture silhouette below is
         // layered over it when the target platform supports that capture.
@@ -246,14 +245,25 @@ export class PrepareRaceFlow {
     private buildCharacterControls(parent: Node) {
         const skin = selectedPlayerSkinTone();
         const palette = selectedPlayerColorScheme();
-        const skinButton = makeButton('SkinToneButton', parent, 170, 50, PANEL_ALT, `肤色：${skin.label}`);
+        const supportsSkinTone = selectedPlayerCharacterSupportsSkinTone();
+        const skinButton = makeButton(
+            'SkinToneButton',
+            parent,
+            170,
+            50,
+            supportsSkinTone ? PANEL_ALT : MUTED,
+            supportsSkinTone ? `肤色：${skin.label}` : '肤色：固定',
+        );
         skinButton.setPosition(-208, this._height / 2 - 140, 2);
         this._skinToneButtonLabel = skinButton.getChildByName('Label')?.getComponent(Label) ?? null;
-        skinButton.on(Button.EventType.CLICK, () => {
-            cyclePlayerSkinTone();
-            this.refreshAppearanceControls();
-            this._preview?.applyAppearance();
-        });
+        skinButton.getComponent(Button)!.interactable = supportsSkinTone;
+        if (supportsSkinTone) {
+            skinButton.on(Button.EventType.CLICK, () => {
+                cyclePlayerSkinTone();
+                this.refreshAppearanceControls();
+                this._preview?.applyAppearance();
+            });
+        }
         const colorButton = makeButton('PaletteButton', parent, 170, 50, PANEL_ALT, `配色：${palette.label}`);
         colorButton.setPosition(-208, this._height / 2 - 202, 2);
         this._paletteButtonLabel = colorButton.getChildByName('Label')?.getComponent(Label) ?? null;
@@ -268,7 +278,9 @@ export class PrepareRaceFlow {
         const skin = selectedPlayerSkinTone();
         const palette = selectedPlayerColorScheme();
         if (this._skinToneButtonLabel?.isValid) {
-            this._skinToneButtonLabel.string = `肤色：${skin.label}`;
+            this._skinToneButtonLabel.string = selectedPlayerCharacterSupportsSkinTone()
+                ? `肤色：${skin.label}`
+                : '肤色：固定';
         }
         if (this._paletteButtonLabel?.isValid) {
             this._paletteButtonLabel.string = `配色：${palette.label}`;
@@ -279,11 +291,14 @@ export class PrepareRaceFlow {
         const character = findPlayerCharacter();
         if (!character) return;
         const panelWidth = 330;
-        // Shorten this panel to leave a dedicated lower-right button area,
-        // while shifting it upward keeps its title aligned with the roster.
+        // Shorten this panel to leave a dedicated lower-right button area.
         const panelHeight = this._height - 220;
         const panel = makeRect('CharacterDetailPanel', parent, panelWidth, panelHeight, PANEL);
-        panel.setPosition(this._width / 2 - panelWidth / 2 - 32, 51, 2);
+        // Keep the panel's top at or below the headbar's reserved band (top-right
+        // resource pill) so it is never hidden behind it. Shift the whole panel down
+        // by placing its top at the safe line; height is preserved.
+        const detailTopY = this._height / 2 - HEADBAR_TOP_SAFE_AREA;
+        panel.setPosition(this._width / 2 - panelWidth / 2 - 32, detailTopY - panelHeight / 2, 2);
         makeLabel('CharacterName', panel, character.name, 32, WHITE).setPosition(0, panelHeight / 2 - 42, 1);
         // Progression: show current level and XP progress for this character.
         const progression = getProgressionManager();

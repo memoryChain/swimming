@@ -4,7 +4,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
 
 const SWIMMER_TEXTURE_SIZE = 128;
-const OUTLINE_SHELL_WIDTH = 18;
+const OUTLINE_SHELL_WIDTH = 10;
 
 export type CharacterSkinOutfit = 'default' | 'trunksA';
 
@@ -291,6 +291,10 @@ function configureOutlineShells(options: CharacterSkinOptions) {
                 outline.mesh = source.mesh;
                 outline.skeleton = source.skeleton;
                 outline.skinningRoot = source.skinningRoot || model;
+                // Match the source renderer's load-time visibility. Character
+                // switching keeps newly instantiated skins hidden until their
+                // first posed joint matrices have reached the renderer.
+                outline.enabled = source.enabled;
                 outline.setUseBakedAnimation(false, true);
                 outline.uploadAnimation(null);
                 setAllRendererMaterialSlots(source, outline, material);
@@ -353,7 +357,7 @@ function loadOutlineShellMaterial(lineWidth: number, done: (material: Material |
         material.initialize({ effectAsset: effect });
         material.name = 'CharacterInvertedHullOutline';
         material.setProperty('lineWidth', lineWidth);
-        material.setProperty('depthBias', 0.08);
+        material.setProperty('depthBias', 0.02);
         material.setProperty('baseColor', new Color(3, 5, 8, 255));
         done(material);
     };

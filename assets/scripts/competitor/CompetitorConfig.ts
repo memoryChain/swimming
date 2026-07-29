@@ -1,3 +1,5 @@
+import { shuffleInPlace } from '../core/SharedRNG';
+
 export type AICompetitorProfile = {
     // Single competitiveness axis (0..1). Drives BOTH the release-timing accuracy
     // (how reliably the AI hits the sweet zone) and the stroke cadence (how tight
@@ -142,32 +144,78 @@ export const AI_STRATEGY_TUNING = {
     maxModifier: 0.2,
 };
 
-export const AI_COMPETITOR_NAMES = [
-    '王铁柱',
-    '刘二狗',
-    '张翠花',
-    '赵大壮',
-    '孙富贵',
-    '李来福',
-    '牛建国',
-    '马根生',
-    '托尼老师',
-    '凯文公子',
-    '杰克马',
-    '露西姐',
-    '安吉拉铁蛋',
-    '欧阳霸总',
-    '慕容翠花',
-    '亚历山大强',
+// AI opponents are named by DIFFICULTY TIER so every lane carries a memorable,
+// readable identity instead of interchangeable random noise: the weak lanes get
+// self-deprecating "here to splash around" names, the mid lanes get solid ordinary
+// Chinese names, and the top lanes get names that already sound like a swimming ace.
+// Players remember "浪里白条 was the fast one" — the name itself hints at the threat.
+export type AiNameTier = {
+    // Inclusive upper bound on base profile difficulty for this tier.
+    maxDifficulty: number;
+    names: string[];
+};
+
+export const AI_NAME_TIERS: AiNameTier[] = [
+    // 弱（菜鸟）：名字自带喜感，一看就是来划水的。
+    {
+        maxDifficulty: 0.6,
+        names: ['王划水', '李扑通', '张狗刨', '赵慢半拍', '孙漏气', '刘二饼', '周浮板', '吴呛水'],
+    },
+    // 中坚（普通）：踏实、常见的中国名字。
+    {
+        maxDifficulty: 0.78,
+        names: ['张建军', '李国强', '王志刚', '赵永胜', '陈海涛', '刘大江', '周奋进', '孙拼搏'],
+    },
+    // 高手 / 大师：名字自带高手气场。
+    {
+        maxDifficulty: Number.POSITIVE_INFINITY,
+        names: ['浪里白条', '陈飞鱼', '水中蛟龙', '赵劈波', '何逐浪', '江疾风', '龙教头', '海霸王'],
+    },
 ];
 
-export function shuffledAiCompetitorNames(): string[] {
-    const names = AI_COMPETITOR_NAMES.slice();
-    for (let i = names.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const temp = names[i];
-        names[i] = names[j];
-        names[j] = temp;
+function aiNameTierIndex(difficulty: number): number {
+    for (let i = 0; i < AI_NAME_TIERS.length; i++) {
+        if (difficulty <= AI_NAME_TIERS[i].maxDifficulty) {
+            return i;
+        }
     }
-    return names;
+    return AI_NAME_TIERS.length - 1;
+}
+
+// Pick a name for each difficulty, preferring the matching tier so the name hints
+// at the opponent's skill. Names never repeat within one roster: if a tier runs
+// out we spill over to the nearest remaining tier.
+export function assignAiNames(difficulties: number[]): string[] {
+    const pools = AI_NAME_TIERS.map((tier) => shuffleInPlace(tier.names.slice()));
+    return difficulties.map((difficulty) => {
+        const preferred = aiNameTierIndex(difficulty);
+        for (let distance = 0; distance < pools.length; distance++) {
+            for (const index of [preferred - distance, preferred + distance]) {
+                if (index >= 0 && index < pools.length && pools[index].length > 0) {
+                    return pools[index].pop() as string;
+                }
+            }
+        }
+        return 'AI';
+    });
+}
+
+export type AiRosterEntry = {
+    profile: AICompetitorProfile;
+    name: string;
+};
+
+// Build a freshly randomized roster of `count` AI opponents: the difficulty
+// profiles are shuffled (so the exact lineup and its lane order differ every race)
+// and each opponent gets a difficulty-appropriate name. Called both at race build
+// time and when the player taps "再来一次", so every restart reshuffles opponents
+// and their lane positions.
+export function buildRandomizedAiRoster(count: number): AiRosterEntry[] {
+    const profiles = shuffleInPlace(DEFAULT_AI_PROFILES.slice());
+    const chosen: AICompetitorProfile[] = [];
+    for (let i = 0; i < count; i++) {
+        chosen.push(profiles[i % profiles.length]);
+    }
+    const names = assignAiNames(chosen.map((profile) => profile.difficulty));
+    return chosen.map((profile, i) => ({ profile, name: names[i] }));
 }

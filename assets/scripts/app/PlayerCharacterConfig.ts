@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'women2';
+export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -14,6 +14,7 @@ export type PlayerCharacterDefinition = {
     skillName: string;
     skillDescription: string;
     robotStyle?: boolean;
+    supportsSkinTone?: boolean;
 };
 
 export type PlayerSkinTone = {
@@ -30,22 +31,36 @@ export type PlayerColorScheme = {
     cap: readonly [number, number, number];
 };
 
-export const PLAYER_CHARACTER_SLOT_COUNT = 2;
+// Keep an even slot count: the roster lays characters out in two columns.
+export const PLAYER_CHARACTER_SLOT_COUNT = 4;
 
 // Add a definition here to introduce a selectable character. Both the roster
 // and the formal-race hand-off use this catalog directly.
 export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] = [
     {
-        id: 'muscleMan', name: '肌肉猛男', modelVariantId: 'muscleMan', unlocked: true,
+        id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
         stamina: 88, technique: 70, burst: 82,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
     {
-        id: 'women2', name: '浪花飞鱼', modelVariantId: 'women2', unlocked: true,
+        id: 'women2', name: '灵波飞鱼', modelVariantId: 'women2', unlocked: true,
         stamina: 82, technique: 91, burst: 76,
         description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
         skillName: '水感节奏', skillDescription: '精准把握节奏时，更容易维持稳定的连续推进。',
+    },
+    {
+        id: 'lowPolyHuman2', name: '破浪新星', modelVariantId: 'lowPolyHuman2', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        description: '均衡型游泳选手，动作灵活，能稳定应对不同比赛节奏。',
+        skillName: '流线节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+    },
+    {
+        id: 'diver', name: '深海潜将', modelVariantId: 'diver', unlocked: true,
+        stamina: 92, technique: 78, burst: 74,
+        description: '装备齐全的潜水选手，身体稳定，擅长保持持续而扎实的推进。',
+        skillName: '深潜耐力', skillDescription: '厚重装备带来更强的稳定性与持续输出。',
+        supportsSkinTone: false,
     },
 ];
 
@@ -56,7 +71,7 @@ export const PLAYER_SKIN_TONES: readonly PlayerSkinTone[] = [
 ];
 
 export const PLAYER_COLOR_SCHEMES: readonly PlayerColorScheme[] = [
-    // The T-pose MuscleMan uses one shared white-key channel for cap and trunks,
+    // Canonical swimmers use one white-key channel for their white equipment,
     // so every named scheme keeps its visible identity in `suit`.
     { id: 'red', label: '红', suit: [240, 68, 58], cap: [22, 119, 232] },
     { id: 'blue', label: '蓝', suit: [23, 109, 218], cap: [245, 238, 220] },
@@ -85,6 +100,7 @@ export function selectPlayerCharacter(id: PlayerCharacterId) {
 }
 
 export function cyclePlayerSkinTone() {
+    if (!selectedPlayerCharacterSupportsSkinTone()) return;
     const index = PLAYER_SKIN_TONES.findIndex((tone) => tone.id === selection.skinToneId);
     selection = { ...selection, skinToneId: PLAYER_SKIN_TONES[(Math.max(0, index) + 1) % PLAYER_SKIN_TONES.length].id };
 }
@@ -100,7 +116,12 @@ export function findPlayerCharacter(id = selection.characterId): PlayerCharacter
 }
 
 export function selectedPlayerSkinTone(): PlayerSkinTone {
+    if (!selectedPlayerCharacterSupportsSkinTone()) return PLAYER_SKIN_TONES[0];
     return PLAYER_SKIN_TONES.find((tone) => tone.id === selection.skinToneId) ?? PLAYER_SKIN_TONES[0];
+}
+
+export function selectedPlayerCharacterSupportsSkinTone(): boolean {
+    return findPlayerCharacter()?.supportsSkinTone !== false;
 }
 
 export function selectedPlayerColorScheme(): PlayerColorScheme {

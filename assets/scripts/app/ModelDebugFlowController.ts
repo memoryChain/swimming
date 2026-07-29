@@ -24,7 +24,6 @@ const DEBUG_ACTION_GROUP_CENTER_X = 12;
 const DEBUG_WATER_LENGTH = 8.8;
 const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, (DEBUG_SWIMMER_ACTION_PREVIEWS.length - 1) * DEBUG_ACTION_SPACING + 2.4);
 const DEBUG_WATER_HALF_WIDTH = DEBUG_WATER_WIDTH * 0.5;
-const DEBUG_STANDING_WATER_CLEARANCE = 0.03;
 const DEFAULT_MODEL_DEBUG_SPEED_SCALE = 1;
 
 export type ModelDebugFlowRefs = {
@@ -572,7 +571,7 @@ export class ModelDebugFlowController {
             preview.rig.setWaterY(waterY);
             preview.rig.setModelDebugMode(true);
             const previewY = config.pose === 'sampledAction'
-                ? Math.max(baseY, waterY + DEBUG_STANDING_WATER_CLEARANCE)
+                ? Math.max(baseY, waterY)
                 : baseY;
             preview.node.setPosition(this.debugActionPreviewX(), previewY, this.debugActionLaneZ(actionIndex));
             preview.node.setRotationFromEuler(0, 0, 0);

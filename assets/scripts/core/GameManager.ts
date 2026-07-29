@@ -49,7 +49,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, getAiDebugDifficulty } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
@@ -61,6 +61,7 @@ import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
+import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta } from './TimeScale';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
@@ -116,6 +117,9 @@ export class GameManager extends Component {
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
     private _isReturningToLogin = false;
+    // True when this race was launched from the online room (finish screen shows only
+    // an exit action, which returns to the room).
+    private _roomMode = false;
     // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
@@ -526,7 +530,42 @@ export class GameManager extends Component {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this.applyPlayerProgression();
+        this.randomizeAiRosterForRestart();
         this._gameFlow?.restartGame();
+    }
+
+    // Re-roll the AI lineup before each replay so tapping "再来一次" faces a freshly
+    // shuffled set of opponents (names + difficulty) in new lane positions. Skipped
+    // for the 100m AI-debug 1v1, where the opponent is intentionally fixed.
+    private randomizeAiRosterForRestart() {
+        if (this._aiDebugMode || this._modelDebugFlow?.active) {
+            return;
+        }
+        if (this._aiSwimmers.length === 0 || this._aiControllers.length === 0) {
+            return;
+        }
+        this.createCompetitorManager().reassignAiRoster(this._aiSwimmers, this._aiControllers);
+        this.refreshPreRaceIntroRoster();
+        this.refreshSwimmerNameRoster();
+        this.refreshAiDifficultyPanel();
+        this.debug('restart AI roster reshuffled');
+    }
+
+    // In room mode the finish screen offers only "exit" (back to the room), never a
+    // replay. Hide the restart button and relabel the menu button accordingly.
+    private applyRoomModeHud(raceHud: Node) {
+        if (!this._roomMode || !raceHud?.isValid) {
+            return;
+        }
+        const restart = findByName(raceHud, 'RestartButton');
+        if (restart) {
+            restart.active = false;
+        }
+        const menu = findByName(raceHud, 'MenuButton');
+        const menuLabel = menu?.getChildByName('Label')?.getComponent(Label);
+        if (menuLabel) {
+            menuLabel.string = '退出比赛';
+        }
     }
 
     private returnToLogin() {
@@ -534,6 +573,10 @@ export class GameManager extends Component {
             return;
         }
         this._isReturningToLogin = true;
+        // Room-mode races return to the online room, not the main menu.
+        if (this._roomMode) {
+            setReturnToRoom(true);
+        }
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.unbind();
         this._gameFlow?.stopAllAi();
@@ -544,6 +587,7 @@ export class GameManager extends Component {
     }
 
     private buildScene(done: (error?: unknown) => void) {
+        this._roomMode = consumeRoomMode();
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
@@ -964,7 +1008,7 @@ export class GameManager extends Component {
     }
 
     private assignRaceLanes() {
-        this._playerLaneIndex = Math.floor(Math.random() * LANE_LAYOUT.laneCount);
+        this._playerLaneIndex = randomInt(LANE_LAYOUT.laneCount);
         this._primaryAiLaneIndex = this._playerLaneIndex === PRIMARY_AI_LANE_INDEX
             ? (PRIMARY_AI_LANE_INDEX + 1) % LANE_LAYOUT.laneCount
             : PRIMARY_AI_LANE_INDEX;
@@ -1058,7 +1102,7 @@ export class GameManager extends Component {
             .sort((left, right) => left.node.position.z - right.node.position.z);
         const entries: PreRaceIntroEntry[] = swimmers.map((swimmer, index) => ({
             lane: index + 1,
-            name: swimmer === this._playerSwimmer ? '你' : swimmer.swimmerName,
+            name: swimmer.swimmerName,
             isPlayer: swimmer === this._playerSwimmer,
             avatar: avatarFrames[index] ?? null,
             rowBack: swimmer === this._playerSwimmer ? playerRowFrame : normalRowFrame,
@@ -1107,6 +1151,7 @@ export class GameManager extends Component {
             }
 
             this._raceHud = refs.raceHud;
+            this.applyRoomModeHud(this._raceHud);
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
             this._cameraSpeedLines.bind(this._raceHud);
@@ -1839,6 +1884,21 @@ export class GameManager extends Component {
     private debug(message: string) {
         this._debugLog.log(message);
     }
+}
+
+// Depth-first search for a descendant node by name (Node.getChildByName is direct
+// children only).
+function findByName(root: Node, name: string): Node | null {
+    if (root.name === name) {
+        return root;
+    }
+    for (const child of root.children) {
+        const found = findByName(child, name);
+        if (found) {
+            return found;
+        }
+    }
+    return null;
 }
 
 function color(r: number, g: number, b: number, a = 255): Color {

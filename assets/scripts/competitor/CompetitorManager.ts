@@ -1,13 +1,15 @@
-import { Node } from 'cc';
+import { Color, Node } from 'cc';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { defaultSwimmerColorVariant, SWIMMER_COLOR_VARIANTS } from '../core/ResourcePaths';
 import { getRaceDifficultyConfig } from '../core/GameBalance';
+import { shuffleInPlace } from '../core/SharedRNG';
+import { PlayerData } from '../backend/PlayerData';
 import { PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
-import { DEFAULT_AI_PROFILES, getAiPersonality, shuffledAiCompetitorNames } from './CompetitorConfig';
-import { SwimmerFactory } from './SwimmerFactory';
+import { AICompetitorProfile, buildRandomizedAiRoster, getAiPersonality } from './CompetitorConfig';
+import { randomAiModelVariantId, SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
     laneLayout: LaneLayout;
@@ -40,13 +42,14 @@ export class CompetitorManager {
 
     build(root: Node): CompetitorSet {
         const group = makeWorldNode('Swimmers3D', root);
-        const competitors = this.buildPlayerAndAi(group);
+        const playerSwimmer = this.createPlayer(group);
+        const ai = this.populateAiLanes(group);
 
         return {
-            playerSwimmer: competitors.playerSwimmer,
-            primaryAiController: competitors.primaryAiController,
-            aiControllers: competitors.aiControllers,
-            aiSwimmers: competitors.aiSwimmers,
+            playerSwimmer,
+            primaryAiController: ai.primaryAiController,
+            aiControllers: ai.aiControllers,
+            aiSwimmers: ai.aiSwimmers,
         };
     }
 
@@ -57,50 +60,79 @@ export class CompetitorManager {
     }
 
     buildAi(group: Node, options?: AiBuildOptions): Omit<CompetitorSet, 'playerSwimmer'> {
+        return this.populateAiLanes(group, options);
+    }
+
+    // Re-roll the roster onto already-spawned AI swimmers. Each lane is handed a
+    // fresh difficulty profile, matching name, and a re-randomized look (model +
+    // suit color + skin tone), so tapping "再来一次" reshuffles the opponents, their
+    // appearance, and their lane positions without rebuilding the scene.
+    reassignAiRoster(
+        aiSwimmers: Swimmer[],
+        aiControllers: AISwimmerController[],
+        difficultyOverride?: number,
+    ) {
+        const count = Math.min(aiSwimmers.length, aiControllers.length);
+        const roster = buildRandomizedAiRoster(count);
+        const colorVariantIds = shuffledAiColorVariantIds(defaultSwimmerColorVariant().id);
+        const skinColors = shuffledAiSkinColors();
+        for (let i = 0; i < count; i++) {
+            const entry = roster[i];
+            aiSwimmers[i].swimmerName = entry.name;
+            this.applyProfile(aiControllers[i], aiSwimmers[i], entry.profile, difficultyOverride);
+            this.reassignAppearance(
+                aiSwimmers[i],
+                colorVariantIds[i % colorVariantIds.length],
+                skinColors[i % skinColors.length],
+            );
+        }
+    }
+
+    private reassignAppearance(
+        swimmer: Swimmer,
+        colorVariantId: string,
+        skinColor: readonly [number, number, number],
+    ) {
+        const rig = swimmer.cartoonRig;
+        if (!rig) {
+            return;
+        }
+        rig.setModelVariant(randomAiModelVariantId());
+        rig.setColorVariant(colorVariantId);
+        rig.setColorOverride({ skin: new Color(skinColor[0], skinColor[1], skinColor[2]) });
+    }
+
+    private populateAiLanes(group: Node, options?: AiBuildOptions): Omit<CompetitorSet, 'playerSwimmer'> {
         const aiControllers: AISwimmerController[] = [];
         const aiSwimmers: Swimmer[] = [];
         let primaryAiController: AISwimmerController | null = null;
+        const aiLanes = this.aiLaneIndices(options?.soloLane);
+        const roster = buildRandomizedAiRoster(aiLanes.length);
         const playerColorVariantId = defaultSwimmerColorVariant().id;
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
         const aiSkinColors = shuffledAiSkinColors();
-        const aiNames = shuffledAiCompetitorNames();
-        let aiNameIndex = 0;
-        let aiColorIndex = 0;
-        let aiSkinIndex = 0;
 
-        for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
-            if (lane === this._options.playerLaneIndex) {
-                continue;
-            }
-            // Solo mode (100m AI debug): build only the one opponent lane.
-            if (options?.soloLane !== undefined && lane !== options.soloLane) {
-                continue;
-            }
+        aiLanes.forEach((lane, index) => {
+            const entry = roster[index];
             const swimmer = this._factory.create(group, {
                 name: `AISwimmerLane${lane + 1}`,
                 x: this._options.courseLayout.startX,
                 y: this._options.courseLayout.swimY,
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: true,
-                colorVariantId: aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
-                skinColor: aiSkinColors[aiSkinIndex++ % aiSkinColors.length],
-                displayName: aiNames[aiNameIndex++ % aiNames.length],
+                colorVariantId: aiColorVariantIds[index % aiColorVariantIds.length],
+                skinColor: aiSkinColors[index % aiSkinColors.length],
+                displayName: entry.name,
             });
             swimmer.configureCourse(this._options.courseLayout);
-            const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
             const controller = swimmer.node.addComponent(AISwimmerController);
-            controller.swimmer = swimmer;
-            controller.difficulty = options?.difficultyOverride ?? scaledRaceDifficulty(profile.difficulty);
-            controller.bpmOffset = profile.bpmOffset;
-            controller.divePower = profile.divePower;
-            controller.diveReaction = profile.diveReaction;
-            controller.personality = getAiPersonality(profile.personalityId);
+            this.applyProfile(controller, swimmer, entry.profile, options?.difficultyOverride);
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
             if (lane === this._options.primaryAiLaneIndex || options?.soloLane !== undefined) {
                 primaryAiController = controller;
             }
-        }
+        });
 
         return {
             primaryAiController,
@@ -109,55 +141,33 @@ export class CompetitorManager {
         };
     }
 
-    private buildPlayerAndAi(group: Node): CompetitorSet {
-        const aiControllers: AISwimmerController[] = [];
-        const aiSwimmers: Swimmer[] = [];
-        let primaryAiController: AISwimmerController | null = null;
-        const playerSwimmer = this.createPlayer(group);
-        const playerColorVariantId = defaultSwimmerColorVariant().id;
-        const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
-        const aiSkinColors = shuffledAiSkinColors();
-        const aiNames = shuffledAiCompetitorNames();
-        let aiNameIndex = 0;
-        let aiColorIndex = 0;
-        let aiSkinIndex = 0;
-
+    private aiLaneIndices(soloLane?: number): number[] {
+        const lanes: number[] = [];
         for (let lane = 0; lane < this._options.laneLayout.laneCount; lane++) {
             if (lane === this._options.playerLaneIndex) {
                 continue;
             }
-            const swimmer = this._factory.create(group, {
-                name: `AISwimmerLane${lane + 1}`,
-                x: this._options.courseLayout.startX,
-                y: this._options.courseLayout.swimY,
-                z: this._options.laneLayout.centerZ(lane),
-                isAI: true,
-                colorVariantId: aiColorVariantIds[aiColorIndex++ % aiColorVariantIds.length],
-                skinColor: aiSkinColors[aiSkinIndex++ % aiSkinColors.length],
-                displayName: aiNames[aiNameIndex++ % aiNames.length],
-            });
-            swimmer.configureCourse(this._options.courseLayout);
-            const profile = DEFAULT_AI_PROFILES[lane % DEFAULT_AI_PROFILES.length];
-            const controller = swimmer.node.addComponent(AISwimmerController);
-            controller.swimmer = swimmer;
-            controller.difficulty = scaledRaceDifficulty(profile.difficulty);
-            controller.bpmOffset = profile.bpmOffset;
-            controller.divePower = profile.divePower;
-            controller.diveReaction = profile.diveReaction;
-            controller.personality = getAiPersonality(profile.personalityId);
-            aiSwimmers.push(swimmer);
-            aiControllers.push(controller);
-            if (lane === this._options.primaryAiLaneIndex) {
-                primaryAiController = controller;
+            // Solo mode (100m AI debug): build only the one opponent lane.
+            if (soloLane !== undefined && lane !== soloLane) {
+                continue;
             }
+            lanes.push(lane);
         }
+        return lanes;
+    }
 
-        return {
-            playerSwimmer,
-            primaryAiController,
-            aiControllers,
-            aiSwimmers,
-        };
+    private applyProfile(
+        controller: AISwimmerController,
+        swimmer: Swimmer,
+        profile: AICompetitorProfile,
+        difficultyOverride?: number,
+    ) {
+        controller.swimmer = swimmer;
+        controller.difficulty = difficultyOverride ?? scaledRaceDifficulty(profile.difficulty);
+        controller.bpmOffset = profile.bpmOffset;
+        controller.divePower = profile.divePower;
+        controller.diveReaction = profile.diveReaction;
+        controller.personality = getAiPersonality(profile.personalityId);
     }
 
     private createPlayer(group: Node): Swimmer {
@@ -168,7 +178,7 @@ export class CompetitorManager {
             z: this._options.laneLayout.centerZ(this._options.playerLaneIndex),
             isAI: false,
             colorVariantId: defaultSwimmerColorVariant().id,
-            displayName: 'YOU',
+            displayName: PlayerData.nickName,
         });
         swimmer.configureCourse(this._options.courseLayout);
         return swimmer;
@@ -184,24 +194,12 @@ function shuffledAiColorVariantIds(playerVariantId: string): string[] {
     const ids = SWIMMER_COLOR_VARIANTS
         .map((variant) => variant.id)
         .filter((id) => id !== playerVariantId);
-    for (let i = ids.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const value = ids[i];
-        ids[i] = ids[j];
-        ids[j] = value;
-    }
-    return ids;
+    return shuffleInPlace(ids);
 }
 
 function shuffledAiSkinColors(): Array<readonly [number, number, number]> {
     const colors = PLAYER_SKIN_TONES.map((tone) => tone.color);
-    for (let i = colors.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const value = colors[i];
-        colors[i] = colors[j];
-        colors[j] = value;
-    }
-    return colors;
+    return shuffleInPlace(colors);
 }
 
 function makeWorldNode(name: string, parent: Node): Node {
