@@ -548,6 +548,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             // generically from the parent of the canonical `Root` bone instead.
             const rootBone = findNode(this._model, 'Root');
             this.root = findNode(this._model, 'Armature') || rootBone?.parent || this._model;
+            this._pose.setModelVariantId(variant.id);
             this._pose.bind(this.root);
             this._pose.setSwimHeadLift(this.swimHeadLiftDegrees());
             this.configureSkinnedRenderers();

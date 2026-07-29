@@ -1,14 +1,23 @@
 import { _decorator, Camera, Color, Component, DirectionalLight, Layers, Material, Node, RenderTexture, Vec3 } from 'cc';
-import { CharacterAction } from '../character/CharacterActionConfig';
+import {
+    CharacterAction,
+    sampledActionIdFor,
+    selectActionFromPool,
+} from '../character/CharacterActionConfig';
 import { loadSampledAction } from '../character/SampledActionLoader';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from './PlayerCharacterConfig';
 
 const { ccclass } = _decorator;
-const PREVIEW_CHARACTER_SCALE = 1.15;
+const PREVIEW_CHARACTER_SCALE = 1.3;
 const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
 const SHADOW_SILHOUETTE_LAYER = 1 << 22;
 const SHADOW_TEXTURE_SIZE = 192;
+const CHARACTER_SELECT_ACTIONS: readonly CharacterAction[] = [
+    CharacterAction.ArmStretching,
+    CharacterAction.Happy,
+    CharacterAction.WavingGesture,
+];
 
 // Lightweight 3D showcase rendered over the 2D prepare-race UI. It deliberately
 // uses the production rig/model loader so a choice made here has the same visual
@@ -27,6 +36,8 @@ export class PrepareRaceCharacterPreview extends Component {
     private _yawDegrees = 0;
     private _centered = false;
     private _showcaseActionLoadToken = 0;
+    private _selectedCharacterId = '';
+    private _showcaseAction = CharacterAction.ArmStretching;
     private readonly _modelPivot = new Vec3();
     private readonly _groundShadowPosition = new Vec3();
 
@@ -42,6 +53,11 @@ export class PrepareRaceCharacterPreview extends Component {
     refresh() {
         const character = findPlayerCharacter();
         if (!character) return;
+        if (character.id !== this._selectedCharacterId) {
+            this._selectedCharacterId = character.id;
+            this._showcaseAction = selectActionFromPool(CHARACTER_SELECT_ACTIONS)
+                ?? CharacterAction.ArmStretching;
+        }
         this._shadowSilhouetteProxy?.destroy();
         this._shadowSilhouetteProxy = null;
         this._pivotNode?.destroy();
@@ -80,7 +96,7 @@ export class PrepareRaceCharacterPreview extends Component {
         this.applyAppearance();
         this.ensureShadowCapture();
         this._centered = false;
-        this.loadShowcaseAction(rig);
+        this.loadShowcaseAction(rig, this._showcaseAction);
     }
 
     rotateBy(deltaDegrees: number) {
@@ -215,11 +231,15 @@ export class PrepareRaceCharacterPreview extends Component {
         }
     }
 
-    private loadShowcaseAction(rig: CartoonSwimmerRig) {
+    private loadShowcaseAction(rig: CartoonSwimmerRig, action: CharacterAction) {
         const token = ++this._showcaseActionLoadToken;
-        loadSampledAction('arm_stretching', (error) => {
+        const actionId = sampledActionIdFor(action);
+        // Store the requested id on the rig immediately so model-specific action
+        // overrides that finish first can activate the same randomly chosen pose.
+        rig.setShowcaseAction(action);
+        loadSampledAction(actionId, (error) => {
             if (error) {
-                console.warn('[SpeedSwimming] prepare-race arm stretching action failed to load', error);
+                console.warn(`[SpeedSwimming] prepare-race showcase action failed to load action=${actionId}`, error);
                 return;
             }
             // Character switching can replace the rig while the race bundle is
@@ -227,7 +247,7 @@ export class PrepareRaceCharacterPreview extends Component {
             if (token !== this._showcaseActionLoadToken || this._rig !== rig || !rig.node?.isValid) {
                 return;
             }
-            rig.setShowcaseAction(CharacterAction.ArmStretching);
+            rig.setShowcaseAction(action);
             rig.setShowcaseStanding();
         });
     }

@@ -25,6 +25,24 @@ const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new S
     'R_Foot',
     'R_ToeBase',
 ]);
+// Hand thickness differs enough between the four shared-rig meshes that one
+// wrist distance either leaves a visible gap or drives the left hand through
+// the right. These ratios were measured from the deformed palm surfaces in
+// Blender; they leave a small positive contact clearance on every clap.
+const CLAP_WRIST_SEPARATION_ARM_RATIOS: Readonly<Record<string, number>> = {
+    muscleMan: 0.35,
+    women2: 0.215,
+    lowPolyHuman2: 0.29,
+    diver: 0.33,
+};
+// Diver's longer upper arms and shorter forearm share produce a much smaller
+// wrist arc from the same local rotations. Expand only its open clap phase to
+// match the visible range of the other characters.
+const CLAP_OPEN_WRIST_SEPARATION_ARM_RATIOS: Readonly<Record<string, number>> = {
+    diver: 0.66,
+};
+const CLAP_CONTACT_PHASES: readonly number[] = [0, 0.228571, 0.485714, 0.771429, 1];
+const CLAP_CONTACT_PHASE_HALF_WIDTH = 0.15;
 const BONE_ALIASES: Record<string, string[]> = {
     Hips: ['Hip', 'Pelvis'],
     Spine: ['Waist', 'Spine01'],
@@ -116,10 +134,16 @@ export class FreestylePoseController {
     private readonly _tmpGroundFootRotation = new Quat();
     private readonly _tmpGroundToeRotation = new Quat();
     private readonly _tmpGroundBoneRotation = new Quat();
+    private readonly _tmpClapCenter = new Vec3();
+    private readonly _tmpClapAxis = new Vec3();
+    private readonly _tmpClapLeftTarget = new Vec3();
+    private readonly _tmpClapRightTarget = new Vec3();
+    private readonly _tmpClapHandRotation = new Quat();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
     private _sampledActionRestLeftContactOffsetY = 0;
     private _sampledActionRestRightContactOffsetY = 0;
     private _sampledActionHipTranslationScale = 1;
+    private _modelVariantId = 'muscleMan';
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
     private _movementHeadingRadians = 0;
@@ -184,6 +208,10 @@ export class FreestylePoseController {
 
     setDivePrepPoseOverride(sample: DivePrepPoseSample | null) {
         this._divePrepPoseOverride = sample;
+    }
+
+    setModelVariantId(variantId: string) {
+        this._modelVariantId = variantId;
     }
 
     restoreBasePose() {
@@ -474,6 +502,9 @@ export class FreestylePoseController {
         const sample = sampleDebugActionMotion(action.samples, phase);
         this.applySampledActionTranslation(sample, power, action);
         this.applySampledActionRotations(sample, power, action);
+        if (actionId === 'clapping') {
+            this.applySampledClapContact(sample.phase, power);
+        }
         this.applySampledActionGrounding(sample, power);
     }
 
@@ -1234,6 +1265,196 @@ export class FreestylePoseController {
         // and toe orientation after correcting contact height.
         foot.setWorldRotation(this._tmpGroundFootRotation);
         toe?.setWorldRotation(this._tmpGroundToeRotation);
+    }
+
+    private applySampledClapContact(phase: number, power: number) {
+        if (!this._leftArm || !this._leftForeArm || !this._leftHand
+            || !this._rightArm || !this._rightForeArm || !this._rightHand) {
+            return;
+        }
+        let contactWeight = 0;
+        for (const contactPhase of CLAP_CONTACT_PHASES) {
+            const distance = Math.abs(phase - contactPhase);
+            if (distance >= CLAP_CONTACT_PHASE_HALF_WIDTH) {
+                continue;
+            }
+            contactWeight = Math.max(
+                contactWeight,
+                0.5 + 0.5 * Math.cos(
+                    Math.PI * distance / CLAP_CONTACT_PHASE_HALF_WIDTH,
+                ),
+            );
+        }
+        const actionPower = clamp(power, 0, 1);
+        const openSeparationRatio = (
+            CLAP_OPEN_WRIST_SEPARATION_ARM_RATIOS[this._modelVariantId]
+        );
+        const blend = (
+            openSeparationRatio === undefined
+                ? contactWeight * actionPower
+                : actionPower
+        );
+        if (blend <= 0) {
+            return;
+        }
+
+        this._leftHand.getWorldPosition(this._tmpGroundHip);
+        this._rightHand.getWorldPosition(this._tmpGroundKnee);
+        Vec3.add(this._tmpClapCenter, this._tmpGroundHip, this._tmpGroundKnee);
+        Vec3.multiplyScalar(this._tmpClapCenter, this._tmpClapCenter, 0.5);
+        Vec3.subtract(this._tmpClapAxis, this._tmpGroundHip, this._tmpGroundKnee);
+        const currentSeparation = this._tmpClapAxis.length();
+        if (currentSeparation <= 0.000001) {
+            return;
+        }
+        Vec3.multiplyScalar(this._tmpClapAxis, this._tmpClapAxis, 1 / currentSeparation);
+
+        const averageArmLength = (
+            this.sampledArmLength(this._leftArm, this._leftForeArm, this._leftHand)
+            + this.sampledArmLength(this._rightArm, this._rightForeArm, this._rightHand)
+        ) * 0.5;
+        if (averageArmLength <= 0.000001) {
+            return;
+        }
+        const separationRatio = (
+            CLAP_WRIST_SEPARATION_ARM_RATIOS[this._modelVariantId]
+            ?? CLAP_WRIST_SEPARATION_ARM_RATIOS.muscleMan
+        );
+        const targetSeparationRatio = (
+            openSeparationRatio === undefined
+                ? separationRatio
+                : lerp(openSeparationRatio, separationRatio, contactWeight)
+        );
+        const contactSeparation = averageArmLength * targetSeparationRatio;
+        // Standard rigs need correction only near impact. Diver instead follows
+        // an explicit contact-to-open wrist arc because its bone proportions
+        // compress the authored opening. Both paths can push intersecting hands
+        // apart instead of treating an already-small distance as valid.
+        const desiredSeparation = lerp(
+            currentSeparation,
+            contactSeparation,
+            blend,
+        );
+        Vec3.scaleAndAdd(
+            this._tmpClapLeftTarget,
+            this._tmpClapCenter,
+            this._tmpClapAxis,
+            desiredSeparation * 0.5,
+        );
+        Vec3.scaleAndAdd(
+            this._tmpClapRightTarget,
+            this._tmpClapCenter,
+            this._tmpClapAxis,
+            -desiredSeparation * 0.5,
+        );
+
+        this.solveSampledArmContact(
+            this._leftArm,
+            this._leftForeArm,
+            this._leftHand,
+            this._tmpClapLeftTarget,
+        );
+        this.solveSampledArmContact(
+            this._rightArm,
+            this._rightForeArm,
+            this._rightHand,
+            this._tmpClapRightTarget,
+        );
+    }
+
+    private sampledArmLength(upperArm: Node, foreArm: Node, hand: Node): number {
+        upperArm.getWorldPosition(this._tmpGroundHip);
+        foreArm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+        return (
+            Vec3.distance(this._tmpGroundHip, this._tmpGroundKnee)
+            + Vec3.distance(this._tmpGroundKnee, this._tmpGroundAnkle)
+        );
+    }
+
+    private solveSampledArmContact(
+        upperArm: Node,
+        foreArm: Node,
+        hand: Node,
+        target: Vec3,
+    ) {
+        hand.getWorldRotation(this._tmpClapHandRotation);
+        upperArm.getWorldPosition(this._tmpGroundHip);
+        foreArm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+
+        const firstLength = Vec3.distance(this._tmpGroundHip, this._tmpGroundKnee);
+        const secondLength = Vec3.distance(this._tmpGroundKnee, this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpGroundAxis, target, this._tmpGroundHip);
+        const targetDistance = this._tmpGroundAxis.length();
+        if (firstLength <= 0.000001 || secondLength <= 0.000001 || targetDistance <= 0.000001) {
+            return;
+        }
+        Vec3.multiplyScalar(this._tmpGroundAxis, this._tmpGroundAxis, 1 / targetDistance);
+        const reachableDistance = Math.min(
+            firstLength + secondLength - 0.000001,
+            Math.max(Math.abs(firstLength - secondLength) + 0.000001, targetDistance),
+        );
+
+        // Preserve the sampled elbow bend side so the IK cannot flip between
+        // adjacent clap frames.
+        Vec3.subtract(this._tmpGroundKneeOffset, this._tmpGroundKnee, this._tmpGroundHip);
+        const elbowAlongAxis = Vec3.dot(this._tmpGroundKneeOffset, this._tmpGroundAxis);
+        Vec3.scaleAndAdd(
+            this._tmpGroundKneeOffset,
+            this._tmpGroundKneeOffset,
+            this._tmpGroundAxis,
+            -elbowAlongAxis,
+        );
+        if (this._tmpGroundKneeOffset.lengthSqr() <= 0.00000001) {
+            if (Math.abs(this._tmpGroundAxis.x) < 0.9) {
+                this._tmpGroundKneeOffset.set(
+                    0,
+                    this._tmpGroundAxis.z,
+                    -this._tmpGroundAxis.y,
+                );
+            } else {
+                this._tmpGroundKneeOffset.set(
+                    this._tmpGroundAxis.y,
+                    -this._tmpGroundAxis.x,
+                    0,
+                );
+            }
+        }
+        Vec3.normalize(this._tmpGroundKneeOffset, this._tmpGroundKneeOffset);
+
+        const along = (
+            firstLength * firstLength
+            - secondLength * secondLength
+            + reachableDistance * reachableDistance
+        ) / (2 * reachableDistance);
+        const bendHeight = Math.sqrt(Math.max(0, firstLength * firstLength - along * along));
+        Vec3.scaleAndAdd(
+            this._tmpGroundDesiredKnee,
+            this._tmpGroundHip,
+            this._tmpGroundAxis,
+            along,
+        );
+        Vec3.scaleAndAdd(
+            this._tmpGroundDesiredKnee,
+            this._tmpGroundDesiredKnee,
+            this._tmpGroundKneeOffset,
+            bendHeight,
+        );
+
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        Vec3.subtract(this._tmpDirection, this._tmpGroundDesiredKnee, this._tmpGroundHip);
+        this.rotateWorldBoneDirection(upperArm, this._tmpWorldDirection, this._tmpDirection);
+
+        foreArm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundAnkle, this._tmpGroundKnee);
+        Vec3.subtract(this._tmpDirection, target, this._tmpGroundKnee);
+        this.rotateWorldBoneDirection(foreArm, this._tmpWorldDirection, this._tmpDirection);
+
+        // The endpoint solve changes child transforms; keep the sampled palm
+        // facing so the hands meet palm-to-palm instead of turning edge-on.
+        hand.setWorldRotation(this._tmpClapHandRotation);
     }
 
     private rotateWorldBoneDirection(bone: Node, current: Vec3, desired: Vec3) {

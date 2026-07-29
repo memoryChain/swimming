@@ -144,7 +144,7 @@ export class PrepareRaceFlow {
         // RenderTexture contains a top-down black silhouette of the live
         // skinned model.  Compressing it vertically makes it read as the
         // overhead locker-room light's floor shadow, while keeping the exact
-        // current pose (including the arm-stretching action).
+        // current pose (including the randomly selected showcase action).
         // A soft contact shadow guarantees a visible grounding cue under the
         // overhead changing-room light. The RenderTexture silhouette below is
         // layered over it when the target platform supports that capture.
