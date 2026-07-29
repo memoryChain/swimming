@@ -53,6 +53,14 @@ export class MockBackend implements IBackend {
         return Promise.resolve(profile);
     }
 
+    // Phase-2 progression writes come through here. The mock just persists what the
+    // client computed; the future cloud function will validate and return the
+    // authoritative profile instead.
+    saveProfile(profile: PlayerProfile): Promise<PlayerProfile> {
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
     private read(): PlayerProfile {
         try {
             const raw = sys.localStorage.getItem(STORAGE_KEY);

@@ -11,6 +11,7 @@ import { getUILayer, UILayer } from '../ui/UILayers';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
+import { getProgressionManager } from '../progression/ProgressionManager';
 import { AVATARS } from '../backend/IdentityConfig';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
@@ -62,7 +63,7 @@ export class LoginManager extends Component {
             onAddSwimCards: () => this.watchAdForSwimCards(),
             onEditIdentity: () => this.openIdentityEdit(),
         });
-        void PlayerData.load();
+        void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
     }
 
     // Simple identity editor popup: pick an avatar swatch and reroll the random

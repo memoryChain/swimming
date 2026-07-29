@@ -1,18 +1,13 @@
 ﻿import { sys } from 'cc';
 import { PROGRESSION_BALANCE, xpForLevel, calculateRaceXp, RacePerformanceInput } from './ProgressionBalance';
-import { findPlayerCharacter, PLAYER_CHARACTER_DEFINITIONS, PlayerCharacterId } from '../app/PlayerCharacterConfig';
+import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { resolvePlayerBalance, PlayerBalanceOverrides } from './PlayerBalanceOverrides';
+import { PlayerData } from '../backend/PlayerData';
+import type { CharacterProgress } from '../backend/PlayerProfile';
 
-const PROGRESSION_STORAGE_KEY = 'SpeedSwimming.Progression.v2';
-
-export type CharacterProgress = {
-    level: number;
-    xp: number;
-};
-
-export type PlayerProfileData = {
-    characters: Record<string, CharacterProgress>;
-};
+// Legacy local-storage key from before progression moved into PlayerProfile.
+// Kept only long enough to migrate old saves, then cleared.
+const LEGACY_STORAGE_KEY = 'SpeedSwimming.Progression.v2';
 
 export type AwardResult = {
     characterId: string;
@@ -25,72 +20,33 @@ export type AwardResult = {
     xpForNextLevel: number;
 };
 
-function defaultProfile(): PlayerProfileData {
-    const characters: Record<string, CharacterProgress> = {};
-    for (const def of PLAYER_CHARACTER_DEFINITIONS) {
-        if (def.unlocked) {
-            characters[def.id] = { level: 1, xp: 0 };
-        }
-    }
-    return { characters };
-}
-
+// Reads/writes character progression through the shared PlayerData profile (which
+// delegates persistence to the active backend). awardRace computes XP on the
+// client and persists via PlayerData.persist() - fine for the mock phase; when the
+// WeChat Cloud backend lands the XP math should move server-side (see IBackend).
 export class ProgressionManager {
-    private _profile: PlayerProfileData;
-
-    constructor() {
-        this._profile = this.loadProfile();
-    }
-
-    private loadProfile(): PlayerProfileData {
-        try {
-            const raw = sys.localStorage.getItem(PROGRESSION_STORAGE_KEY);
-            if (!raw) {
-                return defaultProfile();
-            }
-            const data = JSON.parse(raw) as Partial<PlayerProfileData>;
-            return this.migrate(data);
-        } catch {
-            return defaultProfile();
+    // Returns the live character progress object inside PlayerData.profile (creating
+    // a default entry for unknown ids so mutations land in the shared profile).
+    private _progress(characterId: PlayerCharacterId): CharacterProgress {
+        let progress = PlayerData.profile.characters[characterId];
+        if (!progress) {
+            progress = { level: 1, xp: 0 };
+            PlayerData.profile.characters[characterId] = progress;
         }
-    }
-
-    private migrate(data: Partial<PlayerProfileData>): PlayerProfileData {
-        const base = defaultProfile();
-        const characters = { ...base.characters };
-        if (data.characters) {
-            for (const id of Object.keys(data.characters)) {
-                const entry = data.characters[id];
-                if (entry && typeof entry.level === 'number' && typeof entry.xp === 'number') {
-                    characters[id] = {
-                        level: Math.max(1, entry.level),
-                        xp: Math.max(0, entry.xp),
-                    };
-                }
-            }
-        }
-        return { characters };
-    }
-
-    private save() {
-        try {
-            sys.localStorage.setItem(PROGRESSION_STORAGE_KEY, JSON.stringify(this._profile));
-        } catch {
-            // localStorage may be unavailable in some preview environments.
-        }
+        return progress;
     }
 
     getCharacterLevel(characterId: PlayerCharacterId): number {
-        return this._profile.characters[characterId]?.level ?? 1;
+        return this._progress(characterId).level;
     }
 
     getCharacterXp(characterId: PlayerCharacterId): number {
-        return this._profile.characters[characterId]?.xp ?? 0;
+        return this._progress(characterId).xp;
     }
 
     xpToNextLevel(characterId: PlayerCharacterId): number {
-        const progress = this._profile.characters[characterId];
-        if (!progress || progress.level >= PROGRESSION_BALANCE.maxLevel) {
+        const progress = this._progress(characterId);
+        if (progress.level >= PROGRESSION_BALANCE.maxLevel) {
             return 0;
         }
         return Math.max(0, xpForLevel(progress.level) - progress.xp);
@@ -109,22 +65,13 @@ export class ProgressionManager {
         );
     }
 
+    // Synchronous XP/level computation + in-memory mutation, then asynchronous
+    // persistence. Returns the result immediately so the UI (showProgressionResult)
+    // can display it without awaiting - matching the existing synchronous callback.
     awardRace(characterId: PlayerCharacterId, input: RacePerformanceInput): AwardResult {
         const character = findPlayerCharacter(characterId);
         const characterName = character?.name ?? '';
-        const progress = this._profile.characters[characterId];
-        if (!progress) {
-            return {
-                characterId,
-                characterName,
-                xpGained: 0,
-                previousLevel: 1,
-                newLevel: 1,
-                leveledUp: false,
-                newXp: 0,
-                xpForNextLevel: 0,
-            };
-        }
+        const progress = this._progress(characterId);
 
         const previousLevel = progress.level;
         const xpGained = calculateRaceXp(input);
@@ -144,7 +91,9 @@ export class ProgressionManager {
             progress.xp = 0;
         }
 
-        this.save();
+        // Fire-and-forget persist: the in-memory profile is already updated, so UI
+        // reads stay correct; this just durably stores the change.
+        void PlayerData.persist();
 
         return {
             characterId,
@@ -156,6 +105,51 @@ export class ProgressionManager {
             newXp: progress.xp,
             xpForNextLevel: progress.level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(progress.level),
         };
+    }
+
+    // One-time migration of the legacy local-storage progression save into the
+    // shared PlayerData profile. Call once after PlayerData has loaded. Reads the
+    // old key, folds any saved character progress into the profile, persists, then
+    // clears the old key so it never runs again.
+    migrateLegacySave(): void {
+        let raw: string | null = null;
+        try {
+            raw = sys.localStorage.getItem(LEGACY_STORAGE_KEY);
+        } catch {
+            return;
+        }
+        if (!raw) {
+            return;
+        }
+        let legacy: { characters?: Record<string, { level?: number; xp?: number }> } | null = null;
+        try {
+            legacy = JSON.parse(raw);
+        } catch {
+            this.clearLegacySave();
+            return;
+        }
+        const characters = PlayerData.profile.characters;
+        if (legacy?.characters) {
+            for (const id of Object.keys(legacy.characters)) {
+                const entry = legacy.characters[id];
+                if (entry && typeof entry.level === 'number' && typeof entry.xp === 'number') {
+                    characters[id] = {
+                        level: Math.max(1, Math.floor(entry.level)),
+                        xp: Math.max(0, Math.floor(entry.xp)),
+                    };
+                }
+            }
+        }
+        void PlayerData.persist();
+        this.clearLegacySave();
+    }
+
+    private clearLegacySave(): void {
+        try {
+            sys.localStorage.removeItem(LEGACY_STORAGE_KEY);
+        } catch {
+            // ignore
+        }
     }
 }
 
