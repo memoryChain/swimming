@@ -1,4 +1,4 @@
-import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, view } from 'cc';
+import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
@@ -10,6 +10,7 @@ import { getUILayer, UILayer } from '../ui/UILayers';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
+import { AVATARS } from '../backend/IdentityConfig';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 
@@ -54,8 +55,53 @@ export class LoginManager extends Component {
         this._headBar = new ResourceHeadBar();
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
             onAddSwimCards: () => this.watchAdForSwimCards(),
+            onEditIdentity: () => this.openIdentityEdit(),
         });
         void PlayerData.load();
+    }
+
+    // Simple identity editor popup: pick an avatar swatch and reroll the random
+    // nickname. Changes persist via PlayerData; the headbar auto-refreshes.
+    private openIdentityEdit() {
+        if (!this._canvasNode) {
+            return;
+        }
+        const popup = getUILayer(this._canvasNode, UILayer.Popup);
+        popup.getChildByName('IdentityEdit')?.destroy();
+        const root = makeUiNode('IdentityEdit', popup);
+        const dim = makeRect('Dim', root, this._designWidth, this._designHeight, uiColor(2, 8, 14, 200));
+        dim.on(Node.EventType.TOUCH_END, () => root.destroy());
+        const panel = makeRect('Panel', root, 520, 440, uiColor(14, 36, 58, 250));
+        makeLabel('Title', panel, '编辑资料', 30, uiColor(240, 250, 255)).setPosition(0, 176, 1);
+        const content = makeUiNode('Content', panel);
+        const render = () => {
+            content.removeAllChildren();
+            const nick = makeLabel('Nick', content, PlayerData.nickName, 26, uiColor(255, 244, 188));
+            nick.getComponent(UITransform)!.setContentSize(460, 36);
+            nick.setPosition(0, 128, 1);
+            const reroll = makeButton('Reroll', content, 168, 46, uiColor(40, 96, 168, 240), '换个昵称');
+            reroll.setPosition(0, 78, 1);
+            reroll.on(Node.EventType.TOUCH_END, () => { void PlayerData.rerollNickName().then(render); });
+            const size = 66;
+            const cols = 4;
+            AVATARS.forEach((option, i) => {
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                const x = (col - (cols - 1) / 2) * 108;
+                const y = 6 - row * 86;
+                if (option.id === PlayerData.avatarId) {
+                    makeRect(`Sel${i}`, content, size + 10, size + 10, uiColor(20, 205, 229, 255)).setPosition(x, y, 0);
+                }
+                const [r, g, b] = option.color;
+                const swatch = makeButton(`Av_${option.id}`, content, size, size, uiColor(r, g, b, 255), '');
+                swatch.setPosition(x, y, 1);
+                swatch.on(Node.EventType.TOUCH_END, () => { void PlayerData.setAvatar(option.id).then(render); });
+            });
+        };
+        render();
+        const close = makeButton('Close', panel, 200, 52, uiColor(61, 81, 99, 255), '完成');
+        close.setPosition(0, -182, 1);
+        close.on(Node.EventType.TOUCH_END, () => root.destroy());
     }
 
     // Watch a rewarded ad to gain 游泳卡. The reward is granted authoritatively by the

@@ -6,6 +6,7 @@ import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { defaultSwimmerColorVariant, SWIMMER_COLOR_VARIANTS } from '../core/ResourcePaths';
 import { getRaceDifficultyConfig } from '../core/GameBalance';
 import { shuffleInPlace } from '../core/SharedRNG';
+import { PlayerData } from '../backend/PlayerData';
 import { PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
 import { AICompetitorProfile, buildRandomizedAiRoster, getAiPersonality } from './CompetitorConfig';
 import { randomAiModelVariantId, SwimmerFactory } from './SwimmerFactory';
@@ -177,7 +178,7 @@ export class CompetitorManager {
             z: this._options.laneLayout.centerZ(this._options.playerLaneIndex),
             isAI: false,
             colorVariantId: defaultSwimmerColorVariant().id,
-            displayName: 'YOU',
+            displayName: PlayerData.nickName,
         });
         swimmer.configureCourse(this._options.courseLayout);
         return swimmer;

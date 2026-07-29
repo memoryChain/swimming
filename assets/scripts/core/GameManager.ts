@@ -1044,7 +1044,7 @@ export class GameManager extends Component {
             .sort((left, right) => left.node.position.z - right.node.position.z);
         const entries: PreRaceIntroEntry[] = swimmers.map((swimmer, index) => ({
             lane: index + 1,
-            name: swimmer === this._playerSwimmer ? '你' : swimmer.swimmerName,
+            name: swimmer.swimmerName,
             isPlayer: swimmer === this._playerSwimmer,
             avatar: avatarFrames[index] ?? null,
             rowBack: swimmer === this._playerSwimmer ? playerRowFrame : normalRowFrame,

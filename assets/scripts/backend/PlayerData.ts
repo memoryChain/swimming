@@ -5,6 +5,7 @@
 
 import { backend } from './BackendManager';
 import { AdRewardResult } from './IBackend';
+import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
 
 type ChangeListener = (profile: PlayerProfile) => void;
@@ -21,6 +22,14 @@ class PlayerDataStore {
 
     get swimCards(): number {
         return this._profile.swimCards;
+    }
+
+    get nickName(): string {
+        return this._profile.nickName;
+    }
+
+    get avatarId(): string {
+        return this._profile.avatarId;
     }
 
     get loaded(): boolean {
@@ -60,6 +69,18 @@ class PlayerDataStore {
         this._profile = result.profile;
         this._emit();
         return result;
+    }
+
+    // Change the chosen avatar; persists and notifies listeners.
+    async setAvatar(avatarId: string): Promise<void> {
+        this._profile = await backend().saveIdentity({ avatarId });
+        this._emit();
+    }
+
+    // Generate + persist a fresh random nickname; notifies listeners.
+    async rerollNickName(): Promise<void> {
+        this._profile = await backend().saveIdentity({ nickName: generateRandomNickName() });
+        this._emit();
     }
 
     onChange(listener: ChangeListener): void {

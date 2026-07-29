@@ -9,13 +9,20 @@ export type PlatformName = 'wechat' | 'douyin' | 'default';
 
 // Capabilities a platform may or may not support. Callers should gate optional
 // features with isSupported() so the mock/editor build degrades gracefully.
-export type PlatformFeature = 'login' | 'rewardedAd' | 'share' | 'leaderboard';
+export type PlatformFeature = 'login' | 'rewardedAd' | 'share' | 'leaderboard' | 'userProfile';
 
 // wx.login()/tt.login() return a short-lived code. Exchange it on YOUR server for
 // the real openid/session (appid+secret must stay server-side, never in the bundle).
 export interface LoginResult {
     code: string;
     platform: PlatformName;
+}
+
+// Public profile shown in-game (headbar, leaderboards). Avatar is a URL (remote on
+// mini-game platforms); empty when unknown/unauthorized.
+export interface UserProfile {
+    nickName: string;
+    avatarUrl: string;
 }
 
 export type RewardedAdResult =
@@ -61,4 +68,16 @@ export interface IPlatform {
 
     // Fetch ranked entries (self + top/friends). Empty array when unsupported.
     getLeaderboard(count?: number): Promise<LeaderboardEntry[]>;
+
+    // Fetch the user's public profile (nickname + avatar) if already available /
+    // authorized. Resolves null when unavailable or not yet authorized (the caller
+    // then shows a placeholder and can trigger the platform's authorization flow).
+    getUserProfile(): Promise<UserProfile | null>;
+
+    // Interactive authorization: on WeChat/Douyin this creates the required native
+    // "get user info" button (user MUST tap it — platforms forbid silent grabs) and
+    // resolves the profile after the tap. If already authorized it resolves silently.
+    // Resolves null if the user declines or it is unsupported. May never resolve if
+    // the user ignores the button, so treat it as fire-and-forget.
+    requestUserProfile(): Promise<UserProfile | null>;
 }

@@ -24,6 +24,13 @@ export interface AdRewardResult {
     reason?: AdRewardReason;
 }
 
+// Cosmetic identity fields the player chooses (nickname / avatar). Not anti-cheat
+// sensitive, so the client may set them directly (backend just persists).
+export interface IdentityPatch {
+    nickName?: string;
+    avatarId?: string;
+}
+
 export interface IBackend {
     readonly name: string;
 
@@ -33,4 +40,8 @@ export interface IBackend {
     // Grant swim cards for a completed rewarded-ad view. Backend enforces the daily
     // cap and returns the authoritative profile. Never rejects — inspect result.ok.
     grantAdReward(): Promise<AdRewardResult>;
+
+    // Persist the player-chosen identity (nickname / avatar). Returns the updated
+    // profile.
+    saveIdentity(identity: IdentityPatch): Promise<PlayerProfile>;
 }

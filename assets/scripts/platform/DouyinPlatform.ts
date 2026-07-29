@@ -9,6 +9,7 @@ import {
     PlatformFeature,
     RewardedAdResult,
     ShareOptions,
+    UserProfile,
 } from './IPlatform';
 
 // Injected by the Douyin mini-game runtime adapter. Untyped on purpose.
@@ -33,6 +34,8 @@ export class DouyinPlatform implements IPlatform {
             case 'leaderboard':
                 // No native KV leaderboard; served by your own backend.
                 return false;
+            case 'userProfile':
+                return typeof tt.getUserInfo === 'function';
             default:
                 return false;
         }
@@ -99,5 +102,51 @@ export class DouyinPlatform implements IPlatform {
         // TODO: fetch ranked rows from your server.
         console.warn('[Platform] douyin getLeaderboard needs a server backend');
         return Promise.resolve([]);
+    }
+
+    getUserProfile(): Promise<UserProfile | null> {
+        return new Promise((resolve) => {
+            if (!this.isSupported('userProfile')) {
+                resolve(null);
+                return;
+            }
+            tt.getUserInfo({
+                success: (info: { userInfo?: { nickName?: string; avatarUrl?: string } }) => {
+                    const u = info.userInfo;
+                    resolve(u ? { nickName: u.nickName ?? '', avatarUrl: u.avatarUrl ?? '' } : null);
+                },
+                fail: () => resolve(null),
+            });
+        });
+    }
+
+    requestUserProfile(): Promise<UserProfile | null> {
+        return new Promise((resolve) => {
+            if (!this.isSupported('userProfile') || typeof tt.createUserInfoButton !== 'function') {
+                resolve(null);
+                return;
+            }
+            const button = tt.createUserInfoButton({
+                type: 'text',
+                text: '获取头像昵称',
+                style: {
+                    left: 12,
+                    top: 12,
+                    width: 200,
+                    height: 44,
+                    lineHeight: 44,
+                    backgroundColor: '#1a83aa',
+                    color: '#ffffff',
+                    textAlign: 'center',
+                    fontSize: 16,
+                    borderRadius: 8,
+                },
+            });
+            button.onTap((res: { userInfo?: { nickName?: string; avatarUrl?: string } }) => {
+                const u = res && res.userInfo;
+                resolve(u ? { nickName: u.nickName ?? '', avatarUrl: u.avatarUrl ?? '' } : null);
+                button.destroy();
+            });
+        });
     }
 }

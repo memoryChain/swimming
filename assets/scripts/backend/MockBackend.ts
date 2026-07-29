@@ -7,7 +7,7 @@
 // local mock; the production WeChat Cloud backend is the authoritative one.
 
 import { sys } from 'cc';
-import { AdRewardResult, IBackend } from './IBackend';
+import { AdRewardResult, IBackend, IdentityPatch } from './IBackend';
 import {
     createDefaultProfile,
     normalizeProfile,
@@ -41,11 +41,27 @@ export class MockBackend implements IBackend {
         return Promise.resolve({ ok: true, profile, granted });
     }
 
+    saveIdentity(identity: IdentityPatch): Promise<PlayerProfile> {
+        const profile = this.read();
+        if (typeof identity.nickName === 'string' && identity.nickName.length > 0) {
+            profile.nickName = identity.nickName;
+        }
+        if (typeof identity.avatarId === 'string' && identity.avatarId.length > 0) {
+            profile.avatarId = identity.avatarId;
+        }
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
     private read(): PlayerProfile {
         try {
             const raw = sys.localStorage.getItem(STORAGE_KEY);
             if (!raw) {
-                return createDefaultProfile();
+                // Persist the freshly generated default so the random identity stays
+                // stable across launches.
+                const created = createDefaultProfile();
+                this.write(created);
+                return created;
             }
             return normalizeProfile(JSON.parse(raw));
         } catch (error) {

@@ -10,6 +10,7 @@ import {
     PlatformFeature,
     RewardedAdResult,
     ShareOptions,
+    UserProfile,
 } from './IPlatform';
 
 export class DefaultPlatform implements IPlatform {
@@ -50,5 +51,15 @@ export class DefaultPlatform implements IPlatform {
             });
         }
         return Promise.resolve(rows);
+    }
+
+    getUserProfile(): Promise<UserProfile | null> {
+        // Editor/web mock identity so the headbar has something to show locally.
+        return Promise.resolve({ nickName: '游客', avatarUrl: '' });
+    }
+
+    requestUserProfile(): Promise<UserProfile | null> {
+        // No real authorization off-platform; return the same mock.
+        return Promise.resolve({ nickName: '游客', avatarUrl: '' });
     }
 }

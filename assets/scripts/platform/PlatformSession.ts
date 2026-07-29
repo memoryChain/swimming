@@ -5,11 +5,13 @@
 // exchange it for a stable openid, this just proves the login call works and gives a
 // single place to later store the server-issued user id / session.
 
-import { LoginResult } from './IPlatform';
+import { LoginResult, UserProfile } from './IPlatform';
 import { platform } from './PlatformManager';
 
 let _result: LoginResult | null = null;
 let _pending: Promise<LoginResult | null> | null = null;
+let _profile: UserProfile | null = null;
+let _profilePending: Promise<UserProfile | null> | null = null;
 
 // Log in once and cache the result. Safe to call repeatedly (idempotent): concurrent
 // callers share one in-flight request, and later callers get the cached result.
@@ -43,4 +45,54 @@ export function getLoginResult(): LoginResult | null {
 
 export function isLoggedIn(): boolean {
     return _result !== null;
+}
+
+// Fetch the user's profile (nickname + avatar) once and cache it. Idempotent.
+// Resolves null when unavailable / not yet authorized (WeChat first-time auth needs
+// a user tap on createUserInfoButton). Never rejects.
+export function ensureUserProfile(): Promise<UserProfile | null> {
+    if (_profile) {
+        return Promise.resolve(_profile);
+    }
+    if (_profilePending) {
+        return _profilePending;
+    }
+    _profilePending = platform()
+        .getUserProfile()
+        .then((profile) => {
+            _profilePending = null;
+            _profile = profile;
+            return profile;
+        })
+        .catch((error) => {
+            _profilePending = null;
+            console.warn('[Platform] getUserProfile failed', error);
+            return null;
+        });
+    return _profilePending;
+}
+
+export function getUserProfile(): UserProfile | null {
+    return _profile;
+}
+
+// Interactive profile authorization (creates the native auth button on WeChat/Douyin).
+// Caches the result. Call this only in response to startup/user intent, since it may
+// surface a native button. Never rejects.
+export function requestUserProfile(): Promise<UserProfile | null> {
+    if (_profile) {
+        return Promise.resolve(_profile);
+    }
+    return platform()
+        .requestUserProfile()
+        .then((profile) => {
+            if (profile) {
+                _profile = profile;
+            }
+            return profile;
+        })
+        .catch((error) => {
+            console.warn('[Platform] requestUserProfile failed', error);
+            return null;
+        });
 }

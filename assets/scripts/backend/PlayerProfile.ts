@@ -2,6 +2,8 @@
 // single currency: 游泳卡 (swim cards). Kept deliberately small; add fields over time
 // and bump PLAYER_PROFILE_SCHEMA when the shape changes so old saves can migrate.
 
+import { defaultAvatarId, generateRandomNickName } from './IdentityConfig';
+
 export const PLAYER_PROFILE_SCHEMA = 1;
 
 // In-game resource display names (single source of truth for UI text).
@@ -21,6 +23,9 @@ export const PROGRESSION_CONFIG = {
 
 export interface PlayerProfile {
     schema: number;
+    // In-game identity (player-chosen, NOT the real WeChat profile).
+    nickName: string;
+    avatarId: string;
     // 游泳卡 balance.
     swimCards: number;
     // Per-day rewarded-ad counter (reset when the date rolls over).
@@ -45,6 +50,8 @@ function pad2(value: number): string {
 export function createDefaultProfile(): PlayerProfile {
     return {
         schema: PLAYER_PROFILE_SCHEMA,
+        nickName: generateRandomNickName(),
+        avatarId: defaultAvatarId(),
         swimCards: 0,
         daily: { date: todayString(), adCount: 0 },
     };
@@ -61,6 +68,8 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
     const src = raw as Partial<PlayerProfile>;
     const profile: PlayerProfile = {
         schema: PLAYER_PROFILE_SCHEMA,
+        nickName: typeof src.nickName === 'string' && src.nickName.length > 0 ? src.nickName : base.nickName,
+        avatarId: typeof src.avatarId === 'string' && src.avatarId.length > 0 ? src.avatarId : base.avatarId,
         swimCards: Number.isFinite(src.swimCards as number) ? Math.max(0, Math.floor(src.swimCards as number)) : 0,
         daily: {
             date: typeof src.daily?.date === 'string' ? src.daily!.date : base.daily.date,

@@ -427,10 +427,7 @@ function addRowLabel(
 }
 
 function displayName(result: RaceFinishResult): string {
-    if (result.isPlayer) {
-        return '你';
-    }
-    const name = result.name || 'AI';
+    const name = result.name || (result.isPlayer ? '你' : 'AI');
     return name.length > 6 ? `${name.slice(0, 6)}…` : name;
 }
 

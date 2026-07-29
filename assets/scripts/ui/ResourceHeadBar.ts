@@ -6,21 +6,27 @@
 // It subscribes to PlayerData and refreshes automatically whenever the balance
 // changes. Do NOT add it to the race HUD.
 
-import { Label, Node, UITransform } from 'cc';
+import { Graphics, Label, Node, UITransform } from 'cc';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { CURRENCY, PlayerProfile } from '../backend/PlayerProfile';
+import { avatarColorOf } from '../backend/IdentityConfig';
 import { PlayerData } from '../backend/PlayerData';
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
     onAddSwimCards?: () => void;
+    // Called when the player taps their identity (avatar + name) to edit it.
+    onEditIdentity?: () => void;
 }
 
 const BAR_WIDTH = 236;
 const BAR_HEIGHT = 60;
-const BACK_WIDTH = 108;
+const BACK_WIDTH = 84;
 const BACK_HEIGHT = 52;
+const IDENTITY_WIDTH = 200;
+const AVATAR_SIZE = 40;
 const EDGE_PADDING = 24;
+const BACK_GAP = 12;
 
 // Vertical band (px from the top of the design-resolution canvas) reserved by the
 // headbar. Non-race screens should keep their top-most UI at or below
@@ -32,6 +38,14 @@ export class ResourceHeadBar {
     private _countLabel: Label | null = null;
     private _backButton: Node | null = null;
     private _backHandler: (() => void) | null = null;
+    private _identity: Node | null = null;
+    private _nameLabel: Label | null = null;
+    private _avatarGfx: Graphics | null = null;
+    // Identity X when the back button is hidden vs shown (it shifts right to make
+    // room for the back button, and is NEVER hidden).
+    private _identityXDefault = 0;
+    private _identityXWithBack = 0;
+    private _identityY = 0;
     private _onChange = (profile: PlayerProfile) => this.refresh(profile);
 
     build(parent: Node, designWidth: number, designHeight: number, options: ResourceHeadBarOptions = {}): Node {
@@ -42,13 +56,39 @@ export class ResourceHeadBar {
 
         const topY = designHeight / 2 - EDGE_PADDING - BAR_HEIGHT / 2;
 
-        // Back button, top-left. Hidden until a screen provides a back target via
-        // setBack() — the top-level login screen has none, so it stays hidden there.
+        // Back button, top-left corner. Compact; hidden until a screen provides a back
+        // target via setBack(). It sits to the LEFT of the identity (which shifts right
+        // to make room) so the avatar + nickname stay visible on every non-race screen.
         const back = makeButton('BackButton', root, BACK_WIDTH, BACK_HEIGHT, uiColor(18, 60, 104, 238), '返回');
         back.setPosition(-designWidth / 2 + EDGE_PADDING + BACK_WIDTH / 2, topY, 0);
         back.active = false;
         back.on(Node.EventType.TOUCH_END, () => this._backHandler?.());
         this._backButton = back;
+
+        // Player identity (avatar + in-game nickname), top-left. Tappable to edit.
+        // Always visible; shifts right when the back button appears.
+        this._identityXDefault = -designWidth / 2 + EDGE_PADDING + IDENTITY_WIDTH / 2;
+        this._identityXWithBack = -designWidth / 2 + EDGE_PADDING + BACK_WIDTH + BACK_GAP + IDENTITY_WIDTH / 2;
+        this._identityY = topY;
+        const identity = makeUiNode('Identity', root);
+        identity.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH, BAR_HEIGHT);
+        identity.setPosition(this._identityXDefault, topY, 0);
+        makeRect('Bg', identity, IDENTITY_WIDTH, BAR_HEIGHT, uiColor(12, 28, 44, 220));
+        identity.on(Node.EventType.TOUCH_END, () => options.onEditIdentity?.());
+        // Circular avatar; color comes from the chosen avatarId (redrawn on refresh).
+        const avatarBg = makeUiNode('Avatar', identity);
+        avatarBg.getComponent(UITransform)!.setContentSize(AVATAR_SIZE, AVATAR_SIZE);
+        avatarBg.setPosition(-IDENTITY_WIDTH / 2 + 30, 0, 1);
+        this._avatarGfx = avatarBg.addComponent(Graphics);
+        const nameNode = makeLabel('Name', identity, '', 20, uiColor(240, 250, 255, 255));
+        const nameLabel = nameNode.getComponent(Label)!;
+        nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        nameLabel.overflow = Label.Overflow.SHRINK;
+        nameNode.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH - 74, BAR_HEIGHT);
+        nameNode.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+        nameNode.setPosition(-IDENTITY_WIDTH / 2 + 56, 0, 1);
+        this._nameLabel = nameLabel;
+        this._identity = identity;
 
         // Resource pill, top-right (keeps the top-left free for navigation).
         const pill = makeRect('ResourcePill', root, BAR_WIDTH, BAR_HEIGHT, uiColor(12, 28, 44, 220));
@@ -78,11 +118,30 @@ export class ResourceHeadBar {
     }
 
     // Show/hide and wire the integrated back button. Pass a handler to show it, or
-    // null to hide it (top-level screens with no back target).
+    // null to hide it (top-level screens with no back target). The identity stays
+    // visible either way — it just shifts right to make room for the back button.
     setBack(handler: (() => void) | null): void {
         this._backHandler = handler;
+        const showBack = !!handler;
         if (this._backButton?.isValid) {
-            this._backButton.active = !!handler;
+            this._backButton.active = showBack;
+        }
+        if (this._identity?.isValid) {
+            this._identity.setPosition(showBack ? this._identityXWithBack : this._identityXDefault, this._identityY, 0);
+        }
+    }
+
+    // Update the displayed identity from the in-game profile.
+    private refreshIdentity(profile: PlayerProfile): void {
+        if (this._nameLabel?.isValid) {
+            this._nameLabel.string = profile.nickName;
+        }
+        if (this._avatarGfx?.isValid) {
+            const [r, g, b] = avatarColorOf(profile.avatarId);
+            this._avatarGfx.clear();
+            this._avatarGfx.fillColor = uiColor(r, g, b, 255);
+            this._avatarGfx.circle(0, 0, AVATAR_SIZE / 2);
+            this._avatarGfx.fill();
         }
     }
 
@@ -90,6 +149,7 @@ export class ResourceHeadBar {
         if (this._countLabel) {
             this._countLabel.string = `${CURRENCY.swimCard.label} ${profile.swimCards}`;
         }
+        this.refreshIdentity(profile);
     }
 
     setVisible(visible: boolean): void {
@@ -107,5 +167,8 @@ export class ResourceHeadBar {
         this._countLabel = null;
         this._backButton = null;
         this._backHandler = null;
+        this._identity = null;
+        this._nameLabel = null;
+        this._avatarGfx = null;
     }
 }
