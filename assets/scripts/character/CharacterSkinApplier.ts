@@ -4,7 +4,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
 
 const SWIMMER_TEXTURE_SIZE = 128;
-const OUTLINE_SHELL_WIDTH = 18;
+const OUTLINE_SHELL_WIDTH = 10;
 
 export type CharacterSkinOutfit = 'default' | 'trunksA';
 
@@ -357,7 +357,7 @@ function loadOutlineShellMaterial(lineWidth: number, done: (material: Material |
         material.initialize({ effectAsset: effect });
         material.name = 'CharacterInvertedHullOutline';
         material.setProperty('lineWidth', lineWidth);
-        material.setProperty('depthBias', 0.08);
+        material.setProperty('depthBias', 0.02);
         material.setProperty('baseColor', new Color(3, 5, 8, 255));
         done(material);
     };
