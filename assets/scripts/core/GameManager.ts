@@ -49,7 +49,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, getAiDebugDifficulty } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
@@ -113,6 +113,9 @@ export class GameManager extends Component {
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
     private _isReturningToLogin = false;
+    // True when this race was launched from the online room (finish screen shows only
+    // an exit action, which returns to the room).
+    private _roomMode = false;
     // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
@@ -543,11 +546,32 @@ export class GameManager extends Component {
         this.debug('restart AI roster reshuffled');
     }
 
+    // In room mode the finish screen offers only "exit" (back to the room), never a
+    // replay. Hide the restart button and relabel the menu button accordingly.
+    private applyRoomModeHud(raceHud: Node) {
+        if (!this._roomMode || !raceHud?.isValid) {
+            return;
+        }
+        const restart = findByName(raceHud, 'RestartButton');
+        if (restart) {
+            restart.active = false;
+        }
+        const menu = findByName(raceHud, 'MenuButton');
+        const menuLabel = menu?.getChildByName('Label')?.getComponent(Label);
+        if (menuLabel) {
+            menuLabel.string = '退出比赛';
+        }
+    }
+
     private returnToLogin() {
         if (this._isReturningToLogin) {
             return;
         }
         this._isReturningToLogin = true;
+        // Room-mode races return to the online room, not the main menu.
+        if (this._roomMode) {
+            setReturnToRoom(true);
+        }
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.unbind();
         this._gameFlow?.stopAllAi();
@@ -558,6 +582,7 @@ export class GameManager extends Component {
     }
 
     private buildScene(done: (error?: unknown) => void) {
+        this._roomMode = consumeRoomMode();
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
@@ -1093,6 +1118,7 @@ export class GameManager extends Component {
             }
 
             this._raceHud = refs.raceHud;
+            this.applyRoomModeHud(this._raceHud);
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
             this._cameraSpeedLines.bind(this._raceHud);
@@ -1821,6 +1847,21 @@ export class GameManager extends Component {
     private debug(message: string) {
         this._debugLog.log(message);
     }
+}
+
+// Depth-first search for a descendant node by name (Node.getChildByName is direct
+// children only).
+function findByName(root: Node, name: string): Node | null {
+    if (root.name === name) {
+        return root;
+    }
+    for (const child of root.children) {
+        const found = findByName(child, name);
+        if (found) {
+            return found;
+        }
+    }
+    return null;
 }
 
 function color(r: number, g: number, b: number, a = 255): Color {

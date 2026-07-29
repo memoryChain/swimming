@@ -1,11 +1,12 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
-import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode } from '../core/GameLaunchOptions';
+import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, setRoomMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { ResourceHeadBar } from '../ui/ResourceHeadBar';
+import { RoomFlow } from '../ui/RoomFlow';
 import { getUILayer, UILayer } from '../ui/UILayers';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
@@ -29,7 +30,9 @@ export class LoginManager extends Component {
     private _loginUiRoot: Node | null = null;
     private _prepareRaceFlow: PrepareRaceFlow | null = null;
     private _headBar: ResourceHeadBar | null = null;
+    private _roomFlow: RoomFlow | null = null;
     private _adPending = false;
+    private _pendingOpenRoom = false;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -45,6 +48,8 @@ export class LoginManager extends Component {
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
         MusicManager.playLogin();
+        // Returning from a room-mode race: re-open the room once the login UI loads.
+        this._pendingOpenRoom = consumeReturnToRoom();
         // Log in as soon as the entry scene opens. On WeChat/Douyin this fetches a
         // login code (to later exchange on a server); in the editor/web build it is a
         // harmless mock. Fire-and-forget: the result is cached in PlatformSession.
@@ -131,6 +136,7 @@ export class LoginManager extends Component {
 
     onDestroy() {
         this._prepareRaceFlow?.dispose();
+        this._roomFlow?.dispose();
         this._headBar?.dispose();
     }
 
@@ -159,6 +165,34 @@ export class LoginManager extends Component {
     private exitPrepareRace() {
         this._prepareRaceFlow?.dispose();
         this._prepareRaceFlow = null;
+        this._headBar?.setBack(null);
+        if (this._loginUiRoot?.isValid) {
+            this._loginUiRoot.active = true;
+        }
+    }
+
+    private openRoom() {
+        if (this._roomFlow || !this._loginUiRoot) {
+            return;
+        }
+        this._loginUiRoot.active = false;
+        this._roomFlow = new RoomFlow(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight, {
+            onExit: () => this.exitRoom(),
+            onStartRace: (_humanCount) => {
+                // Placeholder: real networked race (frame sync + AI fill) is phase 2B.
+                // Launch the standard race in ROOM MODE so the finish screen offers
+                // only "exit", which returns here and re-opens the room.
+                setRoomMode(true);
+                this._headBar?.setBack(null);
+                this.launchMainGame('race');
+            },
+        });
+        this._headBar?.setBack(() => this.exitRoom());
+    }
+
+    private exitRoom() {
+        this._roomFlow?.dispose();
+        this._roomFlow = null;
         this._headBar?.setBack(null);
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
@@ -242,6 +276,7 @@ export class LoginManager extends Component {
         canvasNode.getChildByName('SpeedStarsUI')?.destroy();
         new SpeedStarsStartUiPrefabBuilder({
             onStart: () => this.openPrepareRace(),
+            onRoom: () => this.openRoom(),
             onModelDebug: () => this.startModelDebug(),
             onAiDebug: () => this.showAiDebugPicker(),
         }).build(getUILayer(canvasNode, UILayer.Screen), width, height, (error, refs) => {
@@ -250,6 +285,11 @@ export class LoginManager extends Component {
                 return;
             }
             this._loginUiRoot = refs?.root ?? null;
+            // Returning from a room-mode race re-opens the room.
+            if (this._pendingOpenRoom) {
+                this._pendingOpenRoom = false;
+                this.openRoom();
+            }
         });
     }
 

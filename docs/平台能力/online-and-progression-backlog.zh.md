@@ -58,9 +58,11 @@
 目标：借助微信 `GameServerManager` 跑通好友对战，不自建实时服务器。
 
 ### 2A net 抽象层
-- 🔲 `assets/scripts/net/INetRoom.ts`：`createRoom/joinRoom/startGame/uploadFrame/onSyncFrame/reconnect/leave` + 事件。
-- 🔲 `assets/scripts/net/WechatGameRoom.ts`：用 `wx.getGameServerManager()` 实现（房间/帧同步/补帧）。
-- 🔲 `assets/scripts/net/NetManager.ts`：工厂（按 `cc/env` 选实现）。
+- ✅ `assets/scripts/net/INetRoom.ts`：接口 `login/createRoom/joinRoom/getRoomInfo/updateReady/startGame/uploadFrame/broadcast/reconnect/leaveRoom/logout` + `setCallbacks`(onRoomInfoChange/onGameStart/onSyncFrame/onBroadcast/onGameEnd/onDisconnect/onLogout) + 类型(NetRoomInfo/NetRoomMember/NetSyncFrame/CreateRoomOptions)。
+- ✅ `assets/scripts/net/WechatGameRoom.ts`：用 `wx.getGameServerManager()` 实现(房间/帧同步/补帧)。**骨架**： payload 字段映射(mapRoomInfo/mapSyncFrame)按文档写，**真机待验**。
+- ✅ `assets/scripts/net/DefaultNetRoom.ts`：编辑器/web 空实现(isSupported=false，方法 no-op/reject)。
+- ✅ `assets/scripts/net/NetManager.ts`：工厂 `netRoom()`(按 `cc/env` WECHAT 选实现)。
+- 🔲 游戏接入：目前仅骨架，尚无任何游戏系统调用。
 
 ### 2B 帧同步接入（依赖确定性，SharedRNG 已就绪）
 - ⏸ **固定逻辑步**：把比赛 `update` 改成「每个 `onSyncFrame` 推进一个固定逻辑帧」（微信帧节拍驱动）。
