@@ -15,36 +15,41 @@
 - ✅ **确定性随机 `SharedRNG`**：`assets/scripts/core/SharedRNG.ts`；AI/赛道/名单随机全部改走种子流。为帧同步铺路（同 seed + 同输入 = 各端一致）。
 - ✅ **平台抽象层 `platform/`**：`IPlatform` + 微信/抖音/默认实现 + `PlatformManager`（按 `cc/env` 编译期常量选实现）。
 - ✅ **登录接入**：`PlatformSession.ensureLogin()`，进入 Login 场景即登录；编辑器/Web 走 mock 不崩。
+- ✅ **UI 层级框架 `assets/scripts/ui/UILayers.ts`**：Canvas 下固定层容器（Background/Screen/Hud/Popup/Toast），高层永远盖低层，取代 bringToTop 打补丁；登录→Screen、赛前→Screen、headbar→Hud、弹窗→Popup。含 `HEADBAR_TOP_SAFE_AREA` 顶部安全区常量供界面避让。
 
 ---
 
-## 阶段 1 · 养成后端（第一阶段核心，先做这个）
+## 阶段 1 · 养成后端
 
-目标：每账号云端养成，换设备不丢；看广告得金币跑通。后端 = 微信云开发（CloudBase）。
+> **状态（2026-07）**：本地 mock 版（1B/1D）已完成并验证（点「+」加游泳卡、重启保留）。**云端（1A/1C）暂缓**：当前连养成系统都还没设计，`IBackend` 已隔离好，等养成/经济设计定下、要真机测试/上线时再把 MockBackend 换成 WechatCloudBackend + 云函数。
 
-### 1A 云端准备（在微信开发者工具里做，非本仓库代码）
-- 🔲 开通「云开发」，创建环境，记下环境 ID。
-- 🔲 建云数据库集合 `players`（结构见后端设计文档第 4 节）。
-- 🔲 仓库根建 `cloud/functions/` 放云函数 Node 代码（不进 Cocos 工程）。
+目标：每账号云端养成，换设备不丢；看广告得游泳卡跑通。后端 = 微信云开发（CloudBase）。
+
+### 1A 云端准备（在微信开发者工具里做，非本仓库代码）—— ⏸ 暂缓
+- ⏸ 开通「云开发」，创建环境，记下环境 ID。
+- ⏸ 建云数据库集合 `players`（结构见后端设计文档第 4 节）。
+- ⏸ 仓库根建 `cloud/functions/` 放云函数 Node 代码（不进 Cocos 工程）。
 
 ### 1B 客户端 backend 抽象层（本仓库代码）
-- 🔲 `assets/scripts/backend/IBackend.ts`：接口 `loadProfile / grantAdReward / saveProgress`（+ 可选 `submitScore`）。
-- 🔲 `assets/scripts/backend/PlayerProfile.ts`：养成数据结构（coins/level/unlocks/daily…）。
+- ✅ `assets/scripts/backend/IBackend.ts`：接口 `loadProfile / grantAdReward`。
+- ✅ `assets/scripts/backend/PlayerProfile.ts`：养成数据结构（**货币=游泳卡 `swimCards`** + `daily{date,adCount}` + `schema`；`CURRENCY`/`PROGRESSION_CONFIG` 集中配置）。
 - 🔲 `assets/scripts/backend/WechatCloudBackend.ts`：用 `wx.cloud.callFunction` 实现（`declare const wx`）。
-- 🔲 `assets/scripts/backend/MockBackend.ts`：编辑器/Web 用 `sys.localStorage` 模拟，本地可调试。
-- 🔲 `assets/scripts/backend/BackendManager.ts`：工厂，按 `cc/env` 的 `WECHAT` 选实现（同 platform 套路）。
-- 🔲 `assets/scripts/backend/PlayerData.ts`：养成单一入口（单例）。内存值 + 本地缓存；`load()` 启动拉取；写操作走 backend、以返回值为准。
+- ✅ `assets/scripts/backend/MockBackend.ts`：`sys.localStorage` 模拟，含每日上限 + 跨天重置，本地可调试。
+- ✅ `assets/scripts/backend/BackendManager.ts`：工厂（当前只返回 Mock，`WECHAT` 分支留 TODO）。
+- ✅ `assets/scripts/backend/PlayerData.ts`：养成单一入口（单例）+ `onChange` 订阅；`load()` 幂等拉取；写走 backend 以返回值为准。
 
-### 1C 云函数（Node.js，放 `cloud/functions/`）
-- 🔲 `loadProfile`：读 `OPENID` → 查/建 `players` 文档 → 返回 profile。
-- 🔲 `grantAdReward`：校验每日上限 → 原子 `inc(coins)` → 返回新余额+adCount。
-- 🔲 （可选）`saveProgress`：白名单字段保存（拒绝敏感字段）。
+### 1C 云函数（Node.js，放 `cloud/functions/`）—— ⏸ 暂缓（等养成系统设计定下）
+- ⏸ `loadProfile`：读 `OPENID` → 查/建 `players` 文档 → 返回 profile。
+- ⏸ `grantAdReward`：校验每日上限 → 原子 `inc(swimCards)` → 返回新余额+adCount。
+- ⏸ （可选）`saveProgress`：白名单字段保存（拒绝敏感字段）。
 
 ### 1D 接入游戏
-- 🔲 启动流程调 `PlayerData.load()`（Login 场景，login 之后）。
-- 🔲 界面显示金币（先放个简单文字/角标）。
-- 🔲 加一个**独立「看广告得金币」测试按钮**：`showRewardedAd → 'completed' → grantAdReward → 刷新金币`。
-- 🔲 本地缓存：启动先显示缓存值，云端返回后覆盖。
+- ✅ 启动流程调 `PlayerData.load()`（Login 场景）。
+- ✅ **统一资源 headbar** `assets/scripts/ui/ResourceHeadBar.ts`：非比赛界面顶部显示「游泳卡 N」，挂 canvas 跨登录/赛前存在，订阅 PlayerData 自动刷新。
+- ✅ headbar 上 **「+」按钮 = 看广告得游泳卡**：`showRewardedAd → 'completed' → PlayerData.grantAdReward → 自动刷新`（编辑器 mock 广告自动发奖）。
+- ✅ 本地缓存：MockBackend 存 `sys.localStorage`，重启后游泳卡保留。
+- ✅ headbar 集成**返回按钮**（左上，`setBack(handler|null)`）：资源栏移到右上角，赛前界面的返回由 headbar 提供，不再与界面按钮重叠。
+- ✅ 顶部安全区：`HEADBAR_TOP_SAFE_AREA` 常量；赛前角色详情面板下移到安全线以下，不再被资源栏髡住。
 
 ---
 
@@ -100,8 +105,9 @@
 
 ## 建议动手顺序
 
-1. 阶段 1B + 1D 的 **MockBackend 版**：先不碰云，用 `localStorage` 把 `PlayerData` + 金币显示 + 看广告按钮跑通（编辑器就能测）。
-2. 再做 1A + 1C + `WechatCloudBackend`：把 mock 换成真云函数，验证换设备存档还在。
+1. ~~阶段 1B + 1D 的 **MockBackend 版**：本地 `localStorage` 跑通 `PlayerData` + 游泳卡显示 + 看广告按钮~~ ✅ 已完成并验证。
+2. （暂缓）阶段 1A + 1C + `WechatCloudBackend`：等**养成/经济系统设计定下**、要真机测试/上线时，把 mock 换成真云函数，验证换设备存档还在。`IBackend` 已隔离，随时可换。
 3. 之后进入阶段 2 的好友对战。
 
 > 这样每一步都能独立验证、可回退，理解成本也低。
+> 当前进展：阶段 0 地基 + 阶段 1 本地养成（游泳卡）均已完成；云端与实时对战待养成/玩法更成熟后推进。
