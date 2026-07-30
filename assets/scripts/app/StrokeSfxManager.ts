@@ -10,7 +10,7 @@ export class StrokeSfxManager {
     private static readonly _clips: Array<AudioClip | null> = RESOURCE_PATHS.music.strokeSfx.map(() => null);
     private static _loading = false;
     private static _nextClip = 0;
-    private static _enabled = true;
+    private static _volumeScale = 1;
 
     static preload() {
         this.ensureSource();
@@ -34,7 +34,7 @@ export class StrokeSfxManager {
     }
 
     static playStroke() {
-        if (!this._enabled) {
+        if (this._volumeScale <= 0) {
             return;
         }
         const source = this.ensureSource();
@@ -48,14 +48,14 @@ export class StrokeSfxManager {
                 continue;
             }
             this._nextClip = (index + 1) % this._clips.length;
-            source.playOneShot(clip, STROKE_VOLUME);
+            source.playOneShot(clip, STROKE_VOLUME * this._volumeScale);
             return;
         }
         this.preload();
     }
 
-    static setEnabled(enabled: boolean) {
-        this._enabled = enabled;
+    static setVolume(scale: number) {
+        this._volumeScale = Math.max(0, Math.min(1, scale));
     }
 
     private static loadClips(bundle: AssetManager.Bundle) {

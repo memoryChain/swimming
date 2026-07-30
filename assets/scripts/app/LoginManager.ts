@@ -12,6 +12,8 @@ import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
 import { getProgressionManager } from '../progression/ProgressionManager';
+import { SettingsManager } from './SettingsManager';
+import { openSettingsPanel } from '../ui/SettingsPanel';
 import { AVATARS } from '../backend/IdentityConfig';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
@@ -48,6 +50,7 @@ export class LoginManager extends Component {
 
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
+        SettingsManager.apply();
         MusicManager.playLogin();
         // Returning from a room-mode race: re-open the room once the login UI loads.
         this._pendingOpenRoom = consumeReturnToRoom();
@@ -62,6 +65,7 @@ export class LoginManager extends Component {
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
             onAddSwimCards: () => this.watchAdForSwimCards(),
             onEditIdentity: () => this.openIdentityEdit(),
+            onOpenSettings: () => openSettingsPanel(canvasNode, width, height),
         });
         void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
     }

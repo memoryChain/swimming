@@ -3,7 +3,8 @@ import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
-import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeButton, makeLabel, makeOutlineButton, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { UI_STYLE } from './UIStyle';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
@@ -563,18 +564,26 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     if (startLabel) startLabel.string = '准备比赛';
     startButton.on(Node.EventType.TOUCH_END, callbacks.onStart);
 
-    // Online room entry, sitting next to the start button.
-    const roomButton = makeButton('RoomButton', startScreen, 260, 64, uiColor(38, 150, 96, 235), '联机房间');
+    // Secondary entries share the unified outline style so they don't fight
+    // the primary start button artwork for attention.
+    const roomButton = makeOutlineButton('RoomButton', startScreen, 240, 58, UI_STYLE.panelAlt, '联机房间', UI_STYLE.cyanOutline, 10);
     roomButton.on(Node.EventType.TOUCH_END, callbacks.onRoom);
 
     const modelDebug = requireNode(startScreen, 'ModelDebugButton');
     modelDebug.active = EDITOR;
     modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
 
-    // 100m AI-debug 1v1 entry. Built in code so it needs no prefab change. Opens
-    // a difficulty picker first.
-    const aiDebug = makeButton('AiDebugStartButton', startScreen, 260, 64, uiColor(60, 110, 180, 235), '100m AI 调试');
+    // 100m AI-debug 1v1 entry. Not a shipping feature, so park it in the
+    // bottom-right corner instead of the main menu flow.
+    const aiDebug = makeOutlineButton('AiDebugStartButton', startScreen, 200, 46, uiColor(40, 46, 56, 200), '100m AI 调试', uiColor(150, 160, 175, 140), 12);
     aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
+    const aiDebugTransform = aiDebug.getComponent(UITransform)!;
+    const visibleSize = view.getVisibleSize();
+    aiDebug.setPosition(
+        visibleSize.width / 2 - 16 - aiDebugTransform.contentSize.width / 2,
+        -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height / 2,
+        0,
+    );
 
     // Arrange the difficulty row and the action buttons with Layout + Widget so the
     // engine handles spacing, centring and screen-fit instead of hand-written
@@ -583,8 +592,17 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     applyResponsiveStartMenu(
         startScreen,
         [],
-        [startButton, roomButton, modelDebug, aiDebug],
+        [startButton, roomButton, modelDebug],
     );
+
+    // Lift the bottom hint strip fully inside the visible area: the prefab parks
+    // it half off the bottom edge (y=-358 on a 720-tall design), which crops it.
+    const controls = startScreen.getChildByName('Controls');
+    const controlsTransform = controls?.getComponent(UITransform);
+    if (controls && controlsTransform) {
+        const margin = 14;
+        controls.setPosition(0, -view.getVisibleSize().height / 2 + controlsTransform.contentSize.height / 2 + margin, 0);
+    }
 }
 
 // Build Layout containers for the start-menu buttons: a horizontal difficulty row
