@@ -4,12 +4,12 @@ export const PROGRESSION_BALANCE = {
 } as const;
 
 // XP required to advance from level `level` to `level + 1`.
-// Curve: 40 * n^1.5 - steepens so leveling slows noticeably after ~30.
+// Curve: 800 * n^1.15 - level 1 needs ~2 races (1st place), steepens gradually.
 export function xpForLevel(level: number): number {
     if (level < 1 || level >= PROGRESSION_BALANCE.maxLevel) {
         return 0;
     }
-    return Math.round(40 * Math.pow(level, 1.5));
+    return Math.round(800 * Math.pow(level, 1.15));
 }
 
 export const XP_REWARDS = {
