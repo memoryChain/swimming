@@ -37,7 +37,7 @@ export type GameFlowRefs = {
     applyPlayerDive: (result: DiveResult) => void;
     playerDiveSpeedScale: () => number;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
-        { characterId: string; characterName: string; xpGained: number; previousLevel: number; newLevel: number; leveledUp: boolean; newXp: number; xpForNextLevel: number } | null;
+        { characterId: string; characterName: string; xpGained: number; previousLevel: number; newLevel: number; leveledUp: boolean; newXp: number; xpForNextLevel: number; previousXp: number; previousXpForNextLevel: number } | null;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;

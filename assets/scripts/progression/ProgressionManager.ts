@@ -1,4 +1,4 @@
-﻿import { sys } from 'cc';
+import { sys } from 'cc';
 import { PROGRESSION_BALANCE, xpForLevel, calculateRaceXp, RacePerformanceInput } from './ProgressionBalance';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { resolvePlayerBalance, PlayerBalanceOverrides } from './PlayerBalanceOverrides';
@@ -18,6 +18,8 @@ export type AwardResult = {
     leveledUp: boolean;
     newXp: number;
     xpForNextLevel: number;
+    previousXp: number;
+    previousXpForNextLevel: number;
 };
 
 // Reads/writes character progression through the shared PlayerData profile (which
@@ -74,6 +76,8 @@ export class ProgressionManager {
         const progress = this._progress(characterId);
 
         const previousLevel = progress.level;
+        const previousXp = progress.xp;
+        const previousXpForNextLevel = previousLevel >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(previousLevel);
         const xpGained = calculateRaceXp(input);
         progress.xp += xpGained;
 
@@ -104,6 +108,8 @@ export class ProgressionManager {
             leveledUp: progress.level > previousLevel,
             newXp: progress.xp,
             xpForNextLevel: progress.level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(progress.level),
+            previousXp,
+            previousXpForNextLevel,
         };
     }
 

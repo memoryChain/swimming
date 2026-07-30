@@ -1,4 +1,4 @@
-﻿import { Node } from 'cc';
+import { Node } from 'cc';
 import { Rating } from '../core/GameConstants';
 import { RaceResultStats, UIController } from './UIController';
 
@@ -11,6 +11,8 @@ export type ProgressionResult = {
     leveledUp: boolean;
     newXp: number;
     xpForNextLevel: number;
+    previousXp: number;
+    previousXpForNextLevel: number;
 } | null;
 
 export type UIFlowRefs = {
