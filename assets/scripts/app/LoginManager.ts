@@ -33,6 +33,8 @@ export class LoginManager extends Component {
     private _roomFlow: RoomFlow | null = null;
     private _adPending = false;
     private _pendingOpenRoom = false;
+    private _pendingJoinRoomId: string | null = null;
+    private _loginUiRetries = 0;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -50,6 +52,13 @@ export class LoginManager extends Component {
         MusicManager.playLogin();
         // Returning from a room-mode race: re-open the room once the login UI loads.
         this._pendingOpenRoom = consumeReturnToRoom();
+        // Launched from a shared room invite (query `room=<accessInfo>`): auto-open the
+        // room in JOIN mode as soon as the login UI is ready.
+        const invitedRoom = platform().getLaunchQuery().room;
+        if (invitedRoom) {
+            this._pendingJoinRoomId = invitedRoom;
+            this._pendingOpenRoom = true;
+        }
         // Log in as soon as the entry scene opens. On WeChat/Douyin this fetches a
         // login code (to later exchange on a server); in the editor/web build it is a
         // harmless mock. Fire-and-forget: the result is cached in PlatformSession.
@@ -171,22 +180,35 @@ export class LoginManager extends Component {
         }
     }
 
-    private openRoom() {
-        if (this._roomFlow || !this._loginUiRoot) {
+    private openRoom(joinRoomId: string | null = null) {
+        if (this._roomFlow) {
             return;
         }
-        this._loginUiRoot.active = false;
+        // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share
+        // (cold start), the room must open even if the login prefab isn't ready yet —
+        // otherwise the guest lands on an empty scene ("竖屏 + 啥都没有"). Just hide the
+        // login UI if it happens to exist.
+        console.log(`[Room] openRoom join=${joinRoomId ?? '(host)'} loginRoot=${!!this._loginUiRoot} design=${this._designWidth}x${this._designHeight}`);
+        if (this._loginUiRoot?.isValid) {
+            this._loginUiRoot.active = false;
+        }
         this._roomFlow = new RoomFlow(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight, {
             onExit: () => this.exitRoom(),
-            onStartRace: (_humanCount) => {
-                // Placeholder: real networked race (frame sync + AI fill) is phase 2B.
-                // Launch the standard race in ROOM MODE so the finish screen offers
-                // only "exit", which returns here and re-opens the room.
+            onStartLocalRace: (_humanCount) => {
+                // Editor / local preview: standard race in ROOM MODE so the finish
+                // screen offers only "exit", which returns here and re-opens the room.
                 setRoomMode(true);
                 this._headBar?.setBack(null);
                 this.launchMainGame('race');
             },
-        });
+            onStartNetRace: () => {
+                // Networked race: RoomFlow has already set the shared NetRaceSession
+                // (seed + roster). GameManager consumes it and reseeds SharedRNG.
+                setRoomMode(true);
+                this._headBar?.setBack(null);
+                this.launchMainGame('race');
+            },
+        }, joinRoomId);
         this._headBar?.setBack(() => this.exitRoom());
     }
 
@@ -196,6 +218,11 @@ export class LoginManager extends Component {
         this._headBar?.setBack(null);
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
+        } else if (this._canvasNode?.isValid) {
+            // A guest launched straight into the room from a share never had the login
+            // menu built — build it now so exiting returns to a real screen instead of
+            // leaving a blank one.
+            this.buildLoginScreen(this._canvasNode, this._designWidth, this._designHeight);
         }
     }
 
@@ -282,13 +309,29 @@ export class LoginManager extends Component {
         }).build(getUILayer(canvasNode, UILayer.Screen), width, height, (error, refs) => {
             if (error) {
                 console.error('[SpeedSwimming] Login UI failed to load', error);
-                return;
+                // Cold launch from a friend's share can transiently fail asset/runtime
+                // init (subpackage download, GameServerManager subcontext). Retry a
+                // couple times before giving up so the menu isn't permanently missing.
+                if (this._loginUiRetries < 2 && this._canvasNode?.isValid && !this._roomFlow) {
+                    this._loginUiRetries++;
+                    this.scheduleOnce(() => {
+                        if (this._canvasNode?.isValid && !this._loginUiRoot?.isValid && !this._roomFlow) {
+                            this.buildLoginScreen(this._canvasNode, this._designWidth, this._designHeight);
+                        }
+                    }, 0.6);
+                }
+            } else {
+                this._loginUiRoot = refs?.root ?? null;
+                this._loginUiRetries = 0;
             }
-            this._loginUiRoot = refs?.root ?? null;
-            // Returning from a room-mode race re-opens the room.
+            // Open the invited/returning room REGARDLESS of whether the login prefab
+            // loaded — a guest launched from a friend's share must never get stuck on
+            // an empty screen just because the menu prefab was slow/failed to load.
             if (this._pendingOpenRoom) {
                 this._pendingOpenRoom = false;
-                this.openRoom();
+                const roomId = this._pendingJoinRoomId;
+                this._pendingJoinRoomId = null;
+                this.openRoom(roomId);
             }
         });
     }

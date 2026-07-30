@@ -149,4 +149,13 @@ export class DouyinPlatform implements IPlatform {
             });
         });
     }
+
+    getLaunchQuery(): Record<string, string> {
+        try {
+            return (tt.getLaunchOptionsSync && tt.getLaunchOptionsSync().query) || {};
+        } catch (error) {
+            console.warn('[Platform] douyin getLaunchQuery failed', error);
+            return {};
+        }
+    }
 }

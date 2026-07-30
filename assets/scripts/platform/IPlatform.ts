@@ -80,4 +80,7 @@ export interface IPlatform {
     // Resolves null if the user declines or it is unsupported. May never resolve if
     // the user ignores the button, so treat it as fire-and-forget.
     requestUserProfile(): Promise<UserProfile | null>;
+
+    // Launch query parameters (e.g. a shared room id in `room`). Empty when none.
+    getLaunchQuery(): Record<string, string>;
 }

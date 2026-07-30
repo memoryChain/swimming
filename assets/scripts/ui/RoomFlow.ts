@@ -8,19 +8,23 @@
 // fully viewable/clickable. The actual networked race (frame sync + AI fill +
 // return-to-room after finishing) is phase 2B and needs on-device testing.
 
-import { Graphics, Label, Node, UITransform } from 'cc';
+import { Graphics, Label, Node, UITransform, view } from 'cc';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
 import { avatarColorOf } from '../backend/IdentityConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
 import { NetRoomInfo } from '../net/INetRoom';
+import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
+import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 
 export type RoomFlowCallbacks = {
     onExit: () => void;
-    // Launch the race with the given number of human players (AI fills the rest).
-    onStartRace: (humanCount: number) => void;
+    // Editor / local-preview start (no real net): launch a placeholder single race.
+    onStartLocalRace: (humanCount: number) => void;
+    // Networked start: the shared NetRaceSession has been set; launch the net race.
+    onStartNetRace: () => void;
 };
 
 const MAX_SLOTS = 8;
@@ -40,13 +44,20 @@ export class RoomFlow {
     private _members: SlotMember[] = [];
     private _netReal = false;
     private _accessInfo = '';
+    private _isHost = true;
+    private _pendingSeed = 0;
+    private _statusHint: string | null = null;
+    private _startRequested = false;
+    private _raceEntered = false;
 
     constructor(
         private readonly _parent: Node,
         private readonly _width: number,
         private readonly _height: number,
         private readonly _callbacks: RoomFlowCallbacks,
+        private readonly _joinRoomId: string | null = null,
     ) {
+        this._isHost = !_joinRoomId;
         this.build();
         this.setupNet();
     }
@@ -65,47 +76,88 @@ export class RoomFlow {
 
         this._content = makeUiNode('Slots', root);
 
+        const bottomY = -this._height / 2 + 70;
         const exit = makeButton('ExitRoom', root, 220, 60, uiColor(90, 96, 104, 235), '退出房间');
-        exit.setPosition(-150, -this._height / 2 + 70, 0);
+        exit.setPosition(-150, bottomY, 0);
         exit.on(Node.EventType.TOUCH_END, () => this.exit());
         const start = makeButton('StartRoomRace', root, 260, 60, uiColor(38, 150, 96, 245), '开始比赛');
-        start.setPosition(160, -this._height / 2 + 70, 0);
+        start.setPosition(160, bottomY, 0);
         start.on(Node.EventType.TOUCH_END, () => this.startRace());
         this._startButton = start;
     }
 
     private setupNet() {
         const self = this.selfMember();
+        // Show yourself immediately so the lobby is NEVER blank, no matter whether the
+        // game service connects, hangs, or throws synchronously on this device. On a
+        // real phone the async login/createRoom below may take a moment (or fail if the
+        // 联机对战 service is not enabled) — the grid must still render first.
+        this._members = [self];
+        this.render();
+
         const net = netRoom();
-        this._netReal = net.isSupported();
-        net.setCallbacks({
-            onRoomInfoChange: (info) => {
-                this._members = this.membersFromInfo(info);
-                this.render();
-            },
-        });
-        if (this._netReal) {
-            net.login()
-                .then(() => net.createRoom({
-                    maxMembers: MAX_SLOTS,
-                    memberExtInfo: encodeIdentity(self.avatarId, self.nickName),
-                }))
-                .then((info) => {
-                    this._accessInfo = info.accessInfo;
+        let supported = false;
+        try {
+            supported = net.isSupported();
+        } catch (error) {
+            supported = false;
+        }
+        this._netReal = supported;
+        if (!supported) {
+            // Editor / web / unsupported: stay in the local preview room (just you).
+            return;
+        }
+
+        // Any of setCallbacks/login/createRoom can throw synchronously if the game
+        // service is unavailable; keep it from breaking the whole screen.
+        try {
+            net.setCallbacks({
+                onRoomInfoChange: (info) => {
                     this._members = this.membersFromInfo(info);
                     this.render();
+                },
+                onBroadcast: (msg) => this.handleBroadcast(msg),
+                onGameStart: () => this.enterNetRace(),
+            });
+            const extInfo = encodeIdentity(self.avatarId, self.nickName);
+            const enter = this._joinRoomId
+                ? net.login().then(() => net.joinRoom(this._joinRoomId!, extInfo))
+                : net.login().then(() => net.createRoom({ maxMembers: MAX_SLOTS, memberExtInfo: extInfo }));
+            enter
+                .then((info) => {
+                    this._accessInfo = info.accessInfo || this._joinRoomId || this._accessInfo;
+                    this._statusHint = null;
+                    // WeChat's joinRoom result is just { myPos, clientId } with NO
+                    // roster, so mapping it yields a self-only list. Don't let it
+                    // clobber the fuller roster we may already have received via
+                    // onRoomInfoChange (which DOES reach the joiner on device).
+                    const mapped = this.membersFromInfo(info);
+                    if (mapped.length >= this._members.length) {
+                        this._members = mapped;
+                    }
+                    this.render();
+                    // Backup pull of the authoritative roster (a few retries) in case
+                    // onRoomInfoChange didn't reach us on this device.
+                    this.refreshRoomInfo(0);
                 })
                 .catch((error) => {
-                    console.warn('[Room] game service unavailable, local preview', error);
+                    const reason = (error && (error.errMsg || error.message)) || String(error);
+                    console.warn('[Room] net enter failed, local preview:', reason, error);
                     this._netReal = false;
+                    this._statusHint = this._joinRoomId
+                        ? `加入房间失败：${reason}`
+                        : `建房失败：${reason}`;
                     this._members = [self];
                     this.render();
                 });
-        } else {
-            // Editor / web: local preview room with just the player.
+        } catch (error) {
+            const reason = (error && ((error as any).errMsg || (error as any).message)) || String(error);
+            console.warn('[Room] game service threw, local preview:', reason, error);
+            this._netReal = false;
+            this._statusHint = `联机服务异常：${reason}`;
             this._members = [self];
+            this.render();
         }
-        this.render();
     }
 
     private selfMember(): SlotMember {
@@ -130,15 +182,50 @@ export class RoomFlow {
         return list;
     }
 
+    // Pull the authoritative room roster a few times after joining. Bridges the gap
+    // where the joiner doesn't get an onRoomInfoChange for their own join, and the
+    // roster may take a moment to propagate. Ongoing changes still arrive via
+    // onRoomInfoChange once we're an existing member.
+    private refreshRoomInfo(attempt: number) {
+        if (!this._netReal || !this._root?.isValid) {
+            return;
+        }
+        netRoom()
+            .getRoomInfo()
+            .then((info) => {
+                if (!this._root?.isValid || !this._netReal) {
+                    return;
+                }
+                if (info && info.members.length > 0) {
+                    this._members = this.membersFromInfo(info);
+                    this.render();
+                }
+                if (attempt < 4) {
+                    setTimeout(() => this.refreshRoomInfo(attempt + 1), 700);
+                }
+            })
+            .catch(() => {
+                if (attempt < 4) {
+                    setTimeout(() => this.refreshRoomInfo(attempt + 1), 700);
+                }
+            });
+    }
+
     private render() {
         const content = this._content;
         if (!content?.isValid) {
             return;
         }
         content.removeAllChildren();
+        // Fixed landscape layout (the game is locked to landscape). Deliberately NOT
+        // based on the live viewport: during a share the viewport briefly flips to
+        // portrait, and reacting to it left the grid stuck in a narrow layout after
+        // returning from the share sheet.
         const cols = 4;
         const gapX = 168;
         const rowY = [40, -150];
+        const vs = view.getVisibleSize();
+        console.log(`[Room] render members=${this._members.length} view=${Math.round(vs.width)}x${Math.round(vs.height)} netReal=${this._netReal} host=${this._isHost}`);
         for (let i = 0; i < MAX_SLOTS; i++) {
             const col = i % cols;
             const row = Math.floor(i / cols);
@@ -153,16 +240,26 @@ export class RoomFlow {
         }
         const humanCount = this._members.length;
         if (this._hintLabel?.isValid) {
-            this._hintLabel.string = this._netReal
-                ? `已加入 ${humanCount}/${MAX_SLOTS} 人 · 至少 2 名真人可开始，空位由 AI 补齐`
-                : '本地预览房间（真机联机才能邀请好友） · 空位由 AI 补齐';
+            if (this._statusHint) {
+                this._hintLabel.string = this._statusHint;
+            } else {
+                this._hintLabel.string = this._netReal
+                    ? `已加入 ${humanCount}/${MAX_SLOTS} 人 · 至少 2 名真人可开始，空位由 AI 补齐`
+                    : '本地预览房间（真机联机才能邀请好友） · 空位由 AI 补齐';
+            }
         }
         // Host gating: real net needs ≥2 humans; local preview allows a solo demo.
         const canStart = !this._netReal || humanCount >= 2;
         if (this._startButton?.isValid) {
             const label = this._startButton.getChildByName('Label')?.getComponent(Label);
             if (label) {
-                label.color = canStart ? uiColor(255, 255, 255, 235) : uiColor(160, 176, 190, 200);
+                if (this._netReal && !this._isHost) {
+                    label.string = '等待房主';
+                    label.color = uiColor(160, 176, 190, 200);
+                } else {
+                    label.string = '开始比赛';
+                    label.color = canStart ? uiColor(255, 255, 255, 235) : uiColor(160, 176, 190, 200);
+                }
             }
         }
     }
@@ -200,7 +297,7 @@ export class RoomFlow {
 
     private invite() {
         if (this._netReal && this._accessInfo) {
-            platform().share({ title: '一起来游泳对战！', query: `room=${this._accessInfo}` });
+            platform().share({ title: '一起来游泳对战！', query: `room=${encodeURIComponent(this._accessInfo)}` });
         } else {
             console.log('[Room] invite friend (real device only)');
             if (this._hintLabel?.isValid) {
@@ -210,14 +307,71 @@ export class RoomFlow {
     }
 
     private startRace() {
-        const humanCount = this._members.length;
-        if (this._netReal && humanCount < 2) {
-            if (this._hintLabel?.isValid) {
-                this._hintLabel.string = '至少需要 2 名真人玩家才能开始';
-            }
+        if (!this._netReal) {
+            // Editor / local preview: launch the placeholder single-player race.
+            this._callbacks.onStartLocalRace(this._members.length);
             return;
         }
-        this._callbacks.onStartRace(humanCount);
+        if (!this._isHost) {
+            this.setHint('等待房主开始…');
+            return;
+        }
+        if (this._members.length < 2) {
+            this.setHint('至少需要 2 名真人玩家才能开始');
+            return;
+        }
+        if (this._startRequested) {
+            return;
+        }
+        this._startRequested = true;
+        // Host: pick a seed, broadcast it + a start signal, then enter lock-step. Every
+        // client must call startGame(); onGameStart then fires on all of them.
+        this._pendingSeed = SeededRandom.entropySeed();
+        this.setHint('开始中…');
+        netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
+        netRoom().startGame();
+    }
+
+    // Guests receive the host's start signal (seed) and join lock-step.
+    private handleBroadcast(msg: string) {
+        try {
+            const data = JSON.parse(msg);
+            if (data && data.t === 'start' && typeof data.seed === 'number') {
+                this._pendingSeed = data.seed >>> 0;
+                if (!this._isHost && !this._startRequested) {
+                    this._startRequested = true;
+                    this.setHint('开始中…');
+                    netRoom().startGame();
+                }
+            }
+        } catch (error) {
+            console.warn('[Room] bad broadcast', error);
+        }
+    }
+
+    // Lock-step has begun on every client: hand the agreed seed + roster to the race.
+    private enterNetRace() {
+        if (this._raceEntered) {
+            return;
+        }
+        this._raceEntered = true;
+        const members: NetRaceMember[] = this._members.map((m) => ({
+            avatarId: m.avatarId,
+            nickName: m.nickName,
+            self: m.self,
+        }));
+        setNetRaceSession({
+            seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
+            members,
+            localIsHost: this._isHost,
+        });
+        this._callbacks.onStartNetRace();
+    }
+
+    private setHint(text: string) {
+        if (this._hintLabel?.isValid) {
+            this._hintLabel.string = text;
+        }
     }
 
     private exit() {

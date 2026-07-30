@@ -50,6 +50,8 @@ import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
+import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
+import { reseedSharedRandom } from './SharedRNG';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceManager } from './RaceManager';
@@ -116,6 +118,9 @@ export class GameManager extends Component {
     // True when this race was launched from the online room (finish screen shows only
     // an exit action, which returns to the room).
     private _roomMode = false;
+    // Set for a networked (frame-synced) race: shared seed + human roster. Null for a
+    // normal single-player race.
+    private _netSession: NetRaceSessionData | null = null;
     // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
@@ -583,6 +588,12 @@ export class GameManager extends Component {
 
     private buildScene(done: (error?: unknown) => void) {
         this._roomMode = consumeRoomMode();
+        this._netSession = consumeNetRaceSession();
+        if (this._netSession) {
+            // Networked race: every client reseeds SharedRNG with the host's seed so
+            // the AI fill, lane assignment, and roster shuffles match on all clients.
+            reseedSharedRandom(this._netSession.seed);
+        }
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;

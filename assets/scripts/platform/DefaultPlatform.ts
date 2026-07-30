@@ -62,4 +62,8 @@ export class DefaultPlatform implements IPlatform {
         // No real authorization off-platform; return the same mock.
         return Promise.resolve({ nickName: '游客', avatarUrl: '' });
     }
+
+    getLaunchQuery(): Record<string, string> {
+        return {};
+    }
 }

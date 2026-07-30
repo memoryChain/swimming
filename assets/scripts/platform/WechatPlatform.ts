@@ -211,4 +211,13 @@ export class WechatPlatform implements IPlatform {
             }
         });
     }
+
+    getLaunchQuery(): Record<string, string> {
+        try {
+            return (wx.getLaunchOptionsSync && wx.getLaunchOptionsSync().query) || {};
+        } catch (error) {
+            console.warn('[Platform] wechat getLaunchQuery failed', error);
+            return {};
+        }
+    }
 }
