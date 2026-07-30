@@ -106,6 +106,10 @@ export const RACE_CAMERA_TUNING = {
     sprintHeight: 0.52,
     sprintLookAhead: 0.8,
     sprintFov: 58,
+    // Extra FOV pushed while sprintActive for a cinematic speed-up; blended
+    // in/out so the sprint entry reads as acceleration instead of a hard cut.
+    sprintFovBoost: 8,
+    sprintFovBlendSpeed: 4.5,
     // Sprint chase follow smoothing (per second, dt-based). Forward/height track
     // tightly; the LATERAL (Z) follow is deliberately slower so the swimmer
     // visibly slides sideways in frame when steering, then the camera eases
@@ -169,6 +173,7 @@ export class RaceCameraDirector {
     private readonly _cameraTarget = new Vec3(8, 0.25, 0);
     private _cameraNode: Node = null;
     private _mode = RaceCameraMode.Broadcast;
+    private _sprintFovCurrent = RACE_CAMERA_TUNING.sprintFov;
     private _broadcastShotTimer = 0;
     private _broadcastShotIndex = 0;
     private _broadcastShotSequence: number[] = [];
@@ -249,6 +254,9 @@ export class RaceCameraDirector {
         }
         if (this._mode === RaceCameraMode.Broadcast) {
             this.resetBroadcastDirector();
+        }
+        if (this._mode === RaceCameraMode.Sprint) {
+            this._sprintFovCurrent = RACE_CAMERA_TUNING.sprintFov;
         }
         this.applyFov();
         return this.currentModeName;
@@ -560,7 +568,7 @@ export class RaceCameraDirector {
         } else if (this._mode === RaceCameraMode.Top) {
             baseFov = 44;
         } else if (this._mode === RaceCameraMode.Sprint) {
-            baseFov = RACE_CAMERA_TUNING.sprintFov;
+            baseFov = this._sprintFovCurrent;
         }
         if (this._topViewActive && this._mode !== RaceCameraMode.Top) {
             baseFov = FINISH_TOP_FOV;
@@ -922,6 +930,11 @@ export class RaceCameraDirector {
             this._cameraTarget.y += (view.target.y - this._cameraTarget.y) * follow;
             this._cameraTarget.z += (view.target.z - this._cameraTarget.z) * lateral;
         }
+        const targetSprintFov = snapshot.sprintActive
+            ? RACE_CAMERA_TUNING.sprintFov + RACE_CAMERA_TUNING.sprintFovBoost
+            : RACE_CAMERA_TUNING.sprintFov;
+        const fovBlend = clamp(1 - Math.exp(-Math.max(0, dt) * RACE_CAMERA_TUNING.sprintFovBlendSpeed), 0.02, 0.4);
+        this._sprintFovCurrent += (targetSprintFov - this._sprintFovCurrent) * fovBlend;
         this.applyCameraTransform();
         this.applyFov();
     }

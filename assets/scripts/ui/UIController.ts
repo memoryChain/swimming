@@ -1,7 +1,9 @@
-﻿import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
+import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
+import { SprintVignetteOverlay } from './SprintVignetteOverlay';
+import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
 
 const { ccclass, property } = _decorator;
 
@@ -48,6 +50,7 @@ export class UIController extends Component {
     public energyBarFill: Graphics = null;
     public energyLabel: Label = null;
     public sprintLabel: Label | null = null;
+    public sprintVignette: SprintVignetteOverlay | null = null;
     private _sprintActive = false;
     private _energyTotal = 100;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
@@ -148,6 +151,7 @@ export class UIController extends Component {
 
     setSprintActive(active: boolean) {
         this._sprintActive = active;
+        this.sprintVignette?.setActive(active);
         if (!this.sprintLabel) {
             return;
         }
@@ -165,6 +169,13 @@ export class UIController extends Component {
             tween(node)
                 .to(0.18, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'backOut' })
                 .to(0.08, { scale: new Vec3(1, 1, 1) })
+                .call(() => {
+                    tween(node)
+                        .to(0.8, { scale: new Vec3(1.05, 1.05, 1) }, { easing: 'sineInOut' })
+                        .to(0.8, { scale: new Vec3(1, 1, 1) }, { easing: 'sineInOut' })
+                        .repeatForever()
+                        .start();
+                })
                 .start();
             tween(opacity)
                 .to(0.15, { opacity: 255 })
@@ -177,7 +188,7 @@ export class UIController extends Component {
             Tween.stopAllByTarget(node);
             Tween.stopAllByTarget(opacity);
             tween(opacity)
-                .to(0.25, { opacity: 0 })
+                .to(0.9, { opacity: 0 }, { easing: 'sineInOut' })
                 .call(() => { node.active = false; })
                 .start();
         }

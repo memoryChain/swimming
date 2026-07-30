@@ -3,6 +3,7 @@ import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
+import { SprintVignetteOverlay } from './SprintVignetteOverlay';
 import { makeButton, makeLabel, makeOutlineButton, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
 
@@ -191,21 +192,26 @@ export class SpeedStarsUiPrefabBuilder {
         // Sprint indicator: large centered label near the top of the screen,
         // hidden until the sprint phase begins. Has a glowing outline for impact.
         const sprintNode = makeUiNode('SprintLabel', raceHud);
-        sprintNode.getComponent(UITransform).setContentSize(400, 100);
+        sprintNode.getComponent(UITransform).setContentSize(400, 150);
         const sprintLabel = sprintNode.addComponent(Label);
         sprintLabel.string = '冲刺';
         sprintLabel.fontSize = 72;
+        sprintLabel.lineHeight = 88;
         sprintLabel.color = uiColor(255, 210, 90, 255);
         sprintLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         sprintLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        sprintLabel.overflow = Label.Overflow.NONE;
         // Position at the top center of the screen.
         const vs = view.getVisibleSize();
-        sprintNode.setPosition(0, vs.height / 2 - 80, 0);
+        sprintNode.setPosition(0, vs.height / 2 - 110, 0);
         sprintNode.active = false;
         const sprintOutline = sprintNode.addComponent(LabelOutline);
         sprintOutline.color = new Color(255, 120, 30, 220);
         sprintOutline.width = 5;
         ui.sprintLabel = sprintLabel;
+        const sprintVignette = new SprintVignetteOverlay();
+        sprintVignette.bind(raceHud);
+        ui.sprintVignette = sprintVignette;
 
         return {
             root,

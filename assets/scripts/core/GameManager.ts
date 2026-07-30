@@ -1,4 +1,4 @@
-﻿import {
+import {
     _decorator,
     Button,
     Camera,
@@ -641,8 +641,8 @@ export class GameManager extends Component {
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
-            updateCameraSpeedLines: (dt, speed, visible) => {
-                this._cameraSpeedLines.update(dt, speed, visible);
+            updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
+                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
             },
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,

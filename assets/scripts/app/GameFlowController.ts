@@ -1,4 +1,4 @@
-﻿import { Vec3 } from 'cc';
+import { Vec3 } from 'cc';
 import { RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -41,7 +41,7 @@ export type GameFlowRefs = {
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
-    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean) => void;
+    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean) => void;
     debug: (message: string) => void;
 };
 
@@ -275,6 +275,9 @@ export class GameFlowController {
         raceManager.onSwimmerFinished = (result) => {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
+            if (result.isPlayer) {
+                this._refs.uiFlow.setSprintActive(false);
+            }
         };
         raceManager.onSwimmerEliminated = (swimmer) => {
             this._refs.debug(`eliminated ${swimmer.swimmerName}`);
@@ -309,6 +312,7 @@ export class GameFlowController {
             this._refs.uiFlow.showProgressionResult(progressionResult);
             this._refs.clearFinishRanks();
             this._refs.showAwards(placement.leaderboard ?? []);
+            this._refs.uiFlow.setSprintActive(false);
             this._refs.setState(GameState.AWARDS);
         };
         raceManager.onDiveReady = () => {
@@ -408,6 +412,7 @@ export class GameFlowController {
             this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
                 && !this._refs.raceCameraDirector.topViewActive
                 && !this._refs.raceCameraDirector.underwaterViewActive,
+            this._sprintTriggered,
         );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);
