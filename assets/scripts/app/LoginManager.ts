@@ -157,7 +157,7 @@ export class LoginManager extends Component {
             return;
         }
         this._loginUiRoot.active = false;
-        this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight, {
+        this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onBack: () => this.exitPrepareRace(),
             onStartRace: () => this.startGame(),
         });

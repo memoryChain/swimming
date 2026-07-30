@@ -111,6 +111,17 @@ export function cyclePlayerColorScheme() {
     selection = { ...selection, colorSchemeId: PLAYER_COLOR_SCHEMES[nextIndex].id };
 }
 
+export function setPlayerSkinTone(id: PlayerSkinTone['id']) {
+    if (!selectedPlayerCharacterSupportsSkinTone()) return;
+    if (!PLAYER_SKIN_TONES.some((tone) => tone.id === id)) return;
+    selection = { ...selection, skinToneId: id };
+}
+
+export function setPlayerColorScheme(id: string) {
+    if (!PLAYER_COLOR_SCHEMES.some((scheme) => scheme.id === id)) return;
+    selection = { ...selection, colorSchemeId: id };
+}
+
 export function findPlayerCharacter(id = selection.characterId): PlayerCharacterDefinition | null {
     return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.id === id) ?? null;
 }

@@ -1,37 +1,46 @@
-import { Button, EventTouch, Graphics, Label, Mask, Node, resources, ScrollView, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+import { Button, EventTouch, Graphics, Label, LabelOutline, Mask, Node, resources, ScrollView, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
 import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, setRaceDifficulty } from '../core/GameBalance';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
-    cyclePlayerColorScheme,
-    cyclePlayerSkinTone,
     findPlayerCharacter,
     getPlayerCharacterSelection,
     getSelectedRaceDifficulty,
     PLAYER_CHARACTER_DEFINITIONS,
     PLAYER_CHARACTER_SLOT_COUNT,
     selectPlayerCharacter,
-    selectedPlayerCharacterSupportsSkinTone,
     selectedPlayerColorScheme,
-    selectedPlayerSkinTone,
     setSelectedRaceDifficulty,
 } from '../app/PlayerCharacterConfig';
 import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
+import { openAppearancePanel } from './AppearancePanel';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
-import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
+import { UI_STYLE } from './UIStyle';
 
 export type PrepareRaceFlowCallbacks = {
     onBack: () => void;
     onStartRace: () => void;
 };
 
-const PANEL = uiColor(8, 31, 62, 226);
-const PANEL_ALT = uiColor(18, 60, 104, 238);
-const CYAN = uiColor(20, 205, 229, 255);
-const MUTED = uiColor(99, 123, 150, 225);
-const WHITE = uiColor(242, 250, 255, 255);
+const PANEL = UI_STYLE.panel;
+const PANEL_ALT = UI_STYLE.panelAlt;
+const CYAN = UI_STYLE.cyan;
+const ACCENT = UI_STYLE.accent;
+const MUTED = UI_STYLE.muted;
+const WHITE = UI_STYLE.white;
+// Bottom horizontal roster strip geometry.
+const ROSTER_HEIGHT = 96;
+const ROSTER_CARD_WIDTH = 150;
+const ROSTER_CARD_HEIGHT = 68;
+const ROSTER_CARD_PITCH = 162;
+
+// Screen-space lift applied to the central character preview (px). The 3D model
+// lift lives in PrepareRaceCharacterPreview (PREVIEW_CHARACTER_LIFT); these UI
+// elements track the same shift so the floor shadow and rotate surface follow.
+const PREPARE_RACE_MODEL_LIFT = 40;
 
 export class PrepareRaceFlow {
     private _root: Node | null = null;
@@ -42,11 +51,11 @@ export class PrepareRaceFlow {
     // presents that live texture as the flattened shadow under its feet.
     private _shadowSprite: Sprite | null = null;
     private _previewTouchX = 0;
-    private _skinToneButtonLabel: Label | null = null;
-    private _paletteButtonLabel: Label | null = null;
+    // Appearance is edited through the 外观 popup (see openAppearance).
 
     constructor(
         private readonly _parent: Node,
+        private readonly _canvasNode: Node,
         private readonly _width: number,
         private readonly _height: number,
         private readonly _callbacks: PrepareRaceFlowCallbacks,
@@ -113,22 +122,21 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterSelect(parent: Node) {
-        makeLabel('PrepareRaceTitle', parent, '准备比赛', 42, WHITE).setPosition(0, this._height / 2 - 52, 2);
+        makeScreenTitle(parent, '准备比赛', this._height / 2 - 56);
         // Back navigation lives in the unified resource headbar (top-left) now, so
         // this screen no longer draws its own back button.
         this.buildRealtimeCharacterShadow(parent);
         this.buildRoster(parent);
-        this.buildCharacterControls(parent);
         this.buildCharacterDetail(parent);
-        // Keep the central foreground clear for the larger character preview.
-        // The action belongs with the selected character's information, at the
-        // lower-right edge of that panel.
-        this.buildDifficultySwitcher(parent);
+        this.buildCharacterControls(parent);
+        // Character info on the left; race-mode selection and the appearance
+        // button on the right; the central column stays clear for the preview.
+        this.buildRaceModeList(parent);
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
         // Keep the drag surface strictly inside the central character area so
-        // it cannot intercept the skin/palette buttons at either edge.
-        rotateArea.getComponent(UITransform)!.setContentSize(240, 440);
-        rotateArea.setPosition(0, 12, 2);
+        // it cannot intercept the roster strip or the skin/palette swatches.
+        rotateArea.getComponent(UITransform)!.setContentSize(240, 380);
+        rotateArea.setPosition(0, 52 + PREPARE_RACE_MODEL_LIFT, 2);
         rotateArea.on(Node.EventType.TOUCH_START, (event: EventTouch) => { this._previewTouchX = event.getUILocation().x; });
         rotateArea.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => {
             const x = event.getUILocation().x;
@@ -152,7 +160,7 @@ export class PrepareRaceFlow {
         contact.getComponent(UITransform)!.setContentSize(170, 40);
         // Matches the selected swimmer's projected foot level in the
         // locker-room framing, rather than the centre of the bright floor area.
-        contact.setPosition(0, -248, 1);
+        contact.setPosition(0, -248 + PREPARE_RACE_MODEL_LIFT, 1);
         const contactGraphics = contact.addComponent(Graphics);
         contactGraphics.fillColor = uiColor(4, 13, 26, 78);
         contactGraphics.ellipse(0, 0, 82, 17);
@@ -163,33 +171,32 @@ export class PrepareRaceFlow {
 
         const shadow = makeUiNode('CharacterRealtimeShadow', parent);
         shadow.getComponent(UITransform)!.setContentSize(166, 46);
-        shadow.setPosition(0, -248, 2);
+        shadow.setPosition(0, -248 + PREPARE_RACE_MODEL_LIFT, 2);
         const sprite = shadow.addComponent(Sprite);
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
         this._shadowSprite = sprite;
     }
 
     private buildRoster(parent: Node) {
-        const panelWidth = 276;
-        // Leave a 100px navigation band above the list. The previous full
-        // height panel extended into the back button's hit area.
-        const panelHeight = this._height - 190;
-        const panel = makeRect('CharacterRosterPanel', parent, panelWidth, panelHeight, PANEL);
-        panel.setPosition(-this._width / 2 + panelWidth / 2 + 32, -15, 2);
-        makeLabel('RosterTitle', panel, '角色列表', 26, WHITE).setPosition(0, panelHeight / 2 - 34, 1);
+        // Bottom-left horizontal character strip. Cards slide sideways so the
+        // left edge of the screen stays free for a larger 3D preview; the start
+        // button owns the bottom-right corner, so the strip stops before it.
+        const stripLeft = -this._width / 2 + 24;
+        const stripWidth = this._width - 24 - 280;
+        const stripY = -this._height / 2 + ROSTER_HEIGHT / 2 + 12;
+        const panel = makeRect('CharacterRosterPanel', parent, stripWidth, ROSTER_HEIGHT, PANEL);
+        panel.setPosition(stripLeft + stripWidth / 2, stripY, 2);
+
         // Standard Cocos hierarchy: View (ScrollView + Mask) -> Content. The
-        // View's transform is the only visible/interactive scrolling area;
-        // cards never use the entire roster panel as their scroll bounds.
-        const viewportWidth = panelWidth - 28;
-        // Explicit inner rectangle: 60px below the title/header and 30px
-        // above the panel bottom. This is the actual visible ScrollView area.
-        const viewportHeight = panelHeight - 130;
+        // View's transform is the only visible/interactive scrolling area.
+        const viewportWidth = stripWidth - 24;
+        const viewportHeight = ROSTER_CARD_HEIGHT + 12;
         const viewNode = makeUiNode('RosterScrollView', panel);
         viewNode.getComponent(UITransform)!.setContentSize(viewportWidth, viewportHeight);
-        viewNode.setPosition(0, -30, 1);
+        viewNode.setPosition(0, 0, 1);
         const scrollView = viewNode.addComponent(ScrollView);
-        scrollView.horizontal = false;
-        scrollView.vertical = true;
+        scrollView.horizontal = true;
+        scrollView.vertical = false;
         scrollView.inertia = true;
         scrollView.elastic = false;
         scrollView.brake = 0.5;
@@ -202,89 +209,85 @@ export class PrepareRaceFlow {
         mask.type = Mask.Type.GRAPHICS_RECT;
         mask.inverted = false;
         const content = makeUiNode('RosterContent', viewNode);
-        const rowCount = PLAYER_CHARACTER_SLOT_COUNT / 2;
-        const rowPitch = 74;
-        const slotHeight = 64;
-        const contentHeight = rowCount * rowPitch + 16;
-        content.getComponent(UITransform)!.setContentSize(viewportWidth, contentHeight);
-        content.setPosition(0, (contentHeight - viewportHeight) * 0.5, 1);
+        const contentWidth = PLAYER_CHARACTER_SLOT_COUNT * ROSTER_CARD_PITCH + 8;
+        content.getComponent(UITransform)!.setContentSize(contentWidth, viewportHeight);
         scrollView.content = content;
-        this.renderRoster(content, contentHeight, rowPitch, slotHeight);
-        scrollView.scrollToTop(0);
+        this.renderRoster(content, contentWidth);
+        scrollView.scrollToLeft(0);
     }
 
-    private renderRoster(content: Node, contentHeight: number, rowPitch: number, slotHeight: number) {
+    private renderRoster(content: Node, contentWidth: number) {
         content.removeAllChildren();
-        const slotWidth = 112;
         const selected = getPlayerCharacterSelection().characterId;
-        for (let row = 0; row < PLAYER_CHARACTER_SLOT_COUNT / 2; row++) {
-            for (let column = 0; column < 2; column++) {
-                const index = row * 2 + column;
-                const character = PLAYER_CHARACTER_DEFINITIONS[index];
-                const unlocked = !!character?.unlocked;
-                const active = character?.id === selected;
-                const fill = active ? CYAN : unlocked ? PANEL_ALT : MUTED;
-                const slot = makeButton(`CharacterSlot${index}`, content, slotWidth, slotHeight, fill, unlocked ? character.name : '🔒');
-                slot.setPosition(
-                    (column === 0 ? -1 : 1) * 61,
-                    contentHeight / 2 - slotHeight / 2 - 8 - row * rowPitch,
-                    1,
-                );
-                const label = slot.getChildByName('Label')?.getComponent(Label);
-                if (label) label.fontSize = unlocked ? 17 : 24;
-                if (unlocked) {
-                    slot.on(Button.EventType.CLICK, () => {
-                        selectPlayerCharacter(character.id);
-                        this.showCharacterSelect();
-                    });
-                }
+        const progression = getProgressionManager();
+        for (let index = 0; index < PLAYER_CHARACTER_SLOT_COUNT; index++) {
+            const character = PLAYER_CHARACTER_DEFINITIONS[index];
+            if (!character) continue;
+            const unlocked = !!character?.unlocked;
+            const active = character?.id === selected;
+            const fill = active ? CYAN : unlocked ? PANEL_ALT : MUTED;
+            const card = makeButton(`CharacterSlot${index}`, content, ROSTER_CARD_WIDTH, ROSTER_CARD_HEIGHT, fill, '');
+            card.setPosition(
+                -contentWidth / 2 + ROSTER_CARD_WIDTH / 2 + 8 + index * ROSTER_CARD_PITCH,
+                0,
+                1,
+            );
+            if (unlocked) {
+                const nameNode = makeLabel('Name', card, character.name, 20, active ? uiColor(6, 35, 54) : WHITE);
+                nameNode.getComponent(UITransform)!.setContentSize(ROSTER_CARD_WIDTH - 12, 28);
+                nameNode.setPosition(0, 11, 1);
+                const levelText = 'Lv.' + progression.getCharacterLevel(character.id);
+                const levelNode = makeLabel('Level', card, levelText, 15, active ? uiColor(6, 35, 54, 200) : ACCENT);
+                levelNode.getComponent(UITransform)!.setContentSize(ROSTER_CARD_WIDTH - 12, 22);
+                levelNode.setPosition(0, -14, 1);
+                card.on(Button.EventType.CLICK, () => {
+                    selectPlayerCharacter(character.id);
+                    this.showCharacterSelect();
+                });
+            } else {
+                const lockNode = makeLabel('Lock', card, '🔒', 24, WHITE);
+                lockNode.setPosition(0, 0, 1);
             }
         }
     }
 
     private buildCharacterControls(parent: Node) {
-        const skin = selectedPlayerSkinTone();
-        const palette = selectedPlayerColorScheme();
-        const supportsSkinTone = selectedPlayerCharacterSupportsSkinTone();
-        const skinButton = makeButton(
-            'SkinToneButton',
-            parent,
-            170,
-            50,
-            supportsSkinTone ? PANEL_ALT : MUTED,
-            supportsSkinTone ? `肤色：${skin.label}` : '肤色：固定',
-        );
-        skinButton.setPosition(-208, this._height / 2 - 140, 2);
-        this._skinToneButtonLabel = skinButton.getChildByName('Label')?.getComponent(Label) ?? null;
-        skinButton.getComponent(Button)!.interactable = supportsSkinTone;
-        if (supportsSkinTone) {
-            skinButton.on(Button.EventType.CLICK, () => {
-                cyclePlayerSkinTone();
-                this.refreshAppearanceControls();
+        // A single 外观 button on the right opens a modal color picker, so the
+        // prepare-race screen stays clean and the full skin-tone / outfit grid
+        // lives in the popup. The color dot shows the current outfit color.
+        const centerX = this._width / 2 - 165 - 32; // matches buildRaceModeList
+        const button = makeRoundedRect('AppearanceButton', parent, 200, 56, PANEL, 12, UI_STYLE.cyanOutline, 1.5);
+        button.setPosition(centerX, -160, 3);
+        const hit = button.addComponent(Button);
+        hit.target = button;
+        hit.transition = Button.Transition.NONE;
+        const dot = makeUiNode('ColorDot', button);
+        dot.getComponent(UITransform)!.setContentSize(28, 28);
+        dot.setPosition(-58, 0, 1);
+        dot.addComponent(Graphics);
+        makeLabel('Label', button, '外观', 22, WHITE).setPosition(16, 0, 1);
+        button.on(Button.EventType.CLICK, () => this.openAppearance());
+        this.refreshAppearanceControls();
+    }
+
+    private openAppearance() {
+        openAppearancePanel(this._canvasNode, this._width, this._height, {
+            onChange: () => {
                 this._preview?.applyAppearance();
-            });
-        }
-        const colorButton = makeButton('PaletteButton', parent, 170, 50, PANEL_ALT, `配色：${palette.label}`);
-        colorButton.setPosition(-208, this._height / 2 - 202, 2);
-        this._paletteButtonLabel = colorButton.getChildByName('Label')?.getComponent(Label) ?? null;
-        colorButton.on(Button.EventType.CLICK, () => {
-            cyclePlayerColorScheme();
-            this.refreshAppearanceControls();
-            this._preview?.applyAppearance();
+                this.refreshAppearanceControls();
+            },
         });
     }
 
     private refreshAppearanceControls() {
-        const skin = selectedPlayerSkinTone();
         const palette = selectedPlayerColorScheme();
-        if (this._skinToneButtonLabel?.isValid) {
-            this._skinToneButtonLabel.string = selectedPlayerCharacterSupportsSkinTone()
-                ? `肤色：${skin.label}`
-                : '肤色：固定';
-        }
-        if (this._paletteButtonLabel?.isValid) {
-            this._paletteButtonLabel.string = `配色：${palette.label}`;
-        }
+        const dot = this._content?.getChildByName('AppearanceButton')?.getChildByName('ColorDot');
+        const gfx = dot?.getComponent(Graphics);
+        if (!gfx) return;
+        gfx.clear();
+        gfx.fillColor = uiColor(palette.suit[0], palette.suit[1], palette.suit[2], 255);
+        gfx.roundRect(-14, -14, 28, 28, 6);
+        gfx.fill();
     }
 
     private buildCharacterDetail(parent: Node) {
@@ -294,11 +297,11 @@ export class PrepareRaceFlow {
         // Shorten this panel to leave a dedicated lower-right button area.
         const panelHeight = this._height - 220;
         const panel = makeRect('CharacterDetailPanel', parent, panelWidth, panelHeight, PANEL);
-        // Keep the panel's top at or below the headbar's reserved band (top-right
-        // resource pill) so it is never hidden behind it. Shift the whole panel down
-        // by placing its top at the safe line; height is preserved.
+        // Panel now lives on the LEFT; its top stays at the headbar's reserved
+        // band (top-left back/identity) so nothing hides behind it. Height is
+        // preserved; the right side is left for the race-mode list.
         const detailTopY = this._height / 2 - HEADBAR_TOP_SAFE_AREA;
-        panel.setPosition(this._width / 2 - panelWidth / 2 - 32, detailTopY - panelHeight / 2, 2);
+        panel.setPosition(-(this._width / 2 - panelWidth / 2 - 32), detailTopY - panelHeight / 2, 2);
         makeLabel('CharacterName', panel, character.name, 32, WHITE).setPosition(0, panelHeight / 2 - 42, 1);
         // Progression: show current level and XP progress for this character.
         const progression = getProgressionManager();
@@ -354,39 +357,42 @@ export class PrepareRaceFlow {
         valueLabel.setPosition(132, y, 2);
     }
 
-    private buildDifficultySwitcher(parent: Node) {
-        const difficulty = getSelectedRaceDifficulty();
-        const currentIndex = Math.max(0, RACE_DIFFICULTY_OPTIONS.findIndex((o) => o.id === difficulty));
-        const currentOption = RACE_DIFFICULTY_OPTIONS[currentIndex];
-
-        // Vertical stack at bottom-right: switcher on top, description middle, start button bottom.
-        const baseY = -this._height / 2 + 110;
-        const centerX = this._width / 2 - 160;
-
-        const prevBtn = makeButton('DifficultyPrev', parent, 44, 44, PANEL_ALT, '<');
-        prevBtn.setPosition(centerX - 80, baseY, 3);
-        prevBtn.on(Button.EventType.CLICK, () => {
-            const prevIndex = (currentIndex - 1 + RACE_DIFFICULTY_OPTIONS.length) % RACE_DIFFICULTY_OPTIONS.length;
-            setSelectedRaceDifficulty(RACE_DIFFICULTY_OPTIONS[prevIndex].id);
-            this.showCharacterSelect();
+    private buildRaceModeList(parent: Node) {
+        // Right-hand vertical list of race modes. A visible list (rather than a
+        // prev/next switcher) scales naturally as more modes are added later.
+        const selected = getSelectedRaceDifficulty();
+        const centerX = this._width / 2 - 165 - 32; // mirrors the left info panel offset
+        const headingY = this._height / 2 - HEADBAR_TOP_SAFE_AREA - 6;
+        makeLabel('RaceModeHeading', parent, '比赛模式', 24, CYAN).setPosition(centerX, headingY, 3);
+        const listTopY = headingY - 70;
+        const cardPitch = 84;
+        RACE_DIFFICULTY_OPTIONS.forEach((option, index) => {
+            const isSel = option.id === selected;
+            const card = makeButton(`RaceMode${option.id}`, parent, 300, 72, isSel ? CYAN : PANEL, option.label);
+            card.setPosition(centerX, listTopY - index * cardPitch, 3);
+            const label = card.getChildByName('Label')?.getComponent(Label);
+            if (label) {
+                label.fontSize = 22;
+                label.color = isSel ? uiColor(6, 35, 54) : WHITE;
+                label.getComponent(UITransform)!.setContentSize(280, 28);
+                label.node.setPosition(0, 16, 1);
+           }
+            const desc = makeLabel('Description', card, raceDifficultyDescription(option.id), 14, isSel ? uiColor(6, 35, 54, 220) : uiColor(215, 238, 248));
+            desc.getComponent(UITransform)!.setContentSize(280, 28);
+            desc.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
+            desc.setPosition(0, -16, 1);
+            card.on(Button.EventType.CLICK, () => { setSelectedRaceDifficulty(option.id); this.showCharacterSelect(); });
         });
 
-        const diffLabel = makeLabel('DifficultyLabel', parent, currentOption.label, 24, CYAN);
-        diffLabel.getComponent(UITransform)!.setContentSize(120, 36);
-        diffLabel.setPosition(centerX, baseY, 3);
-
-        const nextBtn = makeButton('DifficultyNext', parent, 44, 44, PANEL_ALT, '>');
-        nextBtn.setPosition(centerX + 80, baseY, 3);
-        nextBtn.on(Button.EventType.CLICK, () => {
-            const nextIndex = (currentIndex + 1) % RACE_DIFFICULTY_OPTIONS.length;
-            setSelectedRaceDifficulty(RACE_DIFFICULTY_OPTIONS[nextIndex].id);
-            this.showCharacterSelect();
-        });
-
-        makeLabel('DifficultyDesc', parent, raceDifficultyDescription(currentOption.id), 14, uiColor(180, 200, 220)).setPosition(centerX, baseY - 30, 3);
-
-        const start = makeButton('StartRaceButton', parent, 200, 56, CYAN, '开始比赛');
-        start.setPosition(centerX, baseY - 68, 3);
+        // Primary start button: bottom-right corner, same family as the start
+        // menu's main action so the two screens read as one flow.
+        const start = makeButton('StartRaceButton', parent, 240, 96, CYAN, '开始比赛');
+        start.setPosition(this._width / 2 - 32 - 120, -this._height / 2 + 12 + 48, 3);
+        const startLabel = start.getChildByName('Label')?.getComponent(Label);
+        if (startLabel) {
+            startLabel.fontSize = 28;
+            startLabel.color = uiColor(6, 35, 54);
+        }
         start.on(Button.EventType.CLICK, () => {
             const chosen = getSelectedRaceDifficulty();
             setRaceDifficulty(chosen);
@@ -439,4 +445,31 @@ function raceDifficultyDescription(difficulty: RaceDifficulty): string {
     if (difficulty === 'beginner') return '节奏宽松，适合熟悉操作。';
     if (difficulty === 'championship') return '高压对抗，挑战极限表现。';
     return '平衡对抗，考验节奏与判断。';
+}
+
+// Shared screen title: bold italic-ish white text with a dark drop shadow and
+// an orange speed slash, matching the logo's slanted style.
+function makeScreenTitle(parent: Node, text: string, y: number): Node {
+    const title = makeLabel('ScreenTitle', parent, text, 40, WHITE);
+    title.setPosition(0, y, 2);
+    const label = title.getComponent(Label)!;
+    label.enableOutline = false;
+    label.isItalic = true;
+    const outline = title.addComponent(LabelOutline);
+    outline.color = uiColor(4, 16, 30, 255);
+    outline.width = 3;
+
+    const slash = makeUiNode('ScreenTitleSlash', parent);
+    slash.getComponent(UITransform)!.setContentSize(12, 40);
+    const labelWidth = label.string.length * 40;
+    slash.setPosition(labelWidth / 2 + 26, y, 2);
+    const gfx = slash.addComponent(Graphics);
+    gfx.fillColor = ACCENT;
+    gfx.moveTo(-6, -20);
+    gfx.lineTo(2, -20);
+    gfx.lineTo(6, 20);
+    gfx.lineTo(-2, 20);
+    gfx.close();
+    gfx.fill();
+    return title;
 }
