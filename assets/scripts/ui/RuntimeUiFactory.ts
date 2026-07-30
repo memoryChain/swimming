@@ -7,7 +7,9 @@ export function uiColor(r: number, g: number, b: number, a = 255): Color {
 export function makeUiNode(name: string, parent: Node): Node {
     const node = new Node(name);
     node.setParent(parent);
-    node.layer = Layers.Enum.UI_2D;
+    // Inherit the parent's Cocos layer so UI built under a dedicated layer (e.g.
+    // the popup overlay) lands on that layer automatically; normal UI stays UI_2D.
+    node.layer = parent?.layer ?? Layers.Enum.UI_2D;
     node.addComponent(UITransform);
     return node;
 }
