@@ -36,6 +36,7 @@ type SlotMember = {
     nickName: string;
     ready: boolean;
     owner: boolean;
+    pos: number;
 };
 
 export class RoomFlow {
@@ -50,8 +51,10 @@ export class RoomFlow {
     private _pendingSeed = 0;
     private _statusHint: string | null = null;
     private _startRequested = false;
+    private _gameStartCalled = false;
     private _raceEntered = false;
     private _localReady = false;
+    private _localPos = -1;
 
     constructor(
         private readonly _parent: Node,
@@ -61,6 +64,7 @@ export class RoomFlow {
         private readonly _joinRoomId: string | null = null,
     ) {
         this._isHost = !_joinRoomId;
+        this._localPos = this._isHost ? 0 : -1;
         this.build();
         this.setupNet();
     }
@@ -144,6 +148,13 @@ export class RoomFlow {
                     // Backup pull of the authoritative roster (a few retries) in case
                     // onRoomInfoChange didn't reach us on this device.
                     this.refreshRoomInfo(0);
+                    // The host auto-readies: the official demo requires ALL members
+                    // (including the owner) to be ready before starting, and unready
+                    // members don't seem to receive onGameStart. Guests ready manually.
+                    if (this._isHost) {
+                        this._localReady = true;
+                        netRoom().updateReady(true).catch(() => undefined);
+                    }
                 })
                 .catch((error) => {
                     const reason = (error && (error.errMsg || error.message)) || String(error);
@@ -172,6 +183,7 @@ export class RoomFlow {
             nickName: PlayerData.nickName,
             ready: this._localReady,
             owner: this._isHost,
+            pos: this._localPos,
         };
     }
 
@@ -184,6 +196,7 @@ export class RoomFlow {
                 nickName: parsed.nickName,
                 ready: m.ready === true,
                 owner: m.owner === true,
+                pos: typeof m.pos === 'number' ? m.pos : -1,
             };
         });
         // Best-effort self highlight (no reliable openId match on-device yet): mark
@@ -193,8 +206,11 @@ export class RoomFlow {
         const mine = list.find((m) => m.avatarId === selfId && m.nickName === selfName);
         if (mine) {
             mine.self = true;
-            // Trust the server's ready state for our own slot.
+            // Trust the server's ready state + seat index for our own slot.
             this._localReady = mine.ready;
+            if (mine.pos >= 0) {
+                this._localPos = mine.pos;
+            }
         } else if (list.length === 0) {
             list.push(this.selfMember());
         }
@@ -258,9 +274,9 @@ export class RoomFlow {
             }
         }
         const humanCount = this._members.length;
-        const guests = this._members.filter((m) => !m.owner);
-        const readyGuests = guests.filter((m) => m.ready).length;
-        const allReady = guests.length > 0 && readyGuests === guests.length;
+        // Count ALL members (the host auto-readies too), matching the demo's allReady.
+        const readyCount = this._members.filter((m) => m.ready).length;
+        const allReady = humanCount >= 2 && readyCount === humanCount;
         if (this._hintLabel?.isValid) {
             if (this._statusHint) {
                 this._hintLabel.string = this._statusHint;
@@ -269,7 +285,7 @@ export class RoomFlow {
             } else if (this._isHost) {
                 this._hintLabel.string = humanCount < 2
                     ? '邀请好友加入 · 至少 2 人可开始'
-                    : `${readyGuests}/${guests.length} 名玩家已准备${allReady ? ' · 可以开始' : '，等待全部准备'}`;
+                    : `${readyCount}/${humanCount} 名玩家已准备${allReady ? ' · 可以开始' : '，等待全部准备'}`;
             } else {
                 this._hintLabel.string = this._localReady ? '已准备 · 等待房主开始' : '点“准备”后等待房主开始';
             }
@@ -281,7 +297,7 @@ export class RoomFlow {
                     label.string = this._localReady ? '取消准备' : '准备';
                     label.color = this._localReady ? uiColor(255, 214, 140, 235) : uiColor(255, 255, 255, 235);
                 } else {
-                    const canStart = !this._netReal || (humanCount >= 2 && allReady);
+                    const canStart = !this._netReal || allReady;
                     label.string = '开始比赛';
                     label.color = canStart ? uiColor(255, 255, 255, 235) : uiColor(160, 176, 190, 200);
                 }
@@ -347,9 +363,8 @@ export class RoomFlow {
         }
     }
 
-    private allGuestsReady(): boolean {
-        const guests = this._members.filter((m) => !m.owner);
-        return guests.length > 0 && guests.every((m) => m.ready);
+    private allMembersReady(): boolean {
+        return this._members.length >= 2 && this._members.every((m) => m.ready);
     }
 
     // Guest toggles their own ready state (shown on every client's avatar badge via
@@ -378,7 +393,7 @@ export class RoomFlow {
             this.setHint('至少需要 2 名玩家才能开始');
             return;
         }
-        if (!this.allGuestsReady()) {
+        if (!this.allMembersReady()) {
             this.setHint('等待所有玩家准备…');
             return;
         }
@@ -386,40 +401,46 @@ export class RoomFlow {
             return;
         }
         this._startRequested = true;
-        // Host: pick a seed, broadcast it to guests, then start lock-step. The HOST does
-        // NOT receive onGameStart (only guests do), so it enters the race on its own
-        // startGame success. enterNetRace is idempotent (_raceEntered).
+        // Follow the WeChat lock-step demo: the host broadcasts a START signal carrying
+        // the shared seed; EVERY member (including the host, which receives its own
+        // broadcast) then calls startGame via handleBroadcast. With startPercent=0 the
+        // game starts and onGameStart fires on ALL members — that is the ONLY signal
+        // used to enter the race. (Entering earlier uploads frames before the frame
+        // loop exists -> nativeInstance.uploadFrame error.)
         this._pendingSeed = SeededRandom.entropySeed();
         this.setHint('开始中…');
         netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
-        netRoom()
-            .startGame()
-            .then(() => this.enterNetRace())
-            .catch((error) => {
-                console.warn('[Room] startGame failed', error);
-                this._startRequested = false;
-                this.setHint('开始失败，请重试');
-            });
+        // Do NOT call startGame directly here: the host must go through its own
+        // broadcast (handleBroadcast -> requestStartGame) like the guest, otherwise it
+        // becomes the lone initiator that the server does NOT deliver onGameStart to.
     }
 
-    // Guests receive the host's start signal (seed) and join lock-step. A guest enters
-    // the race on EITHER onGameStart OR its own startGame success, whichever arrives
-    // first (idempotent via _raceEntered).
+    // Enter lock-step by calling startGame (once). Host calls this after broadcasting;
+    // guests call it on receiving the broadcast. Race entry is driven by onGameStart.
+    private requestStartGame() {
+        if (this._gameStartCalled) {
+            return;
+        }
+        this._gameStartCalled = true;
+        this.setHint('开始中…');
+        netRoom().startGame().catch((error) => {
+            console.warn('[Room] startGame failed', error);
+        });
+    }
+
+    // The host broadcasts START; guests call startGame on receiving it. The HOST
+    // (room owner) does NOT call startGame: on device the owner that calls startGame
+    // never becomes a real frame participant (uploadFrame's nativeInstance is never
+    // created), while a guest that calls startGame works. Mirroring the official demo
+    // (where the owner doesn't receive its own broadcast and so never calls startGame),
+    // only guests call startGame; the host enters via game-start detection (roomState).
     private handleBroadcast(msg: string) {
         try {
             const data = JSON.parse(msg);
             if (data && data.t === 'start' && typeof data.seed === 'number') {
                 this._pendingSeed = data.seed >>> 0;
-                if (!this._isHost && !this._startRequested) {
-                    this._startRequested = true;
-                    this.setHint('开始中…');
-                    netRoom()
-                        .startGame()
-                        .then(() => this.enterNetRace())
-                        .catch(() => {
-                            // Game may already be running (host initiated with
-                            // startPercent=0); rely on onGameStart instead.
-                        });
+                if (!this._isHost) {
+                    this.requestStartGame();
                 }
             }
         } catch (error) {
@@ -442,6 +463,7 @@ export class RoomFlow {
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
             members,
             localIsHost: this._isHost,
+            localPos: this._localPos >= 0 ? this._localPos : (this._isHost ? 0 : 0),
         });
         this._callbacks.onStartNetRace();
     }

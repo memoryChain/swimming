@@ -82,5 +82,13 @@ export interface IPlatform {
     requestUserProfile(): Promise<UserProfile | null>;
 
     // Launch query parameters (e.g. a shared room id in `room`). Empty when none.
+    // NOTE: only reflects the COLD launch; when the game is already running and the
+    // user taps a share card, the platform does NOT relaunch — it fires onAppShow
+    // with the NEW query instead. Use onAppShow to catch warm-launch invites.
     getLaunchQuery(): Record<string, string>;
+
+    // Fires every time the mini-game returns to the foreground (including when a
+    // share card is tapped while it is already running). `query` carries the launch
+    // parameters of THAT show (e.g. a `room` id). Returns an unsubscribe function.
+    onAppShow(callback: (query: Record<string, string>) => void): () => void;
 }

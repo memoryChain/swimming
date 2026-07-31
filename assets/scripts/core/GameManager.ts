@@ -51,6 +51,7 @@ import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
+import { NetRaceController } from '../net/NetRaceController';
 import { reseedSharedRandom } from './SharedRNG';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
@@ -121,6 +122,8 @@ export class GameManager extends Component {
     // Set for a networked (frame-synced) race: shared seed + human roster. Null for a
     // normal single-player race.
     private _netSession: NetRaceSessionData | null = null;
+    // Drives lock-step frame exchange during a networked race (null otherwise).
+    private _netRaceController: NetRaceController | null = null;
     // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
@@ -267,6 +270,8 @@ export class GameManager extends Component {
     onDestroy() {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.unbind();
+        this._netRaceController?.dispose();
+        this._netRaceController = null;
         this._gameFlow?.stopAllAi();
         this._gameFlow?.clearRaceManagerCallbacks();
         this._laneLockdownVisuals?.dispose();
@@ -284,6 +289,9 @@ export class GameManager extends Component {
         if (!this._playerSwimmer) {
             return;
         }
+        // Lock-step frame exchange (networked race only) runs on wall-clock dt, before
+        // bullet-time scaling.
+        this._netRaceController?.tick(dt);
         // Bullet-time: everything GameManager drives (camera, model debug, etc.)
         // runs on the scaled delta. Input classification stays on wall-clock.
         dt = scaledDelta(dt);
@@ -593,10 +601,13 @@ export class GameManager extends Component {
             // Networked race: every client reseeds SharedRNG with the host's seed so
             // the AI fill, lane assignment, and roster shuffles match on all clients.
             reseedSharedRandom(this._netSession.seed);
+            this._netRaceController = new NetRaceController(this._netSession);
         }
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
+        // Networked race: show the sync debug HUD on the race canvas.
+        this._netRaceController?.attachHud(scene.canvasNode, scene.width, scene.height);
         this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
         this.buildPool3D(this._worldRoot, (pool) => {

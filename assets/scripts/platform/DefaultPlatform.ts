@@ -66,4 +66,9 @@ export class DefaultPlatform implements IPlatform {
     getLaunchQuery(): Record<string, string> {
         return {};
     }
+
+    onAppShow(_callback: (query: Record<string, string>) => void): () => void {
+        // No foreground/background lifecycle off-platform.
+        return () => {};
+    }
 }

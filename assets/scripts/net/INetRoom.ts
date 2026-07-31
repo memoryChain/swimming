@@ -14,6 +14,8 @@ export interface NetRoomMember {
     openId?: string;
     // Assigned by the platform on joinRoom; identifies a player within the room.
     clientId?: number;
+    // Seat index within the room (WeChat posNum). Used to attribute lock-step frames.
+    pos?: number;
     ready?: boolean;
     // True for the room owner (host).
     owner?: boolean;

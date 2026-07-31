@@ -17,6 +17,8 @@ export interface NetRaceSessionData {
     members: NetRaceMember[];
     // Whether this client is the room host.
     localIsHost: boolean;
+    // This client's own seat index (WeChat posNum) used to stamp uploaded frames.
+    localPos: number;
 }
 
 let _session: NetRaceSessionData | null = null;

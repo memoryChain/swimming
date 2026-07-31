@@ -220,4 +220,27 @@ export class WechatPlatform implements IPlatform {
             return {};
         }
     }
+
+    onAppShow(callback: (query: Record<string, string>) => void): () => void {
+        const handler = (res: any) => {
+            try {
+                callback((res && res.query) || {});
+            } catch (error) {
+                console.warn('[Platform] wechat onShow handler failed', error);
+            }
+        };
+        try {
+            wx.onShow(handler);
+        } catch (error) {
+            console.warn('[Platform] wechat onShow failed', error);
+            return () => {};
+        }
+        return () => {
+            try {
+                wx.offShow && wx.offShow(handler);
+            } catch (error) {
+                // ignore
+            }
+        };
+    }
 }

@@ -14,14 +14,14 @@ const SUBPACKAGE_BUNDLES = [
 ];
 
 // WeChat lock-step (帧同步) options for wx.getGameServerManager(). gameTick is the
-// logical frame interval in ms (33ms ≈ 30 logical frames/sec). dataType 'String'
-// matches our string-encoded per-frame input actions (see net/NetRaceInput).
+// logical frame interval in ms (33ms ≈ 30 logical frames/sec). Matches the official
+// minigame-lockstep-demo game.json. Without this, WeChat warns "lockStepOptions is
+// not an Object, using default options".
 const LOCK_STEP_OPTIONS = {
     gameTick: 33,
     heartBeatTick: 2000,
-    offlineTimeLength: 15000,
+    offlineTimeLength: 10000,
     UDPReliabilityStrategy: 3,
-    dataType: 'String',
 };
 
 exports.throwError = true;

@@ -158,4 +158,27 @@ export class DouyinPlatform implements IPlatform {
             return {};
         }
     }
+
+    onAppShow(callback: (query: Record<string, string>) => void): () => void {
+        const handler = (res: any) => {
+            try {
+                callback((res && res.query) || {});
+            } catch (error) {
+                console.warn('[Platform] douyin onShow handler failed', error);
+            }
+        };
+        try {
+            tt.onShow(handler);
+        } catch (error) {
+            console.warn('[Platform] douyin onShow failed', error);
+            return () => {};
+        }
+        return () => {
+            try {
+                tt.offShow && tt.offShow(handler);
+            } catch (error) {
+                // ignore
+            }
+        };
+    }
 }

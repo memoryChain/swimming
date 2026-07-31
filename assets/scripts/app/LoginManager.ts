@@ -35,6 +35,7 @@ export class LoginManager extends Component {
     private _pendingOpenRoom = false;
     private _pendingJoinRoomId: string | null = null;
     private _loginUiRetries = 0;
+    private _offAppShow: (() => void) | null = null;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -59,6 +60,11 @@ export class LoginManager extends Component {
             this._pendingJoinRoomId = invitedRoom;
             this._pendingOpenRoom = true;
         }
+        // Warm-launch invites: when the game is ALREADY running and the user taps a
+        // share card, WeChat does not relaunch (onLoad won't run again) — it fires
+        // onShow with the new query. Catch that here so a room invite still opens the
+        // room instead of just foregrounding the game.
+        this._offAppShow = platform().onAppShow((query) => this.handleAppShowInvite(query));
         // Log in as soon as the entry scene opens. On WeChat/Douyin this fetches a
         // login code (to later exchange on a server); in the editor/web build it is a
         // harmless mock. Fire-and-forget: the result is cached in PlatformSession.
@@ -144,6 +150,8 @@ export class LoginManager extends Component {
     }
 
     onDestroy() {
+        this._offAppShow?.();
+        this._offAppShow = null;
         this._prepareRaceFlow?.dispose();
         this._roomFlow?.dispose();
         this._headBar?.dispose();
@@ -178,6 +186,20 @@ export class LoginManager extends Component {
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
         }
+    }
+
+    private handleAppShowInvite(query: Record<string, string>) {
+        const invitedRoom = query && query.room;
+        if (!invitedRoom) {
+            return;
+        }
+        console.log(`[Room] onShow invite room=${invitedRoom} roomOpen=${!!this._roomFlow}`);
+        // Already in a room: nothing to do (openRoom also guards on _roomFlow).
+        if (this._roomFlow) {
+            return;
+        }
+        // Open the invited room in JOIN mode right away (openRoom hides the login UI).
+        this.openRoom(invitedRoom);
     }
 
     private openRoom(joinRoomId: string | null = null) {

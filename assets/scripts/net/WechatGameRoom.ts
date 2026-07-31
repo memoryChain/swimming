@@ -18,6 +18,16 @@ import {
 // Injected by the WeChat mini-game runtime adapter. Untyped on purpose.
 declare const wx: any;
 
+// onGameStart is an UNRELIABLE WeChat API: the official lock-step demo has the same
+// bug where some members (often the room owner) never receive it even though
+// startGame's success returns 'ok'. The documented community workaround is to detect
+// the game start from the room state via getRoomInfo / onRoomInfoChange. Room states:
+// 1=inTeam(lobby), 2=gameStart, 3=gameEnd, 4=roomDestroy, and a running game has also
+// been reported as 5. Treat 2 or 5 as "the game has started".
+function isGameStartedRoomState(state: number | undefined): boolean {
+    return state === 2 || state === 5;
+}
+
 // Verbose logging of the raw GameServerManager payloads. Leave on until the field
 // mappings below are confirmed on a real device, then flip to false.
 const NET_DEBUG = true;
@@ -42,6 +52,36 @@ function netLog(tag: string, payload?: any): void {
     console.log(`[NetWX] ${tag}: ${text}`);
 }
 
+// One-shot device/runtime diagnostic. The frame-sync native module (nativeInstance)
+// runs inside a WeChat worker; on some devices the worker fails to spin up
+// (`WeixinWorker.createWXLibWorker is not a function`), which correlates with an old
+// WeChat client / base-library version. Log both device envs so a failing phone can
+// be compared against a working one.
+let _deviceEnvLogged = false;
+function logDeviceEnv(): void {
+    if (_deviceEnvLogged) {
+        return;
+    }
+    _deviceEnvLogged = true;
+    try {
+        const info: any = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {};
+        const gsm: any = wx.getGameServerManager ? wx.getGameServerManager() : null;
+        netLog('device env', {
+            wechatVersion: info.version, // 微信客户端版本
+            SDKVersion: info.SDKVersion, // 基础库版本 (frame sync needs a recent one)
+            platform: info.platform, // ios / android / devtools
+            system: info.system,
+            brand: info.brand,
+            model: info.model,
+            hasGSM: !!gsm,
+            hasUploadFrame: !!(gsm && typeof gsm.uploadFrame === 'function'),
+            hasCreateWorker: typeof (wx as any).createWorker === 'function',
+        });
+    } catch (error) {
+        netLog('device env FAILED', String(error));
+    }
+}
+
 export class WechatGameRoom implements INetRoom {
     readonly name = 'wechat';
 
@@ -51,6 +91,15 @@ export class WechatGameRoom implements INetRoom {
     private _roomEventsBound = false;
     private _gameEventsBound = false;
     private _loggedIn = false;
+    // True once the game has started: only then may we uploadFrame (before that the
+    // native frame instance doesn't exist -> 'nativeInstance.uploadFrame' error).
+    private _gameStarted = false;
+    // Fire the game-start callback exactly once, from whichever signal arrives first
+    // (native onGameStart, or roomState->started via onRoomInfoChange / getRoomInfo
+    // poll). Needed because onGameStart is unreliable (see note above).
+    private _gameStartNotified = false;
+    // True for the room creator (owner); owners must leave via ownerLeaveRoom.
+    private _isOwner = false;
 
     isSupported(): boolean {
         return typeof wx !== 'undefined' && typeof wx.getGameServerManager === 'function';
@@ -85,13 +134,14 @@ export class WechatGameRoom implements INetRoom {
         this._roomEventsBound = true;
         this.safeOn('onRoomInfoChange', () => gsm.onRoomInfoChange?.((res: any) => {
             netLog('onRoomInfoChange', res);
-            this._callbacks.onRoomInfoChange?.(mapRoomInfo(res));
+            const info = mapRoomInfo(res);
+            this._callbacks.onRoomInfoChange?.(info);
+            if (isGameStartedRoomState(info.state)) {
+                this.handleGameStarted('roomState');
+            }
         }));
         this.safeOn('onGameStart', () => gsm.onGameStart?.(() => {
-            netLog('onGameStart');
-            // The frame emitter exists now — (re)bind onSyncFrame/onDisconnect.
-            this.bindGameEvents();
-            this._callbacks.onGameStart?.();
+            this.handleGameStarted('onGameStart');
         }));
         this.safeOn('onBroadcast', () => gsm.onBroadcast?.((res: any) => {
             netLog('onBroadcast', res);
@@ -99,6 +149,8 @@ export class WechatGameRoom implements INetRoom {
         }));
         this.safeOn('onGameEnd', () => gsm.onGameEnd?.(() => {
             netLog('onGameEnd');
+            this._gameStarted = false;
+            this._gameStartNotified = false;
             this._callbacks.onGameEnd?.();
         }));
         this.safeOn('onLogout', () => gsm.onLogout?.(() => {
@@ -140,10 +192,44 @@ export class WechatGameRoom implements INetRoom {
         }
     }
 
+    // Fire the game-start callback exactly once (onGameStart / roomState / poll).
+    private handleGameStarted(source: string): void {
+        if (this._gameStartNotified) {
+            return;
+        }
+        this._gameStartNotified = true;
+        this._gameStarted = true;
+        netLog(`game started (${source})`);
+        this.bindGameEvents();
+        this._callbacks.onGameStart?.();
+    }
+
+    // Poll the room state after startGame so a member that never receives the native
+    // onGameStart still detects the game has started (roomState 2/5). Logs the state
+    // so we can see the real value.
+    private pollGameStart(attempt: number): void {
+        if (this._gameStartNotified || attempt >= 15) {
+            return;
+        }
+        this.getRoomInfo().then((info) => {
+            if (this._gameStartNotified) {
+                return;
+            }
+            const state = info ? info.state : undefined;
+            netLog(`poll roomState=${state}`);
+            if (isGameStartedRoomState(state)) {
+                this.handleGameStarted('poll');
+            } else {
+                setTimeout(() => this.pollGameStart(attempt + 1), 400);
+            }
+        });
+    }
+
     login(): Promise<void> {
         if (!this.isSupported()) {
             return Promise.reject(new Error('game server manager unavailable'));
         }
+        logDeviceEnv();
         return this.manager()
             .login()
             .then(() => {
@@ -161,14 +247,15 @@ export class WechatGameRoom implements INetRoom {
     createRoom(options: CreateRoomOptions): Promise<NetRoomInfo> {
         const payload = {
             maxMemberNum: options.maxMembers,
-            // startPercent = how many members must have called startGame before the
-            // game actually starts (onGameStart fires). 0 = a single startGame (the
-            // host's) starts it for the whole room; 100 = ALL must call startGame.
-            // We use 0 so a host-initiated start reliably fires onGameStart even if a
-            // guest's startGame is late/dropped.
+            // startPercent = fraction of members that must have called startGame before
+            // the game starts. 0 (the demo default) = the game starts as soon as the
+            // members' startGame calls arrive. The official demo requires ALL members
+            // (including the owner) to be READY (updateReadyStatus) before the host
+            // broadcasts START; every member then calls startGame and receives
+            // onGameStart. Readiness — not startPercent — is what makes the owner
+            // participate, so we keep 0 and auto-ready the host.
             startPercent: options.startPercent ?? 0,
             needUserInfo: false,
-            roomType: 'swim',
             memberExtInfo: options.memberExtInfo,
         };
         netLog('createRoom ->', payload);
@@ -178,6 +265,7 @@ export class WechatGameRoom implements INetRoom {
                 netLog('createRoom result', res);
                 const info = mapRoomInfo(res);
                 this._accessInfo = info.accessInfo;
+                this._isOwner = true;
                 return info;
             })
             .catch((error: any) => {
@@ -259,17 +347,20 @@ export class WechatGameRoom implements INetRoom {
 
     startGame(): Promise<void> {
         const gsm = this.manager();
-        // The frame emitter should exist once we're starting — bind onSyncFrame now.
-        this.bindGameEvents();
-        // startGame does NOT support promise-style calls — wrap success/fail. The
-        // resolution is THIS member's "game started" cue (the caller does not receive
-        // onGameStart; other members do).
+        // Do NOT bind onSyncFrame here. Before the game has actually started the frame
+        // emitter doesn't exist and gsm.onSyncFrame() throws; that premature failed bind
+        // appears to leave the CALLER out of the frame loop (uploadFrame's nativeInstance
+        // never gets created, so the host — the first startGame caller — gets
+        // 'nativeInstance.uploadFrame' errors while the guest works). We bind onSyncFrame
+        // ONLY after the game is confirmed started, in handleGameStarted().
+        // onGameStart is unreliable; poll the room state to detect the start.
+        this.pollGameStart(0);
+        // startGame does NOT support promise-style calls — wrap success/fail.
         return new Promise((resolve, reject) => {
             try {
                 gsm.startGame({
                     success: () => {
                         netLog('startGame ok');
-                        this.bindGameEvents();
                         resolve();
                     },
                     fail: (error: any) => {
@@ -285,11 +376,24 @@ export class WechatGameRoom implements INetRoom {
     }
 
     uploadFrame(action: string): void {
-        this.manager().uploadFrame({ actionList: [action] });
+        // Only valid after onGameStart; before that the native frame instance is not
+        // ready and uploadFrame throws (unhandled promise rejection).
+        if (!this._gameStarted) {
+            return;
+        }
+        try {
+            this.manager().uploadFrame({ actionList: [action] });
+        } catch (error) {
+            netLog('uploadFrame threw', (error as any)?.errMsg || (error as any)?.message || String(error));
+        }
     }
 
     broadcast(msg: string): void {
         this.manager().broadcastInRoom({ msg });
+        // The host broadcasts START but does NOT call startGame (see RoomFlow), so it
+        // won't poll via startGame(); start watching for the game start here so the
+        // owner still detects it (roomState) even without receiving onGameStart.
+        this.pollGameStart(0);
     }
 
     reconnect(): Promise<number> {
@@ -299,9 +403,19 @@ export class WechatGameRoom implements INetRoom {
     }
 
     leaveRoom(): Promise<void> {
+        const gsm = this.manager();
         const accessInfo = this._accessInfo;
+        const wasOwner = this._isOwner;
         this._accessInfo = '';
-        return this.manager().memberLeaveRoom({ accessInfo });
+        this._gameStarted = false;
+        this._gameStartNotified = false;
+        this._isOwner = false;
+        // The room OWNER must call ownerLeaveRoom (dissolves / reassigns the room) so
+        // remaining members get an onRoomInfoChange; guests call memberLeaveRoom.
+        if (wasOwner && typeof gsm.ownerLeaveRoom === 'function') {
+            return gsm.ownerLeaveRoom({ accessInfo, assignToMinPosNum: true });
+        }
+        return gsm.memberLeaveRoom({ accessInfo });
     }
 
     logout(): Promise<void> {
@@ -333,6 +447,7 @@ function mapRoomInfo(res: any): NetRoomInfo {
         ? rawMembers.map((m: any) => ({
             openId: m?.openId ?? m?.openid,
             clientId: m?.clientId ?? m?.posNum,
+            pos: typeof m?.posNum === 'number' ? m.posNum : undefined,
             ready: m?.readyState === 1 || m?.isReady === true || m?.ready === true,
             owner: m?.role === 1 || m?.owner === true,
             extInfo: m?.memberExtInfo ?? m?.extInfo,
