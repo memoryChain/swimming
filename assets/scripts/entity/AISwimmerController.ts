@@ -113,10 +113,18 @@ export class AISwimmerController extends Component {
     }
 
     update(dt: number) {
+        // Fixed-step (net race): stepped by the net driver, not the engine.
+        if (this.swimmer?.netFixedStep) {
+            return;
+        }
+        this.stepSimulation(scaledDelta(dt));
+    }
+
+    // One AI decision step. `sdt` is the final step length (scaling applied by caller).
+    stepSimulation(sdt: number) {
         if (!this._active || !this.swimmer || !this.swimmer.isRacing) {
             return;
         }
-        const sdt = scaledDelta(dt);
         this.updateEffortModifier(sdt);
         if (this._phase === 'gap') {
             this._timer -= sdt;

@@ -99,6 +99,63 @@ export class Swimmer extends Component {
         this.cartoonRig?.flashCollision();
     }
 
+    // NETWORKED RACE ONLY: lateral offset for authoritative position snapshots.
+    get netLateralOffset(): number {
+        return this._motor.lateralOffset;
+    }
+
+    // NETWORKED RACE ONLY: steering heading (radians) for authoritative snapshots.
+    get netHeading(): number {
+        return this._motor.heading;
+    }
+
+    // NETWORKED RACE ONLY: ease this swimmer's steering heading toward the host's
+    // authoritative value so its facing/steering matches on every client.
+    applyNetHeading(targetHeading: number, blend: number) {
+        if (!this._motor.isRacing) {
+            return;
+        }
+        this._motor.correctHeading(targetHeading, blend);
+    }
+
+    // NETWORKED RACE ONLY: keep this swimmer just short of the finish wall. Used on the
+    // client for remote/AI swimmers until the host's authoritative snapshot reports them
+    // finished, so a client can't latch a finish (finishes are latched) that the host
+    // never had — which would make the two ends disagree on the final placement.
+    holdBeforeFinishLine() {
+        if (!this._motor.isRacing) {
+            return;
+        }
+        const cap = getRaceDistance() - 0.03;
+        if (this._motor.distance > cap) {
+            this._motor.nudgeDistance(cap - this._motor.distance);
+        }
+    }
+
+    // NETWORKED RACE ONLY (host-authoritative sync): nudge this swimmer's race
+    // progress + lane offset toward the host's authoritative values. Small errors
+    // ease smoothly; large errors (e.g. after a collision the host resolved
+    // differently) snap so clients converge quickly. The swimmer's own update()
+    // repositions the node from the corrected motor state, so we only touch the motor.
+    applyNetCorrection(targetDistance: number, targetLateral: number, distanceBlend: number, lateralBlend: number) {
+        if (!this._motor.isRacing) {
+            return;
+        }
+        const errD = targetDistance - this._motor.distance;
+        if (Math.abs(errD) > 3) {
+            this._motor.nudgeDistance(errD);
+        } else if (Math.abs(errD) > 1e-3) {
+            this._motor.nudgeDistance(errD * distanceBlend);
+        }
+        const curLateral = this._motor.lateralOffset;
+        const errL = targetLateral - curLateral;
+        if (Math.abs(errL) > 1) {
+            this._motor.setLateralOffset(targetLateral);
+        } else if (Math.abs(errL) > 1e-4) {
+            this._motor.setLateralOffset(curLateral + errL * lateralBlend);
+        }
+    }
+
     start() {
         this.captureStartPosition();
     }
@@ -292,13 +349,28 @@ export class Swimmer extends Component {
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
+    // NETWORKED RACE ONLY: when true this swimmer is stepped in deterministic fixed
+    // steps by the net driver (used for AI, which have no network input and the same
+    // seed, so a fixed step makes them identical across clients without correction).
+    // The engine update() then skips it. Defaults false → single-player / players run
+    // on the normal engine dt.
+    public netFixedStep = false;
+
     update(dt: number) {
+        // Fixed-step (AI in a net race): stepped by the net driver instead of here.
+        if (this.netFixedStep) {
+            return;
+        }
+        this.stepSimulation(scaledDelta(dt));
+    }
+
+    // One simulation step. Single-player: engine-driven on variable (bullet-time
+    // scaled) dt. Networked race: fixed-step (NET_SIM_STEP) from the deterministic
+    // net driver. `dt` is already the final step length (scaling applied by caller).
+    stepSimulation(dt: number) {
         if (!this._motor.isRacing) {
             return;
         }
-
-        // Bullet-time: swimmer simulation + motion run on the scaled delta.
-        dt = scaledDelta(dt);
         if (this._phases.tick(dt)) {
             return;
         }

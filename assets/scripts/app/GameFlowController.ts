@@ -41,6 +41,12 @@ export type GameFlowRefs = {
     showLiveRanks: (results: RaceFinishResult[]) => void;
     showFinishRank: (result: RaceFinishResult) => void;
     onSwimmerEliminated: (swimmer: Swimmer) => void;
+    // Begin the pre-dive countdown. Single-player starts immediately; a networked race
+    // waits for the host's synchronized GO so all players' countdowns start together.
+    beginCountdown: () => void;
+    // Networked race: adopt the host's authoritative final placement (single-player
+    // passes the local leaderboard straight to `done`).
+    resolveNetLeaderboard: (leaderboard: RaceFinishResult[], done: (leaderboard: RaceFinishResult[]) => void) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
     enterSprint: () => void;
@@ -214,7 +220,7 @@ export class GameFlowController {
             return;
         }
         this._refs.debug('pre-race showcase skipped by player');
-        this._refs.raceManager?.startRace();
+        this._refs.beginCountdown();
     }
 
     handleDiveRelease(holdSeconds: number) {
@@ -298,19 +304,30 @@ export class GameFlowController {
             this.stopAllAi();
             const rhythm = this._refs.playerSwimmer?.rhythmStats;
             const placement = placementSummary ?? this.calculatePlayerPlacement();
-            this._refs.uiFlow.showResult(playerWin, playerTime, aiTime, {
-                averageSpeed: playerTime > 0 ? getRaceDistance() / playerTime : 0,
-                maxCombo: rhythm?.maxCombo ?? 0,
-                perfectCount: rhythm?.perfectCount ?? 0,
-                goodCount: rhythm?.goodCount ?? 0,
-                missCount: rhythm?.missCount ?? 0,
-                placement: placement.placement,
-                racerCount: placement.racerCount,
-                leaderboard: placement.leaderboard,
+            const localLeaderboard = placement.leaderboard ?? [];
+            // Networked race: adopt the host's authoritative ordering before showing
+            // results (single-player resolves synchronously with the local order).
+            this._refs.resolveNetLeaderboard(localLeaderboard, (leaderboard) => {
+                const playerRow = leaderboard.find((row) => row.isPlayer);
+                const finalPlacement = playerRow?.placement ?? placement.placement;
+                const finalPlayerWin = !!playerRow?.finished && finalPlacement === 1;
+                // Networked race: the host's authoritative time (adopted into playerRow)
+                // is the shared truth, so both screens show the same headline result.
+                const finalPlayerTime = playerRow && playerRow.time > 0 ? playerRow.time : playerTime;
+                this._refs.uiFlow.showResult(finalPlayerWin, finalPlayerTime, aiTime, {
+                    averageSpeed: finalPlayerTime > 0 ? getRaceDistance() / finalPlayerTime : 0,
+                    maxCombo: rhythm?.maxCombo ?? 0,
+                    perfectCount: rhythm?.perfectCount ?? 0,
+                    goodCount: rhythm?.goodCount ?? 0,
+                    missCount: rhythm?.missCount ?? 0,
+                    placement: finalPlacement,
+                    racerCount: placement.racerCount,
+                    leaderboard,
+                });
+                this._refs.clearFinishRanks();
+                this._refs.showAwards(leaderboard);
+                this._refs.setState(GameState.AWARDS);
             });
-            this._refs.clearFinishRanks();
-            this._refs.showAwards(placement.leaderboard ?? []);
-            this._refs.setState(GameState.AWARDS);
         };
         raceManager.onDiveReady = () => {
             if (this._diveChargeStarted) {
@@ -414,7 +431,7 @@ export class GameFlowController {
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);
         if (this._refs.getState() === GameState.PRECOUNTDOWN && this._refs.raceCameraDirector.consumePreCountdownReady()) {
             this._refs.debug('pre-countdown camera ready');
-            this._refs.raceManager?.startRace();
+            this._refs.beginCountdown();
         }
     }
 

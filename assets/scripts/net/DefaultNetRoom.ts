@@ -61,6 +61,18 @@ export class DefaultNetRoom implements INetRoom {
         return Promise.resolve();
     }
 
+    endGame(): Promise<void> {
+        return Promise.resolve();
+    }
+
+    isOwner(): boolean {
+        return false;
+    }
+
+    currentAccessInfo(): string {
+        return '';
+    }
+
     logout(): Promise<void> {
         return Promise.resolve();
     }

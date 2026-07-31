@@ -31,18 +31,20 @@ export function avatarColorOf(id: string): readonly [number, number, number] {
     return (AVATARS.find((a) => a.id === id) ?? AVATARS[0]).color;
 }
 
-const NICK_PREFIX = [
-    '飞驰的', '无敌', '闪电', '疾风', '深海', '浪花', '金牌', '冠军',
-    '快乐', '咸鱼', '摸鱼', '躺平', '暴走', '佛系', '钢铁', '迷你',
-];
-
-const NICK_CORE = [
-    '海豚', '飞鱼', '蛟龙', '鲨鱼', '旗鱼', '水母', '企鹅', '河马',
-    '鸭子', '泳者', '劈波者', '浪里白条', '锦鲤', '章鱼', '海星', '龙王',
+// Human-player nicknames use a cute "小 + 动物 + 随机数字" style (e.g. 小鸡1024,
+// 小鸭7788). This is deliberately DISTINCT from the surname-style AI opponent names
+// (王划水 / 浪里白条 …) so players and AI are easy to tell apart, and the numeric
+// suffix keeps repeats between players unlikely.
+const CUTE_ANIMALS = [
+    '鸡', '鸭', '猫', '狗', '兔', '熊', '猪', '鹅',
+    '鱼', '虾', '龟', '鹿', '象', '狮', '虎', '豹',
+    '猴', '羊', '牛', '马', '蛙', '鲸', '海豚', '水獭',
 ];
 
 export function generateRandomNickName(): string {
-    const prefix = NICK_PREFIX[Math.floor(Math.random() * NICK_PREFIX.length)];
-    const core = NICK_CORE[Math.floor(Math.random() * NICK_CORE.length)];
-    return `${prefix}${core}`;
+    const animal = CUTE_ANIMALS[Math.floor(Math.random() * CUTE_ANIMALS.length)];
+    // 4-digit suffix (1000–9999): 9000 numbers × the animal pool make collisions
+    // between two randomly-generated player names rare.
+    const number = 1000 + Math.floor(Math.random() * 9000);
+    return `小${animal}${number}`;
 }

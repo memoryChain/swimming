@@ -34,6 +34,7 @@ export class LoginManager extends Component {
     private _adPending = false;
     private _pendingOpenRoom = false;
     private _pendingJoinRoomId: string | null = null;
+    private _pendingReconnect = false;
     private _loginUiRetries = 0;
     private _offAppShow: (() => void) | null = null;
 
@@ -52,13 +53,22 @@ export class LoginManager extends Component {
         this.buildLoginScreen(canvasNode, width, height);
         MusicManager.playLogin();
         // Returning from a room-mode race: re-open the room once the login UI loads.
-        this._pendingOpenRoom = consumeReturnToRoom();
+        // This is a RECONNECT to the still-existing room, not a fresh create/join.
+        const returningToRoom = consumeReturnToRoom();
+        this._pendingOpenRoom = returningToRoom;
+        this._pendingReconnect = returningToRoom;
         // Launched from a shared room invite (query `room=<accessInfo>`): auto-open the
-        // room in JOIN mode as soon as the login UI is ready.
-        const invitedRoom = platform().getLaunchQuery().room;
-        if (invitedRoom) {
-            this._pendingJoinRoomId = invitedRoom;
-            this._pendingOpenRoom = true;
+        // room in JOIN mode. IMPORTANT: only on a genuine fresh launch — getLaunchQuery()
+        // keeps returning the ORIGINAL invite room on every later scene load, so honoring
+        // it after a race would wrongly re-JOIN the (now in-game) room ("invalid room
+        // state"). When returning from a race we reconnect instead and ignore it.
+        if (!returningToRoom) {
+            const invitedRoom = platform().getLaunchQuery().room;
+            if (invitedRoom) {
+                this._pendingJoinRoomId = invitedRoom;
+                this._pendingOpenRoom = true;
+                this._pendingReconnect = false;
+            }
         }
         // Warm-launch invites: when the game is ALREADY running and the user taps a
         // share card, WeChat does not relaunch (onLoad won't run again) — it fires
@@ -202,7 +212,7 @@ export class LoginManager extends Component {
         this.openRoom(invitedRoom);
     }
 
-    private openRoom(joinRoomId: string | null = null) {
+    private openRoom(joinRoomId: string | null = null, reconnect = false) {
         if (this._roomFlow) {
             return;
         }
@@ -230,7 +240,7 @@ export class LoginManager extends Component {
                 this._headBar?.setBack(null);
                 this.launchMainGame('race');
             },
-        }, joinRoomId);
+        }, joinRoomId, reconnect);
         this._headBar?.setBack(() => this.exitRoom());
     }
 
@@ -353,7 +363,9 @@ export class LoginManager extends Component {
                 this._pendingOpenRoom = false;
                 const roomId = this._pendingJoinRoomId;
                 this._pendingJoinRoomId = null;
-                this.openRoom(roomId);
+                const reconnect = this._pendingReconnect;
+                this._pendingReconnect = false;
+                this.openRoom(roomId, reconnect);
             }
         });
     }

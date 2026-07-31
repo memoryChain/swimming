@@ -62,8 +62,22 @@ export class RoomFlow {
         private readonly _height: number,
         private readonly _callbacks: RoomFlowCallbacks,
         private readonly _joinRoomId: string | null = null,
+        // True when RE-entering the room after a race (the WeChat room still exists):
+        // reconnect to it instead of creating/joining a fresh one.
+        private readonly _reconnect: boolean = false,
     ) {
-        this._isHost = !_joinRoomId;
+        if (_reconnect) {
+            // Returning after a race: keep whatever role we had (owner stays owner).
+            let owner = false;
+            try {
+                owner = netRoom().isOwner();
+            } catch (error) {
+                owner = !_joinRoomId;
+            }
+            this._isHost = owner;
+        } else {
+            this._isHost = !_joinRoomId;
+        }
         this._localPos = this._isHost ? 0 : -1;
         this.build();
         this.setupNet();
@@ -129,6 +143,26 @@ export class RoomFlow {
                 onGameStart: () => this.enterNetRace(),
             });
             const extInfo = encodeIdentity(self.avatarId, self.nickName);
+            if (this._reconnect) {
+                // Returning after a race: the WeChat room still exists and we are still
+                // a member — do NOT create/join a new one (that would fork the room, so
+                // the host ends up alone while the guest sees a stale roster). Re-attach
+                // callbacks (they were replaced by NetRaceController during the race),
+                // have the owner end the game so the room returns to the lobby, reset
+                // our ready flag, and re-pull the roster.
+                this._accessInfo = net.currentAccessInfo();
+                const prep = this._isHost ? net.endGame() : Promise.resolve();
+                prep.then(() => {
+                    this._localReady = this._isHost;
+                    net.updateReady(this._localReady).catch(() => undefined);
+                    this.refreshRoomInfo(0);
+                    this.render();
+                }).catch((error) => {
+                    console.warn('[Room] reconnect prep failed:', error);
+                    this.refreshRoomInfo(0);
+                });
+                return;
+            }
             const enter = this._joinRoomId
                 ? net.login().then(() => net.joinRoom(this._joinRoomId!, extInfo))
                 : net.login().then(() => net.createRoom({ maxMembers: MAX_SLOTS, memberExtInfo: extInfo }));
@@ -210,6 +244,15 @@ export class RoomFlow {
             this._localReady = mine.ready;
             if (mine.pos >= 0) {
                 this._localPos = mine.pos;
+            }
+            // Ownership can transfer to us mid-lobby (the host left, so WeChat's
+            // assignToMinPosNum handed ownership to the lowest-seat member). Promote to
+            // the host view (start button + auto-ready) so the room stays controllable.
+            if (mine.owner && !this._isHost) {
+                this._isHost = true;
+                this._localReady = true;
+                mine.ready = true;
+                netRoom().updateReady(true).catch(() => undefined);
             }
         } else if (list.length === 0) {
             list.push(this.selfMember());

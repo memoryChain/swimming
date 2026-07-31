@@ -91,6 +91,10 @@ const SPRINT_KICK_VIEW_CONFIRM_SECONDS = 0.24;
 // +10.5) stays in frame from the fixed 22.5m camera height; the previous 46
 // clipped lanes 1 and 8 off the top and bottom of the screen.
 const FINISH_TOP_FOV = 56;
+// Debug "whole field" overhead: high, centred on the pool, framing the entire venue
+// so AI positions can be compared across clients. Ceiling is hidden (topViewActive).
+const FIELD_OVERVIEW_HEIGHT = 27;
+const FIELD_OVERVIEW_FOV = 64;
 const SWIM_ANGLE_VIEW_FRONT_RANK = 3;
 const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
 export const RACE_CAMERA_TUNING = {
@@ -183,6 +187,8 @@ export class RaceCameraDirector {
     private _diveShotElapsed = -1;
     private _diveSurfaceRestoreSeconds = 0;
     private _topViewActive = false;
+    // Debug: overhead whole-field view toggle (overrides the normal race camera).
+    private _fieldOverviewActive = false;
     // When true this director drives the venue jumbotron feed camera. Both the
     // main broadcast camera and this feed use the classic side-tracking race
     // views outside the actual sprint phase.
@@ -486,6 +492,12 @@ export class RaceCameraDirector {
             this.updateSpectatorCamera(dt);
             return;
         }
+        // Debug overhead whole-field view overrides the normal race camera.
+        if (this._fieldOverviewActive) {
+            this._flipTurnViewActive = false;
+            this.updateFieldOverviewCamera();
+            return;
+        }
         const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive && !this._feedMode;
         if (flipTurnViewRequested) {
             const enteringFlipTurnView = !this._flipTurnViewActive;
@@ -567,6 +579,9 @@ export class RaceCameraDirector {
         }
         if (this._flipTurnViewActive) {
             baseFov = RACE_CAMERA_TUNING.flipTurnFov;
+        }
+        if (this._fieldOverviewActive) {
+            baseFov = FIELD_OVERVIEW_FOV;
         }
         camera.fov = Math.max(18, baseFov);
     }
@@ -1088,6 +1103,26 @@ export class RaceCameraDirector {
 
     get underwaterViewActive(): boolean {
         return this._underwaterViewActive;
+    }
+
+    // Debug: toggle the overhead whole-field view. Returns the new active state.
+    toggleFieldOverview(): boolean {
+        this._fieldOverviewActive = !this._fieldOverviewActive;
+        return this._fieldOverviewActive;
+    }
+
+    get fieldOverviewActive(): boolean {
+        return this._fieldOverviewActive;
+    }
+
+    private updateFieldOverviewCamera() {
+        this._topViewActive = true;
+        this._underwaterViewActive = false;
+        const centerX = (this._courseLayout.poolStartX + this._courseLayout.poolFinishX) * 0.5;
+        this._cameraTarget.set(centerX, 0.18, 0);
+        this._cameraPos.set(centerX, FIELD_OVERVIEW_HEIGHT, 0);
+        this.applyCameraTransform(new Vec3(0, 0, -1));
+        this.applyFov();
     }
 }
 

@@ -418,6 +418,44 @@ export class WechatGameRoom implements INetRoom {
         return gsm.memberLeaveRoom({ accessInfo });
     }
 
+    endGame(): Promise<void> {
+        const gsm = this.manager();
+        // Owner-only; ends the lock-step game so the room returns to the lobby state
+        // and can be reused. Wrapped as a callback-style call (no promise support).
+        return new Promise((resolve) => {
+            try {
+                if (typeof gsm.endGame !== 'function') {
+                    resolve();
+                    return;
+                }
+                gsm.endGame({
+                    accessInfo: this._accessInfo,
+                    success: () => {
+                        netLog('endGame ok');
+                        this._gameStarted = false;
+                        this._gameStartNotified = false;
+                        resolve();
+                    },
+                    fail: (error: any) => {
+                        netLog('endGame FAILED', (error as any)?.errMsg || String(error));
+                        resolve();
+                    },
+                });
+            } catch (error) {
+                netLog('endGame threw', (error as any)?.errMsg || String(error));
+                resolve();
+            }
+        });
+    }
+
+    isOwner(): boolean {
+        return this._isOwner;
+    }
+
+    currentAccessInfo(): string {
+        return this._accessInfo;
+    }
+
     logout(): Promise<void> {
         return this.manager().logout();
     }

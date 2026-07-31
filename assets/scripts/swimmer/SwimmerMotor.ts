@@ -924,6 +924,18 @@ export class SwimmerMotor {
         return this._heading;
     }
 
+    // NETWORKED RACE: ease the heading (and its steering target) toward the host's
+    // authoritative value. Math.sin/cos differ in the last bits across JS engines
+    // (iOS JavaScriptCore vs Android V8), so headings drift apart otherwise, showing
+    // as "faces one way but swims the other". Setting the target too makes the local
+    // steering ease toward the host instead of the locally-chosen weave.
+    correctHeading(targetHeading: number, blend: number) {
+        const max = safeMaxHeadingRadians();
+        const t = clamp(finiteOr(targetHeading, 0), -max, max);
+        this._heading = clamp(finiteOr(this._heading + (t - this._heading) * clamp(blend, 0, 1), 0), -max, max);
+        this._headingTarget = t;
+    }
+
     get lateralOffset(): number {
         return this._lateralOffset;
     }

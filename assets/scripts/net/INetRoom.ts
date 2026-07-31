@@ -105,6 +105,16 @@ export interface INetRoom {
     // Leave the current room.
     leaveRoom(): Promise<void>;
 
+    // End the current lock-step game (owner only) so the room returns to the lobby
+    // state and can be reused for another race. No-op if not in a game.
+    endGame(): Promise<void>;
+
+    // Whether this client currently owns a room (created it and hasn't left).
+    isOwner(): boolean;
+
+    // The accessInfo (room id) of the room this client is currently in ('' if none).
+    currentAccessInfo(): string;
+
     // Log out of the game service.
     logout(): Promise<void>;
 }

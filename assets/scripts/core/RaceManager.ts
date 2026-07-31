@@ -84,7 +84,11 @@ export class RaceManager extends Component {
     }
 
     update(dt: number) {
-        dt = scaledDelta(dt);
+        this.stepSimulation(scaledDelta(dt));
+    }
+
+    // One race step. `dt` is the final step length (scaling applied by the caller).
+    stepSimulation(dt: number) {
         if (this._state === GameState.COUNTDOWN) {
             this.updateCountdown(dt);
         } else if (this._state === GameState.DIVING) {
@@ -162,21 +166,32 @@ export class RaceManager extends Component {
     private updateDiving(dt: number) {
         this._raceTimer += dt;
         this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0, dt);
+        // AI race on their own reaction timers even if the player never dives. Keep
+        // watching for finishers here so the race can still conclude (player = DNF)
+        // instead of hanging with the AI frozen at the wall.
+        this.trackFinishers(dt);
     }
 
     private updateGliding(dt: number) {
         this._raceTimer += dt;
         this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0, dt);
+        this.trackFinishers(dt);
     }
 
     private updateRacing(dt: number) {
         this._raceTimer += dt;
         const playerDist = this.playerSwimmer?.distance ?? 0;
         const aiDist = this.aiSwimmer?.distance ?? 0;
+        this.onProgressUpdate?.(playerDist, aiDist, dt);
+        this.trackFinishers(dt);
+    }
+
+    // Finisher detection + straggler countdown + race conclusion. Runs during
+    // DIVING/GLIDING/RACING so the race always concludes even if the player never
+    // dives (the AI dive and race on their own reaction timers).
+    private trackFinishers(dt: number) {
         const aiSwimmers = this.activeAiSwimmers();
         const activeRacers = this.activeRacers();
-
-        this.onProgressUpdate?.(playerDist, aiDist, dt);
 
         for (const swimmer of aiSwimmers) {
             if (!this._aiFinishTimes.has(swimmer) && swimmer.distance >= getRaceDistance()) {
@@ -187,6 +202,7 @@ export class RaceManager extends Component {
         }
         this._aiFinishTime = this.bestAiFinishTime();
 
+        const playerDist = this.playerSwimmer?.distance ?? 0;
         if (!this._playerFinished && playerDist >= getRaceDistance()) {
             this._playerFinished = true;
             this._playerFinishTime = this._raceTimer;
