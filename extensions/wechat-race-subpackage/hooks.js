@@ -13,6 +13,17 @@ const SUBPACKAGE_BUNDLES = [
     { name: 'music', root: 'db://assets/music', priority: 6 },
 ];
 
+// WeChat lock-step (帧同步) options for wx.getGameServerManager(). gameTick is the
+// logical frame interval in ms (33ms ≈ 30 logical frames/sec). dataType 'String'
+// matches our string-encoded per-frame input actions (see net/NetRaceInput).
+const LOCK_STEP_OPTIONS = {
+    gameTick: 33,
+    heartBeatTick: 2000,
+    offlineTimeLength: 15000,
+    UDPReliabilityStrategy: 3,
+    dataType: 'String',
+};
+
 exports.throwError = true;
 
 exports.onBeforeBuild = async function onBeforeBuild(options) {
@@ -106,6 +117,9 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
         ...generatedSubpackages.map(({ name, root }) => ({ name, root })),
         ...subpackages.filter((subpackage) => !generatedNames.has(subpackage.name)),
     ];
+    // Configure lock-step so wx.getGameServerManager() stops falling back to defaults
+    // (the "lockStepOptions is not an Object" runtime warning) and uses our gameTick.
+    gameConfig.lockStepOptions = LOCK_STEP_OPTIONS;
     fs.writeFileSync(gameJsonPath, `${JSON.stringify(gameConfig, null, 4)}\n`, 'utf8');
 
     const verifiedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));

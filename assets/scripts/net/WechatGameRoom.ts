@@ -48,7 +48,8 @@ export class WechatGameRoom implements INetRoom {
     private _gsm: any = null;
     private _callbacks: NetRoomCallbacks = {};
     private _accessInfo = '';
-    private _eventsBound = false;
+    private _roomEventsBound = false;
+    private _gameEventsBound = false;
     private _loggedIn = false;
 
     isSupported(): boolean {
@@ -68,30 +69,30 @@ export class WechatGameRoom implements INetRoom {
         // GameServerManager's internal emitter doesn't exist until login() runs, so
         // calling gsm.onXxx() before login throws "this.emitter.on is undefined".
         if (this._loggedIn) {
-            this.bindEvents();
+            this.bindRoomEvents();
         }
     }
 
-    // Register the platform event listeners once, forwarding to _callbacks (which
-    // can be swapped freely via setCallbacks without re-binding). MUST run after
-    // login() so the manager's internal emitter exists.
-    private bindEvents(): void {
-        if (this._eventsBound || !this.isSupported()) {
+    // Room-level events, bindable after login(). NOTE: onSyncFrame / onDisconnect are
+    // FRAME-level and are bound separately in bindGameEvents() — on some devices their
+    // internal emitter only exists once the lock-step game is starting, so binding
+    // them here throws "this.emitter.on is undefined".
+    private bindRoomEvents(): void {
+        if (this._roomEventsBound || !this.isSupported()) {
             return;
         }
         const gsm = this.manager();
-        this._eventsBound = true;
-        // Each registration is guarded: a single unsupported/failing event must not
-        // abort the whole room setup.
+        this._roomEventsBound = true;
         this.safeOn('onRoomInfoChange', () => gsm.onRoomInfoChange?.((res: any) => {
             netLog('onRoomInfoChange', res);
             this._callbacks.onRoomInfoChange?.(mapRoomInfo(res));
         }));
         this.safeOn('onGameStart', () => gsm.onGameStart?.(() => {
             netLog('onGameStart');
+            // The frame emitter exists now — (re)bind onSyncFrame/onDisconnect.
+            this.bindGameEvents();
             this._callbacks.onGameStart?.();
         }));
-        this.safeOn('onSyncFrame', () => gsm.onSyncFrame?.((res: any) => this._callbacks.onSyncFrame?.(mapSyncFrame(res))));
         this.safeOn('onBroadcast', () => gsm.onBroadcast?.((res: any) => {
             netLog('onBroadcast', res);
             this._callbacks.onBroadcast?.(typeof res?.msg === 'string' ? res.msg : '');
@@ -100,21 +101,42 @@ export class WechatGameRoom implements INetRoom {
             netLog('onGameEnd');
             this._callbacks.onGameEnd?.();
         }));
-        this.safeOn('onDisconnect', () => gsm.onDisconnect?.(() => {
-            netLog('onDisconnect');
-            this._callbacks.onDisconnect?.();
-        }));
         this.safeOn('onLogout', () => gsm.onLogout?.(() => {
             netLog('onLogout');
             this._callbacks.onLogout?.();
         }));
     }
 
-    private safeOn(name: string, register: () => void): void {
+    // Frame-level events, bindable once the lock-step game is starting (startGame /
+    // onGameStart). Idempotent + retried, since their emitter may not be ready on the
+    // first attempt.
+    private bindGameEvents(): void {
+        if (this._gameEventsBound || !this.isSupported()) {
+            return;
+        }
+        const gsm = this.manager();
+        const syncOk = this.safeOn('onSyncFrame', () => gsm.onSyncFrame?.((res: any) => {
+            this._callbacks.onSyncFrame?.(mapSyncFrame(res));
+        }));
+        this.safeOn('onDisconnect', () => gsm.onDisconnect?.(() => {
+            netLog('onDisconnect');
+            this._callbacks.onDisconnect?.();
+        }));
+        // Only latch as bound if the critical frame event actually attached; otherwise
+        // leave it unbound so a later startGame/onGameStart retries.
+        if (syncOk) {
+            this._gameEventsBound = true;
+            netLog('game events bound');
+        }
+    }
+
+    private safeOn(name: string, register: () => void): boolean {
         try {
             register();
+            return true;
         } catch (error) {
             netLog(`event bind failed: ${name}`, (error as any)?.errMsg || (error as any)?.message || String(error));
+            return false;
         }
     }
 
@@ -127,8 +149,8 @@ export class WechatGameRoom implements INetRoom {
             .then(() => {
                 netLog('login ok');
                 this._loggedIn = true;
-                // The emitter is ready now — safe to register room/frame events.
-                this.bindEvents();
+                // The room emitter is ready now — safe to register room events.
+                this.bindRoomEvents();
             })
             .catch((error: any) => {
                 netLog('login FAILED', error);
@@ -139,7 +161,12 @@ export class WechatGameRoom implements INetRoom {
     createRoom(options: CreateRoomOptions): Promise<NetRoomInfo> {
         const payload = {
             maxMemberNum: options.maxMembers,
-            startPercent: options.startPercent ?? 100,
+            // startPercent = how many members must have called startGame before the
+            // game actually starts (onGameStart fires). 0 = a single startGame (the
+            // host's) starts it for the whole room; 100 = ALL must call startGame.
+            // We use 0 so a host-initiated start reliably fires onGameStart even if a
+            // guest's startGame is late/dropped.
+            startPercent: options.startPercent ?? 0,
             needUserInfo: false,
             roomType: 'swim',
             memberExtInfo: options.memberExtInfo,
@@ -203,11 +230,58 @@ export class WechatGameRoom implements INetRoom {
     }
 
     updateReady(ready: boolean): Promise<void> {
-        return this.manager().updateReadyStatus({ accessInfo: this._accessInfo, isReady: ready });
+        // updateReadyStatus does NOT support promise-style calls — use success/fail.
+        return new Promise((resolve, reject) => {
+            const gsm = this.manager();
+            if (!gsm || typeof gsm.updateReadyStatus !== 'function') {
+                resolve();
+                return;
+            }
+            try {
+                gsm.updateReadyStatus({
+                    accessInfo: this._accessInfo,
+                    isReady: ready,
+                    success: () => {
+                        netLog('updateReady ok', ready);
+                        resolve();
+                    },
+                    fail: (error: any) => {
+                        netLog('updateReady FAILED', error);
+                        reject(error);
+                    },
+                });
+            } catch (error) {
+                netLog('updateReady threw', (error as any)?.errMsg || (error as any)?.message || String(error));
+                reject(error);
+            }
+        });
     }
 
-    startGame(): void {
-        this.manager().startGame();
+    startGame(): Promise<void> {
+        const gsm = this.manager();
+        // The frame emitter should exist once we're starting — bind onSyncFrame now.
+        this.bindGameEvents();
+        // startGame does NOT support promise-style calls — wrap success/fail. The
+        // resolution is THIS member's "game started" cue (the caller does not receive
+        // onGameStart; other members do).
+        return new Promise((resolve, reject) => {
+            try {
+                gsm.startGame({
+                    success: () => {
+                        netLog('startGame ok');
+                        this.bindGameEvents();
+                        resolve();
+                    },
+                    fail: (error: any) => {
+                        netLog('startGame FAILED', error);
+                        reject(error);
+                    },
+                });
+            } catch (error) {
+                netLog('startGame threw', (error as any)?.errMsg || (error as any)?.message || String(error));
+                reject(error);
+            }
+        });
     }
 
     uploadFrame(action: string): void {
@@ -260,6 +334,7 @@ function mapRoomInfo(res: any): NetRoomInfo {
             openId: m?.openId ?? m?.openid,
             clientId: m?.clientId ?? m?.posNum,
             ready: m?.readyState === 1 || m?.isReady === true || m?.ready === true,
+            owner: m?.role === 1 || m?.owner === true,
             extInfo: m?.memberExtInfo ?? m?.extInfo,
         }))
         : [];

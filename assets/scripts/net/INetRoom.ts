@@ -15,6 +15,8 @@ export interface NetRoomMember {
     // Assigned by the platform on joinRoom; identifies a player within the room.
     clientId?: number;
     ready?: boolean;
+    // True for the room owner (host).
+    owner?: boolean;
     // Per-player info set on join (e.g. nickname / avatar / chosen character).
     extInfo?: string;
 }
@@ -81,9 +83,12 @@ export interface INetRoom {
     // Mark this player ready/not-ready in the room.
     updateReady(ready: boolean): Promise<void>;
 
-    // Enter lock-step. Every member must call this; frames start once startPercent
-    // of members have. Fires onGameStart / onSyncFrame afterwards.
-    startGame(): void;
+    // Enter lock-step. Every member may call this; the game starts once startPercent
+    // of members have (0 = the first startGame starts it for the room). Resolves when
+    // the platform confirms the start command succeeded. NOTE: on WeChat the member
+    // that calls startGame does NOT receive onGameStart — use this resolution as that
+    // member's own "game started" signal; other members get onGameStart.
+    startGame(): Promise<void>;
 
     // Upload this player's input for the current logical frame (opaque string).
     uploadFrame(action: string): void;

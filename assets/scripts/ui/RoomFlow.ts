@@ -34,6 +34,8 @@ type SlotMember = {
     self: boolean;
     avatarId: string;
     nickName: string;
+    ready: boolean;
+    owner: boolean;
 };
 
 export class RoomFlow {
@@ -49,6 +51,7 @@ export class RoomFlow {
     private _statusHint: string | null = null;
     private _startRequested = false;
     private _raceEntered = false;
+    private _localReady = false;
 
     constructor(
         private readonly _parent: Node,
@@ -80,10 +83,12 @@ export class RoomFlow {
         const exit = makeButton('ExitRoom', root, 220, 60, uiColor(90, 96, 104, 235), '退出房间');
         exit.setPosition(-150, bottomY, 0);
         exit.on(Node.EventType.TOUCH_END, () => this.exit());
-        const start = makeButton('StartRoomRace', root, 260, 60, uiColor(38, 150, 96, 245), '开始比赛');
-        start.setPosition(160, bottomY, 0);
-        start.on(Node.EventType.TOUCH_END, () => this.startRace());
-        this._startButton = start;
+        // Host gets the start button; guests get a ready toggle. (_isHost is set before
+        // build() runs.)
+        const action = makeButton('StartRoomRace', root, 260, 60, uiColor(38, 150, 96, 245), this._isHost ? '开始比赛' : '准备');
+        action.setPosition(160, bottomY, 0);
+        action.on(Node.EventType.TOUCH_END, () => (this._isHost ? this.startRace() : this.toggleReady()));
+        this._startButton = action;
     }
 
     private setupNet() {
@@ -161,13 +166,25 @@ export class RoomFlow {
     }
 
     private selfMember(): SlotMember {
-        return { self: true, avatarId: PlayerData.avatarId, nickName: PlayerData.nickName };
+        return {
+            self: true,
+            avatarId: PlayerData.avatarId,
+            nickName: PlayerData.nickName,
+            ready: this._localReady,
+            owner: this._isHost,
+        };
     }
 
     private membersFromInfo(info: NetRoomInfo): SlotMember[] {
-        const list = info.members.map((m) => {
+        const list: SlotMember[] = info.members.map((m) => {
             const parsed = parseIdentity(m.extInfo);
-            return { self: false, avatarId: parsed.avatarId, nickName: parsed.nickName };
+            return {
+                self: false,
+                avatarId: parsed.avatarId,
+                nickName: parsed.nickName,
+                ready: m.ready === true,
+                owner: m.owner === true,
+            };
         });
         // Best-effort self highlight (no reliable openId match on-device yet): mark
         // the first member whose identity equals ours.
@@ -176,6 +193,8 @@ export class RoomFlow {
         const mine = list.find((m) => m.avatarId === selfId && m.nickName === selfName);
         if (mine) {
             mine.self = true;
+            // Trust the server's ready state for our own slot.
+            this._localReady = mine.ready;
         } else if (list.length === 0) {
             list.push(this.selfMember());
         }
@@ -239,24 +258,30 @@ export class RoomFlow {
             }
         }
         const humanCount = this._members.length;
+        const guests = this._members.filter((m) => !m.owner);
+        const readyGuests = guests.filter((m) => m.ready).length;
+        const allReady = guests.length > 0 && readyGuests === guests.length;
         if (this._hintLabel?.isValid) {
             if (this._statusHint) {
                 this._hintLabel.string = this._statusHint;
+            } else if (!this._netReal) {
+                this._hintLabel.string = '本地预览房间（真机联机才能邀请好友） · 空位由 AI 补齐';
+            } else if (this._isHost) {
+                this._hintLabel.string = humanCount < 2
+                    ? '邀请好友加入 · 至少 2 人可开始'
+                    : `${readyGuests}/${guests.length} 名玩家已准备${allReady ? ' · 可以开始' : '，等待全部准备'}`;
             } else {
-                this._hintLabel.string = this._netReal
-                    ? `已加入 ${humanCount}/${MAX_SLOTS} 人 · 至少 2 名真人可开始，空位由 AI 补齐`
-                    : '本地预览房间（真机联机才能邀请好友） · 空位由 AI 补齐';
+                this._hintLabel.string = this._localReady ? '已准备 · 等待房主开始' : '点“准备”后等待房主开始';
             }
         }
-        // Host gating: real net needs ≥2 humans; local preview allows a solo demo.
-        const canStart = !this._netReal || humanCount >= 2;
         if (this._startButton?.isValid) {
             const label = this._startButton.getChildByName('Label')?.getComponent(Label);
             if (label) {
-                if (this._netReal && !this._isHost) {
-                    label.string = '等待房主';
-                    label.color = uiColor(160, 176, 190, 200);
+                if (!this._isHost && this._netReal) {
+                    label.string = this._localReady ? '取消准备' : '准备';
+                    label.color = this._localReady ? uiColor(255, 214, 140, 235) : uiColor(255, 255, 255, 235);
                 } else {
+                    const canStart = !this._netReal || (humanCount >= 2 && allReady);
                     label.string = '开始比赛';
                     label.color = canStart ? uiColor(255, 255, 255, 235) : uiColor(160, 176, 190, 200);
                 }
@@ -280,6 +305,22 @@ export class RoomFlow {
         const name = makeLabel('SlotName', content, member.self ? `${member.nickName}(你)` : member.nickName, 20, uiColor(240, 250, 255));
         name.getComponent(UITransform)!.setContentSize(150, 28);
         name.setPosition(cx, cy - 40, 0);
+        // Ready / owner badge under the name so the host can see who is ready.
+        let badgeText: string;
+        let badgeColor;
+        if (member.owner) {
+            badgeText = '房主';
+            badgeColor = uiColor(246, 205, 110);
+        } else if (member.ready) {
+            badgeText = '已准备';
+            badgeColor = uiColor(88, 214, 141);
+        } else {
+            badgeText = '未准备';
+            badgeColor = uiColor(150, 170, 188);
+        }
+        const badge = makeLabel('SlotReady', content, badgeText, 16, badgeColor);
+        badge.getComponent(UITransform)!.setContentSize(120, 22);
+        badge.setPosition(cx, cy - 64, 0);
     }
 
     private buildEmptySlot(content: Node, cx: number, cy: number, index: number) {
@@ -306,6 +347,23 @@ export class RoomFlow {
         }
     }
 
+    private allGuestsReady(): boolean {
+        const guests = this._members.filter((m) => !m.owner);
+        return guests.length > 0 && guests.every((m) => m.ready);
+    }
+
+    // Guest toggles their own ready state (shown on every client's avatar badge via
+    // updateReadyStatus -> onRoomInfoChange).
+    private toggleReady() {
+        this._localReady = !this._localReady;
+        this.render();
+        if (this._netReal) {
+            netRoom().updateReady(this._localReady).catch((error) => {
+                console.warn('[Room] updateReady failed', error);
+            });
+        }
+    }
+
     private startRace() {
         if (!this._netReal) {
             // Editor / local preview: launch the placeholder single-player race.
@@ -317,22 +375,36 @@ export class RoomFlow {
             return;
         }
         if (this._members.length < 2) {
-            this.setHint('至少需要 2 名真人玩家才能开始');
+            this.setHint('至少需要 2 名玩家才能开始');
+            return;
+        }
+        if (!this.allGuestsReady()) {
+            this.setHint('等待所有玩家准备…');
             return;
         }
         if (this._startRequested) {
             return;
         }
         this._startRequested = true;
-        // Host: pick a seed, broadcast it + a start signal, then enter lock-step. Every
-        // client must call startGame(); onGameStart then fires on all of them.
+        // Host: pick a seed, broadcast it to guests, then start lock-step. The HOST does
+        // NOT receive onGameStart (only guests do), so it enters the race on its own
+        // startGame success. enterNetRace is idempotent (_raceEntered).
         this._pendingSeed = SeededRandom.entropySeed();
         this.setHint('开始中…');
         netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
-        netRoom().startGame();
+        netRoom()
+            .startGame()
+            .then(() => this.enterNetRace())
+            .catch((error) => {
+                console.warn('[Room] startGame failed', error);
+                this._startRequested = false;
+                this.setHint('开始失败，请重试');
+            });
     }
 
-    // Guests receive the host's start signal (seed) and join lock-step.
+    // Guests receive the host's start signal (seed) and join lock-step. A guest enters
+    // the race on EITHER onGameStart OR its own startGame success, whichever arrives
+    // first (idempotent via _raceEntered).
     private handleBroadcast(msg: string) {
         try {
             const data = JSON.parse(msg);
@@ -341,7 +413,13 @@ export class RoomFlow {
                 if (!this._isHost && !this._startRequested) {
                     this._startRequested = true;
                     this.setHint('开始中…');
-                    netRoom().startGame();
+                    netRoom()
+                        .startGame()
+                        .then(() => this.enterNetRace())
+                        .catch(() => {
+                            // Game may already be running (host initiated with
+                            // startPercent=0); rely on onGameStart instead.
+                        });
                 }
             }
         } catch (error) {

@@ -41,8 +41,8 @@ export class DefaultNetRoom implements INetRoom {
         return Promise.resolve();
     }
 
-    startGame(): void {
-        // no-op
+    startGame(): Promise<void> {
+        return Promise.reject(new Error('game server manager unavailable'));
     }
 
     uploadFrame(_action: string): void {
