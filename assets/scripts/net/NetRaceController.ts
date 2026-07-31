@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
@@ -33,6 +33,11 @@ const HOST_SILENCE_MS = 2500;
 // posNum reaches its threshold first and starts broadcasting again; everyone else
 // then receives its snapshots and stands down. Deterministic outcome, no negotiation.
 const HOST_TAKEOVER_STAGGER_MS = 800;
+
+// A self-position report (P|) older than this is treated as missing (dropped by the
+// broadcast rate limit), so its swimmer falls back to the host snapshot rather than
+// freezing at a stale position.
+const SELF_SNAPSHOT_FRESH_MS = 800;
 
 export class NetRaceController {
     private readonly _net: INetRoom;
@@ -56,6 +61,12 @@ export class NetRaceController {
     // Latest authoritative position snapshot from the host, keyed by lane. Clients ease
     // their swimmers toward these. Empty on the host (it IS the authority).
     private _snapshotTargets: NetSnapshotEntry[] = [];
+    // Latest OWN-authoritative self-position report per lane (from that human's own
+    // client), with arrival time so a stale one (P| dropped) is ignored and we fall back
+    // to the host snapshot. Used to catch remote human copies up to their owner's view.
+    private readonly _selfSnapshots: Record<number, { entry: NetSnapshotEntry; time: number }> = {};
+    // This client's own player lane, so we ignore the echo of our own self-position.
+    private _playerLaneForSelf = -1;
     // Previous snapshot + arrival times (ms), used to estimate each lane's velocity so
     // the client can EXTRAPOLATE the host position forward and cancel broadcast latency
     // (otherwise every remote/AI swimmer renders ~1 RTT behind, diverging from the
@@ -81,6 +92,8 @@ export class NetRaceController {
     private _countdownStarted = false;
     private _countdownStartListener: (() => void) | null = null;
     private _goTimeoutHandle: any = null;
+    // Notified when a member quits mid-race (Q| broadcast) so its swimmer is retired.
+    private _playerQuitListener: ((pos: number) => void) | null = null;
     // Host migration state. `_isHost` starts from the session but can flip: a client
     // promotes itself if the host goes silent, and a self-promoted host steps back down
     // if a lower-pos (higher-priority) host appears. `_activeHostPos` is the seat of the
@@ -230,6 +243,33 @@ export class NetRaceController {
         return this._snapshotTargets;
     }
 
+    // Broadcast THIS client's own player position so every other client can catch its
+    // on-screen copy up to how its owner sees it (owner predicts locally = the truth).
+    sendSelfSnapshot(entry: NetSnapshotEntry): void {
+        if (this._disposed || !this._net.isSupported()) {
+            return;
+        }
+        this._net.broadcast(encodeSelfSnapshot(entry));
+    }
+
+    // The latest own-authoritative self-position for a lane (from that human's client),
+    // or null if none received recently. Stale reports (P| dropped by the broadcast rate
+    // limit) are ignored so the caller falls back to the host snapshot instead of
+    // freezing that swimmer at an old position.
+    selfSnapshot(lane: number): NetSnapshotEntry | null {
+        const rec = this._selfSnapshots[lane];
+        if (!rec || Date.now() - rec.time > SELF_SNAPSHOT_FRESH_MS) {
+            return null;
+        }
+        return rec.entry;
+    }
+
+    // Tell the controller our own player's lane so it drops the echo of our own
+    // self-position broadcast (we never catch up our own predicted player).
+    setLocalPlayerLane(lane: number): void {
+        this._playerLaneForSelf = lane;
+    }
+
     // Client: the host's position for a lane, EXTRAPOLATED to "now" using the velocity
     // estimated from the last two snapshots (cancels broadcast latency + the gap
     // between snapshots). Returns null if the lane has no snapshot yet.
@@ -266,6 +306,25 @@ export class NetRaceController {
         this._net.broadcast(encodeRaceResult(entries));
     }
 
+    // Announce that THIS client is leaving the race mid-way, so the others retire our
+    // swimmer immediately instead of waiting for the straggler countdown to DNF a body
+    // that has simply frozen. Best-effort (broadcast can drop) + we're leaving right
+    // after, so fire a few times; the straggler countdown is the ultimate fallback.
+    broadcastQuit(): void {
+        if (this._disposed || !this._net.isSupported()) {
+            return;
+        }
+        const msg = `Q|${this._session.localPos}`;
+        this._net.broadcast(msg);
+        this._net.broadcast(msg);
+        this._net.broadcast(msg);
+    }
+
+    // Be notified when a member quits mid-race (its seat pos). Set once by GameManager.
+    setPlayerQuitListener(listener: ((pos: number) => void) | null): void {
+        this._playerQuitListener = listener;
+    }
+
     // Client: the authoritative final placement, or null if not received yet.
     get authResult(): NetResultEntry[] | null {
         return this._authResult;
@@ -297,6 +356,15 @@ export class NetRaceController {
             this.refreshHud();
             return;
         }
+        const self = decodeSelfSnapshot(msg);
+        if (self) {
+            // Own-authoritative position from another human's client; keep the latest
+            // per lane (ignore our own echo — we don't catch up our own player).
+            if (self.lane !== this._playerLaneForSelf) {
+                this._selfSnapshots[self.lane] = { entry: self, time: Date.now() };
+            }
+            return;
+        }
         const result = decodeRaceResult(msg);
         if (result) {
             this._resultRecv++;
@@ -308,6 +376,14 @@ export class NetRaceController {
         // Synchronized countdown start.
         if (msg === 'GO|') {
             this.triggerCountdownFromGo();
+            return;
+        }
+        // A member quit mid-race: retire its swimmer on this client.
+        if (msg.slice(0, 2) === 'Q|') {
+            const pos = parseInt(msg.slice(2), 10);
+            if (Number.isFinite(pos) && pos !== this._session.localPos) {
+                this._playerQuitListener?.(pos);
+            }
             return;
         }
         if (msg.slice(0, 3) === 'CR|' && this.isHost) {
@@ -386,7 +462,9 @@ export class NetRaceController {
 
     // Called once per rendered frame. Emits at most one logical frame per tick window
     // so upload rate tracks the 33ms lock-step cadence rather than the render rate.
-    tick(dt: number): void {
+    // `selfPos` (if given) is this client's own authoritative position, ridden along on
+    // the reliable frame channel so remote copies catch up without best-effort broadcasts.
+    tick(dt: number, selfPos: NetSnapshotEntry | null = null): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
         }
@@ -401,9 +479,10 @@ export class NetRaceController {
             this._sentFrames++;
             // Real per-frame payload: this member's captured input events for the
             // frame (empty payload "<pos>|" when the player did nothing this frame —
-            // every client must upload every frame to keep the lock-step cadence).
+            // every client must upload every frame to keep the lock-step cadence) plus
+            // its own position so peers can reliably catch up to it.
             const events: NetInputEvent[] = drainNetInput();
-            this._net.uploadFrame(encodeInputFrame(this._session.localPos, events));
+            this._net.uploadFrame(encodeInputFrame(this._session.localPos, events, selfPos));
             sentThisTick = true;
         }
         if (sentThisTick) {
@@ -433,6 +512,11 @@ export class NetRaceController {
             // Drive the remote human for this seat (never the local player's own seat).
             if (decoded.senderPos !== this._session.localPos && decoded.events.length > 0) {
                 this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
+            }
+            // Own-authoritative position ridden along on the reliable frame channel:
+            // record the latest per lane (skip our own echo) so remote copies catch up.
+            if (decoded.self && decoded.self.lane !== this._playerLaneForSelf) {
+                this._selfSnapshots[decoded.self.lane] = { entry: decoded.self, time: Date.now() };
             }
             if (decoded.events.length > 0) {
                 this._peerInputCount[decoded.senderPos] = (this._peerInputCount[decoded.senderPos] ?? 0) + 1;

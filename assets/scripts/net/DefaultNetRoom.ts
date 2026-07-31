@@ -65,6 +65,10 @@ export class DefaultNetRoom implements INetRoom {
         return Promise.resolve();
     }
 
+    resetGameStartedLatch(): void {
+        // no-op
+    }
+
     isOwner(): boolean {
         return false;
     }

@@ -55,6 +55,9 @@ export class RoomFlow {
     private _raceEntered = false;
     private _localReady = false;
     private _localPos = -1;
+    // Recovery timer for a start that never completes (guest hadn't returned to the
+    // lobby yet and missed the START broadcast) so the host can't get stuck at 开始中.
+    private _startTimeoutHandle: any = null;
 
     constructor(
         private readonly _parent: Node,
@@ -151,16 +154,18 @@ export class RoomFlow {
                 // have the owner end the game so the room returns to the lobby, reset
                 // our ready flag, and re-pull the roster.
                 this._accessInfo = net.currentAccessInfo();
-                const prep = this._isHost ? net.endGame() : Promise.resolve();
-                prep.then(() => {
-                    this._localReady = this._isHost;
-                    net.updateReady(this._localReady).catch(() => undefined);
-                    this.refreshRoomInfo(0);
-                    this.render();
-                }).catch((error) => {
-                    console.warn('[Room] reconnect prep failed:', error);
-                    this.refreshRoomInfo(0);
-                });
+                // Rematch: KEEP the one lock-step game session ALIVE. Do NOT endGame —
+                // WeChat rejects a second startGame in an ended room with 4014 "game
+                // already started" (the room can't be restarted). Instead we reuse the
+                // still-running session and enter the next race DIRECTLY (see startRace /
+                // handleBroadcast), with the server's heartbeat frames keeping the session
+                // alive while we sit in the lobby. Everyone returns to not-ready (a race
+                // just ended; the server keeps stale isReady otherwise); the host readies
+                // implicitly by pressing 开始.
+                this._localReady = false;
+                net.updateReady(false).catch(() => undefined);
+                this.refreshRoomInfo(0);
+                this.render();
                 return;
             }
             const enter = this._joinRoomId
@@ -407,7 +412,10 @@ export class RoomFlow {
     }
 
     private allMembersReady(): boolean {
-        return this._members.length >= 2 && this._members.every((m) => m.ready);
+        // The host readies implicitly by pressing 开始, so only non-host members must be
+        // ready. (After a race everyone returns not-ready, so this also prevents the
+        // host from starting a rematch until the guest is genuinely back and readied.)
+        return this._members.length >= 2 && this._members.every((m) => m.owner || m.ready);
     }
 
     // Guest toggles their own ready state (shown on every client's avatar badge via
@@ -453,9 +461,42 @@ export class RoomFlow {
         this._pendingSeed = SeededRandom.entropySeed();
         this.setHint('开始中…');
         netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
-        // Do NOT call startGame directly here: the host must go through its own
-        // broadcast (handleBroadcast -> requestStartGame) like the guest, otherwise it
-        // becomes the lone initiator that the server does NOT deliver onGameStart to.
+        if (this._reconnect) {
+            // Rematch on an already-running session: do NOT startGame again (WeChat
+            // errors 4014 "game already started"). The seed is broadcast; enter the race
+            // directly. The guest enters on receiving the broadcast (handleBroadcast).
+            this.enterNetRace();
+        } else {
+            // First game: the guest calls startGame on the broadcast; the host enters via
+            // the resulting onGameStart / roomState detection. Recover if it never
+            // completes (armStartTimeout).
+            this.armStartTimeout();
+        }
+    }
+
+    // Recover from a start that never completes (e.g. the guest hadn't returned to the
+    // lobby yet and missed the START broadcast, so nobody's game actually started).
+    // After a grace period, clear the pending flags so the host can retry once everyone
+    // is genuinely back and ready — instead of being stuck at 开始中 forever.
+    private armStartTimeout() {
+        this.clearStartTimeout();
+        this._startTimeoutHandle = setTimeout(() => {
+            this._startTimeoutHandle = null;
+            if (this._raceEntered) {
+                return;
+            }
+            this._startRequested = false;
+            this._gameStartCalled = false;
+            this.setHint('开始失败，请确认好友已回到房间并准备后重试');
+            this.render();
+        }, 8000);
+    }
+
+    private clearStartTimeout() {
+        if (this._startTimeoutHandle) {
+            clearTimeout(this._startTimeoutHandle);
+            this._startTimeoutHandle = null;
+        }
     }
 
     // Enter lock-step by calling startGame (once). Host calls this after broadcasting;
@@ -466,6 +507,7 @@ export class RoomFlow {
         }
         this._gameStartCalled = true;
         this.setHint('开始中…');
+        this.armStartTimeout();
         netRoom().startGame().catch((error) => {
             console.warn('[Room] startGame failed', error);
         });
@@ -478,11 +520,22 @@ export class RoomFlow {
     // (where the owner doesn't receive its own broadcast and so never calls startGame),
     // only guests call startGame; the host enters via game-start detection (roomState).
     private handleBroadcast(msg: string) {
+        // Only our own room-control messages are JSON objects ('{...}'). The race layer
+        // also broadcasts tagged strings (S|, R|, GO|, Q|) that can still arrive at this
+        // handler right after returning to the lobby — ignore anything that isn't a JSON
+        // object instead of spamming parse errors.
+        if (typeof msg !== 'string' || msg.charCodeAt(0) !== 123) {
+            return;
+        }
         try {
             const data = JSON.parse(msg);
             if (data && data.t === 'start' && typeof data.seed === 'number') {
                 this._pendingSeed = data.seed >>> 0;
-                if (!this._isHost) {
+                if (this._reconnect) {
+                    // Rematch: the lock-step session is still running, so enter the race
+                    // directly instead of calling startGame (which would 4014).
+                    this.enterNetRace();
+                } else if (!this._isHost) {
                     this.requestStartGame();
                 }
             }
@@ -497,6 +550,13 @@ export class RoomFlow {
             return;
         }
         this._raceEntered = true;
+        this.clearStartTimeout();
+        // Clear our ready as the race begins so the server doesn't carry a stale
+        // isReady=true through the race — otherwise a member who returns to the lobby
+        // FIRST sees the still-racing member as "ready" until they get back. Best-effort
+        // (may be rejected mid-game); returning to the lobby also resets it.
+        this._localReady = false;
+        netRoom().updateReady(false).catch(() => undefined);
         const members: NetRaceMember[] = this._members.map((m) => ({
             avatarId: m.avatarId,
             nickName: m.nickName,
@@ -524,6 +584,7 @@ export class RoomFlow {
     }
 
     dispose() {
+        this.clearStartTimeout();
         netRoom().setCallbacks({});
         if (this._root?.isValid) {
             this._root.destroy();

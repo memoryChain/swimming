@@ -29,6 +29,8 @@ export class RemoteSwimmerController extends Component {
     public pos = -1;
     // Guard so a single dive event can't be applied twice.
     private _dived = false;
+    // When the dive was triggered (ms), to detect a dive that got stuck mid-tween.
+    private _diveStartedAt = 0;
 
     // Apply one logical frame's worth of this member's decoded input events, in order.
     applyEvents(events: NetInputEvent[]): void {
@@ -71,11 +73,37 @@ export class RemoteSwimmerController extends Component {
             return;
         }
         this._dived = true;
+        this._diveStartedAt = Date.now();
         swimmer.performDive(resolveDiveResult(Math.max(0, Math.min(1, power))));
+    }
+
+    // Whether this swimmer's dive has been triggered (via a replayed DiveRelease or the
+    // forced-dive redundancy). While false the body is still on the starting block.
+    get hasDived(): boolean {
+        return this._dived;
+    }
+
+    // Milliseconds since the dive was triggered (0 if never). Used to tell a normal
+    // in-progress dive tween (recent) from one that got stuck (old, never reached racing).
+    diveElapsed(): number {
+        return this._dived ? Date.now() - this._diveStartedAt : 0;
+    }
+
+    // Redundancy for a lost/failed/stuck DiveRelease: if the owner's authoritative
+    // position keeps advancing but this copy isn't racing, force it straight into the
+    // race at the reported distance so it can't stay frozen. Marks it dived so a late
+    // DiveRelease can't re-trigger the dive animation.
+    forceEnterRace(distance: number): void {
+        if (!this.swimmer || !this.swimmer.node.active) {
+            return;
+        }
+        this._dived = true;
+        this.swimmer.forceEnterRaceAt(distance);
     }
 
     // Reset per-race latch so the same body can be reused across restarts.
     resetRemote(): void {
         this._dived = false;
+        this._diveStartedAt = 0;
     }
 }

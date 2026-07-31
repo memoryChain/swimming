@@ -109,6 +109,12 @@ export interface INetRoom {
     // state and can be reused for another race. No-op if not in a game.
     endGame(): Promise<void>;
 
+    // Clear the LOCAL "game has started" latch so a NEW game can be detected. Every
+    // member must call this when returning to the lobby after a race — otherwise the
+    // stale latch makes the next start's onGameStart/roomState detection a no-op and the
+    // member hangs at "开始中". (endGame resets it too, but that is owner-only.)
+    resetGameStartedLatch(): void;
+
     // Whether this client currently owns a room (created it and hasn't left).
     isOwner(): boolean;
 

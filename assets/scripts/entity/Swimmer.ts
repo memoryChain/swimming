@@ -23,6 +23,9 @@ import { SwimmerRacePhases } from './SwimmerRacePhases';
 
 const { ccclass, property } = _decorator;
 const PERFECT_COMBO_IDLE_SECONDS = 1;
+// Scratch vector for net-race render interpolation (avoids per-frame allocation on
+// the WeChat Mini Game heap).
+const _tmpNetLerpPos = new Vec3();
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -208,6 +211,23 @@ export class Swimmer extends Component {
         this.node.active = false;
     }
 
+    // NETWORKED RACE: whether the motor is racing (for the stuck-dive redundancy check).
+    get isNetRacing(): boolean {
+        return this._motor.isRacing;
+    }
+
+    // NETWORKED RACE redundancy: force a remote copy straight into racing at a distance
+    // when its dive was lost/failed or got stuck mid-tween but its owner's authoritative
+    // position keeps advancing. Cancels any half-finished dive tween and skips the
+    // (already-missed) dive animation; the position correction then keeps it in sync.
+    forceEnterRaceAt(distance: number): void {
+        if (this._motor.isRacing) {
+            return;
+        }
+        Tween.stopAllByTarget(this.node);
+        this.startRace(Math.max(0, distance));
+    }
+
     // Signed steering heading as a fraction of maxHeading (-1..1). The AI reads
     // this to sense how far off course it is.
     get steeringHeadingRatio(): number {
@@ -355,6 +375,45 @@ export class Swimmer extends Component {
     // The engine update() then skips it. Defaults false → single-player / players run
     // on the normal engine dt.
     public netFixedStep = false;
+
+    // --- Networked-race render interpolation (position only) ---------------------
+    // The net sim advances in FIXED 33ms steps (30/s) but we render at 45fps, so a
+    // net-driven body's forward glide would visibly step. We smooth ONLY the root
+    // translation by lerping between the last two step positions each render frame.
+    // Rotation/pose stay at step cadence: their stepping is far less visible, and
+    // interpolating rotation would spin the body across the 180° flip-turn / finish
+    // snaps. Cost per body/frame: one Vec3.lerp + setPosition (net-mode only, ~7 bodies,
+    // no allocation) — negligible for WeChat. Player + single-player never use this.
+    private readonly _netLerpFrom = new Vec3();
+    private readonly _netLerpTo = new Vec3();
+    private _netLerpReady = false;
+
+    // Called by the net driver right BEFORE a fixed step: carry the last step target
+    // forward as the new interpolation origin.
+    netStepBegin() {
+        if (!this._netLerpReady) {
+            this._netLerpTo.set(this.node.position);
+            this._netLerpReady = true;
+        }
+        this._netLerpFrom.set(this._netLerpTo);
+    }
+
+    // Called right AFTER a fixed step: capture the fresh authoritative position.
+    netStepEnd() {
+        this._netLerpTo.set(this.node.position);
+    }
+
+    // Called every render frame with the step-phase fraction f∈[0,1]: show the tween
+    // position so the 30/s sim renders smoothly at 45fps. No-op unless racing so the
+    // authoritative position stands during dives/turns/finish.
+    netRenderLerp(f: number) {
+        if (!this._netLerpReady || !this._motor.isRacing) {
+            return;
+        }
+        const t = f < 0 ? 0 : f > 1 ? 1 : f;
+        Vec3.lerp(_tmpNetLerpPos, this._netLerpFrom, this._netLerpTo, t);
+        this.node.setPosition(_tmpNetLerpPos);
+    }
 
     update(dt: number) {
         // Fixed-step (AI in a net race): stepped by the net driver instead of here.

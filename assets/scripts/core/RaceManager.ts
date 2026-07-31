@@ -22,6 +22,9 @@ export type RaceFinishResult = {
     isPlayer: boolean;
     lane: number;
     eliminated?: boolean;
+    // true when the swimmer LEFT a networked race mid-way (shown as 退出 in the live
+    // rank, distinct from a lockdown 已淘汰). Always a subset of `eliminated`.
+    quit?: boolean;
     // false when the swimmer never reached the wall before the straggler
     // countdown ended (未完成 / DNF, sharing the last placement).
     finished: boolean;
@@ -57,6 +60,9 @@ export class RaceManager extends Component {
     private _lastFinishCountdownValue = -1;
     private readonly _raceRoster: Swimmer[] = [];
     private readonly _eliminated = new Set<Swimmer>();
+    // Swimmers that LEFT the race (net quit), a subset of _eliminated. Kept separate so
+    // the live rank can label them 退出 rather than the lockdown 已淘汰.
+    private readonly _quit = new Set<Swimmer>();
     private readonly _liveRowsBySwimmer = new Map<Swimmer, RaceFinishResult>();
     private readonly _liveLeaderboard: RaceFinishResult[] = [];
     private readonly _liveFinished: RaceFinishResult[] = [];
@@ -74,6 +80,7 @@ export class RaceManager extends Component {
         this._finishTimes.clear();
         this.captureRaceRoster();
         this._eliminated.clear();
+        this._quit.clear();
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -112,6 +119,7 @@ export class RaceManager extends Component {
         this._finishTimes.clear();
         this._raceRoster.length = 0;
         this._eliminated.clear();
+        this._quit.clear();
         this._lastCountdownValue = -1;
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -233,11 +241,14 @@ export class RaceManager extends Component {
         }
     }
 
-    public eliminateSwimmer(swimmer: Swimmer) {
+    public eliminateSwimmer(swimmer: Swimmer, quit = false) {
         if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
             return;
         }
         this._eliminated.add(swimmer);
+        if (quit) {
+            this._quit.add(swimmer);
+        }
         swimmer.eliminate();
         this.onSwimmerEliminated?.(swimmer);
     }
@@ -292,6 +303,7 @@ export class RaceManager extends Component {
             result.isPlayer = swimmer === this.playerSwimmer;
             result.lane = laneForSwimmer(swimmer);
             result.eliminated = isEliminated;
+            result.quit = this._quit.has(swimmer);
             result.finished = time > 0;
             if (isEliminated) {
                 this._liveEliminated.push(result);

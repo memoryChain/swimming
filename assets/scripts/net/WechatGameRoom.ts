@@ -90,6 +90,11 @@ export class WechatGameRoom implements INetRoom {
     private _accessInfo = '';
     private _roomEventsBound = false;
     private _gameEventsBound = false;
+    // The exact frame-event callbacks we registered, kept so we can offSyncFrame /
+    // offDisconnect them when returning to the lobby — otherwise rebinding for a second
+    // game would stack a duplicate listener and process every frame twice.
+    private _syncFrameCb: ((res: any) => void) | null = null;
+    private _disconnectCb: (() => void) | null = null;
     private _loggedIn = false;
     // True once the game has started: only then may we uploadFrame (before that the
     // native frame instance doesn't exist -> 'nativeInstance.uploadFrame' error).
@@ -167,19 +172,52 @@ export class WechatGameRoom implements INetRoom {
             return;
         }
         const gsm = this.manager();
-        const syncOk = this.safeOn('onSyncFrame', () => gsm.onSyncFrame?.((res: any) => {
+        // Store the exact callbacks so unbindGameEvents() can remove THESE listeners
+        // (offSyncFrame needs the same reference). The closures indirect through
+        // this._callbacks, so they always route to the CURRENT game's controller.
+        const syncCb = (res: any) => {
             this._callbacks.onSyncFrame?.(mapSyncFrame(res));
-        }));
-        this.safeOn('onDisconnect', () => gsm.onDisconnect?.(() => {
+        };
+        const disconnectCb = () => {
             netLog('onDisconnect');
             this._callbacks.onDisconnect?.();
-        }));
+        };
+        const syncOk = this.safeOn('onSyncFrame', () => gsm.onSyncFrame?.(syncCb));
+        this.safeOn('onDisconnect', () => gsm.onDisconnect?.(disconnectCb));
         // Only latch as bound if the critical frame event actually attached; otherwise
         // leave it unbound so a later startGame/onGameStart retries.
         if (syncOk) {
+            this._syncFrameCb = syncCb;
+            this._disconnectCb = disconnectCb;
             this._gameEventsBound = true;
             netLog('game events bound');
         }
+    }
+
+    // Remove the frame-event listeners bound for the game that just ended, so the NEXT
+    // game rebinds cleanly (fresh emitter after a new startGame) WITHOUT stacking a
+    // duplicate onSyncFrame that would double-process every frame. Called on return to
+    // the lobby (resetGameStartedLatch). Roster changes need no special handling here:
+    // the callback only forwards frames; the new game rebuilds its own session/roster.
+    private unbindGameEvents(): void {
+        if (!this._gameEventsBound && !this._syncFrameCb) {
+            return;
+        }
+        const gsm = this.manager();
+        try {
+            if (this._syncFrameCb && typeof gsm.offSyncFrame === 'function') {
+                gsm.offSyncFrame(this._syncFrameCb);
+            }
+            if (this._disconnectCb && typeof gsm.offDisconnect === 'function') {
+                gsm.offDisconnect(this._disconnectCb);
+            }
+        } catch (error) {
+            netLog('unbindGameEvents threw', (error as any)?.errMsg || (error as any)?.message || String(error));
+        }
+        this._syncFrameCb = null;
+        this._disconnectCb = null;
+        this._gameEventsBound = false;
+        netLog('game events unbound');
     }
 
     private safeOn(name: string, register: () => void): boolean {
@@ -454,6 +492,19 @@ export class WechatGameRoom implements INetRoom {
 
     currentAccessInfo(): string {
         return this._accessInfo;
+    }
+
+    // Clear the local game-started latch so the NEXT startGame is detected. Required on
+    // every member (owner + guests) when returning to the lobby after a race, since the
+    // guest never calls endGame and would otherwise keep the stale latch and hang the
+    // next start at "开始中".
+    resetGameStartedLatch(): void {
+        netLog('resetGameStartedLatch');
+        this._gameStarted = false;
+        this._gameStartNotified = false;
+        // Drop the previous game's frame listeners so the next game rebinds fresh onto
+        // its new emitter (and can't double-process frames from a stacked listener).
+        this.unbindGameEvents();
     }
 
     logout(): Promise<void> {

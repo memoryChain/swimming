@@ -59,6 +59,7 @@ type PanelRow = {
     placement: number;
     lane: number;
     eliminated: boolean;
+    quit: boolean;
     isPlayer: boolean;
     name: string;
 };
@@ -357,6 +358,7 @@ export class FinishRankOverlay {
                 placement: -1,
                 lane: -1,
                 eliminated: false,
+                quit: false,
                 isPlayer: false,
                 name: '',
             });
@@ -366,6 +368,7 @@ export class FinishRankOverlay {
     private updatePanelRow(row: PanelRow, result: RaceFinishResult) {
         const swimmerNode = result.swimmer?.node ?? null;
         const eliminated = result.eliminated === true;
+        const quit = result.quit === true;
         const presentationChanged = row.swimmerNode !== swimmerNode
             || row.eliminated !== eliminated
             || row.isPlayer !== result.isPlayer;
@@ -388,13 +391,14 @@ export class FinishRankOverlay {
         if (row.name !== result.name || row.isPlayer !== result.isPlayer) {
             row.nameLabel.string = displayName(result);
         }
-        if (row.lane !== result.lane || row.eliminated !== eliminated) {
-            row.laneLabel.string = eliminated ? '已淘汰' : `${result.lane}`;
+        if (row.lane !== result.lane || row.eliminated !== eliminated || row.quit !== quit) {
+            row.laneLabel.string = quit ? '退出' : eliminated ? '已淘汰' : `${result.lane}`;
         }
         row.swimmerNode = swimmerNode;
         row.placement = result.placement;
         row.lane = result.lane;
         row.eliminated = eliminated;
+        row.quit = quit;
         row.isPlayer = result.isPlayer;
         row.name = result.name;
     }

@@ -84,3 +84,42 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     }
     return { hostPos: Number.isFinite(hostPos) ? hostPos : 0, entries };
 }
+
+// Self-position report (tag "P|"): a single lane's own-authoritative position, sent by
+// the client that CONTROLS that swimmer (each human broadcasts their own player). Every
+// other client eases that swimmer toward this so its on-screen copy "catches up" to how
+// its owner actually sees it — the owner predicts locally with zero input lag, so the
+// owner's position is the truth; input-replay alone leaves the remote copy ~1 RTT behind
+// and drifting. Same field layout as one snapshot entry.
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>"
+const SELF_TAG = 'P|';
+
+export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)}`;
+}
+
+// Returns null if the payload is not a self-position report.
+export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
+    if (typeof payload !== 'string' || payload.slice(0, SELF_TAG.length) !== SELF_TAG) {
+        return null;
+    }
+    const parts = payload.slice(SELF_TAG.length).split(',');
+    if (parts.length < 4) {
+        return null;
+    }
+    const lane = parseInt(parts[0], 10);
+    const distCm = parseInt(parts[1], 10);
+    const latMm = parseInt(parts[2], 10);
+    const fin = parts[3] === '1';
+    const headMrad = parts.length > 4 ? parseInt(parts[4], 10) : 0;
+    if (!Number.isFinite(lane) || !Number.isFinite(distCm) || !Number.isFinite(latMm)) {
+        return null;
+    }
+    return {
+        lane,
+        distance: distCm / 100,
+        lateral: latMm / 1000,
+        finished: fin,
+        heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+    };
+}

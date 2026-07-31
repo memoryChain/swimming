@@ -92,6 +92,14 @@ const PLAYER_LANE_Z = LANE_LAYOUT.centerZ(PLAYER_LANE_INDEX);
 const RACE_OPPONENTS_ENABLED = true;
 // Host broadcasts an authoritative position snapshot every this many seconds (~6.7Hz).
 const NET_SNAPSHOT_INTERVAL = 0.15;
+// Redundancy: if a remote human's own position has advanced past this (metres) but its
+// dive was never triggered (DiveRelease lost/failed), force it into the race so it can't
+// stay stuck on the starting block while its position data keeps moving.
+const NET_DIVE_STUCK_M = 1;
+// A dive that hasn't reached racing this long after it started (ms) is treated as stuck
+// (its tween never completed), so the redundancy forces it straight into racing. Longer
+// than the ~1.5s dive tween so a normal in-progress dive isn't cut short.
+const NET_DIVE_STUCK_TIMEOUT_MS = 2000;
 const UNDERWATER_TINT_DISTANCE = 1.2;
 const UNDERWATER_TINT_DEPTH = 0.002;
 const UNDERWATER_TINT_MARGIN = 1.45;
@@ -306,8 +314,9 @@ export class GameManager extends Component {
             return;
         }
         // Lock-step frame exchange (networked race only) runs on wall-clock dt, before
-        // bullet-time scaling.
-        this._netRaceController?.tick(dt);
+        // bullet-time scaling. The local player's own position rides along on the frame
+        // (reliable channel) so peers catch its copy up without best-effort broadcasts.
+        this._netRaceController?.tick(dt, this.buildLocalSelfSnapshot());
         // Deterministic AI: in a net race step the AI on a fixed 33ms clock (raw dt),
         // so the shared-seed AI advance identically on every client (no drift).
         this.driveNetAiFixedStep(dt);
@@ -507,6 +516,13 @@ export class GameManager extends Component {
         if (this._modelDebugFlow?.active) {
             return;
         }
+        // Networked race: swimmer positions are authoritative per owner (self-report) and
+        // corrected toward those, so local collision pushes would fight the corrections
+        // (shove a body one way, the next correction yanks it back). Skip them — lanes
+        // keep swimmers apart anyway.
+        if (this._netSession) {
+            return;
+        }
         this._collisionSwimmers.length = 0;
         if (this._playerSwimmer) {
             this._collisionSwimmers.push(this._playerSwimmer);
@@ -605,6 +621,11 @@ export class GameManager extends Component {
         if (this._roomMode) {
             setReturnToRoom(true);
         }
+        // Networked race: tell the others we're leaving so our swimmer is retired
+        // immediately, rather than freezing in the pool until the straggler countdown.
+        if (this._netSession) {
+            this._netRaceController?.broadcastQuit();
+        }
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.unbind();
         this._gameFlow?.stopAllAi();
@@ -648,6 +669,7 @@ export class GameManager extends Component {
                     // Networked race: the host issues a synchronized GO once every
                     // member's pre-race showcase is ready; the countdown starts then.
                     this._netRaceController?.setCountdownStartListener(() => this._raceManager?.startRace());
+                    this._netRaceController?.setPlayerQuitListener((pos) => this.onNetPlayerQuit(pos));
                     this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
@@ -1137,9 +1159,14 @@ export class GameManager extends Component {
             // Neutralize the AI on this lane.
             aiController.remoteDriven = true;
             aiController.stopSwimming();
-            // Remote humans have network input (non-deterministic timing per client),
-            // so they are NOT fixed-stepped — they stay engine-driven + host-corrected.
-            swimmer.netFixedStep = false;
+            // Slice 3: drive remote humans on the SAME deterministic fixed 33ms clock as
+            // the AI (driveNetAiFixedStep). Their strokes arrive identically on every
+            // client over frame-sync, so a fixed cadence removes the variable-dt drift
+            // (huge across iOS 120fps vs Android 60fps) and leaves only the cross-engine
+            // float residual for the host snapshot to correct — exactly the AI model.
+            // The neutralized AI controller's stepSimulation is a no-op (inactive), so
+            // the shared driver loop can step this body without fighting the input replay.
+            swimmer.netFixedStep = true;
             // Attach the network-input replayer.
             const driver = swimmer.node.addComponent(RemoteSwimmerController);
             driver.swimmer = swimmer;
@@ -1163,6 +1190,7 @@ export class GameManager extends Component {
         this._gameFlow?.refreshPreRaceShowcaseRoster();
         this.refreshPreRaceIntroRoster();
         this.refreshSwimmerNameRoster();
+        this._netRaceController?.setLocalPlayerLane(this._playerLaneIndex);
         this.debug(`net remote swimmers wired count=${this._remoteControllers.length}`);
     }
 
@@ -1272,11 +1300,33 @@ export class GameManager extends Component {
         return -1;
     }
 
-    // Deterministic AI stepping (net race only). The AI have no network input and use
-    // the shared RNG seed, so stepping them on a FIXED 33ms clock (in a stable order)
-    // makes them advance identically on every client — killing the variable-dt drift
-    // that the host correction was papering over. Their engine update() is skipped
-    // (netFixedStep); we step controller-then-swimmer per AI here. No-op single-player.
+    // A member quit mid-race: retire that seat's swimmer so it stops racing and drops
+    // out of the finish accounting (the race can then conclude without waiting for the
+    // straggler countdown to DNF a frozen body). If it was the host, host migration
+    // separately hands authority to the next seat. No-op if we can't resolve the seat.
+    private onNetPlayerQuit(pos: number) {
+        if (!this._netLanePlan || !this._raceManager) {
+            return;
+        }
+        const remote = this._netLanePlan.remotes.find((r) => r.pos === pos);
+        if (!remote) {
+            return;
+        }
+        const swimmer = this.swimmerForLane(remote.lane);
+        if (swimmer) {
+            this._raceManager.eliminateSwimmer(swimmer, true);
+            this.debug(`net player pos=${pos} quit — retired lane=${remote.lane}`);
+        }
+    }
+
+    // Deterministic fixed-step driver (net race only). Advances every net-driven body
+    // on a FIXED 33ms clock in a stable order, so they progress identically on every
+    // client — killing the variable-dt drift the host correction was papering over.
+    // Covers BOTH the AI (decisions from the shared RNG seed) and remote humans (inputs
+    // replayed from frame-sync); both bodies live in _aiSwimmers with netFixedStep=true
+    // and skip their engine update(). A remote lane's AI controller is neutralized, so
+    // its stepSimulation is an inactive no-op and won't fight the replayed input.
+    // No-op single-player.
     private driveNetAiFixedStep(dt: number) {
         if (!this._netSession || this._aiSwimmers.length === 0) {
             return;
@@ -1293,80 +1343,147 @@ export class GameManager extends Component {
                 if (!swimmer?.netFixedStep || !swimmer.node.active) {
                     continue;
                 }
+                swimmer.netStepBegin();
                 this._aiControllers[i]?.stepSimulation(NET_SIM_STEP);
                 swimmer.stepSimulation(NET_SIM_STEP);
+                swimmer.netStepEnd();
+            }
+        }
+        // Smooth the 30/s fixed steps up to the 45fps render by interpolating each
+        // net-driven body's position toward the latest step by the leftover phase.
+        // Cheap (one lerp + setPosition per body) and net-mode only.
+        const renderPhase = this._aiStepAccum / NET_SIM_STEP;
+        for (let i = 0; i < this._aiSwimmers.length; i++) {
+            const swimmer = this._aiSwimmers[i];
+            if (swimmer?.netFixedStep && swimmer.node.active) {
+                swimmer.netRenderLerp(renderPhase);
             }
         }
     }
 
 
-    // The HOST periodically broadcasts every lane's race progress + lane offset; every
-    // CLIENT eases its swimmers toward those values so all clients converge to the
-    // host's result (locally-computed collisions give feel; the host resolves ties).
+    // Position sync. Every client broadcasts its OWN player's authoritative position
+    // (it predicts locally with zero input lag, so its own view is the truth); every
+    // other client catches that swimmer's on-screen copy up to it (killing the ~1 RTT
+    // input-replay lag + drift). The HOST additionally broadcasts a full snapshot that
+    // is authoritative for the AI lanes (shared-seed AI + host tie-breaking).
     private updateNetRaceSync(dt: number) {
         if (!this._netSession || !this._netRaceController) {
             return;
         }
-        // Positions are only meaningful once swimmers are gliding/racing.
-        if (this._state !== GameState.RACING && this._state !== GameState.GLIDING) {
+        // Positions matter once ANY swimmer can be racing — from DIVING (remote humans /
+        // AI dive and race while our own player may still be on the block) through
+        // RACING. Gating this on our OWN local racing state was the bug: if the local
+        // player just sat in DIVING (no input), the remote swimmers never got corrected
+        // and froze after their dive glide.
+        if (this._state !== GameState.RACING
+            && this._state !== GameState.GLIDING
+            && this._state !== GameState.DIVING) {
             return;
         }
         // If the current host goes silent (dropped), the lowest surviving seat promotes
-        // itself to host here so the race keeps a single authority. After a promotion
-        // this client's isHost flips true and the host branch below starts broadcasting.
+        // itself to host here so the race keeps a single authority for the AI lanes.
         this._netRaceController.checkHostMigration(true);
         const laneCount = LANE_LAYOUT.laneCount;
-        if (this._netRaceController.isHost) {
-            this._netSnapshotTimer += dt;
-            if (this._netSnapshotTimer < NET_SNAPSHOT_INTERVAL) {
-                return;
-            }
-            this._netSnapshotTimer = 0;
-            const raceDistance = getRaceDistance();
-            const entries: NetSnapshotEntry[] = [];
-            for (let lane = 0; lane < laneCount; lane++) {
-                const swimmer = this.swimmerForLane(lane);
-                if (!swimmer?.node?.active) {
-                    continue;
-                }
-                entries.push({
-                    lane,
-                    distance: swimmer.distance,
-                    lateral: swimmer.netLateralOffset,
-                    finished: swimmer.distance >= raceDistance,
-                    heading: swimmer.netHeading,
-                });
-            }
-            this._netRaceController.sendSnapshot(entries);
-            this._netRaceController.setDiag(this.buildNetDiag());
-            return;
-        }
-        // Client: ease each swimmer toward the host's authoritative snapshot. IMPORTANT:
-        // do NOT correct the LOCAL player — it is client-side predicted from immediate
-        // local input, and the host's value for it always lags by ~RTT (our input
-        // reaches the host late). Correcting it would repeatedly snap the local player
-        // back to a stale position ("走不动"). Placement stays fair via the separate
-        // host-authoritative final result. Only remote humans + AI are corrected.
+        const raceDistance = getRaceDistance();
+
         this._netSnapshotTimer += dt;
         if (this._netSnapshotTimer >= NET_SNAPSHOT_INTERVAL) {
             this._netSnapshotTimer = 0;
+            // Host: broadcast the full snapshot (authoritative for AI lanes). Human
+            // positions ride the reliable frame channel (buildLocalSelfSnapshot in
+            // tick()), not this best-effort broadcast.
+            if (this._netRaceController.isHost) {
+                const entries: NetSnapshotEntry[] = [];
+                for (let lane = 0; lane < laneCount; lane++) {
+                    const swimmer = this.swimmerForLane(lane);
+                    if (!swimmer?.node?.active) {
+                        continue;
+                    }
+                    entries.push({
+                        lane,
+                        distance: swimmer.distance,
+                        lateral: swimmer.netLateralOffset,
+                        finished: swimmer.distance >= raceDistance,
+                        heading: swimmer.netHeading,
+                    });
+                }
+                this._netRaceController.sendSnapshot(entries);
+            }
             this._netRaceController.setDiag(this.buildNetDiag());
         }
-        // Remote humans + AI are eased toward the host's authoritative snapshot. The
-        // fixed-step reduces AI drift, but Math.sin/cos differ across JS engines
-        // (iOS vs Android) so the AI's position AND heading still drift — correct BOTH
-        // toward the host (heading too, or they'd "face one way but swim the other").
-        for (const target of this._netRaceController.snapshotTargets) {
-            if (target.lane === this._playerLaneIndex) {
+
+        // Correct every swimmer EXCEPT our own predicted player (correcting it would snap
+        // it back to a ~RTT-stale value = "走不动"). Human lanes catch up to their owner's
+        // OWN-authoritative self-report (strong, no lag drift); AI lanes follow the host's
+        // authoritative snapshot.
+        for (let lane = 0; lane < laneCount; lane++) {
+            if (lane === this._playerLaneIndex) {
                 continue;
             }
-            const swimmer = this.swimmerForLane(target.lane);
+            const swimmer = this.swimmerForLane(lane);
             if (!swimmer?.node?.active) {
                 continue;
             }
-            swimmer.applyNetCorrection(target.distance, target.lateral, 0.2, 0.25);
-            swimmer.applyNetHeading(target.heading, 0.3);
+            const self = this.isNetHumanLane(lane) ? this._netRaceController.selfSnapshot(lane) : null;
+            if (self) {
+                // Redundancy: the owner is clearly moving but this copy isn't racing — its
+                // DiveRelease was lost, or its dive got stuck mid-tween and never reached
+                // racing. Force it straight into the race so it can't stay frozen. (Only
+                // when clearly not a normal in-progress dive: never dived, or dived long
+                // enough ago that the ~1.5s dive tween should already be done.)
+                if (self.distance > NET_DIVE_STUCK_M && !swimmer.isNetRacing) {
+                    const remote = swimmer.getComponent(RemoteSwimmerController);
+                    if (remote && (!remote.hasDived || remote.diveElapsed() > NET_DIVE_STUCK_TIMEOUT_MS)) {
+                        remote.forceEnterRace(self.distance);
+                    }
+                }
+                // Catch up to how the owner sees itself (strong blend; snaps if far).
+                swimmer.applyNetCorrection(self.distance, self.lateral, 0.4, 0.4);
+                swimmer.applyNetHeading(self.heading, 0.4);
+            } else {
+                const target = this._netRaceController.snapshotTargets.find((e) => e.lane === lane);
+                if (target) {
+                    swimmer.applyNetCorrection(target.distance, target.lateral, 0.2, 0.25);
+                    swimmer.applyNetHeading(target.heading, 0.3);
+                }
+            }
         }
+    }
+
+    // True if a lane is occupied by a HUMAN (local player or a remote human), whose
+    // position is own-authoritative (self-report), vs an AI lane (host-authoritative).
+    private isNetHumanLane(lane: number): boolean {
+        if (lane === this._playerLaneIndex) {
+            return true;
+        }
+        if (!this._netLanePlan) {
+            return false;
+        }
+        return this._netLanePlan.remotes.some((r) => r.lane === lane);
+    }
+
+    // The local player's own authoritative position for the frame, or null when it isn't
+    // meaningful yet (not racing/gliding, or single-player). Ridden along on the reliable
+    // lock-step frame so peers catch its remote copy up to how we actually see it.
+    private buildLocalSelfSnapshot(): NetSnapshotEntry | null {
+        if (!this._netSession || !this._netRaceController) {
+            return null;
+        }
+        if (this._state !== GameState.RACING && this._state !== GameState.GLIDING) {
+            return null;
+        }
+        const player = this._playerSwimmer;
+        if (!player?.node?.active) {
+            return null;
+        }
+        return {
+            lane: this._playerLaneIndex,
+            distance: player.distance,
+            lateral: player.netLateralOffset,
+            finished: player.distance >= getRaceDistance(),
+            heading: player.netHeading,
+        };
     }
 
     // Per-lane local-vs-host distance diagnostic for the net HUD. '*' marks the local

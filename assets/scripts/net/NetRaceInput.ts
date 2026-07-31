@@ -12,9 +12,15 @@
 // calling uploadFrame each tick, and applying decoded remote events to swimmers.
 //
 // Wire format (one client's payload for one frame):
-//   "<senderPos>|<token>;<token>;..."
-// where senderPos identifies which room member produced it (WeChat posNum), and each
-// token is one input event. An empty event list is "<senderPos>|".
+//   "<senderPos>|<token>;<token>;...|<selfPos>"
+// where senderPos identifies which room member produced it (WeChat posNum), each token
+// is one input event, and the optional trailing "<selfPos>" is the sender's OWN
+// authoritative position "<lane>,<distCm>,<latMm>,<fin>,<headMrad>". Positions ride the
+// RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently
+// and froze remote swimmers), so every client's copy of every human catches up reliably.
+// An empty event list is "<senderPos>|" (optionally "<senderPos>||<selfPos>").
+
+import type { NetSnapshotEntry } from './NetRaceSnapshot';
 
 // Side of a stroke/kick. 0 = LEFT, 1 = RIGHT (kept numeric so the codec doesn't
 // depend on the game's StrokeType enum; the controller maps between them).
@@ -41,6 +47,8 @@ export interface DecodedInputFrame {
     // Room member (posNum) that produced these events; -1 if unattributable.
     senderPos: number;
     events: NetInputEvent[];
+    // The sender's own authoritative position this frame, if it included one.
+    self?: NetSnapshotEntry;
 }
 
 const TOKEN_SEP = ';';
@@ -90,10 +98,16 @@ function decodeToken(token: string): NetInputEvent | null {
     }
 }
 
-// Encode one client's events for one frame into its uploadFrame payload string.
-export function encodeInputFrame(senderPos: number, events: NetInputEvent[]): string {
+// Encode one client's events for one frame into its uploadFrame payload string. An
+// optional self-position (the sender's own authoritative position) rides along on the
+// reliable frame channel so remote copies catch up without best-effort broadcasts.
+export function encodeInputFrame(senderPos: number, events: NetInputEvent[], self?: NetSnapshotEntry | null): string {
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
-    return `${senderPos}${HEADER_SEP}${body}`;
+    let out = `${senderPos}${HEADER_SEP}${body}`;
+    if (self) {
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)}`;
+    }
+    return out;
 }
 
 // Decode one uploadFrame payload (as delivered inside onSyncFrame.actionList).
@@ -101,12 +115,14 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
     if (typeof payload !== 'string' || payload.length === 0) {
         return { senderPos: -1, events: [] };
     }
-    const headerEnd = payload.indexOf(HEADER_SEP);
-    if (headerEnd < 0) {
+    // Format is "<pos>|<events>|<selfPos?>"; events never contain '|' (they use ';'), so
+    // splitting on '|' is unambiguous.
+    const parts = payload.split(HEADER_SEP);
+    if (parts.length < 2) {
         return { senderPos: -1, events: [] };
     }
-    const senderPos = parseInt(payload.slice(0, headerEnd), 10);
-    const body = payload.slice(headerEnd + 1);
+    const senderPos = parseInt(parts[0], 10);
+    const body = parts[1];
     const events: NetInputEvent[] = [];
     if (body.length > 0) {
         for (const token of body.split(TOKEN_SEP)) {
@@ -116,5 +132,25 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
             }
         }
     }
-    return { senderPos: Number.isFinite(senderPos) ? senderPos : -1, events };
+    let self: NetSnapshotEntry | undefined;
+    if (parts.length >= 3 && parts[2].length > 0) {
+        const p = parts[2].split(',');
+        if (p.length >= 4) {
+            const lane = parseInt(p[0], 10);
+            const distCm = parseInt(p[1], 10);
+            const latMm = parseInt(p[2], 10);
+            const fin = p[3] === '1';
+            const headMrad = p.length > 4 ? parseInt(p[4], 10) : 0;
+            if (Number.isFinite(lane) && Number.isFinite(distCm) && Number.isFinite(latMm)) {
+                self = {
+                    lane,
+                    distance: distCm / 100,
+                    lateral: latMm / 1000,
+                    finished: fin,
+                    heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+                };
+            }
+        }
+    }
+    return { senderPos: Number.isFinite(senderPos) ? senderPos : -1, events, self };
 }
