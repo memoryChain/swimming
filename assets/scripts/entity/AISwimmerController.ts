@@ -44,6 +44,11 @@ export class AISwimmerController extends Component {
     // (or in isolated tests), in which case strategy falls back to pacing only.
     public raceObserver: AIRaceObserver | null = null;
 
+    // NETWORKED RACE ONLY: when this lane is a remote human (driven by
+    // RemoteSwimmerController from network input), the AI must never act. Defaults
+    // false so single-player / local AI behaviour is completely unchanged.
+    public remoteDriven = false;
+
     private _active = false;
     private _phase: AiStrokePhase = 'gap';
     private _timer = 0;
@@ -80,6 +85,10 @@ export class AISwimmerController extends Component {
     }
 
     startSwimming() {
+        // Networked remote human: driven by RemoteSwimmerController, never by AI.
+        if (this.remoteDriven) {
+            return;
+        }
         // Idempotent: an AI that already began swimming (e.g. right after its own
         // dive) keeps its rhythm instead of being reset when the race-wide start
         // fires. Only a fresh (inactive) controller initializes its schedule.

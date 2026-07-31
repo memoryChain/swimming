@@ -8,6 +8,9 @@ export interface NetRaceMember {
     nickName: string;
     // True for the local player's member (the one this client controls).
     self: boolean;
+    // WeChat seat index (posNum). Stable per member for the room's lifetime; used to
+    // map members to lanes deterministically and to route each member's input.
+    pos: number;
 }
 
 export interface NetRaceSessionData {

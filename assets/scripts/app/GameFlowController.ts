@@ -14,6 +14,14 @@ import { CHARACTER_ACTION_CONFIG, selectAdjacentDistinctActions } from '../chara
 import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
 import { StrokeSfxManager } from './StrokeSfxManager';
+import { captureNetInput } from '../net/NetInputCapture';
+import { NetInputKind, NetInputSide } from '../net/NetRaceInput';
+
+// Map the game's StrokeType to the codec's numeric side (0=LEFT, 1=RIGHT). BOTH
+// (rare) collapses to LEFT — the mobile input only ever produces LEFT/RIGHT.
+function netSide(type: StrokeType): NetInputSide {
+    return type === StrokeType.RIGHT ? 1 : 0;
+}
 
 export type GameFlowRefs = {
     raceManager: RaceManager;
@@ -132,6 +140,7 @@ export class GameFlowController {
         const playStrokeSfx = this._refs.getState() === GameState.RACING
             && (this._refs.playerSwimmer?.canAcceptStroke(type) ?? false);
         const result = this._refs.playerSwimmer?.handleStroke(type);
+        captureNetInput({ kind: NetInputKind.Stroke, side: netSide(type) });
         if (playStrokeSfx) {
             StrokeSfxManager.playStroke();
         }
@@ -151,6 +160,7 @@ export class GameFlowController {
             return false;
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held, preHeldSeconds);
+        captureNetInput({ kind: held ? NetInputKind.HeldOn : NetInputKind.HeldOff, side: netSide(type) });
         if (result) {
             this._refs.uiFlow.showRating(result.rating, result.combo);
         }
@@ -165,6 +175,7 @@ export class GameFlowController {
             return;
         }
         this._refs.playerSwimmer?.handleKickStroke(type);
+        captureNetInput({ kind: NetInputKind.Kick, side: netSide(type) });
     }
 
     private isStrokeInputActive(): boolean {
@@ -187,6 +198,7 @@ export class GameFlowController {
         this._diveChargeStarted = true;
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
+        captureNetInput({ kind: NetInputKind.DiveCharge });
         this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
         this._refs.debug('dive charging');
         if (state === GameState.DIVING) {
@@ -218,6 +230,7 @@ export class GameFlowController {
             return;
         }
         const charge = this._diveChargeStarted ? this._diveChargePower : 0;
+        captureNetInput({ kind: NetInputKind.DiveRelease, power: charge });
         this.commitDive(charge, `release hold=${holdSeconds.toFixed(2)}`);
     }
 
@@ -459,6 +472,11 @@ export class GameFlowController {
             const swimmer = this._refs.aiSwimmers[i];
             swimmer.prepareDive();
             const controller = this._refs.aiControllers[i];
+            // Networked remote human: its dive comes from network input, not the AI
+            // dive timer. Still prepareDive()'d above so the body is on the block.
+            if (controller?.remoteDriven) {
+                continue;
+            }
             const delayMs = Math.round(this.aiDiveReactionDelay(controller) * 1000);
             const power = this.aiDivePower(swimmer, controller);
             const diveResult = resolveDiveResult(power);

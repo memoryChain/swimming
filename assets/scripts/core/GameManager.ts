@@ -52,6 +52,9 @@ import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
+import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
+import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
+import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
 import { reseedSharedRandom } from './SharedRNG';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
@@ -124,6 +127,10 @@ export class GameManager extends Component {
     private _netSession: NetRaceSessionData | null = null;
     // Drives lock-step frame exchange during a networked race (null otherwise).
     private _netRaceController: NetRaceController | null = null;
+    // Deterministic lane plan for the networked race (null for single-player).
+    private _netLanePlan: NetLanePlan | null = null;
+    // Remote-human input drivers created for a networked race (empty single-player).
+    private _remoteControllers: RemoteSwimmerController[] = [];
     // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
@@ -991,13 +998,29 @@ export class GameManager extends Component {
         this._aiControllers = [];
         this._aiSwimmers = [];
         this._aiConditions = [];
+        // Networked race: give the local player the same avatar-derived look every
+        // other client renders for this seat, so appearances match across clients.
+        if (this._netSession) {
+            const self = this._netSession.members.find((m) => m.pos === this._netSession!.localPos)
+                ?? this._netSession.members.find((m) => m.self);
+            if (self) {
+                applyNetSwimmerLook(this._playerSwimmer.cartoonRig, self.avatarId);
+            }
+        }
         this.applySplashParticlesEnabled();
         this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
     }
 
     private assignRaceLanes() {
-        this._playerLaneIndex = randomInt(LANE_LAYOUT.laneCount);
+        if (this._netSession) {
+            // Networked race: every client lays swimmers out identically from the
+            // shared roster, and each client's own player takes its seat's lane.
+            this._netLanePlan = buildNetLanePlan(this._netSession, LANE_LAYOUT.laneCount);
+            this._playerLaneIndex = this._netLanePlan.playerLane;
+        } else {
+            this._playerLaneIndex = randomInt(LANE_LAYOUT.laneCount);
+        }
         this._primaryAiLaneIndex = this._playerLaneIndex === PRIMARY_AI_LANE_INDEX
             ? (PRIMARY_AI_LANE_INDEX + 1) % LANE_LAYOUT.laneCount
             : PRIMARY_AI_LANE_INDEX;
@@ -1059,6 +1082,55 @@ export class GameManager extends Component {
         }
         this.refreshAiDifficultyPanel();
         this.debug(`deferred AI swimmers loaded count=${this._aiSwimmers.length}`);
+        // Networked race: convert the lanes occupied by remote humans from AI to
+        // network-driven bodies. Single-player leaves this untouched.
+        this.wireRemoteSwimmers();
+    }
+
+    // Networked race only: turn the AI swimmers that sit in remote-human lanes into
+    // RemoteSwimmerController-driven bodies and register them with the net controller
+    // so their seat's decoded input is replayed onto them. No-op in single-player.
+    private wireRemoteSwimmers() {
+        this._remoteControllers.length = 0;
+        if (!this._netSession || !this._netLanePlan || !this._netRaceController) {
+            return;
+        }
+        const playerLane = this._playerLaneIndex;
+        for (const remote of this._netLanePlan.remotes) {
+            const lane = remote.lane;
+            if (lane === playerLane) {
+                continue;
+            }
+            // AI swimmers are pushed in ascending lane order skipping the player lane,
+            // so the body in `lane` is at this index in the AI arrays.
+            const index = lane < playerLane ? lane : lane - 1;
+            const swimmer = this._aiSwimmers[index];
+            const aiController = this._aiControllers[index];
+            if (!swimmer?.node?.isValid || !aiController) {
+                continue;
+            }
+            // Neutralize the AI on this lane.
+            aiController.remoteDriven = true;
+            aiController.stopSwimming();
+            // Attach the network-input replayer.
+            const driver = swimmer.node.addComponent(RemoteSwimmerController);
+            driver.swimmer = swimmer;
+            driver.pos = remote.pos;
+            driver.resetRemote();
+            const identity = this._netSession.members.find((m) => m.pos === remote.pos);
+            if (identity?.nickName) {
+                swimmer.swimmerName = identity.nickName;
+            }
+            // Match this remote human's look to what its own client renders (derived
+            // from the shared avatarId) so appearances are identical everywhere.
+            if (identity?.avatarId) {
+                applyNetSwimmerLook(swimmer.cartoonRig, identity.avatarId);
+            }
+            this._remoteControllers.push(driver);
+            this._netRaceController.registerRemote(remote.pos, driver);
+        }
+        this.refreshSwimmerNameRoster();
+        this.debug(`net remote swimmers wired count=${this._remoteControllers.length}`);
     }
 
     // Rebuild the AI difficulty panel rows from the current roster. Lane index is

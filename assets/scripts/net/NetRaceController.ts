@@ -1,16 +1,23 @@
 // Networked-race frame-sync controller.
 //
-// STEP 1 (current): transport verification only. It re-registers the lock-step
-// callbacks in the race scene (they were cleared when the room UI was disposed),
-// uploads one heartbeat frame every logical tick, and logs the onSyncFrame payloads
-// it receives so we can confirm both devices exchange frames and learn the real
-// actionList structure. It does NOT yet drive the simulation — the race still runs
-// locally on each client. Deterministic fixed-step simulation comes in later steps.
+// STEP 2 · slice 1 (current): real per-frame INPUT capture + verification. Each
+// logical tick it drains the local player's discrete input events (arm stroke / kick /
+// held / dive) captured this frame, encodes them, and uploads them via uploadFrame.
+// onSyncFrame decodes every member's payload and shows it on the debug HUD so we can
+// confirm both devices exchange REAL inputs (not just heartbeats). It still does NOT
+// drive any swimmer — the race runs locally on each client. Applying decoded remote
+// inputs to swimmers + fixed-step deterministic advance come in later slices.
+//
+// COMPATIBILITY: only ever constructed for a networked race (GameManager gates on
+// _netSession). Single-player never creates this and never activates input capture.
 
 import { Label, Node, UITransform } from 'cc';
 import { INetRoom, NetSyncFrame } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
+import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
+import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
+import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 
 // Logical frame interval (must match game.json lockStepOptions.gameTick = 33ms).
@@ -28,9 +35,18 @@ export class NetRaceController {
     private _lastFrameId = 0;
     private _lastItems: string[] = [];
     private readonly _peerLatest: Record<number, number> = {};
+    // Most recent decoded input tokens per member pos (for the HUD / verification).
+    private readonly _peerLastInput: Record<number, string> = {};
+    // Count of non-empty input frames received per member pos.
+    private readonly _peerInputCount: Record<number, number> = {};
+    // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
+    // replayed onto its controller. Registered by GameManager after the roster builds.
+    private readonly _remoteByPos: Record<number, RemoteSwimmerController> = {};
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
+        // Turn on local-player input capture for the duration of this networked race.
+        setNetInputCaptureActive(true);
         this._net.setCallbacks({
             onSyncFrame: (frame) => this.onSyncFrame(frame),
             onDisconnect: () => console.warn('[NetRace] disconnected mid-game'),
@@ -57,9 +73,11 @@ export class NetRaceController {
         while (this._accum >= LOGICAL_FRAME_SECONDS) {
             this._accum -= LOGICAL_FRAME_SECONDS;
             this._sentFrames++;
-            // Step 1 heartbeat payload: "<posNum>|f<frameCounter>". Real per-frame
-            // input capture replaces this next.
-            this._net.uploadFrame(`${this._session.localPos}|f${this._sentFrames}`);
+            // Real per-frame payload: this member's captured input events for the
+            // frame (empty payload "<pos>|" when the player did nothing this frame —
+            // every client must upload every frame to keep the lock-step cadence).
+            const events: NetInputEvent[] = drainNetInput();
+            this._net.uploadFrame(encodeInputFrame(this._session.localPos, events));
             sentThisTick = true;
         }
         if (sentThisTick) {
@@ -67,28 +85,43 @@ export class NetRaceController {
         }
     }
 
+    // Register a remote-human swimmer so this member's decoded input is replayed onto
+    // it. Called by GameManager once the networked roster is built.
+    registerRemote(pos: number, controller: RemoteSwimmerController): void {
+        if (pos < 0 || !controller) {
+            return;
+        }
+        this._remoteByPos[pos] = controller;
+    }
+
     private onSyncFrame(frame: NetSyncFrame): void {
         this._recvFrames++;
         this._lastFrameId = frame.frameId;
         this._lastItems = frame.items;
         for (const item of frame.items) {
-            const bar = item.indexOf('|');
-            if (bar <= 0) {
+            const decoded = decodeInputFrame(item);
+            if (decoded.senderPos < 0) {
                 continue;
             }
-            const pos = parseInt(item.slice(0, bar), 10);
-            const rest = item.slice(bar + 1);
-            const fn = rest.charAt(0) === 'f' ? parseInt(rest.slice(1), 10) : NaN;
-            if (Number.isFinite(pos) && Number.isFinite(fn)) {
-                this._peerLatest[pos] = fn;
+            this._peerLatest[decoded.senderPos] = frame.frameId;
+            // Drive the remote human for this seat (never the local player's own seat).
+            if (decoded.senderPos !== this._session.localPos && decoded.events.length > 0) {
+                this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
             }
-        }
-        // Verbose for the first frames (to inspect structure), then sample.
-        if (this._recvFrames <= 12 || this._recvFrames % 30 === 0) {
-            console.log(`[NetRace] onSyncFrame #${frame.frameId} items=${JSON.stringify(frame.items)}`);
+            if (decoded.events.length > 0) {
+                this._peerInputCount[decoded.senderPos] = (this._peerInputCount[decoded.senderPos] ?? 0) + 1;
+                this._peerLastInput[decoded.senderPos] = decoded.events
+                    .map((e) => (e.kind === 'r' ? `r${Math.round((e.power ?? 0) * 100)}` : `${e.kind}${e.side ?? ''}`))
+                    .join(',');
+                // Log real inputs as they arrive so we can verify both directions.
+                console.log(
+                    `[NetRace] frame#${frame.frameId} pos${decoded.senderPos} input=${this._peerLastInput[decoded.senderPos]}`,
+                );
+            }
         }
         this.refreshHud();
     }
+
 
     // Build the on-screen sync HUD (top-left). Call once the race canvas exists.
     attachHud(parent: Node, width: number, height: number): void {
@@ -122,15 +155,17 @@ export class NetRaceController {
             return;
         }
         const peers = Object.keys(this._peerLatest)
-            .map((k) => `p${k}=${this._peerLatest[Number(k)]}`)
+            .map((k) => {
+                const pos = Number(k);
+                const last = this._peerLastInput[pos] ? ` [${this._peerLastInput[pos]}]` : '';
+                return `p${k}#${this._peerLatest[pos]}×${this._peerInputCount[pos] ?? 0}${last}`;
+            })
             .join('  ');
-        const items = this._lastItems.length ? JSON.stringify(this._lastItems) : '(无)';
         this._hudLabel.string =
-            `联机同步(调试)\n` +
+            `联机同步(调试·输入)\n` +
             `本端 pos=${this._session.localPos} 房主=${this._session.localIsHost ? '是' : '否'} seed=${this._session.seed}\n` +
             `成员=${this._session.members.length} 发送=${this._sentFrames} 接收=${this._recvFrames} 帧#=${this._lastFrameId}\n` +
-            `各端最新帧: ${peers || '(无)'}\n` +
-            `最近: ${items}`;
+            `各端: ${peers || '(无)'}`;
     }
 
     dispose(): void {
@@ -138,6 +173,8 @@ export class NetRaceController {
             return;
         }
         this._disposed = true;
+        // Stop capturing local input once the networked race ends.
+        setNetInputCaptureActive(false);
         if (this._hudRoot?.isValid) {
             this._hudRoot.destroy();
         }

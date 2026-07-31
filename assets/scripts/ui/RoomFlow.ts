@@ -458,6 +458,7 @@ export class RoomFlow {
             avatarId: m.avatarId,
             nickName: m.nickName,
             self: m.self,
+            pos: typeof m.pos === 'number' ? m.pos : -1,
         }));
         setNetRaceSession({
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
