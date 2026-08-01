@@ -20,8 +20,15 @@ const SUBPACKAGE_BUNDLES = [
 const LOCK_STEP_OPTIONS = {
     gameTick: 33,
     heartBeatTick: 2000,
-    offlineTimeLength: 10000,
-    UDPReliabilityStrategy: 3,
+    // Cross-network diagnosis (2026-08): a remote friend's frame channel connected
+    // then stalled after ~5s while broadcastInRoom delivered nothing. Raising these
+    // two makes the managed frame channel more tolerant of packet loss and stops the
+    // server from dropping a laggy cross-network client too early. Both are reversible.
+    offlineTimeLength: 60000,
+    UDPReliabilityStrategy: 5,
+    // actionList element type. Explicit "String" avoids the runtime warning
+    // 'lockStepOptions.dataType ... is invalid, using default value "String"'.
+    dataType: 'String',
 };
 
 exports.throwError = true;

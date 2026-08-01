@@ -43,10 +43,14 @@ export class RoomFlow {
     private _root: Node | null = null;
     private _content: Node | null = null;
     private _hintLabel: Label | null = null;
+    private _roomLabel: Label | null = null;
     private _startButton: Node | null = null;
     private _members: SlotMember[] = [];
     private _netReal = false;
     private _accessInfo = '';
+    // Human-readable room number (WeChat roomIdStr) shown so both players can confirm
+    // they are in the same room. Empty until the room info arrives.
+    private _roomId = '';
     private _isHost = true;
     private _pendingSeed = 0;
     private _statusHint: string | null = null;
@@ -58,6 +62,13 @@ export class RoomFlow {
     // Recovery timer for a start that never completes (guest hadn't returned to the
     // lobby yet and missed the START broadcast) so the host can't get stuck at 开始中.
     private _startTimeoutHandle: any = null;
+    // A guest's onGameStart fired but the host's seed broadcast hasn't landed yet.
+    // Entering now would use a random seed and desync — wait for the seed instead.
+    private _gameStartPending = false;
+    private _seedWaitHandle: any = null;
+    // True once we've shown the "room gone" notice (invited room dissolved / in-game), so
+    // render() stops repainting the lobby over it.
+    private _roomUnavailable = false;
 
     constructor(
         private readonly _parent: Node,
@@ -93,9 +104,16 @@ export class RoomFlow {
 
         const titleY = this._height / 2 - HEADBAR_TOP_SAFE_AREA - 30;
         makeLabel('RoomTitle', root, '联机房间', 40, uiColor(240, 250, 255)).setPosition(0, titleY, 0);
+        // Room number so both players can verify they are in the SAME room (the #1
+        // source of confusion: "am I even with my friend?"). Filled once the room
+        // info arrives; hidden in local-preview mode.
+        const roomLabel = makeLabel('RoomNumber', root, '', 24, uiColor(255, 224, 150));
+        roomLabel.getComponent(UITransform)!.setContentSize(560, 30);
+        roomLabel.setPosition(0, titleY - 40, 0);
+        this._roomLabel = roomLabel.getComponent(Label);
         const hint = makeLabel('RoomHint', root, '', 20, uiColor(180, 210, 232));
         hint.getComponent(UITransform)!.setContentSize(560, 28);
-        hint.setPosition(0, titleY - 46, 0);
+        hint.setPosition(0, titleY - 74, 0);
         this._hintLabel = hint.getComponent(Label);
 
         this._content = makeUiNode('Slots', root);
@@ -143,7 +161,7 @@ export class RoomFlow {
                     this.render();
                 },
                 onBroadcast: (msg) => this.handleBroadcast(msg),
-                onGameStart: () => this.enterNetRace(),
+                onGameStart: () => this.onNetGameStart(),
             });
             const extInfo = encodeIdentity(self.avatarId, self.nickName);
             if (this._reconnect) {
@@ -197,11 +215,18 @@ export class RoomFlow {
                 })
                 .catch((error) => {
                     const reason = (error && (error.errMsg || error.message)) || String(error);
-                    console.warn('[Room] net enter failed, local preview:', reason, error);
+                    console.warn('[Room] net enter failed:', reason, error);
+                    if (this._joinRoomId) {
+                        // A guest tapping an invite whose room no longer accepts us: the
+                        // host left and dissolved it, or the race already started (WeChat
+                        // returns "invalid room state"). Don't drop into a fake local room
+                        // with a raw error — show a clean "dissolved" notice + back button.
+                        this.showRoomUnavailable('房间已解散或已开始比赛');
+                        return;
+                    }
+                    // Host create failed (editor / service down): local preview fallback.
                     this._netReal = false;
-                    this._statusHint = this._joinRoomId
-                        ? `加入房间失败：${reason}`
-                        : `建房失败：${reason}`;
+                    this._statusHint = `建房失败：${reason}`;
                     this._members = [self];
                     this.render();
                 });
@@ -227,6 +252,18 @@ export class RoomFlow {
     }
 
     private membersFromInfo(info: NetRoomInfo): SlotMember[] {
+        // Capture room metadata (display number + join token) wherever roster info
+        // arrives, so the room number stays up to date on every client.
+        if (info.roomId) {
+            this._roomId = info.roomId;
+        }
+        // Only adopt an accessInfo we don't already have. The authoritative JOIN TOKEN
+        // comes from createRoom/joinRoom (setupNet); room-info payloads don't include it,
+        // so never let them overwrite the real token (doing so shared the roomIdStr and
+        // made friends fail joinRoom with errCode 4003).
+        if (info.accessInfo && !this._accessInfo) {
+            this._accessInfo = info.accessInfo;
+        }
         const list: SlotMember[] = info.members.map((m) => {
             const parsed = parseIdentity(m.extInfo);
             return {
@@ -238,11 +275,15 @@ export class RoomFlow {
                 pos: typeof m.pos === 'number' ? m.pos : -1,
             };
         });
-        // Best-effort self highlight (no reliable openId match on-device yet): mark
-        // the first member whose identity equals ours.
+        // Identify our own slot. Prefer the seat index (posNum) when we know it — two
+        // players can roll the SAME random avatar+nickname, so an identity-only match
+        // can highlight the wrong person ("房间显示的人不对"). Fall back to identity.
         const selfId = PlayerData.avatarId;
         const selfName = PlayerData.nickName;
-        const mine = list.find((m) => m.avatarId === selfId && m.nickName === selfName);
+        let mine = this._localPos >= 0 ? list.find((m) => m.pos === this._localPos) : undefined;
+        if (!mine) {
+            mine = list.find((m) => m.avatarId === selfId && m.nickName === selfName);
+        }
         if (mine) {
             mine.self = true;
             // Trust the server's ready state + seat index for our own slot.
@@ -262,6 +303,16 @@ export class RoomFlow {
         } else if (list.length === 0) {
             list.push(this.selfMember());
         }
+        // Stable seat order so every device shows the same roster in the same slots
+        // (WeChat can deliver memberList in arbitrary order → "人不对/乱跳").
+        list.sort((a, b) => {
+            const pa = a.pos >= 0 ? a.pos : MAX_SLOTS + 1;
+            const pb = b.pos >= 0 ? b.pos : MAX_SLOTS + 1;
+            if (pa !== pb) {
+                return pa - pb;
+            }
+            return a.nickName.localeCompare(b.nickName);
+        });
         return list;
     }
 
@@ -294,12 +345,37 @@ export class RoomFlow {
             });
     }
 
+    // A guest's invited room is gone (host dissolved it) or already in a race, so joining
+    // failed. Replace the lobby with a clean centered notice + a back button instead of
+    // leaving them in a fake room showing a raw "invalid room state" error.
+    private showRoomUnavailable(message: string) {
+        this._netReal = false;
+        this._roomUnavailable = true;
+        this.clearStartTimeout();
+        if (!this._root?.isValid) {
+            return;
+        }
+        this._content?.removeAllChildren();
+        if (this._startButton?.isValid) {
+            this._startButton.active = false;
+        }
+        this.setHint('');
+        this._root.getChildByName('RoomUnavailable')?.destroy();
+        const panel = makeUiNode('RoomUnavailable', this._root);
+        makeLabel('Notice', panel, message, 32, uiColor(240, 224, 200)).setPosition(0, 40, 0);
+        const back = makeButton('BackFromDissolved', panel, 260, 62, uiColor(60, 130, 90, 245), '返回大厅');
+        back.setPosition(0, -50, 0);
+        back.on(Node.EventType.TOUCH_END, () => this.exit());
+    }
+
     private render() {
+        if (this._roomUnavailable) {
+            return;
+        }
         const content = this._content;
         if (!content?.isValid) {
             return;
-        }
-        content.removeAllChildren();
+        }        content.removeAllChildren();
         // Fixed landscape layout (the game is locked to landscape). Deliberately NOT
         // based on the live viewport: during a share the viewport briefly flips to
         // portrait, and reacting to it left the grid stuck in a narrow layout after
@@ -325,6 +401,15 @@ export class RoomFlow {
         // Count ALL members (the host auto-readies too), matching the demo's allReady.
         const readyCount = this._members.filter((m) => m.ready).length;
         const allReady = humanCount >= 2 && readyCount === humanCount;
+        if (this._roomLabel?.isValid) {
+            if (!this._netReal) {
+                this._roomLabel.string = '本地预览房间（真机联机才有房间号）';
+            } else if (this._roomId) {
+                this._roomLabel.string = `房间号 ${this._roomId}（与好友核对是否一致）`;
+            } else {
+                this._roomLabel.string = '房间号 获取中…';
+            }
+        }
         if (this._hintLabel?.isValid) {
             if (this._statusHint) {
                 this._hintLabel.string = this._statusHint;
@@ -453,11 +538,11 @@ export class RoomFlow {
         }
         this._startRequested = true;
         // Follow the WeChat lock-step demo: the host broadcasts a START signal carrying
-        // the shared seed; EVERY member (including the host, which receives its own
-        // broadcast) then calls startGame via handleBroadcast. With startPercent=0 the
-        // game starts and onGameStart fires on ALL members — that is the ONLY signal
-        // used to enter the race. (Entering earlier uploads frames before the frame
-        // loop exists -> nativeInstance.uploadFrame error.)
+        // the shared seed; EVERY member — INCLUDING the host — then calls startGame. The
+        // host used to skip startGame and rely on passive roomState detection, but that
+        // poll returned undefined on device, leaving the host stuck at 开始中 while the
+        // guest started and timed out into becoming host. onGameStart / roomState / the
+        // startGame-success fallback (WechatGameRoom) then delivers the start signal.
         this._pendingSeed = SeededRandom.entropySeed();
         this.setHint('开始中…');
         netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
@@ -467,10 +552,10 @@ export class RoomFlow {
             // directly. The guest enters on receiving the broadcast (handleBroadcast).
             this.enterNetRace();
         } else {
-            // First game: the guest calls startGame on the broadcast; the host enters via
-            // the resulting onGameStart / roomState detection. Recover if it never
-            // completes (armStartTimeout).
-            this.armStartTimeout();
+            // First game: the host calls startGame itself (not just the guests) so it
+            // becomes a frame participant and gets a reliable start signal. The broadcast
+            // makes the guests do the same. requestStartGame arms the recovery timeout.
+            this.requestStartGame();
         }
     }
 
@@ -535,13 +620,44 @@ export class RoomFlow {
                     // Rematch: the lock-step session is still running, so enter the race
                     // directly instead of calling startGame (which would 4014).
                     this.enterNetRace();
-                } else if (!this._isHost) {
+                } else {
+                    // First game: EVERY member (host + guests) calls startGame, matching
+                    // the official demo. requestStartGame is guarded by _gameStartCalled,
+                    // so the host also calling it in startRace is harmless.
                     this.requestStartGame();
+                    // onGameStart may have already fired (roomState detection) and been
+                    // deferred waiting for this seed — enter now that we have it.
+                    if (this._gameStartPending) {
+                        this.enterNetRace();
+                    }
                 }
             }
         } catch (error) {
             console.warn('[Room] bad broadcast', error);
         }
+    }
+
+    // onGameStart fired. The HOST always has its own seed, so it enters immediately.
+    // A GUEST must enter with the host's shared seed (delivered by the 'start'
+    // broadcast); onGameStart can arrive first (from roomState detection), and entering
+    // then would pick a random seed and desync AI/lanes — the "莫名进了比赛但完全不同步"
+    // symptom. Defer until the seed lands, with a short fallback so a dropped broadcast
+    // doesn't hang the guest in the lobby forever.
+    private onNetGameStart() {
+        if (!this._isHost && this._pendingSeed === 0) {
+            this._gameStartPending = true;
+            this.setHint('即将开始…');
+            if (!this._seedWaitHandle) {
+                this._seedWaitHandle = setTimeout(() => {
+                    this._seedWaitHandle = null;
+                    if (!this._raceEntered && this._gameStartPending) {
+                        this.enterNetRace();
+                    }
+                }, 3000);
+            }
+            return;
+        }
+        this.enterNetRace();
     }
 
     // Lock-step has begun on every client: hand the agreed seed + roster to the race.
@@ -550,6 +666,11 @@ export class RoomFlow {
             return;
         }
         this._raceEntered = true;
+        this._gameStartPending = false;
+        if (this._seedWaitHandle) {
+            clearTimeout(this._seedWaitHandle);
+            this._seedWaitHandle = null;
+        }
         this.clearStartTimeout();
         // Clear our ready as the race begins so the server doesn't carry a stale
         // isReady=true through the race — otherwise a member who returns to the lobby
@@ -583,8 +704,22 @@ export class RoomFlow {
         this._callbacks.onExit();
     }
 
+    // Whether this room is the one identified by the given accessInfo (share token).
+    // Used to ignore an invite to the SAME room the player is already in (instead of
+    // pointlessly leaving and rejoining).
+    matchesRoom(accessInfo: string): boolean {
+        if (!accessInfo) {
+            return false;
+        }
+        return accessInfo === this._accessInfo || accessInfo === this._joinRoomId;
+    }
+
     dispose() {
         this.clearStartTimeout();
+        if (this._seedWaitHandle) {
+            clearTimeout(this._seedWaitHandle);
+            this._seedWaitHandle = null;
+        }
         netRoom().setCallbacks({});
         if (this._root?.isValid) {
             this._root.destroy();

@@ -8,6 +8,7 @@ import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder'
 import { ResourceHeadBar } from '../ui/ResourceHeadBar';
 import { RoomFlow } from '../ui/RoomFlow';
 import { getUILayer, UILayer } from '../ui/UILayers';
+import { netRoom } from '../net/NetManager';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
@@ -204,8 +205,32 @@ export class LoginManager extends Component {
             return;
         }
         console.log(`[Room] onShow invite room=${invitedRoom} roomOpen=${!!this._roomFlow}`);
-        // Already in a room: nothing to do (openRoom also guards on _roomFlow).
+        // Any deferred open (login screen still loading) is superseded by this invite.
+        this._pendingOpenRoom = false;
+        this._pendingJoinRoomId = null;
+        this._pendingReconnect = false;
         if (this._roomFlow) {
+            // Already in a room. If it's the SAME room, do nothing. Otherwise LEAVE the
+            // current room first, then join the friend's — previously this returned and
+            // silently did nothing, so tapping a friend's invite while already in a room
+            // left the player stuck in the old room ("一直加不到好友的房间里").
+            if (this._roomFlow.matchesRoom(invitedRoom)) {
+                return;
+            }
+            this._roomFlow.dispose();
+            this._roomFlow = null;
+            this._headBar?.setBack(null);
+            // Leave the old room on the server BEFORE joining the new one (WeChat only
+            // allows membership in one room at a time; joining while still in the old one
+            // fails). Open the invited room once the leave settles.
+            netRoom()
+                .leaveRoom()
+                .catch(() => undefined)
+                .then(() => {
+                    if (this._canvasNode?.isValid && !this._roomFlow) {
+                        this.openRoom(invitedRoom);
+                    }
+                });
             return;
         }
         // Open the invited room in JOIN mode right away (openRoom hides the login UI).

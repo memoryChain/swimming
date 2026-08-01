@@ -149,8 +149,15 @@ export class WechatGameRoom implements INetRoom {
             this.handleGameStarted('onGameStart');
         }));
         this.safeOn('onBroadcast', () => gsm.onBroadcast?.((res: any) => {
-            netLog('onBroadcast', res);
-            this._callbacks.onBroadcast?.(typeof res?.msg === 'string' ? res.msg : '');
+            const msg = typeof res?.msg === 'string' ? res.msg : '';
+            // Skip logging the high-frequency in-race broadcasts — position snapshots
+            // (S| ~6.7/s) and self-position (P|) flood the console, and each vConsole
+            // log is expensive (DOM append + reflow). Room-control messages still log.
+            const c = msg.charCodeAt(0);
+            if (c !== 83 /* 'S' */ && c !== 80 /* 'P' */) {
+                netLog('onBroadcast', res);
+            }
+            this._callbacks.onBroadcast?.(msg);
         }));
         this.safeOn('onGameEnd', () => gsm.onGameEnd?.(() => {
             netLog('onGameEnd');
@@ -399,6 +406,15 @@ export class WechatGameRoom implements INetRoom {
                 gsm.startGame({
                     success: () => {
                         netLog('startGame ok');
+                        // The caller may NOT receive onGameStart, and the roomState poll
+                        // can return undefined on device (observed: host stuck at 开始中).
+                        // Per the docs, the caller's own startGame success is a valid
+                        // "game started" signal — use it as a delayed fallback so the
+                        // starter can't hang. The delay lets the native frame instance
+                        // initialize (uploadFrame is gated on _gameStarted) and gives
+                        // onGameStart / roomState a chance to fire first; handleGameStarted
+                        // is idempotent so whichever lands first wins.
+                        setTimeout(() => this.handleGameStarted('startGame-success'), 1500);
                         resolve();
                     },
                     fail: (error: any) => {
@@ -448,12 +464,45 @@ export class WechatGameRoom implements INetRoom {
         this._gameStarted = false;
         this._gameStartNotified = false;
         this._isOwner = false;
-        // The room OWNER must call ownerLeaveRoom (dissolves / reassigns the room) so
-        // remaining members get an onRoomInfoChange; guests call memberLeaveRoom.
-        if (wasOwner && typeof gsm.ownerLeaveRoom === 'function') {
-            return gsm.ownerLeaveRoom({ accessInfo, assignToMinPosNum: true });
-        }
-        return gsm.memberLeaveRoom({ accessInfo });
+        // Drop stale frame listeners so joining a NEW room and starting its game rebinds
+        // cleanly instead of stacking a duplicate onSyncFrame from the old room.
+        this.unbindGameEvents();
+        // Always resolve to a real settled Promise: WeChat's leave APIs may be
+        // callback-style, promise-style, or return nothing, and callers chain
+        // .catch()/.then() on the result (e.g. leave-then-join on an invite). A short
+        // timeout guarantees the chain proceeds even if the platform never calls back.
+        return new Promise<void>((resolve) => {
+            let done = false;
+            const finish = () => {
+                if (done) {
+                    return;
+                }
+                done = true;
+                resolve();
+            };
+            const timer = setTimeout(finish, 1500);
+            const settle = () => {
+                clearTimeout(timer);
+                finish();
+            };
+            try {
+                // The room OWNER must call ownerLeaveRoom (dissolves / reassigns the room)
+                // so remaining members get an onRoomInfoChange; guests call
+                // memberLeaveRoom.
+                const useOwner = wasOwner && typeof gsm.ownerLeaveRoom === 'function';
+                const opts: any = { accessInfo, success: settle, fail: settle };
+                if (useOwner) {
+                    opts.assignToMinPosNum = true;
+                }
+                const ret = useOwner ? gsm.ownerLeaveRoom(opts) : gsm.memberLeaveRoom(opts);
+                if (ret && typeof ret.then === 'function') {
+                    ret.then(settle, settle);
+                }
+            } catch (error) {
+                netLog('leaveRoom threw', (error as any)?.errMsg || (error as any)?.message || String(error));
+                settle();
+            }
+        });
     }
 
     endGame(): Promise<void> {
@@ -543,7 +592,12 @@ function mapRoomInfo(res: any): NetRoomInfo {
         }))
         : [];
     return {
-        accessInfo: room?.accessInfo ?? data.accessInfo ?? room?.roomIdStr ?? data.roomIdStr ?? '',
+        // accessInfo is the JOIN TOKEN (from createRoom/joinRoom). getRoomInfo /
+        // onRoomInfoChange payloads do NOT carry it — only roomIdStr. Do NOT fall back
+        // to roomIdStr here: they are different values, and joining with roomIdStr fails
+        // with errCode 4003. Leave it empty so callers keep the real token.
+        accessInfo: room?.accessInfo ?? data.accessInfo ?? '',
+        roomId: String(room?.roomIdStr ?? data.roomIdStr ?? room?.roomId ?? data.roomId ?? ''),
         members,
         ownerOpenId: room?.ownerOpenId ?? room?.owner,
         state: room?.roomState ?? room?.state,

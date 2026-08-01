@@ -516,13 +516,6 @@ export class GameManager extends Component {
         if (this._modelDebugFlow?.active) {
             return;
         }
-        // Networked race: swimmer positions are authoritative per owner (self-report) and
-        // corrected toward those, so local collision pushes would fight the corrections
-        // (shove a body one way, the next correction yanks it back). Skip them — lanes
-        // keep swimmers apart anyway.
-        if (this._netSession) {
-            return;
-        }
         this._collisionSwimmers.length = 0;
         if (this._playerSwimmer) {
             this._collisionSwimmers.push(this._playerSwimmer);
@@ -530,6 +523,17 @@ export class GameManager extends Component {
         for (const swimmer of this._aiSwimmers) {
             if (swimmer) {
                 this._collisionSwimmers.push(swimmer);
+            }
+        }
+        // Networked race: keep collisions ON while positions are well-synced, but exclude
+        // any swimmer that's mid catch-up (snapping to its authoritative position) — a
+        // collision push there would fight the snap. The local player never snaps (it's
+        // predicted), so it always collides.
+        if (this._netSession) {
+            for (let i = this._collisionSwimmers.length - 1; i >= 0; i--) {
+                if (this._collisionSwimmers[i].netCatchingUp) {
+                    this._collisionSwimmers.splice(i, 1);
+                }
             }
         }
         resolveSwimmerCollisions(this._collisionSwimmers);
@@ -1425,29 +1429,50 @@ export class GameManager extends Component {
             if (!swimmer?.node?.active) {
                 continue;
             }
-            const self = this.isNetHumanLane(lane) ? this._netRaceController.selfSnapshot(lane) : null;
+            const isHuman = this.isNetHumanLane(lane);
+            const self = isHuman ? this._netRaceController.selfSnapshot(lane) : null;
+            // Resolve a correction target from the best available source: the human's own
+            // self-report on the reliable frame channel first, else the host snapshot (S|).
+            let targetDist: number;
+            let targetLat: number;
+            let targetHead: number;
+            let distBlend: number;
+            let latBlend: number;
+            let headBlend: number;
             if (self) {
-                // Redundancy: the owner is clearly moving but this copy isn't racing — its
-                // DiveRelease was lost, or its dive got stuck mid-tween and never reached
-                // racing. Force it straight into the race so it can't stay frozen. (Only
-                // when clearly not a normal in-progress dive: never dived, or dived long
-                // enough ago that the ~1.5s dive tween should already be done.)
-                if (self.distance > NET_DIVE_STUCK_M && !swimmer.isNetRacing) {
-                    const remote = swimmer.getComponent(RemoteSwimmerController);
-                    if (remote && (!remote.hasDived || remote.diveElapsed() > NET_DIVE_STUCK_TIMEOUT_MS)) {
-                        remote.forceEnterRace(self.distance);
-                    }
-                }
-                // Catch up to how the owner sees itself (strong blend; snaps if far).
-                swimmer.applyNetCorrection(self.distance, self.lateral, 0.4, 0.4);
-                swimmer.applyNetHeading(self.heading, 0.4);
+                targetDist = self.distance;
+                targetLat = self.lateral;
+                targetHead = self.heading;
+                distBlend = 0.4;
+                latBlend = 0.4;
+                headBlend = 0.4;
             } else {
                 const target = this._netRaceController.snapshotTargets.find((e) => e.lane === lane);
-                if (target) {
-                    swimmer.applyNetCorrection(target.distance, target.lateral, 0.2, 0.25);
-                    swimmer.applyNetHeading(target.heading, 0.3);
+                if (!target) {
+                    continue;
+                }
+                targetDist = target.distance;
+                targetLat = target.lateral;
+                targetHead = target.heading;
+                distBlend = 0.2;
+                latBlend = 0.25;
+                headBlend = 0.3;
+            }
+            // Stuck-dive redundancy for remote humans: the owner is clearly moving but this
+            // copy isn't racing — its DiveRelease was lost, or its dive stuck mid-tween and
+            // never reached racing. Force it straight into the race so it can't stay frozen
+            // at the block (which left the host invisible, way behind the friend). Applies
+            // regardless of whether the position came from the frame channel or S|. (Only
+            // when clearly not a normal in-progress dive: never dived, or dived long enough
+            // ago that the ~1.5s dive tween should already be done.)
+            if (isHuman && targetDist > NET_DIVE_STUCK_M && !swimmer.isNetRacing) {
+                const remote = swimmer.getComponent(RemoteSwimmerController);
+                if (remote && (!remote.hasDived || remote.diveElapsed() > NET_DIVE_STUCK_TIMEOUT_MS)) {
+                    remote.forceEnterRace(targetDist);
                 }
             }
+            swimmer.applyNetCorrection(targetDist, targetLat, distBlend, latBlend);
+            swimmer.applyNetHeading(targetHead, headBlend);
         }
     }
 

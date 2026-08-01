@@ -26,6 +26,10 @@ const PERFECT_COMBO_IDLE_SECONDS = 1;
 // Scratch vector for net-race render interpolation (avoids per-frame allocation on
 // the WeChat Mini Game heap).
 const _tmpNetLerpPos = new Vec3();
+// After a large position correction (catch-up SNAP), suppress this swimmer's collisions
+// for this long — a collision push would fight the snap. When positions are well-synced
+// (only small eased corrections, no snap), collisions stay on.
+const NET_CATCHUP_COLLISION_SUPPRESS_MS = 400;
 
 @ccclass('Swimmer')
 export class Swimmer extends Component {
@@ -145,18 +149,33 @@ export class Swimmer extends Component {
             return;
         }
         const errD = targetDistance - this._motor.distance;
-        if (Math.abs(errD) > 3) {
+        const snappedD = Math.abs(errD) > 3;
+        if (snappedD) {
             this._motor.nudgeDistance(errD);
         } else if (Math.abs(errD) > 1e-3) {
             this._motor.nudgeDistance(errD * distanceBlend);
         }
         const curLateral = this._motor.lateralOffset;
         const errL = targetLateral - curLateral;
-        if (Math.abs(errL) > 1) {
+        const snappedL = Math.abs(errL) > 1;
+        if (snappedL) {
             this._motor.setLateralOffset(targetLateral);
         } else if (Math.abs(errL) > 1e-4) {
             this._motor.setLateralOffset(curLateral + errL * lateralBlend);
         }
+        // A snap means this swimmer is teleporting to catch up to its authoritative
+        // position; suppress its collisions briefly so a collision push can't fight it.
+        if (snappedD || snappedL) {
+            this._netSnappedAtMs = Date.now();
+        }
+    }
+
+    // NETWORKED RACE: true briefly after a large catch-up snap. While catching up the
+    // swimmer is jumping toward its authoritative position, so it is excluded from
+    // collision resolution (a push would fight the snap). When positions are well-synced
+    // (only small eased corrections) this stays false and collisions apply normally.
+    get netCatchingUp(): boolean {
+        return Date.now() - this._netSnappedAtMs < NET_CATCHUP_COLLISION_SUPPRESS_MS;
     }
 
     start() {
@@ -387,6 +406,9 @@ export class Swimmer extends Component {
     private readonly _netLerpFrom = new Vec3();
     private readonly _netLerpTo = new Vec3();
     private _netLerpReady = false;
+    // Wall-clock ms of the last catch-up SNAP (large position correction); collisions are
+    // suppressed for NET_CATCHUP_COLLISION_SUPPRESS_MS after it.
+    private _netSnappedAtMs = 0;
 
     // Called by the net driver right BEFORE a fixed step: carry the last step target
     // forward as the new interpolation origin.

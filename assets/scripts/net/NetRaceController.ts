@@ -39,6 +39,17 @@ const HOST_TAKEOVER_STAGGER_MS = 800;
 // freezing at a stale position.
 const SELF_SNAPSHOT_FRESH_MS = 800;
 
+// Per-frame input logging. OFF by default: it fires for every non-empty input frame
+// (dozens/sec during racing) and each console.log is very expensive with vConsole open
+// (it appends a DOM node + reflows), which showed up as heavy in-race lag. Flip to true
+// only when debugging the frame channel.
+const NET_FRAME_LOG = false;
+
+// The debug HUD is repainted from both onSyncFrame (~30/s) and tick (~30/s). Setting
+// Label.string rebuilds the text mesh, so cap repaints to this interval (~6/s) — plenty
+// for a status readout, and it keeps the hot network path cheap.
+const HUD_REPAINT_INTERVAL_MS = 160;
+
 export class NetRaceController {
     private readonly _net: INetRoom;
     private _accum = 0;
@@ -48,6 +59,7 @@ export class NetRaceController {
     // In-race debug HUD so sync state is visible without the console.
     private _hudRoot: Node | null = null;
     private _hudLabel: Label | null = null;
+    private _hudLastPaintAt = 0;
     private _lastFrameId = 0;
     private _lastItems: string[] = [];
     private readonly _peerLatest: Record<number, number> = {};
@@ -520,13 +532,15 @@ export class NetRaceController {
             }
             if (decoded.events.length > 0) {
                 this._peerInputCount[decoded.senderPos] = (this._peerInputCount[decoded.senderPos] ?? 0) + 1;
-                this._peerLastInput[decoded.senderPos] = decoded.events
-                    .map((e) => (e.kind === 'r' ? `r${Math.round((e.power ?? 0) * 100)}` : `${e.kind}${e.side ?? ''}`))
-                    .join(',');
-                // Log real inputs as they arrive so we can verify both directions.
-                console.log(
-                    `[NetRace] frame#${frame.frameId} pos${decoded.senderPos} input=${this._peerLastInput[decoded.senderPos]}`,
-                );
+                if (NET_FRAME_LOG) {
+                    this._peerLastInput[decoded.senderPos] = decoded.events
+                        .map((e) => (e.kind === 'r' ? `r${Math.round((e.power ?? 0) * 100)}` : `${e.kind}${e.side ?? ''}`))
+                        .join(',');
+                    // Log real inputs as they arrive so we can verify both directions.
+                    console.log(
+                        `[NetRace] frame#${frame.frameId} pos${decoded.senderPos} input=${this._peerLastInput[decoded.senderPos]}`,
+                    );
+                }
             }
         }
         this.refreshHud();
@@ -570,6 +584,13 @@ export class NetRaceController {
         if (!this._hudLabel?.isValid) {
             return;
         }
+        // Throttle: called from both the frame-receive and upload paths (~60/s), but
+        // updating the Label rebuilds its text mesh. ~6/s is plenty for a status readout.
+        const now = Date.now();
+        if (now - this._hudLastPaintAt < HUD_REPAINT_INTERVAL_MS) {
+            return;
+        }
+        this._hudLastPaintAt = now;
         this._hudLabel.string =
             `联机同步(调试)  ${this._isHost ? '房主' : '客户'} pos=${this._session.localPos}  当前房主seat=${this._activeHostPos === Number.MAX_SAFE_INTEGER ? '?' : this._activeHostPos}${this._isHost && !this._session.localIsHost ? ' (已接管)' : ''}\n` +
             `帧 发=${this._sentFrames} 收=${this._recvFrames}  |  快照 发=${this._snapSent} 收=${this._snapRecv}  |  名次 发=${this._resultSent} 收=${this._resultRecv}\n` +

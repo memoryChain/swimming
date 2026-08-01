@@ -26,6 +26,10 @@ export interface NetRoomMember {
 export interface NetRoomInfo {
     // Opaque room id returned by createRoom; pass it to joinRoom.
     accessInfo: string;
+    // Human-readable room number for display/verification (WeChat roomIdStr). Unlike
+    // accessInfo (the long join token), this is the short number both players can
+    // compare to confirm they are in the same room. May be empty on some platforms.
+    roomId?: string;
     members: NetRoomMember[];
     ownerOpenId?: string;
     // Platform-specific room state code (kept opaque here).
