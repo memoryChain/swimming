@@ -3,6 +3,7 @@ import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
+import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 
 const CYCLE_AMOUNT = Math.PI * 2;
@@ -128,6 +129,16 @@ export class SwimmerMotor {
     private _lateralOffset = 0;
     private _lateralOffsetMin = -1000;
     private _lateralOffsetMax = 1000;
+    // Body weight for collision knockback (player from character def, AI from
+    // competitor profile; default 1). Heavy bodies resist being shoved.
+    private _weight = 1;
+    // Decaying collision knockback, integrated into distance/lateralOffset each
+    // frame (same channels nudgeDistance/setLateralOffset use). Stored in
+    // distance-rate / lateral-rate space (m/s) so no per-frame direction
+    // conversion is needed: the resolver folds each swimmer's lap direction
+    // into the distance component at injection time.
+    private _knockbackDistance = 0;
+    private _knockbackLateral = 0;
     private _steeringEnabled = false;
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
@@ -158,6 +169,9 @@ export class SwimmerMotor {
     beginFlipTurnPhase() {
         // The flip turn is an input-locked movement phase. Discard any held or
         // queued stroke so it cannot resume halfway through the wall push.
+        // A knockback impulse buffered just before the turn would freeze during
+        // the scripted phase and jolt afterwards, so clear it here.
+        this.clearKnockback();
         this._leftStrokeHeld = false;
         this._rightStrokeHeld = false;
         this._leftPressStartedAt = -1;
@@ -414,6 +428,7 @@ export class SwimmerMotor {
         if (Math.abs(this._lateralOffset - requestedLateralOffset) > 1e-6) {
             this.returnToLaneFromPoolWall();
         }
+        this.integrateKnockback(dt, raceDistance);
         this.updateMotionCycles(dt, options);
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
@@ -421,12 +436,14 @@ export class SwimmerMotor {
 
         if (this._distance >= raceDistance) {
             this._isRacing = false;
+            this.clearKnockback();
             return true;
         }
         return false;
     }
 
     private resetRaceState(initialDistance = 0) {
+        this.clearKnockback();
         this._distance = Math.max(0, initialDistance);
         this._bodyPhase = 0;
         this._leftArmCycle = 0;
@@ -470,6 +487,7 @@ export class SwimmerMotor {
 
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
         this._playerBalance = overrides;
+        this._weight = overrides?.weight ?? 1;
     }
 
     private get _effectiveMaxSpeed(): number {
@@ -995,6 +1013,56 @@ export class SwimmerMotor {
     // to push bodies apart along the swim axis). Clamped to the race bounds.
     nudgeDistance(delta: number) {
         this._distance = Math.max(0, Math.min(getRaceDistance(), this._distance + delta));
+    }
+    get weight(): number {
+        return this._weight;
+    }
+
+    setWeight(weight: number) {
+        this._weight = Math.max(0.1, weight);
+    }
+
+    // Add a decaying collision impulse (distance-rate + lateral-rate, m/s) to the
+    // knockback buffer. Capped so a multi-body pile-up can't explode the slide.
+    applyCollisionImpulse(distRate: number, latRate: number) {
+        if (!SWIMMER_COLLISION.knockbackEnabled) {
+            return;
+        }
+        const cap = SWIMMER_COLLISION.knockbackMaxImpulse;
+        this._knockbackDistance = clamp(this._knockbackDistance + distRate, -cap, cap);
+        this._knockbackLateral = clamp(this._knockbackLateral + latRate, -cap, cap);
+    }
+
+    clearKnockback() {
+        this._knockbackDistance = 0;
+        this._knockbackLateral = 0;
+    }
+
+    // Integrate the decaying knockback into distance/lateralOffset (same channels
+    // nudgeDistance/setLateralOffset use), then exponentially decay the buffer.
+    private integrateKnockback(dt: number, raceDistance: number) {
+        if (this._knockbackDistance === 0 && this._knockbackLateral === 0) {
+            return;
+        }
+        if (this._knockbackDistance !== 0) {
+            this._distance = Math.max(0, Math.min(raceDistance, this._distance + this._knockbackDistance * dt));
+        }
+        if (this._knockbackLateral !== 0) {
+            this._lateralOffset = clamp(
+                this._lateralOffset + this._knockbackLateral * dt,
+                this._lateralOffsetMin,
+                this._lateralOffsetMax,
+            );
+        }
+        const decay = Math.exp(-dt / Math.max(0.01, SWIMMER_COLLISION.knockbackDecaySeconds));
+        this._knockbackDistance *= decay;
+        this._knockbackLateral *= decay;
+        if (Math.abs(this._knockbackDistance) < 0.01) {
+            this._knockbackDistance = 0;
+        }
+        if (Math.abs(this._knockbackLateral) < 0.01) {
+            this._knockbackLateral = 0;
+        }
     }
 
     // Ease the actual heading toward the stroke-set target so a stroke turns the

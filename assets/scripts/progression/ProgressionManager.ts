@@ -64,6 +64,7 @@ export class ProgressionManager {
             { stamina: character.stamina, technique: character.technique, burst: character.burst },
             level,
             PROGRESSION_BALANCE.maxLevel,
+            character.weight,
         );
     }
 

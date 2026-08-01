@@ -19,6 +19,8 @@ export type PlayerBalanceOverrides = {
     strokeQualityAccel: number;
     kickMaxSpeed: number;
     diveMaxLaunchSpeed: number;
+    // Body weight (from the character definition). Pass-through, not leveled.
+    weight: number;
 };
 
 export type CharacterStats = {
@@ -49,6 +51,7 @@ export function resolvePlayerBalance(
     stats: CharacterStats,
     level: number,
     maxLevel: number,
+    weight: number,
 ): PlayerBalanceOverrides {
     const clampedLevel = Math.max(1, Math.min(maxLevel, level));
     const levelsAbove1 = clampedLevel - 1;
@@ -73,5 +76,6 @@ export function resolvePlayerBalance(
         strokeQualityAccel,
         kickMaxSpeed,
         diveMaxLaunchSpeed,
+        weight,
     };
 }

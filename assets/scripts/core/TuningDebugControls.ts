@@ -10,6 +10,7 @@ import { HeartRateZone } from '../condition/ConditionTypes';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
+import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 
 export type TuningControl = {
     id: string;
@@ -41,7 +42,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 19;
+const TUNING_FILE_VERSION = 20;
 
 type TuningFileData = {
     version: number;
@@ -59,6 +60,16 @@ type TuningFileData = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '碰撞',
+        controls: [
+            control('collision.knockbackDepthFactor', '撞飞深度系数', '每米重叠产生的撞飞冲量（m/s）。嵌得越深撞得越狠。', () => SWIMMER_COLLISION.knockbackDepthFactor, (v) => SWIMMER_COLLISION.knockbackDepthFactor = v, 0.1, 0, 10, 2),
+            control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
+            control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
+            control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
+            control('collision.knockbackFlashThreshold', '受击闪红阈值', '撞飞冲量超过此值（m/s）才闪红。调高则只有猛撞才闪。', () => SWIMMER_COLLISION.knockbackFlashThreshold, (v) => SWIMMER_COLLISION.knockbackFlashThreshold = v, 0.05, 0, 4, 2, 'm/s'),
+        ],
+    },
     {
         name: 'Flip Turn',
         controls: [
