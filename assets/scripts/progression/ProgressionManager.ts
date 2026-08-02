@@ -61,10 +61,12 @@ export class ProgressionManager {
         }
         const level = this.getCharacterLevel(characterId);
         return resolvePlayerBalance(
-            { stamina: character.stamina, technique: character.technique, burst: character.burst },
+            { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick },
             level,
             PROGRESSION_BALANCE.maxLevel,
             character.weight,
+            character.energyGain,
+            character.kick,
         );
     }
 

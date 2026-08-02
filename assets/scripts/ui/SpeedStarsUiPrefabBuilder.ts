@@ -152,6 +152,7 @@ export class SpeedStarsUiPrefabBuilder {
         ui.diveChargeFillNode = requireNode(raceHud, 'DiveChargeFill');
         this.buildHeartRateBar(raceHud, ui);
         this.buildEnergyBar(raceHud, ui);
+        this.buildUltimateEnergyBar(raceHud, ui);
         // Full-screen swim-input pad. Hidden during the awards ceremony so pointer events fall
         // through to the global input listeners that drive the free-look podium camera.
         // 全屏划水输入板。颁奖仪式时隐藏，让指针事件穿透到驱动颁奖自由视角相机的全局输入监听。
@@ -319,6 +320,28 @@ export class SpeedStarsUiPrefabBuilder {
         ui.energyLabel = label.getComponent(Label);
         ui.updateEnergyBar(100, false);
 
+    }
+
+    private buildUltimateEnergyBar(raceHud: Node, ui: UIController) {
+        const visibleSize = view.getVisibleSize();
+        const safeTop = raceSafeTopInset();
+        const root = makeUiNode('UltimateEnergyBar', raceHud);
+        // Anchor just below the stamina (体能) bar.
+        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - safeTop - 156, 0);
+
+        const label = makeLabel('UltimateEnergyLabel', root, '蓄气 0', 20, uiColor(255, 215, 90, 255));
+        label.getComponent(UITransform).setContentSize(220, 26);
+        label.setPosition(0, 20, 0);
+        label.getComponent(Label).horizontalAlign = Label.HorizontalAlign.LEFT;
+
+        const fillNode = makeUiNode('UltimateEnergyFill', root);
+        fillNode.getComponent(UITransform).setContentSize(220, 16);
+        const fillGfx = fillNode.addComponent(Graphics);
+
+        ui.ultimateBarRoot = root;
+        ui.ultimateBarFill = fillGfx;
+        ui.ultimateLabel = label.getComponent(Label);
+        ui.updateUltimateEnergyBar(0, false);
     }
 
     private layoutRaceProgress(raceHud: Node) {

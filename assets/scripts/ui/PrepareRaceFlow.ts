@@ -9,11 +9,13 @@ import {
     PLAYER_CHARACTER_DEFINITIONS,
     PLAYER_CHARACTER_SLOT_COUNT,
     selectPlayerCharacter,
+    weightToPhysicalRating,
     selectedPlayerColorScheme,
     setSelectedRaceDifficulty,
 } from '../app/PlayerCharacterConfig';
 import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
 import { openAppearancePanel } from './AppearancePanel';
+import { openCharacterStatsPanel } from './CharacterStatsPanel';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
 import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
@@ -308,32 +310,28 @@ export class PrepareRaceFlow {
         const level = progression.getCharacterLevel(character.id);
         const xp = progression.getCharacterXp(character.id);
         const xpNeeded = level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(level);
-        makeLabel('LevelLabel', panel, 'Lv.' + level + (level >= PROGRESSION_BALANCE.maxLevel ? ' (满级)' : ''), 18, uiColor(150, 200, 255)).setPosition(0, panelHeight / 2 - 70, 1);
+        makeLabel('LevelLabel', panel, 'Lv.' + level + (level >= PROGRESSION_BALANCE.maxLevel ? ' (满级)' : ''), 18, uiColor(150, 200, 255)).setPosition(0, panelHeight / 2 - 120, 1);
         if (xpNeeded > 0) {
             const xpLabel = makeLabel('XpLabel', panel, 'XP', 20, WHITE);
             xpLabel.getComponent(UITransform)!.setContentSize(72, 28);
-            xpLabel.setPosition(-118, panelHeight / 2 - 92, 1);
+            xpLabel.setPosition(-118, panelHeight / 2 - 142, 1);
             const xpBarWidth = 188;
             const xpTrack = makeRect('XpTrack', panel, xpBarWidth, 16, uiColor(24, 55, 90, 255));
-            xpTrack.setPosition(18, panelHeight / 2 - 92, 1);
+            xpTrack.setPosition(18, panelHeight / 2 - 142, 1);
             const xpRatio = Math.max(0, Math.min(1, xp / xpNeeded));
             const xpFill = makeRect('XpFill', xpTrack, 184 * xpRatio, 10, uiColor(120, 220, 130, 255));
             xpFill.setPosition(-92 + (184 * xpRatio) / 2, 0, 2);
             const xpValueLabel = makeLabel('XpValue', panel, xp + '/' + xpNeeded, 16, WHITE);
             xpValueLabel.getComponent(UITransform)!.setContentSize(72, 24);
-            xpValueLabel.setPosition(132, panelHeight / 2 - 92, 1);
+            xpValueLabel.setPosition(132, panelHeight / 2 - 142, 1);
         }
-        // Pull the compact three-row attribute block up below the name. This
-        // removes the old empty band at the top of the panel and reserves its
-        // lower-right area for the race-selection button.
-        this.makeStat(panel, '体力', character.stamina, 130);
-        this.makeStat(panel, '技巧', character.technique, 90);
-        this.makeStat(panel, '爆发力', character.burst, 50);
-        makeLabel('DescriptionHeading', panel, '角色介绍', 22, CYAN).setPosition(-106, 0, 1);
-        const description = makeLabel('Description', panel, character.description, 17, WHITE);
-        description.getComponent(UITransform)!.setContentSize(278, 76);
+        // 六维天赋雷达图：替换原来的三条进度条，直观展示角色的先天资质轮廓。
+        this.buildRadarChart(panel, character, 2);
+        const description = makeLabel('Description', panel, character.description, 14, uiColor(214, 232, 246));
+        description.getComponent(UITransform)!.setContentSize(290, 40);
+        description.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.CENTER;
         description.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
-        description.setPosition(0, -50, 1);
+        description.setPosition(0, panelHeight / 2 - 82, 1);
         makeLabel('SkillHeading', panel, '技能', 22, CYAN).setPosition(-128, -112, 1);
         const skill = makeRect('SkillCard', panel, 278, 72, PANEL_ALT);
         skill.setPosition(0, -168, 1);
@@ -342,19 +340,104 @@ export class PrepareRaceFlow {
         skillDesc.getComponent(UITransform)!.setContentSize(246, 30);
         skillDesc.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
         skillDesc.setPosition(0, -17, 1);
+
+        const statsButton = makeRoundedRect('StatsButton', panel, 200, 44, PANEL, 12, UI_STYLE.cyanOutline, 1.5);
+        statsButton.setPosition(0, -226, 2);
+        const statsHit = statsButton.addComponent(Button);
+        statsHit.target = statsButton;
+        statsHit.transition = Button.Transition.NONE;
+        makeLabel('Label', statsButton, '属性', 20, WHITE).setPosition(0, 0, 1);
+        statsButton.on(Button.EventType.CLICK, () => openCharacterStatsPanel(this._canvasNode, this._width, this._height));
     }
 
-    private makeStat(panel: Node, name: string, value: number, y: number) {
-        const label = makeLabel(`${name}Label`, panel, name, 20, WHITE);
-        label.getComponent(UITransform)!.setContentSize(72, 28);
-        label.setPosition(-118, y, 1);
-        const track = makeRect(`${name}Track`, panel, 188, 16, uiColor(24, 55, 90, 255));
-        track.setPosition(18, y, 1);
-        const fill = makeRect(`${name}Fill`, track, 184 * Math.max(0, Math.min(100, value)) / 100, 10, CYAN);
-        fill.setPosition(-92 + (184 * value / 100) / 2, 0, 2);
-        const valueLabel = makeLabel(`${name}Value`, panel, `${value}`, 16, WHITE);
-        valueLabel.getComponent(UITransform)!.setContentSize(44, 24);
-        valueLabel.setPosition(132, y, 2);
+    // 六维能力雷达图（先天资质，固定不随等级变化）。顺时针从正上方开始：
+    // 体力 / 爆发 / 踢腿 / 对抗(体重归一化) / 蓄气 / 技巧。
+    private buildRadarChart(panel: Node, character: ReturnType<typeof findPlayerCharacter> & {}, centerY: number) {
+        const R = 74;
+        const axes = [
+            { label: '体力', value: character.stamina },
+            { label: '爆发', value: character.burst },
+            { label: '踢腿', value: character.kick },
+            { label: '对抗', value: weightToPhysicalRating(character.weight) },
+            { label: '蓄气', value: character.energyGain },
+            { label: '技巧', value: character.technique },
+        ];
+        const n = axes.length;
+        const angle = (i: number) => Math.PI / 2 - (i * Math.PI * 2) / n;
+        const vertex = (i: number, scale: number) => {
+            const a = angle(i);
+            return { x: R * scale * Math.cos(a), y: R * scale * Math.sin(a) };
+        };
+        const trace = (scale: number) => {
+            for (let i = 0; i <= n; i++) {
+                const v = vertex(i % n, scale);
+                if (i === 0) gfx.moveTo(v.x, v.y); else gfx.lineTo(v.x, v.y);
+            }
+        };
+
+        const gfxNode = makeUiNode('RadarChart', panel);
+        gfxNode.getComponent(UITransform)!.setContentSize(260, 230);
+        const gfx = gfxNode.addComponent(Graphics);
+        gfxNode.setPosition(0, centerY, 1);
+
+        // 极淡的底盘填充，让网格有“表盘”质感。
+        gfx.fillColor = uiColor(70, 150, 200, 18);
+        trace(1);
+        gfx.fill();
+
+        // 五圈同心六边形网格（20/40/60/80/100），外圈加粗加亮。
+        const rings = [0.2, 0.4, 0.6, 0.8, 1];
+        for (let r = 0; r < rings.length; r++) {
+            const outer = r === rings.length - 1;
+            gfx.strokeColor = outer ? uiColor(120, 200, 240, 150) : uiColor(80, 150, 200, 48);
+            gfx.lineWidth = outer ? 1.6 : 1;
+            trace(rings[r]);
+            gfx.stroke();
+        }
+
+        // 六条径向辐条：从中心连到每个顶点，让每个维度的方向清晰可读。
+        gfx.strokeColor = uiColor(110, 180, 220, 95);
+        gfx.lineWidth = 1.2;
+        for (let i = 0; i < n; i++) {
+            const v = vertex(i, 1);
+            gfx.moveTo(0, 0);
+            gfx.lineTo(v.x, v.y);
+        }
+        gfx.stroke();
+
+        // 数据多边形（半透明填充 + 亮青描边 + 顶点）。
+        const ratio = (i: number) => Math.max(0, Math.min(100, axes[i].value)) / 100;
+        gfx.fillColor = uiColor(80, 215, 255, 78);
+        gfx.strokeColor = uiColor(150, 238, 255, 255);
+        gfx.lineWidth = 2.6;
+        for (let i = 0; i <= n; i++) {
+            const v = vertex(i % n, ratio(i % n));
+            if (i === 0) gfx.moveTo(v.x, v.y); else gfx.lineTo(v.x, v.y);
+        }
+        gfx.fill();
+        gfx.stroke();
+
+        // 顶点：外圈深色描边 + 内圈亮芯，做出立体感并从网格里跳出来。
+        for (let i = 0; i < n; i++) {
+            const v = vertex(i, ratio(i));
+            gfx.fillColor = uiColor(10, 40, 70, 255);
+            gfx.circle(v.x, v.y, 4.2);
+            gfx.fill();
+            gfx.fillColor = uiColor(180, 244, 255, 255);
+            gfx.circle(v.x, v.y, 2.6);
+            gfx.fill();
+        }
+
+        // 轴标签（名称 + 数值）放在雷达外侧。
+        for (let i = 0; i < n; i++) {
+            const a = angle(i);
+            const lx = (R + 16) * Math.cos(a);
+            const ly = (R + 16) * Math.sin(a);
+            const label = makeLabel(`RadarLabel${i}`, panel, `${axes[i].label} ${axes[i].value}`, 13, uiColor(220, 238, 250));
+            label.getComponent(UITransform)!.setContentSize(86, 20);
+            label.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.CENTER;
+            label.setPosition(lx, centerY + ly, 2);
+        }
     }
 
     private buildRaceModeList(parent: Node) {

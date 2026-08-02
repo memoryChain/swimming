@@ -21,12 +21,15 @@ export type PlayerBalanceOverrides = {
     diveMaxLaunchSpeed: number;
     // Body weight (from the character definition). Pass-through, not leveled.
     weight: number;
+    // 蓄气资质（from the character definition）. Pass-through, not leveled.
+    energyGainAptitude: number;
 };
 
 export type CharacterStats = {
     stamina: number;
     technique: number;
     burst: number;
+    kick: number;
 };
 
 // Per-level increments (micro - a maxed character is stronger but never broken).
@@ -52,6 +55,8 @@ export function resolvePlayerBalance(
     level: number,
     maxLevel: number,
     weight: number,
+    energyGainAptitude: number,
+    kickAptitude: number,
 ): PlayerBalanceOverrides {
     const clampedLevel = Math.max(1, Math.min(maxLevel, level));
     const levelsAbove1 = clampedLevel - 1;
@@ -65,7 +70,8 @@ export function resolvePlayerBalance(
         + per.perfectComboMaxOvercap * levelsAbove1;
     const strokeQualityAccel = SWIMMER_BALANCE.strokeQualityAccel * attributeMultiplier(stats.technique)
         + per.strokeQualityAccel * levelsAbove1;
-    const kickMaxSpeed = SWIMMER_BALANCE.kickMaxSpeed + per.kickMaxSpeed * levelsAbove1;
+    const kickMaxSpeed = SWIMMER_BALANCE.kickMaxSpeed * attributeMultiplier(kickAptitude)
+        + per.kickMaxSpeed * levelsAbove1;
     const diveMaxLaunchSpeed = DIVE_BALANCE.maxLaunchSpeed * attributeMultiplier(stats.burst)
         + per.diveMaxLaunchSpeed * levelsAbove1;
 
@@ -77,5 +83,6 @@ export function resolvePlayerBalance(
         kickMaxSpeed,
         diveMaxLaunchSpeed,
         weight,
+        energyGainAptitude,
     };
 }

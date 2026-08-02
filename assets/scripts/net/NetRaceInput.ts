@@ -155,6 +155,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     finished: fin,
                     heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
                     speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
+                    energy: -1,
                 };
             }
         }

@@ -235,6 +235,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const iL = _impLat[i];
         if (iD !== 0 || iL !== 0) {
             _active[i].applyCollisionImpulse(iD, iL);
+            _active[i].addCollisionEnergyBonus(Math.hypot(iD, iL));
         }
     }
 }

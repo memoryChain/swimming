@@ -169,6 +169,7 @@ export class CompetitorManager {
         controller.diveReaction = profile.diveReaction;
         controller.personality = getAiPersonality(profile.personalityId);
         swimmer.motor.setWeight(profile.weight ?? 1);
+        swimmer.setEnergyGainAptitude(profile.energyGain ?? 80);
     }
 
     private createPlayer(group: Node): Swimmer {

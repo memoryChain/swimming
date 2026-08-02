@@ -11,6 +11,7 @@ import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
+import { UltimateEnergyModel } from '../condition/UltimateEnergyModel';
 import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { scaledDelta } from '../core/TimeScale';
 import { StrokeQualityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -48,6 +49,7 @@ export class Swimmer extends Component {
     private readonly _pendingRhythmResults: RhythmResult[] = [];
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
+    private readonly _ultimate = new UltimateEnergyModel();
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
     private readonly _swimBoundaryWorldPositions = [
@@ -112,6 +114,26 @@ export class Swimmer extends Component {
     // competitor profile; default 1). Heavy bodies resist being shoved.
     get weight(): number {
         return this._motor.weight;
+    }
+
+    // 赛内大招能量（蓄气）。玩家与 AI 各自积攒，海豚跳消耗。
+    get ultimate(): UltimateEnergyModel {
+        return this._ultimate;
+    }
+
+    // 蓄气资质（0-100，纯资质）：玩家/远程人类来自养成档案，AI 来自对手配置。
+    setEnergyGainAptitude(value: number) {
+        this._ultimate.setGainAptitude(value);
+    }
+
+    // 被撞飞补偿：收到的击退冲量足够大时给一次能量（带节流）。
+    addCollisionEnergyBonus(receivedImpulse: number) {
+        this._ultimate.addCollisionBonus(receivedImpulse);
+    }
+
+    // 联机：把本地预测能量朝房主权威值校正。
+    applyNetEnergy(target: number, blend = 0.5) {
+        this._ultimate.applyNetEnergy(target, blend);
     }
     // Flash the body red for a moment when bumping into another swimmer.
     flashCollision() {
@@ -285,6 +307,7 @@ export class Swimmer extends Component {
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.captureStartPosition();
+        this._ultimate.reset();
         this._phases.clearFlipTurnPhase(true);
         if (fromDiveEntry) {
             this._phases.startDiveUnderwaterPhase();
@@ -477,6 +500,7 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return;
         }
+        this._ultimate.tick(dt);
         if (this._phases.tick(dt)) {
             return;
         }
@@ -661,6 +685,7 @@ export class Swimmer extends Component {
         this._missStrokeQualityCount = 0;
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
+        this._ultimate.reset();
         this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
@@ -730,6 +755,7 @@ export class Swimmer extends Component {
             }
         }
         this._maxStrokeQualityCombo = Math.max(this._maxStrokeQualityCombo, this._strokeQualityCombo);
+        this._ultimate.addStrokeRating(rating, this._strokeQualityCombo);
         if (!this.isAI) {
             this._pendingConditionInputs.push({
                 strokeAccepted: true,
@@ -999,7 +1025,15 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return false;
         }
-        return this._phases.tryStartDolphinJump();
+        if (!this._ultimate.canAffordDolphin) {
+            this._ultimate.flagDolphinDenied();
+            return false;
+        }
+        if (!this._phases.tryStartDolphinJump()) {
+            return false;
+        }
+        this._ultimate.spendDolphin();
+        return true;
     }
 
     get rhythmStats(): RhythmStats {

@@ -7,6 +7,7 @@ import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
+import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import { HeartRateZone } from '../condition/ConditionTypes';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';
@@ -68,6 +69,21 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
             control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
             control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
+        ],
+    },
+    {
+        name: '大招能量',
+        controls: [
+            control('ultimate.maxEnergy', '能量上限', '蓄气槽上限（点）。', () => ULTIMATE_ENERGY_BALANCE.maxEnergy, (v) => ULTIMATE_ENERGY_BALANCE.maxEnergy = v, 5, 50, 200, 0),
+            control('ultimate.passivePerSecond', '被动增长/秒', '所有角色每秒被动获得的能量（低保）。', () => ULTIMATE_ENERGY_BALANCE.passivePerSecond, (v) => ULTIMATE_ENERGY_BALANCE.passivePerSecond = v, 0.1, 0, 5, 2, '/s'),
+            control('ultimate.perfectGain', 'PERFECT 积攒', '每次 PERFECT 划水获得的能量。', () => ULTIMATE_ENERGY_BALANCE.perfectGain, (v) => ULTIMATE_ENERGY_BALANCE.perfectGain = v, 0.1, 0, 10, 1),
+            control('ultimate.goodGain', 'GOOD 积攒', '每次 GOOD 划水获得的能量。', () => ULTIMATE_ENERGY_BALANCE.goodGain, (v) => ULTIMATE_ENERGY_BALANCE.goodGain = v, 0.1, 0, 5, 1),
+            control('ultimate.comboEvery', '连击间隔', '每连续 PERFECT 这么多次给一次额外奖励。', () => ULTIMATE_ENERGY_BALANCE.comboEvery, (v) => ULTIMATE_ENERGY_BALANCE.comboEvery = v, 1, 2, 20, 0),
+            control('ultimate.comboBonus', '连击奖励', '达成连击间隔时额外获得的能量。', () => ULTIMATE_ENERGY_BALANCE.comboBonus, (v) => ULTIMATE_ENERGY_BALANCE.comboBonus = v, 0.5, 0, 10, 1),
+            control('ultimate.collisionBonus', '被撞补偿', '被撞飞时补偿的能量。', () => ULTIMATE_ENERGY_BALANCE.collisionBonus, (v) => ULTIMATE_ENERGY_BALANCE.collisionBonus = v, 0.5, 0, 20, 1),
+            control('ultimate.collisionMinImpulse', '碰撞判定冲量', '收到的击退冲量超过该值才视为被撞飞。', () => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse, (v) => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse = v, 0.1, 0, 6, 1, 'm/s'),
+            control('ultimate.collisionCooldownMs', '碰撞冷却', '同一角色两次碰撞补偿的最小间隔。', () => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs, (v) => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs = v, 50, 0, 2000, 0, 'ms'),
+            control('ultimate.dolphinCost', '海豚跳消耗', '释放一次海豚跳消耗的能量；不足无法触发。', () => ULTIMATE_ENERGY_BALANCE.dolphinCost, (v) => ULTIMATE_ENERGY_BALANCE.dolphinCost = v, 1, 5, 100, 0),
         ],
     },
     {

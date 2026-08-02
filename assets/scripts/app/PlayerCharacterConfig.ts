@@ -13,6 +13,10 @@ export type PlayerCharacterDefinition = {
     // Body weight for swimmer-vs-swimmer collision knockback (default ~1). Heavy
     // bodies barely move when bumped; light bodies get knocked further.
     weight: number;
+    // 蓄气资质（0-100，纯资质、不随等级成长）。决定赛内大招能量的积攒速率。
+    energyGain: number;
+    // 踢腿资质（0-100）。影响踢腿速度上限；50 为基准（±15%）。
+    kick: number;
     description: string;
     skillName: string;
     skillDescription: string;
@@ -44,6 +48,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
         stamina: 88, technique: 70, burst: 82,
         weight: 1.2,
+        energyGain: 75,
+        kick: 50,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
@@ -51,6 +57,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         id: 'women2', name: '灵波飞鱼', modelVariantId: 'women2', unlocked: true,
         stamina: 82, technique: 91, burst: 76,
         weight: 0.85,
+        energyGain: 92,
+        kick: 50,
         description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
         skillName: '水感节奏', skillDescription: '精准把握节奏时，更容易维持稳定的连续推进。',
     },
@@ -58,6 +66,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         id: 'lowPolyHuman2', name: '破浪新星', modelVariantId: 'lowPolyHuman2', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
+        energyGain: 82,
+        kick: 50,
         description: '均衡型游泳选手，动作灵活，能稳定应对不同比赛节奏。',
         skillName: '流线节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
     },
@@ -65,6 +75,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         id: 'diver', name: '深海潜将', modelVariantId: 'diver', unlocked: true,
         stamina: 92, technique: 78, burst: 74,
         weight: 1.15,
+        energyGain: 80,
+        kick: 50,
         description: '装备齐全的潜水选手，身体稳定，擅长保持持续而扎实的推进。',
         skillName: '深潜耐力', skillDescription: '厚重装备带来更强的稳定性与持续输出。',
         supportsSkinTone: false,
@@ -131,6 +143,13 @@ export function setPlayerColorScheme(id: string) {
 
 export function findPlayerCharacter(id = selection.characterId): PlayerCharacterDefinition | null {
     return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.id === id) ?? null;
+}
+
+// 将角色的物理体重（0.85~1.2 左右）归一化成 0-100 的“对抗”雷达轴分值。
+// 底层 weight 仍驱动碰撞击退；这里只用于雷达图显示，刻意压缩差异（约 50~85），
+// 让角色之间有区分但不至于像 0~100 那样悬殊。
+export function weightToPhysicalRating(weight: number): number {
+    return Math.max(0, Math.min(100, Math.round(50 + (weight - 0.85) * 100)));
 }
 
 export function selectedPlayerSkinTone(): PlayerSkinTone {

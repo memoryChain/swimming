@@ -61,7 +61,7 @@ import { reseedSharedRandom } from './SharedRNG';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
-import { applyRaceModifiersToMotor, resolveLocalRaceModifiers, resolveModifiersFromDigest } from '../progression/RaceModifiers';
+import { applyRaceModifiersToSwimmer, resolveLocalRaceModifiers, resolveModifiersFromDigest } from '../progression/RaceModifiers';
 import { decodeModifierDigest } from '../net/NetRaceModifierCodec';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
@@ -1096,7 +1096,7 @@ export class GameManager extends Component {
         const overrides = modifiers.balance;
         this._playerBalanceOverrides = overrides;
         if (this._playerSwimmer) {
-            applyRaceModifiersToMotor(this._playerSwimmer.motor, modifiers);
+            applyRaceModifiersToSwimmer(this._playerSwimmer, modifiers);
         }
         if (overrides) {
             this._playerCondition.setProgressionOverrides({
@@ -1235,7 +1235,7 @@ export class GameManager extends Component {
             // channel) to their local motor, so their predicted sim + weight-based collision
             // match how their own client races them — the same seam the local player uses
             // (applyPlayerProgression). Re-resolved from the digest via shared config.
-            applyRaceModifiersToMotor(swimmer.motor, resolveModifiersFromDigest(decodeModifierDigest(identity?.modifiersBlob)));
+            applyRaceModifiersToSwimmer(swimmer, resolveModifiersFromDigest(decodeModifierDigest(identity?.modifiersBlob)));
             // Match this remote human's look to what its own client renders (derived
             // from the shared avatarId) so appearances are identical everywhere.
             if (identity?.avatarId) {
@@ -1467,6 +1467,7 @@ export class GameManager extends Component {
                         finished: swimmer.distance >= raceDistance,
                         heading: swimmer.netHeading,
                         speed: swimmer.netSpeed,
+                        energy: swimmer.ultimate.energy,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1538,6 +1539,25 @@ export class GameManager extends Component {
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
             swimmer.applyNetPoseSpeed(targetSpeed);
+            // Ultimate energy is host-authoritative (the P| self-report does not carry it),
+            // so every non-player lane eases toward the host snapshot's energy. This keeps
+            // remote dolphin-jump cost validation consistent across clients.
+            const hostTarget = this._netRaceController.snapshotTargets.find((e) => e.lane === lane);
+            if (hostTarget && hostTarget.energy >= 0) {
+                swimmer.applyNetEnergy(hostTarget.energy);
+            }
+        }
+        // Gently ease the LOCAL player's energy toward the host value as well. Unlike
+        // position (full prediction), the energy bar isn't the primary feel, and things
+        // like collision bonuses can diverge by a few points - enough to straddle the
+        // dolphin-jump threshold. Use a soft blend and skip while airborne so a synced
+        // spend isn't fought by a stale snapshot. On the host this is a no-op (its own
+        // value is the authority); single-player has no session and skips it entirely.
+        if (this._netSession && this._playerSwimmer && !this._playerSwimmer.isDolphinJumpActive) {
+            const playerHost = this._netRaceController?.snapshotTargets.find((e) => e.lane === this._playerLaneIndex);
+            if (playerHost && playerHost.energy >= 0) {
+                this._playerSwimmer.applyNetEnergy(playerHost.energy, 0.2);
+            }
         }
     }
 
@@ -1574,6 +1594,7 @@ export class GameManager extends Component {
             finished: player.distance >= getRaceDistance(),
             heading: player.netHeading,
             speed: player.netSpeed,
+            energy: -1,
         };
     }
 
@@ -1900,6 +1921,13 @@ export class GameManager extends Component {
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
         this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
+        const ultimate = this._playerSwimmer?.ultimate;
+        if (ultimate) {
+            this._uiFlow?.updateUltimateEnergyBar(ultimate.energy, ultimate.canAffordDolphin);
+            if (ultimate.consumeDeniedFlash()) {
+                this._uiFlow?.flashUltimateEnergyDenied();
+            }
+        }
         this._raceContext.setPhase(this._playerCondition.phase);
         this.updateAiConditions(dt);
     }

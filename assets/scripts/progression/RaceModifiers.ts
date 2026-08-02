@@ -1,4 +1,5 @@
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
+import type { Swimmer } from '../entity/Swimmer';
 import type { PlayerBalanceOverrides } from './PlayerBalanceOverrides';
 import { resolvePlayerBalance } from './PlayerBalanceOverrides';
 import { getProgressionManager } from './ProgressionManager';
@@ -59,10 +60,12 @@ export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): R
         return { balance: null };
     }
     const balance = resolvePlayerBalance(
-        { stamina: character.stamina, technique: character.technique, burst: character.burst },
+        { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick },
         digest.level,
         PROGRESSION_BALANCE.maxLevel,
         character.weight,
+        character.energyGain,
+        character.kick,
     );
     return { balance };
 }
@@ -80,4 +83,12 @@ export function resolveLocalRaceModifiers(): RaceModifierProfile {
 // the motor on the raw global constants (neutral).
 export function applyRaceModifiersToMotor(motor: SwimmerMotor, profile: RaceModifierProfile | null): void {
     motor.setPlayerBalance(profile?.balance ?? null);
+}
+
+// Apply the full profile (motor balance + 蓄气资质) to a swimmer. Use this for
+// the local player and remote humans; AI uses CompetitorManager.applyProfile which
+// sets weight + energyGain directly from its competitor profile.
+export function applyRaceModifiersToSwimmer(swimmer: Swimmer, profile: RaceModifierProfile | null): void {
+    applyRaceModifiersToMotor(swimmer.motor, profile);
+    swimmer.setEnergyGainAptitude(profile?.balance?.energyGainAptitude ?? 50);
 }

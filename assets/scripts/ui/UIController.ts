@@ -4,6 +4,7 @@ import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
 import { SprintVignetteOverlay } from './SprintVignetteOverlay';
 import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
+import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
 
 const { ccclass, property } = _decorator;
 
@@ -49,10 +50,14 @@ export class UIController extends Component {
     public energyBarRoot: Node = null;
     public energyBarFill: Graphics = null;
     public energyLabel: Label = null;
+    public ultimateBarRoot: Node = null;
+    public ultimateBarFill: Graphics = null;
+    public ultimateLabel: Label = null;
     public sprintLabel: Label | null = null;
     public sprintVignette: SprintVignetteOverlay | null = null;
     private _sprintActive = false;
     private _energyTotal = 100;
+    private _ultimateDeniedUntil = 0;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -116,6 +121,7 @@ export class UIController extends Component {
         this.setProgressVisible(visible);
         this.setHeartRateBarVisible(visible);
         this.setEnergyBarVisible(visible);
+        this.setUltimateBarVisible(visible);
     }
 
     updateHeartRateBar(heartRate: number, zone: string) {
@@ -201,6 +207,31 @@ export class UIController extends Component {
     setEnergyBarVisible(visible: boolean) {
         if (this.energyBarRoot) {
             this.energyBarRoot.active = visible;
+        }
+    }
+
+    // 蓄气（大招能量）条。enough = 当前能量已够放一次海豚跳，金色高亮；不足时偏暗。
+    updateUltimateEnergyBar(energy: number, enough: boolean) {
+        const ratio = clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        const denied = Date.now() < this._ultimateDeniedUntil;
+        const color = ultimateEnergyColor(ratio, enough, denied);
+        if (this.ultimateBarFill) {
+            drawUltimateEnergyFill(this.ultimateBarFill, ratio, color, ULTIMATE_ENERGY_BALANCE.dolphinCost / ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        }
+        if (this.ultimateLabel) {
+            this.ultimateLabel.string = `蓄气 ${Math.round(energy)}`;
+            this.ultimateLabel.color = color;
+        }
+    }
+
+    // 能量不足时触发一次短暂红闪（弱提示，不打断操作）。
+    flashUltimateEnergyDenied() {
+        this._ultimateDeniedUntil = Date.now() + 350;
+    }
+
+    setUltimateBarVisible(visible: boolean) {
+        if (this.ultimateBarRoot) {
+            this.ultimateBarRoot.active = visible;
         }
     }
 
@@ -852,6 +883,38 @@ function sprintEnergyColor(ratio: number, depleted: boolean): Color {
         return new Color(255, 160, 40, 255);
     }
     return new Color(255, 210, 70, 255);
+}
+
+function ultimateEnergyColor(ratio: number, enough: boolean, denied: boolean): Color {
+    if (denied) {
+        return new Color(255, 92, 92, 255);
+    }
+    if (ratio <= 0.0001) {
+        return new Color(110, 100, 80, 255);
+    }
+    if (enough) {
+        return new Color(255, 215, 90, 255);
+    }
+    return new Color(210, 160, 60, 255);
+}
+
+function drawUltimateEnergyFill(gfx: Graphics, ratio: number, color: Color, readyRatio: number) {
+    const w = 220;
+    const h = 16;
+    gfx.clear();
+    gfx.fillColor = new Color(20, 24, 34, 180);
+    gfx.rect(-w / 2, -h / 2, w, h);
+    gfx.fill();
+    gfx.fillColor = color;
+    gfx.rect(-w / 2, -h / 2, w * clamp01(ratio), h);
+    gfx.fill();
+    // 海豚跳消耗刻度线（readyRatio 位置），提示“攒到这里就能放”。
+    const tickX = -w / 2 + w * clamp01(readyRatio);
+    gfx.strokeColor = new Color(255, 255, 255, 200);
+    gfx.lineWidth = 2;
+    gfx.moveTo(tickX, -h / 2);
+    gfx.lineTo(tickX, h / 2);
+    gfx.stroke();
 }
 
 function drawChargeFill(gfx: Graphics, ratio: number) {
