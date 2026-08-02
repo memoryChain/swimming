@@ -355,12 +355,12 @@ sharedRandom();             // 取共享实例
 - **为什么必须同步**：养成改的是玩家 balance（`maxSpeed/energyTotal/perfectComboMaxOvercap/strokeQualityAccel/kickMaxSpeed/diveMaxLaunchSpeed/`**`weight`**），全都**影响比赛结果**；`weight` 还进碰撞击退结算。若各端对同一泳者用不同 balance，本地预测和碰撞会算出不同结果。养成是**本地存档**，既不在共享 roster 里，也无法从 `avatarId` 推导 → 必须显式同步。
 - **三层解耦架构**（加新养成只动前后两层的映射，中间传输层通用）：
   - **resolve**（`progression/RaceModifiers.ts`）：存档 → 极小 `RaceModifierDigest`（当前=`{characterId, level}`）；再由 `resolveModifiersFromDigest()` 用**共享角色配置 + 同一纯函数** digest → `RaceModifierProfile`（`{balance}`）。owner 端出 digest，各端**重新解析**出同一份 profile。
-  - **transport**（`net/NetRaceModifierCodec.ts` + `RoomFlow` 广播）：只传 **digest** `"<characterId>,<level>"`（几字节），**走房间广播通道**，标签 `MOD|<pos>|<payload>`，各端按 seat 收集进 `_memberModifiers`，开赛时并入 `NetRaceMember.modifiersBlob`。
+  - **transport**（`net/NetRaceModifierCodec.ts` + `RoomFlow`）：只传 **digest** `"<characterId>,<level>"`（几字节）。大厅里各端把自己的 digest 广播出去（`MOD|<pos>|<payload>`），**房主收集**成一张按 seat 的表；**开赛时房主把整张表连同 seed 塞进同一条 start 广播**（`{t:'start',seed,mods:{pos:payload}}`），各端 `mergeBroadcastModifiers` 采纳后并入 `NetRaceMember.modifiersBlob`。
   - **apply**（`applyRaceModifiersToMotor`）：本地玩家（`GameManager.applyPlayerProgression`）与每个远端人类（`GameManager.wireRemoteSwimmers`，`resolveModifiersFromDigest(decodeModifierDigest(blob))`）走**同一个 seam** → 养成对联机的作用与单机一致。
 - **★为什么传 digest 而不是解析后的 balance、为什么走广播而不是 extInfo（血泪坑）**：
   - **微信 `memberExtInfo` / `roomExtInfo` 硬上限 = 32 字节**（官方文档）。`avatarId|nickName` 本身就可能接近 32（中文昵称 3 字节/字），塞进 7 个量化浮点（~40 字节）→ **`createRoom` 直接 `errCode 4013 buffer overflow`，新版本建不了房**。所以 extInfo 只留 `avatarId|nickName`，养成**移出 extInfo**。
   - balance 是 `(角色, 等级)` 的**纯函数**，角色定义 + resolve 逻辑都是**各端共享代码** → 只需传最小 digest（角色 id + 等级），各端本地重解析即得同一份 balance。传 digest 而非浮点：① 小得多（绕开 32 字节坑）；② 更可扩展（未来养成加 key/id，不是加传输值）。
-  - 广播是**尽力而为**：在「join 成功 / 每次 roster 变化 / 开赛」各广播一次自己的 digest，大厅停留期间就已传达；自己的 digest 还本地直存，开赛必有。丢了 → 该玩家中性 balance（自愈，不崩）。
+  - **★递送用「房主合并进 start 广播」而非各发各的（健壮性关键）**：digest 广播本身尽力而为、且和 seed 广播**赛跑**（访客可能先收到 seed 就进场，随后到的 digest 已晚）。所以不靠「每个人各自那条 digest 都送达」，而是**房主整局大厅收集好，开赛时和 seed 打包成一条 start 广播原子下发**。收益：① 消除 seed↔digest 赛跑（同一条消息）；② 消除逐 peer 丢包（只依赖 start 到达——而它本就是开赛必要条件，丢了根本开不了赛）；③ **各端用同一张表 = 每个泳者 balance 各端一致**（单一权威，不会 A 端收到 B 的、C 端没收到而分歧）。残余：房主自己没收全某人的 digest（大厅期间从没送达房主）→ 那人中性 balance，位置仍 owner 权威，自愈不崩。
 - **进房即冻结**：联机中不升级，digest 一局不变；rematch 保活重开也用同一套广播刷新，无陈旧问题。
 - **★weight 跨端一致 → 联机恢复「按体重加权」碰撞**：AI 的 weight 来自共享 roster（确定性一致），真人的 weight 由 digest 各端重解析一致 → 所有泳者 weight 各端一致，`resolveSwimmerCollisions` 联机也用**加权拆分**（不再需要早期 `uniform-weight` 权宜方案，已回退）。养成的「体重/撞飞抗性」在联机真正生效；残余跨引擎浮点差异由 owner/host 位置权威吸收，不会永久漂移。
 - **加新养成项 = 追加式改动**：① 扩 `RaceModifierDigest` + `RaceModifierProfile`；② `resolveLocalModifierDigest` / `resolveModifiersFromDigest` 里映射；③ `applyRaceModifiersToMotor`（或新 apply 分支）里映射字段→泳者；④ 若需要独立线上字段再动 codec。传输层（`MOD|` 广播）通用无需改，自动带进联机。

@@ -262,14 +262,12 @@ export class RoomFlow {
         };
     }
 
-    // Broadcast the local player's 养成 digest (tiny: characterId+level) so every client
-    // can re-resolve and apply our modifiers to our swimmer. Sent on the room BROADCAST
-    // channel because memberExtInfo is only 32 bytes (too small). Best-effort; re-sent on
-    // join, on every roster change, and at start, so late joiners still collect it. Our
-    // own entry is also stored locally so it is always available at race start.
-    private broadcastSelfModifiers() {
-        if (!this._netReal || this._localPos < 0) {
-            return;
+    // Resolve + store the local player's own 养成 digest into the seat map (no broadcast).
+    // Returns the payload ('' if none). Used before a lobby broadcast and before the host
+    // consolidates the map into the start message.
+    private storeSelfModifiers(): string {
+        if (this._localPos < 0) {
+            return '';
         }
         let payload = '';
         try {
@@ -277,14 +275,28 @@ export class RoomFlow {
         } catch (error) {
             console.warn('[Room] resolve modifiers failed', error);
         }
+        if (payload) {
+            this._memberModifiers[this._localPos] = payload;
+        }
+        return payload;
+    }
+
+    // Best-effort lobby broadcast of our digest so the HOST collects it while everyone
+    // waits in the lobby. The host later consolidates all collected digests into the start
+    // message (see startRace), which is the authoritative, race-free delivery to every
+    // client — so a lost lobby broadcast only matters if it never reaches the host at all.
+    private broadcastSelfModifiers() {
+        if (!this._netReal || this._localPos < 0) {
+            return;
+        }
+        const payload = this.storeSelfModifiers();
         if (!payload) {
             return;
         }
-        this._memberModifiers[this._localPos] = payload;
         netRoom().broadcast(`MOD|${this._localPos}|${payload}`);
     }
 
-    // Collect a peer's broadcast 养成 digest, keyed by seat, for use at race start.
+    // Collect a peer's lobby digest broadcast, keyed by seat (the host builds the map here).
     private collectMemberModifiers(msg: string) {
         // "MOD|<pos>|<payload>"
         const body = msg.slice(4);
@@ -296,6 +308,23 @@ export class RoomFlow {
         const payload = body.slice(sep + 1);
         if (Number.isFinite(pos) && payload) {
             this._memberModifiers[pos] = payload;
+        }
+    }
+
+    // Adopt the host's consolidated digest map from the start message. Authoritative:
+    // every client uses the SAME map, so each swimmer's balance is identical everywhere,
+    // and it arrives atomically with the seed (no seed-vs-digest broadcast race).
+    private mergeBroadcastModifiers(mods: unknown) {
+        if (!mods || typeof mods !== 'object') {
+            return;
+        }
+        const map = mods as Record<string, unknown>;
+        for (const key of Object.keys(map)) {
+            const pos = parseInt(key, 10);
+            const payload = map[key];
+            if (Number.isFinite(pos) && typeof payload === 'string' && payload) {
+                this._memberModifiers[pos] = payload;
+            }
         }
     }
 
@@ -593,10 +622,13 @@ export class RoomFlow {
         // startGame-success fallback (WechatGameRoom) then delivers the start signal.
         this._pendingSeed = SeededRandom.entropySeed();
         this.setHint('开始中…');
-        netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
-        // Final re-broadcast of our 养成 digest so peers that missed the lobby sends still
-        // have it (best-effort; own copy is already stored locally regardless).
-        this.broadcastSelfModifiers();
+        // Consolidated start: carry the shared seed AND the full 养成 digest map (collected
+        // from lobby broadcasts, plus our own) in ONE message. This removes the seed-vs-
+        // digest broadcast race and per-peer drop — every client adopts the SAME map
+        // atomically with the seed. Since the start message is a precondition for entering,
+        // a swimmer can never slip in with the wrong balance. Host-authoritative + consistent.
+        this.storeSelfModifiers();
+        netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed, mods: this._memberModifiers }));
         if (this._reconnect) {
             // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
             // one-game — a second startGame returns 4014 / a fake ok with roomState stuck
@@ -673,6 +705,9 @@ export class RoomFlow {
             const data = JSON.parse(msg);
             if (data && data.t === 'start' && typeof data.seed === 'number') {
                 this._pendingSeed = data.seed >>> 0;
+                // Adopt the host's consolidated 养成 digest map (authoritative + identical on
+                // every client) BEFORE entering, so all clients apply the same balance.
+                this.mergeBroadcastModifiers(data.mods);
                 if (this._reconnect) {
                     // Rematch: the lock-step session is still alive (we never endGame),
                     // so enter directly instead of calling startGame (which would 4014).
