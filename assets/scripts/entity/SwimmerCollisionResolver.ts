@@ -69,7 +69,15 @@ const _impLat: number[] = [];
 
 // Fully separate overlapping swimmers so no two bodies interpenetrate. Call once
 // per frame after the swimmers have updated their own positions.
-export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
+//
+// `uniformWeight` (networked races): ignore per-swimmer weight and split every
+// separation/knockback 50/50. Body weight comes from local save data (player
+// progression / competitor profile) that is NOT in the shared net roster, so it
+// differs across devices — feeding it into the collision solver would make the
+// knockback math (and the outcome-affecting distance/lateral it writes) diverge
+// per client. A uniform split keeps collisions deterministic given the synced /
+// host-corrected positions. Single-player passes false and keeps weighted shoves.
+export function resolveSwimmerCollisions(swimmers: readonly Swimmer[], uniformWeight = false): void {
     if (!SWIMMER_COLLISION.enabled) {
         return;
     }
@@ -92,7 +100,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
         _isAi[i] = s.isAI;
-        _weight[i] = s.weight;
+        _weight[i] = uniformWeight ? 1 : s.weight;
         _dir[i] = s.raceDirection;
         // World-space velocity (m/s): the swim-axis component is signed by the lap
         // direction (distanceToWorldX slope magnitude is 1), the lateral component

@@ -545,7 +545,11 @@ export class GameManager extends Component {
                 }
             }
         }
-        resolveSwimmerCollisions(this._collisionSwimmers);
+        // Net races split collisions 50/50 (uniform weight): body weight is local save
+        // data (progression / competitor profile) that isn't in the shared roster, so a
+        // weighted split would compute differently per client and drift the outcome-
+        // affecting distance/lateral it writes. Single-player keeps weighted shoves.
+        resolveSwimmerCollisions(this._collisionSwimmers, !!this._netSession);
     }
 
     private toggleSplashCulling() {
