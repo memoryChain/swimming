@@ -168,6 +168,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _treadWaterWeight = 0;
     private _treadWaterPhase = 0;
     private _treadExitHold = 0;
+    // Networked remote copies: the OWNER's authoritative swim speed drives the
+    // tread-water<->freestyle blend instead of this copy's local motor speed (which
+    // jitters over the network). -1 = no override (single-player / local player).
+    private _treadSpeedOverride = -1;
     private _selfTime = 0;
     private _modelDebugMode = false;
     private _debugMotionSpeedScale = 1;
@@ -925,6 +929,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
+    // Networked remote copy: drive the tread-water<->freestyle blend from the OWNER's
+    // authoritative speed (m/s) instead of this copy's local motor speed. Pass a
+    // negative value to clear the override (local player / single-player).
+    setTreadWaterSpeedOverride(speed: number) {
+        this._treadSpeedOverride = speed;
+    }
+
     updateFreestyleFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1006,7 +1017,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updateArmCycleMotion(dt, leftArmCycle, rightArmCycle);
         this.updateKickCycleMotion(dt, leftKickCycle, rightKickCycle);
 
-        const treadWeight = this.updateTreadWaterBlend(dt, speed);
+        // Remote copies drive the tread-water decision from the owner's authoritative
+        // speed (synced) so the pose can't say "treading water" while the corrected
+        // position slides forward. Arm/kick cadence still comes from the replayed input.
+        const treadSpeed = this._treadSpeedOverride >= 0 ? this._treadSpeedOverride : speed;
+        const treadWeight = this.updateTreadWaterBlend(dt, treadSpeed);
         this.applyTreadBlendModelPlacement(treadWeight);
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
         this._pose.applyFreestyleTreadBlendPose(
@@ -1200,6 +1215,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._treadWaterWeight = 0;
         this._treadWaterPhase = 0;
         this._treadExitHold = 0;
+        this._treadSpeedOverride = -1;
         this._poseState.resetRuntime();
         this._splashEmitter?.reset();
         this._pose.restoreBasePose();

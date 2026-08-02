@@ -3,6 +3,8 @@
 本文记录把当前单机游泳竞速游戏演进到「实时对战」需要的技术改造点，方便日后分阶段实现。
 先读结论，再看清单。
 
+> **维护者请先读第 8 节**「实战：当前实现的架构与踩坑」——那是已经真机落地的架构、微信硬事实清单和一路踩的坑。第 1~7 节是早期设计规划（部分已被第 8 节的实际做法取代，如：最终不是纯帧同步而是混合模型、再来一局用保活会话而非重新建房）。
+
 ## 0. 结论速览
 
 - 当前物理/运动/计时系统**天然确定性强**（纯数学 + `dt` 累积计时，无墙钟），这是帧同步最难改的部分，我们已经基本满足。
@@ -223,5 +225,126 @@ sharedRandom();             // 取共享实例
 2. **W2**：开局广播 seed + 各端 `reseedSharedRandom`，把 `onSyncFrame` 接到确定性模拟，2 人同屏一致跑完一局。
 3. **W3**：接 `startMatch` 匹配（后台先 `createMatchRule` 申请 matchid、`setMatchIdOpenState` 打开），断线 `reconnect` + 补帧，超时/退出处理。
 4. **W4**：轻量云函数做养成货币权威 + 存档；成绩/排行榜用 `RankManager`；好友邀请（开放数据域）体验升级。
+
+---
+
+## 8. 实战：当前实现的架构与踩坑（真机验证过，2026-08）
+
+> 这一节记录**实际落地后**的架构和一路踩的坑。上面 1~7 是设计规划，这一节是「维护这套代码时你真正需要知道的东西」。**改联机前先读这一节。**
+
+### 8.1 我们最终用的不是纯帧同步，而是「混合模型」
+
+严格帧同步（各端逐比特一致）**做不到**：iOS 用 JavaScriptCore、安卓用 V8，`Math.sin/cos` 最后几位不同（`SwimmerMotor.updateSteering` 的 heading 计算），跨引擎浮点必然分叉。所以我们走**「本地预测 + 权威校正」的混合模型**：
+
+- **每个客户端本地跑完整模拟**（复用单机的 `SwimmerMotor`/物理/碰撞），要手感、零输入延迟。
+- **真人位置 = 各自权威（self-authoritative）**：每个人把自己玩家的权威位置广播出去，别人把这个真人的屏上副本**追（catch-up）到 owner 自报的位置**。owner 本地零延迟预测=真值。
+- **AI = 房主权威（host-authoritative）**：AI 由共享 seed 各端本地跑（近似一致），房主再用快照校正抹平跨引擎浮点残差。
+- **名次/成绩 = 房主权威**：完赛判定、最终名次、完赛时间都以房主为准广播，避免两端各算差几毫秒。
+- **确定性定步长**：`NET_SIM_STEP=33ms`，AI + 远程真人都由 `GameManager.driveNetAiFixedStep` 按固定步长推进（不用引擎变 dt），消除变 dt 漂移；渲染用廉价位置插值（`netRenderLerp`）补 45fps vs 30 步/s 的顿挫。
+
+**教训**：别追纯 lockstep 确定性。老实用房主权威校正，且**要校正所有可见量**（位置+横向+朝向+姿态速度），任何一个不校正都会分叉。
+
+### 8.2 关键文件地图（`assets/scripts/net/` + 接入点）
+
+| 文件 | 职责 |
+|---|---|
+| `net/INetRoom.ts` | 联机抽象接口（login/createRoom/joinRoom/startGame/uploadFrame/broadcast/leaveRoom/setCallbacks…）。游戏只认这个接口。 |
+| `net/WechatGameRoom.ts` | 微信实现（`wx.getGameServerManager()`）。所有微信坑都在这里。 |
+| `net/DefaultNetRoom.ts` | 编辑器/web 桩，`isSupported()=false`，方法 no-op/reject。 |
+| `net/NetManager.ts` | 工厂，按平台选实现。 |
+| `net/NetRaceSession.ts` | 开局握手数据（seed + roster + localIsHost + localPos），`setNetRaceSession`/`consumeNetRaceSession`。 |
+| `net/NetRaceController.ts` | **赛中核心**：每逻辑帧 uploadFrame（输入+自位置）、onSyncFrame 解析、房主迁移、快照/名次广播、赛内调试 HUD。 |
+| `net/NetRaceInput.ts` | 每帧输入编解码，格式 `<pos>|<events>|<selfPos>`。 |
+| `net/NetRaceSnapshot.ts` | 房主权威快照 `S|`（含每泳道 距离/横向/完赛/朝向/**速度**）。 |
+| `net/NetRaceResult.ts` | 最终名次 `R|`。 |
+| `net/NetLanePlan.ts` | 确定性泳道分配（按 posNum 升序→lane），各端一致。 |
+| `net/NetInputCapture.ts` | 被动输入 sink，默认关，联机才开。 |
+| `net/NetSwimmerLook.ts` | 按 avatarId 取稳定形象（各端看同一个人长一样）。 |
+| `entity/RemoteSwimmerController.ts` | 远程真人泳者=复用 AI 身体，回放解码输入驱动 handleStroke/Kick/Dive。 |
+| `ui/RoomFlow.ts` | 房间大厅 UI + 开赛握手 + 会话生命周期。**房间相关坑都在这里。** |
+| `app/LoginManager.ts` | 邀请拉起/冷启动/热启动 onShow、openRoom/exitRoom。 |
+| `core/GameManager.ts` | `updateNetRaceSync`（校正循环）、`driveNetAiFixedStep`（定步长）、`wireRemoteSwimmers`（远程真人接线）、`buildLocalSelfSnapshot`。 |
+
+### 8.3 ★★会话生命周期 = 保活模型（最大的坑，务必理解）
+
+**微信房间严格「一房一局」**：`endGame` 后房间进入 `roomState=3(gameEnd)`，**同房间再也无法 startGame**——真机双端实测铁证：owner 第二次 startGame 返回假 `ok`（roomState 仍卡 3、游戏没真开），member 返回 `errCode 4014 "game already started"`。
+
+因此**「再来一局」不能用 endGame + 重新 startGame**。我们的解法是**保活单一会话（keep-alive）**：
+
+- 一局结束**不调 endGame**，会话靠服务器 heartBeat 保活（`roomState` 停在 running）。
+- 首局：正常握手（广播 seed → 各端 startGame → onGameStart → 进场）。
+- 再来一局（`_reconnect=true`）：**不 createRoom/join、不 endGame、不 startGame**，直接复用运行中的会话——房主广播新 seed 后**直接 enterNetRace**，访客收到广播也直接进。
+- `RoomFlow._reconnect` 只影响 `setupNet`（复用房+不 endGame），首局走 startGame 握手、再来一局走 direct-enter。
+
+> **血泪教训**：曾经因为看到官方 demo 调 endGame（demo 是「一房一局，再来一局重新 createRoom + 重新邀请」），一度改成调 endGame，结果第二局房主进了「幻影比赛」、朋友卡「等待房主」。**demo 的一房一局意味着再来一局要重新建房+重新邀请，UX 差；保活模型才是「同一批人连续玩」的正解。别再改回 endGame。**
+
+### 8.4 微信 GameServerManager 硬事实清单（全是坑）
+
+1. **`onGameStart` 不可靠**：官方 demo 自己都有此 bug。startGame 返回 `ok` 但 onGameStart 有时不触发。**别只依赖它**，用多信号：`onGameStart` + `onRoomInfoChange` 的 roomState + `getRoomInfo` 轮询 roomState + startGame success 兜底，`handleGameStarted` 用 `_gameStartNotified` 保证只触发一次。
+2. **`roomState` 值**：1=inTeam(大厅) / 2=gameStart / 3=gameEnd / 4=roomDestroy / **5=running**。`isGameStartedRoomState(s)=s===2||s===5`。
+3. **`getRoomInfo` 轮询有时返回 `roomState=undefined`**（尤其刚 startGame 后）——所以不能只靠轮询，见上。
+4. **所有人（含房主）都要调 startGame**：官方 demo `onBroadcast → startGame()`，房主也调。曾经只让访客调、房主靠被动检测 → 房主卡「开始中」（roomState=undefined 检测不到）。**房主也调 startGame，用它的 success 当兜底进场信号。**
+5. **`accessInfo`（join 令牌，长串）≠ `roomIdStr`（房间号，20位数字，展示用）**：`getRoomInfo`/`onRoomInfoChange` 的 roomInfo **只有 roomIdStr、没有 accessInfo**。joinRoom 必须用 accessInfo，用 roomIdStr 会 `errCode 4003`。**分享 query 用 accessInfo，UI 展示房间号用 roomIdStr。二者绝不能互相回退。**
+6. **`getRoomInfo` 不支持 Promise**，必须 success/fail 回调（很多 GSM API 都这样：startGame/updateReadyStatus/joinRoom/createRoom/leaveRoom）。我们统一包成 Promise。
+7. **joinRoom 返回不含名单**（只 `{myPos, clientId}`），完整名单来自 `onRoomInfoChange`。别用 join 返回覆盖已有名单。
+8. **GameServerManager 事件必须 `login()` 之后再注册**：全新设备上 login 前 `gsm.onXxx` 会抛 `undefined is not an object (this.emitter.on)`。`WechatGameRoom` 里 `_loggedIn` 后才 bindEvents。
+9. **帧事件是「追加」监听不是替换**：裸重绑会叠加 → 每帧处理两遍。用 `offSyncFrame/offDisconnect` 精确解绑（存下回调引用）。
+10. **房主退出用 `ownerLeaveRoom({assignToMinPosNum:true})`**，访客用 `memberLeaveRoom`。房主用 member 版退→别人还看得到房主。
+11. **★★iOS 高性能模式与帧同步不兼容**：`game.json "iOSHighPerformance":true` 会让 iOS 建不出帧同步 Worker（`createWXLibWorker is not a function`）→ `nativeInstance.uploadFrame` undefined、onSyncFrame 永不来。**联机必须关闭 iOS 高性能模式**（构建面板取消勾选，别只手改 build/game.json）。安卓不受影响。
+12. **`game.json lockStepOptions`** 由 `extensions/wechat-race-subpackage/hooks.js` 构建期注入（`gameTick:33, heartBeatTick:2000, offlineTimeLength:60000, UDPReliabilityStrategy:5, dataType:'String'`）。**改 hooks.js 要重载扩展 + 重 Build**，别手改 build 目录（重 Build 会覆盖）。
+13. **必须体验版联调**：真机调试分享出去的是开发版，好友打不开（`Load Subpackage failed: path: music`）。双方都用体验版。
+14. **热启动邀请走 `wx.onShow`**：游戏已运行时点分享卡，不走启动（onLoad 不再执行），新 query 给 onShow。`IPlatform.onAppShow` 处理。冷启动才走 `getLaunchQuery`。
+
+### 8.5 传输通道：帧 vs 广播（可靠性不同）
+
+- **帧通道**（`uploadFrame`/`onSyncFrame`）：UDP + 冗余（`UDPReliabilityStrategy`=每次下发的总帧数）。**相对可靠**（有冗余重发）。**真人的输入 + 自位置都走这条**（`buildLocalSelfSnapshot` piggyback 到每帧 uploadFrame）。
+- **广播通道**（`broadcastInRoom`/`onBroadcast`）：**尽力而为，会丢包**（「时好时坏」）。房主 AI 快照 `S|`、开赛 seed、GO 倒计时、退出 `Q|`、名次 `R|` 走这条。丢了各有兜底（名次 4s 超时回退本地、GO 7s 兜底、AI 定步长自跑）。
+- **教训**：需要稳的（真人位置）走帧通道；广播只放「丢了能兜底」的。曾经真人位置走广播 → 「时好时坏」，改走帧通道才稳。
+- **跨网络**：帧通道 UDP 在跨运营商/地区/严格 NAT 下可能几秒后掉；`offlineTimeLength` 别设太激进（默认 100s，我们 60s）。若跨网络完全同步不上，先看两端调试 HUD 的「帧收/快照收」定位哪条通道挂了。
+
+### 8.6 位置 + 姿态同步（校正循环，`GameManager.updateNetRaceSync`）
+
+- **门控**：`_state` 是 RACING/GLIDING/**DIVING** 才校正（DIVING 必须包含——否则本端玩家坐在跳台没输入时，远端泳者跳完滑行就冻住）。
+- **本地玩家不校正**（跳过 `_playerLaneIndex`）：本地预测=真值，校正它会被房主 ~1RTT 滞后值拽回 →「走不动」。
+- **真人泳道**：追 `selfSnapshot(lane)`（帧通道来的 owner 自位置，强 blend 0.4，远则 snap）。
+- **AI 泳道**：追 `snapshotTargets`（房主 `S|`，blend 0.2/0.25）。
+- **卡跳水冗余**：真人泳道若 owner 位置在前进（`distance>1m`）但本副本 `!isNetRacing` → `forceEnterRace`（DiveRelease 丢了/跳水 tween 卡住的兜底）。**两条分支（帧 self + S| 兜底）都要有这个冗余**。
+- **姿态速度同步（踩水坑）**：踩水↔游泳切换原本由本地 `motor.currentSpeed` 驱动，而远程副本位置是校正的、速度是本地回放算的 → 解耦 → 「踩水姿态在前移」。**修法**：`NetSnapshotEntry` 加 `speed` 字段，远程副本的踩水混合用**同步来的 owner 速度**（`applyNetPoseSpeed`→`CartoonSwimmerRig.setTreadWaterSpeedOverride`），只覆盖踩水决策、手臂节奏仍由回放驱动。本地玩家不覆盖（override=-1 回退本地速度）。
+- **碰撞**：联机保留碰撞手感，只在**追帧 snap 那一刻**（`netCatchingUp`，距上次 snap<400ms）把该泳者移出碰撞集，同步好时正常参与碰撞。
+
+### 8.7 确定性房主迁移（房主掉线不卡死）
+
+- 房主权威只是**校准**通道不是**驱动**，各端本地在跑，房主掉线只退化成本地模拟，不会「玩不了」。唯一硬卡点=赛前倒计时（GO 只房主发）→ client 加 7s GO 兜底。
+- **迁移**：`NetRaceController.checkHostMigration`（每帧）——快照 `S|` 带 `hostPos`（发送者 seat）；client 若信任的房主静默 >`HOST_SILENCE_MS(2500)+localPos*800` 则自升房主；`onRoomInfoChange` 第二探测——信任的房主 seat 不在名单→最小 present seat 立即接管。冲突自愈（收到更低 seat 快照就降级）。
+- **注意**：房主迁移是**游戏层概念**，微信不知道。所以「自升房主」不改变微信会话状态。
+
+### 8.8 房间 UI / 邀请健壮性（RoomFlow / LoginManager 坑）
+
+- **已在房间里点新邀请**：`handleAppShowInvite` 曾 `if(_roomFlow)return` 什么都不做→加不进好友房。改成：不同房则 `leaveRoom` 旧房→`.then(openRoom(新房))`（微信同时只能在一个房，必须先离再进）。同房用 `matchesRoom(accessInfo)` 判断忽略。
+- **成员按 posNum 稳定排序**：微信 memberList 顺序不定→各端槽位不一致。自我识别优先按 posNum（两人可能 roll 到相同随机头像+昵称）。
+- **访客防幻影进场**：进场必须 `_pendingSeed!=0`(收到真 seed 广播) **且** `_gameStartConfirmed`(游戏已开始)（`maybeEnterNetRace`）。否则 fresh-join 进保活房间会因陈旧 roomState=running 自动开赛。**别加「没种子也进场」的兜底**（会触发幻影进场）。
+- **邀请分享**：`share({query:'room='+encodeURIComponent(accessInfo)})`。房间固定横屏 4 列布局（别用 view.getVisibleSize 自适应——分享时视口瞬切竖屏会卡成 2 列）。
+- **房间不可用**：join 失败（房间解散/已开赛）→ `showRoomUnavailable('房间已解散或已开始比赛')`，别掉进假本地预览房显示原始报错。
+
+### 8.9 性能坑（vConsole 极贵）
+
+- **vConsole 打开时 `console.log` 极贵**（每条 DOM append + reflow）。热路径（每帧/每广播）的 log **必须门控或限流**：
+  - `NetRaceController.onSyncFrame` 每帧输入 log → `NET_FRAME_LOG=false` 门控。
+  - 调试 HUD 刷新 → `HUD_REPAINT_INTERVAL_MS=160` 限流（Label.string 重设会重建文字网格）。
+  - `WechatGameRoom.onBroadcast` 跳过高频 S|/P| 日志。
+- 正式发布 vConsole 是关的，这部分开销不存在——但真机联调开着 vConsole 会误判成「联机很卡」。**测性能先关 vConsole。**
+- `driveNetAiFixedStep` 有 6 步上限防死亡螺旋；AI 姿态降频/裁剪在联机模式也跑（没绕过单机优化）。
+- **「一方卡在开始中不上传帧」会拖累另一方**：帧同步每 tick 等所有参与者的帧，一个参与者 startGame 了却不上传帧（如卡大厅）→ 帧通道 stall → 对端空转变卡。根治=保证进了会话就进比赛并上传帧。
+
+### 8.10 调试 HUD（赛内左上角）
+
+`NetRaceController.attachHud` 显示：`房主/客户 pos=X 当前房主seat=X (已接管)` + `帧 发=X 收=Y | 快照 发=A 收=B | 名次 发=C 收=D` + 每泳道 本地 vs 房主距离。**联机排障第一眼看这里**：帧收不涨=帧通道挂；快照收不涨=广播挂；都涨但人不动=名单/lane 时序 bug。
+
+### 8.11 已知限制 / 待办
+
+- 跨网络（不同运营商/地区）帧通道 UDP 可能不稳，极端网络下同步不上是平台限制，非代码 bug（换网测对照）。
+- 本地玩家零延迟预测→在对方屏上你被渲染成房主权威（你输入晚到房主）略靠后，两屏位置无法**完全**一致，这是混合模型的固有代价，名次权威保证公平。
+- 匹配（陌生人 gamematch）、好友邀请（开放数据域）、断线补帧 `reconnect` 尚未接入（当前只有房间号邀请 + 好友房）。
+- 养成货币/存档云端（CloudBase）延后，`IBackend` 已隔离，现用 MockBackend(localStorage)。
 
 

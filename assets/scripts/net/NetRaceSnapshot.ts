@@ -28,6 +28,11 @@ export interface NetSnapshotEntry {
     lateral: number;
     finished: boolean;
     heading: number;
+    // Owner's authoritative swim speed (m/s). Drives the tread-water<->freestyle pose on
+    // remote copies so the pose follows the owner instead of the remote's local input
+    // replay (which jitters over the network → "treading water while sliding forward").
+    // -1 = not provided (consumer falls back to the local motor speed).
+    speed: number;
 }
 
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
@@ -40,7 +45,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -73,12 +78,14 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             if (!Number.isFinite(lane) || !Number.isFinite(distCm) || !Number.isFinite(latMm)) {
                 continue;
             }
+            const speedCms = parts.length > 5 ? parseInt(parts[5], 10) : -1;
             entries.push({
                 lane,
                 distance: distCm / 100,
                 lateral: latMm / 1000,
                 finished: fin,
                 heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+                speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
             });
         }
     }
@@ -121,5 +128,6 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         lateral: latMm / 1000,
         finished: fin,
         heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+        speed: -1,
     };
 }

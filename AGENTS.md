@@ -34,6 +34,19 @@
 - `RaceManager` owns countdown, dive-to-race transition, race timing, progress, finish, and placement callbacks.
 - AI behavior/config should stay in `entity/AISwimmerController.ts` and `competitor/CompetitorConfig.ts`, not in player input code.
 
+## Multiplayer / Online Sync (consider for EVERY feature)
+
+The game has a WeChat networked race mode (host-authoritative "predict + correct" hybrid, keep-alive session). **Any new gameplay/UI/economy feature must be evaluated for its multiplayer impact.** Before finishing a feature, ask: "what happens to this in a networked race, and does it stay in sync across devices?"
+
+- **Read `docs/平台能力/realtime-multiplayer-notes.zh.md` section 8 (「实战：当前实现的架构与踩坑」) before touching anything sync-related.** It has the real architecture, the WeChat hard-facts list, and every pitfall we hit on device.
+- **Single-player must stay unchanged.** All net logic is gated on the net session (`GameManager._netSession` / `consumeNetRaceSession()` non-null). Put multiplayer branches behind that gate; single-player takes the original path with zero behaviour change and no extra per-frame cost.
+- **Anything that affects race OUTCOME must be deterministic across devices**: route it through `SharedRNG` (never `Math.random()` for outcome-affecting randomness), and reseed from the host seed. Pure-visual randomness (splash, confetti) may stay `Math.random()`.
+- **Cross-engine floats diverge** (iOS JavaScriptCore vs Android V8), so strict lockstep is impossible. New per-swimmer visible state (position, lateral, heading, pose, speed-gated poses, etc.) that can drift must be either host-authoritative-corrected or derived from synced authoritative values — not from the remote copy's local sim alone. See the tread-water pose fix (`NetSnapshotEntry.speed` → `applyNetPoseSpeed`) as the pattern.
+- **Do NOT call `endGame` for a rematch.** WeChat rooms are strictly one-game (endGame → room dead, second startGame fails 4014 / fake ok). Rematch reuses the keep-alive session (`RoomFlow._reconnect` direct-enter). Do not "fix" this back to endGame.
+- **New sync data goes on the right channel**: reliable/needed → the lock-step frame channel (piggyback on `uploadFrame`); best-effort/tolerable-loss → `broadcastInRoom`. Keep wire formats compact (quantized ints) in `net/NetRace*.ts`.
+- **Never add per-frame or per-broadcast `console.log` on the hot net path** (vConsole makes each log very expensive). Gate debug logging behind a flag, like `NET_FRAME_LOG` / `NET_RACE_DEBUG_HUD`.
+- Talk to the net layer only through `net/INetRoom.ts` (never `wx.getGameServerManager()` directly), same as the platform abstraction.
+
 ## Venue And Assets
 
 - The low-poly venue asset is generated from Blender tooling in `tools/`, especially `tools/build-lowpoly-pool.py`, and exported to `assets/resources/pool/LowPolyPool.glb`.

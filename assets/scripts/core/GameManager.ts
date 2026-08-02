@@ -100,6 +100,10 @@ const NET_DIVE_STUCK_M = 1;
 // (its tween never completed), so the redundancy forces it straight into racing. Longer
 // than the ~1.5s dive tween so a normal in-progress dive isn't cut short.
 const NET_DIVE_STUCK_TIMEOUT_MS = 2000;
+// In-race frame-sync debug HUD (top-left: 帧/快照/名次 发收 + per-lane distances). OFF by
+// default — it repaints a Label every tick which costs a little. Flip to true only when
+// debugging sync issues; the HUD code itself (NetRaceController.attachHud/setDiag) is kept.
+const NET_RACE_DEBUG_HUD = false;
 const UNDERWATER_TINT_DISTANCE = 1.2;
 const UNDERWATER_TINT_DEPTH = 0.002;
 const UNDERWATER_TINT_MARGIN = 1.45;
@@ -651,8 +655,10 @@ export class GameManager extends Component {
         const scene = this.createRuntimeSceneBuilder().build();
         this._worldRoot = scene.worldRoot;
         this._cameraNode = scene.cameraNode;
-        // Networked race: show the sync debug HUD on the race canvas.
-        this._netRaceController?.attachHud(scene.canvasNode, scene.width, scene.height);
+        // Networked race: show the sync debug HUD on the race canvas (debug-flag gated).
+        if (NET_RACE_DEBUG_HUD) {
+            this._netRaceController?.attachHud(scene.canvasNode, scene.width, scene.height);
+        }
         this._underwaterCameraTint = this.buildUnderwaterCameraTint(this._cameraNode, scene.width, scene.height);
         this._skyboxApplier = scene.skyboxApplier;
         this.buildPool3D(this._worldRoot, (pool) => {
@@ -1410,11 +1416,14 @@ export class GameManager extends Component {
                         lateral: swimmer.netLateralOffset,
                         finished: swimmer.distance >= raceDistance,
                         heading: swimmer.netHeading,
+                        speed: swimmer.netSpeed,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
             }
-            this._netRaceController.setDiag(this.buildNetDiag());
+            if (NET_RACE_DEBUG_HUD) {
+                this._netRaceController.setDiag(this.buildNetDiag());
+            }
         }
 
         // Correct every swimmer EXCEPT our own predicted player (correcting it would snap
@@ -1436,6 +1445,7 @@ export class GameManager extends Component {
             let targetDist: number;
             let targetLat: number;
             let targetHead: number;
+            let targetSpeed: number;
             let distBlend: number;
             let latBlend: number;
             let headBlend: number;
@@ -1443,6 +1453,7 @@ export class GameManager extends Component {
                 targetDist = self.distance;
                 targetLat = self.lateral;
                 targetHead = self.heading;
+                targetSpeed = self.speed;
                 distBlend = 0.4;
                 latBlend = 0.4;
                 headBlend = 0.4;
@@ -1454,6 +1465,7 @@ export class GameManager extends Component {
                 targetDist = target.distance;
                 targetLat = target.lateral;
                 targetHead = target.heading;
+                targetSpeed = target.speed;
                 distBlend = 0.2;
                 latBlend = 0.25;
                 headBlend = 0.3;
@@ -1473,6 +1485,9 @@ export class GameManager extends Component {
             }
             swimmer.applyNetCorrection(targetDist, targetLat, distBlend, latBlend);
             swimmer.applyNetHeading(targetHead, headBlend);
+            // Drive the tread-water<->freestyle pose from the owner's authoritative speed
+            // so a corrected-forward copy can't be stuck in the vertical tread pose.
+            swimmer.applyNetPoseSpeed(targetSpeed);
         }
     }
 
@@ -1508,6 +1523,7 @@ export class GameManager extends Component {
             lateral: player.netLateralOffset,
             finished: player.distance >= getRaceDistance(),
             heading: player.netHeading,
+            speed: player.netSpeed,
         };
     }
 

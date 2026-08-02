@@ -116,6 +116,19 @@ export class Swimmer extends Component {
         return this._motor.heading;
     }
 
+    // NETWORKED RACE ONLY: current swim speed (m/s) for authoritative snapshots, so
+    // remote copies can drive their tread-water<->freestyle pose from the owner.
+    get netSpeed(): number {
+        return this._motor.currentSpeed;
+    }
+
+    // NETWORKED RACE ONLY: drive this copy's tread-water<->freestyle pose from the
+    // owner's authoritative speed (from the synced snapshot) instead of its own local
+    // motor speed, which jitters over the network. Negative clears the override.
+    applyNetPoseSpeed(speed: number) {
+        this.cartoonRig?.setTreadWaterSpeedOverride(speed);
+    }
+
     // NETWORKED RACE ONLY: ease this swimmer's steering heading toward the host's
     // authoritative value so its facing/steering matches on every client.
     applyNetHeading(targetHeading: number, blend: number) {

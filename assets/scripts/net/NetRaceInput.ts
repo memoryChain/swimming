@@ -105,7 +105,7 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)}`;
     }
     return out;
 }
@@ -142,12 +142,14 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
             const fin = p[3] === '1';
             const headMrad = p.length > 4 ? parseInt(p[4], 10) : 0;
             if (Number.isFinite(lane) && Number.isFinite(distCm) && Number.isFinite(latMm)) {
+                const speedCms = p.length > 5 ? parseInt(p[5], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
                     lateral: latMm / 1000,
                     finished: fin,
                     heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+                    speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
                 };
             }
         }
