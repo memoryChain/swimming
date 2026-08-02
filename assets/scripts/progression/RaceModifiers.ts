@@ -1,7 +1,9 @@
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import type { PlayerBalanceOverrides } from './PlayerBalanceOverrides';
+import { resolvePlayerBalance } from './PlayerBalanceOverrides';
 import { getProgressionManager } from './ProgressionManager';
-import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
+import { PROGRESSION_BALANCE } from './ProgressionBalance';
+import { findPlayerCharacter, getPlayerCharacterSelection, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 
 // The complete, self-contained set of gameplay-affecting modifiers a player brings
 // into a race, resolved ONCE from their local save. Today this is progression-derived
@@ -10,31 +12,65 @@ import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 //
 // This is the SINGLE seam shared by single-player and multiplayer, split into three
 // decoupled layers so any new 养成 flows into online for free:
-//   1. resolve  — resolveLocalRaceModifiers(): save -> profile (owner side).
-//   2. transport — NetRaceModifierCodec encodes the profile into the net roster's
-//      per-member extInfo, so EVERY client receives EVERY player's profile. The value
-//      is resolved on the owner's device and transmitted verbatim, so all clients agree
-//      (deterministic; static per race; off the per-frame hot path).
-//   3. apply    — applyRaceModifiers*(): profile -> swimmer, run identically for the
-//      local player and each remote human, so 养成 affects the networked race the same
-//      way it does offline.
+//   1. resolve   — resolveLocalModifierDigest(): save -> compact digest (owner side);
+//      resolveModifiersFromDigest(): digest -> full profile (any client, shared config).
+//   2. transport — NetRaceModifierCodec + RoomFlow broadcast the tiny DIGEST (not the
+//      resolved floats) on the room broadcast channel, so EVERY client receives EVERY
+//      player's digest and re-resolves an identical profile. (memberExtInfo is capped at
+//      32 bytes — too small for the resolved blob, see NetRaceModifierCodec.)
+//   3. apply     — applyRaceModifiers*(): profile -> swimmer, run identically for the
+//      local player and each remote human.
 //
-// Adding a new 养成 modifier is a localized, append-only change: extend this interface,
-// map it in resolveLocalRaceModifiers + applyRaceModifiers*, and append it in the codec.
-// The transport (roster extInfo) is generic and needs no change.
+// Adding a new 养成 modifier is a localized, append-only change: extend RaceModifierDigest
+// + RaceModifierProfile, map it in resolveLocalModifierDigest / resolveModifiersFromDigest
+// / applyRaceModifiers*, and (if it needs its own wire field) the codec. The transport is
+// generic and needs no change.
 export interface RaceModifierProfile {
     // Progression-derived movement/condition balance (null = neutral / no character).
     balance: PlayerBalanceOverrides | null;
     // Future 养成 fields go here, e.g. startBoost?: number; luckyLaneBias?: number; ...
 }
 
-// Resolve the local player's modifier profile from their save (selected character +
-// progression). This is the same source single-player uses, so the profile a client
-// publishes to its peers matches what it applies to its own swimmer.
-export function resolveLocalRaceModifiers(): RaceModifierProfile {
+// The compact, transmissible SOURCE of a player's modifiers: the save-derived keys
+// needed to re-resolve the profile on any client using shared config + pure functions.
+// Tiny on the wire (vs the resolved floats). A future 养成 system adds a key here (e.g.
+// equipped item ids) rather than more transmitted values.
+export interface RaceModifierDigest {
+    characterId: string;
+    level: number;
+}
+
+// The local player's digest, from their save (selected character + its progression level).
+export function resolveLocalModifierDigest(): RaceModifierDigest {
     const characterId = getPlayerCharacterSelection().characterId;
-    const balance = getProgressionManager().resolveBalance(characterId);
+    const level = getProgressionManager().getCharacterLevel(characterId);
+    return { characterId, level };
+}
+
+// Re-resolve a full profile from a digest using SHARED config (character definitions)
+// + the SAME pure resolve function, so every client derives an identical profile for a
+// given (characterId, level). Unknown character -> neutral (null balance).
+export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): RaceModifierProfile {
+    if (!digest) {
+        return { balance: null };
+    }
+    const character = findPlayerCharacter(digest.characterId as PlayerCharacterId);
+    if (!character) {
+        return { balance: null };
+    }
+    const balance = resolvePlayerBalance(
+        { stamina: character.stamina, technique: character.technique, burst: character.burst },
+        digest.level,
+        PROGRESSION_BALANCE.maxLevel,
+        character.weight,
+    );
     return { balance };
+}
+
+// Resolve the local player's full profile from their save. Same source single-player
+// uses, so what this client applies to its own swimmer matches the digest it publishes.
+export function resolveLocalRaceModifiers(): RaceModifierProfile {
+    return resolveModifiersFromDigest(resolveLocalModifierDigest());
 }
 
 // Apply the movement-affecting part of a profile to a swimmer's motor. Safe for the

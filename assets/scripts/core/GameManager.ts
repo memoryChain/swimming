@@ -61,8 +61,8 @@ import { reseedSharedRandom } from './SharedRNG';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
-import { applyRaceModifiersToMotor, resolveLocalRaceModifiers } from '../progression/RaceModifiers';
-import { decodeRaceModifiers } from '../net/NetRaceModifierCodec';
+import { applyRaceModifiersToMotor, resolveLocalRaceModifiers, resolveModifiersFromDigest } from '../progression/RaceModifiers';
+import { decodeModifierDigest } from '../net/NetRaceModifierCodec';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
@@ -1230,10 +1230,11 @@ export class GameManager extends Component {
             if (identity?.nickName) {
                 swimmer.swimmerName = identity.nickName;
             }
-            // Apply this remote human's 养成 profile (synced in the roster) to their local
-            // motor, so their predicted sim + weight-based collision match how their own
-            // client races them — the same seam the local player uses (applyPlayerProgression).
-            applyRaceModifiersToMotor(swimmer.motor, decodeRaceModifiers(identity?.modifiersBlob));
+            // Apply this remote human's 养成 profile (digest synced over the room broadcast
+            // channel) to their local motor, so their predicted sim + weight-based collision
+            // match how their own client races them — the same seam the local player uses
+            // (applyPlayerProgression). Re-resolved from the digest via shared config.
+            applyRaceModifiersToMotor(swimmer.motor, resolveModifiersFromDigest(decodeModifierDigest(identity?.modifiersBlob)));
             // Match this remote human's look to what its own client renders (derived
             // from the shared avatarId) so appearances are identical everywhere.
             if (identity?.avatarId) {

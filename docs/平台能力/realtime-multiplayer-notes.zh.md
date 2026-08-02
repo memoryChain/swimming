@@ -354,16 +354,19 @@ sharedRandom();             // 取共享实例
 - **★前提（务必理解）**：**联机对战中不升级**——玩家一旦进房，养成就**冻结**，整局（含 rematch 保活重开）都不变。所以「入房时」快照的养成档案在整个房间生命周期内**始终有效**，不存在陈旧/需要中途刷新的问题。这条前提是下面「用 roster extInfo 一次性传输」成立的基础。
 - **为什么必须同步**：养成改的是玩家 balance（`maxSpeed/energyTotal/perfectComboMaxOvercap/strokeQualityAccel/kickMaxSpeed/diveMaxLaunchSpeed/`**`weight`**），全都**影响比赛结果**；`weight` 还进碰撞击退结算。若各端对同一泳者用不同 balance，本地预测和碰撞会算出不同结果。养成是**本地存档**，既不在共享 roster 里，也无法从 `avatarId` 推导 → 必须显式同步。
 - **三层解耦架构**（加新养成只动前后两层的映射，中间传输层通用）：
-  - **resolve**（`progression/RaceModifiers.ts` `resolveLocalRaceModifiers()`）：存档 → `RaceModifierProfile`（当前=`{balance}`，未来加装备/技能/赛季 buff 就往这个容器加字段）。单机、联机同一入口。
-  - **transport**（`net/NetRaceModifierCodec.ts` + roster `extInfo`）：档案 ↔ 紧凑版本化串 `M!<ver>,<f×1000>,...`，塞进成员 `extInfo`（和 `avatarId` **同一条已验证通道**，见 `RoomFlow.encodeIdentity/parseIdentity` + `NetRaceMember.modifiersBlob`）。**owner 端从自己存档 resolve 后原样广播**，各端拿到一致值 → 确定性；每局静态、**不碰逐帧热路径**。
-  - **apply**（`applyRaceModifiersToMotor`）：本地玩家（`GameManager.applyPlayerProgression`）与每个远端人类（`GameManager.wireRemoteSwimmers`）走**同一个 seam** → 养成对联机的作用与单机一致。
-- **传输通道选型：走 roster extInfo，不走帧/广播热路径**。养成每局静态、进房即冻结，所以随 roster 自然传播（还能覆盖晚加入者）最合适；一次捕获终生有效（含 rematch），无需在开赛广播里反复带。
-- **★weight 跨端一致 → 联机恢复「按体重加权」碰撞**：AI 的 weight 来自共享 roster（确定性一致），真人的 weight 来自同步档案 → 所有泳者 weight 各端一致，`resolveSwimmerCollisions` 联机也用**加权拆分**（不再需要早期 `uniform-weight` 权宜方案，已回退）。养成的「体重/撞飞抗性」在联机真正生效；残余跨引擎浮点差异由 owner/host 位置权威吸收，不会永久漂移。
-- **加新养成项 = 追加式改动**：① 扩 `RaceModifierProfile`；② `resolveLocalRaceModifiers` 里映射存档→字段；③ `applyRaceModifiersToMotor`（或新 apply 分支）里映射字段→泳者；④ `NetRaceModifierCodec` 末尾**追加**一个 `×1000` 量化字段（`VERSION` 顺手 +1）。传输层通用无需改，自动带进联机。
-- **混版本优雅降级**：codec **只追加不重排**——新端读旧（短）串给缺失尾字段补默认、旧端读新（长）串忽略多余尾字段，不硬 desync。旧客户端（没这功能）发的 extInfo 无 `M!` 哨兵 → 档案=null → 该玩家用中性 balance（`weight=1`），其位置仍是 owner 权威、各端一致。
+  - **resolve**（`progression/RaceModifiers.ts`）：存档 → 极小 `RaceModifierDigest`（当前=`{characterId, level}`）；再由 `resolveModifiersFromDigest()` 用**共享角色配置 + 同一纯函数** digest → `RaceModifierProfile`（`{balance}`）。owner 端出 digest，各端**重新解析**出同一份 profile。
+  - **transport**（`net/NetRaceModifierCodec.ts` + `RoomFlow` 广播）：只传 **digest** `"<characterId>,<level>"`（几字节），**走房间广播通道**，标签 `MOD|<pos>|<payload>`，各端按 seat 收集进 `_memberModifiers`，开赛时并入 `NetRaceMember.modifiersBlob`。
+  - **apply**（`applyRaceModifiersToMotor`）：本地玩家（`GameManager.applyPlayerProgression`）与每个远端人类（`GameManager.wireRemoteSwimmers`，`resolveModifiersFromDigest(decodeModifierDigest(blob))`）走**同一个 seam** → 养成对联机的作用与单机一致。
+- **★为什么传 digest 而不是解析后的 balance、为什么走广播而不是 extInfo（血泪坑）**：
+  - **微信 `memberExtInfo` / `roomExtInfo` 硬上限 = 32 字节**（官方文档）。`avatarId|nickName` 本身就可能接近 32（中文昵称 3 字节/字），塞进 7 个量化浮点（~40 字节）→ **`createRoom` 直接 `errCode 4013 buffer overflow`，新版本建不了房**。所以 extInfo 只留 `avatarId|nickName`，养成**移出 extInfo**。
+  - balance 是 `(角色, 等级)` 的**纯函数**，角色定义 + resolve 逻辑都是**各端共享代码** → 只需传最小 digest（角色 id + 等级），各端本地重解析即得同一份 balance。传 digest 而非浮点：① 小得多（绕开 32 字节坑）；② 更可扩展（未来养成加 key/id，不是加传输值）。
+  - 广播是**尽力而为**：在「join 成功 / 每次 roster 变化 / 开赛」各广播一次自己的 digest，大厅停留期间就已传达；自己的 digest 还本地直存，开赛必有。丢了 → 该玩家中性 balance（自愈，不崩）。
+- **进房即冻结**：联机中不升级，digest 一局不变；rematch 保活重开也用同一套广播刷新，无陈旧问题。
+- **★weight 跨端一致 → 联机恢复「按体重加权」碰撞**：AI 的 weight 来自共享 roster（确定性一致），真人的 weight 由 digest 各端重解析一致 → 所有泳者 weight 各端一致，`resolveSwimmerCollisions` 联机也用**加权拆分**（不再需要早期 `uniform-weight` 权宜方案，已回退）。养成的「体重/撞飞抗性」在联机真正生效；残余跨引擎浮点差异由 owner/host 位置权威吸收，不会永久漂移。
+- **加新养成项 = 追加式改动**：① 扩 `RaceModifierDigest` + `RaceModifierProfile`；② `resolveLocalModifierDigest` / `resolveModifiersFromDigest` 里映射；③ `applyRaceModifiersToMotor`（或新 apply 分支）里映射字段→泳者；④ 若需要独立线上字段再动 codec。传输层（`MOD|` 广播）通用无需改，自动带进联机。
 - **坑**：
-  - 微信 `memberExtInfo` 有大小上限 → 档案用**量化整数**（×1000）拼串，别塞 JSON。
-  - `extInfo` = `avatarId|nickName|M!...`，而**昵称可能含 `|`** → `parseIdentity` **从右侧**按 `|M!` 哨兵剥离档案串，不能数 `|` 的个数。
-  - 档案在 owner 端 resolve、各端 apply 的是**收到的串**；本地玩家 apply 的是自己 resolve 的同一份（字节一致）→ 单一真值源，自己看到的和别人看到的你一致。
+  - **别再把养成塞 `memberExtInfo`**（32 字节，和 `avatarId|nickName` 抢空间，必炸 4013）。静态每局数据走广播。
+  - `MOD|` 是广播裸串（非 JSON）→ `RoomFlow.handleBroadcast` 要在 JSON 判断**之前**先认 `MOD|` 收集，别被「只处理 `{...}`」的早返回吞掉。
+  - digest 各端**重新解析**：跨引擎浮点在 balance 上有末位差异，但只影响碰撞权重/预测的极小量，由位置权威吸收；若要严格一致可对重解析值同样量化取整。
 
 

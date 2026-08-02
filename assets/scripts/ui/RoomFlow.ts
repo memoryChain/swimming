@@ -18,8 +18,8 @@ import { NetRoomInfo } from '../net/INetRoom';
 import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
 import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
-import { resolveLocalRaceModifiers } from '../progression/RaceModifiers';
-import { encodeRaceModifiers, PROFILE_MARK } from '../net/NetRaceModifierCodec';
+import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
+import { encodeModifierDigest } from '../net/NetRaceModifierCodec';
 
 export type RoomFlowCallbacks = {
     onExit: () => void;
@@ -39,9 +39,6 @@ type SlotMember = {
     ready: boolean;
     owner: boolean;
     pos: number;
-    // Opaque 养成 modifier blob (see NetRaceModifierCodec) carried in this member's
-    // roster extInfo. Passed through untouched to NetRaceMember at race start.
-    modifiersBlob: string;
 };
 
 export class RoomFlow {
@@ -58,6 +55,10 @@ export class RoomFlow {
     private _roomId = '';
     private _isHost = true;
     private _pendingSeed = 0;
+    // Peers' 养成 digests collected from the lobby broadcast channel, keyed by seat
+    // (posNum). memberExtInfo is only 32 bytes (too small for a modifier blob), so each
+    // client broadcasts its tiny digest instead; consumed into the session at start.
+    private readonly _memberModifiers: Record<number, string> = {};
     private _statusHint: string | null = null;
     private _startRequested = false;
     private _gameStartCalled = false;
@@ -165,11 +166,14 @@ export class RoomFlow {
                 onRoomInfoChange: (info) => {
                     this._members = this.membersFromInfo(info);
                     this.render();
+                    // Roster changed (e.g. a newcomer joined): re-broadcast our digest so
+                    // they collect it too.
+                    this.broadcastSelfModifiers();
                 },
                 onBroadcast: (msg) => this.handleBroadcast(msg),
                 onGameStart: () => this.onNetGameStart(),
             });
-            const extInfo = encodeIdentity(self.avatarId, self.nickName, self.modifiersBlob);
+            const extInfo = encodeIdentity(self.avatarId, self.nickName);
             if (this._reconnect) {
                 // Returning after a race: the WeChat room still exists and we are still
                 // a member — do NOT create/join a new one (that would fork the room, so
@@ -218,6 +222,7 @@ export class RoomFlow {
                         this._localReady = true;
                         netRoom().updateReady(true).catch(() => undefined);
                     }
+                    this.broadcastSelfModifiers();
                 })
                 .catch((error) => {
                     const reason = (error && (error.errMsg || error.message)) || String(error);
@@ -254,18 +259,43 @@ export class RoomFlow {
             ready: this._localReady,
             owner: this._isHost,
             pos: this._localPos,
-            modifiersBlob: this.selfModifiersBlob(),
         };
     }
 
-    // The local player's own 养成 profile, encoded for the roster. Resolved from the
-    // same save single-player uses, so peers apply to our swimmer exactly what we do.
-    private selfModifiersBlob(): string {
+    // Broadcast the local player's 养成 digest (tiny: characterId+level) so every client
+    // can re-resolve and apply our modifiers to our swimmer. Sent on the room BROADCAST
+    // channel because memberExtInfo is only 32 bytes (too small). Best-effort; re-sent on
+    // join, on every roster change, and at start, so late joiners still collect it. Our
+    // own entry is also stored locally so it is always available at race start.
+    private broadcastSelfModifiers() {
+        if (!this._netReal || this._localPos < 0) {
+            return;
+        }
+        let payload = '';
         try {
-            return encodeRaceModifiers(resolveLocalRaceModifiers());
+            payload = encodeModifierDigest(resolveLocalModifierDigest());
         } catch (error) {
             console.warn('[Room] resolve modifiers failed', error);
-            return '';
+        }
+        if (!payload) {
+            return;
+        }
+        this._memberModifiers[this._localPos] = payload;
+        netRoom().broadcast(`MOD|${this._localPos}|${payload}`);
+    }
+
+    // Collect a peer's broadcast 养成 digest, keyed by seat, for use at race start.
+    private collectMemberModifiers(msg: string) {
+        // "MOD|<pos>|<payload>"
+        const body = msg.slice(4);
+        const sep = body.indexOf(IDENTITY_SEP);
+        if (sep < 0) {
+            return;
+        }
+        const pos = parseInt(body.slice(0, sep), 10);
+        const payload = body.slice(sep + 1);
+        if (Number.isFinite(pos) && payload) {
+            this._memberModifiers[pos] = payload;
         }
     }
 
@@ -291,7 +321,6 @@ export class RoomFlow {
                 ready: m.ready === true,
                 owner: m.owner === true,
                 pos: typeof m.pos === 'number' ? m.pos : -1,
-                modifiersBlob: parsed.modifiersBlob,
             };
         });
         // Identify our own slot. Prefer the seat index (posNum) when we know it — two
@@ -565,6 +594,9 @@ export class RoomFlow {
         this._pendingSeed = SeededRandom.entropySeed();
         this.setHint('开始中…');
         netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
+        // Final re-broadcast of our 养成 digest so peers that missed the lobby sends still
+        // have it (best-effort; own copy is already stored locally regardless).
+        this.broadcastSelfModifiers();
         if (this._reconnect) {
             // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
             // one-game — a second startGame returns 4014 / a fake ok with roomState stuck
@@ -625,6 +657,11 @@ export class RoomFlow {
     // (where the owner doesn't receive its own broadcast and so never calls startGame),
     // only guests call startGame; the host enters via game-start detection (roomState).
     private handleBroadcast(msg: string) {
+        // 养成 digest from a peer (lobby broadcast): collect it by seat for race start.
+        if (typeof msg === 'string' && msg.slice(0, 4) === 'MOD|') {
+            this.collectMemberModifiers(msg);
+            return;
+        }
         // Only our own room-control messages are JSON objects ('{...}'). The race layer
         // also broadcasts tagged strings (S|, R|, GO|, Q|) that can still arrive at this
         // handler right after returning to the lobby — ignore anything that isn't a JSON
@@ -697,7 +734,9 @@ export class RoomFlow {
             nickName: m.nickName,
             self: m.self,
             pos: typeof m.pos === 'number' ? m.pos : -1,
-            modifiersBlob: m.modifiersBlob,
+            // 养成 digest collected from the lobby broadcasts (empty if it never arrived,
+            // e.g. an old client or a dropped broadcast -> that swimmer stays neutral).
+            modifiersBlob: this._memberModifiers[typeof m.pos === 'number' ? m.pos : -1] ?? '',
         }));
         setNetRaceSession({
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
@@ -742,31 +781,17 @@ export class RoomFlow {
     }
 }
 
-function encodeIdentity(avatarId: string, nickName: string, modifiersBlob: string): string {
-    // avatarId|nickName[|M!...]. The 养成 profile blob (if any) is appended LAST with its
-    // own PROFILE_MARK sentinel, so parseIdentity can peel it back off from the right even
-    // though a nickName in the middle may itself contain the '|' separator.
-    const base = `${avatarId}${IDENTITY_SEP}${nickName}`;
-    return modifiersBlob ? `${base}${IDENTITY_SEP}${modifiersBlob}` : base;
+function encodeIdentity(avatarId: string, nickName: string): string {
+    return `${avatarId}${IDENTITY_SEP}${nickName}`;
 }
 
-function parseIdentity(extInfo: string | undefined): { avatarId: string; nickName: string; modifiersBlob: string } {
+function parseIdentity(extInfo: string | undefined): { avatarId: string; nickName: string } {
     if (!extInfo) {
-        return { avatarId: 'aqua', nickName: '玩家', modifiersBlob: '' };
+        return { avatarId: 'aqua', nickName: '玩家' };
     }
     const sep = extInfo.indexOf(IDENTITY_SEP);
     if (sep < 0) {
-        return { avatarId: 'aqua', nickName: extInfo, modifiersBlob: '' };
+        return { avatarId: 'aqua', nickName: extInfo };
     }
-    const avatarId = extInfo.slice(0, sep) || 'aqua';
-    let rest = extInfo.slice(sep + 1);
-    // Peel a trailing profile blob (|M!...) off the RIGHT. An old client sends no blob, so
-    // the marker is simply absent and the whole remainder is the nickName.
-    let modifiersBlob = '';
-    const markIdx = rest.lastIndexOf(IDENTITY_SEP + PROFILE_MARK);
-    if (markIdx >= 0) {
-        modifiersBlob = rest.slice(markIdx + IDENTITY_SEP.length);
-        rest = rest.slice(0, markIdx);
-    }
-    return { avatarId, nickName: rest || '玩家', modifiersBlob };
+    return { avatarId: extInfo.slice(0, sep) || 'aqua', nickName: extInfo.slice(sep + 1) || '玩家' };
 }
