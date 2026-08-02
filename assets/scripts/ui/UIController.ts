@@ -2,6 +2,8 @@ import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, No
 import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
+import { SprintVignetteOverlay } from './SprintVignetteOverlay';
+import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
 
 const { ccclass, property } = _decorator;
 
@@ -47,6 +49,10 @@ export class UIController extends Component {
     public energyBarRoot: Node = null;
     public energyBarFill: Graphics = null;
     public energyLabel: Label = null;
+    public sprintLabel: Label | null = null;
+    public sprintVignette: SprintVignetteOverlay | null = null;
+    private _sprintActive = false;
+    private _energyTotal = 100;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -130,14 +136,66 @@ export class UIController extends Component {
     }
 
     updateEnergyBar(energy: number, depleted: boolean) {
-        const ratio = clamp01(energy / 100);
+        const ratio = clamp01(energy / this._energyTotal);
+        const color = this._sprintActive
+            ? sprintEnergyColor(ratio, depleted)
+            : energyColor(ratio, depleted);
         if (this.energyBarFill) {
-            drawEnergyFill(this.energyBarFill, ratio, energyColor(ratio, depleted));
+            drawEnergyFill(this.energyBarFill, ratio, color);
         }
         if (this.energyLabel) {
             this.energyLabel.string = `体能 ${Math.round(energy)}`;
-            this.energyLabel.color = energyColor(ratio, depleted);
+            this.energyLabel.color = color;
         }
+    }
+
+    setSprintActive(active: boolean) {
+        this._sprintActive = active;
+        this.sprintVignette?.setActive(active);
+        if (!this.sprintLabel) {
+            return;
+        }
+        const node = this.sprintLabel.node;
+        if (active) {
+            node.active = true;
+            node.setScale(0.3, 0.3, 1);
+            let opacity = node.getComponent(UIOpacity);
+            if (!opacity) {
+                opacity = node.addComponent(UIOpacity);
+            }
+            opacity.opacity = 0;
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(opacity);
+            tween(node)
+                .to(0.18, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'backOut' })
+                .to(0.08, { scale: new Vec3(1, 1, 1) })
+                .call(() => {
+                    tween(node)
+                        .to(0.8, { scale: new Vec3(1.05, 1.05, 1) }, { easing: 'sineInOut' })
+                        .to(0.8, { scale: new Vec3(1, 1, 1) }, { easing: 'sineInOut' })
+                        .repeatForever()
+                        .start();
+                })
+                .start();
+            tween(opacity)
+                .to(0.15, { opacity: 255 })
+                .start();
+        } else {
+            let opacity = node.getComponent(UIOpacity);
+            if (!opacity) {
+                opacity = node.addComponent(UIOpacity);
+            }
+            Tween.stopAllByTarget(node);
+            Tween.stopAllByTarget(opacity);
+            tween(opacity)
+                .to(0.9, { opacity: 0 }, { easing: 'sineInOut' })
+                .call(() => { node.active = false; })
+                .start();
+        }
+    }
+
+    setEnergyTotal(total: number) {
+        this._energyTotal = Math.max(1, total);
     }
 
     setEnergyBarVisible(visible: boolean) {
@@ -419,7 +477,186 @@ export class UIController extends Component {
         }
     }
 
+    private _progressionNode: Node | null = null;
+    private _progressionTweenCounter: { value: number } | null = null;
+
+    showProgressionResult(result: {
+        characterName: string;
+        xpGained: number;
+        previousLevel: number;
+        newLevel: number;
+        leveledUp: boolean;
+        newXp: number;
+        xpForNextLevel: number;
+        previousXp: number;
+        previousXpForNextLevel: number;
+    } | null) {
+        this.hideProgressionResult();
+        if (!result || result.xpGained <= 0) {
+            return;
+        }
+        const parent = this.node.parent;
+        if (!parent?.isValid) {
+            return;
+        }
+        // Independent panel under the race HUD (not inside resultPanel) so the
+        // awards layout's 0.52 scale does not shrink the progression feedback.
+        const visibleSize = view.getVisibleSize();
+        const panel = new Node('ProgressionResult');
+        panel.layer = parent.layer;
+        panel.setParent(parent);
+        panel.addComponent(UITransform).setContentSize(360, 130);
+        const panelOpacity = panel.addComponent(UIOpacity);
+        panelOpacity.opacity = 0;
+        const targetY = -visibleSize.height / 2 + 105;
+        panel.setPosition(0, targetY - 24, 0);
+
+        const headerLabel = new Node('Header').addComponent(Label);
+        headerLabel.node.layer = panel.layer;
+        headerLabel.node.setParent(panel);
+        headerLabel.node.addComponent(UITransform).setContentSize(360, 28);
+        headerLabel.string = result.characterName + '  Lv.' + result.newLevel;
+        headerLabel.fontSize = 20;
+        headerLabel.color = new Color(150, 200, 255, 255);
+        headerLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        headerLabel.node.setPosition(0, 44, 0);
+
+        const xpLabel = new Node('XpGained').addComponent(Label);
+        xpLabel.node.layer = panel.layer;
+        xpLabel.node.setParent(panel);
+        xpLabel.node.addComponent(UITransform).setContentSize(360, 32);
+        xpLabel.fontSize = 24;
+        xpLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        xpLabel.color = new Color(120, 220, 130, 255);
+        xpLabel.string = '+0 XP';
+        xpLabel.node.setPosition(0, 12, 0);
+
+        const barWidth = 300;
+        const barNode = new Node('XpBar');
+        barNode.layer = panel.layer;
+        barNode.setParent(panel);
+        barNode.addComponent(UITransform).setContentSize(barWidth, 10);
+        barNode.setPosition(0, -18, 0);
+        const gfx = barNode.addComponent(Graphics);
+
+        const barLabel = new Node('XpBarText').addComponent(Label);
+        barLabel.node.layer = panel.layer;
+        barLabel.node.setParent(panel);
+        barLabel.node.addComponent(UITransform).setContentSize(360, 20);
+        barLabel.fontSize = 13;
+        barLabel.color = new Color(140, 160, 180, 255);
+        barLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        barLabel.node.setPosition(0, -38, 0);
+
+        this._progressionNode = panel;
+        this._progressionTweenCounter = null;
+
+        // Delay slightly so the result panel reads first, then slide up + fade in.
+        tween(panelOpacity)
+            .delay(0.4)
+            .to(0.4, { opacity: 255 })
+            .start();
+        tween(panel)
+            .delay(0.4)
+            .to(0.4, { position: new Vec3(0, targetY, 0) }, { easing: 'sineOut' })
+            .call(() => this.animateProgressionGain(result, xpLabel, headerLabel, gfx, barLabel, barWidth))
+            .start();
+    }
+
+    private animateProgressionGain(
+        result: {
+            xpGained: number;
+            previousXp: number;
+            previousLevel: number;
+            newLevel: number;
+            newXp: number;
+            leveledUp: boolean;
+        },
+        xpLabel: Label,
+        headerLabel: Label,
+        gfx: Graphics,
+        barLabel: Label,
+        barWidth: number,
+    ) {
+        const maxLevel = PROGRESSION_BALANCE.maxLevel;
+        let lastLevel = result.previousLevel;
+        const drawBar = (acc: number, level: number) => {
+            const denom = level >= maxLevel ? 1 : Math.max(1, xpForLevel(level));
+            const ratio = Math.max(0, Math.min(1, acc / denom));
+            gfx.clear();
+            gfx.fillColor = new Color(28, 42, 60, 255);
+            gfx.rect(-barWidth / 2, -5, barWidth, 10);
+            gfx.fill();
+            gfx.fillColor = result.leveledUp ? new Color(255, 209, 42, 255) : new Color(120, 220, 130, 255);
+            gfx.rect(-barWidth / 2, -5, barWidth * ratio, 10);
+            gfx.fill();
+            const denomDisplay = level >= maxLevel ? 0 : xpForLevel(level);
+            barLabel.string = Math.round(acc) + ' / ' + denomDisplay;
+        };
+        const counter = { value: 0 };
+        this._progressionTweenCounter = counter;
+        const duration = Math.min(1.6, 0.6 + result.xpGained / 200);
+        tween(counter)
+            .to(duration, { value: result.xpGained }, {
+                onUpdate: () => {
+                    if (!xpLabel.node.isValid) {
+                        return;
+                    }
+                    const gain = counter.value;
+                    xpLabel.string = '+' + Math.round(gain) + ' XP';
+                    let acc = result.previousXp + gain;
+                    let level = result.previousLevel;
+                    while (level < maxLevel && acc >= xpForLevel(level)) {
+                        acc -= xpForLevel(level);
+                        level += 1;
+                        if (level > lastLevel) {
+                            lastLevel = level;
+                            this.pulseProgressionLevelUp(xpLabel, headerLabel, level);
+                        }
+                    }
+                    if (level >= maxLevel) {
+                        acc = 0;
+                    }
+                    drawBar(acc, level);
+                },
+            })
+            .call(() => {
+                if (!xpLabel.node.isValid) {
+                    return;
+                }
+                xpLabel.string = '+' + result.xpGained + ' XP';
+                drawBar(result.newXp, result.newLevel);
+            })
+            .start();
+    }
+
+    private pulseProgressionLevelUp(xpLabel: Label, headerLabel: Label, level: number) {
+        if (!headerLabel.node.isValid) {
+            return;
+        }
+        headerLabel.string = headerLabel.string.replace(/Lv\.\d+/, 'Lv.' + level);
+        xpLabel.color = new Color(255, 224, 89, 255);
+        Tween.stopAllByTarget(xpLabel.node);
+        xpLabel.node.setScale(1, 1, 1);
+        tween(xpLabel.node)
+            .to(0.12, { scale: new Vec3(1.18, 1.18, 1) })
+            .to(0.18, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+            .start();
+    }
+
+    hideProgressionResult() {
+        if (this._progressionTweenCounter) {
+            Tween.stopAllByTarget(this._progressionTweenCounter);
+            this._progressionTweenCounter = null;
+        }
+        if (this._progressionNode) {
+            this._progressionNode.destroy();
+            this._progressionNode = null;
+        }
+    }
+
     resetAll() {
+        this.hideProgressionResult();
         this.updateProgress(0, 0);
         this.setRaceStatusVisible(false);
         if (this.ratingLabel) {
@@ -441,6 +678,7 @@ export class UIController extends Component {
         this.hideFinishCountdown();
         this.updateDiveCharge(0, false);
         this.setSpeedBarVisible(false);
+        this.setSprintActive(false);
         // Restore the swim pad for the next race (it is hidden during the awards ceremony).
         // 为下一场比赛恢复划水板（颁奖仪式期间被隐藏）。
         if (this.strokeInput) {
@@ -600,6 +838,20 @@ function energyColor(ratio: number, depleted: boolean): Color {
         return new Color(255, 184, 77, 255);
     }
     return new Color(120, 220, 255, 255);
+}
+
+// Fiery palette during sprint: warm oranges replace the normal blue/teal.
+function sprintEnergyColor(ratio: number, depleted: boolean): Color {
+    if (depleted || ratio <= 0.0001) {
+        return new Color(180, 80, 30, 255);
+    }
+    if (ratio < 0.25) {
+        return new Color(255, 100, 30, 255);
+    }
+    if (ratio < 0.5) {
+        return new Color(255, 160, 40, 255);
+    }
+    return new Color(255, 210, 70, 255);
 }
 
 function drawChargeFill(gfx: Graphics, ratio: number) {

@@ -3,6 +3,8 @@ import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
+import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
+import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -70,6 +72,8 @@ export type StrokeTimingGuide = {
     intervals: StrokeTimingGuideInterval[];
 };
 
+type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
+
 export class SwimmerMotor {
     private readonly _physics = new SwimPhysicsModel();
     private _currentSpeed = 0;
@@ -98,6 +102,7 @@ export class SwimmerMotor {
     private _strokeAccelerationSeconds = 0;
     private _strokeAccelerationTotalSeconds = 0;
     private _speedCapBonus = 0;
+    private _playerBalance: PlayerBalanceOverrides | null = null;
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
     private _lastStrokeQuality = 0;
@@ -124,6 +129,16 @@ export class SwimmerMotor {
     private _lateralOffset = 0;
     private _lateralOffsetMin = -1000;
     private _lateralOffsetMax = 1000;
+    // Body weight for collision knockback (player from character def, AI from
+    // competitor profile; default 1). Heavy bodies resist being shoved.
+    private _weight = 1;
+    // Decaying collision knockback, integrated into distance/lateralOffset each
+    // frame (same channels nudgeDistance/setLateralOffset use). Stored in
+    // distance-rate / lateral-rate space (m/s) so no per-frame direction
+    // conversion is needed: the resolver folds each swimmer's lap direction
+    // into the distance component at injection time.
+    private _knockbackDistance = 0;
+    private _knockbackLateral = 0;
     private _steeringEnabled = false;
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
@@ -154,6 +169,9 @@ export class SwimmerMotor {
     beginFlipTurnPhase() {
         // The flip turn is an input-locked movement phase. Discard any held or
         // queued stroke so it cannot resume halfway through the wall push.
+        // A knockback impulse buffered just before the turn would freeze during
+        // the scripted phase and jolt afterwards, so clear it here.
+        this.clearKnockback();
         this._leftStrokeHeld = false;
         this._rightStrokeHeld = false;
         this._leftPressStartedAt = -1;
@@ -260,7 +278,7 @@ export class SwimmerMotor {
             return false;
         }
         const progress = clamp01(action.progress / CYCLE_AMOUNT);
-        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        const perfect = this._effectiveReleaseRanges.perfect;
         return progress >= perfect.start && progress <= perfect.end;
     }
 
@@ -339,7 +357,7 @@ export class SwimmerMotor {
         const fade = this._glidePhaseActive
             ? 1
             : clamp01(
-                (SWIMMER_BALANCE.kickMaxSpeed - this._currentSpeed)
+                (this._effectiveKickMaxSpeed - this._currentSpeed)
                     / Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand),
             );
         if (fade <= 0) {
@@ -388,6 +406,7 @@ export class SwimmerMotor {
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
                 glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
+                maxSpeedOverride: this._playerBalance?.maxSpeed,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
@@ -409,6 +428,7 @@ export class SwimmerMotor {
         if (Math.abs(this._lateralOffset - requestedLateralOffset) > 1e-6) {
             this.returnToLaneFromPoolWall();
         }
+        this.integrateKnockback(dt, raceDistance);
         this.updateMotionCycles(dt, options);
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
@@ -416,12 +436,14 @@ export class SwimmerMotor {
 
         if (this._distance >= raceDistance) {
             this._isRacing = false;
+            this.clearKnockback();
             return true;
         }
         return false;
     }
 
     private resetRaceState(initialDistance = 0) {
+        this.clearKnockback();
         this._distance = Math.max(0, initialDistance);
         this._bodyPhase = 0;
         this._leftArmCycle = 0;
@@ -463,6 +485,54 @@ export class SwimmerMotor {
         this._conditionSpeedScale = clamp(scale, 0, 2);
     }
 
+    setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
+        this._playerBalance = overrides;
+        this._weight = overrides?.weight ?? 1;
+    }
+
+    private get _effectiveMaxSpeed(): number {
+        return this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed;
+    }
+
+    private get _effectiveKickMaxSpeed(): number {
+        return this._playerBalance?.kickMaxSpeed ?? SWIMMER_BALANCE.kickMaxSpeed;
+    }
+
+    private get _effectiveComboMaxOvercap(): number {
+        return this._playerBalance?.perfectComboMaxOvercap ?? SWIMMER_BALANCE.perfectComboMaxOvercap;
+    }
+
+    private get _effectiveComboOvercapDecay(): number {
+        // Intentionally not progression-overridable: the overcap AMOUNT scales
+        // with character burst (see _effectiveComboMaxOvercap), but the DECAY rate
+        // is a global physics constant shared by player and AI.
+        return Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay);
+    }
+
+    private get _effectiveStrokeQualityAccel(): number {
+        return this._playerBalance?.strokeQualityAccel ?? SWIMMER_BALANCE.strokeQualityAccel;
+    }
+
+    // Quality-axis sweet-zone scaling: the heart-rate zone modifier widens or
+    // narrows the PERFECT release window. Only PERFECT width is scaled (relative
+    // to its center, clamped inside the GOOD window); GOOD stays fixed so the
+    // invariant good.start <= perfect.start <= perfect.end <= good.end holds.
+    private get _effectiveReleaseRanges(): ReleaseRanges {
+        const strength = clamp01(STROKE_QUALITY_TUNING.qualityZoneScaleStrength);
+        const scale = 1 + (clamp(this._conditionQualityScale, 0, 2) - 1) * strength;
+        const perfectBase = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+        const goodBase = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
+        const pCenter = (perfectBase.start + perfectBase.end) * 0.5;
+        const pHalf = (perfectBase.end - perfectBase.start) * 0.5 * scale;
+        return {
+            perfect: {
+                start: clamp(Math.max(goodBase.start, pCenter - pHalf), 0, 1),
+                end: clamp(Math.min(goodBase.end, pCenter + pHalf), 0, 1),
+            },
+            good: goodBase,
+        };
+    }
+
     setConditionQualityScale(scale: number) {
         this._conditionQualityScale = clamp(scale, 0, 2);
     }
@@ -471,10 +541,10 @@ export class SwimmerMotor {
         if (this._speedCapBonus <= 0) {
             return;
         }
-        const decay = Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay) * Math.max(0, dt);
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed;
+        const decay = Math.max(0, this._effectiveComboOvercapDecay) * Math.max(0, dt);
+        const maxSpeed = this._effectiveMaxSpeed;
         const neededForCurrentSpeed = Math.max(0, this._currentSpeed - maxSpeed);
-        const comboMax = Math.max(0, SWIMMER_BALANCE.perfectComboMaxOvercap);
+        const comboMax = Math.max(0, this._effectiveComboMaxOvercap);
         const decayedBonus = Math.max(0, this._speedCapBonus - decay);
         this._speedCapBonus = Math.max(neededForCurrentSpeed, Math.min(decayedBonus, comboMax));
     }
@@ -735,8 +805,9 @@ export class SwimmerMotor {
 
         // Single-stroke quality is purely the release-timing sweet zone now
         // (no cross-stroke consistency, no alternation, no input-freshness).
-        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
-        const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
+        const ranges = this._effectiveReleaseRanges;
+        const perfect = ranges.perfect;
+        const good = ranges.good;
         const secondsSinceYellow = releasedAt - action.perfectGuidePresentedAt;
         const releasedJustAfterVisiblePerfect = releaseProgress > perfect.end
             && releaseProgress <= Math.min(good.end, perfect.end + 0.03)
@@ -744,10 +815,10 @@ export class SwimmerMotor {
             && secondsSinceYellow >= 0
             && secondsSinceYellow <= Math.max(0, STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds);
         const strokeQuality = holdTimeValid
-            ? (releasedJustAfterVisiblePerfect ? 1 : strokeQualityFromReleaseProgress(releaseProgress))
+            ? (releasedJustAfterVisiblePerfect ? 1 : strokeQualityFromReleaseProgress(releaseProgress, ranges))
             : 0;
         const badReason = strokeQuality <= 0
-            ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds)
+            ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds, ranges)
             : undefined;
         this._lastStrokeQuality = strokeQuality;
         this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
@@ -795,7 +866,7 @@ export class SwimmerMotor {
 
     private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
-        const qualityAccel = Math.max(0, strokeQuality) * SWIMMER_BALANCE.strokeQualityAccel * this._conditionSpeedScale;
+        const qualityAccel = Math.max(0, strokeQuality) * this._effectiveStrokeQualityAccel * this._conditionSpeedScale;
         const accel = (baseAccel + qualityAccel) * this.strokeActionTimeScale(actionSeconds);
         if (accel <= 0) {
             return;
@@ -812,7 +883,7 @@ export class SwimmerMotor {
         const cycleSpeed = Math.max(0.0001, this.currentActionCycleSpeed());
         const heldScale = Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
         const releaseScale = Math.max(0.0001, MOTION_TUNING.releasedMotionSpeedScale);
-        const center = perfectReleaseCenter();
+        const center = perfectReleaseCenter(this._effectiveReleaseRanges);
         return (CYCLE_AMOUNT * center) / (cycleSpeed * heldScale)
             + (CYCLE_AMOUNT * (1 - center)) / (cycleSpeed * releaseScale);
     }
@@ -880,7 +951,7 @@ export class SwimmerMotor {
     }
 
     private speedRatio(): number {
-        return SWIMMER_BALANCE.maxSpeed > 0 ? clamp01(this._currentSpeed / SWIMMER_BALANCE.maxSpeed) : 0;
+        const ms = this._effectiveMaxSpeed; return ms > 0 ? clamp01(this._currentSpeed / ms) : 0;
     }
 
     // Steering is enabled for both the player and AI; both drive it through the
@@ -954,6 +1025,56 @@ export class SwimmerMotor {
     // to push bodies apart along the swim axis). Clamped to the race bounds.
     nudgeDistance(delta: number) {
         this._distance = Math.max(0, Math.min(getRaceDistance(), this._distance + delta));
+    }
+    get weight(): number {
+        return this._weight;
+    }
+
+    setWeight(weight: number) {
+        this._weight = Math.max(0.1, weight);
+    }
+
+    // Add a decaying collision impulse (distance-rate + lateral-rate, m/s) to the
+    // knockback buffer. Capped so a multi-body pile-up can't explode the slide.
+    applyCollisionImpulse(distRate: number, latRate: number) {
+        if (!SWIMMER_COLLISION.knockbackEnabled) {
+            return;
+        }
+        const cap = SWIMMER_COLLISION.knockbackMaxImpulse;
+        this._knockbackDistance = clamp(this._knockbackDistance + distRate, -cap, cap);
+        this._knockbackLateral = clamp(this._knockbackLateral + latRate, -cap, cap);
+    }
+
+    clearKnockback() {
+        this._knockbackDistance = 0;
+        this._knockbackLateral = 0;
+    }
+
+    // Integrate the decaying knockback into distance/lateralOffset (same channels
+    // nudgeDistance/setLateralOffset use), then exponentially decay the buffer.
+    private integrateKnockback(dt: number, raceDistance: number) {
+        if (this._knockbackDistance === 0 && this._knockbackLateral === 0) {
+            return;
+        }
+        if (this._knockbackDistance !== 0) {
+            this._distance = Math.max(0, Math.min(raceDistance, this._distance + this._knockbackDistance * dt));
+        }
+        if (this._knockbackLateral !== 0) {
+            this._lateralOffset = clamp(
+                this._lateralOffset + this._knockbackLateral * dt,
+                this._lateralOffsetMin,
+                this._lateralOffsetMax,
+            );
+        }
+        const decay = Math.exp(-dt / Math.max(0.01, SWIMMER_COLLISION.knockbackDecaySeconds));
+        this._knockbackDistance *= decay;
+        this._knockbackLateral *= decay;
+        if (Math.abs(this._knockbackDistance) < 0.01) {
+            this._knockbackDistance = 0;
+        }
+        if (Math.abs(this._knockbackLateral) < 0.01) {
+            this._knockbackLateral = 0;
+        }
     }
 
     // Ease the actual heading toward the stroke-set target so a stroke turns the
@@ -1375,7 +1496,7 @@ export class SwimmerMotor {
         if (progress >= clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)) {
             return Rating.BAD;
         }
-        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress));
+        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress, this._effectiveReleaseRanges));
     }
 }
 
@@ -1419,13 +1540,13 @@ function strongerStrokeQuality(a: StrokeQualityResult | null, b: StrokeQualityRe
     return a.strokeQuality >= b.strokeQuality ? a : b;
 }
 
-function strokeQualityFromReleaseProgress(progress: number): number {
+function strokeQualityFromReleaseProgress(progress: number, ranges: ReleaseRanges): number {
     const p = clamp01(progress);
-    const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
+    const perfect = ranges.perfect;
     if (p >= perfect.start && p <= perfect.end) {
         return 1;
     }
-    const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
+    const good = ranges.good;
     if (p < good.start || p > good.end) {
         return 0;
     }
@@ -1441,11 +1562,11 @@ function strokeQualityFromReleaseProgress(progress: number): number {
     return 0.98;
 }
 
-function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolean, holdSeconds: number, minHoldSeconds: number): string {
+function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolean, holdSeconds: number, minHoldSeconds: number, ranges: ReleaseRanges): string {
     if (!holdTimeValid) {
         return `hold_too_short(${holdSeconds.toFixed(2)}<${minHoldSeconds.toFixed(2)})`;
     }
-    if (releaseProgress < perfectReleaseCenter()) {
+    if (releaseProgress < perfectReleaseCenter(ranges)) {
         return `released_early(${(releaseProgress * 100).toFixed(0)}%)`;
     }
     return `released_late(${(releaseProgress * 100).toFixed(0)}%)`;
@@ -1458,9 +1579,8 @@ function normalizedReleaseRange(startValue: number, endValue: number): { start: 
     };
 }
 
-function perfectReleaseCenter(): number {
-    const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
-    return clamp01((perfect.start + perfect.end) * 0.5);
+function perfectReleaseCenter(ranges: ReleaseRanges): number {
+    return clamp01((ranges.perfect.start + ranges.perfect.end) * 0.5);
 }
 
 function ratingForGuideStrokeQuality(strokeQuality: number): Rating {

@@ -7,7 +7,9 @@ export function uiColor(r: number, g: number, b: number, a = 255): Color {
 export function makeUiNode(name: string, parent: Node): Node {
     const node = new Node(name);
     node.setParent(parent);
-    node.layer = Layers.Enum.UI_2D;
+    // Inherit the parent's Cocos layer so UI built under a dedicated layer (e.g.
+    // the popup overlay) lands on that layer automatically; normal UI stays UI_2D.
+    node.layer = parent?.layer ?? Layers.Enum.UI_2D;
     node.addComponent(UITransform);
     return node;
 }
@@ -75,6 +77,58 @@ export function makeButton(name: string, parent: Node, w: number, h: number, fil
     return node;
 }
 
+export function makeRoundedRect(
+    name: string,
+    parent: Node,
+    w: number,
+    h: number,
+    fill: Color,
+    radius = 10,
+    stroke: Color | null = null,
+    strokeWidth = 1.5,
+): Node {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform).setContentSize(w, h);
+    const gfx = node.addComponent(Graphics);
+    gfx.fillColor = fill;
+    gfx.roundRect(-w / 2, -h / 2, w, h, radius);
+    gfx.fill();
+    if (stroke) {
+        gfx.strokeColor = stroke;
+        gfx.lineWidth = strokeWidth;
+        gfx.roundRect(
+            -w / 2 + strokeWidth / 2,
+            -h / 2 + strokeWidth / 2,
+            w - strokeWidth,
+            h - strokeWidth,
+            Math.max(0, radius - strokeWidth / 2),
+        );
+        gfx.stroke();
+    }
+    return node;
+}
+
+export function makeOutlineButton(
+    name: string,
+    parent: Node,
+    w: number,
+    h: number,
+    fill: Color,
+    text: string,
+    stroke: Color,
+    radius = 12,
+): Node {
+    const node = makeRoundedRect(name, parent, w, h, fill, radius, stroke, 2);
+    const button = node.addComponent(Button);
+    button.target = node;
+    button.interactable = true;
+    button.transition = Button.Transition.NONE;
+    if (text) {
+        const labelNode = makeLabel('Label', node, text, 18, uiColor(255, 255, 255, 235));
+        labelNode.getComponent(UITransform).setContentSize(w, h);
+    }
+    return node;
+}
 export function drawLeftFill(gfx: Graphics, w: number, h: number, ratio: number, fill: Color) {
     if (!gfx) {
         return;

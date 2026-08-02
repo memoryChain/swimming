@@ -1,4 +1,4 @@
-﻿// First-version tunable constants for the condition layer (heart-rate + energy).
+// First-version tunable constants for the condition layer (heart-rate + energy).
 // These values are NOT yet design-locked: the docs define the qualitative rules
 // (doc 11.5/11.6/11.7 + 29.x) but leave concrete magnitudes open. The numbers
 // below are the v1 starting point discussed during design and are expected to be
@@ -17,13 +17,14 @@ export const CONDITION_BALANCE = {
         // Total energy pool (absolute, 0..total). Doc 29 / dev-alignment: 100.
         total: 100,
 
-        // Per-stroke energy drain by current heart-rate zone (during PACE).
+        // Per-stroke energy drain by current heart-rate zone (all phases;
+        // SPRINT multiplies this by sprintTierMultiplier).
         // OPTIMAL is the most efficient sustained zone; higher zones cost more.
         drainPerStroke: {
-            [HeartRateZone.LOW]: 0.3,
+            [HeartRateZone.LOW]: 0.5,
             [HeartRateZone.OPTIMAL]: 1.0,
-            [HeartRateZone.HIGH_PRESSURE]: 1.5,
-            [HeartRateZone.OVERLOAD]: 2.5,
+            [HeartRateZone.HIGH_PRESSURE]: 1.3,
+            [HeartRateZone.OVERLOAD]: 1.8,
         } as Record<HeartRateZone, number>,
 
         // Sprint-phase multipliers applied on top of the per-stroke drain.
@@ -33,9 +34,19 @@ export const CONDITION_BALANCE = {
             [SprintTier.GAMBLE]: 2.5,
         } as Record<SprintTier, number>,
 
-        // When energy is empty: quality/efficiency penalties (doc: no loss of control).
-        depletedQualityPenalty: 0.3,
-        depletedEfficiencyPenalty: 0.5,
+        // Energy regeneration by heart-rate zone (energy points per second).
+        // LOW is the strongest recovery zone; higher zones regen less. During SPRINT
+        // the finish is an all-out peak: all zones regen (boosted), so the player
+        // feels energy rising regardless of how hard they push, not just in LOW.
+        regenPerZone: {
+            [HeartRateZone.LOW]: 0.8,
+            [HeartRateZone.OPTIMAL]: 0.5,
+            [HeartRateZone.HIGH_PRESSURE]: 0.3,
+            [HeartRateZone.OVERLOAD]: 0.15,
+        } as Record<HeartRateZone, number>,
+        regenSprintBoost: 1.0,
+        // Energy depletion only affects the efficiency curve below;
+        // the quality axis (heart-rate) is fully orthogonal.
     },
 
     heartRate: {
@@ -59,19 +70,20 @@ export const CONDITION_BALANCE = {
         zoneModifier: {
             [HeartRateZone.LOW]: 0.7,
             [HeartRateZone.OPTIMAL]: 1.25,
-            [HeartRateZone.HIGH_PRESSURE]: 1.0,
-            [HeartRateZone.OVERLOAD]: 0.8,
+            [HeartRateZone.HIGH_PRESSURE]: 1.05,
+            [HeartRateZone.OVERLOAD]: 0.85,
         } as Record<HeartRateZone, number>,
     },
 
     efficiency: {
-        // efficiencyModifier by zone: OPTIMAL is the most cost-effective (doc 11.5).
-        zoneModifier: {
-            [HeartRateZone.LOW]: 0.65,
-            [HeartRateZone.OPTIMAL]: 1.2,
-            [HeartRateZone.HIGH_PRESSURE]: 0.95,
-            [HeartRateZone.OVERLOAD]: 0.78,
-        } as Record<HeartRateZone, number>,
+        // efficiencyModifier is now derived from ENERGY (the muscle-fuel axis),
+        // NOT from heart-rate zone. HR drives quality; energy drives efficiency.
+        // Curve: efficiency = floor + (1 - floor) * (energyRatio ^ exponent).
+        //   energyRatio = energy / total (0..1).
+        // exponent 0.3 gives a slow-start curve: high energy barely affects
+        // efficiency, the last ~10% drops off steeply to the floor.
+        energyFloor: 0.5,   // efficiency at zero energy
+        curveExponent: 0.3, // <1 = slow-start (flat near full, steep near empty)
     },
 };
 

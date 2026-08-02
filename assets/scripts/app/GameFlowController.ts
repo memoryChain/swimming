@@ -49,10 +49,13 @@ export type GameFlowRefs = {
     resolveNetLeaderboard: (leaderboard: RaceFinishResult[], done: (leaderboard: RaceFinishResult[]) => void) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
+    playerDiveSpeedScale: () => number;
+    awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
+        { characterId: string; characterName: string; xpGained: number; previousLevel: number; newLevel: number; leveledUp: boolean; newXp: number; xpForNextLevel: number; previousXp: number; previousXpForNextLevel: number } | null;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
-    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean) => void;
+    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean) => void;
     debug: (message: string) => void;
 };
 
@@ -290,6 +293,9 @@ export class GameFlowController {
         raceManager.onSwimmerFinished = (result) => {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
+            if (result.isPlayer) {
+                this._refs.uiFlow.setSprintActive(false);
+            }
         };
         raceManager.onSwimmerEliminated = (swimmer) => {
             this._refs.debug(`eliminated ${swimmer.swimmerName}`);
@@ -323,6 +329,18 @@ export class GameFlowController {
                     racerCount: placement.racerCount,
                     leaderboard,
                 });
+                // Progression uses the authoritative (net-resolved) placement/time so
+                // the XP reward matches the result the player actually sees.
+                const progressionResult = this._refs.awardProgression({
+                    placement: finalPlacement,
+                    racerCount: placement.racerCount,
+                    maxCombo: rhythm?.maxCombo ?? 0,
+                    perfectCount: rhythm?.perfectCount ?? 0,
+                    goodCount: rhythm?.goodCount ?? 0,
+                    finished: finalPlayerTime > 0,
+                });
+                this._refs.uiFlow.showProgressionResult(progressionResult);
+                this._refs.uiFlow.setSprintActive(false);
                 this._refs.clearFinishRanks();
                 this._refs.showAwards(leaderboard);
                 this._refs.setState(GameState.AWARDS);
@@ -425,6 +443,7 @@ export class GameFlowController {
             this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
                 && !this._refs.raceCameraDirector.topViewActive
                 && !this._refs.raceCameraDirector.underwaterViewActive,
+            this._sprintTriggered,
         );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);
@@ -563,6 +582,10 @@ export class GameFlowController {
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
         const diveResult = resolveDiveResult(power);
+        const diveSpeedScale = this._refs.playerDiveSpeedScale();
+        if (diveSpeedScale !== 1) {
+            diveResult.launchSpeed *= diveSpeedScale;
+        }
         this._refs.applyPlayerDive(diveResult);
         this._refs.raceManager?.startFromDive(diveResult);
     }

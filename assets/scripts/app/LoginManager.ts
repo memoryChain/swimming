@@ -12,6 +12,9 @@ import { netRoom } from '../net/NetManager';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
+import { getProgressionManager } from '../progression/ProgressionManager';
+import { SettingsManager } from './SettingsManager';
+import { openSettingsPanel } from '../ui/SettingsPanel';
 import { AVATARS } from '../backend/IdentityConfig';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
@@ -52,6 +55,7 @@ export class LoginManager extends Component {
 
         this.setupUiCamera(canvasNode, height);
         this.buildLoginScreen(canvasNode, width, height);
+        SettingsManager.apply();
         MusicManager.playLogin();
         // Returning from a room-mode race: re-open the room once the login UI loads.
         // This is a RECONNECT to the still-existing room, not a fresh create/join.
@@ -87,8 +91,9 @@ export class LoginManager extends Component {
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
             onAddSwimCards: () => this.watchAdForSwimCards(),
             onEditIdentity: () => this.openIdentityEdit(),
+            onOpenSettings: () => openSettingsPanel(canvasNode, width, height),
         });
-        void PlayerData.load();
+        void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
     }
 
     // Simple identity editor popup: pick an avatar swatch and reroll the random
@@ -180,7 +185,7 @@ export class LoginManager extends Component {
             return;
         }
         this._loginUiRoot.active = false;
-        this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight, {
+        this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onBack: () => this.exitPrepareRace(),
             onStartRace: () => this.startGame(),
         });

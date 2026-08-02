@@ -58,10 +58,14 @@ import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
 import { NetSnapshotEntry } from '../net/NetRaceSnapshot';
 import { NET_SIM_STEP } from '../net/NetSimClock';
 import { reseedSharedRandom } from './SharedRNG';
+import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
+import { getProgressionManager } from '../progression/ProgressionManager';
+import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
-import { RaceFinishResult, RaceManager } from './RaceManager';import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { RaceFinishResult, RaceManager } from './RaceManager';
+import { GameState, Rating, StrokeType } from './GameConstants';
+import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
@@ -115,6 +119,7 @@ export class GameManager extends Component {
     private _raceManager: RaceManager = null;
     private _playerSwimmer: Swimmer = null;
     private readonly _playerCondition = new PlayerConditionModel();
+    private _playerBalanceOverrides: PlayerBalanceOverrides | null = null;
     private _aiConditions: AiConditionModel[] = [];
     private readonly _raceContext = new RaceContext(this._playerCondition);
     private _aiController: AISwimmerController = null;
@@ -582,6 +587,7 @@ export class GameManager extends Component {
     restartGame() {
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
+        this.applyPlayerProgression();
         this.randomizeAiRosterForRestart();
         this._gameFlow?.restartGame();
     }
@@ -713,8 +719,8 @@ export class GameManager extends Component {
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
-            updateCameraSpeedLines: (dt, speed, visible) => {
-                this._cameraSpeedLines.update(dt, speed, visible);
+            updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
+                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
             },
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
@@ -774,6 +780,14 @@ export class GameManager extends Component {
                 const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);
             },
+            playerDiveSpeedScale: () => this._playerBalanceOverrides
+                ? this._playerBalanceOverrides.diveMaxLaunchSpeed / DIVE_BALANCE.maxLaunchSpeed
+                : 1,
+            awardProgression: (input) => {
+                const progression = getProgressionManager();
+                const characterId = getPlayerCharacterSelection().characterId;
+                return progression.awardRace(characterId, input);
+            },
             applyPlayerDive: (result) => {
                 this._playerCondition.reset();
                 this._playerCondition.setPhase(RacePhase.START);
@@ -799,6 +813,7 @@ export class GameManager extends Component {
                     aiCondition.setPhase(RacePhase.SPRINT);
                 }
                 this._raceContext.setPhase(RacePhase.SPRINT);
+                this._uiFlow?.setSprintActive(true);
             },
             updateSprintTier: (tier) => {
                 this._playerCondition.updateSprintState({ sprintTier: tier });
@@ -1060,6 +1075,25 @@ export class GameManager extends Component {
         this.applySplashParticlesEnabled();
         this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
+        this.applyPlayerProgression();
+    }
+
+    private applyPlayerProgression() {
+        const progression = getProgressionManager();
+        const characterId = getPlayerCharacterSelection().characterId;
+        const level = progression.getCharacterLevel(characterId);
+        const overrides = progression.resolveBalance(characterId);
+        this._playerBalanceOverrides = overrides;
+        if (overrides && this._playerSwimmer) {
+            this._playerSwimmer.motor.setPlayerBalance(overrides);
+        }
+        if (overrides) {
+            this._playerCondition.setProgressionOverrides({
+                energyTotal: overrides.energyTotal,
+            });
+            this._uiFlow?.setEnergyTotal(overrides.energyTotal);
+        }
+        this.debug('progression character=' + characterId + ' level=' + level);
     }
 
     private assignRaceLanes() {
@@ -1881,11 +1915,15 @@ export class GameManager extends Component {
         if (phase === RacePhase.PACE && this._playerCondition.phase !== RacePhase.START) {
             return;
         }
+        const wasSprint = this._playerCondition.phase === RacePhase.SPRINT;
         this._playerCondition.setPhase(phase);
         for (const aiCondition of this._aiConditions) {
             aiCondition.setPhase(phase);
         }
         this._raceContext.setPhase(phase);
+        if (wasSprint && phase !== RacePhase.SPRINT) {
+            this._uiFlow?.setSprintActive(false);
+        }
     }
 
     private phaseForState(state: GameState): RacePhase | null {

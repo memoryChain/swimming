@@ -24,6 +24,7 @@ export class MusicManager {
     private static _source: AudioSource | null = null;
     private static _track: MusicTrack | null = null;
     private static _requestId = 0;
+    private static _volumeScale = 1;
 
     static playLogin() {
         this.play('login');
@@ -37,7 +38,40 @@ export class MusicManager {
         this.play('result');
     }
 
+    // User volume scale (0..1) applied on top of each track's base volume. At
+    // zero the source stops outright; raising from zero resumes the track.
+    static setVolume(scale: number) {
+        const clamped = Math.max(0, Math.min(1, scale));
+        const wasMuted = this._volumeScale <= 0;
+        this._volumeScale = clamped;
+        const source = this._source;
+        if (source?.isValid && source.clip && this._track) {
+            source.volume = TRACKS[this._track].volume * clamped;
+        }
+        if (clamped <= 0) {
+            source?.stop();
+            return;
+        }
+        if (!wasMuted || !this._track) {
+            return;
+        }
+        const resumed = this.ensureSource();
+        if (resumed && resumed.clip) {
+            resumed.volume = TRACKS[this._track].volume * clamped;
+            resumed.play();
+            return;
+        }
+        const track = this._track;
+        this._track = null;
+        this.play(track);
+    }
+
     private static play(track: MusicTrack) {
+        if (this._volumeScale <= 0) {
+            // Remember the requested track so raising the volume resumes it later.
+            this._track = track;
+            return;
+        }
         const source = this.ensureSource();
         if (!source) {
             return;
@@ -55,7 +89,7 @@ export class MusicManager {
         source.stop();
         source.clip = null;
         source.loop = config.loop;
-        source.volume = config.volume;
+        source.volume = config.volume * this._volumeScale;
 
         const loadClip = () => {
             const bundle = assetManager.getBundle(RESOURCE_PATHS.music.bundle);
@@ -72,7 +106,7 @@ export class MusicManager {
                 }
                 source.clip = clip;
                 source.loop = config.loop;
-                source.volume = config.volume;
+                source.volume = config.volume * this._volumeScale;
                 source.play();
             });
         };

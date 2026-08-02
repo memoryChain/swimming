@@ -101,6 +101,17 @@ export class Swimmer extends Component {
         this.node.setPosition(x, pos.y, this._startPosition.z + this._motor.lateralOffset);
     }
 
+    // Add a decaying knockback impulse (distance-rate + lateral-rate, m/s) from a
+    // swimmer-vs-swimmer collision. The motor integrates and decays it over the
+    // next few frames so a bump reads as a slide, not a one-frame nudge.
+    applyCollisionImpulse(distRate: number, latRate: number) {
+        this._motor.applyCollisionImpulse(distRate, latRate);
+    }
+    // Body weight for collision knockback (player from character def, AI from
+    // competitor profile; default 1). Heavy bodies resist being shoved.
+    get weight(): number {
+        return this._motor.weight;
+    }
     // Flash the body red for a moment when bumping into another swimmer.
     flashCollision() {
         this.cartoonRig?.flashCollision();

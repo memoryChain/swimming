@@ -2,6 +2,19 @@ import { Node } from 'cc';
 import { Rating } from '../core/GameConstants';
 import { RaceResultStats, UIController } from './UIController';
 
+export type ProgressionResult = {
+    characterId: string;
+    characterName: string;
+    xpGained: number;
+    previousLevel: number;
+    newLevel: number;
+    leveledUp: boolean;
+    newXp: number;
+    xpForNextLevel: number;
+    previousXp: number;
+    previousXpForNextLevel: number;
+} | null;
+
 export type UIFlowRefs = {
     raceHud: Node | null;
     modelDebugHud: Node | null;
@@ -44,8 +57,16 @@ export class UIFlowController {
         this._refs.uiController?.updateEnergyBar(energy, depleted);
     }
 
+    setSprintActive(active: boolean) {
+        this._refs.uiController?.setSprintActive(active);
+    }
+
     setEnergyBarVisible(visible: boolean) {
         this._refs.uiController?.setEnergyBarVisible(visible);
+    }
+
+    setEnergyTotal(total: number) {
+        this._refs.uiController?.setEnergyTotal(total);
     }
 
     updateProgress(playerDistance: number, aiDistance: number) {
@@ -94,6 +115,10 @@ export class UIFlowController {
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
         this._refs.uiController?.showResult(isWin, playerTime, aiTime, stats);
+    }
+
+    showProgressionResult(result: ProgressionResult) {
+        this._refs.uiController?.showProgressionResult(result);
     }
 }
 

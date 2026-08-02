@@ -34,6 +34,23 @@ export const SWIMMER_COLLISION = {
     // PLAYER still resolves fully on both axes (the impassable "hold your line"
     // racing feel that actually matters to the player).
     aiVsAiLateralOnly: true as boolean,
+    // --- Decaying knockback impulse (layered on top of the separation above) ---
+    // Master switch for the knockback slide. The instantaneous separation always
+    // runs; this only gates the extra decaying impulse.
+    knockbackEnabled: true as boolean,
+    // Impulse (m/s) added per metre of overlap depth. Deeper overlaps hit harder.
+    knockbackDepthFactor: 6.0,
+    // Impulse (m/s) added per m/s of closing speed along the collision normal.
+    // Head-on pairs close fast and hit much harder than same-direction brushes.
+    knockbackSpeedFactor: 0.8,
+    // Hard cap on a single swimmer's knockback velocity (m/s); also caps the
+    // accumulated buffer so a multi-body pile-up can't explode the slide.
+    knockbackMaxImpulse: 4.0,
+    // Exponential decay time constant (seconds). Higher = longer slide.
+    knockbackDecaySeconds: 0.5,
+    // Knockback magnitude (m/s) above which the body flashes red on impact. Kept
+    // high so only hard hits (head-on / fast closing) flash; light brushes don't.
+    knockbackFlashThreshold: 0.9,
 };
 
 // Reused module-scope buffers keep this allocation-free each frame.
@@ -43,6 +60,12 @@ const _origX: number[] = [];
 const _origZ: number[] = [];
 const _posX: number[] = [];
 const _posZ: number[] = [];
+const _weight: number[] = [];
+const _velX: number[] = [];
+const _velZ: number[] = [];
+const _dir: number[] = [];
+const _impDist: number[] = [];
+const _impLat: number[] = [];
 
 // Fully separate overlapping swimmers so no two bodies interpenetrate. Call once
 // per frame after the swimmers have updated their own positions.
@@ -64,10 +87,23 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     }
 
     for (let i = 0; i < count; i++) {
-        const pos = _active[i].node.position;
+        const s = _active[i];
+        const pos = s.node.position;
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
-        _isAi[i] = _active[i].isAI;
+        _isAi[i] = s.isAI;
+        _weight[i] = s.weight;
+        _dir[i] = s.raceDirection;
+        // World-space velocity (m/s): the swim-axis component is signed by the lap
+        // direction (distanceToWorldX slope magnitude is 1), the lateral component
+        // is the sideways drift. Used only to scale knockback by closing speed.
+        const speed = s.currentSpeed;
+        const cosH = Math.max(0, Math.cos(s.movementHeading));
+        const sinH = Math.sin(s.movementHeading);
+        _velX[i] = _dir[i] * speed * cosH;
+        _velZ[i] = speed * sinH;
+        _impDist[i] = 0;
+        _impLat[i] = 0;
     }
 
     const minDist = SWIMMER_COLLISION.radius * 2;
@@ -105,13 +141,18 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     nx = dx / dist;
                     nz = dz / dist;
                 }
-                const half = (minDist - dist) * 0.5;
+                const wi = _weight[i];
+                const wj = _weight[j];
+                const totalW = wi + wj;
+                const overlap = minDist - dist;
+                const sepI = totalW > 0 ? overlap * (wj / totalW) : overlap * 0.5;
+                const sepJ = totalW > 0 ? overlap * (wi / totalW) : overlap * 0.5;
                 if (!lateralOnly) {
-                    _posX[i] += nx * half;
-                    _posX[j] -= nx * half;
+                    _posX[i] += nx * sepI;
+                    _posX[j] -= nx * sepJ;
                 }
-                _posZ[i] += nz * half;
-                _posZ[j] -= nz * half;
+                _posZ[i] += nz * sepI;
+                _posZ[j] -= nz * sepJ;
             }
         }
         if (!anyOverlap) {
@@ -119,14 +160,79 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         }
     }
 
-    // Apply the net displacement once (X -> distance, Z -> lateral offset).
-    // Collision feedback intentionally stays motion-only; flashing the full
-    // character material made close racing harder to read.
+    // Single knockback pass (once per pair, NOT per separation iteration):
+    // impulse magnitude from overlap depth + closing speed, split by inverse
+    // weight. Lateral impulse always; distance impulse only for head-on pairs
+    // that are still closing (both lose progress, never free distance).
+    if (SWIMMER_COLLISION.knockbackEnabled) {
+        for (let i = 0; i < count; i++) {
+            for (let j = i + 1; j < count; j++) {
+                const dx = _origX[i] - _origX[j];
+                const dz = _origZ[i] - _origZ[j];
+                const distSq = dx * dx + dz * dz;
+                if (distSq >= minDistSq) {
+                    continue;
+                }
+                const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
+                let nx: number;
+                let nz: number;
+                let dist: number;
+                if (distSq < 1e-8) {
+                    nx = 0;
+                    nz = 1;
+                    dist = 0;
+                } else {
+                    dist = Math.sqrt(distSq);
+                    nx = dx / dist;
+                    nz = dz / dist;
+                }
+                // Closing speed along the normal (n points from j to i); positive
+                // while the pair is still approaching, zero/negative once separating.
+                const closing = (_velX[j] - _velX[i]) * nx + (_velZ[j] - _velZ[i]) * nz;
+                const impact = closing > 0 ? closing : 0;
+                const depth = minDist - dist;
+                let mag = depth * SWIMMER_COLLISION.knockbackDepthFactor
+                    + impact * SWIMMER_COLLISION.knockbackSpeedFactor;
+                if (mag > SWIMMER_COLLISION.knockbackMaxImpulse) {
+                    mag = SWIMMER_COLLISION.knockbackMaxImpulse;
+                }
+                if (mag <= 0) {
+                    continue;
+                }
+                const wi = _weight[i];
+                const wj = _weight[j];
+                const totalW = wi + wj;
+                const impI = totalW > 0 ? mag * (wj / totalW) : mag * 0.5;
+                const impJ = totalW > 0 ? mag * (wi / totalW) : mag * 0.5;
+                // Lateral shove: always applied, for the readable knocked-apart feel.
+                _impLat[i] += nz * impI;
+                _impLat[j] -= nz * impJ;
+                // Distance shove: only head-on (opposite lap directions) and only
+                // while still approaching. Head-on geometry pushes each swimmer
+                // backward vs its own travel, so both lose a little progress.
+                const headOn = _dir[i] * _dir[j] < 0;
+                if (!lateralOnly && headOn && impact > 0) {
+                    _impDist[i] += nx * impI * _dir[i];
+                    _impDist[j] -= nx * impJ * _dir[j];
+                }
+            }
+        }
+    }
+    // Apply the net separation displacement once (X -> distance, Z -> lateral),
+    // then the accumulated knockback impulse. Flash red only on hard hits.
     for (let i = 0; i < count; i++) {
         const dX = _posX[i] - _origX[i];
         const dZ = _posZ[i] - _origZ[i];
         if (dX !== 0 || dZ !== 0) {
             _active[i].applyCollisionPush(dX, dZ);
+        }
+        const iD = _impDist[i];
+        const iL = _impLat[i];
+        if (iD !== 0 || iL !== 0) {
+            _active[i].applyCollisionImpulse(iD, iL);
+            if (Math.hypot(iD, iL) >= SWIMMER_COLLISION.knockbackFlashThreshold) {
+                _active[i].flashCollision();
+            }
         }
     }
 }

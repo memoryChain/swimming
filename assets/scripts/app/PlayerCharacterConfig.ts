@@ -10,6 +10,9 @@ export type PlayerCharacterDefinition = {
     stamina: number;
     technique: number;
     burst: number;
+    // Body weight for swimmer-vs-swimmer collision knockback (default ~1). Heavy
+    // bodies barely move when bumped; light bodies get knocked further.
+    weight: number;
     description: string;
     skillName: string;
     skillDescription: string;
@@ -40,24 +43,28 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
         stamina: 88, technique: 70, burst: 82,
+        weight: 1.2,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
     {
         id: 'women2', name: '灵波飞鱼', modelVariantId: 'women2', unlocked: true,
         stamina: 82, technique: 91, burst: 76,
+        weight: 0.85,
         description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
         skillName: '水感节奏', skillDescription: '精准把握节奏时，更容易维持稳定的连续推进。',
     },
     {
         id: 'lowPolyHuman2', name: '破浪新星', modelVariantId: 'lowPolyHuman2', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
         description: '均衡型游泳选手，动作灵活，能稳定应对不同比赛节奏。',
         skillName: '流线节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
     },
     {
         id: 'diver', name: '深海潜将', modelVariantId: 'diver', unlocked: true,
         stamina: 92, technique: 78, burst: 74,
+        weight: 1.15,
         description: '装备齐全的潜水选手，身体稳定，擅长保持持续而扎实的推进。',
         skillName: '深潜耐力', skillDescription: '厚重装备带来更强的稳定性与持续输出。',
         supportsSkinTone: false,
@@ -109,6 +116,17 @@ export function cyclePlayerColorScheme() {
     const index = PLAYER_COLOR_SCHEMES.findIndex((scheme) => scheme.id === selection.colorSchemeId);
     const nextIndex = index < 0 ? 0 : (index + 1) % PLAYER_COLOR_SCHEMES.length;
     selection = { ...selection, colorSchemeId: PLAYER_COLOR_SCHEMES[nextIndex].id };
+}
+
+export function setPlayerSkinTone(id: PlayerSkinTone['id']) {
+    if (!selectedPlayerCharacterSupportsSkinTone()) return;
+    if (!PLAYER_SKIN_TONES.some((tone) => tone.id === id)) return;
+    selection = { ...selection, skinToneId: id };
+}
+
+export function setPlayerColorScheme(id: string) {
+    if (!PLAYER_COLOR_SCHEMES.some((scheme) => scheme.id === id)) return;
+    selection = { ...selection, colorSchemeId: id };
 }
 
 export function findPlayerCharacter(id = selection.characterId): PlayerCharacterDefinition | null {

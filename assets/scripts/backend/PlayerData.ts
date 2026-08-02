@@ -1,4 +1,4 @@
-// PlayerData — the single in-memory entry point for 养成 data. UI reads PlayerData.
+// PlayerData - the single in-memory entry point for 养成 data. UI reads PlayerData.
 // swimCards and subscribes to onChange() to refresh; gameplay calls its methods to
 // mutate. It delegates persistence to the active backend (mock now, WeChat Cloud
 // later) and notifies listeners whenever the profile changes.
@@ -37,7 +37,7 @@ class PlayerDataStore {
     }
 
     // Load the profile from the backend (idempotent: concurrent callers share one
-    // request). Never rejects — keeps defaults on failure so the UI still works.
+    // request). Never rejects - keeps defaults on failure so the UI still works.
     load(): Promise<PlayerProfile> {
         if (this._loaded) {
             return Promise.resolve(this._profile);
@@ -81,6 +81,15 @@ class PlayerDataStore {
     async rerollNickName(): Promise<void> {
         this._profile = await backend().saveIdentity({ nickName: generateRandomNickName() });
         this._emit();
+    }
+
+    // Persist the current in-memory profile (phase-2 progression writes). Delegates
+    // to the backend and notifies listeners with the authoritative result. Safe to
+    // call after mutating this.profile in place (e.g. progression XP/level updates).
+    async persist(): Promise<PlayerProfile> {
+        this._profile = await backend().saveProfile(this._profile);
+        this._emit();
+        return this._profile;
     }
 
     onChange(listener: ChangeListener): void {

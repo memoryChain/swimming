@@ -11,6 +11,10 @@ import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone 
 const { ccclass } = _decorator;
 const PREVIEW_CHARACTER_SCALE = 1.3;
 const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
+// Small lift of the showcase model so the central preview reads slightly higher
+// on the prepare-race screen. Paired with PREPARE_RACE_MODEL_LIFT (px) in
+// PrepareRaceFlow, which moves the floor shadow and rotate surface the same way.
+const PREVIEW_CHARACTER_LIFT = 0.2;
 const SHADOW_SILHOUETTE_LAYER = 1 << 22;
 const SHADOW_TEXTURE_SIZE = 192;
 const CHARACTER_SELECT_ACTIONS: readonly CharacterAction[] = [
@@ -131,7 +135,7 @@ export class PrepareRaceCharacterPreview extends Component {
             // The camera looks at world origin. Move the authored armature pivot to
             // that point (rather than preserving its imported X/Z offset) so the
             // selected character is visually centred in the prepare-race screen.
-            this._pivotNode.setPosition(0, PREVIEW_CHARACTER_Y_OFFSET, 0);
+            this._pivotNode.setPosition(0, PREVIEW_CHARACTER_Y_OFFSET + PREVIEW_CHARACTER_LIFT, 0);
             this._swimmerNode.setPosition(-this._modelPivot.x, 0, -this._modelPivot.z);
             this._pivotNode.setRotationFromEuler(0, this._yawDegrees, 0);
             this._centered = true;

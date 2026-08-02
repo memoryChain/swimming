@@ -1,4 +1,4 @@
-﻿import { Rating, StrokeType } from './GameConstants';
+import { Rating, StrokeType } from './GameConstants';
 
 export interface RhythmResult {
     rating: Rating;
@@ -19,7 +19,6 @@ export interface RhythmResult {
     meanRatio?: number;
     ratioStdDev?: number;
     sampleCount?: number;
-    comboSpeedBonus?: number;
 }
 
 export interface RhythmStats {

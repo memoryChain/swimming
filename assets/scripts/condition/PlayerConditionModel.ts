@@ -1,4 +1,4 @@
-﻿// PlayerConditionModel: the player heart-rate + energy state layer (doc 23/27).
+// PlayerConditionModel: the player heart-rate + energy state layer (doc 23/27).
 // Pure data object, no Cocos types. Driven by the flow/game layer, never holds
 // a back-reference to Swimmer. Inputs arrive via updateFromStroke (event-driven)
 // and tick (per-frame drift); outputs are read through the getters.
@@ -29,6 +29,7 @@ export class PlayerConditionModel {
     private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
+    private _energyTotalOverride: number | null = null;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
@@ -42,7 +43,7 @@ export class PlayerConditionModel {
         this._phase = RacePhase.START;
         this._heartRate = HEART_RATE_BOUNDS.min;
         this._heartRateZone = HeartRateZone.LOW;
-        this._energy = CONDITION_BALANCE.energy.total;
+        this._energy = this._effectiveEnergyTotal;
         this._energyDepleted = false;
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
@@ -53,6 +54,14 @@ export class PlayerConditionModel {
         this._strokesSinceDive = 0;
         this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
+    }
+
+    setProgressionOverrides(opts: { energyTotal?: number } | null) {
+        this._energyTotalOverride = opts?.energyTotal ?? null;
+    }
+
+    private get _effectiveEnergyTotal(): number {
+        return this._energyTotalOverride ?? CONDITION_BALANCE.energy.total;
     }
 
     setPhase(phase: RacePhase) {
@@ -129,6 +138,10 @@ export class PlayerConditionModel {
         this._heartRate = clamp(this._heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
 
         this._heartRateZone = zoneForHeartRate(this._heartRate);
+
+        // Energy regeneration: all heart-rate zones regen (LOW strongest).
+        // SPRINT boosts all zones so the finish is an all-out peak, not a crawl.
+        this.regenEnergy(dt);
         this.refreshModifiers();
     }
 
@@ -143,21 +156,33 @@ export class PlayerConditionModel {
         if (this._phase === RacePhase.SPRINT) {
             drain *= energyCfg.sprintTierMultiplier[this._sprintTier];
         }
-        this._energy = clamp(this._energy - drain, 0, energyCfg.total);
+        this._energy = clamp(this._energy - drain, 0, this._effectiveEnergyTotal);
         this._energyDepleted = this._energy <= 0;
     }
 
     private refreshModifiers() {
-        let quality = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
-        let efficiency = CONDITION_BALANCE.efficiency.zoneModifier[this._heartRateZone];
-        // The final sprint is an all-out push: energy may remain visibly empty,
-        // but its quality/efficiency debuffs no longer limit the swimmer.
-        if (this._energyDepleted && this._phase !== RacePhase.SPRINT) {
-            quality -= CONDITION_BALANCE.energy.depletedQualityPenalty;
-            efficiency -= CONDITION_BALANCE.energy.depletedEfficiencyPenalty;
+        // Quality axis: driven ONLY by heart-rate zone (hand stability).
+        // Energy depletion does NOT affect quality - the two axes are orthogonal.
+        this._qualityModifier = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
+
+        // Efficiency axis: driven by ENERGY (muscle fuel), not heart rate.
+        // Slow-start curve: efficiency = floor + (1-floor) * ratio^exponent.
+        const eff = CONDITION_BALANCE.efficiency;
+        const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
+        this._efficiencyModifier = eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
+    }
+
+    // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
+    private regenEnergy(dt: number) {
+        const energyCfg = CONDITION_BALANCE.energy;
+        // All zones regen, but LOW regenerates the most. SPRINT boosts all zones
+        // so the finish feels like an all-out peak regardless of how hard you push.
+        let rate = energyCfg.regenPerZone[this._heartRateZone];
+        if (this._phase === RacePhase.SPRINT) {
+            rate += energyCfg.regenSprintBoost;
         }
-        this._qualityModifier = Math.max(0, quality);
-        this._efficiencyModifier = Math.max(0, efficiency);
+        this._energy = clamp(this._energy + rate * dt, 0, this._effectiveEnergyTotal);
+        this._energyDepleted = this._energy <= 0;
     }
 
     // --- Query getters (doc 27.4) ---
