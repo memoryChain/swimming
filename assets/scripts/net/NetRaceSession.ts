@@ -11,6 +11,11 @@ export interface NetRaceMember {
     // WeChat seat index (posNum). Stable per member for the room's lifetime; used to
     // map members to lanes deterministically and to route each member's input.
     pos: number;
+    // Opaque race-modifier blob (养成 profile) carried in the roster extInfo and decoded
+    // by the game layer via NetRaceModifierCodec. Empty when the member published none
+    // (old client / neutral). Kept as a raw string so this handshake stays codec-
+    // agnostic and any future 养成 field flows through without touching this type.
+    modifiersBlob?: string;
 }
 
 export interface NetRaceSessionData {

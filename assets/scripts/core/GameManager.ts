@@ -61,6 +61,8 @@ import { reseedSharedRandom } from './SharedRNG';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
+import { applyRaceModifiersToMotor, resolveLocalRaceModifiers } from '../progression/RaceModifiers';
+import { decodeRaceModifiers } from '../net/NetRaceModifierCodec';
 import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
@@ -545,11 +547,12 @@ export class GameManager extends Component {
                 }
             }
         }
-        // Net races split collisions 50/50 (uniform weight): body weight is local save
-        // data (progression / competitor profile) that isn't in the shared roster, so a
-        // weighted split would compute differently per client and drift the outcome-
-        // affecting distance/lateral it writes. Single-player keeps weighted shoves.
-        resolveSwimmerCollisions(this._collisionSwimmers, !!this._netSession);
+        // Net races run weighted collisions like single-player: every swimmer's body
+        // weight is now consistent across clients (AI from the shared roster; humans from
+        // the 养成 profile synced in the net roster and applied in wireRemoteSwimmers), so
+        // the weighted knockback split resolves the same everywhere. Residual float
+        // divergence is absorbed by the owner/host position authority.
+        resolveSwimmerCollisions(this._collisionSwimmers);
     }
 
     private toggleSplashCulling() {
@@ -1083,13 +1086,16 @@ export class GameManager extends Component {
     }
 
     private applyPlayerProgression() {
-        const progression = getProgressionManager();
         const characterId = getPlayerCharacterSelection().characterId;
-        const level = progression.getCharacterLevel(characterId);
-        const overrides = progression.resolveBalance(characterId);
+        const level = getProgressionManager().getCharacterLevel(characterId);
+        // Resolve + apply through the shared seam so the local player uses EXACTLY what it
+        // publishes to peers (and what peers apply to its remote copy) — same code path a
+        // remote human takes in wireRemoteSwimmers.
+        const modifiers = resolveLocalRaceModifiers();
+        const overrides = modifiers.balance;
         this._playerBalanceOverrides = overrides;
-        if (overrides && this._playerSwimmer) {
-            this._playerSwimmer.motor.setPlayerBalance(overrides);
+        if (this._playerSwimmer) {
+            applyRaceModifiersToMotor(this._playerSwimmer.motor, modifiers);
         }
         if (overrides) {
             this._playerCondition.setProgressionOverrides({
@@ -1224,6 +1230,10 @@ export class GameManager extends Component {
             if (identity?.nickName) {
                 swimmer.swimmerName = identity.nickName;
             }
+            // Apply this remote human's 养成 profile (synced in the roster) to their local
+            // motor, so their predicted sim + weight-based collision match how their own
+            // client races them — the same seam the local player uses (applyPlayerProgression).
+            applyRaceModifiersToMotor(swimmer.motor, decodeRaceModifiers(identity?.modifiersBlob));
             // Match this remote human's look to what its own client renders (derived
             // from the shared avatarId) so appearances are identical everywhere.
             if (identity?.avatarId) {

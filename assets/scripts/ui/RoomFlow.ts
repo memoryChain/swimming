@@ -18,6 +18,8 @@ import { NetRoomInfo } from '../net/INetRoom';
 import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
 import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
+import { resolveLocalRaceModifiers } from '../progression/RaceModifiers';
+import { encodeRaceModifiers, PROFILE_MARK } from '../net/NetRaceModifierCodec';
 
 export type RoomFlowCallbacks = {
     onExit: () => void;
@@ -37,6 +39,9 @@ type SlotMember = {
     ready: boolean;
     owner: boolean;
     pos: number;
+    // Opaque 养成 modifier blob (see NetRaceModifierCodec) carried in this member's
+    // roster extInfo. Passed through untouched to NetRaceMember at race start.
+    modifiersBlob: string;
 };
 
 export class RoomFlow {
@@ -164,7 +169,7 @@ export class RoomFlow {
                 onBroadcast: (msg) => this.handleBroadcast(msg),
                 onGameStart: () => this.onNetGameStart(),
             });
-            const extInfo = encodeIdentity(self.avatarId, self.nickName);
+            const extInfo = encodeIdentity(self.avatarId, self.nickName, self.modifiersBlob);
             if (this._reconnect) {
                 // Returning after a race: the WeChat room still exists and we are still
                 // a member — do NOT create/join a new one (that would fork the room, so
@@ -249,7 +254,19 @@ export class RoomFlow {
             ready: this._localReady,
             owner: this._isHost,
             pos: this._localPos,
+            modifiersBlob: this.selfModifiersBlob(),
         };
+    }
+
+    // The local player's own 养成 profile, encoded for the roster. Resolved from the
+    // same save single-player uses, so peers apply to our swimmer exactly what we do.
+    private selfModifiersBlob(): string {
+        try {
+            return encodeRaceModifiers(resolveLocalRaceModifiers());
+        } catch (error) {
+            console.warn('[Room] resolve modifiers failed', error);
+            return '';
+        }
     }
 
     private membersFromInfo(info: NetRoomInfo): SlotMember[] {
@@ -274,6 +291,7 @@ export class RoomFlow {
                 ready: m.ready === true,
                 owner: m.owner === true,
                 pos: typeof m.pos === 'number' ? m.pos : -1,
+                modifiersBlob: parsed.modifiersBlob,
             };
         });
         // Identify our own slot. Prefer the seat index (posNum) when we know it — two
@@ -679,6 +697,7 @@ export class RoomFlow {
             nickName: m.nickName,
             self: m.self,
             pos: typeof m.pos === 'number' ? m.pos : -1,
+            modifiersBlob: m.modifiersBlob,
         }));
         setNetRaceSession({
             seed: (this._pendingSeed >>> 0) || SeededRandom.entropySeed(),
@@ -723,17 +742,31 @@ export class RoomFlow {
     }
 }
 
-function encodeIdentity(avatarId: string, nickName: string): string {
-    return `${avatarId}${IDENTITY_SEP}${nickName}`;
+function encodeIdentity(avatarId: string, nickName: string, modifiersBlob: string): string {
+    // avatarId|nickName[|M!...]. The 养成 profile blob (if any) is appended LAST with its
+    // own PROFILE_MARK sentinel, so parseIdentity can peel it back off from the right even
+    // though a nickName in the middle may itself contain the '|' separator.
+    const base = `${avatarId}${IDENTITY_SEP}${nickName}`;
+    return modifiersBlob ? `${base}${IDENTITY_SEP}${modifiersBlob}` : base;
 }
 
-function parseIdentity(extInfo: string | undefined): { avatarId: string; nickName: string } {
+function parseIdentity(extInfo: string | undefined): { avatarId: string; nickName: string; modifiersBlob: string } {
     if (!extInfo) {
-        return { avatarId: 'aqua', nickName: '玩家' };
+        return { avatarId: 'aqua', nickName: '玩家', modifiersBlob: '' };
     }
     const sep = extInfo.indexOf(IDENTITY_SEP);
     if (sep < 0) {
-        return { avatarId: 'aqua', nickName: extInfo };
+        return { avatarId: 'aqua', nickName: extInfo, modifiersBlob: '' };
     }
-    return { avatarId: extInfo.slice(0, sep) || 'aqua', nickName: extInfo.slice(sep + 1) || '玩家' };
+    const avatarId = extInfo.slice(0, sep) || 'aqua';
+    let rest = extInfo.slice(sep + 1);
+    // Peel a trailing profile blob (|M!...) off the RIGHT. An old client sends no blob, so
+    // the marker is simply absent and the whole remainder is the nickName.
+    let modifiersBlob = '';
+    const markIdx = rest.lastIndexOf(IDENTITY_SEP + PROFILE_MARK);
+    if (markIdx >= 0) {
+        modifiersBlob = rest.slice(markIdx + IDENTITY_SEP.length);
+        rest = rest.slice(0, markIdx);
+    }
+    return { avatarId, nickName: rest || '玩家', modifiersBlob };
 }
