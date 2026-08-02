@@ -46,4 +46,25 @@ export class AIRaceObserver {
         }
         return ahead + 1;
     }
+
+    // Whether another swimmer sits just ahead of `swimmer` — within `aheadGap`
+    // metres along the course AND `lateralGap` metres across (world Z). Used by the
+    // expert AI to decide to dolphin-jump OVER a body it is about to overtake.
+    hasSwimmerCloseAhead(swimmer: Swimmer, aheadGap: number, lateralGap: number): boolean {
+        if (!swimmer) {
+            return false;
+        }
+        const distance = swimmer.distance;
+        const z = swimmer.node.position.z;
+        for (const other of this._racers) {
+            if (!other || other === swimmer || !other.node.active) {
+                continue;
+            }
+            const ahead = other.distance - distance;
+            if (ahead > 0 && ahead <= aheadGap && Math.abs(other.node.position.z - z) <= lateralGap) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

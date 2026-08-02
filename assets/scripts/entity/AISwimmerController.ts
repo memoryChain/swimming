@@ -1,8 +1,8 @@
 import { _decorator, Component } from 'cc';
-import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceDifficultyConfig } from '../core/GameBalance';
+import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceDifficultyConfig, getRaceDistance } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
-import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
+import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AI_DOLPHIN_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
@@ -66,6 +66,13 @@ export class AISwimmerController extends Component {
     private _laneLockdownWarning = false;
     private _laneLockdownAware = false;
 
+    // Dolphin-jump (海豚跃) state. Cooldown gates re-triggers; the decision timer
+    // throttles how often the trigger is re-rolled; the air-tap timer paces the
+    // comedic mid-air spin.
+    private _dolphinCooldown = 0;
+    private _dolphinDecisionTimer = 0;
+    private _dolphinAirTapTimer = 0;
+
     setLaneLockdownSafeZRange(minZ: number | null, maxZ: number | null, warning: boolean) {
         if (!Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
             this._laneLockdownSafeMinZ = null;
@@ -100,6 +107,9 @@ export class AISwimmerController extends Component {
         this._nextSide = StrokeType.LEFT;
         this._holdElapsed = 0;
         this._effortModifier = 0;
+        this._dolphinCooldown = 0;
+        this._dolphinDecisionTimer = 0;
+        this._dolphinAirTapTimer = 0;
         this._timer = randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
     }
 
@@ -125,7 +135,22 @@ export class AISwimmerController extends Component {
         if (!this._active || !this.swimmer || !this.swimmer.isRacing) {
             return;
         }
+        if (this._dolphinCooldown > 0) {
+            this._dolphinCooldown -= sdt;
+        }
+        // While a dolphin jump is in the air, suspend normal strokes and only run
+        // the comedic random mid-air spin.
+        if (this.swimmer.isDolphinJumpActive) {
+            this.updateDolphinAirComedy(sdt);
+            return;
+        }
         this.updateEffortModifier(sdt);
+        this.maybeTriggerDolphinJump(sdt);
+        // A jump started this step: skip the normal stroke logic (the scripted
+        // phase owns the body now).
+        if (this.swimmer.isDolphinJumpActive) {
+            return;
+        }
         if (this._phase === 'gap') {
             this._timer -= sdt;
             if (this._timer <= 0) {
@@ -134,6 +159,79 @@ export class AISwimmerController extends Component {
             return;
         }
         this.updateStroke(sdt);
+    }
+
+    // Decide whether to launch a dolphin jump this step. The trigger is
+    // outcome-affecting, so it is drawn from the deterministic SharedRNG stream
+    // (host correction absorbs residual drift). Every eligible AI draws once per
+    // decision window so the shared stream consumption stays uniform.
+    private maybeTriggerDolphinJump(sdt: number) {
+        if (!AI_DOLPHIN_TUNING.enabled || this._dolphinCooldown > 0) {
+            return;
+        }
+        // Only from surface racing (tryDolphinJump also guards near walls/finish).
+        if (this.swimmer.isUnderwater) {
+            return;
+        }
+        this._dolphinDecisionTimer -= sdt;
+        if (this._dolphinDecisionTimer > 0) {
+            return;
+        }
+        this._dolphinDecisionTimer = AI_DOLPHIN_TUNING.decisionIntervalSeconds;
+        const chance = this.dolphinJumpChance();
+        if (randomFloat() >= chance) {
+            return;
+        }
+        if (this.swimmer.tryDolphinJump()) {
+            this._dolphinCooldown = AI_DOLPHIN_TUNING.cooldownSeconds;
+            this._dolphinAirTapTimer = 0;
+            // Cleanly restart the stroke cycle after the scripted jump completes.
+            this._phase = 'gap';
+            this._timer = 0;
+        }
+    }
+
+    // Per-decision jump probability from the three strategies: rookies (菜鸟) show
+    // off at random, experts (高手) leap over a swimmer they are about to overtake,
+    // and everyone may launch a triumphant leap near the finish. Uses the strongest
+    // matching chance so overlapping conditions don't stack into spam.
+    private dolphinJumpChance(): number {
+        let chance = 0;
+        const remaining = getRaceDistance() - this.swimmer.distance;
+        if (remaining <= AI_DOLPHIN_TUNING.finishZoneMeters) {
+            chance = Math.max(chance, AI_DOLPHIN_TUNING.finishShowoffChance);
+        }
+        if (this.difficulty >= AI_DOLPHIN_TUNING.expertDifficultyMin
+            && this.raceObserver?.hasSwimmerCloseAhead(
+                this.swimmer,
+                AI_DOLPHIN_TUNING.closeAheadGap,
+                AI_DOLPHIN_TUNING.closeAheadLateral,
+            )) {
+            chance = Math.max(chance, AI_DOLPHIN_TUNING.expertJumpOverChance);
+        }
+        if (this.difficulty <= AI_DOLPHIN_TUNING.rookieDifficultyMax) {
+            chance = Math.max(chance, AI_DOLPHIN_TUNING.rookieShowoffChance);
+        }
+        return chance;
+    }
+
+    // Comedic mid-air spin: while airborne, tap random sides to corkscrew. This is
+    // VISUAL ONLY (the roll never changes speed/position), so it deliberately uses
+    // non-shared Math.random() — consuming SharedRNG here would desync the shared
+    // stream that outcome-affecting draws depend on.
+    private updateDolphinAirComedy(sdt: number) {
+        if (!this.swimmer.isDolphinAirActive) {
+            return;
+        }
+        this._dolphinAirTapTimer -= sdt;
+        if (this._dolphinAirTapTimer > 0) {
+            return;
+        }
+        this._dolphinAirTapTimer = AI_DOLPHIN_TUNING.airTapIntervalSeconds;
+        if (Math.random() < AI_DOLPHIN_TUNING.airTapChance) {
+            const side = Math.random() < 0.5 ? StrokeType.LEFT : StrokeType.RIGHT;
+            this.swimmer.handleKickStroke(side);
+        }
     }
 
     // Effective competitiveness for THIS moment: the baseline difficulty plus the

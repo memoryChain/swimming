@@ -98,9 +98,10 @@ const FIELD_OVERVIEW_FOV = 64;
 const SWIM_ANGLE_VIEW_FRONT_RANK = 3;
 const SWIM_ANGLE_VIEW_BACK_RANK_FROM_END = 3;
 export const RACE_CAMERA_TUNING = {
-    // Remaining distance at which the sprint chase camera gives way to the
-    // existing finish-line top view.
-    finishTopViewDistance: 5,
+    // Remaining distance at which the finish-line top view takes over. Kept near
+    // zero so it only triggers once the PLAYER has actually reached the finish
+    // wall (not during the final sprint approach).
+    finishTopViewDistance: 0.05,
     // Close third-person sprint view, above and behind the player's upper body.
     sprintBackDistance: 1.1,
     // Extra pullback while the player is chaining kick-only taps. A promoted arm
@@ -126,6 +127,31 @@ export const RACE_CAMERA_TUNING = {
     flipTurnSideDistance: 2.6,
     flipTurnBelowDistance: 0.42,
     flipTurnFov: 48,
+    // Dolphin-jump follow chase: a dedicated immersive rig that plunges into the
+    // water with the swimmer. It sits behind ALONG THE FLIGHT TANGENT (dips
+    // behind-below on the climb to look up, rises behind-above on the fall to look
+    // down into the dive) and looks along the velocity, so it tracks the parabola.
+    dolphinBackDistance: 2.6,
+    dolphinApexPullback: 1.4,
+    // Small world-up framing lift on top of the tangent follow.
+    dolphinHeight: 0.35,
+    // 0 = behind purely horizontally (flat), 1 = fully behind along the 3D flight
+    // tangent. Kept moderate so the rig isn't rigidly locked to the tangent (which
+    // reads stiff); the graded height offset below adds the dynamic feel.
+    dolphinPitchFollow: 0.4,
+    // Graded vertical offset from the tangent (metres at the steepest pitch): the
+    // camera rides BELOW the flight line on the way up (out of the water) and ABOVE
+    // it on the way down (into the water), passing through 0 at the apex — a smooth
+    // gradient driven by the flight pitch. This is what makes the follow feel alive
+    // instead of glued to the tangent. Set 0 to sit exactly on the tangent.
+    dolphinTangentBias: 0.6,
+    // How far below the surface (m) the camera may sink as it swings under on the
+    // launch/climb, so it doesn't drop too deep.
+    dolphinMaxSubmerge: 0.6,
+    dolphinLookAhead: 1.2,
+    // Apex height (m above the surface) at which the pullback is fully applied.
+    dolphinApexReferenceHeight: 1.2,
+    dolphinFov: 55,
 };
 
 export enum RaceCameraMode {
@@ -157,6 +183,9 @@ export type RaceCameraSnapshot = {
     // Radians away from the current lane direction. Used by the sprint chase so
     // it follows the swimmer's actual travel direction while steering.
     playerHeading?: number;
+    // Airborne flight pitch (radians, + = ascending) during a dolphin jump. The
+    // follow camera and speed lines tilt with it so they track the parabola.
+    playerFlightPitch?: number;
     // Kick cadence stays at zero until a second tap establishes a rhythm. The
     // sprint camera uses it only while no arm stroke is active, so long presses
     // restore the normal close chase framing as soon as they become strokes.
@@ -170,6 +199,10 @@ export type RaceCameraSnapshot = {
     countdownActive: boolean;
     sprintActive: boolean;
     playerFlipTurnCameraActive?: boolean;
+    // True through the dolphin jump (dip + air + landing dive): hold a
+    // follow-behind chase that tracks the swimmer up into the air and back into
+    // the water.
+    playerDolphinCameraActive?: boolean;
 };
 
 export class RaceCameraDirector {
@@ -194,6 +227,8 @@ export class RaceCameraDirector {
     private _topViewActive = false;
     // Debug: overhead whole-field view toggle (overrides the normal race camera).
     private _fieldOverviewActive = false;
+    // Dolphin-jump follow chase active (overrides the normal race views).
+    private _dolphinViewActive = false;
     // When true this director drives the venue jumbotron feed camera. Both the
     // main broadcast camera and this feed use the classic side-tracking race
     // views outside the actual sprint phase.
@@ -490,6 +525,7 @@ export class RaceCameraDirector {
             this._flipTurnViewActive = false;
             this._underwaterViewActive = false;
             this._topViewActive = false;
+            this._dolphinViewActive = false;
             this.updateBroadcastCamera(dt, snapshot);
             return;
         }
@@ -497,15 +533,30 @@ export class RaceCameraDirector {
             this._flipTurnViewActive = false;
             this._underwaterViewActive = false;
             this._topViewActive = false;
+            this._dolphinViewActive = false;
             this.updateSpectatorCamera(dt);
             return;
         }
         // Debug overhead whole-field view overrides the normal race camera.
         if (this._fieldOverviewActive) {
             this._flipTurnViewActive = false;
+            this._dolphinViewActive = false;
             this.updateFieldOverviewCamera();
             return;
         }
+        // Dolphin jump: a follow-behind chase that tracks the arc out of and back
+        // into the water, holding through the whole leap and landing dive.
+        const dolphinViewRequested = !!snapshot.playerDolphinCameraActive && !this._feedMode;
+        if (dolphinViewRequested) {
+            const enteringDolphinView = !this._dolphinViewActive;
+            this._dolphinViewActive = true;
+            this._flipTurnViewActive = false;
+            this._underwaterViewActive = false;
+            this._topViewActive = false;
+            this.updateDolphinCamera(dt, snapshot, enteringDolphinView);
+            return;
+        }
+        this._dolphinViewActive = false;
         const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive && !this._feedMode;
         if (flipTurnViewRequested) {
             const enteringFlipTurnView = !this._flipTurnViewActive;
@@ -587,6 +638,9 @@ export class RaceCameraDirector {
         }
         if (this._flipTurnViewActive) {
             baseFov = RACE_CAMERA_TUNING.flipTurnFov;
+        }
+        if (this._dolphinViewActive) {
+            baseFov = RACE_CAMERA_TUNING.dolphinFov;
         }
         if (this._fieldOverviewActive) {
             baseFov = FIELD_OVERVIEW_FOV;
@@ -898,8 +952,10 @@ export class RaceCameraDirector {
     }
 
     private shouldUseFinishTopView(snapshot: RaceCameraSnapshot): boolean {
-        return snapshot.sprintActive
-            && getRaceDistance() - snapshot.playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance;
+        // Only switch to the finish-line top view once the PLAYER has actually
+        // reached the finish wall — not during the final sprint approach. Keep the
+        // sprint chase all the way in, then cut to the top view at the touch.
+        return getRaceDistance() - snapshot.playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance;
     }
 
     private finishTopCameraView(snapshot: RaceCameraSnapshot): { position: Vec3; target: Vec3 } {
@@ -963,6 +1019,101 @@ export class RaceCameraDirector {
         }
         this._continuousKickViewSeconds += Math.max(0, dt);
         return this._continuousKickViewSeconds >= SPRINT_KICK_VIEW_CONFIRM_SECONDS;
+    }
+
+    private updateDolphinCamera(dt: number, snapshot: RaceCameraSnapshot, immediate: boolean) {
+        // Dedicated dolphin-jump rig. The anchor Y tracks the swimmer's upper body,
+        // so the camera rises with the leap and — because its height offset is
+        // deliberately small — PLUNGES BELOW THE SURFACE with the swimmer on
+        // re-entry for an into-the-water, first-person-ish feel. At the apex it
+        // eases back and up so the whole arc is framed against the ceiling.
+        const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
+        const body = snapshot.playerUpperBodyWorldPosition?.clone()
+            ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.5, this._playerLaneZ);
+        // The jump can fly diagonally (lane axis rotated by the steering heading),
+        // so sit behind and look along the ACTUAL travel direction — otherwise the
+        // camera faces down-lane while the swimmer flies off at an angle.
+        const heading = snapshot.playerHeading ?? 0;
+        const movementX = direction * Math.cos(heading);
+        const movementZ = Math.sin(heading);
+        // Flight pitch (parabola slope): tilt the look direction up on the climb and
+        // down on the fall so the camera tracks the arc instead of staying level.
+        const pitch = snapshot.playerFlightPitch ?? 0;
+        const cosP = Math.cos(pitch);
+        const sinP = Math.sin(pitch);
+        // 3D forward unit along the actual flight velocity (horizontal + vertical).
+        const forwardX = movementX * cosP;
+        const forwardZ = movementZ * cosP;
+        const forwardY = sinP;
+        const waterY = this._courseLayout.waterY;
+        // 0 at/under the surface (tight, low, plunging), 1 at the apex (pulled back
+        // and lifted to show the leap).
+        const apex = clamp(
+            (body.y - waterY) / Math.max(0.1, RACE_CAMERA_TUNING.dolphinApexReferenceHeight),
+            0,
+            1,
+        );
+        const eased = smoothStep(apex);
+        const back = Math.max(0.5, RACE_CAMERA_TUNING.dolphinBackDistance)
+            + eased * RACE_CAMERA_TUNING.dolphinApexPullback;
+
+        const edgeMargin = 0.35;
+        const poolMinX = Math.min(this._courseLayout.poolStartX, this._courseLayout.poolFinishX) + edgeMargin;
+        const poolMaxX = Math.max(this._courseLayout.poolStartX, this._courseLayout.poolFinishX) - edgeMargin;
+        const poolHalfWidth = Math.max(edgeMargin + 0.1, this._courseLayout.poolWidth * 0.5);
+        const poolMinZ = -poolHalfWidth + edgeMargin;
+        const poolMaxZ = poolHalfWidth - edgeMargin;
+
+        // Behind direction blends from purely horizontal (flat chase) toward the
+        // full 3D flight tangent by dolphinPitchFollow: the higher it is, the more
+        // the camera swings BELOW on the climb (to look up the leap) and ABOVE on
+        // the fall (to look down the dive) — i.e. it rides the parabola.
+        const follow3D = clamp(RACE_CAMERA_TUNING.dolphinPitchFollow, 0, 1);
+        const behindX = lerp(movementX, forwardX, follow3D);
+        const behindY = lerp(0, forwardY, follow3D);
+        const behindZ = lerp(movementZ, forwardZ, follow3D);
+        // Graded height deviation from the tangent: below the flight line on the
+        // climb (sinP > 0 → out of the water), above it on the fall (sinP < 0 →
+        // into the water), smoothly through 0 at the apex. Keeps the follow dynamic
+        // instead of rigidly glued to the tangent.
+        const tangentBias = RACE_CAMERA_TUNING.dolphinTangentBias * sinP;
+        // Keep the camera from sinking too far under the surface as it swings under.
+        const posY = Math.max(
+            body.y + RACE_CAMERA_TUNING.dolphinHeight - back * behindY - tangentBias,
+            waterY - RACE_CAMERA_TUNING.dolphinMaxSubmerge,
+        );
+        const desiredPos = new Vec3(
+            clamp(body.x - back * behindX, poolMinX, poolMaxX),
+            posY,
+            clamp(body.z - back * behindZ, poolMinZ, poolMaxZ),
+        );
+        // Look straight along the 3D flight velocity so the horizon tilts with the
+        // arc (up on the climb, down into the water on the fall). Because the camera
+        // is now aligned with the velocity, the speed-line vanishing point projects
+        // to near screen centre on its own — no separate up/down handling needed.
+        const target = new Vec3(
+            body.x + RACE_CAMERA_TUNING.dolphinLookAhead * forwardX,
+            body.y + RACE_CAMERA_TUNING.dolphinLookAhead * forwardY,
+            body.z + RACE_CAMERA_TUNING.dolphinLookAhead * forwardZ,
+        );
+        // Always ease (even on entry) so the reframe reads as a smooth follow into
+        // the water rather than a hard cut. Track tightly so the plunge stays glued
+        // to the swimmer; lateral eases more slowly. On entry it eases from the
+        // current chase position, which is already behind the swimmer.
+        const follow = immediate ? cameraBlend(dt, 9) : cameraBlend(dt, 13);
+        const lateral = cameraBlend(dt, 6);
+        this._cameraPos.x += (desiredPos.x - this._cameraPos.x) * follow;
+        this._cameraPos.y += (desiredPos.y - this._cameraPos.y) * follow;
+        this._cameraPos.z += (desiredPos.z - this._cameraPos.z) * lateral;
+        this._cameraTarget.x += (target.x - this._cameraTarget.x) * follow;
+        this._cameraTarget.y += (target.y - this._cameraTarget.y) * follow;
+        this._cameraTarget.z += (target.z - this._cameraTarget.z) * lateral;
+        this._topViewActive = false;
+        // Flag the underwater view while the camera itself is below the surface so
+        // downstream logic (speed lines, etc.) treats it as an underwater shot.
+        this._underwaterViewActive = this._cameraPos.y < waterY;
+        this.applyCameraTransform();
+        this.applyFov();
     }
 
     private updateFlipTurnCamera(dt: number, snapshot: RaceCameraSnapshot, immediate: boolean) {

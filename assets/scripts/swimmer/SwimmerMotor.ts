@@ -218,6 +218,32 @@ export class SwimmerMotor {
         this.setFlipTurnSpeed(speed);
     }
 
+    // Advance ONLY the limb animation cycles (arms/legs/body phase), leaving speed
+    // and race distance untouched. Used by the dolphin-jump air phase, which drives
+    // the swimmer's position from a scripted arc but still wants the freestyle
+    // stroke to animate when the player inputs mid-air.
+    advanceVisualAnimation(dt: number) {
+        this._motionClock += dt;
+        this._armAction = Math.max(0, this._armAction - dt * 4.6);
+        this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
+        this.updateMotionCycles(dt, { isAI: false });
+    }
+
+    // Queue one visual arm-pull sweep (plus the contralateral leg kick) with no
+    // propulsion, stroke-quality, or steering side effects. The dolphin-jump air
+    // phase uses this so a mid-air stroke plays the normal in-water animation
+    // without changing the scripted speed.
+    queueVisualArmStroke(type: StrokeType) {
+        if (type === StrokeType.RIGHT) {
+            this.queueMotionCycle('_rightArmMotionRemaining');
+        } else {
+            this.queueMotionCycle('_leftArmMotionRemaining');
+        }
+        this.queueKickOnly(type);
+        this._armAction = 1;
+        this._kickAction = 1;
+    }
+
     reset() {
         this._currentSpeed = 0;
         this._isRacing = false;

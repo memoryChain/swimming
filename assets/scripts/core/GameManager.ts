@@ -870,6 +870,7 @@ export class GameManager extends Component {
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
             onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
@@ -2118,11 +2119,18 @@ export class GameManager extends Component {
         if (!swimmer?.node?.isValid || !worldCamera || !this._uiCamera || !hudTransform) {
             return;
         }
-        const heading = swimmer.movementHeading;
+        const heading = swimmer.cameraHeading;
+        // Include the airborne flight pitch so the vanishing point (and thus the
+        // speed-line convergence) tilts UP on the climb and DOWN on the fall,
+        // instead of always pointing along the flat water line.
+        const pitch = swimmer.flightPitch;
+        const cosP = Math.cos(pitch);
+        const sinP = Math.sin(pitch);
+        const baseY = swimmer.isDolphinAirActive ? swimmer.node.worldPosition.y : swimmer.swimWorldY;
         this._tmpSpeedLineVanishWorld.set(swimmer.node.worldPosition);
-        this._tmpSpeedLineVanishWorld.x += swimmer.raceDirection * Math.cos(heading) * 32;
-        this._tmpSpeedLineVanishWorld.z += Math.sin(heading) * 32;
-        this._tmpSpeedLineVanishWorld.y = swimmer.swimWorldY;
+        this._tmpSpeedLineVanishWorld.x += swimmer.raceDirection * Math.cos(heading) * cosP * 32;
+        this._tmpSpeedLineVanishWorld.z += Math.sin(heading) * cosP * 32;
+        this._tmpSpeedLineVanishWorld.y = baseY + sinP * 32;
         worldCamera.worldToScreen(this._tmpSpeedLineVanishWorld, this._tmpDialScreen);
         this._uiCamera.screenToWorld(this._tmpDialScreen, this._tmpSpeedLineVanishWorld);
         hudTransform.convertToNodeSpaceAR(this._tmpSpeedLineVanishWorld, this._tmpDialAnchorUi);

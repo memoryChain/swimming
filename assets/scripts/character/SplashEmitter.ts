@@ -195,6 +195,38 @@ export class SplashEmitter {
         this.update(TUNING.triggerBurstUpdateSpeed);
     }
 
+    // Big one-shot surface plume for the dolphin-jump take-off and landing. Unlike
+    // triggerBurst (which only feeds the foam/spray signals and relies on the
+    // hand/leg entry edges to actually spawn particles), this fires an immediate
+    // exaggerated particle plume from EVERY emitter — hands, legs and body — at the
+    // fast particle profile, bypassing the entry gating and the leg-splash
+    // suppression that is active mid-jump. The leg emitters' continuous spray is
+    // still cleared next frame by the suppression, so no spray trails into the air.
+    triggerBigSurfaceBurst(scale = 1) {
+        if (this._culled) {
+            return;
+        }
+        const safeScale = Math.max(0, scale);
+        this._splashBurst = Math.max(this._splashBurst, safeScale);
+        this._armSplashBurst = Math.max(this._armSplashBurst, safeScale * TUNING.burst.armScale);
+        this._kickSplashBurst = Math.max(this._kickSplashBurst, safeScale * TUNING.burst.kickScale);
+        if (this._particleEffectsEnabled) {
+            for (const emitter of this._particleEmitters) {
+                const base = emitter.role === 'leg'
+                    ? TUNING.behavior.legBurstCountMax
+                    : emitter.role === 'body'
+                        ? TUNING.behavior.bodyBurstCountMax
+                        : TUNING.behavior.handBurstCountMax;
+                const count = Math.max(1, Math.round(base * safeScale));
+                // speedRatio 1 = biggest/fastest particle profile; pullScale = safeScale
+                // pushes the plume higher/faster for an exaggerated "山峰" spray.
+                this.playParticleBurst(emitter, count, 1, safeScale);
+            }
+        }
+        this.node.active = true;
+        this.update(TUNING.triggerBurstUpdateSpeed);
+    }
+
     decay(dt: number) {
         if (this._culled) {
             return;

@@ -1248,6 +1248,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.triggerBurst(scale);
     }
 
+    // Big exaggerated one-shot surface plume for the dolphin-jump take-off and
+    // landing (all emitters fire, bypassing entry gating and leg suppression).
+    triggerBigSplash(scale = 1) {
+        this._splashEmitter?.triggerBigSurfaceBurst(scale);
+    }
+
     setPerfectGlowActive(active: boolean) {
         const intensity = active ? 1 : 0;
         const changed = this._perfectGlowIntensity !== intensity;

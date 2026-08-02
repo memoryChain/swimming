@@ -147,6 +147,40 @@ export const AI_STRATEGY_TUNING = {
     maxModifier: 0.2,
 };
 
+// AI dolphin-jump (海豚跃) behaviour. The trigger decision is OUTCOME-AFFECTING
+// (it moves the swimmer), so it is drawn from the deterministic SharedRNG stream
+// like every other AI decision; the host's position correction absorbs any
+// residual cross-engine drift. The comedic mid-air spin is VISUAL ONLY (axial
+// roll, no speed) and deliberately uses non-shared Math.random() so it never
+// perturbs the shared stream.
+export const AI_DOLPHIN_TUNING = {
+    enabled: true as boolean,
+    // Difficulty tier splits (aligned with AI_NAME_TIERS): rookies (菜鸟) show off
+    // at random; experts (高手) leap over a swimmer they are about to overtake.
+    rookieDifficultyMax: 0.6,
+    expertDifficultyMin: 0.78,
+    // How often (seconds) an AI re-rolls whether to launch a jump.
+    decisionIntervalSeconds: 0.4,
+    // Cooldown (seconds) after any jump before the same AI may jump again.
+    cooldownSeconds: 6,
+    // Per-decision probability for a rookie's occasional show-off.
+    rookieShowoffChance: 0.03,
+    // Per-decision probability for an expert to leap over a swimmer just ahead.
+    expertJumpOverChance: 0.5,
+    // A swimmer counts as "close ahead" within this along-course gap (m) and this
+    // lateral band (m) — i.e. someone the AI is about to overtake / bump.
+    closeAheadGap: 2.2,
+    closeAheadLateral: 1.6,
+    // Final-sprint leap: within this distance (m) of the finish, any AI may launch
+    // a triumphant jump toward the wall.
+    finishZoneMeters: 12,
+    finishShowoffChance: 0.14,
+    // Comedic mid-air spin: while airborne, tap random sides to corkscrew. VISUAL
+    // ONLY (roll) → uses non-shared Math.random(), never the SharedRNG stream.
+    airTapIntervalSeconds: 0.12,
+    airTapChance: 0.7,
+};
+
 // AI opponents are named by DIFFICULTY TIER so every lane carries a memorable,
 // readable identity instead of interchangeable random noise: the weak lanes get
 // self-deprecating "here to splash around" names, the mid lanes get solid ordinary

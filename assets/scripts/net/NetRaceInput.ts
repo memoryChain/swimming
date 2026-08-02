@@ -33,6 +33,7 @@ export const enum NetInputKind {
     HeldOff = 'H',     // stroke-held end
     DiveCharge = 'c',  // dive charge start (countdown/diving)
     DiveRelease = 'r', // dive release (carries charge power)
+    DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
 }
 
 export interface NetInputEvent {
@@ -66,6 +67,8 @@ function encodeEvent(event: NetInputEvent): string {
             return `${event.kind}${event.side === 1 ? 1 : 0}`;
         case NetInputKind.DiveCharge:
             return NetInputKind.DiveCharge;
+        case NetInputKind.DolphinJump:
+            return NetInputKind.DolphinJump;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             return `${NetInputKind.DiveRelease}${power}`;
@@ -87,6 +90,8 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.HeldOff:
             return { kind, side: token.charAt(1) === '1' ? 1 : 0 };
         case NetInputKind.DiveCharge:
+            return { kind };
+        case NetInputKind.DolphinJump:
             return { kind };
         case NetInputKind.DiveRelease: {
             const raw = parseInt(token.slice(1), 10);

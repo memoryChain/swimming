@@ -78,6 +78,7 @@ export class Swimmer extends Component {
         return this._motor.isRacing
             && this.node.active
             && !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater;
     }
 
@@ -508,6 +509,11 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return null;
         }
+        if (this._phases.isDolphinJumpActive) {
+            // Airborne stroke input is handled as a roll/animation impulse via the
+            // per-press kick path; the arm-stroke event itself does nothing here.
+            return null;
+        }
         if (this._phases.isFlipTurnActive) {
             // Keep the complete pose sequence input-locked, including the
             // keyframe-2-to-swim recovery blend.
@@ -538,7 +544,7 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return false;
         }
-        if (this._phases.isFlipTurnActive) {
+        if (this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive) {
             return false;
         }
         return this._phases.isDiveGlidePoseActive || this._motor.canRecordStroke(type);
@@ -546,6 +552,16 @@ export class Swimmer extends Component {
 
     handleKickStroke(type: StrokeType): void {
         if (!this._motor.isRacing) {
+            return;
+        }
+        if (this._phases.isDolphinJumpActive) {
+            // Mid-air, each press adds an axial-roll impulse and plays the in-water
+            // stroke animation (no propulsion). During the pre-launch dip it is
+            // ignored. addDolphinRollImpulse itself no-ops outside the air stage.
+            if (this._phases.isDolphinAirActive) {
+                this._phases.addDolphinRollImpulse(type);
+                this._motor.queueVisualArmStroke(type);
+            }
             return;
         }
         if (this._phases.isFlipTurnActive) {
@@ -565,6 +581,9 @@ export class Swimmer extends Component {
 
     handleStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): RhythmResult | null {
         if (this._phases.isFlipTurnActive) {
+            return null;
+        }
+        if (this._phases.isDolphinJumpActive) {
             return null;
         }
         if (this._phases.isDiveGlidePoseActive) {
@@ -797,6 +816,11 @@ export class Swimmer extends Component {
         const deg2rad = Math.PI / 180;
         Quat.fromEuler(this._tmpCourseRotation, 0, yaw, 0);
         Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, pitch * deg2rad);
+        // Unwind any leftover dolphin-jump axial roll on the way back to level.
+        const dolphinRoll = this._phases.dolphinRollResidualRadians();
+        if (Math.abs(dolphinRoll) > 1e-5) {
+            Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, dolphinRoll);
+        }
         this.node.setPosition(x, this._phases.visualSwimY(), z);
         this.node.setRotation(this._tmpCourseRotation);
     }
@@ -913,6 +937,24 @@ export class Swimmer extends Component {
         return this._motor.heading;
     }
 
+    // Heading (radians off the lane axis) the FOLLOW CAMERA should sit behind and
+    // look along. Same as movementHeading during normal swimming, but during a
+    // dolphin jump the motor heading is zeroed (the phase scripts the arc), so this
+    // reports the jump's flight direction — keeping the camera behind the body.
+    get cameraHeading(): number {
+        return this._phases.isDolphinJumpActive
+            ? this._phases.dolphinTravelHeadingRadians()
+            : this._motor.heading;
+    }
+
+    // Airborne flight pitch (radians, + = ascending) during a dolphin jump, else 0.
+    // The follow camera and speed lines tilt along this so they track the parabola.
+    get flightPitch(): number {
+        return this._phases.isDolphinAirActive
+            ? this._phases.dolphinFlightPitchRadians()
+            : 0;
+    }
+
     getCameraUpperBodyWorldPosition(out: Vec3): Vec3 {
         if (this.cartoonRig?.getUpperBodyWorldPosition(out)) {
             return out;
@@ -932,6 +974,32 @@ export class Swimmer extends Component {
 
     get isFlipTurnCameraActive(): boolean {
         return this._phases.isFlipTurnCameraActive;
+    }
+
+    // True through the whole dolphin jump (dip + air) and its landing dive, so the
+    // camera holds the follow-behind view from launch until the swimmer resurfaces.
+    get isDolphinCameraActive(): boolean {
+        return this._phases.isDolphinCameraActive;
+    }
+
+    // True for the whole dolphin jump (dip + air). Read by the AI to suspend its
+    // normal stroke logic and drive the comedic mid-air spin.
+    get isDolphinJumpActive(): boolean {
+        return this._phases.isDolphinJumpActive;
+    }
+
+    // True only while airborne, when stroke input becomes an axial-roll impulse.
+    get isDolphinAirActive(): boolean {
+        return this._phases.isDolphinAirActive;
+    }
+
+    // Begin a dolphin jump (both-hands gesture). Only from surface racing; the
+    // phase controller rejects it mid-turn/underwater or too close to a wall.
+    tryDolphinJump(): boolean {
+        if (!this._motor.isRacing) {
+            return false;
+        }
+        return this._phases.tryStartDolphinJump();
     }
 
     get rhythmStats(): RhythmStats {

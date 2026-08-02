@@ -192,6 +192,22 @@ export class GameFlowController {
         return state === GameState.RACING || state === GameState.GLIDING;
     }
 
+    // Both-hands long-press gesture: launch the player into a dolphin jump. Only
+    // from surface racing; the swimmer/phase controller rejects it otherwise.
+    handleDolphinJump() {
+        if (this._refs.getState() !== GameState.RACING) {
+            return;
+        }
+        const swimmer = this._refs.playerSwimmer;
+        if (!swimmer) {
+            return;
+        }
+        if (swimmer.tryDolphinJump()) {
+            captureNetInput({ kind: NetInputKind.DolphinJump });
+            this._refs.debug('dolphin jump');
+        }
+    }
+
     handleDiveChargeStart() {
         const state = this._refs.getState();
         // Race HUD routes every full-screen press through this callback. During
@@ -413,7 +429,8 @@ export class GameFlowController {
             playerSpeed: focus.currentSpeed,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,
-            playerHeading: focus.movementHeading,
+            playerHeading: focus.cameraHeading,
+            playerFlightPitch: focus.flightPitch,
             playerKickCadenceHz: focus.kickCadenceHz,
             playerArmStrokeActive: focus.isArmStrokeActive,
             playerUnderwater: focus.isUnderwater,
@@ -424,6 +441,7 @@ export class GameFlowController {
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
             sprintActive: this._sprintTriggered,
             playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
+            playerDolphinCameraActive: focus.isDolphinCameraActive,
         };
         // Switch to the behind-the-swimmer sprint chase once the player has
         // surfaced from the dive, so the steering weave is clearly visible. Done
@@ -432,18 +450,24 @@ export class GameFlowController {
             && !this._swimSprintViewApplied
             && this._refs.getState() === GameState.RACING
             && !playerSwimmer.isUnderwater
-            && !playerSwimmer.isFlipTurnCameraActive) {
+            && !playerSwimmer.isFlipTurnCameraActive
+            && !playerSwimmer.isDolphinCameraActive) {
             this._swimSprintViewApplied = true;
             this._refs.raceCameraDirector.selectMode(RaceCameraMode.Sprint, true);
         }
         this._refs.raceCameraDirector.update(dt, cameraSnapshot);
+        // Speed lines: normally only in the sprint chase (not top/underwater). Also
+        // force them ON while the player is airborne during a dolphin jump — the
+        // burst out of the water shows speed lines until it re-enters the water.
+        const dolphinAirborne = playerSwimmer.isDolphinAirActive;
         this._refs.updateCameraSpeedLines?.(
             dt,
             cameraSnapshot.playerSpeed,
-            this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
-                && !this._refs.raceCameraDirector.topViewActive
-                && !this._refs.raceCameraDirector.underwaterViewActive,
-            this._sprintTriggered,
+            dolphinAirborne
+                || (this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
+                    && !this._refs.raceCameraDirector.topViewActive
+                    && !this._refs.raceCameraDirector.underwaterViewActive),
+            this._sprintTriggered || dolphinAirborne,
         );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);
