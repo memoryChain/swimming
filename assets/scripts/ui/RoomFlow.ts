@@ -410,6 +410,11 @@ export class RoomFlow {
                 if (info && info.members.length > 0) {
                     this._members = this.membersFromInfo(info);
                     this.render();
+                    // The backup roster pull (and the rematch/reconnect path, which enters
+                    // through here — NOT onRoomInfoChange) is where a guest often first
+                    // learns its own seat. (Re)broadcast our 养成 digest so the host collects
+                    // it; idempotent, guarded on a known seat.
+                    this.broadcastSelfModifiers();
                 }
                 if (attempt < 4) {
                     setTimeout(() => this.refreshRoomInfo(attempt + 1), 700);
