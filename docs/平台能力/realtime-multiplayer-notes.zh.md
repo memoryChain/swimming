@@ -347,4 +347,23 @@ sharedRandom();             // 取共享实例
 - 匹配（陌生人 gamematch）、好友邀请（开放数据域）、断线补帧 `reconnect` 尚未接入（当前只有房间号邀请 + 好友房）。
 - 养成货币/存档云端（CloudBase）延后，`IBackend` 已隔离，现用 MockBackend(localStorage)。
 
+### 8.12 养成修饰同步（让养成在联机中生效，`RaceModifiers` + `NetRaceModifierCodec`）
+
+> 目标：养成（等级/角色带来的 balance 加成）在联机里要像单机一样发挥作用，且**后续新增的养成项要能低成本带进联机**。
+
+- **★前提（务必理解）**：**联机对战中不升级**——玩家一旦进房，养成就**冻结**，整局（含 rematch 保活重开）都不变。所以「入房时」快照的养成档案在整个房间生命周期内**始终有效**，不存在陈旧/需要中途刷新的问题。这条前提是下面「用 roster extInfo 一次性传输」成立的基础。
+- **为什么必须同步**：养成改的是玩家 balance（`maxSpeed/energyTotal/perfectComboMaxOvercap/strokeQualityAccel/kickMaxSpeed/diveMaxLaunchSpeed/`**`weight`**），全都**影响比赛结果**；`weight` 还进碰撞击退结算。若各端对同一泳者用不同 balance，本地预测和碰撞会算出不同结果。养成是**本地存档**，既不在共享 roster 里，也无法从 `avatarId` 推导 → 必须显式同步。
+- **三层解耦架构**（加新养成只动前后两层的映射，中间传输层通用）：
+  - **resolve**（`progression/RaceModifiers.ts` `resolveLocalRaceModifiers()`）：存档 → `RaceModifierProfile`（当前=`{balance}`，未来加装备/技能/赛季 buff 就往这个容器加字段）。单机、联机同一入口。
+  - **transport**（`net/NetRaceModifierCodec.ts` + roster `extInfo`）：档案 ↔ 紧凑版本化串 `M!<ver>,<f×1000>,...`，塞进成员 `extInfo`（和 `avatarId` **同一条已验证通道**，见 `RoomFlow.encodeIdentity/parseIdentity` + `NetRaceMember.modifiersBlob`）。**owner 端从自己存档 resolve 后原样广播**，各端拿到一致值 → 确定性；每局静态、**不碰逐帧热路径**。
+  - **apply**（`applyRaceModifiersToMotor`）：本地玩家（`GameManager.applyPlayerProgression`）与每个远端人类（`GameManager.wireRemoteSwimmers`）走**同一个 seam** → 养成对联机的作用与单机一致。
+- **传输通道选型：走 roster extInfo，不走帧/广播热路径**。养成每局静态、进房即冻结，所以随 roster 自然传播（还能覆盖晚加入者）最合适；一次捕获终生有效（含 rematch），无需在开赛广播里反复带。
+- **★weight 跨端一致 → 联机恢复「按体重加权」碰撞**：AI 的 weight 来自共享 roster（确定性一致），真人的 weight 来自同步档案 → 所有泳者 weight 各端一致，`resolveSwimmerCollisions` 联机也用**加权拆分**（不再需要早期 `uniform-weight` 权宜方案，已回退）。养成的「体重/撞飞抗性」在联机真正生效；残余跨引擎浮点差异由 owner/host 位置权威吸收，不会永久漂移。
+- **加新养成项 = 追加式改动**：① 扩 `RaceModifierProfile`；② `resolveLocalRaceModifiers` 里映射存档→字段；③ `applyRaceModifiersToMotor`（或新 apply 分支）里映射字段→泳者；④ `NetRaceModifierCodec` 末尾**追加**一个 `×1000` 量化字段（`VERSION` 顺手 +1）。传输层通用无需改，自动带进联机。
+- **混版本优雅降级**：codec **只追加不重排**——新端读旧（短）串给缺失尾字段补默认、旧端读新（长）串忽略多余尾字段，不硬 desync。旧客户端（没这功能）发的 extInfo 无 `M!` 哨兵 → 档案=null → 该玩家用中性 balance（`weight=1`），其位置仍是 owner 权威、各端一致。
+- **坑**：
+  - 微信 `memberExtInfo` 有大小上限 → 档案用**量化整数**（×1000）拼串，别塞 JSON。
+  - `extInfo` = `avatarId|nickName|M!...`，而**昵称可能含 `|`** → `parseIdentity` **从右侧**按 `|M!` 哨兵剥离档案串，不能数 `|` 的个数。
+  - 档案在 owner 端 resolve、各端 apply 的是**收到的串**；本地玩家 apply 的是自己 resolve 的同一份（字节一致）→ 单一真值源，自己看到的和别人看到的你一致。
+
 
