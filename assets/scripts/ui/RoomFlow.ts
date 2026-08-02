@@ -62,10 +62,11 @@ export class RoomFlow {
     // Recovery timer for a start that never completes (guest hadn't returned to the
     // lobby yet and missed the START broadcast) so the host can't get stuck at 开始中.
     private _startTimeoutHandle: any = null;
-    // A guest's onGameStart fired but the host's seed broadcast hasn't landed yet.
-    // Entering now would use a random seed and desync — wait for the seed instead.
-    private _gameStartPending = false;
-    private _seedWaitHandle: any = null;
+    // The WeChat game-start signal (onGameStart / roomState) has fired. On its own this
+    // is NOT enough to enter a race: a fresh JOIN into a keep-alive room sees a stale
+    // roomState=started and would auto-enter a phantom race. Entry also requires a real
+    // 'start' broadcast (_pendingSeed != 0). See maybeEnterNetRace.
+    private _gameStartConfirmed = false;
     // True once we've shown the "room gone" notice (invited room dissolved / in-game), so
     // render() stops repainting the lobby over it.
     private _roomUnavailable = false;
@@ -169,17 +170,17 @@ export class RoomFlow {
                 // a member — do NOT create/join a new one (that would fork the room, so
                 // the host ends up alone while the guest sees a stale roster). Re-attach
                 // callbacks (they were replaced by NetRaceController during the race),
-                // have the owner end the game so the room returns to the lobby, reset
-                // our ready flag, and re-pull the roster.
+                // have the owner END the previous game so the room returns to the lobby,
+                // reset our ready flag, and re-pull the roster.
                 this._accessInfo = net.currentAccessInfo();
-                // Rematch: KEEP the one lock-step game session ALIVE. Do NOT endGame —
-                // WeChat rejects a second startGame in an ended room with 4014 "game
-                // already started" (the room can't be restarted). Instead we reuse the
-                // still-running session and enter the next race DIRECTLY (see startRace /
-                // handleBroadcast), with the server's heartbeat frames keeping the session
-                // alive while we sit in the lobby. Everyone returns to not-ready (a race
-                // just ended; the server keeps stale isReady otherwise); the host readies
-                // implicitly by pressing 开始.
+                // KEEP-ALIVE rematch (WeChat rooms are strictly one-game): do NOT endGame.
+                // PROVEN on device — after endGame the room is stuck at roomState=3
+                // (gameEnd); a second startGame returns 4014 for a member and a fake "ok"
+                // (no real start) for the owner, so the room can never be reused. Instead
+                // we keep the ORIGINAL lock-step session alive (the server heartbeat keeps
+                // it running while we sit in the lobby) and enter the next race DIRECTLY
+                // (see startRace / handleBroadcast). Just re-attach callbacks (done above),
+                // reset our ready flag, and re-pull the roster.
                 this._localReady = false;
                 net.updateReady(false).catch(() => undefined);
                 this.refreshRoomInfo(0);
@@ -547,13 +548,14 @@ export class RoomFlow {
         this.setHint('开始中…');
         netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed }));
         if (this._reconnect) {
-            // Rematch on an already-running session: do NOT startGame again (WeChat
-            // errors 4014 "game already started"). The seed is broadcast; enter the race
-            // directly. The guest enters on receiving the broadcast (handleBroadcast).
+            // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
+            // one-game — a second startGame returns 4014 / a fake ok with roomState stuck
+            // at gameEnd, PROVEN on device). Reuse the running session: the seed is
+            // broadcast and we enter directly. Guests enter on the broadcast (handleBroadcast).
             this.enterNetRace();
         } else {
             // First game: the host calls startGame itself (not just the guests) so it
-            // becomes a frame participant and gets a reliable start signal. The broadcast
+            // becomes a frame participant + gets a reliable start signal; the broadcast
             // makes the guests do the same. requestStartGame arms the recovery timeout.
             this.requestStartGame();
         }
@@ -617,19 +619,17 @@ export class RoomFlow {
             if (data && data.t === 'start' && typeof data.seed === 'number') {
                 this._pendingSeed = data.seed >>> 0;
                 if (this._reconnect) {
-                    // Rematch: the lock-step session is still running, so enter the race
-                    // directly instead of calling startGame (which would 4014).
+                    // Rematch: the lock-step session is still alive (we never endGame),
+                    // so enter directly instead of calling startGame (which would 4014).
                     this.enterNetRace();
                 } else {
                     // First game: EVERY member (host + guests) calls startGame, matching
                     // the official demo. requestStartGame is guarded by _gameStartCalled,
                     // so the host also calling it in startRace is harmless.
                     this.requestStartGame();
-                    // onGameStart may have already fired (roomState detection) and been
-                    // deferred waiting for this seed — enter now that we have it.
-                    if (this._gameStartPending) {
-                        this.enterNetRace();
-                    }
+                    // We now have the shared seed; enter if the game-start signal already
+                    // arrived (or once it does, via onNetGameStart).
+                    this.maybeEnterNetRace();
                 }
             }
         } catch (error) {
@@ -637,27 +637,28 @@ export class RoomFlow {
         }
     }
 
-    // onGameStart fired. The HOST always has its own seed, so it enters immediately.
-    // A GUEST must enter with the host's shared seed (delivered by the 'start'
-    // broadcast); onGameStart can arrive first (from roomState detection), and entering
-    // then would pick a random seed and desync AI/lanes — the "莫名进了比赛但完全不同步"
-    // symptom. Defer until the seed lands, with a short fallback so a dropped broadcast
-    // doesn't hang the guest in the lobby forever.
+    // onGameStart fired (or roomState reached "started"). The HOST always has its own
+    // seed, so this completes its entry. A GUEST must ALSO have received the host's
+    // 'start' broadcast (the shared seed) before entering: onGameStart alone can come
+    // from a STALE roomState when JOINING a keep-alive room (whose session stays
+    // "started" between races), and entering off that would start a phantom race with a
+    // random seed. maybeEnterNetRace enforces "real start in progress + game started".
     private onNetGameStart() {
-        if (!this._isHost && this._pendingSeed === 0) {
-            this._gameStartPending = true;
-            this.setHint('即将开始…');
-            if (!this._seedWaitHandle) {
-                this._seedWaitHandle = setTimeout(() => {
-                    this._seedWaitHandle = null;
-                    if (!this._raceEntered && this._gameStartPending) {
-                        this.enterNetRace();
-                    }
-                }, 3000);
-            }
+        this._gameStartConfirmed = true;
+        this.maybeEnterNetRace();
+    }
+
+    // Enter the net race only when BOTH conditions hold: a real start is in progress
+    // (we have the shared seed from a 'start' broadcast or our own startRace) AND the
+    // WeChat game has started (onGameStart / roomState). Prevents a fresh join into an
+    // already-started keep-alive room from auto-entering off the stale roomState.
+    private maybeEnterNetRace() {
+        if (this._raceEntered) {
             return;
         }
-        this.enterNetRace();
+        if (this._pendingSeed !== 0 && this._gameStartConfirmed) {
+            this.enterNetRace();
+        }
     }
 
     // Lock-step has begun on every client: hand the agreed seed + roster to the race.
@@ -666,11 +667,6 @@ export class RoomFlow {
             return;
         }
         this._raceEntered = true;
-        this._gameStartPending = false;
-        if (this._seedWaitHandle) {
-            clearTimeout(this._seedWaitHandle);
-            this._seedWaitHandle = null;
-        }
         this.clearStartTimeout();
         // Clear our ready as the race begins so the server doesn't carry a stale
         // isReady=true through the race — otherwise a member who returns to the lobby
@@ -716,10 +712,6 @@ export class RoomFlow {
 
     dispose() {
         this.clearStartTimeout();
-        if (this._seedWaitHandle) {
-            clearTimeout(this._seedWaitHandle);
-            this._seedWaitHandle = null;
-        }
         netRoom().setCallbacks({});
         if (this._root?.isValid) {
             this._root.destroy();
