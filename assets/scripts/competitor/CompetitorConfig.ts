@@ -153,31 +153,37 @@ export const AI_STRATEGY_TUNING = {
 // residual cross-engine drift. The comedic mid-air spin is VISUAL ONLY (axial
 // roll, no speed) and deliberately uses non-shared Math.random() so it never
 // perturbs the shared stream.
+//
+// AI 海豚跃行为配置。是否起跳会移动角色（影响胜负），所以和其它 AI 决策一样走确定性的
+// SharedRNG，残余的跨引擎浮点漂移由房主位置校正兜底；空中搞笑乱转只影响表现（轴向转体、
+// 不改速度），故意用非同步的 Math.random()，绝不打乱共享随机流。
 export const AI_DOLPHIN_TUNING = {
+    // 总开关：false = AI 完全不使用海豚跃。
     enabled: true as boolean,
-    // Difficulty tier splits (aligned with AI_NAME_TIERS): rookies (菜鸟) show off
-    // at random; experts (高手) leap over a swimmer they are about to overtake.
+    // 难度分档（和 AI_NAME_TIERS 对齐）：难度 ≤ 该值算「菜鸟」，会随机偶尔秀一下。
     rookieDifficultyMax: 0.6,
+    // 难度 ≥ 该值算「高手」，会在快追上/快撞到前方选手时跃过对方。
     expertDifficultyMin: 0.78,
-    // How often (seconds) an AI re-rolls whether to launch a jump.
+    // 决策间隔：每隔这么久，AI 重新掷一次「要不要起跳」。单位：秒。
     decisionIntervalSeconds: 0.4,
-    // Cooldown (seconds) after any jump before the same AI may jump again.
+    // 冷却时间：一次海豚跃之后，同一个 AI 至少隔这么久才能再跃。单位：秒。
     cooldownSeconds: 6,
-    // Per-decision probability for a rookie's occasional show-off.
+    // 菜鸟偶尔秀：单次决策里菜鸟随机起跳的概率。
     rookieShowoffChance: 0.03,
-    // Per-decision probability for an expert to leap over a swimmer just ahead.
+    // 高手跨人：单次决策里高手在「前方近处有人」时起跳跃过对方的概率。
     expertJumpOverChance: 0.5,
-    // A swimmer counts as "close ahead" within this along-course gap (m) and this
-    // lateral band (m) — i.e. someone the AI is about to overtake / bump.
+    // 判定「前方近处有人」的沿泳道纵向距离（米）——即快要追上/撞上的人。
     closeAheadGap: 2.2,
+    // 判定「前方近处有人」的横向(泳道宽度方向)距离（米）。
     closeAheadLateral: 1.6,
-    // Final-sprint leap: within this distance (m) of the finish, any AI may launch
-    // a triumphant jump toward the wall.
+    // 终点冲刺跃：距终点这么多米内，任意 AI 都可能来一记冲线海豚跃。单位：米。
     finishZoneMeters: 12,
+    // 终点冲刺跃的单次决策概率。
     finishShowoffChance: 0.14,
-    // Comedic mid-air spin: while airborne, tap random sides to corkscrew. VISUAL
-    // ONLY (roll) → uses non-shared Math.random(), never the SharedRNG stream.
+    // —— 空中搞笑乱转（纯表演）——
+    // 腾空时每隔这么久尝试一次随机点击（左右）来乱转。单位：秒。
     airTapIntervalSeconds: 0.12,
+    // 每次尝试真的点一下（产生一次转体）的概率。
     airTapChance: 0.7,
 };
 

@@ -1,51 +1,69 @@
-// Tuning for the mid-race "dolphin jump" (海豚跃): both screen halves held
-// together launch the swimmer into an exaggerated arc out of the water, ignoring
-// drag and collision, then dive back under before resuming the normal swim.
+// 赛中「海豚跃」(dolphin jump) 参数配置。
 //
-// The airborne arc has NO automatic body-axis spin. While airborne, each stroke
-// input plays the normal in-water stroke animation and adds one full axial roll
-// (left = one way, right = the other); more strokes spin faster. The roll unwinds
-// back to the normal swim axis after re-entry.
+// 玩法：双手（左右屏幕各一指）同时长按触发，角色先短暂潜入水面蓄势，再像海豚一样
+// 夸张地跃出水面、划出一条抛物线（空中无阻力、无视碰撞），最后扎回水里、下潜一小段
+// 再上浮恢复正常游泳。
+//
+// 空中默认不带任何身体轴向旋转（转体）。腾空期间每次划水输入会：播放和水里一样的
+// 划水动作 + 叠加一次整圈的轴向转体（左手一个方向、右手反方向），划得越多转得越快；
+// 落水后残余的转体会自动回正到正常游泳姿态。
+//
+// 注：本文件是「代码默认值」，运行时以 assets/resources/config/tuning.json 的保存值为准
+// （调参面板「海豚跃」组可实时调整并保存）。
 export const DOLPHIN_JUMP = {
-    // Both invisible screen halves must be held together at least this long for
-    // the gesture to fire (distinguishes it from a normal two-hand stroke hold).
+    // 触发手势：左右两半屏幕需要同时按住至少这么久才触发海豚跃（用于和普通的双手划水
+    // 长按区分开）。单位：秒。调小 = 更容易触发；调大 = 需要按更久。
     triggerHoldSeconds: 0.25,
-    // Reject the jump when less than this much course distance remains before the
-    // next turn wall or the finish, and keep the whole maneuver this far short of it.
+    // 临界保护：距离前方折返墙或终点不足这么多米时，不允许起跳（防止飞出去/越过墙）。
+    // 单位：米。
     minAvailableDistance: 3,
+    // 落点安全余量：整套动作的落点至少要停在墙/终点之前这么多米。单位：米。
     endMargin: 1.0,
 
-    // Brief pre-launch dip below the surface (the porpoise gather).
+    // —— 起跳前的下潜蓄势（海豚式钻水）——
+    // 下潜阶段的持续时间。单位：秒。
     dipSeconds: 0.3,
+    // 下潜到水面以下的深度。单位：米。越大钻得越深。
     dipDepth: 0.5,
+    // 下潜时身体低头俯冲的最大角度。单位：度。
     dipTiltDegrees: 24,
 
-    // Airborne parabola. Horizontal speed is capped near walls so the arc always
-    // lands inside the pool. No drag is applied while airborne.
+    // —— 空中抛物线 —— 靠近池壁时水平速度会被自动收窄，保证落点在池内；空中不施加阻力。
+    // 离水弹射速度：越大飞得越远、越夸张。单位：米/秒。
     launchSpeed: 8.5,
+    // 起跳角度：抛物线仰角。单位：度。越大越高越短，越小越平越远。
     launchAngleDegrees: 40,
+    // 空中重力：越小滞空越久、飞得越夸张。单位：米/秒²。
     gravity: 12,
 
-    // Input-driven axial roll: one stroke = one full turn; left rolls one way,
-    // right the other. rollEaseRate governs how quickly the body catches up to the
-    // accumulated target, so rapid strokes read as a faster corkscrew.
+    // —— 空中输入驱动的轴向转体（转体只影响表现，不影响速度）——
+    // 每次划水输入产生的转体角度：左手一个方向、右手反方向。单位：度（360 = 一整圈）。
     rollPerStrokeDegrees: 360,
+    // 转体跟随速度：当前转角向「累计目标角度」追赶的快慢，越大转得越快、越跟手。
+    // 快速连划会让目标角度叠加、从而转得更快（螺旋感更强）。
     rollEaseRate: 7,
-    // Time to unwind any leftover roll to the normal swim axis after re-entry.
+    // 落水后把残余转体拉回正常游泳姿态（人体轴回正）所用的时间。单位：秒。
     landingRollUnwindSeconds: 0.45,
 
-    // Landing dive: sink to this depth, hold, then rise back to the surface.
+    // —— 落水后的下潜上浮 —— 入水后下潜到设定深度、停顿、再上浮，随后恢复正常游泳。
+    // 落水下潜的目标深度。单位：米。
     landingDepth: 0.7,
+    // 从水面下潜到目标深度所用的时间。单位：秒。
     landingDescentSeconds: 0.25,
+    // 在最深处停留（滑行）的时间。单位：秒。
     landingHoldSeconds: 0.3,
+    // 从最深处上浮回水面所用的时间。单位：秒。
     landingRiseSeconds: 0.5,
+    // 上浮阶段身体抬头的最大角度。单位：度。
     landingRiseTiltDegrees: 16,
-    // Speed carried out of the re-entry, bled off by the underwater glide drag.
+    // 落水时带出的速度，之后由水下滑行阻力衰减回正常巡航速度。单位：米/秒。
     landingExitSpeed: 3.2,
 
-    // Splash burst sizes: entering the dip (a normal burst), then the big
-    // exaggerated surface plumes when leaving the water and re-entering.
+    // —— 水花大小 —— 数值越大水花越大越多越夸张。
+    // 起跳前钻水时的水花（普通爆发）。
     dipSplashScale: 1.2,
+    // 冲出水面（出水）时的大水花羽流。
     takeoffSplashScale: 2.6,
+    // 扎回水里（落水）时的大水花羽流。
     landingSplashScale: 3.2,
 };

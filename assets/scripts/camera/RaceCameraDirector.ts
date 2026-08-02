@@ -127,30 +127,29 @@ export const RACE_CAMERA_TUNING = {
     flipTurnSideDistance: 2.6,
     flipTurnBelowDistance: 0.42,
     flipTurnFov: 48,
-    // Dolphin-jump follow chase: a dedicated immersive rig that plunges into the
-    // water with the swimmer. It sits behind ALONG THE FLIGHT TANGENT (dips
-    // behind-below on the climb to look up, rises behind-above on the fall to look
-    // down into the dive) and looks along the velocity, so it tracks the parabola.
+    // 海豚跃跟随相机：一套专门的沉浸式跟拍机位，会随角色一起扎进水里。相机沿「飞行切线」
+    // 跟在身后（上升时沉到身后下方仰拍，下降时升到身后上方俯冲入水），并朝飞行速度方向
+    // 看，从而跟着抛物线走。
+    // 基础后距：相机沿飞行切线跟在角色身后的距离。单位：米。
     dolphinBackDistance: 2.6,
+    // 顶点拉远：腾到最高点时在基础后距上额外往后拉的距离，用来把整个跃起框进画面。单位：米。
     dolphinApexPullback: 1.4,
-    // Small world-up framing lift on top of the tangent follow.
+    // 相机抬高：在切线跟拍基础上额外的世界向上抬高量（取景用，别调太大否则削弱抛物线跟拍感）。单位：米。
     dolphinHeight: 0.35,
-    // 0 = behind purely horizontally (flat), 1 = fully behind along the 3D flight
-    // tangent. Kept moderate so the rig isn't rigidly locked to the tangent (which
-    // reads stiff); the graded height offset below adds the dynamic feel.
+    // 抛物线跟拍强度：0 = 纯水平跟在身后（平）；1 = 完全沿 3D 飞行切线跟拍。刻意保持中等，
+    // 避免相机死死锁在切线上（会显得僵）；灵动感主要靠下面的「切线高度偏移」。
     dolphinPitchFollow: 0.4,
-    // Graded vertical offset from the tangent (metres at the steepest pitch): the
-    // camera rides BELOW the flight line on the way up (out of the water) and ABOVE
-    // it on the way down (into the water), passing through 0 at the apex — a smooth
-    // gradient driven by the flight pitch. This is what makes the follow feel alive
-    // instead of glued to the tangent. Set 0 to sit exactly on the tangent.
+    // 切线高度偏移：相机相对飞行切线的渐变高度偏移（最陡俯仰角时的米数）。上升出水时相机在
+    // 切线「下面」（仰拍冲出水面），下降入水时在切线「上面」（俯冲入水），顶点处为 0，随飞行
+    // 俯仰角平滑过渡。这是让跟拍不呆板、有生命力的关键。设 0 = 完全贴在切线上。单位：米。
     dolphinTangentBias: 0.6,
-    // How far below the surface (m) the camera may sink as it swings under on the
-    // launch/climb, so it doesn't drop too deep.
+    // 相机最大入水深度：相机在上升摆到身后下方时最多沉到水面以下多少米，防止扎太深。单位：米。
     dolphinMaxSubmerge: 0.6,
+    // 前视距离：相机看向的目标点沿飞行方向在角色前方的距离。单位：米。
     dolphinLookAhead: 1.2,
-    // Apex height (m above the surface) at which the pullback is fully applied.
+    // 顶点参考高度：角色离水面达到这个高度时「顶点拉远」完全生效（用于归一化拉远程度）。单位：米。
     dolphinApexReferenceHeight: 1.2,
+    // 相机视场角(FOV)：海豚跃跟随相机的垂直视场角。单位：度。越大越广、速度感越强。
     dolphinFov: 55,
 };
 
