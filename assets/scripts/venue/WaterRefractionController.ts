@@ -12,7 +12,7 @@ const RUNTIME_WATER_MATERIAL_NAME = 'RuntimePoolWater';
 // Refraction target resolution scale. Lower saves fill/bandwidth but the pool
 // floor's thin lane lines alias badly below ~0.75, so keep it here; the
 // wave-driven UV offset hides the remaining softness.
-const REFRACTION_RT_SCALE = 0.75;
+const REFRACTION_RT_SCALE = 0.45;
 const MIN_RT_SIZE = 16;
 // Re-tag swimmer subtrees onto SWIMMER_LAYER periodically to catch async-loaded
 // character models and rebuilt rosters.
