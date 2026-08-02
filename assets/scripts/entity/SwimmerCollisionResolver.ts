@@ -48,9 +48,6 @@ export const SWIMMER_COLLISION = {
     knockbackMaxImpulse: 4.0,
     // Exponential decay time constant (seconds). Higher = longer slide.
     knockbackDecaySeconds: 0.5,
-    // Knockback magnitude (m/s) above which the body flashes red on impact. Kept
-    // high so only hard hits (head-on / fast closing) flash; light brushes don't.
-    knockbackFlashThreshold: 0.9,
 };
 
 // Reused module-scope buffers keep this allocation-free each frame.
@@ -226,7 +223,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         }
     }
     // Apply the net separation displacement once (X -> distance, Z -> lateral),
-    // then the accumulated knockback impulse. Flash red only on hard hits.
+    // then the accumulated knockback impulse. Collision feedback intentionally stays
+    // motion-only; flashing the character red made close racing harder to read.
     for (let i = 0; i < count; i++) {
         const dX = _posX[i] - _origX[i];
         const dZ = _posZ[i] - _origZ[i];
@@ -237,9 +235,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const iL = _impLat[i];
         if (iD !== 0 || iL !== 0) {
             _active[i].applyCollisionImpulse(iD, iL);
-            if (Math.hypot(iD, iL) >= SWIMMER_COLLISION.knockbackFlashThreshold) {
-                _active[i].flashCollision();
-            }
         }
     }
 }

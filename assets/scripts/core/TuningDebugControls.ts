@@ -67,7 +67,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
             control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
             control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
-            control('collision.knockbackFlashThreshold', '受击闪红阈值', '撞飞冲量超过此值（m/s）才闪红。调高则只有猛撞才闪。', () => SWIMMER_COLLISION.knockbackFlashThreshold, (v) => SWIMMER_COLLISION.knockbackFlashThreshold = v, 0.05, 0, 4, 2, 'm/s'),
         ],
     },
     {
