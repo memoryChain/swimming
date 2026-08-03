@@ -52,10 +52,7 @@ export class Swimmer extends Component {
     private readonly _ultimate = new UltimateEnergyModel();
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
-    private readonly _swimBoundaryWorldPositions = [
-        new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
-        new Vec3(), new Vec3(), new Vec3(), new Vec3(), new Vec3(),
-    ];
+    private readonly _swimBoundaryRange = { min: 0, max: 0 };
     private readonly _tmpCourseRotation = new Quat();
     private _lateralMinWorld = Number.NEGATIVE_INFINITY;
     private _lateralMaxWorld = Number.POSITIVE_INFINITY;
@@ -258,18 +255,16 @@ export class Swimmer extends Component {
     }
 
     swimBoundaryZRange() {
-        const count = this.cartoonRig?.getSwimBoundaryWorldPositions(this._swimBoundaryWorldPositions) ?? 0;
-        if (count <= 0) {
-            return { min: this.node.position.z - 0.9, max: this.node.position.z + 0.9 };
-        }
-        let min = Number.POSITIVE_INFINITY;
-        let max = Number.NEGATIVE_INFINITY;
-        for (let index = 0; index < count; index++) {
-            const z = this._swimBoundaryWorldPositions[index].z;
-            min = Math.min(min, z);
-            max = Math.max(max, z);
-        }
-        return { min, max };
+        // Use an oriented, deterministic root-space footprint. Reading animated bone
+        // world transforms here made gameplay boundary results depend on render-rate
+        // pose LOD/culling, which can differ between devices in a networked race.
+        const heading = this._motor.heading;
+        const lateralExtent = Math.abs(Math.sin(heading)) * STEERING_TUNING.poolBoundaryBodyHalfLength
+            + Math.abs(Math.cos(heading)) * STEERING_TUNING.poolBoundaryBodyHalfWidth;
+        const centerZ = this._startPosition.z + this._motor.lateralOffset;
+        this._swimBoundaryRange.min = centerZ - lateralExtent;
+        this._swimBoundaryRange.max = centerZ + lateralExtent;
+        return this._swimBoundaryRange;
     }
 
     eliminate() {

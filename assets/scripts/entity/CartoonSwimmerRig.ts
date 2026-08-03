@@ -14,6 +14,7 @@ import { FLIP_TURN_KEYFRAME_1, FLIP_TURN_KEYFRAME_2 } from '../character/FlipTur
 import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/SampledActionMotionCurve';
 import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
 import { SplashEmitter } from '../character/SplashEmitter';
+import type { SplashEmitterState } from '../character/SplashEmitter';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
@@ -128,6 +129,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private _model: Node = null;
     private _splashEmitter: SplashEmitter = null;
+    private readonly _splashState: SplashEmitterState = {
+        armAction: 0,
+        kickAction: 0,
+        armCycleMotion: 0,
+        kickCycleMotion: 0,
+        movementDirection: 1,
+        movementHeadingRadians: 0,
+        legSplashSuppressed: false,
+        leftHandWaterContact: 0,
+        rightHandWaterContact: 0,
+        leftHandWaterEntry: 0,
+        rightHandWaterEntry: 0,
+        leftHandWaterProgress: 0,
+        rightHandWaterProgress: 0,
+    };
     private readonly _pose = new FreestylePoseController();
     private readonly _animationPlayer = new CharacterAnimationPlayer();
     private readonly _poseState = new CharacterPoseStateController({
@@ -236,6 +252,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _motionThrottleStride = 1;
     private _motionThrottleCountdown = 0;
     private _motionThrottleAccumDt = 0;
+    private _lastTreadModelY = Number.NaN;
+    private _lastTreadModelEulerX = Number.NaN;
+    private _lastTreadModelEulerY = Number.NaN;
+    private _lastTreadModelEulerZ = Number.NaN;
 
     build(
         skinColor: Color,
@@ -503,6 +523,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._raceFlipTurnActive = false;
         this.resetDebugFlipTurnState();
         this._poseState.enterFreestyle();
+        this.invalidateTreadBlendModelPlacement();
         this._splashEmitter?.setVisible(true);
         this.updateSplashSurface(0);
     }
@@ -762,6 +783,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._animationPlayer.stop();
         if (active) {
+            this.invalidateTreadBlendModelPlacement();
             this._poseState.enterFreestyle();
         } else {
             this._poseState.enterPreview();
@@ -799,11 +821,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setLegSplashSuppressed(suppressed: boolean) {
+        if (this._legSplashSuppressed === suppressed) {
+            return;
+        }
         this._legSplashSuppressed = suppressed;
         this.syncSplashState();
     }
 
     setSplashCulled(culled: boolean) {
+        if (this._splashCulled === culled) {
+            return;
+        }
         this._splashCulled = culled;
         this._splashEmitter?.setCulled(culled);
     }
@@ -1084,20 +1112,32 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         const raceY = CHARACTER_POSE_TUNING.raceModelBaseY + this.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset;
         const raceEuler = this.raceModelEulerDegrees();
-        if (weight <= 0.001) {
-            this._model.setPosition(0, raceY, 0);
-            this._model.setRotationFromEuler(raceEuler[0], raceEuler[1], raceEuler[2]);
-            return;
-        }
+        const w = weight <= 0.001 ? 0 : Math.max(0, Math.min(1, weight));
         const treadY = CHARACTER_POSE_TUNING.raceModelBaseY + CHARACTER_POSE_TUNING.raceTreadModelYOffset + MOTION_TUNING.swimBodyYOffset;
         const treadEuler = CHARACTER_POSE_TUNING.raceTreadModelEuler;
-        const w = Math.max(0, Math.min(1, weight));
-        this._model.setPosition(0, lerpScalar(raceY, treadY, w), 0);
-        this._model.setRotationFromEuler(
-            lerpScalar(raceEuler[0], treadEuler[0], w),
-            lerpScalar(raceEuler[1], treadEuler[1], w),
-            lerpScalar(raceEuler[2], treadEuler[2], w),
-        );
+        const y = w === 0 ? raceY : lerpScalar(raceY, treadY, w);
+        const eulerX = w === 0 ? raceEuler[0] : lerpScalar(raceEuler[0], treadEuler[0], w);
+        const eulerY = w === 0 ? raceEuler[1] : lerpScalar(raceEuler[1], treadEuler[1], w);
+        const eulerZ = w === 0 ? raceEuler[2] : lerpScalar(raceEuler[2], treadEuler[2], w);
+        if (y !== this._lastTreadModelY) {
+            this._model.setPosition(0, y, 0);
+            this._lastTreadModelY = y;
+        }
+        if (eulerX !== this._lastTreadModelEulerX
+            || eulerY !== this._lastTreadModelEulerY
+            || eulerZ !== this._lastTreadModelEulerZ) {
+            this._model.setRotationFromEuler(eulerX, eulerY, eulerZ);
+            this._lastTreadModelEulerX = eulerX;
+            this._lastTreadModelEulerY = eulerY;
+            this._lastTreadModelEulerZ = eulerZ;
+        }
+    }
+
+    private invalidateTreadBlendModelPlacement() {
+        this._lastTreadModelY = Number.NaN;
+        this._lastTreadModelEulerX = Number.NaN;
+        this._lastTreadModelEulerY = Number.NaN;
+        this._lastTreadModelEulerZ = Number.NaN;
     }
 
     updateDebugActionPreview(dt: number) {
@@ -1163,7 +1203,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
-        if (this._poseState.update(dt, this._animationPlayer.hasAnimation)) {
+        let poseDt = dt;
+        if (this._backgroundSwimmer && this._poseState.isPresentationMotionActive) {
+            poseDt = this.consumeThrottledMotionDt(dt);
+            if (poseDt < 0) {
+                return;
+            }
+        }
+        if (this._poseState.update(poseDt, this._animationPlayer.hasAnimation)) {
             return;
         }
 
@@ -1216,6 +1263,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._treadWaterPhase = 0;
         this._treadExitHold = 0;
         this._treadSpeedOverride = -1;
+        this.invalidateTreadBlendModelPlacement();
         this._poseState.resetRuntime();
         this._splashEmitter?.reset();
         this._pose.restoreBasePose();
@@ -1760,21 +1808,24 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private syncSplashState() {
-        this._splashEmitter?.setState({
-            armAction: this._armAction,
-            kickAction: this._kickAction,
-            armCycleMotion: this._armCycleMotion,
-            kickCycleMotion: this._kickCycleMotion,
-            movementDirection: this._splashMovementDirection,
-            movementHeadingRadians: this._splashMovementHeadingRadians,
-            legSplashSuppressed: this._legSplashSuppressed,
-            leftHandWaterContact: this._leftHandWaterContact,
-            rightHandWaterContact: this._rightHandWaterContact,
-            leftHandWaterEntry: this._leftHandWaterEntry,
-            rightHandWaterEntry: this._rightHandWaterEntry,
-            leftHandWaterProgress: this._leftHandWaterProgress,
-            rightHandWaterProgress: this._rightHandWaterProgress,
-        });
+        if (!this._splashEmitter) {
+            return;
+        }
+        const state = this._splashState;
+        state.armAction = this._armAction;
+        state.kickAction = this._kickAction;
+        state.armCycleMotion = this._armCycleMotion;
+        state.kickCycleMotion = this._kickCycleMotion;
+        state.movementDirection = this._splashMovementDirection;
+        state.movementHeadingRadians = this._splashMovementHeadingRadians;
+        state.legSplashSuppressed = this._legSplashSuppressed;
+        state.leftHandWaterContact = this._leftHandWaterContact;
+        state.rightHandWaterContact = this._rightHandWaterContact;
+        state.leftHandWaterEntry = this._leftHandWaterEntry;
+        state.rightHandWaterEntry = this._rightHandWaterEntry;
+        state.leftHandWaterProgress = this._leftHandWaterProgress;
+        state.rightHandWaterProgress = this._rightHandWaterProgress;
+        this._splashEmitter.setState(state);
     }
 
     private getSplashBoneWorldPosition(name: string, out: Vec3): boolean {

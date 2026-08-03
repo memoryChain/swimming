@@ -67,6 +67,14 @@ export const STEERING_TUNING = {
     // 横向钳制时，泳者根节点与泳池侧壁之间保留的余量（米）。
     poolWallClearance: 0.4,
 
+    // Deterministic oriented footprint used for pool-wall and lane-lockdown checks.
+    // It follows only the synchronized root heading, never the render-rate skeleton pose,
+    // so AI pose LOD/culling cannot change race results across devices.
+    // 泳池边界与封道判定使用的确定性朝向包围体。只跟随同步的根节点朝向，不读取渲染骨骼，
+    // 避免 AI 动作降频或离屏冻结导致不同设备判定不一致。
+    poolBoundaryBodyHalfLength: 1.35,
+    poolBoundaryBodyHalfWidth: 0.9,
+
     // Use the behind-the-swimmer sprint chase camera for the surface-swim phase
     // so the weaving reads clearly. Not a slider (boolean).
     // 游泳推进段是否使用背后跟拍的冲刺视角，让蛇形一目了然。（布尔，不是滑块）

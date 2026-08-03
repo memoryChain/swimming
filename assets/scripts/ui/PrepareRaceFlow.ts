@@ -32,17 +32,31 @@ export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
 };
 
+type RaceModeCardView = {
+    id: RaceDifficulty;
+    background: Graphics;
+    title: Label | null;
+    description: Label;
+    selected: boolean;
+};
+
 const PANEL = UI_STYLE.panel;
 const PANEL_ALT = UI_STYLE.panelAlt;
 const CYAN = UI_STYLE.cyan;
 const ACCENT = UI_STYLE.accent;
 const MUTED = UI_STYLE.muted;
 const WHITE = UI_STYLE.white;
+const RACE_MODE_SELECTED_TEXT = uiColor(6, 35, 54);
+const RACE_MODE_SELECTED_DESCRIPTION = uiColor(6, 35, 54, 220);
+const RACE_MODE_DEFAULT_DESCRIPTION = uiColor(215, 238, 248);
 // Bottom horizontal roster strip geometry.
 const ROSTER_HEIGHT = 96;
 const ROSTER_CARD_WIDTH = 150;
 const ROSTER_CARD_HEIGHT = 68;
 const ROSTER_CARD_PITCH = 162;
+const CHARACTER_ROTATE_AREA_WIDTH = 420;
+const CHARACTER_ROTATE_AREA_HEIGHT = 450;
+const CHARACTER_ROTATE_AREA_Y = -5;
 
 // Screen-space lift applied to the central character preview (px). The 3D model
 // lift lives in PrepareRaceCharacterPreview (PREVIEW_CHARACTER_LIFT); these UI
@@ -57,7 +71,8 @@ export class PrepareRaceFlow {
     // The preview component owns the RenderTexture.  This UI SpriteFrame only
     // presents that live texture as the flattened shadow under its feet.
     private _shadowSprite: Sprite | null = null;
-    private _previewTouchX = 0;
+    private readonly _raceModeCards: RaceModeCardView[] = [];
+    private _previewRotateTouchId: number | null = null;
     // Rebuild the screen whenever the profile changes (coin gain/level-up) so the
     // upgrade buttons and cost stay in sync. Only rebuilds when content is shown.
     private _onProfileChange: (profile: PlayerProfile) => void = () => {
@@ -150,19 +165,39 @@ export class PrepareRaceFlow {
         // button on the right; the central column stays clear for the preview.
         this.buildRaceModeList(parent);
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
-        // Keep the drag surface strictly inside the central character area so
-        // it cannot intercept the roster strip or the skin/palette swatches.
-        rotateArea.getComponent(UITransform)!.setContentSize(240, 380);
-        rotateArea.setPosition(0, 52 + PREPARE_RACE_MODEL_LIFT, 2);
-        rotateArea.on(Node.EventType.TOUCH_START, (event: EventTouch) => { this._previewTouchX = event.getUILocation().x; });
-        rotateArea.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => {
-            const x = event.getUILocation().x;
-            this._preview?.rotateBy((x - this._previewTouchX) * 0.55);
-            this._previewTouchX = x;
-        });
-        // All actual UI controls are later siblings and therefore win hit
-        // testing wherever their rectangles overlap this drag surface.
-        rotateArea.setSiblingIndex(0);
+        // Cover the complete visible athlete while staying inside the empty central
+        // column: below the upgrade controls, above the roster, and between the side
+        // panels. The node is created last so it owns touches in this non-control area.
+        rotateArea.getComponent(UITransform)!.setContentSize(CHARACTER_ROTATE_AREA_WIDTH, CHARACTER_ROTATE_AREA_HEIGHT);
+        rotateArea.setPosition(0, CHARACTER_ROTATE_AREA_Y, 2);
+        this._previewRotateTouchId = null;
+        rotateArea.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginPreviewRotation(event));
+        rotateArea.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => this.updatePreviewRotation(event));
+        rotateArea.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.endPreviewRotation(event));
+        rotateArea.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.endPreviewRotation(event));
+    }
+
+    private beginPreviewRotation(event: EventTouch) {
+        if (this._previewRotateTouchId !== null) {
+            return;
+        }
+        this._previewRotateTouchId = event.getID();
+    }
+
+    private updatePreviewRotation(event: EventTouch) {
+        if (event.getID() !== this._previewRotateTouchId) {
+            return;
+        }
+        const deltaX = event.getDeltaX();
+        if (Number.isFinite(deltaX) && Math.abs(deltaX) > 0.01) {
+            this._preview?.rotateBy(deltaX * 0.55);
+        }
+    }
+
+    private endPreviewRotation(event: EventTouch) {
+        if (event.getID() === this._previewRotateTouchId) {
+            this._previewRotateTouchId = null;
+        }
     }
 
     private buildRealtimeCharacterShadow(parent: Node) {
@@ -531,6 +566,7 @@ export class PrepareRaceFlow {
         makeLabel('RaceModeHeading', parent, '比赛模式', 24, CYAN).setPosition(centerX, headingY, 3);
         const listTopY = headingY - 70;
         const cardPitch = 84;
+        this._raceModeCards.length = 0;
         RACE_DIFFICULTY_OPTIONS.forEach((option, index) => {
             const isSel = option.id === selected;
             const card = makeButton(`RaceMode${option.id}`, parent, 300, 72, isSel ? CYAN : PANEL, option.label);
@@ -538,15 +574,25 @@ export class PrepareRaceFlow {
             const label = card.getChildByName('Label')?.getComponent(Label);
             if (label) {
                 label.fontSize = 22;
-                label.color = isSel ? uiColor(6, 35, 54) : WHITE;
+                label.color = isSel ? RACE_MODE_SELECTED_TEXT : WHITE;
                 label.getComponent(UITransform)!.setContentSize(280, 28);
                 label.node.setPosition(0, 16, 1);
            }
-            const desc = makeLabel('Description', card, raceDifficultyDescription(option.id), 14, isSel ? uiColor(6, 35, 54, 220) : uiColor(215, 238, 248));
+            const desc = makeLabel('Description', card, raceDifficultyDescription(option.id), 14, isSel ? RACE_MODE_SELECTED_DESCRIPTION : RACE_MODE_DEFAULT_DESCRIPTION);
             desc.getComponent(UITransform)!.setContentSize(280, 28);
-            desc.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
+            const description = desc.getComponent(Label)!;
+            description.overflow = Label.Overflow.SHRINK;
             desc.setPosition(0, -16, 1);
-            card.on(Button.EventType.CLICK, () => { setSelectedRaceDifficulty(option.id); this.showCharacterSelect(); });
+            this._raceModeCards.push({
+                id: option.id,
+                background: card.getComponent(Graphics)!,
+                title: label,
+                description,
+                selected: isSel,
+            });
+            card.on(Button.EventType.CLICK, () => {
+                this.selectRaceDifficulty(option.id);
+            });
         });
 
         // Primary start button: bottom-right corner, same family as the start
@@ -563,6 +609,33 @@ export class PrepareRaceFlow {
             setRaceDifficulty(chosen);
             this._callbacks.onStartRace();
         });
+    }
+
+    private selectRaceDifficulty(difficulty: RaceDifficulty) {
+        if (getSelectedRaceDifficulty() === difficulty) {
+            return;
+        }
+        setSelectedRaceDifficulty(difficulty);
+        for (const card of this._raceModeCards) {
+            this.setRaceModeCardSelected(card, card.id === difficulty);
+        }
+    }
+
+    private setRaceModeCardSelected(card: RaceModeCardView, selected: boolean) {
+        if (card.selected === selected || !card.background?.isValid) {
+            return;
+        }
+        card.selected = selected;
+        card.background.clear();
+        card.background.fillColor = selected ? CYAN : PANEL;
+        card.background.rect(-150, -36, 300, 72);
+        card.background.fill();
+        if (card.title?.isValid) {
+            card.title.color = selected ? RACE_MODE_SELECTED_TEXT : WHITE;
+        }
+        if (card.description?.isValid) {
+            card.description.color = selected ? RACE_MODE_SELECTED_DESCRIPTION : RACE_MODE_DEFAULT_DESCRIPTION;
+        }
     }
 
     private showRaceSelect() {

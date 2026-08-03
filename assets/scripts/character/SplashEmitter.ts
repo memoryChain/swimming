@@ -114,6 +114,7 @@ export class SplashEmitter {
     private _particleEffectsEnabled = true;
     private _countSpeedFactor = 1;
     private readonly _reduced: boolean;
+    private _lastRootYawDegrees = Number.NaN;
 
     constructor(private readonly _options: SplashEmitterOptions) {
         this._waterY = _options.waterY;
@@ -258,7 +259,9 @@ export class SplashEmitter {
     }
 
     setVisible(active: boolean) {
-        this.node.active = active;
+        if (this.node.active !== active) {
+            this.node.active = active;
+        }
     }
 
     setCulled(culled: boolean) {
@@ -329,8 +332,10 @@ export class SplashEmitter {
         // the actual world heading so splashes trail the body when it steers off-lane.
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
         const yawDegrees = -direction * this._state.movementHeadingRadians * 180 / Math.PI;
-        this.node.setRotationFromEuler(0, yawDegrees, 0);
-        this.node.setScale(1, 1, 1);
+        if (yawDegrees !== this._lastRootYawDegrees) {
+            this.node.setRotationFromEuler(0, yawDegrees, 0);
+            this._lastRootYawDegrees = yawDegrees;
+        }
         let anyActive = false;
         for (const part of this._parts) {
             const isHand = part.node.name.indexOf('Hand') >= 0;

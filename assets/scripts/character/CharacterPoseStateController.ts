@@ -63,6 +63,14 @@ export class CharacterPoseStateController {
         return this._state === CharacterPoseState.Freestyle || this._state === CharacterPoseState.Glide;
     }
 
+    // Finished swimmers can safely follow the background-swimmer pose LOD. Showcase
+    // standing is deliberately excluded: the race camera's splash culling volume does
+    // not represent visibility during the preparation presentation.
+    get isPresentationMotionActive(): boolean {
+        return !this._poseTransition
+            && this._state === CharacterPoseState.TreadWater;
+    }
+
     setShowcaseAction(
         actionId: SampledActionId,
         actionOverride?: SampledActionMotion | null,

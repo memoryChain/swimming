@@ -24,6 +24,21 @@ Race-time UI runs alongside 3D rendering and networking on iOS JavaScriptCore, s
 - **Keep state update and presentation frequency separate.** Gameplay, timers, and synchronized values may update every simulation step, while the HUD consumes cached/quantized snapshots at a lower rate. UI throttling must never throttle gameplay or network state itself.
 - Before finishing race UI work, audit every call reachable from `GameManager.update()` for `Label.string`, `Graphics.clear`, `Node.active`, transform writes, Tween starts, and temporary allocations. Validate the result on a real iOS WeChat Mini Game build when the change is visually or structurally significant.
 
+## General UI Lifecycle And State Updates
+
+Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `Label`/`Sprite`/`Graphics`) follow the same lifecycle rules. Basic control-state changes must be local and must not rebuild unrelated UI or 3D content.
+
+- **Build stable UI hierarchy once.** Create nodes, components, labels, hit areas, and event listeners when the screen/panel is mounted. Keep references to controls that will change. Do not destroy and recreate a screen merely to refresh selection styling.
+- **A selection/toggle/tab change updates only affected controls.** Cache the previous state and update the old and new controls only (for example background tint, label color, checkmark visibility, or `Button.interactable`). Clicking the already-selected option must be a no-op.
+- **Never route a small state change through a broad `show*`, `refresh`, `reset`, or `rebuild*` method.** A difficulty button must not rebuild character cards, stats, shadows, listeners, or the character preview. Split APIs by scope, such as `buildScreen()`, `updateDifficultySelection()`, `updateCharacterStats()`, and `rebuildCharacterPreview()`.
+- **Do not make a generic `refresh()` destructive by default.** If a method destroys nodes, reloads assets, recreates a model/rig, restarts an animation, or rebinds events, its name and call sites must make that scope explicit. Prefer identity/version checks before any resource-level refresh.
+- **Keep 3D previews independent from 2D control state.** Rebuild a character preview only when its model identity or required asset actually changes. Difficulty, tab selection, sort/filter choices, button focus, or unrelated profile text must not restart the preview action, reset rotation, reload materials, or recreate its shadow capture.
+- **Bind listeners once.** State refreshes must not stack duplicate callbacks. If structural rebuild is genuinely required, destroy/unbind the old owner as one explicit lifecycle operation before creating the replacement.
+- **Write Cocos properties only on state edges.** Compare cached/current values before assigning `Node.active`, `Label.string/color`, `Sprite.color/spriteFrame`, `Button.interactable`, or layout properties. Do not start the same Tween repeatedly.
+- **For simple visual state, mutate presentation instead of replacing nodes.** Prefer sprite tint/material state where suitable. Event-only `Graphics.clear()` + redraw is acceptable for a small control when its state changes, but never rebuild the control hierarchy and never redraw it every frame.
+- **A data/profile change does not automatically justify a whole-screen rebuild.** Update the specific labels, counters, enabled states, or cards whose input changed. Structural rebuild is reserved for an actual change in hierarchy/card count/layout schema and should be commented with the reason.
+- Before finishing UI work, repeatedly toggle every option and verify: node/component counts stay stable, callbacks fire once, selected-state visuals are correct, scroll/rotation/focus are preserved, active animations remain continuous, and memory does not grow. For previews, explicitly test that unrelated UI changes do not reload the model or restart its action.
+
 ## Mobile Input
 
 - The current mobile race input is full-screen tap/hold. The invisible left and right screen halves map directly to `LEFT` and `RIGHT` strokes.

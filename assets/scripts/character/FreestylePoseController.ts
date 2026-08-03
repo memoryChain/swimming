@@ -7,7 +7,7 @@ import type { DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
 import { FLIP_TURN_KEYFRAME_1, FlipTurnBoneName, FlipTurnPoseSample } from './FlipTurnPoseCurve';
 import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotion, SampledActionMotionSample } from './SampledActionMotionCurve';
 
-const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new Set([
+const BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES: readonly BreaststrokeBoneName[] = [
     'L_Clavicle',
     'L_Upperarm',
     'L_Forearm',
@@ -24,7 +24,20 @@ const BREASTSTROKE_SAMPLED_LIMB_BONES: ReadonlySet<BreaststrokeBoneName> = new S
     'R_Calf',
     'R_Foot',
     'R_ToeBase',
-]);
+];
+type MutableVec3Tuple = [number, number, number];
+type MutableQuatTuple = [number, number, number, number];
+type BreaststrokeMotionSampleBuffer = {
+    sample: {
+        phase: number;
+        root: MutableVec3Tuple;
+        head: MutableVec3Tuple;
+        hand: MutableVec3Tuple;
+        foot: MutableVec3Tuple;
+        rotations: Partial<Record<BreaststrokeBoneName, MutableQuatTuple>>;
+    };
+    rotationBuffers: Partial<Record<BreaststrokeBoneName, MutableQuatTuple>>;
+};
 // Hand thickness differs enough between the four shared-rig meshes that one
 // wrist distance either leaves a visible gap or drives the left hand through
 // the right. These ratios were measured from the deformed palm surfaces in
@@ -107,6 +120,17 @@ export class FreestylePoseController {
     private _divePrepPoseOverride: DivePrepPoseSample | null = null;
     private readonly _sampledActionNodes = new Map<string, Node>();
     private readonly _flipTurnBones = new Map<FlipTurnBoneName, Node>();
+    private readonly _manualBones: Node[] = [];
+    private readonly _freestyleBlendRootPosition = new Vec3();
+    private readonly _freestyleBlendRootRotation = new Quat();
+    private readonly _freestyleBlendRotations: Quat[] = [];
+    private readonly _divePrepBlendRootPosition = new Vec3();
+    private readonly _divePrepBlendRootRotation = new Quat();
+    private readonly _divePrepBlendRotations: Quat[] = [];
+    private readonly _streamlineBlendRootPosition = new Vec3();
+    private readonly _streamlineBlendRootRotation = new Quat();
+    private readonly _streamlineBlendRotations: Quat[] = [];
+    private readonly _breaststrokeSampleBuffer = createBreaststrokeMotionSampleBuffer();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
     private readonly _boneBasePosition = new Map<Node, Vec3>();
     private readonly _tmpOffsetRotation = new Quat();
@@ -176,6 +200,7 @@ export class FreestylePoseController {
         this.bindBreaststrokeBones();
         this.bindFlipTurnBones(root);
         this.bindSampledActionNodes(root);
+        this.rebuildManualBoneCache();
     }
 
     captureBasePose() {
@@ -187,11 +212,9 @@ export class FreestylePoseController {
         Quat.copy(this.rootBaseRotation, this.root.rotation);
         this._boneBaseRotation.clear();
         this._boneBasePosition.clear();
-        for (const bone of this.manualBones) {
-            if (bone) {
-                this._boneBaseRotation.set(bone, Quat.clone(bone.rotation));
-                this._boneBasePosition.set(bone, Vec3.clone(bone.position));
-            }
+        for (const bone of this._manualBones) {
+            this._boneBaseRotation.set(bone, Quat.clone(bone.rotation));
+            this._boneBasePosition.set(bone, Vec3.clone(bone.position));
         }
         for (const bone of this._sampledActionNodes.values()) {
             if (!this._boneBaseRotation.has(bone)) {
@@ -234,8 +257,8 @@ export class FreestylePoseController {
             return null;
         }
         const boneRotations = new Map<Node, Quat>();
-        for (const bone of this.manualBones) {
-            if (bone?.isValid) {
+        for (const bone of this._manualBones) {
+            if (bone.isValid) {
                 boneRotations.set(bone, Quat.clone(bone.rotation));
             }
         }
@@ -290,7 +313,11 @@ export class FreestylePoseController {
     }
 
     setMovementDirection(direction: number) {
-        this._movementDirectionSign = direction >= 0 ? 1 : -1;
+        const next = direction >= 0 ? 1 : -1;
+        if (next === this._movementDirectionSign) {
+            return;
+        }
+        this._movementDirectionSign = next;
         this.updateMovementForwardWorld();
     }
 
@@ -299,7 +326,11 @@ export class FreestylePoseController {
     // pinned to world X and the arms keep pointing down the lane after the body
     // yaws. World forward = lane axis (by lap sign) rotated by heading about Y.
     setMovementHeadingRadians(headingRadians: number) {
-        this._movementHeadingRadians = Number.isFinite(headingRadians) ? headingRadians : 0;
+        const next = Number.isFinite(headingRadians) ? headingRadians : 0;
+        if (next === this._movementHeadingRadians) {
+            return;
+        }
+        this._movementHeadingRadians = next;
         this.updateMovementForwardWorld();
     }
 
@@ -369,7 +400,7 @@ export class FreestylePoseController {
             return;
         }
         const p = positiveMod(phase, 1);
-        const sample = sampleBreaststrokeMotion(1 - p, this._breaststrokeSamplesOverride);
+        const sample = sampleBreaststrokeMotion(1 - p, this._breaststrokeSamplesOverride, this._breaststrokeSampleBuffer);
         const hand = sample.hand;
         const foot = sample.foot;
         const head = sample.head;
@@ -425,21 +456,23 @@ export class FreestylePoseController {
             return;
         }
 
-        const bones = this.manualBones.filter((bone): bone is Node => !!bone);
+        const bones = this._manualBones;
         this.applyFreestylePose(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, upperBodyPower, armPower, kickPower);
-        const freestyleRootPosition = this.root.position.clone();
-        const freestyleRootRotation = this.root.rotation.clone();
-        const freestyleRotations = bones.map((bone) => bone.rotation.clone());
+        Vec3.copy(this._freestyleBlendRootPosition, this.root.position);
+        Quat.copy(this._freestyleBlendRootRotation, this.root.rotation);
+        for (let i = 0; i < bones.length; i++) {
+            Quat.copy(this._freestyleBlendRotations[i], bones[i].rotation);
+        }
 
         this.restoreBasePose();
         this.applyBreaststrokePose(treadPhase, 1);
 
-        Vec3.lerp(this._tmpBlendPosition, freestyleRootPosition, this.root.position, weight);
+        Vec3.lerp(this._tmpBlendPosition, this._freestyleBlendRootPosition, this.root.position, weight);
         this.root.setPosition(this._tmpBlendPosition);
-        Quat.slerp(this._tmpBlendRotation, freestyleRootRotation, this.root.rotation, weight);
+        Quat.slerp(this._tmpBlendRotation, this._freestyleBlendRootRotation, this.root.rotation, weight);
         this.root.setRotation(this._tmpBlendRotation);
         for (let i = 0; i < bones.length; i++) {
-            Quat.slerp(this._tmpBlendRotation, freestyleRotations[i], bones[i].rotation, weight);
+            Quat.slerp(this._tmpBlendRotation, this._freestyleBlendRotations[i], bones[i].rotation, weight);
             bones[i].setRotation(this._tmpBlendRotation);
         }
     }
@@ -523,24 +556,28 @@ export class FreestylePoseController {
             return;
         }
 
-        const bones = this.manualBones.filter((bone): bone is Node => !!bone);
+        const bones = this._manualBones;
         this.applyDivePrepPose(1);
-        const prepRootPosition = this.root.position.clone();
-        const prepRootRotation = this.root.rotation.clone();
-        const prepRotations = bones.map((bone) => bone.rotation.clone());
+        Vec3.copy(this._divePrepBlendRootPosition, this.root.position);
+        Quat.copy(this._divePrepBlendRootRotation, this.root.rotation);
+        for (let i = 0; i < bones.length; i++) {
+            Quat.copy(this._divePrepBlendRotations[i], bones[i].rotation);
+        }
 
         this.restoreBasePose();
         this.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
-        const streamlineRootPosition = this.root.position.clone();
-        const streamlineRootRotation = this.root.rotation.clone();
-        const streamlineRotations = bones.map((bone) => bone.rotation.clone());
+        Vec3.copy(this._streamlineBlendRootPosition, this.root.position);
+        Quat.copy(this._streamlineBlendRootRotation, this.root.rotation);
+        for (let i = 0; i < bones.length; i++) {
+            Quat.copy(this._streamlineBlendRotations[i], bones[i].rotation);
+        }
 
-        Vec3.lerp(this._tmpBlendPosition, prepRootPosition, streamlineRootPosition, t);
+        Vec3.lerp(this._tmpBlendPosition, this._divePrepBlendRootPosition, this._streamlineBlendRootPosition, t);
         this.root.setPosition(this._tmpBlendPosition);
-        Quat.slerp(this._tmpBlendRotation, prepRootRotation, streamlineRootRotation, t);
+        Quat.slerp(this._tmpBlendRotation, this._divePrepBlendRootRotation, this._streamlineBlendRootRotation, t);
         this.root.setRotation(this._tmpBlendRotation);
         for (let i = 0; i < bones.length; i++) {
-            Quat.slerp(this._tmpBlendRotation, prepRotations[i], streamlineRotations[i], t);
+            Quat.slerp(this._tmpBlendRotation, this._divePrepBlendRotations[i], this._streamlineBlendRotations[i], t);
             bones[i].setRotation(this._tmpBlendRotation);
         }
     }
@@ -726,11 +763,11 @@ export class FreestylePoseController {
     }
 
     get boundJointCount(): number {
-        return this.manualBones.filter(Boolean).length;
+        return this._manualBones.length;
     }
 
     get manualBoneCount(): number {
-        return this.manualBones.filter(Boolean).length;
+        return this._manualBones.length;
     }
 
     get leftArmPresent(): boolean {
@@ -757,8 +794,8 @@ export class FreestylePoseController {
         return boneEuler(this._leftLeg);
     }
 
-    private get manualBones(): Array<Node | null> {
-        const bones: Array<Node | null> = [
+    private rebuildManualBoneCache() {
+        const candidates: Array<Node | null> = [
             this._torso,
             this._rootBone,
             this._hips,
@@ -783,12 +820,27 @@ export class FreestylePoseController {
             this._rightFoot,
             this._rightToe,
         ];
-        for (const bone of this._flipTurnBones.values()) {
-            if (bones.indexOf(bone) < 0) {
-                bones.push(bone);
+        this._manualBones.length = 0;
+        for (const bone of candidates) {
+            if (bone && this._manualBones.indexOf(bone) < 0) {
+                this._manualBones.push(bone);
             }
         }
-        return bones;
+        for (const bone of this._flipTurnBones.values()) {
+            if (this._manualBones.indexOf(bone) < 0) {
+                this._manualBones.push(bone);
+            }
+        }
+        this.resizeRotationBuffer(this._freestyleBlendRotations);
+        this.resizeRotationBuffer(this._divePrepBlendRotations);
+        this.resizeRotationBuffer(this._streamlineBlendRotations);
+    }
+
+    private resizeRotationBuffer(buffer: Quat[]) {
+        while (buffer.length < this._manualBones.length) {
+            buffer.push(new Quat());
+        }
+        buffer.length = this._manualBones.length;
     }
 
     private isArmBone(bone: Node): boolean {
@@ -933,10 +985,8 @@ export class FreestylePoseController {
 
     private applyBreaststrokeSampleRotations(sample: BreaststrokeMotionSample, power: number) {
         const blend = clamp(power, 0, 1);
-        for (const name of Object.keys(sample.rotations) as BreaststrokeBoneName[]) {
-            if (!BREASTSTROKE_SAMPLED_LIMB_BONES.has(name)) {
-                continue;
-            }
+        for (let index = 0; index < BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES.length; index++) {
+            const name = BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES[index];
             const rotation = sample.rotations[name];
             if (!rotation) {
                 continue;
@@ -1833,7 +1883,8 @@ const NEUTRAL_BREASTSTROKE_SAMPLE: BreaststrokeMotionSample = {
 
 function sampleBreaststrokeMotion(
     phase: number,
-    samplesOverride: readonly BreaststrokeMotionSample[] | null = null,
+    samplesOverride: readonly BreaststrokeMotionSample[] | null,
+    buffer: BreaststrokeMotionSampleBuffer,
 ): BreaststrokeMotionSample {
     const samples = samplesOverride ?? getBreaststrokeSamples();
     if (samples.length === 0) {
@@ -1850,17 +1901,110 @@ function sampleBreaststrokeMotion(
         const next = samples[i + 1];
         if (p >= current.phase && p <= next.phase) {
             const t = smoothRange(p, current.phase, next.phase);
-            return {
-                phase: p,
-                root: lerpVectorTuple(current.root, next.root, t),
-                head: lerpVectorTuple(current.head, next.head, t),
-                hand: lerpVectorTuple(current.hand, next.hand, t),
-                foot: lerpVectorTuple(current.foot, next.foot, t),
-                rotations: slerpBreaststrokeRotations(current.rotations, next.rotations, t),
-            };
+            const sample = buffer.sample;
+            sample.phase = p;
+            lerpVectorTupleInto(sample.root, current.root, next.root, t);
+            lerpVectorTupleInto(sample.head, current.head, next.head, t);
+            lerpVectorTupleInto(sample.hand, current.hand, next.hand, t);
+            lerpVectorTupleInto(sample.foot, current.foot, next.foot, t);
+            for (let boneIndex = 0; boneIndex < BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES.length; boneIndex++) {
+                const name = BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES[boneIndex];
+                const fromRotation = current.rotations[name];
+                const toRotation = next.rotations[name];
+                const output = buffer.rotationBuffers[name];
+                if (!fromRotation || !toRotation || !output) {
+                    sample.rotations[name] = undefined;
+                    continue;
+                }
+                slerpQuatTupleInto(output, fromRotation, toRotation, t);
+                sample.rotations[name] = output;
+            }
+            return sample;
         }
     }
     return samples[samples.length - 1];
+}
+
+function createBreaststrokeMotionSampleBuffer(): BreaststrokeMotionSampleBuffer {
+    const rotations: Partial<Record<BreaststrokeBoneName, MutableQuatTuple>> = {};
+    const rotationBuffers: Partial<Record<BreaststrokeBoneName, MutableQuatTuple>> = {};
+    for (const name of BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES) {
+        const rotation: MutableQuatTuple = [0, 0, 0, 1];
+        rotations[name] = rotation;
+        rotationBuffers[name] = rotation;
+    }
+    return {
+        sample: {
+            phase: 0,
+            root: [0, 0, 0],
+            head: [0, 0, 0],
+            hand: [0, 0, 0],
+            foot: [0, 0, 0],
+            rotations,
+        },
+        rotationBuffers,
+    };
+}
+
+function lerpVectorTupleInto(
+    output: MutableVec3Tuple,
+    from: readonly [number, number, number],
+    to: readonly [number, number, number],
+    t: number,
+) {
+    output[0] = lerp(from[0], to[0], t);
+    output[1] = lerp(from[1], to[1], t);
+    output[2] = lerp(from[2], to[2], t);
+}
+
+function slerpQuatTupleInto(
+    output: MutableQuatTuple,
+    from: readonly [number, number, number, number],
+    to: readonly [number, number, number, number],
+    t: number,
+) {
+    const ax = from[0];
+    const ay = from[1];
+    const az = from[2];
+    const aw = from[3];
+    let bx = to[0];
+    let by = to[1];
+    let bz = to[2];
+    let bw = to[3];
+    let dot = ax * bx + ay * by + az * bz + aw * bw;
+    if (dot < 0) {
+        dot = -dot;
+        bx = -bx;
+        by = -by;
+        bz = -bz;
+        bw = -bw;
+    }
+    if (dot > 0.9995) {
+        output[0] = lerp(ax, bx, t);
+        output[1] = lerp(ay, by, t);
+        output[2] = lerp(az, bz, t);
+        output[3] = lerp(aw, bw, t);
+        normalizeQuatTupleInto(output);
+        return;
+    }
+    const theta0 = Math.acos(clamp(dot, -1, 1));
+    const theta = theta0 * t;
+    const sinTheta = Math.sin(theta);
+    const sinTheta0 = Math.sin(theta0);
+    const s0 = Math.cos(theta) - dot * sinTheta / sinTheta0;
+    const s1 = sinTheta / sinTheta0;
+    output[0] = ax * s0 + bx * s1;
+    output[1] = ay * s0 + by * s1;
+    output[2] = az * s0 + bz * s1;
+    output[3] = aw * s0 + bw * s1;
+}
+
+function normalizeQuatTupleInto(value: MutableQuatTuple) {
+    const length = Math.sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2] + value[3] * value[3]) || 1;
+    value[0] /= length;
+    value[1] /= length;
+    value[2] /= length;
+    value[3] /= length;
 }
 
 function sampleDebugActionMotion(samples: readonly SampledActionMotionSample[], phase: number): SampledActionMotionSample {
