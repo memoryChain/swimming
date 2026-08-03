@@ -326,7 +326,7 @@ export class PrepareRaceFlow {
         makeLabel('CharacterName', panel, `${character.name}  Lv.${level}${atMax ? '（满级）' : ''}`, 28, WHITE)
             .setPosition(0, panelHeight / 2 - 42, 1);
         // 六维天赋雷达图：替换原来的三条进度条，直观展示角色的先天资质轮廓。
-        this.buildRadarChart(panel, character, 2);
+        this.buildRadarChart(panel, character, 22);
         const description = makeLabel('Description', panel, character.description, 14, uiColor(214, 232, 246));
         description.getComponent(UITransform)!.setContentSize(290, 40);
         description.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.CENTER;
@@ -435,7 +435,7 @@ export class PrepareRaceFlow {
     // 六维能力雷达图（先天资质，固定不随等级变化）。顺时针从正上方开始：
     // 体力 / 爆发 / 踢腿 / 对抗(体重归一化) / 蓄气 / 技巧。
     private buildRadarChart(panel: Node, character: ReturnType<typeof findPlayerCharacter> & {}, centerY: number) {
-        const R = 74;
+        const R = 96;
         const axes = [
             { label: '体力', value: character.stamina },
             { label: '爆发', value: character.burst },
@@ -458,7 +458,7 @@ export class PrepareRaceFlow {
         };
 
         const gfxNode = makeUiNode('RadarChart', panel);
-        gfxNode.getComponent(UITransform)!.setContentSize(260, 230);
+        gfxNode.getComponent(UITransform)!.setContentSize(300, 260);
         const gfx = gfxNode.addComponent(Graphics);
         gfxNode.setPosition(0, centerY, 1);
 
@@ -472,14 +472,14 @@ export class PrepareRaceFlow {
         for (let r = 0; r < rings.length; r++) {
             const outer = r === rings.length - 1;
             gfx.strokeColor = outer ? uiColor(120, 200, 240, 150) : uiColor(80, 150, 200, 48);
-            gfx.lineWidth = outer ? 1.6 : 1;
+            gfx.lineWidth = outer ? 1.8 : 1;
             trace(rings[r]);
             gfx.stroke();
         }
 
         // 六条径向辐条：从中心连到每个顶点，让每个维度的方向清晰可读。
         gfx.strokeColor = uiColor(110, 180, 220, 95);
-        gfx.lineWidth = 1.2;
+        gfx.lineWidth = 1.4;
         for (let i = 0; i < n; i++) {
             const v = vertex(i, 1);
             gfx.moveTo(0, 0);
@@ -491,7 +491,7 @@ export class PrepareRaceFlow {
         const ratio = (i: number) => Math.max(0, Math.min(100, axes[i].value)) / 100;
         gfx.fillColor = uiColor(80, 215, 255, 78);
         gfx.strokeColor = uiColor(150, 238, 255, 255);
-        gfx.lineWidth = 2.6;
+        gfx.lineWidth = 3;
         for (let i = 0; i <= n; i++) {
             const v = vertex(i % n, ratio(i % n));
             if (i === 0) gfx.moveTo(v.x, v.y); else gfx.lineTo(v.x, v.y);
@@ -503,20 +503,20 @@ export class PrepareRaceFlow {
         for (let i = 0; i < n; i++) {
             const v = vertex(i, ratio(i));
             gfx.fillColor = uiColor(10, 40, 70, 255);
-            gfx.circle(v.x, v.y, 4.2);
+            gfx.circle(v.x, v.y, 4.8);
             gfx.fill();
             gfx.fillColor = uiColor(180, 244, 255, 255);
-            gfx.circle(v.x, v.y, 2.6);
+            gfx.circle(v.x, v.y, 3);
             gfx.fill();
         }
 
         // 轴标签（名称 + 数值）放在雷达外侧。
         for (let i = 0; i < n; i++) {
             const a = angle(i);
-            const lx = (R + 16) * Math.cos(a);
-            const ly = (R + 16) * Math.sin(a);
-            const label = makeLabel(`RadarLabel${i}`, panel, `${axes[i].label} ${axes[i].value}`, 13, uiColor(220, 238, 250));
-            label.getComponent(UITransform)!.setContentSize(86, 20);
+            const lx = (R + 18) * Math.cos(a);
+            const ly = (R + 18) * Math.sin(a);
+            const label = makeLabel(`RadarLabel${i}`, panel, `${axes[i].label} ${axes[i].value}`, 14, uiColor(220, 238, 250));
+            label.getComponent(UITransform)!.setContentSize(96, 22);
             label.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.CENTER;
             label.setPosition(lx, centerY + ly, 2);
         }
