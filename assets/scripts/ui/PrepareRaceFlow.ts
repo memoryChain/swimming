@@ -4,6 +4,7 @@ import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
     findPlayerCharacter,
+    PlayerCharacterDefinition,
     getPlayerCharacterSelection,
     getSelectedRaceDifficulty,
     PLAYER_CHARACTER_DEFINITIONS,
@@ -17,10 +18,14 @@ import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview'
 import { openAppearancePanel } from './AppearancePanel';
 import { openCharacterStatsPanel } from './CharacterStatsPanel';
 import { getProgressionManager } from '../progression/ProgressionManager';
-import { PROGRESSION_BALANCE, xpForLevel } from '../progression/ProgressionBalance';
+import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
 import { UI_STYLE } from './UIStyle';
+import { PlayerData } from '../backend/PlayerData';
+import type { PlayerProfile } from '../backend/PlayerProfile';
+import { getUILayer, UILayer } from './UILayers';
+import { showToast } from './Toast';
 
 export type PrepareRaceFlowCallbacks = {
     onBack: () => void;
@@ -53,6 +58,13 @@ export class PrepareRaceFlow {
     // presents that live texture as the flattened shadow under its feet.
     private _shadowSprite: Sprite | null = null;
     private _previewTouchX = 0;
+    // Rebuild the screen whenever the profile changes (coin gain/level-up) so the
+    // upgrade buttons and cost stay in sync. Only rebuilds when content is shown.
+    private _onProfileChange: (profile: PlayerProfile) => void = () => {
+        if (this._root?.isValid && this._content?.isValid) {
+            this.showCharacterSelect();
+        }
+    };
     // Appearance is edited through the 外观 popup (see openAppearance).
 
     constructor(
@@ -82,6 +94,7 @@ export class PrepareRaceFlow {
     }
 
     dispose() {
+        PlayerData.offChange(this._onProfileChange);
         this._previewRoot?.destroy();
         this._previewRoot = null;
         this._preview = null;
@@ -95,6 +108,7 @@ export class PrepareRaceFlow {
         const root = makeUiNode('PrepareRaceUI', this._parent);
         root.getComponent(UITransform)!.setContentSize(this._width, this._height);
         this._root = root;
+        PlayerData.onChange(this._onProfileChange);
         this.buildBackground(root);
     }
 
@@ -125,6 +139,7 @@ export class PrepareRaceFlow {
 
     private buildCharacterSelect(parent: Node) {
         makeScreenTitle(parent, '准备比赛', this._height / 2 - 56);
+        this.buildCharacterHeader(parent);
         // Back navigation lives in the unified resource headbar (top-left) now, so
         // this screen no longer draws its own back button.
         this.buildRealtimeCharacterShadow(parent);
@@ -304,27 +319,12 @@ export class PrepareRaceFlow {
         // preserved; the right side is left for the race-mode list.
         const detailTopY = this._height / 2 - HEADBAR_TOP_SAFE_AREA;
         panel.setPosition(-(this._width / 2 - panelWidth / 2 - 32), detailTopY - panelHeight / 2, 2);
-        makeLabel('CharacterName', panel, character.name, 32, WHITE).setPosition(0, panelHeight / 2 - 42, 1);
-        // Progression: show current level and XP progress for this character.
         const progression = getProgressionManager();
         const level = progression.getCharacterLevel(character.id);
-        const xp = progression.getCharacterXp(character.id);
-        const xpNeeded = level >= PROGRESSION_BALANCE.maxLevel ? 0 : xpForLevel(level);
-        makeLabel('LevelLabel', panel, 'Lv.' + level + (level >= PROGRESSION_BALANCE.maxLevel ? ' (满级)' : ''), 18, uiColor(150, 200, 255)).setPosition(0, panelHeight / 2 - 120, 1);
-        if (xpNeeded > 0) {
-            const xpLabel = makeLabel('XpLabel', panel, 'XP', 20, WHITE);
-            xpLabel.getComponent(UITransform)!.setContentSize(72, 28);
-            xpLabel.setPosition(-118, panelHeight / 2 - 142, 1);
-            const xpBarWidth = 188;
-            const xpTrack = makeRect('XpTrack', panel, xpBarWidth, 16, uiColor(24, 55, 90, 255));
-            xpTrack.setPosition(18, panelHeight / 2 - 142, 1);
-            const xpRatio = Math.max(0, Math.min(1, xp / xpNeeded));
-            const xpFill = makeRect('XpFill', xpTrack, 184 * xpRatio, 10, uiColor(120, 220, 130, 255));
-            xpFill.setPosition(-92 + (184 * xpRatio) / 2, 0, 2);
-            const xpValueLabel = makeLabel('XpValue', panel, xp + '/' + xpNeeded, 16, WHITE);
-            xpValueLabel.getComponent(UITransform)!.setContentSize(72, 24);
-            xpValueLabel.setPosition(132, panelHeight / 2 - 142, 1);
-        }
+        const atMax = level >= PROGRESSION_BALANCE.maxLevel;
+        // Name + level together at the top of the character card, above the description.
+        makeLabel('CharacterName', panel, `${character.name}  Lv.${level}${atMax ? '（满级）' : ''}`, 28, WHITE)
+            .setPosition(0, panelHeight / 2 - 42, 1);
         // 六维天赋雷达图：替换原来的三条进度条，直观展示角色的先天资质轮廓。
         this.buildRadarChart(panel, character, 2);
         const description = makeLabel('Description', panel, character.description, 14, uiColor(214, 232, 246));
@@ -348,6 +348,88 @@ export class PrepareRaceFlow {
         statsHit.transition = Button.Transition.NONE;
         makeLabel('Label', statsButton, '属性', 20, WHITE).setPosition(0, 0, 1);
         statsButton.on(Button.EventType.CLICK, () => openCharacterStatsPanel(this._canvasNode, this._width, this._height));
+    }
+
+    private buildCharacterHeader(parent: Node) {
+        const character = findPlayerCharacter();
+        if (!character) {
+            return;
+        }
+        const progression = getProgressionManager();
+        if (progression.getCharacterLevel(character.id) >= PROGRESSION_BALANCE.maxLevel) {
+            return;
+        }
+        const cost = progression.coinCostForNextLevel(character.id);
+        const affordable = PlayerData.coins >= cost;
+
+        // Only the two upgrade buttons live above the character's head (below the
+        // title). Name + level stay on the character card. The single-upgrade
+        // button shows the coin cost as a number; the number turns red when
+        // unaffordable. Button background color never changes - only the number.
+        const y = this._height / 2 - 96;
+        const singleBtn = makeRoundedRect('UpgradeSingle', parent, 160, 48, PANEL_ALT, 10, UI_STYLE.cyanOutline, 1.5);
+        singleBtn.setPosition(-95, y, 3);
+        const singleHit = singleBtn.addComponent(Button);
+        singleHit.target = singleBtn;
+        singleHit.transition = Button.Transition.NONE;
+        makeLabel('SingleLabel', singleBtn, '升级', 20, WHITE).setPosition(-34, 0, 1);
+        const costColor = affordable ? WHITE : uiColor(255, 80, 80, 255);
+        makeLabel('SingleCost', singleBtn, `${cost}`, 20, costColor).setPosition(40, 0, 1);
+        singleBtn.on(Button.EventType.CLICK, async () => {
+            const need = progression.coinCostForNextLevel(character.id);
+            if (PlayerData.coins < need) {
+                showToast(this._canvasNode, '金币不足');
+                return;
+            }
+            const result = await progression.spendForLevel(character.id);
+            if (result.levelsGained > 0) {
+                showToast(this._canvasNode, `升级成功 · Lv.${progression.getCharacterLevel(character.id)}`);
+            } else {
+                showToast(this._canvasNode, '金币不足');
+            }
+        });
+
+        const maxBtn = makeRoundedRect('UpgradeMax', parent, 160, 48, PANEL, 10, UI_STYLE.cyanOutline, 1.5);
+        maxBtn.setPosition(95, y, 3);
+        const maxHit = maxBtn.addComponent(Button);
+        maxHit.target = maxBtn;
+        maxHit.transition = Button.Transition.NONE;
+        makeLabel('MaxLabel', maxBtn, '一键升满', 20, WHITE).setPosition(0, 0, 1);
+        maxBtn.on(Button.EventType.CLICK, () => this.confirmSpendToMax(character));
+    }
+
+    private confirmSpendToMax(character: PlayerCharacterDefinition) {
+        const progression = getProgressionManager();
+        const projection = progression.projectSpendToMax(character.id);
+        if (projection.levels <= 0) {
+            showToast(this._canvasNode, '金币不足');
+            return;
+        }
+        const popup = getUILayer(this._canvasNode, UILayer.Popup);
+        popup.getChildByName('UpgradeConfirm')?.destroy();
+        const root = makeUiNode('UpgradeConfirm', popup);
+        const dim = makeRect('Dim', root, this._width, this._height, uiColor(2, 8, 14, 200));
+        dim.on(Node.EventType.TOUCH_END, () => root.destroy());
+        const panelW = 460;
+        const panelH = 220;
+        const panel = makeRoundedRect('Panel', root, panelW, panelH, uiColor(14, 36, 58, 252), 16, uiColor(86, 196, 236, 110), 2);
+        makeLabel('Title', panel, '一键升满', 28, WHITE).setPosition(0, panelH / 2 - 36, 1);
+        makeLabel('Body', panel, `将花费 ${projection.coins} 金币，升级 ${projection.levels} 级`, 20, uiColor(214, 232, 246))
+            .setPosition(0, 6, 1);
+        const cancel = makeButton('Cancel', panel, 160, 52, uiColor(61, 81, 99, 255), '取消');
+        cancel.setPosition(-90, -panelH / 2 + 40, 1);
+        cancel.on(Node.EventType.TOUCH_END, () => root.destroy());
+        const confirm = makeButton('Confirm', panel, 160, 52, CYAN, '确认');
+        confirm.setPosition(90, -panelH / 2 + 40, 1);
+        confirm.on(Node.EventType.TOUCH_END, async () => {
+            root.destroy();
+            const result = await progression.spendToMax(character.id);
+            if (result.levelsGained > 0) {
+                showToast(this._canvasNode, `升级到 Lv.${progression.getCharacterLevel(character.id)}（+${result.levelsGained}级）`);
+            } else {
+                showToast(this._canvasNode, '金币不足');
+            }
+        });
     }
 
     // 六维能力雷达图（先天资质，固定不随等级变化）。顺时针从正上方开始：

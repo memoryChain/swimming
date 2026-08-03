@@ -7,7 +7,7 @@
 // local mock; the production WeChat Cloud backend is the authoritative one.
 
 import { sys } from 'cc';
-import { AdRewardResult, IBackend, IdentityPatch } from './IBackend';
+import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult } from './IBackend';
 import {
     createDefaultProfile,
     normalizeProfile,
@@ -15,6 +15,7 @@ import {
     PROGRESSION_CONFIG,
     todayString,
 } from './PlayerProfile';
+import { PROGRESSION_BALANCE, coinCostForLevel } from '../progression/ProgressionBalance';
 
 const STORAGE_KEY = 'swimming.player-profile';
 
@@ -34,11 +35,49 @@ export class MockBackend implements IBackend {
         if (profile.daily.adCount >= PROGRESSION_CONFIG.dailyAdCap) {
             return Promise.resolve({ ok: false, profile, granted: 0, reason: 'capped' });
         }
-        const granted = PROGRESSION_CONFIG.adRewardSwimCards;
-        profile.swimCards += granted;
+        const granted = PROGRESSION_CONFIG.adRewardCoins;
+        profile.coins += granted;
         profile.daily.adCount += 1;
         this.write(profile);
         return Promise.resolve({ ok: true, profile, granted });
+    }
+
+    // DEBUG ONLY: no ad, no cap. See IBackend.grantDebugCoins.
+    grantDebugCoins(amount: number): Promise<PlayerProfile> {
+        const profile = this.read();
+        profile.coins += Math.max(0, Math.floor(amount));
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
+    spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult> {
+        const profile = this.read();
+        const progress = profile.characters[characterId];
+        if (!progress) {
+            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'maxed' });
+        }
+        if (progress.level >= PROGRESSION_BALANCE.maxLevel) {
+            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'maxed' });
+        }
+        let levelsGained = 0;
+        let coinsSpent = 0;
+        let remaining = Math.max(0, Math.floor(requestedLevels));
+        while (remaining > 0 && progress.level < PROGRESSION_BALANCE.maxLevel) {
+            const cost = coinCostForLevel(progress.level);
+            if (profile.coins < cost) {
+                break;
+            }
+            profile.coins -= cost;
+            coinsSpent += cost;
+            progress.level += 1;
+            levelsGained += 1;
+            remaining -= 1;
+        }
+        if (levelsGained === 0) {
+            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'insufficient' });
+        }
+        this.write(profile);
+        return Promise.resolve({ ok: true, profile, levelsGained, coinsSpent });
     }
 
     saveIdentity(identity: IdentityPatch): Promise<PlayerProfile> {

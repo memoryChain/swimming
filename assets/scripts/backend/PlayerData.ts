@@ -1,5 +1,5 @@
-// PlayerData - the single in-memory entry point for 养成 data. UI reads PlayerData.
-// swimCards and subscribes to onChange() to refresh; gameplay calls its methods to
+// PlayerData - the single in-memory entry point for 养成 data. UI reads PlayerData
+// coins and subscribes to onChange() to refresh; gameplay calls its methods to
 // mutate. It delegates persistence to the active backend (mock now, WeChat Cloud
 // later) and notifies listeners whenever the profile changes.
 
@@ -7,6 +7,7 @@ import { backend } from './BackendManager';
 import { AdRewardResult } from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
+import type { SpendResult } from '../progression/ProgressionManager';
 
 type ChangeListener = (profile: PlayerProfile) => void;
 
@@ -20,8 +21,8 @@ class PlayerDataStore {
         return this._profile;
     }
 
-    get swimCards(): number {
-        return this._profile.swimCards;
+    get coins(): number {
+        return this._profile.coins;
     }
 
     get nickName(): string {
@@ -71,6 +72,28 @@ class PlayerDataStore {
         return result;
     }
 
+    // DEBUG ONLY: add coins with no ad and no cap (headbar "+" button while ads
+    // are deferred). Updates local state and notifies listeners.
+    async grantDebugCoins(amount: number): Promise<void> {
+        this._profile = await backend().grantDebugCoins(amount);
+        this._emit();
+    }
+
+    // Spend coins to level a character. Delegates to the backend (validates
+    // balance, returns authoritative profile) and maps the raw result into the
+    // SpendResult shape the progression/UI layer expects.
+    async spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<SpendResult> {
+        const result = await backend().spendCoinsForLevel(characterId, requestedLevels);
+        this._profile = result.profile;
+        this._emit();
+        return {
+            characterId,
+            levelsGained: result.levelsGained,
+            coinsSpent: result.coinsSpent,
+            reason: result.ok ? undefined : result.reason,
+        };
+    }
+
     // Change the chosen avatar; persists and notifies listeners.
     async setAvatar(avatarId: string): Promise<void> {
         this._profile = await backend().saveIdentity({ avatarId });
@@ -85,7 +108,7 @@ class PlayerDataStore {
 
     // Persist the current in-memory profile (phase-2 progression writes). Delegates
     // to the backend and notifies listeners with the authoritative result. Safe to
-    // call after mutating this.profile in place (e.g. progression XP/level updates).
+    // call after mutating this.profile in place (e.g. progression coin updates).
     async persist(): Promise<PlayerProfile> {
         this._profile = await backend().saveProfile(this._profile);
         this._emit();

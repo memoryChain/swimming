@@ -12,6 +12,7 @@ import { netRoom } from '../net/NetManager';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { PlayerData } from '../backend/PlayerData';
+import { PROGRESSION_CONFIG } from '../backend/PlayerProfile';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { SettingsManager } from './SettingsManager';
 import { openSettingsPanel } from '../ui/SettingsPanel';
@@ -19,9 +20,6 @@ import { AVATARS } from '../backend/IdentityConfig';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
 
-// Placeholder rewarded-ad unit id. Replace with the real id from the WeChat MP
-// backend before shipping.
-const SWIM_CARD_AD_UNIT_ID = 'adunit-swimcard-placeholder';
 
 const { ccclass } = _decorator;
 
@@ -35,7 +33,6 @@ export class LoginManager extends Component {
     private _prepareRaceFlow: PrepareRaceFlow | null = null;
     private _headBar: ResourceHeadBar | null = null;
     private _roomFlow: RoomFlow | null = null;
-    private _adPending = false;
     private _pendingOpenRoom = false;
     private _pendingJoinRoomId: string | null = null;
     private _pendingReconnect = false;
@@ -89,7 +86,7 @@ export class LoginManager extends Component {
         // z-order juggling. Load the profile so the count reflects saved data.
         this._headBar = new ResourceHeadBar();
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
-            onAddSwimCards: () => this.watchAdForSwimCards(),
+            onAddCoins: () => this.grantDebugCoins(),
             onEditIdentity: () => this.openIdentityEdit(),
             onOpenSettings: () => openSettingsPanel(canvasNode, width, height),
         });
@@ -140,29 +137,12 @@ export class LoginManager extends Component {
         close.on(Node.EventType.TOUCH_END, () => root.destroy());
     }
 
-    // Watch a rewarded ad to gain 游泳卡. The reward is granted authoritatively by the
-    // backend (mock now, cloud function later); the headbar auto-refreshes via
-    // PlayerData.onChange. Guarded so double-taps don't stack ad requests.
-    private async watchAdForSwimCards() {
-        if (this._adPending) {
-            return;
-        }
-        this._adPending = true;
-        try {
-            const outcome = await platform().showRewardedAd(SWIM_CARD_AD_UNIT_ID);
-            if (outcome !== 'completed') {
-                console.log(`[Login] rewarded ad not completed: ${outcome}`);
-                return;
-            }
-            const result = await PlayerData.grantAdReward();
-            if (result.ok) {
-                console.log(`[Login] +${result.granted} 游泳卡 (total ${result.profile.swimCards})`);
-            } else if (result.reason === 'capped') {
-                console.log('[Login] daily ad reward cap reached');
-            }
-        } finally {
-            this._adPending = false;
-        }
+    // DEBUG ONLY: add coins with no ad and no cap (headbar "+" button while the
+    // rewarded-ad flow is deferred). The headbar auto-refreshes via
+    // PlayerData.onChange. See PROGRESSION_CONFIG.debugGrantCoins - this must be
+    // removed or gated behind a real ad flow before shipping.
+    private async grantDebugCoins() {
+        await PlayerData.grantDebugCoins(PROGRESSION_CONFIG.debugGrantCoins);
     }
 
     onDestroy() {

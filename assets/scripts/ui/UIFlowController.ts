@@ -4,15 +4,7 @@ import { RaceResultStats, UIController } from './UIController';
 
 export type ProgressionResult = {
     characterId: string;
-    characterName: string;
-    xpGained: number;
-    previousLevel: number;
-    newLevel: number;
-    leveledUp: boolean;
-    newXp: number;
-    xpForNextLevel: number;
-    previousXp: number;
-    previousXpForNextLevel: number;
+    coinsGained: number;
 } | null;
 
 export type UIFlowRefs = {

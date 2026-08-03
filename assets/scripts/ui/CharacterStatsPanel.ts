@@ -45,7 +45,7 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
         title: '划水质量',
         lines: [
             '松手时机决定：完美窗口中心=完美(满额推力)，良好窗口=良好(按比例)，失误=无推力。',
-            '连击只影响比赛结算经验，不叠加推力；推力大小受技巧资质影响，但时机纯靠操作。',
+            '连击只影响比赛结算金币，不叠加推力；推力大小受技巧资质影响，但时机纯靠操作。',
         ],
     },
     {
@@ -122,7 +122,7 @@ export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, d
     renderTable(content, rows, contentH);
     renderMechanicsSection(content, contentH / 2 - tableH - MECH_TOP_GAP);
 
-    const note1 = makeLabel('Note1', panel, `体力为先天资质（0-100），决定赛中体能池上限；体能为赛中实际值，由资质与等级折算。等级通过比赛经验提升，满级 ${maxLevel}。`, 16, UI_STYLE.muted);
+    const note1 = makeLabel('Note1', panel, `体力为先天资质（0-100），决定赛中体能池上限；体能为赛中实际值，由资质与等级折算。等级通过花费金币提升，满级 ${maxLevel}。`, 16, UI_STYLE.muted);
     note1.getComponent(UITransform)!.setContentSize(TABLE_W - 20, 28);
     note1.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
     note1.setPosition(0, -PANEL_H / 2 + 60, 1);

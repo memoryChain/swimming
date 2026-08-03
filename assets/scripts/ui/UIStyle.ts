@@ -1,4 +1,4 @@
-﻿import { uiColor } from './RuntimeUiFactory';
+import { uiColor } from './RuntimeUiFactory';
 
 // Shared UI palette for all non-race screens (start menu, prepare-race, headbar).
 // Keep every runtime-built UI on these tokens so screens stay visually unified.
@@ -16,7 +16,6 @@ export const UI_STYLE = {
     // Text colors.
     white: uiColor(242, 250, 255, 255),
     faint: uiColor(180, 200, 220, 255),
-    // Stat / XP bar fills.
-    xpFill: uiColor(120, 220, 130, 255),
+    // Stat bar fills.
     barTrack: uiColor(24, 55, 90, 255),
 };

@@ -18,7 +18,7 @@ const PILL_OUTLINE = UI_STYLE.cyanOutline;
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
-    onAddSwimCards?: () => void;
+    onAddCoins?: () => void;
     // Called when the player taps their identity (avatar + name) to edit it.
     onEditIdentity?: () => void;
     // Called when the player taps the settings gear (shown only when provided).
@@ -116,7 +116,7 @@ export class ResourceHeadBar {
         // "+" button: watch an ad to gain swim cards.
         const addButton = makeButton('Add', pill, 44, 44, UI_STYLE.accent, '+');
         addButton.setPosition(BAR_WIDTH / 2 - 32, 0, 0);
-        addButton.on(Node.EventType.TOUCH_END, () => options.onAddSwimCards?.());
+        addButton.on(Node.EventType.TOUCH_END, () => options.onAddCoins?.());
 
         // Settings entry, left of the resource pill. Matches the headbar panels:
         // same dark rounded plate + faint cyan outline (only when a handler is given).
@@ -167,7 +167,7 @@ export class ResourceHeadBar {
 
     refresh(profile: PlayerProfile): void {
         if (this._countLabel) {
-            this._countLabel.string = `${CURRENCY.swimCard.label} ${profile.swimCards}`;
+            this._countLabel.string = `${CURRENCY.coin.label} ${profile.coins}`;
         }
         this.refreshIdentity(profile);
     }
