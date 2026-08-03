@@ -15,9 +15,10 @@
 //   "<senderPos>|<token>;<token>;...|<selfPos>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative position "<lane>,<distCm>,<latMm>,<fin>,<headMrad>". Positions ride the
-// RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently
-// and froze remote swimmers), so every client's copy of every human catches up reliably.
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>".
+// Position, pose speed, and outcome-affecting ultimate energy ride the RELIABLE lock-step
+// frame channel (not best-effort broadcasts, which drop intermittently), so every client's
+// copy of every human catches up to its owner reliably.
 // An empty event list is "<senderPos>|" (optionally "<senderPos>||<selfPos>").
 
 import type { NetSnapshotEntry } from './NetRaceSnapshot';
@@ -110,7 +111,7 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))}`;
     }
     return out;
 }
@@ -148,6 +149,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
             const headMrad = p.length > 4 ? parseInt(p[4], 10) : 0;
             if (Number.isFinite(lane) && Number.isFinite(distCm) && Number.isFinite(latMm)) {
                 const speedCms = p.length > 5 ? parseInt(p[5], 10) : -1;
+                const energy = p.length > 6 ? parseInt(p[6], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -155,7 +157,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     finished: fin,
                     heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
                     speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
-                    energy: -1,
+                    energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
                 };
             }
         }

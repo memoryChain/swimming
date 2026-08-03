@@ -10,10 +10,13 @@ const OVERLAP_X = 76;
 const OVERLAP_Y = 22;
 const AI_COLOR = new Color(245, 250, 255, 255);
 const OUTLINE_COLOR = new Color(5, 14, 24, 225);
+const NAME_TAG_UPDATE_INTERVAL = 1 / 30;
 
 type NameEntry = {
     swimmer: Swimmer;
     root: Node;
+    x: number;
+    y: number;
 };
 
 // Lightweight race-time name tags. They reuse the same world -> screen -> HUD
@@ -31,6 +34,7 @@ export class SwimmerNameOverlay {
     private readonly _cameraToHead = new Vec3();
     private readonly _placedX: number[] = [];
     private readonly _placedY: number[] = [];
+    private _updateElapsed = NAME_TAG_UPDATE_INTERVAL;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -68,13 +72,16 @@ export class SwimmerNameOverlay {
             label.enableOutline = true;
             label.outlineColor = OUTLINE_COLOR;
             label.outlineWidth = 2;
-            this._entries.push({ swimmer, root: tag });
+            this._entries.push({ swimmer, root: tag, x: Number.NaN, y: Number.NaN });
         }
     }
 
     setVisible(visible: boolean) {
-        if (this._root?.isValid) {
+        if (this._root?.isValid && this._root.active !== visible) {
             this._root.active = visible;
+            if (visible) {
+                this._updateElapsed = NAME_TAG_UPDATE_INTERVAL;
+            }
         }
     }
 
@@ -84,10 +91,16 @@ export class SwimmerNameOverlay {
         finishDistance: number,
         showFinished = false,
         headOffsetY = HEAD_OFFSET_Y,
+        dt = NAME_TAG_UPDATE_INTERVAL,
     ) {
         if (!this._root?.isValid || !this._root.active || !this._hud?.isValid || !worldCamera || !uiCamera) {
             return;
         }
+        this._updateElapsed += Math.max(0, dt);
+        if (this._updateElapsed < NAME_TAG_UPDATE_INTERVAL) {
+            return;
+        }
+        this._updateElapsed %= NAME_TAG_UPDATE_INTERVAL;
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;
@@ -103,7 +116,7 @@ export class SwimmerNameOverlay {
             const swimmerNode = entry.swimmer?.node;
             if (!entry.root?.isValid || !swimmerNode?.isValid || !swimmerNode.activeInHierarchy
                 || (!showFinished && entry.swimmer.distance >= finishDistance)) {
-                if (entry.root?.isValid) {
+                if (entry.root?.isValid && entry.root.active) {
                     entry.root.active = false;
                 }
                 continue;
@@ -111,19 +124,23 @@ export class SwimmerNameOverlay {
             entry.swimmer.getCameraUpperBodyWorldPosition(this._worldPos);
             Vec3.subtract(this._cameraToHead, this._worldPos, worldCamera.node.worldPosition);
             if (Vec3.dot(this._cameraToHead, this._cameraForward) <= 0) {
-                entry.root.active = false;
+                if (entry.root.active) {
+                    entry.root.active = false;
+                }
                 continue;
             }
             worldCamera.worldToScreen(this._worldPos, this._screenPos);
             uiCamera.screenToWorld(this._screenPos, this._uiWorld);
             hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
             if (Math.abs(this._uiLocal.x) > halfWidth || Math.abs(this._uiLocal.y) > halfHeight) {
-                entry.root.active = false;
+                if (entry.root.active) {
+                    entry.root.active = false;
+                }
                 continue;
             }
 
-            const x = this._uiLocal.x;
-            let y = this._uiLocal.y + headOffsetY;
+            const x = Math.round(this._uiLocal.x);
+            let y = Math.round(this._uiLocal.y + headOffsetY);
             for (let guard = 0; guard < this._entries.length; guard++) {
                 let collided = false;
                 for (let i = 0; i < this._placedX.length; i++) {
@@ -139,8 +156,14 @@ export class SwimmerNameOverlay {
             }
             this._placedX.push(x);
             this._placedY.push(y);
-            entry.root.active = true;
-            entry.root.setPosition(x, y, 0);
+            if (!entry.root.active) {
+                entry.root.active = true;
+            }
+            if (entry.x !== x || entry.y !== y) {
+                entry.x = x;
+                entry.y = y;
+                entry.root.setPosition(x, y, 0);
+            }
         }
     }
 }

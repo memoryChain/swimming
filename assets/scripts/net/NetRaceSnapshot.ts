@@ -33,9 +33,9 @@ export interface NetSnapshotEntry {
     // replay (which jitters over the network → "treading water while sliding forward").
     // -1 = not provided (consumer falls back to the local motor speed).
     speed: number;
-    // Owner's authoritative ultimate energy (0..100, integer points). Host-authoritative;
-    // used to keep dolphin-jump cost validation consistent across clients. -1 = not
-    // provided (only the S| host snapshot carries it; the P| self-report does not).
+    // Ultimate energy (0..100, integer points). For human lanes the owner's reliable
+    // frame self-report is authoritative; for AI lanes the host S| snapshot is
+    // authoritative. -1 = not provided by an older payload.
     energy: number;
 }
 

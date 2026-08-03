@@ -6,6 +6,32 @@ import { SprintVignetteOverlay } from './SprintVignetteOverlay';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
 
 const { ccclass, property } = _decorator;
+const HUD_BAR_WIDTH = 220;
+const HUD_BAR_BACKGROUND = new Color(20, 24, 34, 180);
+const HUD_READY_TICK = new Color(255, 255, 255, 200);
+const HEART_RATE_LOW = new Color(120, 196, 255, 255);
+const HEART_RATE_OPTIMAL = new Color(80, 242, 161, 255);
+const HEART_RATE_HIGH = new Color(255, 184, 77, 255);
+const HEART_RATE_OVERLOAD = new Color(255, 92, 92, 255);
+const ENERGY_EMPTY = new Color(120, 120, 130, 255);
+const ENERGY_LOW = new Color(255, 92, 92, 255);
+const ENERGY_MID = new Color(255, 184, 77, 255);
+const ENERGY_HIGH = new Color(120, 220, 255, 255);
+const SPRINT_ENERGY_EMPTY = new Color(180, 80, 30, 255);
+const SPRINT_ENERGY_LOW = new Color(255, 100, 30, 255);
+const SPRINT_ENERGY_MID = new Color(255, 160, 40, 255);
+const SPRINT_ENERGY_HIGH = new Color(255, 210, 70, 255);
+const ULTIMATE_DENIED = new Color(255, 92, 92, 255);
+const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
+const ULTIMATE_READY = new Color(255, 215, 90, 255);
+const ULTIMATE_CHARGING = new Color(210, 160, 60, 255);
+const DIVE_CHARGE_HEIGHT = 216;
+const DIVE_GFX_LOW = new Color(87, 196, 255, 255);
+const DIVE_GFX_MID = new Color(80, 242, 161, 255);
+const DIVE_GFX_HIGH = new Color(255, 224, 89, 255);
+const DIVE_SPRITE_LOW = new Color(255, 82, 91, 255);
+const DIVE_SPRITE_MID = new Color(76, 216, 235, 255);
+const DIVE_SPRITE_HIGH = new Color(255, 214, 64, 255);
 
 export type RaceResultStats = {
     averageSpeed: number;
@@ -57,6 +83,24 @@ export class UIController extends Component {
     private _sprintActive = false;
     private _energyTotal = 100;
     private _ultimateDeniedUntil = 0;
+    // Hot HUD cache: Cocos Label.string rebuilds text meshes and Graphics.clear()
+    // rebuilds geometry. Quantize fills to physical bar pixels and only touch labels
+    // when their displayed integer actually changes.
+    private _progressPercent = -1;
+    private _progressDotPixel = -1;
+    private _aiDistanceTenths = -1;
+    private _heartRateText = -1;
+    private _heartRateFillPixel = -1;
+    private _heartRateColor: Color | null = null;
+    private _energyText = -1;
+    private _energyFillPixel = -1;
+    private _energyColor: Color | null = null;
+    private _ultimateText = -1;
+    private _ultimateFillPixel = -1;
+    private _ultimateColor: Color | null = null;
+    private _diveChargeFillPixel = -1;
+    private _diveChargeGfxColor: Color | null = null;
+    private _diveChargeSpriteColor: Color | null = null;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -96,22 +140,28 @@ export class UIController extends Component {
     updateProgress(playerDist: number, aiDist: number) {
         const raceDistance = getRaceDistance();
         const ratio = clamp01(playerDist / raceDistance);
-        if (this.distanceLabel) {
-            this.distanceLabel.string = `${Math.round(ratio * 100)}%`;
+        const percent = Math.round(ratio * 100);
+        if (this.distanceLabel && percent !== this._progressPercent) {
+            this._progressPercent = percent;
+            this.distanceLabel.string = `${percent}%`;
         }
-        if (this.progressDot) {
-            this.progressDot.setPosition(-this.progressTrackWidth / 2 + this.progressTrackWidth * ratio, 0, 0);
+        const dotPixel = Math.round(this.progressTrackWidth * ratio);
+        if (this.progressDot && dotPixel !== this._progressDotPixel) {
+            this._progressDotPixel = dotPixel;
+            this.progressDot.setPosition(-this.progressTrackWidth / 2 + dotPixel, 0, 0);
         }
-        if (this.aiDistanceLabel) {
-            this.aiDistanceLabel.string = `AI ${Math.min(raceDistance, aiDist).toFixed(1)}m`;
+        const aiTenths = Math.round(Math.min(raceDistance, aiDist) * 10);
+        if (this.aiDistanceLabel && aiTenths !== this._aiDistanceTenths) {
+            this._aiDistanceTenths = aiTenths;
+            this.aiDistanceLabel.string = `AI ${(aiTenths / 10).toFixed(1)}m`;
         }
     }
 
     setProgressVisible(visible: boolean) {
-        if (this.progressTrackRoot) {
+        if (this.progressTrackRoot && this.progressTrackRoot.active !== visible) {
             this.progressTrackRoot.active = visible;
         }
-        if (this.distanceLabel?.node) {
+        if (this.distanceLabel?.node && this.distanceLabel.node.active !== visible) {
             this.distanceLabel.node.active = visible;
         }
     }
@@ -125,17 +175,26 @@ export class UIController extends Component {
 
     updateHeartRateBar(heartRate: number, zone: string) {
         const ratio = clamp01(heartRate / 200);
-        if (this.heartRateBarFill) {
-            drawHeartRateFill(this.heartRateBarFill, ratio, heartRateZoneColor(zone));
+        const color = heartRateZoneColor(zone);
+        const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
+        const colorChanged = color !== this._heartRateColor;
+        if (this.heartRateBarFill && (fillPixel !== this._heartRateFillPixel || colorChanged)) {
+            drawHeartRateFill(this.heartRateBarFill, fillPixel / HUD_BAR_WIDTH, color);
         }
-        if (this.heartRateLabel) {
-            this.heartRateLabel.string = `心率 ${Math.round(heartRate)}`;
-            this.heartRateLabel.color = heartRateZoneColor(zone);
+        this._heartRateFillPixel = fillPixel;
+        this._heartRateColor = color;
+        const textValue = Math.round(heartRate);
+        if (this.heartRateLabel && textValue !== this._heartRateText) {
+            this._heartRateText = textValue;
+            this.heartRateLabel.string = `心率 ${textValue}`;
+        }
+        if (this.heartRateLabel && colorChanged) {
+            this.heartRateLabel.color = color;
         }
     }
 
     setHeartRateBarVisible(visible: boolean) {
-        if (this.heartRateBarRoot) {
+        if (this.heartRateBarRoot && this.heartRateBarRoot.active !== visible) {
             this.heartRateBarRoot.active = visible;
         }
     }
@@ -145,16 +204,29 @@ export class UIController extends Component {
         const color = this._sprintActive
             ? sprintEnergyColor(ratio, depleted)
             : energyColor(ratio, depleted);
-        if (this.energyBarFill) {
-            drawEnergyFill(this.energyBarFill, ratio, color);
+        const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
+        const colorChanged = color !== this._energyColor;
+        if (this.energyBarFill && (fillPixel !== this._energyFillPixel || colorChanged)) {
+            drawEnergyFill(this.energyBarFill, fillPixel / HUD_BAR_WIDTH, color);
         }
-        if (this.energyLabel) {
-            this.energyLabel.string = `体能 ${Math.round(energy)}`;
+        this._energyFillPixel = fillPixel;
+        this._energyColor = color;
+        const textValue = Math.round(energy);
+        if (this.energyLabel && textValue !== this._energyText) {
+            this._energyText = textValue;
+            this.energyLabel.string = `体能 ${textValue}`;
+        }
+        if (this.energyLabel && colorChanged) {
             this.energyLabel.color = color;
         }
     }
 
     setSprintActive(active: boolean) {
+        if (active === this._sprintActive) {
+            return;
+        }
+        this._energyFillPixel = -1;
+        this._energyColor = null;
         this._sprintActive = active;
         this.sprintVignette?.setActive(active);
         if (!this.sprintLabel) {
@@ -201,10 +273,11 @@ export class UIController extends Component {
 
     setEnergyTotal(total: number) {
         this._energyTotal = Math.max(1, total);
+        this._energyFillPixel = -1;
     }
 
     setEnergyBarVisible(visible: boolean) {
-        if (this.energyBarRoot) {
+        if (this.energyBarRoot && this.energyBarRoot.active !== visible) {
             this.energyBarRoot.active = visible;
         }
     }
@@ -214,11 +287,24 @@ export class UIController extends Component {
         const ratio = clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
         const denied = Date.now() < this._ultimateDeniedUntil;
         const color = ultimateEnergyColor(ratio, enough, denied);
-        if (this.ultimateBarFill) {
-            drawUltimateEnergyFill(this.ultimateBarFill, ratio, color, ULTIMATE_ENERGY_BALANCE.dolphinCost / ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
+        const colorChanged = color !== this._ultimateColor;
+        if (this.ultimateBarFill && (fillPixel !== this._ultimateFillPixel || colorChanged)) {
+            drawUltimateEnergyFill(
+                this.ultimateBarFill,
+                fillPixel / HUD_BAR_WIDTH,
+                color,
+                ULTIMATE_ENERGY_BALANCE.dolphinCost / ULTIMATE_ENERGY_BALANCE.maxEnergy,
+            );
         }
-        if (this.ultimateLabel) {
-            this.ultimateLabel.string = `蓄气 ${Math.round(energy)}`;
+        this._ultimateFillPixel = fillPixel;
+        this._ultimateColor = color;
+        const textValue = Math.round(energy);
+        if (this.ultimateLabel && textValue !== this._ultimateText) {
+            this._ultimateText = textValue;
+            this.ultimateLabel.string = `蓄气 ${textValue}`;
+        }
+        if (this.ultimateLabel && colorChanged) {
             this.ultimateLabel.color = color;
         }
     }
@@ -226,10 +312,12 @@ export class UIController extends Component {
     // 能量不足时触发一次短暂红闪（弱提示，不打断操作）。
     flashUltimateEnergyDenied() {
         this._ultimateDeniedUntil = Date.now() + 350;
+        this._ultimateFillPixel = -1;
+        this._ultimateColor = null;
     }
 
     setUltimateBarVisible(visible: boolean) {
-        if (this.ultimateBarRoot) {
+        if (this.ultimateBarRoot && this.ultimateBarRoot.active !== visible) {
             this.ultimateBarRoot.active = visible;
         }
     }
@@ -289,17 +377,33 @@ export class UIController extends Component {
 
     updateDiveCharge(power: number, visible: boolean) {
         this.setSpeedBarVisible(!visible && !this.countdownOverlay?.active);
-        if (this.diveChargeTrack) {
+        if (this.diveChargeTrack && this.diveChargeTrack.active !== visible) {
             this.diveChargeTrack.active = visible;
         }
-        if (this.diveChargeFill) {
+        if (this.diveChargeFill && this.diveChargeFill.node.active !== visible) {
             this.diveChargeFill.node.active = visible;
-            drawChargeFill(this.diveChargeFill, clamp01(power));
         }
-        if (this.diveChargeFillNode) {
+        if (this.diveChargeFillNode && this.diveChargeFillNode.active !== visible) {
             this.diveChargeFillNode.active = visible;
-            setVerticalFill(this.diveChargeFillNode, clamp01(power), chargeColor(power));
         }
+        if (!visible) {
+            return;
+        }
+        const ratio = clamp01(power);
+        const fillPixel = Math.round(ratio * DIVE_CHARGE_HEIGHT);
+        const gfxColor = diveChargeGraphicsColor(ratio);
+        if (this.diveChargeFill
+            && (fillPixel !== this._diveChargeFillPixel || gfxColor !== this._diveChargeGfxColor)) {
+            drawChargeFill(this.diveChargeFill, fillPixel / DIVE_CHARGE_HEIGHT, gfxColor);
+        }
+        const spriteColor = diveChargeSpriteColor(ratio);
+        if (this.diveChargeFillNode
+            && (fillPixel !== this._diveChargeFillPixel || spriteColor !== this._diveChargeSpriteColor)) {
+            setVerticalFill(this.diveChargeFillNode, fillPixel / DIVE_CHARGE_HEIGHT, spriteColor);
+        }
+        this._diveChargeFillPixel = fillPixel;
+        this._diveChargeGfxColor = gfxColor;
+        this._diveChargeSpriteColor = spriteColor;
     }
 
     // Straggler countdown after the first racer finishes: swimmers still in the
@@ -593,6 +697,7 @@ export class UIController extends Component {
 
     resetAll() {
         this.hideProgressionResult();
+        this.invalidateRaceHudCache();
         this.updateProgress(0, 0);
         this.setRaceStatusVisible(false);
         if (this.ratingLabel) {
@@ -630,6 +735,24 @@ export class UIController extends Component {
         if (this.hintLabel) {
             this.hintLabel.string = '准备开始';
         }
+    }
+
+    private invalidateRaceHudCache() {
+        this._progressPercent = -1;
+        this._progressDotPixel = -1;
+        this._aiDistanceTenths = -1;
+        this._heartRateText = -1;
+        this._heartRateFillPixel = -1;
+        this._heartRateColor = null;
+        this._energyText = -1;
+        this._energyFillPixel = -1;
+        this._energyColor = null;
+        this._ultimateText = -1;
+        this._ultimateFillPixel = -1;
+        this._ultimateColor = null;
+        this._diveChargeFillPixel = -1;
+        this._diveChargeGfxColor = null;
+        this._diveChargeSpriteColor = null;
     }
 
     private updateLeaderboard(rows: RaceLeaderboardRow[] | undefined, playerTime: number) {
@@ -701,7 +824,7 @@ export class UIController extends Component {
     }
 
     private setSpeedBarVisible(visible: boolean) {
-        if (this.speedBarRoot) {
+        if (this.speedBarRoot && this.speedBarRoot.active !== visible) {
             this.speedBarRoot.active = visible;
         }
     }
@@ -727,10 +850,10 @@ function clamp01(value: number): number {
 }
 
 function drawHeartRateFill(gfx: Graphics, ratio: number, color: Color) {
-    const w = 220;
+    const w = HUD_BAR_WIDTH;
     const h = 16;
     gfx.clear();
-    gfx.fillColor = new Color(20, 24, 34, 180);
+    gfx.fillColor = HUD_BAR_BACKGROUND;
     gfx.rect(-w / 2, -h / 2, w, h);
     gfx.fill();
     gfx.fillColor = color;
@@ -741,21 +864,21 @@ function drawHeartRateFill(gfx: Graphics, ratio: number, color: Color) {
 function heartRateZoneColor(zone: string): Color {
     switch (zone) {
         case 'OPTIMAL':
-            return new Color(80, 242, 161, 255);
+            return HEART_RATE_OPTIMAL;
         case 'HIGH_PRESSURE':
-            return new Color(255, 184, 77, 255);
+            return HEART_RATE_HIGH;
         case 'OVERLOAD':
-            return new Color(255, 92, 92, 255);
+            return HEART_RATE_OVERLOAD;
         default:
-            return new Color(120, 196, 255, 255);
+            return HEART_RATE_LOW;
     }
 }
 
 function drawEnergyFill(gfx: Graphics, ratio: number, color: Color) {
-    const w = 220;
+    const w = HUD_BAR_WIDTH;
     const h = 16;
     gfx.clear();
-    gfx.fillColor = new Color(20, 24, 34, 180);
+    gfx.fillColor = HUD_BAR_BACKGROUND;
     gfx.rect(-w / 2, -h / 2, w, h);
     gfx.fill();
     gfx.fillColor = color;
@@ -765,49 +888,49 @@ function drawEnergyFill(gfx: Graphics, ratio: number, color: Color) {
 
 function energyColor(ratio: number, depleted: boolean): Color {
     if (depleted || ratio <= 0.0001) {
-        return new Color(120, 120, 130, 255);
+        return ENERGY_EMPTY;
     }
     if (ratio < 0.25) {
-        return new Color(255, 92, 92, 255);
+        return ENERGY_LOW;
     }
     if (ratio < 0.5) {
-        return new Color(255, 184, 77, 255);
+        return ENERGY_MID;
     }
-    return new Color(120, 220, 255, 255);
+    return ENERGY_HIGH;
 }
 
 // Fiery palette during sprint: warm oranges replace the normal blue/teal.
 function sprintEnergyColor(ratio: number, depleted: boolean): Color {
     if (depleted || ratio <= 0.0001) {
-        return new Color(180, 80, 30, 255);
+        return SPRINT_ENERGY_EMPTY;
     }
     if (ratio < 0.25) {
-        return new Color(255, 100, 30, 255);
+        return SPRINT_ENERGY_LOW;
     }
     if (ratio < 0.5) {
-        return new Color(255, 160, 40, 255);
+        return SPRINT_ENERGY_MID;
     }
-    return new Color(255, 210, 70, 255);
+    return SPRINT_ENERGY_HIGH;
 }
 
 function ultimateEnergyColor(ratio: number, enough: boolean, denied: boolean): Color {
     if (denied) {
-        return new Color(255, 92, 92, 255);
+        return ULTIMATE_DENIED;
     }
     if (ratio <= 0.0001) {
-        return new Color(110, 100, 80, 255);
+        return ULTIMATE_EMPTY;
     }
     if (enough) {
-        return new Color(255, 215, 90, 255);
+        return ULTIMATE_READY;
     }
-    return new Color(210, 160, 60, 255);
+    return ULTIMATE_CHARGING;
 }
 
 function drawUltimateEnergyFill(gfx: Graphics, ratio: number, color: Color, readyRatio: number) {
-    const w = 220;
+    const w = HUD_BAR_WIDTH;
     const h = 16;
     gfx.clear();
-    gfx.fillColor = new Color(20, 24, 34, 180);
+    gfx.fillColor = HUD_BAR_BACKGROUND;
     gfx.rect(-w / 2, -h / 2, w, h);
     gfx.fill();
     gfx.fillColor = color;
@@ -815,22 +938,18 @@ function drawUltimateEnergyFill(gfx: Graphics, ratio: number, color: Color, read
     gfx.fill();
     // 海豚跳消耗刻度线（readyRatio 位置），提示“攒到这里就能放”。
     const tickX = -w / 2 + w * clamp01(readyRatio);
-    gfx.strokeColor = new Color(255, 255, 255, 200);
+    gfx.strokeColor = HUD_READY_TICK;
     gfx.lineWidth = 2;
     gfx.moveTo(tickX, -h / 2);
     gfx.lineTo(tickX, h / 2);
     gfx.stroke();
 }
 
-function drawChargeFill(gfx: Graphics, ratio: number) {
+function drawChargeFill(gfx: Graphics, ratio: number, color: Color) {
     const w = 12;
-    const h = 216;
+    const h = DIVE_CHARGE_HEIGHT;
     gfx.clear();
-    gfx.fillColor = ratio > 0.82
-        ? new Color(255, 224, 89, 255)
-        : ratio > 0.45
-            ? new Color(80, 242, 161, 255)
-            : new Color(87, 196, 255, 255);
+    gfx.fillColor = color;
     gfx.rect(-w / 2, -h / 2, w, h * ratio);
     gfx.fill();
 }
@@ -851,12 +970,12 @@ function setVerticalFill(node: Node, ratio: number, color: Color) {
     node.setPosition(node.position.x, -originalHeight / 2 + height / 2, node.position.z);
 }
 
-function chargeColor(power: number): Color {
-    return power > 0.82
-        ? new Color(255, 214, 64, 255)
-        : power > 0.45
-            ? new Color(76, 216, 235, 255)
-            : new Color(255, 82, 91, 255);
+function diveChargeGraphicsColor(power: number): Color {
+    return power > 0.82 ? DIVE_GFX_HIGH : power > 0.45 ? DIVE_GFX_MID : DIVE_GFX_LOW;
+}
+
+function diveChargeSpriteColor(power: number): Color {
+    return power > 0.82 ? DIVE_SPRITE_HIGH : power > 0.45 ? DIVE_SPRITE_MID : DIVE_SPRITE_LOW;
 }
 
 function fitName(name: string): string {

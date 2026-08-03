@@ -11,7 +11,10 @@ import { makeUiNode } from './RuntimeUiFactory';
 const VIGNETTE_COLOR = new Color(255, 110, 40, 255);
 const ACTIVE_OPACITY = 80;
 const INNER_RADIUS_RATIO = 0.42;
-const RING_COUNT = 64;
+// 32 translucent rings are enough at mobile resolution. Quantizing the reveal
+// animation prevents a full Graphics mesh rebuild on every 60/120Hz render frame.
+const RING_COUNT = 32;
+const REVEAL_DRAW_STEPS = 30;
 const ENTER_SECONDS = 1.0;
 const EXIT_SECONDS = 1.3;
 
@@ -23,6 +26,8 @@ export class SprintVignetteOverlay {
     private _height = 0;
     private _reveal = 0;
     private _revealTween: { value: number } | null = null;
+    private _requestedActive = false;
+    private _drawStep = -1;
     private readonly _stroke = new Color();
 
     bind(hud: Node) {
@@ -42,6 +47,10 @@ export class SprintVignetteOverlay {
         if (!this._root?.isValid || !this._opacity) {
             return;
         }
+        if (active === this._requestedActive) {
+            return;
+        }
+        this._requestedActive = active;
         if (this._revealTween) {
             Tween.stopAllByTarget(this._revealTween);
             this._revealTween = null;
@@ -75,6 +84,8 @@ export class SprintVignetteOverlay {
                     onComplete: () => {
                         this._revealTween = null;
                         this._reveal = 0;
+                        this._graphics?.clear();
+                        this._drawStep = -1;
                         if (this._root?.isValid) {
                             this._root.active = false;
                         }
@@ -92,15 +103,25 @@ export class SprintVignetteOverlay {
         this._width = size.width;
         this._height = size.height;
         this._root?.getComponent(UITransform)?.setContentSize(size.width, size.height);
+        this._drawStep = -1;
         this.draw();
     }
 
     private draw() {
         const graphics = this._graphics;
-        if (!graphics || this._width <= 0 || this._height <= 0 || this._reveal <= 0) {
+        if (!graphics || this._width <= 0 || this._height <= 0) {
             return;
         }
+        const drawStep = Math.round(Math.max(0, Math.min(1, this._reveal)) * REVEAL_DRAW_STEPS);
+        if (drawStep === this._drawStep) {
+            return;
+        }
+        this._drawStep = drawStep;
         graphics.clear();
+        if (drawStep <= 0) {
+            return;
+        }
+        const reveal = drawStep / REVEAL_DRAW_STEPS;
         const halfWidth = this._width * 0.5;
         const halfHeight = this._height * 0.5;
         const maxRadius = Math.sqrt(halfWidth * halfWidth + halfHeight * halfHeight);
@@ -108,7 +129,7 @@ export class SprintVignetteOverlay {
         // reveal 0 -> innerRadius == maxRadius (no rings visible); 1 -> innerRadius
         // == targetInner (full vignette). Entering shrinks innerRadius so rings
         // sweep in from the edge; leaving grows it back so they retreat out.
-        const innerRadius = maxRadius + (targetInner - maxRadius) * this._reveal;
+        const innerRadius = maxRadius + (targetInner - maxRadius) * reveal;
         const span = maxRadius - innerRadius;
         if (span <= 0) {
             return;

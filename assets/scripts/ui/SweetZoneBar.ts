@@ -29,6 +29,9 @@ export class SweetZoneBar {
     private _bandGfx: Graphics = null;
     private _markerGfx: Graphics = null;
     private _lastSignature = '';
+    private _lastMarkerDirection = 0;
+    private _lastMarkerActive = false;
+    private _lastMarkerStep = -1;
     // Swim direction sign: +1 outbound (hand starts at 3 o'clock, sweeps CW),
     // -1 after a lap turn (hand starts at 9 o'clock, sweeps CCW). Mirrors the dial
     // so the pointer matches the character's hand once they fold back.
@@ -54,8 +57,11 @@ export class SweetZoneBar {
     }
 
     setVisible(visible: boolean) {
-        if (this._root) {
+        if (this._root && this._root.active !== visible) {
             this._root.active = visible;
+            if (visible) {
+                this._lastMarkerStep = -1;
+            }
         }
     }
 
@@ -81,7 +87,9 @@ export class SweetZoneBar {
     // every frame while a stroke is active. `direction` is the swimmer's current
     // course direction (>=0 outbound, <0 folded back).
     update(guide: StrokeTimingGuide | null, speed = 0, direction = 1) {
-        if (!this._bandGfx || !this._markerGfx) {
+        // This debug-only dial is still called from the main race update path. Never
+        // rebuild Graphics while its root is hidden on production HUDs.
+        if (!this._root?.active || !this._bandGfx || !this._markerGfx) {
             return;
         }
         this._direction = direction < 0 ? -1 : 1;
@@ -120,11 +128,22 @@ export class SweetZoneBar {
     }
 
     private drawMarker(guide: StrokeTimingGuide | null) {
-        const g = this._markerGfx;
-        g.clear();
         const active = !!guide?.active;
         const ratio = clamp01(guide?.currentRatio ?? 0);
-        const angle = this.angleForRatio(ratio);
+        // A one-degree pointer step is visually continuous at this dial size and
+        // avoids rebuilding the same two-line mesh on high-refresh-rate displays.
+        const ratioStep = Math.round(ratio * 360);
+        if (this._direction === this._lastMarkerDirection
+            && active === this._lastMarkerActive
+            && ratioStep === this._lastMarkerStep) {
+            return;
+        }
+        this._lastMarkerDirection = this._direction;
+        this._lastMarkerActive = active;
+        this._lastMarkerStep = ratioStep;
+        const g = this._markerGfx;
+        g.clear();
+        const angle = this.angleForRatio(ratioStep / 360);
         const cos = Math.cos(angle);
         const sin = Math.sin(angle);
         const tipR = DIAL_OUTER_RADIUS + 3;
@@ -187,4 +206,3 @@ function anglePoint(radius: number, angle: number): { x: number; y: number } {
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
 }
-

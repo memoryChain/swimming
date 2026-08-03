@@ -15,12 +15,14 @@ export class UltimateEnergyModel {
     private _gainAptitude = 50;
     private _gainMultiplier = 1;
     private _deniedFlash = false;
-    private _lastCollisionBonusMs = 0;
+    private _simulationSeconds = 0;
+    private _lastCollisionBonusAt = Number.NEGATIVE_INFINITY;
 
     reset() {
         this._energy = 0;
         this._deniedFlash = false;
-        this._lastCollisionBonusMs = 0;
+        this._simulationSeconds = 0;
+        this._lastCollisionBonusAt = Number.NEGATIVE_INFINITY;
     }
 
     // 蓄气资质（0-100，纯资质不随等级成长）。
@@ -51,7 +53,9 @@ export class UltimateEnergyModel {
 
     // 被动增长：所有角色每秒固定获得（低保），乘以角色积攒倍率。
     tick(dt: number) {
-        this.add(ULTIMATE_ENERGY_BALANCE.passivePerSecond * dt);
+        const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+        this._simulationSeconds += step;
+        this.add(ULTIMATE_ENERGY_BALANCE.passivePerSecond * step);
     }
 
     // 一次划水结算的积攒。combo 为该击之后的连续 PERFECT 数（用于每 N 连击额外奖励）。
@@ -72,11 +76,11 @@ export class UltimateEnergyModel {
         if (receivedImpulse < ULTIMATE_ENERGY_BALANCE.collisionMinImpulse) {
             return;
         }
-        const now = Date.now();
-        if (now - this._lastCollisionBonusMs < ULTIMATE_ENERGY_BALANCE.collisionCooldownMs) {
+        const cooldownSeconds = ULTIMATE_ENERGY_BALANCE.collisionCooldownMs / 1000;
+        if (this._simulationSeconds - this._lastCollisionBonusAt < cooldownSeconds) {
             return;
         }
-        this._lastCollisionBonusMs = now;
+        this._lastCollisionBonusAt = this._simulationSeconds;
         this.add(ULTIMATE_ENERGY_BALANCE.collisionBonus);
     }
 
@@ -99,7 +103,7 @@ export class UltimateEnergyModel {
         this._energy = clamp(this._energy - ULTIMATE_ENERGY_BALANCE.dolphinCost, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
     }
 
-    // 联机：把本地预测能量朝房主权威值校正。小误差平滑，大误差直接吸附。
+    // 联机：把本地预测能量朝权威值校正（真人取 owner，AI 取 host）。
     applyNetEnergy(target: number, blend = 0.5) {
         if (!Number.isFinite(target) || target < 0) {
             return;

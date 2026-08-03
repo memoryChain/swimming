@@ -6,6 +6,9 @@ export const CAMERA_SPEED_LINE_TUNING = {
 };
 
 const LINE_COLOR = new Color(224, 250, 255, 255);
+// Graphics mesh rebuilds are costly on iOS/WeChat. The camera can still render at
+// 60/120fps while this decorative overlay samples its animation at 30fps.
+const SPEED_LINE_DRAW_INTERVAL = 1 / 30;
 const LINE_ANCHORS: ReadonlyArray<readonly [number, number, number]> = [
     [-0.92, -0.72, 0.02], [-0.8, -0.94, 0.46], [-0.54, -0.98, 0.79],
     [-0.28, -0.91, 0.61], [0.04, -0.97, 0.2], [0.32, -0.94, 0.14],
@@ -29,6 +32,8 @@ export class CameraSpeedLineOverlay {
     private _height = 0;
     private _vanishingX = 0;
     private _vanishingY = 0;
+    private _drawElapsed = SPEED_LINE_DRAW_INTERVAL;
+    private _vanishingPointRefreshPending = false;
     private readonly _strokeColor = new Color();
 
     bind(hud: Node) {
@@ -55,20 +60,43 @@ export class CameraSpeedLineOverlay {
             : 0;
         const blend = 1 - Math.exp(-Math.max(0, dt) * (target > this._intensity ? 9 : 5));
         this._intensity += (target - this._intensity) * blend;
-        this._root.active = this._intensity > 0.015;
-        if (!this._root.active) {
+        const active = this._intensity > 0.015;
+        const becameActive = active && !this._root.active;
+        if (this._root.active !== active) {
+            this._root.active = active;
+        }
+        if (!active) {
+            this._drawElapsed = SPEED_LINE_DRAW_INTERVAL;
             return;
         }
         this._phase = (this._phase + dt * (0.75 + this._intensity * 1.8)) % 1;
+        this._drawElapsed += Math.max(0, dt);
+        if (!becameActive && this._drawElapsed < SPEED_LINE_DRAW_INTERVAL) {
+            return;
+        }
+        this._drawElapsed %= SPEED_LINE_DRAW_INTERVAL;
         this.draw();
+        this._vanishingPointRefreshPending = true;
     }
 
     setVanishingPoint(x: number, y: number) {
-        this.resize();
+        if (this._width <= 0 || this._height <= 0) {
+            this.resize();
+        }
         const halfWidth = this._width * 0.5;
         const halfHeight = this._height * 0.5;
         this._vanishingX = clamp(x, -halfWidth * 0.82, halfWidth * 0.82);
         this._vanishingY = clamp(y, -halfHeight * 0.82, halfHeight * 0.82);
+    }
+
+    get active(): boolean {
+        return this._root?.isValid === true && this._root.active;
+    }
+
+    consumeVanishingPointRefresh(): boolean {
+        const pending = this._vanishingPointRefreshPending && this.active;
+        this._vanishingPointRefreshPending = false;
+        return pending;
     }
 
     setEnabled(enabled: boolean) {

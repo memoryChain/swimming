@@ -310,7 +310,8 @@ sharedRandom();             // 取共享实例
 - **AI 泳道**：追 `snapshotTargets`（房主 `S|`，blend 0.2/0.25）。
 - **卡跳水冗余**：真人泳道若 owner 位置在前进（`distance>1m`）但本副本 `!isNetRacing` → `forceEnterRace`（DiveRelease 丢了/跳水 tween 卡住的兜底）。**两条分支（帧 self + S| 兜底）都要有这个冗余**。
 - **姿态速度同步（踩水坑）**：踩水↔游泳切换原本由本地 `motor.currentSpeed` 驱动，而远程副本位置是校正的、速度是本地回放算的 → 解耦 → 「踩水姿态在前移」。**修法**：`NetSnapshotEntry` 加 `speed` 字段，远程副本的踩水混合用**同步来的 owner 速度**（`applyNetPoseSpeed`→`CartoonSwimmerRig.setTreadWaterSpeedOverride`），只覆盖踩水决策、手臂节奏仍由回放驱动。本地玩家不覆盖（override=-1 回退本地速度）。
-- **碰撞**：联机保留碰撞手感，只在**追帧 snap 那一刻**（`netCatchingUp`，距上次 snap<400ms）把该泳者移出碰撞集，同步好时正常参与碰撞。
+- **碰撞**：联机保留碰撞手感，只在**追帧 snap 那一刻**（`netCatchingUp`，距上次 snap<400ms）把该泳者移出碰撞集，同步好时正常参与碰撞。碰撞求解跟随 `NET_SIM_STEP=33ms` 固定步执行，击退只在 contact-begin 注入一次（带释放滞回），不能按渲染帧重复累计，否则 120fps/60fps 设备结果不同。
+- **蓄气权威**：蓄气会决定海豚跃能否触发，属于比赛结果状态。真人蓄气与真人位置一样由 owner 权威，量化整数后随 `uploadFrame` 的 self state 可靠传输；AI 蓄气仍取房主 `S|` 快照。`DolphinJump` 事件只在 owner 本地成功触发后上传，远端按「已接受动作」回放，不能再用远端预测能量二次拒绝。
 
 ### 8.7 确定性房主迁移（房主掉线不卡死）
 
@@ -368,5 +369,4 @@ sharedRandom();             // 取共享实例
   - **别再把养成塞 `memberExtInfo`**（32 字节，和 `avatarId|nickName` 抢空间，必炸 4013）。静态每局数据走广播。
   - `MOD|` 是广播裸串（非 JSON）→ `RoomFlow.handleBroadcast` 要在 JSON 判断**之前**先认 `MOD|` 收集，别被「只处理 `{...}`」的早返回吞掉。
   - digest 各端**重新解析**：跨引擎浮点在 balance 上有末位差异，但只影响碰撞权重/预测的极小量，由位置权威吸收；若要严格一致可对重解析值同样量化取整。
-
 

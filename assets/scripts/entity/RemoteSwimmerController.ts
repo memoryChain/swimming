@@ -61,7 +61,8 @@ export class RemoteSwimmerController extends Component {
                 // Charge start carries no motion; the release event drives the dive.
                 break;
             case NetInputKind.DolphinJump:
-                swimmer.tryDolphinJump();
+                // The owner emits this event only after accepting the jump locally.
+                swimmer.applyAcceptedNetDolphinJump();
                 break;
             case NetInputKind.DiveRelease:
                 this.performDive(swimmer, event.power ?? 0);

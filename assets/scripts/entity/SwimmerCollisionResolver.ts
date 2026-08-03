@@ -4,7 +4,7 @@ import type { Swimmer } from './Swimmer';
 // kinematically (position is driven by SwimPhysicsModel, not a physics engine),
 // so a full 3D physics engine (Ammo/Box2D) would be overkill and add WASM weight
 // to the WeChat mini-game package. Instead we treat each swimmer as a solid disc
-// on the XZ plane (top-down circle) and fully resolve every overlap each frame.
+// on the XZ plane (top-down circle) and fully resolve every overlap each collision step.
 //
 // Bodies are IMPASSABLE and everyone blocks everyone: to overtake, a swimmer
 // must go around sideways. Resolution runs on both axes:
@@ -22,7 +22,7 @@ export const SWIMMER_COLLISION = {
     // apart, so radius*2 (=1.8m at 0.9) is the centre spacing at which two
     // swimmers touch. Raise for chunkier bodies, lower for slimmer ones.
     radius: 0.9,
-    // Relaxation passes per frame. One pass fully separates each overlapping
+    // Relaxation passes per collision step. One pass fully separates each overlapping
     // pair, but separating one pair can push a swimmer into a third; a few
     // Gauss-Seidel passes let chains of 3+ stacked swimmers settle with no
     // residual overlap. 8 swimmers -> a handful of passes is plenty.
@@ -50,7 +50,9 @@ export const SWIMMER_COLLISION = {
     knockbackDecaySeconds: 0.5,
 };
 
-// Reused module-scope buffers keep this allocation-free each frame.
+// Reused module-scope buffers keep this allocation-free each collision step.
+const MAX_SWIMMERS = 8;
+const CONTACT_RELEASE_MARGIN = 0.08;
 const _active: Swimmer[] = [];
 const _isAi: boolean[] = [];
 const _origX: number[] = [];
@@ -63,9 +65,13 @@ const _velZ: number[] = [];
 const _dir: number[] = [];
 const _impDist: number[] = [];
 const _impLat: number[] = [];
+const _newContact: boolean[] = [];
+const _contactA: Swimmer[] = [];
+const _contactB: Swimmer[] = [];
+const _contactSeen: boolean[] = [];
 
 // Fully separate overlapping swimmers so no two bodies interpenetrate. Call once
-// per frame after the swimmers have updated their own positions.
+// per collision step after the swimmers have updated their own positions.
 //
 // Body weight splits every separation/knockback by inverse weight (heavy bodies resist
 // being shoved). In a networked race this stays consistent because every swimmer's
@@ -75,6 +81,7 @@ const _impLat: number[] = [];
 // owner/host position authority, so the weighted knockback never drifts permanently.
 export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     if (!SWIMMER_COLLISION.enabled) {
+        clearContacts();
         return;
     }
 
@@ -86,9 +93,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     }
 
     const count = _active.length;
-    if (count < 2) {
-        return;
-    }
 
     for (let i = 0; i < count; i++) {
         const s = _active[i];
@@ -112,6 +116,10 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
 
     const minDist = SWIMMER_COLLISION.radius * 2;
     const minDistSq = minDist * minDist;
+    refreshContacts(count, minDistSq, (minDist + CONTACT_RELEASE_MARGIN) ** 2);
+    if (count < 2) {
+        return;
+    }
 
     // Iteratively push overlapping pairs fully apart along the XZ centre line.
     // Working on the local position buffers (not the nodes) lets later passes
@@ -174,7 +182,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const dx = _origX[i] - _origX[j];
                 const dz = _origZ[i] - _origZ[j];
                 const distSq = dx * dx + dz * dz;
-                if (distSq >= minDistSq) {
+                if (distSq >= minDistSq || !_newContact[i * MAX_SWIMMERS + j]) {
                     continue;
                 }
                 const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
@@ -238,4 +246,64 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
             _active[i].addCollisionEnergyBonus(Math.hypot(iD, iL));
         }
     }
+}
+
+// Knockback is a contact-begin impulse, not a force accumulated every render frame.
+// Keep a small release margin so numerical jitter around exactly 2*radius does not
+// repeatedly end/restart the same contact and award multiple energy bonuses.
+function refreshContacts(count: number, minDistSq: number, releaseDistSq: number): void {
+    for (let i = 0; i < MAX_SWIMMERS * MAX_SWIMMERS; i++) {
+        _newContact[i] = false;
+    }
+    for (let i = 0; i < _contactSeen.length; i++) {
+        _contactSeen[i] = false;
+    }
+    for (let i = 0; i < count; i++) {
+        for (let j = i + 1; j < count; j++) {
+            const dx = _origX[i] - _origX[j];
+            const dz = _origZ[i] - _origZ[j];
+            const distSq = dx * dx + dz * dz;
+            const contactIndex = findContact(_active[i], _active[j]);
+            if (contactIndex >= 0) {
+                if (distSq <= releaseDistSq) {
+                    _contactSeen[contactIndex] = true;
+                }
+                continue;
+            }
+            if (distSq < minDistSq) {
+                _contactA.push(_active[i]);
+                _contactB.push(_active[j]);
+                _contactSeen.push(true);
+                _newContact[i * MAX_SWIMMERS + j] = true;
+            }
+        }
+    }
+    for (let i = _contactSeen.length - 1; i >= 0; i--) {
+        if (_contactSeen[i]) {
+            continue;
+        }
+        const last = _contactSeen.length - 1;
+        _contactA[i] = _contactA[last];
+        _contactB[i] = _contactB[last];
+        _contactSeen[i] = _contactSeen[last];
+        _contactA.pop();
+        _contactB.pop();
+        _contactSeen.pop();
+    }
+}
+
+function findContact(a: Swimmer, b: Swimmer): number {
+    for (let i = 0; i < _contactA.length; i++) {
+        if ((_contactA[i] === a && _contactB[i] === b)
+            || (_contactA[i] === b && _contactB[i] === a)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function clearContacts(): void {
+    _contactA.length = 0;
+    _contactB.length = 0;
+    _contactSeen.length = 0;
 }

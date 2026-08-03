@@ -1036,6 +1036,18 @@ export class Swimmer extends Component {
         return true;
     }
 
+    // Network replay only: DolphinJump is captured and sent only AFTER the owner has
+    // successfully passed energy/phase validation. Do not reject that accepted action
+    // against this remote copy's predicted energy; the reliable self-state in the same
+    // frame will align the exact post-spend energy.
+    applyAcceptedNetDolphinJump(): boolean {
+        if (!this._motor.isRacing || !this._phases.tryStartDolphinJump()) {
+            return false;
+        }
+        this._ultimate.spendDolphin();
+        return true;
+    }
+
     get rhythmStats(): RhythmStats {
         return {
             maxCombo: this._maxStrokeQualityCombo,

@@ -123,7 +123,7 @@ export class UIFlowController {
 }
 
 function setActive(node: Node | null, active: boolean) {
-    if (node) {
+    if (node && node.active !== active) {
         node.active = active;
     }
 }

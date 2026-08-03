@@ -41,6 +41,7 @@ const EXIT_BUTTON_GAP = 8;
 // Slack (in UI px) allowed past the HUD edge before a head badge is culled, so a
 // swimmer right at the screen border does not pop in/out.
 const BADGE_OFF_SCREEN_MARGIN = 70;
+const BADGE_UPDATE_INTERVAL = 1 / 30;
 
 type BadgeEntry = {
     swimmerNode: Node;
@@ -77,6 +78,7 @@ export class FinishRankOverlay {
     private readonly _results: RaceFinishResult[] = [];
     private readonly _panelRowPool: PanelRow[] = [];
     private _headBadgesVisible = true;
+    private _badgeUpdateElapsed = BADGE_UPDATE_INTERVAL;
 
     // Reused scratch vectors so per-frame projection allocates nothing.
     private readonly _worldPos = new Vec3();
@@ -85,7 +87,9 @@ export class FinishRankOverlay {
     private readonly _uiLocal = new Vec3();
     private readonly _camForward = new Vec3();
     private readonly _camToHead = new Vec3();
-    private readonly _placed: { x: number; y: number }[] = [];
+    private readonly _projectionEntries: BadgeEntry[] = [];
+    private readonly _placedX: number[] = [];
+    private readonly _placedY: number[] = [];
 
     bind(hud: Node, width: number, height: number, onExitRace: () => void) {
         if (!hud?.isValid) {
@@ -140,7 +144,13 @@ export class FinishRankOverlay {
     setHeadBadgesVisible(visible: boolean) {
         this._headBadgesVisible = visible;
         if (this._badgeRoot?.isValid) {
-            this._badgeRoot.active = visible && this._badges.size > 0;
+            const active = visible && this._badges.size > 0;
+            if (this._badgeRoot.active !== active) {
+                this._badgeRoot.active = active;
+                if (active) {
+                    this._badgeUpdateElapsed = BADGE_UPDATE_INTERVAL;
+                }
+            }
         }
     }
 
@@ -151,6 +161,7 @@ export class FinishRankOverlay {
             }
         }
         this._badges.clear();
+        this._projectionEntries.length = 0;
         this._results.length = 0;
         for (const row of this._panelRowPool) {
             row.root.active = false;
@@ -177,6 +188,7 @@ export class FinishRankOverlay {
             placement: result.placement,
         });
         this._badgeRoot.active = this._headBadgesVisible;
+        this.refreshBadgeSiblingOrder();
         this.rebuildPanel();
     }
 
@@ -197,24 +209,23 @@ export class FinishRankOverlay {
     // Reproject every head badge into HUD-local space and de-overlap them so
     // stacked swimmers stay individually readable. Call after the race camera
     // has been updated for the frame.
-    update(worldCamera: Camera | null, uiCamera: Camera | null) {
-        if (!this._badgeRoot?.isValid || !worldCamera || !uiCamera || !this._hud?.isValid) {
+    update(worldCamera: Camera | null, uiCamera: Camera | null, dt = BADGE_UPDATE_INTERVAL) {
+        if (!this._badgeRoot?.isValid || !this._badgeRoot.active
+            || !worldCamera || !uiCamera || !this._hud?.isValid) {
             return;
         }
+        this._badgeUpdateElapsed += Math.max(0, dt);
+        if (this._badgeUpdateElapsed < BADGE_UPDATE_INTERVAL) {
+            return;
+        }
+        this._badgeUpdateElapsed %= BADGE_UPDATE_INTERVAL;
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;
         }
-        const entries: BadgeEntry[] = [];
-        for (const entry of this._badges.values()) {
-            if (entry.root?.isValid && entry.swimmerNode?.isValid) {
-                entries.push(entry);
-            }
-        }
-        // Best rank placed first so it keeps its natural spot above the head; the
-        // worse ranks get pushed upward when they collide with it.
-        entries.sort((a, b) => a.placement - b.placement);
-        this._placed.length = 0;
+        const entries = this._projectionEntries;
+        this._placedX.length = 0;
+        this._placedY.length = 0;
         const size = view.getVisibleSize();
         const halfW = (hudTransform.width || size.width) / 2 + BADGE_OFF_SCREEN_MARGIN;
         const halfH = (hudTransform.height || size.height) / 2 + BADGE_OFF_SCREEN_MARGIN;
@@ -226,7 +237,9 @@ export class FinishRankOverlay {
             // Behind the camera -> hide instead of projecting a mirrored ghost.
             Vec3.subtract(this._camToHead, this._worldPos, worldCamera.node.worldPosition);
             if (Vec3.dot(this._camToHead, this._camForward) <= 0) {
-                entry.root.active = false;
+                if (entry.root.active) {
+                    entry.root.active = false;
+                }
                 continue;
             }
             worldCamera.worldToScreen(this._worldPos, this._screen);
@@ -234,17 +247,22 @@ export class FinishRankOverlay {
             hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
             // Off the visible HUD area -> hide.
             if (Math.abs(this._uiLocal.x) > halfW || Math.abs(this._uiLocal.y) > halfH) {
-                entry.root.active = false;
+                if (entry.root.active) {
+                    entry.root.active = false;
+                }
                 continue;
             }
-            entry.root.active = true;
-            const x = this._uiLocal.x;
-            let y = this._uiLocal.y + BADGE_HEAD_OFFSET_Y;
+            if (!entry.root.active) {
+                entry.root.active = true;
+            }
+            const x = Math.round(this._uiLocal.x);
+            let y = Math.round(this._uiLocal.y + BADGE_HEAD_OFFSET_Y);
             for (let guard = 0; guard < entries.length; guard++) {
                 let collided = false;
-                for (const slot of this._placed) {
-                    if (Math.abs(slot.x - x) < BADGE_CLUSTER_X && Math.abs(slot.y - y) < BADGE_STACK_GAP) {
-                        y = slot.y + BADGE_STACK_GAP;
+                for (let i = 0; i < this._placedX.length; i++) {
+                    if (Math.abs(this._placedX[i] - x) < BADGE_CLUSTER_X
+                        && Math.abs(this._placedY[i] - y) < BADGE_STACK_GAP) {
+                        y = this._placedY[i] + BADGE_STACK_GAP;
                         collided = true;
                         break;
                     }
@@ -253,12 +271,12 @@ export class FinishRankOverlay {
                     break;
                 }
             }
-            this._placed.push({ x, y });
-            entry.root.setPosition(x, y, 0);
-        }
-        // Draw the best rank on top of any that stacked behind it.
-        for (let i = 0; i < entries.length; i++) {
-            entries[i].root.setSiblingIndex(entries.length - 1 - i);
+            this._placedX.push(x);
+            this._placedY.push(y);
+            const current = entry.root.position;
+            if (current.x !== x || current.y !== y) {
+                entry.root.setPosition(x, y, 0);
+            }
         }
     }
 
@@ -409,6 +427,19 @@ export class FinishRankOverlay {
             this._results[index] = result;
         } else {
             this._results.push(result);
+        }
+    }
+
+    // Placement only changes when a result is added/rebuilt, so do not dirty the
+    // UI hierarchy with setSiblingIndex on every projection frame.
+    private refreshBadgeSiblingOrder() {
+        this._projectionEntries.length = 0;
+        for (const entry of this._badges.values()) {
+            this._projectionEntries.push(entry);
+        }
+        this._projectionEntries.sort((a, b) => a.placement - b.placement);
+        for (let i = 0; i < this._projectionEntries.length; i++) {
+            this._projectionEntries[i].root.setSiblingIndex(this._projectionEntries.length - 1 - i);
         }
     }
 }

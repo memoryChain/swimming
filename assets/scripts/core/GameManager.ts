@@ -110,6 +110,7 @@ const NET_DIVE_STUCK_TIMEOUT_MS = 2000;
 // default — it repaints a Label every tick which costs a little. Flip to true only when
 // debugging sync issues; the HUD code itself (NetRaceController.attachHud/setDiag) is kept.
 const NET_RACE_DEBUG_HUD = false;
+const RACE_HUD_TEXT_REFRESH_SECONDS = 0.1;
 const UNDERWATER_TINT_DISTANCE = 1.2;
 const UNDERWATER_TINT_DEPTH = 0.002;
 const UNDERWATER_TINT_MARGIN = 1.45;
@@ -127,6 +128,7 @@ export class GameManager extends Component {
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
     private _aiSwimmers: Swimmer[] = [];
+    private readonly _laneLockdownRacers: Swimmer[] = [];
     // Reused each frame for the swimmer-vs-swimmer collision pass (no per-frame allocation).
     private readonly _collisionSwimmers: Swimmer[] = [];
     // 100m AI-debug 1v1 mode: a single opponent at PRIMARY_AI_LANE_INDEX whose
@@ -161,6 +163,8 @@ export class GameManager extends Component {
     // True while a pointer is dragging either independent free-look camera.
     private _awardsCameraDragging = false;
     private _playerOnAwardsPodium = false;
+    private _overheadSpeedTextElapsed = RACE_HUD_TEXT_REFRESH_SECONDS;
+    private _overheadSpeedText = '';
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
@@ -384,10 +388,10 @@ export class GameManager extends Component {
         this._sweetZoneBarRight.setVisible(playerFeedbackVisible);
         this._sweetZoneBarLeft.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
         this._sweetZoneBarRight.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
-        if (this._overheadReadout) {
+        if (this._overheadReadout && this._overheadReadout.active !== playerSpeedVisible) {
             this._overheadReadout.active = playerSpeedVisible;
         }
-        if (this._playerOverheadMarker) {
+        if (this._playerOverheadMarker && this._playerOverheadMarker.active !== playerIndicatorVisible) {
             this._playerOverheadMarker.active = playerIndicatorVisible;
         }
         if (playerIndicatorVisible) {
@@ -397,14 +401,28 @@ export class GameManager extends Component {
                 this._sweetZoneBarRight,
                 this._overheadReadout,
                 this._playerOverheadMarker,
+                playerFeedbackVisible,
             );
             if (this._overheadSpeedLabel) {
-                this._overheadSpeedLabel.string = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
+                this._overheadSpeedTextElapsed += dt;
+                if (this._overheadSpeedTextElapsed >= RACE_HUD_TEXT_REFRESH_SECONDS) {
+                    this._overheadSpeedTextElapsed %= RACE_HUD_TEXT_REFRESH_SECONDS;
+                    const nextText = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
+                    if (nextText !== this._overheadSpeedText) {
+                        this._overheadSpeedText = nextText;
+                        this._overheadSpeedLabel.string = nextText;
+                    }
+                }
             }
         }
         this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
-        this.updateSwimmerCollisions();
+        // Single-player keeps the original render-driven separation path. Network races
+        // resolve collisions inside driveNetAiFixedStep on the shared 33ms clock, never
+        // once per render frame (which made impulse count depend on device FPS).
+        if (!this._netSession) {
+            this.updateSwimmerCollisions();
+        }
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
         // Roster info panel only during pre-race stage 1 (the wide overview shot);
@@ -442,11 +460,12 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             standingPresentation ? 72 : 30,
+            dt,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
         if (this._finishRankOverlay.hasResults()) {
-            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera);
+            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera, dt);
         }
         // Update after the race camera so the refraction camera uses this frame's
         // final transform. Underwater shots keep the swimmer overlay camera synced
@@ -971,9 +990,16 @@ export class GameManager extends Component {
         if (!this._laneLockdownRace || this._modelDebugFlow?.active) {
             return;
         }
-        const racers = [this._playerSwimmer, ...this._aiSwimmers]
-            .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.active));
-        this._laneLockdownRace.update(dt, this._state, racers);
+        this._laneLockdownRacers.length = 0;
+        if (this._playerSwimmer?.node?.active) {
+            this._laneLockdownRacers.push(this._playerSwimmer);
+        }
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer?.node?.active) {
+                this._laneLockdownRacers.push(swimmer);
+            }
+        }
+        this._laneLockdownRace.update(dt, this._state, this._laneLockdownRacers);
     }
 
     private updateLaneLockdownStatus(status: LaneLockdownStatus | null) {
@@ -1400,13 +1426,29 @@ export class GameManager extends Component {
             this._aiStepAccum -= NET_SIM_STEP;
             for (let i = 0; i < this._aiSwimmers.length; i++) {
                 const swimmer = this._aiSwimmers[i];
+                if (swimmer?.netFixedStep && swimmer.node.active) {
+                    swimmer.netStepBegin();
+                }
+            }
+            for (let i = 0; i < this._aiSwimmers.length; i++) {
+                const swimmer = this._aiSwimmers[i];
                 if (!swimmer?.netFixedStep || !swimmer.node.active) {
                     continue;
                 }
-                swimmer.netStepBegin();
                 this._aiControllers[i]?.stepSimulation(NET_SIM_STEP);
                 swimmer.stepSimulation(NET_SIM_STEP);
-                swimmer.netStepEnd();
+            }
+            // One collision solve per deterministic simulation step, after every
+            // net-driven body has advanced in stable lane order. The local player's
+            // latest predicted body participates but remains owner-authoritative.
+            this.updateSwimmerCollisions();
+            // Capture the post-collision target so render interpolation preserves the
+            // resolved push instead of repainting the pre-collision step position.
+            for (let i = 0; i < this._aiSwimmers.length; i++) {
+                const swimmer = this._aiSwimmers[i];
+                if (swimmer?.netFixedStep && swimmer.node.active) {
+                    swimmer.netStepEnd();
+                }
             }
         }
         // Smooth the 30/s fixed steps up to the 45fps render by interpolating each
@@ -1539,24 +1581,19 @@ export class GameManager extends Component {
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
             swimmer.applyNetPoseSpeed(targetSpeed);
-            // Ultimate energy is host-authoritative (the P| self-report does not carry it),
-            // so every non-player lane eases toward the host snapshot's energy. This keeps
-            // remote dolphin-jump cost validation consistent across clients.
-            const hostTarget = this._netRaceController.snapshotTargets.find((e) => e.lane === lane);
-            if (hostTarget && hostTarget.energy >= 0) {
-                swimmer.applyNetEnergy(hostTarget.energy);
-            }
-        }
-        // Gently ease the LOCAL player's energy toward the host value as well. Unlike
-        // position (full prediction), the energy bar isn't the primary feel, and things
-        // like collision bonuses can diverge by a few points - enough to straddle the
-        // dolphin-jump threshold. Use a soft blend and skip while airborne so a synced
-        // spend isn't fought by a stale snapshot. On the host this is a no-op (its own
-        // value is the authority); single-player has no session and skips it entirely.
-        if (this._netSession && this._playerSwimmer && !this._playerSwimmer.isDolphinJumpActive) {
-            const playerHost = this._netRaceController?.snapshotTargets.find((e) => e.lane === this._playerLaneIndex);
-            if (playerHost && playerHost.energy >= 0) {
-                this._playerSwimmer.applyNetEnergy(playerHost.energy, 0.2);
+            // Outcome-affecting energy uses the same authority as movement: a human's
+            // owner reports it on the reliable frame channel; AI follows the host S|
+            // snapshot. Apply exactly (rather than once-per-render blending) so the
+            // dolphin threshold cannot vary with FPS or a stale best-effort packet.
+            if (isHuman) {
+                if (self && self.energy >= 0) {
+                    swimmer.applyNetEnergy(self.energy, 1);
+                }
+            } else {
+                const hostTarget = this._netRaceController.snapshotTargets.find((e) => e.lane === lane);
+                if (hostTarget && hostTarget.energy >= 0) {
+                    swimmer.applyNetEnergy(hostTarget.energy, 1);
+                }
             }
         }
     }
@@ -1594,7 +1631,7 @@ export class GameManager extends Component {
             finished: player.distance >= getRaceDistance(),
             heading: player.netHeading,
             speed: player.netSpeed,
-            energy: -1,
+            energy: player.ultimate.energy,
         };
     }
 
@@ -2086,6 +2123,7 @@ export class GameManager extends Component {
         rightBar: SweetZoneBar,
         readout: Node | null = null,
         playerMarker: Node | null = null,
+        positionDials = true,
     ) {
         const node = swimmer?.node;
         const worldCamera = this._cameraNode?.getComponent(Camera);
@@ -2113,10 +2151,12 @@ export class GameManager extends Component {
         const cx = this._tmpDialAnchorUi.x;
         const cy = this._tmpDialAnchorUi.y + this._dialScreenOffsetY * scale;
         const spread = this._dialScreenSpread * scale;
-        leftBar.setAnchorPosition(cx - spread, cy);
-        rightBar.setAnchorPosition(cx + spread, cy);
-        leftBar.setScale(scale);
-        rightBar.setScale(scale);
+        if (positionDials) {
+            leftBar.setAnchorPosition(cx - spread, cy);
+            rightBar.setAnchorPosition(cx + spread, cy);
+            leftBar.setScale(scale);
+            rightBar.setScale(scale);
+        }
         // Speed and player marker stay at fixed screen size so the main character
         // remains identifiable in the widest camera shots.
         if (readout?.isValid) {
@@ -2141,6 +2181,9 @@ export class GameManager extends Component {
     // is the lane's visual vanishing point for the current camera composition,
     // so screen-space speed lines converge with the scene instead of HUD centre.
     private updateSpeedLineVanishingPoint() {
+        if (!this._cameraSpeedLines.consumeVanishingPointRefresh()) {
+            return;
+        }
         const swimmer = this._playerSwimmer;
         const worldCamera = this._cameraNode?.getComponent(Camera);
         const hudTransform = this._raceHud?.getComponent(UITransform);
@@ -2429,6 +2472,15 @@ export class GameManager extends Component {
     private drawStrokeTimingGuide(guide: StrokeTimingGuide | null, active: boolean) {
         const fillNode = this._timingGuideFillNode;
         if (!fillNode) {
+            return;
+        }
+        // The timing guide is an AI-tuning aid. Production races still pass through
+        // this method every frame, so return before touching transforms/colors when
+        // the debug presentation is disabled.
+        if (!active) {
+            if (this._timingGuideMarker?.active) {
+                this._timingGuideMarker.active = false;
+            }
             return;
         }
         const h = 216;

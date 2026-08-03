@@ -32,6 +32,10 @@ export class LaneLockdownRaceController {
     private _lastAiTargetFirstSafeLane = 0;
     private _lastAiTargetLastSafeLane = 0;
     private _lastAiTargetWarning = false;
+    private _lastStatusFirstSafeLane = 0;
+    private _lastStatusLastSafeLane = 0;
+    private _lastStatusWarningSeconds = -1;
+    private _lastStatusLocked = false;
 
     constructor(
         private readonly _layout: RaceCourseLayout,
@@ -51,6 +55,10 @@ export class LaneLockdownRaceController {
         this._activeFirstSafeLane = 1;
         this._activeLastSafeLane = this._layout.laneCount;
         this._visuals?.clear();
+        this._lastStatusFirstSafeLane = 0;
+        this._lastStatusLastSafeLane = 0;
+        this._lastStatusWarningSeconds = -1;
+        this._lastStatusLocked = false;
         this._onStatus(null);
         this.clearAiTarget();
     }
@@ -116,11 +124,25 @@ export class LaneLockdownRaceController {
     }
 
     private publishStatus(warning: boolean) {
+        const firstSafeLane = warning ? this._pendingFirstSafeLane : this._activeFirstSafeLane;
+        const lastSafeLane = warning ? this._pendingLastSafeLane : this._activeLastSafeLane;
+        const warningSeconds = warning ? Math.ceil(this._warningTimer) : 0;
+        const locked = !warning;
+        if (firstSafeLane === this._lastStatusFirstSafeLane
+            && lastSafeLane === this._lastStatusLastSafeLane
+            && warningSeconds === this._lastStatusWarningSeconds
+            && locked === this._lastStatusLocked) {
+            return;
+        }
+        this._lastStatusFirstSafeLane = firstSafeLane;
+        this._lastStatusLastSafeLane = lastSafeLane;
+        this._lastStatusWarningSeconds = warningSeconds;
+        this._lastStatusLocked = locked;
         this._onStatus({
-            firstSafeLane: warning ? this._pendingFirstSafeLane : this._activeFirstSafeLane,
-            lastSafeLane: warning ? this._pendingLastSafeLane : this._activeLastSafeLane,
-            warningSeconds: warning ? Math.ceil(this._warningTimer) : 0,
-            locked: !warning,
+            firstSafeLane,
+            lastSafeLane,
+            warningSeconds,
+            locked,
         });
     }
 

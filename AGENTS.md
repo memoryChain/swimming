@@ -11,6 +11,19 @@
 - The active game entry is `assets/scripts/core/GameManager.ts`. It should stay mostly as orchestration; put detailed behavior into `app`, `swimmer`, `camera`, `ui`, `venue`, `competitor`, or `character` modules.
 - Runtime resources should stay under `assets/resources`. Keep resource paths centralized in `assets/scripts/core/ResourcePaths.ts` instead of scattering string paths through loaders.
 
+## Race HUD / UI Performance (WeChat Mini Game, especially iOS)
+
+Race-time UI runs alongside 3D rendering and networking on iOS JavaScriptCore, so treat every HUD update as a hot path. New or changed race UI must follow these rules:
+
+- **Never assign `Label.string` every frame.** Cocos may rebuild label geometry/atlases even when the text looks unchanged. Cache the displayed value and assign only when it changes. Quantize continuous values to what is actually visible (for example integer energy/heart rate, whole-percent progress, 0.1m distance). Decorative/readout text that does not need frame accuracy should normally refresh at no more than 10Hz and still compare the final string before assignment.
+- **Never call `Graphics.clear()` + redraw every render frame for ordinary HUD.** `Graphics` rebuilds geometry. Build static shapes once; for dynamic bars cache the last physical pixel width and color/state, and redraw only when either changes. Complex decorative animation should use a pooled sprite/material when practical; if runtime `Graphics` is necessary, quantize it and cap redraw sampling to about 30Hz or lower.
+- **Hidden/debug UI must have zero race-frame work.** Check `root.active`/the feature flag before formatting strings, building signatures, projecting world positions, clearing Graphics, or allocating scratch data. Debug-only UI must return immediately in normal production races.
+- **Write Cocos properties only on change.** Before assigning `Node.active`, `Label.color`, `Sprite.color`/`spriteFrame`, `UITransform.contentSize`, or other state that dirties UI/render data, compare against a cached/current value. Starting a Tween is also a state transition: trigger it on the state edge, never by repeatedly calling the same setter from `update()`.
+- **Avoid allocations in race UI update paths.** Do not create `Color`, `Vec2/3/4`, arrays, objects, closures, `map/filter` results, or formatted strings every frame. Reuse module constants, instance scratch vectors, and stable arrays/buffers. Event-only UI (countdown ticks, results, button presses) may allocate modestly.
+- **Screen-following labels and decorative overlays do not need render-rate simulation.** Reuse projection vectors/buffers, avoid per-frame sorting or `setSiblingIndex`, quantize HUD positions to pixels where acceptable, and normally update at 30Hz. Gameplay/world movement can remain at render rate; this rule is for HUD presentation.
+- **Keep state update and presentation frequency separate.** Gameplay, timers, and synchronized values may update every simulation step, while the HUD consumes cached/quantized snapshots at a lower rate. UI throttling must never throttle gameplay or network state itself.
+- Before finishing race UI work, audit every call reachable from `GameManager.update()` for `Label.string`, `Graphics.clear`, `Node.active`, transform writes, Tween starts, and temporary allocations. Validate the result on a real iOS WeChat Mini Game build when the change is visually or structurally significant.
+
 ## Mobile Input
 
 - The current mobile race input is full-screen tap/hold. The invisible left and right screen halves map directly to `LEFT` and `RIGHT` strokes.
