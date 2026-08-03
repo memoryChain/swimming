@@ -3,7 +3,6 @@ import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
-import { SprintVignetteOverlay } from './SprintVignetteOverlay';
 import { makeButton, makeLabel, makeOutlineButton, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
 
@@ -210,9 +209,6 @@ export class SpeedStarsUiPrefabBuilder {
         sprintOutline.color = new Color(255, 120, 30, 220);
         sprintOutline.width = 5;
         ui.sprintLabel = sprintLabel;
-        const sprintVignette = new SprintVignetteOverlay();
-        sprintVignette.bind(raceHud);
-        ui.sprintVignette = sprintVignette;
 
         return {
             root,

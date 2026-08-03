@@ -2,7 +2,6 @@ import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, No
 import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
-import { SprintVignetteOverlay } from './SprintVignetteOverlay';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
 
 const { ccclass, property } = _decorator;
@@ -79,7 +78,6 @@ export class UIController extends Component {
     public ultimateBarFill: Graphics = null;
     public ultimateLabel: Label = null;
     public sprintLabel: Label | null = null;
-    public sprintVignette: SprintVignetteOverlay | null = null;
     private _sprintActive = false;
     private _energyTotal = 100;
     private _ultimateDeniedUntil = 0;
@@ -228,7 +226,6 @@ export class UIController extends Component {
         this._energyFillPixel = -1;
         this._energyColor = null;
         this._sprintActive = active;
-        this.sprintVignette?.setActive(active);
         if (!this.sprintLabel) {
             return;
         }
