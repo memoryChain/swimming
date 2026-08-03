@@ -50,7 +50,11 @@
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": false,
-        "type": "texture"
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-opaque-6x6"
+        }
       },
       "ver": "1.0.3",
       "imported": true,

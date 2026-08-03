@@ -1859,7 +1859,11 @@
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": false,
-        "type": "texture"
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-world-opaque-8x8"
+        }
       },
       "ver": "1.0.3",
       "imported": true,
@@ -1879,7 +1883,11 @@
         "gltfIndex": 1,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": false,
-        "type": "texture"
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-world-opaque-8x8"
+        }
       },
       "ver": "1.0.3",
       "imported": true,
@@ -1900,7 +1908,7 @@
         "wrapModeT": "repeat",
         "minfilter": "linear",
         "magfilter": "linear",
-        "mipfilter": "linear",
+        "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
         "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@2a241"
@@ -1923,7 +1931,7 @@
         "wrapModeT": "repeat",
         "minfilter": "linear",
         "magfilter": "linear",
-        "mipfilter": "linear",
+        "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
         "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@0b1c1"

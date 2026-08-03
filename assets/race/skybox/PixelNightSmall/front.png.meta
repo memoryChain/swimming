@@ -37,6 +37,10 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "49a3d60c-844e-43cb-9c31-0d1dd97f9adc@6c48a"
+    "redirect": "49a3d60c-844e-43cb-9c31-0d1dd97f9adc@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "astc-world-alpha-8x8"
+    }
   }
 }

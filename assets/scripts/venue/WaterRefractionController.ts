@@ -27,12 +27,12 @@ const REBIND_WARMUP_FRAMES = 4;
 // Local-turbulence: must match MAX_DISTURB in RagingPoolWater.effect. Each slot
 // is a swimmer's world XZ (xy) + strength (z). disturbParams: x = influence
 // radius (world units of churn around a swimmer), y = chaotic ripple frequency,
-// z = churn strength added to the refraction offset, w = churn animation speed.
+// z = churn strength added to the refraction offset, w = enabled. The expensive
+// eight-swimmer branch is enabled only for top-view shots.
 const MAX_DISTURB = 8;
 const DISTURB_RADIUS = 1.7;
 const DISTURB_FREQUENCY = 9.0;
 const DISTURB_STRENGTH = 1.15;
-const DISTURB_SPEED = 4.2;
 // Pool-bottom recolour that swaps with the camera: ABOVE water the floor/walls are
 // deep pool BLUE (so the surface reads as rich blue water); UNDER water they turn
 // light/WHITE so the submerged view stays a legible natural pool instead of a blue
@@ -70,7 +70,9 @@ export class WaterRefractionController {
     // Reused local-turbulence buffers so the per-frame uniform write allocates
     // nothing. _disturb is uploaded to the water shader's swimmerDisturb[] array.
     private readonly _disturb: Vec4[] = [];
-    private readonly _disturbParams = new Vec4(DISTURB_RADIUS, DISTURB_FREQUENCY, DISTURB_STRENGTH, DISTURB_SPEED);
+    private readonly _disturbParams = new Vec4(DISTURB_RADIUS, DISTURB_FREQUENCY, DISTURB_STRENGTH, 0);
+    private _swimmerDisturbanceActive = false;
+    private _swimmerDisturbanceStateDirty = true;
     // x/y are the safe corridor's world-Z edges, z is the boundary half-width,
     // and w enables the material-side locked lane mask.
     private readonly _laneLockdownParams = new Vec4(0, 0, 0.075, 0);
@@ -79,10 +81,9 @@ export class WaterRefractionController {
     private readonly _laneLockdownWarningParams = new Vec4(0, 0, 0.075, 0);
     private _laneLockdownParamsDirty = true;
     private readonly _tmpPos = new Vec3();
-    // Pool-bottom materials whose colour swaps with the camera crossing the water
-    // line (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
+    // Pool-bottom materials whose colour swaps with the underwater camera mode
+    // (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
     private readonly _floorTints: { material: Material; above: Color; below: Color }[] = [];
-    private _waterY = 0;
     private _floorUnderwater: boolean | null = null;
     private _underwaterViewActive = false;
     private _waterActiveBeforeUnderwater = true;
@@ -117,7 +118,6 @@ export class WaterRefractionController {
         const waterNode = findNodeByName(pool, WATER_SURFACE_NODE_NAME);
         this._waterNode = waterNode;
         this._waterActiveBeforeUnderwater = waterNode?.active ?? true;
-        this._waterY = waterNode?.isValid ? waterNode.worldPosition.y : 0.1;
         this.collectFloorTints(pool);
 
         const size = view.getVisibleSize();
@@ -191,7 +191,6 @@ export class WaterRefractionController {
             this.resizeIfNeeded();
             this.ensureMaterialBound();
         }
-        this.updateFloorTint();
         this._frame += 1;
         if (this._frame <= SWIMMER_TAG_WARMUP_FRAMES && this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
@@ -207,6 +206,11 @@ export class WaterRefractionController {
         if (active === this._underwaterViewActive) {
             return;
         }
+        // The surface visibility, underwater screen tint and pool-tile tint must
+        // change on the same camera-mode edge. Driving the tiles independently
+        // from camera Y used to expose a whole-pool colour pop while a smoothed
+        // dive camera crossed the water line.
+        this.applyFloorTint(active);
         if (active) {
             if (this._waterNode?.isValid) {
                 this._waterActiveBeforeUnderwater = this._waterNode.active;
@@ -229,6 +233,18 @@ export class WaterRefractionController {
         }
         this._underwaterViewActive = active;
         this._debug?.(`water surface ${active ? 'hidden for underwater camera' : 'restored above water'}`);
+    }
+
+    // Local per-swimmer water churn is only useful from the top view. This is an
+    // edge-triggered presentation switch: normal shots skip both the CPU uniform
+    // upload and the shader's eight-source disturbance loop.
+    setSwimmerDisturbanceActive(active: boolean) {
+        if (active === this._swimmerDisturbanceActive) {
+            return;
+        }
+        this._swimmerDisturbanceActive = active;
+        this._disturbParams.w = active ? 1 : 0;
+        this._swimmerDisturbanceStateDirty = true;
     }
 
     setLaneLockdownMask(safeMinZ: number, safeMaxZ: number) {
@@ -260,7 +276,7 @@ export class WaterRefractionController {
 
     // Collect the pool-bottom renderers matching FLOOR_TINT, give each an unlit
     // material initialised to the ABOVE-water (blue) colour, and remember the
-    // material + both colours so updateFloorTint() can swap them per frame.
+    // material + both colours so the camera-mode edge can swap them together.
     private collectFloorTints(pool: Node) {
         this._floorTints.length = 0;
         const walk = (node: Node) => {
@@ -294,16 +310,16 @@ export class WaterRefractionController {
             }
         };
         walk(pool);
-        this._floorUnderwater = null;
+        // Every new runtime material was initialised with its above-water tint.
+        this._floorUnderwater = false;
     }
 
-    // Swap the pool-bottom colours when the camera crosses the water line: blue
-    // above (rich water look), light/white below (legible underwater view).
-    private updateFloorTint() {
-        if (this._floorTints.length <= 0 || !this._mainCamera?.node?.isValid) {
+    // Swap the pool-bottom colours atomically with the camera presentation mode:
+    // blue above (rich water look), light/white below (legible underwater view).
+    private applyFloorTint(underwater: boolean) {
+        if (this._floorTints.length <= 0) {
             return;
         }
-        const underwater = this._mainCamera.node.worldPosition.y < this._waterY;
         if (underwater === this._floorUnderwater) {
             return;
         }
@@ -434,8 +450,12 @@ export class WaterRefractionController {
         if (material.name !== RUNTIME_WATER_MATERIAL_NAME) {
             return;
         }
-        if (justBound) {
+        if (justBound || this._swimmerDisturbanceStateDirty) {
             material.setProperty('disturbParams', this._disturbParams);
+            this._swimmerDisturbanceStateDirty = false;
+        }
+        if (!this._swimmerDisturbanceActive) {
+            return;
         }
         const nodes = this._getSwimmerNodes?.() ?? [];
         for (let i = 0; i < MAX_DISTURB; i++) {

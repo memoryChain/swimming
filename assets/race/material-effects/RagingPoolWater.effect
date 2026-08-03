@@ -142,9 +142,8 @@ CCProgram water-fs %{
   // Local turbulence sources (the swimmers). Each active slot: xy = world XZ,
   // z = strength (0 = inactive slot). disturbParams: x = influence radius,
   // y = chaotic ripple frequency, z = churn strength added to the refraction
-  // offset, w = churn animation speed. WaterRefractionController writes the
-  // swimmer slots every frame; an all-zero array (no controller) leaves the
-  // whole surface on the calm two-octave distortion.
+  // offset, w = enabled. WaterRefractionController enables this branch only for
+  // top-view shots; normal shots stay on the calm open-water distortion.
   // NOTE: the array length must be a literal (Cocos EFX rejects a #define here);
   // keep it equal to MAX_DISTURB above.
   uniform WaterDisturb {
@@ -209,16 +208,21 @@ CCProgram water-fs %{
     // Local wake: sum how close this water pixel is to each swimmer, then layer
     // high-frequency chaotic ripples weighted by that proximity, so the water
     // churns finely around swimmers while the open pool keeps the calm wobble.
-    float disturb = 0.0;
-    for (int i = 0; i < MAX_DISTURB; i++) {
-      vec2 sd = v_worldPos.xz - swimmerDisturb[i].xy;
-      float r2 = max(disturbParams.x * disturbParams.x, 1e-4);
-      float prox = 1.0 - clamp(dot(sd, sd) / r2, 0.0, 1.0);
-      disturb += prox * prox * swimmerDisturb[i].z;
+    vec2 dudv = baseWobble;
+    // This condition is uniform across the draw. Normal camera shots coherently
+    // skip both the eight-source loop and the second four-octave wobble.
+    if (disturbParams.w > 0.5) {
+      float disturb = 0.0;
+      for (int i = 0; i < MAX_DISTURB; i++) {
+        vec2 sd = v_worldPos.xz - swimmerDisturb[i].xy;
+        float r2 = max(disturbParams.x * disturbParams.x, 1e-4);
+        float prox = 1.0 - clamp(dot(sd, sd) / r2, 0.0, 1.0);
+        disturb += prox * prox * swimmerDisturb[i].z;
+      }
+      disturb = clamp(disturb, 0.0, 1.5);
+      vec2 chaos = waterWobble(v_worldPos.xz * (fw * 2.7) + vec2(11.3, 4.1), t * 2.1);
+      dudv += chaos * (disturb * disturbParams.z * 0.5);
     }
-    disturb = clamp(disturb, 0.0, 1.5);
-    vec2 chaos = waterWobble(v_worldPos.xz * (fw * 2.7) + vec2(11.3, 4.1), t * 2.1);
-    vec2 dudv = baseWobble + chaos * (disturb * disturbParams.z * 0.5);
     vec2 refractUV = clamp(screenUV + dudv * refractionParams.x, vec2(0.001), vec2(0.999));
     vec3 background = texture(refractionMap, refractUV).rgb;
 

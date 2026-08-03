@@ -2,6 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const { assertTextureCompressionPolicy } = require('./texture-compression-policy');
+
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 const LOGIN_SCENE = {
     url: 'db://assets/scenes/Login.scene',
@@ -12,6 +15,8 @@ const SUBPACKAGE_BUNDLES = [
     { name: 'race', root: 'db://assets/race', priority: 7 },
     { name: 'music', root: 'db://assets/music', priority: 6 },
 ];
+const MAX_WECHAT_MAIN_SOURCE_BYTES = 4 * 1024 * 1024;
+const FORBIDDEN_TEXTURE_EXTENSIONS = new Set(['.pvr', '.pkm']);
 
 // WeChat lock-step (帧同步) options for wx.getGameServerManager(). gameTick is the
 // logical frame interval in ms (33ms ≈ 30 logical frames/sec). Matches the official
@@ -37,6 +42,17 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
     if (options.platform !== 'wechatgame') {
         return;
     }
+
+    // Do not silently publish newly imported large images or GLB-embedded images
+    // without the project's tiered ASTC policy. The fixer must run before this
+    // build so Creator has time to re-import the changed .meta files.
+    const textureAudit = assertTextureCompressionPolicy(PROJECT_ROOT);
+    console.log(
+        `[texture-policy] verified ${textureAudit.eligible} compressed textures; `
+        + `${textureAudit.mipmapSamplersDisabled} GLB texture samplers have mip filtering disabled; `
+        + `${textureAudit.ignoredMainPackage} main-package UI textures and `
+        + `${textureAudit.ignoredSmall} small textures intentionally remain original.`,
+    );
 
     // MainGame belongs to the race Bundle and must not also be copied into main.
     options.startScene = LOGIN_SCENE.uuid;
@@ -144,5 +160,54 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
             );
         }
     }
-    console.log('[wechat-race-subpackage] generated and verified race and music subpackages.');
+    const packageAudit = auditWechatPackageOutput(result.dest);
+    console.log(
+        `[wechat-race-subpackage] generated and verified race/music subpackages; `
+        + `main package ${(packageAudit.mainBytes / 1024).toFixed(1)} KiB.`,
+    );
 };
+
+function auditWechatPackageOutput(outputRoot) {
+    const resolvedRoot = path.resolve(outputRoot);
+    const files = [];
+    visitOutputFiles(resolvedRoot, files);
+
+    const forbidden = files.filter((filePath) => FORBIDDEN_TEXTURE_EXTENSIONS.has(path.extname(filePath).toLowerCase()));
+    if (forbidden.length > 0) {
+        const examples = forbidden.slice(0, 8)
+            .map((filePath) => path.relative(resolvedRoot, filePath).replace(/\\/g, '/'))
+            .join(', ');
+        throw new Error(
+            `[texture-policy] Build emitted ${forbidden.length} unexpected PVR/PKM textures (${examples}). `
+            + 'Creator is using stale/default compression presets. Close and reopen the Creator project, '
+            + 'run npm run textures:check, then rebuild. Do not upload this oversized package.',
+        );
+    }
+
+    let mainBytes = 0;
+    for (const filePath of files) {
+        const relative = path.relative(resolvedRoot, filePath).replace(/\\/g, '/');
+        if (!relative.startsWith('subpackages/')) {
+            mainBytes += fs.statSync(filePath).size;
+        }
+    }
+    if (mainBytes > MAX_WECHAT_MAIN_SOURCE_BYTES) {
+        throw new Error(
+            `[wechat-package] Main package is ${(mainBytes / 1024).toFixed(1)} KiB, `
+            + `exceeding the 4096 KiB limit. Move new race-only assets into a subpackage `
+            + 'or remove duplicated main-package variants before upload.',
+        );
+    }
+    return { mainBytes };
+}
+
+function visitOutputFiles(directory, files) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const target = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+            visitOutputFiles(target, files);
+        } else if (entry.isFile()) {
+            files.push(target);
+        }
+    }
+}

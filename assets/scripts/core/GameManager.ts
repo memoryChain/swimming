@@ -86,6 +86,7 @@ import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
+import { logTextureFormatDiagnostics } from './TextureFormatDiagnostics';
 
 const { ccclass } = _decorator;
 
@@ -291,6 +292,12 @@ export class GameManager extends Component {
                                 this.applyAiDebugHud();
                                 this.startGame();
                             }
+                            // Models and venue textures finish their asynchronous
+                            // uploads shortly after scene construction. Audit once,
+                            // after that initial loading window, so a real-device
+                            // vConsole can prove both the selected .astc source and
+                            // the final GPU texture format without any frame-loop cost.
+                            this.scheduleOnce(logTextureFormatDiagnostics, 3);
                             // Race scene is fully built and its initial camera /
                             // state are set: reveal it by dropping the loading
                             // cover that spanned the scene switch.
@@ -446,6 +453,7 @@ export class GameManager extends Component {
             this.setUnderwaterOverlayVisible(false);
             this._modelDebugFlow.update(dt);
             this._modelDebugFlow.updateCamera();
+            this._waterRefraction?.setSwimmerDisturbanceActive(false);
             this._waterRefraction?.update();
             return;
         }
@@ -454,6 +462,7 @@ export class GameManager extends Component {
         this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
+        this._waterRefraction?.setSwimmerDisturbanceActive(this._raceCameraDirector.topViewActive);
         this._swimmerNameOverlay.update(
             this._cameraNode?.getComponent(Camera) ?? null,
             this._uiCamera,
@@ -2429,7 +2438,7 @@ export class GameManager extends Component {
 
     private setUnderwaterOverlayVisible(visible: boolean) {
         this._waterRefraction?.setUnderwaterViewActive(visible);
-        if (this._underwaterCameraTint) {
+        if (this._underwaterCameraTint && this._underwaterCameraTint.active !== visible) {
             this._underwaterCameraTint.active = visible;
             if (visible) {
                 this.resizeUnderwaterCameraTint();

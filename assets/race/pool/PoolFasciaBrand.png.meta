@@ -37,6 +37,10 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": false,
-    "redirect": "273cefb5-3d22-40b4-99c2-58804377c809@6c48a"
+    "redirect": "273cefb5-3d22-40b4-99c2-58804377c809@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "astc-opaque-6x6"
+    }
   }
 }

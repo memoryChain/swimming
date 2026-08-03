@@ -1,3 +1,178 @@
 {
-  "__version__": "1.3.9"
+  "__version__": "1.3.9",
+  "textureCompressConfig": {
+    "userPreset": {
+      "astc-ui-alpha-5x5": {
+        "name": "ASTC UI Alpha 5x5",
+        "options": {
+          "miniGame": {
+            "astc_5x5": {
+              "quality": "thorough"
+            },
+            "png": {
+              "quality": 90
+            }
+          },
+          "ios": {
+            "astc_5x5": {
+              "quality": "thorough"
+            },
+            "png": {
+              "quality": 90
+            }
+          },
+          "android": {
+            "astc_5x5": {
+              "quality": "thorough"
+            },
+            "png": {
+              "quality": 90
+            }
+          },
+          "web": {
+            "png": {
+              "quality": 90
+            }
+          }
+        }
+      },
+      "astc-model-alpha-6x6": {
+        "name": "ASTC Model Alpha 6x6",
+        "options": {
+          "miniGame": {
+            "astc_6x6": {
+              "quality": "thorough"
+            },
+            "png": {
+              "quality": 90
+            }
+          },
+          "ios": {
+            "astc_6x6": {
+              "quality": "thorough"
+            },
+            "png": {
+              "quality": 90
+            }
+          },
+          "android": {
+            "astc_6x6": {
+              "quality": "thorough"
+            },
+            "png": {
+              "quality": 90
+            }
+          },
+          "web": {
+            "png": {
+              "quality": 90
+            }
+          }
+        }
+      },
+      "astc-opaque-6x6": {
+        "name": "ASTC Opaque 6x6",
+        "options": {
+          "miniGame": {
+            "astc_6x6": {
+              "quality": "thorough"
+            },
+            "jpg": {
+              "quality": 88
+            }
+          },
+          "ios": {
+            "astc_6x6": {
+              "quality": "thorough"
+            },
+            "jpg": {
+              "quality": 88
+            }
+          },
+          "android": {
+            "astc_6x6": {
+              "quality": "thorough"
+            },
+            "jpg": {
+              "quality": 88
+            }
+          },
+          "web": {
+            "jpg": {
+              "quality": 88
+            }
+          }
+        }
+      },
+      "astc-world-alpha-8x8": {
+        "name": "ASTC World Alpha 8x8",
+        "options": {
+          "miniGame": {
+            "astc_8x8": {
+              "quality": "medium"
+            },
+            "png": {
+              "quality": 85
+            }
+          },
+          "ios": {
+            "astc_8x8": {
+              "quality": "medium"
+            },
+            "png": {
+              "quality": 85
+            }
+          },
+          "android": {
+            "astc_8x8": {
+              "quality": "medium"
+            },
+            "png": {
+              "quality": 85
+            }
+          },
+          "web": {
+            "png": {
+              "quality": 85
+            }
+          }
+        }
+      },
+      "astc-world-opaque-8x8": {
+        "name": "ASTC World Opaque 8x8",
+        "options": {
+          "miniGame": {
+            "astc_8x8": {
+              "quality": "medium"
+            },
+            "jpg": {
+              "quality": 82
+            }
+          },
+          "ios": {
+            "astc_8x8": {
+              "quality": "medium"
+            },
+            "jpg": {
+              "quality": 82
+            }
+          },
+          "android": {
+            "astc_8x8": {
+              "quality": "medium"
+            },
+            "jpg": {
+              "quality": 82
+            }
+          },
+          "web": {
+            "jpg": {
+              "quality": 82
+            }
+          }
+        }
+      }
+    },
+    "genMipmaps": true
+  }
 }

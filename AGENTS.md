@@ -84,6 +84,21 @@ The game has a WeChat networked race mode (host-authoritative "predict + correct
 - Do not place `.blend`, preview images, backup files, or other source-only assets under `assets/`; keep them in `tools/` unless the user explicitly wants them shipped.
 - Top-view camera logic may hide ceiling nodes. If adding ceiling pieces, include `ceiling` in relevant node names so this behavior can continue to work.
 
+## Texture Compression Policy
+
+Texture compression is an asset-import/build concern, not a render-pipeline feature and not a runtime image-processing step. The authoritative presets live in `settings/v2/packages/builder.json`; automatic classification and auditing live in `extensions/wechat-race-subpackage/texture-compression-policy.js`.
+
+- **After adding or re-importing any PNG/JPG/GLB, first let Cocos Creator generate/update its `.meta`, then run `npm run textures:fix`.** Do not ask the user to choose ASTC block sizes manually and do not hand-edit `compressSettings` unless changing the policy itself.
+- Run `npm run textures:check` before finishing asset work. The WeChat build hook also runs the same read-only audit and intentionally fails the build if an eligible texture or GLB-embedded image is missing/mismatching its policy preset.
+- The classifier owns the tiers inside the `race` subpackage: transparent UI uses ASTC 5x5 + PNG fallback; character/model and quality-sensitive opaque art use ASTC 6x6 + JPG fallback; alpha-bearing model art uses ASTC 6x6 + PNG fallback; low-frequency world textures use ASTC 8x8 with PNG/JPG fallback according to alpha.
+- **Never generate ASTC/PVR/ETC variants for `assets/resources/ui`.** Cocos' built-in `resources` Bundle is part of the WeChat main package; duplicating its UI as GPU-compressed textures plus fallbacks can exceed the 4096 KiB upload limit. The policy intentionally keeps these main-package UI images in their original PNG/JPG form.
+- **Compressed GLB embedded images must not use mip sampling.** A raw `.astc` output contains no mip chain, while Cocos' GLTF importer defaults its Texture2D sub-assets to `mipfilter: linear`. On WebGL/iOS WeChat this can make the compressed texture incomplete and render magenta/corrupted pixels. `npm run textures:fix` must set each referencing GLB Texture2D sub-meta to `mipfilter: none`; do not re-enable it unless the build pipeline starts emitting and validating a complete compressed mip chain.
+- Small textures remain original by design: standalone UI below 16K pixels and world textures below 32K pixels normally should not gain an ASTC variant. Do not compress every icon, particle droplet, or tiny mask merely for consistency; fallback duplication can cost more package bytes than it saves.
+- Preserve the `.meta` when replacing an existing asset so its compression assignment survives. New GLBs are covered through their `gltf-embeded-image` sub-metas; do not extract embedded textures solely to enable ASTC.
+- Do not remove fallback PNG/JPG formats. WeChat selects ASTC only on supported devices; fallbacks prevent missing/black textures elsewhere. ASTC cannot be validated in WeChat Developer Tools, so visually validate significant asset changes on real iOS and Android devices.
+- The WeChat build output must contain no `.pvr` or `.pkm` files in this project. Their appearance means a running Creator process cached the default preset instead of the project's ASTC presets; close/reopen Creator and rebuild. The build hook also enforces the 4096 KiB main-package limit before upload.
+- If a new asset category genuinely needs a different quality tier, update the preset definitions and `extensions/wechat-race-subpackage/texture-compression-policy.js` together, run `npm run textures:fix`, rebuild WeChat, and verify that `.astc` files plus fallbacks are emitted.
+
 ## Blender MCP
 
 - Blender MCP may be used for inspecting and editing Blender scenes/assets, especially low-poly venue work under `tools/`.

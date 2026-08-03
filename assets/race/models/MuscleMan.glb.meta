@@ -50,7 +50,11 @@
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": false,
-        "type": "texture"
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-opaque-6x6"
+        }
       },
       "ver": "1.0.3",
       "imported": true,
@@ -71,7 +75,7 @@
         "wrapModeT": "repeat",
         "minfilter": "linear",
         "magfilter": "linear",
-        "mipfilter": "linear",
+        "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
         "imageUuidOrDatabaseUri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@1bc8f"
