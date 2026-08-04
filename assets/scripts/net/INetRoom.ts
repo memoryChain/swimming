@@ -71,6 +71,13 @@ export interface INetRoom {
     // Whether real networking is available in this build/runtime.
     isSupported(): boolean;
 
+    // Whether the reliable lock-step frame channel (uploadFrame/onSyncFrame) actually
+    // works. It can be UNAVAILABLE even when the room service works — notably iOS
+    // high-performance(+) mode disables GameServerManager's frame-sync native instance
+    // (rooms/broadcast still work). Becomes false once frame binding/upload is observed
+    // to fail on device; callers should then sync via broadcast() instead of uploadFrame.
+    isFrameSyncAvailable(): boolean;
+
     // Register event listeners. Call once before login/create/join.
     setCallbacks(callbacks: NetRoomCallbacks): void;
 

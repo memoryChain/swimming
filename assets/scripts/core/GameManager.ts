@@ -1482,6 +1482,10 @@ export class GameManager extends Component {
         if (!this._netSession || !this._netRaceController) {
             return;
         }
+        // If our own frame channel is down (iOS high-performance+), keep telling the room
+        // so a peer with working frame sync (e.g. Android) also broadcasts its state.
+        // Runs before the racing gate so the switch happens as early as possible.
+        this._netRaceController.maybeAnnounceBroadcastNeed();
         // Positions matter once ANY swimmer can be racing — from DIVING (remote humans /
         // AI dive and race while our own player may still be on the block) through
         // RACING. Gating this on our OWN local racing state was the bug: if the local
@@ -1522,6 +1526,21 @@ export class GameManager extends Component {
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
+            }
+            // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
+            // frame channel): a non-host human's self-position can no longer ride
+            // uploadFrame, so broadcast it as P| here instead. The host's own lane is
+            // already carried in its S| snapshot above, so only non-hosts send P|.
+            // `broadcastSyncRequired` also triggers when a PEER can't use frames (mixed
+            // iOS/Android room), so an Android guest still broadcasts P| to an iOS host.
+            // In a fully frame-synced race this is false and self keeps riding the
+            // reliable frame channel via tick(), so single-player + normal races are
+            // unchanged.
+            else if (this._netRaceController.broadcastSyncRequired) {
+                const self = this.buildLocalSelfSnapshot();
+                if (self) {
+                    this._netRaceController.sendSelfSnapshot(self);
+                }
             }
             if (NET_RACE_DEBUG_HUD) {
                 this._netRaceController.setDiag(this.buildNetDiag());

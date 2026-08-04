@@ -143,6 +143,14 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     // Configure lock-step so wx.getGameServerManager() stops falling back to defaults
     // (the "lockStepOptions is not an Object" runtime warning) and uses our gameTick.
     gameConfig.lockStepOptions = LOCK_STEP_OPTIONS;
+    // Cocos Creator's build panel exposes "高性能模式(iOS)" (iOSHighPerformance) but NOT the
+    // newer 高性能+ flag, so inject it here on every WeChat build. iOSHighPerformance+ requires
+    // iOSHighPerformance to also be true (WeChat: "要开通高性能+模式请先保证游戏已经在高性能模式下"),
+    // so force both. NOTE: '+' is part of the key, so it needs bracket notation. To disable
+    // high-performance mode (e.g. to A/B test framerate), flip these to false here and rebuild —
+    // do NOT hand-edit build/wechatgame/game.json, a rebuild overwrites it.
+    gameConfig.iOSHighPerformance = true;
+    gameConfig['iOSHighPerformance+'] = true;
     fs.writeFileSync(gameJsonPath, `${JSON.stringify(gameConfig, null, 4)}\n`, 'utf8');
 
     const verifiedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));

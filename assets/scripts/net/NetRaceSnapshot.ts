@@ -103,12 +103,14 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // other client eases that swimmer toward this so its on-screen copy "catches up" to how
 // its owner actually sees it — the owner predicts locally with zero input lag, so the
 // owner's position is the truth; input-replay alone leaves the remote copy ~1 RTT behind
-// and drifting. Same field layout as one snapshot entry.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>"
+// and drifting. Same field layout as one snapshot entry (incl. speed + energy), so it
+// also carries authoritative pose-speed and ultimate energy — required in broadcast-only
+// mode (iOS high-performance+), where these can no longer ride the lock-step frame self.
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -128,13 +130,15 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     if (!Number.isFinite(lane) || !Number.isFinite(distCm) || !Number.isFinite(latMm)) {
         return null;
     }
+    const speedCms = parts.length > 5 ? parseInt(parts[5], 10) : -1;
+    const energy = parts.length > 6 ? parseInt(parts[6], 10) : -1;
     return {
         lane,
         distance: distCm / 100,
         lateral: latMm / 1000,
         finished: fin,
         heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
-        speed: -1,
-        energy: -1,
+        speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
+        energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
     };
 }

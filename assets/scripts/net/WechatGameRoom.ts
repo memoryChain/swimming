@@ -105,9 +105,31 @@ export class WechatGameRoom implements INetRoom {
     private _gameStartNotified = false;
     // True for the room creator (owner); owners must leave via ownerLeaveRoom.
     private _isOwner = false;
+    // Whether the lock-step frame channel (uploadFrame/onSyncFrame) actually works.
+    // Optimistic until proven otherwise: on iOS high-performance(+) mode the room
+    // service works but the frame-sync native instance does NOT — binding onSyncFrame
+    // throws "this.emitter.on is undefined" and uploadFrame rejects with
+    // "this.nativeInstance.uploadFrame is undefined". When we observe either, we flip
+    // this to false and stop uploading frames; the game then syncs via broadcast() only.
+    private _frameSyncAvailable = true;
 
     isSupported(): boolean {
         return typeof wx !== 'undefined' && typeof wx.getGameServerManager === 'function';
+    }
+
+    isFrameSyncAvailable(): boolean {
+        return this._frameSyncAvailable;
+    }
+
+    // Called the first time the lock-step frame channel is observed to be broken (bind
+    // failure or an uploadFrame rejection). Latches broadcast-only mode for the session.
+    private markFrameSyncUnavailable(where: string, error?: any): void {
+        if (!this._frameSyncAvailable) {
+            return;
+        }
+        this._frameSyncAvailable = false;
+        netLog(`frame-sync unavailable (${where}) — switching to broadcast-only`,
+            (error as any)?.errMsg || (error as any)?.message || (error !== undefined ? String(error) : undefined));
     }
 
     private manager(): any {
@@ -198,6 +220,12 @@ export class WechatGameRoom implements INetRoom {
             this._disconnectCb = disconnectCb;
             this._gameEventsBound = true;
             netLog('game events bound');
+        } else {
+            // onSyncFrame's emitter doesn't exist -> this runtime has no working frame
+            // sync (e.g. iOS high-performance+). Drop to broadcast-only so we never call
+            // uploadFrame (which would flood unhandled rejections) and the game switches
+            // to broadcasting positions instead.
+            this.markFrameSyncUnavailable('onSyncFrame-bind');
         }
     }
 
@@ -430,15 +458,20 @@ export class WechatGameRoom implements INetRoom {
     }
 
     uploadFrame(action: string): void {
-        // Only valid after onGameStart; before that the native frame instance is not
-        // ready and uploadFrame throws (unhandled promise rejection).
-        if (!this._gameStarted) {
+        // Only valid after onGameStart AND when the frame-sync native instance exists.
+        // On iOS high-performance(+) the instance is missing, so uploadFrame REJECTS
+        // asynchronously (a synchronous try/catch does NOT catch it) — gate it out and
+        // latch broadcast-only mode on the first failure to stop the rejection flood.
+        if (!this._gameStarted || !this._frameSyncAvailable) {
             return;
         }
         try {
-            this.manager().uploadFrame({ actionList: [action] });
+            const ret = this.manager().uploadFrame({ actionList: [action] });
+            if (ret && typeof ret.then === 'function') {
+                ret.then(undefined, (error: any) => this.markFrameSyncUnavailable('uploadFrame', error));
+            }
         } catch (error) {
-            netLog('uploadFrame threw', (error as any)?.errMsg || (error as any)?.message || String(error));
+            this.markFrameSyncUnavailable('uploadFrame', error);
         }
     }
 

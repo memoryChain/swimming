@@ -17,6 +17,12 @@ export class DefaultNetRoom implements INetRoom {
         return false;
     }
 
+    isFrameSyncAvailable(): boolean {
+        // No real networking here; value is never meaningfully consulted (isSupported
+        // is false), but keep the optimistic default so no broadcast-only path triggers.
+        return true;
+    }
+
     setCallbacks(_callbacks: NetRoomCallbacks): void {
         // no-op
     }

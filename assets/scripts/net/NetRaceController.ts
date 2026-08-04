@@ -39,6 +39,14 @@ const HOST_TAKEOVER_STAGGER_MS = 800;
 // freezing at a stale position.
 const SELF_SNAPSHOT_FRESH_MS = 800;
 
+// Broadcast message tags for mixed / broadcast-only sync (used when the reliable
+// lock-step frame channel can't reach a peer, e.g. an iOS high-performance+ player
+// whose frame sync is disabled while the other player is on Android).
+//   NB| = "need broadcast": I can't use the frame channel, please broadcast your state.
+//   IN| = an input-event frame ridden over broadcast so remote copies still animate.
+const NEED_BROADCAST_TAG = 'NB|';
+const BROADCAST_INPUT_TAG = 'IN|';
+
 // Per-frame input logging. OFF by default: it fires for every non-empty input frame
 // (dozens/sec during racing) and each console.log is very expensive with vConsole open
 // (it appends a DOM node + reflows), which showed up as heavy in-race lag. Flip to true
@@ -114,6 +122,13 @@ export class NetRaceController {
     private _isHost: boolean;
     private _activeHostPos: number;
     private _lastSnapshotAt = 0;
+    // Mixed-environment sync flags. `_localFrameSyncDown` latches once our own frame
+    // channel is observed dead; `_peerNeedsBroadcast` latches when a peer announces (NB|)
+    // that theirs is. Either forces broadcast-based position/input sync.
+    private _localFrameSyncDown = false;
+    private _peerNeedsBroadcast = false;
+    private _lastNeedBroadcastAt = 0;
+    private _needBroadcastCount = 0;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -137,6 +152,48 @@ export class NetRaceController {
 
     get isHost(): boolean {
         return this._isHost;
+    }
+
+    // Whether the reliable lock-step frame channel works. When false (e.g. iOS
+    // high-performance+ disables GameServerManager frame sync), the game must sync via
+    // broadcast() only: human self-positions go out as P| instead of riding uploadFrame.
+    get frameSyncAvailable(): boolean {
+        return this._net.isFrameSyncAvailable();
+    }
+
+    // True when race state must be synced over broadcast rather than the lock-step frame
+    // channel: EITHER our own frame sync is down (we can't receive frames) OR a peer
+    // announced theirs is (they can't receive our frames). In a mixed room (one iOS
+    // high-perf+ + one Android) the two ends otherwise talk on different channels and
+    // never hear each other. Drives P| self-position + IN| input broadcasts.
+    get broadcastSyncRequired(): boolean {
+        return this._localFrameSyncDown || this._peerNeedsBroadcast;
+    }
+
+    // If our own frame channel is unavailable, periodically tell the room (NB|) so peers
+    // WITH a working frame channel (e.g. Android, no high-perf mode) also start
+    // broadcasting their position/inputs — otherwise their frame-only data never reaches
+    // us. Cheap + rate-limited; a no-op when our frame sync works. Called every frame by
+    // GameManager (before the racing gate) so the switch happens as early as possible.
+    maybeAnnounceBroadcastNeed(): void {
+        if (this._disposed || !this._net.isSupported()) {
+            return;
+        }
+        if (this._net.isFrameSyncAvailable()) {
+            return;
+        }
+        this._localFrameSyncDown = true;
+        const now = Date.now();
+        // Announce the first several times quickly so peers switch to broadcast ASAP and
+        // stop stalling in lock-step waiting for our frames that will never come (that
+        // wait is the pre-countdown jank on the other client). Then settle to a slow
+        // keep-alive rate. First call fires immediately (_lastNeedBroadcastAt = 0).
+        const interval = this._needBroadcastCount < 6 ? 300 : 1500;
+        if (now - this._lastNeedBroadcastAt >= interval) {
+            this._lastNeedBroadcastAt = now;
+            this._needBroadcastCount++;
+            this._net.broadcast(`${NEED_BROADCAST_TAG}${this._session.localPos}`);
+        }
     }
 
     // The seat (posNum) of the host this client currently defers to. For diagnostics.
@@ -377,6 +434,24 @@ export class NetRaceController {
             }
             return;
         }
+        // A peer can't use the lock-step frame channel (e.g. iOS high-performance+). Even
+        // if OUR frame sync works, switch to broadcasting our position/inputs so that peer
+        // can see us (its frame-only path can't reach us either, but broadcast can).
+        if (msg.slice(0, NEED_BROADCAST_TAG.length) === NEED_BROADCAST_TAG) {
+            this._peerNeedsBroadcast = true;
+            return;
+        }
+        // Input events ridden over broadcast for mixed / broadcast-only sync: replay onto
+        // the remote human for this seat so it animates (same as onSyncFrame does).
+        if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
+            const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
+            if (decoded.senderPos >= 0
+                && decoded.senderPos !== this._session.localPos
+                && decoded.events.length > 0) {
+                this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
+            }
+            return;
+        }
         const result = decodeRaceResult(msg);
         if (result) {
             this._resultRecv++;
@@ -494,7 +569,19 @@ export class NetRaceController {
             // every client must upload every frame to keep the lock-step cadence) plus
             // its own position so peers can reliably catch up to it.
             const events: NetInputEvent[] = drainNetInput();
-            this._net.uploadFrame(encodeInputFrame(this._session.localPos, events, selfPos));
+            if (!this.broadcastSyncRequired) {
+                // Fully frame-synced room: input + self-position ride the reliable
+                // lock-step frame channel (zero extra broadcast traffic).
+                this._net.uploadFrame(encodeInputFrame(this._session.localPos, events, selfPos));
+            } else if (events.length > 0) {
+                // Mixed / broadcast-only: a peer can't use frame sync, so do NOT
+                // participate in lock-step at all. Uploading frames into a session a peer
+                // never feeds makes WeChat's frame-sync wait for the missing member every
+                // tick and stall the whole frame loop — that is the "laggy, waiting for the
+                // host" jank on the other client. Ride inputs over broadcast instead;
+                // self-position goes out as P| from updateNetRaceSync.
+                this._net.broadcast(BROADCAST_INPUT_TAG + encodeInputFrame(this._session.localPos, events));
+            }
             sentThisTick = true;
         }
         if (sentThisTick) {
