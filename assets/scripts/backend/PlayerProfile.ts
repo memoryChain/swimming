@@ -18,10 +18,11 @@ export const CURRENCY = {
 // function is authoritative and keeps its own copy of these (server can't trust
 // client values); keep the two in sync when they matter.
 export const PROGRESSION_CONFIG = {
-    // Coins granted per completed rewarded-ad view (ad path is dormant in v1;
-    // the "+" headbar button is a debug free-grant instead, see grantDebugCoins).
-    adRewardCoins: 1,
-    // Max rewarded-ad grants per day (anti-spam). Unused while ads are deferred.
+    // Coins granted per completed rewarded-ad view (headbar "+" button). Tune to
+    // taste — a race awards ~300-400 and a level-up costs 800+, so this is a small
+    // top-up, not a shortcut.
+    adRewardCoins: 100,
+    // Max rewarded-ad grants per day (anti-spam), enforced by the backend.
     dailyAdCap: 10,
     // Coins granted to brand-new accounts so the first level-up is reachable
     // before any race.

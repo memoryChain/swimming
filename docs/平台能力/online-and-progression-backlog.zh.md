@@ -46,7 +46,9 @@
 ### 1D 接入游戏
 - ✅ 启动流程调 `PlayerData.load()`（Login 场景）。
 - ✅ **统一资源 headbar** `assets/scripts/ui/ResourceHeadBar.ts`：非比赛界面顶部显示「游泳卡 N」，挂 canvas 跨登录/赛前存在，订阅 PlayerData 自动刷新。
-- ✅ headbar 上 **「+」按钮 = 看广告得游泳卡**：`showRewardedAd → 'completed' → PlayerData.grantAdReward → 自动刷新`（编辑器 mock 广告自动发奖）。
+- ✅ headbar 上 **「+」按钮 = 看激励视频得金币**：`platform().showRewardedAd(adUnitId) → 'completed' → PlayerData.grantAdReward → 自动刷新`（编辑器/web 走 mock 广告自动发奖，真机走 `wx.createRewardedVideoAd`）。发奖客户端权威（MockBackend，含每日上限 `dailyAdCap:10`），**不自建服务器**；奖励额度 `PROGRESSION_CONFIG.adRewardCoins`（现 100）+ 每日上限均为配置。
+  - 🔲 **待填真实广告位 ID**：`assets/scripts/platform/AdConfig.ts` 现为占位常量（`adunit-0000...`），在微信/抖音后台创建激励视频广告位后替换。
+  - ℹ️ 调试免费发币（无广告无上限，`debugGrantCoins`）已从「+」移到 **AI 调试弹窗**里，仅供测试等级系统，上线前删。
 - ✅ 本地缓存：MockBackend 存 `sys.localStorage`，重启后游泳卡保留。
 - ✅ headbar 集成**返回按钮**（左上，`setBack(handler|null)`）：资源栏移到右上角，赛前界面的返回由 headbar 提供，不再与界面按钮重叠。
 - ✅ 顶部安全区：`HEADBAR_TOP_SAFE_AREA` 常量；赛前角色详情面板下移到安全线以下，不再被资源栏髡住。

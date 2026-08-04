@@ -286,7 +286,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('steer.aiWanderChance', 'AI乱划概率', 'AI 接近直行时，打破整齐左右交替、重复同一侧（从而开始蛇形）的基础概率，实际按 (1-难度) 缩放：强对手几乎不乱划走直线，弱对手常乱划乱窜。', () => STEERING_TUNING.aiWanderChance, (v) => STEERING_TUNING.aiWanderChance = v, 0.05, 0, 1, 2),
             control('steer.poolWallClearance', '撞墙余量', '人物确定性包围体与泳池侧墙之间保留的最小距离（米），横向漂移到此就贴墙滑行。', () => STEERING_TUNING.poolWallClearance, (v) => STEERING_TUNING.poolWallClearance = v, 0.05, 0, 1.5, 2, 'm'),
             control('steer.poolBoundaryBodyHalfLength', '边界体半长', '用于撞墙和封道判定的人物确定性包围体半长。偏航越大，半长投影到横向越多；它不依赖当前骨骼动作。', () => STEERING_TUNING.poolBoundaryBodyHalfLength, (v) => STEERING_TUNING.poolBoundaryBodyHalfLength = v, 0.05, 0.5, 2.5, 2, 'm'),
-            control('steer.poolBoundaryBodyHalfWidth', '边界体半宽', '用于撞墙和封道判定的人物确定性包围体半宽。直游时主要由该值决定贴墙距离；它不依赖角色模型或当前骨骼动作。', () => STEERING_TUNING.poolBoundaryBodyHalfWidth, (v) => STEERING_TUNING.poolBoundaryBodyHalfWidth = v, 0.05, 0.4, 1.5, 2, 'm'),
+            control('steer.poolBoundaryBodyHalfWidth', '边界体半宽', '用于撞墙和封道判定的人物确定性包围体半宽。直游时主要由该值决定贴墙距离；它不依赖角色模型或当前骨骼动作。', () => STEERING_TUNING.poolBoundaryBodyHalfWidth, (v) => STEERING_TUNING.poolBoundaryBodyHalfWidth = v, 0.05, 0.2, 1.5, 2, 'm'),
         ],
     },
     {

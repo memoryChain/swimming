@@ -11,8 +11,10 @@ import { getUILayer, UILayer } from '../ui/UILayers';
 import { netRoom } from '../net/NetManager';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
+import { rewardedAdUnitId } from '../platform/AdConfig';
+import { showToast } from '../ui/Toast';
 import { PlayerData } from '../backend/PlayerData';
-import { PROGRESSION_CONFIG } from '../backend/PlayerProfile';
+import { PROGRESSION_CONFIG, CURRENCY } from '../backend/PlayerProfile';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { SettingsManager } from './SettingsManager';
 import { openSettingsPanel } from '../ui/SettingsPanel';
@@ -38,6 +40,7 @@ export class LoginManager extends Component {
     private _pendingReconnect = false;
     private _loginUiRetries = 0;
     private _offAppShow: (() => void) | null = null;
+    private _adInProgress = false;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -86,7 +89,7 @@ export class LoginManager extends Component {
         // z-order juggling. Load the profile so the count reflects saved data.
         this._headBar = new ResourceHeadBar();
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
-            onAddCoins: () => this.grantDebugCoins(),
+            onAddCoins: () => this.watchAdForCoins(),
             onEditIdentity: () => this.openIdentityEdit(),
             onOpenSettings: () => openSettingsPanel(canvasNode, width, height),
         });
@@ -137,12 +140,49 @@ export class LoginManager extends Component {
         close.on(Node.EventType.TOUCH_END, () => root.destroy());
     }
 
-    // DEBUG ONLY: add coins with no ad and no cap (headbar "+" button while the
-    // rewarded-ad flow is deferred). The headbar auto-refreshes via
-    // PlayerData.onChange. See PROGRESSION_CONFIG.debugGrantCoins - this must be
-    // removed or gated behind a real ad flow before shipping.
+    // Rewarded-ad reward flow for the headbar "+" button: show the ad, and only on
+    // a completed view ask the backend to grant coins (it enforces the daily cap).
+    // The headbar auto-refreshes via PlayerData.onChange. Editor/web auto-completes
+    // the mock ad so this is testable locally.
+    private async watchAdForCoins() {
+        if (this._adInProgress) {
+            return;
+        }
+        this._adInProgress = true;
+        try {
+            const outcome = await platform().showRewardedAd(rewardedAdUnitId(platform().name));
+            if (outcome === 'completed') {
+                const reward = await PlayerData.grantAdReward();
+                if (reward.ok) {
+                    this.toast(`+${reward.granted} ${CURRENCY.coin.label}`);
+                } else if (reward.reason === 'capped') {
+                    this.toast('今日看广告次数已达上限');
+                } else {
+                    this.toast('发放失败，请稍后再试');
+                }
+            } else if (outcome === 'unavailable') {
+                this.toast('暂无可用广告');
+            } else if (outcome === 'error') {
+                this.toast('广告加载失败，请稍后再试');
+            }
+            // 'skipped' (closed early): no reward, no nagging toast.
+        } finally {
+            this._adInProgress = false;
+        }
+    }
+
+    private toast(text: string) {
+        if (this._canvasNode?.isValid) {
+            showToast(this._canvasNode, text);
+        }
+    }
+
+    // DEBUG ONLY: add coins with no ad and no cap. Reachable only from the AI-debug
+    // popup (hidden dev panel), NOT the headbar "+" which now runs the real ad flow.
+    // See PROGRESSION_CONFIG.debugGrantCoins - remove before a production release.
     private async grantDebugCoins() {
         await PlayerData.grantDebugCoins(PROGRESSION_CONFIG.debugGrantCoins);
+        this.toast(`调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
     }
 
     onDestroy() {
@@ -405,5 +445,12 @@ export class LoginManager extends Component {
         const cancel = makeButton('Cancel', overlay, 200, 52, uiColor(90, 96, 104, 235), '返回');
         cancel.setPosition(0, firstY - tiers.length * spacing - 6, 0);
         cancel.on(Node.EventType.TOUCH_END, () => overlay.destroy());
+
+        // DEBUG ONLY: free coin grant (no ad, no cap) tucked into this dev popup so
+        // it stays reachable for testing the level system, while the headbar "+"
+        // runs the real rewarded-ad flow. Remove before a production release.
+        const debugCoins = makeButton('DebugCoins', overlay, 300, 52, uiColor(120, 72, 24, 235), `调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
+        debugCoins.setPosition(0, firstY - (tiers.length + 1) * spacing - 6, 0);
+        debugCoins.on(Node.EventType.TOUCH_END, () => { void this.grantDebugCoins(); });
     }
 }

@@ -1566,6 +1566,7 @@ export class GameManager extends Component {
             let targetLat: number;
             let targetHead: number;
             let targetSpeed: number;
+            let targetFinished: boolean;
             let distBlend: number;
             let latBlend: number;
             let headBlend: number;
@@ -1574,6 +1575,7 @@ export class GameManager extends Component {
                 targetLat = self.lateral;
                 targetHead = self.heading;
                 targetSpeed = self.speed;
+                targetFinished = self.finished;
                 distBlend = 0.4;
                 latBlend = 0.4;
                 headBlend = 0.4;
@@ -1586,6 +1588,7 @@ export class GameManager extends Component {
                 targetLat = target.lateral;
                 targetHead = target.heading;
                 targetSpeed = target.speed;
+                targetFinished = target.finished;
                 distBlend = 0.2;
                 latBlend = 0.25;
                 headBlend = 0.3;
@@ -1608,6 +1611,13 @@ export class GameManager extends Component {
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
             swimmer.applyNetPoseSpeed(targetSpeed);
+            // Finish is host/owner-authoritative: the eased correction never quite reaches
+            // the wall, so honour the authoritative finished flag and snap this copy onto
+            // the finish line. The local finish path then plays its tread-water pose and
+            // freezes it (instead of jittering at the wall with a flickering name tag).
+            if (targetFinished) {
+                swimmer.applyNetFinish();
+            }
             // Outcome-affecting energy uses the same authority as movement: a human's
             // owner reports it on the reliable frame channel; AI follows the host S|
             // snapshot. Apply exactly (rather than once-per-render blending) so the

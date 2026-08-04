@@ -183,6 +183,23 @@ export class Swimmer extends Component {
         }
     }
 
+    // NETWORKED RACE ONLY: the authoritative owner/host reports this lane has finished.
+    // The eased position correction only ASYMPTOTICALLY approaches the finish line, so a
+    // copy driven purely by correction (a client-side AI, or a remote human once its input
+    // stops) never satisfies the local `distance >= raceDistance` finish check. That left
+    // it swimming in place at the wall with no tread-water pose while its name tag
+    // flickered across the threshold. Snap its progress exactly to the wall so the normal
+    // finish path (RaceManager.trackFinishers -> playFinishTouch) fires deterministically.
+    applyNetFinish() {
+        if (!this._motor.isRacing) {
+            return;
+        }
+        const line = getRaceDistance();
+        if (this._motor.distance < line) {
+            this._motor.nudgeDistance(line - this._motor.distance);
+        }
+    }
+
     // NETWORKED RACE ONLY (host-authoritative sync): nudge this swimmer's race
     // progress + lane offset toward the host's authoritative values. Small errors
     // ease smoothly; large errors (e.g. after a collision the host resolved
