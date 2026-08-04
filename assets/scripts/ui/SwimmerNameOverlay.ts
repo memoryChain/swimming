@@ -10,7 +10,6 @@ const OVERLAP_X = 76;
 const OVERLAP_Y = 22;
 const AI_COLOR = new Color(245, 250, 255, 255);
 const OUTLINE_COLOR = new Color(5, 14, 24, 225);
-const NAME_TAG_UPDATE_INTERVAL = 1 / 30;
 
 type NameEntry = {
     swimmer: Swimmer;
@@ -34,7 +33,6 @@ export class SwimmerNameOverlay {
     private readonly _cameraToHead = new Vec3();
     private readonly _placedX: number[] = [];
     private readonly _placedY: number[] = [];
-    private _updateElapsed = NAME_TAG_UPDATE_INTERVAL;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -79,9 +77,6 @@ export class SwimmerNameOverlay {
     setVisible(visible: boolean) {
         if (this._root?.isValid && this._root.active !== visible) {
             this._root.active = visible;
-            if (visible) {
-                this._updateElapsed = NAME_TAG_UPDATE_INTERVAL;
-            }
         }
     }
 
@@ -91,16 +86,10 @@ export class SwimmerNameOverlay {
         finishDistance: number,
         showFinished = false,
         headOffsetY = HEAD_OFFSET_Y,
-        dt = NAME_TAG_UPDATE_INTERVAL,
     ) {
         if (!this._root?.isValid || !this._root.active || !this._hud?.isValid || !worldCamera || !uiCamera) {
             return;
         }
-        this._updateElapsed += Math.max(0, dt);
-        if (this._updateElapsed < NAME_TAG_UPDATE_INTERVAL) {
-            return;
-        }
-        this._updateElapsed %= NAME_TAG_UPDATE_INTERVAL;
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;

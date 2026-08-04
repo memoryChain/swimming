@@ -469,12 +469,11 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             standingPresentation ? 72 : 30,
-            dt,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
         if (this._finishRankOverlay.hasResults()) {
-            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera, dt);
+            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera);
         }
         // Update after the race camera so the refraction camera uses this frame's
         // final transform. Underwater shots keep the swimmer overlay camera synced

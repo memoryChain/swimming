@@ -41,7 +41,6 @@ const EXIT_BUTTON_GAP = 8;
 // Slack (in UI px) allowed past the HUD edge before a head badge is culled, so a
 // swimmer right at the screen border does not pop in/out.
 const BADGE_OFF_SCREEN_MARGIN = 70;
-const BADGE_UPDATE_INTERVAL = 1 / 30;
 
 type BadgeEntry = {
     swimmerNode: Node;
@@ -78,7 +77,6 @@ export class FinishRankOverlay {
     private readonly _results: RaceFinishResult[] = [];
     private readonly _panelRowPool: PanelRow[] = [];
     private _headBadgesVisible = true;
-    private _badgeUpdateElapsed = BADGE_UPDATE_INTERVAL;
 
     // Reused scratch vectors so per-frame projection allocates nothing.
     private readonly _worldPos = new Vec3();
@@ -147,9 +145,6 @@ export class FinishRankOverlay {
             const active = visible && this._badges.size > 0;
             if (this._badgeRoot.active !== active) {
                 this._badgeRoot.active = active;
-                if (active) {
-                    this._badgeUpdateElapsed = BADGE_UPDATE_INTERVAL;
-                }
             }
         }
     }
@@ -209,16 +204,11 @@ export class FinishRankOverlay {
     // Reproject every head badge into HUD-local space and de-overlap them so
     // stacked swimmers stay individually readable. Call after the race camera
     // has been updated for the frame.
-    update(worldCamera: Camera | null, uiCamera: Camera | null, dt = BADGE_UPDATE_INTERVAL) {
+    update(worldCamera: Camera | null, uiCamera: Camera | null) {
         if (!this._badgeRoot?.isValid || !this._badgeRoot.active
             || !worldCamera || !uiCamera || !this._hud?.isValid) {
             return;
         }
-        this._badgeUpdateElapsed += Math.max(0, dt);
-        if (this._badgeUpdateElapsed < BADGE_UPDATE_INTERVAL) {
-            return;
-        }
-        this._badgeUpdateElapsed %= BADGE_UPDATE_INTERVAL;
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;
