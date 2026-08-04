@@ -38,7 +38,7 @@ export const STEERING_TUNING = {
     // gradually returns to the lane axis. The body still follows it through
     // turnEaseRate, so correction never snaps.
     kickStraightenMinCadenceHz: 2.5,
-    kickStraightenRate: 1.5,
+    kickStraightenRate: 0.0,
 
     // Turn scales with stroke POWER: the longer a stroke is held (the further the
     // pull travels before release), the bigger the turn. This is the multiplier

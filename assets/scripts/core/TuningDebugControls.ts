@@ -129,7 +129,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dolphin.rollPerStrokeDegrees', '每次划水转体', '空中每次划水输入产生的轴向转体角度（左右反向）。', () => DOLPHIN_JUMP.rollPerStrokeDegrees, (v) => DOLPHIN_JUMP.rollPerStrokeDegrees = v, 30, 90, 720, 0, '°'),
             control('dolphin.rollEaseRate', '转体跟随速度', '轴向转体角度向输入目标追赶的速度。越大转得越快、越跟手。', () => DOLPHIN_JUMP.rollEaseRate, (v) => DOLPHIN_JUMP.rollEaseRate = v, 0.5, 2, 20, 1),
             control('dolphin.landingDepth', '落水下潜深度', '落水后潜入水下的深度，随后上浮恢复正常游泳。', () => DOLPHIN_JUMP.landingDepth, (v) => DOLPHIN_JUMP.landingDepth = v, 0.05, 0, 2, 2, 'm'),
-            control('dolphin.landingExitSpeed', '落水出速', '落水下潜带出的速度，之后由水下阻力衰减回巡航速度。', () => DOLPHIN_JUMP.landingExitSpeed, (v) => DOLPHIN_JUMP.landingExitSpeed = v, 0.1, 0, 8, 1, 'm/s'),
             control('dolphin.landingRollUnwindSeconds', '转体回正时间', '落水后把残余轴向转体拉回正常游泳姿态所用的时间。', () => DOLPHIN_JUMP.landingRollUnwindSeconds, (v) => DOLPHIN_JUMP.landingRollUnwindSeconds = v, 0.05, 0.1, 2, 2, 's'),
             control('camera.dolphinBackDistance', '相机后距', '海豚跃跟随相机沿飞行切线在身后的基础距离。', () => RACE_CAMERA_TUNING.dolphinBackDistance, (v) => RACE_CAMERA_TUNING.dolphinBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
             control('camera.dolphinApexPullback', '顶点拉远', '腾空到最高点时在基础后距上额外往后拉的距离，用来把整个跃起框进画面。', () => RACE_CAMERA_TUNING.dolphinApexPullback, (v) => RACE_CAMERA_TUNING.dolphinApexPullback = v, 0.1, 0, 5, 1, 'm'),

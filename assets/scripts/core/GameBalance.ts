@@ -109,8 +109,11 @@ export const SWIMMER_BALANCE = {
     // 踢腿推进（重构）：不再按次给脉冲，而是按当前踢腿频率（次/秒）产生连续加速度——
     // 点得快加速快、点得慢加速慢。单靠踢腿速度封顶在 kickMaxSpeed（远低于手臂的 maxSpeed），
     // 手臂才是真正的发动机。
-    // Acceleration per Hz of kick cadence (m/s² per tap/second).
-    kickAccelPerHz: 0.34,
+    // Acceleration per Hz of kick cadence (m/s² per tap/second). Underwater
+    // (post-dive/dolphin glide) this runs without the surface ceiling fade, so it
+    // is the main way to hold speed after entering the water — keep it punchy
+    // enough that flutter-kicking clearly propels instead of just slowing the bleed.
+    kickAccelPerHz: 0.46,
     // PROPULSION cadence cap: kick frequency above this doesn't add more speed, so
     // a burst of extremely fast taps can't spike the pace. Only limits propulsion;
     // the leg animation tracks the raw finger rhythm (see kickCadenceMeasureMaxHz).
@@ -136,7 +139,7 @@ export const SWIMMER_BALANCE = {
     // 水下滑行阻力（重构）：跳水入水后、露出水面前的潜水滑行阶段，在常规阻力之外再叠加一份
     // 与当前速度成正比的额外阻力。于是入水速度很快就会衰减，除非玩家持续抖腿踢水（每次潜水
     // 踢腿推进由上面的点击频率参数计算）。只作用于滑行阶段，水面游泳不受影响；设 0 关闭。
-    glideDrag: 0.35,
+    glideDrag: 0.22,
     // Overspeed cap/decay: a strong dive can launch above maxSpeed; these clamp
     // how far over and how fast it bleeds back down. (Legacy name kept.)
     perfectComboMaxOvercap: 0.9,

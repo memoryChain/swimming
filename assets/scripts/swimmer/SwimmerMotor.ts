@@ -1,4 +1,4 @@
-import { getRaceDistance, SWIMMER_BALANCE } from '../core/GameBalance';
+import { getRaceDistance, SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
@@ -514,6 +514,18 @@ export class SwimmerMotor {
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
         this._playerBalance = overrides;
         this._weight = overrides?.weight ?? 1;
+    }
+
+    // Burst-driven multiplier for the dolphin-jump launch speed. Reuses the same
+    // ratio the dive uses (diveMaxLaunchSpeed / base), so a high-爆发力 / higher
+    // level character launches farther. Returns 1 for swimmers without progression
+    // overrides (AI), keeping opponents on the raw DOLPHIN_JUMP.launchSpeed.
+    get dolphinLaunchSpeedScale(): number {
+        const base = DIVE_BALANCE.maxLaunchSpeed;
+        if (!this._playerBalance || !(base > 0)) {
+            return 1;
+        }
+        return this._playerBalance.diveMaxLaunchSpeed / base;
     }
 
     private get _effectiveMaxSpeed(): number {
