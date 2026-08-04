@@ -205,6 +205,7 @@ export const RESOURCE_PATHS = {
     playerOutlineEffect: 'effects/PlayerOutline',
     laneFloatCutoutEffect: 'effects/LaneFloatCutout',
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
+    toonPropEffect: 'effects/ToonProp',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
     prepareRaceBackground: 'ui/prepare-race/locker-room-lowpoly-bg/texture',
     sampledActionsDir: TPOSE_ACTION_PROFILE_DIR,

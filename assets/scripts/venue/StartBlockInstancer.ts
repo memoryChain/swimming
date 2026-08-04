@@ -1,7 +1,8 @@
-import { BatchingUtility, instantiate, Node, Prefab, Vec3 } from 'cc';
+import { BatchingUtility, EffectAsset, instantiate, Node, Prefab, Vec3 } from 'cc';
 import { pruneNullComponentsRecursive } from '../character/CharacterModelLoader';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { applyToonPropMaterials } from './ToonPropMaterial';
 
 const ANCHOR_ROOT_NAME = 'start_block_anchor_root';
 const ANCHOR_PREFIX = 'start_block_anchor_';
@@ -78,11 +79,34 @@ export class StartBlockInstancer {
                 count += 1;
             }
 
-            const batchRoot = count > 0 ? batchStartBlocks(anchorRoot, pool) : null;
-            const batched = batchRoot !== null;
-            this._renderRoot = batchRoot ?? anchorRoot;
-            console.log(`[SpeedSwimming] dynamic start blocks=${count} batched=${batched ? 'yes' : 'no'} prefab=${loadedPath}`);
-            done({ count, batched, error: null });
+            // Cel-shade the blocks to match the comic-styled swimmers, then batch.
+            // Applying one shared toon material to every instance keeps static
+            // batching valid (all renderers share a material). Do this BEFORE
+            // batching; afterwards the meshes are folded into one baked renderer.
+            const finalizeBatch = () => {
+                const batchRoot = count > 0 ? batchStartBlocks(anchorRoot, pool) : null;
+                const batched = batchRoot !== null;
+                this._renderRoot = batchRoot ?? anchorRoot;
+                console.log(`[SpeedSwimming] dynamic start blocks=${count} batched=${batched ? 'yes' : 'no'} prefab=${loadedPath}`);
+                done({ count, batched, error: null });
+            };
+
+            if (count <= 0) {
+                finalizeBatch();
+                return;
+            }
+
+            loadRaceAsset(RESOURCE_PATHS.toonPropEffect, EffectAsset, (toonError, toonEffect) => {
+                if (!anchorRoot.isValid || !pool.isValid) {
+                    return;
+                }
+                if (toonError || !toonEffect) {
+                    console.warn('[SpeedSwimming] toon prop effect load failed; start blocks stay lit', toonError);
+                } else {
+                    applyToonPropMaterials(anchorRoot, toonEffect);
+                }
+                finalizeBatch();
+            });
         });
     }
 }

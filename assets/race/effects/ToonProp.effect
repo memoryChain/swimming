@@ -1,0 +1,75 @@
+// Cel-shaded material for STATIC venue props (start blocks, etc.). Because the
+// mesh is static we can pass a smooth world normal straight from the vertex
+// stage (a_normal * matWorld) instead of reconstructing a faceted one from
+// screen-space derivatives. That avoids the GL_OES_standard_derivatives
+// extension entirely (which the WebGL1 target disables) and gives cleaner bands.
+CCEffect %{
+  techniques:
+  - name: opaque
+    passes:
+    - vert: toon-prop-vs:vert
+      frag: toon-prop-fs:frag
+      properties:
+        mainTexture: { value: white }
+        mainColor:   { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
+        # Cel shading: x = band count, y = shadow-side brightness floor (0..1),
+        # z = enable (0/1), w = cool shadow-tint strength.
+        celParams:   { value: [3, 0.5, 1, 0.25] }
+}%
+
+CCProgram toon-prop-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+  #include <legacy/fog-vs>
+
+  out vec2 v_uv;
+  out vec3 v_normal;
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    v_uv = a_texCoord;
+    v_normal = normalize((matWorld * vec4(a_normal, 0.0)).xyz);
+    vec4 worldPos = matWorld * position;
+    CC_TRANSFER_FOG(worldPos);
+    return cc_matProj * (cc_matView * worldPos);
+  }
+}%
+
+CCProgram toon-prop-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+  #include <legacy/fog-fs>
+
+  in vec2 v_uv;
+  in vec3 v_normal;
+  uniform sampler2D mainTexture;
+
+  uniform ToonProp {
+    vec4 mainColor;
+    vec4 celParams;
+  };
+
+  vec4 frag () {
+    vec4 texel = texture(mainTexture, v_uv);
+    vec3 base = SRGBToLinear(texel.rgb) * mainColor.rgb;
+    // --- Cel shading: quantise a fixed key light into flat bands -------------
+    vec3 celN = normalize(v_normal);
+    vec3 celL = normalize(vec3(0.35, 1.0, 0.22));
+    float celNdl = dot(celN, celL) * 0.5 + 0.5; // half-lambert, 0..1
+    float celBands = max(celParams.x, 1.0);
+    float celQ = clamp(floor(celNdl * celBands) / max(celBands - 1.0, 1.0), 0.0, 1.0);
+    float celLight = mix(celParams.y, 1.0, celQ);
+    vec3 shaded = base * celLight;
+    shaded = mix(shaded, shaded * vec3(0.92, 0.96, 1.06), (1.0 - celQ) * celParams.w);
+    vec3 color = mix(base, shaded, step(0.5, celParams.z));
+    vec4 outputColor = vec4(color, texel.a * mainColor.a);
+    CC_APPLY_FOG(outputColor);
+    return CCFragOutput(outputColor);
+  }
+}%
