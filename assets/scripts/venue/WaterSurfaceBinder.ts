@@ -192,6 +192,11 @@ export class WaterSurfaceBinder {
                 const nodes: Node[] = [];
                 collectNodesByNamePrefix(pool, spec.prefix, nodes);
                 const isScoreboard = spec.prefix === 'scoreboard_screen';
+                // Share branding materials across all meshes using the same
+                // texture/orientation. Scoreboards intentionally keep separate
+                // normal and flipped instances because the far screen's UVs are
+                // authored mirrored; banners and fascia normally need only one.
+                const materialByFlip = new Map<boolean, Material>();
                 let applied = 0;
                 for (const node of nodes) {
                     const renderer = node.getComponent(MeshRenderer);
@@ -205,9 +210,14 @@ export class WaterSurfaceBinder {
                     // 两块不同的屏 mesh：near（跳水端）UV 正常，远端颁奖屏是镜像的会左右反。仅翻颁奖端那块；
                     // 用节点名判断可靠，而刚建好泳池时 worldPosition 可能尚未刷新。
                     const flipU = isScoreboard && !node.name.toLowerCase().includes('near');
+                    let runtimeMaterial = materialByFlip.get(flipU);
+                    if (!runtimeMaterial) {
+                        runtimeMaterial = makeUnlitBrandingMaterial(texture, `${spec.prefix}${flipU ? '_flipped' : ''}`, flipU);
+                        materialByFlip.set(flipU, runtimeMaterial);
+                    }
                     const count = Math.max(1, renderer.sharedMaterials.length);
                     for (let i = 0; i < count; i++) {
-                        renderer.setMaterial(makeUnlitBrandingMaterial(texture, node.name, flipU), i);
+                        renderer.setMaterial(runtimeMaterial, i);
                     }
                     applied += 1;
                 }

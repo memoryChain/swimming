@@ -279,6 +279,16 @@ export class WaterRefractionController {
     // material + both colours so the camera-mode edge can swap them together.
     private collectFloorTints(pool: Node) {
         this._floorTints.length = 0;
+        // Reuse one runtime material for renderers that share both their source
+        // material and tint rule. The tint rule is part of the cache key on
+        // purpose: pool floor, inner walls and lane markings use different
+        // above/underwater colours even when the imported GLB material happens
+        // to be shared between them.
+        const materialCache: {
+            source: Material | null;
+            tint: (typeof FLOOR_TINT)[number];
+            material: Material;
+        }[] = [];
         const walk = (node: Node) => {
             const name = node.name.toLowerCase();
             const match = FLOOR_TINT.find((entry) => name.startsWith(entry.prefix));
@@ -288,20 +298,25 @@ export class WaterRefractionController {
                     const slots = renderer.sharedMaterials.length || 1;
                     for (let i = 0; i < slots; i++) {
                         const source = renderer.getSharedMaterial(i);
-                        const usesPoolTileTexture = name.startsWith('pool_inner_wall') || name.startsWith('pool_floor');
-                        const texture = usesPoolTileTexture ? findMaterialTexture(source) : null;
-                        const material = new Material();
-                        material.initialize(texture
-                            ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
-                            : { effectName: 'builtin-unlit' });
-                        material.name = `RuntimeFloor_${node.name}`;
-                        material.setProperty('mainColor', match.above.clone());
-                        if (texture) {
-                            texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
-                            material.setProperty('mainTexture', texture);
+                        let cached = materialCache.find((entry) => entry.source === source && entry.tint === match);
+                        if (!cached) {
+                            const usesPoolTileTexture = name.startsWith('pool_inner_wall') || name.startsWith('pool_floor');
+                            const texture = usesPoolTileTexture ? findMaterialTexture(source) : null;
+                            const material = new Material();
+                            material.initialize(texture
+                                ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
+                                : { effectName: 'builtin-unlit' });
+                            material.name = `RuntimeFloor_${match.prefix}`;
+                            material.setProperty('mainColor', match.above.clone());
+                            if (texture) {
+                                texture.setWrapMode(Texture2D.WrapMode.REPEAT, Texture2D.WrapMode.REPEAT);
+                                material.setProperty('mainTexture', texture);
+                            }
+                            cached = { source, tint: match, material };
+                            materialCache.push(cached);
+                            this._floorTints.push({ material, above: match.above, below: match.below });
                         }
-                        renderer.setMaterial(material, i);
-                        this._floorTints.push({ material, above: match.above, below: match.below });
+                        renderer.setMaterial(cached.material, i);
                     }
                 }
             }
