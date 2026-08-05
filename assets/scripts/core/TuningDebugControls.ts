@@ -319,12 +319,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('water.floorFarStrength', '水下远处加深', '水下池底"越远越蓝"的强度：0=整片一个色（不渐变），1=远处完全变成深蓝。近处始终保持池底蓝。', () => WATER_COLOR_TUNING.floorFarStrength, (v) => { WATER_COLOR_TUNING.floorFarStrength = v; applyWaterColorTuning(); }, 0.02, 0, 1, 2),
             control('water.floorFarStart', '水下渐变起点', '水下：离相机多远开始变深蓝（米）。水下相机离池底近，一般 3 左右。', () => WATER_COLOR_TUNING.floorFarStart, (v) => { WATER_COLOR_TUNING.floorFarStart = v; applyWaterColorTuning(); }, 0.5, 0, 30, 1, 'm'),
             control('water.floorFarEnd', '水下渐变终点', '水下：离相机多远达到最深的蓝（米）。起点到终点之间平滑渐变。', () => WATER_COLOR_TUNING.floorFarEnd, (v) => { WATER_COLOR_TUNING.floorFarEnd = v; applyWaterColorTuning(); }, 0.5, 1, 60, 1, 'm'),
-            waterControl('water.floorAboveFarR', '水上远处色 R', '相机在水面上时，远处池底透过水面渐变到的颜色红通道，0-255。这是和水下不同的一套色。', () => WATER_COLOR_TUNING.floorAboveFarR, (v) => WATER_COLOR_TUNING.floorAboveFarR = v),
-            waterControl('water.floorAboveFarG', '水上远处色 G', '相机在水面上时远处池底渐变到的颜色绿通道，0-255。', () => WATER_COLOR_TUNING.floorAboveFarG, (v) => WATER_COLOR_TUNING.floorAboveFarG = v),
-            waterControl('water.floorAboveFarB', '水上远处色 B', '相机在水面上时远处池底渐变到的颜色蓝通道，0-255。', () => WATER_COLOR_TUNING.floorAboveFarB, (v) => WATER_COLOR_TUNING.floorAboveFarB = v),
-            control('water.floorAboveFarStrength', '水上远处加深', '相机在水面上时"越远越深"的强度：0=关闭（远近一个色），1=远处完全变成上面那套远处色。', () => WATER_COLOR_TUNING.floorAboveFarStrength, (v) => { WATER_COLOR_TUNING.floorAboveFarStrength = v; applyWaterColorTuning(); }, 0.02, 0, 1, 2),
-            control('water.floorAboveFarStart', '水上渐变起点', '水面上：离相机多远开始变深（米）。水面上相机离池底远，一般 8 左右。', () => WATER_COLOR_TUNING.floorAboveFarStart, (v) => { WATER_COLOR_TUNING.floorAboveFarStart = v; applyWaterColorTuning(); }, 0.5, 0, 40, 1, 'm'),
-            control('water.floorAboveFarEnd', '水上渐变终点', '水面上：离相机多远达到最深的颜色（米）。起点到终点之间平滑渐变。', () => WATER_COLOR_TUNING.floorAboveFarEnd, (v) => { WATER_COLOR_TUNING.floorAboveFarEnd = v; applyWaterColorTuning(); }, 0.5, 1, 90, 1, 'm'),
         ],
     },
 ];

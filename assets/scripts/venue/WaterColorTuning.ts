@@ -48,14 +48,6 @@ export const WATER_COLOR_TUNING = {
     floorFarStrength: 0.85,
     floorFarStart: 3.0,
     floorFarEnd: 20.0,
-    // Above-water distance gradient: viewed through the surface, the far pool
-    // floor fades toward this colour — a DIFFERENT (deeper) look than the
-    // underwater deep blue. Made clearly visible: strong, a dark far colour, and
-    // a tighter range that ramps within the visible floor.
-    floorAboveFarR: 16, floorAboveFarG: 64, floorAboveFarB: 116,
-    floorAboveFarStrength: 0.9,
-    floorAboveFarStart: 6.0,
-    floorAboveFarEnd: 30.0,
     // How strongly the underwater surface mirror is tinted toward deepColor
     // (0 = raw reflection / whiter, 1 = fully deep-water blue).
     reflectionBlue: 0.45,

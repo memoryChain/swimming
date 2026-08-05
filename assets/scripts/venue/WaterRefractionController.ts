@@ -107,19 +107,6 @@ function computeFloorDeepColor(): Color {
     );
 }
 
-// The colour the far floor fades toward ABOVE water (seen through the surface).
-// A deliberately DIFFERENT (deeper teal-blue) look than the underwater deep blue;
-// fully tunable. Alpha = far-blend strength.
-function computeFloorAboveDeepColor(): Color {
-    const c = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-    return new Color(
-        c(WATER_COLOR_TUNING.floorAboveFarR),
-        c(WATER_COLOR_TUNING.floorAboveFarG),
-        c(WATER_COLOR_TUNING.floorAboveFarB),
-        c(WATER_COLOR_TUNING.floorAboveFarStrength * 255),
-    );
-}
-
 // Drives real screen-space refraction for the pool water. A second camera mirrors
 // the active main camera every frame and renders only the underwater scene (pool
 // floor, lane lines, submerged swimmers on the DEFAULT layer — the water surface
@@ -551,11 +538,14 @@ export class WaterRefractionController {
         }
         material.setProperty('mainColor', underwater ? computeFloorBelowColor(tint.belowKind) : tint.above);
         if (this._floorHasDepth) {
-            const enable = tint.belowKind !== 'line' ? 1 : 0;
-            material.setProperty('depthColor', underwater ? computeFloorDeepColor() : computeFloorAboveDeepColor());
+            // Only the underwater view uses a distance-based blue gradient; above
+            // water the floor keeps a flat color (the distance blue there did not
+            // read well), so the gradient is disabled when not underwater.
+            const enable = underwater && tint.belowKind !== 'line' ? 1 : 0;
+            material.setProperty('depthColor', computeFloorDeepColor());
             material.setProperty('depthParams', new Vec4(
-                underwater ? WATER_COLOR_TUNING.floorFarStart : WATER_COLOR_TUNING.floorAboveFarStart,
-                underwater ? WATER_COLOR_TUNING.floorFarEnd : WATER_COLOR_TUNING.floorAboveFarEnd,
+                WATER_COLOR_TUNING.floorFarStart,
+                WATER_COLOR_TUNING.floorFarEnd,
                 enable,
                 0,
             ));
