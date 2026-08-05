@@ -61,6 +61,9 @@ import { NET_SIM_STEP } from '../net/NetSimClock';
 import { reseedSharedRandom } from './SharedRNG';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
+import { platform } from '../platform/PlatformManager';
+import { rewardedAdUnitId } from '../platform/AdConfig';
+import { PlayerData } from '../backend/PlayerData';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { applyRaceModifiersToSwimmer, resolveLocalRaceModifiers, resolveModifiersFromDigest } from '../progression/RaceModifiers';
 import { decodeModifierDigest } from '../net/NetRaceModifierCodec';
@@ -828,6 +831,18 @@ export class GameManager extends Component {
                 const progression = getProgressionManager();
                 const characterId = getPlayerCharacterSelection().characterId;
                 return progression.awardRace(characterId, input);
+            },
+            // Post-race "watch ad for double coins": show a rewarded ad, and on a
+            // completed view grant another coinsGained so the reward doubles. No
+            // daily cap. Single-player and net races share this client-side mock
+            // path; move it server-side when the WeChat Cloud backend lands.
+            claimDoubleCoins: async (coinsGained: number): Promise<boolean> => {
+                const outcome = await platform().showRewardedAd(rewardedAdUnitId(platform().name));
+                if (outcome !== 'completed') {
+                    return false;
+                }
+                await PlayerData.grantRewardedBonusCoins(coinsGained);
+                return true;
             },
             applyPlayerDive: (result) => {
                 this._playerCondition.reset();

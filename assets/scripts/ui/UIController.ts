@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
+import { _decorator, Button, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
@@ -610,10 +610,13 @@ export class UIController extends Component {
 
     private _progressionNode: Node | null = null;
     private _progressionTweenCounter: { value: number } | null = null;
+    private _progressionBaseCoins = 0;
+    private _progressionCoinLabel: Label | null = null;
+    private _progressionDoubleClaimed = false;
 
     showProgressionResult(result: {
         coinsGained: number;
-    } | null) {
+    } | null, onClaimDouble?: () => Promise<boolean>) {
         this.hideProgressionResult();
         if (!result || result.coinsGained <= 0) {
             return;
@@ -646,6 +649,19 @@ export class UIController extends Component {
 
         this._progressionNode = panel;
         this._progressionTweenCounter = null;
+        this._progressionBaseCoins = result.coinsGained;
+        this._progressionCoinLabel = coinLabel;
+        this._progressionDoubleClaimed = false;
+
+        // Watch-ad-for-double-coins CTA below the coin readout. The app layer
+        // owns the ad + grant; the button reports success/failure so it can
+        // re-enable on a skipped/failed ad and animate to 2x on success.
+        if (onClaimDouble) {
+            const button = this.buildDoubleCoinsButton(panel);
+            button.node.on(Node.EventType.TOUCH_END, () => {
+                void this.handleDoubleClaim(button, onClaimDouble);
+            });
+        }
 
         // Delay slightly so the result panel reads first, then slide up + fade in.
         tween(panelOpacity)
@@ -659,7 +675,70 @@ export class UIController extends Component {
             .start();
     }
 
+    // Rounded double-coins button in the HUD hand-built Graphics style, parked
+    // just under the coin readout. Gold accent ties it to the coin reward.
+    private buildDoubleCoinsButton(panel: Node): Button {
+        const w = 240;
+        const h = 50;
+        const node = new Node('DoubleCoinsButton');
+        node.layer = panel.layer;
+        node.setParent(panel);
+        node.setPosition(0, -52, 0);
+        node.addComponent(UITransform).setContentSize(w, h);
+        const gfx = node.addComponent(Graphics);
+        gfx.fillColor = new Color(60, 44, 12, 235);
+        gfx.roundRect(-w / 2, -h / 2, w, h, 10);
+        gfx.fill();
+        gfx.lineWidth = 2;
+        gfx.strokeColor = new Color(255, 209, 42, 220);
+        gfx.roundRect(-w / 2 + 1, -h / 2 + 1, w - 2, h - 2, 9);
+        gfx.stroke();
+        const labelNode = new Node('Label');
+        labelNode.layer = panel.layer;
+        labelNode.setParent(node);
+        labelNode.addComponent(UITransform).setContentSize(w, h);
+        const label = labelNode.addComponent(Label);
+        label.string = '看广告领双倍';
+        label.fontSize = 22;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.color = new Color(255, 224, 130, 255);
+        const button = node.addComponent(Button);
+        button.target = node;
+        button.interactable = true;
+        button.transition = Button.Transition.NONE;
+        return button;
+    }
+
+    private async handleDoubleClaim(button: Button, onClaimDouble: () => Promise<boolean>) {
+        if (this._progressionDoubleClaimed || !button?.isValid || !button.interactable) {
+            return;
+        }
+        this._progressionDoubleClaimed = true;
+        button.interactable = false;
+        let ok = false;
+        try {
+            ok = await onClaimDouble();
+        } catch {
+            ok = false;
+        }
+        if (!button?.isValid) {
+            return;
+        }
+        if (ok) {
+            this.animateDoubleBonus(this._progressionBaseCoins);
+            button.node.active = false;
+        } else {
+            // Ad skipped/failed/unavailable: let the player retry.
+            this._progressionDoubleClaimed = false;
+            button.interactable = true;
+        }
+    }
+
     private animateCoinGain(result: { coinsGained: number }, coinLabel: Label) {
+        if (this._progressionDoubleClaimed) {
+            return;
+        }
         const counter = { value: 0 };
         this._progressionTweenCounter = counter;
         const duration = Math.min(1.2, 0.5 + result.coinsGained / 600);
@@ -681,6 +760,35 @@ export class UIController extends Component {
             .start();
     }
 
+    // Ad reward granted: roll the counter from its current value up to 2x base so
+    // the readout lands on the doubled total. Stops any in-flight base animation.
+    private animateDoubleBonus(bonus: number) {
+        const label = this._progressionCoinLabel;
+        if (!label?.node?.isValid) {
+            return;
+        }
+        const counter = this._progressionTweenCounter ?? { value: 0 };
+        this._progressionTweenCounter = counter;
+        const to = this._progressionBaseCoins + bonus;
+        Tween.stopAllByTarget(counter);
+        tween(counter)
+            .to(0.6, { value: to }, {
+                onUpdate: () => {
+                    if (!label?.node?.isValid) {
+                        return;
+                    }
+                    label.string = '+' + Math.round(counter.value) + ' 金币';
+                },
+            })
+            .call(() => {
+                if (!label?.node?.isValid) {
+                    return;
+                }
+                label.string = '+' + to + ' 金币';
+            })
+            .start();
+    }
+
     hideProgressionResult() {
         if (this._progressionTweenCounter) {
             Tween.stopAllByTarget(this._progressionTweenCounter);
@@ -690,6 +798,9 @@ export class UIController extends Component {
             this._progressionNode.destroy();
             this._progressionNode = null;
         }
+        this._progressionCoinLabel = null;
+        this._progressionBaseCoins = 0;
+        this._progressionDoubleClaimed = false;
     }
 
     resetAll() {

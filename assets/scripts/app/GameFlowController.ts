@@ -52,6 +52,9 @@ export type GameFlowRefs = {
     playerDiveSpeedScale: () => number;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
         { characterId: string; coinsGained: number } | null;
+    // Watch a rewarded ad to double the race coin reward. Resolves true when the
+    // bonus was granted (ad completed); false when skipped/failed/unavailable.
+    claimDoubleCoins: (coinsGained: number) => Promise<boolean>;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
@@ -355,7 +358,12 @@ export class GameFlowController {
                     goodCount: rhythm?.goodCount ?? 0,
                     finished: finalPlayerTime > 0,
                 });
-                this._refs.uiFlow.showProgressionResult(progressionResult);
+                this._refs.uiFlow.showProgressionResult(
+                    progressionResult,
+                    progressionResult && progressionResult.coinsGained > 0
+                        ? () => this._refs.claimDoubleCoins(progressionResult.coinsGained)
+                        : undefined,
+                );
                 this._refs.uiFlow.setSprintActive(false);
                 this._refs.clearFinishRanks();
                 this._refs.showAwards(leaderboard);

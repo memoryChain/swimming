@@ -50,6 +50,15 @@ export class MockBackend implements IBackend {
         return Promise.resolve(profile);
     }
 
+    // Post-race "watch ad for double coins" bonus: grants the caller-supplied
+    // amount with no daily cap (the cap is only for the fixed headbar ad reward).
+    grantRewardedBonusCoins(amount: number): Promise<PlayerProfile> {
+        const profile = this.read();
+        profile.coins += Math.max(0, Math.floor(amount));
+        this.write(profile);
+        return Promise.resolve(profile);
+    }
+
     spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult> {
         const profile = this.read();
         const progress = profile.characters[characterId];

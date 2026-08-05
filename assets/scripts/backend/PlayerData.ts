@@ -79,6 +79,13 @@ class PlayerDataStore {
         this._emit();
     }
 
+    // Variable coin bonus for a completed rewarded-ad view (e.g. post-race double
+    // coins). No daily cap. Updates local state and notifies listeners.
+    async grantRewardedBonusCoins(amount: number): Promise<void> {
+        this._profile = await backend().grantRewardedBonusCoins(amount);
+        this._emit();
+    }
+
     // Spend coins to level a character. Delegates to the backend (validates
     // balance, returns authoritative profile) and maps the raw result into the
     // SpendResult shape the progression/UI layer expects.

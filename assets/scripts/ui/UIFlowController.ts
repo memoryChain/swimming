@@ -117,8 +117,8 @@ export class UIFlowController {
         this._refs.uiController?.showResult(isWin, playerTime, aiTime, stats);
     }
 
-    showProgressionResult(result: ProgressionResult) {
-        this._refs.uiController?.showProgressionResult(result);
+    showProgressionResult(result: ProgressionResult, onClaimDouble?: () => Promise<boolean>) {
+        this._refs.uiController?.showProgressionResult(result, onClaimDouble);
     }
 }
 

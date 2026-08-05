@@ -71,6 +71,11 @@ export interface IBackend {
     // cloud backend (or must be gated to dev accounts).
     grantDebugCoins(amount: number): Promise<PlayerProfile>;
 
+    // Grant a variable coin bonus for a completed rewarded-ad view (e.g. the
+    // post-race "watch ad for double coins" CTA). No daily cap by design - the
+    // bonus amount is caller-supplied. Returns the authoritative profile.
+    grantRewardedBonusCoins(amount: number): Promise<PlayerProfile>;
+
     // Spend coins to level a character. requestedLevels caps how many levels to
     // attempt (1 for single, maxLevel for "spend to max"); the backend spends as
     // many as the balance allows, validates, and returns the authoritative
