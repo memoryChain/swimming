@@ -25,12 +25,12 @@ const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
 const ULTIMATE_READY = new Color(255, 215, 90, 255);
 const ULTIMATE_CHARGING = new Color(210, 160, 60, 255);
 const DIVE_CHARGE_HEIGHT = 216;
-const DIVE_GFX_LOW = new Color(87, 196, 255, 255);
-const DIVE_GFX_MID = new Color(80, 242, 161, 255);
-const DIVE_GFX_HIGH = new Color(255, 224, 89, 255);
-const DIVE_SPRITE_LOW = new Color(255, 82, 91, 255);
-const DIVE_SPRITE_MID = new Color(76, 216, 235, 255);
-const DIVE_SPRITE_HIGH = new Color(255, 214, 64, 255);
+const DIVE_TRACK_WIDTH = 48;
+const DIVE_MARKER_HEIGHT = 6;
+const DIVE_ZONE_PERFECT = new Color(255, 224, 89, 190);
+const DIVE_ZONE_GOOD = new Color(94, 200, 214, 120);
+const DIVE_MARKER = new Color(255, 255, 255, 255);
+const DIVE_MARKER_BACK = new Color(0, 0, 0, 200);
 
 export type RaceResultStats = {
     averageSpeed: number;
@@ -68,6 +68,8 @@ export class UIController extends Component {
     @property(Node) public diveChargeTrack: Node = null;
     @property(Graphics) public diveChargeFill: Graphics = null;
     @property(Node) public diveChargeFillNode: Node = null;
+    public diveChargeZoneGfx: Graphics | null = null;
+    public diveChargeMarkerGfx: Graphics | null = null;
     public heartRateBarRoot: Node = null;
     public heartRateBarFill: Graphics = null;
     public heartRateLabel: Label = null;
@@ -96,9 +98,11 @@ export class UIController extends Component {
     private _ultimateText = -1;
     private _ultimateFillPixel = -1;
     private _ultimateColor: Color | null = null;
-    private _diveChargeFillPixel = -1;
-    private _diveChargeGfxColor: Color | null = null;
-    private _diveChargeSpriteColor: Color | null = null;
+    private _diveSweetCenter = 0.5;
+    private _divePerfectHalf = 0.045;
+    private _diveGoodHalf = 0.13;
+    private _diveMarkerPixel = -1;
+    private _diveLocked = false;
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -361,7 +365,7 @@ export class UIController extends Component {
         this.setSpeedBarVisible(false);
         this.resizeCountdownShade(190, 160);
         if (this.hintLabel) {
-            this.hintLabel.string = '倒计时长按蓄力，听令出发';
+            this.hintLabel.string = this._diveLocked ? '已锁定，等待出发' : '按住瞄准甜区，松手锁定';
         }
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(720, 220);
@@ -377,30 +381,78 @@ export class UIController extends Component {
         if (this.diveChargeTrack && this.diveChargeTrack.active !== visible) {
             this.diveChargeTrack.active = visible;
         }
-        if (this.diveChargeFill && this.diveChargeFill.node.active !== visible) {
-            this.diveChargeFill.node.active = visible;
-        }
-        if (this.diveChargeFillNode && this.diveChargeFillNode.active !== visible) {
-            this.diveChargeFillNode.active = visible;
-        }
         if (!visible) {
+            this._diveMarkerPixel = -1;
             return;
         }
+        // 指针位置 = 当前蓄力值(往返波动)。量化到像素，仅在像素变化时写 transform。
         const ratio = clamp01(power);
-        const fillPixel = Math.round(ratio * DIVE_CHARGE_HEIGHT);
-        const gfxColor = diveChargeGraphicsColor(ratio);
-        if (this.diveChargeFill
-            && (fillPixel !== this._diveChargeFillPixel || gfxColor !== this._diveChargeGfxColor)) {
-            drawChargeFill(this.diveChargeFill, fillPixel / DIVE_CHARGE_HEIGHT, gfxColor);
+        const pixel = Math.round(ratio * DIVE_CHARGE_HEIGHT);
+        if (pixel !== this._diveMarkerPixel && this.diveChargeMarkerGfx) {
+            this._diveMarkerPixel = pixel;
+            this.diveChargeMarkerGfx.node.setPosition(0, (ratio - 0.5) * DIVE_CHARGE_HEIGHT, 0);
         }
-        const spriteColor = diveChargeSpriteColor(ratio);
-        if (this.diveChargeFillNode
-            && (fillPixel !== this._diveChargeFillPixel || spriteColor !== this._diveChargeSpriteColor)) {
-            setVerticalFill(this.diveChargeFillNode, fillPixel / DIVE_CHARGE_HEIGHT, spriteColor);
+    }
+
+    // 由 GameFlowController 在 COUNTDOWN 时调用：设定当局甜区并重绘目标带(每局一次)。
+    setDiveSweetZone(center: number, perfectHalf: number, goodHalf: number) {
+        this._diveSweetCenter = center;
+        this._divePerfectHalf = perfectHalf;
+        this._diveGoodHalf = goodHalf;
+        this.drawDiveSweetZone();
+    }
+
+    // 倒计时期间松手锁定力度：切换 hint 文案；指针位置因 updateDiveCharge 停止更新而停住。
+    setDiveLocked(locked: boolean) {
+        if (this._diveLocked === locked) {
+            return;
         }
-        this._diveChargeFillPixel = fillPixel;
-        this._diveChargeGfxColor = gfxColor;
-        this._diveChargeSpriteColor = spriteColor;
+        this._diveLocked = locked;
+        if (this.hintLabel) {
+            this.hintLabel.string = locked ? '已锁定，等待出发' : '按住瞄准甜区，松手锁定';
+        }
+    }
+
+    // 由 UI 构建器调用：zone/marker Graphics 创建后，绘制静态指针(只画一次，运行时只移动)。
+    initDiveChargeBar() {
+        this.drawDiveMarker();
+        this.drawDiveSweetZone();
+    }
+
+    private drawDiveSweetZone() {
+        const g = this.diveChargeZoneGfx;
+        if (!g) {
+            return;
+        }
+        g.clear();
+        const w = DIVE_TRACK_WIDTH;
+        const h = DIVE_CHARGE_HEIGHT;
+        const cy = (this._diveSweetCenter - 0.5) * h;
+        const goodH = this._diveGoodHalf * 2 * h;
+        g.fillColor = DIVE_ZONE_GOOD;
+        g.rect(-w / 2, cy - goodH / 2, w, goodH);
+        g.fill();
+        const perfectH = this._divePerfectHalf * 2 * h;
+        g.fillColor = DIVE_ZONE_PERFECT;
+        g.rect(-w / 2, cy - perfectH / 2, w, perfectH);
+        g.fill();
+    }
+
+    private drawDiveMarker() {
+        const g = this.diveChargeMarkerGfx;
+        if (!g) {
+            return;
+        }
+        g.clear();
+        const w = DIVE_TRACK_WIDTH;
+        const mh = DIVE_MARKER_HEIGHT;
+        // 深色描边 + 白色指针，只画一次；运行时通过 node.setPosition 移动，不重建几何。
+        g.fillColor = DIVE_MARKER_BACK;
+        g.rect(-w / 2 - 2, -mh / 2 - 1, w + 4, mh + 2);
+        g.fill();
+        g.fillColor = DIVE_MARKER;
+        g.rect(-w / 2, -mh / 2, w, mh);
+        g.fill();
     }
 
     // Straggler countdown after the first racer finishes: swimmers still in the
@@ -517,15 +569,9 @@ export class UIController extends Component {
             this.countdownOverlay.active = true;
         }
         this.resizeCountdownShade(500, 120);
-        if (this.countdownLabel) {
-            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
-            this.countdownLabel.fontSize = 58;
-            this.countdownLabel.lineHeight = 72;
-            this.countdownLabel.string = '长按蓄力';
-            this.pulse(this.countdownLabel.node, 1.08);
-        }
+        // 倒计时数字(3/2/1/冲)由 showCountdown 维护，这里只设提示并显示甜区条。
         if (this.hintLabel) {
-            this.hintLabel.string = '倒计时按住屏幕，出发时释放';
+            this.hintLabel.string = '按住瞄准甜区，松手锁定';
         }
         this.updateDiveCharge(0, true);
     }
@@ -550,7 +596,7 @@ export class UIController extends Component {
             this.countdownLabel.string = `出发 ${Math.round(power * 100)}%`;
             this.pulse(this.countdownLabel.node, 1.18);
         }
-        this.updateDiveCharge(power, true);
+        this.updateDiveCharge(0, false);
     }
 
     showGliding() {
@@ -858,9 +904,7 @@ export class UIController extends Component {
         this._ultimateText = -1;
         this._ultimateFillPixel = -1;
         this._ultimateColor = null;
-        this._diveChargeFillPixel = -1;
-        this._diveChargeGfxColor = null;
-        this._diveChargeSpriteColor = null;
+        this._diveMarkerPixel = -1;
     }
 
     private updateLeaderboard(rows: RaceLeaderboardRow[] | undefined, playerTime: number) {
@@ -1053,38 +1097,6 @@ function drawUltimateEnergyFill(gfx: Graphics, ratio: number, color: Color, read
     gfx.stroke();
 }
 
-function drawChargeFill(gfx: Graphics, ratio: number, color: Color) {
-    const w = 12;
-    const h = DIVE_CHARGE_HEIGHT;
-    gfx.clear();
-    gfx.fillColor = color;
-    gfx.rect(-w / 2, -h / 2, w, h * ratio);
-    gfx.fill();
-}
-
-function setVerticalFill(node: Node, ratio: number, color: Color) {
-    const transform = node.getComponent(UITransform);
-    const sprite = node.getComponent(Sprite);
-    if (sprite) {
-        sprite.color = color;
-    }
-    if (!transform) {
-        node.setScale(1, Math.max(0.001, ratio), 1);
-        return;
-    }
-    const originalHeight = 212;
-    const height = Math.max(1, originalHeight * ratio);
-    transform.setContentSize(transform.contentSize.width, height);
-    node.setPosition(node.position.x, -originalHeight / 2 + height / 2, node.position.z);
-}
-
-function diveChargeGraphicsColor(power: number): Color {
-    return power > 0.82 ? DIVE_GFX_HIGH : power > 0.45 ? DIVE_GFX_MID : DIVE_GFX_LOW;
-}
-
-function diveChargeSpriteColor(power: number): Color {
-    return power > 0.82 ? DIVE_SPRITE_HIGH : power > 0.45 ? DIVE_SPRITE_MID : DIVE_SPRITE_LOW;
-}
 
 function fitName(name: string): string {
     const value = name || 'AI';

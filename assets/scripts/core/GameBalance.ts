@@ -163,6 +163,20 @@ export const DIVE_BALANCE = {
     aiPowerVariance: 0.08,
     aiPowerMin: 0.38,
     aiPowerMax: 0.96,
+    // 起跳甜区：每局随机位置的「最佳入水」目标带。蓄力指针离甜区中心越近，起跳
+    // 力度越接近 100%；落在 PERFECT 带为干净入水、GOOD 带为普通、外侧为凌乱入水。
+    // 中心位置每局用 SharedRNG 随机，避免玩家背时间卡固定顶点。
+    sweetZone: {
+        centerMin: 0.18,
+        centerMax: 0.82,
+        perfectHalfWidth: 0.045,
+        goodHalfWidth: 0.13,
+        perfectPower: 1.0,
+        perfectEdgePower: 0.88,
+        goodEdgePower: 0.5,
+        // PERFECT/GOOD 带以外，力度从 goodEdgePower 向 minPower 衰减的距离跨度。
+        missSpan: 0.25,
+    },
 };
 
 export const RHYTHM_BALANCE = {

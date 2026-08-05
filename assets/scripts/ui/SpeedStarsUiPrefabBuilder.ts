@@ -149,6 +149,7 @@ export class SpeedStarsUiPrefabBuilder {
         ui.countdownLabel = requireLabel(raceHud, 'CountdownLabel');
         ui.diveChargeTrack = requireNode(raceHud, 'DiveChargeTrack');
         ui.diveChargeFillNode = requireNode(raceHud, 'DiveChargeFill');
+        this.buildDiveChargeBar(raceHud, ui);
         this.buildHeartRateBar(raceHud, ui);
         this.buildEnergyBar(raceHud, ui);
         this.buildUltimateEnergyBar(raceHud, ui);
@@ -270,6 +271,27 @@ export class SpeedStarsUiPrefabBuilder {
         for (const name of ['TopLeftPlate', 'Placement', 'TimerPlate', 'Timer', 'SpeedValue', 'SpeedBarRoot']) {
             requireNode(raceHud, name).active = false;
         }
+    }
+
+    private buildDiveChargeBar(raceHud: Node, ui: UIController) {
+        const track = ui.diveChargeTrack;
+        if (!track) {
+            return;
+        }
+        // 旧版「从底向上长的填充」已弃用：甜区起跳用 轨道 + 甜区带 + 移动指针。
+        if (ui.diveChargeFillNode) {
+            ui.diveChargeFillNode.active = false;
+        }
+        const trackTransform = track.getComponent(UITransform);
+        const trackW = trackTransform ? trackTransform.contentSize.width : 52;
+        const trackH = trackTransform ? trackTransform.contentSize.height : 280;
+        const zoneNode = makeUiNode('DiveChargeZone', track);
+        zoneNode.getComponent(UITransform).setContentSize(trackW, trackH);
+        ui.diveChargeZoneGfx = zoneNode.addComponent(Graphics);
+        const markerNode = makeUiNode('DiveChargeMarker', track);
+        markerNode.getComponent(UITransform).setContentSize(trackW, trackH);
+        ui.diveChargeMarkerGfx = markerNode.addComponent(Graphics);
+        ui.initDiveChargeBar();
     }
 
     private buildHeartRateBar(raceHud: Node, ui: UIController) {

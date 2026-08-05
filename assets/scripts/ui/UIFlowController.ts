@@ -109,6 +109,14 @@ export class UIFlowController {
         this._refs.uiController?.updateDiveCharge(power, visible);
     }
 
+    setDiveSweetZone(center: number, perfectHalf: number, goodHalf: number) {
+        this._refs.uiController?.setDiveSweetZone(center, perfectHalf, goodHalf);
+    }
+
+    setDiveLocked(locked: boolean) {
+        this._refs.uiController?.setDiveLocked(locked);
+    }
+
     showGliding() {
         this._refs.uiController?.showGliding();
     }

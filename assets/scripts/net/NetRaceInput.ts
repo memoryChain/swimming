@@ -33,7 +33,7 @@ export const enum NetInputKind {
     HeldOn = 'h',      // stroke-held begin
     HeldOff = 'H',     // stroke-held end
     DiveCharge = 'c',  // dive charge start (countdown/diving)
-    DiveRelease = 'r', // dive release (carries charge power)
+    DiveRelease = 'r', // dive release (carries resolved 0..1 dive power)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
 }
 
@@ -41,7 +41,7 @@ export interface NetInputEvent {
     kind: NetInputKind;
     // Present for Stroke / Kick / HeldOn / HeldOff.
     side?: NetInputSide;
-    // Present for DiveRelease: the 0..1 charge power at release.
+    // Present for DiveRelease: the resolved 0..1 dive power at release (sweet-zone mapped).
     power?: number;
 }
 

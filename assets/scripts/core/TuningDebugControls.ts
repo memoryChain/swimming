@@ -153,7 +153,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dive.sweetPerfectEdgePower', '完美带边缘力度', '指针落在 PERFECT 带边缘时的力度，控制完美带的力度落差。', () => DIVE_BALANCE.sweetZone.perfectEdgePower, (v) => DIVE_BALANCE.sweetZone.perfectEdgePower = v, 0.01, 0.4, 1, 2),
             control('dive.sweetGoodEdgePower', '良好带边缘力度', '指针落在 GOOD 带边缘时的力度，再往外即向最低跳水力度衰减。', () => DIVE_BALANCE.sweetZone.goodEdgePower, (v) => DIVE_BALANCE.sweetZone.goodEdgePower = v, 0.01, 0.2, 0.9, 2),
             control('dive.sweetMissSpan', '失误衰减跨度', 'GOOD 带之外，力度从良好带边缘衰减到最低跳水力度所跨的距离(蓄力轴比例)。越大衰减越缓。', () => DIVE_BALANCE.sweetZone.missSpan, (v) => DIVE_BALANCE.sweetZone.missSpan = v, 0.01, 0.05, 0.5, 2),
-            control('dive.diveFallbackSeconds', '兜底超时', 'GO 后甜区蓄力自动波动，玩家超时未松手则用当前指针值自动提交的时长。', () => DIVE_BALANCE.diveFallbackSeconds, (v) => DIVE_BALANCE.diveFallbackSeconds = v, 0.1, 1, 8, 1, 's'),
             control('dive.underwaterHoldSeconds', '水下保持时间', '跳水入水后保持水下深度、只允许踢腿推进的时间。', () => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
             control('dive.underwaterRiseSeconds', '水下上浮时间', '水下阶段从深度回升到水面的时间。上浮结束后才恢复手臂划水。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
             control('dive.straightenRatio', '斜下拉平占比', '水下保持阶段里，把入水斜下姿态拉回水平所用时间占比。越小越早变水平。', () => SWIMMER_ACTION_TUNING.diveStraightenRatio, (v) => SWIMMER_ACTION_TUNING.diveStraightenRatio = v, 0.05, 0.05, 1, 2),

@@ -8,6 +8,7 @@ import { randomFloat } from '../core/SharedRNG';
 import { GameState, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { resolveDiveResult } from '../core/DiveResolver';
+import { rollDiveSweetZone, resolveDivePower, DiveSweetZone } from '../core/DiveSweetZone';
 import { DiveResult } from '../core/DiveResult';
 import { SprintTier } from '../condition/ConditionTypes';
 import { CHARACTER_ACTION_CONFIG, selectAdjacentDistinctActions } from '../character/CharacterActionConfig';
@@ -72,7 +73,11 @@ export class GameFlowController {
     private _diveChargeStarted = false;
     private _diveChargeElapsed = 0;
     private _diveChargePower = 0;
+    // 当局起跳甜区(中心每局随机)；COUNTDOWN 时 roll，跨端由 SharedRNG 确定。
+    private _diveSweetZone: DiveSweetZone = { center: 0.5, perfectHalf: 0.045, goodHalf: 0.13 };
     private _diveCommitted = false;
+    // 倒计时期间松手即锁定力度(指针停住)，GO 时用锁定值起跳；未松手则用 GO 时刻指针起跳。
+    private _diveLocked = false;
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
@@ -214,24 +219,21 @@ export class GameFlowController {
     handleDiveChargeStart() {
         const state = this._refs.getState();
         // Race HUD routes every full-screen press through this callback. During
-        // the showcase that first press is consumed only as "skip"; charging
-        // starts from the player's next press after COUNTDOWN is active.
+        // the showcase that first press is consumed only as "skip".
         if (state === GameState.PRECOUNTDOWN) {
             this.skipPreRaceShowcase();
             return;
         }
-        if ((state !== GameState.COUNTDOWN && state !== GameState.DIVING) || this._diveChargeStarted) {
+        // 甜区起跳：倒计时期间按下启动指针波动，松手锁定力度，GO 时起跳。
+        // 已在波动/已锁定/已提交则忽略，避免重复启动或跳过展示的同一次点按误触发。
+        if (state !== GameState.COUNTDOWN || this._diveChargeStarted || this._diveLocked || this._diveCommitted) {
             return;
         }
         this._diveChargeStarted = true;
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
-        captureNetInput({ kind: NetInputKind.DiveCharge });
         this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
-        this._refs.debug('dive charging');
-        if (state === GameState.DIVING) {
-            this._refs.uiFlow.showDiveCharging();
-        }
+        this._refs.debug('dive charging started');
     }
 
     private skipPreRaceShowcase() {
@@ -246,19 +248,26 @@ export class GameFlowController {
     }
 
     handleDiveRelease(holdSeconds: number) {
-        if (this._diveCommitted) {
+        if (this._diveCommitted || this._diveLocked) {
             return;
         }
-        if (this._refs.getState() === GameState.COUNTDOWN) {
-            this.resetDiveCharge();
-            this._refs.debug('dive charge cancelled before start');
+        const state = this._refs.getState();
+        if (state === GameState.COUNTDOWN) {
+            if (!this._diveChargeStarted) {
+                // 未在蓄力(如跳过展示的同一次点按的松开)：不锁定。
+                return;
+            }
+            // 倒计时期间松手：锁定当前指针力度，marker 停住，等待 GO 起跳(不抢跑)。
+            this._diveLocked = true;
+            this._diveChargeStarted = false;
+            this._refs.uiFlow.setDiveLocked(true);
+            this._refs.debug(`dive locked charge=${this._diveChargePower.toFixed(2)} hold=${holdSeconds.toFixed(2)}`);
             return;
         }
-        if (this._refs.getState() !== GameState.DIVING) {
-            return;
+        if (state === GameState.DIVING) {
+            // GO 后仍未提交的极端兜底：松手即提交。
+            this.commitDive(this._diveChargePower, `release hold=${holdSeconds.toFixed(2)}`);
         }
-        const charge = this._diveChargeStarted ? this._diveChargePower : 0;
-        this.commitDive(charge, `release hold=${holdSeconds.toFixed(2)}`);
     }
 
     bindRaceManagerCallbacks() {
@@ -272,6 +281,10 @@ export class GameFlowController {
             this._refs.debug(`state=${state}`);
             if (state === GameState.COUNTDOWN) {
                 this.resetDiveCharge();
+                this._diveSweetZone = rollDiveSweetZone();
+                this._refs.uiFlow.setDiveSweetZone(this._diveSweetZone.center, this._diveSweetZone.perfectHalf, this._diveSweetZone.goodHalf);
+                // 倒计时一开始显示甜区条(指针停在 0)：玩家按下启动波动，松手锁定力度，GO 时起跳。
+                this._refs.uiFlow.showDivePrompt();
                 this._refs.playerSwimmer?.prepareDive();
                 for (const swimmer of this._refs.aiSwimmers) {
                     if (swimmer.node.active) {
@@ -281,11 +294,7 @@ export class GameFlowController {
                 this._refs.raceCameraDirector.resetCountdownTimers();
             }
             if (state === GameState.DIVING) {
-                if (this._diveChargeStarted) {
-                    this._refs.uiFlow.showDiveCharging();
-                } else {
-                    this._refs.uiFlow.showDivePrompt();
-                }
+                // 甜区蓄力条由 onDiveReady(紧随其后调用)统一启动并显示，这里只安排 AI 起跳。
                 this.prepareAndScheduleAiDives();
             }
             if (state === GameState.GLIDING) {
@@ -371,11 +380,11 @@ export class GameFlowController {
             });
         };
         raceManager.onDiveReady = () => {
-            if (this._diveChargeStarted) {
-                this.commitDive(this._diveChargePower, 'countdown-end auto');
-            } else {
-                this._refs.uiFlow.showDivePrompt();
+            // GO：用倒计时期间锁定的力度(已松手)或当前指针(未松手)起跳。所有人同步出发，不抢跑。
+            if (this._diveCommitted) {
+                return;
             }
+            this.commitDive(this._diveChargePower, this._diveLocked ? 'GO locked' : 'GO auto');
         };
     }
 
@@ -581,8 +590,11 @@ export class GameFlowController {
     }
 
     private updateDiveCharge(dt: number) {
+        if (!this._diveChargeStarted || this._diveCommitted) {
+            return;
+        }
         const state = this._refs.getState();
-        if (!this._diveChargeStarted || (state !== GameState.COUNTDOWN && state !== GameState.DIVING)) {
+        if (state !== GameState.COUNTDOWN && state !== GameState.DIVING) {
             return;
         }
         this._diveChargeElapsed += Math.max(0, dt);
@@ -595,6 +607,8 @@ export class GameFlowController {
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
         this._diveCommitted = false;
+        this._diveLocked = false;
+        this._refs.uiFlow.setDiveLocked(false);
         this._refs.uiFlow.updateDiveCharge(0, false);
     }
 
@@ -602,14 +616,14 @@ export class GameFlowController {
         if (this._diveCommitted || this._refs.getState() !== GameState.DIVING) {
             return;
         }
-        const power = this.calculateDivePower(charge);
+        const power = resolveDivePower(charge, this._diveSweetZone);
         this._diveCommitted = true;
         this._diveChargeStarted = false;
         // Broadcast the dive to remote clients HERE (not in handleDiveRelease) so BOTH
         // the manual release AND the countdown-end auto-dive reach the network — an
         // auto-dived player must still start moving on every other screen. Exactly-once
         // per real commit (guarded above); a cheap no-op in single-player.
-        captureNetInput({ kind: NetInputKind.DiveRelease, power: charge });
+        captureNetInput({ kind: NetInputKind.DiveRelease, power });
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
@@ -620,10 +634,6 @@ export class GameFlowController {
         }
         this._refs.applyPlayerDive(diveResult);
         this._refs.raceManager?.startFromDive(diveResult);
-    }
-
-    private calculateDivePower(charge: number): number {
-        return Math.max(DIVE_BALANCE.minPower, Math.min(1, DIVE_BALANCE.minPower + clamp01(charge) * (1 - DIVE_BALANCE.minPower)));
     }
 
     // Interpret sustained sprint effort into a tier and push it only on change
@@ -663,8 +673,4 @@ function diveChargePingPong(seconds: number): number {
     const cycle = Math.max(0.1, DIVE_BALANCE.chargeCycleSeconds);
     const phase = (seconds % cycle) / cycle;
     return phase <= 0.5 ? phase * 2 : (1 - phase) * 2;
-}
-
-function clamp01(value: number): number {
-    return Math.max(0, Math.min(1, value));
 }
