@@ -1,4 +1,4 @@
-import { Button, Camera, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3 } from 'cc';
+import { Button, Camera, Canvas, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3 } from 'cc';
 
 export function uiColor(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
@@ -158,9 +158,10 @@ export type DragSlider = {
 
 // A self-drawn horizontal drag slider (Graphics track + fill + handle) that
 // reports a 0..1 ratio on touch/drag. Avoids the Slider component's SpriteFrame
-// dependency and matches the project's Graphics-based UI. Pass the UI camera so
-// the touch point is converted screen->world correctly even when the runtime
-// viewport differs from the design resolution.
+// dependency and matches the project's Graphics-based UI. Touch points are
+// converted with the camera that renders the slider (walked up to its Canvas),
+// so it works on any canvas including the popup overlay without a caller-supplied
+// camera.
 export function makeDragSlider(
     name: string,
     parent: Node,
@@ -168,7 +169,6 @@ export function makeDragSlider(
     h: number,
     initialRatio: number,
     onChange: (ratio: number) => void,
-    camera: Camera | null = null,
 ): DragSlider {
     const node = makeUiNode(name, parent);
     const uiTransform = node.getComponent(UITransform)!;
@@ -196,14 +196,26 @@ export function makeDragSlider(
     draw(initialRatio);
 
     const worldPoint = new Vec3();
+    const screenPoint = new Vec3();
+    let camera: Camera | null = null;
     const onTouch = (event: EventTouch) => {
-        const loc = event.getLocation();
-        if (camera) {
-            camera.screenToWorld(new Vec3(loc.x, loc.y, 0), worldPoint);
-        } else {
-            const ui = event.getUILocation();
-            worldPoint.set(ui.x, ui.y, 0);
+        if (!camera) {
+            let owner: Node | null = node;
+            while (owner) {
+                const canvas = owner.getComponent(Canvas);
+                if (canvas?.cameraComponent) {
+                    camera = canvas.cameraComponent;
+                    break;
+                }
+                owner = owner.parent;
+            }
         }
+        if (!camera) {
+            return;
+        }
+        const loc = event.getLocation();
+        screenPoint.set(loc.x, loc.y, 0);
+        camera.screenToWorld(screenPoint, worldPoint);
         const local = uiTransform.convertToNodeSpaceAR(worldPoint);
         const ratio = Math.max(0, Math.min(1, (local.x + w / 2) / w));
         draw(ratio);
