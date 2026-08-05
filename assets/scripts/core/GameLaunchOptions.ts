@@ -48,3 +48,17 @@ export function consumeReturnToRoom(): boolean {
     pendingReturnToRoom = false;
     return value;
 }
+
+// Set when a single-player race/debug exits back to Login, so LoginManager skips
+// the top-level menu and re-opens the prepare-race screen directly.
+let pendingReturnToPrepare = false;
+
+export function setReturnToPrepare(value: boolean) {
+    pendingReturnToPrepare = value;
+}
+
+export function consumeReturnToPrepare(): boolean {
+    const value = pendingReturnToPrepare;
+    pendingReturnToPrepare = false;
+    return value;
+}

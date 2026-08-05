@@ -1,5 +1,5 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
-import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, setRoomMode } from '../core/GameLaunchOptions';
+import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToPrepare, consumeReturnToRoom, setRoomMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
@@ -38,6 +38,7 @@ export class LoginManager extends Component {
     private _pendingOpenRoom = false;
     private _pendingJoinRoomId: string | null = null;
     private _pendingReconnect = false;
+    private _pendingPrepareRace = false;
     private _loginUiRetries = 0;
     private _offAppShow: (() => void) | null = null;
     private _adInProgress = false;
@@ -62,6 +63,7 @@ export class LoginManager extends Component {
         const returningToRoom = consumeReturnToRoom();
         this._pendingOpenRoom = returningToRoom;
         this._pendingReconnect = returningToRoom;
+        this._pendingPrepareRace = consumeReturnToPrepare();
         // Launched from a shared room invite (query `room=<accessInfo>`): auto-open the
         // room in JOIN mode. IMPORTANT: only on a genuine fresh launch — getLaunchQuery()
         // keeps returning the ORIGINAL invite room on every later scene load, so honoring
@@ -416,6 +418,9 @@ export class LoginManager extends Component {
                 const reconnect = this._pendingReconnect;
                 this._pendingReconnect = false;
                 this.openRoom(roomId, reconnect);
+            } else if (this._pendingPrepareRace && this._loginUiRoot) {
+                this._pendingPrepareRace = false;
+                this.openPrepareRace();
             }
         });
     }

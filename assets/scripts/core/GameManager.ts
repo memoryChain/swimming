@@ -50,7 +50,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToPrepare, setReturnToRoom } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -319,6 +319,7 @@ export class GameManager extends Component {
 
     onDestroy() {
         this._raceUiBuilder?.resetInputState();
+        this._uiController?.hideProgressionResult();
         this._inputRouter?.unbind();
         this._netRaceController?.dispose();
         this._netRaceController = null;
@@ -672,6 +673,8 @@ export class GameManager extends Component {
         // Room-mode races return to the online room, not the main menu.
         if (this._roomMode) {
             setReturnToRoom(true);
+        } else {
+            setReturnToPrepare(true);
         }
         // Networked race: tell the others we're leaving so our swimmer is retired
         // immediately, rather than freezing in the pool until the straggler countdown.

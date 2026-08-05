@@ -666,14 +666,14 @@ export class UIController extends Component {
         tween(counter)
             .to(duration, { value: result.coinsGained }, {
                 onUpdate: () => {
-                    if (!coinLabel.node.isValid) {
+                    if (!coinLabel?.node?.isValid) {
                         return;
                     }
                     coinLabel.string = '+' + Math.round(counter.value) + ' 金币';
                 },
             })
             .call(() => {
-                if (!coinLabel.node.isValid) {
+                if (!coinLabel?.node?.isValid) {
                     return;
                 }
                 coinLabel.string = '+' + result.coinsGained + ' 金币';
