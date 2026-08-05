@@ -27,6 +27,7 @@ import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
 import { RacePhase } from '../condition/ConditionTypes';
+import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
@@ -125,6 +126,9 @@ export class GameManager extends Component {
     private readonly _playerCondition = new PlayerConditionModel();
     private _playerBalanceOverrides: PlayerBalanceOverrides | null = null;
     private _aiConditions: AiConditionModel[] = [];
+    // Dolphin-jump takeoff edge detection: rising edge -> one-shot heart-rate strain.
+    private _prevPlayerDolphinAir = false;
+    private _prevAiDolphinAir: boolean[] = [];
     private readonly _raceContext = new RaceContext(this._playerCondition);
     private _aiController: AISwimmerController = null;
     private _aiControllers: AISwimmerController[] = [];
@@ -838,6 +842,8 @@ export class GameManager extends Component {
                     aiCondition.reset();
                     aiCondition.setPhase(RacePhase.START);
                 }
+                this._prevPlayerDolphinAir = false;
+                this._prevAiDolphinAir.length = 0;
                 this._raceContext.reset();
                 this._raceContext.latestDiveResult = result;
             },
@@ -1991,6 +1997,12 @@ export class GameManager extends Component {
             this._playerCondition.updateFromStroke(input);
         }
         this._playerCondition.tick(dt);
+        // 海豚跃起跳上升沿：注入一次心率爆发（加法、封顶 200），空中任其自然回落。
+        const playerAir = this._playerSwimmer?.isDolphinAirActive ?? false;
+        if (playerAir && !this._prevPlayerDolphinAir) {
+            this._playerCondition.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+        }
+        this._prevPlayerDolphinAir = playerAir;
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
         this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
@@ -2008,6 +2020,9 @@ export class GameManager extends Component {
 
     private updateAiConditions(dt: number) {
         const raceDistance = getRaceDistance();
+        while (this._prevAiDolphinAir.length < this._aiConditions.length) {
+            this._prevAiDolphinAir.push(false);
+        }
         for (let i = 0; i < this._aiConditions.length; i++) {
             const swimmer = this._aiSwimmers[i];
             const controller = this._aiControllers[i];
@@ -2015,6 +2030,11 @@ export class GameManager extends Component {
                 continue;
             }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
+            const aiAir = swimmer.isDolphinAirActive;
+            if (aiAir && !this._prevAiDolphinAir[i]) {
+                this._aiConditions[i].applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+            }
+            this._prevAiDolphinAir[i] = aiAir;
             this._aiConditions[i].tickAi({
                 difficulty: controller.difficulty,
                 progress,

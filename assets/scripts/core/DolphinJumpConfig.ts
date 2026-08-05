@@ -66,4 +66,8 @@ export const DOLPHIN_JUMP = {
     takeoffSplashScale: 2.6,
     // 扎回水里（落水）时的大水花羽流。
     landingSplashScale: 3.2,
+
+    // -- 起跳心率代价 -- 海豚跃起跳瞬间对心率的加法增长（不碰体力）。
+    // 从当前心率加该值、封顶 200。越大起跳后过载越深、划水代价越大。
+    strainHr: 60,
 };
