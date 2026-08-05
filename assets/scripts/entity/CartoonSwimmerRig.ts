@@ -1349,6 +1349,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (this._diveChargeRequestedActive === active && this._diveChargeRequestedPower === nextPower) {
             return;
         }
+        // A rematch can replace the renderer's material instances while the old
+        // instances remain valid. Rebind on every new charge instead of writing
+        // charge parameters into a detached material from the previous race.
+        if (active && !this._diveChargeRequestedActive) {
+            this._diveChargeBodyMaterials.length = 0;
+        }
         this._diveChargeRequestedActive = active;
         this._diveChargeRequestedPower = nextPower;
         if (!active) {
@@ -1363,6 +1369,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             && !this._diveChargeGatherEffect
             && this._diveChargeBodyParams.x <= 0
             && this._diveChargeRimParams.y >= 1) {
+            this._diveChargeBodyMaterials.length = 0;
             return;
         }
         this._diveChargeRequestedActive = false;
@@ -1370,6 +1377,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeVisualElapsed = 0;
         this._diveChargeReleaseBurstRemaining = 0;
         this.applyDiveChargeBodyMaterial(0, 0, false);
+        this._diveChargeBodyMaterials.length = 0;
         this._diveChargeGatherEffect?.destroy();
         this._diveChargeGatherEffect = null;
     }
@@ -1380,6 +1388,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
         this.applyDiveChargeBodyMaterial(0, 0, false);
+        this._diveChargeBodyMaterials.length = 0;
         const gather = this._diveChargeGatherEffect;
         if (gather && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
             gather.setWorldPosition(this._diveChargeWorldCenter);
