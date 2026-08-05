@@ -119,7 +119,7 @@ export function energyDepletionCadenceScale(energyRatio: number): number {
     if (ratio >= eff.cadenceExhaustedRatio) {
         const span = eff.cadenceWarningRatio - eff.cadenceExhaustedRatio;
         const t = span > 0 ? (ratio - eff.cadenceExhaustedRatio) / span : 0;
-        return eff.cadenceExhaustedScale + (eff.cadenceWarningScale - eff.cadenceExhaustedScale) * t;
+        return eff.cadenceWarningScale + (1 - eff.cadenceWarningScale) * t;
     }
     const span = eff.cadenceExhaustedRatio;
     const t = span > 0 ? ratio / span : 0;

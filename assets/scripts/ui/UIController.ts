@@ -613,6 +613,7 @@ export class UIController extends Component {
     private _progressionBaseCoins = 0;
     private _progressionCoinLabel: Label | null = null;
     private _progressionDoubleClaimed = false;
+    private _progressionBaseCoinsAnimated = false;
 
     showProgressionResult(result: {
         coinsGained: number;
@@ -732,6 +733,12 @@ export class UIController extends Component {
             // Ad skipped/failed/unavailable: let the player retry.
             this._progressionDoubleClaimed = false;
             button.interactable = true;
+            // If the base coin animation was skipped while the ad was pending
+            // (it gates on _progressionDoubleClaimed), replay it so the readout
+            // does not stay stuck on +0.
+            if (!this._progressionBaseCoinsAnimated && this._progressionCoinLabel) {
+                this.animateCoinGain({ coinsGained: this._progressionBaseCoins }, this._progressionCoinLabel);
+            }
         }
     }
 
@@ -739,8 +746,10 @@ export class UIController extends Component {
         if (this._progressionDoubleClaimed) {
             return;
         }
+        this._progressionBaseCoinsAnimated = true;
         const counter = { value: 0 };
         this._progressionTweenCounter = counter;
+        let lastShown = -1;
         const duration = Math.min(1.2, 0.5 + result.coinsGained / 600);
         tween(counter)
             .to(duration, { value: result.coinsGained }, {
@@ -748,7 +757,11 @@ export class UIController extends Component {
                     if (!coinLabel?.node?.isValid) {
                         return;
                     }
-                    coinLabel.string = '+' + Math.round(counter.value) + ' 金币';
+                    const rounded = Math.round(counter.value);
+                    if (rounded !== lastShown) {
+                        lastShown = rounded;
+                        coinLabel.string = '+' + rounded + ' 金币';
+                    }
                 },
             })
             .call(() => {
@@ -771,13 +784,18 @@ export class UIController extends Component {
         this._progressionTweenCounter = counter;
         const to = this._progressionBaseCoins + bonus;
         Tween.stopAllByTarget(counter);
+        let lastShown = -1;
         tween(counter)
             .to(0.6, { value: to }, {
                 onUpdate: () => {
                     if (!label?.node?.isValid) {
                         return;
                     }
-                    label.string = '+' + Math.round(counter.value) + ' 金币';
+                    const rounded = Math.round(counter.value);
+                    if (rounded !== lastShown) {
+                        lastShown = rounded;
+                        label.string = '+' + rounded + ' 金币';
+                    }
                 },
             })
             .call(() => {
@@ -801,6 +819,7 @@ export class UIController extends Component {
         this._progressionCoinLabel = null;
         this._progressionBaseCoins = 0;
         this._progressionDoubleClaimed = false;
+        this._progressionBaseCoinsAnimated = false;
     }
 
     resetAll() {

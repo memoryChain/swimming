@@ -2049,6 +2049,13 @@ export class GameManager extends Component {
             if (!swimmer || !controller) {
                 continue;
             }
+            // Remote humans are driven by RemoteSwimmerController from network
+            // input; their condition/cadence is owned by their own client, so
+            // never run the AI condition model on them (would apply a wrong
+            // speed cap / cadence and drift away from the owner).
+            if (controller.remoteDriven) {
+                continue;
+            }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
             const aiAir = swimmer.isDolphinAirActive;
             if (aiAir && !this._prevAiDolphinAir[i]) {
