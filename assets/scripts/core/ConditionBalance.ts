@@ -45,6 +45,9 @@ export const CONDITION_BALANCE = {
             [HeartRateZone.OVERLOAD]: 0.15,
         } as Record<HeartRateZone, number>,
         regenSprintBoost: 1.0,
+        // Depletion cooldown: when energy hits zero, regen is paused for this many
+        // seconds so the depleted state sticks instead of bouncing back instantly.
+        depletionCooldownSeconds: 1.5,
         // Energy depletion only affects the efficiency curve below;
         // the quality axis (heart-rate) is fully orthogonal.
     },
@@ -56,9 +59,9 @@ export const CONDITION_BALANCE = {
         // HIGH_PRESSURE / OVERLOAD. Replaces the old one-way ratchet.
         restTargetHr: 70,         // resting HR with no effort (drifts down to here)
         maxEffortTargetHr: 140,   // perfect steady effort settles high in OPTIMAL (sweet zone)
-        effortDecayPerSecond: 1.1, // sustained-effort sample fade rate when not stroking
-        easeUpPerSecond: 42,      // climb rate when HR is below target (HR points/sec)
-        easeDownPerSecond: 26,    // recovery rate when HR is above target
+        effortDecayPerSecond: 0.35, // sustained-effort sample fade rate when not stroking
+        easeUpPerSecond: 16,      // climb rate when HR is below target (HR points/sec)
+        easeDownPerSecond: 6,    // recovery rate when HR is above target
 
         // Startup wobble window: first N strokes use DiveResult.heartRateStartupWobbleModifier.
         startupStrokeWindow: 5,
@@ -83,7 +86,16 @@ export const CONDITION_BALANCE = {
         // exponent 0.3 gives a slow-start curve: high energy barely affects
         // efficiency, the last ~10% drops off steeply to the floor.
         energyFloor: 0.5,   // efficiency at zero energy
+        speedCapFloor: 0.75, // max-speed scale at zero energy (decoupled from accel)
         curveExponent: 0.3, // <1 = slow-start (flat near full, steep near empty)
+        // Arm-stroke cadence scale as energy drops. Segment-linear:
+        // above cadenceWarningRatio no slowdown; between warning and exhausted
+        // eases down to cadenceWarningScale; below exhausted eases to
+        // cadenceExhaustedScale at zero energy. Makes the swimmer look heavy.
+        cadenceWarningRatio: 0.15,
+        cadenceExhaustedRatio: 0.05,
+        cadenceWarningScale: 0.85,
+        cadenceExhaustedScale: 0.6,
     },
 };
 
@@ -95,3 +107,21 @@ export const CONDITION_PHASE_TUNING: Record<RacePhase, { hrPushScale: number; hr
     [RacePhase.SPRINT]: { hrPushScale: 1.5, hrDriftScale: 0.6 },
     [RacePhase.RESULT]: { hrPushScale: 0.0, hrDriftScale: 1.5 },
 };
+
+// Arm-stroke cadence multiplier for a given energy ratio (0..1). 1 = normal,
+// drops segment-linearly through the warning tier to the exhausted floor.
+export function energyDepletionCadenceScale(energyRatio: number): number {
+    const eff = CONDITION_BALANCE.efficiency;
+    const ratio = Math.max(0, Math.min(1, energyRatio));
+    if (ratio >= eff.cadenceWarningRatio) {
+        return 1;
+    }
+    if (ratio >= eff.cadenceExhaustedRatio) {
+        const span = eff.cadenceWarningRatio - eff.cadenceExhaustedRatio;
+        const t = span > 0 ? (ratio - eff.cadenceExhaustedRatio) / span : 0;
+        return eff.cadenceExhaustedScale + (eff.cadenceWarningScale - eff.cadenceExhaustedScale) * t;
+    }
+    const span = eff.cadenceExhaustedRatio;
+    const t = span > 0 ? ratio / span : 0;
+    return eff.cadenceExhaustedScale + (eff.cadenceWarningScale - eff.cadenceExhaustedScale) * t;
+}

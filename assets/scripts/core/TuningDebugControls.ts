@@ -44,7 +44,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 21;
+const TUNING_FILE_VERSION = 24;
 
 type TuningFileData = {
     version: number;
@@ -145,6 +145,15 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('dive.minPower', '最低跳水', '没有蓄力或蓄力条很低时保留的最低跳水力度。数值越高，失误跳水也会更快。', () => DIVE_BALANCE.minPower, (v) => DIVE_BALANCE.minPower = v, 0.02, 0, 0.8, 2),
             control('dive.chargeCycleSeconds', '蓄力周期', '蓄力条从 0 到 1 再回到 0 的完整周期。值越小，顶点更难抓；值越大，蓄力节奏更宽松。', () => DIVE_BALANCE.chargeCycleSeconds, (v) => DIVE_BALANCE.chargeCycleSeconds = v, 0.05, 0.4, 4, 2, 's'),
+            control('dive.sweetCenterMin', '甜区中心最小', '甜区中心每局随机范围的下限(0..1蓄力轴)。越大甜区越偏高位。', () => DIVE_BALANCE.sweetZone.centerMin, (v) => DIVE_BALANCE.sweetZone.centerMin = v, 0.01, 0, 0.5, 2),
+            control('dive.sweetCenterMax', '甜区中心最大', '甜区中心每局随机范围的上限(0..1蓄力轴)。越大甜区越偏高位。', () => DIVE_BALANCE.sweetZone.centerMax, (v) => DIVE_BALANCE.sweetZone.centerMax = v, 0.01, 0.5, 1, 2),
+            control('dive.sweetPerfectHalf', '完美带半宽', 'PERFECT 带半宽(蓄力轴比例)。落在此范围内为干净入水、接近满力。越小越难抓。', () => DIVE_BALANCE.sweetZone.perfectHalfWidth, (v) => DIVE_BALANCE.sweetZone.perfectHalfWidth = v, 0.005, 0.01, 0.2, 3),
+            control('dive.sweetGoodHalf', '良好带半宽', 'GOOD 带半宽(>=完美带半宽)。落在此范围内为普通入水，之外为凌乱入水。', () => DIVE_BALANCE.sweetZone.goodHalfWidth, (v) => DIVE_BALANCE.sweetZone.goodHalfWidth = v, 0.005, 0.05, 0.4, 3),
+            control('dive.sweetPerfectPower', '甜区中心力度', '指针正好停在甜区中心时的起跳力度(0..1)。通常为 1.0(满力)。', () => DIVE_BALANCE.sweetZone.perfectPower, (v) => DIVE_BALANCE.sweetZone.perfectPower = v, 0.01, 0.5, 1, 2),
+            control('dive.sweetPerfectEdgePower', '完美带边缘力度', '指针落在 PERFECT 带边缘时的力度，控制完美带的力度落差。', () => DIVE_BALANCE.sweetZone.perfectEdgePower, (v) => DIVE_BALANCE.sweetZone.perfectEdgePower = v, 0.01, 0.4, 1, 2),
+            control('dive.sweetGoodEdgePower', '良好带边缘力度', '指针落在 GOOD 带边缘时的力度，再往外即向最低跳水力度衰减。', () => DIVE_BALANCE.sweetZone.goodEdgePower, (v) => DIVE_BALANCE.sweetZone.goodEdgePower = v, 0.01, 0.2, 0.9, 2),
+            control('dive.sweetMissSpan', '失误衰减跨度', 'GOOD 带之外，力度从良好带边缘衰减到最低跳水力度所跨的距离(蓄力轴比例)。越大衰减越缓。', () => DIVE_BALANCE.sweetZone.missSpan, (v) => DIVE_BALANCE.sweetZone.missSpan = v, 0.01, 0.05, 0.5, 2),
+            control('dive.diveFallbackSeconds', '兜底超时', 'GO 后甜区蓄力自动波动，玩家超时未松手则用当前指针值自动提交的时长。', () => DIVE_BALANCE.diveFallbackSeconds, (v) => DIVE_BALANCE.diveFallbackSeconds = v, 0.1, 1, 8, 1, 's'),
             control('dive.underwaterHoldSeconds', '水下保持时间', '跳水入水后保持水下深度、只允许踢腿推进的时间。', () => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
             control('dive.underwaterRiseSeconds', '水下上浮时间', '水下阶段从深度回升到水面的时间。上浮结束后才恢复手臂划水。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
             control('dive.straightenRatio', '斜下拉平占比', '水下保持阶段里，把入水斜下姿态拉回水平所用时间占比。越小越早变水平。', () => SWIMMER_ACTION_TUNING.diveStraightenRatio, (v) => SWIMMER_ACTION_TUNING.diveStraightenRatio = v, 0.05, 0.05, 1, 2),
@@ -205,8 +214,17 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('strokeQuality.armCycleHighSpeedPerSecond', '高速划水轮速', '速度达到“顶速速度”后手臂划水每秒的圈数（上限）。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打）。', () => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
             control('strokeQuality.armCycleSpeedStart', '起爬速度', '低于这个速度时轮速恒为下限；到达后才开始随速度加快。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedStart, (v) => STROKE_QUALITY_TUNING.armCycleSpeedStart = v, 0.1, 0, 6, 2, 'm/s'),
             control('strokeQuality.armCycleSpeedFull', '顶速速度', '到达这个速度时轮速升到上限；再快也不变。应大于“起爬速度”。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedFull, (v) => STROKE_QUALITY_TUNING.armCycleSpeedFull = v, 0.1, 0.1, 8, 2, 'm/s'),
+            control('condition.effortDecay', '努力采样衰减', '不划水时「持续努力」采样的衰减速度（/秒）。越大目标心率越容易在划水间隔里掉下去、造成心率抖动；调小让目标更稳、心率更有惯性。', () => CONDITION_BALANCE.heartRate.effortDecayPerSecond, (v) => CONDITION_BALANCE.heartRate.effortDecayPerSecond = v, 0.05, 0, 2, 2, '/s'),
+            control('condition.easeUp', '心率上升速率', '心率向目标攀升的速度（bpm/秒）。越大爬升越快、越跟手；调小让上升更缓。', () => CONDITION_BALANCE.heartRate.easeUpPerSecond, (v) => CONDITION_BALANCE.heartRate.easeUpPerSecond = v, 1, 2, 60, 0, '/s'),
+            control('condition.easeDown', '心率下降速率', '心率从高位回落的速度（bpm/秒）。越大恢复越快；调小让心率更有惯性、不那么过山车。建议小于上升速率。', () => CONDITION_BALANCE.heartRate.easeDownPerSecond, (v) => CONDITION_BALANCE.heartRate.easeDownPerSecond = v, 0.5, 1, 40, 1, '/s'),
             control('condition.efficiencyFloor', '效率地板', '体力耗尽时的效率下限。0=没力气完全游不动；0.5=还能以一半效率游。配合效率曲线指数使用。', () => CONDITION_BALANCE.efficiency.energyFloor, (v) => CONDITION_BALANCE.efficiency.energyFloor = v, 0.05, 0, 0.9, 2),
+            control('condition.speedCapFloor', '速度上限地板', '体力归零时最高速度缩到原来的多少（0.75=剩3/4）。和效率地板分开，只管速度上限、不管划水力度。', () => CONDITION_BALANCE.efficiency.speedCapFloor, (v) => CONDITION_BALANCE.efficiency.speedCapFloor = v, 0.05, 0, 1, 2),
+            control('condition.depletionCooldown', '归零冷却时间', '体力见底后暂停回血的秒数，让「累」的状态持续一小段而不是立刻反弹。0=无冷却。', () => CONDITION_BALANCE.energy.depletionCooldownSeconds, (v) => CONDITION_BALANCE.energy.depletionCooldownSeconds = v, 0.1, 0, 5, 2, 's'),
             control('condition.curveExponent', '效率曲线指数', '效率随体力衰减的曲线形状。1=线性；<1=缓启动（高体力几乎不掉，最后10%急跌）。0.3=陡峭缓启动。', () => CONDITION_BALANCE.efficiency.curveExponent, (v) => CONDITION_BALANCE.efficiency.curveExponent = v, 0.05, 0.1, 2, 2),
+            control('condition.cadenceWarningRatio', '划水变慢预警体力', '体力低于这个比例时手臂划水开始变慢（0.15=15%）。', () => CONDITION_BALANCE.efficiency.cadenceWarningRatio, (v) => CONDITION_BALANCE.efficiency.cadenceWarningRatio = v, 0.01, 0, 0.5, 2),
+            control('condition.cadenceExhaustedRatio', '划水变慢虚脱体力', '体力低于这个比例时划水降到最慢（0.05=5%）。应小于预警值。', () => CONDITION_BALANCE.efficiency.cadenceExhaustedRatio, (v) => CONDITION_BALANCE.efficiency.cadenceExhaustedRatio = v, 0.01, 0, 0.3, 2),
+            control('condition.cadenceWarningScale', '预警划水频率', '体力在预警到虚脱之间时划水频率的倍数（0.85=85折）。', () => CONDITION_BALANCE.efficiency.cadenceWarningScale, (v) => CONDITION_BALANCE.efficiency.cadenceWarningScale = v, 0.05, 0.3, 1, 2),
+            control('condition.cadenceExhaustedScale', '虚脱划水频率', '体力归零时划水频率的倍数（0.6=6折）。越小手臂越沉重。', () => CONDITION_BALANCE.efficiency.cadenceExhaustedScale, (v) => CONDITION_BALANCE.efficiency.cadenceExhaustedScale = v, 0.05, 0.3, 1, 2),
             control('condition.regenLow', '低区回血', '心率在低区时每秒回复的体力。越高回血越快。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW] = v, 0.05, 0, 5, 2),
             control('condition.regenOptimal', '最佳区回血', '心率在最佳区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL] = v, 0.05, 0, 5, 2),
             control('condition.regenHighPressure', '高压区回血', '心率在高压区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE] = v, 0.05, 0, 5, 2),

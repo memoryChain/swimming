@@ -13,7 +13,7 @@ import {
     HEART_RATE_BOUNDS,
     zoneForHeartRate,
 } from './ConditionTypes';
-import { CONDITION_BALANCE, CONDITION_PHASE_TUNING } from '../core/ConditionBalance';
+import { CONDITION_BALANCE, CONDITION_PHASE_TUNING, energyDepletionCadenceScale } from '../core/ConditionBalance';
 import { DiveResult } from '../core/DiveResult';
 
 function clamp(value: number, min: number, max: number): number {
@@ -30,6 +30,7 @@ export class PlayerConditionModel {
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
     private _energyTotalOverride: number | null = null;
+    private _depletionCooldown = 0;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
@@ -54,6 +55,7 @@ export class PlayerConditionModel {
         this._strokesSinceDive = 0;
         this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
+        this._depletionCooldown = 0;
     }
 
     setProgressionOverrides(opts: { energyTotal?: number } | null) {
@@ -152,6 +154,9 @@ export class PlayerConditionModel {
 
         // Energy regeneration: all heart-rate zones regen (LOW strongest).
         // SPRINT boosts all zones so the finish is an all-out peak, not a crawl.
+        if (this._depletionCooldown > 0) {
+            this._depletionCooldown = Math.max(0, this._depletionCooldown - dt);
+        }
         this.regenEnergy(dt);
         this.refreshModifiers();
     }
@@ -167,8 +172,12 @@ export class PlayerConditionModel {
         if (this._phase === RacePhase.SPRINT) {
             drain *= energyCfg.sprintTierMultiplier[this._sprintTier];
         }
+        const wasPositive = this._energy > 0;
         this._energy = clamp(this._energy - drain, 0, this._effectiveEnergyTotal);
         this._energyDepleted = this._energy <= 0;
+        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
+            this._depletionCooldown = CONDITION_BALANCE.energy.depletionCooldownSeconds;
+        }
     }
 
     private refreshModifiers() {
@@ -185,6 +194,9 @@ export class PlayerConditionModel {
 
     // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
     private regenEnergy(dt: number) {
+        if (this._depletionCooldown > 0) {
+            return;
+        }
         const energyCfg = CONDITION_BALANCE.energy;
         // All zones regen, but LOW regenerates the most. SPRINT boosts all zones
         // so the finish feels like an all-out peak regardless of how hard you push.
@@ -201,10 +213,21 @@ export class PlayerConditionModel {
     get heartRate(): number { return this._heartRate; }
     get heartRateZone(): HeartRateZone { return this._heartRateZone; }
     get energy(): number { return this._energy; }
+    get energyRatio(): number { return clamp(this._energy / this._effectiveEnergyTotal, 0, 1); }
     get energyDepleted(): boolean { return this._energyDepleted; }
     get sprintTier(): SprintTier { return this._sprintTier; }
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
+
+    get strokeCadenceScale(): number {
+        return energyDepletionCadenceScale(this.energyRatio);
+    }
+
+    get speedCapScale(): number {
+        const eff = CONDITION_BALANCE.efficiency;
+        const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
+        return eff.speedCapFloor + (1 - eff.speedCapFloor) * Math.pow(ratio, eff.curveExponent);
+    }
 
     // --- Derived helpers (doc 23.8) ---
     isOptimal(): boolean {

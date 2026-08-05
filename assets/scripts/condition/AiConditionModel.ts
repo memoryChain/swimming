@@ -14,7 +14,7 @@ import {
     HEART_RATE_BOUNDS,
     zoneForHeartRate,
 } from './ConditionTypes';
-import { CONDITION_BALANCE } from '../core/ConditionBalance';
+import { CONDITION_BALANCE, energyDepletionCadenceScale } from '../core/ConditionBalance';
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
@@ -33,6 +33,7 @@ export class AiConditionModel {
     private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
+    private _depletionCooldown = 0;
 
     reset() {
         this._phase = RacePhase.START;
@@ -43,6 +44,7 @@ export class AiConditionModel {
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
+        this._depletionCooldown = 0;
     }
 
     setPhase(phase: RacePhase) {
@@ -79,6 +81,9 @@ export class AiConditionModel {
         );
         this._heartRateZone = zoneForHeartRate(this._heartRate);
 
+        if (this._depletionCooldown > 0) {
+            this._depletionCooldown = Math.max(0, this._depletionCooldown - input.dt);
+        }
         this.drainEnergy(difficulty, input.dt);
         this.regenEnergy(input.dt);
         this.refreshModifiers();
@@ -109,13 +114,20 @@ export class AiConditionModel {
         if (this._phase === RacePhase.SPRINT) {
             drain *= lerp(1.2, 3.0, difficulty);
         }
+        const wasPositive = this._energy > 0;
         this._energy = clamp(this._energy - drain, 0, energyCfg.total);
         this._energyDepleted = this._energy <= 0;
+        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
+            this._depletionCooldown = CONDITION_BALANCE.energy.depletionCooldownSeconds;
+        }
     }
 
     // Energy regen: same model as the player. All zones regen (LOW strongest);
     // SPRINT boosts all zones so AI also peaks at the finish instead of stalling.
     private regenEnergy(dt: number) {
+        if (this._depletionCooldown > 0) {
+            return;
+        }
         const energyCfg = CONDITION_BALANCE.energy;
         let rate = energyCfg.regenPerZone[this._heartRateZone];
         if (this._phase === RacePhase.SPRINT) {
@@ -140,10 +152,20 @@ export class AiConditionModel {
     get heartRate(): number { return this._heartRate; }
     get heartRateZone(): HeartRateZone { return this._heartRateZone; }
     get energy(): number { return this._energy; }
+    get energyRatio(): number { return clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1); }
+    get strokeCadenceScale(): number {
+        return energyDepletionCadenceScale(this.energyRatio);
+    }
     get energyDepleted(): boolean { return this._energyDepleted; }
     get sprintTier(): SprintTier { return this._sprintTier; }
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
+
+    get speedCapScale(): number {
+        const eff = CONDITION_BALANCE.efficiency;
+        const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
+        return eff.speedCapFloor + (1 - eff.speedCapFloor) * Math.pow(ratio, eff.curveExponent);
+    }
 
     readout(): ConditionReadout {
         return {
