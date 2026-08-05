@@ -1,0 +1,163 @@
+CCEffect %{
+  techniques:
+  - name: transparent
+    passes:
+    - vert: dive-charge-gather-vs:vert
+      frag: dive-charge-gather-fs:frag
+      priority: max - 25
+      rasterizerState:
+        cullMode: none
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one
+          blendSrcAlpha: one
+          blendDstAlpha: one
+      properties:
+        chargeBlue:   { value: [0.05, 0.62, 1.0, 0.9], linear: true, editor: { type: color } }
+        chargeYellow: { value: [1.0, 0.72, 0.04, 0.9], linear: true, editor: { type: color } }
+        chargeRed:    { value: [1.0, 0.08, 0.025, 0.9], linear: true, editor: { type: color } }
+        releaseColor: { value: [1.0, 0.82, 0.32, 1.0], linear: true, editor: { type: color } }
+        # x = intensity, y = reserved, z = travel distance,
+        # w = actual charge progress (0..1).
+        chargeParams: { value: [0.0, 0.0, 0.72, 0.0] }
+        # x = phase at time origin, y = time origin, z = cycles/second,
+        # w = visible share of the authored ray set.
+        gatherMotion: { value: [0.0, 0.0, 2.2, 0.34] }
+        # x = release mode, y = start time, z = duration, w = travel distance.
+        releaseParams: { value: [0.0, 0.0, 0.38, 0.92] }
+}%
+
+CCProgram dive-charge-gather-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+
+  out vec2 v_uv;
+  out float v_cycleFade;
+  out float v_releaseFade;
+  out float v_haloFade;
+
+  in vec4 a_color;
+
+  uniform DiveChargeGather {
+    vec4 chargeBlue;
+    vec4 chargeYellow;
+    vec4 chargeRed;
+    vec4 releaseColor;
+    vec4 chargeParams;
+    vec4 gatherMotion;
+    vec4 releaseParams;
+  };
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+
+    // The mesh stores a normalized inward/outward direction in a_normal. Its
+    // length also carries a stable per-streak phase offset (1..2), avoiding a
+    // per-instance buffer or CPU-side animation.
+    float encodedLength = max(length(a_normal), 0.0001);
+    vec3 radialDirection = a_normal / encodedLength;
+    float phaseOffset = encodedLength - 1.0;
+    float cycle = fract(
+      gatherMotion.x + (cc_time.x - gatherMotion.y) * gatherMotion.z + phaseOffset
+    );
+    float releaseT = clamp(
+      (cc_time.x - releaseParams.y) / max(releaseParams.z, 0.001),
+      0.0,
+      1.0
+    );
+    float releaseMode = step(0.5, releaseParams.x);
+    float haloGeometry = step(0.5, a_color.b);
+
+    // Gather mode: streaks appear outside the body and travel inward.
+    float gatherTravel = (1.0 - cycle) * chargeParams.z;
+    vec3 gatherPosition = position.xyz + radialDirection * gatherTravel;
+
+    // Release mode: collapse the authored ribbon to the centre on the first
+    // frame, then restore its length while carrying it rapidly outward.
+    float baseRadius = dot(position.xyz, radialDirection);
+    vec3 lateral = position.xyz - radialDirection * baseRadius;
+    float releaseShape = smoothstep(0.0, 0.22, releaseT);
+    float releaseRadius = mix(0.035, baseRadius, releaseShape)
+      + releaseParams.w * releaseT * releaseT;
+    vec3 releasePosition = lateral * releaseShape + radialDirection * releaseRadius;
+    vec3 particlePosition = mix(gatherPosition, releasePosition, releaseMode);
+
+    // The halo is authored as three unit rings in the same mesh. Ease-out
+    // expansion creates a fast launch flash followed by a softer broad spread.
+    float haloEase = 1.0 - (1.0 - releaseT) * (1.0 - releaseT);
+    float haloScale = mix(0.055, 1.12, haloEase);
+    vec3 haloPosition = position.xyz * haloScale;
+    position.xyz = mix(particlePosition, haloPosition, haloGeometry * releaseMode);
+
+    float appear = smoothstep(0.0, 0.14, cycle);
+    float arrive = 1.0 - smoothstep(0.76, 1.0, cycle);
+    // Vertex colour R stores each authored ray's density rank. A small feather
+    // makes newly enabled rays fade in instead of popping as charge rises.
+    float densityFade = 1.0 - smoothstep(gatherMotion.w - 0.035, gatherMotion.w + 0.035, a_color.r);
+    float releaseDensity = 1.0 - smoothstep(0.505, 0.575, a_color.r);
+    v_cycleFade = appear * arrive * chargeParams.x * densityFade
+      * (1.0 - releaseMode) * (1.0 - haloGeometry);
+    v_releaseFade = sin(releaseT * 3.14159265) * releaseDensity
+      * releaseMode * (1.0 - haloGeometry);
+    float haloAppear = smoothstep(0.0, 0.08, releaseT);
+    float haloDisappear = 1.0 - smoothstep(0.52, 1.0, releaseT);
+    v_haloFade = haloAppear * haloDisappear * haloGeometry * releaseMode;
+    v_uv = a_texCoord;
+
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    vec4 worldPosition = matWorld * position;
+    return cc_matProj * (cc_matView * worldPosition);
+  }
+}%
+
+CCProgram dive-charge-gather-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+
+  in vec2 v_uv;
+  in float v_cycleFade;
+  in float v_releaseFade;
+  in float v_haloFade;
+
+  uniform DiveChargeGather {
+    vec4 chargeBlue;
+    vec4 chargeYellow;
+    vec4 chargeRed;
+    vec4 releaseColor;
+    vec4 chargeParams;
+    vec4 gatherMotion;
+    vec4 releaseParams;
+  };
+
+  vec4 frag () {
+    // Crossed tapered ribbons: a white-hot inner tip and a cyan feathered tail.
+    float across = 1.0 - abs(v_uv.y * 2.0 - 1.0);
+    across = smoothstep(0.0, 0.72, across);
+    float tail = 1.0 - smoothstep(0.08, 1.0, v_uv.x);
+    float tip = pow(1.0 - v_uv.x, 5.0);
+    float chargeProgress = clamp(chargeParams.w, 0.0, 1.0);
+    vec4 chargeColor = chargeProgress < 0.34
+      ? chargeBlue
+      : (chargeProgress < 0.67 ? chargeYellow : chargeRed);
+    float gatherAlpha = across * (0.16 + tail * 0.84) * v_cycleFade * chargeColor.a;
+    float releaseAlpha = across * (0.28 + tail * 0.72) * v_releaseFade * releaseColor.a;
+    float haloAlpha = pow(across, 1.5) * v_haloFade * releaseColor.a * 0.46;
+    float alpha = gatherAlpha + releaseAlpha + haloAlpha;
+    vec3 gatherColor = mix(chargeColor.rgb, vec3(1.0), tip * 0.12);
+    vec3 burstColor = mix(releaseColor.rgb, vec3(1.0), 0.58 + tip * 0.30);
+    vec3 haloColor = mix(releaseColor.rgb, vec3(1.0), 0.76);
+    vec3 color = mix(gatherColor, burstColor, step(0.001, v_releaseFade));
+    color = mix(color, haloColor, step(0.001, v_haloFade));
+    return CCFragOutput(vec4(color, alpha));
+  }
+}%

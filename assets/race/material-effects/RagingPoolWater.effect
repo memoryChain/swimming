@@ -40,6 +40,18 @@ CCEffect %{
         laneLockdownClosedColor: { value: [0.025, 0.034, 0.074, 0.88], linear: true, editor: { type: color } }
         laneLockdownBoundaryColor: { value: [0.485, 0.791, 0.888, 1.00], linear: true, editor: { type: color } }
         refractionMap:   { value: grey }
+        # Planar reflection of the underwater scene, rendered by a mirror camera
+        # into a RenderTexture (see WaterRefractionController). Sampled by the
+        # underwater-looking-up branch so the underside of the surface acts like a
+        # mirror (total internal reflection).
+        reflectionMap:   { value: grey }
+        # x = mirror strength (0 = no reflection, keeps the old Snell tint),
+        # y = flip U (1/0), z = flip V (1/0), w = extra wobble scale for the
+        # underside distortion (bigger = more violent refraction ripple).
+        reflectionParams: { value: [0.90, 1.00, 0.00, 1.60] }
+        # x = how strongly the reflection is tinted toward deepColor (0 = raw
+        # reflection / whiter, 1 = fully deep-water blue). y/z/w unused.
+        reflectionTint: { value: [0.45, 0.00, 0.00, 0.00] }
 }%
 
 CCProgram water-vs %{
@@ -138,6 +150,15 @@ CCProgram water-fs %{
   // opaque and only refracts the floor.
   uniform sampler2D refractionMap;
 
+  // Planar reflection of the underwater scene (floor + swimmers) rendered from
+  // the mirror of the main camera. Sampled only when the camera is below the
+  // surface so the underside reads as a rippling mirror.
+  uniform sampler2D reflectionMap;
+  uniform WaterReflect {
+    vec4 reflectionParams;
+    vec4 reflectionTint;
+  };
+
   #define MAX_DISTURB 8
   // Local turbulence sources (the swimmers). Each active slot: xy = world XZ,
   // z = strength (0 = inactive slot). disturbParams: x = influence radius,
@@ -172,20 +193,32 @@ CCProgram water-fs %{
     vec3 viewDir = normalize(cc_cameraPos.xyz - v_worldPos);
     float fresnel = pow(1.0 - clamp(viewDir.y, 0.0, 1.0), 3.0);
 
-    // Underwater-looking-up view: when the camera is below the surface, drop the
-    // opaque floor compositing (which is meaningless from below and reads as a
-    // white wash) and instead render the surface as a semi-transparent tint so
-    // the real above-water scene the main camera already drew shows THROUGH it.
-    // Snell's-window feel: clearer looking straight up (see the world above),
-    // tinting toward deep blue and turning opaque at grazing angles (total
-    // internal reflection). Caustics + foam add rippling surface life.
+    // Underwater-looking-up view: when the camera is below the surface, the
+    // underside of the water acts like an OPAQUE MIRROR at EVERY angle — it
+    // reflects the underwater scene (swimmers + pool) with a heavy rippling
+    // distortion, so the swimmers' reflection is visible from any viewpoint (no
+    // Snell-window see-through fade).
     if (cc_cameraPos.y < v_worldPos.y) {
-      float upness = clamp(-viewDir.y, 0.0, 1.0);
-      float windowMask = smoothstep(0.12, 0.62, upness);
-      vec3 underTint = mix(deepColor.rgb, shallowColor.rgb, windowMask);
-      // See-through inside the window (small alpha), opaque tint at grazing.
-      float underAlpha = mix(0.9, 0.2, windowMask);
-      vec4 uo = vec4(underTint, underAlpha);
+      // Screen-space UV of this surface pixel (same basis the refraction uses).
+      vec2 ndc = v_screenPos.xy / max(abs(v_screenPos.w), 1e-4);
+      vec2 mirrorUV = ndc * 0.5 + 0.5;
+      // More violent underside ripple: a larger-amplitude irregular wobble.
+      float fwU = refractionParams.w * reflectionParams.w;
+      vec2 underWobble = waterWobble(v_worldPos.xz * fwU, t) * 0.6;
+      mirrorUV += underWobble * (refractionParams.x * 3.2);
+      if (reflectionParams.y > 0.5) mirrorUV.x = 1.0 - mirrorUV.x;
+      if (reflectionParams.z > 0.5) mirrorUV.y = 1.0 - mirrorUV.y;
+      mirrorUV = clamp(mirrorUV, vec2(0.001), vec2(0.999));
+      vec3 mirror = texture(reflectionMap, mirrorUV).rgb;
+      // Push the reflection toward the deep pool blue so the bright/near-white
+      // reflected floor reads as blue water rather than a white glare. Strength
+      // is the tunable '反光蓝浓度' slider (reflectionTint.x).
+      mirror = mix(mirror, deepColor.rgb, clamp(reflectionTint.x, 0.0, 1.0));
+      // reflectionParams.x blends between the flat deep-water tint and the mirror
+      // (1 = full mirror). No view-angle fade, so the reflection reads at all angles.
+      vec3 underColor = mix(deepColor.rgb, mirror, clamp(reflectionParams.x, 0.0, 1.0));
+      // Fully opaque (no see-through Snell window).
+      vec4 uo = vec4(underColor, 1.0);
       CC_APPLY_FOG(uo);
       return CCFragOutput(uo);
     }

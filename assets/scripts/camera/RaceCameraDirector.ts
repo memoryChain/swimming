@@ -111,6 +111,11 @@ export const RACE_CAMERA_TUNING = {
     sprintHeight: 0.52,
     sprintLookAhead: 0.8,
     sprintFov: 58,
+    // While the normal chase starts during an underwater ascent, frame it from
+    // a virtual upper-body anchor above the water instead of following the deep
+    // torso Y directly. This keeps the water line out of the main view while the
+    // swimmer rises into the regular surface composition.
+    sprintAscentAnchorAboveWater: 0.25,
     // Extra FOV pushed while sprintActive for a cinematic speed-up; blended
     // in/out so the sprint entry reads as acceleration instead of a hard cut.
     sprintFovBoost: 8,
@@ -121,8 +126,12 @@ export const RACE_CAMERA_TUNING = {
     // across to catch up. Lower lateral = more visible weave / more lag.
     sprintFollowSpeed: 14,
     sprintLateralFollowSpeed: 3.2,
+    // Hand the underwater shot back to the normal sprint chase before the root
+    // fully reaches the surface. This is the normalized ascent progress (0..1),
+    // shared by the opening dive and the post-flip-turn rise.
+    surfaceRaceCameraRiseProgress: 0,
     // Underwater side/rear view held from flip entry through the complete
-    // post-turn underwater descent, hold, and ascent.
+    // post-turn underwater descent/hold and most of the ascent.
     flipTurnBackDistance: 2.8,
     flipTurnSideDistance: 2.6,
     flipTurnBelowDistance: 0.42,
@@ -152,6 +161,14 @@ export const RACE_CAMERA_TUNING = {
     // 相机视场角(FOV)：海豚跃跟随相机的垂直视场角。单位：度。越大越广、速度感越强。
     dolphinFov: 55,
 };
+
+// A zero tuning value means "the first actual ascent frame", not the start of
+// the underwater phase where descent/hold also report zero progress.
+export function isSurfaceRaceCameraRiseReady(progress: number | undefined): boolean {
+    const normalizedProgress = Math.max(0, Math.min(1, progress ?? 0));
+    const threshold = Math.max(0, Math.min(1, RACE_CAMERA_TUNING.surfaceRaceCameraRiseProgress));
+    return normalizedProgress > 0 && normalizedProgress >= threshold;
+}
 
 export enum RaceCameraMode {
     Broadcast = 0,
@@ -191,6 +208,9 @@ export type RaceCameraSnapshot = {
     playerKickCadenceHz?: number;
     playerArmStrokeActive?: boolean;
     playerUnderwater: boolean;
+    // Normalized progress through the current underwater ascent. Zero covers
+    // descent/hold, one means the surface has been reached.
+    playerUnderwaterRiseProgress?: number;
     closestAiDistanceGap: number;
     playerPlacement: number;
     racerCount: number;
@@ -556,7 +576,11 @@ export class RaceCameraDirector {
             return;
         }
         this._dolphinViewActive = false;
-        const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive && !this._feedMode;
+        const flipTurnNearSurface = snapshot.playerUnderwater
+            && isSurfaceRaceCameraRiseReady(snapshot.playerUnderwaterRiseProgress);
+        const flipTurnViewRequested = !!snapshot.playerFlipTurnCameraActive
+            && !flipTurnNearSurface
+            && !this._feedMode;
         if (flipTurnViewRequested) {
             const enteringFlipTurnView = !this._flipTurnViewActive;
             if (enteringFlipTurnView) {
@@ -575,13 +599,13 @@ export class RaceCameraDirector {
                 this.updateFinishTopCamera(snapshot);
                 return;
             }
-            // GameFlow promotes the camera to Sprint on the first surfaced frame.
+            // GameFlow promotes the camera to Sprint once the opening ascent is
+            // close to the surface.
             // The broadcast-only underwater exit hard-cut below is therefore not
-            // reached; preserve the same immediate hand-off for this dive ->
-            // first-person transition instead of blending across the pool.
+            // reached; preserve the same immediate hand-off for the underwater ->
+            // sprint transition instead of blending across the pool.
             const leavingUnderwaterDiveView = this._underwaterViewActive;
             this._topViewActive = false;
-            this._underwaterViewActive = false;
             this.updateSprintCamera(dt, snapshot, leavingFlipTurnView || leavingUnderwaterDiveView);
             return;
         }
@@ -849,7 +873,12 @@ export class RaceCameraDirector {
             fixedTopView = true;
         } else if (snapshot.sprintActive) {
             this.finishDiveShotIfNeeded();
-            const sprintView = sprintCameraView(snapshot, direction, this.updateContinuousKickView(dt, snapshot));
+            const sprintView = sprintCameraView(
+                snapshot,
+                direction,
+                this.updateContinuousKickView(dt, snapshot),
+                this._courseLayout.waterY,
+            );
             desiredPos = sprintView.position;
             desiredTarget = sprintView.target;
             this._broadcastDesiredFov = RACE_CAMERA_TUNING.sprintFov;
@@ -984,7 +1013,7 @@ export class RaceCameraDirector {
     private updateSprintCamera(dt: number, snapshot: RaceCameraSnapshot, immediate = false) {
         const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const continuousKickViewActive = this.updateContinuousKickView(dt, snapshot);
-        const view = sprintCameraView(snapshot, direction, continuousKickViewActive);
+        const view = sprintCameraView(snapshot, direction, continuousKickViewActive, this._courseLayout.waterY);
         if (immediate) {
             this._cameraPos.set(view.position);
             this._cameraTarget.set(view.target);
@@ -1005,6 +1034,12 @@ export class RaceCameraDirector {
             : RACE_CAMERA_TUNING.sprintFov;
         const fovBlend = clamp(1 - Math.exp(-Math.max(0, dt) * RACE_CAMERA_TUNING.sprintFovBlendSpeed), 0.02, 0.4);
         this._sprintFovCurrent += (targetSprintFov - this._sprintFovCurrent) * fovBlend;
+        // Match the dolphin camera's water-state handoff: the normal chase may
+        // begin while the swimmer is only starting to rise, so keep the pool in
+        // underwater rendering until the CAMERA itself crosses the water plane.
+        // This prevents the floor/surface colours from popping to the above-water
+        // set while the new chase viewpoint is still physically submerged.
+        this._underwaterViewActive = this._cameraPos.y < this._courseLayout.waterY;
         this.applyCameraTransform();
         this.applyFov();
     }
@@ -1175,6 +1210,10 @@ export class RaceCameraDirector {
 
     private shouldHoldUnderwaterDiveShot(snapshot: RaceCameraSnapshot): boolean {
         if (this._diveShotElapsed < 0 || this.shouldHoldDiveSideShot(snapshot)) {
+            return false;
+        }
+        if (snapshot.playerUnderwater
+            && isSurfaceRaceCameraRiseReady(snapshot.playerUnderwaterRiseProgress)) {
             return false;
         }
         if (this._diveShotElapsed < DIVE_SIDE_MIN_SECONDS + DIVE_UNDERWATER_MIN_SECONDS) {
@@ -1385,11 +1424,20 @@ function sprintCameraView(
     snapshot: RaceCameraSnapshot,
     direction: number,
     continuousKickViewActive: boolean,
+    waterY: number,
 ): { position: Vec3; target: Vec3 } {
     // This anchor is sampled from the rig's torso/spine chain (blended slightly
     // toward the head), not from the swimmer root at the hips/feet.
     const upperBody = snapshot.playerUpperBodyWorldPosition?.clone()
         ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.54, 0);
+    // Starting the chase on the first ascent frame used to put the eye almost on
+    // the water plane because upperBody.y was still deep underwater. The shallow
+    // downward viewing angle then split the screen into an above-water upper half
+    // and underwater lower half. Keep X/Z attached to the swimmer, but compose Y
+    // from the normal surface-height anchor until the body catches up.
+    const framingY = snapshot.playerUnderwater
+        ? Math.max(upperBody.y, waterY + RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater)
+        : upperBody.y;
     const heading = snapshot.playerHeading ?? 0;
     // Heading is relative to the current pool-leg direction. Lateral movement
     // always uses world Z, while the along-lane component flips after a turn.
@@ -1400,12 +1448,12 @@ function sprintCameraView(
     return {
         position: new Vec3(
             upperBody.x - backDistance * movementX,
-            upperBody.y + RACE_CAMERA_TUNING.sprintHeight,
+            framingY + RACE_CAMERA_TUNING.sprintHeight,
             upperBody.z - backDistance * movementZ,
         ),
         target: new Vec3(
             upperBody.x + RACE_CAMERA_TUNING.sprintLookAhead * movementX,
-            upperBody.y + 0.08,
+            framingY + 0.08,
             upperBody.z + RACE_CAMERA_TUNING.sprintLookAhead * movementZ,
         ),
     };

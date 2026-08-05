@@ -24,10 +24,79 @@ export const WATER_COLOR_TUNING = {
     // Swimmer submerged-body blue (SwimmerDynamicColor waterLine tint) + strength.
     bodyR: 40, bodyG: 150, bodyB: 226,
     bodyStrength: 0.8,
+    // Above-waterline haze: a body part poking out of the surface, seen from an
+    // UNDERWATER camera, fades toward this pale washed colour (reads as poking
+    // through the surface, not a hard glitch). Only when the camera is submerged.
+    aboveR: 150, aboveG: 195, aboveB: 225,
+    aboveStrength: 0.75,
+    // Distance-based blue absorption for submerged bodies: far swimmers read
+    // bluer than near ones. depthColor = deep-water blue, depthStrength = max
+    // blend, depthStart/depthEnd = camera distances (m) over which blue ramps in.
+    depthR: 26, depthG: 120, depthB: 200,
+    depthStrength: 0.55,
+    depthStart: 4.0,
+    depthEnd: 24.0,
+    // Underwater pool-floor blue (the colour the floor/walls swap to when the
+    // camera is below the surface). Walls/grout are derived shades of this.
+    // Tuned to match the bright, slightly-cyan light blue seen when looking DOWN
+    // at the pool from above the surface (green kept close to blue = cyan-ish).
+    floorR: 142, floorG: 200, floorB: 222,
+    // Underwater distance gradient: near the camera the floor keeps its (brighter)
+    // floor blue; farther away it fades toward a deep blue derived from floorR/G/B.
+    // Strength = how deep the far end gets (0 = uniform, off), start/end = camera
+    // distances (m) over which it ramps in (underwater camera is close, ~5m).
+    floorFarStrength: 0.85,
+    floorFarStart: 3.0,
+    floorFarEnd: 20.0,
+    // Above-water distance gradient: viewed through the surface, the far pool
+    // floor fades toward this colour — a DIFFERENT (deeper) look than the
+    // underwater deep blue. Made clearly visible: strong, a dark far colour, and
+    // a tighter range that ramps within the visible floor.
+    floorAboveFarR: 16, floorAboveFarG: 64, floorAboveFarB: 116,
+    floorAboveFarStrength: 0.9,
+    floorAboveFarStart: 6.0,
+    floorAboveFarEnd: 30.0,
+    // How strongly the underwater surface mirror is tinted toward deepColor
+    // (0 = raw reflection / whiter, 1 = fully deep-water blue).
+    reflectionBlue: 0.45,
 };
+
+// The pool-floor underwater colour lives in WaterRefractionController (it owns
+// the runtime floor materials + the above/below camera swap). It registers an
+// applier so the '水色' floor sliders can re-tint the submerged floor live.
+let _floorTintApply: (() => void) | null = null;
+export function registerFloorTintApplier(fn: () => void) {
+    _floorTintApply = fn;
+    fn();
+}
 
 const _waterMaterials: Material[] = [];
 const _swimmerMaterials: Material[] = [];
+// Whether swimmer draws should clip their above-water fragments (set only while
+// the underwater mirror-reflection camera is rendering; see setSwimmerReflectClip).
+let _swimmerReflectClip = false;
+
+// Toggle the reflection clip flag on every registered swimmer material. Called by
+// WaterRefractionController when the main camera crosses below the surface, so the
+// reflection pass drops above-water fragments (no ghost) while direct/broadcast
+// draws stay intact. No-op when unchanged (avoids per-frame material writes).
+export function setSwimmerReflectClip(on: boolean) {
+    if (on === _swimmerReflectClip) {
+        return;
+    }
+    _swimmerReflectClip = on;
+    for (const material of _swimmerMaterials) {
+        applySwimmerReflectClip(material);
+    }
+}
+
+function applySwimmerReflectClip(material: Material) {
+    try {
+        material.setProperty('reflectClipParams', new Vec4(_swimmerReflectClip ? 1 : 0, 0, 0, 0));
+    } catch {
+        // Material's effect lacks the uniform; ignore.
+    }
+}
 
 // Register the live pool-water material so tuning changes reach it. Applies the
 // current tuning immediately.
@@ -57,12 +126,15 @@ export function applyWaterColorTuning() {
     for (const material of _swimmerMaterials) {
         applySwimmerMaterial(material);
     }
+    _floorTintApply?.();
 }
 
 function applyWaterMaterial(material: Material) {
     try {
         material.setProperty('deepColor', new Color(WATER_COLOR_TUNING.deepR, WATER_COLOR_TUNING.deepG, WATER_COLOR_TUNING.deepB, 255));
         material.setProperty('shallowColor', new Color(WATER_COLOR_TUNING.shallowR, WATER_COLOR_TUNING.shallowG, WATER_COLOR_TUNING.shallowB, 255));
+        // Reflection blue tint strength (underwater surface mirror).
+        material.setProperty('reflectionTint', new Vec4(WATER_COLOR_TUNING.reflectionBlue, 0, 0, 0));
         // Preserve refractionParams x (distort) / y (flipY) / w (frequency); only
         // retune z (tint strength).
         const current = material.getProperty('refractionParams') as Vec4 | null;
@@ -106,6 +178,25 @@ function applySwimmerMaterial(material: Material) {
             WATER_COLOR_TUNING.bodyB,
             Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.bodyStrength * 255))),
         ));
+        material.setProperty('depthFogColor', new Color(
+            WATER_COLOR_TUNING.depthR,
+            WATER_COLOR_TUNING.depthG,
+            WATER_COLOR_TUNING.depthB,
+            Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.depthStrength * 255))),
+        ));
+        material.setProperty('depthFogParams', new Vec4(
+            WATER_COLOR_TUNING.depthStart,
+            WATER_COLOR_TUNING.depthEnd,
+            1,
+            0,
+        ));
+        material.setProperty('aboveWaterColor', new Color(
+            WATER_COLOR_TUNING.aboveR,
+            WATER_COLOR_TUNING.aboveG,
+            WATER_COLOR_TUNING.aboveB,
+            Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.aboveStrength * 255))),
+        ));
+        material.setProperty('reflectClipParams', new Vec4(_swimmerReflectClip ? 1 : 0, 0, 0, 0));
     } catch {
         // Not a swimmer body material; ignore.
     }

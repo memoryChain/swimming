@@ -358,6 +358,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        this.setCountdownMessageVisible(true);
         this.setSpeedBarVisible(false);
         this.resizeCountdownShade(190, 160);
         if (this.hintLabel) {
@@ -516,6 +517,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        this.setCountdownMessageVisible(true);
         this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
@@ -531,17 +533,13 @@ export class UIController extends Component {
     }
 
     showDiveCharging() {
-        this.resizeCountdownShade(500, 120);
-        if (this.countdownLabel) {
-            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
-            this.countdownLabel.fontSize = 64;
-            this.countdownLabel.lineHeight = 64;
-            this.countdownLabel.string = '蓄力中';
-            this.pulse(this.countdownLabel.node, 1.12);
-        }
+        // Keep the charge bar and character VFX, but remove the large center-screen
+        // message and backdrop while the player is holding to charge.
+        this.setCountdownMessageVisible(false);
     }
 
     showDiveRelease(power: number) {
+        this.setCountdownMessageVisible(true);
         this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
@@ -823,6 +821,19 @@ export class UIController extends Component {
     private setSpeedBarVisible(visible: boolean) {
         if (this.speedBarRoot && this.speedBarRoot.active !== visible) {
             this.speedBarRoot.active = visible;
+        }
+    }
+
+    private setCountdownMessageVisible(visible: boolean) {
+        if (this.countdownShade && this.countdownShade.active !== visible) {
+            this.countdownShade.active = visible;
+        }
+        const labelNode = this.countdownLabel?.node;
+        if (labelNode && labelNode.active !== visible) {
+            if (!visible) {
+                Tween.stopAllByTarget(labelNode);
+            }
+            labelNode.active = visible;
         }
     }
 

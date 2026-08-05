@@ -303,6 +303,7 @@ export class Swimmer extends Component {
             return;
         }
         Tween.stopAllByTarget(this.node);
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.startRace(Math.max(0, distance));
     }
 
@@ -352,6 +353,18 @@ export class Swimmer extends Component {
         // from showcase standing into dive-ready instead of snapping via base pose.
         this.resetPose(true);
         this.cartoonRig?.setDiveReady(true);
+    }
+
+    setDiveChargeEffect(power: number, active: boolean) {
+        this.cartoonRig?.setDiveChargeEffect(power, active);
+    }
+
+    clearDiveChargeEffect() {
+        this.cartoonRig?.clearDiveChargeEffect();
+    }
+
+    releaseDiveChargeEffect() {
+        this.cartoonRig?.releaseDiveChargeEffect();
     }
 
     prepareShowcaseStanding() {
@@ -408,6 +421,11 @@ export class Swimmer extends Component {
                 this.cartoonRig?.startDiveStreamlineTransition(poseTransitionDuration);
             })
             .delay(launchDelayDuration)
+            // Burst at the actual take-off edge: the next tween segment is the
+            // first frame that moves the swimmer forward off the platform.
+            .call(() => {
+                this.cartoonRig?.releaseDiveChargeEffect();
+            })
             .to(projectileFlightDuration, {}, {
                 onUpdate: (_target?: Node, ratio = 0) => {
                     this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, ratio, projectileFlightDuration);
@@ -555,7 +573,7 @@ export class Swimmer extends Component {
             // keyframe-2-to-swim recovery blend.
             return null;
         }
-        if (this._phases.isDiveGlidePoseActive) {
+        if (this._phases.isDiveGlidePoseActive && !this._phases.canUseArmStroke) {
             // Player presses already kick on key/touch down. AI input enters here
             // directly, so register the same cadence-based underwater kick.
             const recorded = this.isAI ? this._motor.recordKickTap(type) : false;
@@ -572,7 +590,11 @@ export class Swimmer extends Component {
         if (!this.isAI) {
             this._strokeMetrics.recordStroke(type);
         }
-        this.playStroke(type, Rating.GOOD);
+        // The queued motor cycles already animate the arms during ascent. Avoid
+        // the surface-only one-shot burst until the body has actually surfaced.
+        if (!this._phases.isUnderwater) {
+            this.playStroke(type, Rating.GOOD);
+        }
         return null;
     }
 
@@ -584,6 +606,15 @@ export class Swimmer extends Component {
             return false;
         }
         return this._phases.isDiveGlidePoseActive || this._motor.canRecordStroke(type);
+    }
+
+    // Shared by local input and network replay. This is presentation/gameplay
+    // phase state only; the wire format remains the existing held/stroke events.
+    get canUseArmStroke(): boolean {
+        return this._motor.isRacing
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
+            && this._phases.canUseArmStroke;
     }
 
     handleKickStroke(type: StrokeType): void {
@@ -622,7 +653,7 @@ export class Swimmer extends Component {
         if (this._phases.isDolphinJumpActive) {
             return null;
         }
-        if (this._phases.isDiveGlidePoseActive) {
+        if (this._phases.isDiveGlidePoseActive && !this._phases.canUseArmStroke) {
             return null;
         }
         const strokeQualityResult = this._motor.setStrokeHeld(type, held, preHeldSeconds);
@@ -676,6 +707,7 @@ export class Swimmer extends Component {
         const inwardDirection = -direction;
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.cartoonRig?.setPerfectGlowActive(false);
         this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
         this.cartoonRig?.setFinishFloating();
@@ -704,6 +736,7 @@ export class Swimmer extends Component {
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setDiveReady(true);
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
@@ -716,6 +749,7 @@ export class Swimmer extends Component {
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setShowcaseStanding();
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
@@ -800,16 +834,22 @@ export class Swimmer extends Component {
         if (!this.cartoonRig) {
             return;
         }
-        if (this._phases.isDiveGlidePoseActive) {
-            this.cartoonRig.setLegSplashSuppressed(true);
+        const kickOnlyUnderwater = this._phases.isDiveGlidePoseActive
+            && !this._phases.canUseArmStroke;
+        // Arm motion may start during ascent, but surface-only leg spray remains
+        // suppressed until the swimmer actually exits the underwater phase.
+        this.cartoonRig.setLegSplashSuppressed(this._phases.isUnderwater);
+        if (kickOnlyUnderwater) {
             this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection);
         } else {
-            this.cartoonRig.setLegSplashSuppressed(false);
             this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection);
         }
     }
 
     private flashSplash(rating: Rating) {
+        if (this._phases.isUnderwater) {
+            return;
+        }
         const scale = rating === Rating.PERFECT ? 1.15 : rating === Rating.BAD ? 0.55 : 0.85;
         this.cartoonRig?.triggerSplashBurst(scale);
     }
@@ -926,6 +966,10 @@ export class Swimmer extends Component {
 
     get isUnderwater(): boolean {
         return this._phases.isUnderwater;
+    }
+
+    get underwaterRiseProgress(): number {
+        return this._phases.underwaterRiseProgress;
     }
 
     // Sustained limb effort (0..1), used by the flow layer to read sprint intent.

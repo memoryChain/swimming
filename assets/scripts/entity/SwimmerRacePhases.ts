@@ -143,6 +143,29 @@ export class SwimmerRacePhases {
         return this._diveUnderwaterActive;
     }
 
+    // Normalized progress through the current underwater rise. Descent and hold
+    // report 0; a completed/non-underwater phase reports 1. Camera presentation
+    // can use this without ending the gameplay/input glide phase early.
+    get underwaterRiseProgress(): number {
+        if (!this._diveUnderwaterActive) {
+            return 1;
+        }
+        const riseElapsed = this._diveUnderwaterElapsed
+            - this.underwaterDescentSeconds()
+            - this.underwaterHoldSeconds();
+        if (riseElapsed <= 0) {
+            return 0;
+        }
+        return Math.max(0, Math.min(1, riseElapsed / this.underwaterRiseSeconds()));
+    }
+
+    // Descent and the underwater hold remain kick-only. Arm strokes become
+    // available on the first real ascent frame, while glide physics and the
+    // underwater state continue until the swimmer actually reaches the surface.
+    get canUseArmStroke(): boolean {
+        return !this._diveGlidePoseActive || this.underwaterRiseProgress > 0;
+    }
+
     // True through the whole flip-turn and the following underwater phase so the
     // camera holds its underwater view from wall approach until the swimmer rises.
     get isFlipTurnCameraActive(): boolean {

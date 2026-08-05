@@ -11,6 +11,7 @@ export type SpeedStarsStartUiCallbacks = {
     onRoom: () => void;
     onModelDebug: () => void;
     onAiDebug: () => void;
+    onUnderwaterDebug: () => void;
 };
 
 export type SpeedStarsUiCallbacks = {
@@ -607,6 +608,19 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     aiDebug.setPosition(
         visibleSize.width / 2 - 16 - aiDebugTransform.contentSize.width / 2,
         -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height / 2,
+        0,
+    );
+
+    // Underwater-effect tuning scene entry, parked just above the AI-debug button
+    // in the bottom-right corner. Launches a dedicated scene where the player
+    // flutter-kicks underwater and laps back and forth for tuning the submerged
+    // water look without playing a full race.
+    const underwaterDebug = makeOutlineButton('UnderwaterDebugButton', startScreen, 200, 46, uiColor(28, 50, 70, 200), '水下效果调试', uiColor(90, 160, 210, 150), 12);
+    underwaterDebug.on(Node.EventType.TOUCH_END, callbacks.onUnderwaterDebug);
+    const underwaterDebugTransform = underwaterDebug.getComponent(UITransform)!;
+    underwaterDebug.setPosition(
+        visibleSize.width / 2 - 16 - underwaterDebugTransform.contentSize.width / 2,
+        -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height + 12 + underwaterDebugTransform.contentSize.height / 2,
         0,
     );
 

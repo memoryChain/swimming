@@ -187,9 +187,9 @@ export class InputRouter {
             return;
         }
         if (now - press.startedMs >= thresholdMs) {
-            // A held press may still be in the dive-underwater phase, where arm
+            // A held press may still be in the dive descent/hold, where arm
             // strokes are intentionally unavailable. Keep it promotable so the
-            // same press becomes an arm stroke on the first surfaced frame.
+            // same press becomes an arm stroke on the first ascent frame.
             // Cap the carried hold time: underwater waiting must not turn into a
             // pre-held multi-second stroke when it is finally accepted.
             const accepted = this._callbacks.onStrokeHeld(type, true, thresholdMs / 1000);
