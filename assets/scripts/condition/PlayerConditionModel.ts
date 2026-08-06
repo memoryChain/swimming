@@ -13,7 +13,14 @@ import {
     HEART_RATE_BOUNDS,
     zoneForHeartRate,
 } from './ConditionTypes';
-import { CONDITION_BALANCE, CONDITION_PHASE_TUNING, energyDepletionCadenceScale } from '../core/ConditionBalance';
+import {
+    CONDITION_BALANCE,
+    CONDITION_PHASE_TUNING,
+    conditionEfficiencyScale,
+    conditionQualityScale,
+    conditionSpeedCapScale,
+    energyDepletionCadenceScale,
+} from '../core/ConditionBalance';
 import { DiveResult } from '../core/DiveResult';
 
 function clamp(value: number, min: number, max: number): number {
@@ -183,13 +190,12 @@ export class PlayerConditionModel {
     private refreshModifiers() {
         // Quality axis: driven ONLY by heart-rate zone (hand stability).
         // Energy depletion does NOT affect quality - the two axes are orthogonal.
-        this._qualityModifier = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
+        this._qualityModifier = conditionQualityScale(this._heartRate);
 
         // Efficiency axis: driven by ENERGY (muscle fuel), not heart rate.
         // Slow-start curve: efficiency = floor + (1-floor) * ratio^exponent.
-        const eff = CONDITION_BALANCE.efficiency;
         const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
-        this._efficiencyModifier = eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
+        this._efficiencyModifier = conditionEfficiencyScale(ratio);
     }
 
     // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
@@ -224,9 +230,7 @@ export class PlayerConditionModel {
     }
 
     get speedCapScale(): number {
-        const eff = CONDITION_BALANCE.efficiency;
-        const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
-        return eff.speedCapFloor + (1 - eff.speedCapFloor) * Math.pow(ratio, eff.curveExponent);
+        return conditionSpeedCapScale(this.energyRatio);
     }
 
     // --- Derived helpers (doc 23.8) ---

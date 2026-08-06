@@ -14,7 +14,13 @@ import {
     HEART_RATE_BOUNDS,
     zoneForHeartRate,
 } from './ConditionTypes';
-import { CONDITION_BALANCE, energyDepletionCadenceScale } from '../core/ConditionBalance';
+import {
+    CONDITION_BALANCE,
+    conditionEfficiencyScale,
+    conditionQualityScale,
+    conditionSpeedCapScale,
+    energyDepletionCadenceScale,
+} from '../core/ConditionBalance';
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
@@ -139,12 +145,11 @@ export class AiConditionModel {
 
     private refreshModifiers() {
         // Quality axis: driven ONLY by heart-rate zone (hand stability).
-        this._qualityModifier = CONDITION_BALANCE.quality.zoneModifier[this._heartRateZone];
+        this._qualityModifier = conditionQualityScale(this._heartRate);
 
         // Efficiency axis: energy curve, same formula as the player.
-        const eff = CONDITION_BALANCE.efficiency;
         const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
-        this._efficiencyModifier = eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
+        this._efficiencyModifier = conditionEfficiencyScale(ratio);
     }
 
     // --- Readonly getters (same surface as PlayerConditionModel) ---
@@ -162,9 +167,7 @@ export class AiConditionModel {
     get efficiencyModifier(): number { return this._efficiencyModifier; }
 
     get speedCapScale(): number {
-        const eff = CONDITION_BALANCE.efficiency;
-        const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
-        return eff.speedCapFloor + (1 - eff.speedCapFloor) * Math.pow(ratio, eff.curveExponent);
+        return conditionSpeedCapScale(this.energyRatio);
     }
 
     readout(): ConditionReadout {

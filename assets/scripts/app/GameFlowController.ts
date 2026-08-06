@@ -605,11 +605,6 @@ export class GameFlowController {
         const power = this.calculateDivePower(charge);
         this._diveCommitted = true;
         this._diveChargeStarted = false;
-        // Broadcast the dive to remote clients HERE (not in handleDiveRelease) so BOTH
-        // the manual release AND the countdown-end auto-dive reach the network — an
-        // auto-dived player must still start moving on every other screen. Exactly-once
-        // per real commit (guarded above); a cheap no-op in single-player.
-        captureNetInput({ kind: NetInputKind.DiveRelease, power });
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
@@ -618,6 +613,10 @@ export class GameFlowController {
         if (diveSpeedScale !== 1) {
             diveResult.launchSpeed *= diveSpeedScale;
         }
+        // Broadcast the final owner-authoritative launch speed HERE so BOTH manual and
+        // countdown-end dives reproduce progression on remote copies. Older clients
+        // ignore the optional suffix and still replay the base power-only result.
+        captureNetInput({ kind: NetInputKind.DiveRelease, power, launchSpeed: diveResult.launchSpeed });
         this._refs.applyPlayerDive(diveResult);
         this._refs.raceManager?.startFromDive(diveResult);
     }

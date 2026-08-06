@@ -743,7 +743,9 @@ export class UIController extends Component {
     }
 
     private animateCoinGain(result: { coinsGained: number }, coinLabel: Label) {
-        if (this._progressionDoubleClaimed) {
+        // The scheduled panel animation may arrive after an ad-failure fallback already
+        // started this counter. Treat base-coin animation as an idempotent transition.
+        if (this._progressionDoubleClaimed || this._progressionBaseCoinsAnimated) {
             return;
         }
         this._progressionBaseCoinsAnimated = true;

@@ -4,7 +4,7 @@
 // below are the v1 starting point discussed during design and are expected to be
 // tuned. Keep all magic numbers here so logic stays clean and balance is adjustable.
 
-import { HeartRateZone, RacePhase, SprintTier } from '../condition/ConditionTypes';
+import { HeartRateZone, RacePhase, SprintTier, zoneForHeartRate } from '../condition/ConditionTypes';
 
 export const RACE_PHASE_BALANCE = {
     // Enter SPRINT when this many metres remain. The finish top-view camera is a
@@ -124,4 +124,23 @@ export function energyDepletionCadenceScale(energyRatio: number): number {
     const span = eff.cadenceExhaustedRatio;
     const t = span > 0 ? ratio / span : 0;
     return eff.cadenceExhaustedScale + (eff.cadenceWarningScale - eff.cadenceExhaustedScale) * t;
+}
+
+// Shared pure derivations used by the local condition models and by remote-human
+// presentation. Keeping these here ensures a synced energy/heart-rate snapshot is
+// interpreted with exactly the same balance curve as the owner's local swimmer.
+export function conditionEfficiencyScale(energyRatio: number): number {
+    const eff = CONDITION_BALANCE.efficiency;
+    const ratio = Math.max(0, Math.min(1, energyRatio));
+    return eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
+}
+
+export function conditionSpeedCapScale(energyRatio: number): number {
+    const eff = CONDITION_BALANCE.efficiency;
+    const ratio = Math.max(0, Math.min(1, energyRatio));
+    return eff.speedCapFloor + (1 - eff.speedCapFloor) * Math.pow(ratio, eff.curveExponent);
+}
+
+export function conditionQualityScale(heartRate: number): number {
+    return CONDITION_BALANCE.quality.zoneModifier[zoneForHeartRate(heartRate)];
 }

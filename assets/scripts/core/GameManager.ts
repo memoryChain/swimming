@@ -27,6 +27,12 @@ import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
 import { RacePhase } from '../condition/ConditionTypes';
+import {
+    conditionEfficiencyScale,
+    conditionQualityScale,
+    conditionSpeedCapScale,
+    energyDepletionCadenceScale,
+} from './ConditionBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
@@ -1546,6 +1552,8 @@ export class GameManager extends Component {
                         heading: swimmer.netHeading,
                         speed: swimmer.netSpeed,
                         energy: swimmer.ultimate.energy,
+                        conditionEnergyRatio: lane === this._playerLaneIndex ? this._playerCondition.energyRatio : -1,
+                        conditionHeartRate: lane === this._playerLaneIndex ? this._playerCondition.heartRate : -1,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1591,6 +1599,8 @@ export class GameManager extends Component {
             let targetHead: number;
             let targetSpeed: number;
             let targetFinished: boolean;
+            let targetConditionEnergyRatio: number;
+            let targetConditionHeartRate: number;
             let distBlend: number;
             let latBlend: number;
             let headBlend: number;
@@ -1600,6 +1610,8 @@ export class GameManager extends Component {
                 targetHead = self.heading;
                 targetSpeed = self.speed;
                 targetFinished = self.finished;
+                targetConditionEnergyRatio = self.conditionEnergyRatio;
+                targetConditionHeartRate = self.conditionHeartRate;
                 distBlend = 0.4;
                 latBlend = 0.4;
                 headBlend = 0.4;
@@ -1613,6 +1625,8 @@ export class GameManager extends Component {
                 targetHead = target.heading;
                 targetSpeed = target.speed;
                 targetFinished = target.finished;
+                targetConditionEnergyRatio = target.conditionEnergyRatio;
+                targetConditionHeartRate = target.conditionHeartRate;
                 distBlend = 0.2;
                 latBlend = 0.25;
                 headBlend = 0.3;
@@ -1635,6 +1649,15 @@ export class GameManager extends Component {
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
             swimmer.applyNetPoseSpeed(targetSpeed);
+            // Remote humans do not run an AI condition model. Derive their four motor
+            // modifiers from the owner's compact condition snapshot so their cadence,
+            // stroke window and speed cap match the body being corrected forward.
+            if (isHuman && targetConditionEnergyRatio >= 0 && targetConditionHeartRate >= 0) {
+                swimmer.applyConditionSpeedScale(conditionEfficiencyScale(targetConditionEnergyRatio));
+                swimmer.applyConditionQualityScale(conditionQualityScale(targetConditionHeartRate));
+                swimmer.applyConditionSpeedCapScale(conditionSpeedCapScale(targetConditionEnergyRatio));
+                swimmer.applyConditionCadenceScale(energyDepletionCadenceScale(targetConditionEnergyRatio));
+            }
             // Finish is host/owner-authoritative: the eased correction never quite reaches
             // the wall, so honour the authoritative finished flag and snap this copy onto
             // the finish line. The local finish path then plays its tread-water pose and
@@ -1693,6 +1716,8 @@ export class GameManager extends Component {
             heading: player.netHeading,
             speed: player.netSpeed,
             energy: player.ultimate.energy,
+            conditionEnergyRatio: this._playerCondition.energyRatio,
+            conditionHeartRate: this._playerCondition.heartRate,
         };
     }
 

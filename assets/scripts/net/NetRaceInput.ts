@@ -15,10 +15,10 @@
 //   "<senderPos>|<token>;<token>;...|<selfPos>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>".
-// Position, pose speed, and outcome-affecting ultimate energy ride the RELIABLE lock-step
-// frame channel (not best-effort broadcasts, which drop intermittently), so every client's
-// copy of every human catches up to its owner reliably.
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>".
+// Position, pose speed, outcome-affecting ultimate energy, and condition state ride the
+// RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently),
+// so every client's copy of every human catches up to its owner reliably.
 // An empty event list is "<senderPos>|" (optionally "<senderPos>||<selfPos>").
 
 import type { NetSnapshotEntry } from './NetRaceSnapshot';
@@ -33,7 +33,7 @@ export const enum NetInputKind {
     HeldOn = 'h',      // stroke-held begin
     HeldOff = 'H',     // stroke-held end
     DiveCharge = 'c',  // dive charge start (countdown/diving)
-    DiveRelease = 'r', // dive release (carries charge power)
+    DiveRelease = 'r', // dive release (carries charge power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
 }
 
@@ -43,6 +43,9 @@ export interface NetInputEvent {
     side?: NetInputSide;
     // Present for DiveRelease: the 0..1 charge power at release.
     power?: number;
+    // Present for new DiveRelease payloads: owner's final progression-adjusted launch
+    // speed (m/s). Optional so old payloads/replays keep using the base dive result.
+    launchSpeed?: number;
 }
 
 export interface DecodedInputFrame {
@@ -58,6 +61,7 @@ const HEADER_SEP = '|';
 // Dive power is quantized to integer per-mille so it stays deterministic across
 // clients (no float formatting differences) and compact.
 const POWER_SCALE = 1000;
+const SPEED_SCALE = 100;
 
 function encodeEvent(event: NetInputEvent): string {
     switch (event.kind) {
@@ -72,6 +76,10 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DolphinJump;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
+            if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
+                const launchSpeed = Math.max(0, Math.round((event.launchSpeed ?? 0) * SPEED_SCALE));
+                return `${NetInputKind.DiveRelease}${power},${launchSpeed}`;
+            }
             return `${NetInputKind.DiveRelease}${power}`;
         }
         default:
@@ -95,9 +103,13 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.DolphinJump:
             return { kind };
         case NetInputKind.DiveRelease: {
-            const raw = parseInt(token.slice(1), 10);
+            const values = token.slice(1).split(',');
+            const raw = parseInt(values[0], 10);
             const power = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw / POWER_SCALE)) : 0;
-            return { kind, power };
+            const launchSpeedCms = values.length > 1 ? parseInt(values[1], 10) : -1;
+            return Number.isFinite(launchSpeedCms) && launchSpeedCms >= 0
+                ? { kind, power, launchSpeed: launchSpeedCms / SPEED_SCALE }
+                : { kind, power };
         }
         default:
             return null;
@@ -111,7 +123,13 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))}`;
+        const conditionEnergy = Number.isFinite(self.conditionEnergyRatio) && self.conditionEnergyRatio >= 0
+            ? Math.max(0, Math.min(1000, Math.floor(self.conditionEnergyRatio * 1000)))
+            : -1;
+        const conditionHeartRate = Number.isFinite(self.conditionHeartRate) && self.conditionHeartRate >= 0
+            ? Math.max(0, Math.min(200, Math.floor(self.conditionHeartRate)))
+            : -1;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate}`;
     }
     return out;
 }
@@ -150,6 +168,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
             if (Number.isFinite(lane) && Number.isFinite(distCm) && Number.isFinite(latMm)) {
                 const speedCms = p.length > 5 ? parseInt(p[5], 10) : -1;
                 const energy = p.length > 6 ? parseInt(p[6], 10) : -1;
+                const conditionEnergyPermille = p.length > 7 ? parseInt(p[7], 10) : -1;
+                const conditionHeartRate = p.length > 8 ? parseInt(p[8], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -158,6 +178,12 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
                     speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
                     energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
+                    conditionEnergyRatio: Number.isFinite(conditionEnergyPermille) && conditionEnergyPermille >= 0
+                        ? Math.min(1, conditionEnergyPermille / 1000)
+                        : -1,
+                    conditionHeartRate: Number.isFinite(conditionHeartRate) && conditionHeartRate >= 0
+                        ? Math.min(200, conditionHeartRate)
+                        : -1,
                 };
             }
         }
