@@ -2461,6 +2461,8 @@ export class GameManager extends Component {
             UNDERWATER_DEBUG_SPEED,
             dirSign,
         );
+        // The debug swimmer is always submerged, so keep the bubble trail on.
+        this._playerSwimmer?.cartoonRig?.updateUnderwaterBubbles(true);
         // Free-look orbit around the swimmer: the camera follows the lapping
         // swimmer while the user drags to rotate and wheels/pinches to zoom.
         this._uwCamTarget.set(worldX, bodyY + 0.25, PLAYER_LANE_Z);

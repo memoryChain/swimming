@@ -527,6 +527,8 @@ export class Swimmer extends Component {
     // scaled) dt. Networked race: fixed-step (NET_SIM_STEP) from the deterministic
     // net driver. `dt` is already the final step length (scaling applied by caller).
     stepSimulation(dt: number) {
+        // Player-only rising bubbles while submerged (no-op for AI / above water).
+        this.cartoonRig?.updateUnderwaterBubbles(this._phases.isUnderwater);
         if (!this._motor.isRacing) {
             return;
         }
