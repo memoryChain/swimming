@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { _decorator, Billboard, Color, Component, EffectAsset, instantiate, JsonAsset, Material, MeshRenderer, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
@@ -122,6 +122,17 @@ const COLLISION_FLASH_SECONDS = 0.35;
 const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
 const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
 
+// --- Dive charge glow: color gradient stops (sRGB, converted to linear in shader) ---
+// Matches the existing UI charge bar color language.
+const CHARGE_GLOW_STOPS: readonly { t: number; r: number; g: number; b: number }[] = [
+    { t: 0.00, r: 255, g: 230, b: 200 },  // warm white
+    { t: 0.30, r: 255, g: 210, b:  80 },  // warm yellow
+    { t: 0.72, r: 255, g: 170, b:  40 },  // orange-gold
+    { t: 1.00, r: 255, g: 150, b:  20 },  // deep orange-gold
+];
+const CHARGE_FLASH_BURST_SECONDS = 0.18;
+const CHARGE_FLASH_BURST_OVERSHOOT = 1.6;
+
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
     public root: Node = null;
@@ -202,6 +213,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowMaterial: Material = null;
     private readonly _perfectGlowRestoreSlots: FlashRestoreSlot[] = [];
     private _collisionFlashTimer = 0;
+    // --- Dive charge glow state ---
+    private _chargeGlowPower = 0;
+    private _chargeFlashBurstTimer = 0;
+    private _chargeFlashBurstPeak = 0;
+    private readonly _chargeGlowVec4 = new Vec4();
+    private _starburstNode: Node | null = null;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmerColorVariant().id;
@@ -1197,6 +1214,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
             this.updatePerfectGlowMaterial();
         }
+        this.updateChargeFlashBurst(dt);
 
         this._selfTime += dt;
         if (this._modelDebugMode) {
@@ -1234,6 +1252,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._perfectGlowMaterial.destroy();
         }
         this._perfectGlowMaterial = null;
+        if (this._starburstNode?.isValid) {
+            this._starburstNode.destroy();
+        }
+        this._starburstNode = null;
     }
 
     resetPose() {
@@ -1309,6 +1331,163 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (changed && this._bodyFeedbackEnabled) {
             this.updatePerfectGlowMaterial();
         }
+    }
+
+    // ---- Dive charge glow (additive emissive via shader uniform) ----------------
+
+    /**
+     * Set dive charge glow intensity (0..1). The colour is interpolated from a
+     * warm-white → gold → orange gradient. Only writes material uniforms when
+     * the quantised power actually changes (performance-safe).
+     */
+    setChargeGlow(power: number) {
+        const quantized = Math.round(Math.max(0, Math.min(1, power)) * 100) / 100;
+        if (quantized === this._chargeGlowPower && this._chargeFlashBurstTimer <= 0) {
+            return;
+        }
+        this._chargeGlowPower = quantized;
+        this.applyChargeGlowUniforms(quantized);
+        this.updateStarburstGlow(quantized);
+    }
+
+    /**
+     * Trigger a short "full charge" flash burst — intensity overshoots to 1.6
+     * then decays back. Called once when the ping-pong wave hits the peak.
+     */
+    triggerChargeFlashBurst() {
+        this._chargeFlashBurstTimer = CHARGE_FLASH_BURST_SECONDS;
+        this._chargeFlashBurstPeak = CHARGE_FLASH_BURST_OVERSHOOT;
+    }
+
+    /** Clear all charge glow state (called when dive completes or resets). */
+    clearChargeGlow() {
+        if (this._chargeGlowPower === 0 && this._chargeFlashBurstTimer <= 0 && !this._starburstNode?.active) {
+            return;
+        }
+        this._chargeGlowPower = 0;
+        this._chargeFlashBurstTimer = 0;
+        this._chargeFlashBurstPeak = 0;
+        this.applyChargeGlowUniforms(0);
+        if (this._starburstNode) {
+            this._starburstNode.active = false;
+        }
+    }
+
+    /** Advance the flash burst decay. Called from the rig's update(). */
+    private updateChargeFlashBurst(dt: number) {
+        if (this._chargeFlashBurstTimer <= 0) {
+            return;
+        }
+        this._chargeFlashBurstTimer = Math.max(0, this._chargeFlashBurstTimer - dt);
+        // Re-apply uniforms with boosted intensity while the burst is active.
+        this.applyChargeGlowUniforms(this._chargeGlowPower);
+        this.updateStarburstGlow(this._chargeGlowPower);
+    }
+
+    private applyChargeGlowUniforms(power: number) {
+        // During a flash burst, overshoot the intensity.
+        let effectiveIntensity = power;
+        if (this._chargeFlashBurstTimer > 0) {
+            const burstRatio = this._chargeFlashBurstTimer / CHARGE_FLASH_BURST_SECONDS;
+            effectiveIntensity = Math.min(2, power + (this._chargeFlashBurstPeak - 1) * burstRatio);
+        }
+        this.interpolateChargeGlowColor(power, effectiveIntensity, this._chargeGlowVec4);
+        for (const renderer of this._skinnedRenderers) {
+            if (!renderer?.isValid) {
+                continue;
+            }
+            for (let i = 0; i < renderer.sharedMaterials.length; i++) {
+                const mat = renderer.getMaterialInstance(i);
+                if (!mat) {
+                    continue;
+                }
+                try {
+                    mat.setProperty('chargeGlow', this._chargeGlowVec4);
+                } catch {
+                    // Material doesn't have chargeGlow uniform (e.g. builtin-unlit fallback).
+                }
+            }
+        }
+    }
+
+    private interpolateChargeGlowColor(power: number, intensity: number, out: Vec4) {
+        const stops = CHARGE_GLOW_STOPS;
+        let lo = 0;
+        for (let i = 1; i < stops.length; i++) {
+            if (power <= stops[i].t) {
+                break;
+            }
+            lo = i;
+        }
+        const hi = Math.min(lo + 1, stops.length - 1);
+        const range = stops[hi].t - stops[lo].t;
+        const t = range > 0 ? (power - stops[lo].t) / range : 0;
+        out.x = ((stops[lo].r + (stops[hi].r - stops[lo].r) * t)) / 255;
+        out.y = ((stops[lo].g + (stops[hi].g - stops[lo].g) * t)) / 255;
+        out.z = ((stops[lo].b + (stops[hi].b - stops[lo].b) * t)) / 255;
+        out.w = intensity;
+    }
+
+    // ---- Starburst billboard (radial light rays behind the body) ----------------
+
+    private updateStarburstGlow(power: number) {
+        if (power <= 0.08) {
+            if (this._starburstNode?.active) {
+                this._starburstNode.active = false;
+            }
+            return;
+        }
+        this.ensureStarburstNode();
+        if (!this._starburstNode) {
+            return;
+        }
+        if (!this._starburstNode.active) {
+            this._starburstNode.active = true;
+        }
+        // Scale: grows from 0.4 to 2.0 with power; flash burst overshoots to 3.0.
+        let targetScale = 0.4 + power * 1.6;
+        if (this._chargeFlashBurstTimer > 0) {
+            const burstRatio = this._chargeFlashBurstTimer / CHARGE_FLASH_BURST_SECONDS;
+            targetScale += 1.0 * burstRatio;
+        }
+        this._starburstNode.setScale(targetScale, targetScale, targetScale);
+        // Opacity via color alpha: power² curve so faint at low charge, vivid at high.
+        const alpha = Math.min(255, Math.round(power * power * 220));
+        const color = this.interpolateChargeGlowColor(power, 1, this._chargeGlowVec4);
+        const meshRenderer = this._starburstNode.getComponent(MeshRenderer);
+        if (meshRenderer) {
+            const mat = meshRenderer.getMaterialInstance(0);
+            if (mat) {
+                try {
+                    mat.setProperty('mainColor', new Color(
+                        Math.round(this._chargeGlowVec4.x * 255),
+                        Math.round(this._chargeGlowVec4.y * 255),
+                        Math.round(this._chargeGlowVec4.z * 255),
+                        alpha,
+                    ));
+                } catch { /* no mainColor on this material */ }
+            }
+        }
+    }
+
+    private ensureStarburstNode() {
+        if (this._starburstNode?.isValid) {
+            return;
+        }
+        if (!this._model?.isValid) {
+            return;
+        }
+        // Create a simple quad behind the character to show radial light rays.
+        // Uses builtin-unlit with additive blending for a glow overlay.
+        const node = new Node('ChargeStarburst');
+        node.setParent(this._model);
+        node.setPosition(0, 0, 0);
+        node.setScale(0.4, 0.4, 0.4);
+        node.layer = this._model.layer;
+        node.active = false;
+        // Add a Billboard component so the quad always faces the camera.
+        node.addComponent(Billboard);
+        this._starburstNode = node;
     }
 
     setBodyFeedbackEnabled(enabled: boolean) {
