@@ -521,6 +521,30 @@
       ],
       "subMetas": {}
     },
+    "0b1c1": {
+      "importer": "gltf-embeded-image",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@0b1c1",
+      "displayName": "",
+      "id": "0b1c1",
+      "name": "VenueFloorDeepBlueResin.image",
+      "userData": {
+        "gltfIndex": 2,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-world-opaque-8x8"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "3effa": {
       "importer": "texture",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@3effa",
@@ -582,6 +606,29 @@
         "anisotropy": 0,
         "isUuid": true,
         "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@a0101"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "9b633": {
+      "importer": "texture",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@9b633",
+      "displayName": "",
+      "id": "9b633",
+      "name": "UnnamedTexture-3.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@0b1c1"
       },
       "ver": "1.0.22",
       "imported": true,
@@ -783,12 +830,12 @@
       ],
       "subMetas": {}
     },
-    "55ca7": {
+    "5bdca": {
       "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@55ca7",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@5bdca",
       "displayName": "",
-      "id": "55ca7",
-      "name": "Venue_Ground_Deep_Blue.material",
+      "id": "5bdca",
+      "name": "Venue_Ground_Resin.material",
       "userData": {
         "gltfIndex": 12
       },
@@ -841,6 +888,10 @@
       {
         "name": "PoolWallNarrowTilesWhite",
         "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@a0101"
+      },
+      {
+        "name": "VenueFloorDeepBlueResin",
+        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@0b1c1"
       }
     ],
     "lods": {
@@ -894,7 +945,8 @@
       "textures": [
         "a751d540-5ebd-4868-a41a-334975b3aed3@3effa",
         "a751d540-5ebd-4868-a41a-334975b3aed3@221a5",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@0089c"
+        "a751d540-5ebd-4868-a41a-334975b3aed3@0089c",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@9b633"
       ],
       "materials": [
         "a751d540-5ebd-4868-a41a-334975b3aed3@49dfb",
@@ -909,7 +961,7 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@5dcc0",
         "a751d540-5ebd-4868-a41a-334975b3aed3@270a0",
         "a751d540-5ebd-4868-a41a-334975b3aed3@86ba8",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@55ca7",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@5bdca",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d3bc5"
       ],
       "scenes": [
