@@ -81,6 +81,7 @@ import { WaterRefractionController } from '../venue/WaterRefractionController';
 import { applyPoolEdgeToonOutline } from '../venue/PoolEdgeToonOutline';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
+import { applyStandHeightShade } from '../venue/StandHeightShade';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
@@ -1093,6 +1094,13 @@ export class GameManager extends Component {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);
             console.warn('[SpeedSwimming] spectator crowd skipped', error);
+        }
+        // Darken the stands progressively with height (bright poolside, dark up
+        // top) so the pool reads brighter than the arena. Quick 方案B preview.
+        try {
+            applyStandHeightShade(pool, undefined, (message) => this.debug(message));
+        } catch (error) {
+            console.warn('[SpeedSwimming] stand height shade skipped', error);
         }
     }
 

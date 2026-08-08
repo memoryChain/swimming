@@ -15,8 +15,9 @@ const SPECTATOR_COLORS = [
 ];
 
 // Per-tier brightness multiplier baked into spectator vertex colors. Index 0 =
-// tier 1 (normal); each higher tier is darker. Values beyond the array clamp.
-const TIER_BRIGHTNESS = [1, 0.82, 0.66, 0.52];
+// tier 1 (poolside, kept bright); each higher tier drops off harder so the upper
+// crowd reads dark like the stands/walls above.
+const TIER_BRIGHTNESS = [1, 0.6, 0.38, 0.22];
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
