@@ -9,6 +9,12 @@ const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
 const SWIMMER_CAMERA_NAME = 'SwimmerOverlayCamera';
 const REFLECTION_CAMERA_NAME = 'WaterReflectionCamera';
 const WATER_SURFACE_NODE_NAME = 'PoolWaterSurface';
+// Lane-float rope nodes. Tagged onto SWIMMER_LAYER so the swimmer overlay camera
+// draws them over the opaque water (same as swimmers) — otherwise the water
+// hides their submerged lower half. Their material (RuntimeLaneFloatCutout_*)
+// already carries the waterLine/underwaterColor uniforms, so the below-water
+// part reads correctly once it is drawn on top.
+const LANE_FLOAT_NODE_PREFIX = 'lane_float_rope';
 // Name of the runtime water material created by WaterSurfaceBinder. Only this
 // material's effect carries the refraction/disturbance uniforms, so we gate
 // per-frame uniform writes on it (the GLB placeholder material lacks them).
@@ -280,9 +286,11 @@ export class WaterRefractionController {
         swimmerCamera.visibility = SWIMMER_LAYER;
         // DONT_CLEAR keeps BOTH the main camera's colour and its DEPTH buffer.
         // Keeping depth means swimmers are correctly occluded by opaque geometry
-        // the main camera drew (lane float ropes, deck, pool edges — they write
-        // depth), while the opaque water does NOT write depth (depthWrite:false),
-        // so it still doesn't hide the submerged swimmer.
+        // the main camera drew (deck, pool edges — they write depth), while the
+        // opaque water does NOT write depth (depthWrite:false), so it still
+        // doesn't hide the submerged swimmer. Lane floats also live on this layer
+        // (see tagLaneFloats) so they draw over the water and interocclude with
+        // swimmers within this same pass.
         swimmerCamera.clearFlags = Camera.ClearFlag.DONT_CLEAR;
         swimmerCamera.clearColor = mainCamera.clearColor;
         swimmerCamera.priority = mainCamera.priority + 1;
@@ -322,6 +330,9 @@ export class WaterRefractionController {
         // Tag the already-created player/effects immediately. The periodic pass
         // below still catches deferred AI and asynchronously-created children.
         this.tagSwimmers();
+        // Move the lane floats onto the swimmer overlay layer so their submerged
+        // half draws over the water instead of being hidden by it.
+        this.tagLaneFloats();
         this.syncCamera();
 
         this._debug?.(`water refraction ready rt=${this._rtWidth}x${this._rtHeight}`);
@@ -344,6 +355,7 @@ export class WaterRefractionController {
         this._frame += 1;
         if (this._frame <= SWIMMER_TAG_WARMUP_FRAMES && this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
+            this.tagLaneFloats();
         }
     }
 
@@ -391,6 +403,11 @@ export class WaterRefractionController {
         // the big hitch when entering the water. The submerged blue instead comes
         // from the clean blue pool floor + the surface mirror (no uniform haze).
         this._underwaterViewActive = active;
+        // Lane floats swap between the overlay layer (above water, submerged half
+        // shows over the surface) and the main DEFAULT layer (underwater, so the
+        // opaque mirror surface occludes them instead of the overlay drawing them
+        // on top of the mirror).
+        this.tagLaneFloats();
         this._debug?.(`water surface ${active ? 'underwater mirror mode' : 'restored above water'}`);
     }
 
@@ -585,6 +602,28 @@ export class WaterRefractionController {
         for (const node of nodes) {
             if (node?.isValid) {
                 setLayerRecursive(node, SWIMMER_LAYER);
+            }
+        }
+    }
+
+    // Lane floats are static venue geometry (loaded before setup), but re-tagging
+    // during the warmup window is cheap and guards against any deferred rebuild.
+    //
+    // Above water they live on SWIMMER_LAYER so the overlay camera draws their
+    // submerged half over the water. Underwater the surface underside is a fully
+    // OPAQUE mirror, and the overlay would force the floats to draw over that
+    // mirror (they break through / 穿帮). So underwater they go back to the main
+    // camera's DEFAULT layer, where the opaque surface correctly occludes them.
+    private tagLaneFloats() {
+        if (!this._pool?.isValid) {
+            return;
+        }
+        const layer = this._underwaterViewActive ? Layers.Enum.DEFAULT : SWIMMER_LAYER;
+        const floats: Node[] = [];
+        collectNodesByNamePrefix(this._pool, LANE_FLOAT_NODE_PREFIX, floats);
+        for (const node of floats) {
+            if (node?.isValid) {
+                setLayerRecursive(node, layer);
             }
         }
     }
@@ -855,6 +894,15 @@ function findNodeByName(root: Node, name: string): Node | null {
         }
     }
     return null;
+}
+
+function collectNodesByNamePrefix(root: Node, prefix: string, out: Node[]) {
+    if (root.name.startsWith(prefix)) {
+        out.push(root);
+    }
+    for (const child of root.children) {
+        collectNodesByNamePrefix(child, prefix, out);
+    }
 }
 
 function setLayerRecursive(node: Node, layer: number) {
