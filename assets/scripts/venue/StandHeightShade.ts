@@ -1,29 +1,31 @@
-import { Color, Mat4, Material, MeshRenderer, Node, Texture2D, gfx, utils, Vec3 } from 'cc';
+import { Color, EffectAsset, Mat4, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
-// Runtime "arena dimming" pass: darken the grandstand / structure geometry by
-// BOTH height and horizontal distance from the pool, PER-VERTEX, so the venue
-// reads like the reference photo (bright poolside, fading dark toward the top
-// and the far corners). Pool/water/lane-floats/swimmers stay bright (unlit).
+// "Arena dimming" pass: darken the grandstand / wall geometry by BOTH world
+// height and horizontal distance from the pool, so the venue reads like the
+// reference photo (bright poolside, fading dark toward the top and far corners).
+// Pool/water/lane-floats/swimmers stay bright.
 //
-// Why per-vertex (not per-node): several stands are merged into single meshes
-// (CornerStands_Merged, StandStructure_Merged, ...). A per-node single colour
-// can't represent geometry spread across both far corners, and can't keep the
-// poolside front bright while darkening the back. So we rebuild each stand mesh
-// with a vertex-colour gradient and draw it unlit + USE_VERTEX_COLOR.
-//
-// Trade-off: rebuilding meshes + swapping to unlit breaks the static batching
-// the GLB was merged for (a few extra draw calls). Fine for the preview; bake
-// the same gradient into GLB vertex colours later (方案A) if we want batching.
+// Implementation: swap each stand renderer's material to VenueHeightShade.effect
+// (an unlit shader that multiplies the visible colour by a per-PIXEL height/
+// distance brightness gradient in the fragment shader). We do NOT read or rebuild
+// meshes — that only works in the editor/web (mesh CPU data is released on device,
+// so utils.readMesh returns nothing and the effect silently does nothing). The
+// GPU gradient needs only the world position, so it works on WeChat/real devices.
+// Only the mesh AABB (struct.min/maxPosition, metadata that survives on device)
+// is read, to compute the global height/distance range.
 
 // Node-name keywords that count as "stands / arena structure" (lowercased,
-// matched as substrings so merged nodes like CornerStands_Merged / StandStructure_Merged
-// are covered too).
+// matched as substrings so merged nodes like CornerStands_Merged /
+// StandStructure_Merged are covered too).
 const STAND_KEYWORDS = [
     'bleacher',
     'grandstand',
-    'stand',        // standstructure / standsupport / standsoffit / standbackwall / cornerstand
-    'corner',       // cornerbackwall / cornersoffit / cornerstand (incl. *_Merged)
+    'stand',
+    'corner',
     'olympicpanel',
+    'platform',
 ];
 
 // Pool footprint in world space (cocos): X[0,50], Z[±half].
@@ -31,15 +33,16 @@ const POOL_MIN_X = 0;
 const POOL_MAX_X = 50;
 const POOL_HALF_Z = 10.5;
 
-// Horizontal distance (m) within which stands are NOT darkened at all, so the
-// first tier's poolside white railing stays bright.
+// Horizontal distance (m) near the pool kept fully bright (first-tier railing).
 const NEAR_KEEP_M = 6;
 
-// Source-material texture uniforms to carry over onto the unlit shaded material.
+// Source-material texture uniforms to carry over onto the shaded material.
 const TEXTURE_KEYS = ['emissiveMap', 'albedoMap', 'mainTexture'];
 
-const _p = new Vec3();
-const _pw = new Vec3();
+// Wall / structure nodes (backwall, supports, soffits, upper platform) get a
+// muted blue-grey tint instead of their bland grey source colour.
+const WALL_TINT = new Color(78, 98, 126);
+
 const _mat = new Mat4();
 const _corner = new Vec3();
 
@@ -56,28 +59,16 @@ export interface StandHeightShadeOptions {
     nearKeep?: number;
 }
 
-function clamp01(value: number): number {
-    return value < 0 ? 0 : value > 1 ? 1 : value;
-}
-
 function isStandNode(name: string): boolean {
     const lower = name.toLowerCase();
     return STAND_KEYWORDS.some((keyword) => lower.includes(keyword));
 }
-
-// Wall / structure nodes (backwall, supports, soffits, upper platform) are the
-// bland grey pieces. Give them a muted blue-GREY tint (RGB kept close together
-// so it stays desaturated) that's distinct from the stands' saturated blue,
-// times the height gradient.
-const WALL_TINT = new Color(78, 98, 126);
 
 function isWallNode(name: string): boolean {
     const lower = name.toLowerCase();
     return lower.includes('standstructure') || lower.includes('upperplatform');
 }
 
-// Horizontal distance from a point to the pool rectangle (0 while over the
-// water/deck, growing as you move out toward the stands and corners).
 function horizontalPoolDistance(x: number, z: number): number {
     const dx = x < POOL_MIN_X ? POOL_MIN_X - x : x > POOL_MAX_X ? x - POOL_MAX_X : 0;
     const az = Math.abs(z);
@@ -110,31 +101,8 @@ function findMaterialTexture(source: Material | null): Texture2D | null {
     return null;
 }
 
-function makeShadedMaterial(source: Material | null, tint: Color | null): Material {
-    // A tinted wall ignores its (greyish) source texture/colour and uses the
-    // flat tint; other stands keep their original colour/texture.
-    const texture = tint ? null : findMaterialTexture(source);
-    const material = new Material();
-    material.initialize({
-        effectName: 'builtin-unlit',
-        defines: texture
-            ? { USE_VERTEX_COLOR: true, USE_TEXTURE: true }
-            : { USE_VERTEX_COLOR: true },
-        // Some stands (south side, SE corner) are mirrored (negative scale /
-        // baked-mirrored winding), so single-sided culling would drop them.
-        // Render double-sided to keep every stand visible.
-        states: { rasterizerState: { cullMode: gfx.CullMode.NONE } },
-    });
-    material.name = 'RuntimeStandShade';
-    material.setProperty('mainColor', tint ? tint.clone() : readVisibleColor(source));
-    if (texture) {
-        material.setProperty('mainTexture', texture);
-    }
-    return material;
-}
-
-// First pass: world-space height range + max horizontal pool distance, from each
-// renderer's bounding-box corners (cheap, no mesh read).
+// World-space height range + max horizontal pool distance from each renderer's
+// AABB corners (mesh.struct metadata is available on device, unlike vertex data).
 function accumulateBounds(
     renderer: MeshRenderer,
     range: { minY: number; maxY: number; maxDist: number },
@@ -166,80 +134,44 @@ function accumulateBounds(
     }
 }
 
-// Rebuild `renderer`'s mesh with a per-vertex brightness gradient and draw it
-// unlit as child nodes (one per sub-mesh). Returns the number of children made.
-function shadeRendererVertices(
-    renderer: MeshRenderer,
-    brightnessAt: (x: number, y: number, z: number) => number,
-): number {
-    const mesh = renderer.mesh;
-    if (!mesh) {
-        return 0;
+function makeShadeMaterial(
+    effect: EffectAsset,
+    source: Material | null,
+    tint: Color | null,
+    poolRect: Vec4,
+    heightRange: Vec4,
+    shadeCurve: Vec4,
+): Material {
+    // A tinted wall ignores its greyish source texture/colour; other stands keep
+    // their original colour (and texture, e.g. the Olympic logo panels).
+    const texture = tint ? null : findMaterialTexture(source);
+    const material = new Material();
+    material.initialize({
+        effectAsset: effect,
+        defines: texture ? { USE_TEXTURE: true } : {},
+    });
+    material.name = 'RuntimeStandShade';
+    material.setProperty('mainColor', tint ? tint.clone() : readVisibleColor(source));
+    if (texture) {
+        material.setProperty('mainTexture', texture);
     }
-    const node = renderer.node;
-    const tint = isWallNode(node.name) ? WALL_TINT : null;
-    node.getWorldMatrix(_mat);
-    const subCount = Math.max(1, renderer.sharedMaterials.length);
-    let made = 0;
-    for (let sub = 0; sub < subCount; sub++) {
-        let geometry: ReturnType<typeof utils.readMesh>;
-        try {
-            geometry = utils.readMesh(mesh, sub);
-        } catch (error) {
-            continue;
-        }
-        const positions = geometry.positions;
-        if (!positions || positions.length <= 0) {
-            continue;
-        }
-        const vertexCount = positions.length / 3;
-        const colors: number[] = new Array(vertexCount * 4);
-        for (let v = 0; v < vertexCount; v++) {
-            _p.set(positions[v * 3], positions[v * 3 + 1], positions[v * 3 + 2]);
-            Vec3.transformMat4(_pw, _p, _mat);
-            const b = brightnessAt(_pw.x, _pw.y, _pw.z);
-            colors[v * 4] = b;
-            colors[v * 4 + 1] = b;
-            colors[v * 4 + 2] = b;
-            colors[v * 4 + 3] = 1;
-        }
-        geometry.colors = colors;
-        let shadedMesh;
-        try {
-            shadedMesh = utils.createMesh(geometry);
-        } catch (error) {
-            continue;
-        }
-        const child = new Node(`${node.name}_shade${sub}`);
-        child.layer = node.layer;
-        node.addChild(child);
-        child.setPosition(0, 0, 0);
-        child.setRotationFromEuler(0, 0, 0);
-        child.setScale(1, 1, 1);
-        const childRenderer = child.addComponent(MeshRenderer);
-        childRenderer.mesh = shadedMesh;
-        childRenderer.setMaterial(makeShadedMaterial(renderer.getSharedMaterial(sub), tint), 0);
-        made += 1;
-    }
-    if (made > 0) {
-        // Hide the original bright renderer; the shaded children replace it.
-        renderer.enabled = false;
-    }
-    return made;
+    material.setProperty('poolRect', poolRect);
+    material.setProperty('heightRange', heightRange);
+    material.setProperty('shadeCurve', shadeCurve);
+    return material;
 }
 
-// Darken stands per-vertex by height AND horizontal distance from the pool.
-export function applyStandHeightShade(
-    pool: Node | null,
-    options?: StandHeightShadeOptions,
-    debug?: (message: string) => void,
+function shadeStands(
+    pool: Node,
+    effect: EffectAsset,
+    options: StandHeightShadeOptions | undefined,
+    debug: ((message: string) => void) | undefined,
 ): number {
-    if (!pool?.isValid) {
-        return 0;
-    }
     const bottom = options?.bottomBrightness ?? 1.0;
-    const top = options?.topBrightness ?? 0.15;
-    const heightCurve = options?.heightCurve ?? 0.7;
+    const top = options?.topBrightness ?? 0.08;
+    // Small gamma so the darkening kicks in hard from the 2nd tier up (the low
+    // first tier near the pool stays bright, everything above goes dark fast).
+    const heightCurve = options?.heightCurve ?? 0.28;
     const distanceCurve = options?.distanceCurve ?? 0.85;
     const nearKeep = options?.nearKeep ?? NEAR_KEEP_M;
 
@@ -272,19 +204,60 @@ export function applyStandHeightShade(
     const spanY = Math.max(0.0001, range.maxY - range.minY);
     const spanDist = Math.max(0.0001, range.maxDist - nearKeep);
 
-    const brightnessAt = (x: number, y: number, z: number): number => {
-        const heightT = Math.pow(clamp01((y - minY) / spanY), heightCurve);
-        const dist = horizontalPoolDistance(x, z);
-        const distT = Math.pow(clamp01((dist - nearKeep) / spanDist), distanceCurve);
-        // Being either high OR far from the pool darkens the vertex.
-        const combined = clamp01(Math.max(heightT, distT));
-        return bottom + (top - bottom) * combined;
-    };
+    const poolRect = new Vec4(POOL_MIN_X, POOL_MAX_X, POOL_HALF_Z, nearKeep);
+    const heightRange = new Vec4(minY, spanY, spanDist, 0);
+    const shadeCurve = new Vec4(bottom, top, heightCurve, distanceCurve);
 
-    let children = 0;
+    // Share one material per (source colour + texture), or one per wall tint, so
+    // same-coloured stands keep batching instead of each getting a unique
+    // material instance (which would break the venue's static batching and add
+    // ~20 draw calls). The shade uniforms are global, so sharing is safe.
+    const materialCache = new Map<string, Material>();
     for (const renderer of renderers) {
-        children += shadeRendererVertices(renderer, brightnessAt);
+        const tint = isWallNode(renderer.node.name) ? WALL_TINT : null;
+        const slots = Math.max(1, renderer.sharedMaterials.length);
+        for (let sub = 0; sub < slots; sub++) {
+            const source = renderer.getSharedMaterial(sub);
+            const texture = tint ? null : findMaterialTexture(source);
+            const key = tint
+                ? 'wall'
+                : `${readVisibleColor(source).toHEX('#rrggbb')}|${texture ? texture.uuid : 'n'}`;
+            let material = materialCache.get(key);
+            if (!material) {
+                material = makeShadeMaterial(effect, source, tint, poolRect, heightRange, shadeCurve);
+                materialCache.set(key, material);
+            }
+            renderer.setMaterial(material, sub);
+        }
     }
-    debug?.(`stand shade matched ${renderers.length} (${children} sub-meshes): ${names.join(', ')}`);
+    console.log(`[SpeedSwimming] stand shade: ${renderers.length} renderers -> ${materialCache.size} shared materials`);
+    debug?.(`stand shade applied to ${renderers.length} renderers, ${materialCache.size} shared materials: ${names.join(', ')}`);
     return renderers.length;
+}
+
+// Darken the stands by height + horizontal distance from the pool. Loads the
+// VenueHeightShade effect from the race bundle, then swaps stand materials.
+export function applyStandHeightShade(
+    pool: Node | null,
+    options?: StandHeightShadeOptions,
+    debug?: (message: string) => void,
+): void {
+    if (!pool?.isValid) {
+        return;
+    }
+    loadRaceAsset(RESOURCE_PATHS.venueHeightShadeEffect, EffectAsset, (error, effect) => {
+        if (error || !effect) {
+            console.warn('[SpeedSwimming] venue height shade effect load failed', error);
+            debug?.('stand shade skipped: effect load failed');
+            return;
+        }
+        if (!pool.isValid) {
+            return;
+        }
+        try {
+            shadeStands(pool, effect, options, debug);
+        } catch (shadeError) {
+            console.warn('[SpeedSwimming] stand height shade skipped', shadeError);
+        }
+    });
 }

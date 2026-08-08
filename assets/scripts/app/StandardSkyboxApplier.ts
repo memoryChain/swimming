@@ -11,8 +11,14 @@ const SKYBOX_FACE_NAMES: SkyboxFaceName[] = [
     'back',
 ];
 
+// Module-level cache so the cubemap survives scene changes. RuntimeSceneBuilder
+// creates a NEW applier per scene, so an instance-level cache is lost on exit
+// and the face textures (having no other holder) get released — leaving the
+// skybox blank on re-entry. Keeping the cube here + addRef on the cube and its
+// faces keeps them alive across scenes, and re-entry just reuses the cube.
+const persistentCubeCache = new Map<string, TextureCube>();
+
 export class StandardSkyboxApplier {
-    private readonly _textureCubeCache = new Map<string, TextureCube>();
     private _sceneRoot: Node | null = null;
     private _camera: Camera | null = null;
     private _debug: ((message: string) => void) | undefined;
@@ -61,7 +67,7 @@ export class StandardSkyboxApplier {
         }
         const applyRevision = ++this._applyRevision;
 
-        const cachedCube = this._textureCubeCache.get(variant.id);
+        const cachedCube = persistentCubeCache.get(variant.id);
         if (cachedCube) {
             skybox.envmap = cachedCube;
             skybox.enabled = true;
@@ -89,7 +95,13 @@ export class StandardSkyboxApplier {
             try {
                 const textureCube = TextureCube.fromTexture2DArray(textures);
                 textureCube.name = `${variant.id}Skybox`;
-                this._textureCubeCache.set(variant.id, textureCube);
+                // Keep the cube + its source faces alive across scene changes so
+                // re-entering the race scene doesn't lose the skybox.
+                for (const face of textures) {
+                    face.addRef();
+                }
+                textureCube.addRef();
+                persistentCubeCache.set(variant.id, textureCube);
                 skybox.envmap = textureCube;
                 skybox.enabled = true;
                 camera.clearFlags = Camera.ClearFlag.SKYBOX;

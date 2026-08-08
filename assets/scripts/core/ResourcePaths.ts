@@ -208,6 +208,7 @@ export const RESOURCE_PATHS = {
     swimmerDynamicColorEffect: 'effects/SwimmerDynamicColor',
     toonPropEffect: 'effects/ToonProp',
     underwaterFloorEffect: 'effects/UnderwaterFloorTint',
+    venueHeightShadeEffect: 'effects/VenueHeightShade',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
     prepareRaceBackground: 'ui/prepare-race/locker-room-lowpoly-bg/texture',
     sampledActionsDir: TPOSE_ACTION_PROFILE_DIR,
