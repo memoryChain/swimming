@@ -44,7 +44,9 @@ export class RuntimeSceneBuilder {
         const skyboxApplier = new StandardSkyboxApplier();
         if (worldCamera) {
             skyboxApplier.bind(sceneRoot, worldCamera, this._options.debug);
-            skyboxApplier.disable(color(74, 158, 224));
+            // Apply the default skybox (galaxy) so the roofless venue shows the
+            // night sky above the pool instead of a flat blue clear colour.
+            skyboxApplier.applyDefault();
         }
         this.buildLights(worldRoot);
 
