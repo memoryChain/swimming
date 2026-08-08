@@ -21,7 +21,11 @@ const TIER_BRIGHTNESS = [1, 0.82, 0.66, 0.52];
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
 const FLAT_BLEACHER_ROW_COUNT = 2;
-const STAND_ROW_RISE = 0.85;
+// The flat bleacher module's two seat treads sit ~0.6 and ~1.3 above the tier
+// base. Lifting the crowd onto those surfaces (instead of the tier floor) keeps
+// the vertical planes off the seat faces, which otherwise z-fight head-on.
+const SEAT_SURFACE_LIFT = 0.6;
+const STAND_ROW_RISE = 0.72;
 const STAND_SECTION_COUNT = 6;
 const STAND_AISLE_WIDTH = 1.8;
 const SPECTATOR_SPACING = 0.95;
@@ -162,14 +166,28 @@ export class SpectatorCrowdBuilder {
             (standLength - STAND_AISLE_WIDTH * (sectionCount - 1)) / sectionCount,
         );
         const rowDepth = standDepth / rowCount;
-        const innerDepth = axis === 'x'
-            ? (sideSign > 0 ? bounds.minZ : bounds.maxZ)
-            : (sideSign > 0 ? bounds.minX : bounds.maxX);
+        // Pool-facing front edge + direction toward the back, derived from the
+        // stand's real position. Row 0 (low) must land at the pool-facing front
+        // and rake back/up. The old sideSign+minZ convention used the FAR edge on
+        // north/south, which inverted the raking and (after the lift) made the
+        // high back row protrude over the pool.
+        let frontEdge: number;
+        let backDir: number;
+        if (axis === 'x') {
+            frontEdge = Math.abs(bounds.minZ) <= Math.abs(bounds.maxZ) ? bounds.minZ : bounds.maxZ;
+            backDir = Math.sign((bounds.minZ + bounds.maxZ) * 0.5) || 1;
+        } else {
+            const poolCenterX = 25;
+            frontEdge = Math.abs(bounds.minX - poolCenterX) <= Math.abs(bounds.maxX - poolCenterX)
+                ? bounds.minX
+                : bounds.maxX;
+            backDir = Math.sign((bounds.minX + bounds.maxX) * 0.5 - poolCenterX) || 1;
+        }
         let globalColumn = 0;
 
         for (let row = 0; row < rowCount; row++) {
-            const seatY = bounds.minY + row * STAND_ROW_RISE;
-            const seatDepth = innerDepth + sideSign * (row + 0.5) * rowDepth;
+            const seatY = bounds.minY + SEAT_SURFACE_LIFT + row * STAND_ROW_RISE;
+            const seatDepth = frontEdge + backDir * (row + 0.5) * rowDepth;
             for (let section = 0; section < sectionCount; section++) {
                 // Horizontal stands are segmented along X; the east/west
                 // stands are rotated 90 degrees and must be segmented along Z.
@@ -268,7 +286,7 @@ export class SpectatorCrowdBuilder {
                 const brightness = tierBrightness(tier);
                 const baseY = tierBaseY[tier];
                 for (let row = 0; row < FLAT_BLEACHER_ROW_COUNT; row++) {
-                    const seatY = baseY + row * STAND_ROW_RISE;
+                    const seatY = baseY + SEAT_SURFACE_LIFT + row * STAND_ROW_RISE;
                     const rowDepth = ((row + 0.5) / FLAT_BLEACHER_ROW_COUNT) * depth;
                     for (let col = 0; col < columns; col++) {
                         if (random01(col, row, tier + salt, 29) < 0.15) {
