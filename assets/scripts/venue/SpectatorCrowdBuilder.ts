@@ -15,12 +15,24 @@ const SPECTATOR_COLORS = [
 ];
 
 const WOBBLE_GROUP_COUNT = 3;
-const STAND_ROW_COUNT = 7;
+const LEGACY_STAND_ROW_COUNT = 7;
+const FLAT_BLEACHER_ROW_COUNT = 2;
 const STAND_ROW_RISE = 0.85;
 const STAND_SECTION_COUNT = 6;
 const STAND_AISLE_WIDTH = 1.8;
 const SPECTATOR_SPACING = 0.95;
-const STAND_NODE_NAMES = new Set(['grandstand_north', 'grandstand_south']);
+const STAND_NODE_NAMES = new Set([
+    'grandstand_north',
+    'grandstand_south',
+    'bleacherbatch_t1_n',
+    'bleacherbatch_t1_s',
+    'bleacherbatch_t1_e',
+    'bleacherbatch_t2_n',
+    'bleacherbatch_t2_s',
+    'bleacherbatch_t2_e',
+]);
+
+type StandAxis = 'x' | 'z';
 
 type SpectatorSpec = {
     pos: Vec3;
@@ -47,6 +59,9 @@ type Grandstand = {
     name: string;
     bounds: SceneBounds;
     sideSign: number;
+    axis: StandAxis;
+    rowCount: number;
+    yaw: number;
 };
 
 @ccclass('SpectatorGroupWobble')
@@ -118,22 +133,33 @@ export class SpectatorCrowdBuilder {
     }
 
     private collectGrandstandSpectators(buckets: SpectatorSpec[][], stand: Grandstand) {
-        const { bounds, sideSign } = stand;
-        const standLength = bounds.maxX - bounds.minX;
-        const standDepth = bounds.maxZ - bounds.minZ;
+        const { bounds, sideSign, axis, rowCount, yaw } = stand;
+        const standLength = axis === 'x'
+            ? bounds.maxX - bounds.minX
+            : bounds.maxZ - bounds.minZ;
+        const standDepth = axis === 'x'
+            ? bounds.maxZ - bounds.minZ
+            : bounds.maxX - bounds.minX;
         const sectionWidth = Math.max(
             1,
             (standLength - STAND_AISLE_WIDTH * (STAND_SECTION_COUNT - 1)) / STAND_SECTION_COUNT,
         );
-        const rowDepth = standDepth / STAND_ROW_COUNT;
-        const innerZ = sideSign > 0 ? bounds.minZ : bounds.maxZ;
+        const rowDepth = standDepth / rowCount;
+        const innerDepth = axis === 'x'
+            ? (sideSign > 0 ? bounds.minZ : bounds.maxZ)
+            : (sideSign > 0 ? bounds.minX : bounds.maxX);
         let globalColumn = 0;
 
-        for (let row = 0; row < STAND_ROW_COUNT; row++) {
+        for (let row = 0; row < rowCount; row++) {
             const seatY = bounds.minY + row * STAND_ROW_RISE;
-            const seatZ = innerZ + sideSign * (row + 0.5) * rowDepth;
+            const seatDepth = innerDepth + sideSign * (row + 0.5) * rowDepth;
             for (let section = 0; section < STAND_SECTION_COUNT; section++) {
-                const sectionMinX = bounds.minX + section * (sectionWidth + STAND_AISLE_WIDTH);
+                // Horizontal stands are segmented along X; the east/west
+                // stands are rotated 90 degrees and must be segmented along Z.
+                // Using minX for both axes puts east-side spectators far outside
+                // the venue (their Z coordinate starts around the east stand's X).
+                const sectionMinLong = (axis === 'x' ? bounds.minX : bounds.minZ)
+                    + section * (sectionWidth + STAND_AISLE_WIDTH);
                 const columns = Math.max(4, Math.floor(sectionWidth / SPECTATOR_SPACING));
                 for (let col = 0; col < columns; col++, globalColumn++) {
                     // Irregular empty pockets keep the crowd from becoming a rigid
@@ -145,10 +171,12 @@ export class SpectatorCrowdBuilder {
 
                     const height = 0.34 + random01(row, col, section, 31) * 0.24;
                     const width = 0.25 + random01(col, section, row, 37) * 0.24;
-                    const x = sectionMinX
+                    const longPosition = sectionMinLong
                         + (col + 0.5) * (sectionWidth / columns)
                         + jitter(row, col, section, 0.18);
-                    const z = seatZ + jitter(col, row, sideSign, rowDepth * 0.24);
+                    const depthJitter = jitter(col, row, sideSign, rowDepth * 0.24);
+                    const x = axis === 'x' ? longPosition : seatDepth + depthJitter;
+                    const z = axis === 'x' ? seatDepth + depthJitter : longPosition;
                     const colorIndex = Math.floor(
                         random01(col, row, section + sideSign * 11, 53) * SPECTATOR_COLORS.length,
                     ) % SPECTATOR_COLORS.length;
@@ -167,7 +195,7 @@ export class SpectatorCrowdBuilder {
                         side: sideSign,
                         // Face inward toward the pool; small per-plane yaw/roll
                         // jitter is applied again while building the mesh.
-                        yaw: sideSign > 0 ? 0 : 180,
+                        yaw,
                     });
                 }
             }
@@ -277,11 +305,27 @@ function collectGrandstands(root: Node): Grandstand[] {
         if (!bounds) {
             return;
         }
-        const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
+        const isNorth = name === 'grandstand_north' || name.endsWith('_n');
+        const isSouth = name === 'grandstand_south' || name.endsWith('_s');
+        const isEast = name.endsWith('_e');
+        if (!isNorth && !isSouth && !isEast && !name.endsWith('_w')) {
+            return;
+        }
+        const axis: StandAxis = isNorth || isSouth ? 'x' : 'z';
+        const sideSign = axis === 'x'
+            ? (isNorth ? 1 : -1)
+            : (isEast ? 1 : -1);
         stands.push({
             name,
             bounds,
-            sideSign: centerZ >= 0 ? 1 : -1,
+            sideSign,
+            axis,
+            rowCount: name.startsWith('bleacherbatch_') ? FLAT_BLEACHER_ROW_COUNT : LEGACY_STAND_ROW_COUNT,
+            // The local quad is authored for a north-facing stand. Rotate it
+            // around Y so every audience plane faces the pool on all four sides.
+            yaw: axis === 'x'
+                ? (sideSign > 0 ? 0 : 180)
+                : (sideSign > 0 ? 90 : -90),
         });
     });
     return stands.sort((left, right) => left.sideSign - right.sideSign);

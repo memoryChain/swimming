@@ -71,7 +71,7 @@ const FLOOR_TINT: { prefix: string; above: Color; belowKind: FloorBelowKind }[] 
     // floor blue is tunable ('水色' → 池底蓝 sliders); walls/grout are derived
     // shades of it; lane lines stay dark for contrast.
     { prefix: 'pool_tile_grout', above: new Color(88, 181, 160, 255), belowKind: 'grout' },
-    { prefix: 'pool_inner_wall', above: new Color(126, 208, 182, 255), belowKind: 'wall' },
+    { prefix: 'pool_inner_wall', above: new Color(118, 202, 174, 255), belowKind: 'wall' },
     { prefix: 'pool_floor', above: new Color(118, 202, 174, 255), belowKind: 'floor' },
 ];
 
@@ -85,7 +85,7 @@ function computeFloorBelowColor(kind: FloorBelowKind): Color {
     const b = WATER_COLOR_TUNING.floorB;
     const c = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
     switch (kind) {
-        case 'wall': return new Color(c(r * 0.89), c(g * 0.92), c(b * 0.97), 255);
+        case 'wall': return new Color(c(r), c(g), c(b), 255);
         case 'grout': return new Color(c(r * 0.67), c(g * 0.76), c(b * 0.86), 255);
         case 'line': return new Color(24, 52, 84, 255);
         case 'floor':
@@ -120,6 +120,7 @@ export class WaterRefractionController {
     private _mainCamera: Camera | null = null;
     private _pool: Node | null = null;
     private _waterNode: Node | null = null;
+    private _poolEdgeNode: Node | null = null;
     private _boundMaterial: Material | null = null;
     private _getSwimmerNodes: (() => Node[]) | null = null;
     private _rtWidth = 0;
@@ -134,6 +135,7 @@ export class WaterRefractionController {
     private _reflHeight = 0;
     private _reflectionActive = false;
     private _waterY = 0.055;
+    private _poolEdgeActiveBeforeUnderwater = true;
     // x = mirror strength, y = flip U (mirror is horizontally reversed by the
     // right-handed lookAt of the mirror camera, so default 1), z = flip V,
     // w = extra wobble scale.
@@ -172,6 +174,7 @@ export class WaterRefractionController {
     private readonly _laneLockdownWarningParams = new Vec4(0, 0, 0.075, 0);
     private _laneLockdownParamsDirty = true;
     private readonly _tmpPos = new Vec3();
+    private readonly _wallWaterLineParams = new Vec4();
     // Pool-bottom materials whose colour swaps with the underwater camera mode
     // (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
     private readonly _floorTints: { material: Material; above: Color; belowKind: FloorBelowKind }[] = [];
@@ -213,6 +216,8 @@ export class WaterRefractionController {
         const waterNode = findNodeByName(pool, WATER_SURFACE_NODE_NAME);
         this._waterNode = waterNode;
         this._waterActiveBeforeUnderwater = waterNode?.active ?? true;
+        this._poolEdgeNode = findNodeByName(pool, 'pool_edge_batch');
+        this._poolEdgeActiveBeforeUnderwater = this._poolEdgeNode?.active ?? true;
         if (waterNode?.isValid) {
             waterNode.getWorldPosition(this._tmpPos);
             this._waterY = this._tmpPos.y;
@@ -356,6 +361,15 @@ export class WaterRefractionController {
         // from camera Y used to expose a whole-pool colour pop while a smoothed
         // dive camera crossed the water line.
         this.applyFloorTint(active);
+        // The pool rim is an above-deck shell. Drawing it directly from the
+        // underwater main camera causes the white side borders to flash through
+        // the water; submerged views should show the inner wall instead.
+        if (this._poolEdgeNode?.isValid) {
+            const rimActive = active ? false : this._poolEdgeActiveBeforeUnderwater;
+            if (this._poolEdgeNode.active !== rimActive) {
+                this._poolEdgeNode.active = rimActive;
+            }
+        }
         // Keep the water surface VISIBLE in underwater shots so its underside
         // renders as a MIRROR (the below-water branch of the shader samples the
         // reflection RT). Previously the surface was hidden here, which is exactly
@@ -550,6 +564,17 @@ export class WaterRefractionController {
                 0,
             ));
         }
+        // Walls are a single quad spanning the waterline. Let the material
+        // whiten only the exposed cap without splitting the mesh or adding a
+        // second renderer/draw call. Floors, grout, and lane lines keep the
+        // feature disabled.
+        this._wallWaterLineParams.set(
+            this._waterY,
+            tint.belowKind === 'wall' ? 1 : 0,
+            0,
+            0,
+        );
+        material.setProperty('waterLineParams', this._wallWaterLineParams);
     }
 
     // Move swimmer body and splash subtrees onto SWIMMER_LAYER so only the same
@@ -572,6 +597,9 @@ export class WaterRefractionController {
         setSwimmerReflectClip(false);
         if (this._underwaterViewActive && this._waterNode?.isValid) {
             this._waterNode.active = this._waterActiveBeforeUnderwater;
+        }
+        if (this._poolEdgeNode?.isValid) {
+            this._poolEdgeNode.active = this._poolEdgeActiveBeforeUnderwater;
         }
         if (this._refractionCamera?.isValid) {
             this._refractionCamera.enabled = true;
@@ -600,6 +628,7 @@ export class WaterRefractionController {
         this._mainCamera = null;
         this._pool = null;
         this._waterNode = null;
+        this._poolEdgeNode = null;
         this._boundMaterial = null;
         this._getSwimmerNodes = null;
         this._floorTints.length = 0;

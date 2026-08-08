@@ -79,9 +79,9 @@ The game has a WeChat networked race mode (host-authoritative "predict + correct
 
 ## Venue And Assets
 
-- The low-poly venue asset is generated from Blender tooling in `tools/`, especially `tools/build-lowpoly-pool.py`, and exported to `assets/resources/pool/LowPolyPool.glb`.
+- The low-poly venue asset is generated from Blender tooling in `sceneresource/`, especially `sceneresource/build-lowpoly-pool.py` when present, and exported to `assets/resources/pool/LowPolyPool.glb`.
 - Prefer low-poly meshes, batched runtime meshes, unlit/simple materials, and small textures for WeChat Mini Game.
-- Do not place `.blend`, preview images, backup files, or other source-only assets under `assets/`; keep them in `tools/` unless the user explicitly wants them shipped.
+- Do not place `.blend`, preview images, backup files, or other source-only assets under `assets/`; keep them in `sceneresource/` unless the user explicitly wants them shipped.
 - Top-view camera logic may hide ceiling nodes. If adding ceiling pieces, include `ceiling` in relevant node names so this behavior can continue to work.
 
 ## Texture Compression Policy
@@ -123,5 +123,5 @@ Pin `typescript@5.4.5`: the project's `tsconfig.json` uses `moduleResolution=nod
 ## Git And Local Files
 
 - The worktree may contain user/editor generated files. Do not revert unrelated changes.
-- Current untracked tool artifacts such as `tools/LowPolyPool.blend1` and `tools/lowpoly_pool_preview.png` should not be staged unless the user explicitly asks.
+- Current untracked scene artifacts such as `sceneresource/LowPolyPool.blend1` and `sceneresource/lowpoly_pool_preview.png` should not be staged unless the user explicitly asks.
 - When committing, stage only relevant project changes and mention if push fails because of local proxy/network issues.

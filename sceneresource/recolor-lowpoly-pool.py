@@ -1,8 +1,8 @@
 """Recolor and export the runtime pool.
 
 Run with Blender in background mode:
-blender --background --python tools/recolor-lowpoly-pool.py -- \
-  --blend tools/LowPolyPool.blend \
+blender --background --python sceneresource/recolor-lowpoly-pool.py -- \
+  --blend sceneresource/LowPolyPool.blend \
   --output-glb assets/resources/pool/LowPolyPool.glb
 """
 
@@ -54,10 +54,15 @@ def srgb(hex_color: str) -> tuple[float, float, float, float]:
 def apply_palette() -> None:
     missing = sorted(set(PALETTE) - set(bpy.data.materials.keys()))
     if missing:
-        raise RuntimeError(f'missing venue materials: {missing}')
+        # Rebuilt venue blends intentionally use a smaller flat-color material
+        # set. Keep the legacy palette useful for LowPolyPool.blend while
+        # allowing the rebuilt scene to export its existing materials unchanged.
+        print(f'palette skipped missing materials={missing}')
 
     for name, hex_color in PALETTE.items():
-        material = bpy.data.materials[name]
+        material = bpy.data.materials.get(name)
+        if not material:
+            continue
         color = srgb(hex_color)
         material.diffuse_color = color
         material.metallic = 0

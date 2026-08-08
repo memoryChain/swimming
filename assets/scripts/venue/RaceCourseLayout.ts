@@ -13,6 +13,8 @@ export const PLATFORM_STANDING_LIFT = 0.04;
 const PLATFORM_STANDING_FORWARD_OFFSET = 0.22;
 const WATER_NODE_NAMES = ['poolwatersurface'];
 const FLOOR_NODE_NAMES = ['pool_floor'];
+const GROUND_NODE_NAMES = ['venue_rectangular_ground'];
+const POOL_EDGE_NODE_NAMES = ['pool_edge_batch'];
 const START_BLOCK_NODE_NAMES = ['start_block_top_near'];
 const COURSE_START_MARKER_NAMES = ['racecoursestartmarker', 'poolracestart'];
 const COURSE_FINISH_MARKER_NAMES = ['racecoursefinishmarker', 'poolracefinish'];
@@ -77,6 +79,7 @@ export class RaceCourseLayout {
 
         const waterBounds = collectNamedBounds(pool, WATER_NODE_NAMES);
         const floorBounds = collectNamedBounds(pool, FLOOR_NODE_NAMES);
+        const groundBounds = collectNamedBounds(pool, GROUND_NODE_NAMES);
         const startMarker = findNamedWorldPosition(pool, COURSE_START_MARKER_NAMES);
         const finishMarker = findNamedWorldPosition(pool, COURSE_FINISH_MARKER_NAMES);
         const courseBounds = validCourseBounds(waterBounds) ? waterBounds : floorBounds;
@@ -104,6 +107,32 @@ export class RaceCourseLayout {
 
         if (waterBounds) {
             this.waterY = waterBounds.maxY;
+        }
+
+        // The GLB is authored with the water slightly below the deck and the
+        // raised end blocks 0.20m above it. A stale Cocos nested-prefab override
+        // can resurrect the old centered pool nodes at a higher Y, so repair the
+        // two contact-critical nodes once after import when their measured bounds
+        // disagree with the ground plane.
+        if (groundBounds) {
+            const groundTop = groundBounds.maxY;
+            const waterNode = findNamedNode(pool, WATER_NODE_NAMES);
+            if (waterBounds && waterNode && waterBounds.maxY > groundTop - 0.045) {
+                const targetWaterTop = groundTop - 0.045;
+                shiftNodeWorldY(waterNode, targetWaterTop - waterBounds.maxY);
+                this.waterY = targetWaterTop;
+                debug?.(`pool water corrected top=${targetWaterTop.toFixed(3)} ground=${groundTop.toFixed(3)}`);
+            }
+            const edgeNode = findNamedNode(pool, POOL_EDGE_NODE_NAMES);
+            const edgeBounds = collectNamedBounds(pool, POOL_EDGE_NODE_NAMES);
+            if (edgeNode && edgeBounds) {
+                const targetEdgeTop = groundTop + 0.20;
+                const edgeError = targetEdgeTop - edgeBounds.maxY;
+                if (Math.abs(edgeError) > 0.005) {
+                    shiftNodeWorldY(edgeNode, edgeError);
+                    debug?.(`pool edge corrected top=${targetEdgeTop.toFixed(3)} ground=${groundTop.toFixed(3)}`);
+                }
+            }
         }
         this.swimY = definition.swimY ?? DEFAULT_SWIM_Y;
 
@@ -266,6 +295,26 @@ function findNamedWorldPosition(root: Node, names: string[]): Vec3 | null {
         node.getWorldPosition(result);
     });
     return result;
+}
+
+function findNamedNode(root: Node, names: string[]): Node | null {
+    let result: Node | null = null;
+    visit(root, (node) => {
+        if (!result && matchesAnyName(node.name, names)) {
+            result = node;
+        }
+    });
+    return result;
+}
+
+function shiftNodeWorldY(node: Node, deltaY: number) {
+    if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.0001) {
+        return;
+    }
+    const world = new Vec3();
+    node.getWorldPosition(world);
+    world.y += deltaY;
+    node.setWorldPosition(world);
 }
 
 function boundsForNode(node: Node): SceneBounds | null {

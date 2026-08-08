@@ -263,6 +263,7 @@ export class RaceCameraDirector {
     private _preCountdownShotIndex = -1;
     private _preRacePhase: PreRacePhase = 'none';
     private _awardsCenter: Vec3 | null = null;
+    private _awardsBaseYaw = 0;
     private _awardsYaw = AWARDS_DEFAULT_YAW;
     private _awardsPitch = AWARDS_DEFAULT_PITCH;
     private _awardsDistance = AWARDS_DEFAULT_DISTANCE;
@@ -397,6 +398,8 @@ export class RaceCameraDirector {
         this._spectatorFreeLookActive = false;
         this._spectatorCenter = null;
         this._awardsCenter = center.clone();
+        const poolCenterX = (this._courseLayout.poolStartX + this._courseLayout.poolFinishX) * 0.5;
+        this._awardsBaseYaw = center.x < poolCenterX ? Math.PI : 0;
         this._awardsYaw = AWARDS_DEFAULT_YAW;
         this._awardsPitch = AWARDS_DEFAULT_PITCH;
         this._awardsDistance = AWARDS_DEFAULT_DISTANCE;
@@ -779,17 +782,18 @@ export class RaceCameraDirector {
                 }
             }
             const center = this._awardsCenter;
+            const awardsYaw = this._awardsBaseYaw + this._awardsYaw;
             const cosPitch = Math.cos(this._awardsPitch);
             const targetY = center.y + AWARDS_TARGET_Y;
             desiredTarget = new Vec3(
-                center.x + Math.sin(this._awardsYaw) * AWARDS_TARGET_SCREEN_RIGHT_OFFSET,
+                center.x + Math.sin(awardsYaw) * AWARDS_TARGET_SCREEN_RIGHT_OFFSET,
                 targetY,
-                center.z - Math.cos(this._awardsYaw) * AWARDS_TARGET_SCREEN_RIGHT_OFFSET,
+                center.z - Math.cos(awardsYaw) * AWARDS_TARGET_SCREEN_RIGHT_OFFSET,
             );
             desiredPos = new Vec3(
-                center.x + Math.cos(this._awardsYaw) * cosPitch * this._awardsDistance,
+                center.x + Math.cos(awardsYaw) * cosPitch * this._awardsDistance,
                 targetY + Math.sin(this._awardsPitch) * this._awardsDistance,
-                center.z + Math.sin(this._awardsYaw) * cosPitch * this._awardsDistance,
+                center.z + Math.sin(awardsYaw) * cosPitch * this._awardsDistance,
             );
             this._broadcastDesiredFov = 38;
         } else if (this._preCountdownActive) {

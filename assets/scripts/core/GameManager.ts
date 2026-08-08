@@ -962,6 +962,7 @@ export class GameManager extends Component {
                 }
                 const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
                 if (calibrated) {
+                    venue.setWaterY(COURSE_LAYOUT.waterY);
                     this._raceCameraDirector.resetToBroadcast();
                 }
                 this._poolNode = pool;

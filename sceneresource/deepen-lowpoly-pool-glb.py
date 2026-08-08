@@ -6,7 +6,7 @@ floor and floor markings are lowered, and four simple inner wall meshes are
 added so the deeper basin has visible sides.
 
 Usage:
-python tools/deepen-lowpoly-pool-glb.py --input assets/resources/pool/LowPolyPool.glb --output assets/resources/pool/LowPolyPool.glb
+python sceneresource/deepen-lowpoly-pool-glb.py --input assets/resources/pool/LowPolyPool.glb --output assets/resources/pool/LowPolyPool.glb
 """
 
 from __future__ import annotations

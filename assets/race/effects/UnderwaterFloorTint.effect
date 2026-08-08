@@ -18,6 +18,10 @@ CCEffect %{
         # x = distance where the blue starts (m), y = distance for full blue (m),
         # z = enable (0/1, off above water). w unused.
         depthParams: { value: [3.0, 20.0, 0.0, 0.0] }
+        # x = world waterline, y = enable the above-water white cap (walls only).
+        # The cap keeps the exposed tile strip white while the submerged part
+        # continues to use the live pool-blue tint.
+        waterLineParams: { value: [0.055, 0.0, 0.0, 0.0] }
 }%
 
 CCProgram uw-floor-vs %{
@@ -53,10 +57,11 @@ CCProgram uw-floor-fs %{
   uniform sampler2D mainTexture;
   #endif
 
-  uniform UwFloor {
-    vec4 mainColor;
-    vec4 depthColor;
-    vec4 depthParams;
+    uniform UwFloor {
+        vec4 mainColor;
+        vec4 depthColor;
+        vec4 depthParams;
+        vec4 waterLineParams;
   };
 
   vec4 frag () {
@@ -77,6 +82,10 @@ CCProgram uw-floor-fs %{
     float t = clamp((dist - depthParams.x) / max(depthParams.y - depthParams.x, 0.001), 0.0, 1.0);
     float amt = t * depthColor.a * step(0.5, depthParams.z);
     vec3 color = mix(base, depthColor.rgb, amt);
+    // Pool walls share one continuous quad across the waterline. Keep only the
+    // exposed upper strip white; underwater fragments retain the tuned blue.
+    float aboveWater = step(waterLineParams.x, v_worldPos.y);
+    color = mix(color, vec3(1.0), aboveWater * step(0.5, waterLineParams.y));
     return CCFragOutput(vec4(color, alpha));
   }
 }%
