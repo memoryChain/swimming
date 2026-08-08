@@ -47,12 +47,13 @@ const UNDERWATER_FOG_COLOR = new Color(10, 74, 130, 255);
 const UNDERWATER_FOG_START = 5.0;
 const UNDERWATER_FOG_END = 24.0;
 // Re-tag swimmer subtrees onto SWIMMER_LAYER periodically to catch async-loaded
-// character models and rebuilt rosters.
+// character models and rebuilt rosters. This runs for the whole race (not just a
+// startup warmup) because AI character models and color-variant rebuilds can
+// finish loading at any point; an untagged swimmer stays on the main camera's
+// DEFAULT layer and is skipped by the reflection camera, so only early-loaded
+// swimmers would reflect underwater. The cost is a few hundred setLayer calls
+// every ~0.44s, which is well below a per-frame hot path.
 const SWIMMER_TAG_INTERVAL = 20;
-// Async swimmer models and splash nodes arrive during scene startup. Once that
-// window closes, the roster is stable across race restarts, so recursive layer
-// tagging must stop instead of producing a periodic JS spike throughout a race.
-const SWIMMER_TAG_WARMUP_FRAMES = 90;
 // Frames to keep re-applying the RT to the water material after it is (re)created
 // or resized, covering the GPU texture handle changing on the first real render.
 const REBIND_WARMUP_FRAMES = 4;
@@ -353,7 +354,14 @@ export class WaterRefractionController {
         }
         this.ensureMaterialBound();
         this._frame += 1;
-        if (this._frame <= SWIMMER_TAG_WARMUP_FRAMES && this._frame % SWIMMER_TAG_INTERVAL === 0) {
+        // Swimmer/character models and the AI roster are created asynchronously and
+        // can finish loading well after the warmup window. If they miss tagging they
+        // stay on the main camera's DEFAULT layer: visible above water, but absent
+        // from the reflection camera (which only renders UNDERWATER_LAYER|SWIMMER_LAYER),
+        // so only the early-loaded player would reflect. Re-tag every interval for the
+        // whole race (cheap: a few setLayer calls per frame on average) so every
+        // swimmer reflects underwater.
+        if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
             this.tagLaneFloats();
         }

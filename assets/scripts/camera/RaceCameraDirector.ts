@@ -134,8 +134,14 @@ export const RACE_CAMERA_TUNING = {
     // post-turn underwater descent/hold and most of the ascent.
     flipTurnBackDistance: 2.8,
     flipTurnSideDistance: 2.6,
-    flipTurnBelowDistance: 0.42,
+    // Sit lower under the swimmer so the shot looks UP and shows more of the water
+    // surface mirror (the underside reflection). Clamped away from the floor below.
+    flipTurnBelowDistance: 0.72,
     flipTurnFov: 48,
+    // The camera plants (stops translating, aim-only) once the swimmer is within
+    // this distance (m) of the turn wall, and resumes following after the turn
+    // when the swimmer is back this-plus-follow far away on the reverse side.
+    flipTurnCameraPlantWallDistance: 2.2,
     // 海豚跃跟随相机：一套专门的沉浸式跟拍机位，会随角色一起扎进水里。相机沿「飞行切线」
     // 跟在身后（上升时沉到身后下方仰拍，下降时升到身后上方俯冲入水），并朝飞行速度方向
     // 看，从而跟着抛物线走。
@@ -255,6 +261,12 @@ export class RaceCameraDirector {
     private _underwaterViewActive = false;
     private _flipTurnViewActive = false;
     private _flipTurnViewDirection = 1;
+    // Flip-turn "plant" state: near the wall the camera stops translating and only
+    // pans to keep the swimmer in frame; it resumes following once the swimmer has
+    // turned and moved back out to the same distance on the reverse side.
+    private _flipTurnCameraPlanted = false;
+    private readonly _flipTurnPlantedPos = new Vec3();
+    private _flipTurnPlantForwardX = 0;
     private _continuousKickViewSeconds = 0;
     private _preCountdownElapsed = 0;
     private _preCountdownActive = false;
@@ -597,6 +609,7 @@ export class RaceCameraDirector {
         }
         const leavingFlipTurnView = this._flipTurnViewActive;
         this._flipTurnViewActive = false;
+        this._flipTurnCameraPlanted = false;
         if (this._mode === RaceCameraMode.Sprint) {
             if (this.shouldUseFinishTopView(snapshot)) {
                 this.updateFinishTopCamera(snapshot);
@@ -1176,7 +1189,7 @@ export class RaceCameraDirector {
             ),
             clamp(
                 target.y - Math.max(0.1, RACE_CAMERA_TUNING.flipTurnBelowDistance),
-                this._courseLayout.waterY - 1.2,
+                this._courseLayout.waterY - 1.35,
                 this._courseLayout.waterY - 0.25,
             ),
             clamp(
@@ -1186,12 +1199,44 @@ export class RaceCameraDirector {
             ),
         );
         if (immediate) {
+            // Fresh flip-turn shot: start following behind the swimmer, unplanted.
+            this._flipTurnCameraPlanted = false;
             this._cameraPos.set(desiredPos);
             this._cameraTarget.set(target);
-        } else {
+        } else if (!this._flipTurnCameraPlanted) {
+            // FOLLOW phase: track behind the swimmer as before. Plant the camera
+            // (stop translating) once the swimmer nears the turn wall.
             const smooth = cameraBlend(dt, 10.5);
             Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
             Vec3.lerp(this._cameraTarget, this._cameraTarget, target, smooth);
+            const wallX = this._flipTurnViewDirection > 0
+                ? Math.max(this._courseLayout.poolStartX, this._courseLayout.poolFinishX)
+                : Math.min(this._courseLayout.poolStartX, this._courseLayout.poolFinishX);
+            if (Math.abs(target.x - wallX) <= RACE_CAMERA_TUNING.flipTurnCameraPlantWallDistance) {
+                this._flipTurnCameraPlanted = true;
+                this._flipTurnPlantedPos.set(this._cameraPos);
+                // How far ahead (along the incoming direction) the swimmer is when
+                // we plant — the distance to reclaim on the reverse side before we
+                // resume following.
+                this._flipTurnPlantForwardX = Math.max(
+                    0.5,
+                    (target.x - this._cameraPos.x) * this._flipTurnViewDirection,
+                );
+            }
+        } else {
+            // PLANTED phase: freeze the position, only pan to keep aiming at the
+            // swimmer while it flips, pushes off the wall and swims back. Resume
+            // following once the swimmer has passed the camera and reached the same
+            // distance on the reverse side.
+            const smooth = cameraBlend(dt, 10.5);
+            this._cameraPos.set(this._flipTurnPlantedPos);
+            Vec3.lerp(this._cameraTarget, this._cameraTarget, target, smooth);
+            const signedAhead = (target.x - this._flipTurnPlantedPos.x) * this._flipTurnViewDirection;
+            if (signedAhead <= -this._flipTurnPlantForwardX) {
+                this._flipTurnCameraPlanted = false;
+                // Following now trails the reversed swim direction.
+                this._flipTurnViewDirection = this._courseLayout.directionAtDistance(snapshot.playerDistance);
+            }
         }
         this._topViewActive = false;
         this._underwaterViewActive = true;
@@ -1497,7 +1542,10 @@ function underwaterDiveCameraPos(
     const wallClearance = 0.45;
     return new Vec3(
         playerX + 4.25 * direction,
-        Math.min(playerY + 0.44, 0.08),
+        // Sit BELOW the diving swimmer so the shot looks up and shows more of the
+        // water surface mirror (matches the flip-turn underwater framing). Clamped
+        // above the pool floor.
+        Math.max(playerY - 0.55, -1.3),
         clamp(playerLaneZ + 4.65, -poolHalfWidth + wallClearance, poolHalfWidth - wallClearance),
     );
 }

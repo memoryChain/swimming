@@ -49,7 +49,7 @@
     "motion.heldMotionSpeedScale": 1,
     "motion.releasedMotionSpeedScale": 2,
     "motion.flipTurnUnderwaterDiveSeconds": 0.25,
-    "motion.flipTurnUnderwaterHoldSeconds": 0.2,
+    "motion.flipTurnUnderwaterHoldSeconds": 0.5,
     "motion.flipTurnUnderwaterRiseSeconds": 0.3,
     "motion.kickFlutterMaxCyclesPerSecond": 3.2,
     "motion.kickFlutterIdleFraction": 0.08,

@@ -69,8 +69,8 @@ const SPEED_MAX = 0.05;
 // dominant motion is the body swimming away from it (World space). gravityModifier
 // is a multiplier on scene gravity; negative = a tiny push toward +Y (world up).
 const GRAVITY = -0.015;
-const SIZE_MIN = 0.011;
-const SIZE_MAX = 0.034;
+const SIZE_MIN = 0.018;
+const SIZE_MAX = 0.05;
 const ALPHA = 165;
 const RENDER_PRIORITY = 255;
 // ParticleSystem.Space enum: World = 0, Local = 1, Custom = 2. MUST be World so

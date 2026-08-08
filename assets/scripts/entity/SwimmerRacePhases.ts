@@ -143,6 +143,17 @@ export class SwimmerRacePhases {
         return this._diveUnderwaterActive;
     }
 
+    // True during the underwater swimming phases where friction bubbles read well:
+    // the dive-start glide, the WHOLE flip turn (somersault + wall push-off
+    // _flipTurnActive AND the glide after it), and the dolphin jump's landing
+    // glide once it is back UNDERWATER (kind === 'dolphin'). Still excludes the
+    // airborne part of the dolphin jump (_dolphinActive: dip + flight), where
+    // there is no water to churn.
+    get isSwimUnderwaterActive(): boolean {
+        return (this._flipTurnActive || this._diveUnderwaterActive)
+            && !this._dolphinActive;
+    }
+
     // Normalized progress through the current underwater rise. Descent and hold
     // report 0; a completed/non-underwater phase reports 1. Camera presentation
     // can use this without ending the gameplay/input glide phase early.
