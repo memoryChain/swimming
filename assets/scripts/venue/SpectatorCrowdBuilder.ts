@@ -3,16 +3,20 @@ import { scaledDelta } from '../core/TimeScale';
 
 const { ccclass, property } = _decorator;
 
-// Low-saturation values designed for the venue's dark grandstands. These stay
-// unlit so the crowd remains legible, but their low value prevents the old
-// neon/confetti look.
+// Tier 1 (poolside) shows these normal, mid-bright clothing tones. Higher tiers
+// are progressively darkened per-vertex (see TIER_BRIGHTNESS) so the stands read
+// with depth without turning neon/confetti.
 const SPECTATOR_COLORS = [
-    color(70, 78, 98),
-    color(82, 70, 91),
-    color(62, 82, 84),
-    color(92, 76, 68),
-    color(102, 98, 92),
+    color(150, 162, 190),
+    color(178, 150, 172),
+    color(140, 180, 172),
+    color(196, 168, 140),
+    color(200, 198, 190),
 ];
+
+// Per-tier brightness multiplier baked into spectator vertex colors. Index 0 =
+// tier 1 (normal); each higher tier is darker. Values beyond the array clamp.
+const TIER_BRIGHTNESS = [1, 0.82, 0.66, 0.52];
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
@@ -50,6 +54,7 @@ type SpectatorSpec = {
     col: number;
     side: number;
     yaw: number;
+    brightness: number;
 };
 
 type SceneBounds = {
@@ -68,6 +73,7 @@ type Grandstand = {
     axis: StandAxis;
     rowCount: number;
     yaw: number;
+    tier: number;
 };
 
 @ccclass('SpectatorGroupWobble')
@@ -111,6 +117,7 @@ export class SpectatorCrowdBuilder {
             for (const stand of stands) {
                 this.collectGrandstandSpectators(buckets, stand);
             }
+            this.collectCornerSpectators(buckets, stands, collectCornerAnchors(poolNode));
 
             let groupCount = 0;
             let spectatorCount = 0;
@@ -139,16 +146,20 @@ export class SpectatorCrowdBuilder {
     }
 
     private collectGrandstandSpectators(buckets: SpectatorSpec[][], stand: Grandstand) {
-        const { bounds, sideSign, axis, rowCount, yaw } = stand;
+        const { bounds, sideSign, axis, rowCount, yaw, tier } = stand;
+        const brightness = tierBrightness(tier);
         const standLength = axis === 'x'
             ? bounds.maxX - bounds.minX
             : bounds.maxZ - bounds.minZ;
         const standDepth = axis === 'x'
             ? bounds.maxZ - bounds.minZ
             : bounds.maxX - bounds.minX;
+        // Short stands (e.g. the east end) waste too much length on the fixed
+        // six aisles and end up sparse; scale the section count with length.
+        const sectionCount = Math.max(2, Math.min(STAND_SECTION_COUNT, Math.round(standLength / 12)));
         const sectionWidth = Math.max(
             1,
-            (standLength - STAND_AISLE_WIDTH * (STAND_SECTION_COUNT - 1)) / STAND_SECTION_COUNT,
+            (standLength - STAND_AISLE_WIDTH * (sectionCount - 1)) / sectionCount,
         );
         const rowDepth = standDepth / rowCount;
         const innerDepth = axis === 'x'
@@ -159,7 +170,7 @@ export class SpectatorCrowdBuilder {
         for (let row = 0; row < rowCount; row++) {
             const seatY = bounds.minY + row * STAND_ROW_RISE;
             const seatDepth = innerDepth + sideSign * (row + 0.5) * rowDepth;
-            for (let section = 0; section < STAND_SECTION_COUNT; section++) {
+            for (let section = 0; section < sectionCount; section++) {
                 // Horizontal stands are segmented along X; the east/west
                 // stands are rotated 90 degrees and must be segmented along Z.
                 // Using minX for both axes puts east-side spectators far outside
@@ -202,7 +213,93 @@ export class SpectatorCrowdBuilder {
                         // Face inward toward the pool; small per-plane yaw/roll
                         // jitter is applied again while building the mesh.
                         yaw,
+                        brightness,
                     });
+                }
+            }
+        }
+    }
+
+    private collectCornerSpectators(
+        buckets: SpectatorSpec[][],
+        stands: Grandstand[],
+        anchors: Map<string, Vec3>,
+    ) {
+        // Per-tier base height comes from the live tier nodes; the horizontal
+        // seating frame comes from anchor empties baked into the venue, so the
+        // corner crowd lands exactly on the diagonal corner seats regardless of
+        // the glTF axis mapping.
+        const tierBaseY: Record<number, number> = {};
+        for (const stand of stands) {
+            if (stand.name.endsWith('_n')) {
+                tierBaseY[stand.tier] = stand.bounds.minY;
+            }
+        }
+        const tiers = [1, 2, 3, 4].filter((tier) => tierBaseY[tier] !== undefined);
+        if (tiers.length <= 0) {
+            return;
+        }
+
+        const sides: Array<{ key: string; salt: number }> = [
+            { key: 'ne', salt: 0 },
+            { key: 'se', salt: 97 },
+        ];
+        for (const side of sides) {
+            const origin = anchors.get(`spectator_corner_${side.key}_o`);
+            const alongEnd = anchors.get(`spectator_corner_${side.key}_u`);
+            const depthEnd = anchors.get(`spectator_corner_${side.key}_v`);
+            if (!origin || !alongEnd || !depthEnd) {
+                continue;
+            }
+            const length = Math.hypot(alongEnd.x - origin.x, alongEnd.z - origin.z);
+            const depth = Math.hypot(depthEnd.x - origin.x, depthEnd.z - origin.z);
+            if (length < 0.1 || depth < 0.1) {
+                continue;
+            }
+            const longUx = (alongEnd.x - origin.x) / length;
+            const longUz = (alongEnd.z - origin.z) / length;
+            const depthUx = (depthEnd.x - origin.x) / depth;
+            const depthUz = (depthEnd.z - origin.z) / depth;
+            // Face inward toward the pool (facing = -depth axis).
+            const yaw = Math.atan2(depthUx, depthUz) * 180 / Math.PI;
+            const columns = Math.max(5, Math.floor(length / SPECTATOR_SPACING));
+            const salt = side.salt;
+            for (const tier of tiers) {
+                const brightness = tierBrightness(tier);
+                const baseY = tierBaseY[tier];
+                for (let row = 0; row < FLAT_BLEACHER_ROW_COUNT; row++) {
+                    const seatY = baseY + row * STAND_ROW_RISE;
+                    const rowDepth = ((row + 0.5) / FLAT_BLEACHER_ROW_COUNT) * depth;
+                    for (let col = 0; col < columns; col++) {
+                        if (random01(col, row, tier + salt, 29) < 0.15) {
+                            continue;
+                        }
+                        const along = ((col + 0.5) / columns) * length
+                            + jitter(row, col, tier + salt, 0.18);
+                        const dp = rowDepth + jitter(col, row, tier + salt, depth * 0.12);
+                        const x = origin.x + longUx * along + depthUx * dp;
+                        const z = origin.z + longUz * along + depthUz * dp;
+                        const height = 0.34 + random01(row, col, tier + salt, 31) * 0.24;
+                        const width = 0.25 + random01(col, tier, row + salt, 37) * 0.24;
+                        const colorIndex = Math.floor(
+                            random01(col, row, tier + salt + 11, 53) * SPECTATOR_COLORS.length,
+                        ) % SPECTATOR_COLORS.length;
+                        const wobbleIndex = Math.floor(
+                            random01(row, col, tier + salt, 71) * WOBBLE_GROUP_COUNT,
+                        ) % WOBBLE_GROUP_COUNT;
+                        buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
+                            pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
+                            width,
+                            height,
+                            topWidthScale: 0.76 + random01(col, row, tier + salt, 79) * 0.38,
+                            topOffset: jitter(tier, col, row + salt, 0.18),
+                            row,
+                            col,
+                            side: 1,
+                            yaw,
+                            brightness,
+                        });
+                    }
                 }
             }
         }
@@ -238,6 +335,7 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeomet
     const positions: number[] = [];
     const normals: number[] = [];
     const uvs: number[] = [];
+    const colors: number[] = [];
     const indices: number[] = [];
     const rotation = new Quat();
     const point = new Vec3();
@@ -260,12 +358,14 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeomet
         pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.5, -0.5, 1, 0);
         pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.5, 0.5, 1, 1);
         pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.5, 0.5, 0, 1);
+        const b = spectator.brightness;
+        colors.push(b, b, b, 1, b, b, b, 1, b, b, b, 1, b, b, b, 1);
         indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
         // Back-facing triangles keep the flat crowd visible from every race shot.
         indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
     }
 
-    return { positions, normals, uvs, indices, minPos, maxPos };
+    return { positions, normals, uvs, colors, indices, minPos, maxPos };
 }
 
 function pushCorner(
@@ -321,12 +421,15 @@ function collectGrandstands(root: Node): Grandstand[] {
         const sideSign = axis === 'x'
             ? (isNorth ? 1 : -1)
             : (isEast ? 1 : -1);
+        const tierMatch = /_t(\d)_/.exec(name);
+        const tier = tierMatch ? parseInt(tierMatch[1], 10) : 1;
         stands.push({
             name,
             bounds,
             sideSign,
             axis,
             rowCount: name.startsWith('bleacherbatch_') ? FLAT_BLEACHER_ROW_COUNT : LEGACY_STAND_ROW_COUNT,
+            tier,
             // The local quad is authored for a north-facing stand. Rotate it
             // around Y so every audience plane faces the pool on all four sides.
             yaw: axis === 'x'
@@ -335,6 +438,20 @@ function collectGrandstands(root: Node): Grandstand[] {
         });
     });
     return stands.sort((left, right) => left.sideSign - right.sideSign);
+}
+
+// World positions of the corner seating anchor empties baked into the venue GLB
+// (spectator_corner_{ne,se}_{o,u,v}). Used to place the diagonal corner crowd
+// exactly on the seats without hard-coding the glTF axis mapping.
+function collectCornerAnchors(root: Node): Map<string, Vec3> {
+    const anchors = new Map<string, Vec3>();
+    visit(root, (node) => {
+        const name = node.name.toLowerCase();
+        if (name.startsWith('spectator_corner_')) {
+            anchors.set(name, node.worldPosition.clone());
+        }
+    });
+    return anchors;
 }
 
 function boundsForNode(node: Node): SceneBounds | null {
@@ -387,7 +504,7 @@ function mergeBounds(a: SceneBounds | null, b: SceneBounds | null): SceneBounds 
 
 function makeMaterial(name: string, albedo: Color): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit' });
+    material.initialize({ effectName: 'builtin-unlit', defines: { USE_VERTEX_COLOR: true } });
     material.name = name;
     material.setProperty('mainColor', albedo);
     return material;
@@ -409,6 +526,11 @@ function visit(node: Node, handle: (node: Node) => void) {
 
 function color(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
+}
+
+function tierBrightness(tier: number): number {
+    const index = Math.min(TIER_BRIGHTNESS.length, Math.max(1, tier)) - 1;
+    return TIER_BRIGHTNESS[index];
 }
 
 function jitter(a: number, b: number, c: number, scale: number): number {
