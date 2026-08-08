@@ -78,6 +78,7 @@ import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { WaterRefractionController } from '../venue/WaterRefractionController';
+import { applyPoolEdgeToonOutline } from '../venue/PoolEdgeToonOutline';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
@@ -969,6 +970,7 @@ export class GameManager extends Component {
                 const ceilingCount = this._topViewCeiling.bind(pool);
                 this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);
+                applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
                 this.setupLaneLockdownVisualPreview();
                 done(pool);
             }, 0);
