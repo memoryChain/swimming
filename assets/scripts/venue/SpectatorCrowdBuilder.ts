@@ -30,6 +30,12 @@ const STAND_NODE_NAMES = new Set([
     'bleacherbatch_t2_n',
     'bleacherbatch_t2_s',
     'bleacherbatch_t2_e',
+    'bleacherbatch_t3_n',
+    'bleacherbatch_t3_s',
+    'bleacherbatch_t3_e',
+    'bleacherbatch_t4_n',
+    'bleacherbatch_t4_s',
+    'bleacherbatch_t4_e',
 ]);
 
 type StandAxis = 'x' | 'z';
