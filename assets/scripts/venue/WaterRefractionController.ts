@@ -581,13 +581,15 @@ export class WaterRefractionController {
                 0,
             ));
         }
-        // Walls are a single quad spanning the waterline. Let the material
-        // whiten only the exposed cap without splitting the mesh or adding a
-        // second renderer/draw call. Floors, grout, and lane lines keep the
-        // feature disabled.
+        // Walls are a single quad spanning the waterline. Above water the material
+        // whitens only the exposed cap (reads as a white pool gutter) without
+        // splitting the mesh or adding a second renderer/draw call. UNDERWATER that
+        // same white cap becomes a jarring bright band at the waterline, so disable
+        // it when submerged and let the wall read as one uniform blue. Floors,
+        // grout, and lane lines keep the feature disabled in both.
         this._wallWaterLineParams.set(
             this._waterY,
-            tint.belowKind === 'wall' ? 1 : 0,
+            tint.belowKind === 'wall' && !underwater ? 1 : 0,
             0,
             0,
         );

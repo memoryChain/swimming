@@ -216,6 +216,15 @@ CCProgram swimmer-color-fs %{
     float belowness = step(v_worldPos.y, waterLine.x);
     vec3 submerged = mix(bodyColor, underwaterColor.rgb, 0.66);
     bodyColor = mix(bodyColor, submerged, belowness * underwaterColor.a);
+    // Directional underwater light: the key light comes from the surface ABOVE,
+    // so the body's up-facing side (toward the surface) reads clearly brighter and
+    // its down-facing side (toward the pool floor) reads darker, instead of a flat
+    // blue. Applied at FULL strength on the submerged body (not diluted by
+    // underwaterColor.a) so the top/bottom difference is obvious. Uses the true
+    // skinned world normal (not the camera-oriented cel normal) so up/down is the
+    // real world axis regardless of view.
+    float upFacing = clamp(normalize(v_worldNormal).y * 0.5 + 0.5, 0.0, 1.0);
+    bodyColor = mix(bodyColor, bodyColor * mix(0.3, 1.8, upFacing), belowness);
     // Distance-based blue absorption: submerged bodies fade toward deep-water
     // blue with camera distance, so far competitors read markedly bluer than the
     // nearby swimmer (real "the further underwater, the bluer" look). Only below

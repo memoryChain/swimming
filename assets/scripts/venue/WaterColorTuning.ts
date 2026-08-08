@@ -32,15 +32,19 @@ export const WATER_COLOR_TUNING = {
     // Distance-based blue absorption for submerged bodies: far swimmers read
     // bluer than near ones. depthColor = deep-water blue, depthStrength = max
     // blend, depthStart/depthEnd = camera distances (m) over which blue ramps in.
-    depthR: 26, depthG: 120, depthB: 200,
+    // Aligned to the same saturated azure as the underwater floor (a deeper shade
+    // of floorR/G/B) so bodies and floor read as one coherent blue.
+    depthR: 36, depthG: 122, depthB: 198,
     depthStrength: 0.55,
     depthStart: 4.0,
     depthEnd: 24.0,
     // Underwater pool-floor blue (the colour the floor/walls swap to when the
     // camera is below the surface). Walls/grout are derived shades of this.
-    // Tuned to match the bright, slightly-cyan light blue seen when looking DOWN
-    // at the pool from above the surface (green kept close to blue = cyan-ish).
-    floorR: 142, floorG: 200, floorB: 222,
+    // Now that the interior tiles are pure white, this tint multiplies straight
+    // onto white so the floor reads as this exact colour. Tuned to the vivid,
+    // saturated azure of the Tokyo-2020 underwater broadcast (deeper/bluer than
+    // the old pale cyan). Nudge these live with the '水色' floor sliders.
+    floorR: 48, floorG: 142, floorB: 212,
     // Underwater distance gradient: near the camera the floor keeps its (brighter)
     // floor blue; farther away it fades toward a deep blue derived from floorR/G/B.
     // Strength = how deep the far end gets (0 = uniform, off), start/end = camera
@@ -49,8 +53,16 @@ export const WATER_COLOR_TUNING = {
     floorFarStart: 3.0,
     floorFarEnd: 20.0,
     // How strongly the underwater surface mirror is tinted toward deepColor
-    // (0 = raw reflection / whiter, 1 = fully deep-water blue).
-    reflectionBlue: 0.45,
+    // (0 = raw reflection / whiter, 1 = fully deep-water blue). Nudged up so the
+    // underside-of-surface mirror reads the same azure as the floor/bodies.
+    reflectionBlue: 0.5,
+    // Underwater reflection-surface distance brightness: near the camera the
+    // mirror stays bright; from reflectionNear..reflectionFar (metres) it fades
+    // toward the deep blue by reflectionFarStrength (0 = uniform, 1 = fully deep).
+    // Matches how the real underside-of-surface is brighter close to the lens.
+    reflectionNear: 2.0,
+    reflectionFar: 10.0,
+    reflectionFarStrength: 0.9,
 };
 
 // The pool-floor underwater colour lives in WaterRefractionController (it owns
@@ -125,8 +137,14 @@ function applyWaterMaterial(material: Material) {
     try {
         material.setProperty('deepColor', new Color(WATER_COLOR_TUNING.deepR, WATER_COLOR_TUNING.deepG, WATER_COLOR_TUNING.deepB, 255));
         material.setProperty('shallowColor', new Color(WATER_COLOR_TUNING.shallowR, WATER_COLOR_TUNING.shallowG, WATER_COLOR_TUNING.shallowB, 255));
-        // Reflection blue tint strength (underwater surface mirror).
-        material.setProperty('reflectionTint', new Vec4(WATER_COLOR_TUNING.reflectionBlue, 0, 0, 0));
+        // Reflection blue tint strength (x) + underwater distance brightness
+        // (y=near m, z=far m, w=far-fade strength) for the underside mirror.
+        material.setProperty('reflectionTint', new Vec4(
+            WATER_COLOR_TUNING.reflectionBlue,
+            WATER_COLOR_TUNING.reflectionNear,
+            WATER_COLOR_TUNING.reflectionFar,
+            WATER_COLOR_TUNING.reflectionFarStrength,
+        ));
         // Preserve refractionParams x (distort) / y (flipY) / w (frequency); only
         // retune z (tint strength).
         const current = material.getProperty('refractionParams') as Vec4 | null;

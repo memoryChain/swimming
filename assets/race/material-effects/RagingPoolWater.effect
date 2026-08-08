@@ -51,7 +51,7 @@ CCEffect %{
         reflectionParams: { value: [0.90, 1.00, 0.00, 1.60] }
         # x = how strongly the reflection is tinted toward deepColor (0 = raw
         # reflection / whiter, 1 = fully deep-water blue). y/z/w unused.
-        reflectionTint: { value: [0.45, 0.00, 0.00, 0.00] }
+        reflectionTint: { value: [0.50, 2.00, 10.00, 0.90] }
 }%
 
 CCProgram water-vs %{
@@ -217,6 +217,17 @@ CCProgram water-fs %{
       // reflectionParams.x blends between the flat deep-water tint and the mirror
       // (1 = full mirror). No view-angle fade, so the reflection reads at all angles.
       vec3 underColor = mix(deepColor.rgb, mirror, clamp(reflectionParams.x, 0.0, 1.0));
+      // Distance brightness: right under the lens the surface reads BRIGHT/silvery
+      // and it deepens to a dark blue with distance (reflectionTint.y=near m,
+      // .z=far m, .w=overall strength). The near/far targets are pushed apart
+      // (brighten near, darken far) so the gradient is actually visible instead of
+      // fading between two near-identical azures.
+      float uDist = length(cc_cameraPos.xyz - v_worldPos);
+      float uFar = clamp((uDist - reflectionTint.y) / max(reflectionTint.z - reflectionTint.y, 0.001), 0.0, 1.0);
+      vec3 uNear = min(underColor * 1.65 + 0.14, vec3(1.0));
+      vec3 uDeep = deepColor.rgb * 0.38;
+      vec3 uGraded = mix(uNear, uDeep, uFar);
+      underColor = mix(underColor, uGraded, clamp(reflectionTint.w, 0.0, 1.0));
       // Fully opaque (no see-through Snell window).
       vec4 uo = vec4(underColor, 1.0);
       CC_APPLY_FOG(uo);
