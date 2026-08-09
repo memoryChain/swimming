@@ -39,9 +39,11 @@ const NEAR_KEEP_M = 6;
 // Source-material texture uniforms to carry over onto the shaded material.
 const TEXTURE_KEYS = ['emissiveMap', 'albedoMap', 'mainTexture'];
 
-// Wall / structure nodes (backwall, supports, soffits, upper platform) get a
-// muted blue-grey tint instead of their bland grey source colour.
-const WALL_TINT = new Color(78, 98, 126);
+// Start walls / stairs / platforms from clean white. The common height and
+// distance gradient still darkens upper and far tiers in the arena.
+const WALL_TINT = new Color(255, 255, 255);
+const EMERGENCY_EXIT_MATERIAL_KEYWORD = 'emergencyexit';
+const SOFFIT_MATERIAL_KEYWORD = 'upper_tier_soffit_dark';
 
 const _mat = new Mat4();
 const _corner = new Vec3();
@@ -67,6 +69,14 @@ function isStandNode(name: string): boolean {
 function isWallNode(name: string): boolean {
     const lower = name.toLowerCase();
     return lower.includes('standstructure') || lower.includes('upperplatform');
+}
+
+function isEmergencyExitMaterial(material: Material | null): boolean {
+    return material?.name.toLowerCase().includes(EMERGENCY_EXIT_MATERIAL_KEYWORD) ?? false;
+}
+
+function isSoffitMaterial(material: Material | null): boolean {
+    return material?.name.toLowerCase().includes(SOFFIT_MATERIAL_KEYWORD) ?? false;
 }
 
 function horizontalPoolDistance(x: number, z: number): number {
@@ -218,6 +228,12 @@ function shadeStands(
         const slots = Math.max(1, renderer.sharedMaterials.length);
         for (let sub = 0; sub < slots; sub++) {
             const source = renderer.getSharedMaterial(sub);
+            // Exit signs simulate powered lamps. The tier-3 underside also has
+            // an authored dark ceiling colour so it stays distinct from white
+            // walls and remains a stable base for future ceiling lights.
+            if (isEmergencyExitMaterial(source) || isSoffitMaterial(source)) {
+                continue;
+            }
             const texture = tint ? null : findMaterialTexture(source);
             const key = tint
                 ? 'wall'

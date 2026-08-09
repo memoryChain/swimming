@@ -27,9 +27,19 @@ const FLAT_BLEACHER_ROW_COUNT = 2;
 // the vertical planes off the seat faces, which otherwise z-fight head-on.
 const SEAT_SURFACE_LIFT = 0.6;
 const STAND_ROW_RISE = 0.72;
+// Pull the audience cards slightly toward the pool, in front of the moulded
+// seat backs. The rebuilt chairs are deeper than the old flat seats and would
+// otherwise occlude most of each card from the race camera.
+const SPECTATOR_SEAT_FORWARD_OFFSET = 0.22;
 const STAND_SECTION_COUNT = 6;
 const STAND_AISLE_WIDTH = 1.8;
 const SPECTATOR_SPACING = 0.95;
+// The rebuilt grandstands have a shared access core at their longitudinal
+// centre. Keep spectator planes out of the full stair/door/platform opening on
+// every tier. North/south use the 12 m core; the shorter east stand uses 6 m.
+// The small padding also keeps each plane's half-width clear of the side walls.
+const LONG_STAND_ACCESS_HALF_WIDTH = 6.35;
+const SHORT_STAND_ACCESS_HALF_WIDTH = 3.25;
 const STAND_NODE_NAMES = new Set([
     'grandstand_north',
     'grandstand_south',
@@ -151,7 +161,7 @@ export class SpectatorCrowdBuilder {
     }
 
     private collectGrandstandSpectators(buckets: SpectatorSpec[][], stand: Grandstand) {
-        const { bounds, sideSign, axis, rowCount, yaw, tier } = stand;
+        const { name, bounds, sideSign, axis, rowCount, yaw, tier } = stand;
         const brightness = tierBrightness(tier);
         const standLength = axis === 'x'
             ? bounds.maxX - bounds.minX
@@ -166,6 +176,12 @@ export class SpectatorCrowdBuilder {
             1,
             (standLength - STAND_AISLE_WIDTH * (sectionCount - 1)) / sectionCount,
         );
+        const standCenterLong = axis === 'x'
+            ? (bounds.minX + bounds.maxX) * 0.5
+            : (bounds.minZ + bounds.maxZ) * 0.5;
+        const accessHalfWidth = name.startsWith('bleacherbatch_')
+            ? (axis === 'x' ? LONG_STAND_ACCESS_HALF_WIDTH : SHORT_STAND_ACCESS_HALF_WIDTH)
+            : 0;
         const rowDepth = standDepth / rowCount;
         // Pool-facing front edge + direction toward the back, derived from the
         // stand's real position. Row 0 (low) must land at the pool-facing front
@@ -189,6 +205,7 @@ export class SpectatorCrowdBuilder {
         for (let row = 0; row < rowCount; row++) {
             const seatY = bounds.minY + SEAT_SURFACE_LIFT + row * STAND_ROW_RISE;
             const seatDepth = frontEdge + backDir * (row + 0.5) * rowDepth;
+            const visibleSeatDepth = seatDepth - backDir * SPECTATOR_SEAT_FORWARD_OFFSET;
             for (let section = 0; section < sectionCount; section++) {
                 // Horizontal stands are segmented along X; the east/west
                 // stands are rotated 90 degrees and must be segmented along Z.
@@ -210,9 +227,12 @@ export class SpectatorCrowdBuilder {
                     const longPosition = sectionMinLong
                         + (col + 0.5) * (sectionWidth / columns)
                         + jitter(row, col, section, 0.18);
+                    if (accessHalfWidth > 0 && Math.abs(longPosition - standCenterLong) < accessHalfWidth) {
+                        continue;
+                    }
                     const depthJitter = jitter(col, row, sideSign, rowDepth * 0.24);
-                    const x = axis === 'x' ? longPosition : seatDepth + depthJitter;
-                    const z = axis === 'x' ? seatDepth + depthJitter : longPosition;
+                    const x = axis === 'x' ? longPosition : visibleSeatDepth + depthJitter;
+                    const z = axis === 'x' ? visibleSeatDepth + depthJitter : longPosition;
                     const colorIndex = Math.floor(
                         random01(col, row, section + sideSign * 11, 53) * SPECTATOR_COLORS.length,
                     ) % SPECTATOR_COLORS.length;
@@ -295,7 +315,8 @@ export class SpectatorCrowdBuilder {
                         }
                         const along = ((col + 0.5) / columns) * length
                             + jitter(row, col, tier + salt, 0.18);
-                        const dp = rowDepth + jitter(col, row, tier + salt, depth * 0.12);
+                        const dp = rowDepth - SPECTATOR_SEAT_FORWARD_OFFSET
+                            + jitter(col, row, tier + salt, depth * 0.12);
                         const x = origin.x + longUx * along + depthUx * dp;
                         const z = origin.z + longUz * along + depthUz * dp;
                         const height = 0.34 + random01(row, col, tier + salt, 31) * 0.24;
@@ -364,7 +385,7 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeomet
 
     for (let i = 0; i < spectators.length; i++) {
         const spectator = spectators[i];
-        const base = i * 4;
+        const base = i * 6;
         Quat.fromEuler(
             rotation,
             -90 + jitter(spectator.row, spectator.col, spectator.side, 5),
@@ -373,15 +394,31 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeomet
         );
         Vec3.transformQuat(normal, Vec3.UNIT_Y, rotation);
 
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.5, -0.5, 0, 0);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.5, -0.5, 1, 0);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.5, 0.5, 1, 1);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.5, 0.5, 0, 1);
+        // Six hard-edged points read as an oval/capsule at venue distance while
+        // avoiding alpha overdraw, textures, extra materials, or extra draw calls.
+        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.28, -0.5, 0.22, 0);
+        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.28, -0.5, 0.78, 0);
+        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.5, 0, 1, 0.5);
+        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.28, 0.5, 0.78, 1);
+        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.28, 0.5, 0.22, 1);
+        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.5, 0, 0, 0.5);
         const b = spectator.brightness;
-        colors.push(b, b, b, 1, b, b, b, 1, b, b, b, 1, b, b, b, 1);
-        indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        for (let vertex = 0; vertex < 6; vertex++) {
+            colors.push(b, b, b, 1);
+        }
+        indices.push(
+            base, base + 1, base + 2,
+            base, base + 2, base + 3,
+            base, base + 3, base + 4,
+            base, base + 4, base + 5,
+        );
         // Back-facing triangles keep the flat crowd visible from every race shot.
-        indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+        indices.push(
+            base, base + 2, base + 1,
+            base, base + 3, base + 2,
+            base, base + 4, base + 3,
+            base, base + 5, base + 4,
+        );
     }
 
     return { positions, normals, uvs, colors, indices, minPos, maxPos };
