@@ -125,10 +125,10 @@ const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
 // --- Dive charge glow: color gradient stops (sRGB, converted to linear in shader) ---
 // Matches the existing UI charge bar color language.
 const CHARGE_GLOW_STOPS: readonly { t: number; r: number; g: number; b: number }[] = [
-    { t: 0.00, r: 255, g: 230, b: 200 },  // warm white
-    { t: 0.30, r: 255, g: 210, b:  80 },  // warm yellow
-    { t: 0.72, r: 255, g: 170, b:  40 },  // orange-gold
-    { t: 1.00, r: 255, g: 150, b:  20 },  // deep orange-gold
+    { t: 0.00, r: 120, g: 180, b: 255 },  // cool blue (visible even at low charge)
+    { t: 0.35, r: 160, g: 255, b: 180 },  // cyan-green transition
+    { t: 0.70, r: 255, g: 210, b:  50 },  // vivid gold
+    { t: 1.00, r: 255, g: 140, b:  20 },  // hot orange
 ];
 const CHARGE_FLASH_BURST_SECONDS = 0.18;
 const CHARGE_FLASH_BURST_OVERSHOOT = 1.6;

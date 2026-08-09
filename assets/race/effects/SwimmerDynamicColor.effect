@@ -140,8 +140,10 @@ CCProgram swimmer-color-fs %{
     // camera (silhouette), adding an anime-style backlight halo. Additive.
     float rim = pow(1.0 - clamp(dot(celN, celV), 0.0, 1.0), max(rimParams.x, 0.1));
     bodyColor += rimColor.rgb * (rim * rimColor.a * step(0.5, rimParams.y));
-    // --- Charge glow: additive emissive during dive charge -------------------
-    bodyColor += chargeGlow.rgb * (chargeGlow.a * chargeGlow.a);
+    // --- Charge glow: Fresnel-weighted inner edge emission during dive charge --
+    float chargeRim = pow(1.0 - clamp(dot(celN, celV), 0.0, 1.0), 1.8);
+    float chargeMask = 0.12 + 0.88 * chargeRim;
+    bodyColor += chargeGlow.rgb * (chargeGlow.a * chargeGlow.a) * chargeMask;
     // World-space waterline as a HARD boundary: every fragment below waterLine.x
     // is the submerged colour, everything above is normal, with a single sharp
     // division line (no gradient/blur). underwaterColor.a controls how different
