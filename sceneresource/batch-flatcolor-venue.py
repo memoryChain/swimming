@@ -31,6 +31,7 @@ ATLAS_VERSION = 6
 ATLAS_WIDTH = 192
 ATLAS_HEIGHT = 16
 ATLAS_TEMP_FILENAME = ".BleacherFlatColorAtlas.tmp.png"
+EXPECTED_BLEACHER_TARGETS = 17
 POOL_CENTER = Vector((25.0, 0.0, 0.0))
 TIER_BRIGHTNESS = (1.0, 0.82, 0.66, 0.52)
 
@@ -213,12 +214,13 @@ def concrete_orientation_name(
     if normal.z <= -0.7:
         return "Side"
 
-    side_match = re.search(r"_t[1-4]_([nse])(?:_|$)", obj.name.lower())
+    side_match = re.search(r"_t[1-4]_([nsew])(?:_|$)", obj.name.lower())
     if side_match:
         front_by_side = {
             "n": Vector((0.0, -1.0, 0.0)),
             "s": Vector((0.0, 1.0, 0.0)),
             "e": Vector((-1.0, 0.0, 0.0)),
+            "w": Vector((1.0, 0.0, 0.0)),
         }
         return "Front" if normal.dot(front_by_side[side_match.group(1)]) >= 0.7 else "Side"
 
@@ -564,8 +566,10 @@ def main() -> None:
         (obj for obj in bpy.data.objects if is_bleacher_object(obj)),
         key=lambda obj: obj.name,
     )
-    if len(targets) != 13:
-        raise RuntimeError(f"expected 13 bleacher targets, found {len(targets)}")
+    if len(targets) != EXPECTED_BLEACHER_TARGETS:
+        raise RuntimeError(
+            f"expected {EXPECTED_BLEACHER_TARGETS} bleacher targets, found {len(targets)}"
+        )
 
     silver_faces = 0 if args.dry_run else sync_master_wall_materials()
     before = estimate_primitive_count()

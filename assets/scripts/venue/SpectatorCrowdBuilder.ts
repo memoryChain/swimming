@@ -49,15 +49,19 @@ const STAND_NODE_NAMES = new Set([
     'bleacherbatch_t1_n',
     'bleacherbatch_t1_s',
     'bleacherbatch_t1_e',
+    'bleacherbatch_t1_w',
     'bleacherbatch_t2_n',
     'bleacherbatch_t2_s',
     'bleacherbatch_t2_e',
+    'bleacherbatch_t2_w',
     'bleacherbatch_t3_n',
     'bleacherbatch_t3_s',
     'bleacherbatch_t3_e',
+    'bleacherbatch_t3_w',
     'bleacherbatch_t4_n',
     'bleacherbatch_t4_s',
     'bleacherbatch_t4_e',
+    'bleacherbatch_t4_w',
 ]);
 
 type StandAxis = 'x' | 'z';
@@ -299,6 +303,8 @@ export class SpectatorCrowdBuilder {
         const sides: Array<{ key: string; salt: number }> = [
             { key: 'ne', salt: 0 },
             { key: 'se', salt: 97 },
+            { key: 'nw', salt: 193 },
+            { key: 'sw', salt: 307 },
         ];
         for (const side of sides) {
             const origin = anchors.get(`spectator_corner_${side.key}_o`);
@@ -545,7 +551,7 @@ function collectGrandstands(root: Node): Grandstand[] {
 }
 
 // World positions of the corner seating anchor empties baked into the venue GLB
-// (spectator_corner_{ne,se}_{o,u,v}). Used to place the diagonal corner crowd
+// (spectator_corner_{ne,se,nw,sw}_{o,u,v}). Used to place the diagonal corner crowd
 // exactly on the seats without hard-coding the glTF axis mapping.
 function collectCornerAnchors(root: Node): Map<string, Vec3> {
     const anchors = new Map<string, Vec3>();

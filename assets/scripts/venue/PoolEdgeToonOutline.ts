@@ -32,13 +32,13 @@ const TIER_FRONT_POSITION_SCALE = 1000;
 const TIER_FRONT_GROUP_EPSILON = 0.01;
 const TIER_FRONT_MERGE_EPSILON = 0.02;
 const TIER_FRONT_ATLAS_BANDS = 12;
-const TIER_FRONT_NODE_PATTERN = /^bleacherbatch_t([1-4])_([nse])$/;
+const TIER_FRONT_NODE_PATTERN = /^bleacherbatch_t([1-4])_([nsew])$/;
 const TIER_FRONT_CORNER_NODE_NAME = 'cornerstands_merged';
 const TIER_FRONT_POOL_MIN_X = 0;
 const TIER_FRONT_POOL_MAX_X = 50;
 const TIER_FRONT_POOL_HALF_Z = 10.5;
-const EXPECTED_TIER_FRONT_SOURCE_NODES = 13;
-const EXPECTED_TIER_FRONT_RUNS = 96;
+const EXPECTED_TIER_FRONT_SOURCE_NODES = 17;
+const EXPECTED_TIER_FRONT_RUNS = 144;
 
 type LineGeometry = { positions: number[]; indices: number[] };
 type TierFrontRun = {
@@ -538,11 +538,13 @@ function appendTierFrontRuns(
     expectedTier: number,
 ): TierFrontRun[] {
     const physicalEdges = collectTierFrontEdges(renderer, nodeToPool, expectedTier);
-    const axis: 'x' | 'z' = side === 'e' ? 'z' : 'x';
+    const axis: 'x' | 'z' = side === 'e' || side === 'w' ? 'z' : 'x';
     const crossAxis: 'x' | 'z' = axis === 'x' ? 'z' : 'x';
     const back = side === 'n'
         ? new Vec3(0, 0, -1)
-        : side === 's' ? new Vec3(0, 0, 1) : new Vec3(1, 0, 0);
+        : side === 's'
+            ? new Vec3(0, 0, 1)
+            : side === 'e' ? new Vec3(1, 0, 0) : new Vec3(-1, 0, 0);
     const candidates: StraightTierFrontCandidate[] = [];
     for (const edge of physicalEdges) {
         const axisDelta = Math.abs(edge.end[axis] - edge.start[axis]);
@@ -653,6 +655,13 @@ function appendCornerTierFrontRuns(
             const normalZ = tangentX;
             const midpointX = (start.x + end.x) * 0.5;
             const midpointZ = (start.z + end.z) * 0.5;
+            const cornerX = midpointX < TIER_FRONT_POOL_MIN_X
+                ? -1 : midpointX > TIER_FRONT_POOL_MAX_X ? 1 : 0;
+            const cornerZ = midpointZ < -TIER_FRONT_POOL_HALF_Z
+                ? -1 : midpointZ > TIER_FRONT_POOL_HALF_Z ? 1 : 0;
+            if (cornerX === 0 || cornerZ === 0) {
+                return null;
+            }
             const nearestPoolX = Math.max(TIER_FRONT_POOL_MIN_X, Math.min(TIER_FRONT_POOL_MAX_X, midpointX));
             const nearestPoolZ = Math.max(-TIER_FRONT_POOL_HALF_Z, Math.min(TIER_FRONT_POOL_HALF_Z, midpointZ));
             const back = new Vec3(midpointX - nearestPoolX, 0, midpointZ - nearestPoolZ);
@@ -661,6 +670,7 @@ function appendCornerTierFrontRuns(
             }
             back.normalize();
             return {
+                corner: `${cornerX}_${cornerZ}`,
                 height: (start.y + end.y) * 0.5,
                 angle: Math.atan2(tangentZ, tangentX),
                 offset: normalX * midpointX + normalZ * midpointZ,
@@ -678,7 +688,8 @@ function appendCornerTierFrontRuns(
 
     const byHeightAndDirection = new Map<string, typeof candidates>();
     for (const candidate of candidates) {
-        const key = `${Math.round(candidate.height * TIER_FRONT_POSITION_SCALE)}`
+        const key = `${candidate.corner}`
+            + `_${Math.round(candidate.height * TIER_FRONT_POSITION_SCALE)}`
             + `_${Math.round(candidate.angle * TIER_FRONT_POSITION_SCALE)}`;
         const group = byHeightAndDirection.get(key);
         if (group) {
@@ -1055,12 +1066,15 @@ function appendConfiguredStructureContactLines(
     // These are the visible wall planes; the slab bounds penetrate the walls.
     // Adjacent straight/diagonal segments share wall-plane intersections so the
     // one-sided ribbons overlap cleanly at all four corner junctions.
-    ceilingWallEdge(fromBlenderVenue(-15.69, 24.291, 5.08), fromBlenderVenue(59.2071, 24.291, 5.08), fromBlenderVenue(0, -1, 0), fromBlenderVenue(0, -1, 0));
-    ceilingWallEdge(fromBlenderVenue(-15.737, -24.29, 5.08), fromBlenderVenue(59.2081, -24.29, 5.08), fromBlenderVenue(0, 1, 0), fromBlenderVenue(0, 1, 0));
+    ceilingWallEdge(fromBlenderVenue(-18.9484, 24.291, 5.08), fromBlenderVenue(59.2071, 24.291, 5.08), fromBlenderVenue(0, -1, 0), fromBlenderVenue(0, -1, 0));
+    ceilingWallEdge(fromBlenderVenue(-18.9494, -24.29, 5.08), fromBlenderVenue(59.2081, -24.29, 5.08), fromBlenderVenue(0, 1, 0), fromBlenderVenue(0, 1, 0));
+    ceilingWallEdge(fromBlenderVenue(-18.9484, 24.291, 5.08), fromBlenderVenue(-24.2113, 19.0281, 5.08), fromBlenderVenue(1, -1, 0), fromBlenderVenue(1, -1, 0));
+    ceilingWallEdge(fromBlenderVenue(-18.9494, -24.29, 5.08), fromBlenderVenue(-24.2113, -19.0281, 5.08), fromBlenderVenue(1, 1, 0), fromBlenderVenue(1, 1, 0));
+    ceilingWallEdge(fromBlenderVenue(-24.2113, -19.0281, 5.08), fromBlenderVenue(-24.2113, 19.0281, 5.08), fromBlenderVenue(1, 0, 0), fromBlenderVenue(1, 0, 0));
     ceilingWallEdge(fromBlenderVenue(59.2071, 24.291, 5.08), fromBlenderVenue(64.47, 19.0281, 5.08), fromBlenderVenue(-1, -1, 0), fromBlenderVenue(-1, -1, 0));
     ceilingWallEdge(fromBlenderVenue(59.2081, -24.29, 5.08), fromBlenderVenue(64.47, -19.0281, 5.08), fromBlenderVenue(-1, 1, 0), fromBlenderVenue(-1, 1, 0));
     ceilingWallEdge(fromBlenderVenue(64.47, -19.0281, 5.08), fromBlenderVenue(64.47, 19.0281, 5.08), fromBlenderVenue(-1, 0, 0), fromBlenderVenue(-1, 0, 0));
-    return 5;
+    return 8;
 }
 
 function buildStandStructureLineGeometry(

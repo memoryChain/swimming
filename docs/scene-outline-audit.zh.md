@@ -15,10 +15,10 @@
 | --- | --- | --- | --- | --- | --- |
 | 所有泳者 | `CharacterOutlineShell` | 蒙皮反向外壳，使用 `PlayerOutline.effect` | `CharacterSkinApplier.configureOutlineShells()` | 每个角色复制约 2,826-3,082 个蒙皮三角形；当前四个生产模型均为 1 个 skinned primitive，通常每角色增加 1 draw call | 玩家和 AI 当前均显式开启；底层开关已生效 |
 | 泳池白色池沿 | `PoolEdgeOutlineLines` | 从 4 个池沿长方体的顶部与竖向中段硬边生成双面贴面色带，排除底边 | `GameManager.buildPool3D()` -> `applyPoolEdgeToonOutline()` | 128 triangles，1 draw call | 启用；不再使用反向外壳 |
-| 场馆建筑结构线 | `VenueStructureEdgeLines` | 从 `StandStructure_Merged` 全部硬边和 Access 非楼梯混凝土硬边生成双面贴面色带；楼梯继续使用逐级专用提取，另补南、北、东直墙及南北斜角墙共 5 条穿插式天花板墙交界 | `GameManager.buildPool3D()` -> `applyStandStructureToonOutline()` | 3,398 triangles，1 draw call | 启用；覆盖墙体、二楼/三楼楼板、天花板、平台、Access 墙与门楣；明确排除普通看台、角看台、座椅、扶手、门、标识、泳池和池沿 |
-| 四层观众席前沿 | `VenueTierFrontOutlineLines` | 提取 T1-T4 顶面与朝泳池正面的连续折边；按 1 mm 坐标焊接模块和 UV seam，再合并同线区间 | `GameManager.buildPool3D()` -> `applyTierFrontToonOutline()` | 192 triangles，1 draw call | 启用；覆盖 N/S/E 直线看台和斜角看台，共 96 条整体线；保留中央入口缺口，不画模块分割线 |
+| 场馆建筑结构线 | `VenueStructureEdgeLines` | 从 `StandStructure_Merged` 全部硬边和 Access 非楼梯混凝土硬边生成双面贴面色带；楼梯继续使用逐级专用提取，另补南、北、东、西直墙及四个斜角墙共 8 条穿插式天花板墙交界 | `GameManager.buildPool3D()` -> `applyStandStructureToonOutline()` | 3,410 triangles，1 draw call | 启用；覆盖墙体、二楼/三楼楼板、天花板、平台、Access 墙与门楣；明确排除普通看台、角看台、座椅、扶手、门、标识、泳池和池沿 |
+| 四层观众席前沿 | `VenueTierFrontOutlineLines` | 提取 T1-T4 顶面与朝泳池正面的连续折边；按 1 mm 坐标焊接模块和 UV seam，再合并同线区间 | `GameManager.buildPool3D()` -> `applyTierFrontToonOutline()` | 288 triangles，1 draw call | 启用；覆盖 N/S/E/W 直线看台和 NE/SE/NW/SW 斜角看台，共 144 条整体线；保留中央入口缺口，不画模块分割线 |
 
-建筑通用提取实际命中 308 条硬边、1,184 triangles；与入口楼梯 2,194 triangles 和 5 条接触线 20 triangles 合并为一个 Mesh。加上四层观众席前沿与池沿后，场馆描边合计约 3,718 triangles、3 draw calls。全部只在场馆加载时构建一次，比赛帧内没有 JavaScript 更新或 Mesh 重建。
+建筑通用提取实际命中 308 条硬边、1,184 triangles；与入口楼梯 2,194 triangles 和 8 条接触线 32 triangles 合并为一个 Mesh。加上四层观众席前沿与池沿后，场馆描边合计约 3,826 triangles、3 draw calls。全部只在场馆加载时构建一次，比赛帧内没有 JavaScript 更新或 Mesh 重建。
 
 ### 共用描边 Effect
 
