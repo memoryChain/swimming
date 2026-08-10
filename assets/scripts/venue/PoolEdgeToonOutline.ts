@@ -5,6 +5,10 @@ import { Color, gfx, Mat4, Material, Mesh, MeshRenderer, Node, utils, Vec3 } fro
 
 const EDGE_NODE_NAME = 'pool_edge_batch';
 const POOL_EDGE_LINE_NODE_NAME = 'PoolEdgeOutlineLines';
+const PODIUM_NODE_NAMES = ['award_podium_1', 'award_podium_2', 'award_podium_3'];
+const PODIUM_LINE_NODE_NAME = 'AwardsPodiumOutlineLines';
+const PODIUM_SURFACE_COLOR = new Color(234, 89, 89, 255);
+const PODIUM_CONTACT_EPSILON = 1e-3;
 const POOL_EDGE_LINE_THICKNESS = 0.01;
 const POOL_EDGE_LINE_SURFACE_OFFSET = 0.002;
 const POOL_EDGE_HARD_EDGE_DOT = 0.95;
@@ -32,6 +36,14 @@ const SEAT_SIDE_SURFACE_OFFSET = 0.003;
 const SEAT_SIDE_COLOR = new Color(4, 34, 170, 255);
 
 type LineGeometry = { positions: number[]; indices: number[] };
+type Bounds3 = {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    minZ: number;
+    maxZ: number;
+};
 
 function findNodeByName(root: Node, name: string): Node | null {
     if (root.name === name) {
@@ -406,7 +418,11 @@ function appendPrimitiveHardEdgeRibbons(
     return hardEdges;
 }
 
-function buildPoolEdgeLineGeometry(mesh: Mesh): { geometry: LineGeometry; edges: number } | null {
+function buildPoolEdgeLineGeometry(
+    mesh: Mesh,
+    transform?: Mat4,
+    adjustEdge?: (start: Vec3, end: Vec3) => boolean,
+): { geometry: LineGeometry; edges: number } | null {
     const positions: number[] = [];
     const indices: number[] = [];
     const identity = new Mat4();
@@ -452,9 +468,18 @@ function buildPoolEdgeLineGeometry(mesh: Mesh): { geometry: LineGeometry; edges:
             }
         }
 
+        const localStart = new Vec3();
+        const localEnd = new Vec3();
+        const localOpposite = new Vec3();
         const lineStart = new Vec3();
         const lineEnd = new Vec3();
         const opposite = new Vec3();
+        const faceNormal = new Vec3();
+        const normalTip = new Vec3();
+        const transformedOrigin = new Vec3();
+        if (transform) {
+            Vec3.transformMat4(transformedOrigin, Vec3.ZERO, transform);
+        }
         for (const edge of edgeFaces.values()) {
             if (edge.faces.length !== 2
                 || Math.abs(Vec3.dot(edge.faces[0].normal, edge.faces[1].normal)) > POOL_EDGE_HARD_EDGE_DOT) {
@@ -466,18 +491,37 @@ function buildPoolEdgeLineGeometry(mesh: Mesh): { geometry: LineGeometry; edges:
                 && Math.abs(pos[bBase + 1] - minY) < POOL_EDGE_HEIGHT_EPSILON) {
                 continue;
             }
-            lineStart.set(pos[aBase], pos[aBase + 1], pos[aBase + 2]);
-            lineEnd.set(pos[bBase], pos[bBase + 1], pos[bBase + 2]);
+            localStart.set(pos[aBase], pos[aBase + 1], pos[aBase + 2]);
+            localEnd.set(pos[bBase], pos[bBase + 1], pos[bBase + 2]);
+            if (transform) {
+                Vec3.transformMat4(lineStart, localStart, transform);
+                Vec3.transformMat4(lineEnd, localEnd, transform);
+            } else {
+                lineStart.set(localStart);
+                lineEnd.set(localEnd);
+            }
+            if (adjustEdge && !adjustEdge(lineStart, lineEnd)) {
+                continue;
+            }
             for (const face of edge.faces) {
                 const oppositeBase = face.opposite * 3;
-                opposite.set(pos[oppositeBase], pos[oppositeBase + 1], pos[oppositeBase + 2]);
+                localOpposite.set(pos[oppositeBase], pos[oppositeBase + 1], pos[oppositeBase + 2]);
+                if (transform) {
+                    Vec3.transformMat4(opposite, localOpposite, transform);
+                    normalTip.set(face.normal);
+                    Vec3.transformMat4(normalTip, normalTip, transform);
+                    Vec3.subtract(faceNormal, normalTip, transformedOrigin).normalize();
+                } else {
+                    opposite.set(localOpposite);
+                    faceNormal.set(face.normal);
+                }
                 appendSurfaceRibbon(
                     positions,
                     indices,
                     lineStart,
                     lineEnd,
                     opposite,
-                    face.normal,
+                    faceNormal,
                     identity,
                     POOL_EDGE_LINE_THICKNESS,
                     POOL_EDGE_LINE_SURFACE_OFFSET,
@@ -487,6 +531,95 @@ function buildPoolEdgeLineGeometry(mesh: Mesh): { geometry: LineGeometry; edges:
         }
     }
     return indices.length > 0 ? { geometry: { positions, indices }, edges: hardEdges } : null;
+}
+
+function transformedMeshBounds(
+    mesh: Mesh,
+    transform: Mat4,
+): Bounds3 | null {
+    const min = mesh.struct.minPosition;
+    const max = mesh.struct.maxPosition;
+    if (!min || !max) {
+        return null;
+    }
+    const bounds: Bounds3 = {
+        minX: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY,
+        minZ: Number.POSITIVE_INFINITY,
+        maxZ: Number.NEGATIVE_INFINITY,
+    };
+    const point = new Vec3();
+    for (let corner = 0; corner < 8; corner++) {
+        point.set(
+            (corner & 1) ? max.x : min.x,
+            (corner & 2) ? max.y : min.y,
+            (corner & 4) ? max.z : min.z,
+        );
+        Vec3.transformMat4(point, point, transform);
+        bounds.minX = Math.min(bounds.minX, point.x);
+        bounds.maxX = Math.max(bounds.maxX, point.x);
+        bounds.minY = Math.min(bounds.minY, point.y);
+        bounds.maxY = Math.max(bounds.maxY, point.y);
+        bounds.minZ = Math.min(bounds.minZ, point.z);
+        bounds.maxZ = Math.max(bounds.maxZ, point.z);
+    }
+    return bounds;
+}
+
+function adjustPodiumInternalVerticalEdge(
+    start: Vec3,
+    end: Vec3,
+    own: Bounds3,
+    all: Bounds3[],
+): boolean {
+    if (Math.abs(start.x - end.x) > PODIUM_CONTACT_EPSILON
+        || Math.abs(start.z - end.z) > PODIUM_CONTACT_EPSILON
+        || Math.abs(start.y - end.y) <= PODIUM_CONTACT_EPSILON) {
+        return true;
+    }
+
+    let sharedHeight = own.minY;
+    for (const other of all) {
+        if (other === own || Math.abs(other.minY - own.minY) > PODIUM_CONTACT_EPSILON) {
+            continue;
+        }
+        const withinSharedX = start.x >= Math.max(own.minX, other.minX) - PODIUM_CONTACT_EPSILON
+            && start.x <= Math.min(own.maxX, other.maxX) + PODIUM_CONTACT_EPSILON;
+        const withinSharedZ = start.z >= Math.max(own.minZ, other.minZ) - PODIUM_CONTACT_EPSILON
+            && start.z <= Math.min(own.maxZ, other.maxZ) + PODIUM_CONTACT_EPSILON;
+        const touchesAcrossX = withinSharedZ && (
+            (Math.abs(start.x - own.minX) <= PODIUM_CONTACT_EPSILON
+                && Math.abs(start.x - other.maxX) <= PODIUM_CONTACT_EPSILON)
+            || (Math.abs(start.x - own.maxX) <= PODIUM_CONTACT_EPSILON
+                && Math.abs(start.x - other.minX) <= PODIUM_CONTACT_EPSILON)
+        );
+        const touchesAcrossZ = withinSharedX && (
+            (Math.abs(start.z - own.minZ) <= PODIUM_CONTACT_EPSILON
+                && Math.abs(start.z - other.maxZ) <= PODIUM_CONTACT_EPSILON)
+            || (Math.abs(start.z - own.maxZ) <= PODIUM_CONTACT_EPSILON
+                && Math.abs(start.z - other.minZ) <= PODIUM_CONTACT_EPSILON)
+        );
+        if (touchesAcrossX || touchesAcrossZ) {
+            sharedHeight = Math.max(sharedHeight, Math.min(own.maxY, other.maxY));
+        }
+    }
+
+    const low = Math.min(start.y, end.y);
+    const high = Math.max(start.y, end.y);
+    if (sharedHeight <= low + PODIUM_CONTACT_EPSILON) {
+        return true;
+    }
+    if (sharedHeight >= high - PODIUM_CONTACT_EPSILON) {
+        return false;
+    }
+    if (start.y < end.y) {
+        start.y = sharedHeight;
+    } else {
+        end.y = sharedHeight;
+    }
+    return true;
 }
 
 function shouldOutlinePrimitive(nodeName: string, materialName: string, primitive: number): boolean {
@@ -827,6 +960,117 @@ export function applyPoolEdgeToonOutline(pool: Node | null, debug?: (message: st
     lineRenderer.mesh = lineMesh;
     lineRenderer.setMaterial(material, 0);
     debug?.(`pool edge ribbons attached edges=${built.edges} triangles=${built.geometry.indices.length / 3} drawCalls=1`);
+}
+
+// Reuse the pool-curb hard-edge treatment for the three awards steps, merging
+// all ribbons into one static renderer so the podium costs one extra draw call.
+export function applyAwardsPodiumToonOutline(pool: Node | null, debug?: (message: string) => void): void {
+    if (!pool?.isValid || pool.getChildByName(PODIUM_LINE_NODE_NAME)) {
+        return;
+    }
+
+    const poolWorld = new Mat4();
+    const inversePoolWorld = new Mat4();
+    pool.getWorldMatrix(poolWorld);
+    if (!Mat4.invert(inversePoolWorld, poolWorld)) {
+        debug?.('awards podium outline skipped: pool transform is not invertible');
+        return;
+    }
+
+    const podiums: { node: Node; renderer: MeshRenderer; mesh: Mesh; transform: Mat4; bounds: Bounds3 }[] = [];
+    for (const name of PODIUM_NODE_NAMES) {
+        const node = findNodeByName(pool, name);
+        const renderer = node?.getComponent(MeshRenderer);
+        const mesh = renderer?.mesh;
+        if (!node?.isValid || !renderer || !mesh) {
+            debug?.(`awards podium source missing: ${name}`);
+            continue;
+        }
+        const nodeWorld = new Mat4();
+        const nodeToPool = new Mat4();
+        node.getWorldMatrix(nodeWorld);
+        Mat4.multiply(nodeToPool, inversePoolWorld, nodeWorld);
+        const bounds = transformedMeshBounds(mesh, nodeToPool);
+        if (!bounds) {
+            debug?.(`awards podium bounds unreadable: ${name}`);
+            continue;
+        }
+        podiums.push({ node, renderer, mesh, transform: nodeToPool, bounds });
+    }
+    if (podiums.length === 0) {
+        debug?.('awards podium setup skipped: no readable podium geometry');
+        return;
+    }
+
+    const surfaceMaterial = new Material();
+    surfaceMaterial.initialize({ effectName: 'builtin-unlit' });
+    surfaceMaterial.name = 'AwardsPodiumUnlitMaterial';
+    surfaceMaterial.setProperty('mainColor', PODIUM_SURFACE_COLOR);
+    for (const podium of podiums) {
+        const materialCount = Math.max(1, podium.renderer.sharedMaterials.length);
+        for (let primitive = 0; primitive < materialCount; primitive++) {
+            podium.renderer.setMaterial(surfaceMaterial, primitive);
+        }
+    }
+
+    const geometry: LineGeometry = { positions: [], indices: [] };
+    const allBounds = podiums.map((podium) => podium.bounds);
+    let hardEdges = 0;
+    let lineLayer = pool.layer;
+    for (const podium of podiums) {
+        const built = buildPoolEdgeLineGeometry(
+            podium.mesh,
+            podium.transform,
+            (start, end) => adjustPodiumInternalVerticalEdge(start, end, podium.bounds, allBounds),
+        );
+        if (!built) {
+            debug?.(`awards podium outline geometry unreadable: ${podium.node.name}`);
+            continue;
+        }
+        const vertexOffset = geometry.positions.length / 3;
+        geometry.positions.push(...built.geometry.positions);
+        for (const index of built.geometry.indices) {
+            geometry.indices.push(index + vertexOffset);
+        }
+        hardEdges += built.edges;
+        lineLayer = podium.node.layer;
+    }
+    if (geometry.indices.length === 0) {
+        debug?.('awards podium outline skipped: no visible hard edges');
+        return;
+    }
+
+    let lineMesh: Mesh | null = null;
+    try {
+        lineMesh = utils.createMesh(geometry);
+    } catch (error) {
+        debug?.(`awards podium outline mesh build failed: ${error}`);
+        return;
+    }
+
+    const material = new Material();
+    material.initialize({
+        effectName: 'builtin-unlit',
+        states: {
+            rasterizerState: {
+                cullMode: gfx.CullMode.NONE,
+            },
+        },
+    });
+    material.name = 'AwardsPodiumLineMaterial';
+    material.setProperty('mainColor', OUTLINE_COLOR);
+
+    const lineNode = new Node(PODIUM_LINE_NODE_NAME);
+    lineNode.setParent(pool);
+    lineNode.setPosition(0, 0, 0);
+    lineNode.setRotationFromEuler(0, 0, 0);
+    lineNode.setScale(1, 1, 1);
+    lineNode.layer = lineLayer;
+
+    const lineRenderer = lineNode.addComponent(MeshRenderer);
+    lineRenderer.mesh = lineMesh;
+    lineRenderer.setMaterial(material, 0);
+    debug?.(`awards podium unlit+ribbons attached nodes=${podiums.length} edges=${hardEdges} triangles=${geometry.indices.length / 3} drawCalls=1`);
 }
 
 // Build one static line mesh for stair folds and the selected architectural
