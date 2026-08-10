@@ -528,10 +528,14 @@ function appendConfiguredStructureContactLines(
         append(start, end, down, towardPool);
     };
     // These are the visible wall planes; the slab bounds penetrate the walls.
-    ceilingWallEdge(fromBlenderVenue(-15.69, 24.291, 5.08), fromBlenderVenue(56.123, 24.291, 5.08), fromBlenderVenue(0, -1, 0), fromBlenderVenue(0, -1, 0));
-    ceilingWallEdge(fromBlenderVenue(-15.737, -24.29, 5.08), fromBlenderVenue(56.099, -24.29, 5.08), fromBlenderVenue(0, 1, 0), fromBlenderVenue(0, 1, 0));
-    ceilingWallEdge(fromBlenderVenue(64.47, -17.9354, 5.08), fromBlenderVenue(64.47, 17.9354, 5.08), fromBlenderVenue(-1, 0, 0), fromBlenderVenue(-1, 0, 0));
-    return 3;
+    // Adjacent straight/diagonal segments share wall-plane intersections so the
+    // one-sided ribbons overlap cleanly at all four corner junctions.
+    ceilingWallEdge(fromBlenderVenue(-15.69, 24.291, 5.08), fromBlenderVenue(59.2071, 24.291, 5.08), fromBlenderVenue(0, -1, 0), fromBlenderVenue(0, -1, 0));
+    ceilingWallEdge(fromBlenderVenue(-15.737, -24.29, 5.08), fromBlenderVenue(59.2081, -24.29, 5.08), fromBlenderVenue(0, 1, 0), fromBlenderVenue(0, 1, 0));
+    ceilingWallEdge(fromBlenderVenue(59.2071, 24.291, 5.08), fromBlenderVenue(64.47, 19.0281, 5.08), fromBlenderVenue(-1, -1, 0), fromBlenderVenue(-1, -1, 0));
+    ceilingWallEdge(fromBlenderVenue(59.2081, -24.29, 5.08), fromBlenderVenue(64.47, -19.0281, 5.08), fromBlenderVenue(-1, 1, 0), fromBlenderVenue(-1, 1, 0));
+    ceilingWallEdge(fromBlenderVenue(64.47, -19.0281, 5.08), fromBlenderVenue(64.47, 19.0281, 5.08), fromBlenderVenue(-1, 0, 0), fromBlenderVenue(-1, 0, 0));
+    return 5;
 }
 
 function buildStandStructureLineGeometry(
