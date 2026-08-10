@@ -2,14 +2,16 @@ import { Color, EffectAsset, Mat4, Material, MeshRenderer, Node, Texture2D, Vec3
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
-// "Arena dimming" pass: darken the grandstand / wall geometry by BOTH world
-// height and horizontal distance from the pool, so the venue reads like the
-// reference photo (bright poolside, fading dark toward the top and far corners).
+// "Arena dimming" pass: darken wall and decorative geometry by BOTH world
+// height and horizontal distance from the pool. The blue bleacher atlas uses
+// four discrete tier values so matching faces stay uniform within each tier.
 // Pool/water/lane-floats/swimmers stay bright.
 //
 // Implementation: swap each stand renderer's material to VenueHeightShade.effect
 // (an unlit shader that multiplies the visible colour by a per-PIXEL height/
-// distance brightness gradient in the fragment shader). We do NOT read or rebuild
+// distance brightness gradient in the fragment shader). The v5 bleacher atlas
+// already contains its final T1-T4 values, so its four multipliers stay at 1.
+// We do NOT read or rebuild
 // meshes — that only works in the editor/web (mesh CPU data is released on device,
 // so utils.readMesh returns nothing and the effect silently does nothing). The
 // GPU gradient needs only the world position, so it works on WeChat/real devices.
@@ -39,11 +41,12 @@ const NEAR_KEEP_M = 6;
 // Source-material texture uniforms to carry over onto the shaded material.
 const TEXTURE_KEYS = ['emissiveMap', 'albedoMap', 'mainTexture'];
 
-// Keep walls, Access stairs and platforms white. Ordinary bleacher steps use a
-// separate cyan-grey tint so they remain distinct from the dark-blue seats.
-const WALL_TINT = new Color(255, 255, 255);
-const BLEACHER_STEP_TINT = new Color(132, 196, 204);
+// Keep walls, access stairs, and platforms silver-grey. Legacy unbatched
+// bleacher steps use the same venue blue as the authored atlas.
+const WALL_TINT = new Color(206, 214, 218);
+const BLEACHER_STEP_TINT = new Color(44, 97, 184);
 const CONCRETE_MATERIAL_KEYWORD = 'bleacher_step_concrete';
+const BLEACHER_ATLAS_MATERIAL_KEYWORD = 'bleacherflatcoloratlas';
 const EMERGENCY_EXIT_MATERIAL_KEYWORD = 'emergencyexit';
 const SOFFIT_MATERIAL_KEYWORD = 'upper_tier_soffit_dark';
 
@@ -78,8 +81,17 @@ function isBleacherModule(name: string): boolean {
     return lower.startsWith('bleacherbatch_') || lower === 'cornerstands_merged';
 }
 
+function bleacherTierIndex(name: string): number {
+    const match = /^bleacherbatch_t([1-4])_/.exec(name.toLowerCase());
+    return match ? parseInt(match[1], 10) - 1 : -1;
+}
+
 function isConcreteMaterial(material: Material | null): boolean {
     return material?.name.toLowerCase().includes(CONCRETE_MATERIAL_KEYWORD) ?? false;
+}
+
+function isBleacherAtlasMaterial(material: Material | null): boolean {
+    return material?.name.toLowerCase().includes(BLEACHER_ATLAS_MATERIAL_KEYWORD) ?? false;
 }
 
 function isEmergencyExitMaterial(material: Material | null): boolean {
@@ -155,6 +167,29 @@ function accumulateBounds(
     }
 }
 
+function rendererWorldHeightBounds(renderer: MeshRenderer): { minY: number; maxY: number } | null {
+    const mesh = renderer.mesh;
+    const min = mesh?.struct.minPosition;
+    const max = mesh?.struct.maxPosition;
+    if (!min || !max) {
+        return null;
+    }
+    renderer.node.getWorldMatrix(_mat);
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < 8; i++) {
+        _corner.set(
+            (i & 1) ? max.x : min.x,
+            (i & 2) ? max.y : min.y,
+            (i & 4) ? max.z : min.z,
+        );
+        Vec3.transformMat4(_corner, _corner, _mat);
+        minY = Math.min(minY, _corner.y);
+        maxY = Math.max(maxY, _corner.y);
+    }
+    return { minY, maxY };
+}
+
 function makeShadeMaterial(
     effect: EffectAsset,
     source: Material | null,
@@ -218,8 +253,18 @@ function shadeStands(
     }
 
     const range = { minY: Number.POSITIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY, maxDist: 0 };
+    const tierBounds = Array.from(
+        { length: 4 },
+        () => ({ minY: Number.POSITIVE_INFINITY, maxY: Number.NEGATIVE_INFINITY }),
+    );
     for (const renderer of renderers) {
         accumulateBounds(renderer, range);
+        const tierIndex = bleacherTierIndex(renderer.node.name);
+        const bounds = tierIndex >= 0 ? rendererWorldHeightBounds(renderer) : null;
+        if (bounds) {
+            tierBounds[tierIndex].minY = Math.min(tierBounds[tierIndex].minY, bounds.minY);
+            tierBounds[tierIndex].maxY = Math.max(tierBounds[tierIndex].maxY, bounds.maxY);
+        }
     }
     const minY = range.minY;
     const spanY = Math.max(0.0001, range.maxY - range.minY);
@@ -228,6 +273,20 @@ function shadeStands(
     const poolRect = new Vec4(POOL_MIN_X, POOL_MAX_X, POOL_HALF_Z, nearKeep);
     const heightRange = new Vec4(minY, spanY, spanDist, 0);
     const shadeCurve = new Vec4(bottom, top, heightCurve, distanceCurve);
+    const tierBoundary = (lower: number, upper: number, fallback: number) => (
+        Number.isFinite(tierBounds[lower].maxY) && Number.isFinite(tierBounds[upper].minY)
+            ? (tierBounds[lower].maxY + tierBounds[upper].minY) * 0.5
+            : fallback
+    );
+    // Tier mode prevents the continuous wall gradient from touching the atlas.
+    // Its final T1-T4 brightness is authored in Blender and baked into the UVs.
+    const bleacherAuthoredBrightness = new Vec4(1, 1, 1, 1);
+    const bleacherTierRange = new Vec4(
+        tierBoundary(0, 1, minY + spanY * 0.25),
+        tierBoundary(1, 2, minY + spanY * 0.5),
+        tierBoundary(2, 3, minY + spanY * 0.75),
+        1,
+    );
 
     // Share one material per (source colour + texture), or one per wall tint, so
     // same-coloured stands keep batching instead of each getting a unique
@@ -246,16 +305,24 @@ function shadeStands(
             }
             const concrete = isConcreteMaterial(source);
             const bleacherStep = concrete && isBleacherModule(renderer.node.name);
+            const bleacherAtlas = isBleacherAtlasMaterial(source);
             const tint = bleacherStep
                 ? BLEACHER_STEP_TINT
                 : isWallNode(renderer.node.name) || concrete ? WALL_TINT : null;
             const texture = tint ? null : findMaterialTexture(source);
             const key = tint
                 ? bleacherStep ? 'bleacher-step' : 'wall'
-                : `${readVisibleColor(source).toHEX('#rrggbb')}|${texture ? texture.uuid : 'n'}`;
+                : `${readVisibleColor(source).toHEX('#rrggbb')}|${texture ? texture.uuid : 'n'}|${bleacherAtlas ? 'tier' : 'shade'}`;
             let material = materialCache.get(key);
             if (!material) {
-                material = makeShadeMaterial(effect, source, tint, poolRect, heightRange, shadeCurve);
+                material = makeShadeMaterial(
+                    effect,
+                    source,
+                    tint,
+                    bleacherAtlas ? bleacherAuthoredBrightness : poolRect,
+                    bleacherAtlas ? bleacherTierRange : heightRange,
+                    shadeCurve,
+                );
                 materialCache.set(key, material);
             }
             renderer.setMaterial(material, sub);

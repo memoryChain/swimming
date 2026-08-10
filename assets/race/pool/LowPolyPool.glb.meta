@@ -13,7 +13,7 @@
       "name": "BleacherBatch_T3_E_Mesh.mesh",
       "userData": {
         "gltfIndex": 20,
-        "triangleCount": 1800
+        "triangleCount": 144
       },
       "ver": "1.1.1",
       "imported": true,
@@ -49,7 +49,7 @@
       "name": "BleacherBatch_T4_N_Mesh.mesh",
       "userData": {
         "gltfIndex": 21,
-        "triangleCount": 3472
+        "triangleCount": 232
       },
       "ver": "1.1.1",
       "imported": true,
@@ -247,7 +247,7 @@
       "name": "BleacherBatch_T1_N_Mesh.mesh",
       "userData": {
         "gltfIndex": 11,
-        "triangleCount": 3472
+        "triangleCount": 232
       },
       "ver": "1.1.1",
       "imported": true,
@@ -265,7 +265,7 @@
       "name": "BleacherBatch_T1_S_Mesh.mesh",
       "userData": {
         "gltfIndex": 12,
-        "triangleCount": 3472
+        "triangleCount": 232
       },
       "ver": "1.1.1",
       "imported": true,
@@ -283,7 +283,7 @@
       "name": "BleacherBatch_T1_E_Mesh.mesh",
       "userData": {
         "gltfIndex": 13,
-        "triangleCount": 1800
+        "triangleCount": 144
       },
       "ver": "1.1.1",
       "imported": true,
@@ -301,7 +301,7 @@
       "name": "CornerStands_Merged_Mesh.mesh",
       "userData": {
         "gltfIndex": 14,
-        "triangleCount": 5632
+        "triangleCount": 448
       },
       "ver": "1.1.1",
       "imported": true,
@@ -319,7 +319,7 @@
       "name": "BleacherBatch_T2_N_Mesh.mesh",
       "userData": {
         "gltfIndex": 15,
-        "triangleCount": 3452
+        "triangleCount": 212
       },
       "ver": "1.1.1",
       "imported": true,
@@ -337,7 +337,7 @@
       "name": "BleacherBatch_T2_S_Mesh.mesh",
       "userData": {
         "gltfIndex": 16,
-        "triangleCount": 3452
+        "triangleCount": 212
       },
       "ver": "1.1.1",
       "imported": true,
@@ -355,7 +355,7 @@
       "name": "BleacherBatch_T2_E_Mesh.mesh",
       "userData": {
         "gltfIndex": 17,
-        "triangleCount": 1788
+        "triangleCount": 132
       },
       "ver": "1.1.1",
       "imported": true,
@@ -373,7 +373,7 @@
       "name": "BleacherBatch_T3_N_Mesh.mesh",
       "userData": {
         "gltfIndex": 18,
-        "triangleCount": 3472
+        "triangleCount": 232
       },
       "ver": "1.1.1",
       "imported": true,
@@ -391,7 +391,7 @@
       "name": "BleacherBatch_T3_S_Mesh.mesh",
       "userData": {
         "gltfIndex": 19,
-        "triangleCount": 3472
+        "triangleCount": 232
       },
       "ver": "1.1.1",
       "imported": true,
@@ -409,7 +409,7 @@
       "name": "BleacherBatch_T4_S_Mesh.mesh",
       "userData": {
         "gltfIndex": 22,
-        "triangleCount": 3472
+        "triangleCount": 232
       },
       "ver": "1.1.1",
       "imported": true,
@@ -427,7 +427,7 @@
       "name": "BleacherBatch_T4_E_Mesh.mesh",
       "userData": {
         "gltfIndex": 23,
-        "triangleCount": 1800
+        "triangleCount": 144
       },
       "ver": "1.1.1",
       "imported": true,
@@ -702,12 +702,12 @@
       ],
       "subMetas": {}
     },
-    "437d7": {
+    "35d7e": {
       "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@437d7",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@35d7e",
       "displayName": "",
-      "id": "437d7",
-      "name": "Upper_Tier_Platform_Blue.material",
+      "id": "35d7e",
+      "name": "Upper_Tier_Soffit_Dark.material",
       "userData": {
         "gltfIndex": 0
       },
@@ -718,12 +718,12 @@
       ],
       "subMetas": {}
     },
-    "35d7e": {
+    "bfef7": {
       "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@35d7e",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@bfef7",
       "displayName": "",
-      "id": "35d7e",
-      "name": "Upper_Tier_Soffit_Dark.material",
+      "id": "bfef7",
+      "name": "Venue_Wall_SilverGray.material",
       "userData": {
         "gltfIndex": 1
       },
@@ -911,22 +911,6 @@
       ],
       "subMetas": {}
     },
-    "1edd1": {
-      "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@1edd1",
-      "displayName": "",
-      "id": "1edd1",
-      "name": "Bleacher_Step_Concrete.material",
-      "userData": {
-        "gltfIndex": 13
-      },
-      "ver": "1.0.14",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
     "5e8cb": {
       "importer": "gltf-material",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@5e8cb",
@@ -934,7 +918,7 @@
       "id": "5e8cb",
       "name": "Bleacher_Access_Door_Dark.material",
       "userData": {
-        "gltfIndex": 14
+        "gltfIndex": 13
       },
       "ver": "1.0.14",
       "imported": true,
@@ -950,7 +934,7 @@
       "id": "b5a68",
       "name": "EmergencyExit_Green.material",
       "userData": {
-        "gltfIndex": 15
+        "gltfIndex": 14
       },
       "ver": "1.0.14",
       "imported": true,
@@ -966,7 +950,7 @@
       "id": "cdd5d",
       "name": "Bleacher_Access_Rail_Blue.material",
       "userData": {
-        "gltfIndex": 16
+        "gltfIndex": 15
       },
       "ver": "1.0.14",
       "imported": true,
@@ -982,7 +966,7 @@
       "id": "fdd62",
       "name": "tripo_mat_5335fffe-5079-4a12-b652-047c6dc6b800.003.material",
       "userData": {
-        "gltfIndex": 17
+        "gltfIndex": 16
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1084,8 +1068,8 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@9b782"
       ],
       "materials": [
-        "a751d540-5ebd-4868-a41a-334975b3aed3@437d7",
         "a751d540-5ebd-4868-a41a-334975b3aed3@35d7e",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@bfef7",
         "a751d540-5ebd-4868-a41a-334975b3aed3@c3802",
         "a751d540-5ebd-4868-a41a-334975b3aed3@3271b",
         "a751d540-5ebd-4868-a41a-334975b3aed3@bdbbf",
@@ -1097,7 +1081,6 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@5bdca",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d3bc5",
         "a751d540-5ebd-4868-a41a-334975b3aed3@61c03",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@1edd1",
         "a751d540-5ebd-4868-a41a-334975b3aed3@5e8cb",
         "a751d540-5ebd-4868-a41a-334975b3aed3@b5a68",
         "a751d540-5ebd-4868-a41a-334975b3aed3@cdd5d",

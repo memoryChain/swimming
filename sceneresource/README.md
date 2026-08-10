@@ -43,6 +43,15 @@
 
 打开 `SwimmingVenue_Rebuild_FlatColor_editable.blend` 修改几何、材质或锚点，完成后保存。
 
+无座椅看台的最终颜色必须在 editable 中可见。修改看台或墙面配色后执行：
+
+```powershell
+<BLENDER> -b sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend `
+  --python sceneresource/batch-flatcolor-venue.py -- --author-editable
+```
+
+该模式会把 T1-T4 的顶面、正面、侧/底面写成 12 个最终 unlit 材质，并将背墙、上层平台和入口建筑墙面写成银灰色。不得只在 Cocos 运行时 shader 中补偿错误的 Blender 源材质。
+
 不要在 `SwimmingVenue_Rebuild_FlatColor.blend` 里直接做创作性修改。否则下一次从 editable 同步时无法判断哪一份才是权威。
 
 ### 2. 同步到导出目标
@@ -80,7 +89,9 @@
 该脚本会：
 
 - 保留 13 个看台节点及全部几何；
-- 把台阶、蓝座椅、深蓝座椅写入一个内嵌 `48x16` atlas；
+- 按 T1-T4 层号和固定看台方位把无座椅台阶写成 12 档最终蓝色，共用一个内嵌 `192x16` atlas；N/S/E 看台的正面分别固定为朝泳池的 `-Y/+Y/-X` 面，不能按面中心到泳池中心的斜向量分类；
+- 12 条色带只包含 `T1-T4 × 顶/正/侧`，色带中心为 `U=(index+0.5)/12`；不保留座椅备用色带、座椅材质或运行时座椅 overlay；
+- 将 `StandStructure_Merged` 和 `BleacherAccess_Architecture_Merged` 中对应墙面同步为 editable 使用的银灰色；
 - 将每个看台从 3 个材质 primitive 收敛为 1 个；
 - 保存合批目标；
 - 清理生成过程中的临时 PNG。
@@ -142,7 +153,9 @@ npm run textures:check
 
 - GLB 仍为 44 个节点、27 个 Mesh 左右，当前基线为 33 primitive。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 26 次提交。
-- 近处座椅为可辨识的蓝色，高层为较暗蓝色，不能变成纯黑或全白。
+- 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
+- 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
+- `StandStructure_Merged`、入口楼梯、平台和其他墙面在 Blender 源与运行时都必须为同一银灰色，不得继承看台蓝色。
 - 东侧、南侧、北侧看台没有缺面，楼梯、扶手、天花板和墙顶交界正常。
 - 观众仍落在 12 个分层看台及角看台上，拍照闪光位置正常。
 - 水面、水下、起跳台、泳道线、颁奖台和场馆描边正常。

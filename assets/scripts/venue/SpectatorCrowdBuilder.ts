@@ -16,9 +16,9 @@ const SPECTATOR_COLORS = [
 ];
 
 // Per-tier brightness multiplier baked into spectator vertex colors. The
-// poolside tier remains readable but dim; each higher tier falls deeper into the
-// same dark environment as the stands and walls.
-const TIER_BRIGHTNESS = [0.52, 0.34, 0.22, 0.14];
+// poolside tier stays clearly readable while each higher tier falls deeper into
+// the same dark environment as the stands and walls.
+const TIER_BRIGHTNESS = [0.68, 0.42, 0.27, 0.17];
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
@@ -34,7 +34,7 @@ const STAND_ROW_RISE = 0.72;
 const SPECTATOR_SEAT_FORWARD_OFFSET = 0.22;
 const STAND_SECTION_COUNT = 6;
 const STAND_AISLE_WIDTH = 1.8;
-const SPECTATOR_SPACING = 0.95;
+const SPECTATOR_SPACING = 1.1;
 const FLASH_CANDIDATE_RATE = 0.22;
 const MAX_FLASH_CANDIDATES = 320;
 // The rebuilt grandstands have a shared access core at their longitudinal

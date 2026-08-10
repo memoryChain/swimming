@@ -78,7 +78,7 @@ import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { WaterRefractionController } from '../venue/WaterRefractionController';
-import { applyAwardsPodiumToonOutline, applyPoolEdgeToonOutline, applySeatSideTone, applyStandStructureToonOutline } from '../venue/PoolEdgeToonOutline';
+import { applyAwardsPodiumToonOutline, applyPoolEdgeToonOutline, applyStandStructureToonOutline, applyTierFrontToonOutline } from '../venue/PoolEdgeToonOutline';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitter';
@@ -993,7 +993,7 @@ export class GameManager extends Component {
                 applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
                 applyAwardsPodiumToonOutline(pool, (message) => this.debug(message));
                 applyStandStructureToonOutline(pool, (message) => this.debug(message));
-                applySeatSideTone(pool, (message) => this.debug(message));
+                applyTierFrontToonOutline(pool, (message) => this.debug(message));
                 this.setupLaneLockdownVisualPreview();
                 done(pool);
             }, 0);

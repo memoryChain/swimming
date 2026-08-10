@@ -24,18 +24,40 @@ const STRUCTURE_LINE_SURFACE_OFFSET = 0.003;
 // the adjacent wall and lintel components contain only 10-12.
 const ACCESS_STAIR_MIN_COMPONENT_TRIANGLES = 48;
 const CONCRETE_MATERIAL_KEYWORD = 'bleacher_step_concrete';
-
-const SEAT_SIDE_TONE_NODE_NAME = 'BleacherSeatSideToneOverlay';
-const SEAT_MATERIAL_KEYWORD = 'stadiumseat_blue';
-const BLEACHER_ATLAS_MATERIAL_KEYWORD = 'bleacherflatcoloratlas';
-const BLEACHER_ATLAS_CONCRETE_MAX_U = 1 / 3;
-const SEAT_SIDE_THRESHOLD = 0.75;
-const SEAT_SIDE_SURFACE_OFFSET = 0.003;
-// Only a mild step down from StadiumSeat_Blue (roughly 83% brightness). Strong
-// contrast turns repeated low-poly side faces into a distracting stripe pattern.
-const SEAT_SIDE_COLOR = new Color(4, 34, 170, 255);
+const WALL_SILVER_MATERIAL_KEYWORD = 'venue_wall_silvergray';
+const TIER_FRONT_LINE_NODE_NAME = 'VenueTierFrontOutlineLines';
+const TIER_FRONT_LINE_THICKNESS = 0.035;
+const TIER_FRONT_LINE_SURFACE_OFFSET = 0.003;
+const TIER_FRONT_POSITION_SCALE = 1000;
+const TIER_FRONT_GROUP_EPSILON = 0.01;
+const TIER_FRONT_MERGE_EPSILON = 0.02;
+const TIER_FRONT_ATLAS_BANDS = 12;
+const TIER_FRONT_NODE_PATTERN = /^bleacherbatch_t([1-4])_([nse])$/;
+const TIER_FRONT_CORNER_NODE_NAME = 'cornerstands_merged';
+const TIER_FRONT_POOL_MIN_X = 0;
+const TIER_FRONT_POOL_MAX_X = 50;
+const TIER_FRONT_POOL_HALF_Z = 10.5;
+const EXPECTED_TIER_FRONT_SOURCE_NODES = 13;
+const EXPECTED_TIER_FRONT_RUNS = 96;
 
 type LineGeometry = { positions: number[]; indices: number[] };
+type TierFrontRun = {
+    start: Vec3;
+    end: Vec3;
+    back: Vec3;
+};
+type StraightTierFrontCandidate = {
+    axis: 'x' | 'z';
+    cross: number;
+    height: number;
+    lo: number;
+    hi: number;
+    back: Vec3;
+};
+type TierFrontEdge = {
+    start: Vec3;
+    end: Vec3;
+};
 type Bounds3 = {
     minX: number;
     maxX: number;
@@ -109,7 +131,6 @@ function appendSurfaceRibbon(
         vertexOffset, vertexOffset + 2, vertexOffset + 3,
     );
 }
-
 function appendDirectedRibbon(
     positions: number[],
     indices: number[],
@@ -418,6 +439,372 @@ function appendPrimitiveHardEdgeRibbons(
     return hardEdges;
 }
 
+function tierFrontPointKey(point: Vec3): string {
+    return `${Math.round(point.x * TIER_FRONT_POSITION_SCALE)}`
+        + `_${Math.round(point.y * TIER_FRONT_POSITION_SCALE)}`
+        + `_${Math.round(point.z * TIER_FRONT_POSITION_SCALE)}`;
+}
+
+function collectTierFrontEdges(
+    renderer: MeshRenderer,
+    nodeToPool: Mat4,
+    expectedTier: number,
+): TierFrontEdge[] {
+    const mesh = renderer.mesh;
+    if (!mesh) {
+        return [];
+    }
+    const physicalEdges = new Map<string, {
+        start: Vec3;
+        end: Vec3;
+        top: boolean;
+        front: boolean;
+    }>();
+    const trianglePoints = [new Vec3(), new Vec3(), new Vec3()];
+    for (let primitive = 0; primitive < mesh.struct.primitives.length; primitive++) {
+        const rawPositions = mesh.readAttribute(
+            primitive, gfx.AttributeName.ATTR_POSITION,
+        ) as ArrayLike<number> | null;
+        const rawTexCoords = mesh.readAttribute(
+            primitive, gfx.AttributeName.ATTR_TEX_COORD,
+        ) as ArrayLike<number> | null;
+        const rawIndices = mesh.readIndices(primitive) as ArrayLike<number> | null;
+        if (!rawPositions || !rawTexCoords || rawPositions.length < 9) {
+            continue;
+        }
+        const vertexCount = Math.floor(rawPositions.length / 3);
+        const sourceIndexCount = rawIndices?.length ?? vertexCount;
+        for (let indexBase = 0; indexBase + 2 < sourceIndexCount; indexBase += 3) {
+            const triangleIndices = [
+                rawIndices ? rawIndices[indexBase] : indexBase,
+                rawIndices ? rawIndices[indexBase + 1] : indexBase + 1,
+                rawIndices ? rawIndices[indexBase + 2] : indexBase + 2,
+            ];
+            const averageU = (
+                rawTexCoords[triangleIndices[0] * 2]
+                + rawTexCoords[triangleIndices[1] * 2]
+                + rawTexCoords[triangleIndices[2] * 2]
+            ) / 3;
+            const atlasIndex = Math.max(
+                0,
+                Math.min(TIER_FRONT_ATLAS_BANDS - 1, Math.round(averageU * TIER_FRONT_ATLAS_BANDS - 0.5)),
+            );
+            if (Math.floor(atlasIndex / 3) + 1 !== expectedTier) {
+                continue;
+            }
+            const orientation = atlasIndex % 3;
+            if (orientation !== 0 && orientation !== 1) {
+                continue;
+            }
+            for (let corner = 0; corner < 3; corner++) {
+                const sourceIndex = triangleIndices[corner];
+                const sourceBase = sourceIndex * 3;
+                trianglePoints[corner].set(
+                    rawPositions[sourceBase],
+                    rawPositions[sourceBase + 1],
+                    rawPositions[sourceBase + 2],
+                );
+                Vec3.transformMat4(trianglePoints[corner], trianglePoints[corner], nodeToPool);
+            }
+            for (const [startCorner, endCorner] of [[0, 1], [1, 2], [2, 0]]) {
+                const start = trianglePoints[startCorner];
+                const end = trianglePoints[endCorner];
+                const startKey = tierFrontPointKey(start);
+                const endKey = tierFrontPointKey(end);
+                const key = startKey < endKey ? `${startKey}|${endKey}` : `${endKey}|${startKey}`;
+                let edge = physicalEdges.get(key);
+                if (!edge) {
+                    edge = { start: start.clone(), end: end.clone(), top: false, front: false };
+                    physicalEdges.set(key, edge);
+                }
+                if (orientation === 0) {
+                    edge.top = true;
+                } else {
+                    edge.front = true;
+                }
+            }
+        }
+    }
+
+    return [...physicalEdges.values()]
+        .filter((edge) => edge.top && edge.front)
+        .map((edge) => ({ start: edge.start, end: edge.end }));
+}
+
+function appendTierFrontRuns(
+    renderer: MeshRenderer,
+    nodeToPool: Mat4,
+    side: string,
+    expectedTier: number,
+): TierFrontRun[] {
+    const physicalEdges = collectTierFrontEdges(renderer, nodeToPool, expectedTier);
+    const axis: 'x' | 'z' = side === 'e' ? 'z' : 'x';
+    const crossAxis: 'x' | 'z' = axis === 'x' ? 'z' : 'x';
+    const back = side === 'n'
+        ? new Vec3(0, 0, -1)
+        : side === 's' ? new Vec3(0, 0, 1) : new Vec3(1, 0, 0);
+    const candidates: StraightTierFrontCandidate[] = [];
+    for (const edge of physicalEdges) {
+        const axisDelta = Math.abs(edge.end[axis] - edge.start[axis]);
+        const crossDelta = Math.abs(edge.end[crossAxis] - edge.start[crossAxis]);
+        const heightDelta = Math.abs(edge.end.y - edge.start.y);
+        if (axisDelta < TIER_FRONT_GROUP_EPSILON
+            || crossDelta > TIER_FRONT_GROUP_EPSILON
+            || heightDelta > TIER_FRONT_GROUP_EPSILON) {
+            continue;
+        }
+        candidates.push({
+            axis,
+            cross: (edge.start[crossAxis] + edge.end[crossAxis]) * 0.5,
+            height: (edge.start.y + edge.end.y) * 0.5,
+            lo: Math.min(edge.start[axis], edge.end[axis]),
+            hi: Math.max(edge.start[axis], edge.end[axis]),
+            back,
+        });
+    }
+
+    const byHeight = new Map<number, StraightTierFrontCandidate[]>();
+    for (const candidate of candidates) {
+        const key = Math.round(candidate.height * TIER_FRONT_POSITION_SCALE);
+        const group = byHeight.get(key);
+        if (group) {
+            group.push(candidate);
+        } else {
+            byHeight.set(key, [candidate]);
+        }
+    }
+    const frontCandidates: StraightTierFrontCandidate[] = [];
+    for (const group of byHeight.values()) {
+        const nearestCross = Math.min(...group.map((candidate) => Math.abs(candidate.cross)));
+        frontCandidates.push(...group.filter(
+            (candidate) => Math.abs(Math.abs(candidate.cross) - nearestCross) <= TIER_FRONT_GROUP_EPSILON,
+        ));
+    }
+
+    const byLine = new Map<string, StraightTierFrontCandidate[]>();
+    for (const candidate of frontCandidates) {
+        const key = `${Math.round(candidate.height * TIER_FRONT_POSITION_SCALE)}`
+            + `_${Math.round(candidate.cross * TIER_FRONT_POSITION_SCALE)}`;
+        const group = byLine.get(key);
+        if (group) {
+            group.push(candidate);
+        } else {
+            byLine.set(key, [candidate]);
+        }
+    }
+    const straightRuns: StraightTierFrontCandidate[] = [];
+    for (const group of byLine.values()) {
+        group.sort((left, right) => left.lo - right.lo);
+        let current = { ...group[0] };
+        for (let index = 1; index < group.length; index++) {
+            const next = group[index];
+            if (next.lo <= current.hi + TIER_FRONT_MERGE_EPSILON) {
+                current.hi = Math.max(current.hi, next.hi);
+            } else {
+                straightRuns.push(current);
+                current = { ...next };
+            }
+        }
+        straightRuns.push(current);
+    }
+    return straightRuns.map((run) => ({
+        start: run.axis === 'x'
+            ? new Vec3(run.lo, run.height, run.cross)
+            : new Vec3(run.cross, run.height, run.lo),
+        end: run.axis === 'x'
+            ? new Vec3(run.hi, run.height, run.cross)
+            : new Vec3(run.cross, run.height, run.hi),
+        back: run.back,
+    }));
+}
+
+function horizontalPoolDistance(x: number, z: number): number {
+    const dx = x < TIER_FRONT_POOL_MIN_X
+        ? TIER_FRONT_POOL_MIN_X - x
+        : x > TIER_FRONT_POOL_MAX_X ? x - TIER_FRONT_POOL_MAX_X : 0;
+    const absoluteZ = Math.abs(z);
+    const dz = absoluteZ > TIER_FRONT_POOL_HALF_Z ? absoluteZ - TIER_FRONT_POOL_HALF_Z : 0;
+    return Math.hypot(dx, dz);
+}
+
+function appendCornerTierFrontRuns(
+    renderer: MeshRenderer,
+    nodeToPool: Mat4,
+    expectedTier: number,
+): TierFrontRun[] {
+    const candidates = collectTierFrontEdges(renderer, nodeToPool, expectedTier)
+        .map((edge) => {
+            let start = edge.start;
+            let end = edge.end;
+            const deltaX = end.x - start.x;
+            const deltaZ = end.z - start.z;
+            const length = Math.hypot(deltaX, deltaZ);
+            if (length < TIER_FRONT_GROUP_EPSILON || Math.abs(end.y - start.y) > TIER_FRONT_GROUP_EPSILON) {
+                return null;
+            }
+            let tangentX = deltaX / length;
+            let tangentZ = deltaZ / length;
+            if (tangentX < 0 || (Math.abs(tangentX) < 1e-6 && tangentZ < 0)) {
+                [start, end] = [end, start];
+                tangentX = -tangentX;
+                tangentZ = -tangentZ;
+            }
+            const normalX = -tangentZ;
+            const normalZ = tangentX;
+            const midpointX = (start.x + end.x) * 0.5;
+            const midpointZ = (start.z + end.z) * 0.5;
+            const nearestPoolX = Math.max(TIER_FRONT_POOL_MIN_X, Math.min(TIER_FRONT_POOL_MAX_X, midpointX));
+            const nearestPoolZ = Math.max(-TIER_FRONT_POOL_HALF_Z, Math.min(TIER_FRONT_POOL_HALF_Z, midpointZ));
+            const back = new Vec3(midpointX - nearestPoolX, 0, midpointZ - nearestPoolZ);
+            if (back.lengthSqr() < 1e-8) {
+                return null;
+            }
+            back.normalize();
+            return {
+                height: (start.y + end.y) * 0.5,
+                angle: Math.atan2(tangentZ, tangentX),
+                offset: normalX * midpointX + normalZ * midpointZ,
+                poolDistance: horizontalPoolDistance(midpointX, midpointZ),
+                lo: tangentX * start.x + tangentZ * start.z,
+                hi: tangentX * end.x + tangentZ * end.z,
+                tangentX,
+                tangentZ,
+                normalX,
+                normalZ,
+                back,
+            };
+        })
+        .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+
+    const byHeightAndDirection = new Map<string, typeof candidates>();
+    for (const candidate of candidates) {
+        const key = `${Math.round(candidate.height * TIER_FRONT_POSITION_SCALE)}`
+            + `_${Math.round(candidate.angle * TIER_FRONT_POSITION_SCALE)}`;
+        const group = byHeightAndDirection.get(key);
+        if (group) {
+            group.push(candidate);
+        } else {
+            byHeightAndDirection.set(key, [candidate]);
+        }
+    }
+    const runs: TierFrontRun[] = [];
+    for (const directionGroup of byHeightAndDirection.values()) {
+        const byParallelLine = new Map<number, typeof candidates>();
+        for (const candidate of directionGroup) {
+            const key = Math.round(candidate.offset * TIER_FRONT_POSITION_SCALE);
+            const line = byParallelLine.get(key);
+            if (line) {
+                line.push(candidate);
+            } else {
+                byParallelLine.set(key, [candidate]);
+            }
+        }
+        const frontLine = [...byParallelLine.values()].reduce((nearest, line) => (
+            Math.min(...line.map((candidate) => candidate.poolDistance))
+                < Math.min(...nearest.map((candidate) => candidate.poolDistance)) ? line : nearest
+        ));
+        frontLine.sort((left, right) => left.lo - right.lo);
+        let lo = frontLine[0].lo;
+        let hi = frontLine[0].hi;
+        const appendRun = () => {
+            const sample = frontLine[0];
+            runs.push({
+                start: new Vec3(
+                    sample.tangentX * lo + sample.normalX * sample.offset,
+                    sample.height,
+                    sample.tangentZ * lo + sample.normalZ * sample.offset,
+                ),
+                end: new Vec3(
+                    sample.tangentX * hi + sample.normalX * sample.offset,
+                    sample.height,
+                    sample.tangentZ * hi + sample.normalZ * sample.offset,
+                ),
+                back: sample.back,
+            });
+        };
+        for (let index = 1; index < frontLine.length; index++) {
+            const next = frontLine[index];
+            if (next.lo <= hi + TIER_FRONT_MERGE_EPSILON) {
+                hi = Math.max(hi, next.hi);
+            } else {
+                appendRun();
+                lo = next.lo;
+                hi = next.hi;
+            }
+        }
+        appendRun();
+    }
+    return runs;
+}
+
+function buildTierFrontLineGeometry(pool: Node): {
+    geometry: LineGeometry;
+    sourceNodes: number;
+    runs: number;
+} | null {
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const poolWorld = new Mat4();
+    const inversePoolWorld = new Mat4();
+    pool.getWorldMatrix(poolWorld);
+    if (!Mat4.invert(inversePoolWorld, poolWorld)) {
+        return null;
+    }
+    const identity = new Mat4();
+    Mat4.identity(identity);
+    const down = new Vec3(0, -1, 0);
+    const poolFacing = new Vec3();
+    let sourceNodes = 0;
+    let runCount = 0;
+    const visit = (node: Node) => {
+        const lowerName = node.name.toLowerCase();
+        const match = TIER_FRONT_NODE_PATTERN.exec(lowerName);
+        const isCorner = lowerName === TIER_FRONT_CORNER_NODE_NAME;
+        const renderer = match || isCorner ? node.getComponent(MeshRenderer) : null;
+        if (renderer?.mesh && (match || isCorner)) {
+            const nodeWorld = new Mat4();
+            const nodeToPool = new Mat4();
+            node.getWorldMatrix(nodeWorld);
+            Mat4.multiply(nodeToPool, inversePoolWorld, nodeWorld);
+            const runs = match
+                ? appendTierFrontRuns(renderer, nodeToPool, match[2], parseInt(match[1], 10))
+                : [
+                    ...appendCornerTierFrontRuns(renderer, nodeToPool, 1),
+                    ...appendCornerTierFrontRuns(renderer, nodeToPool, 2),
+                    ...appendCornerTierFrontRuns(renderer, nodeToPool, 3),
+                    ...appendCornerTierFrontRuns(renderer, nodeToPool, 4),
+                ];
+            for (const run of runs) {
+                poolFacing.set(-run.back.x, -run.back.y, -run.back.z);
+                appendDirectedRibbon(
+                    positions,
+                    indices,
+                    run.start,
+                    run.end,
+                    down,
+                    poolFacing,
+                    identity,
+                    TIER_FRONT_LINE_THICKNESS,
+                    TIER_FRONT_LINE_SURFACE_OFFSET,
+                );
+            }
+            if (runs.length > 0) {
+                sourceNodes++;
+                runCount += runs.length;
+            }
+        }
+        for (const child of node.children) {
+            visit(child);
+        }
+    };
+    visit(pool);
+    return indices.length > 0 ? {
+        geometry: { positions, indices },
+        sourceNodes,
+        runs: runCount,
+    } : null;
+}
+
 function buildPoolEdgeLineGeometry(
     mesh: Mesh,
     transform?: Mat4,
@@ -623,8 +1010,11 @@ function adjustPodiumInternalVerticalEdge(
 }
 
 function shouldOutlinePrimitive(nodeName: string, materialName: string, primitive: number): boolean {
+    const lowerNode = nodeName.toLowerCase();
     const lowerMaterial = materialName.toLowerCase();
     return lowerMaterial.includes(CONCRETE_MATERIAL_KEYWORD)
+        || (lowerNode === 'bleacheraccess_architecture_merged'
+            && lowerMaterial.includes(WALL_SILVER_MATERIAL_KEYWORD))
         || (!lowerMaterial && primitive === 0);
 }
 
@@ -752,155 +1142,6 @@ function buildStandStructureLineGeometry(
         buildingEdges,
         contactLines,
     } : null;
-}
-
-function isSeatBatchNode(name: string): boolean {
-    const lower = name.toLowerCase();
-    return lower.startsWith('bleacherbatch_') || lower === 'cornerstands_merged';
-}
-
-function seatLateralAxis(nodeName: string, centerX: number, centerZ: number): { x: number; z: number } | null {
-    const lower = nodeName.toLowerCase();
-    if (lower.endsWith('_n') || lower.endsWith('_s')) {
-        return { x: 1, z: 0 };
-    }
-    if (lower.endsWith('_e')) {
-        return { x: 0, z: 1 };
-    }
-    // The two corner stands face diagonally toward the pool centre.
-    const inwardX = 25 - centerX;
-    const inwardZ = -centerZ;
-    const length = Math.hypot(inwardX, inwardZ);
-    if (length < 1e-6) {
-        return null;
-    }
-    return { x: -inwardZ / length, z: inwardX / length };
-}
-
-function buildSeatSideToneGeometry(pool: Node): { positions: number[]; indices: number[]; nodes: number; triangles: number } | null {
-    const positions: number[] = [];
-    const indices: number[] = [];
-    const poolWorld = new Mat4();
-    const inversePoolWorld = new Mat4();
-    pool.getWorldMatrix(poolWorld);
-    if (!Mat4.invert(inversePoolWorld, poolWorld)) {
-        return null;
-    }
-
-    let sourceNodes = 0;
-    let triangleCount = 0;
-    const a = new Vec3();
-    const b = new Vec3();
-    const c = new Vec3();
-    const visit = (node: Node) => {
-        if (isSeatBatchNode(node.name)) {
-            const renderer = node.getComponent(MeshRenderer);
-            const mesh = renderer?.mesh;
-            if (renderer && mesh) {
-                const nodeWorld = new Mat4();
-                const nodeToPool = new Mat4();
-                node.getWorldMatrix(nodeWorld);
-                Mat4.multiply(nodeToPool, inversePoolWorld, nodeWorld);
-                let includedNode = false;
-
-                for (let p = 0; p < mesh.struct.primitives.length; p++) {
-                    const source = renderer.getSharedMaterial(p) ?? renderer.sharedMaterials[p] ?? null;
-                    const materialName = source?.name.toLowerCase() ?? '';
-                    const isSeatPrimitive = materialName.includes(SEAT_MATERIAL_KEYWORD);
-                    const isBleacherAtlas = materialName.includes(BLEACHER_ATLAS_MATERIAL_KEYWORD);
-                    if (!isSeatPrimitive && !isBleacherAtlas) {
-                        continue;
-                    }
-                    const rawPositions = mesh.readAttribute(p, gfx.AttributeName.ATTR_POSITION) as ArrayLike<number> | null;
-                    const rawIndices = mesh.readIndices(p) as ArrayLike<number> | null;
-                    const rawTexCoords = isBleacherAtlas
-                        ? mesh.readAttribute(p, gfx.AttributeName.ATTR_TEX_COORD) as ArrayLike<number> | null
-                        : null;
-                    if (!rawPositions || rawPositions.length < 9) {
-                        continue;
-                    }
-                    if (isBleacherAtlas && !rawTexCoords) {
-                        continue;
-                    }
-                    const vertexCount = Math.floor(rawPositions.length / 3);
-                    const sourceIndexCount = rawIndices?.length ?? vertexCount;
-                    const remap = new Map<number, number>();
-                    const readPoint = (sourceIndex: number, out: Vec3) => {
-                        const base = sourceIndex * 3;
-                        out.set(rawPositions[base], rawPositions[base + 1], rawPositions[base + 2]);
-                        Vec3.transformMat4(out, out, nodeToPool);
-                    };
-
-                    for (let i = 0; i + 2 < sourceIndexCount; i += 3) {
-                        const ia = rawIndices ? rawIndices[i] : i;
-                        const ib = rawIndices ? rawIndices[i + 1] : i + 1;
-                        const ic = rawIndices ? rawIndices[i + 2] : i + 2;
-                        if (rawTexCoords) {
-                            const averageU = (
-                                rawTexCoords[ia * 2]
-                                + rawTexCoords[ib * 2]
-                                + rawTexCoords[ic * 2]
-                            ) / 3;
-                            if (averageU <= BLEACHER_ATLAS_CONCRETE_MAX_U) {
-                                continue;
-                            }
-                        }
-                        readPoint(ia, a);
-                        readPoint(ib, b);
-                        readPoint(ic, c);
-                        const ux = b.x - a.x;
-                        const uy = b.y - a.y;
-                        const uz = b.z - a.z;
-                        const vx = c.x - a.x;
-                        const vy = c.y - a.y;
-                        const vz = c.z - a.z;
-                        const nx = uy * vz - uz * vy;
-                        const ny = uz * vx - ux * vz;
-                        const nz = ux * vy - uy * vx;
-                        const normalLength = Math.hypot(nx, ny, nz);
-                        if (normalLength < 1e-7 || Math.abs(ny / normalLength) > 0.72) {
-                            continue;
-                        }
-                        const lateral = seatLateralAxis(node.name, (a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3);
-                        if (!lateral) {
-                            continue;
-                        }
-                        const sideDot = (nx * lateral.x + nz * lateral.z) / normalLength;
-                        if (Math.abs(sideDot) < SEAT_SIDE_THRESHOLD) {
-                            continue;
-                        }
-                        const sideSign = sideDot >= 0 ? 1 : -1;
-                        const append = (sourceIndex: number, point: Vec3) => {
-                            const key = sourceIndex * 2 + (sideSign > 0 ? 1 : 0);
-                            const existing = remap.get(key);
-                            if (existing !== undefined) {
-                                return existing;
-                            }
-                            const outputIndex = positions.length / 3;
-                            positions.push(
-                                point.x + lateral.x * sideSign * SEAT_SIDE_SURFACE_OFFSET,
-                                point.y,
-                                point.z + lateral.z * sideSign * SEAT_SIDE_SURFACE_OFFSET,
-                            );
-                            remap.set(key, outputIndex);
-                            return outputIndex;
-                        };
-                        indices.push(append(ia, a), append(ib, b), append(ic, c));
-                        triangleCount++;
-                        includedNode = true;
-                    }
-                }
-                if (includedNode) {
-                    sourceNodes++;
-                }
-            }
-        }
-        for (const child of node.children) {
-            visit(child);
-        }
-    };
-    visit(pool);
-    return triangleCount > 0 ? { positions, indices, nodes: sourceNodes, triangles: triangleCount } : null;
 }
 
 // Attach explicit double-sided ribbons to the top and vertical hard edges of
@@ -1122,42 +1363,56 @@ export function applyStandStructureToonOutline(pool: Node | null, debug?: (messa
     );
 }
 
-// Add a single unlit overlay containing only the left/right-facing triangles of
-// every moulded seat. The source GLB stays compact: the overlay is derived once
-// at load time, then the normal stand-height pass replaces its source material
-// so the darker blue follows the same upper/far dimming as the seats.
-export function applySeatSideTone(pool: Node | null, debug?: (message: string) => void): void {
-    if (!pool?.isValid || pool.getChildByName(SEAT_SIDE_TONE_NODE_NAME)) {
+// Outline only the pool-facing fold lines of the seating tiers.
+// Collinear module segments are merged before mesh creation, so the authored
+// six-metre modules read as one stand and central access gaps remain open.
+export function applyTierFrontToonOutline(pool: Node | null, debug?: (message: string) => void): void {
+    if (!pool?.isValid || pool.getChildByName(TIER_FRONT_LINE_NODE_NAME)) {
         return;
     }
-    const geometry = buildSeatSideToneGeometry(pool);
-    if (!geometry) {
-        debug?.('seat side tone skipped: no readable matching geometry');
+    const built = buildTierFrontLineGeometry(pool);
+    if (!built) {
+        debug?.('tier front outline skipped: no matching fold lines');
         return;
     }
-
-    let mesh: Mesh | null = null;
+    let outlineMesh: Mesh | null = null;
     try {
-        mesh = utils.createMesh({ positions: geometry.positions, indices: geometry.indices });
+        outlineMesh = utils.createMesh(built.geometry);
     } catch (error) {
-        debug?.(`seat side tone mesh build failed: ${error}`);
+        debug?.(`tier front outline mesh build failed: ${error}`);
         return;
     }
-
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit' });
-    material.name = 'RuntimeSeatSideDarkBlue';
-    material.setProperty('mainColor', SEAT_SIDE_COLOR);
-
-    const node = new Node(SEAT_SIDE_TONE_NODE_NAME);
-    node.setParent(pool);
-    node.setPosition(0, 0, 0);
-    node.setRotationFromEuler(0, 0, 0);
-    node.setScale(1, 1, 1);
-    node.layer = pool.layer;
-
-    const renderer = node.addComponent(MeshRenderer);
-    renderer.mesh = mesh;
+    material.initialize({
+        effectName: 'builtin-unlit',
+        states: {
+            rasterizerState: {
+                cullMode: gfx.CullMode.NONE,
+            },
+        },
+    });
+    material.name = 'VenueTierFrontOutlineMaterial';
+    material.setProperty('mainColor', OUTLINE_COLOR);
+    const lineNode = new Node(TIER_FRONT_LINE_NODE_NAME);
+    lineNode.setParent(pool);
+    lineNode.setPosition(0, 0, 0);
+    lineNode.setRotationFromEuler(0, 0, 0);
+    lineNode.setScale(1, 1, 1);
+    lineNode.layer = pool.layer;
+    const renderer = lineNode.addComponent(MeshRenderer);
+    renderer.mesh = outlineMesh;
     renderer.setMaterial(material, 0);
-    debug?.(`seat side tone attached nodes=${geometry.nodes} triangles=${geometry.triangles} drawCalls=1`);
+    if (built.sourceNodes !== EXPECTED_TIER_FRONT_SOURCE_NODES || built.runs !== EXPECTED_TIER_FRONT_RUNS) {
+        console.warn(
+            `[SpeedSwimming] unexpected tier front outline geometry:`
+            + ` nodes=${built.sourceNodes}/${EXPECTED_TIER_FRONT_SOURCE_NODES}`
+            + ` runs=${built.runs}/${EXPECTED_TIER_FRONT_RUNS}`,
+        );
+    }
+    debug?.(
+        `tier front outline attached nodes=${built.sourceNodes}`
+        + ` runs=${built.runs}`
+        + ` triangles=${built.geometry.indices.length / 3} drawCalls=1`,
+    );
 }
+
