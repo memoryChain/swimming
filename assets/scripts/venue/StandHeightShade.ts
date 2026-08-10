@@ -39,9 +39,11 @@ const NEAR_KEEP_M = 6;
 // Source-material texture uniforms to carry over onto the shaded material.
 const TEXTURE_KEYS = ['emissiveMap', 'albedoMap', 'mainTexture'];
 
-// Start walls / stairs / platforms from clean white. The common height and
-// distance gradient still darkens upper and far tiers in the arena.
+// Keep walls, Access stairs and platforms white. Ordinary bleacher steps use a
+// separate cyan-grey tint so they remain distinct from the dark-blue seats.
 const WALL_TINT = new Color(255, 255, 255);
+const BLEACHER_STEP_TINT = new Color(132, 196, 204);
+const CONCRETE_MATERIAL_KEYWORD = 'bleacher_step_concrete';
 const EMERGENCY_EXIT_MATERIAL_KEYWORD = 'emergencyexit';
 const SOFFIT_MATERIAL_KEYWORD = 'upper_tier_soffit_dark';
 
@@ -69,6 +71,15 @@ function isStandNode(name: string): boolean {
 function isWallNode(name: string): boolean {
     const lower = name.toLowerCase();
     return lower.includes('standstructure') || lower.includes('upperplatform');
+}
+
+function isBleacherModule(name: string): boolean {
+    const lower = name.toLowerCase();
+    return lower.startsWith('bleacherbatch_') || lower === 'cornerstands_merged';
+}
+
+function isConcreteMaterial(material: Material | null): boolean {
+    return material?.name.toLowerCase().includes(CONCRETE_MATERIAL_KEYWORD) ?? false;
 }
 
 function isEmergencyExitMaterial(material: Material | null): boolean {
@@ -224,7 +235,6 @@ function shadeStands(
     // ~20 draw calls). The shade uniforms are global, so sharing is safe.
     const materialCache = new Map<string, Material>();
     for (const renderer of renderers) {
-        const tint = isWallNode(renderer.node.name) ? WALL_TINT : null;
         const slots = Math.max(1, renderer.sharedMaterials.length);
         for (let sub = 0; sub < slots; sub++) {
             const source = renderer.getSharedMaterial(sub);
@@ -234,9 +244,14 @@ function shadeStands(
             if (isEmergencyExitMaterial(source) || isSoffitMaterial(source)) {
                 continue;
             }
+            const concrete = isConcreteMaterial(source);
+            const bleacherStep = concrete && isBleacherModule(renderer.node.name);
+            const tint = bleacherStep
+                ? BLEACHER_STEP_TINT
+                : isWallNode(renderer.node.name) || concrete ? WALL_TINT : null;
             const texture = tint ? null : findMaterialTexture(source);
             const key = tint
-                ? 'wall'
+                ? bleacherStep ? 'bleacher-step' : 'wall'
                 : `${readVisibleColor(source).toHEX('#rrggbb')}|${texture ? texture.uuid : 'n'}`;
             let material = materialCache.get(key);
             if (!material) {

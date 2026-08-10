@@ -2,7 +2,10 @@
 
 ## Communication
 
-- Prefer replying in Chinese (中文) in conversations with the user, unless the user writes in another language or asks otherwise.
+- **Always reply in Chinese (中文). This is a hard rule with no exceptions.**
+- **Never use Japanese (日本語) in any part of a reply** — not in narration, explanations, tool preambles, summaries, comments, or anywhere else. Japanese is explicitly forbidden even when tool output, code, or file contents are in another language.
+- This applies to all thinking-out-loud narration and status updates too, not just the final answer. Every sentence shown to the user must be in Chinese.
+- Technical terms, code identifiers, file paths, and commands may stay in their original form (usually English), but all surrounding prose must be Chinese.
 
 ## Project Context
 
