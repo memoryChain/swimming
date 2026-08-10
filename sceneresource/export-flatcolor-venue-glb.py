@@ -1,8 +1,9 @@
 """Export the clean FlatColor swimming venue to the runtime GLB.
 
-Unlike the old venue, SwimmingVenue_Rebuild_FlatColor.blend has no post-export
-injected content (start blocks are runtime-instanced from the anchor empties), so
-a straight full export is safe.
+SwimmingVenue_Rebuild_FlatColor.blend is the merged/export target, not the
+editable source. Synchronize the editable venue into it, then run
+batch-flatcolor-venue.py before exporting. This script rejects an unbatched
+target instead of silently shipping its extra material primitives.
 
 Headless usage:
     & "E:\\blender\\blender.exe" -b sceneresource\\SwimmingVenue_Rebuild_FlatColor.blend \\
@@ -44,6 +45,10 @@ REQUIRED_NODES = (
     "start_block_top_near_marker",
 )
 
+BLEACHER_ATLAS_MATERIAL = "BleacherFlatColorAtlas_Material"
+EXPECTED_BLEACHER_BATCHES = 13
+MAX_EXPORT_PRIMITIVES = 35
+
 
 def script_args():
     args = sys.argv
@@ -56,6 +61,51 @@ def default_output():
     # sceneresource/ -> repo root -> assets/race/pool/LowPolyPool.glb
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(repo_root, "assets", "race", "pool", "LowPolyPool.glb")
+
+
+def exportable_meshes():
+    return [
+        obj for obj in bpy.data.objects
+        if obj.type == "MESH" and not obj.hide_render and not obj.hide_get()
+    ]
+
+
+def validate_batching():
+    meshes = exportable_meshes()
+    bleachers = [
+        obj for obj in meshes
+        if obj.name.lower().startswith("bleacherbatch_")
+        or obj.name.lower() == "cornerstands_merged"
+    ]
+    if len(bleachers) != EXPECTED_BLEACHER_BATCHES:
+        raise RuntimeError(
+            f"Expected {EXPECTED_BLEACHER_BATCHES} bleacher batches, found {len(bleachers)}"
+        )
+    unbatched = []
+    for obj in bleachers:
+        used_indices = {polygon.material_index for polygon in obj.data.polygons}
+        used_names = {
+            obj.material_slots[index].material.name
+            for index in used_indices
+            if index < len(obj.material_slots) and obj.material_slots[index].material
+        }
+        if used_names != {BLEACHER_ATLAS_MATERIAL}:
+            unbatched.append((obj.name, sorted(used_names)))
+    if unbatched:
+        raise RuntimeError(
+            "Bleachers are not atlas-batched; run batch-flatcolor-venue.py first: "
+            f"{unbatched}"
+        )
+
+    primitive_count = sum(
+        max(1, len({polygon.material_index for polygon in obj.data.polygons}))
+        for obj in meshes
+    )
+    if primitive_count > MAX_EXPORT_PRIMITIVES:
+        raise RuntimeError(
+            f"Venue has {primitive_count} export primitives; expected <= {MAX_EXPORT_PRIMITIVES}"
+        )
+    return primitive_count
 
 
 def main():
@@ -73,6 +123,8 @@ def main():
             obj.hide_set(True)
             obj.hide_viewport = True
             obj.hide_render = True
+
+    primitive_count = validate_batching()
 
     os.makedirs(os.path.dirname(output_glb), exist_ok=True)
     bpy.ops.export_scene.gltf(
@@ -95,7 +147,11 @@ def main():
         export_normals=False,
         export_tangents=False,
     )
-    print({"output": output_glb, "bytes": os.path.getsize(output_glb)})
+    print({
+        "output": output_glb,
+        "bytes": os.path.getsize(output_glb),
+        "source_primitives": primitive_count,
+    })
 
 
 if __name__ == "__main__":

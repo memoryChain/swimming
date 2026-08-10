@@ -82,9 +82,14 @@ The game has a WeChat networked race mode (host-authoritative "predict + correct
 
 ## Venue And Assets
 
-- The low-poly venue asset is generated from Blender tooling in `sceneresource/`, especially `sceneresource/build-lowpoly-pool.py` when present, and exported to `assets/resources/pool/LowPolyPool.glb`.
+- **Read `sceneresource/README.md` before every venue edit.** It is the authoritative checklist for editing, synchronization, batching, export, Cocos reimport, and validation.
+- `sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend` is the only authoring source. Never export it directly.
+- Synchronize affected geometry into `sceneresource/SwimmingVenue_Rebuild_FlatColor.blend`, rebuild only the affected logical merged batches, then run `batch-flatcolor-venue.py` before `export-flatcolor-venue-glb.py`.
+- The runtime output is `assets/race/pool/LowPolyPool.glb`, not `assets/resources/pool/LowPolyPool.glb`. Preserve its existing `.meta`.
+- Do not bypass the scripts with a manual GLB export. The export script enforces required runtime nodes, 13 bleacher batches, the atlas material, and the primitive budget.
+- Preserve the 12 `BleacherBatch_T{1..4}_{N/S/E}` nodes and `CornerStands_Merged`; spectator placement depends on their names and bounds.
 - Prefer low-poly meshes, batched runtime meshes, unlit/simple materials, and small textures for WeChat Mini Game.
-- Do not place `.blend`, preview images, backup files, or other source-only assets under `assets/`; keep them in `sceneresource/` unless the user explicitly wants them shipped.
+- Do not place `.blend`, preview images, backup files, or other source-only assets under `assets/`. Do not commit `.blend1`, `.blendbak`, `.venuebak`, `__pycache__`, or temporary atlas PNGs under `sceneresource/`.
 - Top-view camera logic may hide ceiling nodes. If adding ceiling pieces, include `ceiling` in relevant node names so this behavior can continue to work.
 
 ## Texture Compression Policy
@@ -104,12 +109,12 @@ Texture compression is an asset-import/build concern, not a render-pipeline feat
 
 ## Blender MCP
 
-- Blender MCP may be used for inspecting and editing Blender scenes/assets, especially low-poly venue work under `tools/`.
+- Blender MCP may be used for inspecting and editing Blender scenes/assets, especially low-poly venue work under `sceneresource/`.
 - For any model sampling, retargeting, rig inspection, animation baking, GLB export, or Blender scene/asset modification, try Blender MCP first. Do not repeatedly search for or invoke a local `blender.exe` unless Blender MCP is unavailable or explicitly unsuitable.
 - Before large Blender edits, save the `.blend` file or confirm the intended source file with the user.
 - Keep generated geometry suitable for WeChat Mini Game: low face count, few materials, small textures, and merged/static batches where practical.
 - Do not enable or rely on PolyHaven/Hyper3D assets unless the user explicitly asks. External assets can easily add excessive texture size, material count, or geometry.
-- Exported runtime assets should go to `assets/resources`, while Blender source files and previews should remain in `tools/`.
+- Venue runtime assets go to `assets/race/pool`; Blender source files remain in `sceneresource/`.
 
 ## Checks After Code Changes
 
@@ -126,5 +131,5 @@ Pin `typescript@5.4.5`: the project's `tsconfig.json` uses `moduleResolution=nod
 ## Git And Local Files
 
 - The worktree may contain user/editor generated files. Do not revert unrelated changes.
-- Current untracked scene artifacts such as `sceneresource/LowPolyPool.blend1` and `sceneresource/lowpoly_pool_preview.png` should not be staged unless the user explicitly asks.
+- Scene auto-backups, previews, Python caches, and temporary atlas files are ignored and must not be staged.
 - When committing, stage only relevant project changes and mention if push fails because of local proxy/network issues.

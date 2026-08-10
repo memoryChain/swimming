@@ -539,6 +539,30 @@
       ],
       "subMetas": {}
     },
+    "10c95": {
+      "importer": "gltf-embeded-image",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@10c95",
+      "displayName": "",
+      "id": "10c95",
+      "name": "BleacherFlatColorAtlas.image",
+      "userData": {
+        "gltfIndex": 2,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": true,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-world-alpha-8x8"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".json",
+        ".png"
+      ],
+      "subMetas": {}
+    },
     "20be9": {
       "importer": "gltf-embeded-image",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@20be9",
@@ -546,7 +570,7 @@
       "id": "20be9",
       "name": "blue_bleachers_3d_model_basecolor.image",
       "userData": {
-        "gltfIndex": 2,
+        "gltfIndex": 3,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": false,
         "type": "texture",
@@ -623,7 +647,7 @@
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@20be9"
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@10c95"
       },
       "ver": "1.0.22",
       "imported": true,
@@ -638,6 +662,29 @@
       "displayName": "",
       "id": "9b633",
       "name": "UnnamedTexture-3.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@20be9"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "9b782": {
+      "importer": "texture",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@9b782",
+      "displayName": "",
+      "id": "9b782",
+      "name": "UnnamedTexture-4.texture",
       "userData": {
         "wrapModeS": "repeat",
         "wrapModeT": "repeat",
@@ -848,12 +895,12 @@
       ],
       "subMetas": {}
     },
-    "1edd1": {
+    "61c03": {
       "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@1edd1",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@61c03",
       "displayName": "",
-      "id": "1edd1",
-      "name": "Bleacher_Step_Concrete.material",
+      "id": "61c03",
+      "name": "BleacherFlatColorAtlas_Material.material",
       "userData": {
         "gltfIndex": 12
       },
@@ -864,30 +911,14 @@
       ],
       "subMetas": {}
     },
-    "02cba": {
+    "1edd1": {
       "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@02cba",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@1edd1",
       "displayName": "",
-      "id": "02cba",
-      "name": "StadiumSeat_Blue.material",
+      "id": "1edd1",
+      "name": "Bleacher_Step_Concrete.material",
       "userData": {
         "gltfIndex": 13
-      },
-      "ver": "1.0.14",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "374f9": {
-      "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@374f9",
-      "displayName": "",
-      "id": "374f9",
-      "name": "StadiumSeat_Blue_Dark.material",
-      "userData": {
-        "gltfIndex": 14
       },
       "ver": "1.0.14",
       "imported": true,
@@ -903,7 +934,7 @@
       "id": "5e8cb",
       "name": "Bleacher_Access_Door_Dark.material",
       "userData": {
-        "gltfIndex": 15
+        "gltfIndex": 14
       },
       "ver": "1.0.14",
       "imported": true,
@@ -919,7 +950,7 @@
       "id": "b5a68",
       "name": "EmergencyExit_Green.material",
       "userData": {
-        "gltfIndex": 16
+        "gltfIndex": 15
       },
       "ver": "1.0.14",
       "imported": true,
@@ -935,7 +966,7 @@
       "id": "cdd5d",
       "name": "Bleacher_Access_Rail_Blue.material",
       "userData": {
-        "gltfIndex": 17
+        "gltfIndex": 16
       },
       "ver": "1.0.14",
       "imported": true,
@@ -951,7 +982,7 @@
       "id": "fdd62",
       "name": "tripo_mat_5335fffe-5079-4a12-b652-047c6dc6b800.003.material",
       "userData": {
-        "gltfIndex": 18
+        "gltfIndex": 17
       },
       "ver": "1.0.14",
       "imported": true,
@@ -986,6 +1017,10 @@
       {
         "name": "VenueFloorDeepBlueResin",
         "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@0b1c1"
+      },
+      {
+        "name": "BleacherFlatColorAtlas",
+        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@10c95"
       },
       {
         "name": "blue_bleachers_3d_model_basecolor",
@@ -1045,7 +1080,8 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@3effa",
         "a751d540-5ebd-4868-a41a-334975b3aed3@221a5",
         "a751d540-5ebd-4868-a41a-334975b3aed3@0089c",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@9b633"
+        "a751d540-5ebd-4868-a41a-334975b3aed3@9b633",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@9b782"
       ],
       "materials": [
         "a751d540-5ebd-4868-a41a-334975b3aed3@437d7",
@@ -1060,9 +1096,8 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@86ba8",
         "a751d540-5ebd-4868-a41a-334975b3aed3@5bdca",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d3bc5",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@61c03",
         "a751d540-5ebd-4868-a41a-334975b3aed3@1edd1",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@02cba",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@374f9",
         "a751d540-5ebd-4868-a41a-334975b3aed3@5e8cb",
         "a751d540-5ebd-4868-a41a-334975b3aed3@b5a68",
         "a751d540-5ebd-4868-a41a-334975b3aed3@cdd5d",

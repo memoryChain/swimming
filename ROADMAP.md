@@ -10,8 +10,8 @@
 
 ## 当前场景与资源
 
-- 运行时泳池入口集中在 `RESOURCE_PATHS.poolPrefab = 'pool/PoolScene'`，也就是 `assets/resources/pool/PoolScene.prefab`。当前 prefab 内嵌的是 `assets/resources/pool/LowPolyPool.glb` 导入出的 `LowPolyPool` prefab。
-- 泳馆权威源文件统一为 `sceneresource/LowPolyPool.blend`。正常运行路径应加载 `PoolScene.prefab`，不要在运行时代码里再拼出另一套泳池；`PoolFallbackBuilder` 只作为 prefab 加载失败时的线框降级方案。
+- 运行时泳池入口集中在 `RESOURCE_PATHS.poolPrefab = 'pool/PoolScene'`，由 race bundle 中的 `assets/race/pool/PoolScene.prefab` 提供；其场馆模型来自 `assets/race/pool/LowPolyPool.glb`。
+- 泳馆权威编辑源为 `sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend`，同步、合批和导出目标为 `sceneresource/SwimmingVenue_Rebuild_FlatColor.blend`。完整流程见 `sceneresource/README.md`；正常运行路径加载 `PoolScene.prefab`，`PoolFallbackBuilder` 只作为加载失败时的线框降级方案。
 - Blender 源文件、预览图、备份文件只保留在 `sceneresource/`，不放进 `assets/` 发布资源目录。
 - 当前 prefab 中应保留可手调的 `RaceCourseStartMarker` 和 `RaceCourseFinishMarker`，代码会优先用它们校准泳池内部起点和终点。
 - 水面节点使用 `PoolWaterSurface`。旧的 `PoolWater_0_50` / `PoolWater_50_100` 会被 `WaterSurfaceBinder` 禁用，`flat_transparent_water_plane` 不应再作为当前水面参与渲染。
@@ -174,9 +174,9 @@ ui/
 
 ### 5. 低模资源管线
 
-- 保持 Blender 源文件在 `sceneresource/`，运行时只加载 `assets/resources` 下的 prefab、glb、材质和 effect。
-- 后续从 `sceneresource/LowPolyPool.blend` 导出泳馆后，检查 `PoolScene.prefab` 中 marker、水面、看台行和跳台节点名是否仍可被代码识别。
-- `sceneresource/` 里当前没有 `build-lowpoly-pool.py`，如果继续依赖 Blender 自动导出，需要补回脚本或在文档里记录新的手动导出步骤。
+- 保持 Blender 源文件在 `sceneresource/`，场馆运行时资产位于 race bundle 的 `assets/race/pool/`。
+- 每次先编辑 editable 源，再同步到 FlatColor 合批目标，运行 `batch-flatcolor-venue.py`，最后通过 `export-flatcolor-venue-glb.py` 导出；禁止从 editable 或 Blender 菜单直接导出。
+- 导出后检查 `PoolScene.prefab` 中 marker、水面、12 个分层看台、角看台和跳台节点名仍可被代码识别，并执行 `npm run textures:fix` 与 `npm run textures:check`。
 - 避免把 `.blend1`、预览图、备份 glb 等开发产物加入发布资源。
 
 ## 中长期计划

@@ -23,6 +23,8 @@ const CONCRETE_MATERIAL_KEYWORD = 'bleacher_step_concrete';
 
 const SEAT_SIDE_TONE_NODE_NAME = 'BleacherSeatSideToneOverlay';
 const SEAT_MATERIAL_KEYWORD = 'stadiumseat_blue';
+const BLEACHER_ATLAS_MATERIAL_KEYWORD = 'bleacherflatcoloratlas';
+const BLEACHER_ATLAS_CONCRETE_MAX_U = 1 / 3;
 const SEAT_SIDE_THRESHOLD = 0.75;
 const SEAT_SIDE_SURFACE_OFFSET = 0.003;
 // Only a mild step down from StadiumSeat_Blue (roughly 83% brightness). Strong
@@ -670,12 +672,21 @@ function buildSeatSideToneGeometry(pool: Node): { positions: number[]; indices: 
 
                 for (let p = 0; p < mesh.struct.primitives.length; p++) {
                     const source = renderer.getSharedMaterial(p) ?? renderer.sharedMaterials[p] ?? null;
-                    if (!source?.name.toLowerCase().includes(SEAT_MATERIAL_KEYWORD)) {
+                    const materialName = source?.name.toLowerCase() ?? '';
+                    const isSeatPrimitive = materialName.includes(SEAT_MATERIAL_KEYWORD);
+                    const isBleacherAtlas = materialName.includes(BLEACHER_ATLAS_MATERIAL_KEYWORD);
+                    if (!isSeatPrimitive && !isBleacherAtlas) {
                         continue;
                     }
                     const rawPositions = mesh.readAttribute(p, gfx.AttributeName.ATTR_POSITION) as ArrayLike<number> | null;
                     const rawIndices = mesh.readIndices(p) as ArrayLike<number> | null;
+                    const rawTexCoords = isBleacherAtlas
+                        ? mesh.readAttribute(p, gfx.AttributeName.ATTR_TEX_COORD) as ArrayLike<number> | null
+                        : null;
                     if (!rawPositions || rawPositions.length < 9) {
+                        continue;
+                    }
+                    if (isBleacherAtlas && !rawTexCoords) {
                         continue;
                     }
                     const vertexCount = Math.floor(rawPositions.length / 3);
@@ -691,6 +702,16 @@ function buildSeatSideToneGeometry(pool: Node): { positions: number[]; indices: 
                         const ia = rawIndices ? rawIndices[i] : i;
                         const ib = rawIndices ? rawIndices[i + 1] : i + 1;
                         const ic = rawIndices ? rawIndices[i + 2] : i + 2;
+                        if (rawTexCoords) {
+                            const averageU = (
+                                rawTexCoords[ia * 2]
+                                + rawTexCoords[ib * 2]
+                                + rawTexCoords[ic * 2]
+                            ) / 3;
+                            if (averageU <= BLEACHER_ATLAS_CONCRETE_MAX_U) {
+                                continue;
+                            }
+                        }
                         readPoint(ia, a);
                         readPoint(ib, b);
                         readPoint(ic, c);

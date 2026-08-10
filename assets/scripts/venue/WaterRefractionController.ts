@@ -399,6 +399,10 @@ export class WaterRefractionController {
         if (this._refractionCamera?.isValid) {
             this._refractionCamera.enabled = !active;
         }
+        if (!active && this._reflectionCamera?.isValid) {
+            this._reflectionActive = false;
+            this._reflectionCamera.enabled = false;
+        }
         if (!active) {
             // Force a short rebind after the off-screen refraction camera resumes
             // so a resized/recreated GPU texture cannot leave a stale sampler.
@@ -716,7 +720,8 @@ export class WaterRefractionController {
         // the only above-water swimmer draw and gets clipped; the direct underwater
         // overlay (camera below) and all above-water/broadcast draws stay intact.
         setSwimmerReflectClip(this._tmpCamPos.y < this._waterY);
-        const below = this._tmpCamPos.y < this._waterY + REFLECTION_ACTIVE_MARGIN;
+        const below = this._underwaterViewActive
+            && this._tmpCamPos.y < this._waterY + REFLECTION_ACTIVE_MARGIN;
         if (below !== this._reflectionActive) {
             this._reflectionActive = below;
             refl.enabled = below;

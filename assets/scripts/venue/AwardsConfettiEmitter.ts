@@ -1,4 +1,23 @@
-import { Color, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
+import { Color, Material, Mesh, MeshRenderer, Node, Quat, utils, Vec3 } from 'cc';
+
+type DynamicGeometry = {
+    positions: Float32Array;
+    colors?: Float32Array;
+    indices16?: Uint16Array;
+    minPos?: { x: number; y: number; z: number };
+    maxPos?: { x: number; y: number; z: number };
+};
+
+const dynamicMeshUtils = (utils as unknown as {
+    MeshUtils: {
+        createDynamicMesh: (
+            primitiveIndex: number,
+            geometry: DynamicGeometry,
+            out: Mesh | undefined,
+            options: { maxSubMeshes: number; maxSubMeshVertices: number; maxSubMeshIndices: number },
+        ) => Mesh;
+    };
+}).MeshUtils;
 
 const CONFETTI_COLORS = [
     new Color(255, 54, 84, 255),
@@ -18,13 +37,34 @@ const FIELD_TOP_Y = 5.2;
 const PIECE_THICKNESS = 0.01;
 const PIECE_HEIGHT = 0.045;
 const PIECE_WIDTH = 0.075;
+const VERTICES_PER_PIECE = 8;
+const INDICES_PER_PIECE = 36;
+const BOX_CORNERS = new Float32Array([
+    -PIECE_THICKNESS * 0.5, -PIECE_HEIGHT * 0.5, -PIECE_WIDTH * 0.5,
+    PIECE_THICKNESS * 0.5, -PIECE_HEIGHT * 0.5, -PIECE_WIDTH * 0.5,
+    PIECE_THICKNESS * 0.5, PIECE_HEIGHT * 0.5, -PIECE_WIDTH * 0.5,
+    -PIECE_THICKNESS * 0.5, PIECE_HEIGHT * 0.5, -PIECE_WIDTH * 0.5,
+    -PIECE_THICKNESS * 0.5, -PIECE_HEIGHT * 0.5, PIECE_WIDTH * 0.5,
+    PIECE_THICKNESS * 0.5, -PIECE_HEIGHT * 0.5, PIECE_WIDTH * 0.5,
+    PIECE_THICKNESS * 0.5, PIECE_HEIGHT * 0.5, PIECE_WIDTH * 0.5,
+    -PIECE_THICKNESS * 0.5, PIECE_HEIGHT * 0.5, PIECE_WIDTH * 0.5,
+]);
+const BOX_INDICES = new Uint16Array([
+    0, 2, 1, 0, 3, 2,
+    4, 5, 6, 4, 6, 7,
+    0, 1, 5, 0, 5, 4,
+    3, 7, 6, 3, 6, 2,
+    0, 4, 7, 0, 7, 3,
+    1, 2, 6, 1, 6, 5,
+]);
 
 type ConfettiPiece = {
-    node: Node;
     column: number;
     depthIndex: number;
     baseX: number;
     baseZ: number;
+    x: number;
+    z: number;
     y: number;
     phase: number;
     fallSpeed: number;
@@ -36,8 +76,6 @@ type ConfettiPiece = {
     spinZ: number;
 };
 
-let sharedConfettiMesh: Mesh | null = null;
-
 /**
  * Small opaque confetti pieces with an explicit grid distribution. A custom
  * field is used instead of ParticleSystem so spawn coverage and solid color do
@@ -45,8 +83,15 @@ let sharedConfettiMesh: Mesh | null = null;
  */
 export class AwardsConfettiEmitter {
     private _node: Node | null = null;
+    private _mesh: Mesh | null = null;
     private readonly _pieces: ConfettiPiece[] = [];
-    private readonly _materials: Material[] = [];
+    private _material: Material | null = null;
+    private readonly _positions = new Float32Array(CONFETTI_COUNT * VERTICES_PER_PIECE * 3);
+    private readonly _colors = new Float32Array(CONFETTI_COUNT * VERTICES_PER_PIECE * 4);
+    private readonly _indices = new Uint16Array(CONFETTI_COUNT * INDICES_PER_PIECE);
+    private readonly _rotation = new Quat();
+    private readonly _corner = new Vec3();
+    private readonly _rotatedCorner = new Vec3();
     private _active = false;
     private _elapsed = 0;
 
@@ -80,13 +125,14 @@ export class AwardsConfettiEmitter {
 
             const driftX = Math.sin(this._elapsed * 0.75 + piece.phase) * 0.11;
             const driftZ = Math.sin(this._elapsed * 0.58 + piece.phase * 1.7) * 0.09;
-            piece.node.setPosition(piece.baseX + driftX, piece.y, piece.baseZ + driftZ);
+            piece.x = piece.baseX + driftX;
+            piece.z = piece.baseZ + driftZ;
 
             piece.eulerX += piece.spinX * safeDt;
             piece.eulerY += piece.spinY * safeDt;
             piece.eulerZ += piece.spinZ * safeDt;
-            piece.node.setRotationFromEuler(piece.eulerX, piece.eulerY, piece.eulerZ);
         }
+        this.updateMeshGeometry();
     }
 
     hide() {
@@ -101,14 +147,16 @@ export class AwardsConfettiEmitter {
         if (this._node?.isValid) {
             this._node.destroy();
         }
-        for (const material of this._materials) {
-            if (material.isValid) {
-                material.destroy();
-            }
+        if (this._mesh?.isValid) {
+            this._mesh.destroy();
+        }
+        if (this._material?.isValid) {
+            this._material.destroy();
         }
         this._node = null;
+        this._mesh = null;
+        this._material = null;
         this._pieces.length = 0;
-        this._materials.length = 0;
     }
 
     private ensureBuilt(parent: Node) {
@@ -116,31 +164,19 @@ export class AwardsConfettiEmitter {
             return;
         }
         this._pieces.length = 0;
-        this._materials.length = 0;
         this._node = new Node('AwardsConfetti');
         this._node.setParent(parent);
         this._node.layer = parent.layer;
         this._node.active = false;
 
-        for (const color of CONFETTI_COLORS) {
-            this._materials.push(makeOpaqueMaterial(color));
-        }
-
-        const mesh = getConfettiMesh();
         for (let index = 0; index < CONFETTI_COUNT; index++) {
-            const node = new Node(`ConfettiPiece${index + 1}`);
-            node.setParent(this._node);
-            node.layer = this._node.layer;
-            node.setScale(PIECE_THICKNESS, PIECE_HEIGHT, PIECE_WIDTH);
-            const renderer = node.addComponent(MeshRenderer);
-            renderer.mesh = mesh;
-            renderer.setMaterial(this._materials[index % this._materials.length], 0);
             this._pieces.push({
-                node,
                 column: index % GRID_COLUMNS,
                 depthIndex: Math.floor(index / GRID_COLUMNS) % GRID_DEPTH,
                 baseX: 0,
                 baseZ: 0,
+                x: 0,
+                z: 0,
                 y: 0,
                 phase: Math.random() * Math.PI * 2,
                 fallSpeed: randomRange(0.55, 0.82),
@@ -152,6 +188,32 @@ export class AwardsConfettiEmitter {
                 spinZ: randomSigned(40, 95),
             });
         }
+        this.initializeStaticGeometry();
+        this.resetField();
+        this.updatePositionBuffer();
+        this._mesh = dynamicMeshUtils.createDynamicMesh(0, {
+            positions: this._positions,
+            colors: this._colors,
+            indices16: this._indices,
+            minPos: {
+                x: -FIELD_DEPTH_X * 0.5 - 0.25,
+                y: FIELD_BOTTOM_Y - 0.25,
+                z: -FIELD_WIDTH_Z * 0.5 - 0.25,
+            },
+            maxPos: {
+                x: FIELD_DEPTH_X * 0.5 + 0.25,
+                y: FIELD_TOP_Y + 1.05,
+                z: FIELD_WIDTH_Z * 0.5 + 0.25,
+            },
+        }, undefined, {
+            maxSubMeshes: 1,
+            maxSubMeshVertices: CONFETTI_COUNT * VERTICES_PER_PIECE,
+            maxSubMeshIndices: CONFETTI_COUNT * INDICES_PER_PIECE,
+        });
+        this._material = makeOpaqueMaterial();
+        const renderer = this._node.addComponent(MeshRenderer);
+        renderer.mesh = this._mesh;
+        renderer.setMaterial(this._material, 0);
     }
 
     private resetField() {
@@ -173,24 +235,69 @@ export class AwardsConfettiEmitter {
             + (piece.column + randomRange(0.18, 0.82)) * cellWidth;
         piece.baseX = -FIELD_DEPTH_X * 0.5
             + (piece.depthIndex + randomRange(0.18, 0.82)) * cellDepth;
+        piece.x = piece.baseX;
+        piece.z = piece.baseZ;
         piece.y = y;
         piece.fallSpeed = randomRange(0.55, 0.82);
         piece.phase = Math.random() * Math.PI * 2;
     }
-}
 
-function getConfettiMesh(): Mesh {
-    if (!sharedConfettiMesh) {
-        sharedConfettiMesh = utils.createMesh(primitives.box());
+    private initializeStaticGeometry() {
+        for (let pieceIndex = 0; pieceIndex < CONFETTI_COUNT; pieceIndex++) {
+            const vertexBase = pieceIndex * VERTICES_PER_PIECE;
+            const indexBase = pieceIndex * INDICES_PER_PIECE;
+            for (let index = 0; index < BOX_INDICES.length; index++) {
+                this._indices[indexBase + index] = vertexBase + BOX_INDICES[index];
+            }
+            const color = CONFETTI_COLORS[pieceIndex % CONFETTI_COLORS.length];
+            for (let vertex = 0; vertex < VERTICES_PER_PIECE; vertex++) {
+                const colorOffset = (vertexBase + vertex) * 4;
+                this._colors[colorOffset] = color.r / 255;
+                this._colors[colorOffset + 1] = color.g / 255;
+                this._colors[colorOffset + 2] = color.b / 255;
+                this._colors[colorOffset + 3] = 1;
+            }
+        }
     }
-    return sharedConfettiMesh;
+
+    private updateMeshGeometry() {
+        if (!this._mesh?.isValid) {
+            return;
+        }
+        this.updatePositionBuffer();
+        this._mesh.updateSubMesh(0, {
+            positions: this._positions,
+            indices16: this._indices,
+        });
+    }
+
+    private updatePositionBuffer() {
+        for (let pieceIndex = 0; pieceIndex < this._pieces.length; pieceIndex++) {
+            const piece = this._pieces[pieceIndex];
+            Quat.fromEuler(this._rotation, piece.eulerX, piece.eulerY, piece.eulerZ);
+            const positionBase = pieceIndex * VERTICES_PER_PIECE * 3;
+            for (let vertex = 0; vertex < VERTICES_PER_PIECE; vertex++) {
+                const cornerOffset = vertex * 3;
+                this._corner.set(
+                    BOX_CORNERS[cornerOffset],
+                    BOX_CORNERS[cornerOffset + 1],
+                    BOX_CORNERS[cornerOffset + 2],
+                );
+                Vec3.transformQuat(this._rotatedCorner, this._corner, this._rotation);
+                const positionOffset = positionBase + cornerOffset;
+                this._positions[positionOffset] = piece.x + this._rotatedCorner.x;
+                this._positions[positionOffset + 1] = piece.y + this._rotatedCorner.y;
+                this._positions[positionOffset + 2] = piece.z + this._rotatedCorner.z;
+            }
+        }
+    }
 }
 
-function makeOpaqueMaterial(color: Color): Material {
+function makeOpaqueMaterial(): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit' });
-    material.name = `AwardsConfetti_${color.r}_${color.g}_${color.b}`;
-    material.setProperty('mainColor', color);
+    material.initialize({ effectName: 'builtin-unlit', defines: { USE_VERTEX_COLOR: true } });
+    material.name = 'AwardsConfettiMerged';
+    material.setProperty('mainColor', Color.WHITE);
     return material;
 }
 
