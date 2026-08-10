@@ -1,5 +1,6 @@
 import { _decorator, Color, Component, Layers, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
 import { scaledDelta } from '../core/TimeScale';
+import { SpectatorCameraFlashEmitter } from './SpectatorCameraFlashEmitter';
 
 const { ccclass, property } = _decorator;
 
@@ -34,6 +35,8 @@ const SPECTATOR_SEAT_FORWARD_OFFSET = 0.22;
 const STAND_SECTION_COUNT = 6;
 const STAND_AISLE_WIDTH = 1.8;
 const SPECTATOR_SPACING = 0.95;
+const FLASH_CANDIDATE_RATE = 0.22;
+const MAX_FLASH_CANDIDATES = 320;
 // The rebuilt grandstands have a shared access core at their longitudinal
 // centre. Keep spectator planes out of the full stair/door/platform opening on
 // every tier. North/south use the 12 m core; the shorter east stand uses 6 m.
@@ -113,15 +116,16 @@ export class SpectatorGroupWobble extends Component {
 }
 
 export class SpectatorCrowdBuilder {
-    build(root: Node, poolNode: Node, debug?: (message: string) => void) {
+    build(root: Node, poolNode: Node, debug?: (message: string) => void): SpectatorCameraFlashEmitter | null {
         root.getChildByName('SpectatorCrowd')?.destroy();
         const crowdRoot = makeWorldNode('SpectatorCrowd', root);
+        let flashEmitter: SpectatorCameraFlashEmitter | null = null;
         try {
             const stands = collectGrandstands(poolNode);
             if (stands.length <= 0) {
                 crowdRoot.active = false;
                 debug?.('spectator crowd skipped: current grandstand nodes not found');
-                return;
+                return null;
             }
 
             const materials = SPECTATOR_COLORS.map((value, index) => makeMaterial(`SpectatorMuted${index}`, value));
@@ -151,9 +155,22 @@ export class SpectatorCrowdBuilder {
                 }
             }
 
-            const message = `spectator crowd built stands=${stands.length} groups=${groupCount} planes=${spectatorCount}`;
+            let flashSiteCount = 0;
+            try {
+                const flashPositions = buildCameraFlashPositions(buckets);
+                flashSiteCount = Math.floor(flashPositions.length / 3);
+                if (flashSiteCount > 0) {
+                    flashEmitter = crowdRoot.addComponent(SpectatorCameraFlashEmitter);
+                    flashEmitter.configure(flashPositions);
+                }
+            } catch (error) {
+                console.warn('[SpeedSwimming] spectator camera flashes skipped', error);
+            }
+
+            const message = `spectator crowd built stands=${stands.length} groups=${groupCount} planes=${spectatorCount} flashSites=${flashSiteCount}`;
             debug?.(message);
             console.log(`[SpeedSwimming] ${message}`);
+            return flashEmitter;
         } catch (error) {
             crowdRoot.active = false;
             throw error;
@@ -344,6 +361,37 @@ export class SpectatorCrowdBuilder {
             }
         }
     }
+}
+
+function buildCameraFlashPositions(buckets: SpectatorSpec[][]): Float32Array {
+    const selected: number[] = [];
+    for (const bucket of buckets) {
+        for (const spectator of bucket) {
+            const positionSalt = Math.round((spectator.pos.x + spectator.pos.z) * 10);
+            if (random01(spectator.row, spectator.col, positionSalt, 113) >= FLASH_CANDIDATE_RATE) {
+                continue;
+            }
+            selected.push(
+                spectator.pos.x,
+                spectator.pos.y + spectator.height * 0.12,
+                spectator.pos.z,
+            );
+        }
+    }
+    const selectedCount = Math.floor(selected.length / 3);
+    if (selectedCount <= MAX_FLASH_CANDIDATES) {
+        return new Float32Array(selected);
+    }
+    const positions = new Float32Array(MAX_FLASH_CANDIDATES * 3);
+    const stride = selectedCount / MAX_FLASH_CANDIDATES;
+    for (let index = 0; index < MAX_FLASH_CANDIDATES; index++) {
+        const source = Math.min(selectedCount - 1, Math.floor((index + 0.5) * stride)) * 3;
+        const target = index * 3;
+        positions[target] = selected[source];
+        positions[target + 1] = selected[source + 1];
+        positions[target + 2] = selected[source + 2];
+    }
+    return positions;
 }
 
 function addSpectatorGroup(

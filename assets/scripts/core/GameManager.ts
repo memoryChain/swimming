@@ -81,6 +81,7 @@ import { WaterRefractionController } from '../venue/WaterRefractionController';
 import { applyPoolEdgeToonOutline, applySeatSideTone, applyStandStructureToonOutline } from '../venue/PoolEdgeToonOutline';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
+import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitter';
 import { applyStandHeightShade } from '../venue/StandHeightShade';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -196,6 +197,7 @@ export class GameManager extends Component {
     private _spectating = false;
     private _venueManager: VenueManager | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
+    private _spectatorCameraFlashEmitter: SpectatorCameraFlashEmitter | null = null;
     private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
@@ -385,6 +387,19 @@ export class GameManager extends Component {
         const raceDistance = getRaceDistance();
         const playerAlive = this._playerSwimmer.node.active;
         const playerBeforeFinish = playerAlive && this._playerSwimmer.distance < raceDistance;
+        const flashEmitter = this._spectatorCameraFlashEmitter;
+        if (flashEmitter?.isValid) {
+            const settlementActive = this._state === GameState.FINISHED || this._state === GameState.AWARDS;
+            const flashRaceProgress = settlementActive
+                ? 1
+                : raceActive && raceDistance > 0
+                    ? Math.max(0, Math.min(1, this._playerSwimmer.distance / raceDistance))
+                    : 0;
+            flashEmitter.setRaceIntensity(
+                flashRaceProgress,
+                settlementActive || (raceActive && this._playerCondition.phase === RacePhase.SPRINT),
+            );
+        }
         const laneFloatCutoutActive = !this._modelDebugFlow?.active
             && playerBeforeFinish
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
@@ -794,6 +809,10 @@ export class GameManager extends Component {
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
+                if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
+                    && this._spectatorCameraFlashEmitter?.isValid) {
+                    this._spectatorCameraFlashEmitter.resetRaceIntensity();
+                }
                 if (state === GameState.PRECOUNTDOWN) {
                     MusicManager.playRace();
                     this.hideEliminationAndSpectatorUi();
@@ -1086,12 +1105,20 @@ export class GameManager extends Component {
     }
 
     private buildSpectatorCrowd(root: Node, pool: Node | null) {
+        this._spectatorCameraFlashEmitter = null;
         if (!pool?.isValid) {
             this.debug('spectator crowd skipped: pool unavailable');
             return;
         }
         try {
-            new SpectatorCrowdBuilder().build(root, pool, (message) => this.debug(message));
+            this._spectatorCameraFlashEmitter = new SpectatorCrowdBuilder().build(
+                root,
+                pool,
+                (message) => this.debug(message),
+            );
+            this._spectatorCameraFlashEmitter?.setVisibilityCamera(
+                this._cameraNode?.getComponent(Camera) ?? null,
+            );
         } catch (error) {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);

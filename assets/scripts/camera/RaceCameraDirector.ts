@@ -110,7 +110,7 @@ export const RACE_CAMERA_TUNING = {
     sprintKickPullbackMinCadenceHz: 2.5,
     sprintHeight: 0.52,
     sprintLookAhead: 0.8,
-    sprintFov: 58,
+    sprintFov: 64,
     // While the normal chase starts during an underwater ascent, frame it from
     // a virtual upper-body anchor above the water instead of following the deep
     // torso Y directly. This keeps the water line out of the main view while the
