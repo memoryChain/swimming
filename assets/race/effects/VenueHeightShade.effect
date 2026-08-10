@@ -1,7 +1,7 @@
 // Unlit venue-stand shading: darkens grandstand / wall geometry by BOTH world
 // height and horizontal distance from the pool, PER-PIXEL in the fragment shader
 // (no readMesh, no runtime mesh rebuild — works on device where mesh CPU data is
-// released). Bright poolside/low, fading dark toward the top and far corners.
+// released). Dim poolside/low, fading darker toward the top and far corners.
 // The visible colour (or a wall tint) is passed in via mainColor/mainTexture by
 // StandHeightShade.ts; this effect only multiplies it by the height/distance
 // brightness gradient.
@@ -21,7 +21,7 @@ CCEffect %{
         # x = min world Y, y = height span, z = horizontal-distance span, w unused.
         heightRange: { value: [0.0, 20.0, 20.0, 0.0] }
         # x = bottom brightness, y = top brightness, z = height gamma, w = dist gamma.
-        shadeCurve:  { value: [1.0, 0.15, 0.7, 0.85] }
+        shadeCurve:  { value: [0.55, 0.08, 0.28, 0.85] }
 }%
 
 CCProgram venue-shade-vs %{

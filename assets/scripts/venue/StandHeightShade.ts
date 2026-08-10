@@ -51,7 +51,7 @@ const _mat = new Mat4();
 const _corner = new Vec3();
 
 export interface StandHeightShadeOptions {
-    // Brightness multiplier at the poolside baseline (1 = unchanged).
+    // Brightness multiplier at the poolside baseline.
     bottomBrightness?: number;
     // Brightness multiplier at the darkest point (top and/or far corners).
     topBrightness?: number;
@@ -188,10 +188,10 @@ function shadeStands(
     options: StandHeightShadeOptions | undefined,
     debug: ((message: string) => void) | undefined,
 ): number {
-    const bottom = options?.bottomBrightness ?? 1.0;
+    const bottom = options?.bottomBrightness ?? 0.55;
     const top = options?.topBrightness ?? 0.08;
-    // Small gamma so the darkening kicks in hard from the 2nd tier up (the low
-    // first tier near the pool stays bright, everything above goes dark fast).
+    // Small gamma so the darkening kicks in hard from the 2nd tier up. Even the
+    // poolside tier stays dim; the unlit pool remains the clear focal area.
     const heightCurve = options?.heightCurve ?? 0.28;
     const distanceCurve = options?.distanceCurve ?? 0.85;
     const nearKeep = options?.nearKeep ?? NEAR_KEEP_M;

@@ -3,7 +3,7 @@ import { scaledDelta } from '../core/TimeScale';
 
 const { ccclass, property } = _decorator;
 
-// Tier 1 (poolside) shows these normal, mid-bright clothing tones. Higher tiers
+// Clothing stays muted so the unlit pool remains the focal area. Higher tiers
 // are progressively darkened per-vertex (see TIER_BRIGHTNESS) so the stands read
 // with depth without turning neon/confetti.
 const SPECTATOR_COLORS = [
@@ -14,10 +14,10 @@ const SPECTATOR_COLORS = [
     color(200, 198, 190),
 ];
 
-// Per-tier brightness multiplier baked into spectator vertex colors. Index 0 =
-// tier 1 (poolside, kept bright); each higher tier drops off harder so the upper
-// crowd reads dark like the stands/walls above.
-const TIER_BRIGHTNESS = [1, 0.6, 0.38, 0.22];
+// Per-tier brightness multiplier baked into spectator vertex colors. The
+// poolside tier remains readable but dim; each higher tier falls deeper into the
+// same dark environment as the stands and walls.
+const TIER_BRIGHTNESS = [0.52, 0.34, 0.22, 0.14];
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
