@@ -73,7 +73,6 @@ export class GameFlowController {
     private _diveChargeElapsed = 0;
     private _diveChargePower = 0;
     private _diveCommitted = false;
-    private _diveChargeFlashed = false;
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
@@ -589,16 +588,6 @@ export class GameFlowController {
         this._diveChargeElapsed += Math.max(0, dt);
         this._diveChargePower = diveChargePingPong(this._diveChargeElapsed);
         this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
-        // Sync charge glow to the player's body.
-        this._refs.playerSwimmer?.cartoonRig?.setChargeGlow(this._diveChargePower);
-        // Detect ping-pong peak for flash burst.
-        if (this._diveChargePower >= 0.98 && !this._diveChargeFlashed) {
-            this._diveChargeFlashed = true;
-            this._refs.playerSwimmer?.cartoonRig?.triggerChargeFlashBurst();
-        }
-        if (this._diveChargePower < 0.90) {
-            this._diveChargeFlashed = false;
-        }
     }
 
     private resetDiveCharge() {
@@ -606,9 +595,7 @@ export class GameFlowController {
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
         this._diveCommitted = false;
-        this._diveChargeFlashed = false;
         this._refs.uiFlow.updateDiveCharge(0, false);
-        this._refs.playerSwimmer?.cartoonRig?.clearChargeGlow();
     }
 
     private commitDive(charge: number, reason: string) {
@@ -620,7 +607,6 @@ export class GameFlowController {
         this._diveChargeStarted = false;
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
-        this._refs.playerSwimmer?.cartoonRig?.clearChargeGlow();
         this._refs.raceCameraDirector.startDiveShot();
         const diveResult = resolveDiveResult(power);
         const diveSpeedScale = this._refs.playerDiveSpeedScale();
