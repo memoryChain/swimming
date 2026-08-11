@@ -2459,8 +2459,9 @@ export class GameManager extends Component {
         // keep the flat veil box off.
         this._waterRefraction?.setUnderwaterViewActive(true);
         this.setUnderwaterOverlayVisible(false);
-        // Reuse the model-debug tuning HUD for the '水色' sliders + exit button.
-        this._uiFlow?.showModelDebugHud();
+        // Reuse the model-debug HUD, but minimal: only the 退出 button is wired
+        // in this scene, so hide the rest to keep the view clear.
+        this._uiFlow?.showModelDebugHud(true);
         this.debug('enterUnderwaterDebug');
     }
 

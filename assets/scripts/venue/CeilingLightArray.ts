@@ -14,11 +14,15 @@ const CEILING_GLOW_NODE_NAME = 'ceiling_light_glow';
 const CEILING_FLARE_NODE_NAME = 'ceiling_light_flare_glow';
 const CEILING_FLARE_CTRL_NAME = 'ceiling_light_flare_ctrl';
 
-// The ring rectangle in pool-local space (pool spans X[0,50], Z[-10.5,10.5]).
+// Parallel ceiling light trusses running the length of the pool (along X),
+// spread evenly across its width (Z) - like a real aquatics-centre roof rig -
+// instead of a single boxy perimeter ring. Pool spans X[0,50], Z[-10.5,10.5].
 const LIGHT_HEIGHT_Y = 11;
-const RING_MIN_X = 0;
-const RING_MAX_X = 50;
-const RING_HALF_Z = 11;
+const STRIP_COUNT: number = 4;
+const STRIP_MIN_X = 2;
+const STRIP_MAX_X = 48;
+const STRIP_MIN_Z = -7.5;
+const STRIP_MAX_Z = 7.5;
 
 // Bright solid core of each fixture; FIXTURE_SPACING is the gap along the ring.
 const FIXTURE_SIZE = 0.55;
@@ -85,24 +89,18 @@ function getGlowTexture(): Texture2D {
     return texture;
 }
 
-// Evenly spaced fixture centres around the four perimeter edges (corners not
-// doubled: each edge runs from its start corner up to the next corner).
+// Evenly spaced fixture centres laid out as STRIP_COUNT parallel trusses that
+// run the length of the pool (along X), spread across its width (Z).
 function fixtureCenters(): [number, number][] {
-    const corners: [number, number][] = [
-        [RING_MIN_X, -RING_HALF_Z],
-        [RING_MAX_X, -RING_HALF_Z],
-        [RING_MAX_X, RING_HALF_Z],
-        [RING_MIN_X, RING_HALF_Z],
-    ];
     const centers: [number, number][] = [];
-    for (let edge = 0; edge < 4; edge++) {
-        const [startX, startZ] = corners[edge];
-        const [endX, endZ] = corners[(edge + 1) % 4];
-        const length = Math.hypot(endX - startX, endZ - startZ);
-        const count = Math.max(1, Math.round(length / FIXTURE_SPACING));
-        for (let i = 0; i < count; i++) {
-            const t = i / count;
-            centers.push([startX + (endX - startX) * t, startZ + (endZ - startZ) * t]);
+    const perStrip = Math.max(1, Math.round((STRIP_MAX_X - STRIP_MIN_X) / FIXTURE_SPACING));
+    for (let s = 0; s < STRIP_COUNT; s++) {
+        const z = STRIP_COUNT === 1
+            ? (STRIP_MIN_Z + STRIP_MAX_Z) * 0.5
+            : STRIP_MIN_Z + (STRIP_MAX_Z - STRIP_MIN_Z) * (s / (STRIP_COUNT - 1));
+        for (let i = 0; i <= perStrip; i++) {
+            const x = STRIP_MIN_X + (STRIP_MAX_X - STRIP_MIN_X) * (i / perStrip);
+            centers.push([x, z]);
         }
     }
     return centers;

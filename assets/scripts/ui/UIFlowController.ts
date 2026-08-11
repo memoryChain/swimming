@@ -24,9 +24,17 @@ export class UIFlowController {
         this.resetSpeedBar();
     }
 
-    showModelDebugHud() {
+    // `minimal` (used by the underwater-debug scene, which reuses this HUD but
+    // where only the exit button is wired) hides every control except 退出.
+    showModelDebugHud(minimal = false) {
         setActive(this._refs.raceHud, false);
         setActive(this._refs.modelDebugHud, true);
+        const hud = this._refs.modelDebugHud;
+        if (hud) {
+            for (const child of hud.children) {
+                child.active = minimal ? child.name === 'ModelDebugExit' : true;
+            }
+        }
     }
 
     hideModelDebugHud() {
