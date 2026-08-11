@@ -79,6 +79,7 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { WaterRefractionController } from '../venue/WaterRefractionController';
 import { applyAwardsPodiumToonOutline, applyPoolEdgeToonOutline, applyStandStructureToonOutline, applyTierFrontToonOutline } from '../venue/PoolEdgeToonOutline';
+import { applyCeilingLightArray } from '../venue/CeilingLightArray';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitter';
@@ -987,6 +988,9 @@ export class GameManager extends Component {
                     this._raceCameraDirector.resetToBroadcast();
                 }
                 this._poolNode = pool;
+                // Attach the ceiling lights before the top-view binder scans so
+                // its 'ceiling'-named node is captured and hidden in top view.
+                applyCeilingLightArray(pool, (message) => this.debug(message));
                 const ceilingCount = this._topViewCeiling.bind(pool);
                 this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);

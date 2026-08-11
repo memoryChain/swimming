@@ -174,6 +174,18 @@ function classifyEmbeddedImage(projectRoot, metaPath, embeddedMeta) {
     const relative = normalizeRelative(projectRoot, metaPath);
     const normalized = `/${relative}`;
     const imageName = embeddedMeta.name || '';
+    // The venue colour-atlas is a tiny 192x16 EXACT lookup table: 12 flat colour
+    // bands encoding the per-tier darkening. Any lossy compression (ASTC) bleeds
+    // adjacent bands and lifts the dark tiers, which breaks the "darker toward
+    // the top" look on device (fine in editor/browser because they use the
+    // lossless original). Keep it uncompressed. Unlike standalone images,
+    // embedded images otherwise have no size exemption, so this must be explicit.
+    if (/BleacherFlatColorAtlas/i.test(imageName)) {
+        return {
+            excluded: true,
+            reason: '看台色板查找表必须无损，ASTC 会压坏分层色带',
+        };
+    }
     const hasAlpha = embeddedMeta.userData?.hasAlpha === true;
     const qualitySensitive = MODEL_DIRECTORY.test(normalized) || SHARP_ART_NAME.test(imageName);
 
@@ -340,7 +352,22 @@ function auditTextureCompression(projectRoot, options = {}) {
                 result.eligible++;
                 const classification = classifyEmbeddedImage(resolvedRoot, metaPath, subMeta);
                 const current = configuredPreset(subMeta.userData);
-                if (current !== classification.presetId) {
+                if (classification.excluded) {
+                    if (current) {
+                        result.issues.push(makeIssue(
+                            relativeMeta,
+                            `${subMeta.name || 'embedded-image'}@${subId}`,
+                            '原图(无压缩)',
+                            current,
+                            classification.reason,
+                        ));
+                        if (fix) {
+                            delete subMeta.userData.compressSettings;
+                            result.changed++;
+                            dirty = true;
+                        }
+                    }
+                } else if (current !== classification.presetId) {
                     result.issues.push(makeIssue(
                         relativeMeta,
                         `${subMeta.name || 'embedded-image'}@${subId}`,
