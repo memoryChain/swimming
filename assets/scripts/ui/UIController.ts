@@ -635,7 +635,10 @@ export class UIController extends Component {
         const coinLabel = new Node('CoinsGained').addComponent(Label);
         coinLabel.node.layer = panel.layer;
         coinLabel.node.setParent(panel);
-        coinLabel.node.addComponent(UITransform).setContentSize(360, 36);
+        // Label already requires/creates a UITransform - reuse it, don't re-add.
+        const coinTransform = coinLabel.node.getComponent(UITransform)
+            ?? coinLabel.node.addComponent(UITransform);
+        coinTransform.setContentSize(360, 36);
         coinLabel.fontSize = 28;
         coinLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         coinLabel.color = new Color(255, 209, 42, 255);

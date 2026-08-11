@@ -18,11 +18,14 @@ const CEILING_FLARE_CTRL_NAME = 'ceiling_light_flare_ctrl';
 // spread evenly across its width (Z) - like a real aquatics-centre roof rig -
 // instead of a single boxy perimeter ring. Pool spans X[0,50], Z[-10.5,10.5].
 const LIGHT_HEIGHT_Y = 11;
-const STRIP_COUNT: number = 4;
+const STRIP_COUNT: number = 6;
 const STRIP_MIN_X = 2;
 const STRIP_MAX_X = 48;
 const STRIP_MIN_Z = -7.5;
 const STRIP_MAX_Z = 7.5;
+// Extra transverse rows added off the -X end (beyond STRIP_MIN_X), at the same
+// spacing, to cover the deck past that end of the pool.
+const EXTRA_COLUMNS_MINUS_X = 3;
 
 // Bright solid core of each fixture; FIXTURE_SPACING is the gap along the ring.
 const FIXTURE_SIZE = 0.55;
@@ -36,11 +39,17 @@ const HALO_SIZE = 2.4;
 const HALO_DROP = 0.06;
 const GLOW_COLOR = new Color(255, 248, 230, 210);
 
-// View-dependent camera glare ("lens flare"): when the camera looks nearly
-// straight at a fixture, that fixture flares into a big dazzling additive burst
-// like a camera pointed at a flashgun. Purely angle-driven, NOT a timed blink.
-// Only the single most head-on fixture flares, so this is one extra draw call.
-const FLARE_ALIGN_THRESHOLD = 0.9;
+// View-dependent camera glare ("lens flare"). A fixture flares only when the
+// camera LOOKS AT it (the lamp sits near the centre of view) AND the camera is
+// on the lit side of that lamp (the lamp's aim points back toward the camera).
+// A lamp aimed away, or off to the side of the view, stays a plain glow. This
+// reads like a real lens flare and, unlike a pure beam-cone test, is actually
+// observable with a forward-looking race camera. Purely geometry-driven, NOT a
+// timed blink.
+// cos of the view half-angle: how centred the lamp must be on screen to flare.
+const FLARE_VIEW_THRESHOLD = 0.82; // ~35 degrees off screen centre
+// Min "lamp faces the camera" dot; keeps back-lit lamps from flaring.
+const FLARE_FACING_MIN = 0.05;
 const FLARE_MIN_SIZE = 0.6;
 const FLARE_MAX_SIZE = 10;
 const FLARE_FADE_RATE = 9;
@@ -49,6 +58,8 @@ const { ccclass } = _decorator;
 
 type PlainGeometry = { positions: number[]; indices: number[] };
 type TexturedGeometry = { positions: number[]; uvs: number[]; indices: number[] };
+// A light fixture: local-space centre plus a unit aim direction it points along.
+type Fixture = { pos: Vec3; aim: Vec3 };
 
 let sharedGlowTexture: Texture2D | null = null;
 
@@ -89,50 +100,77 @@ function getGlowTexture(): Texture2D {
     return texture;
 }
 
-// Evenly spaced fixture centres laid out as STRIP_COUNT parallel trusses that
-// run the length of the pool (along X), spread across its width (Z).
-function fixtureCenters(): [number, number][] {
-    const centers: [number, number][] = [];
+// The roof rig: STRIP_COUNT parallel trusses running the length of the pool
+// (along X), spread across its width (Z), all aiming straight down.
+function downFixtures(): Fixture[] {
+    const fixtures: Fixture[] = [];
     const perStrip = Math.max(1, Math.round((STRIP_MAX_X - STRIP_MIN_X) / FIXTURE_SPACING));
+    const stepX = (STRIP_MAX_X - STRIP_MIN_X) / perStrip;
     for (let s = 0; s < STRIP_COUNT; s++) {
         const z = STRIP_COUNT === 1
             ? (STRIP_MIN_Z + STRIP_MAX_Z) * 0.5
             : STRIP_MIN_Z + (STRIP_MAX_Z - STRIP_MIN_Z) * (s / (STRIP_COUNT - 1));
-        for (let i = 0; i <= perStrip; i++) {
-            const x = STRIP_MIN_X + (STRIP_MAX_X - STRIP_MIN_X) * (i / perStrip);
-            centers.push([x, z]);
+        // Same spacing as the pool columns, with a few extra rows off the -X end.
+        for (let i = -EXTRA_COLUMNS_MINUS_X; i <= perStrip; i++) {
+            const x = STRIP_MIN_X + stepX * i;
+            fixtures.push({ pos: new Vec3(x, LIGHT_HEIGHT_Y, z), aim: new Vec3(0, -1, 0) });
         }
     }
-    return centers;
+    return fixtures;
 }
 
-function buildCoreGeometry(centers: [number, number][]): PlainGeometry {
+// Build an orthonormal (right, up) basis for a quad whose normal is `aim`.
+// Falls back to a Z reference when the aim is (near) vertical.
+function orientedBasis(aim: Vec3, right: Vec3, up: Vec3): void {
+    const ref = Math.abs(aim.y) > 0.99 ? Vec3.UNIT_Z : Vec3.UNIT_Y;
+    Vec3.cross(right, ref, aim);
+    right.normalize();
+    Vec3.cross(up, aim, right);
+    up.normalize();
+}
+
+const basisRight = new Vec3();
+const basisUp = new Vec3();
+
+// Bright solid cores, one quad per fixture, oriented to face along its aim.
+function buildCoreGeometry(fixtures: Fixture[]): PlainGeometry {
     const geometry: PlainGeometry = { positions: [], indices: [] };
     const half = FIXTURE_SIZE * 0.5;
-    for (const [cx, cz] of centers) {
+    for (const f of fixtures) {
+        orientedBasis(f.aim, basisRight, basisUp);
         const base = geometry.positions.length / 3;
+        const rx = basisRight.x * half, ry = basisRight.y * half, rz = basisRight.z * half;
+        const ux = basisUp.x * half, uy = basisUp.y * half, uz = basisUp.z * half;
+        const cx = f.pos.x, cy = f.pos.y, cz = f.pos.z;
         geometry.positions.push(
-            cx - half, LIGHT_HEIGHT_Y, cz - half,
-            cx + half, LIGHT_HEIGHT_Y, cz - half,
-            cx + half, LIGHT_HEIGHT_Y, cz + half,
-            cx - half, LIGHT_HEIGHT_Y, cz + half,
+            cx - rx - ux, cy - ry - uy, cz - rz - uz,
+            cx + rx - ux, cy + ry - uy, cz + rz - uz,
+            cx + rx + ux, cy + ry + uy, cz + rz + uz,
+            cx - rx + ux, cy - ry + uy, cz - rz + uz,
         );
         geometry.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
     return geometry;
 }
 
-function buildHaloGeometry(centers: [number, number][]): TexturedGeometry {
+// Additive glow halos, one textured quad per fixture, nudged a touch along the
+// aim (toward the lit side) so the halo glows over the core.
+function buildHaloGeometry(fixtures: Fixture[]): TexturedGeometry {
     const geometry: TexturedGeometry = { positions: [], uvs: [], indices: [] };
     const half = HALO_SIZE * 0.5;
-    const y = LIGHT_HEIGHT_Y - HALO_DROP;
-    for (const [cx, cz] of centers) {
+    for (const f of fixtures) {
+        orientedBasis(f.aim, basisRight, basisUp);
         const base = geometry.positions.length / 3;
+        const rx = basisRight.x * half, ry = basisRight.y * half, rz = basisRight.z * half;
+        const ux = basisUp.x * half, uy = basisUp.y * half, uz = basisUp.z * half;
+        const cx = f.pos.x + f.aim.x * HALO_DROP;
+        const cy = f.pos.y + f.aim.y * HALO_DROP;
+        const cz = f.pos.z + f.aim.z * HALO_DROP;
         geometry.positions.push(
-            cx - half, y, cz - half,
-            cx + half, y, cz - half,
-            cx + half, y, cz + half,
-            cx - half, y, cz + half,
+            cx - rx - ux, cy - ry - uy, cz - rz - uz,
+            cx + rx - ux, cy + ry - uy, cz + rz - uz,
+            cx + rx + ux, cy + ry + uy, cz + rz + uz,
+            cx - rx + ux, cy - ry + uy, cz - rz + uz,
         );
         geometry.uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
         geometry.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -170,19 +208,21 @@ function buildFlareQuadMesh(): Mesh {
 const tmpForward = new Vec3();
 const tmpDir = new Vec3();
 
-// Drives a per-fixture billboard glare: every fixture the camera looks near
-// flares at once - brightest/biggest for the most head-on one and tapering for
-// its neighbours - so the glare reads as one soft moving patch of light rather
-// than single lamps popping on one at a time. Lives on an always-active node.
+// Drives one billboard glare per fixture: each lamp independently fades its own
+// flare in/out based on how centred it is in view and whether it faces the
+// camera, so the glare slides smoothly across lamps instead of a few pooled
+// quads jumping between them. Lives on an always-active node.
 @ccclass('CeilingLightFlare')
 export class CeilingLightFlare extends Component {
     private _centers: Vec3[] = [];
+    private _aims: Vec3[] = [];
     private _camera: Node | null = null;
     private _flares: Node[] = [];
     private _intensities: number[] = [];
 
-    init(centers: Vec3[], camera: Node, flares: Node[]): void {
+    init(centers: Vec3[], aims: Vec3[], camera: Node, flares: Node[]): void {
         this._centers = centers;
+        this._aims = aims;
         this._camera = camera;
         this._flares = flares;
         this._intensities = new Array(centers.length).fill(0);
@@ -198,10 +238,20 @@ export class CeilingLightFlare extends Component {
         const rate = Math.min(1, dt * FLARE_FADE_RATE);
         for (let i = 0; i < this._centers.length; i++) {
             const center = this._centers[i];
+            // Direction from the camera to the fixture (normalized).
             Vec3.subtract(tmpDir, center, camPos);
             const len = tmpDir.length();
-            const align = len > 1e-4 ? Vec3.dot(tmpDir, tmpForward) / len : -1;
-            const target = align > FLARE_ALIGN_THRESHOLD ? smoothstep(FLARE_ALIGN_THRESHOLD, 1, align) : 0;
+            if (len > 1e-4) {
+                tmpDir.multiplyScalar(1 / len);
+            }
+            // How centred the lamp is in view (1 = dead centre of the screen).
+            const viewAlign = len > 1e-4 ? Vec3.dot(tmpDir, tmpForward) : -1;
+            // Whether the lamp faces back toward the camera (lit side). tmpDir is
+            // camera->lamp, so dot(lamp->camera, aim) = -dot(tmpDir, aim).
+            const facing = -Vec3.dot(tmpDir, this._aims[i]);
+            const target = (facing > FLARE_FACING_MIN && viewAlign > FLARE_VIEW_THRESHOLD)
+                ? smoothstep(FLARE_VIEW_THRESHOLD, 1, viewAlign)
+                : 0;
             const intensity = this._intensities[i] + (target - this._intensities[i]) * rate;
             this._intensities[i] = intensity;
             const node = this._flares[i];
@@ -230,7 +280,7 @@ export class CeilingLightFlare extends Component {
 // plus the always-active controller node.
 function setupCameraFlare(
     pool: Node,
-    centers: [number, number][],
+    fixtures: Fixture[],
     camera: Node | null,
     glowMaterial: Material,
 ): void {
@@ -241,11 +291,16 @@ function setupCameraFlare(
     pool.getWorldMatrix(world);
     const flareMesh = buildFlareQuadMesh();
     const worldCenters: Vec3[] = [];
+    const worldAims: Vec3[] = [];
     const flareNodes: Node[] = [];
-    for (const [cx, cz] of centers) {
-        const center = new Vec3(cx, LIGHT_HEIGHT_Y, cz);
+    for (const f of fixtures) {
+        const center = new Vec3(f.pos.x, f.pos.y, f.pos.z);
         Vec3.transformMat4(center, center, world);
         worldCenters.push(center);
+        const aim = new Vec3(f.aim.x, f.aim.y, f.aim.z);
+        Vec3.transformMat4Normal(aim, aim, world);
+        aim.normalize();
+        worldAims.push(aim);
         const node = new Node(CEILING_FLARE_NODE_NAME);
         node.setParent(pool);
         node.layer = pool.layer;
@@ -261,7 +316,7 @@ function setupCameraFlare(
     ctrlNode.setParent(pool);
     ctrlNode.layer = pool.layer;
     const controller = ctrlNode.addComponent(CeilingLightFlare);
-    controller.init(worldCenters, camera, flareNodes);
+    controller.init(worldCenters, worldAims, camera, flareNodes);
 }
 
 // Attach the static ceiling spotlight ring (bright cores + additive glow halos).
@@ -269,9 +324,9 @@ export function applyCeilingLightArray(pool: Node | null, camera: Node | null, d
     if (!pool?.isValid || pool.getChildByName(CEILING_LIGHT_NODE_NAME)) {
         return;
     }
-    const centers = fixtureCenters();
-    const coreGeometry = buildCoreGeometry(centers);
-    const haloGeometry = buildHaloGeometry(centers);
+    const fixtures = downFixtures();
+    const coreGeometry = buildCoreGeometry(fixtures);
+    const haloGeometry = buildHaloGeometry(fixtures);
 
     let coreMesh: Mesh | null = null;
     let haloMesh: Mesh | null = null;
@@ -319,9 +374,9 @@ export function applyCeilingLightArray(pool: Node | null, camera: Node | null, d
 
     attachRenderer(pool, CEILING_LIGHT_NODE_NAME, coreMesh, coreMaterial);
     attachRenderer(pool, CEILING_GLOW_NODE_NAME, haloMesh, glowMaterial);
-    setupCameraFlare(pool, centers, camera, glowMaterial);
+    setupCameraFlare(pool, fixtures, camera, glowMaterial);
     debug?.(
-        `ceiling light ring attached fixtures=${centers.length}`
+        `ceiling light ring attached fixtures=${fixtures.length}`
         + ` coreTris=${coreGeometry.indices.length / 3} glowTris=${haloGeometry.indices.length / 3} drawCalls=2`,
     );
 }
