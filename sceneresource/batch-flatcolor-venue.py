@@ -524,12 +524,17 @@ def author_editable() -> None:
 
 def sync_master_wall_materials() -> int:
     silver_material = create_authored_material(WALL_SILVER_MATERIAL, WALL_SILVER_COLOR)
-    targets = {
-        "StandStructure_Merged": "Upper_Tier_Platform_Blue",
-        "BleacherAccess_Architecture_Merged": "Bleacher_Step_Concrete",
-    }
+    # (object, source material) pairs redirected to the shared silver wall so the
+    # stairs, walls and the high tier soffit (ceiling) all read as ONE colour and
+    # share a single material / draw call. The soffit was authored a separate dark
+    # blue; folding it in here lets the baked height dimming treat it like the wall.
+    targets = [
+        ("StandStructure_Merged", "Upper_Tier_Platform_Blue"),
+        ("StandStructure_Merged", "Upper_Tier_Soffit_Dark"),
+        ("BleacherAccess_Architecture_Merged", "Bleacher_Step_Concrete"),
+    ]
     changed_faces = 0
-    for object_name, source_material_name in targets.items():
+    for object_name, source_material_name in targets:
         obj = bpy.data.objects.get(object_name)
         if obj is None or obj.type != "MESH":
             raise RuntimeError(f"missing master wall batch: {object_name}")
@@ -547,8 +552,19 @@ def sync_master_wall_materials() -> int:
             raise RuntimeError(f"{object_name}: missing wall material {source_material_name}")
         if obj.data.users > 1:
             obj.data = obj.data.copy()
-        obj.data.materials.append(silver_material)
-        silver_slot = len(obj.data.materials) - 1
+        # Reuse an existing silver slot so a second source material on the same
+        # object does not append a duplicate slot.
+        silver_slot = next(
+            (
+                index
+                for index, slot in enumerate(obj.material_slots)
+                if slot.material is not None and slot.material.name == WALL_SILVER_MATERIAL
+            ),
+            None,
+        )
+        if silver_slot is None:
+            obj.data.materials.append(silver_material)
+            silver_slot = len(obj.data.materials) - 1
         for polygon in obj.data.polygons:
             if polygon.material_index in source_indices:
                 polygon.material_index = silver_slot

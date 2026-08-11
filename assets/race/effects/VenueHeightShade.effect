@@ -1,10 +1,9 @@
-// Unlit venue-stand shading: darkens grandstand / wall geometry by BOTH world
-// height and horizontal distance from the pool, PER-PIXEL in the fragment shader
-// (no readMesh, no runtime mesh rebuild — works on device where mesh CPU data is
-// released). Dim poolside/low, fading darker toward the top and far corners.
-// The visible colour (or a wall tint) is passed in via mainColor/mainTexture by
-// StandHeightShade.ts. Walls use the continuous gradient; bleachers use four
-// discrete world-height tiers so one tier never changes colour across its span.
+// Unlit venue-stand shading driven by a BAKED per-vertex brightness (COLOR_0).
+// The arena dimming (bright poolside/low, dark high/far) is baked into vertex
+// colours by sceneresource/export-flatcolor-venue-glb.py, so there is NO runtime
+// height/distance math here — this is a fixed scene with fixed lighting. The
+// visible colour + optional texture come from StandHeightShade.ts; the bleacher
+// atlas keeps white vertex colours so its authored tiers stay unchanged.
 CCEffect %{
   techniques:
   - name: opaque
@@ -16,12 +15,6 @@ CCEffect %{
       properties:
         mainTexture: { value: white }
         mainColor:   { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
-        # x = pool minX, y = pool maxX, z = pool halfZ, w = near-keep metres.
-        poolRect:    { value: [0.0, 50.0, 10.5, 6.0] }
-        # x = min world Y, y = height span, z = horizontal-distance span, w unused.
-        heightRange: { value: [0.0, 20.0, 20.0, 0.0] }
-        # x = bottom brightness, y = top brightness, z = height gamma, w = dist gamma.
-        shadeCurve:  { value: [0.55, 0.08, 0.28, 0.85] }
 }%
 
 CCProgram venue-shade-vs %{
@@ -31,8 +24,9 @@ CCProgram venue-shade-vs %{
   #include <legacy/decode-base>
   #include <legacy/local-batch>
 
+  in vec4 a_color;
   out vec2 v_uv;
-  out vec3 v_worldPos;
+  out vec4 v_color;
 
   vec4 vert () {
     vec4 position;
@@ -40,9 +34,8 @@ CCProgram venue-shade-vs %{
     mat4 matWorld;
     CCGetWorldMatrix(matWorld);
     v_uv = a_texCoord;
-    vec4 worldPos = matWorld * position;
-    v_worldPos = worldPos.xyz;
-    return cc_matProj * (cc_matView * worldPos);
+    v_color = a_color;
+    return cc_matProj * (cc_matView * (matWorld * position));
   }
 }%
 
@@ -52,16 +45,13 @@ CCProgram venue-shade-fs %{
   #include <builtin/uniforms/cc-global>
 
   in vec2 v_uv;
-  in vec3 v_worldPos;
+  in vec4 v_color;
   #if USE_TEXTURE
   uniform sampler2D mainTexture;
   #endif
 
   uniform VenueShade {
     vec4 mainColor;
-    vec4 poolRect;
-    vec4 heightRange;
-    vec4 shadeCurve;
   };
 
   vec4 frag () {
@@ -75,37 +65,7 @@ CCProgram venue-shade-fs %{
     vec3 base = mainColor.rgb;
     float alpha = mainColor.a;
     #endif
-
-    float b;
-    if (heightRange.w > 0.5) {
-      // Tier mode: poolRect stores T1..T4 brightness and heightRange stores
-      // the three boundaries. Horizontal distance is intentionally ignored.
-      b = v_worldPos.y < heightRange.x ? poolRect.x
-        : (v_worldPos.y < heightRange.y ? poolRect.y
-        : (v_worldPos.y < heightRange.z ? poolRect.z : poolRect.w));
-    } else {
-      float minY = heightRange.x;
-      float spanY = max(heightRange.y, 0.001);
-      float spanDist = max(heightRange.z, 0.001);
-      float nearKeep = poolRect.w;
-
-      // Height factor (0 at the lowest stand, 1 at the top), with gamma.
-      float hp = pow(clamp((v_worldPos.y - minY) / spanY, 0.0, 1.0), shadeCurve.z);
-
-      // Horizontal distance from the pool rectangle, with a near-keep dead zone.
-      float dx = v_worldPos.x < poolRect.x
-        ? poolRect.x - v_worldPos.x
-        : (v_worldPos.x > poolRect.y ? v_worldPos.x - poolRect.y : 0.0);
-      float az = abs(v_worldPos.z);
-      float dz = az > poolRect.z ? az - poolRect.z : 0.0;
-      float dist = sqrt(dx * dx + dz * dz);
-      float dp = pow(clamp((dist - nearKeep) / spanDist, 0.0, 1.0), shadeCurve.w);
-
-      // Being either high OR far darkens the pixel.
-      float t = max(hp, dp);
-      b = shadeCurve.x + (shadeCurve.y - shadeCurve.x) * t;
-    }
-
-    return CCFragOutput(vec4(base * b, alpha));
+    // Baked arena dimming: per-vertex brightness multiplier (COLOR_0, linear).
+    return CCFragOutput(vec4(base * v_color.rgb, alpha));
   }
 }%

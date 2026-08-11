@@ -770,22 +770,6 @@
       ],
       "subMetas": {}
     },
-    "35d7e": {
-      "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@35d7e",
-      "displayName": "",
-      "id": "35d7e",
-      "name": "Upper_Tier_Soffit_Dark.material",
-      "userData": {
-        "gltfIndex": 0
-      },
-      "ver": "1.0.14",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
     "bfef7": {
       "importer": "gltf-material",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@bfef7",
@@ -793,7 +777,7 @@
       "id": "bfef7",
       "name": "Venue_Wall_SilverGray.material",
       "userData": {
-        "gltfIndex": 1
+        "gltfIndex": 0
       },
       "ver": "1.0.14",
       "imported": true,
@@ -809,7 +793,7 @@
       "id": "61c03",
       "name": "BleacherFlatColorAtlas_Material.material",
       "userData": {
-        "gltfIndex": 2
+        "gltfIndex": 1
       },
       "ver": "1.0.14",
       "imported": true,
@@ -825,7 +809,7 @@
       "id": "c3802",
       "name": "LPVenue_cartoon_float_blue.material",
       "userData": {
-        "gltfIndex": 3
+        "gltfIndex": 2
       },
       "ver": "1.0.14",
       "imported": true,
@@ -841,7 +825,7 @@
       "id": "3271b",
       "name": "LPVenue_cartoon_float_white.material",
       "userData": {
-        "gltfIndex": 4
+        "gltfIndex": 3
       },
       "ver": "1.0.14",
       "imported": true,
@@ -857,7 +841,7 @@
       "id": "bdbbf",
       "name": "LPVenue_cartoon_float_red.material",
       "userData": {
-        "gltfIndex": 5
+        "gltfIndex": 4
       },
       "ver": "1.0.14",
       "imported": true,
@@ -873,7 +857,7 @@
       "id": "7137e",
       "name": "LPVenue_cartoon_float_yellow.material",
       "userData": {
-        "gltfIndex": 6
+        "gltfIndex": 5
       },
       "ver": "1.0.14",
       "imported": true,
@@ -889,7 +873,7 @@
       "id": "973fd",
       "name": "LPVenue_cartoon_lane_floor_navy.material",
       "userData": {
-        "gltfIndex": 7
+        "gltfIndex": 6
       },
       "ver": "1.0.14",
       "imported": true,
@@ -905,7 +889,7 @@
       "id": "5dcc0",
       "name": "LPVenue_cartoon_pool_edge_white.material",
       "userData": {
-        "gltfIndex": 8
+        "gltfIndex": 7
       },
       "ver": "1.0.14",
       "imported": true,
@@ -921,7 +905,7 @@
       "id": "270a0",
       "name": "LPVenue_pool_inner_wall_narrow_tiles.material",
       "userData": {
-        "gltfIndex": 9
+        "gltfIndex": 8
       },
       "ver": "1.0.14",
       "imported": true,
@@ -937,7 +921,7 @@
       "id": "86ba8",
       "name": "LPVenue_runtime_water_placeholder.material",
       "userData": {
-        "gltfIndex": 10,
+        "gltfIndex": 9,
         "triangleCount": 2
       },
       "ver": "1.0.14",
@@ -954,7 +938,7 @@
       "id": "5bdca",
       "name": "Venue_Ground_Resin.material",
       "userData": {
-        "gltfIndex": 11
+        "gltfIndex": 10
       },
       "ver": "1.0.14",
       "imported": true,
@@ -970,7 +954,7 @@
       "id": "d3bc5",
       "name": "LPVenue_cartoon_podium_red.001.material",
       "userData": {
-        "gltfIndex": 12
+        "gltfIndex": 11
       },
       "ver": "1.0.14",
       "imported": true,
@@ -986,7 +970,7 @@
       "id": "5e8cb",
       "name": "Bleacher_Access_Door_Dark.material",
       "userData": {
-        "gltfIndex": 13
+        "gltfIndex": 12
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1002,7 +986,7 @@
       "id": "b5a68",
       "name": "EmergencyExit_Green.material",
       "userData": {
-        "gltfIndex": 14
+        "gltfIndex": 13
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1018,7 +1002,7 @@
       "id": "cdd5d",
       "name": "Bleacher_Access_Rail_Blue.material",
       "userData": {
-        "gltfIndex": 15
+        "gltfIndex": 14
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1034,7 +1018,7 @@
       "id": "fdd62",
       "name": "tripo_mat_5335fffe-5079-4a12-b652-047c6dc6b800.003.material",
       "userData": {
-        "gltfIndex": 16
+        "gltfIndex": 15
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1140,7 +1124,6 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@9b782"
       ],
       "materials": [
-        "a751d540-5ebd-4868-a41a-334975b3aed3@35d7e",
         "a751d540-5ebd-4868-a41a-334975b3aed3@bfef7",
         "a751d540-5ebd-4868-a41a-334975b3aed3@61c03",
         "a751d540-5ebd-4868-a41a-334975b3aed3@c3802",
