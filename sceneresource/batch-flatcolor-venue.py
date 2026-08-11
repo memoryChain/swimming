@@ -33,7 +33,7 @@ ATLAS_HEIGHT = 16
 ATLAS_TEMP_FILENAME = ".BleacherFlatColorAtlas.tmp.png"
 EXPECTED_BLEACHER_TARGETS = 17
 POOL_CENTER = Vector((25.0, 0.0, 0.0))
-TIER_BRIGHTNESS = (1.0, 0.82, 0.66, 0.52)
+TIER_BRIGHTNESS = (1.0, 0.46, 0.18, 0.05)
 
 # Values are linear RGB. The seatless bleacher bands use a venue-blue palette
 # with separate tread, riser, and side values so the geometry reads unlit.

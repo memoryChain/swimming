@@ -4,21 +4,23 @@ import { SpectatorCameraFlashEmitter } from './SpectatorCameraFlashEmitter';
 
 const { ccclass, property } = _decorator;
 
-// Clothing stays muted so the unlit pool remains the focal area. Higher tiers
-// are progressively darkened per-vertex (see TIER_BRIGHTNESS) so the stands read
-// with depth without turning neon/confetti.
+// Front-row clothing is fairly saturated so the poolside tier reads vivid;
+// higher tiers are darkened steeply toward black (see TIER_BRIGHTNESS), which
+// also drains their apparent saturation, so the crowd fades into the dark
+// upper stands as if only the pool is lit.
 const SPECTATOR_COLORS = [
-    color(150, 162, 190),
-    color(178, 150, 172),
-    color(140, 180, 172),
-    color(196, 168, 140),
-    color(200, 198, 190),
+    color(96, 138, 214),
+    color(206, 108, 150),
+    color(86, 190, 158),
+    color(224, 166, 88),
+    color(206, 206, 198),
 ];
 
-// Per-tier brightness multiplier baked into spectator vertex colors. The
-// poolside tier stays clearly readable while each higher tier falls deeper into
-// the same dark environment as the stands and walls.
-const TIER_BRIGHTNESS = [0.68, 0.42, 0.27, 0.17];
+// Per-tier brightness multiplier baked into spectator vertex colors, modelling
+// a spotlight that only lights the pool: the poolside tier is at full strength
+// while each higher tier falls off steeply (non-linear) so the top tier is
+// nearly black.
+const TIER_BRIGHTNESS = [1.0, 0.46, 0.18, 0.05];
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
