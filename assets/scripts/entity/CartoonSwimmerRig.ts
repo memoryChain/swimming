@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3 } from 'cc';
+import { _decorator, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
@@ -7,6 +7,7 @@ import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
+import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
 import { collectComponentsRecursive, configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from '../character/DivePrepPoseCurve';
 import { FreestylePoseController, ProceduralPoseSnapshot } from '../character/FreestylePoseController';
@@ -121,6 +122,11 @@ type FlashRestoreSlot = {
 const COLLISION_FLASH_SECONDS = 0.35;
 const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
 const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
+const DIVE_CHARGE_BLUE = new Color(48, 198, 255, 255);
+const DIVE_CHARGE_YELLOW = new Color(255, 218, 42, 255);
+const DIVE_CHARGE_RED = new Color(255, 54, 24, 255);
+const DIVE_CHARGE_VISUAL_INTERVAL_SECONDS = 1 / 30;
+const DIVE_CHARGE_POWER_STEPS = 20;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -202,6 +208,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowMaterial: Material = null;
     private readonly _perfectGlowRestoreSlots: FlashRestoreSlot[] = [];
     private _collisionFlashTimer = 0;
+    private _diveChargeGatherEffect: DiveChargeGatherEffect | null = null;
+    private _diveChargeRequestedActive = false;
+    private _diveChargeRequestedPower = 0;
+    private _diveChargeVisualElapsed = 0;
+    private _diveChargeReleaseBurstRemaining = 0;
+    private readonly _diveChargeWorldCenter = new Vec3();
+    private readonly _diveChargeBodyMaterials: Material[] = [];
+    private readonly _diveChargeBodyParams = new Vec4(0, 0, 0.90, 15);
+    private readonly _diveChargeRimParams = new Vec4(4, 1, 0, 0);
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmerColorVariant().id;
@@ -601,6 +616,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private clearLoadedModel() {
         this.restorePerfectGlowMaterials();
+        this._diveChargeBodyMaterials.length = 0;
         this._modelLoadToken++;
         this._sampledActionOverrideLoadToken++;
         this._sampledActionOverrides.clear();
@@ -1193,6 +1209,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
 
+        if (this._diveChargeRequestedActive) {
+            this.updateDiveChargeVisual(dt);
+        }
+        if (this._diveChargeReleaseBurstRemaining > 0) {
+            this._diveChargeReleaseBurstRemaining = Math.max(0, this._diveChargeReleaseBurstRemaining - Math.max(0, dt));
+            if (this._diveChargeReleaseBurstRemaining <= 0) {
+                this._diveChargeGatherEffect?.destroy();
+                this._diveChargeGatherEffect = null;
+            }
+        }
+
         if (this._bodyFeedbackEnabled && (this._perfectGlowIntensity > 0 || this._collisionFlashTimer > 0)) {
             this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
             this.updatePerfectGlowMaterial();
@@ -1229,6 +1256,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     onDestroy() {
         this._modelLoadToken += 1;
         this._colorAssetLoadToken += 1;
+        this._diveChargeBodyMaterials.length = 0;
+        this._diveChargeGatherEffect?.destroy();
+        this._diveChargeGatherEffect = null;
         this.restorePerfectGlowMaterials();
         if (this._perfectGlowMaterial?.isValid) {
             this._perfectGlowMaterial.destroy();
@@ -1311,6 +1341,57 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
+    // Start-dive charge feedback. Body materials carry a subtle Screen glow;
+    // a single pooled mesh supplies the converging rays and launch burst.
+    setDiveChargeEffect(power: number, active: boolean) {
+        const nextPower = Math.max(0, Math.min(1, power));
+        if (this._diveChargeRequestedActive === active && this._diveChargeRequestedPower === nextPower) {
+            return;
+        }
+        // A rematch can replace renderer-local material instances. Rebind the
+        // next time charging begins rather than writing into detached instances.
+        if (active && !this._diveChargeRequestedActive) {
+            this._diveChargeBodyMaterials.length = 0;
+        }
+        this._diveChargeRequestedActive = active;
+        this._diveChargeRequestedPower = nextPower;
+        if (!active) {
+            this._diveChargeVisualElapsed = 0;
+            this.applyDiveChargeVisual(0, false);
+        }
+    }
+
+    clearDiveChargeEffect() {
+        if (!this._diveChargeRequestedActive
+            && !this._diveChargeGatherEffect
+            && this._diveChargeBodyParams.x <= 0
+            && this._diveChargeRimParams.y >= 1) {
+            this._diveChargeBodyMaterials.length = 0;
+            return;
+        }
+        this._diveChargeRequestedActive = false;
+        this._diveChargeRequestedPower = 0;
+        this._diveChargeVisualElapsed = 0;
+        this._diveChargeReleaseBurstRemaining = 0;
+        this.applyDiveChargeBodyMaterial(0, 0, false);
+        this._diveChargeBodyMaterials.length = 0;
+        this._diveChargeGatherEffect?.destroy();
+        this._diveChargeGatherEffect = null;
+    }
+
+    releaseDiveChargeEffect(duration?: number) {
+        this._diveChargeRequestedActive = false;
+        this._diveChargeRequestedPower = 0;
+        this._diveChargeVisualElapsed = 0;
+        this.applyDiveChargeBodyMaterial(0, 0, false);
+        this._diveChargeBodyMaterials.length = 0;
+        const gather = this._diveChargeGatherEffect;
+        if (gather && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
+            gather.setWorldPosition(this._diveChargeWorldCenter);
+        }
+        this._diveChargeReleaseBurstRemaining = gather?.releaseBurst(duration) ?? 0;
+    }
+
     setBodyFeedbackEnabled(enabled: boolean) {
         if (this._bodyFeedbackEnabled === enabled) {
             return;
@@ -1351,6 +1432,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this.restorePerfectGlowMaterials();
+        this._diveChargeBodyMaterials.length = 0;
         const modelVariant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
         const colorVariant = findSwimmerColorVariant(this._colorVariantId) ?? defaultSwimmerColorVariant();
         const override = this._colorOverride;
@@ -1385,6 +1467,81 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             },
         });
         this.updatePerfectGlowMaterial();
+    }
+
+    private updateDiveChargeVisual(dt: number) {
+        this._diveChargeVisualElapsed += Math.max(0, dt);
+        if (this._diveChargeVisualElapsed < DIVE_CHARGE_VISUAL_INTERVAL_SECONDS) {
+            return;
+        }
+        this._diveChargeVisualElapsed %= DIVE_CHARGE_VISUAL_INTERVAL_SECONDS;
+        const quantizedPower = Math.round(this._diveChargeRequestedPower * DIVE_CHARGE_POWER_STEPS) / DIVE_CHARGE_POWER_STEPS;
+        this.applyDiveChargeVisual(0.35 + quantizedPower * 0.65, true);
+    }
+
+    private applyDiveChargeVisual(intensity: number, active: boolean) {
+        this.applyDiveChargeBodyMaterial(intensity, this._diveChargeRequestedPower, active);
+        if (active && !this._diveChargeGatherEffect) {
+            this._diveChargeGatherEffect = new DiveChargeGatherEffect(this.node);
+        }
+        const gather = this._diveChargeGatherEffect;
+        if (!gather) {
+            return;
+        }
+        gather.setCharge(intensity, this._diveChargeRequestedPower);
+        gather.setActive(active);
+        if (active && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
+            gather.setWorldPosition(this._diveChargeWorldCenter);
+        }
+    }
+
+    private applyDiveChargeBodyMaterial(intensity: number, progress: number, active: boolean) {
+        if (this._diveChargeBodyMaterials.length <= 0) {
+            this.bindDiveChargeBodyMaterials();
+        }
+        this._diveChargeBodyParams.x = active ? intensity : 0;
+        this._diveChargeBodyParams.y = active ? Math.max(0, Math.min(1, progress)) : 0;
+        this._diveChargeRimParams.y = active ? 0 : 1;
+        for (const material of this._diveChargeBodyMaterials) {
+            if (!material?.isValid) {
+                continue;
+            }
+            material.setProperty('chargeParams', this._diveChargeBodyParams);
+            material.setProperty('rimParams', this._diveChargeRimParams);
+        }
+    }
+
+    private bindDiveChargeBodyMaterials() {
+        for (const renderer of this._skinnedRenderers) {
+            if (!renderer?.isValid || !renderer.node?.isValid) {
+                continue;
+            }
+            const slotCount = Math.max(1, renderer.sharedMaterials.length);
+            for (let index = 0; index < slotCount; index++) {
+                const shared = renderer.getSharedMaterial(index);
+                if (!shared?.isValid) {
+                    continue;
+                }
+                let supportsCharge = false;
+                for (const pass of shared.passes) {
+                    if (pass.getHandle('chargeParams')) {
+                        supportsCharge = true;
+                        break;
+                    }
+                }
+                if (!supportsCharge) {
+                    continue;
+                }
+                const material = renderer.getMaterialInstance(index);
+                if (!material?.isValid) {
+                    continue;
+                }
+                material.setProperty('chargeBlue', DIVE_CHARGE_BLUE);
+                material.setProperty('chargeYellow', DIVE_CHARGE_YELLOW);
+                material.setProperty('chargeRed', DIVE_CHARGE_RED);
+                this._diveChargeBodyMaterials.push(material);
+            }
+        }
     }
 
     private storeSkinSettings(skinColor: Color, suitColor: Color, capColor: Color, robotStyle: boolean, playerOutline: boolean) {

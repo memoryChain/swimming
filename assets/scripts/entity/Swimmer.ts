@@ -321,6 +321,7 @@ export class Swimmer extends Component {
             return;
         }
         Tween.stopAllByTarget(this.node);
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.startRace(Math.max(0, distance));
     }
 
@@ -374,6 +375,18 @@ export class Swimmer extends Component {
         this.cartoonRig?.setDiveReady(true);
     }
 
+    setDiveChargeEffect(power: number, active: boolean) {
+        this.cartoonRig?.setDiveChargeEffect(power, active);
+    }
+
+    clearDiveChargeEffect() {
+        this.cartoonRig?.clearDiveChargeEffect();
+    }
+
+    releaseDiveChargeEffect(duration?: number) {
+        this.cartoonRig?.releaseDiveChargeEffect(duration);
+    }
+
     prepareShowcaseStanding() {
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
@@ -413,12 +426,17 @@ export class Swimmer extends Component {
         entry.y = entryY;
         const poseTransitionDuration = projectileFlightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio;
         const launchDelayDuration = poseTransitionDuration * SWIMMER_ACTION_TUNING.diveLaunchDelayRatio;
+        // The release is a pre-jump pulse, not a trail left behind the swimmer.
+        // Fit it into the existing crouch/extension time and leave one render
+        // frame of clean anticipation before root motion begins.
+        const preLaunchBurstDuration = Math.max(0.01, crouchDuration + launchDelayDuration - 1 / 60);
         const totalDuration = crouchDuration + launchDelayDuration + projectileFlightDuration;
 
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
         this.cartoonRig?.setDiveReady(true);
+        this.cartoonRig?.releaseDiveChargeEffect(preLaunchBurstDuration);
         tween(this.node)
             .to(crouchDuration, {
                 position: launchStart,
@@ -732,6 +750,7 @@ export class Swimmer extends Component {
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setDiveReady(true);
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
@@ -744,6 +763,7 @@ export class Swimmer extends Component {
         this.resetPose();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setShowcaseStanding();
+        this.cartoonRig?.setDiveChargeEffect(0, false);
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 

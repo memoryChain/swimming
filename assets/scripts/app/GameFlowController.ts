@@ -241,6 +241,7 @@ export class GameFlowController {
         this._diveChargeStarted = true;
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
+        this._refs.playerSwimmer?.setDiveChargeEffect(this._diveChargePower, true);
         captureNetInput({ kind: NetInputKind.DiveCharge });
         this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
         this._refs.debug('dive charging');
@@ -304,10 +305,14 @@ export class GameFlowController {
                 this.prepareAndScheduleAiDives();
             }
             if (state === GameState.GLIDING) {
+                // The launch burst has already played; this handles cancelled or
+                // interrupted dive tweens without leaving a stale mesh behind.
+                this._refs.playerSwimmer?.clearDiveChargeEffect();
                 this._refs.raceCameraDirector.resetRaceTimers();
                 this._refs.uiFlow.showGliding();
             }
             if (state === GameState.RACING) {
+                this._refs.playerSwimmer?.clearDiveChargeEffect();
                 this._refs.uiFlow.hideCountdown();
                 this.startAllAi();
             }
@@ -610,6 +615,7 @@ export class GameFlowController {
         }
         this._diveChargeElapsed += Math.max(0, dt);
         this._diveChargePower = diveChargePingPong(this._diveChargeElapsed);
+        this._refs.playerSwimmer?.setDiveChargeEffect(this._diveChargePower, true);
         this._refs.uiFlow.updateDiveCharge(this._diveChargePower, true);
     }
 
@@ -618,6 +624,7 @@ export class GameFlowController {
         this._diveChargeElapsed = 0;
         this._diveChargePower = 0;
         this._diveCommitted = false;
+        this._refs.playerSwimmer?.setDiveChargeEffect(0, false);
         this._refs.uiFlow.updateDiveCharge(0, false);
     }
 
@@ -628,6 +635,8 @@ export class GameFlowController {
         const power = this.calculateDivePower(charge);
         this._diveCommitted = true;
         this._diveChargeStarted = false;
+        // Preserve the last visible charge through anticipation. Swimmer releases
+        // the burst at the exact liftoff edge rather than at input release.
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();

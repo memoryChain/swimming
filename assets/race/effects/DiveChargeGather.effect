@@ -1,0 +1,164 @@
+CCEffect %{
+  techniques:
+  - name: transparent
+    passes:
+    - vert: dive-charge-gather-vs:vert
+      frag: dive-charge-gather-fs:frag
+      priority: max - 25
+      rasterizerState:
+        cullMode: none
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one
+          blendSrcAlpha: one
+          blendDstAlpha: one
+      properties:
+        chargeBlue:   { value: [0.05, 0.62, 1.0, 0.9], linear: true, editor: { type: color } }
+        chargeYellow: { value: [1.0, 0.72, 0.04, 0.9], linear: true, editor: { type: color } }
+        chargeRed:    { value: [1.0, 0.08, 0.025, 0.9], linear: true, editor: { type: color } }
+        releaseColor: { value: [1.0, 0.82, 0.32, 1.0], linear: true, editor: { type: color } }
+        chargeParams: { value: [0.0, 0.0, 0.72, 0.0] }
+        gatherMotion: { value: [0.0, 0.0, 2.2, 0.34] }
+        releaseParams: { value: [0.0, 0.0, 0.38, 0.92] }
+}%
+
+CCProgram dive-charge-gather-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+
+  out vec2 v_uv;
+  out float v_cycleFade;
+  out float v_releaseFade;
+  out float v_haloFade;
+  in vec4 a_color;
+
+  uniform DiveChargeGather {
+    vec4 chargeBlue;
+    vec4 chargeYellow;
+    vec4 chargeRed;
+    vec4 releaseColor;
+    vec4 chargeParams;
+    vec4 gatherMotion;
+    vec4 releaseParams;
+  };
+
+  float hash11(float value) {
+    value = fract(value * 0.1031);
+    value *= value + 33.33;
+    value *= value + value;
+    return fract(value);
+  }
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    // G carries a stable ray id. Each time that ray restarts, its cycle number
+    // joins the seed so the next inward streak chooses a genuinely new point on
+    // the ring instead of revisiting a fixed slot or rotating a fixed pattern.
+    float phaseOffset = a_color.g;
+    float cycleValue = gatherMotion.x + (cc_time.x - gatherMotion.y) * gatherMotion.z + phaseOffset;
+    float cycle = fract(cycleValue);
+    float cycleIndex = floor(cycleValue);
+    float raySeed = phaseOffset * 59.0 + cycleIndex * 31.0;
+    float azimuth = hash11(raySeed + 17.0) * 6.28318531;
+    // Build the ring in the current camera plane, rather than in a horizontal
+    // world-space belt. This guarantees visible coverage above, below, left,
+    // and right of the swimmer from the countdown camera.
+    vec3 effectCenter = (matWorld * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    vec3 toCamera = normalize(cc_cameraPos.xyz - effectCenter);
+    vec3 screenReference = abs(toCamera.y) > 0.96
+      ? vec3(1.0, 0.0, 0.0)
+      : vec3(0.0, 1.0, 0.0);
+    vec3 screenRight = normalize(cross(screenReference, toCamera));
+    vec3 screenUp = normalize(cross(toCamera, screenRight));
+    float depthJitter = (hash11(raySeed + 37.0) - 0.5) * 0.16;
+    vec3 radialDirection = normalize(
+      screenRight * cos(azimuth)
+      + screenUp * sin(azimuth)
+      + toCamera * depthJitter
+    );
+    vec3 tangentReference = abs(radialDirection.y) < 0.92
+      ? vec3(0.0, 1.0, 0.0)
+      : vec3(1.0, 0.0, 0.0);
+    vec3 tangentA = normalize(cross(tangentReference, radialDirection));
+    vec3 tangentB = normalize(cross(radialDirection, tangentA));
+    vec3 ribbonSide = mix(tangentA, tangentB, step(0.5, a_color.a));
+    float releaseT = clamp((cc_time.x - releaseParams.y) / max(releaseParams.z, 0.001), 0.0, 1.0);
+    float releaseMode = step(0.5, releaseParams.x);
+    float haloGeometry = step(0.5, a_color.b);
+    float baseRadius = position.x;
+    float lateralWidth = a_color.a < 0.5 ? position.y : position.z;
+    vec3 ribbonPosition = radialDirection * baseRadius + ribbonSide * lateralWidth;
+    float gatherTravel = (1.0 - cycle) * chargeParams.z;
+    vec3 gatherPosition = ribbonPosition + radialDirection * gatherTravel;
+    float releaseShape = smoothstep(0.0, 0.22, releaseT);
+    float releaseRadius = mix(0.035, baseRadius, releaseShape) + releaseParams.w * releaseT * releaseT;
+    vec3 releasePosition = ribbonSide * lateralWidth * releaseShape + radialDirection * releaseRadius;
+    vec3 particlePosition = mix(gatherPosition, releasePosition, releaseMode);
+    float haloEase = 1.0 - (1.0 - releaseT) * (1.0 - releaseT);
+    float haloScale = mix(0.055, 1.12, haloEase);
+    vec3 haloPosition = position.xyz * haloScale;
+    position.xyz = mix(particlePosition, haloPosition, haloGeometry * releaseMode);
+    float appear = smoothstep(0.0, 0.14, cycle);
+    float arrive = 1.0 - smoothstep(0.76, 1.0, cycle);
+    float densityFade = 1.0 - smoothstep(gatherMotion.w - 0.035, gatherMotion.w + 0.035, a_color.r);
+    float releaseDensity = 1.0 - smoothstep(0.505, 0.575, a_color.r);
+    v_cycleFade = appear * arrive * chargeParams.x * densityFade * (1.0 - releaseMode) * (1.0 - haloGeometry);
+    v_releaseFade = sin(releaseT * 3.14159265) * releaseDensity * releaseMode * (1.0 - haloGeometry);
+    float haloAppear = smoothstep(0.0, 0.08, releaseT);
+    float haloDisappear = 1.0 - smoothstep(0.52, 1.0, releaseT);
+    v_haloFade = haloAppear * haloDisappear * haloGeometry * releaseMode;
+    v_uv = a_texCoord;
+    vec4 worldPosition = matWorld * position;
+    return cc_matProj * (cc_matView * worldPosition);
+  }
+}%
+
+CCProgram dive-charge-gather-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+  in vec2 v_uv;
+  in float v_cycleFade;
+  in float v_releaseFade;
+  in float v_haloFade;
+  uniform DiveChargeGather {
+    vec4 chargeBlue;
+    vec4 chargeYellow;
+    vec4 chargeRed;
+    vec4 releaseColor;
+    vec4 chargeParams;
+    vec4 gatherMotion;
+    vec4 releaseParams;
+  };
+  vec4 frag () {
+    float across = 1.0 - abs(v_uv.y * 2.0 - 1.0);
+    across = smoothstep(0.0, 0.72, across);
+    float tail = 1.0 - smoothstep(0.08, 1.0, v_uv.x);
+    float tip = pow(1.0 - v_uv.x, 5.0);
+    float chargeProgress = clamp(chargeParams.w, 0.0, 1.0);
+    // Keep the low-charge blue readable for longer, then blend through yellow
+    // and reserve red for the final high-tension portion of the hold.
+    vec4 chargeColor = mix(chargeBlue, chargeYellow, smoothstep(0.50, 0.66, chargeProgress));
+    chargeColor = mix(chargeColor, chargeRed, smoothstep(0.78, 0.92, chargeProgress));
+    float gatherAlpha = across * (0.16 + tail * 0.84) * v_cycleFade * chargeColor.a;
+    float releaseAlpha = across * (0.28 + tail * 0.72) * v_releaseFade * releaseColor.a;
+    float haloAlpha = pow(across, 1.5) * v_haloFade * releaseColor.a * 0.46;
+    float alpha = gatherAlpha + releaseAlpha + haloAlpha;
+    vec3 gatherColor = mix(chargeColor.rgb, vec3(1.0), tip * 0.12);
+    vec3 burstColor = mix(releaseColor.rgb, vec3(1.0), 0.58 + tip * 0.30);
+    vec3 haloColor = mix(releaseColor.rgb, vec3(1.0), 0.76);
+    vec3 color = mix(gatherColor, burstColor, step(0.001, v_releaseFade));
+    color = mix(color, haloColor, step(0.001, v_haloFade));
+    return CCFragOutput(vec4(color, alpha));
+  }
+}%
