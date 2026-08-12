@@ -31,6 +31,15 @@ const DIVE_GFX_HIGH = new Color(255, 224, 89, 255);
 const DIVE_SPRITE_LOW = new Color(255, 82, 91, 255);
 const DIVE_SPRITE_MID = new Color(76, 216, 235, 255);
 const DIVE_SPRITE_HIGH = new Color(255, 214, 64, 255);
+// Race praise is presentation-only. Keep the gameplay Rating enum at three
+// levels so movement, rewards, statistics, and net simulation stay unchanged.
+const PRAISE_GOOD = { text: 'Good', color: new Color(80, 242, 161, 255) };
+const PRAISE_GREAT = { text: 'Great', color: new Color(80, 216, 255, 255) };
+const PRAISE_EXCELLENT = { text: 'Excellent', color: new Color(156, 142, 255, 255) };
+const PRAISE_PERFECT = { text: 'Perfect', color: new Color(255, 224, 89, 255) };
+const PRAISE_AMAZING = { text: 'Amazing', color: new Color(255, 184, 77, 255) };
+const PRAISE_CRAZY = { text: 'Crazy', color: new Color(255, 122, 184, 255) };
+const PRAISE_UNBELIEVABLE = { text: 'Unbelievable', color: new Color(255, 208, 97, 255) };
 
 export type RaceResultStats = {
     averageSpeed: number;
@@ -93,6 +102,10 @@ export class UIController extends Component {
     private _energyText = -1;
     private _energyFillPixel = -1;
     private _energyColor: Color | null = null;
+    private _ratingText = '';
+    private _ratingColor: Color | null = null;
+    private _comboText = '';
+    private _comboFontSize = -1;
     private _ultimateText = -1;
     private _ultimateFillPixel = -1;
     private _ultimateColor: Color | null = null;
@@ -320,22 +333,37 @@ export class UIController extends Component {
     }
 
     showRating(rating: Rating, combo: number) {
+        const praise = praiseForRating(rating, combo);
+        // A mistimed release still settles in the gameplay layer, but should
+        // not create a visible negative event in this relaxed presentation.
+        if (!praise) {
+            return;
+        }
         if (this.ratingLabel) {
-            this.ratingLabel.string = ratingText(rating);
-            this.ratingLabel.color = rating === Rating.PERFECT
-                ? new Color(255, 224, 89, 255)
-                : rating === Rating.GOOD
-                    ? new Color(80, 242, 161, 255)
-                    : new Color(255, 92, 92, 255);
+            if (this._ratingText !== praise.text) {
+                this.ratingLabel.string = praise.text;
+                this._ratingText = praise.text;
+            }
+            if (this._ratingColor !== praise.color) {
+                this.ratingLabel.color = praise.color;
+                this._ratingColor = praise.color;
+            }
             this.pulse(this.ratingLabel.node, 1.18);
         }
         if (this.comboLabel) {
-            this.comboLabel.string = combo > 0 ? `${combo} 连击` : '';
-            this.comboLabel.fontSize = combo >= 10 ? 25 : 24;
+            const comboText = combo > 0 ? `${combo} 连击` : '';
+            const comboFontSize = combo >= 10 ? 25 : 24;
+            if (this._comboText !== comboText) {
+                this.comboLabel.string = comboText;
+                this._comboText = comboText;
+            }
+            if (this._comboFontSize !== comboFontSize) {
+                this.comboLabel.fontSize = comboFontSize;
+                this._comboFontSize = comboFontSize;
+            }
         }
         this.fadeRatingReadout();
     }
-
     // Hold the rating/combo readout briefly, then fade it out so it does not
     // linger over the swimmer until the next stroke.
     private fadeRatingReadout() {
@@ -876,6 +904,10 @@ export class UIController extends Component {
         this._energyText = -1;
         this._energyFillPixel = -1;
         this._energyColor = null;
+        this._ratingText = '';
+        this._ratingColor = null;
+        this._comboText = '';
+        this._comboFontSize = -1;
         this._ultimateText = -1;
         this._ultimateFillPixel = -1;
         this._ultimateColor = null;
@@ -964,16 +996,24 @@ export class UIController extends Component {
     }
 }
 
-function ratingText(rating: Rating): string {
-    if (rating === Rating.PERFECT) {
-        return '完美';
-    }
+function praiseForRating(rating: Rating, combo: number): { text: string; color: Color } | null {
     if (rating === Rating.GOOD) {
-        return '不错';
+        return PRAISE_GOOD;
     }
-    return '失误';
+    if (rating !== Rating.PERFECT) {
+        return null;
+    }
+    // combo is the consecutive-PERFECT count after the current stroke. GOOD
+    // establishes the base word, then each PERFECT advances one praise tier.
+    switch (Math.min(6, Math.max(1, Math.floor(combo)))) {
+        case 1: return PRAISE_GREAT;
+        case 2: return PRAISE_EXCELLENT;
+        case 3: return PRAISE_PERFECT;
+        case 4: return PRAISE_AMAZING;
+        case 5: return PRAISE_CRAZY;
+        default: return PRAISE_UNBELIEVABLE;
+    }
 }
-
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
 }
