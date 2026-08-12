@@ -12,6 +12,7 @@ import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { UltimateEnergyModel } from '../condition/UltimateEnergyModel';
+import { SkillRuntime } from '../skills/SkillRuntime';
 import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { scaledDelta } from '../core/TimeScale';
 import { StrokeQualityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -50,6 +51,7 @@ export class Swimmer extends Component {
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private readonly _ultimate = new UltimateEnergyModel();
+    private readonly _skill = new SkillRuntime();
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
     private readonly _swimBoundaryRange = { min: 0, max: 0 };
@@ -118,6 +120,10 @@ export class Swimmer extends Component {
         return this._ultimate;
     }
 
+    get skill(): SkillRuntime {
+        return this._skill;
+    }
+
     // 蓄气资质（0-100，纯资质）：玩家/远程人类来自养成档案，AI 来自对手配置。
     setEnergyGainAptitude(value: number) {
         this._ultimate.setGainAptitude(value);
@@ -131,6 +137,10 @@ export class Swimmer extends Component {
     // 联机：把本地预测能量朝房主权威值校正。
     applyNetEnergy(target: number, blend = 0.5) {
         this._ultimate.applyNetEnergy(target, blend);
+    }
+
+    applyNetSkillRemaining(targetSeconds: number) {
+        this._skill.applyNetRemaining(targetSeconds);
     }
     // Flash the body red for a moment when bumping into another swimmer.
     flashCollision() {
@@ -320,6 +330,7 @@ export class Swimmer extends Component {
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.captureStartPosition();
         this._ultimate.reset();
+        this._skill.reset();
         this._phases.clearFlipTurnPhase(true);
         if (fromDiveEntry) {
             this._phases.startDiveUnderwaterPhase();
@@ -513,6 +524,9 @@ export class Swimmer extends Component {
             return;
         }
         this._ultimate.tick(dt);
+        this._skill.tick(dt);
+        this._motor.setSkillStrokeAccelScale(this._skill.strokeAccelScale);
+        this._motor.setSkillSpeedCapScale(this._skill.speedCapScale);
         if (this._phases.tick(dt)) {
             return;
         }
@@ -698,6 +712,7 @@ export class Swimmer extends Component {
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
         this._ultimate.reset();
+        this._skill.reset();
         this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
@@ -1045,6 +1060,43 @@ export class Swimmer extends Component {
             return false;
         }
         this._ultimate.spendDolphin();
+        return true;
+    }
+
+    // The dedicated skill button is valid only during ordinary surface swimming.
+    // Local activation validates the full shared gauge before it changes state.
+    tryActivateUltimate(): boolean {
+        if (!this.canActivateUltimate) {
+            this._ultimate.flagUltimateDenied();
+            return false;
+        }
+        if (!this._skill.activate()) {
+            return false;
+        }
+        this._ultimate.spendUltimate();
+        return true;
+    }
+
+    get canActivateUltimate(): boolean {
+        return this._motor.isRacing
+            && !this._skill.active
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater
+            && this._ultimate.canActivateUltimate;
+    }
+
+    // Remote replay deliberately skips its own predicted-energy check. The owner
+    // uploads this event only after a local success; its reliable self snapshot
+    // then corrects the exact post-spend energy and remaining duration.
+    applyAcceptedNetUltimate(): boolean {
+        if (!this._motor.isRacing || this._skill.active) {
+            return false;
+        }
+        if (!this._skill.activate()) {
+            return false;
+        }
+        this._ultimate.spendUltimate();
         return true;
     }
 

@@ -64,6 +64,11 @@ export class RemoteSwimmerController extends Component {
                 // The owner emits this event only after accepting the jump locally.
                 swimmer.applyAcceptedNetDolphinJump();
                 break;
+            case NetInputKind.UltimateActivate:
+                // Same accepted-action rule as DolphinJump: owner's self snapshot
+                // supplies authoritative energy and remaining duration afterwards.
+                swimmer.applyAcceptedNetUltimate();
+                break;
             case NetInputKind.DiveRelease:
                 this.performDive(swimmer, event.power ?? 0, event.launchSpeed);
                 break;

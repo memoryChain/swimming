@@ -9,7 +9,7 @@
 // This module is the pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>;..."
+//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>;..."
 // hostPos   = the seat index (posNum) of the client that produced this snapshot, i.e.
 //             who currently believes it is the authoritative host. Clients use it for
 //             deterministic host migration: if the host goes silent, the lowest
@@ -42,6 +42,9 @@ export interface NetSnapshotEntry {
     // -1 = not provided by an older payload or for a lane without an owner report.
     conditionEnergyRatio: number;
     conditionHeartRate: number;
+    // Remaining prototype-ultimate duration in seconds. -1 keeps old payloads
+    // compatible and means the consumer should keep its local timer.
+    skillRemainingSeconds: number;
 }
 
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
@@ -54,7 +57,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeSkillRemainingMs(e.skillRemainingSeconds)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -91,6 +94,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const energy = parts.length > 6 ? parseInt(parts[6], 10) : -1;
             const conditionEnergyPermille = parts.length > 7 ? parseInt(parts[7], 10) : -1;
             const conditionHeartRate = parts.length > 8 ? parseInt(parts[8], 10) : -1;
+            const skillRemainingMs = parts.length > 9 ? parseInt(parts[9], 10) : -1;
             entries.push({
                 lane,
                 distance: distCm / 100,
@@ -104,6 +108,9 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                     : -1,
                 conditionHeartRate: Number.isFinite(conditionHeartRate) && conditionHeartRate >= 0
                     ? Math.min(200, conditionHeartRate)
+                    : -1,
+                skillRemainingSeconds: Number.isFinite(skillRemainingMs) && skillRemainingMs >= 0
+                    ? Math.min(9.999, skillRemainingMs / 1000)
                     : -1,
             });
         }
@@ -119,11 +126,11 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // and drifting. Same field layout as one snapshot entry (incl. speed, ultimate energy,
 // and condition state), so it also carries those authoritative values in broadcast-only
 // mode (iOS high-performance+), where they can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeSkillRemainingMs(entry.skillRemainingSeconds)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -147,6 +154,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const energy = parts.length > 6 ? parseInt(parts[6], 10) : -1;
     const conditionEnergyPermille = parts.length > 7 ? parseInt(parts[7], 10) : -1;
     const conditionHeartRate = parts.length > 8 ? parseInt(parts[8], 10) : -1;
+    const skillRemainingMs = parts.length > 9 ? parseInt(parts[9], 10) : -1;
     return {
         lane,
         distance: distCm / 100,
@@ -161,6 +169,9 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         conditionHeartRate: Number.isFinite(conditionHeartRate) && conditionHeartRate >= 0
             ? Math.min(200, conditionHeartRate)
             : -1,
+        skillRemainingSeconds: Number.isFinite(skillRemainingMs) && skillRemainingMs >= 0
+            ? Math.min(9.999, skillRemainingMs / 1000)
+            : -1,
     };
 }
 
@@ -173,5 +184,11 @@ function encodeConditionEnergyRatio(value: number): number {
 function encodeConditionHeartRate(value: number): number {
     return Number.isFinite(value) && value >= 0
         ? Math.max(0, Math.min(200, Math.floor(value)))
+        : -1;
+}
+
+function encodeSkillRemainingMs(value: number): number {
+    return Number.isFinite(value) && value >= 0
+        ? Math.max(0, Math.min(9999, Math.round(value * 1000)))
         : -1;
 }

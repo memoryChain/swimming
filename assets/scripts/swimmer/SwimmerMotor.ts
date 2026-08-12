@@ -107,6 +107,8 @@ export class SwimmerMotor {
     private _conditionQualityScale = 1;
     private _conditionSpeedCapScale = 1;
     private _conditionCadenceScale = 1;
+    private _skillStrokeAccelScale = 1;
+    private _skillSpeedCapScale = 1;
     private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
@@ -502,6 +504,8 @@ export class SwimmerMotor {
         this._conditionQualityScale = 1;
         this._conditionSpeedCapScale = 1;
         this._conditionCadenceScale = 1;
+        this._skillStrokeAccelScale = 1;
+        this._skillSpeedCapScale = 1;
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
@@ -517,6 +521,14 @@ export class SwimmerMotor {
 
     setConditionSpeedCapScale(scale: number) {
         this._conditionSpeedCapScale = clamp(scale, 0, 2);
+    }
+
+    setSkillStrokeAccelScale(scale: number) {
+        this._skillStrokeAccelScale = clamp(scale, 0, 3);
+    }
+
+    setSkillSpeedCapScale(scale: number) {
+        this._skillSpeedCapScale = clamp(scale, 0, 3);
     }
 
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
@@ -537,7 +549,9 @@ export class SwimmerMotor {
     }
 
     private get _effectiveMaxSpeed(): number {
-        return (this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed) * this._conditionSpeedCapScale;
+        return (this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed)
+            * this._conditionSpeedCapScale
+            * this._skillSpeedCapScale;
     }
 
     private get _effectiveKickMaxSpeed(): number {
@@ -916,8 +930,12 @@ export class SwimmerMotor {
 
     private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
-        const qualityAccel = Math.max(0, strokeQuality) * this._effectiveStrokeQualityAccel * this._conditionSpeedScale;
-        const accel = (baseAccel + qualityAccel) * this.strokeActionTimeScale(actionSeconds);
+        const qualityAccel = Math.max(0, strokeQuality)
+            * this._effectiveStrokeQualityAccel
+            * this._conditionSpeedScale;
+        const accel = (baseAccel + qualityAccel)
+            * this._skillStrokeAccelScale
+            * this.strokeActionTimeScale(actionSeconds);
         if (accel <= 0) {
             return;
         }

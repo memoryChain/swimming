@@ -211,6 +211,21 @@ export class GameFlowController {
         }
     }
 
+    handleUltimateActivate() {
+        if (this._refs.getState() !== GameState.RACING) {
+            return;
+        }
+        const swimmer = this._refs.playerSwimmer;
+        if (!swimmer) {
+            return;
+        }
+        if (swimmer.tryActivateUltimate()) {
+            captureNetInput({ kind: NetInputKind.UltimateActivate });
+            this._refs.uiFlow.showUltimateSkillActivated();
+            this._refs.debug('ultimate activated');
+        }
+    }
+
     handleDiveChargeStart() {
         const state = this._refs.getState();
         // Race HUD routes every full-screen press through this callback. During
@@ -325,6 +340,14 @@ export class GameFlowController {
         };
         raceManager.onRaceFinished = (playerWin, playerTime, aiTime, placementSummary) => {
             this._refs.debug(`finished win=${playerWin} player=${playerTime.toFixed(2)} ai=${aiTime.toFixed(2)}`);
+            const ultimateTelemetry = this._refs.playerSwimmer?.ultimate.telemetry;
+            if (ultimateTelemetry) {
+                this._refs.debug(
+                    `ultimate generated=${ultimateTelemetry.generated.toFixed(1)}`
+                    + ` dolphin=${ultimateTelemetry.dolphinUses}/${ultimateTelemetry.dolphinSpent.toFixed(0)}`
+                    + ` casts=${ultimateTelemetry.ultimateUses}/${ultimateTelemetry.ultimateSpent.toFixed(0)}`,
+                );
+            }
             this.stopAllAi();
             const rhythm = this._refs.playerSwimmer?.rhythmStats;
             const placement = placementSummary ?? this.calculatePlayerPlacement();

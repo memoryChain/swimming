@@ -928,6 +928,7 @@ export class GameManager extends Component {
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
+            onUltimateActivate: () => this._gameFlow?.handleUltimateActivate(),
             onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
@@ -1554,6 +1555,7 @@ export class GameManager extends Component {
                         energy: swimmer.ultimate.energy,
                         conditionEnergyRatio: lane === this._playerLaneIndex ? this._playerCondition.energyRatio : -1,
                         conditionHeartRate: lane === this._playerLaneIndex ? this._playerCondition.heartRate : -1,
+                        skillRemainingSeconds: swimmer.skill.remainingSeconds,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1601,6 +1603,7 @@ export class GameManager extends Component {
             let targetFinished: boolean;
             let targetConditionEnergyRatio: number;
             let targetConditionHeartRate: number;
+            let targetSkillRemainingSeconds: number;
             let distBlend: number;
             let latBlend: number;
             let headBlend: number;
@@ -1612,6 +1615,7 @@ export class GameManager extends Component {
                 targetFinished = self.finished;
                 targetConditionEnergyRatio = self.conditionEnergyRatio;
                 targetConditionHeartRate = self.conditionHeartRate;
+                targetSkillRemainingSeconds = self.skillRemainingSeconds;
                 distBlend = 0.4;
                 latBlend = 0.4;
                 headBlend = 0.4;
@@ -1627,6 +1631,7 @@ export class GameManager extends Component {
                 targetFinished = target.finished;
                 targetConditionEnergyRatio = target.conditionEnergyRatio;
                 targetConditionHeartRate = target.conditionHeartRate;
+                targetSkillRemainingSeconds = target.skillRemainingSeconds;
                 distBlend = 0.2;
                 latBlend = 0.25;
                 headBlend = 0.3;
@@ -1679,6 +1684,9 @@ export class GameManager extends Component {
                     swimmer.applyNetEnergy(hostTarget.energy, 1);
                 }
             }
+            if (targetSkillRemainingSeconds >= 0) {
+                swimmer.applyNetSkillRemaining(targetSkillRemainingSeconds);
+            }
         }
     }
 
@@ -1718,6 +1726,7 @@ export class GameManager extends Component {
             energy: player.ultimate.energy,
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: this._playerCondition.heartRate,
+            skillRemainingSeconds: player.skill.remainingSeconds,
         };
     }
 
@@ -1820,6 +1829,7 @@ export class GameManager extends Component {
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onUltimateActivate: () => this._gameFlow?.handleUltimateActivate(),
             onRestart: () => this.restartGame(),
             onMenu: () => this.returnToLogin(),
         });
@@ -2054,7 +2064,12 @@ export class GameManager extends Component {
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
         const ultimate = this._playerSwimmer?.ultimate;
         if (ultimate) {
-            this._uiFlow?.updateUltimateEnergyBar(ultimate.energy, ultimate.canAffordDolphin);
+            this._uiFlow?.updateUltimateSkillButton(
+                ultimate.energy,
+                this._playerSwimmer?.skill.remainingSeconds ?? 0,
+                this._playerSwimmer?.canActivateUltimate ?? false,
+                this._state === GameState.RACING,
+            );
             if (ultimate.consumeDeniedFlash()) {
                 this._uiFlow?.flashUltimateEnergyDenied();
             }

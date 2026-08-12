@@ -11,6 +11,7 @@ export type InputRouterCallbacks = {
     onDiveRelease: (holdSeconds: number) => void;
     // Both invisible screen halves held together past the trigger threshold.
     onDolphinJump: () => void;
+    onUltimateActivate: () => void;
     onPrimaryAction: () => void;
     onToggleDebug: () => void;
     onCycleRaceCamera: () => void;
@@ -64,6 +65,7 @@ export class InputRouter {
         this._target.on('right-stroke-held', this.onRightStrokeHeld, this);
         this._target.on('dive-charge-start', this.onDiveChargeStart, this);
         this._target.on('dive-release', this.onDiveRelease, this);
+        this._target.on('ultimate-activate', this.onUltimateActivate, this);
         this._target.on('primary-action', this.onPrimaryAction, this);
         this._target.on('toggle-debug', this.onToggleDebug, this);
         this._target.on('cycle-race-camera', this.onCycleRaceCamera, this);
@@ -90,6 +92,7 @@ export class InputRouter {
         this._target.off('right-stroke-held', this.onRightStrokeHeld, this);
         this._target.off('dive-charge-start', this.onDiveChargeStart, this);
         this._target.off('dive-release', this.onDiveRelease, this);
+        this._target.off('ultimate-activate', this.onUltimateActivate, this);
         this._target.off('primary-action', this.onPrimaryAction, this);
         this._target.off('toggle-debug', this.onToggleDebug, this);
         this._target.off('cycle-race-camera', this.onCycleRaceCamera, this);
@@ -249,6 +252,10 @@ export class InputRouter {
 
     private onDiveRelease(holdSeconds: number) {
         this._callbacks.onDiveRelease(holdSeconds);
+    }
+
+    private onUltimateActivate() {
+        this._callbacks.onUltimateActivate();
     }
 
     private onPrimaryAction() {

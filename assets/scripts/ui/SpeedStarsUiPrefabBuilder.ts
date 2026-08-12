@@ -1,4 +1,4 @@
-import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Layout, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view, Widget } from 'cc';
+import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Layout, Node, Prefab, resources, Sprite, sys, UITransform, view, Widget } from 'cc';
 import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
@@ -18,6 +18,7 @@ export type SpeedStarsUiCallbacks = {
     onStrokeEnd: (type: StrokeType) => void;
     onDiveHoldStart: () => void;
     onDiveHoldEnd: (holdSeconds: number) => void;
+    onUltimateActivate: () => void;
     onRestart: () => void;
     onMenu: () => void;
 };
@@ -151,7 +152,7 @@ export class SpeedStarsUiPrefabBuilder {
         ui.diveChargeFillNode = requireNode(raceHud, 'DiveChargeFill');
         this.buildHeartRateBar(raceHud, ui);
         this.buildEnergyBar(raceHud, ui);
-        this.buildUltimateEnergyBar(raceHud, ui);
+        this.buildUltimateSkillButton(raceHud, ui);
         // Full-screen swim-input pad. Hidden during the awards ceremony so pointer events fall
         // through to the global input listeners that drive the free-look podium camera.
         // 全屏划水输入板。颁奖仪式时隐藏，让指针事件穿透到驱动颁奖自由视角相机的全局输入监听。
@@ -318,26 +319,53 @@ export class SpeedStarsUiPrefabBuilder {
 
     }
 
-    private buildUltimateEnergyBar(raceHud: Node, ui: UIController) {
+    private buildUltimateSkillButton(raceHud: Node, ui: UIController) {
         const visibleSize = view.getVisibleSize();
-        const safeTop = raceSafeTopInset();
-        const root = makeUiNode('UltimateEnergyBar', raceHud);
-        // Anchor just below the stamina (体能) bar.
-        root.setPosition(-visibleSize.width / 2 + 150, visibleSize.height / 2 - safeTop - 156, 0);
+        const root = makeUiNode('UltimateSkillButton', raceHud);
+        // This intentionally uses a compact program-drawn prototype instead of
+        // art assets, so its on-screen size remains predictable on every canvas.
+        const visualSize = 72;
+        const hitSize = 88;
+        root.getComponent(UITransform).setContentSize(hitSize, hitSize);
+        // Right-middle-lower: reachable by the right thumb, but not tucked into
+        // the corner where the hand's grip makes a small visual button hard to hit.
+        root.setPosition(visibleSize.width * 0.28, -visibleSize.height * 0.24, 5);
+        // This node is created after the fullscreen stroke pad and is the topmost
+        // touch target, so a right-side skill press cannot become a right stroke.
+        root.setSiblingIndex(raceHud.children.length - 1);
+        const button = root.addComponent(Button);
+        button.target = root;
+        button.transition = Button.Transition.NONE;
+        button.interactable = false;
+        root.on(Button.EventType.CLICK, this._callbacks.onUltimateActivate);
 
-        const label = makeLabel('UltimateEnergyLabel', root, '蓄气 0', 20, uiColor(255, 215, 90, 255));
-        label.getComponent(UITransform).setContentSize(220, 26);
-        label.setPosition(0, 20, 0);
-        label.getComponent(Label).horizontalAlign = Label.HorizontalAlign.LEFT;
+        const base = makeUltimateGraphicsNode('Base', root, visualSize);
+        drawUltimateBase(base, visualSize);
+        base.node.setPosition(0, 0, 0);
+        const track = makeUltimateGraphicsNode('ChargeTrack', root, visualSize + 6);
+        drawUltimateChargeTrack(track, visualSize + 6);
+        track.node.setPosition(0, 0, 1);
+        const fill = makeUltimateGraphicsNode('ChargeRing', root, visualSize + 6);
+        fill.node.setPosition(0, 0, 2);
+        const ready = makeUltimateGraphicsNode('ReadyRing', root, visualSize + 8);
+        drawUltimateReadyRing(ready, visualSize + 8);
+        ready.node.setPosition(0, 0, 3);
+        ready.node.active = false;
+        const icon = makeUltimateGraphicsNode('Icon', root, visualSize);
+        drawUltimateBolt(icon);
+        icon.node.setPosition(0, 0, 4);
 
-        const fillNode = makeUiNode('UltimateEnergyFill', root);
-        fillNode.getComponent(UITransform).setContentSize(220, 16);
-        const fillGfx = fillNode.addComponent(Graphics);
+        const flash = makeLabel('UltimateSkillFlash', raceHud, '', 42, uiColor(255, 224, 117, 255));
+        flash.getComponent(UITransform).setContentSize(480, 70);
+        flash.setPosition(0, visibleSize.height / 2 - raceSafeTopInset() - 160, 5);
+        flash.active = false;
 
-        ui.ultimateBarRoot = root;
-        ui.ultimateBarFill = fillGfx;
-        ui.ultimateLabel = label.getComponent(Label);
-        ui.updateUltimateEnergyBar(0, false);
+        ui.ultimateSkillRoot = root;
+        ui.ultimateSkillButton = button;
+        ui.ultimateSkillFill = fill;
+        ui.ultimateSkillReadyRing = ready.node;
+        ui.ultimateSkillFlashLabel = flash.getComponent(Label)!;
+        ui.updateUltimateSkillButton(0, 0, false, false);
     }
 
     private layoutRaceProgress(raceHud: Node) {
@@ -565,6 +593,55 @@ function loadSpeedStarsPrefab(done: (error: Error | null, prefab?: Prefab) => vo
         }
         done(null, prefab);
     });
+}
+
+function makeUltimateGraphicsNode(name: string, parent: Node, size: number): Graphics {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform)!.setContentSize(size, size);
+    return node.addComponent(Graphics);
+}
+
+function drawUltimateBase(gfx: Graphics, size: number) {
+    const radius = size / 2 - 1;
+    gfx.clear();
+    gfx.fillColor = uiColor(12, 27, 44, 232);
+    gfx.circle(0, 0, radius);
+    gfx.fill();
+    gfx.strokeColor = uiColor(91, 143, 169, 230);
+    gfx.lineWidth = 1.5;
+    gfx.circle(0, 0, radius);
+    gfx.stroke();
+}
+
+function drawUltimateReadyRing(gfx: Graphics, size: number) {
+    const radius = size / 2 - 2;
+    gfx.clear();
+    gfx.strokeColor = uiColor(255, 226, 96, 255);
+    gfx.lineWidth = 5;
+    gfx.circle(0, 0, radius);
+    gfx.stroke();
+}
+
+function drawUltimateChargeTrack(gfx: Graphics, size: number) {
+    const radius = size / 2 - 2;
+    gfx.clear();
+    gfx.strokeColor = uiColor(17, 78, 108, 245);
+    gfx.lineWidth = 7;
+    gfx.circle(0, 0, radius);
+    gfx.stroke();
+}
+
+function drawUltimateBolt(gfx: Graphics) {
+    gfx.clear();
+    gfx.fillColor = uiColor(255, 223, 104, 255);
+    gfx.moveTo(-5, 21);
+    gfx.lineTo(9, 4);
+    gfx.lineTo(2, 4);
+    gfx.lineTo(7, -21);
+    gfx.lineTo(-10, -2);
+    gfx.lineTo(-2, -2);
+    gfx.close();
+    gfx.fill();
 }
 
 function instantiateRoot(parent: Node, prefab: Prefab): Node {

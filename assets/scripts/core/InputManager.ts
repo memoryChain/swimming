@@ -81,6 +81,8 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('model-debug-speed-up');
         } else if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.ENTER) {
             this.strokeTarget?.emit('primary-action');
+        } else if (!this.modelDebugMode && event.keyCode === KeyCode.KEY_F) {
+            this.strokeTarget?.emit('ultimate-activate');
         } else if (event.keyCode === KeyCode.F3 || event.keyCode === KeyCode.BACK_QUOTE) {
             this.strokeTarget?.emit('toggle-debug');
         } else if (event.keyCode === KeyCode.KEY_C) {

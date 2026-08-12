@@ -9,15 +9,17 @@ export const ULTIMATE_ENERGY_BALANCE = {
     maxEnergy: 100,
 
     // 所有角色共享的被动增长（点/秒）。提供低保，避免玩得差就完全攒不动。
-    passivePerSecond: 1.2,
+    // Tuned for the shared-spend model: a competent 100m player who also uses
+    // one dolphin jump should still reach one full-gauge ultimate.
+    passivePerSecond: 2.0,
 
     // 单次划水评级的积攒（点）。BAD 给 0。
-    perfectGain: 1.5,
-    goodGain: 0.5,
+    perfectGain: 2.0,
+    goodGain: 0.75,
 
     // 每 comboEvery 次连续 PERFECT 额外奖励 comboBonus 点（只在达成的那一击结算一次）。
     comboEvery: 5,
-    comboBonus: 2,
+    comboBonus: 3,
 
     // 被撞飞时的补偿（点）。带节流，防止贴身摩擦反复刷能量。
     collisionBonus: 8,

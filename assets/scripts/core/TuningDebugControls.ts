@@ -8,6 +8,7 @@ import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
+import { ULTIMATE_SKILL_BALANCE } from '../skills/SkillRuntime';
 import { HeartRateZone } from '../condition/ConditionTypes';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';
@@ -84,6 +85,14 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('ultimate.collisionMinImpulse', '碰撞判定冲量', '收到的击退冲量超过该值才视为被撞飞。', () => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse, (v) => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse = v, 0.1, 0, 6, 1, 'm/s'),
             control('ultimate.collisionCooldownMs', '碰撞冷却', '同一角色两次碰撞补偿的最小间隔。', () => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs, (v) => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs = v, 50, 0, 2000, 0, 'ms'),
             control('ultimate.dolphinCost', '海豚跳消耗', '释放一次海豚跳消耗的能量；不足无法触发。', () => ULTIMATE_ENERGY_BALANCE.dolphinCost, (v) => ULTIMATE_ENERGY_BALANCE.dolphinCost = v, 1, 5, 100, 0),
+        ],
+    },
+    {
+        name: '原型大招',
+        controls: [
+            control('skill.prototype.durationSeconds', '爆发冲刺持续', '满蓄气按钮释放后的持续时间。', () => ULTIMATE_SKILL_BALANCE.durationSeconds, (v) => ULTIMATE_SKILL_BALANCE.durationSeconds = v, 0.1, 0.5, 10, 2, 's'),
+            control('skill.prototype.strokeAccelScale', '划水加速倍率', '爆发冲刺期间对划水加速度的乘数。', () => ULTIMATE_SKILL_BALANCE.strokeAccelScale, (v) => ULTIMATE_SKILL_BALANCE.strokeAccelScale = v, 0.01, 1, 2, 2),
+            control('skill.prototype.speedCapScale', '速度上限倍率', '爆发冲刺期间对最高速度的乘数。', () => ULTIMATE_SKILL_BALANCE.speedCapScale, (v) => ULTIMATE_SKILL_BALANCE.speedCapScale = v, 0.01, 1, 2, 2),
         ],
     },
     {

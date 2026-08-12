@@ -61,12 +61,16 @@ export class UIFlowController {
         this._refs.uiController?.setEnergyTotal(total);
     }
 
-    updateUltimateEnergyBar(energy: number, enough: boolean) {
-        this._refs.uiController?.updateUltimateEnergyBar(energy, enough);
+    updateUltimateSkillButton(energy: number, remainingSeconds: number, canActivate: boolean, inputAllowed: boolean) {
+        this._refs.uiController?.updateUltimateSkillButton(energy, remainingSeconds, canActivate, inputAllowed);
     }
 
     flashUltimateEnergyDenied() {
         this._refs.uiController?.flashUltimateEnergyDenied();
+    }
+
+    showUltimateSkillActivated() {
+        this._refs.uiController?.showUltimateSkillActivated();
     }
 
     updateProgress(playerDistance: number, aiDistance: number) {

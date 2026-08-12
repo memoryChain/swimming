@@ -15,7 +15,7 @@
 //   "<senderPos>|<token>;<token>;...|<selfPos>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>".
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>".
 // Position, pose speed, outcome-affecting ultimate energy, and condition state ride the
 // RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently),
 // so every client's copy of every human catches up to its owner reliably.
@@ -35,6 +35,7 @@ export const enum NetInputKind {
     DiveCharge = 'c',  // dive charge start (countdown/diving)
     DiveRelease = 'r', // dive release (carries charge power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
+    UltimateActivate = 'u', // dedicated full-gauge prototype ultimate
 }
 
 export interface NetInputEvent {
@@ -74,6 +75,8 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DiveCharge;
         case NetInputKind.DolphinJump:
             return NetInputKind.DolphinJump;
+        case NetInputKind.UltimateActivate:
+            return NetInputKind.UltimateActivate;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -101,6 +104,7 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.DiveCharge:
             return { kind };
         case NetInputKind.DolphinJump:
+        case NetInputKind.UltimateActivate:
             return { kind };
         case NetInputKind.DiveRelease: {
             const values = token.slice(1).split(',');
@@ -129,7 +133,10 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
         const conditionHeartRate = Number.isFinite(self.conditionHeartRate) && self.conditionHeartRate >= 0
             ? Math.max(0, Math.min(200, Math.floor(self.conditionHeartRate)))
             : -1;
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate}`;
+        const skillRemainingMs = Number.isFinite(self.skillRemainingSeconds) && self.skillRemainingSeconds >= 0
+            ? Math.max(0, Math.min(9999, Math.round(self.skillRemainingSeconds * 1000)))
+            : -1;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate},${skillRemainingMs}`;
     }
     return out;
 }
@@ -170,6 +177,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const energy = p.length > 6 ? parseInt(p[6], 10) : -1;
                 const conditionEnergyPermille = p.length > 7 ? parseInt(p[7], 10) : -1;
                 const conditionHeartRate = p.length > 8 ? parseInt(p[8], 10) : -1;
+                const skillRemainingMs = p.length > 9 ? parseInt(p[9], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -183,6 +191,9 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                         : -1,
                     conditionHeartRate: Number.isFinite(conditionHeartRate) && conditionHeartRate >= 0
                         ? Math.min(200, conditionHeartRate)
+                        : -1,
+                    skillRemainingSeconds: Number.isFinite(skillRemainingMs) && skillRemainingMs >= 0
+                        ? Math.min(9.999, skillRemainingMs / 1000)
                         : -1,
                 };
             }

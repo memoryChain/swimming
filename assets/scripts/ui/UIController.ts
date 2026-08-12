@@ -3,11 +3,11 @@ import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
+import { ULTIMATE_SKILL_BALANCE } from '../skills/SkillRuntime';
 
 const { ccclass, property } = _decorator;
 const HUD_BAR_WIDTH = 220;
 const HUD_BAR_BACKGROUND = new Color(20, 24, 34, 180);
-const HUD_READY_TICK = new Color(255, 255, 255, 200);
 const HEART_RATE_LOW = new Color(120, 196, 255, 255);
 const HEART_RATE_OPTIMAL = new Color(80, 242, 161, 255);
 const HEART_RATE_HIGH = new Color(255, 184, 77, 255);
@@ -21,9 +21,9 @@ const SPRINT_ENERGY_LOW = new Color(255, 100, 30, 255);
 const SPRINT_ENERGY_MID = new Color(255, 160, 40, 255);
 const SPRINT_ENERGY_HIGH = new Color(255, 210, 70, 255);
 const ULTIMATE_DENIED = new Color(255, 92, 92, 255);
-const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
-const ULTIMATE_READY = new Color(255, 215, 90, 255);
-const ULTIMATE_CHARGING = new Color(210, 160, 60, 255);
+const ULTIMATE_READY = new Color(255, 226, 96, 255);
+const ULTIMATE_SKILL_CHARGING = new Color(168, 241, 255, 255);
+const ULTIMATE_SKILL_ACTIVE = new Color(255, 210, 61, 255);
 const DIVE_CHARGE_HEIGHT = 216;
 const DIVE_GFX_LOW = new Color(87, 196, 255, 255);
 const DIVE_GFX_MID = new Color(80, 242, 161, 255);
@@ -83,9 +83,13 @@ export class UIController extends Component {
     public energyBarRoot: Node = null;
     public energyBarFill: Graphics = null;
     public energyLabel: Label = null;
-    public ultimateBarRoot: Node = null;
-    public ultimateBarFill: Graphics = null;
-    public ultimateLabel: Label = null;
+    // Dedicated right-bottom ultimate button. The static base is drawn once;
+    // its simple prototype ring redraws only on quantized state changes.
+    public ultimateSkillRoot: Node = null;
+    public ultimateSkillButton: Button = null;
+    public ultimateSkillFill: Graphics = null;
+    public ultimateSkillReadyRing: Node = null;
+    public ultimateSkillFlashLabel: Label = null;
     public sprintLabel: Label | null = null;
     private _sprintActive = false;
     private _energyTotal = 100;
@@ -106,9 +110,12 @@ export class UIController extends Component {
     private _ratingColor: Color | null = null;
     private _comboText = '';
     private _comboFontSize = -1;
-    private _ultimateText = -1;
-    private _ultimateFillPixel = -1;
-    private _ultimateColor: Color | null = null;
+    private _ultimateSkillRatioPercent = -1;
+    private _ultimateSkillActive = false;
+    private _ultimateSkillReady = false;
+    private _ultimateSkillInteractable = false;
+    private _ultimateSkillDenied = false;
+    private _ultimateSkillLastSampleMs = 0;
     private _diveChargeFillPixel = -1;
     private _diveChargeGfxColor: Color | null = null;
     private _diveChargeSpriteColor: Color | null = null;
@@ -181,7 +188,7 @@ export class UIController extends Component {
         this.setProgressVisible(visible);
         this.setHeartRateBarVisible(visible);
         this.setEnergyBarVisible(visible);
-        this.setUltimateBarVisible(visible);
+        this.setUltimateSkillVisible(visible);
     }
 
     updateHeartRateBar(heartRate: number, zone: string) {
@@ -293,42 +300,100 @@ export class UIController extends Component {
     }
 
     // 蓄气（大招能量）条。enough = 当前能量已够放一次海豚跳，金色高亮；不足时偏暗。
-    updateUltimateEnergyBar(energy: number, enough: boolean) {
-        const ratio = clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
-        const denied = Date.now() < this._ultimateDeniedUntil;
-        const color = ultimateEnergyColor(ratio, enough, denied);
-        const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
-        const colorChanged = color !== this._ultimateColor;
-        if (this.ultimateBarFill && (fillPixel !== this._ultimateFillPixel || colorChanged)) {
-            drawUltimateEnergyFill(
-                this.ultimateBarFill,
-                fillPixel / HUD_BAR_WIDTH,
-                color,
-                ULTIMATE_ENERGY_BALANCE.dolphinCost / ULTIMATE_ENERGY_BALANCE.maxEnergy,
-            );
-        }
-        this._ultimateFillPixel = fillPixel;
-        this._ultimateColor = color;
-        const textValue = Math.round(energy);
-        if (this.ultimateLabel && textValue !== this._ultimateText) {
-            this._ultimateText = textValue;
-            this.ultimateLabel.string = `蓄气 ${textValue}`;
-        }
-        if (this.ultimateLabel && colorChanged) {
-            this.ultimateLabel.color = color;
-        }
-    }
-
     // 能量不足时触发一次短暂红闪（弱提示，不打断操作）。
     flashUltimateEnergyDenied() {
         this._ultimateDeniedUntil = Date.now() + 350;
-        this._ultimateFillPixel = -1;
-        this._ultimateColor = null;
+        this._ultimateSkillLastSampleMs = 0;
     }
 
-    setUltimateBarVisible(visible: boolean) {
-        if (this.ultimateBarRoot && this.ultimateBarRoot.active !== visible) {
-            this.ultimateBarRoot.active = visible;
+    updateUltimateSkillButton(
+        energy: number,
+        remainingSeconds: number,
+        canActivate: boolean,
+        inputAllowed: boolean,
+    ) {
+        const active = remainingSeconds > 0.001;
+        const ratio = active
+            ? clamp01(remainingSeconds / Math.max(0.001, ULTIMATE_SKILL_BALANCE.durationSeconds))
+            : clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        const ratioPercent = Math.round(ratio * 100);
+        const ready = !active && canActivate;
+        const interactable = ready && inputAllowed;
+        const denied = !active && Date.now() < this._ultimateDeniedUntil;
+        const stateChanged = active !== this._ultimateSkillActive
+            || ready !== this._ultimateSkillReady
+            || interactable !== this._ultimateSkillInteractable
+            || denied !== this._ultimateSkillDenied;
+        const now = Date.now();
+        // The prototype Graphics ring is capped to 30Hz and integer-percent
+        // changes; it is never rebuilt at render frequency.
+        if (!stateChanged
+            && ratioPercent === this._ultimateSkillRatioPercent
+            && now - this._ultimateSkillLastSampleMs < 34) {
+            return;
+        }
+        this._ultimateSkillLastSampleMs = now;
+        if (this.ultimateSkillFill && (ratioPercent !== this._ultimateSkillRatioPercent || stateChanged)) {
+            const color = active
+                ? ULTIMATE_SKILL_ACTIVE
+                : denied ? ULTIMATE_DENIED
+                    : ready ? ULTIMATE_READY : ULTIMATE_SKILL_CHARGING;
+            drawUltimateSkillRing(this.ultimateSkillFill, ratioPercent / 100, color);
+        }
+        if (this.ultimateSkillReadyRing && this.ultimateSkillReadyRing.active !== ready) {
+            this.ultimateSkillReadyRing.active = ready;
+        }
+        if (this.ultimateSkillButton && this.ultimateSkillButton.interactable !== interactable) {
+            this.ultimateSkillButton.interactable = interactable;
+        }
+        if (stateChanged) {
+            this.setUltimateReadyPulse(ready);
+        }
+        this._ultimateSkillRatioPercent = ratioPercent;
+        this._ultimateSkillActive = active;
+        this._ultimateSkillReady = ready;
+        this._ultimateSkillInteractable = interactable;
+        this._ultimateSkillDenied = denied;
+    }
+
+    showUltimateSkillActivated() {
+        const buttonNode = this.ultimateSkillRoot;
+        if (buttonNode?.isValid) {
+            Tween.stopAllByTarget(buttonNode);
+            buttonNode.setScale(0.9, 0.9, 1);
+            tween(buttonNode)
+                .to(0.09, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'quadOut' })
+                .to(0.14, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
+                .start();
+        }
+        const label = this.ultimateSkillFlashLabel;
+        if (!label?.node?.isValid) {
+            return;
+        }
+        const node = label.node;
+        label.string = '爆发冲刺！';
+        if (!node.active) {
+            node.active = true;
+        }
+        let opacity = node.getComponent(UIOpacity);
+        if (!opacity) {
+            opacity = node.addComponent(UIOpacity);
+        }
+        Tween.stopAllByTarget(node);
+        Tween.stopAllByTarget(opacity);
+        node.setScale(0.82, 0.82, 1);
+        opacity.opacity = 0;
+        tween(node).to(0.12, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'backOut' }).to(0.12, { scale: new Vec3(1, 1, 1) }).start();
+        tween(opacity).to(0.1, { opacity: 255 }).delay(0.6).to(0.25, { opacity: 0 }).call(() => {
+            if (node.isValid) {
+                node.active = false;
+            }
+        }).start();
+    }
+
+    setUltimateSkillVisible(visible: boolean) {
+        if (this.ultimateSkillRoot && this.ultimateSkillRoot.active !== visible) {
+            this.ultimateSkillRoot.active = visible;
         }
     }
 
@@ -364,6 +429,7 @@ export class UIController extends Component {
         }
         this.fadeRatingReadout();
     }
+
     // Hold the rating/combo readout briefly, then fade it out so it does not
     // linger over the swimmer until the next stroke.
     private fadeRatingReadout() {
@@ -877,6 +943,9 @@ export class UIController extends Component {
         this.updateDiveCharge(0, false);
         this.setSpeedBarVisible(false);
         this.setSprintActive(false);
+        if (this.ultimateSkillFlashLabel?.node?.active) {
+            this.ultimateSkillFlashLabel.node.active = false;
+        }
         // Restore the swim pad for the next race (it is hidden during the awards ceremony).
         // 为下一场比赛恢复划水板（颁奖仪式期间被隐藏）。
         if (this.strokeInput) {
@@ -908,12 +977,45 @@ export class UIController extends Component {
         this._ratingColor = null;
         this._comboText = '';
         this._comboFontSize = -1;
-        this._ultimateText = -1;
-        this._ultimateFillPixel = -1;
-        this._ultimateColor = null;
+        this._ultimateSkillRatioPercent = -1;
+        this._ultimateSkillActive = false;
+        this._ultimateSkillReady = false;
+        this._ultimateSkillInteractable = false;
+        this._ultimateSkillDenied = false;
+        this._ultimateSkillLastSampleMs = 0;
         this._diveChargeFillPixel = -1;
         this._diveChargeGfxColor = null;
         this._diveChargeSpriteColor = null;
+    }
+
+    private setUltimateReadyPulse(ready: boolean) {
+        const node = this.ultimateSkillReadyRing;
+        if (!node?.isValid) {
+            return;
+        }
+        let opacity = node.getComponent(UIOpacity);
+        if (!opacity) {
+            opacity = node.addComponent(UIOpacity);
+        }
+        Tween.stopAllByTarget(node);
+        Tween.stopAllByTarget(opacity);
+        if (!ready) {
+            node.setScale(1, 1, 1);
+            opacity.opacity = 255;
+            return;
+        }
+        node.setScale(1, 1, 1);
+        opacity.opacity = 255;
+        tween(node)
+            .to(0.72, { scale: new Vec3(1.09, 1.09, 1) }, { easing: 'sineInOut' })
+            .to(0.72, { scale: new Vec3(1, 1, 1) }, { easing: 'sineInOut' })
+            .repeatForever()
+            .start();
+        tween(opacity)
+            .to(0.72, { opacity: 165 }, { easing: 'sineInOut' })
+            .to(0.72, { opacity: 255 }, { easing: 'sineInOut' })
+            .repeatForever()
+            .start();
     }
 
     private updateLeaderboard(rows: RaceLeaderboardRow[] | undefined, playerTime: number) {
@@ -1014,8 +1116,31 @@ function praiseForRating(rating: Rating, combo: number): { text: string; color: 
         default: return PRAISE_UNBELIEVABLE;
     }
 }
+
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
+}
+
+// Starts at six o'clock. In Cocos' y-up UI space, decreasing the x coordinate
+// first makes the visible sweep advance clockwise around a clock face.
+function drawUltimateSkillRing(gfx: Graphics, ratio: number, color: Color) {
+    gfx.clear();
+    const transform = gfx.node.getComponent(UITransform);
+    const radius = Math.max(1, (transform?.contentSize.width ?? 42) / 2 - 2);
+    const clamped = clamp01(ratio);
+    if (clamped <= 0) {
+        return;
+    }
+    const segments = Math.max(1, Math.ceil(clamped * 24));
+    gfx.strokeColor = color;
+    gfx.lineWidth = 7;
+    gfx.moveTo(0, -radius);
+    for (let i = 1; i <= segments; i++) {
+        const t = clamped * i / segments;
+        const angle = Math.PI * 2 * t;
+        gfx.lineTo(-Math.sin(angle) * radius, -Math.cos(angle) * radius);
+    }
+    gfx.stroke();
 }
 
 function drawHeartRateFill(gfx: Graphics, ratio: number, color: Color) {
@@ -1082,20 +1207,7 @@ function sprintEnergyColor(ratio: number, depleted: boolean): Color {
     return SPRINT_ENERGY_HIGH;
 }
 
-function ultimateEnergyColor(ratio: number, enough: boolean, denied: boolean): Color {
-    if (denied) {
-        return ULTIMATE_DENIED;
-    }
-    if (ratio <= 0.0001) {
-        return ULTIMATE_EMPTY;
-    }
-    if (enough) {
-        return ULTIMATE_READY;
-    }
-    return ULTIMATE_CHARGING;
-}
-
-function drawUltimateEnergyFill(gfx: Graphics, ratio: number, color: Color, readyRatio: number) {
+/*
     const w = HUD_BAR_WIDTH;
     const h = 16;
     gfx.clear();
@@ -1113,6 +1225,7 @@ function drawUltimateEnergyFill(gfx: Graphics, ratio: number, color: Color, read
     gfx.lineTo(tickX, h / 2);
     gfx.stroke();
 }
+*/
 
 function drawChargeFill(gfx: Graphics, ratio: number, color: Color) {
     const w = 12;
