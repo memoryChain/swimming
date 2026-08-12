@@ -1,0 +1,11 @@
+root = true
+
+# 所有文件默认使用 Windows CRLF 换行符，UTF-8 编码
+[*]
+end_of_line = crlf
+charset = utf-8
+
+# 二进制资源不做任何换行符处理
+[*.{png,jpg,jpeg,gif,webp,bmp,tga,mp3,wav,ogg,fbx,glb,gltf,blend,blend1,pyc,astc,pvr,pkm,bin,zip,ttf,otf}]
+end_of_line = unset
+charset = unset
