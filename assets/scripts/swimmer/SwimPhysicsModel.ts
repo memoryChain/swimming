@@ -12,6 +12,9 @@ export type SwimPhysicsInput = {
     speedCapBonus: number;
     // Extra drag coefficient (per m/s) active only during the underwater glide.
     glideDrag?: number;
+    // Surface-only ultimate modifier. It scales normal pool drag but intentionally
+    // does not affect the dedicated underwater glide coefficient.
+    surfaceDragScale?: number;
     // Player-only override for the speed ceiling. When set, replaces
     // SWIMMER_BALANCE.maxSpeed so progression can raise the player's top speed
     // without affecting AI swimmers.
@@ -25,12 +28,12 @@ export class SwimPhysicsModel {
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
         const accel = input.strokeAcceleration * accelLimit + Math.max(0, input.kickAcceleration);
         const speed = state.currentSpeed;
+        const surfaceDragScale = clamp(input.surfaceDragScale ?? 1, 0.05, 1);
         const drag = (
             SWIMMER_BALANCE.poolDeceleration
             + SWIMMER_BALANCE.baseDrag * speed
             + SWIMMER_BALANCE.highSpeedDrag * speed * speed
-            + Math.max(0, input.glideDrag ?? 0) * speed
-        );
+        ) * surfaceDragScale + Math.max(0, input.glideDrag ?? 0) * speed;
         const currentSpeed = clamp(state.currentSpeed + (accel - drag) * input.dt, SWIMMER_BALANCE.minSpeed, maxSpeed);
 
         return {

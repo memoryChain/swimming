@@ -221,7 +221,7 @@ export class GameFlowController {
         }
         if (swimmer.tryActivateUltimate()) {
             captureNetInput({ kind: NetInputKind.UltimateActivate });
-            this._refs.uiFlow.showUltimateSkillActivated();
+            this._refs.uiFlow.showUltimateSkillActivated(swimmer.skill.definition.name);
             this._refs.debug('ultimate activated');
         }
     }

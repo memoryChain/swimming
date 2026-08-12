@@ -620,9 +620,9 @@ export class GameManager extends Component {
     }
 
     private applyBodyFeedbackEnabled() {
-        this._playerSwimmer?.setBodyFeedbackEnabled(true);
+        this._playerSwimmer?.setBodyFeedbackEnabled(false);
         for (const swimmer of this._aiSwimmers) {
-            swimmer?.setBodyFeedbackEnabled(true);
+            swimmer?.setBodyFeedbackEnabled(false);
         }
     }
 
@@ -1556,6 +1556,8 @@ export class GameManager extends Component {
                         conditionEnergyRatio: lane === this._playerLaneIndex ? this._playerCondition.energyRatio : -1,
                         conditionHeartRate: lane === this._playerLaneIndex ? this._playerCondition.heartRate : -1,
                         skillRemainingSeconds: swimmer.skill.remainingSeconds,
+                        skillCharges: swimmer.skill.charges,
+                        skillPulsesTriggered: swimmer.skill.pulsesTriggered,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1604,6 +1606,8 @@ export class GameManager extends Component {
             let targetConditionEnergyRatio: number;
             let targetConditionHeartRate: number;
             let targetSkillRemainingSeconds: number;
+            let targetSkillCharges: number;
+            let targetSkillPulsesTriggered: number;
             let distBlend: number;
             let latBlend: number;
             let headBlend: number;
@@ -1616,6 +1620,8 @@ export class GameManager extends Component {
                 targetConditionEnergyRatio = self.conditionEnergyRatio;
                 targetConditionHeartRate = self.conditionHeartRate;
                 targetSkillRemainingSeconds = self.skillRemainingSeconds;
+                targetSkillCharges = self.skillCharges;
+                targetSkillPulsesTriggered = self.skillPulsesTriggered;
                 distBlend = 0.4;
                 latBlend = 0.4;
                 headBlend = 0.4;
@@ -1632,6 +1638,8 @@ export class GameManager extends Component {
                 targetConditionEnergyRatio = target.conditionEnergyRatio;
                 targetConditionHeartRate = target.conditionHeartRate;
                 targetSkillRemainingSeconds = target.skillRemainingSeconds;
+                targetSkillCharges = target.skillCharges;
+                targetSkillPulsesTriggered = target.skillPulsesTriggered;
                 distBlend = 0.2;
                 latBlend = 0.25;
                 headBlend = 0.3;
@@ -1685,7 +1693,7 @@ export class GameManager extends Component {
                 }
             }
             if (targetSkillRemainingSeconds >= 0) {
-                swimmer.applyNetSkillRemaining(targetSkillRemainingSeconds);
+                swimmer.applyNetSkillState(targetSkillRemainingSeconds, targetSkillCharges, targetSkillPulsesTriggered);
             }
         }
     }
@@ -1727,6 +1735,8 @@ export class GameManager extends Component {
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: this._playerCondition.heartRate,
             skillRemainingSeconds: player.skill.remainingSeconds,
+            skillCharges: player.skill.charges,
+            skillPulsesTriggered: player.skill.pulsesTriggered,
         };
     }
 
@@ -2069,6 +2079,10 @@ export class GameManager extends Component {
                 this._playerSwimmer?.skill.remainingSeconds ?? 0,
                 this._playerSwimmer?.canActivateUltimate ?? false,
                 this._state === GameState.RACING,
+                this._playerSwimmer?.skill.durationSeconds ?? 0,
+                this._playerSwimmer?.skill.charges ?? 0,
+                this._playerSwimmer?.skill.pulsesTriggered ?? 0,
+                this._playerSwimmer?.skill.pulseCount ?? 0,
             );
             if (ultimate.consumeDeniedFlash()) {
                 this._uiFlow?.flashUltimateEnergyDenied();

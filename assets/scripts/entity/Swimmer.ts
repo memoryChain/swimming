@@ -13,6 +13,7 @@ import { StrokeMetrics } from '../swimmer/StrokeMetrics';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { UltimateEnergyModel } from '../condition/UltimateEnergyModel';
 import { SkillRuntime } from '../skills/SkillRuntime';
+import type { UltimateSkillDefinition } from '../skills/SkillRuntime';
 import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { scaledDelta } from '../core/TimeScale';
 import { StrokeQualityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -52,6 +53,9 @@ export class Swimmer extends Component {
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private readonly _ultimate = new UltimateEnergyModel();
     private readonly _skill = new SkillRuntime();
+    // Presentation-only cadence for Deep Trail. Reuses the existing pooled splash
+    // emitter rather than creating a runtime graphics/particle hierarchy.
+    private _skillTrailVisualCooldown = 0;
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
     private readonly _swimBoundaryRange = { min: 0, max: 0 };
@@ -139,8 +143,12 @@ export class Swimmer extends Component {
         this._ultimate.applyNetEnergy(target, blend);
     }
 
-    applyNetSkillRemaining(targetSeconds: number) {
-        this._skill.applyNetRemaining(targetSeconds);
+    applyNetSkillState(targetSeconds: number, charges: number, pulsesTriggered: number) {
+        this._skill.applyNetState(targetSeconds, charges, pulsesTriggered);
+    }
+
+    setUltimateSkillDefinition(definition: UltimateSkillDefinition) {
+        this._skill.setDefinition(definition);
     }
     // Flash the body red for a moment when bumping into another swimmer.
     flashCollision() {
@@ -331,6 +339,7 @@ export class Swimmer extends Component {
         this.captureStartPosition();
         this._ultimate.reset();
         this._skill.reset();
+        this._skillTrailVisualCooldown = 0;
         this._phases.clearFlipTurnPhase(true);
         if (fromDiveEntry) {
             this._phases.startDiveUnderwaterPhase();
@@ -524,9 +533,13 @@ export class Swimmer extends Component {
             return;
         }
         this._ultimate.tick(dt);
-        this._skill.tick(dt);
-        this._motor.setSkillStrokeAccelScale(this._skill.strokeAccelScale);
-        this._motor.setSkillSpeedCapScale(this._skill.speedCapScale);
+        const normalSurface = this.isUltimateSurfacePhase();
+        this._skill.tick(dt, normalSurface);
+        this._motor.setSkillStrokeAccelScale(1);
+        this._motor.setSkillSpeedCapScale(1);
+        this._motor.setSkillSurfaceDragScale(normalSurface ? this._skill.surfaceDragScale : 1);
+        this.applyPendingSkillImpulses(normalSurface);
+        this.updateSkillTrailVisual(dt, normalSurface);
         if (this._phases.tick(dt)) {
             return;
         }
@@ -767,7 +780,19 @@ export class Swimmer extends Component {
         if (!strokeQualityResult) {
             return null;
         }
-        const rating = ratingForStrokeQuality(strokeQualityResult.strokeQuality);
+        const originalQuality = strokeQualityResult.strokeQuality;
+        let rating = ratingForStrokeQuality(originalQuality);
+        if (this._skill.consumeRhythmUpgrade(rating, this.isUltimateSurfacePhase())) {
+            this._motor.applySkillQualityUpgrade(
+                originalQuality,
+                1,
+                strokeQualityResult.actionSeconds,
+                this._skill.rhythmBonusQualityAccelScale,
+            );
+            strokeQualityResult.strokeQuality = 1;
+            rating = Rating.PERFECT;
+            this.cartoonRig?.triggerSplashBurst(1.25);
+        }
         if (rating === Rating.PERFECT) {
             this._strokeQualityCombo += 1;
             this._perfectComboIdleSeconds = 0;
@@ -1074,15 +1099,17 @@ export class Swimmer extends Component {
             return false;
         }
         this._ultimate.spendUltimate();
+        this.applyPendingSkillImpulses(true);
+        if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
+            this.cartoonRig?.triggerSplashBurst(1.05);
+        }
         return true;
     }
 
     get canActivateUltimate(): boolean {
         return this._motor.isRacing
             && !this._skill.active
-            && !this._phases.isFlipTurnActive
-            && !this._phases.isDolphinJumpActive
-            && !this._phases.isUnderwater
+            && this.isUltimateSurfacePhase()
             && this._ultimate.canActivateUltimate;
     }
 
@@ -1090,14 +1117,54 @@ export class Swimmer extends Component {
     // uploads this event only after a local success; its reliable self snapshot
     // then corrects the exact post-spend energy and remaining duration.
     applyAcceptedNetUltimate(): boolean {
-        if (!this._motor.isRacing || this._skill.active) {
+        if (!this._motor.isRacing) {
             return false;
         }
+        // The owner only uploads an accepted activation. Do not let a locally
+        // drifting duration reject that reliable event; the following self state
+        // will reconcile the exact timer/counter values.
+        this._skill.reset();
         if (!this._skill.activate()) {
             return false;
         }
         this._ultimate.spendUltimate();
+        this.applyPendingSkillImpulses(this.isUltimateSurfacePhase());
+        if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
+            this.cartoonRig?.triggerSplashBurst(1.05);
+        }
         return true;
+    }
+
+    private isUltimateSurfacePhase(): boolean {
+        return !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater;
+    }
+
+    private applyPendingSkillImpulses(canAffectSurface: boolean) {
+        if (!canAffectSurface) {
+            this._skill.consumePendingImpulseCount();
+            return;
+        }
+        const count = this._skill.consumePendingImpulseCount();
+        if (count <= 0) return;
+        for (let index = 0; index < count; index++) {
+            this._motor.applySkillSpeedImpulse(this._skill.impulseSpeed, this._skill.impulseCapBonus);
+        }
+        // Existing pooled splash emitter is deliberately reused for one-shot skill
+        // feedback; it has no race-frame allocation or new permanent nodes.
+        this.cartoonRig?.triggerBigSplash(this._skill.definition.kind === 'instant' ? 1.3 : 0.95);
+    }
+
+    private updateSkillTrailVisual(dt: number, normalSurface: boolean) {
+        if (this._skill.definition.kind !== 'drag' || !this._skill.active || !normalSurface) {
+            this._skillTrailVisualCooldown = 0;
+            return;
+        }
+        this._skillTrailVisualCooldown -= Math.max(0, dt);
+        if (this._skillTrailVisualCooldown > 0) return;
+        this._skillTrailVisualCooldown = 0.48;
+        this.cartoonRig?.triggerSplashBurst(0.45);
     }
 
     // Network replay only: DolphinJump is captured and sent only AFTER the owner has

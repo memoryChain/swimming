@@ -61,16 +61,28 @@ export class UIFlowController {
         this._refs.uiController?.setEnergyTotal(total);
     }
 
-    updateUltimateSkillButton(energy: number, remainingSeconds: number, canActivate: boolean, inputAllowed: boolean) {
-        this._refs.uiController?.updateUltimateSkillButton(energy, remainingSeconds, canActivate, inputAllowed);
+    updateUltimateSkillButton(
+        energy: number,
+        remainingSeconds: number,
+        canActivate: boolean,
+        inputAllowed: boolean,
+        durationSeconds = 0,
+        charges = 0,
+        pulsesTriggered = 0,
+        pulseCount = 0,
+    ) {
+        this._refs.uiController?.updateUltimateSkillButton(
+            energy, remainingSeconds, canActivate, inputAllowed,
+            durationSeconds, charges, pulsesTriggered, pulseCount,
+        );
     }
 
     flashUltimateEnergyDenied() {
         this._refs.uiController?.flashUltimateEnergyDenied();
     }
 
-    showUltimateSkillActivated() {
-        this._refs.uiController?.showUltimateSkillActivated();
+    showUltimateSkillActivated(skillName?: string) {
+        this._refs.uiController?.showUltimateSkillActivated(skillName);
     }
 
     updateProgress(playerDistance: number, aiDistance: number) {

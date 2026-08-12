@@ -109,6 +109,7 @@ export class SwimmerMotor {
     private _conditionCadenceScale = 1;
     private _skillStrokeAccelScale = 1;
     private _skillSpeedCapScale = 1;
+    private _skillSurfaceDragScale = 1;
     private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
@@ -436,6 +437,7 @@ export class SwimmerMotor {
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
                 glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
+                surfaceDragScale: this._skillSurfaceDragScale,
                 maxSpeedOverride: this._effectiveMaxSpeed,
             },
         );
@@ -506,6 +508,7 @@ export class SwimmerMotor {
         this._conditionCadenceScale = 1;
         this._skillStrokeAccelScale = 1;
         this._skillSpeedCapScale = 1;
+        this._skillSurfaceDragScale = 1;
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
@@ -529,6 +532,29 @@ export class SwimmerMotor {
 
     setSkillSpeedCapScale(scale: number) {
         this._skillSpeedCapScale = clamp(scale, 0, 3);
+    }
+
+    setSkillSurfaceDragScale(scale: number) {
+        this._skillSurfaceDragScale = clamp(scale, 0.05, 1);
+    }
+
+    // One-shot skill propulsion uses the same speed/overcap channel as normal
+    // swimming, so the following physics frames naturally decay it.
+    applySkillSpeedImpulse(speedDelta: number, capBonus: number) {
+        const ceiling = this._effectiveMaxSpeed + Math.max(0, capBonus);
+        this._speedCapBonus = Math.max(this._speedCapBonus, Math.max(0, capBonus));
+        this._currentSpeed = Math.min(ceiling, Math.max(0, this._currentSpeed + Math.max(0, speedDelta)));
+    }
+
+    // A rhythm charge upgrades the already-settled GOOD stroke rather than
+    // inventing another input. This is only the GOOD->PERFECT quality delta.
+    applySkillQualityUpgrade(fromQuality: number, toQuality: number, actionSeconds: number, scale: number) {
+        const qualityDelta = Math.max(0, toQuality - fromQuality);
+        if (qualityDelta <= 0) return;
+        const accel = qualityDelta * this._effectiveStrokeQualityAccel
+            * this._conditionSpeedScale * Math.max(0, scale)
+            * this.strokeActionTimeScale(actionSeconds);
+        this.startStrokeAcceleration(accel, true);
     }
 
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {

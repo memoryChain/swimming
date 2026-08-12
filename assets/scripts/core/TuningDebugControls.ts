@@ -45,7 +45,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 24;
+const TUNING_FILE_VERSION = 25;
 
 type TuningFileData = {
     version: number;
@@ -93,6 +93,21 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('skill.prototype.durationSeconds', '爆发冲刺持续', '满蓄气按钮释放后的持续时间。', () => ULTIMATE_SKILL_BALANCE.durationSeconds, (v) => ULTIMATE_SKILL_BALANCE.durationSeconds = v, 0.1, 0.5, 10, 2, 's'),
             control('skill.prototype.strokeAccelScale', '划水加速倍率', '爆发冲刺期间对划水加速度的乘数。', () => ULTIMATE_SKILL_BALANCE.strokeAccelScale, (v) => ULTIMATE_SKILL_BALANCE.strokeAccelScale = v, 0.01, 1, 2, 2),
             control('skill.prototype.speedCapScale', '速度上限倍率', '爆发冲刺期间对最高速度的乘数。', () => ULTIMATE_SKILL_BALANCE.speedCapScale, (v) => ULTIMATE_SKILL_BALANCE.speedCapScale = v, 0.01, 1, 2, 2),
+        ],
+    },
+    {
+        name: '角色专属大招',
+        controls: [
+            control('skill.shark.impulseSpeed', '鲨尾重击速度冲量', '铁臂狂鲨瞬发时增加的速度。', () => ULTIMATE_SKILL_BALANCE.sharkImpulseSpeed, (v) => ULTIMATE_SKILL_BALANCE.sharkImpulseSpeed = v, 0.05, 0, 3, 2, 'm/s'),
+            control('skill.shark.capBonus', '鲨尾重击超速上限', '让瞬发冲量可短暂超过普通速度上限。', () => ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus, (v) => ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus = v, 0.02, 0, 1.5, 2, 'm/s'),
+            control('skill.fish.durationSeconds', '律动水线时长', '灵波飞鱼强化划水的可用窗口。', () => ULTIMATE_SKILL_BALANCE.fishDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.fishDurationSeconds = v, 0.1, 1, 8, 2, 's'),
+            control('skill.fish.charges', '律动水线次数', '窗口内可强化的 GOOD/PERFECT 划水次数。', () => ULTIMATE_SKILL_BALANCE.fishCharges, (v) => ULTIMATE_SKILL_BALANCE.fishCharges = v, 1, 1, 5, 0),
+            control('skill.fish.qualityAccelScale', '律动额外质量加速', 'GOOD 升为 PERFECT 时补足的质量加速比例。', () => ULTIMATE_SKILL_BALANCE.fishBonusQualityAccelScale, (v) => ULTIMATE_SKILL_BALANCE.fishBonusQualityAccelScale = v, 0.05, 0, 2, 2),
+            control('skill.nova.durationSeconds', '踏浪追击时长', '破浪新星三段推进的总窗口。', () => ULTIMATE_SKILL_BALANCE.novaDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.novaDurationSeconds = v, 0.1, 0.5, 5, 2, 's'),
+            control('skill.nova.pulseSpeed', '踏浪单段冲量', '每段自动推进增加的速度。', () => ULTIMATE_SKILL_BALANCE.novaPulseSpeed, (v) => ULTIMATE_SKILL_BALANCE.novaPulseSpeed = v, 0.02, 0, 2, 2, 'm/s'),
+            control('skill.nova.capBonus', '踏浪单段超速上限', '每段推进允许的短暂超速余量。', () => ULTIMATE_SKILL_BALANCE.novaPulseCapBonus, (v) => ULTIMATE_SKILL_BALANCE.novaPulseCapBonus = v, 0.02, 0, 1, 2, 'm/s'),
+            control('skill.diver.durationSeconds', '深海航迹时长', '深海潜将表面减阻状态的时长。', () => ULTIMATE_SKILL_BALANCE.diverDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.diverDurationSeconds = v, 0.1, 1, 8, 2, 's'),
+            control('skill.diver.surfaceDragScale', '深海航迹表面阻力', '正常水面游泳的阻力倍率；越低越不易减速。', () => ULTIMATE_SKILL_BALANCE.diverSurfaceDragScale, (v) => ULTIMATE_SKILL_BALANCE.diverSurfaceDragScale = v, 0.02, 0.1, 1, 2),
         ],
     },
     {

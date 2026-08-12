@@ -5,6 +5,8 @@ import { resolvePlayerBalance } from './PlayerBalanceOverrides';
 import { getProgressionManager } from './ProgressionManager';
 import { PROGRESSION_BALANCE } from './ProgressionBalance';
 import { findPlayerCharacter, getPlayerCharacterSelection, PlayerCharacterId } from '../app/PlayerCharacterConfig';
+import { getUltimateSkillDefinition } from '../skills/SkillRuntime';
+import type { UltimateSkillDefinition } from '../skills/SkillRuntime';
 
 // The complete, self-contained set of gameplay-affecting modifiers a player brings
 // into a race, resolved ONCE from their local save. Today this is progression-derived
@@ -29,6 +31,10 @@ import { findPlayerCharacter, getPlayerCharacterSelection, PlayerCharacterId } f
 export interface RaceModifierProfile {
     // Progression-derived movement/condition balance (null = neutral / no character).
     balance: PlayerBalanceOverrides | null;
+    // Character id is the stable source of the dedicated ultimate definition.
+    // We transmit the id in the existing modifier digest, never runtime skill floats.
+    characterId: PlayerCharacterId | null;
+    skill: UltimateSkillDefinition | null;
     // Future 养成 fields go here, e.g. startBoost?: number; luckyLaneBias?: number; ...
 }
 
@@ -53,11 +59,11 @@ export function resolveLocalModifierDigest(): RaceModifierDigest {
 // given (characterId, level). Unknown character -> neutral (null balance).
 export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): RaceModifierProfile {
     if (!digest) {
-        return { balance: null };
+        return { balance: null, characterId: null, skill: null };
     }
     const character = findPlayerCharacter(digest.characterId as PlayerCharacterId);
     if (!character) {
-        return { balance: null };
+        return { balance: null, characterId: null, skill: null };
     }
     const balance = resolvePlayerBalance(
         { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick },
@@ -67,7 +73,7 @@ export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): R
         character.energyGain,
         character.kick,
     );
-    return { balance };
+    return { balance, characterId: character.id, skill: getUltimateSkillDefinition(character.id) };
 }
 
 // Resolve the local player's full profile from their save. Same source single-player
@@ -91,4 +97,5 @@ export function applyRaceModifiersToMotor(motor: SwimmerMotor, profile: RaceModi
 export function applyRaceModifiersToSwimmer(swimmer: Swimmer, profile: RaceModifierProfile | null): void {
     applyRaceModifiersToMotor(swimmer.motor, profile);
     swimmer.setEnergyGainAptitude(profile?.balance?.energyGainAptitude ?? 50);
+    swimmer.setUltimateSkillDefinition(profile?.skill ?? getUltimateSkillDefinition(null));
 }

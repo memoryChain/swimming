@@ -354,10 +354,28 @@ export class SpeedStarsUiPrefabBuilder {
         const icon = makeUltimateGraphicsNode('Icon', root, visualSize);
         drawUltimateBolt(icon);
         icon.node.setPosition(0, 0, 4);
+        const status = makeLabel('UltimateSkillStatus', root, '', 22, uiColor(255, 239, 145, 255));
+        status.getComponent(UITransform)!.setContentSize(34, 28);
+        status.setPosition(0, -3, 5);
+        const markers: Node[] = [];
+        for (let index = 0; index < 3; index++) {
+            const marker = makeUltimateGraphicsNode(`PulseMarker${index + 1}`, root, 8);
+            drawUltimatePulseMarker(marker);
+            marker.node.setPosition(-10 + index * 10, -27, 5);
+            marker.node.active = false;
+            markers.push(marker.node);
+        }
 
-        const flash = makeLabel('UltimateSkillFlash', raceHud, '', 42, uiColor(255, 224, 117, 255));
-        flash.getComponent(UITransform).setContentSize(480, 70);
-        flash.setPosition(0, visibleSize.height / 2 - raceSafeTopInset() - 160, 5);
+        // Skill names are local feedback for the right-thumb action, not rhythm
+        // grades. Keep this compact label on the button's upper-left so the
+        // centre of the race view remains reserved for GOOD/PERFECT feedback.
+        const flash = makeLabel('UltimateSkillFlash', raceHud, '', 26, uiColor(255, 224, 117, 255));
+        flash.getComponent(UITransform).setContentSize(230, 44);
+        flash.setPosition(
+            visibleSize.width * 0.28 - 58,
+            -visibleSize.height * 0.24 + 72,
+            5,
+        );
         flash.active = false;
 
         ui.ultimateSkillRoot = root;
@@ -365,6 +383,8 @@ export class SpeedStarsUiPrefabBuilder {
         ui.ultimateSkillFill = fill;
         ui.ultimateSkillReadyRing = ready.node;
         ui.ultimateSkillFlashLabel = flash.getComponent(Label)!;
+        ui.ultimateSkillStatusLabel = status.getComponent(Label)!;
+        ui.ultimateSkillPulseMarkers = markers;
         ui.updateUltimateSkillButton(0, 0, false, false);
     }
 
@@ -641,6 +661,13 @@ function drawUltimateBolt(gfx: Graphics) {
     gfx.lineTo(-10, -2);
     gfx.lineTo(-2, -2);
     gfx.close();
+    gfx.fill();
+}
+
+function drawUltimatePulseMarker(gfx: Graphics) {
+    gfx.clear();
+    gfx.fillColor = uiColor(255, 218, 95, 255);
+    gfx.circle(0, 0, 3);
     gfx.fill();
 }
 

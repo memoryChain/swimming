@@ -136,7 +136,9 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
         const skillRemainingMs = Number.isFinite(self.skillRemainingSeconds) && self.skillRemainingSeconds >= 0
             ? Math.max(0, Math.min(9999, Math.round(self.skillRemainingSeconds * 1000)))
             : -1;
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate},${skillRemainingMs}`;
+        const skillCharges = Number.isFinite(self.skillCharges) && self.skillCharges >= 0 ? Math.min(9, Math.round(self.skillCharges)) : -1;
+        const skillPulses = Number.isFinite(self.skillPulsesTriggered) && self.skillPulsesTriggered >= 0 ? Math.min(9, Math.round(self.skillPulsesTriggered)) : -1;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate},${skillRemainingMs},${skillCharges},${skillPulses}`;
     }
     return out;
 }
@@ -178,6 +180,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const conditionEnergyPermille = p.length > 7 ? parseInt(p[7], 10) : -1;
                 const conditionHeartRate = p.length > 8 ? parseInt(p[8], 10) : -1;
                 const skillRemainingMs = p.length > 9 ? parseInt(p[9], 10) : -1;
+                const skillCharges = p.length > 10 ? parseInt(p[10], 10) : -1;
+                const skillPulsesTriggered = p.length > 11 ? parseInt(p[11], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -195,6 +199,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     skillRemainingSeconds: Number.isFinite(skillRemainingMs) && skillRemainingMs >= 0
                         ? Math.min(9.999, skillRemainingMs / 1000)
                         : -1,
+                    skillCharges: Number.isFinite(skillCharges) && skillCharges >= 0 ? Math.min(9, skillCharges) : -1,
+                    skillPulsesTriggered: Number.isFinite(skillPulsesTriggered) && skillPulsesTriggered >= 0 ? Math.min(9, skillPulsesTriggered) : -1,
                 };
             }
         }

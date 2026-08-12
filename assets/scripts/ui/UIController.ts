@@ -3,7 +3,6 @@ import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
-import { ULTIMATE_SKILL_BALANCE } from '../skills/SkillRuntime';
 
 const { ccclass, property } = _decorator;
 const HUD_BAR_WIDTH = 220;
@@ -90,6 +89,8 @@ export class UIController extends Component {
     public ultimateSkillFill: Graphics = null;
     public ultimateSkillReadyRing: Node = null;
     public ultimateSkillFlashLabel: Label = null;
+    public ultimateSkillStatusLabel: Label = null;
+    public ultimateSkillPulseMarkers: Node[] = [];
     public sprintLabel: Label | null = null;
     private _sprintActive = false;
     private _energyTotal = 100;
@@ -116,6 +117,8 @@ export class UIController extends Component {
     private _ultimateSkillInteractable = false;
     private _ultimateSkillDenied = false;
     private _ultimateSkillLastSampleMs = 0;
+    private _ultimateSkillStatusText = '';
+    private _ultimateSkillPulseMask = -1;
     private _diveChargeFillPixel = -1;
     private _diveChargeGfxColor: Color | null = null;
     private _diveChargeSpriteColor: Color | null = null;
@@ -311,19 +314,32 @@ export class UIController extends Component {
         remainingSeconds: number,
         canActivate: boolean,
         inputAllowed: boolean,
+        durationSeconds = 0,
+        charges = 0,
+        pulsesTriggered = 0,
+        pulseCount = 0,
     ) {
         const active = remainingSeconds > 0.001;
         const ratio = active
-            ? clamp01(remainingSeconds / Math.max(0.001, ULTIMATE_SKILL_BALANCE.durationSeconds))
+            ? clamp01(remainingSeconds / Math.max(0.001, durationSeconds))
             : clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
         const ratioPercent = Math.round(ratio * 100);
         const ready = !active && canActivate;
         const interactable = ready && inputAllowed;
         const denied = !active && Date.now() < this._ultimateDeniedUntil;
+        const statusText = active && charges > 0 ? `${charges}` : '';
+        let pulseMask = 0;
+        if (active && pulseCount > 0) {
+            for (let index = Math.max(0, pulsesTriggered); index < pulseCount; index++) {
+                pulseMask |= 1 << index;
+            }
+        }
         const stateChanged = active !== this._ultimateSkillActive
             || ready !== this._ultimateSkillReady
             || interactable !== this._ultimateSkillInteractable
-            || denied !== this._ultimateSkillDenied;
+            || denied !== this._ultimateSkillDenied
+            || statusText !== this._ultimateSkillStatusText
+            || pulseMask !== this._ultimateSkillPulseMask;
         const now = Date.now();
         // The prototype Graphics ring is capped to 30Hz and integer-percent
         // changes; it is never rebuilt at render frequency.
@@ -354,9 +370,21 @@ export class UIController extends Component {
         this._ultimateSkillReady = ready;
         this._ultimateSkillInteractable = interactable;
         this._ultimateSkillDenied = denied;
+        if (this.ultimateSkillStatusLabel && statusText !== this._ultimateSkillStatusText) {
+            this.ultimateSkillStatusLabel.string = statusText;
+            this._ultimateSkillStatusText = statusText;
+        }
+        if (pulseMask !== this._ultimateSkillPulseMask) {
+            for (let index = 0; index < this.ultimateSkillPulseMarkers.length; index++) {
+                const marker = this.ultimateSkillPulseMarkers[index];
+                const visible = (pulseMask & (1 << index)) !== 0;
+                if (marker && marker.active !== visible) marker.active = visible;
+            }
+            this._ultimateSkillPulseMask = pulseMask;
+        }
     }
 
-    showUltimateSkillActivated() {
+    showUltimateSkillActivated(skillName = '大招') {
         const buttonNode = this.ultimateSkillRoot;
         if (buttonNode?.isValid) {
             Tween.stopAllByTarget(buttonNode);
@@ -372,6 +400,7 @@ export class UIController extends Component {
         }
         const node = label.node;
         label.string = '爆发冲刺！';
+        if (label.string !== skillName) label.string = skillName;
         if (!node.active) {
             node.active = true;
         }
@@ -983,6 +1012,8 @@ export class UIController extends Component {
         this._ultimateSkillInteractable = false;
         this._ultimateSkillDenied = false;
         this._ultimateSkillLastSampleMs = 0;
+        this._ultimateSkillStatusText = '';
+        this._ultimateSkillPulseMask = -1;
         this._diveChargeFillPixel = -1;
         this._diveChargeGfxColor = null;
         this._diveChargeSpriteColor = null;

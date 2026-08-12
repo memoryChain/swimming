@@ -9,7 +9,7 @@
 // This module is the pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>;..."
+//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>,<skillCharges>,<skillPulses>;..."
 // hostPos   = the seat index (posNum) of the client that produced this snapshot, i.e.
 //             who currently believes it is the authoritative host. Clients use it for
 //             deterministic host migration: if the host goes silent, the lowest
@@ -45,6 +45,10 @@ export interface NetSnapshotEntry {
     // Remaining prototype-ultimate duration in seconds. -1 keeps old payloads
     // compatible and means the consumer should keep its local timer.
     skillRemainingSeconds: number;
+    // Extra compact dedicated-skill state. Character id is already synchronized
+    // in the modifier digest, so the receiver resolves skill type locally.
+    skillCharges: number;
+    skillPulsesTriggered: number;
 }
 
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
@@ -57,7 +61,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeSkillRemainingMs(e.skillRemainingSeconds)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeSkillRemainingMs(e.skillRemainingSeconds)},${encodeSkillStateInt(e.skillCharges)},${encodeSkillStateInt(e.skillPulsesTriggered)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -95,6 +99,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const conditionEnergyPermille = parts.length > 7 ? parseInt(parts[7], 10) : -1;
             const conditionHeartRate = parts.length > 8 ? parseInt(parts[8], 10) : -1;
             const skillRemainingMs = parts.length > 9 ? parseInt(parts[9], 10) : -1;
+            const skillCharges = parts.length > 10 ? parseInt(parts[10], 10) : -1;
+            const skillPulsesTriggered = parts.length > 11 ? parseInt(parts[11], 10) : -1;
             entries.push({
                 lane,
                 distance: distCm / 100,
@@ -112,6 +118,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 skillRemainingSeconds: Number.isFinite(skillRemainingMs) && skillRemainingMs >= 0
                     ? Math.min(9.999, skillRemainingMs / 1000)
                     : -1,
+                skillCharges: Number.isFinite(skillCharges) && skillCharges >= 0 ? Math.min(9, skillCharges) : -1,
+                skillPulsesTriggered: Number.isFinite(skillPulsesTriggered) && skillPulsesTriggered >= 0 ? Math.min(9, skillPulsesTriggered) : -1,
             });
         }
     }
@@ -126,11 +134,11 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // and drifting. Same field layout as one snapshot entry (incl. speed, ultimate energy,
 // and condition state), so it also carries those authoritative values in broadcast-only
 // mode (iOS high-performance+), where they can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<conditionEnergyPermille>,<heartRate>,<skillRemainingMs>,<skillCharges>,<skillPulses>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeSkillRemainingMs(entry.skillRemainingSeconds)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeSkillRemainingMs(entry.skillRemainingSeconds)},${encodeSkillStateInt(entry.skillCharges)},${encodeSkillStateInt(entry.skillPulsesTriggered)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -155,6 +163,8 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const conditionEnergyPermille = parts.length > 7 ? parseInt(parts[7], 10) : -1;
     const conditionHeartRate = parts.length > 8 ? parseInt(parts[8], 10) : -1;
     const skillRemainingMs = parts.length > 9 ? parseInt(parts[9], 10) : -1;
+    const skillCharges = parts.length > 10 ? parseInt(parts[10], 10) : -1;
+    const skillPulsesTriggered = parts.length > 11 ? parseInt(parts[11], 10) : -1;
     return {
         lane,
         distance: distCm / 100,
@@ -172,6 +182,8 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         skillRemainingSeconds: Number.isFinite(skillRemainingMs) && skillRemainingMs >= 0
             ? Math.min(9.999, skillRemainingMs / 1000)
             : -1,
+        skillCharges: Number.isFinite(skillCharges) && skillCharges >= 0 ? Math.min(9, skillCharges) : -1,
+        skillPulsesTriggered: Number.isFinite(skillPulsesTriggered) && skillPulsesTriggered >= 0 ? Math.min(9, skillPulsesTriggered) : -1,
     };
 }
 
@@ -191,4 +203,8 @@ function encodeSkillRemainingMs(value: number): number {
     return Number.isFinite(value) && value >= 0
         ? Math.max(0, Math.min(9999, Math.round(value * 1000)))
         : -1;
+}
+
+function encodeSkillStateInt(value: number): number {
+    return Number.isFinite(value) && value >= 0 ? Math.max(0, Math.min(9, Math.round(value))) : -1;
 }
