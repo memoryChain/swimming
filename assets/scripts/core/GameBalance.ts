@@ -150,10 +150,14 @@ export const SWIMMER_BALANCE = {
 // These values deliberately live beside the existing flip-turn balance so the
 // ordinary (no-input) push remains the lowest valid result.
 export const FLIP_TURN_TIMING_BALANCE = {
-    ringStartScale: 1.8,
-    // Show the ring slightly before the swimmer enters the authored turn pose.
+    // The ring first appears at 2x for a short visual-only buffer. It cannot
+    // consume an in-progress swim input until it reaches inputStartScale.
+    ringStartScale: 2.0,
+    inputStartScale: 1.8,
+    // Start the text-only pre-warning early enough for a player who is still
+    // swimming to notice it, finish the current stroke, and prepare to turn.
     // The ring still reaches the yellow target exactly at foot contact.
-    previewSeconds: 0.5,
+    previewSeconds: 1.2,
     // After the target is crossed, let the blue ring visibly overshoot before
     // hiding it so a missed timing reads as a complete motion, not a pop.
     lateShrinkSeconds: 0.1,

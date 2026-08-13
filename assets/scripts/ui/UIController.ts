@@ -165,7 +165,9 @@ export class UIController extends Component {
     private _flipTurnQteFeedbackLabel: Label = null;
     private _flipTurnQtePromptLabel: Label = null;
     private _flipTurnQteActive = false;
+    private _flipTurnQteRingsVisible = false;
     private _flipTurnQteAccepting = false;
+    private _flipTurnQteResolved = false;
     private _flipTurnQteRadius = -1;
     private _flipTurnQteLastSampleMs = 0;
     private _flipTurnQteFeedbackText = '';
@@ -182,6 +184,9 @@ export class UIController extends Component {
         if (!active) {
             if (this._flipTurnQteActive) {
                 this._flipTurnQteActive = false;
+                this._flipTurnQteResolved = false;
+                this.setFlipTurnQteRingsVisible(false);
+                this.stopFlipTurnQtePromptMotion();
                 if (this._flipTurnQteRoot && this._flipTurnQteRoot.active) {
                     this._flipTurnQteRoot.active = false;
                 }
@@ -191,37 +196,42 @@ export class UIController extends Component {
         this.buildFlipTurnQtePrototype();
         if (!this._flipTurnQteActive) {
             this._flipTurnQteActive = true;
+            this._flipTurnQteRingsVisible = false;
             this._flipTurnQteAccepting = false;
+            this._flipTurnQteResolved = false;
             this._flipTurnQteRadius = -1;
             this._flipTurnQteLastSampleMs = 0;
+            // The previous turn can have been hidden immediately on a hit.
+            // Explicitly reset its child state before showing this turn's
+            // text-only warning, otherwise stale rings reappear over the text.
+            this.setFlipTurnQteRingsVisible(false);
             if (this._flipTurnQteRoot && !this._flipTurnQteRoot.active) {
                 this._flipTurnQteRoot.active = true;
             }
+            this.setFlipTurnQtePrompt(false, true);
+        }
+        if (state?.resolved) {
+            if (!this._flipTurnQteResolved) {
+                this._flipTurnQteResolved = true;
+                this.hideFlipTurnQteOnResolve();
+            }
+            return;
+        }
+        const ringsVisible = !!state?.ringVisible;
+        if (ringsVisible !== this._flipTurnQteRingsVisible) {
+            this.setFlipTurnQteRingsVisible(ringsVisible);
         }
         const accepting = !!state?.accepting;
         if (accepting !== this._flipTurnQteAccepting) {
             this._flipTurnQteAccepting = accepting;
-            this._flipTurnQteRadius = -1;
-            if (this._flipTurnQteBlue && this._flipTurnQteBlue.node.active !== accepting) {
-                this._flipTurnQteBlue.node.active = accepting;
-            }
-            if (this._flipTurnQtePromptLabel) {
-                const prompt = accepting ? '点击蹬墙' : '准备蹬墙';
-                if (this._flipTurnQtePromptLabel.string !== prompt) {
-                    this._flipTurnQtePromptLabel.string = prompt;
-                }
-                const color = accepting ? FLIP_TURN_QTE_NORMAL : FLIP_TURN_QTE_YELLOW;
-                if (this._flipTurnQtePromptLabel.color !== color) {
-                    this._flipTurnQtePromptLabel.color = color;
-                }
-            }
+            this.setFlipTurnQtePrompt(accepting, false);
         }
         const now = Date.now();
         if (now - this._flipTurnQteLastSampleMs < 34) {
             return;
         }
         this._flipTurnQteLastSampleMs = now;
-        if (!accepting) {
+        if (!ringsVisible) {
             return;
         }
         const radius = Math.round(108 * Math.max(1, state?.ringScale ?? 1));
@@ -234,9 +244,12 @@ export class UIController extends Component {
 
     showFlipTurnTimingResult(rating: FlipTurnTimingRating, _launchSpeed: number) {
         this.buildFlipTurnQtePrototype();
+        // Resolve is event-driven, so hide the input visual in the same frame as
+        // the press instead of waiting for the next HUD state sample.
+        this._flipTurnQteResolved = true;
+        this.hideFlipTurnQteOnResolve();
         // Reuse the same vocabulary players already learn from stroke timing;
-        // the number makes the wall-push reward concrete without a separate
-        // "turn" rating taxonomy.
+        // this avoids a separate "turn" rating taxonomy.
         const praise = rating === 'perfect' ? PRAISE_PERFECT
             : rating === 'good' ? PRAISE_GREAT : PRAISE_GOOD;
         this.showFlipTurnTimingFeedback(
@@ -260,20 +273,100 @@ export class UIController extends Component {
         const opacity = root.getComponent(UIOpacity)!;
         Tween.stopAllByTarget(root);
         Tween.stopAllByTarget(opacity);
-        root.setScale(0.78, 0.78, 1);
+        root.setScale(0.55, 0.55, 1);
         opacity.opacity = 255;
         if (!root.active) {
             root.active = true;
         }
         tween(root)
-            .to(0.1, { scale: new Vec3(1.1, 1.1, 1) }, { easing: 'backOut' })
-            .to(0.32, { scale: new Vec3(1, 1, 1) })
+            .to(0.12, { scale: new Vec3(1.2, 1.2, 1) }, { easing: 'backOut' })
+            .to(0.28, { scale: new Vec3(1, 1, 1) })
             .start();
         tween(opacity)
             .delay(0.28)
             .to(0.24, { opacity: 0 })
             .call(() => { if (root.active) root.active = false; })
             .start();
+    }
+
+    // Event-driven only: the preview needs a clear attention grab while the
+    // player is still allowed to swim, rather than another per-frame HUD effect.
+    private setFlipTurnQtePrompt(accepting: boolean, playPreviewEntrance: boolean) {
+        const label = this._flipTurnQtePromptLabel;
+        if (!label) {
+            return;
+        }
+        const prompt = accepting ? '点击蹬墙' : '准备蹬墙';
+        if (label.string !== prompt) {
+            label.string = prompt;
+        }
+        const color = accepting ? FLIP_TURN_QTE_NORMAL : FLIP_TURN_QTE_YELLOW;
+        if (label.color !== color) {
+            label.color = color;
+        }
+        const node = label.node;
+        let opacity = node.getComponent(UIOpacity);
+        if (!opacity) {
+            opacity = node.addComponent(UIOpacity);
+        }
+        Tween.stopAllByTarget(node);
+        Tween.stopAllByTarget(opacity);
+        if (!playPreviewEntrance) {
+            node.setScale(1, 1, 1);
+            opacity.opacity = 255;
+            return;
+        }
+        node.setScale(0.3, 0.3, 1);
+        opacity.opacity = 0;
+        tween(node)
+            .to(0.2, { scale: new Vec3(1.25, 1.25, 1) }, { easing: 'backOut' })
+            .to(0.1, { scale: new Vec3(1, 1, 1) })
+            .call(() => {
+                tween(node)
+                    .to(0.72, { scale: new Vec3(1.07, 1.07, 1) }, { easing: 'sineInOut' })
+                    .to(0.72, { scale: new Vec3(1, 1, 1) }, { easing: 'sineInOut' })
+                    .repeatForever()
+                    .start();
+            })
+            .start();
+        tween(opacity)
+            .to(0.16, { opacity: 255 })
+            .start();
+    }
+
+    private stopFlipTurnQtePromptMotion() {
+        const label = this._flipTurnQtePromptLabel;
+        if (!label) {
+            return;
+        }
+        const node = label.node;
+        Tween.stopAllByTarget(node);
+        const opacity = node.getComponent(UIOpacity);
+        if (opacity) {
+            Tween.stopAllByTarget(opacity);
+        }
+    }
+
+    private hideFlipTurnQteOnResolve() {
+        this.setFlipTurnQteRingsVisible(false);
+        this.stopFlipTurnQtePromptMotion();
+        if (this._flipTurnQteRoot?.active) {
+            this._flipTurnQteRoot.active = false;
+        }
+    }
+
+    private setFlipTurnQteRingsVisible(visible: boolean) {
+        this._flipTurnQteRingsVisible = visible;
+        this._flipTurnQteRadius = -1;
+        // The pre-warning is deliberately text-only. The rings begin only
+        // after the flip phase has started and the camera has switched to
+        // its immediate underwater framing in this same game update.
+        if (this._flipTurnQteYellow && this._flipTurnQteYellow.node.active !== visible) {
+            this._flipTurnQteYellow.node.active = visible;
+        }
+        if (this._flipTurnQteBlue && this._flipTurnQteBlue.node.active !== visible) {
+            this._flipTurnQteBlue.node.active = visible;
+        }
     }
 
     private buildFlipTurnQtePrototype() {
@@ -292,6 +385,7 @@ export class UIController extends Component {
         yellowNode.addComponent(UITransform).setContentSize(240, 240);
         const yellow = yellowNode.addComponent(Graphics);
         drawFlipTurnQteRing(yellow, 108, FLIP_TURN_QTE_YELLOW, 8);
+        yellowNode.active = false;
         const blueNode = new Node('TimingRing');
         blueNode.layer = Layers.Enum.UI_2D;
         blueNode.setParent(root);
@@ -326,7 +420,7 @@ export class UIController extends Component {
         prompt.string = '准备蹬墙';
         prompt.horizontalAlign = Label.HorizontalAlign.CENTER;
         prompt.verticalAlign = Label.VerticalAlign.CENTER;
-        prompt.color = FLIP_TURN_QTE_NORMAL;
+        prompt.color = FLIP_TURN_QTE_YELLOW;
         const promptOutline = promptRoot.addComponent(LabelOutline);
         promptOutline.color = new Color(5, 28, 54, 255);
         promptOutline.width = 4;

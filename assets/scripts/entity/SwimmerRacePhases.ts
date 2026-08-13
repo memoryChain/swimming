@@ -15,6 +15,9 @@ export type FlipTurnTimingRating = 'perfect' | 'good' | 'normal';
 // can inspect it every frame without creating garbage on mobile JavaScriptCore.
 export type FlipTurnTimingState = {
     active: boolean;
+    // The rings are visible only for the underwater turn. The earlier surface
+    // warning stays text-only even though the timing state is already active.
+    ringVisible: boolean;
     accepting: boolean;
     resolved: boolean;
     progressRatio: number;
@@ -72,6 +75,7 @@ export class SwimmerRacePhases {
     private _flipTurnTimingLatePhase = false;
     private readonly _flipTurnTiming: FlipTurnTimingState = {
         active: false,
+        ringVisible: false,
         accepting: false,
         resolved: false,
         progressRatio: 0,
@@ -159,7 +163,7 @@ export class SwimmerRacePhases {
     // Network replay supplies the owner's already-quantized result. It intentionally
     // bypasses local timing so iOS/Android frame pacing cannot change the outcome.
     applyAcceptedNetFlipTurnTiming(launchSpeed: number): boolean {
-        if (!this._flipTurnTiming.active || !this._flipTurnTiming.accepting || this._flipTurnTiming.resolved || !Number.isFinite(launchSpeed)) {
+        if (!this._flipTurnTiming.active || !this._flipTurnTiming.ringVisible || this._flipTurnTiming.resolved || !Number.isFinite(launchSpeed)) {
             return false;
         }
         this.resolveFlipTurnTiming(quantizedLaunchSpeed(launchSpeed));
@@ -363,9 +367,9 @@ export class SwimmerRacePhases {
         }
     }
 
-    // Start the player-facing timing cue before the authored flip animation. Its
-    // scale timeline remains tied to the future foot-contact moment, not to the
-    // swimmer's current render frame, so the yellow-ring overlap is still exact.
+    // Start a text-only pre-warning before the authored flip animation. The
+    // actual rings remain hidden until the flip phase starts, so players never
+    // see a QTE circle while the normal surface camera is still active.
     private updateFlipTurnTimingPreview(dt: number) {
         if (this._flipTurnTiming.active) {
             return;
@@ -397,6 +401,7 @@ export class SwimmerRacePhases {
 
     private beginFlipTurnTiming() {
         this._flipTurnTiming.active = true;
+        this._flipTurnTiming.ringVisible = false;
         // The lead-in is awareness time only: the player can finish the current
         // stroke without accidentally consuming the one QTE press.
         this._flipTurnTiming.accepting = false;
@@ -411,7 +416,7 @@ export class SwimmerRacePhases {
     }
 
     private updateFlipTurnTimingBeforeContact(elapsed: number) {
-        if (!this._flipTurnTiming.active || !this._flipTurnTiming.accepting || this._flipTurnTimingLatePhase) {
+        if (!this._flipTurnTiming.active || !this._flipTurnTiming.ringVisible || this._flipTurnTimingLatePhase) {
             return;
         }
         const ratio = clamp01(elapsed / Math.max(0.001, this._flipTurnTimingContactSeconds));
@@ -421,6 +426,14 @@ export class SwimmerRacePhases {
             1,
             ratio,
         );
+        // The opening 2.0x -> 1.8x shrink is a visual hand-off from ongoing
+        // swimming. Only once it reaches the threshold does a new A/D/tap get
+        // consumed as the one wall-push decision.
+        if (!this._flipTurnTiming.accepting
+            && !this._flipTurnTiming.resolved
+            && this._flipTurnTiming.ringScale <= FLIP_TURN_TIMING_BALANCE.inputStartScale) {
+            this._flipTurnTiming.accepting = true;
+        }
     }
 
     private updateFlipTurnTimingAfterContact(dt: number) {
@@ -438,13 +451,9 @@ export class SwimmerRacePhases {
         this._flipTurnTimingLateElapsed += Math.max(0, dt);
         const ratio = clamp01(this._flipTurnTimingLateElapsed / seconds);
         this._flipTurnTiming.ringScale = lerp(1, FLIP_TURN_TIMING_BALANCE.lateRingEndScale, ratio);
-        // Keep the input window open through the lower half of the perfect band.
-        // At the default 0.1s late shrink this gives roughly another 0.05s after
-        // contact, ending only after the blue ring is smaller than 0.90x.
-        if (this._flipTurnTiming.ringScale < 1 - FLIP_TURN_TIMING_BALANCE.perfectRadiusError) {
-            this._flipTurnTiming.accepting = false;
-        }
         if (ratio >= 1) {
+            this._flipTurnTiming.accepting = false;
+            this._flipTurnTiming.ringVisible = false;
             this._flipTurnTiming.active = false;
         }
     }
@@ -512,9 +521,11 @@ export class SwimmerRacePhases {
         if (!this._flipTurnTiming.active) {
             this.beginFlipTurnTiming();
         }
-        // Start the actual judgment only once the authored turn pose begins.
-        // The preceding 0.5s pre-warning never consumes A/D or screen strokes.
-        this._flipTurnTiming.accepting = true;
+        // Show the rings once the authored turn pose/camera begins, but keep the
+        // initial 2.0x -> 1.8x segment display-only so an ongoing stroke does
+        // not become an instant QTE judgment.
+        this._flipTurnTiming.ringVisible = true;
+        this._flipTurnTiming.accepting = false;
         this._flipTurnTiming.progressRatio = 0;
         this._flipTurnTiming.ringScale = Math.max(1, FLIP_TURN_TIMING_BALANCE.ringStartScale);
         if (!this._flipTurnTiming.resolved) {
@@ -634,6 +645,7 @@ export class SwimmerRacePhases {
 
     private resetFlipTurnTiming() {
         this._flipTurnTiming.active = false;
+        this._flipTurnTiming.ringVisible = false;
         this._flipTurnTiming.accepting = false;
         this._flipTurnTiming.resolved = false;
         this._flipTurnTiming.progressRatio = 0;
