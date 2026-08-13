@@ -36,8 +36,8 @@ PROP_ATLAS_IMAGE_NAME = "PoolsidePropsFlatColorAtlas"
 PROP_ATLAS_MATERIAL_NAME = "PoolsidePropsFlatColorAtlas_Material"
 PROP_ATLAS_UV_NAME = "PoolsidePropsFlatColorAtlasUV"
 PROP_ATLAS_VERSION_PROPERTY = "poolside_props_flat_color_atlas_version"
-PROP_ATLAS_VERSION = 3
-PROP_ATLAS_WIDTH = 96
+PROP_ATLAS_VERSION = 5
+PROP_ATLAS_WIDTH = 112
 PROP_ATLAS_HEIGHT = 16
 PROP_ATLAS_TEMP_FILENAME = ".PoolsidePropsFlatColorAtlas.tmp.png"
 EXPECTED_BLEACHER_TARGETS = 17
@@ -77,6 +77,7 @@ PROP_SOURCE_MATERIALS = {
     "LPVenue_cartoon_float_blue": (0.0275, 0.3569, 0.8784, 1.0),
     "LPVenue_cartoon_float_red": (1.0, 0.2431, 0.2196, 1.0),
     "LPVenue_cartoon_float_yellow": (1.0, 0.8353, 0.1843, 1.0),
+    "PoolsideProp_Flag_SafetyOrange": (1.0, 0.38, 0.045, 1.0),
     # Poolside tube frames used the pool-edge near-white at full emissive
     # intensity, which made them read like glowing wireframes against the dark
     # deck. Keep a cool venue white here; the four baked tone bands below add
@@ -319,7 +320,7 @@ def prop_tone_index(world_normal: Vector) -> int:
 def is_backstroke_pennant(obj: bpy.types.Object, polygon: bpy.types.MeshPolygon) -> bool:
     center = obj.matrix_world @ polygon.center
     on_flag_line = min(abs(center.x - 5.0), abs(center.x - 45.0)) <= 0.08
-    return on_flag_line and abs(center.y) <= 10.6 and 1.88 <= center.z <= 2.36
+    return on_flag_line and abs(center.y) <= 10.6 and 1.68 <= center.z <= 2.16
 
 
 def collapse_prop_target(obj: bpy.types.Object, material: bpy.types.Material) -> None:
@@ -347,7 +348,7 @@ def collapse_prop_target(obj: bpy.types.Object, material: bpy.types.Material) ->
         if source_material is None:
             raise RuntimeError(f"{obj.name}: empty material slot {polygon.material_index}")
         if source_material.name == PROP_ATLAS_MATERIAL_NAME:
-            # Atlas-batched meshes have already lost their six source material
+            # Atlas-batched meshes have already lost their source material
             # slots, but the previous stripe still identifies the source colour.
             # Version 1 had six bands; version 2+ has four tone bands per source.
             previous_u = sum(uv_layer.data[index].uv.x for index in polygon.loop_indices) / len(

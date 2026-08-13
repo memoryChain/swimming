@@ -50,7 +50,7 @@ REQUIRED_NODES = (
 BLEACHER_ATLAS_MATERIAL = "BleacherFlatColorAtlas_Material"
 POOLSIDE_PROPS_ATLAS_MATERIAL = "PoolsidePropsFlatColorAtlas_Material"
 POOLSIDE_PROPS_ATLAS_VERSION_PROPERTY = "poolside_props_flat_color_atlas_version"
-EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION = 3
+EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION = 5
 EXPECTED_BLEACHER_BATCHES = 17
 MAX_EXPORT_PRIMITIVES = 39
 
@@ -62,9 +62,18 @@ MAX_EXPORT_PRIMITIVES = 39
 POOLSIDE_BOUNDS_RANGES = (
     ((4.5, 5.5), (44.5, 45.5)),       # world X: two backstroke lines
     ((-16.5, -13.5), (14.5, 16.5)),   # world Y: two long pool edges
-    ((-1.5, 0.0), (2.3, 4.0)),        # world Z: submerged ladder to chair top
+    ((-1.05, -0.8), (2.3, 2.6)),      # world Z: grounded submerged ladder to chair top
 )
 POOLSIDE_TRIANGLE_RANGE = (5000, 8000)
+POOLSIDE_DECK_GROUND_Z = 0.2
+POOLSIDE_MIN_GROUNDED_VERTICES = 150
+POOLSIDE_LADDER_GROUND_CENTERS = (
+    (14.0, 10.8),
+    (36.0, 10.8),
+    (14.0, -10.8),
+    (36.0, -10.8),
+)
+POOLSIDE_MIN_LADDER_GROUNDED_VERTICES = 12
 
 # --- Baked arena dimming (replaces the runtime per-pixel VenueHeightShade) -----
 # The stands / walls / structure darken with world height and horizontal distance
@@ -286,6 +295,30 @@ def validate_poolside_geometry(obj):
             "PoolsideProps_Merged triangle count is outside the approved static-prop range: "
             f"{triangles}"
         )
+    grounded_vertices = sum(
+        abs(vertex.z - POOLSIDE_DECK_GROUND_Z) <= 0.002 for vertex in world_vertices
+    )
+    if grounded_vertices < POOLSIDE_MIN_GROUNDED_VERTICES:
+        raise RuntimeError(
+            "PoolsideProps_Merged freestanding feet do not reach the deck ground: "
+            f"z={POOLSIDE_DECK_GROUND_Z} groundedVertices={grounded_vertices} "
+            f"expected>={POOLSIDE_MIN_GROUNDED_VERTICES}"
+        )
+    for ladder_index, (center_x, center_y) in enumerate(
+        POOLSIDE_LADDER_GROUND_CENTERS, start=1
+    ):
+        ladder_grounded_vertices = sum(
+            abs(vertex.z - POOLSIDE_DECK_GROUND_Z) <= 0.002
+            and abs(vertex.x - center_x) <= 0.9
+            and abs(vertex.y - center_y) <= 1.0
+            for vertex in world_vertices
+        )
+        if ladder_grounded_vertices < POOLSIDE_MIN_LADDER_GROUNDED_VERTICES:
+            raise RuntimeError(
+                f"Poolside ladder {ladder_index} does not reach the deck ground: "
+                f"groundedVertices={ladder_grounded_vertices} "
+                f"expected>={POOLSIDE_MIN_LADDER_GROUNDED_VERTICES}"
+            )
 
 
 def validate_batching():
