@@ -4,10 +4,9 @@ import { SpectatorCameraFlashEmitter } from './SpectatorCameraFlashEmitter';
 
 const { ccclass, property } = _decorator;
 
-// Front-row clothing is fairly saturated so the poolside tier reads vivid;
-// higher tiers are darkened steeply toward black (see TIER_BRIGHTNESS), which
-// also drains their apparent saturation, so the crowd fades into the dark
-// upper stands as if only the pool is lit.
+// Keep the palette colourful enough to read as a crowd, then mute only the
+// pool-facing first row through its baked vertex colour. This prevents the
+// nearest audience and the new poolside props from competing for attention.
 const SPECTATOR_COLORS = [
     color(96, 138, 214),
     color(206, 108, 150),
@@ -21,6 +20,8 @@ const SPECTATOR_COLORS = [
 // while each higher tier falls off steeply (non-linear) so the top tier is
 // nearly black.
 const TIER_BRIGHTNESS = [1.0, 0.46, 0.18, 0.05];
+const FRONT_ROW_BRIGHTNESS = 0.70;
+const FRONT_ROW_SATURATION = 0.55;
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
@@ -79,6 +80,7 @@ type SpectatorSpec = {
     side: number;
     yaw: number;
     brightness: number;
+    saturation: number;
 };
 
 type SceneBounds = {
@@ -185,7 +187,6 @@ export class SpectatorCrowdBuilder {
 
     private collectGrandstandSpectators(buckets: SpectatorSpec[][], stand: Grandstand) {
         const { name, bounds, sideSign, axis, rowCount, yaw, tier } = stand;
-        const brightness = tierBrightness(tier);
         const standLength = axis === 'x'
             ? bounds.maxX - bounds.minX
             : bounds.maxZ - bounds.minZ;
@@ -226,6 +227,8 @@ export class SpectatorCrowdBuilder {
         let globalColumn = 0;
 
         for (let row = 0; row < rowCount; row++) {
+            const brightness = spectatorBrightness(tier);
+            const saturation = spectatorSaturation(tier);
             const seatY = bounds.minY + SEAT_SURFACE_LIFT + row * STAND_ROW_RISE;
             const seatDepth = frontEdge + backDir * (row + 0.5) * rowDepth;
             const visibleSeatDepth = seatDepth - backDir * SPECTATOR_SEAT_FORWARD_OFFSET;
@@ -276,6 +279,7 @@ export class SpectatorCrowdBuilder {
                         // jitter is applied again while building the mesh.
                         yaw,
                         brightness,
+                        saturation,
                     });
                 }
             }
@@ -329,9 +333,10 @@ export class SpectatorCrowdBuilder {
             const columns = Math.max(5, Math.floor(length / SPECTATOR_SPACING));
             const salt = side.salt;
             for (const tier of tiers) {
-                const brightness = tierBrightness(tier);
                 const baseY = tierBaseY[tier];
                 for (let row = 0; row < FLAT_BLEACHER_ROW_COUNT; row++) {
+                    const brightness = spectatorBrightness(tier);
+                    const saturation = spectatorSaturation(tier);
                     const seatY = baseY + SEAT_SURFACE_LIFT + row * STAND_ROW_RISE;
                     const rowDepth = ((row + 0.5) / FLAT_BLEACHER_ROW_COUNT) * depth;
                     for (let col = 0; col < columns; col++) {
@@ -363,6 +368,7 @@ export class SpectatorCrowdBuilder {
                             side: 1,
                             yaw,
                             brightness,
+                            saturation,
                         });
                     }
                 }
@@ -415,7 +421,8 @@ function addSpectatorGroup(
 
     const node = makeWorldNode(name, parent);
     const renderer = node.addComponent(MeshRenderer);
-    renderer.mesh = utils.createMesh(buildSpectatorGeometry(spectators));
+    const colorIndex = positiveMod(groupIndex, SPECTATOR_COLORS.length);
+    renderer.mesh = utils.createMesh(buildSpectatorGeometry(spectators, SPECTATOR_COLORS[colorIndex]));
     renderer.setMaterial(material, 0);
 
     const wobble = node.addComponent(SpectatorGroupWobble);
@@ -427,7 +434,7 @@ function addSpectatorGroup(
     return node;
 }
 
-function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeometry {
+function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): primitives.IGeometry {
     const positions: number[] = [];
     const normals: number[] = [];
     const uvs: number[] = [];
@@ -438,6 +445,10 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeomet
     const normal = new Vec3();
     const minPos = new Vec3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
     const maxPos = new Vec3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
+    const baseR = baseColor.r / 255;
+    const baseG = baseColor.g / 255;
+    const baseB = baseColor.b / 255;
+    const luminance = baseR * 0.2126 + baseG * 0.7152 + baseB * 0.0722;
 
     for (let i = 0; i < spectators.length; i++) {
         const spectator = spectators[i];
@@ -459,8 +470,16 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[]): primitives.IGeomet
         pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.28, 0.5, 0.22, 1);
         pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.5, 0, 0, 0.5);
         const b = spectator.brightness;
+        const s = spectator.saturation;
+        // The unlit material supplies the base clothing colour. Vertex colour
+        // is a per-spectator multiplier, so the first row can be desaturated
+        // without creating extra materials or draw calls. Non-front rows use
+        // saturation=1 and therefore preserve the previous grayscale multiplier.
+        const r = Math.min(1, (luminance + (baseR - luminance) * s) * b / baseR);
+        const g = Math.min(1, (luminance + (baseG - luminance) * s) * b / baseG);
+        const blue = Math.min(1, (luminance + (baseB - luminance) * s) * b / baseB);
         for (let vertex = 0; vertex < 6; vertex++) {
-            colors.push(b, b, b, 1);
+            colors.push(r, g, blue, 1);
         }
         indices.push(
             base, base + 1, base + 2,
@@ -643,6 +662,14 @@ function color(r: number, g: number, b: number, a = 255): Color {
 function tierBrightness(tier: number): number {
     const index = Math.min(TIER_BRIGHTNESS.length, Math.max(1, tier)) - 1;
     return TIER_BRIGHTNESS[index];
+}
+
+function spectatorBrightness(tier: number): number {
+    return tier === 1 ? FRONT_ROW_BRIGHTNESS : tierBrightness(tier);
+}
+
+function spectatorSaturation(tier: number): number {
+    return tier === 1 ? FRONT_ROW_SATURATION : 1;
 }
 
 function jitter(a: number, b: number, c: number, scale: number): number {
