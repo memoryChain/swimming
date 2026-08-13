@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSharkSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
@@ -81,6 +81,7 @@ export class NetRaceController {
     // Latest authoritative position snapshot from the host, keyed by lane. Clients ease
     // their swimmers toward these. Empty on the host (it IS the authority).
     private _snapshotTargets: NetSnapshotEntry[] = [];
+    private _sharkSnapshot: NetSharkSnapshot | null = null;
     // Latest OWN-authoritative self-position report per lane (from that human's own
     // client), with arrival time so a stale one (P| dropped) is ignored and we fall back
     // to the host snapshot. Used to catch remote human copies up to their owner's view.
@@ -301,16 +302,18 @@ export class NetRaceController {
     }
 
     // Host: encode + broadcast the authoritative position snapshot.
-    sendSnapshot(entries: NetSnapshotEntry[]): void {
+    sendSnapshot(entries: NetSnapshotEntry[], shark?: NetSharkSnapshot | null): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries));
+        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, shark));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
     get snapshotTargets(): NetSnapshotEntry[] {
         return this._snapshotTargets;
     }
+
+    get sharkSnapshot(): NetSharkSnapshot | null { return this._sharkSnapshot; }
 
     // Broadcast THIS client's own player position so every other client can catch its
     // on-screen copy up to how its owner sees it (owner predicts locally = the truth).
@@ -420,6 +423,7 @@ export class NetRaceController {
                 this._prevSnapshot = this._snapshotTargets;
                 this._prevSnapshotTime = this._snapshotTime;
                 this._snapshotTargets = snapshot.entries;
+                this._sharkSnapshot = snapshot.shark ?? null;
                 this._snapshotTime = Date.now();
             }
             this.refreshHud();

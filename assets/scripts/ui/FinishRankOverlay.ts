@@ -59,6 +59,7 @@ type PanelRow = {
     placement: number;
     lane: number;
     eliminated: boolean;
+    sharkEliminated: boolean;
     quit: boolean;
     isPlayer: boolean;
     name: string;
@@ -366,6 +367,7 @@ export class FinishRankOverlay {
                 placement: -1,
                 lane: -1,
                 eliminated: false,
+                sharkEliminated: false,
                 quit: false,
                 isPlayer: false,
                 name: '',
@@ -376,9 +378,11 @@ export class FinishRankOverlay {
     private updatePanelRow(row: PanelRow, result: RaceFinishResult) {
         const swimmerNode = result.swimmer?.node ?? null;
         const eliminated = result.eliminated === true;
+        const sharkEliminated = result.sharkEliminated === true;
         const quit = result.quit === true;
         const presentationChanged = row.swimmerNode !== swimmerNode
             || row.eliminated !== eliminated
+            || row.sharkEliminated !== sharkEliminated
             || row.isPlayer !== result.isPlayer;
         if (presentationChanged) {
             row.highlight.clear();
@@ -399,13 +403,17 @@ export class FinishRankOverlay {
         if (row.name !== result.name || row.isPlayer !== result.isPlayer) {
             row.nameLabel.string = displayName(result);
         }
-        if (row.lane !== result.lane || row.eliminated !== eliminated || row.quit !== quit) {
+        if (row.lane !== result.lane || row.eliminated !== eliminated || row.sharkEliminated !== sharkEliminated || row.quit !== quit) {
             row.laneLabel.string = quit ? '退出' : eliminated ? '已淘汰' : `${result.lane}`;
+        }
+        if (sharkEliminated && row.laneLabel.string !== '鲨鱼') {
+            row.laneLabel.string = '鲨鱼';
         }
         row.swimmerNode = swimmerNode;
         row.placement = result.placement;
         row.lane = result.lane;
         row.eliminated = eliminated;
+        row.sharkEliminated = sharkEliminated;
         row.quit = quit;
         row.isPlayer = result.isPlayer;
         row.name = result.name;

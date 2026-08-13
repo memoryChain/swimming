@@ -59,6 +59,9 @@ export type GameFlowRefs = {
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
     updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean) => void;
+    // Returns accepted for an authoritative local cast, requested for a client
+    // request awaiting host confirmation, and blocked while the global shark exists.
+    trySummonShark: (swimmer: Swimmer) => 'accepted' | 'requested' | 'blocked';
     debug: (message: string) => void;
 };
 
@@ -230,6 +233,26 @@ export class GameFlowController {
         }
         const swimmer = this._refs.playerSwimmer;
         if (!swimmer) {
+            return;
+        }
+        if (swimmer.skill.definition.kind === 'shark') {
+            if (!swimmer.canActivateUltimate) {
+                this._refs.uiFlow.flashUltimateEnergyDenied();
+                return;
+            }
+            const summon = this._refs.trySummonShark(swimmer);
+            if (summon === 'blocked') {
+                this._refs.uiFlow.showUltimateSkillActivated('鲨鱼出没中');
+                return;
+            }
+            // The host/single-player path commits immediately. A client sends only
+            // the reliable request and spends when the host snapshot confirms it.
+            if (summon === 'accepted') {
+                swimmer.spendUltimateForExternalSkill();
+            }
+            captureNetInput({ kind: NetInputKind.UltimateActivate });
+            this._refs.uiFlow.showUltimateSkillActivated('召唤鲨鱼');
+            this._refs.debug(`shark summon ${summon}`);
             return;
         }
         if (swimmer.tryActivateUltimate()) {

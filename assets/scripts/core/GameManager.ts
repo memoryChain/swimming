@@ -16,10 +16,12 @@ import {
     Node,
     primitives,
     Sprite,
+    Tween,
     UITransform,
     utils,
     Vec3,
     view,
+    tween,
 } from 'cc';
 import { GameFlowController } from '../app/GameFlowController';
 import { MusicManager } from '../app/MusicManager';
@@ -42,6 +44,8 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
+import { SharkController } from '../entity/SharkController';
+import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
@@ -51,6 +55,9 @@ import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
 import { SwimmerNameOverlay } from '../ui/SwimmerNameOverlay';
+import { SharkEventBanner } from '../ui/SharkEventBanner';
+import { SharkLockOnOverlay } from '../ui/SharkLockOnOverlay';
+import { pickSharkBannerLine } from '../ui/SharkBannerCopy';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
@@ -83,7 +90,7 @@ import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta } from './TimeScale';
-import { RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { RaceCameraDirector, RaceCameraMode } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
@@ -96,7 +103,9 @@ import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
+import { setLayerRecursive } from '../character/CharacterModelLoader';
 import { logTextureFormatDiagnostics } from './TextureFormatDiagnostics';
+import { SWIMMER_LAYER } from '../venue/WaterSurfaceBinder';
 
 const { ccclass } = _decorator;
 
@@ -171,6 +180,8 @@ export class GameManager extends Component {
     private _remoteControllers: RemoteSwimmerController[] = [];
     // Host: paces authoritative position-snapshot broadcasts (seconds accumulator).
     private _netSnapshotTimer = 0;
+    private _lastNetSharkSpendSequence = 0;
+    private _lastNetSharkEliminationSequence = 0;
     // Accumulates real dt to step the AI on a fixed 33ms clock in a net race (so the
     // shared-seed AI advance identically on every client instead of drifting on dt).
     private _aiStepAccum = 0;
@@ -258,6 +269,13 @@ export class GameManager extends Component {
     private _aiDebugCameraButtonLabel: Label = null;
     private _fieldOverviewButtonLabel: Label | null = null;
     private _gameFlow: GameFlowController = null;
+    private _shark: SharkController | null = null;
+    private _sharkNode: Node | null = null;
+    private _sharkWake: Node | null = null;
+    private readonly _sharkEyeMaterials: Material[] = [];
+    private _sharkSplash: Node | null = null;
+    private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
+    private readonly _sharkEventBanner = new SharkEventBanner();
     private _modelDebugFlow: ModelDebugFlowController = null;
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
@@ -473,6 +491,8 @@ export class GameManager extends Component {
         }
         this.updateSpectatorCameraTarget();
         this._gameFlow?.updateRaceCamera(dt);
+        this.updateShark(dt);
+        this._sharkEventBanner.update();
         this._uiFlow?.updateFlipTurnTiming(this._playerSwimmer?.flipTurnTiming ?? null);
         this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
@@ -484,6 +504,11 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             standingPresentation ? 72 : 30,
+        );
+        this._sharkLockOnOverlay.update(
+            this._shark,
+            this._cameraNode?.getComponent(Camera) ?? null,
+            this._uiCamera,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
@@ -739,6 +764,7 @@ export class GameManager extends Component {
                     this._netRaceController?.setPlayerQuitListener((pos) => this.onNetPlayerQuit(pos));
                     this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
+                    this.createShark();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
                     done();
@@ -773,6 +799,7 @@ export class GameManager extends Component {
             updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
                 this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
             },
+            trySummonShark: (swimmer) => this.trySummonShark(swimmer),
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
@@ -888,6 +915,222 @@ export class GameManager extends Component {
             },
             debug: (message) => this.debug(message),
         });
+    }
+
+    // The project currently has no shark GLB under resources yet. Keep this tiny
+    // low-poly fallback isolated here so gameplay remains testable; replace this
+    // node with RESOURCE_PATHS.sharkPrefab once art exports the final asset.
+    private createShark(): void {
+        if (!this._worldRoot || this._shark) return;
+        const root = new Node('RaceSharkPlaceholder');
+        // The pool surface is rendered before the dedicated swimmer-overlay
+        // camera. A shark in DEFAULT is therefore hidden beneath the refracting
+        // water even though its node is active; render its whole visual subtree
+        // beside swimmers so it remains visible on the surface.
+        root.layer = SWIMMER_LAYER;
+        root.parent = this._worldRoot;
+        // Stable low-poly fallback until the art-authored resources/models/Shark
+        // asset lands. All meshes/materials are made once; the hot path only moves
+        // this root and flips cached state nodes.
+        const body = new Node('Body');
+        body.parent = root;
+        const renderer = body.addComponent(MeshRenderer);
+        renderer.mesh = utils.createMesh(primitives.box());
+        const material = new Material();
+        material.initialize({ effectName: 'builtin-unlit' });
+        material.setProperty('mainColor', new Color(68, 88, 104, 255));
+        renderer.setMaterial(material, 0);
+        body.setScale(1.55, 0.46, 0.54);
+        const fin = new Node('DorsalFin');
+        fin.parent = root;
+        const finRenderer = fin.addComponent(MeshRenderer);
+        finRenderer.mesh = utils.createMesh(primitives.box());
+        finRenderer.setMaterial(material, 0);
+        fin.setScale(0.2, 0.55, 0.08);
+        fin.setPosition(0, 0.38, 0);
+        const tail = new Node('Tail');
+        tail.parent = root;
+        const tailRenderer = tail.addComponent(MeshRenderer);
+        tailRenderer.mesh = utils.createMesh(primitives.box());
+        tailRenderer.setMaterial(material, 0);
+        tail.setScale(0.12, 0.48, 0.45);
+        tail.setPosition(-0.92, 0.04, 0);
+        for (const z of [-0.3, 0.3]) {
+            const eye = new Node('Eye');
+            eye.parent = root;
+            const eyeRenderer = eye.addComponent(MeshRenderer);
+            eyeRenderer.mesh = utils.createMesh(primitives.sphere(0.13));
+            const eyeMaterial = new Material();
+            eyeMaterial.initialize({ effectName: 'builtin-unlit' });
+            eyeMaterial.setProperty('mainColor', new Color(235, 242, 248, 255));
+            eyeRenderer.setMaterial(eyeMaterial, 0);
+            eye.setPosition(0.72, 0.1, z);
+            this._sharkEyeMaterials.push(eyeMaterial);
+        }
+        const wake = new Node('Wake');
+        wake.parent = root;
+        const wakeRenderer = wake.addComponent(MeshRenderer);
+        wakeRenderer.mesh = utils.createMesh(primitives.plane({ width: 1.2, length: 1.9, widthSegments: 1, lengthSegments: 1 }));
+        const wakeMaterial = new Material();
+        wakeMaterial.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
+        wakeMaterial.setProperty('mainColor', new Color(222, 243, 255, 105));
+        wakeRenderer.setMaterial(wakeMaterial, 0);
+        wake.setPosition(-1.18, -0.22, 0);
+        wake.setRotationFromEuler(-90, 0, 0);
+        wake.active = false;
+        this._sharkWake = wake;
+        setLayerRecursive(root, SWIMMER_LAYER);
+        this.createSharkSplash();
+        this._sharkNode = root;
+        this._shark = new SharkController({
+            node: root,
+            course: COURSE_LAYOUT,
+            swimmers: () => this.activeSharkSwimmers(),
+            laneFor: (swimmer) => this.assignedLaneOfSwimmer(swimmer),
+            swimmerForLane: (lane) => this.swimmerForLane(lane),
+            onEliminate: (swimmer) => this.handleSharkElimination(swimmer),
+            onSummoned: (x, z) => this.playSharkDropIn(x, z),
+            onStateChange: (state) => this.handleSharkStateChange(state),
+            onHuntEngaged: () => this.handleSharkHuntEngaged(),
+        });
+    }
+
+    private createSharkSplash(): void {
+        if (!this._worldRoot || this._sharkSplash) return;
+        const splash = new Node('SharkLandingSplash');
+        splash.layer = SWIMMER_LAYER;
+        splash.parent = this._worldRoot;
+        const renderer = splash.addComponent(MeshRenderer);
+        renderer.mesh = utils.createMesh(primitives.plane({ width: 1, length: 1, widthSegments: 1, lengthSegments: 1 }));
+        const material = new Material();
+        material.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
+        material.setProperty('mainColor', new Color(230, 246, 255, 195));
+        renderer.setMaterial(material, 0);
+        splash.setRotationFromEuler(-90, 0, 0);
+        splash.active = false;
+        this._sharkSplash = splash;
+    }
+
+    private playSharkDropIn(x: number, z: number): void {
+        const shark = this._sharkNode;
+        if (!shark) return;
+        const waterY = COURSE_LAYOUT.waterY + SHARK_TUNING.waterYOffset;
+        Tween.stopAllByTarget(shark);
+        shark.setPosition(x, waterY + 5.5, z);
+        if (!shark.active) shark.active = true;
+        if (this._sharkWake?.active) this._sharkWake.active = false;
+        tween(shark)
+            .to(0.52, { position: new Vec3(x, waterY, z) }, { easing: 'quadIn' })
+            .call(() => {
+                this.playSharkSplash(x, z);
+                if (this._sharkWake && !this._sharkWake.active) this._sharkWake.active = true;
+            })
+            .start();
+        // The landing warning is gameplay protection, not just presentation: it
+        // stays visible for the complete no-bite window.
+        this._sharkEventBanner.show(pickSharkBannerLine('reveal'), new Color(255, 186, 77, 255), Math.round(SHARK_TUNING.warningSeconds * 1000));
+        if (this.canShowSharkRevealCamera()) {
+            this._raceCameraDirector.requestSharkRevealShot(x, z);
+        }
+    }
+
+    private playSharkSplash(x: number, z: number): void {
+        const splash = this._sharkSplash;
+        if (!splash) return;
+        Tween.stopAllByTarget(splash);
+        splash.setPosition(x, COURSE_LAYOUT.waterY + 0.01, z);
+        splash.setScale(0.55, 0.55, 0.55);
+        if (!splash.active) splash.active = true;
+        tween(splash)
+            .to(0.38, { scale: new Vec3(4.4, 4.4, 4.4) }, { easing: 'quadOut' })
+            .to(0.18, { scale: new Vec3(5.2, 5.2, 5.2) })
+            .call(() => { if (splash.active) splash.active = false; })
+            .start();
+    }
+
+    private handleSharkStateChange(state: SharkState): void {
+        const angry = state === SharkState.WARNING || state === SharkState.HUNT;
+        const color = angry ? new Color(255, 62, 54, 255) : new Color(235, 242, 248, 255);
+        for (const material of this._sharkEyeMaterials) material.setProperty('mainColor', color);
+        if (state === SharkState.HUNT) {
+            this._sharkEventBanner.show('锁定完成：鲨鱼蓄力中，立刻变向拉开距离！', new Color(255, 86, 70, 255), Math.round(SHARK_TUNING.huntOpeningGraceSeconds * 1000));
+        } else if (state === SharkState.INACTIVE) {
+            if (this._sharkWake?.active) this._sharkWake.active = false;
+            this._sharkLockOnOverlay.hide();
+            // When a swimmer was caught, the elimination callback owns the
+            // first line and this retreat notice follows it in the banner queue.
+            // A timeout has no victim, so it shows only the retreat line.
+            if (this._state === GameState.RACING && this._shark?.eliminatedLane < 0) {
+                this._sharkEventBanner.show(pickSharkBannerLine('retreat'), new Color(120, 220, 150, 255), 1800);
+            } else if (this._shark?.eliminatedLane >= 0) {
+                this.enqueueSharkRetreatBanner();
+            }
+        }
+    }
+
+    private handleSharkHuntEngaged(): void {
+        this._sharkEventBanner.show(pickSharkBannerLine('attack'), new Color(255, 86, 70, 255), 1500);
+    }
+
+    private handleSharkElimination(swimmer: Swimmer): void {
+        if (!swimmer) return;
+        this._sharkEventBanner.show(`${swimmer.swimmerName} 被鲨鱼拖走了`, new Color(255, 86, 70, 255), 1800);
+        this._raceManager?.eliminateSwimmer(swimmer, false, true);
+        // Hosts receive this callback before SharkController switches to INACTIVE;
+        // guests receive it from the inactive authoritative snapshot afterwards.
+        if (this._shark?.state === SharkState.INACTIVE) this.enqueueSharkRetreatBanner();
+    }
+
+    private enqueueSharkRetreatBanner(): void {
+        if (this._state !== GameState.RACING) return;
+        this._sharkEventBanner.enqueue(pickSharkBannerLine('retreat'), new Color(120, 220, 150, 255), 1800);
+    }
+
+    private canShowSharkRevealCamera(): boolean {
+        const player = this._playerSwimmer;
+        if (this._state !== GameState.RACING
+            || this._raceCameraDirector.modeManuallySelected
+            || (this._raceCameraDirector.mode !== RaceCameraMode.Broadcast && this._raceCameraDirector.mode !== RaceCameraMode.Sprint)
+            || !player?.node.active
+            || player.isUnderwater
+            || player.isFlipTurnCameraActive
+            || player.isDolphinCameraActive) {
+            return false;
+        }
+        const nextWall = COURSE_LAYOUT.currentCourseEndDistance(player.distance, getRaceDistance());
+        return Math.abs(nextWall - player.distance) > 6;
+    }
+
+    private activeSharkSwimmers(): readonly Swimmer[] {
+        this._collisionSwimmers.length = 0;
+        if (this._playerSwimmer?.node.active) this._collisionSwimmers.push(this._playerSwimmer);
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer?.node.active) this._collisionSwimmers.push(swimmer);
+        }
+        return this._collisionSwimmers;
+    }
+
+    private trySummonShark(swimmer: Swimmer): 'accepted' | 'requested' | 'blocked' {
+        if (!this._shark || this._state !== GameState.RACING || this._shark.active) {
+            return 'blocked';
+        }
+        // A guest submits the existing reliable UltimateActivate frame event; the
+        // host accepts it when replayed and publishes the shark state in snapshots.
+        if (this._netSession && this._netRaceController && !this._netRaceController.isHost) {
+            return 'requested';
+        }
+        return this._shark.trySummon(swimmer) ? 'accepted' : 'blocked';
+    }
+
+    private updateShark(dt: number): void {
+        const shark = this._shark;
+        if (!shark) return;
+        if (this._state !== GameState.RACING) {
+            if (shark.active) shark.reset();
+            return;
+        }
+        // Net clients only render state received from the current host.
+        if (!this._netSession || this._netRaceController?.isHost) shark.tick(dt);
     }
 
     private createModelDebugFlow(): ModelDebugFlowController {
@@ -1293,6 +1536,7 @@ export class GameManager extends Component {
             const driver = swimmer.node.addComponent(RemoteSwimmerController);
             driver.swimmer = swimmer;
             driver.pos = remote.pos;
+            driver.onSharkSummonRequest = (requester) => this.handleRemoteSharkSummon(requester);
             driver.resetRemote();
             const identity = this._netSession.members.find((m) => m.pos === remote.pos);
             if (identity?.nickName) {
@@ -1319,6 +1563,15 @@ export class GameManager extends Component {
         this.refreshSwimmerNameRoster();
         this._netRaceController?.setLocalPlayerLane(this._playerLaneIndex);
         this.debug(`net remote swimmers wired count=${this._remoteControllers.length}`);
+    }
+
+    private handleRemoteSharkSummon(swimmer: Swimmer): void {
+        if (!this._netRaceController?.isHost || !swimmer?.canActivateUltimate) {
+            return;
+        }
+        if (this.trySummonShark(swimmer) === 'accepted') {
+            swimmer.spendUltimateForExternalSkill();
+        }
     }
 
     // Begin the pre-dive countdown. Single-player starts it immediately; a networked
@@ -1531,6 +1784,9 @@ export class GameManager extends Component {
         // If the current host goes silent (dropped), the lowest surviving seat promotes
         // itself to host here so the race keeps a single authority for the AI lanes.
         this._netRaceController.checkHostMigration(true);
+        if (!this._netRaceController.isHost) {
+            this.applyNetSharkState(this._netRaceController.sharkSnapshot);
+        }
         const laneCount = LANE_LAYOUT.laneCount;
         const raceDistance = getRaceDistance();
 
@@ -1562,7 +1818,7 @@ export class GameManager extends Component {
                         skillPulsesTriggered: swimmer.skill.pulsesTriggered,
                     });
                 }
-                this._netRaceController.sendSnapshot(entries);
+                this._netRaceController.sendSnapshot(entries, this._shark?.snapshot());
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
             // frame channel): a non-host human's self-position can no longer ride
@@ -1875,6 +2131,8 @@ export class GameManager extends Component {
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
             this._swimmerNameOverlay.bind(this._raceHud);
+            this._sharkLockOnOverlay.bind(this._raceHud);
+            this._sharkEventBanner.bind(this._raceHud);
             this.refreshSwimmerNameRoster();
             this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height, () => this.returnToLogin());
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
@@ -2080,7 +2338,7 @@ export class GameManager extends Component {
             this._uiFlow?.updateUltimateSkillButton(
                 ultimate.energy,
                 this._playerSwimmer?.skill.remainingSeconds ?? 0,
-                this._playerSwimmer?.canActivateUltimate ?? false,
+                this.canPlayerActivateUltimate(),
                 this._state === GameState.RACING,
                 this._playerSwimmer?.skill.durationSeconds ?? 0,
                 this._playerSwimmer?.skill.charges ?? 0,
@@ -2093,6 +2351,30 @@ export class GameManager extends Component {
         }
         this._raceContext.setPhase(this._playerCondition.phase);
         this.updateAiConditions(dt);
+    }
+
+    private applyNetSharkState(state: import('../net/NetRaceSnapshot').NetSharkSnapshot | null): void {
+        if (!state || !this._shark) return;
+        this._shark.applyAuthoritativeState(state);
+        // The owner keeps predicting its own energy, so it must commit the spend
+        // when the host publishes the accepted sequence (not when it sends a request).
+        if (state.sequence > this._lastNetSharkSpendSequence
+            && state.state !== SharkState.INACTIVE
+            && state.ownerLane === this._playerLaneIndex) {
+            this._playerSwimmer?.spendUltimateForExternalSkill();
+            this._lastNetSharkSpendSequence = state.sequence;
+        }
+        if (state.eliminatedLane >= 0 && state.sequence > this._lastNetSharkEliminationSequence) {
+            const swimmer = this.swimmerForLane(state.eliminatedLane);
+            if (swimmer) this.handleSharkElimination(swimmer);
+            this._lastNetSharkEliminationSequence = state.sequence;
+        }
+    }
+
+    private canPlayerActivateUltimate(): boolean {
+        const swimmer = this._playerSwimmer;
+        if (!swimmer?.canActivateUltimate) return false;
+        return swimmer.skill.definition.kind !== 'shark' || !this._shark?.active;
     }
 
     private updateAiConditions(dt: number) {

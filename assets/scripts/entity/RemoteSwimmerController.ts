@@ -25,6 +25,9 @@ function strokeType(side: NetInputSide | undefined): StrokeType {
 @ccclass('RemoteSwimmerController')
 export class RemoteSwimmerController extends Component {
     @property(Swimmer) public swimmer: Swimmer = null;
+    // Assigned only on the current host. Shark calls are globally arbitrated,
+    // instead of being replayed as a normal per-swimmer skill activation.
+    public onSharkSummonRequest: ((swimmer: Swimmer) => void) | null = null;
     // The room seat (posNum) whose input this controller replays.
     public pos = -1;
     // Guard so a single dive event can't be applied twice.
@@ -67,7 +70,11 @@ export class RemoteSwimmerController extends Component {
             case NetInputKind.UltimateActivate:
                 // Same accepted-action rule as DolphinJump: owner's self snapshot
                 // supplies authoritative energy and remaining duration afterwards.
-                swimmer.applyAcceptedNetUltimate();
+                if (swimmer.skill.definition.kind === 'shark') {
+                    this.onSharkSummonRequest?.(swimmer);
+                } else {
+                    swimmer.applyAcceptedNetUltimate();
+                }
                 break;
             case NetInputKind.FlipTurnTiming:
                 // The owner scores against its local ring, then sends the resulting

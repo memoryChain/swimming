@@ -51,19 +51,38 @@ export interface NetSnapshotEntry {
     skillPulsesTriggered: number;
 }
 
+// Race-global state appended to the host snapshot after the lane entries. It is
+// deliberately host-authoritative: predator target selection and elimination are
+// outcome-affecting and cannot rely on floating-point local simulation.
+export interface NetSharkSnapshot {
+    sequence: number;
+    state: number;
+    remainingSeconds: number;
+    huntOpeningGraceSeconds: number;
+    x: number;
+    z: number;
+    ownerLane: number;
+    targetLane: number;
+    eliminatedLane: number;
+}
+
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
 export interface DecodedRaceSnapshot {
     hostPos: number;
     entries: NetSnapshotEntry[];
+    shark?: NetSharkSnapshot;
 }
 
 const TAG = 'S|';
 
-export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
+export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[], shark?: NetSharkSnapshot | null): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeSkillRemainingMs(e.skillRemainingSeconds)},${encodeSkillStateInt(e.skillCharges)},${encodeSkillStateInt(e.skillPulsesTriggered)}`)
         .join(';');
-    return `${TAG}${hostPos}#${body}`;
+    const sharkBody = shark
+        ? `~${Math.max(0, Math.round(shark.sequence))},${Math.max(0, Math.round(shark.state))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.ownerLane)},${Math.round(shark.targetLane)},${Math.round(shark.eliminatedLane)}`
+        : '';
+    return `${TAG}${hostPos}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -78,7 +97,9 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
         return null;
     }
     const hostPos = parseInt(rest.slice(0, hash), 10);
-    const body = rest.slice(hash + 1);
+    const stateBody = rest.slice(hash + 1);
+    const sharkSeparator = stateBody.indexOf('~');
+    const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
     const entries: NetSnapshotEntry[] = [];
     if (body.length > 0) {
         for (const token of body.split(';')) {
@@ -123,7 +144,23 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             });
         }
     }
-    return { hostPos: Number.isFinite(hostPos) ? hostPos : 0, entries };
+    let shark: NetSharkSnapshot | undefined;
+    if (sharkSeparator >= 0) {
+        const p = stateBody.slice(sharkSeparator + 1).split(',');
+        if (p.length >= 8) {
+            const hasOpeningGrace = p.length >= 9;
+            const values = p.slice(0, hasOpeningGrace ? 9 : 8).map((v) => parseInt(v, 10));
+            if (values.every(Number.isFinite)) {
+                shark = {
+                    sequence: values[0], state: values[1], remainingSeconds: Math.max(0, values[2] / 1000),
+                    huntOpeningGraceSeconds: hasOpeningGrace ? Math.max(0, values[3] / 1000) : 0,
+                    x: values[hasOpeningGrace ? 4 : 3] / 100, z: values[hasOpeningGrace ? 5 : 4] / 100,
+                    ownerLane: values[hasOpeningGrace ? 6 : 5], targetLane: values[hasOpeningGrace ? 7 : 6], eliminatedLane: values[hasOpeningGrace ? 8 : 7],
+                };
+            }
+        }
+    }
+    return { hostPos: Number.isFinite(hostPos) ? hostPos : 0, entries, shark };
 }
 
 // Self-position report (tag "P|"): a single lane's own-authoritative position, sent by

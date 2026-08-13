@@ -87,6 +87,17 @@ export class Swimmer extends Component {
             && !this._phases.isUnderwater;
     }
 
+    // The global shark deliberately considers its summoner as a valid target.
+    // RaceManager removes eliminated swimmers by hiding their nodes, so no extra
+    // collection or per-frame allocation is needed here.
+    get isSharkTargetable(): boolean {
+        return this._motor.isRacing
+            && this.node.active
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater;
+    }
+
     // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
     // Bodies are impassable, so both axes move: Z via the motor lateral offset
     // (clamped to the pool walls) and X via race distance (X is derived from
@@ -1143,6 +1154,16 @@ export class Swimmer extends Component {
         if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
             this.cartoonRig?.triggerSplashBurst(1.05);
         }
+        return true;
+    }
+
+    // A race-level skill spends through the same energy model only after the
+    // global controller accepts it. Rejected casts therefore keep a full gauge.
+    spendUltimateForExternalSkill(): boolean {
+        if (!this.canActivateUltimate) {
+            return false;
+        }
+        this._ultimate.spendUltimate();
         return true;
     }
 

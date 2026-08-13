@@ -22,6 +22,7 @@ export type RaceFinishResult = {
     isPlayer: boolean;
     lane: number;
     eliminated?: boolean;
+    sharkEliminated?: boolean;
     // true when the swimmer LEFT a networked race mid-way (shown as 退出 in the live
     // rank, distinct from a lockdown 已淘汰). Always a subset of `eliminated`.
     quit?: boolean;
@@ -63,6 +64,7 @@ export class RaceManager extends Component {
     // Swimmers that LEFT the race (net quit), a subset of _eliminated. Kept separate so
     // the live rank can label them 退出 rather than the lockdown 已淘汰.
     private readonly _quit = new Set<Swimmer>();
+    private readonly _sharkEliminated = new Set<Swimmer>();
     private readonly _liveRowsBySwimmer = new Map<Swimmer, RaceFinishResult>();
     private readonly _liveLeaderboard: RaceFinishResult[] = [];
     private readonly _liveFinished: RaceFinishResult[] = [];
@@ -81,6 +83,7 @@ export class RaceManager extends Component {
         this.captureRaceRoster();
         this._eliminated.clear();
         this._quit.clear();
+        this._sharkEliminated.clear();
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -120,6 +123,7 @@ export class RaceManager extends Component {
         this._raceRoster.length = 0;
         this._eliminated.clear();
         this._quit.clear();
+        this._sharkEliminated.clear();
         this._lastCountdownValue = -1;
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -241,13 +245,16 @@ export class RaceManager extends Component {
         }
     }
 
-    public eliminateSwimmer(swimmer: Swimmer, quit = false) {
+    public eliminateSwimmer(swimmer: Swimmer, quit = false, shark = false) {
         if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
             return;
         }
         this._eliminated.add(swimmer);
         if (quit) {
             this._quit.add(swimmer);
+        }
+        if (shark) {
+            this._sharkEliminated.add(swimmer);
         }
         swimmer.eliminate();
         this.onSwimmerEliminated?.(swimmer);
@@ -303,6 +310,7 @@ export class RaceManager extends Component {
             result.isPlayer = swimmer === this.playerSwimmer;
             result.lane = laneForSwimmer(swimmer);
             result.eliminated = isEliminated;
+            result.sharkEliminated = this._sharkEliminated.has(swimmer);
             result.quit = this._quit.has(swimmer);
             result.finished = time > 0;
             if (isEliminated) {
@@ -333,6 +341,7 @@ export class RaceManager extends Component {
                 isPlayer: swimmer === this.playerSwimmer,
                 lane: laneForSwimmer(swimmer),
                 eliminated: false,
+                sharkEliminated: false,
                 finished: false,
             };
             this._liveRowsBySwimmer.set(swimmer, row);
@@ -442,10 +451,12 @@ export class RaceManager extends Component {
             const time = this._finishTimes.get(swimmer) ?? (swimmer === this.playerSwimmer ? this._playerFinishTime : this._aiFinishTimes.get(swimmer)) ?? 0;
             const isPlayer = swimmer === this.playerSwimmer;
             const lane = laneForSwimmer(swimmer);
+            const eliminated = this._eliminated.has(swimmer);
+            const sharkEliminated = this._sharkEliminated.has(swimmer);
             if (time > 0) {
-                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, finished: true });
+                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, eliminated, sharkEliminated, finished: true });
             } else {
-                unfinished.push({ swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, finished: false });
+                unfinished.push({ swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, eliminated, sharkEliminated, finished: false });
             }
         }
         finishers.sort((a, b) => a.time - b.time);

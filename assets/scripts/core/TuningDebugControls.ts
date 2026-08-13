@@ -14,6 +14,7 @@ import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUN
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
+import { SHARK_TUNING } from '../entity/SharkTuning';
 
 export type TuningControl = {
     id: string;
@@ -111,6 +112,17 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
     {
+        name: 'Shark Summon',
+        controls: [
+            control('skill.shark.warningSeconds', '预警时长', '召唤后进入追击前的反应时间。', () => SHARK_TUNING.warningSeconds, (v) => SHARK_TUNING.warningSeconds = v, 0.1, 0.5, 6, 2, 's'),
+            control('skill.shark.huntOpeningGraceSeconds', '锁定后蓄力', '锁定完成后，鲨鱼开始游动及咬人前的额外逃生时间。', () => SHARK_TUNING.huntOpeningGraceSeconds, (v) => SHARK_TUNING.huntOpeningGraceSeconds = v, 0.1, 0, 3, 2, 's'),
+            control('skill.shark.huntSeconds', '追击时长', '未命中时自动离场的最长追击时间。', () => SHARK_TUNING.huntSeconds, (v) => SHARK_TUNING.huntSeconds = v, 0.1, 1, 15, 2, 's'),
+            control('skill.shark.huntSpeed', '追击速度', '鲨鱼水面追击速度。', () => SHARK_TUNING.huntSpeed, (v) => SHARK_TUNING.huntSpeed = v, 0.05, 1, 8, 2, 'm/s'),
+            control('skill.shark.spawnClearance', '落点安全距离', '鲨鱼入水时与最近选手的最低优先距离。', () => SHARK_TUNING.spawnClearance, (v) => SHARK_TUNING.spawnClearance = v, 0.25, 2, 12, 2, 'm'),
+            control('skill.shark.retargetSeconds', '改锁间隔', '按最近选手重新选择目标的间隔。', () => SHARK_TUNING.retargetSeconds, (v) => SHARK_TUNING.retargetSeconds = v, 0.05, 0.1, 2, 2, 's'),
+        ],
+    },
+    {
         name: 'Flip Turn',
         controls: [
             control('motion.flipTurnToKeyframe1Seconds', 'To Keyframe 1', 'Seconds from the swim pose to flip-turn keyframe 1.', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds = v, 0.05, 0.05, 2, 2, 's'),
@@ -126,8 +138,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('motion.flipTurnUnderwaterRiseTiltDegrees', 'Rise Tilt', 'Maximum head-up body tilt during the post-turn ascent.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
             control('motion.flipTurnWallContactPadding', 'Wall Contact', 'Clearance from sampled foot/toe bone centers to the visible sole surface. Higher values keep both feet farther inside the pool.', () => CHARACTER_POSE_TUNING.flipTurnWallContactPadding, (v) => CHARACTER_POSE_TUNING.flipTurnWallContactPadding = v, 0.01, 0, 1, 2, 'm'),
             control('speed.flipTurnPushLaunchSpeed', 'Push Launch Speed', 'Legacy alias for the normal QTE wall-push launch speed; kept so existing saved tuning preserves its feel.', () => SWIMMER_BALANCE.flipTurnPushLaunchSpeed, (v) => { SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v; FLIP_TURN_TIMING_BALANCE.minLaunchSpeed = v; }, 0.1, 0, 10, 1, 'm/s'),
-            control('turnQte.ringStartScale', 'QTE Ring Start Scale', 'Blue timing ring starts at this multiple of the fixed yellow ring and shrinks to it at wall contact.', () => FLIP_TURN_TIMING_BALANCE.ringStartScale, (v) => FLIP_TURN_TIMING_BALANCE.ringStartScale = v, 0.05, 1.05, 3, 2),
-            control('turnQte.previewSeconds', 'QTE Preview Time', 'Seconds the blue ring is visible before the authored flip animation begins; it still reaches yellow exactly at foot contact.', () => FLIP_TURN_TIMING_BALANCE.previewSeconds, (v) => FLIP_TURN_TIMING_BALANCE.previewSeconds = v, 0.05, 0, 1.5, 2, 's'),
+            control('turnQte.ringStartScale', 'QTE Ring Display Start', 'Blue ring first appears at this multiple of the fixed yellow ring. This leading section is visual-only, so an ongoing stroke cannot be judged instantly.', () => FLIP_TURN_TIMING_BALANCE.ringStartScale, (v) => FLIP_TURN_TIMING_BALANCE.ringStartScale = v, 0.05, 1.05, 3, 2),
+            control('turnQte.inputStartScale', 'QTE Input Start Scale', 'Blue ring scale at which the wall-push input window opens. The ring is visible before this, but taps remain normal swim input.', () => FLIP_TURN_TIMING_BALANCE.inputStartScale, (v) => FLIP_TURN_TIMING_BALANCE.inputStartScale = v, 0.05, 1.01, 2.8, 2),
+            control('turnQte.previewSeconds', 'QTE Preview Time', 'Seconds the text-only “prepare to push” warning is shown before the authored flip animation begins. The blue ring still starts only after the camera enters its underwater turn view.', () => FLIP_TURN_TIMING_BALANCE.previewSeconds, (v) => FLIP_TURN_TIMING_BALANCE.previewSeconds = v, 0.05, 0, 2.5, 2, 's'),
             control('turnQte.lateShrinkSeconds', 'QTE Late Shrink', 'After blue meets yellow, seconds used to keep shrinking it to the missed-timing end scale before hiding.', () => FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds, (v) => FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds = v, 0.01, 0.02, 0.5, 2, 's'),
             control('turnQte.lateRingEndScale', 'QTE Late End Scale', 'Blue ring scale after the post-contact missed-timing shrink completes.', () => FLIP_TURN_TIMING_BALANCE.lateRingEndScale, (v) => FLIP_TURN_TIMING_BALANCE.lateRingEndScale = v, 0.02, 0.4, 0.99, 2),
             control('turnQte.perfectRadiusError', 'QTE Perfect Radius Error', 'Maximum blue/yellow ring scale difference that awards a perfect wall push.', () => FLIP_TURN_TIMING_BALANCE.perfectRadiusError, (v) => FLIP_TURN_TIMING_BALANCE.perfectRadiusError = v, 0.01, 0.01, 0.3, 2),
@@ -570,7 +583,12 @@ function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string,
 
 function validateTuningRelations() {
     FLIP_TURN_TIMING_BALANCE.ringStartScale = clamp(FLIP_TURN_TIMING_BALANCE.ringStartScale, 1.01, 3);
-    FLIP_TURN_TIMING_BALANCE.previewSeconds = clamp(FLIP_TURN_TIMING_BALANCE.previewSeconds, 0, 1.5);
+    FLIP_TURN_TIMING_BALANCE.inputStartScale = clamp(
+        FLIP_TURN_TIMING_BALANCE.inputStartScale,
+        1.001,
+        FLIP_TURN_TIMING_BALANCE.ringStartScale,
+    );
+    FLIP_TURN_TIMING_BALANCE.previewSeconds = clamp(FLIP_TURN_TIMING_BALANCE.previewSeconds, 0, 2.5);
     FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds = clamp(FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds, 0.02, 0.5);
     FLIP_TURN_TIMING_BALANCE.lateRingEndScale = clamp(FLIP_TURN_TIMING_BALANCE.lateRingEndScale, 0.4, 0.99);
     const maxRingError = FLIP_TURN_TIMING_BALANCE.ringStartScale - 1;

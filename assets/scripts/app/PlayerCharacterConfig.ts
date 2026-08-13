@@ -51,7 +51,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 75,
         kick: 50,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
-        skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
+        skillName: '召唤鲨鱼', skillDescription: '召唤一条会追逐最近选手的鲨鱼；自己也可能成为目标。',
     },
     {
         id: 'women2', name: '灵波飞鱼', modelVariantId: 'women2', unlocked: true,

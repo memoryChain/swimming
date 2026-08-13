@@ -209,6 +209,7 @@ export class RaceCameraDirector {
     private readonly _cameraTarget = new Vec3(8, 0.25, 0);
     private _cameraNode: Node = null;
     private _mode = RaceCameraMode.Broadcast;
+    private _modeManuallySelected = false;
     private _sprintFovCurrent = RACE_CAMERA_TUNING.sprintFov;
     private _broadcastShotTimer = 0;
     private _broadcastShotIndex = 0;
@@ -223,6 +224,11 @@ export class RaceCameraDirector {
     private _broadcastRaceElapsed = 0;
     private _diveShotElapsed = -1;
     private _diveSurfaceRestoreSeconds = 0;
+    // A short, optional top shot for a shark landing. It never changes the
+    // player's selected mode and naturally expires while a higher-priority
+    // dolphin/flip camera owns the frame.
+    private _sharkRevealSeconds = 0;
+    private readonly _sharkRevealTarget = new Vec3();
     private _topViewActive = false;
     // Debug: overhead whole-field view toggle (overrides the normal race camera).
     private _fieldOverviewActive = false;
@@ -283,11 +289,12 @@ export class RaceCameraDirector {
     cycleMode(): string {
         const currentIndex = RACE_CAMERA_MODE_OPTIONS.findIndex((option) => option.mode === this._mode);
         const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % RACE_CAMERA_MODE_OPTIONS.length;
-        return this.selectMode(RACE_CAMERA_MODE_OPTIONS[nextIndex].mode);
+        return this.selectMode(RACE_CAMERA_MODE_OPTIONS[nextIndex].mode, false, true);
     }
 
-    selectMode(mode: RaceCameraMode, preserveUnderwaterExit = false): string {
+    selectMode(mode: RaceCameraMode, preserveUnderwaterExit = false, manuallySelected = false): string {
         this._mode = mode;
+        this._modeManuallySelected = manuallySelected;
         this._topViewActive = this._mode === RaceCameraMode.Top;
         if (!preserveUnderwaterExit) {
             this._underwaterViewActive = false;
@@ -307,6 +314,7 @@ export class RaceCameraDirector {
         this._spectatorFreeLookActive = false;
         this._spectatorCenter = null;
         this.selectMode(RaceCameraMode.Broadcast);
+        this._modeManuallySelected = false;
         this.resetBroadcastCamera();
     }
 
@@ -512,10 +520,20 @@ export class RaceCameraDirector {
         this._broadcastShotTimer = 0;
     }
 
+    requestSharkRevealShot(x: number, z: number, seconds = 0.55): void {
+        if (this._modeManuallySelected || !Number.isFinite(x) || !Number.isFinite(z)) return;
+        this._sharkRevealTarget.set(x, 0.15, z);
+        this._sharkRevealSeconds = Math.max(0, seconds);
+    }
+
     update(dt: number, snapshot: RaceCameraSnapshot) {
         if (!this._cameraNode) {
             return;
         }
+        // Consume reveal time before the priority returns below. Therefore an
+        // event received during a dolphin jump or wall turn is silently skipped,
+        // never replayed later when it could disrupt a different input moment.
+        this._sharkRevealSeconds = Math.max(0, this._sharkRevealSeconds - Math.max(0, dt));
         // Once the awards ceremony is armed it overrides every in-race view. This
         // matters when the race force-finishes on the straggler countdown while a
         // swimmer is still underwater / mid flip-turn: without this the snapshot's
@@ -570,6 +588,13 @@ export class RaceCameraDirector {
         }
         const leavingFlipTurnView = this._flipTurnViewActive;
         this._flipTurnViewActive = false;
+        if (this._sharkRevealSeconds > 0
+            && !this._modeManuallySelected
+            && (this._mode === RaceCameraMode.Broadcast || this._mode === RaceCameraMode.Sprint)
+            && !snapshot.playerUnderwater) {
+            this.updateSharkRevealCamera();
+            return;
+        }
         if (this._mode === RaceCameraMode.Sprint) {
             if (this.shouldUseFinishTopView(snapshot)) {
                 this.updateFinishTopCamera(snapshot);
@@ -950,6 +975,17 @@ export class RaceCameraDirector {
         this.applyFov();
     }
 
+    private updateSharkRevealCamera(): void {
+        this._topViewActive = true;
+        this._underwaterViewActive = false;
+        this._cameraTarget.set(this._sharkRevealTarget);
+        this._cameraPos.set(this._sharkRevealTarget.x, 16.5, this._sharkRevealTarget.z);
+        this._broadcastCameraFov = 45;
+        this._broadcastDesiredFov = 45;
+        this.applyCameraTransform(new Vec3(0, 0, -1));
+        this.applyFov();
+    }
+
     private shouldUseFinishTopView(snapshot: RaceCameraSnapshot): boolean {
         // Only switch to the finish-line top view once the PLAYER has actually
         // reached the finish wall — not during the final sprint approach. Keep the
@@ -1206,6 +1242,7 @@ export class RaceCameraDirector {
         this._broadcastRaceElapsed = 0;
         this._diveShotElapsed = -1;
         this._diveSurfaceRestoreSeconds = 0;
+        this._sharkRevealSeconds = 0;
         this._topViewActive = false;
         this._underwaterViewActive = false;
         this._flipTurnViewActive = false;
@@ -1252,6 +1289,10 @@ export class RaceCameraDirector {
 
     get mode(): RaceCameraMode {
         return this._mode;
+    }
+
+    get modeManuallySelected(): boolean {
+        return this._modeManuallySelected;
     }
 
     // Which pre-race showcase stage the broadcast camera is currently in. Drives

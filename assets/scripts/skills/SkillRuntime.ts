@@ -3,7 +3,7 @@ import { Rating } from '../core/GameConstants';
 
 // Pure per-swimmer ultimate state. Definitions live with the runtime so tuning,
 // local prediction and network reconciliation use exactly the same rules.
-export type UltimateSkillKind = 'instant' | 'charges' | 'pulses' | 'drag';
+export type UltimateSkillKind = 'shark' | 'instant' | 'charges' | 'pulses' | 'drag';
 
 export type UltimateSkillDefinition = {
     characterId: PlayerCharacterId;
@@ -41,6 +41,13 @@ const SKILL_DEFINITIONS: Record<PlayerCharacterId, UltimateSkillDefinition> = {
 };
 
 const PULSE_RATIOS = [0, 0.325, 0.65];
+
+// This skill is different from the other per-swimmer runtimes: the actual shark
+// is owned by the race-level SharkController. Keep the definition here so the
+// character mapping and all existing skill UI still resolve normally.
+SKILL_DEFINITIONS.muscleMan = {
+    characterId: 'muscleMan', id: 'skill.shark.summon', name: 'Shark Call', kind: 'shark', durationSeconds: 0,
+};
 
 export function getUltimateSkillDefinition(characterId: PlayerCharacterId | null | undefined): UltimateSkillDefinition {
     return SKILL_DEFINITIONS[characterId ?? 'muscleMan'];
@@ -96,6 +103,8 @@ export class SkillRuntime {
     activate(): boolean {
         if (this.active) return false;
         switch (this._definition.kind) {
+            case 'shark':
+                return false;
             case 'instant':
                 this._pendingImpulseCount = 1;
                 return true;
