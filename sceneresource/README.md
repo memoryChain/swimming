@@ -28,6 +28,7 @@
    - `pool_inner_wall_batch`
    - `lane_float_rope_batch`
    - `lane_floor_line_batch`
+   - `PoolsideProps_Merged`
    - `start_block_anchor_root`
    - `start_block_anchor_near_01` 至 `start_block_anchor_near_08`
    - `start_block_top_near_marker`
@@ -61,6 +62,7 @@
 1. 从 editable 文件 Append 本次修改涉及的对象到临时 Collection。
 2. 对同名独立运行时节点，替换 Mesh 数据但保留目标文件中的节点名、父子关系和变换。
 3. 对合并节点，删除目标文件中对应的旧批次，再从新 Append 的源对象重新合并。
+   `PoolsideProps_Merged` 必须使用 Blender 原生 Join 保留各对象 world transform，随后应用合并对象变换；不要用未经逐对象验证的一次性 bmesh 变换脚本烘焙整个批次。
 4. 合并时按运行时边界分组，不能为了少一个 draw call 跨边界 join。
 5. 检查新旧对象的 world transform、包围盒、面数和材质，再删除临时 Collection。
 6. 保存 `SwimmingVenue_Rebuild_FlatColor.blend`。
@@ -73,6 +75,7 @@
 - `BleacherAccess_Architecture_Merged`：入口楼梯及建筑结构。
 - `BleacherAccess_Rails_Merged`：入口扶手。
 - `OlympicPanels_Merged`：奥运装饰板。
+- `PoolsideProps_Merged`：救生站、泳具车、仰泳旗线、泳池梯、裁判席和长凳，共用一个池岸纯色 atlas。
 - 泳池、水面、泳道线、浮标、领奖台和锚点保持各自运行时节点，不跨组 join。
 
 只修改某个合并批次中的一个源对象时，也必须重建整个受影响批次，不能把新对象额外留成一个 renderer。
@@ -93,6 +96,8 @@
 - 12 条色带只包含 `T1-T4 × 顶/正/侧`，色带中心为 `U=(index+0.5)/12`；不保留座椅备用色带、座椅材质或运行时座椅 overlay；
 - 将 `StandStructure_Merged` 和 `BleacherAccess_Architecture_Merged` 中对应墙面同步为 editable 使用的银灰色；
 - 将每个看台从 3 个材质 primitive 收敛为 1 个；
+- 将 `PoolsideProps_Merged` 的六种源材质按固定顶光方向烘焙为亮、中亮、中暗、暗四档，共 24 条色带，收敛为一个内嵌 `96x16` 纯色 atlas 和一个 primitive；白色管架使用偏蓝银灰白，不以纯白自发光输出；仰泳旗两面固定使用高亮档，保证从泳池两端观看都清晰；
+- `PoolsideProps_Merged` 导出前必须删除源模型遗留 UV，只保留 `PoolsidePropsFlatColorAtlasUV` 作为 `TEXCOORD_0`；Cocos Creator 3.8 不能正确绑定第三套 UV，atlas 落到 `TEXCOORD_2` 会导致整批运行时显示黑色。
 - 保存合批目标；
 - 清理生成过程中的临时 PNG。
 
@@ -129,6 +134,8 @@ primitiveDrawsAfter: 37
 
 - 缺少关键运行时节点；
 - 看台未使用 `BleacherFlatColorAtlas_Material`；
+- `PoolsideProps_Merged` 未使用 `PoolsidePropsFlatColorAtlas_Material`；
+- `PoolsideProps_Merged` 未升级到当前四档卡通明暗 atlas 版本；
 - 看台批次数不是 17；
 - 总 primitive 超过 39。
 
@@ -151,7 +158,7 @@ npm run textures:check
 
 至少检查以下内容：
 
-- GLB 当前基线为 54 个节点、31 个 Mesh、37 primitive。
+- GLB 当前基线为 55 个节点、32 个 Mesh、37 primitive。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
@@ -161,6 +168,8 @@ npm run textures:check
 - 东侧、南侧、北侧、西侧看台没有缺面，楼梯、扶手、天花板和墙顶交界正常；墙顶交界描边基线为 N/S/E/W 直墙加 NE/SE/NW/SW 斜角共 8 条物理接触线。西侧必须按角看台与南北长看台的接缝关系定位，不得以泳池中心镜像回填空地。
 - 观众仍落在 16 个分层看台及 NE/SE/NW/SW 角看台上，拍照闪光位置正常。
 - 水面、水下、起跳台、泳道线、颁奖台和场馆描边正常；观众席正面描边基线为 17 个源节点、144 条连续线、288 triangles，NW/SW 必须按各自角区提取，不能被更靠近泳池的 NE/SE 候选淘汰。
+- 两组仰泳旗线、四组泳池梯、两组救生站与泳具车、裁判席和低矮长凳位置正常；领奖台西端的自由环绕镜头区域必须保持无高物体遮挡。
+- `PoolsideProps_Merged` 的 Blender world bounds 基线约为 X `4.965..45.035`、Y `-14.710..15.657`、Z `-0.720..2.685`；导出脚本会用宽松范围拦截换轴、漏应用变换或整体移位的损坏批次。
 - 顶视镜头仍能隐藏名称包含 `ceiling` 的顶部构件。
 - 真机重要改动需同时检查 iOS 和 Android 微信小游戏。
 

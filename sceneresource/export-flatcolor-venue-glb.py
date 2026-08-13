@@ -44,11 +44,27 @@ REQUIRED_NODES = (
     "start_block_anchor_near_01",
     "start_block_anchor_near_08",
     "start_block_top_near_marker",
+    "PoolsideProps_Merged",
 )
 
 BLEACHER_ATLAS_MATERIAL = "BleacherFlatColorAtlas_Material"
+POOLSIDE_PROPS_ATLAS_MATERIAL = "PoolsidePropsFlatColorAtlas_Material"
+POOLSIDE_PROPS_ATLAS_VERSION_PROPERTY = "poolside_props_flat_color_atlas_version"
+EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION = 3
 EXPECTED_BLEACHER_BATCHES = 17
 MAX_EXPORT_PRIMITIVES = 39
+
+# Poolside props are authored around the two long pool edges and the two
+# backstroke lines. A bad one-off merge once baked object-space Y into world Z:
+# the triangle/material counts still passed, but almost every prop vanished from
+# the runtime camera. Keep deliberately loose placement guards so normal art
+# iteration remains possible while an axis swap or missing transform is rejected.
+POOLSIDE_BOUNDS_RANGES = (
+    ((4.5, 5.5), (44.5, 45.5)),       # world X: two backstroke lines
+    ((-16.5, -13.5), (14.5, 16.5)),   # world Y: two long pool edges
+    ((-1.5, 0.0), (2.3, 4.0)),        # world Z: submerged ladder to chair top
+)
+POOLSIDE_TRIANGLE_RANGE = (5000, 8000)
 
 # --- Baked arena dimming (replaces the runtime per-pixel VenueHeightShade) -----
 # The stands / walls / structure darken with world height and horizontal distance
@@ -247,6 +263,31 @@ def exportable_meshes():
     ]
 
 
+def validate_poolside_geometry(obj):
+    world_vertices = [obj.matrix_world @ vertex.co for vertex in obj.data.vertices]
+    if not world_vertices:
+        raise RuntimeError("PoolsideProps_Merged has no vertices")
+    bounds = tuple(
+        (min(vertex[axis] for vertex in world_vertices), max(vertex[axis] for vertex in world_vertices))
+        for axis in range(3)
+    )
+    for axis, ((minimum_low, minimum_high), (maximum_low, maximum_high)) in enumerate(
+        POOLSIDE_BOUNDS_RANGES
+    ):
+        minimum, maximum = bounds[axis]
+        if not minimum_low <= minimum <= minimum_high or not maximum_low <= maximum <= maximum_high:
+            raise RuntimeError(
+                "PoolsideProps_Merged bounds indicate a broken merge/axis transform: "
+                f"axis={axis} bounds={bounds}"
+            )
+    triangles = sum(len(polygon.vertices) - 2 for polygon in obj.data.polygons)
+    if not POOLSIDE_TRIANGLE_RANGE[0] <= triangles <= POOLSIDE_TRIANGLE_RANGE[1]:
+        raise RuntimeError(
+            "PoolsideProps_Merged triangle count is outside the approved static-prop range: "
+            f"{triangles}"
+        )
+
+
 def validate_batching():
     meshes = exportable_meshes()
     bleachers = [
@@ -273,6 +314,29 @@ def validate_batching():
             "Bleachers are not atlas-batched; run batch-flatcolor-venue.py first: "
             f"{unbatched}"
         )
+
+    prop_target = next((obj for obj in meshes if obj.name == "PoolsideProps_Merged"), None)
+    if prop_target is None:
+        raise RuntimeError("Missing renderable PoolsideProps_Merged")
+    prop_used_indices = {polygon.material_index for polygon in prop_target.data.polygons}
+    prop_used_names = {
+        prop_target.material_slots[index].material.name
+        for index in prop_used_indices
+        if index < len(prop_target.material_slots) and prop_target.material_slots[index].material
+    }
+    if prop_used_names != {POOLSIDE_PROPS_ATLAS_MATERIAL}:
+        raise RuntimeError(
+            "PoolsideProps_Merged is not atlas-batched; run batch-flatcolor-venue.py first: "
+            f"{sorted(prop_used_names)}"
+        )
+    prop_atlas_version = prop_target.get(POOLSIDE_PROPS_ATLAS_VERSION_PROPERTY)
+    if prop_atlas_version != EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION:
+        raise RuntimeError(
+            "PoolsideProps_Merged is using an obsolete full-bright atlas; "
+            "run batch-flatcolor-venue.py first: "
+            f"version={prop_atlas_version} expected={EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION}"
+        )
+    validate_poolside_geometry(prop_target)
 
     primitive_count = sum(
         max(1, len({polygon.material_index for polygon in obj.data.polygons}))

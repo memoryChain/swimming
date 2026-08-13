@@ -31,6 +31,15 @@ ATLAS_VERSION = 6
 ATLAS_WIDTH = 192
 ATLAS_HEIGHT = 16
 ATLAS_TEMP_FILENAME = ".BleacherFlatColorAtlas.tmp.png"
+PROP_TARGET_NAME = "PoolsideProps_Merged"
+PROP_ATLAS_IMAGE_NAME = "PoolsidePropsFlatColorAtlas"
+PROP_ATLAS_MATERIAL_NAME = "PoolsidePropsFlatColorAtlas_Material"
+PROP_ATLAS_UV_NAME = "PoolsidePropsFlatColorAtlasUV"
+PROP_ATLAS_VERSION_PROPERTY = "poolside_props_flat_color_atlas_version"
+PROP_ATLAS_VERSION = 3
+PROP_ATLAS_WIDTH = 96
+PROP_ATLAS_HEIGHT = 16
+PROP_ATLAS_TEMP_FILENAME = ".PoolsidePropsFlatColorAtlas.tmp.png"
 EXPECTED_BLEACHER_TARGETS = 17
 POOL_CENTER = Vector((25.0, 0.0, 0.0))
 TIER_BRIGHTNESS = (1.0, 0.46, 0.18, 0.05)
@@ -63,6 +72,27 @@ AUTHORED_MATERIAL_TO_ATLAS = {
     for tier in range(1, 5)
     for orientation in ORIENTATION_COLORS
 }
+PROP_SOURCE_MATERIALS = {
+    "Bleacher_Access_Door_Dark": (0.018, 0.032, 0.052, 1.0),
+    "LPVenue_cartoon_float_blue": (0.0275, 0.3569, 0.8784, 1.0),
+    "LPVenue_cartoon_float_red": (1.0, 0.2431, 0.2196, 1.0),
+    "LPVenue_cartoon_float_yellow": (1.0, 0.8353, 0.1843, 1.0),
+    # Poolside tube frames used the pool-edge near-white at full emissive
+    # intensity, which made them read like glowing wireframes against the dark
+    # deck. Keep a cool venue white here; the four baked tone bands below add
+    # stable cartoon volume without runtime lighting.
+    "LPVenue_cartoon_pool_edge_white": (0.78, 0.82, 0.86, 1.0),
+    "Venue_Wall_SilverGray": WALL_SILVER_COLOR,
+}
+PROP_TONE_MULTIPLIERS = (0.88, 0.66, 0.46, 0.30)
+PROP_TONE_THRESHOLDS = (0.62, 0.18, -0.22)
+PROP_BAKED_LIGHT_DIRECTION = Vector((-0.35, -0.45, 0.82)).normalized()
+PROP_ATLAS_COLORS = {
+    (name, tone): tuple(channel * multiplier for channel in color[:3]) + (1.0,)
+    for name, color in PROP_SOURCE_MATERIALS.items()
+    for tone, multiplier in enumerate(PROP_TONE_MULTIPLIERS)
+}
+PROP_COLOR_INDEX = {key: index for index, key in enumerate(PROP_ATLAS_COLORS)}
 
 
 def parse_args() -> argparse.Namespace:
@@ -136,6 +166,28 @@ def write_atlas_png(path: str) -> None:
         output.write(png)
 
 
+def write_prop_atlas_png(path: str) -> None:
+    colors = [
+        tuple(round(linear_to_srgb(channel) * 255) for channel in color[:3])
+        + (round(color[3] * 255),)
+        for color in PROP_ATLAS_COLORS.values()
+    ]
+    stripe_width = PROP_ATLAS_WIDTH // len(colors)
+    row = bytearray([0])
+    for x in range(PROP_ATLAS_WIDTH):
+        row.extend(colors[min(x // stripe_width, len(colors) - 1)])
+    pixels = bytes(row) * PROP_ATLAS_HEIGHT
+    header = struct.pack(">IIBBBBB", PROP_ATLAS_WIDTH, PROP_ATLAS_HEIGHT, 8, 6, 0, 0, 0)
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + png_chunk(b"IHDR", header)
+        + png_chunk(b"IDAT", zlib.compress(pixels, level=9))
+        + png_chunk(b"IEND", b"")
+    )
+    with open(path, "wb") as output:
+        output.write(png)
+
+
 def validate_targets(targets: list[bpy.types.Object]) -> tuple[list[bpy.types.Object], list[bpy.types.Object]]:
     pending: list[bpy.types.Object] = []
     completed: list[bpy.types.Object] = []
@@ -197,6 +249,132 @@ def create_atlas_material(image: bpy.types.Image) -> bpy.types.Material:
     material.node_tree.links.new(texture.outputs["Color"], emission)
     material.node_tree.links.new(shader.outputs["BSDF"], output.inputs["Surface"])
     return material
+
+
+def create_prop_atlas_image() -> bpy.types.Image:
+    image = bpy.data.images.get(PROP_ATLAS_IMAGE_NAME)
+    if image is not None:
+        bpy.data.images.remove(image, do_unlink=True)
+    if not bpy.data.filepath:
+        raise RuntimeError("cannot pack the poolside prop atlas in an unnamed blend file")
+    temporary_path = os.path.join(os.path.dirname(bpy.data.filepath), PROP_ATLAS_TEMP_FILENAME)
+    write_prop_atlas_png(temporary_path)
+    image = bpy.data.images.load(temporary_path, check_existing=False)
+    image.name = PROP_ATLAS_IMAGE_NAME
+    image.colorspace_settings.name = "sRGB"
+    image.pack()
+    image.filepath = f"//{PROP_ATLAS_TEMP_FILENAME}"
+    return image
+
+
+def create_prop_atlas_material(image: bpy.types.Image) -> bpy.types.Material:
+    material = bpy.data.materials.get(PROP_ATLAS_MATERIAL_NAME)
+    if material is None:
+        material = bpy.data.materials.new(PROP_ATLAS_MATERIAL_NAME)
+    material.use_nodes = True
+    material.diffuse_color = (1.0, 1.0, 1.0, 1.0)
+    nodes = material.node_tree.nodes
+    nodes.clear()
+    output = nodes.new("ShaderNodeOutputMaterial")
+    shader = nodes.new("ShaderNodeBsdfPrincipled")
+    texture = nodes.new("ShaderNodeTexImage")
+    texture.image = image
+    texture.interpolation = "Closest"
+    texture.extension = "CLIP"
+    shader.inputs["Base Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    shader.inputs["Roughness"].default_value = 1.0
+    shader.inputs["Emission Strength"].default_value = 1.0
+    emission = shader.inputs.get("Emission Color") or shader.inputs.get("Emission")
+    if emission is None:
+        raise RuntimeError("Principled BSDF has no emission colour input")
+    material.node_tree.links.new(texture.outputs["Color"], emission)
+    material.node_tree.links.new(shader.outputs["BSDF"], output.inputs["Surface"])
+    return material
+
+
+def prop_source_name(material_name: str) -> str:
+    for source_name in PROP_SOURCE_MATERIALS:
+        if material_name == source_name or re.fullmatch(re.escape(source_name) + r"\.\d{3}", material_name):
+            return source_name
+    raise RuntimeError(f"{PROP_TARGET_NAME}: unsupported material {material_name}")
+
+
+def validate_prop_target(obj: bpy.types.Object) -> bool:
+    names = used_material_names(obj)
+    if names == [PROP_ATLAS_MATERIAL_NAME]:
+        return obj.get(PROP_ATLAS_VERSION_PROPERTY) != PROP_ATLAS_VERSION
+    for name in names:
+        prop_source_name(name)
+    return True
+
+
+def prop_tone_index(world_normal: Vector) -> int:
+    light_amount = world_normal.normalized().dot(PROP_BAKED_LIGHT_DIRECTION)
+    for tone, threshold in enumerate(PROP_TONE_THRESHOLDS):
+        if light_amount >= threshold:
+            return tone
+    return len(PROP_TONE_MULTIPLIERS) - 1
+
+
+def is_backstroke_pennant(obj: bpy.types.Object, polygon: bpy.types.MeshPolygon) -> bool:
+    center = obj.matrix_world @ polygon.center
+    on_flag_line = min(abs(center.x - 5.0), abs(center.x - 45.0)) <= 0.08
+    return on_flag_line and abs(center.y) <= 10.6 and 1.88 <= center.z <= 2.36
+
+
+def collapse_prop_target(obj: bpy.types.Object, material: bpy.types.Material) -> None:
+    uv_layer = obj.data.uv_layers.get(PROP_ATLAS_UV_NAME) or obj.data.uv_layers.new(name=PROP_ATLAS_UV_NAME)
+    # Cocos Creator 3.8 only exposes two UV channels to imported materials. The
+    # editable prop meshes carry assorted legacy UV layers; leaving the atlas as
+    # TEXCOORD_2 makes Creator bind it to the wrong channel and the whole batch
+    # samples black. Runtime props need only the flat-colour atlas, so keep that
+    # layer alone and force it to TEXCOORD_0 in the exported GLB.
+    for existing in list(obj.data.uv_layers):
+        if existing.name != PROP_ATLAS_UV_NAME:
+            obj.data.uv_layers.remove(existing)
+    uv_layer = obj.data.uv_layers[PROP_ATLAS_UV_NAME]
+    obj.data.uv_layers.active_index = next(
+        index for index, layer in enumerate(obj.data.uv_layers) if layer.name == uv_layer.name
+    )
+    uv_layer.active_render = True
+    normal_matrix = obj.matrix_world.to_3x3().inverted().transposed()
+    source_names = tuple(PROP_SOURCE_MATERIALS)
+    previous_version = obj.get(PROP_ATLAS_VERSION_PROPERTY, 0)
+    for polygon in obj.data.polygons:
+        if polygon.material_index >= len(obj.material_slots):
+            raise RuntimeError(f"{obj.name}: invalid material index {polygon.material_index}")
+        source_material = obj.material_slots[polygon.material_index].material
+        if source_material is None:
+            raise RuntimeError(f"{obj.name}: empty material slot {polygon.material_index}")
+        if source_material.name == PROP_ATLAS_MATERIAL_NAME:
+            # Atlas-batched meshes have already lost their six source material
+            # slots, but the previous stripe still identifies the source colour.
+            # Version 1 had six bands; version 2+ has four tone bands per source.
+            previous_u = sum(uv_layer.data[index].uv.x for index in polygon.loop_indices) / len(
+                polygon.loop_indices
+            )
+            clamped_u = max(0.0, min(0.999999, previous_u))
+            if previous_version <= 1:
+                source_index = int(clamped_u * len(source_names))
+            else:
+                previous_band = int(clamped_u * len(PROP_ATLAS_COLORS))
+                source_index = previous_band // len(PROP_TONE_MULTIPLIERS)
+            source_name = source_names[min(len(source_names) - 1, source_index)]
+        else:
+            source_name = prop_source_name(source_material.name)
+        # Pennants must remain equally legible from both pool directions. Their
+        # two broad faces have opposite normals, so directional tone baking made
+        # one camera side land in the darkest band. Lock only the pennant zone to
+        # the bright band; poles, cable and all solid props keep four-tone volume.
+        tone = 0 if is_backstroke_pennant(obj, polygon) else prop_tone_index(normal_matrix @ polygon.normal)
+        u = (PROP_COLOR_INDEX[(source_name, tone)] + 0.5) / len(PROP_ATLAS_COLORS)
+        for loop_index in polygon.loop_indices:
+            uv_layer.data[loop_index].uv = (u, 0.5)
+        polygon.material_index = 0
+    obj.data.materials.clear()
+    obj.data.materials.append(material)
+    obj[PROP_ATLAS_VERSION_PROPERTY] = PROP_ATLAS_VERSION
+    obj.data.update()
 
 
 def atlas_u(color_name: str) -> float:
@@ -586,17 +764,24 @@ def main() -> None:
         raise RuntimeError(
             f"expected {EXPECTED_BLEACHER_TARGETS} bleacher targets, found {len(targets)}"
         )
+    prop_target = bpy.data.objects.get(PROP_TARGET_NAME)
+    if prop_target is None or prop_target.type != "MESH" or prop_target.hide_render:
+        raise RuntimeError(f"missing renderable poolside prop target: {PROP_TARGET_NAME}")
 
     silver_faces = 0 if args.dry_run else sync_master_wall_materials()
     before = estimate_primitive_count()
     pending, completed = validate_targets(targets)
+    prop_pending = validate_prop_target(prop_target)
     predicted = before - sum(len(used_material_names(obj)) - 1 for obj in pending)
+    if prop_pending:
+        predicted -= len(used_material_names(prop_target)) - 1
     report = {
         "blend": bpy.data.filepath,
         "dryRun": args.dry_run,
         "targets": len(targets),
         "pending": len(pending),
         "completed": len(completed),
+        "poolsidePropsPending": prop_pending,
         "primitiveDrawsBefore": before,
         "primitiveDrawsAfter": predicted,
         "silverFaces": silver_faces,
@@ -611,6 +796,10 @@ def main() -> None:
     for obj in pending:
         collapse_object(obj, material, boundaries)
     remove_obsolete_seat_materials()
+    if prop_pending:
+        prop_image = create_prop_atlas_image()
+        prop_material = create_prop_atlas_material(prop_image)
+        collapse_prop_target(prop_target, prop_material)
 
     actual = estimate_primitive_count()
     if actual != predicted:
@@ -621,6 +810,9 @@ def main() -> None:
     temporary_path = os.path.join(os.path.dirname(bpy.data.filepath), ATLAS_TEMP_FILENAME)
     if os.path.exists(temporary_path):
         os.remove(temporary_path)
+    prop_temporary_path = os.path.join(os.path.dirname(bpy.data.filepath), PROP_ATLAS_TEMP_FILENAME)
+    if os.path.exists(prop_temporary_path):
+        os.remove(prop_temporary_path)
     print(json.dumps({"saved": bpy.data.filepath, "primitiveDraws": actual}, indent=2))
 
 
