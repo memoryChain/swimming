@@ -15,6 +15,10 @@ CCEffect %{
         playerCutout:  { value: [0, 0, 0, 0.72] }
         # xy = player forward direction XZ, z = along-body radius, w = side radius.
         cutoutShape:   { value: [1, 0, 1.05, 0.55] }
+        # x = world water surface Y, y = enable flag.
+        waterLine:     { value: [0.055, 1.0, 0.0, 0.0] }
+        # RGB = underwater tint in linear space, A = blend strength.
+        underwaterColor: { value: [0.05, 0.34, 0.62, 0.72], linear: true, editor: { type: color } }
 }%
 
 CCProgram lane-float-cutout-vs %{
@@ -58,6 +62,8 @@ CCProgram lane-float-cutout-fs %{
     vec4 mainColor;
     vec4 playerCutout;
     vec4 cutoutShape;
+    vec4 waterLine;
+    vec4 underwaterColor;
   };
 
   // Stable screen-space noise used as a tiny screen-door transition. The core
@@ -82,7 +88,10 @@ CCProgram lane-float-cutout-fs %{
     }
 
     vec4 sampleColor = texture(mainTexture, v_uv);
-    vec4 outputColor = vec4(SRGBToLinear(sampleColor.rgb) * mainColor.rgb, sampleColor.a * mainColor.a);
+    vec3 baseColor = SRGBToLinear(sampleColor.rgb) * mainColor.rgb;
+    float belowWater = step(v_worldPos.y, waterLine.x) * step(0.5, waterLine.y);
+    vec3 submerged = mix(baseColor, underwaterColor.rgb, underwaterColor.a);
+    vec4 outputColor = vec4(mix(baseColor, submerged, belowWater), sampleColor.a * mainColor.a);
     CC_APPLY_FOG(outputColor);
     return CCFragOutput(outputColor);
   }

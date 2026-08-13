@@ -32,6 +32,10 @@ export class VenueManager {
         this._startBlocks.setVisible(visible);
     }
 
+    setWaterY(waterY: number) {
+        this._waterBinder.setWaterY(waterY);
+    }
+
     updateLaneFloatCutout(
         playerWorldPosition: Readonly<{ x: number; z: number }> | null,
         forwardX: number,

@@ -1,5 +1,5 @@
 import { Vec3 } from 'cc';
-import { RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
+import { isSurfaceRaceCameraRiseReady, RaceCameraDirector, RaceCameraMode, RaceCameraSnapshot } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
@@ -80,8 +80,8 @@ export class GameFlowController {
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
     private _liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
-    // Once the player surfaces after the dive, switch the swim view to the
-    // behind-the-swimmer sprint chase so the steering weave reads clearly.
+    // Once the opening dive rises close to the surface, switch the swim view to
+    // the behind-the-swimmer sprint chase so the steering weave reads clearly.
     private _swimSprintViewApplied = false;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
     private readonly _playerUpperBodyWorldPosition = new Vec3();
@@ -171,7 +171,7 @@ export class GameFlowController {
         if (!this.isStrokeInputActive()) {
             return false;
         }
-        if (held && this._refs.playerSwimmer?.isUnderwater) {
+        if (held && !this._refs.playerSwimmer?.canUseArmStroke) {
             return false;
         }
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held, preHeldSeconds);
@@ -506,6 +506,7 @@ export class GameFlowController {
             playerKickCadenceHz: focus.kickCadenceHz,
             playerArmStrokeActive: focus.isArmStrokeActive,
             playerUnderwater: focus.isUnderwater,
+            playerUnderwaterRiseProgress: focus.underwaterRiseProgress,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,
             racerCount: placement.racerCount,
@@ -515,13 +516,16 @@ export class GameFlowController {
             playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
             playerDolphinCameraActive: focus.isDolphinCameraActive,
         };
-        // Switch to the behind-the-swimmer sprint chase once the player has
-        // surfaced from the dive, so the steering weave is clearly visible. Done
-        // once; the player can still cycle camera modes manually afterwards.
+        // Switch to the behind-the-swimmer sprint chase as the opening dive rises
+        // close to the surface. Gameplay remains underwater until the rise really
+        // completes; only the local presentation hands off early. Done once; the
+        // player can still cycle camera modes manually afterwards.
+        const openingDiveCameraReady = !playerSwimmer.isUnderwater
+            || isSurfaceRaceCameraRiseReady(playerSwimmer.underwaterRiseProgress);
         if (STEERING_TUNING.useSprintSwimView
             && !this._swimSprintViewApplied
             && this._refs.getState() === GameState.RACING
-            && !playerSwimmer.isUnderwater
+            && openingDiveCameraReady
             && !playerSwimmer.isFlipTurnCameraActive
             && !playerSwimmer.isDolphinCameraActive) {
             this._swimSprintViewApplied = true;
@@ -671,8 +675,14 @@ export class GameFlowController {
         const power = this.calculateDivePower(charge);
         this._diveCommitted = true;
         this._diveChargeStarted = false;
-        // Preserve the last visible charge through anticipation. Swimmer releases
-        // the burst at the exact liftoff edge rather than at input release.
+        // Freeze the last charge value through the crouch/extension anticipation.
+        // Swimmer.performDive switches it to the release burst on the exact
+        // take-off frame, so there is no empty visual gap after input release.
+        // Broadcast the dive to remote clients HERE (not in handleDiveRelease) so BOTH
+        // the manual release AND the countdown-end auto-dive reach the network — an
+        // auto-dived player must still start moving on every other screen. Exactly-once
+        // per real commit (guarded above); a cheap no-op in single-player.
+        captureNetInput({ kind: NetInputKind.DiveRelease, power: charge });
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();

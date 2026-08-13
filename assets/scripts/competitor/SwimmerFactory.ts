@@ -38,7 +38,7 @@ export class SwimmerFactory {
             color(245, 42, 64),
             color(255, 220, 72),
             robotStyle,
-            !options.isAI,
+            true,
             options.isAI,
         );
         if (selectedPlayer) {

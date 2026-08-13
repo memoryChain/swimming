@@ -1001,6 +1001,17 @@ export class Swimmer extends Component {
         return this.cartoonRig?.splashNode ?? null;
     }
 
+    get underwaterRiseProgress(): number {
+        return this._phases.underwaterRiseProgress;
+    }
+
+    get canUseArmStroke(): boolean {
+        return this._motor.isRacing
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
+            && this._phases.canUseArmStroke;
+    }
+
     get isUnderwater(): boolean {
         return this._phases.isUnderwater;
     }

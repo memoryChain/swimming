@@ -1,0 +1,57 @@
+# 统一换行符策略：工作区(Windows)一律 CRLF，二进制文件绝不改动。
+# 说明：`text` 让 git 追踪为文本并在检出时使用 CRLF；`binary` 关闭一切换行符/编码转换。
+
+# 默认：自动识别文本，文本文件检出为 CRLF
+* text=auto eol=crlf
+
+#//////////////////////////
+# 文本类型（工作区 CRLF）
+#//////////////////////////
+*.ts        text eol=crlf
+*.js        text eol=crlf
+*.json      text eol=crlf
+*.meta      text eol=crlf
+*.md        text eol=crlf
+*.py        text eol=crlf
+*.ps1       text eol=crlf
+*.yaml      text eol=crlf
+*.yml       text eol=crlf
+*.effect    text eol=crlf
+*.prefab    text eol=crlf
+*.scene     text eol=crlf
+*.mtl       text eol=crlf
+*.toml      text eol=crlf
+*.url       text eol=crlf
+*.txt       text eol=crlf
+.gitignore      text eol=crlf
+.gitattributes  text eol=crlf
+.editorconfig   text eol=crlf
+
+#//////////////////////////
+# 二进制类型（禁止换行符/编码转换）
+#//////////////////////////
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.bmp       binary
+*.tga       binary
+*.mp3       binary
+*.wav       binary
+*.ogg       binary
+*.fbx       binary
+*.glb       binary
+*.gltf      binary
+*.blend     binary
+*.blend1    binary
+*.blendbak  binary
+*.venuebak  binary
+*.pyc       binary
+*.astc      binary
+*.pvr       binary
+*.pkm       binary
+*.bin       binary
+*.zip       binary
+*.ttf       binary
+*.otf       binary

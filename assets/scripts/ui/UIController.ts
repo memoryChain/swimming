@@ -755,6 +755,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        this.setCountdownMessageVisible(true);
         this.setSpeedBarVisible(false);
         this.resizeCountdownShade(190, 160);
         if (this.hintLabel) {
@@ -913,6 +914,7 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
+        this.setCountdownMessageVisible(true);
         this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
@@ -928,17 +930,13 @@ export class UIController extends Component {
     }
 
     showDiveCharging() {
-        this.resizeCountdownShade(500, 120);
-        if (this.countdownLabel) {
-            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
-            this.countdownLabel.fontSize = 64;
-            this.countdownLabel.lineHeight = 64;
-            this.countdownLabel.string = '蓄力中';
-            this.pulse(this.countdownLabel.node, 1.12);
-        }
+        // Keep the charge bar and character VFX, but remove the large center-screen
+        // message and backdrop while the player is holding to charge.
+        this.setCountdownMessageVisible(false);
     }
 
     showDiveRelease(power: number) {
+        this.setCountdownMessageVisible(true);
         this.resizeCountdownShade(500, 120);
         if (this.countdownLabel) {
             this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
@@ -1038,7 +1036,10 @@ export class UIController extends Component {
         const coinLabel = new Node('CoinsGained').addComponent(Label);
         coinLabel.node.layer = panel.layer;
         coinLabel.node.setParent(panel);
-        coinLabel.node.addComponent(UITransform).setContentSize(360, 36);
+        // Label already requires/creates a UITransform - reuse it, don't re-add.
+        const coinTransform = coinLabel.node.getComponent(UITransform)
+            ?? coinLabel.node.addComponent(UITransform);
+        coinTransform.setContentSize(360, 36);
         coinLabel.fontSize = 28;
         coinLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         coinLabel.color = new Color(255, 209, 42, 255);
@@ -1394,6 +1395,19 @@ export class UIController extends Component {
     private setSpeedBarVisible(visible: boolean) {
         if (this.speedBarRoot && this.speedBarRoot.active !== visible) {
             this.speedBarRoot.active = visible;
+        }
+    }
+
+    private setCountdownMessageVisible(visible: boolean) {
+        if (this.countdownShade && this.countdownShade.active !== visible) {
+            this.countdownShade.active = visible;
+        }
+        const labelNode = this.countdownLabel?.node;
+        if (labelNode && labelNode.active !== visible) {
+            if (!visible) {
+                Tween.stopAllByTarget(labelNode);
+            }
+            labelNode.active = visible;
         }
     }
 

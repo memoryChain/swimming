@@ -1,0 +1,71 @@
+// Unlit venue-stand shading driven by a BAKED per-vertex brightness (COLOR_0).
+// The arena dimming (bright poolside/low, dark high/far) is baked into vertex
+// colours by sceneresource/export-flatcolor-venue-glb.py, so there is NO runtime
+// height/distance math here — this is a fixed scene with fixed lighting. The
+// visible colour + optional texture come from StandHeightShade.ts; the bleacher
+// atlas keeps white vertex colours so its authored tiers stay unchanged.
+CCEffect %{
+  techniques:
+  - name: opaque
+    passes:
+    - vert: venue-shade-vs:vert
+      frag: venue-shade-fs:frag
+      rasterizerState:
+        cullMode: none
+      properties:
+        mainTexture: { value: white }
+        mainColor:   { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
+}%
+
+CCProgram venue-shade-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+
+  in vec4 a_color;
+  out vec2 v_uv;
+  out vec4 v_color;
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+    v_uv = a_texCoord;
+    v_color = a_color;
+    return cc_matProj * (cc_matView * (matWorld * position));
+  }
+}%
+
+CCProgram venue-shade-fs %{
+  precision highp float;
+  #include <legacy/output-standard>
+  #include <builtin/uniforms/cc-global>
+
+  in vec2 v_uv;
+  in vec4 v_color;
+  #if USE_TEXTURE
+  uniform sampler2D mainTexture;
+  #endif
+
+  uniform VenueShade {
+    vec4 mainColor;
+  };
+
+  vec4 frag () {
+    // Match builtin-unlit / ToonProp colour handling: linear mainColor +
+    // SRGBToLinear on the sRGB texture.
+    #if USE_TEXTURE
+    vec4 texel = texture(mainTexture, v_uv);
+    vec3 base = SRGBToLinear(texel.rgb) * mainColor.rgb;
+    float alpha = texel.a * mainColor.a;
+    #else
+    vec3 base = mainColor.rgb;
+    float alpha = mainColor.a;
+    #endif
+    // Baked arena dimming: per-vertex brightness multiplier (COLOR_0, linear).
+    return CCFragOutput(vec4(base * v_color.rgb, alpha));
+  }
+}%

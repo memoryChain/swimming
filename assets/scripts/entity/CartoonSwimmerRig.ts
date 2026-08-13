@@ -16,6 +16,7 @@ import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/Sampled
 import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
 import { SplashEmitter } from '../character/SplashEmitter';
 import type { SplashEmitterState } from '../character/SplashEmitter';
+import { UnderwaterBubbleEmitter } from '../character/UnderwaterBubbleEmitter';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING } from '../core/InputTuning';
@@ -135,6 +136,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private _model: Node = null;
     private _splashEmitter: SplashEmitter = null;
+    private _bubbleEmitter: UnderwaterBubbleEmitter = null;
     private readonly _splashState: SplashEmitterState = {
         armAction: 0,
         kickAction: 0,
@@ -305,6 +307,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             });
             this.splashNode = this._splashEmitter.node;
             this._splashEmitter.build();
+            // Underwater bubbles: player only (skip reduced-LOD AI). Parented under
+            // the splash node so it inherits the swimmer overlay-layer tagging and
+            // is drawn over the opaque underwater surface.
+            if (!reducedSplash) {
+                this._bubbleEmitter = new UnderwaterBubbleEmitter({
+                    parent: this.splashNode || this.node,
+                    name: `${this.node.name || 'Swimmer'}Bubbles`,
+                    getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
+                });
+                this._bubbleEmitter.build();
+            }
         }
 
         this.loadModelForCurrentVariant();
@@ -1905,6 +1918,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private updateSplashSurface(speed: number) {
         this.syncSplashState();
         this._splashEmitter?.update(speed);
+    }
+
+    // Drive the player's underwater bubble trail. Called every frame by the owner
+    // (Swimmer in a race, GameManager in the underwater debug scene) with the
+    // current submerged state. No-op for AI (no bubble emitter) and above water.
+    updateUnderwaterBubbles(active: boolean) {
+        if (!this._bubbleEmitter) {
+            return;
+        }
+        const emit = active && !this._splashCulled;
+        this._bubbleEmitter.setEmitting(emit);
+        if (emit) {
+            this._bubbleEmitter.updatePositions();
+        }
     }
 
     private raceModelYOffset(): number {

@@ -95,8 +95,12 @@ import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
 import { WaterRefractionController } from '../venue/WaterRefractionController';
+import { applyAwardsPodiumToonOutline, applyPoolEdgeToonOutline, applyStandStructureToonOutline, applyTierFrontToonOutline } from '../venue/PoolEdgeToonOutline';
+import { applyCeilingLightArray } from '../venue/CeilingLightArray';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
+import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitter';
+import { applyStandHeightShade } from '../venue/StandHeightShade';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
@@ -134,6 +138,13 @@ const RACE_HUD_TEXT_REFRESH_SECONDS = 0.1;
 const UNDERWATER_TINT_DISTANCE = 1.2;
 const UNDERWATER_TINT_DEPTH = 0.002;
 const UNDERWATER_TINT_MARGIN = 1.45;
+// Underwater-effect tuning scene ('underwater-debug' launch mode): the player
+// continuously flutter-kicks below the surface and laps back and forth so the
+// submerged water look (blue + surface mirror) can be tuned without a full race.
+const UNDERWATER_DEBUG_SPEED = 1.4;      // lap travel speed (m/s)
+const UNDERWATER_DEBUG_DEPTH = 0.75;     // metres the body sits below swimY
+const UNDERWATER_DEBUG_KICK_RATE = 9.0;  // leg flutter cadence (rad/s)
+const UNDERWATER_DEBUG_BODY_RATE = 3.2;  // body undulation (rad/s)
 // Debug bullet-time cycle (B key): full speed -> slower stages -> back to full.
 const BULLET_TIME_SCALES = [1, 0.5, 0.25, 0.1];
 @ccclass('GameManager')
@@ -211,6 +222,7 @@ export class GameManager extends Component {
     private _spectating = false;
     private _venueManager: VenueManager | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
+    private _spectatorCameraFlashEmitter: SpectatorCameraFlashEmitter | null = null;
     private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
     private readonly _tmpSplashCullCenter = new Vec3();
@@ -277,6 +289,19 @@ export class GameManager extends Component {
     private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
     private readonly _sharkEventBanner = new SharkEventBanner();
     private _modelDebugFlow: ModelDebugFlowController = null;
+    // Underwater-effect tuning scene state (launch mode 'underwater-debug').
+    private _underwaterDebugActive = false;
+    private _uwLapDistance = 2;
+    private _uwLapDir = 1;
+    private _uwKickPhase = 0;
+    private _uwBodyPhase = 0;
+    // Free-look orbit around the swimmer (drag to rotate, wheel/pinch to zoom).
+    private _uwYaw = Math.PI * 0.82;
+    private _uwPitch = -0.08;
+    private _uwDistance = 5.5;
+    private _uwCameraDragging = false;
+    private readonly _uwCamPos = new Vec3();
+    private readonly _uwCamTarget = new Vec3();
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
     private readonly _aiDifficultyPanel = new AiDifficultyPanel();
@@ -315,6 +340,8 @@ export class GameManager extends Component {
                             const launchMode = consumeMainGameLaunchMode();
                             if (launchMode === 'model-debug') {
                                 this.enterModelDebug('freestyle');
+                            } else if (launchMode === 'underwater-debug') {
+                                this.enterUnderwaterDebug();
                             } else {
                                 this._aiDebugMode = launchMode === 'ai-debug';
                                 if (this._aiDebugMode) {
@@ -367,6 +394,13 @@ export class GameManager extends Component {
         if (!this._playerSwimmer) {
             return;
         }
+        // Dedicated underwater-effect tuning scene: drive the player + camera
+        // directly and skip the entire race/net/HUD update path.
+        if (this._underwaterDebugActive) {
+            this.updateUnderwaterDebug(dt);
+            this._waterRefraction?.update();
+            return;
+        }
         // Lock-step frame exchange (networked race only) runs on wall-clock dt, before
         // bullet-time scaling. The local player's own position rides along on the frame
         // (reliable channel) so peers catch its copy up without best-effort broadcasts.
@@ -386,6 +420,19 @@ export class GameManager extends Component {
         const raceDistance = getRaceDistance();
         const playerAlive = this._playerSwimmer.node.active;
         const playerBeforeFinish = playerAlive && this._playerSwimmer.distance < raceDistance;
+        const flashEmitter = this._spectatorCameraFlashEmitter;
+        if (flashEmitter?.isValid) {
+            const settlementActive = this._state === GameState.FINISHED || this._state === GameState.AWARDS;
+            const flashRaceProgress = settlementActive
+                ? 1
+                : raceActive && raceDistance > 0
+                    ? Math.max(0, Math.min(1, this._playerSwimmer.distance / raceDistance))
+                    : 0;
+            flashEmitter.setRaceIntensity(
+                flashRaceProgress,
+                settlementActive || (raceActive && this._playerCondition.phase === RacePhase.SPRINT),
+            );
+        }
         const laneFloatCutoutActive = !this._modelDebugFlow?.active
             && playerBeforeFinish
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
@@ -807,6 +854,10 @@ export class GameManager extends Component {
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
+                if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
+                    && this._spectatorCameraFlashEmitter?.isValid) {
+                    this._spectatorCameraFlashEmitter.resetRaceIntensity();
+                }
                 if (state === GameState.PRECOUNTDOWN) {
                     MusicManager.playRace();
                     this.hideEliminationAndSpectatorUi();
@@ -1209,12 +1260,20 @@ export class GameManager extends Component {
                 }
                 const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
                 if (calibrated) {
+                    venue.setWaterY(COURSE_LAYOUT.waterY);
                     this._raceCameraDirector.resetToBroadcast();
                 }
                 this._poolNode = pool;
+                // Attach the ceiling lights before the top-view binder scans so
+                // its 'ceiling'-named node is captured and hidden in top view.
+                applyCeilingLightArray(pool, this._cameraNode, (message) => this.debug(message));
                 const ceilingCount = this._topViewCeiling.bind(pool);
                 this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);
+                applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
+                applyAwardsPodiumToonOutline(pool, (message) => this.debug(message));
+                applyStandStructureToonOutline(pool, (message) => this.debug(message));
+                applyTierFrontToonOutline(pool, (message) => this.debug(message));
                 this.setupLaneLockdownVisualPreview();
                 done(pool);
             }, 0);
@@ -1327,16 +1386,31 @@ export class GameManager extends Component {
     }
 
     private buildSpectatorCrowd(root: Node, pool: Node | null) {
+        this._spectatorCameraFlashEmitter = null;
         if (!pool?.isValid) {
             this.debug('spectator crowd skipped: pool unavailable');
             return;
         }
         try {
-            new SpectatorCrowdBuilder().build(root, pool, (message) => this.debug(message));
+            this._spectatorCameraFlashEmitter = new SpectatorCrowdBuilder().build(
+                root,
+                pool,
+                (message) => this.debug(message),
+            );
+            this._spectatorCameraFlashEmitter?.setVisibilityCamera(
+                this._cameraNode?.getComponent(Camera) ?? null,
+            );
         } catch (error) {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);
             console.warn('[SpeedSwimming] spectator crowd skipped', error);
+        }
+        // Darken the stands progressively with height (bright poolside, dark up
+        // top) so the pool reads brighter than the arena. Quick 方案B preview.
+        try {
+            applyStandHeightShade(pool, undefined, (message) => this.debug(message));
+        } catch (error) {
+            console.warn('[SpeedSwimming] stand height shade skipped', error);
         }
     }
 
@@ -2733,10 +2807,124 @@ export class GameManager extends Component {
     }
 
     private exitModelDebug(showStart: boolean) {
+        if (this._underwaterDebugActive) {
+            this._underwaterDebugActive = false;
+            this.returnToLogin();
+            return;
+        }
         this._modelDebugFlow?.exit(showStart);
     }
 
+    // Enter the underwater-effect tuning scene: hide the AI, keep the player, force
+    // the underwater render path, and show the tuning HUD (its '水色' sliders +
+    // exit button). The player is then driven manually in updateUnderwaterDebug.
+    private enterUnderwaterDebug() {
+        this._underwaterDebugActive = true;
+        this._state = GameState.READY;
+        const player = this._playerSwimmer;
+        if (!player) {
+            return;
+        }
+        for (const ai of this._aiSwimmers) {
+            if (ai.node?.active) {
+                ai.node.active = false;
+            }
+        }
+        // Take the player out of the race sim; its pose/position are driven here.
+        player.netFixedStep = true;
+        player.node.active = true;
+        player.cartoonRig?.setActiveSwimming(true);
+        player.cartoonRig?.setLegSplashSuppressed(true);
+        this._uwLapDistance = Math.min(2, COURSE_LAYOUT.courseLength * 0.1);
+        this._uwLapDir = 1;
+        this._uwKickPhase = 0;
+        this._uwBodyPhase = 0;
+        this._uwYaw = Math.PI * 0.82;
+        this._uwPitch = -0.08;
+        this._uwDistance = 5.5;
+        this._uwCameraDragging = false;
+        // Force the underwater render path (blue floor swap + surface mirror) and
+        // keep the flat veil box off.
+        this._waterRefraction?.setUnderwaterViewActive(true);
+        this.setUnderwaterOverlayVisible(false);
+        // Reuse the model-debug HUD, but minimal: only the 退出 button is wired
+        // in this scene, so hide the rest to keep the view clear.
+        this._uiFlow?.showModelDebugHud(true);
+        this.debug('enterUnderwaterDebug');
+    }
+
+    // Drive the underwater tuning scene each frame: lap the player back and forth
+    // below the surface with a continuous flutter kick, and follow with an
+    // underwater chase camera looking up toward the surface mirror.
+    private updateUnderwaterDebug(dt: number) {
+        const player = this._playerSwimmer;
+        if (!player) {
+            return;
+        }
+        for (const ai of this._aiSwimmers) {
+            if (ai.node?.active) {
+                ai.node.active = false;
+            }
+        }
+        const length = COURSE_LAYOUT.courseLength;
+        this._uwLapDistance += this._uwLapDir * UNDERWATER_DEBUG_SPEED * dt;
+        if (this._uwLapDistance >= length) {
+            this._uwLapDistance = length;
+            this._uwLapDir = -1;
+        } else if (this._uwLapDistance <= 0) {
+            this._uwLapDistance = 0;
+            this._uwLapDir = 1;
+        }
+        const dirSign = this._uwLapDir > 0 ? 1 : -1;
+        const worldX = COURSE_LAYOUT.distanceToWorldX(this._uwLapDistance);
+        const swimY = COURSE_LAYOUT.swimY;
+        const bodyY = swimY - UNDERWATER_DEBUG_DEPTH;
+        player.node.setPosition(worldX, bodyY, PLAYER_LANE_Z);
+        player.node.setRotationFromEuler(0, dirSign > 0 ? 0 : 180, 0);
+        // Continuous underwater flutter kick (arms held in streamline = 0 cycles).
+        this._uwKickPhase += dt * UNDERWATER_DEBUG_KICK_RATE;
+        this._uwBodyPhase += dt * UNDERWATER_DEBUG_BODY_RATE;
+        player.cartoonRig?.updateFreestyle(
+            dt,
+            0,
+            0,
+            this._uwKickPhase,
+            this._uwKickPhase + Math.PI,
+            this._uwBodyPhase,
+            UNDERWATER_DEBUG_SPEED,
+            dirSign,
+        );
+        // The debug swimmer is always submerged, so keep the bubble trail on.
+        this._playerSwimmer?.cartoonRig?.updateUnderwaterBubbles(true);
+        // Free-look orbit around the swimmer: the camera follows the lapping
+        // swimmer while the user drags to rotate and wheels/pinches to zoom.
+        this._uwCamTarget.set(worldX, bodyY + 0.25, PLAYER_LANE_Z);
+        const cosPitch = Math.cos(this._uwPitch);
+        this._uwCamPos.set(
+            this._uwCamTarget.x + Math.cos(this._uwYaw) * cosPitch * this._uwDistance,
+            this._uwCamTarget.y + Math.sin(this._uwPitch) * this._uwDistance,
+            this._uwCamTarget.z + Math.sin(this._uwYaw) * cosPitch * this._uwDistance,
+        );
+        const camNode = this._cameraNode;
+        if (camNode?.isValid) {
+            camNode.setWorldPosition(this._uwCamPos);
+            camNode.lookAt(this._uwCamTarget);
+        }
+        // Follow the actual camera height: below the surface = underwater look
+        // (mirror + blue floor gradient); orbit above the surface = above-water
+        // look (deck + the above-water distance gradient), so both can be seen and
+        // tuned in this scene.
+        this._waterRefraction?.setUnderwaterViewActive(this._uwCamPos.y < COURSE_LAYOUT.waterY);
+    }
+
     private onDebugCameraMouseDown(event: EventMouse) {
+        if (this._underwaterDebugActive) {
+            const button = event.getButton();
+            this._uwCameraDragging = button === EventMouse.BUTTON_LEFT
+                || button === EventMouse.BUTTON_RIGHT
+                || button === EventMouse.BUTTON_MIDDLE;
+            return;
+        }
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.onMouseDown(event);
             return;
@@ -2750,6 +2938,12 @@ export class GameManager extends Component {
     }
 
     private onDebugCameraMouseMove(event: EventMouse) {
+        if (this._underwaterDebugActive) {
+            if (this._uwCameraDragging) {
+                this.orbitUnderwaterCamera(event.getDeltaX(), event.getDeltaY());
+            }
+            return;
+        }
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.onMouseMove(event);
             return;
@@ -2760,6 +2954,10 @@ export class GameManager extends Component {
     }
 
     private onDebugCameraMouseUp() {
+        if (this._underwaterDebugActive) {
+            this._uwCameraDragging = false;
+            return;
+        }
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.onMouseUp();
             return;
@@ -2768,6 +2966,10 @@ export class GameManager extends Component {
     }
 
     private onDebugCameraWheel(event: EventMouse) {
+        if (this._underwaterDebugActive) {
+            this.zoomUnderwaterCamera(event.getScrollY());
+            return;
+        }
         if (this._modelDebugFlow?.active) {
             this._modelDebugFlow.onMouseWheel(event);
             return;
@@ -2779,6 +2981,10 @@ export class GameManager extends Component {
 
     // Touch orbit / pinch-zoom for the active free-look camera (mobile).
     private onAwardsCameraOrbit(deltaX: number, deltaY: number) {
+        if (this._underwaterDebugActive) {
+            this.orbitUnderwaterCamera(deltaX, deltaY);
+            return;
+        }
         if (this._modelDebugFlow?.active) {
             return;
         }
@@ -2788,6 +2994,10 @@ export class GameManager extends Component {
     }
 
     private onAwardsCameraZoom(scroll: number) {
+        if (this._underwaterDebugActive) {
+            this.zoomUnderwaterCamera(scroll);
+            return;
+        }
         if (this._modelDebugFlow?.active) {
             return;
         }
@@ -2810,6 +3020,17 @@ export class GameManager extends Component {
         } else {
             this._raceCameraDirector.zoomAwardsCamera(scroll);
         }
+    }
+
+    // Free-look orbit controls for the underwater tuning scene (drag + wheel/pinch).
+    private orbitUnderwaterCamera(deltaX: number, deltaY: number) {
+        this._uwYaw -= deltaX * 0.008;
+        this._uwPitch += deltaY * 0.006;
+        this._uwPitch = Math.max(-1.4, Math.min(1.4, this._uwPitch));
+    }
+
+    private zoomUnderwaterCamera(scroll: number) {
+        this._uwDistance = Math.max(2, Math.min(25, this._uwDistance - scroll * 0.004));
     }
 
     private slowModelDebugMotion() {
@@ -2854,11 +3075,13 @@ export class GameManager extends Component {
 
     private setUnderwaterOverlayVisible(visible: boolean) {
         this._waterRefraction?.setUnderwaterViewActive(visible);
-        if (this._underwaterCameraTint && this._underwaterCameraTint.active !== visible) {
-            this._underwaterCameraTint.active = visible;
-            if (visible) {
-                this.resizeUnderwaterCameraTint();
-            }
+        // The old full-screen blue box (UnderwaterCameraTint3D) is a UNIFORM tint
+        // with no distance falloff — it reads as a dirty gauze/veil over the whole
+        // underwater view. The submerged blue now comes from distance fog + the
+        // blue pool floor + the surface mirror, so keep this overlay OFF. The node
+        // is kept (not destroyed) so it can be re-enabled if fog is unavailable.
+        if (this._underwaterCameraTint && this._underwaterCameraTint.active) {
+            this._underwaterCameraTint.active = false;
         }
     }
 

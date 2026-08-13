@@ -55,6 +55,9 @@ export class WaterSurfaceBinder {
     private readonly _laneFloatMaterials: Material[] = [];
     private readonly _laneFloatPlayerCutout = new Vec4(0, 0, 0, 0.72);
     private readonly _laneFloatCutoutShape = new Vec4(1, 0, 1.05, 0.55);
+    private readonly _laneFloatWaterLine = new Vec4(0.055, 1, 0, 0);
+    private readonly _laneFloatUnderwaterColor = new Color(13, 87, 158, 184);
+    private _waterY = 0.055;
 
     bind(pool: Node, waterMaterialPath: string, debug?: (message: string) => void) {
         const oldWaterNodes: Node[] = [];
@@ -69,6 +72,11 @@ export class WaterSurfaceBinder {
 
         const activeWaterNodes: Node[] = [];
         collectNodesByName(pool, ACTIVE_WATER_NODE_NAMES, activeWaterNodes);
+        const measuredWaterY = findWaterSurfaceY(activeWaterNodes);
+        if (measuredWaterY !== null) {
+            this._waterY = measuredWaterY;
+            this._laneFloatWaterLine.x = measuredWaterY;
+        }
         for (const node of activeWaterNodes) {
             // The editor's embedded game preview does not refresh an off-screen
             // camera reliably. Keeping refraction live there required recreating
@@ -134,6 +142,17 @@ export class WaterSurfaceBinder {
         }
         for (const material of this._laneFloatMaterials) {
             this.applyLaneFloatCutout(material);
+        }
+    }
+
+    setWaterY(waterY: number) {
+        if (!Number.isFinite(waterY) || Math.abs(waterY - this._waterY) < 0.0001) {
+            return;
+        }
+        this._waterY = waterY;
+        this._laneFloatWaterLine.x = waterY;
+        for (const material of this._laneFloatMaterials) {
+            this.applyLaneFloatWaterline(material);
         }
     }
 
@@ -250,6 +269,7 @@ export class WaterSurfaceBinder {
                     runtime = makeUnlitLaneFloatMaterial(source, beadTexture, cutoutEffect);
                     materialCache.set(source, runtime);
                     this._laneFloatMaterials.push(runtime);
+                    this.applyLaneFloatWaterline(runtime);
                     this.applyLaneFloatCutout(runtime);
                 }
                 renderer.setMaterial(runtime, i);
@@ -267,6 +287,14 @@ export class WaterSurfaceBinder {
         }
         material.setProperty('playerCutout', this._laneFloatPlayerCutout);
         material.setProperty('cutoutShape', this._laneFloatCutoutShape);
+    }
+
+    private applyLaneFloatWaterline(material: Material) {
+        if (!material.name.startsWith('RuntimeLaneFloatCutout_')) {
+            return;
+        }
+        material.setProperty('waterLine', this._laneFloatWaterLine);
+        material.setProperty('underwaterColor', this._laneFloatUnderwaterColor);
     }
 
     // Move the pool-bottom geometry onto the underwater layer so the refraction
@@ -357,6 +385,20 @@ function readMaterialProperty(material: Material, name: string): unknown {
     } catch {
         return null;
     }
+}
+
+function findWaterSurfaceY(nodes: Node[]): number | null {
+    let maxY = -Infinity;
+    for (const node of nodes) {
+        const renderer = node.getComponent(MeshRenderer);
+        const model = renderer && (renderer as unknown as { model?: { worldBounds?: unknown } }).model;
+        const bounds = model?.worldBounds as { center?: Vec3; halfExtents?: Vec3 } | undefined;
+        if (!bounds?.center || !bounds.halfExtents) {
+            continue;
+        }
+        maxY = Math.max(maxY, bounds.center.y + bounds.halfExtents.y);
+    }
+    return Number.isFinite(maxY) ? maxY : null;
 }
 
 function clampByte(value: number): number {

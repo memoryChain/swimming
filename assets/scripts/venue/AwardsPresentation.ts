@@ -17,9 +17,6 @@ import {
 
 const AWARDS_DECK_MARGIN = 2.4;
 const AWARDS_RACER_SPACING = 1.45;
-// The podium is beyond the pool's +X finish end. The model's forward is +X at
-// euler Y=0, so winners face away from the pool and toward the awards camera.
-const AWARDS_FACING_Y = 0;
 const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
     [1, 'award_podium_1'],
     [2, 'award_podium_2'],
@@ -116,12 +113,17 @@ export class AwardsPresentation {
         if (tops.size === 0) {
             return null;
         }
+        const poolCenterX = (this._courseLayout.poolStartX + this._courseLayout.poolFinishX) * 0.5;
         for (const row of winners) {
             const bounds = tops.get(row.placement);
             if (!bounds) {
                 continue;
             }
-            row.swimmer.presentStanding(standingOnBounds(bounds), AWARDS_FACING_Y);
+            const position = standingOnBounds(bounds);
+            // Keep winners facing away from the pool and toward the awards camera,
+            // regardless of whether the podium is authored beyond -X or +X.
+            const facingY = position.x < poolCenterX ? 180 : 0;
+            row.swimmer.presentStanding(position, facingY);
         }
         // Frame on the champion step (podium centre) for the awards camera.
         const champion = tops.get(1) ?? tops.values().next().value;
@@ -136,21 +138,20 @@ export class AwardsPresentation {
     // up beside the pool so the ceremony still has all three on screen.
     private presentPoolside(winners: RaceFinishResult[]): Vec3 {
         const center = new Vec3(
-            (this._courseLayout.poolStartX + this._courseLayout.poolFinishX) * 0.5,
+            this._courseLayout.poolStartX - this._courseLayout.direction * AWARDS_DECK_MARGIN,
             this._courseLayout.platformY,
-            -this._courseLayout.poolWidth * 0.5 - AWARDS_DECK_MARGIN,
+            0,
         );
-        const xOffsetByPlacement = new Map<number, number>([
+        const zOffsetByPlacement = new Map<number, number>([
             [1, 0],
-            [2, -AWARDS_RACER_SPACING],
-            [3, AWARDS_RACER_SPACING],
+            [2, AWARDS_RACER_SPACING],
+            [3, -AWARDS_RACER_SPACING],
         ]);
         for (const row of winners) {
             const position = center.clone();
-            position.x += xOffsetByPlacement.get(row.placement) ?? 0;
-            // This fallback line-up is on the pool's -Z side, so +Z faces the
-            // pool and -Z faces away from it.
-            row.swimmer.presentStanding(position, 90);
+            position.z += zOffsetByPlacement.get(row.placement) ?? 0;
+            const facingY = this._courseLayout.direction > 0 ? 180 : 0;
+            row.swimmer.presentStanding(position, facingY);
         }
         return center;
     }

@@ -13,6 +13,13 @@ native
 #//////////////////////////
 node_modules/
 
+# Blender/Python generated scene artifacts
+sceneresource/*.blend1
+sceneresource/*.blendbak
+sceneresource/*.venuebak
+sceneresource/**/__pycache__/
+sceneresource/*.tmp.png
+
 # Local tooling downloads
 tools/blender-portable/
 extensions/cocos-code-mode/

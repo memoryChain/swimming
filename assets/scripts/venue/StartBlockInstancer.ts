@@ -15,6 +15,9 @@ const ANCHOR_NAME_PATTERN = /^start_block_anchor_near_\d{2}$/;
 // plant their feet. The dedicated start_block_top_near_marker owns that height.
 const RUNTIME_BLOCK_PREFIX = 'runtime_start_block_';
 const BATCH_ROOT_NAME = 'RuntimeStartBlocksBatch';
+// Uniform scale applied to every instanced start block. 1 = the prefab's
+// authored size; lower this single number to shrink the blocks.
+const START_BLOCK_SCALE = 0.8;
 
 export type StartBlockBuildResult = {
     count: number;
@@ -75,7 +78,7 @@ export class StartBlockInstancer {
                 block.setParent(anchor);
                 block.setPosition(Vec3.ZERO);
                 block.setRotationFromEuler(0, 0, 0);
-                block.setScale(Vec3.ONE);
+                block.setScale(START_BLOCK_SCALE, START_BLOCK_SCALE, START_BLOCK_SCALE);
                 count += 1;
             }
 

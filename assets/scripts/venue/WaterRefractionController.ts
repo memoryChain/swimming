@@ -1,10 +1,20 @@
-import { Camera, Color, Layers, Material, MeshRenderer, Node, RenderTexture, Texture2D, Vec3, Vec4, view } from 'cc';
+import { Camera, Color, director, EffectAsset, Layers, Material, MeshRenderer, Node, RenderTexture, Texture2D, Vec3, Vec4, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { SWIMMER_LAYER, UNDERWATER_LAYER, WATER_SURFACE_LAYER } from './WaterSurfaceBinder';
+import { WATER_COLOR_TUNING, registerFloorTintApplier, setSwimmerReflectClip } from './WaterColorTuning';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
 const SWIMMER_CAMERA_NAME = 'SwimmerOverlayCamera';
+const REFLECTION_CAMERA_NAME = 'WaterReflectionCamera';
 const WATER_SURFACE_NODE_NAME = 'PoolWaterSurface';
+// Lane-float rope nodes. Tagged onto SWIMMER_LAYER so the swimmer overlay camera
+// draws them over the opaque water (same as swimmers) — otherwise the water
+// hides their submerged lower half. Their material (RuntimeLaneFloatCutout_*)
+// already carries the waterLine/underwaterColor uniforms, so the below-water
+// part reads correctly once it is drawn on top.
+const LANE_FLOAT_NODE_PREFIX = 'lane_float_rope';
 // Name of the runtime water material created by WaterSurfaceBinder. Only this
 // material's effect carries the refraction/disturbance uniforms, so we gate
 // per-frame uniform writes on it (the GLB placeholder material lacks them).
@@ -14,13 +24,36 @@ const RUNTIME_WATER_MATERIAL_NAME = 'RuntimePoolWater';
 // wave-driven UV offset hides the remaining softness.
 const REFRACTION_RT_SCALE = 0.45;
 const MIN_RT_SIZE = 16;
+// Planar reflection RenderTexture scale. The reflection is heavily wobbled and
+// tinted, so it tolerates a lower resolution than the refraction floor.
+const REFLECTION_RT_SCALE = 0.5;
+// Only render the reflection pass when the main camera is at/below this height
+// above the water surface. Normal above-water broadcast shots never pay for the
+// extra camera; it switches on exactly when the underside-of-water mirror can be
+// seen (camera near/below the surface).
+const REFLECTION_ACTIVE_MARGIN = 0.6;
+// How far ahead of the camera the mirror look-at point is projected before being
+// reflected across the water plane.
+const REFLECTION_LOOK_AHEAD = 6.0;
+// Deep pool blue the reflection camera clears to, so empty areas of the mirror
+// (no geometry) read as water rather than black.
+const REFLECTION_CLEAR_COLOR = new Color(9, 46, 82, 255);
+// Underwater depth fog (engine linear fog) enabled only for dedicated underwater
+// camera shots. Gives the whole submerged scene a "the further, the bluer" look.
+const UNDERWATER_FOG_COLOR = new Color(10, 74, 130, 255);
+// Start the fog several metres out so the near view stays crisp/clear (like the
+// reference) instead of a hazy veil right at the camera; only the distance goes
+// deep blue.
+const UNDERWATER_FOG_START = 5.0;
+const UNDERWATER_FOG_END = 24.0;
 // Re-tag swimmer subtrees onto SWIMMER_LAYER periodically to catch async-loaded
-// character models and rebuilt rosters.
+// character models and rebuilt rosters. This runs for the whole race (not just a
+// startup warmup) because AI character models and color-variant rebuilds can
+// finish loading at any point; an untagged swimmer stays on the main camera's
+// DEFAULT layer and is skipped by the reflection camera, so only early-loaded
+// swimmers would reflect underwater. The cost is a few hundred setLayer calls
+// every ~0.44s, which is well below a per-frame hot path.
 const SWIMMER_TAG_INTERVAL = 20;
-// Async swimmer models and splash nodes arrive during scene startup. Once that
-// window closes, the roster is stable across race restarts, so recursive layer
-// tagging must stop instead of producing a periodic JS spike throughout a race.
-const SWIMMER_TAG_WARMUP_FRAMES = 90;
 // Frames to keep re-applying the RT to the water material after it is (re)created
 // or resized, covering the GPU texture handle changing on the first real render.
 const REBIND_WARMUP_FRAMES = 4;
@@ -37,13 +70,49 @@ const DISTURB_STRENGTH = 1.15;
 // deep pool BLUE (so the surface reads as rich blue water); UNDER water they turn
 // light/WHITE so the submerged view stays a legible natural pool instead of a blue
 // blur. Lane lines stay dark in both. First matching prefix wins.
-const FLOOR_TINT: { prefix: string; above: Color; below: Color }[] = [
-    { prefix: 'lane_floor_line', above: new Color(8, 12, 20, 255), below: new Color(26, 32, 42, 255) },
-    { prefix: 'lane_t_end', above: new Color(8, 12, 20, 255), below: new Color(26, 32, 42, 255) },
-    { prefix: 'pool_tile_grout', above: new Color(88, 181, 160, 255), below: new Color(176, 198, 216, 255) },
-    { prefix: 'pool_inner_wall', above: new Color(126, 208, 182, 255), below: new Color(220, 234, 246, 255) },
-    { prefix: 'pool_floor', above: new Color(118, 202, 174, 255), below: new Color(232, 242, 249, 255) },
+const FLOOR_TINT: { prefix: string; above: Color; belowKind: FloorBelowKind }[] = [
+    { prefix: 'lane_floor_line', above: new Color(8, 12, 20, 255), belowKind: 'line' },
+    { prefix: 'lane_t_end', above: new Color(8, 12, 20, 255), belowKind: 'line' },
+    // Underwater below-colours are a clean, saturated pool blue (not a pale cyan
+    // and not a heavy/gray wash): the camera reads a vivid blue pool. The base
+    // floor blue is tunable ('水色' → 池底蓝 sliders); walls/grout are derived
+    // shades of it; lane lines stay dark for contrast.
+    { prefix: 'pool_tile_grout', above: new Color(88, 181, 160, 255), belowKind: 'grout' },
+    { prefix: 'pool_inner_wall', above: new Color(118, 202, 174, 255), belowKind: 'wall' },
+    { prefix: 'pool_floor', above: new Color(118, 202, 174, 255), belowKind: 'floor' },
 ];
+
+type FloorBelowKind = 'floor' | 'wall' | 'grout' | 'line';
+
+// Submerged floor colour from the live WATER_COLOR_TUNING floor sliders. Walls
+// and grout are proportional shades of the base floor blue.
+function computeFloorBelowColor(kind: FloorBelowKind): Color {
+    const r = WATER_COLOR_TUNING.floorR;
+    const g = WATER_COLOR_TUNING.floorG;
+    const b = WATER_COLOR_TUNING.floorB;
+    const c = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+    switch (kind) {
+        case 'wall': return new Color(c(r), c(g), c(b), 255);
+        case 'grout': return new Color(c(r * 0.67), c(g * 0.76), c(b * 0.86), 255);
+        case 'line': return new Color(24, 52, 84, 255);
+        case 'floor':
+        default: return new Color(c(r), c(g), c(b), 255);
+    }
+}
+
+// The deep blue the far end of the floor fades toward UNDERWATER (distance
+// gradient). Kept fairly bright and low-saturation (the darkening multipliers are
+// gentle and even) so the far end reads as a lighter deep blue, not a dark wash;
+// alpha = far-blend strength.
+function computeFloorDeepColor(): Color {
+    const c = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+    return new Color(
+        c(WATER_COLOR_TUNING.floorR * 0.66),
+        c(WATER_COLOR_TUNING.floorG * 0.74),
+        c(WATER_COLOR_TUNING.floorB * 0.84),
+        c(WATER_COLOR_TUNING.floorFarStrength * 255),
+    );
+}
 
 // Drives real screen-space refraction for the pool water. A second camera mirrors
 // the active main camera every frame and renders only the underwater scene (pool
@@ -58,10 +127,41 @@ export class WaterRefractionController {
     private _mainCamera: Camera | null = null;
     private _pool: Node | null = null;
     private _waterNode: Node | null = null;
+    private _poolEdgeNode: Node | null = null;
     private _boundMaterial: Material | null = null;
     private _getSwimmerNodes: (() => Node[]) | null = null;
     private _rtWidth = 0;
     private _rtHeight = 0;
+    // Planar-reflection pass: mirrors the main camera across the water plane and
+    // renders the underwater scene (floor + swimmers) so the underside of the
+    // surface reads as a rippling mirror. Rendered only when the camera is
+    // near/below the water surface.
+    private _reflectionCamera: Camera | null = null;
+    private _reflectionRT: RenderTexture | null = null;
+    private _reflWidth = 0;
+    private _reflHeight = 0;
+    private _reflectionActive = false;
+    private _waterY = 0.055;
+    private _poolEdgeActiveBeforeUnderwater = true;
+    // x = mirror strength, y = flip U (mirror is horizontally reversed by the
+    // right-handed lookAt of the mirror camera, so default 1), z = flip V,
+    // w = extra wobble scale.
+    private readonly _reflectionParams = new Vec4(0.9, 1, 0, 1.6);
+    private readonly _tmpCamPos = new Vec3();
+    private readonly _tmpFwd = new Vec3();
+    private readonly _tmpUp = new Vec3();
+    private readonly _tmpAhead = new Vec3();
+    private readonly _tmpReflPos = new Vec3();
+    private readonly _tmpReflAhead = new Vec3();
+    private readonly _tmpReflUp = new Vec3();
+    // Saved scene fog state so the dedicated-underwater blue fog can be restored
+    // when the camera surfaces.
+    private _fogSaved = false;
+    private _fogPrevEnabled = false;
+    private _fogPrevType = 0;
+    private readonly _fogPrevColor = new Color();
+    private _fogPrevStart = 0;
+    private _fogPrevEnd = 0;
     // Frames to keep re-applying the RT after (re)creation. The RT can recreate
     // its underlying GPU texture on its first real render, so we rebind for a few
     // frames instead of every frame; steady state does no per-frame rebinding.
@@ -81,9 +181,14 @@ export class WaterRefractionController {
     private readonly _laneLockdownWarningParams = new Vec4(0, 0, 0.075, 0);
     private _laneLockdownParamsDirty = true;
     private readonly _tmpPos = new Vec3();
+    private readonly _wallWaterLineParams = new Vec4();
     // Pool-bottom materials whose colour swaps with the underwater camera mode
     // (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
-    private readonly _floorTints: { material: Material; above: Color; below: Color }[] = [];
+    private readonly _floorTints: { material: Material; above: Color; belowKind: FloorBelowKind }[] = [];
+    // Optional custom effect that adds the near-clear -> far-deep-blue distance
+    // gradient to the submerged floor (loaded async; falls back to builtin-unlit).
+    private _floorDepthEffect: EffectAsset | null = null;
+    private _floorHasDepth = false;
     private _floorUnderwater: boolean | null = null;
     private _underwaterViewActive = false;
     private _waterActiveBeforeUnderwater = true;
@@ -118,7 +223,24 @@ export class WaterRefractionController {
         const waterNode = findNodeByName(pool, WATER_SURFACE_NODE_NAME);
         this._waterNode = waterNode;
         this._waterActiveBeforeUnderwater = waterNode?.active ?? true;
+        this._poolEdgeNode = findNodeByName(pool, 'pool_edge_batch');
+        this._poolEdgeActiveBeforeUnderwater = this._poolEdgeNode?.active ?? true;
+        if (waterNode?.isValid) {
+            waterNode.getWorldPosition(this._tmpPos);
+            this._waterY = this._tmpPos.y;
+        }
         this.collectFloorTints(pool);
+        // Let the '水色' floor sliders re-tint the submerged floor live.
+        registerFloorTintApplier(() => this.applyFloorTuning());
+        // Upgrade the submerged floor to the distance-gradient effect (near clear,
+        // far deep blue) once it loads. Until then the builtin-unlit fallback
+        // renders a uniform blue; on load the floor materials are rebuilt.
+        loadRaceAsset(RESOURCE_PATHS.underwaterFloorEffect, EffectAsset, (err, effect) => {
+            if (err || !effect || !this._pool?.isValid) {
+                return;
+            }
+            this.setFloorDepthEffect(effect);
+        });
 
         const size = view.getVisibleSize();
         this._rtWidth = Math.max(MIN_RT_SIZE, Math.round(size.width * REFRACTION_RT_SCALE));
@@ -165,17 +287,53 @@ export class WaterRefractionController {
         swimmerCamera.visibility = SWIMMER_LAYER;
         // DONT_CLEAR keeps BOTH the main camera's colour and its DEPTH buffer.
         // Keeping depth means swimmers are correctly occluded by opaque geometry
-        // the main camera drew (lane float ropes, deck, pool edges — they write
-        // depth), while the opaque water does NOT write depth (depthWrite:false),
-        // so it still doesn't hide the submerged swimmer.
+        // the main camera drew (deck, pool edges — they write depth), while the
+        // opaque water does NOT write depth (depthWrite:false), so it still
+        // doesn't hide the submerged swimmer. Lane floats also live on this layer
+        // (see tagLaneFloats) so they draw over the water and interocclude with
+        // swimmers within this same pass.
         swimmerCamera.clearFlags = Camera.ClearFlag.DONT_CLEAR;
         swimmerCamera.clearColor = mainCamera.clearColor;
         swimmerCamera.priority = mainCamera.priority + 1;
         this._swimmerCamera = swimmerCamera;
 
+        // Planar-reflection camera: mirrors the main camera across the water
+        // plane each frame and renders the underwater scene (pool floor +
+        // swimmers) into its own RenderTexture. The water material samples that
+        // texture in the underwater-looking-up branch, so the underside of the
+        // surface acts like a rippling mirror. Independent top-level camera (same
+        // reasoning as the refraction camera) with its own target texture.
+        this._reflWidth = Math.max(MIN_RT_SIZE, Math.round(size.width * REFLECTION_RT_SCALE));
+        this._reflHeight = Math.max(MIN_RT_SIZE, Math.round(size.height * REFLECTION_RT_SCALE));
+        const reflRt = new RenderTexture('PoolWaterReflection');
+        reflRt.reset({ width: this._reflWidth, height: this._reflHeight });
+        this._reflectionRT = reflRt;
+        const reflNode = new Node(REFLECTION_CAMERA_NAME);
+        reflNode.setParent(parent);
+        reflNode.layer = Layers.Enum.DEFAULT;
+        const reflCamera = reflNode.addComponent(Camera);
+        // Reflect the underwater pool AND the swimmers. The swimmers' ABOVE-water
+        // parts (head/arms breaking the surface) would ghost in the mirror, so the
+        // swimmer shader discards them when it detects it is rendering the
+        // reflection (a camera above the surface) via the reflectClipParams flag
+        // driven below — a real underwater mirror only reflects what is submerged.
+        reflCamera.visibility = UNDERWATER_LAYER | SWIMMER_LAYER;
+        reflCamera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
+        reflCamera.clearColor = REFLECTION_CLEAR_COLOR;
+        // Render before the main/refraction cameras; it draws to its own RT.
+        reflCamera.priority = mainCamera.priority - 2;
+        reflCamera.targetTexture = reflRt;
+        // Off until the camera dips near/below the surface (saves the whole pass
+        // in normal above-water shots).
+        reflCamera.enabled = false;
+        this._reflectionCamera = reflCamera;
+
         // Tag the already-created player/effects immediately. The periodic pass
         // below still catches deferred AI and asynchronously-created children.
         this.tagSwimmers();
+        // Move the lane floats onto the swimmer overlay layer so their submerged
+        // half draws over the water instead of being hidden by it.
+        this.tagLaneFloats();
         this.syncCamera();
 
         this._debug?.(`water refraction ready rt=${this._rtWidth}x${this._rtHeight}`);
@@ -187,13 +345,25 @@ export class WaterRefractionController {
             return;
         }
         this.syncCamera();
+        // The reflection (underside mirror) and the water material binding must
+        // run in BOTH above-water and underwater shots: the surface stays visible
+        // underwater now so its underside can show the mirror.
+        this.updateReflection();
         if (!this._underwaterViewActive) {
             this.resizeIfNeeded();
-            this.ensureMaterialBound();
         }
+        this.ensureMaterialBound();
         this._frame += 1;
-        if (this._frame <= SWIMMER_TAG_WARMUP_FRAMES && this._frame % SWIMMER_TAG_INTERVAL === 0) {
+        // Swimmer/character models and the AI roster are created asynchronously and
+        // can finish loading well after the warmup window. If they miss tagging they
+        // stay on the main camera's DEFAULT layer: visible above water, but absent
+        // from the reflection camera (which only renders UNDERWATER_LAYER|SWIMMER_LAYER),
+        // so only the early-loaded player would reflect. Re-tag every interval for the
+        // whole race (cheap: a few setLayer calls per frame on average) so every
+        // swimmer reflects underwater.
+        if (this._frame % SWIMMER_TAG_INTERVAL === 0) {
             this.tagSwimmers();
+            this.tagLaneFloats();
         }
     }
 
@@ -211,28 +381,46 @@ export class WaterRefractionController {
         // from camera Y used to expose a whole-pool colour pop while a smoothed
         // dive camera crossed the water line.
         this.applyFloorTint(active);
-        if (active) {
-            if (this._waterNode?.isValid) {
-                this._waterActiveBeforeUnderwater = this._waterNode.active;
-                this._waterNode.active = false;
+        // The pool rim is an above-deck shell. Drawing it directly from the
+        // underwater main camera causes the white side borders to flash through
+        // the water; submerged views should show the inner wall instead.
+        if (this._poolEdgeNode?.isValid) {
+            const rimActive = active ? false : this._poolEdgeActiveBeforeUnderwater;
+            if (this._poolEdgeNode.active !== rimActive) {
+                this._poolEdgeNode.active = rimActive;
             }
-            if (this._refractionCamera?.isValid) {
-                this._refractionCamera.enabled = false;
-            }
-        } else {
-            if (this._waterNode?.isValid) {
-                this._waterNode.active = this._waterActiveBeforeUnderwater;
-            }
-            if (this._refractionCamera?.isValid) {
-                this._refractionCamera.enabled = true;
-            }
-            // Force a short rebind after the off-screen camera resumes so a
-            // resized or recreated GPU texture cannot leave a stale sampler.
+        }
+        // Keep the water surface VISIBLE in underwater shots so its underside
+        // renders as a MIRROR (the below-water branch of the shader samples the
+        // reflection RT). Previously the surface was hidden here, which is exactly
+        // why the reflection never showed underwater. Only the opaque above-water
+        // refraction camera is paused; the reflection camera keeps running (it
+        // self-gates on the camera being below the surface in updateReflection()).
+        if (this._refractionCamera?.isValid) {
+            this._refractionCamera.enabled = !active;
+        }
+        if (!active && this._reflectionCamera?.isValid) {
+            this._reflectionActive = false;
+            this._reflectionCamera.enabled = false;
+        }
+        if (!active) {
+            // Force a short rebind after the off-screen refraction camera resumes
+            // so a resized/recreated GPU texture cannot leave a stale sampler.
             this._boundMaterial = null;
             this._rebindFrames = REBIND_WARMUP_FRAMES;
         }
+        // NOTE: engine scene fog is intentionally NOT toggled here. Flipping
+        // fog.enabled changes the global CC_USE_FOG shader macro, which forces a
+        // full shader-variant recompile of every material on that frame — that was
+        // the big hitch when entering the water. The submerged blue instead comes
+        // from the clean blue pool floor + the surface mirror (no uniform haze).
         this._underwaterViewActive = active;
-        this._debug?.(`water surface ${active ? 'hidden for underwater camera' : 'restored above water'}`);
+        // Lane floats swap between the overlay layer (above water, submerged half
+        // shows over the surface) and the main DEFAULT layer (underwater, so the
+        // opaque mirror surface occludes them instead of the overlay drawing them
+        // on top of the mirror).
+        this.tagLaneFloats();
+        this._debug?.(`water surface ${active ? 'underwater mirror mode' : 'restored above water'}`);
     }
 
     // Local per-swimmer water churn is only useful from the top view. This is an
@@ -303,9 +491,15 @@ export class WaterRefractionController {
                             const usesPoolTileTexture = name.startsWith('pool_inner_wall') || name.startsWith('pool_floor');
                             const texture = usesPoolTileTexture ? findMaterialTexture(source) : null;
                             const material = new Material();
-                            material.initialize(texture
-                                ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
-                                : { effectName: 'builtin-unlit' });
+                            if (this._floorDepthEffect) {
+                                material.initialize(texture
+                                    ? { effectAsset: this._floorDepthEffect, defines: { USE_TEXTURE: true } }
+                                    : { effectAsset: this._floorDepthEffect });
+                            } else {
+                                material.initialize(texture
+                                    ? { effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } }
+                                    : { effectName: 'builtin-unlit' });
+                            }
                             material.name = `RuntimeFloor_${match.prefix}`;
                             material.setProperty('mainColor', match.above.clone());
                             if (texture) {
@@ -314,7 +508,7 @@ export class WaterRefractionController {
                             }
                             cached = { source, tint: match, material };
                             materialCache.push(cached);
-                            this._floorTints.push({ material, above: match.above, below: match.below });
+                            this._floorTints.push({ material, above: match.above, belowKind: match.belowKind });
                         }
                         renderer.setMaterial(cached.material, i);
                     }
@@ -327,6 +521,21 @@ export class WaterRefractionController {
         walk(pool);
         // Every new runtime material was initialised with its above-water tint.
         this._floorUnderwater = false;
+        this._floorHasDepth = !!this._floorDepthEffect;
+    }
+
+    // Upgrade the submerged floor to the distance-gradient effect once it has
+    // loaded (near = floor blue, far = deep blue). Rebuilds the floor materials
+    // with the effect and re-applies the current camera state.
+    setFloorDepthEffect(effect: EffectAsset) {
+        if (!effect || !this._pool?.isValid) {
+            return;
+        }
+        this._floorDepthEffect = effect;
+        const prev = this._floorUnderwater;
+        this.collectFloorTints(this._pool);
+        this._floorUnderwater = prev ?? false;
+        this.refreshFloor();
     }
 
     // Swap the pool-bottom colours atomically with the camera presentation mode:
@@ -339,11 +548,64 @@ export class WaterRefractionController {
             return;
         }
         this._floorUnderwater = underwater;
-        for (const tint of this._floorTints) {
-            if (tint.material?.isValid) {
-                tint.material.setProperty('mainColor', underwater ? tint.below : tint.above);
-            }
+        this.refreshFloor();
+    }
+
+    // Re-apply the floor near/far colours for the CURRENT camera state (above or
+    // below water). Used on '水色' slider edits and after the depth effect loads.
+    private applyFloorTuning() {
+        if (this._floorTints.length <= 0 || this._floorUnderwater === null) {
+            return;
         }
+        this.refreshFloor();
+    }
+
+    private refreshFloor() {
+        const underwater = this._floorUnderwater === true;
+        for (const tint of this._floorTints) {
+            this.applyFloorMaterial(tint, underwater);
+        }
+    }
+
+    // Set a floor material's near colour (above-deck or submerged blue) and, when
+    // the distance-gradient effect is active, the far colour + range so near reads
+    // clear and far fades to a deep colour. Above and below water use DIFFERENT
+    // deep colours; lane lines never fade.
+    private applyFloorMaterial(
+        tint: { material: Material; above: Color; belowKind: FloorBelowKind },
+        underwater: boolean,
+    ) {
+        const material = tint.material;
+        if (!material?.isValid) {
+            return;
+        }
+        material.setProperty('mainColor', underwater ? computeFloorBelowColor(tint.belowKind) : tint.above);
+        if (this._floorHasDepth) {
+            // Only the underwater view uses a distance-based blue gradient; above
+            // water the floor keeps a flat color (the distance blue there did not
+            // read well), so the gradient is disabled when not underwater.
+            const enable = underwater && tint.belowKind !== 'line' ? 1 : 0;
+            material.setProperty('depthColor', computeFloorDeepColor());
+            material.setProperty('depthParams', new Vec4(
+                WATER_COLOR_TUNING.floorFarStart,
+                WATER_COLOR_TUNING.floorFarEnd,
+                enable,
+                0,
+            ));
+        }
+        // Walls are a single quad spanning the waterline. Above water the material
+        // whitens only the exposed cap (reads as a white pool gutter) without
+        // splitting the mesh or adding a second renderer/draw call. UNDERWATER that
+        // same white cap becomes a jarring bright band at the waterline, so disable
+        // it when submerged and let the wall read as one uniform blue. Floors,
+        // grout, and lane lines keep the feature disabled in both.
+        this._wallWaterLineParams.set(
+            this._waterY,
+            tint.belowKind === 'wall' && !underwater ? 1 : 0,
+            0,
+            0,
+        );
+        material.setProperty('waterLineParams', this._wallWaterLineParams);
     }
 
     // Move swimmer body and splash subtrees onto SWIMMER_LAYER so only the same
@@ -358,9 +620,39 @@ export class WaterRefractionController {
         }
     }
 
+    // Lane floats are static venue geometry (loaded before setup), but re-tagging
+    // during the warmup window is cheap and guards against any deferred rebuild.
+    //
+    // Above water they live on SWIMMER_LAYER so the overlay camera draws their
+    // submerged half over the water. Underwater the surface underside is a fully
+    // OPAQUE mirror, and the overlay would force the floats to draw over that
+    // mirror (they break through / 穿帮). So underwater they go back to the main
+    // camera's DEFAULT layer, where the opaque surface correctly occludes them.
+    private tagLaneFloats() {
+        if (!this._pool?.isValid) {
+            return;
+        }
+        const layer = this._underwaterViewActive ? Layers.Enum.DEFAULT : SWIMMER_LAYER;
+        const floats: Node[] = [];
+        collectNodesByNamePrefix(this._pool, LANE_FLOAT_NODE_PREFIX, floats);
+        for (const node of floats) {
+            if (node?.isValid) {
+                setLayerRecursive(node, layer);
+            }
+        }
+    }
+
     dispose() {
+        // Clear the swimmer reflection-clip flag: it is module-level state, so
+        // leaving a race while underwater would otherwise leave it stuck ON and
+        // make the next character preview (prepare screen) discard every fragment
+        // (character reads black/invisible).
+        setSwimmerReflectClip(false);
         if (this._underwaterViewActive && this._waterNode?.isValid) {
             this._waterNode.active = this._waterActiveBeforeUnderwater;
+        }
+        if (this._poolEdgeNode?.isValid) {
+            this._poolEdgeNode.active = this._poolEdgeActiveBeforeUnderwater;
         }
         if (this._refractionCamera?.isValid) {
             this._refractionCamera.enabled = true;
@@ -372,17 +664,30 @@ export class WaterRefractionController {
         if (this._swimmerCamera?.node?.isValid) {
             this._swimmerCamera.node.destroy();
         }
+        if (this._reflectionCamera?.isValid) {
+            this._reflectionCamera.targetTexture = null;
+        }
+        if (this._reflectionCamera?.node?.isValid) {
+            this._reflectionCamera.node.destroy();
+        }
         this._renderTexture?.destroy();
+        this._reflectionRT?.destroy();
         this._refractionCamera = null;
         this._swimmerCamera = null;
+        this._reflectionCamera = null;
         this._renderTexture = null;
+        this._reflectionRT = null;
+        this._reflectionActive = false;
         this._mainCamera = null;
         this._pool = null;
         this._waterNode = null;
+        this._poolEdgeNode = null;
         this._boundMaterial = null;
         this._getSwimmerNodes = null;
         this._floorTints.length = 0;
         this._floorUnderwater = null;
+        this._floorDepthEffect = null;
+        this._floorHasDepth = false;
         this._underwaterViewActive = false;
         this._waterActiveBeforeUnderwater = true;
     }
@@ -397,6 +702,89 @@ export class WaterRefractionController {
         }
         mirrorCamera(main, this._refractionCamera);
         mirrorCamera(main, this._swimmerCamera);
+    }
+
+    // Reflect the main camera across the water plane and render the underwater
+    // scene into the reflection RT. Gated on the camera being near/below the
+    // surface: normal above-water shots disable the whole pass.
+    private updateReflection() {
+        const refl = this._reflectionCamera;
+        const main = this._mainCamera;
+        if (!refl?.isValid || !main?.isValid) {
+            return;
+        }
+        main.node.getWorldPosition(this._tmpCamPos);
+        // Tell the swimmer shader to clip above-water fragments while the mirror
+        // reflection is being drawn. Gated on the MAIN camera being clearly below
+        // the surface, so the reflection camera (which sits above the surface) is
+        // the only above-water swimmer draw and gets clipped; the direct underwater
+        // overlay (camera below) and all above-water/broadcast draws stay intact.
+        setSwimmerReflectClip(this._tmpCamPos.y < this._waterY);
+        const below = this._underwaterViewActive
+            && this._tmpCamPos.y < this._waterY + REFLECTION_ACTIVE_MARGIN;
+        if (below !== this._reflectionActive) {
+            this._reflectionActive = below;
+            refl.enabled = below;
+        }
+        if (!below) {
+            return;
+        }
+        const h = this._waterY;
+        // Main camera forward / up in world space.
+        Vec3.transformQuat(this._tmpFwd, Vec3.FORWARD, main.node.worldRotation);
+        Vec3.transformQuat(this._tmpUp, Vec3.UP, main.node.worldRotation);
+        Vec3.scaleAndAdd(this._tmpAhead, this._tmpCamPos, this._tmpFwd, REFLECTION_LOOK_AHEAD);
+        // Reflect the eye position, the look-at point and the up vector across
+        // the horizontal water plane (y = h). Rendering the real scene from this
+        // mirrored viewpoint yields the planar reflection.
+        this._tmpReflPos.set(this._tmpCamPos.x, 2 * h - this._tmpCamPos.y, this._tmpCamPos.z);
+        this._tmpReflAhead.set(this._tmpAhead.x, 2 * h - this._tmpAhead.y, this._tmpAhead.z);
+        this._tmpReflUp.set(this._tmpUp.x, -this._tmpUp.y, this._tmpUp.z);
+        refl.node.setWorldPosition(this._tmpReflPos);
+        refl.node.lookAt(this._tmpReflAhead, this._tmpReflUp);
+        refl.projection = main.projection;
+        refl.fovAxis = main.fovAxis;
+        refl.fov = main.fov;
+        refl.orthoHeight = main.orthoHeight;
+        refl.near = main.near;
+        refl.far = main.far;
+    }
+
+    // Toggle the scene's linear blue fog for dedicated underwater shots, saving
+    // and restoring the authored fog so above-water shots are unaffected. This is
+    // what makes the submerged scene read "the further, the bluer".
+    private setUnderwaterFog(active: boolean) {
+        let fog: any = null;
+        try {
+            fog = director.getScene()?.globals?.fog ?? null;
+        } catch {
+            fog = null;
+        }
+        if (!fog) {
+            return;
+        }
+        if (active) {
+            if (!this._fogSaved) {
+                this._fogPrevEnabled = !!fog.enabled;
+                this._fogPrevType = fog.type;
+                this._fogPrevColor.set(fog.fogColor);
+                this._fogPrevStart = fog.fogStart;
+                this._fogPrevEnd = fog.fogEnd;
+                this._fogSaved = true;
+            }
+            fog.type = 0; // FogType.LINEAR (enum not exported from 'cc')
+            fog.fogColor = UNDERWATER_FOG_COLOR;
+            fog.fogStart = UNDERWATER_FOG_START;
+            fog.fogEnd = UNDERWATER_FOG_END;
+            fog.enabled = true;
+        } else if (this._fogSaved) {
+            fog.type = this._fogPrevType;
+            fog.fogColor = this._fogPrevColor;
+            fog.fogStart = this._fogPrevStart;
+            fog.fogEnd = this._fogPrevEnd;
+            fog.enabled = this._fogPrevEnabled;
+            this._fogSaved = false;
+        }
     }
 
     private resizeIfNeeded() {
@@ -446,6 +834,12 @@ export class WaterRefractionController {
         // Re-apply the RenderTexture every frame so runtime resize or GPU texture
         // handle changes cannot leave the sampler pointing at a stale texture.
         material.setProperty('refractionMap', this._renderTexture);
+        if (this._reflectionRT) {
+            material.setProperty('reflectionMap', this._reflectionRT);
+        }
+        if (changed) {
+            material.setProperty('reflectionParams', this._reflectionParams);
+        }
         if (changed || this._laneLockdownParamsDirty) {
             material.setProperty('laneLockdownParams', this._laneLockdownParams);
             material.setProperty('laneLockdownWarningParams', this._laneLockdownWarningParams);
@@ -515,6 +909,15 @@ function findNodeByName(root: Node, name: string): Node | null {
         }
     }
     return null;
+}
+
+function collectNodesByNamePrefix(root: Node, prefix: string, out: Node[]) {
+    if (root.name.startsWith(prefix)) {
+        out.push(root);
+    }
+    for (const child of root.children) {
+        collectNodesByNamePrefix(child, prefix, out);
+    }
 }
 
 function setLayerRecursive(node: Node, layer: number) {

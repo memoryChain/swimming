@@ -237,6 +237,13 @@ function getMaterialProperty(material: Material, name: string): unknown {
 
 function configureOutlineShells(options: CharacterSkinOptions) {
     const { model, skinnedRenderers, outlineRoot, setOutlineRoot } = options;
+    if (!options.playerOutline) {
+        if (outlineRoot?.isValid) {
+            outlineRoot.destroy();
+        }
+        setOutlineRoot(null);
+        return;
+    }
     if (!model || skinnedRenderers.length <= 0) {
         return;
     }

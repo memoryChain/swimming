@@ -314,6 +314,13 @@ export class LoginManager extends Component {
         this.launchMainGame('model-debug');
     }
 
+    // Dedicated underwater-effect tuning scene: just the player + venue, the
+    // player flutter-kicks below the surface and laps back and forth so the
+    // submerged water look can be tuned without playing a full race.
+    startUnderwaterDebug() {
+        this.launchMainGame('underwater-debug');
+    }
+
     // 100m AI-debug 1v1: store the chosen difficulty and launch straight into a
     // single-opponent race. All race modes now use the fixed 100m distance.
     startAiDebug(difficulty: number) {
@@ -390,6 +397,7 @@ export class LoginManager extends Component {
             onRoom: () => this.openRoom(),
             onModelDebug: () => this.startModelDebug(),
             onAiDebug: () => this.showAiDebugPicker(),
+            onUnderwaterDebug: () => this.startUnderwaterDebug(),
         }).build(getUILayer(canvasNode, UILayer.Screen), width, height, (error, refs) => {
             if (error) {
                 console.error('[SpeedSwimming] Login UI failed to load', error);
