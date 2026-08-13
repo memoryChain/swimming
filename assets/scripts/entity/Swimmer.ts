@@ -446,6 +446,12 @@ export class Swimmer extends Component {
                 this.cartoonRig?.startDiveStreamlineTransition(poseTransitionDuration);
             })
             .delay(launchDelayDuration)
+            // Hard boundary for presentation: even if a low frame rate leaves
+            // one final burst frame pending, no charge light may cross the
+            // instant this root begins its projectile motion.
+            .call(() => {
+                this.cartoonRig?.clearDiveChargeEffect();
+            })
             .to(projectileFlightDuration, {}, {
                 onUpdate: (_target?: Node, ratio = 0) => {
                     this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, ratio, projectileFlightDuration);
