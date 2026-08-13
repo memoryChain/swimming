@@ -7,6 +7,8 @@ export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
     onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
     onKickStroke: (type: StrokeType) => void;
+    // Returns true only when the press was consumed by the wall-turn QTE.
+    onFlipTurnTiming: () => boolean;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
     // Both invisible screen halves held together past the trigger threshold.
@@ -130,6 +132,11 @@ export class InputRouter {
     // to the player's tap rhythm instantly. If the press is held past
     // STROKE_QUALITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
+        if (this._callbacks.onFlipTurnTiming()) {
+            // Do not mark the press active: its eventual release must not promote
+            // into an arm stroke after the scripted turn hands control back.
+            return;
+        }
         const press = this.pressState(type);
         press.active = true;
         press.startedMs = Date.now();

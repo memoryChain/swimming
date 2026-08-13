@@ -5,7 +5,7 @@ import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorCo
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
-import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
+import { DIVE_BALANCE, FLIP_TURN_TIMING_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import { ULTIMATE_SKILL_BALANCE } from '../skills/SkillRuntime';
@@ -45,7 +45,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 25;
+const TUNING_FILE_VERSION = 26;
 
 type TuningFileData = {
     version: number;
@@ -125,7 +125,15 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('motion.flipTurnUnderwaterRiseSeconds', 'Underwater Rise', 'Seconds used to rise from the deeper glide depth to surface freestyle after the hold.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
             control('motion.flipTurnUnderwaterRiseTiltDegrees', 'Rise Tilt', 'Maximum head-up body tilt during the post-turn ascent.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
             control('motion.flipTurnWallContactPadding', 'Wall Contact', 'Clearance from sampled foot/toe bone centers to the visible sole surface. Higher values keep both feet farther inside the pool.', () => CHARACTER_POSE_TUNING.flipTurnWallContactPadding, (v) => CHARACTER_POSE_TUNING.flipTurnWallContactPadding = v, 0.01, 0, 1, 2, 'm'),
-            control('speed.flipTurnPushLaunchSpeed', 'Push Launch Speed', 'Initial speed reached by the wall push before underwater drag settles toward the restored cruise speed.', () => SWIMMER_BALANCE.flipTurnPushLaunchSpeed, (v) => SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v, 0.1, 0, 10, 1, 'm/s'),
+            control('speed.flipTurnPushLaunchSpeed', 'Push Launch Speed', 'Legacy alias for the normal QTE wall-push launch speed; kept so existing saved tuning preserves its feel.', () => SWIMMER_BALANCE.flipTurnPushLaunchSpeed, (v) => { SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v; FLIP_TURN_TIMING_BALANCE.minLaunchSpeed = v; }, 0.1, 0, 10, 1, 'm/s'),
+            control('turnQte.ringStartScale', 'QTE Ring Start Scale', 'Blue timing ring starts at this multiple of the fixed yellow ring and shrinks to it at wall contact.', () => FLIP_TURN_TIMING_BALANCE.ringStartScale, (v) => FLIP_TURN_TIMING_BALANCE.ringStartScale = v, 0.05, 1.05, 3, 2),
+            control('turnQte.previewSeconds', 'QTE Preview Time', 'Seconds the blue ring is visible before the authored flip animation begins; it still reaches yellow exactly at foot contact.', () => FLIP_TURN_TIMING_BALANCE.previewSeconds, (v) => FLIP_TURN_TIMING_BALANCE.previewSeconds = v, 0.05, 0, 1.5, 2, 's'),
+            control('turnQte.lateShrinkSeconds', 'QTE Late Shrink', 'After blue meets yellow, seconds used to keep shrinking it to the missed-timing end scale before hiding.', () => FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds, (v) => FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds = v, 0.01, 0.02, 0.5, 2, 's'),
+            control('turnQte.lateRingEndScale', 'QTE Late End Scale', 'Blue ring scale after the post-contact missed-timing shrink completes.', () => FLIP_TURN_TIMING_BALANCE.lateRingEndScale, (v) => FLIP_TURN_TIMING_BALANCE.lateRingEndScale = v, 0.02, 0.4, 0.99, 2),
+            control('turnQte.perfectRadiusError', 'QTE Perfect Radius Error', 'Maximum blue/yellow ring scale difference that awards a perfect wall push.', () => FLIP_TURN_TIMING_BALANCE.perfectRadiusError, (v) => FLIP_TURN_TIMING_BALANCE.perfectRadiusError = v, 0.01, 0.01, 0.3, 2),
+            control('turnQte.goodRadiusError', 'QTE Good Radius Error', 'Maximum ring scale difference that still awards a good wall push.', () => FLIP_TURN_TIMING_BALANCE.goodRadiusError, (v) => FLIP_TURN_TIMING_BALANCE.goodRadiusError = v, 0.01, 0.02, 0.8, 2),
+            control('turnQte.minLaunchSpeed', 'QTE Normal Launch', 'No input or an early normal press uses this wall-push launch speed.', () => FLIP_TURN_TIMING_BALANCE.minLaunchSpeed, (v) => { FLIP_TURN_TIMING_BALANCE.minLaunchSpeed = v; SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v; }, 0.05, 0, 10, 2, 'm/s'),
+            control('turnQte.maxLaunchSpeed', 'QTE Perfect Launch', 'A perfect timing press reaches this wall-push launch speed.', () => FLIP_TURN_TIMING_BALANCE.maxLaunchSpeed, (v) => FLIP_TURN_TIMING_BALANCE.maxLaunchSpeed = v, 0.05, 0, 12, 2, 'm/s'),
             control('speed.flipTurnUnderwaterGlideDrag', 'Push Glide Drag', 'Extra speed-proportional drag during the post-turn underwater glide. Normal water drag still applies.', () => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag, (v) => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag = v, 0.01, 0, 1, 2),
             control('speed.flipTurnDecelerationExponent', 'Deceleration Curve', 'Approach curve power (clamped 1-2). 1 spreads the slowdown evenly; 2 starts the turn later and sheds speed harder near the wall. Lane speed always reaches 0 exactly when the feet plant.', () => SWIMMER_BALANCE.flipTurnDecelerationExponent, (v) => SWIMMER_BALANCE.flipTurnDecelerationExponent = v, 0.1, 1, 2, 1),
             control('speed.flipTurnAccelerationExponent', 'Acceleration Curve', 'Wall-push curve power (clamped 1-2). 1 accelerates evenly off the wall; 2 builds speed later for a punchier launch into the underwater glide.', () => SWIMMER_BALANCE.flipTurnAccelerationExponent, (v) => SWIMMER_BALANCE.flipTurnAccelerationExponent = v, 0.1, 1, 2, 1),
@@ -561,6 +569,26 @@ function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string,
 }
 
 function validateTuningRelations() {
+    FLIP_TURN_TIMING_BALANCE.ringStartScale = clamp(FLIP_TURN_TIMING_BALANCE.ringStartScale, 1.01, 3);
+    FLIP_TURN_TIMING_BALANCE.previewSeconds = clamp(FLIP_TURN_TIMING_BALANCE.previewSeconds, 0, 1.5);
+    FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds = clamp(FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds, 0.02, 0.5);
+    FLIP_TURN_TIMING_BALANCE.lateRingEndScale = clamp(FLIP_TURN_TIMING_BALANCE.lateRingEndScale, 0.4, 0.99);
+    const maxRingError = FLIP_TURN_TIMING_BALANCE.ringStartScale - 1;
+    FLIP_TURN_TIMING_BALANCE.perfectRadiusError = clamp(
+        FLIP_TURN_TIMING_BALANCE.perfectRadiusError,
+        0.001,
+        maxRingError,
+    );
+    FLIP_TURN_TIMING_BALANCE.goodRadiusError = clamp(
+        Math.max(FLIP_TURN_TIMING_BALANCE.perfectRadiusError, FLIP_TURN_TIMING_BALANCE.goodRadiusError),
+        FLIP_TURN_TIMING_BALANCE.perfectRadiusError,
+        maxRingError,
+    );
+    FLIP_TURN_TIMING_BALANCE.minLaunchSpeed = Math.max(0, FLIP_TURN_TIMING_BALANCE.minLaunchSpeed);
+    FLIP_TURN_TIMING_BALANCE.maxLaunchSpeed = Math.max(
+        FLIP_TURN_TIMING_BALANCE.minLaunchSpeed,
+        FLIP_TURN_TIMING_BALANCE.maxLaunchSpeed,
+    );
     const safeMaxHeading = clamp(STEERING_TUNING.maxHeading, 0, MAX_STEERING_HEADING_DEGREES);
     if (safeMaxHeading !== STEERING_TUNING.maxHeading) {
         console.warn(

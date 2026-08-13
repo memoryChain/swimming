@@ -16,6 +16,8 @@ export type SpeedStarsStartUiCallbacks = {
 export type SpeedStarsUiCallbacks = {
     onStroke: (type: StrokeType) => void;
     onStrokeEnd: (type: StrokeType) => void;
+    // Consumes a full-screen race press while the wall-turn QTE is live.
+    onFlipTurnTiming: () => boolean;
     onDiveHoldStart: () => void;
     onDiveHoldEnd: (holdSeconds: number) => void;
     onUltimateActivate: () => void;
@@ -459,6 +461,11 @@ export class SpeedStarsUiPrefabBuilder {
 
     private beginStrokeInput(type: StrokeType) {
         const count = this._activeStrokeCounts[type];
+        if (count === 0 && this._callbacks.onFlipTurnTiming()) {
+            // Do not begin pointer/hold bookkeeping: this click belongs solely
+            // to the one-shot wall-turn QTE, never to swimming input.
+            return;
+        }
         this._activeStrokeCounts[type] = count + 1;
         this.beginPointerHold();
         if (count === 0) {

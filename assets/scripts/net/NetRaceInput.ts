@@ -36,6 +36,7 @@ export const enum NetInputKind {
     DiveRelease = 'r', // dive release (carries charge power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
     UltimateActivate = 'u', // dedicated full-gauge prototype ultimate
+    FlipTurnTiming = 't', // accepted wall-push timing (quantized launch speed)
 }
 
 export interface NetInputEvent {
@@ -44,8 +45,8 @@ export interface NetInputEvent {
     side?: NetInputSide;
     // Present for DiveRelease: the 0..1 charge power at release.
     power?: number;
-    // Present for new DiveRelease payloads: owner's final progression-adjusted launch
-    // speed (m/s). Optional so old payloads/replays keep using the base dive result.
+    // Present for DiveRelease and FlipTurnTiming: owner's final quantized launch
+    // speed (m/s). Optional so old payloads/replays keep using the base result.
     launchSpeed?: number;
 }
 
@@ -77,6 +78,10 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DolphinJump;
         case NetInputKind.UltimateActivate:
             return NetInputKind.UltimateActivate;
+        case NetInputKind.FlipTurnTiming: {
+            const launchSpeed = Math.max(0, Math.round((event.launchSpeed ?? 0) * SPEED_SCALE));
+            return `${NetInputKind.FlipTurnTiming}${launchSpeed}`;
+        }
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -106,6 +111,12 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.DolphinJump:
         case NetInputKind.UltimateActivate:
             return { kind };
+        case NetInputKind.FlipTurnTiming: {
+            const launchSpeedCms = parseInt(token.slice(1), 10);
+            return Number.isFinite(launchSpeedCms) && launchSpeedCms >= 0
+                ? { kind, launchSpeed: launchSpeedCms / SPEED_SCALE }
+                : null;
+        }
         case NetInputKind.DiveRelease: {
             const values = token.slice(1).split(',');
             const raw = parseInt(values[0], 10);

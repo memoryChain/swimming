@@ -146,6 +146,25 @@ export const SWIMMER_BALANCE = {
     perfectComboOvercapDecay: 0.45,
 };
 
+// One-shot timing judgment used while a swimmer is tucked at an internal wall.
+// These values deliberately live beside the existing flip-turn balance so the
+// ordinary (no-input) push remains the lowest valid result.
+export const FLIP_TURN_TIMING_BALANCE = {
+    ringStartScale: 1.8,
+    // Show the ring slightly before the swimmer enters the authored turn pose.
+    // The ring still reaches the yellow target exactly at foot contact.
+    previewSeconds: 0.5,
+    // After the target is crossed, let the blue ring visibly overshoot before
+    // hiding it so a missed timing reads as a complete motion, not a pop.
+    lateShrinkSeconds: 0.1,
+    lateRingEndScale: 0.8,
+    // 1.10x through 0.90x of the yellow ring is a full-power wall push.
+    perfectRadiusError: 0.1,
+    goodRadiusError: 0.35,
+    minLaunchSpeed: 5.2,
+    maxLaunchSpeed: 6.0,
+};
+
 export const DIVE_BALANCE = {
     platformNodeOffset: new Vec3(-1.37, 0.53, 0),
     minLaunchSpeed: 4.2,

@@ -72,6 +72,9 @@ export class AISwimmerController extends Component {
     private _dolphinCooldown = 0;
     private _dolphinDecisionTimer = 0;
     private _dolphinAirTapTimer = 0;
+    // One target ratio per wall turn. The random draw is outcome-affecting, so
+    // it uses SharedRNG through randomGaussian rather than Math.random().
+    private _flipTurnTimingTargetRatio = -1;
 
     setLaneLockdownSafeZRange(minZ: number | null, maxZ: number | null, warning: boolean) {
         if (!Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
@@ -110,6 +113,7 @@ export class AISwimmerController extends Component {
         this._dolphinCooldown = 0;
         this._dolphinDecisionTimer = 0;
         this._dolphinAirTapTimer = 0;
+        this._flipTurnTimingTargetRatio = -1;
         this._timer = randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
     }
 
@@ -145,6 +149,12 @@ export class AISwimmerController extends Component {
             return;
         }
         this.updateEffortModifier(sdt);
+        this.maybeResolveFlipTurnTiming();
+        // The scripted turn has input locked; after resolving its one timing
+        // decision, let the phase own the body until normal swimming resumes.
+        if (this.swimmer.isFlipTurning) {
+            return;
+        }
         this.maybeTriggerDolphinJump(sdt);
         // A jump started this step: skip the normal stroke logic (the scripted
         // phase owns the body now).
@@ -159,6 +169,27 @@ export class AISwimmerController extends Component {
             return;
         }
         this.updateStroke(sdt);
+    }
+
+    private maybeResolveFlipTurnTiming() {
+        const timing = this.swimmer.flipTurnTiming;
+        if (!timing.active || !timing.accepting) {
+            this._flipTurnTimingTargetRatio = -1;
+            return;
+        }
+        if (this._flipTurnTimingTargetRatio < 0) {
+            // At difficulty 0, targets scatter across the approach; at 1 they
+            // cluster tightly around the ring overlap without being guaranteed.
+            const sigma = 0.70 - 0.64 * this.effectiveDifficulty();
+            this._flipTurnTimingTargetRatio = clamp(
+                1 - Math.abs(randomGaussian() * Math.max(0.02, sigma)),
+                0.02,
+                0.995,
+            );
+        }
+        if (timing.progressRatio >= this._flipTurnTimingTargetRatio) {
+            this.swimmer.tryResolveFlipTurnTiming();
+        }
     }
 
     // Decide whether to launch a dolphin jump this step. The trigger is

@@ -1,6 +1,6 @@
 import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
-import { SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
+import { FLIP_TURN_TIMING_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { StrokeType } from '../core/GameConstants';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -8,6 +8,24 @@ import { COURSE_DISTANCE_EPSILON, RaceCourseLayout } from '../venue/RaceCourseLa
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 
 export type UnderwaterPhaseKind = 'none' | 'dive' | 'flipTurn' | 'dolphin';
+
+export type FlipTurnTimingRating = 'perfect' | 'good' | 'normal';
+
+// Stable, read-only-to-callers snapshot. It is mutated in place so the race HUD
+// can inspect it every frame without creating garbage on mobile JavaScriptCore.
+export type FlipTurnTimingState = {
+    active: boolean;
+    accepting: boolean;
+    resolved: boolean;
+    progressRatio: number;
+    ringScale: number;
+};
+
+export type FlipTurnTimingResult = {
+    rating: FlipTurnTimingRating;
+    score: number;
+    launchSpeed: number;
+};
 
 /**
  * The pieces of the owning Swimmer that the race-phase controller needs. Kept
@@ -48,6 +66,17 @@ export class SwimmerRacePhases {
     private _flipTurnEntrySpeed = 0;
     private _flipTurnPushSpeed = 0;
     private _lastCompletedFlipTurnWallDistance = Number.NEGATIVE_INFINITY;
+    private _flipTurnTimingPreviewElapsed = 0;
+    private _flipTurnTimingContactSeconds = 0;
+    private _flipTurnTimingLateElapsed = 0;
+    private _flipTurnTimingLatePhase = false;
+    private readonly _flipTurnTiming: FlipTurnTimingState = {
+        active: false,
+        accepting: false,
+        resolved: false,
+        progressRatio: 0,
+        ringScale: FLIP_TURN_TIMING_BALANCE.ringStartScale,
+    };
 
     // --- Dolphin jump (海豚跃) -------------------------------------------------
     // A scripted dip -> airborne arc -> landing dive. While airborne the position
@@ -97,6 +126,44 @@ export class SwimmerRacePhases {
 
     get isFlipTurnActive(): boolean {
         return this._flipTurnActive;
+    }
+
+    get flipTurnTiming(): Readonly<FlipTurnTimingState> {
+        return this._flipTurnTiming;
+    }
+
+    // Accept exactly one local timing press during the approach portion of a
+    // flip-turn. Its result is stored now and applied when the feet plant.
+    tryResolveFlipTurnTiming(): FlipTurnTimingResult | null {
+        if (!this._flipTurnTiming.active || !this._flipTurnTiming.accepting || this._flipTurnTiming.resolved) {
+            return null;
+        }
+        const startScale = Math.max(1.001, FLIP_TURN_TIMING_BALANCE.ringStartScale);
+        const error = Math.abs(this._flipTurnTiming.ringScale - 1);
+        const rating: FlipTurnTimingRating = error <= FLIP_TURN_TIMING_BALANCE.perfectRadiusError
+            ? 'perfect'
+            : error <= FLIP_TURN_TIMING_BALANCE.goodRadiusError ? 'good' : 'normal';
+        // The whole perfect band is deliberately flat: players should receive
+        // the same maximum wall push anywhere from 1.10x to 0.90x ring scale.
+        const score = rating === 'perfect'
+            ? 1
+            : clamp01(1 - error / (startScale - 1));
+        const launchSpeed = quantizedLaunchSpeed(
+            FLIP_TURN_TIMING_BALANCE.minLaunchSpeed
+            + (FLIP_TURN_TIMING_BALANCE.maxLaunchSpeed - FLIP_TURN_TIMING_BALANCE.minLaunchSpeed) * score,
+        );
+        this.resolveFlipTurnTiming(launchSpeed);
+        return { rating, score, launchSpeed };
+    }
+
+    // Network replay supplies the owner's already-quantized result. It intentionally
+    // bypasses local timing so iOS/Android frame pacing cannot change the outcome.
+    applyAcceptedNetFlipTurnTiming(launchSpeed: number): boolean {
+        if (!this._flipTurnTiming.active || !this._flipTurnTiming.accepting || this._flipTurnTiming.resolved || !Number.isFinite(launchSpeed)) {
+            return false;
+        }
+        this.resolveFlipTurnTiming(quantizedLaunchSpeed(launchSpeed));
+        return true;
     }
 
     // True for the whole dolphin jump (dip + air). Gates collision and input.
@@ -166,6 +233,7 @@ export class SwimmerRacePhases {
             this.updateFlipTurnPhase(dt);
             return true;
         }
+        this.updateFlipTurnTimingPreview(dt);
         if (this.tryStartFlipTurnPhase(dt)) {
             this.updateFlipTurnPhase(dt);
             return true;
@@ -197,6 +265,7 @@ export class SwimmerRacePhases {
         this._flipTurnActive = false;
         this._flipTurnEntrySpeed = 0;
         this._flipTurnPushSpeed = 0;
+        this.resetFlipTurnTiming();
         this._dolphinActive = false;
         this._dolphinRollAngle = 0;
         this._dolphinRollTarget = 0;
@@ -294,6 +363,92 @@ export class SwimmerRacePhases {
         }
     }
 
+    // Start the player-facing timing cue before the authored flip animation. Its
+    // scale timeline remains tied to the future foot-contact moment, not to the
+    // swimmer's current render frame, so the yellow-ring overlap is still exact.
+    private updateFlipTurnTimingPreview(dt: number) {
+        if (this._flipTurnTiming.active) {
+            return;
+        }
+        const rig = this._host.cartoonRig;
+        const motor = this._host.motor;
+        const courseLayout = this._host.courseLayout;
+        if (!rig || !motor.isRacing || this._diveUnderwaterActive || this._dolphinActive) {
+            return;
+        }
+        const distance = motor.distance;
+        const wallDistance = courseLayout.nextInternalTurnDistance(distance, getRaceDistance());
+        if (wallDistance === null || wallDistance <= this._lastCompletedFlipTurnWallDistance + COURSE_DISTANCE_EPSILON) {
+            return;
+        }
+        const keyframeSeconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
+            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        const entrySpeed = finiteNonNegative(motor.currentSpeed);
+        const exponent = Math.min(2, Math.max(1, finitePower(SWIMMER_BALANCE.flipTurnDecelerationExponent)));
+        const approachDistance = Math.min(
+            Math.max(0.1, entrySpeed * keyframeSeconds / (exponent + 1)),
+            Math.max(0.1, courseLayout.courseLength - COURSE_DISTANCE_EPSILON),
+        );
+        const previewDistance = approachDistance + entrySpeed * Math.max(0, FLIP_TURN_TIMING_BALANCE.previewSeconds);
+        if (wallDistance - distance <= previewDistance) {
+            this.beginFlipTurnTiming();
+        }
+    }
+
+    private beginFlipTurnTiming() {
+        this._flipTurnTiming.active = true;
+        // The lead-in is awareness time only: the player can finish the current
+        // stroke without accidentally consuming the one QTE press.
+        this._flipTurnTiming.accepting = false;
+        this._flipTurnTiming.resolved = false;
+        this._flipTurnTiming.progressRatio = 0;
+        this._flipTurnTiming.ringScale = Math.max(1, FLIP_TURN_TIMING_BALANCE.ringStartScale);
+        this._flipTurnTimingPreviewElapsed = 0;
+        this._flipTurnTimingContactSeconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
+            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        this._flipTurnTimingLateElapsed = 0;
+        this._flipTurnTimingLatePhase = false;
+    }
+
+    private updateFlipTurnTimingBeforeContact(elapsed: number) {
+        if (!this._flipTurnTiming.active || !this._flipTurnTiming.accepting || this._flipTurnTimingLatePhase) {
+            return;
+        }
+        const ratio = clamp01(elapsed / Math.max(0.001, this._flipTurnTimingContactSeconds));
+        this._flipTurnTiming.progressRatio = ratio;
+        this._flipTurnTiming.ringScale = lerp(
+            Math.max(1, FLIP_TURN_TIMING_BALANCE.ringStartScale),
+            1,
+            ratio,
+        );
+    }
+
+    private updateFlipTurnTimingAfterContact(dt: number) {
+        if (!this._flipTurnTiming.active) {
+            return;
+        }
+        if (!this._flipTurnTimingLatePhase) {
+            this._flipTurnTimingLatePhase = true;
+            this._flipTurnTiming.progressRatio = 1;
+            this._flipTurnTiming.ringScale = 1;
+            this._flipTurnTimingLateElapsed = 0;
+            return;
+        }
+        const seconds = Math.max(0.001, FLIP_TURN_TIMING_BALANCE.lateShrinkSeconds);
+        this._flipTurnTimingLateElapsed += Math.max(0, dt);
+        const ratio = clamp01(this._flipTurnTimingLateElapsed / seconds);
+        this._flipTurnTiming.ringScale = lerp(1, FLIP_TURN_TIMING_BALANCE.lateRingEndScale, ratio);
+        // Keep the input window open through the lower half of the perfect band.
+        // At the default 0.1s late shrink this gives roughly another 0.05s after
+        // contact, ending only after the blue ring is smaller than 0.90x.
+        if (this._flipTurnTiming.ringScale < 1 - FLIP_TURN_TIMING_BALANCE.perfectRadiusError) {
+            this._flipTurnTiming.accepting = false;
+        }
+        if (ratio >= 1) {
+            this._flipTurnTiming.active = false;
+        }
+    }
+
     private tryStartFlipTurnPhase(dt: number): boolean {
         const rig = this._host.cartoonRig;
         const courseLayout = this._host.courseLayout;
@@ -352,7 +507,19 @@ export class SwimmerRacePhases {
         this._flipTurnIncomingDirection = incomingDirection;
         this._flipTurnMaxReach = incomingDirection * (contactX - exitX);
         this._flipTurnEntrySpeed = entrySpeed;
-        this._flipTurnPushSpeed = finiteNonNegative(SWIMMER_BALANCE.flipTurnPushLaunchSpeed);
+        // Usually the timing ring began in the lead-in preview. Keep a safe
+        // fallback for teleports/high frame-time steps that enter the turn now.
+        if (!this._flipTurnTiming.active) {
+            this.beginFlipTurnTiming();
+        }
+        // Start the actual judgment only once the authored turn pose begins.
+        // The preceding 0.5s pre-warning never consumes A/D or screen strokes.
+        this._flipTurnTiming.accepting = true;
+        this._flipTurnTiming.progressRatio = 0;
+        this._flipTurnTiming.ringScale = Math.max(1, FLIP_TURN_TIMING_BALANCE.ringStartScale);
+        if (!this._flipTurnTiming.resolved) {
+            this._flipTurnPushSpeed = finiteNonNegative(FLIP_TURN_TIMING_BALANCE.minLaunchSpeed);
+        }
         motor.beginFlipTurnPhase();
         rig.setStrokeHeld(StrokeType.LEFT, false);
         rig.setStrokeHeld(StrokeType.RIGHT, false);
@@ -395,6 +562,9 @@ export class SwimmerRacePhases {
             // Reach eases in with zero initial slope so the world-X velocity at the
             // turn onset stays exactly the incoming lane speed (no lurch).
             reachRatio = smoothStep(tau);
+            this.updateFlipTurnTimingBeforeContact(
+                tau * keyframe2Seconds,
+            );
         } else {
             // Wall push: accelerate from 0 to the launch burst, advancing into the
             // new lap while the reach offset eases back to the swim line.
@@ -403,6 +573,7 @@ export class SwimmerRacePhases {
             distance = this._flipTurnWallDistance + motion.position;
             laneSpeed = motion.speed;
             reachRatio = 1 - smoothStep(tau);
+            this.updateFlipTurnTimingAfterContact(dt);
         }
         const baseX = courseLayout.distanceToWorldX(distance);
         const x = baseX + this._flipTurnIncomingDirection * this._flipTurnMaxReach * reachRatio;
@@ -431,6 +602,7 @@ export class SwimmerRacePhases {
         motor.completeFlipTurnPhase(handoffDistance, this._flipTurnPushSpeed);
         this._lastCompletedFlipTurnWallDistance = this._flipTurnWallDistance;
         this._flipTurnActive = false;
+        this.resetFlipTurnTiming();
         this.startFlipTurnUnderwaterPhase();
         // Drive the underwater glide pose on this same frame. Without it the rig
         // would render one frame frozen on the static exit-swim snapshot before
@@ -450,6 +622,26 @@ export class SwimmerRacePhases {
             SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag,
         );
         this._host.cartoonRig?.setLegSplashSuppressed(true);
+    }
+
+    private resolveFlipTurnTiming(launchSpeed: number) {
+        this._flipTurnTiming.resolved = true;
+        // Keep the ring visible through yellow and into the post-contact
+        // overshoot; only input is locked after the one allowed press.
+        this._flipTurnTiming.accepting = false;
+        this._flipTurnPushSpeed = Math.max(0, launchSpeed);
+    }
+
+    private resetFlipTurnTiming() {
+        this._flipTurnTiming.active = false;
+        this._flipTurnTiming.accepting = false;
+        this._flipTurnTiming.resolved = false;
+        this._flipTurnTiming.progressRatio = 0;
+        this._flipTurnTiming.ringScale = Math.max(1, FLIP_TURN_TIMING_BALANCE.ringStartScale);
+        this._flipTurnTimingPreviewElapsed = 0;
+        this._flipTurnTimingContactSeconds = 0;
+        this._flipTurnTimingLateElapsed = 0;
+        this._flipTurnTimingLatePhase = false;
     }
 
     // Try to begin a dolphin jump this frame. Rejected when already in another
@@ -786,6 +978,15 @@ export class SwimmerRacePhases {
 
 function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
+}
+
+function clamp01(value: number): number {
+    return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+// Keep the player and remote replay on the same centimetres-per-second value.
+function quantizedLaunchSpeed(value: number): number {
+    return Math.max(0, Math.round(value * 100) / 100);
 }
 
 function clampScalar(value: number, min: number, max: number): number {

@@ -473,6 +473,7 @@ export class GameManager extends Component {
         }
         this.updateSpectatorCameraTarget();
         this._gameFlow?.updateRaceCamera(dt);
+        this._uiFlow?.updateFlipTurnTiming(this._playerSwimmer?.flipTurnTiming ?? null);
         this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
@@ -925,6 +926,7 @@ export class GameManager extends Component {
             onStroke: (type) => this.handlePlayerStroke(type),
             onStrokeHeld: (type, held, preHeldSeconds) => this.handlePlayerStrokeHeld(type, held, preHeldSeconds),
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
+            onFlipTurnTiming: () => this._gameFlow?.handleFlipTurnTiming() ?? false,
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
@@ -1837,6 +1839,7 @@ export class GameManager extends Component {
         const raceUiBuilder = new SpeedStarsUiPrefabBuilder({
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
+            onFlipTurnTiming: () => this._gameFlow?.handleFlipTurnTiming() ?? false,
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onUltimateActivate: () => this._gameFlow?.handleUltimateActivate(),

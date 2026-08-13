@@ -22,7 +22,7 @@ import {
     RaceCourseLayout,
 } from '../venue/RaceCourseLayout';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
-import { SwimmerRacePhases } from './SwimmerRacePhases';
+import { FlipTurnTimingResult, FlipTurnTimingState, SwimmerRacePhases } from './SwimmerRacePhases';
 
 const { ccclass, property } = _decorator;
 const PERFECT_COMBO_IDLE_SECONDS = 1;
@@ -1068,6 +1068,20 @@ export class Swimmer extends Component {
 
     get isFlipTurning(): boolean {
         return this._phases.isFlipTurnActive;
+    }
+
+    // Stable snapshot for the HUD. See SwimmerRacePhases for the no-allocation
+    // backing object and the exact timing/scoring rules.
+    get flipTurnTiming(): Readonly<FlipTurnTimingState> {
+        return this._phases.flipTurnTiming;
+    }
+
+    tryResolveFlipTurnTiming(): FlipTurnTimingResult | null {
+        return this._phases.tryResolveFlipTurnTiming();
+    }
+
+    applyAcceptedNetFlipTurnTiming(launchSpeed: number): boolean {
+        return this._phases.applyAcceptedNetFlipTurnTiming(launchSpeed);
     }
 
     get isFlipTurnCameraActive(): boolean {

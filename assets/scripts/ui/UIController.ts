@@ -3,6 +3,7 @@ import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
+import { FlipTurnTimingRating, FlipTurnTimingState } from '../entity/SwimmerRacePhases';
 
 const { ccclass, property } = _decorator;
 const HUD_BAR_WIDTH = 220;
@@ -39,6 +40,10 @@ const PRAISE_PERFECT = { text: 'Perfect', color: new Color(255, 224, 89, 255) };
 const PRAISE_AMAZING = { text: 'Amazing', color: new Color(255, 184, 77, 255) };
 const PRAISE_CRAZY = { text: 'Crazy', color: new Color(255, 122, 184, 255) };
 const PRAISE_UNBELIEVABLE = { text: 'Unbelievable', color: new Color(255, 208, 97, 255) };
+const FLIP_TURN_QTE_YELLOW = new Color(255, 220, 63, 245);
+const FLIP_TURN_QTE_BLUE = new Color(82, 220, 255, 235);
+const FLIP_TURN_QTE_NORMAL = new Color(214, 235, 246, 255);
+const FLIP_TURN_QTE_GOOD = new Color(80, 242, 161, 255);
 
 export type RaceResultStats = {
     averageSpeed: number;
@@ -151,11 +156,186 @@ export class UIController extends Component {
     private _finishCountdownRoot: Node = null;
     private _finishCountdownLabel: Label = null;
     private _finishCountdownHint: Label = null;
+    // Runtime prototype only. The hierarchy is built once and Graphics redraw is
+    // throttled/quantized; replace these rings with authored sprites before ship.
+    private _flipTurnQteRoot: Node = null;
+    private _flipTurnQteBlue: Graphics = null;
+    private _flipTurnQteYellow: Graphics = null;
+    private _flipTurnQteFeedbackRoot: Node = null;
+    private _flipTurnQteFeedbackLabel: Label = null;
+    private _flipTurnQtePromptLabel: Label = null;
+    private _flipTurnQteActive = false;
+    private _flipTurnQteAccepting = false;
+    private _flipTurnQteRadius = -1;
+    private _flipTurnQteLastSampleMs = 0;
+    private _flipTurnQteFeedbackText = '';
 
     start() {
         this.setupButtonFeedback(this.btnArm);
         this.setupButtonFeedback(this.btnLeg);
+        this.buildFlipTurnQtePrototype();
         this.resetAll();
+    }
+
+    updateFlipTurnTiming(state: Readonly<FlipTurnTimingState> | null) {
+        const active = !!state?.active;
+        if (!active) {
+            if (this._flipTurnQteActive) {
+                this._flipTurnQteActive = false;
+                if (this._flipTurnQteRoot && this._flipTurnQteRoot.active) {
+                    this._flipTurnQteRoot.active = false;
+                }
+            }
+            return;
+        }
+        this.buildFlipTurnQtePrototype();
+        if (!this._flipTurnQteActive) {
+            this._flipTurnQteActive = true;
+            this._flipTurnQteAccepting = false;
+            this._flipTurnQteRadius = -1;
+            this._flipTurnQteLastSampleMs = 0;
+            if (this._flipTurnQteRoot && !this._flipTurnQteRoot.active) {
+                this._flipTurnQteRoot.active = true;
+            }
+        }
+        const accepting = !!state?.accepting;
+        if (accepting !== this._flipTurnQteAccepting) {
+            this._flipTurnQteAccepting = accepting;
+            this._flipTurnQteRadius = -1;
+            if (this._flipTurnQteBlue && this._flipTurnQteBlue.node.active !== accepting) {
+                this._flipTurnQteBlue.node.active = accepting;
+            }
+            if (this._flipTurnQtePromptLabel) {
+                const prompt = accepting ? '点击蹬墙' : '准备蹬墙';
+                if (this._flipTurnQtePromptLabel.string !== prompt) {
+                    this._flipTurnQtePromptLabel.string = prompt;
+                }
+                const color = accepting ? FLIP_TURN_QTE_NORMAL : FLIP_TURN_QTE_YELLOW;
+                if (this._flipTurnQtePromptLabel.color !== color) {
+                    this._flipTurnQtePromptLabel.color = color;
+                }
+            }
+        }
+        const now = Date.now();
+        if (now - this._flipTurnQteLastSampleMs < 34) {
+            return;
+        }
+        this._flipTurnQteLastSampleMs = now;
+        if (!accepting) {
+            return;
+        }
+        const radius = Math.round(108 * Math.max(1, state?.ringScale ?? 1));
+        if (radius === this._flipTurnQteRadius || !this._flipTurnQteBlue) {
+            return;
+        }
+        this._flipTurnQteRadius = radius;
+        drawFlipTurnQteRing(this._flipTurnQteBlue, radius, FLIP_TURN_QTE_BLUE, 8);
+    }
+
+    showFlipTurnTimingResult(rating: FlipTurnTimingRating, _launchSpeed: number) {
+        this.buildFlipTurnQtePrototype();
+        // Reuse the same vocabulary players already learn from stroke timing;
+        // the number makes the wall-push reward concrete without a separate
+        // "turn" rating taxonomy.
+        const praise = rating === 'perfect' ? PRAISE_PERFECT
+            : rating === 'good' ? PRAISE_GREAT : PRAISE_GOOD;
+        this.showFlipTurnTimingFeedback(
+            praise.text.toUpperCase(),
+            praise.color,
+        );
+    }
+
+    private showFlipTurnTimingFeedback(text: string, color: Color) {
+        if (!this._flipTurnQteFeedbackRoot || !this._flipTurnQteFeedbackLabel) {
+            return;
+        }
+        if (text !== this._flipTurnQteFeedbackText) {
+            this._flipTurnQteFeedbackText = text;
+            this._flipTurnQteFeedbackLabel.string = text;
+        }
+        if (this._flipTurnQteFeedbackLabel.color !== color) {
+            this._flipTurnQteFeedbackLabel.color = color;
+        }
+        const root = this._flipTurnQteFeedbackRoot;
+        const opacity = root.getComponent(UIOpacity)!;
+        Tween.stopAllByTarget(root);
+        Tween.stopAllByTarget(opacity);
+        root.setScale(0.78, 0.78, 1);
+        opacity.opacity = 255;
+        if (!root.active) {
+            root.active = true;
+        }
+        tween(root)
+            .to(0.1, { scale: new Vec3(1.1, 1.1, 1) }, { easing: 'backOut' })
+            .to(0.32, { scale: new Vec3(1, 1, 1) })
+            .start();
+        tween(opacity)
+            .delay(0.28)
+            .to(0.24, { opacity: 0 })
+            .call(() => { if (root.active) root.active = false; })
+            .start();
+    }
+
+    private buildFlipTurnQtePrototype() {
+        if (this._flipTurnQteRoot || !this.node?.isValid) {
+            return;
+        }
+        const root = new Node('FlipTurnQtePrototype');
+        root.layer = Layers.Enum.UI_2D;
+        root.setParent(this.node);
+        root.addComponent(UITransform).setContentSize(460, 460);
+        root.setPosition(0, 0, 0);
+        root.active = false;
+        const yellowNode = new Node('SweetRing');
+        yellowNode.layer = Layers.Enum.UI_2D;
+        yellowNode.setParent(root);
+        yellowNode.addComponent(UITransform).setContentSize(240, 240);
+        const yellow = yellowNode.addComponent(Graphics);
+        drawFlipTurnQteRing(yellow, 108, FLIP_TURN_QTE_YELLOW, 8);
+        const blueNode = new Node('TimingRing');
+        blueNode.layer = Layers.Enum.UI_2D;
+        blueNode.setParent(root);
+        blueNode.addComponent(UITransform).setContentSize(460, 460);
+        const blue = blueNode.addComponent(Graphics);
+        blueNode.active = false;
+        const feedbackRoot = new Node('FlipTurnQteFeedback');
+        feedbackRoot.layer = Layers.Enum.UI_2D;
+        feedbackRoot.setParent(this.node);
+        feedbackRoot.addComponent(UITransform).setContentSize(540, 78);
+        feedbackRoot.setPosition(0, 0, 0);
+        const feedbackOpacity = feedbackRoot.addComponent(UIOpacity);
+        feedbackOpacity.opacity = 0;
+        feedbackRoot.active = false;
+        const feedbackLabel = feedbackRoot.addComponent(Label);
+        feedbackLabel.fontSize = 42;
+        feedbackLabel.lineHeight = 52;
+        feedbackLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        feedbackLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        feedbackLabel.color = FLIP_TURN_QTE_NORMAL;
+        const feedbackOutline = feedbackRoot.addComponent(LabelOutline);
+        feedbackOutline.color = new Color(5, 28, 54, 255);
+        feedbackOutline.width = 5;
+        const promptRoot = new Node('FlipTurnQtePrompt');
+        promptRoot.layer = Layers.Enum.UI_2D;
+        promptRoot.setParent(root);
+        promptRoot.addComponent(UITransform).setContentSize(300, 46);
+        promptRoot.setPosition(0, -150, 0);
+        const prompt = promptRoot.addComponent(Label);
+        prompt.fontSize = 26;
+        prompt.lineHeight = 34;
+        prompt.string = '准备蹬墙';
+        prompt.horizontalAlign = Label.HorizontalAlign.CENTER;
+        prompt.verticalAlign = Label.VerticalAlign.CENTER;
+        prompt.color = FLIP_TURN_QTE_NORMAL;
+        const promptOutline = promptRoot.addComponent(LabelOutline);
+        promptOutline.color = new Color(5, 28, 54, 255);
+        promptOutline.width = 4;
+        this._flipTurnQteRoot = root;
+        this._flipTurnQteYellow = yellow;
+        this._flipTurnQteBlue = blue;
+        this._flipTurnQteFeedbackRoot = feedbackRoot;
+        this._flipTurnQteFeedbackLabel = feedbackLabel;
+        this._flipTurnQtePromptLabel = prompt;
     }
 
     updateProgress(playerDist: number, aiDist: number) {
@@ -1154,6 +1334,14 @@ function clamp01(value: number): number {
 
 // Starts at six o'clock. In Cocos' y-up UI space, decreasing the x coordinate
 // first makes the visible sweep advance clockwise around a clock face.
+function drawFlipTurnQteRing(gfx: Graphics, radius: number, color: Color, lineWidth: number) {
+    gfx.clear();
+    gfx.lineWidth = lineWidth;
+    gfx.strokeColor = color;
+    gfx.circle(0, 0, radius);
+    gfx.stroke();
+}
+
 function drawUltimateSkillRing(gfx: Graphics, ratio: number, color: Color) {
     gfx.clear();
     const transform = gfx.node.getComponent(UITransform);

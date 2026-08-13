@@ -1,5 +1,6 @@
 import { Node } from 'cc';
 import { Rating } from '../core/GameConstants';
+import { FlipTurnTimingRating, FlipTurnTimingState } from '../entity/SwimmerRacePhases';
 import { RaceResultStats, UIController } from './UIController';
 
 export type ProgressionResult = {
@@ -95,6 +96,14 @@ export class UIFlowController {
 
     showRating(rating: Rating, combo: number) {
         this._refs.uiController?.showRating(rating, combo);
+    }
+
+    updateFlipTurnTiming(state: Readonly<FlipTurnTimingState> | null) {
+        this._refs.uiController?.updateFlipTurnTiming(state);
+    }
+
+    showFlipTurnTimingResult(rating: FlipTurnTimingRating, launchSpeed: number) {
+        this._refs.uiController?.showFlipTurnTimingResult(rating, launchSpeed);
     }
 
     showCountdown(value: number) {

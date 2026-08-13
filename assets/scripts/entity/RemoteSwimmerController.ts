@@ -69,6 +69,11 @@ export class RemoteSwimmerController extends Component {
                 // supplies authoritative energy and remaining duration afterwards.
                 swimmer.applyAcceptedNetUltimate();
                 break;
+            case NetInputKind.FlipTurnTiming:
+                // The owner scores against its local ring, then sends the resulting
+                // quantized speed. Remote frame pacing must never re-score it.
+                swimmer.applyAcceptedNetFlipTurnTiming(event.launchSpeed ?? 0);
+                break;
             case NetInputKind.DiveRelease:
                 this.performDive(swimmer, event.power ?? 0, event.launchSpeed);
                 break;

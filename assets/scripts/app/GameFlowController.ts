@@ -190,6 +190,19 @@ export class GameFlowController {
         captureNetInput({ kind: NetInputKind.Kick, side: netSide(type) });
     }
 
+    // Called before the normal tap/hold classifier commits a kick. A successful
+    // timing press consumes this whole pointer action so it cannot become a held
+    // arm stroke after the turn ends.
+    handleFlipTurnTiming(): boolean {
+        const result = this._refs.playerSwimmer?.tryResolveFlipTurnTiming();
+        if (!result) {
+            return false;
+        }
+        captureNetInput({ kind: NetInputKind.FlipTurnTiming, launchSpeed: result.launchSpeed });
+        this._refs.uiFlow.showFlipTurnTimingResult(result.rating, result.launchSpeed);
+        return true;
+    }
+
     private isStrokeInputActive(): boolean {
         const state = this._refs.getState();
         return state === GameState.RACING || state === GameState.GLIDING;
