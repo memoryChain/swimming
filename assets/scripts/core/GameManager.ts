@@ -912,6 +912,10 @@ export class GameManager extends Component {
             playerDiveSpeedScale: () => this._playerBalanceOverrides
                 ? this._playerBalanceOverrides.diveMaxLaunchSpeed / DIVE_BALANCE.maxLaunchSpeed
                 : 1,
+            canPlayerStartDolphinJump: () => this._playerCondition.energy >= Math.max(
+                DOLPHIN_JUMP.staminaCost,
+                DOLPHIN_JUMP.minStaminaToUse,
+            ),
             awardProgression: (input) => {
                 const progression = getProgressionManager();
                 const characterId = getPlayerCharacterSelection().characterId;
@@ -1534,6 +1538,13 @@ export class GameManager extends Component {
         this._aiControllers.splice(0, this._aiControllers.length, ...competitors.aiControllers);
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
+        for (let index = 0; index < this._aiControllers.length; index++) {
+            this._aiControllers[index].canStartDolphinJump = () =>
+                (this._aiConditions[index]?.energy ?? 0) >= Math.max(
+                    DOLPHIN_JUMP.staminaCost,
+                    DOLPHIN_JUMP.minStaminaToUse,
+                );
+        }
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
         }
@@ -2399,6 +2410,7 @@ export class GameManager extends Component {
         const playerAir = this._playerSwimmer?.isDolphinAirActive ?? false;
         if (playerAir && !this._prevPlayerDolphinAir) {
             this._playerCondition.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+            this._playerCondition.consumeDolphinJumpStamina(DOLPHIN_JUMP.staminaCost);
         }
         this._prevPlayerDolphinAir = playerAir;
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
@@ -2473,6 +2485,7 @@ export class GameManager extends Component {
             const aiAir = swimmer.isDolphinAirActive;
             if (aiAir && !this._prevAiDolphinAir[i]) {
                 this._aiConditions[i].applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+                this._aiConditions[i].consumeDolphinJumpStamina(DOLPHIN_JUMP.staminaCost);
             }
             this._prevAiDolphinAir[i] = aiAir;
             this._aiConditions[i].tickAi({

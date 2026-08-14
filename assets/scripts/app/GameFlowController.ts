@@ -50,6 +50,9 @@ export type GameFlowRefs = {
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
     playerDiveSpeedScale: () => number;
+    // Checked before the both-hands gesture consumes the dolphin jump. A failed
+    // check deliberately leaves the already-held left/right strokes untouched.
+    canPlayerStartDolphinJump: () => boolean;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
         { characterId: string; coinsGained: number } | null;
     // Watch a rewarded ad to double the race coin reward. Resolves true when the
@@ -219,6 +222,9 @@ export class GameFlowController {
         }
         const swimmer = this._refs.playerSwimmer;
         if (!swimmer) {
+            return;
+        }
+        if (!this._refs.canPlayerStartDolphinJump()) {
             return;
         }
         if (swimmer.tryDolphinJump()) {

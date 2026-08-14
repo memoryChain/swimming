@@ -91,7 +91,7 @@ export class PlayerConditionModel {
         this.refreshModifiers();
     }
 
-    // 海豚跃起跳瞬间的心率爆发：从当前心率加 strainHr、封顶 200，不碰体力。
+    // 海豚跃起跳瞬间的心率爆发：从当前心率加 strainHr、封顶 200。
     // 只在起跳上升沿调用一次；之后心率按 tick 自然回落（空中不再抑制）。
     applyDolphinJumpStrain(strainHr: number) {
         if (!Number.isFinite(strainHr) || strainHr <= 0) {
@@ -99,6 +99,20 @@ export class PlayerConditionModel {
         }
         this._heartRate = clamp(this._heartRate + strainHr, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
         this._heartRateZone = zoneForHeartRate(this._heartRate);
+        this.refreshModifiers();
+    }
+
+    // 海豚跳起跳时的一次性体力消耗；见底时沿用划水耗尽后的恢复冷却。
+    consumeDolphinJumpStamina(cost: number) {
+        if (!Number.isFinite(cost) || cost <= 0) {
+            return;
+        }
+        const wasPositive = this._energy > 0;
+        this._energy = clamp(this._energy - cost, 0, this._effectiveEnergyTotal);
+        this._energyDepleted = this._energy <= 0;
+        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
+            this._depletionCooldown = CONDITION_BALANCE.energy.depletionCooldownSeconds;
+        }
         this.refreshModifiers();
     }
 

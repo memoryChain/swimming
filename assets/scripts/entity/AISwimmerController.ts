@@ -43,6 +43,9 @@ export class AISwimmerController extends Component {
     // Shared race view used for rank/gap-based strategy. Null before it is wired
     // (or in isolated tests), in which case strategy falls back to pacing only.
     public raceObserver: AIRaceObserver | null = null;
+    // Assigned by GameManager after the matching AI condition model is created.
+    // Null keeps isolated controller tests on their legacy behavior.
+    public canStartDolphinJump: (() => boolean) | null = null;
 
     // NETWORKED RACE ONLY: when this lane is a remote human (driven by
     // RemoteSwimmerController from network input), the AI must never act. Defaults
@@ -211,6 +214,11 @@ export class AISwimmerController extends Component {
         this._dolphinDecisionTimer = AI_DOLPHIN_TUNING.decisionIntervalSeconds;
         const chance = this.dolphinJumpChance();
         if (randomFloat() >= chance) {
+            return;
+        }
+        // Keep the RNG draw above this gate: all clients must consume the same
+        // deterministic decision stream even when low stamina rejects the jump.
+        if (this.canStartDolphinJump && !this.canStartDolphinJump()) {
             return;
         }
         if (this.swimmer.tryDolphinJump()) {

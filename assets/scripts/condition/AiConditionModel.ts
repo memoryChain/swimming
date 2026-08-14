@@ -71,6 +71,20 @@ export class AiConditionModel {
         this.refreshModifiers();
     }
 
+    // AI 与玩家共用同一条海豚跳一次性体力消耗规则。
+    consumeDolphinJumpStamina(cost: number) {
+        if (!Number.isFinite(cost) || cost <= 0) {
+            return;
+        }
+        const wasPositive = this._energy > 0;
+        this._energy = clamp(this._energy - cost, 0, CONDITION_BALANCE.energy.total);
+        this._energyDepleted = this._energy <= 0;
+        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
+            this._depletionCooldown = CONDITION_BALANCE.energy.depletionCooldownSeconds;
+        }
+        this.refreshModifiers();
+    }
+
     // Per-frame derivation. No input judging; pure curve over difficulty/progress.
     tickAi(input: AiConditionInput) {
         const difficulty = clamp(input.difficulty, 0, 1);
