@@ -461,7 +461,7 @@ export class Swimmer extends Component {
             // one final burst frame pending, no charge light may cross the
             // instant this root begins its projectile motion.
             .call(() => {
-                this.cartoonRig?.clearDiveChargeEffect();
+                this.cartoonRig?.clearDiveChargeEffect(false);
             })
             .to(projectileFlightDuration, {}, {
                 onUpdate: (_target?: Node, ratio = 0) => {
@@ -471,6 +471,9 @@ export class Swimmer extends Component {
             .call(() => {
                 this._phases.setDiveEntryLean(this.diveProjectileLean(horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, projectileFlightDuration));
                 this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, 1, projectileFlightDuration);
+                // The charge mesh is already gone, but now that the airborne
+                // phase has ended the regular character rim may come back.
+                this.cartoonRig?.clearDiveChargeEffect();
                 this.cartoonRig?.setDiveStreamlinePose();
                 this.startRace(distance, horizontalSpeed, true);
                 this.flashSplash(splashRatingForEntryStyle(result.entryStyle));

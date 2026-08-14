@@ -1374,11 +1374,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    clearDiveChargeEffect() {
+    clearDiveChargeEffect(restoreRim = true) {
         if (!this._diveChargeRequestedActive
             && !this._diveChargeGatherEffect
             && this._diveChargeBodyParams.x <= 0
-            && this._diveChargeRimParams.y >= 1) {
+            && (restoreRim ? this._diveChargeRimParams.y >= 1 : this._diveChargeRimParams.y < 1)) {
             this._diveChargeBodyMaterials.length = 0;
             return;
         }
@@ -1386,7 +1386,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
         this._diveChargeReleaseBurstRemaining = 0;
-        this.applyDiveChargeBodyMaterial(0, 0, false);
+        this.applyDiveChargeBodyMaterial(0, 0, false, restoreRim);
         this._diveChargeBodyMaterials.length = 0;
         this._diveChargeGatherEffect?.destroy();
         this._diveChargeGatherEffect = null;
@@ -1396,7 +1396,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeRequestedActive = false;
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
-        this.applyDiveChargeBodyMaterial(0, 0, false);
+        // Keep the normal rim off through the release and flight. It is a
+        // skinned-material effect, so restoring it here looks like a white
+        // charge light following the airborne character.
+        this.applyDiveChargeBodyMaterial(0, 0, false, false);
         this._diveChargeBodyMaterials.length = 0;
         const gather = this._diveChargeGatherEffect;
         if (gather && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
@@ -1508,13 +1511,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
-    private applyDiveChargeBodyMaterial(intensity: number, progress: number, active: boolean) {
+    private applyDiveChargeBodyMaterial(intensity: number, progress: number, active: boolean, restoreRim = true) {
         if (this._diveChargeBodyMaterials.length <= 0) {
             this.bindDiveChargeBodyMaterials();
         }
         this._diveChargeBodyParams.x = active ? intensity : 0;
         this._diveChargeBodyParams.y = active ? Math.max(0, Math.min(1, progress)) : 0;
-        this._diveChargeRimParams.y = active ? 0 : 1;
+        this._diveChargeRimParams.y = active || !restoreRim ? 0 : 1;
         for (const material of this._diveChargeBodyMaterials) {
             if (!material?.isValid) {
                 continue;
