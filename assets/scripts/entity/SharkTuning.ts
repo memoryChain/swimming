@@ -15,6 +15,10 @@ export const SHARK_TUNING = {
     retargetSeconds: 0.5,
     huntSpeed: 4.5,
     spawnClearance: 6.5,
-    catchRadius: 1.95,
+    // The art root is the body centre. Move the hit point to the mouth so a
+    // swimmer cannot be eliminated by a tail or an invisible centre-radius ring.
+    biteMouthForwardOffset: 0.75,
+    catchRadius: 0.55,
+    approachCameraDistance: 3.5,
     waterYOffset: -0.28,
 };

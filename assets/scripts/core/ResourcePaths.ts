@@ -10,6 +10,9 @@ export type SwimmerModelVariant = {
     raceModelEulerDegrees?: readonly [number, number, number];
     debugPose?: 'breaststroke' | 'divePrep';
     swimHeadLiftDegrees?: number;
+    // 非人形预览拥有独立的预制体与动画配置。
+    // 仅用于模型调试，不能传给 CartoonSwimmerRig。
+    debugPreviewKind?: 'shark';
     // Rig-profile emote and tread-water curves. Characters normalized to the
     // same T-pose skeleton should point at one shared profile directory.
     sampledActionOverrideDir?: string;
@@ -67,6 +70,18 @@ const DIVER_PREFAB_CANDIDATES = [
     'models/Diver',
     'models/Diver/Diver',
 ];
+const SHARK_MODEL_PREFAB_CANDIDATES = [
+    'models/SharkModel',
+    'models/SharkModel/SharkModel',
+];
+
+// 导出的鲨鱼在 Cocos 中头朝本地 +Z，赛场移动则以本地 +X 为前方。
+// 缩放后约 1.8 米长；下沉后只有背鳍和上半身露出水面。
+export const SHARK_MODEL_PRESENTATION = {
+    visualScale: 1.8,
+    visualYOffset: -0.35,
+    visualEulerDegrees: [0, 90, 0] as const,
+};
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     {
@@ -131,7 +146,16 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     },
 ];
 
-export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = SWIMMER_MODEL_VARIANTS;
+export const DEBUG_SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
+    ...SWIMMER_MODEL_VARIANTS,
+    {
+        id: 'shark',
+        label: 'Shark',
+        candidates: SHARK_MODEL_PREFAB_CANDIDATES,
+        debugOnly: true,
+        debugPreviewKind: 'shark',
+    },
+];
 
 export const DEBUG_SWIMMER_ACTION_PREVIEWS: DebugSwimmerActionPreview[] = [
     { id: 'freestyle', label: 'Freestyle', pose: 'freestyle' },
@@ -191,6 +215,7 @@ export const DEFAULT_SKYBOX_VARIANT: SkyboxVariant = SKYBOX_VARIANTS[0];
 
 export const RESOURCE_PATHS = {
     swimmerPrefabCandidates: MUSCLE_MAN_PREFAB_CANDIDATES,
+    sharkPrefabCandidates: SHARK_MODEL_PREFAB_CANDIDATES,
     swimmerModelVariants: SWIMMER_MODEL_VARIANTS,
     poolPrefab: 'pool/PoolScene',
     startBlockPrefabCandidates: [

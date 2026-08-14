@@ -1,4 +1,4 @@
-import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3, view } from 'cc';
+import { Camera, Color, EventMouse, instantiate, Label, Layers, Material, MeshRenderer, Node, Prefab, primitives, SkeletalAnimation, utils, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -7,11 +7,12 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { RaceManager } from '../core/RaceManager';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
-import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
+import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SHARK_MODEL_PRESENTATION, SKYBOX_VARIANTS, SWIMMER_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
 import { formatStrokeQualityLog, nextStrokeQualityCombo, ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
+import { loadPrefabFromCandidates } from '../character/CharacterModelLoader';
 import { StrokeQualityResult } from '../swimmer/SwimmerMotor';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -79,6 +80,10 @@ export class ModelDebugFlowController {
     private _debugWaterRoot: Node | null = null;
     private _actionPreviewRoot: Node | null = null;
     private readonly _actionPreviews: ModelDebugActionPreviewInstance[] = [];
+    private _sharkPreviewRoot: Node | null = null;
+    private _sharkPreview: Node | null = null;
+    private _sharkPreviewAnimation: SkeletalAnimation | null = null;
+    private _sharkPreviewLoadToken = 0;
 
     constructor(private readonly _refs: ModelDebugFlowRefs) {}
 
@@ -151,6 +156,7 @@ export class ModelDebugFlowController {
         this.restoreHiddenDebugSceneNodes();
         this.destroyDebugWaterReference();
         this.destroyActionPreviews();
+        this.destroySharkPreview();
         this._refs.uiFlow.hideModelDebugHud();
         for (const swimmer of this._refs.aiSwimmers) {
             swimmer.node.active = true;
@@ -329,7 +335,7 @@ export class ModelDebugFlowController {
     }
 
     switchActionPreview() {
-        if (!this._active || DEBUG_SWIMMER_ACTION_PREVIEWS.length <= 0) {
+        if (!this._active || this.isSharkPreviewSelected() || DEBUG_SWIMMER_ACTION_PREVIEWS.length <= 0) {
             return;
         }
         this._actionPreviewIndex = positiveMod(this._actionPreviewIndex + 1, DEBUG_SWIMMER_ACTION_PREVIEWS.length);
@@ -376,6 +382,17 @@ export class ModelDebugFlowController {
         if (!variant) {
             return;
         }
+        if (variant.debugPreviewKind === 'shark') {
+            this.setActionPreviewsVisible(false);
+            this.ensureSharkPreview();
+            this.updateModelLabel();
+            this.updateActionLabel();
+            this._refs.debug('model debug variant=Shark');
+            this.updateCamera(0.32);
+            return;
+        }
+        this.hideSharkPreview();
+        this.setActionPreviewsVisible(true);
         let applied = false;
         for (const preview of this._actionPreviews) {
             if (preview.rig.setModelVariant(variant.id)) {
@@ -428,6 +445,11 @@ export class ModelDebugFlowController {
     }
 
     private updateActionLabel() {
+        if (this.isSharkPreviewSelected()) {
+            if (this._refs.actionLabel) this._refs.actionLabel.string = 'Action Shark Swim Loop';
+            if (this._refs.flipTurnButton?.active) this._refs.flipTurnButton.active = false;
+            return;
+        }
         const preview = DEBUG_SWIMMER_ACTION_PREVIEWS[this._actionPreviewIndex] ?? DEBUG_SWIMMER_ACTION_PREVIEWS[0];
         if (this._refs.actionLabel) {
             this._refs.actionLabel.string = `Action ${preview?.label ?? '-'}`;
@@ -466,6 +488,8 @@ export class ModelDebugFlowController {
         for (const preview of this._actionPreviews) {
             preview.rig.setDebugMotionSpeedScale(this._speedScale);
         }
+        const sharkSwimState = this._sharkPreviewAnimation?.getState('Shark_Swim_Loop');
+        if (sharkSwimState) sharkSwimState.speed = this._speedScale;
     }
 
     private applyDebugStrokeQualityResult(result: RhythmResult | null): RhythmResult | null {
@@ -523,6 +547,10 @@ export class ModelDebugFlowController {
     }
 
     private debugCameraTarget(): Vec3 {
+        if (this.isSharkPreviewSelected() && this._sharkPreviewRoot?.isValid) {
+            const pos = this._sharkPreviewRoot.position;
+            return new Vec3(pos.x, pos.y + 0.32, pos.z);
+        }
         const previewPosition = this.currentActionPreview()?.node.position;
         const baseX = previewPosition?.x ?? DEBUG_ACTION_GROUP_CENTER_X;
         const baseY = previewPosition?.y ?? this._refs.playerSwimmer?.swimWorldY ?? 0.24;
@@ -591,6 +619,60 @@ export class ModelDebugFlowController {
         this._actionPreviewRoot = null;
     }
 
+    private ensureSharkPreview() {
+        const worldRoot = this._refs.worldRoot;
+        if (!worldRoot) return;
+        if (!this._sharkPreviewRoot?.isValid) {
+            this._sharkPreviewRoot = new Node('ModelDebugSharkPreviewRoot');
+            this._sharkPreviewRoot.setParent(worldRoot);
+            this._sharkPreviewRoot.layer = Layers.Enum.DEFAULT;
+        }
+        this._sharkPreviewRoot.active = true;
+        const waterY = this._refs.playerSwimmer?.waterWorldY ?? 0;
+        this._sharkPreviewRoot.setPosition(DEBUG_ACTION_GROUP_CENTER_X + 0.4, waterY - 0.20, this._refs.playerLaneZ);
+        if (this._sharkPreview?.isValid) return;
+        const token = ++this._sharkPreviewLoadToken;
+        loadPrefabFromCandidates(RESOURCE_PATHS.sharkPrefabCandidates, (error, result) => {
+            const prefab = result?.prefab;
+            if (token !== this._sharkPreviewLoadToken || error || !prefab || !this._sharkPreviewRoot?.isValid || !this.isSharkPreviewSelected()) {
+                if (error) this._refs.debug(`model debug shark load failed: ${error.message}`);
+                return;
+            }
+            const shark = instantiate(prefab);
+            shark.name = 'SharkModelPreview';
+            shark.setParent(this._sharkPreviewRoot);
+            shark.layer = Layers.Enum.DEFAULT;
+            shark.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
+            shark.setRotationFromEuler(...SHARK_MODEL_PRESENTATION.visualEulerDegrees);
+            shark.setScale(
+                SHARK_MODEL_PRESENTATION.visualScale,
+                SHARK_MODEL_PRESENTATION.visualScale,
+                SHARK_MODEL_PRESENTATION.visualScale,
+            );
+            this._sharkPreview = shark;
+            this._sharkPreviewAnimation = shark.getComponentInChildren(SkeletalAnimation);
+            this._sharkPreviewAnimation?.play('Shark_Swim_Loop');
+            this.applySpeedToPreviews();
+            this.updateCamera(1);
+        });
+    }
+
+    private hideSharkPreview() {
+        if (this._sharkPreviewRoot?.active) this._sharkPreviewRoot.active = false;
+    }
+
+    private destroySharkPreview() {
+        this._sharkPreviewLoadToken++;
+        this._sharkPreviewAnimation = null;
+        this._sharkPreview = null;
+        if (this._sharkPreviewRoot?.isValid) this._sharkPreviewRoot.destroy();
+        this._sharkPreviewRoot = null;
+    }
+
+    private isSharkPreviewSelected(): boolean {
+        return (DEBUG_SWIMMER_MODEL_VARIANTS[this._modelVariantIndex] ?? DEBUG_SWIMMER_MODEL_VARIANTS[0])?.debugPreviewKind === 'shark';
+    }
+
     private debugActionPreviewX(): number {
         return DEBUG_ACTION_GROUP_CENTER_X;
     }
@@ -601,8 +683,12 @@ export class ModelDebugFlowController {
     }
 
     private refreshActionPreviewVisibility() {
+        this.setActionPreviewsVisible(!this.isSharkPreviewSelected());
+    }
+
+    private setActionPreviewsVisible(visible: boolean) {
         for (const preview of this._actionPreviews) {
-            preview.node.active = true;
+            if (preview.node.active !== visible) preview.node.active = visible;
         }
     }
 
@@ -658,6 +744,7 @@ export class ModelDebugFlowController {
             || node.name === 'CartoonFillLight'
             || node.name === 'CartoonTopLight'
             || node.name === 'ModelDebugActionPreviewRoot'
+            || node.name === 'ModelDebugSharkPreviewRoot'
             || node.name === 'ModelDebugWaterReference';
     }
 
@@ -680,14 +767,17 @@ export class ModelDebugFlowController {
     private updateDebugWaterReference() {
         const worldRoot = this._refs.worldRoot;
         const preview = this.currentActionPreview();
-        if (!worldRoot || !preview?.node?.isValid) {
+        const sharkRoot = this._sharkPreviewRoot;
+        if (!worldRoot || (!preview?.node?.isValid && !sharkRoot?.isValid)) {
             return;
         }
         const water = this.ensureDebugWaterReference(worldRoot);
-        const previewPosition = preview.node.position;
-        const waterY = preview.rig.waterY ?? previewPosition.y;
+        const previewPosition = this.isSharkPreviewSelected() && sharkRoot?.isValid ? sharkRoot.position : preview!.node.position;
+        const waterY = this.isSharkPreviewSelected()
+            ? this._refs.playerSwimmer?.waterWorldY ?? previewPosition.y + 0.20
+            : preview!.rig.waterY ?? previewPosition.y;
         water.active = true;
-        water.setPosition(DEBUG_ACTION_GROUP_CENTER_X + 0.42, waterY, this.debugActionLaneGroupCenterZ());
+        water.setPosition(previewPosition.x, waterY, previewPosition.z);
     }
 
     private ensureDebugWaterReference(parent: Node): Node {

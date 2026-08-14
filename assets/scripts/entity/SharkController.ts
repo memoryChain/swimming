@@ -4,6 +4,8 @@ import { SHARK_TUNING, SharkState } from './SharkTuning';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { randomFloat } from '../core/SharedRNG';
 
+const RADIANS_TO_DEGREES = 180 / Math.PI;
+
 // Compact state carried by the host's race snapshot. Coordinates are world-space
 // metres; the snapshot codec quantizes them before transport.
 export type SharkRaceState = {
@@ -29,6 +31,9 @@ export type SharkControllerOptions = {
     onStateChange?: (state: SharkState) => void;
     // Fires exactly when the no-bite wind-up ends and true pursuit begins.
     onHuntEngaged?: () => void;
+    // Fires once per locked target when the predator is close enough for the
+    // local presentation to show the incoming attack before a possible bite.
+    onTargetApproach?: (target: Swimmer, sharkX: number, sharkZ: number) => void;
 };
 
 // A single race-owned predator. It has no per-frame allocations and intentionally
@@ -40,6 +45,9 @@ export class SharkController {
     private _huntOpeningGraceSeconds = 0;
     private _huntEngaged = false;
     private _target: Swimmer | null = null;
+    private _approachNotifiedTarget: Swimmer | null = null;
+    private _facingX = 1;
+    private _facingZ = 0;
     private _ownerLane = -1;
     private _sequence = 0;
     private _eliminatedLane = -1;
@@ -62,6 +70,7 @@ export class SharkController {
         this._huntOpeningGraceSeconds = 0;
         this._huntEngaged = false;
         this._target = null;
+        this._approachNotifiedTarget = null;
         this._ownerLane = -1;
         this._eliminatedLane = -1;
         if (this._opts.node.active) this._opts.node.active = false;
@@ -75,6 +84,7 @@ export class SharkController {
         this._ownerLane = this._opts.laneFor(owner);
         this._eliminatedLane = -1;
         this._target = null;
+        this._approachNotifiedTarget = null;
         this.placeAtSafeRandomWaterPosition();
         this.setState(SharkState.WARNING);
         this._remainingSeconds = SHARK_TUNING.warningSeconds;
@@ -121,14 +131,19 @@ export class SharkController {
             const targetPos = target.node.position;
             const dx = targetPos.x - pos.x;
             const dz = targetPos.z - pos.z;
-            const distanceSq = dx * dx + dz * dz;
-            if (distanceSq <= SHARK_TUNING.catchRadius * SHARK_TUNING.catchRadius) {
+            this.notifyTargetApproach(target, pos.x, pos.z, dx * dx + dz * dz);
+            const mouthX = pos.x + this._facingX * SHARK_TUNING.biteMouthForwardOffset;
+            const mouthZ = pos.z + this._facingZ * SHARK_TUNING.biteMouthForwardOffset;
+            const mouthDx = targetPos.x - mouthX;
+            const mouthDz = targetPos.z - mouthZ;
+            const mouthDistanceSq = mouthDx * mouthDx + mouthDz * mouthDz;
+            if (mouthDistanceSq <= SHARK_TUNING.catchRadius * SHARK_TUNING.catchRadius) {
                 this._eliminatedLane = this._opts.laneFor(target);
                 this._opts.onEliminate(target);
                 this.end();
                 return;
             }
-            const distance = Math.sqrt(distanceSq);
+            const distance = Math.sqrt(dx * dx + dz * dz);
             if (distance > 0.0001) {
                 const step = Math.min(distance, SHARK_TUNING.huntSpeed * dt);
                 this.moveAndFace(dx / distance, dz / distance, step);
@@ -163,11 +178,22 @@ export class SharkController {
         this._ownerLane = state.ownerLane;
         this._eliminatedLane = state.eliminatedLane;
         this._target = state.targetLane >= 0 ? this._opts.swimmerForLane(state.targetLane) : null;
+        if (state.sequence > previousSequence) this._approachNotifiedTarget = null;
         const node = this._opts.node;
         if (node.active !== this.active) node.active = this.active;
         if (this.active) {
             const pos = node.position;
+            const dx = state.x - pos.x;
+            const dz = state.z - pos.z;
+            if (dx * dx + dz * dz > 0.0001) this.faceDirection(dx, dz);
             node.setPosition(state.x, pos.y, state.z);
+            const target = this._target;
+            if (this._state === SharkState.HUNT && target?.isSharkTargetable) {
+                const targetPos = target.node.position;
+                const targetDx = targetPos.x - state.x;
+                const targetDz = targetPos.z - state.z;
+                this.notifyTargetApproach(target, state.x, state.z, targetDx * targetDx + targetDz * targetDz);
+            }
         }
         if (previousState !== this._state) this._opts.onStateChange?.(this._state);
         if (this._state === SharkState.HUNT && this._huntOpeningGraceSeconds <= 0) this.notifyHuntEngaged();
@@ -182,6 +208,7 @@ export class SharkController {
         this._huntOpeningGraceSeconds = 0;
         this._huntEngaged = false;
         this._target = null;
+        this._approachNotifiedTarget = null;
         this._ownerLane = -1;
         if (this._opts.node.active) this._opts.node.active = false;
     }
@@ -214,7 +241,12 @@ export class SharkController {
                 nearestDistanceSq = distanceSq;
             }
         }
+        if (this._target !== nearest) this._approachNotifiedTarget = null;
         this._target = nearest;
+        if (nearest) {
+            const targetPos = nearest.node.position;
+            this.faceDirection(targetPos.x - pos.x, targetPos.z - pos.z);
+        }
     }
 
     private placeAtSafeRandomWaterPosition(): void {
@@ -269,6 +301,24 @@ export class SharkController {
             pos.y,
             Math.max(-halfZ, Math.min(halfZ, pos.z + nz * distance)),
         );
-        node.setRotationFromEuler(0, Math.atan2(-nz, nx), 0);
+        this.faceDirection(nx, nz);
+    }
+
+    private faceDirection(dx: number, dz: number): void {
+        const lengthSq = dx * dx + dz * dz;
+        if (lengthSq <= 0.0001) return;
+        const inverseLength = 1 / Math.sqrt(lengthSq);
+        this._facingX = dx * inverseLength;
+        this._facingZ = dz * inverseLength;
+        this._opts.node.setRotationFromEuler(0, Math.atan2(-dz, dx) * RADIANS_TO_DEGREES, 0);
+    }
+
+    private notifyTargetApproach(target: Swimmer, sharkX: number, sharkZ: number, distanceSq: number): void {
+        if (this._approachNotifiedTarget === target
+            || distanceSq > SHARK_TUNING.approachCameraDistance * SHARK_TUNING.approachCameraDistance) {
+            return;
+        }
+        this._approachNotifiedTarget = target;
+        this._opts.onTargetApproach?.(target, sharkX, sharkZ);
     }
 }

@@ -7,15 +7,15 @@ export type SwimmerPrefabLoadResult = {
     path: string;
 };
 
-export function loadSwimmerPrefab(
+export function loadPrefabFromCandidates(
+    candidates: readonly string[],
     done: (err: Error | null, result: SwimmerPrefabLoadResult | null) => void,
-    candidates = RESOURCE_PATHS.swimmerPrefabCandidates,
 ) {
     const failedAttempts: string[] = [];
     const tryPath = (index: number) => {
         if (index >= candidates.length) {
             const details = failedAttempts.length > 0 ? `; ${failedAttempts.join(' | ')}` : '';
-            done(new Error(`swimmer prefab not imported yet; candidates=${candidates.join(', ')}${details}`), null);
+            done(new Error(`prefab not imported yet; candidates=${candidates.join(', ')}${details}`), null);
             return;
         }
         const path = candidates[index];
@@ -29,6 +29,13 @@ export function loadSwimmerPrefab(
         });
     };
     tryPath(0);
+}
+
+export function loadSwimmerPrefab(
+    done: (err: Error | null, result: SwimmerPrefabLoadResult | null) => void,
+    candidates = RESOURCE_PATHS.swimmerPrefabCandidates,
+) {
+    loadPrefabFromCandidates(candidates, done);
 }
 
 export function findNode(root: Node, name: string): Node | null {

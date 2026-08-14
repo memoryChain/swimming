@@ -9,13 +9,16 @@ import {
     game,
     geometry,
     Graphics,
+    instantiate,
     Label,
     Layers,
     Material,
     MeshRenderer,
     Node,
+    Prefab,
     primitives,
     Sprite,
+    SkeletalAnimation,
     Tween,
     UITransform,
     utils,
@@ -107,7 +110,8 @@ import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
-import { setLayerRecursive } from '../character/CharacterModelLoader';
+import { loadPrefabFromCandidates, setLayerRecursive } from '../character/CharacterModelLoader';
+import { RESOURCE_PATHS, SHARK_MODEL_PRESENTATION } from './ResourcePaths';
 import { logTextureFormatDiagnostics } from './TextureFormatDiagnostics';
 import { SWIMMER_LAYER } from '../venue/WaterSurfaceBinder';
 
@@ -283,6 +287,7 @@ export class GameManager extends Component {
     private _gameFlow: GameFlowController = null;
     private _shark: SharkController | null = null;
     private _sharkNode: Node | null = null;
+    private _sharkArtLoaded = false;
     private _sharkWake: Node | null = null;
     private readonly _sharkEyeMaterials: Material[] = [];
     private _sharkSplash: Node | null = null;
@@ -972,11 +977,11 @@ export class GameManager extends Component {
         });
     }
 
-    // The project currently has no shark GLB under resources yet. Keep this tiny
-    // low-poly fallback isolated here so gameplay remains testable; replace this
-    // node with RESOURCE_PATHS.sharkPrefab once art exports the final asset.
+    // The controller root exists before art loads, so shark summoning never waits
+    // on asynchronous resources. The low-poly mesh remains a load-failure fallback.
     private createShark(): void {
         if (!this._worldRoot || this._shark) return;
+        this._sharkArtLoaded = false;
         const root = new Node('RaceSharkPlaceholder');
         // The pool surface is rendered before the dedicated swimmer-overlay
         // camera. A shark in DEFAULT is therefore hidden beneath the refracting
@@ -984,11 +989,12 @@ export class GameManager extends Component {
         // beside swimmers so it remains visible on the surface.
         root.layer = SWIMMER_LAYER;
         root.parent = this._worldRoot;
-        // Stable low-poly fallback until the art-authored resources/models/Shark
-        // asset lands. All meshes/materials are made once; the hot path only moves
-        // this root and flips cached state nodes.
+        const fallback = new Node('FallbackVisual');
+        fallback.parent = root;
+        // Stable low-poly fallback. All meshes/materials are made once; the hot
+        // path only moves this root and flips cached state nodes.
         const body = new Node('Body');
-        body.parent = root;
+        body.parent = fallback;
         const renderer = body.addComponent(MeshRenderer);
         renderer.mesh = utils.createMesh(primitives.box());
         const material = new Material();
@@ -997,14 +1003,14 @@ export class GameManager extends Component {
         renderer.setMaterial(material, 0);
         body.setScale(1.55, 0.46, 0.54);
         const fin = new Node('DorsalFin');
-        fin.parent = root;
+        fin.parent = fallback;
         const finRenderer = fin.addComponent(MeshRenderer);
         finRenderer.mesh = utils.createMesh(primitives.box());
         finRenderer.setMaterial(material, 0);
         fin.setScale(0.2, 0.55, 0.08);
         fin.setPosition(0, 0.38, 0);
         const tail = new Node('Tail');
-        tail.parent = root;
+        tail.parent = fallback;
         const tailRenderer = tail.addComponent(MeshRenderer);
         tailRenderer.mesh = utils.createMesh(primitives.box());
         tailRenderer.setMaterial(material, 0);
@@ -1012,7 +1018,7 @@ export class GameManager extends Component {
         tail.setPosition(-0.92, 0.04, 0);
         for (const z of [-0.3, 0.3]) {
             const eye = new Node('Eye');
-            eye.parent = root;
+            eye.parent = fallback;
             const eyeRenderer = eye.addComponent(MeshRenderer);
             eyeRenderer.mesh = utils.createMesh(primitives.sphere(0.13));
             const eyeMaterial = new Material();
@@ -1047,6 +1053,34 @@ export class GameManager extends Component {
             onSummoned: (x, z) => this.playSharkDropIn(x, z),
             onStateChange: (state) => this.handleSharkStateChange(state),
             onHuntEngaged: () => this.handleSharkHuntEngaged(),
+            onTargetApproach: (target, x, z) => this.handleSharkTargetApproach(target, x, z),
+        });
+        this.loadSharkArtVisual(root, fallback);
+    }
+
+    private loadSharkArtVisual(root: Node, fallback: Node): void {
+        loadPrefabFromCandidates(RESOURCE_PATHS.sharkPrefabCandidates, (error, result) => {
+            const prefab = result?.prefab;
+            if (error || !prefab || !root.isValid || this._sharkNode !== root) {
+                if (error) this.debug(`shark art load failed: ${error.message}`);
+                return;
+            }
+            const model = instantiate(prefab);
+            model.name = 'SharkArtModel';
+            model.setParent(root);
+            model.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
+            model.setRotationFromEuler(...SHARK_MODEL_PRESENTATION.visualEulerDegrees);
+            model.setScale(
+                SHARK_MODEL_PRESENTATION.visualScale,
+                SHARK_MODEL_PRESENTATION.visualScale,
+                SHARK_MODEL_PRESENTATION.visualScale,
+            );
+            setLayerRecursive(model, SWIMMER_LAYER);
+            model.getComponentInChildren(SkeletalAnimation)?.play('Shark_Swim_Loop');
+            this._sharkArtLoaded = true;
+            if (fallback.active) fallback.active = false;
+            if (this._sharkWake?.active) this._sharkWake.active = false;
+            if (this._sharkSplash?.active) this._sharkSplash.active = false;
         });
     }
 
@@ -1077,8 +1111,10 @@ export class GameManager extends Component {
         tween(shark)
             .to(0.52, { position: new Vec3(x, waterY, z) }, { easing: 'quadIn' })
             .call(() => {
-                this.playSharkSplash(x, z);
-                if (this._sharkWake && !this._sharkWake.active) this._sharkWake.active = true;
+                if (!this._sharkArtLoaded) {
+                    this.playSharkSplash(x, z);
+                    if (this._sharkWake && !this._sharkWake.active) this._sharkWake.active = true;
+                }
             })
             .start();
         // The landing warning is gameplay protection, not just presentation: it
@@ -1090,6 +1126,7 @@ export class GameManager extends Component {
     }
 
     private playSharkSplash(x: number, z: number): void {
+        if (this._sharkArtLoaded) return;
         const splash = this._sharkSplash;
         if (!splash) return;
         Tween.stopAllByTarget(splash);
@@ -1125,6 +1162,11 @@ export class GameManager extends Component {
 
     private handleSharkHuntEngaged(): void {
         this._sharkEventBanner.show(pickSharkBannerLine('attack'), new Color(255, 86, 70, 255), 1500);
+    }
+
+    private handleSharkTargetApproach(target: Swimmer, x: number, z: number): void {
+        if (target !== this._playerSwimmer || !this.canShowSharkRevealCamera()) return;
+        this._raceCameraDirector.requestSharkRevealShot(x, z, 0.78);
     }
 
     private handleSharkElimination(swimmer: Swimmer): void {
