@@ -51,7 +51,7 @@
   --python sceneresource/batch-flatcolor-venue.py -- --author-editable
 ```
 
-该模式会把 T1-T4 的顶面、正面、侧/底面写成 12 个最终 unlit 材质，并将背墙、上层平台和入口建筑墙面写成银灰色。不得只在 Cocos 运行时 shader 中补偿错误的 Blender 源材质。
+该模式会把 T1-T4 的顶面、正面、侧/底面写成 12 个最终 unlit 材质，并将背墙、上层平台和入口建筑墙面写成浅蓝灰色；当前线性色值为 `(0.20, 0.38, 0.58)`，Cocos 最终显示约为 sRGB `RGB(124,166,200)`。不得只在 Cocos 运行时 shader 中补偿错误的 Blender 源材质。
 
 不要在 `SwimmingVenue_Rebuild_FlatColor.blend` 里直接做创作性修改。否则下一次从 editable 同步时无法判断哪一份才是权威。
 
@@ -94,7 +94,7 @@
 - 保留 17 个看台节点及全部几何；
 - 按 T1-T4 层号和固定看台方位把无座椅台阶写成 12 档最终蓝色，共用一个内嵌 `192x16` atlas；N/S/E/W 看台的正面分别固定为朝泳池的 `-Y/+Y/-X/+X` 面，不能按面中心到泳池中心的斜向量分类；
 - 12 条色带只包含 `T1-T4 × 顶/正/侧`，色带中心为 `U=(index+0.5)/12`；不保留座椅备用色带、座椅材质或运行时座椅 overlay；
-- 将 `StandStructure_Merged` 和 `BleacherAccess_Architecture_Merged` 中对应墙面同步为 editable 使用的银灰色；
+- 将 `StandStructure_Merged` 和 `BleacherAccess_Architecture_Merged` 中对应墙面同步为 editable 使用的浅蓝灰色；
 - 将每个看台从 3 个材质 primitive 收敛为 1 个；
 - 将 `PoolsideProps_Merged` 的七种源材质按固定顶光方向烘焙为亮、中亮、中暗、暗四档，共 28 条色带，收敛为一个内嵌 `112x16` 纯色 atlas 和一个 primitive；白色管架使用偏蓝银灰白，不以纯白自发光输出；仰泳旗使用亮黄与安全橙交替配色，两面固定使用高亮档，保证从泳池两端及蓝色看台背景前观看都清晰；
 - `PoolsideProps_Merged` 导出前必须删除源模型遗留 UV，只保留 `PoolsidePropsFlatColorAtlasUV` 作为 `TEXCOORD_0`；Cocos Creator 3.8 不能正确绑定第三套 UV，atlas 落到 `TEXCOORD_2` 会导致整批运行时显示黑色。
@@ -162,9 +162,9 @@ npm run textures:check
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
-- `StandStructure_Merged`、入口楼梯、平台和其他墙面在 Blender 源与运行时都必须为同一银灰色，不得继承看台蓝色。
+- `StandStructure_Merged`、入口楼梯、平台和其他墙面在 Blender 源与运行时都必须为同一浅蓝灰色，不得继承看台深蓝色。
 - 东、西直看台不得保留整面 `StandSoffit_E` / `StandSoffit_W`；这两块约 35.87m × 4.57m 的连续底板会在泳池低视角遮住二层观众。西侧角区也不得保留 `CornerSoffit_NW` / `CornerSoffit_SW`，它们会与整体大 O 重叠并露出蓝灰色块；editable 中这四个对象都应不存在。
-- T3 地板是覆盖 N/E/S/W 四边的一个整体大 O，不是东、西各自闭合。editable 必须保留独立源对象 `T3RingFloor_O`：内孔与外框同轴，东西两臂等宽、南北两臂等宽，外边界从 `StandSupport_N/S/E/W` 的朝池接触平面推导并贴合四面墙，中央孔保持场馆内区开放，底面使用银灰 ceiling 材质；不得固定为 3m 后再手调单边宽度。同步 master 时将它并入 `StandStructure_Merged`，不能只给 E/W 半模块补离散小面，也不能在西侧单独造一个局部 O。
+- T3 地板是覆盖 N/E/S/W 四边的一个整体大 O，不是东、西各自闭合。editable 必须保留独立源对象 `T3RingFloor_O`：内孔与外框同轴，东西两臂等宽、南北两臂等宽，外边界从 `StandSupport_N/S/E/W` 的朝池接触平面推导并贴合四面墙，中央孔保持场馆内区开放，底面使用浅蓝灰 ceiling 材质；不得固定为 3m 后再手调单边宽度。同步 master 时将它并入 `StandStructure_Merged`，不能只给 E/W 半模块补离散小面，也不能在西侧单独造一个局部 O。
 - 东侧、南侧、北侧、西侧看台没有缺面，楼梯、扶手、天花板和墙顶交界正常；墙顶交界描边基线为 N/S/E/W 直墙加 NE/SE/NW/SW 斜角共 8 条物理接触线。西侧必须按角看台与南北长看台的接缝关系定位，不得以泳池中心镜像回填空地。
 - 观众仍落在 16 个分层看台及 NE/SE/NW/SW 角看台上，拍照闪光位置正常。
 - 水面、水下、起跳台、泳道线、颁奖台和场馆描边正常；观众席正面描边基线为 17 个源节点、144 条连续线、288 triangles，NW/SW 必须按各自角区提取，不能被更靠近泳池的 NE/SE 候选淘汰。

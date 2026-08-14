@@ -36,7 +36,7 @@ PROP_ATLAS_IMAGE_NAME = "PoolsidePropsFlatColorAtlas"
 PROP_ATLAS_MATERIAL_NAME = "PoolsidePropsFlatColorAtlas_Material"
 PROP_ATLAS_UV_NAME = "PoolsidePropsFlatColorAtlasUV"
 PROP_ATLAS_VERSION_PROPERTY = "poolside_props_flat_color_atlas_version"
-PROP_ATLAS_VERSION = 5
+PROP_ATLAS_VERSION = 7
 PROP_ATLAS_WIDTH = 112
 PROP_ATLAS_HEIGHT = 16
 PROP_ATLAS_TEMP_FILENAME = ".PoolsidePropsFlatColorAtlas.tmp.png"
@@ -51,7 +51,11 @@ TIER_BRIGHTNESS = (1.0, 0.46, 0.18, 0.05)
 CONCRETE_TOP_COLOR = (0.025, 0.12, 0.48, 1.0)
 CONCRETE_FRONT_COLOR = (0.015, 0.075, 0.30, 1.0)
 CONCRETE_SIDE_COLOR = (0.008, 0.04, 0.16, 1.0)
-WALL_SILVER_COLOR = (0.617206562, 0.672443157, 0.701101892, 1.0)
+# Keep the historical material id for stable Blender/GLB references, but use a
+# light blue-gray so walls and access stairs read as authored architecture
+# instead of untextured neutral gray. These are LINEAR GLB emission values;
+# Cocos displays them at roughly sRGB (124, 166, 200).
+WALL_SILVER_COLOR = (0.20, 0.38, 0.58, 1.0)
 WALL_SILVER_MATERIAL = "Venue_Wall_SilverGray"
 SOURCE_MATERIALS = {
     "Bleacher_Step_Concrete": CONCRETE_TOP_COLOR,
