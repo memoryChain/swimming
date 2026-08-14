@@ -56,6 +56,9 @@ export interface SwimmerRacePhaseHost {
 export class SwimmerRacePhases {
     private _diveUnderwaterActive = false;
     private _diveGlidePoseActive = false;
+    // The rise begins before the swimmer reaches the waterline. Its pose must
+    // already be freestyle so the first accepted arm stroke is visible.
+    private _diveAscentPresentationActive = false;
     private _diveUnderwaterElapsed = 0;
     private _diveEntryLeanDegrees = 0;
     private _underwaterPhaseKind: UnderwaterPhaseKind = 'none';
@@ -300,6 +303,7 @@ export class SwimmerRacePhases {
         this._underwaterPhaseKind = 'dive';
         this._diveUnderwaterActive = true;
         this._diveGlidePoseActive = true;
+        this._diveAscentPresentationActive = false;
         this._diveUnderwaterElapsed = 0;
         this._host.motor.setGlidePhase(true);
         this._host.cartoonRig?.setLegSplashSuppressed(true);
@@ -308,6 +312,7 @@ export class SwimmerRacePhases {
     clearDiveUnderwaterPhase() {
         this._diveUnderwaterActive = false;
         this._diveGlidePoseActive = false;
+        this._diveAscentPresentationActive = false;
         this._diveUnderwaterElapsed = 0;
         this._diveEntryLeanDegrees = 0;
         this._underwaterPhaseKind = 'none';
@@ -337,6 +342,9 @@ export class SwimmerRacePhases {
             return;
         }
         this._diveUnderwaterElapsed += Math.max(0, dt);
+        if (!this._diveAscentPresentationActive && this.underwaterRiseProgress > 0) {
+            this.beginUnderwaterAscentPresentation();
+        }
         // Unwind any leftover dolphin-jump roll so the body returns to the normal
         // swim axis before it resurfaces.
         if (this._underwaterPhaseKind === 'dolphin' && this._dolphinRollResidual !== 0) {
@@ -373,8 +381,9 @@ export class SwimmerRacePhases {
         const riseSeconds = this.underwaterRiseSeconds();
         const ratio = (phaseElapsed - holdSeconds) / riseSeconds;
         if (ratio >= 1) {
+            const ascentPresentationWasActive = this._diveAscentPresentationActive;
             this.clearDiveUnderwaterPhase();
-            this.beginSurfaceSwimming();
+            this.beginSurfaceSwimming(ascentPresentationWasActive);
             return startY;
         }
         return lerp(underwaterY, startY, smoothStep(ratio));
@@ -409,12 +418,23 @@ export class SwimmerRacePhases {
         return this.underwaterRiseTiltDegrees() * Math.sin(Math.PI * riseRatio);
     }
 
-    private beginSurfaceSwimming() {
+    private beginUnderwaterAscentPresentation() {
+        this._diveAscentPresentationActive = true;
+        if (!this._host.motor.isRacing) {
+            return;
+        }
+        this._host.cartoonRig?.setLegSplashSuppressed(false);
+        this._host.cartoonRig?.setActiveSwimming(true);
+    }
+
+    private beginSurfaceSwimming(alreadyUsingFreestylePose = false) {
         this._diveGlidePoseActive = false;
         this._host.motor.setGlidePhase(false);
         this._host.cartoonRig?.setLegSplashSuppressed(false);
         if (this._host.motor.isRacing) {
-            this._host.cartoonRig?.setActiveSwimming(true);
+            if (!alreadyUsingFreestylePose) {
+                this._host.cartoonRig?.setActiveSwimming(true);
+            }
         }
     }
 
@@ -971,6 +991,7 @@ export class SwimmerRacePhases {
         this._underwaterPhaseKind = 'dolphin';
         this._diveUnderwaterActive = true;
         this._diveGlidePoseActive = true;
+        this._diveAscentPresentationActive = false;
         this._diveUnderwaterElapsed = 0;
         this._diveEntryLeanDegrees = 0;
         this._host.motor.setGlidePhase(true, SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag);

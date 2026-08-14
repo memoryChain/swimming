@@ -636,7 +636,7 @@ export class Swimmer extends Component {
             // keyframe-2-to-swim recovery blend.
             return null;
         }
-        if (this._phases.isDiveGlidePoseActive) {
+        if (!this._phases.canUseArmStroke) {
             // Player presses already kick on key/touch down. AI input enters here
             // directly, so register the same cadence-based underwater kick.
             const recorded = this.isAI ? this._motor.recordKickTap(type) : false;
@@ -664,7 +664,7 @@ export class Swimmer extends Component {
         if (this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive) {
             return false;
         }
-        return this._phases.isDiveGlidePoseActive || this._motor.canRecordStroke(type);
+        return this._phases.canUseArmStroke && this._motor.canRecordStroke(type);
     }
 
     handleKickStroke(type: StrokeType): void {
@@ -684,7 +684,7 @@ export class Swimmer extends Component {
         if (this._phases.isFlipTurnActive) {
             return;
         }
-        if (this._phases.isDiveGlidePoseActive) {
+        if (!this._phases.canUseArmStroke) {
             const recorded = this._motor.recordKickTap(type);
             if (recorded) {
                 this.cartoonRig?.triggerKick();
@@ -703,7 +703,7 @@ export class Swimmer extends Component {
         if (this._phases.isDolphinJumpActive) {
             return null;
         }
-        if (this._phases.isDiveGlidePoseActive) {
+        if (!this._phases.canUseArmStroke) {
             return null;
         }
         const strokeQualityResult = this._motor.setStrokeHeld(type, held, preHeldSeconds);
@@ -900,7 +900,7 @@ export class Swimmer extends Component {
         if (!this.cartoonRig) {
             return;
         }
-        if (this._phases.isDiveGlidePoseActive) {
+        if (!this._phases.canUseArmStroke) {
             this.cartoonRig.setLegSplashSuppressed(true);
             this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection);
         } else {
