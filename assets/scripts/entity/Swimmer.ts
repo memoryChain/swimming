@@ -393,8 +393,8 @@ export class Swimmer extends Component {
         this.cartoonRig?.setDiveChargeEffect(power, active);
     }
 
-    clearDiveChargeEffect() {
-        this.cartoonRig?.clearDiveChargeEffect();
+    clearDiveChargeEffect(restoreRim = true) {
+        this.cartoonRig?.clearDiveChargeEffect(restoreRim);
     }
 
     releaseDiveChargeEffect(duration?: number) {
@@ -474,11 +474,14 @@ export class Swimmer extends Component {
             .call(() => {
                 this._phases.setDiveEntryLean(this.diveProjectileLean(horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, projectileFlightDuration));
                 this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, 1, projectileFlightDuration);
-                // The charge mesh is already gone, but now that the airborne
-                // phase has ended the regular character rim may come back.
-                this.cartoonRig?.clearDiveChargeEffect();
+                // Keep the normal rim disabled until the swimmer has been placed
+                // at the underwater entry position. The GLIDING state callback
+                // shares this timing boundary, so restoring it before startRace
+                // can reveal a blue-white rim for one airborne render frame.
+                this.cartoonRig?.clearDiveChargeEffect(false);
                 this.cartoonRig?.setDiveStreamlinePose();
                 this.startRace(distance, horizontalSpeed, true);
+                this.cartoonRig?.clearDiveChargeEffect();
                 this.flashSplash(splashRatingForEntryStyle(result.entryStyle));
             })
             .start();

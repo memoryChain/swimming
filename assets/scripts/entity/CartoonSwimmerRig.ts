@@ -1517,6 +1517,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
                 this._outlineRoot = root;
             },
         });
+        // Dynamic-color assets can finish loading while the swimmer is in the
+        // air. Rebind the current charge/rim state onto the fresh material
+        // instances so their effect defaults cannot re-enable the blue-white
+        // rim before the dive has entered the water.
+        const chargeStillActive = this._diveChargeRequestedActive && this._diveChargeBodyParams.x > 0;
+        this.applyDiveChargeBodyMaterial(
+            chargeStillActive ? this._diveChargeBodyParams.x : 0,
+            chargeStillActive ? this._diveChargeBodyParams.y : 0,
+            chargeStillActive,
+            this._diveChargeRimParams.y >= 1,
+        );
         this.updatePerfectGlowMaterial();
     }
 

@@ -349,7 +349,10 @@ export class GameFlowController {
             if (state === GameState.GLIDING) {
                 // The launch burst has already played; this handles cancelled or
                 // interrupted dive tweens without leaving a stale mesh behind.
-                this._refs.playerSwimmer?.clearDiveChargeEffect();
+                // Keep the regular rim suppressed here: this state timer ends at
+                // the same boundary as the dive tween, so restoring it here can
+                // flash the blue-white body rim on the final airborne frame.
+                this._refs.playerSwimmer?.clearDiveChargeEffect(false);
                 this._refs.raceCameraDirector.resetRaceTimers();
                 this._refs.uiFlow.showGliding();
             }
