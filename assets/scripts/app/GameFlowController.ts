@@ -58,7 +58,7 @@ export type GameFlowRefs = {
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
-    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean) => void;
+    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean, dashBoost: boolean) => void;
     // Returns accepted for an authoritative local cast, requested for a client
     // request awaiting host confirmation, and blocked while the global shark exists.
     trySummonShark: (swimmer: Swimmer) => 'accepted' | 'requested' | 'blocked';
@@ -513,6 +513,7 @@ export class GameFlowController {
             raceActive: this._refs.getState() === GameState.RACING || this._refs.getState() === GameState.GLIDING,
             countdownActive: this._refs.getState() === GameState.COUNTDOWN || this._refs.getState() === GameState.DIVING,
             sprintActive: this._sprintTriggered,
+            playerDashActive: focus.isSkillDashActive,
             playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
             playerDolphinCameraActive: focus.isDolphinCameraActive,
         };
@@ -536,14 +537,16 @@ export class GameFlowController {
         // force them ON while the player is airborne during a dolphin jump — the
         // burst out of the water shows speed lines until it re-enters the water.
         const dolphinAirborne = playerSwimmer.isDolphinAirActive;
+        const dashActive = focus.isSkillDashActive;
         this._refs.updateCameraSpeedLines?.(
             dt,
             cameraSnapshot.playerSpeed,
-            dolphinAirborne
+            dashActive || dolphinAirborne
                 || (this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
                     && !this._refs.raceCameraDirector.topViewActive
                     && !this._refs.raceCameraDirector.underwaterViewActive),
             this._sprintTriggered || dolphinAirborne,
+            dashActive,
         );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);

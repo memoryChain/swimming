@@ -69,7 +69,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 82,
         kick: 50,
         description: '均衡型游泳选手，动作灵活，能稳定应对不同比赛节奏。',
-        skillName: '流线节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        skillName: '劈波突进', skillDescription: '锁定当前朝向猛冲，并能挤开前方同向的首个对手。',
     },
     {
         id: 'diver', name: '深海潜将', modelVariantId: 'diver', unlocked: true,

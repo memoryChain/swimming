@@ -12,7 +12,7 @@ import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { UltimateEnergyModel } from '../condition/UltimateEnergyModel';
-import { SkillRuntime } from '../skills/SkillRuntime';
+import { SkillRuntime, ULTIMATE_SKILL_BALANCE } from '../skills/SkillRuntime';
 import type { UltimateSkillDefinition } from '../skills/SkillRuntime';
 import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
 import { scaledDelta } from '../core/TimeScale';
@@ -156,6 +156,7 @@ export class Swimmer extends Component {
 
     applyNetSkillState(targetSeconds: number, charges: number, pulsesTriggered: number) {
         this._skill.applyNetState(targetSeconds, charges, pulsesTriggered);
+        this.syncSkillDashState();
     }
 
     setUltimateSkillDefinition(definition: UltimateSkillDefinition) {
@@ -362,6 +363,8 @@ export class Swimmer extends Component {
         const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
         this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.setSkillDashActive(false);
+        this.cartoonRig?.setSkillDashGlowActive(false);
         this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setDiveReady(false);
         if (fromDiveEntry) {
@@ -572,13 +575,23 @@ export class Swimmer extends Component {
         }
         this._ultimate.tick(dt);
         const normalSurface = this.isUltimateSurfacePhase();
+        if (!normalSurface && this._skill.isDashActive) {
+            this._skill.cancel();
+        }
         this._skill.tick(dt, normalSurface);
         this._motor.setSkillStrokeAccelScale(1);
         this._motor.setSkillSpeedCapScale(1);
         this._motor.setSkillSurfaceDragScale(normalSurface ? this._skill.surfaceDragScale : 1);
+        this._motor.setSkillDash(normalSurface ? this._skill.dashExtraSpeed : 0);
+        this.syncSkillDashState();
         this.applyPendingSkillImpulses(normalSurface);
         this.updateSkillTrailVisual(dt, normalSurface);
         if (this._phases.tick(dt)) {
+            if (this._skill.isDashActive) {
+                this._skill.cancel();
+            }
+            this._motor.clearSkillDash();
+            this.syncSkillDashState();
             return;
         }
         this.updatePerfectComboIdle(dt);
@@ -742,6 +755,8 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
         this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.setSkillDashActive(false);
+        this.cartoonRig?.setSkillDashGlowActive(false);
         this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
         this.cartoonRig?.setFinishFloating();
         const x = this.finishFloatX(direction);
@@ -765,6 +780,8 @@ export class Swimmer extends Component {
         this._ultimate.reset();
         this._skill.reset();
         this._strokeMetrics.reset();
+        this.cartoonRig?.setSkillDashActive(false);
+        this.cartoonRig?.setSkillDashGlowActive(false);
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
@@ -998,6 +1015,12 @@ export class Swimmer extends Component {
         return this._motor.currentSpeed;
     }
 
+    // 仅供本机镜头与 HUD 表现读取；实际突进运动仍由技能运行时和马达
+    // 驱动，联机中的位置继续以 owner 快照校正。
+    get isSkillDashActive(): boolean {
+        return this._skill.isDashActive && this.isUltimateSurfacePhase();
+    }
+
     // Splash effect root, owned by the rig. Exposed so the refraction overlay can
     // keep the splash nodes on the swimmer layer alongside the body.
     get splashNode(): Node | null {
@@ -1165,7 +1188,9 @@ export class Swimmer extends Component {
         }
         this._ultimate.spendUltimate();
         this.applyPendingSkillImpulses(true);
-        if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
+        if (this._skill.definition.kind === 'dash') {
+            this.syncSkillDashState(true);
+        } else if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
             this.cartoonRig?.triggerSplashBurst(1.05);
         }
         return true;
@@ -1185,7 +1210,8 @@ export class Swimmer extends Component {
         return this._motor.isRacing
             && !this._skill.active
             && this.isUltimateSurfacePhase()
-            && this._ultimate.canActivateUltimate;
+            && this._ultimate.canActivateUltimate
+            && this.canStartUltimateSkillHere();
     }
 
     // Remote replay deliberately skips its own predicted-energy check. The owner
@@ -1204,7 +1230,9 @@ export class Swimmer extends Component {
         }
         this._ultimate.spendUltimate();
         this.applyPendingSkillImpulses(this.isUltimateSurfacePhase());
-        if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
+        if (this._skill.definition.kind === 'dash') {
+            this.syncSkillDashState(true);
+        } else if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
             this.cartoonRig?.triggerSplashBurst(1.05);
         }
         return true;
@@ -1214,6 +1242,54 @@ export class Swimmer extends Component {
         return !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater;
+    }
+
+    get canSkillDashYield(): boolean {
+        return this._skill.canDashYield && this.isCollisionActive;
+    }
+
+    consumeSkillDashYield(): boolean {
+        return this._skill.consumeDashYield();
+    }
+
+    // Collision-side helper: the resolver chooses a candidate root Z using its
+    // allocation-free buffers, then asks the swimmer whether pool-wall bounds can
+    // accept it. The final animated-joint clamp still runs after motion.
+    canYieldToWorldZ(worldZ: number, clearance: number): boolean {
+        return Number.isFinite(worldZ)
+            && worldZ - clearance >= this._lateralMinWorld
+            && worldZ + clearance <= this._lateralMaxWorld;
+    }
+
+    get poolCenterWorldZ(): number {
+        return (this._lateralMinWorld + this._lateralMaxWorld) * 0.5;
+    }
+
+    lateralClearanceToward(worldZ: number, direction: number): number {
+        return direction >= 0
+            ? this._lateralMaxWorld - worldZ
+            : worldZ - this._lateralMinWorld;
+    }
+
+    private canStartUltimateSkillHere(): boolean {
+        if (this._skill.definition.kind !== 'dash') {
+            return true;
+        }
+        const duration = Math.max(0.001, ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds);
+        const dashExtraSpeed = Math.max(0, ULTIMATE_SKILL_BALANCE.novaDashExtraDistance) / duration;
+        const maxTravel = (Math.max(0, SWIMMER_BALANCE.maxSpeed) + dashExtraSpeed) * duration;
+        return this._phases.canStartForwardDash(maxTravel, ULTIMATE_SKILL_BALANCE.novaDashTurnSafetyPadding);
+    }
+
+    private syncSkillDashState(triggerStart = false) {
+        const active = this._skill.isDashActive && this.isUltimateSurfacePhase();
+        this._motor.setSkillDash(active ? this._skill.dashExtraSpeed : 0);
+        this.cartoonRig?.setSkillDashActive(active);
+        this.cartoonRig?.setSkillDashGlowActive(active);
+        if (active && triggerStart) {
+            this.cartoonRig?.triggerBigSplash(0.9);
+            this.cartoonRig?.triggerSplashBurst(0.65);
+        }
     }
 
     private applyPendingSkillImpulses(canAffectSurface: boolean) {

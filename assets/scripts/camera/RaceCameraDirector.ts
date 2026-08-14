@@ -120,6 +120,10 @@ export const RACE_CAMERA_TUNING = {
     // in/out so the sprint entry reads as acceleration instead of a hard cut.
     sprintFovBoost: 8,
     sprintFovBlendSpeed: 4.5,
+    // 劈波突进以更快的短促扩张放大边缘掠过感；不使用全屏模糊，避免
+    // 微信小游戏上的额外全屏采样与填充率开销。
+    dashFovBoost: 14,
+    dashFovBlendSpeed: 18,
     // Sprint chase follow smoothing (per second, dt-based). Forward/height track
     // tightly; the LATERAL (Z) follow is deliberately slower so the swimmer
     // visibly slides sideways in frame when steering, then the camera eases
@@ -223,6 +227,8 @@ export type RaceCameraSnapshot = {
     raceActive: boolean;
     countdownActive: boolean;
     sprintActive: boolean;
+    // 破浪新星的短时劈波态。仅用于本机镜头表现，不参与比赛状态同步。
+    playerDashActive?: boolean;
     playerFlipTurnCameraActive?: boolean;
     // True through the dolphin jump (dip + air + landing dive): hold a
     // follow-behind chase that tracks the swimmer up into the air and back into
@@ -1082,10 +1088,16 @@ export class RaceCameraDirector {
             this._cameraTarget.y += (view.target.y - this._cameraTarget.y) * follow;
             this._cameraTarget.z += (view.target.z - this._cameraTarget.z) * lateral;
         }
-        const targetSprintFov = snapshot.sprintActive
-            ? RACE_CAMERA_TUNING.sprintFov + RACE_CAMERA_TUNING.sprintFovBoost
-            : RACE_CAMERA_TUNING.sprintFov;
-        const fovBlend = clamp(1 - Math.exp(-Math.max(0, dt) * RACE_CAMERA_TUNING.sprintFovBlendSpeed), 0.02, 0.4);
+        const dashActive = snapshot.playerDashActive === true;
+        const targetSprintFov = dashActive
+            ? RACE_CAMERA_TUNING.sprintFov + RACE_CAMERA_TUNING.dashFovBoost
+            : snapshot.sprintActive
+                ? RACE_CAMERA_TUNING.sprintFov + RACE_CAMERA_TUNING.sprintFovBoost
+                : RACE_CAMERA_TUNING.sprintFov;
+        const fovBlendSpeed = dashActive
+            ? RACE_CAMERA_TUNING.dashFovBlendSpeed
+            : RACE_CAMERA_TUNING.sprintFovBlendSpeed;
+        const fovBlend = clamp(1 - Math.exp(-Math.max(0, dt) * fovBlendSpeed), 0.02, 0.4);
         this._sprintFovCurrent += (targetSprintFov - this._sprintFovCurrent) * fovBlend;
         // Match the dolphin camera's water-state handoff: the normal chase may
         // begin while the swimmer is only starting to rise, so keep the pool in

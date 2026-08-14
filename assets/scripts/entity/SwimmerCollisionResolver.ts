@@ -1,4 +1,5 @@
 import type { Swimmer } from './Swimmer';
+import { ULTIMATE_SKILL_BALANCE } from '../skills/SkillRuntime';
 
 // Swimmer-vs-swimmer collision. The race only ever has up to 8 swimmers moving
 // kinematically (position is driven by SwimPhysicsModel, not a physics engine),
@@ -66,6 +67,7 @@ const _dir: number[] = [];
 const _impDist: number[] = [];
 const _impLat: number[] = [];
 const _newContact: boolean[] = [];
+const _dashYieldResolved: boolean[] = [];
 const _contactA: Swimmer[] = [];
 const _contactB: Swimmer[] = [];
 const _contactSeen: boolean[] = [];
@@ -117,6 +119,9 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     const minDist = SWIMMER_COLLISION.radius * 2;
     const minDistSq = minDist * minDist;
     refreshContacts(count, minDistSq, (minDist + CONTACT_RELEASE_MARGIN) ** 2);
+    for (let index = 0; index < MAX_SWIMMERS * MAX_SWIMMERS; index++) {
+        _dashYieldResolved[index] = false;
+    }
     if (count < 2) {
         return;
     }
@@ -139,6 +144,14 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 // piling up. Player pairs resolve on both axes.
                 const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
                 anyOverlap = true;
+
+                // 劈波突进 only yields one same-direction blocker from behind.
+                // Resolve the target sideways before ordinary X/Z separation so
+                // the dashing swimmer actually gains a readable overtake rather
+                // than being pushed backwards by the default solid-body solver.
+                if (!lateralOnly && tryResolveDashYield(i, j, minDist)) {
+                    continue;
+                }
 
                 let nx: number;
                 let nz: number;
@@ -182,7 +195,9 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const dx = _origX[i] - _origX[j];
                 const dz = _origZ[i] - _origZ[j];
                 const distSq = dx * dx + dz * dz;
-                if (distSq >= minDistSq || !_newContact[i * MAX_SWIMMERS + j]) {
+                if (distSq >= minDistSq
+                    || !_newContact[i * MAX_SWIMMERS + j]
+                    || _dashYieldResolved[i * MAX_SWIMMERS + j]) {
                     continue;
                 }
                 const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
@@ -246,6 +261,93 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
             _active[i].addCollisionEnergyBonus(Math.hypot(iD, iL));
         }
     }
+}
+
+function tryResolveDashYield(i: number, j: number, minDist: number): boolean {
+    let dashIndex = -1;
+    let targetIndex = -1;
+    if (_dir[i] === _dir[j]) {
+        if (_active[i].canSkillDashYield && isTrailing(i, j)) {
+            dashIndex = i;
+            targetIndex = j;
+        } else if (_active[j].canSkillDashYield && isTrailing(j, i)) {
+            dashIndex = j;
+            targetIndex = i;
+        }
+    }
+    if (dashIndex < 0 || targetIndex < 0) {
+        return false;
+    }
+    const first = Math.min(i, j);
+    const second = Math.max(i, j);
+    // 只在这一对身体刚开始接触时触发。已经贴住的阻挡者不能因为
+    // 突进中途开启而被强制让位，避免把持续碰撞变成可重复利用的位移。
+    if (!_newContact[first * MAX_SWIMMERS + second]) {
+        return false;
+    }
+
+    const dashX = _posX[dashIndex];
+    const dashZ = _posZ[dashIndex];
+    const targetX = _posX[targetIndex];
+    const dx = targetX - dashX;
+    const requiredZ = Math.sqrt(Math.max(0, minDist * minDist - dx * dx))
+        + Math.max(0, ULTIMATE_SKILL_BALANCE.novaDashYieldPadding);
+    const plusZ = dashZ + requiredZ;
+    const minusZ = dashZ - requiredZ;
+    const plusClear = canYieldTo(targetIndex, plusZ, minDist * 0.5)
+        && isYieldPathClear(targetIndex, plusZ, minDist * minDist);
+    const minusClear = canYieldTo(targetIndex, minusZ, minDist * 0.5)
+        && isYieldPathClear(targetIndex, minusZ, minDist * minDist);
+    if (!plusClear && !minusClear) {
+        return false;
+    }
+
+    let chosenZ: number;
+    if (plusClear && minusClear) {
+        const target = _active[targetIndex];
+        const plusRoom = target.lateralClearanceToward(plusZ, 1);
+        const minusRoom = target.lateralClearanceToward(minusZ, -1);
+        if (Math.abs(plusRoom - minusRoom) > 1e-5) {
+            chosenZ = plusRoom > minusRoom ? plusZ : minusZ;
+        } else {
+            const center = target.poolCenterWorldZ;
+            const plusCenterDistance = Math.abs(plusZ - center);
+            const minusCenterDistance = Math.abs(minusZ - center);
+            chosenZ = plusCenterDistance !== minusCenterDistance
+                ? (plusCenterDistance < minusCenterDistance ? plusZ : minusZ)
+                : plusZ;
+        }
+    } else {
+        chosenZ = plusClear ? plusZ : minusZ;
+    }
+
+    if (!_active[dashIndex].consumeSkillDashYield()) {
+        return false;
+    }
+    _posZ[targetIndex] = chosenZ;
+    _dashYieldResolved[first * MAX_SWIMMERS + second] = true;
+    return true;
+}
+
+function isTrailing(candidate: number, target: number): boolean {
+    return (_posX[target] - _posX[candidate]) * _dir[candidate] > 0.001;
+}
+
+function canYieldTo(targetIndex: number, worldZ: number, clearance: number): boolean {
+    return _active[targetIndex].canYieldToWorldZ(worldZ, clearance);
+}
+
+function isYieldPathClear(targetIndex: number, candidateZ: number, minDistSq: number): boolean {
+    const x = _posX[targetIndex];
+    for (let index = 0; index < _active.length; index++) {
+        if (index === targetIndex) continue;
+        const dx = x - _posX[index];
+        const dz = candidateZ - _posZ[index];
+        if (dx * dx + dz * dz < minDistSq) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // Knockback is a contact-begin impulse, not a force accumulated every render frame.

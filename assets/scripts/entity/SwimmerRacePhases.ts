@@ -214,6 +214,23 @@ export class SwimmerRacePhases {
         return this._diveUnderwaterActive;
     }
 
+    // A dash must not be cast once its maximum possible travel would carry the
+    // swimmer into the flip-turn approach. The final wall is intentionally not a
+    // turn wall, so a finish-line dash remains legal.
+    canStartForwardDash(maxTravel: number, padding: number): boolean {
+        if (this._flipTurnActive || this._dolphinActive || this._diveUnderwaterActive) {
+            return false;
+        }
+        const motor = this._host.motor;
+        const wallDistance = this._host.courseLayout.nextInternalTurnDistance(motor.distance, getRaceDistance());
+        if (wallDistance === null || wallDistance <= this._lastCompletedFlipTurnWallDistance + COURSE_DISTANCE_EPSILON) {
+            return true;
+        }
+        const remaining = wallDistance - motor.distance;
+        return remaining > this.flipTurnApproachDistance(motor.currentSpeed)
+            + Math.max(0, maxTravel) + Math.max(0, padding);
+    }
+
     // True during the underwater swimming phases where friction bubbles read well:
     // the dive-start glide, the WHOLE flip turn (somersault + wall push-off
     // _flipTurnActive AND the glide after it), and the dolphin jump's landing
@@ -509,8 +526,6 @@ export class SwimmerRacePhases {
             return false;
         }
         const remaining = wallDistance - distance;
-        const keyframe2Seconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
-            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
         const entrySpeed = finiteNonNegative(motor.currentSpeed);
         // The approach distance is exactly the integral of the decelerating lane
         // speed, so the wall push starts with zero velocity discontinuity and the
@@ -519,14 +534,7 @@ export class SwimmerRacePhases {
         // padding the approach, so no fixed extra distance is added here. Clamp
         // the effective exponent to [1, 2] so the cubic Hermite approach curve
         // stays monotonic (no backward drift near the wall).
-        const decelerationExponent = Math.min(2, Math.max(1, finitePower(SWIMMER_BALANCE.flipTurnDecelerationExponent)));
-        const integratedDecelerationDistance = entrySpeed * keyframe2Seconds
-            / (decelerationExponent + 1);
-        // Never let extreme tuning make the next turn start on the previous wall.
-        const approachDistance = Math.min(
-            Math.max(0.1, integratedDecelerationDistance),
-            Math.max(0.1, courseLayout.courseLength - COURSE_DISTANCE_EPSILON),
-        );
+        const approachDistance = this.flipTurnApproachDistance(entrySpeed);
         // Include this frame's possible travel so a low frame rate or a temporary
         // speed spike cannot step across an internal wall before the next check.
         const projectedFrameTravel = entrySpeed * finiteNonNegative(dt);
@@ -654,6 +662,18 @@ export class SwimmerRacePhases {
         // the normal update path takes over next frame, which reads as a hitch
         // right as the push-off recovers into the underwater glide.
         this._host.updateBodyMotion(dt);
+    }
+
+    private flipTurnApproachDistance(entrySpeed: number): number {
+        const keyframe2Seconds = Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds)
+            + Math.max(0.001, CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds);
+        const decelerationExponent = Math.min(2, Math.max(1, finitePower(SWIMMER_BALANCE.flipTurnDecelerationExponent)));
+        const integratedDecelerationDistance = finiteNonNegative(entrySpeed) * keyframe2Seconds
+            / (decelerationExponent + 1);
+        return Math.min(
+            Math.max(0.1, integratedDecelerationDistance),
+            Math.max(0.1, this._host.courseLayout.courseLength - COURSE_DISTANCE_EPSILON),
+        );
     }
 
     private startFlipTurnUnderwaterPhase() {

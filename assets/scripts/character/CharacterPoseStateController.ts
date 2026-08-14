@@ -12,6 +12,7 @@ export enum CharacterPoseState {
     DiveFlight = 'dive-flight',
     Glide = 'glide',
     Freestyle = 'freestyle',
+    SkillDash = 'skill-dash',
     TreadWater = 'tread-water',
 }
 
@@ -60,7 +61,13 @@ export class CharacterPoseStateController {
     }
 
     get isFreestyleActive(): boolean {
-        return this._state === CharacterPoseState.Freestyle || this._state === CharacterPoseState.Glide;
+        return this._state === CharacterPoseState.Freestyle
+            || this._state === CharacterPoseState.Glide
+            || this._state === CharacterPoseState.SkillDash;
+    }
+
+    get isSkillDashActive(): boolean {
+        return this._state === CharacterPoseState.SkillDash;
     }
 
     // Finished swimmers can safely follow the background-swimmer pose LOD. Showcase
@@ -105,8 +112,12 @@ export class CharacterPoseStateController {
         this.setState(CharacterPoseState.Glide);
     }
 
-    enterFreestyle() {
-        this.setState(CharacterPoseState.Freestyle);
+    enterFreestyle(transitionSeconds = 0) {
+        this.transitionTo(CharacterPoseState.Freestyle, transitionSeconds);
+    }
+
+    enterSkillDash(transitionSeconds = 0) {
+        this.transitionTo(CharacterPoseState.SkillDash, transitionSeconds);
     }
 
     enterTreadWater() {
@@ -239,6 +250,9 @@ export class CharacterPoseStateController {
             case CharacterPoseState.Freestyle:
                 this.applyRaceModelSetup();
                 break;
+            case CharacterPoseState.SkillDash:
+                this.applySkillDashSetup();
+                break;
             case CharacterPoseState.TreadWater:
                 this.applyTreadWaterSetup();
                 break;
@@ -296,6 +310,14 @@ export class CharacterPoseStateController {
         this._options.pose.restoreBasePose();
         this._options.pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
         this._options.setSplashVisible(false);
+    }
+
+    private applySkillDashSetup() {
+        if (!this._options.getRoot()) {
+            return;
+        }
+        this.applyRaceModelSetup();
+        this._options.pose.applyWaveDashPose();
     }
 
     private updateDiveFlight(dt: number) {

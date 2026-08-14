@@ -3,7 +3,7 @@ import { Rating } from '../core/GameConstants';
 
 // Pure per-swimmer ultimate state. Definitions live with the runtime so tuning,
 // local prediction and network reconciliation use exactly the same rules.
-export type UltimateSkillKind = 'shark' | 'instant' | 'charges' | 'pulses' | 'drag';
+export type UltimateSkillKind = 'shark' | 'instant' | 'charges' | 'dash' | 'drag';
 
 export type UltimateSkillDefinition = {
     characterId: PlayerCharacterId;
@@ -12,7 +12,6 @@ export type UltimateSkillDefinition = {
     kind: UltimateSkillKind;
     durationSeconds: number;
     maxCharges?: number;
-    pulseCount?: number;
 };
 
 export const ULTIMATE_SKILL_BALANCE = {
@@ -21,9 +20,12 @@ export const ULTIMATE_SKILL_BALANCE = {
     fishDurationSeconds: 5,
     fishCharges: 3,
     fishBonusQualityAccelScale: 1,
-    novaDurationSeconds: 2,
-    novaPulseSpeed: 0.48,
-    novaPulseCapBonus: 0.2,
+    // 破浪新星：持续短时的额外前向速度。额外距离 = speed * duration，
+    // 因此默认直线无阻挡收益约 2.5m，而不是硬编码位置瞬移。
+    novaDashDurationSeconds: 0.6,
+    novaDashExtraDistance: 2.5,
+    novaDashTurnSafetyPadding: 0.1,
+    novaDashYieldPadding: 0.08,
     diverDurationSeconds: 5,
     diverSurfaceDragScale: 0.42,
     // Kept only so old saved tuning entries load harmlessly. Dedicated skills no
@@ -36,11 +38,9 @@ export const ULTIMATE_SKILL_BALANCE = {
 const SKILL_DEFINITIONS: Record<PlayerCharacterId, UltimateSkillDefinition> = {
     muscleMan: { characterId: 'muscleMan', id: 'skill.shark.tailSlam', name: '鲨尾重击', kind: 'instant', durationSeconds: 0 },
     women2: { characterId: 'women2', id: 'skill.fish.rhythmLine', name: '律动水线', kind: 'charges', durationSeconds: 5, maxCharges: 3 },
-    lowPolyHuman2: { characterId: 'lowPolyHuman2', id: 'skill.nova.waveChase', name: '踏浪追击', kind: 'pulses', durationSeconds: 2, pulseCount: 3 },
+    lowPolyHuman2: { characterId: 'lowPolyHuman2', id: 'skill.nova.waveDash', name: '劈波突进', kind: 'dash', durationSeconds: 0.6 },
     diver: { characterId: 'diver', id: 'skill.diver.deepTrail', name: '深海航迹', kind: 'drag', durationSeconds: 5 },
 };
-
-const PULSE_RATIOS = [0, 0.325, 0.65];
 
 // This skill is different from the other per-swimmer runtimes: the actual shark
 // is owned by the race-level SharkController. Keep the definition here so the
@@ -63,12 +63,21 @@ export class SkillRuntime {
     private _charges = 0;
     private _pulsesTriggered = 0;
     private _pendingImpulseCount = 0;
+    private _dashYieldAvailable = false;
 
     get definition(): UltimateSkillDefinition { return this._definition; }
     get remainingSeconds(): number { return this._remainingSeconds; }
     get charges(): number { return this._charges; }
     get pulsesTriggered(): number { return this._pulsesTriggered; }
-    get pulseCount(): number { return this._definition.pulseCount ?? 0; }
+    // Kept for the compact existing network/UI wire format. Dash has no pulses.
+    get pulseCount(): number { return 0; }
+    get isDashActive(): boolean { return this._definition.kind === 'dash' && this._remainingSeconds > 0; }
+    get canDashYield(): boolean { return this.isDashActive && this._dashYieldAvailable; }
+    get dashExtraSpeed(): number {
+        return this.isDashActive
+            ? Math.max(0, ULTIMATE_SKILL_BALANCE.novaDashExtraDistance) / Math.max(0.001, this.durationSeconds)
+            : 0;
+    }
     get active(): boolean { return this._remainingSeconds > 0 || this._charges > 0; }
     get normalizedRemaining(): number {
         return clamp(this._remainingSeconds / Math.max(0.001, this.durationSeconds), 0, 1);
@@ -76,7 +85,7 @@ export class SkillRuntime {
     get durationSeconds(): number {
         switch (this._definition.kind) {
             case 'charges': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.fishDurationSeconds);
-            case 'pulses': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.novaDurationSeconds);
+            case 'dash': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds);
             case 'drag': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.diverDurationSeconds);
             default: return 0;
         }
@@ -98,6 +107,7 @@ export class SkillRuntime {
         this._charges = 0;
         this._pulsesTriggered = 0;
         this._pendingImpulseCount = 0;
+        this._dashYieldAvailable = false;
     }
 
     activate(): boolean {
@@ -112,10 +122,9 @@ export class SkillRuntime {
                 this._remainingSeconds = this.durationSeconds;
                 this._charges = Math.max(1, Math.round(ULTIMATE_SKILL_BALANCE.fishCharges));
                 return true;
-            case 'pulses':
+            case 'dash':
                 this._remainingSeconds = this.durationSeconds;
-                this._pulsesTriggered = 1;
-                this._pendingImpulseCount = 1;
+                this._dashYieldAvailable = true;
                 return true;
             case 'drag':
                 this._remainingSeconds = this.durationSeconds;
@@ -123,22 +132,15 @@ export class SkillRuntime {
         }
     }
 
-    // Timers always elapse. Pulses that occur in an ineligible phase are consumed
-    // without an impulse, which is the intended "no pause, no make-up" behavior.
+    // Timers always elapse. The caller ends a dash immediately when a scripted
+    // movement phase begins, so it never resumes or compensates later.
     tick(dt: number, canAffectSurface: boolean): void {
         if (!this.active || !Number.isFinite(dt) || dt <= 0) return;
         const previous = this._remainingSeconds;
         this._remainingSeconds = Math.max(0, previous - dt);
-        if (this._definition.kind !== 'pulses') {
-            if (this._remainingSeconds <= 0) this._charges = 0;
-            return;
-        }
-        const duration = this.durationSeconds;
-        const elapsed = duration - this._remainingSeconds;
-        const max = Math.max(0, this._definition.pulseCount ?? 0);
-        while (this._pulsesTriggered < max && elapsed + 1e-6 >= duration * PULSE_RATIOS[this._pulsesTriggered]) {
-            this._pulsesTriggered += 1;
-            if (canAffectSurface) this._pendingImpulseCount += 1;
+        if (this._remainingSeconds <= 0) {
+            this._charges = 0;
+            this._dashYieldAvailable = false;
         }
     }
 
@@ -146,6 +148,21 @@ export class SkillRuntime {
         const count = this._pendingImpulseCount;
         this._pendingImpulseCount = 0;
         return count;
+    }
+
+    // A dash can make exactly one same-direction swimmer yield sideways. The
+    // collision solver calls this only after it has found a valid free side.
+    consumeDashYield(): boolean {
+        if (!this.isDashActive || !this._dashYieldAvailable) return false;
+        this._dashYieldAvailable = false;
+        return true;
+    }
+
+    cancel(): void {
+        this._remainingSeconds = 0;
+        this._charges = 0;
+        this._pendingImpulseCount = 0;
+        this._dashYieldAvailable = false;
     }
 
     // Returns true only for GOOD/PERFECT strokes while the finite rhythm window
@@ -165,16 +182,15 @@ export class SkillRuntime {
             this._charges = clamp(Math.round(charges), 0, Math.max(1, Math.round(ULTIMATE_SKILL_BALANCE.fishCharges)));
             if (this._remainingSeconds <= 0) this._charges = 0;
         }
-        if (this._definition.kind === 'pulses') {
-            this._pulsesTriggered = clamp(Math.round(pulsesTriggered), 0, this.pulseCount);
-        }
+        // `pulsesTriggered` remains on the compact wire format for old clients;
+        // the dash deliberately has no pulse substate to reconcile.
     }
 
     get impulseSpeed(): number {
-        return this._definition.kind === 'instant' ? ULTIMATE_SKILL_BALANCE.sharkImpulseSpeed : ULTIMATE_SKILL_BALANCE.novaPulseSpeed;
+        return ULTIMATE_SKILL_BALANCE.sharkImpulseSpeed;
     }
     get impulseCapBonus(): number {
-        return this._definition.kind === 'instant' ? ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus : ULTIMATE_SKILL_BALANCE.novaPulseCapBonus;
+        return ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus;
     }
     get rhythmBonusQualityAccelScale(): number { return Math.max(0, ULTIMATE_SKILL_BALANCE.fishBonusQualityAccelScale); }
 }

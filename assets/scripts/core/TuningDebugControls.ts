@@ -46,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 26;
+const TUNING_FILE_VERSION = 27;
 
 type TuningFileData = {
     version: number;
@@ -104,9 +104,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('skill.fish.durationSeconds', '律动水线时长', '灵波飞鱼强化划水的可用窗口。', () => ULTIMATE_SKILL_BALANCE.fishDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.fishDurationSeconds = v, 0.1, 1, 8, 2, 's'),
             control('skill.fish.charges', '律动水线次数', '窗口内可强化的 GOOD/PERFECT 划水次数。', () => ULTIMATE_SKILL_BALANCE.fishCharges, (v) => ULTIMATE_SKILL_BALANCE.fishCharges = v, 1, 1, 5, 0),
             control('skill.fish.qualityAccelScale', '律动额外质量加速', 'GOOD 升为 PERFECT 时补足的质量加速比例。', () => ULTIMATE_SKILL_BALANCE.fishBonusQualityAccelScale, (v) => ULTIMATE_SKILL_BALANCE.fishBonusQualityAccelScale = v, 0.05, 0, 2, 2),
-            control('skill.nova.durationSeconds', '踏浪追击时长', '破浪新星三段推进的总窗口。', () => ULTIMATE_SKILL_BALANCE.novaDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.novaDurationSeconds = v, 0.1, 0.5, 5, 2, 's'),
-            control('skill.nova.pulseSpeed', '踏浪单段冲量', '每段自动推进增加的速度。', () => ULTIMATE_SKILL_BALANCE.novaPulseSpeed, (v) => ULTIMATE_SKILL_BALANCE.novaPulseSpeed = v, 0.02, 0, 2, 2, 'm/s'),
-            control('skill.nova.capBonus', '踏浪单段超速上限', '每段推进允许的短暂超速余量。', () => ULTIMATE_SKILL_BALANCE.novaPulseCapBonus, (v) => ULTIMATE_SKILL_BALANCE.novaPulseCapBonus = v, 0.02, 0, 1, 2, 'm/s'),
+            control('skill.nova.dashDurationSeconds', '劈波突进时长', '破浪新星锁定朝向后的持续突进时间。', () => ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds = v, 0.05, 0.3, 1.5, 2, 's'),
+            control('skill.nova.dashExtraDistance', '劈波额外距离', '直线无阻挡时相对同期正常游泳额外获得的目标距离；实际额外速度由本值除以时长得出。', () => ULTIMATE_SKILL_BALANCE.novaDashExtraDistance, (v) => ULTIMATE_SKILL_BALANCE.novaDashExtraDistance = v, 0.1, 0.5, 5, 2, 'm'),
+            control('skill.nova.dashTurnSafetyPadding', '劈波转身安全余量', '折返预警区额外保留的距离，避免突进进入翻滚转身。', () => ULTIMATE_SKILL_BALANCE.novaDashTurnSafetyPadding, (v) => ULTIMATE_SKILL_BALANCE.novaDashTurnSafetyPadding = v, 0.02, 0, 1, 2, 'm'),
+            control('skill.nova.dashYieldPadding', '劈波侧让位余量', '超越时对手横移后额外保留的身体间隙。', () => ULTIMATE_SKILL_BALANCE.novaDashYieldPadding, (v) => ULTIMATE_SKILL_BALANCE.novaDashYieldPadding = v, 0.01, 0, 0.4, 2, 'm'),
             control('skill.diver.durationSeconds', '深海航迹时长', '深海潜将表面减阻状态的时长。', () => ULTIMATE_SKILL_BALANCE.diverDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.diverDurationSeconds = v, 0.1, 1, 8, 2, 's'),
             control('skill.diver.surfaceDragScale', '深海航迹表面阻力', '正常水面游泳的阻力倍率；越低越不易减速。', () => ULTIMATE_SKILL_BALANCE.diverSurfaceDragScale, (v) => ULTIMATE_SKILL_BALANCE.diverSurfaceDragScale = v, 0.02, 0.1, 1, 2),
         ],
@@ -175,7 +176,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dolphin.rollEaseRate', '转体跟随速度', '轴向转体角度向输入目标追赶的速度。越大转得越快、越跟手。', () => DOLPHIN_JUMP.rollEaseRate, (v) => DOLPHIN_JUMP.rollEaseRate = v, 0.5, 2, 20, 1),
             control('dolphin.landingDepth', '落水下潜深度', '落水后潜入水下的深度，随后上浮恢复正常游泳。', () => DOLPHIN_JUMP.landingDepth, (v) => DOLPHIN_JUMP.landingDepth = v, 0.05, 0, 2, 2, 'm'),
             control('dolphin.landingRollUnwindSeconds', '转体回正时间', '落水后把残余轴向转体拉回正常游泳姿态所用的时间。', () => DOLPHIN_JUMP.landingRollUnwindSeconds, (v) => DOLPHIN_JUMP.landingRollUnwindSeconds = v, 0.05, 0.1, 2, 2, 's'),
-            control('dolphin.strainHr', '起跳心率增长', '海豚跃起跳瞬间给心率增加的值（加法、封顶200），不碰体力。越大起跳后过载越深、划水代价越大。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 1, 0, 100, 0),
+            control('dolphin.strainHr', '起跳心率增长', '海豚跃起跳瞬间给心率增加的值（加法、封顶200）。越大起跳后过载越深、划水代价越大。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 1, 0, 100, 0),
+            control('dolphin.staminaCost', '海豚跳体力消耗', '海豚跃出水时一次性扣除的体力；与蓄气消耗和心率上升同时生效。', () => DOLPHIN_JUMP.staminaCost, (v) => DOLPHIN_JUMP.staminaCost = v, 1, 0, 30, 0),
             control('camera.dolphinBackDistance', '相机后距', '海豚跃跟随相机沿飞行切线在身后的基础距离。', () => RACE_CAMERA_TUNING.dolphinBackDistance, (v) => RACE_CAMERA_TUNING.dolphinBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
             control('camera.dolphinApexPullback', '顶点拉远', '腾空到最高点时在基础后距上额外往后拉的距离，用来把整个跃起框进画面。', () => RACE_CAMERA_TUNING.dolphinApexPullback, (v) => RACE_CAMERA_TUNING.dolphinApexPullback = v, 0.1, 0, 5, 1, 'm'),
             control('camera.dolphinHeight', '相机抬高', '在切线跟拍基础上额外的世界向上抬高量（取景用，别调太大否则会削弱抛物线跟拍感）。', () => RACE_CAMERA_TUNING.dolphinHeight, (v) => RACE_CAMERA_TUNING.dolphinHeight = v, 0.05, -0.5, 2, 2, 'm'),
@@ -208,6 +210,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('camera.sprintLookAhead', '冲刺镜头前看', '以主角上半身骨骼为基准，镜头目标向终点方向前移的距离。越小越聚焦上半身。', () => RACE_CAMERA_TUNING.sprintLookAhead, (v) => RACE_CAMERA_TUNING.sprintLookAhead = v, 0.1, 0, 6, 1, 'm'),
             control('camera.sprintAscentAnchorAboveWater', '上浮镜头水面锚点', '上浮阶段提前切入冲刺视角时，镜头构图锚点保持在水面以上的最低高度。调高可把横切画面的水面线继续向下压。', () => RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater, (v) => RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater = v, 0.05, 0, 1.5, 2, 'm'),
             control('camera.sprintFov', '水面跟随视野', '水面背后跟随镜头的垂直视野角度。越大画面越广，越小主角越大。', () => RACE_CAMERA_TUNING.sprintFov, (v) => RACE_CAMERA_TUNING.sprintFov = v, 1, 25, 80, 0, '°'),
+            control('camera.dashFovBoost', '劈波视野扩张', '劈波突进时额外扩大视野的角度。越大边缘掠过感越强；过大可能使人物显得太小。', () => RACE_CAMERA_TUNING.dashFovBoost, (v) => RACE_CAMERA_TUNING.dashFovBoost = v, 1, 0, 24, 0, '°'),
+            control('camera.dashFovBlendSpeed', '劈波视野响应', '劈波突进时视野扩张与恢复的响应速度。越高越有猛然加速的冲击感。', () => RACE_CAMERA_TUNING.dashFovBlendSpeed, (v) => RACE_CAMERA_TUNING.dashFovBlendSpeed = v, 1, 1, 40, 0, '/s'),
             control('camera.sprintFollowSpeed', '冲刺前向跟随', '冲刺镜头前进/高度方向的跟随速度（每秒）。越高越紧跟，越低越拖影。', () => RACE_CAMERA_TUNING.sprintFollowSpeed, (v) => RACE_CAMERA_TUNING.sprintFollowSpeed = v, 0.5, 2, 30, 1, '/s'),
             control('camera.sprintLateralFollowSpeed', '冲刺横向跟随', '冲刺镜头左右(横向)跟随速度（每秒）。故意调慢，让人物蛇形偏移时先在画面里滑出去、相机再缓缓追上，玩家才感受得到偏移。越低偏移越明显、越拖。', () => RACE_CAMERA_TUNING.sprintLateralFollowSpeed, (v) => RACE_CAMERA_TUNING.sprintLateralFollowSpeed = v, 0.2, 0.5, 15, 1, '/s'),
             control('camera.surfaceRaceCameraRiseProgress', '上浮切冲刺进度', '开局入水与翻滚蹬壁后的上浮进度达到该比例时，提前切回正常冲刺跟随镜头。0 表示上浮开始的第一帧。', () => RACE_CAMERA_TUNING.surfaceRaceCameraRiseProgress, (v) => RACE_CAMERA_TUNING.surfaceRaceCameraRiseProgress = v, 0.05, 0, 1, 2),

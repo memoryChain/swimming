@@ -488,6 +488,20 @@ export class FreestylePoseController {
         }
     }
 
+    // Temporary production pose for 破浪新星 until an authored dash clip exists.
+    // Both arms stay forward with a small opening, so the silhouette reads as
+    // actively splitting water instead of continuing the regular crawl cycle.
+    applyWaveDashPose() {
+        if (!this.root) {
+            return;
+        }
+        this.restoreBasePose();
+        this.applyFreestyleRootMotion(0, 0, 0, 0, 0, 0);
+        this.applyUpperBodyRoll(0, 1, 0);
+        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(0), 1.25);
+        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(0), 1.25);
+    }
+
     applyFlipTurnKeyPose(sample: FlipTurnPoseSample, power = 1) {
         if (!this.root) {
             return;

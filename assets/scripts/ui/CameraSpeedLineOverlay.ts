@@ -6,6 +6,7 @@ export const CAMERA_SPEED_LINE_TUNING = {
 };
 
 const LINE_COLOR = new Color(224, 250, 255, 255);
+const DASH_LINE_COLOR = new Color(188, 238, 255, 255);
 // Graphics mesh rebuilds are costly on iOS/WeChat. The camera can still render at
 // 60/120fps while this decorative overlay samples its animation at 30fps.
 const SPEED_LINE_DRAW_INTERVAL = 1 / 30;
@@ -34,6 +35,7 @@ export class CameraSpeedLineOverlay {
     private _vanishingY = 0;
     private _drawElapsed = SPEED_LINE_DRAW_INTERVAL;
     private _vanishingPointRefreshPending = false;
+    private _dashBoost = false;
     private readonly _strokeColor = new Color();
 
     bind(hud: Node) {
@@ -47,18 +49,20 @@ export class CameraSpeedLineOverlay {
         this._root.active = false;
     }
 
-    update(dt: number, speed: number, visible: boolean, sprintBoost = false) {
+    update(dt: number, speed: number, visible: boolean, sprintBoost = false, dashBoost = false) {
         if (!this._root?.isValid || !this._graphics) {
             return;
         }
         this.resize();
-        const threshold = sprintBoost
+        const threshold = sprintBoost || dashBoost
             ? CAMERA_SPEED_LINE_TUNING.speedLineThreshold * 0.7
             : CAMERA_SPEED_LINE_TUNING.speedLineThreshold;
-        const target = visible && speed >= threshold
-            ? (sprintBoost ? 1.25 : 1)
+        const target = visible && (dashBoost || speed >= threshold)
+            ? (dashBoost ? 1.9 : sprintBoost ? 1.25 : 1)
             : 0;
-        const blend = 1 - Math.exp(-Math.max(0, dt) * (target > this._intensity ? 9 : 5));
+        this._dashBoost = dashBoost;
+        const blendSpeed = dashBoost ? 24 : target > this._intensity ? 9 : 5;
+        const blend = 1 - Math.exp(-Math.max(0, dt) * blendSpeed);
         this._intensity += (target - this._intensity) * blend;
         const active = this._intensity > 0.015;
         const becameActive = active && !this._root.active;
@@ -69,7 +73,7 @@ export class CameraSpeedLineOverlay {
             this._drawElapsed = SPEED_LINE_DRAW_INTERVAL;
             return;
         }
-        this._phase = (this._phase + dt * (0.75 + this._intensity * 1.8)) % 1;
+        this._phase = (this._phase + dt * (0.75 + this._intensity * (this._dashBoost ? 3.5 : 1.8))) % 1;
         this._drawElapsed += Math.max(0, dt);
         if (!becameActive && this._drawElapsed < SPEED_LINE_DRAW_INTERVAL) {
             return;
@@ -147,13 +151,15 @@ export class CameraSpeedLineOverlay {
             }
             const normalX = -(endY - startY) / length;
             const normalY = (endX - startX) / length;
-            const innerHalfWidth = 0.3 + this._intensity * 0.25;
-            const outerHalfWidth = 1.3 + this._intensity * 1.9;
+            const dashWidth = this._dashBoost ? 1.45 : 1;
+            const innerHalfWidth = (0.3 + this._intensity * 0.25) * dashWidth;
+            const outerHalfWidth = (1.3 + this._intensity * 1.9) * dashWidth;
+            const color = this._dashBoost ? DASH_LINE_COLOR : LINE_COLOR;
             this._strokeColor.set(
-                LINE_COLOR.r,
-                LINE_COLOR.g,
-                LINE_COLOR.b,
-                Math.round((40 + travel * 115) * this._intensity),
+                color.r,
+                color.g,
+                color.b,
+                Math.min(235, Math.round((40 + travel * 115) * this._intensity)),
             );
             graphics.fillColor = this._strokeColor;
             graphics.moveTo(startX + normalX * innerHalfWidth, startY + normalY * innerHalfWidth);

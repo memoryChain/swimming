@@ -39,6 +39,9 @@ type StrokeAction = {
     progress: number;
     baseAccelerationStarted: boolean;
     strokeQualitySettled: boolean;
+    // Inputs are still scored during 劈波突进, but their physical stroke result
+    // must never add propulsion or steering during/after the locked pose.
+    propulsionSuppressed: boolean;
     alternationQuality: number;
     inputFreshness: number;
     inputLeadSeconds: number;
@@ -110,6 +113,11 @@ export class SwimmerMotor {
     private _skillStrokeAccelScale = 1;
     private _skillSpeedCapScale = 1;
     private _skillSurfaceDragScale = 1;
+    // A short additive locomotion layer used by 劈波突进. It deliberately lives
+    // outside the normal velocity integrator so ending the skill leaves no
+    // hidden inertial speed bonus.
+    private _skillDashExtraSpeed = 0;
+    private _skillDashHeading = 0;
     private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
@@ -158,6 +166,7 @@ export class SwimmerMotor {
 
     stopRace() {
         this._isRacing = false;
+        this.clearSkillDash();
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
     }
@@ -177,6 +186,7 @@ export class SwimmerMotor {
         // A knockback impulse buffered just before the turn would freeze during
         // the scripted phase and jolt afterwards, so clear it here.
         this.clearKnockback();
+        this.clearSkillDash();
         this._leftStrokeHeld = false;
         this._rightStrokeHeld = false;
         this._leftPressStartedAt = -1;
@@ -382,6 +392,9 @@ export class SwimmerMotor {
     // enters above that ceiling, so applying the surface fade there would make
     // every kick produce exactly zero propulsion.
     private computeKickAcceleration(): number {
+        if (this.isSkillDashActive) {
+            return 0;
+        }
         if (this._kickCadenceHz <= 0) {
             return 0;
         }
@@ -420,31 +433,43 @@ export class SwimmerMotor {
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
-        const strokeAcceleration = this.consumeStrokeAcceleration(dt);
+        const dashActive = this.isSkillDashActive;
+        const recordedStrokeAcceleration = this.consumeStrokeAcceleration(dt);
+        const strokeAcceleration = dashActive ? 0 : recordedStrokeAcceleration;
         // Normal-dive player and AI inputs both register discrete kick taps. AI
         // uses the same cadence-derived underwater propulsion instead of a tiny
         // one-off pulse that cannot overcome glide drag.
         this.updateKickCadence();
         const kickAcceleration = this.computeKickAcceleration();
-        const next = this._physics.step(
-            {
-                currentSpeed: this._currentSpeed,
-                distance: this._distance,
-            },
-            {
-                dt,
-                strokeAcceleration,
-                kickAcceleration,
-                speedCapBonus: this._speedCapBonus,
-                glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
-                surfaceDragScale: this._skillSurfaceDragScale,
-                maxSpeedOverride: this._effectiveMaxSpeed,
-            },
-        );
-        this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
-        this._currentSpeed = next.currentSpeed;
+        // 突进不是把正常游速换成另一套低速物理：锁住释放当刻的基础
+        // 速度，再在其上叠加技能速度。若仍让水阻在这段时间持续拉低
+        // 基础速度，技能结束会从高速瞬间跌到最低游速，体感会像刹车。
+        let nextSpeed = this._currentSpeed;
+        if (!dashActive) {
+            nextSpeed = this._physics.step(
+                {
+                    currentSpeed: this._currentSpeed,
+                    distance: this._distance,
+                },
+                {
+                    dt,
+                    strokeAcceleration,
+                    kickAcceleration,
+                    speedCapBonus: this._speedCapBonus,
+                    glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
+                    surfaceDragScale: this._skillSurfaceDragScale,
+                    maxSpeedOverride: this._effectiveMaxSpeed,
+                },
+            ).currentSpeed;
+        }
+        this._currentAcceleration = dt > 0
+            ? ((nextSpeed + this._skillDashExtraSpeed) - this.currentSpeed) / dt
+            : 0;
+        this._currentSpeed = nextSpeed;
         this.decaySpeedCapBonus(dt, options);
-        this.updateKickSteeringCorrection(dt, options);
+        if (!this.isSkillDashActive) {
+            this.updateKickSteeringCorrection(dt, options);
+        }
         this.updateSteering(dt);
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
@@ -452,10 +477,11 @@ export class SwimmerMotor {
         // Race distance is monotonic by contract. The steering hard cap keeps
         // cos(heading) positive; max(0, ...) is a second line of defence so even
         // corrupted runtime state can never make the swimmer turn back.
-        const forwardSpeed = this._currentSpeed * Math.max(0, Math.cos(this._heading));
+        const effectiveSpeed = this.currentSpeed;
+        const forwardSpeed = effectiveSpeed * Math.max(0, Math.cos(this._heading));
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
-        const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
+        const requestedLateralOffset = this._lateralOffset + effectiveSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
         if (Math.abs(this._lateralOffset - requestedLateralOffset) > 1e-6) {
             this.returnToLaneFromPoolWall();
@@ -509,6 +535,7 @@ export class SwimmerMotor {
         this._skillStrokeAccelScale = 1;
         this._skillSpeedCapScale = 1;
         this._skillSurfaceDragScale = 1;
+        this.clearSkillDash();
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
@@ -536,6 +563,25 @@ export class SwimmerMotor {
 
     setSkillSurfaceDragScale(scale: number) {
         this._skillSurfaceDragScale = clamp(scale, 0.05, 1);
+    }
+
+    get isSkillDashActive(): boolean {
+        return this._skillDashExtraSpeed > 0;
+    }
+
+    // Captures the heading on the start edge. Repeated calls only sustain the
+    // bonus, which keeps the active dash locked to its release direction.
+    setSkillDash(extraSpeed: number) {
+        const next = Math.max(0, finiteOr(extraSpeed, 0));
+        if (next > 0 && this._skillDashExtraSpeed <= 0) {
+            this._skillDashHeading = this._heading;
+            this._headingTarget = this._heading;
+        }
+        this._skillDashExtraSpeed = next;
+    }
+
+    clearSkillDash() {
+        this._skillDashExtraSpeed = 0;
     }
 
     // One-shot skill propulsion uses the same speed/overcap channel as normal
@@ -833,7 +879,9 @@ export class SwimmerMotor {
         action.releasedAt = this._motionClock;
         action.strokeQualitySettled = true;
         this._lastStrokeQuality = 0;
-        this.startStrokeAcceleration(Math.max(0, STROKE_QUALITY_TUNING.armStrokeTimeoutAccel), false);
+        if (!action.propulsionSuppressed && !this.isSkillDashActive) {
+            this.startStrokeAcceleration(Math.max(0, STROKE_QUALITY_TUNING.armStrokeTimeoutAccel), false);
+        }
         const actionSeconds = this.predictedActionSecondsAfterRelease(action);
         this._pendingStrokeQualityResults.push({
             type,
@@ -911,13 +959,19 @@ export class SwimmerMotor {
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds, ranges)
             : undefined;
         this._lastStrokeQuality = strokeQuality;
-        this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
+        if (!action.propulsionSuppressed && !this.isSkillDashActive) {
+            this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
+        }
         action.strokeQualitySettled = true;
         // Steering nudge fires when a real stroke settles (“松手” for a tap, or a
         // held cycle completing). The turn scales with pull strength: the further
         // the pull travelled before release (longer hold), the bigger the turn.
         const turnPower = clamp01(releaseProgress / Math.max(0.01, STROKE_QUALITY_TUNING.armStrokeTimeoutProgress));
-        this.applyStrokeSteering(type, turnPower);
+        // 突进期间开始的划水只结算节奏与能量；即使它在突进结束后才结算，
+        // 也不能把之前被抑制的转向延迟补发出来。
+        if (!action.propulsionSuppressed) {
+            this.applyStrokeSteering(type, turnPower);
+        }
         const result = {
             type,
             strokeQuality,
@@ -1175,6 +1229,11 @@ export class SwimmerMotor {
     // body GRADUALLY after release. No auto-recenter: heading only returns toward
     // straight when the swimmer strokes the other side (player and AI alike).
     private updateSteering(dt: number) {
+        if (this.isSkillDashActive) {
+            this._heading = this._skillDashHeading;
+            this._headingTarget = this._skillDashHeading;
+            return;
+        }
         const maxHeading = safeMaxHeadingRadians();
         // Re-clamp every frame because debug tuning can change while racing and
         // persisted JSON bypasses the UI slider's min/max metadata.
@@ -1214,7 +1273,7 @@ export class SwimmerMotor {
     // The sign is flipped by lap direction so it stays consistent after the turn.
     // powerFactor (0..1) scales the turn by how hard/long the stroke was pulled.
     private applyStrokeSteering(type: StrokeType, powerFactor: number) {
-        if (!this._steeringEnabled) {
+        if (!this._steeringEnabled || this.isSkillDashActive) {
             return;
         }
         const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
@@ -1247,6 +1306,7 @@ export class SwimmerMotor {
             progress: 0,
             baseAccelerationStarted: false,
             strokeQualitySettled: false,
+            propulsionSuppressed: this.isSkillDashActive,
             alternationQuality: 0,
             inputFreshness: 1,
             inputLeadSeconds: 0,
@@ -1296,6 +1356,7 @@ export class SwimmerMotor {
             progress: 0,
             baseAccelerationStarted: false,
             strokeQualitySettled: false,
+            propulsionSuppressed: this.isSkillDashActive,
             alternationQuality: 0,
             inputFreshness: 1,
             inputLeadSeconds: 0,
@@ -1430,7 +1491,7 @@ export class SwimmerMotor {
     }
 
     get currentSpeed(): number {
-        return this._currentSpeed;
+        return this._currentSpeed + this._skillDashExtraSpeed;
     }
 
     get distance(): number {

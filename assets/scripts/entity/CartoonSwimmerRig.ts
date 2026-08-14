@@ -123,6 +123,7 @@ type FlashRestoreSlot = {
 const COLLISION_FLASH_SECONDS = 0.35;
 const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
 const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
+const SKILL_DASH_GLOW_COLOR = new Color(88, 224, 255, 255);
 const DIVE_CHARGE_BLUE = new Color(48, 198, 255, 255);
 const DIVE_CHARGE_YELLOW = new Color(255, 218, 42, 255);
 const DIVE_CHARGE_RED = new Color(255, 54, 24, 255);
@@ -206,6 +207,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _playerOutline = false;
     private _skinOutfit: CharacterSkinOutfit = 'default';
     private _perfectGlowIntensity = 0;
+    private _skillDashGlowIntensity = 0;
     private _bodyFeedbackEnabled = true;
     private _perfectGlowMaterial: Material = null;
     private readonly _perfectGlowRestoreSlots: FlashRestoreSlot[] = [];
@@ -643,6 +645,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._animationPlayer.disable();
         this._animationPlayer.bind(null);
         this._perfectGlowIntensity = 0;
+        this._skillDashGlowIntensity = 0;
         this._collisionFlashTimer = 0;
         this._outlineRoot = null;
         if (this._model?.isValid) {
@@ -817,6 +820,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         } else {
             this._poseState.enterPreview();
             this.resetPose();
+        }
+    }
+
+    setSkillDashActive(active: boolean) {
+        if (this._modelDebugMode || active === this._poseState.isSkillDashActive) {
+            return;
+        }
+        this._animationPlayer.stop();
+        if (active) {
+            this._poseState.enterSkillDash(0.08);
+        } else {
+            this._poseState.enterFreestyle(0.08);
         }
     }
 
@@ -1071,6 +1086,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._armAction = Math.max(0, this._armAction - dt * 4.8);
         this._kickAction = Math.max(0, this._kickAction - dt * 7);
         this._splashEmitter?.decay(dt);
+        if (this._poseState.isSkillDashActive) {
+            this._pose.applyWaveDashPose();
+            this._leftHandWaterContact = 0;
+            this._rightHandWaterContact = 0;
+            this._leftHandWaterEntry = 0;
+            this._rightHandWaterEntry = 0;
+            this.updateSplashSurface(speed);
+            return;
+        }
         this.updateArmCycleMotion(dt, leftArmCycle, rightArmCycle);
         this.updateKickCycleMotion(dt, leftKickCycle, rightKickCycle);
 
@@ -1233,7 +1257,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             }
         }
 
-        if (this._bodyFeedbackEnabled && (this._perfectGlowIntensity > 0 || this._collisionFlashTimer > 0)) {
+        if (this._bodyFeedbackEnabled && (this._perfectGlowIntensity > 0 || this._skillDashGlowIntensity > 0 || this._collisionFlashTimer > 0)) {
             this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
             this.updatePerfectGlowMaterial();
         }
@@ -1350,6 +1374,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const changed = this._perfectGlowIntensity !== intensity;
         this._perfectGlowIntensity = intensity;
         if (changed && this._bodyFeedbackEnabled) {
+            this.updatePerfectGlowMaterial();
+        }
+    }
+
+    setSkillDashGlowActive(active: boolean) {
+        const intensity = active ? 1 : 0;
+        if (this._skillDashGlowIntensity === intensity) {
+            return;
+        }
+        this._skillDashGlowIntensity = intensity;
+        if (this._bodyFeedbackEnabled) {
             this.updatePerfectGlowMaterial();
         }
     }
@@ -2066,7 +2101,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private updatePerfectGlowMaterial() {
         const collisionFlash = this.currentCollisionFlashIntensity();
         const yellowGlow = this._perfectGlowIntensity;
-        const intensity = Math.max(yellowGlow, collisionFlash);
+        const dashGlow = this._skillDashGlowIntensity;
+        const intensity = Math.max(yellowGlow, dashGlow, collisionFlash);
         if (intensity <= 0.001) {
             this.restorePerfectGlowMaterials();
             return;
@@ -2076,7 +2112,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         // Both effects start at intensity 1, so comparing their magnitudes made
         // the tie select yellow; as the red timer decayed it could then never win.
         // Once the red timer expires, an active sweet zone naturally shows again.
-        const color = collisionFlash > 0 ? COLLISION_FLASH_COLOR : PERFECT_GLOW_COLOR;
+        const color = collisionFlash > 0
+            ? COLLISION_FLASH_COLOR
+            : dashGlow > 0 ? SKILL_DASH_GLOW_COLOR : PERFECT_GLOW_COLOR;
         const flashMaterial = this.ensurePerfectGlowMaterial();
         flashMaterial.setProperty('mainColor', color);
 

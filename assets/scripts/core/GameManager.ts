@@ -843,8 +843,8 @@ export class GameManager extends Component {
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
-            updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
-                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
+            updateCameraSpeedLines: (dt, speed, visible, sprintBoost, dashBoost) => {
+                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost, dashBoost);
             },
             trySummonShark: (swimmer) => this.trySummonShark(swimmer),
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
