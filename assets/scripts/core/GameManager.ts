@@ -48,6 +48,7 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { SharkController } from '../entity/SharkController';
+import { CrowdControlSkillController } from '../skills/CrowdControlSkillController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
@@ -73,6 +74,8 @@ import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
 import { NetSnapshotEntry } from '../net/NetRaceSnapshot';
+import { NetInputKind } from '../net/NetRaceInput';
+import { captureNetInput } from '../net/NetInputCapture';
 import { NET_SIM_STEP } from '../net/NetSimClock';
 import { reseedSharedRandom } from './SharedRNG';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
@@ -286,6 +289,7 @@ export class GameManager extends Component {
     private _fieldOverviewButtonLabel: Label | null = null;
     private _gameFlow: GameFlowController = null;
     private _shark: SharkController | null = null;
+    private _crowdControlSkills: CrowdControlSkillController | null = null;
     private _sharkNode: Node | null = null;
     private _sharkArtLoaded = false;
     private _sharkWake: Node | null = null;
@@ -543,6 +547,7 @@ export class GameManager extends Component {
         }
         this.updateSpectatorCameraTarget();
         this._gameFlow?.updateRaceCamera(dt);
+        this.updateCrowdControlSkills(dt);
         this.updateShark(dt);
         this._sharkEventBanner.update();
         this._uiFlow?.updateFlipTurnTiming(this._playerSwimmer?.flipTurnTiming ?? null);
@@ -817,6 +822,7 @@ export class GameManager extends Component {
                     this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
                     this.createShark();
+                    this.createCrowdControlSkills();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
                     done();
@@ -852,6 +858,7 @@ export class GameManager extends Component {
                 this._cameraSpeedLines.update(dt, speed, visible, sprintBoost, dashBoost);
             },
             trySummonShark: (swimmer) => this.trySummonShark(swimmer),
+            onUltimateSkillActivated: (swimmer) => this.handleUltimateSkillActivated(swimmer),
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
@@ -1228,6 +1235,47 @@ export class GameManager extends Component {
         }
         // Net clients only render state received from the current host.
         if (!this._netSession || this._netRaceController?.isHost) shark.tick(dt);
+    }
+
+    private createCrowdControlSkills(): void {
+        if (!this._worldRoot || this._crowdControlSkills) return;
+        this._crowdControlSkills = new CrowdControlSkillController({
+            root: this._worldRoot,
+            waterY: COURSE_LAYOUT.waterY,
+            swimmers: () => this.activeSharkSwimmers(),
+            laneFor: (swimmer) => this.assignedLaneOfSwimmer(swimmer),
+            onControlApplied: (target, seconds) => this.publishCrowdControl(target, seconds),
+        });
+        this._netRaceController?.setSkillControlListener((event, senderPos) => {
+            if (event.kind !== NetInputKind.SkillControl) return;
+            const net = this._netRaceController;
+            if (!net || senderPos !== net.activeHostPos) return;
+            const target = this.swimmerForLane(event.targetLane ?? -1);
+            target?.applyCrowdControl(Math.max(0, event.durationMs ?? 0) / 1000);
+        });
+    }
+
+    private handleUltimateSkillActivated(swimmer: Swimmer): void {
+        const kind = swimmer?.skill.definition.kind;
+        if (kind !== 'charm' && kind !== 'siren') return;
+        this._crowdControlSkills?.activate(swimmer);
+    }
+
+    private updateCrowdControlSkills(dt: number): void {
+        const controller = this._crowdControlSkills;
+        if (!controller) return;
+        if (this._state !== GameState.RACING) {
+            controller.reset();
+            return;
+        }
+        controller.tick(dt, !this._netSession || this._netRaceController?.isHost === true);
+    }
+
+    private publishCrowdControl(target: Swimmer, seconds: number): void {
+        if (!this._netSession || !this._netRaceController?.isHost) return;
+        const lane = this.assignedLaneOfSwimmer(target);
+        if (lane < 0 || !Number.isFinite(seconds) || seconds <= 0) return;
+        captureNetInput({ kind: NetInputKind.SkillControl, targetLane: lane, durationMs: Math.round(seconds * 1000) });
     }
 
     private createModelDebugFlow(): ModelDebugFlowController {
@@ -1664,6 +1712,7 @@ export class GameManager extends Component {
             driver.swimmer = swimmer;
             driver.pos = remote.pos;
             driver.onSharkSummonRequest = (requester) => this.handleRemoteSharkSummon(requester);
+            driver.onUltimateSkillActivated = (caster) => this.handleUltimateSkillActivated(caster);
             driver.resetRemote();
             const identity = this._netSession.members.find((m) => m.pos === remote.pos);
             if (identity?.nickName) {
@@ -1943,6 +1992,7 @@ export class GameManager extends Component {
                         skillRemainingSeconds: swimmer.skill.remainingSeconds,
                         skillCharges: swimmer.skill.charges,
                         skillPulsesTriggered: swimmer.skill.pulsesTriggered,
+                        crowdControlRemainingSeconds: swimmer.crowdControlRemainingSeconds,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries, this._shark?.snapshot());
@@ -1993,6 +2043,7 @@ export class GameManager extends Component {
             let targetSkillRemainingSeconds: number;
             let targetSkillCharges: number;
             let targetSkillPulsesTriggered: number;
+            let targetCrowdControlRemainingSeconds: number;
             let distBlend: number;
             let latBlend: number;
             let headBlend: number;
@@ -2007,6 +2058,7 @@ export class GameManager extends Component {
                 targetSkillRemainingSeconds = self.skillRemainingSeconds;
                 targetSkillCharges = self.skillCharges;
                 targetSkillPulsesTriggered = self.skillPulsesTriggered;
+                targetCrowdControlRemainingSeconds = self.crowdControlRemainingSeconds;
                 distBlend = 0.4;
                 latBlend = 0.4;
                 headBlend = 0.4;
@@ -2025,6 +2077,7 @@ export class GameManager extends Component {
                 targetSkillRemainingSeconds = target.skillRemainingSeconds;
                 targetSkillCharges = target.skillCharges;
                 targetSkillPulsesTriggered = target.skillPulsesTriggered;
+                targetCrowdControlRemainingSeconds = target.crowdControlRemainingSeconds;
                 distBlend = 0.2;
                 latBlend = 0.25;
                 headBlend = 0.3;
@@ -2080,6 +2133,22 @@ export class GameManager extends Component {
             if (targetSkillRemainingSeconds >= 0) {
                 swimmer.applyNetSkillState(targetSkillRemainingSeconds, targetSkillCharges, targetSkillPulsesTriggered);
             }
+            // Crowd control is host-authoritative even for a human lane whose own
+            // self snapshot is newer: a hit is decided by the host, not its victim.
+            const hostControl = this._netRaceController.snapshotTargets.find((entry) => entry.lane === lane)?.crowdControlRemainingSeconds;
+            if (hostControl !== undefined && hostControl >= 0) {
+                swimmer.applyNetCrowdControl(hostControl);
+            } else if (targetCrowdControlRemainingSeconds >= 0) {
+                swimmer.applyNetCrowdControl(targetCrowdControlRemainingSeconds);
+            }
+        }
+        // The local player is intentionally excluded from position correction, but
+        // crowd control is a host-decided outcome and must still correct locally.
+        if (!this._netRaceController.isHost) {
+            const localControl = this._netRaceController.snapshotTargets.find((entry) => entry.lane === this._playerLaneIndex)?.crowdControlRemainingSeconds;
+            if (localControl !== undefined && localControl >= 0) {
+                this._playerSwimmer?.applyNetCrowdControl(localControl);
+            }
         }
     }
 
@@ -2122,6 +2191,7 @@ export class GameManager extends Component {
             skillRemainingSeconds: player.skill.remainingSeconds,
             skillCharges: player.skill.charges,
             skillPulsesTriggered: player.skill.pulsesTriggered,
+            crowdControlRemainingSeconds: player.crowdControlRemainingSeconds,
         };
     }
 

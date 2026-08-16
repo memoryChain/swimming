@@ -49,6 +49,9 @@ export interface NetSnapshotEntry {
     // in the modifier digest, so the receiver resolves skill type locally.
     skillCharges: number;
     skillPulsesTriggered: number;
+    // Host-authoritative crowd-control remainder. This is intentionally separate
+    // from the caster's skill timer because the victim owns the blocked input state.
+    crowdControlRemainingSeconds: number;
 }
 
 // Race-global state appended to the host snapshot after the lane entries. It is
@@ -77,7 +80,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[], shark?: NetSharkSnapshot | null): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeSkillRemainingMs(e.skillRemainingSeconds)},${encodeSkillStateInt(e.skillCharges)},${encodeSkillStateInt(e.skillPulsesTriggered)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeSkillRemainingMs(e.skillRemainingSeconds)},${encodeSkillStateInt(e.skillCharges)},${encodeSkillStateInt(e.skillPulsesTriggered)},${encodeSkillRemainingMs(e.crowdControlRemainingSeconds)}`)
         .join(';');
     const sharkBody = shark
         ? `~${Math.max(0, Math.round(shark.sequence))},${Math.max(0, Math.round(shark.state))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.ownerLane)},${Math.round(shark.targetLane)},${Math.round(shark.eliminatedLane)}`
@@ -122,6 +125,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const skillRemainingMs = parts.length > 9 ? parseInt(parts[9], 10) : -1;
             const skillCharges = parts.length > 10 ? parseInt(parts[10], 10) : -1;
             const skillPulsesTriggered = parts.length > 11 ? parseInt(parts[11], 10) : -1;
+            const crowdControlRemainingMs = parts.length > 12 ? parseInt(parts[12], 10) : -1;
             entries.push({
                 lane,
                 distance: distCm / 100,
@@ -141,6 +145,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                     : -1,
                 skillCharges: Number.isFinite(skillCharges) && skillCharges >= 0 ? Math.min(9, skillCharges) : -1,
                 skillPulsesTriggered: Number.isFinite(skillPulsesTriggered) && skillPulsesTriggered >= 0 ? Math.min(9, skillPulsesTriggered) : -1,
+                crowdControlRemainingSeconds: Number.isFinite(crowdControlRemainingMs) && crowdControlRemainingMs >= 0
+                    ? Math.min(9.999, crowdControlRemainingMs / 1000) : -1,
             });
         }
     }
@@ -175,7 +181,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeSkillRemainingMs(entry.skillRemainingSeconds)},${encodeSkillStateInt(entry.skillCharges)},${encodeSkillStateInt(entry.skillPulsesTriggered)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeSkillRemainingMs(entry.skillRemainingSeconds)},${encodeSkillStateInt(entry.skillCharges)},${encodeSkillStateInt(entry.skillPulsesTriggered)},${encodeSkillRemainingMs(entry.crowdControlRemainingSeconds)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -202,6 +208,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const skillRemainingMs = parts.length > 9 ? parseInt(parts[9], 10) : -1;
     const skillCharges = parts.length > 10 ? parseInt(parts[10], 10) : -1;
     const skillPulsesTriggered = parts.length > 11 ? parseInt(parts[11], 10) : -1;
+    const crowdControlRemainingMs = parts.length > 12 ? parseInt(parts[12], 10) : -1;
     return {
         lane,
         distance: distCm / 100,
@@ -221,6 +228,8 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
             : -1,
         skillCharges: Number.isFinite(skillCharges) && skillCharges >= 0 ? Math.min(9, skillCharges) : -1,
         skillPulsesTriggered: Number.isFinite(skillPulsesTriggered) && skillPulsesTriggered >= 0 ? Math.min(9, skillPulsesTriggered) : -1,
+        crowdControlRemainingSeconds: Number.isFinite(crowdControlRemainingMs) && crowdControlRemainingMs >= 0
+            ? Math.min(9.999, crowdControlRemainingMs / 1000) : -1,
     };
 }
 

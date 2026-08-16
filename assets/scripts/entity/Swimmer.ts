@@ -53,6 +53,7 @@ export class Swimmer extends Component {
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private readonly _ultimate = new UltimateEnergyModel();
     private readonly _skill = new SkillRuntime();
+    private _crowdControlRemainingSeconds = 0;
     // Presentation-only cadence for Deep Trail. Reuses the existing pooled splash
     // emitter rather than creating a runtime graphics/particle hierarchy.
     private _skillTrailVisualCooldown = 0;
@@ -137,6 +138,21 @@ export class Swimmer extends Component {
 
     get skill(): SkillRuntime {
         return this._skill;
+    }
+
+    get isCrowdControlled(): boolean { return this._crowdControlRemainingSeconds > 0; }
+    get crowdControlRemainingSeconds(): number { return this._crowdControlRemainingSeconds; }
+    get isCrowdControlTargetable(): boolean { return this.isSharkTargetable && !this.isCrowdControlled; }
+
+    applyCrowdControl(seconds: number): void {
+        if (!this.isSharkTargetable || !Number.isFinite(seconds) || seconds <= 0) return;
+        this._crowdControlRemainingSeconds = Math.max(this._crowdControlRemainingSeconds, seconds);
+        this.cartoonRig?.triggerSplashBurst(0.5);
+    }
+
+    applyNetCrowdControl(seconds: number): void {
+        if (!Number.isFinite(seconds) || seconds < 0) return;
+        this._crowdControlRemainingSeconds = seconds;
     }
 
     // 蓄气资质（0-100，纯资质）：玩家/远程人类来自养成档案，AI 来自对手配置。
@@ -577,6 +593,9 @@ export class Swimmer extends Component {
             return;
         }
         this._ultimate.tick(dt);
+        if (this._crowdControlRemainingSeconds > 0) {
+            this._crowdControlRemainingSeconds = Math.max(0, this._crowdControlRemainingSeconds - Math.max(0, dt));
+        }
         const normalSurface = this.isUltimateSurfacePhase();
         if (!normalSurface && this._skill.isDashActive) {
             this._skill.cancel();
@@ -623,7 +642,7 @@ export class Swimmer extends Component {
     }
 
     handleStroke(type: StrokeType): RhythmResult | null {
-        if (!this._motor.isRacing) {
+        if (!this._motor.isRacing || this.isCrowdControlled) {
             return null;
         }
         if (this._phases.isDolphinJumpActive) {
@@ -658,7 +677,7 @@ export class Swimmer extends Component {
     }
 
     canAcceptStroke(type: StrokeType): boolean {
-        if (!this._motor.isRacing) {
+        if (!this._motor.isRacing || this.isCrowdControlled) {
             return false;
         }
         if (this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive) {
@@ -697,6 +716,7 @@ export class Swimmer extends Component {
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): RhythmResult | null {
+        if (this.isCrowdControlled) return null;
         if (this._phases.isFlipTurnActive) {
             return null;
         }
@@ -782,6 +802,7 @@ export class Swimmer extends Component {
         this._pendingConditionInputs.length = 0;
         this._ultimate.reset();
         this._skill.reset();
+        this._crowdControlRemainingSeconds = 0;
         this._strokeMetrics.reset();
         this.cartoonRig?.setSkillDashActive(false);
         this.cartoonRig?.setSkillDashGlowActive(false);
@@ -1165,7 +1186,7 @@ export class Swimmer extends Component {
     // Begin a dolphin jump (both-hands gesture). Only from surface racing; the
     // phase controller rejects it mid-turn/underwater or too close to a wall.
     tryDolphinJump(): boolean {
-        if (!this._motor.isRacing) {
+        if (!this._motor.isRacing || this.isCrowdControlled) {
             return false;
         }
         if (!this._ultimate.canAffordDolphin) {
@@ -1193,7 +1214,7 @@ export class Swimmer extends Component {
         this.applyPendingSkillImpulses(true);
         if (this._skill.definition.kind === 'dash') {
             this.syncSkillDashState(true);
-        } else if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
+        } else if (this._skill.definition.kind === 'charm' || this._skill.definition.kind === 'siren') {
             this.cartoonRig?.triggerSplashBurst(1.05);
         }
         return true;
@@ -1212,6 +1233,7 @@ export class Swimmer extends Component {
     get canActivateUltimate(): boolean {
         return this._motor.isRacing
             && !this._skill.active
+            && !this.isCrowdControlled
             && this.isUltimateSurfacePhase()
             && this._ultimate.canActivateUltimate
             && this.canStartUltimateSkillHere();
@@ -1235,7 +1257,7 @@ export class Swimmer extends Component {
         this.applyPendingSkillImpulses(this.isUltimateSurfacePhase());
         if (this._skill.definition.kind === 'dash') {
             this.syncSkillDashState(true);
-        } else if (this._skill.definition.kind === 'charges' || this._skill.definition.kind === 'drag') {
+        } else if (this._skill.definition.kind === 'charm' || this._skill.definition.kind === 'siren') {
             this.cartoonRig?.triggerSplashBurst(1.05);
         }
         return true;

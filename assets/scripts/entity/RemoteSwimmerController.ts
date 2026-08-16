@@ -28,6 +28,7 @@ export class RemoteSwimmerController extends Component {
     // Assigned only on the current host. Shark calls are globally arbitrated,
     // instead of being replayed as a normal per-swimmer skill activation.
     public onSharkSummonRequest: ((swimmer: Swimmer) => void) | null = null;
+    public onUltimateSkillActivated: ((swimmer: Swimmer) => void) | null = null;
     // The room seat (posNum) whose input this controller replays.
     public pos = -1;
     // Guard so a single dive event can't be applied twice.
@@ -73,7 +74,7 @@ export class RemoteSwimmerController extends Component {
                 if (swimmer.skill.definition.kind === 'shark') {
                     this.onSharkSummonRequest?.(swimmer);
                 } else {
-                    swimmer.applyAcceptedNetUltimate();
+                    if (swimmer.applyAcceptedNetUltimate()) this.onUltimateSkillActivated?.(swimmer);
                 }
                 break;
             case NetInputKind.FlipTurnTiming:

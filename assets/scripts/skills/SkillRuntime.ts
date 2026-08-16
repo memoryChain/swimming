@@ -3,7 +3,7 @@ import { Rating } from '../core/GameConstants';
 
 // Pure per-swimmer ultimate state. Definitions live with the runtime so tuning,
 // local prediction and network reconciliation use exactly the same rules.
-export type UltimateSkillKind = 'shark' | 'instant' | 'charges' | 'dash' | 'drag';
+export type UltimateSkillKind = 'shark' | 'instant' | 'charges' | 'dash' | 'drag' | 'charm' | 'siren';
 
 export type UltimateSkillDefinition = {
     characterId: PlayerCharacterId;
@@ -17,17 +17,20 @@ export type UltimateSkillDefinition = {
 export const ULTIMATE_SKILL_BALANCE = {
     sharkImpulseSpeed: 1.05,
     sharkImpulseCapBonus: 0.42,
-    fishDurationSeconds: 5,
-    fishCharges: 3,
-    fishBonusQualityAccelScale: 1,
+    charmRange: 9,
+    charmSpeed: 12,
+    charmHitRadius: 0.5,
+    charmControlSeconds: 1.3,
+    sirenDurationSeconds: 3,
+    sirenWindupSeconds: 0.4,
+    sirenRadius: 3,
+    sirenControlSeconds: 1.3,
     // 破浪新星：持续短时的额外前向速度。额外距离 = speed * duration，
     // 因此默认直线无阻挡收益约 2.5m，而不是硬编码位置瞬移。
     novaDashDurationSeconds: 0.6,
     novaDashExtraDistance: 2.5,
     novaDashTurnSafetyPadding: 0.1,
     novaDashYieldPadding: 0.08,
-    diverDurationSeconds: 5,
-    diverSurfaceDragScale: 0.42,
     // Kept only so old saved tuning entries load harmlessly. Dedicated skills no
     // longer read these prototype fields.
     durationSeconds: 4,
@@ -37,9 +40,9 @@ export const ULTIMATE_SKILL_BALANCE = {
 
 const SKILL_DEFINITIONS: Record<PlayerCharacterId, UltimateSkillDefinition> = {
     muscleMan: { characterId: 'muscleMan', id: 'skill.shark.tailSlam', name: '鲨尾重击', kind: 'instant', durationSeconds: 0 },
-    women2: { characterId: 'women2', id: 'skill.fish.rhythmLine', name: '律动水线', kind: 'charges', durationSeconds: 5, maxCharges: 3 },
+    women2: { characterId: 'women2', id: 'skill.fish.charmHeart', name: '心潮魅惑', kind: 'charm', durationSeconds: 0 },
     lowPolyHuman2: { characterId: 'lowPolyHuman2', id: 'skill.nova.waveDash', name: '劈波突进', kind: 'dash', durationSeconds: 0.6 },
-    diver: { characterId: 'diver', id: 'skill.diver.deepTrail', name: '深海航迹', kind: 'drag', durationSeconds: 5 },
+    diver: { characterId: 'diver', id: 'skill.diver.sirenSong', name: '海妖之歌', kind: 'siren', durationSeconds: 3 },
 };
 
 // This skill is different from the other per-swimmer runtimes: the actual shark
@@ -84,16 +87,13 @@ export class SkillRuntime {
     }
     get durationSeconds(): number {
         switch (this._definition.kind) {
-            case 'charges': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.fishDurationSeconds);
             case 'dash': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds);
-            case 'drag': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.diverDurationSeconds);
+            case 'siren': return Math.max(0.001, ULTIMATE_SKILL_BALANCE.sirenDurationSeconds);
             default: return 0;
         }
     }
     get surfaceDragScale(): number {
-        return this._definition.kind === 'drag' && this.active
-            ? clamp(ULTIMATE_SKILL_BALANCE.diverSurfaceDragScale, 0.05, 1)
-            : 1;
+        return 1;
     }
 
     setDefinition(definition: UltimateSkillDefinition): void {
@@ -118,15 +118,13 @@ export class SkillRuntime {
             case 'instant':
                 this._pendingImpulseCount = 1;
                 return true;
-            case 'charges':
-                this._remainingSeconds = this.durationSeconds;
-                this._charges = Math.max(1, Math.round(ULTIMATE_SKILL_BALANCE.fishCharges));
+            case 'charm':
                 return true;
             case 'dash':
                 this._remainingSeconds = this.durationSeconds;
                 this._dashYieldAvailable = true;
                 return true;
-            case 'drag':
+            case 'siren':
                 this._remainingSeconds = this.durationSeconds;
                 return true;
         }
@@ -168,20 +166,13 @@ export class SkillRuntime {
     // Returns true only for GOOD/PERFECT strokes while the finite rhythm window
     // remains. The caller promotes the rating and adds the physical quality delta.
     consumeRhythmUpgrade(rating: Rating, canAffectSurface: boolean): boolean {
-        if (!canAffectSurface || this._definition.kind !== 'charges' || !this.active || this._charges <= 0) return false;
-        if (rating !== Rating.GOOD && rating !== Rating.PERFECT) return false;
-        this._charges -= 1;
-        if (this._charges <= 0) this._remainingSeconds = 0;
-        return true;
+        return false;
     }
 
     applyNetState(remainingSeconds: number, charges: number, pulsesTriggered: number): void {
         if (!Number.isFinite(remainingSeconds) || remainingSeconds < 0) return;
         this._remainingSeconds = clamp(remainingSeconds, 0, this.durationSeconds);
-        if (this._definition.kind === 'charges') {
-            this._charges = clamp(Math.round(charges), 0, Math.max(1, Math.round(ULTIMATE_SKILL_BALANCE.fishCharges)));
-            if (this._remainingSeconds <= 0) this._charges = 0;
-        }
+        this._charges = 0;
         // `pulsesTriggered` remains on the compact wire format for old clients;
         // the dash deliberately has no pulse substate to reconcile.
     }
@@ -192,5 +183,7 @@ export class SkillRuntime {
     get impulseCapBonus(): number {
         return ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus;
     }
-    get rhythmBonusQualityAccelScale(): number { return Math.max(0, ULTIMATE_SKILL_BALANCE.fishBonusQualityAccelScale); }
+    // Compatibility seam for saved/replayed legacy rhythm casts. No current skill
+    // consumes it, so it intentionally contributes no physical bonus.
+    get rhythmBonusQualityAccelScale(): number { return 0; }
 }

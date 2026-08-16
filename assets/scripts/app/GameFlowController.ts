@@ -65,6 +65,7 @@ export type GameFlowRefs = {
     // Returns accepted for an authoritative local cast, requested for a client
     // request awaiting host confirmation, and blocked while the global shark exists.
     trySummonShark: (swimmer: Swimmer) => 'accepted' | 'requested' | 'blocked';
+    onUltimateSkillActivated?: (swimmer: Swimmer) => void;
     debug: (message: string) => void;
 };
 
@@ -263,6 +264,7 @@ export class GameFlowController {
         }
         if (swimmer.tryActivateUltimate()) {
             captureNetInput({ kind: NetInputKind.UltimateActivate });
+            this._refs.onUltimateSkillActivated?.(swimmer);
             this._refs.uiFlow.showUltimateSkillActivated(swimmer.skill.definition.name);
             this._refs.debug('ultimate activated');
         }

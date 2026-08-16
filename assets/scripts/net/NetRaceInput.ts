@@ -36,6 +36,7 @@ export const enum NetInputKind {
     DiveRelease = 'r', // dive release (carries charge power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
     UltimateActivate = 'u', // dedicated full-gauge prototype ultimate
+    SkillControl = 'x', // host-authoritative crowd-control result
     FlipTurnTiming = 't', // accepted wall-push timing (quantized launch speed)
 }
 
@@ -48,6 +49,10 @@ export interface NetInputEvent {
     // Present for DiveRelease and FlipTurnTiming: owner's final quantized launch
     // speed (m/s). Optional so old payloads/replays keep using the base result.
     launchSpeed?: number;
+    // Present only for SkillControl. The host names the victim lane and sends a
+    // quantized duration rather than asking each client to reproduce a hit test.
+    targetLane?: number;
+    durationMs?: number;
 }
 
 export interface DecodedInputFrame {
@@ -78,6 +83,11 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DolphinJump;
         case NetInputKind.UltimateActivate:
             return NetInputKind.UltimateActivate;
+        case NetInputKind.SkillControl: {
+            const lane = Math.max(0, Math.min(99, Math.round(event.targetLane ?? -1)));
+            const duration = Math.max(0, Math.min(9999, Math.round(event.durationMs ?? 0)));
+            return `${NetInputKind.SkillControl}${lane},${duration}`;
+        }
         case NetInputKind.FlipTurnTiming: {
             const launchSpeed = Math.max(0, Math.round((event.launchSpeed ?? 0) * SPEED_SCALE));
             return `${NetInputKind.FlipTurnTiming}${launchSpeed}`;
@@ -111,6 +121,14 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.DolphinJump:
         case NetInputKind.UltimateActivate:
             return { kind };
+        case NetInputKind.SkillControl: {
+            const parts = token.slice(1).split(',');
+            const targetLane = parseInt(parts[0], 10);
+            const durationMs = parseInt(parts[1], 10);
+            return Number.isFinite(targetLane) && targetLane >= 0 && Number.isFinite(durationMs) && durationMs > 0
+                ? { kind, targetLane, durationMs }
+                : null;
+        }
         case NetInputKind.FlipTurnTiming: {
             const launchSpeedCms = parseInt(token.slice(1), 10);
             return Number.isFinite(launchSpeedCms) && launchSpeedCms >= 0
@@ -149,7 +167,9 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
             : -1;
         const skillCharges = Number.isFinite(self.skillCharges) && self.skillCharges >= 0 ? Math.min(9, Math.round(self.skillCharges)) : -1;
         const skillPulses = Number.isFinite(self.skillPulsesTriggered) && self.skillPulsesTriggered >= 0 ? Math.min(9, Math.round(self.skillPulsesTriggered)) : -1;
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate},${skillRemainingMs},${skillCharges},${skillPulses}`;
+        const crowdControlMs = Number.isFinite(self.crowdControlRemainingSeconds) && self.crowdControlRemainingSeconds >= 0
+            ? Math.max(0, Math.min(9999, Math.round(self.crowdControlRemainingSeconds * 1000))) : -1;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${conditionEnergy},${conditionHeartRate},${skillRemainingMs},${skillCharges},${skillPulses},${crowdControlMs}`;
     }
     return out;
 }
@@ -193,6 +213,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const skillRemainingMs = p.length > 9 ? parseInt(p[9], 10) : -1;
                 const skillCharges = p.length > 10 ? parseInt(p[10], 10) : -1;
                 const skillPulsesTriggered = p.length > 11 ? parseInt(p[11], 10) : -1;
+                const crowdControlRemainingMs = p.length > 12 ? parseInt(p[12], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -212,6 +233,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                         : -1,
                     skillCharges: Number.isFinite(skillCharges) && skillCharges >= 0 ? Math.min(9, skillCharges) : -1,
                     skillPulsesTriggered: Number.isFinite(skillPulsesTriggered) && skillPulsesTriggered >= 0 ? Math.min(9, skillPulsesTriggered) : -1,
+                    crowdControlRemainingSeconds: Number.isFinite(crowdControlRemainingMs) && crowdControlRemainingMs >= 0
+                        ? Math.min(9.999, crowdControlRemainingMs / 1000) : -1,
                 };
             }
         }

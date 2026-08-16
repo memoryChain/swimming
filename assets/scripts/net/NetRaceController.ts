@@ -106,6 +106,7 @@ export class NetRaceController {
     private _diagText = '';
     // Notified once when the authoritative final result arrives (clients).
     private _authResultListener: ((result: NetResultEntry[]) => void) | null = null;
+    private _skillControlListener: ((event: NetInputEvent, senderPos: number) => void) | null = null;
     // Synchronized countdown start: members that have reported their pre-race showcase
     // ready (host tracks all; clients just broadcast). GO fires once everyone is ready.
     private readonly _readyPoses = new Set<number>();
@@ -397,6 +398,10 @@ export class NetRaceController {
         this._playerQuitListener = listener;
     }
 
+    setSkillControlListener(listener: ((event: NetInputEvent, senderPos: number) => void) | null): void {
+        this._skillControlListener = listener;
+    }
+
     // Client: the authoritative final placement, or null if not received yet.
     get authResult(): NetResultEntry[] | null {
         return this._authResult;
@@ -449,6 +454,9 @@ export class NetRaceController {
         // the remote human for this seat so it animates (same as onSyncFrame does).
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
+            for (const event of decoded.events) {
+                if (event.kind === 'x') this._skillControlListener?.(event, decoded.senderPos);
+            }
             if (decoded.senderPos >= 0
                 && decoded.senderPos !== this._session.localPos
                 && decoded.events.length > 0) {
@@ -612,6 +620,9 @@ export class NetRaceController {
                 continue;
             }
             this._peerLatest[decoded.senderPos] = frame.frameId;
+            for (const event of decoded.events) {
+                if (event.kind === 'x') this._skillControlListener?.(event, decoded.senderPos);
+            }
             // Drive the remote human for this seat (never the local player's own seat).
             if (decoded.senderPos !== this._session.localPos && decoded.events.length > 0) {
                 this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);

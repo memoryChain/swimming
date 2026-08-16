@@ -60,7 +60,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 92,
         kick: 50,
         description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
-        skillName: '水感节奏', skillDescription: '精准把握节奏时，更容易维持稳定的连续推进。',
+        skillName: '心潮魅惑', skillDescription: '向正前方射出爱心，命中首名对手使其短暂挣扎。',
     },
     {
         id: 'lowPolyHuman2', name: '破浪新星', modelVariantId: 'lowPolyHuman2', unlocked: true,
@@ -78,7 +78,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 80,
         kick: 50,
         description: '装备齐全的潜水选手，身体稳定，擅长保持持续而扎实的推进。',
-        skillName: '深潜耐力', skillDescription: '厚重装备带来更强的稳定性与持续输出。',
+        skillName: '海妖之歌', skillDescription: '短暂蓄力后释放随身声波圈，使近处对手陷入睡眠。',
         supportsSkinTone: false,
     },
 ];
