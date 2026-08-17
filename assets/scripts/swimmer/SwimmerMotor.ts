@@ -171,6 +171,34 @@ export class SwimmerMotor {
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
     }
 
+    // Hard crowd control is an immediate no-input stop, not just a drag increase.
+    // Keep race progress/lateral position intact while removing every source of
+    // residual propulsion, queued stroke motion, and collision slide.
+    haltForCrowdControl(): void {
+        this._currentSpeed = 0;
+        this._currentAcceleration = 0;
+        this._speedCapBonus = 0;
+        this.clearSkillDash();
+        this._strokeAcceleration = 0;
+        this._strokeAccelerationSeconds = 0;
+        this._strokeAccelerationTotalSeconds = 0;
+        this._kickCadenceHz = 0;
+        this._lastKickTapClock = -1;
+        this._leftStrokeHeld = false;
+        this._rightStrokeHeld = false;
+        this._leftPressStartedAt = -1;
+        this._rightPressStartedAt = -1;
+        this._leftActions.length = 0;
+        this._rightActions.length = 0;
+        this._leftArmMotionRemaining = 0;
+        this._rightArmMotionRemaining = 0;
+        this._leftKickMotionRemaining = 0;
+        this._rightKickMotionRemaining = 0;
+        this._armAction = 0;
+        this._kickAction = 0;
+        this.clearKnockback();
+    }
+
     // Toggled by the Swimmer for post-dive and post-turn underwater glides.
     setGlidePhase(
         active: boolean,

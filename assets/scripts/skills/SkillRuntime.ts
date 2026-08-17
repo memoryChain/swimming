@@ -17,9 +17,11 @@ export type UltimateSkillDefinition = {
 export const ULTIMATE_SKILL_BALANCE = {
     sharkImpulseSpeed: 1.05,
     sharkImpulseCapBonus: 0.42,
-    charmRange: 9,
+    charmRange: 8.5,
     charmSpeed: 12,
-    charmHitRadius: 0.5,
+    charmHalfAngleDegrees: 32,
+    charmTurnSpeedDegreesPerSecond: 125,
+    charmHitRadius: 0.6,
     charmControlSeconds: 1.3,
     sirenDurationSeconds: 3,
     sirenWindupSeconds: 0.4,

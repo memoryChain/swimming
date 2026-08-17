@@ -83,6 +83,7 @@ export class Swimmer extends Component {
     get isCollisionActive(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && !this.isCrowdControlled
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater;
@@ -147,12 +148,14 @@ export class Swimmer extends Component {
     applyCrowdControl(seconds: number): void {
         if (!this.isSharkTargetable || !Number.isFinite(seconds) || seconds <= 0) return;
         this._crowdControlRemainingSeconds = Math.max(this._crowdControlRemainingSeconds, seconds);
+        this.stopForCrowdControl();
         this.cartoonRig?.triggerSplashBurst(0.5);
     }
 
     applyNetCrowdControl(seconds: number): void {
         if (!Number.isFinite(seconds) || seconds < 0) return;
         this._crowdControlRemainingSeconds = seconds;
+        if (seconds > 0) this.stopForCrowdControl();
     }
 
     // 蓄气资质（0-100，纯资质）：玩家/远程人类来自养成档案，AI 来自对手配置。
@@ -592,9 +595,11 @@ export class Swimmer extends Component {
         if (!this._motor.isRacing) {
             return;
         }
+        const crowdControlled = this.isCrowdControlled;
         this._ultimate.tick(dt);
-        if (this._crowdControlRemainingSeconds > 0) {
+        if (crowdControlled) {
             this._crowdControlRemainingSeconds = Math.max(0, this._crowdControlRemainingSeconds - Math.max(0, dt));
+            this.stopForCrowdControl();
         }
         const normalSurface = this.isUltimateSurfacePhase();
         if (!normalSurface && this._skill.isDashActive) {
@@ -606,7 +611,7 @@ export class Swimmer extends Component {
         this._motor.setSkillSurfaceDragScale(normalSurface ? this._skill.surfaceDragScale : 1);
         this._motor.setSkillDash(normalSurface ? this._skill.dashExtraSpeed : 0);
         this.syncSkillDashState();
-        this.applyPendingSkillImpulses(normalSurface);
+        if (!crowdControlled) this.applyPendingSkillImpulses(normalSurface);
         this.updateSkillTrailVisual(dt, normalSurface);
         if (this._phases.tick(dt)) {
             if (this._skill.isDashActive) {
@@ -687,7 +692,7 @@ export class Swimmer extends Component {
     }
 
     handleKickStroke(type: StrokeType): void {
-        if (!this._motor.isRacing) {
+        if (!this._motor.isRacing || this.isCrowdControlled) {
             return;
         }
         if (this._phases.isDolphinJumpActive) {
@@ -915,6 +920,13 @@ export class Swimmer extends Component {
             this._strokeQualityCombo = 0;
             this._perfectComboIdleSeconds = 0;
         }
+    }
+
+    private stopForCrowdControl(): void {
+        this._skill.cancel();
+        this._motor.haltForCrowdControl();
+        this.cartoonRig?.setSkillDashActive(false);
+        this.cartoonRig?.setSkillDashGlowActive(false);
     }
 
     updateBodyMotion(dt: number) {

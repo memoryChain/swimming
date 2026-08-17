@@ -1244,7 +1244,10 @@ export class GameManager extends Component {
             waterY: COURSE_LAYOUT.waterY,
             swimmers: () => this.activeSharkSwimmers(),
             laneFor: (swimmer) => this.assignedLaneOfSwimmer(swimmer),
+            swimmerForLane: (lane) => this.swimmerForLane(lane),
+            isAuthoritative: () => !this._netSession || this._netRaceController?.isHost === true,
             onControlApplied: (target, seconds) => this.publishCrowdControl(target, seconds),
+            onCharmLocked: (caster, target) => this.publishCharmLock(caster, target),
         });
         this._netRaceController?.setSkillControlListener((event, senderPos) => {
             if (event.kind !== NetInputKind.SkillControl) return;
@@ -1252,6 +1255,12 @@ export class GameManager extends Component {
             if (!net || senderPos !== net.activeHostPos) return;
             const target = this.swimmerForLane(event.targetLane ?? -1);
             target?.applyCrowdControl(Math.max(0, event.durationMs ?? 0) / 1000);
+        });
+        this._netRaceController?.setSkillLockListener((event, senderPos) => {
+            if (event.kind !== NetInputKind.SkillLock) return;
+            const net = this._netRaceController;
+            if (!net || senderPos !== net.activeHostPos) return;
+            this._crowdControlSkills?.applyCharmLock(event.casterLane ?? -1, event.targetLane ?? -1);
         });
     }
 
@@ -1276,6 +1285,14 @@ export class GameManager extends Component {
         const lane = this.assignedLaneOfSwimmer(target);
         if (lane < 0 || !Number.isFinite(seconds) || seconds <= 0) return;
         captureNetInput({ kind: NetInputKind.SkillControl, targetLane: lane, durationMs: Math.round(seconds * 1000) });
+    }
+
+    private publishCharmLock(caster: Swimmer, target: Swimmer | null): void {
+        if (!this._netSession || !this._netRaceController?.isHost) return;
+        const casterLane = this.assignedLaneOfSwimmer(caster);
+        const targetLane = target ? this.assignedLaneOfSwimmer(target) : -1;
+        if (casterLane < 0 || targetLane < -1) return;
+        captureNetInput({ kind: NetInputKind.SkillLock, casterLane, targetLane });
     }
 
     private createModelDebugFlow(): ModelDebugFlowController {

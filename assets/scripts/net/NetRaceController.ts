@@ -16,7 +16,7 @@ import { INetRoom, NetSyncFrame, NetRoomInfo } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
-import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
+import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSharkSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
@@ -107,6 +107,7 @@ export class NetRaceController {
     // Notified once when the authoritative final result arrives (clients).
     private _authResultListener: ((result: NetResultEntry[]) => void) | null = null;
     private _skillControlListener: ((event: NetInputEvent, senderPos: number) => void) | null = null;
+    private _skillLockListener: ((event: NetInputEvent, senderPos: number) => void) | null = null;
     // Synchronized countdown start: members that have reported their pre-race showcase
     // ready (host tracks all; clients just broadcast). GO fires once everyone is ready.
     private readonly _readyPoses = new Set<number>();
@@ -402,6 +403,10 @@ export class NetRaceController {
         this._skillControlListener = listener;
     }
 
+    setSkillLockListener(listener: ((event: NetInputEvent, senderPos: number) => void) | null): void {
+        this._skillLockListener = listener;
+    }
+
     // Client: the authoritative final placement, or null if not received yet.
     get authResult(): NetResultEntry[] | null {
         return this._authResult;
@@ -454,14 +459,12 @@ export class NetRaceController {
         // the remote human for this seat so it animates (same as onSyncFrame does).
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
-            for (const event of decoded.events) {
-                if (event.kind === 'x') this._skillControlListener?.(event, decoded.senderPos);
-            }
             if (decoded.senderPos >= 0
                 && decoded.senderPos !== this._session.localPos
                 && decoded.events.length > 0) {
                 this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
             }
+            this.dispatchSkillEvents(decoded.events, decoded.senderPos);
             return;
         }
         const result = decodeRaceResult(msg);
@@ -620,13 +623,11 @@ export class NetRaceController {
                 continue;
             }
             this._peerLatest[decoded.senderPos] = frame.frameId;
-            for (const event of decoded.events) {
-                if (event.kind === 'x') this._skillControlListener?.(event, decoded.senderPos);
-            }
             // Drive the remote human for this seat (never the local player's own seat).
             if (decoded.senderPos !== this._session.localPos && decoded.events.length > 0) {
                 this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
             }
+            this.dispatchSkillEvents(decoded.events, decoded.senderPos);
             // Own-authoritative position ridden along on the reliable frame channel:
             // record the latest per lane (skip our own echo) so remote copies catch up.
             if (decoded.self && decoded.self.lane !== this._playerLaneForSelf) {
@@ -646,6 +647,13 @@ export class NetRaceController {
             }
         }
         this.refreshHud();
+    }
+
+    private dispatchSkillEvents(events: readonly NetInputEvent[], senderPos: number): void {
+        for (const event of events) {
+            if (event.kind === NetInputKind.SkillControl) this._skillControlListener?.(event, senderPos);
+            else if (event.kind === NetInputKind.SkillLock) this._skillLockListener?.(event, senderPos);
+        }
     }
 
 

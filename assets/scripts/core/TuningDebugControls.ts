@@ -101,8 +101,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('skill.shark.impulseSpeed', '鲨尾重击速度冲量', '铁臂狂鲨瞬发时增加的速度。', () => ULTIMATE_SKILL_BALANCE.sharkImpulseSpeed, (v) => ULTIMATE_SKILL_BALANCE.sharkImpulseSpeed = v, 0.05, 0, 3, 2, 'm/s'),
             control('skill.shark.capBonus', '鲨尾重击超速上限', '让瞬发冲量可短暂超过普通速度上限。', () => ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus, (v) => ULTIMATE_SKILL_BALANCE.sharkImpulseCapBonus = v, 0.02, 0, 1.5, 2, 'm/s'),
-            control('skill.charm.range', '心潮魅惑距离', '爱心直线飞行的最大距离。', () => ULTIMATE_SKILL_BALANCE.charmRange, (v) => ULTIMATE_SKILL_BALANCE.charmRange = v, 0.5, 3, 15, 2, 'm'),
-            control('skill.charm.speed', '心潮魅惑速度', '爱心的直线飞行速度。', () => ULTIMATE_SKILL_BALANCE.charmSpeed, (v) => ULTIMATE_SKILL_BALANCE.charmSpeed = v, 0.5, 4, 20, 2, 'm/s'),
+            control('skill.charm.range', '心潮魅惑距离', '爱心飞行与扇形锁定的最大距离。', () => ULTIMATE_SKILL_BALANCE.charmRange, (v) => ULTIMATE_SKILL_BALANCE.charmRange = v, 0.5, 3, 15, 2, 'm'),
+            control('skill.charm.speed', '心潮魅惑速度', '爱心的基础飞行速度。', () => ULTIMATE_SKILL_BALANCE.charmSpeed, (v) => ULTIMATE_SKILL_BALANCE.charmSpeed = v, 0.5, 4, 20, 2, 'm/s'),
+            control('skill.charm.halfAngleDegrees', '心潮魅惑半扇角', '施放时可锁定目标的前方半扇形角度。', () => ULTIMATE_SKILL_BALANCE.charmHalfAngleDegrees, (v) => ULTIMATE_SKILL_BALANCE.charmHalfAngleDegrees = v, 1, 10, 60, 1, '°'),
+            control('skill.charm.turnSpeedDegreesPerSecond', '心潮魅惑转向速度', '锁定后爱心每秒最多转向的角度；较低时更容易躲开。', () => ULTIMATE_SKILL_BALANCE.charmTurnSpeedDegreesPerSecond, (v) => ULTIMATE_SKILL_BALANCE.charmTurnSpeedDegreesPerSecond = v, 1, 30, 240, 1, '°/s'),
             control('skill.charm.hitRadius', '心潮魅惑命中半径', '爱心命中对手身体中心的判定半径。', () => ULTIMATE_SKILL_BALANCE.charmHitRadius, (v) => ULTIMATE_SKILL_BALANCE.charmHitRadius = v, 0.05, 0.2, 1.2, 2, 'm'),
             control('skill.charm.controlSeconds', '心潮魅惑挣扎时长', '命中后无法划水、踢腿、海豚跃或开大的时间。', () => ULTIMATE_SKILL_BALANCE.charmControlSeconds, (v) => ULTIMATE_SKILL_BALANCE.charmControlSeconds = v, 0.05, 0.4, 3, 2, 's'),
             control('skill.nova.dashDurationSeconds', '劈波突进时长', '破浪新星锁定朝向后的持续突进时间。', () => ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds, (v) => ULTIMATE_SKILL_BALANCE.novaDashDurationSeconds = v, 0.05, 0.3, 1.5, 2, 's'),

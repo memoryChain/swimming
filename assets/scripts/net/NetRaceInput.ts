@@ -37,6 +37,7 @@ export const enum NetInputKind {
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
     UltimateActivate = 'u', // dedicated full-gauge prototype ultimate
     SkillControl = 'x', // host-authoritative crowd-control result
+    SkillLock = 'l', // host-selected heart target, used to correct its visual trajectory
     FlipTurnTiming = 't', // accepted wall-push timing (quantized launch speed)
 }
 
@@ -52,6 +53,8 @@ export interface NetInputEvent {
     // Present only for SkillControl. The host names the victim lane and sends a
     // quantized duration rather than asking each client to reproduce a hit test.
     targetLane?: number;
+    // Present only for SkillLock. The caster lane disambiguates simultaneous hearts.
+    casterLane?: number;
     durationMs?: number;
 }
 
@@ -87,6 +90,11 @@ function encodeEvent(event: NetInputEvent): string {
             const lane = Math.max(0, Math.min(99, Math.round(event.targetLane ?? -1)));
             const duration = Math.max(0, Math.min(9999, Math.round(event.durationMs ?? 0)));
             return `${NetInputKind.SkillControl}${lane},${duration}`;
+        }
+        case NetInputKind.SkillLock: {
+            const caster = Math.max(0, Math.min(99, Math.round(event.casterLane ?? -1)));
+            const target = Math.max(-1, Math.min(99, Math.round(event.targetLane ?? -1)));
+            return `${NetInputKind.SkillLock}${caster},${target}`;
         }
         case NetInputKind.FlipTurnTiming: {
             const launchSpeed = Math.max(0, Math.round((event.launchSpeed ?? 0) * SPEED_SCALE));
@@ -127,6 +135,15 @@ function decodeToken(token: string): NetInputEvent | null {
             const durationMs = parseInt(parts[1], 10);
             return Number.isFinite(targetLane) && targetLane >= 0 && Number.isFinite(durationMs) && durationMs > 0
                 ? { kind, targetLane, durationMs }
+                : null;
+        }
+        case NetInputKind.SkillLock: {
+            const parts = token.slice(1).split(',');
+            const casterLane = parseInt(parts[0], 10);
+            const targetLane = parseInt(parts[1], 10);
+            return Number.isFinite(casterLane) && casterLane >= 0
+                && Number.isFinite(targetLane) && targetLane >= -1
+                ? { kind, casterLane, targetLane }
                 : null;
         }
         case NetInputKind.FlipTurnTiming: {
