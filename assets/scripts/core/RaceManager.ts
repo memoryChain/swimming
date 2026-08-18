@@ -245,7 +245,7 @@ export class RaceManager extends Component {
         }
     }
 
-    public eliminateSwimmer(swimmer: Swimmer, quit = false, shark = false) {
+    public eliminateSwimmer(swimmer: Swimmer, quit = false, shark = false, presentationSeconds = 0) {
         if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
             return;
         }
@@ -256,7 +256,15 @@ export class RaceManager extends Component {
         if (shark) {
             this._sharkEliminated.add(swimmer);
         }
-        swimmer.eliminate();
+        const keepVisible = shark && Number.isFinite(presentationSeconds) && presentationSeconds > 0;
+        swimmer.eliminate(!keepVisible);
+        if (keepVisible) {
+            this.scheduleOnce(() => {
+                if (this._eliminated.has(swimmer)) {
+                    swimmer.hideAfterElimination();
+                }
+            }, presentationSeconds);
+        }
         this.onSwimmerEliminated?.(swimmer);
     }
 

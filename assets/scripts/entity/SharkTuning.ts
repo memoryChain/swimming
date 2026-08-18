@@ -4,6 +4,9 @@ export enum SharkState {
     INACTIVE = 0,
     WARNING = 1,
     HUNT = 2,
+    // The race result is already committed, but the predator remains visible
+    // briefly so the contact reads as a real attack instead of two pop-outs.
+    BITE = 3,
 }
 
 export const SHARK_TUNING = {
@@ -19,6 +22,9 @@ export const SHARK_TUNING = {
     // swimmer cannot be eliminated by a tail or an invisible centre-radius ring.
     biteMouthForwardOffset: 0.75,
     catchRadius: 0.55,
+    bitePresentationSeconds: 0.38,
+    biteLungeSpeed: 2.1,
+    biteCameraHoldSeconds: 2,
     approachCameraDistance: 3.5,
     waterYOffset: -0.28,
 };

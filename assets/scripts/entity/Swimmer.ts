@@ -333,9 +333,17 @@ export class Swimmer extends Component {
         return this._swimBoundaryRange;
     }
 
-    eliminate() {
+    eliminate(hideImmediately = true) {
         this.stopRace();
-        this.node.active = false;
+        if (hideImmediately && this.node.active) {
+            this.node.active = false;
+        }
+    }
+
+    hideAfterElimination() {
+        if (this.node.active) {
+            this.node.active = false;
+        }
     }
 
     // NETWORKED RACE: whether the motor is racing (for the stuck-dive redundancy check).

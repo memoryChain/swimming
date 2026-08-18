@@ -1,8 +1,10 @@
-import { Node, Vec3 } from 'cc';
+import { Material, MeshRenderer, Node, Vec3, Vec4, utils } from 'cc';
 import type { Swimmer } from './Swimmer';
 import { SHARK_TUNING, SharkState } from './SharkTuning';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { randomFloat } from '../core/SharedRNG';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const RADIANS_TO_DEGREES = 180 / Math.PI;
 
@@ -44,6 +46,8 @@ export class SharkController {
     private _retargetSeconds = 0;
     private _huntOpeningGraceSeconds = 0;
     private _huntEngaged = false;
+    private _biteDirectionX = 1;
+    private _biteDirectionZ = 0;
     private _target: Swimmer | null = null;
     private _approachNotifiedTarget: Swimmer | null = null;
     private _facingX = 1;
@@ -73,6 +77,8 @@ export class SharkController {
         this._retargetSeconds = 0;
         this._huntOpeningGraceSeconds = 0;
         this._huntEngaged = false;
+        this._biteDirectionX = 1;
+        this._biteDirectionZ = 0;
         this._target = null;
         this._approachNotifiedTarget = null;
         this._ownerLane = -1;
@@ -103,6 +109,18 @@ export class SharkController {
     // received state via applyAuthoritativeState instead.
     tick(dt: number): void {
         if (!this.active || !Number.isFinite(dt) || dt <= 0) return;
+        if (this._state === SharkState.BITE) {
+            this._remainingSeconds = Math.max(0, this._remainingSeconds - dt);
+            const step = Math.min(
+                Math.max(0, SHARK_TUNING.biteLungeSpeed) * dt,
+                Math.max(0, SHARK_TUNING.biteLungeSpeed) * this._remainingSeconds + 0.02,
+            );
+            if (step > 0) {
+                this.moveAndFace(this._biteDirectionX, this._biteDirectionZ, step);
+            }
+            if (this._remainingSeconds <= 0) this.end();
+            return;
+        }
         if (this._state === SharkState.WARNING) {
             this._remainingSeconds = Math.max(0, this._remainingSeconds - dt);
             this.retarget();
@@ -143,8 +161,12 @@ export class SharkController {
             const mouthDistanceSq = mouthDx * mouthDx + mouthDz * mouthDz;
             if (mouthDistanceSq <= SHARK_TUNING.catchRadius * SHARK_TUNING.catchRadius) {
                 this._eliminatedLane = this._opts.laneFor(target);
+                this._biteDirectionX = this._facingX;
+                this._biteDirectionZ = this._facingZ;
+                this._remainingSeconds = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
+                this._huntOpeningGraceSeconds = 0;
+                this.setState(SharkState.BITE);
                 this._opts.onEliminate(target);
-                this.end();
                 return;
             }
             const distance = Math.sqrt(dx * dx + dz * dz);
@@ -325,4 +347,175 @@ export class SharkController {
         this._approachNotifiedTarget = target;
         this._opts.onTargetApproach?.(target, sharkX, sharkZ);
     }
+}
+
+const IMPACT_UPDATE_INTERVAL_SECONDS = 1 / 30;
+const PRIMARY_IMPACT_DURATION_SECONDS = 1.55;
+const SECONDARY_IMPACT_DELAY_SECONDS = 0.16;
+const SECONDARY_IMPACT_DURATION_SECONDS = 1.38;
+
+type SharkImpactRing = {
+    node: Node;
+    material: Material;
+    splashParams: Vec4;
+    shapeParams: Vec4;
+    delay: number;
+    duration: number;
+    startScale: number;
+    endScale: number;
+};
+
+// Reuses the swimmer's authored foam/ripple material and elliptical mesh language.
+// The supplied overlay layer keeps this presentation visible in both the main swim
+// pass and the shark picture-in-picture pass without rendering the water surface twice.
+export class SharkBiteWaterImpact {
+    private readonly _root: Node;
+    private readonly _rings: SharkImpactRing[] = [];
+    private readonly _pendingPosition = new Vec3();
+    private _pendingStrength = 0;
+    private _elapsed = 0;
+    private _sampleElapsed = 0;
+    private _active = false;
+    private _ready = false;
+
+    constructor(parent: Node, layer: number, waterY: number) {
+        this._root = new Node('SharkBiteWaterImpact');
+        this._root.layer = layer;
+        this._root.setParent(parent);
+        this._root.setPosition(0, waterY + 0.018, 0);
+        this._root.active = false;
+        loadRaceAsset(RESOURCE_PATHS.swimmerSplashMaterial, Material, (error, sourceMaterial) => {
+            if (error || !sourceMaterial || !this._root.isValid) {
+                return;
+            }
+            this.createRing(sourceMaterial, layer, 0, PRIMARY_IMPACT_DURATION_SECONDS, 0.52, 4.3);
+            this.createRing(sourceMaterial, layer, SECONDARY_IMPACT_DELAY_SECONDS, SECONDARY_IMPACT_DURATION_SECONDS, 0.38, 3.65);
+            this._ready = true;
+            if (this._pendingStrength > 0) {
+                this.start(this._pendingPosition.x, this._pendingPosition.z, this._pendingStrength);
+                this._pendingStrength = 0;
+            }
+        });
+    }
+
+    trigger(x: number, z: number, strength = 1): void {
+        const safeStrength = Math.max(0.5, strength);
+        if (!this._ready) {
+            this._pendingPosition.set(x, 0, z);
+            this._pendingStrength = safeStrength;
+            return;
+        }
+        this.start(x, z, safeStrength);
+    }
+
+    update(dt: number): void {
+        if (!this._active) {
+            return;
+        }
+        const safeDt = Math.max(0, dt);
+        this._elapsed += safeDt;
+        this._sampleElapsed += safeDt;
+        if (this._sampleElapsed < IMPACT_UPDATE_INTERVAL_SECONDS) {
+            return;
+        }
+        this._sampleElapsed %= IMPACT_UPDATE_INTERVAL_SECONDS;
+
+        let anyVisible = false;
+        for (const ring of this._rings) {
+            const localTime = this._elapsed - ring.delay;
+            const visible = localTime >= 0 && localTime < ring.duration;
+            if (ring.node.active !== visible) {
+                ring.node.active = visible;
+            }
+            if (!visible) {
+                continue;
+            }
+            anyVisible = true;
+            const progress = Math.max(0, Math.min(1, localTime / ring.duration));
+            const eased = 1 - (1 - progress) * (1 - progress);
+            const scale = ring.startScale + (ring.endScale - ring.startScale) * eased;
+            ring.node.setScale(scale, 1, scale);
+            ring.shapeParams.w = progress;
+            ring.splashParams.x = 1.35 - progress * 0.42;
+            ring.splashParams.z = 1.7 - progress * 0.72;
+            ring.material.setProperty('shapeParams', ring.shapeParams);
+            ring.material.setProperty('splashParams', ring.splashParams);
+        }
+        if (!anyVisible) {
+            this._active = false;
+            if (this._root.active) {
+                this._root.active = false;
+            }
+        }
+    }
+
+    dispose(): void {
+        if (this._root.isValid) {
+            this._root.destroy();
+        }
+        this._rings.length = 0;
+        this._active = false;
+    }
+
+    private start(x: number, z: number, strength: number): void {
+        this._elapsed = 0;
+        this._sampleElapsed = IMPACT_UPDATE_INTERVAL_SECONDS;
+        this._active = true;
+        this._root.setPosition(x, this._root.position.y, z);
+        if (!this._root.active) {
+            this._root.active = true;
+        }
+        for (const ring of this._rings) {
+            ring.node.active = false;
+            ring.endScale = (ring.delay > 0 ? 3.65 : 4.3) * strength;
+        }
+        this.update(0);
+    }
+
+    private createRing(
+        sourceMaterial: Material,
+        layer: number,
+        delay: number,
+        duration: number,
+        startScale: number,
+        endScale: number,
+    ): void {
+        const node = new Node(delay > 0 ? 'SecondaryImpactRipple' : 'PrimaryImpactRipple');
+        node.layer = layer;
+        node.setParent(this._root);
+        node.active = false;
+        const renderer = node.addComponent(MeshRenderer);
+        renderer.mesh = utils.createMesh(createEllipticalImpactGeometry(1.6, 1.26));
+        const material = new Material();
+        material.copy(sourceMaterial);
+        material.name = node.name;
+        const splashParams = new Vec4(1.35, 0.7, 1.7, delay * 17.3);
+        const shapeParams = new Vec4(0.68, 1.22, 1, 0);
+        material.setProperty('splashParams', splashParams);
+        material.setProperty('shapeParams', shapeParams);
+        renderer.setMaterial(material, 0);
+        this._rings.push({ node, material, splashParams, shapeParams, delay, duration, startScale, endScale });
+    }
+}
+
+function createEllipticalImpactGeometry(width: number, length: number) {
+    const segments = 12;
+    const positions = [0, 0, 0];
+    const normals = [0, 1, 0];
+    const uvs = [0.5, 0.5];
+    const indices: number[] = [];
+    const radiusX = width * 0.5;
+    const radiusZ = length * 0.5;
+    for (let index = 0; index < segments; index++) {
+        const angle = index / segments * Math.PI * 2;
+        const cosine = Math.cos(angle);
+        const sine = Math.sin(angle);
+        positions.push(cosine * radiusX, 0, sine * radiusZ);
+        normals.push(0, 1, 0);
+        uvs.push(0.5 + cosine * 0.5, 0.5 + sine * 0.5);
+    }
+    for (let index = 0; index < segments; index++) {
+        indices.push(0, index + 1, (index + 1) % segments + 1);
+    }
+    return { positions, normals, uvs, indices };
 }

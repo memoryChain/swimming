@@ -47,7 +47,7 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
-import { SharkController } from '../entity/SharkController';
+import { SharkBiteWaterImpact, SharkController } from '../entity/SharkController';
 import { CrowdControlSkillController } from '../skills/CrowdControlSkillController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
@@ -225,6 +225,7 @@ export class GameManager extends Component {
     private _laneLockdownStatusLabel: Label | null = null;
     private _eliminationDialog: Node | null = null;
     private _spectatorHud: Node | null = null;
+    private _playerEliminationDialogToken = 0;
     private _spectatorTargetLabel: Label | null = null;
     private _spectatorTarget: Swimmer | null = null;
     private _spectating = false;
@@ -294,10 +295,11 @@ export class GameManager extends Component {
     private _crowdControlSkills: CrowdControlSkillController | null = null;
     private _sharkNode: Node | null = null;
     private _sharkArtLoaded = false;
+    private _sharkArtModel: Node | null = null;
     private _sharkAnimation: SkeletalAnimation | null = null;
     private _sharkWake: Node | null = null;
     private readonly _sharkEyeMaterials: Material[] = [];
-    private _sharkSplash: Node | null = null;
+    private _sharkWaterImpact: SharkBiteWaterImpact | null = null;
     private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
     private readonly _sharkEventBanner = new SharkEventBanner();
     private _modelDebugFlow: ModelDebugFlowController = null;
@@ -400,6 +402,8 @@ export class GameManager extends Component {
         this._scoreboardFeed = null;
         this._sharkPictureInPicture?.dispose();
         this._sharkPictureInPicture = null;
+        this._sharkWaterImpact?.dispose();
+        this._sharkWaterImpact = null;
         this._awardsPresentation.dispose();
         this._topViewCeiling.dispose();
     }
@@ -554,6 +558,7 @@ export class GameManager extends Component {
         this._gameFlow?.updateRaceCamera(dt);
         this.updateCrowdControlSkills(dt);
         this.updateShark(dt);
+        this._sharkWaterImpact?.update(dt);
         this._sharkPictureInPicture?.update(this._shark, dt);
         this._sharkEventBanner.update();
         this._uiFlow?.updateFlipTurnTiming(this._playerSwimmer?.flipTurnTiming ?? null);
@@ -870,6 +875,9 @@ export class GameManager extends Component {
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
             handleModelDebugKickStroke: (type) => this._modelDebugFlow?.handleKickStroke(type) ?? false,
             setState: (state) => {
+                if (state !== GameState.RACING) {
+                    this._playerEliminationDialogToken++;
+                }
                 this._state = state;
                 this.syncConditionPhase(state);
                 if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
@@ -995,6 +1003,8 @@ export class GameManager extends Component {
     private createShark(): void {
         if (!this._worldRoot || this._shark) return;
         this._sharkArtLoaded = false;
+        this._sharkArtModel = null;
+        this._sharkAnimation = null;
         const root = new Node('RaceSharkPlaceholder');
         // The pool surface is rendered before the dedicated swimmer-overlay
         // camera. A shark in DEFAULT is therefore hidden beneath the refracting
@@ -1054,7 +1064,8 @@ export class GameManager extends Component {
         wake.active = false;
         this._sharkWake = wake;
         setLayerRecursive(root, SWIMMER_LAYER);
-        this.createSharkSplash();
+        this._sharkWaterImpact?.dispose();
+        this._sharkWaterImpact = new SharkBiteWaterImpact(this._worldRoot, SWIMMER_LAYER, COURSE_LAYOUT.waterY);
         this._sharkNode = root;
         this._shark = new SharkController({
             node: root,
@@ -1095,6 +1106,7 @@ export class GameManager extends Component {
                 SHARK_MODEL_PRESENTATION.visualScale,
             );
             setLayerRecursive(model, SWIMMER_LAYER);
+            this._sharkArtModel = model;
             this._sharkAnimation = model.getComponent(SkeletalAnimation) ?? model.getComponentInChildren(SkeletalAnimation);
             if (!this._sharkAnimation) {
                 this.debug('shark animation component missing');
@@ -1104,29 +1116,13 @@ export class GameManager extends Component {
             this._sharkArtLoaded = true;
             if (fallback.active) fallback.active = false;
             if (this._sharkWake?.active) this._sharkWake.active = false;
-            if (this._sharkSplash?.active) this._sharkSplash.active = false;
         });
-    }
-
-    private createSharkSplash(): void {
-        if (!this._worldRoot || this._sharkSplash) return;
-        const splash = new Node('SharkLandingSplash');
-        splash.layer = SWIMMER_LAYER;
-        splash.parent = this._worldRoot;
-        const renderer = splash.addComponent(MeshRenderer);
-        renderer.mesh = utils.createMesh(primitives.plane({ width: 1, length: 1, widthSegments: 1, lengthSegments: 1 }));
-        const material = new Material();
-        material.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
-        material.setProperty('mainColor', new Color(230, 246, 255, 195));
-        renderer.setMaterial(material, 0);
-        splash.setRotationFromEuler(-90, 0, 0);
-        splash.active = false;
-        this._sharkSplash = splash;
     }
 
     private playSharkDropIn(x: number, z: number): void {
         const shark = this._sharkNode;
         if (!shark) return;
+        this.resetSharkArtPresentation();
         this.startSharkSwimAnimation();
         const waterY = COURSE_LAYOUT.waterY + SHARK_TUNING.waterYOffset;
         Tween.stopAllByTarget(shark);
@@ -1137,7 +1133,7 @@ export class GameManager extends Component {
             .to(0.52, { position: new Vec3(x, waterY, z) }, { easing: 'quadIn' })
             .call(() => {
                 if (!this._sharkArtLoaded) {
-                    this.playSharkSplash(x, z);
+                    this._sharkWaterImpact?.trigger(x, z, 0.9);
                     if (this._sharkWake && !this._sharkWake.active) this._sharkWake.active = true;
                 }
             })
@@ -1162,27 +1158,39 @@ export class GameManager extends Component {
         animation.play('Shark_Swim_Loop');
     }
 
-    private playSharkSplash(x: number, z: number): void {
-        if (this._sharkArtLoaded) return;
-        const splash = this._sharkSplash;
-        if (!splash) return;
-        Tween.stopAllByTarget(splash);
-        splash.setPosition(x, COURSE_LAYOUT.waterY + 0.01, z);
-        splash.setScale(0.55, 0.55, 0.55);
-        if (!splash.active) splash.active = true;
-        tween(splash)
-            .to(0.38, { scale: new Vec3(4.4, 4.4, 4.4) }, { easing: 'quadOut' })
-            .to(0.18, { scale: new Vec3(5.2, 5.2, 5.2) })
-            .call(() => { if (splash.active) splash.active = false; })
+    private resetSharkArtPresentation(): void {
+        const model = this._sharkArtModel;
+        if (!model?.isValid) return;
+        Tween.stopAllByTarget(model);
+        const position = model.position;
+        const offsetY = SHARK_MODEL_PRESENTATION.visualYOffset;
+        if (position.x !== 0 || position.y !== offsetY || position.z !== 0) {
+            model.setPosition(0, offsetY, 0);
+        }
+    }
+
+    private playSharkBitePresentation(): void {
+        const model = this._sharkArtModel;
+        if (!model?.isValid) return;
+        Tween.stopAllByTarget(model);
+        const offsetY = SHARK_MODEL_PRESENTATION.visualYOffset;
+        model.setPosition(0, offsetY, 0);
+        const settleSeconds = Math.max(0.08, SHARK_TUNING.bitePresentationSeconds - 0.1);
+        tween(model)
+            .to(0.1, { position: new Vec3(0, offsetY - 0.12, 0) }, { easing: 'quadIn' })
+            .to(settleSeconds, { position: new Vec3(0, offsetY - 0.54, 0) }, { easing: 'quadIn' })
             .start();
     }
 
+
     private handleSharkStateChange(state: SharkState): void {
-        const angry = state === SharkState.WARNING || state === SharkState.HUNT;
+        const angry = state === SharkState.WARNING || state === SharkState.HUNT || state === SharkState.BITE;
         const color = angry ? new Color(255, 62, 54, 255) : new Color(235, 242, 248, 255);
         for (const material of this._sharkEyeMaterials) material.setProperty('mainColor', color);
         if (state === SharkState.HUNT) {
             this._sharkEventBanner.show('锁定完成：鲨鱼蓄力中，立刻变向拉开距离！', new Color(255, 86, 70, 255), Math.round(SHARK_TUNING.huntOpeningGraceSeconds * 1000));
+        } else if (state === SharkState.BITE) {
+            this.playSharkBitePresentation();
         } else if (state === SharkState.INACTIVE) {
             if (this._sharkWake?.active) this._sharkWake.active = false;
             this._sharkLockOnOverlay.hide();
@@ -1209,7 +1217,17 @@ export class GameManager extends Component {
     private handleSharkElimination(swimmer: Swimmer): void {
         if (!swimmer) return;
         this._sharkEventBanner.show(`${swimmer.swimmerName} 被鲨鱼拖走了`, new Color(255, 86, 70, 255), 1800);
-        this._raceManager?.eliminateSwimmer(swimmer, false, true);
+        const presentationSeconds = this._shark?.state === SharkState.BITE
+            ? Math.max(0, this._shark.remainingSeconds)
+            : 0;
+        if (presentationSeconds > 0) {
+            const splashNode = swimmer.cartoonRig?.splashNode;
+            if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
+            swimmer.cartoonRig?.triggerBigSplash(3.1, true);
+            const position = swimmer.node.position;
+            this._sharkWaterImpact?.trigger(position.x, position.z, 1.2);
+        }
+        this._raceManager?.eliminateSwimmer(swimmer, false, true, presentationSeconds);
         // Hosts receive this callback before SharkController switches to INACTIVE;
         // guests receive it from the inactive authoritative snapshot afterwards.
         if (this._shark?.state === SharkState.INACTIVE) this.enqueueSharkRetreatBanner();
@@ -2470,6 +2488,22 @@ export class GameManager extends Component {
         if (swimmer !== this._playerSwimmer) {
             return;
         }
+        const bitePresentationSeconds = this._shark?.state === SharkState.BITE
+            ? Math.max(0, this._shark.remainingSeconds)
+            : 0;
+        if (bitePresentationSeconds > 0) {
+            const token = ++this._playerEliminationDialogToken;
+            this.scheduleOnce(() => {
+                if (token === this._playerEliminationDialogToken && this._state === GameState.RACING) {
+                    this.showPlayerEliminationUi();
+                }
+            }, bitePresentationSeconds);
+            return;
+        }
+        this.showPlayerEliminationUi();
+    }
+
+    private showPlayerEliminationUi() {
         if (this._eliminationDialog) {
             this._eliminationDialog.active = true;
         }

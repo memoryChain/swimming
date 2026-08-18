@@ -203,8 +203,8 @@ export class SplashEmitter {
     // fast particle profile, bypassing the entry gating and the leg-splash
     // suppression that is active mid-jump. The leg emitters' continuous spray is
     // still cleared next frame by the suppression, so no spray trails into the air.
-    triggerBigSurfaceBurst(scale = 1) {
-        if (this._culled) {
+    triggerBigSurfaceBurst(scale = 1, force = false) {
+        if (this._culled && !force) {
             return;
         }
         const safeScale = Math.max(0, scale);

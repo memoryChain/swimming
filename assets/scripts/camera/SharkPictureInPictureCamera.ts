@@ -35,9 +35,12 @@ export class SharkPictureInPictureCamera {
     private _lastState = SharkState.INACTIVE;
     private _renderElapsed = RENDER_INTERVAL_SECONDS;
     private _warningPush = 0;
+    private _biteHoldSeconds = 0;
     private _lastFov = 46;
     private readonly _cameraPosition = new Vec3();
     private readonly _focus = new Vec3();
+    private readonly _biteHoldCameraPosition = new Vec3();
+    private readonly _biteHoldFocus = new Vec3();
 
     constructor(private readonly _options: SharkPictureInPictureOptions) {
         this.buildCamera();
@@ -45,16 +48,29 @@ export class SharkPictureInPictureCamera {
     }
 
     update(shark: SharkController | null, dt: number): void {
+        const safeDt = Math.max(0, dt);
         const active = !!shark?.active && !!shark.node?.activeInHierarchy;
-        if (!active || !shark) {
+        let holdBiteView = false;
+        if (active && shark) {
+            this.setVisible(true);
+            this.presentState(shark.state);
+            this.updateWarningPush(shark, safeDt);
+            if (shark.state === SharkState.BITE) {
+                this._biteHoldSeconds = Math.max(0, SHARK_TUNING.biteCameraHoldSeconds);
+            }
+        } else if (this._biteHoldSeconds > 0) {
+            this._biteHoldSeconds = Math.max(0, this._biteHoldSeconds - safeDt);
+            if (this._biteHoldSeconds <= 0) {
+                this.setVisible(false);
+                return;
+            }
+            this.setVisible(true);
+            holdBiteView = true;
+        } else {
             this.setVisible(false);
             return;
         }
 
-        this.setVisible(true);
-        this.presentState(shark.state);
-        const safeDt = Math.max(0, dt);
-        this.updateWarningPush(shark, safeDt);
         this._renderElapsed += safeDt;
         if (this._renderElapsed < RENDER_INTERVAL_SECONDS) {
             const camera = this._camera;
@@ -64,7 +80,17 @@ export class SharkPictureInPictureCamera {
             return;
         }
         this._renderElapsed %= RENDER_INTERVAL_SECONDS;
-        this.updateCameraPose(shark);
+        if (holdBiteView) {
+            this._cameraNode!.setPosition(this._biteHoldCameraPosition);
+            this._cameraNode!.lookAt(this._biteHoldFocus);
+            this.setFov(34);
+        } else if (shark) {
+            this.updateCameraPose(shark);
+            if (shark.state === SharkState.BITE) {
+                this._biteHoldCameraPosition.set(this._cameraPosition);
+                this._biteHoldFocus.set(this._focus);
+            }
+        }
         const camera = this._camera;
         if (camera?.isValid && !camera.enabled) {
             camera.enabled = true;
@@ -98,8 +124,8 @@ export class SharkPictureInPictureCamera {
         node.layer = Layers.Enum.DEFAULT;
         const camera = node.addComponent(Camera);
         camera.projection = Camera.ProjectionType.PERSPECTIVE;
-        // The main water surface is screen-space-refraction authored for the main camera.
-        // This feed instead shows the real swimmers and pool floor against a clean blue field.
+        // Reuse the same pool-bottom scene used by the original feed. It keeps the
+        // established water quality without allocating an additional render pass.
         camera.visibility = SWIMMER_LAYER | UNDERWATER_LAYER;
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
         camera.clearColor = FEED_CLEAR_COLOR;
@@ -183,6 +209,7 @@ export class SharkPictureInPictureCamera {
         if (!active) {
             this._lastState = SharkState.INACTIVE;
             this._warningPush = 0;
+            this._biteHoldSeconds = 0;
         }
     }
 
@@ -195,8 +222,9 @@ export class SharkPictureInPictureCamera {
         if (!label) {
             return;
         }
-        const isHunting = state === SharkState.HUNT;
-        const text = isHunting ? '正在追击最近选手' : '已落水，锁定目标中';
+        const isBiting = state === SharkState.BITE;
+        const isHunting = state === SharkState.HUNT || isBiting;
+        const text = isBiting ? '吞没目标中' : isHunting ? '正在追击最近选手' : '已落水，锁定目标中';
         if (label.string !== text) {
             label.string = text;
         }
@@ -238,6 +266,25 @@ export class SharkPictureInPictureCamera {
                 sharkPosition.z + 8.5 * (1 - push) + sideZ * 3.1 * push - forwardZ * 1.15 * push,
             );
             this.setFov(56 - 20 * push);
+        } else if (shark.state === SharkState.BITE) {
+            const dx = targetPosition.x - sharkPosition.x;
+            const dz = targetPosition.z - sharkPosition.z;
+            const length = Math.sqrt(dx * dx + dz * dz);
+            const forwardX = length > 0.001 ? dx / length : 1;
+            const forwardZ = length > 0.001 ? dz / length : 0;
+            const sideX = -forwardZ;
+            const sideZ = forwardX;
+            this._focus.set(
+                sharkPosition.x + forwardX * 0.45,
+                waterY - 0.16,
+                sharkPosition.z + forwardZ * 0.45,
+            );
+            this._cameraPosition.set(
+                sharkPosition.x - forwardX * 0.9 + sideX * 2.7,
+                waterY + 1.05,
+                sharkPosition.z - forwardZ * 0.9 + sideZ * 2.7,
+            );
+            this.setFov(34);
         } else {
             // Pursuit shot: keep the shark as the composition anchor. Centering the
             // shark/target midpoint made distant targets pull the shark out of the
