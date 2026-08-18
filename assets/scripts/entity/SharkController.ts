@@ -59,9 +59,13 @@ export class SharkController {
     get active(): boolean { return this._state !== SharkState.INACTIVE; }
     get state(): SharkState { return this._state; }
     get sequence(): number { return this._sequence; }
+    get remainingSeconds(): number { return this._remainingSeconds; }
     get ownerLane(): number { return this._ownerLane; }
     get eliminatedLane(): number { return this._eliminatedLane; }
     get target(): Swimmer | null { return this._target; }
+    // Presentation-only consumers (such as the picture-in-picture feed) may observe
+    // the host-restored node, but never mutate its movement or target state.
+    get node(): Node { return this._opts.node; }
 
     reset(): void {
         this.setState(SharkState.INACTIVE);

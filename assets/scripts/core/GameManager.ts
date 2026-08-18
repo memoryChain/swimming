@@ -104,6 +104,7 @@ import { WaterRefractionController } from '../venue/WaterRefractionController';
 import { applyAwardsPodiumToonOutline, applyPoolEdgeToonOutline, applyStandStructureToonOutline, applyTierFrontToonOutline } from '../venue/PoolEdgeToonOutline';
 import { applyCeilingLightArray } from '../venue/CeilingLightArray';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
+import { SharkPictureInPictureCamera } from '../camera/SharkPictureInPictureCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitter';
 import { applyStandHeightShade } from '../venue/StandHeightShade';
@@ -229,6 +230,7 @@ export class GameManager extends Component {
     private _spectating = false;
     private _venueManager: VenueManager | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
+    private _sharkPictureInPicture: SharkPictureInPictureCamera | null = null;
     private _spectatorCameraFlashEmitter: SpectatorCameraFlashEmitter | null = null;
     private readonly _topViewCeiling = new TopViewCeilingController();
     private readonly _splashCullAabb = new geometry.AABB();
@@ -395,6 +397,8 @@ export class GameManager extends Component {
         this._waterRefraction = null;
         this._scoreboardFeed?.dispose();
         this._scoreboardFeed = null;
+        this._sharkPictureInPicture?.dispose();
+        this._sharkPictureInPicture = null;
         this._awardsPresentation.dispose();
         this._topViewCeiling.dispose();
     }
@@ -549,6 +553,7 @@ export class GameManager extends Component {
         this._gameFlow?.updateRaceCamera(dt);
         this.updateCrowdControlSkills(dt);
         this.updateShark(dt);
+        this._sharkPictureInPicture?.update(this._shark, dt);
         this._sharkEventBanner.update();
         this._uiFlow?.updateFlipTurnTiming(this._playerSwimmer?.flipTurnTiming ?? null);
         this.updateSpeedLineVanishingPoint();
@@ -1061,6 +1066,12 @@ export class GameManager extends Component {
             onStateChange: (state) => this.handleSharkStateChange(state),
             onHuntEngaged: () => this.handleSharkHuntEngaged(),
             onTargetApproach: (target, x, z) => this.handleSharkTargetApproach(target, x, z),
+        });
+        this._sharkPictureInPicture?.dispose();
+        this._sharkPictureInPicture = new SharkPictureInPictureCamera({
+            worldRoot: this._worldRoot,
+            hud: this._raceHud,
+            course: COURSE_LAYOUT,
         });
         this.loadSharkArtVisual(root, fallback);
     }
