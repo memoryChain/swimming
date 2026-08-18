@@ -5,6 +5,8 @@ import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
 import { makeButton, makeLabel, makeOutlineButton, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
+import { drawSkillBadgeBase, drawSkillBadgeTrack, drawSkillGlyph } from './SkillIconPrototype';
+import { findPlayerCharacter } from '../app/PlayerCharacterConfig';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
@@ -343,10 +345,10 @@ export class SpeedStarsUiPrefabBuilder {
         root.on(Button.EventType.CLICK, this._callbacks.onUltimateActivate);
 
         const base = makeUltimateGraphicsNode('Base', root, visualSize);
-        drawUltimateBase(base, visualSize);
+        drawSkillBadgeBase(base, visualSize);
         base.node.setPosition(0, 0, 0);
         const track = makeUltimateGraphicsNode('ChargeTrack', root, visualSize + 6);
-        drawUltimateChargeTrack(track, visualSize + 6);
+        drawSkillBadgeTrack(track, visualSize + 6);
         track.node.setPosition(0, 0, 1);
         const fill = makeUltimateGraphicsNode('ChargeRing', root, visualSize + 6);
         fill.node.setPosition(0, 0, 2);
@@ -355,7 +357,7 @@ export class SpeedStarsUiPrefabBuilder {
         ready.node.setPosition(0, 0, 3);
         ready.node.active = false;
         const icon = makeUltimateGraphicsNode('Icon', root, visualSize);
-        drawUltimateBolt(icon);
+        drawSkillGlyph(icon, findPlayerCharacter()?.skillIconKind ?? 'shark');
         icon.node.setPosition(0, 0, 4);
         const status = makeLabel('UltimateSkillStatus', root, '', 22, uiColor(255, 239, 145, 255));
         status.getComponent(UITransform)!.setContentSize(34, 28);
@@ -629,18 +631,6 @@ function makeUltimateGraphicsNode(name: string, parent: Node, size: number): Gra
     return node.addComponent(Graphics);
 }
 
-function drawUltimateBase(gfx: Graphics, size: number) {
-    const radius = size / 2 - 1;
-    gfx.clear();
-    gfx.fillColor = uiColor(12, 27, 44, 232);
-    gfx.circle(0, 0, radius);
-    gfx.fill();
-    gfx.strokeColor = uiColor(91, 143, 169, 230);
-    gfx.lineWidth = 1.5;
-    gfx.circle(0, 0, radius);
-    gfx.stroke();
-}
-
 function drawUltimateReadyRing(gfx: Graphics, size: number) {
     const radius = size / 2 - 2;
     gfx.clear();
@@ -648,28 +638,6 @@ function drawUltimateReadyRing(gfx: Graphics, size: number) {
     gfx.lineWidth = 5;
     gfx.circle(0, 0, radius);
     gfx.stroke();
-}
-
-function drawUltimateChargeTrack(gfx: Graphics, size: number) {
-    const radius = size / 2 - 2;
-    gfx.clear();
-    gfx.strokeColor = uiColor(17, 78, 108, 245);
-    gfx.lineWidth = 7;
-    gfx.circle(0, 0, radius);
-    gfx.stroke();
-}
-
-function drawUltimateBolt(gfx: Graphics) {
-    gfx.clear();
-    gfx.fillColor = uiColor(255, 223, 104, 255);
-    gfx.moveTo(-5, 21);
-    gfx.lineTo(9, 4);
-    gfx.lineTo(2, 4);
-    gfx.lineTo(7, -21);
-    gfx.lineTo(-10, -2);
-    gfx.lineTo(-2, -2);
-    gfx.close();
-    gfx.fill();
 }
 
 function drawUltimatePulseMarker(gfx: Graphics) {

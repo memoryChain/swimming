@@ -2,6 +2,10 @@ import { RaceDifficulty } from '../core/GameBalance';
 
 export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver';
 
+// The current project has no final skill art yet. This keeps the temporary
+// program-drawn badge semantic in the character data instead of UI code.
+export type PlayerSkillIconKind = 'shark' | 'charm' | 'dash' | 'siren';
+
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
     name: string;
@@ -20,6 +24,8 @@ export type PlayerCharacterDefinition = {
     description: string;
     skillName: string;
     skillDescription: string;
+    skillFlavorText: string;
+    skillIconKind: PlayerSkillIconKind;
     robotStyle?: boolean;
     supportsSkinTone?: boolean;
 };
@@ -51,7 +57,10 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 75,
         kick: 50,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
-        skillName: '召唤鲨鱼', skillDescription: '召唤一条会追逐最近选手的鲨鱼；自己也可能成为目标。',
+        skillName: '召唤鲨鱼',
+        skillDescription: '召来鲨鱼追逐最近的选手；所有人都可能成为目标。',
+        skillFlavorText: '村里人都叫他干柿鬼鲛。',
+        skillIconKind: 'shark',
     },
     {
         id: 'women2', name: '灵波飞鱼', modelVariantId: 'women2', unlocked: true,
@@ -60,7 +69,10 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 92,
         kick: 50,
         description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
-        skillName: '心潮魅惑', skillDescription: '向正前方射出爱心，命中首名对手使其短暂挣扎。',
+        skillName: '心潮魅惑',
+        skillDescription: '向正前方射出爱心，命中首名对手，使其短暂停在原地。',
+        skillFlavorText: '别回头，她真的在看你。',
+        skillIconKind: 'charm',
     },
     {
         id: 'lowPolyHuman2', name: '破浪新星', modelVariantId: 'lowPolyHuman2', unlocked: true,
@@ -69,7 +81,10 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 82,
         kick: 50,
         description: '均衡型游泳选手，动作灵活，能稳定应对不同比赛节奏。',
-        skillName: '劈波突进', skillDescription: '锁定当前朝向猛冲，并能挤开前方同向的首个对手。',
+        skillName: '劈波突进',
+        skillDescription: '沿当前朝向极速突进，并撞开前方同向的首名对手。',
+        skillFlavorText: '水花是他的签名，背影也是。',
+        skillIconKind: 'dash',
     },
     {
         id: 'diver', name: '深海潜将', modelVariantId: 'diver', unlocked: true,
@@ -78,7 +93,10 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         energyGain: 80,
         kick: 50,
         description: '装备齐全的潜水选手，身体稳定，擅长保持持续而扎实的推进。',
-        skillName: '海妖之歌', skillDescription: '短暂蓄力后释放随身声波圈，使近处对手陷入睡眠。',
+        skillName: '海妖之歌',
+        skillDescription: '短暂蓄力后释放声波，使附近对手陷入短暂睡眠。',
+        skillFlavorText: '闭眼三秒，醒来已经落后一截。',
+        skillIconKind: 'siren',
         supportsSkinTone: false,
     },
 ];

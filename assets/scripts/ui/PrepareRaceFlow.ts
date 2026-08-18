@@ -20,6 +20,7 @@ import { openCharacterStatsPanel } from './CharacterStatsPanel';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeSkillIconPrototype } from './SkillIconPrototype';
 import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
 import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
@@ -367,17 +368,37 @@ export class PrepareRaceFlow {
         description.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.CENTER;
         description.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
         description.setPosition(0, panelHeight / 2 - 82, 1);
-        makeLabel('SkillHeading', panel, '技能', 22, CYAN).setPosition(-128, -112, 1);
-        const skill = makeRect('SkillCard', panel, 278, 72, PANEL_ALT);
-        skill.setPosition(0, -168, 1);
-        makeLabel('SkillName', skill, character.skillName, 19, WHITE).setPosition(-44, 14, 1);
-        const skillDesc = makeLabel('SkillDescription', skill, character.skillDescription, 14, uiColor(214, 234, 246));
-        skillDesc.getComponent(UITransform)!.setContentSize(246, 30);
-        skillDesc.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
-        skillDesc.setPosition(0, -17, 1);
+        makeLabel('SkillHeading', panel, '技能', 22, CYAN).setPosition(-128, -94, 1);
+        const skill = makeRect('SkillCard', panel, 278, 96, PANEL_ALT);
+        skill.setPosition(0, -165, 1);
+        const icon = makeSkillIconPrototype('SkillIcon', skill, 62, character.skillIconKind);
+        icon.setPosition(-98, 0, 1);
+        // The right-hand column is an explicit three-row grid. Do not place
+        // later rows relative to a label's auto-resized bounds: Cocos updates
+        // those bounds asynchronously, which makes the rows overlap visually.
+        const skillName = makeLabel('SkillName', skill, character.skillName, 18, WHITE);
+        skillName.getComponent(UITransform)!.setContentSize(182, 24);
+        skillName.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.LEFT;
+        skillName.setPosition(37, 33, 1);
+        const skillDesc = makeLabel('SkillDescription', skill, character.skillDescription, 13, uiColor(214, 234, 246));
+        skillDesc.getComponent(UITransform)!.setContentSize(182, 40);
+        const skillDescriptionLabel = skillDesc.getComponent(Label)!;
+        // The middle row is reserved for exactly two readable lines. Its
+        // position is independent of its calculated text height.
+        skillDescriptionLabel.overflow = Label.Overflow.RESIZE_HEIGHT;
+        skillDescriptionLabel.enableWrapText = true;
+        skillDescriptionLabel.lineHeight = 17;
+        skillDescriptionLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        skillDescriptionLabel.verticalAlign = Label.VerticalAlign.TOP;
+        skillDesc.setPosition(37, -9, 1);
+        const flavor = makeLabel('SkillFlavorText', skill, character.skillFlavorText, 11, uiColor(145, 185, 203, 255));
+        flavor.getComponent(UITransform)!.setContentSize(182, 16);
+        flavor.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.LEFT;
+        flavor.getComponent(Label)!.isItalic = true;
+        flavor.setPosition(37, -38, 1);
 
-        const statsButton = makeRoundedRect('StatsButton', panel, 200, 44, PANEL, 12, UI_STYLE.cyanOutline, 1.5);
-        statsButton.setPosition(0, -226, 2);
+        const statsButton = makeRoundedRect('StatsButton', panel, 200, 36, PANEL, 12, UI_STYLE.cyanOutline, 1.5);
+        statsButton.setPosition(0, -232, 2);
         const statsHit = statsButton.addComponent(Button);
         statsHit.target = statsButton;
         statsHit.transition = Button.Transition.NONE;
