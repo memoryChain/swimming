@@ -294,6 +294,7 @@ export class GameManager extends Component {
     private _crowdControlSkills: CrowdControlSkillController | null = null;
     private _sharkNode: Node | null = null;
     private _sharkArtLoaded = false;
+    private _sharkAnimation: SkeletalAnimation | null = null;
     private _sharkWake: Node | null = null;
     private readonly _sharkEyeMaterials: Material[] = [];
     private _sharkSplash: Node | null = null;
@@ -1094,7 +1095,12 @@ export class GameManager extends Component {
                 SHARK_MODEL_PRESENTATION.visualScale,
             );
             setLayerRecursive(model, SWIMMER_LAYER);
-            model.getComponentInChildren(SkeletalAnimation)?.play('Shark_Swim_Loop');
+            this._sharkAnimation = model.getComponent(SkeletalAnimation) ?? model.getComponentInChildren(SkeletalAnimation);
+            if (!this._sharkAnimation) {
+                this.debug('shark animation component missing');
+            } else {
+                this.startSharkSwimAnimation();
+            }
             this._sharkArtLoaded = true;
             if (fallback.active) fallback.active = false;
             if (this._sharkWake?.active) this._sharkWake.active = false;
@@ -1121,6 +1127,7 @@ export class GameManager extends Component {
     private playSharkDropIn(x: number, z: number): void {
         const shark = this._sharkNode;
         if (!shark) return;
+        this.startSharkSwimAnimation();
         const waterY = COURSE_LAYOUT.waterY + SHARK_TUNING.waterYOffset;
         Tween.stopAllByTarget(shark);
         shark.setPosition(x, waterY + 5.5, z);
@@ -1141,6 +1148,18 @@ export class GameManager extends Component {
         if (this.canShowSharkRevealCamera()) {
             this._raceCameraDirector.requestSharkRevealShot(x, z);
         }
+    }
+
+    private startSharkSwimAnimation(): void {
+        const animation = this._sharkAnimation;
+        if (!animation?.isValid) return;
+        const state = animation.getState('Shark_Swim_Loop');
+        if (!state) {
+            this.debug('shark swim clip missing');
+            return;
+        }
+        state.speed = SHARK_MODEL_PRESENTATION.swimAnimationSpeed;
+        animation.play('Shark_Swim_Loop');
     }
 
     private playSharkSplash(x: number, z: number): void {

@@ -79,8 +79,11 @@ const SHARK_MODEL_PREFAB_CANDIDATES = [
 // 缩放后约 1.8 米长；下沉后只有背鳍和上半身露出水面。
 export const SHARK_MODEL_PRESENTATION = {
     visualScale: 1.8,
-    visualYOffset: -0.35,
+    // Keep enough of the torso/tail near the surface for the authored swim loop
+    // to read in the main view and the shark picture-in-picture feed.
+    visualYOffset: -0.18,
     visualEulerDegrees: [0, 90, 0] as const,
+    swimAnimationSpeed: 1.2,
 };
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
