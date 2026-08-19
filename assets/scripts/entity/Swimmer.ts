@@ -1071,6 +1071,12 @@ export class Swimmer extends Component {
         return this.cartoonRig?.splashNode ?? null;
     }
 
+    // Kept separate from the regular splash root because it owns its own world
+    // transform, but it must follow the same overlay-camera layer assignment.
+    get dashWaterNode(): Node | null {
+        return this.cartoonRig?.dashWaterNode ?? null;
+    }
+
     get underwaterRiseProgress(): number {
         return this._phases.underwaterRiseProgress;
     }

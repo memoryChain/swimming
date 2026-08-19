@@ -16,6 +16,7 @@ import { findSampledDebugAction, SAMPLED_ACTION_IDS } from '../character/Sampled
 import type { SampledActionId, SampledActionMotion } from '../character/SampledActionMotionCurve';
 import { SplashEmitter } from '../character/SplashEmitter';
 import type { SplashEmitterState } from '../character/SplashEmitter';
+import { WaveDashWaterEffect } from '../character/WaveDashWaterEffect';
 import { UnderwaterBubbleEmitter } from '../character/UnderwaterBubbleEmitter';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
@@ -134,9 +135,11 @@ const DIVE_CHARGE_POWER_STEPS = 20;
 export class CartoonSwimmerRig extends Component implements CharacterRig {
     public root: Node = null;
     public splashNode: Node = null;
+    public dashWaterNode: Node = null;
 
     private _model: Node = null;
     private _splashEmitter: SplashEmitter = null;
+    private _waveDashWaterEffect: WaveDashWaterEffect = null;
     private _bubbleEmitter: UnderwaterBubbleEmitter = null;
     private readonly _splashState: SplashEmitterState = {
         armAction: 0,
@@ -309,6 +312,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             });
             this.splashNode = this._splashEmitter.node;
             this._splashEmitter.build();
+            this._waveDashWaterEffect = new WaveDashWaterEffect({
+                owner: this.node,
+                parent: this.node.parent || this.node,
+                name: `${this.node.name || 'Swimmer'}WaveDashWater`,
+                waterY: this._waterY,
+                reduced: reducedSplash,
+            });
+            this.dashWaterNode = this._waveDashWaterEffect.node;
+            this._waveDashWaterEffect.build();
             // Underwater bubbles: player only (skip reduced-LOD AI). Parented under
             // the splash node so it inherits the swimmer overlay-layer tagging and
             // is drawn over the opaque underwater surface.
@@ -824,7 +836,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setSkillDashActive(active: boolean) {
-        if (this._modelDebugMode || active === this._poseState.isSkillDashActive) {
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._waveDashWaterEffect?.setActive(active);
+        if (active === this._poseState.isSkillDashActive) {
             return;
         }
         this._animationPlayer.stop();
@@ -878,6 +894,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._splashCulled = culled;
         this._splashEmitter?.setCulled(culled);
+        this._waveDashWaterEffect?.setCulled(culled);
     }
 
     // The race uses a world-space waterline shader, while presentation spaces
@@ -1093,6 +1110,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._leftHandWaterEntry = 0;
             this._rightHandWaterEntry = 0;
             this.updateSplashSurface(speed);
+            this._waveDashWaterEffect?.update(dt, this._splashMovementDirection, this._splashMovementHeadingRadians, speed);
             return;
         }
         this.updateArmCycleMotion(dt, leftArmCycle, rightArmCycle);
@@ -1126,6 +1144,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._leftHandWaterProgress = this._pose.handWaterProgress(leftArmCycle);
         this._rightHandWaterProgress = this._pose.handWaterProgress(rightArmCycle);
         this.updateSplashSurface(speed);
+        this._waveDashWaterEffect?.update(dt, this._splashMovementDirection, this._splashMovementHeadingRadians, speed);
     }
 
     // Advance the mid-race tread-water phase and ease the freestyle<->tread blend weight toward
@@ -1293,6 +1312,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     onDestroy() {
         this._modelLoadToken += 1;
         this._colorAssetLoadToken += 1;
+        this._waveDashWaterEffect?.destroy();
+        this._waveDashWaterEffect = null;
+        this.dashWaterNode = null;
         this._diveChargeBodyMaterials.length = 0;
         this._diveChargeGatherEffect?.destroy();
         this._diveChargeGatherEffect = null;
@@ -1333,6 +1355,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.invalidateTreadBlendModelPlacement();
         this._poseState.resetRuntime();
         this._splashEmitter?.reset();
+        this._waveDashWaterEffect?.reset();
         this._pose.restoreBasePose();
         this.updateSplashSurface(0);
     }

@@ -22,6 +22,7 @@ CCEffect %{
         rippleColor:  { value: [0.15, 0.76, 0.96, 0.48], linear: true, editor: { type: color } }
         splashParams: { value: [0.0, 0.0, 0.0, 0.0] }
         shapeParams:  { value: [0.25, 0.60, 0.0, 0.0] }
+        dashWaveParams: { value: [0.0, 0.0, 0.0, 0.0] }
 }%
 
 CCProgram splash-vs %{
@@ -40,6 +41,7 @@ CCProgram splash-vs %{
     vec4 rippleColor;
     vec4 splashParams;
     vec4 shapeParams;
+    vec4 dashWaveParams;
   };
 
   vec4 vert () {
@@ -55,7 +57,9 @@ CCProgram splash-vs %{
     float ripple = sin(position.x * 12.0 - t * (7.0 + speedRatio * 6.0))
                  * sin(position.z * 24.0 + t * 3.6);
     float burstLift = max(0.0, sin((1.0 - length(position.xz)) * 5.2 + t * 7.0)) * splashParams.z * (1.0 - flowStrength * 0.45);
-    position.y += (ripple * 0.004 * intensity + burstLift * 0.005) * max(lateral, radial);
+    float dashStable = step(0.5, dashWaveParams.x);
+    position.y += (ripple * 0.004 * intensity + burstLift * 0.005)
+      * max(lateral, radial) * (1.0 - dashStable);
 
     mat4 matWorld;
     CCGetWorldMatrix(matWorld);
@@ -80,6 +84,7 @@ CCProgram splash-fs %{
     vec4 rippleColor;
     vec4 splashParams;
     vec4 shapeParams;
+    vec4 dashWaveParams;
   };
 
   float hash12(vec2 p) {
@@ -151,7 +156,18 @@ CCProgram splash-fs %{
     float spray = clamp(foamBody * (0.42 + intensity * 0.55) + ring * burst * 0.35 + droplets * (0.45 + burst * 0.45) + flowFoam * (0.7 + intensity * 0.34), 0.0, 1.0);
     spray = mix(spray, rippleSpray, rippleMode);
     flowFoam *= 1.0 - rippleMode;
-    float thinRipples = (1.0 - smoothstep(0.02, 0.09, abs(ellipse - 0.62))) * wakeMask * (0.4 + speedRatio * 0.6);
+  float thinRipples = (1.0 - smoothstep(0.02, 0.09, abs(ellipse - 0.62))) * wakeMask * (0.4 + speedRatio * 0.6);
+
+    // The dash bow is one connected mesh. Its silhouette supplies the V shape,
+    // so give it a static foam distribution instead of the lively break-up used
+    // by normal strokes; otherwise the apparent connection can flicker at speed.
+    if (dashWaveParams.x > 0.5) {
+      float staticGrain = 0.78 + 0.22 * sin(uv.x * 19.0 + uv.y * 27.0 + splashParams.w * 1.9);
+      float stableAlpha = foamColor.a * clamp(intensity * 0.82, 0.0, 1.0)
+        * staticGrain * (0.76 + v_sideFade * 0.24);
+      vec3 stableColor = mix(rippleColor.rgb, foamColor.rgb, 0.88);
+      return CCFragOutput(vec4(stableColor, stableAlpha));
+    }
 
     // Only the dense core reads as white foam; thin/outer areas stay water-tinted so it blends in.
     float foamDensity = smoothstep(0.12, 0.86, spray);

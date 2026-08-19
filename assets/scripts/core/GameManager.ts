@@ -1532,12 +1532,18 @@ export class GameManager extends Component {
             if (this._playerSwimmer.splashNode?.isValid) {
                 nodes.push(this._playerSwimmer.splashNode);
             }
+            if (this._playerSwimmer.dashWaterNode?.isValid) {
+                nodes.push(this._playerSwimmer.dashWaterNode);
+            }
         }
         for (const swimmer of this._aiSwimmers) {
             if (swimmer?.node?.isValid) {
                 nodes.push(swimmer.node);
                 if (swimmer.splashNode?.isValid) {
                     nodes.push(swimmer.splashNode);
+                }
+                if (swimmer.dashWaterNode?.isValid) {
+                    nodes.push(swimmer.dashWaterNode);
                 }
             }
         }
