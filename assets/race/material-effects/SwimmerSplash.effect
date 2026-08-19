@@ -59,7 +59,14 @@ CCProgram splash-vs %{
     float burstLift = max(0.0, sin((1.0 - length(position.xz)) * 5.2 + t * 7.0)) * splashParams.z * (1.0 - flowStrength * 0.45);
     float dashStable = step(0.5, dashWaveParams.x);
     position.y += (ripple * 0.004 * intensity + burstLift * 0.005)
-      * max(lateral, radial) * (1.0 - dashStable);
+      * max(lateral, radial) * (1.0 - dashStable * 0.48);
+    // Give the dash bow real water volume: a raised compression crown at the
+    // forward tip and lower, outward-flaring crests along both wing edges.
+    float bowTipLift = smoothstep(0.30, 0.90, position.x)
+      * (1.0 - smoothstep(0.03, 0.28, abs(position.z)));
+    float bowWingLift = smoothstep(0.18, 0.86, abs(position.z))
+      * (1.0 - smoothstep(-0.88, 0.20, position.x));
+    position.y += dashStable * (bowTipLift * 0.014 + bowWingLift * 0.008);
 
     mat4 matWorld;
     CCGetWorldMatrix(matWorld);
@@ -158,14 +165,25 @@ CCProgram splash-fs %{
     flowFoam *= 1.0 - rippleMode;
   float thinRipples = (1.0 - smoothstep(0.02, 0.09, abs(ellipse - 0.62))) * wakeMask * (0.4 + speedRatio * 0.6);
 
-    // The dash bow is one connected mesh. Its silhouette supplies the V shape,
-    // so give it a static foam distribution instead of the lively break-up used
-    // by normal strokes; otherwise the apparent connection can flicker at speed.
+    // The dash bow owns a stable V silhouette, but it must still read as water:
+    // preserve a faint base so its outline cannot blink out, then layer moving
+    // foam ribbons and blue water gaps over it instead of returning a flat white fill.
     if (dashWaveParams.x > 0.5) {
-      float staticGrain = 0.78 + 0.22 * sin(uv.x * 19.0 + uv.y * 27.0 + splashParams.w * 1.9);
-      float stableAlpha = foamColor.a * clamp(intensity * 0.82, 0.0, 1.0)
-        * staticGrain * (0.76 + v_sideFade * 0.24);
-      vec3 stableColor = mix(rippleColor.rgb, foamColor.rgb, 0.88);
+      float outerRidge = 1.0 - smoothstep(0.06, 0.28, min(uv.y, 1.0 - uv.y));
+      float centrePressure = 1.0 - smoothstep(0.05, 0.42, abs(uv.y - 0.5));
+      float tipPressure = smoothstep(0.44, 0.94, uv.x) * centrePressure;
+      float crest = max(outerRidge, max(centrePressure * 0.56, tipPressure));
+      float flowingFoam = smoothstep(0.31, 0.74, ribbonA * 0.48 + ribbonB * 0.32 + fineWave * 0.26);
+      float brokenFoam = smoothstep(0.28, 0.75, edgeWave * 0.44 + fineWave * 0.38 + cloud * 0.24);
+      float foamPattern = max(flowingFoam * 0.94, brokenFoam * 0.82);
+      float foamAmount = mix(0.28, 1.0, foamPattern) * (0.46 + crest * 0.54);
+      float stableAlpha = foamColor.a * clamp(intensity * 0.90, 0.0, 1.0)
+        * (0.52 + v_sideFade * 0.48) * foamAmount;
+      vec3 stableColor = mix(
+        rippleColor.rgb,
+        foamColor.rgb,
+        clamp(0.26 + crest * 0.42 + foamPattern * 0.42, 0.0, 1.0)
+      );
       return CCFragOutput(vec4(stableColor, stableAlpha));
     }
 

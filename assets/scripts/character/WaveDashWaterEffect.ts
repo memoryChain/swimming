@@ -274,55 +274,62 @@ function seedFor(kind: DashPartKind): number {
     }
 }
 
-// One connected low-poly ship-bow mesh. +X is the swim direction: the tip is
-// deliberately a visible distance in front of the head (not hidden by it), and
-// the two wings open much wider toward the rear than at their forward join.
+// Close-range cutting foam: two narrow crest ribbons meet just ahead of the
+// head, then skim backward along the shoulders instead of opening into a large
+// boat-bow wake. The inner gap remains visible water.
 function createBowWaveGeometry() {
-    const positions = [
-        1.55, 0, 0,
-        0.95, 0, -0.09,
-        0.22, 0, -0.34,
-        0.95, 0, 0.09,
-        0.22, 0, 0.34,
-        0.82, 0, -0.22,
-        -0.82, 0, -1.05,
-        -0.54, 0, -0.58,
-        0.82, 0, 0.22,
-        -0.82, 0, 1.05,
-        -0.54, 0, 0.58,
-    ];
-    const normals = [
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-        0, 1, 0,
-    ];
-    const uvs = [
-        1, 0.5,
-        0.70, 0.36,
-        0.30, 0.18,
-        0.70, 0.64,
-        0.30, 0.82,
-        0.62, 0.18,
-        0, 0,
-        0.18, 0.18,
-        0.62, 0.82,
-        0, 1,
-        0.18, 0.82,
-    ];
-    return {
-        positions,
-        normals,
-        uvs,
-        indices: [0, 2, 1, 0, 1, 3, 0, 3, 4, 0, 4, 2, 1, 6, 5, 1, 7, 6, 3, 8, 9, 3, 9, 10],
-    };
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    appendBowCrestRibbon(-1, positions, normals, uvs, indices);
+    appendBowCrestRibbon(1, positions, normals, uvs, indices);
+    return { positions, normals, uvs, indices };
+}
+
+function appendBowCrestRibbon(
+    side: number,
+    positions: number[],
+    normals: number[],
+    uvs: number[],
+    indices: number[],
+) {
+    const segments = 4;
+    const base = positions.length / 3;
+    const innerV = side < 0 ? 0.42 : 0.58;
+    const outerV = side < 0 ? 0.04 : 0.96;
+    for (let index = 0; index <= segments; index++) {
+        const t = index / segments;
+        const centerX = 0.94 - 1.55 * t;
+        const centerZ = side * 0.60 * t;
+        const tangentX = -1.55;
+        const tangentZ = side * 0.60;
+        const tangentLength = Math.hypot(tangentX, tangentZ);
+        const outwardX = (-tangentZ / tangentLength) * -side;
+        const outwardZ = (tangentX / tangentLength) * -side;
+        const halfWidth = 0.012 + 0.065 * t;
+        appendBowCrestVertex(positions, normals, uvs, centerX - outwardX * halfWidth, centerZ - outwardZ * halfWidth, 1 - t, innerV);
+        appendBowCrestVertex(positions, normals, uvs, centerX + outwardX * halfWidth, centerZ + outwardZ * halfWidth, 1 - t, outerV);
+    }
+    for (let index = 0; index < segments; index++) {
+        const current = base + index * 2;
+        const next = current + 2;
+        indices.push(current, next, current + 1, current + 1, next, next + 1);
+    }
+}
+
+function appendBowCrestVertex(
+    positions: number[],
+    normals: number[],
+    uvs: number[],
+    x: number,
+    z: number,
+    u: number,
+    v: number,
+) {
+    positions.push(x, 0, z);
+    normals.push(0, 1, 0);
+    uvs.push(u, v);
 }
 
 function clamp(value: number, min: number, max: number): number {
