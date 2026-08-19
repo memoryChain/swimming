@@ -13,10 +13,15 @@ CCEffect %{
       properties:
         mainTexture: { value: white }
         mainColor:   { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
+        # Pool floor colours are selected per rendering camera. This lets the shark
+        # picture-in-picture retain its above-water water quality while the main
+        # player camera is submerged, without another render pass or material copy.
+        aboveColor:      { value: [0.46, 0.79, 0.68, 1.0], linear: true, editor: { type: color } }
+        underwaterColor: { value: [0.10, 0.42, 0.72, 1.0], linear: true, editor: { type: color } }
         # Deep-water blue the far end fades toward (rgb) + max blend strength (a).
         depthColor:  { value: [0.02, 0.12, 0.42, 0.85], linear: true, editor: { type: color } }
         # x = distance where the blue starts (m), y = distance for full blue (m),
-        # z = enable (0/1, off above water). w unused.
+        # z = enable (0/1; the shader enables it only for a submerged camera). w unused.
         depthParams: { value: [3.0, 20.0, 0.0, 0.0] }
         # x = world waterline, y = enable the above-water white cap (walls only).
         # The cap keeps the exposed tile strip white while the submerged part
@@ -59,33 +64,40 @@ CCProgram uw-floor-fs %{
 
     uniform UwFloor {
         vec4 mainColor;
+        vec4 aboveColor;
+        vec4 underwaterColor;
         vec4 depthColor;
         vec4 depthParams;
         vec4 waterLineParams;
   };
 
   vec4 frag () {
-    // Match builtin-unlit / ToonProp colour handling: linear mainColor +
+    // The current rendering camera chooses the palette. All cameras share this
+    // material, so this is intentionally a shader decision rather than a global
+    // material-property swap made by the player's camera transition.
+    float cameraUnderwater = step(cc_cameraPos.y, waterLineParams.x);
+    vec4 cameraColor = mix(aboveColor, underwaterColor, cameraUnderwater);
+    // Match builtin-unlit / ToonProp colour handling: linear cameraColor +
     // SRGBToLinear on the sRGB texture, so the floor colours tuned against
     // builtin-unlit (and the water tint that refracts them) render identically.
     #if USE_TEXTURE
     vec4 texel = texture(mainTexture, v_uv);
-    vec3 base = SRGBToLinear(texel.rgb) * mainColor.rgb;
-    float alpha = texel.a * mainColor.a;
+    vec3 base = SRGBToLinear(texel.rgb) * cameraColor.rgb;
+    float alpha = texel.a * cameraColor.a;
     #else
-    vec3 base = mainColor.rgb;
-    float alpha = mainColor.a;
+    vec3 base = cameraColor.rgb;
+    float alpha = cameraColor.a;
     #endif
     // Distance-based blue absorption toward deepColor: near = base tile colour,
     // far = deep blue, smooth gradient. Tracks the moving camera via cc_cameraPos.
     float dist = length(cc_cameraPos.xyz - v_worldPos);
     float t = clamp((dist - depthParams.x) / max(depthParams.y - depthParams.x, 0.001), 0.0, 1.0);
-    float amt = t * depthColor.a * step(0.5, depthParams.z);
+    float amt = t * depthColor.a * step(0.5, depthParams.z) * cameraUnderwater;
     vec3 color = mix(base, depthColor.rgb, amt);
     // Pool walls share one continuous quad across the waterline. Keep only the
     // exposed upper strip white; underwater fragments retain the tuned blue.
     float aboveWater = step(waterLineParams.x, v_worldPos.y);
-    color = mix(color, vec3(1.0), aboveWater * step(0.5, waterLineParams.y));
+    color = mix(color, vec3(1.0), aboveWater * step(0.5, waterLineParams.y) * (1.0 - cameraUnderwater));
     return CCFragOutput(vec4(color, alpha));
   }
 }%

@@ -66,10 +66,10 @@ const MAX_DISTURB = 8;
 const DISTURB_RADIUS = 1.7;
 const DISTURB_FREQUENCY = 9.0;
 const DISTURB_STRENGTH = 1.15;
-// Pool-bottom recolour that swaps with the camera: ABOVE water the floor/walls are
-// deep pool BLUE (so the surface reads as rich blue water); UNDER water they turn
-// light/WHITE so the submerged view stays a legible natural pool instead of a blue
-// blur. Lane lines stay dark in both. First matching prefix wins.
+// Pool-bottom recolour selected per rendering camera: ABOVE water the floor/walls
+// are deep pool BLUE (so the surface reads as rich blue water); UNDER water they
+// turn to the submerged palette. This must not be a global material swap because
+// the shark picture-in-picture camera renders the same pool at the same time.
 const FLOOR_TINT: { prefix: string; above: Color; belowKind: FloorBelowKind }[] = [
     { prefix: 'lane_floor_line', above: new Color(8, 12, 20, 255), belowKind: 'line' },
     { prefix: 'lane_t_end', above: new Color(8, 12, 20, 255), belowKind: 'line' },
@@ -182,14 +182,13 @@ export class WaterRefractionController {
     private _laneLockdownParamsDirty = true;
     private readonly _tmpPos = new Vec3();
     private readonly _wallWaterLineParams = new Vec4();
-    // Pool-bottom materials whose colour swaps with the underwater camera mode
-    // (see FLOOR_TINT). _floorUnderwater tracks the current applied set.
+    // Pool-bottom materials carry both palettes; UnderwaterFloorTint selects one
+    // from cc_cameraPos for each camera render (see FLOOR_TINT).
     private readonly _floorTints: { material: Material; above: Color; belowKind: FloorBelowKind }[] = [];
     // Optional custom effect that adds the near-clear -> far-deep-blue distance
     // gradient to the submerged floor (loaded async; falls back to builtin-unlit).
     private _floorDepthEffect: EffectAsset | null = null;
     private _floorHasDepth = false;
-    private _floorUnderwater: boolean | null = null;
     private _underwaterViewActive = false;
     private _waterActiveBeforeUnderwater = true;
     private readonly _debug?: (message: string) => void;
@@ -376,11 +375,6 @@ export class WaterRefractionController {
         if (active === this._underwaterViewActive) {
             return;
         }
-        // The surface visibility, underwater screen tint and pool-tile tint must
-        // change on the same camera-mode edge. Driving the tiles independently
-        // from camera Y used to expose a whole-pool colour pop while a smoothed
-        // dive camera crossed the water line.
-        this.applyFloorTint(active);
         // The pool rim is an above-deck shell. Drawing it directly from the
         // underwater main camera causes the white side borders to flash through
         // the water; submerged views should show the inner wall instead.
@@ -462,9 +456,9 @@ export class WaterRefractionController {
         this._laneLockdownParamsDirty = true;
     }
 
-    // Collect the pool-bottom renderers matching FLOOR_TINT, give each an unlit
-    // material initialised to the ABOVE-water (blue) colour, and remember the
-    // material + both colours so the camera-mode edge can swap them together.
+    // Collect pool-bottom renderers and give each runtime material both its above-
+    // and below-water palettes. The custom shader selects per camera; no camera
+    // transition writes to these materials after setup.
     private collectFloorTints(pool: Node) {
         this._floorTints.length = 0;
         // Reuse one runtime material for renderers that share both their source
@@ -519,77 +513,55 @@ export class WaterRefractionController {
             }
         };
         walk(pool);
-        // Every new runtime material was initialised with its above-water tint.
-        this._floorUnderwater = false;
         this._floorHasDepth = !!this._floorDepthEffect;
     }
 
     // Upgrade the submerged floor to the distance-gradient effect once it has
     // loaded (near = floor blue, far = deep blue). Rebuilds the floor materials
-    // with the effect and re-applies the current camera state.
+    // with the effect and restores both palettes.
     setFloorDepthEffect(effect: EffectAsset) {
         if (!effect || !this._pool?.isValid) {
             return;
         }
         this._floorDepthEffect = effect;
-        const prev = this._floorUnderwater;
         this.collectFloorTints(this._pool);
-        this._floorUnderwater = prev ?? false;
         this.refreshFloor();
     }
 
-    // Swap the pool-bottom colours atomically with the camera presentation mode:
-    // blue above (rich water look), light/white below (legible underwater view).
-    private applyFloorTint(underwater: boolean) {
-        if (this._floorTints.length <= 0) {
-            return;
-        }
-        if (underwater === this._floorUnderwater) {
-            return;
-        }
-        this._floorUnderwater = underwater;
-        this.refreshFloor();
-    }
-
-    // Re-apply the floor near/far colours for the CURRENT camera state (above or
-    // below water). Used on '水色' slider edits and after the depth effect loads.
+    // Re-apply both palettes on '水色' slider edits and after the depth effect loads.
     private applyFloorTuning() {
-        if (this._floorTints.length <= 0 || this._floorUnderwater === null) {
+        if (this._floorTints.length <= 0) {
             return;
         }
         this.refreshFloor();
     }
 
     private refreshFloor() {
-        const underwater = this._floorUnderwater === true;
         for (const tint of this._floorTints) {
-            this.applyFloorMaterial(tint, underwater);
+            this.applyFloorMaterial(tint);
         }
     }
 
-    // Set a floor material's near colour (above-deck or submerged blue) and, when
-    // the distance-gradient effect is active, the far colour + range so near reads
-    // clear and far fades to a deep colour. Above and below water use DIFFERENT
-    // deep colours; lane lines never fade.
+    // Set both floor palettes once. The custom shader picks the active one from
+    // its current camera position, and applies the far-depth gradient only below
+    // the surface. Lane lines never use the gradient.
     private applyFloorMaterial(
         tint: { material: Material; above: Color; belowKind: FloorBelowKind },
-        underwater: boolean,
     ) {
         const material = tint.material;
         if (!material?.isValid) {
             return;
         }
-        material.setProperty('mainColor', underwater ? computeFloorBelowColor(tint.belowKind) : tint.above);
+        const underwaterColor = computeFloorBelowColor(tint.belowKind);
+        material.setProperty('mainColor', tint.above);
         if (this._floorHasDepth) {
-            // Only the underwater view uses a distance-based blue gradient; above
-            // water the floor keeps a flat color (the distance blue there did not
-            // read well), so the gradient is disabled when not underwater.
-            const enable = underwater && tint.belowKind !== 'line' ? 1 : 0;
+            material.setProperty('aboveColor', tint.above);
+            material.setProperty('underwaterColor', underwaterColor);
             material.setProperty('depthColor', computeFloorDeepColor());
             material.setProperty('depthParams', new Vec4(
                 WATER_COLOR_TUNING.floorFarStart,
                 WATER_COLOR_TUNING.floorFarEnd,
-                enable,
+                tint.belowKind !== 'line' ? 1 : 0,
                 0,
             ));
         }
@@ -597,11 +569,11 @@ export class WaterRefractionController {
         // whitens only the exposed cap (reads as a white pool gutter) without
         // splitting the mesh or adding a second renderer/draw call. UNDERWATER that
         // same white cap becomes a jarring bright band at the waterline, so disable
-        // it when submerged and let the wall read as one uniform blue. Floors,
-        // grout, and lane lines keep the feature disabled in both.
+        // it when submerged and let the wall read as one uniform blue. The shader
+        // applies this cap only for the camera that is actually above water.
         this._wallWaterLineParams.set(
             this._waterY,
-            tint.belowKind === 'wall' && !underwater ? 1 : 0,
+            tint.belowKind === 'wall' ? 1 : 0,
             0,
             0,
         );
@@ -685,7 +657,6 @@ export class WaterRefractionController {
         this._boundMaterial = null;
         this._getSwimmerNodes = null;
         this._floorTints.length = 0;
-        this._floorUnderwater = null;
         this._floorDepthEffect = null;
         this._floorHasDepth = false;
         this._underwaterViewActive = false;
