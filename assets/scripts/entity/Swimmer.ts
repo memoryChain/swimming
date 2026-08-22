@@ -6,6 +6,7 @@ import {
     StrokeType,
 } from '../core/GameConstants';
 import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
+import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
@@ -818,7 +819,9 @@ export class Swimmer extends Component {
                 this._motor.markPerfectGuidePresented(StrokeType.RIGHT);
             }
         }
-        this.cartoonRig?.setPerfectGlowActive(active);
+        this.cartoonRig?.setPerfectGlowActive(
+            PERFORMANCE_CONFIG.visualFeedback.perfectZoneBodyGlowEnabled && active,
+        );
     }
 
     private playStroke(type: StrokeType, rating: Rating) {

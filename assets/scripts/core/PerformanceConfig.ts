@@ -4,6 +4,12 @@
 // 面向微信小游戏的轻量运行时性能开关。
 // 只放渲染/特效开销相关的取舍项，方便按机型分级或做 A/B 测试。此处为默认值，部分可运行时切换。
 export const PERFORMANCE_CONFIG = {
+    visualFeedback: {
+        // 玩家划水进入 PERFECT 区间时，是否把人物身体切成黄色提示。
+        // 只控制表现，不改变 PERFECT 判定、得分或松手输入宽容。
+        perfectZoneBodyGlowEnabled: false,
+    },
+
     water: {
         // World-space fake ceiling-light reflections on the pool water. This is
         // shader-only: no reflection camera, RenderTexture, texture, geometry,

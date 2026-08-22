@@ -18,7 +18,7 @@ const CEILING_FLARE_CTRL_NAME = 'ceiling_light_flare_ctrl';
 // spread evenly across its width (Z) - like a real aquatics-centre roof rig -
 // instead of a single boxy perimeter ring. Pool spans X[0,50], Z[-10.5,10.5].
 const LIGHT_HEIGHT_Y = 11;
-const STRIP_COUNT: number = 6;
+const STRIP_COUNT: number = 4;
 const STRIP_MIN_X = 2;
 const STRIP_MAX_X = 48;
 const STRIP_MIN_Z = -7.5;
@@ -51,7 +51,7 @@ const FLARE_VIEW_THRESHOLD = 0.82; // ~35 degrees off screen centre
 // Min "lamp faces the camera" dot; keeps back-lit lamps from flaring.
 const FLARE_FACING_MIN = 0.05;
 const FLARE_MIN_SIZE = 0.6;
-const FLARE_MAX_SIZE = 10;
+const FLARE_MAX_SIZE = 2.5;
 const FLARE_FADE_RATE = 9;
 
 const { ccclass } = _decorator;
