@@ -6,15 +6,12 @@
 // It subscribes to PlayerData and refreshes automatically whenever the balance
 // changes. Do NOT add it to the race HUD.
 
-import { Button, Graphics, Label, Node, UITransform } from 'cc';
-import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
-import { CURRENCY, PlayerProfile } from '../backend/PlayerProfile';
-import { avatarColorOf } from '../backend/IdentityConfig';
+import { Button, Label, Node, resources, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { PlayerProfile } from '../backend/PlayerProfile';
 import { PlayerData } from '../backend/PlayerData';
 import { UI_STYLE } from './UIStyle';
-
-const PILL_FILL = UI_STYLE.panel;
-const PILL_OUTLINE = UI_STYLE.cyanOutline;
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
@@ -25,13 +22,14 @@ export interface ResourceHeadBarOptions {
     onOpenSettings?: () => void;
 }
 
-const BAR_WIDTH = 236;
-const BAR_HEIGHT = 60;
+const BAR_WIDTH = 190;
+const BAR_HEIGHT = 52;
 const BACK_WIDTH = 84;
 const BACK_HEIGHT = 52;
-const IDENTITY_WIDTH = 200;
-const AVATAR_SIZE = 40;
-const EDGE_PADDING = 24;
+const IDENTITY_WIDTH = 253;
+const IDENTITY_HEIGHT = 80;
+const EDGE_PADDING = 35;
+const RIGHT_PADDING = 31;
 const BACK_GAP = 12;
 
 // Vertical band (px from the top of the design-resolution canvas) reserved by the
@@ -46,7 +44,6 @@ export class ResourceHeadBar {
     private _backHandler: (() => void) | null = null;
     private _identity: Node | null = null;
     private _nameLabel: Label | null = null;
-    private _avatarGfx: Graphics | null = null;
     // Identity X when the back button is hidden vs shown (it shifts right to make
     // room for the back button, and is NEVER hidden).
     private _identityXDefault = 0;
@@ -60,7 +57,7 @@ export class ResourceHeadBar {
         root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
         this._root = root;
 
-        const topY = designHeight / 2 - EDGE_PADDING - BAR_HEIGHT / 2;
+        const topY = designHeight / 2 - 12 - IDENTITY_HEIGHT / 2;
 
         // Back button, top-left corner. Compact; hidden until a screen provides a back
         // target via setBack(). It sits to the LEFT of the identity (which shifts right
@@ -77,54 +74,58 @@ export class ResourceHeadBar {
         this._identityXWithBack = -designWidth / 2 + EDGE_PADDING + BACK_WIDTH + BACK_GAP + IDENTITY_WIDTH / 2;
         this._identityY = topY;
         const identity = makeUiNode('Identity', root);
-        identity.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH, BAR_HEIGHT);
+        identity.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH, IDENTITY_HEIGHT);
         identity.setPosition(this._identityXDefault, topY, 0);
-        makeRoundedRect('Bg', identity, IDENTITY_WIDTH, BAR_HEIGHT, PILL_FILL, 10, PILL_OUTLINE, 1.5);
+        makeLoginSprite('Plate', identity, RESOURCE_PATHS.loginUi.playerPlate, IDENTITY_WIDTH, IDENTITY_HEIGHT, 0, 0);
         identity.on(Node.EventType.TOUCH_END, () => options.onEditIdentity?.());
-        // Circular avatar; color comes from the chosen avatarId (redrawn on refresh).
-        const avatarBg = makeUiNode('Avatar', identity);
-        avatarBg.getComponent(UITransform)!.setContentSize(AVATAR_SIZE, AVATAR_SIZE);
-        avatarBg.setPosition(-IDENTITY_WIDTH / 2 + 30, 0, 1);
-        this._avatarGfx = avatarBg.addComponent(Graphics);
+        makeLoginSprite('Avatar', identity, RESOURCE_PATHS.loginUi.avatar, 75, 75, -89, 0);
         const nameNode = makeLabel('Name', identity, '', 20, uiColor(240, 250, 255, 255));
         const nameLabel = nameNode.getComponent(Label)!;
+        nameLabel.fontFamily = 'PingFang SC';
+        nameLabel.lineHeight = 26;
         nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
         nameLabel.overflow = Label.Overflow.SHRINK;
-        nameNode.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH - 74, BAR_HEIGHT);
+        nameNode.getComponent(UITransform)!.setContentSize(150, 36);
         nameNode.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        nameNode.setPosition(-IDENTITY_WIDTH / 2 + 56, 0, 1);
+        nameNode.setPosition(-38.5, 0, 1);
         this._nameLabel = nameLabel;
         this._identity = identity;
 
-        // Resource pill, top-right (keeps the top-left free for navigation).
-        const pill = makeRoundedRect('ResourcePill', root, BAR_WIDTH, BAR_HEIGHT, PILL_FILL, 10, PILL_OUTLINE, 1.5);
-        pill.setPosition(designWidth / 2 - EDGE_PADDING - BAR_WIDTH / 2, topY, 0);
-
-        // Swim-card icon (simple colored square placeholder; swap for a sprite later).
-        const icon = makeRect('Icon', pill, 34, 34, UI_STYLE.cyan);
-        icon.setPosition(-BAR_WIDTH / 2 + 30, 0, 0);
+        const pill = makeUiNode('ResourcePill', root);
+        pill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
+        pill.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH / 2, topY, 0);
+        makeLoginSprite('Plate', pill, RESOURCE_PATHS.loginUi.currencyPlate, BAR_WIDTH, BAR_HEIGHT, 0, 0);
+        makeLoginSprite('CurrencyIcon', pill, RESOURCE_PATHS.loginUi.currencyIcon, 36, 36, -65, 0);
 
         // "游泳卡 N" count text.
         const countNode = makeLabel('Count', pill, '', 22, uiColor(240, 250, 255, 255));
         const countLabel = countNode.getComponent(Label)!;
+        countLabel.fontFamily = 'PingFang SC';
+        countLabel.lineHeight = 30;
         countLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
-        countNode.getComponent(UITransform)!.setContentSize(120, BAR_HEIGHT);
+        countLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        countLabel.overflow = Label.Overflow.SHRINK;
+        countNode.getComponent(UITransform)!.setContentSize(82, 36);
         countNode.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        countNode.setPosition(-BAR_WIDTH / 2 + 54, 0, 0);
+        countNode.setPosition(-34, 0, 1);
         this._countLabel = countLabel;
 
-        // "+" button: watch an ad to gain swim cards.
-        const addButton = makeButton('Add', pill, 44, 44, UI_STYLE.accent, '+');
-        addButton.setPosition(BAR_WIDTH / 2 - 32, 0, 0);
+        const addButton = makeUiNode('Add', pill);
+        addButton.getComponent(UITransform)!.setContentSize(48, 48);
+        addButton.setPosition(68, 0, 1);
+        makeLoginSprite('Icon', addButton, RESOURCE_PATHS.loginUi.plusIcon, 37, 37, 0, 0);
+        addButton.addComponent(Button).transition = Button.Transition.NONE;
         addButton.on(Node.EventType.TOUCH_END, () => options.onAddCoins?.());
 
         // Settings entry, left of the resource pill. Matches the headbar panels:
         // same dark rounded plate + faint cyan outline (only when a handler is given).
         if (options.onOpenSettings) {
-            const settingsButton = makeRoundedRect('SettingsButton', root, 96, BAR_HEIGHT, PILL_FILL, 10, PILL_OUTLINE, 1.5);
-            settingsButton.setPosition(designWidth / 2 - EDGE_PADDING - BAR_WIDTH - 12 - 48, topY, 0);
-            const labelNode = makeLabel('Label', settingsButton, '设置', 20, uiColor(240, 250, 255));
-            labelNode.getComponent(UITransform)!.setContentSize(96, BAR_HEIGHT);
+            const settingsButton = makeUiNode('SettingsButton', root);
+            settingsButton.getComponent(UITransform)!.setContentSize(52, 52);
+            settingsButton.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH - 8 - 26, topY, 0);
+            makeLoginSprite('Plate', settingsButton, RESOURCE_PATHS.loginUi.settingsPlate, 52, 52, 0, 0);
+            makeLoginSprite('Icon', settingsButton, RESOURCE_PATHS.loginUi.settingsIcon, 28, 28, 0, 0);
             const settingsBtn = settingsButton.addComponent(Button);
             settingsBtn.target = settingsButton;
             settingsBtn.interactable = true;
@@ -153,21 +154,15 @@ export class ResourceHeadBar {
 
     // Update the displayed identity from the in-game profile.
     private refreshIdentity(profile: PlayerProfile): void {
-        if (this._nameLabel?.isValid) {
+        if (this._nameLabel?.isValid && this._nameLabel.string !== profile.nickName) {
             this._nameLabel.string = profile.nickName;
-        }
-        if (this._avatarGfx?.isValid) {
-            const [r, g, b] = avatarColorOf(profile.avatarId);
-            this._avatarGfx.clear();
-            this._avatarGfx.fillColor = uiColor(r, g, b, 255);
-            this._avatarGfx.circle(0, 0, AVATAR_SIZE / 2);
-            this._avatarGfx.fill();
         }
     }
 
     refresh(profile: PlayerProfile): void {
-        if (this._countLabel) {
-            this._countLabel.string = `${CURRENCY.coin.label} ${profile.coins}`;
+        const count = `${profile.coins}`;
+        if (this._countLabel && this._countLabel.string !== count) {
+            this._countLabel.string = count;
         }
         this.refreshIdentity(profile);
     }
@@ -189,7 +184,23 @@ export class ResourceHeadBar {
         this._backHandler = null;
         this._identity = null;
         this._nameLabel = null;
-        this._avatarGfx = null;
     }
+}
+
+function makeLoginSprite(name: string, parent: Node, path: string, width: number, height: number, x: number, y: number) {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform)!.setContentSize(width, height);
+    node.setPosition(x, y, 0);
+    const sprite = node.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.trim = false;
+    resources.load(path, Texture2D, (error, texture) => {
+        if (!error && texture && node.isValid && sprite.isValid) {
+            const frame = new SpriteFrame();
+            frame.texture = texture;
+            sprite.spriteFrame = frame;
+        }
+    });
+    return node;
 }
 
