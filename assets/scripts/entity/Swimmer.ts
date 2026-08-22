@@ -154,6 +154,10 @@ export class Swimmer extends Component {
         return this._motor.heading;
     }
 
+    get netHeadingTurnRate(): number {
+        return this._motor.headingTurnRate;
+    }
+
     // NETWORKED RACE ONLY: powered long-axis roll state. Both angle and angular
     // velocity are corrected because input replay alone can visibly diverge
     // across JavaScript engines while a side-fall is in progress.
@@ -180,14 +184,29 @@ export class Swimmer extends Component {
 
     // NETWORKED RACE ONLY: ease this swimmer's steering heading toward the host's
     // authoritative value so its facing/steering matches on every client.
-    applyNetHeading(targetHeading: number, blend: number) {
+    applyNetHeading(targetHeading: number, targetTurnRate: number, blend: number) {
         if (!this._motor.isRacing) {
             return;
         }
-        this._motor.correctHeading(targetHeading, blend);
+        // Wall-turn assets are authored from a straight prone frame. A snapshot
+        // sent just before the owner entered the turn can arrive after this copy
+        // has already reset, so never let stale heading momentum leak back into
+        // the scripted turn or its underwater push-off.
+        if (this._phases.isFlipTurnCameraActive) {
+            this._motor.correctHeading(0, 0, 1);
+            return;
+        }
+        this._motor.correctHeading(targetHeading, targetTurnRate, blend);
     }
 
     applyNetAxialRoll(targetRoll: number, targetRollVelocity: number, blend: number) {
+        // Same stale-packet guard as heading above. The local/authoritative turn
+        // already resets roll at entry; remote copies must hold that invariant
+        // until the complete wall-turn underwater phase has ended.
+        if (this._phases.isFlipTurnCameraActive) {
+            this._motor.restoreAxialBalance(0);
+            return;
+        }
         this._motor.correctAxialRoll(targetRoll, targetRollVelocity, blend);
     }
 
@@ -952,7 +971,7 @@ export class Swimmer extends Component {
         }
 
         this._motor.setLateralOffset(this._motor.lateralOffset + correctionZ);
-        this._motor.returnToLaneFromPoolWall();
+        this._motor.returnToLaneFromPoolWall(correctionZ);
         this.node.setPosition(
             this.node.position.x,
             this.node.position.y,

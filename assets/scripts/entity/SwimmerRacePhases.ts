@@ -64,6 +64,7 @@ export class SwimmerRacePhases {
     // swimmer's actual travel direction (lane axis + heading), not straight down
     // the lane. The along-course and lateral (Z) components below come from it.
     private _dolphinHeading = 0;
+    private _dolphinHeadingTurnRate = 0;
     // Lateral (Z) offset from the lane centre at the start of the current stage.
     private _dolphinBaseLateral = 0;
     private _dolphinEntrySpeed = 0;
@@ -593,6 +594,7 @@ export class SwimmerRacePhases {
         this._dolphinElapsed = 0;
         this._dolphinDirection = direction;
         this._dolphinHeading = heading;
+        this._dolphinHeadingTurnRate = motor.headingTurnRate;
         this._dolphinBaseDistance = distance;
         this._dolphinBaseLateral = motor.lateralOffset;
         this._dolphinEntrySpeed = entrySpeed;
@@ -745,7 +747,7 @@ export class SwimmerRacePhases {
         // Restore the launch heading so the underwater glide (and the surfacing
         // swim) keep travelling and facing the jump direction instead of snapping
         // back to the lane axis. beginFlipTurnPhase zeroed it at launch.
-        motor.correctHeading(this._dolphinHeading, 1);
+        motor.correctHeading(this._dolphinHeading, this._dolphinHeadingTurnRate, 1);
         const headingDeg = this._dolphinHeading * 180 / Math.PI;
         const yaw = (this._dolphinDirection > 0 ? 0 : 180) - this._dolphinDirection * headingDeg;
         // Carry over any leftover roll as a residual that unwinds to 0 (shortest

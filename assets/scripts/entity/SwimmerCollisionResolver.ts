@@ -56,7 +56,10 @@ export const SWIMMER_COLLISION = {
     // Degrees/second of roll velocity per 1m/s of the weight-split collision
     // impulse. The contact normal supplies the side and race direction converts
     // the world-space shove into each swimmer's local long-axis convention.
-    axialRollDegreesPerImpulse: 65,
+    axialRollDegreesPerImpulse: 360,
+    // Even a near-centred impact keeps a small deterministic roll lever so a hard
+    // collision cannot look completely dead merely because |normal.z| is tiny.
+    axialRollMinimumLever: 0.35,
 };
 
 // Reused module-scope buffers keep this allocation-free each collision step.
@@ -241,13 +244,25 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     }
                 }
                 if (SWIMMER_COLLISION.axialRollEnabled >= 0.5) {
-                    // Only the side component creates long-axis roll: a perfectly
-                    // centred head-on impact pushes backward but has no artificial
-                    // roll torque. impI/impJ already contain the inverse-weight split.
+                    // The side component supplies the physical lever. Near-centred
+                    // impacts keep a small deterministic minimum so a visibly hard
+                    // collision never produces a completely dead roll response.
+                    // impI/impJ already contain the inverse-weight split.
                     const rollScale = Math.max(0, SWIMMER_COLLISION.axialRollDegreesPerImpulse)
                         * DEG2RAD;
-                    _impRoll[i] += nz * impI * _dir[i] * rollScale;
-                    _impRoll[j] -= nz * impJ * _dir[j] * rollScale;
+                    const minimumLever = Math.max(0, Math.min(1, SWIMMER_COLLISION.axialRollMinimumLever));
+                    // When the side lever is below the artificial minimum, its
+                    // tiny sign is numerical noise and may differ after network
+                    // correction. Use the longitudinal contact side instead. nx/nz
+                    // both reverse when pair order reverses, so the result for each
+                    // swimmer is invariant even though every client lists its own
+                    // player first in the collision array.
+                    const rollSide = Math.abs(nz) >= minimumLever
+                        ? (nz > 0 ? 1 : -1)
+                        : (nx >= 0 ? 1 : -1);
+                    const rollLever = rollSide * Math.max(Math.abs(nz), minimumLever);
+                    _impRoll[i] += rollLever * impI * _dir[i] * rollScale;
+                    _impRoll[j] -= rollLever * impJ * _dir[j] * rollScale;
                 }
             }
         }

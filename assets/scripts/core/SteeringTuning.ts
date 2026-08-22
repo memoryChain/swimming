@@ -1,22 +1,26 @@
 // Steering / "蛇形转向" comedy system tuning.
 // 蛇形转向搞笑系统的手感数值。设计见 docs/imbalance-comedy-design.zh.md。
 //
-// Core idea: a stroke no longer only accelerates — it also nudges the swimmer's
-// heading. A RIGHT-hand stroke turns the body toward +Z ("left"); a LEFT-hand
-// stroke turns toward -Z ("right"). Alternating strokes (or both at once) cancel
-// out and keep a straight line; spamming one side curves the path. Forward race
-// progress is speed*cos(heading), so veering is naturally slower — no extra
-// penalty needed. Lane ropes have no collision; only the pool walls clamp.
+// Core idea: a stroke no longer only accelerates — it also injects heading angular
+// velocity. That velocity survives release and decays through water drag, so the
+// swimmer keeps drawing an arc instead of travelling along one fixed diagonal.
+// Opposite strokes reverse the curvature and naturally produce an S; simultaneous
+// strokes cancel. Forward progress is speed*cos(heading), so veering is slower.
 //
-// 核心：划手不再只是加速，还会给一个转向冲量。右手 → 身体偏向 +Z（"左"），左手 → 偏向
-// -Z（"右"）。左右交替（或同时双划）相互抵消保持直线；连点一侧就画弧。名次进度按
-// speed*cos(heading)，所以歪着游天然更慢，无需额外惩罚。泳道绳无碰撞，只有池壁钳制。
+// 核心：划手给偏航角速度一个冲量。松手后角速度继续存在，朝向持续变化、轨迹继续画弧；
+// 划另一侧会反转曲率，自然形成 S 形。同时双划仍相互抵消，连续同侧则让弯道越来越急。
 export const MAX_STEERING_HEADING_DEGREES = 85;
 
 export const STEERING_TUNING = {
-    // Heading change (degrees) applied by a single arm stroke.
-    // 单手划水施加的转向角（度）。
-    turnPerStroke: 14,
+    // Angular-velocity impulse (degrees/second) from one full-power arm stroke.
+    turnAngularImpulse: 36,
+
+    // Exponential water drag on steering angular velocity. Lower preserves the
+    // curve longer; 0 keeps turning until an opposite stroke or boundary counters it.
+    turnAngularDrag: 0.6,
+
+    // Hard angular-velocity cap for repeated same-side strokes.
+    maxTurnRate: 95,
 
     // Maximum |heading| (degrees). At 65° cos≈0.42, so the swimmer still moves
     // forward (~40% speed) while looking hilariously crooked; it never swims
@@ -26,17 +30,15 @@ export const STEERING_TUNING = {
     maxHeading: 65,
 
 
-    // How fast the actual heading eases toward its target, per second. A stroke
-    // bumps the target on RELEASE; the body then turns GRADUALLY toward it rather
-    // than snapping. Lower = slower, lazier turn; higher = snappier.
-    // 实际朝向向目标靠拢的速率（每秒）。划水在“松手”时改变目标，身体随后逐渐转过去而非瞬间硬转。
-    // 越低转得越慢越懒，越高越干脆。
-    turnEaseRate: 3.5,
+    // Turn the curvature inward after the oriented body touches a pool wall.
+    poolWallHeadingCorrectionRate: 2.5,
+    // Minimum inward-facing angle the wall helper tries to establish before it
+    // stops interfering. This gives the body footprint enough room to detach.
+    poolWallEscapeHeadingDegrees: 14,
 
     // Sustained player kicking offers a forgiving way to recover from a bad
     // heading. Once kick cadence reaches this frequency, the target heading
-    // gradually returns to the lane axis. The body still follows it through
-    // turnEaseRate, so correction never snaps.
+    // gradually returns to the lane axis through a damped angular spring.
     kickStraightenMinCadenceHz: 2.5,
     kickStraightenRate: 0.0,
 
@@ -53,12 +55,11 @@ export const STEERING_TUNING = {
     // weave purely through imperfect input (the AI controller only decides which
     // side to stroke). aiCorrectHeadingRatio = how far off course (fraction of
     // maxHeading) before the AI tries to steer back. aiWanderChance = base chance
-    // a sloppy AI breaks clean alternation (repeats a side) to start a drift;
-    // scaled by (1 - difficulty) so strong AI almost never wanders and stays
-    // straight, weak AI weaves a lot. No separate wobble system.
+    // a sloppy AI breaks clean alternation (repeats a side) to amplify its curve;
+    // scaled by (1 - difficulty), so weak AI weaves much more.
     // AI 转向：对手与玩家共用同一套划水转向，完全靠不完美的输入蛇形（AI 控制器
     // 只决定划哪一侧）。aiCorrectHeadingRatio = 偏离多少（占 maxHeading 比例）后 AI 开始纠偏；
-    // aiWanderChance = 跟 AI 打破整齐交替（重复同侧）开始飘的基础概率，按 (1-难度) 缩放。
+    // aiWanderChance = AI 打破整齐交替（重复同侧）放大偏航的基础概率，按 (1-难度) 缩放。
     aiCorrectHeadingRatio: 0.3,
     aiWanderChance: 0.5,
 

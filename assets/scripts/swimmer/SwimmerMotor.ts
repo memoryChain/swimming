@@ -121,12 +121,10 @@ export class SwimmerMotor {
     private _kickCadenceHz = 0;
     private _lastKickTapClock = -1;
     // Steering (蛇形转向): heading is the yaw offset from straight-ahead, in
-    // radians. A stroke nudges it left/right; forward progress is speed*cos and
-    // the lateral offset accumulates speed*sin. Player AND AI use the same
-    // stroke-driven steering (AI just controls which side it strokes). See
-    // core/SteeringTuning.ts.
+    // radians. A stroke injects yaw angular velocity, which survives release and
+    // keeps bending the path until water drag or an opposite stroke removes it.
     private _heading = 0;
-    private _headingTarget = 0;
+    private _headingTurnRate = 0;
     private _courseDirection = 1;
     private _lateralOffset = 0;
     private _lateralOffsetMin = -1000;
@@ -207,7 +205,7 @@ export class SwimmerMotor {
         this._currentAcceleration = 0;
         // Push off the wall straight ahead; the player steers again after the turn.
         this._heading = 0;
-        this._headingTarget = 0;
+        this._headingTurnRate = 0;
         this._axialRoll.reset();
     }
 
@@ -472,8 +470,9 @@ export class SwimmerMotor {
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
-        if (Math.abs(this._lateralOffset - requestedLateralOffset) > 1e-6) {
-            this.returnToLaneFromPoolWall();
+        const wallCorrection = this._lateralOffset - requestedLateralOffset;
+        if (Math.abs(wallCorrection) > 1e-6) {
+            this.returnToLaneFromPoolWall(wallCorrection);
         }
         this.integrateKnockback(dt, raceDistance);
         if (!options.isAI) {
@@ -523,7 +522,7 @@ export class SwimmerMotor {
         this._kickCadenceHz = 0;
         this._lastKickTapClock = -1;
         this._heading = 0;
-        this._headingTarget = 0;
+        this._headingTurnRate = 0;
         this._lateralOffset = 0;
         this._axialRoll.reset();
     }
@@ -1037,7 +1036,7 @@ export class SwimmerMotor {
     // AI to sense how far off course it is and decide which side to stroke.
     get steeringHeadingRatio(): number {
         const maxHeading = safeMaxHeadingRadians();
-        return maxHeading > 0 ? clamp(this._headingTarget / maxHeading, -1, 1) : 0;
+        return maxHeading > 0 ? clamp(this._heading / maxHeading, -1, 1) : 0;
     }
 
     // The stroke side whose steering nudge pulls the heading back toward straight.
@@ -1045,15 +1044,22 @@ export class SwimmerMotor {
     // anatomical left/right in world space. When already straight either side
     // works; returns the alternation-neutral LEFT.
     correctiveStrokeSide(): StrokeType {
-        const targetSign = this._headingTarget >= 0 ? 1 : -1;
+        const steeringSignal = Math.abs(this._heading) > 1e-4
+            ? this._heading
+            : this._headingTurnRate;
+        const targetSign = steeringSignal >= 0 ? 1 : -1;
         const rollSign = this.axialSteeringProjection() >= 0 ? 1 : -1;
         const leftDirSign = (this._courseDirection >= 0 ? 1 : -1) * rollSign;
-        // We want a stroke whose dir sign is the opposite of the current target.
+        // We want a stroke whose angular impulse opposes the current bend.
         return leftDirSign === -targetSign ? StrokeType.LEFT : StrokeType.RIGHT;
     }
 
     get heading(): number {
         return this._heading;
+    }
+
+    get headingTurnRate(): number {
+        return this._headingTurnRate;
     }
 
     get axialRollRadians(): number {
@@ -1084,16 +1090,19 @@ export class SwimmerMotor {
         this._axialRoll.correct(targetAngle, targetAngularVelocity, blend);
     }
 
-    // NETWORKED RACE: ease the heading (and its steering target) toward the host's
-    // authoritative value. Math.sin/cos differ in the last bits across JS engines
-    // (iOS JavaScriptCore vs Android V8), so headings drift apart otherwise, showing
-    // as "faces one way but swims the other". Setting the target too makes the local
-    // steering ease toward the host instead of the locally-chosen weave.
-    correctHeading(targetHeading: number, blend: number) {
+    // NETWORKED RACE: correct both heading and persistent angular velocity.
+    correctHeading(targetHeading: number, targetTurnRate: number, blend: number) {
         const max = safeMaxHeadingRadians();
         const t = clamp(finiteOr(targetHeading, 0), -max, max);
-        this._heading = clamp(finiteOr(this._heading + (t - this._heading) * clamp(blend, 0, 1), 0), -max, max);
-        this._headingTarget = t;
+        const useBlend = clamp(blend, 0, 1);
+        this._heading = clamp(finiteOr(this._heading + (t - this._heading) * useBlend, 0), -max, max);
+        const maxRate = safeMaxTurnRateRadians();
+        const targetRate = clamp(finiteOr(targetTurnRate, 0), -maxRate, maxRate);
+        this._headingTurnRate = clamp(
+            finiteOr(this._headingTurnRate + (targetRate - this._headingTurnRate) * useBlend, 0),
+            -maxRate,
+            maxRate,
+        );
     }
 
     get lateralOffset(): number {
@@ -1104,10 +1113,25 @@ export class SwimmerMotor {
         this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
     }
 
-    // A pool wall absorbs lateral motion. Clearing the target lets the existing
-    // steering easing return the swimmer to the lane without a visual snap.
-    returnToLaneFromPoolWall() {
-        this._headingTarget = 0;
+    // A pool wall removes only OUTWARD curvature and establishes a small inward
+    // escape angle. The explicit wall-side sign is essential: deriving correction
+    // from -heading flips after crossing zero and sucks the swimmer back to the wall.
+    returnToLaneFromPoolWall(inwardDirection: number) {
+        const inwardSign = inwardDirection >= 0 ? 1 : -1;
+        const correctionRate = Math.max(0, finiteOr(STEERING_TUNING.poolWallHeadingCorrectionRate, 0));
+        const maxRate = safeMaxTurnRateRadians();
+        const escapeHeading = Math.max(0, finiteOr(STEERING_TUNING.poolWallEscapeHeadingDegrees, 0)) * DEG2RAD;
+        const inwardHeading = this._heading * inwardSign;
+        const inwardTurnRate = this._headingTurnRate * inwardSign;
+
+        // Never allow stored angular velocity to rotate back toward the wall while
+        // the oriented footprint is still touching it.
+        let nextInwardRate = Math.max(0, inwardTurnRate);
+        if (inwardHeading < escapeHeading) {
+            const requiredRate = (escapeHeading - inwardHeading) * correctionRate;
+            nextInwardRate = Math.max(nextInwardRate, requiredRate);
+        }
+        this._headingTurnRate = inwardSign * Math.min(maxRate, nextInwardRate);
     }
 
     // Shift race progress by a small amount (used by swimmer-vs-swimmer collision
@@ -1173,28 +1197,36 @@ export class SwimmerMotor {
         }
     }
 
-    // Ease the actual heading toward the stroke-set target so a stroke turns the
-    // body GRADUALLY after release. No auto-recenter: heading only returns toward
-    // straight when the swimmer strokes the other side (player and AI alike).
+    // Integrate persistent yaw angular velocity. A released stroke therefore keeps
+    // bending the path; water drag slowly relaxes curvature instead of freezing the
+    // swimmer onto a fixed diagonal.
     private updateSteering(dt: number) {
         const maxHeading = safeMaxHeadingRadians();
-        // Re-clamp every frame because debug tuning can change while racing and
-        // persisted JSON bypasses the UI slider's min/max metadata.
-        this._headingTarget = clamp(finiteOr(this._headingTarget, 0), -maxHeading, maxHeading);
         this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
-        const ease = Math.max(0, finiteOr(STEERING_TUNING.turnEaseRate, 0));
-        this._heading += ease > 0
-            ? (this._headingTarget - this._heading) * Math.min(1, ease * dt)
-            : (this._headingTarget - this._heading);
-        this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
-        if (Math.abs(this._heading - this._headingTarget) < 1e-4) {
-            this._heading = this._headingTarget;
+        const maxRate = safeMaxTurnRateRadians();
+        this._headingTurnRate = clamp(finiteOr(this._headingTurnRate, 0), -maxRate, maxRate);
+        const step = Math.max(0, dt);
+        this._heading += this._headingTurnRate * step;
+        if (this._heading >= maxHeading) {
+            this._heading = maxHeading;
+            if (this._headingTurnRate > 0) {
+                this._headingTurnRate = 0;
+            }
+        } else if (this._heading <= -maxHeading) {
+            this._heading = -maxHeading;
+            if (this._headingTurnRate < 0) {
+                this._headingTurnRate = 0;
+            }
+        }
+        const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0));
+        this._headingTurnRate *= Math.exp(-drag * step);
+        if (Math.abs(this._headingTurnRate) < 1e-5) {
+            this._headingTurnRate = 0;
         }
     }
 
-    // Rapid player kick taps act as a gradual recovery aid: they pull only the
-    // steering target back toward the lane. updateSteering then eases the body
-    // after it, preserving the existing smooth turn and avoiding a snap.
+    // Optional damped recovery spring toward the lane axis. It defaults to zero,
+    // so normal kicking does not erase the persistent S-curve momentum.
     private updateKickSteeringCorrection(dt: number, options: SwimmerMotorOptions) {
         if (options.isAI) {
             return;
@@ -1207,7 +1239,18 @@ export class SwimmerMotor {
             return;
         }
         const correctionRate = Math.max(0, finiteOr(STEERING_TUNING.kickStraightenRate, 0));
-        this._headingTarget += (0 - this._headingTarget) * Math.min(1, correctionRate * Math.max(0, dt));
+        if (correctionRate <= 0) {
+            return;
+        }
+        const step = Math.max(0, dt);
+        const angularAccel = -this._heading * correctionRate * correctionRate
+            - this._headingTurnRate * correctionRate * 2;
+        const maxRate = safeMaxTurnRateRadians();
+        this._headingTurnRate = clamp(
+            this._headingTurnRate + angularAccel * step,
+            -maxRate,
+            maxRate,
+        );
     }
 
     // Effective underwater pull for one arm, aligned to the authored freestyle
@@ -1223,9 +1266,9 @@ export class SwimmerMotor {
         return smoothPulse01(progress, 0.36, 0.46, 0.78, 0.92);
     }
 
-    // A settled arm stroke nudges the heading TARGET; the actual heading eases
-    // toward it (see updateSteering) so the body turns gradually AFTER release,
-    // not on press. RIGHT hand -> drift toward screen-left; LEFT -> screen-right.
+    // A settled arm stroke injects yaw angular velocity. The velocity survives hand
+    // release and keeps rotating heading, so the path remains curved. Opposite strokes
+    // subtract/reverse that velocity; same-instant opposite strokes cancel exactly.
     // The sign is flipped by lap direction and continuously projected through the
     // current axial roll: it fades to zero side-on, then reverses after capsizing.
     // powerFactor (0..1) scales the turn by how hard/long the stroke was pulled.
@@ -1235,14 +1278,16 @@ export class SwimmerMotor {
         }
         const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
         const factor = minFactor + (1 - minFactor) * clamp01(powerFactor);
-        const turn = Math.max(0, finiteOr(STEERING_TUNING.turnPerStroke, 0)) * DEG2RAD * factor;
-        const maxHeading = safeMaxHeadingRadians();
+        const turnImpulse = Math.max(0, finiteOr(STEERING_TUNING.turnAngularImpulse, 0))
+            * DEG2RAD
+            * factor;
         const dir = (type === StrokeType.LEFT ? 1 : -1) * this._courseDirection;
-        const projectedTurn = turn * this.axialSteeringProjection();
-        this._headingTarget = clamp(
-            finiteOr(this._headingTarget, 0) + dir * projectedTurn,
-            -maxHeading,
-            maxHeading,
+        const signedImpulse = dir * turnImpulse * this.axialSteeringProjection();
+        const maxRate = safeMaxTurnRateRadians();
+        this._headingTurnRate = clamp(
+            finiteOr(this._headingTurnRate, 0) + signedImpulse,
+            -maxRate,
+            maxRate,
         );
     }
 
@@ -1660,6 +1705,10 @@ function finiteOr(value: number, fallback: number): number {
 function safeMaxHeadingRadians(): number {
     const configuredDegrees = Math.max(0, finiteOr(STEERING_TUNING.maxHeading, 65));
     return Math.min(configuredDegrees, MAX_STEERING_HEADING_DEGREES) * DEG2RAD;
+}
+
+function safeMaxTurnRateRadians(): number {
+    return Math.max(0, finiteOr(STEERING_TUNING.maxTurnRate, 95)) * DEG2RAD;
 }
 
 // Map a value into [0, modulo) with a proper positive remainder, used to read a

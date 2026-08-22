@@ -15,7 +15,7 @@
 //   "<senderPos>|<token>;<token>;...|<selfPos>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>".
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>".
 // Position, pose speed, and outcome-affecting ultimate energy ride the RELIABLE lock-step
 // frame channel (not best-effort broadcasts, which drop intermittently), so every client's
 // copy of every human catches up to its owner reliably.
@@ -111,7 +111,7 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)}`;
     }
     return out;
 }
@@ -152,12 +152,14 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const energy = p.length > 6 ? parseInt(p[6], 10) : -1;
                 const rollMrad = p.length > 7 ? parseInt(p[7], 10) : 0;
                 const rollVelMrad = p.length > 8 ? parseInt(p[8], 10) : 0;
+                const headVelMrad = p.length > 9 ? parseInt(p[9], 10) : 0;
                 self = {
                     lane,
                     distance: distCm / 100,
                     lateral: latMm / 1000,
                     finished: fin,
                     heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+                    headingVelocity: Number.isFinite(headVelMrad) ? headVelMrad / 1000 : 0,
                     speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
                     energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
                     axialRoll: Number.isFinite(rollMrad) ? rollMrad / 1000 : 0,

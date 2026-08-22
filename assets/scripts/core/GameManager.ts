@@ -1594,6 +1594,7 @@ export class GameManager extends Component {
                         lateral: swimmer.netLateralOffset,
                         finished: swimmer.distance >= raceDistance,
                         heading: swimmer.netHeading,
+                        headingVelocity: swimmer.netHeadingTurnRate,
                         speed: swimmer.netSpeed,
                         energy: swimmer.ultimate.energy,
                         axialRoll: swimmer.netAxialRoll,
@@ -1641,6 +1642,7 @@ export class GameManager extends Component {
             let targetDist: number;
             let targetLat: number;
             let targetHead: number;
+            let targetHeadVelocity: number;
             let targetSpeed: number;
             let targetRoll: number;
             let targetRollVelocity: number;
@@ -1652,6 +1654,7 @@ export class GameManager extends Component {
                 targetDist = self.distance;
                 targetLat = self.lateral;
                 targetHead = self.heading;
+                targetHeadVelocity = self.headingVelocity;
                 targetSpeed = self.speed;
                 targetRoll = self.axialRoll;
                 targetRollVelocity = self.axialRollVelocity;
@@ -1667,6 +1670,7 @@ export class GameManager extends Component {
                 targetDist = target.distance;
                 targetLat = target.lateral;
                 targetHead = target.heading;
+                targetHeadVelocity = target.headingVelocity;
                 targetSpeed = target.speed;
                 targetRoll = target.axialRoll;
                 targetRollVelocity = target.axialRollVelocity;
@@ -1689,7 +1693,7 @@ export class GameManager extends Component {
                 }
             }
             swimmer.applyNetCorrection(targetDist, targetLat, distBlend, latBlend);
-            swimmer.applyNetHeading(targetHead, headBlend);
+            swimmer.applyNetHeading(targetHead, targetHeadVelocity, headBlend);
             // Roll affects forward efficiency, so remote copies follow the same
             // owner/host authority as position. Velocity preserves visible inertia
             // instead of making a side-fall ease toward a static angle.
@@ -1753,6 +1757,7 @@ export class GameManager extends Component {
             lateral: player.netLateralOffset,
             finished: player.distance >= getRaceDistance(),
             heading: player.netHeading,
+            headingVelocity: player.netHeadingTurnRate,
             speed: player.netSpeed,
             energy: player.ultimate.energy,
             axialRoll: player.netAxialRoll,

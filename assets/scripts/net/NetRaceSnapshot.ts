@@ -9,7 +9,7 @@
 // This module is the pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>;..."
+//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>;..."
 // hostPos   = the seat index (posNum) of the client that produced this snapshot, i.e.
 //             who currently believes it is the authoritative host. Clients use it for
 //             deterministic host migration: if the host goes silent, the lowest
@@ -20,6 +20,7 @@
 // fin       = 1 if that lane has finished, else 0
 // headMrad  = steering heading in milliradians (round(heading*1000)) — facing/weave,
 //             which drifts across JS engines (Math.sin/cos) so must be synced too.
+// headVelMrad = persistent steering angular velocity in milliradians/second.
 // The leading "S|" tag distinguishes snapshots from other broadcast messages.
 
 export interface NetSnapshotEntry {
@@ -28,6 +29,9 @@ export interface NetSnapshotEntry {
     lateral: number;
     finished: boolean;
     heading: number;
+    // Persistent steering angular velocity (rad/s). Appended to the wire format
+    // for backward compatibility; older payloads decode it as zero.
+    headingVelocity: number;
     // Owner's authoritative swim speed (m/s). Drives the tread-water<->freestyle pose on
     // remote copies so the pose follows the owner instead of the remote's local input
     // replay (which jitters over the network → "treading water while sliding forward").
@@ -53,7 +57,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -90,12 +94,14 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const energy = parts.length > 6 ? parseInt(parts[6], 10) : -1;
             const rollMrad = parts.length > 7 ? parseInt(parts[7], 10) : 0;
             const rollVelMrad = parts.length > 8 ? parseInt(parts[8], 10) : 0;
+            const headVelMrad = parts.length > 9 ? parseInt(parts[9], 10) : 0;
             entries.push({
                 lane,
                 distance: distCm / 100,
                 lateral: latMm / 1000,
                 finished: fin,
                 heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+                headingVelocity: Number.isFinite(headVelMrad) ? headVelMrad / 1000 : 0,
                 speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
                 energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
                 axialRoll: Number.isFinite(rollMrad) ? rollMrad / 1000 : 0,
@@ -114,11 +120,11 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // and drifting. Same field layout as one snapshot entry (incl. speed + energy), so it
 // also carries authoritative pose-speed and ultimate energy — required in broadcast-only
 // mode (iOS high-performance+), where these can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -142,12 +148,14 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const energy = parts.length > 6 ? parseInt(parts[6], 10) : -1;
     const rollMrad = parts.length > 7 ? parseInt(parts[7], 10) : 0;
     const rollVelMrad = parts.length > 8 ? parseInt(parts[8], 10) : 0;
+    const headVelMrad = parts.length > 9 ? parseInt(parts[9], 10) : 0;
     return {
         lane,
         distance: distCm / 100,
         lateral: latMm / 1000,
         finished: fin,
         heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
+        headingVelocity: Number.isFinite(headVelMrad) ? headVelMrad / 1000 : 0,
         speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
         energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
         axialRoll: Number.isFinite(rollMrad) ? rollMrad / 1000 : 0,

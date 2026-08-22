@@ -174,14 +174,13 @@ export class AxialRollModel {
 
     get forwardScale(): number {
         const tuning = AXIAL_ROLL_TUNING;
-        const absoluteAngle = Math.abs(this.angleDegrees);
-        // Propulsion loss depends on distance from the NEAREST stable state.
-        // Both prone (0°) and supine (180°) therefore regain full efficiency;
-        // side-on around 90° is the slowest point.
-        const magnitude = Math.min(absoluteAngle, Math.max(0, 180 - absoluteAngle));
-        const start = Math.max(0, finite(tuning.speedPenaltyStartDegrees));
-        const full = Math.max(start + 0.01, finite(tuning.speedPenaltyFullDegrees));
-        const ratio = smoothStep(clamp01((magnitude - start) / (full - start)));
+        // Absolute roll angle does NOT decide speed. Hydrodynamic waste follows
+        // tumbling intensity, so crossing 90° cannot suddenly switch from slow to
+        // fast; efficiency returns only as angular velocity settles near either face.
+        const angularSpeed = Math.abs(this._angularVelocity) * RAD2DEG;
+        const start = Math.max(0, finite(tuning.tumblePenaltyStartAngularSpeed));
+        const full = Math.max(start + 0.01, finite(tuning.tumblePenaltyFullAngularSpeed));
+        const ratio = smoothStep(clamp01((angularSpeed - start) / (full - start)));
         return lerp(1, clamp01(finite(tuning.minForwardScale)), ratio);
     }
 }

@@ -23,7 +23,9 @@ export const AXIAL_ROLL_TUNING = {
     capsizeTorque: 90,
     angularDrag: 0.5,
     kickAngularDragPerHz: 0.05,
-    maxAngularSpeed: 230,
+    // High enough for collision-launched multi-turn tumbles. Normal arm torque is
+    // much weaker and remains self-limited by water drag, so it does not hit this cap.
+    maxAngularSpeed: 720,
 
     // Virtual shoulder probes. The raised/out-of-water arm loses catch torque;
     // the submerged opposite arm becomes the effective recovery input.
@@ -35,9 +37,10 @@ export const AXIAL_ROLL_TUNING = {
     // articulation. Whole-body orientation comes from the physics state.
     proceduralRollDegrees: 7,
 
-    // Distance from the nearest stable face wastes propulsion. Supine recovers
-    // full efficiency; the side-on transition is slowest.
-    speedPenaltyStartDegrees: 32,
-    speedPenaltyFullDegrees: 72,
+    // Propulsion loss comes from active tumbling, not absolute body angle. A still
+    // prone, supine, or side-on swimmer therefore has no artificial angle penalty;
+    // fast angular motion creates temporary hydrodynamic waste until it settles.
+    tumblePenaltyStartAngularSpeed: 35,
+    tumblePenaltyFullAngularSpeed: 140,
     minForwardScale: 0.22,
 };
