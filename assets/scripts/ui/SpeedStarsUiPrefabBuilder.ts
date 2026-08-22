@@ -1,10 +1,12 @@
-import { Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Layout, Node, Prefab, resources, Sprite, SpriteFrame, sys, UITransform, view, Widget } from 'cc';
+import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
 import { makeButton, makeLabel, makeOutlineButton, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
+
+const SHOW_LOGIN_DEBUG_ENTRIES = false;
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
@@ -36,27 +38,43 @@ export type SpeedStarsStartUiRefs = {
     startScreen: Node;
 };
 
+type LoginTextures = {
+    background: Texture2D;
+    logo: Texture2D;
+    primaryButton: Texture2D;
+    primaryArrow: Texture2D;
+    onlineButton: Texture2D;
+    onlineIcon: Texture2D;
+};
+
 export class SpeedStarsStartUiPrefabBuilder {
     constructor(private readonly _callbacks: SpeedStarsStartUiCallbacks) {}
 
     build(parent: Node, _w: number, _h: number, done: (error: Error | null, refs?: SpeedStarsStartUiRefs) => void) {
-        loadSpeedStarsPrefab((error, prefab) => {
-            if (error || !prefab) {
-                done(error ?? new Error('SpeedStars UI prefab is missing'));
+        loadLoginTextures((artError, art) => {
+            if (artError || !art) {
+                done(artError ?? new Error('Login UI artwork is missing'));
                 return;
             }
-            try {
-                const root = instantiateRoot(parent, prefab);
-                const startScreen = requireNode(root, 'StartScreen');
-                layoutStartScreen(root, startScreen);
-                const raceHud = requireNode(root, 'RaceHUD');
-                raceHud.active = false;
-                raceHud.destroy();
-                bindStartScreen(startScreen, this._callbacks);
-                done(null, { root, startScreen });
-            } catch (buildError) {
-                done(buildError instanceof Error ? buildError : new Error(`${buildError}`));
-            }
+            loadSpeedStarsPrefab((error, prefab) => {
+                if (error || !prefab) {
+                    done(error ?? new Error('SpeedStars UI prefab is missing'));
+                    return;
+                }
+                try {
+                    const root = instantiateRoot(parent, prefab);
+                    const startScreen = requireNode(root, 'StartScreen');
+                    applyLoginArtwork(startScreen, art);
+                    layoutStartScreen(root, startScreen);
+                    const raceHud = requireNode(root, 'RaceHUD');
+                    raceHud.active = false;
+                    raceHud.destroy();
+                    bindStartScreen(startScreen, this._callbacks);
+                    done(null, { root, startScreen });
+                } catch (buildError) {
+                    done(buildError instanceof Error ? buildError : new Error(`${buildError}`));
+                }
+            });
         });
     }
 }
@@ -501,20 +519,105 @@ function layoutStartScreen(root: Node, startScreen: Node) {
     fitNodeToVisibleScreen(root);
     fitNodeToVisibleScreen(startScreen);
 
-    // The current start artwork was authored as a portrait texture. Scale it
-    // uniformly like CSS `cover` so landscape screens are filled without
-    // stretching swimmers or venue details. The excess top/bottom is cropped.
+    // The approved login PSD uses a 1280x720 design canvas. Keep the background
+    // in cover mode, while the logo/actions use one uniform center-anchored
+    // scale so wider/taller phones never stretch the authored artwork.
     const background = requireNode(startScreen, 'StartShade');
     const transform = background.getComponent(UITransform);
     const visibleSize = view.getVisibleSize();
-    if (transform && transform.contentSize.width > 0 && transform.contentSize.height > 0) {
+    if (transform) {
+        transform.setContentSize(1280, 720);
         const coverScale = Math.max(
-            visibleSize.width / transform.contentSize.width,
-            visibleSize.height / transform.contentSize.height,
+            visibleSize.width / 1280,
+            visibleSize.height / 720,
         );
         background.setPosition(0, 0, background.position.z);
         background.setScale(coverScale, coverScale, background.scale.z);
     }
+
+    const artScale = Math.min(visibleSize.width / 1280, visibleSize.height / 720);
+    layoutPsdNode(requireNode(startScreen, 'TitlePlate'), 28, 157, 608, 262, artScale);
+    layoutPsdNode(requireNode(startScreen, 'StartButton'), -0.5, -151.5, 373, 119, artScale);
+    layoutPsdNode(requireNode(startScreen, 'ModelDebugButton'), 0.5, -243.5, 149, 57, artScale);
+
+    // These belong to the previous start-screen composition. The PSD-derived
+    // logo and buttons replace them without rebuilding the stable prefab tree.
+    for (const name of ['SpeedBackPlate', 'Logo', 'Kicker', 'Controls', 'SwimLogo']) {
+        const node = findNode(startScreen, name);
+        if (node?.active) {
+            node.active = false;
+        }
+    }
+}
+
+function applyLoginArtwork(startScreen: Node, art: LoginTextures) {
+    setSpriteTexture(requireNode(startScreen, 'StartShade'), art.background);
+
+    const logo = requireNode(startScreen, 'TitlePlate');
+    setSpriteTexture(logo, art.logo);
+
+    const primary = requireNode(startScreen, 'StartButton');
+    setSpriteTexture(primary, art.primaryButton);
+    configurePsdButton(primary);
+    const primaryLabel = primary.getChildByName('Label')?.getComponent(Label);
+    if (primaryLabel) {
+        stylePsdLabel(primaryLabel, '开游', 40, uiColor(0, 29, 65), 110, 50, 0, 0.5);
+    }
+    makePsdSprite('PrimaryArrow', primary, art.primaryArrow, 38, 38, 122.5, -0.5);
+
+    const online = requireNode(startScreen, 'ModelDebugButton');
+    setSpriteTexture(online, art.onlineButton);
+    configurePsdButton(online);
+    const onlineLabel = online.getChildByName('Label')?.getComponent(Label);
+    if (onlineLabel) {
+        stylePsdLabel(onlineLabel, '联机', 23, uiColor(0, 29, 65), 60, 34, 13, -0.5);
+    }
+    makePsdSprite('OnlineIcon', online, art.onlineIcon, 28, 21, -32.5, 1);
+}
+
+function setSpriteTexture(node: Node, texture: Texture2D) {
+    const sprite = node.getComponent(Sprite) || node.addComponent(Sprite);
+    const frame = new SpriteFrame();
+    frame.texture = texture;
+    sprite.spriteFrame = frame;
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.trim = false;
+}
+
+function makePsdSprite(name: string, parent: Node, texture: Texture2D, width: number, height: number, x: number, y: number) {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform)!.setContentSize(width, height);
+    setSpriteTexture(node, texture);
+    node.setPosition(x, y, 1);
+}
+
+function stylePsdLabel(label: Label, text: string, fontSize: number, color: Color, width: number, height: number, x: number, y: number) {
+    label.string = text;
+    label.fontFamily = 'PingFang SC';
+    label.fontSize = fontSize;
+    label.lineHeight = Math.ceil(fontSize * 1.25);
+    label.isBold = true;
+    label.color = color;
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    label.overflow = Label.Overflow.SHRINK;
+    label.node.getComponent(UITransform)?.setContentSize(width, height);
+    label.node.setPosition(x, y, 1);
+    label.node.active = true;
+}
+
+function configurePsdButton(node: Node) {
+    const button = node.getComponent(Button) || node.addComponent(Button);
+    button.target = node;
+    button.transition = Button.Transition.SCALE;
+    button.zoomScale = 0.96;
+    button.duration = 0.08;
+}
+
+function layoutPsdNode(node: Node, x: number, y: number, width: number, height: number, scale: number) {
+    node.getComponent(UITransform)?.setContentSize(width, height);
+    node.setPosition(x * scale, y * scale, node.position.z);
+    node.setScale(scale, scale, node.scale.z);
 }
 
 function raceSafeTopInset(): number {
@@ -568,6 +671,39 @@ function loadSpeedStarsPrefab(done: (error: Error | null, prefab?: Prefab) => vo
     });
 }
 
+function loadLoginTextures(done: (error: Error | null, art?: LoginTextures) => void) {
+    const paths = RESOURCE_PATHS.loginUi;
+    const entries: Array<[keyof LoginTextures, string]> = [
+        ['background', paths.background],
+        ['logo', paths.logo],
+        ['primaryButton', paths.primaryButton],
+        ['primaryArrow', paths.primaryArrow],
+        ['onlineButton', paths.onlineButton],
+        ['onlineIcon', paths.onlineIcon],
+    ];
+    const art = {} as LoginTextures;
+    let remaining = entries.length;
+    let settled = false;
+    for (const [key, path] of entries) {
+        resources.load(path, Texture2D, (error, texture) => {
+            if (settled) {
+                return;
+            }
+            if (error || !texture) {
+                settled = true;
+                done(new Error(`Failed to load ${path}: ${error?.message ?? 'missing SpriteFrame'}`));
+                return;
+            }
+            art[key] = texture;
+            remaining--;
+            if (remaining === 0) {
+                settled = true;
+                done(null, art);
+            }
+        });
+    }
+}
+
 function instantiateRoot(parent: Node, prefab: Prefab): Node {
     const root = instantiate(prefab);
     root.name = 'SpeedStarsUI';
@@ -586,118 +722,43 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     requireNode(startScreen, 'DistanceModeLabel').active = false;
 
     const startButton = requireNode(startScreen, 'StartButton');
-    const startLabel = startButton.getChildByName('Label')?.getComponent(Label);
-    if (startLabel) startLabel.string = '准备比赛';
     startButton.on(Node.EventType.TOUCH_END, callbacks.onStart);
 
-    // Secondary entries share the unified outline style so they don't fight
-    // the primary start button artwork for attention.
-    const roomButton = makeOutlineButton('RoomButton', startScreen, 240, 58, UI_STYLE.panelAlt, '联机房间', UI_STYLE.cyanOutline, 10);
+    // Reuse the prefab's second sprite-backed button for the separately exported
+    // optional online action. This keeps the PSD hierarchy stable at runtime.
+    const roomButton = requireNode(startScreen, 'ModelDebugButton');
+    roomButton.name = 'RoomButton';
     roomButton.on(Node.EventType.TOUCH_END, callbacks.onRoom);
 
-    const modelDebug = requireNode(startScreen, 'ModelDebugButton');
-    modelDebug.active = EDITOR;
-    modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
+    // Keep the editor-only model entry available, but outside the production
+    // composition so it never displaces the approved primary/secondary actions.
+    if (EDITOR && SHOW_LOGIN_DEBUG_ENTRIES) {
+        const modelDebug = makeOutlineButton('ModelDebugButton', startScreen, 170, 42, uiColor(40, 46, 56, 200), '模型调试', uiColor(150, 160, 175, 140), 10);
+        modelDebug.setPosition(-view.getVisibleSize().width / 2 + 101, -view.getVisibleSize().height / 2 + 29, 0);
+        modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
+    }
 
     // 100m AI-debug 1v1 entry. Not a shipping feature, so park it in the
     // bottom-right corner instead of the main menu flow.
-    const aiDebug = makeOutlineButton('AiDebugStartButton', startScreen, 200, 46, uiColor(40, 46, 56, 200), '100m AI 调试', uiColor(150, 160, 175, 140), 12);
-    aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
-    const aiDebugTransform = aiDebug.getComponent(UITransform)!;
-    const visibleSize = view.getVisibleSize();
-    aiDebug.setPosition(
-        visibleSize.width / 2 - 16 - aiDebugTransform.contentSize.width / 2,
-        -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height / 2,
-        0,
-    );
+    if (EDITOR && SHOW_LOGIN_DEBUG_ENTRIES) {
+        const aiDebug = makeOutlineButton('AiDebugStartButton', startScreen, 200, 46, uiColor(40, 46, 56, 200), '100m AI 调试', uiColor(150, 160, 175, 140), 12);
+        aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
+        const aiDebugTransform = aiDebug.getComponent(UITransform)!;
+        const visibleSize = view.getVisibleSize();
+        aiDebug.setPosition(
+            visibleSize.width / 2 - 16 - aiDebugTransform.contentSize.width / 2,
+            -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height / 2,
+            0,
+        );
 
-    // Underwater-effect tuning scene entry, parked just above the AI-debug button
-    // in the bottom-right corner. Launches a dedicated scene where the player
-    // flutter-kicks underwater and laps back and forth for tuning the submerged
-    // water look without playing a full race.
-    const underwaterDebug = makeOutlineButton('UnderwaterDebugButton', startScreen, 200, 46, uiColor(28, 50, 70, 200), '水下效果调试', uiColor(90, 160, 210, 150), 12);
-    underwaterDebug.on(Node.EventType.TOUCH_END, callbacks.onUnderwaterDebug);
-    const underwaterDebugTransform = underwaterDebug.getComponent(UITransform)!;
-    underwaterDebug.setPosition(
-        visibleSize.width / 2 - 16 - underwaterDebugTransform.contentSize.width / 2,
-        -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height + 12 + underwaterDebugTransform.contentSize.height / 2,
-        0,
-    );
-
-    // Arrange the difficulty row and the action buttons with Layout + Widget so the
-    // engine handles spacing, centring and screen-fit instead of hand-written
-    // coordinates. Editor-only debug buttons are inactive off-editor and Layout
-    // skips them automatically.
-    applyResponsiveStartMenu(
-        startScreen,
-        [],
-        [startButton, roomButton, modelDebug],
-    );
-
-    // Lift the bottom hint strip fully inside the visible area: the prefab parks
-    // it half off the bottom edge (y=-358 on a 720-tall design), which crops it.
-    const controls = startScreen.getChildByName('Controls');
-    const controlsTransform = controls?.getComponent(UITransform);
-    if (controls && controlsTransform) {
-        const margin = 14;
-        controls.setPosition(0, -view.getVisibleSize().height / 2 + controlsTransform.contentSize.height / 2 + margin, 0);
-    }
-}
-
-// Build Layout containers for the start-menu buttons: a horizontal difficulty row
-// stacked above a vertical action column, wrapped in one vertical block that a
-// Widget keeps horizontally centred and that is uniformly scaled to fit the
-// visible area. This keeps every button on screen for any aspect ratio without
-// per-button coordinates.
-function applyResponsiveStartMenu(startScreen: Node, difficultyNodes: Node[], actionNodes: Node[]) {
-    const menu = makeUiNode('StartMenu', startScreen);
-    const menuLayout = menu.addComponent(Layout);
-    menuLayout.type = Layout.Type.VERTICAL;
-    menuLayout.resizeMode = Layout.ResizeMode.CONTAINER;
-    menuLayout.spacingY = 26;
-
-    const difficultyRow = makeUiNode('DifficultyRow', menu);
-    const rowLayout = difficultyRow.addComponent(Layout);
-    rowLayout.type = Layout.Type.HORIZONTAL;
-    rowLayout.resizeMode = Layout.ResizeMode.CONTAINER;
-    rowLayout.spacingX = 22;
-    for (const node of difficultyNodes) {
-        node.setParent(difficultyRow);
-        node.setPosition(0, 0, 0);
+        const underwaterDebug = makeOutlineButton('UnderwaterDebugButton', startScreen, 200, 46, uiColor(28, 50, 70, 200), '水下效果调试', uiColor(90, 160, 210, 150), 12);
+        underwaterDebug.on(Node.EventType.TOUCH_END, callbacks.onUnderwaterDebug);
+        const underwaterDebugTransform = underwaterDebug.getComponent(UITransform)!;
+        underwaterDebug.setPosition(
+            visibleSize.width / 2 - 16 - underwaterDebugTransform.contentSize.width / 2,
+            -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height + 12 + underwaterDebugTransform.contentSize.height / 2,
+            0,
+        );
     }
 
-    const actionColumn = makeUiNode('ActionColumn', menu);
-    const columnLayout = actionColumn.addComponent(Layout);
-    columnLayout.type = Layout.Type.VERTICAL;
-    columnLayout.resizeMode = Layout.ResizeMode.CONTAINER;
-    columnLayout.spacingY = 16;
-    for (const node of actionNodes) {
-        node.setParent(actionColumn);
-        node.setPosition(0, 0, 0);
-    }
-
-    const widget = menu.addComponent(Widget);
-    widget.isAlignHorizontalCenter = true;
-    widget.horizontalCenter = 0;
-
-    // Force an immediate pass so container sizes are known before we fit them.
-    rowLayout.updateLayout();
-    columnLayout.updateLayout();
-    menuLayout.updateLayout();
-
-    const visibleSize = view.getVisibleSize();
-    const halfH = visibleSize.height / 2;
-    // Reserve the top for the title art and leave a little room at the bottom.
-    const topBound = Math.min(120, halfH - 20);
-    const bottomBound = -halfH + 48;
-    const areaWidth = Math.max(1, visibleSize.width - 40);
-    const areaHeight = Math.max(1, topBound - bottomBound);
-
-    const menuTransform = menu.getComponent(UITransform);
-    const menuWidth = Math.max(1, menuTransform?.contentSize.width ?? 1);
-    const menuHeight = Math.max(1, menuTransform?.contentSize.height ?? 1);
-    const fit = Math.min(1, areaWidth / menuWidth, areaHeight / menuHeight);
-    menu.setScale(fit, fit, 1);
-    menu.setPosition(0, (topBound + bottomBound) / 2, menu.position.z);
-    widget.updateAlignment();
 }

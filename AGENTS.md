@@ -44,6 +44,12 @@ Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `L
 - **A data/profile change does not automatically justify a whole-screen rebuild.** Update the specific labels, counters, enabled states, or cards whose input changed. Structural rebuild is reserved for an actual change in hierarchy/card count/layout schema and should be commented with the reason.
 - Before finishing UI work, repeatedly toggle every option and verify: node/component counts stay stable, callbacks fire once, selected-state visuals are correct, scroll/rotation/focus are preserved, active animations remain continuous, and memory does not grow. For previews, explicitly test that unrelated UI changes do not reload the model or restart its action.
 
+## UI Asset Replacement And Validation
+
+- **Do not automatically launch or restart Cocos Creator after replacing UI assets.** Validate the files, dimensions, alpha channel, metadata, resource paths, texture policy, and relevant code through non-GUI checks. Only open Cocos Creator when the user explicitly asks for it.
+- **Never take screenshots of Cocos Creator for UI validation.** Do not use editor-window screenshots, preview-window screenshots launched from Cocos Creator, or screen-capture automation against Cocos Creator. If visual confirmation inside the engine is required, ask the user to verify it in their existing editor session or use another user-approved validation method.
+- **Never bake button text into a raster UI asset.** Export and import each button background, icon, and text separately. When creating an export smart object for a button background or icon, hide the text layers first. Keep button copy as an editable Cocos `Label` so localization and runtime state changes do not require replacing artwork.
+
 ## Mobile Input
 
 - The current mobile race input is full-screen tap/hold. The invisible left and right screen halves map directly to `LEFT` and `RIGHT` strokes.
