@@ -611,11 +611,6 @@ export class GameFlowController {
         // Freeze the last charge value through the crouch/extension anticipation.
         // Swimmer.performDive switches it to the release burst on the exact
         // take-off frame, so there is no empty visual gap after input release.
-        // Broadcast the dive to remote clients HERE (not in handleDiveRelease) so BOTH
-        // the manual release AND the countdown-end auto-dive reach the network — an
-        // auto-dived player must still start moving on every other screen. Exactly-once
-        // per real commit (guarded above); a cheap no-op in single-player.
-        captureNetInput({ kind: NetInputKind.DiveRelease, power: charge });
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power);
         this._refs.raceCameraDirector.startDiveShot();
@@ -624,6 +619,14 @@ export class GameFlowController {
         if (diveSpeedScale !== 1) {
             diveResult.launchSpeed *= diveSpeedScale;
         }
+        // Publish the final owner-authoritative result only after progression has
+        // adjusted it. This covers manual and countdown-end dives and keeps older
+        // clients compatible because the launch-speed suffix is optional.
+        captureNetInput({
+            kind: NetInputKind.DiveRelease,
+            power,
+            launchSpeed: diveResult.launchSpeed,
+        });
         this._refs.applyPlayerDive(diveResult);
         this._refs.raceManager?.startFromDive(diveResult);
     }

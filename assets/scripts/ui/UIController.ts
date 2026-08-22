@@ -689,23 +689,33 @@ export class UIController extends Component {
     }
 
     private animateCoinGain(result: { coinsGained: number }, coinLabel: Label) {
+        if (!coinLabel?.node?.isValid) {
+            return;
+        }
         const counter = { value: 0 };
         this._progressionTweenCounter = counter;
+        let lastShown = -1;
         const duration = Math.min(1.2, 0.5 + result.coinsGained / 600);
         tween(counter)
             .to(duration, { value: result.coinsGained }, {
                 onUpdate: () => {
-                    if (!coinLabel.node.isValid) {
+                    if (!coinLabel?.node?.isValid) {
                         return;
                     }
-                    coinLabel.string = '+' + Math.round(counter.value) + ' 金币';
+                    const rounded = Math.round(counter.value);
+                    if (rounded !== lastShown) {
+                        lastShown = rounded;
+                        coinLabel.string = '+' + rounded + ' 金币';
+                    }
                 },
             })
             .call(() => {
-                if (!coinLabel.node.isValid) {
+                if (!coinLabel?.node?.isValid) {
                     return;
                 }
-                coinLabel.string = '+' + result.coinsGained + ' 金币';
+                if (lastShown !== result.coinsGained) {
+                    coinLabel.string = '+' + result.coinsGained + ' 金币';
+                }
             })
             .start();
     }
@@ -716,7 +726,15 @@ export class UIController extends Component {
             this._progressionTweenCounter = null;
         }
         if (this._progressionNode) {
-            this._progressionNode.destroy();
+            const panel = this._progressionNode;
+            Tween.stopAllByTarget(panel);
+            if (panel.isValid) {
+                const opacity = panel.getComponent(UIOpacity);
+                if (opacity) {
+                    Tween.stopAllByTarget(opacity);
+                }
+                panel.destroy();
+            }
             this._progressionNode = null;
         }
     }

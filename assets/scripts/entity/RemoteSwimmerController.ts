@@ -65,20 +65,24 @@ export class RemoteSwimmerController extends Component {
                 swimmer.applyAcceptedNetDolphinJump();
                 break;
             case NetInputKind.DiveRelease:
-                this.performDive(swimmer, event.power ?? 0);
+                this.performDive(swimmer, event.power ?? 0, event.launchSpeed);
                 break;
             default:
                 break;
         }
     }
 
-    private performDive(swimmer: Swimmer, power: number): void {
+    private performDive(swimmer: Swimmer, power: number, launchSpeed?: number): void {
         if (this._dived) {
             return;
         }
         this._dived = true;
         this._diveStartedAt = Date.now();
-        swimmer.performDive(resolveDiveResult(Math.max(0, Math.min(1, power))));
+        const result = resolveDiveResult(Math.max(0, Math.min(1, power)));
+        if (Number.isFinite(launchSpeed) && (launchSpeed ?? -1) >= 0) {
+            result.launchSpeed = Math.max(0, launchSpeed ?? 0);
+        }
+        swimmer.performDive(result);
     }
 
     // Whether this swimmer's dive has been triggered (via a replayed DiveRelease or the

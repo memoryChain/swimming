@@ -33,7 +33,7 @@ export const enum NetInputKind {
     HeldOn = 'h',      // stroke-held begin
     HeldOff = 'H',     // stroke-held end
     DiveCharge = 'c',  // dive charge start (countdown/diving)
-    DiveRelease = 'r', // dive release (carries charge power)
+    DiveRelease = 'r', // dive release (carries final power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
 }
 
@@ -41,8 +41,11 @@ export interface NetInputEvent {
     kind: NetInputKind;
     // Present for Stroke / Kick / HeldOn / HeldOff.
     side?: NetInputSide;
-    // Present for DiveRelease: the 0..1 charge power at release.
+    // Present for DiveRelease: the final normalized 0..1 dive power.
     power?: number;
+    // Present for newer DiveRelease payloads: the owner's final progression-adjusted
+    // launch speed in m/s. Optional so older payloads keep decoding correctly.
+    launchSpeed?: number;
 }
 
 export interface DecodedInputFrame {
@@ -58,6 +61,7 @@ const HEADER_SEP = '|';
 // Dive power is quantized to integer per-mille so it stays deterministic across
 // clients (no float formatting differences) and compact.
 const POWER_SCALE = 1000;
+const SPEED_SCALE = 100;
 
 function encodeEvent(event: NetInputEvent): string {
     switch (event.kind) {
@@ -72,6 +76,10 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DolphinJump;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
+            if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
+                const launchSpeed = Math.max(0, Math.round((event.launchSpeed ?? 0) * SPEED_SCALE));
+                return `${NetInputKind.DiveRelease}${power},${launchSpeed}`;
+            }
             return `${NetInputKind.DiveRelease}${power}`;
         }
         default:
@@ -95,9 +103,13 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.DolphinJump:
             return { kind };
         case NetInputKind.DiveRelease: {
-            const raw = parseInt(token.slice(1), 10);
+            const values = token.slice(1).split(',');
+            const raw = parseInt(values[0], 10);
             const power = Number.isFinite(raw) ? Math.max(0, Math.min(1, raw / POWER_SCALE)) : 0;
-            return { kind, power };
+            const launchSpeedCms = values.length > 1 ? parseInt(values[1], 10) : -1;
+            return Number.isFinite(launchSpeedCms) && launchSpeedCms >= 0
+                ? { kind, power, launchSpeed: launchSpeedCms / SPEED_SCALE }
+                : { kind, power };
         }
         default:
             return null;

@@ -342,6 +342,7 @@ export class GameManager extends Component {
 
     onDestroy() {
         this._raceUiBuilder?.resetInputState();
+        this._uiController?.hideProgressionResult();
         this._inputRouter?.unbind();
         this._netRaceController?.dispose();
         this._netRaceController = null;
