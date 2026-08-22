@@ -23,6 +23,8 @@
 *.toml      text eol=crlf
 *.url       text eol=crlf
 *.txt       text eol=crlf
+*.bat       text eol=crlf
+*.command   text eol=lf
 .gitignore      text eol=crlf
 .gitattributes  text eol=crlf
 .editorconfig   text eol=crlf
