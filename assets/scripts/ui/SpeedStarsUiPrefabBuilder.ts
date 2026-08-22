@@ -3,10 +3,7 @@ import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
-import { makeButton, makeLabel, makeOutlineButton, makeUiNode, uiColor } from './RuntimeUiFactory';
-import { UI_STYLE } from './UIStyle';
-
-const SHOW_LOGIN_DEBUG_ENTRIES = false;
+import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
@@ -728,37 +725,59 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     // optional online action. This keeps the PSD hierarchy stable at runtime.
     const roomButton = requireNode(startScreen, 'ModelDebugButton');
     roomButton.name = 'RoomButton';
+
+    // Auxiliary entries use the same artwork and press state as the current online
+    // button. Scene-effect preview is available in every runtime; model debug stays
+    // editor-only. Keep them in a separate bottom-right stack so they never move or
+    // rebuild the production login actions.
+    const bottomRightButtons: Node[] = [];
+    if (EDITOR) {
+        const modelDebug = cloneLoginSecondaryButton(roomButton, 'ModelDebugButton', '模型调试', callbacks.onModelDebug);
+        bottomRightButtons.push(modelDebug);
+    }
+    const sceneEffectPreview = cloneLoginSecondaryButton(roomButton, 'UnderwaterDebugButton', '场景效果预览', callbacks.onUnderwaterDebug);
+    bottomRightButtons.push(sceneEffectPreview);
+    layoutBottomRightDebugButtons(bottomRightButtons);
     roomButton.on(Node.EventType.TOUCH_END, callbacks.onRoom);
+}
 
-    // Keep the editor-only model entry available, but outside the production
-    // composition so it never displaces the approved primary/secondary actions.
-    if (EDITOR && SHOW_LOGIN_DEBUG_ENTRIES) {
-        const modelDebug = makeOutlineButton('ModelDebugButton', startScreen, 170, 42, uiColor(40, 46, 56, 200), '模型调试', uiColor(150, 160, 175, 140), 10);
-        modelDebug.setPosition(-view.getVisibleSize().width / 2 + 101, -view.getVisibleSize().height / 2 + 29, 0);
-        modelDebug.on(Node.EventType.TOUCH_END, callbacks.onModelDebug);
+function cloneLoginSecondaryButton(template: Node, name: string, text: string, onClick: () => void): Node {
+    const button = instantiate(template);
+    button.name = name;
+    button.setParent(template.parent);
+    configurePsdButton(button);
+
+    const label = button.getChildByName('Label')?.getComponent(Label);
+    if (label) {
+        stylePsdLabel(label, text, 20, uiColor(0, 29, 65), 125, 34, 0, -0.5);
     }
-
-    // 100m AI-debug 1v1 entry. Not a shipping feature, so park it in the
-    // bottom-right corner instead of the main menu flow.
-    if (EDITOR && SHOW_LOGIN_DEBUG_ENTRIES) {
-        const aiDebug = makeOutlineButton('AiDebugStartButton', startScreen, 200, 46, uiColor(40, 46, 56, 200), '100m AI 调试', uiColor(150, 160, 175, 140), 12);
-        aiDebug.on(Node.EventType.TOUCH_END, callbacks.onAiDebug);
-        const aiDebugTransform = aiDebug.getComponent(UITransform)!;
-        const visibleSize = view.getVisibleSize();
-        aiDebug.setPosition(
-            visibleSize.width / 2 - 16 - aiDebugTransform.contentSize.width / 2,
-            -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height / 2,
-            0,
-        );
-
-        const underwaterDebug = makeOutlineButton('UnderwaterDebugButton', startScreen, 200, 46, uiColor(28, 50, 70, 200), '水下效果调试', uiColor(90, 160, 210, 150), 12);
-        underwaterDebug.on(Node.EventType.TOUCH_END, callbacks.onUnderwaterDebug);
-        const underwaterDebugTransform = underwaterDebug.getComponent(UITransform)!;
-        underwaterDebug.setPosition(
-            visibleSize.width / 2 - 16 - underwaterDebugTransform.contentSize.width / 2,
-            -visibleSize.height / 2 + 16 + aiDebugTransform.contentSize.height + 12 + underwaterDebugTransform.contentSize.height / 2,
-            0,
-        );
+    const onlineIcon = button.getChildByName('OnlineIcon');
+    if (onlineIcon?.active) {
+        onlineIcon.active = false;
     }
+    button.on(Node.EventType.TOUCH_END, onClick);
+    return button;
+}
 
+function layoutBottomRightDebugButtons(buttons: Node[]) {
+    const visibleSize = view.getVisibleSize();
+    const safeArea = sys.getSafeAreaRect(false);
+    const rightInset = Math.max(0, visibleSize.width - safeArea.x - safeArea.width);
+    const bottomInset = Math.max(0, safeArea.y);
+    const margin = 16;
+    const gap = 10;
+    let bottom = -visibleSize.height / 2 + bottomInset + margin;
+
+    for (let index = buttons.length - 1; index >= 0; index--) {
+        const button = buttons[index];
+        const transform = button.getComponent(UITransform)!;
+        const scaledWidth = transform.contentSize.width * button.scale.x;
+        const scaledHeight = transform.contentSize.height * button.scale.y;
+        button.setPosition(
+            visibleSize.width / 2 - rightInset - margin - scaledWidth / 2,
+            bottom + scaledHeight / 2,
+            button.position.z,
+        );
+        bottom += scaledHeight + gap;
+    }
 }
