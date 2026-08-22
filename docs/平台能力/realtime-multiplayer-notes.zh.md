@@ -255,7 +255,7 @@ sharedRandom();             // 取共享实例
 | `net/NetRaceSession.ts` | 开局握手数据（seed + roster + localIsHost + localPos），`setNetRaceSession`/`consumeNetRaceSession`。 |
 | `net/NetRaceController.ts` | **赛中核心**：每逻辑帧 uploadFrame（输入+自位置）、onSyncFrame 解析、房主迁移、快照/名次广播、赛内调试 HUD。 |
 | `net/NetRaceInput.ts` | 每帧输入编解码，格式 `<pos>|<events>|<selfPos>`。 |
-| `net/NetRaceSnapshot.ts` | 房主权威快照 `S|`（含每泳道 距离/横向/完赛/朝向/**速度**）。 |
+| `net/NetRaceSnapshot.ts` | 房主权威快照 `S|`（含每泳道 距离/横向/完赛/朝向/**速度/轴心转体角与角速度**）。 |
 | `net/NetRaceResult.ts` | 最终名次 `R|`。 |
 | `net/NetLanePlan.ts` | 确定性泳道分配（按 posNum 升序→lane），各端一致。 |
 | `net/NetInputCapture.ts` | 被动输入 sink，默认关，联机才开。 |
@@ -310,7 +310,8 @@ sharedRandom();             // 取共享实例
 - **AI 泳道**：追 `snapshotTargets`（房主 `S|`，blend 0.2/0.25）。
 - **卡跳水冗余**：真人泳道若 owner 位置在前进（`distance>1m`）但本副本 `!isNetRacing` → `forceEnterRace`（DiveRelease 丢了/跳水 tween 卡住的兜底）。**两条分支（帧 self + S| 兜底）都要有这个冗余**。
 - **姿态速度同步（踩水坑）**：踩水↔游泳切换原本由本地 `motor.currentSpeed` 驱动，而远程副本位置是校正的、速度是本地回放算的 → 解耦 → 「踩水姿态在前移」。**修法**：`NetSnapshotEntry` 加 `speed` 字段，远程副本的踩水混合用**同步来的 owner 速度**（`applyNetPoseSpeed`→`CartoonSwimmerRig.setTreadWaterSpeedOverride`），只覆盖踩水决策、手臂节奏仍由回放驱动。本地玩家不覆盖（override=-1 回退本地速度）。
-- **碰撞**：联机保留碰撞手感，只在**追帧 snap 那一刻**（`netCatchingUp`，距上次 snap<400ms）把该泳者移出碰撞集，同步好时正常参与碰撞。碰撞求解跟随 `NET_SIM_STEP=33ms` 固定步执行，击退只在 contact-begin 注入一次（带释放滞回），不能按渲染帧重复累计，否则 120fps/60fps 设备结果不同。
+- **轴心转体同步**：转体角会降低前进效率，因此属于比赛结果状态，不能只让远程副本依赖可能丢帧的输入回放。`NetSnapshotEntry` 同步 `axialRoll` 与 `axialRollVelocity`；真人泳道跟随 owner 自报，AI 泳道跟随房主快照。转体采用俯面 0°／仰面 180°双稳态周期模型，角度按最短圆周差校正，角速度也做权威校正。
+- **碰撞**：联机保留碰撞手感，只在**追帧 snap 那一刻**（`netCatchingUp`，距上次 snap<400ms）把该泳者移出碰撞集，同步好时正常参与碰撞。碰撞求解跟随 `NET_SIM_STEP=33ms` 固定步执行，线性击退和按体重拆分的侧撞轴向角冲量都只在 contact-begin 注入一次（带释放滞回），不能按渲染帧重复累计，否则 120fps/60fps 设备结果不同；残差由权威 `axialRoll/axialRollVelocity` 快照校正。
 - **蓄气权威**：蓄气会决定海豚跃能否触发，属于比赛结果状态。真人蓄气与真人位置一样由 owner 权威，量化整数后随 `uploadFrame` 的 self state 可靠传输；AI 蓄气仍取房主 `S|` 快照。`DolphinJump` 事件只在 owner 本地成功触发后上传，远端按「已接受动作」回放，不能再用远端预测能量二次拒绝。
 
 ### 8.7 确定性房主迁移（房主掉线不卡死）

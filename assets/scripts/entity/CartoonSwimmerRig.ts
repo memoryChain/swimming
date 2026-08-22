@@ -995,6 +995,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._treadSpeedOverride = speed;
     }
 
+    // Root-level axial imbalance fades only when the rig actually enters upright
+    // tread water. Supine balance suppresses tread water and therefore keeps this
+    // at 1, allowing a stopped swimmer to back-float instead of hanging head-down.
+    get axialRollVisualWeight(): number {
+        return 1 - Math.max(0, Math.min(1, this._treadWaterWeight));
+    }
+
     updateFreestyleFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1013,6 +1020,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.bodyPhase,
             motor.currentSpeed,
             movementDirection,
+            !motor.permitsUprightTreadWater,
         );
     }
 
@@ -1032,6 +1040,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.bodyPhase,
             motor.currentSpeed,
             movementDirection,
+            true,
         );
     }
 
@@ -1063,7 +1072,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return used;
     }
 
-    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1) {
+    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1, suppressTreadWater = false) {
         if (!this._loaded || !this._poseState.isFreestyleActive || !this.root) {
             return;
         }
@@ -1080,7 +1089,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         // speed (synced) so the pose can't say "treading water" while the corrected
         // position slides forward. Arm/kick cadence still comes from the replayed input.
         const treadSpeed = this._treadSpeedOverride >= 0 ? this._treadSpeedOverride : speed;
-        const treadWeight = this.updateTreadWaterBlend(dt, treadSpeed);
+        const treadWeight = this.updateTreadWaterBlend(dt, treadSpeed, suppressTreadWater);
         this.applyTreadBlendModelPlacement(treadWeight);
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
         this._pose.applyFreestyleTreadBlendPose(
@@ -1111,13 +1120,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // does not flicker while the swimmer hovers near the threshold. Returns the eased weight.
     // 推进比赛途中的踩水相位，并把自由泳<->踩水权重缓动到当前速度对应的目标。进入/退出速度带迟滞，
     // 避免临界抖动。返回缓动后的权重。
-    private updateTreadWaterBlend(dt: number, speed: number): number {
+    private updateTreadWaterBlend(dt: number, speed: number, suppressTreadWater: boolean): number {
         const cycleSeconds = CHARACTER_POSE_TUNING.raceTreadWaterCycleSeconds / Math.max(0.25, this.motionPreviewSpeedScale());
         this._treadWaterPhase = positiveMod(this._treadWaterPhase + dt / Math.max(0.05, cycleSeconds), 1);
         this._treadExitHold = Math.max(0, this._treadExitHold - dt);
 
         let target = this._treadWaterWeight >= 0.5 ? 1 : 0;
-        if (this._treadExitHold > 0 || speed >= CHARACTER_POSE_TUNING.raceTreadExitSpeed) {
+        if (suppressTreadWater || this._treadExitHold > 0 || speed >= CHARACTER_POSE_TUNING.raceTreadExitSpeed) {
             target = 0;
         } else if (speed <= CHARACTER_POSE_TUNING.raceTreadEnterSpeed) {
             target = 1;

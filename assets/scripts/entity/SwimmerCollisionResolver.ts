@@ -1,5 +1,7 @@
 import type { Swimmer } from './Swimmer';
 
+const DEG2RAD = Math.PI / 180;
+
 // Swimmer-vs-swimmer collision. The race only ever has up to 8 swimmers moving
 // kinematically (position is driven by SwimPhysicsModel, not a physics engine),
 // so a full 3D physics engine (Ammo/Box2D) would be overkill and add WASM weight
@@ -48,6 +50,13 @@ export const SWIMMER_COLLISION = {
     knockbackMaxImpulse: 4.0,
     // Exponential decay time constant (seconds). Higher = longer slide.
     knockbackDecaySeconds: 0.5,
+    // A side contact also injects angular velocity around each swimmer's own
+    // head-to-feet axis. It is contact-begin only, just like linear knockback.
+    axialRollEnabled: 1,
+    // Degrees/second of roll velocity per 1m/s of the weight-split collision
+    // impulse. The contact normal supplies the side and race direction converts
+    // the world-space shove into each swimmer's local long-axis convention.
+    axialRollDegreesPerImpulse: 65,
 };
 
 // Reused module-scope buffers keep this allocation-free each collision step.
@@ -65,6 +74,7 @@ const _velZ: number[] = [];
 const _dir: number[] = [];
 const _impDist: number[] = [];
 const _impLat: number[] = [];
+const _impRoll: number[] = [];
 const _newContact: boolean[] = [];
 const _contactA: Swimmer[] = [];
 const _contactB: Swimmer[] = [];
@@ -112,6 +122,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         _velZ[i] = speed * sinH;
         _impDist[i] = 0;
         _impLat[i] = 0;
+        _impRoll[i] = 0;
     }
 
     const minDist = SWIMMER_COLLISION.radius * 2;
@@ -176,7 +187,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     // impulse magnitude from overlap depth + closing speed, split by inverse
     // weight. Lateral impulse always; distance impulse only for head-on pairs
     // that are still closing (both lose progress, never free distance).
-    if (SWIMMER_COLLISION.knockbackEnabled) {
+    if (SWIMMER_COLLISION.knockbackEnabled || SWIMMER_COLLISION.axialRollEnabled >= 0.5) {
         for (let i = 0; i < count; i++) {
             for (let j = i + 1; j < count; j++) {
                 const dx = _origX[i] - _origX[j];
@@ -216,16 +227,27 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const totalW = wi + wj;
                 const impI = totalW > 0 ? mag * (wj / totalW) : mag * 0.5;
                 const impJ = totalW > 0 ? mag * (wi / totalW) : mag * 0.5;
-                // Lateral shove: always applied, for the readable knocked-apart feel.
-                _impLat[i] += nz * impI;
-                _impLat[j] -= nz * impJ;
-                // Distance shove: only head-on (opposite lap directions) and only
-                // while still approaching. Head-on geometry pushes each swimmer
-                // backward vs its own travel, so both lose a little progress.
-                const headOn = _dir[i] * _dir[j] < 0;
-                if (!lateralOnly && headOn && impact > 0) {
-                    _impDist[i] += nx * impI * _dir[i];
-                    _impDist[j] -= nx * impJ * _dir[j];
+                if (SWIMMER_COLLISION.knockbackEnabled) {
+                    // Lateral shove: always applied, for the readable knocked-apart feel.
+                    _impLat[i] += nz * impI;
+                    _impLat[j] -= nz * impJ;
+                    // Distance shove: only head-on (opposite lap directions) and only
+                    // while still approaching. Head-on geometry pushes each swimmer
+                    // backward vs its own travel, so both lose a little progress.
+                    const headOn = _dir[i] * _dir[j] < 0;
+                    if (!lateralOnly && headOn && impact > 0) {
+                        _impDist[i] += nx * impI * _dir[i];
+                        _impDist[j] -= nx * impJ * _dir[j];
+                    }
+                }
+                if (SWIMMER_COLLISION.axialRollEnabled >= 0.5) {
+                    // Only the side component creates long-axis roll: a perfectly
+                    // centred head-on impact pushes backward but has no artificial
+                    // roll torque. impI/impJ already contain the inverse-weight split.
+                    const rollScale = Math.max(0, SWIMMER_COLLISION.axialRollDegreesPerImpulse)
+                        * DEG2RAD;
+                    _impRoll[i] += nz * impI * _dir[i] * rollScale;
+                    _impRoll[j] -= nz * impJ * _dir[j] * rollScale;
                 }
             }
         }
@@ -244,6 +266,10 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         if (iD !== 0 || iL !== 0) {
             _active[i].applyCollisionImpulse(iD, iL);
             _active[i].addCollisionEnergyBonus(Math.hypot(iD, iL));
+        }
+        const iR = _impRoll[i];
+        if (iR !== 0) {
+            _active[i].applyCollisionAxialImpulse(iR);
         }
     }
 }

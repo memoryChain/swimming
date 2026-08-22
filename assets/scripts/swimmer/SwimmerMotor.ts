@@ -5,6 +5,7 @@ import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringT
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
+import { AxialRollModel } from './AxialRollModel';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -76,6 +77,7 @@ type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: n
 
 export class SwimmerMotor {
     private readonly _physics = new SwimPhysicsModel();
+    private readonly _axialRoll = new AxialRollModel();
     private _currentSpeed = 0;
     private _distance = 0;
     private _isRacing = false;
@@ -155,15 +157,20 @@ export class SwimmerMotor {
         this._isRacing = false;
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
+        this._axialRoll.reset();
     }
 
     // Toggled by the Swimmer for post-dive and post-turn underwater glides.
     setGlidePhase(
         active: boolean,
         glideDrag = SWIMMER_BALANCE.glideDrag,
+        preserveAxialBalance = false,
     ) {
         this._glidePhaseActive = active;
         this._glideDrag = active ? Math.max(0, glideDrag) : SWIMMER_BALANCE.glideDrag;
+        if (active && !preserveAxialBalance) {
+            this._axialRoll.reset();
+        }
     }
 
     beginFlipTurnPhase() {
@@ -201,6 +208,7 @@ export class SwimmerMotor {
         // Push off the wall straight ahead; the player steers again after the turn.
         this._heading = 0;
         this._headingTarget = 0;
+        this._axialRoll.reset();
     }
 
     setFlipTurnSpeed(speed: number) {
@@ -440,13 +448,26 @@ export class SwimmerMotor {
         this.decaySpeedCapBonus(dt, options);
         this.updateKickSteeringCorrection(dt, options);
         this.updateSteering(dt);
+        // Advance the arm/action phase first so the torque sampled below belongs
+        // to the exact pose rendered for this frame, not the previous frame's arm
+        // position. Propulsion still settles after the physics step as before.
+        this.updateMotionCycles(dt, options);
+        this._axialRoll.update(
+            dt,
+            !this._glidePhaseActive,
+            this.armCatchSupportForSide(StrokeType.LEFT),
+            this.armCatchSupportForSide(StrokeType.RIGHT),
+            this._kickCadenceHz,
+        );
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
         // large heading is naturally slower (this is the whole steering cost).
         // Race distance is monotonic by contract. The steering hard cap keeps
         // cos(heading) positive; max(0, ...) is a second line of defence so even
         // corrupted runtime state can never make the swimmer turn back.
-        const forwardSpeed = this._currentSpeed * Math.max(0, Math.cos(this._heading));
+        const forwardSpeed = this._currentSpeed
+            * Math.max(0, Math.cos(this._heading))
+            * this._axialRoll.forwardScale;
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
@@ -455,7 +476,6 @@ export class SwimmerMotor {
             this.returnToLaneFromPoolWall();
         }
         this.integrateKnockback(dt, raceDistance);
-        this.updateMotionCycles(dt, options);
         if (!options.isAI) {
             this.checkArmStrokeTimeout();
         }
@@ -505,6 +525,7 @@ export class SwimmerMotor {
         this._heading = 0;
         this._headingTarget = 0;
         this._lateralOffset = 0;
+        this._axialRoll.reset();
     }
 
     setConditionSpeedScale(scale: number) {
@@ -1020,17 +1041,47 @@ export class SwimmerMotor {
     }
 
     // The stroke side whose steering nudge pulls the heading back toward straight.
-    // Depends on lap direction (dir(LEFT) = +courseDirection). When already
-    // straight either side works; returns the alternation-neutral LEFT.
+    // Depends on lap direction and whether axial roll has mirrored the swimmer's
+    // anatomical left/right in world space. When already straight either side
+    // works; returns the alternation-neutral LEFT.
     correctiveStrokeSide(): StrokeType {
         const targetSign = this._headingTarget >= 0 ? 1 : -1;
-        const leftDirSign = this._courseDirection >= 0 ? 1 : -1;
+        const rollSign = this.axialSteeringProjection() >= 0 ? 1 : -1;
+        const leftDirSign = (this._courseDirection >= 0 ? 1 : -1) * rollSign;
         // We want a stroke whose dir sign is the opposite of the current target.
         return leftDirSign === -targetSign ? StrokeType.LEFT : StrokeType.RIGHT;
     }
 
     get heading(): number {
         return this._heading;
+    }
+
+    get axialRollRadians(): number {
+        return this._axialRoll.angleRadians;
+    }
+
+    get axialRollAngularVelocity(): number {
+        return this._axialRoll.angularVelocityRadians;
+    }
+
+    get axialStableAngleRadians(): number {
+        return this._axialRoll.stableAngleRadians;
+    }
+
+    get permitsUprightTreadWater(): boolean {
+        return this._axialRoll.permitsUprightTreadWater;
+    }
+
+    restoreAxialBalance(angleRadians: number) {
+        this._axialRoll.setState(angleRadians, 0);
+    }
+
+    // NETWORKED RACE: correct the periodic roll state and its continuous inertia.
+    correctAxialRoll(targetAngle: number, targetAngularVelocity: number, blend: number) {
+        if (!this._isRacing) {
+            return;
+        }
+        this._axialRoll.correct(targetAngle, targetAngularVelocity, blend);
     }
 
     // NETWORKED RACE: ease the heading (and its steering target) toward the host's
@@ -1081,6 +1132,13 @@ export class SwimmerMotor {
         const cap = SWIMMER_COLLISION.knockbackMaxImpulse;
         this._knockbackDistance = clamp(this._knockbackDistance + distRate, -cap, cap);
         this._knockbackLateral = clamp(this._knockbackLateral + latRate, -cap, cap);
+    }
+
+    applyCollisionAxialImpulse(angularVelocityDeltaRadians: number) {
+        if (!this._isRacing || this._glidePhaseActive || SWIMMER_COLLISION.axialRollEnabled < 0.5) {
+            return;
+        }
+        this._axialRoll.applyAngularImpulse(angularVelocityDeltaRadians);
     }
 
     clearKnockback() {
@@ -1152,10 +1210,24 @@ export class SwimmerMotor {
         this._headingTarget += (0 - this._headingTarget) * Math.min(1, correctionRate * Math.max(0, dt));
     }
 
+    // Effective underwater pull for one arm, aligned to the authored freestyle
+    // contact window. Torque eases in just before the visible catch, stays full
+    // through the main pull, then releases with the hand exit. Keeping the curve in
+    // deterministic motor phase space avoids sampling render bones in gameplay.
+    private armCatchSupportForSide(type: StrokeType): number {
+        const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
+        if (!action || action.startedAt < 0) {
+            return 0;
+        }
+        const progress = clamp01(action.progress / CYCLE_AMOUNT);
+        return smoothPulse01(progress, 0.36, 0.46, 0.78, 0.92);
+    }
+
     // A settled arm stroke nudges the heading TARGET; the actual heading eases
     // toward it (see updateSteering) so the body turns gradually AFTER release,
     // not on press. RIGHT hand -> drift toward screen-left; LEFT -> screen-right.
-    // The sign is flipped by lap direction so it stays consistent after the turn.
+    // The sign is flipped by lap direction and continuously projected through the
+    // current axial roll: it fades to zero side-on, then reverses after capsizing.
     // powerFactor (0..1) scales the turn by how hard/long the stroke was pulled.
     private applyStrokeSteering(type: StrokeType, powerFactor: number) {
         if (!this._steeringEnabled) {
@@ -1166,7 +1238,19 @@ export class SwimmerMotor {
         const turn = Math.max(0, finiteOr(STEERING_TUNING.turnPerStroke, 0)) * DEG2RAD * factor;
         const maxHeading = safeMaxHeadingRadians();
         const dir = (type === StrokeType.LEFT ? 1 : -1) * this._courseDirection;
-        this._headingTarget = clamp(finiteOr(this._headingTarget, 0) + dir * turn, -maxHeading, maxHeading);
+        const projectedTurn = turn * this.axialSteeringProjection();
+        this._headingTarget = clamp(
+            finiteOr(this._headingTarget, 0) + dir * projectedTurn,
+            -maxHeading,
+            maxHeading,
+        );
+    }
+
+    // Anatomical left/right projected onto the pool's horizontal plane. cos(roll)
+    // gives +1 prone, 0 on either side, and -1 inverted, so steering changes side
+    // without a discontinuous sign switch at the 90-degree tipping point.
+    private axialSteeringProjection(): number {
+        return Math.cos(this._axialRoll.angleRadians);
     }
 
     private queueSideStroke(type: StrokeType): QueueSideStrokeResult {
@@ -1548,6 +1632,25 @@ function clamp(value: number, min: number, max: number): number {
 
 function clamp01(value: number): number {
     return clamp(value, 0, 1);
+}
+
+function smoothPulse01(value: number, start: number, fullStart: number, fullEnd: number, end: number): number {
+    const v = clamp01(value);
+    if (v <= start || v >= end) {
+        return 0;
+    }
+    if (v < fullStart) {
+        return smoothRange01(v, start, fullStart);
+    }
+    if (v <= fullEnd) {
+        return 1;
+    }
+    return 1 - smoothRange01(v, fullEnd, end);
+}
+
+function smoothRange01(value: number, start: number, end: number): number {
+    const t = clamp01((value - start) / Math.max(0.0001, end - start));
+    return t * t * (3 - 2 * t);
 }
 
 function finiteOr(value: number, fallback: number): number {

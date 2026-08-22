@@ -111,7 +111,7 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)}`;
     }
     return out;
 }
@@ -150,6 +150,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
             if (Number.isFinite(lane) && Number.isFinite(distCm) && Number.isFinite(latMm)) {
                 const speedCms = p.length > 5 ? parseInt(p[5], 10) : -1;
                 const energy = p.length > 6 ? parseInt(p[6], 10) : -1;
+                const rollMrad = p.length > 7 ? parseInt(p[7], 10) : 0;
+                const rollVelMrad = p.length > 8 ? parseInt(p[8], 10) : 0;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -158,6 +160,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     heading: Number.isFinite(headMrad) ? headMrad / 1000 : 0,
                     speed: Number.isFinite(speedCms) && speedCms >= 0 ? speedCms / 100 : -1,
                     energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
+                    axialRoll: Number.isFinite(rollMrad) ? rollMrad / 1000 : 0,
+                    axialRollVelocity: Number.isFinite(rollVelMrad) ? rollVelMrad / 1000 : 0,
                 };
             }
         }

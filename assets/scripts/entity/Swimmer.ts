@@ -107,6 +107,13 @@ export class Swimmer extends Component {
     applyCollisionImpulse(distRate: number, latRate: number) {
         this._motor.applyCollisionImpulse(distRate, latRate);
     }
+
+    // Add collision-induced angular velocity around the swimmer's own long axis.
+    // The resolver has already applied contact-side, course-direction and weight.
+    applyCollisionAxialImpulse(angularVelocityDeltaRadians: number) {
+        this._motor.applyCollisionAxialImpulse(angularVelocityDeltaRadians);
+    }
+
     // Body weight for collision knockback (player from character def, AI from
     // competitor profile; default 1). Heavy bodies resist being shoved.
     get weight(): number {
@@ -147,6 +154,17 @@ export class Swimmer extends Component {
         return this._motor.heading;
     }
 
+    // NETWORKED RACE ONLY: powered long-axis roll state. Both angle and angular
+    // velocity are corrected because input replay alone can visibly diverge
+    // across JavaScript engines while a side-fall is in progress.
+    get netAxialRoll(): number {
+        return this._motor.axialRollRadians;
+    }
+
+    get netAxialRollVelocity(): number {
+        return this._motor.axialRollAngularVelocity;
+    }
+
     // NETWORKED RACE ONLY: current swim speed (m/s) for authoritative snapshots, so
     // remote copies can drive their tread-water<->freestyle pose from the owner.
     get netSpeed(): number {
@@ -167,6 +185,10 @@ export class Swimmer extends Component {
             return;
         }
         this._motor.correctHeading(targetHeading, blend);
+    }
+
+    applyNetAxialRoll(targetRoll: number, targetRollVelocity: number, blend: number) {
+        this._motor.correctAxialRoll(targetRoll, targetRollVelocity, blend);
     }
 
     // NETWORKED RACE ONLY: keep this swimmer just short of the finish wall. Used on the
@@ -897,10 +919,14 @@ export class Swimmer extends Component {
         const deg2rad = Math.PI / 180;
         Quat.fromEuler(this._tmpCourseRotation, 0, yaw, 0);
         Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, pitch * deg2rad);
-        // Unwind any leftover dolphin-jump axial roll on the way back to level.
+        // Surface freestyle adds the powered roll imbalance around the same local
+        // head-to-feet axis used by the dolphin corkscrew. Scripted dive/turn/glide
+        // phases reset the motor roll, leaving only their own residual here.
         const dolphinRoll = this._phases.dolphinRollResidualRadians();
-        if (Math.abs(dolphinRoll) > 1e-5) {
-            Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, dolphinRoll);
+        const surfaceRollWeight = this.cartoonRig?.axialRollVisualWeight ?? 1;
+        const axialRoll = dolphinRoll + this._motor.axialRollRadians * surfaceRollWeight;
+        if (Math.abs(axialRoll) > 1e-5) {
+            Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, axialRoll);
         }
         this.node.setPosition(x, this._phases.visualSwimY(), z);
         this.node.setRotation(this._tmpCourseRotation);

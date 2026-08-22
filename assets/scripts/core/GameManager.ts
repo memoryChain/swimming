@@ -1596,6 +1596,8 @@ export class GameManager extends Component {
                         heading: swimmer.netHeading,
                         speed: swimmer.netSpeed,
                         energy: swimmer.ultimate.energy,
+                        axialRoll: swimmer.netAxialRoll,
+                        axialRollVelocity: swimmer.netAxialRollVelocity,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1640,6 +1642,8 @@ export class GameManager extends Component {
             let targetLat: number;
             let targetHead: number;
             let targetSpeed: number;
+            let targetRoll: number;
+            let targetRollVelocity: number;
             let targetFinished: boolean;
             let distBlend: number;
             let latBlend: number;
@@ -1649,6 +1653,8 @@ export class GameManager extends Component {
                 targetLat = self.lateral;
                 targetHead = self.heading;
                 targetSpeed = self.speed;
+                targetRoll = self.axialRoll;
+                targetRollVelocity = self.axialRollVelocity;
                 targetFinished = self.finished;
                 distBlend = 0.4;
                 latBlend = 0.4;
@@ -1662,6 +1668,8 @@ export class GameManager extends Component {
                 targetLat = target.lateral;
                 targetHead = target.heading;
                 targetSpeed = target.speed;
+                targetRoll = target.axialRoll;
+                targetRollVelocity = target.axialRollVelocity;
                 targetFinished = target.finished;
                 distBlend = 0.2;
                 latBlend = 0.25;
@@ -1682,6 +1690,10 @@ export class GameManager extends Component {
             }
             swimmer.applyNetCorrection(targetDist, targetLat, distBlend, latBlend);
             swimmer.applyNetHeading(targetHead, headBlend);
+            // Roll affects forward efficiency, so remote copies follow the same
+            // owner/host authority as position. Velocity preserves visible inertia
+            // instead of making a side-fall ease toward a static angle.
+            swimmer.applyNetAxialRoll(targetRoll, targetRollVelocity, headBlend);
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
             swimmer.applyNetPoseSpeed(targetSpeed);
@@ -1743,6 +1755,8 @@ export class GameManager extends Component {
             heading: player.netHeading,
             speed: player.netSpeed,
             energy: player.ultimate.energy,
+            axialRoll: player.netAxialRoll,
+            axialRollVelocity: player.netAxialRollVelocity,
         };
     }
 

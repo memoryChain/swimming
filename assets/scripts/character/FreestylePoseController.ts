@@ -1,6 +1,7 @@
 import { Node, Quat, Vec3 } from 'cc';
 import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
+import { AXIAL_ROLL_TUNING } from '../core/AxialRollTuning';
 import { BreaststrokeBoneName, BreaststrokeMotionSample, getBreaststrokeSamples } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
@@ -365,7 +366,8 @@ export class FreestylePoseController {
         const bob = Math.sin(bodyPhase) * 0.045;
         const armReach = this.armReachSignal(leftArmCycle, rightArmCycle);
         const breathRatio = clamp(rightBreath, 0, 1);
-        const baseBodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle) * FREESTYLE_POSE_TUNING.freestyleInternalBodyRollDegrees;
+        const baseBodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle)
+            * AXIAL_ROLL_TUNING.proceduralRollDegrees;
         const bodyRoll = baseBodyRoll - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees;
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
         const axisCenteringOffset = this.freestyleAxisCenteringOffset(baseBodyRoll, breathRatio);
@@ -1626,7 +1628,11 @@ export class FreestylePoseController {
     }
 
     private freestyleAxisCenteringOffset(baseBodyRollDegrees: number, rightBreath: number): number {
-        const rollRatio = clamp(baseBodyRollDegrees / FREESTYLE_POSE_TUNING.freestyleInternalBodyRollDegrees, -1, 1);
+        const rollRatio = clamp(
+            baseBodyRollDegrees / Math.max(0.01, AXIAL_ROLL_TUNING.proceduralRollDegrees),
+            -1,
+            1,
+        );
         const rollOffset = -Math.sin(rollRatio * Math.PI * 0.5) * FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset;
         const breathOffset = clamp(rightBreath, 0, 1) * FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset;
         return (rollOffset + breathOffset) * this._movementDirectionSign;

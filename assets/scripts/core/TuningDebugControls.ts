@@ -13,6 +13,7 @@ import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUN
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
+import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
 
 export type TuningControl = {
     id: string;
@@ -44,7 +45,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 20;
+const TUNING_FILE_VERSION = 22;
 
 type TuningFileData = {
     version: number;
@@ -69,6 +70,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
             control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
             control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
+            control('collision.axialRollEnabled', '启用碰撞转体', '1=侧撞会给双方施加轴向角冲量；0=碰撞只产生位移和撞飞。', () => SWIMMER_COLLISION.axialRollEnabled, (v) => SWIMMER_COLLISION.axialRollEnabled = v, 1, 0, 1, 0),
+            control('collision.axialRollDegreesPerImpulse', '侧撞转体强度', '每 1m/s 加权碰撞冲量转化出的轴向角速度。体重越轻分到的角冲量越大，正面中心相撞不会凭空侧翻。', () => SWIMMER_COLLISION.axialRollDegreesPerImpulse, (v) => SWIMMER_COLLISION.axialRollDegreesPerImpulse = v, 5, 0, 180, 0, '°/s·m/s'),
         ],
     },
     {
@@ -271,6 +274,28 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('difficulty.championship.rubberBandScale', '世锦赛追赶倍率', '世锦赛对橡皮筋追赶强度的倍率。越高越甩不掉、领先也被反复追平。', () => getRaceDifficultyConfig('championship').rubberBandScale, (v) => getRaceDifficultyConfig('championship').rubberBandScale = v, 0.05, 0, 2.5, 2),
             control('difficulty.championship.duelScale', '世锦赛缠斗倍率', '世锦赛对贴身缠斗发力的倍率。越高贴身时越死拼。', () => getRaceDifficultyConfig('championship').duelScale, (v) => getRaceDifficultyConfig('championship').duelScale = v, 0.05, 0, 2.5, 2),
             control('difficulty.championship.weaveScale', '世锦赛蛇形倍率', '世锦赛对 AI 蛇形/犯错倾向的倍率。越低对手路线越干净专业。', () => getRaceDifficultyConfig('championship').weaveScale, (v) => getRaceDifficultyConfig('championship').weaveScale = v, 0.05, 0, 3, 2),
+        ],
+    },
+    {
+        name: '转体失衡',
+        controls: [
+            control('axialRoll.enabled', '启用转体失衡', '1=启用由划水驱动的轴心转体；0=关闭并让角色快速回到平趴。', () => AXIAL_ROLL_TUNING.enabled, (v) => AXIAL_ROLL_TUNING.enabled = v, 1, 0, 1, 0),
+            control('axialRoll.armCatchTorque', '水下拉水扭矩', '手臂处于有效拉水段时持续施加的转体扭矩。越大，单侧持续划水越容易滚起来。', () => AXIAL_ROLL_TUNING.armCatchTorque, (v) => AXIAL_ROLL_TUNING.armCatchTorque = v, 5, 0, 700, 0, '°/s²'),
+            control('axialRoll.catchTorqueResponseRate', '拉水力矩响应', '力矩跟随水下拉水窗口的速度。越高越贴手，越低越柔和但会显得划完才开始倒。默认值已对齐当前手臂动作。', () => AXIAL_ROLL_TUNING.catchTorqueResponseRate, (v) => AXIAL_ROLL_TUNING.catchTorqueResponseRate = v, 1, 2, 40, 0, '/s'),
+            control('axialRoll.waterRightingTorque', '小角度扶正力', '角色接近平趴时的弱回复力。越小越像窄独木舟，轻微左右力矩也会持续晃动。', () => AXIAL_ROLL_TUNING.waterRightingTorque, (v) => AXIAL_ROLL_TUNING.waterRightingTorque = v, 2, 0, 240, 0, '°/s²'),
+            control('axialRoll.tippingStartDegrees', '倾覆起始角', '超过这个倾角后开始进入不稳定区，水体不再只负责扶正，而会逐渐推动角色继续翻倒。', () => AXIAL_ROLL_TUNING.tippingStartDegrees, (v) => AXIAL_ROLL_TUNING.tippingStartDegrees = v, 1, 5, 80, 0, '°'),
+            control('axialRoll.tippingFullDegrees', '完全失稳角', '达到这个倾角时倾覆力矩完全生效。它越接近起始角，越有突然失去平衡的独木舟感。', () => AXIAL_ROLL_TUNING.tippingFullDegrees, (v) => AXIAL_ROLL_TUNING.tippingFullDegrees = v, 1, 10, 100, 0, '°'),
+            control('axialRoll.capsizeTorque', '倾覆力矩', '进入不稳定区后把角色带向下一个稳定面：俯泳会翻向仰泳，仰泳也可继续翻回俯泳。', () => AXIAL_ROLL_TUNING.capsizeTorque, (v) => AXIAL_ROLL_TUNING.capsizeTorque = v, 5, 0, 300, 0, '°/s²'),
+            control('axialRoll.angularDrag', '水中转体阻尼', '持续消耗转体角速度。默认值偏低以保留翻转惯性；越大越稳、停得快，越小越有随时倾覆的感觉。', () => AXIAL_ROLL_TUNING.angularDrag, (v) => AXIAL_ROLL_TUNING.angularDrag = v, 0.05, 0, 6, 2, '/s'),
+            control('axialRoll.kickAngularDragPerHz', '踢腿稳定强度', '每 1Hz 踢腿频率增加的转体阻尼。当前只提供轻微稳定，避免正常踢腿把翻转惯性完全吃掉。', () => AXIAL_ROLL_TUNING.kickAngularDragPerHz, (v) => AXIAL_ROLL_TUNING.kickAngularDragPerHz = v, 0.01, 0, 0.8, 2, '/Hz'),
+            control('axialRoll.maxAngularSpeed', '最大转体角速度', '轴心转体的角速度硬上限，避免连续同侧划水导致不可控闪转。', () => AXIAL_ROLL_TUNING.maxAngularSpeed, (v) => AXIAL_ROLL_TUNING.maxAngularSpeed = v, 10, 90, 720, 0, '°/s'),
+            control('axialRoll.shoulderHalfWidth', '虚拟肩宽', '用于估算左右肩露出或没入水面的半宽。它只影响手臂在当前滚转角下还能产生多少水下扭矩。', () => AXIAL_ROLL_TUNING.shoulderHalfWidth, (v) => AXIAL_ROLL_TUNING.shoulderHalfWidth = v, 0.02, 0.1, 0.7, 2, 'm'),
+            control('axialRoll.shoulderWaterBand', '肩部水线过渡', '肩部跨过水线时，手臂抓水能力从弱到强的过渡宽度。越小越像突然出水，越大越柔和。', () => AXIAL_ROLL_TUNING.shoulderWaterBand, (v) => AXIAL_ROLL_TUNING.shoulderWaterBand = v, 0.02, 0.04, 0.6, 2, 'm'),
+            control('axialRoll.minimumExposedArmCatch', '出水手最低抓水', '肩膀抬出水面后，该侧手臂仍保留的最低扭矩比例，防止完全失去输入。', () => AXIAL_ROLL_TUNING.minimumExposedArmCatch, (v) => AXIAL_ROLL_TUNING.minimumExposedArmCatch = v, 0.02, 0, 1, 2),
+            control('axialRoll.proceduralRollDegrees', '动作内置侧滚', '自由泳动作自身保留的小幅肩胯扭转。整个人的大角度滚转由物理模型负责，建议保持较小。', () => AXIAL_ROLL_TUNING.proceduralRollDegrees, (v) => AXIAL_ROLL_TUNING.proceduralRollDegrees = v, 0.5, 0, 20, 1, '°'),
+            control('axialRoll.speedPenaltyStartDegrees', '掉速起始角', '偏离最近稳定面（俯面或仰面）超过该角度后开始损失前进效率。', () => AXIAL_ROLL_TUNING.speedPenaltyStartDegrees, (v) => AXIAL_ROLL_TUNING.speedPenaltyStartDegrees = v, 2, 0, 90, 0, '°'),
+            control('axialRoll.speedPenaltyFullDegrees', '掉速拉满角', '接近侧躺时降到最低前进倍率；仰面稳定后会重新恢复完整推进。', () => AXIAL_ROLL_TUNING.speedPenaltyFullDegrees, (v) => AXIAL_ROLL_TUNING.speedPenaltyFullDegrees = v, 2, 20, 90, 0, '°'),
+            control('axialRoll.minForwardScale', '侧躺最低前进倍率', '最不平衡的侧躺状态保留多少前进效率；俯泳和仰泳稳定态都为完整效率。', () => AXIAL_ROLL_TUNING.minForwardScale, (v) => AXIAL_ROLL_TUNING.minForwardScale = v, 0.02, 0, 1, 2),
         ],
     },
     {

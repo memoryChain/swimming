@@ -67,6 +67,10 @@ export class SwimmerRacePhases {
     // Lateral (Z) offset from the lane centre at the start of the current stage.
     private _dolphinBaseLateral = 0;
     private _dolphinEntrySpeed = 0;
+    // Surface imbalance captured at activation and settled onto its current prone
+    // or supine base through the take-off dip. Airborne corkscrew layers on top.
+    private _dolphinEntryAxialRoll = 0;
+    private _dolphinBaseAxialRoll = 0;
     private _dolphinHorizontalSpeed = 0;
     private _dolphinVerticalSpeed = 0;
     private _dolphinFlightSeconds = 0;
@@ -232,6 +236,8 @@ export class SwimmerRacePhases {
         this._flipTurnEntrySpeed = 0;
         this._flipTurnPushSpeed = 0;
         this._dolphinActive = false;
+        this._dolphinEntryAxialRoll = 0;
+        this._dolphinBaseAxialRoll = 0;
         this._dolphinRollAngle = 0;
         this._dolphinRollTarget = 0;
         this._dolphinAirStroking = false;
@@ -371,12 +377,17 @@ export class SwimmerRacePhases {
             return false;
         }
 
+        const incomingDirection = courseLayout.finishDirectionAtDistance(wallDistance);
+        // Normalize the complete root BEFORE the rig samples its waist/feet. The
+        // authored contact offset and vertical pivot are measured in a prone frame;
+        // sampling them under a 180-degree parent roll produces the wrong height.
+        motor.restoreAxialBalance(0);
+        this._host.node.setRotationFromEuler(0, incomingDirection > 0 ? 0 : 180, 0);
         const footContactOffset = rig.startRaceFlipTurn();
         if (footContactOffset === null || !Number.isFinite(footContactOffset) || footContactOffset < 0) {
             rig.finishRaceFlipTurn();
             return false;
         }
-        const incomingDirection = courseLayout.finishDirectionAtDistance(wallDistance);
         const wallX = courseLayout.wallWorldXAtDistance(wallDistance);
         const contactX = wallX - incomingDirection * footContactOffset;
         const exitX = courseLayout.distanceToWorldX(wallDistance);
@@ -387,6 +398,8 @@ export class SwimmerRacePhases {
         this._flipTurnMaxReach = incomingDirection * (contactX - exitX);
         this._flipTurnEntrySpeed = entrySpeed;
         this._flipTurnPushSpeed = finiteNonNegative(SWIMMER_BALANCE.flipTurnPushLaunchSpeed);
+        // Wall-turn assets are authored only for prone entry. Resetting here also
+        // makes the very first scripted frame use the correct waist/foot height.
         motor.beginFlipTurnPhase();
         rig.setStrokeHeld(StrokeType.LEFT, false);
         rig.setStrokeHeld(StrokeType.RIGHT, false);
@@ -444,7 +457,11 @@ export class SwimmerRacePhases {
         // lane centre when the turn begins/ends (heading itself is reset to 0).
         const z = this._host.startPosition.z + motor.lateralOffset;
         node.setPosition(x, courseLayout.swimY, z);
-        node.setRotationFromEuler(0, this._flipTurnIncomingDirection > 0 ? 0 : 180, 0);
+        this.applyDolphinRotation(
+            this._flipTurnIncomingDirection > 0 ? 0 : 180,
+            0,
+            0,
+        );
         motor.setFlipTurnDistance(distance);
         motor.setFlipTurnSpeed(laneSpeed);
         if (!state.complete) {
@@ -460,9 +477,14 @@ export class SwimmerRacePhases {
         const underwaterY = courseLayout.swimY
             - Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth);
         node.setPosition(courseLayout.distanceToWorldX(handoffDistance), underwaterY, z);
-        node.setRotationFromEuler(0, outgoingDirection > 0 ? 0 : 180, 0);
+        this.applyDolphinRotation(
+            outgoingDirection > 0 ? 0 : 180,
+            0,
+            0,
+        );
         rig?.finishRaceFlipTurn();
         motor.completeFlipTurnPhase(handoffDistance, this._flipTurnPushSpeed);
+        motor.restoreAxialBalance(0);
         this._lastCompletedFlipTurnWallDistance = this._flipTurnWallDistance;
         this._flipTurnActive = false;
         this.startFlipTurnUnderwaterPhase();
@@ -482,6 +504,7 @@ export class SwimmerRacePhases {
         this._host.motor.setGlidePhase(
             true,
             SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag,
+            true,
         );
         this._host.cartoonRig?.setLegSplashSuppressed(true);
     }
@@ -573,6 +596,8 @@ export class SwimmerRacePhases {
         this._dolphinBaseDistance = distance;
         this._dolphinBaseLateral = motor.lateralOffset;
         this._dolphinEntrySpeed = entrySpeed;
+        this._dolphinEntryAxialRoll = motor.axialRollRadians;
+        this._dolphinBaseAxialRoll = motor.axialStableAngleRadians;
         this._dolphinHorizontalSpeed = horizontalSpeed;
         this._dolphinVerticalSpeed = verticalSpeed;
         this._dolphinFlightSeconds = flightSeconds;
@@ -635,7 +660,12 @@ export class SwimmerRacePhases {
             const y = swimY - DOLPHIN_JUMP.dipDepth * Math.sin(Math.PI * t);
             const pitch = -DOLPHIN_JUMP.dipTiltDegrees * Math.sin(Math.PI * t);
             node.setPosition(courseLayout.distanceToWorldX(distance), y, worldZ);
-            this.applyDolphinRotation(yaw, pitch, 0);
+            const entryRoll = lerpAngle(
+                this._dolphinEntryAxialRoll,
+                this._dolphinBaseAxialRoll,
+                smoothStep(t),
+            );
+            this.applyDolphinRotation(yaw, pitch, entryRoll);
             motor.setFlipTurnDistance(distance);
             motor.setFlipTurnSpeed(this._dolphinEntrySpeed);
             if (t >= 1) {
@@ -668,7 +698,11 @@ export class SwimmerRacePhases {
         this._dolphinRollAngle += (this._dolphinRollTarget - this._dolphinRollAngle)
             * (1 - Math.exp(-Math.max(0, dt) * DOLPHIN_JUMP.rollEaseRate));
         node.setPosition(courseLayout.distanceToWorldX(distance), y, worldZ);
-        this.applyDolphinRotation(yaw, arcPitchRad * 180 / Math.PI, this._dolphinRollAngle);
+        this.applyDolphinRotation(
+            yaw,
+            arcPitchRad * 180 / Math.PI,
+            this._dolphinBaseAxialRoll + this._dolphinRollAngle,
+        );
         motor.setFlipTurnDistance(distance);
         motor.setFlipTurnSpeed(this._dolphinHorizontalSpeed);
         // Drive the freestyle stroke animation once the player has stroked mid-air.
@@ -685,6 +719,7 @@ export class SwimmerRacePhases {
                 motor.bodyPhase,
                 motor.currentSpeed,
                 direction,
+                true,
             );
         }
     }
@@ -721,8 +756,9 @@ export class SwimmerRacePhases {
             / Math.max(0.01, DOLPHIN_JUMP.landingRollUnwindSeconds);
         rig?.triggerBigSplash(DOLPHIN_JUMP.landingSplashScale);
         node.setPosition(courseLayout.distanceToWorldX(landingDistance), courseLayout.swimY, worldZ);
-        this.applyDolphinRotation(yaw, 0, residual);
+        this.applyDolphinRotation(yaw, 0, this._dolphinBaseAxialRoll + residual);
         motor.completeFlipTurnPhase(landingDistance, this._dolphinLandingExitSpeed);
+        motor.restoreAxialBalance(this._dolphinBaseAxialRoll);
         this._dolphinActive = false;
         this._dolphinAirStroking = false;
         this.startDolphinLandingUnderwaterPhase();
@@ -749,7 +785,11 @@ export class SwimmerRacePhases {
         this._diveGlidePoseActive = true;
         this._diveUnderwaterElapsed = 0;
         this._diveEntryLeanDegrees = 0;
-        this._host.motor.setGlidePhase(true, SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag);
+        this._host.motor.setGlidePhase(
+            true,
+            SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag,
+            true,
+        );
         this._host.cartoonRig?.setLegSplashSuppressed(true);
     }
 
@@ -822,18 +862,22 @@ function lerp(a: number, b: number, t: number): number {
     return a + (b - a) * t;
 }
 
+function lerpAngle(a: number, b: number, t: number): number {
+    return normalizeAngle(a + normalizeAngle(b - a) * Math.max(0, Math.min(1, t)));
+}
+
 function clampScalar(value: number, min: number, max: number): number {
     return value < min ? min : value > max ? max : value;
 }
 
-// Wrap an angle (radians) to (-PI, PI] so a corkscrew that ended near a full
-// multiple of a turn unwinds the short way back to the level swim axis.
+// Wrap an angle to one physical turn. Prone and supine phase handoffs use the
+// shortest path while airborne corkscrew residuals still unwind without a jump.
 function normalizeAngle(angle: number): number {
     const twoPi = Math.PI * 2;
     let a = angle % twoPi;
     if (a > Math.PI) {
         a -= twoPi;
-    } else if (a <= -Math.PI) {
+    } else if (a < -Math.PI) {
         a += twoPi;
     }
     return a;

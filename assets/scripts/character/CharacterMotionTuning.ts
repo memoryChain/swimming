@@ -137,10 +137,6 @@ export const FREESTYLE_POSE_TUNING = {
     // 模型变体没有单独配置时使用的默认头部抬起角度。
     defaultSwimHeadLiftDegrees: -14,
 
-    // Internal body roll amplitude for freestyle side-to-side motion.
-    // 自由泳身体左右滚转的内部幅度。
-    freestyleInternalBodyRollDegrees: 22,
-
     // Local side offset used to keep the body centered while rolling.
     // 身体滚转时用于保持轴线居中的本地侧向补偿。
     freestyleAxisCenteringOffset: 0.075,
