@@ -45,7 +45,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 27;
+const TUNING_FILE_VERSION = 28;
 
 type TuningFileData = {
     version: number;
@@ -283,10 +283,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('axialRoll.enabled', '启用转体失衡', '1=启用由划水驱动的轴心转体；0=关闭并让角色快速回到平趴。', () => AXIAL_ROLL_TUNING.enabled, (v) => AXIAL_ROLL_TUNING.enabled = v, 1, 0, 1, 0),
             control('axialRoll.armCatchTorque', '水下拉水扭矩', '手臂处于有效拉水段时持续施加的转体扭矩。越大，单侧持续划水越容易滚起来。', () => AXIAL_ROLL_TUNING.armCatchTorque, (v) => AXIAL_ROLL_TUNING.armCatchTorque = v, 5, 0, 700, 0, '°/s²'),
             control('axialRoll.catchTorqueResponseRate', '拉水力矩响应', '力矩跟随水下拉水窗口的速度。越高越贴手，越低越柔和但会显得划完才开始倒。默认值已对齐当前手臂动作。', () => AXIAL_ROLL_TUNING.catchTorqueResponseRate, (v) => AXIAL_ROLL_TUNING.catchTorqueResponseRate = v, 1, 2, 40, 0, '/s'),
-            control('axialRoll.waterRightingTorque', '小角度扶正力', '角色接近平趴时的弱回复力。越小越像窄独木舟，轻微左右力矩也会持续晃动。', () => AXIAL_ROLL_TUNING.waterRightingTorque, (v) => AXIAL_ROLL_TUNING.waterRightingTorque = v, 2, 0, 240, 0, '°/s²'),
-            control('axialRoll.tippingStartDegrees', '倾覆起始角', '超过这个倾角后开始进入不稳定区，水体不再只负责扶正，而会逐渐推动角色继续翻倒。', () => AXIAL_ROLL_TUNING.tippingStartDegrees, (v) => AXIAL_ROLL_TUNING.tippingStartDegrees = v, 1, 5, 80, 0, '°'),
-            control('axialRoll.tippingFullDegrees', '完全失稳角', '达到这个倾角时倾覆力矩完全生效。它越接近起始角，越有突然失去平衡的独木舟感。', () => AXIAL_ROLL_TUNING.tippingFullDegrees, (v) => AXIAL_ROLL_TUNING.tippingFullDegrees = v, 1, 10, 100, 0, '°'),
-            control('axialRoll.capsizeTorque', '倾覆力矩', '进入不稳定区后把角色带向下一个稳定面：俯泳会翻向仰泳，仰泳也可继续翻回俯泳。', () => AXIAL_ROLL_TUNING.capsizeTorque, (v) => AXIAL_ROLL_TUNING.capsizeTorque = v, 5, 0, 300, 0, '°/s²'),
+            control('axialRoll.hullRightingTorque', '船体复原力矩', '俯泳 0° 与仰泳 180° 共用的对称船体支撑。越大，中低速倾斜时越明显被船舷弹回。', () => AXIAL_ROLL_TUNING.hullRightingTorque, (v) => AXIAL_ROLL_TUNING.hullRightingTorque = v, 5, 0, 300, 0, '°/s²'),
+            control('axialRoll.hullRightingCurvePower', '船舷支撑曲线', '控制复原力如何随倾角长出来。小于 1 会让轻微倾斜更快出现支撑和摇摆；1 是标准 sin(2×角度) 船体曲线。', () => AXIAL_ROLL_TUNING.hullRightingCurvePower, (v) => AXIAL_ROLL_TUNING.hullRightingCurvePower = v, 0.05, 0.2, 2, 2),
+            control('axialRoll.hullFadeStartAngularSpeed', '高速退让起始速度', '转得超过该速度后，船体复原力开始退让，让碰撞或强划水能越过 90° 船舷继续翻。它不改变转体阻尼。', () => AXIAL_ROLL_TUNING.hullFadeStartAngularSpeed, (v) => AXIAL_ROLL_TUNING.hullFadeStartAngularSpeed = v, 5, 0, 360, 0, '°/s'),
+            control('axialRoll.hullFadeFullAngularSpeed', '高速完全退让速度', '达到该角速度后暂时不施加船体复原力，只保留原有水阻与转动惯性；速度降下来后支撑自然恢复。', () => AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed, (v) => AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed = v, 5, 10, 720, 0, '°/s'),
+            control('axialRoll.treadWaterProneToleranceDegrees', '踩水俯泳容差', '距离俯泳 0° 小于该角度时，停下后允许进入正常踩水姿态；仰泳稳定态不会错误切成倒置踩水。', () => AXIAL_ROLL_TUNING.treadWaterProneToleranceDegrees, (v) => AXIAL_ROLL_TUNING.treadWaterProneToleranceDegrees = v, 1, 1, 45, 0, '°'),
             control('axialRoll.angularDrag', '水中转体阻尼', '持续消耗转体角速度。默认值偏低以保留翻转惯性；越大越稳、停得快，越小越有随时倾覆的感觉。', () => AXIAL_ROLL_TUNING.angularDrag, (v) => AXIAL_ROLL_TUNING.angularDrag = v, 0.05, 0, 6, 2, '/s'),
             control('axialRoll.kickAngularDragPerHz', '踢腿稳定强度', '每 1Hz 踢腿频率增加的转体阻尼。当前只提供轻微稳定，避免正常踢腿把翻转惯性完全吃掉。', () => AXIAL_ROLL_TUNING.kickAngularDragPerHz, (v) => AXIAL_ROLL_TUNING.kickAngularDragPerHz = v, 0.01, 0, 0.8, 2, '/Hz'),
             control('axialRoll.maxAngularSpeed', '最大转体角速度', '轴心转体的角速度硬上限。默认允许强碰撞触发多圈翻滚；正常划水力矩远低于该上限。', () => AXIAL_ROLL_TUNING.maxAngularSpeed, (v) => AXIAL_ROLL_TUNING.maxAngularSpeed = v, 20, 90, 1200, 0, '°/s'),
@@ -538,6 +539,8 @@ function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string,
         }
     };
     renameLegacyKey('speed.strokeStabilityAccel', 'speed.strokeQualityAccel');
+    renameLegacyKey('axialRoll.waterRightingTorque', 'axialRoll.hullRightingTorque');
+    renameLegacyKey('axialRoll.tippingStartDegrees', 'axialRoll.treadWaterProneToleranceDegrees');
     for (const suffix of [
         'minHoldSeconds',
         'goodStart',
@@ -576,6 +579,15 @@ function validateTuningRelations() {
             `set to ${safeMaxHeading.toFixed(1)}°`,
         );
         STEERING_TUNING.maxHeading = safeMaxHeading;
+    }
+    if (AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed <= AXIAL_ROLL_TUNING.hullFadeStartAngularSpeed) {
+        const fixed = AXIAL_ROLL_TUNING.hullFadeStartAngularSpeed + 1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: axialRoll.hullFadeFullAngularSpeed ` +
+            `${AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed.toFixed(1)} must be above fade start; ` +
+            `set to ${fixed.toFixed(1)}`,
+        );
+        AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed = fixed;
     }
     const timeoutProgress = clamp(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, 0.05, 1);
     const good = normalizeRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd, timeoutProgress, 'strokeQuality.good');

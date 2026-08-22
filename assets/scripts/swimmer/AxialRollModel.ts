@@ -39,8 +39,6 @@ export class AxialRollModel {
         }
 
         const tuning = AXIAL_ROLL_TUNING;
-        const angleDegrees = this._angle * RAD2DEG;
-        const magnitudeDegrees = Math.abs(angleDegrees);
         const sinRoll = Math.sin(this._angle);
         const halfWidth = Math.max(0.01, finite(tuning.shoulderHalfWidth));
         const leftShoulderY = halfWidth * sinRoll;
@@ -63,22 +61,26 @@ export class AxialRollModel {
             * Math.max(0, finite(tuning.armCatchTorque))
             * DEG2RAD;
 
-        const sinRollMoment = Math.sin(this._angle);
-        angularAccel -= sinRollMoment
-            * Math.max(0, finite(tuning.waterRightingTorque))
-            * DEG2RAD;
-        const tippingStart = Math.max(0, finite(tuning.tippingStartDegrees));
-        const tippingFull = Math.max(tippingStart + 0.01, finite(tuning.tippingFullDegrees));
-        const capsizeRatio = smoothStep(clamp01(
-            (magnitudeDegrees - tippingStart) / (tippingFull - tippingStart),
+        // Periodic canoe-hull moment curve. Unlike the old abs(angle) blend, this
+        // is exactly symmetric: 0° and 180° have identical stability, while 90°
+        // is the unstable gunwale where one more nudge commits to the other face.
+        const hullMoment = Math.sin(this._angle * 2);
+        const hullPower = Math.max(0.1, finite(tuning.hullRightingCurvePower));
+        // Treat the exact 90° ridge as zero explicitly. Besides matching the
+        // physical curve, this prevents tiny Math.sin(PI) sign differences across
+        // JavaScript engines from choosing a local capsize direction.
+        const shapedHullMoment = Math.abs(hullMoment) < 1e-7
+            ? 0
+            : Math.sign(hullMoment) * Math.pow(Math.abs(hullMoment), hullPower);
+        const angularSpeedDegrees = Math.abs(this._angularVelocity) * RAD2DEG;
+        const hullFadeStart = Math.max(0, finite(tuning.hullFadeStartAngularSpeed));
+        const hullFadeFull = Math.max(hullFadeStart + 0.01, finite(tuning.hullFadeFullAngularSpeed));
+        const hullFade = smoothStep(clamp01(
+            (angularSpeedDegrees - hullFadeStart) / (hullFadeFull - hullFadeStart),
         ));
-        // Once the center of buoyancy passes the narrow stable window, the same
-        // water force that used to right the body now finishes the capsize. It
-        // fades to zero near inverted, making supine the second balance state.
-        angularAccel += Math.sign(angleDegrees)
-            * Math.abs(sinRollMoment)
-            * Math.max(0, finite(tuning.capsizeTorque))
-            * capsizeRatio
+        angularAccel -= shapedHullMoment
+            * Math.max(0, finite(tuning.hullRightingTorque))
+            * (1 - hullFade)
             * DEG2RAD;
         const drag = Math.max(0, finite(tuning.angularDrag))
             + Math.max(0, finite(kickCadenceHz))
@@ -163,7 +165,10 @@ export class AxialRollModel {
     }
 
     get permitsUprightTreadWater(): boolean {
-        return Math.abs(this.angleDegrees) < Math.max(1, finite(AXIAL_ROLL_TUNING.tippingStartDegrees));
+        return Math.abs(this.angleDegrees) < Math.max(
+            1,
+            finite(AXIAL_ROLL_TUNING.treadWaterProneToleranceDegrees),
+        );
     }
 
     setState(angleRadians: number, angularVelocityRadians = 0) {
