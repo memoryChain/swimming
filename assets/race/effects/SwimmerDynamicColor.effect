@@ -31,6 +31,9 @@ CCEffect %{
         # Surface-light vertical falloff: x = fully-lit depth, y = deep-dark depth,
         # z = submerged-camera deep ambient, w = above-water-camera deep ambient.
         underwaterDepthLightParams: { value: [0.10, 0.75, 0.34, 0.30] }
+        # Luminance-preserving blue fill for dark body regions:
+        # x = submerged-camera strength, y = above-water-camera strength.
+        underwaterShadowParams: { value: [0.10, 0.14, 0.0, 0.0] }
         # Distance-based blue absorption for submerged bodies: far swimmers read
         # bluer than near ones (matches real underwater "the further, the bluer").
         # rgb = deep-water blue, a = max blend strength.
@@ -121,6 +124,7 @@ CCProgram swimmer-color-fs %{
     vec4 underwaterViewColor;
     vec4 underwaterLightParams;
     vec4 underwaterDepthLightParams;
+    vec4 underwaterShadowParams;
     vec4 depthFogColor;
     vec4 depthFogParams;
     vec4 aboveWaterColor;
@@ -259,6 +263,18 @@ CCProgram swimmer-color-fs %{
     float deepAmbient = mix(underwaterDepthLightParams.w, underwaterDepthLightParams.z, cameraSubmerge);
     float underwaterLight = normalLight * mix(deepAmbient, 1.0, surfaceReach);
     bodyColor *= mix(1.0, underwaterLight, belowness);
+    // Dark underwater skin should pick up a slight blue ambient cast rather than
+    // remaining a plain red-brown shadow. Build a water-hued colour with the same
+    // luminance as the current fragment, then blend it only into dark regions.
+    // Because the target luminance is preserved, this changes hue without lifting
+    // the shadow or turning black garments into a flat blue patch.
+    vec3 lumaWeights = vec3(0.2126, 0.7152, 0.0722);
+    float shadowLuma = dot(bodyColor, lumaWeights);
+    float filterLuma = max(dot(filterRgb, lumaWeights), 0.001);
+    vec3 waterShadow = filterRgb * (shadowLuma / filterLuma);
+    float shadowMask = 1.0 - smoothstep(0.10, 0.32, shadowLuma);
+    float shadowBlue = mix(underwaterShadowParams.y, underwaterShadowParams.x, cameraSubmerge);
+    bodyColor = mix(bodyColor, waterShadow, shadowMask * shadowBlue * belowness);
     // Distance-based blue absorption: submerged bodies fade toward deep-water
     // blue with camera distance, so far competitors read markedly bluer than the
     // nearby swimmer (real "the further underwater, the bluer" look). Only below

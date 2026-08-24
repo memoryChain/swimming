@@ -73,10 +73,9 @@ const DISTURB_STRENGTH = 1.15;
 const FLOOR_TINT: { prefix: string; above: Color; belowKind: FloorBelowKind }[] = [
     { prefix: 'lane_floor_line', above: new Color(8, 12, 20, 255), belowKind: 'line' },
     { prefix: 'lane_t_end', above: new Color(8, 12, 20, 255), belowKind: 'line' },
-    // Underwater below-colours are a clean, saturated pool blue (not a pale cyan
-    // and not a heavy/gray wash): the camera reads a vivid blue pool. The base
-    // floor blue is tunable ('水色' → 池底蓝 sliders); walls/grout are derived
-    // shades of it; lane lines stay dark for contrast.
+    // The submerged near colour is a bright low-saturation cyan like real close tile;
+    // the custom floor effect shifts it independently toward deep blue with camera
+    // distance. Walls/grout derive their near shades here; lane lines stay dark.
     { prefix: 'pool_tile_grout', above: new Color(88, 181, 160, 255), belowKind: 'grout' },
     { prefix: 'pool_inner_wall', above: new Color(118, 202, 174, 255), belowKind: 'wall' },
     { prefix: 'pool_floor', above: new Color(118, 202, 174, 255), belowKind: 'floor' },
@@ -100,16 +99,16 @@ function computeFloorBelowColor(kind: FloorBelowKind): Color {
     }
 }
 
-// The deep blue the far end of the floor fades toward UNDERWATER (distance
-// gradient). Kept fairly bright and low-saturation (the darkening multipliers are
-// gentle and even) so the far end reads as a lighter deep blue, not a dark wash;
-// alpha = far-blend strength.
+// Independent deep-blue target for the far end of the underwater floor gradient.
+// It must not be derived from the pale near-tile colour: independent hues create
+// the real near-clear-cyan -> far-blue water absorption cue.
+// Alpha = far-blend strength.
 function computeFloorDeepColor(): Color {
     const c = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
     return new Color(
-        c(WATER_COLOR_TUNING.floorR * 0.66),
-        c(WATER_COLOR_TUNING.floorG * 0.74),
-        c(WATER_COLOR_TUNING.floorB * 0.84),
+        c(WATER_COLOR_TUNING.floorFarR),
+        c(WATER_COLOR_TUNING.floorFarG),
+        c(WATER_COLOR_TUNING.floorFarB),
         c(WATER_COLOR_TUNING.floorFarStrength * 255),
     );
 }
@@ -567,10 +566,10 @@ export class WaterRefractionController {
         }
     }
 
-    // Set a floor material's near colour (above-deck or submerged blue) and, when
-    // the distance-gradient effect is active, the far colour + range so near reads
-    // clear and far fades to a deep colour. Above and below water use DIFFERENT
-    // deep colours; lane lines never fade.
+    // Set a floor material's near colour and, when the distance-gradient effect is
+    // active, its independent far colour + range. Above water keeps the authored
+    // flat colour; underwater shifts pale pool cyan -> deep blue. Lane lines
+    // never fade so lane readability is preserved.
     private applyFloorMaterial(
         tint: { material: Material; above: Color; belowKind: FloorBelowKind },
         underwater: boolean,

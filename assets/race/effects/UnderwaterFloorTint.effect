@@ -14,10 +14,10 @@ CCEffect %{
         mainTexture: { value: white }
         mainColor:   { value: [1, 1, 1, 1], linear: true, editor: { type: color } }
         # Deep-water blue the far end fades toward (rgb) + max blend strength (a).
-        depthColor:  { value: [0.02, 0.12, 0.42, 0.85], linear: true, editor: { type: color } }
+        depthColor:  { value: [0.031, 0.329, 0.573, 1.0], linear: true, editor: { type: color } }
         # x = distance where the blue starts (m), y = distance for full blue (m),
         # z = enable (0/1, off above water). w unused.
-        depthParams: { value: [3.0, 20.0, 0.0, 0.0] }
+        depthParams: { value: [0.0, 18.0, 0.0, 0.0] }
         # x = world waterline, y = enable the above-water white cap (walls only).
         # The cap keeps the exposed tile strip white while the submerged part
         # continues to use the live pool-blue tint.
@@ -79,7 +79,13 @@ CCProgram uw-floor-fs %{
     // Distance-based blue absorption toward deepColor: near = base tile colour,
     // far = deep blue, smooth gradient. Tracks the moving camera via cc_cameraPos.
     float dist = length(cc_cameraPos.xyz - v_worldPos);
-    float t = clamp((dist - depthParams.x) / max(depthParams.y - depthParams.x, 0.001), 0.0, 1.0);
+    float absorptionDist = max(dist - depthParams.x, 0.0);
+    // Asymptotic absorption has no hard far endpoint and no fast-changing middle
+    // band. At depthParams.y it is about 80% toward the far colour, then continues
+    // approaching it gradually. The squared rational form avoids a per-pixel exp().
+    float absorptionScale = max((depthParams.y - depthParams.x) * 0.5, 0.001);
+    float distSq = absorptionDist * absorptionDist;
+    float t = distSq / (distSq + absorptionScale * absorptionScale);
     float amt = t * depthColor.a * step(0.5, depthParams.z);
     vec3 color = mix(base, depthColor.rgb, amt);
     // Pool walls share one continuous quad across the waterline. Keep only the
