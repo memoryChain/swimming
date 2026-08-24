@@ -15,7 +15,7 @@
 //   "<senderPos>|<token>;<token>;...|<selfPos>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>".
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>".
 // Position, pose speed, and outcome-affecting ultimate energy ride the RELIABLE lock-step
 // frame channel (not best-effort broadcasts, which drop intermittently), so every client's
 // copy of every human catches up to its owner reliably.
@@ -123,7 +123,7 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)}`;
     }
     return out;
 }
@@ -165,6 +165,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const rollMrad = p.length > 7 ? parseInt(p[7], 10) : 0;
                 const rollVelMrad = p.length > 8 ? parseInt(p[8], 10) : 0;
                 const headVelMrad = p.length > 9 ? parseInt(p[9], 10) : 0;
+                const pitchMrad = p.length > 10 ? parseInt(p[10], 10) : 0;
+                const pitchVelMrad = p.length > 11 ? parseInt(p[11], 10) : 0;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -176,6 +178,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     energy: Number.isFinite(energy) && energy >= 0 ? energy : -1,
                     axialRoll: Number.isFinite(rollMrad) ? rollMrad / 1000 : 0,
                     axialRollVelocity: Number.isFinite(rollVelMrad) ? rollVelMrad / 1000 : 0,
+                    collisionPitch: Number.isFinite(pitchMrad) ? pitchMrad / 1000 : 0,
+                    collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
                 };
             }
         }

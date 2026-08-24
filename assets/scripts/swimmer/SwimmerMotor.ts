@@ -6,6 +6,8 @@ import { SwimPhysicsModel } from './SwimPhysicsModel';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { AxialRollModel } from './AxialRollModel';
+import { CollisionPitchModel } from './CollisionPitchModel';
+import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -78,6 +80,7 @@ type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: n
 export class SwimmerMotor {
     private readonly _physics = new SwimPhysicsModel();
     private readonly _axialRoll = new AxialRollModel();
+    private readonly _collisionPitch = new CollisionPitchModel();
     private _currentSpeed = 0;
     private _distance = 0;
     private _isRacing = false;
@@ -156,6 +159,7 @@ export class SwimmerMotor {
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
         this._axialRoll.reset();
+        this._collisionPitch.reset();
     }
 
     // Toggled by the Swimmer for post-dive and post-turn underwater glides.
@@ -168,6 +172,9 @@ export class SwimmerMotor {
         this._glideDrag = active ? Math.max(0, glideDrag) : SWIMMER_BALANCE.glideDrag;
         if (active && !preserveAxialBalance) {
             this._axialRoll.reset();
+        }
+        if (active) {
+            this._collisionPitch.reset();
         }
     }
 
@@ -207,6 +214,7 @@ export class SwimmerMotor {
         this._heading = 0;
         this._headingTurnRate = 0;
         this._axialRoll.reset();
+        this._collisionPitch.reset();
     }
 
     setFlipTurnSpeed(speed: number) {
@@ -248,6 +256,23 @@ export class SwimmerMotor {
         this.queueKickOnly(type);
         this._armAction = 1;
         this._kickAction = 1;
+    }
+
+    // End a scripted, presentation-only stroke sequence at a phase boundary.
+    // Dolphin-jump air strokes are allowed to be mid-cycle at water entry, but
+    // that partial phase must not become the origin of every later swim stroke.
+    resetScriptedVisualMotion() {
+        this._leftArmMotionRemaining = 0;
+        this._rightArmMotionRemaining = 0;
+        this._leftKickMotionRemaining = 0;
+        this._rightKickMotionRemaining = 0;
+        this._leftArmCycle = 0;
+        this._rightArmCycle = 0;
+        this._leftKickCycle = 0;
+        this._rightKickCycle = Math.PI;
+        this._bodyPhase = 0;
+        this._armAction = 0;
+        this._kickAction = 0;
     }
 
     reset() {
@@ -457,6 +482,7 @@ export class SwimmerMotor {
             this.armCatchSupportForSide(StrokeType.RIGHT),
             this._kickCadenceHz,
         );
+        this._collisionPitch.update(dt, !this._glidePhaseActive);
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
         // large heading is naturally slower (this is the whole steering cost).
@@ -465,7 +491,8 @@ export class SwimmerMotor {
         // corrupted runtime state can never make the swimmer turn back.
         const forwardSpeed = this._currentSpeed
             * Math.max(0, Math.cos(this._heading))
-            * this._axialRoll.forwardScale;
+            * this._axialRoll.forwardScale
+            * this._collisionPitch.forwardScale;
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
@@ -525,6 +552,7 @@ export class SwimmerMotor {
         this._headingTurnRate = 0;
         this._lateralOffset = 0;
         this._axialRoll.reset();
+        this._collisionPitch.reset();
     }
 
     setConditionSpeedScale(scale: number) {
@@ -1074,8 +1102,24 @@ export class SwimmerMotor {
         return this._axialRoll.stableAngleRadians;
     }
 
+    // Presentation-only direction for the arm circle. The physical input/action
+    // phase remains unchanged; once the powered roll settles into the supine basin,
+    // the authored freestyle circle must play backward to read as backstroke.
+    get visualArmCycleDirection(): number {
+        return Math.abs(this._axialRoll.angleRadians) > Math.PI * 0.5 ? -1 : 1;
+    }
+
+    get collisionPitchRadians(): number {
+        return this._collisionPitch.angleRadians;
+    }
+
+    get collisionPitchAngularVelocity(): number {
+        return this._collisionPitch.angularVelocityRadians;
+    }
+
     get permitsUprightTreadWater(): boolean {
-        return this._axialRoll.permitsUprightTreadWater;
+        return this._axialRoll.permitsUprightTreadWater
+            && this._collisionPitch.permitsUprightTreadWater;
     }
 
     restoreAxialBalance(angleRadians: number) {
@@ -1088,6 +1132,17 @@ export class SwimmerMotor {
             return;
         }
         this._axialRoll.correct(targetAngle, targetAngularVelocity, blend);
+    }
+
+    restoreCollisionPitch() {
+        this._collisionPitch.reset();
+    }
+
+    correctCollisionPitch(targetAngle: number, targetAngularVelocity: number, blend: number) {
+        if (!this._isRacing) {
+            return;
+        }
+        this._collisionPitch.correct(targetAngle, targetAngularVelocity, blend);
     }
 
     // NETWORKED RACE: correct both heading and persistent angular velocity.
@@ -1163,6 +1218,13 @@ export class SwimmerMotor {
             return;
         }
         this._axialRoll.applyAngularImpulse(angularVelocityDeltaRadians);
+    }
+
+    applyCollisionPitchImpulse(angularVelocityDeltaRadians: number) {
+        if (!this._isRacing || this._glidePhaseActive || COLLISION_PITCH_TUNING.enabled < 0.5) {
+            return;
+        }
+        this._collisionPitch.applyAngularImpulse(angularVelocityDeltaRadians);
     }
 
     clearKnockback() {

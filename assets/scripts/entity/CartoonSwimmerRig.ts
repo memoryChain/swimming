@@ -188,6 +188,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _legSplashSuppressed = false;
     private _lastArmCycle = 0;
     private _hasLastArmCycle = false;
+    // Presentation-only arm phases. Motor/action progress always advances forward
+    // for deterministic scoring and catch torque; these phases reverse in the
+    // supine basin and re-anchor when the body crosses between balance states so a
+    // collision cannot permanently redefine the stroke's neutral arm angle.
+    private _visualLeftArmCycle = 0;
+    private _visualRightArmCycle = 0;
+    private _lastSourceLeftArmCycle = 0;
+    private _lastSourceRightArmCycle = 0;
+    private _hasVisualArmCycles = false;
+    private _visualArmCycleDirection = 1;
     private _kickCycleMotion = 0;
     private _lastKickCycle = 0;
     private _hasLastKickCycle = false;
@@ -259,6 +269,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _tmpFlipTurnModelRotation = new Quat();
     private readonly _tmpFlipTurnContactLocal = new Vec3();
     private readonly _tmpFlipTurnContactWorld = [new Vec3(), new Vec3(), new Vec3(), new Vec3()];
+    // Collision pitch is applied to the swimmer's logical root, whose imported
+    // origin is not the body's buoyancy centre. Keep a model-space hip pivot and
+    // translate the visual model so that pivot stays where the unpitched body put
+    // it. Gameplay position/collision remain on the logical swimmer node.
+    private readonly _collisionPitchPivotModelLocal = new Vec3();
+    private readonly _collisionPitchVisualOffset = new Vec3();
+    private readonly _tmpCollisionPitchPivotBase = new Vec3();
+    private readonly _tmpCollisionPitchPivotCurrent = new Vec3();
+    private readonly _tmpCollisionPitchPivotNeutral = new Vec3();
+    private readonly _tmpCollisionPitchDelta = new Vec3();
+    private readonly _tmpCollisionPitchInverseRotation = new Quat();
+    private _hasCollisionPitchPivot = false;
     private readonly _tmpSplashWorld = new Vec3();
     private readonly _tmpSplashHeadWorld = new Vec3();
     private readonly _tmpSplashHandWorld = new Vec3();
@@ -611,6 +633,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), false);
             this._pose.captureBasePose();
+            if (this._pose.getHipWorldPosition(this._tmpFlipTurnWorldPivot)) {
+                this._model.inverseTransformPoint(
+                    this._collisionPitchPivotModelLocal,
+                    this._tmpFlipTurnWorldPivot,
+                );
+                this._hasCollisionPitchPivot = true;
+            } else {
+                this._hasCollisionPitchPivot = false;
+            }
             this.refreshShowcaseAction();
             this.loadSampledActionOverrides(variant, token);
             this._loaded = true;
@@ -646,6 +677,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._animationPlayer.bind(null);
         this._perfectGlowIntensity = 0;
         this._collisionFlashTimer = 0;
+        this._hasCollisionPitchPivot = false;
+        this._collisionPitchVisualOffset.set(0, 0, 0);
         this._outlineRoot = null;
         if (this._model?.isValid) {
             this._model.destroy();
@@ -951,6 +984,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._animationPlayer.stop();
+        this.clearCollisionPitchPivotCompensation();
+        this._pose.setMovementPitchRadians(0);
         this._poseState.enterGlide();
     }
 
@@ -1002,19 +1037,86 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return 1 - Math.max(0, Math.min(1, this._treadWaterWeight));
     }
 
-    updateFreestyleFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
+    // Preserve the visual hip/buoyancy pivot while the logical swimmer root is
+    // pitched by a collision. The supplied rotations are both local to the same
+    // swimmer parent: current includes collision pitch; neutral excludes it.
+    applyCollisionPitchPivotCompensation(currentRotation: Readonly<Quat>, neutralRotation: Readonly<Quat>) {
+        const model = this._model;
+        const baseY = this._lastTreadModelY;
+        if (!model || !this._hasCollisionPitchPivot || !Number.isFinite(baseY)) {
+            return;
+        }
+
+        const modelScale = model.scale;
+        Vec3.multiply(this._tmpCollisionPitchPivotBase, this._collisionPitchPivotModelLocal, modelScale);
+        Vec3.transformQuat(this._tmpCollisionPitchPivotBase, this._tmpCollisionPitchPivotBase, model.rotation);
+        this._tmpCollisionPitchPivotBase.y += baseY;
+
+        Vec3.transformQuat(
+            this._tmpCollisionPitchPivotCurrent,
+            this._tmpCollisionPitchPivotBase,
+            currentRotation,
+        );
+        Vec3.transformQuat(
+            this._tmpCollisionPitchPivotNeutral,
+            this._tmpCollisionPitchPivotBase,
+            neutralRotation,
+        );
+        Vec3.subtract(
+            this._tmpCollisionPitchDelta,
+            this._tmpCollisionPitchPivotNeutral,
+            this._tmpCollisionPitchPivotCurrent,
+        );
+        Quat.invert(this._tmpCollisionPitchInverseRotation, currentRotation);
+        Vec3.transformQuat(
+            this._collisionPitchVisualOffset,
+            this._tmpCollisionPitchDelta,
+            this._tmpCollisionPitchInverseRotation,
+        );
+
+        const targetX = this._collisionPitchVisualOffset.x;
+        const targetY = baseY + this._collisionPitchVisualOffset.y;
+        const targetZ = this._collisionPitchVisualOffset.z;
+        const current = model.position;
+        if (Math.abs(current.x - targetX) > 1e-5
+            || Math.abs(current.y - targetY) > 1e-5
+            || Math.abs(current.z - targetZ) > 1e-5) {
+            model.setPosition(targetX, targetY, targetZ);
+        }
+    }
+
+    // Camera reconstruction works in swimmer-node local space. Remove the model
+    // translation above before rebuilding the no-collision-pitch camera anchor,
+    // otherwise the visual pivot correction would be counted twice.
+    removeCollisionPitchVisualOffset(out: Vec3) {
+        Vec3.subtract(out, out, this._collisionPitchVisualOffset);
+    }
+
+    updateFreestyleFromMotor(
+        dt: number,
+        motor: SwimmerMotor,
+        movementDirection = 1,
+        movementPitchRadians = motor.collisionPitchRadians * this.axialRollVisualWeight,
+        movementHeadingRadians = motor.heading,
+    ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
             return;
         }
         // Arms reach along the actual swim heading so they follow the body when it
         // steers, instead of staying pinned to the lane axis.
-        this._pose.setMovementHeadingRadians(motor.heading);
-        this._splashMovementHeadingRadians = motor.heading;
-        this.updateFreestyle(
-            useDt,
+        this._pose.setMovementHeadingRadians(movementHeadingRadians);
+        this._pose.setMovementPitchRadians(movementPitchRadians);
+        this._splashMovementHeadingRadians = movementHeadingRadians;
+        this.updateVisualArmCycles(
             motor.leftArmCycle,
             motor.rightArmCycle,
+            motor.visualArmCycleDirection,
+        );
+        this.updateFreestyle(
+            useDt,
+            this._visualLeftArmCycle,
+            this._visualRightArmCycle,
             motor.leftKickCycle,
             motor.rightKickCycle,
             motor.bodyPhase,
@@ -1024,12 +1126,13 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         );
     }
 
-    updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1) {
+    updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1, movementPitchRadians = 0) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
             return;
         }
         this._pose.setMovementHeadingRadians(motor.heading);
+        this._pose.setMovementPitchRadians(movementPitchRadians);
         this._splashMovementHeadingRadians = motor.heading;
         this.updateFreestyle(
             useDt,
@@ -1180,6 +1283,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._lastTreadModelEulerZ = Number.NaN;
     }
 
+    private clearCollisionPitchPivotCompensation() {
+        const model = this._model;
+        if (model && Number.isFinite(this._lastTreadModelY)) {
+            const current = model.position;
+            if (Math.abs(current.x) > 1e-5
+                || Math.abs(current.y - this._lastTreadModelY) > 1e-5
+                || Math.abs(current.z) > 1e-5) {
+                model.setPosition(0, this._lastTreadModelY, 0);
+            }
+        }
+        this._collisionPitchVisualOffset.set(0, 0, 0);
+    }
+
     updateDebugActionPreview(dt: number) {
         if (!this._loaded || !this._modelDebugMode) {
             return;
@@ -1294,6 +1410,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._loaded || !this.root) {
             return;
         }
+        this.clearCollisionPitchPivotCompensation();
         this._armAction = 0;
         this._raceFlipTurnActive = false;
         this.resetDebugFlipTurnState();
@@ -1310,6 +1427,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._legSplashSuppressed = false;
         this._lastArmCycle = 0;
         this._hasLastArmCycle = false;
+        this._visualLeftArmCycle = 0;
+        this._visualRightArmCycle = 0;
+        this._lastSourceLeftArmCycle = 0;
+        this._lastSourceRightArmCycle = 0;
+        this._hasVisualArmCycles = false;
+        this._visualArmCycleDirection = 1;
         this._kickCycleMotion = 0;
         this._lastKickCycle = 0;
         this._hasLastKickCycle = false;
@@ -1320,6 +1443,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.invalidateTreadBlendModelPlacement();
         this._poseState.resetRuntime();
         this._splashEmitter?.reset();
+        this._pose.setMovementPitchRadians(0);
         this._pose.restoreBasePose();
         this.updateSplashSurface(0);
     }
@@ -1997,6 +2121,48 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const target = Math.max(0, Math.min(1, angularSpeed / (Math.PI * 2 * 2.6)));
         const blend = Math.min(1, dt * 10);
         this._armCycleMotion += (target - this._armCycleMotion) * blend;
+    }
+
+    private updateVisualArmCycles(leftSource: number, rightSource: number, direction: number) {
+        const useDirection = direction < 0 ? -1 : 1;
+        if (!this._hasVisualArmCycles) {
+            this._visualLeftArmCycle = leftSource * useDirection;
+            this._visualRightArmCycle = rightSource * useDirection;
+            this._lastSourceLeftArmCycle = leftSource;
+            this._lastSourceRightArmCycle = rightSource;
+            this._visualArmCycleDirection = useDirection;
+            this._hasVisualArmCycles = true;
+            return;
+        }
+
+        // Crossing between prone freestyle and supine backstroke changes the
+        // authored circle direction. Re-anchor both sides to the canonical motor
+        // phase at that state edge; otherwise the reverse-time interval becomes a
+        // permanent offset and every later stroke starts at the collision pose.
+        if (useDirection !== this._visualArmCycleDirection) {
+            this._visualLeftArmCycle = leftSource * useDirection;
+            this._visualRightArmCycle = rightSource * useDirection;
+            this._lastSourceLeftArmCycle = leftSource;
+            this._lastSourceRightArmCycle = rightSource;
+            this._visualArmCycleDirection = useDirection;
+            return;
+        }
+
+        // A wall turn or scripted action can rewind a raw motor counter to zero.
+        // Rebase that side to the new source phase; merely clamping the negative
+        // delta would preserve the old phase offset forever.
+        if (leftSource + 1e-5 < this._lastSourceLeftArmCycle) {
+            this._visualLeftArmCycle = leftSource * useDirection;
+        } else {
+            this._visualLeftArmCycle += (leftSource - this._lastSourceLeftArmCycle) * useDirection;
+        }
+        if (rightSource + 1e-5 < this._lastSourceRightArmCycle) {
+            this._visualRightArmCycle = rightSource * useDirection;
+        } else {
+            this._visualRightArmCycle += (rightSource - this._lastSourceRightArmCycle) * useDirection;
+        }
+        this._lastSourceLeftArmCycle = leftSource;
+        this._lastSourceRightArmCycle = rightSource;
     }
 
     private updateKickCycleMotion(dt: number, leftKickCycle: number, rightKickCycle: number) {

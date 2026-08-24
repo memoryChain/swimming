@@ -14,6 +14,7 @@ import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning'
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
+import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
 
 export type TuningControl = {
     id: string;
@@ -45,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 28;
+const TUNING_FILE_VERSION = 29;
 
 type TuningFileData = {
     version: number;
@@ -73,6 +74,15 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.axialRollEnabled', '启用碰撞转体', '1=侧撞会给双方施加轴向角冲量；0=碰撞只产生位移和撞飞。', () => SWIMMER_COLLISION.axialRollEnabled, (v) => SWIMMER_COLLISION.axialRollEnabled = v, 1, 0, 1, 0),
             control('collision.axialRollDegreesPerImpulse', '碰撞转体强度', '每 1m/s 加权碰撞冲量转化出的轴向角速度。默认值允许普通碰撞翻半圈、强碰撞一圈或多圈；体重越轻越容易被转飞。', () => SWIMMER_COLLISION.axialRollDegreesPerImpulse, (v) => SWIMMER_COLLISION.axialRollDegreesPerImpulse = v, 10, 0, 720, 0, '°/s·m/s'),
             control('collision.axialRollMinimumLever', '碰撞最小转体力臂', '接近正面中心相撞时仍保留的最小转体比例。0=正撞只后退不翻；越大越容易让任何碰撞都产生明显翻滚。', () => SWIMMER_COLLISION.axialRollMinimumLever, (v) => SWIMMER_COLLISION.axialRollMinimumLever = v, 0.05, 0, 1, 2),
+            control('collision.pitchEnabled', '启用碰撞前后翻', '1=纵向碰撞会触发头脚方向的低维布娃娃俯仰；0=保持原有碰撞。普通划水不会驱动该状态。', () => COLLISION_PITCH_TUNING.enabled, (v) => COLLISION_PITCH_TUNING.enabled = v, 1, 0, 1, 0),
+            control('collision.pitchDegreesPerImpulse', '碰撞前后翻强度', '每 1m/s 纵向加权冲量转化出的俯仰角速度。追尾者减速时头端下扎，被追尾者加速时反向后仰。', () => COLLISION_PITCH_TUNING.degreesPerLongitudinalImpulse, (v) => COLLISION_PITCH_TUNING.degreesPerLongitudinalImpulse = v, 10, 0, 540, 0, '°/s·m/s'),
+            control('collision.pitchRightingTorque', '前后翻回正力', '水面对碰撞俯仰的复原力矩。越大越快拉回正常头朝前的水平姿态；强撞仍可越过竖直位置完成前翻。', () => COLLISION_PITCH_TUNING.rightingTorque, (v) => COLLISION_PITCH_TUNING.rightingTorque = v, 5, 0, 360, 0, '°/s²'),
+            control('collision.pitchAngularDrag', '前后翻阻尼', '前后翻角速度的水阻。越大越像沉重浮筒、较快停下；越小越接近松软布娃娃并可能继续翻圈。', () => COLLISION_PITCH_TUNING.angularDrag, (v) => COLLISION_PITCH_TUNING.angularDrag = v, 0.1, 0, 8, 2, '/s'),
+            control('collision.pitchMaxAngularSpeed', '前后翻最大角速度', '碰撞俯仰角速度硬上限，限制多体堆撞时的极端旋转。', () => COLLISION_PITCH_TUNING.maxAngularSpeed, (v) => COLLISION_PITCH_TUNING.maxAngularSpeed = v, 20, 90, 1080, 0, '°/s'),
+            control('collision.pitchTreadTolerance', '前后翻踩水容差', '俯仰偏离水平超过该角度时禁止切入普通竖直踩水，直到碰撞姿态基本恢复。', () => COLLISION_PITCH_TUNING.treadWaterToleranceDegrees, (v) => COLLISION_PITCH_TUNING.treadWaterToleranceDegrees = v, 1, 1, 45, 0, '°'),
+            control('collision.pitchPenaltyStart', '前后翻掉速起始速度', '俯仰角速度达到多少后开始额外损失推进；人物接近竖直时也会按角度自然损失推进。', () => COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed, (v) => COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed = v, 5, 0, 240, 0, '°/s'),
+            control('collision.pitchPenaltyFull', '前后翻掉速拉满速度', '俯仰角速度达到多少时降至最低推进倍率。', () => COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed, (v) => COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed = v, 5, 20, 540, 0, '°/s'),
+            control('collision.pitchMinForwardScale', '前后翻最低推进', '快速前后翻或接近竖直时至少保留的推进效率。', () => COLLISION_PITCH_TUNING.minForwardScale, (v) => COLLISION_PITCH_TUNING.minForwardScale = v, 0.02, 0, 1, 2),
         ],
     },
     {

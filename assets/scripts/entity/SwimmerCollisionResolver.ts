@@ -1,4 +1,5 @@
 import type { Swimmer } from './Swimmer';
+import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 
 const DEG2RAD = Math.PI / 180;
 
@@ -74,10 +75,13 @@ const _posZ: number[] = [];
 const _weight: number[] = [];
 const _velX: number[] = [];
 const _velZ: number[] = [];
+const _forwardX: number[] = [];
+const _forwardZ: number[] = [];
 const _dir: number[] = [];
 const _impDist: number[] = [];
 const _impLat: number[] = [];
 const _impRoll: number[] = [];
+const _impPitch: number[] = [];
 const _newContact: boolean[] = [];
 const _contactA: Swimmer[] = [];
 const _contactB: Swimmer[] = [];
@@ -121,11 +125,14 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const speed = s.currentSpeed;
         const cosH = Math.max(0, Math.cos(s.movementHeading));
         const sinH = Math.sin(s.movementHeading);
-        _velX[i] = _dir[i] * speed * cosH;
-        _velZ[i] = speed * sinH;
+        _forwardX[i] = _dir[i] * cosH;
+        _forwardZ[i] = sinH;
+        _velX[i] = _forwardX[i] * speed;
+        _velZ[i] = _forwardZ[i] * speed;
         _impDist[i] = 0;
         _impLat[i] = 0;
         _impRoll[i] = 0;
+        _impPitch[i] = 0;
     }
 
     const minDist = SWIMMER_COLLISION.radius * 2;
@@ -190,7 +197,9 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     // impulse magnitude from overlap depth + closing speed, split by inverse
     // weight. Lateral impulse always; distance impulse only for head-on pairs
     // that are still closing (both lose progress, never free distance).
-    if (SWIMMER_COLLISION.knockbackEnabled || SWIMMER_COLLISION.axialRollEnabled >= 0.5) {
+    if (SWIMMER_COLLISION.knockbackEnabled
+        || SWIMMER_COLLISION.axialRollEnabled >= 0.5
+        || COLLISION_PITCH_TUNING.enabled >= 0.5) {
         for (let i = 0; i < count; i++) {
             for (let j = i + 1; j < count; j++) {
                 const dx = _origX[i] - _origX[j];
@@ -264,6 +273,18 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     _impRoll[i] += rollLever * impI * _dir[i] * rollScale;
                     _impRoll[j] -= rollLever * impJ * _dir[j] * rollScale;
                 }
+                if (COLLISION_PITCH_TUNING.enabled >= 0.5) {
+                    // Project each body's separating shove onto its own forward axis.
+                    // Negative local impulse = sudden braking, so the internal virtual
+                    // ballast continues toward the head and produces a nose-down pitch.
+                    // Pure side brushes have a near-zero projection and remain roll-only.
+                    const pitchScale = Math.max(0, COLLISION_PITCH_TUNING.degreesPerLongitudinalImpulse)
+                        * DEG2RAD;
+                    const localForwardI = nx * _forwardX[i] + nz * _forwardZ[i];
+                    const localForwardJ = -nx * _forwardX[j] - nz * _forwardZ[j];
+                    _impPitch[i] += localForwardI * impI * pitchScale;
+                    _impPitch[j] += localForwardJ * impJ * pitchScale;
+                }
             }
         }
     }
@@ -285,6 +306,10 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const iR = _impRoll[i];
         if (iR !== 0) {
             _active[i].applyCollisionAxialImpulse(iR);
+        }
+        const iP = _impPitch[i];
+        if (iP !== 0) {
+            _active[i].applyCollisionPitchImpulse(iP);
         }
     }
 }

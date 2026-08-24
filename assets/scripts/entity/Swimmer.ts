@@ -55,6 +55,17 @@ export class Swimmer extends Component {
     private readonly _phases = new SwimmerRacePhases(this);
     private readonly _swimBoundaryRange = { min: 0, max: 0 };
     private readonly _tmpCourseRotation = new Quat();
+    // Camera anchor reconstruction: keep the exact animated upper-body point but
+    // remove collision-only pitch from its parent transform. This prevents the
+    // chase camera from diving and climbing with an end-over-end ragdoll hit.
+    private readonly _cameraNeutralCourseRotation = new Quat();
+    private readonly _tmpCameraNodeWorldRotation = new Quat();
+    private readonly _tmpCameraInverseWorldRotation = new Quat();
+    private readonly _tmpCameraParentWorldRotation = new Quat();
+    private readonly _tmpCameraNeutralWorldRotation = new Quat();
+    private readonly _tmpCameraNodeWorldPosition = new Vec3();
+    private readonly _tmpCameraAnchorOffset = new Vec3();
+    private _cameraCollisionPitchApplied = 0;
     private _lateralMinWorld = Number.NEGATIVE_INFINITY;
     private _lateralMaxWorld = Number.POSITIVE_INFINITY;
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
@@ -115,6 +126,12 @@ export class Swimmer extends Component {
         this._motor.applyCollisionAxialImpulse(angularVelocityDeltaRadians);
     }
 
+    // Add collision-induced angular velocity around the lateral axis. Negative
+    // local pitch drives the head end down; positive pitch lifts it.
+    applyCollisionPitchImpulse(angularVelocityDeltaRadians: number) {
+        this._motor.applyCollisionPitchImpulse(angularVelocityDeltaRadians);
+    }
+
     // Body weight for collision knockback (player from character def, AI from
     // competitor profile; default 1). Heavy bodies resist being shoved.
     get weight(): number {
@@ -170,6 +187,14 @@ export class Swimmer extends Component {
         return this._motor.axialRollAngularVelocity;
     }
 
+    get netCollisionPitch(): number {
+        return this._motor.collisionPitchRadians;
+    }
+
+    get netCollisionPitchVelocity(): number {
+        return this._motor.collisionPitchAngularVelocity;
+    }
+
     // NETWORKED RACE ONLY: current swim speed (m/s) for authoritative snapshots, so
     // remote copies can drive their tread-water<->freestyle pose from the owner.
     get netSpeed(): number {
@@ -209,6 +234,14 @@ export class Swimmer extends Component {
             return;
         }
         this._motor.correctAxialRoll(targetRoll, targetRollVelocity, blend);
+    }
+
+    applyNetCollisionPitch(targetPitch: number, targetPitchVelocity: number, blend: number) {
+        if (this._phases.isFlipTurnCameraActive) {
+            this._motor.restoreCollisionPitch();
+            return;
+        }
+        this._motor.correctCollisionPitch(targetPitch, targetPitchVelocity, blend);
     }
 
     // NETWORKED RACE ONLY: keep this swimmer just short of the finish wall. Used on the
@@ -590,6 +623,10 @@ export class Swimmer extends Component {
         this._phases.updateDiveUnderwaterTimer(dt);
         this.applyCoursePosition(this._motor.distance);
         this.updateBodyMotion(dt);
+        this.cartoonRig?.applyCollisionPitchPivotCompensation(
+            this._tmpCourseRotation,
+            this._cameraNeutralCourseRotation,
+        );
         this.enforcePoolWallBoundary();
         for (const strokeQualityResult of this._motor.consumeStrokeQualityResults()) {
             const result = this.makeStrokeQualityResult(strokeQualityResult.type, strokeQualityResult);
@@ -881,15 +918,17 @@ export class Swimmer extends Component {
         if (!this.cartoonRig) {
             return;
         }
+        const bodyPitchRadians = this._phases.diveRecoveryLean() * Math.PI / 180
+            + this._motor.collisionPitchRadians * this.cartoonRig.axialRollVisualWeight;
         const kickOnlyUnderwater = this._phases.isDiveGlidePoseActive
             && !this._phases.canUseArmStroke;
         // Arm motion may start during ascent, but surface-only leg spray remains
         // suppressed until the swimmer actually exits the underwater phase.
         this.cartoonRig.setLegSplashSuppressed(this._phases.isUnderwater);
         if (kickOnlyUnderwater) {
-            this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection);
+            this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
         } else {
-            this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection);
+            this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
         }
     }
 
@@ -941,14 +980,21 @@ export class Swimmer extends Component {
         const deg2rad = Math.PI / 180;
         Quat.fromEuler(this._tmpCourseRotation, 0, yaw, 0);
         Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, pitch * deg2rad);
+        Quat.copy(this._cameraNeutralCourseRotation, this._tmpCourseRotation);
+        const surfaceRagdollWeight = this.cartoonRig?.axialRollVisualWeight ?? 1;
+        const collisionPitch = this._motor.collisionPitchRadians * surfaceRagdollWeight;
+        this._cameraCollisionPitchApplied = collisionPitch;
+        if (Math.abs(collisionPitch) > 1e-5) {
+            Quat.rotateZ(this._tmpCourseRotation, this._tmpCourseRotation, collisionPitch);
+        }
         // Surface freestyle adds the powered roll imbalance around the same local
         // head-to-feet axis used by the dolphin corkscrew. Scripted dive/turn/glide
         // phases reset the motor roll, leaving only their own residual here.
         const dolphinRoll = this._phases.dolphinRollResidualRadians();
-        const surfaceRollWeight = this.cartoonRig?.axialRollVisualWeight ?? 1;
-        const axialRoll = dolphinRoll + this._motor.axialRollRadians * surfaceRollWeight;
+        const axialRoll = dolphinRoll + this._motor.axialRollRadians * surfaceRagdollWeight;
         if (Math.abs(axialRoll) > 1e-5) {
             Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, axialRoll);
+            Quat.rotateX(this._cameraNeutralCourseRotation, this._cameraNeutralCourseRotation, axialRoll);
         }
         this.node.setPosition(x, this._phases.visualSwimY(), z);
         this.node.setRotation(this._tmpCourseRotation);
@@ -1090,6 +1136,37 @@ export class Swimmer extends Component {
 
     getCameraUpperBodyWorldPosition(out: Vec3): Vec3 {
         if (this.cartoonRig?.getUpperBodyWorldPosition(out)) {
+            if (Math.abs(this._cameraCollisionPitchApplied) > 1e-5) {
+                // Convert the animated anchor back into swimmer-node local space,
+                // then rebuild it with the same yaw/dive/roll but without collision
+                // pitch. Reused scratch values keep this camera hot path allocation-free.
+                this.node.getWorldPosition(this._tmpCameraNodeWorldPosition);
+                this.node.getWorldRotation(this._tmpCameraNodeWorldRotation);
+                Quat.invert(this._tmpCameraInverseWorldRotation, this._tmpCameraNodeWorldRotation);
+                Vec3.subtract(this._tmpCameraAnchorOffset, out, this._tmpCameraNodeWorldPosition);
+                Vec3.transformQuat(
+                    this._tmpCameraAnchorOffset,
+                    this._tmpCameraAnchorOffset,
+                    this._tmpCameraInverseWorldRotation,
+                );
+                this.cartoonRig.removeCollisionPitchVisualOffset(this._tmpCameraAnchorOffset);
+                if (this.node.parent) {
+                    this.node.parent.getWorldRotation(this._tmpCameraParentWorldRotation);
+                    Quat.multiply(
+                        this._tmpCameraNeutralWorldRotation,
+                        this._tmpCameraParentWorldRotation,
+                        this._cameraNeutralCourseRotation,
+                    );
+                } else {
+                    Quat.copy(this._tmpCameraNeutralWorldRotation, this._cameraNeutralCourseRotation);
+                }
+                Vec3.transformQuat(
+                    this._tmpCameraAnchorOffset,
+                    this._tmpCameraAnchorOffset,
+                    this._tmpCameraNeutralWorldRotation,
+                );
+                Vec3.add(out, this._tmpCameraNodeWorldPosition, this._tmpCameraAnchorOffset);
+            }
             return out;
         }
         out.set(this.node.worldPosition);

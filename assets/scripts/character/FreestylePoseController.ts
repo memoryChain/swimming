@@ -172,6 +172,7 @@ export class FreestylePoseController {
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
     private _movementHeadingRadians = 0;
+    private _movementPitchRadians = 0;
 
     bind(root: Node) {
         this.root = root;
@@ -335,10 +336,28 @@ export class FreestylePoseController {
         this.updateMovementForwardWorld();
     }
 
+    // Root-level dive/collision pitch rotates the swimmer's actual forward axis.
+    // Feed that pitch into the procedural limb target so the shoulders and elbows
+    // rotate with the body instead of trying to remain horizontal in world space.
+    setMovementPitchRadians(pitchRadians: number) {
+        const next = Number.isFinite(pitchRadians) ? pitchRadians : 0;
+        if (next === this._movementPitchRadians) {
+            return;
+        }
+        this._movementPitchRadians = next;
+        this.updateMovementForwardWorld();
+    }
+
     private updateMovementForwardWorld() {
         const d = this._movementDirectionSign;
         const h = this._movementHeadingRadians;
-        this._movementForwardWorld.set(d * Math.cos(h), 0, Math.sin(h));
+        const p = this._movementPitchRadians;
+        const horizontal = Math.cos(p);
+        this._movementForwardWorld.set(
+            d * Math.cos(h) * horizontal,
+            Math.sin(p),
+            Math.sin(h) * horizontal,
+        );
     }
 
     setSwimHeadLift(degrees: number | undefined) {

@@ -709,19 +709,17 @@ export class SwimmerRacePhases {
         motor.setFlipTurnSpeed(this._dolphinHorizontalSpeed);
         // Drive the freestyle stroke animation once the player has stroked mid-air.
         // Speed/distance are already scripted above, so this is animation only.
+        // Go through the same presentation-phase mapper as normal swimming so its
+        // source cursor cannot fall behind the pose displayed in the air.
         if (this._dolphinAirStroking && rig) {
             rig.setLegSplashSuppressed(true);
             motor.advanceVisualAnimation(dt);
-            rig.updateFreestyle(
+            rig.updateFreestyleFromMotor(
                 dt,
-                motor.leftArmCycle,
-                motor.rightArmCycle,
-                motor.leftKickCycle,
-                motor.rightKickCycle,
-                motor.bodyPhase,
-                motor.currentSpeed,
+                motor,
                 direction,
-                true,
+                this._dolphinFlightPitch,
+                this._dolphinHeading,
             );
         }
     }
@@ -756,11 +754,16 @@ export class SwimmerRacePhases {
         this._dolphinRollResidual = residual;
         this._dolphinRollResidualDecayPerSecond = Math.abs(residual)
             / Math.max(0.01, DOLPHIN_JUMP.landingRollUnwindSeconds);
-        rig?.triggerBigSplash(DOLPHIN_JUMP.landingSplashScale);
         node.setPosition(courseLayout.distanceToWorldX(landingDistance), courseLayout.swimY, worldZ);
         this.applyDolphinRotation(yaw, 0, this._dolphinBaseAxialRoll + residual);
         motor.completeFlipTurnPhase(landingDistance, this._dolphinLandingExitSpeed);
         motor.restoreAxialBalance(this._dolphinBaseAxialRoll);
+        // Air strokes are presentation-only. If entry happens halfway through a
+        // sweep, terminate it at the landing boundary and restore the canonical
+        // glide pose instead of retaining that partial angle as the next origin.
+        motor.resetScriptedVisualMotion();
+        rig?.setDiveStreamlinePose();
+        rig?.triggerBigSplash(DOLPHIN_JUMP.landingSplashScale);
         this._dolphinActive = false;
         this._dolphinAirStroking = false;
         this.startDolphinLandingUnderwaterPhase();
