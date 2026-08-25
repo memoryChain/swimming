@@ -21,37 +21,56 @@ export const WATER_COLOR_TUNING = {
     // colour" knob. Default = the bright azure pool blue from Mario & Sonic 2020.
     surfaceR: 16, surfaceG: 112, surfaceB: 206,
     surfaceStrength: 0.32,
-    // Swimmer submerged-body blue (SwimmerDynamicColor waterLine tint) + strength.
-    bodyR: 40, bodyG: 150, bodyB: 226,
-    bodyStrength: 0.8,
+    // Swimmer colour transmission while an ABOVE-WATER camera looks through the
+    // surface. The shader treats rgb as a normalized spectral filter rather than
+    // a replacement colour, so black suits stay dark and skin retains some warmth.
+    bodyR: 54, bodyG: 144, bodyB: 205,
+    bodyStrength: 0.42,
+    // The same transmission seen by a SUBMERGED camera. Near underwater footage
+    // is white-balanced and preserves much more local skin/suit colour than a view
+    // through the surface, so this filter is gentler and less saturated.
+    underBodyR: 104, underBodyG: 172, underBodyB: 206,
+    underBodyStrength: 0.24,
+    // Soft top-light range for submerged fragments. Replaces the old 0.3x..1.8x
+    // direct-light multiplier that blew upper surfaces out to grey-white.
+    underLightMin: 0.34,
+    underLightMax: 1.06,
+    surfaceLightMin: 0.30,
+    surfaceLightMax: 0.82,
+    // Luminance-preserving blue fill applied mainly to the body's dark regions.
+    // The above-water view gets a little more so its strongly darkened submerged
+    // torso reads as being in water rather than as plain brown shadow.
+    underShadowBlue: 0.10,
+    surfaceShadowBlue: 0.14,
     // Above-waterline haze: a body part poking out of the surface, seen from an
     // UNDERWATER camera, fades toward this pale washed colour (reads as poking
     // through the surface, not a hard glitch). Only when the camera is submerged.
-    aboveR: 150, aboveG: 195, aboveB: 225,
-    aboveStrength: 0.75,
+    aboveR: 105, aboveG: 172, aboveB: 205,
+    aboveStrength: 0.45,
     // Distance-based blue absorption for submerged bodies: far swimmers read
     // bluer than near ones. depthColor = deep-water blue, depthStrength = max
     // blend, depthStart/depthEnd = camera distances (m) over which blue ramps in.
     // Aligned to the same saturated azure as the underwater floor (a deeper shade
     // of floorR/G/B) so bodies and floor read as one coherent blue.
-    depthR: 36, depthG: 122, depthB: 198,
-    depthStrength: 0.55,
-    depthStart: 4.0,
+    depthR: 38, depthG: 111, depthB: 175,
+    depthStrength: 0.45,
+    depthStart: 6.0,
     depthEnd: 24.0,
-    // Underwater pool-floor blue (the colour the floor/walls swap to when the
-    // camera is below the surface). Walls/grout are derived shades of this.
-    // Now that the interior tiles are pure white, this tint multiplies straight
-    // onto white so the floor reads as this exact colour. Tuned to the vivid,
-    // saturated azure of the Tokyo-2020 underwater broadcast (deeper/bluer than
-    // the old pale cyan). Nudge these live with the '水色' floor sliders.
-    floorR: 48, floorG: 142, floorB: 212,
-    // Underwater distance gradient: near the camera the floor keeps its (brighter)
-    // floor blue; farther away it fades toward a deep blue derived from floorR/G/B.
-    // Strength = how deep the far end gets (0 = uniform, off), start/end = camera
-    // distances (m) over which it ramps in (underwater camera is close, ~5m).
-    floorFarStrength: 0.85,
-    floorFarStart: 3.0,
-    floorFarEnd: 20.0,
+    // Underwater pool-floor NEAR colour. A bright, low-saturation pool cyan matches
+    // the close tiles in the real reference without the previous green cast.
+    // Walls/grout are derived shades of this near colour.
+    floorR: 136, floorG: 181, floorB: 204,
+    // Independent FAR colour. Keeping this separate from the near colour allows
+    // a real hue shift (pale pool cyan -> deep blue), not just a darker version
+    // of the same tint. Alpha/strength controls how fully distant texture detail
+    // is absorbed into this water colour.
+    floorFarR: 8, floorFarG: 84, floorFarB: 146,
+    floorFarStrength: 1.0,
+    // Start at the camera rather than after a flat near plateau. The 18m value is
+    // an asymptotic absorption scale, not a hard endpoint, so the large planar
+    // floor never exposes a visible equal-distance colour boundary.
+    floorFarStart: 0.0,
+    floorFarEnd: 18.0,
     // How strongly the underwater surface mirror is tinted toward deepColor
     // (0 = raw reflection / whiter, 1 = fully deep-water blue). Nudged up so the
     // underside-of-surface mirror reads the same azure as the floor/bodies.
@@ -187,6 +206,24 @@ function applySwimmerMaterial(material: Material) {
             WATER_COLOR_TUNING.bodyG,
             WATER_COLOR_TUNING.bodyB,
             Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.bodyStrength * 255))),
+        ));
+        material.setProperty('underwaterViewColor', new Color(
+            WATER_COLOR_TUNING.underBodyR,
+            WATER_COLOR_TUNING.underBodyG,
+            WATER_COLOR_TUNING.underBodyB,
+            Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.underBodyStrength * 255))),
+        ));
+        material.setProperty('underwaterLightParams', new Vec4(
+            WATER_COLOR_TUNING.underLightMin,
+            WATER_COLOR_TUNING.underLightMax,
+            WATER_COLOR_TUNING.surfaceLightMin,
+            WATER_COLOR_TUNING.surfaceLightMax,
+        ));
+        material.setProperty('underwaterShadowParams', new Vec4(
+            WATER_COLOR_TUNING.underShadowBlue,
+            WATER_COLOR_TUNING.surfaceShadowBlue,
+            0,
+            0,
         ));
         material.setProperty('depthFogColor', new Color(
             WATER_COLOR_TUNING.depthR,
