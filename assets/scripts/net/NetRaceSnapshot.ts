@@ -54,6 +54,9 @@ export interface NetSnapshotEntry {
     // -1 means an older payload or a source that is not authoritative for this lane.
     conditionEnergyRatio: number;
     conditionHeartRate: number;
+    // Human owner-state ordering token. Appended after condition fields on P| and
+    // input-frame self payloads; -1/undefined means an older sender without ordering.
+    ownerStateSeq?: number;
 }
 
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
@@ -108,6 +111,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const pitchVelMrad = parts.length > 11 ? parseInt(parts[11], 10) : 0;
             const conditionEnergyPermille = parts.length > 12 ? parseInt(parts[12], 10) : -1;
             const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
+            const ownerStateSeq = parts.length > 14 ? parseInt(parts[14], 10) : -1;
             entries.push({
                 lane,
                 distance: distCm / 100,
@@ -123,6 +127,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
                 conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
                 conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
+                ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
             });
         }
     }
@@ -137,11 +142,11 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // and drifting. Same field layout as one snapshot entry (incl. speed + energy), so it
 // also carries authoritative pose-speed and ultimate energy — required in broadcast-only
 // mode (iOS high-performance+), where these can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>"
 const SELF_TAG = 'P|';
 
-export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)}`;
+export function encodeSelfSnapshot(entry: NetSnapshotEntry, ownerStateSeq = entry.ownerStateSeq ?? -1): string {
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -170,6 +175,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const pitchVelMrad = parts.length > 11 ? parseInt(parts[11], 10) : 0;
     const conditionEnergyPermille = parts.length > 12 ? parseInt(parts[12], 10) : -1;
     const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
+    const ownerStateSeq = parts.length > 14 ? parseInt(parts[14], 10) : -1;
     return {
         lane,
         distance: distCm / 100,
@@ -185,6 +191,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
         conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
         conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
+        ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
     };
 }
 
@@ -210,4 +217,12 @@ export function decodeConditionHeartRate(value: number): number {
     return Number.isFinite(value) && value >= 0
         ? Math.max(0, Math.min(200, value))
         : -1;
+}
+
+export function encodeOwnerStateSeq(value: number): number {
+    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : -1;
+}
+
+export function decodeOwnerStateSeq(value: number): number {
+    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : -1;
 }

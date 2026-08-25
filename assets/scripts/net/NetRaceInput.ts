@@ -12,10 +12,10 @@
 // calling uploadFrame each tick, and applying decoded remote events to swimmers.
 //
 // Wire format (one client's payload for one frame):
-//   "<senderPos>|<token>;<token>;...|<selfPos>"
+//   "<senderPos>|<token>;<token>;...|<selfPos>|<inputSeq>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>".
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>".
 // Position, pose speed, outcome-affecting ultimate energy, and condition state ride the
 // RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently),
 // so every client's copy of every human catches up to its owner reliably.
@@ -26,6 +26,8 @@ import {
     decodeConditionHeartRate,
     encodeConditionEnergyRatio,
     encodeConditionHeartRate,
+    encodeOwnerStateSeq,
+    decodeOwnerStateSeq,
     type NetSnapshotEntry,
 } from './NetRaceSnapshot';
 
@@ -60,6 +62,8 @@ export interface DecodedInputFrame {
     events: NetInputEvent[];
     // The sender's own authoritative position this frame, if it included one.
     self?: NetSnapshotEntry;
+    // Per-sender input ordering token. -1 means an older payload.
+    inputSeq: number;
 }
 
 const TOKEN_SEP = ';';
@@ -125,11 +129,23 @@ function decodeToken(token: string): NetInputEvent | null {
 // Encode one client's events for one frame into its uploadFrame payload string. An
 // optional self-position (the sender's own authoritative position) rides along on the
 // reliable frame channel so remote copies catch up without best-effort broadcasts.
-export function encodeInputFrame(senderPos: number, events: NetInputEvent[], self?: NetSnapshotEntry | null): string {
+export function encodeInputFrame(
+    senderPos: number,
+    events: NetInputEvent[],
+    self?: NetSnapshotEntry | null,
+    ownerStateSeq = self?.ownerStateSeq ?? -1,
+    inputSeq = -1,
+): string {
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)}`;
+    } else if (inputSeq >= 0) {
+        // Preserve the self slot so old decoders still see a valid empty field.
+        out += HEADER_SEP;
+    }
+    if (inputSeq >= 0) {
+        out += `${HEADER_SEP}${Math.floor(inputSeq)}`;
     }
     return out;
 }
@@ -137,13 +153,13 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
 // Decode one uploadFrame payload (as delivered inside onSyncFrame.actionList).
 export function decodeInputFrame(payload: string): DecodedInputFrame {
     if (typeof payload !== 'string' || payload.length === 0) {
-        return { senderPos: -1, events: [] };
+        return { senderPos: -1, events: [], inputSeq: -1 };
     }
     // Format is "<pos>|<events>|<selfPos?>"; events never contain '|' (they use ';'), so
     // splitting on '|' is unambiguous.
     const parts = payload.split(HEADER_SEP);
     if (parts.length < 2) {
-        return { senderPos: -1, events: [] };
+        return { senderPos: -1, events: [], inputSeq: -1 };
     }
     const senderPos = parseInt(parts[0], 10);
     const body = parts[1];
@@ -175,6 +191,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const pitchVelMrad = p.length > 11 ? parseInt(p[11], 10) : 0;
                 const conditionEnergyPermille = p.length > 12 ? parseInt(p[12], 10) : -1;
                 const conditionHeartRate = p.length > 13 ? parseInt(p[13], 10) : -1;
+                const ownerStateSeq = p.length > 14 ? parseInt(p[14], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -190,9 +207,16 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
                     conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
                     conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
+                    ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
                 };
             }
         }
     }
-    return { senderPos: Number.isFinite(senderPos) ? senderPos : -1, events, self };
+    const inputSeq = parts.length > 3 ? parseInt(parts[3], 10) : -1;
+    return {
+        senderPos: Number.isFinite(senderPos) ? senderPos : -1,
+        events,
+        self,
+        inputSeq: Number.isFinite(inputSeq) && inputSeq >= 0 ? Math.floor(inputSeq) : -1,
+    };
 }

@@ -13,6 +13,7 @@
 import { _decorator, Component } from 'cc';
 import { StrokeType } from '../core/GameConstants';
 import { resolveDiveResult } from '../core/DiveResolver';
+import { conditionEfficiencyScale, conditionQualityScale } from '../core/ConditionBalance';
 import { Swimmer } from './Swimmer';
 import { NetInputEvent, NetInputKind, NetInputSide } from '../net/NetRaceInput';
 
@@ -31,6 +32,31 @@ export class RemoteSwimmerController extends Component {
     private _dived = false;
     // When the dive was triggered (ms), to detect a dive that got stuck mid-tween.
     private _diveStartedAt = 0;
+    // Latest quantized owner condition. It persists independently of position
+    // freshness: if a P| packet drops, the remote keeps the last authoritative
+    // modifiers instead of falling back to a local AI model.
+    private _ownerEnergyRatio = -1;
+    private _ownerHeartRate = -1;
+
+    // Apply the owner's pre-input condition snapshot before replaying events from the
+    // same reliable/broadcast frame. Repeated values are a no-op, keeping the 30Hz net
+    // path allocation-free and avoiding redundant motor writes.
+    applyOwnerCondition(energyRatio: number, heartRate: number): void {
+        if (!Number.isFinite(energyRatio)
+            || !Number.isFinite(heartRate)
+            || energyRatio < 0
+            || heartRate < 0) {
+            return;
+        }
+        const safeEnergyRatio = Math.max(0, Math.min(1, energyRatio));
+        if (safeEnergyRatio === this._ownerEnergyRatio && heartRate === this._ownerHeartRate) {
+            return;
+        }
+        this._ownerEnergyRatio = safeEnergyRatio;
+        this._ownerHeartRate = heartRate;
+        this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(safeEnergyRatio));
+        this.swimmer?.applyConditionQualityScale(conditionQualityScale(heartRate));
+    }
 
     // Apply one logical frame's worth of this member's decoded input events, in order.
     applyEvents(events: NetInputEvent[]): void {
@@ -113,5 +139,9 @@ export class RemoteSwimmerController extends Component {
     resetRemote(): void {
         this._dived = false;
         this._diveStartedAt = 0;
+        this._ownerEnergyRatio = -1;
+        this._ownerHeartRate = -1;
+        this.swimmer?.applyConditionSpeedScale(1);
+        this.swimmer?.applyConditionQualityScale(1);
     }
 }
