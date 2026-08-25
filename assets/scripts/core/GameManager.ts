@@ -68,6 +68,7 @@ import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
@@ -169,6 +170,7 @@ export class GameManager extends Component {
     private _remoteControllers: RemoteSwimmerController[] = [];
     // Host: paces authoritative position-snapshot broadcasts (seconds accumulator).
     private _netSnapshotTimer = 0;
+    private _netAiConditionSnapshotRevision = -1;
     // Accumulates real dt to step the AI on a fixed 33ms clock in a net race (so the
     // shared-seed AI advance identically on every client instead of drifting on dt).
     private _aiStepAccum = 0;
@@ -886,17 +888,28 @@ export class GameManager extends Component {
                     this._playerCondition.energy,
                     this._playerCondition.energyDepleted,
                 );
-                for (const aiCondition of this._aiConditions) {
-                    aiCondition.reset();
-                    aiCondition.setPhase(RacePhase.START);
+                // A network player's dive release is local-owner timing and must not
+                // reset shared AI condition on every peer at different wall-clock
+                // moments. Network AI starts from its freshly constructed START state
+                // and is then driven only by the fixed simulation clock.
+                if (!this._netSession) {
+                    for (const aiCondition of this._aiConditions) {
+                        aiCondition.reset();
+                        aiCondition.setPhase(RacePhase.START);
+                    }
                 }
                 this._raceContext.reset();
                 this._raceContext.latestDiveResult = result;
             },
             enterSprint: () => {
                 this._playerCondition.setPhase(RacePhase.SPRINT);
-                for (const aiCondition of this._aiConditions) {
-                    aiCondition.setPhase(RacePhase.SPRINT);
+                // In a net race each genuine AI derives its phase from its own
+                // fixed-step distance. Remote-human placeholders never run AI
+                // condition at all. Preserve the original shared phase in solo.
+                if (!this._netSession) {
+                    for (const aiCondition of this._aiConditions) {
+                        aiCondition.setPhase(RacePhase.SPRINT);
+                    }
                 }
                 this._raceContext.setPhase(RacePhase.SPRINT);
                 this._uiFlow?.setSprintActive(true);
@@ -1514,6 +1527,7 @@ export class GameManager extends Component {
         }
         while (this._aiStepAccum >= NET_SIM_STEP) {
             this._aiStepAccum -= NET_SIM_STEP;
+            const raceDistance = getRaceDistance();
             for (let i = 0; i < this._aiSwimmers.length; i++) {
                 const swimmer = this._aiSwimmers[i];
                 if (swimmer?.netFixedStep && swimmer.node.active) {
@@ -1525,7 +1539,11 @@ export class GameManager extends Component {
                 if (!swimmer?.netFixedStep || !swimmer.node.active) {
                     continue;
                 }
-                this._aiControllers[i]?.stepSimulation(NET_SIM_STEP);
+                const controller = this._aiControllers[i];
+                if (controller && !controller.remoteDriven) {
+                    this.updateNetAiConditionStep(i, NET_SIM_STEP, raceDistance);
+                }
+                controller?.stepSimulation(NET_SIM_STEP);
                 swimmer.stepSimulation(NET_SIM_STEP);
             }
             // One collision solve per deterministic simulation step, after every
@@ -1550,6 +1568,65 @@ export class GameManager extends Component {
             if (swimmer?.netFixedStep && swimmer.node.active) {
                 swimmer.netRenderLerp(renderPhase);
             }
+        }
+    }
+
+    // Network-only condition simulation for genuine AI. It lives on the same 33ms
+    // clock and immediately precedes AI decisions/movement, so condition-derived
+    // outcome modifiers cannot vary with render FPS. A remote human's placeholder
+    // controller is filtered by the caller and never reaches this method.
+    private updateNetAiConditionStep(index: number, dt: number, raceDistance: number) {
+        const swimmer = this._aiSwimmers[index];
+        const controller = this._aiControllers[index];
+        const condition = this._aiConditions[index];
+        if (!swimmer || !controller || !condition) {
+            return;
+        }
+        const finished = raceDistance > 0 && swimmer.distance >= raceDistance;
+        this.advanceNetAiConditionPhase(condition, swimmer.distance, raceDistance, swimmer.isRacing, finished);
+        if (finished) {
+            return;
+        }
+        if (!swimmer.isRacing) {
+            return;
+        }
+        const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
+        condition.tickAi({
+            difficulty: controller.difficulty,
+            progress,
+            dt,
+        });
+        swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
+        swimmer.applyConditionQualityScale(condition.qualityModifier);
+    }
+
+    // Network AI phases only move forward. Snapshot correction can move a shadow
+    // body across the sprint threshold in either direction, so deriving the phase as
+    // a fresh two-way choice would allow SPRINT -> PACE and make host takeover depend
+    // on interpolation timing. Fixed simulation supplies `raceStarted`; a host S|
+    // packet supplies only sprint/finish evidence and therefore cannot start PACE
+    // prematurely during the dive.
+    private advanceNetAiConditionPhase(
+        condition: AiConditionModel,
+        distance: number,
+        raceDistance: number,
+        raceStarted: boolean,
+        finished: boolean,
+    ) {
+        if (finished) {
+            if (condition.phase !== RacePhase.RESULT) {
+                condition.setPhase(RacePhase.RESULT);
+            }
+            return;
+        }
+        if (condition.phase === RacePhase.RESULT || condition.phase === RacePhase.SPRINT) {
+            return;
+        }
+        const remaining = Math.max(0, raceDistance - distance);
+        if (raceDistance > 0 && remaining <= RACE_PHASE_BALANCE.sprintDistanceFromFinish) {
+            condition.setPhase(RacePhase.SPRINT);
+        } else if (raceStarted && condition.phase === RacePhase.START) {
+            condition.setPhase(RacePhase.PACE);
         }
     }
 
@@ -1582,6 +1659,11 @@ export class GameManager extends Component {
         this._netRaceController.checkHostMigration(true);
         const laneCount = LANE_LAYOUT.laneCount;
         const raceDistance = getRaceDistance();
+        const applyAiConditionSnapshot = !this._netRaceController.isHost
+            && this._netAiConditionSnapshotRevision !== this._netRaceController.snapshotRevision;
+        if (applyAiConditionSnapshot) {
+            this._netAiConditionSnapshotRevision = this._netRaceController.snapshotRevision;
+        }
 
         this._netSnapshotTimer += dt;
         if (this._netSnapshotTimer >= NET_SNAPSHOT_INTERVAL) {
@@ -1744,6 +1826,32 @@ export class GameManager extends Component {
                 const hostTarget = this._netRaceController.snapshotTargets.find((e) => e.lane === lane);
                 if (hostTarget && hostTarget.energy >= 0) {
                     swimmer.applyNetEnergy(hostTarget.energy, 1);
+                }
+                // S| is authoritative for genuine AI condition. Non-host peers also
+                // keep stepping a shadow model, then reconcile it here so a promoted
+                // peer can assume AI authority without resetting condition state.
+                if (applyAiConditionSnapshot
+                    && hostTarget
+                    && hostTarget.conditionEnergyRatio >= 0
+                    && hostTarget.conditionHeartRate >= 0) {
+                    const aiIndex = this.aiIndexForLane(lane);
+                    const aiController = aiIndex >= 0 ? this._aiControllers[aiIndex] : null;
+                    const aiCondition = aiIndex >= 0 ? this._aiConditions[aiIndex] : null;
+                    if (aiCondition && aiController && !aiController.remoteDriven) {
+                        this.advanceNetAiConditionPhase(
+                            aiCondition,
+                            hostTarget.distance,
+                            raceDistance,
+                            false,
+                            hostTarget.finished,
+                        );
+                        aiCondition.applyAuthoritativeState(
+                            hostTarget.conditionEnergyRatio,
+                            hostTarget.conditionHeartRate,
+                        );
+                        swimmer.applyConditionSpeedScale(aiCondition.efficiencyModifier);
+                        swimmer.applyConditionQualityScale(aiCondition.qualityModifier);
+                    }
                 }
             }
         }
@@ -2128,6 +2236,12 @@ export class GameManager extends Component {
     }
 
     private updateAiConditions(dt: number) {
+        // Network AI condition is already advanced in driveNetAiFixedStep. Returning
+        // here also guarantees remoteDriven humans are never overwritten by a
+        // render-frame AI condition update. Solo keeps the exact original path.
+        if (this._netSession) {
+            return;
+        }
         const raceDistance = getRaceDistance();
         for (let i = 0; i < this._aiConditions.length; i++) {
             const swimmer = this._aiSwimmers[i];
@@ -2151,13 +2265,26 @@ export class GameManager extends Component {
         if (phase === null) {
             return;
         }
+        // COUNTDOWN is the synchronized pre-race boundary. Reset genuine network AI
+        // here (rather than on a local human's dive release) so every peer begins the
+        // fixed-step condition simulation from the same state. Remote-human
+        // placeholders are owner-driven and deliberately excluded.
+        if (this._netSession && state === GameState.COUNTDOWN) {
+            for (let i = 0; i < this._aiConditions.length; i++) {
+                if (!this._aiControllers[i]?.remoteDriven) {
+                    this._aiConditions[i].reset();
+                }
+            }
+        }
         if (phase === RacePhase.PACE && this._playerCondition.phase !== RacePhase.START) {
             return;
         }
         const wasSprint = this._playerCondition.phase === RacePhase.SPRINT;
         this._playerCondition.setPhase(phase);
-        for (const aiCondition of this._aiConditions) {
-            aiCondition.setPhase(phase);
+        if (!this._netSession) {
+            for (const aiCondition of this._aiConditions) {
+                aiCondition.setPhase(phase);
+            }
         }
         this._raceContext.setPhase(phase);
         if (wasSprint && phase !== RacePhase.SPRINT) {

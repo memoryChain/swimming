@@ -81,6 +81,10 @@ export class NetRaceController {
     // Latest authoritative position snapshot from the host, keyed by lane. Clients ease
     // their swimmers toward these. Empty on the host (it IS the authority).
     private _snapshotTargets: NetSnapshotEntry[] = [];
+    // Monotonic local receive revision. Consumers use this to apply non-interpolated
+    // authoritative state (such as condition) once per S| packet rather than once per
+    // render frame while the same snapshot remains cached.
+    private _snapshotRevision = 0;
     // Latest OWN-authoritative self-position report per lane (from that human's own
     // client), with arrival time so a stale one (P| dropped) is ignored and we fall back
     // to the host snapshot. Used to catch remote human copies up to their owner's view.
@@ -229,6 +233,15 @@ export class NetRaceController {
         this._isHost = true;
         this._activeHostPos = this._session.localPos;
         this._lastSnapshotAt = Date.now();
+        // The promoted host's current fixed-step simulation becomes authoritative.
+        // Discard the departed host's cached targets immediately; otherwise
+        // GameManager would keep easing AI bodies toward a stale S| packet even after
+        // authority changed, corrupting both movement and distance-derived phases.
+        this._snapshotTargets = [];
+        this._prevSnapshot = [];
+        this._snapshotTime = 0;
+        this._prevSnapshotTime = 0;
+        this._snapshotRevision++;
         console.warn(`[NetRace] host silent — pos=${this._session.localPos} taking over as host`);
     }
 
@@ -310,6 +323,10 @@ export class NetRaceController {
     // Client: the most recent authoritative snapshot (empty until one arrives).
     get snapshotTargets(): NetSnapshotEntry[] {
         return this._snapshotTargets;
+    }
+
+    get snapshotRevision(): number {
+        return this._snapshotRevision;
     }
 
     // Broadcast THIS client's own player position so every other client can catch its
@@ -416,11 +433,16 @@ export class NetRaceController {
             // we are NOT the host, adopt the position targets. Ignoring our own echo this
             // way keeps a live host from correcting itself toward a stale broadcast.
             this.adoptHostFromSnapshot(snapshot.hostPos);
-            if (!this._isHost) {
+            // adoptHostFromSnapshot can reject a lower-priority stale/competing host.
+            // Only the seat currently trusted as authority may replace movement and
+            // condition targets; otherwise packet arrival order would make AI jump
+            // between two authorities during migration.
+            if (!this._isHost && snapshot.hostPos === this._activeHostPos) {
                 this._prevSnapshot = this._snapshotTargets;
                 this._prevSnapshotTime = this._snapshotTime;
                 this._snapshotTargets = snapshot.entries;
                 this._snapshotTime = Date.now();
+                this._snapshotRevision++;
             }
             this.refreshHud();
             return;
