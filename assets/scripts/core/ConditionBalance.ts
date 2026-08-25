@@ -94,6 +94,16 @@ export const CONDITION_BALANCE = {
         energyFloor: 0.5,   // efficiency at zero energy
         curveExponent: 0.3, // <1 = slow-start (flat near full, steep near empty)
     },
+
+    cadence: {
+        // Action cadence stays normal above the warning threshold. From warning to
+        // exhausted it eases from 1 to warningScale; below exhausted it eases again
+        // to exhaustedScale at zero. This changes stroke motion/timing, not max speed.
+        warningRatio: 0.15,
+        exhaustedRatio: 0.05,
+        warningScale: 0.85,
+        exhaustedScale: 0.6,
+    },
 };
 
 // Phase-scoped drift tuning. Kept separate so phases can be tuned independently
@@ -118,4 +128,25 @@ export function conditionQualityScale(heartRate: number): number {
         ? Math.max(HEART_RATE_BOUNDS.min, Math.min(HEART_RATE_BOUNDS.max, heartRate))
         : HEART_RATE_BOUNDS.min;
     return CONDITION_BALANCE.quality.zoneModifier[zoneForHeartRate(safeHeartRate)];
+}
+
+export function energyDepletionCadenceScale(energyRatio: number): number {
+    const ratio = Number.isFinite(energyRatio)
+        ? Math.max(0, Math.min(1, energyRatio))
+        : 1;
+    const cadence = CONDITION_BALANCE.cadence;
+    const warningRatio = Math.max(0, Math.min(1, cadence.warningRatio));
+    const exhaustedRatio = Math.max(0, Math.min(warningRatio, cadence.exhaustedRatio));
+    const warningScale = Math.max(0.1, Math.min(1, cadence.warningScale));
+    const exhaustedScale = Math.max(0.1, Math.min(warningScale, cadence.exhaustedScale));
+    if (ratio >= warningRatio) {
+        return 1;
+    }
+    if (ratio >= exhaustedRatio) {
+        const span = warningRatio - exhaustedRatio;
+        const t = span > 0 ? (ratio - exhaustedRatio) / span : 0;
+        return warningScale + (1 - warningScale) * t;
+    }
+    const t = exhaustedRatio > 0 ? ratio / exhaustedRatio : 0;
+    return exhaustedScale + (warningScale - exhaustedScale) * t;
 }

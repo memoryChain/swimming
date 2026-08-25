@@ -18,6 +18,7 @@ import {
     CONDITION_BALANCE,
     conditionEfficiencyScale,
     conditionQualityScale,
+    energyDepletionCadenceScale,
 } from '../core/ConditionBalance';
 
 function clamp(value: number, min: number, max: number): number {
@@ -37,6 +38,7 @@ export class AiConditionModel {
     private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
+    private _cadenceModifier = 1;
     private _depletionCooldown = 0;
 
     reset() {
@@ -48,6 +50,7 @@ export class AiConditionModel {
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
+        this._cadenceModifier = 1;
         this._depletionCooldown = 0;
     }
 
@@ -164,6 +167,7 @@ export class AiConditionModel {
         // Efficiency axis: energy curve, same formula as the player.
         const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
+        this._cadenceModifier = energyDepletionCadenceScale(ratio);
     }
 
     // --- Readonly getters (same surface as PlayerConditionModel) ---
@@ -176,6 +180,7 @@ export class AiConditionModel {
     get sprintTier(): SprintTier { return this._sprintTier; }
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
+    get strokeCadenceScale(): number { return this._cadenceModifier; }
 
     readout(): ConditionReadout {
         return {
