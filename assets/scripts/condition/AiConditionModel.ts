@@ -59,7 +59,33 @@ export class AiConditionModel {
         this.refreshModifiers();
     }
 
-    // Per-frame derivation. No input judging; pure curve over difficulty/progress.
+    // Reconcile the locally stepped shadow state with the host-authoritative AI
+    // condition carried by S|. Keeping a stepped shadow (instead of applying only
+    // presentation modifiers) lets this client take over coherently after host
+    // migration. The cooldown is edge-triggered because it is intentionally not a
+    // wire field: old payloads stay compatible and repeated zero snapshots do not
+    // restart it while the local state remains depleted.
+    applyAuthoritativeState(energyRatio: number, heartRate: number) {
+        if (!Number.isFinite(energyRatio) || !Number.isFinite(heartRate)) {
+            return;
+        }
+        const energyCfg = CONDITION_BALANCE.energy;
+        const wasPositive = this._energy > 0;
+        const ratio = clamp(energyRatio, 0, 1);
+        this._energy = ratio * energyCfg.total;
+        this._heartRate = clamp(heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
+        this._heartRateZone = zoneForHeartRate(this._heartRate);
+        this._energyDepleted = this._energy <= 0;
+        if (!this._energyDepleted) {
+            this._depletionCooldown = 0;
+        } else if (wasPositive && this._depletionCooldown <= 0) {
+            this._depletionCooldown = energyCfg.depletionCooldownSeconds;
+        }
+        this.refreshModifiers();
+    }
+
+    // Clock-driven derivation. No input judging; pure curve over difficulty/progress.
+    // Solo supplies render dt; network races supply the fixed simulation dt.
     tickAi(input: AiConditionInput) {
         const difficulty = clamp(input.difficulty, 0, 1);
 
