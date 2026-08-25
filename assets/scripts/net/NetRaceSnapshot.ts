@@ -9,7 +9,7 @@
 // This module is the pure codec (no engine deps). NetRaceController sends/receives it.
 //
 // Wire format (broadcast message body):
-//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>;..."
+//   "S|<hostPos>#<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>;..."
 // hostPos   = the seat index (posNum) of the client that produced this snapshot, i.e.
 //             who currently believes it is the authoritative host. Clients use it for
 //             deterministic host migration: if the host goes silent, the lowest
@@ -49,6 +49,11 @@ export interface NetSnapshotEntry {
     // compatibility; older payloads decode both values as zero.
     collisionPitch: number;
     collisionPitchVelocity: number;
+    // Condition state is appended after every existing pose field. Human lanes use
+    // their owner's self report; genuine AI lanes use the host S| snapshot.
+    // -1 means an older payload or a source that is not authoritative for this lane.
+    conditionEnergyRatio: number;
+    conditionHeartRate: number;
 }
 
 // A decoded snapshot: the authoritative host's seat plus the per-lane state.
@@ -61,7 +66,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -101,6 +106,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const headVelMrad = parts.length > 9 ? parseInt(parts[9], 10) : 0;
             const pitchMrad = parts.length > 10 ? parseInt(parts[10], 10) : 0;
             const pitchVelMrad = parts.length > 11 ? parseInt(parts[11], 10) : 0;
+            const conditionEnergyPermille = parts.length > 12 ? parseInt(parts[12], 10) : -1;
+            const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
             entries.push({
                 lane,
                 distance: distCm / 100,
@@ -114,6 +121,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 axialRollVelocity: Number.isFinite(rollVelMrad) ? rollVelMrad / 1000 : 0,
                 collisionPitch: Number.isFinite(pitchMrad) ? pitchMrad / 1000 : 0,
                 collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
+                conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
+                conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
             });
         }
     }
@@ -128,11 +137,11 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // and drifting. Same field layout as one snapshot entry (incl. speed + energy), so it
 // also carries authoritative pose-speed and ultimate energy — required in broadcast-only
 // mode (iOS high-performance+), where these can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(entry: NetSnapshotEntry): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -159,6 +168,8 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const headVelMrad = parts.length > 9 ? parseInt(parts[9], 10) : 0;
     const pitchMrad = parts.length > 10 ? parseInt(parts[10], 10) : 0;
     const pitchVelMrad = parts.length > 11 ? parseInt(parts[11], 10) : 0;
+    const conditionEnergyPermille = parts.length > 12 ? parseInt(parts[12], 10) : -1;
+    const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
     return {
         lane,
         distance: distCm / 100,
@@ -172,5 +183,31 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         axialRollVelocity: Number.isFinite(rollVelMrad) ? rollVelMrad / 1000 : 0,
         collisionPitch: Number.isFinite(pitchMrad) ? pitchMrad / 1000 : 0,
         collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
+        conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
+        conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
     };
+}
+
+export function encodeConditionEnergyRatio(value: number): number {
+    return Number.isFinite(value) && value >= 0
+        ? Math.max(0, Math.min(1000, Math.round(value * 1000)))
+        : -1;
+}
+
+export function encodeConditionHeartRate(value: number): number {
+    return Number.isFinite(value) && value >= 0
+        ? Math.max(0, Math.min(200, Math.round(value)))
+        : -1;
+}
+
+export function decodeConditionEnergyRatio(value: number): number {
+    return Number.isFinite(value) && value >= 0
+        ? Math.max(0, Math.min(1, value / 1000))
+        : -1;
+}
+
+export function decodeConditionHeartRate(value: number): number {
+    return Number.isFinite(value) && value >= 0
+        ? Math.max(0, Math.min(200, value))
+        : -1;
 }

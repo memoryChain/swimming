@@ -4,7 +4,13 @@
 // below are the v1 starting point discussed during design and are expected to be
 // tuned. Keep all magic numbers here so logic stays clean and balance is adjustable.
 
-import { HeartRateZone, RacePhase, SprintTier } from '../condition/ConditionTypes';
+import {
+    HEART_RATE_BOUNDS,
+    HeartRateZone,
+    RacePhase,
+    SprintTier,
+    zoneForHeartRate,
+} from '../condition/ConditionTypes';
 
 export const RACE_PHASE_BALANCE = {
     // Enter SPRINT when this many metres remain. The finish top-view camera is a
@@ -98,3 +104,18 @@ export const CONDITION_PHASE_TUNING: Record<RacePhase, { hrPushScale: number; hr
     [RacePhase.SPRINT]: { hrPushScale: 1.5, hrDriftScale: 0.6 },
     [RacePhase.RESULT]: { hrPushScale: 0.0, hrDriftScale: 1.5 },
 };
+
+export function conditionEfficiencyScale(energyRatio: number): number {
+    const ratio = Number.isFinite(energyRatio)
+        ? Math.max(0, Math.min(1, energyRatio))
+        : 1;
+    const eff = CONDITION_BALANCE.efficiency;
+    return eff.energyFloor + (1 - eff.energyFloor) * Math.pow(ratio, eff.curveExponent);
+}
+
+export function conditionQualityScale(heartRate: number): number {
+    const safeHeartRate = Number.isFinite(heartRate)
+        ? Math.max(HEART_RATE_BOUNDS.min, Math.min(HEART_RATE_BOUNDS.max, heartRate))
+        : HEART_RATE_BOUNDS.min;
+    return CONDITION_BALANCE.quality.zoneModifier[zoneForHeartRate(safeHeartRate)];
+}

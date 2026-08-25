@@ -15,13 +15,19 @@
 //   "<senderPos>|<token>;<token>;...|<selfPos>"
 // where senderPos identifies which room member produced it (WeChat posNum), each token
 // is one input event, and the optional trailing "<selfPos>" is the sender's OWN
-// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>".
-// Position, pose speed, and outcome-affecting ultimate energy ride the RELIABLE lock-step
-// frame channel (not best-effort broadcasts, which drop intermittently), so every client's
-// copy of every human catches up to its owner reliably.
+// authoritative state "<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>".
+// Position, pose speed, outcome-affecting ultimate energy, and condition state ride the
+// RELIABLE lock-step frame channel (not best-effort broadcasts, which drop intermittently),
+// so every client's copy of every human catches up to its owner reliably.
 // An empty event list is "<senderPos>|" (optionally "<senderPos>||<selfPos>").
 
-import type { NetSnapshotEntry } from './NetRaceSnapshot';
+import {
+    decodeConditionEnergyRatio,
+    decodeConditionHeartRate,
+    encodeConditionEnergyRatio,
+    encodeConditionHeartRate,
+    type NetSnapshotEntry,
+} from './NetRaceSnapshot';
 
 // Side of a stroke/kick. 0 = LEFT, 1 = RIGHT (kept numeric so the codec doesn't
 // depend on the game's StrokeType enum; the controller maps between them).
@@ -123,7 +129,7 @@ export function encodeInputFrame(senderPos: number, events: NetInputEvent[], sel
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)}`;
     }
     return out;
 }
@@ -167,6 +173,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                 const headVelMrad = p.length > 9 ? parseInt(p[9], 10) : 0;
                 const pitchMrad = p.length > 10 ? parseInt(p[10], 10) : 0;
                 const pitchVelMrad = p.length > 11 ? parseInt(p[11], 10) : 0;
+                const conditionEnergyPermille = p.length > 12 ? parseInt(p[12], 10) : -1;
+                const conditionHeartRate = p.length > 13 ? parseInt(p[13], 10) : -1;
                 self = {
                     lane,
                     distance: distCm / 100,
@@ -180,6 +188,8 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     axialRollVelocity: Number.isFinite(rollVelMrad) ? rollVelMrad / 1000 : 0,
                     collisionPitch: Number.isFinite(pitchMrad) ? pitchMrad / 1000 : 0,
                     collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
+                    conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
+                    conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
                 };
             }
         }
