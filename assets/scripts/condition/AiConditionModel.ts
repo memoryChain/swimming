@@ -33,6 +33,7 @@ export class AiConditionModel {
     private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
+    private _depletionCooldown = 0;
 
     reset() {
         this._phase = RacePhase.START;
@@ -43,6 +44,7 @@ export class AiConditionModel {
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
+        this._depletionCooldown = 0;
     }
 
     setPhase(phase: RacePhase) {
@@ -69,6 +71,9 @@ export class AiConditionModel {
         );
         this._heartRateZone = zoneForHeartRate(this._heartRate);
 
+        if (this._depletionCooldown > 0) {
+            this._depletionCooldown = Math.max(0, this._depletionCooldown - input.dt);
+        }
         this.drainEnergy(difficulty, input.dt);
         this.regenEnergy(input.dt);
         this.refreshModifiers();
@@ -99,13 +104,20 @@ export class AiConditionModel {
         if (this._phase === RacePhase.SPRINT) {
             drain *= lerp(1.2, 3.0, difficulty);
         }
+        const wasPositive = this._energy > 0;
         this._energy = clamp(this._energy - drain, 0, energyCfg.total);
         this._energyDepleted = this._energy <= 0;
+        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
+            this._depletionCooldown = energyCfg.depletionCooldownSeconds;
+        }
     }
 
     // Energy regen: same model as the player. All zones regen (LOW strongest);
     // SPRINT boosts all zones so AI also peaks at the finish instead of stalling.
     private regenEnergy(dt: number) {
+        if (this._depletionCooldown > 0) {
+            return;
+        }
         const energyCfg = CONDITION_BALANCE.energy;
         let rate = energyCfg.regenPerZone[this._heartRateZone];
         if (this._phase === RacePhase.SPRINT) {

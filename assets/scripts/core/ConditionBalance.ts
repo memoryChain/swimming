@@ -45,6 +45,9 @@ export const CONDITION_BALANCE = {
             [HeartRateZone.OVERLOAD]: 0.15,
         } as Record<HeartRateZone, number>,
         regenSprintBoost: 1.0,
+        // After energy reaches zero, pause regeneration briefly so exhaustion
+        // persists instead of immediately bouncing between empty and non-empty.
+        depletionCooldownSeconds: 1.5,
         // Energy depletion only affects the efficiency curve below;
         // the quality axis (heart-rate) is fully orthogonal.
     },
