@@ -30,6 +30,7 @@ export class PlayerConditionModel {
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
     private _energyTotalOverride: number | null = null;
+    private _depletionCooldown = 0;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
@@ -54,6 +55,7 @@ export class PlayerConditionModel {
         this._strokesSinceDive = 0;
         this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
+        this._depletionCooldown = 0;
     }
 
     setProgressionOverrides(opts: { energyTotal?: number } | null) {
@@ -141,6 +143,9 @@ export class PlayerConditionModel {
 
         // Energy regeneration: all heart-rate zones regen (LOW strongest).
         // SPRINT boosts all zones so the finish is an all-out peak, not a crawl.
+        if (this._depletionCooldown > 0) {
+            this._depletionCooldown = Math.max(0, this._depletionCooldown - dt);
+        }
         this.regenEnergy(dt);
         this.refreshModifiers();
     }
@@ -156,8 +161,12 @@ export class PlayerConditionModel {
         if (this._phase === RacePhase.SPRINT) {
             drain *= energyCfg.sprintTierMultiplier[this._sprintTier];
         }
+        const wasPositive = this._energy > 0;
         this._energy = clamp(this._energy - drain, 0, this._effectiveEnergyTotal);
         this._energyDepleted = this._energy <= 0;
+        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
+            this._depletionCooldown = energyCfg.depletionCooldownSeconds;
+        }
     }
 
     private refreshModifiers() {
@@ -174,6 +183,9 @@ export class PlayerConditionModel {
 
     // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
     private regenEnergy(dt: number) {
+        if (this._depletionCooldown > 0) {
+            return;
+        }
         const energyCfg = CONDITION_BALANCE.energy;
         // All zones regen, but LOW regenerates the most. SPRINT boosts all zones
         // so the finish feels like an all-out peak regardless of how hard you push.

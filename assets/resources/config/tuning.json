@@ -38,6 +38,7 @@
     "condition.effortDecay": 0.35,
     "condition.easeUp": 16,
     "condition.easeDown": 6,
+    "condition.depletionCooldown": 1.5,
     "speed.aiCruiseAccel": 1.9,
     "collision.pitchDegreesPerImpulse": 220,
     "collision.pitchRightingTorque": 90,
