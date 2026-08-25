@@ -56,9 +56,9 @@ export const CONDITION_BALANCE = {
         // HIGH_PRESSURE / OVERLOAD. Replaces the old one-way ratchet.
         restTargetHr: 70,         // resting HR with no effort (drifts down to here)
         maxEffortTargetHr: 140,   // perfect steady effort settles high in OPTIMAL (sweet zone)
-        effortDecayPerSecond: 1.1, // sustained-effort sample fade rate when not stroking
-        easeUpPerSecond: 42,      // climb rate when HR is below target (HR points/sec)
-        easeDownPerSecond: 26,    // recovery rate when HR is above target
+        effortDecayPerSecond: 0.35, // sustained-effort sample fade rate when not stroking
+        easeUpPerSecond: 16,      // climb rate when HR is below target (HR points/sec)
+        easeDownPerSecond: 6,     // recovery rate when HR is above target
 
         // Startup wobble window: first N strokes use DiveResult.heartRateStartupWobbleModifier.
         startupStrokeWindow: 5,
