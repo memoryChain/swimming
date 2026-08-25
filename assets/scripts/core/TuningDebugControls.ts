@@ -230,6 +230,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('condition.depletionCooldown', '体力耗尽冷却', '体力降到零后暂停恢复的时间。设为零可关闭冷却。', () => CONDITION_BALANCE.energy.depletionCooldownSeconds, (v) => CONDITION_BALANCE.energy.depletionCooldownSeconds = v, 0.1, 0, 5, 1, 's'),
             control('condition.efficiencyFloor', '效率地板', '体力耗尽时的效率下限。0=没力气完全游不动；0.5=还能以一半效率游。配合效率曲线指数使用。', () => CONDITION_BALANCE.efficiency.energyFloor, (v) => CONDITION_BALANCE.efficiency.energyFloor = v, 0.05, 0, 0.9, 2),
             control('condition.curveExponent', '效率曲线指数', '效率随体力衰减的曲线形状。1=线性；<1=缓启动（高体力几乎不掉，最后10%急跌）。0.3=陡峭缓启动。', () => CONDITION_BALANCE.efficiency.curveExponent, (v) => CONDITION_BALANCE.efficiency.curveExponent = v, 0.05, 0.1, 2, 2),
+            control('condition.cadenceWarningRatio', '降频预警体力', '体力低于这个比例后，划水动作开始逐渐变慢。0.15 表示 15%。', () => CONDITION_BALANCE.cadence.warningRatio, (v) => CONDITION_BALANCE.cadence.warningRatio = v, 0.01, 0, 0.5, 2),
+            control('condition.cadenceExhaustedRatio', '降频力竭体力', '体力低于这个比例后进入更重的第二段降频。应不高于预警体力。', () => CONDITION_BALANCE.cadence.exhaustedRatio, (v) => CONDITION_BALANCE.cadence.exhaustedRatio = v, 0.01, 0, 0.3, 2),
+            control('condition.cadenceWarningScale', '力竭入口划频', '体力降到力竭阈值时的动作频率倍率。0.85 表示原频率的 85%。', () => CONDITION_BALANCE.cadence.warningScale, (v) => CONDITION_BALANCE.cadence.warningScale = v, 0.05, 0.3, 1, 2),
+            control('condition.cadenceExhaustedScale', '空体力划频', '体力归零时的动作频率倍率。0.6 表示原频率的 60%。', () => CONDITION_BALANCE.cadence.exhaustedScale, (v) => CONDITION_BALANCE.cadence.exhaustedScale = v, 0.05, 0.3, 1, 2),
             control('condition.regenLow', '低区回血', '心率在低区时每秒回复的体力。越高回血越快。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW] = v, 0.05, 0, 5, 2),
             control('condition.regenOptimal', '最佳区回血', '心率在最佳区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL] = v, 0.05, 0, 5, 2),
             control('condition.regenHighPressure', '高压区回血', '心率在高压区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE] = v, 0.05, 0, 5, 2),
@@ -650,6 +654,23 @@ function validateTuningRelations() {
             `${STROKE_QUALITY_TUNING.armCycleSpeedStart.toFixed(3)}; set to ${fixed.toFixed(3)}`,
         );
         STROKE_QUALITY_TUNING.armCycleSpeedFull = fixed;
+    }
+
+    if (CONDITION_BALANCE.cadence.exhaustedRatio > CONDITION_BALANCE.cadence.warningRatio) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: condition.cadenceExhaustedRatio ` +
+            `${CONDITION_BALANCE.cadence.exhaustedRatio.toFixed(2)} was above warning ratio ` +
+            `${CONDITION_BALANCE.cadence.warningRatio.toFixed(2)}`,
+        );
+        CONDITION_BALANCE.cadence.exhaustedRatio = CONDITION_BALANCE.cadence.warningRatio;
+    }
+    if (CONDITION_BALANCE.cadence.exhaustedScale > CONDITION_BALANCE.cadence.warningScale) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: condition.cadenceExhaustedScale ` +
+            `${CONDITION_BALANCE.cadence.exhaustedScale.toFixed(2)} was above warning scale ` +
+            `${CONDITION_BALANCE.cadence.warningScale.toFixed(2)}`,
+        );
+        CONDITION_BALANCE.cadence.exhaustedScale = CONDITION_BALANCE.cadence.warningScale;
     }
 
     if (RACE_PHASE_BALANCE.sprintDistanceFromFinish < RACE_CAMERA_TUNING.finishTopViewDistance) {

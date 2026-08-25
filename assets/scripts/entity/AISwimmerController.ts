@@ -1,7 +1,7 @@
 import { _decorator, Component } from 'cc';
 import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceDifficultyConfig, getRaceDistance } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
-import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
+import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AI_DOLPHIN_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
@@ -387,8 +387,16 @@ export class AISwimmerController extends Component {
         }
         const minHold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
         const reachedTarget = progress >= this._targetProgress && this._holdElapsed >= minHold;
+        // Exhaustion deliberately slows the action cycle. Keep the time fallback
+        // behind the progress fallback so it does not force a slowed AI to release
+        // before its intended sweet-zone target. The small margin covers one fixed step.
+        const cadenceAwareMaxHold = this.swimmer.actionCycleSeconds
+            * Math.max(0, AI_STROKE_TUNING.maxReleaseProgress)
+            / Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale)
+            + 0.033;
+        const maxHold = Math.max(AI_STROKE_TUNING.maxHoldSeconds, cadenceAwareMaxHold);
         const safetyRelease = progress >= AI_STROKE_TUNING.maxReleaseProgress
-            || this._holdElapsed >= AI_STROKE_TUNING.maxHoldSeconds;
+            || this._holdElapsed >= maxHold;
         if (reachedTarget || safetyRelease) {
             this.swimmer.handleStrokeHeld(this._side, false);
             this.scheduleGap();

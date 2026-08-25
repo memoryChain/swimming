@@ -110,6 +110,7 @@ export class SwimmerMotor {
     private _playerBalance: PlayerBalanceOverrides | null = null;
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
+    private _conditionCadenceScale = 1;
     private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
@@ -544,6 +545,7 @@ export class SwimmerMotor {
         this._speedCapBonus = 0;
         this._conditionSpeedScale = 1;
         this._conditionQualityScale = 1;
+        this._conditionCadenceScale = 1;
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
@@ -621,6 +623,10 @@ export class SwimmerMotor {
 
     setConditionQualityScale(scale: number) {
         this._conditionQualityScale = clamp(scale, 0, 2);
+    }
+
+    setConditionCadenceScale(scale: number) {
+        this._conditionCadenceScale = clamp(scale, 0.1, 2);
     }
 
     private decaySpeedCapBonus(dt: number, options: SwimmerMotorOptions) {
@@ -1029,7 +1035,7 @@ export class SwimmerMotor {
         const full = STROKE_QUALITY_TUNING.armCycleSpeedFull;
         const span = Math.max(0.01, full - start);
         const t = clamp01((this._currentSpeed - start) / span);
-        return CYCLE_AMOUNT * getRaceArmCycleSpeedScale() * lerp(
+        return CYCLE_AMOUNT * getRaceArmCycleSpeedScale() * this._conditionCadenceScale * lerp(
             STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond,
             STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond,
             t,

@@ -13,7 +13,11 @@
 import { _decorator, Component } from 'cc';
 import { StrokeType } from '../core/GameConstants';
 import { resolveDiveResult } from '../core/DiveResolver';
-import { conditionEfficiencyScale, conditionQualityScale } from '../core/ConditionBalance';
+import {
+    conditionEfficiencyScale,
+    conditionQualityScale,
+    energyDepletionCadenceScale,
+} from '../core/ConditionBalance';
 import { Swimmer } from './Swimmer';
 import { NetInputEvent, NetInputKind, NetInputSide } from '../net/NetRaceInput';
 
@@ -56,6 +60,7 @@ export class RemoteSwimmerController extends Component {
         this._ownerHeartRate = heartRate;
         this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(safeEnergyRatio));
         this.swimmer?.applyConditionQualityScale(conditionQualityScale(heartRate));
+        this.swimmer?.applyConditionCadenceScale(energyDepletionCadenceScale(safeEnergyRatio));
     }
 
     // Apply one logical frame's worth of this member's decoded input events, in order.
@@ -143,5 +148,6 @@ export class RemoteSwimmerController extends Component {
         this._ownerHeartRate = -1;
         this.swimmer?.applyConditionSpeedScale(1);
         this.swimmer?.applyConditionQualityScale(1);
+        this.swimmer?.applyConditionCadenceScale(1);
     }
 }

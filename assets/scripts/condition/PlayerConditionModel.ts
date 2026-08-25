@@ -18,6 +18,7 @@ import {
     CONDITION_PHASE_TUNING,
     conditionEfficiencyScale,
     conditionQualityScale,
+    energyDepletionCadenceScale,
 } from '../core/ConditionBalance';
 import { DiveResult } from '../core/DiveResult';
 
@@ -34,6 +35,7 @@ export class PlayerConditionModel {
     private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
+    private _cadenceModifier = 1;
     private _energyTotalOverride: number | null = null;
     private _depletionCooldown = 0;
 
@@ -54,6 +56,7 @@ export class PlayerConditionModel {
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
+        this._cadenceModifier = 1;
         this._lastQualityScore = 0;
         this._timeSinceLastStroke = 0;
         this._effortSample = 0;
@@ -183,6 +186,7 @@ export class PlayerConditionModel {
         // Slow-start curve: efficiency = floor + (1-floor) * ratio^exponent.
         const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
+        this._cadenceModifier = energyDepletionCadenceScale(ratio);
     }
 
     // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
@@ -211,6 +215,7 @@ export class PlayerConditionModel {
     get sprintTier(): SprintTier { return this._sprintTier; }
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
+    get strokeCadenceScale(): number { return this._cadenceModifier; }
 
     // --- Derived helpers (doc 23.8) ---
     isOptimal(): boolean {
