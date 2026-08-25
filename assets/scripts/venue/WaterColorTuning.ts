@@ -33,22 +33,15 @@ export const WATER_COLOR_TUNING = {
     underBodyStrength: 0.24,
     // Soft top-light range for submerged fragments. Replaces the old 0.3x..1.8x
     // direct-light multiplier that blew upper surfaces out to grey-white.
-    underLightMin: 0.78,
-    underLightMax: 1.08,
-    surfaceLightMin: 0.55,
+    underLightMin: 0.34,
+    underLightMax: 1.06,
+    surfaceLightMin: 0.30,
     surfaceLightMax: 0.82,
     // Luminance-preserving blue fill applied mainly to the body's dark regions.
     // The above-water view gets a little more so its strongly darkened submerged
     // torso reads as being in water rather than as plain brown shadow.
     underShadowBlue: 0.10,
     surfaceShadowBlue: 0.14,
-    // Vertical reach of the surface light. Fragments within surfaceLightStart of
-    // the water plane stay fully lit; by surfaceLightEnd they retain only the
-    // deep-water ambient factor for the active camera side.
-    surfaceLightStart: 0.10,
-    surfaceLightEnd: 0.75,
-    underDeepLight: 0.34,
-    surfaceDeepLight: 0.30,
     // Above-waterline haze: a body part poking out of the surface, seen from an
     // UNDERWATER camera, fades toward this pale washed colour (reads as poking
     // through the surface, not a hard glitch). Only when the camera is submerged.
@@ -225,12 +218,6 @@ function applySwimmerMaterial(material: Material) {
             WATER_COLOR_TUNING.underLightMax,
             WATER_COLOR_TUNING.surfaceLightMin,
             WATER_COLOR_TUNING.surfaceLightMax,
-        ));
-        material.setProperty('underwaterDepthLightParams', new Vec4(
-            WATER_COLOR_TUNING.surfaceLightStart,
-            WATER_COLOR_TUNING.surfaceLightEnd,
-            WATER_COLOR_TUNING.underDeepLight,
-            WATER_COLOR_TUNING.surfaceDeepLight,
         ));
         material.setProperty('underwaterShadowParams', new Vec4(
             WATER_COLOR_TUNING.underShadowBlue,
