@@ -1,6 +1,6 @@
 {
-  "version": 8,
-  "updatedAt": "2026-08-10T00:00:00.000Z",
+  "version": 29,
+  "updatedAt": "2026-08-25T09:21:07.301Z",
   "values": {
     "input.padStrokeDedupeMs": 5,
     "dive.minPower": 0.3,
@@ -32,6 +32,10 @@
     "speed.baseDrag": 0.42,
     "speed.highSpeedDrag": 0.14,
     "speed.aiCruiseAccel": 1.9,
+    "collision.pitchDegreesPerImpulse": 220,
+    "collision.pitchRightingTorque": 90,
+    "collision.pitchAngularDrag": 1.1,
+    "collision.pitchMaxAngularSpeed": 420,
     "strokeQuality.minHoldSeconds": 0.2,
     "strokeQuality.goodStart": 0.15,
     "strokeQuality.goodEnd": 0.6,
