@@ -18,22 +18,35 @@ CCEffect %{
         # x = water surface world Y, y = tint fade depth (small = crisp edge).
         # z/w unused.
         waterLine:       { value: [0.055, 0.04, 0, 0] }
-        # Underwater tint colour (linear). rgb = blue the submerged body blends
-        # toward, a = blend strength at full depth.
-        underwaterColor: { value: [0.05, 0.34, 0.62, 0.72], linear: true, editor: { type: color } }
+        # Above-water camera looking through the surface: rgb defines a normalized
+        # spectral transmission filter, a = filter strength. Multiplicative filtering
+        # preserves material identity (especially black suits) unlike a flat blue mix.
+        underwaterColor: { value: [0.212, 0.565, 0.804, 0.42], linear: true, editor: { type: color } }
+        # Submerged camera: gentler, white-balanced transmission that keeps nearby
+        # skin warm, matching real underwater broadcast footage.
+        underwaterViewColor: { value: [0.408, 0.675, 0.808, 0.24], linear: true, editor: { type: color } }
+        # x/y = submerged-camera top-light min/max; z/w = above-water-camera min/max.
+        # Both ranges are deliberately soft and never approach the old 1.8x blowout.
+        underwaterLightParams: { value: [0.78, 1.08, 0.55, 0.82] }
+        # Surface-light vertical falloff: x = fully-lit depth, y = deep-dark depth,
+        # z = submerged-camera deep ambient, w = above-water-camera deep ambient.
+        underwaterDepthLightParams: { value: [0.10, 0.75, 0.34, 0.30] }
+        # Luminance-preserving blue fill for dark body regions:
+        # x = submerged-camera strength, y = above-water-camera strength.
+        underwaterShadowParams: { value: [0.10, 0.14, 0.0, 0.0] }
         # Distance-based blue absorption for submerged bodies: far swimmers read
         # bluer than near ones (matches real underwater "the further, the bluer").
         # rgb = deep-water blue, a = max blend strength.
-        depthFogColor:   { value: [0.03, 0.32, 0.62, 0.85], linear: true, editor: { type: color } }
+        depthFogColor:   { value: [0.149, 0.435, 0.686, 0.45], linear: true, editor: { type: color } }
         # x = distance where the blue starts (m), y = distance for full blue (m),
         # z = enable (0/1). w unused.
-        depthFogParams:  { value: [2.5, 22.0, 1.0, 0.0] }
+        depthFogParams:  { value: [6.0, 24.0, 1.0, 0.0] }
         # Above-waterline haze: when the CAMERA is underwater, a body part sticking
         # out above the surface fades toward this pale washed colour so it reads as
         # poking through the surface rather than a hard cut. a = strength. Only
         # applies when the camera is below the surface; normal above-water race
         # views are untouched.
-        aboveWaterColor: { value: [0.60, 0.78, 0.90, 0.75], linear: true, editor: { type: color } }
+        aboveWaterColor: { value: [0.412, 0.675, 0.804, 0.45], linear: true, editor: { type: color } }
         # x>0.5 = this draw is the underwater mirror reflection (a camera ABOVE the
         # surface): discard the swimmer's above-water fragments so the reflection
         # only shows the submerged body (no above-water ghost). Set on the fly by
@@ -108,6 +121,10 @@ CCProgram swimmer-color-fs %{
     vec4 recolorParams;
     vec4 waterLine;
     vec4 underwaterColor;
+    vec4 underwaterViewColor;
+    vec4 underwaterLightParams;
+    vec4 underwaterDepthLightParams;
+    vec4 underwaterShadowParams;
     vec4 depthFogColor;
     vec4 depthFogParams;
     vec4 aboveWaterColor;
@@ -159,6 +176,11 @@ CCProgram swimmer-color-fs %{
     vec3 bodyColor = mix(base, garment, garmentOverride);
     vec3 skin = skinColor.rgb * brightness;
     bodyColor = mix(bodyColor, skin, skinMask * skinColor.a);
+    // Camera depth is evaluated in the shader so the same material naturally
+    // supports both presentation cases without per-frame material writes. Blend
+    // over a narrow band to avoid a colour pop while the camera crosses the plane.
+    float cameraSubmerge = 1.0 - smoothstep(waterLine.x - 0.12, waterLine.x + 0.04, cc_cameraPos.y);
+    float belowness = step(v_worldPos.y, waterLine.x);
     // --- Cel shading: quantise the directional light into flat bands ----------
     // Keep a geometric per-triangle normal for the intentionally faceted cel
     // shading. The charge rim separately uses the smooth skinned vertex normal.
@@ -181,7 +203,11 @@ CCProgram swimmer-color-fs %{
     // Reuses celN / celV. Brightest where the surface faces away from the
     // camera (silhouette), adding an anime-style backlight halo. Additive.
     float rim = pow(1.0 - clamp(dot(celN, celV), 0.0, 1.0), max(rimParams.x, 0.1));
-    bodyColor += rimColor.rgb * (rim * rimColor.a * step(0.5, rimParams.y));
+    // Water scatters the hard silhouette halo. Keep a hint for readability from
+    // above and reduce it further for the direct underwater view.
+    float submergedRimScale = mix(0.48, 0.28, cameraSubmerge);
+    float rimScale = mix(1.0, submergedRimScale, belowness);
+    bodyColor += rimColor.rgb * (rim * rimColor.a * step(0.5, rimParams.y) * rimScale);
     // Silhouette-only inner glow using the standard Screen formula:
     // result = 1 - (1 - base) * (1 - overlay).
     // The smooth skinned vertex normal makes the Fresnel edge continuous across
@@ -209,22 +235,46 @@ CCProgram swimmer-color-fs %{
       vec3 screenBase = clamp(bodyColor, 0.0, 1.0);
       bodyColor = vec3(1.0) - (vec3(1.0) - screenBase) * (vec3(1.0) - screenOverlay);
     }
-    // World-space waterline as a HARD boundary: every fragment below waterLine.x
-    // is the submerged colour, everything above is normal, with a single sharp
-    // division line (no gradient/blur). underwaterColor.a controls how different
-    // the submerged colour is. Correct from any camera angle.
-    float belowness = step(v_worldPos.y, waterLine.x);
-    vec3 submerged = mix(bodyColor, underwaterColor.rgb, 0.66);
-    bodyColor = mix(bodyColor, submerged, belowness * underwaterColor.a);
-    // Directional underwater light: the key light comes from the surface ABOVE,
-    // so the body's up-facing side (toward the surface) reads clearly brighter and
-    // its down-facing side (toward the pool floor) reads darker, instead of a flat
-    // blue. Applied at FULL strength on the submerged body (not diluted by
-    // underwaterColor.a) so the top/bottom difference is obvious. Uses the true
-    // skinned world normal (not the camera-oriented cel normal) so up/down is the
-    // real world axis regardless of view.
+    // Underwater spectral filtering. Normalize rgb so it describes relative
+    // wavelength transmission instead of adding a flat cyan veil. Dark cloth stays
+    // dark, while skin loses some red without becoming grey-white. The underwater
+    // camera uses the gentler white-balanced preset selected above.
+    vec4 waterFilter = mix(underwaterColor, underwaterViewColor, cameraSubmerge);
+    float filterPeak = max(max(waterFilter.r, waterFilter.g), max(waterFilter.b, 0.0001));
+    vec3 filterRgb = waterFilter.rgb / filterPeak;
+    vec3 transmission = mix(vec3(1.0), filterRgb, waterFilter.a);
+    bodyColor *= mix(vec3(1.0), transmission, belowness);
+    // Broad diffuse light from the surface, evaluated with the real skinned normal.
+    // The restrained normal range keeps readable form without burning the
+    // up-facing torso and limbs to the previous grey-white highlight.
     float upFacing = clamp(normalize(v_worldNormal).y * 0.5 + 0.5, 0.0, 1.0);
-    bodyColor = mix(bodyColor, bodyColor * mix(0.3, 1.8, upFacing), belowness);
+    float topLightT = smoothstep(0.08, 0.92, upFacing);
+    float lightMin = mix(underwaterLightParams.z, underwaterLightParams.x, cameraSubmerge);
+    float lightMax = mix(underwaterLightParams.w, underwaterLightParams.y, cameraSubmerge);
+    float normalLight = mix(lightMin, lightMax, topLightT);
+    // Surface illumination reaches only a shallow vertical band. Once a fragment
+    // drops below the falloff end it keeps a small blue ambient term, so a swimmer
+    // near the pool floor reads dark while hands/shoulders close to the water plane
+    // can still catch the bright surface light.
+    float submergeDepth = max(waterLine.x - v_worldPos.y, 0.0);
+    float depthRange = max(underwaterDepthLightParams.y - underwaterDepthLightParams.x, 0.001);
+    float depthFalloff = clamp((submergeDepth - underwaterDepthLightParams.x) / depthRange, 0.0, 1.0);
+    float surfaceReach = 1.0 - smoothstep(0.0, 1.0, depthFalloff);
+    float deepAmbient = mix(underwaterDepthLightParams.w, underwaterDepthLightParams.z, cameraSubmerge);
+    float underwaterLight = normalLight * mix(deepAmbient, 1.0, surfaceReach);
+    bodyColor *= mix(1.0, underwaterLight, belowness);
+    // Dark underwater skin should pick up a slight blue ambient cast rather than
+    // remaining a plain red-brown shadow. Build a water-hued colour with the same
+    // luminance as the current fragment, then blend it only into dark regions.
+    // Because the target luminance is preserved, this changes hue without lifting
+    // the shadow or turning black garments into a flat blue patch.
+    vec3 lumaWeights = vec3(0.2126, 0.7152, 0.0722);
+    float shadowLuma = dot(bodyColor, lumaWeights);
+    float filterLuma = max(dot(filterRgb, lumaWeights), 0.001);
+    vec3 waterShadow = filterRgb * (shadowLuma / filterLuma);
+    float shadowMask = 1.0 - smoothstep(0.10, 0.32, shadowLuma);
+    float shadowBlue = mix(underwaterShadowParams.y, underwaterShadowParams.x, cameraSubmerge);
+    bodyColor = mix(bodyColor, waterShadow, shadowMask * shadowBlue * belowness);
     // Distance-based blue absorption: submerged bodies fade toward deep-water
     // blue with camera distance, so far competitors read markedly bluer than the
     // nearby swimmer (real "the further underwater, the bluer" look). Only below
@@ -238,8 +288,7 @@ CCProgram swimmer-color-fs %{
     // surface instead of a hard glitch. camUnder gates it out of above-water
     // race views (there the above-water body must render normally).
     float aboveness = step(waterLine.x, v_worldPos.y);
-    float camUnder = step(cc_cameraPos.y, waterLine.x);
-    bodyColor = mix(bodyColor, aboveWaterColor.rgb, aboveness * camUnder * aboveWaterColor.a);
+    bodyColor = mix(bodyColor, aboveWaterColor.rgb, aboveness * cameraSubmerge * aboveWaterColor.a);
     vec4 outputColor = vec4(bodyColor, baseSample.a * mainColor.a);
     CC_APPLY_FOG(outputColor);
     return CCFragOutput(outputColor);
