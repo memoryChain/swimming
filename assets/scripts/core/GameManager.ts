@@ -1364,7 +1364,7 @@ export class GameManager extends Component {
                 applyNetSwimmerLook(swimmer.cartoonRig, identity.avatarId);
             }
             this._remoteControllers.push(driver);
-            this._netRaceController.registerRemote(remote.pos, driver);
+            this._netRaceController.registerRemote(remote.pos, remote.lane, driver);
         }
         // The pre-race roster panels + showcase + name overlay were populated with the
         // AI placeholder names BEFORE this rename; rebuild them so the pre-race player
@@ -1703,15 +1703,15 @@ export class GameManager extends Component {
                 this._netRaceController.sendSnapshot(entries);
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
-            // frame channel): a non-host human's self-position can no longer ride
-            // uploadFrame, so broadcast it as P| here instead. The host's own lane is
-            // already carried in its S| snapshot above, so only non-hosts send P|.
+            // frame channel): a human's owner state can no longer ride uploadFrame, so
+            // broadcast it as P| here. This includes the host: S| owns AI condition,
+            // while every human condition remains owner-authoritative on frame/P|.
             // `broadcastSyncRequired` also triggers when a PEER can't use frames (mixed
             // iOS/Android room), so an Android guest still broadcasts P| to an iOS host.
             // In a fully frame-synced race this is false and self keeps riding the
             // reliable frame channel via tick(), so single-player + normal races are
             // unchanged.
-            else if (this._netRaceController.broadcastSyncRequired) {
+            if (this._netRaceController.broadcastSyncRequired) {
                 const self = this.buildLocalSelfSnapshot();
                 if (self) {
                     this._netRaceController.sendSelfSnapshot(self);

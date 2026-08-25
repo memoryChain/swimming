@@ -57,11 +57,19 @@ const NET_FRAME_LOG = false;
 // Label.string rebuilds the text mesh, so cap repaints to this interval (~6/s) — plenty
 // for a status readout, and it keeps the hot network path cheap.
 const HUD_REPAINT_INTERVAL_MS = 160;
+const RECENT_DEDUPE_WINDOW = 64;
+
+interface RecentNumberWindow {
+    values: Float64Array;
+    count: number;
+    cursor: number;
+}
 
 export class NetRaceController {
     private readonly _net: INetRoom;
     private _accum = 0;
     private _sentFrames = 0;
+    private _ownerStateSeq = 0;
     private _recvFrames = 0;
     private _disposed = false;
     // In-race debug HUD so sync state is visible without the console.
@@ -75,9 +83,15 @@ export class NetRaceController {
     private readonly _peerLastInput: Record<number, string> = {};
     // Count of non-empty input frames received per member pos.
     private readonly _peerInputCount: Record<number, number> = {};
+    private readonly _processedReliableFrames: Record<number, RecentNumberWindow> = {};
+    private readonly _processedInputSeqs: Record<number, RecentNumberWindow> = {};
+    private readonly _lastBroadcastInputSeq: Record<number, number> = {};
+    private readonly _latestOwnerStateSeqByLane: Record<number, number> = {};
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
     private readonly _remoteByPos: Record<number, RemoteSwimmerController> = {};
+    private readonly _remoteByLane: Record<number, RemoteSwimmerController> = {};
+    private readonly _remoteLaneByPos: Record<number, number> = {};
     // Latest authoritative position snapshot from the host, keyed by lane. Clients ease
     // their swimmers toward these. Empty on the host (it IS the authority).
     private _snapshotTargets: NetSnapshotEntry[] = [];
@@ -335,7 +349,7 @@ export class NetRaceController {
         if (this._disposed || !this._net.isSupported()) {
             return;
         }
-        this._net.broadcast(encodeSelfSnapshot(entry));
+        this._net.broadcast(encodeSelfSnapshot(entry, ++this._ownerStateSeq));
     }
 
     // The latest own-authoritative self-position for a lane (from that human's client),
@@ -451,9 +465,7 @@ export class NetRaceController {
         if (self) {
             // Own-authoritative position from another human's client; keep the latest
             // per lane (ignore our own echo — we don't catch up our own player).
-            if (self.lane !== this._playerLaneForSelf) {
-                this._selfSnapshots[self.lane] = { entry: self, time: Date.now() };
-            }
+            this.recordRemoteSelf(self);
             return;
         }
         // A peer can't use the lock-step frame channel (e.g. iOS high-performance+). Even
@@ -467,10 +479,15 @@ export class NetRaceController {
         // the remote human for this seat so it animates (same as onSyncFrame does).
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
-            if (decoded.senderPos >= 0
-                && decoded.senderPos !== this._session.localPos
-                && decoded.events.length > 0) {
-                this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
+            if (decoded.senderPos >= 0 && decoded.senderPos !== this._session.localPos) {
+                // The self payload is the owner's state immediately before these
+                // events. Apply it first so a stroke never uses stale condition scales.
+                if (decoded.self) {
+                    this.recordRemoteSelf(decoded.self, decoded.senderPos);
+                }
+                if (decoded.events.length > 0 && this.acceptBroadcastInput(decoded.senderPos, decoded.inputSeq)) {
+                    this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
+                }
             }
             return;
         }
@@ -594,15 +611,31 @@ export class NetRaceController {
             if (!this.broadcastSyncRequired) {
                 // Fully frame-synced room: input + self-position ride the reliable
                 // lock-step frame channel (zero extra broadcast traffic).
-                this._net.uploadFrame(encodeInputFrame(this._session.localPos, events, selfPos));
+                const ownerStateSeq = selfPos ? ++this._ownerStateSeq : -1;
+                this._net.uploadFrame(encodeInputFrame(
+                    this._session.localPos,
+                    events,
+                    selfPos,
+                    ownerStateSeq,
+                    this._sentFrames,
+                ));
             } else if (events.length > 0) {
                 // Mixed / broadcast-only: a peer can't use frame sync, so do NOT
                 // participate in lock-step at all. Uploading frames into a session a peer
                 // never feeds makes WeChat's frame-sync wait for the missing member every
                 // tick and stall the whole frame loop — that is the "laggy, waiting for the
                 // host" jank on the other client. Ride inputs over broadcast instead;
-                // self-position goes out as P| from updateNetRaceSync.
-                this._net.broadcast(BROADCAST_INPUT_TAG + encodeInputFrame(this._session.localPos, events));
+                // The periodic P| remains the idle-state fallback. Include self here
+                // too so the receiver applies the exact pre-event owner condition
+                // before replaying this event frame.
+                const ownerStateSeq = selfPos ? ++this._ownerStateSeq : -1;
+                this._net.broadcast(BROADCAST_INPUT_TAG + encodeInputFrame(
+                    this._session.localPos,
+                    events,
+                    selfPos,
+                    ownerStateSeq,
+                    this._sentFrames,
+                ));
             }
             sentThisTick = true;
         }
@@ -613,11 +646,13 @@ export class NetRaceController {
 
     // Register a remote-human swimmer so this member's decoded input is replayed onto
     // it. Called by GameManager once the networked roster is built.
-    registerRemote(pos: number, controller: RemoteSwimmerController): void {
-        if (pos < 0 || !controller) {
+    registerRemote(pos: number, lane: number, controller: RemoteSwimmerController): void {
+        if (pos < 0 || lane < 0 || !controller) {
             return;
         }
         this._remoteByPos[pos] = controller;
+        this._remoteByLane[lane] = controller;
+        this._remoteLaneByPos[pos] = lane;
     }
 
     private onSyncFrame(frame: NetSyncFrame): void {
@@ -629,15 +664,21 @@ export class NetRaceController {
             if (decoded.senderPos < 0) {
                 continue;
             }
-            this._peerLatest[decoded.senderPos] = frame.frameId;
-            // Drive the remote human for this seat (never the local player's own seat).
-            if (decoded.senderPos !== this._session.localPos && decoded.events.length > 0) {
-                this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
+            if (!this.rememberRecent(this._processedReliableFrames, decoded.senderPos, frame.frameId)) {
+                continue;
             }
+            this._peerLatest[decoded.senderPos] = frame.frameId;
             // Own-authoritative position ridden along on the reliable frame channel:
-            // record the latest per lane (skip our own echo) so remote copies catch up.
-            if (decoded.self && decoded.self.lane !== this._playerLaneForSelf) {
-                this._selfSnapshots[decoded.self.lane] = { entry: decoded.self, time: Date.now() };
+            // record/apply it BEFORE replaying this frame's inputs. The sender builds
+            // self before consuming those events, so this preserves its simulation order.
+            if (decoded.senderPos !== this._session.localPos && decoded.self) {
+                this.recordRemoteSelf(decoded.self, decoded.senderPos);
+            }
+            // Drive the remote human for this seat (never the local player's own seat).
+            if (decoded.senderPos !== this._session.localPos
+                && decoded.events.length > 0
+                && this.acceptReliableInput(decoded.senderPos, decoded.inputSeq)) {
+                this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
             }
             if (decoded.events.length > 0) {
                 this._peerInputCount[decoded.senderPos] = (this._peerInputCount[decoded.senderPos] ?? 0) + 1;
@@ -653,6 +694,97 @@ export class NetRaceController {
             }
         }
         this.refreshHud();
+    }
+
+    private recordRemoteSelf(entry: NetSnapshotEntry, senderPos = -1): void {
+        if (entry.lane === this._playerLaneForSelf) {
+            return;
+        }
+        let remote: RemoteSwimmerController | undefined;
+        if (senderPos >= 0) {
+            const expectedLane = this._remoteLaneByPos[senderPos];
+            if (expectedLane !== undefined && expectedLane !== entry.lane) {
+                return;
+            }
+            remote = this._remoteByPos[senderPos];
+        } else {
+            remote = this._remoteByLane[entry.lane];
+        }
+        const ownerStateSeq = entry.ownerStateSeq ?? -1;
+        const latestOwnerStateSeq = this._latestOwnerStateSeqByLane[entry.lane] ?? -1;
+        if (ownerStateSeq >= 0 && ownerStateSeq <= latestOwnerStateSeq) {
+            return;
+        }
+        if (ownerStateSeq >= 0) {
+            this._latestOwnerStateSeqByLane[entry.lane] = ownerStateSeq;
+        }
+        const now = Date.now();
+        const existing = this._selfSnapshots[entry.lane];
+        if (existing) {
+            existing.entry = entry;
+            existing.time = now;
+        } else {
+            this._selfSnapshots[entry.lane] = { entry, time: now };
+        }
+        remote?.applyOwnerCondition(entry.conditionEnergyRatio, entry.conditionHeartRate);
+    }
+
+    private acceptBroadcastInput(senderPos: number, inputSeq: number): boolean {
+        if (inputSeq < 0) {
+            return true;
+        }
+        const latest = this._lastBroadcastInputSeq[senderPos] ?? -1;
+        if (inputSeq <= latest) {
+            return false;
+        }
+        this._lastBroadcastInputSeq[senderPos] = inputSeq;
+        return this.rememberRecent(this._processedInputSeqs, senderPos, inputSeq);
+    }
+
+    private acceptReliableInput(senderPos: number, inputSeq: number): boolean {
+        if (inputSeq < 0) {
+            return true;
+        }
+        // During the one-frame transition to broadcast fallback, an older reliable
+        // packet can arrive after a newer IN| packet. It is no longer a useful recovery:
+        // replaying its input here would reverse sender order.
+        if (inputSeq <= (this._lastBroadcastInputSeq[senderPos] ?? -1)) {
+            return false;
+        }
+        return this.rememberRecent(this._processedInputSeqs, senderPos, inputSeq);
+    }
+
+    // Fixed-size numeric windows avoid allocating strings/sets on the hot net path.
+    // Reliable frames use exact duplicate suppression so a delayed, previously unseen
+    // frame can still be processed; broadcast input additionally enforces monotonic order.
+    private rememberRecent(
+        store: Record<number, RecentNumberWindow>,
+        senderPos: number,
+        value: number,
+    ): boolean {
+        if (value < 0) {
+            return true;
+        }
+        let window = store[senderPos];
+        if (!window) {
+            window = {
+                values: new Float64Array(RECENT_DEDUPE_WINDOW),
+                count: 0,
+                cursor: 0,
+            };
+            store[senderPos] = window;
+        }
+        for (let i = 0; i < window.count; i++) {
+            if (window.values[i] === value) {
+                return false;
+            }
+        }
+        window.values[window.cursor] = value;
+        window.cursor = (window.cursor + 1) % RECENT_DEDUPE_WINDOW;
+        if (window.count < RECENT_DEDUPE_WINDOW) {
+            window.count++;
+        }
+        return true;
     }
 
 
