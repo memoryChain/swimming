@@ -27,10 +27,7 @@ CCEffect %{
         underwaterViewColor: { value: [0.408, 0.675, 0.808, 0.24], linear: true, editor: { type: color } }
         # x/y = submerged-camera top-light min/max; z/w = above-water-camera min/max.
         # Both ranges are deliberately soft and never approach the old 1.8x blowout.
-        underwaterLightParams: { value: [0.78, 1.08, 0.55, 0.82] }
-        # Surface-light vertical falloff: x = fully-lit depth, y = deep-dark depth,
-        # z = submerged-camera deep ambient, w = above-water-camera deep ambient.
-        underwaterDepthLightParams: { value: [0.10, 0.75, 0.34, 0.30] }
+        underwaterLightParams: { value: [0.34, 1.06, 0.30, 0.82] }
         # Luminance-preserving blue fill for dark body regions:
         # x = submerged-camera strength, y = above-water-camera strength.
         underwaterShadowParams: { value: [0.10, 0.14, 0.0, 0.0] }
@@ -123,7 +120,6 @@ CCProgram swimmer-color-fs %{
     vec4 underwaterColor;
     vec4 underwaterViewColor;
     vec4 underwaterLightParams;
-    vec4 underwaterDepthLightParams;
     vec4 underwaterShadowParams;
     vec4 depthFogColor;
     vec4 depthFogParams;
@@ -247,22 +243,18 @@ CCProgram swimmer-color-fs %{
     // Broad diffuse light from the surface, evaluated with the real skinned normal.
     // The restrained normal range keeps readable form without burning the
     // up-facing torso and limbs to the previous grey-white highlight.
-    float upFacing = clamp(normalize(v_worldNormal).y * 0.5 + 0.5, 0.0, 1.0);
-    float topLightT = smoothstep(0.08, 0.92, upFacing);
+    // Use the true upward normal directly. The old half-Lambert remap turned a
+    // vertical side normal (Y=0) into 50% light, lifting the whole body. Now only
+    // surfaces that genuinely face upward enter the bright top-light lobe; sides
+    // and undersides stay at the dark ambient floor.
+    float upFacing = normalize(v_worldNormal).y;
+    float topLightT = smoothstep(0.05, 0.72, upFacing);
     float lightMin = mix(underwaterLightParams.z, underwaterLightParams.x, cameraSubmerge);
     float lightMax = mix(underwaterLightParams.w, underwaterLightParams.y, cameraSubmerge);
     float normalLight = mix(lightMin, lightMax, topLightT);
-    // Surface illumination reaches only a shallow vertical band. Once a fragment
-    // drops below the falloff end it keeps a small blue ambient term, so a swimmer
-    // near the pool floor reads dark while hands/shoulders close to the water plane
-    // can still catch the bright surface light.
-    float submergeDepth = max(waterLine.x - v_worldPos.y, 0.0);
-    float depthRange = max(underwaterDepthLightParams.y - underwaterDepthLightParams.x, 0.001);
-    float depthFalloff = clamp((submergeDepth - underwaterDepthLightParams.x) / depthRange, 0.0, 1.0);
-    float surfaceReach = 1.0 - smoothstep(0.0, 1.0, depthFalloff);
-    float deepAmbient = mix(underwaterDepthLightParams.w, underwaterDepthLightParams.z, cameraSubmerge);
-    float underwaterLight = normalLight * mix(deepAmbient, 1.0, surfaceReach);
-    bodyColor *= mix(1.0, underwaterLight, belowness);
+    // Every submerged fragment keeps the complete surface top light regardless of
+    // vertical depth. Only its real surface orientation changes the brightness.
+    bodyColor *= mix(1.0, normalLight, belowness);
     // Dark underwater skin should pick up a slight blue ambient cast rather than
     // remaining a plain red-brown shadow. Build a water-hued colour with the same
     // luminance as the current fragment, then blend it only into dark regions.
