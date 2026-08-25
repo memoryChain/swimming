@@ -1453,6 +1453,13 @@ export class GameManager extends Component {
         return this._aiSwimmers[index] ?? null;
     }
 
+    private aiIndexForLane(lane: number): number {
+        if (lane === this._playerLaneIndex || lane < 0 || lane >= LANE_LAYOUT.laneCount) {
+            return -1;
+        }
+        return lane < this._playerLaneIndex ? lane : lane - 1;
+    }
+
     // The stable assigned lane (0-based) of a swimmer, i.e. the reverse of
     // swimmerForLane. Deterministic + identical across clients, so it is a reliable
     // key for the authoritative result (unlike the world-Z-derived race lane). -1 if
@@ -1589,6 +1596,11 @@ export class GameManager extends Component {
                     if (!swimmer?.node?.active) {
                         continue;
                     }
+                    const aiIndex = this.aiIndexForLane(lane);
+                    const aiController = aiIndex >= 0 ? this._aiControllers[aiIndex] : null;
+                    const aiCondition = aiIndex >= 0 && !aiController?.remoteDriven
+                        ? this._aiConditions[aiIndex]
+                        : null;
                     entries.push({
                         lane,
                         distance: swimmer.distance,
@@ -1602,6 +1614,8 @@ export class GameManager extends Component {
                         axialRollVelocity: swimmer.netAxialRollVelocity,
                         collisionPitch: swimmer.netCollisionPitch,
                         collisionPitchVelocity: swimmer.netCollisionPitchVelocity,
+                        conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
+                        conditionHeartRate: aiCondition?.heartRate ?? -1,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1774,6 +1788,8 @@ export class GameManager extends Component {
             axialRollVelocity: player.netAxialRollVelocity,
             collisionPitch: player.netCollisionPitch,
             collisionPitchVelocity: player.netCollisionPitchVelocity,
+            conditionEnergyRatio: this._playerCondition.energyRatio,
+            conditionHeartRate: this._playerCondition.heartRate,
         };
     }
 
