@@ -1,4 +1,4 @@
-import { Label, Node, UITransform } from 'cc';
+import { BlockInputEvents, Label, Mask, Node, ScrollView, UITransform } from 'cc';
 import { resetTuningToDefaults, saveCurrentTuning, TUNING_GROUPS } from '../core/TuningDebugControls';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 
@@ -11,6 +11,7 @@ export type ModelDebugHudCallbacks = {
     onPlayFlipTurn: () => void;
     onSwitchTexture: () => void;
     onSwitchSkybox: () => void;
+    onTuningVisibilityChanged?: (visible: boolean) => void;
 };
 
 export type ModelDebugHudRefs = {
@@ -29,6 +30,11 @@ export class ModelDebugHudBuilder {
     private _groupLabel: Label | null = null;
     private _statusLabel: Label | null = null;
     private _tuningOverlay: Node | null = null;
+    private _tuningContent: Node | null = null;
+    private _tuningScrollView: ScrollView | null = null;
+    private _tuningViewHeight = 0;
+    private _tuningContentWidth = 0;
+    private _tuningRowHeight = 58;
     private readonly _tuningRows: {
         root: Node;
         name: Label;
@@ -36,7 +42,10 @@ export class ModelDebugHudBuilder {
         value: Label;
     }[] = [];
 
-    constructor(private readonly _callbacks: ModelDebugHudCallbacks) {}
+    constructor(
+        private readonly _callbacks: ModelDebugHudCallbacks,
+        private readonly _enableTuningPanel = true,
+    ) {}
 
     build(parent: Node, w: number, h: number): ModelDebugHudRefs {
         const hud = makeUiNode('ModelDebugHUD', parent);
@@ -57,7 +66,8 @@ export class ModelDebugHudBuilder {
         exit.on(Node.EventType.TOUCH_END, () => this._callbacks.onExit());
         const tuning = makeButton('ModelDebugTuningOpen', hud, portrait ? 76 : 110, portrait ? 36 : 42, uiColor(34, 96, 146), '参数');
         tuning.setPosition(portrait ? -48 : w / 2 - 206, portrait ? h / 2 - 60 : topY, 0);
-        tuning.on(Node.EventType.TOUCH_END, () => this.setTuningOverlayVisible(true));
+        tuning.active = this._enableTuningPanel;
+        tuning.on(Node.EventType.TOUCH_END, () => this.openTuningOverlay());
         makeRect('ModelDebugBottom', hud, w, bottomHeight, uiColor(5, 16, 26, 135)).setPosition(0, bottomY, 0);
         const portraitStatusWidth = Math.max(68, Math.min(92, w / 4 - 10));
         const model = makeButton('ModelDebugSwitchModel', hud, portrait ? 54 : 88, 36, uiColor(92, 76, 170), '模型');
@@ -104,7 +114,11 @@ export class ModelDebugHudBuilder {
         const swimSpeedLabel = makeLabel('ModelDebugSwimSpeed', hud, '0.00 m/s', 18, uiColor(150, 235, 255));
         swimSpeedLabel.getComponent(UITransform).setContentSize(portrait ? w - 28 : 520, 30);
         swimSpeedLabel.setPosition(0, h / 2 - (portrait ? 140 : 134), 0);
-        this.buildTuningPanel(hud, w, h);
+        if (this._enableTuningPanel) {
+            // Build as a sibling of the model HUD so the same overlay can also open
+            // above the normal race HUD without duplicating the tuning hierarchy.
+            this.buildTuningPanel(parent, w, h);
+        }
         return {
             root: hud,
             speedLabel: speedLabel.getComponent(Label),
@@ -121,12 +135,13 @@ export class ModelDebugHudBuilder {
         this._tuningRows.length = 0;
         const portrait = h > w;
         const overlay = makeUiNode('ModelDebugTuningOverlay', parent);
-        overlay.active = false;
+        overlay.getComponent(UITransform).setContentSize(w, h);
+        overlay.addComponent(BlockInputEvents);
         this._tuningOverlay = overlay;
         makeRect('OverlayBack', overlay, w, h, uiColor(2, 8, 14, 72));
 
-        const panelWidth = Math.max(320, Math.min(w - (portrait ? 24 : 112), portrait ? w - 24 : 620));
-        const panelHeight = Math.max(440, h - (portrait ? 92 : 104));
+        const panelWidth = Math.max(320, Math.min(w - 24, portrait ? w - 24 : 820));
+        const panelHeight = Math.max(280, h - (portrait ? 92 : 32));
         const panel = makeUiNode('ModelDebugTuningPanel', overlay);
         panel.setPosition(0, -8, 0);
         makeRect('Back', panel, panelWidth, panelHeight, uiColor(6, 18, 28, 132));
@@ -152,19 +167,44 @@ export class ModelDebugHudBuilder {
         this._groupLabel = groupLabelNode.getComponent(Label);
 
         const rowHeight = portrait ? 64 : 58;
-        const rowCount = Math.max(6, Math.min(12, Math.floor((panelHeight - 150) / rowHeight)));
-        const firstY = panelHeight / 2 - 92;
-        const controlValueX = panelWidth / 2 - 96;
-        const controlMinusX = panelWidth / 2 - 176;
-        const controlPlusX = panelWidth / 2 - 28;
-        const textLeft = -panelWidth / 2 + 22;
+        const viewTop = panelHeight / 2 - 66;
+        const viewBottom = -panelHeight / 2 + 104;
+        const viewHeight = Math.max(112, viewTop - viewBottom);
+        const viewWidth = panelWidth - 20;
+        const viewNode = makeUiNode('TuneScrollView', panel);
+        viewNode.getComponent(UITransform).setContentSize(viewWidth, viewHeight);
+        viewNode.setPosition(0, (viewTop + viewBottom) / 2, 1);
+        const scrollView = viewNode.addComponent(ScrollView);
+        scrollView.horizontal = false;
+        scrollView.vertical = true;
+        scrollView.inertia = true;
+        scrollView.elastic = true;
+        scrollView.brake = 0.5;
+        scrollView.cancelInnerEvents = true;
+        const mask = viewNode.addComponent(Mask);
+        mask.type = Mask.Type.GRAPHICS_RECT;
+        mask.inverted = false;
+
+        const content = makeUiNode('TuneScrollContent', viewNode);
+        content.getComponent(UITransform).setContentSize(viewWidth, viewHeight);
+        scrollView.content = content;
+        this._tuningContent = content;
+        this._tuningScrollView = scrollView;
+        this._tuningViewHeight = viewHeight;
+        this._tuningContentWidth = viewWidth;
+        this._tuningRowHeight = rowHeight;
+
+        const rowCount = TUNING_GROUPS.reduce((max, group) => Math.max(max, group.controls.length), 0);
+        const controlValueX = viewWidth / 2 - 86;
+        const controlMinusX = viewWidth / 2 - 166;
+        const controlPlusX = viewWidth / 2 - 18;
+        const textLeft = -viewWidth / 2 + 16;
         const textRight = controlMinusX - 28;
         const textWidth = Math.max(180, textRight - textLeft);
         const textX = textLeft + textWidth / 2;
         for (let i = 0; i < rowCount; i++) {
-            const row = makeUiNode(`TuneRow${i}`, panel);
-            row.setPosition(0, firstY - i * rowHeight, 0);
-            makeRect('RowBack', row, panelWidth - 30, rowHeight - 6, i % 2 === 0 ? uiColor(12, 34, 48, 118) : uiColor(10, 28, 42, 88));
+            const row = makeUiNode(`TuneRow${i}`, content);
+            makeRect('RowBack', row, viewWidth - 8, rowHeight - 6, i % 2 === 0 ? uiColor(12, 34, 48, 118) : uiColor(10, 28, 42, 88));
 
             const nameNode = makeLabel('Name', row, '', portrait ? 18 : 20, uiColor(238, 252, 255));
             nameNode.getComponent(UITransform).setContentSize(textWidth, 26);
@@ -204,13 +244,16 @@ export class ModelDebugHudBuilder {
             });
         }
 
-        this.renderTuningRows();
+        this.renderTuningRows(true);
         this.buildApplyControls(panel, panelWidth, panelHeight);
+        // Mask must initialize while active. Hiding the parent before adding the
+        // GRAPHICS_RECT mask leaves its stencil material uninitialized in Cocos 3.8.
+        overlay.active = false;
     }
 
     private changeGroup(direction: number) {
         this._groupIndex = positiveMod(this._groupIndex + direction, TUNING_GROUPS.length);
-        this.renderTuningRows();
+        this.renderTuningRows(true);
     }
 
     private adjustControl(rowIndex: number, direction: number) {
@@ -219,24 +262,43 @@ export class ModelDebugHudBuilder {
             return;
         }
         control.set(control.get() + direction * control.step);
-        this.renderTuningRows();
+        this.renderTuningRows(false);
     }
 
-    private renderTuningRows() {
+    private renderTuningRows(layoutChanged = false) {
         const group = TUNING_GROUPS[this._groupIndex];
+        if (!group) {
+            return;
+        }
         if (this._groupLabel) {
-            this._groupLabel.string = `${this._groupIndex + 1}/${TUNING_GROUPS.length} ${group.name}`;
+            setLabelString(this._groupLabel, `${this._groupIndex + 1}/${TUNING_GROUPS.length} ${group.name}　（上下拖动查看更多）`);
+        }
+        const contentHeight = Math.max(this._tuningViewHeight, group.controls.length * this._tuningRowHeight);
+        const contentTransform = this._tuningContent?.getComponent(UITransform);
+        if (contentTransform
+            && (contentTransform.contentSize.width !== this._tuningContentWidth
+                || contentTransform.contentSize.height !== contentHeight)) {
+            contentTransform.setContentSize(this._tuningContentWidth, contentHeight);
         }
         for (let i = 0; i < this._tuningRows.length; i++) {
             const row = this._tuningRows[i];
             const control = group.controls[i];
-            row.root.active = !!control;
+            const active = !!control;
+            if (row.root.active !== active) {
+                row.root.active = active;
+            }
             if (!control) {
                 continue;
             }
-            row.name.string = control.label;
-            row.description.string = control.description;
-            row.value.string = `${control.get().toFixed(control.precision)}${control.suffix ?? ''}`;
+            if (layoutChanged) {
+                row.root.setPosition(0, contentHeight / 2 - this._tuningRowHeight / 2 - i * this._tuningRowHeight, 0);
+            }
+            setLabelString(row.name, control.label);
+            setLabelString(row.description, control.description);
+            setLabelString(row.value, `${control.get().toFixed(control.precision)}${control.suffix ?? ''}`);
+        }
+        if (layoutChanged) {
+            this._tuningScrollView?.scrollToTop(0);
         }
     }
 
@@ -248,16 +310,16 @@ export class ModelDebugHudBuilder {
         reset.on(Node.EventType.TOUCH_END, () => {
             resetTuningToDefaults();
             this.setStatus('已重置');
-            this.renderTuningRows();
+            this.renderTuningRows(false);
         });
 
-        const apply = makeButton('TuneApply', parent, 112, 44, uiColor(28, 164, 136, 235), '应用');
+        const apply = makeButton('TuneApply', parent, 112, 44, uiColor(28, 164, 136, 235), '保存');
         setButtonLabelFontSize(apply, 20);
         apply.getComponent(UITransform).setContentSize(112, 44);
         apply.setPosition(92, -panelHeight / 2 + 34, 0);
         apply.on(Node.EventType.TOUCH_END, () => {
             this.setStatus(saveCurrentTuning().message);
-            this.renderTuningRows();
+            this.renderTuningRows(false);
         });
 
         const statusNode = makeLabel('TuneStatus', parent, '', 15, uiColor(190, 244, 255));
@@ -266,16 +328,37 @@ export class ModelDebugHudBuilder {
         this._statusLabel = statusNode.getComponent(Label);
     }
 
+    public openTuningOverlay() {
+        this.renderTuningRows(false);
+        this.setTuningOverlayVisible(true);
+    }
+
+    public closeTuningOverlay() {
+        this.setTuningOverlayVisible(false);
+    }
+
     private setTuningOverlayVisible(visible: boolean) {
         if (this._tuningOverlay) {
-            this._tuningOverlay.active = visible;
+            if (this._tuningOverlay.active !== visible) {
+                this._tuningOverlay.active = visible;
+                this._callbacks.onTuningVisibilityChanged?.(visible);
+            }
+            if (visible && this._tuningOverlay.parent) {
+                this._tuningOverlay.setSiblingIndex(this._tuningOverlay.parent.children.length - 1);
+            }
         }
     }
 
     private setStatus(message: string) {
         if (this._statusLabel) {
-            this._statusLabel.string = message;
+            setLabelString(this._statusLabel, message);
         }
+    }
+}
+
+function setLabelString(label: Label, value: string) {
+    if (label.string !== value) {
+        label.string = value;
     }
 }
 
