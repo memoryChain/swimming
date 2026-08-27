@@ -289,14 +289,14 @@ export class GameFlowController {
                 this.prepareAndScheduleAiDives();
             }
             if (state === GameState.GLIDING) {
-                // The take-off burst has finished well before the full dive
-                // completes; this is a terminal fallback for interrupted tweens.
-                this._refs.playerSwimmer?.clearDiveChargeEffect();
+                // The pre-jump burst must not survive into the airborne/entry
+                // phase. Keep the ordinary rim suppressed until racing begins.
+                this._refs.playerSwimmer?.clearDiveChargeBurstBeforeTakeoff();
                 this._refs.raceCameraDirector.resetRaceTimers();
                 this._refs.uiFlow.showGliding();
             }
             if (state === GameState.RACING) {
-                this._refs.playerSwimmer?.clearDiveChargeEffect();
+                this._refs.playerSwimmer?.finishDiveChargeEffect();
                 this._refs.uiFlow.hideCountdown();
                 this.startAllAi();
             }
