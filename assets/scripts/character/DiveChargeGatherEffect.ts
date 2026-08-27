@@ -93,17 +93,20 @@ export class DiveChargeGatherEffect {
     }
 
     /** Switch the existing pooled gather mesh into a one-shot outward burst. */
-    releaseBurst(): number {
-        if (!this._material?.isValid || !this._node.isValid) {
+    releaseBurst(duration = RELEASE_BURST_SECONDS): number {
+        if (!this._node.isValid) {
             return 0;
         }
+        const burstDuration = Math.max(0.01, duration);
         this._requestedActive = false;
         this._releaseActive = true;
         this._intensity = 0;
-        this._releaseParams.set(1, shaderTimeSeconds(), RELEASE_BURST_SECONDS, RELEASE_BURST_DISTANCE);
-        this._material.setProperty('releaseParams', this._releaseParams);
-        this._node.active = true;
-        return RELEASE_BURST_SECONDS;
+        this._releaseParams.set(1, shaderTimeSeconds(), burstDuration, RELEASE_BURST_DISTANCE);
+        if (this._material?.isValid) {
+            this._material.setProperty('releaseParams', this._releaseParams);
+            this._node.active = true;
+        }
+        return burstDuration;
     }
 
     setCharge(intensity: number, progress: number) {
