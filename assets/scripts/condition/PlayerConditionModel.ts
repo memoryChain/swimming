@@ -92,6 +92,16 @@ export class PlayerConditionModel {
         this.refreshModifiers();
     }
 
+    // Event-driven: a successful dolphin jump adds an immediate heart-rate spike.
+    applyDolphinJumpStrain(strainHr: number) {
+        if (!Number.isFinite(strainHr) || strainHr <= 0) {
+            return;
+        }
+        this._heartRate = clamp(this._heartRate + strainHr, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
+        this._heartRateZone = zoneForHeartRate(this._heartRate);
+        this.refreshModifiers();
+    }
+
     // Event-driven: called once per stroke settlement (doc 27.2).
     updateFromStroke(input: StrokeConditionInput) {
         if (!input.strokeAccepted) {

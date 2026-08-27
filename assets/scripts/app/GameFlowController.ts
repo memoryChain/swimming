@@ -49,6 +49,7 @@ export type GameFlowRefs = {
     resolveNetLeaderboard: (leaderboard: RaceFinishResult[], done: (leaderboard: RaceFinishResult[]) => void) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
+    applyPlayerDolphinJumpStrain: () => void;
     playerDiveSpeedScale: () => number;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
         { characterId: string; coinsGained: number } | null;
@@ -203,6 +204,7 @@ export class GameFlowController {
             return;
         }
         if (swimmer.tryDolphinJump()) {
+            this._refs.applyPlayerDolphinJumpStrain();
             captureNetInput({ kind: NetInputKind.DolphinJump });
             this._refs.debug('dolphin jump');
         }

@@ -62,6 +62,16 @@ export class AiConditionModel {
         this.refreshModifiers();
     }
 
+    // Event-driven: keep AI on the same one-shot dolphin-jump heart-rate rule.
+    applyDolphinJumpStrain(strainHr: number) {
+        if (!Number.isFinite(strainHr) || strainHr <= 0) {
+            return;
+        }
+        this._heartRate = clamp(this._heartRate + strainHr, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
+        this._heartRateZone = zoneForHeartRate(this._heartRate);
+        this.refreshModifiers();
+    }
+
     // Reconcile the locally stepped shadow state with the host-authoritative AI
     // condition carried by S|. Keeping a stepped shadow (instead of applying only
     // presentation modifiers) lets this client take over coherently after host
