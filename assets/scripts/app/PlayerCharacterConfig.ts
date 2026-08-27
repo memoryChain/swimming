@@ -1,4 +1,5 @@
-import { RaceDifficulty } from '../core/GameBalance';
+import { sys } from 'cc';
+import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS } from '../core/GameBalance';
 
 export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver';
 
@@ -38,7 +39,7 @@ export type PlayerColorScheme = {
     cap: readonly [number, number, number];
 };
 
-// Keep an even slot count: the roster lays characters out in two columns.
+// Number of character slots exposed by the current horizontal roster.
 export const PLAYER_CHARACTER_SLOT_COUNT = 4;
 
 // Add a definition here to introduce a selectable character. Both the roster
@@ -110,39 +111,98 @@ export type PlayerCharacterSelection = {
 
 let selection: PlayerCharacterSelection = { characterId: 'muscleMan', skinToneId: 'warm', colorSchemeId: 'red' };
 let selectedRaceDifficulty: RaceDifficulty = 'competitive';
+let preferencesLoaded = false;
 
-export function getPlayerCharacterSelection(): Readonly<PlayerCharacterSelection> { return selection; }
+const PREPARE_RACE_PREFERENCES_KEY = 'SpeedSwimming.PrepareRace.v1';
+
+type PrepareRacePreferences = PlayerCharacterSelection & {
+    raceDifficulty: RaceDifficulty;
+};
+
+function ensurePreferencesLoaded() {
+    if (preferencesLoaded) return;
+    preferencesLoaded = true;
+    try {
+        const raw = sys.localStorage.getItem(PREPARE_RACE_PREFERENCES_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw) as Partial<PrepareRacePreferences>;
+        const character = PLAYER_CHARACTER_DEFINITIONS.find((entry) => entry.id === saved.characterId && entry.unlocked);
+        const skin = PLAYER_SKIN_TONES.find((entry) => entry.id === saved.skinToneId);
+        const color = PLAYER_COLOR_SCHEMES.find((entry) => entry.id === saved.colorSchemeId);
+        const difficulty = RACE_DIFFICULTY_OPTIONS.find((entry) => entry.id === saved.raceDifficulty);
+        selection = {
+            characterId: character?.id ?? selection.characterId,
+            skinToneId: skin?.id ?? selection.skinToneId,
+            colorSchemeId: color?.id ?? selection.colorSchemeId,
+        };
+        selectedRaceDifficulty = difficulty?.id ?? selectedRaceDifficulty;
+    } catch {
+        // Corrupt or unavailable storage falls back to the defaults above.
+    }
+}
+
+function persistPreferences() {
+    try {
+        const data: PrepareRacePreferences = {
+            ...selection,
+            raceDifficulty: selectedRaceDifficulty,
+        };
+        sys.localStorage.setItem(PREPARE_RACE_PREFERENCES_KEY, JSON.stringify(data));
+    } catch {
+        // Storage may be unavailable in some preview environments.
+    }
+}
+
+export function getPlayerCharacterSelection(): Readonly<PlayerCharacterSelection> {
+    ensurePreferencesLoaded();
+    return selection;
+}
 
 export function selectPlayerCharacter(id: PlayerCharacterId) {
+    ensurePreferencesLoaded();
     const character = findPlayerCharacter(id);
-    if (character?.unlocked) selection = { ...selection, characterId: id };
+    if (!character?.unlocked || selection.characterId === id) return;
+    selection = { ...selection, characterId: id };
+    persistPreferences();
 }
 
 export function cyclePlayerSkinTone() {
+    ensurePreferencesLoaded();
     if (!selectedPlayerCharacterSupportsSkinTone()) return;
     const index = PLAYER_SKIN_TONES.findIndex((tone) => tone.id === selection.skinToneId);
     selection = { ...selection, skinToneId: PLAYER_SKIN_TONES[(Math.max(0, index) + 1) % PLAYER_SKIN_TONES.length].id };
+    persistPreferences();
 }
 
 export function cyclePlayerColorScheme() {
+    ensurePreferencesLoaded();
     const index = PLAYER_COLOR_SCHEMES.findIndex((scheme) => scheme.id === selection.colorSchemeId);
     const nextIndex = index < 0 ? 0 : (index + 1) % PLAYER_COLOR_SCHEMES.length;
     selection = { ...selection, colorSchemeId: PLAYER_COLOR_SCHEMES[nextIndex].id };
+    persistPreferences();
 }
 
 export function setPlayerSkinTone(id: PlayerSkinTone['id']) {
+    ensurePreferencesLoaded();
     if (!selectedPlayerCharacterSupportsSkinTone()) return;
     if (!PLAYER_SKIN_TONES.some((tone) => tone.id === id)) return;
+    if (selection.skinToneId === id) return;
     selection = { ...selection, skinToneId: id };
+    persistPreferences();
 }
 
 export function setPlayerColorScheme(id: string) {
+    ensurePreferencesLoaded();
     if (!PLAYER_COLOR_SCHEMES.some((scheme) => scheme.id === id)) return;
+    if (selection.colorSchemeId === id) return;
     selection = { ...selection, colorSchemeId: id };
+    persistPreferences();
 }
 
-export function findPlayerCharacter(id = selection.characterId): PlayerCharacterDefinition | null {
-    return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.id === id) ?? null;
+export function findPlayerCharacter(id?: PlayerCharacterId): PlayerCharacterDefinition | null {
+    ensurePreferencesLoaded();
+    const resolvedId = id ?? selection.characterId;
+    return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.id === resolvedId) ?? null;
 }
 
 // 将角色的物理体重（0.85~1.2 左右）归一化成 0-100 的“对抗”雷达轴分值。
@@ -153,17 +213,30 @@ export function weightToPhysicalRating(weight: number): number {
 }
 
 export function selectedPlayerSkinTone(): PlayerSkinTone {
+    ensurePreferencesLoaded();
     if (!selectedPlayerCharacterSupportsSkinTone()) return PLAYER_SKIN_TONES[0];
     return PLAYER_SKIN_TONES.find((tone) => tone.id === selection.skinToneId) ?? PLAYER_SKIN_TONES[0];
 }
 
 export function selectedPlayerCharacterSupportsSkinTone(): boolean {
+    ensurePreferencesLoaded();
     return findPlayerCharacter()?.supportsSkinTone !== false;
 }
 
 export function selectedPlayerColorScheme(): PlayerColorScheme {
+    ensurePreferencesLoaded();
     return PLAYER_COLOR_SCHEMES.find((scheme) => scheme.id === selection.colorSchemeId) ?? PLAYER_COLOR_SCHEMES[0];
 }
 
-export function setSelectedRaceDifficulty(difficulty: RaceDifficulty) { selectedRaceDifficulty = difficulty; }
-export function getSelectedRaceDifficulty(): RaceDifficulty { return selectedRaceDifficulty; }
+export function setSelectedRaceDifficulty(difficulty: RaceDifficulty) {
+    ensurePreferencesLoaded();
+    if (!RACE_DIFFICULTY_OPTIONS.some((option) => option.id === difficulty)) return;
+    if (selectedRaceDifficulty === difficulty) return;
+    selectedRaceDifficulty = difficulty;
+    persistPreferences();
+}
+
+export function getSelectedRaceDifficulty(): RaceDifficulty {
+    ensurePreferencesLoaded();
+    return selectedRaceDifficulty;
+}

@@ -57,6 +57,9 @@ export class PrepareRaceCharacterPreview extends Component {
     refresh() {
         const character = findPlayerCharacter();
         if (!character) return;
+        if (character.id === this._selectedCharacterId && this._rig && this._pivotNode?.isValid) {
+            return;
+        }
         if (character.id !== this._selectedCharacterId) {
             this._selectedCharacterId = character.id;
             this._showcaseAction = selectActionFromPool(CHARACTER_SELECT_ACTIONS)

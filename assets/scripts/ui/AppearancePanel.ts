@@ -65,6 +65,7 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
             const node = makeColorSwatch(host, option, x, 0);
             swatches.push({ node, option, group: 'skin' });
             node.on(Button.EventType.CLICK, () => {
+                if (selectedPlayerSkinTone().id === tone.id) return;
                 setPlayerSkinTone(tone.id);
                 refresh();
                 options.onChange?.();
@@ -86,6 +87,7 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
         const node = makeColorSwatch(colorHost, option, x, y);
         swatches.push({ node, option, group: 'color' });
         node.on(Button.EventType.CLICK, () => {
+            if (selectedPlayerColorScheme().id === scheme.id) return;
             setPlayerColorScheme(scheme.id);
             refresh();
             options.onChange?.();

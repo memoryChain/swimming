@@ -209,10 +209,10 @@ export class LoginManager extends Component {
             onBack: () => this.exitPrepareRace(),
             onStartRace: () => this.startGame(),
         });
-        this._prepareRaceFlow.showCharacterSelect();
+        this._prepareRaceFlow.showLobby();
         // Integrate the back action into the headbar (top-left) so it never clashes
         // with the prepare-race UI.
-        this._headBar?.setBack(() => this.exitPrepareRace());
+        this._headBar?.setBack(() => this._prepareRaceFlow?.handleBack());
     }
 
     private exitPrepareRace() {
