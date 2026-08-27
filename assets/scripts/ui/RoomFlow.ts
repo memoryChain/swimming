@@ -23,7 +23,9 @@ import { encodeModifierDigest } from '../net/NetRaceModifierCodec';
 import {
     NET_RACE_PROTOCOL_VERSION,
     decodeProtocolHello,
+    decodeProtocolRequest,
     encodeProtocolHello,
+    encodeProtocolRequest,
     hasCompatibleProtocol,
     isCompatibleProtocolVersion,
 } from '../net/NetRaceProtocol';
@@ -307,6 +309,17 @@ export class RoomFlow {
             return;
         }
         netRoom().broadcast(`MOD|${this._localPos}|${payload}`);
+    }
+
+    // Ask every modern peer to repeat its PV| declaration. This is used only when
+    // a user action is blocked by incomplete protocol state, so retries are naturally
+    // rate-limited by that action and a lost first declaration cannot deadlock the room.
+    private requestProtocolDeclarations() {
+        if (!this._netReal || this._localPos < 0) {
+            return;
+        }
+        this.broadcastSelfModifiers();
+        netRoom().broadcast(encodeProtocolRequest(this._localPos));
     }
 
     // Collect a peer's lobby digest broadcast, keyed by seat (the host builds the map here).
@@ -663,7 +676,7 @@ export class RoomFlow {
     // updateReadyStatus -> onRoomInfoChange).
     private toggleReady() {
         if (!this._localReady && !this.protocolCompatible()) {
-            this.broadcastSelfModifiers();
+            this.requestProtocolDeclarations();
             this.setHint('玩家版本不一致或仍在确认，暂时不能准备');
             return;
         }
@@ -695,7 +708,7 @@ export class RoomFlow {
             return;
         }
         if (!this.protocolCompatible()) {
-            this.broadcastSelfModifiers();
+            this.requestProtocolDeclarations();
             this.setHint('玩家版本不一致或仍在确认，无法开始联机比赛');
             return;
         }
@@ -783,6 +796,17 @@ export class RoomFlow {
     // (where the owner doesn't receive its own broadcast and so never calls startGame),
     // only guests call startGame; the host enters via game-start detection (roomState).
     private handleBroadcast(msg: string) {
+        const protocolRequest = decodeProtocolRequest(msg);
+        if (protocolRequest) {
+            // RoomFlow owns callbacks only while this client is in the lobby. A
+            // request from another current roster seat receives exactly one hello;
+            // requests never answer requests, so this cannot form an echo loop.
+            if (protocolRequest.requesterPos !== this._localPos
+                && this._members.some((member) => member.pos === protocolRequest.requesterPos)) {
+                this.broadcastSelfModifiers();
+            }
+            return;
+        }
         if (decodeProtocolHello(msg)) {
             this.collectProtocolHello(msg);
             return;

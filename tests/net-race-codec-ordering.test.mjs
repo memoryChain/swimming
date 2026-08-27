@@ -20,7 +20,9 @@ const { MonotonicSequenceTracker, ownerLaneMatches, shouldUseTransientPacketCond
 const {
     NET_RACE_PROTOCOL_VERSION,
     decodeProtocolHello,
+    decodeProtocolRequest,
     encodeProtocolHello,
+    encodeProtocolRequest,
     hasCompatibleProtocol,
     isCompatibleProtocolVersion,
 } = Protocol;
@@ -156,4 +158,26 @@ test('lobby protocol hello rejects missing or mixed versions', () => {
     assert.equal(isCompatibleProtocolVersion(NET_RACE_PROTOCOL_VERSION), true);
     assert.equal(isCompatibleProtocolVersion(undefined), false, 'legacy start without pv is rejected');
     assert.equal(isCompatibleProtocolVersion(NET_RACE_PROTOCOL_VERSION - 1), false);
+});
+
+test('lobby protocol request lets a missing declaration be retried without a hello echo', () => {
+    const request = decodeProtocolRequest(encodeProtocolRequest(0));
+    assert.deepEqual(request, { requesterPos: 0 });
+    assert.equal(decodeProtocolRequest('PVQ|'), null);
+    assert.equal(decodeProtocolRequest('PVQ|0|2'), null);
+    assert.equal(decodeProtocolRequest('PVQ|-1'), null);
+    assert.equal(decodeProtocolRequest('PVQ|1.5'), null);
+    assert.equal(decodeProtocolRequest(encodeProtocolHello(0)), null, 'a hello is never decoded as a request');
+    assert.equal(decodeProtocolHello(encodeProtocolRequest(0)), null, 'a request is never decoded as a hello');
+
+    // Reproduce the asymmetric-loss case: the guest already knows both versions,
+    // while the host lost the guest's first hello. The explicit request causes one
+    // fresh guest hello, after which the host can pass the protocol gate.
+    const hostVersions = { 0: NET_RACE_PROTOCOL_VERSION };
+    const guestVersions = { 0: NET_RACE_PROTOCOL_VERSION, 4: NET_RACE_PROTOCOL_VERSION };
+    assert.equal(hasCompatibleProtocol([0, 4], hostVersions), false);
+    assert.equal(hasCompatibleProtocol([0, 4], guestVersions), true);
+    const retriedHello = decodeProtocolHello(encodeProtocolHello(4));
+    hostVersions[retriedHello.pos] = retriedHello.version;
+    assert.equal(hasCompatibleProtocol([0, 4], hostVersions), true);
 });
