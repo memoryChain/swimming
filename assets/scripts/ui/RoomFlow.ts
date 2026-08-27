@@ -20,6 +20,13 @@ import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
 import { encodeModifierDigest } from '../net/NetRaceModifierCodec';
+import {
+    NET_RACE_PROTOCOL_VERSION,
+    decodeProtocolHello,
+    encodeProtocolHello,
+    hasCompatibleProtocol,
+    isCompatibleProtocolVersion,
+} from '../net/NetRaceProtocol';
 
 export type RoomFlowCallbacks = {
     onExit: () => void;
@@ -59,6 +66,8 @@ export class RoomFlow {
     // (posNum). memberExtInfo is only 32 bytes (too small for a modifier blob), so each
     // client broadcasts its tiny digest instead; consumed into the session at start.
     private readonly _memberModifiers: Record<number, string> = {};
+    private readonly _memberProtocolVersions: Record<number, number> = {};
+    private readonly _memberProtocolFingerprints: Record<number, string> = {};
     private _statusHint: string | null = null;
     private _startRequested = false;
     private _gameStartCalled = false;
@@ -165,6 +174,7 @@ export class RoomFlow {
             net.setCallbacks({
                 onRoomInfoChange: (info) => {
                     this._members = this.membersFromInfo(info);
+                    this.reconcileProtocolRoster();
                     this.render();
                     // Roster changed (e.g. a newcomer joined): re-broadcast our digest so
                     // they collect it too.
@@ -210,6 +220,7 @@ export class RoomFlow {
                     const mapped = this.membersFromInfo(info);
                     if (mapped.length >= this._members.length) {
                         this._members = mapped;
+                        this.reconcileProtocolRoster();
                     }
                     this.render();
                     // Backup pull of the authoritative roster (a few retries) in case
@@ -289,6 +300,8 @@ export class RoomFlow {
         if (!this._netReal || this._localPos < 0) {
             return;
         }
+        this._memberProtocolVersions[this._localPos] = NET_RACE_PROTOCOL_VERSION;
+        netRoom().broadcast(encodeProtocolHello(this._localPos));
         const payload = this.storeSelfModifiers();
         if (!payload) {
             return;
@@ -309,6 +322,66 @@ export class RoomFlow {
         if (Number.isFinite(pos) && payload) {
             this._memberModifiers[pos] = payload;
         }
+    }
+
+    private collectProtocolHello(msg: string) {
+        const hello = decodeProtocolHello(msg);
+        if (!hello || !this._members.some((member) => member.pos === hello.pos)) {
+            return;
+        }
+        const firstDeclaration = this._memberProtocolVersions[hello.pos] === undefined;
+        this._memberProtocolVersions[hello.pos] = hello.version;
+        if (hello.version !== NET_RACE_PROTOCOL_VERSION && this._localReady && !this._isHost) {
+            this._localReady = false;
+            netRoom().updateReady(false).catch(() => undefined);
+        }
+        if (firstDeclaration && hello.pos !== this._localPos) {
+            // One reply closes the common "new member missed the existing peer's
+            // declaration" race without creating a broadcast echo loop.
+            this.broadcastSelfModifiers();
+        }
+        this.render();
+    }
+
+    private reconcileProtocolRoster() {
+        const active: Record<number, boolean> = {};
+        for (const member of this._members) {
+            if (member.pos < 0) {
+                continue;
+            }
+            active[member.pos] = true;
+            const fingerprint = `${member.avatarId}|${member.nickName}`;
+            if (this._memberProtocolFingerprints[member.pos] !== fingerprint) {
+                delete this._memberProtocolVersions[member.pos];
+                this._memberProtocolFingerprints[member.pos] = fingerprint;
+            }
+            if (member.self) {
+                this._memberProtocolVersions[member.pos] = NET_RACE_PROTOCOL_VERSION;
+            }
+        }
+        for (const rawPos of Object.keys(this._memberProtocolVersions)) {
+            const pos = Number(rawPos);
+            if (!active[pos]) {
+                delete this._memberProtocolVersions[pos];
+            }
+        }
+        for (const rawPos of Object.keys(this._memberProtocolFingerprints)) {
+            const pos = Number(rawPos);
+            if (!active[pos]) {
+                delete this._memberProtocolFingerprints[pos];
+            }
+        }
+        if (!this.protocolCompatible() && this._localReady && !this._isHost) {
+            this._localReady = false;
+            netRoom().updateReady(false).catch(() => undefined);
+        }
+    }
+
+    private protocolCompatible(): boolean {
+        return hasCompatibleProtocol(
+            this._members.map((member) => member.pos),
+            this._memberProtocolVersions,
+        );
     }
 
     // Adopt the host's consolidated digest map from the start message. Authoritative:
@@ -409,6 +482,7 @@ export class RoomFlow {
                 }
                 if (info && info.members.length > 0) {
                     this._members = this.membersFromInfo(info);
+                    this.reconcileProtocolRoster();
                     this.render();
                     // The backup roster pull (and the rematch/reconnect path, which enters
                     // through here — NOT onRoomInfoChange) is where a guest often first
@@ -588,6 +662,11 @@ export class RoomFlow {
     // Guest toggles their own ready state (shown on every client's avatar badge via
     // updateReadyStatus -> onRoomInfoChange).
     private toggleReady() {
+        if (!this._localReady && !this.protocolCompatible()) {
+            this.broadcastSelfModifiers();
+            this.setHint('玩家版本不一致或仍在确认，暂时不能准备');
+            return;
+        }
         this._localReady = !this._localReady;
         this.render();
         if (this._netReal) {
@@ -615,6 +694,11 @@ export class RoomFlow {
             this.setHint('等待所有玩家准备…');
             return;
         }
+        if (!this.protocolCompatible()) {
+            this.broadcastSelfModifiers();
+            this.setHint('玩家版本不一致或仍在确认，无法开始联机比赛');
+            return;
+        }
         if (this._startRequested) {
             return;
         }
@@ -633,7 +717,12 @@ export class RoomFlow {
         // atomically with the seed. Since the start message is a precondition for entering,
         // a swimmer can never slip in with the wrong balance. Host-authoritative + consistent.
         this.storeSelfModifiers();
-        netRoom().broadcast(JSON.stringify({ t: 'start', seed: this._pendingSeed, mods: this._memberModifiers }));
+        netRoom().broadcast(JSON.stringify({
+            t: 'start',
+            pv: NET_RACE_PROTOCOL_VERSION,
+            seed: this._pendingSeed,
+            mods: this._memberModifiers,
+        }));
         if (this._reconnect) {
             // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
             // one-game — a second startGame returns 4014 / a fake ok with roomState stuck
@@ -694,6 +783,10 @@ export class RoomFlow {
     // (where the owner doesn't receive its own broadcast and so never calls startGame),
     // only guests call startGame; the host enters via game-start detection (roomState).
     private handleBroadcast(msg: string) {
+        if (decodeProtocolHello(msg)) {
+            this.collectProtocolHello(msg);
+            return;
+        }
         // 养成 digest from a peer (lobby broadcast): collect it by seat for race start.
         if (typeof msg === 'string' && msg.slice(0, 4) === 'MOD|') {
             this.collectMemberModifiers(msg);
@@ -709,6 +802,14 @@ export class RoomFlow {
         try {
             const data = JSON.parse(msg);
             if (data && data.t === 'start' && typeof data.seed === 'number') {
+                if (!isCompatibleProtocolVersion(data.pv)) {
+                    if (this._localReady && !this._isHost) {
+                        this._localReady = false;
+                        netRoom().updateReady(false).catch(() => undefined);
+                    }
+                    this.setHint('房主版本与当前客户端不兼容，请更新后重试');
+                    return;
+                }
                 this._pendingSeed = data.seed >>> 0;
                 // Adopt the host's consolidated 养成 digest map (authoritative + identical on
                 // every client) BEFORE entering, so all clients apply the same balance.

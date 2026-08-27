@@ -372,10 +372,7 @@ export class GameManager extends Component {
             this._waterRefraction?.update();
             return;
         }
-        // Lock-step frame exchange (networked race only) runs on wall-clock dt, before
-        // bullet-time scaling. The local player's own position rides along on the frame
-        // (reliable channel) so peers catch its copy up without best-effort broadcasts.
-        this._netRaceController?.tick(dt, this.buildLocalSelfSnapshot());
+        const netDt = dt;
         // Deterministic AI: in a net race step the AI on a fixed 33ms clock (raw dt),
         // so the shared-seed AI advance identically on every client (no drift).
         this.driveNetAiFixedStep(dt);
@@ -384,6 +381,10 @@ export class GameManager extends Component {
         dt = scaledDelta(dt);
         this._awardsPresentation.update(dt);
         this._inputRouter?.tick();
+        // Capture tick()-generated HeldOn/Stroke gestures before draining the network
+        // frame, while player condition is still the pre-input state. Network cadence
+        // continues to use raw wall-clock dt and remains outside bullet-time scaling.
+        this._netRaceController?.tick(netDt, this.buildLocalSelfSnapshot());
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
         const timingGuide = this._playerSwimmer.strokeTimingGuide;
@@ -1699,6 +1700,7 @@ export class GameManager extends Component {
                         collisionPitchVelocity: swimmer.netCollisionPitchVelocity,
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
                         conditionHeartRate: aiCondition?.heartRate ?? -1,
+                        conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -1849,6 +1851,7 @@ export class GameManager extends Component {
                         aiCondition.applyAuthoritativeState(
                             hostTarget.conditionEnergyRatio,
                             hostTarget.conditionHeartRate,
+                            hostTarget.conditionDepletionCooldown ?? -1,
                         );
                         swimmer.applyConditionSpeedScale(aiCondition.efficiencyModifier);
                         swimmer.applyConditionQualityScale(aiCondition.qualityModifier);

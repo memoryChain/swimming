@@ -65,10 +65,10 @@ export class AiConditionModel {
     // Reconcile the locally stepped shadow state with the host-authoritative AI
     // condition carried by S|. Keeping a stepped shadow (instead of applying only
     // presentation modifiers) lets this client take over coherently after host
-    // migration. The cooldown is edge-triggered because it is intentionally not a
-    // wire field: old payloads stay compatible and repeated zero snapshots do not
-    // restart it while the local state remains depleted.
-    applyAuthoritativeState(energyRatio: number, heartRate: number) {
+    // migration. New S| payloads transfer the exact cooldown remainder; the
+    // edge-triggered fallback below is retained only for legacy payloads that do not
+    // contain that appended field.
+    applyAuthoritativeState(energyRatio: number, heartRate: number, depletionCooldown = -1) {
         if (!Number.isFinite(energyRatio) || !Number.isFinite(heartRate)) {
             return;
         }
@@ -79,7 +79,11 @@ export class AiConditionModel {
         this._heartRate = clamp(heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
         this._heartRateZone = zoneForHeartRate(this._heartRate);
         this._energyDepleted = this._energy <= 0;
-        if (!this._energyDepleted) {
+        if (Number.isFinite(depletionCooldown) && depletionCooldown >= 0) {
+            // New S| packets carry the host's exact remaining cooldown so a client
+            // promoted during exhaustion does not restart a full cooldown locally.
+            this._depletionCooldown = Math.max(0, depletionCooldown);
+        } else if (!this._energyDepleted) {
             this._depletionCooldown = 0;
         } else if (wasPositive && this._depletionCooldown <= 0) {
             this._depletionCooldown = energyCfg.depletionCooldownSeconds;
@@ -181,6 +185,7 @@ export class AiConditionModel {
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
     get strokeCadenceScale(): number { return this._cadenceModifier; }
+    get depletionCooldownRemaining(): number { return this._depletionCooldown; }
 
     readout(): ConditionReadout {
         return {

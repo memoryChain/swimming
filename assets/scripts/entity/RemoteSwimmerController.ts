@@ -58,9 +58,33 @@ export class RemoteSwimmerController extends Component {
         }
         this._ownerEnergyRatio = safeEnergyRatio;
         this._ownerHeartRate = heartRate;
-        this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(safeEnergyRatio));
+        this.applyConditionScales(safeEnergyRatio, heartRate);
+    }
+
+    // Apply an older packet's condition only while replaying the inputs carried by
+    // that same packet. It deliberately does not replace the latest persistent owner
+    // state (a newer P| may have overtaken this IN| on the broadcast channel).
+    applyTransientOwnerCondition(energyRatio: number, heartRate: number): void {
+        if (!Number.isFinite(energyRatio)
+            || !Number.isFinite(heartRate)
+            || energyRatio < 0
+            || heartRate < 0) {
+            return;
+        }
+        this.applyConditionScales(Math.max(0, Math.min(1, energyRatio)), heartRate);
+    }
+
+    restoreOwnerCondition(): void {
+        if (this._ownerEnergyRatio < 0 || this._ownerHeartRate < 0) {
+            return;
+        }
+        this.applyConditionScales(this._ownerEnergyRatio, this._ownerHeartRate);
+    }
+
+    private applyConditionScales(energyRatio: number, heartRate: number): void {
+        this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(energyRatio));
         this.swimmer?.applyConditionQualityScale(conditionQualityScale(heartRate));
-        this.swimmer?.applyConditionCadenceScale(energyDepletionCadenceScale(safeEnergyRatio));
+        this.swimmer?.applyConditionCadenceScale(energyDepletionCadenceScale(energyRatio));
     }
 
     // Apply one logical frame's worth of this member's decoded input events, in order.

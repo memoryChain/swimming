@@ -139,8 +139,21 @@ export function energyDepletionCadenceScale(energyRatio: number): number {
     const exhaustedRatio = Math.max(0, Math.min(warningRatio, cadence.exhaustedRatio));
     const warningScale = Math.max(0.1, Math.min(1, cadence.warningScale));
     const exhaustedScale = Math.max(0.1, Math.min(warningScale, cadence.exhaustedScale));
+    if (ratio <= 0) {
+        return exhaustedScale;
+    }
+    if (warningRatio <= 0) {
+        return 1;
+    }
     if (ratio >= warningRatio) {
         return 1;
+    }
+    // Degenerate tuning remains continuous: when the two thresholds collapse (or
+    // exhausted is explicitly zero), use one segment from empty to warning instead
+    // of producing a jump or making exhaustedScale unreachable.
+    if (exhaustedRatio <= 0 || exhaustedRatio >= warningRatio) {
+        const t = ratio / warningRatio;
+        return exhaustedScale + (1 - exhaustedScale) * t;
     }
     if (ratio >= exhaustedRatio) {
         const span = warningRatio - exhaustedRatio;
