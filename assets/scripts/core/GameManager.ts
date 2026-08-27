@@ -21,6 +21,7 @@ import {
     Vec3,
     view,
 } from 'cc';
+import { DEV } from 'cc/env';
 import { GameFlowController } from '../app/GameFlowController';
 import { MusicManager } from '../app/MusicManager';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
@@ -73,7 +74,7 @@ import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRa
 import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
-import { setTimeScale, scaledDelta } from './TimeScale';
+import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -182,6 +183,9 @@ export class GameManager extends Component {
 
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
+    private _modelDebugHudBuilder: ModelDebugHudBuilder | null = null;
+    private _raceTuningPaused = false;
+    private _raceTuningPreviousTimeScale = 1;
     private _underwaterCameraTint: Node = null;
     private _worldRoot: Node = null;
     private _swimmersRoot: Node = null;
@@ -2046,7 +2050,7 @@ export class GameManager extends Component {
             if (this._netSession) {
                 this.buildFieldOverviewButton(this._raceHud, visibleSize.width, visibleSize.height);
             }
-            const modelDebugHud = new ModelDebugHudBuilder({
+            const modelDebugHudBuilder = new ModelDebugHudBuilder({
                 onExit: () => this.exitModelDebug(true),
                 onSlow: () => this.slowModelDebugMotion(),
                 onFast: () => this.speedUpModelDebugMotion(),
@@ -2055,7 +2059,10 @@ export class GameManager extends Component {
                 onPlayFlipTurn: () => this._modelDebugFlow?.triggerFlipTurn(),
                 onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
-            }).build(uiRoot, w, h);
+                onTuningVisibilityChanged: (visible) => this.handleTuningVisibilityChanged(visible),
+            }, DEV && !this._netSession);
+            this._modelDebugHudBuilder = modelDebugHudBuilder;
+            const modelDebugHud = modelDebugHudBuilder.build(uiRoot, w, h);
             this._modelDebugHud = modelDebugHud.root;
             this._modelDebugSpeedLabel = modelDebugHud.speedLabel;
             this._modelDebugRatingLabel = modelDebugHud.ratingLabel;
@@ -2065,6 +2072,7 @@ export class GameManager extends Component {
             this._modelDebugFlipTurnButton = modelDebugHud.flipTurnButton;
             this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
             this._modelDebugHud.active = false;
+            this.buildRaceTuningButton(this._raceHud, w, h);
 
             const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
             this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
@@ -2352,6 +2360,41 @@ export class GameManager extends Component {
         this._aiDebugCameraButton = button;
         this._aiDebugCameraButtonLabel = button.getChildByName('Label')?.getComponent(Label) ?? null;
         button.on(Node.EventType.TOUCH_END, () => this.toggleCameraFollowAi());
+    }
+
+    private buildRaceTuningButton(raceHud: Node, width: number, height: number) {
+        // Developer-only and solo-only. Runtime tuning changes gameplay state and
+        // must never be exposed in an authoritative network race.
+        if (!DEV || this._netSession || !raceHud?.isValid || !this._modelDebugHudBuilder) {
+            return;
+        }
+        const button = makeButton(
+            'RaceTuningButton',
+            raceHud,
+            108,
+            42,
+            new Color(34, 96, 146, 235),
+            '调参',
+        );
+        button.setPosition(width / 2 - 72, height / 2 - 42, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        button.on(Node.EventType.TOUCH_END, () => this._modelDebugHudBuilder?.openTuningOverlay());
+    }
+
+    private handleTuningVisibilityChanged(visible: boolean) {
+        // Model debug uses the same overlay but has no live race to pause. In a solo
+        // race, freeze scaled gameplay while the full-screen panel owns the input.
+        if (this._netSession || !this._raceHud?.activeInHierarchy) {
+            return;
+        }
+        if (visible && !this._raceTuningPaused) {
+            this._raceTuningPreviousTimeScale = TIME_SCALE.value;
+            this._raceTuningPaused = true;
+            setTimeScale(0);
+        } else if (!visible && this._raceTuningPaused) {
+            setTimeScale(this._raceTuningPreviousTimeScale);
+            this._raceTuningPaused = false;
+        }
     }
 
     // Networked debug: an overhead whole-field camera toggle so the player can compare
