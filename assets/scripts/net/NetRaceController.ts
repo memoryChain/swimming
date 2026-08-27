@@ -19,6 +19,11 @@ import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
+import {
+    MonotonicSequenceTracker,
+    ownerLaneMatches,
+    shouldUseTransientPacketCondition,
+} from './NetInputOrdering';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 
@@ -57,13 +62,6 @@ const NET_FRAME_LOG = false;
 // Label.string rebuilds the text mesh, so cap repaints to this interval (~6/s) — plenty
 // for a status readout, and it keeps the hot network path cheap.
 const HUD_REPAINT_INTERVAL_MS = 160;
-const RECENT_DEDUPE_WINDOW = 64;
-
-interface RecentNumberWindow {
-    values: Float64Array;
-    count: number;
-    cursor: number;
-}
 
 export class NetRaceController {
     private readonly _net: INetRoom;
@@ -83,10 +81,11 @@ export class NetRaceController {
     private readonly _peerLastInput: Record<number, string> = {};
     // Count of non-empty input frames received per member pos.
     private readonly _peerInputCount: Record<number, number> = {};
-    private readonly _processedReliableFrames: Record<number, RecentNumberWindow> = {};
-    private readonly _processedInputSeqs: Record<number, RecentNumberWindow> = {};
-    private readonly _lastBroadcastInputSeq: Record<number, number> = {};
-    private readonly _latestOwnerStateSeqByLane: Record<number, number> = {};
+    // This hybrid does not roll simulation back. Once a newer packet is applied,
+    // delayed older inputs are discarded and owner snapshots correct the copy.
+    private readonly _reliableFrameOrder = new MonotonicSequenceTracker();
+    private readonly _inputOrder = new MonotonicSequenceTracker();
+    private readonly _ownerStateOrder = new MonotonicSequenceTracker();
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
     private readonly _remoteByPos: Record<number, RemoteSwimmerController> = {};
@@ -349,7 +348,7 @@ export class NetRaceController {
         if (this._disposed || !this._net.isSupported()) {
             return;
         }
-        this._net.broadcast(encodeSelfSnapshot(entry, ++this._ownerStateSeq));
+        this._net.broadcast(encodeSelfSnapshot(entry, ++this._ownerStateSeq, this._session.localPos));
     }
 
     // The latest own-authoritative self-position for a lane (from that human's client),
@@ -465,7 +464,7 @@ export class NetRaceController {
         if (self) {
             // Own-authoritative position from another human's client; keep the latest
             // per lane (ignore our own echo — we don't catch up our own player).
-            this.recordRemoteSelf(self);
+            this.recordRemoteSelf(self, self.ownerPos ?? -1);
             return;
         }
         // A peer can't use the lock-step frame channel (e.g. iOS high-performance+). Even
@@ -480,14 +479,7 @@ export class NetRaceController {
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
             if (decoded.senderPos >= 0 && decoded.senderPos !== this._session.localPos) {
-                // The self payload is the owner's state immediately before these
-                // events. Apply it first so a stroke never uses stale condition scales.
-                if (decoded.self) {
-                    this.recordRemoteSelf(decoded.self, decoded.senderPos);
-                }
-                if (decoded.events.length > 0 && this.acceptBroadcastInput(decoded.senderPos, decoded.inputSeq)) {
-                    this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
-                }
+                this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             return;
         }
@@ -664,21 +656,15 @@ export class NetRaceController {
             if (decoded.senderPos < 0) {
                 continue;
             }
-            if (!this.rememberRecent(this._processedReliableFrames, decoded.senderPos, frame.frameId)) {
+            // We cannot roll a predicted swimmer backward. Drop duplicate or delayed
+            // old service frames permanently instead of replaying an unseen old input
+            // after a newer HeldOn/HeldOff pair.
+            if (!this._reliableFrameOrder.accept(decoded.senderPos, frame.frameId)) {
                 continue;
             }
             this._peerLatest[decoded.senderPos] = frame.frameId;
-            // Own-authoritative position ridden along on the reliable frame channel:
-            // record/apply it BEFORE replaying this frame's inputs. The sender builds
-            // self before consuming those events, so this preserves its simulation order.
-            if (decoded.senderPos !== this._session.localPos && decoded.self) {
-                this.recordRemoteSelf(decoded.self, decoded.senderPos);
-            }
-            // Drive the remote human for this seat (never the local player's own seat).
-            if (decoded.senderPos !== this._session.localPos
-                && decoded.events.length > 0
-                && this.acceptReliableInput(decoded.senderPos, decoded.inputSeq)) {
-                this._remoteByPos[decoded.senderPos]?.applyEvents(decoded.events);
+            if (decoded.senderPos !== this._session.localPos) {
+                this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             if (decoded.events.length > 0) {
                 this._peerInputCount[decoded.senderPos] = (this._peerInputCount[decoded.senderPos] ?? 0) + 1;
@@ -696,27 +682,31 @@ export class NetRaceController {
         this.refreshHud();
     }
 
-    private recordRemoteSelf(entry: NetSnapshotEntry, senderPos = -1): void {
+    private remoteForOwnedEntry(entry: NetSnapshotEntry, senderPos: number): RemoteSwimmerController | undefined {
         if (entry.lane === this._playerLaneForSelf) {
-            return;
+            return undefined;
         }
-        let remote: RemoteSwimmerController | undefined;
         if (senderPos >= 0) {
             const expectedLane = this._remoteLaneByPos[senderPos];
-            if (expectedLane !== undefined && expectedLane !== entry.lane) {
-                return;
+            if (!ownerLaneMatches(expectedLane, entry.lane)) {
+                return undefined;
             }
-            remote = this._remoteByPos[senderPos];
-        } else {
-            remote = this._remoteByLane[entry.lane];
+            return this._remoteByPos[senderPos];
+        }
+        return this._remoteByLane[entry.lane];
+    }
+
+    private recordRemoteSelf(entry: NetSnapshotEntry, senderPos = -1): boolean {
+        const remote = this.remoteForOwnedEntry(entry, senderPos);
+        // Once registration is complete, an attributed packet must resolve to that
+        // owner's controller. Unattributed legacy P| may still resolve by lane until
+        // the lobby protocol gate has removed old clients.
+        if (!remote && (senderPos >= 0 || this._remoteByLane[entry.lane] !== undefined)) {
+            return false;
         }
         const ownerStateSeq = entry.ownerStateSeq ?? -1;
-        const latestOwnerStateSeq = this._latestOwnerStateSeqByLane[entry.lane] ?? -1;
-        if (ownerStateSeq >= 0 && ownerStateSeq <= latestOwnerStateSeq) {
-            return;
-        }
-        if (ownerStateSeq >= 0) {
-            this._latestOwnerStateSeqByLane[entry.lane] = ownerStateSeq;
+        if (!this._ownerStateOrder.accept(entry.lane, ownerStateSeq)) {
+            return false;
         }
         const now = Date.now();
         const existing = this._selfSnapshots[entry.lane];
@@ -727,64 +717,55 @@ export class NetRaceController {
             this._selfSnapshots[entry.lane] = { entry, time: now };
         }
         remote?.applyOwnerCondition(entry.conditionEnergyRatio, entry.conditionHeartRate);
+        return true;
     }
 
-    private acceptBroadcastInput(senderPos: number, inputSeq: number): boolean {
-        if (inputSeq < 0) {
-            return true;
-        }
-        const latest = this._lastBroadcastInputSeq[senderPos] ?? -1;
-        if (inputSeq <= latest) {
-            return false;
-        }
-        this._lastBroadcastInputSeq[senderPos] = inputSeq;
-        return this.rememberRecent(this._processedInputSeqs, senderPos, inputSeq);
-    }
-
-    private acceptReliableInput(senderPos: number, inputSeq: number): boolean {
-        if (inputSeq < 0) {
-            return true;
-        }
-        // During the one-frame transition to broadcast fallback, an older reliable
-        // packet can arrive after a newer IN| packet. It is no longer a useful recovery:
-        // replaying its input here would reverse sender order.
-        if (inputSeq <= (this._lastBroadcastInputSeq[senderPos] ?? -1)) {
-            return false;
-        }
-        return this.rememberRecent(this._processedInputSeqs, senderPos, inputSeq);
-    }
-
-    // Fixed-size numeric windows avoid allocating strings/sets on the hot net path.
-    // Reliable frames use exact duplicate suppression so a delayed, previously unseen
-    // frame can still be processed; broadcast input additionally enforces monotonic order.
-    private rememberRecent(
-        store: Record<number, RecentNumberWindow>,
+    private processRemotePacket(
         senderPos: number,
-        value: number,
-    ): boolean {
-        if (value < 0) {
-            return true;
+        inputSeq: number,
+        events: NetInputEvent[],
+        self?: NetSnapshotEntry,
+    ): void {
+        // Validate the sender/owned lane before accepting its sequence. Otherwise a
+        // malformed high-sequence packet for another lane could advance this sender's
+        // watermark and make its following legitimate inputs look stale.
+        const remote = self
+            ? this.remoteForOwnedEntry(self, senderPos)
+            : this._remoteByPos[senderPos];
+        if (!remote) {
+            return;
         }
-        let window = store[senderPos];
-        if (!window) {
-            window = {
-                values: new Float64Array(RECENT_DEDUPE_WINDOW),
-                count: 0,
-                cursor: 0,
-            };
-            store[senderPos] = window;
+        // Advance the shared reliable/broadcast sequence even for empty reliable
+        // frames. If a missing older frame arrives later, replaying it would reverse
+        // input order; owner position/state correction is the recovery mechanism.
+        const inputAccepted = this._inputOrder.accept(senderPos, inputSeq);
+        let selfAccepted = false;
+        if (self) {
+            selfAccepted = this.recordRemoteSelf(self, senderPos);
         }
-        for (let i = 0; i < window.count; i++) {
-            if (window.values[i] === value) {
-                return false;
+        if (events.length === 0 || !inputAccepted) {
+            return;
+        }
+        // A newer periodic P| can overtake an older IN|. Keep the newer persistent
+        // owner state, but apply the packet's own pre-input condition just for its
+        // events, then restore the latest owner condition afterward.
+        const transientCondition = !!self && shouldUseTransientPacketCondition(
+            inputAccepted,
+            events.length,
+            selfAccepted,
+            self.conditionEnergyRatio,
+            self.conditionHeartRate,
+        );
+        if (transientCondition) {
+            remote.applyTransientOwnerCondition(self!.conditionEnergyRatio, self!.conditionHeartRate);
+        }
+        try {
+            remote.applyEvents(events);
+        } finally {
+            if (transientCondition) {
+                remote.restoreOwnerCondition();
             }
         }
-        window.values[window.cursor] = value;
-        window.cursor = (window.cursor + 1) % RECENT_DEDUPE_WINDOW;
-        if (window.count < RECENT_DEDUPE_WINDOW) {
-            window.count++;
-        }
-        return true;
     }
 
 
