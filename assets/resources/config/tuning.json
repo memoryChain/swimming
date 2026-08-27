@@ -1,8 +1,9 @@
 {
-  "version": 29,
+  "version": 30,
   "updatedAt": "2026-08-25T09:21:07.301Z",
   "values": {
     "input.padStrokeDedupeMs": 5,
+    "dolphin.strainHr": 25,
     "dive.minPower": 0.3,
     "dive.chargeCycleSeconds": 2.5,
     "dive.underwaterHoldSeconds": 2,

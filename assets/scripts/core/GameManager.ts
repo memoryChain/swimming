@@ -28,6 +28,7 @@ import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
 import { RacePhase } from '../condition/ConditionTypes';
+import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
@@ -906,6 +907,9 @@ export class GameManager extends Component {
                 this._raceContext.reset();
                 this._raceContext.latestDiveResult = result;
             },
+            applyPlayerDolphinJumpStrain: () => {
+                this._playerCondition.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+            },
             enterSprint: () => {
                 this._playerCondition.setPhase(RacePhase.SPRINT);
                 // In a net race each genuine AI derives its phase from its own
@@ -1277,6 +1281,11 @@ export class GameManager extends Component {
         this._aiControllers.splice(0, this._aiControllers.length, ...competitors.aiControllers);
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
+        for (let index = 0; index < this._aiControllers.length; index++) {
+            this._aiControllers[index].onDolphinJumpStarted = () => {
+                this._aiConditions[index]?.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+            };
+        }
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
         }

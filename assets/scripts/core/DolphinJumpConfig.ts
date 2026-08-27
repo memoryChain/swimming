@@ -66,4 +66,7 @@ export const DOLPHIN_JUMP = {
     takeoffSplashScale: 2.6,
     // 扎回水里（落水）时的大水花羽流。
     landingSplashScale: 3.2,
+
+    // 成功发动海豚跃时一次性增加的心率，封顶 200；不消耗普通体力。
+    strainHr: 25,
 };

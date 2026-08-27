@@ -43,6 +43,8 @@ export class AISwimmerController extends Component {
     // Shared race view used for rank/gap-based strategy. Null before it is wired
     // (or in isolated tests), in which case strategy falls back to pacing only.
     public raceObserver: AIRaceObserver | null = null;
+    // Assigned with the matching condition model. Event-only; remote humans never call it.
+    public onDolphinJumpStarted: (() => void) | null = null;
 
     // NETWORKED RACE ONLY: when this lane is a remote human (driven by
     // RemoteSwimmerController from network input), the AI must never act. Defaults
@@ -183,6 +185,7 @@ export class AISwimmerController extends Component {
             return;
         }
         if (this.swimmer.tryDolphinJump()) {
+            this.onDolphinJumpStarted?.();
             this._dolphinCooldown = AI_DOLPHIN_TUNING.cooldownSeconds;
             this._dolphinAirTapTimer = 0;
             // Cleanly restart the stroke cycle after the scripted jump completes.

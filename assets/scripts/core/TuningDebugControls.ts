@@ -46,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 29;
+const TUNING_FILE_VERSION = 30;
 
 type TuningFileData = {
     version: number;
@@ -144,6 +144,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dolphin.rollEaseRate', '转体跟随速度', '轴向转体角度向输入目标追赶的速度。越大转得越快、越跟手。', () => DOLPHIN_JUMP.rollEaseRate, (v) => DOLPHIN_JUMP.rollEaseRate = v, 0.5, 2, 20, 1),
             control('dolphin.landingDepth', '落水下潜深度', '落水后潜入水下的深度，随后上浮恢复正常游泳。', () => DOLPHIN_JUMP.landingDepth, (v) => DOLPHIN_JUMP.landingDepth = v, 0.05, 0, 2, 2, 'm'),
             control('dolphin.landingRollUnwindSeconds', '转体回正时间', '落水后把残余轴向转体拉回正常游泳姿态所用的时间。', () => DOLPHIN_JUMP.landingRollUnwindSeconds, (v) => DOLPHIN_JUMP.landingRollUnwindSeconds = v, 0.05, 0.1, 2, 2, 's'),
+            control('dolphin.strainHr', '起跳心率增长', '海豚跃成功发动时立即增加的心率（加法、封顶 200），不消耗普通体力。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 1, 0, 100, 0),
             control('camera.dolphinBackDistance', '相机后距', '海豚跃跟随相机沿飞行切线在身后的基础距离。', () => RACE_CAMERA_TUNING.dolphinBackDistance, (v) => RACE_CAMERA_TUNING.dolphinBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
             control('camera.dolphinApexPullback', '顶点拉远', '腾空到最高点时在基础后距上额外往后拉的距离，用来把整个跃起框进画面。', () => RACE_CAMERA_TUNING.dolphinApexPullback, (v) => RACE_CAMERA_TUNING.dolphinApexPullback = v, 0.1, 0, 5, 1, 'm'),
             control('camera.dolphinHeight', '相机抬高', '在切线跟拍基础上额外的世界向上抬高量（取景用，别调太大否则会削弱抛物线跟拍感）。', () => RACE_CAMERA_TUNING.dolphinHeight, (v) => RACE_CAMERA_TUNING.dolphinHeight = v, 0.05, -0.5, 2, 2, 'm'),
