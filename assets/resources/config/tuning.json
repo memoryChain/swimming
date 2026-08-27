@@ -12,6 +12,7 @@
     "dive.underwaterRiseTilt": 12,
     "race.sprintDistanceFromFinish": 25,
     "camera.finishTopViewDistance": 0.05,
+    "camera.finishTopViewPoolInset": 12,
     "camera.sprintBackDistance": 1.1,
     "camera.sprintHeight": 0.52,
     "camera.sprintLookAhead": 0.8,

@@ -102,6 +102,10 @@ export const RACE_CAMERA_TUNING = {
     // zero so it only triggers once the PLAYER has actually reached the finish
     // wall (not during the final sprint approach).
     finishTopViewDistance: 0.05,
+    // Once the player touches the wall, place the top-view camera this far inside
+    // the pool from the finish. At 12m the finish sits near the left quarter of a
+    // landscape frame, revealing most of the pool instead of centring the wall.
+    finishTopViewPoolInset: 12,
     // Close third-person sprint view, above and behind the player's upper body.
     sprintBackDistance: 1.1,
     // Extra pullback while the player is chaining kick-only taps. A promoted arm
@@ -1007,9 +1011,13 @@ export class RaceCameraDirector {
         const raceDistance = getRaceDistance();
         const courseEndDistance = this._courseLayout.currentCourseEndDistance(snapshot.playerDistance, raceDistance);
         const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
-        const finishAnchorX = this._courseLayout.distanceToWorldX(courseEndDistance) - 7.5 * finishDirection;
-        const playerFollowX = snapshot.playerX + 3.4 * finishDirection;
-        const targetX = playerFollowX * 0.65 + finishAnchorX * 0.35;
+        const finishX = this._courseLayout.distanceToWorldX(courseEndDistance);
+        const poolInset = clamp(
+            RACE_CAMERA_TUNING.finishTopViewPoolInset,
+            0,
+            this._courseLayout.courseLength * 0.5,
+        );
+        const targetX = finishX - poolInset * finishDirection;
         const target = new Vec3(targetX, 0.18, 0);
         return {
             position: new Vec3(target.x, 22.5, 0),

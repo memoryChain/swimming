@@ -170,6 +170,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('race.sprintDistanceFromFinish', '冲刺触发距离', '距离终点还剩多少米时进入冲刺阶段。冲刺期间体力耗尽仍会显示，但不再施加质量和效率减益。', () => RACE_PHASE_BALANCE.sprintDistanceFromFinish, (v) => RACE_PHASE_BALANCE.sprintDistanceFromFinish = v, 1, 0, 100, 0, 'm'),
             control('camera.finishTopViewDistance', '终点俯视距离', '主角距终点还剩多少米时切到终点俯视镜头。设很小(≈0)=只有主角真正到达终点才切俯视，冲刺全程保持跟随。', () => RACE_CAMERA_TUNING.finishTopViewDistance, (v) => RACE_CAMERA_TUNING.finishTopViewDistance = v, 0.05, 0, 50, 2, 'm'),
+            control('camera.finishTopViewPoolInset', '终点俯视内移', '完赛俯视镜头中心从终点向泳池内侧移动的距离。越大则终点越靠画面边缘、能看到的泳池范围越多。', () => RACE_CAMERA_TUNING.finishTopViewPoolInset, (v) => RACE_CAMERA_TUNING.finishTopViewPoolInset = v, 0.5, 0, 25, 1, 'm'),
             control('camera.sprintBackDistance', '冲刺镜头后距', '冲刺镜头位于主角上半身后方的距离。越小越接近第一人称，越大看到的人物越完整。', () => RACE_CAMERA_TUNING.sprintBackDistance, (v) => RACE_CAMERA_TUNING.sprintBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
             control('camera.sprintKickPullbackDistance', '连续踢腿后拉', '冲刺镜头中连续踢腿时，在当前镜头后距上额外往后拉的距离。开始划水后会恢复原有后距。', () => RACE_CAMERA_TUNING.sprintKickPullbackDistance, (v) => RACE_CAMERA_TUNING.sprintKickPullbackDistance = v, 0.1, 0, 4, 1, 'm'),
             control('camera.sprintKickPullbackMinCadenceHz', '连续踢腿频率', '短点按形成的踢腿频率达到该值后，冲刺镜头才开始后拉。越高越需要快速连点。', () => RACE_CAMERA_TUNING.sprintKickPullbackMinCadenceHz, (v) => RACE_CAMERA_TUNING.sprintKickPullbackMinCadenceHz = v, 0.25, 0.5, 10, 2, 'Hz'),
