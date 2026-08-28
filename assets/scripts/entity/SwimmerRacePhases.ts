@@ -720,6 +720,8 @@ export class SwimmerRacePhases {
                 direction,
                 this._dolphinFlightPitch,
                 this._dolphinHeading,
+                Math.cos(this._dolphinFlightPitch)
+                    * Math.cos(this._dolphinBaseAxialRoll + this._dolphinRollAngle),
             );
         }
     }

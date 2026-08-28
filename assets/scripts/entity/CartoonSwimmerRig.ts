@@ -128,6 +128,11 @@ const DIVE_CHARGE_YELLOW = new Color(255, 218, 42, 255);
 const DIVE_CHARGE_RED = new Color(255, 54, 24, 255);
 const DIVE_CHARGE_VISUAL_INTERVAL_SECONDS = 1 / 30;
 const DIVE_CHARGE_POWER_STEPS = 20;
+const ARM_CYCLE_AMOUNT = Math.PI * 2;
+// Do not switch prone/supine presentation while the body is nearly side-on.
+// The two thresholds form an 18-degree-wide hysteresis band around 90 degrees.
+const VISUAL_BODY_UP_HYSTERESIS = 0.15;
+const ARM_CYCLE_BOUNDARY_EPSILON = 0.0001;
 
 @ccclass('CartoonSwimmerRig')
 export class CartoonSwimmerRig extends Component implements CharacterRig {
@@ -197,7 +202,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _lastSourceLeftArmCycle = 0;
     private _lastSourceRightArmCycle = 0;
     private _hasVisualArmCycles = false;
+    // Stable body-facing state plus a direction latched independently for each
+    // arm. A stroke never changes direction halfway through its circle.
     private _visualArmCycleDirection = 1;
+    private _visualLeftArmStrokeDirection = 1;
+    private _visualRightArmStrokeDirection = 1;
     private _kickCycleMotion = 0;
     private _lastKickCycle = 0;
     private _hasLastKickCycle = false;
@@ -1099,6 +1108,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         movementDirection = 1,
         movementPitchRadians = motor.collisionPitchRadians * this.axialRollVisualWeight,
         movementHeadingRadians = motor.heading,
+        bodyUpProjection = Math.cos(motor.axialRollRadians) * Math.cos(motor.collisionPitchRadians),
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1112,7 +1122,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updateVisualArmCycles(
             motor.leftArmCycle,
             motor.rightArmCycle,
-            motor.visualArmCycleDirection,
+            bodyUpProjection,
         );
         this.updateFreestyle(
             useDt,
@@ -1434,6 +1444,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._lastSourceRightArmCycle = 0;
         this._hasVisualArmCycles = false;
         this._visualArmCycleDirection = 1;
+        this._visualLeftArmStrokeDirection = 1;
+        this._visualRightArmStrokeDirection = 1;
         this._kickCycleMotion = 0;
         this._lastKickCycle = 0;
         this._hasLastKickCycle = false;
@@ -2152,43 +2164,52 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._armCycleMotion += (target - this._armCycleMotion) * blend;
     }
 
-    private updateVisualArmCycles(leftSource: number, rightSource: number, direction: number) {
-        const useDirection = direction < 0 ? -1 : 1;
+    private updateVisualArmCycles(leftSource: number, rightSource: number, bodyUpProjection: number) {
+        const projection = Number.isFinite(bodyUpProjection) ? bodyUpProjection : 1;
+        if (this._visualArmCycleDirection > 0 && projection <= -VISUAL_BODY_UP_HYSTERESIS) {
+            this._visualArmCycleDirection = -1;
+        } else if (this._visualArmCycleDirection < 0 && projection >= VISUAL_BODY_UP_HYSTERESIS) {
+            this._visualArmCycleDirection = 1;
+        }
+        const desiredDirection = this._visualArmCycleDirection;
         if (!this._hasVisualArmCycles) {
-            this._visualLeftArmCycle = leftSource * useDirection;
-            this._visualRightArmCycle = rightSource * useDirection;
+            this._visualLeftArmCycle = leftSource * desiredDirection;
+            this._visualRightArmCycle = rightSource * desiredDirection;
             this._lastSourceLeftArmCycle = leftSource;
             this._lastSourceRightArmCycle = rightSource;
-            this._visualArmCycleDirection = useDirection;
+            this._visualLeftArmStrokeDirection = desiredDirection;
+            this._visualRightArmStrokeDirection = desiredDirection;
             this._hasVisualArmCycles = true;
             return;
         }
 
-        // Crossing between prone freestyle and supine backstroke changes the
-        // authored circle direction. Re-anchor both sides to the canonical motor
-        // phase at that state edge; otherwise the reverse-time interval becomes a
-        // permanent offset and every later stroke starts at the collision pose.
-        if (useDirection !== this._visualArmCycleDirection) {
-            this._visualLeftArmCycle = leftSource * useDirection;
-            this._visualRightArmCycle = rightSource * useDirection;
-            this._lastSourceLeftArmCycle = leftSource;
-            this._lastSourceRightArmCycle = rightSource;
-            this._visualArmCycleDirection = useDirection;
-            return;
-        }
-
         // A wall turn or scripted action can rewind a raw motor counter to zero.
-        // Rebase that side to the new source phase; merely clamping the negative
-        // delta would preserve the old phase offset forever.
+        // Rebase that side immediately. Otherwise choose direction only at a full
+        // cycle boundary, so rolling across the prone/supine threshold during a
+        // pull cannot reverse the same arm halfway through its stroke.
         if (leftSource + 1e-5 < this._lastSourceLeftArmCycle) {
-            this._visualLeftArmCycle = leftSource * useDirection;
+            this._visualLeftArmCycle = leftSource * desiredDirection;
+            this._visualLeftArmStrokeDirection = desiredDirection;
         } else {
-            this._visualLeftArmCycle += (leftSource - this._lastSourceLeftArmCycle) * useDirection;
+            const leftDelta = leftSource - this._lastSourceLeftArmCycle;
+            if (leftDelta > 0) {
+                if (isArmCycleBoundary(this._lastSourceLeftArmCycle)) {
+                    this._visualLeftArmStrokeDirection = desiredDirection;
+                }
+                this._visualLeftArmCycle += leftDelta * this._visualLeftArmStrokeDirection;
+            }
         }
         if (rightSource + 1e-5 < this._lastSourceRightArmCycle) {
-            this._visualRightArmCycle = rightSource * useDirection;
+            this._visualRightArmCycle = rightSource * desiredDirection;
+            this._visualRightArmStrokeDirection = desiredDirection;
         } else {
-            this._visualRightArmCycle += (rightSource - this._lastSourceRightArmCycle) * useDirection;
+            const rightDelta = rightSource - this._lastSourceRightArmCycle;
+            if (rightDelta > 0) {
+                if (isArmCycleBoundary(this._lastSourceRightArmCycle)) {
+                    this._visualRightArmStrokeDirection = desiredDirection;
+                }
+                this._visualRightArmCycle += rightDelta * this._visualRightArmStrokeDirection;
+            }
         }
         this._lastSourceLeftArmCycle = leftSource;
         this._lastSourceRightArmCycle = rightSource;
@@ -2374,6 +2395,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
 function positiveMod(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function isArmCycleBoundary(cycle: number): boolean {
+    const phase = positiveMod(cycle, ARM_CYCLE_AMOUNT);
+    return phase <= ARM_CYCLE_BOUNDARY_EPSILON
+        || ARM_CYCLE_AMOUNT - phase <= ARM_CYCLE_BOUNDARY_EPSILON;
 }
 
 function lerpScalar(from: number, to: number, t: number): number {

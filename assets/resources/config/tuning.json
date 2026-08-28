@@ -1,5 +1,5 @@
 {
-  "version": 30,
+  "version": 31,
   "updatedAt": "2026-08-25T09:21:07.301Z",
   "values": {
     "input.padStrokeDedupeMs": 5,
@@ -17,6 +17,8 @@
     "camera.sprintHeight": 0.52,
     "camera.sprintLookAhead": 0.8,
     "camera.sprintFov": 64,
+    "camera.waterlineAboveClearance": 0.25,
+    "camera.waterlineBelowClearance": 0.2,
     "camera.speedLineThreshold": 2.5,
     "speed.baseSpeed": 0.8,
     "speed.maxSpeed": 3.4,

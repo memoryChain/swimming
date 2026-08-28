@@ -120,6 +120,13 @@ export const RACE_CAMERA_TUNING = {
     // torso Y directly. This keeps the water line out of the main view while the
     // swimmer rises into the regular surface composition.
     sprintAscentAnchorAboveWater: 0.25,
+    // Keep the rendered camera eye completely outside a no-camera band around
+    // the water plane. The logical camera position is still allowed to ease
+    // across the plane; only the final position written to the Camera node is
+    // clamped. This avoids a split waterline view without trapping a smoothed
+    // camera on one side forever.
+    waterlineAboveClearance: 0.25,
+    waterlineBelowClearance: 0.2,
     // Extra FOV pushed while sprintActive for a cinematic speed-up; blended
     // in/out so the sprint entry reads as acceleration instead of a hard cut.
     sprintFovBoost: 8,
@@ -180,6 +187,19 @@ export function isSurfaceRaceCameraRiseReady(progress: number | undefined): bool
     return normalizedProgress > 0 && normalizedProgress >= threshold;
 }
 
+// Shared by every camera that can render the race pool. Keeping the rule here
+// prevents a secondary/debug camera from bypassing the main director's final
+// transform guard. `underwater` selects which side of the forbidden band is
+// valid; callers should derive it from their logical (unclamped) camera state.
+export function clampCameraHeightToWaterSide(cameraY: number, waterY: number, underwater: boolean): number {
+    const clearance = underwater
+        ? Math.max(0.1, RACE_CAMERA_TUNING.waterlineBelowClearance)
+        : Math.max(0.1, RACE_CAMERA_TUNING.waterlineAboveClearance);
+    return underwater
+        ? Math.min(cameraY, waterY - clearance)
+        : Math.max(cameraY, waterY + clearance);
+}
+
 export enum RaceCameraMode {
     Broadcast = 0,
     Top = 1,
@@ -236,6 +256,10 @@ export type RaceCameraSnapshot = {
 
 export class RaceCameraDirector {
     private readonly _cameraPos = new Vec3(-6, 4.7, 10.5);
+    // Final node position after applying the waterline exclusion band. Keep it
+    // separate from _cameraPos: smoothing must continue through the forbidden
+    // band so the camera can actually change sides on a later frame.
+    private readonly _renderCameraPos = new Vec3();
     private readonly _cameraTarget = new Vec3(8, 0.25, 0);
     private _cameraNode: Node = null;
     private _mode = RaceCameraMode.Broadcast;
@@ -308,8 +332,7 @@ export class RaceCameraDirector {
 
     bindCamera(cameraNode: Node) {
         this._cameraNode = cameraNode;
-        this._cameraNode.setPosition(this._cameraPos);
-        this._cameraNode.lookAt(this._cameraTarget);
+        this.applyCameraTransform();
         this.applyFov();
     }
 
@@ -697,8 +720,7 @@ export class RaceCameraDirector {
         this._cameraPos.set(platform.x + 8.57 * this._courseLayout.direction, 3.15, this._playerLaneZ + 0.8);
         this.applyFov();
         if (this._cameraNode) {
-            this._cameraNode.setPosition(this._cameraPos);
-            this._cameraNode.lookAt(this._cameraTarget);
+            this.applyCameraTransform();
         }
     }
 
@@ -1287,7 +1309,13 @@ export class RaceCameraDirector {
     }
 
     private applyCameraTransform(up?: Vec3) {
-        this._cameraNode.setPosition(this._cameraPos);
+        this._renderCameraPos.set(this._cameraPos);
+        this._renderCameraPos.y = clampCameraHeightToWaterSide(
+            this._renderCameraPos.y,
+            this._courseLayout.waterY,
+            this._underwaterViewActive,
+        );
+        this._cameraNode.setPosition(this._renderCameraPos);
         this._cameraNode.lookAt(this._cameraTarget, up);
     }
 

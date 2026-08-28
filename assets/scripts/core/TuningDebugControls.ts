@@ -46,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 30;
+const TUNING_FILE_VERSION = 31;
 
 type TuningFileData = {
     version: number;
@@ -177,6 +177,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('camera.sprintHeight', '冲刺镜头高度', '冲刺镜头相对主角上半身的向上高度。', () => RACE_CAMERA_TUNING.sprintHeight, (v) => RACE_CAMERA_TUNING.sprintHeight = v, 0.05, 0.2, 5, 2, 'm'),
             control('camera.sprintLookAhead', '冲刺镜头前看', '以主角上半身骨骼为基准，镜头目标向终点方向前移的距离。越小越聚焦上半身。', () => RACE_CAMERA_TUNING.sprintLookAhead, (v) => RACE_CAMERA_TUNING.sprintLookAhead = v, 0.1, 0, 6, 1, 'm'),
             control('camera.sprintAscentAnchorAboveWater', '上浮镜头水面锚点', '上浮阶段提前切入冲刺视角时，镜头构图锚点保持在水面以上的最低高度。调高可把横切画面的水面线继续向下压。', () => RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater, (v) => RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater = v, 0.05, 0, 1.5, 2, 'm'),
+            control('camera.waterlineAboveClearance', '水上相机离水线', '所有水上比赛机位最终写入相机节点前，与水面保持的最小垂直距离。用于禁止镜头停在水线上形成上下各半的画面。', () => RACE_CAMERA_TUNING.waterlineAboveClearance, (v) => RACE_CAMERA_TUNING.waterlineAboveClearance = v, 0.05, 0.1, 1, 2, 'm'),
+            control('camera.waterlineBelowClearance', '水下相机离水线', '所有水下比赛机位最终写入相机节点前，与水面保持的最小垂直距离。用于禁止镜头停在水线上形成上下各半的画面。', () => RACE_CAMERA_TUNING.waterlineBelowClearance, (v) => RACE_CAMERA_TUNING.waterlineBelowClearance = v, 0.05, 0.1, 1, 2, 'm'),
             control('camera.sprintFov', '水面跟随视野', '水面背后跟随镜头的垂直视野角度。越大画面越广，越小主角越大。', () => RACE_CAMERA_TUNING.sprintFov, (v) => RACE_CAMERA_TUNING.sprintFov = v, 1, 25, 80, 0, '°'),
             control('camera.sprintFollowSpeed', '冲刺前向跟随', '冲刺镜头前进/高度方向的跟随速度（每秒）。越高越紧跟，越低越拖影。', () => RACE_CAMERA_TUNING.sprintFollowSpeed, (v) => RACE_CAMERA_TUNING.sprintFollowSpeed = v, 0.5, 2, 30, 1, '/s'),
             control('camera.sprintLateralFollowSpeed', '冲刺横向跟随', '冲刺镜头左右(横向)跟随速度（每秒）。故意调慢，让人物蛇形偏移时先在画面里滑出去、相机再缓缓追上，玩家才感受得到偏移。越低偏移越明显、越拖。', () => RACE_CAMERA_TUNING.sprintLateralFollowSpeed, (v) => RACE_CAMERA_TUNING.sprintLateralFollowSpeed = v, 0.2, 0.5, 15, 1, '/s'),

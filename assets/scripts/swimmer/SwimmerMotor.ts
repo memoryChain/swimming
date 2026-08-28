@@ -1108,13 +1108,6 @@ export class SwimmerMotor {
         return this._axialRoll.stableAngleRadians;
     }
 
-    // Presentation-only direction for the arm circle. The physical input/action
-    // phase remains unchanged; once the powered roll settles into the supine basin,
-    // the authored freestyle circle must play backward to read as backstroke.
-    get visualArmCycleDirection(): number {
-        return Math.abs(this._axialRoll.angleRadians) > Math.PI * 0.5 ? -1 : 1;
-    }
-
     get collisionPitchRadians(): number {
         return this._collisionPitch.angleRadians;
     }

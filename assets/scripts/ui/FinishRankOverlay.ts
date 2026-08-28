@@ -30,10 +30,15 @@ const BADGE_STACK_GAP = 33;
 const BADGE_CLUSTER_X = 110;
 
 const PANEL_MARGIN = 14;
-const PANEL_WIDTH = 218;
+// Compact two-column layout: keep enough room for the existing six-character
+// display name while tightening the visual gutter between rank and name.
+const PANEL_WIDTH = 160;
+const PANEL_RANK_CENTER_FROM_LEFT = 20;
+const PANEL_RANK_LABEL_WIDTH = 28;
+const PANEL_NAME_LEFT_FROM_LEFT = 36;
+const PANEL_NAME_RIGHT_PADDING = 6;
 const PANEL_TITLE_H = 30;
 const PANEL_ROW_H = 30;
-const PANEL_LANE_WIDTH = 40;
 const PANEL_TOP_CLEARANCE = PANEL_TITLE_H + PANEL_ROW_H;
 const EXIT_BUTTON_H = 36;
 const EXIT_BUTTON_GAP = 8;
@@ -54,12 +59,9 @@ type PanelRow = {
     highlight: Graphics;
     rankLabel: Label;
     nameLabel: Label;
-    laneLabel: Label;
     swimmerNode: Node | null;
     placement: number;
-    lane: number;
     eliminated: boolean;
-    quit: boolean;
     isPlayer: boolean;
     name: string;
 };
@@ -108,15 +110,6 @@ export class FinishRankOverlay {
             titleLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
             titleLabel.verticalAlign = Label.VerticalAlign.CENTER;
             title.getComponent(UITransform)!.setContentSize(PANEL_WIDTH, PANEL_TITLE_H);
-            const laneHeader = makeUiNode('LaneHeader', panel);
-            laneHeader.setPosition(PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8, -PANEL_TITLE_H / 2, 0);
-            laneHeader.getComponent(UITransform)!.setContentSize(PANEL_LANE_WIDTH, PANEL_TITLE_H);
-            const laneHeaderLabel = laneHeader.addComponent(Label);
-            laneHeaderLabel.string = '泳道';
-            laneHeaderLabel.fontSize = 13;
-            laneHeaderLabel.color = PANEL_TITLE;
-            laneHeaderLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
-            laneHeaderLabel.verticalAlign = Label.VerticalAlign.CENTER;
             this._panelRows = makeUiNode('Rows', panel);
             this._exitButton = makeButton('ExitRaceButton', panel, PANEL_WIDTH, EXIT_BUTTON_H, uiColor(190, 64, 72, 238), '退出比赛');
             this._exitButton.on(Node.EventType.TOUCH_END, onExitRace);
@@ -352,21 +345,29 @@ export class FinishRankOverlay {
         while (this._panelRowPool.length < count) {
             const row = makeUiNode(`Row_${this._panelRowPool.length + 1}`, this._panelRows!);
             const highlight = row.addComponent(Graphics);
-            const rankLabel = addRowLabel(row, -PANEL_WIDTH / 2 + 26, 34, false, 17);
-            const nameLabel = addRowLabel(row, -PANEL_WIDTH / 2 + 52, PANEL_WIDTH - 60 - PANEL_LANE_WIDTH, true, 16);
-            const laneLabel = addRowLabel(row, PANEL_WIDTH / 2 - PANEL_LANE_WIDTH / 2 - 8, PANEL_LANE_WIDTH, false, 16);
+            const rankLabel = addRowLabel(
+                row,
+                -PANEL_WIDTH / 2 + PANEL_RANK_CENTER_FROM_LEFT,
+                PANEL_RANK_LABEL_WIDTH,
+                false,
+                17,
+            );
+            const nameLabel = addRowLabel(
+                row,
+                -PANEL_WIDTH / 2 + PANEL_NAME_LEFT_FROM_LEFT,
+                PANEL_WIDTH - PANEL_NAME_LEFT_FROM_LEFT - PANEL_NAME_RIGHT_PADDING,
+                true,
+                16,
+            );
             row.setPosition(0, -PANEL_TITLE_H - this._panelRowPool.length * PANEL_ROW_H - PANEL_ROW_H / 2, 0);
             this._panelRowPool.push({
                 root: row,
                 highlight,
                 rankLabel,
                 nameLabel,
-                laneLabel,
                 swimmerNode: null,
                 placement: -1,
-                lane: -1,
                 eliminated: false,
-                quit: false,
                 isPlayer: false,
                 name: '',
             });
@@ -376,7 +377,6 @@ export class FinishRankOverlay {
     private updatePanelRow(row: PanelRow, result: RaceFinishResult) {
         const swimmerNode = result.swimmer?.node ?? null;
         const eliminated = result.eliminated === true;
-        const quit = result.quit === true;
         const presentationChanged = row.swimmerNode !== swimmerNode
             || row.eliminated !== eliminated
             || row.isPlayer !== result.isPlayer;
@@ -390,8 +390,6 @@ export class FinishRankOverlay {
             const accent = eliminated ? ELIMINATED_TEXT : (result.isPlayer ? PLAYER_ACCENT : NAME_TEXT);
             row.rankLabel.color = accent;
             row.nameLabel.color = accent;
-            row.laneLabel.color = eliminated ? ELIMINATED_TEXT : PANEL_TITLE;
-            row.laneLabel.fontSize = eliminated ? 13 : 16;
         }
         if (row.placement !== result.placement) {
             row.rankLabel.string = `${result.placement}`;
@@ -399,14 +397,9 @@ export class FinishRankOverlay {
         if (row.name !== result.name || row.isPlayer !== result.isPlayer) {
             row.nameLabel.string = displayName(result);
         }
-        if (row.lane !== result.lane || row.eliminated !== eliminated || row.quit !== quit) {
-            row.laneLabel.string = quit ? '退出' : eliminated ? '已淘汰' : `${result.lane}`;
-        }
         row.swimmerNode = swimmerNode;
         row.placement = result.placement;
-        row.lane = result.lane;
         row.eliminated = eliminated;
-        row.quit = quit;
         row.isPlayer = result.isPlayer;
         row.name = result.name;
     }

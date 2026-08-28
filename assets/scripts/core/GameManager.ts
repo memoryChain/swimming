@@ -76,7 +76,7 @@ import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
-import { RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { clampCameraHeightToWaterSide, RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
@@ -2750,6 +2750,15 @@ export class GameManager extends Component {
             this._uwCamTarget.y + Math.sin(this._uwPitch) * this._uwDistance,
             this._uwCamTarget.z + Math.sin(this._uwYaw) * cosPitch * this._uwDistance,
         );
+        // This debug orbit writes the main camera directly instead of going
+        // through RaceCameraDirector. Apply the shared exclusion rule so even a
+        // manually dragged orbit cannot leave the eye sitting on the waterline.
+        const underwaterView = this._uwCamPos.y < COURSE_LAYOUT.waterY;
+        this._uwCamPos.y = clampCameraHeightToWaterSide(
+            this._uwCamPos.y,
+            COURSE_LAYOUT.waterY,
+            underwaterView,
+        );
         const camNode = this._cameraNode;
         if (camNode?.isValid) {
             camNode.setWorldPosition(this._uwCamPos);
@@ -2759,7 +2768,7 @@ export class GameManager extends Component {
         // (mirror + blue floor gradient); orbit above the surface = above-water
         // look (deck + the above-water distance gradient), so both can be seen and
         // tuned in this scene.
-        this._waterRefraction?.setUnderwaterViewActive(this._uwCamPos.y < COURSE_LAYOUT.waterY);
+        this._waterRefraction?.setUnderwaterViewActive(underwaterView);
     }
 
     private onDebugCameraMouseDown(event: EventMouse) {

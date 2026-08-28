@@ -1,6 +1,6 @@
 import { Camera, Color, Layers, Material, MeshRenderer, Node, primitives, RenderTexture, Texture2D, utils, Vec3, Vec4 } from 'cc';
 import { EDITOR } from 'cc/env';
-import { RaceCameraSnapshot } from './RaceCameraDirector';
+import { clampCameraHeightToWaterSide, RaceCameraSnapshot } from './RaceCameraDirector';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SWIMMER_LAYER, UNDERWATER_LAYER, WATER_SURFACE_LAYER } from '../venue/WaterSurfaceBinder';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
@@ -276,7 +276,10 @@ export class ScoreboardFeedCamera {
         }
         const k = Math.min(1, Math.max(0, dt * 6));
         this._camPos.x += (wantX - this._camPos.x) * k;
-        this._camPos.y = preset.height;
+        // The jumbotron feed bypasses RaceCameraDirector, so apply the same
+        // above-water exclusion band here. Current presets are already safely
+        // above it; this guard keeps future low-angle presets from regressing.
+        this._camPos.y = clampCameraHeightToWaterSide(preset.height, waterY, false);
         this._camPos.z = sideZ;
         this._target.set(snapshot.playerX, waterY + preset.targetYOffset, laneZ);
         node.setPosition(this._camPos);

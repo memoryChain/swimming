@@ -929,6 +929,9 @@ export class Swimmer extends Component {
         }
         const bodyPitchRadians = this._phases.diveRecoveryLean() * Math.PI / 180
             + this._motor.collisionPitchRadians * this.cartoonRig.axialRollVisualWeight;
+        const visualAxialRollRadians = this._phases.dolphinRollResidualRadians()
+            + this._motor.axialRollRadians * this.cartoonRig.axialRollVisualWeight;
+        const bodyUpProjection = Math.cos(bodyPitchRadians) * Math.cos(visualAxialRollRadians);
         const kickOnlyUnderwater = this._phases.isDiveGlidePoseActive
             && !this._phases.canUseArmStroke;
         // Arm motion may start during ascent, but surface-only leg spray remains
@@ -937,7 +940,14 @@ export class Swimmer extends Component {
         if (kickOnlyUnderwater) {
             this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
         } else {
-            this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
+            this.cartoonRig.updateFreestyleFromMotor(
+                dt,
+                this._motor,
+                this.raceDirection,
+                bodyPitchRadians,
+                this._motor.heading,
+                bodyUpProjection,
+            );
         }
     }
 
