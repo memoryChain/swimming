@@ -21,7 +21,7 @@ export type PlayerBalanceOverrides = {
     diveMaxLaunchSpeed: number;
     // Body weight (from the character definition). Pass-through, not leveled.
     weight: number;
-    // 蓄气资质（from the character definition）. Pass-through, not leveled.
+    // 旧版蓄气资质透传值，不随等级成长；海豚跳角色配置存在时仅作兼容数据。
     energyGainAptitude: number;
 };
 

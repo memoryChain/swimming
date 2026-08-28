@@ -6,6 +6,7 @@ import {
     StrokeType,
 } from '../core/GameConstants';
 import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
+import type { DolphinJumpProfile } from '../core/DolphinJumpConfig';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
@@ -146,6 +147,14 @@ export class Swimmer extends Component {
     // 蓄气资质（0-100，纯资质）：玩家/远程人类来自养成档案，AI 来自对手配置。
     setEnergyGainAptitude(value: number) {
         this._ultimate.setGainAptitude(value);
+    }
+
+    // One setup edge controls both halves of the character identity: charge rate
+    // in the energy model and trajectory/landing values in the motor phase data.
+    // The profile is a shared tuning object, not copied per swimmer.
+    setDolphinJumpProfile(profile: DolphinJumpProfile | null) {
+        this._motor.setDolphinJumpProfile(profile);
+        this._ultimate.setDolphinJumpProfile(profile);
     }
 
     // 被撞飞补偿：收到的击退冲量足够大时给一次能量（带节流）。

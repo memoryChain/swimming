@@ -1,4 +1,5 @@
 import { shuffleInPlace } from '../core/SharedRNG';
+import type { DolphinJumpProfileId } from '../core/DolphinJumpConfig';
 
 export type AICompetitorProfile = {
     // Single competitiveness axis (0..1). Drives BOTH the release-timing accuracy
@@ -16,8 +17,11 @@ export type AICompetitorProfile = {
     // Body weight for swimmer-vs-swimmer collision knockback (default 1). Heavy
     // bodies barely move when bumped; light bodies get knocked further.
     weight?: number;
-    // 蓄气资质（0-100，纯资质）。决定赛内大招能量积攒速率；缺省 80（基准）。
+    // 旧版蓄气资质兼容值；未指定 dolphinProfileId 时才决定大招能量积攒速率。
     energyGain?: number;
+    // Explicit gameplay style. AI model appearance is randomized independently,
+    // so never infer outcome-affecting dolphin values from the rendered model.
+    dolphinProfileId?: DolphinJumpProfileId;
 };
 
 // A racing personality. These describe HOW an AI spends its effort over the race
@@ -70,14 +74,14 @@ export function getAiPersonality(id: AIPersonalityId): AIPersonality {
 }
 
 export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
-    { difficulty: 0.56, bpmOffset: -22, divePower: 0.44, diveReaction: 0.36, personalityId: 'weaver', weight: 0.9, energyGain: 78 },
-    { difficulty: 0.68, bpmOffset: -14, divePower: 0.56, diveReaction: 0.26, personalityId: 'steady', weight: 1.0, energyGain: 83 },
-    { difficulty: 0.8, bpmOffset: -4, divePower: 0.72, diveReaction: 0.14, personalityId: 'closer', weight: 1.0, energyGain: 80 },
-    { difficulty: 0.64, bpmOffset: -18, divePower: 0.5, diveReaction: 0.3, personalityId: 'sprinter', weight: 0.95, energyGain: 88 },
-    { difficulty: 0.88, bpmOffset: 4, divePower: 0.84, diveReaction: 0.08, personalityId: 'fighter', weight: 1.15, energyGain: 76 },
-    { difficulty: 0.5, bpmOffset: -28, divePower: 0.38, diveReaction: 0.46, personalityId: 'weaver', weight: 0.9, energyGain: 82 },
-    { difficulty: 0.82, bpmOffset: -2, divePower: 0.74, diveReaction: 0.13, personalityId: 'frontrunner', weight: 1.1, energyGain: 85 },
-    { difficulty: 0.9, bpmOffset: 6, divePower: 0.88, diveReaction: 0.07, personalityId: 'closer', weight: 1.05, energyGain: 90 },
+    { difficulty: 0.56, bpmOffset: -22, divePower: 0.44, diveReaction: 0.36, personalityId: 'weaver', weight: 0.9, energyGain: 78, dolphinProfileId: 'women2' },
+    { difficulty: 0.68, bpmOffset: -14, divePower: 0.56, diveReaction: 0.26, personalityId: 'steady', weight: 1.0, energyGain: 83, dolphinProfileId: 'lowPolyHuman2' },
+    { difficulty: 0.8, bpmOffset: -4, divePower: 0.72, diveReaction: 0.14, personalityId: 'closer', weight: 1.0, energyGain: 80, dolphinProfileId: 'lowPolyHuman2' },
+    { difficulty: 0.64, bpmOffset: -18, divePower: 0.5, diveReaction: 0.3, personalityId: 'sprinter', weight: 0.95, energyGain: 88, dolphinProfileId: 'women2' },
+    { difficulty: 0.88, bpmOffset: 4, divePower: 0.84, diveReaction: 0.08, personalityId: 'fighter', weight: 1.15, energyGain: 76, dolphinProfileId: 'muscleMan' },
+    { difficulty: 0.5, bpmOffset: -28, divePower: 0.38, diveReaction: 0.46, personalityId: 'weaver', weight: 0.9, energyGain: 82, dolphinProfileId: 'women2' },
+    { difficulty: 0.82, bpmOffset: -2, divePower: 0.74, diveReaction: 0.13, personalityId: 'frontrunner', weight: 1.1, energyGain: 85, dolphinProfileId: 'muscleMan' },
+    { difficulty: 0.9, bpmOffset: 6, divePower: 0.88, diveReaction: 0.07, personalityId: 'closer', weight: 1.05, energyGain: 90, dolphinProfileId: 'lowPolyHuman2' },
 ];
 
 // Preset difficulty tiers offered by the 100m AI-debug 1v1 picker. Value is the

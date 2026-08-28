@@ -5,6 +5,11 @@ import { resolvePlayerBalance } from './PlayerBalanceOverrides';
 import { getProgressionManager } from './ProgressionManager';
 import { PROGRESSION_BALANCE } from './ProgressionBalance';
 import { findPlayerCharacter, getPlayerCharacterSelection, PlayerCharacterId } from '../app/PlayerCharacterConfig';
+import {
+    DOLPHIN_JUMP_PROFILES,
+    getDolphinJumpProfile,
+    type DolphinJumpProfile,
+} from '../core/DolphinJumpConfig';
 
 // The complete, self-contained set of gameplay-affecting modifiers a player brings
 // into a race, resolved ONCE from their local save. Today this is progression-derived
@@ -29,6 +34,9 @@ import { findPlayerCharacter, getPlayerCharacterSelection, PlayerCharacterId } f
 export interface RaceModifierProfile {
     // Progression-derived movement/condition balance (null = neutral / no character).
     balance: PlayerBalanceOverrides | null;
+    // Character-derived shared object. The existing characterId digest is enough
+    // for every peer to resolve the same outcome-affecting values.
+    dolphin: DolphinJumpProfile;
     // Future 养成 fields go here, e.g. startBoost?: number; luckyLaneBias?: number; ...
 }
 
@@ -53,11 +61,11 @@ export function resolveLocalModifierDigest(): RaceModifierDigest {
 // given (characterId, level). Unknown character -> neutral (null balance).
 export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): RaceModifierProfile {
     if (!digest) {
-        return { balance: null };
+        return { balance: null, dolphin: DOLPHIN_JUMP_PROFILES.lowPolyHuman2 };
     }
     const character = findPlayerCharacter(digest.characterId as PlayerCharacterId);
     if (!character) {
-        return { balance: null };
+        return { balance: null, dolphin: DOLPHIN_JUMP_PROFILES.lowPolyHuman2 };
     }
     const balance = resolvePlayerBalance(
         { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick },
@@ -67,7 +75,7 @@ export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): R
         character.energyGain,
         character.kick,
     );
-    return { balance };
+    return { balance, dolphin: getDolphinJumpProfile(character.id) };
 }
 
 // Resolve the local player's full profile from their save. Same source single-player
@@ -85,10 +93,10 @@ export function applyRaceModifiersToMotor(motor: SwimmerMotor, profile: RaceModi
     motor.setPlayerBalance(profile?.balance ?? null);
 }
 
-// Apply the full profile (motor balance + 蓄气资质) to a swimmer. Use this for
-// the local player and remote humans; AI uses CompetitorManager.applyProfile which
-// sets weight + energyGain directly from its competitor profile.
+// Apply the full profile (motor balance + dolphin-jump identity) to a swimmer. Use
+// this for local and remote humans; AI selects the same shared dolphin profiles in
+// CompetitorManager.applyProfile.
 export function applyRaceModifiersToSwimmer(swimmer: Swimmer, profile: RaceModifierProfile | null): void {
     applyRaceModifiersToMotor(swimmer.motor, profile);
-    swimmer.setEnergyGainAptitude(profile?.balance?.energyGainAptitude ?? 50);
+    swimmer.setDolphinJumpProfile(profile?.dolphin ?? DOLPHIN_JUMP_PROFILES.lowPolyHuman2);
 }

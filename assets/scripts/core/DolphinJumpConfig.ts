@@ -70,3 +70,73 @@ export const DOLPHIN_JUMP = {
     // 成功发动海豚跃时一次性增加的心率，封顶 200；不消耗普通体力。
     strainHr: 25,
 };
+
+// Per-character dolphin-jump identity. These are mutable on purpose: the debug
+// tuning panel edits the shared objects in place so existing swimmers immediately
+// pick up charge changes and the next jump uses the updated trajectory.
+export type DolphinJumpProfileId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver';
+
+export type DolphinJumpProfile = {
+    // Final charge-gain multiplier relative to the balanced character. This
+    // replaces (rather than stacks with) the legacy energy-aptitude conversion.
+    chargeGainScale: number;
+    // Designer-facing result multipliers. The phase controller derives velocity
+    // and angle from the requested apex height + air distance.
+    arcHeightScale: number;
+    arcDistanceScale: number;
+    gravityScale: number;
+    // Underwater re-entry identity, independent from near-wall fit compression.
+    landingSpeedScale: number;
+    landingDepthScale: number;
+    landingDurationScale: number;
+};
+
+export const DOLPHIN_JUMP_PROFILES: Record<DolphinJumpProfileId, DolphinJumpProfile> = {
+    // 铁臂狂鲨：低频、高远、重落水。
+    muscleMan: {
+        chargeGainScale: 0.72,
+        arcHeightScale: 1.50,
+        arcDistanceScale: 1.38,
+        gravityScale: 1.05,
+        landingSpeedScale: 1.05,
+        landingDepthScale: 1.20,
+        landingDurationScale: 1.15,
+    },
+    // 灵波飞鱼：高频、低平、快速回到游泳。
+    women2: {
+        chargeGainScale: 1.30,
+        arcHeightScale: 0.62,
+        arcDistanceScale: 0.78,
+        gravityScale: 1.12,
+        landingSpeedScale: 1.00,
+        landingDepthScale: 0.70,
+        landingDurationScale: 0.72,
+    },
+    // 破浪新星：三角色差异化的标准抛物线。
+    lowPolyHuman2: {
+        chargeGainScale: 1.00,
+        arcHeightScale: 1.00,
+        arcDistanceScale: 1.00,
+        gravityScale: 1.00,
+        landingSpeedScale: 1.00,
+        landingDepthScale: 1.00,
+        landingDurationScale: 1.00,
+    },
+    // 深海潜将尚未定型，暂时保持标准值且使用独立对象，方便后续单独调整。
+    diver: {
+        chargeGainScale: 1.00,
+        arcHeightScale: 1.00,
+        arcDistanceScale: 1.00,
+        gravityScale: 1.00,
+        landingSpeedScale: 1.00,
+        landingDepthScale: 1.00,
+        landingDurationScale: 1.00,
+    },
+};
+
+export function getDolphinJumpProfile(characterId: string | null | undefined): DolphinJumpProfile {
+    if (characterId && Object.prototype.hasOwnProperty.call(DOLPHIN_JUMP_PROFILES, characterId)) {
+        return DOLPHIN_JUMP_PROFILES[characterId as DolphinJumpProfileId];
+    }
+    return DOLPHIN_JUMP_PROFILES.lowPolyHuman2;
+}

@@ -14,7 +14,8 @@ export type PlayerCharacterDefinition = {
     // Body weight for swimmer-vs-swimmer collision knockback (default ~1). Heavy
     // bodies barely move when bumped; light bodies get knocked further.
     weight: number;
-    // 蓄气资质（0-100，纯资质、不随等级成长）。决定赛内大招能量的积攒速率。
+    // 旧版蓄气资质（0-100，纯资质、不随等级成长）。保留给存档、展示和兼容路径；
+    // 玩家海豚跳的实际积攒速率由 DolphinJumpProfile.chargeGainScale 决定。
     energyGain: number;
     // 踢腿资质（0-100）。影响踢腿速度上限；50 为基准（±15%）。
     kick: number;

@@ -9,7 +9,7 @@ import { findPlayerCharacter, getPlayerCharacterSelection, weightToPhysicalRatin
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolvePlayerBalance } from '../progression/PlayerBalanceOverrides';
-import { energyGainMultiplier } from '../core/UltimateEnergyBalance';
+import { getDolphinJumpProfile } from '../core/DolphinJumpConfig';
 import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { getUILayer, UILayer } from './UILayers';
 import { UI_STYLE } from './UIStyle';
@@ -69,7 +69,7 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
         lines: [
             '赛内 0-100 临时资源，每局重置为零。被动每秒缓慢增长（保底），PERFECT/GOOD 划水额外积攒，连续 PERFECT 有连击奖励。',
             '被撞飞会补偿能量；蓄满 100 点可释放全角色共用的海豚跳大招，释放后清空。',
-            '积攒速率受蓄气资质影响（±15%），但能量的获取与花费都由操作决定，不随等级成长。',
+            '积攒速率由角色的海豚跳充能倍率决定；能量获取仍来自操作与被动增长，不随等级成长。',
         ],
     },
 ];
@@ -158,6 +158,7 @@ function buildRows(
     current: ReturnType<typeof resolvePlayerBalance>,
     atMax: ReturnType<typeof resolvePlayerBalance>,
 ): StatRow[] {
+    const dolphin = getDolphinJumpProfile(character.id);
     return [
         {
             name: '体力',
@@ -192,8 +193,8 @@ function buildRows(
         },
         {
             name: '蓄气',
-            aptitude: `${character.energyGain}`,
-            lines: [{ label: `大招积攒 ×${energyGainMultiplier(character.energyGain).toFixed(2)}`, current: '固定', max: '固定' }],
+            aptitude: `${Math.round(dolphin.chargeGainScale * 100)}`,
+            lines: [{ label: `海豚跳充能 ×${dolphin.chargeGainScale.toFixed(2)}`, current: '固定', max: '固定' }],
         },
     ];
 }

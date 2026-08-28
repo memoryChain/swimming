@@ -74,6 +74,7 @@ export class SwimmerRacePhases {
     private _dolphinBaseAxialRoll = 0;
     private _dolphinHorizontalSpeed = 0;
     private _dolphinVerticalSpeed = 0;
+    private _dolphinGravity = DOLPHIN_JUMP.gravity;
     private _dolphinFlightSeconds = 0;
     // Landing-glide exit speed chosen for THIS jump. Follows the arc's forward speed
     // (the air horizontal speed) so the swimmer enters the water carrying its full
@@ -82,7 +83,9 @@ export class SwimmerRacePhases {
     // Per-jump scale (0..1) on the underwater landing dip's durations + depth. 1 far
     // from a wall; shrinks toward 0 near a wall so the dip becomes a quick shallow bob
     // that fits the room while keeping the landing SPEED (see tryStartDolphinJump).
-    private _dolphinLandingDurationScale = 1;
+    private _dolphinLandingFitScale = 1;
+    private _dolphinLandingProfileDepthScale = 1;
+    private _dolphinLandingProfileDurationScale = 1;
     // Accumulated axial-roll target and the eased current angle (radians). Left
     // strokes add +full turns, right strokes subtract them; the angle eases toward
     // the target so rapid input reads as a faster corkscrew.
@@ -548,18 +551,33 @@ export class SwimmerRacePhases {
         // Launch speed scales with the character's 爆发力 (burst) + level, reusing
         // the same progression ratio the dive uses. AI keeps the raw base speed.
         const launchSpeed = DOLPHIN_JUMP.launchSpeed * motor.dolphinLaunchSpeedScale;
-        const horizontalSpeed = Math.max(0.1, launchSpeed * Math.cos(angle));
-        let verticalSpeed = Math.max(0.1, launchSpeed * Math.sin(angle));
-        let flightSeconds = Math.max(0.1, (2 * verticalSpeed) / Math.max(0.1, DOLPHIN_JUMP.gravity));
+        const baseGravity = Math.max(0.1, finitePositive(DOLPHIN_JUMP.gravity));
+        const baseHorizontalSpeed = Math.max(0.1, launchSpeed * Math.cos(angle));
+        const baseVerticalSpeed = Math.max(0.1, launchSpeed * Math.sin(angle));
+        const baseFlightSeconds = Math.max(0.1, (2 * baseVerticalSpeed) / baseGravity);
+        const baseApexHeight = (baseVerticalSpeed * baseVerticalSpeed) / (2 * baseGravity);
+        const baseAirDistance = baseHorizontalSpeed * baseFlightSeconds;
+        const profile = motor.dolphinJumpProfile;
+        // Result-oriented character controls: height and distance are independent,
+        // then velocity/angle are derived. This keeps tuning readable and prevents
+        // character identity from becoming a coupled speed/angle guessing game.
+        const gravity = baseGravity * finitePositive(profile.gravityScale);
+        const apexHeight = Math.max(0.01, baseApexHeight * finitePositive(profile.arcHeightScale));
+        const airDistance = Math.max(0.1, baseAirDistance * finitePositive(profile.arcDistanceScale));
+        let verticalSpeed = Math.sqrt(2 * gravity * apexHeight);
+        let flightSeconds = Math.max(0.1, (2 * verticalSpeed) / gravity);
+        const horizontalSpeed = Math.max(0.1, airDistance / flightSeconds);
         // Fit dip + air + the underwater landing glide inside the available room.
         // Distances are measured ALONG the course (the cosH component).
         const dipForward = entrySpeed * cosH * DOLPHIN_JUMP.dipSeconds;
-        const fullLandingSeconds = DOLPHIN_JUMP.landingDescentSeconds
-            + DOLPHIN_JUMP.landingHoldSeconds + DOLPHIN_JUMP.landingRiseSeconds;
+        const profileLandingDurationScale = finitePositive(profile.landingDurationScale);
+        const fullLandingSeconds = (DOLPHIN_JUMP.landingDescentSeconds
+            + DOLPHIN_JUMP.landingHoldSeconds + DOLPHIN_JUMP.landingRiseSeconds)
+            * profileLandingDurationScale;
         // Land carrying the arc's full forward momentum (never a dead stop): enter the
         // water at the same speed the swimmer was flying, then let water drag bleed it
         // back to cruise. The landing speed simply follows the air speed.
-        const landingExit = horizontalSpeed;
+        const landingExit = Math.max(0.1, horizontalSpeed * finitePositive(profile.landingSpeedScale));
         const fullLandingReserve = landingExit * fullLandingSeconds;
         const roomAfterDip = Math.max(0.5, available - dipForward);
         const fullArcForward = horizontalSpeed * cosH * flightSeconds;
@@ -578,7 +596,7 @@ export class SwimmerRacePhases {
             // airtime. flightSeconds stays coupled to verticalSpeed by
             // flightSeconds = 2·verticalSpeed / gravity, so the parabola lands at t = flightSeconds.
             flightSeconds = airForward / (horizontalSpeed * cosH);
-            verticalSpeed = flightSeconds * DOLPHIN_JUMP.gravity / 2;
+            verticalSpeed = flightSeconds * gravity / 2;
             // Compress the landing dip to the room left after the flattened arc, at the
             // preserved landing speed (distance = landingExit · fullLandingSeconds · scale).
             const landingRoom = Math.max(0, roomAfterDip - airForward);
@@ -587,7 +605,7 @@ export class SwimmerRacePhases {
                 : 0;
         }
         this._dolphinLandingExitSpeed = landingExit;
-        this._dolphinLandingDurationScale = landingDurationScale;
+        this._dolphinLandingFitScale = landingDurationScale;
 
         this._dolphinActive = true;
         this._dolphinStage = 0;
@@ -602,7 +620,10 @@ export class SwimmerRacePhases {
         this._dolphinBaseAxialRoll = motor.axialStableAngleRadians;
         this._dolphinHorizontalSpeed = horizontalSpeed;
         this._dolphinVerticalSpeed = verticalSpeed;
+        this._dolphinGravity = gravity;
         this._dolphinFlightSeconds = flightSeconds;
+        this._dolphinLandingProfileDepthScale = finitePositive(profile.landingDepthScale);
+        this._dolphinLandingProfileDurationScale = profileLandingDurationScale;
         this._dolphinRollAngle = 0;
         this._dolphinRollTarget = 0;
         this._dolphinRollResidual = 0;
@@ -691,8 +712,8 @@ export class SwimmerRacePhases {
         const distance = Math.min(raceDistance, this._dolphinBaseDistance + this._dolphinHorizontalSpeed * cosH * t);
         const lateral = this._dolphinBaseLateral + this._dolphinHorizontalSpeed * sinH * t;
         const worldZ = clampScalar(this._host.startPosition.z + lateral, -halfWidth, halfWidth);
-        const verticalVelocity = this._dolphinVerticalSpeed - DOLPHIN_JUMP.gravity * t;
-        const y = swimY + this._dolphinVerticalSpeed * t - 0.5 * DOLPHIN_JUMP.gravity * t * t;
+        const verticalVelocity = this._dolphinVerticalSpeed - this._dolphinGravity * t;
+        const y = swimY + this._dolphinVerticalSpeed * t - 0.5 * this._dolphinGravity * t * t;
         // Parabola slope (nose up on the climb, down on the fall). Stored so the
         // camera and speed lines tilt along the arc, then reused for the body pitch.
         const arcPitchRad = Math.atan2(verticalVelocity, Math.max(0.1, this._dolphinHorizontalSpeed));
@@ -817,7 +838,12 @@ export class SwimmerRacePhases {
             );
         }
         if (this._underwaterPhaseKind === 'dolphin') {
-            return Math.max(0, DOLPHIN_JUMP.landingDepth * this._dolphinLandingDurationScale);
+            return Math.max(
+                0,
+                DOLPHIN_JUMP.landingDepth
+                    * this._dolphinLandingProfileDepthScale
+                    * this._dolphinLandingFitScale,
+            );
         }
         return Math.max(0, SWIMMER_ACTION_TUNING.diveEntryDepth);
     }
@@ -827,7 +853,12 @@ export class SwimmerRacePhases {
             return Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds);
         }
         if (this._underwaterPhaseKind === 'dolphin') {
-            return Math.max(0, DOLPHIN_JUMP.landingDescentSeconds * this._dolphinLandingDurationScale);
+            return Math.max(
+                0,
+                DOLPHIN_JUMP.landingDescentSeconds
+                    * this._dolphinLandingProfileDurationScale
+                    * this._dolphinLandingFitScale,
+            );
         }
         return 0;
     }
@@ -837,7 +868,12 @@ export class SwimmerRacePhases {
             return Math.max(0, CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds);
         }
         if (this._underwaterPhaseKind === 'dolphin') {
-            return Math.max(0, DOLPHIN_JUMP.landingHoldSeconds * this._dolphinLandingDurationScale);
+            return Math.max(
+                0,
+                DOLPHIN_JUMP.landingHoldSeconds
+                    * this._dolphinLandingProfileDurationScale
+                    * this._dolphinLandingFitScale,
+            );
         }
         return Math.max(0, SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds);
     }
@@ -847,7 +883,12 @@ export class SwimmerRacePhases {
             return Math.max(0.01, CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds);
         }
         if (this._underwaterPhaseKind === 'dolphin') {
-            return Math.max(0.01, DOLPHIN_JUMP.landingRiseSeconds * this._dolphinLandingDurationScale);
+            return Math.max(
+                0.01,
+                DOLPHIN_JUMP.landingRiseSeconds
+                    * this._dolphinLandingProfileDurationScale
+                    * this._dolphinLandingFitScale,
+            );
         }
         return Math.max(0.01, SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds);
     }
@@ -890,6 +931,10 @@ function normalizeAngle(angle: number): number {
 
 function finiteNonNegative(value: number): number {
     return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function finitePositive(value: number): number {
+    return Number.isFinite(value) ? Math.max(0.01, value) : 1;
 }
 
 function finitePower(value: number): number {

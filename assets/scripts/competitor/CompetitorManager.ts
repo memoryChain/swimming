@@ -10,6 +10,7 @@ import { PlayerData } from '../backend/PlayerData';
 import { PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
 import { AICompetitorProfile, buildRandomizedAiRoster, getAiPersonality } from './CompetitorConfig';
 import { randomAiModelVariantId, SwimmerFactory } from './SwimmerFactory';
+import { getDolphinJumpProfile } from '../core/DolphinJumpConfig';
 
 export type CompetitorBuildOptions = {
     laneLayout: LaneLayout;
@@ -170,6 +171,9 @@ export class CompetitorManager {
         controller.personality = getAiPersonality(profile.personalityId);
         swimmer.motor.setWeight(profile.weight ?? 1);
         swimmer.setEnergyGainAptitude(profile.energyGain ?? 80);
+        swimmer.setDolphinJumpProfile(
+            profile.dolphinProfileId ? getDolphinJumpProfile(profile.dolphinProfileId) : null,
+        );
     }
 
     private createPlayer(group: Node): Swimmer {

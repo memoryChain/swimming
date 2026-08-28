@@ -4,6 +4,7 @@
 // 输出：energy（0..max）、canAffordDolphin、denied 闪烁标志。
 
 import { Rating } from '../core/GameConstants';
+import type { DolphinJumpProfile } from '../core/DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE, energyGainMultiplier } from '../core/UltimateEnergyBalance';
 
 function clamp(value: number, min: number, max: number): number {
@@ -14,6 +15,9 @@ export class UltimateEnergyModel {
     private _energy = 0;
     private _gainAptitude = 50;
     private _gainMultiplier = 1;
+    // Shared mutable profile reference. Debug tuning edits it in place, so charge
+    // changes apply immediately without a per-frame copy or setter call.
+    private _dolphinProfile: DolphinJumpProfile | null = null;
     private _deniedFlash = false;
     private _simulationSeconds = 0;
     private _lastCollisionBonusAt = Number.NEGATIVE_INFINITY;
@@ -31,12 +35,19 @@ export class UltimateEnergyModel {
         this._gainMultiplier = energyGainMultiplier(this._gainAptitude);
     }
 
+    setDolphinJumpProfile(profile: DolphinJumpProfile | null) {
+        this._dolphinProfile = profile;
+    }
+
     get gainAptitude(): number {
         return this._gainAptitude;
     }
 
     get gainMultiplier(): number {
-        return this._gainMultiplier;
+        const profileScale = this._dolphinProfile?.chargeGainScale;
+        return typeof profileScale === 'number' && Number.isFinite(profileScale)
+            ? clamp(profileScale, 0, 4)
+            : this._gainMultiplier;
     }
 
     get energy(): number {
@@ -126,6 +137,6 @@ export class UltimateEnergyModel {
         if (!Number.isFinite(amount) || amount <= 0) {
             return;
         }
-        this._energy = clamp(this._energy + amount * this._gainMultiplier, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        this._energy = clamp(this._energy + amount * this.gainMultiplier, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
     }
 }

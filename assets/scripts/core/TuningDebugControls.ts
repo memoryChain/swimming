@@ -6,7 +6,12 @@ import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
-import { DOLPHIN_JUMP } from './DolphinJumpConfig';
+import {
+    DOLPHIN_JUMP,
+    DOLPHIN_JUMP_PROFILES,
+    type DolphinJumpProfile,
+    type DolphinJumpProfileId,
+} from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import { HeartRateZone } from '../condition/ConditionTypes';
 import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
@@ -46,7 +51,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 30;
+const TUNING_FILE_VERSION = 31;
 
 type TuningFileData = {
     version: number;
@@ -165,6 +170,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('camera.dolphinFov', '相机 FOV', '海豚跃跟随相机的垂直视场角。', () => RACE_CAMERA_TUNING.dolphinFov, (v) => RACE_CAMERA_TUNING.dolphinFov = v, 1, 30, 80, 0, '°'),
         ],
     },
+    dolphinCharacterTuningGroup('lowPolyHuman2', '破浪新星', DOLPHIN_JUMP_PROFILES.lowPolyHuman2),
+    dolphinCharacterTuningGroup('women2', '灵波飞鱼', DOLPHIN_JUMP_PROFILES.women2),
+    dolphinCharacterTuningGroup('muscleMan', '铁臂狂鲨', DOLPHIN_JUMP_PROFILES.muscleMan),
     {
         name: '跳水',
         controls: [
@@ -612,6 +620,26 @@ function applyTuningSnapshot(snapshot: Record<string, unknown>) {
         ? 'ultimate.dolphinCost'
         : undefined;
     validateTuningRelations(relationSourceId);
+}
+
+function dolphinCharacterTuningGroup(
+    id: DolphinJumpProfileId,
+    label: string,
+    profile: DolphinJumpProfile,
+): TuningGroup {
+    const key = `dolphin.character.${id}`;
+    return {
+        name: `海豚跃 · ${label}`,
+        controls: [
+            control(`${key}.chargeGainScale`, '充能倍率', '该角色所有蓄气来源的最终倍率；这是相对破浪新星的直接倍率，不与旧蓄气资质重复相乘。', () => profile.chargeGainScale, (v) => profile.chargeGainScale = v, 0.02, 0.3, 2, 2),
+            control(`${key}.arcHeightScale`, '跃高倍率', '相对标准抛物线最高点的倍率；起跳时会与角色爆发力和等级结果共同换算。', () => profile.arcHeightScale, (v) => profile.arcHeightScale = v, 0.02, 0.3, 2, 2),
+            control(`${key}.arcDistanceScale`, '空中距离倍率', '相对标准抛物线离水到落水水平距离的倍率；近墙时仍会自动压缩。', () => profile.arcDistanceScale, (v) => profile.arcDistanceScale = v, 0.02, 0.3, 2, 2),
+            control(`${key}.gravityScale`, '重力倍率', '该角色空中重力相对全局海豚跃重力的倍率；更大表示升降更快、更不漂浮。', () => profile.gravityScale, (v) => profile.gravityScale = v, 0.02, 0.5, 1.8, 2),
+            control(`${key}.landingSpeedScale`, '落水速度倍率', '相对该角色空中水平速度的落水初速度倍率，决定入水后的动量延续。', () => profile.landingSpeedScale, (v) => profile.landingSpeedScale = v, 0.02, 0.3, 2, 2),
+            control(`${key}.landingDepthScale`, '落水深度倍率', '相对全局落水下潜深度的角色倍率；与近墙压缩独立，最终会共同作用。', () => profile.landingDepthScale, (v) => profile.landingDepthScale = v, 0.02, 0.3, 2, 2),
+            control(`${key}.landingDurationScale`, '水下时长倍率', '同时缩放落水后的下潜、保持和上浮时间；近墙时仍会进一步压缩。', () => profile.landingDurationScale, (v) => profile.landingDurationScale = v, 0.02, 0.3, 2, 2),
+        ],
+    };
 }
 
 function warnUnknownTuningKeys(snapshot: Record<string, unknown>) {

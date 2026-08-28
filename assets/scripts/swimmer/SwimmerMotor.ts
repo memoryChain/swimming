@@ -8,6 +8,10 @@ import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrid
 import { AxialRollModel } from './AxialRollModel';
 import { CollisionPitchModel } from './CollisionPitchModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
+import {
+    DOLPHIN_JUMP_PROFILES,
+    type DolphinJumpProfile,
+} from '../core/DolphinJumpConfig';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -108,6 +112,7 @@ export class SwimmerMotor {
     private _strokeAccelerationTotalSeconds = 0;
     private _speedCapBonus = 0;
     private _playerBalance: PlayerBalanceOverrides | null = null;
+    private _dolphinJumpProfile: DolphinJumpProfile = DOLPHIN_JUMP_PROFILES.lowPolyHuman2;
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
     private _conditionCadenceScale = 1;
@@ -564,6 +569,14 @@ export class SwimmerMotor {
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
         this._playerBalance = overrides;
         this._weight = overrides?.weight ?? 1;
+    }
+
+    setDolphinJumpProfile(profile: DolphinJumpProfile | null) {
+        this._dolphinJumpProfile = profile ?? DOLPHIN_JUMP_PROFILES.lowPolyHuman2;
+    }
+
+    get dolphinJumpProfile(): DolphinJumpProfile {
+        return this._dolphinJumpProfile;
     }
 
     // Burst-driven multiplier for the dolphin-jump launch speed. Reuses the same
