@@ -12,6 +12,7 @@ export type ModelDebugHudCallbacks = {
     onSwitchTexture: () => void;
     onSwitchSkybox: () => void;
     onTuningVisibilityChanged?: (visible: boolean) => void;
+    onTuningChanged?: (id: string | null) => void;
 };
 
 export type ModelDebugHudRefs = {
@@ -262,6 +263,7 @@ export class ModelDebugHudBuilder {
             return;
         }
         control.set(control.get() + direction * control.step);
+        this._callbacks.onTuningChanged?.(control.id);
         this.renderTuningRows(false);
     }
 
@@ -309,6 +311,7 @@ export class ModelDebugHudBuilder {
         reset.setPosition(-92, -panelHeight / 2 + 34, 0);
         reset.on(Node.EventType.TOUCH_END, () => {
             resetTuningToDefaults();
+            this._callbacks.onTuningChanged?.(null);
             this.setStatus('已重置');
             this.renderTuningRows(false);
         });

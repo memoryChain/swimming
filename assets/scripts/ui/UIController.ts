@@ -292,7 +292,7 @@ export class UIController extends Component {
         }
     }
 
-    // 蓄气（大招能量）条。enough = 当前能量已够放一次海豚跳，金色高亮；不足时偏暗。
+    // 蓄气（大招能量）条。enough = 当前能量已蓄满、可释放海豚跳大招；满槽金色高亮。
     updateUltimateEnergyBar(energy: number, enough: boolean) {
         const ratio = clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
         const denied = Date.now() < this._ultimateDeniedUntil;

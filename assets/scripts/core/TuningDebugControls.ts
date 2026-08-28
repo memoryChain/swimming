@@ -63,6 +63,17 @@ type TuningFileData = {
     }>;
 };
 
+type TuningLoadData = TuningFileData | Record<string, unknown>;
+
+type TuningLoadSource = 'project' | 'native' | 'localStorage';
+
+type TuningLoadCandidate = {
+    source: TuningLoadSource;
+    data: TuningLoadData;
+    updatedAtMs: number | null;
+    path?: string;
+};
+
 export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '碰撞',
@@ -97,7 +108,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('ultimate.collisionBonus', '被撞补偿', '被撞飞时补偿的能量。', () => ULTIMATE_ENERGY_BALANCE.collisionBonus, (v) => ULTIMATE_ENERGY_BALANCE.collisionBonus = v, 0.5, 0, 20, 1),
             control('ultimate.collisionMinImpulse', '碰撞判定冲量', '收到的击退冲量超过该值才视为被撞飞。', () => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse, (v) => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse = v, 0.1, 0, 6, 1, 'm/s'),
             control('ultimate.collisionCooldownMs', '碰撞冷却', '同一角色两次碰撞补偿的最小间隔。', () => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs, (v) => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs = v, 50, 0, 2000, 0, 'ms'),
-            control('ultimate.dolphinCost', '海豚跳消耗', '释放一次海豚跳消耗的能量；不足无法触发。', () => ULTIMATE_ENERGY_BALANCE.dolphinCost, (v) => ULTIMATE_ENERGY_BALANCE.dolphinCost = v, 1, 5, 100, 0),
+            control('ultimate.dolphinCost', '海豚跳大招消耗', '释放海豚跳大招所需的蓄气；始终与能量上限一致，保证蓄满后释放并清空。', () => ULTIMATE_ENERGY_BALANCE.dolphinCost, (v) => ULTIMATE_ENERGY_BALANCE.dolphinCost = v, 1, 50, 200, 0),
         ],
     },
     {
@@ -231,10 +242,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('condition.depletionCooldown', '体力耗尽冷却', '体力降到零后暂停恢复的时间。设为零可关闭冷却。', () => CONDITION_BALANCE.energy.depletionCooldownSeconds, (v) => CONDITION_BALANCE.energy.depletionCooldownSeconds = v, 0.1, 0, 5, 1, 's'),
             control('condition.efficiencyFloor', '效率地板', '体力耗尽时的效率下限。0=没力气完全游不动；0.5=还能以一半效率游。配合效率曲线指数使用。', () => CONDITION_BALANCE.efficiency.energyFloor, (v) => CONDITION_BALANCE.efficiency.energyFloor = v, 0.05, 0, 0.9, 2),
             control('condition.curveExponent', '效率曲线指数', '效率随体力衰减的曲线形状。1=线性；<1=缓启动（高体力几乎不掉，最后10%急跌）。0.3=陡峭缓启动。', () => CONDITION_BALANCE.efficiency.curveExponent, (v) => CONDITION_BALANCE.efficiency.curveExponent = v, 0.05, 0.1, 2, 2),
-            control('condition.cadenceWarningRatio', '降频预警体力', '体力低于这个比例后，划水动作开始逐渐变慢。0.15 表示 15%。', () => CONDITION_BALANCE.cadence.warningRatio, (v) => { CONDITION_BALANCE.cadence.warningRatio = v; validateTuningRelations(); }, 0.01, 0, 0.5, 2),
-            control('condition.cadenceExhaustedRatio', '降频力竭体力', '体力低于这个比例后进入更重的第二段降频。应不高于预警体力。', () => CONDITION_BALANCE.cadence.exhaustedRatio, (v) => { CONDITION_BALANCE.cadence.exhaustedRatio = v; validateTuningRelations(); }, 0.01, 0, 0.3, 2),
-            control('condition.cadenceWarningScale', '力竭入口划频', '体力降到力竭阈值时的动作频率倍率。0.85 表示原频率的 85%。', () => CONDITION_BALANCE.cadence.warningScale, (v) => { CONDITION_BALANCE.cadence.warningScale = v; validateTuningRelations(); }, 0.05, 0.3, 1, 2),
-            control('condition.cadenceExhaustedScale', '空体力划频', '体力归零时的动作频率倍率。0.6 表示原频率的 60%。', () => CONDITION_BALANCE.cadence.exhaustedScale, (v) => { CONDITION_BALANCE.cadence.exhaustedScale = v; validateTuningRelations(); }, 0.05, 0.3, 1, 2),
+            control('condition.cadenceWarningRatio', '降频预警体力', '体力低于这个比例后，划水动作开始逐渐变慢。0.15 表示 15%。', () => CONDITION_BALANCE.cadence.warningRatio, (v) => CONDITION_BALANCE.cadence.warningRatio = v, 0.01, 0, 0.5, 2),
+            control('condition.cadenceExhaustedRatio', '降频力竭体力', '体力低于这个比例后进入更重的第二段降频。应不高于预警体力。', () => CONDITION_BALANCE.cadence.exhaustedRatio, (v) => CONDITION_BALANCE.cadence.exhaustedRatio = v, 0.01, 0, 0.3, 2),
+            control('condition.cadenceWarningScale', '力竭入口划频', '体力降到力竭阈值时的动作频率倍率。0.85 表示原频率的 85%。', () => CONDITION_BALANCE.cadence.warningScale, (v) => CONDITION_BALANCE.cadence.warningScale = v, 0.05, 0.3, 1, 2),
+            control('condition.cadenceExhaustedScale', '空体力划频', '体力归零时的动作频率倍率。0.6 表示原频率的 60%。', () => CONDITION_BALANCE.cadence.exhaustedScale, (v) => CONDITION_BALANCE.cadence.exhaustedScale = v, 0.05, 0.3, 1, 2),
             control('condition.regenLow', '低区回血', '心率在低区时每秒回复的体力。越高回血越快。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW] = v, 0.05, 0, 5, 2),
             control('condition.regenOptimal', '最佳区回血', '心率在最佳区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL] = v, 0.05, 0, 5, 2),
             control('condition.regenHighPressure', '高压区回血', '心率在高压区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE] = v, 0.05, 0, 5, 2),
@@ -432,36 +443,32 @@ export function saveCurrentTuning(): TuningSaveResult {
 }
 
 export function loadSavedTuning(): boolean {
-    try {
-        defaultTuningSnapshot();
-        const fileData = loadNativeTuningFile();
-        if (fileData) {
-            applyTuningSnapshot(getValuesFromTuningData(fileData));
-            return true;
-        }
-        const raw = sys.localStorage.getItem(TUNING_STORAGE_KEY);
-        if (!raw) {
-            return false;
-        }
-        const data = JSON.parse(raw) as TuningFileData | Record<string, number>;
-        applyTuningSnapshot(getValuesFromTuningData(data));
-        return true;
-    } catch (error) {
-        console.warn('[SpeedSwimming] failed to load tuning settings', error);
+    defaultTuningSnapshot();
+    const candidate = loadRuntimeTuningCandidate();
+    if (!candidate) {
         return false;
     }
+    applyTuningCandidate(candidate);
+    return true;
 }
 
 export function loadSavedTuningAsync(onComplete: () => void) {
     defaultTuningSnapshot();
     resources.load(PROJECT_TUNING_RESOURCE, JsonAsset, (err, asset) => {
-        if (!err && asset?.json) {
-            applyTuningSnapshot(getValuesFromTuningData(asset.json as TuningFileData));
-            console.log(`[SpeedSwimming] tuning loaded from project resource ${PROJECT_TUNING_ASSET_PATH}`);
-            onComplete();
-            return;
+        const projectCandidate = !err && asset?.json
+            ? createTuningLoadCandidate(
+                'project',
+                asset.json as TuningFileData,
+                PROJECT_TUNING_ASSET_PATH,
+            )
+            : null;
+        const selected = selectNewerTuningCandidate(
+            projectCandidate,
+            loadRuntimeTuningCandidate(),
+        );
+        if (selected) {
+            applyTuningCandidate(selected);
         }
-        loadSavedTuning();
         onComplete();
     });
 }
@@ -496,7 +503,12 @@ function control(
         label,
         description,
         get,
-        set: (value) => set(clamp(roundTo(value, precision), min, max)),
+        set: (value) => {
+            set(clamp(roundTo(value, precision), min, max));
+            if (!_suspendRelationValidation) {
+                validateTuningRelations(id);
+            }
+        },
         step,
         min,
         max,
@@ -530,6 +542,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 let _defaultSnapshot: Record<string, number> | null = null;
+let _suspendRelationValidation = false;
 
 function defaultTuningSnapshot(): Record<string, number> {
     if (!_defaultSnapshot) {
@@ -554,18 +567,114 @@ function createTuningFileData(): TuningFileData {
     };
 }
 
-function applyTuningSnapshot(snapshot: Record<string, number>) {
+function applyTuningSnapshot(snapshot: Record<string, unknown>) {
+    warnUnknownTuningKeys(snapshot);
+    const invalidValues = collectInvalidLegacyTuningValues(snapshot);
     snapshot = migrateTuningSnapshot(snapshot);
-    forEachControl((control, group) => {
-        const value = snapshot[control.id] ?? snapshot[`${group.name}.${control.label}`];
-        if (typeof value === 'number' && Number.isFinite(value)) {
+    const clampedValues: string[] = [];
+    _suspendRelationValidation = true;
+    try {
+        forEachControl((control, group) => {
+            const legacyLabelKey = `${group.name}.${control.label}`;
+            const key = Object.prototype.hasOwnProperty.call(snapshot, control.id)
+                ? control.id
+                : Object.prototype.hasOwnProperty.call(snapshot, legacyLabelKey)
+                    ? legacyLabelKey
+                    : null;
+            if (!key) {
+                return;
+            }
+            const value = snapshot[key];
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+                invalidValues.push(`${key}=${formatTuningValue(value)}`);
+                return;
+            }
+            if (value < control.min || value > control.max) {
+                const adopted = clamp(roundTo(value, control.precision), control.min, control.max);
+                clampedValues.push(`${key}=${value} -> ${adopted}`);
+            }
             control.set(value);
-        }
-    });
-    validateTuningRelations();
+        });
+    } finally {
+        _suspendRelationValidation = false;
+    }
+    if (invalidValues.length > 0) {
+        console.warn(`[SpeedSwimming] tuning ignored invalid known values: ${invalidValues.join(', ')}`);
+    }
+    if (clampedValues.length > 0) {
+        console.warn(`[SpeedSwimming] tuning clamped out-of-range values: ${clampedValues.join(', ')}`);
+    }
+    const savedDolphinCost = snapshot['ultimate.dolphinCost'];
+    const savedMaxEnergy = snapshot['ultimate.maxEnergy'];
+    const relationSourceId = typeof savedDolphinCost === 'number'
+        && Number.isFinite(savedDolphinCost)
+        && (typeof savedMaxEnergy !== 'number' || !Number.isFinite(savedMaxEnergy))
+        ? 'ultimate.dolphinCost'
+        : undefined;
+    validateTuningRelations(relationSourceId);
 }
 
-function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string, number> {
+function warnUnknownTuningKeys(snapshot: Record<string, unknown>) {
+    const knownKeys = new Set<string>();
+    forEachControl((control, group) => {
+        knownKeys.add(control.id);
+        knownKeys.add(`${group.name}.${control.label}`);
+    });
+    const unknownKeys = Object.keys(snapshot)
+        .filter((key) => !knownKeys.has(key) && !isKnownLegacyTuningKey(key))
+        .sort();
+    if (unknownKeys.length > 0) {
+        console.warn(`[SpeedSwimming] tuning ignored unknown keys: ${unknownKeys.join(', ')}`);
+    }
+}
+
+function formatTuningValue(value: unknown): string {
+    if (typeof value === 'string') {
+        return JSON.stringify(value);
+    }
+    if (value === undefined) {
+        return 'undefined';
+    }
+    try {
+        return JSON.stringify(value) ?? String(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function collectInvalidLegacyTuningValues(snapshot: Record<string, unknown>): string[] {
+    return Object.keys(snapshot)
+        .filter((key) => isKnownLegacyTuningKey(key))
+        .filter((key) => typeof snapshot[key] !== 'number' || !Number.isFinite(snapshot[key]))
+        .map((key) => `${key}=${formatTuningValue(snapshot[key])}`);
+}
+
+function isKnownLegacyTuningKey(key: string): boolean {
+    if (key === 'speed.strokeStabilityAccel'
+        || key === 'axialRoll.waterRightingTorque'
+        || key === 'axialRoll.tippingStartDegrees'
+        || key === 'stability.armReleaseSweetCenter'
+        || key === 'stability.armReleasePerfectHalfWidth'
+        || key === 'stability.armReleaseGoodHalfWidth') {
+        return true;
+    }
+    if (!key.startsWith('stability.')) {
+        return false;
+    }
+    return [
+        'minHoldSeconds',
+        'goodStart',
+        'goodEnd',
+        'perfectStart',
+        'perfectEnd',
+        'armCycleLowSpeedPerSecond',
+        'armCycleHighSpeedPerSecond',
+        'armCycleSpeedStart',
+        'armCycleSpeedFull',
+    ].indexOf(key.slice('stability.'.length)) >= 0;
+}
+
+function migrateTuningSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
     const migrated = { ...snapshot };
     // Keep legacy ids only at this compatibility boundary so existing saved
     // tuning files load after the strokeQuality terminology migration.
@@ -607,7 +716,49 @@ function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string,
     return migrated;
 }
 
-function validateTuningRelations() {
+function validateTuningRelations(changedId?: string) {
+    if (ULTIMATE_ENERGY_BALANCE.dolphinCost !== ULTIMATE_ENERGY_BALANCE.maxEnergy) {
+        if (changedId === 'ultimate.dolphinCost') {
+            const fixed = ULTIMATE_ENERGY_BALANCE.dolphinCost;
+            console.warn(
+                `[SpeedSwimming] tuning adjusted: ultimate.maxEnergy must equal dolphin cost; ` +
+                `set to ${fixed.toFixed(0)}`,
+            );
+            ULTIMATE_ENERGY_BALANCE.maxEnergy = fixed;
+        } else {
+            const fixed = ULTIMATE_ENERGY_BALANCE.maxEnergy;
+            console.warn(
+                `[SpeedSwimming] tuning adjusted: ultimate.dolphinCost must equal max energy; ` +
+                `set to ${fixed.toFixed(0)}`,
+            );
+            ULTIMATE_ENERGY_BALANCE.dolphinCost = fixed;
+        }
+    }
+
+    if (SWIMMER_BALANCE.kickMaxSpeed > SWIMMER_BALANCE.maxSpeed) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: speed.kickMaxSpeed ${SWIMMER_BALANCE.kickMaxSpeed.toFixed(2)} ` +
+            `exceeded speed.maxSpeed ${SWIMMER_BALANCE.maxSpeed.toFixed(2)}`,
+        );
+        SWIMMER_BALANCE.kickMaxSpeed = SWIMMER_BALANCE.maxSpeed;
+    }
+    if (SWIMMER_BALANCE.kickCadenceMeasureMaxHz < SWIMMER_BALANCE.kickCadenceMaxHz) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: speed.kickCadenceMeasureMaxHz ` +
+            `${SWIMMER_BALANCE.kickCadenceMeasureMaxHz.toFixed(1)} was below propulsion cap ` +
+            `${SWIMMER_BALANCE.kickCadenceMaxHz.toFixed(1)}`,
+        );
+        SWIMMER_BALANCE.kickCadenceMeasureMaxHz = SWIMMER_BALANCE.kickCadenceMaxHz;
+    }
+
+    if (CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth < CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: motion.flipTurnUnderwaterGlideDepth must not be shallower ` +
+            `than motion.flipTurnUnderwaterDepth; set to ${CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth.toFixed(2)}`,
+        );
+        CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth = CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth;
+    }
+
     const safeMaxHeading = clamp(STEERING_TUNING.maxHeading, 0, MAX_STEERING_HEADING_DEGREES);
     if (safeMaxHeading !== STEERING_TUNING.maxHeading) {
         console.warn(
@@ -626,11 +777,41 @@ function validateTuningRelations() {
         );
         AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed = fixed;
     }
+    if (COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed <= COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed) {
+        const fixed = COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed + 1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: collision.pitchPenaltyFull must be above pitchPenaltyStart; ` +
+            `set to ${fixed.toFixed(1)}`,
+        );
+        COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed = fixed;
+    }
+    if (AXIAL_ROLL_TUNING.tumblePenaltyFullAngularSpeed <= AXIAL_ROLL_TUNING.tumblePenaltyStartAngularSpeed) {
+        const fixed = AXIAL_ROLL_TUNING.tumblePenaltyStartAngularSpeed + 1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: axialRoll.tumblePenaltyFullAngularSpeed must be above start; ` +
+            `set to ${fixed.toFixed(1)}`,
+        );
+        AXIAL_ROLL_TUNING.tumblePenaltyFullAngularSpeed = fixed;
+    }
+    if (AI_STROKE_TUNING.maxReleaseProgress >= STROKE_QUALITY_TUNING.armStrokeTimeoutProgress) {
+        const fixed = Math.min(1, AI_STROKE_TUNING.maxReleaseProgress + 0.01);
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: gesture.armStrokeTimeoutProgress must be above ` +
+            `ai.maxReleaseProgress; set to ${fixed.toFixed(2)}`,
+        );
+        STROKE_QUALITY_TUNING.armStrokeTimeoutProgress = fixed;
+    }
     const timeoutProgress = clamp(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, 0.05, 1);
     const good = normalizeRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd, timeoutProgress, 'strokeQuality.good');
     STROKE_QUALITY_TUNING.goodStart = good.start;
     STROKE_QUALITY_TUNING.goodEnd = good.end;
-    const perfect = normalizeRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd, timeoutProgress, 'strokeQuality.perfect');
+    const perfect = normalizeRangeWithin(
+        STROKE_QUALITY_TUNING.perfectStart,
+        STROKE_QUALITY_TUNING.perfectEnd,
+        good.start,
+        good.end,
+        'strokeQuality.perfect',
+    );
     STROKE_QUALITY_TUNING.perfectStart = perfect.start;
     STROKE_QUALITY_TUNING.perfectEnd = perfect.end;
     STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds = clamp(
@@ -638,6 +819,19 @@ function validateTuningRelations() {
         0,
         0.2,
     );
+
+    if (AI_STROKE_TUNING.timingSigmaHigh > AI_STROKE_TUNING.timingSigmaLow) {
+        console.warn('[SpeedSwimming] tuning adjusted: ai.timingSigmaHigh must not exceed timingSigmaLow');
+        AI_STROKE_TUNING.timingSigmaHigh = AI_STROKE_TUNING.timingSigmaLow;
+    }
+    if (AI_STROKE_TUNING.gapSecondsFast > AI_STROKE_TUNING.gapSecondsSlow) {
+        console.warn('[SpeedSwimming] tuning adjusted: ai.gapSecondsFast must not exceed gapSecondsSlow');
+        AI_STROKE_TUNING.gapSecondsFast = AI_STROKE_TUNING.gapSecondsSlow;
+    }
+    if (AI_STROKE_TUNING.startDelayMax < AI_STROKE_TUNING.startDelayMin) {
+        console.warn('[SpeedSwimming] tuning adjusted: ai.startDelayMax must not be below startDelayMin');
+        AI_STROKE_TUNING.startDelayMax = AI_STROKE_TUNING.startDelayMin;
+    }
 
     if (STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond < STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond) {
         console.warn(
@@ -698,12 +892,125 @@ function normalizeRange(startValue: number, endValue: number, maxEnd: number, la
     return { start, end };
 }
 
-function getValuesFromTuningData(data: TuningFileData | Record<string, number>): Record<string, number> {
-    const values = (data as TuningFileData).values;
-    if (values && typeof values === 'object') {
+function normalizeRangeWithin(
+    startValue: number,
+    endValue: number,
+    minStart: number,
+    maxEnd: number,
+    label: string,
+): { start: number; end: number } {
+    let start = clamp(Math.min(startValue, endValue), minStart, maxEnd);
+    let end = clamp(Math.max(startValue, endValue), minStart, maxEnd);
+    if (end - start < 0.001) {
+        end = Math.min(maxEnd, start + 0.001);
+        start = Math.max(minStart, end - 0.001);
+    }
+    if (Math.abs(start - startValue) > 0.0001 || Math.abs(end - endValue) > 0.0001) {
+        console.warn(`[SpeedSwimming] tuning adjusted: ${label} range -> ${start.toFixed(3)}..${end.toFixed(3)}`);
+    }
+    return { start, end };
+}
+
+function applyTuningCandidate(candidate: TuningLoadCandidate) {
+    warnTuningFileVersion(candidate);
+    applyTuningSnapshot(getValuesFromTuningData(candidate.data));
+    logLoadedTuning(candidate);
+}
+
+function warnTuningFileVersion(candidate: TuningLoadCandidate) {
+    const hasValuesWrapper = Object.prototype.hasOwnProperty.call(candidate.data, 'values');
+    if (!hasValuesWrapper) {
+        return;
+    }
+    const version = candidate.data.version;
+    if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version)) {
+        console.warn(
+            `[SpeedSwimming] tuning ${candidate.source} file has an invalid or missing version; ` +
+            `expected ${TUNING_FILE_VERSION}, loading compatible values only`,
+        );
+        return;
+    }
+    if (version !== TUNING_FILE_VERSION) {
+        console.warn(
+            `[SpeedSwimming] tuning ${candidate.source} file version ${version} differs from ` +
+            `current version ${TUNING_FILE_VERSION}; loading with compatibility migration`,
+        );
+    }
+}
+
+function getValuesFromTuningData(data: TuningLoadData): Record<string, unknown> {
+    const values = extractTuningValues(data);
+    if (values) {
         return values;
     }
-    return data as Record<string, number>;
+    console.warn('[SpeedSwimming] tuning data must be an object with an object-valued values field');
+    return {};
+}
+
+function extractTuningValues(data: unknown): Record<string, unknown> | null {
+    if (!isRecord(data)) {
+        return null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(data, 'values')) {
+        return data;
+    }
+    return isRecord(data.values) ? data.values : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasUsableKnownTuningValue(data: TuningLoadData): boolean {
+    const values = extractTuningValues(data);
+    if (!values) {
+        return false;
+    }
+    const migrated = migrateTuningSnapshot(values);
+    let usable = false;
+    forEachControl((control, group) => {
+        if (usable) {
+            return;
+        }
+        const legacyLabelKey = `${group.name}.${control.label}`;
+        const key = Object.prototype.hasOwnProperty.call(migrated, control.id)
+            ? control.id
+            : Object.prototype.hasOwnProperty.call(migrated, legacyLabelKey)
+                ? legacyLabelKey
+                : null;
+        const value = key ? migrated[key] : undefined;
+        usable = typeof value === 'number' && Number.isFinite(value);
+    });
+    return usable;
+}
+
+function warnUnusableTuningCandidate(source: TuningLoadSource, data: TuningLoadData) {
+    const values = extractTuningValues(data);
+    if (!values) {
+        console.warn(`[SpeedSwimming] ignored ${source} tuning candidate: invalid file/value structure`);
+        return;
+    }
+    warnUnknownTuningKeys(values);
+    const invalidValues = collectInvalidLegacyTuningValues(values);
+    forEachControl((control, group) => {
+        const legacyLabelKey = `${group.name}.${control.label}`;
+        const key = Object.prototype.hasOwnProperty.call(values, control.id)
+            ? control.id
+            : Object.prototype.hasOwnProperty.call(values, legacyLabelKey)
+                ? legacyLabelKey
+                : null;
+        if (!key) {
+            return;
+        }
+        const value = values[key];
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            invalidValues.push(`${key}=${formatTuningValue(value)}`);
+        }
+    });
+    if (invalidValues.length > 0) {
+        console.warn(`[SpeedSwimming] tuning ignored invalid known values: ${invalidValues.join(', ')}`);
+    }
+    console.warn(`[SpeedSwimming] ignored ${source} tuning candidate: no usable known tuning values`);
 }
 
 function saveProjectTuningFile(data: TuningFileData): string | null {
@@ -758,7 +1065,7 @@ function saveLocalStorageBackup(data: TuningFileData): boolean {
     }
 }
 
-function loadNativeTuningFile(): TuningFileData | null {
+function loadNativeTuningFile(): TuningLoadData | null {
     if (!NATIVE) {
         return null;
     }
@@ -771,11 +1078,78 @@ function loadNativeTuningFile(): TuningFileData | null {
         if (!raw) {
             return null;
         }
-        console.log(`[SpeedSwimming] tuning loaded from native writable path ${filePath}`);
-        return JSON.parse(raw) as TuningFileData;
+        return JSON.parse(raw) as TuningLoadData;
     } catch (error) {
         console.warn('[SpeedSwimming] failed to load native tuning file', error);
         return null;
+    }
+}
+
+function loadLocalStorageTuningFile(): TuningLoadData | null {
+    try {
+        const raw = sys.localStorage.getItem(TUNING_STORAGE_KEY);
+        return raw ? JSON.parse(raw) as TuningLoadData : null;
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to load tuning settings backup', error);
+        return null;
+    }
+}
+
+function loadRuntimeTuningCandidate(): TuningLoadCandidate | null {
+    const nativeData = loadNativeTuningFile();
+    const nativeCandidate = nativeData
+        ? createTuningLoadCandidate('native', nativeData, getNativeTuningFilePath() ?? undefined)
+        : null;
+    const localStorageData = loadLocalStorageTuningFile();
+    const localStorageCandidate = localStorageData
+        ? createTuningLoadCandidate('localStorage', localStorageData)
+        : null;
+    return selectNewerTuningCandidate(nativeCandidate, localStorageCandidate);
+}
+
+function createTuningLoadCandidate(
+    source: TuningLoadSource,
+    data: TuningLoadData,
+    path?: string,
+): TuningLoadCandidate | null {
+    if (!hasUsableKnownTuningValue(data)) {
+        warnUnusableTuningCandidate(source, data);
+        return null;
+    }
+    const updatedAt = (data as TuningFileData).updatedAt;
+    const parsedUpdatedAt = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
+    return {
+        source,
+        data,
+        updatedAtMs: Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : null,
+        path,
+    };
+}
+
+function selectNewerTuningCandidate(
+    baseline: TuningLoadCandidate | null,
+    override: TuningLoadCandidate | null,
+): TuningLoadCandidate | null {
+    if (!baseline) {
+        return override;
+    }
+    if (!override) {
+        return baseline;
+    }
+    if (override.updatedAtMs !== null
+        && (baseline.updatedAtMs === null || override.updatedAtMs > baseline.updatedAtMs)) {
+        return override;
+    }
+    return baseline;
+}
+
+function logLoadedTuning(candidate: TuningLoadCandidate) {
+    if (candidate.source === 'project') {
+        console.log(`[SpeedSwimming] tuning loaded from project resource ${PROJECT_TUNING_ASSET_PATH}`);
+    } else if (candidate.source === 'native') {
+        console.log(`[SpeedSwimming] tuning loaded from native writable path ${candidate.path ?? ''}`);
+    } else {
+        console.log('[SpeedSwimming] tuning loaded from localStorage backup');
     }
 }
 

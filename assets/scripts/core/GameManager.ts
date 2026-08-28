@@ -2069,6 +2069,7 @@ export class GameManager extends Component {
                 onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
                 onTuningVisibilityChanged: (visible) => this.handleTuningVisibilityChanged(visible),
+                onTuningChanged: (id) => this.handleLiveTuningChanged(id),
             }, DEV && !this._netSession);
             this._modelDebugHudBuilder = modelDebugHudBuilder;
             const modelDebugHud = modelDebugHudBuilder.build(uiRoot, w, h);
@@ -2388,6 +2389,23 @@ export class GameManager extends Component {
         button.setPosition(width / 2 - 72, height / 2 - 42, 0);
         button.setSiblingIndex(raceHud.children.length - 1);
         button.on(Node.EventType.TOUCH_END, () => this._modelDebugHudBuilder?.openTuningOverlay());
+    }
+
+    private handleLiveTuningChanged(id: string | null) {
+        if (this._netSession || !this._playerSwimmer) {
+            return;
+        }
+        if (id !== null
+            && id !== 'speed.maxSpeed'
+            && id !== 'speed.kickMaxSpeed'
+            && id !== 'speed.strokeQualityAccel'
+            && id !== 'speed.perfectComboMaxOvercap'
+            && id !== 'dive.maxLaunchSpeed') {
+            return;
+        }
+        // Player progression resolves these values from the global tuning constants.
+        // Re-resolve in place so a solo live-tuning edit affects player and AI together.
+        this.applyPlayerProgression();
     }
 
     private handleTuningVisibilityChanged(visible: boolean) {

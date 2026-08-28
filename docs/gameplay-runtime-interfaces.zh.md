@@ -2308,17 +2308,9 @@ tick(dt) 内部应维护：
 
 ### 25.3 AI 是否需要接 StrokeMetrics
 
-关键发现：AI 的动作路径和玩家完全不同。
+当前 AI 与玩家共用 `handleStrokeHeld` 的按下、保持、松开链路，会创建并结算同一种划水动作与 `StrokeQualityResult`。AI 的推进来自共享的划水质量加速；`AISwimmerController` 只根据难度、策略和随机误差决定目标松手进度与两次划水之间的间隔，不再存在独立的 AI 巡航加速度参数。
 
-AI 通过 playAiStrokeVisual -> recordAiVisualStroke -> queueVisualSideStroke 只排队动画周期，不创建 StrokeAction，不触发 settleActionStrokeQuality，不产出 StrokeQualityResult。AI 的推进完全靠 SwimmerMotor.update 里的 aiPower 和 aiCruiseAccel 参数。
-
-这意味着两个后果：
-
-1. AI 不会经过 makeStrokeQualityResult，所以 AI 的 _pendingConditionInputs 队列永远是空的。如果 AI 也要有 PlayerConditionModel，它的状态更新不能靠 updateFromStroke，只能靠 tick(dt) 加 aiPower 等参数。
-
-2. 如果给 AI 接 StrokeMetrics，它的 recordStroke 只会在 playAiStrokeVisual 时被调用，effortScore 会反映 AI 的划水频率。但 AI 的划水频率是由 AISwimmerController 的 _baseInterval 和 difficulty 决定的，是预设的，不是博弈出来的。所以 AI 的 pressureScore 有值但没有策略意义。
-
-倾向：第一版 AI 不接 StrokeMetrics，AI 的 PlayerConditionModel 走简化路径。
+AI 的体力与心率仍由 `AiConditionModel` 维护，但划水时机和推进结算必须继续复用玩家运动模型，避免重新引入隐藏速度常量。
 
 具体做法：
 - AI 的 PlayerConditionModel 只用 tick(dt) 更新

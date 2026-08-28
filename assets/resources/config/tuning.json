@@ -4,6 +4,7 @@
   "values": {
     "input.padStrokeDedupeMs": 5,
     "dolphin.strainHr": 25,
+    "ultimate.dolphinCost": 100,
     "dive.minPower": 0.3,
     "dive.chargeCycleSeconds": 2.5,
     "dive.underwaterHoldSeconds": 2,
@@ -23,7 +24,6 @@
     "speed.strokeQualityAccel": 2.1,
     "speed.strokeAccelDurationRatio": 0.35,
     "speed.strokeImpulseSharpness": 0.6,
-    "speed.diveUnderwaterKickAccel": 0.4,
     "speed.kickAccelPerHz": 0.22,
     "speed.kickMaxSpeed": 2.7,
     "speed.kickCeilingBand": 0.5,
@@ -44,7 +44,6 @@
     "condition.cadenceExhaustedRatio": 0.05,
     "condition.cadenceWarningScale": 0.85,
     "condition.cadenceExhaustedScale": 0.6,
-    "speed.aiCruiseAccel": 1.9,
     "collision.pitchDegreesPerImpulse": 220,
     "collision.pitchRightingTorque": 90,
     "collision.pitchAngularDrag": 1.1,
