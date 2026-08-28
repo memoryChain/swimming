@@ -2,38 +2,27 @@ import { Camera, Node, Vec3 } from 'cc';
 import { COUNTDOWN_SECONDS, getRaceDistance } from '../core/GameBalance';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 
-// Pre-race showcase (state PRECOUNTDOWN) splits into two stages:
-//   Stage 1 (overview): a wide establishing shot framing all lanes while the
-//     roster info panel is displayed.
-//   Stage 2 (orbit): a single continuous shot that starts nearly top-down over
-//     the racers, then rotates a full circle around them while descending into a
-//     low three-quarter angle, before a smooth hand-off to the countdown /
-//     dive-prep view. It never stops on an individual swimmer.
-const PRE_RACE_OVERVIEW_SECONDS = 3.0;
-// Duration of the whole descend-and-orbit sweep.
-const PRE_RACE_ORBIT_SECONDS = 4.0;
-const PRE_RACE_OVERVIEW_FOV = 46;
-// Overview shot: elevated 3/4 angle from behind-and-to-the-side of the blocks,
-// looking down the lanes so all eight lanes read on screen.
-const PRE_RACE_OVERVIEW_TARGET_AHEAD = 0.32; // fraction of course length ahead of the start edge
-const PRE_RACE_OVERVIEW_TARGET_Y = 1.1;
-const PRE_RACE_OVERVIEW_BACK = 6.0;   // camera pulled back behind the blocks (kept inside the near hall wall at X=-8)
-const PRE_RACE_OVERVIEW_HEIGHT = 8.2; // elevated
-const PRE_RACE_OVERVIEW_SIDE = 4.5;   // pushed off to one pool side (kept inside the grandstand which starts ~7m off-center)
-// Orbit shot: a spiral from a near top-down view down to a low front angle,
-// circling the standing racers once. Distances are measured from the centre of
-// the standing group (mid-lane, just in front of the blocks).
-const PRE_RACE_ORBIT_SWEEP = Math.PI * 2; // one full revolution, ending on the athletes' front side
-const PRE_RACE_ORBIT_CENTER_AHEAD = 0.4;  // shift the look-at point slightly toward the pool
-const PRE_RACE_ORBIT_TARGET_Y = 1.0;
-const PRE_RACE_ORBIT_START_HEIGHT = 12.5; // high, reads as a top-down opening
-const PRE_RACE_ORBIT_END_HEIGHT = 2.6;    // low three-quarter angle
-const PRE_RACE_ORBIT_START_RADIUS = 9.5;  // pulled back over the pool so the water reads in the opening shot
-const PRE_RACE_ORBIT_END_RADIUS = 7.5;    // pulled out for the closing angle
-const PRE_RACE_ORBIT_START_FOV = 44;
-const PRE_RACE_ORBIT_END_FOV = 36;
+// Pre-race broadcast (state PRECOUNTDOWN), based on a real meet presentation:
+//   1. establish close to the water, looking back at the starting blocks;
+//   2. continuously dolly toward the far end while rising, showing event info;
+//   3. keep pulling away and reveal the competitor roster at the far end;
+//   4. cut to the player's block, blend showcase -> dive-prep, then hand the
+//      existing synchronized countdown logic its ready signal.
+const PRE_RACE_ESTABLISH_SECONDS = 2.2;
+const PRE_RACE_EVENT_SECONDS = 2.6;
+const PRE_RACE_ROSTER_SECONDS = 2.4;
+const PRE_RACE_ATHLETE_SECONDS = 1.6;
+const PRE_RACE_PULLBACK_SECONDS = PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS + PRE_RACE_ROSTER_SECONDS;
+const PRE_RACE_NEAR_FOV = 50;
+const PRE_RACE_FAR_FOV = 44;
+const PRE_RACE_NEAR_AHEAD = 7.0;
+const PRE_RACE_NEAR_HEIGHT = 0.32;
+const PRE_RACE_NEAR_SIDE_RATIO = 0.34;
+const PRE_RACE_FAR_INSET = 4.0;
+const PRE_RACE_FAR_HEIGHT = 5.4;
+const PRE_RACE_FAR_SIDE_OFFSET = 1.6;
 
-export type PreRacePhase = 'none' | 'overview' | 'orbit';
+export type PreRacePhase = 'none' | 'establish' | 'raceInfo' | 'roster' | 'athlete';
 // Awards free-look orbit: the camera moves along a front-facing arc around the
 // podium and the player can drag to rotate / wheel to zoom. When left idle it
 // sweeps back and forth slowly for a ceremony feel.
@@ -299,7 +288,7 @@ export class RaceCameraDirector {
     private _preCountdownElapsed = 0;
     private _preCountdownActive = false;
     private _preCountdownReady = false;
-    private _preCountdownLaneZs: number[] = [];
+    private _preCountdownCompletionSignaled = false;
     private _preCountdownShotIndex = -1;
     private _preRacePhase: PreRacePhase = 'none';
     private _awardsCenter: Vec3 | null = null;
@@ -371,6 +360,9 @@ export class RaceCameraDirector {
     }
 
     resetCountdownTimers() {
+        this._preCountdownActive = false;
+        this._preRacePhase = 'none';
+        this._preCountdownShotIndex = -1;
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
         this._broadcastShotTimer = 0;
@@ -380,7 +372,7 @@ export class RaceCameraDirector {
         this._flipTurnViewActive = false;
     }
 
-    startPreCountdownOrbit(laneZs: number[] = []) {
+    startPreRacePresentation() {
         this._mode = RaceCameraMode.Broadcast;
         this._topViewActive = false;
         this._awardsCenter = null;
@@ -389,34 +381,33 @@ export class RaceCameraDirector {
         this._preCountdownElapsed = 0;
         this._preCountdownActive = true;
         this._preCountdownReady = false;
-        this._preRacePhase = 'overview';
-        this.updatePreCountdownRacerLanes(laneZs);
-        // Sentinel so the first overview frame hard-cuts into the establishing
-        // shot instead of blending from the reset broadcast pose.
-        this._preCountdownShotIndex = -999;
+        this._preCountdownCompletionSignaled = false;
+        this._preRacePhase = 'establish';
+        // Write the establishing pose immediately. Leaving the camera at the
+        // countdown close-up until the next update produced one visible frame of
+        // rapid travel before the intended water-level shot began.
+        const openingShot = this.preRacePullbackShot(0);
+        this._cameraPos.set(openingShot.position);
+        this._cameraTarget.set(openingShot.target);
+        this._preCountdownShotIndex = 0;
         this._broadcastCountdownElapsed = 0;
         this._broadcastRaceElapsed = 0;
         this._diveShotElapsed = -1;
         this._diveSurfaceRestoreSeconds = 0;
         this._underwaterViewActive = false;
         this._flipTurnViewActive = false;
-        this._broadcastCameraFov = 52;
-        this._broadcastDesiredFov = 52;
-        this.resetBroadcastCamera();
-    }
-
-    updatePreCountdownRacerLanes(laneZs: number[]) {
-        // Keep every lane (including the player) sorted by Z so the close-up sweep
-        // visits them in lane order (lane 1 -> lane 8).
-        this._preCountdownLaneZs = laneZs
-            .filter((laneZ) => Number.isFinite(laneZ))
-            .sort((a, b) => a - b);
+        this._broadcastCameraFov = openingShot.fov;
+        this._broadcastDesiredFov = openingShot.fov;
+        if (this._cameraNode) {
+            this.applyCameraTransform();
+            this.applyFov();
+        }
     }
 
     // Stop the showcase immediately without setting the normal completion flag.
     // The next camera update sees COUNTDOWN and blends from the current showcase
     // framing into the existing dive-prep/countdown shot.
-    skipPreCountdownShowcase(): boolean {
+    skipPreRacePresentation(): boolean {
         if (!this._preCountdownActive) {
             return false;
         }
@@ -724,45 +715,36 @@ export class RaceCameraDirector {
         }
     }
 
-    // Wide establishing shot for pre-race stage 1: elevated 3/4 angle from behind
-    // and to one side of the blocks, framing all lanes down the pool.
-    private preRaceOverviewShot(): { position: Vec3; target: Vec3 } {
+    // One continuous pool-length dolly. The camera starts just above the water,
+    // aimed back at the blocks, then retreats toward the opposite wall and rises
+    // into a wide venue view without changing its subject.
+    private preRacePullbackShot(progress: number): { position: Vec3; target: Vec3; fov: number } {
         const direction = this._courseLayout.direction;
-        const targetX = this._courseLayout.poolStartX + direction * this._courseLayout.courseLength * PRE_RACE_OVERVIEW_TARGET_AHEAD;
-        const target = new Vec3(targetX, this._courseLayout.waterY + PRE_RACE_OVERVIEW_TARGET_Y, 0);
-        const position = new Vec3(
-            this._courseLayout.platformX - direction * PRE_RACE_OVERVIEW_BACK,
-            PRE_RACE_OVERVIEW_HEIGHT,
-            this._courseLayout.poolWidth * 0.5 + PRE_RACE_OVERVIEW_SIDE,
+        const eased = smootherStep(progress);
+        // The active roster is populated one frame after startGame. Never derive
+        // this establishing shot from currently loaded racers: doing so made its
+        // centre jump from the player's lane to the pool centre when AI appeared.
+        const poolCenterZ = 0;
+        const target = new Vec3(
+            this._courseLayout.platformX + direction * 0.35,
+            this._courseLayout.waterY + 0.9,
+            poolCenterZ,
         );
-        return { position, target };
-    }
-
-    // Continuous descend-and-orbit shot for pre-race stage 2. As progress goes
-    // 0 -> 1 the camera spirals from a near top-down view down to a low front
-    // three-quarter angle, circling the player once and always aiming at that
-    // player's randomized starting lane. `progress` is the raw 0..1 stage progress; easing
-    // is applied internally so the motion accelerates and settles smoothly.
-    private preRaceOrbitShot(progress: number, direction: number): { position: Vec3; target: Vec3; fov: number } {
-        const eased = smoothStep(clamp(progress, 0, 1));
-        const stand = this._courseLayout.platformStandingPosition(this._playerLaneZ);
-        const center = new Vec3(
-            stand.x + direction * PRE_RACE_ORBIT_CENTER_AHEAD,
-            stand.y + PRE_RACE_ORBIT_TARGET_Y,
-            this._playerLaneZ,
+        const nearPosition = new Vec3(
+            this._courseLayout.poolStartX + direction * PRE_RACE_NEAR_AHEAD,
+            this._courseLayout.waterY + PRE_RACE_NEAR_HEIGHT,
+            poolCenterZ + this._courseLayout.poolWidth * PRE_RACE_NEAR_SIDE_RATIO,
         );
-        // Rotate a full turn, ending at yaw 0 (camera on the athletes' front /
-        // down-pool side) so the hand-off to the countdown front view is short.
-        const yaw = lerp(-PRE_RACE_ORBIT_SWEEP, 0, eased);
-        const radius = lerp(PRE_RACE_ORBIT_START_RADIUS, PRE_RACE_ORBIT_END_RADIUS, eased);
-        const height = lerp(PRE_RACE_ORBIT_START_HEIGHT, PRE_RACE_ORBIT_END_HEIGHT, eased);
-        const position = new Vec3(
-            center.x + direction * Math.cos(yaw) * radius,
-            center.y + height,
-            center.z + Math.sin(yaw) * radius,
+        const farPosition = new Vec3(
+            this._courseLayout.poolFinishX - direction * PRE_RACE_FAR_INSET,
+            this._courseLayout.waterY + PRE_RACE_FAR_HEIGHT,
+            poolCenterZ + this._courseLayout.poolWidth * 0.5 + PRE_RACE_FAR_SIDE_OFFSET,
         );
-        const fov = lerp(PRE_RACE_ORBIT_START_FOV, PRE_RACE_ORBIT_END_FOV, eased);
-        return { position, target: center, fov };
+        return {
+            position: lerpVec3(nearPosition, farPosition, eased),
+            target,
+            fov: lerp(PRE_RACE_NEAR_FOV, PRE_RACE_FAR_FOV, eased),
+        };
     }
 
     private updateBroadcastCamera(dt: number, snapshot: RaceCameraSnapshot) {
@@ -837,44 +819,40 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = 38;
         } else if (this._preCountdownActive) {
             const elapsed = this._preCountdownElapsed;
-            const lanes = this._preCountdownLaneZs;
             let shotIndex: number;
-            if (elapsed < PRE_RACE_OVERVIEW_SECONDS) {
-                // Stage 1: wide establishing shot behind the roster info panel.
-                shotIndex = -1;
-                this._preRacePhase = 'overview';
-                const overview = this.preRaceOverviewShot();
-                desiredTarget = overview.target;
-                desiredPos = overview.position;
-                this._broadcastDesiredFov = PRE_RACE_OVERVIEW_FOV;
-            } else if (elapsed < PRE_RACE_OVERVIEW_SECONDS + PRE_RACE_ORBIT_SECONDS) {
-                // Stage 2: one continuous descend-and-orbit shot around the racers.
-                // The camera spirals from near top-down to a low front angle and
-                // never stops on an individual swimmer.
-                this._preRacePhase = 'orbit';
+            if (elapsed < PRE_RACE_PULLBACK_SECONDS) {
+                if (elapsed < PRE_RACE_ESTABLISH_SECONDS) {
+                    this._preRacePhase = 'establish';
+                } else if (elapsed < PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS) {
+                    this._preRacePhase = 'raceInfo';
+                } else {
+                    this._preRacePhase = 'roster';
+                }
                 shotIndex = 0;
-                const progress = clamp((elapsed - PRE_RACE_OVERVIEW_SECONDS) / PRE_RACE_ORBIT_SECONDS, 0, 1);
-                const shot = this.preRaceOrbitShot(progress, direction);
+                const shot = this.preRacePullbackShot(elapsed / PRE_RACE_PULLBACK_SECONDS);
                 desiredTarget = shot.target;
                 desiredPos = shot.position;
                 this._broadcastDesiredFov = shot.fov;
             } else {
-                // Stage 2 done: ease into the countdown / dive-prep front view with
-                // a quick smooth blend (no hard cut) and hand off to the race start.
+                // Keep this close-up active after reporting ready so a slower
+                // network peer cannot leave the camera drifting while this client
+                // waits for the host's synchronized GO.
                 shotIndex = 1;
-                this._preRacePhase = 'none';
-                this._preCountdownActive = false;
-                this._preCountdownReady = true;
+                this._preRacePhase = 'athlete';
                 const frontTarget = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
                 desiredTarget = frontTarget;
                 desiredPos = countdownFrontCameraPosition(frontTarget, direction, 1);
                 this._broadcastDesiredFov = 40;
+                if (elapsed >= PRE_RACE_PULLBACK_SECONDS + PRE_RACE_ATHLETE_SECONDS
+                    && !this._preCountdownCompletionSignaled) {
+                    this._preCountdownCompletionSignaled = true;
+                    this._preCountdownReady = true;
+                }
             }
-            // Hard-cut into the establishing overview and into the start of the
-            // orbit; the orbit itself is one continuous shot and the final hand-off
-            // stays a smooth blend.
+            // Cut once into the pool establishing shot and once from the far-end
+            // roster view to the athlete. UI phase changes never interrupt the dolly.
             const enteringNewShot = shotIndex !== this._preCountdownShotIndex;
-            hardCameraCut = enteringNewShot && this._preRacePhase !== 'none';
+            hardCameraCut = enteringNewShot;
             this._preCountdownShotIndex = shotIndex;
         } else if (!raceActive && !countdownActive) {
             const platform = this._courseLayout.platformStandingPosition(this._playerLaneZ);
@@ -1337,6 +1315,8 @@ export class RaceCameraDirector {
         this._preCountdownElapsed = 0;
         this._preCountdownActive = false;
         this._preCountdownReady = false;
+        this._preCountdownCompletionSignaled = false;
+        this._preCountdownShotIndex = -1;
         this._preRacePhase = 'none';
         this.pickBroadcastShotSequence();
     }
@@ -1378,8 +1358,8 @@ export class RaceCameraDirector {
         return this._mode;
     }
 
-    // Which pre-race showcase stage the broadcast camera is currently in. Drives
-    // the roster info panel (shown only during 'overview').
+    // Current pre-race presentation stage. Drives the event card, roster panel,
+    // and the one-shot transition from showcase action to dive preparation.
     get preRacePhase(): PreRacePhase {
         return this._preRacePhase;
     }
@@ -1490,6 +1470,11 @@ function cameraBlend(dt: number, speed: number): number {
 function smoothStep(value: number): number {
     const t = clamp(value, 0, 1);
     return t * t * (3 - 2 * t);
+}
+
+function smootherStep(value: number): number {
+    const t = clamp(value, 0, 1);
+    return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function lerp(a: number, b: number, t: number): number {

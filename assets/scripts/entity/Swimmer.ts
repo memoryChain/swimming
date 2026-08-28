@@ -1193,6 +1193,16 @@ export class Swimmer extends Component {
         return out;
     }
 
+    // Name tags must follow the visible head bone. Reusing the camera's blended
+    // torso/head target makes the tag slide sideways during leaning showcase
+    // actions as the viewing angle changes.
+    getNameTagWorldPosition(out: Vec3): Vec3 {
+        if (this.cartoonRig?.getHeadWorldPosition(out)) {
+            return out;
+        }
+        return this.getCameraUpperBodyWorldPosition(out);
+    }
+
     get isRacing(): boolean {
         return this._motor.isRacing;
     }

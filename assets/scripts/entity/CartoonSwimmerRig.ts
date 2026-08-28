@@ -471,6 +471,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._pose.getUpperBodyWorldPosition(out);
     }
 
+    getHeadWorldPosition(out: Vec3): boolean {
+        return this._pose.getHeadWorldPosition(out);
+    }
+
     getSwimBoundaryWorldPositions(outputs: Vec3[]): number {
         return this._pose.getSwimBoundaryWorldPositions(outputs);
     }

@@ -31,6 +31,21 @@ const DIVE_GFX_HIGH = new Color(255, 224, 89, 255);
 const DIVE_SPRITE_LOW = new Color(255, 82, 91, 255);
 const DIVE_SPRITE_MID = new Color(76, 216, 235, 255);
 const DIVE_SPRITE_HIGH = new Color(255, 214, 64, 255);
+const START_BANNER_SHADE = new Color(7, 26, 58, 210);
+const START_BANNER_TEXT = new Color(248, 253, 255, 255);
+const START_BANNER_OUTLINE = new Color(45, 184, 236, 245);
+const GO_TEXT = new Color(70, 255, 226, 255);
+const GO_OUTLINE = new Color(5, 48, 92, 255);
+const START_RESULT_TEXT = new Color(255, 224, 92, 255);
+const START_RESULT_OUTLINE = new Color(102, 52, 8, 250);
+const LATE_START_TEXT = new Color(255, 196, 72, 255);
+const LATE_START_OUTLINE = new Color(126, 50, 16, 245);
+const START_COMMANDS: readonly string[] = [
+    'TAKE YOUR MARKS',
+    'GET READY',
+    'READY ON THE BLOCK',
+    'LOCK IN',
+];
 // Race praise is presentation-only. Keep the gameplay Rating enum at three
 // levels so movement, rewards, statistics, and net simulation stay unchanged.
 const PRAISE_GOOD = { text: 'Good', color: new Color(80, 242, 161, 255) };
@@ -112,6 +127,11 @@ export class UIController extends Component {
     private _diveChargeFillPixel = -1;
     private _diveChargeGfxColor: Color | null = null;
     private _diveChargeSpriteColor: Color | null = null;
+    private _startBannerText = '';
+    private _lastStartCountdownValue = -1;
+    private _pendingDiveStartMessage = '';
+    private _pendingDiveStartLate = false;
+    private _countdownPresentation: 'hidden' | 'banner' | 'go' | 'release' | 'prompt' | 'charging' = 'hidden';
     // Full-screen swim-input pad. Disabled during awards so the podium free-look camera can
     // receive drag/zoom via the global input listeners instead of this pad swallowing them.
     // 全屏划水输入板。颁奖时禁用，让颁奖自由视角相机能通过全局输入监听收到拖拽/缩放，而非被此板吞掉。
@@ -383,21 +403,75 @@ export class UIController extends Component {
     }
 
     showCountdown(value: number) {
+        // Gameplay still ticks 3 -> 2 -> 1. Only the opening (3) beat gets a
+        // starter phrase; 2 and 1 remain visually quiet before the GO impact.
+        if (value !== 3 || value === this._lastStartCountdownValue) {
+            return;
+        }
+        this._lastStartCountdownValue = value;
+        this._startBannerText = randomStartCommand();
+        this._countdownPresentation = 'banner';
         if (this.countdownOverlay) {
+            if (!this.countdownOverlay.active) {
+                this.countdownOverlay.active = true;
+            }
+        }
+        this.setCountdownMessageVisible(true);
+        this.setSpeedBarVisible(false);
+        const bannerY = -view.getVisibleSize().height * 0.27;
+        this.resizeCountdownShade(900, 98, bannerY);
+        const shadeSprite = this.countdownShade?.getComponent(Sprite);
+        if (shadeSprite && !shadeSprite.color.equals(START_BANNER_SHADE)) {
+            shadeSprite.color = START_BANNER_SHADE;
+        }
+        if (this.hintLabel) {
+            setLabelText(this.hintLabel, '倒计时长按蓄力，听令出发');
+        }
+        if (this.countdownLabel) {
+            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(860, 126);
+            this.countdownLabel.fontSize = 58;
+            this.countdownLabel.lineHeight = 72;
+            this.countdownLabel.isItalic = true;
+            this.countdownLabel.spacingX = 2;
+            this.countdownLabel.color = START_BANNER_TEXT;
+            setLabelText(this.countdownLabel, this._startBannerText);
+            this.setCountdownOutline(START_BANNER_OUTLINE, 3);
+        }
+        this.animateStartBanner(bannerY);
+    }
+
+    showGo() {
+        const messageVisible = this.countdownLabel?.node.active ?? false;
+        if (this._countdownPresentation === 'go' && messageVisible) {
+            return;
+        }
+        this._countdownPresentation = 'go';
+        if (this.countdownOverlay && !this.countdownOverlay.active) {
             this.countdownOverlay.active = true;
         }
         this.setCountdownMessageVisible(true);
         this.setSpeedBarVisible(false);
-        this.resizeCountdownShade(190, 160);
-        if (this.hintLabel) {
-            this.hintLabel.string = '倒计时长按蓄力，听令出发';
+        const goY = -view.getVisibleSize().height * 0.18;
+        // GO uses no plate. The reused shade Sprite has baked dark borders that
+        // remain visible even when compressed into a thin line.
+        if (this.countdownShade?.active) {
+            this.countdownShade.active = false;
         }
         if (this.countdownLabel) {
-            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(720, 220);
-            this.countdownLabel.fontSize = 96;
-            this.countdownLabel.lineHeight = 140;
-            this.countdownLabel.string = value > 0 ? `${value}` : '冲';
-            this.pulse(this.countdownLabel.node, 1.25);
+            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(720, 250);
+            this.countdownLabel.node.setPosition(0, goY, 0);
+            this.countdownLabel.fontSize = 154;
+            this.countdownLabel.lineHeight = 182;
+            this.countdownLabel.isBold = true;
+            this.countdownLabel.isItalic = false;
+            this.countdownLabel.spacingX = 10;
+            this.countdownLabel.color = GO_TEXT;
+            setLabelText(this.countdownLabel, 'GO!');
+            this.setCountdownOutline(GO_OUTLINE, 8);
+        }
+        this.animateStartCue(goY, 'go');
+        if (this.hintLabel) {
+            setLabelText(this.hintLabel, 'GO！长按蓄力，松开起跳');
         }
     }
 
@@ -539,9 +613,11 @@ export class UIController extends Component {
         if (this.hintLabel) {
             this.hintLabel.string = '全屏点击 / 长按蓄力';
         }
+        this._countdownPresentation = 'hidden';
     }
 
     showDivePrompt() {
+        this._countdownPresentation = 'prompt';
         if (this.countdownOverlay) {
             this.countdownOverlay.active = true;
         }
@@ -563,20 +639,48 @@ export class UIController extends Component {
     showDiveCharging() {
         // Keep the charge bar and character VFX, but remove the large center-screen
         // message and backdrop while the player is holding to charge.
+        this._countdownPresentation = 'charging';
         this.setCountdownMessageVisible(false);
     }
 
-    showDiveRelease(power: number) {
-        this.setCountdownMessageVisible(true);
-        this.resizeCountdownShade(500, 120);
-        if (this.countdownLabel) {
-            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(820, 220);
-            this.countdownLabel.fontSize = 64;
-            this.countdownLabel.lineHeight = 64;
-            this.countdownLabel.string = `出发 ${Math.round(power * 100)}%`;
-            this.pulse(this.countdownLabel.node, 1.18);
+    showDiveRelease(power: number, late: boolean) {
+        const message = late ? 'LATE START!' : diveStartMessage(power);
+        const goVisible = this._countdownPresentation === 'go'
+            && (this.countdownLabel?.node.active ?? false);
+        if (goVisible) {
+            // Do not replace GO in the same frame. Queue the quality result and
+            // present it after GO's own exit animation completes.
+            this._pendingDiveStartMessage = message;
+            this._pendingDiveStartLate = late;
+        } else {
+            this.showDiveStartFeedback(message, late);
         }
         this.updateDiveCharge(power, true);
+    }
+
+    private showDiveStartFeedback(message: string, late: boolean) {
+        this._countdownPresentation = 'release';
+        if (this.countdownOverlay && !this.countdownOverlay.active) {
+            this.countdownOverlay.active = true;
+        }
+        this.setCountdownMessageVisible(true);
+        if (this.countdownShade?.active) {
+            this.countdownShade.active = false;
+        }
+        const messageY = -view.getVisibleSize().height * 0.18;
+        if (this.countdownLabel) {
+            this.countdownLabel.node.getComponent(UITransform)?.setContentSize(900, 220);
+            this.countdownLabel.node.setPosition(0, messageY, 0);
+            this.countdownLabel.fontSize = message.length > 12 ? 72 : 88;
+            this.countdownLabel.lineHeight = 112;
+            this.countdownLabel.isBold = true;
+            this.countdownLabel.isItalic = true;
+            this.countdownLabel.spacingX = 2;
+            this.countdownLabel.color = late ? LATE_START_TEXT : START_RESULT_TEXT;
+            setLabelText(this.countdownLabel, message);
+            this.setCountdownOutline(late ? LATE_START_OUTLINE : START_RESULT_OUTLINE, 5);
+        }
+        this.animateStartCue(messageY, 'release');
     }
 
     showGliding() {
@@ -760,6 +864,11 @@ export class UIController extends Component {
         if (this.countdownOverlay) {
             this.countdownOverlay.active = false;
         }
+        this._startBannerText = '';
+        this._lastStartCountdownValue = -1;
+        this._pendingDiveStartMessage = '';
+        this._pendingDiveStartLate = false;
+        this._countdownPresentation = 'hidden';
         this.hideFinishCountdown();
         this.updateDiveCharge(0, false);
         this.setSpeedBarVisible(false);
@@ -890,9 +999,107 @@ export class UIController extends Component {
         }
     }
 
-    private resizeCountdownShade(width: number, height: number) {
+    private setCountdownOutline(color: Color, width: number) {
+        const node = this.countdownLabel?.node;
+        if (!node) {
+            return;
+        }
+        const outline = node.getComponent(LabelOutline) ?? node.addComponent(LabelOutline);
+        outline.color = color;
+        outline.width = width;
+    }
+
+    private animateStartBanner(y: number) {
+        const shade = this.countdownShade;
+        const label = this.countdownLabel?.node;
+        if (!shade || !label) {
+            return;
+        }
+        const screenWidth = view.getVisibleSize().width;
+        const entryX = -screenWidth * 0.62;
+        const exitX = screenWidth * 0.62;
+        const shadeOpacity = shade.getComponent(UIOpacity) ?? shade.addComponent(UIOpacity);
+        const labelOpacity = label.getComponent(UIOpacity) ?? label.addComponent(UIOpacity);
+        Tween.stopAllByTarget(shade);
+        Tween.stopAllByTarget(label);
+        Tween.stopAllByTarget(shadeOpacity);
+        Tween.stopAllByTarget(labelOpacity);
+        shade.setPosition(entryX, y, 0);
+        shade.setScale(0.72, 1, 1);
+        shadeOpacity.opacity = 0;
+        label.setPosition(entryX - 50, y, 0);
+        label.setScale(0.9, 0.9, 1);
+        labelOpacity.opacity = 0;
+        tween(shadeOpacity).to(0.12, { opacity: 255 }).delay(0.66).to(0.18, { opacity: 0 }).start();
+        tween(labelOpacity).delay(0.04).to(0.12, { opacity: 255 }).delay(0.58).to(0.18, { opacity: 0 }).start();
+        tween(shade)
+            .to(0.26, { position: new Vec3(0, y, 0), scale: new Vec3(1, 1, 1) }, { easing: 'quartOut' })
+            .delay(0.52)
+            .to(0.22, { position: new Vec3(exitX, y, 0), scale: new Vec3(0.82, 1, 1) }, { easing: 'quartIn' })
+            .start();
+        tween(label)
+            .delay(0.04)
+            .to(0.24, { position: new Vec3(0, y, 0), scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+            .delay(0.48)
+            .to(0.22, { position: new Vec3(exitX + 40, y, 0), scale: new Vec3(0.9, 0.9, 1) }, { easing: 'quartIn' })
+            .call(() => {
+                if (this._countdownPresentation === 'banner') {
+                    this.setCountdownMessageVisible(false);
+                }
+            })
+            .start();
+    }
+
+    private animateStartCue(goY: number, presentation: 'go' | 'release') {
+        const label = this.countdownLabel?.node;
+        if (!label) {
+            return;
+        }
+        const labelOpacity = label.getComponent(UIOpacity) ?? label.addComponent(UIOpacity);
+        Tween.stopAllByTarget(label);
+        Tween.stopAllByTarget(labelOpacity);
+        label.setPosition(0, goY, 0);
+        label.setScale(0.42, 0.42, 1);
+        labelOpacity.opacity = 0;
+        tween(labelOpacity)
+            .to(0.08, { opacity: 255 })
+            .delay(0.42)
+            .to(0.18, { opacity: 0 })
+            .call(() => {
+                if (this._countdownPresentation === presentation) {
+                    this.setCountdownMessageVisible(false);
+                    if (presentation === 'go' && this._pendingDiveStartMessage) {
+                        const message = this._pendingDiveStartMessage;
+                        const late = this._pendingDiveStartLate;
+                        this._pendingDiveStartMessage = '';
+                        this._pendingDiveStartLate = false;
+                        this.showDiveStartFeedback(message, late);
+                    }
+                }
+            })
+            .start();
+        if (presentation === 'go') {
+            tween(label)
+                .to(0.1, { scale: new Vec3(1.42, 1.42, 1) }, { easing: 'cubicOut' })
+                .to(0.05, { position: new Vec3(-12, goY + 2, 0), scale: new Vec3(1.06, 1.06, 1) })
+                .to(0.04, { position: new Vec3(10, goY - 2, 0) })
+                .to(0.04, { position: new Vec3(-7, goY + 1, 0) })
+                .to(0.04, { position: new Vec3(5, goY - 1, 0) })
+                .to(0.04, { position: new Vec3(-3, goY, 0) })
+                .to(0.05, { position: new Vec3(0, goY, 0), scale: new Vec3(1, 1, 1) })
+                .start();
+        } else {
+            tween(label)
+                .to(0.12, { scale: new Vec3(1.38, 1.38, 1) }, { easing: 'cubicOut' })
+                .to(0.2, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
+                .start();
+        }
+    }
+
+    private resizeCountdownShade(width: number, height: number, y = 44, labelY = y) {
         this.countdownShade?.getComponent(UITransform)?.setContentSize(width, height);
-        this.countdownShade?.setPosition(0, 44, 0);
+        this.countdownShade?.setPosition(0, y, 0);
+        this.countdownLabel?.node.setPosition(0, labelY, 0);
     }
 }
 
@@ -916,6 +1123,22 @@ function praiseForRating(rating: Rating, combo: number): { text: string; color: 
 }
 function clamp01(value: number): number {
     return Math.max(0, Math.min(1, value));
+}
+
+function randomStartCommand(): string {
+    const index = Math.floor(Math.random() * START_COMMANDS.length);
+    return START_COMMANDS[index] ?? START_COMMANDS[0];
+}
+
+function diveStartMessage(power: number): string {
+    const normalized = clamp01(power);
+    if (normalized >= 0.85) {
+        return 'PERFECT START!';
+    }
+    if (normalized >= 0.55) {
+        return 'GREAT START!';
+    }
+    return 'GOOD START!';
 }
 
 function drawHeartRateFill(gfx: Graphics, ratio: number, color: Color) {

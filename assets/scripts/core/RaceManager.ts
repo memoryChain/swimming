@@ -26,7 +26,7 @@ export type RaceFinishResult = {
     // rank, distinct from a lockdown 已淘汰). Always a subset of `eliminated`.
     quit?: boolean;
     // false when the swimmer never reached the wall before the straggler
-    // countdown ended (未完成 / DNF, sharing the last placement).
+    // countdown ended (未完成 / DNF). DNF swimmers are ranked by distance.
     finished: boolean;
 };
 
@@ -452,11 +452,13 @@ export class RaceManager extends Component {
         for (let i = 0; i < finishers.length; i++) {
             finishers[i].placement = i + 1;
         }
-        // Swimmers still in the water when the countdown ended are 未完成 and share
-        // the single placement right after the last finisher.
-        const lastPlacement = finishers.length + 1;
-        for (const row of unfinished) {
-            row.placement = lastPlacement;
+        // Match the live leaderboard: swimmers still in the water keep their DNF
+        // status, but rank by course distance instead of sharing one placement.
+        // Modern JS sort is stable, so an exact-distance tie keeps the captured
+        // roster order while still receiving deterministic consecutive places.
+        unfinished.sort((a, b) => b.swimmer.distance - a.swimmer.distance);
+        for (let i = 0; i < unfinished.length; i++) {
+            unfinished[i].placement = finishers.length + i + 1;
         }
         return [...finishers, ...unfinished];
     }

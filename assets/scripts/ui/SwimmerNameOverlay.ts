@@ -8,6 +8,10 @@ const HEAD_OFFSET_Y = 30;
 const OFF_SCREEN_MARGIN = 48;
 const OVERLAP_X = 76;
 const OVERLAP_Y = 22;
+const NAME_REFERENCE_DISTANCE = 10;
+const NAME_MIN_SCALE = 0.48;
+const NAME_MAX_SCALE = 1.05;
+const NAME_SCALE_STEP = 0.02;
 const AI_COLOR = new Color(245, 250, 255, 255);
 const OUTLINE_COLOR = new Color(5, 14, 24, 225);
 
@@ -16,6 +20,7 @@ type NameEntry = {
     root: Node;
     x: number;
     y: number;
+    scale: number;
 };
 
 // Lightweight race-time name tags. They reuse the same world -> screen -> HUD
@@ -33,6 +38,9 @@ export class SwimmerNameOverlay {
     private readonly _cameraToHead = new Vec3();
     private readonly _placedX: number[] = [];
     private readonly _placedY: number[] = [];
+    private readonly _placedWidths: number[] = [];
+    private readonly _placedHeights: number[] = [];
+    private _anchorWarmupFrames = 0;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -58,6 +66,7 @@ export class SwimmerNameOverlay {
                 continue;
             }
             const tag = makeUiNode(`SwimmerName_${swimmer.node.name}`, this._root);
+            tag.active = false;
             tag.getComponent(UITransform)!.setContentSize(TAG_WIDTH, TAG_HEIGHT);
             const label = tag.addComponent(Label);
             label.string = fitName(swimmer.swimmerName);
@@ -70,13 +79,33 @@ export class SwimmerNameOverlay {
             label.enableOutline = true;
             label.outlineColor = OUTLINE_COLOR;
             label.outlineWidth = 2;
-            this._entries.push({ swimmer, root: tag, x: Number.NaN, y: Number.NaN });
+            this._entries.push({ swimmer, root: tag, x: Number.NaN, y: Number.NaN, scale: -1 });
         }
+        this.resetTracking();
     }
 
     setVisible(visible: boolean) {
         if (this._root?.isValid && this._root.active !== visible) {
             this._root.active = visible;
+            if (visible) {
+                this.resetTracking();
+            }
+        }
+    }
+
+    // A rematch can pass AWARDS -> READY -> PRECOUNTDOWN between two rendered
+    // frames, so visibility never gets an edge and the old finish-line positions
+    // would remain on screen. Hide cached tags for one frame while the swimmer
+    // rig applies its new standing pose, then project the refreshed head bones.
+    resetTracking() {
+        this._anchorWarmupFrames = 1;
+        for (const entry of this._entries) {
+            entry.x = Number.NaN;
+            entry.y = Number.NaN;
+            entry.scale = -1;
+            if (entry.root?.isValid && entry.root.active) {
+                entry.root.active = false;
+            }
         }
     }
 
@@ -90,6 +119,10 @@ export class SwimmerNameOverlay {
         if (!this._root?.isValid || !this._root.active || !this._hud?.isValid || !worldCamera || !uiCamera) {
             return;
         }
+        if (this._anchorWarmupFrames > 0) {
+            this._anchorWarmupFrames--;
+            return;
+        }
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;
@@ -100,6 +133,8 @@ export class SwimmerNameOverlay {
         Vec3.transformQuat(this._cameraForward, Vec3.FORWARD, worldCamera.node.worldRotation);
         this._placedX.length = 0;
         this._placedY.length = 0;
+        this._placedWidths.length = 0;
+        this._placedHeights.length = 0;
 
         for (const entry of this._entries) {
             const swimmerNode = entry.swimmer?.node;
@@ -110,7 +145,7 @@ export class SwimmerNameOverlay {
                 }
                 continue;
             }
-            entry.swimmer.getCameraUpperBodyWorldPosition(this._worldPos);
+            entry.swimmer.getNameTagWorldPosition(this._worldPos);
             Vec3.subtract(this._cameraToHead, this._worldPos, worldCamera.node.worldPosition);
             if (Vec3.dot(this._cameraToHead, this._cameraForward) <= 0) {
                 if (entry.root.active) {
@@ -118,6 +153,9 @@ export class SwimmerNameOverlay {
                 }
                 continue;
             }
+
+            const cameraDistance = Math.max(0.01, this._cameraToHead.length());
+            const labelScale = swimmerHudScaleForDistance(cameraDistance);
             worldCamera.worldToScreen(this._worldPos, this._screenPos);
             uiCamera.screenToWorld(this._screenPos, this._uiWorld);
             hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
@@ -129,12 +167,16 @@ export class SwimmerNameOverlay {
             }
 
             const x = Math.round(this._uiLocal.x);
-            let y = Math.round(this._uiLocal.y + headOffsetY);
+            let y = Math.round(this._uiLocal.y + headOffsetY * labelScale);
+            const collisionWidth = OVERLAP_X * labelScale;
+            const collisionHeight = OVERLAP_Y * labelScale;
             for (let guard = 0; guard < this._entries.length; guard++) {
                 let collided = false;
                 for (let i = 0; i < this._placedX.length; i++) {
-                    if (Math.abs(this._placedX[i] - x) < OVERLAP_X && Math.abs(this._placedY[i] - y) < OVERLAP_Y) {
-                        y = this._placedY[i] + OVERLAP_Y;
+                    const overlapWidth = (this._placedWidths[i] + collisionWidth) * 0.5;
+                    const overlapHeight = (this._placedHeights[i] + collisionHeight) * 0.5;
+                    if (Math.abs(this._placedX[i] - x) < overlapWidth && Math.abs(this._placedY[i] - y) < overlapHeight) {
+                        y = Math.round(this._placedY[i] + overlapHeight);
                         collided = true;
                         break;
                     }
@@ -145,8 +187,14 @@ export class SwimmerNameOverlay {
             }
             this._placedX.push(x);
             this._placedY.push(y);
+            this._placedWidths.push(collisionWidth);
+            this._placedHeights.push(collisionHeight);
             if (!entry.root.active) {
                 entry.root.active = true;
+            }
+            if (entry.scale !== labelScale) {
+                entry.scale = labelScale;
+                entry.root.setScale(labelScale, labelScale, 1);
             }
             if (entry.x !== x || entry.y !== y) {
                 entry.x = x;
@@ -155,6 +203,16 @@ export class SwimmerNameOverlay {
             }
         }
     }
+}
+
+// Shared by AI name tags and the player's overhead marker so both retain the
+// same visual hierarchy as broadcast cameras pull in and out.
+export function swimmerHudScaleForDistance(cameraDistance: number): number {
+    const rawScale = Math.max(
+        NAME_MIN_SCALE,
+        Math.min(NAME_MAX_SCALE, Math.sqrt(NAME_REFERENCE_DISTANCE / Math.max(0.01, cameraDistance))),
+    );
+    return Math.round(rawScale / NAME_SCALE_STEP) * NAME_SCALE_STEP;
 }
 
 function fitName(value: string): string {

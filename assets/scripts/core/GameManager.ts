@@ -45,7 +45,7 @@ import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
-import { SwimmerNameOverlay } from '../ui/SwimmerNameOverlay';
+import { SwimmerNameOverlay, swimmerHudScaleForDistance } from '../ui/SwimmerNameOverlay';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
@@ -225,7 +225,11 @@ export class GameManager extends Component {
     private readonly _dialScreenOffsetY = 66;
     private readonly _playerSpeedScreenOffsetY = 52;
     private readonly _playerSpeedTopViewOffsetY = 80;
-    private readonly _playerPreRaceMarkerScreenOffsetY = 18;
+    // The marker's authored triangle reaches 38px above its node origin. Keep
+    // that top edge a small distance below the speed label's lower edge.
+    private readonly _playerMarkerBelowSpeedY = 22;
+    private readonly _playerMarkerVisualTopY = 38;
+    private readonly _playerAwardsMarkerLiftY = 24;
     // Perspective scaling: scale = refDistance / cameraDistance, clamped. At the
     // reference distance the dial is drawn at 1:1; nearer swimmers get a bigger
     // dial, farther ones a smaller one.
@@ -237,8 +241,7 @@ export class GameManager extends Component {
     private readonly _tmpDialScreen = new Vec3();
     private readonly _tmpSpeedLineVanishWorld = new Vec3();
     private _uiCamera: Camera = null;
-    // Player identification stays a constant screen size so it remains readable
-    // when the race camera pulls far back.
+    // Player identification follows the same distance scale as opponent names.
     private _overheadReadout: Node = null;
     private _overheadSpeedLabel: Label = null;
     private _playerOverheadMarker: Node = null;
@@ -488,12 +491,15 @@ export class GameManager extends Component {
         }
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
-        // Roster info panel only during pre-race stage 1 (the wide overview shot);
-        // it fades out as the per-lane close-up sweep begins.
-        this._preRaceIntroPanel.setVisible(
-            !this._modelDebugFlow?.active
-            && this._state === GameState.PRECOUNTDOWN
-            && this._raceCameraDirector.preRacePhase === 'overview',
+        const preRacePhase = this._raceCameraDirector.preRacePhase;
+        this._preRaceIntroPanel.setPhase(
+            this._modelDebugFlow?.active || this._state !== GameState.PRECOUNTDOWN
+                ? 'hidden'
+                : preRacePhase === 'raceInfo'
+                    ? 'raceInfo'
+                    : preRacePhase === 'roster'
+                        ? 'roster'
+                        : 'hidden',
         );
         const awardsActive = this._state === GameState.AWARDS;
         const standingPresentation = this._state === GameState.PRECOUNTDOWN || awardsActive;
@@ -524,7 +530,7 @@ export class GameManager extends Component {
             this._uiCamera,
             raceDistance,
             awardsActive,
-            standingPresentation ? 72 : 30,
+            standingPresentation ? 26 : 20,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
@@ -680,6 +686,7 @@ export class GameManager extends Component {
         this.applyPlayerProgression();
         this.randomizeAiRosterForRestart();
         this._gameFlow?.restartGame();
+        this._swimmerNameOverlay.resetTracking();
     }
 
     // Re-roll the AI lineup before each replay so tapping "再来一次" faces a freshly
@@ -1986,6 +1993,12 @@ export class GameManager extends Component {
             rowBack: swimmer === this._playerSwimmer ? playerRowFrame : normalRowFrame,
         }));
         this._preRaceIntroPanel.populate(entries);
+        const difficulty = getRaceDifficultyConfig();
+        this._preRaceIntroPanel.setRaceInfo({
+            event: `${getRaceDistance()}米自由泳`,
+            format: '标准竞速赛',
+            rule: `${this._netSession ? '联机对战' : `${difficulty.label}难度`} · ${entries.length}名选手 · 率先完成全程者获胜`,
+        });
     }
 
     private scheduleDeferredSceneExtras(pool: Node | null) {
@@ -2503,21 +2516,40 @@ export class GameManager extends Component {
         }
         // Speed and player marker stay at fixed screen size so the main character
         // remains identifiable in the widest camera shots.
+        const speedOffsetY = this._raceCameraDirector.topViewActive
+            ? this._playerSpeedTopViewOffsetY
+            : this._playerSpeedScreenOffsetY;
+        const speedX = Math.round(cx);
+        const speedY = Math.round(this._tmpDialAnchorUi.y + speedOffsetY);
         if (readout?.isValid) {
-            const speedOffsetY = this._raceCameraDirector.topViewActive
-                ? this._playerSpeedTopViewOffsetY
-                : this._playerSpeedScreenOffsetY;
-            readout.setPosition(cx, this._tmpDialAnchorUi.y + speedOffsetY, 0);
-            readout.setScale(1, 1, 1);
+            if (readout.position.x !== speedX || readout.position.y !== speedY) {
+                readout.setPosition(speedX, speedY, 0);
+            }
+            if (readout.scale.x !== 1 || readout.scale.y !== 1) {
+                readout.setScale(1, 1, 1);
+            }
         }
         if (playerMarker?.isValid) {
-            // In top view the swimmer is visually very thin, so leave a larger
-            // gap to keep the triangle tip from covering the character model.
-            const markerOffsetY = this._state === GameState.PRECOUNTDOWN
-                ? this._playerPreRaceMarkerScreenOffsetY
-                : this._raceCameraDirector.topViewActive ? 14 : -8;
-            playerMarker.setPosition(cx, this._tmpDialAnchorUi.y + markerOffsetY, 0);
-            playerMarker.setScale(1, 1, 1);
+            // Share the speed readout's anchor and sit directly below it. The
+            // triangle scales independently, so account for its scaled top edge
+            // when preserving the visual gap below the fixed-size speed text.
+            const markerScale = swimmerHudScaleForDistance(camDistance);
+            const markerX = speedX;
+            const awardsLiftY = this._state === GameState.AWARDS
+                ? this._playerAwardsMarkerLiftY
+                : 0;
+            const markerY = Math.round(
+                speedY
+                    - this._playerMarkerBelowSpeedY
+                    - this._playerMarkerVisualTopY * markerScale
+                    + awardsLiftY,
+            );
+            if (playerMarker.position.x !== markerX || playerMarker.position.y !== markerY) {
+                playerMarker.setPosition(markerX, markerY, 0);
+            }
+            if (playerMarker.scale.x !== markerScale || playerMarker.scale.y !== markerScale) {
+                playerMarker.setScale(markerScale, markerScale, 1);
+            }
         }
     }
 

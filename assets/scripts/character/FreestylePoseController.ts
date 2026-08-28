@@ -757,6 +757,17 @@ export class FreestylePoseController {
         return false;
     }
 
+    // UI markers need the rendered head itself rather than the broader camera
+    // tracking point. The latter blends torso and head positions, which appears
+    // horizontally offset when a standing action leans and the camera orbits.
+    getHeadWorldPosition(out: Vec3): boolean {
+        if (!this._head) {
+            return false;
+        }
+        this._head.getWorldPosition(out);
+        return true;
+    }
+
     // Writes the current world positions of the joints that define the swimmer's
     // lateral footprint. The caller owns/reuses the output vectors, so this is
     // safe to sample every frame without creating garbage.

@@ -10,6 +10,14 @@ export type PreRaceIntroEntry = {
     rowBack: SpriteFrame | null;
 };
 
+export type PreRaceEventInfo = {
+    event: string;
+    format: string;
+    rule: string;
+};
+
+export type PreRaceIntroPhase = 'hidden' | 'raceInfo' | 'roster';
+
 type IntroRow = {
     group: Node;
     back: Sprite;
@@ -24,20 +32,30 @@ const ROW_HEIGHT = 46;
 const HEADER_HEIGHT = 64;
 const PANEL_HEIGHT = HEADER_HEIGHT + MAX_ROWS * ROW_HEIGHT + 28;
 const AVATAR_SIZE = 38;
+const EVENT_PANEL_WIDTH = 760;
+const EVENT_PANEL_HEIGHT = 224;
+const EVENT_HEADER_HEIGHT = 58;
 
 const PLAYER_NAME_COLOR = new Color(255, 214, 44, 255);
 const RIVAL_NAME_COLOR = new Color(226, 236, 250, 255);
 const LANE_COLOR = new Color(150, 205, 255, 255);
 
-// Pre-race stage 1 roster info panel. Styled after the results ranking panel:
-// a header plus one row per lane (lane number + avatar + name). Reuses the
-// results-panel avatar/row-back sprite frames so it needs no new art. Populated
-// from the current roster and faded in/out by the game flow.
+// Pre-race broadcast overlay. Both panels are built once: the centered event
+// card is used during the rising pool-length dolly, then the lane roster fades
+// in near the far end. Runtime updates only switch phase on state edges.
 export class PreRaceIntroPanel {
     private _panel: Node | null = null;
     private _opacity: UIOpacity | null = null;
+    private _eventPanel: Node | null = null;
+    private _eventOpacity: UIOpacity | null = null;
+    private _eventLabel: Label | null = null;
+    private _formatLabel: Label | null = null;
+    private _ruleLabel: Label | null = null;
     private readonly _rows: IntroRow[] = [];
-    private _visible = false;
+    private _phase: PreRaceIntroPhase = 'hidden';
+    private _eventText = '';
+    private _formatText = '';
+    private _ruleText = '';
 
     build(parent: Node, w: number, _h: number): Node {
         const panel = makeUiNode('PreRaceIntroPanel', parent);
@@ -61,7 +79,46 @@ export class PreRaceIntroPanel {
             this._rows.push(this.buildRow(panel, i));
         }
 
+        this.buildEventPanel(parent);
+
         return panel;
+    }
+
+    private buildEventPanel(parent: Node) {
+        const panel = makeUiNode('PreRaceEventPanel', parent);
+        panel.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH, EVENT_PANEL_HEIGHT);
+        panel.setPosition(0, 12, 0);
+        panel.active = false;
+        const opacity = panel.addComponent(UIOpacity);
+        opacity.opacity = 0;
+        this._eventPanel = panel;
+        this._eventOpacity = opacity;
+
+        makeRect('EventBody', panel, EVENT_PANEL_WIDTH, EVENT_PANEL_HEIGHT, uiColor(7, 28, 68, 242));
+        const header = makeRect(
+            'EventHeader',
+            panel,
+            EVENT_PANEL_WIDTH - 120,
+            EVENT_HEADER_HEIGHT,
+            uiColor(194, 39, 48, 250),
+        );
+        header.setPosition(0, EVENT_PANEL_HEIGHT / 2 - EVENT_HEADER_HEIGHT / 2, 0);
+        makeRect('EventHeaderAccent', panel, 18, EVENT_PANEL_HEIGHT, uiColor(57, 170, 225, 255))
+            .setPosition(-EVENT_PANEL_WIDTH / 2 + 9, 0, 0);
+
+        const eventNode = makeLabel('EventName', header, '', 30, uiColor(255, 250, 246));
+        eventNode.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH - 160, EVENT_HEADER_HEIGHT);
+        this._eventLabel = eventNode.getComponent(Label)!;
+
+        const formatNode = makeLabel('EventFormat', panel, '', 50, uiColor(248, 252, 255));
+        formatNode.setPosition(0, 4, 0);
+        formatNode.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH - 80, 74);
+        this._formatLabel = formatNode.getComponent(Label)!;
+
+        const ruleNode = makeLabel('EventRule', panel, '', 22, uiColor(111, 224, 241));
+        ruleNode.setPosition(0, -70, 0);
+        ruleNode.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH - 80, 42);
+        this._ruleLabel = ruleNode.getComponent(Label)!;
     }
 
     private buildRow(panel: Node, index: number): IntroRow {
@@ -103,34 +160,89 @@ export class PreRaceIntroPanel {
             const row = this._rows[i];
             const entry = entries[i];
             if (!entry) {
-                row.group.active = false;
+                if (row.group.active) {
+                    row.group.active = false;
+                }
                 continue;
             }
-            row.group.active = true;
-            row.laneLabel.string = `${entry.lane}`;
-            row.nameLabel.string = entry.name;
-            row.nameLabel.color = entry.isPlayer ? PLAYER_NAME_COLOR : RIVAL_NAME_COLOR;
-            row.back.spriteFrame = entry.rowBack;
-            row.back.node.active = Boolean(entry.rowBack);
-            row.avatar.spriteFrame = entry.avatar;
-            row.avatar.node.active = Boolean(entry.avatar);
-            row.avatar.color = Color.WHITE;
+            if (!row.group.active) {
+                row.group.active = true;
+            }
+            const laneText = `${entry.lane}`;
+            if (row.laneLabel.string !== laneText) {
+                row.laneLabel.string = laneText;
+            }
+            if (row.nameLabel.string !== entry.name) {
+                row.nameLabel.string = entry.name;
+            }
+            const nameColor = entry.isPlayer ? PLAYER_NAME_COLOR : RIVAL_NAME_COLOR;
+            if (!row.nameLabel.color.equals(nameColor)) {
+                row.nameLabel.color = nameColor;
+            }
+            if (row.back.spriteFrame !== entry.rowBack) {
+                row.back.spriteFrame = entry.rowBack;
+            }
+            const rowBackVisible = Boolean(entry.rowBack);
+            if (row.back.node.active !== rowBackVisible) {
+                row.back.node.active = rowBackVisible;
+            }
+            if (row.avatar.spriteFrame !== entry.avatar) {
+                row.avatar.spriteFrame = entry.avatar;
+            }
+            const avatarVisible = Boolean(entry.avatar);
+            if (row.avatar.node.active !== avatarVisible) {
+                row.avatar.node.active = avatarVisible;
+            }
+            if (!row.avatar.color.equals(Color.WHITE)) {
+                row.avatar.color = Color.WHITE;
+            }
         }
     }
 
-    setVisible(visible: boolean) {
-        if (!this._panel || !this._opacity || visible === this._visible) {
+    setRaceInfo(info: PreRaceEventInfo) {
+        if (this._eventLabel && info.event !== this._eventText) {
+            this._eventText = info.event;
+            this._eventLabel.string = info.event;
+        }
+        if (this._formatLabel && info.format !== this._formatText) {
+            this._formatText = info.format;
+            this._formatLabel.string = info.format;
+        }
+        if (this._ruleLabel && info.rule !== this._ruleText) {
+            this._ruleText = info.rule;
+            this._ruleLabel.string = info.rule;
+        }
+    }
+
+    setPhase(phase: PreRaceIntroPhase) {
+        if (phase === this._phase) {
             return;
         }
-        this._visible = visible;
-        Tween.stopAllByTarget(this._opacity);
+        this._phase = phase;
+        this.transitionPanel(this._eventPanel, this._eventOpacity, phase === 'raceInfo');
+        this.transitionPanel(this._panel, this._opacity, phase === 'roster');
+    }
+
+    setVisible(visible: boolean) {
+        this.setPhase(visible ? 'roster' : 'hidden');
+    }
+
+    private transitionPanel(panel: Node | null, opacity: UIOpacity | null, visible: boolean) {
+        if (!panel || !opacity) {
+            return;
+        }
+        Tween.stopAllByTarget(opacity);
         if (visible) {
-            this._panel.active = true;
-            this._opacity.opacity = 0;
-            tween(this._opacity).to(0.25, { opacity: 255 }).start();
+            if (!panel.active) {
+                panel.active = true;
+                opacity.opacity = 0;
+            }
+            tween(opacity).to(0.25, { opacity: 255 }).start();
         } else {
-            const panel = this._panel;
-            tween(this._opacity)
+            if (!panel.active) {
+                return;
+            }
+            tween(opacity)
                 .to(0.25, { opacity: 0 })
                 .call(() => { panel.active = false; })
                 .start();

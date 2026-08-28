@@ -5,7 +5,7 @@ export const RACE_COURSE_LENGTH = 50;
 
 // Once the first racer touches the finish wall, remaining swimmers get this many
 // seconds to also finish. Anyone still in the water when it elapses is recorded
-// as 未完成 (DNF) and shares the last placement.
+// as 未完成 (DNF) and ranked by the distance already covered.
 export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';

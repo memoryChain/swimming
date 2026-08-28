@@ -65,6 +65,7 @@ export type GameFlowRefs = {
 const SPRINT_PUSH_EFFORT = 0.6;
 const SPRINT_GAMBLE_EFFORT = 0.85;
 const LIVE_RANK_REFRESH_SECONDS = 0.2;
+const LATE_DIVE_START_SECONDS = 1.2;
 
 export class GameFlowController {
     private _diveChargeStarted = false;
@@ -78,6 +79,8 @@ export class GameFlowController {
     // Once the opening dive rises close to the surface, switch the swim view to
     // the behind-the-swimmer sprint chase so the steering weave reads clearly.
     private _swimSprintViewApplied = false;
+    private _preRaceDivePrepApplied = false;
+    private _divingElapsed = 0;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
@@ -91,6 +94,8 @@ export class GameFlowController {
         this._sprintTriggered = false;
         this._lastSprintTier = SprintTier.STEADY;
         this._swimSprintViewApplied = false;
+        this._preRaceDivePrepApplied = false;
+        this._divingElapsed = 0;
         this._liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
         this._refs.clearFinishRanks();        this._refs.exitModelDebug(false);
         this._refs.uiFlow.showRaceHud();
@@ -99,10 +104,7 @@ export class GameFlowController {
         this.prepareShowcaseRoster();
         this._refs.raceCameraDirector.setPlayerLaneZ(this._refs.playerSwimmer?.node.position.z ?? 0);
         this._refs.raceCameraDirector.resetToBroadcast();
-        this._refs.raceCameraDirector.startPreCountdownOrbit([
-            this._refs.playerSwimmer?.node.position.z,
-            ...this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).map((swimmer) => swimmer.node.position.z),
-        ].filter((laneZ): laneZ is number => laneZ !== undefined));
+        this._refs.raceCameraDirector.startPreRacePresentation();
         this._refs.setState(GameState.PRECOUNTDOWN);
     }
 
@@ -110,11 +112,11 @@ export class GameFlowController {
         if (this._refs.getState() !== GameState.PRECOUNTDOWN) {
             return;
         }
-        this.prepareShowcaseRoster();
-        this._refs.raceCameraDirector.updatePreCountdownRacerLanes([
-            this._refs.playerSwimmer?.node.position.z,
-            ...this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).map((swimmer) => swimmer.node.position.z),
-        ].filter((laneZ): laneZ is number => laneZ !== undefined));
+        if (this._preRaceDivePrepApplied) {
+            this.prepareDiveRoster();
+        } else {
+            this.prepareShowcaseRoster();
+        }
         this._refs.debug(`pre-race showcase roster refreshed racers=${1 + this._refs.aiSwimmers.filter((swimmer) => swimmer.node.active).length}`);
     }
 
@@ -238,7 +240,7 @@ export class GameFlowController {
         if (this._refs.getState() !== GameState.PRECOUNTDOWN) {
             return;
         }
-        if (!this._refs.raceCameraDirector.skipPreCountdownShowcase()) {
+        if (!this._refs.raceCameraDirector.skipPreRacePresentation()) {
             return;
         }
         this._refs.debug('pre-race showcase skipped by player');
@@ -272,20 +274,15 @@ export class GameFlowController {
             this._refs.debug(`state=${state}`);
             if (state === GameState.COUNTDOWN) {
                 this.resetDiveCharge();
-                this._refs.playerSwimmer?.prepareDive();
-                for (const swimmer of this._refs.aiSwimmers) {
-                    if (swimmer.node.active) {
-                        swimmer.prepareDive();
-                    }
+                if (!this._preRaceDivePrepApplied) {
+                    this._preRaceDivePrepApplied = true;
+                    this.prepareDiveRoster();
                 }
                 this._refs.raceCameraDirector.resetCountdownTimers();
             }
             if (state === GameState.DIVING) {
-                if (this._diveChargeStarted) {
-                    this._refs.uiFlow.showDiveCharging();
-                } else {
-                    this._refs.uiFlow.showDivePrompt();
-                }
+                this._divingElapsed = 0;
+                this._refs.uiFlow.showGo();
                 this.prepareAndScheduleAiDives();
             }
             if (state === GameState.GLIDING) {
@@ -372,8 +369,6 @@ export class GameFlowController {
         raceManager.onDiveReady = () => {
             if (this._diveChargeStarted) {
                 this.commitDive(this._diveChargePower, 'countdown-end auto');
-            } else {
-                this._refs.uiFlow.showDivePrompt();
             }
         };
     }
@@ -405,6 +400,9 @@ export class GameFlowController {
     }
 
     updateRaceCamera(dt: number) {
+        if (this._refs.getState() === GameState.DIVING) {
+            this._divingElapsed += Math.max(0, dt);
+        }
         this.updateDiveCharge(dt);
         const playerSwimmer = this._refs.playerSwimmer;
         if (!playerSwimmer) {
@@ -467,6 +465,13 @@ export class GameFlowController {
             this._refs.raceCameraDirector.selectMode(RaceCameraMode.Sprint, true);
         }
         this._refs.raceCameraDirector.update(dt, cameraSnapshot);
+        if (this._refs.getState() === GameState.PRECOUNTDOWN
+            && this._refs.raceCameraDirector.preRacePhase === 'athlete'
+            && !this._preRaceDivePrepApplied) {
+            this._preRaceDivePrepApplied = true;
+            this.prepareDiveRoster();
+            this._refs.debug('pre-race showcase transitioned to dive prep');
+        }
         // Speed lines: normally only in the sprint chase (not top/underwater). Also
         // force them ON while the player is airborne during a dolphin jump — the
         // burst out of the water shows speed lines until it re-enters the water.
@@ -511,6 +516,15 @@ export class GameFlowController {
             swimmer.prepareShowcaseStanding();
         }
         this._refs.debug(`showcase actions=${actions.join(',')}`);
+    }
+
+    private prepareDiveRoster() {
+        this._refs.playerSwimmer?.prepareDive();
+        for (const swimmer of this._refs.aiSwimmers) {
+            if (swimmer.node.active) {
+                swimmer.prepareDive();
+            }
+        }
     }
 
     startAllAi() {
@@ -614,7 +628,7 @@ export class GameFlowController {
         // Swimmer.performDive switches it to the release burst on the exact
         // take-off frame, so there is no empty visual gap after input release.
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
-        this._refs.uiFlow.showDiveRelease(power);
+        this._refs.uiFlow.showDiveRelease(power, this._divingElapsed > LATE_DIVE_START_SECONDS);
         this._refs.raceCameraDirector.startDiveShot();
         const diveResult = resolveDiveResult(power);
         const diveSpeedScale = this._refs.playerDiveSpeedScale();

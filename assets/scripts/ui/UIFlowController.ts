@@ -93,6 +93,10 @@ export class UIFlowController {
         this._refs.uiController?.showCountdown(value);
     }
 
+    showGo() {
+        this._refs.uiController?.showGo();
+    }
+
     hideCountdown() {
         this._refs.uiController?.hideCountdown();
     }
@@ -109,8 +113,8 @@ export class UIFlowController {
         this._refs.uiController?.showDiveCharging();
     }
 
-    showDiveRelease(power: number) {
-        this._refs.uiController?.showDiveRelease(power);
+    showDiveRelease(power: number, late: boolean) {
+        this._refs.uiController?.showDiveRelease(power, late);
     }
 
     updateDiveCharge(power: number, visible: boolean) {
