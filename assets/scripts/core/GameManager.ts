@@ -530,7 +530,7 @@ export class GameManager extends Component {
             this._uiCamera,
             raceDistance,
             awardsActive,
-            standingPresentation ? 26 : 20,
+            awardsActive ? 48 : standingPresentation ? 26 : 20,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
