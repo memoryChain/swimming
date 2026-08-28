@@ -25,7 +25,7 @@ export const WATER_COLOR_TUNING = {
     // surface. The shader treats rgb as a normalized spectral filter rather than
     // a replacement colour, so black suits stay dark and skin retains some warmth.
     bodyR: 54, bodyG: 144, bodyB: 205,
-    bodyStrength: 0.42,
+    bodyStrength: 0.30,
     // The same transmission seen by a SUBMERGED camera. Near underwater footage
     // is white-balanced and preserves much more local skin/suit colour than a view
     // through the surface, so this filter is gentler and less saturated.
@@ -35,8 +35,8 @@ export const WATER_COLOR_TUNING = {
     // direct-light multiplier that blew upper surfaces out to grey-white.
     underLightMin: 0.34,
     underLightMax: 1.06,
-    surfaceLightMin: 0.30,
-    surfaceLightMax: 0.82,
+    surfaceLightMin: 0.56,
+    surfaceLightMax: 0.96,
     // Luminance-preserving blue fill applied mainly to the body's dark regions.
     // The above-water view gets a little more so its strongly darkened submerged
     // torso reads as being in water rather than as plain brown shadow.

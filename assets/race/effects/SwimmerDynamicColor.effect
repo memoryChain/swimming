@@ -21,13 +21,13 @@ CCEffect %{
         # Above-water camera looking through the surface: rgb defines a normalized
         # spectral transmission filter, a = filter strength. Multiplicative filtering
         # preserves material identity (especially black suits) unlike a flat blue mix.
-        underwaterColor: { value: [0.212, 0.565, 0.804, 0.42], linear: true, editor: { type: color } }
+        underwaterColor: { value: [0.212, 0.565, 0.804, 0.30], linear: true, editor: { type: color } }
         # Submerged camera: gentler, white-balanced transmission that keeps nearby
         # skin warm, matching real underwater broadcast footage.
         underwaterViewColor: { value: [0.408, 0.675, 0.808, 0.24], linear: true, editor: { type: color } }
         # x/y = submerged-camera top-light min/max; z/w = above-water-camera min/max.
         # Both ranges are deliberately soft and never approach the old 1.8x blowout.
-        underwaterLightParams: { value: [0.34, 1.06, 0.30, 0.82] }
+        underwaterLightParams: { value: [0.34, 1.06, 0.56, 0.96] }
         # Luminance-preserving blue fill for dark body regions:
         # x = submerged-camera strength, y = above-water-camera strength.
         underwaterShadowParams: { value: [0.10, 0.14, 0.0, 0.0] }
