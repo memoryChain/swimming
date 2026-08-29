@@ -6,12 +6,13 @@
 // It subscribes to PlayerData and refreshes automatically whenever the balance
 // changes. Do NOT add it to the race HUD.
 
-import { Button, Label, Node, resources, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
+import { Button, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
 import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PlayerProfile } from '../backend/PlayerProfile';
 import { PlayerData } from '../backend/PlayerData';
 import { UI_STYLE } from './UIStyle';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
@@ -22,14 +23,14 @@ export interface ResourceHeadBarOptions {
     onOpenSettings?: () => void;
 }
 
-const BAR_WIDTH = 190;
-const BAR_HEIGHT = 52;
+const BAR_WIDTH = 198;
+const BAR_HEIGHT = 56;
 const BACK_WIDTH = 84;
 const BACK_HEIGHT = 52;
-const IDENTITY_WIDTH = 253;
-const IDENTITY_HEIGHT = 80;
-const EDGE_PADDING = 35;
-const RIGHT_PADDING = 31;
+const IDENTITY_WIDTH = 227;
+const IDENTITY_HEIGHT = 86;
+const EDGE_PADDING = 33;
+const RIGHT_PADDING = 27;
 const BACK_GAP = 12;
 
 // Vertical band (px from the top of the design-resolution canvas) reserved by the
@@ -57,7 +58,7 @@ export class ResourceHeadBar {
         root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
         this._root = root;
 
-        const topY = designHeight / 2 - 12 - IDENTITY_HEIGHT / 2;
+        const topY = designHeight / 2 - 10 - IDENTITY_HEIGHT / 2;
 
         // Back button, top-left corner. Compact; hidden until a screen provides a back
         // target via setBack(). It sits to the LEFT of the identity (which shifts right
@@ -76,45 +77,42 @@ export class ResourceHeadBar {
         const identity = makeUiNode('Identity', root);
         identity.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH, IDENTITY_HEIGHT);
         identity.setPosition(this._identityXDefault, topY, 0);
-        makeLoginSprite('Plate', identity, RESOURCE_PATHS.loginUi.playerPlate, IDENTITY_WIDTH, IDENTITY_HEIGHT, 0, 0);
+        makeLoginSprite('Artwork', identity, RESOURCE_PATHS.lobbyUi.topPlayer, IDENTITY_WIDTH, IDENTITY_HEIGHT, 0, 0);
         identity.on(Node.EventType.TOUCH_END, () => options.onEditIdentity?.());
-        makeLoginSprite('Avatar', identity, RESOURCE_PATHS.loginUi.avatar, 75, 75, -89, 0);
         const nameNode = makeLabel('Name', identity, '', 20, uiColor(240, 250, 255, 255));
         const nameLabel = nameNode.getComponent(Label)!;
         nameLabel.fontFamily = 'PingFang SC';
+        nameLabel.isBold = true;
         nameLabel.lineHeight = 26;
         nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
         nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
         nameLabel.overflow = Label.Overflow.SHRINK;
-        nameNode.getComponent(UITransform)!.setContentSize(150, 36);
-        nameNode.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        nameNode.setPosition(-38.5, 0, 1);
+        nameNode.getComponent(UITransform)!.setContentSize(130, 38);
+        nameNode.setPosition(41.5, 0, 1);
         this._nameLabel = nameLabel;
         this._identity = identity;
 
         const pill = makeUiNode('ResourcePill', root);
         pill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
         pill.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH / 2, topY, 0);
-        makeLoginSprite('Plate', pill, RESOURCE_PATHS.loginUi.currencyPlate, BAR_WIDTH, BAR_HEIGHT, 0, 0);
-        makeLoginSprite('CurrencyIcon', pill, RESOURCE_PATHS.loginUi.currencyIcon, 36, 36, -65, 0);
+        makeLoginSprite('Artwork', pill, RESOURCE_PATHS.lobbyUi.topCurrency, BAR_WIDTH, BAR_HEIGHT, 0, 0);
 
         // "游泳卡 N" count text.
         const countNode = makeLabel('Count', pill, '', 22, uiColor(240, 250, 255, 255));
         const countLabel = countNode.getComponent(Label)!;
-        countLabel.fontFamily = 'PingFang SC';
-        countLabel.lineHeight = 30;
-        countLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        countLabel.fontFamily = 'Arial Black';
+        countLabel.isBold = true;
+        countLabel.lineHeight = 28;
+        countLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         countLabel.verticalAlign = Label.VerticalAlign.CENTER;
         countLabel.overflow = Label.Overflow.SHRINK;
-        countNode.getComponent(UITransform)!.setContentSize(82, 36);
-        countNode.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
-        countNode.setPosition(-34, 0, 1);
+        countNode.getComponent(UITransform)!.setContentSize(80, 38);
+        countNode.setPosition(-3, 0, 1);
         this._countLabel = countLabel;
 
         const addButton = makeUiNode('Add', pill);
         addButton.getComponent(UITransform)!.setContentSize(48, 48);
-        addButton.setPosition(68, 0, 1);
-        makeLoginSprite('Icon', addButton, RESOURCE_PATHS.loginUi.plusIcon, 37, 37, 0, 0);
+        addButton.setPosition(70.5, 0, 1);
         addButton.addComponent(Button).transition = Button.Transition.NONE;
         addButton.on(Node.EventType.TOUCH_END, () => options.onAddCoins?.());
 
@@ -123,9 +121,9 @@ export class ResourceHeadBar {
         if (options.onOpenSettings) {
             const settingsButton = makeUiNode('SettingsButton', root);
             settingsButton.getComponent(UITransform)!.setContentSize(52, 52);
-            settingsButton.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH - 8 - 26, topY, 0);
-            makeLoginSprite('Plate', settingsButton, RESOURCE_PATHS.loginUi.settingsPlate, 52, 52, 0, 0);
-            makeLoginSprite('Icon', settingsButton, RESOURCE_PATHS.loginUi.settingsIcon, 28, 28, 0, 0);
+            settingsButton.getComponent(UITransform)!.setContentSize(56, 56);
+            settingsButton.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH - 28, topY, 0);
+            makeLoginSprite('Artwork', settingsButton, RESOURCE_PATHS.lobbyUi.topSettings, 56, 56, 0, 0);
             const settingsBtn = settingsButton.addComponent(Button);
             settingsBtn.target = settingsButton;
             settingsBtn.interactable = true;
@@ -194,7 +192,7 @@ function makeLoginSprite(name: string, parent: Node, path: string, width: number
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     sprite.trim = false;
-    resources.load(path, Texture2D, (error, texture) => {
+    loadRaceAsset(path, Texture2D, (error, texture) => {
         if (!error && texture && node.isValid && sprite.isValid) {
             const frame = new SpriteFrame();
             frame.texture = texture;

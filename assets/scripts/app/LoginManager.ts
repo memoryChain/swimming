@@ -211,13 +211,13 @@ export class LoginManager extends Component {
             onCharacterManagementChanged: (active) => {
                 this._headBar?.setBack(active
                     ? () => this._prepareRaceFlow?.showReadyScreen()
-                    : () => this.exitPrepareRace());
+                    : null);
             },
         });
         this._prepareRaceFlow.showReadyScreen();
-        // Integrate the back action into the headbar (top-left) so it never clashes
-        // with the prepare-race UI.
-        this._headBar?.setBack(() => this.exitPrepareRace());
+        // The approved lobby composition has no back button. Character management
+        // supplies its own temporary return action through the callback above.
+        this._headBar?.setBack(null);
     }
 
     private exitPrepareRace() {

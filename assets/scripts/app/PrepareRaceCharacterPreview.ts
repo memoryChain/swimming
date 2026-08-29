@@ -10,11 +10,15 @@ import { findPlayerCharacter, PlayerCharacterId, selectedPlayerColorScheme, sele
 
 const { ccclass } = _decorator;
 const PREVIEW_CHARACTER_SCALE = 1.3;
+const LOBBY_CHARACTER_SCALE = 1.58;
 const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
 // Small lift of the showcase model so the central preview reads slightly higher
 // on the prepare-race screen. Paired with PREPARE_RACE_MODEL_LIFT (px) in
 // PrepareRaceFlow, which moves the floor shadow and rotate surface the same way.
 const PREVIEW_CHARACTER_LIFT = 0.2;
+const PREVIEW_CAMERA_TARGET = new Vec3(0, 0.88, 0);
+const LOBBY_CAMERA_TARGET = new Vec3(0.28, 1.04, 0);
+const LOBBY_FRONT_YAW_DEGREES = -37.3;
 const SHADOW_SILHOUETTE_LAYER = 1 << 22;
 const SHADOW_TEXTURE_SIZE = 192;
 const CHARACTER_SELECT_ACTIONS: readonly CharacterAction[] = [
@@ -42,11 +46,28 @@ export class PrepareRaceCharacterPreview extends Component {
     private _showcaseActionLoadToken = 0;
     private _selectedCharacterId = '';
     private _showcaseAction = CharacterAction.ArmStretching;
+    private _lobbyPresentation = false;
+    private _shadowCaptureEnabled = true;
     private readonly _modelPivot = new Vec3();
     private readonly _groundShadowPosition = new Vec3();
 
     get shadowTexture(): RenderTexture | null {
         return this._shadowTexture;
+    }
+
+    setLobbyPresentation(enabled: boolean) {
+        if (this._lobbyPresentation === enabled) return;
+        this._lobbyPresentation = enabled;
+        this._shadowCaptureEnabled = !enabled;
+        const scale = enabled ? LOBBY_CHARACTER_SCALE : PREVIEW_CHARACTER_SCALE;
+        if (this._pivotNode?.isValid && this._pivotNode.scale.x !== scale) {
+            this._pivotNode.setScale(scale, scale, scale);
+        }
+        this._yawDegrees = enabled ? LOBBY_FRONT_YAW_DEGREES : 0;
+        this._pivotNode?.setRotationFromEuler(0, this._yawDegrees, 0);
+        this._cameraNode?.lookAt(enabled ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
+        if (this._shadowCamera) this._shadowCamera.enabled = this._shadowCaptureEnabled;
+        if (this._shadowCaptureEnabled && this._rig && !this._shadowCamera) this.ensureShadowCapture();
     }
 
     onLoad() {
@@ -78,7 +99,8 @@ export class PrepareRaceCharacterPreview extends Component {
         // The flat locker-room backdrop reads its foreground floor near the
         // rotation hint. Place the preview there and scale it up so the
         // character feels present in the room instead of far away in the door.
-        pivot.setScale(PREVIEW_CHARACTER_SCALE, PREVIEW_CHARACTER_SCALE, PREVIEW_CHARACTER_SCALE);
+        const presentationScale = this._lobbyPresentation ? LOBBY_CHARACTER_SCALE : PREVIEW_CHARACTER_SCALE;
+        pivot.setScale(presentationScale, presentationScale, presentationScale);
         const swimmer = new Node('PrepareRaceSelectedCharacter');
         swimmer.layer = Layers.Enum.DEFAULT;
         swimmer.setParent(pivot);
@@ -105,7 +127,7 @@ export class PrepareRaceCharacterPreview extends Component {
         this._swimmerNode = swimmer;
         this._rig = rig;
         this.applyAppearance();
-        this.ensureShadowCapture();
+        if (this._shadowCaptureEnabled) this.ensureShadowCapture();
         this._centered = false;
         this.loadShowcaseAction(rig, this._showcaseAction);
     }
@@ -167,7 +189,7 @@ export class PrepareRaceCharacterPreview extends Component {
         cameraNode.layer = Layers.Enum.DEFAULT;
         cameraNode.setParent(this.node);
         cameraNode.setPosition(3.5, 1.5, 4.6);
-        cameraNode.lookAt(new Vec3(0, 0.88, 0));
+        cameraNode.lookAt(this._lobbyPresentation ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
         const camera = cameraNode.addComponent(Camera);
         camera.projection = Camera.ProjectionType.PERSPECTIVE;
         camera.visibility = Layers.BitMask.DEFAULT;
@@ -217,6 +239,7 @@ export class PrepareRaceCharacterPreview extends Component {
     }
 
     private updateShadowCapture() {
+        if (!this._shadowCaptureEnabled) return;
         if (!this._rig?.getGroundContactWorldPosition(this._groundShadowPosition)) {
             return;
         }

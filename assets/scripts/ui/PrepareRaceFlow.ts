@@ -52,9 +52,8 @@ type CharacterInspectorTab = 'attributes' | 'appearance';
 
 type RaceModeCardView = {
     id: RaceDifficulty;
-    background: Graphics;
-    title: Label;
-    description: Label;
+    root: Node;
+    selectedFrame: Node;
     selected: boolean;
 };
 
@@ -97,6 +96,10 @@ const CHARACTER_CARD_HEIGHT = 142;
 const CHARACTER_CARD_X_PITCH = 144;
 const CHARACTER_CARD_Y_PITCH = 154;
 const SWATCH_SIZE = 42;
+const RACE_MODE_CARD_VISIBLE_HEIGHT = 164;
+const RACE_MODE_CARD_UNSELECTED_SCALE = 0.8;
+const RACE_MODE_CARD_GAP = 7;
+const RACE_MODE_STACK_TOP_Y = 240;
 
 export class PrepareRaceFlow {
     private _root: Node | null = null;
@@ -230,7 +233,7 @@ export class PrepareRaceFlow {
         const image = makeUiNode('PrepareRaceBackgroundImage', root);
         image.getComponent(UITransform)!.setContentSize(this._width, this._height);
         image.setPosition(0, 0, 1);
-        loadRaceAsset(RESOURCE_PATHS.prepareRaceBackground, Texture2D, (error, texture) => {
+        loadRaceAsset(RESOURCE_PATHS.lobbyUi.background, Texture2D, (error, texture) => {
             if (error || !texture || !image.isValid) {
                 console.warn('[SpeedSwimming] prepare-race background texture failed to load', error);
                 return;
@@ -253,28 +256,35 @@ export class PrepareRaceFlow {
     }
 
     private buildReadyCharacterPanel(parent: Node): void {
-        const panel = makeRoundedRect('ReadyCharacterPanel', parent, 320, 390, PANEL, 16, UI_STYLE.cyanOutline, 1.5);
-        panel.setPosition(-456, -8, 2);
-        this._readyName = makeBoundLabel('CharacterName', panel, '', 28, WHITE, 230, 40, -22, 148, Label.HorizontalAlign.LEFT);
-        this._readyLevel = makeBoundLabel('CharacterLevel', panel, '', 18, ACCENT, 74, 28, 106, 148, Label.HorizontalAlign.RIGHT);
+        makeRaceTextureSprite('ReadyCharacterPanel', parent, RESOURCE_PATHS.lobbyUi.characterPanel, 338, 244, -454, 95, 2);
+        this._readyName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 188, 38, -484, 162, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(this._readyName, 'PingFang SC', true, 36);
+        this._readyLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 64, 28, -335, 165);
+        stylePsdRuntimeLabel(this._readyLevel, 'Arial Black', true, 22);
 
         const statNames = ['体力', '技巧', '爆发'];
+        const statY = [107, 62, 17];
         for (let index = 0; index < statNames.length; index++) {
-            const y = 86 - index * 52;
-            makeStatIcon(`StatIcon${index}`, panel, -118, y, index);
-            makeBoundLabel(`StatName${index}`, panel, statNames[index], 20, WHITE, 80, 30, -58, y, Label.HorizontalAlign.LEFT);
-            this._readyStats.push(makeBoundLabel(`StatValue${index}`, panel, '', 21, WHITE, 86, 30, 90, y, Label.HorizontalAlign.RIGHT));
+            const statName = makeBoundLabel(`StatName${index}`, parent, statNames[index], 18, uiColor(31, 43, 62), 92, 28, -488, statY[index], Label.HorizontalAlign.LEFT);
+            stylePsdRuntimeLabel(statName, 'PingFang SC', true, 24);
+            const statValue = makeBoundLabel(`StatValue${index}`, parent, '', 19, uiColor(31, 43, 62), 82, 28, -357, statY[index], Label.HorizontalAlign.RIGHT);
+            stylePsdRuntimeLabel(statValue, 'Arial Black', true, 24);
+            this._readyStats.push(statValue);
         }
 
-        const skill = makeRoundedRect('SkillCard', panel, 286, 104, PANEL_ALT, 12);
-        skill.setPosition(0, -94, 1);
-        makePrototypeSkillIcon(skill, -105, 0);
-        this._readySkillName = makeBoundLabel('SkillName', skill, '', 20, WHITE, 176, 28, 30, 22, Label.HorizontalAlign.LEFT);
-        this._readySkillDescription = makeBoundLabel('SkillDescription', skill, '', 14, uiColor(214, 232, 246), 176, 46, 30, -18, Label.HorizontalAlign.LEFT);
+        makeRaceTextureSprite('ReadySkillCard', parent, RESOURCE_PATHS.lobbyUi.skillCard, 320, 145, -445, -98.5, 2);
+        const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 70, 24, -545, -42);
+        stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 21);
+        this._readySkillName = makeBoundLabel('SkillName', parent, '', 20, DARK_TEXT, 190, 28, -405, -90, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(this._readySkillName, 'PingFang SC', true, 27);
+        this._readySkillDescription = makeBoundLabel('SkillDescription', parent, '', 14, uiColor(72, 82, 98), 190, 42, -405, -126, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(this._readySkillDescription, 'PingFang SC', false, 20);
+        this._readySkillDescription.overflow = Label.Overflow.CLAMP;
+        this._readySkillDescription.enableWrapText = true;
 
-        const manage = makeRoundedButton('MyCharactersButton', parent, 270, 58, uiColor(255, 190, 24), '我的角色');
-        manage.setPosition(-456, -250, 3);
-        styleButtonLabel(manage, 23, DARK_TEXT);
+        const manage = makeRaceTextureButton('MyCharactersButton', parent, RESOURCE_PATHS.lobbyUi.characterButton, 312, 70, -446, -220, 3);
+        const manageLabel = makeBoundLabel('Label', manage, '角色养成', 24, DARK_TEXT, 150, 36, -8, 0);
+        stylePsdRuntimeLabel(manageLabel, 'PingFang SC', true, 32);
         manage.on(Button.EventType.CLICK, () => this.showCharacterManagement());
     }
 
@@ -283,7 +293,7 @@ export class PrepareRaceFlow {
         if (!character) return;
         const level = getProgressionManager().getCharacterLevel(character.id);
         setLabelString(this._readyName, character.name);
-        setLabelString(this._readyLevel, `Lv.${level}`);
+        setLabelString(this._readyLevel, `LV.${level}`);
         const values = [character.stamina, character.technique, character.burst];
         for (let index = 0; index < this._readyStats.length; index++) {
             setLabelString(this._readyStats[index], `${values[index]}`);
@@ -293,23 +303,31 @@ export class PrepareRaceFlow {
     }
 
     private buildRaceModeList(parent: Node): void {
-        const centerX = 455;
-        makeBoundLabel('RaceModeHeading', parent, '比赛模式', 24, WHITE, 300, 36, centerX, 234);
         const selected = getSelectedRaceDifficulty();
         for (let index = 0; index < RACE_DIFFICULTY_OPTIONS.length; index++) {
             const option = RACE_DIFFICULTY_OPTIONS[index];
-            const card = makeRoundedRect(`RaceMode_${option.id}`, parent, 310, 94, PANEL, 14, UI_STYLE.cyanOutline, 1.5);
-            card.setPosition(centerX, 164 - index * 106, 3);
+            const card = makeUiNode(`RaceMode_${option.id}`, parent);
+            card.getComponent(UITransform)!.setContentSize(410, 170);
+            const artPath = option.id === 'beginner'
+                ? RESOURCE_PATHS.lobbyUi.modeBeginner
+                : option.id === 'championship'
+                    ? RESOURCE_PATHS.lobbyUi.modeChampionship
+                    : RESOURCE_PATHS.lobbyUi.modeStandard;
+            makeRaceTextureSprite('Artwork', card, artPath, 410, 170, 0, 0, 1);
+            const selectedFrame = makeRaceTextureSprite('SelectedFrame', card, RESOURCE_PATHS.lobbyUi.modeSelectedFrame, 410, 170, 0, 0, 2);
             const button = card.addComponent(Button);
             button.target = card;
             button.transition = Button.Transition.NONE;
-            const title = makeBoundLabel('Title', card, raceDifficultyTitle(option.id), 23, WHITE, 270, 32, -4, 20, Label.HorizontalAlign.LEFT);
-            const description = makeBoundLabel('Description', card, `200米 · ${raceDifficultyDescription(option.id)}`, 15, uiColor(215, 238, 248), 270, 30, -4, -20, Label.HorizontalAlign.LEFT);
-            const view: RaceModeCardView = { id: option.id, background: card.getComponent(Graphics)!, title, description, selected: option.id === selected };
+            const title = makeBoundLabel('Title', card, raceDifficultyTitle(option.id), 25, DARK_TEXT, 260, 34, -61, -59, Label.HorizontalAlign.LEFT);
+            stylePsdRuntimeLabel(title, 'PingFang SC', true, 32);
+            const distance = makeBoundLabel('Distance', card, raceDifficultyDistance(option.id), 20, DARK_TEXT, 78, 32, 155, -59, Label.HorizontalAlign.RIGHT);
+            stylePsdRuntimeLabel(distance, 'Arial Black', true, 27);
+            const view: RaceModeCardView = { id: option.id, root: card, selectedFrame, selected: option.id === selected };
             this._raceModeCards.push(view);
-            this.drawRaceModeCard(view);
+            this.applyRaceModeCardSelection(view);
             card.on(Button.EventType.CLICK, () => this.selectRaceDifficulty(option.id));
         }
+        this.layoutRaceModeCards();
     }
 
     private selectRaceDifficulty(difficulty: RaceDifficulty): void {
@@ -319,34 +337,39 @@ export class PrepareRaceFlow {
             const selected = card.id === difficulty;
             if (card.selected === selected) continue;
             card.selected = selected;
-            this.drawRaceModeCard(card);
+            this.applyRaceModeCardSelection(card);
+        }
+        this.layoutRaceModeCards();
+    }
+
+    private applyRaceModeCardSelection(card: RaceModeCardView): void {
+        const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
+        const x = card.selected ? 408 : 447;
+        if (card.root.scale.x !== scale || card.root.scale.y !== scale) card.root.setScale(scale, scale, card.root.scale.z);
+        if (card.root.position.x !== x) card.root.setPosition(x, card.root.position.y, card.root.position.z);
+        setNodeActive(card.selectedFrame, card.selected);
+    }
+
+    private layoutRaceModeCards(): void {
+        let topY = RACE_MODE_STACK_TOP_Y;
+        for (const card of this._raceModeCards) {
+            const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
+            const visibleHeight = RACE_MODE_CARD_VISIBLE_HEIGHT * scale;
+            const y = topY - visibleHeight / 2;
+            if (card.root.position.y !== y) card.root.setPosition(card.root.position.x, y, card.root.position.z);
+            topY = y - visibleHeight / 2 - RACE_MODE_CARD_GAP;
         }
     }
 
-    private drawRaceModeCard(card: RaceModeCardView): void {
-        const gfx = card.background;
-        if (!gfx?.isValid) return;
-        gfx.clear();
-        gfx.fillColor = card.selected ? uiColor(255, 190, 24, 245) : PANEL;
-        gfx.roundRect(-155, -47, 310, 94, 14);
-        gfx.fill();
-        gfx.strokeColor = card.selected ? uiColor(255, 238, 140) : UI_STYLE.cyanOutline;
-        gfx.lineWidth = card.selected ? 3 : 1.5;
-        gfx.roundRect(-153.5, -45.5, 307, 91, 12.5);
-        gfx.stroke();
-        setLabelColor(card.title, card.selected ? DARK_TEXT : WHITE);
-        setLabelColor(card.description, card.selected ? uiColor(6, 35, 54, 220) : uiColor(215, 238, 248));
-    }
-
     private buildReadyActions(parent: Node): void {
-        const room = makeRoundedButton('FriendRoomButton', parent, 106, 76, PANEL_ALT, '好友\n开黑');
-        room.setPosition(335, -292, 3);
-        styleButtonLabel(room, 18, WHITE);
+        const room = makeRaceTextureButton('FriendRoomButton', parent, RESOURCE_PATHS.lobbyUi.onlineButton, 102, 102, 236, -287, 3);
+        const roomLabel = makeBoundLabel('Label', room, '联机', 18, DARK_TEXT, 64, 26, 0, -9);
+        stylePsdRuntimeLabel(roomLabel, 'PingFang SC', true, 24);
         room.on(Button.EventType.CLICK, () => this._callbacks.onOpenRoom());
 
-        const start = makeRoundedButton('StartRaceButton', parent, 260, 76, uiColor(183, 255, 0), '开始比赛');
-        start.setPosition(520, -292, 3);
-        styleButtonLabel(start, 28, DARK_TEXT);
+        const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.lobbyUi.startButton, 332, 102, 448, -287, 3);
+        const startLabel = makeBoundLabel('Label', start, '开始比赛', 38, DARK_TEXT, 220, 54, -4, 0);
+        stylePsdRuntimeLabel(startLabel, 'PingFang SC', true, 48);
         start.on(Button.EventType.CLICK, () => {
             setRaceDifficulty(getSelectedRaceDifficulty());
             this._callbacks.onStartRace();
@@ -668,26 +691,29 @@ export class PrepareRaceFlow {
     }
 
     private buildPreviewPresentation(parent: Node): void {
-        const contact = makeUiNode('CharacterContactShadow', parent);
-        contact.getComponent(UITransform)!.setContentSize(178, 42);
-        contact.setPosition(0, READY_MODEL_SHADOW_Y, 1);
-        const contactGraphics = contact.addComponent(Graphics);
-        contactGraphics.fillColor = uiColor(4, 13, 26, 78);
-        contactGraphics.ellipse(0, 0, 86, 18);
-        contactGraphics.fill();
-        contactGraphics.fillColor = uiColor(2, 8, 16, 104);
-        contactGraphics.ellipse(0, 0, 55, 10);
-        contactGraphics.fill();
+        const previewX = this._view === 'ready' ? -45 : 0;
+        if (this._view !== 'ready') {
+            const contact = makeUiNode('CharacterContactShadow', parent);
+            contact.getComponent(UITransform)!.setContentSize(178, 42);
+            contact.setPosition(previewX, READY_MODEL_SHADOW_Y, 1);
+            const contactGraphics = contact.addComponent(Graphics);
+            contactGraphics.fillColor = uiColor(4, 13, 26, 78);
+            contactGraphics.ellipse(0, 0, 86, 18);
+            contactGraphics.fill();
+            contactGraphics.fillColor = uiColor(2, 8, 16, 104);
+            contactGraphics.ellipse(0, 0, 55, 10);
+            contactGraphics.fill();
 
-        const shadow = makeUiNode('CharacterRealtimeShadow', parent);
-        shadow.getComponent(UITransform)!.setContentSize(170, 48);
-        shadow.setPosition(0, READY_MODEL_SHADOW_Y, 2);
-        this._shadowSprite = shadow.addComponent(Sprite);
-        this._shadowSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            const shadow = makeUiNode('CharacterRealtimeShadow', parent);
+            shadow.getComponent(UITransform)!.setContentSize(170, 48);
+            shadow.setPosition(previewX, READY_MODEL_SHADOW_Y, 2);
+            this._shadowSprite = shadow.addComponent(Sprite);
+            this._shadowSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        }
 
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
         rotateArea.getComponent(UITransform)!.setContentSize(400, 470);
-        rotateArea.setPosition(0, -4, 2);
+        rotateArea.setPosition(previewX, -4, 2);
         rotateArea.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginPreviewRotation(event));
         rotateArea.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => this.updatePreviewRotation(event));
         rotateArea.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.endPreviewRotation(event));
@@ -697,6 +723,7 @@ export class PrepareRaceFlow {
     private presentCharacter(characterId: PlayerCharacterId | null): void {
         if (!characterId) return;
         this.ensurePreview();
+        this._preview?.setLobbyPresentation(this._view === 'ready');
         setNodeActive(this._previewRoot, true);
         this._preview?.refresh(characterId);
         const shadowTexture = this._preview?.shadowTexture;
@@ -828,10 +855,63 @@ function raceDifficultyTitle(difficulty: RaceDifficulty): string {
     return '竞技泳道';
 }
 
-function raceDifficultyDescription(difficulty: RaceDifficulty): string {
-    if (difficulty === 'beginner') return '轻松熟悉操作';
-    if (difficulty === 'championship') return '高压极限对抗';
-    return '均衡节奏挑战';
+function raceDifficultyDistance(difficulty: RaceDifficulty): string {
+    if (difficulty === 'beginner') return '50米';
+    if (difficulty === 'championship') return '200米';
+    return '100米';
+}
+
+function stylePsdRuntimeLabel(label: Label, fontFamily: string, bold: boolean, lineHeight: number): void {
+    label.fontFamily = fontFamily;
+    label.isBold = bold;
+    label.lineHeight = lineHeight;
+}
+
+function makeRaceTextureSprite(
+    name: string,
+    parent: Node,
+    path: string,
+    width: number,
+    height: number,
+    x: number,
+    y: number,
+    z: number,
+): Node {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform)!.setContentSize(width, height);
+    node.setPosition(x, y, z);
+    const sprite = node.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.trim = false;
+    loadRaceAsset(path, Texture2D, (error, texture) => {
+        if (error || !texture || !node.isValid || !sprite.isValid) {
+            if (error) console.warn(`[SpeedSwimming] lobby texture failed to load: ${path}`, error);
+            return;
+        }
+        const frame = new SpriteFrame();
+        frame.texture = texture;
+        sprite.spriteFrame = frame;
+    });
+    return node;
+}
+
+function makeRaceTextureButton(
+    name: string,
+    parent: Node,
+    path: string,
+    width: number,
+    height: number,
+    x: number,
+    y: number,
+    z: number,
+): Node {
+    const node = makeRaceTextureSprite(name, parent, path, width, height, x, y, z);
+    const button = node.addComponent(Button);
+    button.target = node;
+    button.transition = Button.Transition.SCALE;
+    button.zoomScale = 0.97;
+    button.duration = 0.08;
+    return node;
 }
 
 function setLabelString(label: Label | null, value: string): void {
