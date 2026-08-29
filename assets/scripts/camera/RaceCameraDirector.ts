@@ -4,8 +4,8 @@ import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCours
 
 // Pre-race broadcast (state PRECOUNTDOWN), based on a real meet presentation:
 //   1. establish close to the water, looking back at the starting blocks;
-//   2. continuously dolly toward the far end while rising, showing event info;
-//   3. keep pulling away and reveal the competitor roster at the far end;
+//   2. dolly horizontally toward the far end while showing event info;
+//   3. reveal the roster, then add a small rise only near the end;
 //   4. cut to the player's block, blend showcase -> dive-prep, then hand the
 //      existing synchronized countdown logic its ready signal.
 const PRE_RACE_ESTABLISH_SECONDS = 2.2;
@@ -13,13 +13,15 @@ const PRE_RACE_EVENT_SECONDS = 2.6;
 const PRE_RACE_ROSTER_SECONDS = 2.4;
 const PRE_RACE_ATHLETE_SECONDS = 1.6;
 const PRE_RACE_PULLBACK_SECONDS = PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS + PRE_RACE_ROSTER_SECONDS;
+const PRE_RACE_ROSTER_START_PROGRESS = (PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS)
+    / PRE_RACE_PULLBACK_SECONDS;
 const PRE_RACE_NEAR_FOV = 50;
 const PRE_RACE_FAR_FOV = 44;
 const PRE_RACE_NEAR_AHEAD = 7.0;
 const PRE_RACE_NEAR_HEIGHT = 0.32;
 const PRE_RACE_NEAR_SIDE_RATIO = 0.34;
-const PRE_RACE_FAR_INSET = 4.0;
-const PRE_RACE_FAR_HEIGHT = 5.4;
+const PRE_RACE_FAR_POOL_RATIO = 0.65;
+const PRE_RACE_FAR_HEIGHT = 1.8;
 const PRE_RACE_FAR_SIDE_OFFSET = 1.6;
 
 export type PreRacePhase = 'none' | 'establish' | 'raceInfo' | 'roster' | 'athlete';
@@ -715,12 +717,17 @@ export class RaceCameraDirector {
         }
     }
 
-    // One continuous pool-length dolly. The camera starts just above the water,
-    // aimed back at the blocks, then retreats toward the opposite wall and rises
-    // into a wide venue view without changing its subject.
+    // One continuous pool-length dolly. The camera stays level through the event
+    // card, then begins its small rise exactly when the roster appears.
     private preRacePullbackShot(progress: number): { position: Vec3; target: Vec3; fov: number } {
         const direction = this._courseLayout.direction;
-        const eased = smootherStep(progress);
+        // Ease only the opening acceleration. Do not ease out horizontally: the
+        // final rise must still carry a meaningful part of the pullback instead
+        // of looking like a nearly stationary vertical crane move.
+        const horizontalProgress = Math.pow(clamp(progress, 0, 1), 1.15);
+        const riseProgress = smootherStep(
+            (progress - PRE_RACE_ROSTER_START_PROGRESS) / (1 - PRE_RACE_ROSTER_START_PROGRESS),
+        );
         // The active roster is populated one frame after startGame. Never derive
         // this establishing shot from currently loaded racers: doing so made its
         // centre jump from the player's lane to the pool centre when AI appeared.
@@ -736,14 +743,23 @@ export class RaceCameraDirector {
             poolCenterZ + this._courseLayout.poolWidth * PRE_RACE_NEAR_SIDE_RATIO,
         );
         const farPosition = new Vec3(
-            this._courseLayout.poolFinishX - direction * PRE_RACE_FAR_INSET,
+            lerp(
+                this._courseLayout.poolStartX,
+                this._courseLayout.poolFinishX,
+                PRE_RACE_FAR_POOL_RATIO,
+            ),
             this._courseLayout.waterY + PRE_RACE_FAR_HEIGHT,
             poolCenterZ + this._courseLayout.poolWidth * 0.5 + PRE_RACE_FAR_SIDE_OFFSET,
         );
+        const position = lerpVec3(nearPosition, farPosition, horizontalProgress);
+        position.y = lerp(nearPosition.y, farPosition.y, riseProgress);
+        // Keep looking at one fixed world-space point near the starting blocks.
+        // The camera orientation changes naturally as the dolly retreats and the
+        // final crane section rises, matching a real operator tracking a subject.
         return {
-            position: lerpVec3(nearPosition, farPosition, eased),
+            position,
             target,
-            fov: lerp(PRE_RACE_NEAR_FOV, PRE_RACE_FAR_FOV, eased),
+            fov: lerp(PRE_RACE_NEAR_FOV, PRE_RACE_FAR_FOV, horizontalProgress),
         };
     }
 
