@@ -7,7 +7,7 @@
 // local mock; the production WeChat Cloud backend is the authoritative one.
 
 import { sys } from 'cc';
-import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult } from './IBackend';
+import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult, RaceDoubleRewardResult } from './IBackend';
 import {
     createDefaultProfile,
     normalizeProfile,
@@ -48,6 +48,37 @@ export class MockBackend implements IBackend {
         profile.coins += Math.max(0, Math.floor(amount));
         this.write(profile);
         return Promise.resolve(profile);
+    }
+
+    claimRaceDoubleReward(settlementId: string): Promise<RaceDoubleRewardResult> {
+        const profile = this.read();
+        const claim = profile.raceRewardClaims[settlementId];
+        if (!claim) {
+            return Promise.resolve({
+                ok: false,
+                profile,
+                granted: 0,
+                alreadyClaimed: false,
+                reason: 'not-found',
+            });
+        }
+        if (claim.doubleClaimed) {
+            return Promise.resolve({
+                ok: true,
+                profile,
+                granted: 0,
+                alreadyClaimed: true,
+            });
+        }
+        claim.doubleClaimed = true;
+        profile.coins += claim.baseCoins;
+        this.write(profile);
+        return Promise.resolve({
+            ok: true,
+            profile,
+            granted: claim.baseCoins,
+            alreadyClaimed: false,
+        });
     }
 
     spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult> {

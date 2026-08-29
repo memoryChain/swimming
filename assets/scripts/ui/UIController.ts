@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
+import { _decorator, Button, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
@@ -6,6 +6,7 @@ import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
 
 const { ccclass, property } = _decorator;
 const HUD_BAR_WIDTH = 220;
+const COIN_LABEL_SAMPLE_MS = 100;
 const HUD_BAR_BACKGROUND = new Color(20, 24, 34, 180);
 const HUD_READY_TICK = new Color(255, 255, 255, 200);
 const HEART_RATE_LOW = new Color(120, 196, 255, 255);
@@ -636,10 +637,14 @@ export class UIController extends Component {
 
     private _progressionNode: Node | null = null;
     private _progressionTweenCounter: { value: number } | null = null;
+    private _progressionBaseCoins = 0;
+    private _progressionCoinLabel: Label | null = null;
+    private _progressionDoubleClaimed = false;
+    private _progressionBaseCoinsAnimated = false;
 
     showProgressionResult(result: {
         coinsGained: number;
-    } | null) {
+    } | null, onClaimDouble?: () => Promise<boolean>) {
         this.hideProgressionResult();
         if (!result || result.coinsGained <= 0) {
             return;
@@ -675,6 +680,17 @@ export class UIController extends Component {
 
         this._progressionNode = panel;
         this._progressionTweenCounter = null;
+        this._progressionBaseCoins = result.coinsGained;
+        this._progressionCoinLabel = coinLabel;
+        this._progressionDoubleClaimed = false;
+        this._progressionBaseCoinsAnimated = false;
+
+        if (onClaimDouble) {
+            const button = this.buildDoubleCoinsButton(panel);
+            button.node.on(Node.EventType.TOUCH_END, () => {
+                void this.handleDoubleClaim(button, onClaimDouble);
+            });
+        }
 
         // Delay slightly so the result panel reads first, then slide up + fade in.
         tween(panelOpacity)
@@ -688,13 +704,83 @@ export class UIController extends Component {
             .start();
     }
 
-    private animateCoinGain(result: { coinsGained: number }, coinLabel: Label) {
-        if (!coinLabel?.node?.isValid) {
+    private buildDoubleCoinsButton(panel: Node): Button {
+        const width = 240;
+        const height = 50;
+        const node = new Node('DoubleCoinsButton');
+        node.layer = panel.layer;
+        node.setParent(panel);
+        node.setPosition(0, -52, 0);
+        node.addComponent(UITransform).setContentSize(width, height);
+        const graphics = node.addComponent(Graphics);
+        graphics.fillColor = new Color(60, 44, 12, 235);
+        graphics.roundRect(-width / 2, -height / 2, width, height, 10);
+        graphics.fill();
+        graphics.lineWidth = 2;
+        graphics.strokeColor = new Color(255, 209, 42, 220);
+        graphics.roundRect(-width / 2 + 1, -height / 2 + 1, width - 2, height - 2, 9);
+        graphics.stroke();
+
+        const labelNode = new Node('Label');
+        labelNode.layer = panel.layer;
+        labelNode.setParent(node);
+        labelNode.addComponent(UITransform).setContentSize(width, height);
+        const label = labelNode.addComponent(Label);
+        label.string = '看广告领双倍';
+        label.fontSize = 22;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.color = new Color(255, 224, 130, 255);
+
+        const button = node.addComponent(Button);
+        button.target = node;
+        button.interactable = true;
+        button.transition = Button.Transition.NONE;
+        return button;
+    }
+
+    private async handleDoubleClaim(button: Button, onClaimDouble: () => Promise<boolean>) {
+        if (this._progressionDoubleClaimed || !button?.isValid || !button.interactable) {
             return;
         }
+        this._progressionDoubleClaimed = true;
+        button.interactable = false;
+        let ok = false;
+        try {
+            ok = await onClaimDouble();
+        } catch (error) {
+            console.warn('[UI] double coin claim failed', error);
+        }
+        if (!button?.isValid) {
+            return;
+        }
+        if (ok) {
+            this.animateDoubleBonus(this._progressionBaseCoins);
+            if (button.node.active) {
+                button.node.active = false;
+            }
+            return;
+        }
+        this._progressionDoubleClaimed = false;
+        button.interactable = true;
+        // The ad can finish before the panel's delayed base counter starts. Make
+        // the fallback idempotent so the readout never remains at +0.
+        if (!this._progressionBaseCoinsAnimated && this._progressionCoinLabel) {
+            this.animateCoinGain({ coinsGained: this._progressionBaseCoins }, this._progressionCoinLabel);
+        }
+    }
+
+    private animateCoinGain(result: { coinsGained: number }, coinLabel: Label) {
+        if (!coinLabel?.node?.isValid
+            || this._progressionDoubleClaimed
+            || this._progressionBaseCoinsAnimated) {
+            return;
+        }
+        this._progressionBaseCoinsAnimated = true;
         const counter = { value: 0 };
         this._progressionTweenCounter = counter;
         let lastShown = -1;
+        let lastSampleAt = Number.NEGATIVE_INFINITY;
         const duration = Math.min(1.2, 0.5 + result.coinsGained / 600);
         tween(counter)
             .to(duration, { value: result.coinsGained }, {
@@ -703,8 +789,10 @@ export class UIController extends Component {
                         return;
                     }
                     const rounded = Math.round(counter.value);
-                    if (rounded !== lastShown) {
+                    const now = Date.now();
+                    if (rounded !== lastShown && now - lastSampleAt >= COIN_LABEL_SAMPLE_MS) {
                         lastShown = rounded;
+                        lastSampleAt = now;
                         coinLabel.string = '+' + rounded + ' 金币';
                     }
                 },
@@ -715,6 +803,40 @@ export class UIController extends Component {
                 }
                 if (lastShown !== result.coinsGained) {
                     coinLabel.string = '+' + result.coinsGained + ' 金币';
+                }
+            })
+            .start();
+    }
+
+    private animateDoubleBonus(bonus: number) {
+        const label = this._progressionCoinLabel;
+        if (!label?.node?.isValid) {
+            return;
+        }
+        const counter = this._progressionTweenCounter ?? { value: 0 };
+        this._progressionTweenCounter = counter;
+        const target = this._progressionBaseCoins + bonus;
+        Tween.stopAllByTarget(counter);
+        let lastShown = -1;
+        let lastSampleAt = Number.NEGATIVE_INFINITY;
+        tween(counter)
+            .to(0.6, { value: target }, {
+                onUpdate: () => {
+                    if (!label?.node?.isValid) {
+                        return;
+                    }
+                    const rounded = Math.round(counter.value);
+                    const now = Date.now();
+                    if (rounded !== lastShown && now - lastSampleAt >= COIN_LABEL_SAMPLE_MS) {
+                        lastShown = rounded;
+                        lastSampleAt = now;
+                        label.string = '+' + rounded + ' 金币';
+                    }
+                },
+            })
+            .call(() => {
+                if (label?.node?.isValid && lastShown !== target) {
+                    label.string = '+' + target + ' 金币';
                 }
             })
             .start();
@@ -737,6 +859,10 @@ export class UIController extends Component {
             }
             this._progressionNode = null;
         }
+        this._progressionCoinLabel = null;
+        this._progressionBaseCoins = 0;
+        this._progressionDoubleClaimed = false;
+        this._progressionBaseCoinsAnimated = false;
     }
 
     resetAll() {

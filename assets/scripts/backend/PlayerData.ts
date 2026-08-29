@@ -4,7 +4,7 @@
 // later) and notifies listeners whenever the profile changes.
 
 import { backend } from './BackendManager';
-import { AdRewardResult } from './IBackend';
+import { AdRewardResult, RaceDoubleRewardResult } from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
 import type { SpendResult } from '../progression/ProgressionManager';
@@ -16,6 +16,7 @@ class PlayerDataStore {
     private _loaded = false;
     private _loading: Promise<PlayerProfile> | null = null;
     private _listeners: ChangeListener[] = [];
+    private readonly _raceDoubleClaims = new Map<string, Promise<RaceDoubleRewardResult>>();
 
     get profile(): PlayerProfile {
         return this._profile;
@@ -77,6 +78,30 @@ class PlayerDataStore {
     async grantDebugCoins(amount: number): Promise<void> {
         this._profile = await backend().grantDebugCoins(amount);
         this._emit();
+    }
+
+    // Business-layer in-flight guard complements the button lock. The backend is
+    // still authoritative and idempotent, so scene rebuilds or response retries
+    // cannot grant the same settlement twice.
+    claimRaceDoubleReward(settlementId: string): Promise<RaceDoubleRewardResult> {
+        const active = this._raceDoubleClaims.get(settlementId);
+        if (active) {
+            return active;
+        }
+        const request = backend().claimRaceDoubleReward(settlementId)
+            .then((result) => {
+                this._profile = result.profile;
+                this._emit();
+                return result;
+            });
+        this._raceDoubleClaims.set(settlementId, request);
+        const clearRequest = () => {
+            if (this._raceDoubleClaims.get(settlementId) === request) {
+                this._raceDoubleClaims.delete(settlementId);
+            }
+        };
+        void request.then(clearRequest, clearRequest);
+        return request;
     }
 
     // Spend coins to level a character. Delegates to the backend (validates

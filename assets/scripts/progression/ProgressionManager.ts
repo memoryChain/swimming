@@ -3,6 +3,7 @@ import { PROGRESSION_BALANCE, coinCostForLevel, calculateRaceCoins, RacePerforma
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { resolvePlayerBalance, PlayerBalanceOverrides } from './PlayerBalanceOverrides';
 import { PlayerData } from '../backend/PlayerData';
+import { registerRaceRewardClaim } from '../backend/PlayerProfile';
 import type { CharacterProgress } from '../backend/PlayerProfile';
 
 // Legacy local-storage key from before progression moved into PlayerProfile.
@@ -12,6 +13,7 @@ const LEGACY_STORAGE_KEY = 'SpeedSwimming.Progression.v2';
 export type AwardResult = {
     characterId: string;
     coinsGained: number;
+    settlementId: string | null;
 };
 
 export type SpendResult = {
@@ -28,6 +30,8 @@ export type SpendResult = {
 // Leveling is manual: spendForLevel / spendToMax go through the backend's
 // spendCoinsForLevel (server-authoritative, mirrors grantAdReward).
 export class ProgressionManager {
+    private readonly _settlementPersistence = new Map<string, Promise<boolean>>();
+
     // Returns the live character progress object inside PlayerData.profile (creating
     // a default entry for unknown ids so mutations land in the shared profile).
     private _progress(characterId: PlayerCharacterId): CharacterProgress {
@@ -79,10 +83,42 @@ export class ProgressionManager {
     awardRace(characterId: PlayerCharacterId, input: RacePerformanceInput): AwardResult {
         const coinsGained = calculateRaceCoins(input);
         PlayerData.profile.coins += coinsGained;
-        // Fire-and-forget persist: the in-memory profile is already updated, so UI
-        // reads stay correct; this just durably stores the change.
-        void PlayerData.persist();
-        return { characterId, coinsGained };
+        const settlementId = registerRaceRewardClaim(PlayerData.profile, coinsGained);
+        // The UI can render immediately, but a completed ad must wait for this
+        // receipt to be durable before asking the backend to claim it. This avoids
+        // a future cloud save racing the bonus mutation.
+        const persistence = PlayerData.persist()
+            .then(() => true)
+            .catch((error) => {
+                console.warn('[Progression] race reward persist failed', error);
+                return false;
+            });
+        if (settlementId) {
+            this._settlementPersistence.set(settlementId, persistence);
+            while (this._settlementPersistence.size > 32) {
+                const oldestId = this._settlementPersistence.keys().next().value as string | undefined;
+                if (!oldestId) break;
+                this._settlementPersistence.delete(oldestId);
+            }
+        }
+        return { characterId, coinsGained, settlementId };
+    }
+
+    async waitForSettlementPersistence(settlementId: string): Promise<boolean> {
+        const pending = this._settlementPersistence.get(settlementId);
+        if (!pending || await pending) {
+            return true;
+        }
+        // A completed ad should not be wasted because the first profile write
+        // failed transiently. Retry the same receipt before the idempotent claim.
+        const retry = PlayerData.persist()
+            .then(() => true)
+            .catch((error) => {
+                console.warn('[Progression] race reward persist retry failed', error);
+                return false;
+            });
+        this._settlementPersistence.set(settlementId, retry);
+        return retry;
     }
 
     // Project how many levels and coins a "spend to max" would cost, WITHOUT

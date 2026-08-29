@@ -21,6 +21,7 @@ export class WechatPlatform implements IPlatform {
     // Rewarded-ad instances must be created ONCE and reused; creating a new one per
     // show leaks and is discouraged by WeChat. Cache them by ad unit id.
     private _ads: Record<string, any> = {};
+    private _adShows: Record<string, Promise<RewardedAdResult> | undefined> = {};
 
     isSupported(feature: PlatformFeature): boolean {
         if (typeof wx === 'undefined') {
@@ -55,7 +56,12 @@ export class WechatPlatform implements IPlatform {
         if (!this.isSupported('rewardedAd')) {
             return Promise.resolve('unavailable');
         }
-        return new Promise((resolve) => {
+        const active = this._adShows[adUnitId];
+        if (active) {
+            // One completed view must never satisfy two independent reward intents.
+            return Promise.resolve('unavailable');
+        }
+        const request = new Promise<RewardedAdResult>((resolve) => {
             let ad = this._ads[adUnitId];
             if (!ad) {
                 ad = wx.createRewardedVideoAd({ adUnitId });
@@ -85,6 +91,14 @@ export class WechatPlatform implements IPlatform {
                     .catch(onError);
             });
         });
+        this._adShows[adUnitId] = request;
+        const clearRequest = () => {
+            if (this._adShows[adUnitId] === request) {
+                delete this._adShows[adUnitId];
+            }
+        };
+        void request.then(clearRequest, clearRequest);
+        return request;
     }
 
     share(options: ShareOptions): void {

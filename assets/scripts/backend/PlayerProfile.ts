@@ -7,7 +7,8 @@
 import { defaultAvatarId, generateRandomNickName } from './IdentityConfig';
 import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 
-export const PLAYER_PROFILE_SCHEMA = 3;
+export const PLAYER_PROFILE_SCHEMA = 4;
+const MAX_RACE_REWARD_CLAIMS = 32;
 
 // In-game resource display names (single source of truth for UI text).
 export const CURRENCY = {
@@ -39,6 +40,15 @@ export interface CharacterProgress {
     level: number;
 }
 
+// Bounded receipt for the optional post-race rewarded-ad bonus. The claim API
+// accepts only the settlement id and looks the amount up here, so callers cannot
+// choose an arbitrary coin amount. A future cloud backend should create the same
+// receipt from its authoritative race settlement.
+export interface RaceRewardClaim {
+    baseCoins: number;
+    doubleClaimed: boolean;
+}
+
 export interface PlayerProfile {
     schema: number;
     // In-game identity (player-chosen, NOT the real WeChat profile).
@@ -54,6 +64,11 @@ export interface PlayerProfile {
     };
     // Per-character 养成 progress (level only). Keyed by PlayerCharacterId.
     characters: Record<string, CharacterProgress>;
+    // Monotonic local receipt sequence. Account scoping makes `race-N` unique for
+    // the current MockBackend profile without outcome-affecting randomness.
+    nextRaceSettlementSeq: number;
+    // Recent receipts only; bounded so long-running profiles do not grow forever.
+    raceRewardClaims: Record<string, RaceRewardClaim>;
 }
 
 export function todayString(): string {
@@ -87,6 +102,8 @@ export function createDefaultProfile(): PlayerProfile {
         coins: PROGRESSION_CONFIG.starterCoins,
         daily: { date: todayString(), adCount: 0 },
         characters: createDefaultCharacterProgress(),
+        nextRaceSettlementSeq: 1,
+        raceRewardClaims: {},
     };
 }
 
@@ -98,10 +115,57 @@ function normalizeCharacterProgress(raw: unknown): CharacterProgress {
     };
 }
 
+function normalizeRaceRewardClaims(raw: unknown): Record<string, RaceRewardClaim> {
+    const claims: Record<string, RaceRewardClaim> = {};
+    if (!raw || typeof raw !== 'object') {
+        return claims;
+    }
+    const source = raw as Record<string, Partial<RaceRewardClaim>>;
+    const ids = Object.keys(source).slice(-MAX_RACE_REWARD_CLAIMS);
+    for (const id of ids) {
+        const entry = source[id];
+        const baseCoins = Number.isFinite(entry?.baseCoins as number)
+            ? Math.max(0, Math.floor(entry!.baseCoins as number))
+            : 0;
+        if (!id || baseCoins <= 0) {
+            continue;
+        }
+        claims[id] = {
+            baseCoins,
+            doubleClaimed: entry?.doubleClaimed === true,
+        };
+    }
+    return claims;
+}
+
+export function registerRaceRewardClaim(profile: PlayerProfile, baseCoins: number): string | null {
+    const normalizedCoins = Number.isFinite(baseCoins) ? Math.max(0, Math.floor(baseCoins)) : 0;
+    if (normalizedCoins <= 0) {
+        return null;
+    }
+    const sequence = Number.isFinite(profile.nextRaceSettlementSeq)
+        ? Math.max(1, Math.floor(profile.nextRaceSettlementSeq))
+        : 1;
+    const settlementId = `race-${sequence}`;
+    profile.nextRaceSettlementSeq = sequence + 1;
+    profile.raceRewardClaims[settlementId] = {
+        baseCoins: normalizedCoins,
+        doubleClaimed: false,
+    };
+    const ids = Object.keys(profile.raceRewardClaims);
+    while (ids.length > MAX_RACE_REWARD_CLAIMS) {
+        const oldestId = ids.shift();
+        if (oldestId) {
+            delete profile.raceRewardClaims[oldestId];
+        }
+    }
+    return settlementId;
+}
+
 // Fill in any missing fields on a loaded profile (forward-compatible migration)
 // and roll the daily counter over if the date changed. Always returns a valid,
 // fully-populated profile. Migrates schema 2 (swimCards + per-character xp) to
-// schema 3 (coins + per-character level only).
+// schema 4 (coins + per-character level + idempotent race reward receipts).
 export function normalizeProfile(raw: unknown): PlayerProfile {
     const base = createDefaultProfile();
     if (!raw || typeof raw !== 'object') {
@@ -122,6 +186,17 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
     const coins = Number.isFinite(src.coins as number)
         ? Math.max(0, Math.floor(src.coins as number))
         : coinFromLegacy;
+    const raceRewardClaims = normalizeRaceRewardClaims(src.raceRewardClaims);
+    let maxStoredSequence = 0;
+    for (const id of Object.keys(raceRewardClaims)) {
+        const match = /^race-(\d+)$/.exec(id);
+        if (match) {
+            maxStoredSequence = Math.max(maxStoredSequence, Number(match[1]));
+        }
+    }
+    const savedNextSequence = Number.isFinite(src.nextRaceSettlementSeq as number)
+        ? Math.max(1, Math.floor(src.nextRaceSettlementSeq as number))
+        : 1;
     const profile: PlayerProfile = {
         schema: PLAYER_PROFILE_SCHEMA,
         nickName: typeof src.nickName === 'string' && src.nickName.length > 0 ? src.nickName : base.nickName,
@@ -132,6 +207,8 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
             adCount: Number.isFinite(src.daily?.adCount as number) ? Math.max(0, Math.floor(src.daily!.adCount as number)) : 0,
         },
         characters,
+        nextRaceSettlementSeq: Math.max(savedNextSequence, maxStoredSequence + 1),
+        raceRewardClaims,
     };
     // Roll over the daily counter on a new day.
     if (profile.daily.date !== todayString()) {

@@ -27,3 +27,12 @@ export function rewardedAdUnitId(platformName: PlatformName): string {
             return WECHAT_REWARDED_AD_UNIT_ID;
     }
 }
+
+export function isRewardedAdConfigured(platformName: PlatformName): boolean {
+    if (platformName === 'default') {
+        // Editor/web uses the deterministic mock and ignores the id.
+        return true;
+    }
+    const adUnitId = rewardedAdUnitId(platformName);
+    return adUnitId.length > 0 && adUnitId !== 'adunit-0000000000000000';
+}

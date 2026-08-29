@@ -62,6 +62,9 @@ import { NET_SIM_STEP } from '../net/NetSimClock';
 import { reseedSharedRandom } from './SharedRNG';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
+import { PlayerData } from '../backend/PlayerData';
+import { platform } from '../platform/PlatformManager';
+import { isRewardedAdConfigured, rewardedAdUnitId } from '../platform/AdConfig';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { applyRaceModifiersToSwimmer, resolveLocalRaceModifiers, resolveModifiersFromDigest } from '../progression/RaceModifiers';
 import { decodeModifierDigest } from '../net/NetRaceModifierCodec';
@@ -158,6 +161,9 @@ export class GameManager extends Component {
     private readonly _preRaceIntroPanel = new PreRaceIntroPanel();
     private _inputManager: InputManager = null;
     private _isReturningToLogin = false;
+    // If the ad completed but the idempotent backend claim failed or its response
+    // was lost, retries skip a second ad view and only retry the same settlement.
+    private readonly _completedRewardAdSettlements = new Set<string>();
     // True when this race was launched from the online room (finish screen shows only
     // an exit action, which returns to the room).
     private _roomMode = false;
@@ -881,6 +887,37 @@ export class GameManager extends Component {
                 const progression = getProgressionManager();
                 const characterId = getPlayerCharacterSelection().characterId;
                 return progression.awardRace(characterId, input);
+            },
+            canClaimDoubleReward: () => {
+                const activePlatform = platform();
+                return activePlatform.isSupported('rewardedAd')
+                    && isRewardedAdConfigured(activePlatform.name);
+            },
+            claimDoubleReward: async (settlementId: string): Promise<boolean> => {
+                const activePlatform = platform();
+                if (!activePlatform.isSupported('rewardedAd')
+                    || !isRewardedAdConfigured(activePlatform.name)) {
+                    return false;
+                }
+                if (!this._completedRewardAdSettlements.has(settlementId)) {
+                    const outcome = await activePlatform.showRewardedAd(
+                        rewardedAdUnitId(activePlatform.name),
+                    );
+                    if (outcome !== 'completed') {
+                        return false;
+                    }
+                    this._completedRewardAdSettlements.add(settlementId);
+                }
+                const persisted = await getProgressionManager()
+                    .waitForSettlementPersistence(settlementId);
+                if (!persisted) {
+                    return false;
+                }
+                const result = await PlayerData.claimRaceDoubleReward(settlementId);
+                if (result.ok) {
+                    this._completedRewardAdSettlements.delete(settlementId);
+                }
+                return result.ok;
             },
             applyPlayerDive: (result) => {
                 this._playerCondition.reset();

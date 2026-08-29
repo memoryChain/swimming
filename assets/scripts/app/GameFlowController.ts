@@ -52,7 +52,10 @@ export type GameFlowRefs = {
     applyPlayerDolphinJumpStrain: () => void;
     playerDiveSpeedScale: () => number;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
-        { characterId: string; coinsGained: number } | null;
+        { characterId: string; coinsGained: number; settlementId: string | null } | null;
+    // Personal post-race economy only; no race-frame or room broadcast data.
+    canClaimDoubleReward: () => boolean;
+    claimDoubleReward: (settlementId: string) => Promise<boolean>;
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
@@ -362,7 +365,14 @@ export class GameFlowController {
                     goodCount: rhythm?.goodCount ?? 0,
                     finished: finalPlayerTime > 0,
                 });
-                this._refs.uiFlow.showProgressionResult(progressionResult);
+                this._refs.uiFlow.showProgressionResult(
+                    progressionResult,
+                    progressionResult?.settlementId
+                        && progressionResult.coinsGained > 0
+                        && this._refs.canClaimDoubleReward()
+                        ? () => this._refs.claimDoubleReward(progressionResult.settlementId!)
+                        : undefined,
+                );
                 this._refs.uiFlow.setSprintActive(false);
                 this._refs.clearFinishRanks();
                 this._refs.showAwards(leaderboard);

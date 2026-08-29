@@ -32,6 +32,18 @@ export interface AdRewardResult {
     reason?: AdRewardReason;
 }
 
+export type RaceDoubleRewardReason = 'not-found';
+
+export interface RaceDoubleRewardResult {
+    // True when this call granted the bonus or the same settlement was already
+    // claimed. Treating retries as success keeps lost responses idempotent.
+    ok: boolean;
+    profile: PlayerProfile;
+    granted: number;
+    alreadyClaimed: boolean;
+    reason?: RaceDoubleRewardReason;
+}
+
 export type SpendFailReason = 'insufficient' | 'maxed';
 
 export interface LevelSpendResult {
@@ -70,6 +82,11 @@ export interface IBackend {
     // while the rewarded-ad flow is deferred. MUST NOT exist in the production
     // cloud backend (or must be gated to dev accounts).
     grantDebugCoins(amount: number): Promise<PlayerProfile>;
+
+    // Claim the rewarded-ad bonus for one previously persisted race settlement.
+    // The backend derives the amount from the receipt and atomically marks it as
+    // claimed; the caller never supplies a coin amount.
+    claimRaceDoubleReward(settlementId: string): Promise<RaceDoubleRewardResult>;
 
     // Spend coins to level a character. requestedLevels caps how many levels to
     // attempt (1 for single, maxLevel for "spend to max"); the backend spends as
