@@ -7,7 +7,6 @@ import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
-    onRoom: () => void;
     onModelDebug: () => void;
     onAiDebug: () => void;
     onUnderwaterDebug: () => void;
@@ -721,10 +720,10 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     const startButton = requireNode(startScreen, 'StartButton');
     startButton.on(Node.EventType.TOUCH_END, callbacks.onStart);
 
-    // Reuse the prefab's second sprite-backed button for the separately exported
-    // optional online action. This keeps the PSD hierarchy stable at runtime.
+    // The former online entry is now only a template for debug buttons. The
+    // production friend-room action lives on the prepare-race screen.
     const roomButton = requireNode(startScreen, 'ModelDebugButton');
-    roomButton.name = 'RoomButton';
+    roomButton.name = 'LegacyOnlineButton';
 
     // Auxiliary entries use the same artwork and press state as the current online
     // button. Scene-effect preview is available in every runtime; model debug stays
@@ -738,12 +737,13 @@ function bindStartScreen(startScreen: Node, callbacks: SpeedStarsStartUiCallback
     const sceneEffectPreview = cloneLoginSecondaryButton(roomButton, 'UnderwaterDebugButton', '场景效果预览', callbacks.onUnderwaterDebug);
     bottomRightButtons.push(sceneEffectPreview);
     layoutBottomRightDebugButtons(bottomRightButtons);
-    roomButton.on(Node.EventType.TOUCH_END, callbacks.onRoom);
+    roomButton.active = false;
 }
 
 function cloneLoginSecondaryButton(template: Node, name: string, text: string, onClick: () => void): Node {
     const button = instantiate(template);
     button.name = name;
+    button.active = true;
     button.setParent(template.parent);
     configurePsdButton(button);
 

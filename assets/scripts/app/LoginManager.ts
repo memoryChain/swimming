@@ -206,10 +206,15 @@ export class LoginManager extends Component {
         }
         this._loginUiRoot.active = false;
         this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
-            onBack: () => this.exitPrepareRace(),
             onStartRace: () => this.startGame(),
+            onOpenRoom: () => this.openRoomFromPrepare(),
+            onCharacterManagementChanged: (active) => {
+                this._headBar?.setBack(active
+                    ? () => this._prepareRaceFlow?.showReadyScreen()
+                    : () => this.exitPrepareRace());
+            },
         });
-        this._prepareRaceFlow.showCharacterSelect();
+        this._prepareRaceFlow.showReadyScreen();
         // Integrate the back action into the headbar (top-left) so it never clashes
         // with the prepare-race UI.
         this._headBar?.setBack(() => this.exitPrepareRace());
@@ -222,6 +227,13 @@ export class LoginManager extends Component {
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
         }
+    }
+
+    private openRoomFromPrepare() {
+        this._prepareRaceFlow?.dispose();
+        this._prepareRaceFlow = null;
+        this._headBar?.setBack(null);
+        this.openRoom();
     }
 
     private handleAppShowInvite(query: Record<string, string>) {
@@ -392,7 +404,6 @@ export class LoginManager extends Component {
         canvasNode.getChildByName('SpeedStarsUI')?.destroy();
         new SpeedStarsStartUiPrefabBuilder({
             onStart: () => this.openPrepareRace(),
-            onRoom: () => this.openRoom(),
             onModelDebug: () => this.startModelDebug(),
             onAiDebug: () => this.showAiDebugPicker(),
             onUnderwaterDebug: () => this.startUnderwaterDebug(),

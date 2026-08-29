@@ -38,11 +38,9 @@ export type PlayerColorScheme = {
     cap: readonly [number, number, number];
 };
 
-// Keep an even slot count: the roster lays characters out in two columns.
-export const PLAYER_CHARACTER_SLOT_COUNT = 4;
-
-// Add a definition here to introduce a selectable character. Both the roster
-// and the formal-race hand-off use this catalog directly.
+// Add a definition here to introduce a selectable character. The management
+// roster derives its scrollable slot count from this catalog, and the formal
+// race hand-off uses the same definitions directly.
 export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] = [
     {
         id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
@@ -130,8 +128,8 @@ export function cyclePlayerColorScheme() {
     selection = { ...selection, colorSchemeId: PLAYER_COLOR_SCHEMES[nextIndex].id };
 }
 
-export function setPlayerSkinTone(id: PlayerSkinTone['id']) {
-    if (!selectedPlayerCharacterSupportsSkinTone()) return;
+export function setPlayerSkinTone(id: PlayerSkinTone['id'], characterId = selection.characterId) {
+    if (!selectedPlayerCharacterSupportsSkinTone(characterId)) return;
     if (!PLAYER_SKIN_TONES.some((tone) => tone.id === id)) return;
     selection = { ...selection, skinToneId: id };
 }
@@ -152,13 +150,13 @@ export function weightToPhysicalRating(weight: number): number {
     return Math.max(0, Math.min(100, Math.round(50 + (weight - 0.85) * 100)));
 }
 
-export function selectedPlayerSkinTone(): PlayerSkinTone {
-    if (!selectedPlayerCharacterSupportsSkinTone()) return PLAYER_SKIN_TONES[0];
+export function selectedPlayerSkinTone(characterId = selection.characterId): PlayerSkinTone {
+    if (!selectedPlayerCharacterSupportsSkinTone(characterId)) return PLAYER_SKIN_TONES[0];
     return PLAYER_SKIN_TONES.find((tone) => tone.id === selection.skinToneId) ?? PLAYER_SKIN_TONES[0];
 }
 
-export function selectedPlayerCharacterSupportsSkinTone(): boolean {
-    return findPlayerCharacter()?.supportsSkinTone !== false;
+export function selectedPlayerCharacterSupportsSkinTone(characterId = selection.characterId): boolean {
+    return findPlayerCharacter(characterId)?.supportsSkinTone !== false;
 }
 
 export function selectedPlayerColorScheme(): PlayerColorScheme {

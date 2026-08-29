@@ -6,7 +6,7 @@ import {
 } from '../character/CharacterActionConfig';
 import { loadSampledAction } from '../character/SampledActionLoader';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
-import { findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from './PlayerCharacterConfig';
+import { findPlayerCharacter, PlayerCharacterId, selectedPlayerColorScheme, selectedPlayerSkinTone } from './PlayerCharacterConfig';
 
 const { ccclass } = _decorator;
 const PREVIEW_CHARACTER_SCALE = 1.3;
@@ -54,9 +54,16 @@ export class PrepareRaceCharacterPreview extends Component {
         this.buildCameraAndLight();
     }
 
-    refresh() {
-        const character = findPlayerCharacter();
+    refresh(characterId?: PlayerCharacterId) {
+        const character = findPlayerCharacter(characterId);
         if (!character) return;
+        // Page/tab transitions can ask to present the same character again. Keep
+        // the existing rig and showcase action alive unless the model identity
+        // actually changed; appearance updates have their own lightweight path.
+        if (character.id === this._selectedCharacterId && this._rig && this._pivotNode?.isValid) {
+            this.applyAppearance();
+            return;
+        }
         if (character.id !== this._selectedCharacterId) {
             this._selectedCharacterId = character.id;
             this._showcaseAction = selectActionFromPool(CHARACTER_SELECT_ACTIONS)
@@ -78,7 +85,7 @@ export class PrepareRaceCharacterPreview extends Component {
         swimmer.setPosition(0, 0, 0);
 
         const rig = swimmer.addComponent(CartoonSwimmerRig);
-        const skin = selectedPlayerSkinTone();
+        const skin = selectedPlayerSkinTone(character.id);
         const palette = selectedPlayerColorScheme();
         rig.setModelVariant(character.modelVariantId);
         rig.build(
@@ -115,7 +122,7 @@ export class PrepareRaceCharacterPreview extends Component {
         if (!this._rig) {
             return;
         }
-        const skin = selectedPlayerSkinTone();
+        const skin = selectedPlayerSkinTone(this._selectedCharacterId as PlayerCharacterId);
         const palette = selectedPlayerColorScheme();
         this._rig.setColorOverride({
             skin: skin.preserveOriginal ? undefined : new Color(...skin.color, 255),
