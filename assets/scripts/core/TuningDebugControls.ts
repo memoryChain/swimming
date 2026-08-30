@@ -51,7 +51,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 32;
+const TUNING_FILE_VERSION = 33;
 
 type TuningFileData = {
     version: number;
@@ -87,6 +87,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
             control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
             control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
+            control('collision.headOnEscapeLateralFactor', '正撞横向脱困倍率', '迎面碰撞横向分量过小时，按各自加权碰撞冲量补足的横向倍率。0=关闭补足；越大越容易一次撞开后从两侧错身。', () => SWIMMER_COLLISION.headOnEscapeLateralFactor, (v) => SWIMMER_COLLISION.headOnEscapeLateralFactor = v, 0.05, 0, 1.5, 2),
+            control('collision.headOnEscapeMaxImpulse', '正撞横向脱困上限', '迎面碰撞额外补足的单人横向速度上限。只限制人工补足，真实侧撞产生的横向分量不受此项削弱。', () => SWIMMER_COLLISION.headOnEscapeMaxImpulse, (v) => SWIMMER_COLLISION.headOnEscapeMaxImpulse = v, 0.1, 0, 4, 2, 'm/s'),
             control('collision.axialRollEnabled', '启用碰撞转体', '1=侧撞会给双方施加轴向角冲量；0=碰撞只产生位移和撞飞。', () => SWIMMER_COLLISION.axialRollEnabled, (v) => SWIMMER_COLLISION.axialRollEnabled = v, 1, 0, 1, 0),
             control('collision.axialRollDegreesPerImpulse', '碰撞转体强度', '每 1m/s 加权碰撞冲量转化出的轴向角速度。默认值允许普通碰撞翻半圈、强碰撞一圈或多圈；体重越轻越容易被转飞。', () => SWIMMER_COLLISION.axialRollDegreesPerImpulse, (v) => SWIMMER_COLLISION.axialRollDegreesPerImpulse = v, 10, 0, 720, 0, '°/s·m/s'),
             control('collision.axialRollMinimumLever', '碰撞最小转体力臂', '接近正面中心相撞时仍保留的最小转体比例。0=正撞只后退不翻；越大越容易让任何碰撞都产生明显翻滚。', () => SWIMMER_COLLISION.axialRollMinimumLever, (v) => SWIMMER_COLLISION.axialRollMinimumLever = v, 0.05, 0, 1, 2),

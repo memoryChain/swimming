@@ -51,6 +51,14 @@ export const SWIMMER_COLLISION = {
     knockbackMaxImpulse: 4.0,
     // Exponential decay time constant (seconds). Higher = longer slide.
     knockbackDecaySeconds: 0.5,
+    // Head-on collisions need a lateral escape component or two impassable bodies
+    // simply swim back into each other. This is a minimum lever applied to each
+    // swimmer's already weight-split impact; ordinary side contacts keep their
+    // physical contact-normal response.
+    headOnEscapeLateralFactor: 0.9,
+    // Cap only the added head-on escape floor. A genuine strong side impact may
+    // still exceed it through the physical contact-normal component.
+    headOnEscapeMaxImpulse: 2.2,
     // A side contact also injects angular velocity around each swimmer's own
     // head-to-feet axis. It is contact-begin only, just like linear knockback.
     axialRollEnabled: 1,
@@ -66,6 +74,7 @@ export const SWIMMER_COLLISION = {
 // Reused module-scope buffers keep this allocation-free each collision step.
 const MAX_SWIMMERS = 8;
 const CONTACT_RELEASE_MARGIN = 0.08;
+const POSITION_DIRECTION_QUANTIZATION = 1000;
 const _active: Swimmer[] = [];
 const _isAi: boolean[] = [];
 const _origX: number[] = [];
@@ -165,9 +174,10 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 let nz: number;
                 let dist: number;
                 if (distSq < 1e-8) {
-                    // Centres coincide: separate sideways in a stable direction.
+                    // Centres coincide: separate sideways using the same stable,
+                    // pair-order-invariant direction as the head-on escape impulse.
                     nx = 0;
-                    nz = 1;
+                    nz = stableLateralSeparationSide(i, j, dx, dz);
                     dist = 0;
                 } else {
                     dist = Math.sqrt(distSq);
@@ -239,15 +249,37 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const totalW = wi + wj;
                 const impI = totalW > 0 ? mag * (wj / totalW) : mag * 0.5;
                 const impJ = totalW > 0 ? mag * (wi / totalW) : mag * 0.5;
+                const headOn = !lateralOnly && _dir[i] * _dir[j] < 0;
                 if (SWIMMER_COLLISION.knockbackEnabled) {
-                    // Lateral shove: always applied, for the readable knocked-apart feel.
-                    _impLat[i] += nz * impI;
-                    _impLat[j] -= nz * impJ;
+                    // Preserve the real left/right relationship whenever one exists.
+                    // A nearly centred head-on hit has no useful Z normal, so choose a
+                    // pair-order-invariant fallback from X position, original lane, then
+                    // travel direction, and add a strong but capped lateral escape floor.
+                    // This makes the first hit explosive while naturally preventing the
+                    // same pair from meeting head-to-head again.
+                    if (headOn) {
+                        const escapeFactor = Math.max(0, SWIMMER_COLLISION.headOnEscapeLateralFactor);
+                        const escapeMax = Math.max(0, SWIMMER_COLLISION.headOnEscapeMaxImpulse);
+                        const side = stableLateralSeparationSide(i, j, dx, dz);
+                        const lateralI = Math.max(
+                            Math.abs(nz) * impI,
+                            Math.min(escapeMax, impI * escapeFactor),
+                        );
+                        const lateralJ = Math.max(
+                            Math.abs(nz) * impJ,
+                            Math.min(escapeMax, impJ * escapeFactor),
+                        );
+                        _impLat[i] += side * lateralI;
+                        _impLat[j] -= side * lateralJ;
+                    } else {
+                        // Ordinary contact follows the physical lateral normal unchanged.
+                        _impLat[i] += nz * impI;
+                        _impLat[j] -= nz * impJ;
+                    }
                     // Distance shove: only head-on (opposite lap directions) and only
                     // while still approaching. Head-on geometry pushes each swimmer
                     // backward vs its own travel, so both lose a little progress.
-                    const headOn = _dir[i] * _dir[j] < 0;
-                    if (!lateralOnly && headOn && impact > 0) {
+                    if (headOn && impact > 0) {
                         _impDist[i] += nx * impI * _dir[i];
                         _impDist[j] -= nx * impJ * _dir[j];
                     }
@@ -366,6 +398,39 @@ function findContact(a: Swimmer, b: Swimmer): number {
         }
     }
     return -1;
+}
+
+// Choose which world-Z side swimmer i moves toward while swimmer j takes the
+// opposite side. Millimetre quantization preserves any meaningful existing
+// left/right relationship while preventing sub-millimetre float noise from
+// flipping the fallback across engines. Every fallback changes sign when i/j are
+// swapped (except the explicitly documented indistinguishable duplicate-body case),
+// so the physical swimmer receives the same direction on every client.
+function stableLateralSeparationSide(i: number, j: number, dx: number, dz: number): number {
+    const dzMm = quantizeSignedPosition(dz);
+    if (dzMm !== 0) {
+        return dzMm > 0 ? 1 : -1;
+    }
+    const dxMm = quantizeSignedPosition(dx);
+    if (dxMm !== 0) {
+        return dxMm > 0 ? 1 : -1;
+    }
+    const startDzMm = quantizeSignedPosition(_active[i].startPosition.z - _active[j].startPosition.z);
+    if (startDzMm !== 0) {
+        return startDzMm > 0 ? 1 : -1;
+    }
+    if (_dir[i] !== _dir[j]) {
+        return _dir[i] >= 0 ? 1 : -1;
+    }
+    // Same start lane, position and direction is a pathological duplicate-body
+    // case. The normal collision path cannot distinguish identity without adding
+    // network-only ids, so keep the existing deterministic local fallback.
+    return i < j ? 1 : -1;
+}
+
+function quantizeSignedPosition(value: number): number {
+    const magnitude = Math.floor(Math.abs(value) * POSITION_DIRECTION_QUANTIZATION + 0.5);
+    return value < 0 ? -magnitude : magnitude;
 }
 
 function clearContacts(): void {
