@@ -117,7 +117,11 @@ export class RemoteSwimmerController extends Component {
                 break;
             case NetInputKind.DolphinJump:
                 // The owner emits this event only after accepting the jump locally.
-                swimmer.applyAcceptedNetDolphinJump();
+                swimmer.applyAcceptedNetDolphinJump(event.dolphinDive ? 'dive' : 'jump');
+                break;
+            case NetInputKind.AiDolphinJump:
+                // NetRaceController routes this host-authoritative event directly
+                // to the assigned AI lane.
                 break;
             case NetInputKind.DiveRelease:
                 this.performDive(swimmer, event.power ?? 0, event.launchSpeed);

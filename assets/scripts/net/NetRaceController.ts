@@ -16,7 +16,7 @@ import { INetRoom, NetSyncFrame, NetRoomInfo } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
-import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
+import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
@@ -51,6 +51,11 @@ const SELF_SNAPSHOT_FRESH_MS = 800;
 //   IN| = an input-event frame ridden over broadcast so remote copies still animate.
 const NEED_BROADCAST_TAG = 'NB|';
 const BROADCAST_INPUT_TAG = 'IN|';
+// AI ultimates are rare, outcome-affecting edges. Repeat an accepted host event
+// across ~0.2s of logical frames so broadcast fallback packet loss and the brief
+// host-migration trust hand-off cannot erase the action. Replays are idempotent at
+// the phase controller and still pass the normal per-packet sequence ordering.
+const AI_DOLPHIN_REPEAT_FRAMES = 6;
 
 // Per-frame input logging. OFF by default: it fires for every non-empty input frame
 // (dozens/sec during racing) and each console.log is very expensive with vConsole open
@@ -68,6 +73,10 @@ export class NetRaceController {
     private _accum = 0;
     private _sentFrames = 0;
     private _ownerStateSeq = 0;
+    private readonly _pendingAiDolphinRepeats: Array<{
+        event: NetInputEvent;
+        remaining: number;
+    }> = [];
     private _recvFrames = 0;
     private _disposed = false;
     // In-race debug HUD so sync state is visible without the console.
@@ -131,6 +140,10 @@ export class NetRaceController {
     private _goTimeoutHandle: any = null;
     // Notified when a member quits mid-race (Q| broadcast) so its swimmer is retired.
     private _playerQuitListener: ((pos: number) => void) | null = null;
+    // Reliable host-authoritative AI dolphin action. The listener receives the
+    // stable assigned lane and the already-decided form; clients never re-evaluate
+    // the host's pose threshold locally.
+    private _aiDolphinListener: ((lane: number, dive: boolean) => void) | null = null;
     // Host migration state. `_isHost` starts from the session but can flip: a client
     // promotes itself if the host goes silent, and a self-promoted host steps back down
     // if a lower-pos (higher-priority) host appears. `_activeHostPos` is the seat of the
@@ -424,6 +437,10 @@ export class NetRaceController {
         this._playerQuitListener = listener;
     }
 
+    setAiDolphinListener(listener: ((lane: number, dive: boolean) => void) | null): void {
+        this._aiDolphinListener = listener;
+    }
+
     // Client: the authoritative final placement, or null if not received yet.
     get authResult(): NetResultEntry[] | null {
         return this._authResult;
@@ -600,6 +617,32 @@ export class NetRaceController {
             // every client must upload every frame to keep the lock-step cadence) plus
             // its own position so peers can reliably catch up to it.
             const events: NetInputEvent[] = drainNetInput();
+            const capturedCount = events.length;
+            // Append repeats registered by earlier logical frames first. A receiver
+            // that already started the announced phase simply rejects the replay.
+            for (let i = this._pendingAiDolphinRepeats.length - 1; i >= 0; i--) {
+                const pending = this._pendingAiDolphinRepeats[i];
+                events.push(pending.event);
+                pending.remaining--;
+                if (pending.remaining <= 0) {
+                    this._pendingAiDolphinRepeats.splice(i, 1);
+                }
+            }
+            // The freshly captured event is already present in this frame; retain a
+            // compact copy for following frames only.
+            for (let i = 0; i < capturedCount; i++) {
+                const event = events[i];
+                if (event.kind === NetInputKind.AiDolphinJump) {
+                    this._pendingAiDolphinRepeats.push({
+                        event: {
+                            kind: NetInputKind.AiDolphinJump,
+                            aiLane: event.aiLane,
+                            dolphinDive: !!event.dolphinDive,
+                        },
+                        remaining: AI_DOLPHIN_REPEAT_FRAMES,
+                    });
+                }
+            }
             if (!this.broadcastSyncRequired) {
                 // Fully frame-synced room: input + self-position ride the reliable
                 // lock-step frame channel (zero extra broadcast traffic).
@@ -746,12 +789,24 @@ export class NetRaceController {
         if (events.length === 0 || !inputAccepted) {
             return;
         }
+        const trustedHost = senderPos === this._activeHostPos;
+        if (trustedHost && this._aiDolphinListener) {
+            for (const event of events) {
+                if (event.kind === NetInputKind.AiDolphinJump && Number.isFinite(event.aiLane)) {
+                    this._aiDolphinListener(Math.max(0, Math.floor(event.aiLane ?? 0)), !!event.dolphinDive);
+                }
+            }
+        }
+        const humanEvents = events.filter((event) => event.kind !== NetInputKind.AiDolphinJump);
+        if (humanEvents.length === 0) {
+            return;
+        }
         // A newer periodic P| can overtake an older IN|. Keep the newer persistent
         // owner state, but apply the packet's own pre-input condition just for its
         // events, then restore the latest owner condition afterward.
         const transientCondition = !!self && shouldUseTransientPacketCondition(
             inputAccepted,
-            events.length,
+            humanEvents.length,
             selfAccepted,
             self.conditionEnergyRatio,
             self.conditionHeartRate,
@@ -760,7 +815,7 @@ export class NetRaceController {
             remote.applyTransientOwnerCondition(self!.conditionEnergyRatio, self!.conditionHeartRate);
         }
         try {
-            remote.applyEvents(events);
+            remote.applyEvents(humanEvents);
         } finally {
             if (transientCondition) {
                 remote.restoreOwnerCondition();
@@ -824,6 +879,7 @@ export class NetRaceController {
             return;
         }
         this._disposed = true;
+        this._pendingAiDolphinRepeats.length = 0;
         // Stop capturing local input once the networked race ends.
         setNetInputCaptureActive(false);
         if (this._hudRoot?.isValid) {

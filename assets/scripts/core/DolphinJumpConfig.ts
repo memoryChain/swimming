@@ -69,7 +69,63 @@ export const DOLPHIN_JUMP = {
 
     // 成功发动海豚跃时一次性增加的心率，封顶 200；不消耗普通体力。
     strainHr: 25,
+
+    // —— 双形态判定：出水跃 / 深潜跃 ——
+    // 角度使用角色头部相对水面的实际朝下角，而不是未经折返的欧拉角。
+    jumpStableDownAngleDegrees: 30,
+    diveStableDownAngleDegrees: 50,
+    transitionDownAngleDegrees: 40,
+    posturePredictionSeconds: 0.12,
+
+    // —— 深潜跃标准轨迹（破浪新星）——
+    // 深潜水平距离由同角色标准出水距离乘此比例，再乘 arcDistanceScale。
+    diveDistanceRatio: 0.72,
+    diveBaseDepth: 1.1,
+    diveBaseDurationSeconds: 1.05,
+    // 0..1：整段潜航的这个时刻到达最深点；小于 0.5 表示快速钻水、缓慢上浮。
+    diveBottomTimeRatio: 0.42,
+    // 离开正常水面游泳层后才免碰撞；上浮用更浅阈值恢复，形成稳定滞回。
+    collisionDisableDepth: 0.35,
+    collisionRestoreDepth: 0.20,
+
+    // 触发前碰撞姿态/动量的受控继承。角度完整保留，速度按倍率继承并逐渐对齐轨迹。
+    impactVelocityCarryScale: 0.50,
+    impactAlignSeconds: 0.25,
+    impactMaxAngularSpeedDegrees: 220,
+    // 允许侧偏和推进受损，但不允许脚本轨迹沿赛道倒退。
+    minimumForwardSpeed: 0.1,
 };
+
+export type DolphinAbilityMode = 'jump' | 'dive';
+
+const RAD2DEG = 180 / Math.PI;
+
+// Signed angle of the swimmer's head direction relative to the water surface.
+// Positive means head-down, negative means head-up. asin(sin(pitch)) folds a full
+// somersault back onto the actual vertical component, so -140° reads as 40° down
+// instead of an impossible 140° dive angle.
+export function dolphinHeadDownAngleDegrees(pitchRadians: number): number {
+    const pitch = Number.isFinite(pitchRadians) ? pitchRadians : 0;
+    return -Math.asin(Math.max(-1, Math.min(1, Math.sin(pitch)))) * RAD2DEG;
+}
+
+export function resolveDolphinAbilityMode(
+    pitchRadians: number,
+    pitchVelocityRadians: number,
+): DolphinAbilityMode {
+    const down = dolphinHeadDownAngleDegrees(pitchRadians);
+    if (down >= DOLPHIN_JUMP.diveStableDownAngleDegrees) {
+        return 'dive';
+    }
+    if (down <= DOLPHIN_JUMP.jumpStableDownAngleDegrees) {
+        return 'jump';
+    }
+    const velocity = Number.isFinite(pitchVelocityRadians) ? pitchVelocityRadians : 0;
+    const predicted = dolphinHeadDownAngleDegrees(
+        pitchRadians + velocity * Math.max(0, DOLPHIN_JUMP.posturePredictionSeconds),
+    );
+    return predicted >= DOLPHIN_JUMP.transitionDownAngleDegrees ? 'dive' : 'jump';
+}
 
 // Per-character dolphin-jump identity. These are mutable on purpose: the debug
 // tuning panel edits the shared objects in place so existing swimmers immediately

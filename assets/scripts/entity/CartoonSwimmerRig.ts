@@ -332,17 +332,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             });
             this.splashNode = this._splashEmitter.node;
             this._splashEmitter.build();
-            // Underwater bubbles: player only (skip reduced-LOD AI). Parented under
-            // the splash node so it inherits the swimmer overlay-layer tagging and
-            // is drawn over the opaque underwater surface.
-            if (!reducedSplash) {
-                this._bubbleEmitter = new UnderwaterBubbleEmitter({
-                    parent: this.splashNode || this.node,
-                    name: `${this.node.name || 'Swimmer'}Bubbles`,
-                    getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
-                });
-                this._bubbleEmitter.build();
-            }
+            // Underwater bubbles share the overlay layer. Background swimmers use
+            // two reduced wake points so dives stay readable without multiplying the
+            // player's detailed multi-point wake across every lane.
+            this._bubbleEmitter = new UnderwaterBubbleEmitter({
+                parent: this.splashNode || this.node,
+                name: `${this.node.name || 'Swimmer'}Bubbles`,
+                getBoneWorldPosition: (name, out) => this.getSplashBoneWorldPosition(name, out),
+                getWaterY: () => this._waterY,
+                reduced: reducedSplash,
+            });
+            this._bubbleEmitter.build();
         }
 
         this.loadModelForCurrentVariant();
@@ -899,6 +899,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._splashCulled = culled;
         this._splashEmitter?.setCulled(culled);
+        this._bubbleEmitter?.setCulled(culled);
     }
 
     // The race uses a world-space waterline shader, while presentation spaces
@@ -2099,15 +2100,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.update(speed);
     }
 
-    // Drive the player's underwater bubble trail. Called every frame by the owner
-    // (Swimmer in a race, GameManager in the underwater debug scene) with the
-    // current submerged state. No-op for AI (no bubble emitter) and above water.
-    updateUnderwaterBubbles(active: boolean) {
+    // Drive the underwater bubble trail. Background rigs own a reduced underwater
+    // point plus a surface-wake point; above water remains a state-edge no-op.
+    updateUnderwaterBubbles(active: boolean, surfaceWake = false) {
         if (!this._bubbleEmitter) {
             return;
         }
         const emit = active && !this._splashCulled;
-        this._bubbleEmitter.setEmitting(emit);
+        this._bubbleEmitter.setEmitting(emit, emit && surfaceWake);
         if (emit) {
             this._bubbleEmitter.updatePositions();
         }

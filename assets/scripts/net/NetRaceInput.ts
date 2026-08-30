@@ -42,7 +42,8 @@ export const enum NetInputKind {
     HeldOff = 'H',     // stroke-held end
     DiveCharge = 'c',  // dive charge start (countdown/diving)
     DiveRelease = 'r', // dive release (carries final power + optional final launch speed)
-    DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
+    DolphinJump = 'd', // owner-accepted dolphin ability; optional suffix 1 = deep-dive form
+    AiDolphinJump = 'a', // host-accepted AI dolphin ability: a<lane>,<0|1>
 }
 
 export interface NetInputEvent {
@@ -54,6 +55,10 @@ export interface NetInputEvent {
     // Present for newer DiveRelease payloads: the owner's final progression-adjusted
     // launch speed in m/s. Optional so older payloads keep decoding correctly.
     launchSpeed?: number;
+    // DolphinJump / AiDolphinJump: true selects the underwater inverse arc.
+    dolphinDive?: boolean;
+    // AiDolphinJump only: stable assigned race lane of the host-authoritative AI.
+    aiLane?: number;
 }
 
 export interface DecodedInputFrame {
@@ -83,7 +88,11 @@ function encodeEvent(event: NetInputEvent): string {
         case NetInputKind.DiveCharge:
             return NetInputKind.DiveCharge;
         case NetInputKind.DolphinJump:
-            return NetInputKind.DolphinJump;
+            return event.dolphinDive ? `${NetInputKind.DolphinJump}1` : NetInputKind.DolphinJump;
+        case NetInputKind.AiDolphinJump: {
+            const lane = Math.max(0, Math.floor(event.aiLane ?? 0));
+            return `${NetInputKind.AiDolphinJump}${lane},${event.dolphinDive ? 1 : 0}`;
+        }
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -111,7 +120,15 @@ function decodeToken(token: string): NetInputEvent | null {
         case NetInputKind.DiveCharge:
             return { kind };
         case NetInputKind.DolphinJump:
-            return { kind };
+            return { kind, dolphinDive: token.charAt(1) === '1' };
+        case NetInputKind.AiDolphinJump: {
+            const values = token.slice(1).split(',');
+            const lane = parseInt(values[0], 10);
+            if (!Number.isFinite(lane) || lane < 0) {
+                return null;
+            }
+            return { kind, aiLane: lane, dolphinDive: values[1] === '1' };
+        }
         case NetInputKind.DiveRelease: {
             const values = token.slice(1).split(',');
             const raw = parseInt(values[0], 10);

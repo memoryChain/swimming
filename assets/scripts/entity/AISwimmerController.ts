@@ -7,6 +7,7 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
+import type { DolphinAbilityMode } from '../core/DolphinJumpConfig';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
@@ -44,7 +45,12 @@ export class AISwimmerController extends Component {
     // (or in isolated tests), in which case strategy falls back to pacing only.
     public raceObserver: AIRaceObserver | null = null;
     // Assigned with the matching condition model. Event-only; remote humans never call it.
-    public onDolphinJumpStarted: (() => void) | null = null;
+    public onDolphinJumpStarted: ((mode: DolphinAbilityMode) => void) | null = null;
+
+    // Single-player always owns AI decisions. In a networked race GameManager updates
+    // this on every fixed step so only the currently authoritative host can accept an
+    // outcome-affecting dolphin action; other clients wait for the host event.
+    public dolphinDecisionAuthority = true;
 
     // NETWORKED RACE ONLY: when this lane is a remote human (driven by
     // RemoteSwimmerController from network input), the AI must never act. Defaults
@@ -74,6 +80,7 @@ export class AISwimmerController extends Component {
     private _dolphinCooldown = 0;
     private _dolphinDecisionTimer = 0;
     private _dolphinAirTapTimer = 0;
+    private _dolphinDefensiveDiveTimer = -1;
 
     setLaneLockdownSafeZRange(minZ: number | null, maxZ: number | null, warning: boolean) {
         if (!Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
@@ -112,6 +119,7 @@ export class AISwimmerController extends Component {
         this._dolphinCooldown = 0;
         this._dolphinDecisionTimer = 0;
         this._dolphinAirTapTimer = 0;
+        this._dolphinDefensiveDiveTimer = -1;
         this._timer = randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
     }
 
@@ -122,6 +130,7 @@ export class AISwimmerController extends Component {
         }
         this._active = false;
         this._phase = 'gap';
+        this._dolphinDefensiveDiveTimer = -1;
     }
 
     update(dt: number) {
@@ -169,12 +178,41 @@ export class AISwimmerController extends Component {
     // decision window so the shared stream consumption stays uniform.
     private maybeTriggerDolphinJump(sdt: number) {
         if (!AI_DOLPHIN_TUNING.enabled || this._dolphinCooldown > 0) {
+            this._dolphinDefensiveDiveTimer = -1;
             return;
         }
         // Only from surface racing (tryDolphinJump also guards near walls/finish).
         if (this.swimmer.isUnderwater) {
+            this._dolphinDefensiveDiveTimer = -1;
             return;
         }
+
+        // A charged AI that has been knocked clearly head-down treats the ability as
+        // a defensive dive. The reaction delay keeps the response readable and scales
+        // from rookie to expert; no random draw is involved in this priority branch.
+        if (this.swimmer.canAffordDolphin && this.swimmer.suggestedDolphinMode === 'dive') {
+            if (this._dolphinDefensiveDiveTimer < 0) {
+                const difficulty = this.effectiveDifficulty();
+                this._dolphinDefensiveDiveTimer = lerp(
+                    AI_DOLPHIN_TUNING.defensiveDiveReactionMaxSeconds,
+                    AI_DOLPHIN_TUNING.defensiveDiveReactionMinSeconds,
+                    difficulty,
+                );
+            } else {
+                this._dolphinDefensiveDiveTimer -= sdt;
+            }
+            if (this._dolphinDefensiveDiveTimer <= 0 && this.dolphinDecisionAuthority) {
+                const mode = this.swimmer.tryDolphinJump('dive');
+                if (mode) {
+                    this.finishDolphinStart(mode);
+                } else {
+                    this._dolphinDefensiveDiveTimer = -1;
+                }
+            }
+            return;
+        }
+        this._dolphinDefensiveDiveTimer = -1;
+
         this._dolphinDecisionTimer -= sdt;
         if (this._dolphinDecisionTimer > 0) {
             return;
@@ -184,14 +222,41 @@ export class AISwimmerController extends Component {
         if (randomFloat() >= chance) {
             return;
         }
-        if (this.swimmer.tryDolphinJump()) {
-            this.onDolphinJumpStarted?.();
-            this._dolphinCooldown = AI_DOLPHIN_TUNING.cooldownSeconds;
-            this._dolphinAirTapTimer = 0;
-            // Cleanly restart the stroke cycle after the scripted jump completes.
-            this._phase = 'gap';
-            this._timer = 0;
+        // All clients consume the same regular-decision random draw, but only the
+        // current host (or single-player) may turn it into an accepted action.
+        if (!this.dolphinDecisionAuthority) {
+            return;
         }
+        const mode = this.swimmer.tryDolphinJump();
+        if (mode) {
+            this.finishDolphinStart(mode);
+        }
+    }
+
+    private finishDolphinStart(mode: DolphinAbilityMode) {
+        this.onDolphinJumpStarted?.(mode);
+        this.resetAfterDolphinStart();
+    }
+
+    // Network replay for a genuine AI lane. The host has already validated and paid
+    // for this action, so the remote copy forces the announced form and mirrors the
+    // controller cooldown without firing the host's outbound callback again.
+    applyAcceptedNetDolphinJump(mode: DolphinAbilityMode): boolean {
+        if (!this.swimmer?.applyAcceptedNetDolphinJump(mode)) {
+            return false;
+        }
+        this.resetAfterDolphinStart();
+        return true;
+    }
+
+    private resetAfterDolphinStart() {
+        this._dolphinCooldown = AI_DOLPHIN_TUNING.cooldownSeconds;
+        this._dolphinDecisionTimer = AI_DOLPHIN_TUNING.decisionIntervalSeconds;
+        this._dolphinDefensiveDiveTimer = -1;
+        this._dolphinAirTapTimer = 0;
+        // Cleanly restart the stroke cycle after the scripted ability completes.
+        this._phase = 'gap';
+        this._timer = 0;
     }
 
     // Per-decision jump probability from the three strategies: rookies (菜鸟) show
@@ -223,7 +288,7 @@ export class AISwimmerController extends Component {
     // non-shared Math.random() — consuming SharedRNG here would desync the shared
     // stream that outcome-affecting draws depend on.
     private updateDolphinAirComedy(sdt: number) {
-        if (!this.swimmer.isDolphinAirActive) {
+        if (!this.swimmer.isDolphinAirActive && !this.swimmer.isDolphinDiveActive) {
             return;
         }
         this._dolphinAirTapTimer -= sdt;

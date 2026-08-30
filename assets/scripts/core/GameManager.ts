@@ -54,6 +54,8 @@ import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
+import { captureNetInput } from '../net/NetInputCapture';
+import { NetInputKind } from '../net/NetRaceInput';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
@@ -782,6 +784,9 @@ export class GameManager extends Component {
                     // member's pre-race showcase is ready; the countdown starts then.
                     this._netRaceController?.setCountdownStartListener(() => this._raceManager?.startRace());
                     this._netRaceController?.setPlayerQuitListener((pos) => this.onNetPlayerQuit(pos));
+                    this._netRaceController?.setAiDolphinListener((lane, dive) => {
+                        this.onNetAiDolphinJump(lane, dive);
+                    });
                     this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
@@ -1319,8 +1324,18 @@ export class GameManager extends Component {
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
         for (let index = 0; index < this._aiControllers.length; index++) {
-            this._aiControllers[index].onDolphinJumpStarted = () => {
+            this._aiControllers[index].onDolphinJumpStarted = (mode) => {
                 this._aiConditions[index]?.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+                if (this._netRaceController?.isHost) {
+                    const lane = this.assignedLaneOfSwimmer(this._aiSwimmers[index]);
+                    if (lane >= 0) {
+                        captureNetInput({
+                            kind: NetInputKind.AiDolphinJump,
+                            aiLane: lane,
+                            dolphinDive: mode === 'dive',
+                        });
+                    }
+                }
             };
         }
         for (const swimmer of this._aiSwimmers) {
@@ -1559,6 +1574,19 @@ export class GameManager extends Component {
         }
     }
 
+    // Replay an AI dolphin form accepted by the current host. The lane is stable
+    // across clients; remote-human placeholder lanes are deliberately excluded.
+    private onNetAiDolphinJump(lane: number, dive: boolean) {
+        const index = this.aiIndexForLane(lane);
+        const controller = index >= 0 ? this._aiControllers[index] : null;
+        if (!controller || controller.remoteDriven) {
+            return;
+        }
+        if (controller.applyAcceptedNetDolphinJump(dive ? 'dive' : 'jump')) {
+            this._aiConditions[index]?.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+        }
+    }
+
     // Deterministic fixed-step driver (net race only). Advances every net-driven body
     // on a FIXED 33ms clock in a stable order, so they progress identically on every
     // client — killing the variable-dt drift the host correction was papering over.
@@ -1579,6 +1607,7 @@ export class GameManager extends Component {
         while (this._aiStepAccum >= NET_SIM_STEP) {
             this._aiStepAccum -= NET_SIM_STEP;
             const raceDistance = getRaceDistance();
+            const ownsAiDolphinDecisions = this._netRaceController?.isHost === true;
             for (let i = 0; i < this._aiSwimmers.length; i++) {
                 const swimmer = this._aiSwimmers[i];
                 if (swimmer?.netFixedStep && swimmer.node.active) {
@@ -1591,6 +1620,9 @@ export class GameManager extends Component {
                     continue;
                 }
                 const controller = this._aiControllers[i];
+                if (controller) {
+                    controller.dolphinDecisionAuthority = ownsAiDolphinDecisions;
+                }
                 if (controller && !controller.remoteDriven) {
                     this.updateNetAiConditionStep(i, NET_SIM_STEP, raceDistance);
                 }

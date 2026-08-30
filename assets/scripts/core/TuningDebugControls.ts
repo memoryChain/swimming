@@ -1,7 +1,7 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
-import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
+import { AI_DOLPHIN_TUNING, AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
@@ -51,7 +51,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 33;
+const TUNING_FILE_VERSION = 34;
 
 type TuningFileData = {
     version: number;
@@ -163,12 +163,27 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dolphin.landingDepth', '落水下潜深度', '落水后潜入水下的深度，随后上浮恢复正常游泳。', () => DOLPHIN_JUMP.landingDepth, (v) => DOLPHIN_JUMP.landingDepth = v, 0.05, 0, 2, 2, 'm'),
             control('dolphin.landingRollUnwindSeconds', '转体回正时间', '落水后把残余轴向转体拉回正常游泳姿态所用的时间。', () => DOLPHIN_JUMP.landingRollUnwindSeconds, (v) => DOLPHIN_JUMP.landingRollUnwindSeconds = v, 0.05, 0.1, 2, 2, 's'),
             control('dolphin.strainHr', '起跳心率增长', '海豚跃成功发动时立即增加的心率（加法、封顶 200），不消耗普通体力。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 1, 0, 100, 0),
+            control('dolphin.jumpStableDownAngle', '稳定出水角度', '头部朝下不超过这个角度时稳定判为出水跃；与临界角、稳定深潜角共同形成缓冲区。', () => DOLPHIN_JUMP.jumpStableDownAngleDegrees, (v) => DOLPHIN_JUMP.jumpStableDownAngleDegrees = v, 1, 0, 80, 0, '°'),
+            control('dolphin.diveStableDownAngle', '稳定深潜角度', '头部朝下达到这个角度时稳定判为深潜跃。', () => DOLPHIN_JUMP.diveStableDownAngleDegrees, (v) => DOLPHIN_JUMP.diveStableDownAngleDegrees = v, 1, 10, 90, 0, '°'),
+            control('dolphin.transitionDownAngle', '临界分流角度', '姿态处于缓冲区时，预测角达到该值则深潜，否则出水。', () => DOLPHIN_JUMP.transitionDownAngleDegrees, (v) => DOLPHIN_JUMP.transitionDownAngleDegrees = v, 1, 0, 90, 0, '°'),
+            control('dolphin.posturePredictionSeconds', '姿态预测时间', '按当前碰撞俯仰角速度向前预测多久，用于临界区跟随旋转趋势。', () => DOLPHIN_JUMP.posturePredictionSeconds, (v) => DOLPHIN_JUMP.posturePredictionSeconds = v, 0.01, 0, 0.4, 2, 's'),
+            control('dolphin.diveDistanceRatio', '深潜距离比例', '破浪新星标准深潜距离相对其标准出水跃距离的比例；角色空中距离倍率继续参与。', () => DOLPHIN_JUMP.diveDistanceRatio, (v) => DOLPHIN_JUMP.diveDistanceRatio = v, 0.02, 0.2, 1.2, 2),
+            control('dolphin.diveBaseDepth', '标准深潜深度', '破浪新星深潜弧线的最大水下深度；角色落水深度倍率继续参与。', () => DOLPHIN_JUMP.diveBaseDepth, (v) => DOLPHIN_JUMP.diveBaseDepth = v, 0.05, 0.2, 2, 2, 'm'),
+            control('dolphin.diveBaseDurationSeconds', '标准深潜时长', '破浪新星从钻入到重新回到水面的整段弧线时长；角色水下时长倍率继续参与。', () => DOLPHIN_JUMP.diveBaseDurationSeconds, (v) => DOLPHIN_JUMP.diveBaseDurationSeconds = v, 0.05, 0.3, 2, 2, 's'),
+            control('dolphin.diveBottomTimeRatio', '最深点时间占比', '整段深潜中到达最深点的时间位置；小于 0.5 表示快速钻水、缓慢上浮。', () => DOLPHIN_JUMP.diveBottomTimeRatio, (v) => DOLPHIN_JUMP.diveBottomTimeRatio = v, 0.02, 0.1, 0.9, 2),
+            control('dolphin.collisionDisableDepth', '免碰下潜深度', '深潜到达该深度后才关闭角色间碰撞；出水跃仍在真正腾空时关闭。', () => DOLPHIN_JUMP.collisionDisableDepth, (v) => DOLPHIN_JUMP.collisionDisableDepth = v, 0.05, 0.05, 1, 2, 'm'),
+            control('dolphin.collisionRestoreDepth', '恢复碰撞深度', '上浮到水面下该深度时恢复角色间碰撞，不追加保护时间。应小于免碰下潜深度。', () => DOLPHIN_JUMP.collisionRestoreDepth, (v) => DOLPHIN_JUMP.collisionRestoreDepth = v, 0.05, 0, 0.8, 2, 'm'),
+            control('dolphin.impactVelocityCarryScale', '撞击动量继承', '触发时保留多少碰撞角速度和线性击退；姿态角本身始终完整保留。', () => DOLPHIN_JUMP.impactVelocityCarryScale, (v) => DOLPHIN_JUMP.impactVelocityCarryScale = v, 0.05, 0, 1, 2),
+            control('dolphin.impactAlignSeconds', '轨迹对齐时间', '继承姿态和撞击动量逐渐对齐脚本轨迹所需的时间。', () => DOLPHIN_JUMP.impactAlignSeconds, (v) => DOLPHIN_JUMP.impactAlignSeconds = v, 0.05, 0.05, 1, 2, 's'),
+            control('dolphin.impactMaxAngularSpeedDegrees', '继承转速上限', '进入双形态动作后允许继承的最大碰撞俯仰/侧翻角速度。', () => DOLPHIN_JUMP.impactMaxAngularSpeedDegrees, (v) => DOLPHIN_JUMP.impactMaxAngularSpeedDegrees = v, 10, 30, 540, 0, '°/s'),
             control('camera.dolphinBackDistance', '相机后距', '海豚跃跟随相机沿飞行切线在身后的基础距离。', () => RACE_CAMERA_TUNING.dolphinBackDistance, (v) => RACE_CAMERA_TUNING.dolphinBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
             control('camera.dolphinApexPullback', '顶点拉远', '腾空到最高点时在基础后距上额外往后拉的距离，用来把整个跃起框进画面。', () => RACE_CAMERA_TUNING.dolphinApexPullback, (v) => RACE_CAMERA_TUNING.dolphinApexPullback = v, 0.1, 0, 5, 1, 'm'),
             control('camera.dolphinHeight', '相机抬高', '在切线跟拍基础上额外的世界向上抬高量（取景用，别调太大否则会削弱抛物线跟拍感）。', () => RACE_CAMERA_TUNING.dolphinHeight, (v) => RACE_CAMERA_TUNING.dolphinHeight = v, 0.05, -0.5, 2, 2, 'm'),
             control('camera.dolphinPitchFollow', '抛物线跟拍强度', '0=纯水平跟在身后；1=完全沿飞行切线跟拍。太高会显得死板，配合下面的“切线高度偏移”更灵动。', () => RACE_CAMERA_TUNING.dolphinPitchFollow, (v) => RACE_CAMERA_TUNING.dolphinPitchFollow = v, 0.05, 0, 1, 2),
             control('camera.dolphinTangentBias', '切线高度偏移', '相机相对飞行切线的渐变高度偏移(最陡俯仰时的米数)：出水上升时在切线下面(仰拍)、入水下降时在切线上面(俯冲)，顶点归零平滑过渡。0=完全贴切线。', () => RACE_CAMERA_TUNING.dolphinTangentBias, (v) => RACE_CAMERA_TUNING.dolphinTangentBias = v, 0.05, 0, 3, 2, 'm'),
             control('camera.dolphinMaxSubmerge', '相机最大入水深度', '相机在上升摆到身后下方时最多沉到水面以下多少米，防止扎太深。', () => RACE_CAMERA_TUNING.dolphinMaxSubmerge, (v) => RACE_CAMERA_TUNING.dolphinMaxSubmerge = v, 0.05, 0, 2, 2, 'm'),
+            control('camera.dolphinDiveDepthFollow', '深潜镜头深度跟随', '深潜时镜头跟随角色下潜深度的比例；0 保持水面，1 完全跟随角色。', () => RACE_CAMERA_TUNING.dolphinDiveDepthFollow, (v) => RACE_CAMERA_TUNING.dolphinDiveDepthFollow = v, 0.05, 0, 1, 2),
+            control('camera.dolphinDiveMaxSubmerge', '深潜镜头最大下沉', '深潜跟随镜头最多沉到水面以下多少米，避免视野跟着角色扎得过深。', () => RACE_CAMERA_TUNING.dolphinDiveMaxSubmerge, (v) => RACE_CAMERA_TUNING.dolphinDiveMaxSubmerge = v, 0.05, 0, 1.5, 2, 'm'),
             control('camera.dolphinFov', '相机 FOV', '海豚跃跟随相机的垂直视场角。', () => RACE_CAMERA_TUNING.dolphinFov, (v) => RACE_CAMERA_TUNING.dolphinFov = v, 1, 30, 80, 0, '°'),
         ],
     },
@@ -299,6 +314,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('ai.startDelayMin', '起步延迟下限', 'AI 进入游泳阶段后，第一次划水前随机延迟的最小秒数。', () => AI_STROKE_TUNING.startDelayMin, (v) => AI_STROKE_TUNING.startDelayMin = v, 0.01, 0, 0.6, 2, 's'),
             control('ai.startDelayMax', '起步延迟上限', 'AI 进入游泳阶段后，第一次划水前随机延迟的最大秒数。', () => AI_STROKE_TUNING.startDelayMax, (v) => AI_STROKE_TUNING.startDelayMax = v, 0.01, 0, 0.8, 2, 's'),
             control('ai.maxHoldSeconds', 'AI保底松手时间', '兜底：AI 按住超过这个秒数还没等到目标进度就强制松手，防止卡住。', () => AI_STROKE_TUNING.maxHoldSeconds, (v) => AI_STROKE_TUNING.maxHoldSeconds = v, 0.05, 0.2, 1.5, 2, 's'),
+            control('ai.dolphinDefensiveDiveReactionMinSeconds', '高手深潜反应', '高难度 AI 满蓄气且被撞到头朝下后，最快多久发动防御性深潜。', () => AI_DOLPHIN_TUNING.defensiveDiveReactionMinSeconds, (v) => AI_DOLPHIN_TUNING.defensiveDiveReactionMinSeconds = v, 0.01, 0, 1, 2, 's'),
+            control('ai.dolphinDefensiveDiveReactionMaxSeconds', '新手深潜反应', '低难度 AI 满蓄气且被撞到头朝下后，最慢多久发动防御性深潜。', () => AI_DOLPHIN_TUNING.defensiveDiveReactionMaxSeconds, (v) => AI_DOLPHIN_TUNING.defensiveDiveReactionMaxSeconds = v, 0.01, 0, 1.5, 2, 's'),
             control('aiStrategy.effortEaseRate', '策略反应速度', 'AI 策略发力向目标靠拢的速率（每秒）。越低橡皮筋/追赶越隐形、越平滑；越高反应越快越明显。', () => AI_STRATEGY_TUNING.effortEaseRate, (v) => AI_STRATEGY_TUNING.effortEaseRate = v, 0.05, 0.1, 4, 2, '/s'),
             control('aiStrategy.rubberBandStrength', '橡皮筋强度', '落后玩家时 AI 额外发力的最大幅度（叠加到难度上）。越大追赶越猛、越容易被你甩不掉；0=完全不追赶。会按对手性格的竞争性缩放。', () => AI_STRATEGY_TUNING.rubberBandStrength, (v) => AI_STRATEGY_TUNING.rubberBandStrength = v, 0.01, 0, 0.4, 2),
             control('aiStrategy.rubberBandRange', '橡皮筋范围', '橡皮筋饱和所需的领先/落后米数。领先或落后玩家超过这个距离后追赶/收力达到最大。越大追赶越"温柔"。', () => AI_STRATEGY_TUNING.rubberBandRange, (v) => AI_STRATEGY_TUNING.rubberBandRange = v, 0.5, 2, 40, 1, 'm'),
@@ -766,6 +783,25 @@ function validateTuningRelations(changedId?: string) {
         }
     }
 
+    const jumpAngle = Math.max(0, DOLPHIN_JUMP.jumpStableDownAngleDegrees);
+    const diveAngle = Math.max(jumpAngle + 1, DOLPHIN_JUMP.diveStableDownAngleDegrees);
+    const transitionAngle = Math.max(
+        jumpAngle,
+        Math.min(diveAngle, DOLPHIN_JUMP.transitionDownAngleDegrees),
+    );
+    if (jumpAngle !== DOLPHIN_JUMP.jumpStableDownAngleDegrees
+        || diveAngle !== DOLPHIN_JUMP.diveStableDownAngleDegrees
+        || transitionAngle !== DOLPHIN_JUMP.transitionDownAngleDegrees) {
+        console.warn('[SpeedSwimming] tuning adjusted: dolphin posture angles must satisfy jump <= transition <= dive.');
+        DOLPHIN_JUMP.jumpStableDownAngleDegrees = jumpAngle;
+        DOLPHIN_JUMP.diveStableDownAngleDegrees = diveAngle;
+        DOLPHIN_JUMP.transitionDownAngleDegrees = transitionAngle;
+    }
+    if (DOLPHIN_JUMP.collisionRestoreDepth > DOLPHIN_JUMP.collisionDisableDepth) {
+        console.warn('[SpeedSwimming] tuning adjusted: dolphin collision restore depth must not exceed disable depth.');
+        DOLPHIN_JUMP.collisionRestoreDepth = DOLPHIN_JUMP.collisionDisableDepth;
+    }
+
     if (SWIMMER_BALANCE.kickMaxSpeed > SWIMMER_BALANCE.maxSpeed) {
         console.warn(
             `[SpeedSwimming] tuning adjusted: speed.kickMaxSpeed ${SWIMMER_BALANCE.kickMaxSpeed.toFixed(2)} ` +
@@ -862,6 +898,12 @@ function validateTuningRelations(changedId?: string) {
     if (AI_STROKE_TUNING.startDelayMax < AI_STROKE_TUNING.startDelayMin) {
         console.warn('[SpeedSwimming] tuning adjusted: ai.startDelayMax must not be below startDelayMin');
         AI_STROKE_TUNING.startDelayMax = AI_STROKE_TUNING.startDelayMin;
+    }
+    if (AI_DOLPHIN_TUNING.defensiveDiveReactionMaxSeconds
+        < AI_DOLPHIN_TUNING.defensiveDiveReactionMinSeconds) {
+        console.warn('[SpeedSwimming] tuning adjusted: AI defensive dive max reaction must not be below min.');
+        AI_DOLPHIN_TUNING.defensiveDiveReactionMaxSeconds
+            = AI_DOLPHIN_TUNING.defensiveDiveReactionMinSeconds;
     }
 
     if (STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond < STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond) {

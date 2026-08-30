@@ -6,7 +6,11 @@ import {
     StrokeType,
 } from '../core/GameConstants';
 import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
-import type { DolphinJumpProfile } from '../core/DolphinJumpConfig';
+import {
+    resolveDolphinAbilityMode,
+    type DolphinAbilityMode,
+    type DolphinJumpProfile,
+} from '../core/DolphinJumpConfig';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
@@ -90,8 +94,7 @@ export class Swimmer extends Component {
         return this._motor.isRacing
             && this.node.active
             && !this._phases.isFlipTurnActive
-            && !this._phases.isDolphinJumpActive
-            && !this._phases.isUnderwater;
+            && !this._phases.isCollisionSuppressed;
     }
 
     // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
@@ -620,9 +623,12 @@ export class Swimmer extends Component {
     // scaled) dt. Networked race: fixed-step (NET_SIM_STEP) from the deterministic
     // net driver. `dt` is already the final step length (scaling applied by caller).
     stepSimulation(dt: number) {
-        // Player-only friction bubbles during the sustained underwater glides
-        // (dive start / flip turn). Excludes the short dolphin jump. No-op for AI.
-        this.cartoonRig?.updateUnderwaterBubbles(this._phases.isSwimUnderwaterActive);
+        // Friction bubbles are emission-gated to actual underwater motion. Reduced
+        // rigs use a much smaller emitter, so remote deep dives remain readable.
+        this.cartoonRig?.updateUnderwaterBubbles(
+            this._phases.isSwimUnderwaterActive,
+            this._phases.isDolphinDiveActive,
+        );
         if (!this._motor.isRacing) {
             return;
         }
@@ -725,7 +731,7 @@ export class Swimmer extends Component {
             // Mid-air, each press adds an axial-roll impulse and plays the in-water
             // stroke animation (no propulsion). During the pre-launch dip it is
             // ignored. addDolphinRollImpulse itself no-ops outside the air stage.
-            if (this._phases.isDolphinAirActive) {
+            if (this._phases.isDolphinRollInputActive) {
                 this._phases.addDolphinRollImpulse(type);
                 this._motor.queueVisualArmStroke(type);
             }
@@ -1147,7 +1153,7 @@ export class Swimmer extends Component {
     // Airborne flight pitch (radians, + = ascending) during a dolphin jump, else 0.
     // The follow camera and speed lines tilt along this so they track the parabola.
     get flightPitch(): number {
-        return this._phases.isDolphinAirActive
+        return this._phases.isDolphinJumpActive
             ? this._phases.dolphinFlightPitchRadians()
             : 0;
     }
@@ -1221,29 +1227,45 @@ export class Swimmer extends Component {
         return this._phases.isDolphinAirActive;
     }
 
+    get isDolphinDiveActive(): boolean {
+        return this._phases.isDolphinDiveActive;
+    }
+
+    get suggestedDolphinMode(): DolphinAbilityMode {
+        return resolveDolphinAbilityMode(
+            this._motor.collisionPitchRadians,
+            this._motor.collisionPitchAngularVelocity,
+        );
+    }
+
+    get canAffordDolphin(): boolean {
+        return this._ultimate.canAffordDolphin;
+    }
+
     // Begin a dolphin jump (both-hands gesture). Only from surface racing; the
     // phase controller rejects it mid-turn/underwater or too close to a wall.
-    tryDolphinJump(): boolean {
+    tryDolphinJump(forcedMode?: DolphinAbilityMode): DolphinAbilityMode | null {
         if (!this._motor.isRacing) {
-            return false;
+            return null;
         }
         if (!this._ultimate.canAffordDolphin) {
             this._ultimate.flagDolphinDenied();
-            return false;
+            return null;
         }
-        if (!this._phases.tryStartDolphinJump()) {
-            return false;
+        const mode = this._phases.tryStartDolphinJump(forcedMode);
+        if (!mode) {
+            return null;
         }
         this._ultimate.spendDolphin();
-        return true;
+        return mode;
     }
 
     // Network replay only: DolphinJump is captured and sent only AFTER the owner has
     // successfully passed energy/phase validation. Do not reject that accepted action
     // against this remote copy's predicted energy; the reliable self-state in the same
     // frame will align the exact post-spend energy.
-    applyAcceptedNetDolphinJump(): boolean {
-        if (!this._motor.isRacing || !this._phases.tryStartDolphinJump()) {
+    applyAcceptedNetDolphinJump(mode: DolphinAbilityMode = 'jump'): boolean {
+        if (!this._motor.isRacing || !this._phases.tryStartDolphinJump(mode)) {
             return false;
         }
         this._ultimate.spendDolphin();

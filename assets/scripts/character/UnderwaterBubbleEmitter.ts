@@ -22,9 +22,9 @@ import {
 // (World-space simulation) so the swimmer leaves them BEHIND as a trail, with only
 // the faintest upward drift.
 //
-// WeChat budget: PLAYER ONLY (AI never build one), one tiny CPU particle system,
-// emission gated to the underwater phases so the normal above-water race pays
-// nothing.
+// WeChat budget: the player uses the detailed body wake; background swimmers use
+// one underwater point plus one low-rate surface-wake point. Emission is gated
+// to underwater phases, so the normal above-water race pays only a boolean comparison.
 
 export type UnderwaterBubbleOptions = {
     // A stable world-space node already tagged onto the swimmer overlay layer (the
@@ -36,6 +36,9 @@ export type UnderwaterBubbleOptions = {
     // Resolve a swimmer bone world position by name (Body/LeftHand/RightHand/
     // LeftFoot/RightFoot/...). Same getter the SplashEmitter uses.
     getBoneWorldPosition: (name: string, out: Vec3) => boolean;
+    getWaterY?: () => number;
+    // AI/remote LOD: two low-rate sources instead of the detailed body wake.
+    reduced?: boolean;
 };
 
 // Emit points with per-point rate/radius/capacity. Spread across the MOVING body
@@ -46,7 +49,15 @@ export type UnderwaterBubbleOptions = {
 // no single source stands out. World-space simulation (below) leaves every speck
 // in the water as the body swims on, so it all trails BEHIND. Many tiny SOFT
 // specks (foam), not distinct soap bubbles.
-type EmitConfig = { bone: string; bone2?: string; mix?: number; rate: number; radius: number; capacity: number };
+type EmitConfig = {
+    bone: string;
+    bone2?: string;
+    mix?: number;
+    rate: number;
+    radius: number;
+    capacity: number;
+    surfaceWake?: boolean;
+};
 const EMIT_POINTS: EmitConfig[] = [
     { bone: 'LeftHand', rate: 10, radius: 0.16, capacity: 22 },
     { bone: 'RightHand', rate: 10, radius: 0.16, capacity: 22 },
@@ -57,6 +68,11 @@ const EMIT_POINTS: EmitConfig[] = [
     { bone: 'LeftLeg', bone2: 'LeftFoot', mix: 0.5, rate: 11, radius: 0.18, capacity: 24 },
     { bone: 'RightLeg', bone2: 'RightFoot', mix: 0.5, rate: 11, radius: 0.18, capacity: 24 },
     { bone: 'Foot', rate: 13, radius: 0.18, capacity: 28 },
+    { bone: 'Body', rate: 5, radius: 0.2, capacity: 16, surfaceWake: true },
+];
+const REDUCED_EMIT_POINTS: EmitConfig[] = [
+    { bone: 'Foot', rate: 7, radius: 0.16, capacity: 18 },
+    { bone: 'Body', rate: 4, radius: 0.18, capacity: 12, surfaceWake: true },
 ];
 
 // Tiny soft foam specks with low alpha, so lots of overlapping specks read as a
@@ -90,6 +106,7 @@ type BubblePoint = {
     boneName2: string | null;
     mix: number;
     rate: number;
+    surfaceWake: boolean;
 };
 
 export class UnderwaterBubbleEmitter {
@@ -98,6 +115,7 @@ export class UnderwaterBubbleEmitter {
     private readonly _tmp = new Vec3();
     private readonly _tmp2 = new Vec3();
     private _emitting = false;
+    private _surfaceWake = false;
     private _visible = true;
     private readonly _options: UnderwaterBubbleOptions;
 
@@ -112,7 +130,8 @@ export class UnderwaterBubbleEmitter {
         root.setPosition(0, 0, 0);
         this.node = root;
 
-        for (const cfg of EMIT_POINTS) {
+        const emitPoints = this._options.reduced ? REDUCED_EMIT_POINTS : EMIT_POINTS;
+        for (const cfg of emitPoints) {
             const node = new Node(`Bubble_${cfg.bone}`);
             node.setParent(root);
             node.layer = root.layer;
@@ -125,6 +144,7 @@ export class UnderwaterBubbleEmitter {
                 boneName2: cfg.bone2 ?? null,
                 mix: cfg.mix ?? 0.5,
                 rate: cfg.rate,
+                surfaceWake: !!cfg.surfaceWake,
             });
         }
     }
@@ -173,14 +193,16 @@ export class UnderwaterBubbleEmitter {
 
     // Open/close emission on the underwater edge. Only writes on change so the
     // above-water race path is a single boolean compare.
-    setEmitting(active: boolean) {
-        if (active === this._emitting) {
+    setEmitting(active: boolean, surfaceWake = false) {
+        if (active === this._emitting && surfaceWake === this._surfaceWake) {
             return;
         }
         this._emitting = active;
+        this._surfaceWake = surfaceWake;
         for (const point of this._points) {
-            setConstant(point.system.rateOverTime, active ? point.rate : 0);
-            if (active && !point.system.isPlaying) {
+            const pointActive = active && (!point.surfaceWake || surfaceWake);
+            setConstant(point.system.rateOverTime, pointActive ? point.rate : 0);
+            if (pointActive && !point.system.isPlaying) {
                 point.system.play();
             }
         }
@@ -200,6 +222,9 @@ export class UnderwaterBubbleEmitter {
             if (point.boneName2 && this._options.getBoneWorldPosition(point.boneName2, this._tmp2)) {
                 Vec3.lerp(this._tmp, this._tmp, this._tmp2, point.mix);
             }
+            if (point.surfaceWake && this._options.getWaterY) {
+                this._tmp.y = this._options.getWaterY();
+            }
             point.node.setWorldPosition(this._tmp);
         }
     }
@@ -210,6 +235,20 @@ export class UnderwaterBubbleEmitter {
         }
         this._visible = visible;
         this.node.active = visible;
+    }
+
+    setCulled(culled: boolean) {
+        if (!this.node || this._visible === !culled) {
+            return;
+        }
+        if (culled) {
+            this.setEmitting(false);
+            for (const point of this._points) {
+                point.system.stop();
+                point.system.clear();
+            }
+        }
+        this.setVisible(!culled);
     }
 
     dispose() {

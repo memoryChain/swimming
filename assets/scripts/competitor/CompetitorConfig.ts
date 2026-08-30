@@ -186,6 +186,9 @@ export const AI_DOLPHIN_TUNING = {
     finishZoneMeters: 12,
     // 终点冲刺跃的单次决策概率。
     finishShowoffChance: 0.14,
+    // 满蓄气且被撞到明确头朝下时，AI 优先把大招用于深潜脱困。高手反应更快。
+    defensiveDiveReactionMinSeconds: 0.10,
+    defensiveDiveReactionMaxSeconds: 0.35,
     // —— 空中搞笑乱转（纯表演）——
     // 腾空时每隔这么久尝试一次随机点击（左右）来乱转。单位：秒。
     airTapIntervalSeconds: 0.12,

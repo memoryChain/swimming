@@ -206,10 +206,14 @@ export class GameFlowController {
         if (!swimmer) {
             return;
         }
-        if (swimmer.tryDolphinJump()) {
+        const mode = swimmer.tryDolphinJump();
+        if (mode) {
             this._refs.applyPlayerDolphinJumpStrain();
-            captureNetInput({ kind: NetInputKind.DolphinJump });
-            this._refs.debug('dolphin jump');
+            captureNetInput({
+                kind: NetInputKind.DolphinJump,
+                dolphinDive: mode === 'dive',
+            });
+            this._refs.debug(mode === 'dive' ? 'dolphin dive' : 'dolphin jump');
         }
     }
 
@@ -465,6 +469,7 @@ export class GameFlowController {
             sprintActive: this._sprintTriggered,
             playerFlipTurnCameraActive: focus.isFlipTurnCameraActive,
             playerDolphinCameraActive: focus.isDolphinCameraActive,
+            playerDolphinDiveActive: focus.isDolphinDiveActive,
         };
         // Switch to the behind-the-swimmer sprint chase as the opening dive rises
         // close to the surface. Gameplay remains underwater until the rise really

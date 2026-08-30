@@ -164,6 +164,10 @@ export const RACE_CAMERA_TUNING = {
     dolphinLookAhead: 1.2,
     // 顶点参考高度：角色离水面达到这个高度时「顶点拉远」完全生效（用于归一化拉远程度）。单位：米。
     dolphinApexReferenceHeight: 1.2,
+    // Deep-dive form stays readable from a shallow chase instead of dragging the
+    // camera all the way to the swimmer. Follow 35% of root depth, capped at 0.45m.
+    dolphinDiveDepthFollow: 0.35,
+    dolphinDiveMaxSubmerge: 0.45,
     // 相机视场角(FOV)：海豚跃跟随相机的垂直视场角。单位：度。越大越广、速度感越强。
     dolphinFov: 55,
 };
@@ -228,11 +232,16 @@ export type RaceCameraSnapshot = {
     // follow-behind chase that tracks the swimmer up into the air and back into
     // the water.
     playerDolphinCameraActive?: boolean;
+    // The inverse underwater arc uses a shallower camera rig than the airborne form.
+    playerDolphinDiveActive?: boolean;
 };
 
 export class RaceCameraDirector {
     private readonly _cameraPos = new Vec3(-6, 4.7, 10.5);
     private readonly _cameraTarget = new Vec3(8, 0.25, 0);
+    private readonly _dolphinDiveBody = new Vec3();
+    private readonly _dolphinDiveDesiredPos = new Vec3();
+    private readonly _dolphinDiveTarget = new Vec3();
     private _cameraNode: Node = null;
     private _mode = RaceCameraMode.Broadcast;
     private _sprintFovCurrent = RACE_CAMERA_TUNING.sprintFov;
@@ -1073,6 +1082,10 @@ export class RaceCameraDirector {
     }
 
     private updateDolphinCamera(dt: number, snapshot: RaceCameraSnapshot, immediate: boolean) {
+        if (snapshot.playerDolphinDiveActive) {
+            this.updateDolphinDiveCamera(dt, snapshot, immediate);
+            return;
+        }
         // Dedicated dolphin-jump rig. The anchor Y tracks the swimmer's upper body,
         // so the camera rises with the leap and — because its height offset is
         // deliberately small — PLUNGES BELOW THE SURFACE with the swimmer on
@@ -1162,6 +1175,57 @@ export class RaceCameraDirector {
         this._topViewActive = false;
         // Flag the underwater view while the camera itself is below the surface so
         // downstream logic (speed lines, etc.) treats it as an underwater shot.
+        this._underwaterViewActive = this._cameraPos.y < waterY;
+        this.applyCameraTransform();
+        this.applyFov();
+    }
+
+    private updateDolphinDiveCamera(dt: number, snapshot: RaceCameraSnapshot, immediate: boolean) {
+        const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
+        const body = this._dolphinDiveBody;
+        if (snapshot.playerUpperBodyWorldPosition) {
+            Vec3.copy(body, snapshot.playerUpperBodyWorldPosition);
+        } else {
+            body.set(snapshot.playerX, snapshot.playerY + 0.5, this._playerLaneZ);
+        }
+        const heading = snapshot.playerHeading ?? 0;
+        const movementX = direction * Math.cos(heading);
+        const movementZ = Math.sin(heading);
+        const waterY = this._courseLayout.waterY;
+        const rootDepth = Math.max(0, waterY - snapshot.playerY);
+        const cameraDepth = Math.min(
+            Math.max(0, RACE_CAMERA_TUNING.dolphinDiveMaxSubmerge),
+            rootDepth * clamp(RACE_CAMERA_TUNING.dolphinDiveDepthFollow, 0, 1),
+        );
+        const edgeMargin = 0.35;
+        const poolMinX = Math.min(this._courseLayout.poolStartX, this._courseLayout.poolFinishX) + edgeMargin;
+        const poolMaxX = Math.max(this._courseLayout.poolStartX, this._courseLayout.poolFinishX) - edgeMargin;
+        const poolHalfWidth = Math.max(edgeMargin + 0.1, this._courseLayout.poolWidth * 0.5);
+        const poolMinZ = -poolHalfWidth + edgeMargin;
+        const poolMaxZ = poolHalfWidth - edgeMargin;
+        const back = Math.max(0.5, RACE_CAMERA_TUNING.dolphinBackDistance);
+        const desiredPos = this._dolphinDiveDesiredPos;
+        desiredPos.set(
+            clamp(body.x - back * movementX, poolMinX, poolMaxX),
+            waterY - cameraDepth,
+            clamp(body.z - back * movementZ, poolMinZ, poolMaxZ),
+        );
+        const target = this._dolphinDiveTarget;
+        target.set(
+            body.x + RACE_CAMERA_TUNING.dolphinLookAhead * movementX,
+            body.y,
+            body.z + RACE_CAMERA_TUNING.dolphinLookAhead * movementZ,
+        );
+        // Entry uses the agreed ~0.18s blend; normal tracking tightens afterward.
+        const follow = immediate ? cameraBlend(dt, 9) : cameraBlend(dt, 13);
+        const lateral = cameraBlend(dt, 6);
+        this._cameraPos.x += (desiredPos.x - this._cameraPos.x) * follow;
+        this._cameraPos.y += (desiredPos.y - this._cameraPos.y) * follow;
+        this._cameraPos.z += (desiredPos.z - this._cameraPos.z) * lateral;
+        this._cameraTarget.x += (target.x - this._cameraTarget.x) * follow;
+        this._cameraTarget.y += (target.y - this._cameraTarget.y) * follow;
+        this._cameraTarget.z += (target.z - this._cameraTarget.z) * lateral;
+        this._topViewActive = false;
         this._underwaterViewActive = this._cameraPos.y < waterY;
         this.applyCameraTransform();
         this.applyFov();

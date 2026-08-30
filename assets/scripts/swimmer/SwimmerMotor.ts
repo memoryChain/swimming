@@ -1142,6 +1142,24 @@ export class SwimmerMotor {
         return this._collisionPitch.angularVelocityRadians;
     }
 
+    // Scripted dolphin phases sample collision impulses while their path owns the
+    // root transform. The rates remain in the same race-distance/lateral axes used
+    // by normal knockback, so the phase can inherit them without allocating a
+    // temporary vector or converting through world space.
+    get collisionKnockbackDistanceRate(): number {
+        return this._knockbackDistance;
+    }
+
+    get collisionKnockbackLateralRate(): number {
+        return this._knockbackLateral;
+    }
+
+    clearDolphinImpactCarry() {
+        this.clearKnockback();
+        this._axialRoll.reset();
+        this._collisionPitch.reset();
+    }
+
     get permitsUprightTreadWater(): boolean {
         return this._axialRoll.permitsUprightTreadWater
             && this._collisionPitch.permitsUprightTreadWater;
@@ -1149,6 +1167,19 @@ export class SwimmerMotor {
 
     restoreAxialBalance(angleRadians: number) {
         this._axialRoll.setState(angleRadians, 0);
+    }
+
+    // Hand the remaining collision pose back from a scripted deep-dive route once
+    // surface collision has already been restored. This prevents a late contact in
+    // the final ascent from snapping upright on the completion frame.
+    restoreDolphinCollisionState(
+        axialAngleRadians: number,
+        axialAngularVelocity: number,
+        pitchAngleRadians: number,
+        pitchAngularVelocity: number,
+    ) {
+        this._axialRoll.setState(axialAngleRadians, axialAngularVelocity);
+        this._collisionPitch.correct(pitchAngleRadians, pitchAngularVelocity, 1);
     }
 
     // NETWORKED RACE: correct the periodic roll state and its continuous inertia.
