@@ -1606,6 +1606,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (!this._modelDebugMode || !this._loaded || !this._model || !this.root) {
             return;
         }
+        // The freestyle debug preview owns its model placement through
+        // applyTreadBlendModelPlacement(). Reapplying the prone race setup here
+        // fights that placement and, once its write cache settles, leaves the
+        // tread-water pose prone and at the swimming height.
+        // Freestyle 调试预览的朝向和水面高度由踩水混合独占控制，不能在每帧刷新时重置为俯泳摆位。
+        if (this._debugActionPose === 'freestyle') {
+            return;
+        }
         this._poseState.applyRaceModelSetup();
     }
 
