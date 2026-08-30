@@ -25,6 +25,10 @@ const ULTIMATE_DENIED = new Color(255, 92, 92, 255);
 const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
 const ULTIMATE_READY = new Color(255, 215, 90, 255);
 const ULTIMATE_CHARGING = new Color(210, 160, 60, 255);
+// The character gather and release halo now carry the start-dive charge readout.
+// Keep the legacy right-side bar mounted but hidden so it can be compared again
+// without rebuilding the race HUD.
+const DIVE_CHARGE_BAR_ENABLED = false;
 const DIVE_CHARGE_HEIGHT = 216;
 const DIVE_GFX_LOW = new Color(87, 196, 255, 255);
 const DIVE_GFX_MID = new Color(80, 242, 161, 255);
@@ -404,16 +408,17 @@ export class UIController extends Component {
 
     updateDiveCharge(power: number, visible: boolean) {
         this.setSpeedBarVisible(!visible && !this.countdownOverlay?.active);
-        if (this.diveChargeTrack && this.diveChargeTrack.active !== visible) {
-            this.diveChargeTrack.active = visible;
+        const barVisible = visible && DIVE_CHARGE_BAR_ENABLED;
+        if (this.diveChargeTrack && this.diveChargeTrack.active !== barVisible) {
+            this.diveChargeTrack.active = barVisible;
         }
-        if (this.diveChargeFill && this.diveChargeFill.node.active !== visible) {
-            this.diveChargeFill.node.active = visible;
+        if (this.diveChargeFill && this.diveChargeFill.node.active !== barVisible) {
+            this.diveChargeFill.node.active = barVisible;
         }
-        if (this.diveChargeFillNode && this.diveChargeFillNode.active !== visible) {
-            this.diveChargeFillNode.active = visible;
+        if (this.diveChargeFillNode && this.diveChargeFillNode.active !== barVisible) {
+            this.diveChargeFillNode.active = barVisible;
         }
-        if (!visible) {
+        if (!barVisible) {
             return;
         }
         const ratio = clamp01(power);
