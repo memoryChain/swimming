@@ -45,7 +45,12 @@ import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
-import { SwimmerNameOverlay, swimmerHudScaleForDistance } from '../ui/SwimmerNameOverlay';
+import {
+    LIVE_PLACEMENT_BADGE_WIDTH,
+    makeLivePlacementBadge,
+    SwimmerNameOverlay,
+    swimmerHudScaleForDistance,
+} from '../ui/SwimmerNameOverlay';
 import { PreRaceIntroPanel, PreRaceIntroEntry } from '../ui/PreRaceIntroPanel';
 import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
@@ -243,8 +248,12 @@ export class GameManager extends Component {
     private _uiCamera: Camera = null;
     // Player identification follows the same distance scale as opponent names.
     private _overheadReadout: Node = null;
+    private _overheadSpeedNode: Node = null;
     private _overheadSpeedLabel: Label = null;
     private _playerOverheadMarker: Node = null;
+    private _playerLivePlacementBadge: Node = null;
+    private _playerLivePlacementLabel: Label = null;
+    private _playerLivePlacement = -1;
     private _modelDebugSpeedLabel: Label = null;
     private _modelDebugRatingLabel: Label = null;
     private _modelDebugSwimSpeedLabel: Label = null;
@@ -867,9 +876,17 @@ export class GameManager extends Component {
                 }
             },
             getState: () => this._state,
-            clearFinishRanks: () => this._finishRankOverlay.clear(),
+            clearFinishRanks: () => {
+                this._finishRankOverlay.clear();
+                this._swimmerNameOverlay.clearPlacements();
+                this.setPlayerLivePlacement(0);
+            },
             isLiveRanksEnabled: () => true,
-            showLiveRanks: (results) => this._finishRankOverlay.showLiveResults(results),
+            showLiveRanks: (results) => {
+                this._finishRankOverlay.showLiveResults(results);
+                this._swimmerNameOverlay.setLivePlacements(results);
+                this.setPlayerLivePlacementFromResults(results);
+            },
             showFinishRank: (result) => this._finishRankOverlay.addResult(result),
             onSwimmerEliminated: (swimmer) => this.handleSwimmerEliminated(swimmer),
             beginCountdown: () => this.beginRaceCountdown(),
@@ -2597,7 +2614,11 @@ export class GameManager extends Component {
         readout.setSiblingIndex(this._raceHud.children.length - 1);
         const speedNode = makeUiNode('SweetZoneReadoutSpeed', readout);
         speedNode.setPosition(0, 0, 0);
-        speedNode.getComponent(UITransform).setContentSize(200, 32);
+        // The readout text is consistently shaped like "0.00 m/s". Keep its
+        // container close to the visible glyph width so the placement badge is
+        // visually adjacent instead of touching a wide invisible label box.
+        const speedWidth = 100;
+        speedNode.getComponent(UITransform).setContentSize(speedWidth, 32);
         const speedLabel = speedNode.addComponent(Label);
         speedLabel.string = '0.00 m/s';
         speedLabel.fontSize = 24;
@@ -2605,9 +2626,17 @@ export class GameManager extends Component {
         speedLabel.color = new Color(255, 255, 255, 255);
         speedLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         speedLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        speedLabel.overflow = Label.Overflow.SHRINK;
         this.addReadoutOutline(speedLabel);
+
+        const placementBadge = makeLivePlacementBadge('PlayerPlacement', readout);
+        placementBadge.root.setPosition(-speedWidth / 2 - 2, 0, 0);
+        placementBadge.root.active = false;
         this._overheadReadout = readout;
+        this._overheadSpeedNode = speedNode;
         this._overheadSpeedLabel = speedLabel;
+        this._playerLivePlacementBadge = placementBadge.root;
+        this._playerLivePlacementLabel = placementBadge.label;
     }
 
     private buildPlayerOverheadMarker() {
@@ -2641,6 +2670,43 @@ export class GameManager extends Component {
         core.stroke();
 
         this._playerOverheadMarker = marker;
+    }
+
+    private setPlayerLivePlacementFromResults(results: readonly RaceFinishResult[]) {
+        let placement = 0;
+        for (let i = 0; i < results.length; i++) {
+            if (results[i].isPlayer) {
+                placement = results[i].placement;
+                break;
+            }
+        }
+        this.setPlayerLivePlacement(placement);
+    }
+
+    private setPlayerLivePlacement(placement: number) {
+        if (this._playerLivePlacement === placement) {
+            return;
+        }
+        this._playerLivePlacement = placement;
+        const label = this._playerLivePlacementLabel;
+        if (!label?.isValid) {
+            return;
+        }
+        const visible = placement > 0;
+        if (visible) {
+            label.string = `${placement}`;
+        }
+        const badge = this._playerLivePlacementBadge;
+        if (badge?.isValid && badge.active !== visible) {
+            badge.active = visible;
+        }
+        const speedNode = this._overheadSpeedNode;
+        if (speedNode?.isValid) {
+            const speedX = visible ? LIVE_PLACEMENT_BADGE_WIDTH / 2 + 2 : 0;
+            if (speedNode.position.x !== speedX) {
+                speedNode.setPosition(speedX, 0, 0);
+            }
+        }
     }
 
     // Dark outline so overhead readout text stays legible over the bright,
