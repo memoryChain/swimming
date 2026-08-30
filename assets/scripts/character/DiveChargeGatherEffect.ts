@@ -9,7 +9,9 @@ const RELEASE_YELLOW_WHITE = new Color(255, 232, 128, 255);
 const RELEASE_BURST_SECONDS = 0.38;
 const RELEASE_BURST_DISTANCE = 0.92;
 const GATHER_TRAVEL_DISTANCE = 0.72;
-const GATHER_FIXED_DENSITY = 0.34;
+// 28 paired ribbons are already baked into the single mesh. Revealing half of
+// them makes the gather read denser without adding draw calls or allocations.
+const GATHER_FIXED_DENSITY = 0.50;
 const RAY_INNER_RADIUS = 0.26;
 const RAY_OUTER_RADIUS = 0.76;
 const RAY_HALF_WIDTH = 0.009;
@@ -17,40 +19,8 @@ const RELEASE_HALO_SEGMENTS = 28;
 const RELEASE_HALO_HALF_WIDTH = 0.045;
 const POSITION_EPSILON_SQ = 0.0004;
 
-// Fixed directions give a stable, authored silhouette around the swimmer while
-// keeping the whole gather effect in one mesh / one draw call. Two crossed
-// ribbons are created per direction so the streaks remain readable from the
-// countdown camera without camera-facing nodes or per-frame billboard work.
-const RAY_DIRECTIONS: ReadonlyArray<readonly [number, number, number]> = [
-    [1, 0.18, 0.10],
-    [-1, 0.26, -0.06],
-    [0.38, 0.92, 0.14],
-    [-0.42, 0.88, -0.18],
-    [0.22, -0.95, 0.12],
-    [-0.30, -0.90, -0.16],
-    [0.45, 0.32, 0.84],
-    [-0.52, 0.25, 0.80],
-    [0.48, -0.30, -0.82],
-    [-0.46, -0.34, -0.80],
-    [0.82, 0.48, 0.28],
-    [-0.80, 0.52, 0.32],
-    [0.76, -0.54, 0.28],
-    [-0.74, -0.56, 0.34],
-    [0.16, 0.72, 0.68],
-    [-0.18, 0.70, 0.70],
-    [0.20, -0.72, 0.66],
-    [-0.22, -0.70, 0.68],
-    [0.68, 0.10, 0.72],
-    [-0.70, 0.08, 0.70],
-    [0.66, 0.12, -0.74],
-    [-0.68, 0.06, -0.72],
-    [0.88, -0.18, 0.42],
-    [-0.86, -0.16, 0.46],
-    [0.84, 0.20, -0.44],
-    [-0.82, 0.22, -0.48],
-    [0.10, 0.96, 0.32],
-    [-0.12, -0.96, 0.30],
-];
+const RAY_COUNT = 28;
+const GOLDEN_RATIO_CONJUGATE = 0.61803398875;
 
 /**
  * One pooled mesh/material for the start-dive charge gather effect.
@@ -229,19 +199,19 @@ function buildGatherGeometry() {
     const uvs: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    const direction = new Vec3();
-    const sideA = new Vec3();
-    const sideB = new Vec3();
-
-    for (let rayIndex = 0; rayIndex < RAY_DIRECTIONS.length; rayIndex++) {
-        const value = RAY_DIRECTIONS[rayIndex];
-        direction.set(value[0], value[1], value[2]).normalize();
-        makePerpendicular(direction, sideA);
-        Vec3.cross(sideB, direction, sideA).normalize();
-        const phase = rayIndex / RAY_DIRECTIONS.length;
-        const densityRank = rayIndex / Math.max(1, RAY_DIRECTIONS.length - 1);
-        appendRibbon(positions, normals, uvs, colors, indices, direction, sideA, phase, densityRank);
-        appendRibbon(positions, normals, uvs, colors, indices, direction, sideB, phase, densityRank);
+    // Every ray starts as a canonical +X strip. The shader chooses a fresh
+    // camera-facing ring position each cycle, so no fixed radial pattern is
+    // visible around the swimmer.
+    const direction = Vec3.RIGHT;
+    const sideA = Vec3.UP;
+    const sideB = Vec3.FORWARD;
+    for (let rayIndex = 0; rayIndex < RAY_COUNT; rayIndex++) {
+        // Density reveals the first N rays. A golden-ratio phase permutation
+        // keeps that visible subset from respawning in a regular sequence.
+        const phase = (rayIndex * GOLDEN_RATIO_CONJUGATE) % 1;
+        const densityRank = rayIndex / Math.max(1, RAY_COUNT - 1);
+        appendRibbon(positions, normals, uvs, colors, indices, direction, sideA, phase, densityRank, 0);
+        appendRibbon(positions, normals, uvs, colors, indices, direction, sideB, phase, densityRank, 1);
     }
     // Three crossed soft rings read as one volumetric halo from the side, top,
     // and diagonal countdown cameras while staying in this mesh's draw call.
@@ -319,13 +289,14 @@ function appendRibbon(
     side: Vec3,
     phase: number,
     densityRank: number,
+    crossAxis: number,
 ) {
     const base = positions.length / 3;
     // Wider, bright end is closest to the body; the far end narrows into a tail.
-    appendVertex(positions, normals, uvs, colors, direction, side, RAY_INNER_RADIUS, -RAY_HALF_WIDTH, phase, densityRank, 0, 0);
-    appendVertex(positions, normals, uvs, colors, direction, side, RAY_INNER_RADIUS, RAY_HALF_WIDTH, phase, densityRank, 0, 1);
-    appendVertex(positions, normals, uvs, colors, direction, side, RAY_OUTER_RADIUS, -RAY_HALF_WIDTH * 0.18, phase, densityRank, 1, 0);
-    appendVertex(positions, normals, uvs, colors, direction, side, RAY_OUTER_RADIUS, RAY_HALF_WIDTH * 0.18, phase, densityRank, 1, 1);
+    appendVertex(positions, normals, uvs, colors, direction, side, RAY_INNER_RADIUS, -RAY_HALF_WIDTH, phase, densityRank, crossAxis, 0, 0);
+    appendVertex(positions, normals, uvs, colors, direction, side, RAY_INNER_RADIUS, RAY_HALF_WIDTH, phase, densityRank, crossAxis, 0, 1);
+    appendVertex(positions, normals, uvs, colors, direction, side, RAY_OUTER_RADIUS, -RAY_HALF_WIDTH * 0.18, phase, densityRank, crossAxis, 1, 0);
+    appendVertex(positions, normals, uvs, colors, direction, side, RAY_OUTER_RADIUS, RAY_HALF_WIDTH * 0.18, phase, densityRank, crossAxis, 1, 1);
     indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
 }
 
@@ -340,6 +311,7 @@ function appendVertex(
     width: number,
     phase: number,
     densityRank: number,
+    crossAxis: number,
     u: number,
     v: number,
 ) {
@@ -351,15 +323,9 @@ function appendVertex(
     const encodedLength = 1 + phase;
     normals.push(direction.x * encodedLength, direction.y * encodedLength, direction.z * encodedLength);
     uvs.push(u, v);
-    colors.push(densityRank, 0, 0, 1);
-}
-
-function makePerpendicular(direction: Vec3, out: Vec3) {
-    if (Math.abs(direction.y) < 0.88) {
-        Vec3.cross(out, direction, Vec3.UP).normalize();
-    } else {
-        Vec3.cross(out, direction, Vec3.RIGHT).normalize();
-    }
+    // R=density rank, G=stable phase/ray id, B=release-halo marker,
+    // A=which crossed ribbon plane this vertex belongs to.
+    colors.push(densityRank, phase, 0, crossAxis);
 }
 
 function gatherSpeedForProgress(progress: number): number {

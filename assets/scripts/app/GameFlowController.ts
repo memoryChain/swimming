@@ -222,7 +222,12 @@ export class GameFlowController {
             this.skipPreRaceShowcase();
             return;
         }
-        if ((state !== GameState.COUNTDOWN && state !== GameState.DIVING) || this._diveChargeStarted) {
+        // Once the dive is committed, DIVING remains active through the whole
+        // airborne sequence. Reject later taps so the gather cannot restart
+        // after the release halo has played.
+        if ((state !== GameState.COUNTDOWN && state !== GameState.DIVING)
+            || this._diveChargeStarted
+            || this._diveCommitted) {
             return;
         }
         this._diveChargeStarted = true;
@@ -595,7 +600,11 @@ export class GameFlowController {
 
     private updateDiveCharge(dt: number) {
         const state = this._refs.getState();
-        if (!this._diveChargeStarted || (state !== GameState.COUNTDOWN && state !== GameState.DIVING)) {
+        // Defense in depth: even if stale input marks charging active after the
+        // release edge, never drive the inward gather once take-off is committed.
+        if (!this._diveChargeStarted
+            || this._diveCommitted
+            || (state !== GameState.COUNTDOWN && state !== GameState.DIVING)) {
             return;
         }
         this._diveChargeElapsed += Math.max(0, dt);
