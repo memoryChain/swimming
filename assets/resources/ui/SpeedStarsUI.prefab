@@ -6322,8 +6322,8 @@
       "__type__": "cc.Quat",
       "x": 0,
       "y": 0,
-      "z": 0,
-      "w": 1
+      "z": -0.017888,
+      "w": 0.99984
     },
     "_lscale": {
       "__type__": "cc.Vec3",
@@ -6337,7 +6337,7 @@
       "__type__": "cc.Vec3",
       "x": 0,
       "y": 0,
-      "z": 0
+      "z": -2.05
     },
     "_id": ""
   },
@@ -6395,8 +6395,8 @@
       "__uuid__": "4c37f567-c5f6-4426-aac0-b9f731908ad6@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_type": 0,
-    "_fillType": 0,
+    "_type": 3,
+    "_fillType": 1,
     "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",

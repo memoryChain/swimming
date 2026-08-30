@@ -24,7 +24,10 @@ const ULTIMATE_DENIED = new Color(255, 92, 92, 255);
 const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
 const ULTIMATE_READY = new Color(255, 215, 90, 255);
 const ULTIMATE_CHARGING = new Color(210, 160, 60, 255);
-const DIVE_CHARGE_HEIGHT = 216;
+// Matches the fixed DiveChargeFill height authored in SpeedStarsUI.prefab.
+// The fill sprite is clipped vertically; its transform must never be resized,
+// otherwise the diagonal artwork changes angle as the charge ratio changes.
+const DIVE_CHARGE_HEIGHT = 260;
 const DIVE_GFX_LOW = new Color(87, 196, 255, 255);
 const DIVE_GFX_MID = new Color(80, 242, 161, 255);
 const DIVE_GFX_HIGH = new Color(255, 224, 89, 255);
@@ -1247,19 +1250,21 @@ function drawChargeFill(gfx: Graphics, ratio: number, color: Color) {
 }
 
 function setVerticalFill(node: Node, ratio: number, color: Color) {
-    const transform = node.getComponent(UITransform);
     const sprite = node.getComponent(Sprite);
-    if (sprite) {
-        sprite.color = color;
-    }
-    if (!transform) {
-        node.setScale(1, Math.max(0.001, ratio), 1);
+    if (!sprite) {
         return;
     }
-    const originalHeight = 212;
-    const height = Math.max(1, originalHeight * ratio);
-    transform.setContentSize(transform.contentSize.width, height);
-    node.setPosition(node.position.x, -originalHeight / 2 + height / 2, node.position.z);
+    const currentColor = sprite.color;
+    if (currentColor.r !== color.r
+        || currentColor.g !== color.g
+        || currentColor.b !== color.b
+        || currentColor.a !== color.a) {
+        sprite.color = color;
+    }
+    const fillRange = clamp01(ratio);
+    if (sprite.fillRange !== fillRange) {
+        sprite.fillRange = fillRange;
+    }
 }
 
 function diveChargeGraphicsColor(power: number): Color {
