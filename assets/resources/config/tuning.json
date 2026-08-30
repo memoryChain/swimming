@@ -1,5 +1,5 @@
 {
-  "version": 31,
+  "version": 32,
   "updatedAt": "2026-08-25T09:21:07.301Z",
   "values": {
     "input.padStrokeDedupeMs": 5,

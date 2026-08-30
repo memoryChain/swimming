@@ -51,7 +51,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 31;
+const TUNING_FILE_VERSION = 32;
 
 type TuningFileData = {
     version: number;
@@ -349,8 +349,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('steer.maxHeading', '最大偏航', '身体相对泳道前进方向的最大偏转角。越大能歪得越狠；65°时前进速度约剩四成。运动模型有85°硬上限，连续单侧划水也不能掉头。', () => STEERING_TUNING.maxHeading, (v) => STEERING_TUNING.maxHeading = v, 1, 10, MAX_STEERING_HEADING_DEGREES, 0, '°'),
             control('steer.turnAngularDrag', '偏航角速度阻尼', '松手后偏航角速度的水阻。越低弯道持续越久；0=除非反侧划水或撞墙，否则会一直继续转弯。', () => STEERING_TUNING.turnAngularDrag, (v) => STEERING_TUNING.turnAngularDrag = v, 0.05, 0, 4, 2, '/s'),
             control('steer.maxTurnRate', '最大偏航角速度', '连续同侧划水能累积到的偏航角速度上限，防止人物瞬间急转。', () => STEERING_TUNING.maxTurnRate, (v) => STEERING_TUNING.maxTurnRate = v, 5, 20, 240, 0, '°/s'),
-            control('steer.poolWallHeadingCorrectionRate', '撞墙转回强度', '人物碰到泳池侧墙时，将偏航角速度推回泳池内部的强度，避免持续把身体压在墙外。', () => STEERING_TUNING.poolWallHeadingCorrectionRate, (v) => STEERING_TUNING.poolWallHeadingCorrectionRate = v, 0.1, 0, 8, 1, '/s'),
-            control('steer.poolWallEscapeHeadingDegrees', '最小离墙角', '贴墙时至少建立多少朝泳池内部的偏航角。达到后墙体不再反向覆盖玩家输入，让人物顺利脱离边界。', () => STEERING_TUNING.poolWallEscapeHeadingDegrees, (v) => STEERING_TUNING.poolWallEscapeHeadingDegrees = v, 1, 0, 45, 0, '°'),
+            control('steer.poolWallHeadingCorrectionRate', '撞墙转回强度', '人物碰到泳池侧墙后，朝离墙目标角平滑回正的速度。越高越快离墙，但实际转速仍受“撞墙最大转速”限制。', () => STEERING_TUNING.poolWallHeadingCorrectionRate, (v) => STEERING_TUNING.poolWallHeadingCorrectionRate = v, 0.1, 0, 8, 1, '/s'),
+            control('steer.poolWallMaxTurnRate', '撞墙最大转速', '侧墙回正过程允许的最大偏航角速度。只限制撞墙脱离，不影响正常划水的最大偏航角速度。', () => STEERING_TUNING.poolWallMaxTurnRate, (v) => STEERING_TUNING.poolWallMaxTurnRate = v, 2, 5, 120, 0, '°/s'),
+            control('steer.poolWallEscapeHeadingDegrees', '最小离墙角', '侧墙回正最终停住的向内偏航角。达到后立即刹住墙体回正角速度并交还玩家控制。', () => STEERING_TUNING.poolWallEscapeHeadingDegrees, (v) => STEERING_TUNING.poolWallEscapeHeadingDegrees = v, 1, 0, 45, 0, '°'),
             control('steer.kickStraightenMinCadenceHz', '踢腿回正频率', '短点按形成的踢腿频率达到该值后，角色会逐渐转回泳道正前方。设为 0 时每次踢腿都会触发回正。', () => STEERING_TUNING.kickStraightenMinCadenceHz, (v) => STEERING_TUNING.kickStraightenMinCadenceHz = v, 0.25, 0, 10, 2, 'Hz'),
             control('steer.kickStraightenRate', '踢腿回正速度', '连续踢腿时将偏航目标拉回泳道方向的速度。角色仍按“转向平滑”逐渐跟随，不会瞬间掰正。设为 0 可关闭。', () => STEERING_TUNING.kickStraightenRate, (v) => STEERING_TUNING.kickStraightenRate = v, 0.1, 0, 8, 1, '/s'),
             control('steer.turnPowerMinFactor', '最弱转向倍率', '转向角与划水发力挂钩：按得越久、拉水行程越长偏得越多。这是最短划水的转向倍率（拉满=1.0）。1=不按力度缩放，每次都满角；越小轻点与重划的转向差别越大。', () => STEERING_TUNING.turnPowerMinFactor, (v) => STEERING_TUNING.turnPowerMinFactor = v, 0.05, 0, 1, 2),
