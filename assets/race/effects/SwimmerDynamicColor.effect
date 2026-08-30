@@ -52,7 +52,11 @@ CCEffect %{
         # Cel shading (quantised directional light):
         # x = band count (2~4 gives a comic look), y = shadow-side brightness floor
         # (0..1, lower = darker shadow), z = enable (0/1), w = cool shadow-tint strength.
-        celParams:       { value: [3, 0.55, 1, 0.25] }
+        celParams:       { value: [3, 0.62, 1, 0.25] }
+        # Soft toon shaping: x = transition feather inside each band (0..0.49),
+        # y = soft-band contribution (0 = continuous gradient, 1 = toon bands),
+        # z/w = continuous-gradient input range.
+        celSoftParams:   { value: [0.22, 0.35, 0.08, 0.92] }
         # Rim light (Fresnel edge glow). rgb = rim colour, a = strength.
         rimColor:        { value: [0.55, 0.72, 1.0, 0.3], linear: true, editor: { type: color } }
         # Rim light shape: x = power (higher = thinner rim), y = enable (0/1). z/w unused.
@@ -96,9 +100,6 @@ CCProgram swimmer-color-vs %{
 }%
 
 CCProgram swimmer-color-fs %{
-  #if __VERSION__ < 300
-  #extension GL_OES_standard_derivatives : enable
-  #endif
   precision highp float;
   #include <legacy/output-standard>
   #include <legacy/fog-fs>
@@ -126,6 +127,7 @@ CCProgram swimmer-color-fs %{
     vec4 aboveWaterColor;
     vec4 reflectClipParams;
     vec4 celParams;
+    vec4 celSoftParams;
     vec4 rimColor;
     vec4 rimParams;
     vec4 chargeBlue;
@@ -177,10 +179,11 @@ CCProgram swimmer-color-fs %{
     // over a narrow band to avoid a colour pop while the camera crosses the plane.
     float cameraSubmerge = 1.0 - smoothstep(waterLine.x - 0.12, waterLine.x + 0.04, cc_cameraPos.y);
     float belowness = step(v_worldPos.y, waterLine.x);
-    // --- Cel shading: quantise the directional light into flat bands ----------
-    // Keep a geometric per-triangle normal for the intentionally faceted cel
-    // shading. The charge rim separately uses the smooth skinned vertex normal.
-    vec3 celN = normalize(cross(dFdx(v_worldPos), dFdy(v_worldPos)));
+    // --- Soft toon shading -----------------------------------------------------
+    // Use the skinned vertex normal so lighting remains continuous across the
+    // model's low-poly triangle boundaries. Soft bands retain the illustrated
+    // toon shape without exposing the underlying triangulation.
+    vec3 celN = normalize(v_worldNormal);
     vec3 celV = normalize(cc_cameraPos.xyz - v_worldPos);
     if (dot(celN, celV) < 0.0) celN = -celN; // orient toward the visible side
     // Fixed key-light direction (surface-to-light) roughly matching the stadium
@@ -189,7 +192,18 @@ CCProgram swimmer-color-fs %{
     vec3 celL = normalize(vec3(0.35, 1.0, 0.22));
     float celNdl = dot(celN, celL) * 0.5 + 0.5; // half-lambert, 0..1
     float celBands = max(celParams.x, 1.0);
-    float celQ = clamp(floor(celNdl * celBands) / max(celBands - 1.0, 1.0), 0.0, 1.0);
+    float celSteps = max(celBands - 1.0, 1.0);
+    float celScaled = clamp(celNdl, 0.0, 1.0) * celSteps;
+    float celBaseBand = floor(celScaled);
+    float celFeather = clamp(celSoftParams.x, 0.001, 0.49);
+    float celBandBlend = smoothstep(
+      0.5 - celFeather,
+      0.5 + celFeather,
+      fract(celScaled)
+    );
+    float celSoftBand = clamp((celBaseBand + celBandBlend) / celSteps, 0.0, 1.0);
+    float celGradient = smoothstep(celSoftParams.z, celSoftParams.w, celNdl);
+    float celQ = mix(celGradient, celSoftBand, clamp(celSoftParams.y, 0.0, 1.0));
     float celLight = mix(celParams.y, 1.0, celQ);
     vec3 celShaded = bodyColor * celLight;
     // Cool-tint the darker bands slightly for a more illustrative feel.
