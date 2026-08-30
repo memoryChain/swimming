@@ -19,7 +19,7 @@
 
 `assets/resources/ui` 只保留游戏实际引用的资源：
 
-- `paddle-master-imagegen`：登录界面背景、标题、赛程按钮、开始按钮和说明条。
+- `paddle-master-login-v8`：登录界面背景、标题 logo、开始/联机按钮和头像等图标。
 - `race-hud`：赛程进度中的游泳选手图标。
 - `results-v2`：结算面板、排名行、按钮和头像。
 - `speed-stars`：HUD 与调试界面仍在使用的通用底板、进度条和计量条。
