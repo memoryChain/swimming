@@ -7,7 +7,7 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
-import type { DolphinAbilityMode } from '../core/DolphinJumpConfig';
+import type { DolphinAbilityMode, DolphinJumpStartState } from '../core/DolphinJumpConfig';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
@@ -241,8 +241,8 @@ export class AISwimmerController extends Component {
     // Network replay for a genuine AI lane. The host has already validated and paid
     // for this action, so the remote copy forces the announced form and mirrors the
     // controller cooldown without firing the host's outbound callback again.
-    applyAcceptedNetDolphinJump(mode: DolphinAbilityMode): boolean {
-        if (!this.swimmer?.applyAcceptedNetDolphinJump(mode)) {
+    applyAcceptedNetDolphinJump(mode: DolphinAbilityMode, startState: DolphinJumpStartState): boolean {
+        if (!this.swimmer?.applyAcceptedNetDolphinJump(mode, startState)) {
             return false;
         }
         this.resetAfterDolphinStart();

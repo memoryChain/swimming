@@ -98,6 +98,23 @@ export const DOLPHIN_JUMP = {
 
 export type DolphinAbilityMode = 'jump' | 'dive';
 
+// Compact outcome-affecting state captured when an authoritative dolphin action
+// starts. Network replicas restore this exact state before replaying the accepted
+// action so local prediction drift cannot change the route or reject it near a wall.
+export interface DolphinJumpStartState {
+    distance: number;
+    lateral: number;
+    heading: number;
+    headingVelocity: number;
+    speed: number;
+    axialRoll: number;
+    axialRollVelocity: number;
+    collisionPitch: number;
+    collisionPitchVelocity: number;
+    knockbackDistance: number;
+    knockbackLateral: number;
+}
+
 const RAD2DEG = 180 / Math.PI;
 
 // Signed angle of the swimmer's head direction relative to the water surface.

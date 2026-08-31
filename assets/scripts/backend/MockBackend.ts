@@ -7,7 +7,14 @@
 // local mock; the production WeChat Cloud backend is the authoritative one.
 
 import { sys } from 'cc';
-import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult, RaceDoubleRewardResult } from './IBackend';
+import {
+    AdRewardResult,
+    IBackend,
+    IdentityPatch,
+    LevelSpendResult,
+    RaceDoubleRewardResult,
+    writeJsonOrThrow,
+} from './IBackend';
 import {
     createDefaultProfile,
     normalizeProfile,
@@ -26,69 +33,69 @@ export class MockBackend implements IBackend {
         return Promise.resolve(this.read());
     }
 
-    grantAdReward(): Promise<AdRewardResult> {
+    async grantAdReward(): Promise<AdRewardResult> {
         const profile = this.read();
         if (profile.daily.date !== todayString()) {
             profile.daily.date = todayString();
             profile.daily.adCount = 0;
         }
         if (profile.daily.adCount >= PROGRESSION_CONFIG.dailyAdCap) {
-            return Promise.resolve({ ok: false, profile, granted: 0, reason: 'capped' });
+            return { ok: false, profile, granted: 0, reason: 'capped' };
         }
         const granted = PROGRESSION_CONFIG.adRewardCoins;
         profile.coins += granted;
         profile.daily.adCount += 1;
         this.write(profile);
-        return Promise.resolve({ ok: true, profile, granted });
+        return { ok: true, profile, granted };
     }
 
     // DEBUG ONLY: no ad, no cap. See IBackend.grantDebugCoins.
-    grantDebugCoins(amount: number): Promise<PlayerProfile> {
+    async grantDebugCoins(amount: number): Promise<PlayerProfile> {
         const profile = this.read();
         profile.coins += Math.max(0, Math.floor(amount));
         this.write(profile);
-        return Promise.resolve(profile);
+        return profile;
     }
 
-    claimRaceDoubleReward(settlementId: string): Promise<RaceDoubleRewardResult> {
+    async claimRaceDoubleReward(settlementId: string): Promise<RaceDoubleRewardResult> {
         const profile = this.read();
         const claim = profile.raceRewardClaims[settlementId];
         if (!claim) {
-            return Promise.resolve({
+            return {
                 ok: false,
                 profile,
                 granted: 0,
                 alreadyClaimed: false,
                 reason: 'not-found',
-            });
+            };
         }
         if (claim.doubleClaimed) {
-            return Promise.resolve({
+            return {
                 ok: true,
                 profile,
                 granted: 0,
                 alreadyClaimed: true,
-            });
+            };
         }
         claim.doubleClaimed = true;
         profile.coins += claim.baseCoins;
         this.write(profile);
-        return Promise.resolve({
+        return {
             ok: true,
             profile,
             granted: claim.baseCoins,
             alreadyClaimed: false,
-        });
+        };
     }
 
-    spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult> {
+    async spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult> {
         const profile = this.read();
         const progress = profile.characters[characterId];
         if (!progress) {
-            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'maxed' });
+            return { ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'maxed' };
         }
         if (progress.level >= PROGRESSION_BALANCE.maxLevel) {
-            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'maxed' });
+            return { ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'maxed' };
         }
         let levelsGained = 0;
         let coinsSpent = 0;
@@ -105,13 +112,13 @@ export class MockBackend implements IBackend {
             remaining -= 1;
         }
         if (levelsGained === 0) {
-            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'insufficient' });
+            return { ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'insufficient' };
         }
         this.write(profile);
-        return Promise.resolve({ ok: true, profile, levelsGained, coinsSpent });
+        return { ok: true, profile, levelsGained, coinsSpent };
     }
 
-    saveIdentity(identity: IdentityPatch): Promise<PlayerProfile> {
+    async saveIdentity(identity: IdentityPatch): Promise<PlayerProfile> {
         const profile = this.read();
         if (typeof identity.nickName === 'string' && identity.nickName.length > 0) {
             profile.nickName = identity.nickName;
@@ -120,15 +127,15 @@ export class MockBackend implements IBackend {
             profile.avatarId = identity.avatarId;
         }
         this.write(profile);
-        return Promise.resolve(profile);
+        return profile;
     }
 
     // Phase-2 progression writes come through here. The mock just persists what the
     // client computed; the future cloud function will validate and return the
     // authoritative profile instead.
-    saveProfile(profile: PlayerProfile): Promise<PlayerProfile> {
+    async saveProfile(profile: PlayerProfile): Promise<PlayerProfile> {
         this.write(profile);
-        return Promise.resolve(profile);
+        return profile;
     }
 
     private read(): PlayerProfile {
@@ -150,9 +157,10 @@ export class MockBackend implements IBackend {
 
     private write(profile: PlayerProfile): void {
         try {
-            sys.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+            writeJsonOrThrow(sys.localStorage, STORAGE_KEY, profile);
         } catch (error) {
             console.warn('[Backend] mock write failed', error);
+            throw error;
         }
     }
 }

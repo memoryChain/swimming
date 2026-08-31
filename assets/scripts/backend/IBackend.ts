@@ -17,7 +17,7 @@
 // profile, mirroring grantAdReward / spendCoinsForLevel's pattern. Until then
 // saveProfile is the persistence hook; callers must not use it to bypass caps.
 
-import { PlayerProfile } from './PlayerProfile';
+import type { PlayerProfile } from './PlayerProfile';
 
 export type AdRewardReason = 'capped' | 'error';
 
@@ -42,6 +42,24 @@ export interface RaceDoubleRewardResult {
     granted: number;
     alreadyClaimed: boolean;
     reason?: RaceDoubleRewardReason;
+}
+
+// A rejected claim can carry a profile read before the latest local settlement was
+// durably written. Only successful/idempotent claims are authoritative enough to
+// replace the current in-memory profile.
+export function shouldAdoptRaceDoubleRewardProfile(result: Pick<RaceDoubleRewardResult, 'ok'>): boolean {
+    return result.ok;
+}
+
+// Shared, engine-free persistence primitive. It intentionally does not catch:
+// callers must observe quota/security/serialization failures instead of reporting
+// a save as successful.
+export function writeJsonOrThrow(
+    storage: { setItem(key: string, value: string): void },
+    key: string,
+    value: unknown,
+): void {
+    storage.setItem(key, JSON.stringify(value));
 }
 
 export type SpendFailReason = 'insufficient' | 'maxed';

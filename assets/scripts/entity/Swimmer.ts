@@ -10,6 +10,7 @@ import {
     resolveDolphinAbilityMode,
     type DolphinAbilityMode,
     type DolphinJumpProfile,
+    type DolphinJumpStartState,
 } from '../core/DolphinJumpConfig';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { STEERING_TUNING } from '../core/SteeringTuning';
@@ -1222,6 +1223,10 @@ export class Swimmer extends Component {
         return this._phases.isDolphinJumpActive;
     }
 
+    get dolphinJumpStartState(): DolphinJumpStartState | null {
+        return this._phases.dolphinStartState;
+    }
+
     // True only while airborne, when stroke input becomes an axial-roll impulse.
     get isDolphinAirActive(): boolean {
         return this._phases.isDolphinAirActive;
@@ -1264,8 +1269,26 @@ export class Swimmer extends Component {
     // successfully passed energy/phase validation. Do not reject that accepted action
     // against this remote copy's predicted energy; the reliable self-state in the same
     // frame will align the exact post-spend energy.
-    applyAcceptedNetDolphinJump(mode: DolphinAbilityMode = 'jump'): boolean {
-        if (!this._motor.isRacing || !this._phases.tryStartDolphinJump(mode)) {
+    applyAcceptedNetDolphinJump(
+        mode: DolphinAbilityMode = 'jump',
+        startState?: DolphinJumpStartState,
+    ): boolean {
+        if (!startState) {
+            // Human-owner replay keeps its existing compact event format. Energy was
+            // already validated by the owner, but its normal local phase guard remains.
+            if (!this._motor.isRacing || !this._phases.tryStartDolphinJump(mode)) {
+                return false;
+            }
+            this._ultimate.spendDolphin();
+            return true;
+        }
+        // A missed dive-release must not let this replica veto a host-accepted AI
+        // action. Enter racing at the authoritative edge before replacing any local
+        // predicted scripted phase.
+        if (!this._motor.isRacing) {
+            this.forceEnterRaceAt(startState.distance);
+        }
+        if (!this._phases.startAcceptedNetDolphinJump(mode, startState)) {
             return false;
         }
         this._ultimate.spendDolphin();

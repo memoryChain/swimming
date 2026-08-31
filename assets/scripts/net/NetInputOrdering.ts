@@ -48,6 +48,40 @@ export class MonotonicSequenceTracker {
     }
 }
 
+// Host-authoritative AI actions are repeated in several packets. Their identity
+// must therefore be ordered independently from packet/frame sequence numbers.
+// The authority seat is part of the key so a migrated host can start its own
+// per-lane counter at 1 without colliding with the departed host.
+export class AiActionSequenceTracker {
+    private readonly _latest: Record<string, number> = {};
+
+    latest(authorityPos: number, lane: number): number {
+        const key = this.key(authorityPos, lane);
+        return key ? (this._latest[key] ?? -1) : -1;
+    }
+
+    markApplied(authorityPos: number, lane: number, sequence: number): boolean {
+        const key = this.key(authorityPos, lane);
+        if (!key || !Number.isFinite(sequence) || sequence < 0) {
+            return false;
+        }
+        const normalized = Math.floor(sequence);
+        if (normalized <= (this._latest[key] ?? -1)) {
+            return false;
+        }
+        this._latest[key] = normalized;
+        return true;
+    }
+
+    private key(authorityPos: number, lane: number): string {
+        if (!Number.isFinite(authorityPos) || authorityPos < 0
+            || !Number.isFinite(lane) || lane < 0) {
+            return '';
+        }
+        return `${Math.floor(authorityPos)}:${Math.floor(lane)}`;
+    }
+}
+
 export function shouldUseTransientPacketCondition(
     inputAccepted: boolean,
     eventCount: number,

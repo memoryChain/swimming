@@ -28,7 +28,7 @@ import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { RaceContext } from '../condition/RaceContext';
 import { RacePhase } from '../condition/ConditionTypes';
-import { DOLPHIN_JUMP } from './DolphinJumpConfig';
+import { DOLPHIN_JUMP, type DolphinJumpStartState } from './DolphinJumpConfig';
 import { ModelDebugFlowController } from '../app/ModelDebugFlowController';
 import { RuntimeSceneBuilder } from '../app/RuntimeSceneBuilder';
 import { StandardSkyboxApplier } from '../app/StandardSkyboxApplier';
@@ -784,8 +784,8 @@ export class GameManager extends Component {
                     // member's pre-race showcase is ready; the countdown starts then.
                     this._netRaceController?.setCountdownStartListener(() => this._raceManager?.startRace());
                     this._netRaceController?.setPlayerQuitListener((pos) => this.onNetPlayerQuit(pos));
-                    this._netRaceController?.setAiDolphinListener((lane, dive) => {
-                        this.onNetAiDolphinJump(lane, dive);
+                    this._netRaceController?.setAiDolphinListener((lane, dive, start) => {
+                        return this.onNetAiDolphinJump(lane, dive, start);
                     });
                     this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
@@ -1326,13 +1326,15 @@ export class GameManager extends Component {
         for (let index = 0; index < this._aiControllers.length; index++) {
             this._aiControllers[index].onDolphinJumpStarted = (mode) => {
                 this._aiConditions[index]?.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
-                if (this._netRaceController?.isHost) {
+                if (this._netRaceController?.canIssueAiDolphinActions) {
                     const lane = this.assignedLaneOfSwimmer(this._aiSwimmers[index]);
-                    if (lane >= 0) {
+                    const start = this._aiSwimmers[index]?.dolphinJumpStartState;
+                    if (lane >= 0 && start) {
                         captureNetInput({
                             kind: NetInputKind.AiDolphinJump,
                             aiLane: lane,
                             dolphinDive: mode === 'dive',
+                            aiStart: start,
                         });
                     }
                 }
@@ -1576,15 +1578,21 @@ export class GameManager extends Component {
 
     // Replay an AI dolphin form accepted by the current host. The lane is stable
     // across clients; remote-human placeholder lanes are deliberately excluded.
-    private onNetAiDolphinJump(lane: number, dive: boolean) {
+    private onNetAiDolphinJump(
+        lane: number,
+        dive: boolean,
+        start: DolphinJumpStartState,
+    ): boolean {
         const index = this.aiIndexForLane(lane);
         const controller = index >= 0 ? this._aiControllers[index] : null;
         if (!controller || controller.remoteDriven) {
-            return;
+            return false;
         }
-        if (controller.applyAcceptedNetDolphinJump(dive ? 'dive' : 'jump')) {
+        if (controller.applyAcceptedNetDolphinJump(dive ? 'dive' : 'jump', start)) {
             this._aiConditions[index]?.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
+            return true;
         }
+        return false;
     }
 
     // Deterministic fixed-step driver (net race only). Advances every net-driven body
@@ -1607,7 +1615,7 @@ export class GameManager extends Component {
         while (this._aiStepAccum >= NET_SIM_STEP) {
             this._aiStepAccum -= NET_SIM_STEP;
             const raceDistance = getRaceDistance();
-            const ownsAiDolphinDecisions = this._netRaceController?.isHost === true;
+            const ownsAiDolphinDecisions = this._netRaceController?.canIssueAiDolphinActions === true;
             for (let i = 0; i < this._aiSwimmers.length; i++) {
                 const swimmer = this._aiSwimmers[i];
                 if (swimmer?.netFixedStep && swimmer.node.active) {

@@ -4,7 +4,11 @@
 // later) and notifies listeners whenever the profile changes.
 
 import { backend } from './BackendManager';
-import { AdRewardResult, RaceDoubleRewardResult } from './IBackend';
+import {
+    AdRewardResult,
+    RaceDoubleRewardResult,
+    shouldAdoptRaceDoubleRewardProfile,
+} from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
 import type { SpendResult } from '../progression/ProgressionManager';
@@ -90,8 +94,10 @@ class PlayerDataStore {
         }
         const request = backend().claimRaceDoubleReward(settlementId)
             .then((result) => {
-                this._profile = result.profile;
-                this._emit();
+                if (shouldAdoptRaceDoubleRewardProfile(result)) {
+                    this._profile = result.profile;
+                    this._emit();
+                }
                 return result;
             });
         this._raceDoubleClaims.set(settlementId, request);

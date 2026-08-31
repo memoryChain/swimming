@@ -16,7 +16,12 @@ const {
     encodeSelfSnapshot,
 } = SnapshotCodec;
 const { decodeInputFrame, encodeInputFrame } = InputCodec;
-const { MonotonicSequenceTracker, ownerLaneMatches, shouldUseTransientPacketCondition } = Ordering;
+const {
+    AiActionSequenceTracker,
+    MonotonicSequenceTracker,
+    ownerLaneMatches,
+    shouldUseTransientPacketCondition,
+} = Ordering;
 const {
     NET_RACE_PROTOCOL_VERSION,
     decodeProtocolHello,
@@ -109,6 +114,54 @@ test('frame self and input sequence round-trip, including an empty self slot', (
     const noSelf = decodeInputFrame(encodeInputFrame(5, [], null, -1, 100));
     assert.equal(noSelf.self, undefined);
     assert.equal(noSelf.inputSeq, 100);
+});
+
+test('AI dolphin action keeps one identity and authoritative launch edge across packets', () => {
+    const aiStart = {
+        distance: 21.01,
+        lateral: -0.123,
+        heading: 0.222,
+        headingVelocity: -0.333,
+        speed: 4.56,
+        axialRoll: 0.444,
+        axialRollVelocity: -0.555,
+        collisionPitch: 0.666,
+        collisionPitchVelocity: -0.777,
+        knockbackDistance: 0.888,
+        knockbackLateral: -0.999,
+    };
+    const event = {
+        kind: 'a',
+        aiLane: 3,
+        dolphinDive: true,
+        aiActionSeq: 17,
+        aiStart,
+    };
+    for (const packetSeq of [100, 101, 105]) {
+        const decoded = decodeInputFrame(encodeInputFrame(2, [event], null, -1, packetSeq));
+        assert.equal(decoded.inputSeq, packetSeq);
+        assert.deepEqual(decoded.events, [event]);
+    }
+});
+
+test('AI action ordering survives repeats, loss, delay, and host migration', () => {
+    const order = new AiActionSequenceTracker();
+    let applied = 0;
+    const apply = (host, lane, sequence) => {
+        if (sequence <= order.latest(host, lane)) return false;
+        applied++;
+        return order.markApplied(host, lane, sequence);
+    };
+
+    assert.equal(apply(1, 3, 7), true, 'a later redundant packet can recover a lost first packet');
+    for (let i = 0; i < 10; i++) {
+        assert.equal(apply(1, 3, 7), false);
+    }
+    assert.equal(applied, 1, 'the same action executes once even after its phase would have ended');
+    assert.equal(apply(1, 3, 6), false, 'an older delayed action cannot roll the lane back');
+    assert.equal(apply(1, 4, 1), true, 'each lane has an independent sequence');
+    assert.equal(apply(5, 3, 1), true, 'a migrated host has an independent authority key');
+    assert.equal(apply(1, 3, 8), true, 'the original seat may continue its monotonic counter if trusted again');
 });
 
 test('heart-rate quantization never crosses a quality-zone boundary', () => {

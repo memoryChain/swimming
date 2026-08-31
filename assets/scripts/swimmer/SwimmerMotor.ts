@@ -11,6 +11,7 @@ import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 import {
     DOLPHIN_JUMP_PROFILES,
     type DolphinJumpProfile,
+    type DolphinJumpStartState,
 } from '../core/DolphinJumpConfig';
 
 const CYCLE_AMOUNT = Math.PI * 2;
@@ -1302,6 +1303,25 @@ export class SwimmerMotor {
     clearKnockback() {
         this._knockbackDistance = 0;
         this._knockbackLateral = 0;
+    }
+
+    // NETWORKED RACE: restore the host-captured launch state before replaying an
+    // already accepted AI dolphin action. This is an exact event-edge correction,
+    // not the ordinary eased snapshot correction.
+    applyAuthoritativeDolphinStart(state: DolphinJumpStartState) {
+        this.setFlipTurnDistance(state.distance);
+        this.setLateralOffset(state.lateral);
+        this.setFlipTurnSpeed(state.speed);
+        this.correctHeading(state.heading, state.headingVelocity, 1);
+        this.restoreDolphinCollisionState(
+            state.axialRoll,
+            state.axialRollVelocity,
+            state.collisionPitch,
+            state.collisionPitchVelocity,
+        );
+        const cap = Math.max(0, SWIMMER_COLLISION.knockbackMaxImpulse);
+        this._knockbackDistance = clamp(finiteOr(state.knockbackDistance, 0), -cap, cap);
+        this._knockbackLateral = clamp(finiteOr(state.knockbackLateral, 0), -cap, cap);
     }
 
     // Integrate the decaying knockback into distance/lateralOffset (same channels

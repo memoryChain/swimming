@@ -20,10 +20,12 @@ import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from 
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
+    AiActionSequenceTracker,
     MonotonicSequenceTracker,
     ownerLaneMatches,
     shouldUseTransientPacketCondition,
 } from './NetInputOrdering';
+import type { DolphinJumpStartState } from '../core/DolphinJumpConfig';
 import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 
@@ -73,6 +75,7 @@ export class NetRaceController {
     private _accum = 0;
     private _sentFrames = 0;
     private _ownerStateSeq = 0;
+    private readonly _aiDolphinActionSeqByLane: Record<number, number> = {};
     private readonly _pendingAiDolphinRepeats: Array<{
         event: NetInputEvent;
         remaining: number;
@@ -95,6 +98,7 @@ export class NetRaceController {
     private readonly _reliableFrameOrder = new MonotonicSequenceTracker();
     private readonly _inputOrder = new MonotonicSequenceTracker();
     private readonly _ownerStateOrder = new MonotonicSequenceTracker();
+    private readonly _aiActionOrder = new AiActionSequenceTracker();
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
     private readonly _remoteByPos: Record<number, RemoteSwimmerController> = {};
@@ -143,7 +147,11 @@ export class NetRaceController {
     // Reliable host-authoritative AI dolphin action. The listener receives the
     // stable assigned lane and the already-decided form; clients never re-evaluate
     // the host's pose threshold locally.
-    private _aiDolphinListener: ((lane: number, dive: boolean) => void) | null = null;
+    private _aiDolphinListener: ((
+        lane: number,
+        dive: boolean,
+        start: DolphinJumpStartState,
+    ) => boolean) | null = null;
     // Host migration state. `_isHost` starts from the session but can flip: a client
     // promotes itself if the host goes silent, and a self-promoted host steps back down
     // if a lower-pos (higher-priority) host appears. `_activeHostPos` is the seat of the
@@ -152,6 +160,9 @@ export class NetRaceController {
     private _isHost: boolean;
     private _activeHostPos: number;
     private _lastSnapshotAt = 0;
+    // A migrated host must announce itself with S| before emitting accepted AI
+    // edges, otherwise clients still trusting the departed seat would discard them.
+    private _aiAuthorityAnnounced: boolean;
     // Mixed-environment sync flags. `_localFrameSyncDown` latches once our own frame
     // channel is observed dead; `_peerNeedsBroadcast` latches when a peer announces (NB|)
     // that theirs is. Either forces broadcast-based position/input sync.
@@ -163,6 +174,7 @@ export class NetRaceController {
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
         this._isHost = _session.localIsHost;
+        this._aiAuthorityAnnounced = false;
         // The host trusts itself; a client trusts nobody until a snapshot arrives.
         this._activeHostPos = _session.localIsHost ? _session.localPos : Number.MAX_SAFE_INTEGER;
         // Turn on local-player input capture for the duration of this networked race.
@@ -182,6 +194,10 @@ export class NetRaceController {
 
     get isHost(): boolean {
         return this._isHost;
+    }
+
+    get canIssueAiDolphinActions(): boolean {
+        return this._isHost && this._aiAuthorityAnnounced;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -257,6 +273,7 @@ export class NetRaceController {
     // snapshots + own the final result immediately (both gate on isHost).
     private promoteToHost(): void {
         this._isHost = true;
+        this._aiAuthorityAnnounced = false;
         this._activeHostPos = this._session.localPos;
         this._lastSnapshotAt = Date.now();
         // The promoted host's current fixed-step simulation becomes authoritative.
@@ -282,6 +299,7 @@ export class NetRaceController {
             this._lastSnapshotAt = now;
             if (this._isHost && hostPos < this._session.localPos) {
                 this._isHost = false;
+                this._aiAuthorityAnnounced = false;
             }
         } else if (hostPos === this._activeHostPos) {
             this._lastSnapshotAt = now;
@@ -291,6 +309,7 @@ export class NetRaceController {
             this._lastSnapshotAt = now;
             if (this._isHost && hostPos < this._session.localPos) {
                 this._isHost = false;
+                this._aiAuthorityAnnounced = false;
             }
         }
     }
@@ -324,9 +343,11 @@ export class NetRaceController {
         if (present.indexOf(this._activeHostPos) >= 0) {
             return;
         }
-        // Host is gone. The lowest present seat takes over now; higher seats defer (and
-        // stand down as soon as the new host's snapshots arrive). If the new lowest also
-        // drops, the next onRoomInfoChange / snapshot-silence handles it.
+        // Host is gone. Every survivor immediately trusts the same lowest present seat,
+        // so delayed actions from the departed host are rejected even before the new
+        // host's first S| arrives. If the new lowest also drops, the next roster/silence
+        // signal handles it.
+        const departedHostPos = this._activeHostPos;
         let lowest = present[0];
         for (const p of present) {
             if (p < lowest) {
@@ -334,8 +355,11 @@ export class NetRaceController {
             }
         }
         if (this._session.localPos === lowest) {
-            console.warn(`[NetRace] host seat=${this._activeHostPos} left room — pos=${lowest} taking over`);
+            console.warn(`[NetRace] host seat=${departedHostPos} left room — pos=${lowest} taking over`);
             this.promoteToHost();
+        } else {
+            this._activeHostPos = lowest;
+            this._lastSnapshotAt = Date.now();
         }
     }
 
@@ -343,7 +367,10 @@ export class NetRaceController {
     sendSnapshot(entries: NetSnapshotEntry[]): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries));
+        }
+        this._snapSent++;
+        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries));
+        this._aiAuthorityAnnounced = true;
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -437,7 +464,11 @@ export class NetRaceController {
         this._playerQuitListener = listener;
     }
 
-    setAiDolphinListener(listener: ((lane: number, dive: boolean) => void) | null): void {
+    setAiDolphinListener(listener: ((
+        lane: number,
+        dive: boolean,
+        start: DolphinJumpStartState,
+    ) => boolean) | null): void {
         this._aiDolphinListener = listener;
     }
 
@@ -496,6 +527,7 @@ export class NetRaceController {
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
             if (decoded.senderPos >= 0 && decoded.senderPos !== this._session.localPos) {
+                this.processTrustedAiActions(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             return;
@@ -633,11 +665,17 @@ export class NetRaceController {
             for (let i = 0; i < capturedCount; i++) {
                 const event = events[i];
                 if (event.kind === NetInputKind.AiDolphinJump) {
+                    const lane = Math.max(0, Math.floor(event.aiLane ?? 0));
+                    const actionSeq = (this._aiDolphinActionSeqByLane[lane] ?? 0) + 1;
+                    this._aiDolphinActionSeqByLane[lane] = actionSeq;
+                    event.aiActionSeq = actionSeq;
                     this._pendingAiDolphinRepeats.push({
                         event: {
                             kind: NetInputKind.AiDolphinJump,
-                            aiLane: event.aiLane,
+                            aiLane: lane,
                             dolphinDive: !!event.dolphinDive,
+                            aiActionSeq: actionSeq,
+                            aiStart: event.aiStart,
                         },
                         remaining: AI_DOLPHIN_REPEAT_FRAMES,
                     });
@@ -698,6 +736,12 @@ export class NetRaceController {
             const decoded = decodeInputFrame(item);
             if (decoded.senderPos < 0) {
                 continue;
+            }
+            // Stable host actions are independent edges. Process them before packet
+            // ordering so a delayed first-seen action is not swallowed merely because
+            // a newer empty frame arrived first.
+            if (decoded.senderPos !== this._session.localPos) {
+                this.processTrustedAiActions(decoded.senderPos, decoded.events);
             }
             // We cannot roll a predicted swimmer backward. Drop duplicate or delayed
             // old service frames permanently instead of replaying an unseen old input
@@ -763,6 +807,30 @@ export class NetRaceController {
         return true;
     }
 
+    private processTrustedAiActions(senderPos: number, events: readonly NetInputEvent[]): void {
+        if (senderPos !== this._activeHostPos || !this._aiDolphinListener) {
+            return;
+        }
+        for (const event of events) {
+            if (event.kind !== NetInputKind.AiDolphinJump
+                || !Number.isFinite(event.aiLane)
+                || !Number.isFinite(event.aiActionSeq)
+                || !event.aiStart) {
+                continue;
+            }
+            const lane = Math.max(0, Math.floor(event.aiLane ?? 0));
+            const actionSeq = Math.floor(event.aiActionSeq ?? -1);
+            if (actionSeq <= this._aiActionOrder.latest(senderPos, lane)) {
+                continue;
+            }
+            // Commit the watermark only after the gameplay object accepted the edge.
+            // If scene wiring is not ready yet, a later redundant packet may retry it.
+            if (this._aiDolphinListener(lane, !!event.dolphinDive, event.aiStart)) {
+                this._aiActionOrder.markApplied(senderPos, lane, actionSeq);
+            }
+        }
+    }
+
     private processRemotePacket(
         senderPos: number,
         inputSeq: number,
@@ -788,14 +856,6 @@ export class NetRaceController {
         }
         if (events.length === 0 || !inputAccepted) {
             return;
-        }
-        const trustedHost = senderPos === this._activeHostPos;
-        if (trustedHost && this._aiDolphinListener) {
-            for (const event of events) {
-                if (event.kind === NetInputKind.AiDolphinJump && Number.isFinite(event.aiLane)) {
-                    this._aiDolphinListener(Math.max(0, Math.floor(event.aiLane ?? 0)), !!event.dolphinDive);
-                }
-            }
         }
         const humanEvents = events.filter((event) => event.kind !== NetInputKind.AiDolphinJump);
         if (humanEvents.length === 0) {

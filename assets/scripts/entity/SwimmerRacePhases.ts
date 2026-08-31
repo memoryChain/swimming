@@ -5,6 +5,7 @@ import {
     DOLPHIN_JUMP,
     resolveDolphinAbilityMode,
     type DolphinAbilityMode,
+    type DolphinJumpStartState,
 } from '../core/DolphinJumpConfig';
 import { StrokeType } from '../core/GameConstants';
 import { SwimmerMotor } from '../swimmer/SwimmerMotor';
@@ -122,6 +123,10 @@ export class SwimmerRacePhases {
     private _dolphinImpactDistanceOffset = 0;
     private _dolphinImpactLateralOffset = 0;
     private _dolphinObservedMotorLateral = 0;
+    private _dolphinStartAxialRollVelocity = 0;
+    private _dolphinStartCollisionPitchVelocity = 0;
+    private _dolphinStartKnockbackDistance = 0;
+    private _dolphinStartKnockbackLateral = 0;
     private readonly _dolphinRotation = new Quat();
 
     constructor(private readonly _host: SwimmerRacePhaseHost) {}
@@ -151,6 +156,27 @@ export class SwimmerRacePhases {
 
     get dolphinMode(): DolphinAbilityMode {
         return this._dolphinMode;
+    }
+
+    // Event-edge snapshot used by the host when it announces an accepted AI action.
+    // Called immediately after local start, before the first phase update advances it.
+    get dolphinStartState(): DolphinJumpStartState | null {
+        if (!this._dolphinActive) {
+            return null;
+        }
+        return {
+            distance: this._dolphinBaseDistance,
+            lateral: this._dolphinBaseLateral,
+            heading: this._dolphinHeading,
+            headingVelocity: this._dolphinHeadingTurnRate,
+            speed: this._dolphinEntrySpeed,
+            axialRoll: this._dolphinEntryAxialRoll,
+            axialRollVelocity: this._dolphinStartAxialRollVelocity,
+            collisionPitch: this._dolphinImpactPitch,
+            collisionPitchVelocity: this._dolphinStartCollisionPitchVelocity,
+            knockbackDistance: this._dolphinStartKnockbackDistance,
+            knockbackLateral: this._dolphinStartKnockbackLateral,
+        };
     }
 
     // Flip turns and ordinary underwater phases always leave the surface collision
@@ -571,17 +597,42 @@ export class SwimmerRacePhases {
         this._host.cartoonRig?.setLegSplashSuppressed(true);
     }
 
+    // Apply a host-accepted network action from its authoritative launch state.
+    // Local prediction is presentation only here: conflicting predicted phases are
+    // replaced, and wall/finish eligibility is not evaluated a second time.
+    startAcceptedNetDolphinJump(
+        mode: DolphinAbilityMode,
+        state: DolphinJumpStartState,
+    ): DolphinAbilityMode | null {
+        const rig = this._host.cartoonRig;
+        if (!rig) {
+            return null;
+        }
+        this.clearDiveUnderwaterPhase();
+        this.clearFlipTurnPhase();
+        this._host.motor.applyAuthoritativeDolphinStart(state);
+        return this.startDolphinJump(mode, true);
+    }
+
     // Try to begin a dolphin jump this frame. Rejected when already in another
     // scripted phase or when too little course distance remains before the next
-    // turn wall or the finish. Returns true when the jump started.
+    // turn wall or the finish.
     tryStartDolphinJump(forcedMode?: DolphinAbilityMode): DolphinAbilityMode | null {
-        if (this._dolphinActive || this._flipTurnActive || this._diveUnderwaterActive) {
+        return this.startDolphinJump(forcedMode, false);
+    }
+
+    private startDolphinJump(
+        forcedMode: DolphinAbilityMode | undefined,
+        acceptedByHost: boolean,
+    ): DolphinAbilityMode | null {
+        if (!acceptedByHost
+            && (this._dolphinActive || this._flipTurnActive || this._diveUnderwaterActive)) {
             return null;
         }
         const rig = this._host.cartoonRig;
         const motor = this._host.motor;
         const courseLayout = this._host.courseLayout;
-        if (!rig || !motor.isRacing) {
+        if (!rig || (!acceptedByHost && !motor.isRacing)) {
             return null;
         }
         const distance = motor.distance;
@@ -596,7 +647,7 @@ export class SwimmerRacePhases {
         }
         limit = Math.max(0, limit - DOLPHIN_JUMP.endMargin);
         const available = limit - distance;
-        if (available < DOLPHIN_JUMP.minAvailableDistance) {
+        if (!acceptedByHost && available < DOLPHIN_JUMP.minAvailableDistance) {
             return null;
         }
         const mode = forcedMode ?? resolveDolphinAbilityMode(
@@ -730,23 +781,27 @@ export class SwimmerRacePhases {
         this._dolphinCollisionSuppressed = false;
         this._dolphinCollisionWasSuppressed = false;
         this._dolphinImpactPitch = motor.collisionPitchRadians;
+        this._dolphinStartAxialRollVelocity = motor.axialRollAngularVelocity;
+        this._dolphinStartCollisionPitchVelocity = motor.collisionPitchAngularVelocity;
+        this._dolphinStartKnockbackDistance = motor.collisionKnockbackDistanceRate;
+        this._dolphinStartKnockbackLateral = motor.collisionKnockbackLateralRate;
         this._dolphinImpactRoll = normalizeAngle(
             motor.axialRollRadians - motor.axialStableAngleRadians,
         );
         const carry = clampScalar(DOLPHIN_JUMP.impactVelocityCarryScale, 0, 1);
         const maxAngular = Math.max(0, DOLPHIN_JUMP.impactMaxAngularSpeedDegrees) * Math.PI / 180;
         this._dolphinImpactPitchVelocity = clampScalar(
-            motor.collisionPitchAngularVelocity * carry,
+            this._dolphinStartCollisionPitchVelocity * carry,
             -maxAngular,
             maxAngular,
         );
         this._dolphinImpactRollVelocity = clampScalar(
-            motor.axialRollAngularVelocity * carry,
+            this._dolphinStartAxialRollVelocity * carry,
             -maxAngular,
             maxAngular,
         );
-        this._dolphinImpactDistanceVelocity = motor.collisionKnockbackDistanceRate * carry;
-        this._dolphinImpactLateralVelocity = motor.collisionKnockbackLateralRate * carry;
+        this._dolphinImpactDistanceVelocity = this._dolphinStartKnockbackDistance * carry;
+        this._dolphinImpactLateralVelocity = this._dolphinStartKnockbackLateral * carry;
         this._dolphinImpactDistanceOffset = 0;
         this._dolphinImpactLateralOffset = 0;
         this._dolphinObservedMotorLateral = motor.lateralOffset;

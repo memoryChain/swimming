@@ -30,6 +30,7 @@ import {
     decodeOwnerStateSeq,
     type NetSnapshotEntry,
 } from './NetRaceSnapshot';
+import type { DolphinJumpStartState } from '../core/DolphinJumpConfig';
 
 // Side of a stroke/kick. 0 = LEFT, 1 = RIGHT (kept numeric so the codec doesn't
 // depend on the game's StrokeType enum; the controller maps between them).
@@ -43,7 +44,7 @@ export const enum NetInputKind {
     DiveCharge = 'c',  // dive charge start (countdown/diving)
     DiveRelease = 'r', // dive release (carries final power + optional final launch speed)
     DolphinJump = 'd', // owner-accepted dolphin ability; optional suffix 1 = deep-dive form
-    AiDolphinJump = 'a', // host-accepted AI dolphin ability: a<lane>,<0|1>
+    AiDolphinJump = 'a', // host-accepted AI dolphin ability with stable action seq + launch state
 }
 
 export interface NetInputEvent {
@@ -59,6 +60,11 @@ export interface NetInputEvent {
     dolphinDive?: boolean;
     // AiDolphinJump only: stable assigned race lane of the host-authoritative AI.
     aiLane?: number;
+    // AiDolphinJump only: per-host, per-lane monotonic action identity. Every
+    // redundant transmission of one action carries the same value.
+    aiActionSeq?: number;
+    // AiDolphinJump only: authoritative launch edge used for deterministic replay.
+    aiStart?: DolphinJumpStartState;
 }
 
 export interface DecodedInputFrame {
@@ -91,7 +97,20 @@ function encodeEvent(event: NetInputEvent): string {
             return event.dolphinDive ? `${NetInputKind.DolphinJump}1` : NetInputKind.DolphinJump;
         case NetInputKind.AiDolphinJump: {
             const lane = Math.max(0, Math.floor(event.aiLane ?? 0));
-            return `${NetInputKind.AiDolphinJump}${lane},${event.dolphinDive ? 1 : 0}`;
+            const actionSeq = Math.floor(event.aiActionSeq ?? -1);
+            const start = event.aiStart;
+            if (actionSeq < 0 || !start) {
+                // Kept parse-compatible for old payload construction, but protocol 5
+                // senders always provide the stable identity and authoritative edge.
+                return `${NetInputKind.AiDolphinJump}${lane},${event.dolphinDive ? 1 : 0}`;
+            }
+            return `${NetInputKind.AiDolphinJump}${lane},${event.dolphinDive ? 1 : 0},${actionSeq}`
+                + `,${Math.round(start.distance * 100)},${Math.round(start.lateral * 1000)}`
+                + `,${Math.round(start.heading * 1000)},${Math.round(start.headingVelocity * 1000)}`
+                + `,${Math.round(Math.max(0, start.speed) * 100)}`
+                + `,${Math.round(start.axialRoll * 1000)},${Math.round(start.axialRollVelocity * 1000)}`
+                + `,${Math.round(start.collisionPitch * 1000)},${Math.round(start.collisionPitchVelocity * 1000)}`
+                + `,${Math.round(start.knockbackDistance * 1000)},${Math.round(start.knockbackLateral * 1000)}`;
         }
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
@@ -127,7 +146,34 @@ function decodeToken(token: string): NetInputEvent | null {
             if (!Number.isFinite(lane) || lane < 0) {
                 return null;
             }
-            return { kind, aiLane: lane, dolphinDive: values[1] === '1' };
+            // Legacy a<lane>,<mode> remains decodable, but protocol-gated gameplay
+            // ignores it because it has no stable action identity.
+            if (values.length < 14) {
+                return { kind, aiLane: lane, dolphinDive: values[1] === '1' };
+            }
+            const raw = values.slice(2, 14).map((value) => parseInt(value, 10));
+            if (raw.some((value) => !Number.isFinite(value)) || raw[0] < 0) {
+                return null;
+            }
+            return {
+                kind,
+                aiLane: lane,
+                dolphinDive: values[1] === '1',
+                aiActionSeq: Math.floor(raw[0]),
+                aiStart: {
+                    distance: raw[1] / 100,
+                    lateral: raw[2] / 1000,
+                    heading: raw[3] / 1000,
+                    headingVelocity: raw[4] / 1000,
+                    speed: Math.max(0, raw[5] / 100),
+                    axialRoll: raw[6] / 1000,
+                    axialRollVelocity: raw[7] / 1000,
+                    collisionPitch: raw[8] / 1000,
+                    collisionPitchVelocity: raw[9] / 1000,
+                    knockbackDistance: raw[10] / 1000,
+                    knockbackLateral: raw[11] / 1000,
+                },
+            };
         }
         case NetInputKind.DiveRelease: {
             const values = token.slice(1).split(',');

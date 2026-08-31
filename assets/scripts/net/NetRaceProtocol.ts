@@ -1,7 +1,7 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-export const NET_RACE_PROTOCOL_VERSION = 4;
+export const NET_RACE_PROTOCOL_VERSION = 5;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 
