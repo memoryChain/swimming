@@ -3,7 +3,14 @@ import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
-import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
+import {
+    fitFullScreenBackgroundCover,
+    fitNodeToVisibleScreen,
+    makeButton,
+    makeLabel,
+    makeUiNode,
+    uiColor,
+} from './RuntimeUiFactory';
 
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
@@ -505,12 +512,6 @@ function fitInputNodeToVisibleScreen(node: Node) {
     fitNodeToVisibleScreen(node);
 }
 
-function fitNodeToVisibleScreen(node: Node) {
-    const visibleSize = view.getVisibleSize();
-    node.setPosition(0, 0, node.position.z);
-    node.getComponent(UITransform)?.setContentSize(visibleSize.width, visibleSize.height);
-}
-
 function layoutStartScreen(root: Node, startScreen: Node) {
     fitNodeToVisibleScreen(root);
     fitNodeToVisibleScreen(startScreen);
@@ -519,17 +520,8 @@ function layoutStartScreen(root: Node, startScreen: Node) {
     // in cover mode, while the logo/actions use one uniform center-anchored
     // scale so wider/taller phones never stretch the authored artwork.
     const background = requireNode(startScreen, 'StartShade');
-    const transform = background.getComponent(UITransform);
     const visibleSize = view.getVisibleSize();
-    if (transform) {
-        transform.setContentSize(1280, 720);
-        const coverScale = Math.max(
-            visibleSize.width / 1280,
-            visibleSize.height / 720,
-        );
-        background.setPosition(0, 0, background.position.z);
-        background.setScale(coverScale, coverScale, background.scale.z);
-    }
+    fitFullScreenBackgroundCover(background);
 
     const artScale = Math.min(visibleSize.width / 1280, visibleSize.height / 720);
     layoutPsdNode(requireNode(startScreen, 'TitlePlate'), 28, 157, 608, 262, artScale);

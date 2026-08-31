@@ -40,7 +40,7 @@ import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
-import { makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
@@ -2143,7 +2143,8 @@ export class GameManager extends Component {
     private buildEliminationSpectatorUi(raceHud: Node, width: number, height: number) {
         const dialog = makeUiNode('EliminationDialog', raceHud);
         dialog.getComponent(UITransform)?.setContentSize(width, height);
-        makeRect('Shade', dialog, width, height, new Color(5, 14, 26, 188));
+        const shade = makeRect('Shade', dialog, width, height, new Color(5, 14, 26, 188));
+        fitFullScreenBackgroundCover(shade);
         const panel = makeRect('Panel', dialog, 470, 242, new Color(19, 42, 66, 248));
         const title = makeLabel('Title', panel, '你已被淘汰', 30, new Color(255, 244, 188, 255));
         title.setPosition(0, 70, 0);

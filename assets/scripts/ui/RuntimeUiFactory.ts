@@ -1,4 +1,7 @@
-import { Button, Camera, Canvas, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3 } from 'cc';
+import { Button, Camera, Canvas, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3, view } from 'cc';
+
+export const UI_DESIGN_WIDTH = 1280;
+export const UI_DESIGN_HEIGHT = 720;
 
 export function uiColor(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
@@ -12,6 +15,48 @@ export function makeUiNode(name: string, parent: Node): Node {
     node.layer = parent?.layer ?? Layers.Enum.UI_2D;
     node.addComponent(UITransform);
     return node;
+}
+
+// Full-screen UI is authored on a fixed 1280x720 landscape canvas. Cocos uses
+// fitHeight for this project, so extra-wide phones expose more horizontal design
+// space than 1280. Background art and solid backdrops therefore need CSS-like
+// `cover`: preserve the authored aspect ratio, fill the visible area, and crop
+// only the overflow. Foreground controls keep their original design coordinates.
+export function fitFullScreenBackgroundCover(
+    node: Node,
+    authoredWidth = UI_DESIGN_WIDTH,
+    authoredHeight = UI_DESIGN_HEIGHT,
+): void {
+    const transform = node.getComponent(UITransform);
+    if (!transform || authoredWidth <= 0 || authoredHeight <= 0) {
+        return;
+    }
+    if (transform.contentSize.width !== authoredWidth || transform.contentSize.height !== authoredHeight) {
+        transform.setContentSize(authoredWidth, authoredHeight);
+    }
+    const visibleSize = view.getVisibleSize();
+    const coverScale = Math.max(
+        visibleSize.width / authoredWidth,
+        visibleSize.height / authoredHeight,
+    );
+    if (node.position.x !== 0 || node.position.y !== 0) {
+        node.setPosition(0, 0, node.position.z);
+    }
+    if (node.scale.x !== coverScale || node.scale.y !== coverScale) {
+        node.setScale(coverScale, coverScale, node.scale.z);
+    }
+}
+
+export function fitNodeToVisibleScreen(node: Node): void {
+    const visibleSize = view.getVisibleSize();
+    const transform = node.getComponent(UITransform);
+    if (node.position.x !== 0 || node.position.y !== 0) {
+        node.setPosition(0, 0, node.position.z);
+    }
+    if (transform
+        && (transform.contentSize.width !== visibleSize.width || transform.contentSize.height !== visibleSize.height)) {
+        transform.setContentSize(visibleSize.width, visibleSize.height);
+    }
 }
 
 export function makeRect(name: string, parent: Node, w: number, h: number, fill: Color): Node {

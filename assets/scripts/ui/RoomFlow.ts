@@ -9,7 +9,7 @@
 // return-to-room after finishing) is phase 2B and needs on-device testing.
 
 import { Graphics, Label, Node, UITransform, view } from 'cc';
-import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
 import { avatarColorOf } from '../backend/IdentityConfig';
 import { PlayerData } from '../backend/PlayerData';
@@ -118,7 +118,8 @@ export class RoomFlow {
     private build() {
         const root = makeUiNode('RoomFlow', this._parent);
         this._root = root;
-        makeRect('Backdrop', root, this._width, this._height, uiColor(6, 18, 32, 255));
+        const backdrop = makeRect('Backdrop', root, this._width, this._height, uiColor(6, 18, 32, 255));
+        fitFullScreenBackgroundCover(backdrop);
 
         const titleY = this._height / 2 - HEADBAR_TOP_SAFE_AREA - 30;
         makeLabel('RoomTitle', root, '联机房间', 40, uiColor(240, 250, 255)).setPosition(0, titleY, 0);

@@ -10,7 +10,7 @@ import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolvePlayerBalance } from '../progression/PlayerBalanceOverrides';
 import { energyGainMultiplier } from '../core/UltimateEnergyBalance';
-import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { getUILayer, UILayer } from './UILayers';
 import { UI_STYLE } from './UIStyle';
 
@@ -80,6 +80,7 @@ export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, d
     const root = makeUiNode('CharacterStatsPanel', popup);
 
     const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 8, 14, 200));
+    fitFullScreenBackgroundCover(dim);
     dim.on(Node.EventType.TOUCH_END, () => root.destroy());
 
     const panel = makeRoundedRect('Panel', root, PANEL_W, PANEL_H, uiColor(14, 36, 58, 252), 18, uiColor(86, 196, 236, 110), 2);

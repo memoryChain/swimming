@@ -3,7 +3,7 @@ import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consum
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
-import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { ResourceHeadBar } from '../ui/ResourceHeadBar';
 import { RoomFlow } from '../ui/RoomFlow';
@@ -106,6 +106,7 @@ export class LoginManager extends Component {
         popup.getChildByName('IdentityEdit')?.destroy();
         const root = makeUiNode('IdentityEdit', popup);
         const dim = makeRect('Dim', root, this._designWidth, this._designHeight, uiColor(2, 8, 14, 200));
+        fitFullScreenBackgroundCover(dim);
         dim.on(Node.EventType.TOUCH_END, () => root.destroy());
         const panel = makeRect('Panel', root, 520, 440, uiColor(14, 36, 58, 250));
         makeLabel('Title', panel, '编辑资料', 30, uiColor(240, 250, 255)).setPosition(0, 176, 1);
@@ -449,7 +450,8 @@ export class LoginManager extends Component {
         popup.getChildByName('AiDebugPicker')?.destroy();
         const overlay = makeUiNode('AiDebugPicker', popup);
         overlay.layer = Layers.Enum.UI_2D;
-        makeRect('Dim', overlay, this._designWidth, this._designHeight, uiColor(2, 8, 14, 210));
+        const dim = makeRect('Dim', overlay, this._designWidth, this._designHeight, uiColor(2, 8, 14, 210));
+        fitFullScreenBackgroundCover(dim);
         makeLabel('Title', overlay, '选择 AI 难度', 30, uiColor(240, 250, 255)).setPosition(0, 190, 0);
 
         const tiers = AI_DEBUG_DIFFICULTY_TIERS;

@@ -12,7 +12,7 @@ import {
     setPlayerColorScheme,
     setPlayerSkinTone,
 } from '../app/PlayerCharacterConfig';
-import { makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { getUILayer, UILayer } from './UILayers';
 import { UI_STYLE } from './UIStyle';
 
@@ -35,6 +35,7 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
     const root = makeUiNode('AppearancePanel', popup);
 
     const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 8, 14, 200));
+    fitFullScreenBackgroundCover(dim);
     dim.on(Node.EventType.TOUCH_END, () => root.destroy());
 
     const panel = makeRoundedRect('Panel', root, 460, 360, uiColor(14, 36, 58, 250), 16, uiColor(86, 196, 236, 90), 1.5);

@@ -35,7 +35,7 @@ import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview'
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolvePlayerBalance } from '../progression/PlayerBalanceOverrides';
-import { makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
 import type { PlayerProfile } from '../backend/PlayerProfile';
@@ -230,9 +230,10 @@ export class PrepareRaceFlow {
 
     private buildBackground(root: Node): void {
         const fallback = makeRect('PrepareRaceBackdrop', root, this._width, this._height, uiColor(4, 20, 42));
+        fitFullScreenBackgroundCover(fallback);
         const image = makeUiNode('PrepareRaceBackgroundImage', root);
-        image.getComponent(UITransform)!.setContentSize(this._width, this._height);
         image.setPosition(0, 0, 1);
+        fitFullScreenBackgroundCover(image);
         loadRaceAsset(RESOURCE_PATHS.lobbyUi.background, Texture2D, (error, texture) => {
             if (error || !texture || !image.isValid) {
                 console.warn('[SpeedSwimming] prepare-race background texture failed to load', error);

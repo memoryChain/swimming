@@ -2,7 +2,7 @@
 // prefab); opened from the headbar settings button on non-race screens.
 
 import { Label, Node, UITransform } from 'cc';
-import { makeDragSlider, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeDragSlider, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { getUILayer, UILayer } from './UILayers';
 import { SettingsManager } from '../app/SettingsManager';
 
@@ -12,6 +12,7 @@ export function openSettingsPanel(canvasNode: Node, designWidth: number, designH
     const root = makeUiNode('SettingsPanel', popup);
 
     const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 8, 14, 200));
+    fitFullScreenBackgroundCover(dim);
     dim.on(Node.EventType.TOUCH_END, () => root.destroy());
 
     const panel = makeRoundedRect('Panel', root, 520, 340, uiColor(14, 36, 58, 250), 16, uiColor(86, 196, 236, 90), 1.5);
