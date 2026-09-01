@@ -1,6 +1,6 @@
 import { EventMouse, EventTouch, input, Input, Node, Vec2 } from 'cc';
 import { StrokeType } from './GameConstants';
-import { DOLPHIN_JUMP } from './DolphinJumpConfig';
+import { DOLPHIN_JUMP, type DolphinAbilityMode } from './DolphinJumpConfig';
 import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
@@ -9,8 +9,10 @@ export type InputRouterCallbacks = {
     onKickStroke: (type: StrokeType) => void;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
-    // Both invisible screen halves held together past the trigger threshold.
-    onDolphinJump: () => void;
+    // Snapshot the root collision posture on the edge where both invisible
+    // screen halves first become held, then use that result when the hold matures.
+    captureDolphinMode: () => DolphinAbilityMode;
+    onDolphinJump: (mode: DolphinAbilityMode) => void;
     onPrimaryAction: () => void;
     onToggleDebug: () => void;
     onCycleRaceCamera: () => void;
@@ -46,6 +48,7 @@ export class InputRouter {
     // already fired, so it triggers once per two-hand hold.
     private _bothHeldSinceMs = -1;
     private _dolphinGestureFired = false;
+    private _dolphinGestureMode: DolphinAbilityMode = 'jump';
     // Awards free-look touch state: whether a multi-finger pinch is in progress and the
     // last measured distance between the first two touch points.
     private _cameraMultiTouch = false;
@@ -128,9 +131,15 @@ export class InputRouter {
     // STROKE_QUALITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
         const press = this.pressState(type);
+        const now = Date.now();
         press.active = true;
-        press.startedMs = Date.now();
+        press.startedMs = now;
         press.promoted = false;
+        if (this._bothHeldSinceMs < 0
+            && this._leftPress.active
+            && this._rightPress.active) {
+            this.beginDolphinGesture(now);
+        }
         this._callbacks.onKickStroke(type);
     }
 
@@ -146,6 +155,9 @@ export class InputRouter {
         }
         press.active = false;
         press.promoted = false;
+        // Reset on the release edge instead of waiting for tick(). A rapid
+        // release/re-press between frames must start a fresh timer and posture latch.
+        this.resetDolphinGesture();
     }
 
     private pressState(type: StrokeType) {
@@ -167,18 +179,32 @@ export class InputRouter {
     private updateDolphinGesture(now: number) {
         const bothHeld = this._leftPress.active && this._rightPress.active;
         if (!bothHeld) {
-            this._bothHeldSinceMs = -1;
-            this._dolphinGestureFired = false;
+            this.resetDolphinGesture();
             return;
         }
         if (this._bothHeldSinceMs < 0) {
-            this._bothHeldSinceMs = now;
+            // Defensive fallback for callers that restore press state without going
+            // through beginPress(). Normal touch/keyboard input latches on the edge.
+            this.beginDolphinGesture(now);
         }
         if (!this._dolphinGestureFired
             && now - this._bothHeldSinceMs >= DOLPHIN_JUMP.triggerHoldSeconds * 1000) {
             this._dolphinGestureFired = true;
-            this._callbacks.onDolphinJump();
+            this._callbacks.onDolphinJump(this._dolphinGestureMode);
         }
+    }
+
+    private beginDolphinGesture(now: number) {
+        this._bothHeldSinceMs = now;
+        this._dolphinGestureFired = false;
+        const capturedMode = this._callbacks.captureDolphinMode();
+        this._dolphinGestureMode = capturedMode === 'dive' ? 'dive' : 'jump';
+    }
+
+    private resetDolphinGesture() {
+        this._bothHeldSinceMs = -1;
+        this._dolphinGestureFired = false;
+        this._dolphinGestureMode = 'jump';
     }
 
     private promoteIfDue(type: StrokeType, now: number, thresholdMs: number) {
@@ -216,8 +242,7 @@ export class InputRouter {
         this._leftPress.promoted = false;
         this._rightPress.active = false;
         this._rightPress.promoted = false;
-        this._bothHeldSinceMs = -1;
-        this._dolphinGestureFired = false;
+        this.resetDolphinGesture();
     }
 
     // Keyboard A/D go through the same press classifier as touch, driven by the

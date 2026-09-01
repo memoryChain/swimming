@@ -16,6 +16,7 @@ import { UIFlowController } from '../ui/UIFlowController';
 import { StrokeSfxManager } from './StrokeSfxManager';
 import { captureNetInput } from '../net/NetInputCapture';
 import { NetInputKind, NetInputSide } from '../net/NetRaceInput';
+import type { DolphinAbilityMode } from '../core/DolphinJumpConfig';
 
 // Map the game's StrokeType to the codec's numeric side (0=LEFT, 1=RIGHT). BOTH
 // (rare) collapses to LEFT — the mobile input only ever produces LEFT/RIGHT.
@@ -198,7 +199,7 @@ export class GameFlowController {
 
     // Both-hands long-press gesture: launch the player into a dolphin jump. Only
     // from surface racing; the swimmer/phase controller rejects it otherwise.
-    handleDolphinJump() {
+    handleDolphinJump(capturedMode: DolphinAbilityMode) {
         if (this._refs.getState() !== GameState.RACING) {
             return;
         }
@@ -206,7 +207,9 @@ export class GameFlowController {
         if (!swimmer) {
             return;
         }
-        const mode = swimmer.tryDolphinJump();
+        // The posture was captured when the second hand went down, before the
+        // confirmation hold could let collision pitch rotate out of the dive window.
+        const mode = swimmer.tryDolphinJump(capturedMode);
         if (mode) {
             this._refs.applyPlayerDolphinJumpStrain();
             captureNetInput({
