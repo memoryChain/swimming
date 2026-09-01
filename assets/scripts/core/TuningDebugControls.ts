@@ -52,7 +52,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 37;
+const TUNING_FILE_VERSION = 38;
 
 type TuningFileData = {
     version: number;
@@ -112,7 +112,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.ragdollMaximumReactionSeconds', '四肢松动最长时间', '一次碰撞四肢松动的绝对时长上限；即使身体仍在翻转，到时也会回到当前泳姿。', () => COLLISION_RAGDOLL_TUNING.maximumReactionSeconds, (v) => COLLISION_RAGDOLL_TUNING.maximumReactionSeconds = v, 0.05, 0.2, 2, 2, 's'),
             control('collision.ragdollEnterAngularSpeed', '四肢松动起始转速', '碰撞后的合成翻转角速度超过该值后开始明显松动。', () => COLLISION_RAGDOLL_TUNING.enterAngularSpeedDegrees, (v) => COLLISION_RAGDOLL_TUNING.enterAngularSpeedDegrees = v, 5, 0, 240, 0, '°/s'),
             control('collision.ragdollFullAngularSpeed', '四肢松动拉满转速', '合成翻转角速度达到该值时使用完整布娃娃权重。', () => COLLISION_RAGDOLL_TUNING.fullAngularSpeedDegrees, (v) => COLLISION_RAGDOLL_TUNING.fullAngularSpeedDegrees = v, 10, 30, 720, 0, '°/s'),
-            control('collision.ragdollMinimumStrokePoseWeight', '最低主动泳姿保留', '强翻滚时仍保留的主动划水姿势比例；默认 0.55 表示最多压低 45%。', () => COLLISION_RAGDOLL_TUNING.minimumStrokePoseWeight, (v) => COLLISION_RAGDOLL_TUNING.minimumStrokePoseWeight = v, 0.05, 0, 1, 2),
+            control('collision.ragdollLinearImpulseForFullReaction', '四肢松动拉满冲量', '线性碰撞冲量达到该值时使用完整布娃娃权重；越低则普通碰撞的手脚反应越明显。', () => COLLISION_RAGDOLL_TUNING.linearImpulseForFullReaction, (v) => COLLISION_RAGDOLL_TUNING.linearImpulseForFullReaction = v, 0.1, 0.2, 8, 1),
+            control('collision.ragdollMinimumStrokePoseWeight', '最低主动泳姿保留', '强翻滚时仍保留的主动划水姿势比例；默认 0.45 表示布娃娃最多占 55%。', () => COLLISION_RAGDOLL_TUNING.minimumStrokePoseWeight, (v) => COLLISION_RAGDOLL_TUNING.minimumStrokePoseWeight = v, 0.05, 0, 1, 2),
             control('collision.ragdollSwingFrequency', '四肢松动频率', '手脚错相摆动的基础频率；各肢体会使用稳定的细微倍率差。', () => COLLISION_RAGDOLL_TUNING.swingFrequencyHz, (v) => COLLISION_RAGDOLL_TUNING.swingFrequencyHz = v, 0.1, 0.3, 4, 2, 'Hz'),
             control('collision.ragdollArmSwing', '上臂松动摆幅', '强碰撞时上臂松散摆动的角度上限。', () => COLLISION_RAGDOLL_TUNING.armSwingDegrees, (v) => COLLISION_RAGDOLL_TUNING.armSwingDegrees = v, 2, 0, 70, 0, '°'),
             control('collision.ragdollForearmSwing', '弯肘节奏扰动', '用于让左右弯肘不同步的相位扰动；最终仍受单方向肘关节上限保护。', () => COLLISION_RAGDOLL_TUNING.forearmSwingDegrees, (v) => COLLISION_RAGDOLL_TUNING.forearmSwingDegrees = v, 2, 0, 90, 0, '°'),

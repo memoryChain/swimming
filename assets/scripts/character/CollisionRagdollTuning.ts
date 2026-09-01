@@ -11,21 +11,21 @@ export const COLLISION_RAGDOLL_TUNING = {
     recoverySeconds: 0.28,
     maximumReactionSeconds: 0.8,
     enterAngularSpeedDegrees: 55,
-    fullAngularSpeedDegrees: 280,
+    fullAngularSpeedDegrees: 220,
     snapshotRetriggerDeltaDegrees: 80,
     snapshotRetriggerMaxGapSeconds: 0.35,
-    linearImpulseForFullReaction: 3.2,
+    linearImpulseForFullReaction: 2.7,
 
     // At full intensity, keep this fraction of the current active swim pose.
     // 0.55 means the relaxed collision target owns at most 45% of the bones.
-    minimumStrokePoseWeight: 0.55,
+    minimumStrokePoseWeight: 0.45,
     swingFrequencyHz: 1.6,
 
-    armSwingDegrees: 20,
-    forearmSwingDegrees: 24,
+    armSwingDegrees: 27,
+    forearmSwingDegrees: 32,
     elbowBendDegrees: 30,
-    legSwingDegrees: 13,
-    calfSwingDegrees: 18,
+    legSwingDegrees: 18,
+    calfSwingDegrees: 25,
     kneeBendDegrees: 22,
     spineLagDegrees: 4,
     headLagDegrees: 5,

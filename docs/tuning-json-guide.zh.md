@@ -151,14 +151,15 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 | `collision.ragdollRecoverySeconds` | `0.28` | s | 受击后回到当前泳姿的指数恢复时间。 |
 | `collision.ragdollMaximumReactionSeconds` | `0.8` | s | 单次碰撞四肢松动的绝对时长上限。 |
 | `collision.ragdollEnterAngularSpeed` | `55` | °/s | 合成翻转角速度达到该值后开始明显松动。 |
-| `collision.ragdollFullAngularSpeed` | `280` | °/s | 合成翻转角速度达到该值时使用完整松动权重。 |
-| `collision.ragdollMinimumStrokePoseWeight` | `0.55` | 比例 | 强翻滚时仍保留的主动划水姿势；`0.55` 表示最多压低 45%。 |
+| `collision.ragdollFullAngularSpeed` | `220` | °/s | 合成翻转角速度达到该值时使用完整松动权重。 |
+| `collision.ragdollLinearImpulseForFullReaction` | `2.7` | m/s | 线性碰撞冲量达到该值时使用完整松动权重。 |
+| `collision.ragdollMinimumStrokePoseWeight` | `0.45` | 比例 | 强翻滚时仍保留的主动划水姿势；`0.45` 表示布娃娃最多占 55%。 |
 | `collision.ragdollSwingFrequency` | `1.6` | Hz | 手脚错相摆动的基础频率。 |
-| `collision.ragdollArmSwing` | `20` | ° | 上臂松动摆幅。 |
-| `collision.ragdollForearmSwing` | `24` | ° | 左右弯肘不同步的节奏扰动，最终受肘关节安全上限约束。 |
+| `collision.ragdollArmSwing` | `27` | ° | 上臂松动摆幅。 |
+| `collision.ragdollForearmSwing` | `32` | ° | 左右弯肘不同步的节奏扰动，最终受肘关节安全上限约束。 |
 | `collision.ragdollElbowBend` | `30` | ° | 碰撞失衡时肘部弯曲上限。 |
-| `collision.ragdollLegSwing` | `13` | ° | 大腿松动摆幅。 |
-| `collision.ragdollCalfSwing` | `18` | ° | 左右弯膝不同步的节奏扰动，最终受膝关节安全上限约束。 |
+| `collision.ragdollLegSwing` | `18` | ° | 大腿松动摆幅。 |
+| `collision.ragdollCalfSwing` | `25` | ° | 左右弯膝不同步的节奏扰动，最终受膝关节安全上限约束。 |
 | `collision.ragdollKneeBend` | `22` | ° | 碰撞失衡时膝部弯曲上限。 |
 | `collision.ragdollSpineLag` | `4` | ° | 腰部相对骨盆向前收拢的幅度，不允许后折或侧折。 |
 | `collision.ragdollHeadLag` | `5` | ° | 头部相对躯干翻转的反向滞后上限。 |

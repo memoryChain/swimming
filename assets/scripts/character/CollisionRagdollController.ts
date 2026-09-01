@@ -62,10 +62,12 @@ export class CollisionRagdollController {
         this._phaseRightArm = unitHash(this._stableSeed, 23) * TAU;
         this._phaseLeftLeg = unitHash(this._stableSeed, 37) * TAU;
         this._phaseRightLeg = unitHash(this._stableSeed, 53) * TAU;
-        this._leftArmScale = 0.84 + unitHash(this._stableSeed, 67) * 0.30;
-        this._rightArmScale = 0.84 + unitHash(this._stableSeed, 79) * 0.30;
-        this._leftLegScale = 0.86 + unitHash(this._stableSeed, 97) * 0.24;
-        this._rightLegScale = 0.86 + unitHash(this._stableSeed, 109) * 0.24;
+        // Keep a stable per-limb mismatch so the stronger overlay reads as loose
+        // secondary motion rather than four limbs moving with one shared motor.
+        this._leftArmScale = 0.80 + unitHash(this._stableSeed, 67) * 0.40;
+        this._rightArmScale = 0.80 + unitHash(this._stableSeed, 79) * 0.40;
+        this._leftLegScale = 0.82 + unitHash(this._stableSeed, 97) * 0.32;
+        this._rightLegScale = 0.82 + unitHash(this._stableSeed, 109) * 0.32;
     }
 
     setSnapshotRetriggerEnabled(enabled: boolean) {
