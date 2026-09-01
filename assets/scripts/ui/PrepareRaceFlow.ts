@@ -619,11 +619,11 @@ export class PrepareRaceFlow {
             makeRaceTextureSprite(`StatIcon${index}`, parent, iconPaths[index], index === 1 ? 26 : index === 0 ? 30 : 28, index === 0 ? 28 : index === 1 ? 30 : 32, -132.5, y, 2);
             const statName = makeBoundLabel(`StatName${index}`, parent, names[index], 18, DARK_TEXT, 80, 28, -63.5, y, Label.HorizontalAlign.LEFT);
             stylePsdTitleLabel(statName, 24);
-            const current = makeBoundLabel(`Current${index}`, parent, '', 19, DARK_TEXT, 62, 28, 12.5, y, Label.HorizontalAlign.RIGHT);
+            const current = makeBoundLabel(`Current${index}`, parent, '', 19, DARK_TEXT, 62, 28, 2.5, y, Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(current, 'Arial Black', true, 24);
             this._inspectorCurrentStats.push(current);
-            makeRaceTextureSprite(`Arrow${index}`, parent, RESOURCE_PATHS.characterUi.statArrow, 14, 13, 54.5, y, 2);
-            const next = makeBoundLabel(`Next${index}`, parent, '', 19, uiColor(56, 208, 29), 62, 28, 93.5, y, Label.HorizontalAlign.RIGHT);
+            makeRaceTextureSprite(`Arrow${index}`, parent, RESOURCE_PATHS.characterUi.statArrow, 14, 13, 59.5, y, 2);
+            const next = makeBoundLabel(`Next${index}`, parent, '', 19, uiColor(56, 208, 29), 62, 28, 78.5, y, Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(next, 'Arial Black', true, 24);
             this._inspectorNextStats.push(next);
         }
