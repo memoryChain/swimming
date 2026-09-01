@@ -243,4 +243,25 @@ export class WechatPlatform implements IPlatform {
             }
         };
     }
+
+    getTopRightReservedRatio(): number {
+        try {
+            const rect = typeof wx.getMenuButtonBoundingClientRect === 'function'
+                ? wx.getMenuButtonBoundingClientRect()
+                : null;
+            const info = typeof wx.getWindowInfo === 'function'
+                ? wx.getWindowInfo()
+                : typeof wx.getSystemInfoSync === 'function'
+                    ? wx.getSystemInfoSync()
+                    : null;
+            const windowWidth = Number(info?.windowWidth || info?.screenWidth || 0);
+            const capsuleLeft = Number(rect?.left || 0);
+            if (windowWidth > 0 && capsuleLeft > 0 && capsuleLeft < windowWidth) {
+                return Math.min(0.35, Math.max(0, (windowWidth - capsuleLeft) / windowWidth));
+            }
+        } catch (error) {
+            console.warn('[Platform] wechat menu button bounds unavailable', error);
+        }
+        return 0.09;
+    }
 }

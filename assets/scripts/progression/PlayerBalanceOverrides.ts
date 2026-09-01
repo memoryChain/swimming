@@ -32,6 +32,8 @@ export type CharacterStats = {
     kick: number;
 };
 
+export type CharacterDisplayStats = Pick<CharacterStats, 'stamina' | 'technique' | 'burst'>;
+
 // Per-level increments (micro - a maxed character is stronger but never broken).
 export const PROGRESSION_PER_LEVEL = {
     maxSpeed: 0.007,             // +0.42 at 60 (+10.5%)
@@ -48,6 +50,29 @@ export const PROGRESSION_PER_LEVEL = {
 // 0-stat character gets ~-15%.
 function attributeMultiplier(value: number): number {
     return 1 + (value - 50) * 0.003;
+}
+
+/**
+ * Converts leveled runtime gains back into the same integer rating scale used
+ * by the character catalog. UI screens must use this instead of exposing raw
+ * energy, acceleration, or speed units as if they were character attributes.
+ */
+export function resolveCharacterDisplayStats(
+    stats: CharacterStats,
+    level: number,
+    maxLevel: number,
+): CharacterDisplayStats {
+    const clampedLevel = Math.max(1, Math.min(maxLevel, level));
+    const levelsAbove1 = clampedLevel - 1;
+    const attributeScale = 0.003;
+    return {
+        stamina: Math.round(stats.stamina
+            + (PROGRESSION_PER_LEVEL.energyTotal / (CONDITION_BALANCE.energy.total * attributeScale)) * levelsAbove1),
+        technique: Math.round(stats.technique
+            + (PROGRESSION_PER_LEVEL.strokeQualityAccel / (SWIMMER_BALANCE.strokeQualityAccel * attributeScale)) * levelsAbove1),
+        burst: Math.round(stats.burst
+            + (PROGRESSION_PER_LEVEL.maxSpeed / (SWIMMER_BALANCE.maxSpeed * attributeScale)) * levelsAbove1),
+    };
 }
 
 export function resolvePlayerBalance(

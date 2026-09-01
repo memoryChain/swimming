@@ -55,17 +55,21 @@ export class PrepareRaceCharacterPreview extends Component {
         return this._shadowTexture;
     }
 
-    setLobbyPresentation(enabled: boolean) {
-        if (this._lobbyPresentation === enabled) return;
+    setLobbyPresentation(enabled: boolean, shadowCaptureEnabled = !enabled) {
+        const presentationChanged = this._lobbyPresentation !== enabled;
+        const shadowChanged = this._shadowCaptureEnabled !== shadowCaptureEnabled;
+        if (!presentationChanged && !shadowChanged) return;
         this._lobbyPresentation = enabled;
-        this._shadowCaptureEnabled = !enabled;
-        const scale = enabled ? LOBBY_CHARACTER_SCALE : PREVIEW_CHARACTER_SCALE;
-        if (this._pivotNode?.isValid && this._pivotNode.scale.x !== scale) {
-            this._pivotNode.setScale(scale, scale, scale);
+        this._shadowCaptureEnabled = shadowCaptureEnabled;
+        if (presentationChanged) {
+            const scale = enabled ? LOBBY_CHARACTER_SCALE : PREVIEW_CHARACTER_SCALE;
+            if (this._pivotNode?.isValid && this._pivotNode.scale.x !== scale) {
+                this._pivotNode.setScale(scale, scale, scale);
+            }
+            this._yawDegrees = enabled ? LOBBY_FRONT_YAW_DEGREES : 0;
+            this._pivotNode?.setRotationFromEuler(0, this._yawDegrees, 0);
+            this._cameraNode?.lookAt(enabled ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
         }
-        this._yawDegrees = enabled ? LOBBY_FRONT_YAW_DEGREES : 0;
-        this._pivotNode?.setRotationFromEuler(0, this._yawDegrees, 0);
-        this._cameraNode?.lookAt(enabled ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
         if (this._shadowCamera) this._shadowCamera.enabled = this._shadowCaptureEnabled;
         if (this._shadowCaptureEnabled && this._rig && !this._shadowCamera) this.ensureShadowCapture();
     }

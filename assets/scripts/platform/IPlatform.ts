@@ -91,4 +91,8 @@ export interface IPlatform {
     // share card is tapped while it is already running). `query` carries the launch
     // parameters of THAT show (e.g. a `room` id). Returns an unsubscribe function.
     onAppShow(callback: (query: Record<string, string>) => void): () => void;
+
+    // Horizontal fraction of the window occupied from the right edge by a native
+    // platform control (for example the WeChat top-right menu capsule).
+    getTopRightReservedRatio(): number;
 }

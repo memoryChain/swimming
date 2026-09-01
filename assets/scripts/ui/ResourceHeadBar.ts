@@ -13,6 +13,7 @@ import { PlayerData } from '../backend/PlayerData';
 import { UI_STYLE } from './UIStyle';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
+import { platform } from '../platform/PlatformManager';
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
@@ -31,6 +32,7 @@ const IDENTITY_WIDTH = 227;
 const IDENTITY_HEIGHT = 86;
 const EDGE_PADDING = 33;
 const RIGHT_PADDING = 27;
+const RIGHT_PLATFORM_CONTROL_RESERVE = 92;
 const BACK_GAP = 12;
 
 // Vertical band (px from the top of the design-resolution canvas) reserved by the
@@ -59,6 +61,8 @@ export class ResourceHeadBar {
         this._root = root;
 
         const topY = designHeight / 2 - 10 - IDENTITY_HEIGHT / 2;
+        const nativeRightReserve = Math.ceil(platform().getTopRightReservedRatio() * designWidth);
+        const rightPadding = Math.max(RIGHT_PADDING, RIGHT_PLATFORM_CONTROL_RESERVE, nativeRightReserve + 12);
 
         // Back button, top-left corner. Compact; hidden until a screen provides a back
         // target via setBack(). It sits to the LEFT of the identity (which shifts right
@@ -94,7 +98,7 @@ export class ResourceHeadBar {
 
         const pill = makeUiNode('ResourcePill', root);
         pill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
-        pill.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH / 2, topY, 0);
+        pill.setPosition(designWidth / 2 - rightPadding - BAR_WIDTH / 2, topY, 0);
         makeLoginSprite('Artwork', pill, RESOURCE_PATHS.lobbyUi.topCurrency, BAR_WIDTH, BAR_HEIGHT, 0, 0);
 
         // "游泳卡 N" count text.
@@ -120,9 +124,8 @@ export class ResourceHeadBar {
         // same dark rounded plate + faint cyan outline (only when a handler is given).
         if (options.onOpenSettings) {
             const settingsButton = makeUiNode('SettingsButton', root);
-            settingsButton.getComponent(UITransform)!.setContentSize(52, 52);
             settingsButton.getComponent(UITransform)!.setContentSize(56, 56);
-            settingsButton.setPosition(designWidth / 2 - RIGHT_PADDING - BAR_WIDTH - 28, topY, 0);
+            settingsButton.setPosition(designWidth / 2 - rightPadding - BAR_WIDTH - 28, topY, 0);
             makeLoginSprite('Artwork', settingsButton, RESOURCE_PATHS.lobbyUi.topSettings, 56, 56, 0, 0);
             const settingsBtn = settingsButton.addComponent(Button);
             settingsBtn.target = settingsButton;
@@ -143,10 +146,21 @@ export class ResourceHeadBar {
         this._backHandler = handler;
         const showBack = !!handler;
         if (this._backButton?.isValid) {
-            this._backButton.active = showBack;
+            if (this._backButton.active !== showBack) this._backButton.active = showBack;
         }
         if (this._identity?.isValid) {
-            this._identity.setPosition(showBack ? this._identityXWithBack : this._identityXDefault, this._identityY, 0);
+            const x = showBack ? this._identityXWithBack : this._identityXDefault;
+            if (this._identity.position.x !== x || this._identity.position.y !== this._identityY) {
+                this._identity.setPosition(x, this._identityY, 0);
+            }
+        }
+    }
+
+    // Character management supplies its own branded page header, so only that
+    // screen hides the global identity plate. Currency and settings remain fixed.
+    setIdentityVisible(visible: boolean): void {
+        if (this._identity?.isValid && this._identity.active !== visible) {
+            this._identity.active = visible;
         }
     }
 
@@ -166,7 +180,7 @@ export class ResourceHeadBar {
     }
 
     setVisible(visible: boolean): void {
-        if (this._root?.isValid) {
+        if (this._root?.isValid && this._root.active !== visible) {
             this._root.active = visible;
         }
     }

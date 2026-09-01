@@ -71,4 +71,8 @@ export class DefaultPlatform implements IPlatform {
         // No foreground/background lifecycle off-platform.
         return () => {};
     }
+
+    getTopRightReservedRatio(): number {
+        return 0;
+    }
 }

@@ -13,6 +13,9 @@ native
 #//////////////////////////
 node_modules/
 
+# Local UI production sources and previews
+/docs/ui-production/
+
 # Blender/Python generated scene artifacts
 **/__pycache__/
 sceneresource/*.blend1

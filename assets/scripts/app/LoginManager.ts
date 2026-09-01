@@ -210,9 +210,8 @@ export class LoginManager extends Component {
             onStartRace: () => this.startGame(),
             onOpenRoom: () => this.openRoomFromPrepare(),
             onCharacterManagementChanged: (active) => {
-                this._headBar?.setBack(active
-                    ? () => this._prepareRaceFlow?.showReadyScreen()
-                    : null);
+                this._headBar?.setBack(null);
+                this._headBar?.setIdentityVisible(!active);
             },
         });
         this._prepareRaceFlow.showReadyScreen();
@@ -225,6 +224,7 @@ export class LoginManager extends Component {
         this._prepareRaceFlow?.dispose();
         this._prepareRaceFlow = null;
         this._headBar?.setBack(null);
+        this._headBar?.setIdentityVisible(true);
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
         }
@@ -234,6 +234,7 @@ export class LoginManager extends Component {
         this._prepareRaceFlow?.dispose();
         this._prepareRaceFlow = null;
         this._headBar?.setBack(null);
+        this._headBar?.setIdentityVisible(true);
         this.openRoom();
     }
 

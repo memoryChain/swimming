@@ -1,12 +1,15 @@
 import {
     Button,
+    CacheMode,
     Color,
     EventTouch,
     Graphics,
     Label,
     Mask,
     Node,
+    Rect,
     ScrollView,
+    Size,
     Sprite,
     SpriteFrame,
     Texture2D,
@@ -34,7 +37,7 @@ import {
 import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
-import { resolvePlayerBalance } from '../progression/PlayerBalanceOverrides';
+import { resolveCharacterDisplayStats } from '../progression/PlayerBalanceOverrides';
 import { fitFullScreenBackgroundCover, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
@@ -59,17 +62,16 @@ type RaceModeCardView = {
 
 type CharacterCardView = {
     characterId: PlayerCharacterId | null;
-    background: Graphics;
+    selectedFrame: Node;
+    activeStatus: Node;
     name: Label;
     level: Label;
-    state: Label;
     draftSelected: boolean;
     committed: boolean;
 };
 
 type TabView = {
     id: CharacterInspectorTab;
-    background: Graphics;
     label: Label;
     selected: boolean;
 };
@@ -77,25 +79,22 @@ type TabView = {
 type SwatchView = {
     id: string;
     group: 'skin' | 'color';
-    graphics: Graphics;
-    color: readonly [number, number, number];
+    selectionGraphics: Graphics;
     selected: boolean;
 };
 
-const PANEL = UI_STYLE.panel;
-const PANEL_ALT = UI_STYLE.panelAlt;
-const CYAN = UI_STYLE.cyan;
-const ACCENT = UI_STYLE.accent;
-const MUTED = UI_STYLE.muted;
 const WHITE = UI_STYLE.white;
 const DARK_TEXT = uiColor(6, 35, 54);
-const READY_MODEL_SHADOW_Y = -208;
-const PROTOTYPE_CHARACTER_SLOT_COUNT = 12;
-const CHARACTER_CARD_WIDTH = 132;
-const CHARACTER_CARD_HEIGHT = 142;
-const CHARACTER_CARD_X_PITCH = 144;
-const CHARACTER_CARD_Y_PITCH = 154;
-const SWATCH_SIZE = 42;
+const PROTOTYPE_CHARACTER_SLOT_COUNT = 6;
+const CHARACTER_CARD_WIDTH = 171;
+const CHARACTER_CARD_HEIGHT = 202;
+const CHARACTER_CARD_X_PITCH = 170;
+const CHARACTER_CARD_Y_PITCH = 200;
+const CHARACTER_LIST_VIEW_WIDTH = 342;
+const CHARACTER_LIST_VIEW_HEIGHT = 562;
+const CHARACTER_LIST_CONTENT_HEIGHT = 602;
+const SWATCH_SIZE = 56;
+const SWATCH_ART_SIZE = 46;
 const RACE_MODE_CARD_VISIBLE_HEIGHT = 164;
 const RACE_MODE_CARD_UNSELECTED_SCALE = 0.8;
 const RACE_MODE_CARD_GAP = 7;
@@ -104,9 +103,9 @@ const RACE_MODE_STACK_TOP_Y = 240;
 export class PrepareRaceFlow {
     private _root: Node | null = null;
     private _content: Node | null = null;
+    private _lobbyBackgroundImage: Node | null = null;
     private _previewRoot: Node | null = null;
     private _preview: PrepareRaceCharacterPreview | null = null;
-    private _shadowSprite: Sprite | null = null;
     private _view: PrepareRaceView = 'ready';
     private _draftCharacterId: PlayerCharacterId | null = null;
     private _activeInspectorTab: CharacterInspectorTab = 'attributes';
@@ -135,6 +134,10 @@ export class PrepareRaceFlow {
     private _attributeContent: Node | null = null;
     private _appearanceContent: Node | null = null;
     private _skinRow: Node | null = null;
+    private _attributeTabArtwork: Node | null = null;
+    private _appearanceTabArtwork: Node | null = null;
+    private _confirmCharacterButton: Node | null = null;
+    private _activeCharacterNotice: Node | null = null;
 
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
         if (!this._root?.isValid || !this._content?.isValid) return;
@@ -143,6 +146,7 @@ export class PrepareRaceFlow {
         } else {
             this.refreshCharacterCards();
             this.refreshCharacterInspector();
+            this.refreshCharacterConfirmState();
         }
     };
 
@@ -158,6 +162,7 @@ export class PrepareRaceFlow {
         this.ensureRoot();
         this._view = 'ready';
         this._draftCharacterId = null;
+        setNodeActive(this._lobbyBackgroundImage, true);
         this.replaceContent('PrepareRaceReadyContent');
         this.buildReadyScreen(this._content!);
         this.presentCharacter(getPlayerCharacterSelection().characterId);
@@ -169,6 +174,7 @@ export class PrepareRaceFlow {
         this._view = 'characters';
         this._draftCharacterId = getPlayerCharacterSelection().characterId;
         this._activeInspectorTab = 'attributes';
+        setNodeActive(this._lobbyBackgroundImage, false);
         this.replaceContent('PrepareRaceCharacterManagementContent');
         this.buildCharacterManagement(this._content!);
         this.presentCharacter(this._draftCharacterId);
@@ -183,6 +189,7 @@ export class PrepareRaceFlow {
         this._root?.destroy();
         this._root = null;
         this._content = null;
+        this._lobbyBackgroundImage = null;
         this.resetViewReferences();
     }
 
@@ -203,7 +210,6 @@ export class PrepareRaceFlow {
     }
 
     private resetViewReferences(): void {
-        this._shadowSprite = null;
         this._previewRotateTouchId = null;
         this._raceModeCards.length = 0;
         this._characterCards.length = 0;
@@ -226,6 +232,10 @@ export class PrepareRaceFlow {
         this._attributeContent = null;
         this._appearanceContent = null;
         this._skinRow = null;
+        this._attributeTabArtwork = null;
+        this._appearanceTabArtwork = null;
+        this._confirmCharacterButton = null;
+        this._activeCharacterNotice = null;
     }
 
     private buildBackground(root: Node): void {
@@ -234,6 +244,7 @@ export class PrepareRaceFlow {
         const image = makeUiNode('PrepareRaceBackgroundImage', root);
         image.setPosition(0, 0, 1);
         fitFullScreenBackgroundCover(image);
+        this._lobbyBackgroundImage = image;
         loadRaceAsset(RESOURCE_PATHS.lobbyUi.background, Texture2D, (error, texture) => {
             if (error || !texture || !image.isValid) {
                 console.warn('[SpeedSwimming] prepare-race background texture failed to load', error);
@@ -259,7 +270,7 @@ export class PrepareRaceFlow {
     private buildReadyCharacterPanel(parent: Node): void {
         makeRaceTextureSprite('ReadyCharacterPanel', parent, RESOURCE_PATHS.lobbyUi.characterPanel, 338, 244, -454, 95, 2);
         this._readyName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 188, 38, -484, 162, Label.HorizontalAlign.LEFT);
-        stylePsdRuntimeLabel(this._readyName, 'PingFang SC', true, 36);
+        stylePsdTitleLabel(this._readyName, 36);
         this._readyLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 64, 28, -335, 165);
         stylePsdRuntimeLabel(this._readyLevel, 'Arial Black', true, 22);
 
@@ -267,7 +278,7 @@ export class PrepareRaceFlow {
         const statY = [107, 62, 17];
         for (let index = 0; index < statNames.length; index++) {
             const statName = makeBoundLabel(`StatName${index}`, parent, statNames[index], 18, uiColor(31, 43, 62), 92, 28, -488, statY[index], Label.HorizontalAlign.LEFT);
-            stylePsdRuntimeLabel(statName, 'PingFang SC', true, 24);
+            stylePsdTitleLabel(statName, 24);
             const statValue = makeBoundLabel(`StatValue${index}`, parent, '', 19, uiColor(31, 43, 62), 82, 28, -357, statY[index], Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(statValue, 'Arial Black', true, 24);
             this._readyStats.push(statValue);
@@ -277,7 +288,7 @@ export class PrepareRaceFlow {
         const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 70, 24, -545, -42);
         stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 21);
         this._readySkillName = makeBoundLabel('SkillName', parent, '', 20, DARK_TEXT, 190, 28, -405, -90, Label.HorizontalAlign.LEFT);
-        stylePsdRuntimeLabel(this._readySkillName, 'PingFang SC', true, 27);
+        stylePsdTitleLabel(this._readySkillName, 27);
         this._readySkillDescription = makeBoundLabel('SkillDescription', parent, '', 14, uiColor(72, 82, 98), 190, 42, -405, -126, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(this._readySkillDescription, 'PingFang SC', false, 20);
         this._readySkillDescription.overflow = Label.Overflow.CLAMP;
@@ -285,7 +296,7 @@ export class PrepareRaceFlow {
 
         const manage = makeRaceTextureButton('MyCharactersButton', parent, RESOURCE_PATHS.lobbyUi.characterButton, 312, 70, -446, -220, 3);
         const manageLabel = makeBoundLabel('Label', manage, '角色养成', 24, DARK_TEXT, 150, 36, -8, 0);
-        stylePsdRuntimeLabel(manageLabel, 'PingFang SC', true, 32);
+        stylePsdTitleLabel(manageLabel, 32);
         manage.on(Button.EventType.CLICK, () => this.showCharacterManagement());
     }
 
@@ -295,7 +306,8 @@ export class PrepareRaceFlow {
         const level = getProgressionManager().getCharacterLevel(character.id);
         setLabelString(this._readyName, character.name);
         setLabelString(this._readyLevel, `LV.${level}`);
-        const values = [character.stamina, character.technique, character.burst];
+        const display = resolveCharacterDisplayStats(character, level, PROGRESSION_BALANCE.maxLevel);
+        const values = [display.stamina, display.technique, display.burst];
         for (let index = 0; index < this._readyStats.length; index++) {
             setLabelString(this._readyStats[index], `${values[index]}`);
         }
@@ -368,9 +380,9 @@ export class PrepareRaceFlow {
         stylePsdRuntimeLabel(roomLabel, 'PingFang SC', true, 24);
         room.on(Button.EventType.CLICK, () => this._callbacks.onOpenRoom());
 
-        const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.lobbyUi.startButton, 332, 102, 448, -287, 3);
+        const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.characterUi.confirmButton, 332, 102, 448, -287, 3);
         const startLabel = makeBoundLabel('Label', start, '开始比赛', 38, DARK_TEXT, 220, 54, -4, 0);
-        stylePsdRuntimeLabel(startLabel, 'PingFang SC', true, 48);
+        stylePsdTitleLabel(startLabel, 48);
         start.on(Button.EventType.CLICK, () => {
             setRaceDifficulty(getSelectedRaceDifficulty());
             this._callbacks.onStartRace();
@@ -378,7 +390,8 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterManagement(parent: Node): void {
-        makeBoundLabel('CharacterScreenTitle', parent, '我的角色', 30, WHITE, 260, 42, -430, 230);
+        makeRaceTextureSprite('CharacterScreenBackground', parent, RESOURCE_PATHS.characterUi.background, this._width, this._height, 0, 0, 0);
+        this.buildCharacterHeader(parent);
         this.buildCharacterRoster(parent);
         this.buildPreviewPresentation(parent);
         this.buildCharacterInspector(parent);
@@ -387,49 +400,90 @@ export class PrepareRaceFlow {
         this.selectInspectorTab('attributes', true);
     }
 
+    private buildCharacterHeader(parent: Node): void {
+        makeRaceTextureSprite('CharacterHeaderBackground', parent, RESOURCE_PATHS.characterUi.headerBackground, 497, 111, -391.5, 304.5, 1);
+
+        // Keep the larger touch target separate from the PSD-sized artwork. Changing
+        // the parent's UITransform previously scaled the icon from 61×40 to 76×60.
+        const backHit = makeUiNode('CharacterBackButton', parent);
+        backHit.getComponent(UITransform)!.setContentSize(76, 60);
+        backHit.setPosition(-582.5, 321, 3);
+        makeRaceTextureSprite('Artwork', backHit, RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0, 1);
+        const backButton = backHit.addComponent(Button);
+        backButton.target = backHit;
+        backButton.transition = Button.Transition.SCALE;
+        backButton.zoomScale = 0.97;
+        backButton.duration = 0.08;
+        backHit.on(Button.EventType.CLICK, () => this.showReadyScreen());
+
+        // The label position is its bounding-box centre. Keep the visible title at
+        // the PSD x=105 edge instead of centring that box on the glyph midpoint.
+        const title = makeBoundLabel('CharacterScreenTitle', parent, '角色', 36, DARK_TEXT, 120, 48, -475, 323.5, Label.HorizontalAlign.LEFT);
+        stylePsdTitleLabel(title, 44);
+    }
+
     private buildCharacterRoster(parent: Node): void {
-        const panel = makeRoundedRect('CharacterRosterPanel', parent, 326, 520, PANEL, 16, UI_STYLE.cyanOutline, 1.5);
-        panel.setPosition(-465, -30, 2);
-        const viewport = makeUiNode('CharacterRosterViewport', panel);
-        viewport.getComponent(UITransform)!.setContentSize(302, 494);
-        const scroll = viewport.addComponent(ScrollView);
-        scroll.horizontal = false;
-        scroll.vertical = true;
-        scroll.inertia = true;
-        scroll.elastic = false;
-        scroll.brake = 0.5;
-        scroll.cancelInnerEvents = true;
+        const viewport = makeUiNode('CharacterRosterScrollView', parent);
+        viewport.getComponent(UITransform)!.setContentSize(CHARACTER_LIST_VIEW_WIDTH, CHARACTER_LIST_VIEW_HEIGHT);
+        viewport.setPosition(-449, -21, 2);
         const mask = viewport.addComponent(Mask);
         mask.type = Mask.Type.GRAPHICS_RECT;
         mask.inverted = false;
+        const scrollView = viewport.addComponent(ScrollView);
+        scrollView.horizontal = false;
+        scrollView.vertical = true;
+        scrollView.inertia = true;
+        scrollView.elastic = true;
+        scrollView.brake = 0.5;
+        scrollView.cancelInnerEvents = true;
+
+        const content = makeUiNode('CharacterRosterContent', viewport);
+        content.getComponent(UITransform)!.setContentSize(CHARACTER_LIST_VIEW_WIDTH, CHARACTER_LIST_CONTENT_HEIGHT);
+        content.setPosition(0, -20, 0);
+        scrollView.content = content;
 
         const slotCount = Math.max(PROTOTYPE_CHARACTER_SLOT_COUNT, PLAYER_CHARACTER_DEFINITIONS.length);
-        const rows = Math.ceil(slotCount / 2);
-        const contentHeight = rows * CHARACTER_CARD_Y_PITCH + 10;
-        const content = makeUiNode('CharacterRosterContent', viewport);
-        content.getComponent(UITransform)!.setContentSize(302, contentHeight);
-        scroll.content = content;
         for (let index = 0; index < slotCount; index++) {
-            this.buildCharacterCard(content, PLAYER_CHARACTER_DEFINITIONS[index] ?? null, index, contentHeight);
+            this.buildCharacterCard(content, PLAYER_CHARACTER_DEFINITIONS[index] ?? null, index);
         }
-        scroll.scrollToTop(0);
     }
 
-    private buildCharacterCard(parent: Node, character: PlayerCharacterDefinition | null, index: number, contentHeight: number): void {
+    private buildCharacterCard(parent: Node, character: PlayerCharacterDefinition | null, index: number): void {
         const column = index % 2;
         const row = Math.floor(index / 2);
-        const card = makeRoundedRect(`CharacterSlot${index}`, parent, CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT, PANEL_ALT, 14, UI_STYLE.cyanOutline, 1.5);
-        card.setPosition((column - 0.5) * CHARACTER_CARD_X_PITCH, contentHeight / 2 - CHARACTER_CARD_HEIGHT / 2 - 8 - row * CHARACTER_CARD_Y_PITCH, 1);
-        const name = makeBoundLabel('Name', card, character?.name ?? '未获得', 17, WHITE, 116, 26, 0, 52);
-        makePrototypePortrait(card, character !== null);
-        const level = makeBoundLabel('Level', card, '', 15, ACCENT, 78, 22, -20, -50, Label.HorizontalAlign.LEFT);
-        const state = makeBoundLabel('State', card, '', 14, uiColor(90, 230, 120), 72, 22, 28, -50, Label.HorizontalAlign.RIGHT);
+        const card = makeUiNode(`CharacterSlot${index}`, parent);
+        card.getComponent(UITransform)!.setContentSize(CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT);
+        card.setPosition(-84.5 + column * CHARACTER_CARD_X_PITCH, 200 - row * CHARACTER_CARD_Y_PITCH, 1);
+
+        const portraitPath = index % 2 === 0 ? RESOURCE_PATHS.characterUi.portraitBlue : RESOURCE_PATHS.characterUi.portraitRed;
+        makeRaceTextureSprite('Portrait', card, portraitPath, 160, 190, 0.5, 0, 1);
+
+        if (!character) {
+            const lockDim = makeRoundedRect('LockedDim', card, 160, 156, uiColor(8, 20, 32, 145), 10);
+            lockDim.setPosition(0.5, 17, 2);
+        }
+
+        // PSD stacking contract: artwork at the bottom, transparent white frame
+        // above it, and the selected yellow outline above every other card layer.
+        makeRaceTextureSprite('CardFrame', card, RESOURCE_PATHS.characterUi.cardFrame, 171, 202, 0, 0, 3);
+
+        const name = makeBoundLabel('Name', card, character?.name ?? '未获得', 18, DARK_TEXT, 116, 26, -17.5, -77.5, Label.HorizontalAlign.LEFT);
+        stylePsdTitleLabel(name, 23);
+        const level = makeBoundLabel('Level', card, '', 14, DARK_TEXT, 40, 22, 54.5, -77.5, Label.HorizontalAlign.RIGHT);
+        stylePsdRuntimeLabel(level, 'Arial Black', true, 19);
+        const activeStatus = makeRaceTextureSprite('ActiveStatus', card, RESOURCE_PATHS.characterUi.statusActive, 62, 27, 49.5, 79.5, 5);
+        activeStatus.active = false;
+        if (!character) {
+            makeRaceTextureSprite('LockIcon', card, RESOURCE_PATHS.characterUi.lockIcon, 38, 51, 1.5, 6.5, 6);
+        }
+        const selectedFrame = makeRaceTextureSprite('SelectedFrame', card, RESOURCE_PATHS.characterUi.cardSelected, 172, 203, 0.5, 0, 7);
+        selectedFrame.active = false;
         const view: CharacterCardView = {
             characterId: character?.id ?? null,
-            background: card.getComponent(Graphics)!,
+            selectedFrame,
+            activeStatus,
             name,
             level,
-            state,
             draftSelected: false,
             committed: false,
         };
@@ -437,7 +491,9 @@ export class PrepareRaceFlow {
         if (character?.unlocked) {
             const button = card.addComponent(Button);
             button.target = card;
-            button.transition = Button.Transition.NONE;
+            button.transition = Button.Transition.SCALE;
+            button.zoomScale = 0.98;
+            button.duration = 0.06;
             card.on(Button.EventType.CLICK, () => this.selectDraftCharacter(character.id));
         }
     }
@@ -450,6 +506,7 @@ export class PrepareRaceFlow {
         this.refreshCharacterCard(characterId);
         this.refreshCharacterInspector();
         this.refreshAppearanceSupport();
+        this.refreshCharacterConfirmState();
         this.presentCharacter(characterId);
     }
 
@@ -463,8 +520,8 @@ export class PrepareRaceFlow {
         const draftSelected = characterId !== null && characterId === this._draftCharacterId;
         const committed = characterId !== null && characterId === getPlayerCharacterSelection().characterId;
         const character = characterId ? findPlayerCharacter(characterId) : null;
-        setLabelString(card.level, character ? `Lv.${getProgressionManager().getCharacterLevel(character.id)}` : '敬请期待');
-        setLabelString(card.state, committed ? '使用中' : draftSelected ? '待确认' : '');
+        setLabelString(card.level, character ? `LV.${getProgressionManager().getCharacterLevel(character.id)}` : '');
+        setNodeActive(card.activeStatus, committed);
         if (card.draftSelected === draftSelected && card.committed === committed) return;
         card.draftSelected = draftSelected;
         card.committed = committed;
@@ -472,51 +529,57 @@ export class PrepareRaceFlow {
     }
 
     private drawCharacterCard(card: CharacterCardView): void {
-        const gfx = card.background;
-        if (!gfx?.isValid) return;
-        const locked = card.characterId === null;
-        gfx.clear();
-        gfx.fillColor = locked ? uiColor(60, 70, 82, 225) : card.draftSelected ? uiColor(255, 190, 24, 245) : PANEL_ALT;
-        gfx.roundRect(-66, -71, 132, 142, 14);
-        gfx.fill();
-        gfx.strokeColor = card.draftSelected ? uiColor(255, 240, 145) : card.committed ? CYAN : UI_STYLE.cyanOutline;
-        gfx.lineWidth = card.draftSelected ? 3 : card.committed ? 2.5 : 1.5;
-        gfx.roundRect(-64.5, -69.5, 129, 139, 12.5);
-        gfx.stroke();
-        setLabelColor(card.name, card.draftSelected ? DARK_TEXT : WHITE);
-        setLabelColor(card.level, card.draftSelected ? uiColor(6, 35, 54, 200) : ACCENT);
+        setNodeActive(card.selectedFrame, card.draftSelected);
+        setLabelColor(card.name, DARK_TEXT);
+        setLabelColor(card.level, DARK_TEXT);
     }
 
     private buildCharacterInspector(parent: Node): void {
-        const panel = makeRoundedRect('CharacterInspector', parent, 332, 520, PANEL, 16, UI_STYLE.cyanOutline, 1.5);
-        panel.setPosition(458, -30, 2);
-        this.buildInspectorTab(panel, 'attributes', '属性', -83);
-        this.buildInspectorTab(panel, 'appearance', '外观', 83);
+        const panel = makeRaceTextureSprite('CharacterInspector', parent, RESOURCE_PATHS.characterUi.detailPanelBackground, 349, 476, 462.5, 22, 2);
+        this._attributeTabArtwork = makeRaceTextureSprite('TabArtworkAttributes', panel, RESOURCE_PATHS.characterUi.tabAttributes, 299, 49, -12, 189.5, 1);
+        this._appearanceTabArtwork = makeRaceTextureSprite('TabArtworkAppearance', panel, RESOURCE_PATHS.characterUi.tabAppearance, 299, 49, -12, 189.5, 1);
+        this.buildInspectorTab(panel, 'attributes', '属性', -87.5);
+        this.buildInspectorTab(panel, 'appearance', '外观', 60);
 
         this._attributeContent = makeUiNode('AttributeContent', panel);
-        this._attributeContent.getComponent(UITransform)!.setContentSize(308, 420);
-        this._attributeContent.setPosition(0, -34, 1);
+        this._attributeContent.getComponent(UITransform)!.setContentSize(320, 360);
+        this._attributeContent.setPosition(0, 0, 2);
         this.buildAttributeContent(this._attributeContent);
 
         this._appearanceContent = makeUiNode('AppearanceContent', panel);
-        this._appearanceContent.getComponent(UITransform)!.setContentSize(308, 420);
-        this._appearanceContent.setPosition(0, -34, 1);
+        this._appearanceContent.getComponent(UITransform)!.setContentSize(320, 360);
+        this._appearanceContent.setPosition(0, 0, 2);
         this.buildAppearanceContent(this._appearanceContent);
 
-        const confirm = makeRoundedButton('ConfirmCharacterButton', parent, 250, 58, uiColor(255, 190, 24), '确认选择');
-        confirm.setPosition(458, -326, 3);
-        styleButtonLabel(confirm, 23, DARK_TEXT);
+        const confirm = makeRaceTextureButton('ConfirmCharacterButton', parent, RESOURCE_PATHS.characterUi.confirmButton, 332, 102, 448, -287, 3);
+        this._confirmCharacterButton = confirm;
+        const confirmLabel = makeBoundLabel('Label', confirm, '确认选择', 38, DARK_TEXT, 220, 54, 0, 0);
+        stylePsdTitleLabel(confirmLabel, 48);
         confirm.on(Button.EventType.CLICK, () => this.confirmDraftCharacter());
+
+        const activeNotice = makeBoundLabel('ActiveCharacterNotice', parent, '已上场', 36, DARK_TEXT, 220, 54, 448, -287);
+        stylePsdTitleLabel(activeNotice, 46);
+        this._activeCharacterNotice = activeNotice.node;
+        this.refreshCharacterConfirmState();
+    }
+
+    private refreshCharacterConfirmState(): void {
+        const alreadyActive = this._draftCharacterId !== null
+            && this._draftCharacterId === getPlayerCharacterSelection().characterId;
+        setNodeActive(this._confirmCharacterButton, !alreadyActive);
+        setNodeActive(this._activeCharacterNotice, alreadyActive);
     }
 
     private buildInspectorTab(parent: Node, id: CharacterInspectorTab, text: string, x: number): void {
-        const tab = makeRect(`Tab_${id}`, parent, 166, 54, PANEL_ALT);
-        tab.setPosition(x, 233, 2);
+        const tab = makeUiNode(`Tab_${id}`, parent);
+        tab.getComponent(UITransform)!.setContentSize(149, 49);
+        tab.setPosition(x, 189.5, 3);
         const button = tab.addComponent(Button);
         button.target = tab;
         button.transition = Button.Transition.NONE;
-        const label = makeBoundLabel('Label', tab, text, 22, WHITE, 150, 40, 0, 0);
-        this._tabs.push({ id, background: tab.getComponent(Graphics)!, label, selected: false });
+        const label = makeBoundLabel('Label', tab, text, 22, DARK_TEXT, 138, 40, 0, 0);
+        stylePsdRuntimeLabel(label, 'PingFang SC', true, 28);
+        this._tabs.push({ id, label, selected: false });
         tab.on(Button.EventType.CLICK, () => this.selectInspectorTab(id, false));
     }
 
@@ -525,42 +588,64 @@ export class PrepareRaceFlow {
         this._activeInspectorTab = tab;
         setNodeActive(this._attributeContent, tab === 'attributes');
         setNodeActive(this._appearanceContent, tab === 'appearance');
+        setNodeActive(this._attributeTabArtwork, tab === 'attributes');
+        setNodeActive(this._appearanceTabArtwork, tab === 'appearance');
         for (const view of this._tabs) {
             const selected = view.id === tab;
             if (!force && view.selected === selected) continue;
             view.selected = selected;
-            view.background.clear();
-            view.background.fillColor = selected ? uiColor(255, 190, 24) : PANEL_ALT;
-            view.background.rect(-83, -27, 166, 54);
-            view.background.fill();
-            setLabelColor(view.label, selected ? DARK_TEXT : WHITE);
+            setLabelColor(view.label, selected ? WHITE : DARK_TEXT);
         }
     }
 
     private buildAttributeContent(parent: Node): void {
-        this._inspectorName = makeBoundLabel('CharacterName', parent, '', 28, WHITE, 230, 38, -22, 172, Label.HorizontalAlign.LEFT);
-        this._inspectorLevel = makeBoundLabel('CharacterLevel', parent, '', 18, ACCENT, 74, 28, 108, 172, Label.HorizontalAlign.RIGHT);
+        this._inspectorName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 200, 38, -47.5, 140, Label.HorizontalAlign.LEFT);
+        stylePsdTitleLabel(this._inspectorName, 36);
+        makeRaceTextureSprite('CharacterLevelPill', parent, RESOURCE_PATHS.characterUi.levelPill, 64, 28, 95.5, 143, 1);
+        this._inspectorLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 54, 24, 95.5, 143);
+        stylePsdRuntimeLabel(this._inspectorLevel, 'Arial Black', true, 20);
         const names = ['体力', '技巧', '爆发'];
+        const iconPaths = [
+            RESOURCE_PATHS.characterUi.statHp,
+            RESOURCE_PATHS.characterUi.statTechnique,
+            RESOURCE_PATHS.characterUi.statBurst,
+        ];
+        const statYs = [85.5, 41.5, -4];
         for (let index = 0; index < names.length; index++) {
-            const y = 110 - index * 48;
-            makeStatIcon(`StatIcon${index}`, parent, -126, y, index);
-            makeBoundLabel(`StatName${index}`, parent, names[index], 18, WHITE, 70, 28, -80, y, Label.HorizontalAlign.LEFT);
-            this._inspectorCurrentStats.push(makeBoundLabel(`Current${index}`, parent, '', 18, WHITE, 62, 28, 5, y, Label.HorizontalAlign.RIGHT));
-            makeBoundLabel(`Arrow${index}`, parent, '→', 18, MUTED, 30, 28, 51, y);
-            this._inspectorNextStats.push(makeBoundLabel(`Next${index}`, parent, '', 18, uiColor(130, 230, 160), 62, 28, 105, y, Label.HorizontalAlign.RIGHT));
+            const y = statYs[index];
+            if (index !== 1) {
+                makeRaceTextureSprite(`StatRow${index}`, parent, RESOURCE_PATHS.characterUi.statRow, 284, 42, -15.5, y, 1);
+            }
+            makeRaceTextureSprite(`StatIcon${index}`, parent, iconPaths[index], index === 1 ? 26 : index === 0 ? 30 : 28, index === 0 ? 28 : index === 1 ? 30 : 32, -132.5, y, 2);
+            const statName = makeBoundLabel(`StatName${index}`, parent, names[index], 18, DARK_TEXT, 80, 28, -63.5, y, Label.HorizontalAlign.LEFT);
+            stylePsdTitleLabel(statName, 24);
+            const current = makeBoundLabel(`Current${index}`, parent, '', 19, DARK_TEXT, 62, 28, 12.5, y, Label.HorizontalAlign.RIGHT);
+            stylePsdRuntimeLabel(current, 'Arial Black', true, 24);
+            this._inspectorCurrentStats.push(current);
+            makeRaceTextureSprite(`Arrow${index}`, parent, RESOURCE_PATHS.characterUi.statArrow, 14, 13, 54.5, y, 2);
+            const next = makeBoundLabel(`Next${index}`, parent, '', 19, uiColor(56, 208, 29), 62, 28, 93.5, y, Label.HorizontalAlign.RIGHT);
+            stylePsdRuntimeLabel(next, 'Arial Black', true, 24);
+            this._inspectorNextStats.push(next);
         }
-        const skill = makeRoundedRect('SkillCard', parent, 284, 86, PANEL_ALT, 12);
-        skill.setPosition(0, -72, 1);
-        makePrototypeSkillIcon(skill, -108, 0);
-        this._inspectorSkillName = makeBoundLabel('SkillName', skill, '', 18, WHITE, 180, 26, 32, 17, Label.HorizontalAlign.LEFT);
-        this._inspectorSkillDescription = makeBoundLabel('SkillDescription', skill, '', 13, uiColor(214, 232, 246), 180, 38, 32, -16, Label.HorizontalAlign.LEFT);
+        makeRaceTextureSprite('SkillHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -53, 1);
+        const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 76, 24, -119.5, -53, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 20);
+        // Reuse the lobby skill-card texture region so both screens always show
+        // the identical icon and dark circular frame without a duplicate asset.
+        makeRaceTextureRegionSprite('SkillIcon', parent, RESOURCE_PATHS.lobbyUi.skillCard, new Rect(20, 49, 71, 71), 70, 70, -118.5, -122, 2);
+        this._inspectorSkillName = makeBoundLabel('SkillName', parent, '', 20, DARK_TEXT, 190, 28, 25.5, -102, Label.HorizontalAlign.LEFT);
+        stylePsdTitleLabel(this._inspectorSkillName, 27);
+        this._inspectorSkillDescription = makeBoundLabel('SkillDescription', parent, '', 16, uiColor(72, 82, 98), 190, 34, 25.5, -135, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(this._inspectorSkillDescription, 'PingFang SC', false, 20);
+        this._inspectorSkillDescription.enableWrapText = true;
 
-        const upgrade = makeRoundedButton('UpgradeButton', parent, 284, 54, PANEL_ALT, '');
-        upgrade.setPosition(0, -156, 2);
+        const upgrade = makeRaceTextureButton('UpgradeButton', parent, RESOURCE_PATHS.characterUi.upgradeButton, 313, 70, -16, -195, 2);
         this._upgradeButton = upgrade.getComponent(Button)!;
-        makeBoundLabel('CoinPrefix', upgrade, '金币', 16, MUTED, 48, 26, -104, 0, Label.HorizontalAlign.LEFT);
-        this._upgradeCost = makeBoundLabel('Cost', upgrade, '', 18, WHITE, 74, 28, -46, 0, Label.HorizontalAlign.LEFT);
-        this._upgradeAction = makeBoundLabel('Action', upgrade, '升级', 22, WHITE, 90, 32, 76, 0);
+        makeRaceTextureSprite('CurrencyIcon', upgrade, RESOURCE_PATHS.characterUi.upgradeCurrency, 36, 36, -106.5, 0, 2);
+        this._upgradeCost = makeBoundLabel('Cost', upgrade, '', 22, DARK_TEXT, 78, 30, -30.5, 0, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(this._upgradeCost, 'Arial Black', true, 28);
+        this._upgradeAction = makeBoundLabel('Action', upgrade, '升级', 24, DARK_TEXT, 90, 34, 68, 0);
+        stylePsdTitleLabel(this._upgradeAction, 31);
         upgrade.on(Button.EventType.CLICK, () => void this.upgradeDraftCharacter());
     }
 
@@ -570,24 +655,15 @@ export class PrepareRaceFlow {
         const progression = getProgressionManager();
         const level = progression.getCharacterLevel(character.id);
         const nextLevel = Math.min(PROGRESSION_BALANCE.maxLevel, level + 1);
-        const current = progression.resolveBalance(character.id);
-        const next = resolvePlayerBalance(
-            { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick },
-            nextLevel,
-            PROGRESSION_BALANCE.maxLevel,
-            character.weight,
-            character.energyGain,
-            character.kick,
-        );
+        const current = resolveCharacterDisplayStats(character, level, PROGRESSION_BALANCE.maxLevel);
+        const next = resolveCharacterDisplayStats(character, nextLevel, PROGRESSION_BALANCE.maxLevel);
         setLabelString(this._inspectorName, character.name);
-        setLabelString(this._inspectorLevel, `Lv.${level}`);
-        if (current) {
-            const currentValues = [current.energyTotal.toFixed(1), current.strokeQualityAccel.toFixed(2), current.maxSpeed.toFixed(2)];
-            const nextValues = [next.energyTotal.toFixed(1), next.strokeQualityAccel.toFixed(2), next.maxSpeed.toFixed(2)];
-            for (let index = 0; index < this._inspectorCurrentStats.length; index++) {
-                setLabelString(this._inspectorCurrentStats[index], currentValues[index]);
-                setLabelString(this._inspectorNextStats[index], nextValues[index]);
-            }
+        setLabelString(this._inspectorLevel, `LV.${level}`);
+        const currentValues = [current.stamina, current.technique, current.burst];
+        const nextValues = [next.stamina, next.technique, next.burst];
+        for (let index = 0; index < this._inspectorCurrentStats.length; index++) {
+            setLabelString(this._inspectorCurrentStats[index], `${currentValues[index]}`);
+            setLabelString(this._inspectorNextStats[index], `${nextValues[index]}`);
         }
         setLabelString(this._inspectorSkillName, character.skillName);
         setLabelString(this._inspectorSkillDescription, character.skillDescription);
@@ -596,7 +672,7 @@ export class PrepareRaceFlow {
         const affordable = !atMax && PlayerData.coins >= cost;
         setLabelString(this._upgradeCost, atMax ? '—' : `${cost}`);
         setLabelString(this._upgradeAction, atMax ? '已满级' : '升级');
-        setLabelColor(this._upgradeCost, affordable || atMax ? WHITE : uiColor(255, 92, 92));
+        setLabelColor(this._upgradeCost, affordable || atMax ? DARK_TEXT : uiColor(214, 52, 52));
         setButtonInteractable(this._upgradeButton, !atMax && !this._upgradePending);
     }
 
@@ -623,34 +699,38 @@ export class PrepareRaceFlow {
 
     private buildAppearanceContent(parent: Node): void {
         this._skinRow = makeUiNode('SkinToneRow', parent);
-        this._skinRow.getComponent(UITransform)!.setContentSize(284, 96);
-        this._skinRow.setPosition(0, 106, 1);
-        makeBoundLabel('SkinLabel', this._skinRow, '肤色', 20, WHITE, 62, 30, -108, 16, Label.HorizontalAlign.LEFT);
+        this._skinRow.getComponent(UITransform)!.setContentSize(316, 105);
+        this._skinRow.setPosition(-14.5, 84, 1);
+        makeRaceTextureSprite('SkinSectionHeader', this._skinRow, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, 0, 33, 1);
+        const skinLabel = makeBoundLabel('SkinLabel', this._skinRow, '肤色', 21, DARK_TEXT, 70, 30, -92, 33, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(skinLabel, 'PingFang SC', false, 27);
         for (let index = 0; index < PLAYER_SKIN_TONES.length; index++) {
             const tone = PLAYER_SKIN_TONES[index];
-            this.buildSwatch(this._skinRow, tone.id, 'skin', tone.color, -26 + index * 58, 16);
+            this.buildSwatch(this._skinRow, tone.id, 'skin', appearanceSwatchPath('skin', tone.id), -104 + index * 70, -30);
         }
-        makeBoundLabel('OutfitLabel', parent, '配饰', 20, WHITE, 62, 30, -108, 20, Label.HorizontalAlign.LEFT);
+        const outfitSection = makeRaceTextureSprite('OutfitSectionHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -3, 1);
+        const outfitLabel = makeBoundLabel('OutfitLabel', outfitSection, '配饰', 21, DARK_TEXT, 70, 28, -92, 0, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(outfitLabel, 'PingFang SC', false, 27);
         for (let index = 0; index < PLAYER_COLOR_SCHEMES.length; index++) {
             const scheme = PLAYER_COLOR_SCHEMES[index];
             const column = index % 4;
             const row = Math.floor(index / 4);
-            this.buildSwatch(parent, scheme.id, 'color', scheme.suit, -38 + column * 58, 20 - row * 58);
+            this.buildSwatch(parent, scheme.id, 'color', appearanceSwatchPath('color', scheme.id), -118.5 + column * 70, -66 - row * 70);
         }
-        makeBoundLabel('AppearanceHint', parent, '外观调整会即时预览；角色需点击“确认选择”后才会用于比赛。', 14, MUTED, 270, 50, 0, -132);
         this.refreshAppearanceSupport();
         this.refreshAppearanceSwatches();
     }
 
-    private buildSwatch(parent: Node, id: string, group: 'skin' | 'color', color: readonly [number, number, number], x: number, y: number): void {
+    private buildSwatch(parent: Node, id: string, group: 'skin' | 'color', texturePath: string, x: number, y: number): void {
         const node = makeUiNode(`Swatch_${group}_${id}`, parent);
         node.getComponent(UITransform)!.setContentSize(SWATCH_SIZE, SWATCH_SIZE);
         node.setPosition(x, y, 1);
-        const graphics = node.addComponent(Graphics);
+        const selectionGraphics = node.addComponent(Graphics);
+        makeRaceTextureSprite('Artwork', node, texturePath, SWATCH_ART_SIZE, SWATCH_ART_SIZE, 0, 0, 1);
         const button = node.addComponent(Button);
         button.target = node;
         button.transition = Button.Transition.NONE;
-        const view: SwatchView = { id, group, graphics, color, selected: false };
+        const view: SwatchView = { id, group, selectionGraphics, selected: false };
         this._swatches.push(view);
         drawSwatch(view);
         node.on(Button.EventType.CLICK, () => this.selectAppearance(view));
@@ -692,26 +772,7 @@ export class PrepareRaceFlow {
     }
 
     private buildPreviewPresentation(parent: Node): void {
-        const previewX = this._view === 'ready' ? -45 : 0;
-        if (this._view !== 'ready') {
-            const contact = makeUiNode('CharacterContactShadow', parent);
-            contact.getComponent(UITransform)!.setContentSize(178, 42);
-            contact.setPosition(previewX, READY_MODEL_SHADOW_Y, 1);
-            const contactGraphics = contact.addComponent(Graphics);
-            contactGraphics.fillColor = uiColor(4, 13, 26, 78);
-            contactGraphics.ellipse(0, 0, 86, 18);
-            contactGraphics.fill();
-            contactGraphics.fillColor = uiColor(2, 8, 16, 104);
-            contactGraphics.ellipse(0, 0, 55, 10);
-            contactGraphics.fill();
-
-            const shadow = makeUiNode('CharacterRealtimeShadow', parent);
-            shadow.getComponent(UITransform)!.setContentSize(170, 48);
-            shadow.setPosition(previewX, READY_MODEL_SHADOW_Y, 2);
-            this._shadowSprite = shadow.addComponent(Sprite);
-            this._shadowSprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        }
-
+        const previewX = -45;
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
         rotateArea.getComponent(UITransform)!.setContentSize(400, 470);
         rotateArea.setPosition(previewX, -4, 2);
@@ -724,15 +785,11 @@ export class PrepareRaceFlow {
     private presentCharacter(characterId: PlayerCharacterId | null): void {
         if (!characterId) return;
         this.ensurePreview();
-        this._preview?.setLobbyPresentation(this._view === 'ready');
+        // Both non-race views use the authored platform lighting only; the former
+        // extra render-texture contact shadow is deliberately disabled.
+        this._preview?.setLobbyPresentation(true, false);
         setNodeActive(this._previewRoot, true);
         this._preview?.refresh(characterId);
-        const shadowTexture = this._preview?.shadowTexture;
-        if (this._shadowSprite?.isValid && shadowTexture) {
-            const frame = new SpriteFrame();
-            frame.texture = shadowTexture;
-            this._shadowSprite.spriteFrame = frame;
-        }
     }
 
     private ensurePreview(): void {
@@ -758,24 +815,6 @@ export class PrepareRaceFlow {
     }
 }
 
-function makeRoundedButton(name: string, parent: Node, width: number, height: number, color: Color, text: string): Node {
-    const node = makeRoundedRect(name, parent, width, height, color, 14, uiColor(255, 255, 255, 120), 2);
-    const button = node.addComponent(Button);
-    button.target = node;
-    button.transition = Button.Transition.NONE;
-    const label = makeBoundLabel('Label', node, text, 20, WHITE, width - 16, height - 8, 0, 0);
-    label.lineHeight = 23;
-    return node;
-}
-
-function styleButtonLabel(buttonNode: Node, fontSize: number, color: Color): void {
-    const label = buttonNode.getChildByName('Label')?.getComponent(Label);
-    if (!label) return;
-    label.fontSize = fontSize;
-    label.lineHeight = fontSize + 4;
-    label.color = color;
-}
-
 function makeBoundLabel(
     name: string,
     parent: Node,
@@ -794,60 +833,38 @@ function makeBoundLabel(
     const label = node.getComponent(Label)!;
     label.horizontalAlign = align;
     label.verticalAlign = Label.VerticalAlign.CENTER;
-    label.overflow = Label.Overflow.SHRINK;
+    label.overflow = Label.Overflow.CLAMP;
     return label;
 }
 
-function makeStatIcon(name: string, parent: Node, x: number, y: number, index: number): void {
-    const node = makeUiNode(name, parent);
-    node.getComponent(UITransform)!.setContentSize(34, 34);
-    node.setPosition(x, y, 1);
-    const gfx = node.addComponent(Graphics);
-    gfx.fillColor = index === 0 ? uiColor(255, 86, 125) : index === 1 ? uiColor(255, 137, 54) : uiColor(43, 207, 232);
-    gfx.circle(0, 0, 16);
-    gfx.fill();
-}
-
-function makePrototypeSkillIcon(parent: Node, x: number, y: number): void {
-    const node = makeUiNode('SkillIconPrototype', parent);
-    node.getComponent(UITransform)!.setContentSize(56, 56);
-    node.setPosition(x, y, 1);
-    const gfx = node.addComponent(Graphics);
-    gfx.fillColor = uiColor(42, 55, 70);
-    gfx.circle(0, 0, 27);
-    gfx.fill();
-    gfx.strokeColor = ACCENT;
-    gfx.lineWidth = 4;
-    gfx.moveTo(-14, 8);
-    gfx.lineTo(-2, -6);
-    gfx.lineTo(4, 5);
-    gfx.lineTo(15, -10);
-    gfx.stroke();
-}
-
-function makePrototypePortrait(parent: Node, available: boolean): void {
-    const node = makeUiNode('PortraitPrototype', parent);
-    node.getComponent(UITransform)!.setContentSize(80, 64);
-    node.setPosition(0, 0, 1);
-    const gfx = node.addComponent(Graphics);
-    gfx.fillColor = available ? uiColor(120, 196, 228, 210) : uiColor(95, 101, 112, 180);
-    gfx.circle(0, 15, 15);
-    gfx.fill();
-    gfx.roundRect(-24, -28, 48, 34, 12);
-    gfx.fill();
-}
-
 function drawSwatch(view: SwatchView): void {
-    const gfx = view.graphics;
+    const gfx = view.selectionGraphics;
     if (!gfx?.isValid) return;
+    const half = SWATCH_SIZE / 2;
     gfx.clear();
-    gfx.fillColor = uiColor(view.color[0], view.color[1], view.color[2]);
-    gfx.roundRect(-21, -21, SWATCH_SIZE, SWATCH_SIZE, 8);
+    if (!view.selected) return;
+    gfx.fillColor = DARK_TEXT;
+    gfx.roundRect(-half, -half, SWATCH_SIZE, SWATCH_SIZE, 12);
     gfx.fill();
-    gfx.strokeColor = view.selected ? CYAN : uiColor(255, 255, 255, 45);
-    gfx.lineWidth = view.selected ? 4 : 1.5;
-    gfx.roundRect(-19, -19, 38, 38, 6);
-    gfx.stroke();
+    gfx.fillColor = WHITE;
+    gfx.roundRect(-half + 4, -half + 4, SWATCH_SIZE - 8, SWATCH_SIZE - 8, 9);
+    gfx.fill();
+}
+
+function appearanceSwatchPath(group: 'skin' | 'color', id: string): string {
+    if (group === 'skin') {
+        return id === 'deep' ? RESOURCE_PATHS.characterUi.skinDeep : RESOURCE_PATHS.characterUi.skinWarm;
+    }
+    switch (id) {
+        case 'blue': return RESOURCE_PATHS.characterUi.swatchBlue;
+        case 'yellow': return RESOURCE_PATHS.characterUi.swatchYellow;
+        case 'purple': return RESOURCE_PATHS.characterUi.swatchPurple;
+        case 'green': return RESOURCE_PATHS.characterUi.swatchGreen;
+        case 'orange': return RESOURCE_PATHS.characterUi.swatchOrange;
+        case 'cyan': return RESOURCE_PATHS.characterUi.swatchCyan;
+        case 'black': return RESOURCE_PATHS.characterUi.swatchBlack;
+        default: return RESOURCE_PATHS.characterUi.swatchRed;
+    }
 }
 
 function raceDifficultyTitle(difficulty: RaceDifficulty): string {
@@ -866,6 +883,16 @@ function stylePsdRuntimeLabel(label: Label, fontFamily: string, bold: boolean, l
     label.fontFamily = fontFamily;
     label.isBold = bold;
     label.lineHeight = lineHeight;
+    label.cacheMode = CacheMode.CHAR;
+}
+
+function stylePsdTitleLabel(label: Label, lineHeight: number): void {
+    // Use the same editable system-label route as the rest of the UI, but request
+    // the semibold face explicitly so Chinese titles do not fall back to regular.
+    label.fontFamily = 'PingFangSC-Semibold';
+    label.isBold = true;
+    label.lineHeight = lineHeight;
+    label.cacheMode = CacheMode.CHAR;
 }
 
 function makeRaceTextureSprite(
@@ -891,6 +918,39 @@ function makeRaceTextureSprite(
         }
         const frame = new SpriteFrame();
         frame.texture = texture;
+        sprite.spriteFrame = frame;
+    });
+    return node;
+}
+
+function makeRaceTextureRegionSprite(
+    name: string,
+    parent: Node,
+    path: string,
+    region: Rect,
+    width: number,
+    height: number,
+    x: number,
+    y: number,
+    z: number,
+): Node {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform)!.setContentSize(width, height);
+    node.setPosition(x, y, z);
+    const sprite = node.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.trim = false;
+    loadRaceAsset(path, Texture2D, (error, texture) => {
+        if (error || !texture || !node.isValid || !sprite.isValid) {
+            if (error) console.warn(`[SpeedSwimming] lobby texture region failed to load: ${path}`, error);
+            return;
+        }
+        const frame = new SpriteFrame();
+        frame.reset({
+            texture,
+            rect: region,
+            originalSize: new Size(region.width, region.height),
+        });
         sprite.spriteFrame = frame;
     });
     return node;

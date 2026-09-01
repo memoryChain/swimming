@@ -181,4 +181,8 @@ export class DouyinPlatform implements IPlatform {
             }
         };
     }
+
+    getTopRightReservedRatio(): number {
+        return 0;
+    }
 }

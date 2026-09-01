@@ -83,21 +83,21 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
 
 export const PLAYER_SKIN_TONES: readonly PlayerSkinTone[] = [
     // Keep the imported MuscleMan skin as the default yellow tone.
-    { id: 'warm', label: '黄', color: [218, 163, 110], preserveOriginal: true },
-    { id: 'deep', label: '黑', color: [97, 55, 39] },
+    { id: 'warm', label: '黄', color: [255, 226, 191], preserveOriginal: true },
+    { id: 'deep', label: '黑', color: [185, 132, 70] },
 ];
 
 export const PLAYER_COLOR_SCHEMES: readonly PlayerColorScheme[] = [
     // Canonical swimmers use one white-key channel for their white equipment,
     // so every named scheme keeps its visible identity in `suit`.
-    { id: 'red', label: '红', suit: [240, 68, 58], cap: [22, 119, 232] },
-    { id: 'blue', label: '蓝', suit: [23, 109, 218], cap: [245, 238, 220] },
-    { id: 'yellow', label: '黄', suit: [255, 209, 42], cap: [255, 209, 42] },
-    { id: 'purple', label: '紫', suit: [139, 77, 255], cap: [35, 220, 232] },
-    { id: 'green', label: '绿', suit: [24, 177, 105], cap: [238, 246, 238] },
-    { id: 'orange', label: '橙', suit: [243, 121, 32], cap: [31, 126, 222] },
-    { id: 'cyan', label: '青', suit: [23, 186, 207], cap: [252, 238, 86] },
-    { id: 'black', label: '黑', suit: [32, 38, 48], cap: [238, 240, 246] },
+    { id: 'red', label: '红', suit: [255, 11, 11], cap: [22, 119, 232] },
+    { id: 'blue', label: '蓝', suit: [51, 137, 255], cap: [245, 238, 220] },
+    { id: 'yellow', label: '黄', suit: [255, 216, 0], cap: [255, 216, 0] },
+    { id: 'purple', label: '紫', suit: [202, 79, 247], cap: [35, 220, 232] },
+    { id: 'green', label: '绿', suit: [71, 222, 46], cap: [238, 246, 238] },
+    { id: 'orange', label: '橙', suit: [255, 102, 0], cap: [31, 126, 222] },
+    { id: 'cyan', label: '青', suit: [12, 224, 255], cap: [252, 238, 86] },
+    { id: 'black', label: '黑', suit: [43, 43, 43], cap: [238, 240, 246] },
 ];
 
 export type PlayerCharacterSelection = {
