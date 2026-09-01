@@ -27,6 +27,18 @@ export class CollisionRagdollController {
     private _snapshotRetriggerEnabled = true;
     private _weight = 0;
     private _curlWeight = 0;
+    // Scripted dolphin phases keep the loose-limb presentation alive after the
+    // ordinary collision reaction would have expired. This remains presentation
+    // only: it never feeds movement, collision or race outcome state back out.
+    private _dolphinCarryActive = false;
+    private _dolphinCarryReleasing = false;
+    private _dolphinCarryScale = 0;
+    private _dolphinCarryBaseWeight = 0;
+    private _dolphinCarryAirWeight = 0;
+    private _dolphinCarryWeight = 0;
+    private _dolphinCarryRecoverySeconds = 0.8;
+    private _dolphinCarryReleaseStartWeight = 0;
+    private _dolphinCarryReleaseElapsed = 0;
     private _hasVelocitySample = false;
     private _lastRollVelocity = 0;
     private _lastPitchVelocity = 0;
@@ -136,6 +148,94 @@ export class CollisionRagdollController {
         );
     }
 
+    beginDolphinCarry(
+        absoluteTime: number,
+        carryScale: number,
+        minimumAirWeight: number,
+    ) {
+        if (COLLISION_RAGDOLL_TUNING.enabled < 0.5) {
+            this.cancelDolphinCarry();
+            return;
+        }
+        const time = finite(absoluteTime);
+        const visibleImpactStrength = Number.isFinite(this._triggerTime)
+            ? this._impactStrength * this.reactionFade(time)
+            : 0;
+        // An authoritative AI action can replace an already-predicted dolphin
+        // phase. Keep the collision fold frozen by that first start instead of
+        // recomputing it from a now-older reaction and visibly stepping weaker.
+        // Preserve only the inherited collision base, not the transient airflow
+        // peak, so mid-flight wind never becomes the next action's permanent floor.
+        const retainedCarryBaseWeight = this._dolphinCarryActive
+            ? this._dolphinCarryBaseWeight
+            : 0;
+        if (!Number.isFinite(this._triggerTime)) {
+            this._triggerTime = time;
+            this._minimumActiveUntil = time;
+            this._impactPhase = 0;
+        }
+        this._dolphinCarryActive = true;
+        this._dolphinCarryReleasing = false;
+        this._dolphinCarryReleaseStartWeight = 0;
+        this._dolphinCarryReleaseElapsed = 0;
+        this._dolphinCarryScale = clamp01(carryScale);
+        this._dolphinCarryBaseWeight = Math.max(
+            retainedCarryBaseWeight,
+            clamp01(visibleImpactStrength * this._dolphinCarryScale),
+        );
+        this._dolphinCarryAirWeight = clamp01(minimumAirWeight);
+        this._dolphinCarryWeight = Math.max(
+            this._dolphinCarryBaseWeight,
+            this._dolphinCarryAirWeight,
+        );
+        this._weight = Math.max(visibleImpactStrength, this._dolphinCarryWeight);
+        const curlSeconds = Math.max(0.01, finite(COLLISION_RAGDOLL_TUNING.impactCurlSeconds));
+        const curlProgress = clamp01((time - this._triggerTime) / curlSeconds);
+        this._curlWeight = time >= this._triggerTime && curlProgress < 1
+            ? Math.sin(curlProgress * Math.PI) * this._impactStrength
+            : 0;
+        // Start from the authority-supplied impact signs rather than possibly
+        // stale velocity samples from a locally culled background swimmer.
+        this.samplePose(time, 0, 0);
+    }
+
+    setDolphinCarryAirWeight(weight: number) {
+        if (!this._dolphinCarryActive) {
+            return;
+        }
+        this._dolphinCarryAirWeight = clamp01(weight);
+        this._dolphinCarryWeight = Math.max(
+            this._dolphinCarryBaseWeight,
+            this._dolphinCarryAirWeight,
+        );
+    }
+
+    releaseDolphinCarry(recoverySeconds: number) {
+        if (!this.hasDolphinCarry) {
+            return;
+        }
+        this._dolphinCarryActive = false;
+        this._dolphinCarryReleasing = true;
+        this._dolphinCarryScale = 0;
+        this._dolphinCarryBaseWeight = 0;
+        this._dolphinCarryAirWeight = 0;
+        this._dolphinCarryWeight = Math.max(this._dolphinCarryWeight, this._weight);
+        this._dolphinCarryRecoverySeconds = Math.max(0.01, finite(recoverySeconds));
+        this._dolphinCarryReleaseStartWeight = this._dolphinCarryWeight;
+        this._dolphinCarryReleaseElapsed = 0;
+    }
+
+    cancelDolphinCarry() {
+        this._dolphinCarryActive = false;
+        this._dolphinCarryReleasing = false;
+        this._dolphinCarryScale = 0;
+        this._dolphinCarryBaseWeight = 0;
+        this._dolphinCarryAirWeight = 0;
+        this._dolphinCarryWeight = 0;
+        this._dolphinCarryReleaseStartWeight = 0;
+        this._dolphinCarryReleaseElapsed = 0;
+    }
+
     private beginReaction(
         time: number,
         strength: number,
@@ -171,14 +271,35 @@ export class CollisionRagdollController {
         const time = finite(absoluteTime);
         const rollVelocity = finite(axialRollVelocityRadians);
         const pitchVelocity = finite(collisionPitchVelocityRadians);
+        const dt = Number.isFinite(this._lastUpdateTime)
+            ? Math.max(0, time - this._lastUpdateTime)
+            : 0;
 
         if (COLLISION_RAGDOLL_TUNING.enabled < 0.5) {
+            this.cancelDolphinCarry();
             this.clearReaction();
             this._lastUpdateTime = time;
             this._lastRollVelocity = rollVelocity;
             this._lastPitchVelocity = pitchVelocity;
             this._hasVelocitySample = true;
             return;
+        }
+        if (this._dolphinCarryReleasing) {
+            this._dolphinCarryReleaseElapsed += dt;
+            const releaseProgress = clamp01(
+                this._dolphinCarryReleaseElapsed
+                    / Math.max(0.01, this._dolphinCarryRecoverySeconds),
+            );
+            this._dolphinCarryWeight = this._dolphinCarryReleaseStartWeight
+                * (1 - smoothStep(releaseProgress));
+            if (releaseProgress >= 1) {
+                this.cancelDolphinCarry();
+            }
+        } else if (this._dolphinCarryActive) {
+            this._dolphinCarryWeight = Math.max(
+                this._dolphinCarryBaseWeight,
+                this._dolphinCarryAirWeight,
+            );
         }
         if (!allowed) {
             this.decaySuppressed(time);
@@ -187,10 +308,6 @@ export class CollisionRagdollController {
             this._hasVelocitySample = true;
             return;
         }
-
-        const dt = Number.isFinite(this._lastUpdateTime)
-            ? Math.max(0, time - this._lastUpdateTime)
-            : 0;
         if (this._snapshotRetriggerEnabled
             && this._hasVelocitySample
             && dt <= Math.max(0.01, finite(COLLISION_RAGDOLL_TUNING.snapshotRetriggerMaxGapSeconds))) {
@@ -226,9 +343,20 @@ export class CollisionRagdollController {
             || this._impactStrength > 0.001
             || this._weight > 0.001;
         const reactionFade = this.reactionFade(time);
-        const target = reactionLatched
+        if (this._dolphinCarryActive) {
+            this._dolphinCarryBaseWeight = Math.max(
+                this._dolphinCarryBaseWeight,
+                this._impactStrength * reactionFade * this._dolphinCarryScale,
+            );
+            this._dolphinCarryWeight = Math.max(
+                this._dolphinCarryBaseWeight,
+                this._dolphinCarryAirWeight,
+            );
+        }
+        const collisionTarget = reactionLatched
             ? Math.max(motionStrength, this._impactStrength) * reactionFade
             : 0;
+        const target = Math.max(collisionTarget, this._dolphinCarryWeight);
 
         if (target >= this._weight) {
             const attack = 1 - Math.exp(-Math.max(0, dt) * 18);
@@ -242,7 +370,10 @@ export class CollisionRagdollController {
         }
         // reactionFade contains the forced exit window, so the presentation
         // cannot lag behind it and remain visibly folded after the deadline.
-        this._weight = Math.min(clamp01(this._weight), reactionFade);
+        this._weight = Math.min(
+            clamp01(this._weight),
+            Math.max(reactionFade, this._dolphinCarryWeight),
+        );
 
         const curlSeconds = Math.max(0.01, finite(COLLISION_RAGDOLL_TUNING.impactCurlSeconds));
         const curlProgress = clamp01((time - this._triggerTime) / curlSeconds);
@@ -259,6 +390,7 @@ export class CollisionRagdollController {
     }
 
     reset() {
+        this.cancelDolphinCarry();
         this.clearReaction();
         this._lastUpdateTime = Number.NaN;
         this._hasVelocitySample = false;
@@ -276,7 +408,9 @@ export class CollisionRagdollController {
         this._weight *= decay;
         this._impactStrength *= decay;
         this._curlWeight = 0;
-        if (this._weight <= 0.001 && this._impactStrength <= 0.001) {
+        if (this._weight <= 0.001
+            && this._impactStrength <= 0.001
+            && !this.hasDolphinCarry) {
             this.clearReaction();
         }
     }
@@ -400,6 +534,11 @@ export class CollisionRagdollController {
     }
 
     get weight(): number { return this._weight; }
+    get hasDolphinCarry(): boolean {
+        return this._dolphinCarryActive
+            || this._dolphinCarryReleasing
+            || this._dolphinCarryWeight > 0.001;
+    }
     get impactStrength(): number { return this._impactStrength; }
     get impactRollSign(): number { return this._impactRollSign; }
     get impactPitchSign(): number { return this._impactPitchSign; }

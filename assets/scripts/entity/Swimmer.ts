@@ -899,6 +899,7 @@ export class Swimmer extends Component {
         const inwardDirection = -direction;
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
+        this.cartoonRig?.cancelDolphinRagdollPresentation();
         this.cartoonRig?.finishDiveChargeEffect();
         this.cartoonRig?.setPerfectGlowActive(false);
         this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);

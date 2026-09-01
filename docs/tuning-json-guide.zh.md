@@ -141,7 +141,7 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 
 ## 碰撞四肢主动布娃娃
 
-这组参数只影响比赛中水面自由泳的骨骼表现，不会改变碰撞体、速度、推进效率、能量或联机比赛结果。折返、跳水、水下滑行、海豚动作和展示姿态不会启用该效果。
+这组参数只影响比赛中的骨骼表现，不会改变碰撞体、速度、推进效率、能量或联机比赛结果。普通折返、起跳跳水和展示姿态不会启用该效果；海豚动作会通过下方的海豚专用参数延续当前四肢松动，并在落水上浮后逐渐恢复。
 
 | 键 | 默认值 | 单位 | 含义 |
 | --- | ---: | --- | --- |
@@ -168,6 +168,17 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 `collision.ragdollFullAngularSpeed` 必须大于 `collision.ragdollEnterAngularSpeed`；不满足时会自动上移到起始值以上。
 
 肘和膝的碰撞叠加只允许沿弯曲方向活动，并分别限制在 `35°` 和 `28°` 内；腰部只允许轻微向前弯曲，局部上限为 `12°`。这些属于人体安全约束，不会被调参文件放宽。整体前后翻仍由根节点完成。
+
+### 海豚动作四肢延续
+
+| 键 | 默认值 | 单位 | 含义 |
+| --- | ---: | --- | --- |
+| `dolphin.ragdollCarryScale` | `0.8` | 比例 | 海豚动作保留触发前四肢折叠与松动的比例。 |
+| `dolphin.ragdollAirWeight` | `0.22` | 比例 | 没有碰撞状态时仍会使用的空中基础松动。 |
+| `dolphin.ragdollWindScale` | `0.65` | 比例 | 飞行中段相对基础松动增加的迎风摆动比例。 |
+| `dolphin.ragdollRecoverySeconds` | `0.8` | s | 回到水面后残余四肢错位平滑恢复完成所用的时间。 |
+
+海豚四肢延续只叠加在程序化姿态的最后一层。海豚的脚本轨迹、免碰撞阶段、速度、蓄气消耗和整体碰撞俯仰仍走原有逻辑；联机继续复用权威 `CollisionRagdoll` 视觉事件，不增加影响比赛结果的同步状态。
 
 ## 碰撞前后翻倒置恢复
 

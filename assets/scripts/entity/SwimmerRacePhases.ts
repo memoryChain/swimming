@@ -310,7 +310,10 @@ export class SwimmerRacePhases {
         this._host.cartoonRig?.setLegSplashSuppressed(false);
     }
 
-    clearFlipTurnPhase(resetCompletedWalls = false) {
+    clearFlipTurnPhase(
+        resetCompletedWalls = false,
+        preserveDolphinRagdoll = false,
+    ) {
         this._flipTurnActive = false;
         this._flipTurnEntrySpeed = 0;
         this._flipTurnPushSpeed = 0;
@@ -324,6 +327,9 @@ export class SwimmerRacePhases {
         this._dolphinCollisionSuppressed = false;
         this._dolphinCollisionWasSuppressed = false;
         this._host.motor.setGlidePhase(false);
+        if (!preserveDolphinRagdoll) {
+            this._host.cartoonRig?.cancelDolphinRagdollPresentation();
+        }
         if (resetCompletedWalls) {
             this._lastCompletedFlipTurnWallDistance = Number.NEGATIVE_INFINITY;
         }
@@ -417,6 +423,7 @@ export class SwimmerRacePhases {
         this._diveGlidePoseActive = false;
         this._host.motor.setGlidePhase(false);
         this._host.cartoonRig?.setLegSplashSuppressed(false);
+        this._host.cartoonRig?.releaseDolphinRagdollPresentation();
         if (this._host.motor.isRacing) {
             this._host.cartoonRig?.setActiveSwimming(true);
         }
@@ -609,7 +616,7 @@ export class SwimmerRacePhases {
             return null;
         }
         this.clearDiveUnderwaterPhase();
-        this.clearFlipTurnPhase();
+        this.clearFlipTurnPhase(false, true);
         this._host.motor.applyAuthoritativeDolphinStart(state);
         return this.startDolphinJump(mode, true);
     }
@@ -809,6 +816,7 @@ export class SwimmerRacePhases {
         // wipe so the launch flies in the swimmer's actual travel direction).
         motor.beginFlipTurnPhase();
         rig.setDiveStreamlinePose();
+        rig.beginDolphinRagdollPresentation();
         rig.setLegSplashSuppressed(true);
         rig.setPerfectGlowActive(false);
         rig.triggerSplashBurst(DOLPHIN_JUMP.dipSplashScale);
@@ -829,6 +837,36 @@ export class SwimmerRacePhases {
             this._dolphinAirStroking = true;
             this._host.cartoonRig?.setActiveSwimming(true);
         }
+    }
+
+    private updateDolphinLimbPresentation(
+        dt: number,
+        movementPitchRadians: number,
+        airflowWeight: number,
+    ) {
+        const rig = this._host.cartoonRig;
+        if (!rig) {
+            return;
+        }
+        const motor = this._host.motor;
+        rig.setLegSplashSuppressed(true);
+        if (this._dolphinAirStroking) {
+            motor.advanceVisualAnimation(dt);
+        }
+        const scriptedRollVelocity = this._dolphinImpactRollVelocity
+            + (this._dolphinRollTarget - this._dolphinRollAngle)
+                * Math.max(0, DOLPHIN_JUMP.rollEaseRate);
+        rig.updateDolphinRagdollPresentation(
+            dt,
+            motor,
+            this._dolphinAirStroking,
+            this._dolphinDirection,
+            movementPitchRadians,
+            this._dolphinHeading,
+            airflowWeight,
+            scriptedRollVelocity,
+            this._dolphinImpactPitchVelocity,
+        );
     }
 
     private updateDolphinJumpPhase(dt: number) {
@@ -879,6 +917,12 @@ export class SwimmerRacePhases {
             this.applyDolphinRotation(yaw, pitch, entryRoll);
             motor.setFlipTurnDistance(distance);
             motor.setFlipTurnSpeed(this._dolphinEntrySpeed);
+            this._dolphinFlightPitch = pitch * Math.PI / 180;
+            this.updateDolphinLimbPresentation(
+                dt,
+                this._dolphinFlightPitch,
+                0.15 + Math.sin(Math.PI * t) * 0.25,
+            );
             if (t >= 1) {
                 // Leave the water: big exaggerated launch plume, then the airborne arc.
                 this._dolphinStage = 1;
@@ -933,21 +977,18 @@ export class SwimmerRacePhases {
         );
         motor.setFlipTurnDistance(distance);
         motor.setFlipTurnSpeed(this._dolphinHorizontalSpeed);
-        // Drive the freestyle stroke animation once the player has stroked mid-air.
-        // Speed/distance are already scripted above, so this is animation only.
-        // Go through the same presentation-phase mapper as normal swimming so its
-        // source cursor cannot fall behind the pose displayed in the air.
-        if (this._dolphinAirStroking && rig) {
-            rig.setLegSplashSuppressed(true);
-            motor.advanceVisualAnimation(dt);
-            rig.updateFreestyleFromMotor(
-                dt,
-                motor,
-                direction,
-                this._dolphinFlightPitch,
-                this._dolphinHeading,
-            );
-        }
+        // Rebuild the base pose before applying carried loose limbs. Air strokes
+        // remain presentation-only; the scripted route above owns all movement.
+        const flightProgress = clampScalar(
+            t / Math.max(0.01, this._dolphinFlightSeconds),
+            0,
+            1,
+        );
+        this.updateDolphinLimbPresentation(
+            dt,
+            this._dolphinFlightPitch,
+            Math.sin(Math.PI * flightProgress),
+        );
     }
 
     private updateDolphinImpactCarry(dt: number) {
@@ -1007,7 +1048,6 @@ export class SwimmerRacePhases {
         raceDistance: number,
     ) {
         const motor = this._host.motor;
-        const rig = this._host.cartoonRig;
         const duration = Math.max(0.1, this._dolphinFlightSeconds);
         const u = clampScalar(this._dolphinElapsed / duration, 0, 1);
         if (u >= 1) {
@@ -1077,17 +1117,11 @@ export class SwimmerRacePhases {
         );
         motor.setFlipTurnDistance(distance);
         motor.setFlipTurnSpeed(this._dolphinHorizontalSpeed);
-        if (this._dolphinAirStroking && rig) {
-            rig.setLegSplashSuppressed(true);
-            motor.advanceVisualAnimation(dt);
-            rig.updateFreestyleFromMotor(
-                dt,
-                motor,
-                this._dolphinDirection,
-                this._dolphinFlightPitch,
-                this._dolphinHeading,
-            );
-        }
+        this.updateDolphinLimbPresentation(
+            dt,
+            this._dolphinFlightPitch,
+            0.25 + Math.sin(Math.PI * u) * 0.45,
+        );
     }
 
     private completeDolphinDive(dt: number) {
@@ -1185,6 +1219,7 @@ export class SwimmerRacePhases {
         // glide pose instead of retaining that partial angle as the next origin.
         motor.resetScriptedVisualMotion();
         rig?.setDiveStreamlinePose();
+        rig?.reapplyDolphinRagdollPresentation();
         rig?.triggerBigSplash(DOLPHIN_JUMP.landingSplashScale);
         this._dolphinActive = false;
         this._dolphinAirStroking = false;

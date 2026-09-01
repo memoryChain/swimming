@@ -92,6 +92,13 @@ export const DOLPHIN_JUMP = {
     impactVelocityCarryScale: 0.50,
     impactAlignSeconds: 0.25,
     impactMaxAngularSpeedDegrees: 220,
+    // Pure-presentation loose-limb carry. Existing collision folding is inherited,
+    // then a small deterministic airflow layer keeps otherwise-clean launches from
+    // becoming a perfectly rigid streamline. Recovery starts only after surfacing.
+    ragdollCarryScale: 0.80,
+    ragdollAirWeight: 0.22,
+    ragdollWindScale: 0.65,
+    ragdollRecoverySeconds: 0.80,
     // 允许侧偏和推进受损，但不允许脚本轨迹沿赛道倒退。
     minimumForwardSpeed: 0.1,
 };

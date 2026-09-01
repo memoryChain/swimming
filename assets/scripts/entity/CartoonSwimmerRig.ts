@@ -20,6 +20,7 @@ import type { SplashEmitterState } from '../character/SplashEmitter';
 import { UnderwaterBubbleEmitter } from '../character/UnderwaterBubbleEmitter';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
+import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
@@ -1103,6 +1104,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         movementPitchRadians = motor.collisionPitchRadians * this.axialRollVisualWeight,
         movementHeadingRadians = motor.heading,
         allowCollisionRagdoll = false,
+        ragdollAxialRollVelocity = motor.axialRollAngularVelocity,
+        ragdollCollisionPitchVelocity = motor.collisionPitchAngularVelocity,
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1129,8 +1132,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             movementDirection,
             !motor.permitsUprightTreadWater,
             allowCollisionRagdoll,
-            motor.axialRollAngularVelocity,
-            motor.collisionPitchAngularVelocity,
+            ragdollAxialRollVelocity,
+            ragdollCollisionPitchVelocity,
         );
     }
 
@@ -1152,7 +1155,84 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.currentSpeed,
             movementDirection,
             true,
+            this._collisionRagdoll.hasDolphinCarry,
+            motor.axialRollAngularVelocity,
+            motor.collisionPitchAngularVelocity,
         );
+    }
+
+    beginDolphinRagdollPresentation() {
+        this._collisionRagdoll.beginDolphinCarry(
+            this._selfTime,
+            DOLPHIN_JUMP.ragdollCarryScale,
+            DOLPHIN_JUMP.ragdollAirWeight,
+        );
+        // setDiveStreamlinePose has already rebuilt the base pose. Reapply the
+        // carried overlay immediately so activation never flashes perfectly rigid.
+        this._pose.applyCollisionRagdollOverlay(this._collisionRagdoll);
+    }
+
+    reapplyDolphinRagdollPresentation() {
+        if (!this._collisionRagdoll.hasDolphinCarry) {
+            return;
+        }
+        this._pose.applyCollisionRagdollOverlay(this._collisionRagdoll);
+    }
+
+    updateDolphinRagdollPresentation(
+        dt: number,
+        motor: SwimmerMotor,
+        useStrokePose: boolean,
+        movementDirection: number,
+        movementPitchRadians: number,
+        movementHeadingRadians: number,
+        airflowWeight: number,
+        ragdollAxialRollVelocity: number,
+        ragdollCollisionPitchVelocity: number,
+    ) {
+        const airflow = clamp01(airflowWeight);
+        const airWeight = Math.max(0, DOLPHIN_JUMP.ragdollAirWeight)
+            * (1 + Math.max(0, DOLPHIN_JUMP.ragdollWindScale) * airflow);
+        this._collisionRagdoll.setDolphinCarryAirWeight(airWeight);
+        if (!useStrokePose) {
+            const useDt = this.consumeThrottledMotionDt(dt);
+            if (useDt < 0) {
+                return;
+            }
+            this._pose.setMovementDirection(movementDirection);
+            this._pose.setMovementPitchRadians(movementPitchRadians);
+            this._pose.setMovementHeadingRadians(movementHeadingRadians);
+            this._splashMovementDirection = movementDirection >= 0 ? 1 : -1;
+            this._splashMovementHeadingRadians = movementHeadingRadians;
+            this._collisionRagdoll.update(
+                this._selfTime,
+                ragdollAxialRollVelocity,
+                ragdollCollisionPitchVelocity,
+                true,
+            );
+            this._pose.restoreBasePose();
+            this._pose.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+            this._pose.applyCollisionRagdollOverlay(this._collisionRagdoll);
+            return;
+        }
+        this.updateFreestyleFromMotor(
+            dt,
+            motor,
+            movementDirection,
+            movementPitchRadians,
+            movementHeadingRadians,
+            true,
+            ragdollAxialRollVelocity,
+            ragdollCollisionPitchVelocity,
+        );
+    }
+
+    releaseDolphinRagdollPresentation() {
+        this._collisionRagdoll.releaseDolphinCarry(DOLPHIN_JUMP.ragdollRecoverySeconds);
+    }
+
+    cancelDolphinRagdollPresentation() {
+        this._collisionRagdoll.cancelDolphinCarry();
     }
 
     // Decide whether the heavy procedural pose runs this frame for a background AI swimmer.
@@ -1215,7 +1295,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const treadSpeed = this._treadSpeedOverride >= 0 ? this._treadSpeedOverride : speed;
         const treadWeight = this.updateTreadWaterBlend(dt, treadSpeed, suppressTreadWater);
         const ragdollAllowed = allowCollisionRagdoll
-            && this._poseState.state === CharacterPoseState.Freestyle;
+            && (this._poseState.state === CharacterPoseState.Freestyle
+                || this._poseState.state === CharacterPoseState.Glide);
         const ragdollPresentationWeight = 1 - clamp01(treadWeight / 0.25);
         this._collisionRagdoll.update(
             this._selfTime,
