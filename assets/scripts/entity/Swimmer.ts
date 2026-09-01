@@ -11,6 +11,7 @@ import {
     type DolphinAbilityMode,
     type DolphinJumpProfile,
     type DolphinJumpStartState,
+    type DolphinRagdollCarrySnapshot,
 } from '../core/DolphinJumpConfig';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { STEERING_TUNING } from '../core/SteeringTuning';
@@ -187,7 +188,7 @@ export class Swimmer extends Component {
         if (!this._captureCollisionRagdollForNet) {
             this._pendingCollisionRagdollForNet = false;
         }
-        // Protocol v6 uses an explicit authority event. Disable the old pitch-jump
+        // Protocol v7 uses an explicit authority event. Disable the old pitch-jump
         // guess so a later pose correction cannot trigger a second visual reaction.
         this.cartoonRig?.setCollisionRagdollSnapshotRetriggerEnabled(false);
     }
@@ -1346,6 +1347,10 @@ export class Swimmer extends Component {
 
     get canAffordDolphin(): boolean {
         return this._ultimate.canAffordDolphin;
+    }
+
+    get dolphinRagdollCarrySnapshot(): DolphinRagdollCarrySnapshot | null {
+        return this.cartoonRig?.captureDolphinRagdollCarrySnapshot() ?? null;
     }
 
     // Begin a dolphin jump (both-hands gesture). Only from surface racing; the

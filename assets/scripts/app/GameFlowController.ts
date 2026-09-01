@@ -215,6 +215,7 @@ export class GameFlowController {
             captureNetInput({
                 kind: NetInputKind.DolphinJump,
                 dolphinDive: mode === 'dive',
+                dolphinRagdoll: swimmer.dolphinRagdollCarrySnapshot ?? undefined,
             });
             this._refs.debug(mode === 'dive' ? 'dolphin dive' : 'dolphin jump');
         }

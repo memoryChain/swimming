@@ -122,6 +122,17 @@ export interface DolphinJumpStartState {
     knockbackLateral: number;
 }
 
+// Pure-presentation collision state captured on an accepted human dolphin action.
+// It rides with that action so a remote replica can rebuild the inherited loose-limb
+// fold even when every independently repeated CollisionRagdoll event was lost.
+export interface DolphinRagdollCarrySnapshot {
+    strength: number;
+    rollSign: number;
+    pitchSign: number;
+    phase: number;
+    ageSeconds: number;
+}
+
 const RAD2DEG = 180 / Math.PI;
 
 // Signed angle of the swimmer's head direction relative to the water surface.

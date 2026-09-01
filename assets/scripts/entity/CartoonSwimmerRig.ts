@@ -20,7 +20,7 @@ import type { SplashEmitterState } from '../character/SplashEmitter';
 import { UnderwaterBubbleEmitter } from '../character/UnderwaterBubbleEmitter';
 import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
-import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
+import { DOLPHIN_JUMP, type DolphinRagdollCarrySnapshot } from '../core/DolphinJumpConfig';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
@@ -1177,6 +1177,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._pose.applyCollisionRagdollOverlay(this._collisionRagdoll);
+    }
+
+    captureDolphinRagdollCarrySnapshot(): DolphinRagdollCarrySnapshot | null {
+        return this._collisionRagdoll.captureDolphinCarrySnapshot(this._selfTime);
     }
 
     updateDolphinRagdollPresentation(

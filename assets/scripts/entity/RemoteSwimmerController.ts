@@ -117,6 +117,18 @@ export class RemoteSwimmerController extends Component {
                 break;
             case NetInputKind.DolphinJump:
                 // The owner emits this event only after accepting the jump locally.
+                // Rebuild its carried collision fold first. This embedded visual
+                // fallback is independent of the separately repeated ragdoll edge.
+                if (event.dolphinRagdoll) {
+                    const ragdoll = event.dolphinRagdoll;
+                    swimmer.applySynchronizedCollisionRagdoll(
+                        ragdoll.ageSeconds,
+                        ragdoll.strength,
+                        ragdoll.rollSign,
+                        ragdoll.pitchSign,
+                        ragdoll.phase,
+                    );
+                }
                 swimmer.applyAcceptedNetDolphinJump(event.dolphinDive ? 'dive' : 'jump');
                 break;
             case NetInputKind.AiDolphinJump:

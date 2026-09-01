@@ -6,6 +6,7 @@ import InputCodec from '../assets/scripts/net/NetRaceInput.ts';
 import Ordering from '../assets/scripts/net/NetInputOrdering.ts';
 import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
 import ConditionBalance from '../assets/scripts/core/ConditionBalance.ts';
+import Ragdoll from '../assets/scripts/character/CollisionRagdollController.ts';
 
 const {
     decodeConditionHeartRate,
@@ -33,6 +34,7 @@ const {
     isCompatibleProtocolVersion,
 } = Protocol;
 const { conditionQualityScale } = ConditionBalance;
+const { CollisionRagdollController } = Ragdoll;
 
 function entry(overrides = {}) {
     return {
@@ -115,6 +117,66 @@ test('frame self and input sequence round-trip, including an empty self slot', (
     const noSelf = decodeInputFrame(encodeInputFrame(5, [], null, -1, 100));
     assert.equal(noSelf.self, undefined);
     assert.equal(noSelf.inputSeq, 100);
+});
+
+test('human dolphin action carries its ragdoll fallback without the collision packet', () => {
+    const event = {
+        kind: 'd',
+        dolphinDive: true,
+        dolphinRagdoll: {
+            strength: 0.73,
+            rollSign: -1,
+            pitchSign: 1,
+            phase: Math.PI * 1.41,
+            ageSeconds: 0.264,
+        },
+    };
+    // Deliberately send no CollisionRagdoll event: the accepted dolphin action must
+    // still contain everything needed to rebuild the inherited visual fold.
+    const decoded = decodeInputFrame(encodeInputFrame(4, [event], null, -1, 73));
+    const restored = decoded.events[0];
+
+    assert.equal(decoded.inputSeq, 73);
+    assert.equal(restored.kind, 'd');
+    assert.equal(restored.dolphinDive, true);
+    assert.ok(Math.abs(restored.dolphinRagdoll.strength - event.dolphinRagdoll.strength) <= 1 / 255);
+    assert.equal(restored.dolphinRagdoll.rollSign, -1);
+    assert.equal(restored.dolphinRagdoll.pitchSign, 1);
+    assert.ok(Math.abs(restored.dolphinRagdoll.phase - event.dolphinRagdoll.phase) <= Math.PI * 2 / 255);
+    assert.ok(Math.abs(restored.dolphinRagdoll.ageSeconds - event.dolphinRagdoll.ageSeconds) <= 0.033 / 2);
+});
+
+test('embedded dolphin ragdoll snapshot rebuilds the carried pose weight', () => {
+    const owner = new CollisionRagdollController();
+    assert.equal(owner.triggerSynchronized(10, 0.198, 0.81, -1, 1, Math.PI * 0.77), true);
+    owner.beginDolphinCarry(10, 0.8, 0.22);
+    const snapshot = owner.captureDolphinCarrySnapshot(10);
+    assert.ok(snapshot);
+
+    const remote = new CollisionRagdollController();
+    assert.equal(remote.triggerSynchronized(
+        10,
+        snapshot.ageSeconds,
+        snapshot.strength,
+        snapshot.rollSign,
+        snapshot.pitchSign,
+        snapshot.phase,
+    ), true);
+    remote.beginDolphinCarry(10, 0.8, 0.22);
+
+    assert.ok(Math.abs(remote.weight - owner.weight) <= 1e-6);
+    assert.equal(remote.impactRollSign, owner.impactRollSign);
+    assert.equal(remote.impactPitchSign, owner.impactPitchSign);
+    assert.ok(Math.abs(remote.impactPhase - owner.impactPhase) <= 1e-6);
+});
+
+test('legacy or malformed dolphin visual data never rejects the accepted action', () => {
+    assert.deepEqual(decodeInputFrame('2|d||1').events, [{ kind: 'd', dolphinDive: false }]);
+    assert.deepEqual(decodeInputFrame('2|d1||2').events, [{ kind: 'd', dolphinDive: true }]);
+    assert.deepEqual(
+        decodeInputFrame('2|d1,broken,3,4,5||3').events,
+        [{ kind: 'd', dolphinDive: true }],
+    );
 });
 
 test('AI dolphin action keeps one identity and authoritative launch edge across packets', () => {

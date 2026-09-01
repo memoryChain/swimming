@@ -1,4 +1,5 @@
 import { COLLISION_RAGDOLL_TUNING } from './CollisionRagdollTuning';
+import type { DolphinRagdollCarrySnapshot } from '../core/DolphinJumpConfig';
 
 const RAD2DEG = 180 / Math.PI;
 const TAU = Math.PI * 2;
@@ -208,6 +209,26 @@ export class CollisionRagdollController {
             this._dolphinCarryBaseWeight,
             this._dolphinCarryAirWeight,
         );
+    }
+
+    captureDolphinCarrySnapshot(absoluteTime: number): DolphinRagdollCarrySnapshot | null {
+        if (!this._dolphinCarryActive
+            || this._dolphinCarryBaseWeight <= 0.001
+            || this._impactStrength <= 0.001
+            || !Number.isFinite(this._triggerTime)) {
+            return null;
+        }
+        const maximum = Math.max(
+            0.01,
+            finite(COLLISION_RAGDOLL_TUNING.maximumReactionSeconds),
+        );
+        return {
+            strength: clamp01(this._impactStrength),
+            rollSign: this._impactRollSign,
+            pitchSign: this._impactPitchSign,
+            phase: positiveModulo(this._impactPhase, TAU),
+            ageSeconds: clamp(finite(absoluteTime) - this._triggerTime, 0, maximum),
+        };
     }
 
     releaseDolphinCarry(recoverySeconds: number) {

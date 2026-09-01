@@ -30,7 +30,10 @@ import {
     decodeOwnerStateSeq,
     type NetSnapshotEntry,
 } from './NetRaceSnapshot';
-import type { DolphinJumpStartState } from '../core/DolphinJumpConfig';
+import type {
+    DolphinJumpStartState,
+    DolphinRagdollCarrySnapshot,
+} from '../core/DolphinJumpConfig';
 
 // Side of a stroke/kick. 0 = LEFT, 1 = RIGHT (kept numeric so the codec doesn't
 // depend on the game's StrokeType enum; the controller maps between them).
@@ -59,6 +62,10 @@ export interface NetInputEvent {
     launchSpeed?: number;
     // DolphinJump / AiDolphinJump: true selects the underwater inverse arc.
     dolphinDive?: boolean;
+    // DolphinJump only: compact fallback for the inherited loose-limb pose. The
+    // ordinary CollisionRagdoll edge remains independently repeated, but this
+    // snapshot makes the accepted action visually self-contained under packet loss.
+    dolphinRagdoll?: DolphinRagdollCarrySnapshot;
     // AiDolphinJump only: stable assigned race lane of the host-authoritative AI.
     aiLane?: number;
     // AiDolphinJump only: per-host, per-lane monotonic action identity. Every
@@ -95,6 +102,7 @@ const SPEED_SCALE = 100;
 const RAGDOLL_STRENGTH_SCALE = 255;
 const RAGDOLL_PHASE_SCALE = 255;
 const RAGDOLL_MAX_AGE_TICKS = 24;
+const RAGDOLL_AGE_TICK_SECONDS = 33 / 1000;
 const TAU = Math.PI * 2;
 
 function encodeEvent(event: NetInputEvent): string {
@@ -106,14 +114,38 @@ function encodeEvent(event: NetInputEvent): string {
             return `${event.kind}${event.side === 1 ? 1 : 0}`;
         case NetInputKind.DiveCharge:
             return NetInputKind.DiveCharge;
-        case NetInputKind.DolphinJump:
-            return event.dolphinDive ? `${NetInputKind.DolphinJump}1` : NetInputKind.DolphinJump;
+        case NetInputKind.DolphinJump: {
+            const mode = event.dolphinDive ? 1 : 0;
+            const ragdoll = event.dolphinRagdoll;
+            if (!ragdoll || !Number.isFinite(ragdoll.strength) || ragdoll.strength <= 0) {
+                return mode === 1 ? `${NetInputKind.DolphinJump}1` : NetInputKind.DolphinJump;
+            }
+            const strength = Math.max(0, Math.min(
+                RAGDOLL_STRENGTH_SCALE,
+                Math.round(ragdoll.strength * RAGDOLL_STRENGTH_SCALE),
+            ));
+            const signBits = (ragdoll.rollSign >= 0 ? 1 : 0)
+                | (ragdoll.pitchSign >= 0 ? 2 : 0);
+            const phase = positiveModulo(ragdoll.phase, TAU);
+            const phaseByte = Math.max(0, Math.min(
+                RAGDOLL_PHASE_SCALE,
+                Math.round(phase / TAU * RAGDOLL_PHASE_SCALE),
+            ));
+            const ageSeconds = Number.isFinite(ragdoll.ageSeconds)
+                ? Math.max(0, ragdoll.ageSeconds)
+                : 0;
+            const ageTicks = Math.max(0, Math.min(
+                RAGDOLL_MAX_AGE_TICKS,
+                Math.round(ageSeconds / RAGDOLL_AGE_TICK_SECONDS),
+            ));
+            return `${NetInputKind.DolphinJump}${mode},${strength},${signBits},${phaseByte},${ageTicks}`;
+        }
         case NetInputKind.AiDolphinJump: {
             const lane = Math.max(0, Math.floor(event.aiLane ?? 0));
             const actionSeq = Math.floor(event.aiActionSeq ?? -1);
             const start = event.aiStart;
             if (actionSeq < 0 || !start) {
-                // Kept parse-compatible for old payload construction, but protocol 6
+                // Kept parse-compatible for old payload construction, but protocol 7
                 // senders always provide the stable identity and authoritative edge.
                 return `${NetInputKind.AiDolphinJump}${lane},${event.dolphinDive ? 1 : 0}`;
             }
@@ -173,8 +205,30 @@ function decodeToken(token: string): NetInputEvent | null {
             return { kind, side: token.charAt(1) === '1' ? 1 : 0 };
         case NetInputKind.DiveCharge:
             return { kind };
-        case NetInputKind.DolphinJump:
-            return { kind, dolphinDive: token.charAt(1) === '1' };
+        case NetInputKind.DolphinJump: {
+            const values = token.slice(1).split(',');
+            const event: NetInputEvent = { kind, dolphinDive: values[0] === '1' };
+            if (values.length < 5) {
+                return event;
+            }
+            const raw = values.slice(1, 5).map((value) => parseInt(value, 10));
+            // Visual metadata must never veto an already accepted gameplay action.
+            // A malformed suffix falls back to the legacy jump/dive token.
+            if (raw.some((value) => !Number.isFinite(value)) || raw[0] <= 0) {
+                return event;
+            }
+            const signBits = Math.max(0, Math.min(3, Math.floor(raw[1])));
+            event.dolphinRagdoll = {
+                strength: Math.max(0, Math.min(1, raw[0] / RAGDOLL_STRENGTH_SCALE)),
+                rollSign: (signBits & 1) !== 0 ? 1 : -1,
+                pitchSign: (signBits & 2) !== 0 ? 1 : -1,
+                phase: Math.max(0, Math.min(RAGDOLL_PHASE_SCALE, raw[2]))
+                    / RAGDOLL_PHASE_SCALE * TAU,
+                ageSeconds: Math.max(0, Math.min(RAGDOLL_MAX_AGE_TICKS, raw[3]))
+                    * RAGDOLL_AGE_TICK_SECONDS,
+            };
+            return event;
+        }
         case NetInputKind.AiDolphinJump: {
             const values = token.slice(1).split(',');
             const lane = parseInt(values[0], 10);
