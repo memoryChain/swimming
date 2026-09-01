@@ -101,3 +101,22 @@ export function shouldUseTransientPacketCondition(
 export function ownerLaneMatches(expectedLane: number | undefined, packetLane: number): boolean {
     return expectedLane === undefined || expectedLane === packetLane;
 }
+
+// A loose-limb collision edge is accepted from exactly one authority:
+// the human owner of that lane, or the active host for a genuine-AI lane.
+export function isTrustedCollisionRagdollAuthority(
+    senderPos: number,
+    lane: number,
+    ownedHumanLane: number | undefined,
+    activeHostPos: number,
+    laneIsHuman: boolean,
+): boolean {
+    if (!Number.isFinite(senderPos) || senderPos < 0
+        || !Number.isFinite(lane) || lane < 0) {
+        return false;
+    }
+    if (ownedHumanLane === lane) {
+        return true;
+    }
+    return senderPos === activeHostPos && !laneIsHuman;
+}

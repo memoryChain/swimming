@@ -45,6 +45,7 @@ export const enum NetInputKind {
     DiveRelease = 'r', // dive release (carries final power + optional final launch speed)
     DolphinJump = 'd', // owner-accepted dolphin ability; optional suffix 1 = deep-dive form
     AiDolphinJump = 'a', // host-accepted AI dolphin ability with stable action seq + launch state
+    CollisionRagdoll = 'g', // authority-only loose-limb visual edge; stable seq + redundant age
 }
 
 export interface NetInputEvent {
@@ -65,6 +66,14 @@ export interface NetInputEvent {
     aiActionSeq?: number;
     // AiDolphinJump only: authoritative launch edge used for deterministic replay.
     aiStart?: DolphinJumpStartState;
+    // CollisionRagdoll only. The owner sends human lanes; the active host sends
+    // genuine AI lanes. Repeated packets keep the same action sequence.
+    ragdollLane?: number;
+    ragdollActionSeq?: number;
+    ragdollStrength?: number;
+    ragdollSignBits?: number;
+    ragdollPhase?: number;
+    ragdollAgeTicks?: number;
 }
 
 export interface DecodedInputFrame {
@@ -83,6 +92,10 @@ const HEADER_SEP = '|';
 // clients (no float formatting differences) and compact.
 const POWER_SCALE = 1000;
 const SPEED_SCALE = 100;
+const RAGDOLL_STRENGTH_SCALE = 255;
+const RAGDOLL_PHASE_SCALE = 255;
+const RAGDOLL_MAX_AGE_TICKS = 24;
+const TAU = Math.PI * 2;
 
 function encodeEvent(event: NetInputEvent): string {
     switch (event.kind) {
@@ -100,7 +113,7 @@ function encodeEvent(event: NetInputEvent): string {
             const actionSeq = Math.floor(event.aiActionSeq ?? -1);
             const start = event.aiStart;
             if (actionSeq < 0 || !start) {
-                // Kept parse-compatible for old payload construction, but protocol 5
+                // Kept parse-compatible for old payload construction, but protocol 6
                 // senders always provide the stable identity and authoritative edge.
                 return `${NetInputKind.AiDolphinJump}${lane},${event.dolphinDive ? 1 : 0}`;
             }
@@ -111,6 +124,28 @@ function encodeEvent(event: NetInputEvent): string {
                 + `,${Math.round(start.axialRoll * 1000)},${Math.round(start.axialRollVelocity * 1000)}`
                 + `,${Math.round(start.collisionPitch * 1000)},${Math.round(start.collisionPitchVelocity * 1000)}`
                 + `,${Math.round(start.knockbackDistance * 1000)},${Math.round(start.knockbackLateral * 1000)}`;
+        }
+        case NetInputKind.CollisionRagdoll: {
+            const lane = Math.max(0, Math.floor(event.ragdollLane ?? 0));
+            const actionSeq = Math.floor(event.ragdollActionSeq ?? -1);
+            if (actionSeq < 0) {
+                return '';
+            }
+            const strength = Math.max(0, Math.min(
+                RAGDOLL_STRENGTH_SCALE,
+                Math.round((event.ragdollStrength ?? 0) * RAGDOLL_STRENGTH_SCALE),
+            ));
+            const signBits = Math.max(0, Math.min(3, Math.floor(event.ragdollSignBits ?? 0)));
+            const phase = positiveModulo(event.ragdollPhase ?? 0, TAU);
+            const phaseByte = Math.max(0, Math.min(
+                RAGDOLL_PHASE_SCALE,
+                Math.round(phase / TAU * RAGDOLL_PHASE_SCALE),
+            ));
+            const ageTicks = Math.max(0, Math.min(
+                RAGDOLL_MAX_AGE_TICKS,
+                Math.floor(event.ragdollAgeTicks ?? 0),
+            ));
+            return `${NetInputKind.CollisionRagdoll}${lane},${actionSeq},${strength},${signBits},${phaseByte},${ageTicks}`;
         }
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
@@ -175,6 +210,25 @@ function decodeToken(token: string): NetInputEvent | null {
                 },
             };
         }
+        case NetInputKind.CollisionRagdoll: {
+            const values = token.slice(1).split(',').map((value) => parseInt(value, 10));
+            if (values.length < 6
+                || values.some((value) => !Number.isFinite(value))
+                || values[0] < 0
+                || values[1] < 0) {
+                return null;
+            }
+            return {
+                kind,
+                ragdollLane: Math.floor(values[0]),
+                ragdollActionSeq: Math.floor(values[1]),
+                ragdollStrength: Math.max(0, Math.min(1, values[2] / RAGDOLL_STRENGTH_SCALE)),
+                ragdollSignBits: Math.max(0, Math.min(3, Math.floor(values[3]))),
+                ragdollPhase: Math.max(0, Math.min(RAGDOLL_PHASE_SCALE, values[4]))
+                    / RAGDOLL_PHASE_SCALE * TAU,
+                ragdollAgeTicks: Math.max(0, Math.min(RAGDOLL_MAX_AGE_TICKS, Math.floor(values[5]))),
+            };
+        }
         case NetInputKind.DiveRelease: {
             const values = token.slice(1).split(',');
             const raw = parseInt(values[0], 10);
@@ -187,6 +241,12 @@ function decodeToken(token: string): NetInputEvent | null {
         default:
             return null;
     }
+}
+
+function positiveModulo(value: number, divisor: number): number {
+    const finiteValue = Number.isFinite(value) ? value : 0;
+    const remainder = finiteValue % divisor;
+    return remainder < 0 ? remainder + divisor : remainder;
 }
 
 // Encode one client's events for one frame into its uploadFrame payload string. An

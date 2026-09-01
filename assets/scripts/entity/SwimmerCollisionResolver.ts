@@ -33,9 +33,9 @@ export const SWIMMER_COLLISION = {
     // AI-vs-AI pairs only separate SIDEWAYS (lateral / Z), never along the swim
     // axis (X / distance). Background swimmers are "acting" — they should spread
     // out so they never clump into a blob, but they must never block each other's
-    // forward progress or pile up behind a slow lane. Any pair involving the
-    // PLAYER still resolves fully on both axes (the impassable "hold your line"
-    // racing feel that actually matters to the player).
+    // forward progress or pile up behind a slow lane. Any pair involving a
+    // HUMAN (local or remote) still resolves fully on both axes, keeping the
+    // same authoritative "hold your line" result on every client.
     aiVsAiLateralOnly: true as boolean,
     // --- Decaying knockback impulse (layered on top of the separation above) ---
     // Master switch for the knockback slide. The instantaneous separation always
@@ -125,7 +125,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const pos = s.node.position;
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
-        _isAi[i] = s.isAI;
+        _isAi[i] = s.collisionParticipantIsAI;
         _weight[i] = s.weight;
         _dir[i] = s.raceDirection;
         // World-space velocity (m/s): the swim-axis component is signed by the lap
@@ -164,7 +164,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 if (distSq >= minDistSq) {
                     continue;
                 }
-                // Two AI bodies never block each other on the swim axis: they
+                // Two true AI bodies never block each other on the swim axis: they
                 // only get nudged sideways so the pack spreads out instead of
                 // piling up. Player pairs resolve on both axes.
                 const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
@@ -342,6 +342,10 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const iP = _impPitch[i];
         if (iP !== 0) {
             _active[i].applyCollisionPitchImpulse(iP);
+        }
+        const linearMagnitude = Math.hypot(iD, iL);
+        if (linearMagnitude > 0 || iR !== 0 || iP !== 0) {
+            _active[i].triggerCollisionRagdoll(linearMagnitude, iR, iP);
         }
     }
 }

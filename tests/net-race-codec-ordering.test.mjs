@@ -18,6 +18,7 @@ const {
 const { decodeInputFrame, encodeInputFrame } = InputCodec;
 const {
     AiActionSequenceTracker,
+    isTrustedCollisionRagdollAuthority,
     MonotonicSequenceTracker,
     ownerLaneMatches,
     shouldUseTransientPacketCondition,
@@ -162,6 +163,38 @@ test('AI action ordering survives repeats, loss, delay, and host migration', () 
     assert.equal(apply(1, 4, 1), true, 'each lane has an independent sequence');
     assert.equal(apply(5, 3, 1), true, 'a migrated host has an independent authority key');
     assert.equal(apply(1, 3, 8), true, 'the original seat may continue its monotonic counter if trusted again');
+});
+
+test('collision ragdoll event keeps identity, pose phase, and advancing repeat age', () => {
+    const base = {
+        kind: 'g',
+        ragdollLane: 4,
+        ragdollActionSeq: 23,
+        ragdollStrength: 0.72,
+        ragdollSignBits: 2,
+        ragdollPhase: Math.PI * 1.37,
+        ragdollAgeTicks: 0,
+    };
+    const first = decodeInputFrame(encodeInputFrame(2, [base], null, -1, 90)).events[0];
+    const repeated = decodeInputFrame(encodeInputFrame(2, [{ ...base, ragdollAgeTicks: 6 }], null, -1, 96)).events[0];
+
+    assert.equal(first.kind, 'g');
+    assert.equal(first.ragdollLane, 4);
+    assert.equal(first.ragdollActionSeq, 23);
+    assert.ok(Math.abs(first.ragdollStrength - 0.72) <= 1 / 255);
+    assert.equal(first.ragdollSignBits, 2);
+    assert.ok(Math.abs(first.ragdollPhase - base.ragdollPhase) <= Math.PI * 2 / 255);
+    assert.equal(first.ragdollAgeTicks, 0);
+    assert.equal(repeated.ragdollActionSeq, 23);
+    assert.equal(repeated.ragdollAgeTicks, 6);
+});
+
+test('collision ragdoll authority rejects wrong human lanes and departed hosts', () => {
+    assert.equal(isTrustedCollisionRagdollAuthority(4, 3, 3, 1, true), true);
+    assert.equal(isTrustedCollisionRagdollAuthority(4, 2, 3, 1, true), false);
+    assert.equal(isTrustedCollisionRagdollAuthority(1, 6, 3, 1, false), true);
+    assert.equal(isTrustedCollisionRagdollAuthority(5, 6, 3, 1, false), false);
+    assert.equal(isTrustedCollisionRagdollAuthority(1, 3, 2, 1, true), false);
 });
 
 test('heart-rate quantization never crosses a quality-zone boundary', () => {

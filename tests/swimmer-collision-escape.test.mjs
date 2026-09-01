@@ -5,18 +5,20 @@ import CollisionResolver from '../assets/scripts/entity/SwimmerCollisionResolver
 
 const { SWIMMER_COLLISION, resolveSwimmerCollisions } = CollisionResolver;
 
-function makeSwimmer({ x, z, direction, startZ = z }) {
+function makeSwimmer({ x, z, direction, startZ = z, isAI = false, collisionParticipantIsAI = isAI }) {
     const impulses = [];
     return {
         node: { position: { x, y: 0, z } },
         isCollisionActive: true,
-        isAI: false,
+        isAI,
+        collisionParticipantIsAI,
         weight: 1,
         raceDirection: direction,
         startPosition: { x: 0, y: 0, z: startZ },
         currentSpeed: 5,
         movementHeading: 0,
         impulses,
+        ragdollTriggers: 0,
         applyCollisionPush(dx, dz) {
             this.node.position.x += dx;
             this.node.position.z += dz;
@@ -27,6 +29,7 @@ function makeSwimmer({ x, z, direction, startZ = z }) {
         addCollisionEnergyBonus() {},
         applyCollisionAxialImpulse() {},
         applyCollisionPitchImpulse() {},
+        triggerCollisionRagdoll() { this.ragdollTriggers += 1; },
     };
 }
 
@@ -121,5 +124,52 @@ test('continuous contact injects the escape impulse only once', () => {
 
     assert.equal(left.impulses.length, 1);
     assert.equal(right.impulses.length, 1);
+    assert.equal(left.ragdollTriggers, 1);
+    assert.equal(right.ragdollTriggers, 1);
+    clearCollisionContacts();
+});
+
+test('remote human placeholders use human collision rules while true AI pairs stay lateral-only', () => {
+    clearCollisionContacts();
+    const remoteHuman = makeSwimmer({
+        x: 0,
+        z: 0,
+        direction: 1,
+        isAI: true,
+        collisionParticipantIsAI: false,
+    });
+    const ai = makeSwimmer({
+        x: 1.7,
+        z: 0,
+        direction: 1,
+        isAI: true,
+        collisionParticipantIsAI: true,
+    });
+
+    resolveSwimmerCollisions([remoteHuman, ai]);
+
+    assert.ok(remoteHuman.node.position.x < 0);
+    assert.ok(ai.node.position.x > 1.7);
+
+    clearCollisionContacts();
+    const firstAi = makeSwimmer({
+        x: 0,
+        z: 0,
+        direction: 1,
+        isAI: true,
+        collisionParticipantIsAI: true,
+    });
+    const secondAi = makeSwimmer({
+        x: 1.7,
+        z: 0,
+        direction: 1,
+        isAI: true,
+        collisionParticipantIsAI: true,
+    });
+
+    resolveSwimmerCollisions([firstAi, secondAi]);
+
+    assert.equal(firstAi.node.position.x, 0);
+    assert.equal(secondAi.node.position.x, 1.7);
     clearCollisionContacts();
 });

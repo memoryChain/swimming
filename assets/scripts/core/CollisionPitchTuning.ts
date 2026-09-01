@@ -20,6 +20,14 @@ export const COLLISION_PITCH_TUNING = {
     angularDrag: 2.4,
     maxAngularSpeed: 540,
 
+    // The ordinary -sin(pitch) righting moment is exactly zero upside-down.
+    // A deterministic positive bias near +/-180 degrees moves a nearly stopped
+    // swimmer through that dead zone. It is derived only from synced state, so
+    // owner/host correction remains sufficient in network races.
+    invertedEscapeStartDegrees: 150,
+    invertedEscapeMaxAngularSpeed: 45,
+    invertedEscapeTorque: 70,
+
     // A collision-disturbed swimmer must remain in the freestyle pose instead of
     // blending into upright tread water while the root is visibly tilted.
     treadWaterToleranceDegrees: 18,

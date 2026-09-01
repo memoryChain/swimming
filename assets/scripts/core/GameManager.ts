@@ -181,6 +181,7 @@ export class GameManager extends Component {
     // Host: paces authoritative position-snapshot broadcasts (seconds accumulator).
     private _netSnapshotTimer = 0;
     private _netAiConditionSnapshotRevision = -1;
+    private _netCollisionRagdollAuthorityState = -1;
     // Accumulates real dt to step the AI on a fixed 33ms clock in a net race (so the
     // shared-seed AI advance identically on every client instead of drifting on dt).
     private _aiStepAccum = 0;
@@ -644,6 +645,55 @@ export class GameManager extends Component {
         // the weighted knockback split resolves the same everywhere. Residual float
         // divergence is absorbed by the owner/host position authority.
         resolveSwimmerCollisions(this._collisionSwimmers);
+        this.captureNetCollisionRagdollEvents();
+    }
+
+    private captureNetCollisionRagdollEvents() {
+        const controller = this._netRaceController;
+        if (!controller) {
+            return;
+        }
+        for (const swimmer of this._collisionSwimmers) {
+            const event = swimmer.takePendingCollisionRagdollVisualEvent();
+            if (!event) {
+                continue;
+            }
+            const lane = this.assignedLaneOfSwimmer(swimmer);
+            if (lane < 0) {
+                continue;
+            }
+            controller.queueCollisionRagdollEvent(
+                lane,
+                event.strength,
+                event.rollSign,
+                event.pitchSign,
+                event.phase,
+            );
+        }
+    }
+
+    private refreshNetCollisionRagdollAuthority(force = false) {
+        const controller = this._netRaceController;
+        if (!controller) {
+            return;
+        }
+        const state = controller.isHost
+            ? (controller.canIssueAiDolphinActions ? 2 : 1)
+            : 0;
+        if (!force && state === this._netCollisionRagdollAuthorityState) {
+            return;
+        }
+        this._netCollisionRagdollAuthorityState = state;
+        // The local player always owns its visual collision edge.
+        this._playerSwimmer?.configureCollisionRagdollSync(true, true);
+        for (let i = 0; i < this._aiSwimmers.length; i++) {
+            const swimmer = this._aiSwimmers[i];
+            const genuineAi = this._aiControllers[i]?.remoteDriven !== true;
+            swimmer.configureCollisionRagdollSync(
+                genuineAi && controller.isHost,
+                genuineAi && controller.canIssueAiDolphinActions,
+            );
+        }
     }
 
     private toggleSplashCulling() {
@@ -787,6 +837,21 @@ export class GameManager extends Component {
                     this._netRaceController?.setAiDolphinListener((lane, dive, start) => {
                         return this.onNetAiDolphinJump(lane, dive, start);
                     });
+                    this._netRaceController?.setCollisionRagdollListener((
+                        lane,
+                        strength,
+                        rollSign,
+                        pitchSign,
+                        phase,
+                        ageSeconds,
+                    ) => this.onNetCollisionRagdoll(
+                        lane,
+                        strength,
+                        rollSign,
+                        pitchSign,
+                        phase,
+                        ageSeconds,
+                    ));
                     this.setupLaneLockdownRace();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
@@ -1387,6 +1452,11 @@ export class GameManager extends Component {
         if (!this._netSession || !this._netLanePlan || !this._netRaceController) {
             return;
         }
+        // A keep-alive rematch may assign different human lanes while reusing swimmer
+        // bodies. Restore every placeholder to the normal AI collision role first.
+        for (const swimmer of this._aiSwimmers) {
+            swimmer.collisionParticipantIsAI = true;
+        }
         const playerLane = this._playerLaneIndex;
         for (const remote of this._netLanePlan.remotes) {
             const lane = remote.lane;
@@ -1404,6 +1474,9 @@ export class GameManager extends Component {
             // Neutralize the AI on this lane.
             aiController.remoteDriven = true;
             aiController.stopSwimming();
+            // Keep `isAI` for the fixed-step motor path, but make collision rules match
+            // this seat's human authority on every client.
+            swimmer.collisionParticipantIsAI = false;
             // Slice 3: drive remote humans on the SAME deterministic fixed 33ms clock as
             // the AI (driveNetAiFixedStep). Their strokes arrive identically on every
             // client over frame-sync, so a fixed cadence removes the variable-dt drift
@@ -1441,6 +1514,7 @@ export class GameManager extends Component {
         this.refreshPreRaceIntroRoster();
         this.refreshSwimmerNameRoster();
         this._netRaceController?.setLocalPlayerLane(this._playerLaneIndex);
+        this.refreshNetCollisionRagdollAuthority(true);
         this.debug(`net remote swimmers wired count=${this._remoteControllers.length}`);
     }
 
@@ -1593,6 +1667,27 @@ export class GameManager extends Component {
             return true;
         }
         return false;
+    }
+
+    private onNetCollisionRagdoll(
+        lane: number,
+        strength: number,
+        rollSign: number,
+        pitchSign: number,
+        phase: number,
+        ageSeconds: number,
+    ): boolean {
+        const swimmer = this.swimmerForLane(lane);
+        if (!swimmer?.node?.active) {
+            return false;
+        }
+        return swimmer.applySynchronizedCollisionRagdoll(
+            ageSeconds,
+            strength,
+            rollSign,
+            pitchSign,
+            phase,
+        );
     }
 
     // Deterministic fixed-step driver (net race only). Advances every net-driven body
@@ -1749,6 +1844,7 @@ export class GameManager extends Component {
         // If the current host goes silent (dropped), the lowest surviving seat promotes
         // itself to host here so the race keeps a single authority for the AI lanes.
         this._netRaceController.checkHostMigration(true);
+        this.refreshNetCollisionRagdollAuthority();
         const laneCount = LANE_LAYOUT.laneCount;
         const raceDistance = getRaceDistance();
         const applyAiConditionSnapshot = !this._netRaceController.isHost

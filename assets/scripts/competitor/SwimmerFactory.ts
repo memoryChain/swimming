@@ -58,6 +58,7 @@ export class SwimmerFactory {
         const swimmer = node.addComponent(Swimmer);
         swimmer.cartoonRig = rig;
         swimmer.isAI = options.isAI;
+        swimmer.collisionParticipantIsAI = options.isAI;
         swimmer.swimmerName = options.displayName || (selectedPlayer?.name ?? (options.isAI ? 'AI' : 'YOU'));
         this._debug?.(`${options.name} uses CartoonSwimmerRig model=${modelVariantId}`);
         return swimmer;

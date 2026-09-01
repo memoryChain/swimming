@@ -1,10 +1,11 @@
 import { _decorator, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
+import { CollisionRagdollController } from '../character/CollisionRagdollController';
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
-import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
+import { CharacterPoseState, CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
@@ -155,6 +156,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         rightHandWaterProgress: 0,
     };
     private readonly _pose = new FreestylePoseController();
+    private readonly _collisionRagdoll = new CollisionRagdollController();
     private readonly _animationPlayer = new CharacterAnimationPlayer();
     private readonly _poseState = new CharacterPoseStateController({
         pose: this._pose,
@@ -1100,6 +1102,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         movementDirection = 1,
         movementPitchRadians = motor.collisionPitchRadians * this.axialRollVisualWeight,
         movementHeadingRadians = motor.heading,
+        allowCollisionRagdoll = false,
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1125,6 +1128,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.currentSpeed,
             movementDirection,
             !motor.permitsUprightTreadWater,
+            allowCollisionRagdoll,
+            motor.axialRollAngularVelocity,
+            motor.collisionPitchAngularVelocity,
         );
     }
 
@@ -1177,7 +1183,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return used;
     }
 
-    updateFreestyle(dt: number, leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, speed: number, movementDirection = 1, suppressTreadWater = false) {
+    updateFreestyle(
+        dt: number,
+        leftArmCycle: number,
+        rightArmCycle: number,
+        leftKickCycle: number,
+        rightKickCycle: number,
+        bodyPhase: number,
+        speed: number,
+        movementDirection = 1,
+        suppressTreadWater = false,
+        allowCollisionRagdoll = false,
+        axialRollVelocity = 0,
+        collisionPitchVelocity = 0,
+    ) {
         if (!this._loaded || !this._poseState.isFreestyleActive || !this.root) {
             return;
         }
@@ -1195,6 +1214,15 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         // position slides forward. Arm/kick cadence still comes from the replayed input.
         const treadSpeed = this._treadSpeedOverride >= 0 ? this._treadSpeedOverride : speed;
         const treadWeight = this.updateTreadWaterBlend(dt, treadSpeed, suppressTreadWater);
+        const ragdollAllowed = allowCollisionRagdoll
+            && this._poseState.state === CharacterPoseState.Freestyle;
+        const ragdollPresentationWeight = 1 - clamp01(treadWeight / 0.25);
+        this._collisionRagdoll.update(
+            this._selfTime,
+            axialRollVelocity,
+            collisionPitchVelocity,
+            ragdollAllowed,
+        );
         this.applyTreadBlendModelPlacement(treadWeight);
         const drive = Math.max(0.85, Math.min(1.45, 0.9 + speed * 0.16));
         this._pose.applyFreestyleTreadBlendPose(
@@ -1209,8 +1237,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._treadWaterPhase,
             treadWeight,
         );
+        if (ragdollAllowed && ragdollPresentationWeight > 0.001) {
+            this._pose.applyCollisionRagdollOverlay(
+                this._collisionRagdoll,
+                ragdollPresentationWeight,
+            );
+        }
 
-        const splashWeight = 1 - treadWeight;
+        // The authored stroke remains partially visible during a tumble, so its
+        // contact-driven splash should fade by the same amount instead of firing
+        // at full strength from a hand that the ragdoll pose has pulled away.
+        const ragdollStrokeWeight = ragdollAllowed
+            ? this._collisionRagdoll.strokePoseWeight
+            : 1;
+        const splashWeight = (1 - treadWeight) * ragdollStrokeWeight;
         this._leftHandWaterContact = this._pose.handWaterContact(leftArmCycle) * splashWeight;
         this._rightHandWaterContact = this._pose.handWaterContact(rightArmCycle) * splashWeight;
         this._leftHandWaterEntry = this.visualHandWaterEntry('left', this._pose.handWaterEntry(leftArmCycle)) * splashWeight;
@@ -1396,6 +1436,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._collisionRagdoll.reset();
         this._modelLoadToken += 1;
         this._colorAssetLoadToken += 1;
         this._diveChargeBodyMaterials.length = 0;
@@ -1409,6 +1450,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     resetPose() {
+        this._collisionRagdoll.reset();
         if (!this._loaded || !this.root) {
             return;
         }
@@ -1514,6 +1556,60 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._diveChargeVisualElapsed = 0;
             this.applyDiveChargeVisual(0, false);
         }
+    }
+
+    setCollisionRagdollSeed(seed: number) {
+        this._collisionRagdoll.setStableSeed(seed);
+    }
+
+    setCollisionRagdollSnapshotRetriggerEnabled(enabled: boolean) {
+        this._collisionRagdoll.setSnapshotRetriggerEnabled(enabled);
+    }
+
+    triggerCollisionRagdoll(
+        linearImpulseMagnitude: number,
+        axialVelocityDeltaRadians: number,
+        pitchVelocityDeltaRadians: number,
+    ): boolean {
+        return this._collisionRagdoll.trigger(
+            this._selfTime,
+            linearImpulseMagnitude,
+            axialVelocityDeltaRadians,
+            pitchVelocityDeltaRadians,
+        );
+    }
+
+    triggerSynchronizedCollisionRagdoll(
+        eventAgeSeconds: number,
+        normalizedStrength: number,
+        rollSign: number,
+        pitchSign: number,
+        impactPhase: number,
+    ): boolean {
+        return this._collisionRagdoll.triggerSynchronized(
+            this._selfTime,
+            eventAgeSeconds,
+            normalizedStrength,
+            rollSign,
+            pitchSign,
+            impactPhase,
+        );
+    }
+
+    get collisionRagdollImpactStrength(): number {
+        return this._collisionRagdoll.impactStrength;
+    }
+
+    get collisionRagdollImpactRollSign(): number {
+        return this._collisionRagdoll.impactRollSign;
+    }
+
+    get collisionRagdollImpactPitchSign(): number {
+        return this._collisionRagdoll.impactPitchSign;
+    }
+
+    get collisionRagdollImpactPhase(): number {
+        return this._collisionRagdoll.impactPhase;
     }
 
     /** Remove the local burst at the take-off edge while keeping the normal rim suppressed in flight. */

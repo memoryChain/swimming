@@ -2,6 +2,14 @@ import { Node, Quat, Vec3 } from 'cc';
 import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { AXIAL_ROLL_TUNING } from '../core/AxialRollTuning';
+import {
+    COLLISION_RAGDOLL_ELBOW_FLEX_LIMIT_DEGREES,
+    COLLISION_RAGDOLL_KNEE_FLEX_LIMIT_DEGREES,
+    collisionRagdollHingeFlexionDegrees,
+    collisionRagdollHeadGuardWeight,
+    collisionRagdollSpineFlexionDegrees,
+    type CollisionRagdollController,
+} from './CollisionRagdollController';
 import { BreaststrokeBoneName, BreaststrokeMotionSample, getBreaststrokeSamples } from './BreaststrokeMotionCurve';
 import { findNode } from './CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
@@ -164,6 +172,12 @@ export class FreestylePoseController {
     private readonly _tmpClapLeftTarget = new Vec3();
     private readonly _tmpClapRightTarget = new Vec3();
     private readonly _tmpClapHandRotation = new Quat();
+    private readonly _ragdollArmSourceRotation = new Quat();
+    private readonly _ragdollForeArmSourceRotation = new Quat();
+    private readonly _ragdollHeadWorld = new Vec3();
+    private readonly _ragdollHandWorld = new Vec3();
+    private readonly _ragdollArmWorld = new Vec3();
+    private readonly _ragdollForeArmWorld = new Vec3();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
     private _sampledActionRestLeftContactOffsetY = 0;
     private _sampledActionRestRightContactOffsetY = 0;
@@ -376,6 +390,110 @@ export class FreestylePoseController {
         this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
+    }
+
+    // Pure presentation overlay applied after the normal freestyle/tread blend.
+    // At full collision weight it still keeps a configurable slice of the current
+    // stroke pose, then blends the major limb joints toward a loose, bent target.
+    applyCollisionRagdollOverlay(state: CollisionRagdollController, presentationWeight = 1) {
+        const visibility = clamp(presentationWeight, 0, 1);
+        const weight = clamp(state.weight * visibility, 0, 1);
+        if (weight <= 0.001) {
+            return;
+        }
+
+        const looseBlend = clamp((1 - state.strokePoseWeight) * visibility, 0, 1);
+        const curl = clamp(state.curlWeight * visibility, 0, 1);
+        const leftElbowFlex = collisionRagdollHingeFlexionDegrees(
+            state.leftElbowBend,
+            state.leftForearmSwing * 0.08,
+            COLLISION_RAGDOLL_ELBOW_FLEX_LIMIT_DEGREES,
+        );
+        const rightElbowFlex = collisionRagdollHingeFlexionDegrees(
+            state.rightElbowBend,
+            state.rightForearmSwing * 0.08,
+            COLLISION_RAGDOLL_ELBOW_FLEX_LIMIT_DEGREES,
+        );
+        const leftKneeFlex = collisionRagdollHingeFlexionDegrees(
+            state.leftKneeBend,
+            state.leftCalfSwing * 0.08,
+            COLLISION_RAGDOLL_KNEE_FLEX_LIMIT_DEGREES,
+        );
+        const rightKneeFlex = collisionRagdollHingeFlexionDegrees(
+            state.rightKneeBend,
+            state.rightCalfSwing * 0.08,
+            COLLISION_RAGDOLL_KNEE_FLEX_LIMIT_DEGREES,
+        );
+
+        // Apply torso/head lag first so the arm guard measures against the final
+        // head location for this frame.
+        this.applyCurrentBoneOffset(
+            this._spine1,
+            collisionRagdollSpineFlexionDegrees(state.spinePitch) * weight,
+            0,
+            0,
+        );
+        this.applyCurrentBoneOffset(
+            this._head,
+            state.headPitch * weight,
+            0,
+            state.headRoll * weight,
+        );
+
+        this.applyCollisionRagdollArm(
+            this._leftArm,
+            this._leftForeArm,
+            this._leftHand,
+            state.leftArmSwing * 0.55 - curl * 12,
+            10 + state.leftArmSwing * 0.12,
+            -8 + state.leftArmSwing * 0.22,
+            -leftElbowFlex,
+            0,
+            0,
+            looseBlend,
+        );
+        this.applyCollisionRagdollArm(
+            this._rightArm,
+            this._rightForeArm,
+            this._rightHand,
+            state.rightArmSwing * 0.55 - curl * 12,
+            -10 - state.rightArmSwing * 0.12,
+            8 - state.rightArmSwing * 0.22,
+            -rightElbowFlex,
+            0,
+            0,
+            looseBlend,
+        );
+
+        this.blendCurrentBoneTowardBaseOffset(
+            this._leftUpLeg,
+            state.leftLegSwing - curl * 8,
+            4 + state.leftLegSwing * 0.1,
+            -3 + state.leftLegSwing * 0.12,
+            looseBlend,
+        );
+        this.blendCurrentBoneTowardBaseOffset(
+            this._rightUpLeg,
+            state.rightLegSwing - curl * 8,
+            -4 - state.rightLegSwing * 0.1,
+            3 - state.rightLegSwing * 0.12,
+            looseBlend,
+        );
+        this.blendCurrentBoneTowardBaseOffset(
+            this._leftLeg,
+            -leftKneeFlex,
+            0,
+            0,
+            looseBlend,
+        );
+        this.blendCurrentBoneTowardBaseOffset(
+            this._rightLeg,
+            -rightKneeFlex,
+            0,
+            0,
+            looseBlend,
+        );
+
     }
 
     applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, rightBreath = 0) {
@@ -1754,6 +1872,109 @@ export class FreestylePoseController {
         Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
         Quat.multiply(this._tmpResultRotation, bone.rotation, this._tmpOffsetRotation);
         bone.setRotation(this._tmpResultRotation);
+    }
+
+    private blendCurrentBoneTowardBaseOffset(
+        bone: Node,
+        x: number,
+        y: number,
+        z: number,
+        weight: number,
+    ) {
+        if (!bone || weight <= 0.001) {
+            return;
+        }
+        const base = this._boneBaseRotation.get(bone);
+        if (!base) {
+            this.applyCurrentBoneOffset(bone, x * weight, y * weight, z * weight);
+            return;
+        }
+        Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
+        Quat.multiply(this._tmpResultRotation, base, this._tmpOffsetRotation);
+        Quat.slerp(this._tmpResultRotation, bone.rotation, this._tmpResultRotation, clamp(weight, 0, 1));
+        bone.setRotation(this._tmpResultRotation);
+    }
+
+    private applyCollisionRagdollArm(
+        arm: Node,
+        foreArm: Node,
+        hand: Node,
+        armX: number,
+        armY: number,
+        armZ: number,
+        foreArmX: number,
+        foreArmY: number,
+        foreArmZ: number,
+        weight: number,
+    ) {
+        if (!arm || !foreArm || weight <= 0.001) {
+            this.blendCurrentBoneTowardBaseOffset(arm, armX, armY, armZ, weight);
+            this.blendCurrentBoneTowardBaseOffset(
+                foreArm,
+                foreArmX,
+                foreArmY,
+                foreArmZ,
+                weight,
+            );
+            return;
+        }
+
+        Quat.copy(this._ragdollArmSourceRotation, arm.rotation);
+        Quat.copy(this._ragdollForeArmSourceRotation, foreArm.rotation);
+
+        let sourceHandHeadDistance = 0;
+        let armLength = 0;
+        const canGuard = !!hand && !!this._head;
+        if (canGuard) {
+            this._head.getWorldPosition(this._ragdollHeadWorld);
+            hand.getWorldPosition(this._ragdollHandWorld);
+            arm.getWorldPosition(this._ragdollArmWorld);
+            foreArm.getWorldPosition(this._ragdollForeArmWorld);
+            sourceHandHeadDistance = Vec3.distance(
+                this._ragdollHandWorld,
+                this._ragdollHeadWorld,
+            );
+            armLength = Vec3.distance(this._ragdollArmWorld, this._ragdollForeArmWorld)
+                + Vec3.distance(this._ragdollForeArmWorld, this._ragdollHandWorld);
+        }
+
+        this.blendCurrentBoneTowardBaseOffset(arm, armX, armY, armZ, weight);
+        this.blendCurrentBoneTowardBaseOffset(
+            foreArm,
+            foreArmX,
+            foreArmY,
+            foreArmZ,
+            weight,
+        );
+        if (!canGuard || armLength <= 0.0001) {
+            return;
+        }
+
+        hand.getWorldPosition(this._ragdollHandWorld);
+        const candidateHandHeadDistance = Vec3.distance(
+            this._ragdollHandWorld,
+            this._ragdollHeadWorld,
+        );
+        const guardWeight = collisionRagdollHeadGuardWeight(
+            sourceHandHeadDistance,
+            candidateHandHeadDistance,
+            armLength,
+        );
+        if (guardWeight >= 0.999) {
+            return;
+        }
+
+        arm.setRotation(this._ragdollArmSourceRotation);
+        foreArm.setRotation(this._ragdollForeArmSourceRotation);
+        const safeWeight = weight * guardWeight;
+        this.blendCurrentBoneTowardBaseOffset(arm, armX, armY, armZ, safeWeight);
+        this.blendCurrentBoneTowardBaseOffset(
+            foreArm,
+            foreArmX,
+            foreArmY,
+            foreArmZ,
+            safeWeight,
+        );
     }
 
     private levelFootToeDirectionToWorldHorizontal(foot: Node, toe: Node, power: number) {

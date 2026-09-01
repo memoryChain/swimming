@@ -35,6 +35,29 @@ export class CollisionPitchModel {
         let angularAccel = -Math.sin(this._angle)
             * Math.max(0, finite(tuning.rightingTorque))
             * DEG2RAD;
+        const absoluteAngleDegrees = Math.abs(this._angle) * RAD2DEG;
+        const invertedStart = clamp(
+            finite(tuning.invertedEscapeStartDegrees),
+            0,
+            179.9,
+        );
+        const invertedAngleWeight = smoothStep(clamp01(
+            (absoluteAngleDegrees - invertedStart) / (180 - invertedStart),
+        ));
+        const invertedMaxSpeed = Math.max(
+            1,
+            finite(tuning.invertedEscapeMaxAngularSpeed),
+        );
+        const invertedSpeedWeight = 1 - smoothStep(clamp01(
+            Math.abs(this._angularVelocity) * RAD2DEG / invertedMaxSpeed,
+        ));
+        // Always use the same positive direction at both +PI and -PI. Those two
+        // numbers describe the same physical orientation, and network mrad
+        // quantization must not make different devices choose opposite exits.
+        angularAccel += invertedAngleWeight
+            * invertedSpeedWeight
+            * Math.max(0, finite(tuning.invertedEscapeTorque))
+            * DEG2RAD;
         angularAccel -= this._angularVelocity * Math.max(0, finite(tuning.angularDrag));
 
         this._angularVelocity += angularAccel * dt;

@@ -6,7 +6,7 @@
 
 ## 基本结构
 
-- `version`：调参文件格式版本，目前是 `30`。
+- `version`：调参文件格式版本，目前是 `37`。
 - `updatedAt`：最近一次保存时间，ISO 字符串，只用于记录。
 - `values`：真正参与运行的调参键值表。
 
@@ -138,3 +138,42 @@ cyclesPerSecond = lerp(armCycleLowSpeedPerSecond, armCycleHighSpeedPerSecond, t)
 - `strokeQuality.armCycleSpeedFull` 必须大于 `strokeQuality.armCycleSpeedStart`，否则会被自动上移。
 
 如果手写 JSON 配出矛盾值，运行时会自动修正并输出 `[SpeedSwimming] tuning adjusted` warning。
+
+## 碰撞四肢主动布娃娃
+
+这组参数只影响比赛中水面自由泳的骨骼表现，不会改变碰撞体、速度、推进效率、能量或联机比赛结果。折返、跳水、水下滑行、海豚动作和展示姿态不会启用该效果。
+
+| 键 | 默认值 | 单位 | 含义 |
+| --- | ---: | --- | --- |
+| `collision.ragdollEnabled` | `1` | 开关 | 是否在碰撞翻转时启用四肢松动叠加。 |
+| `collision.ragdollImpactCurlSeconds` | `0.08` | s | 碰撞瞬间肘膝快速弯曲的持续时间。 |
+| `collision.ragdollMinimumReactionSeconds` | `0.12` | s | 一次碰撞至少保持肢体反应的时间。 |
+| `collision.ragdollRecoverySeconds` | `0.28` | s | 受击后回到当前泳姿的指数恢复时间。 |
+| `collision.ragdollMaximumReactionSeconds` | `0.8` | s | 单次碰撞四肢松动的绝对时长上限。 |
+| `collision.ragdollEnterAngularSpeed` | `55` | °/s | 合成翻转角速度达到该值后开始明显松动。 |
+| `collision.ragdollFullAngularSpeed` | `280` | °/s | 合成翻转角速度达到该值时使用完整松动权重。 |
+| `collision.ragdollMinimumStrokePoseWeight` | `0.55` | 比例 | 强翻滚时仍保留的主动划水姿势；`0.55` 表示最多压低 45%。 |
+| `collision.ragdollSwingFrequency` | `1.6` | Hz | 手脚错相摆动的基础频率。 |
+| `collision.ragdollArmSwing` | `20` | ° | 上臂松动摆幅。 |
+| `collision.ragdollForearmSwing` | `24` | ° | 左右弯肘不同步的节奏扰动，最终受肘关节安全上限约束。 |
+| `collision.ragdollElbowBend` | `30` | ° | 碰撞失衡时肘部弯曲上限。 |
+| `collision.ragdollLegSwing` | `13` | ° | 大腿松动摆幅。 |
+| `collision.ragdollCalfSwing` | `18` | ° | 左右弯膝不同步的节奏扰动，最终受膝关节安全上限约束。 |
+| `collision.ragdollKneeBend` | `22` | ° | 碰撞失衡时膝部弯曲上限。 |
+| `collision.ragdollSpineLag` | `4` | ° | 腰部相对骨盆向前收拢的幅度，不允许后折或侧折。 |
+| `collision.ragdollHeadLag` | `5` | ° | 头部相对躯干翻转的反向滞后上限。 |
+| `collision.ragdollHandHeadGuardRatio` | `0.28` | 臂长比例 | 手腕接近头部时自动减弱该侧手臂叠加；`0` 关闭。 |
+
+`collision.ragdollFullAngularSpeed` 必须大于 `collision.ragdollEnterAngularSpeed`；不满足时会自动上移到起始值以上。
+
+肘和膝的碰撞叠加只允许沿弯曲方向活动，并分别限制在 `35°` 和 `28°` 内；腰部只允许轻微向前弯曲，局部上限为 `12°`。这些属于人体安全约束，不会被调参文件放宽。整体前后翻仍由根节点完成。
+
+## 碰撞前后翻倒置恢复
+
+| 键 | 默认值 | 单位 | 含义 |
+| --- | ---: | --- | --- |
+| `collision.pitchInvertedEscapeStart` | `150` | ° | 低速接近倒置时开始加入回正偏置的角度。 |
+| `collision.pitchInvertedEscapeMaxSpeed` | `45` | °/s | 回正偏置生效的最高前后翻角速度。 |
+| `collision.pitchInvertedEscapeTorque` | `70` | °/s² | 越过 `180°` 回正死区的角加速度。 |
+
+倒置回正只依赖已同步的前后翻角度和角速度，不增加隐藏状态；真人继续以 owner 状态为准，AI 继续以房主快照为准。

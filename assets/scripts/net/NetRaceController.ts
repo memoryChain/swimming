@@ -21,6 +21,7 @@ import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfS
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     AiActionSequenceTracker,
+    isTrustedCollisionRagdollAuthority,
     MonotonicSequenceTracker,
     ownerLaneMatches,
     shouldUseTransientPacketCondition,
@@ -58,6 +59,7 @@ const BROADCAST_INPUT_TAG = 'IN|';
 // host-migration trust hand-off cannot erase the action. Replays are idempotent at
 // the phase controller and still pass the normal per-packet sequence ordering.
 const AI_DOLPHIN_REPEAT_FRAMES = 6;
+const COLLISION_RAGDOLL_REPEAT_FRAMES = 6;
 
 // Per-frame input logging. OFF by default: it fires for every non-empty input frame
 // (dozens/sec during racing) and each console.log is very expensive with vConsole open
@@ -76,8 +78,14 @@ export class NetRaceController {
     private _sentFrames = 0;
     private _ownerStateSeq = 0;
     private readonly _aiDolphinActionSeqByLane: Record<number, number> = {};
+    private readonly _collisionRagdollActionSeqByLane: Record<number, number> = {};
     private readonly _pendingAiDolphinRepeats: Array<{
         event: NetInputEvent;
+        remaining: number;
+    }> = [];
+    private readonly _pendingCollisionRagdollRepeats: Array<{
+        event: NetInputEvent;
+        createdFrame: number;
         remaining: number;
     }> = [];
     private _recvFrames = 0;
@@ -99,6 +107,7 @@ export class NetRaceController {
     private readonly _inputOrder = new MonotonicSequenceTracker();
     private readonly _ownerStateOrder = new MonotonicSequenceTracker();
     private readonly _aiActionOrder = new AiActionSequenceTracker();
+    private readonly _collisionRagdollActionOrder = new AiActionSequenceTracker();
     // Remote-human swimmers keyed by their seat (posNum). Decoded input for a pos is
     // replayed onto its controller. Registered by GameManager after the roster builds.
     private readonly _remoteByPos: Record<number, RemoteSwimmerController> = {};
@@ -151,6 +160,14 @@ export class NetRaceController {
         lane: number,
         dive: boolean,
         start: DolphinJumpStartState,
+    ) => boolean) | null = null;
+    private _collisionRagdollListener: ((
+        lane: number,
+        strength: number,
+        rollSign: number,
+        pitchSign: number,
+        phase: number,
+        ageSeconds: number,
     ) => boolean) | null = null;
     // Host migration state. `_isHost` starts from the session but can flip: a client
     // promotes itself if the host goes silent, and a self-promoted host steps back down
@@ -472,6 +489,47 @@ export class NetRaceController {
         this._aiDolphinListener = listener;
     }
 
+    setCollisionRagdollListener(listener: ((
+        lane: number,
+        strength: number,
+        rollSign: number,
+        pitchSign: number,
+        phase: number,
+        ageSeconds: number,
+    ) => boolean) | null): void {
+        this._collisionRagdollListener = listener;
+    }
+
+    queueCollisionRagdollEvent(
+        lane: number,
+        strength: number,
+        rollSign: number,
+        pitchSign: number,
+        phase: number,
+    ): void {
+        if (this._disposed || !Number.isFinite(lane) || lane < 0 || strength <= 0) {
+            return;
+        }
+        const stableLane = Math.floor(lane);
+        const actionSeq = (this._collisionRagdollActionSeqByLane[stableLane] ?? 0) + 1;
+        this._collisionRagdollActionSeqByLane[stableLane] = actionSeq;
+        this._pendingCollisionRagdollRepeats.push({
+            event: {
+                kind: NetInputKind.CollisionRagdoll,
+                ragdollLane: stableLane,
+                ragdollActionSeq: actionSeq,
+                ragdollStrength: Math.max(0, Math.min(1, strength)),
+                ragdollSignBits: (rollSign >= 0 ? 1 : 0) | (pitchSign >= 0 ? 2 : 0),
+                ragdollPhase: Number.isFinite(phase) ? phase : 0,
+                ragdollAgeTicks: 0,
+            },
+            // Collisions are resolved before tick() in GameManager, so the next logical
+            // frame is the event's zero-age frame. Later redundant packets advance age.
+            createdFrame: this._sentFrames + 1,
+            remaining: COLLISION_RAGDOLL_REPEAT_FRAMES + 1,
+        });
+    }
+
     // Client: the authoritative final placement, or null if not received yet.
     get authResult(): NetResultEntry[] | null {
         return this._authResult;
@@ -527,6 +585,7 @@ export class NetRaceController {
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
             if (decoded.senderPos >= 0 && decoded.senderPos !== this._session.localPos) {
+                this.processTrustedCollisionRagdollActions(decoded.senderPos, decoded.events);
                 this.processTrustedAiActions(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
@@ -681,6 +740,21 @@ export class NetRaceController {
                     });
                 }
             }
+            // Collision ragdoll is a visual authority edge, repeated with the same
+            // action identity. Age advances on each redundant frame so a receiver
+            // that missed the first packet joins the reaction at the correct phase.
+            for (let i = this._pendingCollisionRagdollRepeats.length - 1; i >= 0; i--) {
+                const pending = this._pendingCollisionRagdollRepeats[i];
+                pending.event.ragdollAgeTicks = Math.max(
+                    0,
+                    Math.min(24, this._sentFrames - pending.createdFrame),
+                );
+                events.push(pending.event);
+                pending.remaining--;
+                if (pending.remaining <= 0) {
+                    this._pendingCollisionRagdollRepeats.splice(i, 1);
+                }
+            }
             if (!this.broadcastSyncRequired) {
                 // Fully frame-synced room: input + self-position ride the reliable
                 // lock-step frame channel (zero extra broadcast traffic).
@@ -741,6 +815,7 @@ export class NetRaceController {
             // ordering so a delayed first-seen action is not swallowed merely because
             // a newer empty frame arrived first.
             if (decoded.senderPos !== this._session.localPos) {
+                this.processTrustedCollisionRagdollActions(decoded.senderPos, decoded.events);
                 this.processTrustedAiActions(decoded.senderPos, decoded.events);
             }
             // We cannot roll a predicted swimmer backward. Drop duplicate or delayed
@@ -831,6 +906,48 @@ export class NetRaceController {
         }
     }
 
+    private processTrustedCollisionRagdollActions(
+        senderPos: number,
+        events: readonly NetInputEvent[],
+    ): void {
+        if (!this._collisionRagdollListener) {
+            return;
+        }
+        for (const event of events) {
+            if (event.kind !== NetInputKind.CollisionRagdoll
+                || !Number.isFinite(event.ragdollLane)
+                || !Number.isFinite(event.ragdollActionSeq)) {
+                continue;
+            }
+            const lane = Math.max(0, Math.floor(event.ragdollLane ?? 0));
+            if (!isTrustedCollisionRagdollAuthority(
+                senderPos,
+                lane,
+                this._remoteLaneByPos[senderPos],
+                this._activeHostPos,
+                lane === this._playerLaneForSelf || this._remoteByLane[lane] !== undefined,
+            )) {
+                continue;
+            }
+            const actionSeq = Math.floor(event.ragdollActionSeq ?? -1);
+            if (actionSeq <= this._collisionRagdollActionOrder.latest(senderPos, lane)) {
+                continue;
+            }
+            const signBits = Math.max(0, Math.min(3, Math.floor(event.ragdollSignBits ?? 0)));
+            const accepted = this._collisionRagdollListener(
+                lane,
+                Math.max(0, Math.min(1, event.ragdollStrength ?? 0)),
+                (signBits & 1) !== 0 ? 1 : -1,
+                (signBits & 2) !== 0 ? 1 : -1,
+                Number.isFinite(event.ragdollPhase) ? event.ragdollPhase! : 0,
+                Math.max(0, Math.floor(event.ragdollAgeTicks ?? 0)) * LOGICAL_FRAME_SECONDS,
+            );
+            if (accepted) {
+                this._collisionRagdollActionOrder.markApplied(senderPos, lane, actionSeq);
+            }
+        }
+    }
+
     private processRemotePacket(
         senderPos: number,
         inputSeq: number,
@@ -857,7 +974,8 @@ export class NetRaceController {
         if (events.length === 0 || !inputAccepted) {
             return;
         }
-        const humanEvents = events.filter((event) => event.kind !== NetInputKind.AiDolphinJump);
+        const humanEvents = events.filter((event) => event.kind !== NetInputKind.AiDolphinJump
+            && event.kind !== NetInputKind.CollisionRagdoll);
         if (humanEvents.length === 0) {
             return;
         }

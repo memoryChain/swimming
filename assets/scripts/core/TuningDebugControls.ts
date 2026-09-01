@@ -1,6 +1,7 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
+import { COLLISION_RAGDOLL_TUNING } from '../character/CollisionRagdollTuning';
 import { AI_DOLPHIN_TUNING, AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
@@ -51,7 +52,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 34;
+const TUNING_FILE_VERSION = 37;
 
 type TuningFileData = {
     version: number;
@@ -97,10 +98,31 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.pitchRightingTorque', '前后翻回正力', '水面对碰撞俯仰的复原力矩。越大越快拉回正常头朝前的水平姿态；强撞仍可越过竖直位置完成前翻。', () => COLLISION_PITCH_TUNING.rightingTorque, (v) => COLLISION_PITCH_TUNING.rightingTorque = v, 5, 0, 360, 0, '°/s²'),
             control('collision.pitchAngularDrag', '前后翻阻尼', '前后翻角速度的水阻。越大越像沉重浮筒、较快停下；越小越接近松软布娃娃并可能继续翻圈。', () => COLLISION_PITCH_TUNING.angularDrag, (v) => COLLISION_PITCH_TUNING.angularDrag = v, 0.1, 0, 8, 2, '/s'),
             control('collision.pitchMaxAngularSpeed', '前后翻最大角速度', '碰撞俯仰角速度硬上限，限制多体堆撞时的极端旋转。', () => COLLISION_PITCH_TUNING.maxAngularSpeed, (v) => COLLISION_PITCH_TUNING.maxAngularSpeed = v, 20, 90, 1080, 0, '°/s'),
+            control('collision.pitchInvertedEscapeStart', '倒置回正起始角', '接近倒置且转速较低时，从该角度开始加入确定性回正偏置，避免停在 180°。', () => COLLISION_PITCH_TUNING.invertedEscapeStartDegrees, (v) => COLLISION_PITCH_TUNING.invertedEscapeStartDegrees = v, 5, 90, 179, 0, '°'),
+            control('collision.pitchInvertedEscapeMaxSpeed', '倒置回正最高转速', '只在前后翻角速度低于该值时加入倒置回正偏置；快速翻转不会被额外推着转。', () => COLLISION_PITCH_TUNING.invertedEscapeMaxAngularSpeed, (v) => COLLISION_PITCH_TUNING.invertedEscapeMaxAngularSpeed = v, 5, 5, 180, 0, '°/s'),
+            control('collision.pitchInvertedEscapeTorque', '倒置回正推力', '人物接近 180°且几乎停住时用于越过死区的确定性角加速度。', () => COLLISION_PITCH_TUNING.invertedEscapeTorque, (v) => COLLISION_PITCH_TUNING.invertedEscapeTorque = v, 5, 0, 360, 0, '°/s²'),
             control('collision.pitchTreadTolerance', '前后翻踩水容差', '俯仰偏离水平超过该角度时禁止切入普通竖直踩水，直到碰撞姿态基本恢复。', () => COLLISION_PITCH_TUNING.treadWaterToleranceDegrees, (v) => COLLISION_PITCH_TUNING.treadWaterToleranceDegrees = v, 1, 1, 45, 0, '°'),
             control('collision.pitchPenaltyStart', '前后翻掉速起始速度', '俯仰角速度达到多少后开始额外损失推进；人物接近竖直时也会按角度自然损失推进。', () => COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed, (v) => COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed = v, 5, 0, 240, 0, '°/s'),
             control('collision.pitchPenaltyFull', '前后翻掉速拉满速度', '俯仰角速度达到多少时降至最低推进倍率。', () => COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed, (v) => COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed = v, 5, 20, 540, 0, '°/s'),
             control('collision.pitchMinForwardScale', '前后翻最低推进', '快速前后翻或接近竖直时至少保留的推进效率。', () => COLLISION_PITCH_TUNING.minForwardScale, (v) => COLLISION_PITCH_TUNING.minForwardScale = v, 0.02, 0, 1, 2),
+            control('collision.ragdollEnabled', '启用碰撞四肢松动', '1=碰撞翻转时在水面自由泳姿势上叠加轻量主动布娃娃；只影响骨骼表现。', () => COLLISION_RAGDOLL_TUNING.enabled, (v) => COLLISION_RAGDOLL_TUNING.enabled = v, 1, 0, 1, 0),
+            control('collision.ragdollImpactCurlSeconds', '受击收身时间', '碰撞瞬间肘膝快速弯曲的持续时间。', () => COLLISION_RAGDOLL_TUNING.impactCurlSeconds, (v) => COLLISION_RAGDOLL_TUNING.impactCurlSeconds = v, 0.01, 0.03, 0.4, 2, 's'),
+            control('collision.ragdollMinimumReactionSeconds', '最短松动时间', '一次碰撞至少保持肢体反应多久，避免轻碰只闪过一帧。', () => COLLISION_RAGDOLL_TUNING.minimumReactionSeconds, (v) => COLLISION_RAGDOLL_TUNING.minimumReactionSeconds = v, 0.02, 0.05, 0.8, 2, 's'),
+            control('collision.ragdollRecoverySeconds', '四肢恢复时间', '最短反应结束后，肢体回到当前自由泳姿势的指数恢复时间。', () => COLLISION_RAGDOLL_TUNING.recoverySeconds, (v) => COLLISION_RAGDOLL_TUNING.recoverySeconds = v, 0.05, 0.1, 1.5, 2, 's'),
+            control('collision.ragdollMaximumReactionSeconds', '四肢松动最长时间', '一次碰撞四肢松动的绝对时长上限；即使身体仍在翻转，到时也会回到当前泳姿。', () => COLLISION_RAGDOLL_TUNING.maximumReactionSeconds, (v) => COLLISION_RAGDOLL_TUNING.maximumReactionSeconds = v, 0.05, 0.2, 2, 2, 's'),
+            control('collision.ragdollEnterAngularSpeed', '四肢松动起始转速', '碰撞后的合成翻转角速度超过该值后开始明显松动。', () => COLLISION_RAGDOLL_TUNING.enterAngularSpeedDegrees, (v) => COLLISION_RAGDOLL_TUNING.enterAngularSpeedDegrees = v, 5, 0, 240, 0, '°/s'),
+            control('collision.ragdollFullAngularSpeed', '四肢松动拉满转速', '合成翻转角速度达到该值时使用完整布娃娃权重。', () => COLLISION_RAGDOLL_TUNING.fullAngularSpeedDegrees, (v) => COLLISION_RAGDOLL_TUNING.fullAngularSpeedDegrees = v, 10, 30, 720, 0, '°/s'),
+            control('collision.ragdollMinimumStrokePoseWeight', '最低主动泳姿保留', '强翻滚时仍保留的主动划水姿势比例；默认 0.55 表示最多压低 45%。', () => COLLISION_RAGDOLL_TUNING.minimumStrokePoseWeight, (v) => COLLISION_RAGDOLL_TUNING.minimumStrokePoseWeight = v, 0.05, 0, 1, 2),
+            control('collision.ragdollSwingFrequency', '四肢松动频率', '手脚错相摆动的基础频率；各肢体会使用稳定的细微倍率差。', () => COLLISION_RAGDOLL_TUNING.swingFrequencyHz, (v) => COLLISION_RAGDOLL_TUNING.swingFrequencyHz = v, 0.1, 0.3, 4, 2, 'Hz'),
+            control('collision.ragdollArmSwing', '上臂松动摆幅', '强碰撞时上臂松散摆动的角度上限。', () => COLLISION_RAGDOLL_TUNING.armSwingDegrees, (v) => COLLISION_RAGDOLL_TUNING.armSwingDegrees = v, 2, 0, 70, 0, '°'),
+            control('collision.ragdollForearmSwing', '弯肘节奏扰动', '用于让左右弯肘不同步的相位扰动；最终仍受单方向肘关节上限保护。', () => COLLISION_RAGDOLL_TUNING.forearmSwingDegrees, (v) => COLLISION_RAGDOLL_TUNING.forearmSwingDegrees = v, 2, 0, 90, 0, '°'),
+            control('collision.ragdollElbowBend', '碰撞弯肘幅度', '失衡时肘部基础弯曲上限，直接控制手臂是否仍像直杆。', () => COLLISION_RAGDOLL_TUNING.elbowBendDegrees, (v) => COLLISION_RAGDOLL_TUNING.elbowBendDegrees = v, 2, 0, 100, 0, '°'),
+            control('collision.ragdollLegSwing', '大腿松动摆幅', '强碰撞时大腿松散摆动的角度上限。', () => COLLISION_RAGDOLL_TUNING.legSwingDegrees, (v) => COLLISION_RAGDOLL_TUNING.legSwingDegrees = v, 1, 0, 45, 0, '°'),
+            control('collision.ragdollCalfSwing', '弯膝节奏扰动', '用于让左右弯膝不同步的相位扰动；最终仍受单方向膝关节上限保护。', () => COLLISION_RAGDOLL_TUNING.calfSwingDegrees, (v) => COLLISION_RAGDOLL_TUNING.calfSwingDegrees = v, 2, 0, 70, 0, '°'),
+            control('collision.ragdollKneeBend', '碰撞弯膝幅度', '失衡时膝部基础弯曲上限，避免双腿保持笔直。', () => COLLISION_RAGDOLL_TUNING.kneeBendDegrees, (v) => COLLISION_RAGDOLL_TUNING.kneeBendDegrees = v, 2, 0, 80, 0, '°'),
+            control('collision.ragdollSpineLag', '腰部受击收拢', '碰撞时腰部相对骨盆向前收拢的幅度；不会产生后折或侧向折腰。', () => COLLISION_RAGDOLL_TUNING.spineLagDegrees, (v) => COLLISION_RAGDOLL_TUNING.spineLagDegrees = v, 1, 0, 20, 0, '°'),
+            control('collision.ragdollHeadLag', '头部惯性滞后', '头部相对躯干翻转的反向滞后上限。', () => COLLISION_RAGDOLL_TUNING.headLagDegrees, (v) => COLLISION_RAGDOLL_TUNING.headLagDegrees = v, 1, 0, 30, 0, '°'),
+            control('collision.ragdollHandHeadGuardRatio', '手头保护距离', '按肩到手腕的手臂长度计算保护半径；手被松动叠加拉向头部时自动减弱该侧手臂幅度。0=关闭。', () => COLLISION_RAGDOLL_TUNING.handHeadGuardArmLengthRatio, (v) => COLLISION_RAGDOLL_TUNING.handHeadGuardArmLengthRatio = v, 0.02, 0, 0.6, 2),
         ],
     },
     {
@@ -851,6 +873,22 @@ function validateTuningRelations(changedId?: string) {
             `set to ${fixed.toFixed(1)}`,
         );
         COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed = fixed;
+    }
+    if (COLLISION_RAGDOLL_TUNING.fullAngularSpeedDegrees <= COLLISION_RAGDOLL_TUNING.enterAngularSpeedDegrees) {
+        const fixed = COLLISION_RAGDOLL_TUNING.enterAngularSpeedDegrees + 1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: collision.ragdollFullAngularSpeed must be above enter speed; ` +
+            `set to ${fixed.toFixed(1)}`,
+        );
+        COLLISION_RAGDOLL_TUNING.fullAngularSpeedDegrees = fixed;
+    }
+    if (COLLISION_RAGDOLL_TUNING.maximumReactionSeconds <= COLLISION_RAGDOLL_TUNING.minimumReactionSeconds) {
+        const fixed = COLLISION_RAGDOLL_TUNING.minimumReactionSeconds + 0.01;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: collision.ragdollMaximumReactionSeconds must be above minimum reaction; ` +
+            `set to ${fixed.toFixed(2)}`,
+        );
+        COLLISION_RAGDOLL_TUNING.maximumReactionSeconds = fixed;
     }
     if (AXIAL_ROLL_TUNING.tumblePenaltyFullAngularSpeed <= AXIAL_ROLL_TUNING.tumblePenaltyStartAngularSpeed) {
         const fixed = AXIAL_ROLL_TUNING.tumblePenaltyStartAngularSpeed + 1;

@@ -39,11 +39,30 @@ const _tmpNetLerpPos = new Vec3();
 // (only small eased corrections, no snap), collisions stay on.
 const NET_CATCHUP_COLLISION_SUPPRESS_MS = 400;
 
+export interface CollisionRagdollVisualEvent {
+    strength: number;
+    rollSign: number;
+    pitchSign: number;
+    phase: number;
+}
+
 @ccclass('Swimmer')
 export class Swimmer extends Component {
     @property(CartoonSwimmerRig) public cartoonRig: CartoonSwimmerRig = null;
     @property public isAI = false;
+    // Collision identity is intentionally separate from simulation control.
+    // A remote human reuses an AI-built body and therefore keeps `isAI=true`
+    // for its motor/presentation paths, but must collide as a human on every client.
+    public collisionParticipantIsAI = false;
     @property public swimmerName = 'Swimmer';
+
+    private _collisionRagdollLocalAuthority = true;
+    private _captureCollisionRagdollForNet = false;
+    private _pendingCollisionRagdollForNet = false;
+    private _pendingCollisionRagdollStrength = 0;
+    private _pendingCollisionRagdollRollSign = 1;
+    private _pendingCollisionRagdollPitchSign = 1;
+    private _pendingCollisionRagdollPhase = 0;
 
     private readonly _motor = new SwimmerMotor();
     private _startPosition = new Vec3();
@@ -135,6 +154,71 @@ export class Swimmer extends Component {
     // local pitch drives the head end down; positive pitch lifts it.
     applyCollisionPitchImpulse(angularVelocityDeltaRadians: number) {
         this._motor.applyCollisionPitchImpulse(angularVelocityDeltaRadians);
+    }
+
+    // Pure presentation event. The root motion has already received the exact
+    // gameplay impulses above; this only wakes the rig's loose-limb overlay.
+    triggerCollisionRagdoll(
+        linearImpulseMagnitude: number,
+        axialVelocityDeltaRadians: number,
+        pitchVelocityDeltaRadians: number,
+    ) {
+        if (!this._collisionRagdollLocalAuthority) {
+            return;
+        }
+        const rig = this.cartoonRig;
+        if (!rig?.triggerCollisionRagdoll(
+            linearImpulseMagnitude,
+            axialVelocityDeltaRadians,
+            pitchVelocityDeltaRadians,
+        ) || !this._captureCollisionRagdollForNet) {
+            return;
+        }
+        this._pendingCollisionRagdollStrength = rig.collisionRagdollImpactStrength;
+        this._pendingCollisionRagdollRollSign = rig.collisionRagdollImpactRollSign;
+        this._pendingCollisionRagdollPitchSign = rig.collisionRagdollImpactPitchSign;
+        this._pendingCollisionRagdollPhase = rig.collisionRagdollImpactPhase;
+        this._pendingCollisionRagdollForNet = true;
+    }
+
+    configureCollisionRagdollSync(localAuthority: boolean, captureForNet: boolean) {
+        this._collisionRagdollLocalAuthority = localAuthority;
+        this._captureCollisionRagdollForNet = localAuthority && captureForNet;
+        if (!this._captureCollisionRagdollForNet) {
+            this._pendingCollisionRagdollForNet = false;
+        }
+        // Protocol v6 uses an explicit authority event. Disable the old pitch-jump
+        // guess so a later pose correction cannot trigger a second visual reaction.
+        this.cartoonRig?.setCollisionRagdollSnapshotRetriggerEnabled(false);
+    }
+
+    takePendingCollisionRagdollVisualEvent(): CollisionRagdollVisualEvent | null {
+        if (!this._pendingCollisionRagdollForNet) {
+            return null;
+        }
+        this._pendingCollisionRagdollForNet = false;
+        return {
+            strength: this._pendingCollisionRagdollStrength,
+            rollSign: this._pendingCollisionRagdollRollSign,
+            pitchSign: this._pendingCollisionRagdollPitchSign,
+            phase: this._pendingCollisionRagdollPhase,
+        };
+    }
+
+    applySynchronizedCollisionRagdoll(
+        eventAgeSeconds: number,
+        strength: number,
+        rollSign: number,
+        pitchSign: number,
+        phase: number,
+    ): boolean {
+        return this.cartoonRig?.triggerSynchronizedCollisionRagdoll(
+            eventAgeSeconds,
+            strength,
+            rollSign,
+            pitchSign,
+            phase,
+        ) ?? false;
     }
 
     // Body weight for collision knockback (player from character def, AI from
@@ -336,6 +420,7 @@ export class Swimmer extends Component {
         this._startPosition = this._courseLayout.swimPosition(0, this.node.position.z);
         this._hasStartPosition = true;
         this.node.setPosition(this._startPosition);
+        this.updateCollisionRagdollSeed();
         this.cartoonRig?.setWaterY(this._courseLayout.waterY);
         this.configureSteering();
     }
@@ -836,6 +921,7 @@ export class Swimmer extends Component {
         this._missStrokeQualityCount = 0;
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
+        this._pendingCollisionRagdollForNet = false;
         this._ultimate.reset();
         this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
@@ -953,7 +1039,14 @@ export class Swimmer extends Component {
         if (kickOnlyUnderwater) {
             this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
         } else {
-            this.cartoonRig.updateFreestyleFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
+            this.cartoonRig.updateFreestyleFromMotor(
+                dt,
+                this._motor,
+                this.raceDirection,
+                bodyPitchRadians,
+                this._motor.heading,
+                this._motor.isRacing && !this._phases.isUnderwater,
+            );
         }
     }
 
@@ -978,6 +1071,13 @@ export class Swimmer extends Component {
         this._startPosition = this._courseLayout.swimPosition(0, this.node.position.z);
         this.node.setPosition(this._startPosition);
         this._hasStartPosition = true;
+        this.updateCollisionRagdollSeed();
+    }
+
+    private updateCollisionRagdollSeed() {
+        // Lane centres are stable across devices. Quantization avoids using tiny
+        // cross-engine float differences as cosmetic phase differences.
+        this.cartoonRig?.setCollisionRagdollSeed(Math.round(this._startPosition.z * 1000));
     }
 
     private divePlatformPosition(): Vec3 {
