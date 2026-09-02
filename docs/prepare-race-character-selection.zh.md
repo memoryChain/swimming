@@ -18,7 +18,9 @@
 
 ## 外观与比赛交接
 
-`PLAYER_SKIN_TONES` 定义白、黄、黑三种肤色；`PLAYER_COLOR_SCHEMES` 定义非皮肤部位的配色。默认值为“黄”肤色和“原始”配色：两者都不覆盖模型导入时的材质颜色，与角色选择功能加入前的比赛主角一致。角色页的小按钮循环切换这两项；只有切换到非原始选项时，才按对应通道覆盖材质。正式比赛由 `SwimmerFactory` 读取同一份选择并应用到玩家模型。赛事页将选择写入既有 `GameBalance` 难度状态。
+`PLAYER_SKIN_TONES` 定义原始暖肤色和深肤色；`PLAYER_COLOR_SCHEMES` 定义非皮肤部位的配色。暖肤色使用 `preserveOriginal` 保留模型导入时的皮肤，切换到深肤色后才按遮罩覆盖。角色页的小按钮循环切换肤色和服装配色，正式比赛由 `SwimmerFactory` 读取同一份选择并应用到玩家模型。赛事页将选择写入既有 `GameBalance` 难度状态。
+
+新角色贴图统一用绿色标记可换色服装。导入时先保留原始贴图，再用 `scripts/generate-green-recolor-mask.py` 生成换色遮罩：红通道覆盖绿色服装，蓝通道覆盖皮肤，绿色通道保留给需要独立泳帽颜色的模型。在 `ResourcePaths.ts` 的模型变体中配置 `dynamicColor.mode: 'mask'` 与对应 `maskPath`。运行时分别替换服装色和肤色，同时保留原贴图明暗；头发、黑白服装和其他未遮罩区域不变。新角色不要接到旧模型使用的 `whiteKey` 模式。
 
 ## 背景资源
 
