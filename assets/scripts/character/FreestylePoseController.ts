@@ -48,6 +48,9 @@ const CLAP_WRIST_SEPARATION_ARM_RATIOS: Readonly<Record<string, number>> = {
     women2: 0.215,
     lowPolyHuman2: 0.29,
     diver: 0.33,
+    // The new character's broad palms and wrist guards need more centre-line
+    // clearance than the slimmer shared-rig meshes.
+    cartonSwimmer3: 0.53,
 };
 // Diver's longer upper arms and shorter forearm share produce a much smaller
 // wrist arc from the same local rotations. Expand only its open clap phase to

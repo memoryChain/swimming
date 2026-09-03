@@ -1,0 +1,46 @@
+"""确认新角色遮罩选项不会改变旧角色的默认行为。"""
+import importlib.util
+import tempfile
+import unittest
+from pathlib import Path
+from PIL import Image
+
+spec = importlib.util.spec_from_file_location(
+    'green_mask', Path(__file__).resolve().parents[1] / 'scripts/generate-green-recolor-mask.py')
+mask_tools = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mask_tools)
+
+
+class GreenMaskTests(unittest.TestCase):
+    def test_light_peach_excludes_brown_hair_and_pink_accessories(self):
+        for color in ((120, 75, 48), (186, 129, 92), (245, 120, 170), (255, 255, 255)):
+            self.assertEqual(mask_tools.skin_weight(*color, palette='light-peach'), 0.0)
+        self.assertEqual(mask_tools.skin_weight(245, 180, 135, palette='light-peach'), 1.0)
+
+    def test_palette_separates_green_skin_and_neutrals(self):
+        self.assertEqual(mask_tools.green_weight(50, 220, 40), 1.0)
+        self.assertEqual(mask_tools.green_weight(245, 180, 135), 0.0)
+        self.assertEqual(mask_tools.skin_weight(245, 180, 135), 1.0)
+        for color in ((255, 255, 255), (20, 20, 20), (50, 220, 40), (30, 40, 70)):
+            self.assertEqual(mask_tools.skin_weight(*color), 0.0)
+
+    def test_optional_closing_keeps_existing_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            source = Image.new('RGB', (32, 32), (255, 255, 255))
+            source.paste((50, 220, 40), (0, 0, 8, 32))
+            source.paste((245, 180, 135), (10, 0, 24, 32))
+            source.putpixel((16, 16), (255, 255, 255))
+            source.save(folder / 'source.png')
+            for name, radius in (('default', None), ('legacy', 2), ('precise', 0)):
+                args = () if radius is None else (radius,)
+                mask_tools.build_mask(folder / 'source.png', folder / f'{name}.png', *args)
+            with Image.open(folder / 'default.png') as default, Image.open(folder / 'legacy.png') as legacy, Image.open(folder / 'precise.png') as precise:
+                self.assertEqual(default.tobytes(), legacy.tobytes())
+                self.assertEqual(default.getpixel((16, 16))[2], 255)
+                self.assertEqual(precise.getpixel((16, 16)), (0, 0, 0, 255))
+                self.assertEqual(precise.getchannel('G').getextrema(), (0, 0))
+
+
+if __name__ == '__main__':
+    unittest.main()

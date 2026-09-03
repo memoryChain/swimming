@@ -4,7 +4,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { registerSwimmerBodyMaterial } from '../venue/WaterColorTuning';
 
 const SWIMMER_TEXTURE_SIZE = 128;
-const OUTLINE_SHELL_WIDTH = 10;
+const OUTLINE_SHELL_WIDTH = 4;
 
 export type CharacterSkinOutfit = 'default' | 'trunksA';
 

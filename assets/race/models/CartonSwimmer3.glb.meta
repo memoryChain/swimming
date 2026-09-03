@@ -1,0 +1,166 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691",
+  "files": [],
+  "subMetas": {
+    "2958d": {
+      "importer": "gltf-mesh",
+      "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@2958d",
+      "displayName": "",
+      "id": "2958d",
+      "name": "CartonSwimmer3.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 4764
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9373": {
+      "importer": "gltf-skeleton",
+      "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@f9373",
+      "displayName": "",
+      "id": "f9373",
+      "name": "CartonSwimmer3_Rig.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "d9b41": {
+      "importer": "gltf-embeded-image",
+      "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@d9b41",
+      "displayName": "",
+      "id": "d9b41",
+      "name": "3d模型人偶_basecolor.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-opaque-6x6"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@d9b41"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "415bd": {
+      "importer": "gltf-material",
+      "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@415bd",
+      "displayName": "",
+      "id": "415bd",
+      "name": "tripo_mat_51852e62-9125-4f06-a400-0ee5b29bd00e.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "35f0f": {
+      "importer": "gltf-scene",
+      "uuid": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@35f0f",
+      "displayName": "",
+      "id": "35f0f",
+      "name": "CartonSwimmer3.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "3d模型人偶_basecolor",
+        "uri": "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@d9b41"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@2958d"
+      ],
+      "skeletons": [
+        "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@f9373"
+      ],
+      "textures": [
+        "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@e39f7"
+      ],
+      "materials": [
+        "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@415bd"
+      ],
+      "scenes": [
+        "4dfac2f2-719e-4de2-b09f-0e90aa1b9691@35f0f"
+      ]
+    }
+  }
+}

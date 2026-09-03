@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver';
+export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -79,17 +79,57 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         skillName: '深潜耐力', skillDescription: '厚重装备带来更强的稳定性与持续输出。',
         supportsSkinTone: false,
     },
+    {
+        id: 'cartonSwimmer3', name: '银翼疾风', modelVariantId: 'cartonSwimmer3', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '均衡型未来泳者，动作轻快稳定，能从容适应不同比赛节奏。',
+        skillName: '银翼节奏', skillDescription: '稳定的身体控制让连续划水与转身衔接更加流畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer4', name: '劲浪猛将', modelVariantId: 'cartonSwimmer4', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '身着运动装备的健壮泳者，以稳定节奏迎接每一次挑战。',
+        skillName: '劲浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer5', name: '逐浪少女', modelVariantId: 'cartonSwimmer5', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
+        skillName: '逐浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer6', name: '跃浪少女', modelVariantId: 'cartonSwimmer6', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '戴着圆耳运动帽的活力少女，以轻快稳定的节奏跃浪前行。',
+        skillName: '跃浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        supportsSkinTone: true,
+    },
 ];
 
 export const PLAYER_SKIN_TONES: readonly PlayerSkinTone[] = [
     // Keep the imported MuscleMan skin as the default yellow tone.
     { id: 'warm', label: '黄', color: [255, 226, 191], preserveOriginal: true },
-    { id: 'deep', label: '黑', color: [185, 132, 70] },
+    { id: 'deep', label: '黑', color: [118, 76, 58] },
 ];
 
 export const PLAYER_COLOR_SCHEMES: readonly PlayerColorScheme[] = [
-    // Canonical swimmers use one white-key channel for their white equipment,
-    // so every named scheme keeps its visible identity in `suit`.
+    // Canonical white-key swimmers and newer green-mask swimmers both expose
+    // their single replaceable colour through `suit`.
     { id: 'red', label: '红', suit: [255, 11, 11], cap: [22, 119, 232] },
     { id: 'blue', label: '蓝', suit: [51, 137, 255], cap: [245, 238, 220] },
     { id: 'yellow', label: '黄', suit: [255, 216, 0], cap: [255, 216, 0] },

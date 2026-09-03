@@ -1657,6 +1657,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             colorMask: usesDynamicColor ? this._colorMask : null,
             dynamicColorMode: modelVariant.dynamicColor?.mode ?? 'mask',
             waterLine: this._waterlineEffectEnabled ? this._waterY : undefined,
+            outlineWidth: modelVariant.outlineWidth,
             outlineRoot: this._outlineRoot,
             setOutlineRoot: (root) => {
                 this._outlineRoot = root;

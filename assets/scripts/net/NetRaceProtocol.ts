@@ -1,7 +1,8 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-export const NET_RACE_PROTOCOL_VERSION = 3;
+// 新角色改变共享角色表及头像到模型的映射，旧客户端必须先更新再加入同一房间。
+export const NET_RACE_PROTOCOL_VERSION = 6;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

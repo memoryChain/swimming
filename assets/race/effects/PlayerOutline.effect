@@ -11,7 +11,7 @@ CCEffect %{
         depthTest: true
         depthWrite: false
       properties:
-        lineWidth: { value: 18, target: outlineParams.x }
+        lineWidth: { value: 4, target: outlineParams.x }
         depthBias: { value: 0.08, target: outlineParams.y }
         baseColor: { value: [0.012, 0.018, 0.03, 1.0], linear: true, editor: { type: color } }
 }%

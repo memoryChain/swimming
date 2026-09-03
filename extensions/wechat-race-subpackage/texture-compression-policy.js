@@ -18,7 +18,7 @@ const UI_MIN_PIXELS = 16 * 1024;
 const WORLD_MIN_PIXELS = 32 * 1024;
 const DEFAULT_MIN_PIXELS = 64 * 1024;
 const QUALITY_MIN_PIXELS = 256 * 1024;
-const SHARP_ART_NAME = /(banner|brand|score|sign|logo|title|text|font|label)/i;
+const SHARP_ART_NAME = /(banner|brand|score|sign|logo|title|text|font|label|mask)/i;
 const MODEL_DIRECTORY = /\/(model|models|character|characters)\//i;
 const MAIN_PACKAGE_UI_DIRECTORY = /\/assets\/resources\/ui\//i;
 
