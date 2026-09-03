@@ -8,6 +8,7 @@
   "scripts": {
     "codex:setup": "node scripts/setup-codex-system-proxy.mjs",
     "test:net": "npx --yes --package tsx@4.20.5 tsx --test tests/net-race-codec-ordering.test.mjs tests/condition-sync-cadence.test.mjs",
+    "test:characters": "npx --yes --package tsx@4.20.5 tsx --test tests/character-roster-assets.test.mjs",
     "ui:images:setup": "python -m pip install -r scripts/requirements-ui-tools.txt",
     "ui:images:audit": "python scripts/optimize-ui-images.py",
     "ui:images:optimize": "python scripts/optimize-ui-images.py --apply",

@@ -33,7 +33,7 @@ def green_weight(red: int, green: int, blue: int) -> float:
     return min(hue_weight, dominance_weight, saturation_weight, value_weight)
 
 
-def skin_weight(red: int, green: int, blue: int) -> float:
+def skin_weight(red: int, green: int, blue: int, palette: str = "default") -> float:
     r = red / 255.0
     g = green / 255.0
     b = blue / 255.0
@@ -45,7 +45,11 @@ def skin_weight(red: int, green: int, blue: int) -> float:
     red_weight = smoothstep(0.004, 0.11, r - g)
     saturation_weight = smoothstep(0.045, 0.34, saturation)
     value_weight = smoothstep(0.10, 0.42, value)
-    return min(hue_weight, warm_weight, red_weight, saturation_weight, value_weight)
+    coverage = min(hue_weight, warm_weight, red_weight, saturation_weight, value_weight)
+    if palette == "light-peach":
+        # 浅桃色皮肤与棕发、粉色配件同图集时，排除暗棕色与偏洋红区域。
+        coverage *= smoothstep(0.76, 0.84, r) * smoothstep(0.008, 0.05, g - b)
+    return coverage
 
 
 PREVIEW_PALETTES = {
@@ -58,7 +62,7 @@ PREVIEW_PALETTES = {
 }
 
 
-def build_mask(source_path: Path, output_path: Path) -> tuple[int, int, int, int, int]:
+def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2, skin_palette: str = "default") -> tuple[int, int, int, int, int]:
     with Image.open(source_path) as source_image:
         source = source_image.convert("RGB")
         source_pixels = source.load()
@@ -70,15 +74,18 @@ def build_mask(source_path: Path, output_path: Path) -> tuple[int, int, int, int
             for x in range(source.width):
                 pixel = source_pixels[x, y]
                 garment_weight = green_weight(*pixel)
-                skin_coverage = skin_weight(*pixel) * (1.0 - garment_weight)
+                skin_coverage = skin_weight(*pixel, palette=skin_palette) * (1.0 - garment_weight)
                 garment_pixels[x, y] = round(garment_weight * 255.0)
                 skin_pixels[x, y] = round(skin_coverage * 255.0)
 
         # Fill only small dark holes enclosed by confidently detected skin. This
         # softens baked facial/body hatch marks after recolouring while keeping
         # the exterior comic contour and garment boundaries intact.
-        closed_skin = skin_plane.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
-        skin_plane = ImageChops.lighter(skin_plane, closed_skin)
+        # 碎片 UV 紧邻白色装备时，允许禁用闭运算，避免把肤色扩到衣服和头发。
+        if skin_close_radius > 0:
+            kernel = 2 * skin_close_radius + 1
+            closed_skin = skin_plane.filter(ImageFilter.MaxFilter(kernel)).filter(ImageFilter.MinFilter(kernel))
+            skin_plane = ImageChops.lighter(skin_plane, closed_skin)
         zero_plane = Image.new("L", source.size, 0)
         alpha_plane = Image.new("L", source.size, 255)
         mask = Image.merge("RGBA", (garment_plane, zero_plane, skin_plane, alpha_plane))
@@ -107,7 +114,7 @@ def build_mask(source_path: Path, output_path: Path) -> tuple[int, int, int, int
         return garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count
 
 
-def build_previews(source_path: Path, mask_path: Path, preview_dir: Path) -> None:
+def build_previews(source_path: Path, mask_path: Path, preview_dir: Path, prefix: str = "CartonSwimmer3") -> None:
     with Image.open(source_path) as source_image, Image.open(mask_path) as mask_image:
         source = source_image.convert("RGB")
         mask = mask_image.convert("RGB")
@@ -137,7 +144,7 @@ def build_previews(source_path: Path, mask_path: Path, preview_dir: Path) -> Non
                         round(garment_blend[channel] * (1.0 - skin_coverage) + skin_color[channel] * skin_coverage)
                         for channel in range(3)
                     )
-            preview.save(preview_dir / f"CartonSwimmer3_{name}.png", format="PNG", optimize=True)
+            preview.save(preview_dir / f"{prefix}_{name}.png", format="PNG", optimize=True)
 
 
 def main() -> None:
@@ -146,6 +153,11 @@ def main() -> None:
     )
     parser.add_argument("--input", required=True, type=Path, help="Source base-color texture")
     parser.add_argument("--output", required=True, type=Path, help="Output RGBA PNG mask")
+    parser.add_argument("--skin-close-radius", type=int, choices=range(0, 5), default=2,
+                        help="皮肤小孔闭运算半径；碎片 UV 紧邻装备时使用 0")
+    parser.add_argument("--preview-prefix", default="CartonSwimmer3", help="预览文件名前缀")
+    parser.add_argument("--skin-palette", choices=("default", "light-peach"), default="default",
+                        help="浅桃色皮肤与棕发、粉色配件共用图集时使用 light-peach")
     parser.add_argument(
         "--preview-dir",
         type=Path,
@@ -153,9 +165,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count = build_mask(args.input, args.output)
+    garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count = build_mask(args.input, args.output, args.skin_close_radius, args.skin_palette)
     if args.preview_dir:
-        build_previews(args.input, args.output, args.preview_dir)
+        build_previews(args.input, args.output, args.preview_dir, args.preview_prefix)
     print(
         f"character recolor mask: {args.output} "
         f"garment_nonzero={garment_nonzero}/{pixel_count} ({garment_nonzero / pixel_count:.2%}) "

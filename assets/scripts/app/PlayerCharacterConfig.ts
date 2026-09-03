@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4';
+export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -97,6 +97,26 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '身着运动装备的健壮泳者，以稳定节奏迎接每一次挑战。',
         skillName: '劲浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer5', name: '逐浪少女', modelVariantId: 'cartonSwimmer5', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
+        skillName: '逐浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer6', name: '跃浪少女', modelVariantId: 'cartonSwimmer6', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '戴着圆耳运动帽的活力少女，以轻快稳定的节奏跃浪前行。',
+        skillName: '跃浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
     },
 ];

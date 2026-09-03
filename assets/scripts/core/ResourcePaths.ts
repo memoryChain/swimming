@@ -77,6 +77,14 @@ const CARTON_SWIMMER4_PREFAB_CANDIDATES = [
     'models/CartonSwimmer4',
     'models/CartonSwimmer4/CartonSwimmer4',
 ];
+const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
+    'models/CartonSwimmer5',
+    'models/CartonSwimmer5/CartonSwimmer5',
+];
+const CARTON_SWIMMER6_PREFAB_CANDIDATES = [
+    'models/CartonSwimmer6',
+    'models/CartonSwimmer6/CartonSwimmer6',
+];
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     {
@@ -145,7 +153,6 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         candidates: CARTON_SWIMMER3_PREFAB_CANDIDATES,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
-        outlineWidth: 6,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
         sampledActionOverrideFilePrefix: 'Tpose_',
         divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
@@ -162,7 +169,6 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         candidates: CARTON_SWIMMER4_PREFAB_CANDIDATES,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
-        outlineWidth: 6,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
         sampledActionOverrideFilePrefix: 'Tpose_',
         divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
@@ -170,6 +176,38 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
             mode: 'mask',
             maskPath: 'models/CartonSwimmer4ColorMask/texture',
             labelPrefix: '劲浪猛将',
+            usesCapChannel: false,
+        },
+    },
+    {
+        id: 'cartonSwimmer5',
+        label: '逐浪少女',
+        candidates: CARTON_SWIMMER5_PREFAB_CANDIDATES,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'mask',
+            maskPath: 'models/CartonSwimmer5ColorMask/texture',
+            labelPrefix: '逐浪少女',
+            usesCapChannel: false,
+        },
+    },
+    {
+        id: 'cartonSwimmer6',
+        label: '跃浪少女',
+        candidates: CARTON_SWIMMER6_PREFAB_CANDIDATES,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'mask',
+            maskPath: 'models/CartonSwimmer6ColorMask/texture',
+            labelPrefix: '跃浪少女',
             usesCapChannel: false,
         },
     },
