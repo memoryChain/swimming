@@ -34,6 +34,14 @@ export class DebugLogController {
         return this._visible;
     }
 
+    setVisible(visible: boolean) {
+        if (this._visible === visible) {
+            return;
+        }
+        this._visible = visible;
+        this.syncPanel();
+    }
+
     get visible(): boolean {
         return this._visible;
     }
