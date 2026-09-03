@@ -1,6 +1,5 @@
 import {
     Button,
-    CacheMode,
     Color,
     EventTouch,
     Graphics,
@@ -43,6 +42,7 @@ import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
 import type { PlayerProfile } from '../backend/PlayerProfile';
 import { showToast } from './Toast';
+import { styleProjectUiLabel } from './ProjectUiFonts';
 
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
@@ -887,19 +887,12 @@ function raceDifficultyDistance(difficulty: RaceDifficulty): string {
 }
 
 function stylePsdRuntimeLabel(label: Label, fontFamily: string, bold: boolean, lineHeight: number): void {
-    label.fontFamily = fontFamily;
-    label.isBold = bold;
-    label.lineHeight = lineHeight;
-    label.cacheMode = CacheMode.CHAR;
+    void fontFamily;
+    styleProjectUiLabel(label, bold ? 'semibold' : 'regular', lineHeight);
 }
 
 function stylePsdTitleLabel(label: Label, lineHeight: number): void {
-    // Use the same editable system-label route as the rest of the UI, but request
-    // the semibold face explicitly so Chinese titles do not fall back to regular.
-    label.fontFamily = 'PingFangSC-Semibold';
-    label.isBold = true;
-    label.lineHeight = lineHeight;
-    label.cacheMode = CacheMode.CHAR;
+    styleProjectUiLabel(label, 'semibold', lineHeight);
 }
 
 function makeRaceTextureSprite(

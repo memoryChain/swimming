@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "family": "Noto Sans SC",
+    "version": "2.004",
+    "sha256": "d68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964",
+    "license": "SIL Open Font License 1.1"
+  },
+  "glyphHash": "792eb0124d1120c809abaf011f68ee6f5368e9df3f29975178cdbd9d17196fab",
+  "glyphCount": 1175,
+  "scannedFileCount": 180,
+  "outputs": [
+    {
+      "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
+      "weight": 400,
+      "bytes": 380372,
+      "sha256": "35962e1a708e860130a3c22abc0b85a20cd38213b6894cc1ae5b7f1bacc82193"
+    },
+    {
+      "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
+      "weight": 600,
+      "bytes": 380056,
+      "sha256": "b5a77d4213f92b762edf6c8b8d6556901246532d508aeba93eae9e93f99b9e9c"
+    }
+  ]
+}

@@ -27,6 +27,7 @@ sceneresource/*.tmp.png
 # Local tooling downloads
 tools/blender-portable/
 extensions/cocos-code-mode/
+.cache/ui-fonts/
 
 #//////////////////////////
 # VSCode
