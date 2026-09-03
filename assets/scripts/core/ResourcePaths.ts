@@ -211,6 +211,10 @@ export const RESOURCE_PATHS = {
     underwaterFloorEffect: 'effects/UnderwaterFloorTint',
     venueHeightShadeEffect: 'effects/VenueHeightShade',
     speedStarsUiPrefab: 'ui/SpeedStarsUI',
+    uiFonts: {
+        regular: 'fonts/ShuiMasterUI-Regular',
+        semibold: 'fonts/ShuiMasterUI-SemiBold',
+    },
     loginUi: {
         background: 'ui/paddle-master-login-v8/background/texture',
         logo: 'ui/paddle-master-login-v8/logo/texture',

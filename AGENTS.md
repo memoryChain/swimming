@@ -50,6 +50,16 @@ Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `L
 - **Never take screenshots of Cocos Creator for UI validation.** Do not use editor-window screenshots, preview-window screenshots launched from Cocos Creator, or screen-capture automation against Cocos Creator. If visual confirmation inside the engine is required, ask the user to verify it in their existing editor session or use another user-approved validation method.
 - **Never bake button text into a raster UI asset.** Export and import each button background, icon, and text separately. When creating an export smart object for a button background or icon, hide the text layers first. Keep button copy as an editable Cocos `Label` so localization and runtime state changes do not require replacing artwork.
 
+## UI Font Subsetting Policy
+
+- Static game UI must use the project-bundled `ShuiMaster UI` fonts, not a font that only exists on the designer's or developer's computer. Use `ShuiMasterUI-Regular.ttf` for body copy and `ShuiMasterUI-SemiBold.ttf` for headings, buttons, key values, and other approved bold text.
+- The runtime fonts live under `assets/race/fonts` so the Chinese glyph payload stays in the race subpackage instead of the WeChat main package. Preserve their Cocos `.meta` files after the first import.
+- The glyph set is generated from static text in `assets/scripts`, `assets/resources`, and `assets/race`. **Never hand-edit `scripts/generated/ui-font-glyphs.txt` or the font files.** After adding or changing static UI copy, run `pnpm fonts:build`, then run `pnpm fonts:check`.
+- The WeChat build hook runs the same read-only font audit and intentionally rejects stale or missing generated fonts. It must never download or generate fonts during a Creator build; Creator needs time to import changed TTF assets before building.
+- Run `pnpm fonts:setup` once per development environment to install the pinned font tooling. The open-source source font is cached under `.cache/ui-fonts` and must not be placed under `assets` or committed.
+- User names, chat, server announcements, localization content loaded after build, and other unbounded dynamic text cannot be guaranteed by static subsetting. Keep those labels on an approved full-coverage/system-font fallback, or add their maintained localization corpus to the scan roots before switching them to the subset font.
+- Font weight must come from an actual generated font face. Do not simulate bold with platform-dependent font family names, repeated labels, outlines, shadows, or rasterized Chinese text.
+
 ## Mobile Input
 
 - The current mobile race input is full-screen tap/hold. The invisible left and right screen halves map directly to `LEFT` and `RIGHT` strokes.

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "family": "Noto Sans SC",
+    "version": "2.004",
+    "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+    "license": "SIL Open Font License 1.1",
+    "licenseUrl": "https://github.com/notofonts/noto-cjk/blob/Sans2.004/LICENSE",
+    "sha256": "d68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964",
+    "cachePath": ".cache/ui-fonts/NotoSansSC-VF.ttf"
+  },
+  "scan": {
+    "roots": [
+      "assets/scripts",
+      "assets/resources",
+      "assets/race"
+    ],
+    "extensions": [
+      ".ts",
+      ".json",
+      ".scene",
+      ".prefab"
+    ],
+    "alwaysInclude": " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+  },
+  "outputs": [
+    {
+      "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
+      "weight": 400,
+      "family": "ShuiMaster UI",
+      "subfamily": "Regular",
+      "postscriptName": "ShuiMasterUI-Regular"
+    },
+    {
+      "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
+      "weight": 600,
+      "family": "ShuiMaster UI",
+      "subfamily": "SemiBold",
+      "postscriptName": "ShuiMasterUI-SemiBold"
+    }
+  ],
+  "glyphListPath": "scripts/generated/ui-font-glyphs.txt",
+  "manifestPath": "scripts/generated/ui-font-manifest.json"
+}

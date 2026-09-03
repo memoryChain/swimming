@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { assertTextureCompressionPolicy } = require('./texture-compression-policy');
+const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -52,6 +53,15 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
         + `${textureAudit.mipmapSamplersDisabled} GLB texture samplers have mip filtering disabled; `
         + `${textureAudit.ignoredMainPackage} main-package UI textures and `
         + `${textureAudit.ignoredSmall} small textures intentionally remain original.`,
+    );
+
+    // Static UI copy must be covered by the committed project fonts. This is a
+    // read-only guard: font generation is explicit so Creator can import the
+    // changed TTF files before building.
+    const fontAudit = assertUiFontPolicy(PROJECT_ROOT);
+    console.log(
+        `[ui-font-policy] verified ${fontAudit.glyphCount} glyphs from `
+        + `${fontAudit.scannedFiles} project text files.`,
     );
 
     // MainGame belongs to the race Bundle and must not also be copied into main.
