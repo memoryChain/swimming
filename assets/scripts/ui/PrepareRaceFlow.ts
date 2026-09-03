@@ -86,13 +86,13 @@ type SwatchView = {
 const WHITE = UI_STYLE.white;
 const DARK_TEXT = uiColor(6, 35, 54);
 const PROTOTYPE_CHARACTER_SLOT_COUNT = 6;
+const CHARACTER_LIST_COLUMN_COUNT = 2;
 const CHARACTER_CARD_WIDTH = 171;
 const CHARACTER_CARD_HEIGHT = 202;
 const CHARACTER_CARD_X_PITCH = 170;
 const CHARACTER_CARD_Y_PITCH = 200;
 const CHARACTER_LIST_VIEW_WIDTH = 342;
 const CHARACTER_LIST_VIEW_HEIGHT = 562;
-const CHARACTER_LIST_CONTENT_HEIGHT = 602;
 const SWATCH_SIZE = 56;
 const SWATCH_ART_SIZE = 46;
 const RACE_MODE_CARD_VISIBLE_HEIGHT = 164;
@@ -423,6 +423,12 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterRoster(parent: Node): void {
+        const slotCount = Math.max(PROTOTYPE_CHARACTER_SLOT_COUNT, PLAYER_CHARACTER_DEFINITIONS.length);
+        const rowCount = Math.ceil(slotCount / CHARACTER_LIST_COLUMN_COUNT);
+        const contentHeight = Math.max(
+            CHARACTER_LIST_VIEW_HEIGHT,
+            CHARACTER_CARD_HEIGHT + (rowCount - 1) * CHARACTER_CARD_Y_PITCH,
+        );
         const viewport = makeUiNode('CharacterRosterScrollView', parent);
         viewport.getComponent(UITransform)!.setContentSize(CHARACTER_LIST_VIEW_WIDTH, CHARACTER_LIST_VIEW_HEIGHT);
         viewport.setPosition(-449, -21, 2);
@@ -438,22 +444,23 @@ export class PrepareRaceFlow {
         scrollView.cancelInnerEvents = true;
 
         const content = makeUiNode('CharacterRosterContent', viewport);
-        content.getComponent(UITransform)!.setContentSize(CHARACTER_LIST_VIEW_WIDTH, CHARACTER_LIST_CONTENT_HEIGHT);
-        content.setPosition(0, -20, 0);
+        content.getComponent(UITransform)!.setContentSize(CHARACTER_LIST_VIEW_WIDTH, contentHeight);
+        // 内容顶边与视口顶边对齐，新增角色时同步扩大滚动范围。
+        content.setPosition(0, (CHARACTER_LIST_VIEW_HEIGHT - contentHeight) / 2, 0);
         scrollView.content = content;
 
-        const slotCount = Math.max(PROTOTYPE_CHARACTER_SLOT_COUNT, PLAYER_CHARACTER_DEFINITIONS.length);
         for (let index = 0; index < slotCount; index++) {
             this.buildCharacterCard(content, PLAYER_CHARACTER_DEFINITIONS[index] ?? null, index);
         }
     }
 
     private buildCharacterCard(parent: Node, character: PlayerCharacterDefinition | null, index: number): void {
-        const column = index % 2;
-        const row = Math.floor(index / 2);
+        const column = index % CHARACTER_LIST_COLUMN_COUNT;
+        const row = Math.floor(index / CHARACTER_LIST_COLUMN_COUNT);
+        const firstRowY = (parent.getComponent(UITransform)!.contentSize.height - CHARACTER_CARD_HEIGHT) / 2;
         const card = makeUiNode(`CharacterSlot${index}`, parent);
         card.getComponent(UITransform)!.setContentSize(CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT);
-        card.setPosition(-84.5 + column * CHARACTER_CARD_X_PITCH, 200 - row * CHARACTER_CARD_Y_PITCH, 1);
+        card.setPosition(-84.5 + column * CHARACTER_CARD_X_PITCH, firstRowY - row * CHARACTER_CARD_Y_PITCH, 1);
 
         const portraitPath = index % 2 === 0 ? RESOURCE_PATHS.characterUi.portraitBlue : RESOURCE_PATHS.characterUi.portraitRed;
         makeRaceTextureSprite('Portrait', card, portraitPath, 160, 190, 0.5, 0, 1);

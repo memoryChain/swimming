@@ -12,6 +12,14 @@ spec.loader.exec_module(mask_tools)
 
 
 class GreenMaskTests(unittest.TestCase):
+    def test_lime_and_peach_orange_keep_orange_equipment_separate(self):
+        self.assertEqual(mask_tools.green_weight(160, 186, 42, palette='lime'), 1.0)
+        self.assertEqual(mask_tools.skin_weight(232, 173, 128, palette='peach-orange'), 1.0)
+        for color in ((239, 151, 28), (160, 90, 14), (30, 40, 70), (240, 240, 240)):
+            self.assertEqual(mask_tools.green_weight(*color, palette='lime'), 0.0)
+            self.assertEqual(mask_tools.skin_weight(*color, palette='peach-orange'), 0.0)
+        self.assertEqual(mask_tools.skin_weight(160, 186, 42, palette='peach-orange'), 0.0)
+
     def test_light_peach_excludes_brown_hair_and_pink_accessories(self):
         for color in ((120, 75, 48), (186, 129, 92), (245, 120, 170), (255, 255, 255)):
             self.assertEqual(mask_tools.skin_weight(*color, palette='light-peach'), 0.0)

@@ -19,7 +19,7 @@ def smoothstep(edge0: float, edge1: float, value: float) -> float:
     return t * t * (3.0 - 2.0 * t)
 
 
-def green_weight(red: int, green: int, blue: int) -> float:
+def green_weight(red: int, green: int, blue: int, palette: str = "default") -> float:
     r = red / 255.0
     g = green / 255.0
     b = blue / 255.0
@@ -30,6 +30,10 @@ def green_weight(red: int, green: int, blue: int) -> float:
     dominance_weight = smoothstep(0.025, 0.18, g - max(r, b))
     saturation_weight = smoothstep(0.12, 0.48, saturation)
     value_weight = smoothstep(0.05, 0.28, value)
+    if palette == "lime":
+        # 黄绿色装备仍要求绿色占优，排除同图集中的橙色帽子和暖肤色。
+        hue_weight = 1.0 - smoothstep(25.0, 45.0, abs(hue_degrees - 90.0))
+        dominance_weight = smoothstep(0.01, 0.065, g - max(r, b))
     return min(hue_weight, dominance_weight, saturation_weight, value_weight)
 
 
@@ -49,6 +53,9 @@ def skin_weight(red: int, green: int, blue: int, palette: str = "default") -> fl
     if palette == "light-peach":
         # 浅桃色皮肤与棕发、粉色配件同图集时，排除暗棕色与偏洋红区域。
         coverage *= smoothstep(0.76, 0.84, r) * smoothstep(0.008, 0.05, g - b)
+    elif palette == "peach-orange":
+        # 桃色皮肤与高饱和橙色装备分离，保留皮肤阴影和原有细节。
+        coverage *= 1.0 - smoothstep(0.48, 0.68, saturation)
     return coverage
 
 
@@ -62,7 +69,7 @@ PREVIEW_PALETTES = {
 }
 
 
-def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2, skin_palette: str = "default") -> tuple[int, int, int, int, int]:
+def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2, skin_palette: str = "default", garment_palette: str = "default") -> tuple[int, int, int, int, int]:
     with Image.open(source_path) as source_image:
         source = source_image.convert("RGB")
         source_pixels = source.load()
@@ -73,7 +80,7 @@ def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2,
         for y in range(source.height):
             for x in range(source.width):
                 pixel = source_pixels[x, y]
-                garment_weight = green_weight(*pixel)
+                garment_weight = green_weight(*pixel, palette=garment_palette)
                 skin_coverage = skin_weight(*pixel, palette=skin_palette) * (1.0 - garment_weight)
                 garment_pixels[x, y] = round(garment_weight * 255.0)
                 skin_pixels[x, y] = round(skin_coverage * 255.0)
@@ -156,8 +163,10 @@ def main() -> None:
     parser.add_argument("--skin-close-radius", type=int, choices=range(0, 5), default=2,
                         help="皮肤小孔闭运算半径；碎片 UV 紧邻装备时使用 0")
     parser.add_argument("--preview-prefix", default="CartonSwimmer3", help="预览文件名前缀")
-    parser.add_argument("--skin-palette", choices=("default", "light-peach"), default="default",
-                        help="浅桃色皮肤与棕发、粉色配件共用图集时使用 light-peach")
+    parser.add_argument("--skin-palette", choices=("default", "light-peach", "peach-orange"), default="default",
+                        help="棕发及粉色配件使用 light-peach；橙色装备与桃色皮肤使用 peach-orange")
+    parser.add_argument("--garment-palette", choices=("default", "lime"), default="default",
+                        help="偏黄绿色的装备使用 lime；既有角色保持 default")
     parser.add_argument(
         "--preview-dir",
         type=Path,
@@ -165,7 +174,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count = build_mask(args.input, args.output, args.skin_close_radius, args.skin_palette)
+    garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count = build_mask(args.input, args.output, args.skin_close_radius, args.skin_palette, args.garment_palette)
     if args.preview_dir:
         build_previews(args.input, args.output, args.preview_dir, args.preview_prefix)
     print(
