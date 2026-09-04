@@ -246,7 +246,7 @@ export class PrepareRaceFlow {
         image.setPosition(0, 0, 1);
         fitFullScreenBackgroundCover(image);
         this._lobbyBackgroundImage = image;
-        loadRaceAsset(RESOURCE_PATHS.lobbyUi.background, Texture2D, (error, texture) => {
+        loadRaceAsset(RESOURCE_PATHS.characterUi.background, Texture2D, (error, texture) => {
             if (error || !texture || !image.isValid) {
                 console.warn('[SpeedSwimming] prepare-race background texture failed to load', error);
                 return;
