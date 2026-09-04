@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11';
+export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -100,6 +100,16 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '身着荧绿运动装的全能选手，以稳定节奏和充沛耐力追逐浪线。',
         skillName: '疾风节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加流畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer12', name: '绿电潮童', modelVariantId: 'cartonSwimmer12', unlocked: true,
+        stamina: 84, technique: 86, burst: 81,
+        weight: 0.98,
+        energyGain: 84,
+        kick: 52,
+        description: '身着青柠运动装备的活力少年，以灵敏节奏和轻快步伐追逐浪尖。',
+        skillName: '绿电节奏', skillDescription: '灵巧的身体控制让划水、踢腿与转身衔接更加轻快。',
         supportsSkinTone: true,
     },
     {
