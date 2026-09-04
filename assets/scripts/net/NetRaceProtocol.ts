@@ -1,8 +1,9 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// 角色表精简改变了头像到模型的映射，旧客户端必须先更新再加入同一房间。
-export const NET_RACE_PROTOCOL_VERSION = 8;
+// 角色表精简且新增头像选项，两者都会改变 avatarId 到模型的共享映射。
+// 主干和本地分别从版本 7 升到 8，合并后需再升一版以隔离两种旧客户端。
+export const NET_RACE_PROTOCOL_VERSION = 9;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

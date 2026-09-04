@@ -4,7 +4,7 @@
 // later) and notifies listeners whenever the profile changes.
 
 import { backend } from './BackendManager';
-import { AdRewardResult } from './IBackend';
+import { AdRewardResult, IdentityPatch } from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
 import type { SpendResult } from '../progression/ProgressionManager';
@@ -102,13 +102,18 @@ class PlayerDataStore {
 
     // Change the chosen avatar; persists and notifies listeners.
     async setAvatar(avatarId: string): Promise<void> {
-        this._profile = await backend().saveIdentity({ avatarId });
-        this._emit();
+        await this.setIdentity({ avatarId });
     }
 
     // Generate + persist a fresh random nickname; notifies listeners.
     async rerollNickName(): Promise<void> {
-        this._profile = await backend().saveIdentity({ nickName: generateRandomNickName() });
+        await this.setIdentity({ nickName: generateRandomNickName() });
+    }
+
+    // Save avatar and nickname together so a confirmation dialog emits one coherent
+    // profile change instead of exposing a half-applied identity to room listeners.
+    async setIdentity(identity: IdentityPatch): Promise<void> {
+        this._profile = await backend().saveIdentity(identity);
         this._emit();
     }
 

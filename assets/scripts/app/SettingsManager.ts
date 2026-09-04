@@ -25,16 +25,44 @@ export class SettingsManager {
 
     static setMusicVolume(volume: number) {
         const data = this.load();
-        data.musicVolume = clamp01(volume);
+        const next = clamp01(volume);
+        if (data.musicVolume === next) return;
+        data.musicVolume = next;
         this.save(data);
         MusicManager.setVolume(data.musicVolume);
     }
 
     static setSfxVolume(volume: number) {
         const data = this.load();
-        data.sfxVolume = clamp01(volume);
+        const next = clamp01(volume);
+        if (data.sfxVolume === next) return;
+        data.sfxVolume = next;
         this.save(data);
         StrokeSfxManager.setVolume(data.sfxVolume);
+    }
+
+    // Popup sliders preview immediately without writing localStorage for every
+    // touch-move event. Confirm persists both values as one settings update.
+    static previewMusicVolume(volume: number) {
+        MusicManager.setVolume(clamp01(volume));
+    }
+
+    static previewSfxVolume(volume: number) {
+        StrokeSfxManager.setVolume(clamp01(volume));
+    }
+
+    static setVolumes(musicVolume: number, sfxVolume: number) {
+        const data = this.load();
+        const nextMusic = clamp01(musicVolume);
+        const nextSfx = clamp01(sfxVolume);
+        const musicChanged = data.musicVolume !== nextMusic;
+        const sfxChanged = data.sfxVolume !== nextSfx;
+        if (!musicChanged && !sfxChanged) return;
+        data.musicVolume = nextMusic;
+        data.sfxVolume = nextSfx;
+        this.save(data);
+        if (musicChanged) MusicManager.setVolume(data.musicVolume);
+        if (sfxChanged) StrokeSfxManager.setVolume(data.sfxVolume);
     }
 
     // Apply persisted settings to the audio managers. Call once at startup before
