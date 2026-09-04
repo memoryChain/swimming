@@ -1,0 +1,166 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089",
+  "files": [],
+  "subMetas": {
+    "ea927": {
+      "importer": "gltf-mesh",
+      "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089@ea927",
+      "displayName": "",
+      "id": "ea927",
+      "name": "CartonSwimmer9_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 5675
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8296c": {
+      "importer": "gltf-skeleton",
+      "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089@8296c",
+      "displayName": "",
+      "id": "8296c",
+      "name": "CartonSwimmer9_Rig.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7f2ff": {
+      "importer": "gltf-embeded-image",
+      "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089@7f2ff",
+      "displayName": "",
+      "id": "7f2ff",
+      "name": "CartonSwimmer9_BaseColor.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-opaque-6x6"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "69faef5c-e87c-45a0-a7e4-bc23f4440089@7f2ff"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "6f6c2": {
+      "importer": "gltf-material",
+      "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089@6f6c2",
+      "displayName": "",
+      "id": "6f6c2",
+      "name": "CartonSwimmer9_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "7a110": {
+      "importer": "gltf-scene",
+      "uuid": "69faef5c-e87c-45a0-a7e4-bc23f4440089@7a110",
+      "displayName": "",
+      "id": "7a110",
+      "name": "CartonSwimmer9.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "CartonSwimmer9_BaseColor",
+        "uri": "69faef5c-e87c-45a0-a7e4-bc23f4440089@7f2ff"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "69faef5c-e87c-45a0-a7e4-bc23f4440089@ea927"
+      ],
+      "skeletons": [
+        "69faef5c-e87c-45a0-a7e4-bc23f4440089@8296c"
+      ],
+      "textures": [
+        "69faef5c-e87c-45a0-a7e4-bc23f4440089@e39f7"
+      ],
+      "materials": [
+        "69faef5c-e87c-45a0-a7e4-bc23f4440089@6f6c2"
+      ],
+      "scenes": [
+        "69faef5c-e87c-45a0-a7e4-bc23f4440089@7a110"
+      ]
+    }
+  }
+}

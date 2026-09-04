@@ -182,3 +182,37 @@ test('蛙跃潮童服装与肤色独立切换，资源遵守移动端预算', ()
         setPlayerColorScheme(previous.colorSchemeId);
     }
 });
+
+test('霓光灵猫复用共享骨架动作，UV 重排后仍满足移动端预算', () => {
+    const previous = { ...getPlayerCharacterSelection() };
+    try {
+        selectPlayerCharacter('cartonSwimmer9');
+        assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer9');
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
+        const model = Resources.findSwimmerModelVariant('cartonSwimmer9');
+        assert.equal(model.dynamicColor.mode, 'mask');
+        assert.equal(model.dynamicColor.usesCapChannel, false);
+        assert.equal(model.dynamicColor.maskPath, 'models/CartonSwimmer9ColorMask/texture');
+        assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
+
+        const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer9.glb', root));
+        const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
+        const primitive = doc.meshes[0].primitives[0];
+        assert.equal(doc.meshes.length, 1);
+        assert.equal(doc.materials.length, 1);
+        assert.equal(doc.meshes[0].primitives.length, 1);
+        assert.equal(doc.skins[0].joints.length, 41);
+        assert.equal(doc.accessors[primitive.indices].count / 3, 5675);
+        assert.ok(doc.accessors[primitive.attributes.POSITION].count <= 5700);
+        assert.ok(data.length <= 512 * 1024);
+
+        const png = fs.readFileSync(new URL('assets/race/models/CartonSwimmer9ColorMask.png', root));
+        assert.equal(png.readUInt32BE(16), 512);
+        assert.equal(png.readUInt32BE(20), 512);
+        assert.equal(png[25], 6);
+    } finally {
+        selectPlayerCharacter(previous.characterId);
+        setPlayerSkinTone(previous.skinToneId);
+        setPlayerColorScheme(previous.colorSchemeId);
+    }
+});
