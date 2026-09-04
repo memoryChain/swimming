@@ -217,26 +217,48 @@ export function makeDragSlider(
 ): DragSlider {
     const node = makeUiNode(name, parent);
     const uiTransform = node.getComponent(UITransform)!;
-    uiTransform.setContentSize(w, h + 16);
-    const track = node.addComponent(Graphics);
+    uiTransform.setContentSize(w, Math.max(48, h + 24));
+
+    const trackNode = makeUiNode('Track', node);
+    trackNode.getComponent(UITransform)!.setContentSize(w, h);
+    const track = trackNode.addComponent(Graphics);
+    track.fillColor = uiColor(213, 224, 242, 255);
+    track.roundRect(-w / 2, -h / 2, w, h, h / 2);
+    track.fill();
+
+    const fillNode = makeUiNode('Fill', node);
+    fillNode.getComponent(UITransform)!.setContentSize(w, h);
+    const fill = fillNode.addComponent(Graphics);
+
     const handleNode = makeUiNode('Handle', node);
-    handleNode.getComponent(UITransform).setContentSize(14, h + 12);
+    handleNode.getComponent(UITransform)!.setContentSize(36, 36);
     const handle = handleNode.addComponent(Graphics);
+    handle.fillColor = uiColor(255, 255, 255, 255);
+    handle.circle(0, 0, 17);
+    handle.fill();
+    handle.strokeColor = uiColor(80, 113, 215, 255);
+    handle.lineWidth = 3;
+    handle.circle(0, 0, 15.5);
+    handle.stroke();
+    handle.fillColor = uiColor(40, 210, 232, 255);
+    handle.circle(0, 0, 8);
+    handle.fill();
+
+    let lastPixelWidth = -1;
 
     const draw = (ratio: number) => {
         const r = Math.max(0, Math.min(1, ratio));
-        track.clear();
-        track.fillColor = uiColor(28, 48, 66, 235);
-        track.rect(-w / 2, -h / 2, w, h);
-        track.fill();
-        track.fillColor = uiColor(72, 162, 222, 245);
-        track.rect(-w / 2, -h / 2, w * r, h);
-        track.fill();
-        handle.clear();
-        handle.fillColor = uiColor(248, 252, 255);
-        handle.rect(-7, -(h + 12) / 2, 14, h + 12);
-        handle.fill();
-        handleNode.setPosition(-w / 2 + w * r, 0, 0);
+        const pixelWidth = Math.round(w * r);
+        if (pixelWidth === lastPixelWidth) return false;
+        lastPixelWidth = pixelWidth;
+        fill.clear();
+        if (pixelWidth > 0) {
+            fill.fillColor = uiColor(69, 116, 226, 255);
+            fill.roundRect(-w / 2, -h / 2, Math.max(h, pixelWidth), h, h / 2);
+            fill.fill();
+        }
+        handleNode.setPosition(-w / 2 + pixelWidth, 0, 1);
+        return true;
     };
     draw(initialRatio);
 
@@ -263,8 +285,9 @@ export function makeDragSlider(
         camera.screenToWorld(screenPoint, worldPoint);
         const local = uiTransform.convertToNodeSpaceAR(worldPoint);
         const ratio = Math.max(0, Math.min(1, (local.x + w / 2) / w));
-        draw(ratio);
-        onChange(ratio);
+        if (draw(ratio)) {
+            onChange(ratio);
+        }
     };
     node.on(Node.EventType.TOUCH_START, onTouch);
     node.on(Node.EventType.TOUCH_MOVE, onTouch);

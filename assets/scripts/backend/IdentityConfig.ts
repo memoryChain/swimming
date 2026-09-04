@@ -8,11 +8,12 @@
 
 export interface AvatarOption {
     id: AvatarId;
-    // RGB used to draw the circular avatar placeholder (no art assets needed yet).
+    // Fallback color used by legacy/network room surfaces that have not loaded art.
     color: readonly [number, number, number];
 }
 
-export type AvatarId = 'aqua' | 'coral' | 'lime' | 'gold' | 'violet' | 'rose' | 'teal' | 'sky';
+export type AvatarId = 'aqua' | 'coral' | 'lime' | 'gold' | 'violet' | 'rose' | 'teal' | 'sky'
+    | 'frog-lime' | 'lifeguard';
 
 export interface AvatarSwimmerLookDefinition {
     modelVariantId: string;
@@ -20,6 +21,8 @@ export interface AvatarSwimmerLookDefinition {
     skinToneId: 'warm' | 'deep';
 }
 
+// Keep the original eight ids and ordering stable so existing local profiles and
+// multiplayer identity payloads continue to resolve to the same deterministic slot.
 export const AVATARS: readonly AvatarOption[] = [
     { id: 'aqua', color: [86, 196, 236] },
     { id: 'coral', color: [244, 122, 108] },
@@ -29,6 +32,8 @@ export const AVATARS: readonly AvatarOption[] = [
     { id: 'rose', color: [240, 138, 190] },
     { id: 'teal', color: [72, 196, 176] },
     { id: 'sky', color: [120, 168, 240] },
+    { id: 'frog-lime', color: [132, 211, 72] },
+    { id: 'lifeguard', color: [255, 126, 72] },
 ];
 
 // Stable ID mapping used by networked races. Never derive these looks from an
@@ -43,6 +48,8 @@ export const AVATAR_SWIMMER_LOOK_BY_ID: Readonly<Record<AvatarId, AvatarSwimmerL
     rose: { modelVariantId: 'cartonSwimmer10', colorVariantId: 'orangeNavy', skinToneId: 'deep' },
     teal: { modelVariantId: 'muscleMan', colorVariantId: 'pinkMint', skinToneId: 'warm' },
     sky: { modelVariantId: 'cartonSwimmer5', colorVariantId: 'cyanRed', skinToneId: 'deep' },
+    'frog-lime': { modelVariantId: 'cartonSwimmer8', colorVariantId: 'greenOrange', skinToneId: 'warm' },
+    lifeguard: { modelVariantId: 'cartonSwimmer6', colorVariantId: 'orangeNavy', skinToneId: 'deep' },
 };
 
 export function avatarSwimmerLookOf(avatarId: string): AvatarSwimmerLookDefinition {
