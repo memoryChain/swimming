@@ -6,26 +6,38 @@
 
 - 原始文件：`tripo_convert_5c5e1d58-15e6-4e10-bf50-2b5042c3ca95.glb`，原文件未修改。
 - 原始 SHA-256：`256781b2408dcc06ae257ad8a3221cbbf4b73420bc9e4fdcf735e926c9f4e73c`。
-- 原始副本、制作 `.blend`、审计报告与离线预览：`tools/characters/tripo_5c5e1d58/`；不进入运行时资源，也不提交本地制作缓存。
-- 模型：`assets/race/models/CartonSwimmer5.glb`，575,488 字节，1 个网格、1 个材质、1 个图元、41 根骨骼、5,338 个三角面。源网格 6,834 个顶点，导出接缝拆点后为 6,837 个顶点。
-- 底图：内嵌 512×512 JPEG，保留原始图案，不改头发、黑白服装或皮肤底图。
-- 遮罩：`assets/race/models/CartonSwimmer5ColorMask.png`，512×512 RGBA，120,547 字节。
-- 模型 SHA-256：`b064bae54244825ca9bf68062ffdb99b08beb07aa60630c7777d0437bbf1aa85`。
+- 原始副本、首次制作 `.blend` 与历史审计：`tools/characters/tripo_5c5e1d58/`；UV 重排的双 UV 工作文件、候选、审计与离线预览：`tools/characters/uv-repack/CartonSwimmer5/`。两者均不进入运行时资源，也不提交本地制作缓存。
+- 模型：`assets/race/models/CartonSwimmer5.glb`，418,424 字节，1 个网格、1 个材质、1 个图元、41 根骨骼、5,338 个三角面。安全焊接后的 Blender 网格为 2,799 个顶点，导出接缝拆点后为 5,060 个顶点。
+- 底图：内嵌 512×512 JPEG，以 4× 超采样从原 UV 烘焙到新 UV；头发、黑白服装、皮肤和配件的原始图案保持不变。
+- 遮罩：`assets/race/models/CartonSwimmer5ColorMask.png`，512×512 RGBA，96,181 字节。
+- 模型 SHA-256：`36e88082d31a447ed3140faf489bdae5901d24e3c6011b8d6d21e39414895975`；遮罩 SHA-256：`62a05e1d5e8015d83ccddf12688495081ed2e0ecf35f833ab3830bf5f961285f`。
+
+## UV 重排
+
+原模型的 919 个几何连通块与 919 个 UV 岛来自碎片化导出。按位置、法线与六位小数骨骼权重完全一致的条件安全焊接，保留 17 组权重不一致以及 4 组法线/权重都不一致的同位置顶点，不做强制合并。
+
+- 几何连通块：919 → 19。
+- UV 岛：919 → 379。
+- Blender 顶点：6,834 → 2,799；导出顶点：6,837 → 5,060。
+- 三角面、材质、骨骼、节点名与包围盒保持不变。
+- 新 UV 在 512×512 栅格审计中无退化面、无越界面、无重叠像素；工作文件同时保留 `UVMap_Source` 与 `UVMap_Repacked`，运行时文件只保留标准名 `UVMap`。
 
 ## 换色
 
 沿用 `SwimmerDynamicColor.effect`，无新增 Shader、材质槽、逐实例生成贴图或赛中 UI 更新。
 
-- R 通道：源图绿色的眼镜、腕表、短裤饰边及鞋部饰件，使用现有服装颜色选择。
+- R 通道：源图绿色的眼镜、腕表、短裤饰边及鞋部饰件，使用现有服装颜色选择；非绿色头发、皮肤和鞋面保持黑色遮罩。
 - B 通道：面部、手臂、腰腹与腿部皮肤，使用现有肤色选择；暖肤色保留原图，深肤色独立覆盖。
 - G 通道保持为零；该角色没有独立泳帽通道。A 通道全不透明。
-- 服装与肤色互不覆盖。白色与深色装备保留底图；绿色通道非零像素为 63,394，皮肤通道非零像素为 115,494。
+- 服装与肤色互不覆盖。白色与深色装备保留底图；新图集含烘焙边距，服装通道非零像素为 61,155，皮肤通道非零像素为 69,882。
 
-此图集 UV 碎片较多，皮肤与白色装备区域相邻，因此关闭皮肤闭运算，避免填孔时扩大到非皮肤部分。脚本原有默认值不变，既有角色遮罩不受影响：
+遮罩从重排后的底图重新生成，服装通道要求明确的绿色占优与色度，肤色使用 `light-peach` 分类并关闭闭运算。这样可去除旧遮罩在头发、皮肤边缘和鞋面上的细碎误染，同时不改变其他角色的默认遮罩行为：
 
 ```powershell
-python scripts/generate-green-recolor-mask.py --input tools/characters/tripo_5c5e1d58/basecolor.jpg --output assets/race/models/CartonSwimmer5ColorMask.png --skin-close-radius 0 --preview-prefix CartonSwimmer5
+python scripts/generate-green-recolor-mask.py --input tools/characters/uv-repack/CartonSwimmer5/CartonSwimmer5_BaseColor_Repacked.jpg --output assets/race/models/CartonSwimmer5ColorMask.png --skin-close-radius 0 --skin-palette light-peach --preview-prefix CartonSwimmer5
 ```
+
+刘海与泳镜上沿相邻的 19 个可见头发三角面另做了局部安全修正：只清除这些 UV 区域的 R 通道，并把烘焙底图中随绿色泳镜带入的少量绿色像素校正为周围深蓝发色。遮罩共改动 254 个 R 通道像素，G、B、A 通道保持逐像素不变；橙色高对比近景中，泳镜仍完整换色，泳镜上方不再出现独立橙色区域。
 
 ## 骨架与动作验证
 
@@ -35,7 +47,7 @@ python scripts/generate-green-recolor-mask.py --input tools/characters/tripo_5c5
 
 另外使用实际 `FreestylePoseController.ts`、Cocos 数学库及保存调参，检查交替、双臂与单右臂划水共 363 帧，数值有限且循环闭合。双臂前伸时左肘约 23.26°、右肘约 22.82°，保留角色原有关节位置，不进行额外镜像或权重修复。
 
-已检查原色、六组高对比服装／肤色组合、九个高风险动作各五帧、跳水准备三视角，以及实际自由泳的俯视与斜视离线渲染。离线贴图预览用于检查分区和变形，不等同于 Cocos 光照、压缩纹理或真机验收。
+UV 重排后重新遍历 21 个共享动作、3,661 个采样，未发现缺失骨骼、非有限数值或左右手顺序差异。另检查原色与五组高对比服装／肤色组合的正、侧、背面，以及蛙泳、挥手和跳水准备姿势；原色同机位渲染的角色区域平均绝对像素差为 2.77～3.70，95 分位为 10.33～13.67。离线贴图预览用于检查分区和变形，不等同于 Cocos 光照、压缩纹理或真机验收。
 
 ### 待验收：鞋底接触
 
@@ -43,23 +55,21 @@ python scripts/generate-green-recolor-mask.py --input tools/characters/tripo_5c5
 
 ## Cocos、压缩与联机
 
-使用当前已运行 Creator 的资源数据库刷新和重新导入，没有启动、重启 Creator，没有截取编辑器或其预览窗口。
-
-已核对 `library` 中实际导入的所有骨骼局部变换、内嵌 JPEG、遮罩 PNG 与运行时文件一致，模型三角面数为 5,338。
+本次 UV 重排没有启动、重启 Cocos Creator，也没有截取编辑器或其预览窗口。现有 `.meta` 原样保留，Creator 资源数据库需要在现有编辑器会话中重新导入模型和遮罩后再做引擎内确认。
 
 - 模型 UUID：`8b36f4bc-c8bc-4738-916c-05f25ac8bbad`。
 - 遮罩 UUID：`166caedf-551c-4462-8a60-33f1c89b8a7c`。
-- Creator 生成 `.meta` 后执行 `textures:fix`，底图使用模型 ASTC 6×6＋JPEG 回退，遮罩使用模型 ASTC 6×6＋PNG 回退；内嵌 Texture2D 禁用 mip 采样，并已验证实际导入数据。
+- 已执行 `textures:fix` 与 `textures:check`；底图保持模型 ASTC 6×6＋JPEG 回退，遮罩保持模型 ASTC 6×6＋PNG 回退，内嵌 Texture2D 继续禁用 mip 采样。
 - 资源位于 `race` 分包，没有向主包 UI 添加压缩纹理。
 - 联机沿用共享头像映射和养成摘要传输。新增模型改变共享角色表长度，协议版本由 4 升为 5，拒绝新旧角色表混跑；未新增逐帧网络数据。单机的现有角色、物理和输入逻辑不变。
 
 ## 已完成检查
 
-- TypeScript 5.4.5 指定检查命令通过。
-- `npm run test:net`：14 项通过。
-- `npm run test:characters`：4 项通过，涵盖资源路径、独立肤色切换、养成摘要、协议和模型预算。
-- `python tests/test_green_recolor_mask.py`：2 项通过，涵盖配色分类与旧遮罩默认行为。
-- `npm run textures:check` 通过，扫描 113 项，纳入压缩 47 项。
+- `npm run test:characters`：9 项通过，涵盖资源路径、独立肤色切换、养成摘要、协议和模型预算。
+- `python tests/test_green_recolor_mask.py`：4 项通过，涵盖配色分类与旧遮罩默认行为。
+- `npm run textures:check` 通过，扫描 121 项，纳入压缩 55 项。
+- 21 个共享动作、3,661 个采样重新验证通过。
+- UV 审计与 GLB 结构审计通过：单网格、单材质、41 根骨骼、5,338 个三角面，UV 无退化、越界或重叠。
 - `git diff --check` 通过。
 
 仍需在现有编辑器会话和 iOS／Android 微信真机验证：角色反复切换、准备到跳水衔接、自由泳、肤色／服装配色、舞蹈鞋底接触，以及压缩后的换色边界。此次没有运行平台构建或真机测试。

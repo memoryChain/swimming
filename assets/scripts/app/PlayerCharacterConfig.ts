@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer7' | 'cartonSwimmer8' | 'cartonSwimmer9';
+export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer7' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -147,6 +147,16 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '戴着猫耳帽与霓彩护目镜的灵动少女，以轻盈节奏穿梭浪尖。',
         skillName: '猫影节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加灵巧。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer10', name: '青影忍浪', modelVariantId: 'cartonSwimmer10', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '身着黑绿忍者装束的敏捷泳者，以轻快身法切入浪线。',
+        skillName: '忍浪节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加利落。',
         supportsSkinTone: true,
     },
 ];
