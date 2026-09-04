@@ -1897,6 +1897,7 @@ export class GameManager extends Component {
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
                         conditionHeartRate: aiCondition?.heartRate ?? -1,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
+                        sprintActive: aiCondition?.phase === RacePhase.SPRINT,
                     });
                 }
                 this._netRaceController.sendSnapshot(entries);
@@ -2100,6 +2101,7 @@ export class GameManager extends Component {
             collisionPitchVelocity: player.netCollisionPitchVelocity,
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: this._playerCondition.heartRate,
+            sprintActive: this._playerCondition.phase === RacePhase.SPRINT,
         };
     }
 

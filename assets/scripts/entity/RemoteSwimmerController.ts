@@ -14,6 +14,7 @@ import { _decorator, Component } from 'cc';
 import { StrokeType } from '../core/GameConstants';
 import { resolveDiveResult } from '../core/DiveResolver';
 import {
+    CONDITION_BALANCE,
     conditionEfficiencyScale,
     conditionQualityScale,
     energyDepletionCadenceScale,
@@ -41,11 +42,12 @@ export class RemoteSwimmerController extends Component {
     // modifiers instead of falling back to a local AI model.
     private _ownerEnergyRatio = -1;
     private _ownerHeartRate = -1;
+    private _ownerSprintActive = false;
 
     // Apply the owner's pre-input condition snapshot before replaying events from the
     // same reliable/broadcast frame. Repeated values are a no-op, keeping the 30Hz net
     // path allocation-free and avoiding redundant motor writes.
-    applyOwnerCondition(energyRatio: number, heartRate: number): void {
+    applyOwnerCondition(energyRatio: number, heartRate: number, sprintActive: boolean): void {
         if (!Number.isFinite(energyRatio)
             || !Number.isFinite(heartRate)
             || energyRatio < 0
@@ -53,38 +55,45 @@ export class RemoteSwimmerController extends Component {
             return;
         }
         const safeEnergyRatio = Math.max(0, Math.min(1, energyRatio));
-        if (safeEnergyRatio === this._ownerEnergyRatio && heartRate === this._ownerHeartRate) {
+        const safeSprintActive = sprintActive === true;
+        if (safeEnergyRatio === this._ownerEnergyRatio
+            && heartRate === this._ownerHeartRate
+            && safeSprintActive === this._ownerSprintActive) {
             return;
         }
         this._ownerEnergyRatio = safeEnergyRatio;
         this._ownerHeartRate = heartRate;
-        this.applyConditionScales(safeEnergyRatio, heartRate);
+        this._ownerSprintActive = safeSprintActive;
+        this.applyConditionScales(safeEnergyRatio, heartRate, safeSprintActive);
     }
 
     // Apply an older packet's condition only while replaying the inputs carried by
     // that same packet. It deliberately does not replace the latest persistent owner
     // state (a newer P| may have overtaken this IN| on the broadcast channel).
-    applyTransientOwnerCondition(energyRatio: number, heartRate: number): void {
+    applyTransientOwnerCondition(energyRatio: number, heartRate: number, sprintActive: boolean): void {
         if (!Number.isFinite(energyRatio)
             || !Number.isFinite(heartRate)
             || energyRatio < 0
             || heartRate < 0) {
             return;
         }
-        this.applyConditionScales(Math.max(0, Math.min(1, energyRatio)), heartRate);
+        this.applyConditionScales(Math.max(0, Math.min(1, energyRatio)), heartRate, sprintActive === true);
     }
 
     restoreOwnerCondition(): void {
         if (this._ownerEnergyRatio < 0 || this._ownerHeartRate < 0) {
             return;
         }
-        this.applyConditionScales(this._ownerEnergyRatio, this._ownerHeartRate);
+        this.applyConditionScales(this._ownerEnergyRatio, this._ownerHeartRate, this._ownerSprintActive);
     }
 
-    private applyConditionScales(energyRatio: number, heartRate: number): void {
+    private applyConditionScales(energyRatio: number, heartRate: number, sprintActive: boolean): void {
         this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(energyRatio));
         this.swimmer?.applyConditionQualityScale(conditionQualityScale(heartRate));
         this.swimmer?.applyConditionCadenceScale(energyDepletionCadenceScale(energyRatio));
+        this.swimmer?.applyConditionSprintPropulsionScale(
+            sprintActive ? Math.max(1, CONDITION_BALANCE.sprint.propulsionScale) : 1,
+        );
     }
 
     // Apply one logical frame's worth of this member's decoded input events, in order.
@@ -186,6 +195,7 @@ export class RemoteSwimmerController extends Component {
         this._diveStartedAt = 0;
         this._ownerEnergyRatio = -1;
         this._ownerHeartRate = -1;
+        this._ownerSprintActive = false;
         this.swimmer?.applyConditionSpeedScale(1);
         this.swimmer?.applyConditionQualityScale(1);
         this.swimmer?.applyConditionCadenceScale(1);

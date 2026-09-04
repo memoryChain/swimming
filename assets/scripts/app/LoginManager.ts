@@ -21,6 +21,7 @@ import { openSettingsPanel } from '../ui/SettingsPanel';
 import { AVATARS } from '../backend/IdentityConfig';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
+import { ensureTuningLoadedAsync } from '../core/TuningDebugControls';
 
 
 const { ccclass } = _decorator;
@@ -41,6 +42,10 @@ export class LoginManager extends Component {
     private _loginUiRetries = 0;
     private _offAppShow: (() => void) | null = null;
     private _adInProgress = false;
+    // RoomFlow must not compute its multiplayer tuning fingerprint until the
+    // same project/local tuning override used by MainGame is ready.
+    private _tuningReady = false;
+    private _queuedRoomOpen: { joinRoomId: string | null; reconnect: boolean } | null = null;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -80,6 +85,14 @@ export class LoginManager extends Component {
         // onShow with the new query. Catch that here so a room invite still opens the
         // room instead of just foregrounding the game.
         this._offAppShow = platform().onAppShow((query) => this.handleAppShowInvite(query));
+        ensureTuningLoadedAsync(() => {
+            this._tuningReady = true;
+            const queued = this._queuedRoomOpen;
+            this._queuedRoomOpen = null;
+            if (queued && this._canvasNode?.isValid && !this._roomFlow) {
+                this.openRoom(queued.joinRoomId, queued.reconnect);
+            }
+        });
         // Log in as soon as the entry scene opens. On WeChat/Douyin this fetches a
         // login code (to later exchange on a server); in the editor/web build it is a
         // harmless mock. Fire-and-forget: the result is cached in PlatformSession.
@@ -264,6 +277,12 @@ export class LoginManager extends Component {
 
     private openRoom(joinRoomId: string | null = null, reconnect = false) {
         if (this._roomFlow) {
+            return;
+        }
+        if (!this._tuningReady) {
+            // A later invite replaces an earlier deferred open, matching the
+            // existing room-switch behavior while resources are still loading.
+            this._queuedRoomOpen = { joinRoomId, reconnect };
             return;
         }
         // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share

@@ -878,7 +878,11 @@ export class NetRaceController {
         } else {
             this._selfSnapshots[entry.lane] = { entry, time: now };
         }
-        remote?.applyOwnerCondition(entry.conditionEnergyRatio, entry.conditionHeartRate);
+        remote?.applyOwnerCondition(
+            entry.conditionEnergyRatio,
+            entry.conditionHeartRate,
+            entry.sprintActive === true,
+        );
         return true;
     }
 
@@ -990,7 +994,11 @@ export class NetRaceController {
             self.conditionHeartRate,
         );
         if (transientCondition) {
-            remote.applyTransientOwnerCondition(self!.conditionEnergyRatio, self!.conditionHeartRate);
+            remote.applyTransientOwnerCondition(
+                self!.conditionEnergyRatio,
+                self!.conditionHeartRate,
+                self!.sprintActive === true,
+            );
         }
         try {
             remote.applyEvents(humanEvents);

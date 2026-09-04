@@ -53,6 +53,12 @@ const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
 const TUNING_FILE_VERSION = 40;
+// Tuning is shared by the login lobby and the race scene. Keep one async load
+// operation for the whole app lifetime so a lobby fingerprint always sees the
+// same project/local override that the race will later use.
+let _tuningLoadStarted = false;
+let _tuningLoaded = false;
+const _tuningLoadCallbacks: Array<() => void> = [];
 
 type TuningFileData = {
     version: number;
@@ -534,7 +540,16 @@ export function loadSavedTuning(): boolean {
     return true;
 }
 
-export function loadSavedTuningAsync(onComplete: () => void) {
+export function ensureTuningLoadedAsync(onComplete: () => void) {
+    if (_tuningLoaded) {
+        onComplete();
+        return;
+    }
+    _tuningLoadCallbacks.push(onComplete);
+    if (_tuningLoadStarted) {
+        return;
+    }
+    _tuningLoadStarted = true;
     defaultTuningSnapshot();
     resources.load(PROJECT_TUNING_RESOURCE, JsonAsset, (err, asset) => {
         const projectCandidate = !err && asset?.json
@@ -551,8 +566,18 @@ export function loadSavedTuningAsync(onComplete: () => void) {
         if (selected) {
             applyTuningCandidate(selected);
         }
-        onComplete();
+        _tuningLoaded = true;
+        const callbacks = _tuningLoadCallbacks.splice(0);
+        for (const callback of callbacks) {
+            callback();
+        }
     });
+}
+
+// Backward-compatible name for race-scene callers. It now shares the login
+// preload instead of resetting mutable tuning after lobby verification.
+export function loadSavedTuningAsync(onComplete: () => void) {
+    ensureTuningLoadedAsync(onComplete);
 }
 
 export function getProjectTuningAssetPath(): string {

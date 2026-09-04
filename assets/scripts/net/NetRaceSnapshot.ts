@@ -54,6 +54,9 @@ export interface NetSnapshotEntry {
     // -1 means an older payload or a source that is not authoritative for this lane.
     conditionEnergyRatio: number;
     conditionHeartRate: number;
+    // Owner phase state needed to replay the explicit SPRINT propulsion reward on
+    // a remote-human body. Optional only to make older payloads decode safely.
+    sprintActive?: boolean;
     // Genuine-AI depletion cooldown remaining, authoritative only on host S|.
     // Optional/-1 on human P|/frame self and legacy snapshots.
     conditionDepletionCooldown?: number;
@@ -76,7 +79,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${e.sprintActive ? 1 : 0}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -119,6 +122,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             const conditionEnergyPermille = parts.length > 12 ? parseInt(parts[12], 10) : -1;
             const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
             const conditionCooldownMs = parts.length > 14 ? parseInt(parts[14], 10) : -1;
+            const sprintActive = parts.length > 15 && parts[15] === '1';
             entries.push({
                 lane,
                 distance: distCm / 100,
@@ -135,6 +139,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
                 conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
                 conditionDepletionCooldown: decodeConditionCooldown(conditionCooldownMs),
+                sprintActive,
             });
         }
     }
@@ -149,7 +154,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
 // and drifting. Same field layout as one snapshot entry (incl. speed + energy), so it
 // also carries authoritative pose-speed and ultimate energy — required in broadcast-only
 // mode (iOS high-performance+), where these can no longer ride the lock-step frame self.
-//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>,<ownerPos>"
+//   "P|<lane>,<distCm>,<latMm>,<fin>,<headMrad>,<speedCms>,<energy>,<rollMrad>,<rollVelMrad>,<headVelMrad>,<pitchMrad>,<pitchVelMrad>,<conditionEnergyPermille>,<conditionHeartRate>,<ownerStateSeq>,<ownerPos>,<sprintActive>"
 const SELF_TAG = 'P|';
 
 export function encodeSelfSnapshot(
@@ -157,7 +162,7 @@ export function encodeSelfSnapshot(
     ownerStateSeq = entry.ownerStateSeq ?? -1,
     ownerPos = entry.ownerPos ?? -1,
 ): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${entry.sprintActive ? 1 : 0}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -188,6 +193,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
     const conditionHeartRate = parts.length > 13 ? parseInt(parts[13], 10) : -1;
     const ownerStateSeq = parts.length > 14 ? parseInt(parts[14], 10) : -1;
     const ownerPos = parts.length > 15 ? parseInt(parts[15], 10) : -1;
+    const sprintActive = parts.length > 16 && parts[16] === '1';
     return {
         lane,
         distance: distCm / 100,
@@ -203,6 +209,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         collisionPitchVelocity: Number.isFinite(pitchVelMrad) ? pitchVelMrad / 1000 : 0,
         conditionEnergyRatio: decodeConditionEnergyRatio(conditionEnergyPermille),
         conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
+        sprintActive,
         ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
         ownerPos: decodeOwnerStateSeq(ownerPos),
     };

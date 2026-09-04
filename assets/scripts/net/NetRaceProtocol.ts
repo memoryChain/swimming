@@ -1,10 +1,11 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// v9: every member now proves that its complete local tuning surface matches the
-// lobby. Owner-authoritative condition and movement must never use a private
-// localStorage/native tuning override.
-export const NET_RACE_PROTOCOL_VERSION = 9;
+// v10: every member now proves that its complete local tuning surface matches the
+// lobby, and human owner frames carry sprint state for remote propulsion replay.
+// Owner-authoritative condition and movement must never use a private localStorage/
+// native tuning override.
+export const NET_RACE_PROTOCOL_VERSION = 10;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 const TUNING_FINGERPRINT_PATTERN = /^[0-9a-f]{16}$/;
