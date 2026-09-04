@@ -5,18 +5,63 @@ import CharacterConfig from '../assets/scripts/app/PlayerCharacterConfig.ts';
 import Resources from '../assets/scripts/core/ResourcePaths.ts';
 import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
 import ModifierCodec from '../assets/scripts/net/NetRaceModifierCodec.ts';
+import IdentityConfig from '../assets/scripts/backend/IdentityConfig.ts';
+import PlayerProfileConfig from '../assets/scripts/backend/PlayerProfile.ts';
 
 const root = new URL('../', import.meta.url);
 const { PLAYER_CHARACTER_DEFINITIONS, getPlayerCharacterSelection, selectPlayerCharacter,
+    createDefaultPlayerCharacterSelection, normalizePlayerCharacterSelection,
     setPlayerColorScheme, setPlayerSkinTone, selectedPlayerSkinTone,
     selectedPlayerColorScheme, selectedPlayerCharacterSupportsSkinTone } = CharacterConfig;
 
+test('首次选择取角色列表首位，存档选择通过稳定 ID 迁移', () => {
+    assert.deepEqual(createDefaultPlayerCharacterSelection(), {
+        characterId: PLAYER_CHARACTER_DEFINITIONS[0].id,
+        skinToneId: 'warm',
+        colorSchemeId: 'red',
+    });
+    assert.equal(createDefaultPlayerCharacterSelection().characterId, 'cartonSwimmer6');
+    assert.deepEqual(normalizePlayerCharacterSelection({
+        characterId: 'cartonSwimmer9',
+        skinToneId: 'deep',
+        colorSchemeId: 'purple',
+    }), {
+        characterId: 'cartonSwimmer9',
+        skinToneId: 'deep',
+        colorSchemeId: 'purple',
+    });
+    assert.deepEqual(normalizePlayerCharacterSelection({
+        characterId: 'removed-character',
+        skinToneId: 'removed-tone',
+        colorSchemeId: 'removed-color',
+    }), createDefaultPlayerCharacterSelection());
+    assert.equal(PlayerProfileConfig.createDefaultProfile().characterSelection.characterId, 'cartonSwimmer6');
+    assert.equal(PlayerProfileConfig.normalizeProfile({ schema: 3 }).characterSelection.characterId, 'cartonSwimmer6');
+});
+
+test('联网头像通过稳定 ID 映射角色外观', () => {
+    const avatarIds = IdentityConfig.AVATARS.map((avatar) => avatar.id);
+    assert.deepEqual(Object.keys(IdentityConfig.AVATAR_SWIMMER_LOOK_BY_ID).sort(), [...avatarIds].sort());
+    for (const avatarId of avatarIds) {
+        const look = IdentityConfig.avatarSwimmerLookOf(avatarId);
+        assert.equal(look, IdentityConfig.AVATAR_SWIMMER_LOOK_BY_ID[avatarId]);
+        assert.ok(Resources.findSwimmerModelVariant(look.modelVariantId), `${avatarId} model=${look.modelVariantId}`);
+        assert.ok(Resources.findSwimmerColorVariant(look.colorVariantId), `${avatarId} color=${look.colorVariantId}`);
+        assert.ok(CharacterConfig.PLAYER_SKIN_TONES.some((tone) => tone.id === look.skinToneId),
+            `${avatarId} skin=${look.skinToneId}`);
+    }
+    assert.equal(IdentityConfig.avatarSwimmerLookOf('unknown-avatar'),
+        IdentityConfig.AVATAR_SWIMMER_LOOK_BY_ID.aqua);
+});
+
 test('可选角色均有唯一模型，并复用标准动作资源', () => {
     const characters = PLAYER_CHARACTER_DEFINITIONS;
-    const expectedIds = ['muscleMan', 'cartonSwimmer5', 'cartonSwimmer6',
+    const expectedCharacterIds = ['cartonSwimmer6', 'cartonSwimmer8', 'cartonSwimmer5',
+        'cartonSwimmer9', 'cartonSwimmer10', 'muscleMan'];
+    const expectedModelIds = ['muscleMan', 'cartonSwimmer5', 'cartonSwimmer6',
         'cartonSwimmer8', 'cartonSwimmer9', 'cartonSwimmer10'];
-    assert.deepEqual(characters.map(c => c.id), expectedIds);
-    assert.deepEqual(Resources.SWIMMER_MODEL_VARIANTS.map(c => c.id), expectedIds);
+    assert.deepEqual(characters.map(c => c.id), expectedCharacterIds);
+    assert.deepEqual(Resources.SWIMMER_MODEL_VARIANTS.map(c => c.id), expectedModelIds);
     assert.equal(new Set(characters.map(c => c.id)).size, characters.length);
     assert.equal(new Set(Resources.SWIMMER_MODEL_VARIANTS.map(c => c.id)).size,
         Resources.SWIMMER_MODEL_VARIANTS.length);
@@ -28,7 +73,7 @@ test('可选角色均有唯一模型，并复用标准动作资源', () => {
         assert.ok(fs.existsSync(new URL(`assets/race/${model.divePrepOverridePath}.json`, root)));
     }
     assert.equal(Resources.findSwimmerModelVariant('muscleMan').modelScaleMultiplier, undefined);
-    for (const id of expectedIds.slice(1)) {
+    for (const id of expectedModelIds.slice(1)) {
         const multiplier = Resources.findSwimmerModelVariant(id).modelScaleMultiplier;
         assert.equal(Number.isFinite(multiplier), true, `${id} modelScaleMultiplier`);
         assert.ok(multiplier >= 0.5 && multiplier <= 2, `${id} modelScaleMultiplier=${multiplier}`);

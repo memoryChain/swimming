@@ -142,6 +142,7 @@ export class PrepareRaceFlow {
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
         if (!this._root?.isValid || !this._content?.isValid) return;
         if (this._view === 'ready') {
+            this.presentCharacter(getPlayerCharacterSelection().characterId);
             this.refreshReadyCharacterInfo();
         } else {
             this.refreshCharacterCards();
@@ -775,6 +776,9 @@ export class PrepareRaceFlow {
     private confirmDraftCharacter(): void {
         if (!this._draftCharacterId) return;
         if (getPlayerCharacterSelection().characterId !== this._draftCharacterId) selectPlayerCharacter(this._draftCharacterId);
+        void PlayerData.setCharacterSelection(getPlayerCharacterSelection()).catch((error) => {
+            console.warn('[PrepareRaceFlow] character selection save failed', error);
+        });
         this.showReadyScreen();
     }
 

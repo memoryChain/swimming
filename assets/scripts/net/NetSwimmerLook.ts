@@ -7,14 +7,8 @@
 // keeps its locally-chosen character look untouched.
 
 import { Color } from 'cc';
-import { AVATARS } from '../backend/IdentityConfig';
+import { avatarSwimmerLookOf } from '../backend/IdentityConfig';
 import { PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
-import {
-    defaultSwimmerColorVariant,
-    defaultSwimmerModelVariant,
-    SWIMMER_COLOR_VARIANTS,
-    SWIMMER_MODEL_VARIANTS,
-} from '../core/ResourcePaths';
 import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 
 export interface NetSwimmerLook {
@@ -23,23 +17,15 @@ export interface NetSwimmerLook {
     skinColor: readonly [number, number, number];
 }
 
-function avatarIndex(avatarId: string): number {
-    const i = AVATARS.findIndex((a) => a.id === avatarId);
-    return i >= 0 ? i : 0;
-}
-
-// Map a lobby avatarId to a stable, distinct in-race look. All fields index shared,
-// order-stable lists so the result is identical on every client.
+// Resolve every field through stable IDs. No appearance depends on the position
+// of an avatar, model, color, or skin tone in a catalog.
 export function netSwimmerLook(avatarId: string): NetSwimmerLook {
-    const idx = avatarIndex(avatarId);
-    const models = SWIMMER_MODEL_VARIANTS.filter((v) => !v.debugOnly);
-    const model = models[idx % models.length] ?? defaultSwimmerModelVariant();
-    const colorVariant = SWIMMER_COLOR_VARIANTS[idx % SWIMMER_COLOR_VARIANTS.length] ?? defaultSwimmerColorVariant();
-    const skinTones = PLAYER_SKIN_TONES;
-    const skin = skinTones[idx % skinTones.length]?.color ?? ([246, 176, 118] as const);
+    const definition = avatarSwimmerLookOf(avatarId);
+    const skin = PLAYER_SKIN_TONES.find((tone) => tone.id === definition.skinToneId)?.color
+        ?? ([255, 226, 191] as const);
     return {
-        modelVariantId: model.id,
-        colorVariantId: colorVariant.id,
+        modelVariantId: definition.modelVariantId,
+        colorVariantId: definition.colorVariantId,
         skinColor: skin,
     };
 }

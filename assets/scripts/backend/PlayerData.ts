@@ -8,6 +8,11 @@ import { AdRewardResult } from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
 import type { SpendResult } from '../progression/ProgressionManager';
+import {
+    normalizePlayerCharacterSelection,
+    PlayerCharacterSelection,
+    restorePlayerCharacterSelection,
+} from '../app/PlayerCharacterConfig';
 
 type ChangeListener = (profile: PlayerProfile) => void;
 
@@ -52,6 +57,7 @@ class PlayerDataStore {
                 this._loading = null;
                 this._loaded = true;
                 this._profile = profile;
+                restorePlayerCharacterSelection(profile.characterSelection);
                 this._emit();
                 return profile;
             })
@@ -103,6 +109,26 @@ class PlayerDataStore {
     // Generate + persist a fresh random nickname; notifies listeners.
     async rerollNickName(): Promise<void> {
         this._profile = await backend().saveIdentity({ nickName: generateRandomNickName() });
+        this._emit();
+    }
+
+    // Persist the last confirmed playable character and appearance. Loading first
+    // prevents a fast early click from overwriting other fields with defaults.
+    async setCharacterSelection(selection: Readonly<PlayerCharacterSelection>): Promise<void> {
+        const requested = normalizePlayerCharacterSelection(selection);
+        await this.load();
+        const current = this._profile.characterSelection;
+        if (current.characterId === requested.characterId
+            && current.skinToneId === requested.skinToneId
+            && current.colorSchemeId === requested.colorSchemeId) {
+            restorePlayerCharacterSelection(current);
+            return;
+        }
+        this._profile.characterSelection = requested;
+        restorePlayerCharacterSelection(requested);
+        this._emit();
+        this._profile = await backend().saveProfile(this._profile);
+        restorePlayerCharacterSelection(this._profile.characterSelection);
         this._emit();
     }
 

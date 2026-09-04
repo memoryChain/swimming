@@ -7,9 +7,17 @@
 // on purpose — it is not part of the deterministic SharedRNG stream.
 
 export interface AvatarOption {
-    id: string;
+    id: AvatarId;
     // RGB used to draw the circular avatar placeholder (no art assets needed yet).
     color: readonly [number, number, number];
+}
+
+export type AvatarId = 'aqua' | 'coral' | 'lime' | 'gold' | 'violet' | 'rose' | 'teal' | 'sky';
+
+export interface AvatarSwimmerLookDefinition {
+    modelVariantId: string;
+    colorVariantId: string;
+    skinToneId: 'warm' | 'deep';
 }
 
 export const AVATARS: readonly AvatarOption[] = [
@@ -23,7 +31,25 @@ export const AVATARS: readonly AvatarOption[] = [
     { id: 'sky', color: [120, 168, 240] },
 ];
 
-export function defaultAvatarId(): string {
+// Stable ID mapping used by networked races. Never derive these looks from an
+// avatar/model array index: adding, deleting, or reordering either catalog must
+// not change an existing avatar's in-race appearance.
+export const AVATAR_SWIMMER_LOOK_BY_ID: Readonly<Record<AvatarId, AvatarSwimmerLookDefinition>> = {
+    aqua: { modelVariantId: 'muscleMan', colorVariantId: 'redBlue', skinToneId: 'warm' },
+    coral: { modelVariantId: 'cartonSwimmer5', colorVariantId: 'blueWhite', skinToneId: 'deep' },
+    lime: { modelVariantId: 'cartonSwimmer6', colorVariantId: 'blackYellow', skinToneId: 'warm' },
+    gold: { modelVariantId: 'cartonSwimmer8', colorVariantId: 'greenOrange', skinToneId: 'deep' },
+    violet: { modelVariantId: 'cartonSwimmer9', colorVariantId: 'purpleCyan', skinToneId: 'warm' },
+    rose: { modelVariantId: 'cartonSwimmer10', colorVariantId: 'orangeNavy', skinToneId: 'deep' },
+    teal: { modelVariantId: 'muscleMan', colorVariantId: 'pinkMint', skinToneId: 'warm' },
+    sky: { modelVariantId: 'cartonSwimmer5', colorVariantId: 'cyanRed', skinToneId: 'deep' },
+};
+
+export function avatarSwimmerLookOf(avatarId: string): AvatarSwimmerLookDefinition {
+    return AVATAR_SWIMMER_LOOK_BY_ID[avatarId as AvatarId] ?? AVATAR_SWIMMER_LOOK_BY_ID.aqua;
+}
+
+export function defaultAvatarId(): AvatarId {
     return AVATARS[Math.floor(Math.random() * AVATARS.length)].id;
 }
 

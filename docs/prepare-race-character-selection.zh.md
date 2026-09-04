@@ -14,7 +14,7 @@
 - `description`、`skillName`、`skillDescription`：角色说明与技能文案。
 - `robotStyle`：机械角色的材质风格开关（可选）。
 
-目前只接入 `muscleMan`、`cartonSwimmer5`、`cartonSwimmer6`、`cartonSwimmer8`、`cartonSwimmer9` 和 `cartonSwimmer10`。角色列表固定预留 20 个槽位，未配置或未解锁的槽位显示为锁定状态。
+目前角色列表顺序为 `cartonSwimmer6`、`cartonSwimmer8`、`cartonSwimmer5`、`cartonSwimmer9`、`cartonSwimmer10` 和 `muscleMan`。角色列表固定预留 20 个槽位，未配置或未解锁的槽位显示为锁定状态。
 
 每个模型的整体视觉缩放在 `assets/scripts/core/ResourcePaths.ts` 的对应模型变体中通过 `modelScaleMultiplier` 调整。`1` 表示沿用全局默认缩放；该值只统一缩放完整导入模型层级，不改变游泳速度、碰撞体重或其他比赛数值。
 

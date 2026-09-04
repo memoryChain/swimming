@@ -43,25 +43,6 @@ export type PlayerColorScheme = {
 // race hand-off uses the same definitions directly.
 export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] = [
     {
-        id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
-        stamina: 88, technique: 70, burst: 82,
-        weight: 1.2,
-        energyGain: 75,
-        kick: 50,
-        description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
-        skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
-    },
-    {
-        id: 'cartonSwimmer5', name: '逐浪少女', modelVariantId: 'cartonSwimmer5', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
-        energyGain: 82,
-        kick: 50,
-        description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
-        skillName: '逐浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
-        supportsSkinTone: true,
-    },
-    {
         id: 'cartonSwimmer6', name: '跃浪少女', modelVariantId: 'cartonSwimmer6', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
@@ -79,6 +60,16 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '戴着青蛙帽与粉色护目镜的潮酷少年，以轻快稳定的节奏跃入浪潮。',
         skillName: '蛙跃节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer5', name: '逐浪少女', modelVariantId: 'cartonSwimmer5', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
+        skillName: '逐浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
     },
     {
@@ -100,6 +91,15 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         description: '身着黑绿忍者装束的敏捷泳者，以轻快身法切入浪线。',
         skillName: '忍浪节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加利落。',
         supportsSkinTone: true,
+    },
+    {
+        id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
+        stamina: 88, technique: 70, burst: 82,
+        weight: 1.2,
+        energyGain: 75,
+        kick: 50,
+        description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
+        skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
 ];
 
@@ -128,10 +128,48 @@ export type PlayerCharacterSelection = {
     colorSchemeId: string;
 };
 
-let selection: PlayerCharacterSelection = { characterId: 'muscleMan', skinToneId: 'warm', colorSchemeId: 'red' };
+export function createDefaultPlayerCharacterSelection(): PlayerCharacterSelection {
+    const firstCharacter = PLAYER_CHARACTER_DEFINITIONS[0];
+    if (!firstCharacter) {
+        throw new Error('PLAYER_CHARACTER_DEFINITIONS must contain at least one character');
+    }
+    return {
+        characterId: firstCharacter.id,
+        skinToneId: PLAYER_SKIN_TONES[0].id,
+        colorSchemeId: PLAYER_COLOR_SCHEMES[0].id,
+    };
+}
+
+export function normalizePlayerCharacterSelection(raw: unknown): PlayerCharacterSelection {
+    const fallback = createDefaultPlayerCharacterSelection();
+    if (!raw || typeof raw !== 'object') return fallback;
+    const src = raw as Partial<PlayerCharacterSelection>;
+    const character = typeof src.characterId === 'string'
+        ? PLAYER_CHARACTER_DEFINITIONS.find((entry) => entry.id === src.characterId && entry.unlocked)
+        : null;
+    const skinTone = typeof src.skinToneId === 'string'
+        ? PLAYER_SKIN_TONES.find((entry) => entry.id === src.skinToneId)
+        : null;
+    const colorScheme = typeof src.colorSchemeId === 'string'
+        ? PLAYER_COLOR_SCHEMES.find((entry) => entry.id === src.colorSchemeId)
+        : null;
+    return {
+        characterId: character?.id ?? fallback.characterId,
+        skinToneId: skinTone?.id ?? fallback.skinToneId,
+        colorSchemeId: colorScheme?.id ?? fallback.colorSchemeId,
+    };
+}
+
+let selection: PlayerCharacterSelection = createDefaultPlayerCharacterSelection();
 let selectedRaceDifficulty: RaceDifficulty = 'competitive';
 
 export function getPlayerCharacterSelection(): Readonly<PlayerCharacterSelection> { return selection; }
+
+// Restore the complete appearance from persistent profile data. Validation keeps
+// removed/renamed character ids in old saves from leaking into runtime systems.
+export function restorePlayerCharacterSelection(saved: unknown): void {
+    selection = normalizePlayerCharacterSelection(saved);
+}
 
 export function selectPlayerCharacter(id: PlayerCharacterId) {
     const character = findPlayerCharacter(id);

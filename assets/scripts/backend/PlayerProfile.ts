@@ -5,9 +5,14 @@
 // when the shape changes so old saves can migrate.
 
 import { defaultAvatarId, generateRandomNickName } from './IdentityConfig';
-import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
+import {
+    createDefaultPlayerCharacterSelection,
+    normalizePlayerCharacterSelection,
+    PLAYER_CHARACTER_DEFINITIONS,
+    PlayerCharacterSelection,
+} from '../app/PlayerCharacterConfig';
 
-export const PLAYER_PROFILE_SCHEMA = 3;
+export const PLAYER_PROFILE_SCHEMA = 4;
 
 // In-game resource display names (single source of truth for UI text).
 export const CURRENCY = {
@@ -44,6 +49,8 @@ export interface PlayerProfile {
     // In-game identity (player-chosen, NOT the real WeChat profile).
     nickName: string;
     avatarId: string;
+    // Last confirmed playable character and its cosmetic appearance.
+    characterSelection: PlayerCharacterSelection;
     // 金币 balance (shared wallet - spend on any character).
     coins: number;
     // Per-day rewarded-ad counter (reset when the date rolls over). Unused while
@@ -84,6 +91,7 @@ export function createDefaultProfile(): PlayerProfile {
         schema: PLAYER_PROFILE_SCHEMA,
         nickName: generateRandomNickName(),
         avatarId: defaultAvatarId(),
+        characterSelection: createDefaultPlayerCharacterSelection(),
         coins: PROGRESSION_CONFIG.starterCoins,
         daily: { date: todayString(), adCount: 0 },
         characters: createDefaultCharacterProgress(),
@@ -101,7 +109,9 @@ function normalizeCharacterProgress(raw: unknown): CharacterProgress {
 // Fill in any missing fields on a loaded profile (forward-compatible migration)
 // and roll the daily counter over if the date changed. Always returns a valid,
 // fully-populated profile. Migrates schema 2 (swimCards + per-character xp) to
-// schema 3 (coins + per-character level only).
+// schema 3 (coins + per-character level only), then schema 4 (persistent
+// character selection). Saves without a selection use the current roster's first
+// unlocked character rather than a model-array position.
 export function normalizeProfile(raw: unknown): PlayerProfile {
     const base = createDefaultProfile();
     if (!raw || typeof raw !== 'object') {
@@ -126,6 +136,7 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
         schema: PLAYER_PROFILE_SCHEMA,
         nickName: typeof src.nickName === 'string' && src.nickName.length > 0 ? src.nickName : base.nickName,
         avatarId: typeof src.avatarId === 'string' && src.avatarId.length > 0 ? src.avatarId : base.avatarId,
+        characterSelection: normalizePlayerCharacterSelection(src.characterSelection),
         coins,
         daily: {
             date: typeof src.daily?.date === 'string' ? src.daily!.date : base.daily.date,
