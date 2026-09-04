@@ -57,10 +57,6 @@ CCEffect %{
         # y = soft-band contribution (0 = continuous gradient, 1 = toon bands),
         # z/w = continuous-gradient input range.
         celSoftParams:   { value: [0.22, 0.35, 0.08, 0.92] }
-        # Rim light (Fresnel edge glow). rgb = rim colour, a = strength.
-        rimColor:        { value: [0.55, 0.72, 1.0, 0.3], linear: true, editor: { type: color } }
-        # Rim light shape: x = power (higher = thinner rim), y = enable (0/1). z/w unused.
-        rimParams:       { value: [4.0, 1, 0, 0] }
         # Start-dive inner glow. It is composited into the body's own textured
         # pass with Screen blending, so it cannot z-fight with a proxy shell.
         chargeBlue:      { value: [0.05, 0.62, 1.0, 1.0], linear: true, editor: { type: color } }
@@ -128,8 +124,6 @@ CCProgram swimmer-color-fs %{
     vec4 reflectClipParams;
     vec4 celParams;
     vec4 celSoftParams;
-    vec4 rimColor;
-    vec4 rimParams;
     vec4 chargeBlue;
     vec4 chargeYellow;
     vec4 chargeRed;
@@ -209,15 +203,6 @@ CCProgram swimmer-color-fs %{
     // Cool-tint the darker bands slightly for a more illustrative feel.
     celShaded = mix(celShaded, celShaded * vec3(0.92, 0.96, 1.06), (1.0 - celQ) * celParams.w);
     bodyColor = mix(bodyColor, celShaded, step(0.5, celParams.z));
-    // --- Rim light: bright Fresnel edge glow (back/side light) ----------------
-    // Reuses celN / celV. Brightest where the surface faces away from the
-    // camera (silhouette), adding an anime-style backlight halo. Additive.
-    float rim = pow(1.0 - clamp(dot(celN, celV), 0.0, 1.0), max(rimParams.x, 0.1));
-    // Water scatters the hard silhouette halo. Keep a hint for readability from
-    // above and reduce it further for the direct underwater view.
-    float submergedRimScale = mix(0.48, 0.28, cameraSubmerge);
-    float rimScale = mix(1.0, submergedRimScale, belowness);
-    bodyColor += rimColor.rgb * (rim * rimColor.a * step(0.5, rimParams.y) * rimScale);
     // Silhouette-only inner glow using the standard Screen formula:
     // result = 1 - (1 - base) * (1 - overlay).
     // The smooth skinned vertex normal makes the Fresnel edge continuous across

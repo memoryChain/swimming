@@ -236,11 +236,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _diveChargeRequestedPower = 0;
     private _diveChargeVisualElapsed = 0;
     private _diveChargeReleaseBurstRemaining = 0;
-    private _diveChargeRimSuppressed = false;
     private readonly _diveChargeWorldCenter = new Vec3();
     private readonly _diveChargeBodyMaterials: Material[] = [];
     private readonly _diveChargeBodyParams = new Vec4(0, 0, 0.90, 15);
-    private readonly _diveChargeRimParams = new Vec4(4, 1, 0, 0);
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmerColorVariant().id;
@@ -1530,8 +1528,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     setDiveChargeEffect(power: number, active: boolean) {
         const nextPower = Math.max(0, Math.min(1, power));
         if (this._diveChargeRequestedActive === active
-            && this._diveChargeRequestedPower === nextPower
-            && (active || (!this._diveChargeRimSuppressed && this._diveChargeRimParams.y >= 1))) {
+            && this._diveChargeRequestedPower === nextPower) {
             return;
         }
         // A rematch can replace the renderer's material instances while the old
@@ -1542,32 +1539,28 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._diveChargeRequestedActive = active;
         this._diveChargeRequestedPower = nextPower;
-        this._diveChargeRimSuppressed = active;
         if (!active) {
             this._diveChargeVisualElapsed = 0;
             this.applyDiveChargeVisual(0, false);
         }
     }
 
-    /** Remove the local burst at the take-off edge while keeping the normal rim suppressed in flight. */
+    /** Remove the local burst at the take-off edge. */
     clearDiveChargeBurstBeforeTakeoff() {
         this._diveChargeRequestedActive = false;
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
         this._diveChargeReleaseBurstRemaining = 0;
-        this._diveChargeRimSuppressed = true;
         this.applyDiveChargeBodyMaterial(0, 0, false);
         this._diveChargeGatherEffect?.destroy();
         this._diveChargeGatherEffect = null;
     }
 
-    /** Terminal cleanup after entry, interruption or reuse; restores the regular character rim. */
+    /** Terminal cleanup after entry, interruption or reuse. */
     finishDiveChargeEffect() {
         if (!this._diveChargeRequestedActive
             && !this._diveChargeGatherEffect
-            && this._diveChargeBodyParams.x <= 0
-            && !this._diveChargeRimSuppressed
-            && this._diveChargeRimParams.y >= 1) {
+            && this._diveChargeBodyParams.x <= 0) {
             this._diveChargeBodyMaterials.length = 0;
             return;
         }
@@ -1575,7 +1568,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
         this._diveChargeReleaseBurstRemaining = 0;
-        this._diveChargeRimSuppressed = false;
         this.applyDiveChargeBodyMaterial(0, 0, false);
         this._diveChargeBodyMaterials.length = 0;
         this._diveChargeGatherEffect?.destroy();
@@ -1587,7 +1579,6 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeRequestedActive = false;
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
-        this._diveChargeRimSuppressed = true;
         this.applyDiveChargeBodyMaterial(0, 0, false);
         const gather = this._diveChargeGatherEffect;
         if (gather && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
@@ -1682,9 +1673,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             },
         });
         // Dynamic colour assets can finish loading while the swimmer is charging
-        // or airborne. Rebind the active charge/rim state onto the fresh material
-        // instances so their defaults cannot restore the rim mid-dive.
-        if (this._diveChargeRequestedActive || this._diveChargeRimSuppressed) {
+        // while charging. Rebind the active charge state onto the fresh material
+        // instances so the effect remains continuous.
+        if (this._diveChargeRequestedActive) {
             const chargeStillActive = this._diveChargeRequestedActive && this._diveChargeBodyParams.x > 0;
             this.applyDiveChargeBodyMaterial(
                 chargeStillActive ? this._diveChargeBodyParams.x : 0,
@@ -1729,15 +1720,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         this._diveChargeBodyParams.x = active ? intensity : 0;
         this._diveChargeBodyParams.y = active ? Math.max(0, Math.min(1, progress)) : 0;
-        // Keep the normal cyan rim disabled from charge start through airborne
-        // entry; terminal cleanup restores it after entry or interruption.
-        this._diveChargeRimParams.y = this._diveChargeRimSuppressed ? 0 : 1;
         for (const material of this._diveChargeBodyMaterials) {
             if (!material?.isValid) {
                 continue;
             }
             material.setProperty('chargeParams', this._diveChargeBodyParams);
-            material.setProperty('rimParams', this._diveChargeRimParams);
         }
     }
 

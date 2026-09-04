@@ -7,9 +7,9 @@
 - 原文件：`tripo_convert_790f398d-1d56-4067-a80e-fdb7a9a37d4c.glb`，未修改。
 - 原始 SHA-256：`d81ff0c57ce8fbced41fc0d158f76b881b013cdfb6f246f590d3f4c1cdba2c0c`。
 - 原始副本、制作文件、完整数值报告与离线预览：`tools/characters/tripo_790f398d/`，不进入运行时资源。
-- 模型：`assets/race/models/CartonSwimmer6.glb`，594,244 字节，1 个网格、1 个材质、1 个图元、41 根骨骼、5,705 个三角面；内嵌 512×512 JPEG。
-- 模型 SHA-256：`24db65f68a69081aac800dfb9c800b8d9c34010011d361e8b2ce20f5703e2554`。
-- 遮罩：`assets/race/models/CartonSwimmer6ColorMask.png`，512×512 RGBA，151,273 字节。
+- 模型：`assets/race/models/CartonSwimmer6.glb`，465,128 字节，1 个网格、1 个材质、1 个图元、41 根骨骼、5,705 个三角面；内嵌 512×512 JPEG。
+- 模型 SHA-256：`ebb501207cd9ec8036c434378b6b1b4871e6a62a199ec299dcb2a70a2b0bdcd9`。
+- 遮罩：`assets/race/models/CartonSwimmer6ColorMask.png`，512×512 RGBA，125,900 字节；SHA-256 为 `2aedec42962b8c4cdfb1ae129fec34297a5b75f3ccf40e78394aea0ab463e6d4`。
 
 ## 换色分区
 
@@ -26,7 +26,21 @@
 python scripts/generate-green-recolor-mask.py --input tools/characters/tripo_790f398d/basecolor.jpg --output assets/race/models/CartonSwimmer6ColorMask.png --skin-close-radius 0 --skin-palette light-peach --preview-prefix CartonSwimmer6
 ```
 
-最终绿色非零像素 79,111，皮肤非零像素 86,826。已检查原色、六组高对比换色及正面、背面、侧面的装备边界。
+UV 重排后的最终遮罩中，衣服非零像素 77,993，皮肤非零像素 89,093；像素数变化来自新图集的面积分配、烘焙扩张与下摆内侧补片，不改变 R/G/B 通道语义。已检查原色、六组高对比换色及正面、背面、侧面的装备边界。
+
+黑色换色实机截图首先暴露出后腰衣摆内侧仍保留暗绿色。普通绿色规则对这套偏黄绿色布料的暗部权重不足，因此从重排后的底图以 `--garment-palette lime` 重建衣服 R 通道，保留原有肤色 B 通道，并在交界处按衣服权重压低 B。
+
+后续低机位截图进一步确认，目标不是露出的后腰皮肤，而是皮肤前方、只有角色俯身仰视时才出现的第二层上衣内衬。单层射线首先命中后腰皮肤，不能用来划分这部分；最终改用多层射线定位其后的下摆内圈，并用法线方向和网格连通关系筛出 16 个向下的内衬面。补片从未修改后腰皮肤的干净遮罩重新生成，只写入这 16 个面的 UV，以 8 倍采样和 1 像素边缘扩张提高 477 个衣服纹素，其中 318 个为新增衣服覆盖；未选中任何腰部皮肤面。静止低机位红色对照中皮肤保持原色，内衬面的几何高亮形成一圈独立薄面。有效阶段备份保存在 `CartonSwimmer6ColorMask_BeforeDarkGreenFix.png`、`CartonSwimmer6ColorMask_BeforeLowerShirtInnerFix.png` 与 `CartonSwimmer6ColorMask_BeforeInnerRingFix.png`。
+
+## UV 重排
+
+制作与审计产物位于 `tools/characters/uv-repack/CartonSwimmer6/`。`CartonSwimmer6_UVRepack_Working.blend` 同时保留 `UVMap_Source` 和 `UVMap_Repacked`，`CartonSwimmer6_UVRepack_Final.blend` 仅保留规范化后的运行时 `UVMap`。
+
+- 仅焊接距离 `1e-7` 内、骨骼权重和顶点法线一致的重复顶点；Blender 顶点数由 7,154 降到 2,915，真实几何连通块为 19。`1e-6` 已出现权重和法线冲突，因此没有放宽阈值。
+- UV 岛由 943 降到 444；最终审计为 0 退化面、0 越界面、0 栅格重叠，精确三角形相交检查也为 0。
+- 底色和换色遮罩均以原 UV 采样、目标 UV 写入，使用 2048×2048 烘焙后高质量缩小到项目规定的 512×512。
+- 导出顶点由 7,154 降到 5,693；网格、材质、图元、三角面、骨骼、节点名和包围盒保持不变。
+- 已离线比较原色与高对比换色的正面、侧面、背面，以及挥手、蛙泳和跳水准备姿势，未发现错贴、黑缝、皮肤渗色或附件错位。
 
 ## 骨架与动作
 
@@ -46,9 +60,9 @@ python scripts/generate-green-recolor-mask.py --input tools/characters/tripo_790
 
 - 模型 UUID：`a67993c4-5f32-4ba5-97ea-fd6d3710232e`。
 - 遮罩 UUID：`06f4e112-3493-49ab-a051-be0a37f65ade`。
-- Creator 生成元数据后执行 `textures:fix`；底图使用 ASTC 6×6＋JPEG 回退，遮罩使用 ASTC 6×6＋PNG 回退，内嵌纹理关闭 mip 采样；重新导入后确认实际 Texture2D 数据一致。
-- 角色在 `race` 分包，不增加主包 UI 纹理。模型和遮罩共约 728 KiB，未运行平台构建，构建后体积未测。
+- 保留既有模型与遮罩 `.meta`，UUID 未变化；离线 `textures:check` 通过，既有策略仍要求底图使用 ASTC 6×6＋JPEG 回退、遮罩使用 ASTC 6×6＋PNG 回退，内嵌纹理关闭 mip 采样。本次 UV 重排没有启动或重启 Creator，需在用户现有编辑器会话中对模型和遮罩执行重新导入后，再确认实际 Texture2D 数据与压缩产物一致。
+- 角色在 `race` 分包，不增加主包 UI 纹理。模型和遮罩合计 591,028 字节（约 577 KiB），比重排前减少 154,489 字节；未运行平台构建，构建后体积未测。
 - 新角色改变共享模型表长度及头像映射，联机协议由 5 升为 6，拒绝新旧角色表混跑。沿用现有头像外观映射及养成摘要传输，不新增逐帧网络数据；单机继续使用本地角色与配色选择。
-- TypeScript 5.4.5 指定检查通过；角色测试 6 项、网络测试 14 项、遮罩测试 3 项通过；`textures:check` 通过，扫描 115 项、纳入压缩 49 项；`git diff --check` 通过。
+- 初次导入时 TypeScript 5.4.5 指定检查、角色测试 6 项和网络测试 14 项通过。本次 UV 重排未改 TypeScript；重新执行遮罩测试 4 项均通过，`textures:check` 扫描 119 项、纳入压缩 53 项并通过，`git diff --check` 通过。
 
 离线渲染用于检查分区和变形，不等同于引擎光照或真机验证。仍需在现有编辑器会话及 iOS／Android 微信真机确认反复切换角色和颜色、准备到跳水衔接、自由泳、舞蹈鞋底接触以及压缩后的边界；本次未运行平台构建或真机测试。

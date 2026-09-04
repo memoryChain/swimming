@@ -286,8 +286,7 @@ export class GameFlowController {
                 this.prepareAndScheduleAiDives();
             }
             if (state === GameState.GLIDING) {
-                // The pre-jump burst must not survive into the airborne/entry
-                // phase. Keep the ordinary rim suppressed until racing begins.
+                // The pre-jump burst must not survive into the airborne/entry phase.
                 this._refs.playerSwimmer?.clearDiveChargeBurstBeforeTakeoff();
                 this._refs.raceCameraDirector.resetRaceTimers();
                 this._refs.uiFlow.showGliding();
