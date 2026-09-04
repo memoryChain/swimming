@@ -284,6 +284,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // translate the visual model so that pivot stays where the unpitched body put
     // it. Gameplay position/collision remain on the logical swimmer node.
     private readonly _collisionPitchPivotModelLocal = new Vec3();
+    private readonly _presentationPivotModelLocal = new Vec3();
     private readonly _collisionPitchVisualOffset = new Vec3();
     private readonly _tmpCollisionPitchPivotBase = new Vec3();
     private readonly _tmpCollisionPitchPivotCurrent = new Vec3();
@@ -291,6 +292,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _tmpCollisionPitchDelta = new Vec3();
     private readonly _tmpCollisionPitchInverseRotation = new Quat();
     private _hasCollisionPitchPivot = false;
+    private _hasPresentationPivot = false;
     private readonly _tmpSplashWorld = new Vec3();
     private readonly _tmpSplashHeadWorld = new Vec3();
     private readonly _tmpSplashHandWorld = new Vec3();
@@ -392,10 +394,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     getModelWorldPivot(out: Vec3): boolean {
-        // Imported armature roots are commonly offset behind the character.
-        // Prefer the hip for presentation rotation: it lies on the body's
-        // vertical centreline and stays stable while a showcase action moves
-        // the head and arms.
+        // The presentation axis uses the bind-pose midpoint between both feet.
+        // It is stable across actions and independent of small rig-specific hip offsets.
+        if (this._model?.isValid && this._hasPresentationPivot) {
+            Vec3.transformMat4(out, this._presentationPivotModelLocal, this._model.worldMatrix);
+            return true;
+        }
         if (this._pose.getHipWorldPosition(out)) {
             return true;
         }
@@ -656,6 +660,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             } else {
                 this._hasCollisionPitchPivot = false;
             }
+            this._hasPresentationPivot = false;
+            if (this._hasCollisionPitchPivot) {
+                Vec3.copy(this._presentationPivotModelLocal, this._collisionPitchPivotModelLocal);
+                if (this._pose.getStandingFootCenterWorldPosition(this._tmpFlipTurnWorldPivot)) {
+                    this._model.inverseTransformPoint(
+                        this._tmpFlipTurnContactLocal,
+                        this._tmpFlipTurnWorldPivot,
+                    );
+                    this._presentationPivotModelLocal.x = this._tmpFlipTurnContactLocal.x;
+                    this._presentationPivotModelLocal.z = this._tmpFlipTurnContactLocal.z;
+                }
+                this._hasPresentationPivot = true;
+            }
             this.refreshShowcaseAction();
             this.loadSampledActionOverrides(variant, token);
             this._loaded = true;
@@ -692,6 +709,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._perfectGlowIntensity = 0;
         this._collisionFlashTimer = 0;
         this._hasCollisionPitchPivot = false;
+        this._hasPresentationPivot = false;
         this._collisionPitchVisualOffset.set(0, 0, 0);
         this._outlineRoot = null;
         if (this._model?.isValid) {

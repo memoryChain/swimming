@@ -49,6 +49,7 @@ export class PrepareRaceCharacterPreview extends Component {
     private _lobbyPresentation = false;
     private _shadowCaptureEnabled = true;
     private readonly _modelPivot = new Vec3();
+    private readonly _modelPivotInRotationRoot = new Vec3();
     private readonly _groundShadowPosition = new Vec3();
 
     get shadowTexture(): RenderTexture | null {
@@ -164,12 +165,17 @@ export class PrepareRaceCharacterPreview extends Component {
             // bounding box. Bounds move with poses, while imported armature roots
             // can be offset behind the character's body.
             this._pivotNode.setRotationFromEuler(0, 0, 0);
-            if (!this._rig.getModelWorldPivot(this._modelPivot)) return;
-            // The camera looks at world origin. Move the authored armature pivot to
-            // that point (rather than preserving its imported X/Z offset) so the
-            // selected character is visually centred in the prepare-race screen.
             this._pivotNode.setPosition(0, PREVIEW_CHARACTER_Y_OFFSET + PREVIEW_CHARACTER_LIFT, 0);
-            this._swimmerNode.setPosition(-this._modelPivot.x, 0, -this._modelPivot.z);
+            if (!this._rig.getModelWorldPivot(this._modelPivot)) return;
+            // getModelWorldPivot 返回世界坐标，而 swimmer 使用旋转根节点下的本地坐标。
+            // 先转换坐标空间，避免外层预览缩放再次放大偏移量，导致旋转轴落在背后。
+            this._pivotNode.inverseTransformPoint(this._modelPivotInRotationRoot, this._modelPivot);
+            const swimmerPosition = this._swimmerNode.position;
+            this._swimmerNode.setPosition(
+                swimmerPosition.x - this._modelPivotInRotationRoot.x,
+                swimmerPosition.y,
+                swimmerPosition.z - this._modelPivotInRotationRoot.z,
+            );
             this._pivotNode.setRotationFromEuler(0, this._yawDegrees, 0);
             this._centered = true;
         }

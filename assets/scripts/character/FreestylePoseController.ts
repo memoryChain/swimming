@@ -90,6 +90,11 @@ export type ProceduralPoseSnapshot = {
     boneRotations: Map<Node, Quat>;
 };
 
+// The shared standing-action source carries a small backward whole-body bias.
+// Preserve each character's authored bind stance while removing that common bias.
+const SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES = 4;
+const SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES = 7;
+
 export class FreestylePoseController {
     public root: Node = null;
     public readonly rootBasePos = new Vec3();
@@ -167,10 +172,15 @@ export class FreestylePoseController {
     private readonly _tmpClapLeftTarget = new Vec3();
     private readonly _tmpClapRightTarget = new Vec3();
     private readonly _tmpClapHandRotation = new Quat();
+    private readonly _leftGroundFootRotationInRoot = new Quat();
+    private readonly _rightGroundFootRotationInRoot = new Quat();
+    private readonly _swimFootSideInRoot = new Vec3();
+    private readonly _sampledActionRestFootCenterInRoot = new Vec3();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
     private _sampledActionRestLeftContactOffsetY = 0;
     private _sampledActionRestRightContactOffsetY = 0;
     private _sampledActionHipTranslationScale = 1;
+    private _sampledStandingUprightCorrectionDegrees = SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES;
     private _modelVariantId = 'muscleMan';
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
@@ -227,6 +237,10 @@ export class FreestylePoseController {
                 this._boneBasePosition.set(bone, Vec3.clone(bone.position));
             }
         }
+        this.captureGroundFootRotationInRoot(this._leftFoot, this._leftGroundFootRotationInRoot);
+        this.captureGroundFootRotationInRoot(this._rightFoot, this._rightGroundFootRotationInRoot);
+        this.captureSwimFootSideInRoot();
+        this.captureSampledStandingUprightCorrection();
         this.captureSampledActionGroundPlane();
     }
 
@@ -534,6 +548,17 @@ export class FreestylePoseController {
         return true;
     }
 
+    getStandingFootCenterWorldPosition(out: Vec3): boolean {
+        if (!this._leftFoot || !this._rightFoot) {
+            return false;
+        }
+        this._leftFoot.getWorldPosition(this._tmpGroundAnkle);
+        this._rightFoot.getWorldPosition(this._tmpGroundTarget);
+        Vec3.add(out, this._tmpGroundAnkle, this._tmpGroundTarget);
+        Vec3.multiplyScalar(out, out, 0.5);
+        return true;
+    }
+
     getFlipTurnFootContactWorldPositions(outputs: Vec3[]): number {
         const bones = [this._leftFoot, this._leftToe, this._rightFoot, this._rightToe];
         let count = 0;
@@ -559,10 +584,20 @@ export class FreestylePoseController {
         const sample = sampleDebugActionMotion(action.samples, phase);
         this.applySampledActionTranslation(sample, power, action);
         this.applySampledActionRotations(sample, power, action);
+        this.applyCurrentBoneOffset(
+            this._rootBone,
+            this._sampledStandingUprightCorrectionDegrees * clamp(power, 0, 1),
+            0,
+            0,
+        );
         if (actionId === 'clapping') {
             this.applySampledClapContact(sample.phase, power);
         }
-        this.applySampledActionGrounding(sample, power);
+        // Dancing Twerk 的旧采样误把整段双脚支撑动作标成了完全腾空。
+        const contactMask = actionId === 'dancing_twerk' ? 3 : (sample.groundedFeet ?? 0);
+        this.applySampledStandingFootOrientation(contactMask, power);
+        this.applySampledActionGrounding(sample, power, contactMask);
+        this.applySampledActionHorizontalCentering();
     }
 
     applyDivePrepToStreamlinePose(blend: number) {
@@ -1097,6 +1132,11 @@ export class FreestylePoseController {
         const blend = clamp(power, 0, 1);
         const baseRelative = action.rotationSpace === 'base-relative';
         for (const name of Object.keys(sample.rotations) as SampledActionBoneName[]) {
+            // 这套采样动作来自赤脚动作源，ToeBase 曲线会让使用整块鞋底的角色
+            // 在脚掌中部折弯。站立展示保持脚趾绑定姿势，让脚和鞋作为整体转动。
+            if (name === 'L_ToeBase' || name === 'R_ToeBase') {
+                continue;
+            }
             const rotation = sample.rotations[name];
             if (!rotation) {
                 continue;
@@ -1158,6 +1198,7 @@ export class FreestylePoseController {
             this._sampledActionRestLeftContactOffsetY = 0;
             this._sampledActionRestRightContactOffsetY = 0;
             this._sampledActionHipTranslationScale = 1;
+            this._sampledActionRestFootCenterInRoot.set(0, 0, 0);
             return;
         }
         this.root.getWorldPosition(this._tmpGroundHip);
@@ -1174,13 +1215,35 @@ export class FreestylePoseController {
                 + hipBase.z * hipBase.z
             ))
             : 1;
+        if (this.getStandingFootCenterWorldPosition(this._tmpGroundTarget)) {
+            this.root.inverseTransformPoint(
+                this._sampledActionRestFootCenterInRoot,
+                this._tmpGroundTarget,
+            );
+        } else {
+            this._sampledActionRestFootCenterInRoot.set(0, 0, 0);
+        }
     }
 
-    private applySampledActionGrounding(sample: SampledActionMotionSample, power: number) {
+    private applySampledActionHorizontalCentering() {
+        if (!this.root || !this._hips || !this.getStandingFootCenterWorldPosition(this._tmpGroundDesiredKnee)) {
+            return;
+        }
+        Vec3.transformMat4(
+            this._tmpGroundTarget,
+            this._sampledActionRestFootCenterInRoot,
+            this.root.worldMatrix,
+        );
+        this._hips.getWorldPosition(this._tmpGroundHip);
+        this._tmpGroundHip.x += this._tmpGroundTarget.x - this._tmpGroundDesiredKnee.x;
+        this._tmpGroundHip.z += this._tmpGroundTarget.z - this._tmpGroundDesiredKnee.z;
+        this._hips.setWorldPosition(this._tmpGroundHip);
+    }
+
+    private applySampledActionGrounding(sample: SampledActionMotionSample, power: number, contactMask: number) {
         if (!this.root || !this._hips) {
             return;
         }
-        const contactMask = sample.groundedFeet ?? 0;
         const leftGrounded = (contactMask & 1) !== 0;
         const rightGrounded = (contactMask & 2) !== 0;
         if (!leftGrounded && !rightGrounded) {
@@ -1237,6 +1300,109 @@ export class FreestylePoseController {
                 );
             }
         }
+    }
+
+    private applySampledStandingFootOrientation(contactMask: number, power: number) {
+        const blend = clamp(power, 0, 1);
+        if ((contactMask & 1) !== 0) {
+            this.applyGroundFootRotation(
+                this._leftFoot,
+                this._leftGroundFootRotationInRoot,
+                blend,
+            );
+        }
+        if ((contactMask & 2) !== 0) {
+            this.applyGroundFootRotation(
+                this._rightFoot,
+                this._rightGroundFootRotationInRoot,
+                blend,
+            );
+        }
+    }
+
+    private captureGroundFootRotationInRoot(foot: Node, out: Quat) {
+        Quat.copy(out, Quat.IDENTITY);
+        if (!this.root || !foot) {
+            return;
+        }
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpRootWorldRotation);
+        foot.getWorldRotation(this._tmpRootWorldRotation);
+        Quat.multiply(out, this._tmpInverseParentWorldRotation, this._tmpRootWorldRotation);
+    }
+
+    private applyGroundFootRotation(foot: Node, rotationInRoot: Quat, power: number) {
+        if (!this.root || !foot) {
+            return;
+        }
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Quat.multiply(this._tmpResultRotation, this._tmpRootWorldRotation, rotationInRoot);
+        if (power < 0.999) {
+            foot.getWorldRotation(this._tmpGroundFootRotation);
+            Quat.slerp(this._tmpResultRotation, this._tmpGroundFootRotation, this._tmpResultRotation, power);
+        }
+        foot.setWorldRotation(this._tmpResultRotation);
+    }
+
+    private captureSwimFootSideInRoot() {
+        this._swimFootSideInRoot.set(0, 0, 1);
+        if (!this.root || !this._leftFoot || !this._rightFoot) {
+            return;
+        }
+        this._leftFoot.getWorldPosition(this._tmpGroundAnkle);
+        this._rightFoot.getWorldPosition(this._tmpGroundTarget);
+        Vec3.subtract(this._swimFootSideInRoot, this._tmpGroundTarget, this._tmpGroundAnkle);
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Quat.invert(this._tmpInverseParentWorldRotation, this._tmpRootWorldRotation);
+        Vec3.transformQuat(
+            this._swimFootSideInRoot,
+            this._swimFootSideInRoot,
+            this._tmpInverseParentWorldRotation,
+        );
+        Vec3.normalize(this._swimFootSideInRoot, this._swimFootSideInRoot);
+    }
+
+    private captureSampledStandingUprightCorrection() {
+        this._sampledStandingUprightCorrectionDegrees = SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES;
+        if (!this.root || !this._rootBone || !this._head || !this._leftFoot || !this._rightFoot || !this._leftToe || !this._rightToe) {
+            return;
+        }
+
+        this._leftFoot.getWorldPosition(this._tmpGroundAnkle);
+        this._rightFoot.getWorldPosition(this._tmpGroundTarget);
+        this.root.inverseTransformPoint(this._tmpGroundAnkle, this._tmpGroundAnkle);
+        this.root.inverseTransformPoint(this._tmpGroundTarget, this._tmpGroundTarget);
+        Vec3.add(this._tmpGroundDesiredKnee, this._tmpGroundAnkle, this._tmpGroundTarget);
+        Vec3.multiplyScalar(this._tmpGroundDesiredKnee, this._tmpGroundDesiredKnee, 0.5);
+
+        this._leftToe.getWorldPosition(this._tmpGroundKnee);
+        this._rightToe.getWorldPosition(this._tmpGroundAxis);
+        this.root.inverseTransformPoint(this._tmpGroundKnee, this._tmpGroundKnee);
+        this.root.inverseTransformPoint(this._tmpGroundAxis, this._tmpGroundAxis);
+        Vec3.subtract(this._tmpGroundKneeOffset, this._tmpGroundKnee, this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpDirection, this._tmpGroundAxis, this._tmpGroundTarget);
+        Vec3.add(this._tmpGroundKneeOffset, this._tmpGroundKneeOffset, this._tmpDirection);
+        this._tmpGroundKneeOffset.y = 0;
+        const forwardLength = this._tmpGroundKneeOffset.length();
+        if (forwardLength <= 0.000001) {
+            return;
+        }
+        Vec3.multiplyScalar(this._tmpGroundKneeOffset, this._tmpGroundKneeOffset, 1 / forwardLength);
+
+        this._head.getWorldPosition(this._tmpGroundHip);
+        this.root.inverseTransformPoint(this._tmpGroundHip, this._tmpGroundHip);
+        Vec3.subtract(this._tmpDirection, this._tmpGroundHip, this._tmpGroundDesiredKnee);
+        const standingHeight = Math.abs(this._tmpDirection.y);
+        if (standingHeight <= 0.000001) {
+            return;
+        }
+        const bindForwardOffset = Vec3.dot(this._tmpDirection, this._tmpGroundKneeOffset);
+        const bindLeanDegrees = Math.atan2(bindForwardOffset, standingHeight) * 180 / Math.PI;
+        this._sampledStandingUprightCorrectionDegrees = clamp(
+            SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES - bindLeanDegrees,
+            -SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES,
+            SAMPLED_STANDING_MAX_UPRIGHT_CORRECTION_DEGREES,
+        );
     }
 
     private sampledFootContactWorldY(foot: Node, toe: Node): number {
@@ -1699,15 +1865,46 @@ export class FreestylePoseController {
         const plantarFlex = 16 + downBeat * 18 + calfUnderWater * 8;
         const footPitch = ankle * 8 * power - plantarFlex * power;
         const toePitch = ankle * 4.5 * power - plantarFlex * 0.62 * power;
-        const footSoleUpTwist = -side * downBeat * 7 * highNeutral * power;
-        const toeSoleUpTwist = -side * downBeat * 3.5 * highNeutral * power;
-        const footOutRoll = -side * downBeat * 1.8 * highNeutral * power;
-        const toeOutRoll = -side * downBeat * 0.9 * highNeutral * power;
 
         this.applyBoneOffset(upLeg, hip * 6.5 * power, side * 0.35 * highNeutral, 0);
         this.applyBoneOffset(leg, knee * 10.5 * power - downBeat * 4.5 * power, side * 0.2 * highNeutral, side * 0.35 * highNeutral);
-        this.applyBoneOffset(foot, footPitch, footSoleUpTwist, footOutRoll);
-        this.applyBoneOffset(toe, toePitch, toeSoleUpTwist, toeOutRoll);
+        // 自由泳脚掌沿身体中线绷直。旧的侧向扭转会在下踢时把一侧鞋底
+        // 明显甩向外侧，并因左右腿相位不同而看起来像单侧绑定错误。
+        this.applyBoneOffset(foot, footPitch, 0, 0);
+        this.applyBoneOffset(toe, toePitch, 0, 0);
+        this.alignFreestyleFootWithCenterline(foot, toe, power);
+    }
+
+    private alignFreestyleFootWithCenterline(foot: Node, toe: Node, power: number) {
+        if (!this.root || !foot || !toe || power <= 0) {
+            return;
+        }
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Vec3.transformQuat(this._tmpParentDirection, this._swimFootSideInRoot, this._tmpRootWorldRotation);
+        Vec3.normalize(this._tmpParentDirection, this._tmpParentDirection);
+
+        foot.getWorldRotation(this._tmpGroundFootRotation);
+        Vec3.copy(this._tmpBaseDirection, toe.position);
+        Vec3.normalize(this._tmpBaseDirection, this._tmpBaseDirection);
+        Vec3.transformQuat(this._tmpWorldDirection, this._tmpBaseDirection, this._tmpGroundFootRotation);
+        Vec3.normalize(this._tmpWorldDirection, this._tmpWorldDirection);
+        Vec3.scaleAndAdd(
+            this._tmpDirection,
+            this._tmpWorldDirection,
+            this._tmpParentDirection,
+            -Vec3.dot(this._tmpWorldDirection, this._tmpParentDirection),
+        );
+        if (this._tmpDirection.lengthSqr() <= 0.000001) {
+            return;
+        }
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        Quat.rotationTo(this._tmpDeltaRotation, this._tmpWorldDirection, this._tmpDirection);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundFootRotation);
+        const blend = clamp(power, 0, 1);
+        if (blend < 0.999) {
+            Quat.slerp(this._tmpResultRotation, this._tmpGroundFootRotation, this._tmpResultRotation, blend);
+        }
+        foot.setWorldRotation(this._tmpResultRotation);
     }
 
     private applyBreaststrokeLeg(upLeg: Node, leg: Node, foot: Node, toe: Node, side: number, footTarget: readonly [number, number, number], kick: number, power: number) {
