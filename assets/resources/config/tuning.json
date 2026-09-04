@@ -78,7 +78,7 @@
     "motion.kickSettleCyclesPerSecond": 1.2,
     "motion.swimBodyPitchDegrees": -8,
     "motion.swimBodyYOffset": -0.18,
-    "motion.handPalmTurnDegrees": 130,
+    "motion.handPalmTurnDegrees": 65,
     "motion.forwardArmSideClearance": 0.3,
     "motion.rightBreathTurnDegrees": 70,
     "motion.rightBreathBodyRollDegrees": 4,

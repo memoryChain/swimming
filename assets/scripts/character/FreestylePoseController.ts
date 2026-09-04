@@ -148,6 +148,7 @@ export class FreestylePoseController {
     private readonly _tmpBlendRotation = new Quat();
     private readonly _tmpBlendPosition = new Vec3();
     private readonly _tmpDirection = new Vec3();
+    private readonly _tmpArmDirection = new Vec3();
     private readonly _tmpWorldDirection = new Vec3();
     private readonly _tmpParentDirection = new Vec3();
     private readonly _tmpBaseDirection = new Vec3();
@@ -1038,7 +1039,9 @@ export class FreestylePoseController {
             s + this._tmpMovementForwardRoot.z * c,
         );
         Vec3.normalize(this._tmpDirection, this._tmpDirection);
-        this.applyBoneDirectionFromRootWithOffset(arm, foreArm, this._tmpDirection, 0, upperArmPalmTurn, 0);
+        Vec3.copy(this._tmpArmDirection, this._tmpDirection);
+        this.applyBoneDirectionFromRootWithOffset(arm, foreArm, this._tmpDirection, 0, 0, 0);
+        this.applyBoneAxialRoll(arm, foreArm, upperArmPalmTurn);
         if (forwardReach > 0.02) {
             this._tmpDirection.set(
                 side * sideClearance * 0.34 + this._tmpMovementForwardRoot.x,
@@ -1046,10 +1049,18 @@ export class FreestylePoseController {
                 s * 0.04 + this._tmpMovementForwardRoot.z,
             );
             Vec3.normalize(this._tmpDirection, this._tmpDirection);
-            this.applyBoneDirectionFromRootWithOffset(foreArm, hand, this._tmpDirection, elbowStraight, foreArmOpen + foreArmPalmTurn, foreArmRoll);
+            // During hand entry, blend the forearm target toward the current upper
+            // arm direction as reach increases. Reversing these operands makes the
+            // elbow bend more at full extension, especially on disconnected cartoon
+            // rigs whose right-arm child offsets are not perfectly axial.
+            Vec3.copy(this._tmpBaseDirection, this._tmpDirection);
+            Vec3.lerp(this._tmpDirection, this._tmpBaseDirection, this._tmpArmDirection, forwardReach);
+            Vec3.normalize(this._tmpDirection, this._tmpDirection);
+            this.applyBoneDirectionFromRootWithOffset(foreArm, hand, this._tmpDirection, elbowStraight, foreArmOpen, foreArmRoll);
         } else {
-            this.applyBoneOffset(foreArm, elbowStraight, foreArmOpen + foreArmPalmTurn, foreArmRoll);
+            this.applyBoneOffset(foreArm, elbowStraight, foreArmOpen, foreArmRoll);
         }
+        this.applyBoneAxialRoll(foreArm, hand, foreArmPalmTurn);
         this.applyBoneOffset(hand, handNeutral, handOpen, handRoll);
     }
 
@@ -1964,6 +1975,26 @@ export class FreestylePoseController {
         }
         Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
         Quat.multiply(this._tmpResultRotation, bone.rotation, this._tmpOffsetRotation);
+        bone.setRotation(this._tmpResultRotation);
+    }
+
+    // Palm pronation is a twist around the limb's actual child direction. Applying
+    // it as a local-Y Euler offset bends disconnected cartoon rigs whose child
+    // pivot is not exactly aligned with the authored bone Y axis. Pre-multiplying
+    // around the current parent-space limb direction preserves the elbow/wrist
+    // position while rotating only the skinned surface around that segment.
+    private applyBoneAxialRoll(bone: Node, child: Node, degrees: number) {
+        if (!bone || !child || Math.abs(degrees) <= 0.0001) {
+            return;
+        }
+        Vec3.copy(this._tmpDirection, child.position);
+        if (this._tmpDirection.lengthSqr() <= 0.000001) {
+            return;
+        }
+        Vec3.transformQuat(this._tmpDirection, this._tmpDirection, bone.rotation);
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpDirection, degrees * Math.PI / 180);
+        Quat.multiply(this._tmpResultRotation, this._tmpAxisRotation, bone.rotation);
         bone.setRotation(this._tmpResultRotation);
     }
 

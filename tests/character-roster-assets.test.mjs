@@ -146,3 +146,39 @@ test('疾浪少年服装与肤色独立切换，资源遵守移动端预算', ()
         setPlayerColorScheme(previous.colorSchemeId);
     }
 });
+
+test('蛙跃潮童服装与肤色独立切换，资源遵守移动端预算', () => {
+    const previous = { ...getPlayerCharacterSelection() };
+    try {
+        selectPlayerCharacter('cartonSwimmer8');
+        assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer8');
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
+        const model = Resources.findSwimmerModelVariant('cartonSwimmer8');
+        assert.equal(model.dynamicColor.mode, 'mask');
+        assert.equal(model.dynamicColor.usesCapChannel, false);
+        assert.equal(model.dynamicColor.maskPath, 'models/CartonSwimmer8ColorMask/texture');
+        for (let i = 0; i < 20; ++i) {
+            setPlayerSkinTone('deep');
+            setPlayerColorScheme(i % 2 ? 'blue' : 'red');
+            assert.equal(selectedPlayerSkinTone().id, 'deep');
+            assert.equal(selectedPlayerColorScheme().id, i % 2 ? 'blue' : 'red');
+            setPlayerSkinTone('warm');
+            assert.equal(selectedPlayerSkinTone().preserveOriginal, true);
+        }
+        const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer8.glb', root));
+        const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
+        assert.equal(doc.meshes.length, 1);
+        assert.equal(doc.materials.length, 1);
+        assert.equal(doc.meshes[0].primitives.length, 1);
+        assert.equal(doc.skins[0].joints.length, 41);
+        assert.ok(doc.accessors[doc.meshes[0].primitives[0].indices].count / 3 <= 6000);
+        const png = fs.readFileSync(new URL('assets/race/models/CartonSwimmer8ColorMask.png', root));
+        assert.equal(png.readUInt32BE(16), 512);
+        assert.equal(png.readUInt32BE(20), 512);
+        assert.equal(png[25], 6);
+    } finally {
+        selectPlayerCharacter(previous.characterId);
+        setPlayerSkinTone(previous.skinToneId);
+        setPlayerColorScheme(previous.colorSchemeId);
+    }
+});

@@ -6,8 +6,7 @@ import { SWIMMER_BALANCE } from '../core/GameBalance';
 import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { InputManager } from '../core/InputManager';
 import { RaceManager } from '../core/RaceManager';
-import { loadRaceAsset } from '../core/RaceBundleLoader';
-import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, RESOURCE_PATHS, SKYBOX_VARIANTS, SWIMMER_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
+import { DEBUG_SWIMMER_ACTION_PREVIEWS, DEBUG_SWIMMER_MODEL_VARIANTS, DEFAULT_SKYBOX_VARIANT, SKYBOX_VARIANTS, SWIMMER_COLOR_VARIANTS, isDebugOnlySwimmerModelVariant } from '../core/ResourcePaths';
 import type { DebugSwimmerActionPreview } from '../core/ResourcePaths';
 import type { RhythmResult } from '../core/RhythmTypes';
 import { formatStrokeQualityLog, nextStrokeQualityCombo, ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
@@ -19,7 +18,9 @@ import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { StandardSkyboxApplier } from './StandardSkyboxApplier';
 
 const DEBUG_ACTION_LANE_WIDTH = DEFAULT_POOL_DEFINITION.laneWidth;
-const DEBUG_ACTION_SPACING = 1.65;
+// Long horizontal poses such as freestyle otherwise overlap the neighbouring
+// flip-turn and standing previews from a side/three-quarter inspection camera.
+const DEBUG_ACTION_SPACING = 2.8;
 const DEBUG_ACTION_GROUP_CENTER_X = 12;
 const DEBUG_WATER_LENGTH = 8.8;
 const DEBUG_WATER_WIDTH = Math.max(DEBUG_ACTION_LANE_WIDTH, (DEBUG_SWIMMER_ACTION_PREVIEWS.length - 1) * DEBUG_ACTION_SPACING + 2.4);
@@ -699,32 +700,15 @@ export class ModelDebugFlowController {
         root.setParent(parent);
         root.layer = Layers.Enum.DEFAULT;
 
-        const water = makeDebugMaterial('ModelDebugWater', new Color(42, 208, 232, 72), true);
-        const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 150), true);
+        const water = makeDebugMaterial('ModelDebugWater', new Color(42, 208, 232, 36), true);
+        const edge = makeDebugMaterial('ModelDebugWaterEdge', new Color(215, 255, 255, 86), true);
 
-        const waterRenderer = addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(DEBUG_WATER_LENGTH, 0.018, DEBUG_WATER_WIDTH));
+        addDebugBox(root, 'ModelDebugWaterSlab', water, new Vec3(0, 0, 0), new Vec3(DEBUG_WATER_LENGTH, 0.018, DEBUG_WATER_WIDTH));
         addDebugBox(root, 'ModelDebugWaterNearEdge', edge, new Vec3(0, 0.014, -DEBUG_WATER_HALF_WIDTH - 0.02), new Vec3(DEBUG_WATER_LENGTH, 0.012, 0.018));
         addDebugBox(root, 'ModelDebugWaterFarEdge', edge, new Vec3(0, 0.014, DEBUG_WATER_HALF_WIDTH + 0.02), new Vec3(DEBUG_WATER_LENGTH, 0.012, 0.018));
-        this.applyTransparentDebugWaterMaterial(waterRenderer);
 
         this._debugWaterRoot = root;
         return root;
-    }
-
-    private applyTransparentDebugWaterMaterial(renderer: MeshRenderer) {
-        loadRaceAsset(RESOURCE_PATHS.poolWaterMaterial, Material, (err, sourceMaterial) => {
-            if (err || !sourceMaterial || !renderer?.node?.isValid) {
-                console.warn('[SpeedSwimming] model debug transparent water material load failed', err);
-                return;
-            }
-            const material = new Material();
-            material.copy(sourceMaterial);
-            material.name = 'ModelDebugTransparentWater';
-            material.setProperty('deepColor', new Color(0, 92, 178, 42));
-            material.setProperty('shallowColor', new Color(42, 208, 232, 54));
-            material.setProperty('foamColor', new Color(196, 248, 255, 76));
-            renderer.setMaterial(material, 0);
-        });
     }
 
     private destroyDebugWaterReference() {
@@ -749,7 +733,7 @@ function positiveMod(value: number, divisor: number): number {
 
 function makeDebugMaterial(name: string, color: Color, transparent = false): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit' });
+    material.initialize({ effectName: 'builtin-unlit', technique: transparent ? 1 : 0 });
     material.name = name;
     material.setProperty('mainColor', color);
     return material;

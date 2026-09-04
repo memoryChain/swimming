@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer7';
+export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer7' | 'cartonSwimmer8';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -127,6 +127,16 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '戴着橙色运动帽的活力少年，以轻快稳定的节奏迎浪前行。',
         skillName: '疾浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
+        supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer8', name: '蛙跃潮童', modelVariantId: 'cartonSwimmer8', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '戴着青蛙帽与粉色护目镜的潮酷少年，以轻快稳定的节奏跃入浪潮。',
+        skillName: '蛙跃节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
         supportsSkinTone: true,
     },
 ];

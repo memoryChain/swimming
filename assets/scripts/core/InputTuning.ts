@@ -69,7 +69,7 @@ export const MOTION_TUNING = {
 
     // Palm rotation amount used to turn the hand into the water.
     // 手掌入水/划水时的翻掌角度。
-    handPalmTurnDegrees: 130,
+    handPalmTurnDegrees: 65,
 
     // Side clearance for the forward-reaching arm.
     // 手臂前伸时避开身体侧面的距离。

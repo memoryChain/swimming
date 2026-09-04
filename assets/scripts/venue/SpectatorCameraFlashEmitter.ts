@@ -42,7 +42,6 @@ const VISIBILITY_REFRESH_SECONDS = 0.1;
 const VISIBILITY_HALF_EXTENT = SIZE_MAX * 0.55;
 const SPACE_WORLD = 0;
 const RENDER_MODE_BILLBOARD = 0;
-const ALIGN_SPACE_VIEW = 2;
 
 let sharedFlashMaterial: Material | null = null;
 
@@ -263,7 +262,6 @@ function applyFlashRenderer(system: ParticleSystem, texture: Texture2D) {
     const renderer = system.renderer as unknown as {
         useGPU?: boolean;
         renderMode?: number;
-        alignSpace?: number;
         particleMaterial?: Material;
         cpuMaterial?: Material;
         mainTexture?: Texture2D;
@@ -273,7 +271,6 @@ function applyFlashRenderer(system: ParticleSystem, texture: Texture2D) {
     }
     renderer.useGPU = false;
     renderer.renderMode = RENDER_MODE_BILLBOARD;
-    renderer.alignSpace = ALIGN_SPACE_VIEW;
     renderer.particleMaterial = material;
     renderer.cpuMaterial = material;
     renderer.mainTexture = texture;
