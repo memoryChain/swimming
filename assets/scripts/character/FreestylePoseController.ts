@@ -39,24 +39,10 @@ type BreaststrokeMotionSampleBuffer = {
     };
     rotationBuffers: Partial<Record<BreaststrokeBoneName, MutableQuatTuple>>;
 };
-// Hand thickness differs enough between the four shared-rig meshes that one
-// wrist distance either leaves a visible gap or drives the left hand through
-// the right. These ratios were measured from the deformed palm surfaces in
-// Blender; they leave a small positive contact clearance on every clap.
+// Use the canonical rig's measured wrist distance to keep the palms from
+// intersecting during the sampled clap action.
 const CLAP_WRIST_SEPARATION_ARM_RATIOS: Readonly<Record<string, number>> = {
     muscleMan: 0.35,
-    women2: 0.215,
-    lowPolyHuman2: 0.29,
-    diver: 0.33,
-    // The new character's broad palms and wrist guards need more centre-line
-    // clearance than the slimmer shared-rig meshes.
-    cartonSwimmer3: 0.53,
-};
-// Diver's longer upper arms and shorter forearm share produce a much smaller
-// wrist arc from the same local rotations. Expand only its open clap phase to
-// match the visible range of the other characters.
-const CLAP_OPEN_WRIST_SEPARATION_ARM_RATIOS: Readonly<Record<string, number>> = {
-    diver: 0.66,
 };
 const CLAP_CONTACT_PHASES: readonly number[] = [0, 0.228571, 0.485714, 0.771429, 1];
 const CLAP_CONTACT_PHASE_HALF_WIDTH = 0.15;
@@ -1548,14 +1534,7 @@ export class FreestylePoseController {
             );
         }
         const actionPower = clamp(power, 0, 1);
-        const openSeparationRatio = (
-            CLAP_OPEN_WRIST_SEPARATION_ARM_RATIOS[this._modelVariantId]
-        );
-        const blend = (
-            openSeparationRatio === undefined
-                ? contactWeight * actionPower
-                : actionPower
-        );
+        const blend = contactWeight * actionPower;
         if (blend <= 0) {
             return;
         }
@@ -1582,16 +1561,9 @@ export class FreestylePoseController {
             CLAP_WRIST_SEPARATION_ARM_RATIOS[this._modelVariantId]
             ?? CLAP_WRIST_SEPARATION_ARM_RATIOS.muscleMan
         );
-        const targetSeparationRatio = (
-            openSeparationRatio === undefined
-                ? separationRatio
-                : lerp(openSeparationRatio, separationRatio, contactWeight)
-        );
-        const contactSeparation = averageArmLength * targetSeparationRatio;
-        // Standard rigs need correction only near impact. Diver instead follows
-        // an explicit contact-to-open wrist arc because its bone proportions
-        // compress the authored opening. Both paths can push intersecting hands
-        // apart instead of treating an already-small distance as valid.
+        const contactSeparation = averageArmLength * separationRatio;
+        // Push intersecting hands apart near impact instead of treating an
+        // already-small distance as valid.
         const desiredSeparation = lerp(
             currentSeparation,
             contactSeparation,

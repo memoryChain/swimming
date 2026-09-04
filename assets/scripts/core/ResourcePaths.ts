@@ -57,26 +57,6 @@ const MUSCLE_MAN_PREFAB_CANDIDATES = [
     'models/MuscleMan',
     'models/MuscleMan/MuscleMan',
 ];
-const WOMEN2_PREFAB_CANDIDATES = [
-    'models/Women2',
-    'models/Women2/Women2',
-];
-const LOW_POLY_HUMAN2_PREFAB_CANDIDATES = [
-    'models/LowPolyHuman2',
-    'models/LowPolyHuman2/LowPolyHuman2',
-];
-const DIVER_PREFAB_CANDIDATES = [
-    'models/Diver',
-    'models/Diver/Diver',
-];
-const CARTON_SWIMMER3_PREFAB_CANDIDATES = [
-    'models/CartonSwimmer3',
-    'models/CartonSwimmer3/CartonSwimmer3',
-];
-const CARTON_SWIMMER4_PREFAB_CANDIDATES = [
-    'models/CartonSwimmer4',
-    'models/CartonSwimmer4/CartonSwimmer4',
-];
 const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
     'models/CartonSwimmer5',
     'models/CartonSwimmer5/CartonSwimmer5',
@@ -84,10 +64,6 @@ const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
 const CARTON_SWIMMER6_PREFAB_CANDIDATES = [
     'models/CartonSwimmer6',
     'models/CartonSwimmer6/CartonSwimmer6',
-];
-const CARTON_SWIMMER7_PREFAB_CANDIDATES = [
-    'models/CartonSwimmer7',
-    'models/CartonSwimmer7/CartonSwimmer7',
 ];
 const CARTON_SWIMMER8_PREFAB_CANDIDATES = [
     'models/CartonSwimmer8',
@@ -115,83 +91,6 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'whiteKey',
             labelPrefix: 'Muscle Man',
-            usesCapChannel: false,
-        },
-    },
-    {
-        id: 'women2',
-        label: 'Women 2',
-        candidates: WOMEN2_PREFAB_CANDIDATES,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
-        sampledActionOverrideFilePrefix: 'Tpose_',
-        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
-        dynamicColor: {
-            mode: 'whiteKey',
-            labelPrefix: 'Women 2',
-            usesCapChannel: false,
-        },
-    },
-    {
-        id: 'lowPolyHuman2',
-        label: 'Low Poly Human 2',
-        candidates: LOW_POLY_HUMAN2_PREFAB_CANDIDATES,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
-        sampledActionOverrideFilePrefix: 'Tpose_',
-        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
-        dynamicColor: {
-            mode: 'whiteKey',
-            labelPrefix: 'Low Poly Human 2',
-            usesCapChannel: false,
-        },
-    },
-    {
-        id: 'diver',
-        label: 'Diver',
-        candidates: DIVER_PREFAB_CANDIDATES,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
-        sampledActionOverrideFilePrefix: 'Tpose_',
-        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
-        dynamicColor: {
-            mode: 'whiteKey',
-            labelPrefix: 'Diver',
-            usesCapChannel: false,
-        },
-    },
-    {
-        id: 'cartonSwimmer3',
-        label: 'Carton Swimmer 3',
-        candidates: CARTON_SWIMMER3_PREFAB_CANDIDATES,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
-        sampledActionOverrideFilePrefix: 'Tpose_',
-        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
-        dynamicColor: {
-            mode: 'mask',
-            maskPath: 'models/CartonSwimmer3ColorMask/texture',
-            labelPrefix: 'Carton Swimmer 3',
-            usesCapChannel: false,
-        },
-    },
-    {
-        id: 'cartonSwimmer4',
-        label: '劲浪猛将',
-        candidates: CARTON_SWIMMER4_PREFAB_CANDIDATES,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
-        sampledActionOverrideFilePrefix: 'Tpose_',
-        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
-        dynamicColor: {
-            mode: 'mask',
-            maskPath: 'models/CartonSwimmer4ColorMask/texture',
-            labelPrefix: '劲浪猛将',
             usesCapChannel: false,
         },
     },
@@ -224,22 +123,6 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
             mode: 'mask',
             maskPath: 'models/CartonSwimmer6ColorMask/texture',
             labelPrefix: '跃浪少女',
-            usesCapChannel: false,
-        },
-    },
-    {
-        id: 'cartonSwimmer7',
-        label: '疾浪少年',
-        candidates: CARTON_SWIMMER7_PREFAB_CANDIDATES,
-        preserveOriginalMaterial: true,
-        swimHeadLiftDegrees: 4,
-        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
-        sampledActionOverrideFilePrefix: 'Tpose_',
-        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
-        dynamicColor: {
-            mode: 'mask',
-            maskPath: 'models/CartonSwimmer7ColorMask/texture',
-            labelPrefix: '疾浪少年',
             usesCapChannel: false,
         },
     },

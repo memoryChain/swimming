@@ -121,7 +121,7 @@ def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2,
         return garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count
 
 
-def build_previews(source_path: Path, mask_path: Path, preview_dir: Path, prefix: str = "CartonSwimmer3") -> None:
+def build_previews(source_path: Path, mask_path: Path, preview_dir: Path, prefix: str = "Swimmer") -> None:
     with Image.open(source_path) as source_image, Image.open(mask_path) as mask_image:
         source = source_image.convert("RGB")
         mask = mask_image.convert("RGB")
@@ -162,7 +162,7 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path, help="Output RGBA PNG mask")
     parser.add_argument("--skin-close-radius", type=int, choices=range(0, 5), default=2,
                         help="皮肤小孔闭运算半径；碎片 UV 紧邻装备时使用 0")
-    parser.add_argument("--preview-prefix", default="CartonSwimmer3", help="预览文件名前缀")
+    parser.add_argument("--preview-prefix", default="Swimmer", help="预览文件名前缀")
     parser.add_argument("--skin-palette", choices=("default", "light-peach", "peach-orange"), default="default",
                         help="棕发及粉色配件使用 light-peach；橙色装备与桃色皮肤使用 peach-orange")
     parser.add_argument("--garment-palette", choices=("default", "lime"), default="default",

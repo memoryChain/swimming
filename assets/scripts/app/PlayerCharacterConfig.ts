@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'women2' | 'lowPolyHuman2' | 'diver' | 'cartonSwimmer3' | 'cartonSwimmer4' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer7' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10';
+export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -52,54 +52,6 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
     {
-        id: 'women2', name: '灵波飞鱼', modelVariantId: 'women2', unlocked: true,
-        stamina: 82, technique: 91, burst: 76,
-        weight: 0.85,
-        energyGain: 92,
-        kick: 50,
-        description: '技术型女选手，划水节奏细腻，能在中后程保持高效推进。',
-        skillName: '水感节奏', skillDescription: '精准把握节奏时，更容易维持稳定的连续推进。',
-    },
-    {
-        id: 'lowPolyHuman2', name: '破浪新星', modelVariantId: 'lowPolyHuman2', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
-        energyGain: 82,
-        kick: 50,
-        description: '均衡型游泳选手，动作灵活，能稳定应对不同比赛节奏。',
-        skillName: '流线节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
-    },
-    {
-        id: 'diver', name: '深海潜将', modelVariantId: 'diver', unlocked: true,
-        stamina: 92, technique: 78, burst: 74,
-        weight: 1.15,
-        energyGain: 80,
-        kick: 50,
-        description: '装备齐全的潜水选手，身体稳定，擅长保持持续而扎实的推进。',
-        skillName: '深潜耐力', skillDescription: '厚重装备带来更强的稳定性与持续输出。',
-        supportsSkinTone: false,
-    },
-    {
-        id: 'cartonSwimmer3', name: '银翼疾风', modelVariantId: 'cartonSwimmer3', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
-        energyGain: 82,
-        kick: 50,
-        description: '均衡型未来泳者，动作轻快稳定，能从容适应不同比赛节奏。',
-        skillName: '银翼节奏', skillDescription: '稳定的身体控制让连续划水与转身衔接更加流畅。',
-        supportsSkinTone: true,
-    },
-    {
-        id: 'cartonSwimmer4', name: '劲浪猛将', modelVariantId: 'cartonSwimmer4', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
-        energyGain: 82,
-        kick: 50,
-        description: '身着运动装备的健壮泳者，以稳定节奏迎接每一次挑战。',
-        skillName: '劲浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
-        supportsSkinTone: true,
-    },
-    {
         id: 'cartonSwimmer5', name: '逐浪少女', modelVariantId: 'cartonSwimmer5', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
@@ -117,16 +69,6 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '戴着圆耳运动帽的活力少女，以轻快稳定的节奏跃浪前行。',
         skillName: '跃浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
-        supportsSkinTone: true,
-    },
-    {
-        id: 'cartonSwimmer7', name: '疾浪少年', modelVariantId: 'cartonSwimmer7', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
-        energyGain: 82,
-        kick: 50,
-        description: '戴着橙色运动帽的活力少年，以轻快稳定的节奏迎浪前行。',
-        skillName: '疾浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
     },
     {

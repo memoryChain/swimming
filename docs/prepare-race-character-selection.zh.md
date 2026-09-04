@@ -14,7 +14,7 @@
 - `description`、`skillName`、`skillDescription`：角色说明与技能文案。
 - `robotStyle`：机械角色的材质风格开关（可选）。
 
-目前接入：运动员1（`swimmer0621_2`）、潜水员（`diver`）和高达（`gundam`）。角色列表固定预留 20 个槽位，未配置或未解锁的槽位显示为锁定状态。
+目前只接入 `muscleMan`、`cartonSwimmer5`、`cartonSwimmer6`、`cartonSwimmer8`、`cartonSwimmer9` 和 `cartonSwimmer10`。角色列表固定预留 20 个槽位，未配置或未解锁的槽位显示为锁定状态。
 
 ## 外观与比赛交接
 
