@@ -1,21 +1,26 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-export const NET_RACE_PROTOCOL_VERSION = 7;
+// v9: every member now proves that its complete local tuning surface matches the
+// lobby. Owner-authoritative condition and movement must never use a private
+// localStorage/native tuning override.
+export const NET_RACE_PROTOCOL_VERSION = 9;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
+const TUNING_FINGERPRINT_PATTERN = /^[0-9a-f]{16}$/;
 
 export interface NetRaceProtocolHello {
     pos: number;
     version: number;
+    tuningFingerprint: string;
 }
 
 export interface NetRaceProtocolRequest {
     requesterPos: number;
 }
 
-export function encodeProtocolHello(pos: number): string {
-    return `${PROTOCOL_TAG}${Math.floor(pos)}|${NET_RACE_PROTOCOL_VERSION}`;
+export function encodeProtocolHello(pos: number, tuningFingerprint: string): string {
+    return `${PROTOCOL_TAG}${Math.floor(pos)}|${NET_RACE_PROTOCOL_VERSION}|${tuningFingerprint}`;
 }
 
 export function decodeProtocolHello(message: string): NetRaceProtocolHello | null {
@@ -23,15 +28,20 @@ export function decodeProtocolHello(message: string): NetRaceProtocolHello | nul
         return null;
     }
     const parts = message.slice(PROTOCOL_TAG.length).split('|');
-    if (parts.length !== 2) {
+    if (parts.length !== 3) {
         return null;
     }
     const pos = parseInt(parts[0], 10);
     const version = parseInt(parts[1], 10);
-    if (!Number.isFinite(pos) || pos < 0 || !Number.isFinite(version) || version < 0) {
+    const tuningFingerprint = parts[2];
+    if (!Number.isFinite(pos)
+        || pos < 0
+        || !Number.isFinite(version)
+        || version < 0
+        || !TUNING_FINGERPRINT_PATTERN.test(tuningFingerprint)) {
         return null;
     }
-    return { pos: Math.floor(pos), version: Math.floor(version) };
+    return { pos: Math.floor(pos), version: Math.floor(version), tuningFingerprint };
 }
 
 // Best-effort room broadcasts can lose a member's first PV| declaration. A peer
@@ -61,12 +71,16 @@ export function decodeProtocolRequest(message: string): NetRaceProtocolRequest |
 export function hasCompatibleProtocol(
     memberPositions: readonly number[],
     versions: Readonly<Record<number, number>>,
+    tuningFingerprints: Readonly<Record<number, string>>,
+    localTuningFingerprint: string,
 ): boolean {
-    if (memberPositions.length === 0) {
+    if (memberPositions.length === 0 || !TUNING_FINGERPRINT_PATTERN.test(localTuningFingerprint)) {
         return false;
     }
     for (const pos of memberPositions) {
-        if (pos < 0 || versions[pos] !== NET_RACE_PROTOCOL_VERSION) {
+        if (pos < 0
+            || versions[pos] !== NET_RACE_PROTOCOL_VERSION
+            || tuningFingerprints[pos] !== localTuningFingerprint) {
             return false;
         }
     }

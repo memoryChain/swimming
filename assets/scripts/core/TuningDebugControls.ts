@@ -52,7 +52,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 38;
+const TUNING_FILE_VERSION = 40;
 
 type TuningFileData = {
     version: number;
@@ -291,6 +291,14 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('condition.effortDecay', '努力采样衰减', '不划水时持续努力采样的每秒衰减速度。越小则划水间隔中的目标心率更稳定，惯性更明显。', () => CONDITION_BALANCE.heartRate.effortDecayPerSecond, (v) => CONDITION_BALANCE.heartRate.effortDecayPerSecond = v, 0.05, 0, 2, 2, '/s'),
             control('condition.easeUp', '心率上升速率', '心率向目标值上升的每秒速度。越小则心率上升越平滑。', () => CONDITION_BALANCE.heartRate.easeUpPerSecond, (v) => CONDITION_BALANCE.heartRate.easeUpPerSecond = v, 1, 2, 60, 0, ' bpm/s'),
             control('condition.easeDown', '心率下降速率', '心率从高位回落的每秒速度。越小则恢复越慢、心率惯性越明显。', () => CONDITION_BALANCE.heartRate.easeDownPerSecond, (v) => CONDITION_BALANCE.heartRate.easeDownPerSecond = v, 0.5, 1, 40, 1, ' bpm/s'),
+            control('condition.sprintHeartRatePushScaleMax', '冲刺心率最终倍率', '冲刺刚开始时仍按普通游泳目标心率计算；在“冲刺心率抬升时间”内平滑升至此倍率。1=不额外抬升。', () => CONDITION_BALANCE.sprint.heartRatePushScaleMax, (v) => CONDITION_BALANCE.sprint.heartRatePushScaleMax = v, 0.05, 1, 2, 2),
+            control('condition.sprintHeartRateRampSeconds', '冲刺心率抬升时间', '进入冲刺后，额外心率压力平滑抬升到最终倍率所用时间。越长越不突兀；不改变均匀累计层。', () => CONDITION_BALANCE.sprint.heartRateRampSeconds, (v) => CONDITION_BALANCE.sprint.heartRateRampSeconds = v, 0.5, 0.5, 30, 1, 's'),
+            control('condition.sprintPropulsionScale', '冲刺划水推进倍率', '冲刺阶段每次有效划水的完整推进倍率，直接补偿冲刺压力；1=关闭，1.12 表示提升 12%。', () => CONDITION_BALANCE.sprint.propulsionScale, (v) => CONDITION_BALANCE.sprint.propulsionScale = v, 0.01, 1, 1.5, 2),
+            control('condition.sustainedLoadStrokeGraceSeconds', '连续游进宽限', '距上一次有效划水不超过该时间时，视为持续游进并继续均匀累积心率负荷；超过后开始恢复。冲刺不会改变这项判断。', () => CONDITION_BALANCE.heartRate.sustainedLoadStrokeGraceSeconds, (v) => CONDITION_BALANCE.heartRate.sustainedLoadStrokeGraceSeconds = v, 0.05, 0.1, 2, 2, 's'),
+            control('condition.sustainedLoadGainBpmPerSecond', '持续游进累积', '持续游进时每秒固定增加的额外目标心率；不看划水质量、心率区间、冲刺阶段或冲刺档位。', () => CONDITION_BALANCE.heartRate.sustainedLoadGainBpmPerSecond, (v) => CONDITION_BALANCE.heartRate.sustainedLoadGainBpmPerSecond = v, 0.05, 0, 2, 2, ' bpm/s'),
+            control('condition.sustainedLoadRecoveryBpmPerSecond', '停游负荷恢复', '停止有效划水并超过连续游进宽限后，累计心率负荷每秒回落的速度；即时心率仍由“心率下降速率”单独控制。', () => CONDITION_BALANCE.heartRate.sustainedLoadRecoveryBpmPerSecond, (v) => CONDITION_BALANCE.heartRate.sustainedLoadRecoveryBpmPerSecond = v, 0.05, 0, 3, 2, ' bpm/s'),
+            control('condition.sustainedLoadMaxBpm', '累计心率上限', '持续游进最多可叠加到即时目标上的额外心率，防止长距离比赛无限累积。', () => CONDITION_BALANCE.heartRate.sustainedLoadMaxBpm, (v) => CONDITION_BALANCE.heartRate.sustainedLoadMaxBpm = v, 1, 0, 80, 0, ' bpm'),
+            control('condition.targetHrCap', '目标心率封顶', '即时层与累计层相加后的目标心率上限。它不改变心率区间的定义，只防止冲刺叠加后直接顶到 200。', () => CONDITION_BALANCE.heartRate.targetHrCap, (v) => CONDITION_BALANCE.heartRate.targetHrCap = v, 1, 150, 200, 0, ' bpm'),
             control('condition.depletionCooldown', '体力耗尽冷却', '体力降到零后暂停恢复的时间。设为零可关闭冷却。', () => CONDITION_BALANCE.energy.depletionCooldownSeconds, (v) => CONDITION_BALANCE.energy.depletionCooldownSeconds = v, 0.1, 0, 5, 1, 's'),
             control('condition.efficiencyFloor', '效率地板', '体力耗尽时的效率下限。0=没力气完全游不动；0.5=还能以一半效率游。配合效率曲线指数使用。', () => CONDITION_BALANCE.efficiency.energyFloor, (v) => CONDITION_BALANCE.efficiency.energyFloor = v, 0.05, 0, 0.9, 2),
             control('condition.curveExponent', '效率曲线指数', '效率随体力衰减的曲线形状。1=线性；<1=缓启动（高体力几乎不掉，最后10%急跌）。0.3=陡峭缓启动。', () => CONDITION_BALANCE.efficiency.curveExponent, (v) => CONDITION_BALANCE.efficiency.curveExponent = v, 0.05, 0.1, 2, 2),
@@ -497,6 +505,25 @@ export function saveCurrentTuning(): TuningSaveResult {
     };
 }
 
+// Network races must never let one client silently use a different local tuning
+// override. Fingerprint the complete tuning surface rather than a hand-maintained
+// outcome whitelist: a new gameplay-affecting control is then protected by default.
+// This runs only during lobby handshakes, never in the race-frame hot path.
+export function getNetRaceTuningFingerprint(): string {
+    validateTuningRelations();
+    const entries: string[] = [];
+    forEachControl((control) => {
+        const value = control.get();
+        const canonical = Number.isFinite(value)
+            ? roundTo(value, control.precision).toFixed(control.precision)
+            : 'invalid';
+        entries.push(`${control.id}=${canonical}`);
+    });
+    entries.sort();
+    const source = entries.join('\n');
+    return `${fnv1a32(source, 0x811c9dc5)}${fnv1a32(source, 0x9e3779b9)}`;
+}
+
 export function loadSavedTuning(): boolean {
     defaultTuningSnapshot();
     const candidate = loadRuntimeTuningCandidate();
@@ -590,6 +617,15 @@ function waterControl(
 function roundTo(value: number, precision: number): number {
     const scale = Math.pow(10, precision);
     return Math.round(value * scale) / scale;
+}
+
+function fnv1a32(value: string, seed: number): string {
+    let hash = seed >>> 0;
+    for (let index = 0; index < value.length; index++) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return (`00000000${hash.toString(16)}`).slice(-8);
 }
 
 function clamp(value: number, min: number, max: number): number {

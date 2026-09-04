@@ -26,6 +26,11 @@ function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
 
+function smoothstep01(value: number): number {
+    const t = clamp(value, 0, 1);
+    return t * t * (3 - 2 * t);
+}
+
 export class PlayerConditionModel {
     private _phase: RacePhase = RacePhase.START;
     private _heartRate = HEART_RATE_BOUNDS.min;
@@ -38,11 +43,18 @@ export class PlayerConditionModel {
     private _cadenceModifier = 1;
     private _energyTotalOverride: number | null = null;
     private _depletionCooldown = 0;
+    // Phase-local clock used only for the SPRINT heart-rate ramp. It never
+    // participates in the uniform continuous-swim load.
+    private _phaseElapsed = 0;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
     private _timeSinceLastStroke = 0;
     private _effortSample = 0;
+    // Slow, uniform extra target-HR accumulated only while accepted strokes keep
+    // arriving inside the configured continuity window. Unlike the effort sample,
+    // this deliberately carries across a long continuous swim.
+    private _sustainedLoadHr = 0;
     private _strokesSinceDive = 0;
     private _startupWobbleModifier = 1;
     private _optimalEntryStrokes = 0;
@@ -60,10 +72,12 @@ export class PlayerConditionModel {
         this._lastQualityScore = 0;
         this._timeSinceLastStroke = 0;
         this._effortSample = 0;
+        this._sustainedLoadHr = 0;
         this._strokesSinceDive = 0;
         this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
         this._depletionCooldown = 0;
+        this._phaseElapsed = 0;
     }
 
     setProgressionOverrides(opts: { energyTotal?: number } | null) {
@@ -75,6 +89,9 @@ export class PlayerConditionModel {
     }
 
     setPhase(phase: RacePhase) {
+        if (this._phase !== phase) {
+            this._phaseElapsed = 0;
+        }
         this._phase = phase;
         if (phase !== RacePhase.SPRINT) {
             this._sprintTier = SprintTier.STEADY;
@@ -129,31 +146,59 @@ export class PlayerConditionModel {
         this.refreshModifiers();
     }
 
-    // Per-frame: natural heart-rate drift toward LOW when not stroking (doc 27.2).
+    // Per-frame: immediate effort and long-term continuous-swim load combine into
+    // the target heart rate. The long-term layer intentionally ignores race phase,
+    // so entering SPRINT does not accelerate its accumulation.
     tick(dt: number) {
-        this._timeSinceLastStroke += dt;
+        const step = Math.max(0, dt);
+        this._phaseElapsed += step;
+        this._timeSinceLastStroke += step;
         const hr = CONDITION_BALANCE.heartRate;
         const phaseTuning = CONDITION_PHASE_TUNING[this._phase];
 
         // The effort sample fades when strokes stop, so the HR target falls back
         // toward rest and the swimmer recovers between bursts.
-        this._effortSample = Math.max(0, this._effortSample - hr.effortDecayPerSecond * dt);
+        this._effortSample = Math.max(0, this._effortSample - hr.effortDecayPerSecond * step);
 
-        // Target HR is interpolated from sustained effort; phase push-scale biases
-        // it upward (SPRINT runs hotter).
-        const effort = clamp(this._effortSample * phaseTuning.hrPushScale, 0, 1.8);
-        const target = clamp(
+        const sustainedSwimActive = this._strokesSinceDive > 0
+            && this._timeSinceLastStroke <= Math.max(0, hr.sustainedLoadStrokeGraceSeconds);
+        const sustainedLoadDelta = sustainedSwimActive
+            ? Math.max(0, hr.sustainedLoadGainBpmPerSecond) * step
+            : -Math.max(0, hr.sustainedLoadRecoveryBpmPerSecond) * step;
+        this._sustainedLoadHr = clamp(
+            this._sustainedLoadHr + sustainedLoadDelta,
+            0,
+            Math.max(0, hr.sustainedLoadMaxBpm),
+        );
+
+        // Target HR is interpolated from sustained effort. SPRINT begins at the
+        // PACE scale and smoothly ramps its extra pressure in, so crossing the
+        // phase threshold no longer produces an unexplained target jump.
+        let pushScale = phaseTuning.hrPushScale;
+        if (this._phase === RacePhase.SPRINT) {
+            const sprint = CONDITION_BALANCE.sprint;
+            const rampSeconds = Math.max(0.01, sprint.heartRateRampSeconds);
+            const ramp = smoothstep01(this._phaseElapsed / rampSeconds);
+            pushScale += (Math.max(pushScale, sprint.heartRatePushScaleMax) - pushScale) * ramp;
+        }
+        const effort = clamp(this._effortSample * pushScale, 0, 1.8);
+        const immediateTarget = clamp(
             hr.restTargetHr + (hr.maxEffortTargetHr - hr.restTargetHr) * effort,
             HEART_RATE_BOUNDS.min,
             HEART_RATE_BOUNDS.max,
         );
+        const target = clamp(
+            immediateTarget + this._sustainedLoadHr,
+            HEART_RATE_BOUNDS.min,
+            Math.min(HEART_RATE_BOUNDS.max, Math.max(HEART_RATE_BOUNDS.min, hr.targetHrCap)),
+        );
 
         // Ease toward the target; climbing is faster than recovery (driftScale tunes recovery).
         if (this._heartRate < target) {
-            this._heartRate = Math.min(target, this._heartRate + hr.easeUpPerSecond * dt);
+            this._heartRate = Math.min(target, this._heartRate + hr.easeUpPerSecond * step);
         } else {
-            const step = hr.easeDownPerSecond * phaseTuning.hrDriftScale * dt;
-            this._heartRate = Math.max(target, this._heartRate - step);
+            const recoveryStep = hr.easeDownPerSecond * phaseTuning.hrDriftScale * step;
+            this._heartRate = Math.max(target, this._heartRate - recoveryStep);
         }
         this._heartRate = clamp(this._heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
 
@@ -162,9 +207,9 @@ export class PlayerConditionModel {
         // Energy regeneration: all heart-rate zones regen (LOW strongest).
         // SPRINT boosts all zones so the finish is an all-out peak, not a crawl.
         if (this._depletionCooldown > 0) {
-            this._depletionCooldown = Math.max(0, this._depletionCooldown - dt);
+            this._depletionCooldown = Math.max(0, this._depletionCooldown - step);
         }
-        this.regenEnergy(dt);
+        this.regenEnergy(step);
         this.refreshModifiers();
     }
 
@@ -226,6 +271,13 @@ export class PlayerConditionModel {
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
     get strokeCadenceScale(): number { return this._cadenceModifier; }
+    // This is a phase reward, not a heart-rate reward: it stays active even if
+    // accumulated load later moves the swimmer out of the OPTIMAL HR zone.
+    get sprintPropulsionScale(): number {
+        return this._phase === RacePhase.SPRINT
+            ? Math.max(1, CONDITION_BALANCE.sprint.propulsionScale)
+            : 1;
+    }
 
     // --- Derived helpers (doc 23.8) ---
     isOptimal(): boolean {

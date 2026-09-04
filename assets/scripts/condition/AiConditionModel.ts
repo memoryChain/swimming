@@ -195,6 +195,13 @@ export class AiConditionModel {
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
     get strokeCadenceScale(): number { return this._cadenceModifier; }
+    // Keep AI under the same explicit SPRINT propulsion reward as the player.
+    // Its heart-rate model is already progress-smoothed independently above.
+    get sprintPropulsionScale(): number {
+        return this._phase === RacePhase.SPRINT
+            ? Math.max(1, CONDITION_BALANCE.sprint.propulsionScale)
+            : 1;
+    }
     get depletionCooldownRemaining(): number { return this._depletionCooldown; }
 
     readout(): ConditionReadout {

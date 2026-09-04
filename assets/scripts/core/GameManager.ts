@@ -1794,6 +1794,7 @@ export class GameManager extends Component {
         swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
         swimmer.applyConditionQualityScale(condition.qualityModifier);
         swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
+        swimmer.applyConditionSprintPropulsionScale(condition.sprintPropulsionScale);
     }
 
     // Network AI phases only move forward. Snapshot correction can move a shadow
@@ -2051,6 +2052,7 @@ export class GameManager extends Component {
                         swimmer.applyConditionSpeedScale(aiCondition.efficiencyModifier);
                         swimmer.applyConditionQualityScale(aiCondition.qualityModifier);
                         swimmer.applyConditionCadenceScale(aiCondition.strokeCadenceScale);
+                        swimmer.applyConditionSprintPropulsionScale(aiCondition.sprintPropulsionScale);
                     }
                 }
             }
@@ -2432,6 +2434,7 @@ export class GameManager extends Component {
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
         this._playerSwimmer?.applyConditionCadenceScale(this._playerCondition.strokeCadenceScale);
+        this._playerSwimmer?.applyConditionSprintPropulsionScale(this._playerCondition.sprintPropulsionScale);
         this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
         const ultimate = this._playerSwimmer?.ultimate;
@@ -2468,6 +2471,7 @@ export class GameManager extends Component {
             swimmer.applyConditionSpeedScale(this._aiConditions[i].efficiencyModifier);
             swimmer.applyConditionQualityScale(this._aiConditions[i].qualityModifier);
             swimmer.applyConditionCadenceScale(this._aiConditions[i].strokeCadenceScale);
+            swimmer.applyConditionSprintPropulsionScale(this._aiConditions[i].sprintPropulsionScale);
         }
     }
 

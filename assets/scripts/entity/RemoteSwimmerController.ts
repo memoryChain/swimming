@@ -189,5 +189,6 @@ export class RemoteSwimmerController extends Component {
         this.swimmer?.applyConditionSpeedScale(1);
         this.swimmer?.applyConditionQualityScale(1);
         this.swimmer?.applyConditionCadenceScale(1);
+        this.swimmer?.applyConditionSprintPropulsionScale(1);
     }
 }

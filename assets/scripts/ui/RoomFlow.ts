@@ -20,6 +20,7 @@ import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
 import { encodeModifierDigest } from '../net/NetRaceModifierCodec';
+import { getNetRaceTuningFingerprint } from '../core/TuningDebugControls';
 import {
     NET_RACE_PROTOCOL_VERSION,
     decodeProtocolHello,
@@ -69,6 +70,7 @@ export class RoomFlow {
     // client broadcasts its tiny digest instead; consumed into the session at start.
     private readonly _memberModifiers: Record<number, string> = {};
     private readonly _memberProtocolVersions: Record<number, number> = {};
+    private readonly _memberTuningFingerprints: Record<number, string> = {};
     private readonly _memberProtocolFingerprints: Record<number, string> = {};
     private _statusHint: string | null = null;
     private _startRequested = false;
@@ -302,8 +304,13 @@ export class RoomFlow {
         if (!this._netReal || this._localPos < 0) {
             return;
         }
+        const tuningFingerprint = this.localTuningFingerprint();
+        if (!tuningFingerprint) {
+            return;
+        }
         this._memberProtocolVersions[this._localPos] = NET_RACE_PROTOCOL_VERSION;
-        netRoom().broadcast(encodeProtocolHello(this._localPos));
+        this._memberTuningFingerprints[this._localPos] = tuningFingerprint;
+        netRoom().broadcast(encodeProtocolHello(this._localPos, tuningFingerprint));
         const payload = this.storeSelfModifiers();
         if (!payload) {
             return;
@@ -344,7 +351,11 @@ export class RoomFlow {
         }
         const firstDeclaration = this._memberProtocolVersions[hello.pos] === undefined;
         this._memberProtocolVersions[hello.pos] = hello.version;
-        if (hello.version !== NET_RACE_PROTOCOL_VERSION && this._localReady && !this._isHost) {
+        this._memberTuningFingerprints[hello.pos] = hello.tuningFingerprint;
+        if ((hello.version !== NET_RACE_PROTOCOL_VERSION
+            || hello.tuningFingerprint !== this.localTuningFingerprint())
+            && this._localReady
+            && !this._isHost) {
             this._localReady = false;
             netRoom().updateReady(false).catch(() => undefined);
         }
@@ -366,16 +377,19 @@ export class RoomFlow {
             const fingerprint = `${member.avatarId}|${member.nickName}`;
             if (this._memberProtocolFingerprints[member.pos] !== fingerprint) {
                 delete this._memberProtocolVersions[member.pos];
+                delete this._memberTuningFingerprints[member.pos];
                 this._memberProtocolFingerprints[member.pos] = fingerprint;
             }
             if (member.self) {
                 this._memberProtocolVersions[member.pos] = NET_RACE_PROTOCOL_VERSION;
+                this._memberTuningFingerprints[member.pos] = this.localTuningFingerprint();
             }
         }
         for (const rawPos of Object.keys(this._memberProtocolVersions)) {
             const pos = Number(rawPos);
             if (!active[pos]) {
                 delete this._memberProtocolVersions[pos];
+                delete this._memberTuningFingerprints[pos];
             }
         }
         for (const rawPos of Object.keys(this._memberProtocolFingerprints)) {
@@ -394,7 +408,18 @@ export class RoomFlow {
         return hasCompatibleProtocol(
             this._members.map((member) => member.pos),
             this._memberProtocolVersions,
+            this._memberTuningFingerprints,
+            this.localTuningFingerprint(),
         );
+    }
+
+    private localTuningFingerprint(): string {
+        try {
+            return getNetRaceTuningFingerprint();
+        } catch (error) {
+            console.warn('[Room] resolve tuning fingerprint failed', error);
+            return '';
+        }
     }
 
     // Adopt the host's consolidated digest map from the start message. Authoritative:
@@ -677,7 +702,7 @@ export class RoomFlow {
     private toggleReady() {
         if (!this._localReady && !this.protocolCompatible()) {
             this.requestProtocolDeclarations();
-            this.setHint('玩家版本不一致或仍在确认，暂时不能准备');
+            this.setHint('玩家版本、平衡调参不一致或仍在确认，暂时不能准备');
             return;
         }
         this._localReady = !this._localReady;
@@ -709,7 +734,7 @@ export class RoomFlow {
         }
         if (!this.protocolCompatible()) {
             this.requestProtocolDeclarations();
-            this.setHint('玩家版本不一致或仍在确认，无法开始联机比赛');
+            this.setHint('玩家版本、平衡调参不一致或仍在确认，无法开始联机比赛');
             return;
         }
         if (this._startRequested) {
@@ -730,9 +755,16 @@ export class RoomFlow {
         // atomically with the seed. Since the start message is a precondition for entering,
         // a swimmer can never slip in with the wrong balance. Host-authoritative + consistent.
         this.storeSelfModifiers();
+        const tuningFingerprint = this.localTuningFingerprint();
+        if (!tuningFingerprint) {
+            this._startRequested = false;
+            this.setHint('无法读取本地平衡调参，无法开始联机比赛');
+            return;
+        }
         netRoom().broadcast(JSON.stringify({
             t: 'start',
             pv: NET_RACE_PROTOCOL_VERSION,
+            tf: tuningFingerprint,
             seed: this._pendingSeed,
             mods: this._memberModifiers,
         }));
@@ -832,6 +864,14 @@ export class RoomFlow {
                         netRoom().updateReady(false).catch(() => undefined);
                     }
                     this.setHint('房主版本与当前客户端不兼容，请更新后重试');
+                    return;
+                }
+                if (typeof data.tf !== 'string' || data.tf !== this.localTuningFingerprint()) {
+                    if (this._localReady && !this._isHost) {
+                        this._localReady = false;
+                        netRoom().updateReady(false).catch(() => undefined);
+                    }
+                    this.setHint('房主平衡调参与当前客户端不一致，无法开始联机比赛');
                     return;
                 }
                 this._pendingSeed = data.seed >>> 0;

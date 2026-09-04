@@ -59,18 +59,41 @@ export const CONDITION_BALANCE = {
     },
 
     heartRate: {
-        // Equilibrium model (physiological 0..200 scale): HR continuously eases
-        // toward a target driven by sustained effort. Steady controlled effort settles
-        // in the OPTIMAL sweet zone (110-150); only over-driving climbs into
-        // HIGH_PRESSURE / OVERLOAD. Replaces the old one-way ratchet.
+        // Hybrid model (physiological 0..200 scale): the immediate target follows
+        // the current sustained effort, while a separate long-term load rises at a
+        // uniform rate during continuous swimming. Sprint affects only the immediate
+        // layer; it never changes the long-term load rate.
         restTargetHr: 70,         // resting HR with no effort (drifts down to here)
         maxEffortTargetHr: 140,   // perfect steady effort settles high in OPTIMAL (sweet zone)
         effortDecayPerSecond: 0.35, // sustained-effort sample fade rate when not stroking
         easeUpPerSecond: 16,      // climb rate when HR is below target (HR points/sec)
         easeDownPerSecond: 6,     // recovery rate when HR is above target
 
+        // Long-term cardiac load is measured directly in additional target bpm.
+        // Any accepted stroke starts/continues the active window; after its grace
+        // period the load recovers. This is deliberately independent of quality,
+        // zone, sprint tier, and sprint phase.
+        sustainedLoadStrokeGraceSeconds: 0.75,
+        sustainedLoadGainBpmPerSecond: 0.35,
+        sustainedLoadRecoveryBpmPerSecond: 0.45,
+        sustainedLoadMaxBpm: 30,
+        targetHrCap: 188,
+
         // Startup wobble window: first N strokes use DiveResult.heartRateStartupWobbleModifier.
         startupStrokeWindow: 5,
+    },
+
+    sprint: {
+        // SPRINT starts at the same immediate heart-rate target as PACE, then
+        // eases toward this ceiling. This removes the hard target jump at the
+        // 25m threshold while preserving a readable late-race pressure build.
+        heartRatePushScaleMax: 1.25,
+        heartRateRampSeconds: 8,
+
+        // Direct propulsion reward for accepted strokes during SPRINT. It is
+        // intentionally independent from heart-rate zone and energy efficiency,
+        // so the phase has a clear positive payoff instead of only added strain.
+        propulsionScale: 1.12,
     },
 
     quality: {
@@ -111,7 +134,9 @@ export const CONDITION_BALANCE = {
 export const CONDITION_PHASE_TUNING: Record<RacePhase, { hrPushScale: number; hrDriftScale: number }> = {
     [RacePhase.START]: { hrPushScale: 1.0, hrDriftScale: 0.8 },
     [RacePhase.PACE]: { hrPushScale: 1.0, hrDriftScale: 1.0 },
-    [RacePhase.SPRINT]: { hrPushScale: 1.5, hrDriftScale: 0.6 },
+    // The actual SPRINT push scale is eased from this baseline to
+    // CONDITION_BALANCE.sprint.heartRatePushScaleMax in PlayerConditionModel.
+    [RacePhase.SPRINT]: { hrPushScale: 1.0, hrDriftScale: 0.6 },
     [RacePhase.RESULT]: { hrPushScale: 0.0, hrDriftScale: 1.5 },
 };
 

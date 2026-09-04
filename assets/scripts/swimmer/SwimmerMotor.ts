@@ -117,6 +117,7 @@ export class SwimmerMotor {
     private _conditionSpeedScale = 1;
     private _conditionQualityScale = 1;
     private _conditionCadenceScale = 1;
+    private _conditionSprintPropulsionScale = 1;
     private _lastStrokeQuality = 0;
     private _currentAcceleration = 0;
     // Underwater-glide flag: while true (post-dive, before surfacing) the physics
@@ -557,6 +558,7 @@ export class SwimmerMotor {
         this._conditionSpeedScale = 1;
         this._conditionQualityScale = 1;
         this._conditionCadenceScale = 1;
+        this._conditionSprintPropulsionScale = 1;
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
@@ -647,6 +649,13 @@ export class SwimmerMotor {
 
     setConditionCadenceScale(scale: number) {
         this._conditionCadenceScale = clamp(scale, 0.1, 2);
+    }
+
+    // SPRINT has a dedicated propulsion reward rather than overloading the
+    // energy-efficiency multiplier. It scales every accepted stroke, including
+    // its base impulse, so the reward remains clear at any quality level.
+    setConditionSprintPropulsionScale(scale: number) {
+        this._conditionSprintPropulsionScale = clamp(scale, 1, 2);
     }
 
     private decaySpeedCapBonus(dt: number, options: SwimmerMotorOptions) {
@@ -979,7 +988,9 @@ export class SwimmerMotor {
     private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
         const qualityAccel = Math.max(0, strokeQuality) * this._effectiveStrokeQualityAccel * this._conditionSpeedScale;
-        const accel = (baseAccel + qualityAccel) * this.strokeActionTimeScale(actionSeconds);
+        const accel = (baseAccel + qualityAccel)
+            * this._conditionSprintPropulsionScale
+            * this.strokeActionTimeScale(actionSeconds);
         if (accel <= 0) {
             return;
         }

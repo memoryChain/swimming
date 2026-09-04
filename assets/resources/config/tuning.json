@@ -1,6 +1,6 @@
 {
-  "version": 38,
-  "updatedAt": "2026-08-25T09:21:07.301Z",
+  "version": 40,
+  "updatedAt": "2026-09-04T10:39:00.000+08:00",
   "values": {
     "input.padStrokeDedupeMs": 5,
     "dolphin.strainHr": 25,
@@ -77,6 +77,14 @@
     "condition.effortDecay": 0.35,
     "condition.easeUp": 16,
     "condition.easeDown": 6,
+    "condition.sprintHeartRatePushScaleMax": 1.25,
+    "condition.sprintHeartRateRampSeconds": 8,
+    "condition.sprintPropulsionScale": 1.12,
+    "condition.sustainedLoadStrokeGraceSeconds": 0.75,
+    "condition.sustainedLoadGainBpmPerSecond": 0.35,
+    "condition.sustainedLoadRecoveryBpmPerSecond": 0.45,
+    "condition.sustainedLoadMaxBpm": 30,
+    "condition.targetHrCap": 188,
     "condition.depletionCooldown": 1.5,
     "condition.cadenceWarningRatio": 0.15,
     "condition.cadenceExhaustedRatio": 0.05,

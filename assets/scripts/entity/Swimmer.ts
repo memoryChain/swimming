@@ -1422,6 +1422,10 @@ export class Swimmer extends Component {
         this._motor.setConditionCadenceScale(scale);
     }
 
+    applyConditionSprintPropulsionScale(scale: number) {
+        this._motor.setConditionSprintPropulsionScale(scale);
+    }
+
     consumeConditionInputs(): StrokeConditionInput[] {
         if (this._pendingConditionInputs.length === 0) {
             return [];
