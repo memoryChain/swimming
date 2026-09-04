@@ -22,6 +22,7 @@ export type CharacterPoseStateControllerOptions = {
     getSelfTime: () => number;
     updateSplashSurface: (speed: number) => void;
     setSplashVisible: (visible: boolean) => void;
+    modelScale: () => number;
     raceModelYOffset: () => number;
     raceModelEulerDegrees: () => readonly [number, number, number];
 };
@@ -254,7 +255,7 @@ export class CharacterPoseStateController {
             return;
         }
         model.setPosition(0, CHARACTER_POSE_TUNING.raceModelBaseY + this._options.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset, 0);
-        model.setScale(CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale);
+        this.applyModelScale(model);
         const euler = this._options.raceModelEulerDegrees();
         model.setRotationFromEuler(euler[0], euler[1], euler[2]);
     }
@@ -309,7 +310,7 @@ export class CharacterPoseStateController {
         const prepWeight = 1 - eased;
         const raceY = CHARACTER_POSE_TUNING.raceModelBaseY + this._options.raceModelYOffset() + MOTION_TUNING.swimBodyYOffset;
         model.setPosition(CHARACTER_POSE_TUNING.divePrepModelBackOffset * prepWeight, lerp(raceY, CHARACTER_POSE_TUNING.divePrepModelY, prepWeight), 0);
-        model.setScale(CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale);
+        this.applyModelScale(model);
         const euler = this._options.raceModelEulerDegrees();
         model.setRotationFromEuler(
             lerp(euler[0], CHARACTER_POSE_TUNING.divePrepModelEuler[0], prepWeight),
@@ -330,7 +331,7 @@ export class CharacterPoseStateController {
             return;
         }
         model.setPosition(0, CHARACTER_POSE_TUNING.finishFloatBaseY, 0);
-        model.setScale(CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale);
+        this.applyModelScale(model);
         model.setRotationFromEuler(0, 90, 0);
         this.applyTreadWaterPose();
         this._options.updateSplashSurface(0);
@@ -343,7 +344,7 @@ export class CharacterPoseStateController {
             return;
         }
         model.setPosition(CHARACTER_POSE_TUNING.divePrepModelBackOffset, CHARACTER_POSE_TUNING.divePrepModelY, 0);
-        model.setScale(CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale);
+        this.applyModelScale(model);
         model.setRotationFromEuler(CHARACTER_POSE_TUNING.divePrepModelEuler[0], CHARACTER_POSE_TUNING.divePrepModelEuler[1], CHARACTER_POSE_TUNING.divePrepModelEuler[2]);
     }
 
@@ -353,8 +354,13 @@ export class CharacterPoseStateController {
             return;
         }
         model.setPosition(CHARACTER_POSE_TUNING.divePrepModelBackOffset, CHARACTER_POSE_TUNING.showcaseStandingModelY, 0);
-        model.setScale(CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale, CHARACTER_POSE_TUNING.modelScale);
+        this.applyModelScale(model);
         model.setRotationFromEuler(CHARACTER_POSE_TUNING.divePrepModelEuler[0], CHARACTER_POSE_TUNING.divePrepModelEuler[1], CHARACTER_POSE_TUNING.divePrepModelEuler[2]);
+    }
+
+    private applyModelScale(model: Node) {
+        const scale = this._options.modelScale();
+        model.setScale(scale, scale, scale);
     }
 
     private updateTreadWater() {

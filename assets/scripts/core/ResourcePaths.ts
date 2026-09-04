@@ -6,6 +6,9 @@ export type SwimmerModelVariant = {
     candidates: string[];
     debugOnly?: boolean;
     preserveOriginalMaterial?: boolean;
+    // Uniform visual scale relative to CHARACTER_POSE_TUNING.modelScale.
+    // This scales the complete imported model hierarchy without changing gameplay.
+    modelScaleMultiplier?: number;
     raceModelYOffset?: number;
     raceModelEulerDegrees?: readonly [number, number, number];
     debugPose?: 'breaststroke' | 'divePrep';
@@ -98,6 +101,9 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         id: 'cartonSwimmer5',
         label: '逐浪少女',
         candidates: CARTON_SWIMMER5_PREFAB_CANDIDATES,
+        // Per-character whole-model tuning. Edit these multipliers directly when
+        // comparing the roster; 1 keeps the shared default scale.
+        modelScaleMultiplier: 1.0,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
@@ -114,6 +120,7 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         id: 'cartonSwimmer6',
         label: '跃浪少女',
         candidates: CARTON_SWIMMER6_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 0.93,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
@@ -130,6 +137,7 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         id: 'cartonSwimmer8',
         label: '蛙跃潮童',
         candidates: CARTON_SWIMMER8_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 0.92,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
@@ -146,6 +154,7 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         id: 'cartonSwimmer9',
         label: '霓光灵猫',
         candidates: CARTON_SWIMMER9_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 1.00,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
@@ -162,6 +171,7 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         id: 'cartonSwimmer10',
         label: '青影忍浪',
         candidates: CARTON_SWIMMER10_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 1.09,
         preserveOriginalMaterial: true,
         swimHeadLiftDegrees: 4,
         sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,

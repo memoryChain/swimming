@@ -27,6 +27,12 @@ test('可选角色均有唯一模型，并复用标准动作资源', () => {
         assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
         assert.ok(fs.existsSync(new URL(`assets/race/${model.divePrepOverridePath}.json`, root)));
     }
+    assert.equal(Resources.findSwimmerModelVariant('muscleMan').modelScaleMultiplier, undefined);
+    for (const id of expectedIds.slice(1)) {
+        const multiplier = Resources.findSwimmerModelVariant(id).modelScaleMultiplier;
+        assert.equal(Number.isFinite(multiplier), true, `${id} modelScaleMultiplier`);
+        assert.ok(multiplier >= 0.5 && multiplier <= 2, `${id} modelScaleMultiplier=${multiplier}`);
+    }
 });
 
 test('逐浪少女配色与肤色独立，恢复暖肤色保留原图', () => {

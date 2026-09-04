@@ -16,6 +16,8 @@
 
 目前只接入 `muscleMan`、`cartonSwimmer5`、`cartonSwimmer6`、`cartonSwimmer8`、`cartonSwimmer9` 和 `cartonSwimmer10`。角色列表固定预留 20 个槽位，未配置或未解锁的槽位显示为锁定状态。
 
+每个模型的整体视觉缩放在 `assets/scripts/core/ResourcePaths.ts` 的对应模型变体中通过 `modelScaleMultiplier` 调整。`1` 表示沿用全局默认缩放；该值只统一缩放完整导入模型层级，不改变游泳速度、碰撞体重或其他比赛数值。
+
 ## 外观与比赛交接
 
 `PLAYER_SKIN_TONES` 定义原始暖肤色和深肤色；`PLAYER_COLOR_SCHEMES` 定义非皮肤部位的配色。暖肤色使用 `preserveOriginal` 保留模型导入时的皮肤，切换到深肤色后才按遮罩覆盖。角色页的小按钮循环切换肤色和服装配色，正式比赛由 `SwimmerFactory` 读取同一份选择并应用到玩家模型。赛事页将选择写入既有 `GameBalance` 难度状态。

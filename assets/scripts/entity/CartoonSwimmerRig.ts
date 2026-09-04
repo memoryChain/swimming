@@ -168,6 +168,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         getSelfTime: () => this._selfTime,
         updateSplashSurface: (speed) => this.updateSplashSurface(speed),
         setSplashVisible: (visible) => this._splashEmitter?.setVisible(visible),
+        modelScale: () => this.modelScale(),
         raceModelYOffset: () => this.raceModelYOffset(),
         raceModelEulerDegrees: () => this.raceModelEulerDegrees(),
     });
@@ -2148,6 +2149,12 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return -0.88;
         }
         return findSwimmerModelVariant(this._modelVariantId)?.raceModelYOffset ?? 0;
+    }
+
+    private modelScale(): number {
+        const multiplier = findSwimmerModelVariant(this._modelVariantId)?.modelScaleMultiplier ?? 1;
+        const safeMultiplier = Number.isFinite(multiplier) ? Math.max(0.1, multiplier) : 1;
+        return CHARACTER_POSE_TUNING.modelScale * safeMultiplier;
     }
 
     private raceModelEulerDegrees(): readonly [number, number, number] {
