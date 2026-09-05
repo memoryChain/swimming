@@ -4,6 +4,8 @@ CCEffect %{
     passes:
     - vert: lane-float-cutout-vs:vert
       frag: lane-float-cutout-fs:frag
+      rasterizerState:
+        cullMode: back
       depthStencilState:
         depthTest: true
         depthWrite: true
@@ -31,6 +33,7 @@ CCProgram lane-float-cutout-vs %{
 
   out vec2 v_uv;
   out vec3 v_worldPos;
+  out float v_floatShade;
 
   uniform LaneFloatCutoutVert {
     vec4 tilingOffset;
@@ -42,6 +45,10 @@ CCProgram lane-float-cutout-vs %{
     mat4 matWorld;
     CCGetWorldMatrix(matWorld);
     v_uv = a_texCoord * tilingOffset.xy + tilingOffset.zw;
+    // 浮漂圆周 UV：底部 V=0/1，顶部 V=0.5。
+    // 每个顶点计算固定顶光，插值到像素；无需法线、灯光或第二张纹理。
+    float topFacing = -cos(a_texCoord.y * 6.28318530718);
+    v_floatShade = 0.62 + 0.38 * max(topFacing, 0.0);
     vec4 worldPos = matWorld * position;
     v_worldPos = worldPos.xyz;
     CC_TRANSFER_FOG(worldPos);
@@ -56,6 +63,7 @@ CCProgram lane-float-cutout-fs %{
 
   in vec2 v_uv;
   in vec3 v_worldPos;
+  in float v_floatShade;
   uniform sampler2D mainTexture;
 
   uniform LaneFloatCutoutFrag {
@@ -88,7 +96,9 @@ CCProgram lane-float-cutout-fs %{
     }
 
     vec4 sampleColor = texture(mainTexture, v_uv);
-    vec3 baseColor = SRGBToLinear(sampleColor.rgb) * mainColor.rgb;
+    // 接缝稍提亮，避免细密黑条；体积感来自圆周明暗而非加深每条接缝。
+    vec3 beadColor = mix(vec3(1.0), SRGBToLinear(sampleColor.rgb), 0.88);
+    vec3 baseColor = beadColor * mainColor.rgb * v_floatShade;
     float belowWater = step(v_worldPos.y, waterLine.x) * step(0.5, waterLine.y);
     vec3 submerged = mix(baseColor, underwaterColor.rgb, underwaterColor.a);
     vec4 outputColor = vec4(mix(baseColor, submerged, belowWater), sampleColor.a * mainColor.a);

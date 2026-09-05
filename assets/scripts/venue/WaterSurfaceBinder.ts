@@ -1,4 +1,4 @@
-import { Color, EffectAsset, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
+import { Color, EffectAsset, gfx, Material, MeshRenderer, Node, Texture2D, Vec3, Vec4 } from 'cc';
 import { EDITOR } from 'cc/env';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
@@ -32,14 +32,10 @@ const UNDERWATER_NODE_PREFIXES = ['pool_floor', 'lane_floor_line', 'lane_t_end',
 // light. Swap them to unlit materials that keep the original albedo so they render as
 // their true red/white/blue/yellow colors.
 const LANE_FLOAT_NODE_PREFIX = 'lane_float_rope';
-// Small tiling grayscale texture that fakes the row of round beads/discs of a real lane
-// rope. It is multiplied by each rope's flat color on an unlit material, so we get the
-// beaded, shaded Mario-style look without lighting (no blue ambient tint) and without
-// the geometry cost of modelling every bead. The rope UVs already repeat this along the
-// length, so the texture just needs REPEAT wrapping.
+// 前后对称的闭合浮漂与连续细绳已合并进场馆 Mesh。复用小灰度纹理为轴心到外沿着色，
+// 再乘原有泳道配色；不依赖灯光，也不为每颗浮漂增加材质或节点。
 const LANE_FLOAT_BEAD_TEXTURE_PATH = 'pool/LaneFloatBeads/texture';
-// The rope UVs already bake the bead count into U (6 beads per color segment, aligned to
-// color edges), so no extra tiling scale is needed.
+// 每个盘片的 U=0..0.5，圆周 V=0..1；必须保持原始 UV 尺度。
 const LANE_FLOAT_BEAD_TILING = 1.0;
 
 // Venue branding is applied at runtime by texture path so the art can be swapped just by
@@ -338,19 +334,20 @@ function makeUnlitBrandingMaterial(texture: Texture2D, nodeName: string, flipU =
 // ambient sky light no longer tints the lane floats.
 function makeUnlitLaneFloatMaterial(source: Material, beadTexture: Texture2D | null, cutoutEffect: EffectAsset | null): Material {
     const material = new Material();
+    // 闭合浮漂的两侧均有朝外的面；剔除背面，避免绘制内部表面。
+    const states = { rasterizerState: { cullMode: gfx.CullMode.BACK } };
     if (cutoutEffect) {
-        material.initialize({ effectAsset: cutoutEffect });
+        material.initialize({ effectAsset: cutoutEffect, states });
     } else if (beadTexture) {
-        material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
+        material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true }, states });
     } else {
-        material.initialize({ effectName: 'builtin-unlit' });
+        material.initialize({ effectName: 'builtin-unlit', states });
     }
     material.name = `${cutoutEffect ? 'RuntimeLaneFloatCutout' : 'RuntimeLaneFloat'}_${source.name || 'Float'}`;
     material.setProperty('mainColor', findMaterialColor(source));
     if (beadTexture) {
         material.setProperty('mainTexture', beadTexture);
-        // The rope UVs pack ~247 bead tiles along the length; scale U down so the beads
-        // read as bigger, cleaner discs (~124 beads instead of a muddy fine stripe).
+        // 保持盘片明暗与圆周顶光的 UV 对齐，不再靠重复条纹模拟盘片数量。
         material.setProperty('tilingOffset', new Vec4(LANE_FLOAT_BEAD_TILING, 1, 0, 0));
     }
     return material;

@@ -10,6 +10,9 @@
 | `SwimmingVenue_Rebuild_FlatColor.blend` | 同步、几何合并、材质合批后的导出目标 | 仅做同步与合批，不直接创作 |
 | `batch-flatcolor-venue.py` | 将 17 个看台批次压成单材质 atlas，并校验 primitive 数 | 生产脚本 |
 | `export-flatcolor-venue-glb.py` | 校验运行时节点和合批状态，导出最终 GLB | 生产脚本 |
+| `refine-stand-structure.py` | 按墙体和楼板接触面生成看台柱梁，合为一个运行时批次 | 生产脚本 |
+| `refine-pool-tiles.py` | 烘焙池内方砖贴图并同步池底、池壁 UV | 生产脚本 |
+| `refine-lane-floats.py` | 生成八边连续绳体，以重复贴图表现密集盘片，全池不超过 4,000 面 | 生产脚本 |
 | `venue-textures/` | Blender 源纹理 | 按需编辑 |
 
 最终运行时文件为 `assets/race/pool/LowPolyPool.glb`。必须保留其现有 `.meta`，否则 `PoolScene.prefab` 的子资源引用会失效。
@@ -72,6 +75,7 @@
 - `BleacherBatch_T{1..4}_{N/S/E/W}`：每层、每侧各自一个节点。
 - `CornerStands_Merged`：角看台。
 - `StandStructure_Merged`：墙体、平台和天花板主体。
+- `StandArchitectureArt_Merged`：新增看台柱梁，48 个源构件合并为一个 Mesh、一个材质。柱底接地、柱顶接梁底、梁顶接 T3 楼板底，避开四侧出入口。
 - `BleacherAccess_Architecture_Merged`：入口楼梯及建筑结构。
 - `BleacherAccess_Rails_Merged`：入口扶手。
 - `OlympicPanels_Merged`：奥运装饰板。
@@ -114,8 +118,8 @@
 targets: 17
 pending: 0
 completed: 17
-primitiveDrawsBefore: 37
-primitiveDrawsAfter: 37
+primitiveDrawsBefore: 38
+primitiveDrawsAfter: 38
 ```
 
 合法新增结构可能改变总数，但导出目标必须保持 `<= 39` primitive；超过上限时先审计材质槽和新增 renderer，不要直接放宽限制。
@@ -158,16 +162,21 @@ npm run textures:check
 
 至少检查以下内容：
 
-- GLB 当前基线为 55 个节点、32 个 Mesh、37 primitive。
+- GLB 当前基线为 56 个节点、33 个 Mesh、38 primitive、20,390 triangles、863,148 bytes，约 0.82 MiB。贴图浮漂相对上一版六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。节点、材质批次和贴图数量不增加。此处为源 GLB 大小，不是微信最终包体增量。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
+- 低位跟拍使用 T1-T4 亮度 `(1.0, 0.55, 0.28, 0.12)`，墙体烘焙为 `(1.0, 0.42, 0.24, 0.10)`；运行时观众的四档亮度与看台同步，避免中上层整片压黑。看台 atlas 版本为 7。
+- 池底和池壁共用原名 `PoolWallNarrowTilesWhite` 的内嵌 `256x256` 不透明方砖图，保持图片和材质身份，UV 对应约 0.5m 方砖。不得把 Blender 的水面占位材质当作游戏水面效果；水面与水下吸收仍由原运行时 shader 负责。
+- 运行时观众仍是 15 个动作/颜色分组，每人 8 triangles；新的头部和身体为 12 vertices，移除了无用法线和 UV，材质由 5 份合为 1 份。头发、肤色和衣服烘焙为顶点色，无透明贴图和新增逐帧逻辑。几何变动须复查台阶落点、头部遮挡以及远距离可辨度。
 - `StandStructure_Merged`、入口楼梯、平台和其他墙面在 Blender 源与运行时都必须为同一浅蓝灰色，不得继承看台深蓝色。
 - 东、西直看台不得保留整面 `StandSoffit_E` / `StandSoffit_W`；这两块约 35.87m × 4.57m 的连续底板会在泳池低视角遮住二层观众。西侧角区也不得保留 `CornerSoffit_NW` / `CornerSoffit_SW`，它们会与整体大 O 重叠并露出蓝灰色块；editable 中这四个对象都应不存在。
 - T3 地板是覆盖 N/E/S/W 四边的一个整体大 O，不是东、西各自闭合。editable 必须保留独立源对象 `T3RingFloor_O`：内孔与外框同轴，东西两臂等宽、南北两臂等宽，外边界从 `StandSupport_N/S/E/W` 的朝池接触平面推导并贴合四面墙，中央孔保持场馆内区开放，底面使用浅蓝灰 ceiling 材质；不得固定为 3m 后再手调单边宽度。同步 master 时将它并入 `StandStructure_Merged`，不能只给 E/W 半模块补离散小面，也不能在西侧单独造一个局部 O。
 - 东侧、南侧、北侧、西侧看台没有缺面，楼梯、扶手、天花板和墙顶交界正常；墙顶交界描边基线为 N/S/E/W 直墙加 NE/SE/NW/SW 斜角共 8 条物理接触线。西侧必须按角看台与南北长看台的接缝关系定位，不得以泳池中心镜像回填空地。
 - 观众仍落在 16 个分层看台及 NE/SE/NW/SW 角看台上，拍照闪光位置正常。
 - 水面、水下、起跳台、泳道线、颁奖台和场馆描边正常；观众席正面描边基线为 17 个源节点、144 条连续线、288 triangles，NW/SW 必须按各自角区提取，不能被更靠近泳池的 NE/SE 候选淘汰。
+- 浮漂为 `lane_float_rope_batch` 内的 7 条闭合八边连续绳体，共 3,892 triangles、1,960 个源顶点、3,808 个导出顶点、4 个材质 primitive。每条只在 34 个色段边界保留共享截面环，整条绳体两端封盖，移除逐颗端面及不可见的内部细绳。外接直径 0.14m，顶部为平边。每色段用 UV 重复 12 次表现盘片，纹理盘节约 0.12132m，全池表现 2,856 节但不存在对应独立几何。盘心按真实水面上方 0.02m 定位，约 0.045m 浸在水下。读取 `PoolWaterSurface` 的世界几何高度，不能套用默认水位 0.055。节点变换、泳道中心和颜色分段不变，生成脚本强制全池不超过 4,000 triangles。
+- 浮漂复用原 `LaneFloatBeads.png` 的 128×16 纹理及原着色器；轴向每色段 U 从 0 到 12，纹理采样器必须保持 REPEAT，暗缝和固定顶光提供盘片观感，无新增贴图或采样。几何及 U→12-U 的 UV 映射镜像一致。`LaneFloatCutout.effect` 在顶点阶段按圆周 V 计算固定顶光，顶部 V=0.5；V 在底部跨缝不拆点，因为原纹理各行相同，圆周顶光在顶点阶段计算。闭合绳体保持背面剔除，Effect 及 `WaterSurfaceBinder` 的三条初始化路径均为 BACK。无新增透明层、实时灯光、物理模拟或逐帧逻辑；水下染色与运动员遮挡裁切保持原流程。此方案只模拟盘片明暗，近景外轮廓无真实凹槽，不得声称与逐颗建模完全一致；远处纹理闪烁、实际跟拍效果及帧率仍须微信真机验证。
 - 两组仰泳旗线、四组泳池梯、两组救生站与泳具车、裁判席和低矮长凳位置正常；领奖台西端的自由环绕镜头区域必须保持无高物体遮挡。
 - `PoolsideProps_Merged` 的 Blender world bounds 基线约为 X `4.965..45.035`、Y `-14.710..15.657`、Z `-0.920..2.485`；独立设施及四组池沿扶梯的甲板侧支脚都必须落在外侧地面 `Z=0.2`，每组扶梯当前有 16 个顶点命中该接地平面；导出脚本会分别检查四组扶梯，并拦截换轴、漏应用变换、整体移位或抬高 0.2m 的损坏状态。
 - 顶视镜头仍能隐藏名称包含 `ceiling` 的顶部构件。
@@ -192,7 +201,34 @@ sceneresource/
   SwimmingVenue_Rebuild_FlatColor.blend
   batch-flatcolor-venue.py
   export-flatcolor-venue-glb.py
+  refine-stand-structure.py
+  refine-pool-tiles.py
   venue-textures/
 ```
 
+## 跟拍视角细化的再生成
+
+先备份源文件，按顺序执行以下创作和定向同步，再运行上文的合批、dry-run、正式导出及纹理策略流程：
+
+```powershell
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-pool-tiles.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-stand-structure.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/batch-flatcolor-venue.py -- --author-editable
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-pool-tiles.py -- --sync
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-stand-structure.py -- --sync
+```
+
+柱梁必须检查真实楼板的表面接触，不仅检查包围盒高度。新增 GLB 纹理会移动 Cocos 的 `UnnamedTexture-N` 索引；重导入后按图片身份检查旧 wrap/filter 设置，压缩 preset 和 mipfilter 仍交给 `textures:fix`。源模型预览可用于检查几何/色板，最终水面、观众遮挡与帧率须在实际游戏跟拍视角验收。
+
 旧 `LowPolyPool`、`SwimmingVenue_Rebuild`、`Atlas`、模块样板、一次性修复脚本和 Blender 自动备份已被移除。需要追溯时使用 Git 历史，不要重新放回生产目录。
+
+## 圆盘浮漂再生成
+
+备份 editable、master、运行时 GLB 和 `.meta` 后执行以下步骤，再按标准流程合批、导出、重导入与纹理审计：
+
+```powershell
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-lane-floats.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-lane-floats.py -- --sync
+```
+
+脚本从原绳体提取七条泳道的位置和 34 段颜色布局，缓存于对象自定义属性以供幂等重建；`--prototype` 仅在内存生成中间泳道的两段样板，不保存源文件。版本 6 的每条绳体必须闭合，每条边恰好连接两个面；相邻色段必须共用截面，生成时检查所有色段及端面法线、几何和 UV 对称性。`disc_float_count` 从该版本起表示纹理盘节数量，不是独立几何颗数。导出 Mesh 名 `lane_float_rope_batch_Mesh.002` 必须保持不变。同步后对比其他 32 个 Mesh 的几何、所有节点变换和所有子资源 UUID，并以相同高度、距离和视场检查正向及折返跟拍，同时检查侧视纹理分节与远处混叠。

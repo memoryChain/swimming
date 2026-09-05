@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Layers, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
+import { _decorator, Color, Component, gfx, Layers, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
 import { scaledDelta } from '../core/TimeScale';
 import { SpectatorCameraFlashEmitter } from './SpectatorCameraFlashEmitter';
 
@@ -16,12 +16,18 @@ const SPECTATOR_COLORS = [
 ];
 
 // Per-tier brightness multiplier baked into spectator vertex colors, modelling
-// a spotlight that only lights the pool: the poolside tier is at full strength
-// while each higher tier falls off steeply (non-linear) so the top tier is
-// nearly black.
-const TIER_BRIGHTNESS = [1.0, 0.46, 0.18, 0.05];
+// 中上层保留可辨轮廓，四档亮度与场馆 atlas 同步；泳池仍是画面最亮的区域。
+const TIER_BRIGHTNESS = [1.0, 0.55, 0.28, 0.12];
 const FRONT_ROW_BRIGHTNESS = 0.70;
 const FRONT_ROW_SATURATION = 0.55;
+
+// 坐姿观众：身体与头部分开着色。每人仍为 8 triangles，双面由剔除设置处理。
+// 只在场馆创建时写入 Mesh，不增加观众节点、透明纹理或逐帧计算。
+const SPECTATOR_PROFILE = [
+    -0.35, -0.5, 0.35, -0.5, 0.5, -0.1, 0.30, 0.13, -0.30, 0.13, -0.5, -0.1,
+    -0.14, 0.13, 0.14, 0.13, 0.24, 0.24, 0.18, 0.5, -0.18, 0.5, -0.24, 0.24,
+] as const;
+const SPECTATOR_SKIN_COLORS = [color(224, 174, 137), color(183, 128, 94), color(139, 92, 67)];
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
@@ -136,7 +142,7 @@ export class SpectatorCrowdBuilder {
                 return null;
             }
 
-            const materials = SPECTATOR_COLORS.map((value, index) => makeMaterial(`SpectatorMuted${index}`, value));
+            const material = makeMaterial('SpectatorVertexColor');
             const buckets = Array.from(
                 { length: SPECTATOR_COLORS.length * WOBBLE_GROUP_COUNT },
                 () => [] as SpectatorSpec[],
@@ -153,7 +159,7 @@ export class SpectatorCrowdBuilder {
                 const group = addSpectatorGroup(
                     crowdRoot,
                     `SpectatorMuted${colorIndex}Motion${Math.floor(i / SPECTATOR_COLORS.length)}`,
-                    materials[colorIndex],
+                    material,
                     buckets[i],
                     i,
                 );
@@ -248,7 +254,7 @@ export class SpectatorCrowdBuilder {
                         continue;
                     }
 
-                    const height = 0.34 + random01(row, col, section, 31) * 0.24;
+                    const height = 0.58 + random01(row, col, section, 31) * 0.20;
                     const width = 0.25 + random01(col, section, row, 37) * 0.24;
                     const longPosition = sectionMinLong
                         + (col + 0.5) * (sectionWidth / columns)
@@ -349,7 +355,7 @@ export class SpectatorCrowdBuilder {
                             + jitter(col, row, tier + salt, depth * 0.12);
                         const x = origin.x + longUx * along + depthUx * dp;
                         const z = origin.z + longUz * along + depthUz * dp;
-                        const height = 0.34 + random01(row, col, tier + salt, 31) * 0.24;
+                        const height = 0.58 + random01(row, col, tier + salt, 31) * 0.20;
                         const width = 0.25 + random01(col, tier, row + salt, 37) * 0.24;
                         const colorIndex = Math.floor(
                             random01(col, row, tier + salt + 11, 53) * SPECTATOR_COLORS.length,
@@ -436,50 +442,47 @@ function addSpectatorGroup(
 
 function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): primitives.IGeometry {
     const positions: number[] = [];
-    const normals: number[] = [];
-    const uvs: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
     const rotation = new Quat();
     const point = new Vec3();
-    const normal = new Vec3();
     const minPos = new Vec3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
     const maxPos = new Vec3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
-    const baseR = baseColor.r / 255;
-    const baseG = baseColor.g / 255;
-    const baseB = baseColor.b / 255;
+    const baseR = srgbToLinear(baseColor.r / 255);
+    const baseG = srgbToLinear(baseColor.g / 255);
+    const baseB = srgbToLinear(baseColor.b / 255);
     const luminance = baseR * 0.2126 + baseG * 0.7152 + baseB * 0.0722;
 
     for (let i = 0; i < spectators.length; i++) {
         const spectator = spectators[i];
-        const base = i * 6;
+        const base = i * 12;
         Quat.fromEuler(
             rotation,
             -90 + jitter(spectator.row, spectator.col, spectator.side, 5),
             spectator.yaw + jitter(spectator.col, spectator.side, spectator.row, 12),
             jitter(spectator.side, spectator.row, spectator.col, 9),
         );
-        Vec3.transformQuat(normal, Vec3.UNIT_Y, rotation);
-
-        // Six hard-edged points read as an oval/capsule at venue distance while
-        // avoiding alpha overdraw, textures, extra materials, or extra draw calls.
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.28, -0.5, 0.22, 0);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.28, -0.5, 0.78, 0);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.5, 0, 1, 0.5);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, 0.28, 0.5, 0.78, 1);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.28, 0.5, 0.22, 1);
-        pushCorner(positions, normals, uvs, point, normal, minPos, maxPos, spectator, rotation, -0.5, 0, 0, 0.5);
+        for (let vertex = 0; vertex < 12; vertex++) {
+            const x = SPECTATOR_PROFILE[vertex * 2];
+            const z = SPECTATOR_PROFILE[vertex * 2 + 1];
+            pushCorner(positions, point, minPos, maxPos, spectator, rotation, x, z);
+        }
         const b = spectator.brightness;
         const s = spectator.saturation;
-        // The unlit material supplies the base clothing colour. Vertex colour
-        // is a per-spectator multiplier, so the first row can be desaturated
-        // without creating extra materials or draw calls. Non-front rows use
-        // saturation=1 and therefore preserve the previous grayscale multiplier.
-        const r = Math.min(1, (luminance + (baseR - luminance) * s) * b / baseR);
-        const g = Math.min(1, (luminance + (baseG - luminance) * s) * b / baseG);
-        const blue = Math.min(1, (luminance + (baseB - luminance) * s) * b / baseB);
+        // 白色 unlit 材质读取最终顶点色，肤色不受衣服乘色限制。
+        const r = (luminance + (baseR - luminance) * s) * b;
+        const g = (luminance + (baseG - luminance) * s) * b;
+        const blue = (luminance + (baseB - luminance) * s) * b;
         for (let vertex = 0; vertex < 6; vertex++) {
-            colors.push(r, g, blue, 1);
+            const shade = vertex < 2 ? 0.75 : 1;
+            colors.push(r * shade, g * shade, blue * shade, 1);
+        }
+        const skin = SPECTATOR_SKIN_COLORS[Math.floor(random01(spectator.row, spectator.col, spectator.side, 131) * SPECTATOR_SKIN_COLORS.length)];
+        for (let vertex = 0; vertex < 6; vertex++) {
+            const hair = vertex === 3 || vertex === 4;
+            colors.push(srgbToLinear(hair ? 0.15 : skin.r / 255) * b,
+                srgbToLinear(hair ? 0.12 : skin.g / 255) * b,
+                srgbToLinear(hair ? 0.11 : skin.b / 255) * b, 1);
         }
         indices.push(
             base, base + 1, base + 2,
@@ -487,32 +490,28 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): 
             base, base + 3, base + 4,
             base, base + 4, base + 5,
         );
-        // Back-facing triangles keep the flat crowd visible from every race shot.
+        // 头部 4 triangles；关闭背面剔除后无需重复反向索引，总数与旧版相同。
         indices.push(
-            base, base + 2, base + 1,
-            base, base + 3, base + 2,
-            base, base + 4, base + 3,
-            base, base + 5, base + 4,
+            base + 6, base + 7, base + 8,
+            base + 6, base + 8, base + 9,
+            base + 6, base + 9, base + 10,
+            base + 6, base + 10, base + 11,
         );
     }
 
-    return { positions, normals, uvs, colors, indices, minPos, maxPos };
+    // 此 unlit 顶点色材质不使用法线或 UV，避免新轮廓携带无用的顶点数据。
+    return { positions, colors, indices, minPos, maxPos };
 }
 
 function pushCorner(
     positions: number[],
-    normals: number[],
-    uvs: number[],
     point: Vec3,
-    normal: Vec3,
     minPos: Vec3,
     maxPos: Vec3,
     spectator: SpectatorSpec,
     rotation: Quat,
     xFactor: number,
     zFactor: number,
-    u: number,
-    v: number,
 ) {
     const isTop = zFactor > 0;
     const widthScale = isTop ? spectator.topWidthScale : 1;
@@ -521,8 +520,6 @@ function pushCorner(
     Vec3.transformQuat(point, point, rotation);
     point.add(spectator.pos);
     positions.push(point.x, point.y, point.z);
-    normals.push(normal.x, normal.y, normal.z);
-    uvs.push(u, v);
     minPos.x = Math.min(minPos.x, point.x);
     minPos.y = Math.min(minPos.y, point.y);
     minPos.z = Math.min(minPos.z, point.z);
@@ -633,11 +630,21 @@ function mergeBounds(a: SceneBounds | null, b: SceneBounds | null): SceneBounds 
     };
 }
 
-function makeMaterial(name: string, albedo: Color): Material {
+function srgbToLinear(value: number): number {
+    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+}
+
+function makeMaterial(name: string): Material {
     const material = new Material();
-    material.initialize({ effectName: 'builtin-unlit', defines: { USE_VERTEX_COLOR: true } });
+    material.initialize({
+        effectName: 'builtin-unlit',
+        defines: { USE_VERTEX_COLOR: true },
+        // 普通 Material 的 overridePipelineStates 只会警告，不会修改剔除状态。
+        // 在初始化时设置双面，保证东西看台及反向镜头中的单层观众可见。
+        states: { rasterizerState: { cullMode: gfx.CullMode.NONE } },
+    });
     material.name = name;
-    material.setProperty('mainColor', albedo);
+    material.setProperty('mainColor', Color.WHITE);
     return material;
 }
 

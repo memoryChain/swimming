@@ -110,8 +110,8 @@ SHADE_DIST_CURVE = 1.0
 # Walls/soffit dim IN STEP with the authored seating tiers instead of a single
 # bottom->top line (which left T2 walls too white while T2 seating was already
 # dark). Index 1 (T2) is where the wall starts dimming; lower it to darken the
-# wall from T2 up. Kept a touch darker than the seats' TIER_BRIGHTNESS[1]=0.46.
-SHADE_TIER_VALUES = (1.0, 0.34, 0.18, 0.05)
+# wall from T2 up. Kept below the seats' TIER_BRIGHTNESS[1]=0.55.
+SHADE_TIER_VALUES = (1.0, 0.42, 0.24, 0.10)
 # Far-from-pool floor for the distance term. A tall back wall's BASE has a low z
 # (so the tier curve alone calls it "near pool / bright"), but it actually sits
 # far behind the seating and must read dark. We take the darker of tier(height)

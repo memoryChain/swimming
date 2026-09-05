@@ -27,7 +27,7 @@ ATLAS_IMAGE_NAME = "BleacherFlatColorAtlas"
 ATLAS_MATERIAL_NAME = "BleacherFlatColorAtlas_Material"
 ATLAS_UV_NAME = "BleacherFlatColorAtlasUV"
 ATLAS_VERSION_PROPERTY = "bleacher_flat_color_atlas_version"
-ATLAS_VERSION = 6
+ATLAS_VERSION = 7
 ATLAS_WIDTH = 192
 ATLAS_HEIGHT = 16
 ATLAS_TEMP_FILENAME = ".BleacherFlatColorAtlas.tmp.png"
@@ -42,7 +42,8 @@ PROP_ATLAS_HEIGHT = 16
 PROP_ATLAS_TEMP_FILENAME = ".PoolsidePropsFlatColorAtlas.tmp.png"
 EXPECTED_BLEACHER_TARGETS = 17
 POOL_CENTER = Vector((25.0, 0.0, 0.0))
-TIER_BRIGHTNESS = (1.0, 0.46, 0.18, 0.05)
+# 低位跟拍仍需看清中上层台阶，避免高层整片压黑。
+TIER_BRIGHTNESS = (1.0, 0.55, 0.28, 0.12)
 
 # Values are linear RGB. The seatless bleacher bands use a venue-blue palette
 # with separate tread, riser, and side values so the geometry reads unlit.

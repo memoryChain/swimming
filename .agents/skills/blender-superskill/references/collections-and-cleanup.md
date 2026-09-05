@@ -59,3 +59,10 @@ After approval, join small static detail pieces into logical modules:
 - Check the Outliner for linked clones, shared mesh data, accidental multi-collection objects, and leftover prototype duplicates. Clean them before final response.
 - For contact-critical assemblies, keep a short interface audit list and verify the claimed touching parts still touch after any transforms, joins, or cleanup.
 - Before final response, confirm objects are in the intended collection.
+
+## Blender 源文件定向同步到 Cocos 导出目标
+
+- `bpy.data.libraries.load()` 会把传入的对象名列表原地替换为对象引用；需要保留原名时传入 `names.copy()`。Append 对象先链接到临时集合并更新 view layer，再读取 `matrix_world` 和世界包围盒，避免未求值矩阵误判位移。
+- 替换 Mesh 时保留目标节点的父子关系、变换和原 Mesh 名，复用未修改的材质引用。仅在旧 Mesh 已无用户时移除；不要给 Cocos 子资源无意改名。
+- GLB 新增纹理会使 `UnnamedTexture-N` 的索引移动。Cocos 重导入后核对 Texture2D 的图片引用及 wrap/filter：旧采样配置应按图片身份保留，不能随旧索引错配到另一张图。压缩 preset 与 mipfilter 仍由项目纹理策略脚本处理。
+- 对细栅格、板缝等不影响轮廓的重复细节，优先烘焙到共享小纹理；只给压顶、凹槽和接触面保留几何。相邻材质区域直接分割原表面，避免透明覆盖与贴地面片闪烁。

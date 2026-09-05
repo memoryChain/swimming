@@ -76,6 +76,13 @@ When using the orchestrator:
 
 ## Operating Loop
 
+- 优化已有游戏场景前，先确认主要游戏相机的位置、朝向、视场和常见运动路径，再按画面占比与持续可见时间安排模型、材质预算。跟随运动员的低机位应优先看台、观众轮廓、泳道与池内材质，不能用池岸近景或编辑器全景代替主视角验收。
+- 先区分 Blender 源资产与运行时重建的内容（观众、角色、水面、描边等）；只看源文件缺少这些内容时，不得据此声称游戏画面空旷或水面错误。示意渲染必须明确标为源模型/材质预览，不能冒充运行时截图。
+- 有折返、反向跟拍或绕行镜头的资产，必须在相同距离、高度和视场下做正反视角对照。双面显示仅保证面片可见，不能把单向凸面变成双向一致的体积；优先使用前后对称、闭合且法线向外的低面数形状，并数值校验两侧几何与 UV 的对称性。
+- 重复排列的浮漂等近景资产还须检查侧视覆盖率：分别量化单颗轴向长度、中心节距和端点间隙。优先移动现有顶点拉长单颗来缩小空隙，避免只靠增加颗数补密度；圆周边数则按近景轮廓决定，不能为预算削成明显尖角后只用纵向透视验收。
+- 轴向包围盒接近不等于主体连续：双锥尖端之间即使只留小缝，主体仍可能显得像串珠。需要紧密盘节时用完整端面和等截面柱身，按主要可见高度检查空隙，不能继续拉长尖端来冒充盘身密度。
+- 移动端密集重复盘片若在主要视角只贡献细小明暗条纹，先验证低面数连续外壳加重复纹理，避免为不可辨的端面与内部细绳支付几何成本。纹理密度与几何密度独立设置；检查正反纹理一致、近景轮廓损失和远处混叠，再决定是否值得增加真实盘片。不可把纹理假凹槽描述为真实轮廓细节。
+
 - Use Blender MCP directly when the user asks to model, critique, arrange, clean, or inspect Blender assets.
 - For complex reference-image modeling, start with an orchestrated reference run unless the user explicitly asks to work directly in the main loop.
 - For compound scenes, make a close reference crop/sheet for the target asset before touching Blender. Use that reference for silhouette, construction order, and missing-detail critique.
