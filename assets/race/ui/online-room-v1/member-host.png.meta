@@ -1,0 +1,46 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "f561318c-066c-49a7-87d2-259f59c8d354",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "f561318c-066c-49a7-87d2-259f59c8d354@6c48a",
+      "displayName": "member-host",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "f561318c-066c-49a7-87d2-259f59c8d354",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "fixAlphaTransparencyArtifacts": false,
+    "hasAlpha": true,
+    "redirect": "f561318c-066c-49a7-87d2-259f59c8d354@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "astc-ui-alpha-5x5"
+    }
+  }
+}
