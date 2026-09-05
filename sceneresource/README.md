@@ -172,7 +172,8 @@ npm run textures:check
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
 - 低位跟拍使用 T1-T4 亮度 `(1.0, 0.55, 0.28, 0.12)`，墙体烘焙为 `(1.0, 0.42, 0.24, 0.10)`；运行时观众的四档亮度与看台同步，避免中上层整片压黑。看台 atlas 版本为 7。
 - 池底和池壁共用原名 `PoolWallNarrowTilesWhite` 的内嵌 `256x256` 不透明方砖图，保持图片和材质身份，UV 对应约 0.5m 方砖。不得把 Blender 的水面占位材质当作游戏水面效果；水面与水下吸收仍由原运行时 shader 负责。
-- 运行时观众仍是 15 个动作/颜色分组，每人 8 triangles；新的头部和身体为 12 vertices，移除了无用法线和 UV，材质由 5 份合为 1 份。头发、肤色和衣服烘焙为顶点色，无透明贴图和新增逐帧逻辑。几何变动须复查台阶落点、头部遮挡以及远距离可辨度。
+- 运行时观众使用 15 个合并组、1 个无光照顶点色材质。第一层采用每人 64 triangles 的有厚度卡通模板，其余层为每人 14 triangles 的简化轮廓；脸与头发使用分离的色块边界，只有第一层保留眼睛。按当前 GLB 离线统计共 1,171 人，其中 295 人为立体版，总计 31,144 triangles、59,356 vertices，最大单组 9,284 vertices，仍使用 16 位索引；新增约 1.40 MB 原始顶点/索引数据预算，不能据此推断真机帧率持平。没有新增材质、贴图、单人节点或骨骼。约 72% 静止、20% 单手举起、8% 双手欢呼，只有后两类的 10 个组在最多 24Hz 下做微幅位移，隐藏或时间暂停时不写变换。南北朝向根据世界包围盒确定，不根据 N/S 名称推断，保证脸朝泳池。几何变动须复查台阶落点、头部遮挡以及远距离可辨度。
+- 观众几何权威源码为 `assets/scripts/venue/SpectatorGeometry.ts` 与 `SpectatorCrowdBuilder.ts`，不属于 Blender 场馆源网格。离线预览先运行 `npx --yes --package typescript@5.4.5 -c "node scripts/preview-spectator-crowd.cjs"`（默认与 HEAD 比较，可给脚本传旧提交），再运行 `python scripts/run-blender.py -- --python scripts/render-spectator-preview.py`。输出仅进入被忽略的 `temp/spectator-preview`；该流程执行真实观众生成函数，审计索引、退化面、包围盒、朝向及动画节流，并渲染六面、低位正反视角与看台局部。预览不是 Cocos/微信截图，不含实际水面着色、游戏后处理或真机性能验证。
 - `StandStructure_Merged`、入口楼梯、平台和其他墙面在 Blender 源与运行时都必须为同一浅蓝灰色，不得继承看台深蓝色。
 - 东、西直看台不得保留整面 `StandSoffit_E` / `StandSoffit_W`；这两块约 35.87m × 4.57m 的连续底板会在泳池低视角遮住二层观众。西侧角区也不得保留 `CornerSoffit_NW` / `CornerSoffit_SW`，它们会与整体大 O 重叠并露出蓝灰色块；editable 中这四个对象都应不存在。
 - T3 地板是覆盖 N/E/S/W 四边的一个整体大 O，不是东、西各自闭合。editable 必须保留独立源对象 `T3RingFloor_O`：内孔与外框同轴，东西两臂等宽、南北两臂等宽，外边界从 `StandSupport_N/S/E/W` 的朝池接触平面推导并贴合四面墙，中央孔保持场馆内区开放，底面使用浅蓝灰 ceiling 材质；不得固定为 3m 后再手调单边宽度。同步 master 时将它并入 `StandStructure_Merged`，不能只给 E/W 半模块补离散小面，也不能在西侧单独造一个局部 O。

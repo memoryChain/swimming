@@ -1,6 +1,7 @@
 import { _decorator, Color, Component, gfx, Layers, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
 import { scaledDelta } from '../core/TimeScale';
 import { SpectatorCameraFlashEmitter } from './SpectatorCameraFlashEmitter';
+import { createSpectatorTemplate } from './SpectatorGeometry';
 
 const { ccclass, property } = _decorator;
 
@@ -21,13 +22,13 @@ const TIER_BRIGHTNESS = [1.0, 0.55, 0.28, 0.12];
 const FRONT_ROW_BRIGHTNESS = 0.70;
 const FRONT_ROW_SATURATION = 0.55;
 
-// 坐姿观众：身体与头部分开着色。每人仍为 8 triangles，双面由剔除设置处理。
-// 只在场馆创建时写入 Mesh，不增加观众节点、透明纹理或逐帧计算。
-const SPECTATOR_PROFILE = [
-    -0.35, -0.5, 0.35, -0.5, 0.5, -0.1, 0.30, 0.13, -0.30, 0.13, -0.5, -0.1,
-    -0.14, 0.13, 0.14, 0.13, 0.24, 0.24, 0.18, 0.5, -0.18, 0.5, -0.24, 0.24,
-] as const;
-const SPECTATOR_SKIN_COLORS = [color(224, 174, 137), color(183, 128, 94), color(139, 92, 67)];
+// 六份模板只在模块加载时构建，第一层有厚度，上层使用同风格平面轮廓。
+const SPECTATOR_TEMPLATES = [false, true].map((volume) =>
+    [0, 1, 2].map((pose) => createSpectatorTemplate(volume, pose)));
+const SPECTATOR_SKIN_COLORS = [color(244, 190, 145), color(211, 153, 108), color(166, 111, 77)];
+const SPECTATOR_HAIR_COLORS = [color(55, 40, 38), color(104, 64, 42), color(183, 131, 65)];
+const SPECTATOR_PANTS_COLOR = color(47, 62, 86);
+const SPECTATOR_EYE_COLOR = color(39, 33, 40);
 
 const WOBBLE_GROUP_COUNT = 3;
 const LEGACY_STAND_ROW_COUNT = 7;
@@ -87,6 +88,8 @@ type SpectatorSpec = {
     yaw: number;
     brightness: number;
     saturation: number;
+    detailed: boolean;
+    pose: number;
 };
 
 type SceneBounds = {
@@ -116,13 +119,20 @@ export class SpectatorGroupWobble extends Component {
     @property public phase = 0;
 
     private readonly _base = new Vec3();
+    private _sampleTime = 0;
 
     start() {
         this._base.set(this.node.position);
     }
 
     update(dt: number) {
-        this.phase += scaledDelta(dt) * this.speed;
+        if (!this.node.activeInHierarchy) return;
+        const delta = scaledDelta(dt);
+        if (delta <= 0) return;
+        this.phase += delta * this.speed;
+        this._sampleTime += delta;
+        if (this._sampleTime < 1 / 24) return;
+        this._sampleTime %= 1 / 24;
         const lift = Math.sin(this.phase) * this.amplitude;
         const sway = Math.cos(this.phase * 0.73) * this.sideAmplitude;
         this.node.setPosition(this._base.x + sway, this._base.y + lift, this._base.z);
@@ -254,8 +264,8 @@ export class SpectatorCrowdBuilder {
                         continue;
                     }
 
-                    const height = 0.58 + random01(row, col, section, 31) * 0.20;
-                    const width = 0.25 + random01(col, section, row, 37) * 0.24;
+                    const height = 0.66 + random01(row, col, section, 31) * 0.14;
+                    const width = 0.38 + random01(col, section, row, 37) * 0.10;
                     const longPosition = sectionMinLong
                         + (col + 0.5) * (sectionWidth / columns)
                         + jitter(row, col, section, 0.18);
@@ -268,16 +278,14 @@ export class SpectatorCrowdBuilder {
                     const colorIndex = Math.floor(
                         random01(col, row, section + sideSign * 11, 53) * SPECTATOR_COLORS.length,
                     ) % SPECTATOR_COLORS.length;
-                    const wobbleIndex = Math.floor(
-                        random01(row, col, section, 71) * WOBBLE_GROUP_COUNT,
-                    ) % WOBBLE_GROUP_COUNT;
+                    const wobbleIndex = spectatorPose(random01(row, col, section, 71));
 
                     buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
                         pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
                         width,
                         height,
-                        topWidthScale: 0.76 + random01(col, row, section, 79) * 0.38,
-                        topOffset: jitter(section, col, row, 0.18),
+                        topWidthScale: 0.94 + random01(col, row, section, 79) * 0.12,
+                        topOffset: jitter(section, col, row, 0.06),
                         row,
                         col: globalColumn,
                         side: sideSign,
@@ -286,6 +294,8 @@ export class SpectatorCrowdBuilder {
                         yaw,
                         brightness,
                         saturation,
+                        detailed: tier === 1,
+                        pose: wobbleIndex,
                     });
                 }
             }
@@ -355,26 +365,26 @@ export class SpectatorCrowdBuilder {
                             + jitter(col, row, tier + salt, depth * 0.12);
                         const x = origin.x + longUx * along + depthUx * dp;
                         const z = origin.z + longUz * along + depthUz * dp;
-                        const height = 0.58 + random01(row, col, tier + salt, 31) * 0.20;
-                        const width = 0.25 + random01(col, tier, row + salt, 37) * 0.24;
+                        const height = 0.66 + random01(row, col, tier + salt, 31) * 0.14;
+                        const width = 0.38 + random01(col, tier, row + salt, 37) * 0.10;
                         const colorIndex = Math.floor(
                             random01(col, row, tier + salt + 11, 53) * SPECTATOR_COLORS.length,
                         ) % SPECTATOR_COLORS.length;
-                        const wobbleIndex = Math.floor(
-                            random01(row, col, tier + salt, 71) * WOBBLE_GROUP_COUNT,
-                        ) % WOBBLE_GROUP_COUNT;
+                        const wobbleIndex = spectatorPose(random01(row, col, tier + salt, 71));
                         buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
                             pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
                             width,
                             height,
-                            topWidthScale: 0.76 + random01(col, row, tier + salt, 79) * 0.38,
-                            topOffset: jitter(tier, col, row + salt, 0.18),
+                            topWidthScale: 0.94 + random01(col, row, tier + salt, 79) * 0.12,
+                            topOffset: jitter(tier, col, row + salt, 0.06),
                             row,
                             col,
                             side: 1,
                             yaw,
                             brightness,
                             saturation,
+                            detailed: tier === 1,
+                            pose: wobbleIndex,
                         });
                     }
                 }
@@ -431,12 +441,15 @@ function addSpectatorGroup(
     renderer.mesh = utils.createMesh(buildSpectatorGeometry(spectators, SPECTATOR_COLORS[colorIndex]));
     renderer.setMaterial(material, 0);
 
-    const wobble = node.addComponent(SpectatorGroupWobble);
     const motionIndex = Math.floor(groupIndex / SPECTATOR_COLORS.length);
-    wobble.amplitude = 0.035 + motionIndex * 0.014 + positiveMod(groupIndex, 3) * 0.004;
-    wobble.sideAmplitude = 0.012 + motionIndex * 0.007;
-    wobble.speed = 0.82 + motionIndex * 0.21 + positiveMod(groupIndex * 3, 5) * 0.035;
-    wobble.phase = motionIndex * 2.05 + groupIndex * 0.37;
+    // 大部分观众保持坐稳，只有两类欢呼组需要更新变换。
+    if (motionIndex > 0) {
+        const wobble = node.addComponent(SpectatorGroupWobble);
+        wobble.amplitude = 0.008 + motionIndex * 0.004;
+        wobble.sideAmplitude = 0.003;
+        wobble.speed = 1.2 + motionIndex * 0.23;
+        wobble.phase = motionIndex * 2.05 + groupIndex * 0.37;
+    }
     return node;
 }
 
@@ -448,55 +461,35 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): 
     const point = new Vec3();
     const minPos = new Vec3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
     const maxPos = new Vec3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
-    const baseR = srgbToLinear(baseColor.r / 255);
-    const baseG = srgbToLinear(baseColor.g / 255);
-    const baseB = srgbToLinear(baseColor.b / 255);
-    const luminance = baseR * 0.2126 + baseG * 0.7152 + baseB * 0.0722;
-
-    for (let i = 0; i < spectators.length; i++) {
-        const spectator = spectators[i];
-        const base = i * 12;
-        Quat.fromEuler(
-            rotation,
-            -90 + jitter(spectator.row, spectator.col, spectator.side, 5),
-            spectator.yaw + jitter(spectator.col, spectator.side, spectator.row, 12),
-            jitter(spectator.side, spectator.row, spectator.col, 9),
-        );
-        for (let vertex = 0; vertex < 12; vertex++) {
-            const x = SPECTATOR_PROFILE[vertex * 2];
-            const z = SPECTATOR_PROFILE[vertex * 2 + 1];
-            pushCorner(positions, point, minPos, maxPos, spectator, rotation, x, z);
+    for (const spectator of spectators) {
+        const template = SPECTATOR_TEMPLATES[spectator.detailed ? 1 : 0][spectator.pose];
+        const base = positions.length / 3;
+        // 坐姿保持竖直，避免倾斜令有厚度的底部穿入台阶。
+        Quat.fromEuler(rotation, -90,
+            spectator.yaw + jitter(spectator.col, spectator.side, spectator.row, 8), 0);
+        for (let vertex = 0; vertex < template.positions.length / 3; vertex++) {
+            pushCorner(positions, point, minPos, maxPos, spectator, rotation,
+                template.positions[vertex * 3], template.positions[vertex * 3 + 2],
+                template.positions[vertex * 3 + 1]);
         }
-        const b = spectator.brightness;
-        const s = spectator.saturation;
-        // 白色 unlit 材质读取最终顶点色，肤色不受衣服乘色限制。
-        const r = (luminance + (baseR - luminance) * s) * b;
-        const g = (luminance + (baseG - luminance) * s) * b;
-        const blue = (luminance + (baseB - luminance) * s) * b;
-        for (let vertex = 0; vertex < 6; vertex++) {
-            const shade = vertex < 2 ? 0.75 : 1;
-            colors.push(r * shade, g * shade, blue * shade, 1);
+        const skinIndex = Math.floor(random01(spectator.row, spectator.col, spectator.side, 131) * SPECTATOR_SKIN_COLORS.length);
+        const hairIndex = Math.floor(random01(spectator.row, spectator.col, spectator.side, 139) * SPECTATOR_HAIR_COLORS.length);
+        const palette = [baseColor, SPECTATOR_SKIN_COLORS[skinIndex], SPECTATOR_HAIR_COLORS[hairIndex], SPECTATOR_PANTS_COLOR, SPECTATOR_EYE_COLOR];
+        // 只在创建场馆时分配，比赛帧不访问或重建模板与色板。
+        const linearPalette = palette.map((c) => {
+            const r = srgbToLinear(c.r / 255), g = srgbToLinear(c.g / 255), b = srgbToLinear(c.b / 255);
+            const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+            const saturation = c === baseColor ? spectator.saturation : 1;
+            return [(luminance + (r - luminance) * saturation) * spectator.brightness,
+                (luminance + (g - luminance) * saturation) * spectator.brightness,
+                (luminance + (b - luminance) * saturation) * spectator.brightness];
+        });
+        for (let vertex = 0; vertex < template.colors.length / 2; vertex++) {
+            const rgb = linearPalette[template.colors[vertex * 2]];
+            const shade = template.colors[vertex * 2 + 1];
+            colors.push(rgb[0] * shade, rgb[1] * shade, rgb[2] * shade, 1);
         }
-        const skin = SPECTATOR_SKIN_COLORS[Math.floor(random01(spectator.row, spectator.col, spectator.side, 131) * SPECTATOR_SKIN_COLORS.length)];
-        for (let vertex = 0; vertex < 6; vertex++) {
-            const hair = vertex === 3 || vertex === 4;
-            colors.push(srgbToLinear(hair ? 0.15 : skin.r / 255) * b,
-                srgbToLinear(hair ? 0.12 : skin.g / 255) * b,
-                srgbToLinear(hair ? 0.11 : skin.b / 255) * b, 1);
-        }
-        indices.push(
-            base, base + 1, base + 2,
-            base, base + 2, base + 3,
-            base, base + 3, base + 4,
-            base, base + 4, base + 5,
-        );
-        // 头部 4 triangles；关闭背面剔除后无需重复反向索引，总数与旧版相同。
-        indices.push(
-            base + 6, base + 7, base + 8,
-            base + 6, base + 8, base + 9,
-            base + 6, base + 9, base + 10,
-            base + 6, base + 10, base + 11,
-        );
+        for (const index of template.indices) indices.push(base + index);
     }
 
     // 此 unlit 顶点色材质不使用法线或 UV，避免新轮廓携带无用的顶点数据。
@@ -512,11 +505,15 @@ function pushCorner(
     rotation: Quat,
     xFactor: number,
     zFactor: number,
+    depthFactor: number,
 ) {
     const isTop = zFactor > 0;
     const widthScale = isTop ? spectator.topWidthScale : 1;
     const topOffset = isTop ? spectator.topOffset : 0;
-    point.set(spectator.width * (xFactor * widthScale + topOffset), 0, spectator.height * zFactor);
+    // -90° 换轴后正局部深度朝泳池；模板正脸在负深度，故在此反向。
+    // 平面版也保留同一深度分层，以免裤子与身体共面闪烁。
+    point.set(spectator.width * (xFactor * widthScale + topOffset), -spectator.width * depthFactor,
+        spectator.height * zFactor);
     Vec3.transformQuat(point, point, rotation);
     point.add(spectator.pos);
     positions.push(point.x, point.y, point.z);
@@ -558,11 +555,11 @@ function collectGrandstands(root: Node): Grandstand[] {
             axis,
             rowCount: name.startsWith('bleacherbatch_') ? FLAT_BLEACHER_ROW_COUNT : LEGACY_STAND_ROW_COUNT,
             tier,
-            // The local quad is authored for a north-facing stand. Rotate it
-            // around Y so every audience plane faces the pool on all four sides.
+            // 按实际位置朝池内。GLB 的 N 在负 Z；旧双面剪影看不出反向，
+            // 有正脸/后脑的立体观众不能沿用节点名推断的南北朝向。
             yaw: axis === 'x'
-                ? (sideSign > 0 ? 0 : 180)
-                : (sideSign > 0 ? 90 : -90),
+                ? (bounds.minZ + bounds.maxZ > 0 ? 0 : 180)
+                : (bounds.minX + bounds.maxX > 50 ? 90 : -90),
         });
     });
     return stands.sort((left, right) => left.sideSign - right.sideSign);
@@ -677,6 +674,10 @@ function spectatorBrightness(tier: number): number {
 
 function spectatorSaturation(tier: number): number {
     return tier === 1 ? FRONT_ROW_SATURATION : 1;
+}
+
+function spectatorPose(value: number): number {
+    return value < 0.72 ? 0 : value < 0.92 ? 1 : 2;
 }
 
 function jitter(a: number, b: number, c: number, scale: number): number {
