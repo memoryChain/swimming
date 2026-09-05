@@ -190,10 +190,10 @@ export class LoginManager extends Component {
     }
 
     private openPrepareRace() {
-        if (this._prepareRaceFlow || !this._loginUiRoot) {
+        if (this._prepareRaceFlow || !this._canvasNode?.isValid) {
             return;
         }
-        this._loginUiRoot.active = false;
+        if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
         this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onStartRace: () => this.startGame(),
             onOpenRoom: () => this.openRoomFromPrepare(),
@@ -219,8 +219,6 @@ export class LoginManager extends Component {
     }
 
     private openRoomFromPrepare() {
-        this._prepareRaceFlow?.dispose();
-        this._prepareRaceFlow = null;
         this._headBar?.setBack(null);
         this._headBar?.setIdentityVisible(true);
         this.openRoom();
@@ -268,6 +266,8 @@ export class LoginManager extends Component {
         if (this._roomFlow) {
             return;
         }
+        this._prepareRaceFlow?.dispose();
+        this._prepareRaceFlow = null;
         // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share
         // (cold start), the room must open even if the login prefab isn't ready yet —
         // otherwise the guest lands on an empty scene ("竖屏 + 啥都没有"). Just hide the
@@ -293,21 +293,17 @@ export class LoginManager extends Component {
                 this.launchMainGame('race');
             },
         }, joinRoomId, reconnect);
-        this._headBar?.setBack(() => this.exitRoom());
+        this._headBar?.setBack(null);
+        this._headBar?.setIdentityVisible(false);
     }
 
     private exitRoom() {
+        this._headBar?.setIdentityVisible(true);
         this._roomFlow?.dispose();
         this._roomFlow = null;
         this._headBar?.setBack(null);
-        if (this._loginUiRoot?.isValid) {
-            this._loginUiRoot.active = true;
-        } else if (this._canvasNode?.isValid) {
-            // A guest launched straight into the room from a share never had the login
-            // menu built — build it now so exiting returns to a real screen instead of
-            // leaving a blank one.
-            this.buildLoginScreen(this._canvasNode, this._designWidth, this._designHeight);
-        }
+        setRoomMode(false);
+        this.openPrepareRace();
     }
 
     startModelDebug() {
@@ -413,6 +409,9 @@ export class LoginManager extends Component {
                 }
             } else {
                 this._loginUiRoot = refs?.root ?? null;
+                if (this._loginUiRoot?.isValid && (this._prepareRaceFlow || this._roomFlow)) {
+                    this._loginUiRoot.active = false;
+                }
                 this._loginUiRetries = 0;
             }
             // Open the invited/returning room REGARDLESS of whether the login prefab

@@ -7,6 +7,11 @@
   "version": "3.8.8",
   "scripts": {
     "codex:setup": "node scripts/setup-codex-system-proxy.mjs",
+    "fonts:setup": "node scripts/run-ui-fonts.cjs setup",
+    "fonts:build": "node scripts/run-ui-fonts.cjs build",
+    "fonts:check": "node scripts/ui-font-policy.js",
+    "test:room": "npx --yes --package typescript@5.4.5 -c \"node tests/online-room-runtime.test.cjs\"",
+    "ui:room:preview": "npx --yes --package typescript@5.4.5 -c \"node scripts/preview-online-room.cjs\"",
     "test:net": "npx --yes --package tsx@4.20.5 tsx --test tests/net-race-codec-ordering.test.mjs tests/condition-sync-cadence.test.mjs",
     "test:characters": "npx --yes --package tsx@4.20.5 tsx --test tests/character-roster-assets.test.mjs",
     "ui:images:setup": "python -m pip install -r scripts/requirements-ui-tools.txt",

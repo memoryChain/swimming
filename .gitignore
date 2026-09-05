@@ -28,6 +28,7 @@ sceneresource/*.tmp.png
 tools/blender-portable/
 extensions/cocos-code-mode/
 .cache/ui-fonts/
+.cache/ui-font-venv/
 
 #//////////////////////////
 # VSCode

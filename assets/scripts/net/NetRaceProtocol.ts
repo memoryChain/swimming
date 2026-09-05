@@ -1,8 +1,8 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// 可选角色表属于联网共享语义；新增深潜先锋后拒绝新旧角色表混跑。
-export const NET_RACE_PROTOCOL_VERSION = 10;
+// 联机房间赛制与准备确认协议升级，拒绝新旧房间流程混跑。
+export const NET_RACE_PROTOCOL_VERSION = 11;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

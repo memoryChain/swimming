@@ -4,6 +4,9 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 export type ProjectUiFontWeight = 'regular' | 'semibold';
 
+// 公共金币栏与联机英文数字共享现有系统英文字体声明；不是随包字体资源。
+export const PROJECT_UI_ENGLISH_BOLD_FAMILY = 'Arial Black';
+
 type FontState = {
     asset: Font | null;
     loading: boolean;

@@ -51,6 +51,10 @@ export class DefaultNetRoom implements INetRoom {
         return Promise.reject(new Error('game server manager unavailable'));
     }
 
+    kickMember(_pos: number): Promise<void> {
+        return Promise.reject(new Error('当前平台不支持踢出成员'));
+    }
+
     uploadFrame(_action: string): void {
         // no-op
     }

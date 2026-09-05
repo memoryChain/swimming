@@ -59,6 +59,7 @@ export interface NetRoomCallbacks {
     onSyncFrame?: (frame: NetSyncFrame) => void;
     onBroadcast?: (msg: string) => void;
     onGameEnd?: () => void;
+    onKicked?: () => void;
     // Connection dropped mid-game — the caller should reconnect().
     onDisconnect?: () => void;
     // Logged out of the game service — the caller should login() again to recover.
@@ -95,6 +96,8 @@ export interface INetRoom {
 
     // Mark this player ready/not-ready in the room.
     updateReady(ready: boolean): Promise<void>;
+    // 由平台校验房主权限，以服务端座位号移出成员。
+    kickMember(pos: number): Promise<void>;
 
     // Enter lock-step. Every member may call this; the game starts once startPercent
     // of members have (0 = the first startGame starts it for the room). Resolves when

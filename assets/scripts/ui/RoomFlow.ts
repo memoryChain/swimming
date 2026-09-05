@@ -8,10 +8,10 @@
 // fully viewable/clickable. The actual networked race (frame sync + AI fill +
 // return-to-room after finishing) is phase 2B and needs on-device testing.
 
-import { Graphics, Label, Node, UITransform, view } from 'cc';
-import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
-import { HEADBAR_TOP_SAFE_AREA } from './ResourceHeadBar';
-import { avatarColorOf } from '../backend/IdentityConfig';
+import { Node } from 'cc';
+import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
+import { RaceDifficulty, setRaceDifficulty } from '../core/GameBalance';
+import { PLAYER_CHARACTER_DEFINITIONS, getSelectedRaceDifficulty } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
 import { NetRoomInfo } from '../net/INetRoom';
@@ -19,7 +19,7 @@ import { NetRaceMember, setNetRaceSession } from '../net/NetRaceSession';
 import { SeededRandom } from '../core/SharedRNG';
 import { platform } from '../platform/PlatformManager';
 import { resolveLocalModifierDigest } from '../progression/RaceModifiers';
-import { encodeModifierDigest } from '../net/NetRaceModifierCodec';
+import { decodeModifierDigest, encodeModifierDigest } from '../net/NetRaceModifierCodec';
 import {
     NET_RACE_PROTOCOL_VERSION,
     decodeProtocolHello,
@@ -40,8 +40,10 @@ export type RoomFlowCallbacks = {
 
 const MAX_SLOTS = 8;
 const IDENTITY_SEP = '|';
+let lastRoomMode: RaceDifficulty | null = null;
 
 type SlotMember = {
+    clientId?: number;
     self: boolean;
     avatarId: string;
     nickName: string;
@@ -52,10 +54,19 @@ type SlotMember = {
 
 export class RoomFlow {
     private _root: Node | null = null;
-    private _content: Node | null = null;
-    private _hintLabel: Label | null = null;
-    private _roomLabel: Label | null = null;
-    private _startButton: Node | null = null;
+    private _view: OnlineRoomView | null = null;
+    private _readyPending = false;
+    private _kickPending = false;
+    private _leaving = false;
+    private _mode: RaceDifficulty = getSelectedRaceDifficulty();
+    private _rulesId = '';
+    private _rulesRevision = 0;
+    private _rulesOwnerPos = -1;
+    private _localReadyRule = '';
+    private _readyVersion = 0;
+    private readonly _ruleReadyVersions: Record<number, number> = {};
+    private readonly _ruleReady: Record<number, string> = {};
+    private _rulesTimer: ReturnType<typeof setInterval> | null = null;
     private _members: SlotMember[] = [];
     private _netReal = false;
     private _accessInfo = '';
@@ -98,6 +109,7 @@ export class RoomFlow {
         // reconnect to it instead of creating/joining a fresh one.
         private readonly _reconnect: boolean = false,
     ) {
+        if (_reconnect && lastRoomMode) this._mode = lastRoomMode;
         if (_reconnect) {
             // Returning after a race: keep whatever role we had (owner stays owner).
             let owner = false;
@@ -116,37 +128,14 @@ export class RoomFlow {
     }
 
     private build() {
-        const root = makeUiNode('RoomFlow', this._parent);
-        this._root = root;
-        const backdrop = makeRect('Backdrop', root, this._width, this._height, uiColor(6, 18, 32, 255));
-        fitFullScreenBackgroundCover(backdrop);
-
-        const titleY = this._height / 2 - HEADBAR_TOP_SAFE_AREA - 30;
-        makeLabel('RoomTitle', root, '联机房间', 40, uiColor(240, 250, 255)).setPosition(0, titleY, 0);
-        // Room number so both players can verify they are in the SAME room (the #1
-        // source of confusion: "am I even with my friend?"). Filled once the room
-        // info arrives; hidden in local-preview mode.
-        const roomLabel = makeLabel('RoomNumber', root, '', 24, uiColor(255, 224, 150));
-        roomLabel.getComponent(UITransform)!.setContentSize(560, 30);
-        roomLabel.setPosition(0, titleY - 40, 0);
-        this._roomLabel = roomLabel.getComponent(Label);
-        const hint = makeLabel('RoomHint', root, '', 20, uiColor(180, 210, 232));
-        hint.getComponent(UITransform)!.setContentSize(560, 28);
-        hint.setPosition(0, titleY - 74, 0);
-        this._hintLabel = hint.getComponent(Label);
-
-        this._content = makeUiNode('Slots', root);
-
-        const bottomY = -this._height / 2 + 70;
-        const exit = makeButton('ExitRoom', root, 220, 60, uiColor(90, 96, 104, 235), '退出房间');
-        exit.setPosition(-150, bottomY, 0);
-        exit.on(Node.EventType.TOUCH_END, () => this.exit());
-        // Host gets the start button; guests get a ready toggle. (_isHost is set before
-        // build() runs.)
-        const action = makeButton('StartRoomRace', root, 260, 60, uiColor(38, 150, 96, 245), this._isHost ? '开始比赛' : '准备');
-        action.setPosition(160, bottomY, 0);
-        action.on(Node.EventType.TOUCH_END, () => (this._isHost ? this.startRace() : this.toggleReady()));
-        this._startButton = action;
+        this._view = new OnlineRoomView(this._parent, {
+            exit: () => this.exit(),
+            primary: () => this._isHost ? this.startRace() : this.toggleReady(),
+            invite: () => this.invite(),
+            mode: value => this.changeMode(value),
+            kick: member => { void this.kickMember(member); },
+        });
+        this._root = this._view.root;
     }
 
     private setupNet() {
@@ -166,11 +155,16 @@ export class RoomFlow {
             supported = false;
         }
         this._netReal = supported;
+        this.render();
         if (!supported) {
             // Editor / web / unsupported: stay in the local preview room (just you).
             return;
         }
 
+        // 仅房间存活时低频重发：广播可能丢失，ACK 绑定赛制版本及准备状态。
+        this._rulesTimer = setInterval(() => {
+            if (this._root?.isValid && !this._roomUnavailable && !this._raceEntered && !this._leaving) this.broadcastRules();
+        }, 1500);
         // Any of setCallbacks/login/createRoom can throw synchronously if the game
         // service is unavailable; keep it from breaking the whole screen.
         try {
@@ -185,6 +179,7 @@ export class RoomFlow {
                 },
                 onBroadcast: (msg) => this.handleBroadcast(msg),
                 onGameStart: () => this.onNetGameStart(),
+                onKicked: () => this.showRoomUnavailable('你已被房主移出房间'),
             });
             const extInfo = encodeIdentity(self.avatarId, self.nickName);
             if (this._reconnect) {
@@ -334,7 +329,10 @@ export class RoomFlow {
         const pos = parseInt(body.slice(0, sep), 10);
         const payload = body.slice(sep + 1);
         if (Number.isFinite(pos) && payload) {
+            if (!this._members.some(m => m.pos === pos) || !decodeModifierDigest(payload)) return;
+            if (this._memberModifiers[pos] === payload) return;
             this._memberModifiers[pos] = payload;
+            this.render();
         }
     }
 
@@ -367,6 +365,9 @@ export class RoomFlow {
             const fingerprint = `${member.avatarId}|${member.nickName}`;
             if (this._memberProtocolFingerprints[member.pos] !== fingerprint) {
                 delete this._memberProtocolVersions[member.pos];
+                delete this._memberModifiers[member.pos];
+                delete this._ruleReady[member.pos];
+                delete this._ruleReadyVersions[member.pos];
                 this._memberProtocolFingerprints[member.pos] = fingerprint;
             }
             if (member.self) {
@@ -383,6 +384,9 @@ export class RoomFlow {
             const pos = Number(rawPos);
             if (!active[pos]) {
                 delete this._memberProtocolFingerprints[pos];
+                delete this._memberModifiers[pos];
+                delete this._ruleReady[pos];
+                delete this._ruleReadyVersions[pos];
             }
         }
         if (!this.protocolCompatible() && this._localReady && !this._isHost) {
@@ -431,6 +435,7 @@ export class RoomFlow {
         const list: SlotMember[] = info.members.map((m) => {
             const parsed = parseIdentity(m.extInfo);
             return {
+                clientId: m.clientId,
                 self: false,
                 avatarId: parsed.avatarId,
                 nickName: parsed.nickName,
@@ -451,7 +456,7 @@ export class RoomFlow {
         if (mine) {
             mine.self = true;
             // Trust the server's ready state + seat index for our own slot.
-            this._localReady = mine.ready;
+            if (!this._readyPending) this._localReady = mine.ready && (mine.owner || this._localReadyRule === this.ruleKey());
             if (mine.pos >= 0) {
                 this._localPos = mine.pos;
             }
@@ -460,10 +465,13 @@ export class RoomFlow {
             // the host view (start button + auto-ready) so the room stays controllable.
             if (mine.owner && !this._isHost) {
                 this._isHost = true;
+                this._rulesId = '';
+                this._rulesRevision = 0;
                 this._localReady = true;
                 mine.ready = true;
                 netRoom().updateReady(true).catch(() => undefined);
             }
+            if (!mine.owner) this._isHost = false;
         } else if (list.length === 0) {
             list.push(this.selfMember());
         }
@@ -519,179 +527,184 @@ export class RoomFlow {
     // failed. Replace the lobby with a clean centered notice + a back button instead of
     // leaving them in a fake room showing a raw "invalid room state" error.
     private showRoomUnavailable(message: string) {
+        if (this._roomUnavailable) return;
         this._netReal = false;
         this._roomUnavailable = true;
+        this._startRequested = false;
+        this._gameStartCalled = false;
         this.clearStartTimeout();
-        if (!this._root?.isValid) {
-            return;
-        }
-        this._content?.removeAllChildren();
-        if (this._startButton?.isValid) {
-            this._startButton.active = false;
-        }
-        this.setHint('');
-        this._root.getChildByName('RoomUnavailable')?.destroy();
-        const panel = makeUiNode('RoomUnavailable', this._root);
-        makeLabel('Notice', panel, message, 32, uiColor(240, 224, 200)).setPosition(0, 40, 0);
-        const back = makeButton('BackFromDissolved', panel, 260, 62, uiColor(60, 130, 90, 245), '返回大厅');
-        back.setPosition(0, -50, 0);
-        back.on(Node.EventType.TOUCH_END, () => this.exit());
+        this.stopRulesTimer();
+        if (this._root?.isValid) this._view?.showUnavailable(message);
     }
 
     private render() {
-        if (this._roomUnavailable) {
-            return;
-        }
-        const content = this._content;
-        if (!content?.isValid) {
-            return;
-        }        content.removeAllChildren();
-        // Fixed landscape layout (the game is locked to landscape). Deliberately NOT
-        // based on the live viewport: during a share the viewport briefly flips to
-        // portrait, and reacting to it left the grid stuck in a narrow layout after
-        // returning from the share sheet.
-        const cols = 4;
-        const gapX = 168;
-        const rowY = [40, -150];
-        const vs = view.getVisibleSize();
-        console.log(`[Room] render members=${this._members.length} view=${Math.round(vs.width)}x${Math.round(vs.height)} netReal=${this._netReal} host=${this._isHost}`);
-        for (let i = 0; i < MAX_SLOTS; i++) {
-            const col = i % cols;
-            const row = Math.floor(i / cols);
-            const cx = (col - (cols - 1) / 2) * gapX;
-            const cy = rowY[row];
-            const member = this._members[i];
-            if (member) {
-                this.buildFilledSlot(content, cx, cy, member);
-            } else {
-                this.buildEmptySlot(content, cx, cy, i);
-            }
-        }
-        const humanCount = this._members.length;
-        // Count ALL members (the host auto-readies too), matching the demo's allReady.
-        const readyCount = this._members.filter((m) => m.ready).length;
-        const allReady = humanCount >= 2 && readyCount === humanCount;
-        if (this._roomLabel?.isValid) {
-            if (!this._netReal) {
-                this._roomLabel.string = '本地预览房间（真机联机才有房间号）';
-            } else if (this._roomId) {
-                this._roomLabel.string = `房间号 ${this._roomId}（与好友核对是否一致）`;
-            } else {
-                this._roomLabel.string = '房间号 获取中…';
-            }
-        }
-        if (this._hintLabel?.isValid) {
-            if (this._statusHint) {
-                this._hintLabel.string = this._statusHint;
-            } else if (!this._netReal) {
-                this._hintLabel.string = '本地预览房间（真机联机才能邀请好友） · 空位由 AI 补齐';
-            } else if (this._isHost) {
-                this._hintLabel.string = humanCount < 2
-                    ? '邀请好友加入 · 至少 2 人可开始'
-                    : `${readyCount}/${humanCount} 名玩家已准备${allReady ? ' · 可以开始' : '，等待全部准备'}`;
-            } else {
-                this._hintLabel.string = this._localReady ? '已准备 · 等待房主开始' : '点“准备”后等待房主开始';
-            }
-        }
-        if (this._startButton?.isValid) {
-            const label = this._startButton.getChildByName('Label')?.getComponent(Label);
-            if (label) {
-                if (!this._isHost && this._netReal) {
-                    label.string = this._localReady ? '取消准备' : '准备';
-                    label.color = this._localReady ? uiColor(255, 214, 140, 235) : uiColor(255, 255, 255, 235);
-                } else {
-                    const canStart = !this._netReal || allReady;
-                    label.string = '开始比赛';
-                    label.color = canStart ? uiColor(255, 255, 255, 235) : uiColor(160, 176, 190, 200);
-                }
-            }
-        }
-    }
-
-    private buildFilledSlot(content: Node, cx: number, cy: number, member: SlotMember) {
-        const [r, g, b] = avatarColorOf(member.avatarId);
-        const ring = makeUiNode('SlotRing', content);
-        ring.setPosition(cx, cy + 26, 0);
-        const gfx = ring.addComponent(Graphics);
-        if (member.self) {
-            gfx.fillColor = uiColor(20, 205, 229, 255);
-            gfx.circle(0, 0, 50);
-            gfx.fill();
-        }
-        gfx.fillColor = uiColor(r, g, b, 255);
-        gfx.circle(0, 0, 44);
-        gfx.fill();
-        const name = makeLabel('SlotName', content, member.self ? `${member.nickName}(你)` : member.nickName, 20, uiColor(240, 250, 255));
-        name.getComponent(UITransform)!.setContentSize(150, 28);
-        name.setPosition(cx, cy - 40, 0);
-        // Ready / owner badge under the name so the host can see who is ready.
-        let badgeText: string;
-        let badgeColor;
-        if (member.owner) {
-            badgeText = '房主';
-            badgeColor = uiColor(246, 205, 110);
-        } else if (member.ready) {
-            badgeText = '已准备';
-            badgeColor = uiColor(88, 214, 141);
-        } else {
-            badgeText = '未准备';
-            badgeColor = uiColor(150, 170, 188);
-        }
-        const badge = makeLabel('SlotReady', content, badgeText, 16, badgeColor);
-        badge.getComponent(UITransform)!.setContentSize(120, 22);
-        badge.setPosition(cx, cy - 64, 0);
-    }
-
-    private buildEmptySlot(content: Node, cx: number, cy: number, index: number) {
-        const plus = makeButton(`AddSlot_${index}`, content, 92, 92, uiColor(18, 44, 70, 235), '+');
-        const label = plus.getChildByName('Label')?.getComponent(Label);
-        if (label) {
-            label.fontSize = 48;
-        }
-        plus.setPosition(cx, cy + 26, 0);
-        plus.on(Node.EventType.TOUCH_END, () => this.invite());
-        const tip = makeLabel(`AddTip_${index}`, content, '邀请好友', 16, uiColor(150, 178, 200));
-        tip.getComponent(UITransform)!.setContentSize(120, 22);
-        tip.setPosition(cx, cy - 40, 0);
+        if (this._roomUnavailable || !this._root?.isValid) return;
+        const localDigest = resolveLocalModifierDigest();
+        const members: OnlineMember[] = this._members.map(m => {
+            const digest = m.self ? localDigest : decodeModifierDigest(this._memberModifiers[m.pos]);
+            const character = digest ? PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === digest.characterId)?.name : null;
+            return {
+                ...m, pos: m.pos < 0 ? 0 : m.pos,
+                ready: m.owner || (m.self ? this._localReady : m.ready),
+                character: character ?? '角色同步中…', level: digest?.level ?? 0,
+            };
+        });
+        const canStart = !this._netReal || (this.allMembersReady() && this.protocolCompatible());
+        const hint = this._statusHint ?? (!this._netReal
+            ? '本地预览 · 真机联机可邀请好友'
+            : this._isHost
+                ? this._members.length < 2 ? '邀请好友加入 · 至少 2 人可开始' : canStart ? '全部准备就绪 · 空位由 AI 补齐' : '等待成员准备并确认赛制'
+                : this._localReady ? '已准备 · 等待房主开始' : '准备好后点击右下方按钮');
+        this._view?.update({
+            members, isHost: this._isHost, ready: this._localReady,
+            busy: this._startRequested || this._readyPending || this._kickPending || this._leaving,
+            canStart, roomNumber: this._netReal ? this._roomId || '获取中…' : '本地预览',
+            hint, mode: this._mode,
+        });
     }
 
     private invite() {
         if (this._netReal && this._accessInfo) {
             platform().share({ title: '一起来游泳对战！', query: `room=${encodeURIComponent(this._accessInfo)}` });
-        } else {
-            console.log('[Room] invite friend (real device only)');
-            if (this._hintLabel?.isValid) {
-                this._hintLabel.string = '邀请好友需真机联机（分享房间给好友加入）';
-            }
-        }
+        } else this.setHint('邀请好友需真机联机');
     }
 
     private allMembersReady(): boolean {
-        // The host readies implicitly by pressing 开始, so only non-host members must be
-        // ready. (After a race everyone returns not-ready, so this also prevents the
-        // host from starting a rematch until the guest is genuinely back and readied.)
-        return this._members.length >= 2 && this._members.every((m) => m.owner || m.ready);
+        const key = this.ruleKey();
+        return this._members.length >= 2 && this._members.every(m =>
+            m.owner || (m.ready && this._ruleReady[m.pos] === key));
     }
 
     // Guest toggles their own ready state (shown on every client's avatar badge via
     // updateReadyStatus -> onRoomInfoChange).
     private toggleReady() {
-        if (!this._localReady && !this.protocolCompatible()) {
+        if (this._isHost || this._readyPending || this._startRequested || this._leaving) return;
+        if (!this._localReady && (!this.protocolCompatible() || !this._rulesId)) {
             this.requestProtocolDeclarations();
-            this.setHint('玩家版本不一致或仍在确认，暂时不能准备');
+            this.broadcastRules();
+            this.setHint('正在确认玩家版本和房主赛制，请稍后准备');
             return;
         }
-        this._localReady = !this._localReady;
+        void this.setReady(!this._localReady);
+    }
+
+    private async setReady(ready: boolean) {
+        if (this._readyPending) return;
+        const previous = this._localReady;
+        const rules = this.ruleKey();
+        this._readyPending = true;
+        this._readyVersion++;
+        this.broadcastRules();
+        this._statusHint = null;
         this.render();
-        if (this._netReal) {
-            netRoom().updateReady(this._localReady).catch((error) => {
-                console.warn('[Room] updateReady failed', error);
-            });
+        try {
+            await netRoom().updateReady(ready);
+            if (!this._root?.isValid || this._roomUnavailable) return;
+            this._localReady = ready && rules === this.ruleKey();
+            this._localReadyRule = this._localReady ? rules : '';
+            // 请求过程中房主换了赛制，旧的准备确认不能复活。
+            if (ready && !this._localReady) await netRoom().updateReady(false);
+        } catch {
+            this._localReady = rules === this.ruleKey() ? previous : false;
+            this._statusHint = '准备状态更新失败，请重试';
+        } finally {
+            this._readyPending = false;
+            this._readyVersion++;
+            if (this._root?.isValid && !this._roomUnavailable) {
+                this.broadcastRules();
+                this.render();
+            }
         }
     }
 
+    private ruleKey(): string { return `${this._rulesId}:${this._rulesRevision}`; }
+
+    private changeMode(mode: RaceDifficulty) {
+        if (!this._isHost || this._startRequested || this._kickPending || this._leaving || mode === this._mode) return;
+        this._mode = mode;
+        this._rulesRevision++;
+        for (const pos of Object.keys(this._ruleReady)) delete this._ruleReady[Number(pos)];
+        this._statusHint = this._netReal ? '赛制已切换，等待成员重新准备' : null;
+        this.broadcastRules();
+        this.render();
+    }
+
+    private broadcastRules() {
+        if (!this._netReal || !this._accessInfo || this._localPos < 0) return;
+        if (this._isHost) {
+            if (!this._rulesId) this._rulesId = String(Date.now());
+            netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision, mode: this._mode }));
+        } else if (this._rulesId) {
+            netRoom().broadcast(JSON.stringify({ t: 'rulesReady', pos: this._localPos, key: this.ruleKey(), seq: this._readyVersion, ready: this._localReady && !this._readyPending }));
+        }
+    }
+
+    private handleRules(data: any): boolean {
+        if (data?.t === 'rulesReady') {
+            if (this._isHost && this._members.some(m => m.pos === data.pos && !m.owner) && data.key === this.ruleKey() &&
+                Number.isSafeInteger(data.seq) && data.seq >= (this._ruleReadyVersions[data.pos] ?? -1)) {
+                this._ruleReadyVersions[data.pos] = data.seq;
+                if (data.ready === true) this._ruleReady[data.pos] = data.key;
+                else delete this._ruleReady[data.pos];
+                this.render();
+            }
+            return true;
+        }
+        if (data?.t !== 'rules') return false;
+        const owner = this._members.find(m => m.owner);
+        if (this._isHost || !owner || data.owner !== owner.pos || typeof data.id !== 'string' ||
+            !Number.isSafeInteger(data.rev) || data.rev < 0 || !ROOM_MODES.some(m => m.id === data.mode)) return true;
+        if (!/^\d{13,16}$/.test(data.id)) return true;
+        if (this._rulesOwnerPos === owner.pos && Number(data.id) < Number(this._rulesId)) return true;
+        if (data.id === this._rulesId && data.rev < this._rulesRevision) return true;
+        if (data.id !== this._rulesId || data.rev !== this._rulesRevision) {
+            const hadRules = !!this._rulesId;
+            this._rulesId = data.id;
+            this._rulesOwnerPos = owner.pos;
+            this._rulesRevision = data.rev;
+            this._mode = data.mode;
+            this._localReady = false;
+            this._localReadyRule = '';
+            this._readyVersion++;
+            if (!this._readyPending) void this.setReady(false);
+            this._statusHint = hadRules ? '房主更改了赛制，请重新准备' : null;
+            this.render();
+        }
+        this.broadcastRules();
+        return true;
+    }
+
+    private async kickMember(member: OnlineMember) {
+        if (!this._netReal || !this._isHost || member.self || member.owner || this._startRequested || this._kickPending || this._leaving) return;
+        this._kickPending = true; this._statusHint = null; this.render();
+        try {
+            // 弹窗打开后名单可能变化；再查服务端，不能踢掉占用同一座位的新成员。
+            const info = await netRoom().getRoomInfo();
+            if (!this._root?.isValid || this._leaving) return;
+            const target = info?.members.find(m => m.pos === member.pos);
+            const identity = target ? parseIdentity(target.extInfo) : null;
+            if (!netRoom().isOwner() || !target || target.owner ||
+                (member.clientId !== undefined && target.clientId !== member.clientId) ||
+                identity?.avatarId !== member.avatarId || identity?.nickName !== member.nickName) {
+                this.setHint('成员或房主已变化，请重新选择'); return;
+            }
+            await netRoom().kickMember(member.pos);
+            if (this._root?.isValid) { this.setHint('已移出该成员'); this.refreshRoomInfo(0); }
+        } catch { if (this._root?.isValid) this.setHint('踢出失败，请稍后重试'); }
+        finally { this._kickPending = false; this.render(); }
+    }
+
+    private stopRulesTimer() {
+        if (this._rulesTimer !== null) clearInterval(this._rulesTimer);
+        this._rulesTimer = null;
+    }
+
     private startRace() {
+        if (this._startRequested || this._kickPending || this._leaving || this._roomUnavailable) return;
         if (!this._netReal) {
+            setRaceDifficulty(this._mode);
+            lastRoomMode = this._mode;
+            this.stopRulesTimer();
             // Editor / local preview: launch the placeholder single-player race.
             this._callbacks.onStartLocalRace(this._members.length);
             return;
@@ -717,6 +730,7 @@ export class RoomFlow {
             return;
         }
         this._startRequested = true;
+        setRaceDifficulty(this._mode);
         // Follow the WeChat lock-step demo: the host broadcasts a START signal carrying
         // the shared seed; EVERY member — INCLUDING the host — then calls startGame. The
         // host used to skip startGame and rely on passive roomState detection, but that
@@ -736,6 +750,8 @@ export class RoomFlow {
             pv: NET_RACE_PROTOCOL_VERSION,
             seed: this._pendingSeed,
             mods: this._memberModifiers,
+            mode: this._mode,
+            rules: this.ruleKey(),
         }));
         if (this._reconnect) {
             // Rematch on the still-alive session: do NOT startGame again (WeChat rooms are
@@ -764,6 +780,8 @@ export class RoomFlow {
             }
             this._startRequested = false;
             this._gameStartCalled = false;
+            this._pendingSeed = 0;
+            this._gameStartConfirmed = false;
             this.setHint('开始失败，请确认好友已回到房间并准备后重试');
             this.render();
         }, 8000);
@@ -790,13 +808,9 @@ export class RoomFlow {
         });
     }
 
-    // The host broadcasts START; guests call startGame on receiving it. The HOST
-    // (room owner) does NOT call startGame: on device the owner that calls startGame
-    // never becomes a real frame participant (uploadFrame's nativeInstance is never
-    // created), while a guest that calls startGame works. Mirroring the official demo
-    // (where the owner doesn't receive its own broadcast and so never calls startGame),
-    // only guests call startGame; the host enters via game-start detection (roomState).
+    // 首局房主和成员都需调用 startGame；重赛继续复用已有会话，不再次调用。
     private handleBroadcast(msg: string) {
+        if (!this._root?.isValid || this._roomUnavailable || this._raceEntered || this._leaving) return;
         const protocolRequest = decodeProtocolRequest(msg);
         if (protocolRequest) {
             // RoomFlow owns callbacks only while this client is in the lobby. A
@@ -826,6 +840,7 @@ export class RoomFlow {
         }
         try {
             const data = JSON.parse(msg);
+            if (this.handleRules(data)) return;
             if (data && data.t === 'start' && typeof data.seed === 'number') {
                 if (!isCompatibleProtocolVersion(data.pv)) {
                     if (this._localReady && !this._isHost) {
@@ -835,7 +850,15 @@ export class RoomFlow {
                     this.setHint('房主版本与当前客户端不兼容，请更新后重试');
                     return;
                 }
+                if (!this._isHost && (!this._localReady || data.rules !== this.ruleKey() || data.mode !== this._mode)) {
+                    this.setHint('赛制或准备状态未确认，请重新准备'); return;
+                }
+                if (!ROOM_MODES.some(m => m.id === data.mode)) return;
+                this._mode = data.mode;
+                setRaceDifficulty(this._mode);
                 this._pendingSeed = data.seed >>> 0;
+                this._startRequested = true;
+                this.setHint('开始中…');
                 // Adopt the host's consolidated 养成 digest map (authoritative + identical on
                 // every client) BEFORE entering, so all clients apply the same balance.
                 this.mergeBroadcastModifiers(data.mods);
@@ -888,6 +911,8 @@ export class RoomFlow {
             return;
         }
         this._raceEntered = true;
+        lastRoomMode = this._mode;
+        this.stopRulesTimer();
         this.clearStartTimeout();
         // Clear our ready as the race begins so the server doesn't carry a stale
         // isReady=true through the race — otherwise a member who returns to the lobby
@@ -914,14 +939,22 @@ export class RoomFlow {
     }
 
     private setHint(text: string) {
-        if (this._hintLabel?.isValid) {
-            this._hintLabel.string = text;
-        }
+        this._statusHint = text || null;
+        this.render();
     }
 
-    private exit() {
-        netRoom().leaveRoom().catch(() => undefined);
-        this._callbacks.onExit();
+    private async exit() {
+        if (this._leaving || this._startRequested) return;
+        this._leaving = true; this.render();
+        if (this._netReal && !this._roomUnavailable) {
+            try { await netRoom().leaveRoom(); }
+            catch {
+                this._leaving = false;
+                this.setHint('退出房间失败，请重试');
+                return;
+            }
+        }
+        if (this._root?.isValid) this._callbacks.onExit();
     }
 
     // Whether this room is the one identified by the given accessInfo (share token).
@@ -935,15 +968,14 @@ export class RoomFlow {
     }
 
     dispose() {
+        this.stopRulesTimer();
         this.clearStartTimeout();
         netRoom().setCallbacks({});
         if (this._root?.isValid) {
             this._root.destroy();
         }
         this._root = null;
-        this._content = null;
-        this._hintLabel = null;
-        this._startButton = null;
+        this._view = null;
     }
 }
 

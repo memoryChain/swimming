@@ -105,6 +105,16 @@ export class WechatGameRoom implements INetRoom {
     private _gameStartNotified = false;
     // True for the room creator (owner); owners must leave via ownerLeaveRoom.
     private _isOwner = false;
+    private _localClientId: number | null = null;
+    private _localExtInfo = '';
+
+    private adoptRoomOwnership(info: NetRoomInfo): void {
+        if (!this._accessInfo) return;
+        const byId = this._localClientId === null ? undefined : info.members.find(m => m.clientId === this._localClientId);
+        const byIdentity = info.members.filter(m => m.extInfo === this._localExtInfo);
+        const mine = byId ?? (byIdentity.length === 1 ? byIdentity[0] : undefined);
+        if (mine) this._isOwner = mine.owner === true;
+    }
     // Whether the lock-step frame channel (uploadFrame/onSyncFrame) actually works.
     // Optimistic until proven otherwise: on iOS high-performance(+) mode the room
     // service works but the frame-sync native instance does NOT — binding onSyncFrame
@@ -159,9 +169,17 @@ export class WechatGameRoom implements INetRoom {
         }
         const gsm = this.manager();
         this._roomEventsBound = true;
+        this.safeOn('onBeKickedOut', () => gsm.onBeKickedOut?.(() => {
+            this._accessInfo = '';
+            this._isOwner = false;
+            this._localClientId = null;
+            this._localExtInfo = '';
+            this._callbacks.onKicked?.();
+        }));
         this.safeOn('onRoomInfoChange', () => gsm.onRoomInfoChange?.((res: any) => {
             netLog('onRoomInfoChange', res);
             const info = mapRoomInfo(res);
+            this.adoptRoomOwnership(info);
             this._callbacks.onRoomInfoChange?.(info);
             if (isGameStartedRoomState(info.state)) {
                 this.handleGameStarted('roomState');
@@ -176,7 +194,7 @@ export class WechatGameRoom implements INetRoom {
             // (S| ~6.7/s) and self-position (P|) flood the console, and each vConsole
             // log is expensive (DOM append + reflow). Room-control messages still log.
             const c = msg.charCodeAt(0);
-            if (c !== 83 /* 'S' */ && c !== 80 /* 'P' */) {
+            if (c !== 83 /* 'S' */ && c !== 80 /* 'P' */ && !msg.startsWith('{"t":"rules')) {
                 netLog('onBroadcast', res);
             }
             this._callbacks.onBroadcast?.(msg);
@@ -318,6 +336,8 @@ export class WechatGameRoom implements INetRoom {
     }
 
     createRoom(options: CreateRoomOptions): Promise<NetRoomInfo> {
+        this._localExtInfo = options.memberExtInfo ?? '';
+        this._localClientId = null;
         const payload = {
             maxMemberNum: options.maxMembers,
             // startPercent = fraction of members that must have called startGame before
@@ -339,6 +359,7 @@ export class WechatGameRoom implements INetRoom {
                 const info = mapRoomInfo(res);
                 this._accessInfo = info.accessInfo;
                 this._isOwner = true;
+                this._localClientId = unwrap(res)?.clientId ?? null;
                 return info;
             })
             .catch((error: any) => {
@@ -348,6 +369,9 @@ export class WechatGameRoom implements INetRoom {
     }
 
     joinRoom(accessInfo: string, memberExtInfo?: string): Promise<NetRoomInfo> {
+        this._localExtInfo = memberExtInfo ?? '';
+        this._localClientId = null;
+        this._isOwner = false;
         netLog('joinRoom ->', { accessInfo, memberExtInfo });
         return this.manager()
             .joinRoom({ accessInfo, memberExtInfo })
@@ -355,6 +379,8 @@ export class WechatGameRoom implements INetRoom {
                 netLog('joinRoom result', res);
                 const info = mapRoomInfo(res);
                 this._accessInfo = info.accessInfo || accessInfo;
+                this._localClientId = unwrap(res)?.clientId ?? null;
+                this.adoptRoomOwnership(info);
                 return info;
             })
             .catch((error: any) => {
@@ -367,54 +393,62 @@ export class WechatGameRoom implements INetRoom {
         // getRoomInfo does NOT support promise-style calls on WeChat — it must be
         // called with success/fail callbacks, which we wrap into a Promise here.
         return new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(null), 8000);
+            const finish = (info: NetRoomInfo | null) => { clearTimeout(timer); resolve(info); };
             const gsm = this.manager();
             if (!gsm || typeof gsm.getRoomInfo !== 'function') {
-                resolve(null);
+                finish(null);
                 return;
             }
             try {
                 gsm.getRoomInfo({
                     success: (res: any) => {
                         netLog('getRoomInfo result', res);
-                        resolve(mapRoomInfo(res));
+                        const info = mapRoomInfo(res);
+                        this.adoptRoomOwnership(info);
+                        finish(info);
                     },
                     fail: (error: any) => {
                         netLog('getRoomInfo FAILED', error);
-                        resolve(null);
+                        finish(null);
                     },
                 });
             } catch (error) {
                 netLog('getRoomInfo threw', (error as any)?.errMsg || (error as any)?.message || String(error));
-                resolve(null);
+                finish(null);
             }
         });
     }
 
     updateReady(ready: boolean): Promise<void> {
-        // updateReadyStatus does NOT support promise-style calls — use success/fail.
         return new Promise((resolve, reject) => {
             const gsm = this.manager();
             if (!gsm || typeof gsm.updateReadyStatus !== 'function') {
-                resolve();
-                return;
+                reject(new Error('当前平台不支持准备状态更新')); return;
             }
+            const timer = setTimeout(() => reject(new Error('准备状态更新超时')), 8000);
+            const ok = () => { clearTimeout(timer); resolve(); };
+            const fail = (error: unknown) => { clearTimeout(timer); reject(error); };
             try {
-                gsm.updateReadyStatus({
-                    accessInfo: this._accessInfo,
-                    isReady: ready,
-                    success: () => {
-                        netLog('updateReady ok', ready);
-                        resolve();
-                    },
-                    fail: (error: any) => {
-                        netLog('updateReady FAILED', error);
-                        reject(error);
-                    },
-                });
-            } catch (error) {
-                netLog('updateReady threw', (error as any)?.errMsg || (error as any)?.message || String(error));
-                reject(error);
-            }
+                gsm.updateReadyStatus({ accessInfo: this._accessInfo, isReady: ready, success: ok, fail });
+            } catch (error) { fail(error); }
+        });
+    }
+
+    kickMember(pos: number): Promise<void> {
+        const gsm = this.manager();
+        if (!this.isOwner() || !Number.isInteger(pos) || pos < 0 || pos >= 8 || typeof gsm?.kickoutMember !== 'function') {
+            return Promise.reject(new Error('无房主权限或平台不支持踢人'));
+        }
+        // 官方 API 参数为 kickoutPos，而非 clientId / posNum。
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('踢出成员超时')), 8000);
+            const ok = () => { clearTimeout(timer); resolve(); };
+            const fail = (error: unknown) => { clearTimeout(timer); reject(error); };
+            try {
+                const result = gsm.kickoutMember({ kickoutPos: pos, success: ok, fail });
+                if (result?.then) result.then(ok, fail);
+            } catch (error) { fail(error); }
         });
     }
 
@@ -491,50 +525,30 @@ export class WechatGameRoom implements INetRoom {
 
     leaveRoom(): Promise<void> {
         const gsm = this.manager();
-        const accessInfo = this._accessInfo;
-        const wasOwner = this._isOwner;
-        this._accessInfo = '';
-        this._gameStarted = false;
-        this._gameStartNotified = false;
-        this._isOwner = false;
-        // Drop stale frame listeners so joining a NEW room and starting its game rebinds
-        // cleanly instead of stacking a duplicate onSyncFrame from the old room.
-        this.unbindGameEvents();
-        // Always resolve to a real settled Promise: WeChat's leave APIs may be
-        // callback-style, promise-style, or return nothing, and callers chain
-        // .catch()/.then() on the result (e.g. leave-then-join on an invite). A short
-        // timeout guarantees the chain proceeds even if the platform never calls back.
-        return new Promise<void>((resolve) => {
-            let done = false;
-            const finish = () => {
-                if (done) {
-                    return;
-                }
-                done = true;
+        if (!this._accessInfo) return Promise.resolve();
+        return new Promise<void>((resolve, reject) => {
+            let settled = false;
+            const fail = (error: unknown) => {
+                if (settled) return;
+                settled = true; clearTimeout(timer); reject(error);
+            };
+            const ok = () => {
+                if (settled) return;
+                settled = true; clearTimeout(timer);
+                this._accessInfo = '';
+                this._gameStarted = false; this._gameStartNotified = false;
+                this._isOwner = false; this._localClientId = null; this._localExtInfo = '';
+                this.unbindGameEvents();
                 resolve();
             };
-            const timer = setTimeout(finish, 1500);
-            const settle = () => {
-                clearTimeout(timer);
-                finish();
-            };
+            const timer = setTimeout(() => fail(new Error('退出房间超时')), 8000);
             try {
-                // The room OWNER must call ownerLeaveRoom (dissolves / reassigns the room)
-                // so remaining members get an onRoomInfoChange; guests call
-                // memberLeaveRoom.
-                const useOwner = wasOwner && typeof gsm.ownerLeaveRoom === 'function';
-                const opts: any = { accessInfo, success: settle, fail: settle };
-                if (useOwner) {
-                    opts.assignToMinPosNum = true;
-                }
-                const ret = useOwner ? gsm.ownerLeaveRoom(opts) : gsm.memberLeaveRoom(opts);
-                if (ret && typeof ret.then === 'function') {
-                    ret.then(settle, settle);
-                }
-            } catch (error) {
-                netLog('leaveRoom threw', (error as any)?.errMsg || (error as any)?.message || String(error));
-                settle();
-            }
+                const opts: any = { accessInfo: this._accessInfo, success: ok, fail };
+                const useOwner = this._isOwner && typeof gsm.ownerLeaveRoom === 'function';
+                if (useOwner) opts.assignToMinPosNum = true;
+                const result = useOwner ? gsm.ownerLeaveRoom(opts) : gsm.memberLeaveRoom(opts);
+                if (result?.then) result.then(ok, fail);
+            } catch (error) { fail(error); }
         });
     }
 
