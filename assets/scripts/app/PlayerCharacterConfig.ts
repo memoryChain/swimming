@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12';
+export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -111,6 +111,16 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         description: '身着青柠运动装备的活力少年，以灵敏节奏和轻快步伐追逐浪尖。',
         skillName: '绿电节奏', skillDescription: '灵巧的身体控制让划水、踢腿与转身衔接更加轻快。',
         supportsSkinTone: true,
+    },
+    {
+        id: 'cartonSwimmer13', name: '深潜先锋', modelVariantId: 'cartonSwimmer13', unlocked: true,
+        stamina: 90, technique: 82, burst: 76,
+        weight: 1.08,
+        energyGain: 80,
+        kick: 54,
+        description: '背负轻型潜水装备的耐力型泳者，以稳定节奏穿越深水。',
+        skillName: '深潜续航', skillDescription: '扎实的耐力与踢腿控制让长距离推进更加稳定。',
+        supportsSkinTone: false,
     },
     {
         id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,

@@ -57,9 +57,9 @@ test('联网头像通过稳定 ID 映射角色外观', () => {
 test('可选角色均有唯一模型，并复用标准动作资源', () => {
     const characters = PLAYER_CHARACTER_DEFINITIONS;
     const expectedCharacterIds = ['cartonSwimmer6', 'cartonSwimmer8', 'cartonSwimmer5',
-        'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'muscleMan'];
+        'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'cartonSwimmer13', 'muscleMan'];
     const expectedModelIds = ['muscleMan', 'cartonSwimmer5', 'cartonSwimmer6',
-        'cartonSwimmer8', 'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12'];
+        'cartonSwimmer8', 'cartonSwimmer9', 'cartonSwimmer10', 'cartonSwimmer11', 'cartonSwimmer12', 'cartonSwimmer13'];
     assert.deepEqual(characters.map(c => c.id), expectedCharacterIds);
     assert.deepEqual(Resources.SWIMMER_MODEL_VARIANTS.map(c => c.id), expectedModelIds);
     assert.equal(new Set(characters.map(c => c.id)).size, characters.length);
@@ -331,6 +331,41 @@ test('绿电潮童复用共享骨架动作，换色遮罩与模型满足移动�
         assert.equal(png.readUInt32BE(16), 512);
         assert.equal(png.readUInt32BE(20), 512);
         assert.equal(png[25], 6);
+    } finally {
+        selectPlayerCharacter(previous.characterId);
+        setPlayerSkinTone(previous.skinToneId);
+        setPlayerColorScheme(previous.colorSchemeId);
+    }
+});
+
+test('深潜先锋仅换色绿色连通块并复用共享骨架动作', () => {
+    const previous = { ...getPlayerCharacterSelection() };
+    try {
+        selectPlayerCharacter('cartonSwimmer13');
+        assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer13');
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), false);
+        const model = Resources.findSwimmerModelVariant('cartonSwimmer13');
+        assert.equal(model.dynamicColor?.mode, 'mask');
+        assert.equal(model.dynamicColor?.maskPath, 'models/CartonSwimmer13ColorMask/texture');
+        assert.equal(model.dynamicColor?.usesCapChannel, false);
+        assert.equal(model.preserveOriginalMaterial, true);
+        assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
+
+        const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer13.glb', root));
+        const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
+        const primitive = doc.meshes[0].primitives[0];
+        assert.equal(doc.meshes.length, 1);
+        assert.equal(doc.materials.length, 1);
+        assert.equal(doc.meshes[0].primitives.length, 1);
+        assert.equal(doc.skins[0].joints.length, 41);
+        assert.equal(doc.accessors[primitive.indices].count / 3, 5785);
+        assert.ok(doc.accessors[primitive.attributes.POSITION].count <= 7000);
+        assert.ok(data.length <= 512 * 1024);
+
+        const mask = fs.readFileSync(new URL('assets/race/models/CartonSwimmer13ColorMask.png', root));
+        assert.equal(mask.readUInt32BE(16), 512);
+        assert.equal(mask.readUInt32BE(20), 512);
+        assert.equal(mask[25], 6);
     } finally {
         selectPlayerCharacter(previous.characterId);
         setPlayerSkinTone(previous.skinToneId);

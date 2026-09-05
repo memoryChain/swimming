@@ -49,6 +49,21 @@ class GreenMaskTests(unittest.TestCase):
                 self.assertEqual(precise.getpixel((16, 16)), (0, 0, 0, 255))
                 self.assertEqual(precise.getchannel('G').getextrema(), (0, 0))
 
+    def test_component_filter_removes_flecks_and_solidifies_kept_blocks(self):
+        plane = Image.new('L', (24, 24), 0)
+        for y in range(6, 14):
+            for x in range(6, 14):
+                plane.putpixel((x, y), 96)
+        plane.putpixel((20, 20), 255)
+        removed_components, removed_pixels = mask_tools.remove_small_garment_components(plane, 8)
+        self.assertEqual((removed_components, removed_pixels), (1, 1))
+        self.assertEqual(plane.getpixel((20, 20)), 0)
+        self.assertGreater(plane.getpixel((9, 9)), 0)
+
+        mask_tools.solidify_garment_components(plane)
+        self.assertEqual(plane.getpixel((9, 9)), 255)
+        self.assertEqual(plane.getpixel((20, 20)), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

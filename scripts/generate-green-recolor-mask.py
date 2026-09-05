@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import colorsys
+from collections import deque
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageFilter
@@ -59,6 +60,61 @@ def skin_weight(red: int, green: int, blue: int, palette: str = "default") -> fl
     return coverage
 
 
+def remove_small_garment_components(plane: Image.Image, minimum_weighted_pixels: float) -> tuple[int, int]:
+    """Remove isolated green flecks while preserving anti-aliased block edges."""
+    if minimum_weighted_pixels <= 0:
+        return 0, 0
+    pixels = plane.load()
+    width, height = plane.size
+    visited = bytearray(width * height)
+    removed_components = 0
+    removed_pixels = 0
+    for start_y in range(height):
+        for start_x in range(width):
+            flat = start_y * width + start_x
+            if visited[flat] or pixels[start_x, start_y] < 8:
+                continue
+            queue = deque([(start_x, start_y)])
+            visited[flat] = 1
+            component = []
+            total_weight = 0
+            while queue:
+                x, y = queue.popleft()
+                value = pixels[x, y]
+                component.append((x, y))
+                total_weight += value
+                for next_y in range(max(0, y - 1), min(height, y + 2)):
+                    for next_x in range(max(0, x - 1), min(width, x + 2)):
+                        next_flat = next_y * width + next_x
+                        if visited[next_flat] or pixels[next_x, next_y] < 8:
+                            continue
+                        visited[next_flat] = 1
+                        queue.append((next_x, next_y))
+            if total_weight / 255.0 < minimum_weighted_pixels:
+                removed_components += 1
+                removed_pixels += len(component)
+                for x, y in component:
+                    pixels[x, y] = 0
+    return removed_components, removed_pixels
+
+
+def solidify_garment_components(plane: Image.Image) -> None:
+    """Make retained green blocks opaque while keeping a narrow soft outer edge."""
+    pixels = plane.load()
+    width, height = plane.size
+    solid = Image.new("L", plane.size, 0)
+    solid_pixels = solid.load()
+    for y in range(height):
+        for x in range(width):
+            if pixels[x, y] >= 8:
+                solid_pixels[x, y] = 255
+    # Close small JPEG/shading holes inside the retained color blocks. The
+    # matching erosion returns the outer silhouette to its original extent.
+    closed = solid.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    softened = closed.filter(ImageFilter.GaussianBlur(0.45))
+    plane.paste(softened)
+
+
 PREVIEW_PALETTES = {
     "porcelain_red": ((255, 224, 205), (240, 68, 58)),
     "deep_red": ((118, 76, 58), (255, 11, 11)),
@@ -69,7 +125,7 @@ PREVIEW_PALETTES = {
 }
 
 
-def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2, skin_palette: str = "default", garment_palette: str = "default") -> tuple[int, int, int, int, int]:
+def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2, skin_palette: str = "default", garment_palette: str = "default", garment_min_component: float = 0.0, garment_solidify: bool = False) -> tuple[int, int, int, int, int, int, int]:
     with Image.open(source_path) as source_image:
         source = source_image.convert("RGB")
         source_pixels = source.load()
@@ -84,6 +140,13 @@ def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2,
                 skin_coverage = skin_weight(*pixel, palette=skin_palette) * (1.0 - garment_weight)
                 garment_pixels[x, y] = round(garment_weight * 255.0)
                 skin_pixels[x, y] = round(skin_coverage * 255.0)
+
+        removed_components, removed_pixels = remove_small_garment_components(
+            garment_plane,
+            garment_min_component,
+        )
+        if garment_solidify:
+            solidify_garment_components(garment_plane)
 
         # Fill only small dark holes enclosed by confidently detected skin. This
         # softens baked facial/body hatch marks after recolouring while keeping
@@ -118,7 +181,7 @@ def build_mask(source_path: Path, output_path: Path, skin_close_radius: int = 2,
             )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         mask.save(output_path, format="PNG", optimize=True)
-        return garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count
+        return garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count, removed_components, removed_pixels
 
 
 def build_previews(source_path: Path, mask_path: Path, preview_dir: Path, prefix: str = "Swimmer") -> None:
@@ -168,13 +231,32 @@ def main() -> None:
     parser.add_argument("--garment-palette", choices=("default", "lime"), default="default",
                         help="偏黄绿色的装备使用 lime；既有角色保持 default")
     parser.add_argument(
+        "--garment-min-component",
+        type=float,
+        default=0.0,
+        help="移除小于该等效满权重像素数的孤立绿色连通块；0 保持原行为",
+    )
+    parser.add_argument(
+        "--garment-solidify",
+        action="store_true",
+        help="将保留的绿色连通块转为实心遮罩，并仅在外缘保留抗锯齿",
+    )
+    parser.add_argument(
         "--preview-dir",
         type=Path,
         help="Optional directory for five high-contrast validation textures",
     )
     args = parser.parse_args()
 
-    garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count = build_mask(args.input, args.output, args.skin_close_radius, args.skin_palette, args.garment_palette)
+    garment_nonzero, garment_solid, skin_nonzero, skin_solid, pixel_count, removed_components, removed_pixels = build_mask(
+        args.input,
+        args.output,
+        args.skin_close_radius,
+        args.skin_palette,
+        args.garment_palette,
+        args.garment_min_component,
+        args.garment_solidify,
+    )
     if args.preview_dir:
         build_previews(args.input, args.output, args.preview_dir, args.preview_prefix)
     print(
@@ -183,6 +265,7 @@ def main() -> None:
         f"garment_solid={garment_solid}/{pixel_count} ({garment_solid / pixel_count:.2%}) "
         f"skin_nonzero={skin_nonzero}/{pixel_count} ({skin_nonzero / pixel_count:.2%}) "
         f"skin_solid={skin_solid}/{pixel_count} ({skin_solid / pixel_count:.2%})"
+        f" removed_components={removed_components} removed_pixels={removed_pixels}"
     )
 
 
