@@ -11,6 +11,7 @@ import { STEERING_TUNING } from '../core/SteeringTuning';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
 import { DiveEntryStyle, DiveResult } from '../core/DiveResult';
 import { StrokeMetrics } from '../swimmer/StrokeMetrics';
+import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
 import { StrokeConditionInput } from '../condition/ConditionTypes';
 import { UltimateEnergyModel } from '../condition/UltimateEnergyModel';
 import { ratingForStrokeQuality, rhythmResultFromStrokeQuality } from '../core/StrokeQualityScoring';
@@ -130,6 +131,32 @@ export class Swimmer extends Component {
     // local pitch drives the head end down; positive pitch lifts it.
     applyCollisionPitchImpulse(angularVelocityDeltaRadians: number) {
         this._motor.applyCollisionPitchImpulse(angularVelocityDeltaRadians);
+    }
+
+    applyCollisionSoftnessImpulse(side: number, forward: number): void {
+        this._motor.collisionSoftness.impulse(side, forward);
+    }
+
+    get netCollisionSoftness(): Readonly<CollisionSoftnessState> {
+        return this._motor.collisionSoftness;
+    }
+
+    private _lastSoftnessSnapshot: Readonly<CollisionSoftnessState> | undefined;
+
+    applyNetCollisionSoftness(state: Readonly<CollisionSoftnessState> | undefined): void {
+        if (!state || !(state.side || state.forward || state.sideVelocity || state.forwardVelocity)) {
+            if (this._motor.collisionSoftness.active) this._motor.collisionSoftness.reset();
+            this._lastSoftnessSnapshot = state;
+            return;
+        }
+        // 一个缓存快照只消费一次，断网时继续自然衰减，不被旧值每帧重新激活。
+        if (state === this._lastSoftnessSnapshot) return;
+        this._lastSoftnessSnapshot = state;
+        if (!this.isCollisionActive || !state) {
+            this._motor.collisionSoftness.reset();
+            return;
+        }
+        this._motor.collisionSoftness.correct(state, 0.65);
     }
 
     // Body weight for collision knockback (player from character def, AI from

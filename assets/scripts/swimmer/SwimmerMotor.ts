@@ -7,6 +7,7 @@ import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
 import { AxialRollModel } from './AxialRollModel';
 import { CollisionPitchModel } from './CollisionPitchModel';
+import { CollisionSoftnessModel } from './CollisionSoftnessModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 
 const CYCLE_AMOUNT = Math.PI * 2;
@@ -81,6 +82,7 @@ export class SwimmerMotor {
     private readonly _physics = new SwimPhysicsModel();
     private readonly _axialRoll = new AxialRollModel();
     private readonly _collisionPitch = new CollisionPitchModel();
+    readonly collisionSoftness = new CollisionSoftnessModel();
     private _currentSpeed = 0;
     private _distance = 0;
     private _isRacing = false;
@@ -161,6 +163,7 @@ export class SwimmerMotor {
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
         this._axialRoll.reset();
         this._collisionPitch.reset();
+        this.collisionSoftness.reset();
     }
 
     // Toggled by the Swimmer for post-dive and post-turn underwater glides.
@@ -176,6 +179,7 @@ export class SwimmerMotor {
         }
         if (active) {
             this._collisionPitch.reset();
+            this.collisionSoftness.reset();
         }
     }
 
@@ -216,6 +220,7 @@ export class SwimmerMotor {
         this._headingTurnRate = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
+        this.collisionSoftness.reset();
     }
 
     setFlipTurnSpeed(speed: number) {
@@ -484,6 +489,7 @@ export class SwimmerMotor {
             this._kickCadenceHz,
         );
         this._collisionPitch.update(dt, !this._glidePhaseActive);
+        this.collisionSoftness.update(dt);
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
         // large heading is naturally slower (this is the whole steering cost).
@@ -509,6 +515,7 @@ export class SwimmerMotor {
 
         if (this._distance >= raceDistance) {
             this._isRacing = false;
+            this.collisionSoftness.reset();
             this.clearKnockback();
             return true;
         }
@@ -555,6 +562,7 @@ export class SwimmerMotor {
         this._lateralOffset = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
+        this.collisionSoftness.reset();
     }
 
     setConditionSpeedScale(scale: number) {
@@ -1135,6 +1143,7 @@ export class SwimmerMotor {
 
     restoreCollisionPitch() {
         this._collisionPitch.reset();
+        this.collisionSoftness.reset();
     }
 
     correctCollisionPitch(targetAngle: number, targetAngularVelocity: number, blend: number) {

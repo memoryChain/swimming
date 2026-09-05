@@ -75,6 +75,8 @@ export class InputManager extends Component {
             if (!wasHeld) {
                 this.emitStroke(StrokeType.RIGHT);
             }
+        } else if (this.modelDebugMode && (event.keyCode === KeyCode.KEY_J || event.keyCode === KeyCode.KEY_I || event.keyCode === KeyCode.KEY_O)) {
+            this.strokeTarget?.emit('model-debug-collision', event.keyCode === KeyCode.KEY_J ? -1 : event.keyCode === KeyCode.KEY_O ? 1 : 0);
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_Q) {
             this.strokeTarget?.emit('model-debug-speed-down');
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_E) {

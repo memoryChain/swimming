@@ -1,5 +1,6 @@
 import type { Swimmer } from './Swimmer';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
+import { COLLISION_SOFTNESS_TUNING } from '../core/CollisionSoftnessTuning';
 
 const DEG2RAD = Math.PI / 180;
 
@@ -199,7 +200,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     // that are still closing (both lose progress, never free distance).
     if (SWIMMER_COLLISION.knockbackEnabled
         || SWIMMER_COLLISION.axialRollEnabled >= 0.5
-        || COLLISION_PITCH_TUNING.enabled >= 0.5) {
+        || COLLISION_PITCH_TUNING.enabled >= 0.5
+        || COLLISION_SOFTNESS_TUNING.enabled >= 0.5) {
         for (let i = 0; i < count; i++) {
             for (let j = i + 1; j < count; j++) {
                 const dx = _origX[i] - _origX[j];
@@ -239,6 +241,20 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const totalW = wi + wj;
                 const impI = totalW > 0 ? mag * (wj / totalW) : mag * 0.5;
                 const impJ = totalW > 0 ? mag * (wi / totalW) : mag * 0.5;
+                // 浅接触的实际分离冲量可能接近零，直接用它驱动骨骼几乎不可见。
+                // 只提高视觉反馈的下限；保留实际击退、能量及转体用的 impI/impJ。
+                const softMag = Math.max(mag, COLLISION_SOFTNESS_TUNING.minimumImpact);
+                const softI = totalW > 0 ? softMag * (wj / totalW) : softMag * 0.5;
+                const softJ = totalW > 0 ? softMag * (wi / totalW) : softMag * 0.5;
+                // 仅在接触开始注入柔性反馈，方向按各自前进轴投影；不改碰撞结算。
+                _active[i].applyCollisionSoftnessImpulse(
+                    (-nx * _forwardZ[i] + nz * _forwardX[i]) * softI,
+                    (nx * _forwardX[i] + nz * _forwardZ[i]) * softI,
+                );
+                _active[j].applyCollisionSoftnessImpulse(
+                    (nx * _forwardZ[j] - nz * _forwardX[j]) * softJ,
+                    (-nx * _forwardX[j] - nz * _forwardZ[j]) * softJ,
+                );
                 if (SWIMMER_COLLISION.knockbackEnabled) {
                     // Lateral shove: always applied, for the readable knocked-apart feel.
                     _impLat[i] += nz * impI;

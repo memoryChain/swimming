@@ -1003,6 +1003,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setFinishFloating() {
+        this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
         }
@@ -1011,6 +1012,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     setDiveStreamlinePose() {
+        this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
         }
@@ -1156,9 +1158,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             movementDirection,
             !motor.permitsUprightTreadWater,
         );
+        // 跟随原有降频与离屏裁剪，在完整基础姿态之后应用，下一次姿态会自然覆盖。
+        if (this._loaded && this._poseState.isFreestyleActive) {
+            this._pose.applyCollisionSoftness(motor.collisionSoftness, useDt);
+        }
     }
 
     updateUnderwaterKickFromMotor(dt: number, motor: SwimmerMotor, movementDirection = 1, movementPitchRadians = 0) {
+        this._pose.resetCollisionSoftness();
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
             return;
@@ -1187,6 +1194,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // 离屏被裁的 AI 完全冻结；屏内背景 AI 每 N 帧更新；玩家（stride=1、永不裁剪）始终用原始 dt 运行。
     private consumeThrottledMotionDt(dt: number): number {
         if (this._splashCulled && PERFORMANCE_CONFIG.motion.freezePoseWhenCulled) {
+            this._pose.resetCollisionSoftness();
             this._motionThrottleAccumDt = 0;
             this._motionThrottleCountdown = 0;
             return -1;

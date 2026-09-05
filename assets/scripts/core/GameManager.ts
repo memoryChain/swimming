@@ -1005,6 +1005,7 @@ export class GameManager extends Component {
             onCycleBulletTime: () => this.cycleBulletTime(),
             onModelDebugSpeedDown: () => this.slowModelDebugMotion(),
             onModelDebugSpeedUp: () => this.speedUpModelDebugMotion(),
+            onModelDebugCollision: (side) => this._modelDebugFlow?.previewCollisionSoftness(side),
             onDebugCameraMouseDown: (event) => this.onDebugCameraMouseDown(event),
             onDebugCameraMouseMove: (event) => this.onDebugCameraMouseMove(event),
             onDebugCameraMouseUp: () => this.onDebugCameraMouseUp(),
@@ -1735,6 +1736,7 @@ export class GameManager extends Component {
                         axialRollVelocity: swimmer.netAxialRollVelocity,
                         collisionPitch: swimmer.netCollisionPitch,
                         collisionPitchVelocity: swimmer.netCollisionPitchVelocity,
+                        collisionSoftness: swimmer.netCollisionSoftness,
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
                         conditionHeartRate: aiCondition?.heartRate ?? -1,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
@@ -1787,6 +1789,7 @@ export class GameManager extends Component {
             let targetRollVelocity: number;
             let targetPitch: number;
             let targetPitchVelocity: number;
+            let targetSoftness: NetSnapshotEntry['collisionSoftness'];
             let targetFinished: boolean;
             let distBlend: number;
             let latBlend: number;
@@ -1801,6 +1804,7 @@ export class GameManager extends Component {
                 targetRollVelocity = self.axialRollVelocity;
                 targetPitch = self.collisionPitch;
                 targetPitchVelocity = self.collisionPitchVelocity;
+                targetSoftness = self.collisionSoftness;
                 targetFinished = self.finished;
                 distBlend = 0.4;
                 latBlend = 0.4;
@@ -1819,6 +1823,7 @@ export class GameManager extends Component {
                 targetRollVelocity = target.axialRollVelocity;
                 targetPitch = target.collisionPitch;
                 targetPitchVelocity = target.collisionPitchVelocity;
+                targetSoftness = target.collisionSoftness;
                 targetFinished = target.finished;
                 distBlend = 0.2;
                 latBlend = 0.25;
@@ -1844,6 +1849,9 @@ export class GameManager extends Component {
             // instead of making a side-fall ease toward a static angle.
             swimmer.applyNetAxialRoll(targetRoll, targetRollVelocity, headBlend);
             swimmer.applyNetCollisionPitch(targetPitch, targetPitchVelocity, headBlend);
+            if (isHuman || !this._netRaceController.isHost) {
+                swimmer.applyNetCollisionSoftness(targetSoftness);
+            }
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
             swimmer.applyNetPoseSpeed(targetSpeed);
@@ -1938,6 +1946,7 @@ export class GameManager extends Component {
             axialRollVelocity: player.netAxialRollVelocity,
             collisionPitch: player.netCollisionPitch,
             collisionPitchVelocity: player.netCollisionPitchVelocity,
+            collisionSoftness: player.netCollisionSoftness,
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: this._playerCondition.heartRate,
         };

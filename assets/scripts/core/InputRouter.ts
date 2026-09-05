@@ -20,6 +20,7 @@ export type InputRouterCallbacks = {
     onCycleBulletTime: () => void;
     onModelDebugSpeedDown: () => void;
     onModelDebugSpeedUp: () => void;
+    onModelDebugCollision: (side: number) => void;
     onDebugCameraMouseDown: (event: EventMouse) => void;
     onDebugCameraMouseMove: (event: EventMouse) => void;
     onDebugCameraMouseUp: () => void;
@@ -73,6 +74,7 @@ export class InputRouter {
         this._target.on('cycle-bullet-time', this.onCycleBulletTime, this);
         this._target.on('model-debug-speed-down', this.onModelDebugSpeedDown, this);
         this._target.on('model-debug-speed-up', this.onModelDebugSpeedUp, this);
+        this._target.on('model-debug-collision', this.onModelDebugCollision, this);
         input.on(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
         input.on(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
         input.on(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
@@ -99,6 +101,7 @@ export class InputRouter {
         this._target.off('cycle-bullet-time', this.onCycleBulletTime, this);
         this._target.off('model-debug-speed-down', this.onModelDebugSpeedDown, this);
         this._target.off('model-debug-speed-up', this.onModelDebugSpeedUp, this);
+        this._target.off('model-debug-collision', this.onModelDebugCollision, this);
         input.off(Input.EventType.MOUSE_DOWN, this.onDebugCameraMouseDown, this);
         input.off(Input.EventType.MOUSE_MOVE, this.onDebugCameraMouseMove, this);
         input.off(Input.EventType.MOUSE_UP, this.onDebugCameraMouseUp, this);
@@ -281,6 +284,10 @@ export class InputRouter {
 
     private onModelDebugSpeedDown() {
         this._callbacks.onModelDebugSpeedDown();
+    }
+
+    private onModelDebugCollision(side: number) {
+        this._callbacks.onModelDebugCollision(side);
     }
 
     private onModelDebugSpeedUp() {

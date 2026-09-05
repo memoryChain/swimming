@@ -15,6 +15,7 @@ import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTu
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
 import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
+import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 
 export type TuningControl = {
     id: string;
@@ -74,6 +75,16 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.axialRollEnabled', '启用碰撞转体', '1=侧撞会给双方施加轴向角冲量；0=碰撞只产生位移和撞飞。', () => SWIMMER_COLLISION.axialRollEnabled, (v) => SWIMMER_COLLISION.axialRollEnabled = v, 1, 0, 1, 0),
             control('collision.axialRollDegreesPerImpulse', '碰撞转体强度', '每 1m/s 加权碰撞冲量转化出的轴向角速度。默认值允许普通碰撞翻半圈、强碰撞一圈或多圈；体重越轻越容易被转飞。', () => SWIMMER_COLLISION.axialRollDegreesPerImpulse, (v) => SWIMMER_COLLISION.axialRollDegreesPerImpulse = v, 10, 0, 720, 0, '°/s·m/s'),
             control('collision.axialRollMinimumLever', '碰撞最小转体力臂', '接近正面中心相撞时仍保留的最小转体比例。0=正撞只后退不翻；越大越容易让任何碰撞都产生明显翻滚。', () => SWIMMER_COLLISION.axialRollMinimumLever, (v) => SWIMMER_COLLISION.axialRollMinimumLever = v, 0.05, 0, 1, 2),
+            control('collision.softEnabled', '启用碰撞松软', '仅改变骨骼表现。调试自由泳中 J/I/O 分别测试左侧、正面、右侧碰撞。', () => COLLISION_SOFTNESS_TUNING.enabled, (v) => COLLISION_SOFTNESS_TUNING.enabled = v, 1, 0, 1, 0),
+            control('collision.softImpulseScale', '碰撞松软强度', '碰撞冲量带来的四肢松动程度，不影响推进和碰撞范围。', () => COLLISION_SOFTNESS_TUNING.impulseScale, (v) => COLLISION_SOFTNESS_TUNING.impulseScale = v, 1, 0, 20, 1),
+            control('collision.softMinimumImpact', '松软最小冲量', '浅碰与侧擦的最低视觉反馈，按双方体重分配。只改变松软表现，不增加实际击退。0=关闭下限。', () => COLLISION_SOFTNESS_TUNING.minimumImpact, (v) => COLLISION_SOFTNESS_TUNING.minimumImpact = v, 0.1, 0, 2, 2),
+            control('collision.softRelaxation', '碰撞松弛比例', '碰撞时松弛姿态替代划水姿态的最大比例。接近 1 时四肢明显失力，输入与推进继续计算。', () => COLLISION_SOFTNESS_TUNING.relaxation, (v) => COLLISION_SOFTNESS_TUNING.relaxation = v, 0.05, 0, 1, 2),
+            control('collision.softRecoverySeconds', '松弛恢复时间', '松弛姿态恢复划水的缓和时间，越大越像四肢暂时失去力量。', () => COLLISION_SOFTNESS_TUNING.recoverySeconds, (v) => COLLISION_SOFTNESS_TUNING.recoverySeconds = v, 0.05, 0.15, 1.5, 2, 's'),
+            control('collision.softFollowSpeed', '四肢跟随速度', '控制关节弹性回复速度。越小甩动越迟缓，肘膝和手脚由父关节运动带动。', () => COLLISION_SOFTNESS_TUNING.followSpeed, (v) => COLLISION_SOFTNESS_TUNING.followSpeed = v, 0.1, 0.3, 2, 2),
+            control('collision.softFrequency', '松软回摆频率', '碰撞驱动信号的回摆频率，影响松弛持续过程。', () => COLLISION_SOFTNESS_TUNING.frequency, (v) => COLLISION_SOFTNESS_TUNING.frequency = v, 1, 6, 20, 1),
+            control('collision.softDamping', '松软回摆阻尼', '数值越大，松动越快消退。实际值不超过回摆频率的 95%。', () => COLLISION_SOFTNESS_TUNING.damping, (v) => COLLISION_SOFTNESS_TUNING.damping = v, 0.5, 2, 12, 1),
+            control('collision.softArmDegrees', '松软手臂幅度', '手臂接收碰撞冲量的幅度，越大甩臂和屈肘越明显；仍受关节限制。', () => COLLISION_SOFTNESS_TUNING.armDegrees, (v) => COLLISION_SOFTNESS_TUNING.armDegrees = v, 1, 0, 40, 0),
+            control('collision.softLegDegrees', '松软腿部幅度', '腿部接收碰撞冲量的幅度，越大甩腿和屈膝越明显；仍受关节限制。', () => COLLISION_SOFTNESS_TUNING.legDegrees, (v) => COLLISION_SOFTNESS_TUNING.legDegrees = v, 1, 0, 30, 0),
             control('collision.pitchEnabled', '启用碰撞前后翻', '1=纵向碰撞会触发头脚方向的低维布娃娃俯仰；0=保持原有碰撞。普通划水不会驱动该状态。', () => COLLISION_PITCH_TUNING.enabled, (v) => COLLISION_PITCH_TUNING.enabled = v, 1, 0, 1, 0),
             control('collision.pitchDegreesPerImpulse', '碰撞前后翻强度', '每 1m/s 纵向加权冲量转化出的俯仰角速度。追尾者减速时头端下扎，被追尾者加速时反向后仰。', () => COLLISION_PITCH_TUNING.degreesPerLongitudinalImpulse, (v) => COLLISION_PITCH_TUNING.degreesPerLongitudinalImpulse = v, 10, 0, 540, 0, '°/s·m/s'),
             control('collision.pitchRightingTorque', '前后翻回正力', '水面对碰撞俯仰的复原力矩。越大越快拉回正常头朝前的水平姿态；强撞仍可越过竖直位置完成前翻。', () => COLLISION_PITCH_TUNING.rightingTorque, (v) => COLLISION_PITCH_TUNING.rightingTorque = v, 5, 0, 360, 0, '°/s²'),

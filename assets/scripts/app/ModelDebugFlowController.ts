@@ -177,6 +177,11 @@ export class ModelDebugFlowController {
         }
     }
 
+    previewCollisionSoftness(side: number): void {
+        if (!this._active) return;
+        this._debugMotor.collisionSoftness.impulse(side * 1.4, side === 0 ? -1.4 : -0.25);
+    }
+
     handleStroke(type: StrokeType): boolean {
         if (!this._active) {
             return false;

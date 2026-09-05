@@ -1,8 +1,8 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// 联机房间赛制与准备确认协议升级，拒绝新旧房间流程混跑。
-export const NET_RACE_PROTOCOL_VERSION = 11;
+// 新增碰撞柔性状态，确保双方都能同步骨骼回摆。
+export const NET_RACE_PROTOCOL_VERSION = 12;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

@@ -7,6 +7,8 @@ import { findNode } from './CharacterModelLoader';
 import type { DivePrepBoneName, DivePrepPoseSample } from './DivePrepPoseCurve';
 import { FLIP_TURN_KEYFRAME_1, FlipTurnBoneName, FlipTurnPoseSample } from './FlipTurnPoseCurve';
 import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotion, SampledActionMotionSample } from './SampledActionMotionCurve';
+import { CollisionLimpPoseController } from './CollisionLimpPoseController';
+import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
 
 const BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES: readonly BreaststrokeBoneName[] = [
     'L_Clavicle',
@@ -171,6 +173,7 @@ export class FreestylePoseController {
     private _modelVariantId = 'muscleMan';
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     private _movementDirectionSign = 1;
+    private readonly _collisionLimp = new CollisionLimpPoseController();
     private _movementHeadingRadians = 0;
     private _movementPitchRadians = 0;
 
@@ -229,6 +232,11 @@ export class FreestylePoseController {
         this.captureSwimFootSideInRoot();
         this.captureSampledStandingUprightCorrection();
         this.captureSampledActionGroundPlane();
+        this._collisionLimp.bind(this.root,
+            [this._leftArm, this._leftForeArm, this._leftHand],
+            [this._rightArm, this._rightForeArm, this._rightHand],
+            [this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe],
+            [this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe], this._head);
     }
 
     setBreaststrokeSamplesOverride(samples: readonly BreaststrokeMotionSample[] | null) {
@@ -244,6 +252,7 @@ export class FreestylePoseController {
     }
 
     restoreBasePose() {
+        this._collisionLimp.reset();
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
         for (const [bone, rotation] of this._boneBaseRotation) {
@@ -408,6 +417,15 @@ export class FreestylePoseController {
         );
         this.applyRootRollAroundMovementAxis(bodyRoll);
         this.root.setRotation(this._tmpResultRotation);
+    }
+
+    // 必须在本帧基础姿态完成后调用，松弛权重归零后恢复当前划水动作。
+    applyCollisionSoftness(state: Readonly<CollisionSoftnessState>, dt: number): void {
+        this._collisionLimp.apply(state, dt);
+    }
+
+    resetCollisionSoftness(): void {
+        this._collisionLimp.reset();
     }
 
     applyPreviewPose(selfTime: number) {
