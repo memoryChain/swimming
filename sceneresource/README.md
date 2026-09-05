@@ -13,6 +13,10 @@
 | `refine-stand-structure.py` | 按墙体和楼板接触面生成看台柱梁，合为一个运行时批次 | 生产脚本 |
 | `refine-pool-tiles.py` | 烘焙池内方砖贴图并同步池底、池壁 UV | 生产脚本 |
 | `refine-lane-floats.py` | 生成八边连续绳体，以重复贴图表现密集盘片，全池不超过 4,000 面 | 生产脚本 |
+| `build-venue-ad-atlas.py` | 使用项目字体轮廓生成广告 SVG 与 512×512 图集 | 美术源生成脚本 |
+| `refine-venue-ad-boards.py` | 替换 T1/T3 挡板 UV 和原图片，定向同步广告批次 | 生产脚本 |
+| `build-podium-atlas.py` | 生成名次数字、饰条与踏面共用的 256×256 图集 | 美术源生成脚本 |
+| `refine-podium-and-flags.py` | 重制低面数领奖台、修改源旗片配色并定向同步 | 生产脚本 |
 | `venue-textures/` | Blender 源纹理 | 按需编辑 |
 
 最终运行时文件为 `assets/race/pool/LowPolyPool.glb`。必须保留其现有 `.meta`，否则 `PoolScene.prefab` 的子资源引用会失效。
@@ -78,7 +82,7 @@
 - `StandArchitectureArt_Merged`：新增看台柱梁，48 个源构件合并为一个 Mesh、一个材质。柱底接地、柱顶接梁底、梁顶接 T3 楼板底，避开四侧出入口。
 - `BleacherAccess_Architecture_Merged`：入口楼梯及建筑结构。
 - `BleacherAccess_Rails_Merged`：入口扶手。
-- `OlympicPanels_Merged`：奥运装饰板。
+- `OlympicPanels_Merged`：第 1、3 层广告挡板；保留旧节点名以兼容运行时。
 - `PoolsideProps_Merged`：救生站、泳具车、仰泳旗线、泳池梯、裁判席和长凳，共用一个池岸纯色 atlas。
 - 泳池、水面、泳道线、浮标、领奖台和锚点保持各自运行时节点，不跨组 join。
 
@@ -100,7 +104,7 @@
 - 12 条色带只包含 `T1-T4 × 顶/正/侧`，色带中心为 `U=(index+0.5)/12`；不保留座椅备用色带、座椅材质或运行时座椅 overlay；
 - 将 `StandStructure_Merged` 和 `BleacherAccess_Architecture_Merged` 中对应墙面同步为 editable 使用的浅蓝灰色；
 - 将每个看台从 3 个材质 primitive 收敛为 1 个；
-- 将 `PoolsideProps_Merged` 的七种源材质按固定顶光方向烘焙为亮、中亮、中暗、暗四档，共 28 条色带，收敛为一个内嵌 `112x16` 纯色 atlas 和一个 primitive；白色管架使用偏蓝银灰白，不以纯白自发光输出；仰泳旗使用亮黄与安全橙交替配色，两面固定使用高亮档，保证从泳池两端及蓝色看台背景前观看都清晰；
+- 将 `PoolsideProps_Merged` 的七种源材质按固定顶光方向烘焙为亮、中亮、中暗、暗四档，共 28 条色带，收敛为一个内嵌 `112x16` 纯色 atlas 和一个 primitive；白色管架使用偏蓝银灰白，不以纯白自发光输出；第 8 版仰泳旗使用珍珠白与薄荷青交替配色，两面固定使用高亮档，保证从泳池两端及蓝色看台背景前观看都清晰；
 - `PoolsideProps_Merged` 导出前必须删除源模型遗留 UV，只保留 `PoolsidePropsFlatColorAtlasUV` 作为 `TEXCOORD_0`；Cocos Creator 3.8 不能正确绑定第三套 UV，atlas 落到 `TEXCOORD_2` 会导致整批运行时显示黑色。
 - 保存合批目标；
 - 清理生成过程中的临时 PNG。
@@ -162,7 +166,7 @@ npm run textures:check
 
 至少检查以下内容：
 
-- GLB 当前基线为 56 个节点、33 个 Mesh、38 primitive、20,390 triangles、863,148 bytes，约 0.82 MiB。贴图浮漂相对上一版六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。节点、材质批次和贴图数量不增加。此处为源 GLB 大小，不是微信最终包体增量。
+- GLB 当前基线为 56 个节点、33 个 Mesh、38 primitive、20,486 triangles、869,296 bytes，约 0.83 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。随后广告图集替换增加 480 bytes；本次旗色及领奖台增加 96 triangles、5,668 bytes 和一张 256×256 图集，节点与材质批次不增加。此处为源 GLB 大小，不是微信最终包体增量。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
@@ -232,3 +236,39 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 ```
 
 脚本从原绳体提取七条泳道的位置和 34 段颜色布局，缓存于对象自定义属性以供幂等重建；`--prototype` 仅在内存生成中间泳道的两段样板，不保存源文件。版本 6 的每条绳体必须闭合，每条边恰好连接两个面；相邻色段必须共用截面，生成时检查所有色段及端面法线、几何和 UV 对称性。`disc_float_count` 从该版本起表示纹理盘节数量，不是独立几何颗数。导出 Mesh 名 `lane_float_rope_batch_Mesh.002` 必须保持不变。同步后对比其他 32 个 Mesh 的几何、所有节点变换和所有子资源 UUID，并以相同高度、距离和视场检查正向及折返跟拍，同时检查侧视纹理分节与远处混叠。
+
+## 第 1、3 层广告挡板
+
+- 第 1 层 32 块、第 3 层 44 块，共 76 块源挡板。保留所有位置、几何、材质、Mesh 和运行时节点名称；导出为原 `OlympicPanels_Merged` 的一个 primitive。
+- `venue-textures/VenueAdBoards.svg` 是转曲矢量源，`VenueAdBoards.png` 是 512×512 RGB 不透明源图集。六款虚构运动广告交错排布，入口半板使用紧凑字标；转角及相邻挡板使用深蓝连接底色和居中字标，避开原几何重叠造成的文字截断。
+- 图集取代原 512×512 图片，Blender 图片名仍为 `blue_bleachers_3d_model_basecolor.003`，GLB 图片名仍为 `blue_bleachers_3d_model_basecolor`。图集每行 64px，普通广告使用中间 48px，上下留同色隔离区；最后一行底部为边框纯色采样点。
+- 不新增文字 Mesh、透明覆盖层、动态广告轮换、实时灯光或运行时代码。正反面按观看者方向单独计算 UV，不能靠双面材质修复镜像文字。
+- 同步时从 editable Append 对象，仅向已有合批写入 UV 并替换原图片。定位使用源面的世界重心，逐板检查完整面数；不能按整块中心分配端面，否则入口半板、转角容易串图。所有几何和节点变换须保持不变。
+- 已完成正反跟拍、两侧和转角离线预览，几何/图片身份对比、子 UUID 检查、Cocos 重导入与纹理策略审计。预览不含运行时观众及游戏水面；实际远处文字混叠和微信真机效果需在游戏中验收。
+
+修改矢量设计时，可直接编辑 SVG 后用 resvg 栅格化；从配方再生成需要 `fonttools`、`resvg-py`、`Pillow`，只在制作阶段使用。先备份源文件，再依次运行，最后执行标准合批、正式导出、重导入及纹理审计：
+
+```powershell
+python sceneresource/build-venue-ad-atlas.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-venue-ad-boards.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-venue-ad-boards.py -- --sync
+```
+
+## 薄荷青旗色与领奖台再生成
+
+- 两组仰泳旗共 24 片，原三角片几何、悬挂位置和双向显示保持。奇数片珍珠白，偶数片薄荷青；源材质为 `PoolsideProp_Flag_Pearl` / `PoolsideProp_Flag_Mint`。旗片区域按真实世界高度 `1.53..1.965` 识别，不能把上方细绳也当作旗布锁定亮度。
+- `PoolsidePropsFlatColorAtlas` 升至第 8 版，仍为 112×16 / 28 色带：旧橙色条带改为薄荷青，仅旗片上的黄色映射到原银白条带；泳具上的黄色及泳道浮漂不改。源旗片配色由 editable 保存，master 由批处理解码旧 UV 条带迁移，无需重建未改变的几何。
+- `award_podium_1/2/3` 共用原名 `LPVenue_cartoon_podium_red.001` 的一个材质；保留三个 Mesh 的原名。每台 24 个源顶点、44 triangles，合计 132 triangles，比旧方块增加 96。截面相连，底座与地面 Z=0.2 接触，窄顶盖和收进的台身构成主要轮廓，没有另加文字或装饰 renderer。
+- 原颁奖相机从 -X 侧观看，当前按视觉左至右排成 2—1—3。冠亚季军顶部 Z 分别保留 0.84/0.66/0.52，Blender Y 中心分别为 -1.5/-0.1/-2.9。运行时按同名节点的包围盒放置获奖者，二三名位置与对应台阶同步；比赛结果及联机逻辑不改。
+- `venue-textures/PodiumFinish.svg` 与 `.png` 为可编辑矢量源及 256×256 RGB 图集。内嵌图片名 `PodiumRankLabelAtlas`，由文字类命名自动采用 ASTC 6×6 + JPG 回退；线性采样、clamp-to-edge、无 mip。数字、金银铜饰条及防滑踏面都在图集中。
+- Blender 材质以自发光图集表达；`PoolEdgeToonOutline.ts` 初始化领奖台时把原贴图传给一个共享 `builtin-unlit` 材质，不再覆盖为纯红色。保留原静态描边流程，不增加逐帧更新、实时光照或自定义 Effect。
+- 添加图片会移动 `UnnamedTexture-N` 的序号。重导入后按所引用的图片 UUID 恢复旧 sampler，特别是广告的两份纹理都须线性采样，池岸纯色 atlas 仍为 nearest。不得仅按 Texture2D 序号继承设置；压缩与 mip 交给 `textures:fix`。
+- 已检查闭合性、朝外法线、接地、顶部高度、六侧正交、正反材质预览及泳池两端旗色。其余 29 个 Mesh 的几何和数据保持，旗线批次几何保持；旧 Mesh/材质/图片 UUID 保留，新增图片按正常导入生成 UUID。游戏内获奖者脚底接触、环绕描边与微信真机最终表现仍需验收。
+
+备份后按顺序运行，再执行标准合批、导出、Cocos 重导入、sampler 身份复核与纹理策略检查：
+
+```powershell
+python sceneresource/build-podium-atlas.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-podium-and-flags.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-podium-and-flags.py -- --sync
+```

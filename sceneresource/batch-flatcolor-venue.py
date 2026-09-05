@@ -36,7 +36,7 @@ PROP_ATLAS_IMAGE_NAME = "PoolsidePropsFlatColorAtlas"
 PROP_ATLAS_MATERIAL_NAME = "PoolsidePropsFlatColorAtlas_Material"
 PROP_ATLAS_UV_NAME = "PoolsidePropsFlatColorAtlasUV"
 PROP_ATLAS_VERSION_PROPERTY = "poolside_props_flat_color_atlas_version"
-PROP_ATLAS_VERSION = 7
+PROP_ATLAS_VERSION = 8
 PROP_ATLAS_WIDTH = 112
 PROP_ATLAS_HEIGHT = 16
 PROP_ATLAS_TEMP_FILENAME = ".PoolsidePropsFlatColorAtlas.tmp.png"
@@ -82,7 +82,7 @@ PROP_SOURCE_MATERIALS = {
     "LPVenue_cartoon_float_blue": (0.0275, 0.3569, 0.8784, 1.0),
     "LPVenue_cartoon_float_red": (1.0, 0.2431, 0.2196, 1.0),
     "LPVenue_cartoon_float_yellow": (1.0, 0.8353, 0.1843, 1.0),
-    "PoolsideProp_Flag_SafetyOrange": (1.0, 0.38, 0.045, 1.0),
+    "PoolsideProp_Flag_Mint": (0.16, 0.72, 0.56, 1.0),
     # Poolside tube frames used the pool-edge near-white at full emissive
     # intensity, which made them read like glowing wireframes against the dark
     # deck. Keep a cool venue white here; the four baked tone bands below add
@@ -299,6 +299,10 @@ def create_prop_atlas_material(image: bpy.types.Image) -> bpy.types.Material:
 
 
 def prop_source_name(material_name: str) -> str:
+    if material_name == 'PoolsideProp_Flag_Pearl':
+        return 'LPVenue_cartoon_pool_edge_white'
+    if material_name == 'PoolsideProp_Flag_SafetyOrange':
+        return 'PoolsideProp_Flag_Mint'
     for source_name in PROP_SOURCE_MATERIALS:
         if material_name == source_name or re.fullmatch(re.escape(source_name) + r"\.\d{3}", material_name):
             return source_name
@@ -325,7 +329,7 @@ def prop_tone_index(world_normal: Vector) -> int:
 def is_backstroke_pennant(obj: bpy.types.Object, polygon: bpy.types.MeshPolygon) -> bool:
     center = obj.matrix_world @ polygon.center
     on_flag_line = min(abs(center.x - 5.0), abs(center.x - 45.0)) <= 0.08
-    return on_flag_line and abs(center.y) <= 10.6 and 1.68 <= center.z <= 2.16
+    return on_flag_line and abs(center.y) <= 10.6 and 1.53 <= center.z <= 1.965
 
 
 def collapse_prop_target(obj: bpy.types.Object, material: bpy.types.Material) -> None:
@@ -372,7 +376,12 @@ def collapse_prop_target(obj: bpy.types.Object, material: bpy.types.Material) ->
         # two broad faces have opposite normals, so directional tone baking made
         # one camera side land in the darkest band. Lock only the pennant zone to
         # the bright band; poles, cable and all solid props keep four-tone volume.
-        tone = 0 if is_backstroke_pennant(obj, polygon) else prop_tone_index(normal_matrix @ polygon.normal)
+        pennant = is_backstroke_pennant(obj, polygon)
+        # 第8版复用旧橙色条带为薄荷青，仅把旗片上的黄色切换至珍珠白。
+        # 泳具等其他黄色物体和浮漂材质不变，图集仍为28条色带。
+        if pennant and source_name == 'LPVenue_cartoon_float_yellow':
+            source_name = 'LPVenue_cartoon_pool_edge_white'
+        tone = 0 if pennant else prop_tone_index(normal_matrix @ polygon.normal)
         u = (PROP_COLOR_INDEX[(source_name, tone)] + 0.5) / len(PROP_ATLAS_COLORS)
         for loop_index in polygon.loop_indices:
             uv_layer.data[loop_index].uv = (u, 0.5)

@@ -1,4 +1,4 @@
-import { Color, gfx, Mat4, Material, Mesh, MeshRenderer, Node, utils, Vec3 } from 'cc';
+import { Color, gfx, Mat4, Material, Mesh, MeshRenderer, Node, Texture2D, utils, Vec3 } from 'cc';
 
 // Build static, double-sided surface ribbons for selected venue geometry. The
 // venue GLB remains compact and the generated lines have no race-frame CPU work.
@@ -7,7 +7,6 @@ const EDGE_NODE_NAME = 'pool_edge_batch';
 const POOL_EDGE_LINE_NODE_NAME = 'PoolEdgeOutlineLines';
 const PODIUM_NODE_NAMES = ['award_podium_1', 'award_podium_2', 'award_podium_3'];
 const PODIUM_LINE_NODE_NAME = 'AwardsPodiumOutlineLines';
-const PODIUM_SURFACE_COLOR = new Color(234, 89, 89, 255);
 const PODIUM_CONTACT_EPSILON = 1e-3;
 const POOL_EDGE_LINE_THICKNESS = 0.01;
 const POOL_EDGE_LINE_SURFACE_OFFSET = 0.002;
@@ -924,15 +923,28 @@ export function applyAwardsPodiumToonOutline(pool: Node | null, debug?: (message
         return;
     }
 
-    const surfaceMaterial = new Material();
-    surfaceMaterial.initialize({ effectName: 'builtin-unlit' });
-    surfaceMaterial.name = 'AwardsPodiumUnlitMaterial';
-    surfaceMaterial.setProperty('mainColor', PODIUM_SURFACE_COLOR);
-    for (const podium of podiums) {
-        const materialCount = Math.max(1, podium.renderer.sharedMaterials.length);
-        for (let primitive = 0; primitive < materialCount; primitive++) {
-            podium.renderer.setMaterial(surfaceMaterial, primitive);
+    // 复用原来的一个共享无光照材质，同时保留美术图集中的数字、饰条和踏面。
+    // 只在场馆初始化读取一次，不把自发光源材质留在更重的标准光照通路上。
+    const source = podiums[0].renderer.getSharedMaterial(0);
+    let texture: Texture2D | null = null;
+    for (const key of ['emissiveMap', 'albedoMap', 'mainTexture']) {
+        const candidate = source?.getProperty(key, 0);
+        if (candidate instanceof Texture2D) {
+            texture = candidate;
+            break;
         }
+    }
+    if (texture) {
+        const surfaceMaterial = new Material();
+        surfaceMaterial.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
+        surfaceMaterial.name = 'AwardsPodiumUnlitMaterial';
+        surfaceMaterial.setProperty('mainColor', Color.WHITE);
+        surfaceMaterial.setProperty('mainTexture', texture);
+        for (const podium of podiums) {
+            podium.renderer.setMaterial(surfaceMaterial, 0);
+        }
+    } else {
+        debug?.('颁奖台图集尚未就绪，保留源材质');
     }
 
     const geometry: LineGeometry = { positions: [], indices: [] };

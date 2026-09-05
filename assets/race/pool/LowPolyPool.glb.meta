@@ -306,7 +306,7 @@
       "name": "award_podium_1.002.mesh",
       "userData": {
         "gltfIndex": 13,
-        "triangleCount": 12
+        "triangleCount": 44
       },
       "ver": "1.1.1",
       "imported": true,
@@ -324,7 +324,7 @@
       "name": "award_podium_2.002.mesh",
       "userData": {
         "gltfIndex": 14,
-        "triangleCount": 12
+        "triangleCount": 44
       },
       "ver": "1.1.1",
       "imported": true,
@@ -342,7 +342,7 @@
       "name": "award_podium_3.002.mesh",
       "userData": {
         "gltfIndex": 15,
-        "triangleCount": 12
+        "triangleCount": 44
       },
       "ver": "1.1.1",
       "imported": true,
@@ -714,6 +714,30 @@
       ],
       "subMetas": {}
     },
+    "9f58d": {
+      "importer": "gltf-embeded-image",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@9f58d",
+      "displayName": "",
+      "id": "9f58d",
+      "name": "PodiumRankLabelAtlas.image",
+      "userData": {
+        "gltfIndex": 4,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-opaque-6x6"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".json",
+        ".png"
+      ],
+      "subMetas": {}
+    },
     "20be9": {
       "importer": "gltf-embeded-image",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@20be9",
@@ -721,7 +745,7 @@
       "id": "20be9",
       "name": "blue_bleachers_3d_model_basecolor.image",
       "userData": {
-        "gltfIndex": 4,
+        "gltfIndex": 5,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": false,
         "type": "texture",
@@ -733,8 +757,8 @@
       "ver": "1.0.3",
       "imported": true,
       "files": [
-        ".jpg",
-        ".json"
+        ".json",
+        ".png"
       ],
       "subMetas": {}
     },
@@ -745,7 +769,7 @@
       "id": "bc207",
       "name": "PoolsidePropsFlatColorAtlas.image",
       "userData": {
-        "gltfIndex": 5,
+        "gltfIndex": 6,
         "fixAlphaTransparencyArtifacts": true,
         "hasAlpha": true,
         "type": "texture",
@@ -861,6 +885,29 @@
       "id": "9b782",
       "name": "UnnamedTexture-4.texture",
       "userData": {
+        "wrapModeS": "clamp-to-edge",
+        "wrapModeT": "clamp-to-edge",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "a751d540-5ebd-4868-a41a-334975b3aed3@9f58d"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "99ea5": {
+      "importer": "texture",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@99ea5",
+      "displayName": "",
+      "id": "99ea5",
+      "name": "UnnamedTexture-6.texture",
+      "userData": {
         "wrapModeS": "repeat",
         "wrapModeT": "repeat",
         "minfilter": "linear",
@@ -877,12 +924,12 @@
       ],
       "subMetas": {}
     },
-    "99ea5": {
+    "006bd": {
       "importer": "texture",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@99ea5",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@006bd",
       "displayName": "",
-      "id": "99ea5",
-      "name": "UnnamedTexture-6.texture",
+      "id": "006bd",
+      "name": "UnnamedTexture-7.texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
@@ -1225,6 +1272,10 @@
         "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@0b1c1"
       },
       {
+        "name": "PodiumRankLabelAtlas",
+        "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@9f58d"
+      },
+      {
         "name": "blue_bleachers_3d_model_basecolor",
         "uri": "a751d540-5ebd-4868-a41a-334975b3aed3@20be9"
       },
@@ -1295,7 +1346,8 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@9b633",
         "a751d540-5ebd-4868-a41a-334975b3aed3@9b782",
         "a751d540-5ebd-4868-a41a-334975b3aed3@50743",
-        "a751d540-5ebd-4868-a41a-334975b3aed3@99ea5"
+        "a751d540-5ebd-4868-a41a-334975b3aed3@99ea5",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@006bd"
       ],
       "materials": [
         "a751d540-5ebd-4868-a41a-334975b3aed3@bfef7",

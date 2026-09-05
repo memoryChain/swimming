@@ -82,6 +82,7 @@ When using the orchestrator:
 - 重复排列的浮漂等近景资产还须检查侧视覆盖率：分别量化单颗轴向长度、中心节距和端点间隙。优先移动现有顶点拉长单颗来缩小空隙，避免只靠增加颗数补密度；圆周边数则按近景轮廓决定，不能为预算削成明显尖角后只用纵向透视验收。
 - 轴向包围盒接近不等于主体连续：双锥尖端之间即使只留小缝，主体仍可能显得像串珠。需要紧密盘节时用完整端面和等截面柱身，按主要可见高度检查空隙，不能继续拉长尖端来冒充盘身密度。
 - 移动端密集重复盘片若在主要视角只贡献细小明暗条纹，先验证低面数连续外壳加重复纹理，避免为不可辨的端面与内部细绳支付几何成本。纹理密度与几何密度独立设置；检查正反纹理一致、近景轮廓损失和远处混叠，再决定是否值得增加真实盘片。不可把纹理假凹槽描述为真实轮廓细节。
+- 既有场馆广告优先复用挡板几何、材质与图片身份，用图集和 UV 分配不同设计；入口半板需单独排版，转角重叠区需留出文字安全边距。两面文字以各自观看方向确定 UV，检查四侧及转角，不能只看一面。向合批同步 UV 时用源面的空间位置匹配并逐模块验证覆盖面数，避免仅按整块中心误分配相邻端面。
 
 - Use Blender MCP directly when the user asks to model, critique, arrange, clean, or inspect Blender assets.
 - For complex reference-image modeling, start with an orchestrated reference run unless the user explicitly asks to work directly in the main loop.
