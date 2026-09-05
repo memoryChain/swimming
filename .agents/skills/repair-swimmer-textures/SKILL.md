@@ -1,13 +1,15 @@
 ---
 name: repair-swimmer-textures
-description: Inspect and repair textured rigged swimmer or humanoid GLB/GLTF models, remove unwanted baked shadows, and implement efficient runtime outfit recoloring in Cocos Creator using either a UV mask or a clean-white color key. Use when imported characters need swimsuit or swim-cap color variants, generated masks show triangle folds, seams, jagged edges, or skin bleed, UVs are fragmented, or the original detailed skin must remain intact on mobile or WeChat Mini Games.
+description: 修复带骨骼泳者或人形 GLB/GLTF 的贴图脏色、颜色毛边、头发与袜子杂色、跨 UV 三角错色，保留原有服装图案和设计；处理已确认的烘焙阴影，并按需实现 Cocos 移动端 UV 遮罩或白色键换色。适用于源模型导入前精修、服装或泳帽换色、遮罩接缝与皮肤串色；普通局部贴图修复默认保持现有 UV。
 ---
 
 # Repair Swimmer Textures
 
 Windows／macOS 共用此文件。项目路径、Blender 启动和同步方式见 [仓库技能说明](../../README.md)。以下命令从项目根目录运行，macOS 将 `python` 改为 `python3`。
 
-Preserve the source model, repair only verified UV regions, and choose the simplest recolor method that keeps garment boundaries clean on mobile.
+保留源模型与已确认设计，只修复核实的问题区域。源贴图精修、阴影修复、运行时换色与游戏资源替换分别确定范围，不默认连带执行。
+
+处理颜色毛边、服装／灰白头发／袜子杂色、跨 UV 错色或建立精修验收标准时，先完整阅读 [保留设计的精修流程](references/detail-preserving-cleanup.md) 及其链接的项目规范。原则是重画清晰边界，不靠删设计或整体模糊掩盖问题。
 
 Read [references/white-key-recolor.md](references/white-key-recolor.md) when the source garment is white, when generated masks expose triangle folds or jagged edges, or when deciding whether to revise UVs instead of generating a mask.
 
@@ -17,22 +19,20 @@ Read [references/white-key-recolor.md](references/white-key-recolor.md) when the
 2. Inspect the model before editing:
    - Confirm forward/up axes, origin, scale, armature, skinned mesh, material count, texture size, UV map, and relevant bone names.
    - Run the bundled audit command and read its full output.
-3. Identify the defect:
-   - Confirm the dark armpit area is baked into base color, not lighting, normals, ambient occlusion, or a shader.
-   - Inspect both the model and base-color texture. Do not paint over legitimate anatomical shading blindly.
-4. Repair the shadow with a constrained UV mask:
+3. 区分底色污染、UV／采样接缝、灯光／法线／AO 与真实低模结构，检查模型和底色贴图。局部精修按上述精修流程执行；仅在确认腋下暗部烘焙于底色时执行下一步。
+4. 仅对已确认的烘焙阴影，使用受限 UV 遮罩修复：
    - Select faces using normalized body position plus arm/clavicle bone weights.
    - Expand from the verified underarm seed along mesh topology into upper-torso faces; lower the correction threshold with distance.
    - Estimate replacement skin color from nearby verified skin faces.
    - Correct only pixels below the local luminance threshold.
    - Export a new texture and compare it with the source.
-5. Choose the recolor selector:
+5. 仅在请求换色时选择换色区域方案：
    - Prefer a clean-white key when the target garment is deliberately neutral white and all near-white non-target regions are acceptable members of the same color channel.
    - Otherwise generate a UV mask: swimsuit/trunks in red, cap in green, and untouched regions black.
-   - If fragmented or overlapping UVs prevent both clean internal coverage and clean external edges, repair the UV/material layout instead of hiding the problem with blur.
+   - 若碎片化或重叠 UV 无法兼顾内部覆盖与外部清晰边界，先说明并确认 UV／材质调整范围，再转入对应技能流程；不要自动重排，也不要用模糊掩盖问题。
 6. Re-export or relink the repaired base texture without changing mesh, skeleton, bone names, origin, or animation compatibility.
-7. Integrate the shared base texture, shared mask, and per-character colors. Read [references/cocos-runtime-recolor.md](references/cocos-runtime-recolor.md) for Cocos details.
-8. Validate the original appearance, several recolors, animation poses, and mobile resource cost.
+7. 仅在任务包含游戏集成时接入共享底图、按需共享遮罩与角色颜色；详见 [Cocos 换色接入](references/cocos-runtime-recolor.md)。确认目标角色／路径与覆盖范围，源精修不自动替换运行资源。
+8. 验证原设计、修复区域和结构兼容性；涉及换色、动作或运行交付时，分别验证对应效果与移动端资源成本。未执行的环节标记未验证。
 
 ## Blender Commands
 
@@ -83,6 +83,8 @@ If the verified source garments are black with cyan accents, add `--refine-mode 
 - In white-key mode, derive coverage from the untinted sRGB base sample, preserve luminance as shading, and avoid the extra mask texture lookup.
 
 ## Validation Gates
+
+所有任务先通过源设计保真、局部色界、结构审计与重新导入检查。下列腋下、遮罩、换色、动作、Cocos 与实机条目按任务范围执行，不把不适用或尚未执行的检查记为通过。
 
 - Original skin detail, face, hands, torso, and legs remain unchanged outside the repair area.
 - Both armpits match nearby skin without flat patches or UV seams.

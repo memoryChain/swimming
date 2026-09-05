@@ -109,9 +109,6 @@ export class OnlineRoomView {
         inviteHint.horizontalAlign = Label.HorizontalAlign.RIGHT;
         inviteHint.color = MUTED;
         for (let i = 0; i < 8; i++) this.cards.push(this.buildCard(p, i));
-        this.picture(p, 'ExitBackground', ART.exitButton, 696, 608, 210, 102);
-        this.text(p, 'ExitText', '退出房间', 713, 635, 177, 44, 28).color = HEADER_INK;
-        this.touch(p, 'ExitHit', 704, 616, 195, 86, actions.exit);
         this.primaryArt = this.picture(p, 'PrimaryBackground', RESOURCE_PATHS.lobbyUi.startButton, 922, 608, 332, 102);
         this.primaryText = this.text(p, 'PrimaryText', '', 951, 630, 272, 49, 38);
         this.primary = this.touch(p, 'PrimaryHit', 938, 615, 300, 82, actions.primary);

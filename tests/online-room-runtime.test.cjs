@@ -100,6 +100,17 @@ test('八个座位稳定，空座位不挤占，重复准备切换不新增节�
     assert.equal(v.primaryText.string, '取消准备'); assert.match(v.primaryArt.spriteFrame.path, /cancel-ready/);
     v.update(state()); assert.equal(v.primaryText.string, '准备'); assert.match(v.primaryArt.spriteFrame.path, /start-button/);
 });
+test('只保留左上返回退出房间，底部不残留退出按钮与点击区域', () => {
+    let exits = 0;
+    const v = new OnlineRoomView(new Node('root'), { exit() { exits++; }, primary() {}, invite() {}, mode() {}, kick() {} });
+    for (const isHost of [true, false]) {
+        v.update(state({ isHost }));
+        for (const name of ['ExitBackground', 'ExitText', 'ExitHit']) assert.equal(find(v.root, name), undefined);
+        find(v.root, 'Back').click();
+    }
+    assert.equal(exits, 2);
+    assert.deepEqual(find(v.root, 'PrimaryHit').position, { x: 448, y: -296, z: 0 });
+});
 test('房主与成员权限不同，踢人需要两次确认且不能踢自己', () => {
     let kicked = 0, mode = 0;
     const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() { mode++; }, kick() { kicked++; } });

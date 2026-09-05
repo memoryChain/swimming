@@ -1,0 +1,166 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f",
+  "files": [],
+  "subMetas": {
+    "fdfd4": {
+      "importer": "gltf-mesh",
+      "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@fdfd4",
+      "displayName": "",
+      "id": "fdfd4",
+      "name": "Mecha06de_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 5386
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "a955b": {
+      "importer": "gltf-embeded-image",
+      "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@a955b",
+      "displayName": "",
+      "id": "a955b",
+      "name": "Mecha06de_BaseColor.image",
+      "userData": {
+        "gltfIndex": 0,
+        "fixAlphaTransparencyArtifacts": true,
+        "hasAlpha": false,
+        "type": "texture",
+        "compressSettings": {
+          "useCompressTexture": true,
+          "presetId": "astc-opaque-6x6"
+        }
+      },
+      "ver": "1.0.3",
+      "imported": true,
+      "files": [
+        ".jpg",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "e39f7": {
+      "importer": "texture",
+      "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@e39f7",
+      "displayName": "",
+      "id": "e39f7",
+      "name": "UnnamedTexture.texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@a955b"
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "79a18": {
+      "importer": "gltf-material",
+      "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@79a18",
+      "displayName": "",
+      "id": "79a18",
+      "name": "Mecha06de_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "8826f": {
+      "importer": "gltf-scene",
+      "uuid": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@8826f",
+      "displayName": "",
+      "id": "8826f",
+      "name": "CartonSwimmer15.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [
+      {
+        "name": "Mecha06de_BaseColor",
+        "uri": "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@a955b"
+      }
+    ],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@fdfd4"
+      ],
+      "skeletons": [
+        "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@f9d1d"
+      ],
+      "textures": [
+        "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@e39f7"
+      ],
+      "materials": [
+        "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@79a18"
+      ],
+      "scenes": [
+        "2c0bdd6d-8ac2-4622-854d-87b33c1ef78f@8826f"
+      ]
+    }
+  }
+}

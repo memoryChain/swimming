@@ -1,6 +1,6 @@
 import { RaceDifficulty } from '../core/GameBalance';
 
-export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13';
+export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13' | 'cartonSwimmer14' | 'cartonSwimmer15';
 
 export type PlayerCharacterDefinition = {
     id: PlayerCharacterId;
@@ -120,6 +120,26 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 54,
         description: '背负轻型潜水装备的耐力型泳者，以稳定节奏穿越深水。',
         skillName: '深潜续航', skillDescription: '扎实的耐力与踢腿控制让长距离推进更加稳定。',
+        supportsSkinTone: false,
+    },
+    {
+        id: 'cartonSwimmer14', name: '霓绿少女', modelVariantId: 'cartonSwimmer14', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '身着荧绿装备的银发少女，以轻快稳定的节奏逐浪前行。',
+        skillName: '霓绿节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加顺畅。',
+        supportsSkinTone: false,
+    },
+    {
+        id: 'cartonSwimmer15', name: '破浪机甲', modelVariantId: 'cartonSwimmer15', unlocked: true,
+        stamina: 85, technique: 84, burst: 80,
+        weight: 1.0,
+        energyGain: 82,
+        kick: 50,
+        description: '身披白绿装甲的机械泳者，以稳定节奏破浪前行。',
+        skillName: '机甲节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
         supportsSkinTone: false,
     },
     {

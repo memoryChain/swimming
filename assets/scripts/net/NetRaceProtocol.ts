@@ -1,8 +1,8 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// 新增碰撞柔性状态，确保双方都能同步骨骼回摆。
-export const NET_RACE_PROTOCOL_VERSION = 12;
+// 碰撞柔性状态、可选角色及养成配置共同构成联网共享语义，拒绝新旧版本混跑。
+export const NET_RACE_PROTOCOL_VERSION = 13;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

@@ -92,6 +92,14 @@ const CARTON_SWIMMER13_PREFAB_CANDIDATES = [
     'models/CartonSwimmer13',
     'models/CartonSwimmer13/CartonSwimmer13',
 ];
+const CARTON_SWIMMER14_PREFAB_CANDIDATES = [
+    'models/CartonSwimmer14',
+    'models/CartonSwimmer14/CartonSwimmer14',
+];
+const CARTON_SWIMMER15_PREFAB_CANDIDATES = [
+    'models/CartonSwimmer15',
+    'models/CartonSwimmer15/CartonSwimmer15',
+];
 
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     {
@@ -244,6 +252,41 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
             mode: 'mask',
             maskPath: 'models/CartonSwimmer13ColorMask/texture',
             labelPrefix: '深潜先锋',
+            usesCapChannel: false,
+        },
+    },
+    {
+        id: 'cartonSwimmer14',
+        label: '霓绿少女',
+        candidates: CARTON_SWIMMER14_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 1.0,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'mask',
+            maskPath: 'models/CartonSwimmer14ColorMask/texture',
+            labelPrefix: '霓绿少女',
+            usesCapChannel: false,
+        },
+    },
+    // 新机甲沿用唯一标准动作集；遮罩只控制绿甲，不把白甲或关节当肤色。
+    {
+        id: 'cartonSwimmer15',
+        label: '破浪机甲',
+        candidates: CARTON_SWIMMER15_PREFAB_CANDIDATES,
+        modelScaleMultiplier: 1.0,
+        preserveOriginalMaterial: true,
+        swimHeadLiftDegrees: 4,
+        sampledActionOverrideDir: TPOSE_ACTION_PROFILE_DIR,
+        sampledActionOverrideFilePrefix: 'Tpose_',
+        divePrepOverridePath: `${TPOSE_ACTION_PROFILE_DIR}/Tpose_divePrep`,
+        dynamicColor: {
+            mode: 'mask',
+            maskPath: 'models/CartonSwimmer15ColorMask/texture',
+            labelPrefix: '破浪机甲',
             usesCapChannel: false,
         },
     },
@@ -425,6 +468,19 @@ export const RESOURCE_PATHS = {
         cardSelected: 'ui/character-v1/card-selected/texture',
         portraitBlue: 'ui/character-v1/portrait-blue/texture',
         portraitRed: 'ui/character-v1/portrait-red/texture',
+        portraits: {
+            cartonSwimmer6: 'ui/character-v1/portrait-cartonSwimmer6/texture',
+            cartonSwimmer8: 'ui/character-v1/portrait-cartonSwimmer8/texture',
+            cartonSwimmer5: 'ui/character-v1/portrait-cartonSwimmer5/texture',
+            cartonSwimmer9: 'ui/character-v1/portrait-cartonSwimmer9/texture',
+            cartonSwimmer10: 'ui/character-v1/portrait-cartonSwimmer10/texture',
+            cartonSwimmer11: 'ui/character-v1/portrait-cartonSwimmer11/texture',
+            cartonSwimmer12: 'ui/character-v1/portrait-cartonSwimmer12/texture',
+            cartonSwimmer13: 'ui/character-v1/portrait-cartonSwimmer13/texture',
+            cartonSwimmer14: 'ui/character-v1/portrait-cartonSwimmer14/texture',
+            cartonSwimmer15: 'ui/character-v1/portrait-cartonSwimmer15/texture',
+            muscleMan: 'ui/character-v1/portrait-muscleMan/texture',
+        },
         lockIcon: 'ui/character-v1/lock-icon/texture',
         statusActive: 'ui/character-v1/status-active/texture',
         skinWarm: 'ui/character-v1/skin-warm/texture',

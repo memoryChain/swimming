@@ -463,8 +463,16 @@ export class PrepareRaceFlow {
         card.getComponent(UITransform)!.setContentSize(CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT);
         card.setPosition(-84.5 + column * CHARACTER_CARD_X_PITCH, firstRowY - row * CHARACTER_CARD_Y_PITCH, 1);
 
-        const portraitPath = index % 2 === 0 ? RESOURCE_PATHS.characterUi.portraitBlue : RESOURCE_PATHS.characterUi.portraitRed;
-        makeRaceTextureSprite('Portrait', card, portraitPath, 160, 190, 0.5, 0, 1);
+        if (character) {
+            // 方形卡面居中裁切为 160×156，保持头胸比例，姓名栏仍独立覆盖。
+            makeRaceTextureRegionSprite(
+                'Portrait', card, RESOURCE_PATHS.characterUi.portraits[character.id],
+                new Rect(0, 4, 320, 312), 160, 156, 0.5, 17, 1,
+            );
+        } else {
+            const portraitPath = index % 2 === 0 ? RESOURCE_PATHS.characterUi.portraitBlue : RESOURCE_PATHS.characterUi.portraitRed;
+            makeRaceTextureSprite('Portrait', card, portraitPath, 160, 190, 0.5, 0, 1);
+        }
 
         if (!character) {
             const lockDim = makeRoundedRect('LockedDim', card, 160, 156, uiColor(8, 20, 32, 145), 10);
