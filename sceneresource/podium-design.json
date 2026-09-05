@@ -1,0 +1,17 @@
+{
+  "version": 3,
+  "stepWidth": 1.2,
+  "stepHeights": [0.78, 0.56, 0.44],
+  "topChamfer": 0.02,
+  "numberHeight": 0.25,
+  "colors": {
+    "front": "#1764D5",
+    "side": "#104796",
+    "top": "#C6E6F4",
+    "rim": "#F0F6F7",
+    "base": "#123B78",
+    "ribbon": "#39C7E9",
+    "number": "#FFFFFF",
+    "gold": "#FFCF54"
+  }
+}

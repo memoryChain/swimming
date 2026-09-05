@@ -166,7 +166,7 @@ npm run textures:check
 
 至少检查以下内容：
 
-- GLB 当前基线为 56 个节点、33 个 Mesh、38 primitive、20,486 triangles、869,296 bytes，约 0.83 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。随后广告图集替换增加 480 bytes；本次旗色及领奖台增加 96 triangles、5,668 bytes 和一张 256×256 图集，节点与材质批次不增加。此处为源 GLB 大小，不是微信最终包体增量。
+- GLB 当前基线为 56 个节点、33 个 Mesh、38 primitive、20,414 triangles、868,164 bytes，约 0.83 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。领奖台第 3 版保持 60 triangles、原一张 256×256 图集及批次，比第 2 版减少 372 bytes。此处为源 GLB 大小，不是微信最终包体增量。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
@@ -258,9 +258,9 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 
 - 两组仰泳旗共 24 片，原三角片几何、悬挂位置和双向显示保持。奇数片珍珠白，偶数片薄荷青；源材质为 `PoolsideProp_Flag_Pearl` / `PoolsideProp_Flag_Mint`。旗片区域按真实世界高度 `1.53..1.965` 识别，不能把上方细绳也当作旗布锁定亮度。
 - `PoolsidePropsFlatColorAtlas` 升至第 8 版，仍为 112×16 / 28 色带：旧橙色条带改为薄荷青，仅旗片上的黄色映射到原银白条带；泳具上的黄色及泳道浮漂不改。源旗片配色由 editable 保存，master 由批处理解码旧 UV 条带迁移，无需重建未改变的几何。
-- `award_podium_1/2/3` 共用原名 `LPVenue_cartoon_podium_red.001` 的一个材质；保留三个 Mesh 的原名。每台 24 个源顶点、44 triangles，合计 132 triangles，比旧方块增加 96。截面相连，底座与地面 Z=0.2 接触，窄顶盖和收进的台身构成主要轮廓，没有另加文字或装饰 renderer。
-- 原颁奖相机从 -X 侧观看，当前按视觉左至右排成 2—1—3。冠亚季军顶部 Z 分别保留 0.84/0.66/0.52，Blender Y 中心分别为 -1.5/-0.1/-2.9。运行时按同名节点的包围盒放置获奖者，二三名位置与对应台阶同步；比赛结果及联机逻辑不改。
-- `venue-textures/PodiumFinish.svg` 与 `.png` 为可编辑矢量源及 256×256 RGB 图集。内嵌图片名 `PodiumRankLabelAtlas`，由文字类命名自动采用 ASTC 6×6 + JPG 回退；线性采样、clamp-to-edge、无 mip。数字、金银铜饰条及防滑踏面都在图集中。
+- `award_podium_1/2/3` 共用原名 `LPVenue_cartoon_podium_red.001` 的一个材质；保留三个 Mesh 的原名。第 3 版每台 12 个源顶点、20 triangles，合计 60 triangles，比第 1 版减少 72。台身满宽相接，前后立面齐平，仅踏面边缘保留 2cm 倒角，无独立底脚和外挑顶盖。每台宽 1.2m，总宽 3.6m，深 1.1m；地面以上高度分别 0.78/0.56/0.44m。比例和配色集中于 `podium-design.json`，供模型与图集生成脚本共同读取。
+- 原颁奖相机从 -X 侧观看，当前按视觉左至右排成 2—1—3。冠亚季军顶部 Z 分别为 0.98/0.76/0.64，Blender Y 中心分别为 -1.5/-0.3/-2.7。底部均与地面 Z=0.2 接触。运行时按同名节点包围盒放置获奖者，相机目标随冠军台高度调整；无需修改比赛结果、联机或站位代码。
+- `venue-textures/PodiumFinish.svg` 与 `.png` 为可编辑矢量源及 256×256 RGB 图集。内嵌图片名 `PodiumRankLabelAtlas`，由文字类命名自动采用 ASTC 6×6 + JPG 回退；线性采样、clamp-to-edge、无 mip。采用亮蓝正面、深蓝端面、浅蓝白踏面、统一25cm高的粗体矢量号码和冠军金色冠标；底部6.5cm深蓝带与其上5cm青色带连贯。三块128²名次区加一块纯色区，提高号码纵向分辨率，未增加图集尺寸。去掉上一版粗踏面条纹，靠固定面向色差表现体积。
 - Blender 材质以自发光图集表达；`PoolEdgeToonOutline.ts` 初始化领奖台时把原贴图传给一个共享 `builtin-unlit` 材质，不再覆盖为纯红色。保留原静态描边流程，不增加逐帧更新、实时光照或自定义 Effect。
 - 添加图片会移动 `UnnamedTexture-N` 的序号。重导入后按所引用的图片 UUID 恢复旧 sampler，特别是广告的两份纹理都须线性采样，池岸纯色 atlas 仍为 nearest。不得仅按 Texture2D 序号继承设置；压缩与 mip 交给 `textures:fix`。
 - 已检查闭合性、朝外法线、接地、顶部高度、六侧正交、正反材质预览及泳池两端旗色。其余 29 个 Mesh 的几何和数据保持，旗线批次几何保持；旧 Mesh/材质/图片 UUID 保留，新增图片按正常导入生成 UUID。游戏内获奖者脚底接触、环绕描边与微信真机最终表现仍需验收。
@@ -272,3 +272,5 @@ python sceneresource/build-podium-atlas.py
 python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-podium-and-flags.py
 python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-podium-and-flags.py -- --sync
 ```
+
+仅重制领奖台时在 editable 命令末尾追加 `-- --podium-only`，避免重新处理旗片。第 3 版导出保持原 38 primitives、7 张内嵌图片及所有节点变换；其余 30 个 Mesh 和非领奖台图片不变。检查所有子资源 UUID、按新版尺寸推导的包围盒及正反预览；游戏内角色脚底、环绕描边和真机效果仍需验收。

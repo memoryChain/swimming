@@ -306,7 +306,7 @@
       "name": "award_podium_1.002.mesh",
       "userData": {
         "gltfIndex": 13,
-        "triangleCount": 44
+        "triangleCount": 20
       },
       "ver": "1.1.1",
       "imported": true,
@@ -324,7 +324,7 @@
       "name": "award_podium_2.002.mesh",
       "userData": {
         "gltfIndex": 14,
-        "triangleCount": 44
+        "triangleCount": 20
       },
       "ver": "1.1.1",
       "imported": true,
@@ -342,7 +342,7 @@
       "name": "award_podium_3.002.mesh",
       "userData": {
         "gltfIndex": 15,
-        "triangleCount": 44
+        "triangleCount": 20
       },
       "ver": "1.1.1",
       "imported": true,

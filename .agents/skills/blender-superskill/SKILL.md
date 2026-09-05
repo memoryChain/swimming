@@ -142,6 +142,9 @@ When using the orchestrator:
 
 ## Skill Updates
 
+- 领奖台等卡通道具的“整体感”不能只靠三块同色盒子接触。先检查总宽高比、每级踏面与角色尺度，再去掉独立底脚、外挑盖板和可见间隙；连续立面、统一底带及固定面向明暗应一起验证。真实参考只提供结构逻辑，不应直接照搬低对比配色和细弱号码。
+- 小图集文字模糊时，先按表面实际宽高比重新分配图块，优先增加字形短缺方向的像素；不要把大量像素留给横向空白后直接扩大整张纹理。以相同物理字号检查各名次数字，不按各台高度分别缩放。
+
 When a modeling pattern succeeds or fails in a way that should transfer to future Blender work:
 
 - Update this skill or one of its references.
