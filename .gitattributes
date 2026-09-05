@@ -57,3 +57,8 @@
 *.zip       binary
 *.ttf       binary
 *.otf       binary
+
+# 跨平台技能与启动工具使用 LF，避免 macOS 执行时受 CRLF 影响。
+.agents/**                       eol=lf
+scripts/run-blender.py            text eol=lf
+scripts/manage-project-skills.py  text eol=lf

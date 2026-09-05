@@ -1,0 +1,4 @@
+interface:
+  display_name: "角色 UV 重整流水线"
+  short_description: "为绑定角色重整碎片化 UV，并重烘焙底色与换色遮罩"
+  default_prompt: "使用 $character-uv-repack-pipeline 检查并重整这个角色模型的碎片化 UV，同时验证贴图、骨骼和移动端资源预算。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repair Swimmer Textures"
+  short_description: "Repair swimmer textures and choose clean recolor selectors."
+  default_prompt: "Use $repair-swimmer-textures to audit a swimmer and implement artifact-free mask or clean-white outfit recoloring."

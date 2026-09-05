@@ -8,7 +8,7 @@ import struct
 import bpy
 
 
-PROJECT_ROOT = r"F:\myworkspace\cocosProjects\SpeedSwimming"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET_GLB = os.path.join(PROJECT_ROOT, "assets", "race", "models", "UserSwimmer0621_2.glb")
 RAW_DIR = os.path.join(PROJECT_ROOT, "tools", "mixamo_raw")
 RETARGETED_DIR = os.path.join(PROJECT_ROOT, "tools", "retargeted_actions")

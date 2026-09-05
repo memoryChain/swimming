@@ -6,7 +6,7 @@ import bpy
 from mathutils import Quaternion, Vector
 
 
-PROJECT_ROOT = r"F:\myworkspace\cocosProjects\SpeedSwimming"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGET_GLB = os.path.join(PROJECT_ROOT, "assets", "race", "models", "UserSwimmer0621_2.glb")
 MIXAMO_FBX = os.path.join(PROJECT_ROOT, "tools", "mixamo_raw", "Treading Water.fbx")
 OUTPUT_GLB = os.path.join(PROJECT_ROOT, "assets", "race", "models", "UserSwimmer0621_2MixamoSwimming.glb")

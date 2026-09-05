@@ -14,6 +14,14 @@
 - The active game entry is `assets/scripts/core/GameManager.ts`. It should stay mostly as orchestration; put detailed behavior into `app`, `swimmer`, `camera`, `ui`, `venue`, `competitor`, or `character` modules.
 - Runtime resources should stay under `assets/resources`. Keep resource paths centralized in `assets/scripts/core/ResourcePaths.ts` instead of scattering string paths through loaders.
 
+## Repository Skills / 双机同步
+
+- 模型导入、动作、UV／贴图与 Blender 技能的唯一共享源码在 `.agents/skills/`。使用和更新这里的四个技能，不维护用户目录里的独立副本。
+- 首次在 Windows／Mac 接入或从旧 ZIP 迁移时，阅读 `.agents/README.md`；用 `scripts/manage-project-skills.py` 检查技能，用 `--archive-user-copies` 备份同名旧副本。
+- 新增模型／UV 经验直接修改对应技能的 `SKILL.md` 或 `references/`；可复用代码放入其 `scripts/`，通过正常 Git 提交、推送和拉取同步。
+- 共享技能与脚本使用项目相对路径或从 `__file__` 定位。Blender 本机路径保存在被忽略的 `.agents/local.json` 或 `BLENDER_EXECUTABLE`，不要提交个人盘符、用户名路径、MCP／代理／认证配置。
+- 后台 Blender 统一入口为 `scripts/run-blender.py`；MCP 使用规则仍遵循下文。普通 Python 命令在 Windows 用 `python`、macOS 用 `python3`；macOS 的类型检查使用 `npx` 代替 `npx.cmd`，其余版本和参数不变。
+
 ## Race HUD / UI Performance (WeChat Mini Game, especially iOS)
 
 Race-time UI runs alongside 3D rendering and networking on iOS JavaScriptCore, so treat every HUD update as a hot path. New or changed race UI must follow these rules:

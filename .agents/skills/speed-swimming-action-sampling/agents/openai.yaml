@@ -1,0 +1,4 @@
+interface:
+  display_name: "SpeedSwimming Action Sampling"
+  short_description: "Normalize T-pose swimmers and share validated action curves."
+  default_prompt: "Use $speed-swimming-action-sampling to import a T-pose swimmer onto the canonical rig and validate its shared actions."

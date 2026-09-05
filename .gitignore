@@ -39,3 +39,7 @@ extensions/cocos-code-mode/
 #//////////////////////////
 .idea/
 /tools
+
+# 每台开发机独立的 Blender 路径和技能执行记录
+/.agents/local.json
+/.codex/blender-runs/
