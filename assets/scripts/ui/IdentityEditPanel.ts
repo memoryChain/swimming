@@ -29,7 +29,8 @@ const PANEL_Y = 27;
 const AVATAR_X = [-200, -100, 0, 100, 200] as const;
 const AVATAR_Y = [73, -27] as const;
 const AVATAR_BASE_SIZE = 90;
-const AVATAR_ART_SIZE = 72;
+// 圆底内径为原图的 72/86；略覆盖内缘，避免抗锯齿处漏出蓝线。
+const AVATAR_ART_SIZE = 76;
 const AVATAR_HIT_SIZE = 90;
 
 export class IdentityEditPanel {

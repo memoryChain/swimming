@@ -59,6 +59,13 @@ Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `L
 - **Never take screenshots of Cocos Creator for UI validation.** Do not use editor-window screenshots, preview-window screenshots launched from Cocos Creator, or screen-capture automation against Cocos Creator. If visual confirmation inside the engine is required, ask the user to verify it in their existing editor session or use another user-approved validation method.
 - **Never bake button text into a raster UI asset.** Export and import each button background, icon, and text separately. When creating an export smart object for a button background or icon, hide the text layers first. Keep button copy as an editable Cocos `Label` so localization and runtime state changes do not require replacing artwork.
 
+## Avatar And Character Card Artwork
+
+- 头像与角色卡遵循已确认的美术方向；成组头像需有可辨认的脸型、性格、角度和表情差异。具体设计经验读仓库 UI 技能，当前头像参数见 `docs/头像设计与裁切接入说明.zh.md`。
+- 接入前测量外框的实际内径、圆心和透明边距。圆形头像必须有正确的圆外透明裁切；圆角卡片的画面必须受圆角边界约束，不用叠框掩盖漏角。检查实际小尺寸下的内缘缝隙、描边、人物与手势安全区。
+- 头像替换必须核查所有共用展示入口，保留已有 avatarId、UUID 和资源路径对应关系，不因换画风改变已保存选择、联机身份或比赛外观映射。
+- 「本地预览」与「接入游戏」按用户当前授权区分；预览成果不得自动写入运行时资源。允许接入后仍保留源稿与可复现的导出方式。
+
 ## UI Font Subsetting Policy
 
 - Static game UI must use the project-bundled `ShuiMaster UI` fonts, not a font that only exists on the designer's or developer's computer. Use `ShuiMasterUI-Regular.ttf` for body copy and `ShuiMasterUI-SemiBold.ttf` for headings, buttons, key values, and other approved bold text.

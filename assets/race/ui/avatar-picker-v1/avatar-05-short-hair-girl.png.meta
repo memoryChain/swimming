@@ -37,6 +37,10 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "403015e0-63c9-41d2-8a5e-72f689d9bc12@6c48a"
+    "redirect": "403015e0-63c9-41d2-8a5e-72f689d9bc12@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "astc-ui-alpha-5x5"
+    }
   }
 }

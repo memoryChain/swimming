@@ -12,6 +12,7 @@ description: 制作和维护 Cocos 游戏 UI，从概念设计、分层 Photosho
 - 概念方案、视觉统一、角色/联机/结算状态设计：读 [设计与协作经验](references/design-and-state-review.zh.md)。其中划水大师的选择是项目约定，不是所有游戏的默认规则。
 - 分层 PSD 修改、导出、描边/发光/透明边缘异常：读 [Photoshop 定稿与导出](references/photoshop-export.zh.md)。
 - Cocos 接入、字体、适配、异步加载、数据和验证：读 [运行时接入与验证](references/cocos-prefab-notes.md)。
+- 角色卡近景构图、成组头像性格差异：读设计参考的「角色卡与玩家头像」；圆形头像或圆角卡片接入：读运行时参考的「头像与卡片裁切」。当前头像尺寸和资产映射见仓库 `docs/头像设计与裁切接入说明.zh.md`。
 - 只有确实缺少合适美术资源、需要生成位图时，读 [生成素材与拆分](references/imagegen-decomposition.md)，并使用当前可用的 `imagegen` 技能。不要为了套流程重新生成已获认可的素材。
 - 批量建立资产清单或采用本技能的旧 PowerShell 校验工具时，读 [清单与预算](references/manifest-and-budgets.md)。
 

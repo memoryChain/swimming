@@ -103,7 +103,7 @@ export class SettlementView {
             const medal = this.art(root, 'RankMedal', 1020, y - 2, 46, 69);
             const rank = this.text(root, 'RankNumber', '', 1014, y + 33, 58, 29, NAVY, true, false, false, true);
             this.art(root, 'AvatarBase', 1088, y + 5, 56, 56, RESOURCE_PATHS.avatarPickerUi.avatarBase);
-            const avatar = this.art(root, 'Avatar', 1088, y + 5, 56, 56);
+            const avatar = this.art(root, 'Avatar', 1088, y + 5, 48, 48);
             // 昵称是无界动态文本，不能交给静态子集字库；独立保留系统全覆盖字体。
             const name = this.text(root, 'PlayerName', '', 1162, y + 33, 280, 26, NAVY, false, true);
             const time = this.text(root, 'FinishTime', '', 1455, y + 33, 125, 27, NAVY, false, false, true, true);
