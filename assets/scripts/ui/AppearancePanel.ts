@@ -38,23 +38,28 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
     fitFullScreenBackgroundCover(dim);
     dim.on(Node.EventType.TOUCH_END, () => root.destroy());
 
-    const panel = makeRoundedRect('Panel', root, 460, 360, uiColor(14, 36, 58, 250), 16, uiColor(86, 196, 236, 90), 1.5);
-    makeLabel('Title', panel, '外观', 30, uiColor(240, 250, 255)).setPosition(0, 138, 1);
+    const perRow = 4;
+    const rows = Math.ceil(PLAYER_COLOR_SCHEMES.length / perRow);
+    const panelHeight = Math.max(360, rows * SWATCH_PITCH + 240);
+    const panel = makeRoundedRect('Panel', root, 460, panelHeight, uiColor(14, 36, 58, 250), 16, uiColor(86, 196, 236, 90), 1.5);
+    makeLabel('Title', panel, '外观', 30, uiColor(240, 250, 255)).setPosition(0, panelHeight / 2 - 42, 1);
 
-    const swatches: { node: Node; option: SwatchOption; group: 'skin' | 'color' }[] = [];
+    const swatches: { node: Node; option: SwatchOption; group: 'skin' | 'color'; selected?: boolean }[] = [];
     const refresh = () => {
         const skinId = selectedPlayerSkinTone().id;
         const colorId = selectedPlayerColorScheme().id;
         for (const entry of swatches) {
             const selected = entry.group === 'skin' ? entry.option.id === skinId : entry.option.id === colorId;
+            if (entry.selected === selected) continue;
+            entry.selected = selected;
             const gfx = entry.node.getComponent(Graphics);
             if (gfx) drawSwatch(gfx, entry.option.color, selected);
         }
     };
 
     const skinSupported = selectedPlayerCharacterSupportsSkinTone();
-    const skinY = 76;
-    const colorY = skinSupported ? -40 : 30;
+    const skinY = panelHeight / 2 - 104;
+    const colorY = skinSupported ? skinY - 92 - (rows - 1) * SWATCH_PITCH / 2 : 20;
 
     if (skinSupported) {
         makeLabel('SkinLabel', panel, '肤色', 22, UI_STYLE.cyan).setPosition(-150, skinY, 1);
@@ -66,6 +71,7 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
             const node = makeColorSwatch(host, option, x, 0);
             swatches.push({ node, option, group: 'skin' });
             node.on(Button.EventType.CLICK, () => {
+                if (selectedPlayerSkinTone().id === tone.id) return;
                 setPlayerSkinTone(tone.id);
                 refresh();
                 options.onChange?.();
@@ -76,8 +82,6 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
     makeLabel('ColorLabel', panel, '服装', 22, UI_STYLE.cyan).setPosition(-150, colorY, 1);
     const colorHost = makeUiNode('ColorSwatches', panel);
     colorHost.setPosition(40, colorY, 1);
-    const perRow = 4;
-    const rows = Math.ceil(PLAYER_COLOR_SCHEMES.length / perRow);
     PLAYER_COLOR_SCHEMES.forEach((scheme, index) => {
         const option: SwatchOption = { id: scheme.id, color: scheme.suit };
         const col = index % perRow;
@@ -87,6 +91,7 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
         const node = makeColorSwatch(colorHost, option, x, y);
         swatches.push({ node, option, group: 'color' });
         node.on(Button.EventType.CLICK, () => {
+            if (selectedPlayerColorScheme().id === scheme.id) return;
             setPlayerColorScheme(scheme.id);
             refresh();
             options.onChange?.();
@@ -96,7 +101,7 @@ export function openAppearancePanel(canvasNode: Node, designWidth: number, desig
     refresh();
 
     const close = makeButton('CloseButton', panel, 140, 48, UI_STYLE.panel, '完成');
-    close.setPosition(0, -140, 2);
+    close.setPosition(0, -panelHeight / 2 + 40, 2);
     close.on(Button.EventType.CLICK, () => root.destroy());
 }
 

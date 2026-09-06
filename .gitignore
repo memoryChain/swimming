@@ -16,6 +16,7 @@ node_modules/
 
 # Local UI production sources and previews
 /docs/ui-production/
+/docs/design/
 
 # Blender/Python generated scene artifacts
 **/__pycache__/
