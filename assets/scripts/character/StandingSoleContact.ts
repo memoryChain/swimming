@@ -4,7 +4,7 @@ import type { CharacterSupportPlane } from './CharacterSupportPlane';
 type Influence = { bone: Node; local: Vec3; weight: number };
 type Probe = { rest: Vec3; influences: Influence[] };
 
-// 从角色自身网格建立左右鞋底采样点，每脚最多 16 点；只在模型加载时读取网格。
+// 从角色自身网格建立左右鞋底采样点，每脚最多 32 点；只在模型加载时读取网格。
 // 保留原蒙皮权重，领奖时按实际骨骼变换测量鞋底，不把脚踝骨心当作台面接触点。
 export class StandingSoleContact {
     private _model: Node | null = null;
@@ -81,6 +81,19 @@ export class StandingSoleContact {
                 if (!cells[cell] || point.rest.y < cells[cell]!.rest.y) cells[cell] = point;
             }
             for (const point of cells) if (point) this._feet[side].push(point);
+            // 原来的平底网格采样会漏掉踮脚/侧翻后的最低鞋边，补充不同倾角的轮廓极点。
+            for (const tilt of [Math.PI / 3, Math.PI * 0.47]) {
+                for (let direction = 0; direction < 8; direction++) {
+                    const angle = direction * Math.PI / 4;
+                    const x = Math.cos(angle) * Math.sin(tilt), y = Math.cos(tilt), z = Math.sin(angle) * Math.sin(tilt);
+                    let best = points[0], distance = Infinity;
+                    for (const point of points) {
+                        const d = point.rest.x * x + point.rest.y * y + point.rest.z * z;
+                        if (d < distance) { distance = d; best = point; }
+                    }
+                    if (this._feet[side].indexOf(best) < 0) this._feet[side].push(best);
+                }
+            }
         }
     }
 

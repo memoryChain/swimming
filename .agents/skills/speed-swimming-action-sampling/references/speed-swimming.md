@@ -254,9 +254,12 @@ Only after the numeric gate and this visual gate pass should the action be prese
 
 - 领奖台高度取 `AwardsPodiumSurface.ts` 读取的本体网格世界坐标，不混入描边子节点、节点原点或渲染器上一帧包围盒。
 - 不再叠加统一的跳台抬高和鞋底补偿。`AwardsPresentation` 把本轮台面高度传入 `Swimmer.presentStanding`；`reset()` 清除领奖接地状态。
-- `StandingSoleContact` 在模型绑定姿态下读取原始位置、关节和蒙皮权重，在模型局部 XZ 平面按每脚 4×4 格保留最低顶点。每脚最多 16 个采样点，运行时使用原权重和当前骨骼变换测量真实鞋底；更换模型或缩放不需要手填角色高度。
-- 领奖展示使用水平接地。`FreestylePoseController` 先把动作基准平面移到台面，再按 `groundedFeet` 校正支撑脚并复用双腿 IK；腾空阶段保留采样动作的离地高度。不要逐帧把跳跃动作的最低脚强行吸到台面。
+- `StandingSoleContact` 在模型绑定姿态下读取原始位置、关节和蒙皮权重，保留每脚 4×4 格最低点，并补充 16 个倾斜方向的鞋边极点，每脚最多 32 点。补充点用于避免踮脚、侧翻时漏掉实际最低鞋边；运行时不遍历全网格，不增加逐帧采样点分配。
+- 领奖足部不能直接保留重定向曲线中未经校准的脚踝/脚趾世界旋转：源足骨和目标足骨静止轴向不同，会把平脚拍手变成全程踮脚。源 FBX 逐帧求 `posedWorld * inverse(restWorld)`，换算到模型 Y 向上空间，写入 `footOrientationDeltas`（左足、左趾、右足、右趾）。运行时按 `rootWorld * sourceDelta * targetRestInRoot` 应用在当前角色自己的静止足姿上；源动作的转脚、抬跟和脚趾运动仍保留。四元数插值使用复用临时量，不逐帧复制四组源数组。实际鞋底最低点负责接触，原鞋型的鞋跟/翘头不强制压平。
+- `scripts/sample-source-foot-lifts.py`（本技能目录下）从原始 Mixamo FBX 逐整数帧提取足/趾端相对静止面的离地高度，以源髋部静止高度归一化，写入共享 JSON 的 `footLiftHeights`，同时提取上述足部运动增量。先检查全部源文件、帧区间、骨架、有限值以及三个轴的换基误差，再批量写入；输出各动作最大足部倾角和相邻帧转角；既有旋转、髋位移和原 `groundedFeet` 逐值不变。通过 `python scripts/run-blender.py -- --factory-startup --python .agents/skills/speed-swimming-action-sampling/scripts/sample-source-foot-lifts.py -- --write` 生成；省略 `--write` 只校验和输出报告。
+- 归一化离地高度 0.003 到 0.012 之间连续释放支撑权重；校正目标包含源动作的正离地高度，而非一律高度零。完全释放的腿保留原姿势，只有实际穿台时向上避障，不能向下吸附。双脚腾空只做必要的向上防穿透，保留跳跃。`dancing_twerk` 原动作确有抬脚，领奖不再全程强制双脚着地。跳台斜面展示仍使用其原接触标记与已确认的斜面朝向策略。
 - `tests/standing-sole-contact.test.cjs` 使用实际 GLB、共享动作和本机 Cocos 数学实现，覆盖所有当前角色、14 种领奖动作、三种台高、不同朝向、默认站姿以及重开。测试用完整足部顶点独立复核有限采样点；这是运行时接地近似检查，不替代修改动作采样时的 Blender 重定向验收。
+- 必须独立检查脚掌法线跟随源运动增量，不能只断言与未经校准的目标曲线相同。拍手源动作脚掌水平，所有角色应维持各自静止鞋型的脚跟/前掌高度差并落台；另测自由腿不被拉回、抬脚高度保留、不穿台，以及接触阈值两侧骨盆和踝部连续。用实际蒙皮侧视对比确认多余的踮脚消失，不能把“鞋跟高于前掌”的错误结果直接当成保留原动作的证据。
 - 运行检查：`npx.cmd --yes --package typescript@5.4.5 -c "node --test tests/standing-sole-contact.test.cjs"`（macOS 使用 `npx`）。显著更换鞋型后还需确认足部顶点识别和采样误差，不能只检查脚踝高度。
 
 ## 起跳台斜面适配

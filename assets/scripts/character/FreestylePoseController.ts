@@ -13,6 +13,11 @@ import type { StandingSoleContact } from './StandingSoleContact';
 import type { CharacterSupportPlane } from './CharacterSupportPlane';
 import type { CharacterHandContact } from './CharacterHandContact';
 
+type InterpolatedActionSample = SampledActionMotionSample & {
+    nextFootOrientationDeltas?: SampledActionMotionSample['footOrientationDeltas'];
+    footOrientationBlend?: number;
+};
+
 const BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES: readonly BreaststrokeBoneName[] = [
     'L_Clavicle',
     'L_Upperarm',
@@ -158,6 +163,9 @@ export class FreestylePoseController {
     private readonly _tmpGroundKneeOffset = new Vec3();
     private readonly _tmpGroundDesiredKnee = new Vec3();
     private readonly _tmpGroundFootRotation = new Quat();
+    private readonly _tmpSourceFootDelta = new Quat();
+    private readonly _tmpNextSourceFootDelta = new Quat();
+    private readonly _tmpPodiumFootRotation = new Quat();
     private readonly _tmpGroundToeRotation = new Quat();
     private readonly _tmpGroundBoneRotation = new Quat();
     private readonly _tmpClapCenter = new Vec3();
@@ -657,12 +665,21 @@ export class FreestylePoseController {
         if (actionId === 'clapping') {
             this.applySampledClapContact(sample.phase, power);
         }
-        // Dancing Twerk 的旧采样误把整段双脚支撑动作标成了完全腾空。
-        const contactMask = actionId === 'dancing_twerk' ? 3 : (sample.groundedFeet ?? 0);
+        const preserveFootMotion = this._standingSurfaceY !== null && !this._standingReferencePlane && this._standingSoles?.ready;
+        let contactMask = sample.groundedFeet ?? 0;
+        if (preserveFootMotion && sample.footLiftHeights) {
+            contactMask = (sample.footLiftHeights[0] <= 0.003 ? 1 : 0) | (sample.footLiftHeights[1] <= 0.003 ? 2 : 0);
+        } else if (!preserveFootMotion && actionId === 'dancing_twerk') {
+            // 保留跳台展示现有策略；领奖已改用源动作的连续离地高度，不再整段强制双脚落地。
+            contactMask = 3;
+        }
         // 斜面上水平移动也会改变所需高度，必须先居中再求接触，不能贴台后再平移。
         if (this._standingReferencePlane) this.applySampledActionHorizontalCentering();
-        this.applySampledStandingFootOrientation(contactMask, power);
+        // 领奖动作保留脚踝和脚趾旋转，踮脚时以真实最低点支撑，不把整只脚压平。
+        if (preserveFootMotion && sample.footOrientationDeltas) this.applyPodiumFootOrientations(sample, power);
+        else this.applySampledStandingFootOrientation(contactMask, power);
         this.applySampledActionGrounding(sample, power, contactMask);
+        if (preserveFootMotion) this.preventRaisedFootPenetration(sample, power, contactMask);
         if (!this._standingReferencePlane) this.applySampledActionHorizontalCentering();
     }
 
@@ -1532,9 +1549,22 @@ export class FreestylePoseController {
                 this._hips.setWorldPosition(this._tmpGroundHip);
             }
         }
+        if (surfaceY !== null && !this._standingReferencePlane && this._standingSoles?.ready && sample?.footLiftHeights) {
+            this.applyPodiumFootSupport(sample, surfaceY, blend);
+            return;
+        }
         const leftGrounded = (contactMask & 1) !== 0;
         const rightGrounded = (contactMask & 2) !== 0;
         if (!leftGrounded && !rightGrounded) {
+            // 自由脚/腾空帧只防止鞋底穿台，不向下吸回台面。
+            if (surfaceY !== null && !this._standingReferencePlane && this._standingSoles?.ready) {
+                const penetration = surfaceY - Math.min(this._standingSoles.worldY(0), this._standingSoles.worldY(1));
+                if (penetration > 0) {
+                    this._hips.getWorldPosition(this._tmpGroundHip);
+                    this._tmpGroundHip.y += penetration * blend;
+                    this._hips.setWorldPosition(this._tmpGroundHip);
+                }
+            }
             return;
         }
         if (this._standingReferencePlane && this._standingSoles?.ready) {
@@ -1590,6 +1620,79 @@ export class FreestylePoseController {
                     blend,
                 );
             }
+        }
+    }
+
+    private applyPodiumFootOrientations(sample: InterpolatedActionSample, power: number) {
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        const blend = clamp(power, 0, 1);
+        for (let index = 0; index < 4; index++) {
+            const bone = index === 0 ? this._leftFoot : index === 1 ? this._leftToe : index === 2 ? this._rightFoot : this._rightToe;
+            if (!bone) continue;
+            const rest = index === 0 ? this._leftGroundFootRotationInRoot : index === 1 ? this._leftGroundToeRotationInRoot
+                : index === 2 ? this._rightGroundFootRotationInRoot : this._rightGroundToeRotationInRoot;
+            const delta = sample.footOrientationDeltas[index];
+            this._tmpSourceFootDelta.set(delta[0], delta[1], delta[2], delta[3]);
+            if (sample.nextFootOrientationDeltas) {
+                const next = sample.nextFootOrientationDeltas[index];
+                this._tmpNextSourceFootDelta.set(next[0], next[1], next[2], next[3]);
+                Quat.slerp(this._tmpSourceFootDelta, this._tmpSourceFootDelta, this._tmpNextSourceFootDelta, sample.footOrientationBlend);
+            }
+            // 源静止足骨本身向下倾斜，目标足骨也有自己的轴向；仅叠加源运动增量，
+            // 才能让拍手等平脚动作保持水平，同时保留动作真正的抬跟、转脚和脚趾运动。
+            Quat.multiply(this._tmpPodiumFootRotation, this._tmpSourceFootDelta, rest);
+            Quat.multiply(this._tmpPodiumFootRotation, this._tmpRootWorldRotation, this._tmpPodiumFootRotation);
+            if (blend < 0.999) {
+                bone.getWorldRotation(this._tmpGroundFootRotation);
+                Quat.slerp(this._tmpPodiumFootRotation, this._tmpGroundFootRotation, this._tmpPodiumFootRotation, blend);
+            }
+            bone.setWorldRotation(this._tmpPodiumFootRotation);
+        }
+    }
+
+    private applyPodiumFootSupport(sample: SampledActionMotionSample, surfaceY: number, power: number) {
+        this.root.getWorldScale(this._tmpGroundTarget);
+        const scale = this._sampledActionHipTranslationScale * Math.abs(this._tmpGroundTarget.y);
+        const leftLift = sample.footLiftHeights[0], rightLift = sample.footLiftHeights[1];
+        // 贴地到抬脚之间连续释放；目标始终带原动作的离地高度，不把轻微抬脚当成高度零。
+        const leftWeight = 1 - smoothRange(leftLift, 0.003, 0.012);
+        const rightWeight = 1 - smoothRange(rightLift, 0.003, 0.012);
+        const leftTarget = surfaceY + leftLift * scale, rightTarget = surfaceY + rightLift * scale;
+        const leftCorrection = leftTarget - this._standingSoles.worldY(0), rightCorrection = rightTarget - this._standingSoles.worldY(1);
+        const totalWeight = leftWeight + rightWeight, divisor = Math.max(1, totalWeight);
+        // 双脚支撑时靠较低的骨盆位置保证腿可达，单脚释放时连续过渡到另一支撑脚。
+        const correction = (leftCorrection * leftWeight + rightCorrection * rightWeight) / divisor
+            - Math.abs(leftCorrection - rightCorrection) * 2 * leftWeight * rightWeight / (divisor * divisor);
+        this._hips.getWorldPosition(this._tmpGroundHip);
+        this._tmpGroundHip.y += correction * power;
+        this._hips.setWorldPosition(this._tmpGroundHip);
+        for (let i = 0; i < 2; i++) {
+            if (leftWeight > 0) this.solveSampledLegGroundContact(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftTarget, power * leftWeight);
+            if (rightWeight > 0) this.solveSampledLegGroundContact(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightTarget, power * rightWeight);
+        }
+        if (leftWeight === 0 && rightWeight === 0) {
+            const penetration = surfaceY - Math.min(this._standingSoles.worldY(0), this._standingSoles.worldY(1));
+            if (penetration > 0) {
+                this._hips.getWorldPosition(this._tmpGroundHip);
+                this._tmpGroundHip.y += penetration * power;
+                this._hips.setWorldPosition(this._tmpGroundHip);
+            }
+        }
+    }
+
+    private preventRaisedFootPenetration(sample: SampledActionMotionSample, power: number, contactMask: number) {
+        this.root.getWorldScale(this._tmpGroundTarget);
+        const heightScale = this._sampledActionHipTranslationScale * Math.abs(this._tmpGroundTarget.y);
+        for (let side = 0; side < 2; side++) {
+            if ((contactMask & (1 << side)) || this._standingSoles.worldY(side) >= this._standingSurfaceY - 0.0005) continue;
+            // 腿长差异可能让源动作的自由脚穿台；只向上避障，保留足部旋转，绝不向下贴台。
+            const target = this._standingSurfaceY + Math.max(0.002, (sample.footLiftHeights?.[side] ?? 0) * heightScale);
+            for (let i = 0; i < 2; i++) this.solveSampledLegGroundContact(
+                side === 0 ? this._leftUpLeg : this._rightUpLeg,
+                side === 0 ? this._leftLeg : this._rightLeg,
+                side === 0 ? this._leftFoot : this._rightFoot,
+                side === 0 ? this._leftToe : this._rightToe, target, clamp(power, 0, 1),
+            );
         }
     }
 
@@ -2579,7 +2682,7 @@ function normalizeQuatTupleInto(value: MutableQuatTuple) {
     value[3] /= length;
 }
 
-function sampleDebugActionMotion(samples: readonly SampledActionMotionSample[], phase: number): SampledActionMotionSample {
+function sampleDebugActionMotion(samples: readonly SampledActionMotionSample[], phase: number): InterpolatedActionSample {
     if (samples.length <= 1) {
         return samples[0];
     }
@@ -2600,6 +2703,14 @@ function sampleDebugActionMotion(samples: readonly SampledActionMotionSample[], 
                     lerp(current.footContactHeights?.[0] ?? 0, next.footContactHeights?.[0] ?? 0, t),
                     lerp(current.footContactHeights?.[1] ?? 0, next.footContactHeights?.[1] ?? 0, t),
                 ],
+                footLiftHeights: current.footLiftHeights && next.footLiftHeights ? [
+                    lerp(current.footLiftHeights[0], next.footLiftHeights[0], t),
+                    lerp(current.footLiftHeights[1], next.footLiftHeights[1], t),
+                ] : undefined,
+                // 保留源数组引用，在控制器的复用四元数中插值，避免每帧额外创建四组旋转数组。
+                footOrientationDeltas: current.footOrientationDeltas,
+                nextFootOrientationDeltas: next.footOrientationDeltas,
+                footOrientationBlend: t,
             };
         }
     }

@@ -59,6 +59,14 @@ export type SampledActionMotionSample = {
     // Left/right support target relative to this character's own rest contact
     // plane. Shared actions currently use zero for planted feet.
     footContactHeights?: readonly [number, number];
+    // 原始动作左右脚连续离地高度，以源髋部静止高度归一化；保留轻微抬脚，不替换跳台支撑标记。
+    footLiftHeights?: readonly [number, number];
+    // 左足、左趾、右足、右趾：源世界旋转相对源静止姿态的增量，已换算为模型 Y 向上坐标。
+    // 应施加在当前角色自己的足部静止旋转上，不能直接当成骨骼局部旋转。
+    footOrientationDeltas?: readonly [
+        readonly [number, number, number, number], readonly [number, number, number, number],
+        readonly [number, number, number, number], readonly [number, number, number, number],
+    ];
 };
 
 export type SampledActionMotion = {
