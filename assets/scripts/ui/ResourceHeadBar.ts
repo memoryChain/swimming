@@ -66,7 +66,7 @@ export class ResourceHeadBar {
         const root = makeUiNode('ResourceHeadBar', parent);
         root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
         this._root = root;
-        const left = makeScreenEdgeGroup('HeadBarLeft', root, 'left', designWidth, designHeight, 8);
+        const left = makeScreenEdgeGroup('HeadBarLeft', root, 'left', designWidth, designHeight, 8, false);
         const right = makeScreenEdgeGroup('HeadBarRight', root, 'right', designWidth, designHeight, 0, false);
 
         const topY = designHeight / 2 - 10 - IDENTITY_HEIGHT / 2;

@@ -164,6 +164,51 @@ test('双侧与单侧安全区均不叠加视觉边距，窗口变化后重新�
     visibleSize.width = 1280; safeLeft = 0; safeRight = 0;
 });
 
+test('真实大厅及角色页面组装：Android/iPhone 不同安全区不会收窄左右面板', () => {
+    const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
+    const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
+    const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const flowClass = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'PrepareRaceFlow');
+    // 执行生产代码的两个布局入口，仅替换与布局无关的资源及角色构建。
+    const methods = flowClass.members.filter(n => ['buildReadyScreen', 'buildCharacterManagement'].includes(n.name?.getText(source)));
+    assert.equal(methods.length, 2);
+    const code = ts.transpileModule(`class LayoutHarness { ${methods.map(n => n.getText(source)).join('\n')} }`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    const Harness = vm.runInNewContext(`${code}; LayoutHarness`, { makeScreenEdgeGroup });
+    const safeApi = cc.sys.getSafeAreaRect;
+    cc.sys.getSafeAreaRect = () => { throw new Error('页面整栏布局不应读取设备安全区'); };
+    try {
+        for (const width of [1280, 1600, 2532 / 1170 * 720]) {
+            visibleSize.width = width;
+            const canvas = new Node('Canvas'); canvas.addComponent(Canvas);
+            canvas.addComponent(UITransform).setContentSize(1280, 720);
+            const flow = new Harness(); flow._width = 1280; flow._height = 720;
+            const owners = {};
+            for (const name of ['buildReadyCharacterPanel', 'buildPreviewPresentation', 'buildRaceModeList', 'buildReadyActions',
+                'buildCharacterHeader', 'buildCharacterRoster', 'buildCharacterInspector']) {
+                flow[name] = parent => { owners[name] = parent; };
+            }
+            for (const name of ['refreshReadyCharacterInfo', 'refreshCharacterCards', 'refreshCharacterInspector', 'selectInspectorTab']) flow[name] = () => {};
+            flow.buildReadyScreen(canvas);
+            flow.buildCharacterManagement(canvas);
+            const leftMargin = node => node.position.x - 640 + width / 2;
+            const rightMargin = node => width / 2 - node.position.x - 640;
+            const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
+            near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 24);
+            near(rightMargin(owners.buildRaceModeList), width === 1280 ? 0 : 24);
+            assert.equal(owners.buildRaceModeList, owners.buildReadyActions);
+            near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 24);
+            near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 36);
+            near(leftMargin(owners.buildCharacterHeader), 0);
+            assert.equal(owners.buildPreviewPresentation, canvas);
+            canvas.destroy();
+        }
+    } finally {
+        cc.sys.getSafeAreaRect = safeApi;
+        visibleSize.width = 1280;
+    }
+});
+
 test('字体不使用有限字符图集，晚到字体不覆盖新字重或动态昵称', () => {
     const pendingFonts = [];
     cc.CacheMode = { NONE: 0, CHAR: 2 };
