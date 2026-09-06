@@ -28,6 +28,8 @@ export const COLLISION_RAGDOLL_TUNING = {
     calfSwingDegrees: 25,
     kneeBendDegrees: 22,
     spineLagDegrees: 4,
+    // Hard cap for the waist hinge. Overlay code only folds forward up to this.
+    spineMaxBendDegrees: 12,
     headLagDegrees: 5,
 
     // Scale-independent head guard: the protected radius is this fraction of

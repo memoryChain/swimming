@@ -7,6 +7,8 @@ import {
     COLLISION_RAGDOLL_KNEE_FLEX_LIMIT_DEGREES,
     collisionRagdollHingeFlexionDegrees,
     collisionRagdollHeadGuardWeight,
+    collisionRagdollHeadPitchDegrees,
+    collisionRagdollHipCurlDegrees,
     collisionRagdollSpineFlexionDegrees,
     type CollisionRagdollController,
 } from './CollisionRagdollController';
@@ -426,16 +428,14 @@ export class FreestylePoseController {
         );
 
         // Apply torso/head lag first so the arm guard measures against the final
-        // head location for this frame.
-        this.applyCurrentBoneOffset(
-            this._spine1,
-            collisionRagdollSpineFlexionDegrees(state.spinePitch) * weight,
-            0,
-            0,
-        );
+        // head location for this frame. Waist/head pitch stay on the forward hinge;
+        // collision pitch direction must not open a reverse upper/lower fold.
+        const spineFlex = collisionRagdollSpineFlexionDegrees(state.spinePitch) * weight;
+        this.applyCurrentBoneOffset(this._spine, spineFlex * 0.45, 0, 0);
+        this.applyCurrentBoneOffset(this._spine1, spineFlex * 0.55, 0, 0);
         this.applyCurrentBoneOffset(
             this._head,
-            state.headPitch * weight,
+            collisionRagdollHeadPitchDegrees(state.headPitch) * weight,
             0,
             state.headRoll * weight,
         );
@@ -467,14 +467,14 @@ export class FreestylePoseController {
 
         this.blendCurrentBoneTowardBaseOffset(
             this._leftUpLeg,
-            state.leftLegSwing - curl * 8,
+            collisionRagdollHipCurlDegrees(state.leftLegSwing, curl * 8),
             4 + state.leftLegSwing * 0.1,
             -3 + state.leftLegSwing * 0.12,
             looseBlend,
         );
         this.blendCurrentBoneTowardBaseOffset(
             this._rightUpLeg,
-            state.rightLegSwing - curl * 8,
+            collisionRagdollHipCurlDegrees(state.rightLegSwing, curl * 8),
             -4 - state.rightLegSwing * 0.1,
             3 - state.rightLegSwing * 0.12,
             looseBlend,

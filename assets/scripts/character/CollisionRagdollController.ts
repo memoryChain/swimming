@@ -516,12 +516,13 @@ export class CollisionRagdollController {
         this._rightKneeBend = kneeBendDegrees
             * clamp01(0.58 + rightLegWave * 0.2 + this._curlWeight * 0.28);
 
-        this._spinePitch = -pitchDrive * spineLagDegrees
-            * clamp(Math.abs(pitchRatio) + this._curlWeight * 0.25, 0, 1);
-        this._spineRoll = -rollDrive * spineLagDegrees
-            * clamp(Math.abs(rollRatio) + this._curlWeight * 0.2, 0, 1);
-        this._headPitch = -pitchDrive * headLagDegrees
-            * clamp(Math.abs(pitchRatio) + this._curlWeight * 0.4, 0, 1);
+        // Waist/head pitch are anatomical hinges: always a forward-curl magnitude.
+        // Collision pitch direction still drives whole-body rotation on the root,
+        // but must not reverse the local upper/lower fold.
+        const forwardCurl = clamp(Math.abs(pitchRatio) + this._curlWeight * 0.25, 0, 1);
+        this._spinePitch = spineLagDegrees * forwardCurl;
+        this._spineRoll = 0;
+        this._headPitch = -headLagDegrees * clamp(Math.abs(pitchRatio) + this._curlWeight * 0.4, 0, 1);
         this._headRoll = -rollDrive * headLagDegrees
             * clamp(Math.abs(rollRatio) + this._curlWeight * 0.3, 0, 1);
     }
@@ -636,15 +637,37 @@ export function collisionRagdollHingeFlexionDegrees(
     );
 }
 
+function spineFlexLimitDegrees(): number {
+    const tuned = finite(COLLISION_RAGDOLL_TUNING.spineMaxBendDegrees);
+    if (tuned > 0) {
+        return tuned;
+    }
+    return COLLISION_RAGDOLL_SPINE_FLEX_LIMIT_DEGREES;
+}
+
 // The collision overlay may curl the waist slightly forward, but never reverse
 // it or add a sideways break. Whole-body somersaulting remains on the swimmer
 // root and is intentionally independent from this local anatomical limit.
+// Negative X is the skeleton's forward-flexion sign; the result is always in
+// [-limit, 0].
 export function collisionRagdollSpineFlexionDegrees(signedLagDegrees: number): number {
     return -clamp(
         Math.abs(finite(signedLagDegrees)),
         0,
-        COLLISION_RAGDOLL_SPINE_FLEX_LIMIT_DEGREES,
+        spineFlexLimitDegrees(),
     );
+}
+
+// Head pitch uses the same forward-flexion sign as the waist. A positive value
+// would hyperextend the neck against the chest curl, so it is clamped out.
+export function collisionRagdollHeadPitchDegrees(signedPitchDegrees: number): number {
+    return Math.min(0, finite(signedPitchDegrees));
+}
+
+// Thigh overlay X shares the waist's forward-curl sign (negative = pike). Any
+// positive component would open a reverse hip/torso angle, so it is discarded.
+export function collisionRagdollHipCurlDegrees(signedSwingDegrees: number, curlDegrees: number): number {
+    return Math.min(0, finite(signedSwingDegrees)) - Math.max(0, finite(curlDegrees));
 }
 
 function stableSign(value: number, seed: number, salt: number): number {
