@@ -72,10 +72,9 @@ export class OnlineRoomView {
         fitFullScreenBackgroundCover(bg.node);
         const header = makeScreenEdgeGroup('RoomHeader', this.root, 'left', 1280, 720, 0, false);
         this.picture(header, 'CharacterHeader', RESOURCE_PATHS.characterUi.headerBackground, 0, 0, 497, 111);
-        const controls = makeScreenEdgeGroup('RoomHeaderControls', header, 'left', 1280, 720, 0);
-        this.picture(controls, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 27, 19, 61, 40);
-        this.text(controls, 'Title', '联机', 104, 13, 140, 48, 36, false).color = HEADER_INK;
-        this.touch(controls, 'Back', 16, 9, 90, 68, actions.exit);
+        this.picture(header, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 27, 19, 61, 40);
+        this.text(header, 'Title', '联机', 104, 13, 140, 48, 36, false).color = HEADER_INK;
+        this.touch(header, 'Back', 16, 9, 90, 68, actions.exit);
         this.content = makeUiNode('Content', this.root);
         const p = this.content;
         this.picture(p, 'HostPanel', ART.hostPanel, 64, 84, 404, 522);

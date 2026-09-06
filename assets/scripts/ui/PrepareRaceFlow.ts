@@ -411,11 +411,10 @@ export class PrepareRaceFlow {
 
     private buildCharacterHeader(parent: Node): void {
         makeRaceTextureSprite('CharacterHeaderBackground', parent, RESOURCE_PATHS.characterUi.headerBackground, 497, 111, -391.5, 304.5, 1);
-        const controls = makeScreenEdgeGroup('CharacterHeaderControls', parent, 'left', this._width, this._height, 0);
 
         // Keep the larger touch target separate from the PSD-sized artwork. Changing
         // the parent's UITransform previously scaled the icon from 61×40 to 76×60.
-        const backHit = makeUiNode('CharacterBackButton', controls);
+        const backHit = makeUiNode('CharacterBackButton', parent);
         backHit.getComponent(UITransform)!.setContentSize(76, 60);
         backHit.setPosition(-582.5, 321, 3);
         makeRaceTextureSprite('Artwork', backHit, RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0, 1);
@@ -428,7 +427,7 @@ export class PrepareRaceFlow {
 
         // The label position is its bounding-box centre. Keep the visible title at
         // the PSD x=105 edge instead of centring that box on the glyph midpoint.
-        const title = makeBoundLabel('CharacterScreenTitle', controls, '角色', 36, DARK_TEXT, 120, 48, -475, 323.5, Label.HorizontalAlign.LEFT);
+        const title = makeBoundLabel('CharacterScreenTitle', parent, '角色', 36, DARK_TEXT, 120, 48, -475, 323.5, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(title, 44);
     }
 

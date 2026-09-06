@@ -103,7 +103,7 @@ function find(n, name) { return nodes(n).find(n => n.name === name); }
 const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '铁臂狂鲨', level: 2 };
 const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime' };
 function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', ...overrides }; }
-test('宽屏布局保留边距，装饰贴角，返回按钮避让刘海', () => {
+test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装饰整体适配', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const worldX = n => n.position.x + (n.parent ? worldX(n.parent) : 0);
     for (const width of [1280, 1560, 1600]) {
@@ -119,7 +119,14 @@ test('宽屏布局保留边距，装饰贴角，返回按钮避让刘海', () =>
         const art = find(v.root, 'CharacterHeader');
         assert.equal(worldX(art) - 497 / 2, -width / 2);
         const back = find(v.root, 'Back');
-        assert.equal(worldX(back) - 90 / 2 + width / 2, safeLeft + 16);
+        const arrow = find(v.root, 'BackIcon');
+        const title = find(v.root, 'Title');
+        assert.equal(worldX(back) - 90 / 2 + width / 2, 16);
+        assert.equal(worldX(arrow) - 61 / 2 + width / 2, 27);
+        assert.equal(worldX(title) - 140 / 2 + width / 2, 104);
+        assert.equal(back.parent, art.parent);
+        assert.equal(arrow.parent, art.parent);
+        assert.equal(title.parent, art.parent);
         const bg = find(v.root, 'Background');
         assert.ok(bg.scale.x * bg.getComponent(UITransform).contentSize.width >= width);
         canvas.destroy();
