@@ -9,6 +9,8 @@ description: 制作和维护 Cocos 游戏 UI，从概念设计、分层 Photosho
 
 ## 按任务读取
 
+- 制作或修订划水大师界面时，先读项目统一规范 [界面制作规范](../../../docs/design/界面制作规范.zh.md)。后续新界面画布为 **1290 × 720 px**；既有页面按实际主 PSD 就地维护。规范包含已确认的风格、HUD 交互、字体/头像复用、分层与保存规则，页面特有参数不得无区别套用到其他页面。
+
 - 概念方案、视觉统一、角色/联机/结算状态设计：读 [设计与协作经验](references/design-and-state-review.zh.md)。其中划水大师的选择是项目约定，不是所有游戏的默认规则。
 - 分层 PSD 修改、导出、描边/发光/透明边缘异常：读 [Photoshop 定稿与导出](references/photoshop-export.zh.md)。
 - Cocos 接入、字体、适配、异步加载、数据和验证：读 [运行时接入与验证](references/cocos-prefab-notes.md)。

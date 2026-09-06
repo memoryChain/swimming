@@ -36,7 +36,7 @@
   "userData": {
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
-    "hasAlpha": false,
+    "hasAlpha": true,
     "redirect": "cc52edcd-07d9-460f-b1a8-383174f9ed5a@6c48a",
     "compressSettings": {
       "useCompressTexture": true,
