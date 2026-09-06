@@ -122,7 +122,7 @@ test('可选角色均有唯一模型，并复用标准动作资源', () => {
         assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
         assert.ok(fs.existsSync(new URL(`assets/race/${model.divePrepOverridePath}.json`, root)));
     }
-    assert.equal(Resources.findSwimmerModelVariant('muscleMan').modelScaleMultiplier, undefined);
+    assert.equal(Resources.findSwimmerModelVariant('muscleMan').modelScaleMultiplier, 1.12);
     for (const id of expectedModelIds.slice(1)) {
         const multiplier = Resources.findSwimmerModelVariant(id).modelScaleMultiplier;
         assert.equal(Number.isFinite(multiplier), true, `${id} modelScaleMultiplier`);
@@ -487,7 +487,7 @@ test('深潜先锋精修资源保留原模型与配色通道，仅新增有效�
     assert.equal(model.dynamicColor?.usesCapChannel, false);
     assert.equal(model.preserveOriginalMaterial, true);
     assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
-    assert.equal(model.modelScaleMultiplier, 0.97);
+    assert.equal(model.modelScaleMultiplier, 1.04);
 
     const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer13.glb', root));
     const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
@@ -498,10 +498,10 @@ test('深潜先锋精修资源保留原模型与配色通道，仅新增有效�
     assert.equal(doc.skins[0].joints.length, 41);
     assert.equal(doc.accessors[primitive.indices].count / 3, 5562);
     assert.equal(doc.accessors[primitive.attributes.POSITION].count, 7896);
-    // 仅记录已批准的 308a0775 精修版，不提高其它角色的资源预算。
+    // 保留主干 53a0214 的氧气瓶骨骼修复；网格、贴图和资源预算沿用精修版。
     assert.equal(data.length, 583140);
     assert.equal(createHash('sha256').update(data).digest('hex'),
-        'f475b24383b21139032ec3016aff00b97c3bc0b8158252a546e512091dc8a075');
+        '1f84a8d6f47b906168bf2b8d9a7a024db0bbc249d1837492e1c4ec5b93f4a10b');
     assert.equal(doc.images.length, 1);
     assert.equal(doc.images[0].mimeType, 'image/jpeg');
     const imageView = doc.bufferViews[doc.images[0].bufferView];
@@ -646,5 +646,47 @@ test('霓绿少女保留精修设计，肤色与服装色可独立切换', () =>
         selectPlayerCharacter(previous.characterId);
         setPlayerSkinTone(previous.skinToneId);
         setPlayerColorScheme(previous.colorSchemeId);
+    }
+});
+
+test('试用配色匹配已选样张，角色切换与存档恢复保留颜色和肤色', () => {
+    const previous = { ...getPlayerCharacterSelection() };
+    const expected = [
+        ['soft-lilac', 'A08AC6'], ['lime', 'ADD936'], ['lake-teal', '46AAA5'],
+        ['deep-ocean', '354D70'], ['cherry-red', 'E9364F'],
+        ['strawberry-pink', 'FF759E'],
+    ];
+    try {
+        const ids = CharacterConfig.PLAYER_COLOR_SCHEMES.map((scheme) => scheme.id);
+        assert.equal(new Set(ids).size, ids.length);
+        for (const characterId of ['cartonSwimmer8', 'cartonSwimmer14']) {
+            selectPlayerCharacter(characterId);
+            setPlayerSkinTone('deep');
+            for (const [id, hex] of expected) {
+                setPlayerColorScheme(id);
+                const scheme = selectedPlayerColorScheme();
+                assert.equal(scheme.id, id);
+                assert.deepEqual(scheme.suit, [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)));
+                const saved = JSON.parse(JSON.stringify(getPlayerCharacterSelection()));
+                setPlayerColorScheme('red');
+                restorePlayerCharacterSelection(saved);
+                assert.deepEqual(getPlayerCharacterSelection(), { characterId, colorSchemeId: id, skinToneId: 'deep' });
+                setPlayerSkinTone('warm');
+                assert.equal(selectedPlayerSkinTone().preserveOriginal, true);
+                assert.equal(selectedPlayerColorScheme().id, id);
+                setPlayerSkinTone('deep');
+            }
+        }
+        for (const id of ['red', 'blue', 'yellow', 'purple', 'green', 'orange', 'cyan', 'black']) assert.ok(ids.includes(id));
+        assert.equal(ids.length, 14);
+        for (const removed of ['sage', 'emerald', 'cherry-blossom', 'clear-sky', 'sunset-peach', 'peach-pink']) {
+            assert.ok(!ids.includes(removed));
+            const restored = normalizePlayerCharacterSelection({ characterId: 'cartonSwimmer8', skinToneId: 'deep', colorSchemeId: removed });
+            assert.equal(restored.colorSchemeId, createDefaultPlayerCharacterSelection().colorSchemeId);
+            assert.equal(restored.characterId, 'cartonSwimmer8');
+            assert.equal(restored.skinToneId, 'deep');
+        }
+    } finally {
+        restorePlayerCharacterSelection(previous);
     }
 });

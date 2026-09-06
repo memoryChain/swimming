@@ -170,6 +170,13 @@ export const PLAYER_COLOR_SCHEMES: readonly PlayerColorScheme[] = [
     { id: 'orange', label: '橙', suit: [255, 102, 0], cap: [31, 126, 222] },
     { id: 'cyan', label: '青', suit: [12, 224, 255], cap: [252, 238, 86] },
     { id: 'black', label: '黑', suit: [43, 43, 43], cap: [238, 240, 246] },
+    // 用户选定的试用配色；追加稳定 ID，保留既有颜色和存档。
+    { id: 'soft-lilac', label: '柔藤紫', suit: [160, 138, 198], cap: [160, 138, 198] },
+    { id: 'lime', label: '青柠绿', suit: [173, 217, 54], cap: [173, 217, 54] },
+    { id: 'lake-teal', label: '湖水青', suit: [70, 170, 165], cap: [70, 170, 165] },
+    { id: 'deep-ocean', label: '深海蓝', suit: [53, 77, 112], cap: [53, 77, 112] },
+    { id: 'cherry-red', label: '樱桃红', suit: [233, 54, 79], cap: [233, 54, 79] },
+    { id: 'strawberry-pink', label: '草莓粉', suit: [255, 117, 158], cap: [255, 117, 158] },
 ];
 
 export type PlayerCharacterSelection = {

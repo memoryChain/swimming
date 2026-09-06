@@ -134,6 +134,8 @@ export class PrepareRaceFlow {
     private _attributeContent: Node | null = null;
     private _appearanceContent: Node | null = null;
     private _skinRow: Node | null = null;
+    private _skinSwatches: Node | null = null;
+    private _skinUnavailableNotice: Node | null = null;
     private _attributeTabArtwork: Node | null = null;
     private _appearanceTabArtwork: Node | null = null;
     private _confirmCharacterButton: Node | null = null;
@@ -233,6 +235,8 @@ export class PrepareRaceFlow {
         this._attributeContent = null;
         this._appearanceContent = null;
         this._skinRow = null;
+        this._skinSwatches = null;
+        this._skinUnavailableNotice = null;
         this._attributeTabArtwork = null;
         this._appearanceTabArtwork = null;
         this._confirmCharacterButton = null;
@@ -575,7 +579,7 @@ export class PrepareRaceFlow {
 
         this._appearanceContent = makeUiNode('AppearanceContent', panel);
         this._appearanceContent.getComponent(UITransform)!.setContentSize(320, 360);
-        this._appearanceContent.setPosition(0, 0, 2);
+        this._appearanceContent.setPosition(0, 20, 2);
         this.buildAppearanceContent(this._appearanceContent);
 
         const confirm = makeRaceTextureButton('ConfirmCharacterButton', parent, RESOURCE_PATHS.characterUi.confirmButton, 332, 102, 448, -287, 3);
@@ -731,29 +735,63 @@ export class PrepareRaceFlow {
         makeRaceTextureSprite('SkinSectionHeader', this._skinRow, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, 0, 33, 1);
         const skinLabel = makeBoundLabel('SkinLabel', this._skinRow, '肤色', 21, DARK_TEXT, 70, 30, -92, 33, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(skinLabel, 'PingFang SC', false, 27);
+        this._skinSwatches = makeUiNode('SkinSwatches', this._skinRow);
+        const unavailable = makeBoundLabel('SkinUnavailableNotice', this._skinRow, '该角色无法更换肤色', 15, uiColor(130, 139, 150), 260, 24, 3, -30, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(unavailable, 'PingFang SC', false, 22);
+        this._skinUnavailableNotice = unavailable.node;
         for (let index = 0; index < PLAYER_SKIN_TONES.length; index++) {
             const tone = PLAYER_SKIN_TONES[index];
-            this.buildSwatch(this._skinRow, tone.id, 'skin', appearanceSwatchPath('skin', tone.id), -104 + index * 70, -30);
+            this.buildSwatch(this._skinSwatches, tone.id, 'skin', appearanceSwatchPath('skin', tone.id), -104 + index * 70, -30);
         }
         const outfitSection = makeRaceTextureSprite('OutfitSectionHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -3, 1);
         const outfitLabel = makeBoundLabel('OutfitLabel', outfitSection, '配饰', 21, DARK_TEXT, 70, 28, -92, 0, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(outfitLabel, 'PingFang SC', false, 27);
+        // 色块只创建一次；增加配色通过滚动容纳，选择不重建面板或角色。
+        const viewHeight = 210;
+        const rowPitch = 70;
+        const colorsPerRow = 5;
+        const columnPitch = 56;
+        const contentHeight = Math.max(viewHeight, Math.ceil(PLAYER_COLOR_SCHEMES.length / colorsPerRow) * rowPitch);
+        const viewport = makeUiNode('OutfitColorScrollView', parent);
+        viewport.getComponent(UITransform)!.setContentSize(302, viewHeight);
+        viewport.setPosition(-14.5, -132, 1);
+        viewport.addComponent(Mask).type = Mask.Type.GRAPHICS_RECT;
+        const scrollView = viewport.addComponent(ScrollView);
+        scrollView.horizontal = false;
+        scrollView.vertical = true;
+        scrollView.cancelInnerEvents = true;
+        const content = makeUiNode('OutfitColorContent', viewport);
+        content.getComponent(UITransform)!.setContentSize(302, contentHeight);
+        content.setPosition(0, (viewHeight - contentHeight) / 2, 0);
+        scrollView.content = content;
         for (let index = 0; index < PLAYER_COLOR_SCHEMES.length; index++) {
             const scheme = PLAYER_COLOR_SCHEMES[index];
-            const column = index % 4;
-            const row = Math.floor(index / 4);
-            this.buildSwatch(parent, scheme.id, 'color', appearanceSwatchPath('color', scheme.id), -118.5 + column * 70, -66 - row * 70);
+            const column = index % colorsPerRow;
+            const row = Math.floor(index / colorsPerRow);
+            const x = (column - (colorsPerRow - 1) / 2) * columnPitch;
+            const y = contentHeight / 2 - 34 - row * rowPitch;
+            this.buildSwatch(content, scheme.id, 'color', appearanceSwatchPath('color', scheme.id), x, y, scheme.suit);
         }
         this.refreshAppearanceSupport();
         this.refreshAppearanceSwatches();
     }
 
-    private buildSwatch(parent: Node, id: string, group: 'skin' | 'color', texturePath: string, x: number, y: number): void {
+    private buildSwatch(parent: Node, id: string, group: 'skin' | 'color', texturePath: string | null, x: number, y: number, color?: readonly [number, number, number]): void {
         const node = makeUiNode(`Swatch_${group}_${id}`, parent);
         node.getComponent(UITransform)!.setContentSize(SWATCH_SIZE, SWATCH_SIZE);
         node.setPosition(x, y, 1);
         const selectionGraphics = node.addComponent(Graphics);
-        makeRaceTextureSprite('Artwork', node, texturePath, SWATCH_ART_SIZE, SWATCH_ART_SIZE, 0, 0, 1);
+        if (texturePath) {
+            makeRaceTextureSprite('Artwork', node, texturePath, SWATCH_ART_SIZE, SWATCH_ART_SIZE, 0, 0, 1);
+        } else if (color) {
+            // 简单色块在挂载时绘制一次；不新增贴图，也不在选择时重绘底色。
+            const artwork = makeUiNode('Artwork', node);
+            artwork.setPosition(0, 0, 1);
+            const fill = artwork.addComponent(Graphics);
+            fill.fillColor = uiColor(color[0], color[1], color[2]);
+            fill.roundRect(-SWATCH_ART_SIZE / 2, -SWATCH_ART_SIZE / 2, SWATCH_ART_SIZE, SWATCH_ART_SIZE, 8);
+            fill.fill();
+        }
         const button = node.addComponent(Button);
         button.target = node;
         button.transition = Button.Transition.NONE;
@@ -778,7 +816,9 @@ export class PrepareRaceFlow {
 
     private refreshAppearanceSupport(): void {
         const character = this._draftCharacterId ? findPlayerCharacter(this._draftCharacterId) : null;
-        setNodeActive(this._skinRow, character?.supportsSkinTone !== false);
+        const supported = character?.supportsSkinTone !== false;
+        setNodeActive(this._skinSwatches, supported);
+        setNodeActive(this._skinUnavailableNotice, !supported);
     }
 
     private refreshAppearanceSwatches(): void {
@@ -881,7 +921,7 @@ function drawSwatch(view: SwatchView): void {
     gfx.fill();
 }
 
-function appearanceSwatchPath(group: 'skin' | 'color', id: string): string {
+function appearanceSwatchPath(group: 'skin' | 'color', id: string): string | null {
     if (group === 'skin') {
         return id === 'deep' ? RESOURCE_PATHS.characterUi.skinDeep : RESOURCE_PATHS.characterUi.skinWarm;
     }
@@ -893,7 +933,14 @@ function appearanceSwatchPath(group: 'skin' | 'color', id: string): string {
         case 'orange': return RESOURCE_PATHS.characterUi.swatchOrange;
         case 'cyan': return RESOURCE_PATHS.characterUi.swatchCyan;
         case 'black': return RESOURCE_PATHS.characterUi.swatchBlack;
-        default: return RESOURCE_PATHS.characterUi.swatchRed;
+        case 'red': return RESOURCE_PATHS.characterUi.swatchRed;
+        case 'soft-lilac': return RESOURCE_PATHS.characterUi.swatchSoftLilac;
+        case 'lime': return RESOURCE_PATHS.characterUi.swatchLime;
+        case 'lake-teal': return RESOURCE_PATHS.characterUi.swatchLakeTeal;
+        case 'deep-ocean': return RESOURCE_PATHS.characterUi.swatchDeepOcean;
+        case 'cherry-red': return RESOURCE_PATHS.characterUi.swatchCherryRed;
+        case 'strawberry-pink': return RESOURCE_PATHS.characterUi.swatchStrawberryPink;
+        default: return null;
     }
 }
 
