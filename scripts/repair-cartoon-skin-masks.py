@@ -12,8 +12,8 @@ def smooth(a, b, x):
     return t * t * (3 - 2 * t)
 
 
-def repair(work):
-    for i in (5,6,8,9,10,11,12):
+def repair(work, ids=(5,6,8,9,10,11,12)):
+    for i in ids:
         folder=work/f'CartonSwimmer{i}'
         base_path=folder/'base.png'
         if not base_path.exists():
@@ -53,7 +53,7 @@ def repair(work):
         support=support.astype(np.float32).repeat(4,0).repeat(4,1)
         r,g,b=base.transpose(2,0,1);sat=(base.max(2)-base.min(2))/np.maximum(base.max(2),1e-5)
         # 暖色皮肤的内部覆盖保持完整；灰白衣袜不因闭运算被染色。
-        low,high={5:(.12,.22),6:(.20,.28),8:(.16,.25),9:(.12,.22),10:(.10,.18),11:(.13,.23),12:(.08,.16)}[i]
+        low,high={5:(.12,.22),6:(.20,.28),8:(.16,.25),9:(.12,.22),10:(.10,.18),11:(.13,.23),12:(.08,.16),14:(.06,.13)}[i]
         strong=support>.65
         skin=smooth(np.where(strong,.035,low),np.where(strong,.09,high),r-b)*smooth(.008,.038,r-g)*smooth(.005,.035,g-b)
         skin*=smooth(.26,.48,r)
@@ -74,6 +74,12 @@ def repair(work):
             bare=((np.abs(position[...,0])>.34)&(position[...,2]>.64)&(position[...,2]<.77))|((position[...,2]>.205)&(position[...,2]<.31))
             highlight=smooth(.016,.042,r-b)*smooth(.003,.016,r-g)*smooth(-.008,.008,g-b)
             skin=np.maximum(skin,highlight*bare)
+        if i == 14:
+            # c1b6 银发角色：裸露面部、颈部、双臂及裤脚至袜口之间的腿部。
+            # 位置限制排除胸前金属扣等暖色配件，颜色分离保护灰白头发和袜子。
+            z=position[...,2]
+            bare=((z>.77)&(z<.96))|((np.abs(position[...,0])>.16)&(z>.64)&(z<.79))|((z>.16)&(z<.47))
+            skin*=bare
         # 头部的棕色头发与肤色接近，采用既有高置信度肤色区域作为保护。
         head=position[...,2]>.76
         if i in (6,8):
@@ -83,7 +89,8 @@ def repair(work):
         skin=np.asarray(Image.fromarray(skin.astype(np.float32)).resize((w,h),Image.Resampling.BOX))
         result=original.copy();result[...,2]=np.uint8(skin*255+.5)
         # 衣服的绿色误差不能在明确的暖色皮肤内部留下高对比碎点。
-        result[...,0][skin>.8]=0
+        if i != 14:
+            result[...,0][skin>.8]=0
         Image.fromarray(result).save(folder/'candidate.png',optimize=True)
         report = {
             'character': f'CartonSwimmer{i}',
@@ -104,4 +111,6 @@ def repair(work):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='生成卡通角色肤色修复候选，不写入运行时资产。')
     parser.add_argument('--workdir', type=Path, required=True, help='Blender 审计导出的原始快照目录')
-    repair(parser.parse_args().workdir.resolve())
+    parser.add_argument('--ids', nargs='+', type=int, choices=[5,6,8,9,10,11,12,14], default=[5,6,8,9,10,11,12])
+    args=parser.parse_args()
+    repair(args.workdir.resolve(), args.ids)

@@ -517,12 +517,12 @@ test('新增破浪机甲复用动作与单材质，装甲只使用R换色且有�
     }
 });
 
-test('霓绿少女保留精修设计，绿色服装换色不启用肤色覆盖', () => {
+test('霓绿少女保留精修设计，肤色与服装色可独立切换', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer14');
         assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer14');
-        assert.equal(selectedPlayerCharacterSupportsSkinTone(), false);
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
         const model = Resources.findSwimmerModelVariant('cartonSwimmer14');
         assert.equal(model.dynamicColor?.mode, 'mask');
         assert.equal(model.dynamicColor?.maskPath, 'models/CartonSwimmer14ColorMask/texture');
@@ -532,8 +532,10 @@ test('霓绿少女保留精修设计，绿色服装换色不启用肤色覆盖',
         for (let i = 0; i < 20; ++i) {
             setPlayerSkinTone('deep');
             setPlayerColorScheme(i % 2 ? 'blue' : 'red');
-            assert.equal(selectedPlayerSkinTone().preserveOriginal, true);
+            assert.equal(selectedPlayerSkinTone().id, 'deep');
             assert.equal(selectedPlayerColorScheme().id, i % 2 ? 'blue' : 'red');
+            setPlayerSkinTone('warm');
+            assert.equal(selectedPlayerSkinTone().preserveOriginal, true);
         }
         assert.deepEqual(normalizePlayerCharacterSelection({
             characterId: 'cartonSwimmer14', skinToneId: 'warm', colorSchemeId: 'green',

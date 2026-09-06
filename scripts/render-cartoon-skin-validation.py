@@ -9,6 +9,8 @@ parser=argparse.ArgumentParser(description='验证原色、深肤色、五种装
 parser.add_argument('--workdir', type=Path, required=True)
 parser.add_argument('--stage', choices=('before','after'), default='after')
 parser.add_argument('--ids', nargs='+', type=int, default=[5,6,8,9,10,11,12])
+parser.add_argument('--skin-rgb', nargs=3, type=int, default=[118,76,58])
+parser.add_argument('--resolution', type=int, default=600)
 args=parser.parse_args(sys.argv[sys.argv.index('--')+1:])
 WORK=args.workdir.resolve()
 ROOT=Path(__file__).resolve().parents[1]
@@ -22,7 +24,7 @@ for i in ids:
     rig=next(o for o in bpy.context.scene.objects if o.type=='ARMATURE')
     scene=bpy.context.scene
     scene.render.engine='CYCLES';scene.cycles.samples=4;scene.cycles.use_denoising=False
-    scene.render.resolution_x=600;scene.render.resolution_y=660;scene.render.resolution_percentage=100
+    scene.render.resolution_x=args.resolution;scene.render.resolution_y=round(args.resolution*1.1);scene.render.resolution_percentage=100
     scene.render.image_settings.file_format='PNG'
     scene.world=bpy.data.worlds.new('验证背景');scene.world.use_nodes=True
     scene.world.node_tree.nodes['Background'].inputs[0].default_value=(0.055,0.065,0.082,1)
@@ -60,13 +62,13 @@ for i in ids:
     suit_scale=nodes.new('ShaderNodeVectorMath');suit_scale.operation='SCALE';links.new(gear_bright,suit_scale.inputs['Scale'])
     skin_scale=nodes.new('ShaderNodeVectorMath');skin_scale.operation='SCALE';links.new(bright,skin_scale.inputs['Scale'])
     def lin(rgb):return tuple(v/12.92 if v<=.04045 else ((v+.055)/1.055)**2.4 for v in [x/255 for x in rgb])
-    skin_scale.inputs[0].default_value=lin((91,61,45))
+    skin_scale.inputs[0].default_value=lin(args.skin_rgb)
     suit_mix=nodes.new('ShaderNodeMixRGB');skin_mix=nodes.new('ShaderNodeMixRGB')
     links.new(ramp.outputs[0],suit_mix.inputs[0]);links.new(tex.outputs[0],suit_mix.inputs[1]);links.new(suit_scale.outputs[0],suit_mix.inputs[2])
     links.new(separate.outputs['Blue'],skin_mix.inputs[0]);links.new(suit_mix.outputs[0],skin_mix.inputs[1]);links.new(skin_scale.outputs[0],skin_mix.inputs[2])
     mesh.data.materials[0]=material
     def render(tag,view):
-        camera.location={'front':(0,-3,.55),'back':(0,3,.55),'side':(3,0,.55),'threequarter':(2,-3,.8)}[view]
+        camera.location={'front':(0,-3,.55),'back':(0,3,.55),'side':(3,0,.55),'left':(-3,0,.55),'threequarter':(2,-3,.8)}[view]
         camera.rotation_euler=(Vector((0,0,.46))-camera.location).to_track_quat('-Z','Y').to_euler()
         scene.render.filepath=str(folder/f'{stage}_{tag}_{view}.png');bpy.ops.render.render(write_still=True)
     palettes=['deep'] if stage=='before' else ['deep','red','blue','yellow','purple','original']
@@ -74,7 +76,7 @@ for i in ids:
         tex.image=base_image
         suit_scale.inputs[0].default_value=lin({'deep':(24,199,216),'red':(240,20,20),'blue':(23,109,218),'yellow':(255,209,42),'purple':(139,77,255),'original':(255,255,255)}[palette])
         links.new(tex.outputs[0] if palette=='original' else skin_mix.outputs[0],emission.inputs[0])
-        for view in ('front','back','side') if palette=='deep' else ('front',): render(palette,view)
+        for view in ('front','back','side','left') if palette=='deep' else ('front',): render(palette,view)
     if stage!='before':
         tex.image=base_image;suit_scale.inputs[0].default_value=lin((24,199,216));links.new(skin_mix.outputs[0],emission.inputs[0])
         for action in ('breaststroke','waving'):

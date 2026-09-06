@@ -130,7 +130,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 50,
         description: '身着荧绿装备的银发少女，以轻快稳定的节奏逐浪前行。',
         skillName: '霓绿节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加顺畅。',
-        supportsSkinTone: false,
+        supportsSkinTone: true,
     },
     {
         id: 'cartonSwimmer15', name: '破浪机甲', modelVariantId: 'cartonSwimmer15', unlocked: true,

@@ -13,11 +13,11 @@ import bpy
 import numpy as np
 
 
-def audit(work):
+def audit(work, ids=(5, 6, 8, 9, 10, 11, 12)):
     if not bpy.app.background:
         raise RuntimeError('此脚本只允许在独立后台 Blender 执行，以保护正在编辑的场景。')
     root = Path(__file__).resolve().parents[1]
-    for number in (5, 6, 8, 9, 10, 11, 12):
+    for number in ids:
         name = f'CartonSwimmer{number}'
         folder = work / name
         folder.mkdir(parents=True, exist_ok=True)
@@ -61,5 +61,7 @@ def audit(work):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='保存原始角色和肤色遮罩，不修改运行时资产。')
     parser.add_argument('--workdir', type=Path, required=True)
+    parser.add_argument('--ids', nargs='+', type=int, default=[5, 6, 8, 9, 10, 11, 12])
     arguments = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
-    audit(parser.parse_args(arguments).workdir.resolve())
+    args = parser.parse_args(arguments)
+    audit(args.workdir.resolve(), args.ids)
