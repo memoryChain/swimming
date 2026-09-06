@@ -31,10 +31,15 @@ export const STEERING_TUNING = {
 
 
     // Turn the curvature inward after the oriented body touches a pool wall.
-    poolWallHeadingCorrectionRate: 2.5,
+    poolWallHeadingCorrectionRate: 4,
+    // Wall-only angular-speed cap. Normal stroke steering still uses maxTurnRate;
+    // keeping this separate prevents a side-wall recovery from launching the
+    // swimmer across the pool at the full steering angular speed.
+    poolWallMaxTurnRate: 48,
     // Minimum inward-facing angle the wall helper tries to establish before it
-    // stops interfering. This gives the body footprint enough room to detach.
-    poolWallEscapeHeadingDegrees: 14,
+    // brakes and releases player steering. A small angle is enough to detach
+    // without producing a spring-like turn toward the opposite wall.
+    poolWallEscapeHeadingDegrees: 10,
 
     // Sustained player kicking offers a forgiving way to recover from a bad
     // heading. Once kick cadence reaches this frequency, the target heading

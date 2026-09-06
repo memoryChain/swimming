@@ -23,7 +23,7 @@ function compiler() {
     throw new Error('需要 typescript@5.4.5');
 }
 
-function createHarness() {
+function createHarness(externalModules = {}) {
     assert.ok(available, '需要本机 Cocos 数学实现，不能跳过骨架验证');
     const ts = compiler(), cache = {};
     let cc;
@@ -43,7 +43,7 @@ function createHarness() {
         const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: {
             target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS,
         } }).outputText;
-        const local = id => id === 'cc' ? cc : stubs[id] ?? load(path.resolve(path.dirname(file), id + '.ts'));
+        const local = id => id === 'cc' ? cc : externalModules[id] ?? stubs[id] ?? load(path.resolve(path.dirname(file), id + '.ts'));
         vm.runInThisContext(`(function(require,module,exports){${code}\n})`, { filename: file })(local, module, module.exports);
         return module.exports;
     }

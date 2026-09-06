@@ -38,6 +38,12 @@ const NET_CATCHUP_COLLISION_SUPPRESS_MS = 400;
 export class Swimmer extends Component {
     @property(CartoonSwimmerRig) public cartoonRig: CartoonSwimmerRig = null;
     @property public isAI = false;
+    // 远端真人复用 AI 身体，但碰撞身份必须与其所属客户端一致。
+    public collisionRemoteHuman = false;
+
+    get collisionParticipantIsAI(): boolean {
+        return this.isAI && !this.collisionRemoteHuman;
+    }
     @property public swimmerName = 'Swimmer';
 
     private readonly _motor = new SwimmerMotor();

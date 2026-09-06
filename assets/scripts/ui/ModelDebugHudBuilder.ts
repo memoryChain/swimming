@@ -1,6 +1,7 @@
 import { BlockInputEvents, Label, Mask, Node, ScrollView, UITransform } from 'cc';
 import { resetTuningToDefaults, saveCurrentTuning, TUNING_GROUPS } from '../core/TuningDebugControls';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { styleProjectUiLabel } from './ProjectUiFonts';
 
 export type ModelDebugHudCallbacks = {
     onExit: () => void;
@@ -12,6 +13,7 @@ export type ModelDebugHudCallbacks = {
     onSwitchTexture: () => void;
     onSwitchSkybox: () => void;
     onTuningVisibilityChanged?: (visible: boolean) => void;
+    onTuningChanged?: (id: string | null) => void;
 };
 
 export type ModelDebugHudRefs = {
@@ -246,6 +248,11 @@ export class ModelDebugHudBuilder {
 
         this.renderTuningRows(true);
         this.buildApplyControls(panel, panelWidth, panelHeight);
+        // 面板只构建一次；调参时沿用已有字体与控件。
+        for (const label of overlay.getComponentsInChildren(Label)) {
+            const description = this._tuningRows.some((row) => row.description === label);
+            styleProjectUiLabel(label, description ? 'regular' : 'semibold', label.fontSize + 6);
+        }
         // Mask must initialize while active. Hiding the parent before adding the
         // GRAPHICS_RECT mask leaves its stencil material uninitialized in Cocos 3.8.
         overlay.active = false;
@@ -262,6 +269,7 @@ export class ModelDebugHudBuilder {
             return;
         }
         control.set(control.get() + direction * control.step);
+        this._callbacks.onTuningChanged?.(control.id);
         this.renderTuningRows(false);
     }
 
@@ -309,6 +317,7 @@ export class ModelDebugHudBuilder {
         reset.setPosition(-92, -panelHeight / 2 + 34, 0);
         reset.on(Node.EventType.TOUCH_END, () => {
             resetTuningToDefaults();
+            this._callbacks.onTuningChanged?.(null);
             this.setStatus('已重置');
             this.renderTuningRows(false);
         });

@@ -6,7 +6,7 @@
 
 ## 基本结构
 
-- `version`：调参文件格式版本，目前是 `3`。
+- `version`：调参文件格式版本，目前是 `30`。
 - `updatedAt`：最近一次保存时间，ISO 字符串，只用于记录。
 - `values`：真正参与运行的调参键值表。
 
@@ -55,7 +55,6 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 | `speed.strokeQualityAccel` | `3` | m/s² | 甜区评分带来的额外推进加速度。松手正中甜区时接近满值，偏离中心会按评分比例减少，并受体能效率倍率影响。 |
 | `speed.strokeAccelDurationRatio` | `0.35` | 比例 | 一次划水加速度脉冲持续时间，占当前动作一轮时间的比例。越短越像瞬间窜一下，越长越像持续推水。 |
 | `speed.strokeImpulseSharpness` | `0.6` | 0-1 | 划水脉冲的前置锐度。`0` 表示加速度平均分布；越高表示划水刚触发时更猛、后段回落更快。总推进量大体不变，主要改变手感。 |
-| `speed.diveUnderwaterKickAccel` | `0.4` | m/s² | 跳水入水后的潜水阶段，每次输入只触发腿部踢水时给的推进加速度。和正常比赛里的踢腿频率推进分开调。 |
 | `speed.kickAccelPerHz` | `0.5` | m/s² / Hz | 正常比赛踢腿推进系数。每 1Hz 踢腿频率产生多少持续加速度；点得越快，频率越高，加速越强。 |
 | `speed.kickMaxSpeed` | `3` | m/s | 单靠踢腿能达到的最高速度。应低于 `speed.maxSpeed`，让手臂划水仍是主要速度来源。 |
 | `speed.kickCeilingBand` | `0.5` | m/s | 接近踢腿速度上限前的缓冲区间。速度进入 `kickMaxSpeed - kickCeilingBand` 到 `kickMaxSpeed` 之间时，踢腿加速度会逐渐衰减到 0。 |
@@ -64,7 +63,6 @@ strokeAccel = (基础动作加速 + 划水质量加速 * 甜区质量) * timeSca
 | `speed.poolDeceleration` | `0.05` | m/s² | 固定减速度，和当前速度无关。相当于泳池/场景给的基础阻滞。 |
 | `speed.baseDrag` | `0.42` | 系数 | 线性阻力系数，阻力与当前速度成正比。调大后中低速也会明显掉速。 |
 | `speed.highSpeedDrag` | `0.14` | 系数 | 二次阻力系数，阻力与速度平方成正比。调大后高速段更难维持，低速影响较小。 |
-| `speed.aiCruiseAccel` | `1.9` | m/s² | AI 对手的持续巡航推进加速度，独立于玩家输入评分。值越高，AI 越容易保持速度。只影响 AI。 |
 
 ## 划水判定与甜区
 
