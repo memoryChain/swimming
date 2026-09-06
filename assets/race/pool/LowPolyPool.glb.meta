@@ -12,7 +12,7 @@
       "id": "17667",
       "name": "BleacherBatch_T3_E_Mesh.mesh",
       "userData": {
-        "gltfIndex": 25,
+        "gltfIndex": 26,
         "triangleCount": 144
       },
       "ver": "1.1.1",
@@ -30,7 +30,7 @@
       "id": "23543",
       "name": "立方体.003_TopOnly.mesh",
       "userData": {
-        "gltfIndex": 11,
+        "gltfIndex": 12,
         "triangleCount": 2
       },
       "ver": "1.1.1",
@@ -71,7 +71,7 @@
       "id": "68728",
       "name": "BleacherBatch_T4_N_Mesh.mesh",
       "userData": {
-        "gltfIndex": 26,
+        "gltfIndex": 27,
         "triangleCount": 232
       },
       "ver": "1.1.1",
@@ -190,6 +190,24 @@
       ],
       "subMetas": {}
     },
+    "579e2": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@579e2",
+      "displayName": "",
+      "id": "579e2",
+      "name": "ceiling_lighting_rig_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 6,
+        "triangleCount": 2320
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "ad162": {
       "importer": "gltf-mesh",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@ad162",
@@ -197,7 +215,7 @@
       "id": "ad162",
       "name": "lane_float_rope_batch_Mesh.002.mesh",
       "userData": {
-        "gltfIndex": 6,
+        "gltfIndex": 7,
         "triangleCount": 3892
       },
       "ver": "1.1.1",
@@ -215,7 +233,7 @@
       "id": "d2997",
       "name": "lane_floor_line_batch_Mesh.002.mesh",
       "userData": {
-        "gltfIndex": 7,
+        "gltfIndex": 8,
         "triangleCount": 288
       },
       "ver": "1.1.1",
@@ -233,7 +251,7 @@
       "id": "8cdeb",
       "name": "pool_edge_batch_Mesh.002.mesh",
       "userData": {
-        "gltfIndex": 8,
+        "gltfIndex": 9,
         "triangleCount": 48
       },
       "ver": "1.1.1",
@@ -251,7 +269,7 @@
       "id": "2ea71",
       "name": "pool_floor_mesh.002.mesh",
       "userData": {
-        "gltfIndex": 9,
+        "gltfIndex": 10,
         "triangleCount": 12
       },
       "ver": "1.1.1",
@@ -269,7 +287,7 @@
       "id": "abf3a",
       "name": "pool_inner_wall_batch_Mesh.002.mesh",
       "userData": {
-        "gltfIndex": 10,
+        "gltfIndex": 11,
         "triangleCount": 8
       },
       "ver": "1.1.1",
@@ -287,7 +305,7 @@
       "id": "fe48d",
       "name": "立方体.004.mesh",
       "userData": {
-        "gltfIndex": 12,
+        "gltfIndex": 13,
         "triangleCount": 48
       },
       "ver": "1.1.1",
@@ -305,7 +323,7 @@
       "id": "40c90",
       "name": "award_podium_1.002.mesh",
       "userData": {
-        "gltfIndex": 13,
+        "gltfIndex": 14,
         "triangleCount": 20
       },
       "ver": "1.1.1",
@@ -323,7 +341,7 @@
       "id": "c375b",
       "name": "award_podium_2.002.mesh",
       "userData": {
-        "gltfIndex": 14,
+        "gltfIndex": 15,
         "triangleCount": 20
       },
       "ver": "1.1.1",
@@ -341,7 +359,7 @@
       "id": "82b4a",
       "name": "award_podium_3.002.mesh",
       "userData": {
-        "gltfIndex": 15,
+        "gltfIndex": 16,
         "triangleCount": 20
       },
       "ver": "1.1.1",
@@ -359,7 +377,7 @@
       "id": "8f6c4",
       "name": "BleacherBatch_T1_N_Mesh.mesh",
       "userData": {
-        "gltfIndex": 16,
+        "gltfIndex": 17,
         "triangleCount": 232
       },
       "ver": "1.1.1",
@@ -377,7 +395,7 @@
       "id": "8d389",
       "name": "BleacherBatch_T1_S_Mesh.mesh",
       "userData": {
-        "gltfIndex": 17,
+        "gltfIndex": 18,
         "triangleCount": 232
       },
       "ver": "1.1.1",
@@ -395,7 +413,7 @@
       "id": "840a1",
       "name": "BleacherBatch_T1_E_Mesh.mesh",
       "userData": {
-        "gltfIndex": 18,
+        "gltfIndex": 19,
         "triangleCount": 144
       },
       "ver": "1.1.1",
@@ -413,7 +431,7 @@
       "id": "b2079",
       "name": "CornerStands_Merged_Mesh.mesh",
       "userData": {
-        "gltfIndex": 19,
+        "gltfIndex": 20,
         "triangleCount": 896
       },
       "ver": "1.1.1",
@@ -431,7 +449,7 @@
       "id": "bdbe2",
       "name": "BleacherBatch_T2_N_Mesh.mesh",
       "userData": {
-        "gltfIndex": 20,
+        "gltfIndex": 21,
         "triangleCount": 212
       },
       "ver": "1.1.1",
@@ -449,7 +467,7 @@
       "id": "674ae",
       "name": "BleacherBatch_T2_S_Mesh.mesh",
       "userData": {
-        "gltfIndex": 21,
+        "gltfIndex": 22,
         "triangleCount": 212
       },
       "ver": "1.1.1",
@@ -467,7 +485,7 @@
       "id": "7045a",
       "name": "BleacherBatch_T2_E_Mesh.mesh",
       "userData": {
-        "gltfIndex": 22,
+        "gltfIndex": 23,
         "triangleCount": 132
       },
       "ver": "1.1.1",
@@ -485,7 +503,7 @@
       "id": "3b9d9",
       "name": "BleacherBatch_T3_N_Mesh.mesh",
       "userData": {
-        "gltfIndex": 23,
+        "gltfIndex": 24,
         "triangleCount": 232
       },
       "ver": "1.1.1",
@@ -503,7 +521,7 @@
       "id": "6b1c0",
       "name": "BleacherBatch_T3_S_Mesh.mesh",
       "userData": {
-        "gltfIndex": 24,
+        "gltfIndex": 25,
         "triangleCount": 232
       },
       "ver": "1.1.1",
@@ -521,7 +539,7 @@
       "id": "d4d75",
       "name": "BleacherBatch_T4_S_Mesh.mesh",
       "userData": {
-        "gltfIndex": 27,
+        "gltfIndex": 28,
         "triangleCount": 232
       },
       "ver": "1.1.1",
@@ -539,7 +557,7 @@
       "id": "2dbbf",
       "name": "BleacherBatch_T4_E_Mesh.mesh",
       "userData": {
-        "gltfIndex": 28,
+        "gltfIndex": 29,
         "triangleCount": 144
       },
       "ver": "1.1.1",
@@ -557,7 +575,7 @@
       "id": "cbed6",
       "name": "BleacherAccess_Architecture_Merged_Mesh.mesh",
       "userData": {
-        "gltfIndex": 29,
+        "gltfIndex": 30,
         "triangleCount": 1788
       },
       "ver": "1.1.1",
@@ -575,7 +593,7 @@
       "id": "a6a1b",
       "name": "BleacherAccess_Rails_Merged_Mesh.mesh",
       "userData": {
-        "gltfIndex": 30,
+        "gltfIndex": 31,
         "triangleCount": 1408
       },
       "ver": "1.1.1",
@@ -593,7 +611,7 @@
       "id": "977c9",
       "name": "OlympicPanels_Merged_Mesh.mesh",
       "userData": {
-        "gltfIndex": 31,
+        "gltfIndex": 32,
         "triangleCount": 2260
       },
       "ver": "1.1.1",
@@ -611,7 +629,7 @@
       "id": "070d0",
       "name": "PoolsideProps_Merged_Mesh.mesh",
       "userData": {
-        "gltfIndex": 32,
+        "gltfIndex": 33,
         "triangleCount": 5872
       },
       "ver": "1.1.1",
@@ -995,6 +1013,22 @@
       ],
       "subMetas": {}
     },
+    "4144f": {
+      "importer": "gltf-material",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@4144f",
+      "displayName": "",
+      "id": "4144f",
+      "name": "CeilingArchitecturalVertexColor.material",
+      "userData": {
+        "gltfIndex": 3
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "c3802": {
       "importer": "gltf-material",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@c3802",
@@ -1002,7 +1036,7 @@
       "id": "c3802",
       "name": "LPVenue_cartoon_float_blue.material",
       "userData": {
-        "gltfIndex": 3
+        "gltfIndex": 4
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1018,7 +1052,7 @@
       "id": "3271b",
       "name": "LPVenue_cartoon_float_white.material",
       "userData": {
-        "gltfIndex": 4
+        "gltfIndex": 5
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1034,7 +1068,7 @@
       "id": "bdbbf",
       "name": "LPVenue_cartoon_float_red.material",
       "userData": {
-        "gltfIndex": 5
+        "gltfIndex": 6
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1050,7 +1084,7 @@
       "id": "7137e",
       "name": "LPVenue_cartoon_float_yellow.material",
       "userData": {
-        "gltfIndex": 6
+        "gltfIndex": 7
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1066,7 +1100,7 @@
       "id": "973fd",
       "name": "LPVenue_cartoon_lane_floor_navy.material",
       "userData": {
-        "gltfIndex": 7
+        "gltfIndex": 8
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1082,7 +1116,7 @@
       "id": "5dcc0",
       "name": "LPVenue_cartoon_pool_edge_white.material",
       "userData": {
-        "gltfIndex": 8
+        "gltfIndex": 9
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1098,7 +1132,7 @@
       "id": "270a0",
       "name": "LPVenue_pool_inner_wall_narrow_tiles.material",
       "userData": {
-        "gltfIndex": 9
+        "gltfIndex": 10
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1114,7 +1148,7 @@
       "id": "86ba8",
       "name": "LPVenue_runtime_water_placeholder.material",
       "userData": {
-        "gltfIndex": 10,
+        "gltfIndex": 11,
         "triangleCount": 2
       },
       "ver": "1.0.14",
@@ -1131,7 +1165,7 @@
       "id": "5bdca",
       "name": "Venue_Ground_Resin.material",
       "userData": {
-        "gltfIndex": 11
+        "gltfIndex": 12
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1147,7 +1181,7 @@
       "id": "d3bc5",
       "name": "LPVenue_cartoon_podium_red.001.material",
       "userData": {
-        "gltfIndex": 12
+        "gltfIndex": 13
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1163,7 +1197,7 @@
       "id": "5e8cb",
       "name": "Bleacher_Access_Door_Dark.material",
       "userData": {
-        "gltfIndex": 13
+        "gltfIndex": 14
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1179,7 +1213,7 @@
       "id": "b5a68",
       "name": "EmergencyExit_Green.material",
       "userData": {
-        "gltfIndex": 14
+        "gltfIndex": 15
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1195,7 +1229,7 @@
       "id": "cdd5d",
       "name": "Bleacher_Access_Rail_Blue.material",
       "userData": {
-        "gltfIndex": 15
+        "gltfIndex": 16
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1211,7 +1245,7 @@
       "id": "fdd62",
       "name": "tripo_mat_5335fffe-5079-4a12-b652-047c6dc6b800.003.material",
       "userData": {
-        "gltfIndex": 16
+        "gltfIndex": 17
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1227,7 +1261,7 @@
       "id": "4d2d3",
       "name": "PoolsidePropsFlatColorAtlas_Material.material",
       "userData": {
-        "gltfIndex": 17
+        "gltfIndex": 18
       },
       "ver": "1.0.14",
       "imported": true,
@@ -1310,6 +1344,7 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@1693f",
         "a751d540-5ebd-4868-a41a-334975b3aed3@344b5",
         "a751d540-5ebd-4868-a41a-334975b3aed3@bd98c",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@579e2",
         "a751d540-5ebd-4868-a41a-334975b3aed3@ad162",
         "a751d540-5ebd-4868-a41a-334975b3aed3@d2997",
         "a751d540-5ebd-4868-a41a-334975b3aed3@8cdeb",
@@ -1353,6 +1388,7 @@
         "a751d540-5ebd-4868-a41a-334975b3aed3@bfef7",
         "a751d540-5ebd-4868-a41a-334975b3aed3@61c03",
         "a751d540-5ebd-4868-a41a-334975b3aed3@12fd7",
+        "a751d540-5ebd-4868-a41a-334975b3aed3@4144f",
         "a751d540-5ebd-4868-a41a-334975b3aed3@c3802",
         "a751d540-5ebd-4868-a41a-334975b3aed3@3271b",
         "a751d540-5ebd-4868-a41a-334975b3aed3@bdbbf",

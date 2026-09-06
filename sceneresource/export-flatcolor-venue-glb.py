@@ -45,6 +45,7 @@ REQUIRED_NODES = (
     "start_block_anchor_near_08",
     "start_block_top_near_marker",
     "PoolsideProps_Merged",
+    "ceiling_lighting_rig",
 )
 
 BLEACHER_ATLAS_MATERIAL = "BleacherFlatColorAtlas_Material"
@@ -370,6 +371,16 @@ def validate_batching():
             f"version={prop_atlas_version} expected={EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION}"
         )
     validate_poolside_geometry(prop_target)
+
+    # 屋盖、灯壳、扩散面合为一个顶点色批次；拒绝回退成逐灯 renderer。
+    ceiling = next((obj for obj in meshes if obj.name == 'ceiling_lighting_rig'), None)
+    if ceiling is None or ceiling.get('ceiling_lighting_version') != 1:
+        raise RuntimeError('Missing current ceiling_lighting_rig; run refine-ceiling-lighting.py author/sync')
+    if len(ceiling.data.materials) != 1 or not ceiling.data.color_attributes.get('CeilingColor'):
+        raise RuntimeError('Ceiling lighting must keep one vertex-color material')
+    ceiling_triangles = sum(len(p.vertices) - 2 for p in ceiling.data.polygons)
+    if not 2000 <= ceiling_triangles <= 2400:
+        raise RuntimeError(f'Ceiling lighting triangle budget mismatch: {ceiling_triangles}')
 
     primitive_count = sum(
         max(1, len({polygon.material_index for polygon in obj.data.polygons}))

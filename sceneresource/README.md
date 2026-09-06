@@ -10,6 +10,7 @@
 | `SwimmingVenue_Rebuild_FlatColor.blend` | 同步、几何合并、材质合批后的导出目标 | 仅做同步与合批，不直接创作 |
 | `batch-flatcolor-venue.py` | 将 17 个看台批次压成单材质 atlas，并校验 primitive 数 | 生产脚本 |
 | `export-flatcolor-venue-glb.py` | 校验运行时节点和合批状态，导出最终 GLB | 生产脚本 |
+| `refine-ceiling-lighting.py` | 重制浅拱屋盖、支架和双槽线性灯，合为一个顶点色批次 | 生产脚本 |
 | `refine-stand-structure.py` | 按墙体和楼板接触面生成看台柱梁，合为一个运行时批次 | 生产脚本 |
 | `refine-pool-tiles.py` | 烘焙池内方砖贴图并同步池底、池壁 UV | 生产脚本 |
 | `refine-lane-floats.py` | 生成八边连续绳体，以重复贴图表现密集盘片，全池不超过 4,000 面 | 生产脚本 |
@@ -122,8 +123,8 @@
 targets: 17
 pending: 0
 completed: 17
-primitiveDrawsBefore: 38
-primitiveDrawsAfter: 38
+primitiveDrawsBefore: 39
+primitiveDrawsAfter: 39
 ```
 
 合法新增结构可能改变总数，但导出目标必须保持 `<= 39` primitive；超过上限时先审计材质槽和新增 renderer，不要直接放宽限制。
@@ -166,7 +167,7 @@ npm run textures:check
 
 至少检查以下内容：
 
-- GLB 当前基线为 56 个节点、33 个 Mesh、38 primitive、20,414 triangles、868,164 bytes，约 0.83 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。领奖台第 3 版保持 60 triangles、原一张 256×256 图集及批次，比第 2 版减少 372 bytes。此处为源 GLB 大小，不是微信最终包体增量。
+- GLB 当前基线为 57 个节点、34 个 Mesh、39 primitive、22,734 triangles、934,988 bytes，约 0.89 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。领奖台第 3 版保持 60 triangles、原一张 256×256 图集及批次，比第 2 版减少 372 bytes。此处为源 GLB 大小，不是微信最终包体增量。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
@@ -275,3 +276,22 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 ```
 
 仅重制领奖台时在 editable 命令末尾追加 `-- --podium-only`，避免重新处理旗片。第 3 版导出保持原 38 primitives、7 张内嵌图片及所有节点变换；其余 30 个 Mesh 和非领奖台图片不变。检查所有子资源 UUID、按新版尺寸推导的包围盒及正反预览；游戏内角色脚底、环绕描边和真机效果仍需验收。
+
+
+## 线性灯阵与屋盖（第 1 版）
+
+- 新灯具由 `refine-ceiling-lighting.py` 在 editable 中创作，源码集合 `CeilingPremiumLighting` 包含 7 个浅拱肋、1 个屋盖、4 组线性灯，共 12 个独立编辑对象；合批目标为 `ceiling_lighting_rig`，Mesh 名为 `ceiling_lighting_rig_Mesh`。
+- 横向支架落在现有 `StandBackWall_N/S` 的实际墙顶 `Z≈9.276m`；四条双槽灯沿泳池纵向延展，位于 Blender Y `-9/-3/3/9m`，灯壳底面 `Z=11.36m`。双吊杆连接拱肋与灯壳，扩散面内嵌槽口 0.03m，并与槽底相交 0.01m。屋盖两端按东西后墙与场馆切角收口。
+- 运行时 2,320 triangles、2,600 导出顶点、1 个不透明材质 primitive，只有 POSITION/COLOR_0；无新增纹理、法线、UV、实时光源或透明光晕。GLB 比旧场馆增加 66,824 bytes。全馆 primitive 上限仍为 39，不能放宽。
+- `CeilingLightArray.ts` 现在只绑定一次 `builtin-unlit` 顶点色材质，节点销毁时释放自建材质；不生成灯具网格。旧 76 个逐灯眩光节点和控制器已移除，比赛帧不做灯具计算。`TopViewCeilingController` 按节点名整体隐藏和恢复，包括屋盖；不要把灯具并入不带 ceiling 名称的其他场馆批次。
+- 灯具与屋盖为纯视觉内容，不影响单机或联机结果；水面仍使用原本的近似反光，不增加反射相机。
+- 修改时先备份 editable、master、GLB 和 meta，运行下列作者/同步步骤，再按本文标准流程执行 batch、dry-run、正式 export、Creator 重新导入、`textures:fix` 与 `textures:check`。保留原有 67 个子资源 UUID，新增灯具 Mesh 与 Material 子资源；原有 33 个网格和 7 张图片的数据应保持不变。
+
+```powershell
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/refine-ceiling-lighting.py
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/refine-ceiling-lighting.py -- --sync
+```
+
+`--prototype` 只生成一个灯具跨距并另存至 `temp/ceiling-preview/prototype.blend`，不保存 editable。后台几何预览使用 `scripts/render-ceiling-preview.py`（打开 prototype 时追加 `--prototype`；整馆则打开合批目标）。预览只写入被忽略的 temp 目录，不截图或启动 Creator；图片不含运行时水面与后处理，不能充当微信真机效果或性能验证。
+
+生命周期检查：`npx --yes --package typescript@5.4.5 -c "node --test tests/ceiling-lighting.test.cjs"`。重复绑定、俯视往返和资源释放必须保持单一材质实例与稳定节点数。

@@ -1038,7 +1038,7 @@ export class GameManager extends Component {
                 this._poolNode = pool;
                 // Attach the ceiling lights before the top-view binder scans so
                 // its 'ceiling'-named node is captured and hidden in top view.
-                applyCeilingLightArray(pool, this._cameraNode, (message) => this.debug(message));
+                applyCeilingLightArray(pool, (message) => this.debug(message));
                 const ceilingCount = this._topViewCeiling.bind(pool);
                 this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);
