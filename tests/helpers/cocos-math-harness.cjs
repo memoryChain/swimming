@@ -49,13 +49,18 @@ function createHarness() {
     }
     const { Vec3 } = load(path.join(engine, 'cocos/core/math/vec3.ts'));
     const { Quat } = load(path.join(engine, 'cocos/core/math/quat.ts'));
+    const { Mat4 } = load(path.join(engine, 'cocos/core/math/mat4.ts'));
     class Node {
         isValid = true; rotation = new Quat(); position = new Vec3(); scale = new Vec3(1, 1, 1); children = []; name = ''; writes = 0;
         constructor(parent = null, x = 0, y = 0, z = 0) { this.parent = parent; this.position.set(x, y, z); if (parent) parent.children.push(this); }
         get eulerAngles() { const v = new Vec3(); Quat.toEuler(v, this.rotation); return v; }
+        get worldMatrix() { return Mat4.fromRTS(new Mat4(), this.getWorldRotation(new Quat()), this.getWorldPosition(new Vec3()), this.getWorldScale(new Vec3())); }
+        getChildByPath(value) { let node = this; for (const name of value.split('/').filter(Boolean)) node = node?.children.find(child => child.name === name); return node || null; }
+        setWorldPosition(value) { if (this.parent) this.parent.inverseTransformPoint(this.position, value); else Vec3.copy(this.position, value); }
         setRotation(q) { Quat.copy(this.rotation, q); this.writes++; }
         setRotationFromEuler(x, y, z) { Quat.fromEuler(this.rotation, x, y, z); this.writes++; }
         setPosition(x, y, z) { if (typeof x === 'number') this.position.set(x, y, z); else Vec3.copy(this.position, x); }
+        setScale(x, y, z) { if (typeof x === 'number') this.scale.set(x, y, z); else Vec3.copy(this.scale, x); }
         getWorldScale(out) { if (!this.parent) return Vec3.copy(out, this.scale); this.parent.getWorldScale(out); return Vec3.multiply(out, out, this.scale); }
         inverseTransformPoint(out, point) {
             const q = new Quat(), p = new Vec3(), scale = new Vec3();
@@ -81,7 +86,7 @@ function createHarness() {
             Quat.multiply(this.rotation, inverse, q); this.writes++;
         }
     }
-    cc = { Node, Vec3, Quat };
-    return { load, Node, Vec3, Quat, root };
+    cc = { Node, Vec3, Quat, Mat4, gfx: { AttributeName: { ATTR_POSITION: 'POSITION', ATTR_JOINTS: 'JOINTS_0', ATTR_WEIGHTS: 'WEIGHTS_0' } } };
+    return { load, Node, Vec3, Quat, Mat4, cc, root };
 }
 module.exports = { createHarness };

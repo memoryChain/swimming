@@ -7,10 +7,9 @@ import type { CharacterActionPoolConfig } from '../character/CharacterActionConf
 import type { RaceFinishResult } from '../core/RaceManager';
 import { AwardsConfettiEmitter } from './AwardsConfettiEmitter';
 import { AwardsLighting } from './AwardsLighting';
+import { awardsPodiumSurface } from './AwardsPodiumSurface';
 import {
-    collectNamedBounds,
     DEFAULT_RACE_COURSE_LAYOUT,
-    PLATFORM_STANDING_LIFT,
     RaceCourseLayout,
     SceneBounds,
     STANDING_MODEL_LOCAL_Y,
@@ -18,8 +17,8 @@ import {
 
 const AWARDS_DECK_MARGIN = 2.4;
 const AWARDS_RACER_SPACING = 1.45;
-// 仅领奖动作额外抬高 8cm，避免鞋底进入台面；不改变比赛、起跳与预览站位。
-const AWARDS_SHOE_CLEARANCE = 0.08;
+// 仅留 2mm 防止鞋底与台面重叠，由各角色的真实蒙皮鞋底完成接地。
+const AWARDS_SHOE_CLEARANCE = 0.002;
 const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
     [1, 'award_podium_1'],
     [2, 'award_podium_2'],
@@ -45,7 +44,7 @@ export class AwardsPresentation {
 
         this.assignAwardsActions(winners);
 
-        const center = this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
+        const center = this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners, poolNode);
         this._lighting.show(winners.map(row => row.swimmer.node));
         const effectParent = poolNode?.isValid ? poolNode : winners[0]?.swimmer.node.parent;
         if (effectParent?.isValid) {
@@ -112,12 +111,12 @@ export class AwardsPresentation {
         }
         const tops = new Map<number, SceneBounds>();
         for (const [placement, name] of PODIUM_TOP_NODE_NAMES) {
-            const bounds = collectNamedBounds(poolNode, [name]);
+            const bounds = awardsPodiumSurface(poolNode, name);
             if (bounds) {
                 tops.set(placement, bounds);
             }
         }
-        if (tops.size === 0) {
+        if (tops.size === 0 || winners.some(row => !tops.has(row.placement))) {
             return null;
         }
         const poolCenterX = (this._courseLayout.poolStartX + this._courseLayout.poolFinishX) * 0.5;
@@ -130,7 +129,7 @@ export class AwardsPresentation {
             // Keep winners facing away from the pool and toward the awards camera,
             // regardless of whether the podium is authored beyond -X or +X.
             const facingY = position.x < poolCenterX ? 180 : 0;
-            row.swimmer.presentStanding(position, facingY);
+            row.swimmer.presentStanding(position, facingY, bounds.maxY + AWARDS_SHOE_CLEARANCE);
         }
         // Frame on the champion step (podium centre) for the awards camera.
         const champion = tops.get(1) ?? tops.values().next().value;
@@ -143,10 +142,12 @@ export class AwardsPresentation {
 
     // Fallback used when the podium meshes cannot be located: line the winners
     // up beside the pool so the ceremony still has all three on screen.
-    private presentPoolside(winners: RaceFinishResult[]): Vec3 {
+    private presentPoolside(winners: RaceFinishResult[], poolNode?: Node | null): Vec3 {
+        const ground = poolNode?.isValid ? awardsPodiumSurface(poolNode, 'Venue_Rectangular_Ground') : null;
+        const surfaceY = ground?.maxY ?? this._courseLayout.platformY + STANDING_MODEL_LOCAL_Y;
         const center = new Vec3(
             this._courseLayout.poolStartX - this._courseLayout.direction * AWARDS_DECK_MARGIN,
-            this._courseLayout.platformY,
+            surfaceY - STANDING_MODEL_LOCAL_Y,
             0,
         );
         const zOffsetByPlacement = new Map<number, number>([
@@ -158,7 +159,7 @@ export class AwardsPresentation {
             const position = center.clone();
             position.z += zOffsetByPlacement.get(row.placement) ?? 0;
             const facingY = this._courseLayout.direction > 0 ? 180 : 0;
-            row.swimmer.presentStanding(position, facingY);
+            row.swimmer.presentStanding(position, facingY, surfaceY + AWARDS_SHOE_CLEARANCE);
         }
         return center;
     }
@@ -167,7 +168,7 @@ export class AwardsPresentation {
 function standingOnBounds(bounds: SceneBounds): Vec3 {
     return new Vec3(
         (bounds.minX + bounds.maxX) * 0.5,
-        bounds.maxY - STANDING_MODEL_LOCAL_Y + PLATFORM_STANDING_LIFT + AWARDS_SHOE_CLEARANCE,
+        bounds.maxY - STANDING_MODEL_LOCAL_Y,
         (bounds.minZ + bounds.maxZ) * 0.5,
     );
 }

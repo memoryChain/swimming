@@ -65,6 +65,7 @@ function load(file) {
     const req = id => {
         if (id === 'cc') return cc;
         if (id.endsWith('CharacterActionConfig')) return { CHARACTER_ACTION_CONFIG: { awards: {} }, selectActionFromPool: () => null };
+        if (id.endsWith('AwardsPodiumSurface')) return { awardsPodiumSurface: () => bounds };
         if (id.endsWith('RaceCourseLayout')) return { DEFAULT_RACE_COURSE_LAYOUT: layout, PLATFORM_STANDING_LIFT: 0.04, STANDING_MODEL_LOCAL_Y: 0.55, collectNamedBounds: () => bounds };
         return load(path.resolve(path.dirname(file), id + '.ts'));
     };
@@ -107,12 +108,19 @@ test('领奖补光只写有卡通顶光参数的材质，共享材质不重复�
     light.show(roots); light.hide(); assert.equal(material.properties.celParams.y, 0.72);
 });
 
-test('领奖站位额外提高 8cm，起跳平台的共用常量保持不变', () => {
-    const file = path.join(root, 'assets/scripts/venue/AwardsPresentation.ts');
-    const source = fs.readFileSync(file, 'utf8');
-    const match = source.match(/const AWARDS_SHOE_CLEARANCE = ([\d.]+);/);
-    assert.equal(Number(match[1]), 0.08);
-    assert.match(source, /bounds\.maxY - STANDING_MODEL_LOCAL_Y \+ PLATFORM_STANDING_LIFT \+ AWARDS_SHOE_CLEARANCE/);
+test('重复领奖使用本轮台面高度，仅留 2mm 鞋底间隙，起跳配置保持不变', () => {
+    const { AwardsPresentation } = load(path.join(root, 'assets/scripts/venue/AwardsPresentation.ts'));
+    const awards = new AwardsPresentation(layout);
+    const calls = [];
+    const winner = { placement: 1, swimmer: { presentStanding: (...args) => calls.push(args) } };
+    for (const height of [0.98, 0.76, 0.64]) {
+        bounds.maxY = height;
+        awards.presentOnPodium([winner], new Node());
+        const [position, facing, surface] = calls.at(-1);
+        assert.equal(surface, height + 0.002);
+        assert.equal(position.y, height - 0.55);
+        assert.equal(facing, 180);
+    }
     const shared = fs.readFileSync(path.join(root, 'assets/scripts/venue/RaceCourseLayout.ts'), 'utf8');
     assert.match(shared, /PLATFORM_STANDING_LIFT = 0\.04/);
 });

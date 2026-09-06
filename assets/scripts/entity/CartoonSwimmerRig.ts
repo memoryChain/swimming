@@ -1,4 +1,6 @@
-import { _decorator, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
+import { _decorator, Camera, Color, Component, EffectAsset, instantiate, JsonAsset, Material, Node, Quat, SkeletalAnimation, SkinnedMeshRenderer, Texture2D, Vec3, Vec4 } from 'cc';
+import { CharacterHeadBounds } from '../character/CharacterHeadBounds';
+import { CharacterHandContact } from '../character/CharacterHandContact';
 import { CharacterAnimationPlayer } from '../character/CharacterAnimationPlayer';
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
@@ -6,6 +8,8 @@ import type { CharacterAction } from '../character/CharacterActionConfig';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
+import { StandingSoleContact } from '../character/StandingSoleContact';
+import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
 import { DiveChargeGatherEffect } from '../character/DiveChargeGatherEffect';
 import { collectComponentsRecursive, configureSwimmerSkinnedRenderers, findComponentRecursive, findNode, loadSwimmerPrefab, pruneNullComponentsInParentChain, pruneNullComponentsRecursive, setLayerRecursive } from '../character/CharacterModelLoader';
@@ -300,6 +304,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     // Stride is set per-frame by GameManager based on distance to the player (distance-based LOD).
     // 背景 AI 动作降频：降低昂贵程序化姿态的重算频率。stride 由 GameManager 每帧按到玩家的距离设置（距离分级 LOD）。
     private _backgroundSwimmer = false;
+    private readonly _standingSoles = new StandingSoleContact();
+    private readonly _headBounds = new CharacterHeadBounds();
+    private readonly _handContact = new CharacterHandContact();
     private _splashCulled = false;
     private _motionThrottleStride = 1;
     private _motionThrottleCountdown = 0;
@@ -478,6 +485,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this._pose.getHeadWorldPosition(out);
     }
 
+    getHeadTopScreenPosition(camera: Camera, out: Vec3): boolean {
+        return this._headBounds.topScreenPosition(camera, out);
+    }
+
     getSwimBoundaryWorldPositions(outputs: Vec3[]): number {
         return this._pose.getSwimBoundaryWorldPositions(outputs);
     }
@@ -650,6 +661,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this.applyLaneMaterials(this._skinColor, this._suitColor, this._capColor, this._robotStyle, this._playerOutline);
             this._animationPlayer.bind(findComponentRecursive(this._model, SkeletalAnimation), false);
             this._pose.captureBasePose();
+            this._standingSoles.bind(this._model, this._skinnedRenderers);
+            this._headBounds.bind(this._skinnedRenderers);
+            this._handContact.bind(this._model, this._skinnedRenderers);
+            this._pose.setDiveHandContact(this._handContact);
             if (this._pose.getHipWorldPosition(this._tmpFlipTurnWorldPivot)) {
                 this._model.inverseTransformPoint(
                     this._collisionPitchPivotModelLocal,
@@ -691,6 +706,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private clearLoadedModel() {
+        this._standingSoles.clear();
+        this._headBounds.clear();
+        this._handContact.clear();
         this.restorePerfectGlowMaterials();
         this._diveChargeBodyMaterials.length = 0;
         this._modelLoadToken++;
@@ -987,6 +1005,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._poseState.enterPreview();
             this.resetPose();
         }
+    }
+
+    setStandingSurface(worldY: number | null, referencePlane: CharacterSupportPlane | null = null) {
+        this._pose.setDiveSupportPlane(null);
+        this._pose.setStandingSurface(worldY, this._standingSoles, referencePlane);
+    }
+
+    setDiveSupportPlane(plane: CharacterSupportPlane | null) {
+        this._pose.setStandingSurface(null, this._standingSoles);
+        this._pose.setDiveSupportPlane(plane, this._standingSoles);
     }
 
     setShowcaseStanding(transitionSeconds = 0) {
@@ -1434,6 +1462,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._standingSoles.clear();
+        this._headBounds.clear();
+        this._handContact.clear();
         this._modelLoadToken += 1;
         this._colorAssetLoadToken += 1;
         this._diveChargeBodyMaterials.length = 0;

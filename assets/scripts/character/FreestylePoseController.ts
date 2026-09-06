@@ -9,6 +9,9 @@ import { FLIP_TURN_KEYFRAME_1, FlipTurnBoneName, FlipTurnPoseSample } from './Fl
 import { findSampledDebugAction, SampledActionBoneName, SampledActionId, SampledActionMotion, SampledActionMotionSample } from './SampledActionMotionCurve';
 import { CollisionLimpPoseController } from './CollisionLimpPoseController';
 import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
+import type { StandingSoleContact } from './StandingSoleContact';
+import type { CharacterSupportPlane } from './CharacterSupportPlane';
+import type { CharacterHandContact } from './CharacterHandContact';
 
 const BREASTSTROKE_SAMPLED_LIMB_BONE_NAMES: readonly BreaststrokeBoneName[] = [
     'L_Clavicle',
@@ -73,6 +76,7 @@ const BONE_ALIASES: Record<string, string[]> = {
 };
 
 export type ProceduralPoseSnapshot = {
+    hipPosition: Vec3 | null;
     rootPosition: Vec3;
     rootRotation: Quat;
     boneRotations: Map<Node, Quat>;
@@ -163,10 +167,56 @@ export class FreestylePoseController {
     private readonly _tmpClapHandRotation = new Quat();
     private readonly _leftGroundFootRotationInRoot = new Quat();
     private readonly _rightGroundFootRotationInRoot = new Quat();
+    private readonly _leftGroundToeRotationInRoot = new Quat();
+    private readonly _rightGroundToeRotationInRoot = new Quat();
+    private readonly _tmpDiveSurfaceNormal = new Vec3();
+    private readonly _tmpDiveModelUp = new Vec3();
+    private _diveHands: CharacterHandContact | null = null;
+    private readonly _tmpDiveHandMin = new Vec3();
+    private readonly _tmpDiveHandMax = new Vec3();
+    private readonly _tmpDiveLeftFootAnchor = new Vec3();
+    private readonly _tmpDiveRightFootAnchor = new Vec3();
+
+    setDiveHandContact(hands: CharacterHandContact) { this._diveHands = hands; }
+    private readonly _tmpDiveSoleMin = new Vec3();
+    private readonly _tmpDiveSoleMax = new Vec3();
+    private readonly _divePrepBlendHipPosition = new Vec3();
+    private readonly _streamlineBlendHipPosition = new Vec3();
+    private _diveSupportPlane: CharacterSupportPlane | null = null;
+    private _diveTakeoffPose: ProceduralPoseSnapshot | null = null;
     private readonly _swimFootSideInRoot = new Vec3();
     private readonly _sampledActionRestFootCenterInRoot = new Vec3();
     private readonly _movementForwardWorld = new Vec3(1, 0, 0);
     private _sampledActionRestLeftContactOffsetY = 0;
+    private _standingSurfaceY: number | null = null;
+    private _standingReferencePlane: CharacterSupportPlane | null = null;
+    private _standingSoles: StandingSoleContact | null = null;
+
+    setStandingSurface(worldY: number | null, soles: StandingSoleContact, referencePlane: CharacterSupportPlane | null = null) {
+        this._standingSurfaceY = worldY !== null && Number.isFinite(worldY) ? worldY : null;
+        this._standingReferencePlane = referencePlane;
+        this._standingSoles = soles;
+    }
+
+    setDiveSupportPlane(plane: CharacterSupportPlane | null, soles?: StandingSoleContact) {
+        this._diveSupportPlane = plane;
+        this._diveTakeoffPose = null;
+        if (soles) this._standingSoles = soles;
+    }
+
+    get hasDiveSupportPlane(): boolean { return this._diveSupportPlane !== null; }
+
+    beginDiveFlight() {
+        // 保存最后的贴台姿势，离台后只向流线型混合，不再追踪外部支撑面。
+        this._diveTakeoffPose = this._diveSupportPlane ? this.capturePoseSnapshot() : null;
+        this._diveSupportPlane = null;
+    }
+
+    fitDiveTransitionSupport(handWeight = 1) {
+        // 插值决定上身动作；展示与准备共用斜台，随后单独求解双脚接触。
+        // 仅抬高骨盆防穿透会留下悬空脚，尤其是展示到屈膝的中间帧。
+        this.applyDiveSupport(handWeight);
+    }
     private _sampledActionRestRightContactOffsetY = 0;
     private _sampledActionHipTranslationScale = 1;
     private _sampledStandingUprightCorrectionDegrees = SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES;
@@ -229,6 +279,8 @@ export class FreestylePoseController {
         }
         this.captureGroundFootRotationInRoot(this._leftFoot, this._leftGroundFootRotationInRoot);
         this.captureGroundFootRotationInRoot(this._rightFoot, this._rightGroundFootRotationInRoot);
+        this.captureGroundFootRotationInRoot(this._leftToe, this._leftGroundToeRotationInRoot);
+        this.captureGroundFootRotationInRoot(this._rightToe, this._rightGroundToeRotationInRoot);
         this.captureSwimFootSideInRoot();
         this.captureSampledStandingUprightCorrection();
         this.captureSampledActionGroundPlane();
@@ -278,6 +330,7 @@ export class FreestylePoseController {
             }
         }
         return {
+            hipPosition: this._hips ? Vec3.clone(this._hips.position) : null,
             rootPosition: this.root.position.clone(),
             rootRotation: Quat.clone(this.root.rotation),
             boneRotations,
@@ -290,6 +343,7 @@ export class FreestylePoseController {
         }
         this.root.setPosition(snapshot.rootPosition);
         this.root.setRotation(snapshot.rootRotation);
+        if (this._hips && snapshot.hipPosition) this._hips.setPosition(snapshot.hipPosition);
         for (const [bone, rotation] of snapshot.boneRotations) {
             if (bone.isValid) {
                 bone.setRotation(rotation);
@@ -312,6 +366,10 @@ export class FreestylePoseController {
         }
         const bodyT = clamp(bodyRatio, 0, 1);
         const armT = clamp(armRatio, 0, 1);
+        if (this._hips && from.hipPosition && to.hipPosition) {
+            Vec3.lerp(this._tmpBlendPosition, from.hipPosition, to.hipPosition, bodyT);
+            this._hips.setPosition(this._tmpBlendPosition);
+        }
         Vec3.lerp(this._tmpBlendPosition, from.rootPosition, to.rootPosition, bodyT);
         this.root.setPosition(this._tmpBlendPosition);
         Quat.slerp(this._tmpBlendRotation, from.rootRotation, to.rootRotation, bodyT);
@@ -529,6 +587,7 @@ export class FreestylePoseController {
         if (sample) {
             this.applySampleRotations(sample, power);
         }
+        this.applyDiveSupport();
     }
 
     applyFlipTurnKeyPose(sample: FlipTurnPoseSample, power = 1) {
@@ -600,9 +659,11 @@ export class FreestylePoseController {
         }
         // Dancing Twerk 的旧采样误把整段双脚支撑动作标成了完全腾空。
         const contactMask = actionId === 'dancing_twerk' ? 3 : (sample.groundedFeet ?? 0);
+        // 斜面上水平移动也会改变所需高度，必须先居中再求接触，不能贴台后再平移。
+        if (this._standingReferencePlane) this.applySampledActionHorizontalCentering();
         this.applySampledStandingFootOrientation(contactMask, power);
         this.applySampledActionGrounding(sample, power, contactMask);
-        this.applySampledActionHorizontalCentering();
+        if (!this._standingReferencePlane) this.applySampledActionHorizontalCentering();
     }
 
     applyDivePrepToStreamlinePose(blend: number) {
@@ -611,7 +672,8 @@ export class FreestylePoseController {
         }
         const t = clamp(blend, 0, 1);
         if (t <= 0) {
-            this.applyDivePrepPose(1);
+            if (this._diveTakeoffPose) this.applyPoseSnapshot(this._diveTakeoffPose);
+            else this.applyDivePrepPose(1);
             return;
         }
         if (t >= 1) {
@@ -621,7 +683,9 @@ export class FreestylePoseController {
         }
 
         const bones = this._manualBones;
-        this.applyDivePrepPose(1);
+        if (this._diveTakeoffPose) this.applyPoseSnapshot(this._diveTakeoffPose);
+        else this.applyDivePrepPose(1);
+        if (this._hips) Vec3.copy(this._divePrepBlendHipPosition, this._hips.position);
         Vec3.copy(this._divePrepBlendRootPosition, this.root.position);
         Quat.copy(this._divePrepBlendRootRotation, this.root.rotation);
         for (let i = 0; i < bones.length; i++) {
@@ -630,6 +694,7 @@ export class FreestylePoseController {
 
         this.restoreBasePose();
         this.applyFreestylePose(0, 0, 0, 0, 0, 1, 1, 0.9);
+        if (this._hips) Vec3.copy(this._streamlineBlendHipPosition, this._hips.position);
         Vec3.copy(this._streamlineBlendRootPosition, this.root.position);
         Quat.copy(this._streamlineBlendRootRotation, this.root.rotation);
         for (let i = 0; i < bones.length; i++) {
@@ -644,6 +709,192 @@ export class FreestylePoseController {
             Quat.slerp(this._tmpBlendRotation, this._divePrepBlendRotations[i], this._streamlineBlendRotations[i], t);
             bones[i].setRotation(this._tmpBlendRotation);
         }
+        if (this._hips) {
+            Vec3.lerp(this._tmpBlendPosition, this._divePrepBlendHipPosition, this._streamlineBlendHipPosition, t);
+            this._hips.setPosition(this._tmpBlendPosition);
+        }
+    }
+
+    private applyDiveSupport(handWeight = 1) {
+        const plane = this._diveSupportPlane;
+        const soles = this._standingSoles;
+        if (!plane || !soles?.ready || !this._hips) return;
+        this._tmpDiveSurfaceNormal.set(plane.nx, plane.ny, plane.nz);
+        soles.restUpWorld(this._tmpDiveModelUp);
+        this.orientDiveContactBone(this._leftFoot, this._leftGroundFootRotationInRoot);
+        this.orientDiveContactBone(this._rightFoot, this._rightGroundFootRotationInRoot);
+        this.orientDiveContactBone(this._leftToe, this._leftGroundToeRotationInRoot);
+        this.orientDiveContactBone(this._rightToe, this._rightGroundToeRotationInRoot);
+        this.fitSupportFeet(plane, 3, 1);
+        this.fitDiveHands(plane, handWeight);
+    }
+
+    private fitDiveHands(plane: CharacterSupportPlane, power: number) {
+        const hands = this._diveHands;
+        if (!hands?.ready || power <= 0) return;
+        const direction = hands.forwardSign;
+        const front = direction > 0 ? (plane.obstacleMaxX ?? plane.maxX) : (plane.obstacleMinX ?? plane.minX);
+        this.hangDiveArm(this._leftArm, this._leftForeArm, this._leftHand, direction, power);
+        this.hangDiveArm(this._rightArm, this._rightForeArm, this._rightHand, direction, power);
+        let forwardCorrection = -Infinity;
+        for (let side = 0; side < 2; side++) {
+            // 防穿透与伸出台沿是两个条件：短臂的手可能还在台面上方，不能因此忽略站位。
+            hands.handWorldBounds(side, this._tmpDiveHandMin, this._tmpDiveHandMax);
+            const handEdge = direction > 0 ? this._tmpDiveHandMin.x : this._tmpDiveHandMax.x;
+            const topEdge = direction > 0 ? plane.maxX : plane.minX;
+            const reachCorrection = 0.008 - direction * (handEdge - topEdge);
+            if (Number.isFinite(reachCorrection)) {
+                forwardCorrection = Math.max(forwardCorrection, reachCorrection > 0 ? reachCorrection * power : reachCorrection);
+            }
+            hands.worldBounds(side, this._tmpDiveHandMin, this._tmpDiveHandMax, plane.maxY + 0.01);
+            if (!Number.isFinite(this._tmpDiveHandMin.x)) continue;
+            if (this._tmpDiveHandMin.z >= plane.maxZ || this._tmpDiveHandMax.z <= plane.minZ) continue;
+            if (plane.obstacleBands?.length) {
+                const minY = this._tmpDiveHandMin.y, maxY = this._tmpDiveHandMax.y;
+                for (const band of plane.obstacleBands) {
+                    if (band.maxY < minY || band.minY > maxY) continue;
+                    hands.worldBounds(side, this._tmpDiveHandMin, this._tmpDiveHandMax, band.maxY, band.minY, true);
+                    if (!Number.isFinite(this._tmpDiveHandMin.x)
+                        || this._tmpDiveHandMin.z >= band.maxZ || this._tmpDiveHandMax.z <= band.minZ) continue;
+                    const nearest = direction > 0 ? this._tmpDiveHandMin.x : this._tmpDiveHandMax.x;
+                    const edge = direction > 0 ? band.maxX : band.minX;
+                    forwardCorrection = Math.max(forwardCorrection, 0.008 - direction * (nearest - edge));
+                }
+            } else {
+                const nearest = direction > 0 ? this._tmpDiveHandMin.x : this._tmpDiveHandMax.x;
+                forwardCorrection = Math.max(forwardCorrection, 0.008 - direction * (nearest - front));
+            }
+        }
+        // 前移避障立即生效；后收随准备动作渐入，避免展示阶段刚结束时站位跳变。
+        if (forwardCorrection < 0) forwardCorrection *= power;
+        if (Number.isFinite(forwardCorrection) && Math.abs(forwardCorrection) > 0.0005 && this._leftFoot && this._rightFoot) {
+            // 保持整条手臂斜向内收，将身体前移到不会碰台的位置，优先保留原脚位。
+            this._leftFoot.getWorldPosition(this._tmpDiveLeftFootAnchor);
+            this._rightFoot.getWorldPosition(this._tmpDiveRightFootAnchor);
+            this._hips.getWorldPosition(this._tmpGroundHip);
+            this._tmpGroundHip.x += forwardCorrection * direction;
+            this._hips.setWorldPosition(this._tmpGroundHip);
+            this.advanceDiveFootAnchor(this._leftUpLeg, this._leftLeg, this._leftFoot, this._tmpDiveLeftFootAnchor, plane, direction);
+            this.advanceDiveFootAnchor(this._rightUpLeg, this._rightLeg, this._rightFoot, this._tmpDiveRightFootAnchor, plane, direction);
+            // 短腿角色前移后可能够不到原脚位，先按真实腿长降低骨盆，避免 IK 拉直后悬空。
+            const lowerBy = Math.max(
+                this.diveLegReachLowering(this._leftUpLeg, this._leftLeg, this._leftFoot, this._tmpDiveLeftFootAnchor),
+                this.diveLegReachLowering(this._rightUpLeg, this._rightLeg, this._rightFoot, this._tmpDiveRightFootAnchor),
+            );
+            if (lowerBy > 0) {
+                this._hips.getWorldPosition(this._tmpGroundHip);
+                this._tmpGroundHip.y -= lowerBy;
+                this._hips.setWorldPosition(this._tmpGroundHip);
+            }
+            for (let i = 0; i < 2; i++) {
+                this.solveSampledLegGroundContact(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, 0.002, 1, plane, this._tmpDiveLeftFootAnchor);
+                this.solveSampledLegGroundContact(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, 0.002, 1, plane, this._tmpDiveRightFootAnchor);
+            }
+        }
+    }
+
+    private advanceDiveFootAnchor(thigh: Node, calf: Node, foot: Node, anchor: Vec3, plane: CharacterSupportPlane, direction: number) {
+        if (!thigh || !calf || !foot) return;
+        thigh.getWorldPosition(this._tmpGroundHip);
+        calf.getWorldPosition(this._tmpGroundKnee);
+        foot.getWorldPosition(this._tmpGroundAnkle);
+        const reach = (Vec3.distance(this._tmpGroundHip, this._tmpGroundKnee)
+            + Vec3.distance(this._tmpGroundKnee, this._tmpGroundAnkle)) * 0.98;
+        const dy = this._tmpGroundHip.y - anchor.y, dz = this._tmpGroundHip.z - anchor.z;
+        const reachableX = Math.sqrt(Math.max(0, reach * reach - dy * dy - dz * dz));
+        const needed = Math.max(0, (this._tmpGroundHip.x - anchor.x) * direction - reachableX);
+        if (needed <= 0.0005) return;
+        // 只在腿长不够时将脚位沿踏面略微前移，脚掌范围不能越过台前沿。
+        this._standingSoles.worldBounds(foot === this._leftFoot ? 0 : 1, this._tmpDiveSoleMin, this._tmpDiveSoleMax);
+        const anchorOffset = anchor.x - this._tmpGroundAnkle.x;
+        const space = direction > 0 ? plane.maxX - this._tmpDiveSoleMax.x - anchorOffset
+            : this._tmpDiveSoleMin.x + anchorOffset - plane.minX;
+        const move = Math.min(needed, Math.max(0, space - 0.005)) * direction;
+        anchor.x += move;
+        anchor.y -= plane.nx * move / plane.ny;
+    }
+
+    private diveLegReachLowering(thigh: Node, calf: Node, foot: Node, anchor: Vec3): number {
+        if (!thigh || !calf || !foot) return 0;
+        thigh.getWorldPosition(this._tmpGroundHip);
+        calf.getWorldPosition(this._tmpGroundKnee);
+        foot.getWorldPosition(this._tmpGroundAnkle);
+        const reach = (Vec3.distance(this._tmpGroundHip, this._tmpGroundKnee)
+            + Vec3.distance(this._tmpGroundKnee, this._tmpGroundAnkle)) * 0.995;
+        const dx = this._tmpGroundHip.x - anchor.x, dz = this._tmpGroundHip.z - anchor.z;
+        const maxHeight = Math.sqrt(Math.max(0, reach * reach - dx * dx - dz * dz));
+        return Math.max(0, this._tmpGroundHip.y - anchor.y - maxHeight);
+    }
+
+    private hangDiveArm(arm: Node, forearm: Node, hand: Node, direction: number, power: number) {
+        if (!arm || !forearm || !hand) return;
+        const elbowRest = this._boneBaseRotation.get(forearm);
+        const wristRest = this._boneBaseRotation.get(hand);
+        if (!elbowRest || !wristRest) return;
+        // 手腕回到中性局部姿态，随前臂运动；不再把手掌单独掰向世界下方。
+        Quat.slerp(this._tmpBlendRotation, forearm.rotation, elbowRest, power);
+        forearm.setRotation(this._tmpBlendRotation);
+        Quat.slerp(this._tmpBlendRotation, hand.rotation, wristRest, power);
+        hand.setRotation(this._tmpBlendRotation);
+        arm.getWorldPosition(this._tmpGroundHip);
+        forearm.getWorldPosition(this._tmpGroundKnee);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        // 向身体下方、台前沿略微收臂；以比赛前进方向判断内侧，兼容两端跳台。
+        this._tmpDirection.set(-direction * Math.tan(FREESTYLE_POSE_TUNING.divePrepUpperArmInwardDegrees * Math.PI / 180), -1, 0);
+        this.rotateWorldBoneDirection(arm, this._tmpWorldDirection, this._tmpDirection, power);
+        forearm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundAnkle, this._tmpGroundKnee);
+        // 前臂也向内下方延伸，比上臂稍缓，保留自然屈肘与中性手腕。
+        this._tmpDirection.set(-direction * Math.tan(FREESTYLE_POSE_TUNING.divePrepForearmInwardDegrees * Math.PI / 180), -1, 0);
+        this.rotateWorldBoneDirection(forearm, this._tmpWorldDirection, this._tmpDirection, power);
+        // 方向求解只决定屈伸，另外绕前臂长轴校正旋转，让掌心朝身体而不折手腕。
+        forearm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpGroundAxis, this._tmpGroundAnkle, this._tmpGroundKnee);
+        Vec3.normalize(this._tmpGroundAxis, this._tmpGroundAxis);
+        this._diveHands.palmNormalWorld(hand === this._leftHand ? 0 : 1, this._tmpWorldDirection);
+        Vec3.scaleAndAdd(this._tmpWorldDirection, this._tmpWorldDirection, this._tmpGroundAxis,
+            -Vec3.dot(this._tmpWorldDirection, this._tmpGroundAxis));
+        this._tmpDirection.set(-direction, 0, 0);
+        Vec3.scaleAndAdd(this._tmpDirection, this._tmpDirection, this._tmpGroundAxis,
+            -Vec3.dot(this._tmpDirection, this._tmpGroundAxis));
+        if (this._tmpWorldDirection.lengthSqr() < 0.000001 || this._tmpDirection.lengthSqr() < 0.000001) return;
+        Vec3.normalize(this._tmpWorldDirection, this._tmpWorldDirection);
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        Vec3.cross(this._tmpGroundKneeOffset, this._tmpWorldDirection, this._tmpDirection);
+        const twist = Math.atan2(Vec3.dot(this._tmpGroundKneeOffset, this._tmpGroundAxis),
+            Vec3.dot(this._tmpWorldDirection, this._tmpDirection));
+        Quat.fromAxisAngle(this._tmpDeltaRotation, this._tmpGroundAxis, twist * power);
+        forearm.getWorldRotation(this._tmpGroundBoneRotation);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundBoneRotation);
+        forearm.setWorldRotation(this._tmpResultRotation);
+    }
+
+    private fitSupportFeet(plane: CharacterSupportPlane, contactMask: number, power: number) {
+        const soles = this._standingSoles;
+        if (!soles?.ready || !this._hips || !contactMask) return;
+        const left = (contactMask & 1) !== 0, right = (contactMask & 2) !== 0;
+        const clearance = 0.002;
+        const correction = clearance - Math.max(left ? soles.planeClearance(0, plane) : -Infinity,
+            right ? soles.planeClearance(1, plane) : -Infinity);
+        this._hips.getWorldPosition(this._tmpGroundHip);
+        this._tmpGroundHip.y += correction * power;
+        this._hips.setWorldPosition(this._tmpGroundHip);
+        for (let i = 0; i < 2; i++) {
+            if (left) this.solveSampledLegGroundContact(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, clearance, power, plane);
+            if (right) this.solveSampledLegGroundContact(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, clearance, power, plane);
+        }
+    }
+
+    private orientDiveContactBone(bone: Node, restInRoot: Quat) {
+        if (!bone) return;
+        this.applyGroundFootRotation(bone, restInRoot, 1);
+        bone.getWorldRotation(this._tmpGroundBoneRotation);
+        // 抵消外层节点的已有倾角，只把脚掌对准世界台面法线，不旋转骨盆或上身。
+        Quat.rotationTo(this._tmpDeltaRotation, this._tmpDiveModelUp, this._tmpDiveSurfaceNormal);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundBoneRotation);
+        bone.setWorldRotation(this._tmpResultRotation);
     }
 
     applyPreRaceStandingPose() {
@@ -656,6 +907,10 @@ export class FreestylePoseController {
         this.applyBoneOffset(this._rightUpLeg, 2, 0, 2);
         this.applyBoneOffset(this._leftLeg, 2, 0, 0);
         this.applyBoneOffset(this._rightLeg, -2, 0, 0);
+        if (this._standingSurfaceY !== null) {
+            if (this._standingReferencePlane) this.applySampledStandingFootOrientation(3, 1);
+            this.applySampledActionGrounding(null, 1, 3);
+        }
     }
 
     applyFinishFloatingPose() {
@@ -1255,24 +1510,45 @@ export class FreestylePoseController {
         this._hips.setWorldPosition(this._tmpGroundHip);
     }
 
-    private applySampledActionGrounding(sample: SampledActionMotionSample, power: number, contactMask: number) {
+    private applySampledActionGrounding(sample: SampledActionMotionSample | null, power: number, contactMask: number) {
         if (!this.root || !this._hips) {
             return;
+        }
+        const surfaceY = this._standingSurfaceY !== null && this._standingReferencePlane && this._standingSoles?.ready
+            ? this._standingSoles.horizontalSurfaceY(this._standingReferencePlane) + 0.002
+            : this._standingSurfaceY;
+        const blend = clamp(power, 0, 1);
+        if (surfaceY !== null) {
+            // 先移动整段动作的基准平面，腾空帧保留原有离地高度，不被强行吸到台面。
+            this.root.getWorldPosition(this._tmpGroundHip);
+            const restY = this._standingSoles?.ready
+                ? this._standingSoles.restWorldY()
+                : this._tmpGroundHip.y + Math.min(
+                    this._sampledActionRestLeftContactOffsetY, this._sampledActionRestRightContactOffsetY,
+                );
+            if (Number.isFinite(restY)) {
+                this._hips.getWorldPosition(this._tmpGroundHip);
+                this._tmpGroundHip.y += (surfaceY - restY) * blend;
+                this._hips.setWorldPosition(this._tmpGroundHip);
+            }
         }
         const leftGrounded = (contactMask & 1) !== 0;
         const rightGrounded = (contactMask & 2) !== 0;
         if (!leftGrounded && !rightGrounded) {
             return;
         }
-        const blend = clamp(power, 0, 1);
+        if (this._standingReferencePlane && this._standingSoles?.ready) {
+            this.fitSupportFeet(this._standingReferencePlane, contactMask, blend);
+            return;
+        }
         this.root.getWorldPosition(this._tmpGroundHip);
-        const contactHeights = sample.footContactHeights;
-        const leftTargetY = (
+        const contactHeights = sample?.footContactHeights;
+        const leftTargetY = surfaceY ?? (
             this._tmpGroundHip.y
             + this._sampledActionRestLeftContactOffsetY
             + (contactHeights?.[0] ?? 0) * this._sampledActionHipTranslationScale
         );
-        const rightTargetY = (
+        const rightTargetY = surfaceY ?? (
             this._tmpGroundHip.y
             + this._sampledActionRestRightContactOffsetY
             + (contactHeights?.[1] ?? 0) * this._sampledActionHipTranslationScale
@@ -1319,6 +1595,20 @@ export class FreestylePoseController {
 
     private applySampledStandingFootOrientation(contactMask: number, power: number) {
         const blend = clamp(power, 0, 1);
+        if (this._standingReferencePlane && this._standingSoles?.ready) {
+            const plane = this._standingReferencePlane;
+            this._tmpDiveSurfaceNormal.set(plane.nx, plane.ny, plane.nz);
+            this._standingSoles.restUpWorld(this._tmpDiveModelUp);
+            if (contactMask & 1) {
+                this.orientDiveContactBone(this._leftFoot, this._leftGroundFootRotationInRoot);
+                this.orientDiveContactBone(this._leftToe, this._leftGroundToeRotationInRoot);
+            }
+            if (contactMask & 2) {
+                this.orientDiveContactBone(this._rightFoot, this._rightGroundFootRotationInRoot);
+                this.orientDiveContactBone(this._rightToe, this._rightGroundToeRotationInRoot);
+            }
+            return;
+        }
         if ((contactMask & 1) !== 0) {
             this.applyGroundFootRotation(
                 this._leftFoot,
@@ -1421,6 +1711,10 @@ export class FreestylePoseController {
     }
 
     private sampledFootContactWorldY(foot: Node, toe: Node): number {
+        if (this._standingSurfaceY !== null && this._standingSoles?.ready) {
+            if (foot === this._leftFoot) return this._standingSoles.worldY(0);
+            if (foot === this._rightFoot) return this._standingSoles.worldY(1);
+        }
         if (!foot && !toe) {
             return Number.POSITIVE_INFINITY;
         }
@@ -1443,12 +1737,29 @@ export class FreestylePoseController {
         toe: Node,
         groundY: number,
         power: number,
+        plane?: CharacterSupportPlane,
+        anchor?: Vec3,
     ) {
         if (!thigh || !calf || !foot) {
             return;
         }
-        const contactError = groundY - this.sampledFootContactWorldY(foot, toe);
-        if (Math.abs(contactError) <= 0.0005) {
+        const contactError = groundY - (plane
+            ? this._standingSoles.planeClearance(foot === this._leftFoot ? 0 : 1, plane)
+            : this.sampledFootContactWorldY(foot, toe));
+        let xCorrection = 0;
+        let zCorrection = 0;
+        if (plane) {
+            // 宽肩角色的原始站距可能大于踏面。仅移动踝部目标收拢双脚，保留骨盆和根轨迹。
+            this._standingSoles.worldBounds(foot === this._leftFoot ? 0 : 1, this._tmpDiveSoleMin, this._tmpDiveSoleMax);
+            xCorrection = supportIntervalCorrection(this._tmpDiveSoleMin.x, this._tmpDiveSoleMax.x, plane.minX, plane.maxX);
+            zCorrection = supportIntervalCorrection(this._tmpDiveSoleMin.z, this._tmpDiveSoleMax.z, plane.minZ, plane.maxZ);
+        }
+        if (anchor) {
+            foot.getWorldPosition(this._tmpGroundAnkle);
+            xCorrection = anchor.x - this._tmpGroundAnkle.x;
+            zCorrection = anchor.z - this._tmpGroundAnkle.z;
+        }
+        if (Math.abs(contactError) <= 0.0005 && Math.abs(xCorrection) <= 0.0005 && Math.abs(zCorrection) <= 0.0005) {
             return;
         }
 
@@ -1458,7 +1769,10 @@ export class FreestylePoseController {
         calf.getWorldPosition(this._tmpGroundKnee);
         foot.getWorldPosition(this._tmpGroundAnkle);
         Vec3.copy(this._tmpGroundTarget, this._tmpGroundAnkle);
-        this._tmpGroundTarget.y += contactError * power;
+        this._tmpGroundTarget.y += (contactError - (plane
+            ? (plane.nx * xCorrection + plane.nz * zCorrection) / plane.ny : 0)) * power;
+        this._tmpGroundTarget.x += xCorrection * power;
+        this._tmpGroundTarget.z += zCorrection * power;
 
         const firstLength = Vec3.distance(this._tmpGroundHip, this._tmpGroundKnee);
         const secondLength = Vec3.distance(this._tmpGroundKnee, this._tmpGroundAnkle);
@@ -1709,7 +2023,7 @@ export class FreestylePoseController {
         hand.setWorldRotation(this._tmpClapHandRotation);
     }
 
-    private rotateWorldBoneDirection(bone: Node, current: Vec3, desired: Vec3) {
+    private rotateWorldBoneDirection(bone: Node, current: Vec3, desired: Vec3, power = 1) {
         if (current.lengthSqr() <= 0.00000001 || desired.lengthSqr() <= 0.00000001) {
             return;
         }
@@ -1718,6 +2032,7 @@ export class FreestylePoseController {
         bone.getWorldRotation(this._tmpGroundBoneRotation);
         Quat.rotationTo(this._tmpDeltaRotation, current, desired);
         Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundBoneRotation);
+        if (power < 1) Quat.slerp(this._tmpResultRotation, this._tmpGroundBoneRotation, this._tmpResultRotation, power);
         bone.setWorldRotation(this._tmpResultRotation);
     }
 
@@ -2386,6 +2701,13 @@ function smoothPulse(value: number, fadeInStart: number, fullStart: number, full
 function smoothStep(t: number): number {
     const clamped = Math.max(0, Math.min(1, t));
     return clamped * clamped * (3 - 2 * clamped);
+}
+
+function supportIntervalCorrection(min: number, max: number, surfaceMin: number, surfaceMax: number): number {
+    const low = surfaceMin + 0.01 - min;
+    const high = surfaceMax - 0.01 - max;
+    // 极端鞋型宽于踏面时尽量居中，不拉伸脚或缩放整个人物。
+    return low > high ? (low + high) * 0.5 : clamp(0, low, high);
 }
 
 function boneEuler(node: Node | null): string {

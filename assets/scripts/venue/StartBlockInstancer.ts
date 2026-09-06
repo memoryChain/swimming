@@ -3,6 +3,8 @@ import { pruneNullComponentsRecursive } from '../character/CharacterModelLoader'
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { applyToonPropMaterials } from './ToonPropMaterial';
+import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
+import { readStartBlockSurface } from './StartBlockSurface';
 
 const ANCHOR_ROOT_NAME = 'start_block_anchor_root';
 const ANCHOR_PREFIX = 'start_block_anchor_';
@@ -10,9 +12,8 @@ const ANCHOR_PREFIX = 'start_block_anchor_';
 // swimmers in a one-way sprint, so those 8 blocks are dropped to halve the
 // start-block vertex load.
 const ANCHOR_NAME_PATTERN = /^start_block_anchor_near_\d{2}$/;
-// Keep rendered instances out of RaceCourseLayout's contact-surface lookup.
-// Their highest vertex is a raised rear detail, not the deck where swimmers
-// plant their feet. The dedicated start_block_top_near_marker owns that height.
+// 根节点起跳轨迹继续由 start_block_top_near_marker 标定。
+// 角色鞋底另取合批前的真实斜面，不能用包含后部凸起的整台包围盒。
 const RUNTIME_BLOCK_PREFIX = 'runtime_start_block_';
 const BATCH_ROOT_NAME = 'RuntimeStartBlocksBatch';
 // Uniform scale applied to every instanced start block. 1 = the prefab's
@@ -35,6 +36,9 @@ export class StartBlockInstancer {
     // parents the per-anchor instances. Toggling it lets the race hide the whole
     // set (they are only visible at the dive end and never seen mid-race).
     private _renderRoot: Node | null = null;
+    private readonly _surfaces: CharacterSupportPlane[] = [];
+
+    get surfaces(): readonly CharacterSupportPlane[] { return this._surfaces; }
 
     setVisible(visible: boolean) {
         if (this._renderRoot?.isValid) {
@@ -43,6 +47,7 @@ export class StartBlockInstancer {
     }
 
     build(pool: Node, done: (result: StartBlockBuildResult) => void) {
+        this._surfaces.length = 0;
         const anchorRoot = findNodeByName(pool, ANCHOR_ROOT_NAME);
         if (!anchorRoot) {
             done({ count: 0, batched: false, error: new Error(`missing ${ANCHOR_ROOT_NAME}`) });
@@ -79,6 +84,8 @@ export class StartBlockInstancer {
                 block.setPosition(Vec3.ZERO);
                 block.setRotationFromEuler(0, 0, 0);
                 block.setScale(START_BLOCK_SCALE, START_BLOCK_SCALE, START_BLOCK_SCALE);
+                const surface = readStartBlockSurface(block);
+                if (surface) this._surfaces.push(surface);
                 count += 1;
             }
 

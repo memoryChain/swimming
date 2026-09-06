@@ -234,7 +234,7 @@ export class GameManager extends Component {
     // that top edge a small distance below the speed label's lower edge.
     private readonly _playerMarkerBelowSpeedY = 22;
     private readonly _playerMarkerVisualTopY = 38;
-    private readonly _playerAwardsMarkerLiftY = 24;
+    private readonly _playerAwardsMarkerGapY = 10;
     // Perspective scaling: scale = refDistance / cameraDistance, clamped. At the
     // reference distance the dial is drawn at 1:1; nearer swimmers get a bigger
     // dial, farther ones a smaller one.
@@ -1035,6 +1035,7 @@ export class GameManager extends Component {
         this._venueManager = venue;
         venue.buildPool(root, DEFAULT_POOL_DEFINITION, ({ pool }) => {
             if (!pool?.isValid) {
+                COURSE_LAYOUT.setStartBlockSurfaces([]);
                 this._poolNode = null;
                 done(null);
                 return;
@@ -1046,6 +1047,7 @@ export class GameManager extends Component {
                     return;
                 }
                 const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
+                COURSE_LAYOUT.setStartBlockSurfaces(venue.startBlockSurfaces);
                 if (calibrated) {
                     venue.setWaterY(COURSE_LAYOUT.waterY);
                     this._raceCameraDirector.resetToBroadcast();
@@ -2541,8 +2543,7 @@ export class GameManager extends Component {
             return;
         }
         if (playerMarker && this._state === GameState.AWARDS) {
-            // 领奖动作每局不同，头顶标记必须跟随真实头骨；相机锚点包含胸部混合和
-            // 比赛碰撞姿态补偿，领奖转身后会偏到头部旁边。头骨无需游泳姿态的高度补偿。
+            // 头骨只用于计算距离；屏幕锚点在下方改用角色头部网格的实际上沿。
             swimmer.getNameTagWorldPosition(this._tmpDialAnchorWorld);
         } else {
             swimmer.getCameraUpperBodyWorldPosition(this._tmpDialAnchorWorld);
@@ -2558,7 +2559,11 @@ export class GameManager extends Component {
         // through the actual UI camera (instead of Camera.convertToUINode's
         // design-scale math) keeps the anchor correct when the runtime viewport
         // differs from the design resolution.
-        worldCamera.worldToScreen(this._tmpDialAnchorWorld, this._tmpDialScreen);
+        if (playerMarker && this._state === GameState.AWARDS) {
+            swimmer.getHeadTopScreenPosition(worldCamera, this._tmpDialScreen);
+        } else {
+            worldCamera.worldToScreen(this._tmpDialAnchorWorld, this._tmpDialScreen);
+        }
         this._uiCamera.screenToWorld(this._tmpDialScreen, this._tmpDialAnchorWorld);
         hudTransform.convertToNodeSpaceAR(this._tmpDialAnchorWorld, this._tmpDialAnchorUi);
         const cx = this._tmpDialAnchorUi.x;
@@ -2591,15 +2596,10 @@ export class GameManager extends Component {
             // when preserving the visual gap below the fixed-size speed text.
             const markerScale = swimmerHudScaleForDistance(camDistance);
             const markerX = speedX;
-            const awardsLiftY = this._state === GameState.AWARDS
-                ? this._playerAwardsMarkerLiftY
-                : 0;
-            const markerY = Math.round(
-                speedY
-                    - this._playerMarkerBelowSpeedY
-                    - this._playerMarkerVisualTopY * markerScale
-                    + awardsLiftY,
-            );
+            // 领奖时按三角下尖端对齐头顶，不能沿用隐藏的速度文字及三角上沿偏移。
+            const markerY = this._state === GameState.AWARDS
+                ? Math.round(this._tmpDialAnchorUi.y + this._playerAwardsMarkerGapY - 2 * markerScale)
+                : Math.round(speedY - this._playerMarkerBelowSpeedY - this._playerMarkerVisualTopY * markerScale);
             if (playerMarker.position.x !== markerX || playerMarker.position.y !== markerY) {
                 playerMarker.setPosition(markerX, markerY, 0);
             }

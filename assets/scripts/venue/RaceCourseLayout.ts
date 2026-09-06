@@ -1,6 +1,7 @@
 import { MeshRenderer, Node, Vec3 } from 'cc';
 import { DIVE_BALANCE } from '../core/GameBalance';
 import { DEFAULT_POOL_DEFINITION, PoolDefinition } from './VenueConfig';
+import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
 
 const MIN_COURSE_LENGTH = 1;
 export const COURSE_DISTANCE_EPSILON = 0.001;
@@ -29,6 +30,21 @@ export type SceneBounds = {
 };
 
 export class RaceCourseLayout {
+    private _startBlockSurfaces: readonly CharacterSupportPlane[] = [];
+
+    setStartBlockSurfaces(surfaces: readonly CharacterSupportPlane[]) {
+        this._startBlockSurfaces = surfaces;
+    }
+
+    startBlockSurface(laneZ: number): CharacterSupportPlane | null {
+        let closest: CharacterSupportPlane | null = null;
+        let distance = Infinity;
+        for (const surface of this._startBlockSurfaces) {
+            const offset = Math.abs((surface.minZ + surface.maxZ) * 0.5 - laneZ);
+            if (offset < distance) { closest = surface; distance = offset; }
+        }
+        return distance <= this.laneWidth * 0.5 ? closest : null;
+    }
     startX: number;
     finishX: number;
     poolStartX: number;
@@ -52,6 +68,7 @@ export class RaceCourseLayout {
     }
 
     resetToDefinition(definition: PoolDefinition) {
+        this._startBlockSurfaces = [];
         this.laneCount = definition.laneCount;
         this.laneWidth = definition.laneWidth;
         this.poolWidth = definition.laneCount * definition.laneWidth;

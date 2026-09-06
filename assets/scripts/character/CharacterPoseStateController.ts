@@ -84,10 +84,12 @@ export class CharacterPoseStateController {
     }
 
     enterPreview() {
+        this._options.pose.setDiveSupportPlane(null);
         this.setState(CharacterPoseState.Preview);
     }
 
     enterShowcaseStanding(transitionSeconds = 0) {
+        this._options.pose.setDiveSupportPlane(null);
         this._showcaseStartTime = this._options.getSelfTime();
         this.transitionTo(CharacterPoseState.ShowcaseStanding, transitionSeconds);
     }
@@ -97,16 +99,19 @@ export class CharacterPoseStateController {
     }
 
     enterDiveFlight(duration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds) {
+        this._options.pose.beginDiveFlight();
         this._diveTransitionDuration = Math.max(0.01, duration);
         this._diveTransitionElapsed = 0;
         this.setState(CharacterPoseState.DiveFlight);
     }
 
     enterGlide() {
+        this._options.pose.setDiveSupportPlane(null);
         this.setState(CharacterPoseState.Glide);
     }
 
     enterFreestyle() {
+        this._options.pose.setDiveSupportPlane(null);
         this.setState(CharacterPoseState.Freestyle);
     }
 
@@ -116,6 +121,7 @@ export class CharacterPoseStateController {
     }
 
     reset() {
+        this._options.pose.setDiveSupportPlane(null);
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
         this._showcaseStartTime = 0;
@@ -144,6 +150,11 @@ export class CharacterPoseStateController {
         }
         if (this._state === CharacterPoseState.ShowcaseStanding) {
             this.updateShowcaseStanding();
+            return true;
+        }
+        if (this._state === CharacterPoseState.DiveReady && this._options.pose.hasDiveSupportPlane) {
+            // 蓄力下蹲会移动外层节点，重新贴合仅发生在离台前。
+            this._options.pose.applyDivePrepPose(1);
             return true;
         }
         if (this._state === CharacterPoseState.TreadWater) {
@@ -218,6 +229,9 @@ export class CharacterPoseStateController {
         model.setRotation(this._transitionRotation);
         model.setScale(this._transitionScale);
         this._options.pose.blendPoseSnapshots(transition.fromPose, transition.toPose, eased);
+        if (this._state === CharacterPoseState.DiveReady) {
+            this._options.pose.fitDiveTransitionSupport(eased);
+        }
         if (ratio >= 1) {
             this._poseTransition = null;
         }

@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
+import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import {
@@ -454,6 +454,7 @@ export class Swimmer extends Component {
         // Preserve the currently displayed procedural pose so the rig can blend
         // from showcase standing into dive-ready instead of snapping via base pose.
         this.resetPose(true);
+        this.cartoonRig?.setDiveSupportPlane(this._courseLayout.startBlockSurface(this._startPosition.z));
         this.cartoonRig?.setDiveReady(true);
     }
 
@@ -483,6 +484,9 @@ export class Swimmer extends Component {
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
         this.resetPose();
+        const surface = this._courseLayout.startBlockSurface(this._startPosition.z);
+        // 展示动作保留上身姿态，支撑脚独立贴合真实斜面。
+        this.cartoonRig?.setStandingSurface(surface ? surface.maxY + 0.002 : null, surface);
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setShowcaseStanding();
     }
@@ -834,6 +838,7 @@ export class Swimmer extends Component {
     }
 
     reset() {
+        this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
         this._phases.clearFlipTurnPhase(true);
@@ -858,13 +863,14 @@ export class Swimmer extends Component {
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
-    presentStanding(position: Vec3, facingY: number) {
+    presentStanding(position: Vec3, facingY: number, surfaceWorldY: number | null = null) {
         Tween.stopAllByTarget(this.node);
         this._motor.reset();
         this._phases.clearDiveUnderwaterPhase();
         this.node.setPosition(position);
         this.node.setRotationFromEuler(0, facingY, 0);
         this.resetPose();
+        this.cartoonRig?.setStandingSurface(surfaceWorldY);
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setShowcaseStanding();
         this.cartoonRig?.finishDiveChargeEffect();
@@ -1228,6 +1234,15 @@ export class Swimmer extends Component {
             return out;
         }
         return this.getCameraUpperBodyWorldPosition(out);
+    }
+
+    getHeadTopScreenPosition(camera: Camera, out: Vec3): Vec3 {
+        if (this.cartoonRig?.getHeadTopScreenPosition(camera, out)) return out;
+        // 网格尚未就绪时的暂时回退，加载完成后自动采用各角色的实际头部尺寸。
+        this.getNameTagWorldPosition(out);
+        out.y += 0.2;
+        camera.worldToScreen(out, out);
+        return out;
     }
 
     get isRacing(): boolean {

@@ -164,6 +164,10 @@ export const FREESTYLE_POSE_TUNING = {
     // Extra arm reach applied on top of the sampled dive-prep pose.
     // 跳水预备采样姿态上额外叠加的手臂前伸角度。
     divePrepArmForwardDegrees: 7,
+
+    // 准备姿势相对竖直线向台沿收臂，前臂稍缓以保留轻微屈肘。
+    divePrepUpperArmInwardDegrees: 28,
+    divePrepForearmInwardDegrees: 22,
 };
 
 export const SWIMMER_ACTION_TUNING = {

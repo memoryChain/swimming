@@ -25,6 +25,8 @@ export class VenueManager {
         this._debug = options.debug;
     }
 
+    get startBlockSurfaces() { return this._startBlocks.surfaces; }
+
     // The 16 start blocks are statically batched into one mesh, so they cannot be
     // frustum-culled per instance. They are only ever seen at the dive end, so the
     // race hides the whole batch while swimming to drop their vertex load.
