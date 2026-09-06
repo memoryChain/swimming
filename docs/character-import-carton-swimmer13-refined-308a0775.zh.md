@@ -1,11 +1,15 @@
 # 深潜先锋 · 308a0775 精修模型接入记录
 
-日期：2026-09-06。状态：精修运行 GLB 与新遮罩已替换到深潜先锋槽位；Creator 已完成实际重新导入，资源一致性、压缩策略与替换范围检查通过。
+日期：2026-09-06。状态：首次精修模型已完成 Creator 实际导入；后续肤色补齐的代码、遮罩与离线／回归检查已完成，但当前 Creator 导入库仍是旧遮罩，最新肤色功能的引擎导入验收待刷新后确认，详见末节。
+
+## 首次精修模型接入（10:36）
+
+本节保留首次接入的历史配置、遮罩哈希与验收结果；之后的肤色功能补齐单独记录，不把首次接入时的关闭状态作为后续能力要求。
 
 - 用户先前对「蛙跃潮童」的指定已撤销，最新明确替换「深潜先锋」：唯一目标为 `cartonSwimmer13`，不是新增角色；`cartonSwimmer8` 及其他角色不动。
 - 批准源为 `tools/characters/308a0775_cleanup/Character_FineRefined_v3.glb`，SHA-256 `c26529a1b9b8939143c4c5dbeaf7e905d577bddd535e8685038c97a054e36287`；用户纠正链及替换前基线见同目录 `runtime-import/identity-authorization.json`。
 - 运行目标为 `assets/race/models/CartonSwimmer13.glb` 与 `CartonSwimmer13ColorMask.png`；保留模型 UUID `8306d5f9-36fc-49e5-b914-16754b9290aa`、遮罩 UUID `1d3a072e-4efd-498c-ad0e-d013d050dde4`。
-- 名称、稳定 ID、角色属性、技能、原 `modelScaleMultiplier: 0.97`、`supportsSkinTone: false` 均不变；不因新外观改名，不新增肤色切换。
+- 首次接入保留名称、稳定 ID、角色属性、技能、原 `modelScaleMultiplier: 0.97` 和当时的 `supportsSkinTone: false`；当时未补齐肤色切换，这是后续需修正的功能缺口。
 - 源与旧 13 不是同一网格。候选保留新源 1 网格、1 材质、7,896 顶点、5,562 三角面、41 骨；不重排 UV、不改权重或拓扑、不作额外缩放。
 - 运行骨架作 270° 朝向对齐与标准骨轴规范化；关节枢轴不移动，UV、关节索引、权重、三角索引逐字节保留，位置／法线仅作精确轴置换。继续共享 `model-actions/tPose`，不复制整套角色专属动作。
 - 骨轴候选重新导入的最大局部基轴误差约 `0.000420°`，关节位置误差约 `3.97e-7`，静止网格误差约 `9.38e-7`；21 项共享动作共 3,661 样本、另 235 个生产姿态样本的数值对照通过。最终 512 GLB 在 Blender 重新导入后，235 个关键样本相对规范骨轴候选的骨矩阵与变形顶点差均为零，三张实际 512 姿态图已目检。数值通过不等于全动作视觉验收通过。
@@ -23,3 +27,19 @@
 - 本轮未修改运行代码、角色数值、网络协议或共享动作数据；同版本客户端沿用同一角色 ID，未增加影响比赛结果的逻辑或逐帧开销。
 - 骨架证据见制作目录 `runtime-import/rig/{preserved-buffer-report,shared-actions-detailed,production-samples-detailed,contact-audit,final-runtime-reimport}.json`；贴图证据见 `runtime-import/texture/runtime-texture-audit.json`；安装／范围／Creator状态见 `runtime-import/{installed,scope-check,cocos-import-13}.json`。制作源与预览不进入 `assets/`。
 - 其他任务的 Pool `.meta` 与 `PrepareRaceFlow.ts` 改动原样保留，本轮不归并、不回退、不提交；最终复核 8 的四份模型／遮罩资源与授权基线完全一致。
+
+## 后续补齐肤色切换（11:10）
+
+- 用户明确要求补上换肤；唯一目标仍为 `cartonSwimmer13`「深潜先锋」。`PlayerCharacterConfig.ts` 中仅将该角色的 `supportsSkinTone` 改为 `true`，不改机甲或其他角色的能力配置。
+- 只更新 `CartonSwimmer13ColorMask.png` 的 B 通道，R／G／A 逐像素与首次接入版完全相同。B 是现行材质直接使用的皮肤覆盖率，不套用装备 R 通道的 `smoothstep` 编码；保留灰白头发、黑装备与原绿色设计区。
+- 新遮罩仍为 512×512 RGBA，69,786 字节，SHA-256 `4ec5abde90a922004e36d756f63c4feed425b2fa6b1f588de5bd19e54f100e99`；B 非零 41,846 像素，其中全覆盖 30,776、分数边界 11,070，零背景 220,298。遮罩源 PNG 增加 42,375 字节，但纹理尺寸、网格／材质／着色器数量不增加；该文件增量不等同于最终微信分包增量。
+- GLB 与内嵌底图逐字节不变，GLB SHA 仍为 `f475b24383b21139032ec3016aff00b97c3bc0b8158252a546e512091dc8a075`；UV、权重、41 骨、共享动作、0.97 显示缩放不变。本节不表示前述拍手、接地或全动作视觉债项已解决。
+- 原肤色 `warm` 沿用 `preserveOriginal: true`（皮肤覆盖颜色 alpha 为 0），因此恢复精修原图；深肤色 `deep` 使用现有 `[118,76,58]`，只作用于 B 区域。复用现有选角预览、比赛创建、草稿选择及存档逻辑，不新增运行时图像处理或逐帧任务。
+- 按当前运行 GLB、实际 512 底图与现行换色公式制作暖／深肤色和红、蓝、黄、紫、黑装备色离线回贴。主代理与独立复核均检查了脸、头侧、后脑、耳、袖口和双手；耳后三处误判为灰色的露肤面及耳下浅楔已修成连续覆盖，没有通过删除设计处理边界。
+- 视觉保留项：超近景仍可见原有三角 UV 的细浅线、发丝中的原底图杂线；原 UV 有少量重叠／退化，不能宣称绝对零串色。这些离线回贴不是 Cocos 场馆光照、ASTC 构建或微信 iOS／Android 真机验收。
+- 验证：角色回归测试 18／18 通过，覆盖全部服装色与肤色独立、未确认草稿按目标角色换肤、确认后的完整配置序列化／恢复，以及模型和 R／G／A 通道冻结。固定 TypeScript 5.4.5 类型检查通过；本机无 npm／tsx，使用已缓存的固定版本 TypeScript 与 Node 执行真实模块，不模拟业务实现。
+- 联机影响：不改网络字段、协议、随机数或比赛结果逻辑。联网真人外观仍按现有已同步 `avatarId` 映射；本次未把本地选角肤色新增为跨端同步字段，不宣称改变了这项既有规则。
+- 本次回退材料位于 `tools/characters/308a0775_cleanup/skin-tone/integration-backup/`；只恢复旧遮罩及该角色的能力开关即可撤销此次补齐，不恢复旧模型，不覆盖其他配置。制作与离线验收文件仍留在 `tools/`，不进入运行资源。
+- 本次证据：`skin-tone/skin-mask-audit.json`、`skin-tone/skin-installation-gate.json`、`skin-tone/mask-installed.json`；Creator 资源一致性和最终范围检查另记在 `skin-tone/integration-final.json`，只能在实际导入通过后生成。
+- 截至 11:15：90 份受保护模型、动作及相关配置的文件检查通过，仅目标遮罩和 13 的换肤开关发生变化，见 `skin-tone/integration-files.json`。现有 `.meta` 的压缩策略只读检查通过（188 项），UUID 和无 mip 设置保持。**现有 Creator 会话尚未导入新遮罩**：导入库 PNG 的 SHA 仍为首次版 `a766093c…`，不是新遮罩 `4ec5abde…`；未生成最终通过报告，未把浏览器刷新当作重导入。
+- 已请用户切回现有 Creator 触发资源刷新；未启动、重启或截图编辑器，未手改导入库。刷新后须再次执行 `skin-tone/integrate_skin.cjs --verify`，并执行项目 `textures:fix`／`textures:check` 同入口，才能补记最新引擎导入通过；微信真机验证仍未完成。

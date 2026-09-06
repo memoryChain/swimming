@@ -9,6 +9,8 @@ Windows／macOS 共用此文件。项目路径、Blender 启动和同步方式�
 
 保留源模型与已确认设计，只修复核实的问题区域。源贴图精修、阴影修复、运行时换色与游戏资源替换分别确定范围，不默认连带执行。
 
+项目用户已明确：新增／替换人形角色进入游戏时，肤色切换是默认交付项，不能照搬旧槽位的 `supportsSkinTone: false` 或只做服装换色。须同时验收开关、当前UV的皮肤遮罩和实际换肤；无露肤区域的特殊角色先说明并确认例外。完整标准见下述项目规范与 [Cocos 换色接入](references/cocos-runtime-recolor.md)。这不授权把仅请求源精修的模型自动安装到游戏。
+
 处理颜色毛边、服装／灰白头发／袜子杂色、跨 UV 错色或建立精修验收标准时，先完整阅读 [保留设计的精修流程](references/detail-preserving-cleanup.md) 及其链接的项目规范。原则是重画清晰边界，不靠删设计或整体模糊掩盖问题。
 
 Read [references/white-key-recolor.md](references/white-key-recolor.md) when the source garment is white, when generated masks expose triangle folds or jagged edges, or when deciding whether to revise UVs instead of generating a mask.
@@ -26,9 +28,9 @@ Read [references/white-key-recolor.md](references/white-key-recolor.md) when the
    - Estimate replacement skin color from nearby verified skin faces.
    - Correct only pixels below the local luminance threshold.
    - Export a new texture and compare it with the source.
-5. 仅在请求换色时选择换色区域方案：
+5. 请求换色，或执行已包含默认换肤要求的游戏角色接入时，选择换色区域方案：
    - Prefer a clean-white key when the target garment is deliberately neutral white and all near-white non-target regions are acceptable members of the same color channel.
-   - Otherwise generate a UV mask: swimsuit/trunks in red, cap in green, and untouched regions black.
+   - 否则生成UV遮罩：本项目运行时以R表示服装、G表示泳帽、B表示露肤区域，不换色区域为黑色。
    - 若碎片化或重叠 UV 无法兼顾内部覆盖与外部清晰边界，先说明并确认 UV／材质调整范围，再转入对应技能流程；不要自动重排，也不要用模糊掩盖问题。
 6. Re-export or relink the repaired base texture without changing mesh, skeleton, bone names, origin, or animation compatibility.
 7. 仅在任务包含游戏集成时接入共享底图、按需共享遮罩与角色颜色；详见 [Cocos 换色接入](references/cocos-runtime-recolor.md)。确认目标角色／路径与覆盖范围，源精修不自动替换运行资源。
@@ -75,7 +77,7 @@ If the verified source garments are black with cyan accents, add `--refine-mode 
 ## Runtime Design
 
 - Share one detailed base texture and, only when needed, one mask across all instances.
-- Give each skinned renderer a small material instance containing only swimsuit and cap colors.
+- 每个蒙皮渲染器按需使用含服装、泳帽与肤色参数的小材质实例，复用现行运行effect与通道约定。
 - Do not generate 512x512 RGBA textures per character at runtime.
 - Do not split one skinned mesh into skin, cap, and trunks solely for recoloring; that normally increases draw calls.
 - Use an unlit or deliberately simple effect for lightweight games unless the existing art direction requires PBR.
@@ -88,7 +90,7 @@ If the verified source garments are black with cyan accents, add `--refine-mode 
 
 - Original skin detail, face, hands, torso, and legs remain unchanged outside the repair area.
 - Both armpits match nearby skin without flat patches or UV seams.
-- Red mask covers only swimsuit/trunks; green covers only cap.
+- 现行运行时R仅覆盖指定服装／装备、G仅覆盖泳帽、B仅覆盖露肤区域。游戏接入须检查原／暖肤色与深肤色，不得染到头发、眼镜、服装或固定设计；遮罩非空不等于视觉通过。
 - White-key mode covers every intended white garment region and no unintended skin highlight, eye, tooth, logo, or accessory.
 - Original outfit remains available and visually matches the source artwork.
 - At least five high-contrast color pairs render without color bleeding.
