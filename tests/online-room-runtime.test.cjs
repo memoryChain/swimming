@@ -164,7 +164,7 @@ test('双侧与单侧安全区均不叠加视觉边距，窗口变化后重新�
     visibleSize.width = 1280; safeLeft = 0; safeRight = 0;
 });
 
-test('真实大厅及角色页面组装：Android/iPhone 不同安全区不会收窄左右面板', () => {
+test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横屏翻转不改变留白', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -194,18 +194,29 @@ test('真实大厅及角色页面组装：Android/iPhone 不同安全区不会�
             const leftMargin = node => node.position.x - 640 + width / 2;
             const rightMargin = node => width / 2 - node.position.x - 640;
             const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
-            near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 24);
-            near(rightMargin(owners.buildRaceModeList), width === 1280 ? 0 : 24);
+            near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 48);
+            near(rightMargin(owners.buildRaceModeList), width === 1280 ? 0 : 48);
             assert.equal(owners.buildRaceModeList, owners.buildReadyActions);
-            near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 24);
-            near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 36);
+            near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 48);
+            near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 60);
             near(leftMargin(owners.buildCharacterHeader), 0);
             assert.equal(owners.buildPreviewPresentation, canvas);
+            const groups = [owners.buildReadyCharacterPanel, owners.buildRaceModeList,
+                owners.buildCharacterRoster, owners.buildCharacterInspector];
+            const positions = groups.map(node => node.position.x);
+            const count = nodes(canvas).length;
+            for (const [leftInset, rightInset] of [[82, 0], [0, 82], [82, 0]]) {
+                safeLeft = leftInset; safeRight = rightInset;
+                for (const fn of resizeListeners.get('canvas-resize')) fn();
+                groups.forEach((node, i) => near(node.position.x, positions[i]));
+                assert.equal(nodes(canvas).length, count);
+            }
             canvas.destroy();
         }
     } finally {
         cc.sys.getSafeAreaRect = safeApi;
         visibleSize.width = 1280;
+        safeLeft = 0; safeRight = 0;
     }
 });
 

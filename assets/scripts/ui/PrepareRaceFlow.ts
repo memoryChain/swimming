@@ -265,8 +265,8 @@ export class PrepareRaceFlow {
     }
 
     private buildReadyScreen(parent: Node): void {
-        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height, 24, false);
-        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 24, false);
+        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height, 48, false);
+        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 48, false);
         this.buildReadyCharacterPanel(left);
         this.buildPreviewPresentation(parent);
         this.buildRaceModeList(right);
@@ -398,8 +398,8 @@ export class PrepareRaceFlow {
 
     private buildCharacterManagement(parent: Node): void {
         const header = makeScreenEdgeGroup('CharacterHeader', parent, 'left', this._width, this._height, 0, false);
-        const left = makeScreenEdgeGroup('CharacterLeft', parent, 'left', this._width, this._height, 24, false);
-        const right = makeScreenEdgeGroup('CharacterRight', parent, 'right', this._width, this._height, 36, false);
+        const left = makeScreenEdgeGroup('CharacterLeft', parent, 'left', this._width, this._height, 48, false);
+        const right = makeScreenEdgeGroup('CharacterRight', parent, 'right', this._width, this._height, 60, false);
         this.buildCharacterHeader(header);
         this.buildCharacterRoster(left);
         this.buildPreviewPresentation(parent);
