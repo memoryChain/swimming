@@ -120,7 +120,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         kick: 54,
         description: '背负轻型潜水装备的耐力型泳者，以稳定节奏穿越深水。',
         skillName: '深潜续航', skillDescription: '扎实的耐力与踢腿控制让长距离推进更加稳定。',
-        supportsSkinTone: false,
+        supportsSkinTone: true,
     },
     {
         id: 'cartonSwimmer14', name: '霓绿少女', modelVariantId: 'cartonSwimmer14', unlocked: true,

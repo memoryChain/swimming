@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import CharacterConfig from '../assets/scripts/app/PlayerCharacterConfig.ts';
 import Resources from '../assets/scripts/core/ResourcePaths.ts';
@@ -59,7 +60,7 @@ function jpegDimensions(bytes) {
     throw Error('JPEG缺少受支持的尺寸段');
 }
 const { PLAYER_CHARACTER_DEFINITIONS, getPlayerCharacterSelection, selectPlayerCharacter,
-    createDefaultPlayerCharacterSelection, normalizePlayerCharacterSelection,
+    createDefaultPlayerCharacterSelection, normalizePlayerCharacterSelection, restorePlayerCharacterSelection,
     setPlayerColorScheme, setPlayerSkinTone, selectedPlayerSkinTone,
     selectedPlayerColorScheme, selectedPlayerCharacterSupportsSkinTone } = CharacterConfig;
 
@@ -428,39 +429,110 @@ test('绿电潮童复用共享骨架动作，换色遮罩与模型满足移动�
     }
 });
 
-test('深潜先锋仅换色绿色连通块并复用共享骨架动作', () => {
+test('深潜先锋肤色与全部服装色独立，暖肤色恢复精修原图', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer13');
         assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer13');
-        assert.equal(selectedPlayerCharacterSupportsSkinTone(), false);
-        const model = Resources.findSwimmerModelVariant('cartonSwimmer13');
-        assert.equal(model.dynamicColor?.mode, 'mask');
-        assert.equal(model.dynamicColor?.maskPath, 'models/CartonSwimmer13ColorMask/texture');
-        assert.equal(model.dynamicColor?.usesCapChannel, false);
-        assert.equal(model.preserveOriginalMaterial, true);
-        assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
-
-        const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer13.glb', root));
-        const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
-        const primitive = doc.meshes[0].primitives[0];
-        assert.equal(doc.meshes.length, 1);
-        assert.equal(doc.materials.length, 1);
-        assert.equal(doc.meshes[0].primitives.length, 1);
-        assert.equal(doc.skins[0].joints.length, 41);
-        assert.equal(doc.accessors[primitive.indices].count / 3, 5785);
-        assert.ok(doc.accessors[primitive.attributes.POSITION].count <= 7000);
-        assert.ok(data.length <= 512 * 1024);
-
-        const mask = fs.readFileSync(new URL('assets/race/models/CartonSwimmer13ColorMask.png', root));
-        assert.equal(mask.readUInt32BE(16), 512);
-        assert.equal(mask.readUInt32BE(20), 512);
-        assert.equal(mask[25], 6);
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
+        for (const palette of CharacterConfig.PLAYER_COLOR_SCHEMES) {
+            setPlayerSkinTone('deep');
+            setPlayerColorScheme(palette.id);
+            assert.equal(selectedPlayerSkinTone().id, 'deep');
+            assert.notEqual(selectedPlayerSkinTone().preserveOriginal, true);
+            assert.equal(selectedPlayerColorScheme().id, palette.id);
+            setPlayerSkinTone('warm');
+            assert.equal(selectedPlayerSkinTone().id, 'warm');
+            assert.equal(selectedPlayerSkinTone().preserveOriginal, true);
+            assert.equal(selectedPlayerColorScheme().id, palette.id);
+        }
     } finally {
-        selectPlayerCharacter(previous.characterId);
-        setPlayerSkinTone(previous.skinToneId);
-        setPlayerColorScheme(previous.colorSchemeId);
+        restorePlayerCharacterSelection(previous);
     }
+});
+
+test('深潜先锋草稿肤色按草稿角色生效，确认后的序列化存档可恢复', () => {
+    const previous = { ...getPlayerCharacterSelection() };
+    try {
+        // 当前已选角色不支持换肤，也不能拦住尚未确认的深潜先锋草稿。
+        selectPlayerCharacter('cartonSwimmer15');
+        const draftCharacterId = 'cartonSwimmer13';
+        setPlayerSkinTone('warm', draftCharacterId);
+        setPlayerSkinTone('deep', draftCharacterId);
+        assert.equal(getPlayerCharacterSelection().characterId, 'cartonSwimmer15');
+        assert.equal(selectedPlayerSkinTone(draftCharacterId).id, 'deep');
+        setPlayerColorScheme('purple');
+        selectPlayerCharacter(draftCharacterId);
+        const savedProfile = PlayerProfileConfig.createDefaultProfile();
+        savedProfile.characterSelection = { ...getPlayerCharacterSelection() };
+        const serialized = JSON.stringify(savedProfile);
+        restorePlayerCharacterSelection(createDefaultPlayerCharacterSelection());
+        const loadedProfile = PlayerProfileConfig.normalizeProfile(JSON.parse(serialized));
+        restorePlayerCharacterSelection(loadedProfile.characterSelection);
+        assert.deepEqual(getPlayerCharacterSelection(), {
+            characterId: draftCharacterId, skinToneId: 'deep', colorSchemeId: 'purple',
+        });
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
+        assert.equal(selectedPlayerSkinTone().id, 'deep');
+        assert.equal(selectedPlayerColorScheme().id, 'purple');
+    } finally {
+        restorePlayerCharacterSelection(previous);
+    }
+});
+
+test('深潜先锋精修资源保留原模型与配色通道，仅新增有效皮肤遮罩', () => {
+    const model = Resources.findSwimmerModelVariant('cartonSwimmer13');
+    assert.equal(model.dynamicColor?.mode, 'mask');
+    assert.equal(model.dynamicColor?.maskPath, 'models/CartonSwimmer13ColorMask/texture');
+    assert.equal(model.dynamicColor?.usesCapChannel, false);
+    assert.equal(model.preserveOriginalMaterial, true);
+    assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
+    assert.equal(model.modelScaleMultiplier, 0.97);
+
+    const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer13.glb', root));
+    const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
+    const primitive = doc.meshes[0].primitives[0];
+    assert.equal(doc.meshes.length, 1);
+    assert.equal(doc.materials.length, 1);
+    assert.equal(doc.meshes[0].primitives.length, 1);
+    assert.equal(doc.skins[0].joints.length, 41);
+    assert.equal(doc.accessors[primitive.indices].count / 3, 5562);
+    assert.equal(doc.accessors[primitive.attributes.POSITION].count, 7896);
+    // 仅记录已批准的 308a0775 精修版，不提高其它角色的资源预算。
+    assert.equal(data.length, 583140);
+    assert.equal(createHash('sha256').update(data).digest('hex'),
+        'f475b24383b21139032ec3016aff00b97c3bc0b8158252a546e512091dc8a075');
+    assert.equal(doc.images.length, 1);
+    assert.equal(doc.images[0].mimeType, 'image/jpeg');
+    const imageView = doc.bufferViews[doc.images[0].bufferView];
+    const binaryStart = 20 + data.readUInt32LE(12) + 8;
+    assert.deepEqual(jpegDimensions(data.subarray(binaryStart + (imageView.byteOffset ?? 0))), [512, 512]);
+    const meta = JSON.parse(fs.readFileSync(new URL('assets/race/models/CartonSwimmer13.glb.meta', root)));
+    assert.equal(meta.uuid, '8306d5f9-36fc-49e5-b914-16754b9290aa');
+
+    const mask = decodeMaskRgba(fs.readFileSync(new URL('assets/race/models/CartonSwimmer13ColorMask.png', root)));
+    const channels = Array.from({ length: 4 }, () => Buffer.alloc(512 * 512));
+    let skinCoverage = 0, skinInterior = 0, skinBoundary = 0;
+    for (let pixel = 0; pixel < 512 * 512; ++pixel) {
+        for (let channel = 0; channel < 4; ++channel) channels[channel][pixel] = mask[pixel * 4 + channel];
+        const skin = mask[pixel * 4 + 2];
+        if (skin > 0) skinCoverage++;
+        if (skin === 255) skinInterior++;
+        if (skin > 0 && skin < 255) skinBoundary++;
+    }
+    const approvedChannelHashes = [
+        [0, '8a29dce28923a8dae2327fe5c564a2f29503a14fdd93e92f9288df56dd520047'],
+        [1, '8a39d2abd3999ab73c34db2476849cddf303ce389b35826850f9a700589b4a90'],
+        [3, '3b874d3ba46c638fc3094f8e92fb744ca974893873f8885f54e23760f9b6311b'],
+    ];
+    for (const [channel, hash] of approvedChannelHashes) {
+        assert.equal(createHash('sha256').update(channels[channel]).digest('hex'), hash,
+            `换肤不得改变已批准遮罩的 ${['R', 'G', 'B', 'A'][channel]} 通道`);
+    }
+    // 数值只验证有效覆盖、黑背景和抗锯齿边界；不能代替皮肤/头发/服装的视觉验收。
+    assert.ok(skinCoverage > 0 && skinCoverage < 512 * 512, '皮肤遮罩必须有效且保留零值背景');
+    assert.ok(skinInterior > 0, '皮肤内部必须有完整覆盖');
+    assert.ok(skinBoundary > 0, '皮肤边界必须有分数覆盖');
 });
 
 test('新增破浪机甲复用动作与单材质，装甲只使用R换色且有独立卡面', () => {

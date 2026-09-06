@@ -41,6 +41,7 @@ Do not decide that two rigs are action-compatible from bone names, hierarchy, or
 5. Validate all shared actions in Blender, including Action Slot assignment in Blender 5.x. Inspect shoulders, forearms, palms, torso crossings, and mesh-level sole contact.
 6. Point canonicalized characters to the shared rig-profile action directory. Do not create a complete duplicate action JSON directory per character by default.
 7. After replacing a runtime GLB, verify that Cocos Asset Database actually reimported the mesh and embedded images. Browser reload and TypeScript hot reload do not refresh stale model subassets.
+8. 本项目新增／替换人形角色进入游戏时，默认必须支持肤色切换。不要因为保留旧槽位配置而沿用 `supportsSkinTone: false`；必须同时核验开关、当前UV的皮肤B遮罩以及预览／比赛实际效果。按 [贴图换色技能](../repair-swimmer-textures/SKILL.md) 和其项目规范执行；无露肤区域等特殊情况先说明并确认例外。只做离线骨架／动作任务不因此扩大为游戏安装。
 
 ## Non-Negotiable Defaults
 
