@@ -110,6 +110,14 @@ Do not reshape shoulders to make an action pass. Normalize the rig once, then ke
 
 ## Shared Action Architecture
 
+### 背负硬质装备的蒙皮
+
+- 氧气瓶、硬背包、武器等在肩背动作中扭曲时，先检查完整装备的权重。不要为了固定装备而锁住共享的肩膀、脊柱、头部骨骼，也不要添加逐帧覆盖骨骼的运行时分支。
+- 在副本中按位置焊接后的连通部件识别瓶体、固定环与阀门，目视确认完整选区；不要仅按后背坐标截取顶点，否则可能把衣服或软管一起锁死。硬质组合件统一绑定同一躯干骨骼（例如 `Spine02`，权重 1），软背带与软管保留其合适的柔性权重。
+- 仅修改蒙皮时，优先定点修改 GLB 的 `JOINTS_0` / `WEIGHTS_0`，逐字节证明其他数据未变化，避免重导出引起顶点顺序、UV、贴图或子资源身份变化。保留原始文件和 `.meta`。
+- 深潜先锋现有拓扑的可复现修复入口为 [rigidify-diver-tanks.py](../scripts/rigidify-diver-tanks.py)：选中 11 个完整部件、985 个导出顶点，绑定 `Spine02`。脚本对拓扑和选区数量设置断言；模型版本变更后必须重新检查选区。
+- 遍历共享动作及自由泳样本，检查瓶组跨部件距离保持恒定、数值有限、非选区网格与基线一致；再用背面及侧后三分之四视角检查极端扭转和伸展。刚性检查不替代动作原有的脚底接触验收。最后核对 Cocos 导入后的关节、权重数据，不能仅以源 GLB 修改成功作为导入完成的证明。
+
 The canonical T-pose profile currently lives under `assets/race/model-actions/tPose` and contains the shared emote set plus the breaststroke/tread-water curve. Canonicalized characters should reference this directory instead of owning a complete `model-actions/<character>` copy.
 
 The shared curves use:

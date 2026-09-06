@@ -470,15 +470,7 @@ export class GameManager extends Component {
             this._playerOverheadMarker.active = playerIndicatorVisible;
         }
         if (playerIndicatorVisible) {
-            this.positionSweetZoneDialsAbove(
-                this._playerSwimmer,
-                this._sweetZoneBarLeft,
-                this._sweetZoneBarRight,
-                this._overheadReadout,
-                this._playerOverheadMarker,
-                playerFeedbackVisible,
-            );
-            if (this._overheadSpeedLabel) {
+            if (playerSpeedVisible && this._overheadSpeedLabel) {
                 this._overheadSpeedTextElapsed += dt;
                 if (this._overheadSpeedTextElapsed >= RACE_HUD_TEXT_REFRESH_SECONDS) {
                     this._overheadSpeedTextElapsed %= RACE_HUD_TEXT_REFRESH_SECONDS;
@@ -550,6 +542,22 @@ export class GameManager extends Component {
         // final transform. Underwater shots keep the swimmer overlay camera synced
         // while the water surface and refraction RenderTexture camera stay off.
         this._waterRefraction?.update();
+    }
+
+    lateUpdate() {
+        // 等角色动作和比赛相机完成本帧更新后再投影，避免切换结算机位时使用旧坐标。
+        if (!this._playerOverheadMarker?.activeInHierarchy || this._modelDebugFlow?.active) {
+            return;
+        }
+        this.positionSweetZoneDialsAbove(
+            this._playerSwimmer,
+            this._sweetZoneBarLeft,
+            this._sweetZoneBarRight,
+            this._overheadReadout?.active ? this._overheadReadout : null,
+            this._playerOverheadMarker,
+            this._aiDebugMode && this._state === GameState.RACING
+                && this._playerSwimmer.distance < getRaceDistance(),
+        );
     }
 
     // Cull splash + freeze pose for AI swimmers that are outside the camera frustum. Testing against the
@@ -2532,10 +2540,14 @@ export class GameManager extends Component {
         if (!node?.isValid || !worldCamera || !this._uiCamera || !hudTransform) {
             return;
         }
-        // Anchor to the swimmer's upper body / head (same point the camera tracks)
-        // instead of the node origin, which sits mid/rear of the horizontal body.
-        swimmer.getCameraUpperBodyWorldPosition(this._tmpDialAnchorWorld);
-        this._tmpDialAnchorWorld.y += this._dialHeadWorldOffsetY;
+        if (playerMarker && this._state === GameState.AWARDS) {
+            // 领奖动作每局不同，头顶标记必须跟随真实头骨；相机锚点包含胸部混合和
+            // 比赛碰撞姿态补偿，领奖转身后会偏到头部旁边。头骨无需游泳姿态的高度补偿。
+            swimmer.getNameTagWorldPosition(this._tmpDialAnchorWorld);
+        } else {
+            swimmer.getCameraUpperBodyWorldPosition(this._tmpDialAnchorWorld);
+            this._tmpDialAnchorWorld.y += this._dialHeadWorldOffsetY;
+        }
         // Perspective scale from the camera's distance to the swimmer.
         const camDistance = Vec3.distance(this._cameraNode.worldPosition, this._tmpDialAnchorWorld);
         const scale = Math.max(
