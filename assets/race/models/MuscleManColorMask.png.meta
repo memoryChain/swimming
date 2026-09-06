@@ -1,0 +1,46 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "302e926a-f4dc-42a1-9ecc-054c7d8d639c",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "302e926a-f4dc-42a1-9ecc-054c7d8d639c@6c48a",
+      "displayName": "MuscleManColorMask",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "302e926a-f4dc-42a1-9ecc-054c7d8d639c",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "fixAlphaTransparencyArtifacts": false,
+    "hasAlpha": true,
+    "redirect": "302e926a-f4dc-42a1-9ecc-054c7d8d639c@6c48a",
+    "compressSettings": {
+      "useCompressTexture": true,
+      "presetId": "astc-model-alpha-6x6"
+    }
+  }
+}

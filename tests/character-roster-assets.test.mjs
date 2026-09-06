@@ -122,7 +122,7 @@ test('可选角色均有唯一模型，并复用标准动作资源', () => {
         assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
         assert.ok(fs.existsSync(new URL(`assets/race/${model.divePrepOverridePath}.json`, root)));
     }
-    assert.equal(Resources.findSwimmerModelVariant('muscleMan').modelScaleMultiplier, 1.12);
+    assert.equal(Resources.findSwimmerModelVariant('muscleMan').modelScaleMultiplier, 1.24);
     for (const id of expectedModelIds.slice(1)) {
         const multiplier = Resources.findSwimmerModelVariant(id).modelScaleMultiplier;
         assert.equal(Number.isFinite(multiplier), true, `${id} modelScaleMultiplier`);
@@ -689,4 +689,42 @@ test('试用配色匹配已选样张，角色切换与存档恢复保留颜色�
     } finally {
         restorePlayerCharacterSelection(previous);
     }
+});
+
+test('铁臂狂鲨短臂精修版保留身份并提供独立衣帽和肤色遮罩', () => {
+    const model = Resources.findSwimmerModelVariant('muscleMan');
+    assert.equal(model.dynamicColor.mode, 'mask');
+    assert.equal(model.dynamicColor.maskPath, 'models/MuscleManColorMask/texture');
+    assert.equal(model.dynamicColor.usesCapChannel, true);
+    assert.equal(model.modelScaleMultiplier, 1.24);
+    const meta = JSON.parse(fs.readFileSync(new URL('assets/race/models/MuscleMan.glb.meta', root)));
+    assert.equal(meta.uuid, 'cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a');
+    const glb = fs.readFileSync(new URL('assets/race/models/MuscleMan.glb', root));
+    const doc = JSON.parse(glb.toString('utf8', 20, 20 + glb.readUInt32LE(12)));
+    assert.equal(doc.skins[0].joints.length, 41);
+    const primitive = doc.meshes[0].primitives[0];
+    assert.equal(doc.accessors[primitive.attributes.POSITION].count, 3682);
+    assert.equal(doc.accessors[primitive.indices].count / 3, 5526);
+    const mask = decodeMaskRgba(fs.readFileSync(new URL('assets/race/models/MuscleManColorMask.png', root)));
+    const coverage = [0, 0, 0];
+    for (let i = 0; i < mask.length; i += 4) {
+        for (let channel = 0; channel < 3; ++channel) if (mask[i + channel] > 0) coverage[channel]++;
+        assert.equal(mask[i + 3], 255);
+    }
+    assert.ok(coverage.every(count => count > 1000));
+    const saved = getPlayerCharacterSelection();
+    try {
+        selectPlayerCharacter('muscleMan');
+        assert.equal(selectedPlayerCharacterSupportsSkinTone(), true);
+        setPlayerSkinTone('deep');
+        setPlayerColorScheme('purple');
+        const selected = getPlayerCharacterSelection();
+        assert.equal(selected.characterId, 'muscleMan');
+        assert.equal(selected.skinToneId, 'deep');
+        assert.equal(selected.colorSchemeId, 'purple');
+        restorePlayerCharacterSelection(JSON.parse(JSON.stringify(selected)));
+        assert.deepEqual(getPlayerCharacterSelection(), selected);
+        setPlayerSkinTone('warm');
+        assert.equal(getPlayerCharacterSelection().colorSchemeId, 'purple');
+    } finally { restorePlayerCharacterSelection(saved); }
 });

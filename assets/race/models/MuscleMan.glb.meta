@@ -5,15 +5,15 @@
   "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a",
   "files": [],
   "subMetas": {
-    "b815e": {
+    "64764": {
       "importer": "gltf-mesh",
-      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@b815e",
+      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@64764",
       "displayName": "",
-      "id": "b815e",
-      "name": "tripo_mesh_6335cec0-c721-4393-b739-1ece2ec00947.mesh",
+      "id": "64764",
+      "name": "MuscleMan_Mesh.mesh",
       "userData": {
         "gltfIndex": 0,
-        "triangleCount": 3006
+        "triangleCount": 5526
       },
       "ver": "1.1.1",
       "imported": true,
@@ -40,12 +40,12 @@
       ],
       "subMetas": {}
     },
-    "1bc8f": {
+    "a7b88": {
       "importer": "gltf-embeded-image",
-      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@1bc8f",
+      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@a7b88",
       "displayName": "",
-      "id": "1bc8f",
-      "name": "man3dmodel_basecolor.image",
+      "id": "a7b88",
+      "name": "MuscleMan_BaseColor.image",
       "userData": {
         "gltfIndex": 0,
         "fixAlphaTransparencyArtifacts": true,
@@ -59,8 +59,8 @@
       "ver": "1.0.3",
       "imported": true,
       "files": [
-        ".jpg",
-        ".json"
+        ".json",
+        ".png"
       ],
       "subMetas": {}
     },
@@ -78,7 +78,7 @@
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@1bc8f"
+        "imageUuidOrDatabaseUri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@a7b88"
       },
       "ver": "1.0.22",
       "imported": true,
@@ -87,12 +87,12 @@
       ],
       "subMetas": {}
     },
-    "b9306": {
+    "0978b": {
       "importer": "gltf-material",
-      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@b9306",
+      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@0978b",
       "displayName": "",
-      "id": "b9306",
-      "name": "tripo_mat_6335cec0-c721-4393-b739-1ece2ec00947.material",
+      "id": "0978b",
+      "name": "MuscleMan_Material.material",
       "userData": {
         "gltfIndex": 0
       },
@@ -123,8 +123,8 @@
   "userData": {
     "imageMetas": [
       {
-        "name": "man3dmodel_basecolor",
-        "uri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@1bc8f"
+        "name": "MuscleMan_BaseColor",
+        "uri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@a7b88"
       }
     ],
     "lods": {
@@ -147,7 +147,7 @@
     },
     "assetFinder": {
       "meshes": [
-        "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@b815e"
+        "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@64764"
       ],
       "skeletons": [
         "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@f9d1d"
@@ -156,7 +156,7 @@
         "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@e39f7"
       ],
       "materials": [
-        "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@b9306"
+        "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@0978b"
       ],
       "scenes": [
         "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@9de1e"
