@@ -1,7 +1,32 @@
-import { Button, Camera, Canvas, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3, view } from 'cc';
+import { Button, Camera, Canvas, Color, EventTouch, Graphics, Label, Layers, Node, UITransform, Vec3, Widget, sys, view } from 'cc';
 
 export const UI_DESIGN_WIDTH = 1280;
 export const UI_DESIGN_HEIGHT = 720;
+const SCREEN_CANVASES = new WeakSet<Node>();
+
+function onScreenResize(owner: Node, apply: () => void): void {
+    view.on('canvas-resize', apply);
+    view.on('design-resolution-changed', apply);
+    owner.once(Node.EventType.NODE_DESTROYED, () => {
+        view.off('canvas-resize', apply);
+        view.off('design-resolution-changed', apply);
+    });
+}
+
+function syncScreenCanvas(canvas: Node): void {
+    if (SCREEN_CANVASES.has(canvas)) return;
+    SCREEN_CANVASES.add(canvas);
+    const apply = () => {
+        const size = view.getVisibleSize();
+        const transform = canvas.getComponent(UITransform)!;
+        if (transform.contentSize.width !== size.width || transform.contentSize.height !== size.height) {
+            transform.setContentSize(size.width, size.height);
+        }
+    };
+    // Canvas 的相机适配不会自动更新序列化的 UITransform 尺寸。
+    apply();
+    onScreenResize(canvas, apply);
+}
 
 export function uiColor(r: number, g: number, b: number, a = 255): Color {
     return new Color(r, g, b, a);
@@ -14,6 +39,47 @@ export function makeUiNode(name: string, parent: Node): Node {
     // the popup overlay) lands on that layer automatically; normal UI stays UI_2D.
     node.layer = parent?.layer ?? Layers.Enum.UI_2D;
     node.addComponent(UITransform);
+    return node;
+}
+
+/** 保留组内设计坐标，使用 Canvas 的真实边界对齐整组；仅窗口变化时重新布局。 */
+export function makeScreenEdgeGroup(
+    name: string,
+    parent: Node,
+    edge: 'left' | 'right',
+    width = UI_DESIGN_WIDTH,
+    height = UI_DESIGN_HEIGHT,
+    padding = 24,
+    safe = true,
+): Node {
+    const node = makeUiNode(name, parent);
+    node.getComponent(UITransform)!.setContentSize(width, height);
+    let target: Node | null = parent;
+    while (target && !target.getComponent(Canvas)) target = target.parent;
+    if (target) syncScreenCanvas(target);
+    const widget = node.addComponent(Widget);
+    widget.target = target ?? parent;
+    widget.alignMode = Widget.AlignMode.ON_WINDOW_RESIZE;
+    widget.isAlignTop = true;
+    widget.top = 0;
+    if (edge === 'left') {
+        widget.isAlignLeft = true;
+    } else {
+        widget.isAlignRight = true;
+    }
+    const align = () => {
+        const size = view.getVisibleSize();
+        const safeRect = safe ? sys.getSafeAreaRect(false) : null;
+        const inset = safeRect ? edge === 'left' ? Math.max(0, safeRect.x)
+            : Math.max(0, size.width - safeRect.x - safeRect.width) : 0;
+        // 16:9 保留原布局；宽屏向外展开，并留下视觉边距与刘海安全距离。
+        const margin = Math.min(padding, Math.max(0, (size.width - width) / 2)) + inset;
+        if (edge === 'left' && widget.left !== margin) widget.left = margin;
+        if (edge === 'right' && widget.right !== margin) widget.right = margin;
+        widget.updateAlignment();
+    };
+    align();
+    onScreenResize(node, align);
     return node;
 }
 

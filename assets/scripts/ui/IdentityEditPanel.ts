@@ -10,7 +10,7 @@ import { AVATARS, generateRandomNickName } from '../backend/IdentityConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { styleProjectUiLabel } from './ProjectUiFonts';
+import { styleDynamicUiLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import {
     fitFullScreenBackgroundCover,
     makeLabel,
@@ -160,7 +160,7 @@ export class IdentityEditPanel {
 
         const nickname = makeLabel('Nickname', panel, '', 20, uiColor(13, 39, 76, 255));
         const nicknameLabel = nickname.getComponent(Label)!;
-        styleProjectUiLabel(nicknameLabel, 'semibold', 28);
+        styleDynamicUiLabel(nicknameLabel, 28);
         nicknameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
         nicknameLabel.overflow = Label.Overflow.SHRINK;
         nickname.getComponent(UITransform)!.setContentSize(290, 44);

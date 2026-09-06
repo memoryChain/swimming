@@ -18,6 +18,7 @@ const FONT_STATES: Record<ProjectUiFontWeight, FontState> = {
     regular: { asset: null, loading: false, failed: false, waiting: new Set<Label>() },
     semibold: { asset: null, loading: false, failed: false, waiting: new Set<Label>() },
 };
+const REQUESTED_WEIGHTS = new WeakMap<Label, ProjectUiFontWeight>();
 
 /**
  * Applies the checked-in project font when available. The temporary system
@@ -30,7 +31,10 @@ export function styleProjectUiLabel(
     lineHeight: number,
 ): void {
     label.lineHeight = lineHeight;
-    label.cacheMode = CacheMode.CHAR;
+    // 共用 CHAR 图集只有 1024×1024，多字号/颜色会耗尽后漏字。
+    // 界面文案按状态更新，使用独立文本纹理，避免跨页面累积字符缓存。
+    label.cacheMode = CacheMode.NONE;
+    REQUESTED_WEIGHTS.set(label, weight);
 
     const state = FONT_STATES[weight];
     if (state.asset) {
@@ -38,8 +42,9 @@ export function styleProjectUiLabel(
         return;
     }
 
-    label.fontFamily = 'Arial';
-    label.isBold = weight === 'semibold';
+    label.useSystemFont = true;
+    label.fontFamily = 'sans-serif';
+    label.isBold = false;
     if (state.failed) {
         return;
     }
@@ -61,7 +66,7 @@ function loadFont(weight: ProjectUiFontWeight, state: FontState): void {
         }
         state.asset = asset;
         for (const label of state.waiting) {
-            if (label.isValid) {
+            if (label.isValid && REQUESTED_WEIGHTS.get(label) === weight) {
                 applyFont(label, asset);
             }
         }
@@ -76,4 +81,14 @@ function applyFont(label: Label, font: Font): void {
     if (label.isBold) {
         label.isBold = false;
     }
+}
+
+/** 昵称等无界文本必须保留系统全覆盖字体，不能切到静态子集。 */
+export function styleDynamicUiLabel(label: Label, lineHeight: number): void {
+    REQUESTED_WEIGHTS.delete(label);
+    label.cacheMode = CacheMode.NONE;
+    label.useSystemFont = true;
+    label.fontFamily = 'sans-serif';
+    label.isBold = false;
+    label.lineHeight = lineHeight;
 }

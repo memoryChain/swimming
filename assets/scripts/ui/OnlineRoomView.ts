@@ -2,7 +2,7 @@ import { Button, Color, Label, Node, Sprite, UITransform } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { RaceDifficulty, getRaceDistance } from '../core/GameBalance';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { fitFullScreenBackgroundCover, makeLabel, makeRoundedRect, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
 
 const ART = RESOURCE_PATHS.onlineRoomUi;
@@ -70,10 +70,12 @@ export class OnlineRoomView {
         this.root = makeUiNode('OnlineRoom', parent);
         const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.characterUi.background, 0, 0, 1280, 720);
         fitFullScreenBackgroundCover(bg.node);
-        this.picture(this.root, 'CharacterHeader', RESOURCE_PATHS.characterUi.headerBackground, 0, 0, 497, 111);
-        this.picture(this.root, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 27, 19, 61, 40);
-        this.text(this.root, 'Title', '联机', 104, 13, 140, 48, 36, false).color = HEADER_INK;
-        this.touch(this.root, 'Back', 16, 9, 90, 68, actions.exit);
+        const header = makeScreenEdgeGroup('RoomHeader', this.root, 'left', 1280, 720, 0, false);
+        this.picture(header, 'CharacterHeader', RESOURCE_PATHS.characterUi.headerBackground, 0, 0, 497, 111);
+        const controls = makeScreenEdgeGroup('RoomHeaderControls', header, 'left', 1280, 720, 0);
+        this.picture(controls, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 27, 19, 61, 40);
+        this.text(controls, 'Title', '联机', 104, 13, 140, 48, 36, false).color = HEADER_INK;
+        this.touch(controls, 'Back', 16, 9, 90, 68, actions.exit);
         this.content = makeUiNode('Content', this.root);
         const p = this.content;
         this.picture(p, 'HostPanel', ART.hostPanel, 64, 84, 404, 522);

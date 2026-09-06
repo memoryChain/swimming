@@ -23,23 +23,6 @@
       ],
       "subMetas": {}
     },
-    "f9d1d": {
-      "importer": "gltf-skeleton",
-      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@f9d1d",
-      "displayName": "",
-      "id": "f9d1d",
-      "name": "Armature.skeleton",
-      "userData": {
-        "gltfIndex": 0,
-        "jointsLength": 41
-      },
-      "ver": "1.0.1",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
     "a7b88": {
       "importer": "gltf-embeded-image",
       "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@a7b88",
@@ -64,6 +47,39 @@
       ],
       "subMetas": {}
     },
+    "0978b": {
+      "importer": "gltf-material",
+      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@0978b",
+      "displayName": "",
+      "id": "0978b",
+      "name": "MuscleMan_Material.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9d1d": {
+      "importer": "gltf-skeleton",
+      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@f9d1d",
+      "displayName": "",
+      "id": "f9d1d",
+      "name": "Armature.skeleton",
+      "userData": {
+        "gltfIndex": 0,
+        "jointsLength": 41
+      },
+      "ver": "1.0.1",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "e39f7": {
       "importer": "texture",
       "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@e39f7",
@@ -81,22 +97,6 @@
         "imageUuidOrDatabaseUri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@a7b88"
       },
       "ver": "1.0.22",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "0978b": {
-      "importer": "gltf-material",
-      "uuid": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@0978b",
-      "displayName": "",
-      "id": "0978b",
-      "name": "MuscleMan_Material.material",
-      "userData": {
-        "gltfIndex": 0
-      },
-      "ver": "1.0.14",
       "imported": true,
       "files": [
         ".json"

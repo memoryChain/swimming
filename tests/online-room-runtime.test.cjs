@@ -31,8 +31,25 @@ class Label extends Component {
 class Sprite extends Component { static SizeMode = { CUSTOM: 0 }; spriteFrame = null; }
 class Button extends Component { static Transition = { NONE: 0 }; static EventType = { CLICK: 'click' }; interactable = true; }
 class Graphics extends Component { roundRect() {} rect() {} fill() {} stroke() {} }
+class Canvas extends Component {}
+const visibleSize = { width: 1280, height: 720 };
+let safeLeft = 0;
+class Widget extends Component {
+    static AlignMode = { ON_WINDOW_RESIZE: 2 };
+    updateAlignment() {
+        const size = this.target.getComponent(UITransform)?.contentSize ?? visibleSize;
+        const own = this.node.getComponent(UITransform).contentSize;
+        let parentX = 0, parentY = 0;
+        for (let n = this.node.parent; n && n !== this.target; n = n.parent) {
+            parentX += n.position.x; parentY += n.position.y;
+        }
+        const x = this.isAlignLeft ? -size.width / 2 + this.left + own.width / 2
+            : size.width / 2 - this.right - own.width / 2;
+        this.node.setPosition(x - parentX, (size.height - own.height) / 2 - this.top - parentY);
+    }
+}
 class Node {
-    static EventType = { TOUCH_END: 'touchend' };
+    static EventType = { TOUCH_END: 'touchend', NODE_DESTROYED: 'node-destroyed' };
     children = []; components = []; handlers = {}; active = true; isValid = true; layer = 1;
     position = { x: 0, y: 0, z: 0 }; scale = { x: 1, y: 1, z: 1 };
     constructor(name) { this.name = name; }
@@ -42,10 +59,16 @@ class Node {
     setPosition(x, y, z = 0) { this.position = { x, y, z }; }
     setScale(x, y, z = 1) { this.scale = { x, y, z }; }
     on(event, fn) { (this.handlers[event] ??= []).push(fn); }
+    once(event, fn) { this.on(event, fn); }
     click() { if (this.getComponent(Button)?.interactable !== false) for (const fn of this.handlers.click ?? []) fn(); }
-    destroy() { this.isValid = false; for (const c of this.children) c.destroy(); }
+    destroy() { this.isValid = false; for (const c of this.children) c.destroy(); for (const fn of this.handlers['node-destroyed'] ?? []) fn(); }
 }
-const cc = { Node, UITransform, Label, Sprite, Button, Graphics, Color, Layers: { Enum: { UI_2D: 1 } }, view: { getVisibleSize: () => ({ width: 1280, height: 720 }) } };
+const resizeListeners = new Map();
+const cc = { Node, UITransform, Label, Sprite, Button, Graphics, Color, Canvas, Widget,
+    Layers: { Enum: { UI_2D: 1 } }, view: { getVisibleSize: () => visibleSize,
+        on: (event, fn) => { if (!resizeListeners.has(event)) resizeListeners.set(event, new Set()); resizeListeners.get(event).add(fn); },
+        off: (event, fn) => resizeListeners.get(event)?.delete(fn) },
+    sys: { getSafeAreaRect: () => ({ x: safeLeft, y: 0, width: visibleSize.width - safeLeft, height: visibleSize.height }) } };
 const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () => {}, updateReady: async () => {}, isOwner: () => true, getRoomInfo: async () => null, kickMember: async () => {}, leaveRoom: async () => {} };
 const cache = {};
 const stubs = {
@@ -80,6 +103,68 @@ function find(n, name) { return nodes(n).find(n => n.name === name); }
 const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '铁臂狂鲨', level: 2 };
 const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime' };
 function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', ...overrides }; }
+test('宽屏布局保留边距，装饰贴角，返回按钮避让刘海', () => {
+    const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
+    const worldX = n => n.position.x + (n.parent ? worldX(n.parent) : 0);
+    for (const width of [1280, 1560, 1600]) {
+        visibleSize.width = width;
+        safeLeft = width === 1280 ? 0 : 40;
+        const canvas = new Node('Canvas'); canvas.addComponent(Canvas);
+        canvas.addComponent(UITransform).setContentSize(1280, 720);
+        const left = makeScreenEdgeGroup('Left', canvas, 'left');
+        const right = makeScreenEdgeGroup('Right', canvas, 'right');
+        assert.equal(worldX(left) - 640 + width / 2, width === 1280 ? 0 : 64);
+        assert.equal(width / 2 - worldX(right) - 640, width === 1280 ? 0 : 24);
+        const v = new OnlineRoomView(canvas, { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
+        const art = find(v.root, 'CharacterHeader');
+        assert.equal(worldX(art) - 497 / 2, -width / 2);
+        const back = find(v.root, 'Back');
+        assert.equal(worldX(back) - 90 / 2 + width / 2, safeLeft + 16);
+        const bg = find(v.root, 'Background');
+        assert.ok(bg.scale.x * bg.getComponent(UITransform).contentSize.width >= width);
+        canvas.destroy();
+        assert.equal(resizeListeners.get('canvas-resize').size, 0);
+    }
+    visibleSize.width = 1280; safeLeft = 0;
+});
+
+test('字体不使用有限字符图集，晚到字体不覆盖新字重或动态昵称', () => {
+    const pendingFonts = [];
+    cc.CacheMode = { NONE: 0, CHAR: 2 };
+    cc.Font = class Font {};
+    stubs['core/RaceBundleLoader'] = { loadRaceAsset: (p, type, done) => pendingFonts.push({ p, done }) };
+    const { styleProjectUiLabel, styleDynamicUiLabel } = load(path.join(root, 'assets/scripts/ui/ProjectUiFonts.ts'));
+    const label = new Node('Title').addComponent(Label);
+    const nickname = new Node('Nickname').addComponent(Label);
+    const destroyed = new Node('ClosedPanel').addComponent(Label);
+    styleProjectUiLabel(label, 'regular', 28);
+    styleProjectUiLabel(label, 'semibold', 28);
+    styleProjectUiLabel(nickname, 'regular', 28);
+    styleDynamicUiLabel(nickname, 28);
+    nickname.string = '𠮷昕';
+    styleProjectUiLabel(destroyed, 'regular', 28);
+    destroyed.node.destroy();
+    assert.equal(pendingFonts.length, 2);
+    const regular = new cc.Font(), bold = new cc.Font();
+    pendingFonts[1].done(null, bold);
+    pendingFonts[0].done(null, regular);
+    assert.equal(label.font, bold);
+    assert.equal(label.cacheMode, cc.CacheMode.NONE);
+    assert.equal(nickname.font, undefined);
+    assert.equal(nickname.useSystemFont, true);
+    assert.equal(nickname.string, '𠮷昕');
+    assert.equal(destroyed.font, undefined);
+    for (let i = 0; i < 200; i++) {
+        const next = new Node('ReopenedTitle').addComponent(Label);
+        styleProjectUiLabel(next, 'semibold', 38);
+        assert.equal(next.font, bold);
+        assert.equal(next.cacheMode, cc.CacheMode.NONE);
+        next.node.destroy();
+    }
+    assert.equal(pendingFonts.length, 2);
+    delete stubs['core/RaceBundleLoader'];
+});
+
 function flow(isHost = false) {
     const f = new RoomFlow(new Node('root'), 1280, 720, { onExit() {}, onStartLocalRace() {}, onStartNetRace() {} });
     f._isHost = isHost; f._localPos = isHost ? 0 : 2; f._netReal = true;

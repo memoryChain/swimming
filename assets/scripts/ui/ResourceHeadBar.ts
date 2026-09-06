@@ -6,8 +6,8 @@
 // It subscribes to PlayerData and refreshes automatically whenever the balance
 // changes. Do NOT add it to the race HUD.
 
-import { Button, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform } from 'cc';
-import { makeButton, makeLabel, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { Button, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform, view } from 'cc';
+import { makeButton, makeLabel, makeScreenEdgeGroup, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PlayerProfile } from '../backend/PlayerProfile';
 import { PlayerData } from '../backend/PlayerData';
 import { UI_STYLE } from './UIStyle';
@@ -66,15 +66,17 @@ export class ResourceHeadBar {
         const root = makeUiNode('ResourceHeadBar', parent);
         root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
         this._root = root;
+        const left = makeScreenEdgeGroup('HeadBarLeft', root, 'left', designWidth, designHeight, 8);
+        const right = makeScreenEdgeGroup('HeadBarRight', root, 'right', designWidth, designHeight, 0, false);
 
         const topY = designHeight / 2 - 10 - IDENTITY_HEIGHT / 2;
-        const nativeRightReserve = Math.ceil(platform().getTopRightReservedRatio() * designWidth);
+        const nativeRightReserve = Math.ceil(platform().getTopRightReservedRatio() * view.getVisibleSize().width);
         const rightPadding = Math.max(RIGHT_PADDING, RIGHT_PLATFORM_CONTROL_RESERVE, nativeRightReserve + 12);
 
         // Back button, top-left corner. Compact; hidden until a screen provides a back
         // target via setBack(). It sits to the LEFT of the identity (which shifts right
         // to make room) so the avatar + nickname stay visible on every non-race screen.
-        const back = makeButton('BackButton', root, BACK_WIDTH, BACK_HEIGHT, UI_STYLE.panelAlt, '返回');
+        const back = makeButton('BackButton', left, BACK_WIDTH, BACK_HEIGHT, UI_STYLE.panelAlt, '返回');
         back.setPosition(-designWidth / 2 + EDGE_PADDING + BACK_WIDTH / 2, topY, 0);
         back.active = false;
         back.on(Node.EventType.TOUCH_END, () => this._backHandler?.());
@@ -85,7 +87,7 @@ export class ResourceHeadBar {
         this._identityXDefault = -designWidth / 2 + EDGE_PADDING + IDENTITY_WIDTH / 2;
         this._identityXWithBack = -designWidth / 2 + EDGE_PADDING + BACK_WIDTH + BACK_GAP + IDENTITY_WIDTH / 2;
         this._identityY = topY;
-        const identity = makeUiNode('Identity', root);
+        const identity = makeUiNode('Identity', left);
         identity.getComponent(UITransform)!.setContentSize(IDENTITY_WIDTH, IDENTITY_HEIGHT);
         identity.setPosition(this._identityXDefault, topY, 0);
         makeLoginSprite('Artwork', identity, RESOURCE_PATHS.lobbyUi.topPlayer, IDENTITY_WIDTH, IDENTITY_HEIGHT, 0, 0);
@@ -111,7 +113,7 @@ export class ResourceHeadBar {
         this._nameLabel = nameLabel;
         this._identity = identity;
 
-        const pill = makeUiNode('ResourcePill', root);
+        const pill = makeUiNode('ResourcePill', right);
         pill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
         pill.setPosition(designWidth / 2 - rightPadding - BAR_WIDTH / 2, topY, 0);
         makeLoginSprite('Artwork', pill, RESOURCE_PATHS.lobbyUi.topCurrency, BAR_WIDTH, BAR_HEIGHT, 0, 0);
@@ -138,7 +140,7 @@ export class ResourceHeadBar {
         // Settings entry, left of the resource pill. Matches the headbar panels:
         // same dark rounded plate + faint cyan outline (only when a handler is given).
         if (options.onOpenSettings) {
-            const settingsButton = makeUiNode('SettingsButton', root);
+            const settingsButton = makeUiNode('SettingsButton', right);
             settingsButton.getComponent(UITransform)!.setContentSize(56, 56);
             settingsButton.setPosition(designWidth / 2 - rightPadding - BAR_WIDTH - 28, topY, 0);
             makeLoginSprite('Artwork', settingsButton, RESOURCE_PATHS.lobbyUi.topSettings, 56, 56, 0, 0);

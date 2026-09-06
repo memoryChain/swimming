@@ -37,7 +37,7 @@ import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview'
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolveCharacterDisplayStats } from '../progression/PlayerBalanceOverrides';
-import { fitFullScreenBackgroundCover, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeLabel, makeRect, makeRoundedRect, makeScreenEdgeGroup, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
 import type { PlayerProfile } from '../backend/PlayerProfile';
@@ -177,7 +177,7 @@ export class PrepareRaceFlow {
         this._view = 'characters';
         this._draftCharacterId = getPlayerCharacterSelection().characterId;
         this._activeInspectorTab = 'attributes';
-        setNodeActive(this._lobbyBackgroundImage, false);
+        setNodeActive(this._lobbyBackgroundImage, true);
         this.replaceContent('PrepareRaceCharacterManagementContent');
         this.buildCharacterManagement(this._content!);
         this.presentCharacter(this._draftCharacterId);
@@ -265,10 +265,12 @@ export class PrepareRaceFlow {
     }
 
     private buildReadyScreen(parent: Node): void {
-        this.buildReadyCharacterPanel(parent);
+        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height);
+        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height);
+        this.buildReadyCharacterPanel(left);
         this.buildPreviewPresentation(parent);
-        this.buildRaceModeList(parent);
-        this.buildReadyActions(parent);
+        this.buildRaceModeList(right);
+        this.buildReadyActions(right);
         this.refreshReadyCharacterInfo();
     }
 
@@ -395,11 +397,13 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterManagement(parent: Node): void {
-        makeRaceTextureSprite('CharacterScreenBackground', parent, RESOURCE_PATHS.characterUi.background, this._width, this._height, 0, 0, 0);
-        this.buildCharacterHeader(parent);
-        this.buildCharacterRoster(parent);
+        const header = makeScreenEdgeGroup('CharacterHeader', parent, 'left', this._width, this._height, 0, false);
+        const left = makeScreenEdgeGroup('CharacterLeft', parent, 'left', this._width, this._height);
+        const right = makeScreenEdgeGroup('CharacterRight', parent, 'right', this._width, this._height, 36);
+        this.buildCharacterHeader(header);
+        this.buildCharacterRoster(left);
         this.buildPreviewPresentation(parent);
-        this.buildCharacterInspector(parent);
+        this.buildCharacterInspector(right);
         this.refreshCharacterCards();
         this.refreshCharacterInspector();
         this.selectInspectorTab('attributes', true);
@@ -407,10 +411,11 @@ export class PrepareRaceFlow {
 
     private buildCharacterHeader(parent: Node): void {
         makeRaceTextureSprite('CharacterHeaderBackground', parent, RESOURCE_PATHS.characterUi.headerBackground, 497, 111, -391.5, 304.5, 1);
+        const controls = makeScreenEdgeGroup('CharacterHeaderControls', parent, 'left', this._width, this._height, 0);
 
         // Keep the larger touch target separate from the PSD-sized artwork. Changing
         // the parent's UITransform previously scaled the icon from 61×40 to 76×60.
-        const backHit = makeUiNode('CharacterBackButton', parent);
+        const backHit = makeUiNode('CharacterBackButton', controls);
         backHit.getComponent(UITransform)!.setContentSize(76, 60);
         backHit.setPosition(-582.5, 321, 3);
         makeRaceTextureSprite('Artwork', backHit, RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0, 1);
@@ -423,7 +428,7 @@ export class PrepareRaceFlow {
 
         // The label position is its bounding-box centre. Keep the visible title at
         // the PSD x=105 edge instead of centring that box on the glyph midpoint.
-        const title = makeBoundLabel('CharacterScreenTitle', parent, '角色', 36, DARK_TEXT, 120, 48, -475, 323.5, Label.HorizontalAlign.LEFT);
+        const title = makeBoundLabel('CharacterScreenTitle', controls, '角色', 36, DARK_TEXT, 120, 48, -475, 323.5, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(title, 44);
     }
 
