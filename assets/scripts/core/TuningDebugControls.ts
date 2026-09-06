@@ -47,7 +47,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 31;
+const TUNING_FILE_VERSION = 33;
 
 type TuningFileData = {
     version: number;
@@ -64,6 +64,17 @@ type TuningFileData = {
     }>;
 };
 
+type TuningLoadData = TuningFileData | Record<string, unknown>;
+
+type TuningLoadSource = 'project' | 'native' | 'localStorage';
+
+type TuningLoadCandidate = {
+    source: TuningLoadSource;
+    data: TuningLoadData;
+    updatedAtMs: number | null;
+    path?: string;
+};
+
 export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '碰撞',
@@ -72,6 +83,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('collision.knockbackSpeedFactor', '撞飞速度系数', '每 m/s 相对靠近速度产生的撞飞冲量。迎面靠近快、撞得更狠。', () => SWIMMER_COLLISION.knockbackSpeedFactor, (v) => SWIMMER_COLLISION.knockbackSpeedFactor = v, 0.05, 0, 2, 2),
             control('collision.knockbackMaxImpulse', '撞飞最大冲量', '单个泳者撞飞速度上限（m/s），也限制累积缓冲，防止堆叠爆炸。', () => SWIMMER_COLLISION.knockbackMaxImpulse, (v) => SWIMMER_COLLISION.knockbackMaxImpulse = v, 0.1, 0, 6, 2, 'm/s'),
             control('collision.knockbackDecaySeconds', '撞飞衰减时间', '撞飞冲量指数衰减的时间常数（秒）。越大滑行越久。', () => SWIMMER_COLLISION.knockbackDecaySeconds, (v) => SWIMMER_COLLISION.knockbackDecaySeconds = v, 0.05, 0.05, 1.5, 2, 's'),
+            control('collision.headOnEscapeLateralFactor', '正撞横向脱困倍率', '迎面碰撞横向分量过小时，按各自加权碰撞冲量补足的横向倍率。0=关闭补足；越大越容易一次撞开后从两侧错身。', () => SWIMMER_COLLISION.headOnEscapeLateralFactor, (v) => SWIMMER_COLLISION.headOnEscapeLateralFactor = v, 0.05, 0, 1.5, 2),
+            control('collision.headOnEscapeMaxImpulse', '正撞横向脱困上限', '迎面碰撞额外补足的单人横向速度上限。只限制人工补足，真实侧撞产生的横向分量不受此项削弱。', () => SWIMMER_COLLISION.headOnEscapeMaxImpulse, (v) => SWIMMER_COLLISION.headOnEscapeMaxImpulse = v, 0.1, 0, 4, 2, 'm/s'),
             control('collision.axialRollEnabled', '启用碰撞转体', '1=侧撞会给双方施加轴向角冲量；0=碰撞只产生位移和撞飞。', () => SWIMMER_COLLISION.axialRollEnabled, (v) => SWIMMER_COLLISION.axialRollEnabled = v, 1, 0, 1, 0),
             control('collision.axialRollDegreesPerImpulse', '碰撞转体强度', '每 1m/s 加权碰撞冲量转化出的轴向角速度。默认值允许普通碰撞翻半圈、强碰撞一圈或多圈；体重越轻越容易被转飞。', () => SWIMMER_COLLISION.axialRollDegreesPerImpulse, (v) => SWIMMER_COLLISION.axialRollDegreesPerImpulse = v, 10, 0, 720, 0, '°/s·m/s'),
             control('collision.axialRollMinimumLever', '碰撞最小转体力臂', '接近正面中心相撞时仍保留的最小转体比例。0=正撞只后退不翻；越大越容易让任何碰撞都产生明显翻滚。', () => SWIMMER_COLLISION.axialRollMinimumLever, (v) => SWIMMER_COLLISION.axialRollMinimumLever = v, 0.05, 0, 1, 2),
@@ -108,32 +121,32 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('ultimate.collisionBonus', '被撞补偿', '被撞飞时补偿的能量。', () => ULTIMATE_ENERGY_BALANCE.collisionBonus, (v) => ULTIMATE_ENERGY_BALANCE.collisionBonus = v, 0.5, 0, 20, 1),
             control('ultimate.collisionMinImpulse', '碰撞判定冲量', '收到的击退冲量超过该值才视为被撞飞。', () => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse, (v) => ULTIMATE_ENERGY_BALANCE.collisionMinImpulse = v, 0.1, 0, 6, 1, 'm/s'),
             control('ultimate.collisionCooldownMs', '碰撞冷却', '同一角色两次碰撞补偿的最小间隔。', () => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs, (v) => ULTIMATE_ENERGY_BALANCE.collisionCooldownMs = v, 50, 0, 2000, 0, 'ms'),
-            control('ultimate.dolphinCost', '海豚跳消耗', '释放一次海豚跳消耗的能量；不足无法触发。', () => ULTIMATE_ENERGY_BALANCE.dolphinCost, (v) => ULTIMATE_ENERGY_BALANCE.dolphinCost = v, 1, 5, 100, 0),
+            control('ultimate.dolphinCost', '海豚跳大招消耗', '释放海豚跳大招所需的蓄气；始终与能量上限一致，保证蓄满后释放并清空。', () => ULTIMATE_ENERGY_BALANCE.dolphinCost, (v) => ULTIMATE_ENERGY_BALANCE.dolphinCost = v, 1, 50, 200, 0),
         ],
     },
     {
-        name: 'Flip Turn',
+        name: '翻滚转身',
         controls: [
-            control('motion.flipTurnToKeyframe1Seconds', 'To Keyframe 1', 'Seconds from the swim pose to flip-turn keyframe 1.', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds = v, 0.05, 0.05, 2, 2, 's'),
-            control('motion.flipTurnToKeyframe2Seconds', 'To Keyframe 2', 'Seconds from keyframe 1 to keyframe 2. The 180-degree rotation ends here.', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds = v, 0.05, 0.05, 2, 2, 's'),
-            control('motion.flipTurnReturnToSwimSeconds', 'Return To Swim', 'Seconds from keyframe 2 back to the normal swim pose.', () => CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds = v, 0.05, 0.05, 2, 2, 's'),
-            control('motion.flipTurnArmReturnSeconds', 'Arm Return', 'Seconds for shoulders and arms to reach the swim pose during the final transition.', () => CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds = v, 0.05, 0.05, 1, 2, 's'),
-            control('motion.flipTurnUnderwaterDepth', 'Underwater Depth', 'Depth reached at keyframe 1 and carried through the pose return into the post-turn underwater glide.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth = v, 0.05, 0, 1.5, 2, 'm'),
-            control('motion.flipTurnUnderwaterGlideDepth', 'Glide Depth', 'Target depth reached by continuing downward after the wall push.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth = v, 0.05, 0, 2.5, 2, 'm'),
-            control('motion.flipTurnUnderwaterDiveSeconds', 'Push Dive Time', 'Seconds spent moving downward from the turn pose into the deeper underwater glide.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds = v, 0.05, 0, 2, 2, 's'),
-            control('motion.flipTurnUnderwaterDiveTiltDegrees', 'Push Dive Tilt', 'Maximum head-down body tilt while continuing downward after the wall push.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees = v, 0.5, 0, 30, 1, '°'),
-            control('motion.flipTurnUnderwaterHoldSeconds', 'Underwater Hold', 'Seconds to remain at the deeper glide depth before rising. Only kicks are accepted.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
-            control('motion.flipTurnUnderwaterRiseSeconds', 'Underwater Rise', 'Seconds used to rise from the deeper glide depth to surface freestyle after the hold.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
-            control('motion.flipTurnUnderwaterRiseTiltDegrees', 'Rise Tilt', 'Maximum head-up body tilt during the post-turn ascent.', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
-            control('motion.flipTurnWallContactPadding', 'Wall Contact', 'Clearance from sampled foot/toe bone centers to the visible sole surface. Higher values keep both feet farther inside the pool.', () => CHARACTER_POSE_TUNING.flipTurnWallContactPadding, (v) => CHARACTER_POSE_TUNING.flipTurnWallContactPadding = v, 0.01, 0, 1, 2, 'm'),
-            control('speed.flipTurnPushLaunchSpeed', 'Push Launch Speed', 'Initial speed reached by the wall push before underwater drag settles toward the restored cruise speed.', () => SWIMMER_BALANCE.flipTurnPushLaunchSpeed, (v) => SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v, 0.1, 0, 10, 1, 'm/s'),
-            control('speed.flipTurnUnderwaterGlideDrag', 'Push Glide Drag', 'Extra speed-proportional drag during the post-turn underwater glide. Normal water drag still applies.', () => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag, (v) => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag = v, 0.01, 0, 1, 2),
-            control('speed.flipTurnDecelerationExponent', 'Deceleration Curve', 'Approach curve power (clamped 1-2). 1 spreads the slowdown evenly; 2 starts the turn later and sheds speed harder near the wall. Lane speed always reaches 0 exactly when the feet plant.', () => SWIMMER_BALANCE.flipTurnDecelerationExponent, (v) => SWIMMER_BALANCE.flipTurnDecelerationExponent = v, 0.1, 1, 2, 1),
-            control('speed.flipTurnAccelerationExponent', 'Acceleration Curve', 'Wall-push curve power (clamped 1-2). 1 accelerates evenly off the wall; 2 builds speed later for a punchier launch into the underwater glide.', () => SWIMMER_BALANCE.flipTurnAccelerationExponent, (v) => SWIMMER_BALANCE.flipTurnAccelerationExponent = v, 0.1, 1, 2, 1),
-            control('camera.flipTurnBackDistance', 'Camera Back', 'Underwater flip-turn camera distance behind the incoming swimmer.', () => RACE_CAMERA_TUNING.flipTurnBackDistance, (v) => RACE_CAMERA_TUNING.flipTurnBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
-            control('camera.flipTurnSideDistance', 'Camera Side', 'Side offset of the underwater flip-turn camera, clamped inside the pool.', () => RACE_CAMERA_TUNING.flipTurnSideDistance, (v) => RACE_CAMERA_TUNING.flipTurnSideDistance = v, 0.1, 0.5, 8, 1, 'm'),
-            control('camera.flipTurnBelowDistance', 'Camera Below', 'Vertical distance below the swimmer target for the underwater flip-turn camera.', () => RACE_CAMERA_TUNING.flipTurnBelowDistance, (v) => RACE_CAMERA_TUNING.flipTurnBelowDistance = v, 0.05, 0.1, 1, 2, 'm'),
-            control('camera.flipTurnFov', 'Camera FOV', 'Vertical field of view used while observing the complete flip turn underwater.', () => RACE_CAMERA_TUNING.flipTurnFov, (v) => RACE_CAMERA_TUNING.flipTurnFov = v, 1, 25, 80, 0, '°'),
+            control('motion.flipTurnToKeyframe1Seconds', '进入关键姿势1', '从常规游泳姿势过渡到翻滚转身关键姿势1所需的时间。', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe1Seconds = v, 0.05, 0.05, 2, 2, 's'),
+            control('motion.flipTurnToKeyframe2Seconds', '进入关键姿势2', '从关键姿势1过渡到关键姿势2所需的时间；180度翻转在这里完成。', () => CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds, (v) => CHARACTER_POSE_TUNING.flipTurnToKeyframe2Seconds = v, 0.05, 0.05, 2, 2, 's'),
+            control('motion.flipTurnReturnToSwimSeconds', '恢复游泳姿势', '从关键姿势2恢复到常规游泳姿势所需的时间。', () => CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnReturnToSwimSeconds = v, 0.05, 0.05, 2, 2, 's'),
+            control('motion.flipTurnArmReturnSeconds', '手臂回位时间', '最后一段过渡中，肩膀和手臂恢复到游泳姿势所需的时间。', () => CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnArmReturnSeconds = v, 0.05, 0.05, 1, 2, 's'),
+            control('motion.flipTurnUnderwaterDepth', '转身水下深度', '到达关键姿势1时的水下深度；恢复姿势期间会保持该深度，然后进入蹬墙后的水下滑行。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth = v, 0.05, 0, 1.5, 2, 'm'),
+            control('motion.flipTurnUnderwaterGlideDepth', '滑行目标深度', '蹬墙后继续向下移动所要达到的水下滑行目标深度，不得浅于转身水下深度。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth = v, 0.05, 0, 2.5, 2, 'm'),
+            control('motion.flipTurnUnderwaterDiveSeconds', '蹬墙下潜时间', '从转身姿势向下移动到更深滑行位置所需的时间。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveSeconds = v, 0.05, 0, 2, 2, 's'),
+            control('motion.flipTurnUnderwaterDiveTiltDegrees', '蹬墙下潜俯角', '蹬墙后继续下潜时，身体头部向下倾斜的最大角度。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterDiveTiltDegrees = v, 0.5, 0, 30, 1, '°'),
+            control('motion.flipTurnUnderwaterHoldSeconds', '水下停留时间', '到达较深滑行位置后、开始上浮前的保持时间；这一阶段只接受打腿输入。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
+            control('motion.flipTurnUnderwaterRiseSeconds', '水下上浮时间', '停留结束后，从较深滑行位置上浮并恢复水面自由泳所需的时间。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
+            control('motion.flipTurnUnderwaterRiseTiltDegrees', '上浮仰角', '转身后上浮过程中，身体头部向上倾斜的最大角度。', () => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees, (v) => CHARACTER_POSE_TUNING.flipTurnUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
+            control('motion.flipTurnWallContactPadding', '脚掌贴墙余量', '脚部骨骼采样点到可见脚底表面的补偿距离；数值越大，两只脚会更深入池壁。', () => CHARACTER_POSE_TUNING.flipTurnWallContactPadding, (v) => CHARACTER_POSE_TUNING.flipTurnWallContactPadding = v, 0.01, 0, 1, 2, 'm'),
+            control('speed.flipTurnPushLaunchSpeed', '蹬墙初速度', '蹬墙后立即获得的初始速度；随后水下阻力会让速度逐渐回落到正常巡航速度。', () => SWIMMER_BALANCE.flipTurnPushLaunchSpeed, (v) => SWIMMER_BALANCE.flipTurnPushLaunchSpeed = v, 0.1, 0, 10, 1, 'm/s'),
+            control('speed.flipTurnUnderwaterGlideDrag', '水下滑行额外阻力', '转身后水下滑行阶段额外增加的速度比例阻力；常规水阻仍然生效。', () => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag, (v) => SWIMMER_BALANCE.flipTurnUnderwaterGlideDrag = v, 0.01, 0, 1, 2),
+            control('speed.flipTurnDecelerationExponent', '接近池壁减速曲线', '接近池壁时的减速曲线指数，范围1到2。1表示均匀减速；2表示前段保持速度更久、临近池壁时减速更急。双脚贴墙时前进速度一定降到0。', () => SWIMMER_BALANCE.flipTurnDecelerationExponent, (v) => SWIMMER_BALANCE.flipTurnDecelerationExponent = v, 0.1, 1, 2, 1),
+            control('speed.flipTurnAccelerationExponent', '蹬墙加速曲线', '蹬墙时的加速曲线指数，范围1到2。1表示均匀加速；2表示后段加速更强，蹬墙进入水下滑行时更有爆发感。', () => SWIMMER_BALANCE.flipTurnAccelerationExponent, (v) => SWIMMER_BALANCE.flipTurnAccelerationExponent = v, 0.1, 1, 2, 1),
+            control('camera.flipTurnBackDistance', '镜头后方距离', '水下观察翻滚转身时，镜头位于迎面游来的角色后方多远。', () => RACE_CAMERA_TUNING.flipTurnBackDistance, (v) => RACE_CAMERA_TUNING.flipTurnBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
+            control('camera.flipTurnSideDistance', '镜头侧向距离', '水下翻滚转身镜头相对角色的侧向偏移；最终位置会限制在泳池内部。', () => RACE_CAMERA_TUNING.flipTurnSideDistance, (v) => RACE_CAMERA_TUNING.flipTurnSideDistance = v, 0.1, 0.5, 8, 1, 'm'),
+            control('camera.flipTurnBelowDistance', '镜头下方距离', '水下翻滚转身镜头位于角色观察目标下方的垂直距离。', () => RACE_CAMERA_TUNING.flipTurnBelowDistance, (v) => RACE_CAMERA_TUNING.flipTurnBelowDistance = v, 0.05, 0.1, 1, 2, 'm'),
+            control('camera.flipTurnFov', '镜头视野角', '水下观察完整翻滚转身过程时使用的垂直视野角。', () => RACE_CAMERA_TUNING.flipTurnFov, (v) => RACE_CAMERA_TUNING.flipTurnFov = v, 1, 25, 80, 0, '°'),
         ],
     },
     {
@@ -245,10 +258,10 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('condition.depletionCooldown', '体力耗尽冷却', '体力降到零后暂停恢复的时间。设为零可关闭冷却。', () => CONDITION_BALANCE.energy.depletionCooldownSeconds, (v) => CONDITION_BALANCE.energy.depletionCooldownSeconds = v, 0.1, 0, 5, 1, 's'),
             control('condition.efficiencyFloor', '效率地板', '体力耗尽时的效率下限。0=没力气完全游不动；0.5=还能以一半效率游。配合效率曲线指数使用。', () => CONDITION_BALANCE.efficiency.energyFloor, (v) => CONDITION_BALANCE.efficiency.energyFloor = v, 0.05, 0, 0.9, 2),
             control('condition.curveExponent', '效率曲线指数', '效率随体力衰减的曲线形状。1=线性；<1=缓启动（高体力几乎不掉，最后10%急跌）。0.3=陡峭缓启动。', () => CONDITION_BALANCE.efficiency.curveExponent, (v) => CONDITION_BALANCE.efficiency.curveExponent = v, 0.05, 0.1, 2, 2),
-            control('condition.cadenceWarningRatio', '降频预警体力', '体力低于这个比例后，划水动作开始逐渐变慢。0.15 表示 15%。', () => CONDITION_BALANCE.cadence.warningRatio, (v) => { CONDITION_BALANCE.cadence.warningRatio = v; validateTuningRelations(); }, 0.01, 0, 0.5, 2),
-            control('condition.cadenceExhaustedRatio', '降频力竭体力', '体力低于这个比例后进入更重的第二段降频。应不高于预警体力。', () => CONDITION_BALANCE.cadence.exhaustedRatio, (v) => { CONDITION_BALANCE.cadence.exhaustedRatio = v; validateTuningRelations(); }, 0.01, 0, 0.3, 2),
-            control('condition.cadenceWarningScale', '力竭入口划频', '体力降到力竭阈值时的动作频率倍率。0.85 表示原频率的 85%。', () => CONDITION_BALANCE.cadence.warningScale, (v) => { CONDITION_BALANCE.cadence.warningScale = v; validateTuningRelations(); }, 0.05, 0.3, 1, 2),
-            control('condition.cadenceExhaustedScale', '空体力划频', '体力归零时的动作频率倍率。0.6 表示原频率的 60%。', () => CONDITION_BALANCE.cadence.exhaustedScale, (v) => { CONDITION_BALANCE.cadence.exhaustedScale = v; validateTuningRelations(); }, 0.05, 0.3, 1, 2),
+            control('condition.cadenceWarningRatio', '降频预警体力', '体力低于这个比例后，划水动作开始逐渐变慢。0.15 表示 15%。', () => CONDITION_BALANCE.cadence.warningRatio, (v) => CONDITION_BALANCE.cadence.warningRatio = v, 0.01, 0, 0.5, 2),
+            control('condition.cadenceExhaustedRatio', '降频力竭体力', '体力低于这个比例后进入更重的第二段降频。应不高于预警体力。', () => CONDITION_BALANCE.cadence.exhaustedRatio, (v) => CONDITION_BALANCE.cadence.exhaustedRatio = v, 0.01, 0, 0.3, 2),
+            control('condition.cadenceWarningScale', '力竭入口划频', '体力降到力竭阈值时的动作频率倍率。0.85 表示原频率的 85%。', () => CONDITION_BALANCE.cadence.warningScale, (v) => CONDITION_BALANCE.cadence.warningScale = v, 0.05, 0.3, 1, 2),
+            control('condition.cadenceExhaustedScale', '空体力划频', '体力归零时的动作频率倍率。0.6 表示原频率的 60%。', () => CONDITION_BALANCE.cadence.exhaustedScale, (v) => CONDITION_BALANCE.cadence.exhaustedScale = v, 0.05, 0.3, 1, 2),
             control('condition.regenLow', '低区回血', '心率在低区时每秒回复的体力。越高回血越快。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW] = v, 0.05, 0, 5, 2),
             control('condition.regenOptimal', '最佳区回血', '心率在最佳区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL] = v, 0.05, 0, 5, 2),
             control('condition.regenHighPressure', '高压区回血', '心率在高压区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE] = v, 0.05, 0, 5, 2),
@@ -344,8 +357,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('steer.maxHeading', '最大偏航', '身体相对泳道前进方向的最大偏转角。越大能歪得越狠；65°时前进速度约剩四成。运动模型有85°硬上限，连续单侧划水也不能掉头。', () => STEERING_TUNING.maxHeading, (v) => STEERING_TUNING.maxHeading = v, 1, 10, MAX_STEERING_HEADING_DEGREES, 0, '°'),
             control('steer.turnAngularDrag', '偏航角速度阻尼', '松手后偏航角速度的水阻。越低弯道持续越久；0=除非反侧划水或撞墙，否则会一直继续转弯。', () => STEERING_TUNING.turnAngularDrag, (v) => STEERING_TUNING.turnAngularDrag = v, 0.05, 0, 4, 2, '/s'),
             control('steer.maxTurnRate', '最大偏航角速度', '连续同侧划水能累积到的偏航角速度上限，防止人物瞬间急转。', () => STEERING_TUNING.maxTurnRate, (v) => STEERING_TUNING.maxTurnRate = v, 5, 20, 240, 0, '°/s'),
-            control('steer.poolWallHeadingCorrectionRate', '撞墙转回强度', '人物碰到泳池侧墙时，将偏航角速度推回泳池内部的强度，避免持续把身体压在墙外。', () => STEERING_TUNING.poolWallHeadingCorrectionRate, (v) => STEERING_TUNING.poolWallHeadingCorrectionRate = v, 0.1, 0, 8, 1, '/s'),
-            control('steer.poolWallEscapeHeadingDegrees', '最小离墙角', '贴墙时至少建立多少朝泳池内部的偏航角。达到后墙体不再反向覆盖玩家输入，让人物顺利脱离边界。', () => STEERING_TUNING.poolWallEscapeHeadingDegrees, (v) => STEERING_TUNING.poolWallEscapeHeadingDegrees = v, 1, 0, 45, 0, '°'),
+            control('steer.poolWallHeadingCorrectionRate', '撞墙转回强度', '人物碰到泳池侧墙后，朝离墙目标角平滑回正的速度。越高越快离墙，但实际转速仍受“撞墙最大转速”限制。', () => STEERING_TUNING.poolWallHeadingCorrectionRate, (v) => STEERING_TUNING.poolWallHeadingCorrectionRate = v, 0.1, 0, 8, 1, '/s'),
+            control('steer.poolWallMaxTurnRate', '撞墙最大转速', '侧墙回正过程允许的最大偏航角速度。只限制撞墙脱离，不影响正常划水的最大偏航角速度。', () => STEERING_TUNING.poolWallMaxTurnRate, (v) => STEERING_TUNING.poolWallMaxTurnRate = v, 2, 5, 120, 0, '°/s'),
+            control('steer.poolWallEscapeHeadingDegrees', '最小离墙角', '侧墙回正最终停住的向内偏航角。达到后立即刹住墙体回正角速度并交还玩家控制。', () => STEERING_TUNING.poolWallEscapeHeadingDegrees, (v) => STEERING_TUNING.poolWallEscapeHeadingDegrees = v, 1, 0, 45, 0, '°'),
             control('steer.kickStraightenMinCadenceHz', '踢腿回正频率', '短点按形成的踢腿频率达到该值后，角色会逐渐转回泳道正前方。设为 0 时每次踢腿都会触发回正。', () => STEERING_TUNING.kickStraightenMinCadenceHz, (v) => STEERING_TUNING.kickStraightenMinCadenceHz = v, 0.25, 0, 10, 2, 'Hz'),
             control('steer.kickStraightenRate', '踢腿回正速度', '连续踢腿时将偏航目标拉回泳道方向的速度。角色仍按“转向平滑”逐渐跟随，不会瞬间掰正。设为 0 可关闭。', () => STEERING_TUNING.kickStraightenRate, (v) => STEERING_TUNING.kickStraightenRate = v, 0.1, 0, 8, 1, '/s'),
             control('steer.turnPowerMinFactor', '最弱转向倍率', '转向角与划水发力挂钩：按得越久、拉水行程越长偏得越多。这是最短划水的转向倍率（拉满=1.0）。1=不按力度缩放，每次都满角；越小轻点与重划的转向差别越大。', () => STEERING_TUNING.turnPowerMinFactor, (v) => STEERING_TUNING.turnPowerMinFactor = v, 0.05, 0, 1, 2),
@@ -446,36 +460,32 @@ export function saveCurrentTuning(): TuningSaveResult {
 }
 
 export function loadSavedTuning(): boolean {
-    try {
-        defaultTuningSnapshot();
-        const fileData = loadNativeTuningFile();
-        if (fileData) {
-            applyTuningSnapshot(getValuesFromTuningData(fileData));
-            return true;
-        }
-        const raw = sys.localStorage.getItem(TUNING_STORAGE_KEY);
-        if (!raw) {
-            return false;
-        }
-        const data = JSON.parse(raw) as TuningFileData | Record<string, number>;
-        applyTuningSnapshot(getValuesFromTuningData(data));
-        return true;
-    } catch (error) {
-        console.warn('[SpeedSwimming] failed to load tuning settings', error);
+    defaultTuningSnapshot();
+    const candidate = loadRuntimeTuningCandidate();
+    if (!candidate) {
         return false;
     }
+    applyTuningCandidate(candidate);
+    return true;
 }
 
 export function loadSavedTuningAsync(onComplete: () => void) {
     defaultTuningSnapshot();
     resources.load(PROJECT_TUNING_RESOURCE, JsonAsset, (err, asset) => {
-        if (!err && asset?.json) {
-            applyTuningSnapshot(getValuesFromTuningData(asset.json as TuningFileData));
-            console.log(`[SpeedSwimming] tuning loaded from project resource ${PROJECT_TUNING_ASSET_PATH}`);
-            onComplete();
-            return;
+        const projectCandidate = !err && asset?.json
+            ? createTuningLoadCandidate(
+                'project',
+                asset.json as TuningFileData,
+                PROJECT_TUNING_ASSET_PATH,
+            )
+            : null;
+        const selected = selectNewerTuningCandidate(
+            projectCandidate,
+            loadRuntimeTuningCandidate(),
+        );
+        if (selected) {
+            applyTuningCandidate(selected);
         }
-        loadSavedTuning();
         onComplete();
     });
 }
@@ -510,7 +520,12 @@ function control(
         label,
         description,
         get,
-        set: (value) => set(clamp(roundTo(value, precision), min, max)),
+        set: (value) => {
+            set(clamp(roundTo(value, precision), min, max));
+            if (!_suspendRelationValidation) {
+                validateTuningRelations(id);
+            }
+        },
         step,
         min,
         max,
@@ -544,6 +559,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 let _defaultSnapshot: Record<string, number> | null = null;
+let _suspendRelationValidation = false;
 
 function defaultTuningSnapshot(): Record<string, number> {
     if (!_defaultSnapshot) {
@@ -568,18 +584,114 @@ function createTuningFileData(): TuningFileData {
     };
 }
 
-function applyTuningSnapshot(snapshot: Record<string, number>) {
+function applyTuningSnapshot(snapshot: Record<string, unknown>) {
+    warnUnknownTuningKeys(snapshot);
+    const invalidValues = collectInvalidLegacyTuningValues(snapshot);
     snapshot = migrateTuningSnapshot(snapshot);
-    forEachControl((control, group) => {
-        const value = snapshot[control.id] ?? snapshot[`${group.name}.${control.label}`];
-        if (typeof value === 'number' && Number.isFinite(value)) {
+    const clampedValues: string[] = [];
+    _suspendRelationValidation = true;
+    try {
+        forEachControl((control, group) => {
+            const legacyLabelKey = `${group.name}.${control.label}`;
+            const key = Object.prototype.hasOwnProperty.call(snapshot, control.id)
+                ? control.id
+                : Object.prototype.hasOwnProperty.call(snapshot, legacyLabelKey)
+                    ? legacyLabelKey
+                    : null;
+            if (!key) {
+                return;
+            }
+            const value = snapshot[key];
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+                invalidValues.push(`${key}=${formatTuningValue(value)}`);
+                return;
+            }
+            if (value < control.min || value > control.max) {
+                const adopted = clamp(roundTo(value, control.precision), control.min, control.max);
+                clampedValues.push(`${key}=${value} -> ${adopted}`);
+            }
             control.set(value);
-        }
-    });
-    validateTuningRelations();
+        });
+    } finally {
+        _suspendRelationValidation = false;
+    }
+    if (invalidValues.length > 0) {
+        console.warn(`[SpeedSwimming] tuning ignored invalid known values: ${invalidValues.join(', ')}`);
+    }
+    if (clampedValues.length > 0) {
+        console.warn(`[SpeedSwimming] tuning clamped out-of-range values: ${clampedValues.join(', ')}`);
+    }
+    const savedDolphinCost = snapshot['ultimate.dolphinCost'];
+    const savedMaxEnergy = snapshot['ultimate.maxEnergy'];
+    const relationSourceId = typeof savedDolphinCost === 'number'
+        && Number.isFinite(savedDolphinCost)
+        && (typeof savedMaxEnergy !== 'number' || !Number.isFinite(savedMaxEnergy))
+        ? 'ultimate.dolphinCost'
+        : undefined;
+    validateTuningRelations(relationSourceId);
 }
 
-function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string, number> {
+function warnUnknownTuningKeys(snapshot: Record<string, unknown>) {
+    const knownKeys = new Set<string>();
+    forEachControl((control, group) => {
+        knownKeys.add(control.id);
+        knownKeys.add(`${group.name}.${control.label}`);
+    });
+    const unknownKeys = Object.keys(snapshot)
+        .filter((key) => !knownKeys.has(key) && !isKnownLegacyTuningKey(key))
+        .sort();
+    if (unknownKeys.length > 0) {
+        console.warn(`[SpeedSwimming] tuning ignored unknown keys: ${unknownKeys.join(', ')}`);
+    }
+}
+
+function formatTuningValue(value: unknown): string {
+    if (typeof value === 'string') {
+        return JSON.stringify(value);
+    }
+    if (value === undefined) {
+        return 'undefined';
+    }
+    try {
+        return JSON.stringify(value) ?? String(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function collectInvalidLegacyTuningValues(snapshot: Record<string, unknown>): string[] {
+    return Object.keys(snapshot)
+        .filter((key) => isKnownLegacyTuningKey(key))
+        .filter((key) => typeof snapshot[key] !== 'number' || !Number.isFinite(snapshot[key]))
+        .map((key) => `${key}=${formatTuningValue(snapshot[key])}`);
+}
+
+function isKnownLegacyTuningKey(key: string): boolean {
+    if (key === 'speed.strokeStabilityAccel'
+        || key === 'axialRoll.waterRightingTorque'
+        || key === 'axialRoll.tippingStartDegrees'
+        || key === 'stability.armReleaseSweetCenter'
+        || key === 'stability.armReleasePerfectHalfWidth'
+        || key === 'stability.armReleaseGoodHalfWidth') {
+        return true;
+    }
+    if (!key.startsWith('stability.')) {
+        return false;
+    }
+    return [
+        'minHoldSeconds',
+        'goodStart',
+        'goodEnd',
+        'perfectStart',
+        'perfectEnd',
+        'armCycleLowSpeedPerSecond',
+        'armCycleHighSpeedPerSecond',
+        'armCycleSpeedStart',
+        'armCycleSpeedFull',
+    ].indexOf(key.slice('stability.'.length)) >= 0;
+}
+
+function migrateTuningSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
     const migrated = { ...snapshot };
     // Keep legacy ids only at this compatibility boundary so existing saved
     // tuning files load after the strokeQuality terminology migration.
@@ -621,7 +733,49 @@ function migrateTuningSnapshot(snapshot: Record<string, number>): Record<string,
     return migrated;
 }
 
-function validateTuningRelations() {
+function validateTuningRelations(changedId?: string) {
+    if (ULTIMATE_ENERGY_BALANCE.dolphinCost !== ULTIMATE_ENERGY_BALANCE.maxEnergy) {
+        if (changedId === 'ultimate.dolphinCost') {
+            const fixed = ULTIMATE_ENERGY_BALANCE.dolphinCost;
+            console.warn(
+                `[SpeedSwimming] tuning adjusted: ultimate.maxEnergy must equal dolphin cost; ` +
+                `set to ${fixed.toFixed(0)}`,
+            );
+            ULTIMATE_ENERGY_BALANCE.maxEnergy = fixed;
+        } else {
+            const fixed = ULTIMATE_ENERGY_BALANCE.maxEnergy;
+            console.warn(
+                `[SpeedSwimming] tuning adjusted: ultimate.dolphinCost must equal max energy; ` +
+                `set to ${fixed.toFixed(0)}`,
+            );
+            ULTIMATE_ENERGY_BALANCE.dolphinCost = fixed;
+        }
+    }
+
+    if (SWIMMER_BALANCE.kickMaxSpeed > SWIMMER_BALANCE.maxSpeed) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: speed.kickMaxSpeed ${SWIMMER_BALANCE.kickMaxSpeed.toFixed(2)} ` +
+            `exceeded speed.maxSpeed ${SWIMMER_BALANCE.maxSpeed.toFixed(2)}`,
+        );
+        SWIMMER_BALANCE.kickMaxSpeed = SWIMMER_BALANCE.maxSpeed;
+    }
+    if (SWIMMER_BALANCE.kickCadenceMeasureMaxHz < SWIMMER_BALANCE.kickCadenceMaxHz) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: speed.kickCadenceMeasureMaxHz ` +
+            `${SWIMMER_BALANCE.kickCadenceMeasureMaxHz.toFixed(1)} was below propulsion cap ` +
+            `${SWIMMER_BALANCE.kickCadenceMaxHz.toFixed(1)}`,
+        );
+        SWIMMER_BALANCE.kickCadenceMeasureMaxHz = SWIMMER_BALANCE.kickCadenceMaxHz;
+    }
+
+    if (CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth < CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth) {
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: motion.flipTurnUnderwaterGlideDepth must not be shallower ` +
+            `than motion.flipTurnUnderwaterDepth; set to ${CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth.toFixed(2)}`,
+        );
+        CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth = CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth;
+    }
+
     const safeMaxHeading = clamp(STEERING_TUNING.maxHeading, 0, MAX_STEERING_HEADING_DEGREES);
     if (safeMaxHeading !== STEERING_TUNING.maxHeading) {
         console.warn(
@@ -640,11 +794,41 @@ function validateTuningRelations() {
         );
         AXIAL_ROLL_TUNING.hullFadeFullAngularSpeed = fixed;
     }
+    if (COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed <= COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed) {
+        const fixed = COLLISION_PITCH_TUNING.tumblePenaltyStartAngularSpeed + 1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: collision.pitchPenaltyFull must be above pitchPenaltyStart; ` +
+            `set to ${fixed.toFixed(1)}`,
+        );
+        COLLISION_PITCH_TUNING.tumblePenaltyFullAngularSpeed = fixed;
+    }
+    if (AXIAL_ROLL_TUNING.tumblePenaltyFullAngularSpeed <= AXIAL_ROLL_TUNING.tumblePenaltyStartAngularSpeed) {
+        const fixed = AXIAL_ROLL_TUNING.tumblePenaltyStartAngularSpeed + 1;
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: axialRoll.tumblePenaltyFullAngularSpeed must be above start; ` +
+            `set to ${fixed.toFixed(1)}`,
+        );
+        AXIAL_ROLL_TUNING.tumblePenaltyFullAngularSpeed = fixed;
+    }
+    if (AI_STROKE_TUNING.maxReleaseProgress >= STROKE_QUALITY_TUNING.armStrokeTimeoutProgress) {
+        const fixed = Math.min(1, AI_STROKE_TUNING.maxReleaseProgress + 0.01);
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: gesture.armStrokeTimeoutProgress must be above ` +
+            `ai.maxReleaseProgress; set to ${fixed.toFixed(2)}`,
+        );
+        STROKE_QUALITY_TUNING.armStrokeTimeoutProgress = fixed;
+    }
     const timeoutProgress = clamp(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, 0.05, 1);
     const good = normalizeRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd, timeoutProgress, 'strokeQuality.good');
     STROKE_QUALITY_TUNING.goodStart = good.start;
     STROKE_QUALITY_TUNING.goodEnd = good.end;
-    const perfect = normalizeRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd, timeoutProgress, 'strokeQuality.perfect');
+    const perfect = normalizeRangeWithin(
+        STROKE_QUALITY_TUNING.perfectStart,
+        STROKE_QUALITY_TUNING.perfectEnd,
+        good.start,
+        good.end,
+        'strokeQuality.perfect',
+    );
     STROKE_QUALITY_TUNING.perfectStart = perfect.start;
     STROKE_QUALITY_TUNING.perfectEnd = perfect.end;
     STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds = clamp(
@@ -652,6 +836,19 @@ function validateTuningRelations() {
         0,
         0.2,
     );
+
+    if (AI_STROKE_TUNING.timingSigmaHigh > AI_STROKE_TUNING.timingSigmaLow) {
+        console.warn('[SpeedSwimming] tuning adjusted: ai.timingSigmaHigh must not exceed timingSigmaLow');
+        AI_STROKE_TUNING.timingSigmaHigh = AI_STROKE_TUNING.timingSigmaLow;
+    }
+    if (AI_STROKE_TUNING.gapSecondsFast > AI_STROKE_TUNING.gapSecondsSlow) {
+        console.warn('[SpeedSwimming] tuning adjusted: ai.gapSecondsFast must not exceed gapSecondsSlow');
+        AI_STROKE_TUNING.gapSecondsFast = AI_STROKE_TUNING.gapSecondsSlow;
+    }
+    if (AI_STROKE_TUNING.startDelayMax < AI_STROKE_TUNING.startDelayMin) {
+        console.warn('[SpeedSwimming] tuning adjusted: ai.startDelayMax must not be below startDelayMin');
+        AI_STROKE_TUNING.startDelayMax = AI_STROKE_TUNING.startDelayMin;
+    }
 
     if (STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond < STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond) {
         console.warn(
@@ -712,12 +909,125 @@ function normalizeRange(startValue: number, endValue: number, maxEnd: number, la
     return { start, end };
 }
 
-function getValuesFromTuningData(data: TuningFileData | Record<string, number>): Record<string, number> {
-    const values = (data as TuningFileData).values;
-    if (values && typeof values === 'object') {
+function normalizeRangeWithin(
+    startValue: number,
+    endValue: number,
+    minStart: number,
+    maxEnd: number,
+    label: string,
+): { start: number; end: number } {
+    let start = clamp(Math.min(startValue, endValue), minStart, maxEnd);
+    let end = clamp(Math.max(startValue, endValue), minStart, maxEnd);
+    if (end - start < 0.001) {
+        end = Math.min(maxEnd, start + 0.001);
+        start = Math.max(minStart, end - 0.001);
+    }
+    if (Math.abs(start - startValue) > 0.0001 || Math.abs(end - endValue) > 0.0001) {
+        console.warn(`[SpeedSwimming] tuning adjusted: ${label} range -> ${start.toFixed(3)}..${end.toFixed(3)}`);
+    }
+    return { start, end };
+}
+
+function applyTuningCandidate(candidate: TuningLoadCandidate) {
+    warnTuningFileVersion(candidate);
+    applyTuningSnapshot(getValuesFromTuningData(candidate.data));
+    logLoadedTuning(candidate);
+}
+
+function warnTuningFileVersion(candidate: TuningLoadCandidate) {
+    const hasValuesWrapper = Object.prototype.hasOwnProperty.call(candidate.data, 'values');
+    if (!hasValuesWrapper) {
+        return;
+    }
+    const version = candidate.data.version;
+    if (typeof version !== 'number' || !Number.isFinite(version) || !Number.isInteger(version)) {
+        console.warn(
+            `[SpeedSwimming] tuning ${candidate.source} file has an invalid or missing version; ` +
+            `expected ${TUNING_FILE_VERSION}, loading compatible values only`,
+        );
+        return;
+    }
+    if (version !== TUNING_FILE_VERSION) {
+        console.warn(
+            `[SpeedSwimming] tuning ${candidate.source} file version ${version} differs from ` +
+            `current version ${TUNING_FILE_VERSION}; loading with compatibility migration`,
+        );
+    }
+}
+
+function getValuesFromTuningData(data: TuningLoadData): Record<string, unknown> {
+    const values = extractTuningValues(data);
+    if (values) {
         return values;
     }
-    return data as Record<string, number>;
+    console.warn('[SpeedSwimming] tuning data must be an object with an object-valued values field');
+    return {};
+}
+
+function extractTuningValues(data: unknown): Record<string, unknown> | null {
+    if (!isRecord(data)) {
+        return null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(data, 'values')) {
+        return data;
+    }
+    return isRecord(data.values) ? data.values : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasUsableKnownTuningValue(data: TuningLoadData): boolean {
+    const values = extractTuningValues(data);
+    if (!values) {
+        return false;
+    }
+    const migrated = migrateTuningSnapshot(values);
+    let usable = false;
+    forEachControl((control, group) => {
+        if (usable) {
+            return;
+        }
+        const legacyLabelKey = `${group.name}.${control.label}`;
+        const key = Object.prototype.hasOwnProperty.call(migrated, control.id)
+            ? control.id
+            : Object.prototype.hasOwnProperty.call(migrated, legacyLabelKey)
+                ? legacyLabelKey
+                : null;
+        const value = key ? migrated[key] : undefined;
+        usable = typeof value === 'number' && Number.isFinite(value);
+    });
+    return usable;
+}
+
+function warnUnusableTuningCandidate(source: TuningLoadSource, data: TuningLoadData) {
+    const values = extractTuningValues(data);
+    if (!values) {
+        console.warn(`[SpeedSwimming] ignored ${source} tuning candidate: invalid file/value structure`);
+        return;
+    }
+    warnUnknownTuningKeys(values);
+    const invalidValues = collectInvalidLegacyTuningValues(values);
+    forEachControl((control, group) => {
+        const legacyLabelKey = `${group.name}.${control.label}`;
+        const key = Object.prototype.hasOwnProperty.call(values, control.id)
+            ? control.id
+            : Object.prototype.hasOwnProperty.call(values, legacyLabelKey)
+                ? legacyLabelKey
+                : null;
+        if (!key) {
+            return;
+        }
+        const value = values[key];
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            invalidValues.push(`${key}=${formatTuningValue(value)}`);
+        }
+    });
+    if (invalidValues.length > 0) {
+        console.warn(`[SpeedSwimming] tuning ignored invalid known values: ${invalidValues.join(', ')}`);
+    }
+    console.warn(`[SpeedSwimming] ignored ${source} tuning candidate: no usable known tuning values`);
 }
 
 function saveProjectTuningFile(data: TuningFileData): string | null {
@@ -772,7 +1082,7 @@ function saveLocalStorageBackup(data: TuningFileData): boolean {
     }
 }
 
-function loadNativeTuningFile(): TuningFileData | null {
+function loadNativeTuningFile(): TuningLoadData | null {
     if (!NATIVE) {
         return null;
     }
@@ -785,11 +1095,78 @@ function loadNativeTuningFile(): TuningFileData | null {
         if (!raw) {
             return null;
         }
-        console.log(`[SpeedSwimming] tuning loaded from native writable path ${filePath}`);
-        return JSON.parse(raw) as TuningFileData;
+        return JSON.parse(raw) as TuningLoadData;
     } catch (error) {
         console.warn('[SpeedSwimming] failed to load native tuning file', error);
         return null;
+    }
+}
+
+function loadLocalStorageTuningFile(): TuningLoadData | null {
+    try {
+        const raw = sys.localStorage.getItem(TUNING_STORAGE_KEY);
+        return raw ? JSON.parse(raw) as TuningLoadData : null;
+    } catch (error) {
+        console.warn('[SpeedSwimming] failed to load tuning settings backup', error);
+        return null;
+    }
+}
+
+function loadRuntimeTuningCandidate(): TuningLoadCandidate | null {
+    const nativeData = loadNativeTuningFile();
+    const nativeCandidate = nativeData
+        ? createTuningLoadCandidate('native', nativeData, getNativeTuningFilePath() ?? undefined)
+        : null;
+    const localStorageData = loadLocalStorageTuningFile();
+    const localStorageCandidate = localStorageData
+        ? createTuningLoadCandidate('localStorage', localStorageData)
+        : null;
+    return selectNewerTuningCandidate(nativeCandidate, localStorageCandidate);
+}
+
+function createTuningLoadCandidate(
+    source: TuningLoadSource,
+    data: TuningLoadData,
+    path?: string,
+): TuningLoadCandidate | null {
+    if (!hasUsableKnownTuningValue(data)) {
+        warnUnusableTuningCandidate(source, data);
+        return null;
+    }
+    const updatedAt = (data as TuningFileData).updatedAt;
+    const parsedUpdatedAt = typeof updatedAt === 'string' ? Date.parse(updatedAt) : Number.NaN;
+    return {
+        source,
+        data,
+        updatedAtMs: Number.isFinite(parsedUpdatedAt) ? parsedUpdatedAt : null,
+        path,
+    };
+}
+
+function selectNewerTuningCandidate(
+    baseline: TuningLoadCandidate | null,
+    override: TuningLoadCandidate | null,
+): TuningLoadCandidate | null {
+    if (!baseline) {
+        return override;
+    }
+    if (!override) {
+        return baseline;
+    }
+    if (override.updatedAtMs !== null
+        && (baseline.updatedAtMs === null || override.updatedAtMs > baseline.updatedAtMs)) {
+        return override;
+    }
+    return baseline;
+}
+
+function logLoadedTuning(candidate: TuningLoadCandidate) {
+    if (candidate.source === 'project') {
+        console.log(`[SpeedSwimming] tuning loaded from project resource ${PROJECT_TUNING_ASSET_PATH}`);
+    } else if (candidate.source === 'native') {
+        console.log(`[SpeedSwimming] tuning loaded from native writable path ${candidate.path ?? ''}`);
+    } else {
+        console.log('[SpeedSwimming] tuning loaded from localStorage backup');
     }
 }
 

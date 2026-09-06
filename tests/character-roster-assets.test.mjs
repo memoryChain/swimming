@@ -498,10 +498,10 @@ test('深潜先锋精修资源保留原模型与配色通道，仅新增有效�
     assert.equal(doc.skins[0].joints.length, 41);
     assert.equal(doc.accessors[primitive.indices].count / 3, 5562);
     assert.equal(doc.accessors[primitive.attributes.POSITION].count, 7896);
-    // 仅记录已批准的 308a0775 精修版，不提高其它角色的资源预算。
+    // 保留主干 53a0214 的氧气瓶骨骼修复；网格、贴图和资源预算沿用精修版。
     assert.equal(data.length, 583140);
     assert.equal(createHash('sha256').update(data).digest('hex'),
-        'f475b24383b21139032ec3016aff00b97c3bc0b8158252a546e512091dc8a075');
+        '1f84a8d6f47b906168bf2b8d9a7a024db0bbc249d1837492e1c4ec5b93f4a10b');
     assert.equal(doc.images.length, 1);
     assert.equal(doc.images[0].mimeType, 'image/jpeg');
     const imageView = doc.bufferViews[doc.images[0].bufferView];

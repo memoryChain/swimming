@@ -53,6 +53,9 @@ export class UltimateEnergyModel {
 
     // 被动增长：所有角色每秒固定获得（低保），乘以角色积攒倍率。
     tick(dt: number) {
+        // Live tuning may lower maxEnergy while this model already holds more.
+        // Restore the balance invariant even when passive gain is configured to 0.
+        this._energy = clamp(this._energy, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
         const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
         this._simulationSeconds += step;
         this.add(ULTIMATE_ENERGY_BALANCE.passivePerSecond * step);
@@ -100,7 +103,9 @@ export class UltimateEnergyModel {
 
     // 真正起跳时扣费（由 Swimmer 在相位控制器确认可跳之后调用）。
     spendDolphin() {
-        this._energy = clamp(this._energy - ULTIMATE_ENERGY_BALANCE.dolphinCost, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        // The ultimate always costs the full bar. Clearing explicitly also keeps a
+        // live max-energy reduction from leaving stale overflow energy behind.
+        this._energy = 0;
     }
 
     // 联机：把本地预测能量朝权威值校正（真人取 owner，AI 取 host）。

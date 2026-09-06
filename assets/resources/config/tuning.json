@@ -1,6 +1,6 @@
 {
-  "version": 31,
-  "updatedAt": "2026-09-05T16:10:31.100Z",
+  "version": 33,
+  "updatedAt": "2026-09-06T09:28:54.930Z",
   "values": {
     "collision.knockbackDepthFactor": 6,
     "collision.knockbackSpeedFactor": 0.8,
@@ -33,7 +33,7 @@
     "ultimate.collisionBonus": 8,
     "ultimate.collisionMinImpulse": 0.5,
     "ultimate.collisionCooldownMs": 500,
-    "ultimate.dolphinCost": 30,
+    "ultimate.dolphinCost": 100,
     "motion.flipTurnToKeyframe1Seconds": 0.25,
     "motion.flipTurnToKeyframe2Seconds": 0.45,
     "motion.flipTurnReturnToSwimSeconds": 0.7,
@@ -214,8 +214,9 @@
     "steer.maxHeading": 65,
     "steer.turnAngularDrag": 0.6,
     "steer.maxTurnRate": 95,
-    "steer.poolWallHeadingCorrectionRate": 2.5,
-    "steer.poolWallEscapeHeadingDegrees": 14,
+    "steer.poolWallHeadingCorrectionRate": 4,
+    "steer.poolWallMaxTurnRate": 48,
+    "steer.poolWallEscapeHeadingDegrees": 10,
     "steer.kickStraightenMinCadenceHz": 2.5,
     "steer.kickStraightenRate": 0,
     "steer.turnPowerMinFactor": 0.35,
@@ -262,6 +263,8 @@
     "water.reflectionBlue": 0.5,
     "water.floorFarStrength": 1,
     "water.floorFarStart": 0,
-    "water.floorFarEnd": 18
+    "water.floorFarEnd": 18,
+    "collision.headOnEscapeLateralFactor": 0.9,
+    "collision.headOnEscapeMaxImpulse": 2.2
   }
 }

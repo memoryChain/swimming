@@ -16,6 +16,7 @@
     "ui:room:preview": "npx --yes --package typescript@5.4.5 -c \"node scripts/preview-online-room.cjs\"",
     "test:net": "npx --yes --package tsx@4.20.5 tsx --test tests/net-race-codec-ordering.test.mjs tests/condition-sync-cadence.test.mjs tests/collision-softness.test.mjs",
     "test:limp": "npx --yes --package typescript@5.4.5 -c \"node --test tests/collision-limp-pose.test.cjs\"",
+    "test:balance": "npx --yes --package typescript@5.4.5 --package tsx@4.20.5 -c \"tsx --test tests/tuning-balance-integration.test.cjs tests/swimmer-collision-escape.test.mjs\"",
     "test:characters": "npx --yes --package tsx@4.20.5 tsx --test tests/character-roster-assets.test.mjs",
     "ui:images:setup": "python -m pip install -r scripts/requirements-ui-tools.txt",
     "ui:images:audit": "python scripts/optimize-ui-images.py",

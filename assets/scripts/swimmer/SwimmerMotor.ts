@@ -131,6 +131,10 @@ export class SwimmerMotor {
     // keeps bending the path until water drag or an opposite stroke removes it.
     private _heading = 0;
     private _headingTurnRate = 0;
+    // Signed direction toward the pool interior while recovering from a side-wall
+    // contact. The recovery drives the already-synced heading/turn-rate channels;
+    // it adds no render-only state or per-frame allocation.
+    private _poolWallRecoveryDirection = 0;
     private _courseDirection = 1;
     private _lateralOffset = 0;
     private _lateralOffsetMin = -1000;
@@ -218,6 +222,7 @@ export class SwimmerMotor {
         // Push off the wall straight ahead; the player steers again after the turn.
         this._heading = 0;
         this._headingTurnRate = 0;
+        this._poolWallRecoveryDirection = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
         this.collisionSoftness.reset();
@@ -559,6 +564,7 @@ export class SwimmerMotor {
         this._lastKickTapClock = -1;
         this._heading = 0;
         this._headingTurnRate = 0;
+        this._poolWallRecoveryDirection = 0;
         this._lateralOffset = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
@@ -1176,25 +1182,41 @@ export class SwimmerMotor {
         this._lateralOffset = clamp(offset, this._lateralOffsetMin, this._lateralOffsetMax);
     }
 
-    // A pool wall removes only OUTWARD curvature and establishes a small inward
-    // escape angle. The explicit wall-side sign is essential: deriving correction
-    // from -heading flips after crossing zero and sucks the swimmer back to the wall.
+    // Start a critically damped recovery toward a small inward escape angle.
+    // Cancelling outward angular velocity immediately prevents continued pressure
+    // into the wall; the wall-only speed cap and target brake prevent overshoot.
     returnToLaneFromPoolWall(inwardDirection: number) {
         const inwardSign = inwardDirection >= 0 ? 1 : -1;
-        const correctionRate = Math.max(0, finiteOr(STEERING_TUNING.poolWallHeadingCorrectionRate, 0));
-        const maxRate = safeMaxTurnRateRadians();
-        const escapeHeading = Math.max(0, finiteOr(STEERING_TUNING.poolWallEscapeHeadingDegrees, 0)) * DEG2RAD;
+        const escapeHeading = safePoolWallEscapeHeadingRadians();
         const inwardHeading = this._heading * inwardSign;
         const inwardTurnRate = this._headingTurnRate * inwardSign;
 
-        // Never allow stored angular velocity to rotate back toward the wall while
-        // the oriented footprint is still touching it.
-        let nextInwardRate = Math.max(0, inwardTurnRate);
-        if (inwardHeading < escapeHeading) {
-            const requiredRate = (escapeHeading - inwardHeading) * correctionRate;
-            nextInwardRate = Math.max(nextInwardRate, requiredRate);
+        // Already facing far enough inward: only cancel curvature that would turn
+        // back into the wall. Do not override intentional inward player steering.
+        if (inwardHeading >= escapeHeading) {
+            if (inwardTurnRate < 0) {
+                this._headingTurnRate = 0;
+            }
+            this._poolWallRecoveryDirection = 0;
+            return;
         }
-        this._headingTurnRate = inwardSign * Math.min(maxRate, nextInwardRate);
+
+        const wallMaxRate = safePoolWallMaxTurnRateRadians();
+        const correctionRate = Math.max(0, finiteOr(STEERING_TUNING.poolWallHeadingCorrectionRate, 0));
+        if (wallMaxRate <= 0 || correctionRate <= 0) {
+            // A zero value disables automatic recovery. Still discard outward
+            // curvature while preserving player-generated inward steering so an
+            // intentionally disabled helper cannot trap the swimmer at the wall.
+            this._headingTurnRate = inwardSign * Math.max(0, inwardTurnRate);
+            this._poolWallRecoveryDirection = 0;
+            return;
+        }
+        const requiredRate = (escapeHeading - inwardHeading) * correctionRate;
+        this._headingTurnRate = inwardSign * Math.min(
+            wallMaxRate,
+            Math.max(0, inwardTurnRate, requiredRate),
+        );
+        this._poolWallRecoveryDirection = inwardSign;
     }
 
     // Shift race progress by a small amount (used by swimmer-vs-swimmer collision
@@ -1276,7 +1298,9 @@ export class SwimmerMotor {
         const maxRate = safeMaxTurnRateRadians();
         this._headingTurnRate = clamp(finiteOr(this._headingTurnRate, 0), -maxRate, maxRate);
         const step = Math.max(0, dt);
+        this.updatePoolWallRecovery(step);
         this._heading += this._headingTurnRate * step;
+        this.finishPoolWallRecoveryIfReady();
         if (this._heading >= maxHeading) {
             this._heading = maxHeading;
             if (this._headingTurnRate > 0) {
@@ -1293,6 +1317,45 @@ export class SwimmerMotor {
         if (Math.abs(this._headingTurnRate) < 1e-5) {
             this._headingTurnRate = 0;
         }
+    }
+
+    private updatePoolWallRecovery(step: number) {
+        const inwardSign = this._poolWallRecoveryDirection;
+        if (inwardSign === 0 || step <= 0) {
+            return;
+        }
+        const correctionRate = Math.max(0, finiteOr(STEERING_TUNING.poolWallHeadingCorrectionRate, 0));
+        if (correctionRate <= 0) {
+            this._poolWallRecoveryDirection = 0;
+            return;
+        }
+        const target = inwardSign * safePoolWallEscapeHeadingRadians();
+        const angularAcceleration = (target - this._heading) * correctionRate * correctionRate
+            - this._headingTurnRate * correctionRate * 2;
+        const wallMaxRate = safePoolWallMaxTurnRateRadians();
+        this._headingTurnRate = clamp(
+            this._headingTurnRate + angularAcceleration * step,
+            -wallMaxRate,
+            wallMaxRate,
+        );
+    }
+
+    private finishPoolWallRecoveryIfReady() {
+        const inwardSign = this._poolWallRecoveryDirection;
+        if (inwardSign === 0) {
+            return;
+        }
+        const target = inwardSign * safePoolWallEscapeHeadingRadians();
+        const remaining = (target - this._heading) * inwardSign;
+        const reachedTarget = remaining <= 0;
+        const settledNearTarget = remaining <= 0.5 * DEG2RAD
+            && Math.abs(this._headingTurnRate) <= 2 * DEG2RAD;
+        if (!reachedTarget && !settledNearTarget) {
+            return;
+        }
+        this._heading = target;
+        this._headingTurnRate = 0;
+        this._poolWallRecoveryDirection = 0;
     }
 
     // Optional damped recovery spring toward the lane axis. It defaults to zero,
@@ -1779,6 +1842,16 @@ function safeMaxHeadingRadians(): number {
 
 function safeMaxTurnRateRadians(): number {
     return Math.max(0, finiteOr(STEERING_TUNING.maxTurnRate, 95)) * DEG2RAD;
+}
+
+function safePoolWallMaxTurnRateRadians(): number {
+    const configured = Math.max(0, finiteOr(STEERING_TUNING.poolWallMaxTurnRate, 48)) * DEG2RAD;
+    return Math.min(configured, safeMaxTurnRateRadians());
+}
+
+function safePoolWallEscapeHeadingRadians(): number {
+    const configured = Math.max(0, finiteOr(STEERING_TUNING.poolWallEscapeHeadingDegrees, 10)) * DEG2RAD;
+    return Math.min(configured, safeMaxHeadingRadians());
 }
 
 // Map a value into [0, modulo) with a proper positive remainder, used to read a

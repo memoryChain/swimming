@@ -15,6 +15,7 @@ import {
     MeshRenderer,
     Node,
     primitives,
+    profiler,
     Sprite,
     UITransform,
     utils,
@@ -41,6 +42,7 @@ import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { fitFullScreenBackgroundCover, makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
+import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { SweetZoneBar } from '../ui/SweetZoneBar';
@@ -136,6 +138,10 @@ const UNDERWATER_DEBUG_KICK_RATE = 9.0;  // leg flutter cadence (rad/s)
 const UNDERWATER_DEBUG_BODY_RATE = 3.2;  // body undulation (rad/s)
 // Debug bullet-time cycle (B key): full speed -> slower stages -> back to full.
 const BULLET_TIME_SCALES = [1, 0.5, 0.25, 0.1];
+// This module remains loaded while Login/MainGame scenes switch. Recording mode
+// therefore stays active for the entire launched game session, but resets after
+// the application itself restarts.
+let recordingModeEnabledForSession = false;
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -190,6 +196,9 @@ export class GameManager extends Component {
     private _raceHud: Node = null;
     private _modelDebugHud: Node = null;
     private _modelDebugHudBuilder: ModelDebugHudBuilder | null = null;
+    private _raceTuningButton: Node | null = null;
+    private _recordingModeButton: Node | null = null;
+    private _recordingMode = recordingModeEnabledForSession;
     private _raceTuningPaused = false;
     private _raceTuningPreviousTimeScale = 1;
     private _underwaterCameraTint: Node = null;
@@ -1392,6 +1401,7 @@ export class GameManager extends Component {
             // Neutralize the AI on this lane.
             aiController.remoteDriven = true;
             aiController.stopSwimming();
+            swimmer.collisionRemoteHuman = true;
             // Slice 3: drive remote humans on the SAME deterministic fixed 33ms clock as
             // the AI (driveNetAiFixedStep). Their strokes arrive identically on every
             // client over frame-sync, so a fixed cadence removes the variable-dt drift
@@ -2135,6 +2145,7 @@ export class GameManager extends Component {
                 onSwitchTexture: () => this.switchModelDebugTexture(),
                 onSwitchSkybox: () => this.switchModelDebugSkybox(),
                 onTuningVisibilityChanged: (visible) => this.handleTuningVisibilityChanged(visible),
+                onTuningChanged: (id) => this.handleLiveTuningChanged(id),
             }, DEV && !this._netSession);
             this._modelDebugHudBuilder = modelDebugHudBuilder;
             const modelDebugHud = modelDebugHudBuilder.build(uiRoot, w, h);
@@ -2148,11 +2159,15 @@ export class GameManager extends Component {
             this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
             this._modelDebugHud.active = false;
             this.buildRaceTuningButton(this._raceHud, w, h);
+            this.buildRecordingModeButton(this._raceHud, w, h);
 
             const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
             this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
             this._aiDifficultyPanel.build(uiRoot, w, h);
             this.refreshAiDifficultyPanel();
+            if (this._recordingMode) {
+                this.applyRecordingModePresentation();
+            }
 
             this._uiFlow = new UIFlowController({
                 raceHud: this._raceHud,
@@ -2455,6 +2470,69 @@ export class GameManager extends Component {
         button.setPosition(width / 2 - 72, height / 2 - 42, 0);
         button.setSiblingIndex(raceHud.children.length - 1);
         button.on(Node.EventType.TOUCH_END, () => this._modelDebugHudBuilder?.openTuningOverlay());
+        this._raceTuningButton = button;
+        button.active = !this._recordingMode;
+    }
+
+    private buildRecordingModeButton(raceHud: Node, width: number, height: number) {
+        // Developer-only: recording mode only changes local presentation. It does
+        // not touch race state, so it remains safe for local capture sessions.
+        if (!DEV || !raceHud?.isValid) {
+            return;
+        }
+        const button = makeButton(
+            'RecordingModeButton',
+            raceHud,
+            112,
+            42,
+            new Color(44, 126, 92, 235),
+            '录制模式',
+        );
+        button.setPosition(width / 2 - 194, height / 2 - 42, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        button.on(Node.EventType.TOUCH_END, () => this.enableRecordingMode());
+        const label = button.getChildByName('Label')?.getComponent(Label);
+        if (label) styleProjectUiLabel(label, 'semibold', 24);
+        this._recordingModeButton = button;
+        button.active = !this._recordingMode;
+    }
+
+    private enableRecordingMode() {
+        if (this._recordingMode) {
+            return;
+        }
+        this._recordingMode = true;
+        recordingModeEnabledForSession = true;
+        this.applyRecordingModePresentation();
+    }
+
+    private applyRecordingModePresentation() {
+        profiler.hideStats();
+        this._debugLog.setVisible(false);
+        this._aiDifficultyPanel.setVisible(false);
+        if (this._raceTuningButton?.isValid && this._raceTuningButton.active) {
+            this._raceTuningButton.active = false;
+        }
+        if (this._recordingModeButton?.isValid && this._recordingModeButton.active) {
+            this._recordingModeButton.active = false;
+        }
+    }
+
+    private handleLiveTuningChanged(id: string | null) {
+        if (this._netSession || !this._playerSwimmer) {
+            return;
+        }
+        if (id !== null
+            && id !== 'speed.maxSpeed'
+            && id !== 'speed.kickMaxSpeed'
+            && id !== 'speed.strokeQualityAccel'
+            && id !== 'speed.perfectComboMaxOvercap'
+            && id !== 'dive.maxLaunchSpeed') {
+            return;
+        }
+        // Player progression resolves these values from the global tuning constants.
+        // Re-resolve in place so a solo live-tuning edit affects player and AI together.
+        this.applyPlayerProgression();
     }
 
     private handleTuningVisibilityChanged(visible: boolean) {
@@ -3056,6 +3134,9 @@ export class GameManager extends Component {
     }
 
     private toggleDebug() {
+        if (this._recordingMode) {
+            return;
+        }
         const visible = this._debugLog.toggle();
         this._aiDifficultyPanel.setVisible(visible);
     }

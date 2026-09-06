@@ -1,8 +1,9 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// 碰撞柔性状态、可选角色及养成配置共同构成联网共享语义，拒绝新旧版本混跑。
-export const NET_RACE_PROTOCOL_VERSION = 13;
+// v14：海豚跳改为满槽消耗，并采用侧墙缓和与正撞脱困规则；拒绝旧玩法混跑。
+// 保留 v13 的碰撞柔性状态、角色及养成字段布局。
+export const NET_RACE_PROTOCOL_VERSION = 14;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 
