@@ -72,8 +72,8 @@ export function makeScreenEdgeGroup(
         const safeRect = safe ? sys.getSafeAreaRect(false) : null;
         const inset = safeRect ? edge === 'left' ? Math.max(0, safeRect.x)
             : Math.max(0, size.width - safeRect.x - safeRect.width) : 0;
-        // 16:9 保留原布局；宽屏向外展开，并留下视觉边距与刘海安全距离。
-        const margin = Math.min(padding, Math.max(0, (size.width - width) / 2)) + inset;
+        // 视觉边距与安全区取较大值，避免两段留白相加。
+        const margin = Math.max(Math.min(padding, Math.max(0, (size.width - width) / 2)), inset);
         if (edge === 'left' && widget.left !== margin) widget.left = margin;
         if (edge === 'right' && widget.right !== margin) widget.right = margin;
         widget.updateAlignment();

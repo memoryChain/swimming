@@ -34,6 +34,7 @@ class Graphics extends Component { roundRect() {} rect() {} fill() {} stroke() {
 class Canvas extends Component {}
 const visibleSize = { width: 1280, height: 720 };
 let safeLeft = 0;
+let safeRight = 0;
 class Widget extends Component {
     static AlignMode = { ON_WINDOW_RESIZE: 2 };
     updateAlignment() {
@@ -68,7 +69,7 @@ const cc = { Node, UITransform, Label, Sprite, Button, Graphics, Color, Canvas, 
     Layers: { Enum: { UI_2D: 1 } }, view: { getVisibleSize: () => visibleSize,
         on: (event, fn) => { if (!resizeListeners.has(event)) resizeListeners.set(event, new Set()); resizeListeners.get(event).add(fn); },
         off: (event, fn) => resizeListeners.get(event)?.delete(fn) },
-    sys: { getSafeAreaRect: () => ({ x: safeLeft, y: 0, width: visibleSize.width - safeLeft, height: visibleSize.height }) } };
+    sys: { getSafeAreaRect: () => ({ x: safeLeft, y: 0, width: visibleSize.width - safeLeft - safeRight, height: visibleSize.height }) } };
 const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () => {}, updateReady: async () => {}, isOwner: () => true, getRoomInfo: async () => null, kickMember: async () => {}, leaveRoom: async () => {} };
 const cache = {};
 const stubs = {
@@ -113,7 +114,7 @@ test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装�
         canvas.addComponent(UITransform).setContentSize(1280, 720);
         const left = makeScreenEdgeGroup('Left', canvas, 'left');
         const right = makeScreenEdgeGroup('Right', canvas, 'right');
-        assert.equal(worldX(left) - 640 + width / 2, width === 1280 ? 0 : 64);
+        assert.equal(worldX(left) - 640 + width / 2, width === 1280 ? 0 : 40);
         assert.equal(width / 2 - worldX(right) - 640, width === 1280 ? 0 : 24);
         const v = new OnlineRoomView(canvas, { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
         const art = find(v.root, 'CharacterHeader');
@@ -133,6 +134,34 @@ test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装�
         assert.equal(resizeListeners.get('canvas-resize').size, 0);
     }
     visibleSize.width = 1280; safeLeft = 0;
+});
+
+test('双侧与单侧安全区均不叠加视觉边距，窗口变化后重新计算且不重建', () => {
+    const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
+    const canvas = new Node('Canvas'); canvas.addComponent(Canvas);
+    canvas.addComponent(UITransform).setContentSize(1280, 720);
+    visibleSize.width = 1600;
+    const left = makeScreenEdgeGroup('Left', canvas, 'left', 1280, 720, 24);
+    const right = makeScreenEdgeGroup('Right', canvas, 'right', 1280, 720, 36);
+    const count = nodes(canvas).length;
+    const cases = [
+        { width: 1600, left: 0, right: 0, expectedLeft: 24, expectedRight: 36 },
+        { width: 1600, left: 72, right: 0, expectedLeft: 72, expectedRight: 36 },
+        { width: 1560, left: 82, right: 82, expectedLeft: 82, expectedRight: 82 },
+        { width: 1560, left: 0, right: 82, expectedLeft: 24, expectedRight: 82 },
+        { width: 1560, left: 10, right: 12, expectedLeft: 24, expectedRight: 36 },
+        { width: 1280, left: 0, right: 0, expectedLeft: 0, expectedRight: 0 },
+    ];
+    for (const scenario of cases) {
+        visibleSize.width = scenario.width; safeLeft = scenario.left; safeRight = scenario.right;
+        for (const fn of resizeListeners.get('canvas-resize')) fn();
+        assert.equal(left.position.x - 640 + visibleSize.width / 2, scenario.expectedLeft);
+        assert.equal(visibleSize.width / 2 - right.position.x - 640, scenario.expectedRight);
+        assert.equal(nodes(canvas).length, count);
+    }
+    canvas.destroy();
+    assert.equal(resizeListeners.get('canvas-resize').size, 0);
+    visibleSize.width = 1280; safeLeft = 0; safeRight = 0;
 });
 
 test('字体不使用有限字符图集，晚到字体不覆盖新字重或动态昵称', () => {
