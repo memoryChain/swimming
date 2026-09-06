@@ -6,6 +6,7 @@ import {
 import type { CharacterActionPoolConfig } from '../character/CharacterActionConfig';
 import type { RaceFinishResult } from '../core/RaceManager';
 import { AwardsConfettiEmitter } from './AwardsConfettiEmitter';
+import { AwardsLighting } from './AwardsLighting';
 import {
     collectNamedBounds,
     DEFAULT_RACE_COURSE_LAYOUT,
@@ -17,6 +18,8 @@ import {
 
 const AWARDS_DECK_MARGIN = 2.4;
 const AWARDS_RACER_SPACING = 1.45;
+// 仅领奖动作额外抬高 8cm，避免鞋底进入台面；不改变比赛、起跳与预览站位。
+const AWARDS_SHOE_CLEARANCE = 0.08;
 const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
     [1, 'award_podium_1'],
     [2, 'award_podium_2'],
@@ -25,6 +28,7 @@ const PODIUM_TOP_NODE_NAMES = new Map<number, string>([
 
 export class AwardsPresentation {
     private readonly _confetti = new AwardsConfettiEmitter();
+    private readonly _lighting = new AwardsLighting();
     // Swimmers hidden during the ceremony (placements outside the top three).
     private readonly _hiddenSwimmers: Node[] = [];
 
@@ -42,6 +46,7 @@ export class AwardsPresentation {
         this.assignAwardsActions(winners);
 
         const center = this.presentOnPodium(winners, poolNode) ?? this.presentPoolside(winners);
+        this._lighting.show(winners.map(row => row.swimmer.node));
         const effectParent = poolNode?.isValid ? poolNode : winners[0]?.swimmer.node.parent;
         if (effectParent?.isValid) {
             this._confetti.show(effectParent, center);
@@ -51,6 +56,7 @@ export class AwardsPresentation {
 
     hide() {
         this._confetti.hide();
+        this._lighting.hide();
         this.restoreHiddenSwimmers();
     }
 
@@ -85,6 +91,7 @@ export class AwardsPresentation {
     }
 
     dispose() {
+        this._lighting.hide();
         this._confetti.dispose();
     }
 
@@ -160,7 +167,7 @@ export class AwardsPresentation {
 function standingOnBounds(bounds: SceneBounds): Vec3 {
     return new Vec3(
         (bounds.minX + bounds.maxX) * 0.5,
-        bounds.maxY - STANDING_MODEL_LOCAL_Y + PLATFORM_STANDING_LIFT,
+        bounds.maxY - STANDING_MODEL_LOCAL_Y + PLATFORM_STANDING_LIFT + AWARDS_SHOE_CLEARANCE,
         (bounds.minZ + bounds.maxZ) * 0.5,
     );
 }

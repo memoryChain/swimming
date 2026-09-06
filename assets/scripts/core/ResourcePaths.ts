@@ -406,6 +406,24 @@ export const RESOURCE_PATHS = {
         topSettings: 'ui/lobby-v1/top-settings/texture',
         topCurrency: 'ui/lobby-v1/top-currency/texture',
     },
+    settlementUi: {
+        shade: 'ui/settlement-v1/right-shade/texture',
+        honors: [
+            'ui/settlement-v1/honor-gold/texture', 'ui/settlement-v1/honor-silver/texture',
+            'ui/settlement-v1/honor-bronze/texture', 'ui/settlement-v1/honor-normal/texture',
+        ],
+        medals: [
+            'ui/settlement-v1/medal-gold/texture', 'ui/settlement-v1/medal-silver/texture',
+            'ui/settlement-v1/medal-bronze/texture', 'ui/settlement-v1/medal-normal/texture',
+        ],
+        rows: [
+            'ui/settlement-v1/row-gold/texture', 'ui/settlement-v1/row-silver/texture',
+            'ui/settlement-v1/row-bronze/texture', 'ui/settlement-v1/row-normal/texture',
+        ],
+        self: 'ui/settlement-v1/row-self/texture',
+        header: 'ui/settlement-v1/table-header/texture',
+        wave: 'ui/settlement-v1/wave/texture',
+    },
     onlineRoomUi: {
         hostPanel: 'ui/online-room-v1/host-panel/texture',
         membersPanel: 'ui/online-room-v1/members-panel/texture',

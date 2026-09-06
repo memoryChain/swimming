@@ -28,11 +28,13 @@ export type PreRacePhase = 'none' | 'establish' | 'raceInfo' | 'roster' | 'athle
 // Awards free-look orbit: the camera moves along a front-facing arc around the
 // podium and the player can drag to rotate / wheel to zoom. When left idle it
 // sweeps back and forth slowly for a ceremony feel.
-const AWARDS_TARGET_Y = 1.2;          // aim a bit above the podium top so the winners sit centred
+// 取景中心下移，给领奖台正面留出空间；保持当前近景距离和角色展示比例。
+const AWARDS_TARGET_Y = 0.65;
 // Aim to the camera-right of the podium so the winners occupy the left side of
 // the frame. The offset rotates with the orbit to preserve that composition.
-const AWARDS_TARGET_SCREEN_RIGHT_OFFSET = 2.0;
-const AWARDS_DEFAULT_DISTANCE = 8.5;
+// 结算稿右侧为成绩列表；近景与横向偏移成比例调整，领奖角色仍留在画面左侧。
+const AWARDS_TARGET_SCREEN_RIGHT_OFFSET = 1.25;
+const AWARDS_DEFAULT_DISTANCE = 5.0;
 const AWARDS_MIN_DISTANCE = 3.5;
 // The ceremony may zoom in, but never pull farther back than its opening shot.
 const AWARDS_MAX_DISTANCE = AWARDS_DEFAULT_DISTANCE;

@@ -56,7 +56,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -996,7 +996,14 @@ export class GameManager extends Component {
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
-            onPrimaryAction: () => this._gameFlow?.handlePrimaryAction(),
+            onPrimaryAction: () => {
+                const settlement = this._uiController?.settlementView;
+                if (settlement?.root.active) {
+                    settlement.activatePrimary();
+                } else if (!(this._roomMode && (this._state === GameState.FINISHED || this._state === GameState.AWARDS))) {
+                    this._gameFlow?.handlePrimaryAction();
+                }
+            },
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
             onToggleCameraFollowAi: () => this.toggleCameraFollowAi(),
@@ -2058,7 +2065,16 @@ export class GameManager extends Component {
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onRestart: () => this.restartGame(),
-            onMenu: () => this.returnToLogin(),
+            onMenu: () => {
+                if (!this._roomMode) setReturnToLobby(true);
+                this.returnToLogin();
+            },
+            resolveResultAvatar: (row) => {
+                if (row.isPlayer) return undefined; // 显示层复用本机 PlayerData 头像。
+                // 复用本局已同步的成员身份，按泳道找人，不能按名次猜头像。
+                const remote = this._netSession && this._netLanePlan?.remotes.find(entry => entry.lane === row.lane);
+                return remote ? this._netSession?.members.find(member => member.pos === remote.pos)?.avatarId : undefined;
+            },
         });
         this._raceUiBuilder = raceUiBuilder;
         raceUiBuilder.build(uiRoot, w, h, (error, refs) => {
@@ -2073,6 +2089,7 @@ export class GameManager extends Component {
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;
+            this._uiController.settlementView?.setRoomMode(this._roomMode);
             this._timingGuideFillNode = refs.timingGuideFillNode;
             this._timingGuideMarker = refs.timingGuideMarker;
             // Debug sweet-zone dials: bottom-center of the HUD, one per hand.

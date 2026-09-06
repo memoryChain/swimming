@@ -3,6 +3,8 @@ import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
+import { SettlementView } from './SettlementView';
+import type { RaceLeaderboardRow } from './UIController';
 import {
     fitFullScreenBackgroundCover,
     fitNodeToVisibleScreen,
@@ -20,6 +22,7 @@ export type SpeedStarsStartUiCallbacks = {
 };
 
 export type SpeedStarsUiCallbacks = {
+    resolveResultAvatar?: (row: RaceLeaderboardRow) => string | undefined;
     onStroke: (type: StrokeType) => void;
     onStrokeEnd: (type: StrokeType) => void;
     onDiveHoldStart: () => void;
@@ -210,6 +213,11 @@ export class SpeedStarsUiPrefabBuilder {
         }
         ui.resultRowNormalFrame = ui.resultRowBacks[0]?.getComponent(Sprite)?.spriteFrame ?? null;
         ui.resultRowPlayerFrame = ui.resultRowBacks[7]?.getComponent(Sprite)?.spriteFrame ?? null;
+
+        // 旧行资源仍供赛前名册复用，但旧结算面板不再显示。
+        ui.resultPanel.active = false;
+        ui.settlementView = new SettlementView(raceHud, this._callbacks);
+        ui.resultPanel = ui.settlementView.root;
 
         // Sprint indicator: large centered label near the top of the screen,
         // hidden until the sprint phase begins. Has a glowing outline for impact.

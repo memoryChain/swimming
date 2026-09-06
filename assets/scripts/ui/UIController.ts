@@ -3,6 +3,7 @@ import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
 import { Rating } from '../core/GameConstants';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
+import type { SettlementView } from './SettlementView';
 
 const { ccclass, property } = _decorator;
 const HUD_BAR_WIDTH = 220;
@@ -76,10 +77,14 @@ export type RaceLeaderboardRow = {
     time: number;
     isPlayer: boolean;
     finished?: boolean;
+    lane?: number;
+    quit?: boolean;
+    eliminated?: boolean;
 };
 
 @ccclass('UIController')
 export class UIController extends Component {
+    public settlementView: SettlementView | null = null;
     @property(Node) public btnArm: Node = null;
     @property(Node) public btnLeg: Node = null;
     @property(Label) public distanceLabel: Label = null;
@@ -698,7 +703,7 @@ export class UIController extends Component {
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
         const soloRace = (stats?.racerCount ?? 2) <= 1;
-        this.layoutResultPanelForAwards();
+        if (!this.settlementView) this.layoutResultPanelForAwards();
         this.setSpeedBarVisible(false);
         this.setRaceStatusVisible(false);
         // Awards ceremony: disable the full-screen swim pad so its node-level touch handlers stop
@@ -710,8 +715,14 @@ export class UIController extends Component {
         if (this.diveTouchArea) {
             this.diveTouchArea.active = false;
         }
-        if (this.resultPanel) {
+        if (this.resultPanel && !this.resultPanel.active) {
             this.resultPanel.active = true;
+        }
+        if (this.settlementView) {
+            this.settlementView.show(playerTime, stats);
+            this.hideFinishCountdown();
+            if (this.hintLabel?.string) this.hintLabel.string = '';
+            return;
         }
         if (this.resultTitle) {
             this.resultTitle.string = '比赛成绩';
@@ -747,6 +758,10 @@ export class UIController extends Component {
     showProgressionResult(result: {
         coinsGained: number;
     } | null) {
+        if (this.settlementView) {
+            this.settlementView.setReward(result?.coinsGained ?? 0);
+            return;
+        }
         this.hideProgressionResult();
         if (!result || result.coinsGained <= 0) {
             return;
@@ -884,7 +899,7 @@ export class UIController extends Component {
         if (this.diveTouchArea) {
             this.diveTouchArea.active = true;
         }
-        if (this.resultPanel) {
+        if (this.resultPanel?.active) {
             this.resultPanel.active = false;
         }
         this.updateLeaderboard([], 0);

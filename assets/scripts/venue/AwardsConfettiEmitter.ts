@@ -27,9 +27,10 @@ const CONFETTI_COLORS = [
     new Color(180, 72, 255, 255),
 ] as const;
 
-const CONFETTI_COUNT = 48;
+const CONFETTI_COUNT = 96;
 const GRID_COLUMNS = 12;
-const GRID_DEPTH = 4;
+const GRID_DEPTH = 8;
+const UPDATE_INTERVAL = 1 / 30;
 const FIELD_WIDTH_Z = 6;
 const FIELD_DEPTH_X = 4.8;
 const FIELD_BOTTOM_Y = 0.5;
@@ -94,6 +95,8 @@ export class AwardsConfettiEmitter {
     private readonly _rotatedCorner = new Vec3();
     private _active = false;
     private _elapsed = 0;
+    private _pendingSeconds = 0;
+    private readonly _meshUpdate = { positions: this._positions, indices16: this._indices };
 
     show(parent: Node, podiumCenter: Vec3) {
         this.ensureBuilt(parent);
@@ -108,14 +111,18 @@ export class AwardsConfettiEmitter {
         this._node.active = true;
         this._active = true;
         this._elapsed = 0;
+        this._pendingSeconds = 0;
         this.resetField();
     }
 
     update(dt: number) {
-        if (!this._active || !this._node?.isValid || dt <= 0) {
+        if (!this._active || !this._node?.isValid || !this._node.active || dt <= 0) {
             return;
         }
-        const safeDt = Math.min(dt, 0.05);
+        this._pendingSeconds += dt;
+        if (this._pendingSeconds + 0.000001 < UPDATE_INTERVAL) return;
+        const safeDt = Math.min(this._pendingSeconds, 0.1);
+        this._pendingSeconds = 0;
         this._elapsed += safeDt;
         for (const piece of this._pieces) {
             piece.y -= piece.fallSpeed * safeDt;
@@ -265,10 +272,7 @@ export class AwardsConfettiEmitter {
             return;
         }
         this.updatePositionBuffer();
-        this._mesh.updateSubMesh(0, {
-            positions: this._positions,
-            indices16: this._indices,
-        });
+        this._mesh.updateSubMesh(0, this._meshUpdate);
     }
 
     private updatePositionBuffer() {

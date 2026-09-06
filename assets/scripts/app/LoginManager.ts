@@ -1,5 +1,5 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
-import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, setRoomMode } from '../core/GameLaunchOptions';
+import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, consumeReturnToLobby, setRoomMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
@@ -38,6 +38,7 @@ export class LoginManager extends Component {
     private _settingsPanel: SettingsPanel | null = null;
     private _roomFlow: RoomFlow | null = null;
     private _pendingOpenRoom = false;
+    private _pendingOpenLobby = false;
     private _pendingJoinRoomId: string | null = null;
     private _pendingReconnect = false;
     private _loginUiRetries = 0;
@@ -62,6 +63,7 @@ export class LoginManager extends Component {
         // Returning from a room-mode race: re-open the room once the login UI loads.
         // This is a RECONNECT to the still-existing room, not a fresh create/join.
         const returningToRoom = consumeReturnToRoom();
+        this._pendingOpenLobby = consumeReturnToLobby() && !returningToRoom;
         this._pendingOpenRoom = returningToRoom;
         this._pendingReconnect = returningToRoom;
         // Launched from a shared room invite (query `room=<accessInfo>`): auto-open the
@@ -69,7 +71,7 @@ export class LoginManager extends Component {
         // keeps returning the ORIGINAL invite room on every later scene load, so honoring
         // it after a race would wrongly re-JOIN the (now in-game) room ("invalid room
         // state"). When returning from a race we reconnect instead and ignore it.
-        if (!returningToRoom) {
+        if (!returningToRoom && !this._pendingOpenLobby) {
             const invitedRoom = platform().getLaunchQuery().room;
             if (invitedRoom) {
                 this._pendingJoinRoomId = invitedRoom;
@@ -424,6 +426,9 @@ export class LoginManager extends Component {
                 const reconnect = this._pendingReconnect;
                 this._pendingReconnect = false;
                 this.openRoom(roomId, reconnect);
+            } else if (this._pendingOpenLobby) {
+                this._pendingOpenLobby = false;
+                this.openPrepareRace();
             }
         });
     }

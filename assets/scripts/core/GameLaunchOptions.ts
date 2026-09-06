@@ -28,6 +28,15 @@ export function getAiDebugDifficulty(): number {
 let pendingRoomMode = false;
 // Set when a room-mode race exits back to Login, so LoginManager re-opens the room.
 let pendingReturnToRoom = false;
+let pendingReturnToLobby = false;
+
+/** 结算的“返回大厅”跳过开游封面；仅消费一次，不影响首次启动。 */
+export function setReturnToLobby(value: boolean) { pendingReturnToLobby = value; }
+export function consumeReturnToLobby(): boolean {
+    const value = pendingReturnToLobby;
+    pendingReturnToLobby = false;
+    return value;
+}
 
 export function setRoomMode(value: boolean) {
     pendingRoomMode = value;
