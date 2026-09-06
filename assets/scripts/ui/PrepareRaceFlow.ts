@@ -463,15 +463,26 @@ export class PrepareRaceFlow {
         card.getComponent(UITransform)!.setContentSize(CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT);
         card.setPosition(-84.5 + column * CHARACTER_CARD_X_PITCH, firstRowY - row * CHARACTER_CARD_Y_PITCH, 1);
 
+        // 固定圆角遮罩仅在挂载时绘制，覆盖新卡面和占位图；边框独立叠在外层。
+        const portraitClip = makeUiNode('PortraitClip', card);
+        portraitClip.getComponent(UITransform)!.setContentSize(160, 190);
+        portraitClip.setPosition(0.5, 0, 1);
+        const portraitMask = portraitClip.addComponent(Mask);
+        portraitMask.type = Mask.Type.GRAPHICS_STENCIL;
+        const clipGraphics = portraitClip.getComponent(Graphics)!;
+        clipGraphics.clear();
+        clipGraphics.roundRect(-80, -95, 160, 190, 12);
+        clipGraphics.fill();
+
         if (character) {
             // 方形卡面居中裁切为 160×156，保持头胸比例，姓名栏仍独立覆盖。
             makeRaceTextureRegionSprite(
-                'Portrait', card, RESOURCE_PATHS.characterUi.portraits[character.id],
-                new Rect(0, 4, 320, 312), 160, 156, 0.5, 17, 1,
+                'Portrait', portraitClip, RESOURCE_PATHS.characterUi.portraits[character.id],
+                new Rect(0, 4, 320, 312), 160, 156, 0, 17, 0,
             );
         } else {
             const portraitPath = index % 2 === 0 ? RESOURCE_PATHS.characterUi.portraitBlue : RESOURCE_PATHS.characterUi.portraitRed;
-            makeRaceTextureSprite('Portrait', card, portraitPath, 160, 190, 0.5, 0, 1);
+            makeRaceTextureSprite('Portrait', portraitClip, portraitPath, 160, 190, 0, 0, 0);
         }
 
         if (!character) {

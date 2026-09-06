@@ -82,6 +82,40 @@
       ],
       "subMetas": {}
     },
+    "579e2": {
+      "importer": "gltf-mesh",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@579e2",
+      "displayName": "",
+      "id": "579e2",
+      "name": "ceiling_lighting_rig_Mesh.mesh",
+      "userData": {
+        "gltfIndex": 6,
+        "triangleCount": 2320
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "4144f": {
+      "importer": "gltf-material",
+      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@4144f",
+      "displayName": "",
+      "id": "4144f",
+      "name": "CeilingArchitecturalVertexColor.material",
+      "userData": {
+        "gltfIndex": 3
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
     "1b75b": {
       "importer": "gltf-mesh",
       "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@1b75b",
@@ -181,24 +215,6 @@
       "userData": {
         "gltfIndex": 5,
         "triangleCount": 576
-      },
-      "ver": "1.1.1",
-      "imported": true,
-      "files": [
-        ".bin",
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "579e2": {
-      "importer": "gltf-mesh",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@579e2",
-      "displayName": "",
-      "id": "579e2",
-      "name": "ceiling_lighting_rig_Mesh.mesh",
-      "userData": {
-        "gltfIndex": 6,
-        "triangleCount": 2320
       },
       "ver": "1.1.1",
       "imported": true,
@@ -1005,22 +1021,6 @@
       "name": "StandArchitectureArtAtlas_Material.material",
       "userData": {
         "gltfIndex": 2
-      },
-      "ver": "1.0.14",
-      "imported": true,
-      "files": [
-        ".json"
-      ],
-      "subMetas": {}
-    },
-    "4144f": {
-      "importer": "gltf-material",
-      "uuid": "a751d540-5ebd-4868-a41a-334975b3aed3@4144f",
-      "displayName": "",
-      "id": "4144f",
-      "name": "CeilingArchitecturalVertexColor.material",
-      "userData": {
-        "gltfIndex": 3
       },
       "ver": "1.0.14",
       "imported": true,
