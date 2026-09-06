@@ -1,32 +1,43 @@
-# Cocos Prefab And Verification
+# 运行时接入与验证
 
-## Import
+## 先定位页面与资源
 
-1. Refresh the parent folder after adding or overwriting an image.
-2. Reimport the image when the asset database is stale.
-3. Confirm `cc.Texture2D` and `cc.SpriteFrame` children exist.
-4. Confirm SpriteFrame `rawWidth` and `rawHeight` match the runtime file.
-5. Reopen and save the prefab after changing a referenced asset.
+- 在项目根目录读 `AGENTS.md`，确认 Cocos 版本、资源分包、字体/纹理构建入口与验证限制。
+- 查看 prefab、一次性构建节点的代码和加载入口，搜索运行时对字体、颜色、尺寸、SpriteFrame、trim、缩放和 active 的覆盖。不要只改设计文件却忽略实际生效代码。
+- 划水大师资源路径集中在 `assets/scripts/core/ResourcePaths.ts`。结算新资源位于 `assets/race/ui`，首包既有共享 UI 沿原路径引用；不能机械地把所有新图放 `assets/resources`。
+- 结算具体实现和验证入口见项目根目录的 `docs/结算界面接入说明.zh.md`、`scripts/export-settlement-runtime.jsx`、`tests/settlement-runtime.test.cjs`；这些路径属于宿主项目，不是技能安装目录的相对路径。
 
-With Cocos Code Mode, inspect references before setters. Typical operations are `assetGetAtPath`, `assetOperate(refresh/reimport/open)`, `assetGetTree`, `nodeGetAtPath`, `inspectorGetInstanceProperties`, `inspectorSetInstanceProperties`, and `editorOperate(save_scene_or_prefab/play_preview/stop)`.
+## 保持像素关系
 
-## Prefab Layout
+- 使用原设计坐标做统一等比适配；不要拿另一个横竖屏页面的默认分辨率直接覆盖。
+- 带透明留白的按钮/描边，区分纹理画布、可见区域、点击区域。需要按完整画布定位时使用 `Sprite.SizeMode.CUSTOM` 和 `trim=false`，再按记录的透明边距补偿。
+- 保持 PS 的真实叠放顺序，特别是背景、白色外沿、本人描边和外发光；有问题先查资源 alpha、裁剪、缩放、层级，不叠加更多节点掩盖。
+- 文字位置按基线、行高与容器核对；过小的文本框或错误 lineHeight 会触发 SHRINK，导致“同字号却变小”。
+- 相机距离控制角色大小，取景目标控制露出台面的位置，角色站位补偿控制脚底接触；三者不要混为一个全局缩放参数。针对领奖改专用参数，不误改比赛/预览共用站位。
+- 角色材质若是固定卡通/无光照，不默认新增灯就能生效。先查现有材质与场景限制；优先复用已验证的低开销表现，退出时恢复临时材质值。不要将特定项目的材质补亮说成新增了真实灯光。
 
-- Match the base design resolution explicitly. A 720x1280 background node should not retain an old 960x1706 size or positional offset.
-- Keep full-screen backgrounds centered unless the manifest defines another focal point.
-- Use Widgets/anchors for safe-area UI and stable dimensions for buttons, rows, progress tracks, and icon slots.
-- Use nine-slice for scalable framed controls when the art supports it.
-- Keep touch areas invisible and independent from decorative sprites when necessary.
+## 字体必须能跨设备复现
 
-## Runtime Binding
+- 静态中文遵循项目字库：正文 Regular，批准的标题/按钮/关键值 SemiBold；粗细来自实际字体文件，不用描边/阴影/重复 Label 伪造。
+- 划水大师新增静态文案后运行 `pnpm fonts:build` 和 `pnpm fonts:check`。不手改生成字符表或 TTF；构建钩子只审计，不在 Creator 构建期间临时下载/生成字体。
+- 数字英文与中文分离时，拆 Label 并保持统一对齐。明确区分系统字体声明与项目随包字体：`Arial Black` 字体名本身不是嵌入资源，不能保证另一台设备一致。需随包时核实字体文件与嵌入授权，不能擅自复制本机商业字体。
+- 用户名、聊天等无界文本保留全覆盖回退，不能因为静态示例能显示就切到子集字库。
+- 当前值、升级值、未完成状态等可能使用不同字体时使用独立 Label，避免异步字体回调把状态切换后的标签覆盖回旧字体。
 
-Search for code that changes `fontFamily`, `fontSize`, `lineHeight`, `color`, outlines, shadows, SpriteFrame, Sprite color, content size, scale, or active state. Runtime state changes must preserve prefab typography and layout.
+## 状态与联机
 
-## Preview Matrix
+- 节点/监听一次创建，状态变化只改受影响控件；点击已选项应无操作。只在显示值变化时写 Label/颜色/active，不重建整页或无关 3D 预览。
+- 图片异步回调检查节点有效性以及请求路径仍匹配，防止旧头像覆盖新成员。
+- 大厅与详情共用属性模型，结算使用已结算的权威成绩，不在展示层重算排名或伪造未完成时间。
+- 房主/成员、准备/取消、已上场/可选、未完成/正常完赛分别测试。按钮防重复必须覆盖触摸和键盘。
+- 涉及同步前读项目联机文档第 8 节。联机房间保活返回不调用 `endGame`；所有单机/联机分支沿既有会话标志，不改变单机玩法或新建协议。
+- 结算等事件 UI 可少量分配；隐藏 UI 无逐帧工作。彩带/补光调整也需考虑网格、材质、更新频率及移动端成本。
 
-- 720x1280: exact 9:16 baseline; verify intended full artwork and zero legacy offset.
-- 720x1440: 18:9.
-- 720x1560: 19.5:9.
-- 720x1600: 20:9.
+## 导入与验收
 
-For each size, capture the login/default state and any modal/result state. Verify no accidental crop, overlap, unreadable text, debug overlay, blank sprite, or console error. Distinguish preview-page letterboxing outside the game canvas from content inside the canvas.
+1. 新图等待已有 Creator 会话生成 `.meta`；替换保留原 `.meta`，不编造 UUID。确认 Texture2D/SpriteFrame、原始宽高和资源引用。
+2. 按项目无损优化脚本处理后执行 `pnpm textures:fix`、`pnpm textures:check`。新图缺 `.meta` 必须单独报出，审计通过不能掩盖漏检；不能手动给首包 UI 添加压缩副本。
+3. TypeScript 使用项目固定版本；划水大师 macOS 为 `npx --yes --package typescript@5.4.5 tsc --noEmit --ignoreDeprecations 5.0 --skipLibCheck`，Windows 使用 `npx.cmd`。
+4. 运行对应页面测试：状态切换后节点/监听稳定、回调一次、旧资源不覆盖、本人标记唯一、字体/尺寸/资源存在、返回目的地正确。
+5. 离线原尺寸排版与定稿对比，再检查更宽/更窄的画布、安全区和长昵称。横屏项目不强套 720 × 1280；竖屏项目再使用 9:16、18:9、19.5:9、20:9 的对应矩阵。
+6. 不自动启动/重启 Creator，不截取 Creator 窗口或其启动的预览。可做本地离线 HTML 验图，并明确它不是引擎截图；真实领奖动作、灯光、脚底和微信真机由用户在现有会话确认，或用用户另行批准的方法验证。

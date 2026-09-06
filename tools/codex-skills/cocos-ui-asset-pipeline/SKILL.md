@@ -1,70 +1,42 @@
 ---
 name: cocos-ui-asset-pipeline
-description: Convert game UI references or concept art into production-ready bitmap UI for Cocos Creator, especially WeChat Mini Games. Use when Codex must decompose a UI design, generate isolated elements with imagegen, remove chroma backgrounds, crop and optimize PNG/JPG assets, enforce mobile texture budgets, create contact sheets, import SpriteFrames, assemble prefabs, replace code-drawn UI, audit resources, or verify Cocos UI across portrait aspect ratios.
+description: 制作和维护 Cocos 游戏 UI，从概念设计、分层 Photoshop 定稿、已有素材复用，到透明切图、字体、状态交互及运行时接入校验。适用于划水大师的大厅、角色、联机和结算界面，以及类似微信小游戏 UI；不负责角色建模或动作重定向。
 ---
 
-# Cocos UI Asset Pipeline
+# Cocos 游戏界面制作与接入
 
-Build runtime UI as assets and prefabs, not as a screenshot cut into fragments or as runtime drawing code.
+以用户最新确认的设计和交互为准，先判断本次是讨论方案、制作设计、局部修订还是接入游戏。讨论不等于授权实现；局部改动不扩展成整页重做。项目 `AGENTS.md` 的资源、性能、平台和操作限制优先。
 
-## Non-Negotiable Rules
+## 按任务读取
 
-- Analyze the reference first and create `temp/ui-pipeline/<job>/ui-assets.json` from `assets/ui-assets.template.json`.
-- Generate every complex runtime element as one isolated imagegen request. Never ask imagegen for a crowded runtime sheet.
-- Never algorithmically cut runtime sprites from a flattened concept screenshot. Regenerate isolated elements, then remove the background and crop them.
-- Keep dynamic, localized, selectable, timed, or data-driven text as Cocos `Label`. Bake text only into a fixed decorative logo or title.
-- Keep source images, prompts, raw generations, masks, and contact sheets under `temp/ui-pipeline/<job>`. Put only referenced final assets under `assets/resources`.
-- Treat the prefab as the visual source of truth. Runtime code may bind state and data but must not redraw or restyle the prefab unexpectedly.
-- Enforce the WeChat budgets in the manifest. Do not silently accept an oversized asset.
+- 概念方案、视觉统一、角色/联机/结算状态设计：读 [设计与协作经验](references/design-and-state-review.zh.md)。其中划水大师的选择是项目约定，不是所有游戏的默认规则。
+- 分层 PSD 修改、导出、描边/发光/透明边缘异常：读 [Photoshop 定稿与导出](references/photoshop-export.zh.md)。
+- Cocos 接入、字体、适配、异步加载、数据和验证：读 [运行时接入与验证](references/cocos-prefab-notes.md)。
+- 只有确实缺少合适美术资源、需要生成位图时，读 [生成素材与拆分](references/imagegen-decomposition.md)，并使用当前可用的 `imagegen` 技能。不要为了套流程重新生成已获认可的素材。
+- 批量建立资产清单或采用本技能的旧 PowerShell 校验工具时，读 [清单与预算](references/manifest-and-budgets.md)。
 
-## Workflow
+## 核心流程
 
-1. **Decompose the design**
-   - Read `references/imagegen-decomposition.md`.
-   - Inventory backgrounds, reusable panels, button skins, badges, icons, fixed logos, and dynamic labels.
-   - Record dimensions, format, text policy, reuse policy, fit mode, and budget in the manifest.
+1. **确认真源**：核对当前 PSD 的路径、尺寸、层树与预览；打开的旧文档不一定是定稿。查看实际代码入口与资源引用，不根据截图猜节点或数据源。
+2. **复用优先**：检查已有背景、返回标题区、按钮底图、货币、头像及圆底、技能图标、字体。共用同一资源路径，不复制上传同一图标。仅在缺资源或设计明确改变时制作新资产。
+3. **建立对应关系**：记录源图层、输出路径、设计画布、裁剪边界、显示尺寸、文字/图标拆分、层级、状态和资源复用关系。新功能可用 `assets/ui-assets.template.json`；已有页面延续现有清单/文档，小修不强制另起整套清单。
+4. **在原文件定稿**：用户确认后的 PSD 就地维护，保留可编辑文字、形状与必要状态组。用临时副本导出，不把整张效果图当可编辑 UI，不每轮另建版本。清理过程稿前确认最终图层及可恢复副本。
+5. **接入保真**：保留纹理透明边距和 PS 叠放关系；文案、字重、颜色、字号、间距、箭头和状态逐项核对。界面可以由 prefab 或一次性构建的代码节点组成，不强制改写现有架构。
+6. **分层验证**：先验 PNG/alpha/尺寸/引用与 `.meta`，再验状态/布局/类型/纹理规则；离线排版只证明 UI，不证明引擎光照、角色站位或真机表现。清楚列出未完成的引擎/真机确认。
 
-2. **Generate isolated art**
-   - Use the system `imagegen` skill.
-   - Generate one element per call with generous padding and no neighboring elements.
-   - Use a flat chroma key for transparent elements; generate opaque backgrounds without UI overlays.
-   - Preserve reference geometry aggressively when editing existing art. Use generated patches plus deterministic compositing when only a small region may change.
+## 不应重犯的问题
 
-3. **Prepare runtime files**
-   - Remove chroma using the imagegen helper.
-   - Crop with 8-16 transparent pixels after the visible outline.
-   - Run `scripts/optimize-ui-asset.ps1` for deterministic resizing and JPG encoding.
-   - Run `scripts/validate-ui-assets.ps1 -FailOnError` before importing.
-   - Run `scripts/new-ui-contact-sheet.ps1` and visually inspect every edge, outline, neighbor fragment, and text decision.
+- 按钮底图、图标与文字分别导出；按钮文案必须是运行时 `Label`，包括看似固定的“返回大厅”。
+- `fontFamily` 指向本机粗体不代表已植入字库；以实际随包字体资源为证。遵守项目的字形自动扫描/子集生成流程，不人工维护字符表。
+- 独立外框导出不擅自把 `fillOpacity` 设为 0；它可能同时抹掉矢量描边。先恢复源层叠放和 alpha 合成，再考虑重画或加代码描边。
+- 不把概念图场景烘焙进要求保留实时 3D 的结算页；相机、角色脚底接触和 UI 遮罩分开调整。
+- 正式 UI 的柔光/渐变/复杂装饰使用资源或项目已有低开销材质，不用大量运行时 `Graphics` 拼画。
+- 替换资源保留 `.meta`。新增资源等待 Creator 导入；压缩审计通过不代表缺 `.meta` 的新资源也被检查。不要为验证自动启动/重启 Creator，也不要截取其窗口或由其启动的预览窗口。
 
-4. **Import and assemble in Cocos**
-   - Read `references/cocos-prefab-notes.md`.
-   - Refresh or reimport assets and confirm both `cc.Texture2D` and `cc.SpriteFrame` exist.
-   - Build or update the prefab hierarchy, anchors, widgets, nine-slice borders, labels, and touch areas.
-   - Search runtime code for style overrides after changing prefab typography or sprite tint.
+## 完成标准
 
-5. **Audit and verify**
-   - Run `scripts/audit-cocos-ui-resources.ps1 -ProjectRoot <project> -FailOnError`.
-   - Run the project's TypeScript check from `AGENTS.md`.
-   - Preview at 720x1280, 720x1440, 720x1560, and 720x1600.
-   - At 720x1280, full-screen art must match its intended fit without legacy size or position offsets. At taller ratios, verify the manifest fit mode and safe area.
-   - Capture screenshots, inspect Cocos/browser error logs, and compare against the reference before reporting completion.
-
-## Default Hard Budgets
-
-- Transparent sprite: <= 128 KiB and maximum edge <= 1024 px.
-- Icon/avatar: <= 32 KiB and maximum edge <= 256 px.
-- Portrait background: 720x1280 JPG and <= 256 KiB.
-- One UI feature set: <= 1.5 MiB total runtime image bytes.
-
-Read `references/manifest-and-budgets.md` before changing a budget or granting an override.
-
-## Completion Gate
-
-- Manifest is complete and all output paths exist.
-- Contact sheet contains one clean element per tile.
-- Transparent sprites have alpha and zero opaque edge pixels unless explicitly allowed.
-- No source sheet, raw generation, preview, or unused image remains under `assets/resources`.
-- Cocos metadata exposes SpriteFrames and prefabs reference current UUIDs.
-- Base 9:16 and tall-screen previews have no accidental crop, overlap, unreadable text, or visible debug UI.
-- TypeScript and preview logs contain no new errors.
+- 改动符合最新授权和定稿，复用关系、文字可编辑性与全部必要状态保留。
+- 静态检查通过；只更新受影响控件，重复进入/切换不增加节点或监听，不重启无关 3D 预览。
+- 单机与联机分别检查按钮权限、返回目的地、权威数据与重复点击，不改变比赛结果或房间保活逻辑。
+- 如尚待 Creator 导入或真机确认，明确说明，不以离线图或测试通过冒充实际游戏验收。
+- 可复用经验维护在本技能；具体文件、坐标、数值和实现记录放项目文档，不将某次调参写成全局规则。

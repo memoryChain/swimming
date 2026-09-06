@@ -1,5 +1,7 @@
 # Manifest And WeChat Budgets
 
+本文件及 PowerShell 工具为旧版清单格式。预算仅作项目尚无规则时的起点，不覆盖宿主项目的分包、压缩和尺寸政策；已有设计清单不必迁移。横屏页面记录实际设计比例，不能使用下表的竖屏默认尺寸。划水大师优先运行项目 `scripts/optimize-ui-images.py`、`textures:fix/check` 和页面测试；图标超预算时报告具体原因，不为通过默认值擅自缩小已确认徽章。
+
 ## Manifest Fields
 
 - `id`: Stable ASCII asset id.

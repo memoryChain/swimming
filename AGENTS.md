@@ -16,6 +16,7 @@
 
 ## Repository Skills / 双机同步
 
+- 制作或接入游戏界面前，阅读仓库 UI 技能 `tools/codex-skills/cocos-ui-asset-pipeline/SKILL.md`，按任务读取设计、PS 导出和运行时参考。UI 经验维护在此共享源码，不只保存在个人技能副本；具体页面参数留在 `docs/`。
 - 模型导入、动作、UV／贴图与 Blender 技能的唯一共享源码在 `.agents/skills/`。使用和更新这里的四个技能，不维护用户目录里的独立副本。
 - 首次在 Windows／Mac 接入或从旧 ZIP 迁移时，阅读 `.agents/README.md`；用 `scripts/manage-project-skills.py` 检查技能，用 `--archive-user-copies` 备份同名旧副本。
 - 新增模型／UV 经验直接修改对应技能的 `SKILL.md` 或 `references/`；可复用代码放入其 `scripts/`，通过正常 Git 提交、推送和拉取同步。

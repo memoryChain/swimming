@@ -11,7 +11,11 @@ Windows／macOS 共用此文件。项目路径、Blender 启动和同步方式�
 
 项目用户已明确：新增／替换人形角色进入游戏时，肤色切换是默认交付项，不能照搬旧槽位的 `supportsSkinTone: false` 或只做服装换色。须同时验收开关、当前UV的皮肤遮罩和实际换肤；无露肤区域的特殊角色先说明并确认例外。完整标准见下述项目规范与 [Cocos 换色接入](references/cocos-runtime-recolor.md)。这不授权把仅请求源精修的模型自动安装到游戏。
 
+仅给已接入角色补换肤时，先完整阅读上述Cocos换色接入参考，重点执行“已接入角色补换肤”与“版本锁定与引擎导入验收”：先查现有链路，按实际运行模型制作B，锁定非目标通道；按真实部位复核偏灰耳内等漏涂，分开报告离线、逻辑测试、Creator导入和真机状态。
+
 处理颜色毛边、服装／灰白头发／袜子杂色、跨 UV 错色或建立精修验收标准时，先完整阅读 [保留设计的精修流程](references/detail-preserving-cleanup.md) 及其链接的项目规范。原则是重画清晰边界，不靠删设计或整体模糊掩盖问题。
+
+用户指出近景仍有毛边、黑斑，或大面积去噪后局部质量仍不足时，追加阅读 [定点修边与黑斑处理](references/targeted-boundary-repair.md)。按标注部位建立近景验收，依据模型表面重画连续色界；全身观感和结构审计不能替代局部视觉检查。
 
 Read [references/white-key-recolor.md](references/white-key-recolor.md) when the source garment is white, when generated masks expose triangle folds or jagged edges, or when deciding whether to revise UVs instead of generating a mask.
 
@@ -81,7 +85,7 @@ If the verified source garments are black with cyan accents, add `--refine-mode 
 - Do not generate 512x512 RGBA textures per character at runtime.
 - Do not split one skinned mesh into skin, cap, and trunks solely for recoloring; that normally increases draw calls.
 - Use an unlit or deliberately simple effect for lightweight games unless the existing art direction requires PBR.
-- Copy [assets/SwimmerDynamicColor.effect](assets/SwimmerDynamicColor.effect) as a starting template and adapt property names to the project.
+- 本项目优先复用现行 `assets/race/effects/SwimmerDynamicColor.effect`。[技能内模板](assets/SwimmerDynamicColor.effect) 只演示基础R/G服装换色，没有完整B换肤链路，不得直接覆盖现行运行effect。
 - In white-key mode, derive coverage from the untinted sRGB base sample, preserve luminance as shading, and avoid the extra mask texture lookup.
 
 ## Validation Gates

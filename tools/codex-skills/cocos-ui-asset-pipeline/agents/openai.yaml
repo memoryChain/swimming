@@ -1,4 +1,4 @@
 interface:
-  display_name: "Cocos UI Asset Pipeline"
-  short_description: "Build optimized Cocos UI from design references"
-  default_prompt: "Use $cocos-ui-asset-pipeline to turn this UI reference into isolated, optimized Cocos Creator assets and verify the assembled prefab."
+  display_name: "Cocos 游戏 UI 制作与接入"
+  short_description: "复用已有设计，完成分层 PS、透明切图、字体与状态交互的游戏接入校验"
+  default_prompt: "使用 $cocos-ui-asset-pipeline，沿用已确认风格和已有素材，完成本次界面的设计或局部修订，并按授权范围验证游戏接入。"

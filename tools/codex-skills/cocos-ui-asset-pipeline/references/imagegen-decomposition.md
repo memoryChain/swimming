@@ -1,32 +1,23 @@
-# Design Decomposition And Imagegen
+# 生成素材与拆分
 
-## Decomposition
+## 先决定是否需要生成
 
-Create the manifest before generating anything. Classify each visible element:
+已有合适资源直接复用，有可编辑 PSD 就按原图层导出。用户要局部修改时保留未授权区域；不要因流程偏好重新生成整页、背景、已认可 Logo 或角色头像。
 
-| Element | Runtime form | Text policy |
-| --- | --- | --- |
-| Full-screen illustration | JPG background | No UI text |
-| Decorative title/logo | Transparent PNG | Fixed text may be baked |
-| Button/panel/row | Blank transparent PNG | Cocos Label |
-| Icon/avatar/badge | Transparent PNG | No text |
-| Timer/score/rank/progress | Cocos components | Cocos Label |
+需要新位图概念或复杂资产时使用当前可用的 `imagegen` 技能和工具。生成概念图可以展示整页或用户要求的多方案；交付游戏资源时，应将需要独立状态/布局/动画的元素分开制作，避免从拥挤扁平概念图自动裁出含邻居碎片的运行时资产。
 
-Split an element when it needs independent state, tint, animation, layout, localization, or reuse. Keep it whole when it is a fixed decorative composition that always moves and scales together.
+## 拆分判断
 
-## Generation Rules
+- 背景插画：无 UI 文案；如要保留实时 3D，则不导入概念背景。
+- 按钮/卡片/排行榜行：无文字的底图，文字为可编辑 Label；公共按钮底图/货币/头像优先复用。
+- 图标/头像/徽章：独立素材；可更新的名次数字单独制作。同系列徽章统一主体比例、透视和光照。
+- 选中框/外发光：独立状态，保留完整透明范围和设计层级。
+- 固定品牌 Logo：可保留字形为艺术图，不将这一例外用于按钮、名次、成绩或需本地化的标题。
 
-- Issue one imagegen call per asset id.
-- Preserve the design's outline weight, lighting direction, material, palette, and camera angle.
-- For transparent sprites, request one centered object on flat `#00ff00` or another non-conflicting key color.
-- Request no text, number, icon, logo, watermark, neighboring element, cast shadow on the key, or cropped outline unless the manifest explicitly marks a fixed decorative logo.
-- Use at least 8-16 px of final transparent padding. More is acceptable during generation.
-- Do not use a multi-element source sheet as a runtime asset. A contact sheet is validation output only.
+## 生成与修订
 
-## Edit Preservation
-
-When the user asks to remove or repair a small region, do not accept a whole-image regeneration as a faithful edit. Keep the original as the base, generate only replacement content, composite only the permitted region, and compare outside-region pixels or composition before shipping.
-
-## Quality Gate
-
-Reject and regenerate an asset when it has a neighboring fragment, clipped outline, key-color fringe, unintended text, inconsistent perspective, wrong state, or insufficient padding. Do not attempt to hide these defects in the prefab.
+- 单独资产优先一请求一元素，留出轮廓、柔光和绶带，不让邻近图形进入切图。
+- 透明输出能力按当前工具支持选择；只有确有必要才使用与主体不冲突的纯色底抠图，亮绿色元素不能用同色底。
+- 概念设计可以探索；已确认风格的局部修订以干净母版为基础，只生成需要替换的部分并合成，避免反复整图重绘引起细节劣化。
+- 比较主体可见尺寸而不是 PNG 画布：统一系列时，第一名不能因为透明边距不同反而显得比第三名小。
+- 验收检查轮廓是否被截、是否有底色污染/杂字/邻居碎片、材质与透视是否一致。不要靠运行时加边框掩盖切图缺陷。

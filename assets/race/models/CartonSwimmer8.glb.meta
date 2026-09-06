@@ -30,7 +30,7 @@
       "name": "CartonSwimmer8_Mesh.mesh",
       "userData": {
         "gltfIndex": 0,
-        "triangleCount": 5693
+        "triangleCount": 5601
       },
       "ver": "1.1.1",
       "imported": true,
@@ -59,8 +59,8 @@
       "ver": "1.0.3",
       "imported": true,
       "files": [
-        ".jpg",
-        ".json"
+        ".json",
+        ".png"
       ],
       "subMetas": {}
     },
