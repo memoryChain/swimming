@@ -4,7 +4,7 @@ import { CollisionRagdollController } from '../character/CollisionRagdollControl
 import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../character/BreaststrokeMotionCurve';
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
-import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, FATIGUE_POSE_TUNING } from '../character/CharacterMotionTuning';
 import { CharacterPoseState, CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { applyCharacterSkin, CharacterSkinOutfit } from '../character/CharacterSkinApplier';
@@ -207,6 +207,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _treadWaterWeight = 0;
     private _treadWaterPhase = 0;
     private _treadExitHold = 0;
+    // Condition energy is a target; the visible weight eases independently so
+    // authoritative remote corrections never snap an already animated skeleton.
+    private _fatigueEnergyRatio = 1;
+    private _fatiguePresentationWeight = 0;
     // Networked remote copies: the OWNER's authoritative swim speed drives the
     // tread-water<->freestyle blend instead of this copy's local motor speed (which
     // jitters over the network). -1 = no override (single-player / local player).
@@ -1035,6 +1039,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._treadSpeedOverride = speed;
     }
 
+    setFatigueEnergyRatio(ratio: number) {
+        if (!Number.isFinite(ratio)) {
+            return;
+        }
+        const next = clamp01(ratio);
+        if (Math.abs(next - this._fatigueEnergyRatio) < 1 / 255) {
+            return;
+        }
+        this._fatigueEnergyRatio = next;
+    }
+
     // Root-level axial imbalance fades only when the rig actually enters upright
     // tread water. Supine balance suppresses tread water and therefore keeps this
     // at 1, allowing a stopped swimmer to back-float instead of hanging head-down.
@@ -1106,6 +1121,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         allowCollisionRagdoll = false,
         ragdollAxialRollVelocity = motor.axialRollAngularVelocity,
         ragdollCollisionPitchVelocity = motor.collisionPitchAngularVelocity,
+        allowFatiguePresentation = true,
     ) {
         const useDt = this.consumeThrottledMotionDt(dt);
         if (useDt < 0) {
@@ -1134,6 +1150,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             allowCollisionRagdoll,
             ragdollAxialRollVelocity,
             ragdollCollisionPitchVelocity,
+            allowFatiguePresentation,
         );
     }
 
@@ -1158,6 +1175,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._collisionRagdoll.hasDolphinCarry,
             motor.axialRollAngularVelocity,
             motor.collisionPitchAngularVelocity,
+            false,
         );
     }
 
@@ -1228,6 +1246,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             true,
             ragdollAxialRollVelocity,
             ragdollCollisionPitchVelocity,
+            false,
         );
     }
 
@@ -1280,6 +1299,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         allowCollisionRagdoll = false,
         axialRollVelocity = 0,
         collisionPitchVelocity = 0,
+        allowFatiguePresentation = true,
     ) {
         if (!this._loaded || !this._poseState.isFreestyleActive || !this.root) {
             return;
@@ -1321,6 +1341,14 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             drive + this._kickAction * 0.8,
             this._treadWaterPhase,
             treadWeight,
+        );
+        this._pose.applyFatigueFreestyleOverlay(
+            (allowFatiguePresentation ? this.updateFatiguePresentationWeight(dt) : 0) * (1 - treadWeight),
+            leftArmCycle,
+            rightArmCycle,
+            leftKickCycle,
+            rightKickCycle,
+            bodyPhase,
         );
         if (ragdollAllowed && ragdollPresentationWeight > 0.001) {
             this._pose.applyCollisionRagdollOverlay(
@@ -1369,6 +1397,21 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             this._treadWaterWeight = Math.max(target, this._treadWaterWeight - step);
         }
         return this._treadWaterWeight;
+    }
+
+    private updateFatiguePresentationWeight(dt: number): number {
+        if (FATIGUE_POSE_TUNING.enabled < 0.5) {
+            this._fatiguePresentationWeight = 0;
+            return 0;
+        }
+        const start = Math.max(0.01, Math.min(1, FATIGUE_POSE_TUNING.startEnergyRatio));
+        const full = Math.max(0, Math.min(start - 0.01, FATIGUE_POSE_TUNING.fullEnergyRatio));
+        const range = Math.max(0.01, start - full);
+        const linear = clamp01((start - this._fatigueEnergyRatio) / range);
+        const target = linear * linear * (3 - 2 * linear);
+        const step = Math.max(0, Math.min(1, FATIGUE_POSE_TUNING.responsePerSecond * Math.max(0, dt)));
+        this._fatiguePresentationWeight += (target - this._fatiguePresentationWeight) * step;
+        return this._fatiguePresentationWeight;
     }
 
     // Interpolate the model node's water height and facing between the prone freestyle placement and
@@ -1569,6 +1612,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._treadWaterPhase = 0;
         this._treadExitHold = 0;
         this._treadSpeedOverride = -1;
+        this._fatigueEnergyRatio = 1;
+        this._fatiguePresentationWeight = 0;
         this.invalidateTreadBlendModelPlacement();
         this._poseState.resetRuntime();
         this._splashEmitter?.reset();

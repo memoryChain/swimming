@@ -1,6 +1,6 @@
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
-import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, FATIGUE_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import { COLLISION_RAGDOLL_TUNING } from '../character/CollisionRagdollTuning';
 import { AI_DOLPHIN_TUNING, AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
@@ -52,7 +52,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 40;
+const TUNING_FILE_VERSION = 41;
 // Tuning is shared by the login lobby and the race scene. Keep one async load
 // operation for the whole app lifetime so a lobby fingerprint always sees the
 // same project/local override that the race will later use.
@@ -341,6 +341,16 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('motion.freestyleAxisCenteringOffset', '轴线居中补偿', '自由泳身体左右滚转时给根骨的侧向补偿，主要用于俯视角下保持人物轴线贴近泳道中心。', () => FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset, (v) => FREESTYLE_POSE_TUNING.freestyleAxisCenteringOffset = v, 0.005, 0, 0.16, 3),
             control('motion.freestyleRightBreathAxisCenteringOffset', '右手轴线补偿', '右侧换气/右手移臂时额外叠加的侧向补偿；负值会把当前截图里偏左的身体往反方向拉回。', () => FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset, (v) => FREESTYLE_POSE_TUNING.freestyleRightBreathAxisCenteringOffset = v, 0.005, -0.12, 0.12, 3),
             control('motion.freestyleRightBreathHeadTurnScale', '换气头颈强调', '右侧换气时只放大头颈扭动表现，不影响身体根骨轴线和泳道居中补偿。', () => FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale, (v) => FREESTYLE_POSE_TUNING.freestyleRightBreathHeadTurnScale = v, 0.05, 0.5, 2.5, 2),
+            control('motion.fatigueEnabled', '启用疲劳游姿', '1=体力低时在正常自由泳上叠加可控的狼狈姿势；只影响骨骼表现。', () => FATIGUE_POSE_TUNING.enabled, (v) => FATIGUE_POSE_TUNING.enabled = v, 1, 0, 1, 0),
+            control('motion.fatigueStartEnergy', '疲劳游姿起始体力', '体力比例低于该值后开始出现吃力、手脚不同步的游姿。', () => FATIGUE_POSE_TUNING.startEnergyRatio, (v) => FATIGUE_POSE_TUNING.startEnergyRatio = v, 0.01, 0.21, 1, 2),
+            control('motion.fatigueFullEnergy', '疲劳游姿拉满体力', '体力比例低于该值时使用完整的疲劳游姿；仍不会改变推进或判定。', () => FATIGUE_POSE_TUNING.fullEnergyRatio, (v) => FATIGUE_POSE_TUNING.fullEnergyRatio = v, 0.01, 0, 0.8, 2),
+            control('motion.fatigueResponse', '疲劳姿势反应速度', '体力变化后疲劳姿势追随目标的速度；较低更平缓，较高更灵敏。', () => FATIGUE_POSE_TUNING.responsePerSecond, (v) => FATIGUE_POSE_TUNING.responsePerSecond = v, 0.1, 0.5, 15, 1, '/s'),
+            control('motion.fatigueHeadLift', '疲劳抬头幅度', '体力极低时额外抬头找气的最大骨骼角度。', () => FATIGUE_POSE_TUNING.headLiftDegrees, (v) => FATIGUE_POSE_TUNING.headLiftDegrees = v, 1, 0, 28, 0, '°'),
+            control('motion.fatigueArmLag', '疲劳手臂拖拍', '体力极低时左臂大甩圈、右臂救回姿势的最大迟滞角度；入水和抱水段会自动减弱。', () => FATIGUE_POSE_TUNING.armRecoveryLagDegrees, (v) => FATIGUE_POSE_TUNING.armRecoveryLagDegrees = v, 1, 0, 35, 0, '°'),
+            control('motion.fatigueForearmBend', '疲劳弯肘幅度', '体力极低时移臂回收段额外弯肘的最大角度，受人体单方向关节上限保护。', () => FATIGUE_POSE_TUNING.forearmRecoveryBendDegrees, (v) => FATIGUE_POSE_TUNING.forearmRecoveryBendDegrees = v, 1, 0, 22, 0, '°'),
+            control('motion.fatigueLegMismatch', '疲劳双腿不均衡', '体力极低时左右腿打水幅度不一致的最大角度。', () => FATIGUE_POSE_TUNING.legMismatchDegrees, (v) => FATIGUE_POSE_TUNING.legMismatchDegrees = v, 1, 0, 28, 0, '°'),
+            control('motion.fatigueKneeBend', '疲劳弯膝幅度', '体力极低时双腿在打水周期中额外弯曲的最大角度，受人体单方向关节上限保护。', () => FATIGUE_POSE_TUNING.kneeBendDegrees, (v) => FATIGUE_POSE_TUNING.kneeBendDegrees = v, 1, 0, 16, 0, '°'),
+            control('motion.fatigueTorsoTwist', '疲劳腰胯扭动', '体力极低时上身随划水节奏产生的轻微反向扭动上限。', () => FATIGUE_POSE_TUNING.torsoTwistDegrees, (v) => FATIGUE_POSE_TUNING.torsoTwistDegrees = v, 1, 0, 12, 0, '°'),
         ],
     },
     {
@@ -905,6 +915,24 @@ function validateTuningRelations(changedId?: string) {
         );
         SWIMMER_BALANCE.kickCadenceMeasureMaxHz = SWIMMER_BALANCE.kickCadenceMaxHz;
     }
+
+    FATIGUE_POSE_TUNING.startEnergyRatio = clamp(FATIGUE_POSE_TUNING.startEnergyRatio, 0.01, 1);
+    FATIGUE_POSE_TUNING.fullEnergyRatio = clamp(FATIGUE_POSE_TUNING.fullEnergyRatio, 0, 0.99);
+    if (FATIGUE_POSE_TUNING.fullEnergyRatio >= FATIGUE_POSE_TUNING.startEnergyRatio) {
+        const fixed = Math.max(0, FATIGUE_POSE_TUNING.startEnergyRatio - 0.01);
+        console.warn(
+            `[SpeedSwimming] tuning adjusted: motion.fatigueFullEnergy must be below ` +
+            `motion.fatigueStartEnergy; set to ${fixed.toFixed(2)}`,
+        );
+        FATIGUE_POSE_TUNING.fullEnergyRatio = fixed;
+    }
+    FATIGUE_POSE_TUNING.responsePerSecond = clamp(FATIGUE_POSE_TUNING.responsePerSecond, 0.1, 30);
+    FATIGUE_POSE_TUNING.headLiftDegrees = clamp(FATIGUE_POSE_TUNING.headLiftDegrees, 0, 28);
+    FATIGUE_POSE_TUNING.armRecoveryLagDegrees = clamp(FATIGUE_POSE_TUNING.armRecoveryLagDegrees, 0, 35);
+    FATIGUE_POSE_TUNING.forearmRecoveryBendDegrees = clamp(FATIGUE_POSE_TUNING.forearmRecoveryBendDegrees, 0, 22);
+    FATIGUE_POSE_TUNING.legMismatchDegrees = clamp(FATIGUE_POSE_TUNING.legMismatchDegrees, 0, 24);
+    FATIGUE_POSE_TUNING.kneeBendDegrees = clamp(FATIGUE_POSE_TUNING.kneeBendDegrees, 0, 16);
+    FATIGUE_POSE_TUNING.torsoTwistDegrees = clamp(FATIGUE_POSE_TUNING.torsoTwistDegrees, 0, 12);
 
     if (CHARACTER_POSE_TUNING.flipTurnUnderwaterGlideDepth < CHARACTER_POSE_TUNING.flipTurnUnderwaterDepth) {
         console.warn(

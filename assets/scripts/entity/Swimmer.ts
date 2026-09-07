@@ -1426,6 +1426,12 @@ export class Swimmer extends Component {
         this._motor.setConditionSprintPropulsionScale(scale);
     }
 
+    // Energy already affects gameplay through the motor's condition scales. This
+    // separate hand-off is presentation-only and never changes simulation state.
+    applyConditionFatiguePresentationEnergyRatio(ratio: number) {
+        this.cartoonRig?.setFatigueEnergyRatio(ratio);
+    }
+
     consumeConditionInputs(): StrokeConditionInput[] {
         if (this._pendingConditionInputs.length === 0) {
             return [];

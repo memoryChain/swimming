@@ -1,5 +1,5 @@
 import { Node, Quat, Vec3 } from 'cc';
-import { FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
+import { FATIGUE_POSE_TUNING, FREESTYLE_POSE_TUNING } from './CharacterMotionTuning';
 import { MOTION_TUNING } from '../core/InputTuning';
 import { AXIAL_ROLL_TUNING } from '../core/AxialRollTuning';
 import {
@@ -67,6 +67,10 @@ const CLAP_OPEN_WRIST_SEPARATION_ARM_RATIOS: Readonly<Record<string, number>> = 
 };
 const CLAP_CONTACT_PHASES: readonly number[] = [0, 0.228571, 0.485714, 0.771429, 1];
 const CLAP_CONTACT_PHASE_HALF_WIDTH = 0.15;
+// Fatigue is intentionally less permissive than collision ragdoll. It should
+// read as an exhausted athlete, never a reversed hinge or folded marionette.
+const FATIGUE_ELBOW_FLEX_LIMIT_DEGREES = 22;
+const FATIGUE_KNEE_FLEX_LIMIT_DEGREES = 16;
 const BONE_ALIASES: Record<string, string[]> = {
     Hips: ['Hip', 'Pelvis'],
     Spine: ['Waist', 'Spine01'],
@@ -496,6 +500,93 @@ export class FreestylePoseController {
 
     }
 
+    // Continuous presentation-only fatigue layer. It runs after the normal
+    // freestyle/tread pose, while collision ragdoll remains the final overlay.
+    // Root motion, motor cycles, water contacts and collision volumes are never
+    // modified here.
+    applyFatigueFreestyleOverlay(
+        fatigueWeight: number,
+        leftArmCycle: number,
+        rightArmCycle: number,
+        leftKickCycle: number,
+        rightKickCycle: number,
+        bodyPhase: number,
+    ) {
+        const weight = FATIGUE_POSE_TUNING.enabled >= 0.5
+            ? clamp(fatigueWeight, 0, 1)
+            : 0;
+        if (!this.root || weight <= 0.001) {
+            return;
+        }
+
+        // Do not pull a visible wrist far away from its contact-driven splash.
+        // The loose, late recovery arc carries the comedy instead.
+        // Give the left recovery a deliberately wider, more desperate loop. The
+        // right side stays more controlled, so it reads as the swimmer trying to
+        // pull their crooked body back into line instead of a symmetric wobble.
+        const leftArmWeight = weight * this.fatigueArmRecoveryWeight(leftArmCycle);
+        const rightArmWeight = weight * this.fatigueArmRecoveryWeight(rightArmCycle) * 0.42;
+        const torsoTwist = Math.sin(bodyPhase) * FATIGUE_POSE_TUNING.torsoTwistDegrees * weight;
+        const leftKick = Math.sin(leftKickCycle);
+        const rightKick = Math.sin(rightKickCycle);
+        const leftLegWeight = weight * (0.45 + Math.max(0, leftKick) * 0.55);
+        const rightLegWeight = weight * (0.25 + Math.max(0, rightKick) * 0.35);
+        const leftElbowFlex = collisionRagdollHingeFlexionDegrees(
+            FATIGUE_POSE_TUNING.forearmRecoveryBendDegrees,
+            0,
+            FATIGUE_ELBOW_FLEX_LIMIT_DEGREES,
+        );
+        const rightElbowFlex = leftElbowFlex * 0.55;
+        const leftKneeFlex = collisionRagdollHingeFlexionDegrees(
+            FATIGUE_POSE_TUNING.kneeBendDegrees,
+            0,
+            FATIGUE_KNEE_FLEX_LIMIT_DEGREES,
+        );
+        const rightKneeFlex = leftKneeFlex * 0.6;
+
+        this.applyCurrentBoneOffset(this._neck, -FATIGUE_POSE_TUNING.headLiftDegrees * weight * 0.42, torsoTwist * 0.16, 0);
+        this.applyCurrentBoneOffset(this._head, -FATIGUE_POSE_TUNING.headLiftDegrees * weight, torsoTwist * 0.28, torsoTwist * 0.1);
+        this.applyCurrentBoneOffset(this._hips, 0, -torsoTwist * 0.2, torsoTwist * 0.08);
+        this.applyCurrentBoneOffset(this._spine, 0, torsoTwist * 0.45, torsoTwist * 0.06);
+        this.applyCurrentBoneOffset(this._spine1, 0, torsoTwist * 0.65, torsoTwist * 0.1);
+
+        // Both arms retain their authored cycle. Only recovery becomes late and
+        // uneven, reading as an exhausted swimmer chasing their own limbs.
+        this.applyCurrentBoneOffset(this._leftShoulder, leftArmWeight * 4, leftArmWeight * 2, leftArmWeight * 6);
+        this.applyCurrentBoneOffset(this._rightShoulder, rightArmWeight * 1.2, -rightArmWeight, -rightArmWeight * 1.8);
+        this.applyCollisionRagdollArm(
+            this._leftArm,
+            this._leftForeArm,
+            this._leftHand,
+            FATIGUE_POSE_TUNING.armRecoveryLagDegrees * 0.74,
+            3,
+            6,
+            -leftElbowFlex,
+            0,
+            0,
+            leftArmWeight * 0.7,
+        );
+        this.applyCollisionRagdollArm(
+            this._rightArm,
+            this._rightForeArm,
+            this._rightHand,
+            FATIGUE_POSE_TUNING.armRecoveryLagDegrees * 0.32,
+            -1.5,
+            -2,
+            -rightElbowFlex,
+            0,
+            0,
+            rightArmWeight * 0.42,
+        );
+
+        // No pelvis/root changes: fatigue may look crooked but it never changes
+        // the swimmer's physical facing, collision hull, or lane position.
+        this.applyCurrentBoneOffset(this._leftUpLeg, leftKick * FATIGUE_POSE_TUNING.legMismatchDegrees * leftLegWeight, 0, leftLegWeight * 2.5);
+        this.applyCurrentBoneOffset(this._rightUpLeg, rightKick * FATIGUE_POSE_TUNING.legMismatchDegrees * rightLegWeight * 0.55, 0, -rightLegWeight * 1.4);
+        this.blendCurrentBoneTowardBaseOffset(this._leftLeg, -leftKneeFlex, 0, 0, leftLegWeight * 0.42);
+        this.blendCurrentBoneTowardBaseOffset(this._rightLeg, -rightKneeFlex, 0, 0, rightLegWeight * 0.3);
+    }
+
     applyFreestyleRootMotion(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, rightBreath = 0) {
         if (!this.root) {
             return;
@@ -793,6 +884,11 @@ export class FreestylePoseController {
 
     private armPoseCycle(cycle: number): number {
         return cycle + FREESTYLE_POSE_TUNING.armForwardCycleOffset;
+    }
+
+    private fatigueArmRecoveryWeight(cycle: number): number {
+        const protectedContact = Math.max(this.handWaterContact(cycle), this.handWaterEntry(cycle));
+        return 1 - clamp(protectedContact, 0, 1);
     }
 
     getSplashBoneWorldPosition(name: string, out: Vec3): boolean {

@@ -64,7 +64,7 @@ export class RemoteSwimmerController extends Component {
         this._ownerEnergyRatio = safeEnergyRatio;
         this._ownerHeartRate = heartRate;
         this._ownerSprintActive = safeSprintActive;
-        this.applyConditionScales(safeEnergyRatio, heartRate, safeSprintActive);
+        this.applyConditionScales(safeEnergyRatio, heartRate, safeSprintActive, true);
     }
 
     // Apply an older packet's condition only while replaying the inputs carried by
@@ -77,23 +77,31 @@ export class RemoteSwimmerController extends Component {
             || heartRate < 0) {
             return;
         }
-        this.applyConditionScales(Math.max(0, Math.min(1, energyRatio)), heartRate, sprintActive === true);
+        this.applyConditionScales(Math.max(0, Math.min(1, energyRatio)), heartRate, sprintActive === true, false);
     }
 
     restoreOwnerCondition(): void {
         if (this._ownerEnergyRatio < 0 || this._ownerHeartRate < 0) {
             return;
         }
-        this.applyConditionScales(this._ownerEnergyRatio, this._ownerHeartRate, this._ownerSprintActive);
+        this.applyConditionScales(this._ownerEnergyRatio, this._ownerHeartRate, this._ownerSprintActive, true);
     }
 
-    private applyConditionScales(energyRatio: number, heartRate: number, sprintActive: boolean): void {
+    private applyConditionScales(
+        energyRatio: number,
+        heartRate: number,
+        sprintActive: boolean,
+        applyFatiguePresentation: boolean,
+    ): void {
         this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(energyRatio));
         this.swimmer?.applyConditionQualityScale(conditionQualityScale(heartRate));
         this.swimmer?.applyConditionCadenceScale(energyDepletionCadenceScale(energyRatio));
         this.swimmer?.applyConditionSprintPropulsionScale(
             sprintActive ? Math.max(1, CONDITION_BALANCE.sprint.propulsionScale) : 1,
         );
+        if (applyFatiguePresentation) {
+            this.swimmer?.applyConditionFatiguePresentationEnergyRatio(energyRatio);
+        }
     }
 
     // Apply one logical frame's worth of this member's decoded input events, in order.
@@ -200,5 +208,6 @@ export class RemoteSwimmerController extends Component {
         this.swimmer?.applyConditionQualityScale(1);
         this.swimmer?.applyConditionCadenceScale(1);
         this.swimmer?.applyConditionSprintPropulsionScale(1);
+        this.swimmer?.applyConditionFatiguePresentationEnergyRatio(1);
     }
 }

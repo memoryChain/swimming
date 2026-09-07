@@ -166,6 +166,24 @@ export const FREESTYLE_POSE_TUNING = {
     divePrepArmForwardDegrees: 7,
 };
 
+// Continuous, presentation-only fatigue overlay. These values never participate
+// in propulsion, stroke scoring, collision, or network race outcomes.
+export const FATIGUE_POSE_TUNING = {
+    enabled: 1,
+    // Fatigue begins below this ratio and reaches its visual ceiling below fullEnergyRatio.
+    startEnergyRatio: 0.55,
+    fullEnergyRatio: 0.20,
+    // A modest response rate keeps remote condition corrections visually smooth.
+    responsePerSecond: 5.5,
+    // Full-fatigue additive joint offsets. Exhausted is awkward, never a tumble.
+    headLiftDegrees: 16,
+    armRecoveryLagDegrees: 24,
+    forearmRecoveryBendDegrees: 18,
+    legMismatchDegrees: 15,
+    kneeBendDegrees: 10,
+    torsoTwistDegrees: 8,
+};
+
 export const SWIMMER_ACTION_TUNING = {
     // Clearance from pool edge when placing the swimmer in finish float pose.
     // 完赛漂浮姿态距离池壁保留的安全距离。

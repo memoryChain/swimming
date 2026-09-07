@@ -1795,6 +1795,7 @@ export class GameManager extends Component {
         swimmer.applyConditionQualityScale(condition.qualityModifier);
         swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
         swimmer.applyConditionSprintPropulsionScale(condition.sprintPropulsionScale);
+        swimmer.applyConditionFatiguePresentationEnergyRatio(condition.energyRatio);
     }
 
     // Network AI phases only move forward. Snapshot correction can move a shadow
@@ -2054,6 +2055,7 @@ export class GameManager extends Component {
                         swimmer.applyConditionQualityScale(aiCondition.qualityModifier);
                         swimmer.applyConditionCadenceScale(aiCondition.strokeCadenceScale);
                         swimmer.applyConditionSprintPropulsionScale(aiCondition.sprintPropulsionScale);
+                        swimmer.applyConditionFatiguePresentationEnergyRatio(aiCondition.energyRatio);
                     }
                 }
             }
@@ -2437,6 +2439,7 @@ export class GameManager extends Component {
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
         this._playerSwimmer?.applyConditionCadenceScale(this._playerCondition.strokeCadenceScale);
         this._playerSwimmer?.applyConditionSprintPropulsionScale(this._playerCondition.sprintPropulsionScale);
+        this._playerSwimmer?.applyConditionFatiguePresentationEnergyRatio(this._playerCondition.energyRatio);
         this._uiFlow?.updateHeartRateBar(this._playerCondition.heartRate, this._playerCondition.heartRateZone);
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
         const ultimate = this._playerSwimmer?.ultimate;
@@ -2474,6 +2477,7 @@ export class GameManager extends Component {
             swimmer.applyConditionQualityScale(this._aiConditions[i].qualityModifier);
             swimmer.applyConditionCadenceScale(this._aiConditions[i].strokeCadenceScale);
             swimmer.applyConditionSprintPropulsionScale(this._aiConditions[i].sprintPropulsionScale);
+            swimmer.applyConditionFatiguePresentationEnergyRatio(this._aiConditions[i].energyRatio);
         }
     }
 
