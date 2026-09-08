@@ -103,8 +103,8 @@ export class RaceStrokeView {
             // 图片只调整排版，不做镜像、染色或非等比拉伸。
             s.praise.node.setPosition(s.sign*art.width/2,0);
         }
-        this.position(s.feedback,s.zoneRatio,s.sign);
-        s.feedback.setPosition(s.feedback.position.x+s.sign*10,s.feedback.position.y);
+        // 固定在定稿下方评价位置；只缩短与弧线的水平间距，不跟随动态绿色区移动。
+        s.feedback.setPosition(s.sign*335,-533);
         const count=combo>0?'x'+combo:'';if(s.combo.string!==count)s.combo.string=count;
         Tween.stopAllByTarget(s.feedback);Tween.stopAllByTarget(s.feedbackOpacity);s.feedbackOpacity.opacity=255;
         s.feedback.setScale(combo>=3 && Math.min(6,combo)>s.lastTier ? POP_STRONG : POP);tween(s.feedback).to(.16,{scale:REST},{easing:'backOut'}).start();

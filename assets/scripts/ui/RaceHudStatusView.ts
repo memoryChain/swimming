@@ -72,6 +72,7 @@ export class RaceHudStatusView {
     private readonly jumpButton: Button;
     private readonly jumpRing: Sprite;
     private readonly jumpFace: Node;
+    private readonly jumpCharge: Node;
     private readonly dolphin: Sprite;
     private readonly ranks: RankSlot[] = [];
     private readonly identities = new Map<Swimmer, string>();
@@ -127,11 +128,13 @@ export class RaceHudStatusView {
             this.ranks.push({ root, normal, self, portrait, number, identity: null, path: '', emphasized: null });
         }
         this.jump = makeUiNode('DolphinJumpButton', this.right);
-        this.place(this.jump, -181, 406, 100, 100);
-        this.sprite(this.jump, 'JumpBase', 'base', -42, -42, 84, 84);
-        this.sprite(this.jump, 'JumpTrack', 'ring', -44, -44, 88, 88, TRACK);
-        this.jumpRing = this.ring(this.jump, 'JumpFill', -44, -44, 88, GOLD);
-        this.jumpFace = this.sprite(this.jump, 'ReadyFace', 'jumpReady', -50, -50, 102, 102).node;
+        // 源稿圆心为(1149,449)，三个状态共用同一锚点。
+        this.place(this.jump, -181, 399, 100, 100);
+        this.jumpCharge = makeUiNode('JumpChargingVisual', this.jump);
+        this.sprite(this.jumpCharge, 'JumpBase', 'base', -42, -42, 84, 84);
+        this.sprite(this.jumpCharge, 'JumpTrack', 'ring', -44, -44, 88, 88, TRACK);
+        this.jumpRing = this.ring(this.jumpCharge, 'JumpFill', -44, -44, 88, GOLD);
+        this.jumpFace = this.sprite(this.jump, 'ReadyFace', 'jumpReady', -50, -51, 102, 102).node;
         this.jumpFace.active = false;
         this.dolphin = this.sprite(this.jump, 'Dolphin', 'dolphin', -22, -19, 43, 36, DOLPHIN_WHITE);
         this.label(this.jump, 'JumpCaption', '起跳', -36, 31, 72, 28, 17.6);
@@ -245,6 +248,7 @@ export class RaceHudStatusView {
         this.ready = ready;
         this.jumpButton.interactable = ready;
         this.active(this.jumpFace, ready);
+        this.active(this.jumpCharge, !ready);
         this.tint(this.dolphin, ready ? WHITE : DOLPHIN_WHITE);
     }
     private text(label: Label, value: string) { if (label.string !== value) label.string = value; }

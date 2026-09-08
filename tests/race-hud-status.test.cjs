@@ -138,3 +138,14 @@ test('弧线尾端对应原划水结束进度，区间与白点统一归一化�
  const l=find(s.parent,'LeftStrokeUi'),dot=find(l,'MovingDot'),band=find(l,'PerfectBand0').getComponent(Sprite);
  assert.equal(dot.position.y,-Math.round(401+177*.8));assert.ok(Math.abs(band.fillRange-177*.24/186)<1e-9);
 });
+
+test('起跳按源稿定位；满气按钮面与蓄气圆环互斥，点击后恢复蓄气态',()=>{
+ const s=fixture(),button=find(s.parent,'DolphinJumpButton'),charge=find(s.parent,'JumpChargingVisual'),face=find(s.parent,'ReadyFace');s.hud.setVisible(true);update(s.hud,.5);
+ assert.equal(button.position.x,-131);assert.equal(button.position.y,-449);assert.equal(face.position.x,1);assert.equal(face.position.y,0);assert.equal(charge.active,true);assert.equal(face.active,false);
+ update(s.hud,1);assert.equal(charge.active,false);assert.equal(face.active,true);button.events.click();assert.equal(charge.active,true);assert.equal(face.active,false);
+});
+test('评价固定保持定稿方位和高度，不跟随动态完美区移动',()=>{
+ const s=fixture();s.hud.setVisible(true);const ui=s.hud.stroke;ui.updateSide('left',{active:true,currentRatio:.2,intervals:[{rating:'perfect',startRatio:.1,endRatio:.2}]});
+ s.hud.showStrokePraise('left','Good',undefined,0);const feedback=find(find(s.parent,'LeftStrokeUi'),'StrokePraise');assert.equal(feedback.position.x,335);assert.equal(feedback.position.y,-533);
+ ui.updateSide('left',{active:true,currentRatio:.8,intervals:[{rating:'perfect',startRatio:.7,endRatio:.9}]});s.hud.showStrokePraise('left','Crazy',undefined,5);assert.equal(feedback.position.x,335);assert.equal(feedback.position.y,-533);
+});
