@@ -11,6 +11,7 @@
     "fonts:build": "node scripts/run-ui-fonts.cjs build",
     "fonts:check": "node scripts/ui-font-policy.js",
     "test:race-start": "npx --yes --package typescript@5.4.5 -c \"node --test tests/race-start-runtime.test.cjs\"",
+    "test:hud": "npx --yes --package typescript@5.4.5 -c \"node --test tests/race-hud-status.test.cjs\"",
     "test:pre-race": "npx --yes --package typescript@5.4.5 -c \"node --test tests/pre-race-intro.test.cjs\"",
     "test:room": "npx --yes --package typescript@5.4.5 -c \"node tests/online-room-runtime.test.cjs\"",
     "test:results": "npx --yes --package typescript@5.4.5 -c \"node tests/settlement-runtime.test.cjs\"",

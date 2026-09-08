@@ -1,3 +1,6 @@
+import { PlayerData } from '../backend/PlayerData';
+import { AVATARS, avatarSwimmerLookOf } from '../backend/IdentityConfig';
+import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import {
     _decorator,
     Button,
@@ -446,6 +449,15 @@ export class GameManager extends Component {
             && playerBeforeFinish
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
         this._uiFlow?.setRaceStatusVisible(raceStatusVisible);
+        const statusHud = this._uiController?.raceHudStatus;
+        statusHud?.setVisible(raceStatusVisible);
+        if (statusHud?.consumeSample(netDt)) {
+            const player = this._playerSwimmer;
+            statusHud.updateValues(player.currentSpeed, this._playerCondition.heartRate,
+                this._playerCondition.heartRateZone === 'OVERLOAD', this._playerCondition.energyRatio,
+                player.distance, getRaceDistance(), player.ultimate.energy / ULTIMATE_ENERGY_BALANCE.maxEnergy,
+                this._state === GameState.RACING && player.ultimate.canAffordDolphin);
+        }
         const presentationIndicatorVisible = this._state === GameState.PRECOUNTDOWN
             || (this._state === GameState.AWARDS && this._playerOnAwardsPodium);
         // The player can finish before the last AI swimmer. Hide player-specific
@@ -460,7 +472,7 @@ export class GameManager extends Component {
             ));
         // Motor speed becomes meaningful after the dive has entered its glide.
         // Keep the player marker visible before takeoff, but hide the speed text.
-        const playerSpeedVisible = playerIndicatorVisible
+        const playerSpeedVisible = !this._uiController?.raceHudStatus && playerIndicatorVisible
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
         // Sweet-zone timing feedback is a tuning aid. Keep it out of normal
         // races and only expose it in the dedicated AI-difficulty debug race.
@@ -904,6 +916,7 @@ export class GameManager extends Component {
                 this._finishRankOverlay.showLiveResults(results);
                 this._swimmerNameOverlay.setLivePlacements(results);
                 this.setPlayerLivePlacementFromResults(results);
+                this._uiController?.raceHudStatus?.updateRanks(results);
             },
             showFinishRank: (result) => this._finishRankOverlay.addResult(result),
             onSwimmerEliminated: (swimmer) => this.handleSwimmerEliminated(swimmer),
@@ -1013,8 +1026,11 @@ export class GameManager extends Component {
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
-            onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
-            onPrimaryAction: () => {
+            onPrimaryAction: (source) => {
+                if (source === 'space' && this._state === GameState.RACING) {
+                    this._gameFlow?.handleDolphinJump();
+                    return;
+                }
                 const settlement = this._uiController?.settlementView;
                 if (settlement?.root.active) {
                     settlement.activatePrimary();
@@ -2043,6 +2059,19 @@ export class GameManager extends Component {
             });
         }
         this._preRaceIntroPanel.populate(entries);
+        const hudRoster = [];
+        for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+            const swimmer = this.swimmerForLane(lane);
+            if (!swimmer?.node?.active) continue;
+            const remote = this._netSession && this._netLanePlan?.remotes.find(entry => entry.lane === lane);
+            const member = remote && this._netSession?.members.find(entry => entry.pos === remote.pos);
+            const avatarId = swimmer === this._playerSwimmer ? PlayerData.avatarId
+                : member ? member.avatarId
+                : (AVATARS.find(avatar => avatarSwimmerLookOf(avatar.id).modelVariantId === swimmer.cartoonRig?.modelVariantId)
+                    ?? AVATARS[lane % AVATARS.length]).id;
+            hudRoster.push({ swimmer, avatarId });
+        }
+        this._uiController?.raceHudStatus?.setRoster(hudRoster);
         const difficulty = getRaceDifficultyConfig();
         this._preRaceIntroPanel.setRaceInfo({
             event: `${getRaceDistance()}米自由泳`,
@@ -2078,6 +2107,7 @@ export class GameManager extends Component {
         this._inputManager = input;
 
         const raceUiBuilder = new SpeedStarsUiPrefabBuilder({
+            onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),

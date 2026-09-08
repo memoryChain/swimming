@@ -1,3 +1,4 @@
+import { RaceHudStatusView, preloadRaceHudStatus } from './RaceHudStatusView';
 import { RaceStartView, preloadRaceStartUi } from './RaceStartView';
 import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
@@ -24,6 +25,7 @@ export type SpeedStarsStartUiCallbacks = {
 
 export type SpeedStarsUiCallbacks = {
     resolveResultAvatar?: (row: RaceLeaderboardRow) => string | undefined;
+    onDolphinJump: () => void;
     onStroke: (type: StrokeType) => void;
     onStrokeEnd: (type: StrokeType) => void;
     onDiveHoldStart: () => void;
@@ -127,8 +129,12 @@ export class SpeedStarsUiPrefabBuilder {
                 preloadRaceStartUi((assetError) => {
                     if (!parent.isValid) return;
                     if (assetError) { done(assetError); return; }
-                    try { done(null, this.instantiateUi(parent, prefab)); }
-                    catch (error) { done(error instanceof Error ? error : new Error(`${error}`)); }
+                    preloadRaceHudStatus((hudError) => {
+                        if (!parent.isValid) return;
+                        if (hudError) { done(hudError); return; }
+                        try { done(null, this.instantiateUi(parent, prefab)); }
+                        catch (error) { done(error instanceof Error ? error : new Error(`${error}`)); }
+                    });
                 });
             } catch (error) {
                 done(error instanceof Error ? error : new Error(`${error}`));
@@ -186,9 +192,13 @@ export class SpeedStarsUiPrefabBuilder {
         ui.countdownLabel.node.active = false;
         ui.diveChargeTrack.active = false;
         ui.diveChargeFillNode.active = false;
-        this.buildHeartRateBar(raceHud, ui);
-        this.buildEnergyBar(raceHud, ui);
-        this.buildUltimateEnergyBar(raceHud, ui);
+        // 新 HUD 统一负责状态显示；旧横条不再创建或执行动态绘制。
+        requireNode(raceHud, 'ProgressValue').active = false;
+        progressTrack.active = false;
+        progressDot.active = false;
+        ui.distanceLabel = null;
+        ui.progressTrackRoot = null;
+        ui.progressDot = null;
         // Full-screen swim-input pad. Hidden during the awards ceremony so pointer events fall
         // through to the global input listeners that drive the free-look podium camera.
         // 全屏划水输入板。颁奖仪式时隐藏，让指针事件穿透到驱动颁奖自由视角相机的全局输入监听。
@@ -251,6 +261,7 @@ export class SpeedStarsUiPrefabBuilder {
         sprintOutline.color = new Color(255, 120, 30, 220);
         sprintOutline.width = 5;
         ui.sprintLabel = sprintLabel;
+        ui.raceHudStatus = new RaceHudStatusView(raceHud, this._callbacks.onDolphinJump);
 
         return {
             root,

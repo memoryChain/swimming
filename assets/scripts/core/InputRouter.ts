@@ -1,6 +1,5 @@
 import { EventMouse, EventTouch, input, Input, Node, Vec2 } from 'cc';
 import { StrokeType } from './GameConstants';
-import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
@@ -9,9 +8,7 @@ export type InputRouterCallbacks = {
     onKickStroke: (type: StrokeType) => void;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
-    // Both invisible screen halves held together past the trigger threshold.
-    onDolphinJump: () => void;
-    onPrimaryAction: () => void;
+    onPrimaryAction: (source?: 'space') => void;
     onToggleDebug: () => void;
     onCycleRaceCamera: () => void;
     onToggleCameraFollowAi: () => void;
@@ -42,11 +39,6 @@ export class InputRouter {
     // independently in the editor.
     private readonly _leftPress = { active: false, startedMs: 0, promoted: false };
     private readonly _rightPress = { active: false, startedMs: 0, promoted: false };
-    // Dolphin-jump gesture: when both screen halves are held together, the wall
-    // clock at which that started (-1 = not both held) and whether this hold has
-    // already fired, so it triggers once per two-hand hold.
-    private _bothHeldSinceMs = -1;
-    private _dolphinGestureFired = false;
     // Awards free-look touch state: whether a multi-finger pinch is in progress and the
     // last measured distance between the first two touch points.
     private _cameraMultiTouch = false;
@@ -66,6 +58,7 @@ export class InputRouter {
         this._target.on('dive-charge-start', this.onDiveChargeStart, this);
         this._target.on('dive-release', this.onDiveRelease, this);
         this._target.on('primary-action', this.onPrimaryAction, this);
+        this._target.on('space-action', this.onSpaceAction, this);
         this._target.on('toggle-debug', this.onToggleDebug, this);
         this._target.on('cycle-race-camera', this.onCycleRaceCamera, this);
         this._target.on('toggle-camera-follow-ai', this.onToggleCameraFollowAi, this);
@@ -93,6 +86,7 @@ export class InputRouter {
         this._target.off('dive-charge-start', this.onDiveChargeStart, this);
         this._target.off('dive-release', this.onDiveRelease, this);
         this._target.off('primary-action', this.onPrimaryAction, this);
+        this._target.off('space-action', this.onSpaceAction, this);
         this._target.off('toggle-debug', this.onToggleDebug, this);
         this._target.off('cycle-race-camera', this.onCycleRaceCamera, this);
         this._target.off('toggle-camera-follow-ai', this.onToggleCameraFollowAi, this);
@@ -162,26 +156,6 @@ export class InputRouter {
         const now = Date.now();
         this.promoteIfDue(StrokeType.LEFT, now, thresholdMs);
         this.promoteIfDue(StrokeType.RIGHT, now, thresholdMs);
-        this.updateDolphinGesture(now);
-    }
-
-    // Fire the dolphin-jump gesture once both screen halves have been held
-    // together past the trigger threshold. Releasing either side re-arms it.
-    private updateDolphinGesture(now: number) {
-        const bothHeld = this._leftPress.active && this._rightPress.active;
-        if (!bothHeld) {
-            this._bothHeldSinceMs = -1;
-            this._dolphinGestureFired = false;
-            return;
-        }
-        if (this._bothHeldSinceMs < 0) {
-            this._bothHeldSinceMs = now;
-        }
-        if (!this._dolphinGestureFired
-            && now - this._bothHeldSinceMs >= DOLPHIN_JUMP.triggerHoldSeconds * 1000) {
-            this._dolphinGestureFired = true;
-            this._callbacks.onDolphinJump();
-        }
     }
 
     private promoteIfDue(type: StrokeType, now: number, thresholdMs: number) {
@@ -219,8 +193,6 @@ export class InputRouter {
         this._leftPress.promoted = false;
         this._rightPress.active = false;
         this._rightPress.promoted = false;
-        this._bothHeldSinceMs = -1;
-        this._dolphinGestureFired = false;
     }
 
     // Keyboard A/D go through the same press classifier as touch, driven by the
@@ -252,6 +224,10 @@ export class InputRouter {
 
     private onDiveRelease(holdSeconds: number) {
         this._callbacks.onDiveRelease(holdSeconds);
+    }
+
+    private onSpaceAction() {
+        this._callbacks.onPrimaryAction('space');
     }
 
     private onPrimaryAction() {

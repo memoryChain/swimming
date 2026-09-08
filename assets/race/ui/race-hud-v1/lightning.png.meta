@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "f4ba481a-aad3-4b20-b195-6b09445ecd64",
+  "uuid": "af131311-d8e8-49df-9209-3117922f0e77",
   "files": [
     ".json",
     ".png"
@@ -10,19 +10,19 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "f4ba481a-aad3-4b20-b195-6b09445ecd64@6c48a",
-      "displayName": "charge-fill-mid",
+      "uuid": "af131311-d8e8-49df-9209-3117922f0e77@6c48a",
+      "displayName": "lightning",
       "id": "6c48a",
       "name": "texture",
       "userData": {
-        "wrapModeS": "repeat",
-        "wrapModeT": "repeat",
+        "wrapModeS": "clamp-to-edge",
+        "wrapModeT": "clamp-to-edge",
         "minfilter": "linear",
         "magfilter": "linear",
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "f4ba481a-aad3-4b20-b195-6b09445ecd64",
+        "imageUuidOrDatabaseUri": "af131311-d8e8-49df-9209-3117922f0e77",
         "visible": false
       },
       "ver": "1.0.22",
@@ -37,10 +37,6 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "f4ba481a-aad3-4b20-b195-6b09445ecd64@6c48a",
-    "compressSettings": {
-      "useCompressTexture": true,
-      "presetId": "astc-ui-alpha-5x5"
-    }
+    "redirect": "af131311-d8e8-49df-9209-3117922f0e77@6c48a"
   }
 }

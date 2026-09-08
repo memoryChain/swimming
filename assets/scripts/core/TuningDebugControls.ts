@@ -158,7 +158,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '海豚跃',
         controls: [
-            control('dolphin.triggerHoldSeconds', '双手长按触发', '双手（左右屏幕各一指）同时长按多久触发海豚跃。太短会和普通双手划水冲突。', () => DOLPHIN_JUMP.triggerHoldSeconds, (v) => DOLPHIN_JUMP.triggerHoldSeconds = v, 0.05, 0.2, 1.2, 2, 's'),
             control('dolphin.minAvailableDistance', '最小可用距离', '距离前方池壁或终点不足这么多米时不允许起跳（临界处理）。', () => DOLPHIN_JUMP.minAvailableDistance, (v) => DOLPHIN_JUMP.minAvailableDistance = v, 0.5, 0.5, 15, 1, 'm'),
             control('dolphin.launchSpeed', '起跳速度', '离水弹射速度，越大飞得越远、越夸张。靠近池壁时会自动收窄以免飞出。', () => DOLPHIN_JUMP.launchSpeed, (v) => DOLPHIN_JUMP.launchSpeed = v, 0.5, 3, 16, 1, 'm/s'),
             control('dolphin.launchAngleDegrees', '起跳角度', '离水抛物线角度。越大越高越短，越小越平越远。', () => DOLPHIN_JUMP.launchAngleDegrees, (v) => DOLPHIN_JUMP.launchAngleDegrees = v, 1, 15, 70, 0, '°'),
@@ -667,7 +666,9 @@ function collectInvalidLegacyTuningValues(snapshot: Record<string, unknown>): st
 }
 
 function isKnownLegacyTuningKey(key: string): boolean {
-    if (key === 'speed.strokeStabilityAccel'
+    if (key === 'dolphin.triggerHoldSeconds'
+        || key === '海豚跃.双手长按触发'
+        || key === 'speed.strokeStabilityAccel'
         || key === 'axialRoll.waterRightingTorque'
         || key === 'axialRoll.tippingStartDegrees'
         || key === 'stability.armReleaseSweetCenter'

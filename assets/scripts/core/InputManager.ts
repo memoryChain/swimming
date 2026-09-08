@@ -21,6 +21,7 @@ export class InputManager extends Component {
     private readonly _blockerWorld = new Vec3();
     private readonly _blockerPoint = new Vec2();
 
+    private _spaceHeld = false;
     private _leftHeld = false;
     private _rightHeld = false;
     private _diveCharging = false;
@@ -50,6 +51,7 @@ export class InputManager extends Component {
         input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
         input.off(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
         this.clearTouchInputs();
+        this._spaceHeld = false;
     }
 
     onDestroy() {
@@ -81,7 +83,11 @@ export class InputManager extends Component {
             this.strokeTarget?.emit('model-debug-speed-down');
         } else if (this.modelDebugMode && event.keyCode === KeyCode.KEY_E) {
             this.strokeTarget?.emit('model-debug-speed-up');
-        } else if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.ENTER) {
+        } else if (event.keyCode === KeyCode.SPACE) {
+            if (this._spaceHeld) return;
+            this._spaceHeld = true;
+            this.strokeTarget?.emit('space-action');
+        } else if (event.keyCode === KeyCode.ENTER) {
             this.strokeTarget?.emit('primary-action');
         } else if (event.keyCode === KeyCode.F3 || event.keyCode === KeyCode.BACK_QUOTE) {
             this.strokeTarget?.emit('toggle-debug');
@@ -99,6 +105,7 @@ export class InputManager extends Component {
     }
 
     private onKeyUp(event: EventKeyboard) {
+        if (event.keyCode === KeyCode.SPACE) this._spaceHeld = false;
         if (event.keyCode === KeyCode.KEY_A || event.keyCode === KeyCode.ARROW_LEFT) {
             this.setInputHeld(StrokeType.LEFT, false);
         } else if (event.keyCode === KeyCode.KEY_D || event.keyCode === KeyCode.ARROW_RIGHT) {

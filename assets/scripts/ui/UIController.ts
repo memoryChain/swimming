@@ -1,3 +1,4 @@
+import type { RaceHudStatusView } from './RaceHudStatusView';
 import type { RaceStartView } from './RaceStartView';
 import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
@@ -61,6 +62,7 @@ export type RaceLeaderboardRow = {
 @ccclass('UIController')
 export class UIController extends Component {
     raceStartView: RaceStartView | null = null;
+    raceHudStatus: RaceHudStatusView | null = null;
 
     update(dt: number) { this.raceStartView?.update(dt); }
     onDisable() { this.raceStartView?.reset(); }
@@ -152,6 +154,7 @@ export class UIController extends Component {
     }
 
     updateProgress(playerDist: number, aiDist: number) {
+        if (this.raceHudStatus) return;
         const raceDistance = getRaceDistance();
         const ratio = clamp01(playerDist / raceDistance);
         const percent = Math.round(ratio * 100);
@@ -181,6 +184,7 @@ export class UIController extends Component {
     }
 
     setRaceStatusVisible(visible: boolean) {
+        if (this.raceHudStatus) { this.raceHudStatus.setVisible(visible); return; }
         this.setProgressVisible(visible);
         this.setHeartRateBarVisible(visible);
         this.setEnergyBarVisible(visible);
@@ -188,6 +192,7 @@ export class UIController extends Component {
     }
 
     updateHeartRateBar(heartRate: number, zone: string) {
+        if (this.raceHudStatus) return;
         const ratio = clamp01(heartRate / 200);
         const color = heartRateZoneColor(zone);
         const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
@@ -214,6 +219,7 @@ export class UIController extends Component {
     }
 
     updateEnergyBar(energy: number, depleted: boolean) {
+        if (this.raceHudStatus) return;
         const ratio = clamp01(energy / this._energyTotal);
         const color = this._sprintActive
             ? sprintEnergyColor(ratio, depleted)
@@ -297,6 +303,7 @@ export class UIController extends Component {
 
     // 蓄气（大招能量）条。enough = 当前能量已蓄满、可释放海豚跳大招；满槽金色高亮。
     updateUltimateEnergyBar(energy: number, enough: boolean) {
+        if (this.raceHudStatus) return;
         const ratio = clamp01(energy / ULTIMATE_ENERGY_BALANCE.maxEnergy);
         const denied = Date.now() < this._ultimateDeniedUntil;
         const color = ultimateEnergyColor(ratio, enough, denied);

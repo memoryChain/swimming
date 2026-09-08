@@ -81,6 +81,7 @@ Prefab-authored UI and code-generated UI (`Node` + `UITransform` + `Button` + `L
 - The current mobile race input is full-screen tap/hold. The invisible left and right screen halves map directly to `LEFT` and `RIGHT` strokes.
 - Do not add automatic left/right stroke alternation; the player chooses the stroke side by touch position.
 - Do not reintroduce visible left/right touch zones unless the user explicitly asks. Touch hit areas should remain invisible.
+- 海豚跳仅在蓄气满时点击 HUD 海豚按钮触发；不再以左右半屏同时按住触发。按钮必须阻止触摸穿透，沿用原起跳判定和成功后的联机输入事件。
 - Keyboard `A` / `D` still maps to explicit left/right strokes for editor/debug workflows.
 
 ## Tuning

@@ -1,0 +1,281 @@
+import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UITransform, Vec2, view, sys } from 'cc';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { loadRaceAsset } from '../core/RaceBundleLoader';
+import type { RaceFinishResult } from '../core/RaceManager';
+import type { Swimmer } from '../entity/Swimmer';
+import { loadAvatarUiSpriteFrame, avatarTexturePath } from './AvatarUiAssets';
+import { styleProjectUiLabel } from './ProjectUiFonts';
+import { makeUiNode } from './RuntimeUiFactory';
+
+const ART = RESOURCE_PATHS.raceHudUi;
+type ArtKey = Exclude<keyof typeof ART, 'speedFont'>;
+const FRAMES = new Map<ArtKey, SpriteFrame>();
+let speedFont: Font | null = null;
+const WHITE = new Color(245, 250, 252);
+const CYAN = new Color(0, 215, 201);
+const RED = new Color(255, 73, 76);
+const GOLD = new Color(255, 201, 58);
+const TEXT_OUTLINE = new Color(0, 0, 0, 51);
+const TRACK = new Color(39, 60, 73, 204);
+// 源稿蓄气中海豚为浅白 52.16%，不能再次乘灰蓝色。
+const DOLPHIN_WHITE = new Color(245, 250, 252, 133);
+const COURSE_TRACK = new Color(39, 60, 73, 184);
+
+export function preloadRaceHudStatus(done: (error: Error | null) => void): void {
+    const keys = Object.keys(ART).filter(key => key !== 'speedFont') as ArtKey[];
+    let pending = keys.length + 1;
+    let failure: Error | null = null;
+    const finish = () => { if (--pending === 0) done(failure); };
+    for (const key of keys) loadAvatarUiSpriteFrame(ART[key], frame => {
+        if (frame) FRAMES.set(key, frame);
+        else failure = new Error(`HUD 素材加载失败：${key}`);
+        finish();
+    });
+    loadRaceAsset(ART.speedFont, Font, (error, font) => {
+        if (font) speedFont = font;
+        else failure = error ?? new Error('速度字体加载失败');
+        finish();
+    });
+}
+
+type RankSlot = { root: Node; normal: Node; self: Node; portrait: Sprite; number: Label; identity: Swimmer | null; path: string; emphasized: boolean | null };
+export type HudRosterEntry = { swimmer: Swimmer; avatarId: string };
+
+/** 按原 1280×720 PSD 制作。美术圆环为纹理，动态部分只更新 Sprite 填充参数。 */
+export class RaceHudStatusView {
+    readonly root: Node;
+    private readonly left: Node;
+    private readonly right: Node;
+    private readonly top: Node;
+    private readonly speed: Label;
+    private readonly heartValue: Label;
+    private readonly energyValue: Label;
+    private readonly distance: Label;
+    private readonly percent: Label;
+    private readonly heartRing: Sprite;
+    private readonly energyRing: Sprite;
+    private readonly progress: Sprite;
+    private readonly heartIcon: Sprite;
+    private readonly warning: Node;
+    private readonly jump: Node;
+    private readonly jumpButton: Button;
+    private readonly jumpRing: Sprite;
+    private readonly jumpFace: Node;
+    private readonly dolphin: Sprite;
+    private readonly ranks: RankSlot[] = [];
+    private readonly identities = new Map<Swimmer, string>();
+    private elapsed = 0.1;
+    private warningClock = 0;
+    private ready = false;
+    private scale = 1;
+
+    constructor(parent: Node, onJump: () => void) {
+        this.root = makeUiNode('RaceHudStatus', parent);
+        this.left = makeUiNode('LeftStatus', this.root);
+        this.right = makeUiNode('RightStatus', this.root);
+        this.top = makeUiNode('CourseProgress', this.root);
+        this.label(this.left, 'SpeedTitle', '速度', 28, 19, 70, 25, 18, true, 'left');
+        this.speed = this.label(this.left, 'SpeedValue', '0.00', 27, 41, 126, 65, 72, true, 'left');
+        this.speed.font = speedFont;
+        const unit = this.label(this.left, 'SpeedUnit', 'm/s', 149, 73, 48, 31, 30.6, true, 'left');
+        unit.font = speedFont;
+        // 专用字体回调由预加载完成；不要再让通用字库异步覆盖它。
+        this.sprite(this.left, 'HeartBase', 'base', 22, 114, 76, 76);
+        this.sprite(this.left, 'HeartTrack', 'ring', 22, 114, 76, 76, TRACK);
+        this.heartRing = this.ring(this.left, 'HeartFill', 22, 114, 76, RED);
+        this.heartIcon = this.sprite(this.left, 'Heart', 'heart', 48, 130, 26, 22, RED);
+        this.heartValue = this.label(this.left, 'HeartValue', '0', 30, 152, 60, 25, 18.4);
+        this.label(this.left, 'HeartCaption', '心率', 30, 180, 60, 24, 15.3);
+        this.warning = makeUiNode('HeartWarning', this.left);
+        this.sprite(this.warning, 'WarningBase', 'warning', 75, 110, 18, 18);
+        this.label(this.warning, 'WarningMark', '!', 75, 109, 18, 20, 14);
+        this.warning.active = false;
+        this.sprite(this.left, 'EnergyBase', 'base', 122, 114, 76, 76);
+        this.sprite(this.left, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
+        this.energyRing = this.ring(this.left, 'EnergyFill', 122, 114, 76, CYAN);
+        this.sprite(this.left, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
+        this.energyValue = this.label(this.left, 'EnergyValue', '100%', 128, 152, 64, 25, 18.4);
+        this.label(this.left, 'EnergyCaption', '体力', 128, 180, 64, 24, 15.3);
+        this.distance = this.label(this.top, 'Distance', '200 m', -232, 32, 53, 25, 14.5, true, 'right');
+        this.sprite(this.top, 'ProgressTrack', 'progress', -173, 39, 399, 12, COURSE_TRACK);
+        this.progress = this.sprite(this.top, 'ProgressFill', 'progress', -173, 39, 399, 12, CYAN);
+        this.progress.type = Sprite.Type.FILLED;
+        this.progress.fillType = Sprite.FillType.HORIZONTAL;
+        this.progress.fillStart = 0;
+        this.progress.fillRange = 0;
+        this.percent = this.label(this.top, 'Percent', '0%', 235, 32, 54, 25, 14.5, true, 'left');
+        this.label(this.right, 'RankingTitle', '排名', -53, 62, 40, 24, 13.8);
+        for (let i = 0; i < 8; i++) {
+            const root = makeUiNode(`Rank${i + 1}`, this.right);
+            const normal = this.sprite(root, 'NormalRing', 'rankRing', -47, -15, 30, 30).node;
+            const self = this.sprite(root, 'SelfRing', 'rankSelfRing', -60, -28, 56, 56).node;
+            self.active = false;
+            const portrait = this.sprite(root, 'Avatar', null, -45, -13, 26, 26);
+            const number = this.label(root, 'RankNumber', String(i + 1), -76, -16, 27, 32, 18.4, true, 'right');
+            root.active = false;
+            this.ranks.push({ root, normal, self, portrait, number, identity: null, path: '', emphasized: null });
+        }
+        this.jump = makeUiNode('DolphinJumpButton', this.right);
+        this.place(this.jump, -181, 406, 100, 100);
+        this.sprite(this.jump, 'JumpBase', 'base', -42, -42, 84, 84);
+        this.sprite(this.jump, 'JumpTrack', 'ring', -44, -44, 88, 88, TRACK);
+        this.jumpRing = this.ring(this.jump, 'JumpFill', -44, -44, 88, GOLD);
+        this.jumpFace = this.sprite(this.jump, 'ReadyFace', 'jumpReady', -50, -50, 102, 102).node;
+        this.jumpFace.active = false;
+        this.dolphin = this.sprite(this.jump, 'Dolphin', 'dolphin', -22, -19, 43, 36, DOLPHIN_WHITE);
+        this.label(this.jump, 'JumpCaption', '起跳', -36, 31, 72, 28, 17.6);
+        this.jumpButton = this.jump.addComponent(Button);
+        this.jumpButton.transition = Button.Transition.SCALE;
+        this.jumpButton.zoomScale = 0.94;
+        this.jumpButton.interactable = false;
+        this.jump.addComponent(BlockInputEvents);
+        this.jump.on(Button.EventType.CLICK, () => {
+            if (!this.root.activeInHierarchy || !this.ready) return;
+            this.setReady(false);
+            onJump();
+        });
+        this.layout();
+        view.on('canvas-resize', this.layout, this);
+        view.on('design-resolution-changed', this.layout, this);
+        this.root.once(Node.EventType.NODE_DESTROYED, () => {
+            view.off('canvas-resize', this.layout, this);
+            view.off('design-resolution-changed', this.layout, this);
+            this.identities.clear();
+        });
+        this.root.active = false;
+    }
+
+    private layout() {
+        if (!this.root.isValid) return;
+        const size = view.getVisibleSize();
+        const safe = sys.getSafeAreaRect(false);
+        const left = Math.max(0, safe.x), right = Math.max(0, size.width - safe.x - safe.width);
+        this.scale = Math.min(1, (size.width - left - right) / 1280, safe.height / 720);
+        this.root.setScale(this.scale, this.scale, 1);
+        this.left.setPosition((-size.width / 2 + left) / this.scale, (size.height / 2 - Math.max(0, size.height - safe.y - safe.height)) / this.scale);
+        this.right.setPosition((size.width / 2 - right) / this.scale, this.left.position.y);
+        this.top.setPosition((left - right) / 2 / this.scale, this.left.position.y);
+    }
+
+    setVisible(visible: boolean) {
+        if (this.root.active === visible) return;
+        this.root.active = visible;
+        this.elapsed = 0.1;
+        if (!visible) { this.warningClock = 0; this.setReady(false); }
+    }
+    /** 先门控再读取/格式化数据，UI 节流不影响玩法和网络。 */
+    consumeSample(dt: number): boolean {
+        if (!this.root.activeInHierarchy) return false;
+        this.elapsed += dt;
+        if (this.elapsed < 0.1) return false;
+        this.warningClock += this.elapsed;
+        this.elapsed %= 0.1;
+        return true;
+    }
+    updateValues(speed: number, heart: number, overload: boolean, energyRatio: number, distance: number, total: number, ultimateRatio: number, canJump: boolean) {
+        if (!this.root.activeInHierarchy) return;
+        this.text(this.speed, Math.max(0, speed).toFixed(2));
+        this.text(this.heartValue, String(Math.round(heart)));
+        this.text(this.energyValue, `${Math.round(clamp(energyRatio) * 100)}%`);
+        this.text(this.distance, `${total} m`);
+        const progress = clamp(distance / Math.max(1, total));
+        this.text(this.percent, `${Math.round(progress * 100)}%`);
+        this.fill(this.progress, Math.round(progress * 399) / 399);
+        this.fill(this.heartRing, -0.75 * Math.round(clamp(heart / 200) * 100) / 100);
+        this.fill(this.energyRing, -0.75 * Math.round(clamp(energyRatio) * 100) / 100);
+        this.fill(this.jumpRing, -0.75 * Math.round(clamp(ultimateRatio) * 100) / 100);
+        this.tint(this.heartIcon, RED);
+        this.tint(this.heartRing, RED);
+        this.active(this.warning, overload && Math.floor(this.warningClock * 3) % 2 === 0);
+        this.setReady(canJump && ultimateRatio >= 1);
+    }
+    setRoster(entries: readonly HudRosterEntry[]) {
+        this.identities.clear();
+        for (const entry of entries) this.identities.set(entry.swimmer, avatarTexturePath(entry.avatarId));
+        for (const slot of this.ranks) { slot.identity = null; slot.path = ''; this.active(slot.root, false); }
+    }
+    updateRanks(results: readonly RaceFinishResult[]) {
+        if (!this.root.activeInHierarchy) return;
+        let y = 84;
+        for (let i = 0; i < this.ranks.length; i++) {
+            const slot = this.ranks[i], result = results[i];
+            this.active(slot.root, Boolean(result));
+            if (!result) { slot.identity = null; slot.path = ''; continue; }
+            const self = result.isPlayer;
+            const height = self ? 62 : 32;
+            const center = -(y + height / 2);
+            if (slot.root.position.y !== center) slot.root.setPosition(0, center, 0);
+            y += height;
+            if (slot.emphasized !== self) {
+                slot.emphasized = self;
+                this.active(slot.normal, !self); this.active(slot.self, self);
+                this.place(slot.portrait.node, self ? -55 : -45, self ? -23 : -13, self ? 46 : 26, self ? 46 : 26);
+                this.place(slot.number.node, self ? -101 : -76, self ? -31 : -16, self ? 43 : 27, self ? 62 : 32);
+                slot.number.fontSize = self ? 39.8 : 18.4;
+                slot.number.lineHeight = self ? 60 : 32;
+            }
+            this.text(slot.number, String(result.placement));
+            const path = this.identities.get(result.swimmer) ?? '';
+            if (slot.path === path && slot.identity === result.swimmer) continue;
+            slot.path = path; slot.identity = result.swimmer;
+            slot.portrait.spriteFrame = null;
+            if (path) loadAvatarUiSpriteFrame(path, frame => {
+                if (slot.portrait.isValid && slot.path === path && slot.identity === result.swimmer) slot.portrait.spriteFrame = frame;
+            });
+        }
+    }
+    private setReady(ready: boolean) {
+        if (this.ready === ready) return;
+        this.ready = ready;
+        this.jumpButton.interactable = ready;
+        this.active(this.jumpFace, ready);
+        this.tint(this.dolphin, ready ? WHITE : DOLPHIN_WHITE);
+    }
+    private text(label: Label, value: string) { if (label.string !== value) label.string = value; }
+    private active(node: Node, value: boolean) { if (node.active !== value) node.active = value; }
+    private fill(sprite: Sprite, value: number) { if (sprite.fillRange !== value) sprite.fillRange = value; }
+    private tint(sprite: Sprite, color: Color) { if (!sprite.color.equals(color)) sprite.color = color; }
+    private place(node: Node, x: number, y: number, w: number, h: number) {
+        node.getComponent(UITransform)!.setContentSize(w, h);
+        node.setPosition(x + w / 2, -y - h / 2, 0);
+    }
+    private sprite(parent: Node, name: string, key: ArtKey | null, x: number, y: number, w: number, h: number, tint = Color.WHITE): Sprite {
+        const node = makeUiNode(name, parent);
+        const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.trim = false;
+        sprite.spriteFrame = key ? FRAMES.get(key)! : null;
+        sprite.color = tint;
+        this.place(node, x, y, w, h);
+        return sprite;
+    }
+    private ring(parent: Node, name: string, x: number, y: number, size: number, color: Color): Sprite {
+        const sprite = this.sprite(parent, name, 'ring', x, y, size, size, color);
+        sprite.type = Sprite.Type.FILLED;
+        sprite.fillType = Sprite.FillType.RADIAL;
+        sprite.fillCenter = new Vec2(0.5, 0.5);
+        sprite.fillStart = 0.625;
+        sprite.fillRange = 0;
+        return sprite;
+    }
+    private label(parent: Node, name: string, text: string, x: number, y: number, w: number, h: number, size: number, bold = true, align: 'left' | 'right' | 'center' = 'center'): Label {
+        const node = makeUiNode(name, parent);
+        const label = node.addComponent(Label);
+        label.overflow = Label.Overflow.SHRINK;
+        label.enableWrapText = false;
+        label.fontSize = size;
+        label.string = text;
+        // 按源稿轻黑描边提高水面上的可读性，仅创建时设置。
+        label.color = WHITE;
+        label.enableOutline = true;
+        label.outlineColor = TEXT_OUTLINE;
+        label.outlineWidth = 1.5;
+        label.horizontalAlign = align === 'left' ? Label.HorizontalAlign.LEFT : align === 'right' ? Label.HorizontalAlign.RIGHT : Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        if (name !== 'SpeedValue' && name !== 'SpeedUnit') styleProjectUiLabel(label, bold ? 'semibold' : 'regular', size + 7);
+        else label.lineHeight = size;
+        this.place(node, x, y, w, h);
+        return label;
+    }
+}
+function clamp(value: number) { return Math.max(0, Math.min(1, value)); }

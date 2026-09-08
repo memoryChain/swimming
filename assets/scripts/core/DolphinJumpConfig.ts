@@ -11,9 +11,6 @@
 // 注：本文件是「代码默认值」，运行时以 assets/resources/config/tuning.json 的保存值为准
 // （调参面板「海豚跃」组可实时调整并保存）。
 export const DOLPHIN_JUMP = {
-    // 触发手势：左右两半屏幕需要同时按住至少这么久才触发海豚跃（用于和普通的双手划水
-    // 长按区分开）。单位：秒。调小 = 更容易触发；调大 = 需要按更久。
-    triggerHoldSeconds: 0.25,
     // 临界保护：距离前方折返墙或终点不足这么多米时，不允许起跳（防止飞出去/越过墙）。
     // 单位：米。
     minAvailableDistance: 3,
