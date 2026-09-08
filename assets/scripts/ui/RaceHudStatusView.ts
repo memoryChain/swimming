@@ -1,3 +1,6 @@
+import { RaceStrokeView } from './RaceStrokeView';
+import { StrokeType } from '../core/GameConstants';
+import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UITransform, Vec2, view, sys } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
@@ -51,6 +54,7 @@ export type HudRosterEntry = { swimmer: Swimmer; avatarId: string };
 /** 按原 1280×720 PSD 制作。美术圆环为纹理，动态部分只更新 Sprite 填充参数。 */
 export class RaceHudStatusView {
     readonly root: Node;
+    readonly stroke: RaceStrokeView;
     private readonly left: Node;
     private readonly right: Node;
     private readonly top: Node;
@@ -141,6 +145,7 @@ export class RaceHudStatusView {
             this.setReady(false);
             onJump();
         });
+        this.stroke = new RaceStrokeView(this.left, this.right, key => FRAMES.get(key)!);
         this.layout();
         view.on('canvas-resize', this.layout, this);
         view.on('design-resolution-changed', this.layout, this);
@@ -167,6 +172,7 @@ export class RaceHudStatusView {
     setVisible(visible: boolean) {
         if (this.root.active === visible) return;
         this.root.active = visible;
+        this.stroke.setVisible(visible);
         this.elapsed = 0.1;
         if (!visible) { this.warningClock = 0; this.setReady(false); }
     }
@@ -195,6 +201,9 @@ export class RaceHudStatusView {
         this.tint(this.heartRing, RED);
         this.active(this.warning, overload && Math.floor(this.warningClock * 3) % 2 === 0);
         this.setReady(canJump && ultimateRatio >= 1);
+    }
+    showStrokePraise(side: StrokeType | undefined, text: string, color: Color | undefined, combo: number) {
+        this.stroke.showPraise(side, text, color, combo);
     }
     setRoster(entries: readonly HudRosterEntry[]) {
         this.identities.clear();

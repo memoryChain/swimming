@@ -7,21 +7,26 @@ class Color{constructor(r=255,g=255,b=255,a=255){Object.assign(this,{r,g,b,a});}
 class Comp{get isValid(){return this.node.isValid;}}
 class UITransform extends Comp{setContentSize(width,height){this.contentSize={width,height};}}
 class Label extends Comp{static Overflow={SHRINK:1};static HorizontalAlign={LEFT:0,RIGHT:1,CENTER:2};static VerticalAlign={CENTER:0};set string(s){this._string=s;writes++;}get string(){return this._string;}}
-class Sprite extends Comp{static SizeMode={CUSTOM:1};static Type={FILLED:1};static FillType={RADIAL:0,HORIZONTAL:1};color=Color.WHITE;set fillRange(v){this._fillRange=v;writes++;}get fillRange(){return this._fillRange;}}
+class Sprite extends Comp{static SizeMode={CUSTOM:1};static Type={FILLED:1};static FillType={RADIAL:0,HORIZONTAL:1,VERTICAL:2};color=Color.WHITE;set fillRange(v){this._fillRange=v;writes++;}get fillRange(){return this._fillRange;}}
 class Button extends Comp{static Transition={SCALE:1};static EventType={CLICK:'click'};interactable=true;}
 class BlockInputEvents extends Comp{}
 class Font{}
+class UIOpacity extends Comp{opacity=255;}
+class Vec3{constructor(x,y,z){Object.assign(this,{x,y,z});}}
+const noopTween=()=>({to(){return this;},delay(){return this;},start(){return this;}});
 class Vec2{constructor(x,y){this.x=x;this.y=y;}}
-class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position={x,y};}setScale(x,y){this.scale={x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
+class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position={x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
 function load(file,imports,extras={}){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{require:p=>{assert.ok(imports[p],p);return imports[p];},module:m,exports:m.exports,...extras});return m.exports;}
 function fixture(){
  let size={width:1280,height:720},safe={x:0,y:0,...size},jumps=0;const pending=[],listeners=new Map();
  const view={getVisibleSize:()=>size,on:(e,f,ctx)=>listeners.set(e,()=>f.call(ctx)),off:e=>listeners.delete(e)};
- const cc={BlockInputEvents,Button,Color,Font,Label,Node,Sprite,UITransform,Vec2,view,sys:{getSafeAreaRect:()=>safe}};
+ const cc={BlockInputEvents,Button,Color,Font,Label,Node,Sprite,UITransform,Vec2,Vec3,UIOpacity,Tween:{stopAllByTarget(){}},tween:noopTween,view,sys:{getSafeAreaRect:()=>safe}};
  const block=fs.readFileSync(path.join(root,'assets/scripts/core/ResourcePaths.ts'),'utf8').match(/raceHudUi: (\{[\s\S]*?\n    \}),/)[1];
  const art=vm.runInNewContext('('+block+')');
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
- const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
+ const constants={StrokeType:{LEFT:'left',RIGHT:'right'},Rating:{PERFECT:'perfect',GOOD:'good',BAD:'bad'}};
+ const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
+ const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
  mod.preloadRaceHudStatus(e=>assert.equal(e,null));const parent=new Node('root');const hud=new mod.RaceHudStatusView(parent,()=>jumps++);
  return {hud,parent,pending,listeners,get jumps(){return jumps;},resize(w,h,l=0,r=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h};listeners.get('canvas-resize')();}};
 }
@@ -90,4 +95,46 @@ test('完赛倒计时重复秒数不重播，末三秒变色，到零隐藏且�
  ui.showFinishCountdown(8);assert.equal(writes,before);assert.equal(animations,a);
  ui.showFinishCountdown(3);assert.equal(label.string,'3');assert.equal(label.color.g,66);assert.equal(label.fontSize,120);assert.equal(count(ui.node),n);
  ui.showFinishCountdown(0);assert.equal(find(ui.node,'FinishCountdown').active,false);ui.showFinishCountdown(8);assert.equal(find(ui.node,'FinishCountdown').active,true);assert.equal(label.color.g,234);
+});
+
+test('动态完美区随判定快照收缩和移动；左右镜像、白点与边界共线，隐藏零更新',()=>{
+ const s=fixture(),ui=s.hud.stroke;s.hud.setVisible(true);
+ const guide={active:true,currentRatio:.4,intervals:[{rating:'perfect',startRatio:.3,endRatio:.5}]};
+ ui.updateSide('left',guide);ui.updateSide('right',guide);
+ const l=find(s.parent,'LeftStrokeUi'),r=find(s.parent,'RightStrokeUi'),band=find(l,'PerfectBand0').getComponent(Sprite),dot=find(l,'MovingDot');
+ assert.equal(dot.position.x,-find(r,'MovingDot').position.x);assert.equal(dot.position.y,find(r,'MovingDot').position.y);
+ assert.ok(Math.abs(band.fillRange-177*.2/186)<1e-9);const initial=band.fillStart,n=count(s.parent);
+ guide.intervals[0]={rating:'perfect',startRatio:.6,endRatio:.7};guide.currentRatio=.6;ui.updateSide('left',guide);
+ assert.ok(Math.abs(band.fillRange-177*.1/186)<1e-9);assert.notEqual(band.fillStart,initial);assert.equal(count(s.parent),n);
+ const boundary=l.children.filter(c=>c.name==='PerfectBoundary')[0];assert.equal(boundary.position.x,dot.position.x);assert.equal(boundary.position.y,dot.position.y);
+ assert.equal(find(r,'PerfectBand0').getComponent(Sprite).fillStart,initial);
+ const changes=writes;ui.updateSide('left',guide);assert.equal(writes,changes);
+ s.hud.setVisible(false);assert.equal(ui.consumeSample(10),false);const y=dot.position.y;guide.currentRatio=.9;ui.updateSide('left',guide);assert.equal(dot.position.y,y);
+});
+
+test('评价按照实际手别显示；两侧独立，失误不显示负面文字',()=>{
+ const s=fixture();s.hud.setVisible(true);s.hud.showStrokePraise('right','Crazy',new Color(255,100,180),5);
+ assert.equal(find(find(s.parent,'RightStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-stroke-v1/praise-crazy/texture');assert.equal(find(find(s.parent,'RightStrokeUi'),'Combo').getComponent(Label).string,'x5');assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame,undefined);
+ s.hud.showStrokePraise('left','Good',new Color(80,240,160),0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Combo').getComponent(Label).string,'');s.hud.showStrokePraise('left','',undefined,0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-stroke-v1/praise-good/texture');
+});
+
+test('真实圆盘与新UI复用同一动态判定区，状态缩放和调参移动后快照保持一致',()=>{
+ const h=require('./helpers/cocos-math-harness.cjs').createHarness({'cc/env':{NATIVE:false}});
+ const {SwimmerMotor}=h.load(path.join(root,'assets/scripts/swimmer/SwimmerMotor.ts'));
+ const {STROKE_QUALITY_TUNING:tuning}=h.load(path.join(root,'assets/scripts/core/InputTuning.ts'));
+ const motor=new SwimmerMotor(),target={active:false,currentRatio:0,holdSeconds:0,actionSeconds:0,minHoldRatio:0,intervals:[]};
+ const original=[tuning.perfectStart,tuning.perfectEnd,tuning.qualityZoneScaleStrength];
+ try {
+  tuning.qualityZoneScaleStrength=1;
+  let firstWidth;
+  for(const scale of [.3,1,1.7]){motor.setConditionQualityScale(scale);const ordinary=motor.strokeTimingGuideForSide('left');const reusable=motor.strokeTimingGuideForSide('left',target);assert.equal(reusable,target);assert.equal(JSON.stringify(reusable),JSON.stringify(ordinary));const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p);const w=p.endRatio-p.startRatio;if(firstWidth===undefined)firstWidth=w;else assert.ok(w>firstWidth);}
+  const previous=target.intervals.find(i=>i.rating==='perfect').startRatio;tuning.perfectStart=.44;tuning.perfectEnd=.5;motor.strokeTimingGuideForSide('right',target);const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p.startRatio>previous);assert.equal(motor.ratingForGuideRatio((p.startRatio+p.endRatio)/2,null,1),'perfect');
+ } finally {[tuning.perfectStart,tuning.perfectEnd,tuning.qualityZoneScaleStrength]=original;}
+});
+
+test('弧线尾端对应原划水结束进度，区间与白点统一归一化，不改变松手窗口',()=>{
+ const s=fixture();s.hud.setVisible(true);const ui=s.hud.stroke;
+ ui.updateSide('left',{active:true,currentRatio:.4,displayEndRatio:.5,intervals:[{rating:'perfect',startRatio:.34,endRatio:.46}]});
+ const l=find(s.parent,'LeftStrokeUi'),dot=find(l,'MovingDot'),band=find(l,'PerfectBand0').getComponent(Sprite);
+ assert.equal(dot.position.y,-Math.round(401+177*.8));assert.ok(Math.abs(band.fillRange-177*.24/186)<1e-9);
 });

@@ -4,7 +4,7 @@ import type { RaceStartView } from './RaceStartView';
 import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { PlayerData } from '../backend/PlayerData';
-import { Rating } from '../core/GameConstants';
+import { Rating, StrokeType } from '../core/GameConstants';
 import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
 import type { SettlementView } from './SettlementView';
 
@@ -346,8 +346,12 @@ export class UIController extends Component {
         }
     }
 
-    showRating(rating: Rating, combo: number) {
+    showRating(rating: Rating, combo: number, side?: StrokeType) {
         const praise = praiseForRating(rating, combo);
+        if (this.raceHudStatus) {
+            this.raceHudStatus.showStrokePraise(side, praise?.text ?? '', praise?.color, combo);
+            return;
+        }
         // A mistimed release still settles in the gameplay layer, but should
         // not create a visible negative event in this relaxed presentation.
         if (!praise) {

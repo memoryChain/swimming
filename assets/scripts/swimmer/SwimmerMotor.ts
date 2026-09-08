@@ -68,6 +68,8 @@ export type StrokeTimingGuideInterval = {
 };
 
 export type StrokeTimingGuide = {
+    /** 新弧线的末端对应原有划水超时进度；仅用于显示归一化。 */
+    displayEndRatio?: number;
     active: boolean;
     currentRatio: number;
     holdSeconds: number;
@@ -1715,27 +1717,28 @@ export class SwimmerMotor {
     // so each hand has its own release-progress marker. The combined getter above
     // still returns whichever side is currently active (earliest-started); this
     // one is scoped to a single hand so the UI can show one dial per hand.
-    strokeTimingGuideForSide(type: StrokeType): StrokeTimingGuide {
+    strokeTimingGuideForSide(type: StrokeType, target?: StrokeTimingGuide): StrokeTimingGuide {
         const action = type === StrokeType.LEFT ? this._leftActions[0] : this._rightActions[0];
         const usable = action && action.startedAt >= 0 && !action.strokeQualitySettled ? action : null;
-        return this.buildGuideFromAction(usable);
+        return this.buildGuideFromAction(usable, target);
     }
 
-    private buildGuideFromAction(action: StrokeAction | null): StrokeTimingGuide {
+    private buildGuideFromAction(action: StrokeAction | null, target?: StrokeTimingGuide): StrokeTimingGuide {
         const actionSeconds = action ? this.predictedActionSecondsAfterRelease(action) : this.currentCycleSeconds();
         const holdSeconds = action ? this.currentHoldSeconds(action) : 0;
         // Redesign: the guide axis is the pull-arc progress (release progress),
         // i.e. how far the stroke has pulled as a fraction of a full cycle. The
         // sweet zone and the moving marker both live on this axis now.
         const releaseProgress = action ? clamp01(action.progress / CYCLE_AMOUNT) : 0;
-        return {
-            active: !!action && action.releasedAt < 0,
-            currentRatio: releaseProgress,
-            holdSeconds,
-            actionSeconds,
-            minHoldRatio: clamp01(STROKE_QUALITY_TUNING.minHoldSeconds / Math.max(0.001, actionSeconds)),
-            intervals: this.timingGuideIntervals(action, actionSeconds),
-        };
+        const out = target ?? { active: false, currentRatio: 0, holdSeconds: 0, actionSeconds: 0, minHoldRatio: 0, intervals: [] };
+        out.active = !!action && action.releasedAt < 0;
+        out.currentRatio = releaseProgress;
+        out.displayEndRatio = clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress);
+        out.holdSeconds = holdSeconds;
+        out.actionSeconds = actionSeconds;
+        out.minHoldRatio = clamp01(STROKE_QUALITY_TUNING.minHoldSeconds / Math.max(0.001, actionSeconds));
+        this.timingGuideIntervals(action, actionSeconds, out.intervals);
+        return out;
     }
 
     consumeStrokeQualityResults(): StrokeQualityResult[] {
@@ -1765,29 +1768,31 @@ export class SwimmerMotor {
         return Math.max(0, holdEnd - holdStart);
     }
 
-    private timingGuideIntervals(action: StrokeAction | null, actionSeconds: number): StrokeTimingGuideInterval[] {
-        const intervals: StrokeTimingGuideInterval[] = [];
+    private timingGuideIntervals(action: StrokeAction | null, actionSeconds: number, intervals: StrokeTimingGuideInterval[] = []): StrokeTimingGuideInterval[] {
+        let count = 0;
+        const ranges = this._effectiveReleaseRanges;
         const steps = 96;
-        let openRating = this.ratingForGuideRatio(0.5 / steps, action, actionSeconds);
+        let openRating = this.ratingForGuideRatio(0.5 / steps, action, actionSeconds, ranges);
         let openStart = 0;
         for (let i = 1; i <= steps; i++) {
             const start = i / steps;
             const end = Math.min(1, (i + 1) / steps);
-            const rating = i < steps ? this.ratingForGuideRatio((start + end) * 0.5, action, actionSeconds) : openRating;
+            const rating = i < steps ? this.ratingForGuideRatio((start + end) * 0.5, action, actionSeconds, ranges) : openRating;
             if (i >= steps || rating !== openRating) {
-                intervals.push({
-                    rating: openRating,
-                    startRatio: openStart,
-                    endRatio: start,
-                });
+                const interval = intervals[count] ?? (intervals[count] = { rating: openRating, startRatio: 0, endRatio: 0 });
+                interval.rating = openRating;
+                interval.startRatio = openStart;
+                interval.endRatio = start;
+                count++;
                 openRating = rating;
                 openStart = start;
             }
         }
+        intervals.length = count;
         return intervals;
     }
 
-    private ratingForGuideRatio(holdRatio: number, action: StrokeAction | null, actionSeconds: number): Rating {
+    private ratingForGuideRatio(holdRatio: number, action: StrokeAction | null, actionSeconds: number, ranges = this._effectiveReleaseRanges): Rating {
         // The guide axis is release progress (fraction of a full cycle). Map it
         // through the same release-timing sweet zone used for scoring so the
         // on-screen guide shows exactly where PERFECT / GOOD land. Progress past
@@ -1796,7 +1801,7 @@ export class SwimmerMotor {
         if (progress >= clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)) {
             return Rating.BAD;
         }
-        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress, this._effectiveReleaseRanges));
+        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress, ranges));
     }
 }
 

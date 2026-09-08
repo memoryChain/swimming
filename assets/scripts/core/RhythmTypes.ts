@@ -1,6 +1,7 @@
 import { Rating, StrokeType } from './GameConstants';
 
 export interface RhythmResult {
+    strokeSide?: StrokeType;
     rating: Rating;
     badReason?: string;
     speedMultiplier: number;

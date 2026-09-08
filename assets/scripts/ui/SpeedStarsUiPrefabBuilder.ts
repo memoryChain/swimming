@@ -212,6 +212,8 @@ export class SpeedStarsUiPrefabBuilder {
         ui.resultSpeedStat = requireLabel(raceHud, 'ResultSpeedStat');
         ui.ratingLabel = requireLabel(raceHud, 'Rating');
         ui.comboLabel = requireLabel(raceHud, 'Combo');
+        ui.ratingLabel.node.active = false;
+        ui.comboLabel.node.active = false;
         ui.resultRows = [];
         ui.resultRankLabels = [];
         ui.resultTimeLabels = [];

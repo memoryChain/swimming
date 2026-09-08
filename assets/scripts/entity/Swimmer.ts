@@ -943,6 +943,7 @@ export class Swimmer extends Component {
             });
         }
         const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._strokeQualityCombo);
+        result.strokeSide = type;
         return result;
     }
 
@@ -1156,8 +1157,8 @@ export class Swimmer extends Component {
         return this._motor.strokeTimingGuide;
     }
 
-    strokeTimingGuideForSide(type: StrokeType): StrokeTimingGuide {
-        return this._motor.strokeTimingGuideForSide(type);
+    strokeTimingGuideForSide(type: StrokeType, target?: StrokeTimingGuide): StrokeTimingGuide {
+        return this._motor.strokeTimingGuideForSide(type, target);
     }
 
     get distance(): number {

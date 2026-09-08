@@ -1,5 +1,5 @@
 import { Node } from 'cc';
-import { Rating } from '../core/GameConstants';
+import { Rating, StrokeType } from '../core/GameConstants';
 import { RaceResultStats, UIController } from './UIController';
 
 export type ProgressionResult = {
@@ -85,8 +85,8 @@ export class UIFlowController {
         this._refs.uiController?.setRaceStatusVisible(visible);
     }
 
-    showRating(rating: Rating, combo: number) {
-        this._refs.uiController?.showRating(rating, combo);
+    showRating(rating: Rating, combo: number, side?: StrokeType) {
+        this._refs.uiController?.showRating(rating, combo, side);
     }
 
     showCountdown(value: number) {

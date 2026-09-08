@@ -416,7 +416,7 @@ export class GameManager extends Component {
         this._netRaceController?.tick(netDt, this.buildLocalSelfSnapshot());
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
-        const timingGuide = this._playerSwimmer.strokeTimingGuide;
+        const timingGuide = this._aiDebugMode ? this._playerSwimmer.strokeTimingGuide : null;
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
         const playerAlive = this._playerSwimmer.node.active;
@@ -477,6 +477,11 @@ export class GameManager extends Component {
         // Sweet-zone timing feedback is a tuning aid. Keep it out of normal
         // races and only expose it in the dedicated AI-difficulty debug race.
         const playerFeedbackVisible = this._aiDebugMode && raceActive && playerBeforeFinish;
+        const strokeUi = this._uiController?.raceHudStatus?.stroke;
+        if (strokeUi?.consumeSample(netDt)) {
+            strokeUi.updateSide(StrokeType.LEFT, this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT, strokeUi.leftGuide));
+            strokeUi.updateSide(StrokeType.RIGHT, this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT, strokeUi.rightGuide));
+        }
         this.drawStrokeTimingGuide(timingGuide, playerFeedbackVisible);
         const playerFacing = this.dialFacingSign(this._playerSwimmer);
         const playerSpeed = this._playerSwimmer.currentSpeed;
@@ -2450,7 +2455,7 @@ export class GameManager extends Component {
         const showFeedback = (this._playerSwimmer?.distance ?? 0) < getRaceDistance();
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
             if (showFeedback) {
-                this._uiFlow?.showRating(result.rating, result.combo);
+                this._uiFlow?.showRating(result.rating, result.combo, result.strokeSide);
             }
         }
     }

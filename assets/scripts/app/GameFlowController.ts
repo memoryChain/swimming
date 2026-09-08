@@ -157,7 +157,7 @@ export class GameFlowController {
             StrokeSfxManager.playStroke();
         }
         if (result) {
-            this._refs.uiFlow.showRating(result.rating, result.combo);
+            this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
         }
     }
 
@@ -174,7 +174,7 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held, preHeldSeconds);
         captureNetInput({ kind: held ? NetInputKind.HeldOn : NetInputKind.HeldOff, side: netSide(type) });
         if (result) {
-            this._refs.uiFlow.showRating(result.rating, result.combo);
+            this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
         }
         return true;
     }
