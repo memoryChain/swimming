@@ -530,7 +530,8 @@ export class GameManager extends Component {
             return;
         }
         this.updateSpectatorCameraTarget();
-        this._gameFlow?.updateRaceCamera(dt);
+        // 开场展示按实际秒数推进，避免调试慢速把赛制与角色卡之间的间隔拉长。
+        this._gameFlow?.updateRaceCamera(this._state === GameState.PRECOUNTDOWN ? netDt : dt);
         this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);
@@ -2028,29 +2029,26 @@ export class GameManager extends Component {
         this._swimmerNameOverlay.setSwimmers(swimmers, this._playerSwimmer);
     }
 
-    // Rebuild the pre-race stage 1 roster info panel (lane number + avatar + name)
-    // from the current roster, ordered by lane (ascending Z). Reuses the results
-    // panel avatar/row-back sprite frames.
+    // 按稳定泳道与实际模型读取开场卡片；联机外观已由既有成员映射应用到 rig。
     private refreshPreRaceIntroRoster() {
-        const avatarFrames = this._uiController?.resultAvatarFrames ?? [];
-        const normalRowFrame = this._uiController?.resultRowNormalFrame ?? null;
-        const playerRowFrame = this._uiController?.resultRowPlayerFrame ?? null;
-        const swimmers = [this._playerSwimmer, ...this._aiSwimmers]
-            .filter((swimmer): swimmer is Swimmer => Boolean(swimmer?.node?.active))
-            .sort((left, right) => left.node.position.z - right.node.position.z);
-        const entries: PreRaceIntroEntry[] = swimmers.map((swimmer, index) => ({
-            lane: index + 1,
-            name: swimmer.swimmerName,
-            isPlayer: swimmer === this._playerSwimmer,
-            avatar: avatarFrames[index] ?? null,
-            rowBack: swimmer === this._playerSwimmer ? playerRowFrame : normalRowFrame,
-        }));
+        const entries: PreRaceIntroEntry[] = [];
+        for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+            const swimmer = this.swimmerForLane(lane);
+            if (!swimmer?.node?.active) continue;
+            entries.push({
+                lane: lane + 1,
+                name: swimmer.swimmerName,
+                isPlayer: swimmer === this._playerSwimmer,
+                modelVariantId: swimmer.cartoonRig?.modelVariantId ?? '',
+            });
+        }
         this._preRaceIntroPanel.populate(entries);
         const difficulty = getRaceDifficultyConfig();
         this._preRaceIntroPanel.setRaceInfo({
             event: `${getRaceDistance()}米自由泳`,
             format: '标准竞速赛',
-            rule: `${this._netSession ? '联机对战' : `${difficulty.label}难度`} · ${entries.length}名选手 · 率先完成全程者获胜`,
+            details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${difficulty.label}难度`}`,
+            rule: '率先完成全程者获胜',
         });
     }
 

@@ -9,7 +9,7 @@ import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCours
 //   4. cut to the player's block, blend showcase -> dive-prep, then hand the
 //      existing synchronized countdown logic its ready signal.
 const PRE_RACE_ESTABLISH_SECONDS = 2.2;
-const PRE_RACE_EVENT_SECONDS = 2.6;
+const PRE_RACE_EVENT_SECONDS = 1.5;
 const PRE_RACE_ROSTER_SECONDS = 2.4;
 const PRE_RACE_ATHLETE_SECONDS = 1.6;
 const PRE_RACE_PULLBACK_SECONDS = PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS + PRE_RACE_ROSTER_SECONDS;

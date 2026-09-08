@@ -408,6 +408,14 @@ export const RESOURCE_PATHS = {
         topSettings: 'ui/lobby-v1/top-settings/texture',
         topCurrency: 'ui/lobby-v1/top-currency/texture',
     },
+    preRaceUi: {
+        eventStrip: 'ui/pre-race-v1/event-strip/texture',
+        cardNormal: 'ui/pre-race-v1/card-normal/texture',
+        cardSelf: 'ui/pre-race-v1/card-self/texture',
+        laneNormal: 'ui/pre-race-v1/lane-normal/texture',
+        laneSelf: 'ui/pre-race-v1/lane-self/texture',
+        selfTag: 'ui/pre-race-v1/self-tag/texture',
+    },
     settlementUi: {
         shade: 'ui/settlement-v1/right-shade/texture',
         honors: [

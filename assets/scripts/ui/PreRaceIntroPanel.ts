@@ -1,255 +1,266 @@
-import { Color, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform } from 'cc';
-import { makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { Color, Graphics, Label, Mask, Node, Sprite, Tween, tween, UIOpacity, UITransform, sys, view } from 'cc';
+import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
+import { styleDynamicUiLabel, styleProjectUiLabel } from './ProjectUiFonts';
+import { makeLabel, makeUiNode } from './RuntimeUiFactory';
 
 export type PreRaceIntroEntry = {
-    // 1-based lane number shown on the left of the row.
     lane: number;
     name: string;
     isPlayer: boolean;
-    avatar: SpriteFrame | null;
-    rowBack: SpriteFrame | null;
+    modelVariantId: string;
 };
-
-export type PreRaceEventInfo = {
-    event: string;
-    format: string;
-    rule: string;
-};
-
+export type PreRaceEventInfo = { event: string; format: string; details: string; rule: string };
 export type PreRaceIntroPhase = 'hidden' | 'raceInfo' | 'roster';
 
-type IntroRow = {
+type IntroCard = {
     group: Node;
-    back: Sprite;
+    normal: Node;
+    self: Node;
+    laneNormal: Node;
+    laneSelf: Node;
     laneLabel: Label;
-    avatar: Sprite;
+    laneCaption: Label;
+    portrait: Sprite;
     nameLabel: Label;
+    characterLabel: Label;
+    selfTag: Node;
+    selfState: boolean | null;
 };
+const WIDTH = 1290;
+const HEIGHT = 720;
+const MAX_CARDS = 8;
+const ART = RESOURCE_PATHS.preRaceUi;
+const NAVY = new Color(28, 53, 72, 255);
+const MUTED = new Color(78, 100, 116, 255);
+const WHITE = new Color(248, 251, 253, 255);
+const CAPTION = new Color(169, 218, 225, 255);
+const GOLD_CAPTION = new Color(71, 58, 29, 255);
 
-const MAX_ROWS = 8;
-const PANEL_WIDTH = 560;
-const ROW_HEIGHT = 46;
-const HEADER_HEIGHT = 64;
-const PANEL_HEIGHT = HEADER_HEIGHT + MAX_ROWS * ROW_HEIGHT + 28;
-const AVATAR_SIZE = 38;
-const EVENT_PANEL_WIDTH = 760;
-const EVENT_PANEL_HEIGHT = 224;
-const EVENT_HEADER_HEIGHT = 58;
-
-const PLAYER_NAME_COLOR = new Color(255, 214, 44, 255);
-const RIVAL_NAME_COLOR = new Color(226, 236, 250, 255);
-const LANE_COLOR = new Color(150, 205, 255, 255);
-
-// Pre-race broadcast overlay. Both panels are built once: the centered event
-// card is used during the rising pool-length dolly, then the lane roster fades
-// in near the far end. Runtime updates only switch phase on state edges.
+/** 已批准的开场卡片；所有节点及遮罩仅挂载一次，镜头阶段只触发淡入淡出。 */
 export class PreRaceIntroPanel {
     private _panel: Node | null = null;
-    private _opacity: UIOpacity | null = null;
+    private _cardsPanel: Node | null = null;
+    private _cardsOpacity: UIOpacity | null = null;
     private _eventPanel: Node | null = null;
     private _eventOpacity: UIOpacity | null = null;
     private _eventLabel: Label | null = null;
     private _formatLabel: Label | null = null;
+    private _detailsLabel: Label | null = null;
     private _ruleLabel: Label | null = null;
-    private readonly _rows: IntroRow[] = [];
+    private readonly _cards: IntroCard[] = [];
+    private readonly _paths = new WeakMap<Sprite, string>();
     private _phase: PreRaceIntroPhase = 'hidden';
-    private _eventText = '';
-    private _formatText = '';
-    private _ruleText = '';
 
-    build(parent: Node, w: number, _h: number): Node {
-        const panel = makeUiNode('PreRaceIntroPanel', parent);
-        panel.getComponent(UITransform)!.setContentSize(PANEL_WIDTH, PANEL_HEIGHT);
-        // Hug the left side so the pool overview stays visible on the right, echoing
-        // the reference competitor screen.
-        panel.setPosition(-w / 2 + PANEL_WIDTH / 2 + 40, 0, 0);
-        this._panel = panel;
-        this._opacity = panel.addComponent(UIOpacity);
-        this._opacity.opacity = 0;
-        panel.active = false;
+    build(parent: Node, w: number, h: number): Node {
+        if (this._panel?.isValid) return this._panel;
+        const root = makeUiNode('PreRaceIntroPanel', parent);
+        root.getComponent(UITransform)!.setContentSize(WIDTH, HEIGHT);
+        this._panel = root;
+        const layout = () => {
+            if (!root.isValid) return;
+            const size = view.getVisibleSize();
+            const safe = sys.getSafeAreaRect(false);
+            const width = size.width || w;
+            const height = size.height || h;
+            const left = Math.max(0, safe.x);
+            const right = Math.max(0, width - safe.x - safe.width);
+            const bottom = Math.max(0, safe.y);
+            const top = Math.max(0, height - safe.y - safe.height);
+            const scale = Math.min((width - left - right) / WIDTH, (height - top - bottom) / HEIGHT);
+            if (root.scale.x !== scale) root.setScale(scale, scale, 1);
+            const x = (left - right) / 2;
+            const y = -height / 2 + bottom + HEIGHT * scale / 2;
+            if (root.position.x !== x || root.position.y !== y) root.setPosition(x, y, 0);
+        };
+        layout();
+        view.on('canvas-resize', layout);
+        view.on('design-resolution-changed', layout);
+        root.once(Node.EventType.NODE_DESTROYED, () => {
+            view.off('canvas-resize', layout);
+            view.off('design-resolution-changed', layout);
+            if (this._cardsOpacity) Tween.stopAllByTarget(this._cardsOpacity);
+            if (this._eventOpacity) Tween.stopAllByTarget(this._eventOpacity);
+        });
 
-        makeRect('IntroBack', panel, PANEL_WIDTH, PANEL_HEIGHT, uiColor(8, 22, 40, 232));
+        const event = makeUiNode('EventStrip', root);
+        this._eventPanel = event;
+        this._eventOpacity = event.addComponent(UIOpacity);
+        this._eventOpacity.opacity = 0;
+        event.active = false;
+        this.art('Background', event, ART.eventStrip, 43, 353, 557, 70);
+        this._formatLabel = this.label('Mode', event, '', 12, MUTED, 65, 360, 205, 20, 'left');
+        this._eventLabel = this.label('Event', event, '', 27, NAVY, 65, 379, 205, 36, 'left');
+        this._detailsLabel = this.label('Details', event, '', 16, WHITE, 307, 362, 260, 28, 'left');
+        this._ruleLabel = this.label('Rule', event, '', 14, new Color(201, 214, 223), 307, 388, 265, 26, 'left', false);
 
-        const header = makeRect('IntroHeader', panel, PANEL_WIDTH, HEADER_HEIGHT, uiColor(22, 74, 140, 245));
-        header.setPosition(0, PANEL_HEIGHT / 2 - HEADER_HEIGHT / 2, 0);
-        const title = makeLabel('IntroTitle', header, '参赛选手', 30, uiColor(247, 251, 255));
-        title.getComponent(UITransform)!.setContentSize(PANEL_WIDTH - 40, HEADER_HEIGHT);
-
-        for (let i = 0; i < MAX_ROWS; i++) {
-            this._rows.push(this.buildRow(panel, i));
-        }
-
-        this.buildEventPanel(parent);
-
-        return panel;
+        const cards = makeUiNode('CompetitorCards', root);
+        this._cardsPanel = cards;
+        this._cardsOpacity = cards.addComponent(UIOpacity);
+        this._cardsOpacity.opacity = 0;
+        cards.active = false;
+        for (let i = 0; i < MAX_CARDS; i++) this._cards.push(this.buildCard(cards, i));
+        return root;
     }
 
-    private buildEventPanel(parent: Node) {
-        const panel = makeUiNode('PreRaceEventPanel', parent);
-        panel.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH, EVENT_PANEL_HEIGHT);
-        panel.setPosition(0, 12, 0);
-        panel.active = false;
-        const opacity = panel.addComponent(UIOpacity);
-        opacity.opacity = 0;
-        this._eventPanel = panel;
-        this._eventOpacity = opacity;
+    private buildCard(parent: Node, index: number): IntroCard {
+        const group = makeUiNode(`LaneCard${index + 1}`, parent);
+        // 各卡使用同一套局部坐标；总排列顺序只由泳道号决定。
+        group.setPosition(152 * index, 0, 0);
+        group.active = false;
+        const normal = this.art('CardNormal', group, ART.cardNormal, 43, 435, 140, 237).node;
+        const self = this.art('CardSelf', group, ART.cardSelf, 41, 433, 144, 241).node;
+        self.active = false;
 
-        makeRect('EventBody', panel, EVENT_PANEL_WIDTH, EVENT_PANEL_HEIGHT, uiColor(7, 28, 68, 242));
-        const header = makeRect(
-            'EventHeader',
-            panel,
-            EVENT_PANEL_WIDTH - 120,
-            EVENT_HEADER_HEIGHT,
-            uiColor(194, 39, 48, 250),
-        );
-        header.setPosition(0, EVENT_PANEL_HEIGHT / 2 - EVENT_HEADER_HEIGHT / 2, 0);
-        makeRect('EventHeaderAccent', panel, 18, EVENT_PANEL_HEIGHT, uiColor(57, 170, 225, 255))
-            .setPosition(-EVENT_PANEL_WIDTH / 2 + 9, 0, 0);
+        const clip = makeUiNode('PortraitClip', group);
+        this.place(clip, 43, 435, 140, 166);
+        clip.addComponent(Mask).type = Mask.Type.GRAPHICS_STENCIL;
+        const graphics = clip.getComponent(Graphics)!;
+        graphics.clear();
+        graphics.roundRect(-70, -83, 140, 166, 10);
+        graphics.fill();
+        const portraitNode = makeUiNode('Portrait', clip);
+        portraitNode.getComponent(UITransform)!.setContentSize(166, 166);
+        const portrait = portraitNode.addComponent(Sprite);
+        portrait.sizeMode = Sprite.SizeMode.CUSTOM;
+        portrait.trim = false;
+        portraitNode.active = false;
 
-        const eventNode = makeLabel('EventName', header, '', 30, uiColor(255, 250, 246));
-        eventNode.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH - 160, EVENT_HEADER_HEIGHT);
-        this._eventLabel = eventNode.getComponent(Label)!;
-
-        const formatNode = makeLabel('EventFormat', panel, '', 50, uiColor(248, 252, 255));
-        formatNode.setPosition(0, 4, 0);
-        formatNode.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH - 80, 74);
-        this._formatLabel = formatNode.getComponent(Label)!;
-
-        const ruleNode = makeLabel('EventRule', panel, '', 22, uiColor(111, 224, 241));
-        ruleNode.setPosition(0, -70, 0);
-        ruleNode.getComponent(UITransform)!.setContentSize(EVENT_PANEL_WIDTH - 80, 42);
-        this._ruleLabel = ruleNode.getComponent(Label)!;
-    }
-
-    private buildRow(panel: Node, index: number): IntroRow {
-        const rowCenterY = PANEL_HEIGHT / 2 - HEADER_HEIGHT - ROW_HEIGHT * (index + 0.5) - 8;
-        const group = makeUiNode(`IntroRow${index}`, panel);
-        group.getComponent(UITransform)!.setContentSize(PANEL_WIDTH, ROW_HEIGHT);
-        group.setPosition(0, rowCenterY, 0);
-
-        const backNode = makeUiNode('Back', group);
-        backNode.getComponent(UITransform)!.setContentSize(PANEL_WIDTH - 28, ROW_HEIGHT - 6);
-        const back = backNode.addComponent(Sprite);
-        back.sizeMode = Sprite.SizeMode.CUSTOM;
-        back.type = Sprite.Type.SIMPLE;
-
-        const laneLabelNode = makeLabel('Lane', group, '', 26, LANE_COLOR);
-        laneLabelNode.getComponent(UITransform)!.setContentSize(44, ROW_HEIGHT);
-        laneLabelNode.setPosition(-PANEL_WIDTH / 2 + 40, 0, 0);
-        const laneLabel = laneLabelNode.getComponent(Label)!;
-
-        const avatarNode = makeUiNode('Avatar', group);
-        avatarNode.getComponent(UITransform)!.setContentSize(AVATAR_SIZE, AVATAR_SIZE);
-        avatarNode.setPosition(-PANEL_WIDTH / 2 + 96, 0, 0);
-        const avatar = avatarNode.addComponent(Sprite);
-        avatar.sizeMode = Sprite.SizeMode.CUSTOM;
-        avatar.type = Sprite.Type.SIMPLE;
-
-        const nameWidth = PANEL_WIDTH - 180;
-        const nameNode = makeLabel('Name', group, '', 24, RIVAL_NAME_COLOR);
-        const nameLabel = nameNode.getComponent(Label)!;
-        nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
-        nameNode.getComponent(UITransform)!.setContentSize(nameWidth, ROW_HEIGHT);
-        nameNode.setPosition(-PANEL_WIDTH / 2 + 128 + nameWidth / 2, 0, 0);
-
-        return { group, back, laneLabel, avatar, nameLabel };
+        const laneNormal = this.art('LaneNormal', group, ART.laneNormal, 49, 431, 43, 53).node;
+        const laneSelf = this.art('LaneSelf', group, ART.laneSelf, 49, 431, 43, 53).node;
+        laneSelf.active = false;
+        const laneCaption = this.label('LaneCaption', group, '泳道', 10, CAPTION, 49, 435, 43, 16);
+        const laneLabel = this.label('LaneNumber', group, '', 28, WHITE, 49, 449, 43, 34);
+        const nameLabel = this.label('Nickname', group, '', 17, NAVY, 51, 611, 124, 30);
+        styleDynamicUiLabel(nameLabel, 24);
+        const characterLabel = this.label('CharacterName', group, '', 12, MUTED, 51, 639, 124, 22, 'center', false);
+        const selfTag = makeUiNode('SelfTag', group);
+        this.art('Background', selfTag, ART.selfTag, 48, 615, 25, 22);
+        this.label('Text', selfTag, '我', 12, NAVY, 48, 615, 25, 22);
+        selfTag.active = false;
+        return { group, normal, self, laneNormal, laneSelf, laneLabel, laneCaption, portrait, nameLabel, characterLabel, selfTag, selfState: null };
     }
 
     populate(entries: PreRaceIntroEntry[]) {
-        for (let i = 0; i < this._rows.length; i++) {
-            const row = this._rows[i];
-            const entry = entries[i];
+        for (let i = 0; i < this._cards.length; i++) {
+            const card = this._cards[i];
+            // 缺少某条泳道时留空，不把后面的选手挪到错误的泳道号。
+            const entry = entries.find(candidate => candidate.lane === i + 1);
+            this.active(card.group, Boolean(entry));
             if (!entry) {
-                if (row.group.active) {
-                    row.group.active = false;
-                }
+                this._paths.delete(card.portrait);
+                this.active(card.portrait.node, false);
                 continue;
             }
-            if (!row.group.active) {
-                row.group.active = true;
-            }
-            const laneText = `${entry.lane}`;
-            if (row.laneLabel.string !== laneText) {
-                row.laneLabel.string = laneText;
-            }
-            if (row.nameLabel.string !== entry.name) {
-                row.nameLabel.string = entry.name;
-            }
-            const nameColor = entry.isPlayer ? PLAYER_NAME_COLOR : RIVAL_NAME_COLOR;
-            if (!row.nameLabel.color.equals(nameColor)) {
-                row.nameLabel.color = nameColor;
-            }
-            if (row.back.spriteFrame !== entry.rowBack) {
-                row.back.spriteFrame = entry.rowBack;
-            }
-            const rowBackVisible = Boolean(entry.rowBack);
-            if (row.back.node.active !== rowBackVisible) {
-                row.back.node.active = rowBackVisible;
-            }
-            if (row.avatar.spriteFrame !== entry.avatar) {
-                row.avatar.spriteFrame = entry.avatar;
-            }
-            const avatarVisible = Boolean(entry.avatar);
-            if (row.avatar.node.active !== avatarVisible) {
-                row.avatar.node.active = avatarVisible;
-            }
-            if (!row.avatar.color.equals(Color.WHITE)) {
-                row.avatar.color = Color.WHITE;
+            this.text(card.laneLabel, String(entry.lane));
+            // 昵称按 Unicode 码点截断，避免拆开代理对；保留固定字号与“我”标签安全区。
+            this.text(card.nameLabel, compactIntroName(entry.name, entry.isPlayer ? 10 : 14));
+            const character = PLAYER_CHARACTER_DEFINITIONS.find(item => item.modelVariantId === entry.modelVariantId);
+            this.text(card.characterLabel, character?.name ?? '参赛选手');
+            this.setArt(card.portrait, character ? RESOURCE_PATHS.characterUi.portraits[character.id] : '');
+            if (card.selfState !== entry.isPlayer) {
+                card.selfState = entry.isPlayer;
+                this.active(card.normal, !entry.isPlayer);
+                this.active(card.self, entry.isPlayer);
+                this.active(card.laneNormal, !entry.isPlayer);
+                this.active(card.laneSelf, entry.isPlayer);
+                this.active(card.selfTag, entry.isPlayer);
+                card.laneLabel.color = entry.isPlayer ? NAVY : WHITE;
+                card.laneCaption.color = entry.isPlayer ? GOLD_CAPTION : CAPTION;
+                this.place(card.nameLabel.node, entry.isPlayer ? 78 : 51, 611, entry.isPlayer ? 97 : 124, 30);
+                card.nameLabel.horizontalAlign = entry.isPlayer ? Label.HorizontalAlign.LEFT : Label.HorizontalAlign.CENTER;
             }
         }
     }
 
     setRaceInfo(info: PreRaceEventInfo) {
-        if (this._eventLabel && info.event !== this._eventText) {
-            this._eventText = info.event;
-            this._eventLabel.string = info.event;
-        }
-        if (this._formatLabel && info.format !== this._formatText) {
-            this._formatText = info.format;
-            this._formatLabel.string = info.format;
-        }
-        if (this._ruleLabel && info.rule !== this._ruleText) {
-            this._ruleText = info.rule;
-            this._ruleLabel.string = info.rule;
-        }
+        this.text(this._eventLabel, info.event);
+        this.text(this._formatLabel, info.format);
+        this.text(this._detailsLabel, info.details);
+        this.text(this._ruleLabel, info.rule);
     }
 
     setPhase(phase: PreRaceIntroPhase) {
-        if (phase === this._phase) {
-            return;
-        }
+        if (phase === this._phase) return;
+        const old = this._phase;
         this._phase = phase;
-        this.transitionPanel(this._eventPanel, this._eventOpacity, phase === 'raceInfo');
-        this.transitionPanel(this._panel, this._opacity, phase === 'roster');
-    }
-
-    setVisible(visible: boolean) {
-        this.setPhase(visible ? 'roster' : 'hidden');
-    }
-
-    private transitionPanel(panel: Node | null, opacity: UIOpacity | null, visible: boolean) {
-        if (!panel || !opacity) {
-            return;
+        // 赛制条跨两个镜头保持，不能在名单入场时重放其动画。
+        if ((old !== 'hidden') !== (phase !== 'hidden')) {
+            this.transition(this._eventPanel, this._eventOpacity, phase !== 'hidden');
         }
+        if ((old === 'roster') !== (phase === 'roster')) {
+            this.transition(this._cardsPanel, this._cardsOpacity, phase === 'roster');
+        }
+    }
+    setVisible(visible: boolean) { this.setPhase(visible ? 'roster' : 'hidden'); }
+    get node(): Node | null { return this._panel; }
+
+    private transition(panel: Node | null, opacity: UIOpacity | null, visible: boolean) {
+        if (!panel?.isValid || !opacity) return;
         Tween.stopAllByTarget(opacity);
         if (visible) {
-            if (!panel.active) {
-                panel.active = true;
-                opacity.opacity = 0;
-            }
+            if (!panel.active) { panel.active = true; opacity.opacity = 0; }
             tween(opacity).to(0.25, { opacity: 255 }).start();
-        } else {
-            if (!panel.active) {
-                return;
-            }
-            tween(opacity)
-                .to(0.25, { opacity: 0 })
-                .call(() => { panel.active = false; })
-                .start();
+        } else if (panel.active) {
+            tween(opacity).to(0.2, { opacity: 0 }).call(() => {
+                if (panel.isValid) panel.active = false;
+            }).start();
         }
     }
-
-    get node(): Node | null {
-        return this._panel;
+    private active(node: Node, value: boolean) { if (node.active !== value) node.active = value; }
+    private text(label: Label | null, value: string) { if (label && label.string !== value) label.string = value; }
+    private place(node: Node, x: number, y: number, w: number, h: number) {
+        node.getComponent(UITransform)!.setContentSize(w, h);
+        node.setPosition(x + w / 2 - WIDTH / 2, HEIGHT / 2 - y - h / 2, 0);
     }
+    private label(name: string, parent: Node, text: string, size: number, color: Color,
+        x: number, y: number, w: number, h: number, align: 'left' | 'center' = 'center', bold = true): Label {
+        const node = makeLabel(name, parent, text, size, color);
+        const label = node.getComponent(Label)!;
+        // 缓存字体会同步测量空字符串；先固定溢出模式，最后恢复设计框，避免零宽文本。
+        label.overflow = Label.Overflow.SHRINK;
+        label.enableWrapText = false;
+        label.horizontalAlign = align === 'left' ? Label.HorizontalAlign.LEFT : Label.HorizontalAlign.CENTER;
+        styleProjectUiLabel(label, bold ? 'semibold' : 'regular', size + 7);
+        this.place(node, x, y, w, h);
+        return label;
+    }
+    private art(name: string, parent: Node, path: string, x: number, y: number, w: number, h: number): Sprite {
+        const node = makeUiNode(name, parent);
+        this.place(node, x, y, w, h);
+        const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.trim = false;
+        this.setArt(sprite, path);
+        return sprite;
+    }
+    private setArt(sprite: Sprite, path: string) {
+        if (this._paths.get(sprite) === path) return;
+        this._paths.set(sprite, path);
+        if (!path) { sprite.spriteFrame = null; this.active(sprite.node, false); return; }
+        // 更换参赛者时先清掉旧卡面；迟到回调必须同时核查请求身份和节点生命周期。
+        if (sprite.spriteFrame) sprite.spriteFrame = null;
+        loadAvatarUiSpriteFrame(path, frame => {
+            if (!sprite.isValid || this._paths.get(sprite) !== path) return;
+            if (sprite.spriteFrame !== frame) sprite.spriteFrame = frame;
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.trim = false;
+            // 底板正常/本人显隐由状态控制，不能被异步加载回调反转。
+            if (sprite.node.name === 'Portrait') this.active(sprite.node, Boolean(frame));
+        });
+    }
+}
+
+/** 用近似字宽预算保护固定卡片；UTF-16 代理对不拆开，后续按 Label 实际宽度兜底缩字。 */
+export function compactIntroName(name: string, budget: number): string {
+    let result = '';
+    let width = 0;
+    for (const char of name.replace(/[\r\n\t]/g, ' ')) {
+        const next = char.charCodeAt(0) < 128 ? 1 : 2;
+        if (width + next > budget) return result + '…';
+        result += char;
+        width += next;
+    }
+    return result;
 }
