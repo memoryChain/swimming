@@ -1,3 +1,4 @@
+import { RaceStartView, preloadRaceStartUi } from './RaceStartView';
 import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
@@ -123,7 +124,12 @@ export class SpeedStarsUiPrefabBuilder {
                 return;
             }
             try {
-                done(null, this.instantiateUi(parent, prefab));
+                preloadRaceStartUi((assetError) => {
+                    if (!parent.isValid) return;
+                    if (assetError) { done(assetError); return; }
+                    try { done(null, this.instantiateUi(parent, prefab)); }
+                    catch (error) { done(error instanceof Error ? error : new Error(`${error}`)); }
+                });
             } catch (error) {
                 done(error instanceof Error ? error : new Error(`${error}`));
             }
@@ -174,6 +180,12 @@ export class SpeedStarsUiPrefabBuilder {
         ui.countdownLabel = requireLabel(raceHud, 'CountdownLabel');
         ui.diveChargeTrack = requireNode(raceHud, 'DiveChargeTrack');
         ui.diveChargeFillNode = requireNode(raceHud, 'DiveChargeFill');
+        ui.raceStartView = new RaceStartView(raceHud);
+        ui.countdownOverlay.active = false;
+        ui.countdownShade.active = false;
+        ui.countdownLabel.node.active = false;
+        ui.diveChargeTrack.active = false;
+        ui.diveChargeFillNode.active = false;
         this.buildHeartRateBar(raceHud, ui);
         this.buildEnergyBar(raceHud, ui);
         this.buildUltimateEnergyBar(raceHud, ui);

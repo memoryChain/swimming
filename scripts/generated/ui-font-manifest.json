@@ -8,19 +8,19 @@
   },
   "glyphHash": "734366ac0bb6a7b43803b4cd48d483a512732d3ba6c6fe8ea022d67826a0d71f",
   "glyphCount": 1333,
-  "scannedFileCount": 195,
+  "scannedFileCount": 196,
   "outputs": [
     {
       "path": "assets/race/fonts/ShuiMasterUI-Regular.ttf",
       "weight": 400,
       "bytes": 424424,
-      "sha256": "5527f5ae3d01a2e048a172ac6f96ebd84cc8c8f130a73782ab58e3dd6f779f65"
+      "sha256": "17b435d1a1bb0c99730a7a0db2d7ee678f2d05c133b5d47f86bc1787460d800e"
     },
     {
       "path": "assets/race/fonts/ShuiMasterUI-SemiBold.ttf",
       "weight": 600,
       "bytes": 424084,
-      "sha256": "cce9637812842f84b7c4b40c4fb1638b23610bbb4cd2e32fb94f220bcdfad4a4"
+      "sha256": "7e93daf7638b8109a8f1307ad03b4fe477762d413d5b8408df28243605d8d46a"
     }
   ]
 }

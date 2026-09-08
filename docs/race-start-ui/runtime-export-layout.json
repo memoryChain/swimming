@@ -1,0 +1,85 @@
+{
+  "canvas": {
+    "width": 1290,
+    "height": 720
+  },
+  "assets": [
+    {
+      "name": "ready",
+      "x": 457,
+      "y": 508,
+      "width": 377,
+      "height": 113
+    },
+    {
+      "name": "go",
+      "x": 579,
+      "y": 507,
+      "width": 203,
+      "height": 115
+    },
+    {
+      "name": "late",
+      "x": 400,
+      "y": 517,
+      "width": 490,
+      "height": 97
+    },
+    {
+      "name": "good",
+      "x": 391,
+      "y": 516,
+      "width": 507,
+      "height": 98
+    },
+    {
+      "name": "great",
+      "x": 373,
+      "y": 516,
+      "width": 542,
+      "height": 97
+    },
+    {
+      "name": "perfect",
+      "x": 334,
+      "y": 516,
+      "width": 622,
+      "height": 97
+    },
+    {
+      "name": "charge-track",
+      "x": 1155,
+      "y": 224,
+      "width": 100,
+      "height": 291
+    },
+    {
+      "name": "charge-fill-low",
+      "x": 1166,
+      "y": 269,
+      "width": 72,
+      "height": 233
+    },
+    {
+      "name": "charge-fill-mid",
+      "x": 1166,
+      "y": 269,
+      "width": 72,
+      "height": 233
+    },
+    {
+      "name": "charge-fill-high",
+      "x": 1166,
+      "y": 269,
+      "width": 72,
+      "height": 233
+    },
+    {
+      "name": "charge-cap",
+      "x": 1209,
+      "y": 276,
+      "width": 28,
+      "height": 8
+    }
+  ]
+}

@@ -353,6 +353,19 @@ export const SKYBOX_VARIANTS: SkyboxVariant[] = [
 export const DEFAULT_SKYBOX_VARIANT: SkyboxVariant = SKYBOX_VARIANTS[0];
 
 export const RESOURCE_PATHS = {
+    raceStartUi: {
+        'ready': 'ui/race-start-v1/ready/texture',
+        'go': 'ui/race-start-v1/go/texture',
+        'late': 'ui/race-start-v1/late/texture',
+        'good': 'ui/race-start-v1/good/texture',
+        'great': 'ui/race-start-v1/great/texture',
+        'perfect': 'ui/race-start-v1/perfect/texture',
+        'charge-track': 'ui/race-start-v1/charge-track/texture',
+        'charge-fill-low': 'ui/race-start-v1/charge-fill-low/texture',
+        'charge-fill-mid': 'ui/race-start-v1/charge-fill-mid/texture',
+        'charge-fill-high': 'ui/race-start-v1/charge-fill-high/texture',
+        'charge-cap': 'ui/race-start-v1/charge-cap/texture',
+    },
     swimmerPrefabCandidates: MUSCLE_MAN_PREFAB_CANDIDATES,
     swimmerModelVariants: SWIMMER_MODEL_VARIANTS,
     poolPrefab: 'pool/PoolScene',
