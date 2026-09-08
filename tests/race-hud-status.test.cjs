@@ -17,7 +17,7 @@ const noopTween=()=>({to(){return this;},delay(){return this;},start(){return th
 class Vec2{constructor(x,y){this.x=x;this.y=y;}}
 class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position={x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
 function load(file,imports,extras={}){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{require:p=>{assert.ok(imports[p],p);return imports[p];},module:m,exports:m.exports,...extras});return m.exports;}
-function fixture(){
+function fixture(reservedRatio=0){
  let size={width:1280,height:720},safe={x:0,y:0,...size},jumps=0;const pending=[],listeners=new Map();
  const view={getVisibleSize:()=>size,on:(e,f,ctx)=>listeners.set(e,()=>f.call(ctx)),off:e=>listeners.delete(e)};
  const cc={BlockInputEvents,Button,Color,Font,Label,Node,Sprite,UITransform,Vec2,Vec3,UIOpacity,Tween:{stopAllByTarget(){}},tween:noopTween,view,sys:{getSafeAreaRect:()=>safe}};
@@ -26,9 +26,9 @@ function fixture(){
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
  const constants={StrokeType:{LEFT:'left',RIGHT:'right'},Rating:{PERFECT:'perfect',GOOD:'good',BAD:'bad'}};
  const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
- const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
+ const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
  mod.preloadRaceHudStatus(e=>assert.equal(e,null));const parent=new Node('root');const hud=new mod.RaceHudStatusView(parent,()=>jumps++);
- return {hud,parent,pending,listeners,get jumps(){return jumps;},resize(w,h,l=0,r=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h};listeners.get('canvas-resize')();}};
+ return {hud,parent,pending,listeners,get jumps(){return jumps;},resize(w,h,l=0,r=0,top=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h-top};listeners.get('canvas-resize')();}};
 }
 function find(n,name){if(n.name===name)return n;for(const c of n.children){const f=find(c,name);if(f)return f;}}
 function count(n){return 1+n.children.reduce((s,c)=>s+count(c),0);}
@@ -50,7 +50,7 @@ test('换位保留头像身份，本人只能一处放大，迟到请求和销�
  const s=fixture(),entries=roster(),n=count(s.parent);s.hud.setRoster(entries);s.hud.setVisible(true);s.hud.updateRanks(rows(entries));const first=s.pending.splice(0);
  const swapped=[entries[1],entries[0],...entries.slice(2)];s.hud.updateRanks(rows(swapped));for(const q of s.pending.splice(0))q.cb({path:q.p});for(const q of first)q.cb({path:q.p});
  assert.equal(find(find(s.parent,'Rank1'),'Avatar').getComponent(Sprite).spriteFrame.path,'avatar1');
- for(let self=0;self<8;self++){s.hud.updateRanks(rows(entries,self));assert.equal(s.parent.children[0].children[1].children.filter(x=>x.name.startsWith('Rank')&&x.name!=='RankingTitle'&&find(x,'SelfRing').active).length,1);assert.equal(count(s.parent),n);}
+ for(let self=0;self<8;self++){s.hud.updateRanks(rows(entries,self));assert.equal(find(s.parent,'Ranking').children.filter(x=>x.name.startsWith('Rank')&&x.name!=='RankingTitle'&&find(x,'SelfRing').active).length,1);assert.equal(count(s.parent),n);}
  s.hud.setRoster([]);for(const q of s.pending.splice(0))q.cb({path:q.p});assert.equal(find(s.parent,'Rank1').active,false);s.parent.destroy();assert.equal(s.listeners.size,0);
 });
 test('超宽屏靠边，窄屏圆形等比，所有初始文本框非零',()=>{
@@ -148,4 +148,20 @@ test('评价固定保持定稿方位和高度，不跟随动态完美区移动',
  const s=fixture();s.hud.setVisible(true);const ui=s.hud.stroke;ui.updateSide('left',{active:true,currentRatio:.2,intervals:[{rating:'perfect',startRatio:.1,endRatio:.2}]});
  s.hud.showStrokePraise('left','Good',undefined,0);const feedback=find(find(s.parent,'LeftStrokeUi'),'StrokePraise');assert.equal(feedback.position.x,335);assert.equal(feedback.position.y,-533);
  ui.updateSide('left',{active:true,currentRatio:.8,intervals:[{rating:'perfect',startRatio:.7,endRatio:.9}]});s.hud.showStrokePraise('left','Crazy',undefined,5);assert.equal(feedback.position.x,335);assert.equal(feedback.position.y,-533);
+});
+
+
+test('排行保持靠右并下移避开胶囊，安全区不重复叠加，其余控件不移动',()=>{
+ for(const [w,h,l,r,top] of [[1280,720,0,0,0],[1920,720,100,0,0],[1920,720,100,100,0],[960,720,0,0,0],[1280,720,0,0,150]]){
+  const plain=fixture(),s=fixture(.18);plain.resize(w,h,l,r,top);s.resize(w,h,l,r,top);
+  const scale=s.hud.root.scale.x,right=find(s.parent,'RightStatus'),ranking=find(s.parent,'Ranking');
+  const title=find(s.parent,'RankingTitle'),capsuleBottom=h*.18;
+  const titleTop=h/2-(right.position.y+ranking.position.y+title.position.y+title.getComponent(UITransform).contentSize.height/2)*scale;
+  assert.ok(titleTop>=capsuleBottom+12*scale-1e-8);
+  assert.equal(ranking.position.x,0);
+  for(const name of ['RightStatus','DolphinJumpButton','RightStrokeUi','LeftStatus','CourseProgress'])assert.deepEqual(find(s.parent,name).position,find(plain.parent,name).position);
+  const n=count(s.parent);s.resize(w,h,l,r,top);assert.equal(count(s.parent),n);
+  if(top>=capsuleBottom+12*scale)assert.ok(ranking.position.y===0);
+  s.hud.setVisible(true);s.hud.setVisible(false);s.hud.setVisible(true);assert.equal(count(s.parent),n);
+ }
 });

@@ -1,16 +1,8 @@
 import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
-import { makeButton, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { makeUiNode, uiColor } from './RuntimeUiFactory';
 
-// Screen-space finish-line ranking display. Replaces the old 3D digit placards
-// that were welded to lane positions (and overlapped once swimmers stopped being
-// lane-locked). Two complementary parts, both driven by the same finish results:
-//   1. Head badges: a small "rank + name" chip pinned above each finished
-//      swimmer, projected world -> screen every frame so it follows the top-view
-//      camera. Overlapping swimmers get their badges vertically de-collided and
-//      the best rank is drawn on top, so who-is-which stays legible.
-//   2. Side panel: a compact standing list on the left ("名次" + rank/name rows),
-//      rebuilt as each swimmer crosses the line.
+// 完赛后在选手头顶展示名次与昵称，并随镜头投影更新位置。
 
 const PLAYER_ACCENT = uiColor(255, 214, 44, 255);
 const AI_ACCENT = uiColor(126, 200, 255, 255);
@@ -18,9 +10,6 @@ const CHIP_TEXT = uiColor(10, 22, 38, 255);
 const BADGE_BG = uiColor(10, 24, 40, 224);
 const BADGE_BG_PLAYER = uiColor(58, 40, 6, 236);
 const NAME_TEXT = uiColor(238, 246, 255, 255);
-const ELIMINATED_TEXT = uiColor(132, 147, 162, 255);
-const PANEL_BG = uiColor(9, 22, 38, 206);
-const PANEL_TITLE = uiColor(150, 214, 255, 255);
 
 const BADGE_HEIGHT = 30;
 const CHIP_RADIUS = 12;
@@ -28,20 +17,6 @@ const BADGE_PADDING = 8;
 const BADGE_HEAD_OFFSET_Y = 26;
 const BADGE_STACK_GAP = 33;
 const BADGE_CLUSTER_X = 110;
-
-const PANEL_MARGIN = 14;
-// Compact two-column layout: keep enough room for the existing six-character
-// display name while tightening the visual gutter between rank and name.
-const PANEL_WIDTH = 160;
-const PANEL_RANK_CENTER_FROM_LEFT = 20;
-const PANEL_RANK_LABEL_WIDTH = 28;
-const PANEL_NAME_LEFT_FROM_LEFT = 36;
-const PANEL_NAME_RIGHT_PADDING = 6;
-const PANEL_TITLE_H = 30;
-const PANEL_ROW_H = 30;
-const PANEL_TOP_CLEARANCE = PANEL_TITLE_H + PANEL_ROW_H;
-const EXIT_BUTTON_H = 36;
-const EXIT_BUTTON_GAP = 8;
 
 // Slack (in UI px) allowed past the HUD edge before a head badge is culled, so a
 // swimmer right at the screen border does not pop in/out.
@@ -54,35 +29,10 @@ type BadgeEntry = {
     placement: number;
 };
 
-type PanelRow = {
-    root: Node;
-    highlight: Graphics;
-    rankLabel: Label;
-    nameLabel: Label;
-    swimmerNode: Node | null;
-    placement: number;
-    eliminated: boolean;
-    isPlayer: boolean;
-    name: string;
-};
-
 export class FinishRankOverlay {
     private _hud: Node | null = null;
     private _badgeRoot: Node | null = null;
-    private _panel: Node | null = null;
-    private _panelBg: Graphics | null = null;
-    private _panelToggle: Node | null = null;
-    private _panelToggleLabel: Label | null = null;
-    private _panelRows: Node | null = null;
-    private _exitButton: Node | null = null;
-    private _panelWidth = 0;
-    private _panelHeight = 0;
-    private _panelExpanded = false;
-    private _playerPlacement = -1;
-    private _panelToggleText = '';
     private readonly _badges = new Map<Node, BadgeEntry>();
-    private readonly _results: RaceFinishResult[] = [];
-    private readonly _panelRowPool: PanelRow[] = [];
     private _headBadgesVisible = true;
 
     // Reused scratch vectors so per-frame projection allocates nothing.
@@ -96,7 +46,7 @@ export class FinishRankOverlay {
     private readonly _placedX: number[] = [];
     private readonly _placedY: number[] = [];
 
-    bind(hud: Node, width: number, height: number, onExitRace: () => void) {
+    bind(hud: Node) {
         if (!hud?.isValid) {
             return;
         }
@@ -104,42 +54,11 @@ export class FinishRankOverlay {
         if (!this._badgeRoot?.isValid) {
             this._badgeRoot = makeUiNode('FinishRankBadges', hud);
         }
-        if (!this._panel?.isValid) {
-            const panel = makeUiNode('FinishRankPanel', hud);
-            const bg = panel.addComponent(Graphics);
-            const toggle = makeButton('RankPanelToggle', panel, PANEL_WIDTH, PANEL_TITLE_H, PANEL_BG, '');
-            const toggleLabelNode = makeUiNode('Label', toggle);
-            toggleLabelNode.getComponent(UITransform)!.setContentSize(PANEL_WIDTH, PANEL_TITLE_H);
-            const toggleLabel = toggleLabelNode.addComponent(Label);
-            toggleLabel.fontSize = 17;
-            toggleLabel.color = PANEL_TITLE;
-            toggleLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
-            toggleLabel.verticalAlign = Label.VerticalAlign.CENTER;
-            toggle.on(Node.EventType.TOUCH_END, this.togglePanel, this);
-            this._panelRows = makeUiNode('Rows', panel);
-            this._exitButton = makeButton('ExitRaceButton', panel, PANEL_WIDTH, EXIT_BUTTON_H, uiColor(190, 64, 72, 238), '退出比赛');
-            this._exitButton.on(Node.EventType.TOUCH_END, onExitRace);
-            this._panel = panel;
-            this._panelBg = bg;
-            this._panelToggle = toggle;
-            this._panelToggleLabel = toggleLabel;
-        }
-        // Top-right standing corner (the finish line sits on the left in the
-        // final top-view framing, so the board reads better opposite it).
-        // makeUiNode anchors at centre so offset by half.
-        this._panel!.setPosition(
-            width / 2 - PANEL_MARGIN - PANEL_WIDTH / 2,
-            height / 2 - PANEL_TOP_CLEARANCE - PANEL_MARGIN,
-            0,
-        );
-        this._panelToggle?.setPosition(0, -PANEL_TITLE_H / 2, 0);
-        this.applyPanelExpandedState();
-        this._panel!.active = false;
         this._badgeRoot!.active = false;
     }
 
     hasResults(): boolean {
-        return this._results.length > 0;
+        return this._badges.size > 0;
     }
 
     setHeadBadgesVisible(visible: boolean) {
@@ -160,17 +79,6 @@ export class FinishRankOverlay {
         }
         this._badges.clear();
         this._projectionEntries.length = 0;
-        this._results.length = 0;
-        this._playerPlacement = -1;
-        this.setPanelExpanded(false);
-        for (const row of this._panelRowPool) {
-            if (row.root.active) {
-                row.root.active = false;
-            }
-        }
-        if (this._panel?.isValid) {
-            this._panel.active = false;
-        }
         if (this._badgeRoot?.isValid) {
             this._badgeRoot.active = false;
         }
@@ -181,7 +89,6 @@ export class FinishRankOverlay {
         if (!node?.isValid || this._badges.has(node) || !this._badgeRoot?.isValid) {
             return;
         }
-        this.replaceResult(result);
         const swimmer = result.swimmer;
         this._badges.set(node, {
             swimmerNode: node,
@@ -191,37 +98,6 @@ export class FinishRankOverlay {
         });
         this._badgeRoot.active = this._headBadgesVisible;
         this.refreshBadgeSiblingOrder();
-        this.rebuildPanel();
-    }
-
-    // The panel is also the in-race standing board. Only rebuild its UI when
-    // order or placement changes; distances update every frame but do not need
-    // to recreate labels while the order is stable.
-    showLiveResults(results: RaceFinishResult[]) {
-        if (!this._panel?.isValid || !this._panelRows?.isValid) {
-            return;
-        }
-        this._results.length = 0;
-        let playerPlacement = -1;
-        for (const result of results) {
-            this._results.push(result);
-            if (result.isPlayer) {
-                playerPlacement = result.placement;
-            }
-        }
-        if (this._playerPlacement !== playerPlacement) {
-            this._playerPlacement = playerPlacement;
-            this.refreshPanelToggleText();
-        }
-        if (!this._panel.active) {
-            this._panel.active = true;
-        }
-        // While collapsed, retain only the latest stable result references. Rows,
-        // labels and Graphics stay untouched until the player expands the panel.
-        if (!this._panelExpanded) {
-            return;
-        }
-        this.rebuildPanel();
     }
 
     // Reproject every head badge into HUD-local space and de-overlap them so
@@ -342,170 +218,6 @@ export class FinishRankOverlay {
         return badge;
     }
 
-    private rebuildPanel() {
-        if (!this._panel?.isValid || !this._panelRows?.isValid || !this._panelBg) {
-            return;
-        }
-        if (!this._panelExpanded) {
-            if (!this._panel.active) {
-                this._panel.active = true;
-            }
-            return;
-        }
-        this.ensurePanelRows(this._results.length);
-        const rowsHeight = this._results.length * PANEL_ROW_H;
-        const panelHeight = PANEL_TITLE_H + rowsHeight + 12;
-        if (panelHeight !== this._panelHeight) {
-            this._panelWidth = PANEL_WIDTH;
-            this._panelHeight = panelHeight;
-            this._panelBg.clear();
-            this._panelBg.fillColor = PANEL_BG;
-            this._panelBg.roundRect(
-                -PANEL_WIDTH / 2,
-                -this._panelHeight,
-                PANEL_WIDTH,
-                this._panelHeight - PANEL_TITLE_H,
-                10,
-            );
-            this._panelBg.fill();
-            this._exitButton?.setPosition(0, -this._panelHeight - EXIT_BUTTON_GAP - EXIT_BUTTON_H / 2, 0);
-        }
-
-        for (let index = 0; index < this._panelRowPool.length; index++) {
-            const row = this._panelRowPool[index];
-            const result = this._results[index];
-            const active = !!result;
-            if (row.root.active !== active) {
-                row.root.active = active;
-            }
-            if (result) {
-                this.updatePanelRow(row, result);
-            }
-        }
-        if (!this._panel.active) {
-            this._panel.active = true;
-        }
-    }
-
-    private togglePanel() {
-        this.setPanelExpanded(!this._panelExpanded);
-    }
-
-    private setPanelExpanded(expanded: boolean) {
-        if (this._panelExpanded === expanded) {
-            this.refreshPanelToggleText();
-            return;
-        }
-        this._panelExpanded = expanded;
-        this.applyPanelExpandedState();
-        if (expanded && this._results.length > 0) {
-            this.rebuildPanel();
-        }
-    }
-
-    private applyPanelExpandedState() {
-        if (this._panelRows?.isValid && this._panelRows.active !== this._panelExpanded) {
-            this._panelRows.active = this._panelExpanded;
-        }
-        if (this._exitButton?.isValid && this._exitButton.active !== this._panelExpanded) {
-            this._exitButton.active = this._panelExpanded;
-        }
-        if (!this._panelExpanded && this._panelBg) {
-            this._panelBg.clear();
-            // Force the body geometry to be rebuilt on the next expansion even
-            // when the racer count (and therefore calculated height) is unchanged.
-            this._panelHeight = 0;
-        }
-        this.refreshPanelToggleText();
-    }
-
-    private refreshPanelToggleText() {
-        if (!this._panelToggleLabel?.isValid) {
-            return;
-        }
-        const nextText = this._panelExpanded
-            ? '实时名次  收起'
-            : this._playerPlacement > 0
-                ? `当前名次 ${this._playerPlacement}  展开`
-                : '实时名次  展开';
-        if (this._panelToggleText !== nextText) {
-            this._panelToggleText = nextText;
-            this._panelToggleLabel.string = nextText;
-        }
-    }
-
-    private ensurePanelRows(count: number) {
-        while (this._panelRowPool.length < count) {
-            const row = makeUiNode(`Row_${this._panelRowPool.length + 1}`, this._panelRows!);
-            const highlight = row.addComponent(Graphics);
-            const rankLabel = addRowLabel(
-                row,
-                -PANEL_WIDTH / 2 + PANEL_RANK_CENTER_FROM_LEFT,
-                PANEL_RANK_LABEL_WIDTH,
-                false,
-                17,
-            );
-            const nameLabel = addRowLabel(
-                row,
-                -PANEL_WIDTH / 2 + PANEL_NAME_LEFT_FROM_LEFT,
-                PANEL_WIDTH - PANEL_NAME_LEFT_FROM_LEFT - PANEL_NAME_RIGHT_PADDING,
-                true,
-                16,
-            );
-            row.setPosition(0, -PANEL_TITLE_H - this._panelRowPool.length * PANEL_ROW_H - PANEL_ROW_H / 2, 0);
-            this._panelRowPool.push({
-                root: row,
-                highlight,
-                rankLabel,
-                nameLabel,
-                swimmerNode: null,
-                placement: -1,
-                eliminated: false,
-                isPlayer: false,
-                name: '',
-            });
-        }
-    }
-
-    private updatePanelRow(row: PanelRow, result: RaceFinishResult) {
-        const swimmerNode = result.swimmer?.node ?? null;
-        const eliminated = result.eliminated === true;
-        const presentationChanged = row.swimmerNode !== swimmerNode
-            || row.eliminated !== eliminated
-            || row.isPlayer !== result.isPlayer;
-        if (presentationChanged) {
-            row.highlight.clear();
-            if (result.isPlayer) {
-                row.highlight.fillColor = uiColor(255, 214, 44, 34);
-                row.highlight.rect(-PANEL_WIDTH / 2 + 4, -PANEL_ROW_H / 2 + 2, PANEL_WIDTH - 8, PANEL_ROW_H - 4);
-                row.highlight.fill();
-            }
-            const accent = eliminated ? ELIMINATED_TEXT : (result.isPlayer ? PLAYER_ACCENT : NAME_TEXT);
-            row.rankLabel.color = accent;
-            row.nameLabel.color = accent;
-        }
-        if (row.placement !== result.placement) {
-            row.rankLabel.string = `${result.placement}`;
-        }
-        if (row.name !== result.name || row.isPlayer !== result.isPlayer) {
-            row.nameLabel.string = displayName(result);
-        }
-        row.swimmerNode = swimmerNode;
-        row.placement = result.placement;
-        row.eliminated = eliminated;
-        row.isPlayer = result.isPlayer;
-        row.name = result.name;
-    }
-
-    private replaceResult(result: RaceFinishResult) {
-        const index = this._results.findIndex((row) => row.swimmer === result.swimmer);
-        if (index >= 0) {
-            this._results[index] = result;
-        } else {
-            this._results.push(result);
-        }
-    }
-
     // Placement only changes when a result is added/rebuilt, so do not dirty the
     // UI hierarchy with setSiblingIndex on every projection frame.
     private refreshBadgeSiblingOrder() {
@@ -518,23 +230,6 @@ export class FinishRankOverlay {
             this._projectionEntries[i].root.setSiblingIndex(this._projectionEntries.length - 1 - i);
         }
     }
-}
-
-function addRowLabel(
-    parent: Node,
-    centerX: number,
-    width: number,
-    leftAlign: boolean,
-    fontSize: number,
-): Label {
-    const node = makeUiNode('L', parent);
-    node.setPosition(leftAlign ? centerX + width / 2 : centerX, 0, 0);
-    node.getComponent(UITransform)!.setContentSize(width, PANEL_ROW_H);
-    const label = node.addComponent(Label);
-    label.fontSize = fontSize;
-    label.horizontalAlign = leftAlign ? Label.HorizontalAlign.LEFT : Label.HorizontalAlign.CENTER;
-    label.verticalAlign = Label.VerticalAlign.CENTER;
-    return label;
 }
 
 function displayName(result: RaceFinishResult): string {

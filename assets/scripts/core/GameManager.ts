@@ -919,7 +919,6 @@ export class GameManager extends Component {
             },
             isLiveRanksEnabled: () => true,
             showLiveRanks: (results) => {
-                this._finishRankOverlay.showLiveResults(results);
                 this._swimmerNameOverlay.setLivePlacements(results);
                 this.setPlayerLivePlacementFromResults(results);
                 this._uiController?.raceHudStatus?.updateRanks(results);
@@ -2161,7 +2160,7 @@ export class GameManager extends Component {
             this.buildPlayerOverheadMarker();
             this._swimmerNameOverlay.bind(this._raceHud);
             this.refreshSwimmerNameRoster();
-            this._finishRankOverlay.bind(this._raceHud, visibleSize.width, visibleSize.height, () => this.returnToLogin());
+            this._finishRankOverlay.bind(this._raceHud);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
             this.buildAiDebugCameraButton(this._raceHud, visibleSize.width, visibleSize.height);
             // Networked race: an overhead whole-field toggle to compare AI positions

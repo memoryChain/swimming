@@ -244,6 +244,24 @@ export class WechatPlatform implements IPlatform {
         };
     }
 
+    getTopRightReservedBottomRatio(): number {
+        try {
+            const rect = typeof wx.getMenuButtonBoundingClientRect === 'function'
+                ? wx.getMenuButtonBoundingClientRect() : null;
+            const info = typeof wx.getWindowInfo === 'function'
+                ? wx.getWindowInfo()
+                : typeof wx.getSystemInfoSync === 'function' ? wx.getSystemInfoSync() : null;
+            const height = Number(info?.windowHeight || info?.screenHeight || 0);
+            const bottom = Number(rect?.bottom || 0);
+            if (Number.isFinite(height) && Number.isFinite(bottom) && height > 0 && bottom > 0 && bottom < height) {
+                return bottom / height;
+            }
+        } catch {
+            // 部分基础库无法读取胶囊时，仍为横屏顶部预留空间。
+        }
+        return 0.18;
+    }
+
     getTopRightReservedRatio(): number {
         try {
             const rect = typeof wx.getMenuButtonBoundingClientRect === 'function'

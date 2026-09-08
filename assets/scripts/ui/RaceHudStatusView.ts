@@ -9,6 +9,7 @@ import type { Swimmer } from '../entity/Swimmer';
 import { loadAvatarUiSpriteFrame, avatarTexturePath } from './AvatarUiAssets';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import { makeUiNode } from './RuntimeUiFactory';
+import { platform } from '../platform/PlatformManager';
 
 const ART = RESOURCE_PATHS.raceHudUi;
 type ArtKey = Exclude<keyof typeof ART, 'speedFont'>;
@@ -57,6 +58,7 @@ export class RaceHudStatusView {
     readonly stroke: RaceStrokeView;
     private readonly left: Node;
     private readonly right: Node;
+    private readonly ranking: Node;
     private readonly top: Node;
     private readonly speed: Label;
     private readonly heartValue: Label;
@@ -85,6 +87,7 @@ export class RaceHudStatusView {
         this.root = makeUiNode('RaceHudStatus', parent);
         this.left = makeUiNode('LeftStatus', this.root);
         this.right = makeUiNode('RightStatus', this.root);
+        this.ranking = makeUiNode('Ranking', this.right);
         this.top = makeUiNode('CourseProgress', this.root);
         this.label(this.left, 'SpeedTitle', '速度', 28, 19, 70, 25, 18, true, 'left');
         this.speed = this.label(this.left, 'SpeedValue', '0.00', 27, 41, 126, 65, 72, true, 'left');
@@ -116,9 +119,9 @@ export class RaceHudStatusView {
         this.progress.fillStart = 0;
         this.progress.fillRange = 0;
         this.percent = this.label(this.top, 'Percent', '0%', 235, 32, 54, 25, 14.5, true, 'left');
-        this.label(this.right, 'RankingTitle', '排名', -53, 62, 40, 24, 13.8);
+        this.label(this.ranking, 'RankingTitle', '排名', -53, 62, 40, 24, 13.8);
         for (let i = 0; i < 8; i++) {
-            const root = makeUiNode(`Rank${i + 1}`, this.right);
+            const root = makeUiNode(`Rank${i + 1}`, this.ranking);
             const normal = this.sprite(root, 'NormalRing', 'rankRing', -47, -15, 30, 30).node;
             const self = this.sprite(root, 'SelfRing', 'rankSelfRing', -60, -28, 56, 56).node;
             self.active = false;
@@ -170,11 +173,19 @@ export class RaceHudStatusView {
         this.left.setPosition((-size.width / 2 + left) / this.scale, (size.height / 2 - Math.max(0, size.height - safe.y - safe.height)) / this.scale);
         this.right.setPosition((size.width / 2 - right) / this.scale, this.left.position.y);
         this.top.setPosition((left - right) / 2 / this.scale, this.left.position.y);
+        // 安全区不包含微信胶囊；排行保持靠右，仅将标题和头像整体下移到胶囊底边以下。
+        // 62 是标题在组内的顶边；扣除已生效的顶部安全区和设计留白，避免重复下移。
+        const reservedBottom = size.height * platform().getTopRightReservedBottomRatio();
+        const safeTop = Math.max(0, size.height - safe.y - safe.height);
+        const rankingY = reservedBottom > 0
+            ? -Math.max(0, (reservedBottom - safeTop) / this.scale + 12 - 62) : 0;
+        if (this.ranking.position.y !== rankingY) this.ranking.setPosition(0, rankingY, 0);
     }
 
     setVisible(visible: boolean) {
         if (this.root.active === visible) return;
         this.root.active = visible;
+        if (visible) this.layout();
         this.stroke.setVisible(visible);
         this.elapsed = 0.1;
         if (!visible) { this.warningClock = 0; this.setReady(false); }

@@ -95,4 +95,6 @@ export interface IPlatform {
     // Horizontal fraction of the window occupied from the right edge by a native
     // platform control (for example the WeChat top-right menu capsule).
     getTopRightReservedRatio(): number;
+    /** 右上角原生控件底边距窗口顶边的高度比例；无控件的平台返回 0。 */
+    getTopRightReservedBottomRatio(): number;
 }

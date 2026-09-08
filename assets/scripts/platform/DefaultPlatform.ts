@@ -75,4 +75,7 @@ export class DefaultPlatform implements IPlatform {
     getTopRightReservedRatio(): number {
         return 0;
     }
+    getTopRightReservedBottomRatio(): number {
+        return 0;
+    }
 }
