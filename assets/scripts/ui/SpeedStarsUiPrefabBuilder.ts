@@ -1,3 +1,4 @@
+import { styleProjectUiLabel } from './ProjectUiFonts';
 import { RaceHudStatusView, preloadRaceHudStatus } from './RaceHudStatusView';
 import { RaceStartView, preloadRaceStartUi } from './RaceStartView';
 import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
@@ -244,22 +245,25 @@ export class SpeedStarsUiPrefabBuilder {
         // Sprint indicator: large centered label near the top of the screen,
         // hidden until the sprint phase begins. Has a glowing outline for impact.
         const sprintNode = makeUiNode('SprintLabel', raceHud);
-        sprintNode.getComponent(UITransform).setContentSize(400, 150);
+        sprintNode.getComponent(UITransform).setContentSize(120, 42);
         const sprintLabel = sprintNode.addComponent(Label);
         sprintLabel.string = '冲刺';
-        sprintLabel.fontSize = 72;
-        sprintLabel.lineHeight = 88;
-        sprintLabel.color = uiColor(255, 210, 90, 255);
+        sprintLabel.fontSize = 24;
+        sprintLabel.lineHeight = 32;
+        sprintLabel.color = uiColor(255, 234, 54, 255);
         sprintLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         sprintLabel.verticalAlign = Label.VerticalAlign.CENTER;
-        sprintLabel.overflow = Label.Overflow.NONE;
+        sprintLabel.overflow = Label.Overflow.SHRINK;
+        sprintLabel.enableWrapText = false;
+        styleProjectUiLabel(sprintLabel, 'semibold', 32);
+        sprintNode.getComponent(UITransform).setContentSize(120, 42);
         // Position at the top center of the screen.
         const vs = view.getVisibleSize();
-        sprintNode.setPosition(0, vs.height / 2 - 110, 0);
+        sprintNode.setPosition(0, vs.height / 2 - 70, 0);
         sprintNode.active = false;
         const sprintOutline = sprintNode.addComponent(LabelOutline);
         sprintOutline.color = new Color(255, 120, 30, 220);
-        sprintOutline.width = 5;
+        sprintOutline.width = 2;
         ui.sprintLabel = sprintLabel;
         ui.raceHudStatus = new RaceHudStatusView(raceHud, this._callbacks.onDolphinJump);
 

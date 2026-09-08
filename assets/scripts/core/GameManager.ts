@@ -554,6 +554,7 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             awardsActive ? 48 : standingPresentation ? 26 : 20,
+            netDt,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.

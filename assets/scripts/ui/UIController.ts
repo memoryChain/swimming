@@ -1,3 +1,4 @@
+import { getRaceCountdownFont } from './RaceHudStatusView';
 import type { RaceHudStatusView } from './RaceHudStatusView';
 import type { RaceStartView } from './RaceStartView';
 import { _decorator, Color, Component, Graphics, Label, LabelOutline, Layers, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3, view } from 'cc';
@@ -8,6 +9,8 @@ import { ULTIMATE_ENERGY_BALANCE } from '../core/UltimateEnergyBalance';
 import type { SettlementView } from './SettlementView';
 
 const { ccclass, property } = _decorator;
+const FINISH_GOLD = new Color(255, 234, 54);
+const FINISH_URGENT = new Color(255, 66, 0);
 const HUD_BAR_WIDTH = 220;
 const HUD_BAR_BACKGROUND = new Color(20, 24, 34, 180);
 const HUD_READY_TICK = new Color(255, 255, 255, 200);
@@ -144,6 +147,7 @@ export class UIController extends Component {
     // Dedicated finish (straggler) countdown: a big centred number with no dark
     // plate, built lazily. Intensifies + recolours in the last few seconds.
     private _finishCountdownRoot: Node = null;
+    private _lastFinishCountdownValue = -1;
     private _finishCountdownLabel: Label = null;
     private _finishCountdownHint: Label = null;
 
@@ -413,37 +417,28 @@ export class UIController extends Component {
     // A bespoke big centred number (no dark plate); the last few seconds punch
     // harder and turn red for urgency.
     showFinishCountdown(value: number) {
+        if (value <= 0) {
+            this.hideFinishCountdown();
+            return;
+        }
         this.ensureFinishCountdown();
-        if (this._finishCountdownRoot) {
-            this._finishCountdownRoot.active = true;
-        }
-        this.setSpeedBarVisible(false);
+        if (!this._finishCountdownRoot.active) this._finishCountdownRoot.active = true;
+        // 相同的秒数不重复生成字形或重启动画。
+        if (this._lastFinishCountdownValue === value) return;
+        this._lastFinishCountdownValue = value;
         const label = this._finishCountdownLabel;
-        if (label) {
-            const urgent = value > 0 && value <= 3;
-            label.string = value > 0 ? `${value}` : '到达';
-            if (value <= 0) {
-                label.color = new Color(120, 240, 170, 255); // settle green
-                label.fontSize = 132;
-            } else if (urgent) {
-                label.color = new Color(255, 66, 66, 255); // final-seconds red
-                label.fontSize = 220;
-            } else {
-                label.color = new Color(255, 214, 44, 255); // amber
-                label.fontSize = 150;
-            }
-            label.lineHeight = Math.round(label.fontSize * 1.2);
-            this.punchFinishNumber(label.node, urgent);
-        }
-        if (this._finishCountdownHint) {
-            this._finishCountdownHint.string = value > 0 ? '等待其他选手到达终点' : '结算中…';
-        }
-        if (this.hintLabel) {
-            this.hintLabel.string = value > 0 ? '等待其他选手到达终点' : '结算中…';
-        }
+        const urgent = value <= 3;
+        label.string = String(value);
+        const color = urgent ? FINISH_URGENT : FINISH_GOLD;
+        if (!label.color.equals(color)) label.color = color;
+        const size = urgent ? 120 : 100;
+        if (label.fontSize !== size) label.fontSize = size;
+        label.node.setPosition(0, view.getVisibleSize().height / 2 - 165, 0);
+        this.punchFinishNumber(label.node, urgent);
     }
 
     hideFinishCountdown() {
+        this._lastFinishCountdownValue = -1;
         if (this._finishCountdownRoot?.isValid) {
             this._finishCountdownRoot.active = false;
         }
@@ -453,7 +448,7 @@ export class UIController extends Component {
     // snaps back faster so the final seconds feel tense.
     private punchFinishNumber(node: Node, urgent: boolean) {
         Tween.stopAllByTarget(node);
-        const peak = urgent ? 1.65 : 1.22;
+        const peak = urgent ? 1.12 : 1.06;
         node.setScale(peak, peak, 1);
         tween(node)
             .to(urgent ? 0.16 : 0.22, { scale: new Vec3(1, 1, 1) }, { easing: 'backOut' })
@@ -467,44 +462,28 @@ export class UIController extends Component {
         const root = new Node('FinishCountdown');
         root.layer = Layers.Enum.UI_2D;
         root.setParent(this.node);
-        root.addComponent(UITransform).setContentSize(640, 320);
-        root.setPosition(0, 60, 0);
-
+        root.addComponent(UITransform).setContentSize(180, 160);
         const numberNode = new Node('Number');
         numberNode.layer = Layers.Enum.UI_2D;
         numberNode.setParent(root);
-        numberNode.addComponent(UITransform).setContentSize(640, 260);
-        numberNode.setPosition(0, 24, 0);
+        const transform = numberNode.addComponent(UITransform);
         const number = numberNode.addComponent(Label);
-        number.fontSize = 150;
-        number.lineHeight = 180;
-        number.isBold = true;
-        number.color = new Color(255, 214, 44, 255);
+        number.overflow = Label.Overflow.SHRINK;
+        number.enableWrapText = false;
+        number.fontSize = 100;
+        number.lineHeight = 140;
+        number.color = FINISH_GOLD;
         number.horizontalAlign = Label.HorizontalAlign.CENTER;
         number.verticalAlign = Label.VerticalAlign.CENTER;
-        const numberOutline = numberNode.addComponent(LabelOutline);
-        numberOutline.color = new Color(6, 16, 30, 235);
-        numberOutline.width = 7;
-
-        const hintNode = new Node('Hint');
-        hintNode.layer = Layers.Enum.UI_2D;
-        hintNode.setParent(root);
-        hintNode.addComponent(UITransform).setContentSize(640, 56);
-        hintNode.setPosition(0, -118, 0);
-        const hint = hintNode.addComponent(Label);
-        hint.fontSize = 28;
-        hint.lineHeight = 36;
-        hint.isBold = true;
-        hint.color = new Color(238, 246, 255, 255);
-        hint.horizontalAlign = Label.HorizontalAlign.CENTER;
-        hint.verticalAlign = Label.VerticalAlign.CENTER;
-        const hintOutline = hintNode.addComponent(LabelOutline);
-        hintOutline.color = new Color(6, 16, 30, 220);
-        hintOutline.width = 4;
-
+        const outline = numberNode.addComponent(LabelOutline);
+        outline.color = new Color(255, 153, 0, 255);
+        outline.width = 3;
+        transform.setContentSize(180, 160);
+        // 数字始终保留 Label，使用设计稿 Bungee 的随包数字子集。
+        number.font = getRaceCountdownFont();
+        transform.setContentSize(180, 160);
         this._finishCountdownRoot = root;
         this._finishCountdownLabel = number;
-        this._finishCountdownHint = hint;
     }
 
     hideCountdown() {

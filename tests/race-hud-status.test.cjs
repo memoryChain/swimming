@@ -64,3 +64,30 @@ if(process.env.HUD_LAYOUT_OUTPUT){
  function snapshot(n){const t=n.getComponent(UITransform),l=n.getComponent(Label),sp=n.getComponent(Sprite);return {name:n.name,active:n.active,position:n.position,size:t?.contentSize,label:l?{text:l.string,size:l.fontSize,color:l.color,weight:l.weight,align:l.horizontalAlign}:null,image:sp?.spriteFrame?.path,color:sp?.color,fillType:sp?.fillType,fillStart:sp?.fillStart,fillRange:sp?.fillRange,children:n.children.map(snapshot)};}
  fs.writeFileSync(process.env.HUD_LAYOUT_OUTPUT,JSON.stringify(snapshot(s.hud.root),null,2));
 }
+
+test('泳道隐藏本人姓名名次；对手排名为正圆且复用字库，重复排名不写文字',()=>{
+ class Graphics extends Comp {circle(x,y,r){this.radius=r;}fill(){}}
+ class Vec3{}
+ Node.prototype.destroyAllChildren=function(){this.children=[];};
+ const cc={Color,Graphics,Label,Node,UITransform,Vec3,view:{}};
+ function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
+ const mod=load('assets/scripts/ui/SwimmerNameOverlay.ts',{'cc':cc,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l)=>l.font='项目粗体',styleDynamicUiLabel:(l)=>l.font='动态姓名'}});
+ const root=new Node('hud'),self={node:new Node('self'),swimmerName:'本人'},other={node:new Node('other'),swimmerName:'其他选手'};
+ const overlay=new mod.SwimmerNameOverlay();overlay.bind(root);overlay.setSwimmers([self,other],self);
+ const tags=find(root,'SwimmerNameTags');assert.equal(tags.children.length,1);assert.equal(find(tags,'SwimmerName_self'),undefined);
+ for(const tag of tags.children){const badge=find(tag,'Placement'),size=badge.getComponent(UITransform).contentSize;assert.equal(size.width,size.height);assert.equal(badge.getComponent(Graphics).radius,size.width/2);assert.equal(find(badge,'Label').getComponent(Label).font,'项目粗体');}
+
+ const ranks=[{swimmer:self,placement:2},{swimmer:other,placement:1}];overlay.setLivePlacements(ranks);const before=writes;overlay.setLivePlacements(ranks);assert.equal(writes,before);assert.equal(find(tags.children[0],'Label').getComponent(Label).string,'1');
+});
+
+test('完赛倒计时重复秒数不重播，末三秒变色，到零隐藏且可开始下一轮',()=>{
+ class Vec3{constructor(x,y,z){Object.assign(this,{x,y,z});}}
+ class LabelOutline extends Comp{}
+ let animations=0;const font=new Font();
+ const cc={_decorator:{ccclass:()=>C=>C,property:(...args)=>args.length>=2?undefined:()=>{}},Color,Component:Comp,Graphics:class{},Label,LabelOutline,Layers:{Enum:{UI_2D:1}},Node,Sprite,SpriteFrame:class{},Tween:{stopAllByTarget(){}},tween:()=>({to(){return this;},start(){animations++;}}),UIOpacity:class{},UITransform,Vec3,view:{getVisibleSize:()=>({width:1280,height:720})}};
+ const mod=load('assets/scripts/ui/UIController.ts',{'cc':cc,'./RaceHudStatusView':{getRaceCountdownFont:()=>font},'../core/GameBalance':{getRaceDistance:()=>200},'../backend/PlayerData':{},'../core/GameConstants':{Rating:{}},'../core/UltimateEnergyBalance':{ULTIMATE_ENERGY_BALANCE:{}}});
+ const ui=new mod.UIController();ui.node=new Node('ui');ui.showFinishCountdown(8);const label=find(ui.node,'Number').getComponent(Label);assert.equal(label.font,font);assert.equal(label.string,'8');const before=writes,n=count(ui.node),a=animations;
+ ui.showFinishCountdown(8);assert.equal(writes,before);assert.equal(animations,a);
+ ui.showFinishCountdown(3);assert.equal(label.string,'3');assert.equal(label.color.g,66);assert.equal(label.fontSize,120);assert.equal(count(ui.node),n);
+ ui.showFinishCountdown(0);assert.equal(find(ui.node,'FinishCountdown').active,false);ui.showFinishCountdown(8);assert.equal(find(ui.node,'FinishCountdown').active,true);assert.equal(label.color.g,234);
+});

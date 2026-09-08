@@ -11,6 +11,8 @@ const ART = RESOURCE_PATHS.raceHudUi;
 type ArtKey = Exclude<keyof typeof ART, 'speedFont'>;
 const FRAMES = new Map<ArtKey, SpriteFrame>();
 let speedFont: Font | null = null;
+let countdownFont: Font | null = null;
+export function getRaceCountdownFont(): Font | null { return countdownFont; }
 const WHITE = new Color(245, 250, 252);
 const CYAN = new Color(0, 215, 201);
 const RED = new Color(255, 73, 76);
@@ -23,12 +25,17 @@ const COURSE_TRACK = new Color(39, 60, 73, 184);
 
 export function preloadRaceHudStatus(done: (error: Error | null) => void): void {
     const keys = Object.keys(ART).filter(key => key !== 'speedFont') as ArtKey[];
-    let pending = keys.length + 1;
+    let pending = keys.length + 2;
     let failure: Error | null = null;
     const finish = () => { if (--pending === 0) done(failure); };
     for (const key of keys) loadAvatarUiSpriteFrame(ART[key], frame => {
         if (frame) FRAMES.set(key, frame);
         else failure = new Error(`HUD 素材加载失败：${key}`);
+        finish();
+    });
+    loadRaceAsset(RESOURCE_PATHS.raceHudCountdownFont, Font, (error, font) => {
+        if (font) countdownFont = font;
+        else failure = error ?? new Error('倒计时字体加载失败');
         finish();
     });
     loadRaceAsset(ART.speedFont, Font, (error, font) => {

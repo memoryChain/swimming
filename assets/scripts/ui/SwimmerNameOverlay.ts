@@ -1,13 +1,14 @@
 import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
 import type { Swimmer } from '../entity/Swimmer';
+import { styleProjectUiLabel, styleDynamicUiLabel } from './ProjectUiFonts';
 import { makeUiNode } from './RuntimeUiFactory';
 
 const TAG_WIDTH = 174;
 const TAG_HEIGHT = 24;
-export const LIVE_PLACEMENT_BADGE_WIDTH = 26;
-export const LIVE_PLACEMENT_BADGE_HEIGHT = 24;
-const RANK_NAME_GAP = 0;
+export const LIVE_PLACEMENT_BADGE_WIDTH = 22;
+export const LIVE_PLACEMENT_BADGE_HEIGHT = 22;
+const RANK_NAME_GAP = 4;
 const NAME_FONT_SIZE = 15;
 const NAME_HORIZONTAL_PADDING = 2;
 const NAME_MAX_WIDTH = TAG_WIDTH - LIVE_PLACEMENT_BADGE_WIDTH - RANK_NAME_GAP;
@@ -19,10 +20,12 @@ const NAME_REFERENCE_DISTANCE = 10;
 const NAME_MIN_SCALE = 0.48;
 const NAME_MAX_SCALE = 1.05;
 const NAME_SCALE_STEP = 0.02;
-const AI_COLOR = new Color(245, 250, 255, 255);
-const OUTLINE_COLOR = new Color(5, 14, 24, 225);
-const RANK_BG = new Color(112, 62, 208, 245);
-const RANK_TEXT = new Color(255, 239, 150, 255);
+const AI_COLOR = new Color(245, 250, 252, 255);
+const OUTLINE_COLOR = new Color(0, 0, 0, 51);
+const RANK_BG = new Color(112, 76, 174, 242);
+const RANK_TEXT = new Color(245, 250, 252);
+const SELF_BG = new Color(255, 201, 58, 242);
+const SELF_TEXT = new Color(54, 49, 35);
 
 type NameEntry = {
     swimmer: Swimmer;
@@ -57,6 +60,7 @@ export class SwimmerNameOverlay {
     private readonly _placedWidths: number[] = [];
     private readonly _placedHeights: number[] = [];
     private _anchorWarmupFrames = 0;
+    private _sampleElapsed = 0;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -77,8 +81,7 @@ export class SwimmerNameOverlay {
         this._entries.length = 0;
         this._entriesBySwimmer.clear();
         for (const swimmer of swimmers) {
-            // The protagonist already has a red overhead triangle, so only AI
-            // opponents need race-time name labels.
+            // 本人的身份由右侧排名和原有指示标记展示，泳道内只显示其他选手。
             if (!swimmer?.node?.isValid || swimmer === player) {
                 continue;
             }
@@ -86,7 +89,7 @@ export class SwimmerNameOverlay {
             tag.active = false;
             tag.getComponent(UITransform)!.setContentSize(TAG_WIDTH, TAG_HEIGHT);
 
-            const placementBadge = makeLivePlacementBadge('Placement', tag);
+            const placementBadge = makeLivePlacementBadge('Placement', tag, swimmer === player);
             const rankRoot = placementBadge.root;
             const rankLabel = placementBadge.label;
             rankRoot.active = false;
@@ -111,7 +114,9 @@ export class SwimmerNameOverlay {
             label.overflow = Label.Overflow.SHRINK;
             label.enableOutline = true;
             label.outlineColor = OUTLINE_COLOR;
-            label.outlineWidth = 2;
+            label.outlineWidth = 1.5;
+            styleDynamicUiLabel(label, TAG_HEIGHT);
+            nameNode.getComponent(UITransform)!.setContentSize(nameWidth, TAG_HEIGHT);
             const entry: NameEntry = {
                 swimmer,
                 root: tag,
@@ -173,6 +178,7 @@ export class SwimmerNameOverlay {
     // rig applies its new standing pose, then project the refreshed head bones.
     resetTracking() {
         this._anchorWarmupFrames = 1;
+        this._sampleElapsed = 0;
         for (const entry of this._entries) {
             entry.x = Number.NaN;
             entry.y = Number.NaN;
@@ -189,6 +195,7 @@ export class SwimmerNameOverlay {
         finishDistance: number,
         showFinished = false,
         headOffsetY = HEAD_OFFSET_Y,
+        dt = 1 / 30,
     ) {
         if (!this._root?.isValid || !this._root.active || !this._hud?.isValid || !worldCamera || !uiCamera) {
             return;
@@ -197,6 +204,9 @@ export class SwimmerNameOverlay {
             this._anchorWarmupFrames--;
             return;
         }
+        this._sampleElapsed += dt;
+        if (this._sampleElapsed < 1 / 30) return;
+        this._sampleElapsed %= 1 / 30;
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;
@@ -316,27 +326,26 @@ function layoutNameAndPlacement(entry: NameEntry, showPlacement: boolean) {
     }
 }
 
-export function makeLivePlacementBadge(name: string, parent: Node): { root: Node; label: Label } {
+export function makeLivePlacementBadge(name: string, parent: Node, self = false): { root: Node; label: Label } {
     const root = makeUiNode(name, parent);
     root.getComponent(UITransform)!.setContentSize(LIVE_PLACEMENT_BADGE_WIDTH, LIVE_PLACEMENT_BADGE_HEIGHT);
     const background = root.addComponent(Graphics);
-    background.fillColor = RANK_BG;
-    background.roundRect(
-        -LIVE_PLACEMENT_BADGE_WIDTH / 2,
-        -LIVE_PLACEMENT_BADGE_HEIGHT / 2,
-        LIVE_PLACEMENT_BADGE_WIDTH,
-        LIVE_PLACEMENT_BADGE_HEIGHT,
-        LIVE_PLACEMENT_BADGE_HEIGHT / 2,
-    );
+    // 简单静态正圆只构建一次；不在比赛帧内重画。
+    background.fillColor = self ? SELF_BG : RANK_BG;
+    background.circle(0, 0, LIVE_PLACEMENT_BADGE_WIDTH / 2);
     background.fill();
     const labelNode = makeUiNode('Label', root);
     labelNode.getComponent(UITransform)!.setContentSize(LIVE_PLACEMENT_BADGE_WIDTH, LIVE_PLACEMENT_BADGE_HEIGHT);
     const label = labelNode.addComponent(Label);
-    label.fontSize = 14;
+    label.overflow = Label.Overflow.SHRINK;
+    label.enableWrapText = false;
+    label.fontSize = 16;
     label.lineHeight = LIVE_PLACEMENT_BADGE_HEIGHT;
-    label.color = RANK_TEXT;
+    label.color = self ? SELF_TEXT : RANK_TEXT;
     label.horizontalAlign = Label.HorizontalAlign.CENTER;
     label.verticalAlign = Label.VerticalAlign.CENTER;
+    styleProjectUiLabel(label, 'semibold', LIVE_PLACEMENT_BADGE_HEIGHT);
+    labelNode.getComponent(UITransform)!.setContentSize(LIVE_PLACEMENT_BADGE_WIDTH, LIVE_PLACEMENT_BADGE_HEIGHT);
     return { root, label };
 }
 
