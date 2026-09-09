@@ -46,6 +46,7 @@ import { styleProjectUiLabel } from './ProjectUiFonts';
 
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
+    onStartRiverBrawl: () => void;
     onOpenRoom: () => void;
     onCharacterManagementChanged?: (active: boolean) => void;
 };
@@ -271,6 +272,7 @@ export class PrepareRaceFlow {
         this.buildPreviewPresentation(parent);
         this.buildRaceModeList(right);
         this.buildReadyActions(right);
+        this.buildRiverBrawlEntry(parent);
         this.refreshReadyCharacterInfo();
     }
 
@@ -394,6 +396,22 @@ export class PrepareRaceFlow {
             setRaceDifficulty(getSelectedRaceDifficulty());
             this._callbacks.onStartRace();
         });
+    }
+
+    private buildRiverBrawlEntry(parent: Node): void {
+        const button = makeRaceTextureButton(
+            'RiverBrawlButton',
+            parent,
+            RESOURCE_PATHS.lobbyUi.startButton,
+            250,
+            76,
+            -45,
+            -287,
+            4,
+        );
+        const label = makeBoundLabel('Label', button, '激流乱斗', 30, DARK_TEXT, 190, 44, 0, 0);
+        styleProjectUiLabel(label, 'semibold', 38);
+        button.on(Button.EventType.CLICK, () => this._callbacks.onStartRiverBrawl());
     }
 
     private buildCharacterManagement(parent: Node): void {

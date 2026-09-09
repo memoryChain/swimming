@@ -21,6 +21,7 @@ import { SettingsManager } from './SettingsManager';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
+import { setNetRaceSession } from '../net/NetRaceSession';
 
 
 const { ccclass } = _decorator;
@@ -191,6 +192,15 @@ export class LoginManager extends Component {
         this.launchMainGame('race');
     }
 
+    startRiverBrawl() {
+        this._headBar?.setBack(null);
+        this._prepareRaceFlow?.dispose();
+        this._prepareRaceFlow = null;
+        setRoomMode(false);
+        setNetRaceSession(null);
+        this.launchMainGame('river-brawl');
+    }
+
     private openPrepareRace() {
         if (this._prepareRaceFlow || !this._canvasNode?.isValid) {
             return;
@@ -198,6 +208,7 @@ export class LoginManager extends Component {
         if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
         this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onStartRace: () => this.startGame(),
+            onStartRiverBrawl: () => this.startRiverBrawl(),
             onOpenRoom: () => this.openRoomFromPrepare(),
             onCharacterManagementChanged: (active) => {
                 this._headBar?.setBack(null);

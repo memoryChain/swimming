@@ -16,6 +16,7 @@ import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
 import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
+import { RIVER_BRAWL_BALANCE } from './RiverBrawlBalance';
 
 export type TuningControl = {
     id: string;
@@ -47,7 +48,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 33;
+const TUNING_FILE_VERSION = 35;
 
 type TuningFileData = {
     version: number;
@@ -76,6 +77,30 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '激流乱斗',
+        controls: [
+            control('brawl.attackCooldown', '攻击冷却', '踢击命中或挥空后的冷却时间。', () => RIVER_BRAWL_BALANCE.attackCooldownSeconds, (v) => RIVER_BRAWL_BALANCE.attackCooldownSeconds = v, 0.05, 0.2, 2, 2, 's'),
+            control('brawl.attackForwardRange', '前后判定范围', '攻击者前后方向允许命中的距离。', () => RIVER_BRAWL_BALANCE.attackForwardRange, (v) => RIVER_BRAWL_BALANCE.attackForwardRange = v, 0.1, 0.5, 3, 1, 'm'),
+            control('brawl.attackSideMin', '侧向最近距离', '侧踢判定的最小侧向距离。', () => RIVER_BRAWL_BALANCE.attackSideMin, (v) => RIVER_BRAWL_BALANCE.attackSideMin = v, 0.1, 0.2, 2, 1, 'm'),
+            control('brawl.attackSideMax', '侧向最远距离', '侧踢判定的最大侧向距离。', () => RIVER_BRAWL_BALANCE.attackSideMax, (v) => RIVER_BRAWL_BALANCE.attackSideMax = v, 0.1, 1, 5, 1, 'm'),
+            control('brawl.attackImpulse', '踢击横向冲量', '目标被踢向赛道外侧的基础速度冲量。', () => RIVER_BRAWL_BALANCE.attackLateralImpulse, (v) => RIVER_BRAWL_BALANCE.attackLateralImpulse = v, 0.1, 0.5, 6, 1, 'm/s'),
+            control('brawl.attackBackImpulse', '踢击后退冲量', '目标受击时损失的前进速度分量。', () => RIVER_BRAWL_BALANCE.attackBackwardImpulse, (v) => RIVER_BRAWL_BALANCE.attackBackwardImpulse = v, 0.05, 0, 2, 2, 'm/s'),
+            control('brawl.attackRecoil', '攻击者后坐力', '攻击者向踢击反方向滑动的速度冲量。', () => RIVER_BRAWL_BALANCE.attackerRecoilImpulse, (v) => RIVER_BRAWL_BALANCE.attackerRecoilImpulse = v, 0.05, 0, 2, 2, 'm/s'),
+            control('brawl.attackRollImpulse', '踢击翻滚强度', '受击者侧向翻滚的角速度冲量；保持短暂摇晃，不进入长翻。', () => RIVER_BRAWL_BALANCE.attackAxialImpulse, (v) => RIVER_BRAWL_BALANCE.attackAxialImpulse = v, 0.1, 0, 6, 1, 'rad/s'),
+            control('brawl.attackPitchImpulse', '踢击俯仰强度', '受击者前后倾倒的角速度冲量；过高会触发长时间翻滚。', () => RIVER_BRAWL_BALANCE.attackPitchImpulse, (v) => RIVER_BRAWL_BALANCE.attackPitchImpulse = v, 0.1, 0, 4, 1, 'rad/s'),
+            control('brawl.attackSoftnessSide', '踢击侧向摇晃', '受击时四肢和躯干向侧面松动的视觉强度。', () => RIVER_BRAWL_BALANCE.attackSoftnessSide, (v) => RIVER_BRAWL_BALANCE.attackSoftnessSide = v, 0.1, 0, 2, 1),
+            control('brawl.attackSoftnessForward', '踢击前后摇晃', '受击时四肢和躯干前后松动的视觉强度。', () => RIVER_BRAWL_BALANCE.attackSoftnessForward, (v) => RIVER_BRAWL_BALANCE.attackSoftnessForward = v, 0.1, -2, 0, 1),
+            control('brawl.fallSeconds', '坠落时长', '越界到重新回到赛道前的坠落演出时间。', () => RIVER_BRAWL_BALANCE.fallSeconds, (v) => RIVER_BRAWL_BALANCE.fallSeconds = v, 0.05, 0.3, 2, 2, 's'),
+            control('brawl.respawnSetback', '重生后退距离', '重新回到赛道时损失的比赛进度。', () => RIVER_BRAWL_BALANCE.respawnSetback, (v) => RIVER_BRAWL_BALANCE.respawnSetback = v, 0.5, 0, 30, 1, 'm'),
+            control('brawl.respawnSpeed', '重生速度', '运动员重新入水后的初始速度。', () => RIVER_BRAWL_BALANCE.respawnSpeed, (v) => RIVER_BRAWL_BALANCE.respawnSpeed = v, 0.1, 0, 4, 1, 'm/s'),
+            control('brawl.respawnProtection', '重生保护', '重生后不参与攻击和碰撞的时间。', () => RIVER_BRAWL_BALANCE.respawnProtectionSeconds, (v) => RIVER_BRAWL_BALANCE.respawnProtectionSeconds = v, 0.05, 0, 3, 2, 's'),
+            control('brawl.aiDecisionInterval', 'AI攻击检查间隔', 'AI查找侧边目标的低频检查间隔。', () => RIVER_BRAWL_BALANCE.aiDecisionIntervalSeconds, (v) => RIVER_BRAWL_BALANCE.aiDecisionIntervalSeconds = v, 0.05, 0.1, 1, 2, 's'),
+            control('brawl.aiCooldownMin', 'AI冷却下限', 'AI每次攻击后的随机冷却下限。', () => RIVER_BRAWL_BALANCE.aiCooldownMinSeconds, (v) => RIVER_BRAWL_BALANCE.aiCooldownMinSeconds = v, 0.1, 0.5, 5, 1, 's'),
+            control('brawl.aiCooldownMax', 'AI冷却上限', 'AI每次攻击后的随机冷却上限。', () => RIVER_BRAWL_BALANCE.aiCooldownMaxSeconds, (v) => RIVER_BRAWL_BALANCE.aiCooldownMaxSeconds = v, 0.1, 0.5, 6, 1, 's'),
+            control('brawl.aiEdgeInset', 'AI边缘警戒', 'AI进入该边缘距离后优先向河道内侧脱离。', () => RIVER_BRAWL_BALANCE.aiEdgeInset, (v) => RIVER_BRAWL_BALANCE.aiEdgeInset = v, 0.1, 0.5, 4, 1, 'm'),
+        ],
+    },
     {
         name: '碰撞',
         controls: [

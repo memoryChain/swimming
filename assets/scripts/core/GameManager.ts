@@ -38,6 +38,8 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
+import { RiverCombatController } from '../entity/RiverCombatController';
+import { RiverFallController } from '../entity/RiverFallController';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
@@ -58,7 +60,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, MainGameLaunchMode, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -96,6 +98,7 @@ import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitte
 import { applyStandHeightShade } from '../venue/StandHeightShade';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
+import { decorateRiverBrawlVenue } from '../venue/RiverBrawlVenueDecorator';
 import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
@@ -161,6 +164,13 @@ export class GameManager extends Component {
     // difficulty is chosen from the login picker.
     private _aiDebugMode = false;
     private _aiDebugDifficulty = 0.8;
+    private _launchMode: MainGameLaunchMode = 'race';
+    private _riverBrawlMode = false;
+    private readonly _riverCombat = new RiverCombatController();
+    private readonly _riverFall = new RiverFallController();
+    private _riverAttackButton: Node | null = null;
+    private _riverAttackInteractable = false;
+    private _playerRiverFallInputCleared = false;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
@@ -326,6 +336,8 @@ export class GameManager extends Component {
                     return;
                 }
                 try {
+                    this._launchMode = consumeMainGameLaunchMode();
+                    this._riverBrawlMode = this._launchMode === 'river-brawl';
                     this.buildScene((error) => {
                         if (error) {
                             this.paintError(error);
@@ -334,7 +346,7 @@ export class GameManager extends Component {
                         try {
                             this.registerEvents();
                             this.debug('3D runtime initialized');
-                            const launchMode = consumeMainGameLaunchMode();
+                            const launchMode = this._launchMode;
                             if (launchMode === 'model-debug') {
                                 this.enterModelDebug('freestyle');
                             } else if (launchMode === 'underwater-debug') {
@@ -436,12 +448,14 @@ export class GameManager extends Component {
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
         const laneFloatCutoutCenter = this._playerSwimmer.getCameraUpperBodyWorldPosition(this._tmpLaneFloatCutoutCenter);
         const playerHeading = this._playerSwimmer.movementHeading;
-        this._venueManager?.updateLaneFloatCutout(
-            laneFloatCutoutCenter,
-            this._playerSwimmer.raceDirection * Math.cos(playerHeading),
-            Math.sin(playerHeading),
-            laneFloatCutoutActive,
-        );
+        if (!this._riverBrawlMode) {
+            this._venueManager?.updateLaneFloatCutout(
+                laneFloatCutoutCenter,
+                this._playerSwimmer.raceDirection * Math.cos(playerHeading),
+                Math.sin(playerHeading),
+                laneFloatCutoutActive,
+            );
+        }
         const raceStatusVisible = !this._modelDebugFlow?.active
             && playerBeforeFinish
             && (this._state === GameState.GLIDING || this._state === GameState.RACING);
@@ -498,6 +512,9 @@ export class GameManager extends Component {
         // once per render frame (which made impulse count depend on device FPS).
         if (!this._netSession) {
             this.updateSwimmerCollisions();
+            if (this._riverBrawlMode) {
+                this.updateRiverBrawl(dt);
+            }
         }
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
@@ -670,6 +687,59 @@ export class GameManager extends Component {
         resolveSwimmerCollisions(this._collisionSwimmers);
     }
 
+    private collectRiverRacers(): void {
+        this._collisionSwimmers.length = 0;
+        if (this._playerSwimmer) this._collisionSwimmers.push(this._playerSwimmer);
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer) this._collisionSwimmers.push(swimmer);
+        }
+    }
+
+    private updateRiverBrawl(dt: number): void {
+        this.collectRiverRacers();
+        const edgeHalfWidth = COURSE_LAYOUT.poolWidth * 0.5;
+        this._riverCombat.update(dt, this._collisionSwimmers, edgeHalfWidth);
+        this._riverFall.update(dt, this._collisionSwimmers, edgeHalfWidth, this._state === GameState.RACING);
+        if (this._playerSwimmer?.isRiverFalling) {
+            if (!this._playerRiverFallInputCleared) {
+                this._playerRiverFallInputCleared = true;
+                this._raceUiBuilder?.resetInputState();
+                this._inputRouter?.resetStrokeInput();
+            }
+        } else {
+            this._playerRiverFallInputCleared = false;
+        }
+        this.updateRiverAttackButton();
+    }
+
+    private tryPlayerRiverAttack(): void {
+        if (!this._riverBrawlMode || this._state !== GameState.RACING || !this._playerSwimmer) return;
+        this.collectRiverRacers();
+        this._riverCombat.attack(this._playerSwimmer, this._collisionSwimmers);
+        this.updateRiverAttackButton();
+    }
+
+    private updateRiverAttackButton(): void {
+        const node = this._riverAttackButton;
+        if (!node?.isValid) return;
+        const visible = this._riverBrawlMode && this._state === GameState.RACING;
+        if (node.active !== visible) node.active = visible;
+        const interactable = visible
+            && !!this._playerSwimmer?.canRiverCombat
+            && this._riverCombat.cooldownRemaining(this._playerSwimmer) <= 0;
+        if (this._riverAttackInteractable === interactable) return;
+        this._riverAttackInteractable = interactable;
+        const button = node.getComponent(Button);
+        if (button && button.interactable !== interactable) button.interactable = interactable;
+        const graphics = node.getComponent(Graphics);
+        if (graphics) {
+            graphics.fillColor = interactable ? new Color(214, 82, 54, 238) : new Color(93, 103, 116, 205);
+            graphics.clear();
+            graphics.rect(-48, -48, 96, 96);
+            graphics.fill();
+        }
+    }
+
     private toggleSplashCulling() {
         this._splashCullingEnabled = !this._splashCullingEnabled;
         if (!this._splashCullingEnabled) {
@@ -773,8 +843,14 @@ export class GameManager extends Component {
     }
 
     private buildScene(done: (error?: unknown) => void) {
+        COURSE_LAYOUT.resetToDefinition(DEFAULT_POOL_DEFINITION);
         this._roomMode = consumeRoomMode();
         this._netSession = consumeNetRaceSession();
+        if (this._riverBrawlMode && this._netSession) {
+            this._riverBrawlMode = false;
+            this._launchMode = 'race';
+        }
+        COURSE_LAYOUT.setTravelMode(this._riverBrawlMode ? 'straight' : 'laps');
         if (this._netSession) {
             // Networked race: every client reseeds SharedRNG with the host's seed so
             // the AI fill, lane assignment, and roster shuffles match on all clients.
@@ -864,6 +940,11 @@ export class GameManager extends Component {
                         swimmer.clearLaneLockdownBounds();
                     }
                     this._laneLockdownRace?.reset();
+                    if (this._riverBrawlMode) {
+                        this.collectRiverRacers();
+                        this._riverCombat.reset(this._collisionSwimmers);
+                        this._riverFall.reset(this._collisionSwimmers);
+                    }
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
                     this._laneLockdownVisuals?.clear();
@@ -909,6 +990,10 @@ export class GameManager extends Component {
             beginCountdown: () => this.beginRaceCountdown(),
             resolveNetLeaderboard: (leaderboard, done) => this.resolveNetLeaderboard(leaderboard, done),
             showAwards: (leaderboard) => {
+                if (this._riverBrawlMode) {
+                    this._playerOnAwardsPodium = false;
+                    return;
+                }
                 this._playerOnAwardsPodium = leaderboard.some((row) =>
                     row.isPlayer && row.finished && row.placement >= 1 && row.placement <= 3,
                 );
@@ -1013,6 +1098,7 @@ export class GameManager extends Component {
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
+            onCombatAttack: () => this.tryPlayerRiverAttack(),
             onPrimaryAction: () => {
                 const settlement = this._uiController?.settlementView;
                 if (settlement?.root.active) {
@@ -1061,17 +1147,24 @@ export class GameManager extends Component {
                     venue.setWaterY(COURSE_LAYOUT.waterY);
                     this._raceCameraDirector.resetToBroadcast();
                 }
+                if (this._riverBrawlMode) {
+                    decorateRiverBrawlVenue(pool, COURSE_LAYOUT, getRaceDistance());
+                }
                 this._poolNode = pool;
-                // Attach the ceiling lights before the top-view binder scans so
-                // its 'ceiling'-named node is captured and hidden in top view.
-                applyCeilingLightArray(pool, (message) => this.debug(message));
-                const ceilingCount = this._topViewCeiling.bind(pool);
-                this.debug(`top-view ceiling nodes=${ceilingCount}`);
+                if (!this._riverBrawlMode) {
+                    // Attach the ceiling lights before the top-view binder scans so
+                    // its 'ceiling'-named node is captured and hidden in top view.
+                    applyCeilingLightArray(pool, (message) => this.debug(message));
+                    const ceilingCount = this._topViewCeiling.bind(pool);
+                    this.debug(`top-view ceiling nodes=${ceilingCount}`);
+                }
                 this.setupWaterRefraction(pool);
-                applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
-                applyAwardsPodiumToonOutline(pool, (message) => this.debug(message));
-                applyStandStructureToonOutline(pool, (message) => this.debug(message));
-                applyTierFrontToonOutline(pool, (message) => this.debug(message));
+                if (!this._riverBrawlMode) {
+                    applyPoolEdgeToonOutline(pool, (message) => this.debug(message));
+                    applyAwardsPodiumToonOutline(pool, (message) => this.debug(message));
+                    applyStandStructureToonOutline(pool, (message) => this.debug(message));
+                    applyTierFrontToonOutline(pool, (message) => this.debug(message));
+                }
                 this.setupLaneLockdownVisualPreview();
                 done(pool);
             }, 0);
@@ -1097,7 +1190,7 @@ export class GameManager extends Component {
     private setupLaneLockdownVisualPreview() {
         this._laneLockdownVisuals?.dispose();
         this._laneLockdownVisuals = null;
-        if (!getRaceDifficultyConfig().laneLockdownEnabled || !this._waterRefraction) {
+        if (this._riverBrawlMode || !getRaceDifficultyConfig().laneLockdownEnabled || !this._waterRefraction) {
             return;
         }
         this._laneLockdownVisuals = new LaneLockdownVisuals(this._waterRefraction, COURSE_LAYOUT);
@@ -1106,7 +1199,7 @@ export class GameManager extends Component {
 
     private setupLaneLockdownRace() {
         this._laneLockdownRace = null;
-        if (!getRaceDifficultyConfig().laneLockdownEnabled || !this._raceManager) {
+        if (this._riverBrawlMode || !getRaceDifficultyConfig().laneLockdownEnabled || !this._raceManager) {
             return;
         }
         this._laneLockdownRace = new LaneLockdownRaceController(
@@ -1185,6 +1278,9 @@ export class GameManager extends Component {
 
     private buildSpectatorCrowd(root: Node, pool: Node | null) {
         this._spectatorCameraFlashEmitter = null;
+        if (this._riverBrawlMode) {
+            return;
+        }
         if (!pool?.isValid) {
             this.debug('spectator crowd skipped: pool unavailable');
             return;
@@ -1213,6 +1309,11 @@ export class GameManager extends Component {
     }
 
     private setupScoreboardFeed(pool: Node | null) {
+        if (this._riverBrawlMode) {
+            this._scoreboardFeed?.dispose();
+            this._scoreboardFeed = null;
+            return;
+        }
         if (!PERFORMANCE_CONFIG.scoreboardFeed.enabled) {
             return;
         }
@@ -1374,6 +1475,11 @@ export class GameManager extends Component {
         // Networked race: convert the lanes occupied by remote humans from AI to
         // network-driven bodies. Single-player leaves this untouched.
         this.wireRemoteSwimmers();
+        if (this._riverBrawlMode) {
+            this.collectRiverRacers();
+            this._riverCombat.reset(this._collisionSwimmers);
+            this._riverFall.reset(this._collisionSwimmers);
+        }
     }
 
     // Networked race only: turn the AI swimmers that sit in remote-human lanes into
@@ -2084,6 +2190,8 @@ export class GameManager extends Component {
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
             onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            combatEnabled: this._riverBrawlMode,
+            onCombatAttack: () => this._inputRouter?.handleCombatAttack(),
             onRestart: () => this.restartGame(),
             onMenu: () => {
                 if (!this._roomMode) setReturnToLobby(true);
@@ -2104,6 +2212,8 @@ export class GameManager extends Component {
             }
 
             this._raceHud = refs.raceHud;
+            this._riverAttackButton = refs.attackButton;
+            if (this._riverAttackButton?.active) this._riverAttackButton.active = false;
             this.applyRoomModeHud(this._raceHud);
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);

@@ -1,10 +1,11 @@
-import { Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
+import { BlockInputEvents, Button, Color, EventMouse, EventTouch, Graphics, instantiate, Label, LabelOutline, Node, Prefab, resources, Sprite, SpriteFrame, sys, Texture2D, UITransform, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { StrokeType } from '../core/GameConstants';
 import { UIController } from './UIController';
 import { SettlementView } from './SettlementView';
 import type { RaceLeaderboardRow } from './UIController';
+import { styleProjectUiLabel } from './ProjectUiFonts';
 import {
     fitFullScreenBackgroundCover,
     fitNodeToVisibleScreen,
@@ -27,6 +28,8 @@ export type SpeedStarsUiCallbacks = {
     onStrokeEnd: (type: StrokeType) => void;
     onDiveHoldStart: () => void;
     onDiveHoldEnd: (holdSeconds: number) => void;
+    combatEnabled?: boolean;
+    onCombatAttack?: () => void;
     onRestart: () => void;
     onMenu: () => void;
 };
@@ -37,6 +40,7 @@ export type SpeedStarsUiRefs = {
     uiController: UIController;
     timingGuideFillNode: Node;
     timingGuideMarker: Node;
+    attackButton: Node | null;
 };
 
 export type SpeedStarsStartUiRefs = {
@@ -145,6 +149,7 @@ export class SpeedStarsUiPrefabBuilder {
 
         const refs = this.bindRaceHud(raceHud);
         this.hideRaceOverlayReadouts(raceHud);
+        const attackButton = this.buildCombatAttackButton(raceHud);
 
         const uiNode = new Node('UIController');
         uiNode.setParent(raceHud);
@@ -246,7 +251,29 @@ export class SpeedStarsUiPrefabBuilder {
             uiController: ui,
             timingGuideFillNode: requireNode(raceHud, 'SpeedFill'),
             timingGuideMarker: requireNode(raceHud, 'TimingMarker'),
+            attackButton,
         };
+    }
+
+    private buildCombatAttackButton(raceHud: Node): Node | null {
+        if (!this._callbacks.combatEnabled || !this._callbacks.onCombatAttack) return null;
+        const visibleSize = view.getVisibleSize();
+        const safeArea = sys.getSafeAreaRect(false);
+        const bottomInset = Math.max(0, safeArea.y);
+        const button = makeButton('RiverBrawlAttackButton', raceHud, 96, 96, uiColor(214, 82, 54, 238), '踢');
+        button.setPosition(0, -visibleSize.height * 0.5 + bottomInset + 76, 8);
+        button.addComponent(BlockInputEvents);
+        const label = button.getChildByName('Label')?.getComponent(Label);
+        if (label) {
+            label.fontSize = 32;
+            styleProjectUiLabel(label, 'semibold', 38);
+        }
+        button.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
+            event.propagationStopped = true;
+            this._callbacks.onCombatAttack?.();
+        });
+        button.setSiblingIndex(raceHud.children.length - 1);
+        return button;
     }
 
     private bindRaceHud(raceHud: Node): { speedBarRoot: Node } {

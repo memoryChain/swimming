@@ -212,6 +212,9 @@ if (require.main === module) {
         assert.equal(options.consumeReturnToLobby(), false);
         assert.equal(options.consumeReturnToRoom(), true);
         assert.equal(options.consumeReturnToRoom(), false);
+        options.setMainGameLaunchMode('river-brawl');
+        assert.equal(options.consumeMainGameLaunchMode(), 'river-brawl');
+        assert.equal(options.consumeMainGameLaunchMode(), 'race');
     });
 }
 module.exports = { SettlementView, Node, Label, Sprite, UITransform, data, find, nodes, make };

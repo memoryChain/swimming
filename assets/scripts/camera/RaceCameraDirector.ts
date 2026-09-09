@@ -1159,8 +1159,12 @@ export class RaceCameraDirector {
             body.y + RACE_CAMERA_TUNING.dolphinHeight - back * behindY - tangentBias,
             waterY - RACE_CAMERA_TUNING.dolphinMaxSubmerge,
         );
+        const desiredX = body.x - back * behindX;
         const desiredPos = new Vec3(
-            clamp(body.x - back * behindX, poolMinX, poolMaxX),
+            // A straight river extends well past the source 50m pool. Clamping this
+            // follow position to its old walls leaves the target on the swimmer but
+            // strands the camera at x=50, reading as an extreme pullback.
+            this._courseLayout.openSides ? desiredX : clamp(desiredX, poolMinX, poolMaxX),
             posY,
             clamp(body.z - back * behindZ, poolMinZ, poolMaxZ),
         );

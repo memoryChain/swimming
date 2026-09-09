@@ -29,8 +29,11 @@ export type SceneBounds = {
     maxZ: number;
 };
 
+export type RaceTravelMode = 'laps' | 'straight';
+
 export class RaceCourseLayout {
     private _startBlockSurfaces: readonly CharacterSupportPlane[] = [];
+    private _travelMode: RaceTravelMode = 'laps';
 
     setStartBlockSurfaces(surfaces: readonly CharacterSupportPlane[]) {
         this._startBlockSurfaces = surfaces;
@@ -68,6 +71,7 @@ export class RaceCourseLayout {
     }
 
     resetToDefinition(definition: PoolDefinition) {
+        this._travelMode = 'laps';
         this._startBlockSurfaces = [];
         this.laneCount = definition.laneCount;
         this.laneWidth = definition.laneWidth;
@@ -87,6 +91,22 @@ export class RaceCourseLayout {
         this.finishX = this.swimmerRootInsideBoundary(this.insetFromPoolEdge(this.poolFinishX, -this.direction), -this.direction);
         this.platformX = this.poolStartX - this.direction * this.platformBackOffset;
         this.platformY = this.swimY + this.platformYOffset;
+    }
+
+    setTravelMode(mode: RaceTravelMode): void {
+        this._travelMode = mode;
+    }
+
+    get travelMode(): RaceTravelMode {
+        return this._travelMode;
+    }
+
+    get openSides(): boolean {
+        return this._travelMode === 'straight';
+    }
+
+    get finishHasWall(): boolean {
+        return this._travelMode !== 'straight';
     }
 
     calibrateFromPoolScene(pool: Node, definition: PoolDefinition, debug?: (message: string) => void): boolean {
@@ -172,11 +192,17 @@ export class RaceCourseLayout {
     }
 
     distanceToWorldX(distance: number): number {
+        if (this._travelMode === 'straight') {
+            return this.startX + this.direction * finiteNonNegative(distance);
+        }
         const ratio = this.distanceToCourseOffset(distance) / this.courseLength;
         return this.startX + (this.finishX - this.startX) * ratio;
     }
 
     directionAtDistance(distance: number): number {
+        if (this._travelMode === 'straight') {
+            return this.direction;
+        }
         const lap = Math.floor(Math.max(0, distance) / this.courseLength);
         return lap % 2 === 0 ? this.direction : -this.direction;
     }
@@ -191,12 +217,18 @@ export class RaceCourseLayout {
         if (finishDistance <= 0) {
             return 0;
         }
+        if (this._travelMode === 'straight') {
+            return finishDistance;
+        }
         const nextCourseEnd = (Math.floor(distance / this.courseLength) + 1) * this.courseLength;
         return Math.min(finishDistance, nextCourseEnd);
     }
 
     /** Returns the next pool wall that needs a turn, excluding the race finish. */
     nextInternalTurnDistance(playerDistance: number, raceDistance: number): number | null {
+        if (this._travelMode === 'straight') {
+            return null;
+        }
         const distance = finiteNonNegative(playerDistance);
         const finishDistance = finiteNonNegative(raceDistance);
         if (distance >= finishDistance - COURSE_DISTANCE_EPSILON) {
@@ -242,6 +274,9 @@ export class RaceCourseLayout {
     }
 
     clampSwimWorldX(x: number): number {
+        if (this._travelMode === 'straight') {
+            return Number.isFinite(x) ? x : this.startX;
+        }
         const minX = Math.min(this.startX, this.finishX);
         const maxX = Math.max(this.startX, this.finishX);
         return Math.max(minX, Math.min(maxX, x));

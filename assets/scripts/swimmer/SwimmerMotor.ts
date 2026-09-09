@@ -161,6 +161,16 @@ export class SwimmerMotor {
         this._speedCapBonus = Math.max(0, initialSpeedCapBonus);
     }
 
+    restartAfterRiverFall(initialDistance: number, initialSpeed: number) {
+        const speedScale = this._conditionSpeedScale;
+        const qualityScale = this._conditionQualityScale;
+        const cadenceScale = this._conditionCadenceScale;
+        this.startRace(initialDistance, initialSpeed, Math.max(0, initialSpeed - SWIMMER_BALANCE.maxSpeed));
+        this._conditionSpeedScale = speedScale;
+        this._conditionQualityScale = qualityScale;
+        this._conditionCadenceScale = cadenceScale;
+    }
+
     stopRace() {
         this._isRacing = false;
         this._glidePhaseActive = false;

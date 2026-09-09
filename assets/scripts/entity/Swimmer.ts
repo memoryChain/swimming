@@ -75,6 +75,8 @@ export class Swimmer extends Component {
     private _cameraCollisionPitchApplied = 0;
     private _lateralMinWorld = Number.NEGATIVE_INFINITY;
     private _lateralMaxWorld = Number.POSITIVE_INFINITY;
+    private _riverFalling = false;
+    private _respawnProtected = false;
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
@@ -95,6 +97,8 @@ export class Swimmer extends Component {
     get isCollisionActive(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && !this._riverFalling
+            && !this._respawnProtected
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater;
@@ -366,6 +370,11 @@ export class Swimmer extends Component {
     // whole pool width is traversable).
     private configureSteering() {
         this._motor.setSteeringEnabled(true);
+        if (this._courseLayout.openSides) {
+            const halfWidth = this._courseLayout.poolWidth * 0.5 + 6;
+            this.setLateralWorldBounds(-halfWidth, halfWidth);
+            return;
+        }
         const halfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - STEERING_TUNING.poolWallClearance);
         this.setLateralWorldBounds(-halfWidth, halfWidth);
     }
@@ -375,6 +384,11 @@ export class Swimmer extends Component {
     }
 
     clearLaneLockdownBounds() {
+        if (this._courseLayout.openSides) {
+            const halfWidth = this._courseLayout.poolWidth * 0.5 + 6;
+            this.setLateralWorldBounds(-halfWidth, halfWidth);
+            return;
+        }
         const halfWidth = Math.max(0, this._courseLayout.poolWidth * 0.5 - STEERING_TUNING.poolWallClearance);
         this.setLateralWorldBounds(-halfWidth, halfWidth);
     }
@@ -428,6 +442,8 @@ export class Swimmer extends Component {
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
         this.captureStartPosition();
+        this._riverFalling = false;
+        this._respawnProtected = false;
         this._ultimate.reset();
         this._phases.clearFlipTurnPhase(true);
         if (fromDiveEntry) {
@@ -585,6 +601,54 @@ export class Swimmer extends Component {
         this.cartoonRig?.finishDiveChargeEffect();
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setPerfectGlowActive(false);
+    }
+
+    beginRiverFall(): void {
+        if (this._riverFalling) return;
+        this._riverFalling = true;
+        this._respawnProtected = false;
+        this.stopRace();
+        this._motor.clearKnockback();
+        this.cartoonRig?.setActiveSwimming(false);
+        this.cartoonRig?.setPerfectGlowActive(false);
+    }
+
+    respawnAfterRiverFall(distance: number, speed: number): void {
+        Tween.stopAllByTarget(this.node);
+        this._phases.clearFlipTurnPhase(true);
+        this._phases.clearDiveUnderwaterPhase();
+        this._pendingConditionInputs.length = 0;
+        this._pendingRhythmResults.length = 0;
+        this._motor.restartAfterRiverFall(Math.max(0, distance), Math.max(0, speed));
+        this._motor.setLateralOffset(0);
+        this._riverFalling = false;
+        this.applyCoursePosition(distance);
+        this.resetPose();
+        this.cartoonRig?.setDiveReady(false);
+        this.cartoonRig?.setActiveSwimming(true);
+    }
+
+    cancelRiverFallState(): void {
+        this._riverFalling = false;
+        this.setRespawnProtectionActive(false);
+    }
+
+    setRespawnProtectionActive(active: boolean): void {
+        if (this._respawnProtected === active) return;
+        this._respawnProtected = active;
+        this.cartoonRig?.setPerfectGlowActive(active);
+    }
+
+    get canRiverCombat(): boolean {
+        return this.isCollisionActive;
+    }
+
+    get isRiverFalling(): boolean {
+        return this._riverFalling;
+    }
+
+    playCombatKick(_side: StrokeType): void {
+        this.cartoonRig?.triggerKick();
     }
 
     // NETWORKED RACE ONLY: when true this swimmer is stepped in deterministic fixed
@@ -837,6 +901,11 @@ export class Swimmer extends Component {
         this._motor.stopRace();
         this.cartoonRig?.finishDiveChargeEffect();
         this.cartoonRig?.setPerfectGlowActive(false);
+        if (!this._courseLayout.finishHasWall) {
+            this.node.setPosition(finishPosition.x, finishPosition.y + 0.01, finishPosition.z);
+            this.cartoonRig?.setFinishFloating();
+            return;
+        }
         this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
         this.cartoonRig?.setFinishFloating();
         const x = this.finishFloatX(direction);
@@ -859,6 +928,8 @@ export class Swimmer extends Component {
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
         this._ultimate.reset();
+        this._riverFalling = false;
+        this._respawnProtected = false;
         this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
         this.node.setRotationFromEuler(0, this._courseLayout.direction > 0 ? 0 : 180, 0);
@@ -884,6 +955,10 @@ export class Swimmer extends Component {
     }
 
     private updatePerfectZoneGlow() {
+        if (this._respawnProtected) {
+            this.cartoonRig?.setPerfectGlowActive(true);
+            return;
+        }
         if (this.isAI) {
             return;
         }
@@ -1063,6 +1138,9 @@ export class Swimmer extends Component {
     // the root is still inside. Sample the current pose and shift the root just
     // enough to keep every boundary joint inside both walls.
     private enforcePoolWallBoundary() {
+        if (this._courseLayout.openSides) {
+            return;
+        }
         const bounds = this.swimBoundaryZRange();
         const minZ = bounds.min;
         const maxZ = bounds.max;

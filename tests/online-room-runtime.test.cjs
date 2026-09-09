@@ -185,7 +185,7 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
             const flow = new Harness(); flow._width = 1280; flow._height = 720;
             const owners = {};
             for (const name of ['buildReadyCharacterPanel', 'buildPreviewPresentation', 'buildRaceModeList', 'buildReadyActions',
-                'buildCharacterHeader', 'buildCharacterRoster', 'buildCharacterInspector']) {
+                'buildRiverBrawlEntry', 'buildCharacterHeader', 'buildCharacterRoster', 'buildCharacterInspector']) {
                 flow[name] = parent => { owners[name] = parent; };
             }
             for (const name of ['refreshReadyCharacterInfo', 'refreshCharacterCards', 'refreshCharacterInspector', 'selectInspectorTab']) flow[name] = () => {};
@@ -197,6 +197,7 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
             near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 48);
             near(rightMargin(owners.buildRaceModeList), width === 1280 ? 0 : 48);
             assert.equal(owners.buildRaceModeList, owners.buildReadyActions);
+            assert.equal(owners.buildRiverBrawlEntry, canvas);
             near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 48);
             near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 60);
             near(leftMargin(owners.buildCharacterHeader), 0);
