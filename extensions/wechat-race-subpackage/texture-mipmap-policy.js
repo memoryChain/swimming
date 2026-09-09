@@ -3,17 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 
-// 纯色色板按固定 UV 查表，缩小会混入相邻色带；粒子和动态水面不在本次范围内。
-const COLOR_ATLAS = /^(BleacherFlatColorAtlas|StandArchitectureArtAtlas|PoolsidePropsFlatColorAtlas)\.image$/;
+// 当前 Creator 的 GLB 内嵌图片没有生成 mip 链，压缩纹理必须保持单级采样。
+// 独立图片可生成完整 CMIP；粒子和动态水面不在本次范围内。
 const POOL_IMAGES = new Set(['LaneFloatBeads.png', 'PoolBanner.png', 'PoolFasciaBrand.png',
     'PoolFeedFloor.png', 'IndoorNightSky.png']);
 
 function mipFilterForImage(relativeMeta, imageName = '') {
-    if (/^assets\/race\/models\/[^/]+\.(glb|gltf)\.meta$/i.test(relativeMeta)
-        || /^assets\/race\/models\/[^/]+ColorMask\.png\.meta$/i.test(relativeMeta)) return 'linear';
-    if (/^assets\/race\/pool\/[^/]+\.(glb|gltf)\.meta$/i.test(relativeMeta)) {
-        return COLOR_ATLAS.test(imageName) ? 'none' : 'linear';
-    }
+    if (/^assets\/race\/(models|pool)\/[^/]+\.(glb|gltf)\.meta$/i.test(relativeMeta)) return 'none';
+    if (/^assets\/race\/models\/[^/]+ColorMask\.png\.meta$/i.test(relativeMeta)) return 'linear';
     if (relativeMeta.startsWith('assets/race/pool/') && POOL_IMAGES.has(path.basename(relativeMeta, '.meta'))) return 'linear';
     return null;
 }
@@ -53,7 +50,7 @@ function auditTextureMipmaps(projectRoot, { fix = false } = {}) {
             if (sampler.userData.mipfilter === expected) continue;
             result.issues.push({ relativePath: relativeMeta, assetName: sampler.name || sampler.displayName,
                 expected: `mipfilter=${expected}`, current: `mipfilter=${sampler.userData.mipfilter}`,
-                reason: expected === 'linear' ? '泳池/角色启用完整 mip 链采样' : '纯色色板保持单级采样', kind: 'mipmap' });
+                reason: expected === 'linear' ? '独立贴图启用完整 mip 链采样' : 'GLB 内嵌压缩贴图保持单级采样', kind: 'mipmap' });
             if (fix) {
                 sampler.userData.mipfilter = expected;
                 result.changed++;
@@ -100,15 +97,29 @@ function inspectAstcMipChain(buffer) {
     return { width, height, levels, bytes: buffer.length };
 }
 
+function resolveRawAssetPaths(result, uuid) {
+    return result.getRawAssetPaths(uuid).flatMap(info => info.raw || []).map(file => {
+        // Creator 3.8.8 在部分压缩图片查询中只返回目录和扩展名（如 native/9b/.astc）。
+        // 仅修复这种明确的缺名路径；用被查询资源的 UUID，禁止扫描目录猜测其他图片。
+        if (!/^\.(astc|png|jpe?g)$/i.test(path.basename(file))) return file;
+        const named = path.join(path.dirname(file), uuid + path.basename(file));
+        return result.paths?.hashedMap?.[named] || named;
+    });
+}
+
 function assertBuildMipmaps(projectRoot, result) {
     const checked = new Set();
     visitTargetImages(projectRoot, ({ relativeMeta, image, expected }) => {
         if (expected !== 'linear' || !result.containsAsset(image.uuid)) return false;
-        const raw = result.getRawAssetPaths(image.uuid).flatMap(info => info.raw || []);
+        const raw = resolveRawAssetPaths(result, image.uuid);
         const astc = raw.filter(file => path.extname(file).toLowerCase() === '.astc');
         const compressed = image.userData?.compressSettings?.useCompressTexture === true;
         if (compressed && (astc.length === 0 || !raw.some(file => /\.(png|jpe?g)$/i.test(file)))) {
-            throw new Error(`[texture-mipmap] ${relativeMeta} 缺少 ASTC 或 PNG/JPG 回退输出`);
+            const missing = [];
+            if (astc.length === 0) missing.push('ASTC');
+            if (!raw.some(file => /\.(png|jpe?g)$/i.test(file))) missing.push('PNG/JPG 回退');
+            throw new Error(`[texture-mipmap] ${relativeMeta} 缺少 ${missing.join(' 和 ')}输出。`
+                + `解析后的输出路径：${JSON.stringify(raw)}。请检查本次构建的压缩输出配置。`);
         }
         for (const file of raw) {
             if (!fs.existsSync(file)) throw new Error(`[texture-mipmap] 构建输出不存在：${file}`);

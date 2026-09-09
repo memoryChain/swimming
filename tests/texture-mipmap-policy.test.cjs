@@ -26,10 +26,10 @@ function chain(width = 8, height = 4) {
     }
 }
 
-test('只启用泳池常规贴图、角色与遮罩，色板和粒子保留', () => {
-    assert.equal(mipFilterForImage('assets/race/models/CartonSwimmer10.glb.meta'), 'linear');
+test('独立贴图启用 mip，GLB 内嵌图片保持单级采样', () => {
+    assert.equal(mipFilterForImage('assets/race/models/CartonSwimmer10.glb.meta'), 'none');
     assert.equal(mipFilterForImage('assets/race/models/CartonSwimmer10ColorMask.png.meta'), 'linear');
-    assert.equal(mipFilterForImage('assets/race/pool/LowPolyPool.glb.meta', 'PoolWallNarrowTilesWhite.image'), 'linear');
+    assert.equal(mipFilterForImage('assets/race/pool/LowPolyPool.glb.meta', 'PoolWallNarrowTilesWhite.image'), 'none');
     for (const name of ['BleacherFlatColorAtlas', 'StandArchitectureArtAtlas', 'PoolsidePropsFlatColorAtlas']) {
         assert.equal(mipFilterForImage('assets/race/pool/LowPolyPool.glb.meta', `${name}.image`), 'none');
     }
@@ -54,9 +54,8 @@ test('修复保持 UUID/压缩/采样其他参数，构建门禁验证实际输�
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'swimming-mipmap-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const dir = path.join(root, 'assets/race/models'); fs.mkdirSync(dir, { recursive: true });
-    const metaPath = path.join(dir, 'Test.glb.meta');
-    const meta = { importer: 'gltf', uuid: 'model', subMetas: {
-        image: { importer: 'gltf-embeded-image', uuid: 'image', name: 'color.image', userData: { compressSettings: { useCompressTexture: true, presetId: 'astc-opaque-6x6' } } },
+    const metaPath = path.join(dir, 'TestColorMask.png.meta');
+    const meta = { importer: 'image', uuid: 'image', userData: { compressSettings: { useCompressTexture: true, presetId: 'astc-opaque-6x6' } }, subMetas: {
         texture: { importer: 'texture', uuid: 'texture', name: 'texture', userData: { imageUuidOrDatabaseUri: 'image', mipfilter: 'none', minfilter: 'linear', magfilter: 'linear', wrapModeS: 'repeat' } },
     } };
     fs.writeFileSync(metaPath, JSON.stringify(meta));
@@ -77,5 +76,18 @@ test('修复保持 UUID/压缩/采样其他参数，构建门禁验证实际输�
     fs.writeFileSync(file, chain()); raw = [file];
     assert.throws(() => assertBuildMipmaps(root, result), /回退/);
     raw = [fallback]; assert.throws(() => assertBuildMipmaps(root, result), /ASTC/);
+    // 重现 Creator 返回缺少 UUID 的 .astc/.jpg，而磁盘文件带有 UUID 的情况。
+    const namedAstc = path.join(root, 'image.astc'), namedFallback = path.join(root, 'image.jpg');
+    fs.writeFileSync(namedAstc, chain()); fs.writeFileSync(namedFallback, '回退文件');
+    raw = [path.join(root, '.astc'), path.join(root, '.jpg')];
+    assert.equal(assertBuildMipmaps(root, result).compressedImages, 1);
+    fs.writeFileSync(namedAstc, astc(8, 4));
+    assert.throws(() => assertBuildMipmaps(root, result), /CMIP/);
+    fs.writeFileSync(namedAstc, chain());
+    fs.unlinkSync(namedFallback);
+    // 同目录有其他带 hash 的图片，也不能冒充当前构建的回退资源。
+    assert.throws(() => assertBuildMipmaps(root, result), /构建输出不存在/);
+    result.paths = { hashedMap: { [namedAstc]: file, [namedFallback]: fallback } };
+    assert.equal(assertBuildMipmaps(root, result).compressedImages, 1);
     assert.equal(assertBuildMipmaps(root, { containsAsset: () => false }).compressedImages, 0);
 });
