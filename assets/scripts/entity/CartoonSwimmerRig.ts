@@ -186,6 +186,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _loaded = false;
     private _armAction = 0;
     private _kickAction = 0;
+    private _combatKickElapsed = -1;
+    private _combatKickSide: -1 | 1 = 1;
     private _armCycleMotion = 0;
     private _leftHandWaterContact = 0;
     private _rightHandWaterContact = 0;
@@ -1070,6 +1072,20 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.triggerKick();
     }
 
+    triggerCombatKick(side: StrokeType.LEFT | StrokeType.RIGHT) {
+        this._combatKickElapsed = 0;
+        this._combatKickSide = side === StrokeType.LEFT ? -1 : 1;
+        this._kickAction = 1;
+        this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;
+        this._splashEmitter?.triggerCombatKick(side);
+    }
+
+    triggerCombatImpact() {
+        // A small body-level water burst at the hit swimmer makes the cause of
+        // the later wobble readable without adding a new runtime effect asset.
+        this._splashEmitter?.triggerBurst(0.55);
+    }
+
     triggerStroke(_type: StrokeType) {
         this._armAction = 1;
         this._kickAction = 1;
@@ -1165,6 +1181,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (useDt < 0) {
             return;
         }
+        this._pose.clearCombatSideKickOverlay();
         // Arms reach along the actual swim heading so they follow the body when it
         // steers, instead of staying pinned to the lane axis.
         this._pose.setMovementHeadingRadians(movementHeadingRadians);
@@ -1189,6 +1206,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         // 跟随原有降频与离屏裁剪，在完整基础姿态之后应用，下一次姿态会自然覆盖。
         if (this._loaded && this._poseState.isFreestyleActive) {
             this._pose.applyCollisionSoftness(motor.collisionSoftness, useDt);
+            const combatKickProgress = this.advanceCombatKick(useDt);
+            if (combatKickProgress >= 0) {
+                this._pose.applyCombatSideKick(this._combatKickSide, combatKickProgress);
+            }
         }
     }
 
@@ -1198,6 +1219,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (useDt < 0) {
             return;
         }
+        this._pose.clearCombatSideKickOverlay();
         this._pose.setMovementHeadingRadians(motor.heading);
         this._pose.setMovementPitchRadians(movementPitchRadians);
         this._splashMovementHeadingRadians = motor.heading;
@@ -1509,6 +1531,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._kickCycleMotion = 0;
         this._lastKickCycle = 0;
         this._hasLastKickCycle = false;
+        this._combatKickElapsed = -1;
         this._treadWaterWeight = 0;
         this._treadWaterPhase = 0;
         this._treadExitHold = 0;
@@ -2295,6 +2318,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const target = Math.max(0, Math.min(1, angularSpeed / (Math.PI * 2 * 3.2)));
         const blend = Math.min(1, dt * 10);
         this._kickCycleMotion += (target - this._kickCycleMotion) * blend;
+    }
+
+    private advanceCombatKick(dt: number): number {
+        if (this._combatKickElapsed < 0) {
+            return -1;
+        }
+        const duration = 0.6;
+        const progress = Math.min(1, this._combatKickElapsed / duration);
+        this._combatKickElapsed += Math.max(0, dt);
+        if (this._combatKickElapsed >= duration) {
+            this._combatKickElapsed = -1;
+        }
+        return progress;
     }
 
     private syncSplashState() {

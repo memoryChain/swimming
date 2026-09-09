@@ -108,6 +108,9 @@ export class SplashEmitter {
     private _armSplashBurst = 0;
     private _kickSplashBurst = 0;
     private _kickParticleBurstPending = false;
+    // A combat kick should only burst the leg that actually strikes. This one-frame
+    // marker is consumed after the regular pose has placed the foot emitter.
+    private _combatKickParticleSide: 'left' | 'right' | null = null;
     private _lastDt = TUNING.initialDt;
     private _waterY: number;
     private _culled = false;
@@ -185,6 +188,16 @@ export class SplashEmitter {
         this._kickParticleBurstPending = true;
     }
 
+    triggerCombatKick(side: 'left' | 'right') {
+        if (this._culled) {
+            return;
+        }
+        this._kickSplashBurst = Math.max(this._kickSplashBurst, TUNING.burst.kick * 1.35);
+        this._splashBurst = Math.max(this._splashBurst, TUNING.burst.kickGeneric * 1.15);
+        this._combatKickParticleSide = side;
+        this.node.active = true;
+    }
+
     triggerBurst(scale = 1) {
         if (this._culled) {
             return;
@@ -247,6 +260,7 @@ export class SplashEmitter {
         this._armSplashBurst = 0;
         this._kickSplashBurst = 0;
         this._kickParticleBurstPending = false;
+        this._combatKickParticleSide = null;
         this._state = EMPTY_STATE;
         for (const emitter of this._particleEmitters) {
             this.clearParticleEmitter(emitter);
@@ -276,6 +290,7 @@ export class SplashEmitter {
             this._armSplashBurst = 0;
             this._kickSplashBurst = 0;
             this._kickParticleBurstPending = false;
+            this._combatKickParticleSide = null;
             for (const emitter of this._particleEmitters) {
                 emitter.cooldown = 0;
                 emitter.keepAlive = 0;
@@ -640,10 +655,15 @@ export class SplashEmitter {
 
     private updateParticleEmitters(speedRatio: number) {
         const kickParticleBurstPending = this._kickParticleBurstPending;
+        const combatKickParticleSide = this._combatKickParticleSide;
         for (const emitter of this._particleEmitters) {
             if (emitter.role === 'leg') {
                 if (TUNING.particleEmitters.enableLeg) {
-                    this.updateLegParticleEmitter(emitter, speedRatio, kickParticleBurstPending);
+                    this.updateLegParticleEmitter(
+                        emitter,
+                        speedRatio,
+                        kickParticleBurstPending || combatKickParticleSide === emitter.side,
+                    );
                 } else {
                     this.clearParticleEmitter(emitter);
                 }
@@ -688,6 +708,7 @@ export class SplashEmitter {
             emitter.lastContact = entry;
         }
         this._kickParticleBurstPending = false;
+        this._combatKickParticleSide = null;
     }
 
     private updateLegParticleEmitter(emitter: SplashParticleEmitter, speedRatio: number, kickParticleBurstPending: boolean) {

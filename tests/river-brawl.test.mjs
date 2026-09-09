@@ -23,6 +23,7 @@ function fakeSwimmer({ x, z, direction = 1, heading = 0, weight = 1, active = tr
         applyCollisionSoftnessImpulse(side, forward) { calls.push(['soft', side, forward]); },
         addCollisionEnergyBonus(value) { calls.push(['energy', value]); },
         flashCollision() { calls.push(['flash']); },
+        playCombatImpact() { calls.push(['impact']); },
     };
 }
 
@@ -38,6 +39,7 @@ test('side kick reaches an adjacent lane and pushes the victim outward', () => {
     assert.deepEqual(target.calls.find((call) => call[0] === 'pitch'), ['pitch', -0.8]);
     assert.deepEqual(target.calls.find((call) => call[0] === 'soft'), ['soft', 0.6, -0.4]);
     assert.ok(target.calls.some((call) => call[0] === 'soft'));
+    assert.ok(target.calls.some((call) => call[0] === 'impact'));
 });
 
 test('side kick chooses the nearest stable candidate and rejects invalid targets', () => {

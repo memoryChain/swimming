@@ -139,6 +139,10 @@ export class FreestylePoseController {
     private readonly _breaststrokeSampleBuffer = createBreaststrokeMotionSampleBuffer();
     private readonly _boneBaseRotation = new Map<Node, Quat>();
     private readonly _boneBasePosition = new Map<Node, Vec3>();
+    // Side-kick presentation is an overlay on top of a procedurally assembled
+    // swim pose. Keep its local deltas so the next pose update can remove the
+    // previous overlay before rebuilding the normal stroke.
+    private readonly _combatSideKickOffsets = new Map<Node, Quat>();
     private readonly _tmpOffsetRotation = new Quat();
     private readonly _tmpResultRotation = new Quat();
     private readonly _tmpAxisRotation = new Quat();
@@ -313,6 +317,7 @@ export class FreestylePoseController {
 
     restoreBasePose() {
         this._collisionLimp.reset();
+        this._combatSideKickOffsets.clear();
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
         for (const [bone, rotation] of this._boneBaseRotation) {
@@ -488,6 +493,65 @@ export class FreestylePoseController {
     // 必须在本帧基础姿态完成后调用，松弛权重归零后恢复当前划水动作。
     applyCollisionSoftness(state: Readonly<CollisionSoftnessState>, dt: number): void {
         this._collisionLimp.apply(state, dt);
+    }
+
+    // The ordinary freestyle builder intentionally does not rewrite every
+    // torso bone each frame. Remove the previous presentation layer explicitly
+    // before it runs, otherwise a side kick compounds into the next kick.
+    clearCombatSideKickOverlay(): void {
+        for (const [bone, offset] of this._combatSideKickOffsets) {
+            if (!bone?.isValid) {
+                continue;
+            }
+            Quat.invert(this._tmpDeltaRotation, offset);
+            Quat.multiply(this._tmpResultRotation, bone.rotation, this._tmpDeltaRotation);
+            bone.setRotation(this._tmpResultRotation);
+        }
+        this._combatSideKickOffsets.clear();
+    }
+
+    // Presentation-only side kick layered after the normal freestyle pose. The
+    // caller supplies a normalized 0..1 timeline, so this never changes the
+    // motor's kick cycle, speed, heading, or collision state.
+    applyCombatSideKick(side: -1 | 1, progress: number): void {
+        const t = clamp(progress, 0, 1);
+        const kickSide = side < 0 ? -1 : 1;
+        // A clearly readable coil -> lateral extension -> recovery. The actual
+        // kick holds briefly at full extension so it remains visible through the
+        // motion throttling and the normal freestyle leg cycle.
+        const coil = smoothPulse(t, 0, 0.10, 0.24, 0.38);
+        const extension = smoothPulse(t, 0.18, 0.30, 0.62, 0.82);
+        const balance = Math.max(coil, extension);
+        const upLeg = kickSide < 0 ? this._leftUpLeg : this._rightUpLeg;
+        const leg = kickSide < 0 ? this._leftLeg : this._rightLeg;
+        const foot = kickSide < 0 ? this._leftFoot : this._rightFoot;
+        const toe = kickSide < 0 ? this._leftToe : this._rightToe;
+        const braceArm = kickSide < 0 ? this._rightArm : this._leftArm;
+        const braceForeArm = kickSide < 0 ? this._rightForeArm : this._leftForeArm;
+
+        // A small counter-roll in the torso sells the weight shift without moving
+        // the root transform, which would fight collision roll and the camera.
+        this.applyCombatSideKickOffset(this._hips, -3 * balance, 0, kickSide * 11 * balance);
+        this.applyCombatSideKickOffset(this._spine, -2 * balance, 0, kickSide * 8 * balance);
+        this.applyCombatSideKickOffset(this._torso, -1.5 * balance, 0, kickSide * 6 * balance);
+        this.applyCombatSideKickOffset(braceArm, -5 * balance, -kickSide * 8 * balance, -kickSide * 6 * balance);
+        this.applyCombatSideKickOffset(braceForeArm, 8 * balance, -kickSide * 6 * balance, -kickSide * 4 * balance);
+
+        // Target-side knee gathers first, then the thigh and shin extend into the
+        // lateral push. These are offsets from THIS frame's freestyle pose, so the
+        // next frame naturally returns to the normal stroke without a snap.
+        this.applyCombatSideKickOffset(upLeg,
+            -16 * coil + 26 * extension,
+            kickSide * (7 * coil + 22 * extension),
+            kickSide * (4 * coil + 8 * extension),
+        );
+        this.applyCombatSideKickOffset(leg,
+            40 * coil - 18 * extension,
+            kickSide * (4 * coil + 12 * extension),
+            kickSide * (2 * coil + 6 * extension),
+        );
+        this.applyCombatSideKickOffset(foot, -12 * extension, kickSide * 20 * extension, kickSide * 6 * extension);
+        this.applyCombatSideKickOffset(toe, -7 * extension, kickSide * 10 * extension, kickSide * 3 * extension);
     }
 
     resetCollisionSoftness(): void {
@@ -2384,6 +2448,23 @@ export class FreestylePoseController {
         Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
         Quat.multiply(this._tmpResultRotation, bone.rotation, this._tmpOffsetRotation);
         bone.setRotation(this._tmpResultRotation);
+    }
+
+    private applyCombatSideKickOffset(bone: Node, x: number, y: number, z: number) {
+        if (!bone) {
+            return;
+        }
+        Quat.fromEuler(this._tmpOffsetRotation, x, y, z);
+        Quat.multiply(this._tmpResultRotation, bone.rotation, this._tmpOffsetRotation);
+        bone.setRotation(this._tmpResultRotation);
+
+        const combinedOffset = this._combatSideKickOffsets.get(bone);
+        if (combinedOffset) {
+            Quat.multiply(this._tmpBlendRotation, combinedOffset, this._tmpOffsetRotation);
+            Quat.copy(combinedOffset, this._tmpBlendRotation);
+        } else {
+            this._combatSideKickOffsets.set(bone, Quat.clone(this._tmpOffsetRotation));
+        }
     }
 
     // Palm pronation is a twist around the limb's actual child direction. Applying

@@ -647,8 +647,13 @@ export class Swimmer extends Component {
         return this._riverFalling;
     }
 
-    playCombatKick(_side: StrokeType): void {
-        this.cartoonRig?.triggerKick();
+    playCombatKick(side: StrokeType): void {
+        if (side !== StrokeType.LEFT && side !== StrokeType.RIGHT) return;
+        this.cartoonRig?.triggerCombatKick(side);
+    }
+
+    playCombatImpact(): void {
+        this.cartoonRig?.triggerCombatImpact();
     }
 
     // NETWORKED RACE ONLY: when true this swimmer is stepped in deterministic fixed

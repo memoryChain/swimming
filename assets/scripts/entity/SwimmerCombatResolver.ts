@@ -67,6 +67,7 @@ export function resolveSideKick(attacker: Swimmer, racers: readonly Swimmer[]): 
     );
     best.addCollisionEnergyBonus(lateralMagnitude);
     best.flashCollision();
+    best.playCombatImpact();
 
     const recoilX = -sideX * sideSign * RIVER_BRAWL_BALANCE.attackerRecoilImpulse;
     const recoilZ = -sideZ * sideSign * RIVER_BRAWL_BALANCE.attackerRecoilImpulse;
