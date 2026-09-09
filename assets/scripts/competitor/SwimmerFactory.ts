@@ -24,6 +24,8 @@ export class SwimmerFactory {
         node.setPosition(options.x, options.y ?? 0.22, options.z);
 
         const rig = node.addComponent(CartoonSwimmerRig);
+        // 对手的初始描边由比赛相机距离决定，异步加载期间先保持隐藏。
+        rig.setOutlineVisible(!options.isAI);
         const sharedSkin = color(246, 176, 118);
         const selectedPlayer = options.isAI ? null : findPlayerCharacter();
         // Roll once while creating the opponent so a lane keeps the same

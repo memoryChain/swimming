@@ -1,4 +1,5 @@
 import { PlayerData } from '../backend/PlayerData';
+import { CharacterOutlineVisibility } from '../character/CharacterOutlineVisibility';
 import { AVATARS, avatarSwimmerLookOf } from '../backend/IdentityConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import {
@@ -315,6 +316,7 @@ export class GameManager extends Component {
     // presses stay responsive. Toggle with the B key.
     private _bulletTimeIndex = 0;
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
+    private readonly _characterOutlineVisibility = new CharacterOutlineVisibility();
     private readonly _finishRankOverlay = new FinishRankOverlay();
     private readonly _swimmerNameOverlay = new SwimmerNameOverlay();
     private readonly _cameraSpeedLines = new CameraSpeedLineOverlay();
@@ -557,6 +559,7 @@ export class GameManager extends Component {
         this.updateSpectatorCameraTarget();
         // 开场展示按实际秒数推进，避免调试慢速把赛制与角色卡之间的间隔拉长。
         this._gameFlow?.updateRaceCamera(this._state === GameState.PRECOUNTDOWN ? netDt : dt);
+        this._characterOutlineVisibility.update(netDt, this._cameraNode, this._playerSwimmer, this._aiSwimmers);
         this.updateSpeedLineVanishingPoint();
         this._topViewCeiling.update(this._raceCameraDirector.topViewActive);
         this.setUnderwaterOverlayVisible(this._raceCameraDirector.underwaterViewActive);

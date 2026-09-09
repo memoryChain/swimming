@@ -183,6 +183,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _rendererRevealFramesRemaining = 0;
     private _castsShadow = false;
     private _outlineRoot: Node = null;
+    private _outlineVisible = true;
     private _loaded = false;
     private _armAction = 0;
     private _kickAction = 0;
@@ -901,6 +902,19 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         } else {
             this._poseState.enterPreview();
             this.resetPose();
+        }
+    }
+
+    get outlineVisible(): boolean {
+        return this._outlineVisible;
+    }
+
+    // 仅切换描边壳，不刷新皮肤、不重建模型，也不干预骨架或动作。
+    // 模型尚未加载时也保存状态，新壳通过 setOutlineRoot 继承它。
+    setOutlineVisible(visible: boolean): void {
+        this._outlineVisible = visible;
+        if (this._outlineRoot?.isValid && this._outlineRoot.active !== visible) {
+            this._outlineRoot.active = visible;
         }
     }
 
@@ -1710,6 +1724,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             outlineRoot: this._outlineRoot,
             setOutlineRoot: (root) => {
                 this._outlineRoot = root;
+                this.setOutlineVisible(this._outlineVisible);
             },
         });
         // Dynamic colour assets can finish loading while the swimmer is charging
