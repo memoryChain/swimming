@@ -516,42 +516,51 @@ export class FreestylePoseController {
     applyCombatSideKick(side: -1 | 1, progress: number): void {
         const t = clamp(progress, 0, 1);
         const kickSide = side < 0 ? -1 : 1;
-        // A clearly readable coil -> lateral extension -> recovery. The actual
-        // kick holds briefly at full extension so it remains visible through the
-        // motion throttling and the normal freestyle leg cycle.
-        const coil = smoothPulse(t, 0, 0.10, 0.24, 0.38);
-        const extension = smoothPulse(t, 0.18, 0.30, 0.62, 0.82);
+        // Exaggerated, arcade-style coil -> lateral extension -> recovery. Hold
+        // the full extension long enough that repeated cooldown-limited kicks
+        // read as a distinct combo instead of another normal flutter kick.
+        const coil = smoothPulse(t, 0, 0.08, 0.26, 0.42);
+        const extension = smoothPulse(t, 0.18, 0.30, 0.68, 0.90);
         const balance = Math.max(coil, extension);
         const upLeg = kickSide < 0 ? this._leftUpLeg : this._rightUpLeg;
         const leg = kickSide < 0 ? this._leftLeg : this._rightLeg;
         const foot = kickSide < 0 ? this._leftFoot : this._rightFoot;
         const toe = kickSide < 0 ? this._leftToe : this._rightToe;
+        const braceUpLeg = kickSide < 0 ? this._rightUpLeg : this._leftUpLeg;
+        const braceLeg = kickSide < 0 ? this._rightLeg : this._leftLeg;
+        const braceFoot = kickSide < 0 ? this._rightFoot : this._leftFoot;
         const braceArm = kickSide < 0 ? this._rightArm : this._leftArm;
         const braceForeArm = kickSide < 0 ? this._rightForeArm : this._leftForeArm;
 
-        // A small counter-roll in the torso sells the weight shift without moving
-        // the root transform, which would fight collision roll and the camera.
-        this.applyCombatSideKickOffset(this._hips, -3 * balance, 0, kickSide * 11 * balance);
-        this.applyCombatSideKickOffset(this._spine, -2 * balance, 0, kickSide * 8 * balance);
-        this.applyCombatSideKickOffset(this._torso, -1.5 * balance, 0, kickSide * 6 * balance);
-        this.applyCombatSideKickOffset(braceArm, -5 * balance, -kickSide * 8 * balance, -kickSide * 6 * balance);
-        this.applyCombatSideKickOffset(braceForeArm, 8 * balance, -kickSide * 6 * balance, -kickSide * 4 * balance);
+        // A deliberately broad counter-roll sells the arcade shove without
+        // rotating the root transform, which would fight collision roll/camera.
+        this.applyCombatSideKickOffset(this._hips, -5 * balance, 0, kickSide * 18 * balance);
+        this.applyCombatSideKickOffset(this._spine, -3.5 * balance, 0, kickSide * 13 * balance);
+        this.applyCombatSideKickOffset(this._torso, -2.5 * balance, 0, kickSide * 10 * balance);
+        this.applyCombatSideKickOffset(braceArm, -8 * balance, -kickSide * 14 * balance, -kickSide * 10 * balance);
+        this.applyCombatSideKickOffset(braceForeArm, 14 * balance, -kickSide * 10 * balance, -kickSide * 7 * balance);
 
         // Target-side knee gathers first, then the thigh and shin extend into the
         // lateral push. These are offsets from THIS frame's freestyle pose, so the
         // next frame naturally returns to the normal stroke without a snap.
         this.applyCombatSideKickOffset(upLeg,
-            -16 * coil + 26 * extension,
-            kickSide * (7 * coil + 22 * extension),
-            kickSide * (4 * coil + 8 * extension),
+            -24 * coil + 40 * extension,
+            kickSide * (10 * coil + 34 * extension),
+            kickSide * (6 * coil + 13 * extension),
         );
         this.applyCombatSideKickOffset(leg,
-            40 * coil - 18 * extension,
-            kickSide * (4 * coil + 12 * extension),
-            kickSide * (2 * coil + 6 * extension),
+            58 * coil - 28 * extension,
+            kickSide * (6 * coil + 18 * extension),
+            kickSide * (3 * coil + 9 * extension),
         );
-        this.applyCombatSideKickOffset(foot, -12 * extension, kickSide * 20 * extension, kickSide * 6 * extension);
-        this.applyCombatSideKickOffset(toe, -7 * extension, kickSide * 10 * extension, kickSide * 3 * extension);
+        this.applyCombatSideKickOffset(foot, -20 * extension, kickSide * 30 * extension, kickSide * 10 * extension);
+        this.applyCombatSideKickOffset(toe, -10 * extension, kickSide * 16 * extension, kickSide * 5 * extension);
+
+        // Pull the opposite leg back slightly so the silhouette opens into a
+        // visible scissor rather than hiding the kick inside the swim flutter.
+        this.applyCombatSideKickOffset(braceUpLeg, 10 * extension, -kickSide * 11 * extension, -kickSide * 5 * extension);
+        this.applyCombatSideKickOffset(braceLeg, -8 * extension, -kickSide * 7 * extension, -kickSide * 3 * extension);
+        this.applyCombatSideKickOffset(braceFoot, -5 * extension, -kickSide * 10 * extension, -kickSide * 3 * extension);
     }
 
     resetCollisionSoftness(): void {

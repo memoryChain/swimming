@@ -2324,7 +2324,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         if (this._combatKickElapsed < 0) {
             return -1;
         }
-        const duration = 0.6;
+        const duration = 0.72;
         const progress = Math.min(1, this._combatKickElapsed / duration);
         this._combatKickElapsed += Math.max(0, dt);
         if (this._combatKickElapsed >= duration) {

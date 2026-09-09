@@ -12,6 +12,7 @@ export type InputRouterCallbacks = {
     // Both invisible screen halves held together past the trigger threshold.
     onDolphinJump: () => void;
     onCombatAttack: () => void;
+    onSpaceAction: () => void;
     onPrimaryAction: () => void;
     onToggleDebug: () => void;
     onCycleRaceCamera: () => void;
@@ -67,6 +68,7 @@ export class InputRouter {
         this._target.on('dive-charge-start', this.onDiveChargeStart, this);
         this._target.on('dive-release', this.onDiveRelease, this);
         this._target.on('combat-attack', this.onCombatAttack, this);
+        this._target.on('space-action', this.onSpaceAction, this);
         this._target.on('primary-action', this.onPrimaryAction, this);
         this._target.on('toggle-debug', this.onToggleDebug, this);
         this._target.on('cycle-race-camera', this.onCycleRaceCamera, this);
@@ -95,6 +97,7 @@ export class InputRouter {
         this._target.off('dive-charge-start', this.onDiveChargeStart, this);
         this._target.off('dive-release', this.onDiveRelease, this);
         this._target.off('combat-attack', this.onCombatAttack, this);
+        this._target.off('space-action', this.onSpaceAction, this);
         this._target.off('primary-action', this.onPrimaryAction, this);
         this._target.off('toggle-debug', this.onToggleDebug, this);
         this._target.off('cycle-race-camera', this.onCycleRaceCamera, this);
@@ -263,6 +266,10 @@ export class InputRouter {
 
     private onCombatAttack() {
         this.handleCombatAttack();
+    }
+
+    private onSpaceAction() {
+        this._callbacks.onSpaceAction();
     }
 
     private onPrimaryAction() {

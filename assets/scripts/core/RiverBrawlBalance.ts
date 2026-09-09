@@ -13,7 +13,7 @@ export const RIVER_BRAWL_BALANCE = {
     attackSoftnessSide: 0.6,
     attackSoftnessForward: -0.4,
     fallSeconds: 0.9,
-    respawnSetback: 10,
+    respawnSetback: 5,
     respawnSpeed: 1.2,
     respawnProtectionSeconds: 1.25,
     aiDecisionIntervalSeconds: 0.25,

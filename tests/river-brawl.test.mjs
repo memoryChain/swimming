@@ -97,7 +97,7 @@ test('fall controller keeps the racer active, sets back progress, and ends prote
     assert.equal(node.active, true);
 
     controller.update(0.9, [swimmer], 10.5, true);
-    assert.deepEqual(calls.find((call) => call[0] === 'respawn'), ['respawn', 30, 1.2]);
+    assert.deepEqual(calls.find((call) => call[0] === 'respawn'), ['respawn', 35, 1.2]);
     assert.ok(calls.some((call) => call[0] === 'protect' && call[1] === true));
     controller.update(1.24, [swimmer], 10.5, true);
     assert.equal(swimmer.canRiverCombat, false);

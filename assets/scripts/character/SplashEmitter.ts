@@ -192,8 +192,8 @@ export class SplashEmitter {
         if (this._culled) {
             return;
         }
-        this._kickSplashBurst = Math.max(this._kickSplashBurst, TUNING.burst.kick * 1.35);
-        this._splashBurst = Math.max(this._splashBurst, TUNING.burst.kickGeneric * 1.15);
+        this._kickSplashBurst = Math.max(this._kickSplashBurst, TUNING.burst.kick * 1.7);
+        this._splashBurst = Math.max(this._splashBurst, TUNING.burst.kickGeneric * 1.3);
         this._combatKickParticleSide = side;
         this.node.active = true;
     }

@@ -1099,14 +1099,8 @@ export class GameManager extends Component {
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
             onCombatAttack: () => this.tryPlayerRiverAttack(),
-            onPrimaryAction: () => {
-                const settlement = this._uiController?.settlementView;
-                if (settlement?.root.active) {
-                    settlement.activatePrimary();
-                } else if (!(this._roomMode && (this._state === GameState.FINISHED || this._state === GameState.AWARDS))) {
-                    this._gameFlow?.handlePrimaryAction();
-                }
-            },
+            onSpaceAction: () => this.handleSpaceAction(),
+            onPrimaryAction: () => this.handlePrimaryAction(),
             onToggleDebug: () => this.toggleDebug(),
             onCycleRaceCamera: () => this.cycleRaceCamera(),
             onToggleCameraFollowAi: () => this.toggleCameraFollowAi(),
@@ -1123,6 +1117,23 @@ export class GameManager extends Component {
             onCameraOrbit: (deltaX, deltaY) => this.onAwardsCameraOrbit(deltaX, deltaY),
             onCameraZoom: (scroll) => this.onAwardsCameraZoom(scroll),
         });
+    }
+
+    private handleSpaceAction(): void {
+        if (this._riverBrawlMode && this._state === GameState.RACING) {
+            this.tryPlayerRiverAttack();
+            return;
+        }
+        this.handlePrimaryAction();
+    }
+
+    private handlePrimaryAction(): void {
+        const settlement = this._uiController?.settlementView;
+        if (settlement?.root.active) {
+            settlement.activatePrimary();
+        } else if (!(this._roomMode && (this._state === GameState.FINISHED || this._state === GameState.AWARDS))) {
+            this._gameFlow?.handlePrimaryAction();
+        }
     }
 
     private buildPool3D(root: Node, done: (pool: Node | null) => void) {
