@@ -143,6 +143,11 @@ export class FreestylePoseController {
     // swim pose. Keep its local deltas so the next pose update can remove the
     // previous overlay before rebuilding the normal stroke.
     private readonly _combatSideKickOffsets = new Map<Node, Quat>();
+    // Unlike individual limbs, the armature root is animated in world space for
+    // the arcade spin. Preserve the exact local pose so it can be restored before
+    // the next normal freestyle build.
+    private readonly _combatSideKickRootRotation = new Quat();
+    private _combatSideKickRootOverlayActive = false;
     private readonly _tmpOffsetRotation = new Quat();
     private readonly _tmpResultRotation = new Quat();
     private readonly _tmpAxisRotation = new Quat();
@@ -318,6 +323,7 @@ export class FreestylePoseController {
     restoreBasePose() {
         this._collisionLimp.reset();
         this._combatSideKickOffsets.clear();
+        this._combatSideKickRootOverlayActive = false;
         this.root?.setPosition(this.rootBasePos);
         this.root?.setRotation(this.rootBaseRotation);
         for (const [bone, rotation] of this._boneBaseRotation) {
@@ -499,6 +505,10 @@ export class FreestylePoseController {
     // torso bone each frame. Remove the previous presentation layer explicitly
     // before it runs, otherwise a side kick compounds into the next kick.
     clearCombatSideKickOverlay(): void {
+        if (this._combatSideKickRootOverlayActive && this.root?.isValid) {
+            this.root.setRotation(this._combatSideKickRootRotation);
+        }
+        this._combatSideKickRootOverlayActive = false;
         for (const [bone, offset] of this._combatSideKickOffsets) {
             if (!bone?.isValid) {
                 continue;
@@ -522,6 +532,7 @@ export class FreestylePoseController {
         const coil = smoothPulse(t, 0, 0.08, 0.26, 0.42);
         const extension = smoothPulse(t, 0.18, 0.30, 0.68, 0.90);
         const balance = Math.max(coil, extension);
+        this.applyCombatSideKickRootSpin(kickSide, t);
         const upLeg = kickSide < 0 ? this._leftUpLeg : this._rightUpLeg;
         const leg = kickSide < 0 ? this._leftLeg : this._rightLeg;
         const foot = kickSide < 0 ? this._leftFoot : this._rightFoot;
@@ -2474,6 +2485,25 @@ export class FreestylePoseController {
         } else {
             this._combatSideKickOffsets.set(bone, Quat.clone(this._tmpOffsetRotation));
         }
+    }
+
+    private applyCombatSideKickRootSpin(side: -1 | 1, progress: number): void {
+        if (!this.root) {
+            return;
+        }
+        if (!this._combatSideKickRootOverlayActive) {
+            Quat.copy(this._combatSideKickRootRotation, this.root.rotation);
+            this._combatSideKickRootOverlayActive = true;
+        }
+        // A 100-degree turn at the extension peak is intentionally more dramatic
+        // than a real swimming kick. It changes only the armature presentation:
+        // motor heading, collider direction, race progress, and camera logic stay
+        // driven by the swimmer node.
+        const turn = smoothPulse(progress, 0.10, 0.25, 0.68, 0.92) * side * 100;
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Quat.fromAxisAngle(this._tmpAxisRotation, Vec3.UP, turn * Math.PI / 180);
+        Quat.multiply(this._tmpResultRotation, this._tmpAxisRotation, this._tmpRootWorldRotation);
+        this.root.setWorldRotation(this._tmpResultRotation);
     }
 
     // Palm pronation is a twist around the limb's actual child direction. Applying
