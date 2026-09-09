@@ -16,6 +16,7 @@
 | `refine-lane-floats.py` | 生成八边连续绳体，以重复贴图表现密集盘片，全池不超过 4,000 面 | 生产脚本 |
 | `build-venue-ad-atlas.py` | 使用项目字体轮廓生成广告 SVG 与 512×512 图集 | 美术源生成脚本 |
 | `refine-venue-ad-boards.py` | 替换 T1/T3 挡板 UV 和原图片，定向同步广告批次 | 生产脚本 |
+| `simplify-venue-first-pass.py` | 简化广告挡板和方块道具，原生 Join 定向重建两个批次 | 生产脚本 |
 | `build-podium-atlas.py` | 生成名次数字、饰条与踏面共用的 256×256 图集 | 美术源生成脚本 |
 | `refine-podium-and-flags.py` | 重制低面数领奖台、修改源旗片配色并定向同步 | 生产脚本 |
 | `venue-textures/` | Blender 源纹理 | 按需编辑 |
@@ -167,14 +168,14 @@ npm run textures:check
 
 至少检查以下内容：
 
-- GLB 当前基线为 57 个节点、34 个 Mesh、39 primitive、22,734 triangles、934,988 bytes，约 0.89 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。领奖台第 3 版保持 60 triangles、原一张 256×256 图集及批次，比第 2 版减少 372 bytes。此处为源 GLB 大小，不是微信最终包体增量。
+- GLB 当前基线为 57 个节点、34 个 Mesh、39 primitive、20,618 triangles、781,340 bytes，约 0.75 MiB。浮漂替换时相对六边短柱减少 19,992 triangles、10,542 个导出顶点、330,844 bytes；浮漂三角面减少约 84%。领奖台第 3 版保持 60 triangles、原一张 256×256 图集及批次，比第 2 版减少 372 bytes。此处为源 GLB 大小，不是微信最终包体增量。
 - 准备阶段 draw calls 不应回到旧版约 64；当前场馆基线应比旧 59-primitive GLB 少约 22 次提交。
 - 当前无座椅版本只保留蓝色台阶；顶面、正面、侧/底面应使用同一组场馆蓝的三档明暗，不能因无光照糊成同一色块。
 - 蓝色台阶不参与连续的逐像素高度/距离渐暗；T1-T4 的四档稳定亮度已在 Blender 和 atlas 中烘焙，运行时乘色必须保持 1。越靠上越暗，但同一层、同一面向必须保持同色。
 - 低位跟拍使用 T1-T4 亮度 `(1.0, 0.55, 0.28, 0.12)`，墙体烘焙为 `(1.0, 0.42, 0.24, 0.10)`；运行时观众的四档亮度与看台同步，避免中上层整片压黑。看台 atlas 版本为 7。
 - 池底和池壁共用原名 `PoolWallNarrowTilesWhite` 的内嵌 `256x256` 不透明方砖图，保持图片和材质身份，UV 对应约 0.5m 方砖。不得把 Blender 的水面占位材质当作游戏水面效果；水面与水下吸收仍由原运行时 shader 负责。
-- 运行时观众使用 15 个合并组、1 个无光照顶点色材质。第一层采用每人 64 triangles 的有厚度卡通模板，其余层为每人 14 triangles 的简化轮廓；脸与头发使用分离的色块边界，只有第一层保留眼睛。按当前 GLB 离线统计共 1,171 人，其中 295 人为立体版，总计 31,144 triangles、59,356 vertices，最大单组 9,284 vertices，仍使用 16 位索引；新增约 1.40 MB 原始顶点/索引数据预算，不能据此推断真机帧率持平。没有新增材质、贴图、单人节点或骨骼。约 72% 静止、20% 单手举起、8% 双手欢呼，只有后两类的 10 个组在最多 24Hz 下做微幅位移，隐藏或时间暂停时不写变换。南北朝向根据世界包围盒确定，不根据 N/S 名称推断，保证脸朝泳池。几何变动须复查台阶落点、头部遮挡以及远距离可辨度。
-- 观众几何权威源码为 `assets/scripts/venue/SpectatorGeometry.ts` 与 `SpectatorCrowdBuilder.ts`，不属于 Blender 场馆源网格。离线预览先运行 `npx --yes --package typescript@5.4.5 -c "node scripts/preview-spectator-crowd.cjs"`（默认与 HEAD 比较，可给脚本传旧提交），再运行 `python scripts/run-blender.py -- --python scripts/render-spectator-preview.py`。输出仅进入被忽略的 `temp/spectator-preview`；该流程执行真实观众生成函数，审计索引、退化面、包围盒、朝向及动画节流，并渲染六面、低位正反视角与看台局部。预览不是 Cocos/微信截图，不含实际水面着色、游戏后处理或真机性能验证。
+- 运行时观众按六个空间区域、三种动作使用 18 个合并组、1 个双面无光照顶点色材质。T1 每人 32 triangles：头身有厚度，双臂为轮廓面片，不生成小眼睛；T2 每人 14 triangles；T3 每人 4 triangles，仅头身两个色块；T4 每人 2 triangles／4 vertices，仅衣服色矩形。T3/T4 不应用顶部变形并固定进入静态组，普通看台与转角规则一致。按当前 GLB 离线统计共 1,171 人，T1/T2/T3/T4 分别 295/293/286/297 人，共 15,280 triangles、29,974 vertices，最大单组 5,192 vertices，使用 16 位索引；相对第一层仍为 64 面的上一版减少 9,440 triangles（38.2%）与 17,700 vertices（37.1%）。按 POSITION float3、COLOR float4 和 uint16 索引估算原始数据为 930,952 bytes，减少 552,240 bytes，不含引擎开销，不能据此推断真机帧率。无新增材质、贴图、单人节点或骨骼。T1/T2 约 72% 静止、20% 单手举起、8% 双手欢呼，后两类改由两个共用动作父节点最多 24Hz 微幅位移，同类动作共用相位，子网格独立参与引擎视锥剔除，隐藏或时间暂停时不写变换。南北朝向根据世界包围盒确定，不根据 N/S 名称推断；保持全体观众落位、尺寸、亮度、姿势分配和第二至第四层实际几何。观众仅为视觉内容，不改变单机或联机比赛状态。几何变动须复查台阶落点、头部遮挡以及远距离可辨度。
+- 观众几何权威源码为 `assets/scripts/venue/SpectatorGeometry.ts` 与 `SpectatorCrowdBuilder.ts`，不属于 Blender 场馆源网格。离线预览先运行 `npx --yes --package typescript@5.4.5 -c "node scripts/preview-spectator-crowd.cjs"`（默认与 HEAD 比较，可给脚本传旧提交，或传同时保存两个观众源码文件的基线目录），再运行 `python scripts/run-blender.py -- --python scripts/render-spectator-preview.py`。输出仅进入被忽略的 `temp/spectator-preview`；该流程执行真实观众生成函数，审计索引、退化面、包围盒、朝向及动画节流，并渲染六面、低位正反视角与看台局部。预览不是 Cocos/微信截图，不含实际水面着色、游戏后处理或真机性能验证。
 - `StandStructure_Merged`、入口楼梯、平台和其他墙面在 Blender 源与运行时都必须为同一浅蓝灰色，不得继承看台深蓝色。
 - 东、西直看台不得保留整面 `StandSoffit_E` / `StandSoffit_W`；这两块约 35.87m × 4.57m 的连续底板会在泳池低视角遮住二层观众。西侧角区也不得保留 `CornerSoffit_NW` / `CornerSoffit_SW`，它们会与整体大 O 重叠并露出蓝灰色块；editable 中这四个对象都应不存在。
 - T3 地板是覆盖 N/E/S/W 四边的一个整体大 O，不是东、西各自闭合。editable 必须保留独立源对象 `T3RingFloor_O`：内孔与外框同轴，东西两臂等宽、南北两臂等宽，外边界从 `StandSupport_N/S/E/W` 的朝池接触平面推导并贴合四面墙，中央孔保持场馆内区开放，底面使用浅蓝灰 ceiling 材质；不得固定为 3m 后再手调单边宽度。同步 master 时将它并入 `StandStructure_Merged`，不能只给 E/W 半模块补离散小面，也不能在西侧单独造一个局部 O。
@@ -227,6 +228,14 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 柱梁必须检查真实楼板的表面接触，不仅检查包围盒高度。新增 GLB 纹理会移动 Cocos 的 `UnnamedTexture-N` 索引；重导入后按图片身份检查旧 wrap/filter 设置，压缩 preset 和 mipfilter 仍交给 `textures:fix`。源模型预览可用于检查几何/色板，最终水面、观众遮挡与帧率须在实际游戏跟拍视角验收。
 
 旧 `LowPolyPool`、`SwimmingVenue_Rebuild`、`Atlas`、模块样板、一次性修复脚本和 Blender 自动备份已被移除。需要追溯时使用 Git 历史，不要重新放回生产目录。
+
+## 池岸扶手与泳池梯的运行时水线
+
+- 扶手和泳池梯保留在 `PoolsideProps_Merged` 的单图集合批内，不另拆网格。`PoolsideWaterline.ts` 由 `WaterRefractionController` 持有，在相机初始化时加载并绑定一次材质。
+- 水上视角使用人物的 `SWIMMER_LAYER`，在水面之后绘制，同时保留池壁、池沿深度遮挡。水下视角恢复原主相机层，与浮漂一致，避免救生站、旗线等岸上道具穿过不透明水面镜像。
+- 复用 `VenueHeightShade` 的 `USE_POOLSIDE_WATERLINE` 变体，保留原 `emissiveMap`、白色自发光乘色、UV 和双面显示。该 GLB 批次没有法线和顶点色；变体不能要求这些属性，也不能使用黑色 `albedoScale` 代替自发光色。水线采用世界 Y，仅水下部分叠加与浮漂一致的水色；普通看台不启用此变体。
+- 不新增相机、RenderTexture、贴图或网格，不增加正常水上视角的批次提交数；材质加载后和视角状态切换时更新分层，比赛帧不遍历这批道具。退出时恢复原材质及层，释放自建材质，废弃迟到加载回调。此变更只影响视觉，不修改单机或联机状态。
+- 非 GUI 检查：固定版本类型检查，以及 `npx --yes --package typescript@5.4.5 -c "node --test tests/poolside-waterline.test.cjs"`。最终仍需在游戏内确认水上扶手水下段、池沿遮挡和水下镜像；离线检查不代表真机渲染验收。
 
 ## 圆盘浮漂再生成
 
@@ -295,3 +304,40 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 `--prototype` 只生成一个灯具跨距并另存至 `temp/ceiling-preview/prototype.blend`，不保存 editable。后台几何预览使用 `scripts/render-ceiling-preview.py`（打开 prototype 时追加 `--prototype`；整馆则打开合批目标）。预览只写入被忽略的 temp 目录，不截图或启动 Creator；图片不含运行时水面与后处理，不能充当微信真机效果或性能验证。
 
 生命周期检查：`npx --yes --package typescript@5.4.5 -c "node --test tests/ceiling-lighting.test.cjs"`。重复绑定、俯视往返和资源释放必须保持单一材质实例与稳定节点数。
+
+
+## 泳池与角色 mipmap（2026-09-09）
+
+- 已由统一策略开启 33 个 Texture2D 的 `mipfilter: linear`，保持原 min/mag 过滤、wrap、UUID 和压缩预设。范围包括泳池 GLB 的瓷砖、地面、广告、领奖台，起跳台 GLB，泳池独立常规贴图，以及 11 个角色 GLB 与各自换色遮罩。
+- `BleacherFlatColorAtlas`、`StandArchitectureArtAtlas`、`PoolsidePropsFlatColorAtlas` 是小型纯色色板，保持单级采样以免混色。粒子、UI 和动态水面 RenderTexture 不纳入本次调整。上文旧版本的“无 mip”描述由本节覆盖。
+- `settings/v2/packages/builder.json` 中已有 `textureCompressConfig.genMipmaps=true`，现在作为必检项。Creator 构建负责离线生成压缩 mip；ASTC 回退 PNG/JPG 仍保留，未修改压缩质量档位。非压缩图像由引擎在上传时生成 mip，不在比赛帧重建。
+- `texture-mipmap-policy.js` 是采样规则与 ASTC 输出校验源码。`textures:fix` 同步采样配置；微信 `onAfterBuild` 在搬移分包之前通过 Creator 公开资源路径 API 检查实际输出，兼容 MD5 文件名。压缩图必须同时存在 ASTC 和 PNG/JPG；ASTC 必须具有 Cocos CMIP 包装、逐级正确尺寸及块字节数，完整覆盖到 1×1。裸 ASTC、缺层、截断或无回退输出会拒绝构建。
+- 检查：`npm run textures:fix`、`npm run textures:check`、`node --test tests/texture-mipmap-policy.test.cjs`。已用本机 Cocos 3.8.8 原始 `mergeCompressedTextureMips` / `parseCompressedTextures` 方法验证一份真实编码的 32×32 至 1×1 六层 ASTC，验证结果与项目检查器一致。
+- 本次未启动 Creator、未生成微信发布包、未做真机验收。需等待既有编辑器重新导入后构建；若缓存仍输出单层 ASTC，清理构建缓存后重建。真机须检查泳池斜视纹理、角色及换色遮罩 UV 接缝、远处串色、内存和帧耗时。不能以配置检查或编码样本替代最终资产构建/真机验证。此改动只影响视觉纹理采样，不改变单机或联机比赛状态。
+
+
+## 第一轮场馆与第一层观众减面（2026-09-09）
+
+第一轮已接入：76 块广告挡板使用有厚度的 12 面盒体，2,260 → 912 triangles；24 件方块道具去倒角，1,056 → 288 triangles，池岸整批 5,872 → 5,104。关闭浮漂和顶棚后的场馆几何为 14,406 triangles。保留原广告图集、正反文字、入口半板与转角位置；不动泳池梯、细杆和看台内部面。场馆与观众合计减少 11,556 triangles（单次绘制几何口径）。
+
+源编辑与定向同步（先按上文备份）：
+
+```powershell
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor_editable.blend --python sceneresource/simplify-venue-first-pass.py -- --apply
+python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.blend --python sceneresource/simplify-venue-first-pass.py -- --sync --apply
+```
+
+省略 `--apply` 为内存试算，不保存；创作步骤可重复执行。同步后仍必须执行本文标准 atlas 合批、dry-run 和 GLB 导出步骤。源板局部 X/Y 保留原长度/厚度及原对象旋转；入口半板最长边可能是斜向三角化边，禁止据此重定向盒体。所有方块局部支承平面和对象变换保持，去倒角新增的角点会使旋转道具世界包围盒最多扩约 2mm；角挡板的批次世界包围盒最多扩约 2.5cm。
+
+`python scripts/check-venue-first-pass.py <优化前GLB路径>` 对比节点变换、批次数、其余 32 个网格的逐属性/索引字节及 7 张内嵌图片。`scripts/render-venue-first-pass-preview.py -- --before <优化前GLB路径>` 通过 `scripts/run-blender.py` 执行，输出 GLB 材质下的正反低机位、道具正反面、广告、入口和转角离线对照。完整结果见 `docs/场馆几何优化审计.zh.md`；不以离线预览代替游戏/真机验收。
+
+
+## 观众空间分区剔除（2026-09-09）
+
+`SpectatorCrowdBuilder.ts` 保留初始化时的颜色/动作桶，用于稳定的观众落位和闪光候选顺序；创建 renderer 前按空间重分区。两侧长看台各分两段，两端短看台各一段，转角按归一化位置归入相邻区域。每区按静止/单手/双手三组渲染，同组内衣服颜色由顶点色保留。总计 18 个 MeshRenderer，共用原单一材质，无新增贴图和 Shader。
+
+每个分区网格具有独立的 minPos/maxPos；Cocos 按各相机自己的视锥和模型世界包围盒剔除，不增加每帧逐人判断，不按主相机改 Node.active，因此不干扰其他相机的可见性。两类欢呼共用两个父节点动画，幅度、频率及最多 24Hz 节流不变；同类欢呼相位统一。隐藏 crowdRoot 或暂停时仍不写动画变换。
+
+水下视角不显示观众：观众与拍照闪光使用独立 bit 13，主相机入水时移除该可见位、出水恢复；水面折射和水下反射相机始终不包含此层。不改变预览手动开关或其他相机。水下闪光跳过位置筛选和发射，观众的两个轻量动作组件维持原节流。不要把新观众重新放回 DEFAULT，否则水下会继续提交这些网格。
+
+1,171 人、15,280 triangles、29,974 vertices、原始几何缓冲 930,952 bytes 不变。`scripts/preview-spectator-crowd.cjs` 调用 `spectator-culling-audit.cjs` 比较旧颜色桶、4/6/8 区方案，并调用 `spectator-runtime-audit.cjs` 执行实际 build 生命周期检查。当前六区在代表性正向镜头的保守 AABB 预测为 9 次提交、7,666 triangles；中段反向为 9 次、7,614 triangles。全馆俯视最坏为 18 次，相对旧版 15 次多 3 次；不是所有镜头都能同时减少提交和面数。详细相机参数、结果及验证范围见 `docs/观众空间合批与剔除.zh.md`。真机 FPS 和耗时尚未测量。

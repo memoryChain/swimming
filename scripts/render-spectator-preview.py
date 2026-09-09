@@ -72,7 +72,7 @@ def render(name):
 for version in ('before', 'after'):
     for obj in groups[version, 'samples']:
         obj.hide_render = False
-    view((2.0, 1.25, -4), (1.35, .42, 0), ortho=3.85)
+    view((2.375, 1.25, -4), (2.375, .42, 0), ortho=5.65)
     render(f'{version}-samples')
     if version == 'after':
         # 同一人物的六向轮廓检查，避免前视图掩盖厚度与部件间隙。
@@ -101,6 +101,9 @@ for version in ('before', 'after'):
     render(f'{version}-reverse')
     view((12, 2, 7), (5, 1.8, 18.5), fov=40)
     render(f'{version}-stand')
+    # 上层正面同时呈现 T3、T4，核查简化后的头身色块与单矩形。
+    view((25, 4.8, 0), (8, 6.8, 18.5), fov=40)
+    render(f'{version}-upper-stand')
     for obj in groups[version, 'geometry']:
         obj.hide_render = True
 print('观众离线预览完成：', OUTPUT)

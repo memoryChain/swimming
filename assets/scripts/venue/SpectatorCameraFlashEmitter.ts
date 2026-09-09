@@ -19,6 +19,7 @@ import {
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { scaledDelta } from '../core/TimeScale';
+import { SPECTATOR_LAYER } from './SpectatorVisibility';
 
 const { ccclass } = _decorator;
 
@@ -105,6 +106,8 @@ export class SpectatorCameraFlashEmitter extends Component {
     }
 
     update(dt: number) {
+        // 水下主相机不画观众；无需继续筛选拍照位置或发射新闪光。
+        if (this._visibilityCamera && (this._visibilityCamera.visibility & SPECTATOR_LAYER) === 0) return;
         if (!this._system?.isValid || !this._emitterNode?.isValid || this._positions.length < 3) {
             return;
         }

@@ -1,9 +1,11 @@
 import { Camera, Color, director, EffectAsset, Layers, Material, MeshRenderer, Node, RenderTexture, Texture2D, Vec3, Vec4, view } from 'cc';
 import { EDITOR } from 'cc/env';
 import { SWIMMER_LAYER, UNDERWATER_LAYER, WATER_SURFACE_LAYER } from './WaterSurfaceBinder';
+import { setSpectatorCameraUnderwater } from './SpectatorVisibility';
 import { WATER_COLOR_TUNING, registerFloorTintApplier, setSwimmerReflectClip } from './WaterColorTuning';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
+import { PoolsideWaterline } from './PoolsideWaterline';
 
 const REFRACTION_CAMERA_NAME = 'WaterRefractionCamera';
 const SWIMMER_CAMERA_NAME = 'SwimmerOverlayCamera';
@@ -127,6 +129,7 @@ export class WaterRefractionController {
     private _pool: Node | null = null;
     private _waterNode: Node | null = null;
     private _poolEdgeNode: Node | null = null;
+    private readonly _poolsideWaterline = new PoolsideWaterline();
     private _boundMaterial: Material | null = null;
     private _getSwimmerNodes: (() => Node[]) | null = null;
     private _rtWidth = 0;
@@ -203,6 +206,10 @@ export class WaterRefractionController {
     // mainCameraNode: the single camera the director drives. getSwimmerNodes:
     // returns the current swimmer root nodes to re-tag onto SWIMMER_LAYER.
     setup(mainCameraNode: Node, pool: Node, getSwimmerNodes: () => Node[]): boolean {
+        const mainCamera = mainCameraNode?.getComponent(Camera);
+        if (!mainCamera) return false;
+        this._mainCamera = mainCamera;
+        setSpectatorCameraUnderwater(mainCamera, this._underwaterViewActive);
         // WaterSurfaceBinder hides the pool surface in the editor because its
         // embedded preview does not refresh off-screen cameras reliably. Skip the
         // whole refraction stack as well, so no RenderTexture or extra cameras are
@@ -211,11 +218,9 @@ export class WaterRefractionController {
             this._debug?.('water refraction skipped in editor');
             return false;
         }
-        const mainCamera = mainCameraNode?.getComponent(Camera);
-        if (!mainCamera || !pool?.isValid) {
+        if (!pool?.isValid) {
             return false;
         }
-        this._mainCamera = mainCamera;
         this._pool = pool;
         this._getSwimmerNodes = getSwimmerNodes;
 
@@ -333,6 +338,8 @@ export class WaterRefractionController {
         // Move the lane floats onto the swimmer overlay layer so their submerged
         // half draws over the water instead of being hidden by it.
         this.tagLaneFloats();
+        this._poolsideWaterline.bind(pool, this._waterY);
+        this._poolsideWaterline.setUnderwaterViewActive(this._underwaterViewActive);
         this.syncCamera();
 
         this._debug?.(`water refraction ready rt=${this._rtWidth}x${this._rtHeight}`);
@@ -375,6 +382,7 @@ export class WaterRefractionController {
         if (active === this._underwaterViewActive) {
             return;
         }
+        if (this._mainCamera?.isValid) setSpectatorCameraUnderwater(this._mainCamera, active);
         // The surface visibility, underwater screen tint and pool-tile tint must
         // change on the same camera-mode edge. Driving the tiles independently
         // from camera Y used to expose a whole-pool colour pop while a smoothed
@@ -414,6 +422,7 @@ export class WaterRefractionController {
         // the big hitch when entering the water. The submerged blue instead comes
         // from the clean blue pool floor + the surface mirror (no uniform haze).
         this._underwaterViewActive = active;
+        this._poolsideWaterline.setUnderwaterViewActive(active);
         // Lane floats swap between the overlay layer (above water, submerged half
         // shows over the surface) and the main DEFAULT layer (underwater, so the
         // opaque mirror surface occludes them instead of the overlay drawing them
@@ -642,6 +651,8 @@ export class WaterRefractionController {
     }
 
     dispose() {
+        if (this._mainCamera?.isValid) setSpectatorCameraUnderwater(this._mainCamera, false);
+        this._poolsideWaterline.dispose();
         // Clear the swimmer reflection-clip flag: it is module-level state, so
         // leaving a race while underwater would otherwise leave it stuck ON and
         // make the next character preview (prepare screen) discard every fragment

@@ -26,6 +26,7 @@ export type InputRouterCallbacks = {
     // pointer deltas; scroll is a pinch-distance delta (positive = fingers spreading = zoom in).
     onCameraOrbit: (deltaX: number, deltaY: number) => void;
     onCameraZoom: (scroll: number) => void;
+    isCameraTouchBlocked?: (event: EventTouch) => boolean;
 };
 
 export class InputRouter {
@@ -43,6 +44,7 @@ export class InputRouter {
     // last measured distance between the first two touch points.
     private _cameraMultiTouch = false;
     private _cameraPinchDistance = 0;
+    private readonly _blockedCameraTouches = new Set<number>();
 
     constructor(
         private readonly _target: Node,
@@ -79,6 +81,7 @@ export class InputRouter {
     }
 
     unbind() {
+        this._blockedCameraTouches.clear();
         this._target.off('left-stroke', this.onLeftStroke, this);
         this._target.off('right-stroke', this.onRightStroke, this);
         this._target.off('left-stroke-held', this.onLeftStrokeHeld, this);
@@ -289,12 +292,19 @@ export class InputRouter {
     // Awards free-look touch control: one finger orbits, two fingers pinch-zoom. Gating on the
     // actual awards state happens in the GameManager callback, so this stays a no-op otherwise.
     private onCameraTouchStart(event: EventTouch) {
+        if (this._callbacks.isCameraTouchBlocked?.(event)) this._blockedCameraTouches.add(event.getID());
+        if (this._blockedCameraTouches.size > 0) {
+            this._cameraMultiTouch = false;
+            this._cameraPinchDistance = 0;
+            return;
+        }
         const touches = event.getAllTouches();
         this._cameraMultiTouch = touches.length >= 2;
         this._cameraPinchDistance = this._cameraMultiTouch ? touchPairDistance(touches) : 0;
     }
 
     private onCameraTouchMove(event: EventTouch) {
+        if (this._blockedCameraTouches.size > 0) return;
         const touches = event.getAllTouches();
         if (touches.length >= 2) {
             const distance = touchPairDistance(touches);
@@ -311,6 +321,7 @@ export class InputRouter {
     }
 
     private onCameraTouchEnd(event: EventTouch) {
+        this._blockedCameraTouches.delete(event.getID());
         const touches = event.getAllTouches();
         this._cameraMultiTouch = touches.length >= 2;
         this._cameraPinchDistance = 0;

@@ -3,6 +3,7 @@ import { EDITOR } from 'cc/env';
 import { clampCameraHeightToWaterSide, RaceCameraSnapshot } from './RaceCameraDirector';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SWIMMER_LAYER, UNDERWATER_LAYER, WATER_SURFACE_LAYER } from '../venue/WaterSurfaceBinder';
+import { SPECTATOR_LAYER } from '../venue/SpectatorVisibility';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 
 // Dedicated layer for the venue jumbotron screens. The main camera renders it (so the
@@ -91,7 +92,7 @@ export class ScoreboardFeedCamera {
         // classic "white floor + blue transparent water", so the feed renders its own
         // white-floor + blue-water planes instead of the real (blue-floor) underwater
         // geometry and the (screen-space-refraction) water.
-        camera.visibility = (((mainCamera.visibility as number) & ~(WATER_SURFACE_LAYER | UNDERWATER_LAYER)) | SWIMMER_LAYER | FEED_WATER_LAYER);
+        camera.visibility = (((mainCamera.visibility as number) & ~(WATER_SURFACE_LAYER | UNDERWATER_LAYER)) | SWIMMER_LAYER | FEED_WATER_LAYER | SPECTATOR_LAYER);
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
         camera.clearColor = new Color(18, 58, 120, 255);
         camera.near = mainCamera.near;

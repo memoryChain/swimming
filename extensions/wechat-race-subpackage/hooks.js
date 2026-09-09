@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { assertTextureCompressionPolicy } = require('./texture-compression-policy');
+const { assertBuildMipmaps } = require('./texture-mipmap-policy');
 const { assertUiFontPolicy } = require('../../scripts/ui-font-policy');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -50,7 +51,8 @@ exports.onBeforeBuild = async function onBeforeBuild(options) {
     const textureAudit = assertTextureCompressionPolicy(PROJECT_ROOT);
     console.log(
         `[texture-policy] verified ${textureAudit.eligible} compressed textures; `
-        + `${textureAudit.mipmapSamplersDisabled} GLB texture samplers have mip filtering disabled; `
+        + `${textureAudit.mipmapSamplersEnabled} texture samplers use mipmaps; `
+        + `${textureAudit.mipmapSamplersDisabled} texture samplers remain single-level; `
         + `${textureAudit.ignoredMainPackage} main-package UI textures and `
         + `${textureAudit.ignoredSmall} small textures intentionally remain original.`,
     );
@@ -93,6 +95,10 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     if (options.platform !== 'wechatgame') {
         return;
     }
+
+    // 在搬移 Bundle 之前使用 Creator 返回的原生文件路径，兼容 MD5 文件名。
+    const mipmapAudit = assertBuildMipmaps(PROJECT_ROOT, result);
+    console.log(`[texture-mipmap] 已验证 ${mipmapAudit.compressedImages} 张 ASTC 完整 mip 链及回退图片。`);
 
     const settingsPath = path.join(result.dest, 'src', 'settings.json');
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));

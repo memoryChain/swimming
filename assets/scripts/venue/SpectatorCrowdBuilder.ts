@@ -1,36 +1,38 @@
-import { _decorator, Color, Component, gfx, Layers, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
+import { _decorator, Color, Component, gfx, Material, MeshRenderer, Node, primitives, Quat, utils, Vec3 } from 'cc';
 import { scaledDelta } from '../core/TimeScale';
 import { SpectatorCameraFlashEmitter } from './SpectatorCameraFlashEmitter';
 import { createSpectatorTemplate } from './SpectatorGeometry';
+import { SPECTATOR_LAYER } from './SpectatorVisibility';
 
 const { ccclass, property } = _decorator;
 
-// Keep the palette colourful enough to read as a crowd, then mute only the
-// pool-facing first row through its baked vertex colour. This prevents the
-// nearest audience and the new poolside props from competing for attention.
+// 以场馆蓝灰、青绿和米白为主，五色中仅一档柔和暖色作点缀。
+// 色差烘焙进现有顶点色，避免近处的观众抢过泳池与角色。
 const SPECTATOR_COLORS = [
-    color(96, 138, 214),
-    color(206, 108, 150),
-    color(86, 190, 158),
-    color(224, 166, 88),
-    color(206, 206, 198),
+    color(124, 160, 180),
+    color(142, 155, 168),
+    color(113, 164, 159),
+    color(184, 141, 128),
+    color(203, 207, 197),
 ];
 
 // Per-tier brightness multiplier baked into spectator vertex colors, modelling
 // 中上层保留可辨轮廓，四档亮度与场馆 atlas 同步；泳池仍是画面最亮的区域。
 const TIER_BRIGHTNESS = [1.0, 0.55, 0.28, 0.12];
 const FRONT_ROW_BRIGHTNESS = 0.70;
-const FRONT_ROW_SATURATION = 0.55;
+const FRONT_ROW_SATURATION = 0.80;
 
-// 六份模板只在模块加载时构建，第一层有厚度，上层使用同风格平面轮廓。
-const SPECTATOR_TEMPLATES = [false, true].map((volume) =>
-    [0, 1, 2].map((pose) => createSpectatorTemplate(volume, pose)));
-const SPECTATOR_SKIN_COLORS = [color(244, 190, 145), color(211, 153, 108), color(166, 111, 77)];
-const SPECTATOR_HAIR_COLORS = [color(55, 40, 38), color(104, 64, 42), color(183, 131, 65)];
-const SPECTATOR_PANTS_COLOR = color(47, 62, 86);
+// 模板只在模块加载时构建；第三层两个色块，第四层一个矩形，远层仅保留静态姿势。
+const SPECTATOR_TEMPLATES = [1, 2, 3, 4].map((tier) =>
+    (tier <= 2 ? [0, 1, 2] : [0]).map((pose) => createSpectatorTemplate(tier, pose)));
+// 保留三档自然肤色，减弱橙黄；头发、裤子抬高暗部，减轻远看黑块感。
+const SPECTATOR_SKIN_COLORS = [color(220, 192, 175), color(185, 153, 132), color(140, 112, 96)];
+const SPECTATOR_HAIR_COLORS = [color(72, 76, 82), color(97, 88, 79), color(145, 133, 111)];
+const SPECTATOR_PANTS_COLOR = color(74, 89, 105);
 const SPECTATOR_EYE_COLOR = color(39, 33, 40);
 
 const WOBBLE_GROUP_COUNT = 3;
+const SPECTATOR_REGION_COUNT = 6;
 const LEGACY_STAND_ROW_COUNT = 7;
 const FLAT_BLEACHER_ROW_COUNT = 2;
 // The flat bleacher module's two seat treads sit ~0.6 and ~1.3 above the tier
@@ -88,9 +90,12 @@ type SpectatorSpec = {
     yaw: number;
     brightness: number;
     saturation: number;
-    detailed: boolean;
+    tier: number;
     pose: number;
+    colorIndex?: number;
 };
+
+type SpectatorRegionGroup = { region: number; motion: number; spectators: SpectatorSpec[] };
 
 type SceneBounds = {
     minX: number;
@@ -162,20 +167,31 @@ export class SpectatorCrowdBuilder {
             }
             this.collectCornerSpectators(buckets, stands, collectCornerAnchors(poolNode));
 
+            // 颜色烘焙进顶点后，同一区域可跨衣服颜色合批。
+            // 两个动作父节点共用动画，分区子网格仍有独立包围盒供引擎逐相机剔除。
+            const motionParents = [crowdRoot];
+            for (let motion = 1; motion < WOBBLE_GROUP_COUNT; motion++) {
+                const parent = makeWorldNode(`SpectatorMotion${motion}`, crowdRoot);
+                const wobble = parent.addComponent(SpectatorGroupWobble);
+                wobble.amplitude = 0.008 + motion * 0.004;
+                wobble.sideAmplitude = 0.003;
+                wobble.speed = 1.2 + motion * 0.23;
+                wobble.phase = motion * 2.05;
+                motionParents.push(parent);
+            }
+            const regions = partitionSpectators(buckets);
             let groupCount = 0;
             let spectatorCount = 0;
-            for (let i = 0; i < buckets.length; i++) {
-                const colorIndex = i % SPECTATOR_COLORS.length;
+            for (const region of regions) {
                 const group = addSpectatorGroup(
-                    crowdRoot,
-                    `SpectatorMuted${colorIndex}Motion${Math.floor(i / SPECTATOR_COLORS.length)}`,
+                    motionParents[region.motion],
+                    `SpectatorRegion${region.region}Motion${region.motion}`,
                     material,
-                    buckets[i],
-                    i,
+                    region.spectators,
                 );
                 if (group) {
                     groupCount += 1;
-                    spectatorCount += buckets[i].length;
+                    spectatorCount += region.spectators.length;
                 }
             }
 
@@ -278,7 +294,7 @@ export class SpectatorCrowdBuilder {
                     const colorIndex = Math.floor(
                         random01(col, row, section + sideSign * 11, 53) * SPECTATOR_COLORS.length,
                     ) % SPECTATOR_COLORS.length;
-                    const wobbleIndex = spectatorPose(random01(row, col, section, 71));
+                    const wobbleIndex = tier <= 2 ? spectatorPose(random01(row, col, section, 71)) : 0;
 
                     buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
                         pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
@@ -294,8 +310,9 @@ export class SpectatorCrowdBuilder {
                         yaw,
                         brightness,
                         saturation,
-                        detailed: tier === 1,
+                        tier,
                         pose: wobbleIndex,
+                        colorIndex,
                     });
                 }
             }
@@ -370,7 +387,7 @@ export class SpectatorCrowdBuilder {
                         const colorIndex = Math.floor(
                             random01(col, row, tier + salt + 11, 53) * SPECTATOR_COLORS.length,
                         ) % SPECTATOR_COLORS.length;
-                        const wobbleIndex = spectatorPose(random01(row, col, tier + salt, 71));
+                        const wobbleIndex = tier <= 2 ? spectatorPose(random01(row, col, tier + salt, 71)) : 0;
                         buckets[wobbleIndex * SPECTATOR_COLORS.length + colorIndex].push({
                             pos: new Vec3(x, seatY + height * 0.5 + 0.025, z),
                             width,
@@ -383,14 +400,42 @@ export class SpectatorCrowdBuilder {
                             yaw,
                             brightness,
                             saturation,
-                            detailed: tier === 1,
+                            tier,
                             pose: wobbleIndex,
+                            colorIndex,
                         });
                     }
                 }
             }
         }
     }
+}
+
+// 只在生成场馆时分区，不逐帧遍历观众或切换 Node.active。
+// 两侧长看台各分两段，两端短看台各一段；转角按归一化位置分配。
+function partitionSpectators(buckets: SpectatorSpec[][], regionCount: 4 | 6 | 8 = SPECTATOR_REGION_COUNT): SpectatorRegionGroup[] {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const bucket of buckets) for (const spectator of bucket) {
+        minX = Math.min(minX, spectator.pos.x);
+        maxX = Math.max(maxX, spectator.pos.x);
+        minZ = Math.min(minZ, spectator.pos.z);
+        maxZ = Math.max(maxZ, spectator.pos.z);
+    }
+    if (!Number.isFinite(minX)) return [];
+    const centerX = (minX + maxX) * 0.5, centerZ = (minZ + maxZ) * 0.5;
+    const halfX = Math.max(1, (maxX - minX) * 0.5), halfZ = Math.max(1, (maxZ - minZ) * 0.5);
+    const groups: SpectatorRegionGroup[] = Array.from({ length: regionCount * WOBBLE_GROUP_COUNT }, (_, i) => ({
+        region: Math.floor(i / WOBBLE_GROUP_COUNT), motion: i % WOBBLE_GROUP_COUNT, spectators: [],
+    }));
+    for (const bucket of buckets) for (const spectator of bucket) {
+        const x = (spectator.pos.x - centerX) / halfX, z = (spectator.pos.z - centerZ) / halfZ;
+        const alongX = Math.abs(z) >= Math.abs(x);
+        const side = alongX ? (z < 0 ? 0 : 1) : (x < 0 ? 2 : 3);
+        const region = regionCount === 4 ? side : regionCount === 6 && !alongX
+            ? side + 2 : side * 2 + ((alongX ? x : z) < 0 ? 0 : 1);
+        groups[region * WOBBLE_GROUP_COUNT + spectator.pose].spectators.push(spectator);
+    }
+    return groups.filter(group => group.spectators.length > 0);
 }
 
 function buildCameraFlashPositions(buckets: SpectatorSpec[][]): Float32Array {
@@ -429,7 +474,6 @@ function addSpectatorGroup(
     name: string,
     material: Material,
     spectators: SpectatorSpec[],
-    groupIndex: number,
 ): Node | null {
     if (spectators.length <= 0) {
         return null;
@@ -437,19 +481,8 @@ function addSpectatorGroup(
 
     const node = makeWorldNode(name, parent);
     const renderer = node.addComponent(MeshRenderer);
-    const colorIndex = positiveMod(groupIndex, SPECTATOR_COLORS.length);
-    renderer.mesh = utils.createMesh(buildSpectatorGeometry(spectators, SPECTATOR_COLORS[colorIndex]));
+    renderer.mesh = utils.createMesh(buildSpectatorGeometry(spectators, SPECTATOR_COLORS[0]));
     renderer.setMaterial(material, 0);
-
-    const motionIndex = Math.floor(groupIndex / SPECTATOR_COLORS.length);
-    // 大部分观众保持坐稳，只有两类欢呼组需要更新变换。
-    if (motionIndex > 0) {
-        const wobble = node.addComponent(SpectatorGroupWobble);
-        wobble.amplitude = 0.008 + motionIndex * 0.004;
-        wobble.sideAmplitude = 0.003;
-        wobble.speed = 1.2 + motionIndex * 0.23;
-        wobble.phase = motionIndex * 2.05 + groupIndex * 0.37;
-    }
     return node;
 }
 
@@ -462,7 +495,7 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): 
     const minPos = new Vec3(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY);
     const maxPos = new Vec3(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY);
     for (const spectator of spectators) {
-        const template = SPECTATOR_TEMPLATES[spectator.detailed ? 1 : 0][spectator.pose];
+        const template = SPECTATOR_TEMPLATES[spectator.tier - 1][spectator.pose];
         const base = positions.length / 3;
         // 坐姿保持竖直，避免倾斜令有厚度的底部穿入台阶。
         Quat.fromEuler(rotation, -90,
@@ -474,12 +507,13 @@ function buildSpectatorGeometry(spectators: SpectatorSpec[], baseColor: Color): 
         }
         const skinIndex = Math.floor(random01(spectator.row, spectator.col, spectator.side, 131) * SPECTATOR_SKIN_COLORS.length);
         const hairIndex = Math.floor(random01(spectator.row, spectator.col, spectator.side, 139) * SPECTATOR_HAIR_COLORS.length);
-        const palette = [baseColor, SPECTATOR_SKIN_COLORS[skinIndex], SPECTATOR_HAIR_COLORS[hairIndex], SPECTATOR_PANTS_COLOR, SPECTATOR_EYE_COLOR];
+        const shirtColor = spectator.colorIndex === undefined ? baseColor : SPECTATOR_COLORS[spectator.colorIndex];
+        const palette = [shirtColor, SPECTATOR_SKIN_COLORS[skinIndex], SPECTATOR_HAIR_COLORS[hairIndex], SPECTATOR_PANTS_COLOR, SPECTATOR_EYE_COLOR];
         // 只在创建场馆时分配，比赛帧不访问或重建模板与色板。
         const linearPalette = palette.map((c) => {
             const r = srgbToLinear(c.r / 255), g = srgbToLinear(c.g / 255), b = srgbToLinear(c.b / 255);
             const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
-            const saturation = c === baseColor ? spectator.saturation : 1;
+            const saturation = c === shirtColor ? spectator.saturation : 1;
             return [(luminance + (r - luminance) * saturation) * spectator.brightness,
                 (luminance + (g - luminance) * saturation) * spectator.brightness,
                 (luminance + (b - luminance) * saturation) * spectator.brightness];
@@ -507,7 +541,8 @@ function pushCorner(
     zFactor: number,
     depthFactor: number,
 ) {
-    const isTop = zFactor > 0;
+    // 远层保留标准矩形，不把顶部随机偏移变成斜四边形。
+    const isTop = spectator.tier <= 2 && zFactor > 0;
     const widthScale = isTop ? spectator.topWidthScale : 1;
     const topOffset = isTop ? spectator.topOffset : 0;
     // -90° 换轴后正局部深度朝泳池；模板正脸在负深度，故在此反向。
@@ -648,7 +683,7 @@ function makeMaterial(name: string): Material {
 function makeWorldNode(name: string, parent: Node): Node {
     const node = new Node(name);
     node.setParent(parent);
-    node.layer = Layers.Enum.DEFAULT;
+    node.layer = SPECTATOR_LAYER;
     return node;
 }
 
@@ -687,8 +722,4 @@ function jitter(a: number, b: number, c: number, scale: number): number {
 function random01(a: number, b: number, c: number, salt: number): number {
     const seed = Math.sin(a * 12.9898 + b * 78.233 + c * 37.719 + salt * 19.19) * 43758.5453;
     return seed - Math.floor(seed);
-}
-
-function positiveMod(value: number, divisor: number): number {
-    return ((value % divisor) + divisor) % divisor;
 }

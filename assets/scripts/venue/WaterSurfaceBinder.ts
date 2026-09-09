@@ -3,7 +3,6 @@ import { EDITOR } from 'cc/env';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { WaterSurface } from '../core/WaterSurface';
 import { registerWaterMaterial } from './WaterColorTuning';
-import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const LEGACY_WATER_NODE_NAMES = new Set(['PoolWater_0_50', 'PoolWater_50_100']);
@@ -188,12 +187,7 @@ export class WaterSurfaceBinder {
     }
 
     private bindBranding(pool: Node, debug?: (message: string) => void) {
-        // When the jumbotron feed is ON it renders the live view onto the screens; when it
-        // is OFF, fall back to a static scoreboard image so the screens aren't blank.
-        const specs = PERFORMANCE_CONFIG.scoreboardFeed.enabled
-            ? BRANDING_SPECS
-            : [...BRANDING_SPECS, { prefix: 'scoreboard_screen', texturePath: 'pool/PoolScoreboard/texture', repeat: false }];
-        for (const spec of specs) {
+        for (const spec of BRANDING_SPECS) {
             loadRaceAsset(spec.texturePath, Texture2D, (err, texture) => {
                 if (!pool.isValid) {
                     return;
@@ -206,29 +200,16 @@ export class WaterSurfaceBinder {
                 texture.setWrapMode(wrap, wrap);
                 const nodes: Node[] = [];
                 collectNodesByNamePrefix(pool, spec.prefix, nodes);
-                const isScoreboard = spec.prefix === 'scoreboard_screen';
-                // Share branding materials across all meshes using the same
-                // texture/orientation. Scoreboards intentionally keep separate
-                // normal and flipped instances because the far screen's UVs are
-                // authored mirrored; banners and fascia normally need only one.
-                const materialByFlip = new Map<boolean, Material>();
+                // 同一贴图的横幅和墙面共用一个材质，遇到实际网格时才创建。
+                let runtimeMaterial: Material | null = null;
                 let applied = 0;
                 for (const node of nodes) {
                     const renderer = node.getComponent(MeshRenderer);
                     if (!renderer) {
                         continue;
                     }
-                    // Two distinct screen meshes: the "near" (dive-end) one has correct UVs, while the
-                    // far podium-end one (scoreboard_screen_mesh) is authored mirrored and reads back-to-
-                    // front. Flip U only on the podium-end screen; keying on the node name is reliable,
-                    // whereas world positions may be stale right after the pool is built.
-                    // 两块不同的屏 mesh：near（跳水端）UV 正常，远端颁奖屏是镜像的会左右反。仅翻颁奖端那块；
-                    // 用节点名判断可靠，而刚建好泳池时 worldPosition 可能尚未刷新。
-                    const flipU = isScoreboard && !node.name.toLowerCase().includes('near');
-                    let runtimeMaterial = materialByFlip.get(flipU);
                     if (!runtimeMaterial) {
-                        runtimeMaterial = makeUnlitBrandingMaterial(texture, `${spec.prefix}${flipU ? '_flipped' : ''}`, flipU);
-                        materialByFlip.set(flipU, runtimeMaterial);
+                        runtimeMaterial = makeUnlitBrandingMaterial(texture, spec.prefix);
                     }
                     const count = Math.max(1, renderer.sharedMaterials.length);
                     for (let i = 0; i < count; i++) {
@@ -314,19 +295,13 @@ export class WaterSurfaceBinder {
     }
 }
 
-// Apply a swappable branding texture on an unlit material so venue signage (fascia logos,
-// scoreboards, hanging banners) shows at full color regardless of the dark stand lighting.
-function makeUnlitBrandingMaterial(texture: Texture2D, nodeName: string, flipU = false): Material {
+// 横幅与墙面标识使用无光照材质，保持贴图原色。
+function makeUnlitBrandingMaterial(texture: Texture2D, nodeName: string): Material {
     const material = new Material();
     material.initialize({ effectName: 'builtin-unlit', defines: { USE_TEXTURE: true } });
     material.name = `RuntimeBranding_${nodeName}`;
     material.setProperty('mainTexture', texture);
     material.setProperty('mainColor', new Color(255, 255, 255, 255));
-    // Flip U (u' = 1 - u) for the mirrored podium-end screen so its text reads left-to-right.
-    // 对镜像的颁奖端屏翻转 U（u' = 1 - u），让文字左右正常。
-    if (flipU) {
-        material.setProperty('tilingOffset', new Vec4(-1, 1, 1, 0));
-    }
     return material;
 }
 

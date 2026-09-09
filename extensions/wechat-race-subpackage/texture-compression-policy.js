@@ -4,6 +4,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { mipFilterForImage, auditTextureMipmaps } = require('./texture-mipmap-policy');
 
 const PRESETS = Object.freeze({
     UI_ALPHA: 'astc-ui-alpha-5x5',
@@ -224,6 +225,9 @@ function validatePresetDefinitions(projectRoot) {
     const settingsPath = path.join(projectRoot, 'settings', 'v2', 'packages', 'builder.json');
     const settings = readJson(settingsPath);
     const definitions = settings?.textureCompressConfig?.userPreset || {};
+    if (settings?.textureCompressConfig?.genMipmaps !== true) {
+        throw new Error('[texture-policy] 泳池和角色的 ASTC mip 链要求 textureCompressConfig.genMipmaps=true');
+    }
     const missing = [...POLICY_PRESET_IDS].filter((presetId) => !definitions[presetId]);
     if (missing.length > 0) {
         throw new Error(
@@ -382,13 +386,9 @@ function auditTextureCompression(projectRoot, options = {}) {
                     }
                 }
 
-                // A raw .astc file contains only its base image. Cocos' GLTF
-                // importer enables linear mip sampling by default, but WebGL
-                // cannot generate the missing mip chain for compressed ASTC
-                // textures. On iOS WeChat this leaves the texture incomplete
-                // and has shown up as magenta/corrupted model and venue pixels.
-                // Keep bilinear filtering, but explicitly disable mip sampling
-                // on every Texture2D sub-asset that references this image.
+                // 泳池和角色由独立 mip 策略管理，构建后强制校验完整 CMIP 链。
+                // 其他 GLB 暂时沿用单级 ASTC，防止缺层导致 iOS 紫色贴图。
+                if (mipFilterForImage(relativeMeta, subMeta.name) !== null) continue;
                 for (const [textureId, textureMeta] of Object.entries(meta.subMetas || {})) {
                     const textureUserData = textureMeta?.userData;
                     if (textureUserData?.imageUuidOrDatabaseUri !== subMeta.uuid) {
@@ -421,6 +421,12 @@ function auditTextureCompression(projectRoot, options = {}) {
         }
     });
 
+    const mipmaps = auditTextureMipmaps(resolvedRoot, { fix });
+    result.mipmapSamplersEnabled = mipmaps.enabled;
+    result.mipmapSamplersDisabled += mipmaps.disabled;
+    result.changed += mipmaps.changed;
+    result.changedFiles += mipmaps.changedFiles;
+    result.issues.push(...mipmaps.issues);
     return result;
 }
 
@@ -471,7 +477,7 @@ function runCli() {
 
     console.log(
         `[texture-policy] 检查通过：扫描 ${result.checked} 项，`
-        + `纳入压缩 ${result.eligible} 项，关闭 GLB mip 采样 ${result.mipmapSamplersDisabled} 项，`
+        + `纳入压缩 ${result.eligible} 项，开启 mip 采样 ${result.mipmapSamplersEnabled} 项，保留单级采样 ${result.mipmapSamplersDisabled} 项，`
         + `首包 UI 保持原图 ${result.ignoredMainPackage} 项，`
         + `保留小纹理 ${result.ignoredSmall} 项。`,
     );

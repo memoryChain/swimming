@@ -96,6 +96,8 @@ import { applyCeilingLightArray } from '../venue/CeilingLightArray';
 import { ScoreboardFeedCamera } from '../camera/ScoreboardFeedCamera';
 import { SpectatorCrowdBuilder } from '../venue/SpectatorCrowdBuilder';
 import { SpectatorCameraFlashEmitter } from '../venue/SpectatorCameraFlashEmitter';
+import { SceneEffectPreviewState } from '../venue/SceneEffectPreviewState';
+import { SceneEffectPreviewPanel } from '../ui/SceneEffectPreviewPanel';
 import { applyStandHeightShade } from '../venue/StandHeightShade';
 import { AwardsPresentation } from '../venue/AwardsPresentation';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -291,6 +293,8 @@ export class GameManager extends Component {
     private _modelDebugFlow: ModelDebugFlowController = null;
     // Underwater-effect tuning scene state (launch mode 'underwater-debug').
     private _underwaterDebugActive = false;
+    private _sceneEffectPreviewState: SceneEffectPreviewState | null = null;
+    private _sceneEffectPreviewPanel: SceneEffectPreviewPanel | null = null;
     private _uwLapDistance = 2;
     private _uwLapDir = 1;
     private _uwKickPhase = 0;
@@ -372,6 +376,10 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
+        this._sceneEffectPreviewPanel?.dispose();
+        this._sceneEffectPreviewState?.dispose();
+        this._sceneEffectPreviewPanel = null;
+        this._sceneEffectPreviewState = null;
         this._raceUiBuilder?.resetInputState();
         this._uiController?.hideProgressionResult();
         this._inputRouter?.unbind();
@@ -1058,6 +1066,8 @@ export class GameManager extends Component {
             onDebugCameraWheel: (event) => this.onDebugCameraWheel(event),
             onCameraOrbit: (deltaX, deltaY) => this.onAwardsCameraOrbit(deltaX, deltaY),
             onCameraZoom: (scroll) => this.onAwardsCameraZoom(scroll),
+            isCameraTouchBlocked: (event) => this._underwaterDebugActive
+                && (this._sceneEffectPreviewPanel?.blocksPointer(event.getLocationX(), event.getLocationY()) ?? false),
         });
     }
 
@@ -1220,6 +1230,8 @@ export class GameManager extends Component {
             this._spectatorCameraFlashEmitter?.setVisibilityCamera(
                 this._cameraNode?.getComponent(Camera) ?? null,
             );
+            // 观众可能在面板挂载后才延迟生成，沿用当前开关状态。
+            this._sceneEffectPreviewState?.refreshTargets(root);
         } catch (error) {
             const message = error instanceof Error ? error.message : `${error}`;
             this.debug(`spectator crowd skipped: ${message}`);
@@ -2912,6 +2924,7 @@ export class GameManager extends Component {
     // the underwater render path, and show the tuning HUD (its '水色' sliders +
     // exit button). The player is then driven manually in updateUnderwaterDebug.
     private enterUnderwaterDebug() {
+        if (this._netSession) return;
         this._underwaterDebugActive = true;
         this._state = GameState.READY;
         const player = this._playerSwimmer;
@@ -2943,6 +2956,16 @@ export class GameManager extends Component {
         // Reuse the model-debug HUD, but minimal: only the 退出 button is wired
         // in this scene, so hide the rest to keep the view clear.
         this._uiFlow?.showModelDebugHud(true);
+        if (!this._sceneEffectPreviewState && this._modelDebugHud?.isValid && this._worldRoot?.isValid) {
+            this._sceneEffectPreviewState = new SceneEffectPreviewState();
+            this._sceneEffectPreviewState.refreshTargets(this._worldRoot);
+            this._sceneEffectPreviewPanel = new SceneEffectPreviewPanel(
+                this._modelDebugHud, this._sceneEffectPreviewState, this._uiCamera,
+            );
+        }
+        if (this._sceneEffectPreviewPanel && !this._sceneEffectPreviewPanel.root.active) {
+            this._sceneEffectPreviewPanel.root.active = true;
+        }
         this.debug('enterUnderwaterDebug');
     }
 
@@ -2988,7 +3011,7 @@ export class GameManager extends Component {
             dirSign,
         );
         // The debug swimmer is always submerged, so keep the bubble trail on.
-        this._playerSwimmer?.cartoonRig?.updateUnderwaterBubbles(true);
+        this._playerSwimmer?.cartoonRig?.updateUnderwaterBubbles(this._sceneEffectPreviewState?.isEnabled('bubbles') ?? true);
         // Free-look orbit around the swimmer: the camera follows the lapping
         // swimmer while the user drags to rotate and wheels/pinches to zoom.
         this._uwCamTarget.set(worldX, bodyY + 0.25, PLAYER_LANE_Z);
@@ -3021,6 +3044,10 @@ export class GameManager extends Component {
 
     private onDebugCameraMouseDown(event: EventMouse) {
         if (this._underwaterDebugActive) {
+            if (this._sceneEffectPreviewPanel?.blocksPointer(event.getLocationX(), event.getLocationY())) {
+                this._uwCameraDragging = false;
+                return;
+            }
             const button = event.getButton();
             this._uwCameraDragging = button === EventMouse.BUTTON_LEFT
                 || button === EventMouse.BUTTON_RIGHT
@@ -3069,6 +3096,7 @@ export class GameManager extends Component {
 
     private onDebugCameraWheel(event: EventMouse) {
         if (this._underwaterDebugActive) {
+            if (this._sceneEffectPreviewPanel?.blocksPointer(event.getLocationX(), event.getLocationY())) return;
             this.zoomUnderwaterCamera(event.getScrollY());
             return;
         }

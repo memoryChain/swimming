@@ -34,6 +34,7 @@ class Quat {
 }
 class Color { constructor(r, g, b, a = 255) { Object.assign(this, { r, g, b, a }); } }
 class Component {}
+class AuditFlashEmitter { configure(positions) { this.positions = positions; } }
 const cc = { Vec3, Quat, Color, Component, _decorator: { ccclass: () => c => c, property: () => {} } };
 function load(source, filename, dependencies = {}) {
     const module = { exports: {} };
@@ -41,19 +42,30 @@ function load(source, filename, dependencies = {}) {
     vm.runInThisContext(`(function(require,module,exports){${code}\n})`, { filename })(id => {
         if (id === 'cc') return cc;
         if (id.endsWith('TimeScale')) return { scaledDelta: dt => dt };
-        if (id.endsWith('SpectatorCameraFlashEmitter')) return {};
+        if (id.endsWith('SpectatorVisibility')) return visibilityModule;
+        if (id.endsWith('SpectatorCameraFlashEmitter')) return { SpectatorCameraFlashEmitter: AuditFlashEmitter };
         if (dependencies[id]) return dependencies[id];
         throw Error(id);
     }, module, module.exports);
     return module.exports;
 }
+const visibilityModule = load(fs.readFileSync(path.join(root, 'assets/scripts/venue/SpectatorVisibility.ts'), 'utf8'), 'SpectatorVisibility.ts');
 const templateModule = load(fs.readFileSync(path.join(root, 'assets/scripts/venue/SpectatorGeometry.ts'), 'utf8'), 'SpectatorGeometry.ts');
 const relative = 'assets/scripts/venue/SpectatorCrowdBuilder.ts';
 const expose = '\nexport { buildSpectatorGeometry, collectGrandstands, collectCornerAnchors, SPECTATOR_COLORS };';
-const current = load(fs.readFileSync(path.join(root, relative), 'utf8') + expose, relative, { './SpectatorGeometry': templateModule });
-// 可传入旧提交作对照；默认与当前 HEAD 比较工作区。
+const current = load(fs.readFileSync(path.join(root, relative), 'utf8') + expose + '\nexport { partitionSpectators, buildCameraFlashPositions, SPECTATOR_LAYER };', relative, { './SpectatorGeometry': templateModule });
+// 可传旧提交或保存有两个观众源码文件的目录；默认与 HEAD 比较。
 const baseline = process.argv[2] || 'HEAD';
-const previous = load(execFileSync('git', ['show', `${baseline}:${relative}`], { cwd: root, encoding: 'utf8' }) + expose, 'previous.ts', { './SpectatorGeometry': templateModule });
+// 配色验收允许顶点色变化，但仍逐人检查全部几何、包围盒和落位。
+const paletteOnly = process.argv.includes('--palette-only');
+const comparisonGeometry = g => paletteOnly ? { ...g, colors: undefined } : g;
+const fromDirectory = fs.existsSync(baseline) && fs.statSync(baseline).isDirectory();
+const baselineSource = file => fromDirectory ? fs.readFileSync(path.join(baseline, path.basename(file)), 'utf8')
+    : execFileSync('git', ['show', `${baseline}:${file}`], { cwd: root, encoding: 'utf8' });
+const previousTemplate = load(baselineSource('assets/scripts/venue/SpectatorGeometry.ts'), 'previous-geometry.ts');
+const previousSource = baselineSource(relative);
+const previous = load(previousSource + expose + (previousSource.includes('function partitionSpectators(')
+    ? '\nexport { partitionSpectators };' : ''), 'previous.ts', { './SpectatorGeometry': previousTemplate });
 
 // 从最终 GLB 的节点矩阵和 accessor 包围盒恢复 Cocos 所见的世界坐标。
 const bytes = fs.readFileSync(path.join(root, 'assets/race/pool/LowPolyPool.glb'));
@@ -99,6 +111,9 @@ function audit(g) {
     }
 }
 const report = {};
+const placements = {};
+const nearGeometry = {};
+const collectedBuckets = {};
 for (const [name, module] of [['before', previous], ['after', current]]) {
     const buckets = Array.from({ length: 15 }, () => []), builder = new module.SpectatorCrowdBuilder();
     const stands = module.collectGrandstands(scene);
@@ -109,14 +124,39 @@ for (const [name, module] of [['before', previous], ['after', current]]) {
     }
     for (const stand of stands) builder.collectGrandstandSpectators(buckets, stand);
     builder.collectCornerSpectators(buckets, stands, module.collectCornerAnchors(scene));
-    const geometry = buckets.map((b, i) => module.buildSpectatorGeometry(b, module.SPECTATOR_COLORS[i % 5]));
+    collectedBuckets[name] = buckets;
+    placements[name] = buckets.flat().map(s => [s.pos.x, s.pos.y, s.pos.z, s.width, s.height].join(',')).sort();
+    // 第二层保持不变；目录基线还要验证此前已优化的第三、四层完全不变。
+    nearGeometry[name] = buckets.map((b, i) => module.buildSpectatorGeometry(b.filter(s => fromDirectory ? s.tier >= 2 : s.tier === 2 || s.brightness === 0.55), module.SPECTATOR_COLORS[i % 5]));
+    const geometry = module.partitionSpectators
+        ? module.partitionSpectators(buckets).map(group => module.buildSpectatorGeometry(group.spectators, module.SPECTATOR_COLORS[0]))
+        : buckets.map((b, i) => module.buildSpectatorGeometry(b, module.SPECTATOR_COLORS[i % 5]));
     geometry.forEach(audit);
-    const samples = [0, 1, 2].map(pose => module.buildSpectatorGeometry([{ pos: new Vec3(pose * 0.95, 0.4, 0), width: 0.45, height: 0.75, topWidthScale: 1, topOffset: 0, row: 1, col: pose, side: 1, yaw: 0, brightness: 1, saturation: 1, detailed: true, pose }], module.SPECTATOR_COLORS[pose]));
-    const sampleRear = module.buildSpectatorGeometry([{ pos: new Vec3(3 * 0.95, 0.4, 0), width: 0.45, height: 0.75, topWidthScale: 1, topOffset: 0, row: 1, col: 3, side: 1, yaw: 0, brightness: 1, saturation: 1, detailed: false, pose: 1 }], module.SPECTATOR_COLORS[3]);
-    fs.writeFileSync(path.join(output, `${name}.json`), JSON.stringify({ geometry, samples: [...samples, sampleRear] }));
-    report[name] = { spectators: buckets.flat().length, detailed: buckets.flat().filter(s => s.detailed).length, groups: geometry.length, triangles: geometry.reduce((sum, g) => sum + g.indices.length / 3, 0), vertices: geometry.reduce((sum, g) => sum + g.positions.length / 3, 0), maxGroupVertices: Math.max(...geometry.map(g => g.positions.length / 3)), sampleTriangles: [...samples, sampleRear].map(g => g.indices.length / 3) };
+    const sampleSpecs = [[1, 0], [1, 1], [1, 2], [2, 1], [3, 0], [4, 0]];
+    const samples = sampleSpecs.map(([tier, pose], i) => module.buildSpectatorGeometry([{ pos: new Vec3(i * 0.95, 0.4, 0), width: 0.45, height: 0.75, topWidthScale: 1.1, topOffset: 0.04, row: 1, col: i, side: 1, yaw: 0, brightness: 1, saturation: 1, detailed: tier === 1, tier, pose }], module.SPECTATOR_COLORS[i % 5]));
+    samples.forEach(audit);
+    fs.writeFileSync(path.join(output, `${name}.json`), JSON.stringify({ geometry, samples }));
+    report[name] = { spectators: buckets.flat().length, detailed: buckets.flat().filter(s => s.tier === 1 || s.detailed).length, groups: geometry.filter(g => g.indices.length).length, triangles: geometry.reduce((sum, g) => sum + g.indices.length / 3, 0), vertices: geometry.reduce((sum, g) => sum + g.positions.length / 3, 0), maxGroupVertices: Math.max(...geometry.map(g => g.positions.length / 3)), sampleTriangles: samples.map(g => g.indices.length / 3) };
+    report[name].rawGeometryBytes = report[name].vertices * 28 + report[name].triangles * 6;
+    if (name === 'after') {
+        report[name].tiers = [1, 2, 3, 4].map(tier => {
+            const spectators = buckets.flat().filter(s => s.tier === tier);
+            if (tier >= 3) assert(spectators.every(s => s.pose === 0), '远层观众必须静止');
+            return { tier, spectators: spectators.length, trianglesPerPerson: templateModule.createSpectatorTemplate(tier, 0).indices.length / 3 };
+        });
+        assert.deepEqual(samples.map(g => g.indices.length / 3), [32, 32, 32, 14, 4, 2]);
+        assert.equal(samples[5].positions.length / 3, 4);
+        // 第四层即使有随机身形参数也须保持矩形，相邻边垂直且对边等长。
+        const p = Array.from({ length: 4 }, (_, i) => samples[5].positions.slice(i * 3, i * 3 + 3));
+        const edges = p.map((v, i) => p[(i + 1) % 4].map((n, j) => n - v[j]));
+        assert(Math.abs(edges[0].reduce((sum, n, j) => sum + n * edges[1][j], 0)) < 1e-9);
+        for (let j = 0; j < 3; j++) assert(Math.abs(edges[0][j] + edges[2][j]) < 1e-9);
+    }
 }
 assert.equal(report.before.spectators, report.after.spectators, '不改变观众数量和落位规则');
+assert.deepEqual(placements.before, placements.after, '保留所有观众位置与尺寸');
+assert.deepEqual(nearGeometry.before.map(comparisonGeometry), nearGeometry.after.map(comparisonGeometry), '未修改层的实际几何保持；非配色模式还检查颜色');
+assert.equal(report.before.sampleTriangles[3], report.after.sampleTriangles[3], '第二层面数保持');
 // 装饰动画停用与节流：检查实际组件逻辑，而非只检查常量。
 const wobble = new current.SpectatorGroupWobble(); let writes = 0;
 wobble.node = { activeInHierarchy: true, position: new Vec3(), setPosition: () => writes++ };
@@ -124,5 +164,18 @@ wobble.start(); for (let i = 0; i < 120; i++) wobble.update(1 / 60);
 assert(writes <= 48); const count = writes;
 wobble.node.activeInHierarchy = false; wobble.update(1); assert.equal(writes, count);
 wobble.node.activeInHierarchy = true; wobble.update(0); assert.equal(writes, count);
+report.culling = require('./spectator-culling-audit.cjs')(current, collectedBuckets.after);
+report.runtime = require('./spectator-runtime-audit.cjs')(cc, current, scene, current.buildCameraFlashPositions(collectedBuckets.after));
+// 分区前后的每个人仍使用相同模板、衣服色、肤色、尺寸和位置。
+if (fromDirectory && report.before.triangles === report.after.triangles) {
+    assert.deepEqual(current.buildCameraFlashPositions(collectedBuckets.before),current.buildCameraFlashPositions(collectedBuckets.after),'分区前后闪光候选及顺序保持');
+    for (let i = 0; i < 15; i++) {
+        assert.equal(collectedBuckets.before[i].length,collectedBuckets.after[i].length);
+        for (let j = 0; j < collectedBuckets.before[i].length; j++) {
+            assert.deepEqual(comparisonGeometry(previous.buildSpectatorGeometry([collectedBuckets.before[i][j]],previous.SPECTATOR_COLORS[i%5])),
+                comparisonGeometry(current.buildSpectatorGeometry([collectedBuckets.after[i][j]],current.SPECTATOR_COLORS[0])), '每人实际几何保持；非配色模式还检查顶点色');
+        }
+    }
+}
 fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report, null, 2));
