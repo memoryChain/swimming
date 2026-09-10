@@ -726,6 +726,9 @@ export class Swimmer extends Component {
         this.updatePerfectComboIdle(dt);
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
+            courseCurvature: this._riverBrawlMovementEnabled
+                ? this._courseLayout.courseCurvatureAtDistance(this._motor.distance)
+                : 0,
         });
         this.updatePerfectZoneGlow();
         if (!this.isAI) {

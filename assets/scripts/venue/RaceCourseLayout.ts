@@ -317,6 +317,10 @@ export class RaceCourseLayout {
         return out;
     }
 
+    courseCurvatureAtDistance(distance: number): number {
+        return this.sampleCourseFrame(distance, this._courseFrame).curvature;
+    }
+
     coursePosition(distance: number, lateral: number, y: number, out: Vec3): Vec3 {
         const frame = this.sampleCourseFrame(distance, this._courseFrame);
         out.set(

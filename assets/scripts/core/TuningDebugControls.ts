@@ -48,7 +48,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 37;
+const TUNING_FILE_VERSION = 38;
 
 type TuningFileData = {
     version: number;
@@ -85,6 +85,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('brawl.curveCount', 'S弯数量', '起点与终点直道之间完整S弯的数量；修改后下次进入该模式生效。', () => RIVER_BRAWL_BALANCE.curveCount, (v) => RIVER_BRAWL_BALANCE.curveCount = Math.round(v), 1, 1, 4, 0),
             control('brawl.curveStartStraight', '起点直道', '起跳后保持直线的距离；修改后下次进入该模式生效。', () => RIVER_BRAWL_BALANCE.curveStartStraight, (v) => RIVER_BRAWL_BALANCE.curveStartStraight = v, 5, 20, 140, 0, 'm'),
             control('brawl.curveFinishStraight', '终点直道', '进入终点前保持直线的距离；修改后下次进入该模式生效。', () => RIVER_BRAWL_BALANCE.curveFinishStraight, (v) => RIVER_BRAWL_BALANCE.curveFinishStraight = v, 5, 20, 140, 0, 'm'),
+            control('brawl.curveDriftScale', '弯道外漂强度', '按弯道曲率与总速度计算向弯外的横移；0关闭，速度越高影响越明显。', () => RIVER_BRAWL_BALANCE.curveOutwardDriftScale, (v) => RIVER_BRAWL_BALANCE.curveOutwardDriftScale = v, 0.01, 0, 0.6, 2),
+            control('brawl.curveDriftMaxSpeed', '外漂速度上限', '限制弯道外漂的最大横向速度，避免高速碰撞后突然横穿河道。', () => RIVER_BRAWL_BALANCE.curveOutwardDriftMaxSpeed, (v) => RIVER_BRAWL_BALANCE.curveOutwardDriftMaxSpeed = v, 0.05, 0, 2, 2, 'm/s'),
             control('brawl.flowSpeed', '河流推进速度', '河流持续提供的纵向地面速度，不占用运动员自身游速上限。', () => RIVER_BRAWL_BALANCE.flowSpeed, (v) => RIVER_BRAWL_BALANCE.flowSpeed = v, 0.25, 0, 20, 2, 'm/s'),
             control('brawl.personalMaxSpeed', '个人游速上限', '激流乱斗中运动员依靠划水能够贡献的最高个人速度。', () => RIVER_BRAWL_BALANCE.personalMaxSpeed, (v) => RIVER_BRAWL_BALANCE.personalMaxSpeed = v, 0.1, 1, 8, 1, 'm/s'),
             control('brawl.personalDragScale', '个人阻力倍率', '只缩放个人游速的常规阻力；越低，划几下后的速度保持越久。', () => RIVER_BRAWL_BALANCE.personalDragScale, (v) => RIVER_BRAWL_BALANCE.personalDragScale = v, 0.05, 0, 1.5, 2),

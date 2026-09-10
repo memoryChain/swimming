@@ -11,6 +11,7 @@ import { CollisionSoftnessModel } from './CollisionSoftnessModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 import {
     RIVER_BRAWL_BALANCE,
+    riverCurveOutwardDriftSpeed,
     updateRiverBankResistance,
 } from '../core/RiverBrawlBalance';
 
@@ -63,6 +64,7 @@ type QueueSideStrokeResult = {
 
 export type SwimmerMotorOptions = {
     isAI: boolean;
+    courseCurvature?: number;
 };
 
 export type StrokeTimingGuideInterval = {
@@ -523,8 +525,19 @@ export class SwimmerMotor {
             * this.riverBankPersonalSpeedScale;
         const forwardSpeed = this.courseFlowSpeed + personalForwardSpeed;
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
-        // Lateral drift accumulates the sideways component, clamped to the pool.
-        const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
+        // Lateral movement combines deliberate steering with a light racing-game
+        // outward drift on curved river sections. Ordinary pool modes pass zero
+        // curvature and retain their exact previous path.
+        const curveOutwardDriftSpeed = this._riverBrawlMovementEnabled
+            ? riverCurveOutwardDriftSpeed(
+                options.courseCurvature ?? 0,
+                forwardSpeed,
+                RIVER_BRAWL_BALANCE.curveOutwardDriftScale,
+                RIVER_BRAWL_BALANCE.curveOutwardDriftMaxSpeed,
+            )
+            : 0;
+        const requestedLateralOffset = this._lateralOffset
+            + (this._currentSpeed * Math.sin(this._heading) + curveOutwardDriftSpeed) * dt;
         this._lateralOffset = clamp(requestedLateralOffset, this._lateralOffsetMin, this._lateralOffsetMax);
         const wallCorrection = this._lateralOffset - requestedLateralOffset;
         if (Math.abs(wallCorrection) > 1e-6) {

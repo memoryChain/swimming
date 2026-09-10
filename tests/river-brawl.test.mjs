@@ -7,6 +7,7 @@ import BalanceModule from '../assets/scripts/core/RiverBrawlBalance.ts';
 const { resolveSideKick } = CombatModule;
 const {
     RIVER_BRAWL_BALANCE,
+    riverCurveOutwardDriftSpeed,
     riverBankContactRatio,
     updateRiverBankResistance,
 } = BalanceModule;
@@ -21,6 +22,18 @@ test('river movement keeps course flow separate from the personal swim cap', () 
             + RIVER_BRAWL_BALANCE.personalMaxSpeed * RIVER_BRAWL_BALANCE.bankPersonalSpeedScale,
         5.4,
     );
+});
+
+test('curve drift pushes outward, grows with speed, and vanishes on straights', () => {
+    const scale = RIVER_BRAWL_BALANCE.curveOutwardDriftScale;
+    const limit = RIVER_BRAWL_BALANCE.curveOutwardDriftMaxSpeed;
+    const slowLeftBend = riverCurveOutwardDriftSpeed(0.01, 8, scale, limit);
+    const fastLeftBend = riverCurveOutwardDriftSpeed(0.01, 12, scale, limit);
+    assert.ok(slowLeftBend < 0);
+    assert.ok(fastLeftBend < slowLeftBend);
+    assert.ok(riverCurveOutwardDriftSpeed(-0.01, 12, scale, limit) > 0);
+    assert.equal(riverCurveOutwardDriftSpeed(0, 12, scale, limit), 0);
+    assert.equal(riverCurveOutwardDriftSpeed(0.2, 30, scale, limit), -limit);
 });
 
 function fakeSwimmer({ x, z, direction = 1, heading = 0, weight = 1, active = true, forwardX, forwardZ }) {

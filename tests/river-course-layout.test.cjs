@@ -61,6 +61,7 @@ test('river course keeps straight ends and maps lateral offsets onto each bend',
     course.sampleCourseFrame(102.5, frame);
     assert.ok(frame.tangentZ > 0.3);
     assert.ok(frame.curvature === 0 || Number.isFinite(frame.curvature));
+    assert.equal(course.courseCurvatureAtDistance(102.5), frame.curvature);
     const lightweightDirection = { x: 0, y: 99, z: 0 };
     assert.doesNotThrow(() => course.courseWorldDirection(102.5, 0, lightweightDirection));
     assert.ok(lightweightDirection.x > 0.9);

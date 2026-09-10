@@ -8,6 +8,12 @@ export const RIVER_BRAWL_BALANCE = {
     curveCount: 2,
     curveHeadingDegrees: 20.5,
     curveSampleSpacing: 1,
+    // Arcade outward drift: signed course curvature supplies the side, while
+    // total ground speed is squared so cruising stays gentle and fast swimming
+    // asks for more corrective steering. The cap prevents a hit/boost spike from
+    // throwing the swimmer straight across the river in one bend.
+    curveOutwardDriftScale: 0.22,
+    curveOutwardDriftMaxSpeed: 0.75,
     environmentSampleSpacing: 4,
     flowSpeed: 8.0,
     personalMaxSpeed: 4.0,
@@ -77,6 +83,28 @@ export function updateRiverBankResistance(
         return safeTarget;
     }
     return Math.max(safeTarget, safeCurrent - finiteNonNegative(dt) / seconds);
+}
+
+// Signed lateral speed in course coordinates. Positive curvature bends toward
+// the positive course normal, so the outside of that bend is negative lateral.
+// Squaring ground speed gives the intended racing-game behaviour: the river's
+// base cruise produces a readable nudge, while adding personal speed increases
+// the line-holding cost without affecting forward speed directly.
+export function riverCurveOutwardDriftSpeed(
+    curvature: number,
+    groundSpeed: number,
+    scale: number,
+    maxSpeed: number,
+): number {
+    const safeCurvature = Number.isFinite(curvature) ? curvature : 0;
+    const safeGroundSpeed = finiteNonNegative(groundSpeed);
+    const safeScale = finiteNonNegative(scale);
+    const limit = finiteNonNegative(maxSpeed);
+    if (safeCurvature === 0 || safeGroundSpeed === 0 || safeScale === 0 || limit === 0) {
+        return 0;
+    }
+    const requested = -safeCurvature * safeGroundSpeed * safeGroundSpeed * safeScale;
+    return Math.max(-limit, Math.min(limit, requested));
 }
 
 function finiteNonNegative(value: number): number {
