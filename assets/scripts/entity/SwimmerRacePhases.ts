@@ -98,6 +98,7 @@ export class SwimmerRacePhases {
     // Read by the follow camera and speed lines so both tilt with the arc.
     private _dolphinFlightPitch = 0;
     private readonly _dolphinRotation = new Quat();
+    private readonly _dolphinWorldPosition = new Vec3();
 
     constructor(private readonly _host: SwimmerRacePhaseHost) {}
 
@@ -651,9 +652,6 @@ export class SwimmerRacePhases {
         const cosH = Math.cos(heading);
         const sinH = Math.sin(heading);
         const courseFlowSpeed = motor.courseFlowSpeed;
-        // Face the actual travel direction (same convention as applyCoursePosition):
-        // yaw off the lane axis by the steering heading.
-        const yaw = (direction > 0 ? 0 : 180) - direction * (heading * 180 / Math.PI);
         // Keep the full oriented body inside the same hard bank used by regular
         // swimming. Normal pool modes retain their previous 0.5m root clearance.
         const sideRootLimit = this._host.scriptedSideRootHalfWidth(heading);
@@ -672,13 +670,14 @@ export class SwimmerRacePhases {
             const worldZ = clampScalar(this._host.startPosition.z + lateral, -sideRootLimit, sideRootLimit);
             const y = swimY - DOLPHIN_JUMP.dipDepth * Math.sin(Math.PI * t);
             const pitch = -DOLPHIN_JUMP.dipTiltDegrees * Math.sin(Math.PI * t);
-            node.setPosition(courseLayout.distanceToWorldX(distance), y, worldZ);
+            courseLayout.coursePosition(distance, worldZ, y, this._dolphinWorldPosition);
+            node.setPosition(this._dolphinWorldPosition);
             const entryRoll = lerpAngle(
                 this._dolphinEntryAxialRoll,
                 this._dolphinBaseAxialRoll,
                 smoothStep(t),
             );
-            this.applyDolphinRotation(yaw, pitch, entryRoll);
+            this.applyDolphinRotation(courseLayout.courseYawDegrees(distance, heading), pitch, entryRoll);
             motor.setFlipTurnDistance(distance);
             motor.setFlipTurnSpeed(this._dolphinEntrySpeed);
             if (t >= 1) {
@@ -714,9 +713,10 @@ export class SwimmerRacePhases {
         this._dolphinFlightPitch = arcPitchRad;
         this._dolphinRollAngle += (this._dolphinRollTarget - this._dolphinRollAngle)
             * (1 - Math.exp(-Math.max(0, dt) * DOLPHIN_JUMP.rollEaseRate));
-        node.setPosition(courseLayout.distanceToWorldX(distance), y, worldZ);
+        courseLayout.coursePosition(distance, worldZ, y, this._dolphinWorldPosition);
+        node.setPosition(this._dolphinWorldPosition);
         this.applyDolphinRotation(
-            yaw,
+            courseLayout.courseYawDegrees(distance, heading),
             arcPitchRad * 180 / Math.PI,
             this._dolphinBaseAxialRoll + this._dolphinRollAngle,
         );
@@ -765,16 +765,24 @@ export class SwimmerRacePhases {
         // swim) keep travelling and facing the jump direction instead of snapping
         // back to the lane axis. beginFlipTurnPhase zeroed it at launch.
         motor.correctHeading(this._dolphinHeading, this._dolphinHeadingTurnRate, 1);
-        const headingDeg = this._dolphinHeading * 180 / Math.PI;
-        const yaw = (this._dolphinDirection > 0 ? 0 : 180) - this._dolphinDirection * headingDeg;
         // Carry over any leftover roll as a residual that unwinds to 0 (shortest
         // way) during the landing dive, so the body returns to the normal axis.
         const residual = normalizeAngle(this._dolphinRollAngle);
         this._dolphinRollResidual = residual;
         this._dolphinRollResidualDecayPerSecond = Math.abs(residual)
             / Math.max(0.01, DOLPHIN_JUMP.landingRollUnwindSeconds);
-        node.setPosition(courseLayout.distanceToWorldX(landingDistance), courseLayout.swimY, worldZ);
-        this.applyDolphinRotation(yaw, 0, this._dolphinBaseAxialRoll + residual);
+        courseLayout.coursePosition(
+            landingDistance,
+            worldZ,
+            courseLayout.swimY,
+            this._dolphinWorldPosition,
+        );
+        node.setPosition(this._dolphinWorldPosition);
+        this.applyDolphinRotation(
+            courseLayout.courseYawDegrees(landingDistance, this._dolphinHeading),
+            0,
+            this._dolphinBaseAxialRoll + residual,
+        );
         motor.completeFlipTurnPhase(landingDistance, this._dolphinLandingExitSpeed);
         motor.restoreAxialBalance(this._dolphinBaseAxialRoll);
         // Air strokes are presentation-only. If entry happens halfway through a

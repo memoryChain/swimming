@@ -1,8 +1,12 @@
 {
-  "version": 36,
+  "version": 37,
   "updatedAt": "2026-09-10T00:00:00.000Z",
   "values": {
     "brawl.raceDistance": 400,
+    "brawl.curveHeading": 20.5,
+    "brawl.curveCount": 2,
+    "brawl.curveStartStraight": 70,
+    "brawl.curveFinishStraight": 70,
     "brawl.flowSpeed": 8,
     "brawl.personalMaxSpeed": 4,
     "brawl.personalDragScale": 0.4,

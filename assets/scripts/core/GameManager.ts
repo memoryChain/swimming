@@ -234,6 +234,7 @@ export class GameManager extends Component {
     private readonly _tmpLaneFloatCutoutCenter = new Vec3();
     private readonly _tmpSpectatorTarget = new Vec3();
     private readonly _tmpDialRight = new Vec3();
+    private readonly _tmpDialForward = new Vec3();
     // Sweet-zone dials float above each swimmer's head and follow them. World Y
     // offset lifts the anchor above the (roughly water-level, horizontal) body;
     // the screen-space spread keeps the two hand dials side by side and the extra
@@ -262,6 +263,7 @@ export class GameManager extends Component {
     private readonly _tmpDialAnchorUi = new Vec3();
     private readonly _tmpDialScreen = new Vec3();
     private readonly _tmpSpeedLineVanishWorld = new Vec3();
+    private readonly _tmpSpeedLineForward = new Vec3();
     private _uiCamera: Camera = null;
     // Player identification follows the same distance scale as opponent names.
     private _overheadReadout: Node = null;
@@ -841,7 +843,7 @@ export class GameManager extends Component {
             this._launchMode = 'race';
         }
         setActiveRaceDistance(this._riverBrawlMode ? RIVER_BRAWL_BALANCE.raceDistance : undefined);
-        COURSE_LAYOUT.setTravelMode(this._riverBrawlMode ? 'straight' : 'laps');
+        COURSE_LAYOUT.setTravelMode(this._riverBrawlMode ? 'river' : 'laps');
         if (this._netSession) {
             // Networked race: every client reseeds SharedRNG with the host's seed so
             // the AI fill, lane assignment, and roster shuffles match on all clients.
@@ -1147,6 +1149,15 @@ export class GameManager extends Component {
                 }
                 const calibrated = COURSE_LAYOUT.calibrateFromPoolScene(pool, DEFAULT_POOL_DEFINITION, (message) => this.debug(message));
                 COURSE_LAYOUT.setStartBlockSurfaces(venue.startBlockSurfaces);
+                if (this._riverBrawlMode) {
+                    COURSE_LAYOUT.configureRiverCourse(getRaceDistance(), {
+                        startStraight: RIVER_BRAWL_BALANCE.curveStartStraight,
+                        finishStraight: RIVER_BRAWL_BALANCE.curveFinishStraight,
+                        curveCount: RIVER_BRAWL_BALANCE.curveCount,
+                        headingDegrees: RIVER_BRAWL_BALANCE.curveHeadingDegrees,
+                        sampleSpacing: RIVER_BRAWL_BALANCE.curveSampleSpacing,
+                    });
+                }
                 if (calibrated) {
                     venue.setWaterY(COURSE_LAYOUT.waterY);
                     this._raceCameraDirector.resetToBroadcast();
@@ -2817,7 +2828,16 @@ export class GameManager extends Component {
         if (!swimmer?.node?.isValid || !worldCamera || !this._uiCamera || !hudTransform) {
             return;
         }
-        const heading = swimmer.cameraHeading;
+        if (swimmer.isCurvedCourse) {
+            swimmer.getCameraWorldDirection(this._tmpSpeedLineForward);
+        } else {
+            const heading = swimmer.cameraHeading;
+            this._tmpSpeedLineForward.set(
+                swimmer.raceDirection * Math.cos(heading),
+                0,
+                Math.sin(heading),
+            );
+        }
         // Include the airborne flight pitch so the vanishing point (and thus the
         // speed-line convergence) tilts UP on the climb and DOWN on the fall,
         // instead of always pointing along the flat water line.
@@ -2826,8 +2846,8 @@ export class GameManager extends Component {
         const sinP = Math.sin(pitch);
         const baseY = swimmer.isDolphinAirActive ? swimmer.node.worldPosition.y : swimmer.swimWorldY;
         this._tmpSpeedLineVanishWorld.set(swimmer.node.worldPosition);
-        this._tmpSpeedLineVanishWorld.x += swimmer.raceDirection * Math.cos(heading) * cosP * 32;
-        this._tmpSpeedLineVanishWorld.z += Math.sin(heading) * cosP * 32;
+        this._tmpSpeedLineVanishWorld.x += this._tmpSpeedLineForward.x * cosP * 32;
+        this._tmpSpeedLineVanishWorld.z += this._tmpSpeedLineForward.z * cosP * 32;
         this._tmpSpeedLineVanishWorld.y = baseY + sinP * 32;
         worldCamera.worldToScreen(this._tmpSpeedLineVanishWorld, this._tmpDialScreen);
         this._uiCamera.screenToWorld(this._tmpDialScreen, this._tmpSpeedLineVanishWorld);
@@ -2958,12 +2978,21 @@ export class GameManager extends Component {
     // camera side (including the follow-AI view), instead of a raw world sign that
     // fights the camera flipping sides on the return lap.
     private dialFacingSign(swimmer: Swimmer): number {
-        const facing = swimmer.raceDirection >= 0 ? 1 : -1;
+        if (!swimmer.isCurvedCourse) {
+            const facing = swimmer.raceDirection >= 0 ? 1 : -1;
+            if (!this._cameraNode?.isValid) {
+                return facing;
+            }
+            const right = Vec3.transformQuat(this._tmpDialRight, Vec3.RIGHT, this._cameraNode.worldRotation);
+            return right.x * facing >= 0 ? 1 : -1;
+        }
+        swimmer.getMovementWorldDirection(this._tmpDialForward);
+        const facing = this._tmpDialForward.x >= 0 ? 1 : -1;
         if (!this._cameraNode?.isValid) {
             return facing;
         }
         const right = Vec3.transformQuat(this._tmpDialRight, Vec3.RIGHT, this._cameraNode.worldRotation);
-        return right.x * facing >= 0 ? 1 : -1;
+        return Vec3.dot(right, this._tmpDialForward) >= 0 ? 1 : -1;
     }
 
     // Toggle the race camera between the player and the AI opponent (AI-debug).

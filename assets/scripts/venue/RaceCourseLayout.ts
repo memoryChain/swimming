@@ -2,6 +2,7 @@ import { MeshRenderer, Node, Vec3 } from 'cc';
 import { DIVE_BALANCE } from '../core/GameBalance';
 import { DEFAULT_POOL_DEFINITION, PoolDefinition } from './VenueConfig';
 import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
+import { RiverCourseFrame, RiverCoursePath } from './RiverCoursePath';
 
 const MIN_COURSE_LENGTH = 1;
 export const COURSE_DISTANCE_EPSILON = 0.001;
@@ -29,11 +30,27 @@ export type SceneBounds = {
     maxZ: number;
 };
 
-export type RaceTravelMode = 'laps' | 'straight';
+export type RaceTravelMode = 'laps' | 'straight' | 'river';
+
+export type CourseWorldVector = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+export type RiverCourseShape = {
+    startStraight: number;
+    finishStraight: number;
+    curveCount: number;
+    headingDegrees: number;
+    sampleSpacing: number;
+};
 
 export class RaceCourseLayout {
     private _startBlockSurfaces: readonly CharacterSupportPlane[] = [];
     private _travelMode: RaceTravelMode = 'laps';
+    private _riverPath: RiverCoursePath | null = null;
+    private readonly _courseFrame: RiverCourseFrame = makeCourseFrame();
 
     setStartBlockSurfaces(surfaces: readonly CharacterSupportPlane[]) {
         this._startBlockSurfaces = surfaces;
@@ -72,6 +89,7 @@ export class RaceCourseLayout {
 
     resetToDefinition(definition: PoolDefinition) {
         this._travelMode = 'laps';
+        this._riverPath = null;
         this._startBlockSurfaces = [];
         this.laneCount = definition.laneCount;
         this.laneWidth = definition.laneWidth;
@@ -95,6 +113,24 @@ export class RaceCourseLayout {
 
     setTravelMode(mode: RaceTravelMode): void {
         this._travelMode = mode;
+        if (mode !== 'river') {
+            this._riverPath = null;
+        }
+    }
+
+    configureRiverCourse(length: number, shape: RiverCourseShape): void {
+        this._travelMode = 'river';
+        this._riverPath = new RiverCoursePath({
+            startX: this.startX,
+            startZ: 0,
+            direction: this.direction,
+            length,
+            startStraight: shape.startStraight,
+            finishStraight: shape.finishStraight,
+            curveCount: shape.curveCount,
+            headingDegrees: shape.headingDegrees,
+            sampleSpacing: shape.sampleSpacing,
+        });
     }
 
     get travelMode(): RaceTravelMode {
@@ -102,11 +138,15 @@ export class RaceCourseLayout {
     }
 
     get openSides(): boolean {
-        return this._travelMode === 'straight';
+        return this._travelMode === 'straight' || this._travelMode === 'river';
     }
 
     get finishHasWall(): boolean {
-        return this._travelMode !== 'straight';
+        return this._travelMode === 'laps';
+    }
+
+    get isCurvedRiver(): boolean {
+        return this._travelMode === 'river' && this._riverPath !== null;
     }
 
     calibrateFromPoolScene(pool: Node, definition: PoolDefinition, debug?: (message: string) => void): boolean {
@@ -192,6 +232,9 @@ export class RaceCourseLayout {
     }
 
     distanceToWorldX(distance: number): number {
+        if (this.isCurvedRiver) {
+            return this.sampleCourseFrame(distance, this._courseFrame).x;
+        }
         if (this._travelMode === 'straight') {
             return this.startX + this.direction * finiteNonNegative(distance);
         }
@@ -200,7 +243,7 @@ export class RaceCourseLayout {
     }
 
     directionAtDistance(distance: number): number {
-        if (this._travelMode === 'straight') {
+        if (this._travelMode === 'straight' || this._travelMode === 'river') {
             return this.direction;
         }
         const lap = Math.floor(Math.max(0, distance) / this.courseLength);
@@ -217,7 +260,7 @@ export class RaceCourseLayout {
         if (finishDistance <= 0) {
             return 0;
         }
-        if (this._travelMode === 'straight') {
+        if (this._travelMode === 'straight' || this._travelMode === 'river') {
             return finishDistance;
         }
         const nextCourseEnd = (Math.floor(distance / this.courseLength) + 1) * this.courseLength;
@@ -226,7 +269,7 @@ export class RaceCourseLayout {
 
     /** Returns the next pool wall that needs a turn, excluding the race finish. */
     nextInternalTurnDistance(playerDistance: number, raceDistance: number): number | null {
-        if (this._travelMode === 'straight') {
+        if (this._travelMode === 'straight' || this._travelMode === 'river') {
             return null;
         }
         const distance = finiteNonNegative(playerDistance);
@@ -252,11 +295,74 @@ export class RaceCourseLayout {
     }
 
     swimPosition(distance: number, z: number): Vec3 {
-        return new Vec3(this.distanceToWorldX(distance), this.swimY, z);
+        return this.coursePosition(distance, z, this.swimY, new Vec3());
     }
 
     entryPosition(distance: number, z: number): Vec3 {
-        return new Vec3(this.distanceToWorldX(distance), this.swimY + this.entryYOffset, z);
+        return this.coursePosition(distance, z, this.swimY + this.entryYOffset, new Vec3());
+    }
+
+    sampleCourseFrame(distance: number, out: RiverCourseFrame): RiverCourseFrame {
+        if (this._riverPath) {
+            return this._riverPath.sample(distance, out);
+        }
+        const direction = this.directionAtDistance(distance);
+        out.x = this.distanceToWorldX(distance);
+        out.z = 0;
+        out.tangentX = direction;
+        out.tangentZ = 0;
+        out.normalX = 0;
+        out.normalZ = 1;
+        out.curvature = 0;
+        return out;
+    }
+
+    coursePosition(distance: number, lateral: number, y: number, out: Vec3): Vec3 {
+        const frame = this.sampleCourseFrame(distance, this._courseFrame);
+        out.set(
+            frame.x + frame.normalX * lateral,
+            y,
+            frame.z + frame.normalZ * lateral,
+        );
+        return out;
+    }
+
+    courseWorldDirection<T extends CourseWorldVector>(distance: number, heading: number, out: T): T {
+        const frame = this.sampleCourseFrame(distance, this._courseFrame);
+        const cos = Math.max(0, Math.cos(heading));
+        const sin = Math.sin(heading);
+        out.x = frame.tangentX * cos + frame.normalX * sin;
+        out.y = 0;
+        out.z = frame.tangentZ * cos + frame.normalZ * sin;
+        return out;
+    }
+
+    courseWorldNormal<T extends CourseWorldVector>(distance: number, out: T): T {
+        const frame = this.sampleCourseFrame(distance, this._courseFrame);
+        out.x = frame.normalX;
+        out.y = 0;
+        out.z = frame.normalZ;
+        return out;
+    }
+
+    courseYawDegrees(distance: number, heading: number): number {
+        const direction = this.courseWorldDirection(distance, heading, _tmpCourseDirection);
+        return -Math.atan2(direction.z, direction.x) * 180 / Math.PI;
+    }
+
+    projectWorldDelta(distance: number, worldX: number, worldZ: number, out: Vec3): Vec3 {
+        const frame = this.sampleCourseFrame(distance, this._courseFrame);
+        out.set(
+            worldX * frame.tangentX + worldZ * frame.tangentZ,
+            0,
+            worldX * frame.normalX + worldZ * frame.normalZ,
+        );
+        return out;
+    }
+
+    worldLateralAtDistance(distance: number, worldX: number, worldZ: number): number {
+        const frame = this.sampleCourseFrame(distance, this._courseFrame);
+        return (worldX - frame.x) * frame.normalX + (worldZ - frame.z) * frame.normalZ;
     }
 
     platformPosition(z: number): Vec3 {
@@ -274,7 +380,7 @@ export class RaceCourseLayout {
     }
 
     clampSwimWorldX(x: number): number {
-        if (this._travelMode === 'straight') {
+        if (this._travelMode === 'straight' || this._travelMode === 'river') {
             return Number.isFinite(x) ? x : this.startX;
         }
         const minX = Math.min(this.startX, this.finishX);
@@ -314,6 +420,20 @@ export class RaceCourseLayout {
 }
 
 export const DEFAULT_RACE_COURSE_LAYOUT = new RaceCourseLayout(DEFAULT_POOL_DEFINITION);
+
+const _tmpCourseDirection = new Vec3();
+
+function makeCourseFrame(): RiverCourseFrame {
+    return {
+        x: 0,
+        z: 0,
+        tangentX: 1,
+        tangentZ: 0,
+        normalX: 0,
+        normalZ: 1,
+        curvature: 0,
+    };
+}
 
 function validCourseBounds(bounds: SceneBounds | null): bounds is SceneBounds {
     return !!bounds && Math.abs(bounds.maxX - bounds.minX) >= MIN_COURSE_LENGTH;

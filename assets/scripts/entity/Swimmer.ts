@@ -19,6 +19,7 @@ import { scaledDelta } from '../core/TimeScale';
 import { RIVER_BRAWL_BALANCE, riverBankContactRatio } from '../core/RiverBrawlBalance';
 import { StrokeQualityResult, StrokeTimingGuide, SwimmerMotor } from '../swimmer/SwimmerMotor';
 import {
+    CourseWorldVector,
     DEFAULT_RACE_COURSE_LAYOUT,
     RaceCourseLayout,
 } from '../venue/RaceCourseLayout';
@@ -63,6 +64,8 @@ export class Swimmer extends Component {
     private readonly _phases = new SwimmerRacePhases(this);
     private readonly _swimBoundaryRange = { min: 0, max: 0 };
     private readonly _tmpCourseRotation = new Quat();
+    private readonly _tmpCoursePosition = new Vec3();
+    private readonly _tmpCourseDelta = new Vec3();
     // Camera anchor reconstruction: keep the exact animated upper-body point but
     // remove collision-only pitch from its parent transform. This prevents the
     // chase camera from diving and climbing with an end-over-end ragdoll hit.
@@ -102,24 +105,30 @@ export class Swimmer extends Component {
             && !this._phases.isUnderwater;
     }
 
-    // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
-    // Bodies are impassable, so both axes move: Z via the motor lateral offset
-    // (clamped to the pool walls) and X via race distance (X is derived from
-    // distance, so nudging distance is the only push that survives the next
-    // frame). Both mutate the motor so the separation persists, and the node is
-    // repositioned for same-frame consistency.
+    // Displace the swimmer by a world-space XZ vector. The current course frame
+    // converts it back into persistent race-distance and lateral coordinates.
     applyCollisionPush(pushX: number, pushZ: number) {
-        if (Math.abs(pushZ) > 1e-6) {
-            this._motor.setLateralOffset(this._motor.lateralOffset + pushZ);
+        const local = this._courseLayout.projectWorldDelta(
+            this._motor.distance,
+            pushX,
+            pushZ,
+            this._tmpCourseDelta,
+        );
+        if (Math.abs(local.z) > 1e-6) {
+            this._motor.setLateralOffset(this._motor.lateralOffset + local.z);
         }
-        if (Math.abs(pushX) > 1e-6) {
-            const direction = this._courseLayout.finishDirectionAtDistance(this._motor.distance);
-            this._motor.nudgeDistance(pushX * direction);
+        if (Math.abs(local.x) > 1e-6) {
+            this._motor.nudgeDistance(local.x);
         }
         const visualDistance = Math.min(this._motor.distance, getRaceDistance());
-        const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
         const pos = this.node.position;
-        this.node.setPosition(x, pos.y, this._startPosition.z + this._motor.lateralOffset);
+        this._courseLayout.coursePosition(
+            visualDistance,
+            this._startPosition.z + this._motor.lateralOffset,
+            pos.y,
+            this._tmpCoursePosition,
+        );
+        this.node.setPosition(this._tmpCoursePosition);
     }
 
     // Add a decaying knockback impulse (distance-rate + lateral-rate, m/s) from a
@@ -127,6 +136,16 @@ export class Swimmer extends Component {
     // next few frames so a bump reads as a slide, not a one-frame nudge.
     applyCollisionImpulse(distRate: number, latRate: number) {
         this._motor.applyCollisionImpulse(distRate, latRate);
+    }
+
+    applyWorldCollisionImpulse(worldX: number, worldZ: number) {
+        const local = this._courseLayout.projectWorldDelta(
+            this._motor.distance,
+            worldX,
+            worldZ,
+            this._tmpCourseDelta,
+        );
+        this._motor.applyCollisionImpulse(local.x, local.z);
     }
 
     // Add collision-induced angular velocity around the swimmer's own long axis.
@@ -1075,13 +1094,10 @@ export class Swimmer extends Component {
         const visualDistance = Math.min(distance, getRaceDistance());
         const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
         this._motor.setCourseDirection(direction);
-        const x = this._courseLayout.clampSwimWorldX(this._courseLayout.distanceToWorldX(visualDistance));
         // Lateral steering drift (player only; AI keeps 0). Yaw the whole body to
         // face the direction it is actually travelling, and bank slightly into it.
-        const z = this._startPosition.z + this._motor.lateralOffset;
-        const headingDegrees = this._motor.heading * 180 / Math.PI;
-        const baseYaw = direction > 0 ? 0 : 180;
-        const yaw = baseYaw - direction * headingDegrees;
+        const lateral = this._startPosition.z + this._motor.lateralOffset;
+        const yaw = this._courseLayout.courseYawDegrees(visualDistance, this._motor.heading);
         // Compose the orientation as explicit quaternion steps instead of one
         // setRotationFromEuler call: feeding a large steering yaw together with
         // the dive-recovery pitch into a single Euler conversion gimbal-couples
@@ -1108,7 +1124,13 @@ export class Swimmer extends Component {
             Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, axialRoll);
             Quat.rotateX(this._cameraNeutralCourseRotation, this._cameraNeutralCourseRotation, axialRoll);
         }
-        this.node.setPosition(x, this._phases.visualSwimY(), z);
+        this._courseLayout.coursePosition(
+            visualDistance,
+            lateral,
+            this._phases.visualSwimY(),
+            this._tmpCoursePosition,
+        );
+        this.node.setPosition(this._tmpCoursePosition);
         this.node.setRotation(this._tmpCourseRotation);
     }
 
@@ -1140,11 +1162,13 @@ export class Swimmer extends Component {
 
         this._motor.setLateralOffset(this._motor.lateralOffset + correctionZ);
         this._motor.returnToLaneFromPoolWall(correctionZ);
-        this.node.setPosition(
-            this.node.position.x,
-            this.node.position.y,
+        this._courseLayout.coursePosition(
+            this._motor.distance,
             this._startPosition.z + this._motor.lateralOffset,
+            this.node.position.y,
+            this._tmpCoursePosition,
         );
+        this.node.setPosition(this._tmpCoursePosition);
     }
 
     private enforceRiverBankBoundary(): void {
@@ -1163,11 +1187,13 @@ export class Swimmer extends Component {
 
         this._motor.setLateralOffset(this._motor.lateralOffset + correctionZ);
         const firstImpact = this._motor.applyRiverBankImpact(correctionZ);
-        this.node.setPosition(
-            this.node.position.x,
-            this.node.position.y,
+        this._courseLayout.coursePosition(
+            this._motor.distance,
             this._startPosition.z + this._motor.lateralOffset,
+            this.node.position.y,
+            this._tmpCoursePosition,
         );
+        this.node.setPosition(this._tmpCoursePosition);
         if (firstImpact) {
             this.cartoonRig?.triggerSplashBurst(0.55);
         }
@@ -1179,7 +1205,14 @@ export class Swimmer extends Component {
         }
         const halfWidth = Math.max(0.3, this._courseLayout.poolWidth * 0.5);
         const bounds = this._phases.isDolphinJumpActive
-            ? this.setSwimBoundaryZRange(this.node.position.z, this._phases.dolphinTravelHeadingRadians())
+            ? this.setSwimBoundaryZRange(
+                this._courseLayout.worldLateralAtDistance(
+                    this._motor.distance,
+                    this.node.position.x,
+                    this.node.position.z,
+                ),
+                this._phases.dolphinTravelHeadingRadians(),
+            )
             : this.swimBoundaryZRange();
         const outerExtent = Math.max(Math.abs(bounds.min), Math.abs(bounds.max));
         this._motor.updateRiverBankState(
@@ -1293,6 +1326,18 @@ export class Swimmer extends Component {
         return this._motor.heading;
     }
 
+    getMovementWorldDirection<T extends CourseWorldVector>(out: T): T {
+        return this._courseLayout.courseWorldDirection(this._motor.distance, this._motor.heading, out);
+    }
+
+    getCourseWorldNormal<T extends CourseWorldVector>(out: T): T {
+        return this._courseLayout.courseWorldNormal(this._motor.distance, out);
+    }
+
+    get isCurvedCourse(): boolean {
+        return this._courseLayout.isCurvedRiver;
+    }
+
     // Heading (radians off the lane axis) the FOLLOW CAMERA should sit behind and
     // look along. Same as movementHeading during normal swimming, but during a
     // dolphin jump the motor heading is zeroed (the phase scripts the arc), so this
@@ -1301,6 +1346,18 @@ export class Swimmer extends Component {
         return this._phases.isDolphinJumpActive
             ? this._phases.dolphinTravelHeadingRadians()
             : this._motor.heading;
+    }
+
+    getCameraWorldDirection(out: Vec3): Vec3 {
+        return this._courseLayout.courseWorldDirection(this._motor.distance, this.cameraHeading, out);
+    }
+
+    getCameraLookAheadWorldDirection(aheadDistance: number, out: Vec3): Vec3 {
+        return this._courseLayout.courseWorldDirection(
+            this._motor.distance + (this._courseLayout.isCurvedRiver ? Math.max(0, aheadDistance) : 0),
+            this.cameraHeading,
+            out,
+        );
     }
 
     // Airborne flight pitch (radians, + = ascending) during a dolphin jump, else 0.

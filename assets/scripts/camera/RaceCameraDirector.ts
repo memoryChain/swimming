@@ -1,6 +1,7 @@
 import { Camera, Node, Vec3 } from 'cc';
 import { COUNTDOWN_SECONDS, getRaceDistance } from '../core/GameBalance';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
+import type { RiverCourseFrame } from '../venue/RiverCoursePath';
 
 // Pre-race broadcast (state PRECOUNTDOWN), based on a real meet presentation:
 //   1. establish close to the water, looking back at the starting blocks;
@@ -70,6 +71,7 @@ const SPECTATOR_ZOOM_SCALE = 0.008;
 const MIN_BROADCAST_VIEW_SECONDS = 4.2;
 const BROADCAST_SHOT_SECONDS = 6.2;
 const DIVE_SIDE_MIN_SECONDS = 0.58;
+const CURVED_COURSE_MAX_CAMERA_LAG = 8;
 const DIVE_SIDE_MAX_SECONDS = 1.55;
 const DIVE_UNDERWATER_MIN_SECONDS = 1.15;
 const COUNTDOWN_ATHLETE_TARGET_X_OFFSET = 0;
@@ -216,6 +218,13 @@ export const RACE_CAMERA_MODE_OPTIONS: readonly RaceCameraModeOption[] = [
 export type RaceCameraSnapshot = {
     playerX: number;
     playerY: number;
+    playerZ?: number;
+    // World-space horizontal direction supplied by the swimmer/course mapping.
+    // Straight pool races produce the same values as direction + heading.
+    playerForwardX?: number;
+    playerForwardZ?: number;
+    playerLookAheadForwardX?: number;
+    playerLookAheadForwardZ?: number;
     playerSpeed?: number;
     playerUpperBodyWorldPosition?: Vec3;
     playerDistance: number;
@@ -308,6 +317,8 @@ export class RaceCameraDirector {
     private _spectatorYaw = 0;
     private _spectatorPitch = SPECTATOR_DEFAULT_PITCH;
     private _spectatorDistance = SPECTATOR_DEFAULT_DISTANCE;
+    private readonly _courseFrame: RiverCourseFrame = makeCourseFrame();
+    private readonly _topViewUp = new Vec3(0, 0, -1);
 
     private _playerLaneZ: number;
 
@@ -923,7 +934,18 @@ export class RaceCameraDirector {
             this._broadcastDesiredFov = RACE_CAMERA_TUNING.sprintFov;
         } else if (this._broadcastDuelTimer > 0) {
             this.finishDiveShotIfNeeded();
-            if (this._broadcastDuelShotIndex === 0) {
+            if (this._courseLayout.isCurvedRiver) {
+                const target = surfaceUpperBodyTarget(snapshot, direction, 0);
+                this._courseLayout.sampleCourseFrame(snapshot.playerDistance, this._courseFrame);
+                const sideDistance = this._broadcastDuelShotIndex === 0 ? 3.5 : 4.4;
+                const backDistance = this._broadcastDuelShotIndex === 0 ? 4.1 : 0;
+                desiredTarget = target;
+                desiredPos = new Vec3(
+                    target.x - this._courseFrame.tangentX * backDistance + this._courseFrame.normalX * sideDistance,
+                    this._broadcastDuelShotIndex === 0 ? 2.05 : 1.95,
+                    target.z - this._courseFrame.tangentZ * backDistance + this._courseFrame.normalZ * sideDistance,
+                );
+            } else if (this._broadcastDuelShotIndex === 0) {
                 desiredPos = new Vec3(playerX - 4.1 * direction, 2.05, this._playerLaneZ + 3.5);
                 desiredTarget = surfaceUpperBodyTarget(snapshot, direction, 1.85);
             } else {
@@ -935,11 +957,22 @@ export class RaceCameraDirector {
             this.finishDiveShotIfNeeded();
             const view = swimRaceView(snapshot);
             desiredTarget = surfaceUpperBodyTarget(snapshot, direction, view.targetXOffset);
-            desiredPos = new Vec3(
-                desiredTarget.x + view.cameraXOffset * direction,
-                view.height,
-                this._playerLaneZ + view.zOffset,
-            );
+            if (this._courseLayout.isCurvedRiver) {
+                this._courseLayout.sampleCourseFrame(snapshot.playerDistance, this._courseFrame);
+                desiredPos = new Vec3(
+                    desiredTarget.x + this._courseFrame.tangentX * view.cameraXOffset
+                        + this._courseFrame.normalX * view.zOffset,
+                    view.height,
+                    desiredTarget.z + this._courseFrame.tangentZ * view.cameraXOffset
+                        + this._courseFrame.normalZ * view.zOffset,
+                );
+            } else {
+                desiredPos = new Vec3(
+                    desiredTarget.x + view.cameraXOffset * direction,
+                    view.height,
+                    this._playerLaneZ + view.zOffset,
+                );
+            }
             this._broadcastDesiredFov = view.fov;
         }
 
@@ -958,7 +991,13 @@ export class RaceCameraDirector {
             this._cameraPos.set(desiredPos);
             this._cameraTarget.set(desiredTarget);
             this._broadcastCameraFov = this._broadcastDesiredFov;
-            this.applyCameraTransform(new Vec3(0, 0, -1));
+            if (this._courseLayout.isCurvedRiver) {
+                this._courseLayout.sampleCourseFrame(snapshot.playerDistance, this._courseFrame);
+                this._topViewUp.set(-this._courseFrame.normalX, 0, -this._courseFrame.normalZ);
+                this.applyCameraTransform(this._topViewUp);
+            } else {
+                this.applyCameraTransform(this._topViewUp.set(0, 0, -1));
+            }
             this.applyFov();
             return;
         }
@@ -1012,9 +1051,19 @@ export class RaceCameraDirector {
         this._underwaterViewActive = false;
         // Strict pool-orthogonal top view: camera is directly above the target,
         // and -Z is locked as screen-up so world-X lanes are horizontal.
-        this._cameraTarget.set(playerX, 0.18, 0);
+        this._cameraTarget.set(
+            playerX,
+            0.18,
+            this._courseLayout.isCurvedRiver ? (snapshot.playerZ ?? 0) : 0,
+        );
         this._cameraPos.set(this._cameraTarget.x, 17.5, this._cameraTarget.z);
-        this.applyCameraTransform(new Vec3(0, 0, -1));
+        if (this._courseLayout.isCurvedRiver) {
+            this._courseLayout.sampleCourseFrame(snapshot.playerDistance, this._courseFrame);
+            this._topViewUp.set(-this._courseFrame.normalX, 0, -this._courseFrame.normalZ);
+            this.applyCameraTransform(this._topViewUp);
+        } else {
+            this.applyCameraTransform(this._topViewUp.set(0, 0, -1));
+        }
         this.applyFov();
     }
 
@@ -1028,17 +1077,26 @@ export class RaceCameraDirector {
     private finishTopCameraView(snapshot: RaceCameraSnapshot): { position: Vec3; target: Vec3 } {
         const raceDistance = getRaceDistance();
         const courseEndDistance = this._courseLayout.currentCourseEndDistance(snapshot.playerDistance, raceDistance);
-        const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
-        const finishX = this._courseLayout.distanceToWorldX(courseEndDistance);
         const poolInset = clamp(
             RACE_CAMERA_TUNING.finishTopViewPoolInset,
             0,
             this._courseLayout.courseLength * 0.5,
         );
-        const targetX = finishX - poolInset * finishDirection;
-        const target = new Vec3(targetX, 0.18, 0);
+        let target: Vec3;
+        if (this._courseLayout.isCurvedRiver) {
+            target = this._courseLayout.coursePosition(
+                Math.max(0, courseEndDistance - poolInset),
+                0,
+                0.18,
+                new Vec3(),
+            );
+        } else {
+            const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
+            const finishX = this._courseLayout.distanceToWorldX(courseEndDistance);
+            target = new Vec3(finishX - poolInset * finishDirection, 0.18, 0);
+        }
         return {
-            position: new Vec3(target.x, 22.5, 0),
+            position: new Vec3(target.x, 22.5, target.z),
             target,
         };
     }
@@ -1049,28 +1107,46 @@ export class RaceCameraDirector {
         this._cameraTarget.set(view.target);
         this._topViewActive = true;
         this._underwaterViewActive = false;
-        this.applyCameraTransform(new Vec3(0, 0, -1));
+        if (this._courseLayout.isCurvedRiver) {
+            this._courseLayout.sampleCourseFrame(snapshot.playerDistance, this._courseFrame);
+            this._topViewUp.set(-this._courseFrame.normalX, 0, -this._courseFrame.normalZ);
+            this.applyCameraTransform(this._topViewUp);
+        } else {
+            this.applyCameraTransform(this._topViewUp.set(0, 0, -1));
+        }
         this.applyFov();
     }
 
     private updateSprintCamera(dt: number, snapshot: RaceCameraSnapshot, immediate = false) {
         const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const continuousKickViewActive = this.updateContinuousKickView(dt, snapshot);
-        const view = sprintCameraView(snapshot, direction, continuousKickViewActive, this._courseLayout.waterY);
+        const view = this._courseLayout.isCurvedRiver
+            ? this.curvedSprintCameraView(snapshot, continuousKickViewActive)
+            : sprintCameraView(snapshot, direction, continuousKickViewActive, this._courseLayout.waterY);
         if (immediate) {
             this._cameraPos.set(view.position);
             this._cameraTarget.set(view.target);
         } else {
-            // Forward/height track tightly; lateral (Z) lags so the swimmer's
-            // steering weave reads on screen instead of staying dead-centre.
+            // Forward/height track tightly; lateral movement lags so the swimmer's
+            // steering weave reads on screen instead of staying dead-centre. A
+            // curved course must resolve these axes from its tangent/normal rather
+            // than assuming world X/Z are permanently forward/lateral.
             const follow = cameraBlend(dt, RACE_CAMERA_TUNING.sprintFollowSpeed);
             const lateral = clamp(1 - Math.exp(-Math.max(0, dt) * RACE_CAMERA_TUNING.sprintLateralFollowSpeed), 0.01, 0.5);
-            this._cameraPos.x += (view.position.x - this._cameraPos.x) * follow;
             this._cameraPos.y += (view.position.y - this._cameraPos.y) * follow;
-            this._cameraPos.z += (view.position.z - this._cameraPos.z) * lateral;
-            this._cameraTarget.x += (view.target.x - this._cameraTarget.x) * follow;
             this._cameraTarget.y += (view.target.y - this._cameraTarget.y) * follow;
-            this._cameraTarget.z += (view.target.z - this._cameraTarget.z) * lateral;
+            if (this._courseLayout.isCurvedRiver) {
+                this.smoothCourseHorizontal(this._cameraPos, view.position, follow, lateral, snapshot.playerDistance);
+                this.smoothCourseHorizontal(this._cameraTarget, view.target, follow, lateral, snapshot.playerDistance);
+            } else {
+                this._cameraPos.x += (view.position.x - this._cameraPos.x) * follow;
+                this._cameraPos.z += (view.position.z - this._cameraPos.z) * lateral;
+                this._cameraTarget.x += (view.target.x - this._cameraTarget.x) * follow;
+                this._cameraTarget.z += (view.target.z - this._cameraTarget.z) * lateral;
+            }
+        }
+        if (this._courseLayout.isCurvedRiver) {
+            this.recoverCurvedCameraFollow(view.position, view.target);
         }
         const targetSprintFov = snapshot.sprintActive
             ? RACE_CAMERA_TUNING.sprintFov + RACE_CAMERA_TUNING.sprintFovBoost
@@ -1106,13 +1182,14 @@ export class RaceCameraDirector {
         // eases back and up so the whole arc is framed against the ceiling.
         const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const body = snapshot.playerUpperBodyWorldPosition?.clone()
-            ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.5, this._playerLaneZ);
+            ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.5, snapshot.playerZ ?? this._playerLaneZ);
+        pinCurvedCourseHorizontalAnchor(snapshot, body);
         // The jump can fly diagonally (lane axis rotated by the steering heading),
         // so sit behind and look along the ACTUAL travel direction — otherwise the
         // camera faces down-lane while the swimmer flies off at an angle.
         const heading = snapshot.playerHeading ?? 0;
-        const movementX = direction * Math.cos(heading);
-        const movementZ = Math.sin(heading);
+        const movementX = snapshot.playerForwardX ?? direction * Math.cos(heading);
+        const movementZ = snapshot.playerForwardZ ?? Math.sin(heading);
         // Flight pitch (parabola slope): tilt the look direction up on the climb and
         // down on the fall so the camera tracks the arc instead of staying level.
         const pitch = snapshot.playerFlightPitch ?? 0;
@@ -1166,7 +1243,9 @@ export class RaceCameraDirector {
             // strands the camera at x=50, reading as an extreme pullback.
             this._courseLayout.openSides ? desiredX : clamp(desiredX, poolMinX, poolMaxX),
             posY,
-            clamp(body.z - back * behindZ, poolMinZ, poolMaxZ),
+            this._courseLayout.openSides
+                ? body.z - back * behindZ
+                : clamp(body.z - back * behindZ, poolMinZ, poolMaxZ),
         );
         // Look straight along the 3D flight velocity so the horizon tilts with the
         // arc (up on the climb, down into the water on the fall). Because the camera
@@ -1183,18 +1262,87 @@ export class RaceCameraDirector {
         // current chase position, which is already behind the swimmer.
         const follow = immediate ? cameraBlend(dt, 9) : cameraBlend(dt, 13);
         const lateral = cameraBlend(dt, 6);
-        this._cameraPos.x += (desiredPos.x - this._cameraPos.x) * follow;
         this._cameraPos.y += (desiredPos.y - this._cameraPos.y) * follow;
-        this._cameraPos.z += (desiredPos.z - this._cameraPos.z) * lateral;
-        this._cameraTarget.x += (target.x - this._cameraTarget.x) * follow;
         this._cameraTarget.y += (target.y - this._cameraTarget.y) * follow;
-        this._cameraTarget.z += (target.z - this._cameraTarget.z) * lateral;
+        if (this._courseLayout.isCurvedRiver) {
+            this.smoothCourseHorizontal(this._cameraPos, desiredPos, follow, lateral, snapshot.playerDistance);
+            this.smoothCourseHorizontal(this._cameraTarget, target, follow, lateral, snapshot.playerDistance);
+        } else {
+            this._cameraPos.x += (desiredPos.x - this._cameraPos.x) * follow;
+            this._cameraPos.z += (desiredPos.z - this._cameraPos.z) * lateral;
+            this._cameraTarget.x += (target.x - this._cameraTarget.x) * follow;
+            this._cameraTarget.z += (target.z - this._cameraTarget.z) * lateral;
+        }
         this._topViewActive = false;
         // Flag the underwater view while the camera itself is below the surface so
         // downstream logic (speed lines, etc.) treats it as an underwater shot.
         this._underwaterViewActive = this._cameraPos.y < waterY;
         this.applyCameraTransform();
         this.applyFov();
+    }
+
+    private curvedSprintCameraView(
+        snapshot: RaceCameraSnapshot,
+        continuousKickViewActive: boolean,
+    ): { position: Vec3; target: Vec3 } {
+        const upperBody = snapshot.playerUpperBodyWorldPosition?.clone()
+            ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.54, snapshot.playerZ ?? 0);
+        const framingY = snapshot.playerUnderwater
+            ? Math.max(upperBody.y, this._courseLayout.waterY + RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater)
+            : upperBody.y;
+        const lateral = this._courseLayout.worldLateralAtDistance(
+            snapshot.playerDistance,
+            snapshot.playerX,
+            snapshot.playerZ ?? 0,
+        );
+        const backDistance = RACE_CAMERA_TUNING.sprintBackDistance
+            + (continuousKickViewActive ? RACE_CAMERA_TUNING.sprintKickPullbackDistance : 0);
+        const position = this._courseLayout.coursePosition(
+            snapshot.playerDistance - backDistance,
+            lateral,
+            framingY + RACE_CAMERA_TUNING.sprintHeight,
+            new Vec3(),
+        );
+        const target = this._courseLayout.coursePosition(
+            snapshot.playerDistance + RACE_CAMERA_TUNING.sprintLookAhead,
+            lateral,
+            framingY + 0.08,
+            new Vec3(),
+        );
+        return { position, target };
+    }
+
+    private recoverCurvedCameraFollow(desiredPosition: Vec3, desiredTarget: Vec3) {
+        const positionFinite = isFiniteVec3(this._cameraPos);
+        const targetFinite = isFiniteVec3(this._cameraTarget);
+        const deltaX = desiredPosition.x - this._cameraPos.x;
+        const deltaZ = desiredPosition.z - this._cameraPos.z;
+        const lagExceeded = positionFinite
+            && deltaX * deltaX + deltaZ * deltaZ > CURVED_COURSE_MAX_CAMERA_LAG * CURVED_COURSE_MAX_CAMERA_LAG;
+        if (!positionFinite || lagExceeded) {
+            this._cameraPos.set(desiredPosition);
+        }
+        if (!targetFinite || lagExceeded) {
+            this._cameraTarget.set(desiredTarget);
+        }
+    }
+
+    private smoothCourseHorizontal(
+        current: Vec3,
+        desired: Vec3,
+        forwardBlend: number,
+        lateralBlend: number,
+        distance: number,
+    ) {
+        this._courseLayout.sampleCourseFrame(distance, this._courseFrame);
+        const deltaX = desired.x - current.x;
+        const deltaZ = desired.z - current.z;
+        const forwardDelta = deltaX * this._courseFrame.tangentX + deltaZ * this._courseFrame.tangentZ;
+        const lateralDelta = deltaX * this._courseFrame.normalX + deltaZ * this._courseFrame.normalZ;
+        current.x += this._courseFrame.tangentX * forwardDelta * forwardBlend
+            + this._courseFrame.normalX * lateralDelta * lateralBlend;
+        current.z += this._courseFrame.tangentZ * forwardDelta * forwardBlend
+            + this._courseFrame.normalZ * lateralDelta * lateralBlend;
     }
 
     private updateFlipTurnCamera(dt: number, snapshot: RaceCameraSnapshot, immediate: boolean) {
@@ -1473,13 +1621,27 @@ function surfaceUpperBodyTarget(snapshot: RaceCameraSnapshot, direction: number,
     void direction;
     void forwardOffset;
     if (snapshot.playerUpperBodyWorldPosition) {
-        return snapshot.playerUpperBodyWorldPosition.clone();
+        const target = snapshot.playerUpperBodyWorldPosition.clone();
+        pinCurvedCourseHorizontalAnchor(snapshot, target);
+        return target;
     }
-    return new Vec3(snapshot.playerX, snapshot.playerY + 0.54, 0);
+    return new Vec3(snapshot.playerX, snapshot.playerY + 0.54, snapshot.playerZ ?? 0);
+}
+
+function pinCurvedCourseHorizontalAnchor(snapshot: RaceCameraSnapshot, anchor: Vec3) {
+    if (snapshot.playerForwardX === undefined || snapshot.playerForwardZ === undefined) {
+        return;
+    }
+    anchor.x = snapshot.playerX;
+    anchor.z = snapshot.playerZ ?? anchor.z;
 }
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
+}
+
+function isFiniteVec3(value: Vec3): boolean {
+    return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z);
 }
 
 function cameraBlend(dt: number, speed: number): number {
@@ -1521,7 +1683,11 @@ function sprintCameraView(
     // This anchor is sampled from the rig's torso/spine chain (blended slightly
     // toward the head), not from the swimmer root at the hips/feet.
     const upperBody = snapshot.playerUpperBodyWorldPosition?.clone()
-        ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.54, 0);
+        ?? new Vec3(snapshot.playerX, snapshot.playerY + 0.54, snapshot.playerZ ?? 0);
+    // Curved races keep horizontal tracking on the always-updated swimmer root.
+    // The animated torso anchor still supplies vertical bobbing, but can no longer
+    // freeze the camera if the skinned rig is briefly culled near a bend.
+    pinCurvedCourseHorizontalAnchor(snapshot, upperBody);
     // Starting the chase on the first ascent frame used to put the eye almost on
     // the water plane because upperBody.y was still deep underwater. The shallow
     // downward viewing angle then split the screen into an above-water upper half
@@ -1531,10 +1697,14 @@ function sprintCameraView(
         ? Math.max(upperBody.y, waterY + RACE_CAMERA_TUNING.sprintAscentAnchorAboveWater)
         : upperBody.y;
     const heading = snapshot.playerHeading ?? 0;
-    // Heading is relative to the current pool-leg direction. Lateral movement
-    // always uses world Z, while the along-lane component flips after a turn.
-    const movementX = direction * Math.cos(heading);
-    const movementZ = Math.sin(heading);
+    // Curved river races supply the already-composed path tangent + steering
+    // direction. Straight pool races retain the original scalar fallback.
+    const movementX = snapshot.playerLookAheadForwardX
+        ?? snapshot.playerForwardX
+        ?? direction * Math.cos(heading);
+    const movementZ = snapshot.playerLookAheadForwardZ
+        ?? snapshot.playerForwardZ
+        ?? Math.sin(heading);
     const backDistance = RACE_CAMERA_TUNING.sprintBackDistance
         + (continuousKickViewActive ? RACE_CAMERA_TUNING.sprintKickPullbackDistance : 0);
     return {
@@ -1608,4 +1778,8 @@ function countdownAthleteTargetY(playerY: number): number {
 
 function countdownAthleteTargetX(playerX: number): number {
     return playerX + COUNTDOWN_ATHLETE_TARGET_X_OFFSET;
+}
+
+function makeCourseFrame(): RiverCourseFrame {
+    return { x: 0, z: 0, tangentX: 1, tangentZ: 0, normalX: 0, normalZ: 1, curvature: 0 };
 }

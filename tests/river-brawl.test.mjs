@@ -23,17 +23,24 @@ test('river movement keeps course flow separate from the personal swim cap', () 
     );
 });
 
-function fakeSwimmer({ x, z, direction = 1, heading = 0, weight = 1, active = true }) {
+function fakeSwimmer({ x, z, direction = 1, heading = 0, weight = 1, active = true, forwardX, forwardZ }) {
     const calls = [];
     return {
         node: { position: { x, y: 0, z } },
         canRiverCombat: active,
         raceDirection: direction,
         movementHeading: heading,
+        getMovementWorldDirection(out) {
+            out.x = forwardX ?? direction * Math.max(0, Math.cos(heading));
+            out.y = 0;
+            out.z = forwardZ ?? Math.sin(heading);
+            return out;
+        },
         weight,
         calls,
         playCombatKick(side) { calls.push(['kick', side]); },
         applyCollisionImpulse(distance, lateral) { calls.push(['move', distance, lateral]); },
+        applyWorldCollisionImpulse(worldX, worldZ) { calls.push(['move', worldX * direction, worldZ]); },
         applyCollisionAxialImpulse(value) { calls.push(['roll', value]); },
         applyCollisionPitchImpulse(value) { calls.push(['pitch', value]); },
         applyCollisionSoftnessImpulse(side, forward) { calls.push(['soft', side, forward]); },
@@ -75,6 +82,21 @@ test('side kick uses actual heading when projecting its attack window', () => {
     const sideZ = Math.cos(Math.PI / 6);
     const target = fakeSwimmer({ x: sideX * 2.2, z: sideZ * 2.2 });
     assert.equal(resolveSideKick(attacker, [attacker, target])?.target, target);
+});
+
+test('side kick follows a curved course world tangent', () => {
+    const diagonal = Math.SQRT1_2;
+    const attacker = fakeSwimmer({ x: 5, z: 5, forwardX: diagonal, forwardZ: diagonal });
+    const target = fakeSwimmer({
+        x: 5 - diagonal * 2.2,
+        z: 5 + diagonal * 2.2,
+        forwardX: diagonal,
+        forwardZ: diagonal,
+    });
+    assert.equal(resolveSideKick(attacker, [attacker, target])?.target, target);
+    const move = target.calls.find((call) => call[0] === 'move');
+    assert.ok(move[1] < 0);
+    assert.ok(move[2] > 0);
 });
 
 test('river bank resistance is smooth across the final 1.5 metres', () => {

@@ -66,6 +66,7 @@ const SPRINT_PUSH_EFFORT = 0.6;
 const SPRINT_GAMBLE_EFFORT = 0.85;
 const LIVE_RANK_REFRESH_SECONDS = 0.2;
 const LATE_DIVE_START_SECONDS = 1.2;
+const CURVED_COURSE_CAMERA_LOOK_AHEAD = 14;
 
 export class GameFlowController {
     private _diveChargeStarted = false;
@@ -82,7 +83,10 @@ export class GameFlowController {
     private _preRaceDivePrepApplied = false;
     private _divingElapsed = 0;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
+    private readonly _playerCameraRootWorldPosition = new Vec3();
     private readonly _playerUpperBodyWorldPosition = new Vec3();
+    private readonly _playerCameraWorldDirection = new Vec3();
+    private readonly _playerCameraLookAheadDirection = new Vec3();
 
     constructor(private readonly _refs: GameFlowRefs) {}
 
@@ -432,9 +436,19 @@ export class GameFlowController {
         const focus = this._cameraFollowAi && this._refs.aiSwimmers[0]?.node?.isValid
             ? this._refs.aiSwimmers[0]
             : playerSwimmer;
+        if (focus.isCurvedCourse) {
+            focus.getCameraWorldDirection(this._playerCameraWorldDirection);
+            focus.getCameraLookAheadWorldDirection(CURVED_COURSE_CAMERA_LOOK_AHEAD, this._playerCameraLookAheadDirection);
+        }
+        focus.node.getWorldPosition(this._playerCameraRootWorldPosition);
         const cameraSnapshot: RaceCameraSnapshot = {
-            playerX: focus.node.position.x,
-            playerY: focus.node.position.y,
+            playerX: this._playerCameraRootWorldPosition.x,
+            playerY: this._playerCameraRootWorldPosition.y,
+            playerZ: this._playerCameraRootWorldPosition.z,
+            playerForwardX: focus.isCurvedCourse ? this._playerCameraWorldDirection.x : undefined,
+            playerForwardZ: focus.isCurvedCourse ? this._playerCameraWorldDirection.z : undefined,
+            playerLookAheadForwardX: focus.isCurvedCourse ? this._playerCameraLookAheadDirection.x : undefined,
+            playerLookAheadForwardZ: focus.isCurvedCourse ? this._playerCameraLookAheadDirection.z : undefined,
             playerSpeed: focus.currentGroundSpeed,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,

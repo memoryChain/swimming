@@ -1,5 +1,6 @@
 import { StrokeType } from '../core/GameConstants';
 import { RIVER_BRAWL_BALANCE } from '../core/RiverBrawlBalance';
+import type { CourseWorldVector } from '../venue/RaceCourseLayout';
 import type { Swimmer } from './Swimmer';
 
 export type SideKickResult = {
@@ -8,13 +9,15 @@ export type SideKickResult = {
     side: StrokeType.LEFT | StrokeType.RIGHT;
 };
 
+const _attackForward: CourseWorldVector = { x: 1, y: 0, z: 0 };
+
 export function resolveSideKick(attacker: Swimmer, racers: readonly Swimmer[]): SideKickResult | null {
     if (!attacker.canRiverCombat) {
         return null;
     }
-    const heading = attacker.movementHeading;
-    const forwardX = attacker.raceDirection * Math.max(0, Math.cos(heading));
-    const forwardZ = Math.sin(heading);
+    attacker.getMovementWorldDirection(_attackForward);
+    const forwardX = _attackForward.x;
+    const forwardZ = _attackForward.z;
     const sideX = -forwardZ;
     const sideZ = forwardX;
     const attackerPosition = attacker.node.position;
@@ -58,7 +61,7 @@ export function resolveSideKick(attacker: Swimmer, racers: readonly Swimmer[]): 
     const backwardMagnitude = RIVER_BRAWL_BALANCE.attackBackwardImpulse * weightScale;
     const impulseX = sideX * sideSign * lateralMagnitude - forwardX * backwardMagnitude;
     const impulseZ = sideZ * sideSign * lateralMagnitude - forwardZ * backwardMagnitude;
-    best.applyCollisionImpulse(impulseX * best.raceDirection, impulseZ);
+    best.applyWorldCollisionImpulse(impulseX, impulseZ);
     best.applyCollisionAxialImpulse(-sideSign * RIVER_BRAWL_BALANCE.attackAxialImpulse * weightScale);
     best.applyCollisionPitchImpulse(-RIVER_BRAWL_BALANCE.attackPitchImpulse * weightScale);
     best.applyCollisionSoftnessImpulse(
@@ -71,7 +74,7 @@ export function resolveSideKick(attacker: Swimmer, racers: readonly Swimmer[]): 
 
     const recoilX = -sideX * sideSign * RIVER_BRAWL_BALANCE.attackerRecoilImpulse;
     const recoilZ = -sideZ * sideSign * RIVER_BRAWL_BALANCE.attackerRecoilImpulse;
-    attacker.applyCollisionImpulse(recoilX * attacker.raceDirection, recoilZ);
+    attacker.applyWorldCollisionImpulse(recoilX, recoilZ);
     const side = sideSign > 0 ? StrokeType.RIGHT : StrokeType.LEFT;
     attacker.playCombatKick(side);
     return { attacker, target: best, side };

@@ -1,5 +1,14 @@
 export const RIVER_BRAWL_BALANCE = {
     raceDistance: 400,
+    // The river course owns its own sampled centre line. The first and last
+    // stretches stay straight so the starting blocks and finish presentation
+    // remain readable; two broad S bends fill the middle of the 400m run.
+    curveStartStraight: 70,
+    curveFinishStraight: 70,
+    curveCount: 2,
+    curveHeadingDegrees: 20.5,
+    curveSampleSpacing: 1,
+    environmentSampleSpacing: 4,
     flowSpeed: 8.0,
     personalMaxSpeed: 4.0,
     // Only the ordinary pool/base/high-speed drag is scaled. Underwater glide

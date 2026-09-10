@@ -1,4 +1,5 @@
 import type { Swimmer } from './Swimmer';
+import type { CourseWorldVector } from '../venue/RaceCourseLayout';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from '../core/CollisionSoftnessTuning';
 
@@ -87,6 +88,9 @@ const _velX: number[] = [];
 const _velZ: number[] = [];
 const _forwardX: number[] = [];
 const _forwardZ: number[] = [];
+const _normalX: number[] = [];
+const _normalZ: number[] = [];
+const _curved: boolean[] = [];
 const _dir: number[] = [];
 const _impDist: number[] = [];
 const _impLat: number[] = [];
@@ -96,6 +100,8 @@ const _newContact: boolean[] = [];
 const _contactA: Swimmer[] = [];
 const _contactB: Swimmer[] = [];
 const _contactSeen: boolean[] = [];
+const _tmpWorldDirection: CourseWorldVector = { x: 1, y: 0, z: 0 };
+const _sharedNormal = { x: 0, z: 1 };
 
 // Fully separate overlapping swimmers so no two bodies interpenetrate. Call once
 // per collision step after the swimmers have updated their own positions.
@@ -133,10 +139,29 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         // direction (distanceToWorldX slope magnitude is 1), the lateral component
         // is the sideways drift. Used only to scale knockback by closing speed.
         const speed = s.currentSpeed;
-        const cosH = Math.max(0, Math.cos(s.movementHeading));
-        const sinH = Math.sin(s.movementHeading);
-        _forwardX[i] = _dir[i] * cosH;
-        _forwardZ[i] = sinH;
+        const pathAware = s as unknown as {
+            getMovementWorldDirection?: <T extends CourseWorldVector>(out: T) => T;
+            getCourseWorldNormal?: <T extends CourseWorldVector>(out: T) => T;
+            isCurvedCourse?: boolean;
+        };
+        if (pathAware.isCurvedCourse && pathAware.getMovementWorldDirection) {
+            pathAware.getMovementWorldDirection(_tmpWorldDirection);
+            _forwardX[i] = _tmpWorldDirection.x;
+            _forwardZ[i] = _tmpWorldDirection.z;
+        } else {
+            const cosH = Math.max(0, Math.cos(s.movementHeading));
+            _forwardX[i] = _dir[i] * cosH;
+            _forwardZ[i] = Math.sin(s.movementHeading);
+        }
+        if (pathAware.isCurvedCourse && pathAware.getCourseWorldNormal) {
+            pathAware.getCourseWorldNormal(_tmpWorldDirection);
+            _normalX[i] = _tmpWorldDirection.x;
+            _normalZ[i] = _tmpWorldDirection.z;
+        } else {
+            _normalX[i] = 0;
+            _normalZ[i] = 1;
+        }
+        _curved[i] = !!pathAware.isCurvedCourse;
         _velX[i] = _forwardX[i] * speed;
         _velZ[i] = _forwardZ[i] * speed;
         _impDist[i] = 0;
@@ -177,13 +202,29 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 if (distSq < 1e-8) {
                     // Centres coincide: separate sideways using the same stable,
                     // pair-order-invariant direction as the head-on escape impulse.
-                    nx = 0;
-                    nz = stableLateralSeparationSide(i, j, dx, dz);
+                    const side = stableLateralSeparationSide(i, j, dx, dz);
+                    if (_curved[i] || _curved[j]) {
+                        const shared = sharedCourseNormal(i, j);
+                        nx = shared.x * side;
+                        nz = shared.z * side;
+                    } else {
+                        nx = 0;
+                        nz = side;
+                    }
                     dist = 0;
                 } else {
                     dist = Math.sqrt(distSq);
                     nx = dx / dist;
                     nz = dz / dist;
+                }
+                if (lateralOnly && (_curved[i] || _curved[j])) {
+                    const shared = sharedCourseNormal(i, j);
+                    const projectedSide = dx * shared.x + dz * shared.z;
+                    const side = Math.abs(projectedSide) > 1e-6
+                        ? (projectedSide > 0 ? 1 : -1)
+                        : stableLateralSeparationSide(i, j, dx, dz);
+                    nx = shared.x * side;
+                    nz = shared.z * side;
                 }
                 const wi = _weight[i];
                 const wj = _weight[j];
@@ -191,7 +232,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const overlap = minDist - dist;
                 const sepI = totalW > 0 ? overlap * (wj / totalW) : overlap * 0.5;
                 const sepJ = totalW > 0 ? overlap * (wi / totalW) : overlap * 0.5;
-                if (!lateralOnly) {
+                if (!lateralOnly || _curved[i] || _curved[j]) {
                     _posX[i] += nx * sepI;
                     _posX[j] -= nx * sepJ;
                 }
@@ -225,8 +266,14 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 let nz: number;
                 let dist: number;
                 if (distSq < 1e-8) {
-                    nx = 0;
-                    nz = 1;
+                    if (_curved[i] || _curved[j]) {
+                        const shared = sharedCourseNormal(i, j);
+                        nx = shared.x;
+                        nz = shared.z;
+                    } else {
+                        nx = 0;
+                        nz = 1;
+                    }
                     dist = 0;
                 } else {
                     dist = Math.sqrt(distSq);
@@ -289,8 +336,13 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                         _impLat[j] -= side * lateralJ;
                     } else {
                         // Ordinary contact follows the physical lateral normal unchanged.
-                        _impLat[i] += nz * impI;
-                        _impLat[j] -= nz * impJ;
+                        if (_curved[i] || _curved[j]) {
+                            _impLat[i] += (nx * _normalX[i] + nz * _normalZ[i]) * impI;
+                            _impLat[j] += (-nx * _normalX[j] - nz * _normalZ[j]) * impJ;
+                        } else {
+                            _impLat[i] += nz * impI;
+                            _impLat[j] -= nz * impJ;
+                        }
                     }
                     // Distance shove: only head-on (opposite lap directions) and only
                     // while still approaching. Head-on geometry pushes each swimmer
@@ -314,12 +366,19 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     // both reverse when pair order reverses, so the result for each
                     // swimmer is invariant even though every client lists its own
                     // player first in the collision array.
-                    const rollSide = Math.abs(nz) >= minimumLever
-                        ? (nz > 0 ? 1 : -1)
-                        : (nx >= 0 ? 1 : -1);
-                    const rollLever = rollSide * Math.max(Math.abs(nz), minimumLever);
-                    _impRoll[i] += rollLever * impI * _dir[i] * rollScale;
-                    _impRoll[j] -= rollLever * impJ * _dir[j] * rollScale;
+                    if (_curved[i] || _curved[j]) {
+                        const sideI = nx * _normalX[i] + nz * _normalZ[i];
+                        const sideJ = -nx * _normalX[j] - nz * _normalZ[j];
+                        _impRoll[i] += stableLever(sideI, nx, minimumLever) * impI * rollScale;
+                        _impRoll[j] += stableLever(sideJ, -nx, minimumLever) * impJ * rollScale;
+                    } else {
+                        const rollSide = Math.abs(nz) >= minimumLever
+                            ? (nz > 0 ? 1 : -1)
+                            : (nx >= 0 ? 1 : -1);
+                        const rollLever = rollSide * Math.max(Math.abs(nz), minimumLever);
+                        _impRoll[i] += rollLever * impI * _dir[i] * rollScale;
+                        _impRoll[j] -= rollLever * impJ * _dir[j] * rollScale;
+                    }
                 }
                 if (COLLISION_PITCH_TUNING.enabled >= 0.5) {
                     // Project each body's separating shove onto its own forward axis.
@@ -447,6 +506,29 @@ function stableLateralSeparationSide(i: number, j: number, dx: number, dz: numbe
 function quantizeSignedPosition(value: number): number {
     const magnitude = Math.floor(Math.abs(value) * POSITION_DIRECTION_QUANTIZATION + 0.5);
     return value < 0 ? -magnitude : magnitude;
+}
+
+function sharedCourseNormal(i: number, j: number): { x: number; z: number } {
+    let x = _normalX[i] + _normalX[j];
+    let z = _normalZ[i] + _normalZ[j];
+    const length = Math.hypot(x, z);
+    if (length <= 1e-6) {
+        x = _normalX[i];
+        z = _normalZ[i];
+    } else {
+        x /= length;
+        z /= length;
+    }
+    _sharedNormal.x = x;
+    _sharedNormal.z = z;
+    return _sharedNormal;
+}
+
+function stableLever(side: number, fallback: number, minimum: number): number {
+    const sign = Math.abs(side) > 1e-6
+        ? (side > 0 ? 1 : -1)
+        : (fallback >= 0 ? 1 : -1);
+    return sign * Math.max(Math.abs(side), minimum);
 }
 
 function clearContacts(): void {

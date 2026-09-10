@@ -42,7 +42,8 @@ export class RiverCombatController {
             const footprint = swimmer.swimBoundaryZRange();
             if (footprint.min <= -edgeHalfWidth + bankInset
                 || footprint.max >= edgeHalfWidth - bankInset) {
-                swimmer.applyCollisionImpulse(0, swimmer.node.position.z >= 0 ? -0.9 : 0.9);
+                const lateralCenter = (footprint.min + footprint.max) * 0.5;
+                swimmer.applyCollisionImpulse(0, lateralCenter >= 0 ? -0.9 : 0.9);
                 continue;
             }
             if (this.cooldownRemaining(swimmer) > 0) {
