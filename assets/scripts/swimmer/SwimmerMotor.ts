@@ -9,6 +9,7 @@ import { AxialRollModel } from './AxialRollModel';
 import { CollisionPitchModel } from './CollisionPitchModel';
 import { CollisionSoftnessModel } from './CollisionSoftnessModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
+import { RIVER_BRAWL_BALANCE } from '../core/RiverBrawlBalance';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -150,6 +151,10 @@ export class SwimmerMotor {
     private _knockbackDistance = 0;
     private _knockbackLateral = 0;
     private _steeringEnabled = false;
+    // River brawl keeps the athlete's effort speed separate from the shared
+    // downstream current. The flag is configured once per swimmer by GameManager;
+    // live tuning values remain readable without per-frame setter traffic.
+    private _riverBrawlMovementEnabled = false;
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
     // input tops these up; the leg sweeps through them at a fixed fast cadence.
@@ -165,7 +170,7 @@ export class SwimmerMotor {
         const speedScale = this._conditionSpeedScale;
         const qualityScale = this._conditionQualityScale;
         const cadenceScale = this._conditionCadenceScale;
-        this.startRace(initialDistance, initialSpeed, Math.max(0, initialSpeed - SWIMMER_BALANCE.maxSpeed));
+        this.startRace(initialDistance, initialSpeed, Math.max(0, initialSpeed - this._effectiveMaxSpeed));
         this._conditionSpeedScale = speedScale;
         this._conditionQualityScale = qualityScale;
         this._conditionCadenceScale = cadenceScale;
@@ -241,7 +246,7 @@ export class SwimmerMotor {
     setFlipTurnSpeed(speed: number) {
         this._currentSpeed = Math.max(0, speed);
         this._currentAcceleration = 0;
-        this._speedCapBonus = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
+        this._speedCapBonus = Math.max(0, this._currentSpeed - this.initialSpeedCapBaseline);
     }
 
     setFlipTurnDistance(distance: number) {
@@ -484,7 +489,10 @@ export class SwimmerMotor {
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
                 glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
-                maxSpeedOverride: this._playerBalance?.maxSpeed,
+                maxSpeedOverride: this._effectiveMaxSpeed,
+                personalDragScale: this._riverBrawlMovementEnabled
+                    ? Math.max(0, RIVER_BRAWL_BALANCE.personalDragScale)
+                    : 1,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
@@ -511,10 +519,11 @@ export class SwimmerMotor {
         // Race distance is monotonic by contract. The steering hard cap keeps
         // cos(heading) positive; max(0, ...) is a second line of defence so even
         // corrupted runtime state can never make the swimmer turn back.
-        const forwardSpeed = this._currentSpeed
+        const personalForwardSpeed = this._currentSpeed
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
             * this._collisionPitch.forwardScale;
+        const forwardSpeed = this.courseFlowSpeed + personalForwardSpeed;
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
         const requestedLateralOffset = this._lateralOffset + this._currentSpeed * Math.sin(this._heading) * dt;
@@ -590,6 +599,22 @@ export class SwimmerMotor {
         this._weight = overrides?.weight ?? 1;
     }
 
+    setRiverBrawlMovementEnabled(enabled: boolean) {
+        this._riverBrawlMovementEnabled = enabled;
+    }
+
+    get initialSpeedCapBaseline(): number {
+        return this._riverBrawlMovementEnabled
+            ? this._effectiveMaxSpeed
+            : SWIMMER_BALANCE.maxSpeed;
+    }
+
+    get courseFlowSpeed(): number {
+        return this._riverBrawlMovementEnabled
+            ? Math.max(0, RIVER_BRAWL_BALANCE.flowSpeed)
+            : 0;
+    }
+
     // Burst-driven multiplier for the dolphin-jump launch speed. Reuses the same
     // ratio the dive uses (diveMaxLaunchSpeed / base), so a high-爆发力 / higher
     // level character launches farther. Returns 1 for swimmers without progression
@@ -603,11 +628,17 @@ export class SwimmerMotor {
     }
 
     private get _effectiveMaxSpeed(): number {
+        if (this._riverBrawlMovementEnabled) {
+            return Math.max(0.1, RIVER_BRAWL_BALANCE.personalMaxSpeed);
+        }
         return this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed;
     }
 
     private get _effectiveKickMaxSpeed(): number {
-        return this._playerBalance?.kickMaxSpeed ?? SWIMMER_BALANCE.kickMaxSpeed;
+        const kickMaxSpeed = this._playerBalance?.kickMaxSpeed ?? SWIMMER_BALANCE.kickMaxSpeed;
+        return this._riverBrawlMovementEnabled
+            ? Math.min(this._effectiveMaxSpeed, kickMaxSpeed)
+            : kickMaxSpeed;
     }
 
     private get _effectiveComboMaxOvercap(): number {
@@ -1647,6 +1678,17 @@ export class SwimmerMotor {
 
     get currentSpeed(): number {
         return this._currentSpeed;
+    }
+
+    get currentGroundSpeed(): number {
+        if (!this._riverBrawlMovementEnabled) {
+            return this._currentSpeed;
+        }
+        const personalForwardSpeed = this._currentSpeed
+            * Math.max(0, Math.cos(this._heading))
+            * this._axialRoll.forwardScale
+            * this._collisionPitch.forwardScale;
+        return this.courseFlowSpeed + personalForwardSpeed;
     }
 
     get distance(): number {

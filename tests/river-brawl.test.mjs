@@ -3,9 +3,18 @@ import assert from 'node:assert/strict';
 
 import CombatModule from '../assets/scripts/entity/SwimmerCombatResolver.ts';
 import FallModule from '../assets/scripts/entity/RiverFallController.ts';
+import BalanceModule from '../assets/scripts/core/RiverBrawlBalance.ts';
 
 const { resolveSideKick } = CombatModule;
 const { RiverFallController } = FallModule;
+const { RIVER_BRAWL_BALANCE } = BalanceModule;
+
+test('river movement keeps course flow separate from the personal swim cap', () => {
+    assert.equal(RIVER_BRAWL_BALANCE.raceDistance, 400);
+    assert.equal(RIVER_BRAWL_BALANCE.flowSpeed, 8);
+    assert.equal(RIVER_BRAWL_BALANCE.personalMaxSpeed, 4);
+    assert.equal(RIVER_BRAWL_BALANCE.flowSpeed + RIVER_BRAWL_BALANCE.personalMaxSpeed, 12);
+});
 
 function fakeSwimmer({ x, z, direction = 1, heading = 0, weight = 1, active = true }) {
     const calls = [];

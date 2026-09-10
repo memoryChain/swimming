@@ -47,14 +47,13 @@ export class CameraSpeedLineOverlay {
         this._root.active = false;
     }
 
-    update(dt: number, speed: number, visible: boolean, sprintBoost = false) {
+    update(dt: number, speed: number, visible: boolean, sprintBoost = false, thresholdOverride?: number) {
         if (!this._root?.isValid || !this._graphics) {
             return;
         }
         this.resize();
-        const threshold = sprintBoost
-            ? CAMERA_SPEED_LINE_TUNING.speedLineThreshold * 0.7
-            : CAMERA_SPEED_LINE_TUNING.speedLineThreshold;
+        const baseThreshold = thresholdOverride ?? CAMERA_SPEED_LINE_TUNING.speedLineThreshold;
+        const threshold = sprintBoost ? baseThreshold * 0.7 : baseThreshold;
         const target = visible && speed >= threshold
             ? (sprintBoost ? 1.25 : 1)
             : 0;

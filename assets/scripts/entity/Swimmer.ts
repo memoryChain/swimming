@@ -185,6 +185,10 @@ export class Swimmer extends Component {
         this._ultimate.setGainAptitude(value);
     }
 
+    setRiverBrawlMovementEnabled(enabled: boolean): void {
+        this._motor.setRiverBrawlMovementEnabled(enabled);
+    }
+
     // 被撞飞补偿：收到的击退冲量足够大时给一次能量（带节流）。
     addCollisionEnergyBonus(receivedImpulse: number) {
         this._ultimate.addCollisionBonus(receivedImpulse);
@@ -451,7 +455,7 @@ export class Swimmer extends Component {
         } else {
             this._phases.clearDiveUnderwaterPhase();
         }
-        const maxSpeed = SWIMMER_BALANCE.maxSpeed;
+        const maxSpeed = this._motor.initialSpeedCapBaseline;
         const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
         this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.cartoonRig?.setPerfectGlowActive(false);
@@ -1194,6 +1198,10 @@ export class Swimmer extends Component {
 
     get currentSpeed(): number {
         return this._motor.currentSpeed;
+    }
+
+    get currentGroundSpeed(): number {
+        return this._motor.currentGroundSpeed;
     }
 
     // Splash effect root, owned by the rig. Exposed so the refraction overlay can

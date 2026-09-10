@@ -544,6 +544,7 @@ export class SwimmerRacePhases {
         // along-course progress; sinH scales the lateral (Z) drift.
         const heading = motor.heading;
         const cosH = Math.max(0.1, Math.cos(heading));
+        const courseFlowSpeed = motor.courseFlowSpeed;
         const angle = DOLPHIN_JUMP.launchAngleDegrees * Math.PI / 180;
         // Launch speed scales with the character's 爆发力 (burst) + level, reusing
         // the same progression ratio the dive uses. AI keeps the raw base speed.
@@ -553,16 +554,17 @@ export class SwimmerRacePhases {
         let flightSeconds = Math.max(0.1, (2 * verticalSpeed) / Math.max(0.1, DOLPHIN_JUMP.gravity));
         // Fit dip + air + the underwater landing glide inside the available room.
         // Distances are measured ALONG the course (the cosH component).
-        const dipForward = entrySpeed * cosH * DOLPHIN_JUMP.dipSeconds;
+        const dipForward = (courseFlowSpeed + entrySpeed * cosH) * DOLPHIN_JUMP.dipSeconds;
         const fullLandingSeconds = DOLPHIN_JUMP.landingDescentSeconds
             + DOLPHIN_JUMP.landingHoldSeconds + DOLPHIN_JUMP.landingRiseSeconds;
         // Land carrying the arc's full forward momentum (never a dead stop): enter the
         // water at the same speed the swimmer was flying, then let water drag bleed it
         // back to cruise. The landing speed simply follows the air speed.
         const landingExit = horizontalSpeed;
-        const fullLandingReserve = landingExit * fullLandingSeconds;
+        const fullLandingReserve = (courseFlowSpeed + landingExit) * fullLandingSeconds;
         const roomAfterDip = Math.max(0.5, available - dipForward);
-        const fullArcForward = horizontalSpeed * cosH * flightSeconds;
+        const airborneForwardSpeed = courseFlowSpeed + horizontalSpeed * cosH;
+        const fullArcForward = airborneForwardSpeed * flightSeconds;
         let airForward = fullArcForward;
         let landingDurationScale = 1;
         if (fullArcForward + fullLandingReserve > roomAfterDip) {
@@ -577,7 +579,7 @@ export class SwimmerRacePhases {
             // Flatten the arc to airForward: lower launch angle -> shorter, lower, less
             // airtime. flightSeconds stays coupled to verticalSpeed by
             // flightSeconds = 2·verticalSpeed / gravity, so the parabola lands at t = flightSeconds.
-            flightSeconds = airForward / (horizontalSpeed * cosH);
+            flightSeconds = airForward / Math.max(0.1, airborneForwardSpeed);
             verticalSpeed = flightSeconds * DOLPHIN_JUMP.gravity / 2;
             // Compress the landing dip to the room left after the flattened arc, at the
             // preserved landing speed (distance = landingExit · fullLandingSeconds · scale).
@@ -645,6 +647,7 @@ export class SwimmerRacePhases {
         const heading = this._dolphinHeading;
         const cosH = Math.cos(heading);
         const sinH = Math.sin(heading);
+        const courseFlowSpeed = motor.courseFlowSpeed;
         // Face the actual travel direction (same convention as applyCoursePosition):
         // yaw off the lane axis by the steering heading.
         const yaw = (direction > 0 ? 0 : 180) - direction * (heading * 180 / Math.PI);
@@ -656,7 +659,11 @@ export class SwimmerRacePhases {
             // Dip: a quick porpoise gather below the surface, moving forward at the
             // entry speed in the travel direction. Nose dips then returns to level.
             const t = Math.max(0, Math.min(1, this._dolphinElapsed / Math.max(0.01, DOLPHIN_JUMP.dipSeconds)));
-            const distance = Math.min(raceDistance, this._dolphinBaseDistance + this._dolphinEntrySpeed * cosH * this._dolphinElapsed);
+            const distance = Math.min(
+                raceDistance,
+                this._dolphinBaseDistance
+                    + (courseFlowSpeed + this._dolphinEntrySpeed * cosH) * this._dolphinElapsed,
+            );
             const lateral = this._dolphinBaseLateral + this._dolphinEntrySpeed * sinH * this._dolphinElapsed;
             const worldZ = clampScalar(this._host.startPosition.z + lateral, -halfWidth, halfWidth);
             const y = swimY - DOLPHIN_JUMP.dipDepth * Math.sin(Math.PI * t);
@@ -688,7 +695,11 @@ export class SwimmerRacePhases {
             this.completeDolphinJump(dt);
             return;
         }
-        const distance = Math.min(raceDistance, this._dolphinBaseDistance + this._dolphinHorizontalSpeed * cosH * t);
+        const distance = Math.min(
+            raceDistance,
+            this._dolphinBaseDistance
+                + (courseFlowSpeed + this._dolphinHorizontalSpeed * cosH) * t,
+        );
         const lateral = this._dolphinBaseLateral + this._dolphinHorizontalSpeed * sinH * t;
         const worldZ = clampScalar(this._host.startPosition.z + lateral, -halfWidth, halfWidth);
         const verticalVelocity = this._dolphinVerticalSpeed - DOLPHIN_JUMP.gravity * t;
@@ -734,9 +745,11 @@ export class SwimmerRacePhases {
         const raceDistance = getRaceDistance();
         const cosH = Math.cos(this._dolphinHeading);
         const sinH = Math.sin(this._dolphinHeading);
+        const courseFlowSpeed = motor.courseFlowSpeed;
         const landingDistance = Math.min(
             raceDistance,
-            this._dolphinBaseDistance + this._dolphinHorizontalSpeed * cosH * this._dolphinFlightSeconds,
+            this._dolphinBaseDistance
+                + (courseFlowSpeed + this._dolphinHorizontalSpeed * cosH) * this._dolphinFlightSeconds,
         );
         const halfWidth = Math.max(0.3, courseLayout.poolWidth * 0.5 - 0.5);
         const landingLateral = this._dolphinBaseLateral + this._dolphinHorizontalSpeed * sinH * this._dolphinFlightSeconds;

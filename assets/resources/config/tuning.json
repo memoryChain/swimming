@@ -1,7 +1,11 @@
 {
-  "version": 35,
-  "updatedAt": "2026-09-09T00:00:00.000Z",
+  "version": 36,
+  "updatedAt": "2026-09-10T00:00:00.000Z",
   "values": {
+    "brawl.raceDistance": 400,
+    "brawl.flowSpeed": 8,
+    "brawl.personalMaxSpeed": 4,
+    "brawl.personalDragScale": 0.4,
     "brawl.attackCooldown": 0.8,
     "brawl.attackForwardRange": 1.4,
     "brawl.attackSideMin": 0.7,
@@ -14,7 +18,7 @@
     "brawl.attackSoftnessSide": 0.6,
     "brawl.attackSoftnessForward": -0.4,
     "brawl.fallSeconds": 0.9,
-    "brawl.respawnSetback": 10,
+    "brawl.respawnSetback": 5,
     "brawl.respawnSpeed": 1.2,
     "brawl.respawnProtection": 1.25,
     "brawl.aiDecisionInterval": 0.25,

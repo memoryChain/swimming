@@ -33,9 +33,10 @@ test('straight course is monotonic and does not expose internal turns', () => {
     assert.ok(Math.abs(course.distanceToWorldX(0) - 2.8) < 1e-9);
     assert.ok(Math.abs(course.distanceToWorldX(50) - 52.8) < 1e-9);
     assert.ok(Math.abs(course.distanceToWorldX(200) - 202.8) < 1e-9);
+    assert.ok(Math.abs(course.distanceToWorldX(400) - 402.8) < 1e-9);
     assert.equal(course.directionAtDistance(150), 1);
-    assert.equal(course.currentCourseEndDistance(20, 200), 200);
-    assert.equal(course.nextInternalTurnDistance(20, 200), null);
+    assert.equal(course.currentCourseEndDistance(20, 400), 400);
+    assert.equal(course.nextInternalTurnDistance(20, 400), null);
     assert.equal(course.clampSwimWorldX(180), 180);
     assert.equal(course.openSides, true);
     assert.equal(course.finishHasWall, false);

@@ -16,6 +16,9 @@ export type SwimPhysicsInput = {
     // SWIMMER_BALANCE.maxSpeed so progression can raise the player's top speed
     // without affecting AI swimmers.
     maxSpeedOverride?: number;
+    // Mode-local multiplier for the swimmer's own water resistance. Course flow
+    // is integrated separately by SwimmerMotor and is never slowed by this drag.
+    personalDragScale?: number;
 };
 
 export class SwimPhysicsModel {
@@ -25,12 +28,13 @@ export class SwimPhysicsModel {
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
         const accel = input.strokeAcceleration * accelLimit + Math.max(0, input.kickAcceleration);
         const speed = state.currentSpeed;
+        const personalDragScale = Math.max(0, input.personalDragScale ?? 1);
         const drag = (
             SWIMMER_BALANCE.poolDeceleration
             + SWIMMER_BALANCE.baseDrag * speed
             + SWIMMER_BALANCE.highSpeedDrag * speed * speed
-            + Math.max(0, input.glideDrag ?? 0) * speed
-        );
+        ) * personalDragScale
+            + Math.max(0, input.glideDrag ?? 0) * speed;
         const currentSpeed = clamp(state.currentSpeed + (accel - drag) * input.dt, SWIMMER_BALANCE.minSpeed, maxSpeed);
 
         return {

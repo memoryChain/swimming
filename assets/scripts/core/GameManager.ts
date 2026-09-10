@@ -78,7 +78,8 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, setActiveRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { RIVER_BRAWL_BALANCE } from './RiverBrawlBalance';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -381,6 +382,7 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
+        setActiveRaceDistance();
         this._raceUiBuilder?.resetInputState();
         this._uiController?.hideProgressionResult();
         this._inputRouter?.unbind();
@@ -482,6 +484,7 @@ export class GameManager extends Component {
         this.drawStrokeTimingGuide(timingGuide, playerFeedbackVisible);
         const playerFacing = this.dialFacingSign(this._playerSwimmer);
         const playerSpeed = this._playerSwimmer.currentSpeed;
+        const playerGroundSpeed = this._playerSwimmer.currentGroundSpeed;
         this._sweetZoneBarLeft.setVisible(playerFeedbackVisible);
         this._sweetZoneBarRight.setVisible(playerFeedbackVisible);
         this._sweetZoneBarLeft.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
@@ -497,7 +500,7 @@ export class GameManager extends Component {
                 this._overheadSpeedTextElapsed += dt;
                 if (this._overheadSpeedTextElapsed >= RACE_HUD_TEXT_REFRESH_SECONDS) {
                     this._overheadSpeedTextElapsed %= RACE_HUD_TEXT_REFRESH_SECONDS;
-                    const nextText = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
+                    const nextText = `${Math.max(0, playerGroundSpeed).toFixed(2)} m/s`;
                     if (nextText !== this._overheadSpeedText) {
                         this._overheadSpeedText = nextText;
                         this._overheadSpeedLabel.string = nextText;
@@ -850,6 +853,7 @@ export class GameManager extends Component {
             this._riverBrawlMode = false;
             this._launchMode = 'race';
         }
+        setActiveRaceDistance(this._riverBrawlMode ? RIVER_BRAWL_BALANCE.raceDistance : undefined);
         COURSE_LAYOUT.setTravelMode(this._riverBrawlMode ? 'straight' : 'laps');
         if (this._netSession) {
             // Networked race: every client reseeds SharedRNG with the host's seed so
@@ -919,7 +923,10 @@ export class GameManager extends Component {
             raceCameraDirector: this._raceCameraDirector,
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
             updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
-                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
+                const threshold = this._riverBrawlMode
+                    ? RIVER_BRAWL_BALANCE.flowSpeed + RIVER_BRAWL_BALANCE.personalMaxSpeed * 0.35
+                    : undefined;
+                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost, threshold);
             },
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
@@ -1378,6 +1385,7 @@ export class GameManager extends Component {
         this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
         this.applyPlayerProgression();
+        this._playerSwimmer?.setRiverBrawlMovementEnabled(this._riverBrawlMode);
     }
 
     private applyPlayerProgression() {
@@ -1451,6 +1459,7 @@ export class GameManager extends Component {
         }
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
+            swimmer.setRiverBrawlMovementEnabled(this._riverBrawlMode);
         }
         // Networked race: step the AI deterministically on the fixed clock (see
         // driveNetAiFixedStep). Remote humans are excluded again in wireRemoteSwimmers.
@@ -2165,9 +2174,11 @@ export class GameManager extends Component {
         this._preRaceIntroPanel.populate(entries);
         const difficulty = getRaceDifficultyConfig();
         this._preRaceIntroPanel.setRaceInfo({
-            event: `${getRaceDistance()}米自由泳`,
-            format: '标准竞速赛',
-            rule: `${this._netSession ? '联机对战' : `${difficulty.label}难度`} · ${entries.length}名选手 · 率先完成全程者获胜`,
+            event: this._riverBrawlMode ? `${getRaceDistance()}米激流乱斗` : `${getRaceDistance()}米自由泳`,
+            format: this._riverBrawlMode ? '顺流竞速对抗' : '标准竞速赛',
+            rule: this._riverBrawlMode
+                ? `${entries.length}名选手 · 空格踢击 · 越界坠落后重返河道`
+                : `${this._netSession ? '联机对战' : `${difficulty.label}难度`} · ${entries.length}名选手 · 率先完成全程者获胜`,
         });
     }
 

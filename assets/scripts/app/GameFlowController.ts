@@ -435,7 +435,7 @@ export class GameFlowController {
         const cameraSnapshot: RaceCameraSnapshot = {
             playerX: focus.node.position.x,
             playerY: focus.node.position.y,
-            playerSpeed: focus.currentSpeed,
+            playerSpeed: focus.currentGroundSpeed,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,
             playerHeading: focus.cameraHeading,

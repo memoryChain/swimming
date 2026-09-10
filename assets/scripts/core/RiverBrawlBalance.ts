@@ -1,4 +1,10 @@
 export const RIVER_BRAWL_BALANCE = {
+    raceDistance: 400,
+    flowSpeed: 8.0,
+    personalMaxSpeed: 4.0,
+    // Only the ordinary pool/base/high-speed drag is scaled. Underwater glide
+    // drag remains intact so dives still settle instead of carrying forever.
+    personalDragScale: 0.4,
     attackCooldownSeconds: 0.8,
     attackForwardRange: 1.4,
     attackSideMin: 0.7,

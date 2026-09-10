@@ -3,6 +3,8 @@ import { Vec3 } from 'cc';
 export const RACE_DISTANCE = 200 as const;
 export const RACE_COURSE_LENGTH = 50;
 
+let activeRaceDistance = RACE_DISTANCE as number;
+
 // Once the first racer touches the finish wall, remaining swimmers get this many
 // seconds to also finish. Anyone still in the water when it elapses is recorded
 // as 未完成 (DNF) and ranked by the distance already covered.
@@ -41,7 +43,18 @@ export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
 let currentRaceDifficulty: RaceDifficulty = 'competitive';
 
 export function getRaceDistance(): number {
-    return RACE_DISTANCE;
+    return activeRaceDistance;
+}
+
+// MainGame owns this runtime override and resets it when the scene is destroyed.
+// Keeping the existing getter as the single read seam lets every race consumer
+// (motor, camera, HUD, results) agree on a mode-specific distance without making
+// the ordinary 200m rules depend on the entertainment mode.
+export function setActiveRaceDistance(distance?: number): number {
+    activeRaceDistance = typeof distance === 'number' && Number.isFinite(distance)
+        ? Math.max(1, distance)
+        : RACE_DISTANCE;
+    return activeRaceDistance;
 }
 
 export function getRaceDifficulty(): RaceDifficulty {
