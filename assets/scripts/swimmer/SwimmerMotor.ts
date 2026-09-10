@@ -9,7 +9,10 @@ import { AxialRollModel } from './AxialRollModel';
 import { CollisionPitchModel } from './CollisionPitchModel';
 import { CollisionSoftnessModel } from './CollisionSoftnessModel';
 import { COLLISION_PITCH_TUNING } from '../core/CollisionPitchTuning';
-import { RIVER_BRAWL_BALANCE } from '../core/RiverBrawlBalance';
+import {
+    RIVER_BRAWL_BALANCE,
+    updateRiverBankResistance,
+} from '../core/RiverBrawlBalance';
 
 const CYCLE_AMOUNT = Math.PI * 2;
 const MAX_QUEUED_MOTION = CYCLE_AMOUNT * 2;
@@ -155,6 +158,10 @@ export class SwimmerMotor {
     // downstream current. The flag is configured once per swimmer by GameManager;
     // live tuning values remain readable without per-frame setter traffic.
     private _riverBrawlMovementEnabled = false;
+    private _riverBankResistance = 0;
+    private _riverBankHardContact = false;
+    private _riverBankInwardDirection = 0;
+    private _riverBankGuardRemaining = 0;
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
     // input tops these up; the leg sweeps through them at a fixed fast cadence.
@@ -164,16 +171,6 @@ export class SwimmerMotor {
         this._currentSpeed = initialSpeed;
         this.resetRaceState(initialDistance);
         this._speedCapBonus = Math.max(0, initialSpeedCapBonus);
-    }
-
-    restartAfterRiverFall(initialDistance: number, initialSpeed: number) {
-        const speedScale = this._conditionSpeedScale;
-        const qualityScale = this._conditionQualityScale;
-        const cadenceScale = this._conditionCadenceScale;
-        this.startRace(initialDistance, initialSpeed, Math.max(0, initialSpeed - this._effectiveMaxSpeed));
-        this._conditionSpeedScale = speedScale;
-        this._conditionQualityScale = qualityScale;
-        this._conditionCadenceScale = cadenceScale;
     }
 
     stopRace() {
@@ -522,7 +519,8 @@ export class SwimmerMotor {
         const personalForwardSpeed = this._currentSpeed
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
-            * this._collisionPitch.forwardScale;
+            * this._collisionPitch.forwardScale
+            * this.riverBankPersonalSpeedScale;
         const forwardSpeed = this.courseFlowSpeed + personalForwardSpeed;
         this._distance = Math.min(raceDistance, this._distance + forwardSpeed * dt);
         // Lateral drift accumulates the sideways component, clamped to the pool.
@@ -585,6 +583,7 @@ export class SwimmerMotor {
         this._headingTurnRate = 0;
         this._poolWallRecoveryDirection = 0;
         this._lateralOffset = 0;
+        this.resetRiverBankState();
         this._axialRoll.reset();
         this._collisionPitch.reset();
         this.collisionSoftness.reset();
@@ -600,7 +599,13 @@ export class SwimmerMotor {
     }
 
     setRiverBrawlMovementEnabled(enabled: boolean) {
+        if (this._riverBrawlMovementEnabled === enabled) {
+            return;
+        }
         this._riverBrawlMovementEnabled = enabled;
+        if (!enabled) {
+            this.resetRiverBankState();
+        }
     }
 
     get initialSpeedCapBaseline(): number {
@@ -610,9 +615,77 @@ export class SwimmerMotor {
     }
 
     get courseFlowSpeed(): number {
+        if (!this._riverBrawlMovementEnabled) {
+            return 0;
+        }
+        return Math.max(0, RIVER_BRAWL_BALANCE.flowSpeed)
+            * this.riverBankScale(RIVER_BRAWL_BALANCE.bankFlowSpeedScale);
+    }
+
+    get riverBankPersonalSpeedScale(): number {
         return this._riverBrawlMovementEnabled
-            ? Math.max(0, RIVER_BRAWL_BALANCE.flowSpeed)
-            : 0;
+            ? this.riverBankScale(RIVER_BRAWL_BALANCE.bankPersonalSpeedScale)
+            : 1;
+    }
+
+    updateRiverBankState(contactRatio: number, touchingHardBank: boolean, dt: number): void {
+        if (!this._riverBrawlMovementEnabled) {
+            return;
+        }
+        this._riverBankResistance = updateRiverBankResistance(
+            this._riverBankResistance,
+            contactRatio,
+            dt,
+            RIVER_BRAWL_BALANCE.bankRecoverySeconds,
+        );
+        this._riverBankGuardRemaining = Math.max(0, this._riverBankGuardRemaining - Math.max(0, dt));
+        // Do not re-arm the one-shot impact penalty for tiny sub-frame moves away
+        // from the clamp. The swimmer must visibly leave the hard-bank portion of
+        // the slow zone before another collision can halve personal speed again.
+        if (!touchingHardBank && contactRatio < 0.9) {
+            this._riverBankHardContact = false;
+            if (this._riverBankGuardRemaining <= 0) {
+                this._riverBankInwardDirection = 0;
+            }
+        }
+    }
+
+    // Returns true only for the first frame of a new bank hit, allowing the
+    // presentation layer to trigger one pooled splash instead of emitting every
+    // frame while the player continues steering into the shore.
+    applyRiverBankImpact(inwardDirection: number): boolean {
+        if (!this._riverBrawlMovementEnabled) {
+            return false;
+        }
+        const inward = inwardDirection >= 0 ? 1 : -1;
+        const firstImpact = !this._riverBankHardContact;
+        this._riverBankHardContact = true;
+        this._riverBankInwardDirection = inward;
+        this._riverBankGuardRemaining = Math.max(
+            this._riverBankGuardRemaining,
+            Math.max(0, RIVER_BRAWL_BALANCE.bankKnockbackGuardSeconds),
+        );
+        if (firstImpact) {
+            this._currentSpeed *= clamp(RIVER_BRAWL_BALANCE.bankImpactSpeedRetention, 0, 1);
+            this._currentAcceleration = 0;
+        }
+        if (this._knockbackLateral * inward < 0) {
+            this._knockbackLateral = 0;
+        }
+        this.returnToLaneFromPoolWall(inward);
+        return firstImpact;
+    }
+
+    private riverBankScale(contactScale: number): number {
+        const bankScale = clamp(contactScale, 0, 1);
+        return 1 + (bankScale - 1) * clamp01(this._riverBankResistance);
+    }
+
+    private resetRiverBankState(): void {
+        this._riverBankResistance = 0;
+        this._riverBankHardContact = false;
+        this._riverBankInwardDirection = 0;
+        this._riverBankGuardRemaining = 0;
     }
 
     // Burst-driven multiplier for the dolphin-jump launch speed. Reuses the same
@@ -1279,9 +1352,16 @@ export class SwimmerMotor {
         if (!SWIMMER_COLLISION.knockbackEnabled) {
             return;
         }
+        let lateralImpulse = latRate;
+        if (this._riverBrawlMovementEnabled
+            && this._riverBankGuardRemaining > 0
+            && this._riverBankInwardDirection !== 0
+            && lateralImpulse * this._riverBankInwardDirection < 0) {
+            lateralImpulse *= clamp(RIVER_BRAWL_BALANCE.bankGuardOutwardImpulseScale, 0, 1);
+        }
         const cap = SWIMMER_COLLISION.knockbackMaxImpulse;
         this._knockbackDistance = clamp(this._knockbackDistance + distRate, -cap, cap);
-        this._knockbackLateral = clamp(this._knockbackLateral + latRate, -cap, cap);
+        this._knockbackLateral = clamp(this._knockbackLateral + lateralImpulse, -cap, cap);
     }
 
     applyCollisionAxialImpulse(angularVelocityDeltaRadians: number) {
@@ -1687,7 +1767,8 @@ export class SwimmerMotor {
         const personalForwardSpeed = this._currentSpeed
             * Math.max(0, Math.cos(this._heading))
             * this._axialRoll.forwardScale
-            * this._collisionPitch.forwardScale;
+            * this._collisionPitch.forwardScale
+            * this.riverBankPersonalSpeedScale;
         return this.courseFlowSpeed + personalForwardSpeed;
     }
 

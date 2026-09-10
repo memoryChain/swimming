@@ -2,18 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import CombatModule from '../assets/scripts/entity/SwimmerCombatResolver.ts';
-import FallModule from '../assets/scripts/entity/RiverFallController.ts';
 import BalanceModule from '../assets/scripts/core/RiverBrawlBalance.ts';
 
 const { resolveSideKick } = CombatModule;
-const { RiverFallController } = FallModule;
-const { RIVER_BRAWL_BALANCE } = BalanceModule;
+const {
+    RIVER_BRAWL_BALANCE,
+    riverBankContactRatio,
+    updateRiverBankResistance,
+} = BalanceModule;
 
 test('river movement keeps course flow separate from the personal swim cap', () => {
     assert.equal(RIVER_BRAWL_BALANCE.raceDistance, 400);
     assert.equal(RIVER_BRAWL_BALANCE.flowSpeed, 8);
     assert.equal(RIVER_BRAWL_BALANCE.personalMaxSpeed, 4);
     assert.equal(RIVER_BRAWL_BALANCE.flowSpeed + RIVER_BRAWL_BALANCE.personalMaxSpeed, 12);
+    assert.equal(
+        RIVER_BRAWL_BALANCE.flowSpeed * RIVER_BRAWL_BALANCE.bankFlowSpeedScale
+            + RIVER_BRAWL_BALANCE.personalMaxSpeed * RIVER_BRAWL_BALANCE.bankPersonalSpeedScale,
+        5.4,
+    );
 });
 
 function fakeSwimmer({ x, z, direction = 1, heading = 0, weight = 1, active = true }) {
@@ -70,47 +77,15 @@ test('side kick uses actual heading when projecting its attack window', () => {
     assert.equal(resolveSideKick(attacker, [attacker, target])?.target, target);
 });
 
-test('fall controller keeps the racer active, sets back progress, and ends protection on time', () => {
-    const calls = [];
-    const node = {
-        active: true,
-        isValid: true,
-        position: { x: 40, y: 0, z: 10.6 },
-        setPosition(x, y, z) { this.position = { x, y, z }; },
-        setRotationFromEuler() {},
-    };
-    const swimmer = {
-        node,
-        distance: 40,
-        canRiverCombat: true,
-        beginRiverFall() {
-            calls.push(['fall']);
-            this.canRiverCombat = false;
-        },
-        respawnAfterRiverFall(distance, speed) {
-            calls.push(['respawn', distance, speed]);
-            this.distance = distance;
-        },
-        setRespawnProtectionActive(active) {
-            calls.push(['protect', active]);
-            this.canRiverCombat = !active;
-        },
-        cancelRiverFallState() {
-            calls.push(['cancel']);
-            this.canRiverCombat = true;
-        },
-    };
-    const controller = new RiverFallController();
-    controller.update(0, [swimmer], 10.5, true);
-    assert.deepEqual(calls[0], ['fall']);
-    assert.equal(node.active, true);
+test('river bank resistance is smooth across the final 1.5 metres', () => {
+    assert.equal(riverBankContactRatio(8.5, 10, 1.5), 0);
+    assert.equal(riverBankContactRatio(9.25, 10, 1.5), 0.5);
+    assert.equal(riverBankContactRatio(10, 10, 1.5), 1);
+});
 
-    controller.update(0.9, [swimmer], 10.5, true);
-    assert.deepEqual(calls.find((call) => call[0] === 'respawn'), ['respawn', 35, 1.2]);
-    assert.ok(calls.some((call) => call[0] === 'protect' && call[1] === true));
-    controller.update(1.24, [swimmer], 10.5, true);
-    assert.equal(swimmer.canRiverCombat, false);
-    controller.update(0.02, [swimmer], 10.5, true);
-    assert.equal(swimmer.canRiverCombat, true);
-    assert.equal(node.active, true);
+test('river bank resistance engages immediately and releases over the configured interval', () => {
+    assert.equal(updateRiverBankResistance(0, 1, 1 / 60, 0.4), 1);
+    assert.equal(updateRiverBankResistance(1, 0, 0.2, 0.4), 0.5);
+    assert.equal(updateRiverBankResistance(0.5, 0, 0.2, 0.4), 0);
+    assert.equal('respawnSetback' in RIVER_BRAWL_BALANCE, false);
 });

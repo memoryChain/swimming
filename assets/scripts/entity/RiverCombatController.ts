@@ -25,7 +25,7 @@ export class RiverCombatController {
             else this._cooldowns.delete(swimmer);
         }
         for (const swimmer of racers) {
-            if (!swimmer?.isAI || !swimmer.canRiverCombat || this.cooldownRemaining(swimmer) > 0) {
+            if (!swimmer?.isAI || !swimmer.canRiverCombat) {
                 continue;
             }
             let timer = (this._aiDecisionTimers.get(swimmer) ?? 0) - step;
@@ -35,8 +35,17 @@ export class RiverCombatController {
             }
             timer = RIVER_BRAWL_BALANCE.aiDecisionIntervalSeconds;
             this._aiDecisionTimers.set(swimmer, timer);
-            if (Math.abs(swimmer.node.position.z) >= edgeHalfWidth - RIVER_BRAWL_BALANCE.aiEdgeInset) {
+            // Bank recovery takes priority even while the AI's attack is cooling
+            // down. Otherwise a successful kick made close to shore can leave the
+            // attacker scraping the slow zone for the whole cooldown.
+            const bankInset = Math.max(0, RIVER_BRAWL_BALANCE.aiBankRecoveryInset);
+            const footprint = swimmer.swimBoundaryZRange();
+            if (footprint.min <= -edgeHalfWidth + bankInset
+                || footprint.max >= edgeHalfWidth - bankInset) {
                 swimmer.applyCollisionImpulse(0, swimmer.node.position.z >= 0 ? -0.9 : 0.9);
+                continue;
+            }
+            if (this.cooldownRemaining(swimmer) > 0) {
                 continue;
             }
             const result = this.attack(swimmer, racers);

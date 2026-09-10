@@ -18,13 +18,62 @@ export const RIVER_BRAWL_BALANCE = {
     attackPitchImpulse: 0.8,
     attackSoftnessSide: 0.6,
     attackSoftnessForward: -0.4,
-    fallSeconds: 0.9,
-    respawnSetback: 5,
-    respawnSpeed: 1.2,
-    respawnProtectionSeconds: 1.25,
+    // The final strip of water behaves like a racing-game runoff zone. Both the
+    // shared current and personal propulsion fade toward their contact scales;
+    // the athlete stays in the race and never teleports or loses fixed distance.
+    bankSlowWidth: 1.5,
+    bankFlowSpeedScale: 0.55,
+    bankPersonalSpeedScale: 0.25,
+    bankImpactSpeedRetention: 0.5,
+    bankRecoverySeconds: 0.4,
+    bankKnockbackGuardSeconds: 0.4,
+    bankGuardOutwardImpulseScale: 0.25,
     aiDecisionIntervalSeconds: 0.25,
     aiCooldownMinSeconds: 1.8,
     aiCooldownMaxSeconds: 3.0,
-    aiEdgeInset: 1.5,
+    aiBankRecoveryInset: 1.5,
     venueEndPadding: 8,
 };
+
+// Returns 0 in clear water and 1 when the swimmer's oriented footprint reaches
+// the hard bank. Keeping this scalar calculation pure makes it deterministic and
+// cheap enough to run for every racer without physics colliders or allocations.
+export function riverBankContactRatio(
+    outerExtent: number,
+    hardHalfWidth: number,
+    slowWidth: number,
+): number {
+    const width = Math.max(0.001, finiteNonNegative(slowWidth));
+    const hardEdge = finiteNonNegative(hardHalfWidth);
+    const slowStart = Math.max(0, hardEdge - width);
+    const linear = clamp01((finiteNonNegative(outerExtent) - slowStart) / width);
+    return linear * linear * (3 - 2 * linear);
+}
+
+// Bank resistance engages immediately so contact reads on the first frame, but
+// releases over a short fixed interval after steering back into clear water.
+export function updateRiverBankResistance(
+    current: number,
+    target: number,
+    dt: number,
+    recoverySeconds: number,
+): number {
+    const safeCurrent = clamp01(current);
+    const safeTarget = clamp01(target);
+    if (safeTarget >= safeCurrent) {
+        return safeTarget;
+    }
+    const seconds = finiteNonNegative(recoverySeconds);
+    if (seconds <= 0) {
+        return safeTarget;
+    }
+    return Math.max(safeTarget, safeCurrent - finiteNonNegative(dt) / seconds);
+}
+
+function finiteNonNegative(value: number): number {
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function clamp01(value: number): number {
+    return value < 0 ? 0 : value > 1 ? 1 : value;
+}

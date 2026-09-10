@@ -39,7 +39,6 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { RiverCombatController } from '../entity/RiverCombatController';
-import { RiverFallController } from '../entity/RiverFallController';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
@@ -168,10 +167,8 @@ export class GameManager extends Component {
     private _launchMode: MainGameLaunchMode = 'race';
     private _riverBrawlMode = false;
     private readonly _riverCombat = new RiverCombatController();
-    private readonly _riverFall = new RiverFallController();
     private _riverAttackButton: Node | null = null;
     private _riverAttackInteractable = false;
-    private _playerRiverFallInputCleared = false;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
     private _splashParticlesEnabled: boolean = PERFORMANCE_CONFIG.splash.particleEmittersEnabled;
     private _uiController: UIController = null;
@@ -702,16 +699,6 @@ export class GameManager extends Component {
         this.collectRiverRacers();
         const edgeHalfWidth = COURSE_LAYOUT.poolWidth * 0.5;
         this._riverCombat.update(dt, this._collisionSwimmers, edgeHalfWidth);
-        this._riverFall.update(dt, this._collisionSwimmers, edgeHalfWidth, this._state === GameState.RACING);
-        if (this._playerSwimmer?.isRiverFalling) {
-            if (!this._playerRiverFallInputCleared) {
-                this._playerRiverFallInputCleared = true;
-                this._raceUiBuilder?.resetInputState();
-                this._inputRouter?.resetStrokeInput();
-            }
-        } else {
-            this._playerRiverFallInputCleared = false;
-        }
         this.updateRiverAttackButton();
     }
 
@@ -950,7 +937,6 @@ export class GameManager extends Component {
                     if (this._riverBrawlMode) {
                         this.collectRiverRacers();
                         this._riverCombat.reset(this._collisionSwimmers);
-                        this._riverFall.reset(this._collisionSwimmers);
                     }
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
@@ -1498,7 +1484,6 @@ export class GameManager extends Component {
         if (this._riverBrawlMode) {
             this.collectRiverRacers();
             this._riverCombat.reset(this._collisionSwimmers);
-            this._riverFall.reset(this._collisionSwimmers);
         }
     }
 

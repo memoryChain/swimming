@@ -20,6 +20,7 @@ export interface SwimmerRacePhaseHost {
     readonly cartoonRig: CartoonSwimmerRig | null;
     readonly courseLayout: RaceCourseLayout;
     readonly startPosition: Readonly<Vec3>;
+    scriptedSideRootHalfWidth(heading: number): number;
     updateBodyMotion(dt: number): void;
 }
 
@@ -538,7 +539,7 @@ export class SwimmerRacePhases {
         if (available < DOLPHIN_JUMP.minAvailableDistance) {
             return false;
         }
-        const entrySpeed = finiteNonNegative(motor.currentSpeed);
+        const entrySpeed = finiteNonNegative(motor.currentSpeed) * motor.riverBankPersonalSpeedScale;
         // Fly in the swimmer's actual travel direction (lane axis rotated by the
         // current steering heading), not straight down the lane. cosH scales the
         // along-course progress; sinH scales the lateral (Z) drift.
@@ -548,7 +549,9 @@ export class SwimmerRacePhases {
         const angle = DOLPHIN_JUMP.launchAngleDegrees * Math.PI / 180;
         // Launch speed scales with the character's 爆发力 (burst) + level, reusing
         // the same progression ratio the dive uses. AI keeps the raw base speed.
-        const launchSpeed = DOLPHIN_JUMP.launchSpeed * motor.dolphinLaunchSpeedScale;
+        const launchSpeed = DOLPHIN_JUMP.launchSpeed
+            * motor.dolphinLaunchSpeedScale
+            * motor.riverBankPersonalSpeedScale;
         const horizontalSpeed = Math.max(0.1, launchSpeed * Math.cos(angle));
         let verticalSpeed = Math.max(0.1, launchSpeed * Math.sin(angle));
         let flightSeconds = Math.max(0.1, (2 * verticalSpeed) / Math.max(0.1, DOLPHIN_JUMP.gravity));
@@ -651,8 +654,9 @@ export class SwimmerRacePhases {
         // Face the actual travel direction (same convention as applyCoursePosition):
         // yaw off the lane axis by the steering heading.
         const yaw = (direction > 0 ? 0 : 180) - direction * (heading * 180 / Math.PI);
-        // Keep the lateral drift inside the pool side walls so the arc can't fly out.
-        const halfWidth = Math.max(0.3, courseLayout.poolWidth * 0.5 - 0.5);
+        // Keep the full oriented body inside the same hard bank used by regular
+        // swimming. Normal pool modes retain their previous 0.5m root clearance.
+        const sideRootLimit = this._host.scriptedSideRootHalfWidth(heading);
         this._dolphinElapsed += Math.max(0, dt);
 
         if (this._dolphinStage === 0) {
@@ -665,7 +669,7 @@ export class SwimmerRacePhases {
                     + (courseFlowSpeed + this._dolphinEntrySpeed * cosH) * this._dolphinElapsed,
             );
             const lateral = this._dolphinBaseLateral + this._dolphinEntrySpeed * sinH * this._dolphinElapsed;
-            const worldZ = clampScalar(this._host.startPosition.z + lateral, -halfWidth, halfWidth);
+            const worldZ = clampScalar(this._host.startPosition.z + lateral, -sideRootLimit, sideRootLimit);
             const y = swimY - DOLPHIN_JUMP.dipDepth * Math.sin(Math.PI * t);
             const pitch = -DOLPHIN_JUMP.dipTiltDegrees * Math.sin(Math.PI * t);
             node.setPosition(courseLayout.distanceToWorldX(distance), y, worldZ);
@@ -701,7 +705,7 @@ export class SwimmerRacePhases {
                 + (courseFlowSpeed + this._dolphinHorizontalSpeed * cosH) * t,
         );
         const lateral = this._dolphinBaseLateral + this._dolphinHorizontalSpeed * sinH * t;
-        const worldZ = clampScalar(this._host.startPosition.z + lateral, -halfWidth, halfWidth);
+        const worldZ = clampScalar(this._host.startPosition.z + lateral, -sideRootLimit, sideRootLimit);
         const verticalVelocity = this._dolphinVerticalSpeed - DOLPHIN_JUMP.gravity * t;
         const y = swimY + this._dolphinVerticalSpeed * t - 0.5 * DOLPHIN_JUMP.gravity * t * t;
         // Parabola slope (nose up on the climb, down on the fall). Stored so the
@@ -751,9 +755,9 @@ export class SwimmerRacePhases {
             this._dolphinBaseDistance
                 + (courseFlowSpeed + this._dolphinHorizontalSpeed * cosH) * this._dolphinFlightSeconds,
         );
-        const halfWidth = Math.max(0.3, courseLayout.poolWidth * 0.5 - 0.5);
+        const sideRootLimit = this._host.scriptedSideRootHalfWidth(this._dolphinHeading);
         const landingLateral = this._dolphinBaseLateral + this._dolphinHorizontalSpeed * sinH * this._dolphinFlightSeconds;
-        const worldZ = clampScalar(this._host.startPosition.z + landingLateral, -halfWidth, halfWidth);
+        const worldZ = clampScalar(this._host.startPosition.z + landingLateral, -sideRootLimit, sideRootLimit);
         // Carry the ending lateral drift into the underwater glide so the swimmer
         // does not snap back to the lane centre on re-entry.
         motor.setLateralOffset(worldZ - this._host.startPosition.z);

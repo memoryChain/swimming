@@ -78,6 +78,25 @@ test('海豚跳 30 点与 99 点不可释放，100 点可释放且清空；降�
     assert.equal(energy.energy, 0);
 });
 
+test('激流乱斗贴岸同时降低水流与个人速度，碰岸不会结束或倒退比赛', () => {
+    const { loadModule } = setup();
+    const { SwimmerMotor } = loadModule('swimmer/SwimmerMotor');
+    const motor = new SwimmerMotor();
+    motor.setRiverBrawlMovementEnabled(true);
+    motor.startRace(20, 4);
+    assert.equal(motor.currentGroundSpeed, 12);
+
+    motor.updateRiverBankState(1, true, 1 / 60);
+    assert.ok(Math.abs(motor.currentGroundSpeed - 5.4) < 1e-8);
+    assert.equal(motor.applyRiverBankImpact(-1), true);
+    assert.equal(motor.currentSpeed, 2);
+    assert.ok(Math.abs(motor.currentGroundSpeed - 4.9) < 1e-8);
+    assert.equal(motor.applyRiverBankImpact(-1), false);
+    assert.equal(motor.currentSpeed, 2);
+    assert.equal(motor.distance, 20);
+    assert.equal(motor.isRacing, true);
+});
+
 test('侧墙回正限速、左右对称并能在不同帧率下脱离，不影响随后玩家转向', () => {
     const { loadModule } = setup();
     const { SwimmerMotor } = loadModule('swimmer/SwimmerMotor');
