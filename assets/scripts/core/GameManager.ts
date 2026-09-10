@@ -322,7 +322,7 @@ export class GameManager extends Component {
     private _cameraTarget = new Vec3(8, 0.25, PLAYER_LANE_Z);
 
     onLoad() {
-        game.frameRate = 45;
+        game.frameRate = 60;
         console.log(`[SpeedSwimming] target frameRate=${game.frameRate}`);
         this.node.layer = Layers.Enum.UI_2D;
         loadSavedTuningAsync(() => this.scheduleOnce(() => {
@@ -569,7 +569,6 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             awardsActive ? 48 : standingPresentation ? 26 : 20,
-            netDt,
         );
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.

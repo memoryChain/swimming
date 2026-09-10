@@ -60,7 +60,6 @@ export class SwimmerNameOverlay {
     private readonly _placedWidths: number[] = [];
     private readonly _placedHeights: number[] = [];
     private _anchorWarmupFrames = 0;
-    private _sampleElapsed = 0;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -178,7 +177,6 @@ export class SwimmerNameOverlay {
     // rig applies its new standing pose, then project the refreshed head bones.
     resetTracking() {
         this._anchorWarmupFrames = 1;
-        this._sampleElapsed = 0;
         for (const entry of this._entries) {
             entry.x = Number.NaN;
             entry.y = Number.NaN;
@@ -189,13 +187,13 @@ export class SwimmerNameOverlay {
         }
     }
 
+    // 名字位置跟随每个游戏渲染帧，不使用独立采样时钟，避免与角色移动错帧。
     update(
         worldCamera: Camera | null,
         uiCamera: Camera | null,
         finishDistance: number,
         showFinished = false,
         headOffsetY = HEAD_OFFSET_Y,
-        dt = 1 / 30,
     ) {
         if (!this._root?.isValid || !this._root.active || !this._hud?.isValid || !worldCamera || !uiCamera) {
             return;
@@ -204,9 +202,6 @@ export class SwimmerNameOverlay {
             this._anchorWarmupFrames--;
             return;
         }
-        this._sampleElapsed += dt;
-        if (this._sampleElapsed < 1 / 30) return;
-        this._sampleElapsed %= 1 / 30;
         const hudTransform = this._hud.getComponent(UITransform);
         if (!hudTransform) {
             return;

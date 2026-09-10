@@ -5,6 +5,7 @@ import { scaledDelta } from './TimeScale';
 import { Swimmer } from '../entity/Swimmer';
 import { DiveResult } from './DiveResult';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
+import { laneNumberForZ } from '../venue/LaneLayout';
 
 const { ccclass, property } = _decorator;
 
@@ -474,8 +475,5 @@ export class RaceManager extends Component {
 }
 
 function laneForSwimmer(swimmer: Swimmer): number {
-    const { laneCount, laneWidth } = DEFAULT_POOL_DEFINITION;
-    const poolWidth = laneCount * laneWidth;
-    const lane = Math.floor((swimmer.node.position.z + poolWidth * 0.5) / laneWidth) + 1;
-    return Math.max(1, Math.min(laneCount, lane));
+    return laneNumberForZ(swimmer.node.position.z, DEFAULT_POOL_DEFINITION);
 }

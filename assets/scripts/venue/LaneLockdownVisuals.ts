@@ -1,5 +1,6 @@
 import { RaceCourseLayout } from './RaceCourseLayout';
 import { WaterRefractionController } from './WaterRefractionController';
+import { laneEdgeZ } from './LaneLayout';
 
 /**
  * Visual-only lane-lockdown state. The water material renders the mask itself so
@@ -31,8 +32,8 @@ export class LaneLockdownVisuals {
         const first = clampInt(firstSafeLane, 1, laneCount);
         const last = clampInt(lastSafeLane, first, laneCount);
         return {
-            safeMinZ: -this._layout.poolWidth * 0.5 + (first - 1) * this._layout.laneWidth,
-            safeMaxZ: -this._layout.poolWidth * 0.5 + last * this._layout.laneWidth,
+            safeMinZ: laneEdgeZ(last + 1, this._layout),
+            safeMaxZ: laneEdgeZ(first, this._layout),
         };
     }
 

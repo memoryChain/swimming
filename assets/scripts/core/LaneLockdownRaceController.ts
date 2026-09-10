@@ -2,6 +2,7 @@ import { GameState } from './GameConstants';
 import { Swimmer } from '../entity/Swimmer';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
+import { laneEdgeZ, laneNumberForZ } from '../venue/LaneLayout';
 
 const LOCK_DISTANCES = [50, 100, 150];
 const SAFE_LANE_COUNTS = [6, 4, 2];
@@ -102,8 +103,8 @@ export class LaneLockdownRaceController {
     }
 
     private activatePendingLock(racers: readonly Swimmer[]) {
-        const safeMinZ = laneEdgeZ(this._pendingFirstSafeLane, this._layout);
-        const safeMaxZ = laneEdgeZ(this._pendingLastSafeLane + 1, this._layout);
+        const safeMinZ = laneEdgeZ(this._pendingLastSafeLane + 1, this._layout);
+        const safeMaxZ = laneEdgeZ(this._pendingFirstSafeLane, this._layout);
         for (const swimmer of racers) {
             const bounds = swimmer.swimBoundaryZRange();
             if (bounds.min < safeMinZ + COLLIDER_CLEARANCE || bounds.max > safeMaxZ - COLLIDER_CLEARANCE) {
@@ -147,7 +148,7 @@ export class LaneLockdownRaceController {
     }
 
     private safeLaneRangeForLeader(leader: Swimmer, safeLaneCount: number) {
-        const leaderLane = laneForZ(leader.node.position.z, this._layout);
+        const leaderLane = laneNumberForZ(leader.node.position.z, this._layout);
         const minFirst = this._activeFirstSafeLane;
         const maxFirst = this._activeLastSafeLane - safeLaneCount + 1;
         const centeredFirst = leaderLane - Math.floor((safeLaneCount - 1) * 0.5);
@@ -165,8 +166,8 @@ export class LaneLockdownRaceController {
         this._lastAiTargetLastSafeLane = lastSafeLane;
         this._lastAiTargetWarning = warning;
         this._onAiTarget({
-            safeMinZ: laneEdgeZ(firstSafeLane, this._layout),
-            safeMaxZ: laneEdgeZ(lastSafeLane + 1, this._layout),
+            safeMinZ: laneEdgeZ(lastSafeLane + 1, this._layout),
+            safeMaxZ: laneEdgeZ(firstSafeLane, this._layout),
             warning,
         });
     }
@@ -180,14 +181,6 @@ export class LaneLockdownRaceController {
         this._lastAiTargetWarning = false;
         this._onAiTarget(null);
     }
-}
-
-function laneForZ(z: number, layout: RaceCourseLayout) {
-    return clampInt(Math.floor((z + layout.poolWidth * 0.5) / layout.laneWidth) + 1, 1, layout.laneCount);
-}
-
-function laneEdgeZ(oneBasedEdge: number, layout: RaceCourseLayout) {
-    return -layout.poolWidth * 0.5 + (oneBasedEdge - 1) * layout.laneWidth;
 }
 
 function clampInt(value: number, min: number, max: number) {
