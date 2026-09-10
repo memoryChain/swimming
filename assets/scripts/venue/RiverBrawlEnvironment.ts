@@ -18,7 +18,10 @@ import type { RaceCourseLayout } from './RaceCourseLayout';
 const { ccclass } = _decorator;
 const ROOT_NAME = 'RiverBrawlProceduralEnvironment';
 const SEGMENT_LENGTH = 50;
-const BANK_GAP = 2.5;
+// The old fall-off rule left a visible void between water and scenery. Banks now
+// begin exactly at the analytic river boundary so a clamped body appears to meet
+// land instead of hovering beside it.
+const BANK_GAP = 0;
 const BANK_DEPTH = 7;
 const BANK_TOP_Y = 0.18;
 
