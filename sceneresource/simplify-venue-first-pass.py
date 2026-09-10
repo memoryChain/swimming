@@ -116,7 +116,7 @@ def author():
     return {'mode': 'author', 'objects': report, 'boards': 912, 'boxProps': 288}
 
 
-def join_sources(target, source_path, names):
+def join_sources(target, source_path, names, allow_bounds_change=False):
     old_mesh_name = target.data.name
     old_matrix = target.matrix_world.copy()
     old_bounds = world_bounds(target)
@@ -154,7 +154,8 @@ def join_sources(target, source_path, names):
     target.data.name = old_mesh_name
     assert target.matrix_world == old_matrix
     delta = max(abs(a-b) for x,y in zip(old_bounds,world_bounds(target)) for a,b in zip(x,y))
-    assert delta < 0.035, (target.name, delta)
+    if not allow_bounds_change:
+        assert delta < 0.035, (target.name, delta)
     return {'name': target.name, 'triangles': triangles(target), 'boundsDelta': delta, 'sources': len(names)}
 
 
@@ -163,7 +164,7 @@ def sync():
     with bpy.data.libraries.load(str(EDITABLE), link=False) as (available, _):
         board_names = [n for n in available.objects if n.startswith('OlympicPanel_') and ('_T1_' in n or '_T3_' in n)]
         prop_names = [n for n in available.objects if n.startswith(('PoolsideProp_', 'Prototype_'))]
-    assert len(board_names) == 76 and len(prop_names) == 276
+    assert len(board_names) == 76 and len(prop_names) == 242
     board = bpy.data.objects['OlympicPanels_Merged']
     board_material = board.data.materials[0]
     a = join_sources(board, EDITABLE, board_names)
@@ -172,7 +173,7 @@ def sync():
     for poly in board.data.polygons:
         poly.material_index = 0
     b = join_sources(bpy.data.objects['PoolsideProps_Merged'], EDITABLE, prop_names)
-    assert a['triangles'] == 912 and b['triangles'] == 5104, (a,b)
+    assert a['triangles'] == 912 and b['triangles'] == 4680, (a,b)
     return {'mode': 'sync', 'batches': [a,b]}
 
 

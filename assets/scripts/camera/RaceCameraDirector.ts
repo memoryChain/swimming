@@ -2,28 +2,20 @@ import { Camera, Node, Vec3 } from 'cc';
 import { getRaceDistance } from '../core/GameBalance';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 
-// Pre-race broadcast (state PRECOUNTDOWN), based on a real meet presentation:
-//   1. establish close to the water, looking back at the starting blocks;
-//   2. dolly horizontally toward the far end while showing event info;
-//   3. reveal the roster, then add a small rise only near the end;
-//   4. cut to the player's block, blend showcase -> dive-prep, then hand the
-//      existing synchronized countdown logic its ready signal.
-// 提前展示赛制与成员卡；总拉镜仍为 6.1 秒，保持后续选手镜头和发令时点。
+// 开场依次展示高位全场、出发台成员横移、贴水侧视，最后交给玩家蓄力特写。
+// UI 仍沿用赛制/名单/选手阶段；完成信号只在整段镜头结束后发出一次。
 const PRE_RACE_ESTABLISH_SECONDS = 1.2;
 const PRE_RACE_EVENT_SECONDS = 0.7;
+const PRE_RACE_APPROACH_SECONDS = 1.2;
 const PRE_RACE_ROSTER_SECONDS = 4.2;
+const PRE_RACE_WATERSIDE_SECONDS = 1.4;
+const PRE_RACE_WATERSIDE_HOLD_SECONDS = 0.8;
 const PRE_RACE_ATHLETE_SECONDS = 1.6;
-const PRE_RACE_PULLBACK_SECONDS = PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS + PRE_RACE_ROSTER_SECONDS;
-const PRE_RACE_ROSTER_START_PROGRESS = (PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS)
-    / PRE_RACE_PULLBACK_SECONDS;
-const PRE_RACE_NEAR_FOV = 50;
-const PRE_RACE_FAR_FOV = 44;
-const PRE_RACE_NEAR_AHEAD = 7.0;
-const PRE_RACE_NEAR_HEIGHT = 0.32;
-const PRE_RACE_NEAR_SIDE_RATIO = 0.34;
-const PRE_RACE_FAR_POOL_RATIO = 0.65;
-const PRE_RACE_FAR_HEIGHT = 1.8;
-const PRE_RACE_FAR_SIDE_OFFSET = 1.6;
+const PRE_RACE_OVERVIEW_SECONDS = PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS;
+const PRE_RACE_SWEEP_START = PRE_RACE_OVERVIEW_SECONDS + PRE_RACE_APPROACH_SECONDS;
+const PRE_RACE_WATERSIDE_START = PRE_RACE_SWEEP_START + PRE_RACE_ROSTER_SECONDS;
+const PRE_RACE_PRESENTATION_SECONDS = PRE_RACE_WATERSIDE_START + PRE_RACE_WATERSIDE_SECONDS
+    + PRE_RACE_WATERSIDE_HOLD_SECONDS;
 
 export type PreRacePhase = 'none' | 'establish' | 'raceInfo' | 'roster' | 'athlete';
 // Awards free-look orbit: the camera moves along a front-facing arc around the
@@ -105,15 +97,15 @@ export const RACE_CAMERA_TUNING = {
     // the pool from the finish. At 12m the finish sits near the left quarter of a
     // landscape frame, revealing most of the pool instead of centring the wall.
     finishTopViewPoolInset: 12,
-    // Close third-person sprint view, above and behind the player's upper body.
-    sprintBackDistance: 1.1,
+    // 泳道内后上方跟随：沿前进方向略微俯看水面，保留两侧泳道线的纵深。
+    sprintBackDistance: 1.8,
     // Extra pullback while the player is chaining kick-only taps. A promoted arm
     // stroke immediately removes this offset and restores sprintBackDistance.
     sprintKickPullbackDistance: 1.4,
     sprintKickPullbackMinCadenceHz: 2.5,
-    sprintHeight: 0.52,
-    sprintLookAhead: 0.8,
-    sprintFov: 64,
+    sprintHeight: 0.8,
+    sprintLookAhead: 1.2,
+    sprintFov: 60,
     // While the normal chase starts during an underwater ascent, frame it from
     // a virtual upper-body anchor above the water instead of following the deep
     // torso Y directly. This keeps the water line out of the main view while the
@@ -393,10 +385,8 @@ export class RaceCameraDirector {
         this._preCountdownReady = false;
         this._preCountdownCompletionSignaled = false;
         this._preRacePhase = 'establish';
-        // Write the establishing pose immediately. Leaving the camera at the
-        // countdown close-up until the next update produced one visible frame of
-        // rapid travel before the intended water-level shot began.
-        const openingShot = this.preRacePullbackShot(0);
+        // 进入开场时立即写入高位全场机位，避免从上一镜头快速穿场。
+        const openingShot = this.preRaceOpeningShot(0);
         this._cameraPos.set(openingShot.position);
         this._cameraTarget.set(openingShot.target);
         this._preCountdownShotIndex = 0;
@@ -725,49 +715,49 @@ export class RaceCameraDirector {
         }
     }
 
-    // One continuous pool-length dolly. The camera stays level through the event
-    // card, then begins its small rise exactly when the roster appears.
-    private preRacePullbackShot(progress: number): { position: Vec3; target: Vec3; fov: number } {
-        const direction = this._courseLayout.direction;
-        // Ease only the opening acceleration. Do not ease out horizontally: the
-        // final rise must still carry a meaningful part of the pullback instead
-        // of looking like a nearly stationary vertical crane move.
-        const horizontalProgress = Math.pow(clamp(progress, 0, 1), 1.15);
-        const riseProgress = smootherStep(
-            (progress - PRE_RACE_ROSTER_START_PROGRESS) / (1 - PRE_RACE_ROSTER_START_PROGRESS),
+    // 只由场馆布局和开场时间构造轨迹，异步创建 AI 不会令镜头中心跳变。
+    private preRaceOpeningShot(elapsed: number): { position: Vec3; target: Vec3; fov: number } {
+        const layout = this._courseLayout;
+        const direction = layout.direction;
+        const halfWidth = layout.poolWidth * 0.5;
+        const firstLaneZ = -halfWidth + layout.laneWidth * 0.5;
+        const lastLaneZ = halfWidth - layout.laneWidth * 0.5;
+        const overviewPosition = new Vec3(
+            layout.poolStartX + direction * Math.max(14, layout.poolWidth * 0.72),
+            layout.waterY + 8,
+            0,
         );
-        // The active roster is populated one frame after startGame. Never derive
-        // this establishing shot from currently loaded racers: doing so made its
-        // centre jump from the player's lane to the pool centre when AI appeared.
-        const poolCenterZ = 0;
-        const target = new Vec3(
-            this._courseLayout.platformX + direction * 0.35,
-            this._courseLayout.waterY + 0.9,
-            poolCenterZ,
-        );
-        const nearPosition = new Vec3(
-            this._courseLayout.poolStartX + direction * PRE_RACE_NEAR_AHEAD,
-            this._courseLayout.waterY + PRE_RACE_NEAR_HEIGHT,
-            poolCenterZ + this._courseLayout.poolWidth * PRE_RACE_NEAR_SIDE_RATIO,
-        );
-        const farPosition = new Vec3(
-            lerp(
-                this._courseLayout.poolStartX,
-                this._courseLayout.poolFinishX,
-                PRE_RACE_FAR_POOL_RATIO,
-            ),
-            this._courseLayout.waterY + PRE_RACE_FAR_HEIGHT,
-            poolCenterZ + this._courseLayout.poolWidth * 0.5 + PRE_RACE_FAR_SIDE_OFFSET,
-        );
-        const position = lerpVec3(nearPosition, farPosition, horizontalProgress);
-        position.y = lerp(nearPosition.y, farPosition.y, riseProgress);
-        // Keep looking at one fixed world-space point near the starting blocks.
-        // The camera orientation changes naturally as the dolly retreats and the
-        // final crane section rises, matching a real operator tracking a subject.
+        const overviewTarget = new Vec3(layout.platformX, layout.waterY + 0.9, 0);
+        if (elapsed <= PRE_RACE_OVERVIEW_SECONDS) {
+            return { position: overviewPosition, target: overviewTarget, fov: 50 };
+        }
+
+        // 沿泳道编号顺序连续划过，首尾均准确落在第一、最后一位成员。
+        const sweepProgress = smootherStep((elapsed - PRE_RACE_SWEEP_START) / PRE_RACE_ROSTER_SECONDS);
+        const laneZ = lerp(firstLaneZ, lastLaneZ, sweepProgress);
+        const platform = layout.platformStandingPosition(laneZ);
+        const memberTarget = new Vec3(platform.x, platform.y + 0.9, laneZ);
+        const memberPosition = new Vec3(platform.x + direction * 5.6, platform.y + 1.7, laneZ + 2.2);
+        if (elapsed < PRE_RACE_SWEEP_START) {
+            const approach = smootherStep((elapsed - PRE_RACE_OVERVIEW_SECONDS) / PRE_RACE_APPROACH_SECONDS);
+            return {
+                position: lerpVec3(overviewPosition, memberPosition, approach),
+                target: lerpVec3(overviewTarget, memberTarget, approach),
+                fov: lerp(50, 44, approach),
+            };
+        }
+        if (elapsed <= PRE_RACE_WATERSIDE_START) {
+            return { position: memberPosition, target: memberTarget, fov: 44 };
+        }
+
+        const waterside = smootherStep((elapsed - PRE_RACE_WATERSIDE_START) / PRE_RACE_WATERSIDE_SECONDS);
+        // 收尾略抬高并看向池内水面，减少看台占比，露出更多泳道与近处水面。
+        const waterPosition = new Vec3(layout.poolStartX + direction * 8, layout.waterY + 2.4, halfWidth + 1.4);
+        const waterTarget = new Vec3(layout.poolStartX + direction * 3.5, layout.waterY + 0.1, 0);
         return {
-            position,
-            target,
-            fov: lerp(PRE_RACE_NEAR_FOV, PRE_RACE_FAR_FOV, horizontalProgress),
+            position: lerpVec3(memberPosition, waterPosition, waterside),
+            target: lerpVec3(memberTarget, waterTarget, waterside),
+            fov: lerp(44, 50, waterside),
         };
     }
 
@@ -845,7 +835,7 @@ export class RaceCameraDirector {
         } else if (this._preCountdownActive) {
             const elapsed = this._preCountdownElapsed;
             let shotIndex: number;
-            if (elapsed < PRE_RACE_PULLBACK_SECONDS) {
+            if (elapsed < PRE_RACE_PRESENTATION_SECONDS) {
                 if (elapsed < PRE_RACE_ESTABLISH_SECONDS) {
                     this._preRacePhase = 'establish';
                 } else if (elapsed < PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS) {
@@ -854,7 +844,7 @@ export class RaceCameraDirector {
                     this._preRacePhase = 'roster';
                 }
                 shotIndex = 0;
-                const shot = this.preRacePullbackShot(elapsed / PRE_RACE_PULLBACK_SECONDS);
+                const shot = this.preRaceOpeningShot(elapsed);
                 desiredTarget = shot.target;
                 desiredPos = shot.position;
                 this._broadcastDesiredFov = shot.fov;
@@ -868,14 +858,13 @@ export class RaceCameraDirector {
                 desiredTarget = frontTarget;
                 desiredPos = countdownAthleteCameraPosition(frontTarget, direction);
                 this._broadcastDesiredFov = COUNTDOWN_ATHLETE_FOV;
-                if (elapsed >= PRE_RACE_PULLBACK_SECONDS + PRE_RACE_ATHLETE_SECONDS
+                if (elapsed >= PRE_RACE_PRESENTATION_SECONDS + PRE_RACE_ATHLETE_SECONDS
                     && !this._preCountdownCompletionSignaled) {
                     this._preCountdownCompletionSignaled = true;
                     this._preCountdownReady = true;
                 }
             }
-            // Cut once into the pool establishing shot and once from the far-end
-            // roster view to the athlete. UI phase changes never interrupt the dolly.
+            // 高位、成员横移、贴水侧视连续移动，仅进入玩家蓄力特写时切镜。
             const enteringNewShot = shotIndex !== this._preCountdownShotIndex;
             hardCameraCut = enteringNewShot;
             this._preCountdownShotIndex = shotIndex;

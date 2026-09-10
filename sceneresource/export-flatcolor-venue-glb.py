@@ -55,17 +55,16 @@ EXPECTED_POOLSIDE_PROPS_ATLAS_VERSION = 8
 EXPECTED_BLEACHER_BATCHES = 17
 MAX_EXPORT_PRIMITIVES = 39
 
-# Poolside props are authored around the two long pool edges and the two
-# backstroke lines. A bad one-off merge once baked object-space Y into world Z:
+# 仰泳旗已移除，池岸道具沿两侧池边分布。 A bad one-off merge once baked object-space Y into world Z:
 # the triangle/material counts still passed, but almost every prop vanished from
 # the runtime camera. Keep deliberately loose placement guards so normal art
 # iteration remains possible while an axis swap or missing transform is rejected.
 POOLSIDE_BOUNDS_RANGES = (
-    ((4.5, 5.5), (44.5, 45.5)),       # world X: two backstroke lines
+    ((9.5, 10.5), (39.5, 40.5)),      # 移除旗线后剩余池岸道具的 X 边界
     ((-16.5, -13.5), (14.5, 16.5)),   # world Y: two long pool edges
     ((-1.05, -0.8), (2.3, 2.6)),      # world Z: grounded submerged ladder to chair top
 )
-POOLSIDE_TRIANGLE_RANGE = (5000, 8000)
+POOLSIDE_TRIANGLE_RANGE = (4600, 4800)
 POOLSIDE_DECK_GROUND_Z = 0.2
 POOLSIDE_MIN_GROUNDED_VERTICES = 150
 POOLSIDE_LADDER_GROUND_CENTERS = (
@@ -445,7 +444,25 @@ def main():
         export_kwargs["export_colors"] = True
 
     os.makedirs(os.path.dirname(output_glb), exist_ok=True)
-    bpy.ops.export_scene.gltf(**export_kwargs)
+    # Blender 5.2 优先用贴图文件名命名 GLB 图片；源图的临时文件名会破坏
+    # Creator 既有子资源身份。导出期间使用稳定名称，仍读取原打包图片。
+    image_names = {
+        "BleacherFlatColorAtlas", "StandArchitectureArtAtlas", "PoolWallNarrowTilesWhite",
+        "VenueFloorDeepBlueResin", "PodiumRankLabelAtlas",
+        "blue_bleachers_3d_model_basecolor", "PoolsidePropsFlatColorAtlas",
+    }
+    image_paths = []
+    for image in bpy.data.images:
+        name = image.name.split(".")[0]
+        if image.packed_file and name in image_names:
+            image_paths.append((image, image.filepath_raw))
+            extension = ".jpg" if name == "VenueFloorDeepBlueResin" else ".png"
+            image.filepath_raw = "//" + name + extension
+    try:
+        bpy.ops.export_scene.gltf(**export_kwargs)
+    finally:
+        for image, original_path in image_paths:
+            image.filepath_raw = original_path
     print({
         "bakedStandMeshes": baked_stands,
         "output": output_glb,

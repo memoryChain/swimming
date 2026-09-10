@@ -230,6 +230,7 @@ export class FreestylePoseController {
     private _sampledStandingUprightCorrectionDegrees = SAMPLED_STANDING_SOURCE_BACK_LEAN_DEGREES;
     private _modelVariantId = 'muscleMan';
     private _swimHeadLiftDegrees = FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
+    private _surfaceLiftDirection = 1;
     private _movementDirectionSign = 1;
     private readonly _collisionLimp = new CollisionLimpPoseController();
     private _movementHeadingRadians = 0;
@@ -439,6 +440,14 @@ export class FreestylePoseController {
         );
     }
 
+    // 俯泳抬头在翻成仰泳后会变成压头；仅在仰面半周平滑反转抬升方向。
+    // 使用已有身体朝上投影，不累计新的姿态状态，也不改变根节点物理姿态。
+    setSurfaceBodyUpProjection(projection: number) {
+        this._surfaceLiftDirection = Number.isFinite(projection)
+            ? 1 - 2 * smoothRange(-projection, 0, 1)
+            : 1;
+    }
+
     setSwimHeadLift(degrees: number | undefined) {
         this._swimHeadLiftDegrees = typeof degrees === 'number' ? degrees : FREESTYLE_POSE_TUNING.defaultSwimHeadLiftDegrees;
     }
@@ -477,7 +486,7 @@ export class FreestylePoseController {
         );
         Quat.fromEuler(
             this._tmpResultRotation,
-            this.rootBaseEuler.x + MOTION_TUNING.swimBodyPitchDegrees + kickSignal * 1.5,
+            this.rootBaseEuler.x + (MOTION_TUNING.swimBodyPitchDegrees + kickSignal * 1.5) * this._surfaceLiftDirection,
             this.rootBaseEuler.y,
             this.rootBaseEuler.z,
         );
@@ -2221,9 +2230,9 @@ export class FreestylePoseController {
         const breathLift = smoothRange(breathRatio, 0.08, 0.82);
 
         const swimHeadLift = this._swimHeadLiftDegrees;
-        this.applyBoneOffset(this._torso, swimHeadLift * 0.18 + breathLift * 1.6, breathTurn * 0.1, 0);
-        this.applyBoneOffset(this._neck, swimHeadLift * 0.72 + breathLift * 3.0, headBreathTurn * 0.28, 0);
-        this.applyBoneOffset(this._head, -2.5 + swimHeadLift * 1.15 + breathLift * 2.1, headBreathTurn * 0.5, 0);
+        this.applyBoneOffset(this._torso, (swimHeadLift * 0.18 + breathLift * 1.6) * this._surfaceLiftDirection, breathTurn * 0.1, 0);
+        this.applyBoneOffset(this._neck, (swimHeadLift * 0.72 + breathLift * 3.0) * this._surfaceLiftDirection, headBreathTurn * 0.28, 0);
+        this.applyBoneOffset(this._head, (-2.5 + swimHeadLift * 1.15 + breathLift * 2.1) * this._surfaceLiftDirection, headBreathTurn * 0.5, 0);
         this.applyBoneOffset(this._leftShoulder, leftReach * -2, 0, leftReach * -3);
         this.applyBoneOffset(this._rightShoulder, rightReach * -2 - breathLift * 3.2, 0, rightReach * 3 - breathLift * 1.8);
     }

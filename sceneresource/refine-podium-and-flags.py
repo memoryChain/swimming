@@ -118,6 +118,8 @@ def author_flags():
     mint=batch.create_authored_material('PoolsideProp_Flag_Mint',tuple(c*.88 for c in batch.PROP_SOURCE_MATERIALS['PoolsideProp_Flag_Mint'][:3])+(1,))
     pearl=batch.create_authored_material('PoolsideProp_Flag_Pearl',tuple(c*.88 for c in batch.PROP_SOURCE_MATERIALS['LPVenue_cartoon_pool_edge_white'][:3])+(1,))
     flags=[o for o in bpy.data.objects if o.name.startswith('PoolsideProp_FlagLine') and '_Pennant_' in o.name]
+    # 仰泳旗已从权威源删除；重制领奖台时不再要求旗片存在。
+    if not flags: return
     assert len(flags)==24
     for o in flags:
         o.data.materials.clear();o.data.materials.append(pearl if int(o.name.rsplit('_',1)[1])%2 else mint)

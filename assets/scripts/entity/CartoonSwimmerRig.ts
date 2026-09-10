@@ -1189,6 +1189,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             motor.rightArmCycle,
             bodyUpProjection,
         );
+        this._pose.setSurfaceBodyUpProjection(bodyUpProjection);
         this.updateFreestyle(
             useDt,
             this._visualLeftArmCycle,
@@ -1200,6 +1201,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             movementDirection,
             !motor.permitsUprightTreadWater,
         );
+        // 该补偿只作用于本次水面姿态，水下滑行、转身和独立预览使用默认方向。
+        this._pose.setSurfaceBodyUpProjection(1);
         // 跟随原有降频与离屏裁剪，在完整基础姿态之后应用，下一次姿态会自然覆盖。
         if (this._loaded && this._poseState.isFreestyleActive) {
             this._pose.applyCollisionSoftness(motor.collisionSoftness, useDt);
