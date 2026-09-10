@@ -1,5 +1,5 @@
 import { Camera, Node, Vec3 } from 'cc';
-import { COUNTDOWN_SECONDS, getRaceDistance } from '../core/GameBalance';
+import { getRaceDistance } from '../core/GameBalance';
 import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCourseLayout';
 
 // Pre-race broadcast (state PRECOUNTDOWN), based on a real meet presentation:
@@ -8,9 +8,10 @@ import { DEFAULT_RACE_COURSE_LAYOUT, RaceCourseLayout } from '../venue/RaceCours
 //   3. reveal the roster, then add a small rise only near the end;
 //   4. cut to the player's block, blend showcase -> dive-prep, then hand the
 //      existing synchronized countdown logic its ready signal.
-const PRE_RACE_ESTABLISH_SECONDS = 2.2;
-const PRE_RACE_EVENT_SECONDS = 1.5;
-const PRE_RACE_ROSTER_SECONDS = 2.4;
+// 提前展示赛制与成员卡；总拉镜仍为 6.1 秒，保持后续选手镜头和发令时点。
+const PRE_RACE_ESTABLISH_SECONDS = 1.2;
+const PRE_RACE_EVENT_SECONDS = 0.7;
+const PRE_RACE_ROSTER_SECONDS = 4.2;
 const PRE_RACE_ATHLETE_SECONDS = 1.6;
 const PRE_RACE_PULLBACK_SECONDS = PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS + PRE_RACE_ROSTER_SECONDS;
 const PRE_RACE_ROSTER_START_PROGRESS = (PRE_RACE_ESTABLISH_SECONDS + PRE_RACE_EVENT_SECONDS)
@@ -73,7 +74,12 @@ const DIVE_SIDE_MIN_SECONDS = 0.58;
 const DIVE_SIDE_MAX_SECONDS = 1.55;
 const DIVE_UNDERWATER_MIN_SECONDS = 1.15;
 const COUNTDOWN_ATHLETE_TARGET_X_OFFSET = 0;
-const COUNTDOWN_ATHLETE_TARGET_Y_OFFSET = 1.25;
+// 准备蓄力特写：从池内斜看玩家出发台，保留角色全身和台面。
+const COUNTDOWN_ATHLETE_TARGET_Y_OFFSET = 0.85;
+const COUNTDOWN_ATHLETE_CAMERA_AHEAD = 3.8;
+const COUNTDOWN_ATHLETE_CAMERA_SIDE = 4.2;
+const COUNTDOWN_ATHLETE_CAMERA_HEIGHT_ABOVE_TARGET = 0.3;
+const COUNTDOWN_ATHLETE_FOV = 38;
 const DIVE_ENTRY_WATER_Y_THRESHOLD = 0.16;
 const SWIM_SIDE_TARGET_X_OFFSET = 1.55;
 const SWIM_SIDE_CAMERA_DISTANCE = 10.5;
@@ -777,6 +783,7 @@ export class RaceCameraDirector {
         if (this._preCountdownActive) {
             this._preCountdownElapsed += dt;
         }
+        const enteringCountdown = countdownActive && this._broadcastCountdownElapsed === 0;
         if (countdownActive) {
             this._broadcastCountdownElapsed += dt;
         }
@@ -859,8 +866,8 @@ export class RaceCameraDirector {
                 this._preRacePhase = 'athlete';
                 const frontTarget = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
                 desiredTarget = frontTarget;
-                desiredPos = countdownFrontCameraPosition(frontTarget, direction, 1);
-                this._broadcastDesiredFov = 40;
+                desiredPos = countdownAthleteCameraPosition(frontTarget, direction);
+                this._broadcastDesiredFov = COUNTDOWN_ATHLETE_FOV;
                 if (elapsed >= PRE_RACE_PULLBACK_SECONDS + PRE_RACE_ATHLETE_SECONDS
                     && !this._preCountdownCompletionSignaled) {
                     this._preCountdownCompletionSignaled = true;
@@ -878,14 +885,12 @@ export class RaceCameraDirector {
             desiredPos = new Vec3(platform.x + 8.57 * this._courseLayout.direction, 3.15, this._playerLaneZ + 0.8);
             this._broadcastDesiredFov = 52;
         } else if (countdownActive && this._diveShotElapsed < 0) {
-            const ratio = smoothStep(clamp(this._broadcastCountdownElapsed / Math.max(0.1, COUNTDOWN_SECONDS), 0, 1));
-            const frontTarget = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
-            const frontPos = countdownFrontCameraPosition(frontTarget, direction, 1);
-            const sideTarget = diveSideTarget(playerX, playerY, this._playerLaneZ, direction);
-            const sidePos = diveSideCameraPos(playerX, playerY, this._playerLaneZ, direction);
-            desiredTarget = lerpVec3(frontTarget, sideTarget, ratio);
-            desiredPos = lerpVec3(frontPos, sidePos, ratio);
-            this._broadcastDesiredFov = lerp(42, 36, ratio);
+            // 蓄力全程保持玩家出发台特写；起跳后再交给原有入水镜头。
+            desiredTarget = new Vec3(countdownAthleteTargetX(playerX), countdownAthleteTargetY(playerY), this._playerLaneZ);
+            desiredPos = countdownAthleteCameraPosition(desiredTarget, direction);
+            this._broadcastDesiredFov = COUNTDOWN_ATHLETE_FOV;
+            // 跳过开场或直接进入倒计时时，也直接切到玩家特写。
+            hardCameraCut = enteringCountdown;
         } else if (this.shouldHoldDiveSideShot(snapshot)) {
             desiredTarget = diveSideTarget(playerX, playerY, this._playerLaneZ, direction);
             desiredPos = diveSideCameraPos(playerX, playerY, this._playerLaneZ, direction);
@@ -1589,12 +1594,11 @@ function underwaterDiveCameraPos(
     );
 }
 
-function countdownFrontCameraPosition(target: Vec3, direction: number, ratio: number): Vec3 {
-    const t = clamp(ratio, 0, 1);
+function countdownAthleteCameraPosition(target: Vec3, direction: number): Vec3 {
     return new Vec3(
-        target.x + lerp(8.4, 5.65, t) * direction,
-        lerp(3.15, 2.45, t),
-        target.z + lerp(0.12, 0.85, t),
+        target.x + COUNTDOWN_ATHLETE_CAMERA_AHEAD * direction,
+        target.y + COUNTDOWN_ATHLETE_CAMERA_HEIGHT_ABOVE_TARGET,
+        target.z + COUNTDOWN_ATHLETE_CAMERA_SIDE,
     );
 }
 

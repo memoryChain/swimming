@@ -87,7 +87,8 @@ import { loadSavedTuningAsync } from './TuningDebugControls';
 import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
-import { clampCameraHeightToWaterSide, RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { ScenePreviewCamera } from '../camera/ScenePreviewCamera';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
 import { VenueManager } from '../venue/VenueManager';
@@ -300,13 +301,9 @@ export class GameManager extends Component {
     private _uwLapDir = 1;
     private _uwKickPhase = 0;
     private _uwBodyPhase = 0;
-    // Free-look orbit around the swimmer (drag to rotate, wheel/pinch to zoom).
-    private _uwYaw = Math.PI * 0.82;
-    private _uwPitch = -0.08;
-    private _uwDistance = 5.5;
+    // 场景预览相机独立于人物运动。
+    private _scenePreviewCamera: ScenePreviewCamera | null = null;
     private _uwCameraDragging = false;
-    private readonly _uwCamPos = new Vec3();
-    private readonly _uwCamTarget = new Vec3();
     private _inputRouter: InputRouter = null;
     private readonly _debugLog = new DebugLogController();
     private readonly _aiDifficultyPanel = new AiDifficultyPanel();
@@ -378,6 +375,8 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
+        this._scenePreviewCamera?.dispose();
+        this._scenePreviewCamera = null;
         this._sceneEffectPreviewPanel?.dispose();
         this._sceneEffectPreviewState?.dispose();
         this._sceneEffectPreviewPanel = null;
@@ -2917,6 +2916,8 @@ export class GameManager extends Component {
     private exitModelDebug(showStart: boolean) {
         if (this._underwaterDebugActive) {
             this._underwaterDebugActive = false;
+            this._scenePreviewCamera?.dispose();
+            this._scenePreviewCamera = null;
             this.returnToLogin();
             return;
         }
@@ -2948,9 +2949,14 @@ export class GameManager extends Component {
         this._uwLapDir = 1;
         this._uwKickPhase = 0;
         this._uwBodyPhase = 0;
-        this._uwYaw = Math.PI * 0.82;
-        this._uwPitch = -0.08;
-        this._uwDistance = 5.5;
+        if (this._inputManager) this._inputManager.enabled = false;
+        this._inputRouter?.resetStrokeInput();
+        this._scenePreviewCamera?.dispose();
+        this._scenePreviewCamera = new ScenePreviewCamera(
+            this._cameraNode, COURSE_LAYOUT.waterY,
+            COURSE_LAYOUT.distanceToWorldX(this._uwLapDistance),
+            COURSE_LAYOUT.swimY - UNDERWATER_DEBUG_DEPTH + 0.25, PLAYER_LANE_Z,
+        );
         this._uwCameraDragging = false;
         // Force the underwater render path (blue floor swap + surface mirror) and
         // keep the flat veil box off.
@@ -2972,9 +2978,7 @@ export class GameManager extends Component {
         this.debug('enterUnderwaterDebug');
     }
 
-    // Drive the underwater tuning scene each frame: lap the player back and forth
-    // below the surface with a continuous flutter kick, and follow with an
-    // underwater chase camera looking up toward the surface mirror.
+    // 人物继续往返游动以预览特效，相机由独立输入控制。
     private updateUnderwaterDebug(dt: number) {
         const player = this._playerSwimmer;
         if (!player) {
@@ -3015,33 +3019,7 @@ export class GameManager extends Component {
         );
         // The debug swimmer is always submerged, so keep the bubble trail on.
         this._playerSwimmer?.cartoonRig?.updateUnderwaterBubbles(this._sceneEffectPreviewState?.isEnabled('bubbles') ?? true);
-        // Free-look orbit around the swimmer: the camera follows the lapping
-        // swimmer while the user drags to rotate and wheels/pinches to zoom.
-        this._uwCamTarget.set(worldX, bodyY + 0.25, PLAYER_LANE_Z);
-        const cosPitch = Math.cos(this._uwPitch);
-        this._uwCamPos.set(
-            this._uwCamTarget.x + Math.cos(this._uwYaw) * cosPitch * this._uwDistance,
-            this._uwCamTarget.y + Math.sin(this._uwPitch) * this._uwDistance,
-            this._uwCamTarget.z + Math.sin(this._uwYaw) * cosPitch * this._uwDistance,
-        );
-        // This debug orbit writes the main camera directly instead of going
-        // through RaceCameraDirector. Apply the shared exclusion rule so even a
-        // manually dragged orbit cannot leave the eye sitting on the waterline.
-        const underwaterView = this._uwCamPos.y < COURSE_LAYOUT.waterY;
-        this._uwCamPos.y = clampCameraHeightToWaterSide(
-            this._uwCamPos.y,
-            COURSE_LAYOUT.waterY,
-            underwaterView,
-        );
-        const camNode = this._cameraNode;
-        if (camNode?.isValid) {
-            camNode.setWorldPosition(this._uwCamPos);
-            camNode.lookAt(this._uwCamTarget);
-        }
-        // Follow the actual camera height: below the surface = underwater look
-        // (mirror + blue floor gradient); orbit above the surface = above-water
-        // look (deck + the above-water distance gradient), so both can be seen and
-        // tuned in this scene.
+        const underwaterView = this._scenePreviewCamera?.update(dt) ?? false;
         this._waterRefraction?.setUnderwaterViewActive(underwaterView);
     }
 
@@ -3155,15 +3133,12 @@ export class GameManager extends Component {
         }
     }
 
-    // Free-look orbit controls for the underwater tuning scene (drag + wheel/pinch).
     private orbitUnderwaterCamera(deltaX: number, deltaY: number) {
-        this._uwYaw -= deltaX * 0.008;
-        this._uwPitch += deltaY * 0.006;
-        this._uwPitch = Math.max(-1.4, Math.min(1.4, this._uwPitch));
+        this._scenePreviewCamera?.look(deltaX, deltaY);
     }
 
     private zoomUnderwaterCamera(scroll: number) {
-        this._uwDistance = Math.max(2, Math.min(25, this._uwDistance - scroll * 0.004));
+        this._scenePreviewCamera?.dolly(scroll);
     }
 
     private slowModelDebugMotion() {

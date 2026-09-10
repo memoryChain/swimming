@@ -1,4 +1,4 @@
-import { Color, Graphics, Label, Mask, Node, Sprite, Tween, tween, UIOpacity, UITransform, sys, view } from 'cc';
+import { Color, Graphics, Label, Mask, Node, Sprite, Tween, tween, UIOpacity, UITransform, Vec3, sys, view } from 'cc';
 import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
@@ -16,6 +16,8 @@ export type PreRaceIntroPhase = 'hidden' | 'raceInfo' | 'roster';
 
 type IntroCard = {
     group: Node;
+    opacity: UIOpacity;
+    baseX: number;
     normal: Node;
     self: Node;
     laneNormal: Node;
@@ -38,7 +40,12 @@ const WHITE = new Color(248, 251, 253, 255);
 const CAPTION = new Color(169, 218, 225, 255);
 const GOLD_CAPTION = new Color(71, 58, 29, 255);
 
-/** 已批准的开场卡片；所有节点及遮罩仅挂载一次，镜头阶段只触发淡入淡出。 */
+const EVENT_ENTER_SECONDS = 0.3;
+const CARD_ENTER_SECONDS = 0.28;
+const CARD_STAGGER_SECONDS = 0.045;
+const EXIT_SECONDS = 0.2;
+
+/** 节点与遮罩只建立一次；仅在镜头阶段切换时启动短动效。 */
 export class PreRaceIntroPanel {
     private _panel: Node | null = null;
     private _cardsPanel: Node | null = null;
@@ -80,8 +87,7 @@ export class PreRaceIntroPanel {
         root.once(Node.EventType.NODE_DESTROYED, () => {
             view.off('canvas-resize', layout);
             view.off('design-resolution-changed', layout);
-            if (this._cardsOpacity) Tween.stopAllByTarget(this._cardsOpacity);
-            if (this._eventOpacity) Tween.stopAllByTarget(this._eventOpacity);
+            this.stopMotion();
         });
 
         const event = makeUiNode('EventStrip', root);
@@ -107,7 +113,9 @@ export class PreRaceIntroPanel {
     private buildCard(parent: Node, index: number): IntroCard {
         const group = makeUiNode(`LaneCard${index + 1}`, parent);
         // 各卡使用同一套局部坐标；总排列顺序只由泳道号决定。
-        group.setPosition(152 * index, 0, 0);
+        const baseX = 152 * index;
+        group.setPosition(baseX, 0, 0);
+        const opacity = group.addComponent(UIOpacity);
         group.active = false;
         const normal = this.art('CardNormal', group, ART.cardNormal, 43, 435, 140, 237).node;
         const self = this.art('CardSelf', group, ART.cardSelf, 41, 433, 144, 241).node;
@@ -139,7 +147,7 @@ export class PreRaceIntroPanel {
         this.art('Background', selfTag, ART.selfTag, 48, 615, 25, 22);
         this.label('Text', selfTag, '我', 12, NAVY, 48, 615, 25, 22);
         selfTag.active = false;
-        return { group, normal, self, laneNormal, laneSelf, laneLabel, laneCaption, portrait, nameLabel, characterLabel, selfTag, selfState: null };
+        return { group, opacity, baseX, normal, self, laneNormal, laneSelf, laneLabel, laneCaption, portrait, nameLabel, characterLabel, selfTag, selfState: null };
     }
 
     populate(entries: PreRaceIntroEntry[]) {
@@ -187,24 +195,86 @@ export class PreRaceIntroPanel {
         this._phase = phase;
         // 赛制条跨两个镜头保持，不能在名单入场时重放其动画。
         if ((old !== 'hidden') !== (phase !== 'hidden')) {
-            this.transition(this._eventPanel, this._eventOpacity, phase !== 'hidden');
+            this.transitionEvent(phase !== 'hidden');
         }
         if ((old === 'roster') !== (phase === 'roster')) {
-            this.transition(this._cardsPanel, this._cardsOpacity, phase === 'roster');
+            this.transitionCards(phase === 'roster');
         }
     }
     setVisible(visible: boolean) { this.setPhase(visible ? 'roster' : 'hidden'); }
     get node(): Node | null { return this._panel; }
 
-    private transition(panel: Node | null, opacity: UIOpacity | null, visible: boolean) {
+    private stopCardMotion() {
+        for (const card of this._cards) {
+            Tween.stopAllByTarget(card.group);
+            Tween.stopAllByTarget(card.opacity);
+            Tween.stopAllByTarget(card.selfTag);
+            if (card.selfTag.position.y !== 0) card.selfTag.setPosition(0, 0, 0);
+        }
+    }
+    private stopMotion() {
+        this.stopCardMotion();
+        if (this._cardsPanel) Tween.stopAllByTarget(this._cardsPanel);
+        if (this._eventPanel) Tween.stopAllByTarget(this._eventPanel);
+        if (this._cardsOpacity) Tween.stopAllByTarget(this._cardsOpacity);
+        if (this._eventOpacity) Tween.stopAllByTarget(this._eventOpacity);
+    }
+    private transitionEvent(visible: boolean) {
+        const panel = this._eventPanel;
+        const opacity = this._eventOpacity;
         if (!panel?.isValid || !opacity) return;
+        Tween.stopAllByTarget(panel);
         Tween.stopAllByTarget(opacity);
         if (visible) {
-            if (!panel.active) { panel.active = true; opacity.opacity = 0; }
-            tween(opacity).to(0.25, { opacity: 255 }).start();
+            this.active(panel, true);
+            panel.setPosition(-24, 0, 0);
+            opacity.opacity = 0;
+            tween(panel).to(EVENT_ENTER_SECONDS, { position: new Vec3() }, { easing: 'cubicOut' }).start();
+            tween(opacity).to(EVENT_ENTER_SECONDS, { opacity: 255 }).start();
         } else if (panel.active) {
-            tween(opacity).to(0.2, { opacity: 0 }).call(() => {
-                if (panel.isValid) panel.active = false;
+            tween(panel).to(EXIT_SECONDS, { position: new Vec3(0, -16, 0) }, { easing: 'quadIn' }).start();
+            tween(opacity).to(EXIT_SECONDS, { opacity: 0 }).call(() => {
+                if (panel.isValid) this.active(panel, false);
+            }).start();
+        }
+    }
+    private transitionCards(visible: boolean) {
+        const panel = this._cardsPanel;
+        const opacity = this._cardsOpacity;
+        if (!panel?.isValid || !opacity) return;
+        Tween.stopAllByTarget(panel);
+        Tween.stopAllByTarget(opacity);
+        this.stopCardMotion();
+        if (visible) {
+            this.active(panel, true);
+            panel.setPosition(0, 0, 0);
+            opacity.opacity = 255;
+            let order = 0;
+            for (const card of this._cards) {
+                // 空泳道不占入场节拍，实际卡片仍固定在原泳道槽位。
+                if (!card.group.active) {
+                    card.group.setPosition(card.baseX, 0, 0);
+                    card.opacity.opacity = 255;
+                    continue;
+                }
+                const delay = order++ * CARD_STAGGER_SECONDS;
+                card.group.setPosition(card.baseX, -28, 0);
+                card.opacity.opacity = 0;
+                tween(card.group).delay(delay)
+                    .to(CARD_ENTER_SECONDS, { position: new Vec3(card.baseX, 0, 0) }, { easing: 'cubicOut' }).start();
+                tween(card.opacity).delay(delay).to(CARD_ENTER_SECONDS, { opacity: 255 }).start();
+                if (card.selfState) {
+                    // 标签只上跳四像素后落定，保持整卡及文字比例稳定。
+                    tween(card.selfTag).delay(delay + CARD_ENTER_SECONDS)
+                        .to(0.08, { position: new Vec3(0, 4, 0) }, { easing: 'quadOut' })
+                        .to(0.1, { position: new Vec3() }, { easing: 'quadIn' }).start();
+                }
+            }
+        } else if (panel.active) {
+            // 阶段切换立即取消尚未入场的卡片，整组退场不阻塞比赛时序。
+            tween(panel).to(EXIT_SECONDS, { position: new Vec3(0, -16, 0) }, { easing: 'quadIn' }).start();
+            tween(opacity).to(EXIT_SECONDS, { opacity: 0 }).call(() => {
+                if (panel.isValid) this.active(panel, false);
             }).start();
         }
     }

@@ -15,6 +15,7 @@ function compiler() {
 }
 const ts = compiler();
 const root = path.resolve(__dirname, '..');
+class Vec3 { constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});} }
 class Color { constructor(r=255,g=255,b=255,a=255){Object.assign(this,{r,g,b,a});} }
 class Component { get isValid(){return this.node.isValid;} }
 class UITransform extends Component { setContentSize(width,height){this.contentSize={width,height};} }
@@ -42,9 +43,9 @@ function setup(){
     const art={};for(const k of ['eventStrip','cardNormal','cardSelf','laneNormal','laneSelf','selfTag'])art[k]=k;
     const definitions=Array.from({length:8},(_,i)=>({id:`model${i}`,modelVariantId:`model${i}`,name:`角色${i}`}));
     const portraits=Object.fromEntries(definitions.map(d=>[d.id,d.id]));
-    const cc={Color,Graphics,Label,Mask,Node,Sprite,UIOpacity,UITransform,sys,view,
+    const cc={Vec3,Color,Graphics,Label,Mask,Node,Sprite,UIOpacity,UITransform,sys,view,
         Tween:{stopAllByTarget:o=>{for(const t of tweens)if(t.o===o)t.stopped=true;}},
-        tween:o=>{const t={o,to(_s,values){this.values=values;return this;},call(f){this.cb=f;return this;},start(){tweens.push(this);return this;}};return t;}};
+        tween:o=>{const t={o,delay(seconds){this.delaySeconds=seconds;return this;},to(_s,values){this.values=values;return this;},call(f){this.cb=f;return this;},start(){tweens.push(this);return this;}};return t;}};
     const imports={cc,'../app/PlayerCharacterConfig':{PLAYER_CHARACTER_DEFINITIONS:definitions},
         '../core/ResourcePaths':{RESOURCE_PATHS:{preRaceUi:art,characterUi:{portraits}}},
         './AvatarUiAssets':{loadAvatarUiSpriteFrame:(p,cb)=>pending.push({p,cb})},
@@ -63,9 +64,9 @@ function find(node,name){if(node.name===name)return node;for(const child of node
 function count(node){return 1+node.children.reduce((s,n)=>s+count(n),0);}
 function entries(self=4){return Array.from({length:8},(_,i)=>({lane:i+1,name:`成员${i}`,isPlayer:i===self,modelVariantId:`model${i}`}));}
 test('赛制条跨名单阶段保留；每个状态边缘只播放一次，退出取消动画',()=>{
-    const s=setup();s.panel.setPhase('raceInfo');s.finish();
+    const s=setup();s.panel.populate(entries());s.panel.setPhase('raceInfo');s.finish();
     assert.equal(find(s.parent,'EventStrip').active,true);assert.equal(find(s.parent,'CompetitorCards').active,false);
-    s.panel.setPhase('roster');assert.equal(s.tweens.length,1);s.finish();
+    s.panel.setPhase('roster');assert.equal(s.tweens.length,17);s.finish();
     for(let i=0;i<60;i++)s.panel.setPhase('roster');assert.equal(s.tweens.length,0);
     s.panel.setPhase('hidden');s.panel.setPhase('roster');s.finish();
     assert.equal(find(s.parent,'CompetitorCards').active,true);
@@ -125,4 +126,27 @@ test('缓存字体同步测量空文本时，赛制、泳道与角色名仍保�
     for(const name of ['Mode','Event','Details','Rule','LaneNumber','CharacterName']){
         const n=find(s.parent,name);assert.ok(n.getComponent(Label).string);assert.ok(n.getComponent(UITransform).contentSize.width>0);
     }
+});
+
+
+test('卡片按泳道错峰入场，重入复位且销毁取消所有动效',()=>{
+    const s=setup();s.panel.populate(entries());const initial=count(s.parent);
+    s.panel.setPhase('roster');
+    const cards=Array.from({length:8},(_,i)=>find(s.parent,`LaneCard${i+1}`));
+    for(let i=0;i<8;i++){
+        assert.equal(cards[i].position.y,-28);
+        assert.equal(cards[i].getComponent(UIOpacity).opacity,0);
+        assert.equal(s.tweens.find(t=>t.o===cards[i]).delaySeconds,i*0.045);
+    }
+    const entering=[...s.tweens];s.panel.setPhase('hidden');
+    assert.ok(entering.every(t=>t.stopped));
+    s.panel.setPhase('roster');s.finish();
+    for(let i=0;i<8;i++){
+        assert.equal(cards[i].position.x,152*i);assert.equal(cards[i].position.y,0);
+        assert.equal(cards[i].getComponent(UIOpacity).opacity,255);
+    }
+    assert.equal(find(s.parent,'SelfTag').position.y,0);
+    assert.equal(count(s.parent),initial);
+    s.panel.setPhase('hidden');s.panel.setPhase('roster');
+    s.parent.destroy();assert.ok(s.tweens.every(t=>t.stopped));
 });
