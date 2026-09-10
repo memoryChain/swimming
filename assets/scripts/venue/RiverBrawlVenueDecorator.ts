@@ -1,6 +1,7 @@
 import { Color, Material, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
 import { RIVER_BRAWL_BALANCE } from '../core/RiverBrawlBalance';
 import { RaceCourseLayout } from './RaceCourseLayout';
+import { buildRiverBrawlEnvironment } from './RiverBrawlEnvironment';
 
 // The physical 50m course geometry must go, otherwise it intersects the river
 // after the swimmers pass its original finish. Only the dynamic start blocks
@@ -34,6 +35,7 @@ export function decorateRiverBrawlVenue(pool: Node, course: RaceCourseLayout, ra
     stretchToWorldRange(findNode(pool, 'PoolWaterSurface'), startX, finishX);
     stretchToWorldRange(findNode(pool, 'pool_floor'), startX, finishX);
     buildFinishMarker(pool, course, raceDistance);
+    buildRiverBrawlEnvironment(pool, course, raceDistance);
 }
 
 function hideVenueScenery(root: Node): void {
