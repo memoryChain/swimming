@@ -153,6 +153,8 @@ primitiveDrawsAfter: 39
 
 ### 5. Cocos 重新导入与纹理策略
 
+正式导出后通过 `venue_gltf_uv.py` 检查贴图引用。广告挡板曾被导出为 `texCoord: -1`，Creator 将其误映射到未声明的 `v_uv1`，在材质加载时就触发编译错误。仅当材质的所有网格使用者都只有 `TEXCOORD_0` 时，导出脚本将 -1 纠正为 0；多套 UV、缺失 UV 和其他无效索引直接拒绝，不猜测贴图映射。已有 GLB 可运行 `python sceneresource/venue_gltf_uv.py assets/race/pool/LowPolyPool.glb --repair` 做相同的索引修复；该步骤仅改 JSON 引用，保留全部网格、图片二进制和资源名称，不能用于绕过几何修改的标准合批导出流程。省略 `--repair` 为只读检查；回归使用 `python tests/test_venue_gltf_uv.py`。
+
 1. 保持 Cocos Creator 3.8.8 打开项目，等待 `LowPolyPool.glb.meta` 完成更新。
 2. 不删除、不替换现有 `.meta`。
 3. 执行：

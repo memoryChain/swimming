@@ -49,11 +49,13 @@ test('非法值被忽略、超界值受限，最新本地调参与旧参数迁�
     const local = JSON.parse(encoded);
     local.updatedAt = '2099-01-01T00:00:00.000Z';
     local.values['speed.maxSpeed'] = 4.1;
+    local.values['motion.proneChestRollDegrees'] = 39;
     local.values['ultimate.maxEnergy'] = 100;
     local.values['ultimate.dolphinCost'] = 30;
     saved.set(key, JSON.stringify(local));
     tuning.loadSavedTuningAsync(() => {});
     assert.equal(controls.get('speed.maxSpeed').get(), 4.1);
+    assert.equal(controls.get('motion.proneChestRollDegrees').get(), 39);
     assert.equal(controls.get('ultimate.dolphinCost').get(), 100);
 });
 

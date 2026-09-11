@@ -25,6 +25,9 @@ import sys
 
 import bpy
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from venue_gltf_uv import check_glb
+
 # Template/source objects that must never be exported (kept hidden in the blend).
 SOURCE_OBJECTS = (
     "Bleacher_Module_Flat_Source",
@@ -463,7 +466,10 @@ def main():
     finally:
         for image, original_path in image_paths:
             image.filepath_raw = original_path
+    # 部分导出器会把材质 UV 写为 -1；仅在网格只有 UV0 时纠正，其他不一致拒绝导出。
+    repaired_uvs = check_glb(output_glb, repair=True)
     print({
+        "repairedTextureUvReferences": repaired_uvs,
         "bakedStandMeshes": baked_stands,
         "output": output_glb,
         "bytes": os.path.getsize(output_glb),

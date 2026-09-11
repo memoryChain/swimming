@@ -75,6 +75,9 @@ export const MOTION_TUNING = {
     // 手臂前伸时避开身体侧面的距离。
     forwardArmSideClearance: 0.3,
 
+    // 俯泳胸肩相对髋部的侧转幅度，随高肘回臂达到峰值。
+    proneChestRollDegrees: 32,
+
     // Head turn amount for right-side breathing.
     // 右侧换气时头部转动角度。
     rightBreathTurnDegrees: 70,

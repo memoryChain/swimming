@@ -12,6 +12,7 @@ import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
 import type { StandingSoleContact } from './StandingSoleContact';
 import type { CharacterSupportPlane } from './CharacterSupportPlane';
 import type { CharacterHandContact } from './CharacterHandContact';
+import { proneFreestyleExtensionWeight, proneFreestyleRollSignal, proneFreestyleWeight, sampleProneFreestyleArm } from './ProneFreestyleMotion';
 
 type InterpolatedActionSample = SampledActionMotionSample & {
     nextFootOrientationDeltas?: SampledActionMotionSample['footOrientationDeltas'];
@@ -146,6 +147,21 @@ export class FreestylePoseController {
     private readonly _tmpBlendPosition = new Vec3();
     private readonly _tmpDirection = new Vec3();
     private readonly _tmpArmDirection = new Vec3();
+    private _proneFreestyleWeight = 1;
+    private _proneChestRoll = 0;
+    private readonly _proneUpperDirection = new Vec3();
+    private readonly _proneForeDirection = new Vec3();
+    private readonly _proneUpperWorldDirection = new Vec3();
+    private readonly _proneCurrentUpperWorldDirection = new Vec3();
+    private readonly _proneForeWorldRotation = new Quat();
+    private readonly _surfaceShoulderRotation = new Quat();
+    private readonly _surfaceArmRotation = new Quat();
+    private readonly _surfaceForeRotation = new Quat();
+    private readonly _surfaceHandRotation = new Quat();
+    private readonly _reachArmRotation = new Quat();
+    private readonly _reachForeRotation = new Quat();
+    private readonly _reachHandRotation = new Quat();
+    private readonly _reachShoulderRotation = new Quat();
     private readonly _tmpWorldDirection = new Vec3();
     private readonly _tmpParentDirection = new Vec3();
     private readonly _tmpBaseDirection = new Vec3();
@@ -443,6 +459,7 @@ export class FreestylePoseController {
     // 俯泳抬头在翻成仰泳后会变成压头；仅在仰面半周平滑反转抬升方向。
     // 使用已有身体朝上投影，不累计新的姿态状态，也不改变根节点物理姿态。
     setSurfaceBodyUpProjection(projection: number) {
+        this._proneFreestyleWeight = proneFreestyleWeight(projection);
         this._surfaceLiftDirection = Number.isFinite(projection)
             ? 1 - 2 * smoothRange(-projection, 0, 1)
             : 1;
@@ -453,15 +470,19 @@ export class FreestylePoseController {
     }
 
     applyFreestylePose(leftArmCycle: number, rightArmCycle: number, leftKickCycle: number, rightKickCycle: number, bodyPhase: number, upperBodyPower: number, armPower: number, kickPower: number) {
-        const rightBreath = this.rightBreathSignal(rightArmCycle);
+        const rightPhase = positiveMod(this.armPoseCycle(rightArmCycle), Math.PI * 2) / (Math.PI * 2);
+        const rightBreath = lerp(this.rightBreathSignal(rightArmCycle),
+            smoothPulse(rightPhase, 0.48, 0.64, 0.82, 0.99), this._proneFreestyleWeight);
         this.applyFreestyleRootMotion(leftArmCycle, rightArmCycle, leftKickCycle, rightKickCycle, bodyPhase, rightBreath);
         this.applyUpperBodyRoll(
             this.armReachSignal(leftArmCycle, rightArmCycle),
             upperBodyPower,
             rightBreath,
+            this._proneFreestyleWeight,
+            proneFreestyleRollSignal(this.armPoseCycle(leftArmCycle), this.armPoseCycle(rightArmCycle)),
         );
-        this.applyArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), armPower);
-        this.applyArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
+        this.applySurfaceArm(this._leftShoulder, this._leftArm, this._leftForeArm, this._leftHand, this.armPoseCycle(leftArmCycle), armPower);
+        this.applySurfaceArm(this._rightShoulder, this._rightArm, this._rightForeArm, this._rightHand, this.armPoseCycle(rightArmCycle), armPower);
         this.applyLeg(this._leftUpLeg, this._leftLeg, this._leftFoot, this._leftToe, leftKickCycle, kickPower);
         this.applyLeg(this._rightUpLeg, this._rightLeg, this._rightFoot, this._rightToe, rightKickCycle, kickPower);
     }
@@ -475,7 +496,9 @@ export class FreestylePoseController {
         const breathRatio = clamp(rightBreath, 0, 1);
         const baseBodyRoll = this.sideBodyRollSignal(leftArmCycle, rightArmCycle)
             * AXIAL_ROLL_TUNING.proceduralRollDegrees;
-        const bodyRoll = baseBodyRoll - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees;
+        const proneRoll = proneFreestyleRollSignal(this.armPoseCycle(leftArmCycle), this.armPoseCycle(rightArmCycle));
+        const bodyRoll = lerp(baseBodyRoll, proneRoll * (AXIAL_ROLL_TUNING.proceduralRollDegrees + 12), this._proneFreestyleWeight)
+            - breathRatio * MOTION_TUNING.rightBreathBodyRollDegrees;
         const kickSignal = (Math.sin(leftKickCycle) - Math.sin(rightKickCycle)) * 0.5;
         const axisCenteringOffset = this.freestyleAxisCenteringOffset(baseBodyRoll, breathRatio);
         this.laneSideInRootParent(this._tmpParentDirection);
@@ -1263,6 +1286,150 @@ export class FreestylePoseController {
             }
         };
         visit(root);
+    }
+
+    private applySurfaceArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, cycle: number, power: number) {
+        const weight = this._proneFreestyleWeight;
+        if (weight < 1 || !shoulder || !hand) {
+            this.applyArm(shoulder, arm, foreArm, hand, cycle, power);
+            if (weight <= 0 || !shoulder || !arm || !foreArm || !hand) return;
+            Quat.copy(this._surfaceShoulderRotation, shoulder.rotation);
+            Quat.copy(this._surfaceArmRotation, arm.rotation);
+            Quat.copy(this._surfaceForeRotation, foreArm.rotation);
+            Quat.copy(this._surfaceHandRotation, hand.rotation);
+        }
+        if (!arm || !foreArm) return;
+        const side = arm === this._leftArm ? 1 : -1;
+        sampleProneFreestyleArm(cycle, this._proneUpperDirection, this._proneForeDirection);
+        const reach = Math.max(0, this._proneUpperDirection.y);
+        const extension = proneFreestyleExtensionWeight(cycle);
+        // 前伸先上举肩带，再求解大臂；只转大臂会在横展的肩头形成 U 型拐角。
+        this.applyBoneOffset(shoulder, -2 * reach, side * 2, 0);
+        if (extension > 0) this.applyProneReachShoulder(shoulder, arm, side, extension);
+        if (extension < 1) {
+            this.movementForwardInRoot(this._tmpMovementForwardRoot);
+            this.setProneArmDirection(this._proneUpperDirection, side);
+            this.applyBoneDirectionFromRoot(arm, foreArm, this._tmpDirection);
+            const palmTurn = -side * MOTION_TUNING.handPalmTurnDegrees;
+            this.applyBoneAxialRoll(arm, foreArm, palmTurn * 0.25);
+            this.setProneArmDirection(this._proneForeDirection, side);
+            this.applyBoneDirectionFromRoot(foreArm, hand, this._tmpDirection);
+            this.applyBoneAxialRoll(foreArm, hand, palmTurn * 0.58);
+            this.applyBoneOffset(hand, -3 * (1 - reach), palmTurn * 0.17, 0);
+            this.orientPronePalm(foreArm, hand);
+            this.relaxProneElbowTwist(arm, foreArm);
+        }
+        if (extension > 0) this.applyProneStraightReach(arm, foreArm, hand, extension);
+        if (weight < 1) {
+            this.blendSurfaceBone(shoulder, this._surfaceShoulderRotation, weight);
+            this.blendSurfaceBone(arm, this._surfaceArmRotation, weight);
+            this.blendSurfaceBone(foreArm, this._surfaceForeRotation, weight);
+            this.blendSurfaceBone(hand, this._surfaceHandRotation, weight);
+        }
+    }
+
+    private setProneArmDirection(direction: Vec3, side: number) {
+        this._tmpDirection.set(
+            side * direction.x + this._tmpMovementForwardRoot.x * direction.y,
+            this._tmpMovementForwardRoot.y * direction.y,
+            direction.z + this._tmpMovementForwardRoot.z * direction.y,
+        );
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+    }
+
+    private relaxProneElbowTwist(arm: Node, foreArm: Node) {
+        const rest = this._boneBaseRotation.get(foreArm);
+        if (!rest) return;
+        // 先保留已求得的划水方向和掌心，再反求上臂的滚转。
+        // 独立追掌心会把接近半圈的扭转压在肘部，细臂蒙皮因此拧细、拉斜。
+        arm.getWorldPosition(this._tmpGroundHip);
+        foreArm.getWorldPosition(this._tmpGroundKnee);
+        Vec3.subtract(this._proneUpperWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        Vec3.normalize(this._proneUpperWorldDirection, this._proneUpperWorldDirection);
+        foreArm.getWorldRotation(this._proneForeWorldRotation);
+        Quat.invert(this._tmpOffsetRotation, rest);
+        Quat.multiply(this._tmpResultRotation, this._proneForeWorldRotation, this._tmpOffsetRotation);
+        arm.setWorldRotation(this._tmpResultRotation);
+        arm.getWorldPosition(this._tmpGroundHip);
+        foreArm.getWorldPosition(this._tmpGroundKnee);
+        Vec3.subtract(this._proneCurrentUpperWorldDirection, this._tmpGroundKnee, this._tmpGroundHip);
+        // 最短摆动保留目标骨段方向，让肘的局部增量主要是屈伸。
+        this.rotateWorldBoneDirection(arm, this._proneCurrentUpperWorldDirection, this._proneUpperWorldDirection);
+        foreArm.setWorldRotation(this._proneForeWorldRotation);
+    }
+
+    private applyProneReachShoulder(shoulder: Node, arm: Node, side: number, weight: number) {
+        if (weight < 1) Quat.copy(this._reachShoulderRotation, shoulder.rotation);
+        this.movementForwardInRoot(this._tmpMovementForwardRoot);
+        // 沿用原自由泳前伸的肩带展开尺度，保留左右间距，不移动骨骼枢轴。
+        const clearance = Math.max(0.46, MOTION_TUNING.forwardArmSideClearance + 0.25);
+        this._tmpDirection.set(
+            side * clearance + this._tmpMovementForwardRoot.x,
+            this._tmpMovementForwardRoot.y,
+            this._tmpMovementForwardRoot.z,
+        );
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        // 前伸肩带随胸廓侧转，不能再把肩头反向锁回根节点的水平面。
+        Quat.fromAxisAngle(this._tmpAxisRotation, this._tmpMovementForwardRoot, this._proneChestRoll * Math.PI / 180);
+        Vec3.transformQuat(this._tmpDirection, this._tmpDirection, this._tmpAxisRotation);
+        this.applyBoneDirectionFromRoot(shoulder, arm, this._tmpDirection);
+        if (weight < 1) this.blendSurfaceBone(shoulder, this._reachShoulderRotation, weight);
+    }
+
+    private applyProneStraightReach(arm: Node, foreArm: Node, hand: Node, weight: number) {
+        if (weight < 1) {
+            Quat.copy(this._reachArmRotation, arm.rotation);
+            Quat.copy(this._reachForeRotation, foreArm.rotation);
+            Quat.copy(this._reachHandRotation, hand.rotation);
+        }
+        // 规范 T 姿势的可见手臂已伸直，但骨枢轴并不完全共线。
+        // 保留肘腕的绑定关系，整臂刚性前伸；分别对齐骨点会重新折弯网格。
+        this.applyBoneOffset(arm, 0, 0, 0);
+        this.applyBoneOffset(foreArm, 0, 0, 0);
+        this.applyBoneOffset(hand, 0, 0, 0);
+        arm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpWorldDirection, this._tmpGroundAnkle, this._tmpGroundKnee);
+        this.rotateWorldBoneDirection(arm, this._tmpWorldDirection, this._movementForwardWorld);
+        // 直臂时整条手臂共同翻掌，不能只旋前臂而破坏肘部外形。
+        this._proneForeDirection.set(0, 1, 0);
+        this.orientPronePalm(arm, hand);
+        if (weight < 1) {
+            this.blendSurfaceBone(arm, this._reachArmRotation, weight);
+            this.blendSurfaceBone(foreArm, this._reachForeRotation, weight);
+            this.blendSurfaceBone(hand, this._reachHandRotation, weight);
+        }
+    }
+
+    private blendSurfaceBone(bone: Node, from: Quat, weight: number) {
+        Quat.slerp(this._tmpBlendRotation, from, bone.rotation, weight);
+        bone.setRotation(this._tmpBlendRotation);
+    }
+
+    private orientPronePalm(foreArm: Node, hand: Node) {
+        if (!this._diveHands?.ready) return;
+        // 掌心随前臂从入水朝腹侧转为抱水朝后。只绕前臂轴旋转，不挪动肘腕。
+        this._tmpDirection.set(0, -this._proneForeDirection.z, this._proneForeDirection.y);
+        this.root.getWorldRotation(this._tmpRootWorldRotation);
+        Vec3.transformQuat(this._tmpDirection, this._tmpDirection, this._tmpRootWorldRotation);
+        foreArm.getWorldPosition(this._tmpGroundKnee);
+        hand.getWorldPosition(this._tmpGroundAnkle);
+        Vec3.subtract(this._tmpGroundAxis, this._tmpGroundAnkle, this._tmpGroundKnee);
+        Vec3.normalize(this._tmpGroundAxis, this._tmpGroundAxis);
+        this._diveHands.palmNormalWorld(hand === this._leftHand ? 0 : 1, this._tmpWorldDirection);
+        Vec3.scaleAndAdd(this._tmpWorldDirection, this._tmpWorldDirection, this._tmpGroundAxis,
+            -Vec3.dot(this._tmpWorldDirection, this._tmpGroundAxis));
+        Vec3.scaleAndAdd(this._tmpDirection, this._tmpDirection, this._tmpGroundAxis,
+            -Vec3.dot(this._tmpDirection, this._tmpGroundAxis));
+        if (this._tmpDirection.lengthSqr() < 0.000001 || this._tmpWorldDirection.lengthSqr() < 0.000001) return;
+        Vec3.normalize(this._tmpDirection, this._tmpDirection);
+        Vec3.normalize(this._tmpWorldDirection, this._tmpWorldDirection);
+        Vec3.cross(this._tmpGroundKneeOffset, this._tmpWorldDirection, this._tmpDirection);
+        const angle = Math.atan2(Vec3.dot(this._tmpGroundKneeOffset, this._tmpGroundAxis), Vec3.dot(this._tmpWorldDirection, this._tmpDirection));
+        Quat.fromAxisAngle(this._tmpDeltaRotation, this._tmpGroundAxis, angle);
+        foreArm.getWorldRotation(this._tmpGroundBoneRotation);
+        Quat.multiply(this._tmpResultRotation, this._tmpDeltaRotation, this._tmpGroundBoneRotation);
+        foreArm.setWorldRotation(this._tmpResultRotation);
     }
 
     private applyArm(shoulder: Node, arm: Node, foreArm: Node, hand: Node, cycle: number, power: number) {
@@ -2220,7 +2387,7 @@ export class FreestylePoseController {
         this.applyBoneOffset(hand, -pull * 7, side * handCup * power, side * (pull * 5 - recover * 4) * power);
     }
 
-    private applyUpperBodyRoll(phase: number, power: number, rightBreath = 0) {
+    private applyUpperBodyRoll(phase: number, power: number, rightBreath = 0, proneWeight = 0, proneRoll = 0) {
         const reach = Math.max(-1, Math.min(1, phase));
         const leftReach = Math.max(0, reach);
         const rightReach = Math.max(0, -reach);
@@ -2230,11 +2397,36 @@ export class FreestylePoseController {
         const breathLift = smoothRange(breathRatio, 0.08, 0.82);
 
         const swimHeadLift = this._swimHeadLiftDegrees;
+        // 胸段也由当前姿态完整赋值，翻成仰泳后不残留上一帧的转体。
+        const chestBase = this._spine1 && this._spine1 !== this._torso ? this._spine1 : null;
+        if (chestBase) this.applyBoneOffset(chestBase, 0, 0, 0);
         this.applyBoneOffset(this._torso, (swimHeadLift * 0.18 + breathLift * 1.6) * this._surfaceLiftDirection, breathTurn * 0.1, 0);
+        this._proneChestRoll = proneRoll * clamp(MOTION_TUNING.proneChestRollDegrees, 0, 45)
+            * Math.min(1.2, Math.max(0, power)) * proneWeight;
+        // 胸廓整片侧转，回臂侧肩膀随之抬起；骨盆只继承较小的整体侧滚。
+        if (proneWeight > 0.000001) {
+            // 胸背与肩带共同转动，避免把整个角度集中在腋下的一节骨骼。
+            if (chestBase) this.applyWorldAxisRoll(chestBase, this._proneChestRoll * 0.6);
+            this.applyWorldAxisRoll(this._torso, this._proneChestRoll * (chestBase ? 0.4 : 1));
+        }
         this.applyBoneOffset(this._neck, (swimHeadLift * 0.72 + breathLift * 3.0) * this._surfaceLiftDirection, headBreathTurn * 0.28, 0);
         this.applyBoneOffset(this._head, (-2.5 + swimHeadLift * 1.15 + breathLift * 2.1) * this._surfaceLiftDirection, headBreathTurn * 0.5, 0);
+        if (proneWeight > 0.000001) {
+            // 不换气时头颈抵消胸廓侧转；右侧换气时逐渐允许头跟随肩膀。
+            const counterRoll = -this._proneChestRoll * lerp(0.85, 0.25, breathRatio);
+            this.applyWorldAxisRoll(this._neck, counterRoll * 0.65);
+            this.applyWorldAxisRoll(this._head, counterRoll * 0.35);
+        }
         this.applyBoneOffset(this._leftShoulder, leftReach * -2, 0, leftReach * -3);
         this.applyBoneOffset(this._rightShoulder, rightReach * -2 - breathLift * 3.2, 0, rightReach * 3 - breathLift * 1.8);
+    }
+
+    private applyWorldAxisRoll(bone: Node, degrees: number) {
+        if (!bone) return;
+        bone.getWorldRotation(this._tmpGroundBoneRotation);
+        Quat.fromAxisAngle(this._tmpAxisRotation, this._movementForwardWorld, degrees * Math.PI / 180);
+        Quat.multiply(this._tmpResultRotation, this._tmpAxisRotation, this._tmpGroundBoneRotation);
+        bone.setWorldRotation(this._tmpResultRotation);
     }
 
     private applyRootRollAroundMovementAxis(degrees: number) {
