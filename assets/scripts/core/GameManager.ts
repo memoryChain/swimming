@@ -573,7 +573,7 @@ export class GameManager extends Component {
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
         if (this._finishRankOverlay.hasResults()) {
-            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera);
+            this._finishRankOverlay.update(this._cameraNode?.getComponent(Camera) ?? null, this._uiCamera, netDt);
         }
         // Update after the race camera so the refraction camera uses this frame's
         // final transform. Underwater shots keep the swimmer overlay camera synced
@@ -1036,6 +1036,11 @@ export class GameManager extends Component {
     private createInputRouter(): InputRouter {
         return new InputRouter(this.node, {
             onStroke: (type) => this.handlePlayerStroke(type),
+            onStrokePressChanged: (type, pressed) => {
+                if (!pressed || this._state === GameState.RACING) {
+                    this._uiController?.raceHudStatus?.stroke.setPressed(type, pressed);
+                }
+            },
             onStrokeHeld: (type, held, preHeldSeconds) => this.handlePlayerStrokeHeld(type, held, preHeldSeconds),
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
@@ -2467,7 +2472,7 @@ export class GameManager extends Component {
         const showFeedback = (this._playerSwimmer?.distance ?? 0) < getRaceDistance();
         for (const result of this._playerSwimmer?.consumeRhythmResults() ?? []) {
             if (showFeedback) {
-                this._uiFlow?.showRating(result.rating, result.combo, result.strokeSide);
+                this._gameFlow?.presentStrokeResult(result);
             }
         }
     }

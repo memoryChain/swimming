@@ -176,6 +176,16 @@ export class SplashEmitter {
         this._splashBurst = Math.max(this._splashBurst, TUNING.burst.armGeneric);
     }
 
+    triggerStrokeFeedback(side: 'left' | 'right', perfect: boolean) {
+        if (this._culled || !this._particleEffectsEnabled || !TUNING.particleEmitters.enableHand) return;
+        for (const emitter of this._particleEmitters) {
+            if (emitter.role !== 'hand' || emitter.side !== side) continue;
+            const progress = side === 'left' ? this._state.leftHandWaterProgress : this._state.rightHandWaterProgress;
+            this.positionParticleEmitter(emitter, 0.5, progress, 1);
+            this.playParticleBurst(emitter, perfect ? 7 : 3, perfect ? 0.7 : 0.35, perfect ? 1 : 0.7);
+        }
+    }
+
     triggerKick() {
         if (this._culled) {
             return;

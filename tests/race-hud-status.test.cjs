@@ -165,3 +165,87 @@ test('排行保持靠右并下移避开胶囊，安全区不重复叠加，其�
   s.hud.setVisible(true);s.hud.setVisible(false);s.hud.setVisible(true);assert.equal(count(s.parent),n);
  }
 });
+
+test('手掌即时响应短按，采样不覆盖按压；新按压优先于旧结算，隐藏重开无残留',()=>{
+ const s=fixture(),ui=s.hud.stroke;s.hud.setVisible(true);
+ const left=find(s.parent,'LeftStrokeUi'),hand=find(left,'HandButtonVisual'),right=find(find(s.parent,'RightStrokeUi'),'HandButtonVisual');
+ const n=count(s.parent),guide={active:false,currentRatio:0,intervals:[]};
+ for(let i=0;i<30;i++){
+  ui.setPressed('left',true);assert.equal(hand.scale.x,.88);assert.equal(right.scale.x,1);
+  ui.updateSide('left',guide);assert.equal(hand.scale.x,.88,'尚未升级成长按也保持按压态');
+  ui.showResult('left','perfect');assert.equal(hand.scale.x,.88,'延迟结算不能覆盖新按压');
+  ui.setPressed('left',false);assert.equal(hand.scale.x,1);
+ }
+ ui.showResult('left','good');const good=hand.scale.x;ui.showResult('left','perfect');assert.ok(hand.scale.x>good);
+ ui.setPressed('left',true);ui.updateSide('left',{active:true,currentRatio:.4,intervals:[{rating:'perfect',startRatio:.3,endRatio:.5}]});
+ assert.equal(find(left,'strokeHand').getComponent(Sprite).color.g,255);
+ s.hud.setVisible(false);const before=writes;ui.setPressed('left',true);ui.showResult('left','perfect');ui.updateSide('left',guide);assert.equal(writes,before);
+ s.hud.setVisible(true);assert.equal(hand.scale.x,1);assert.equal(hand.getComponent(UIOpacity).opacity,210);assert.equal(count(s.parent),n);
+});
+
+test('真实输入在长按门槛前发出按下反馈，松手反馈先于结算，重置清除双侧',()=>{
+ let now=0;const events=[];
+ const callbacks=new Proxy({onStrokePressChanged:(side,held)=>events.push(['visual',side,held]),onStrokeHeld:(side,held)=>{events.push(['held',side,held]);return true;}},{get:(o,k)=>o[k]??(()=>{})});
+ const mod=load('assets/scripts/core/InputRouter.ts',{'cc':{Node,Vec2},'./GameConstants':{StrokeType:{LEFT:0,RIGHT:1}},'./InputTuning':{INPUT_TUNING:{padStrokeDedupeMs:0},STROKE_QUALITY_TUNING:{minHoldSeconds:.1}}},{Date:{now:()=>now}});
+ const router=new mod.InputRouter(new Node('input'),callbacks);
+ router.handleScreenStroke(0);assert.deepEqual(events,[['visual',0,true]]);
+ now=50;router.handleScreenStrokeEnd(0);assert.deepEqual(events,[['visual',0,true],['visual',0,false]],'短按不结算手臂划水');
+ events.length=0;router.handleScreenStroke(1);now=200;router.tick();router.handleScreenStrokeEnd(1);
+ assert.deepEqual(events,[['visual',1,true],['held',1,true],['visual',1,false],['held',1,false]]);
+ events.length=0;router.resetStrokeInput();assert.deepEqual(events,[['visual',0,false],['visual',1,false]]);
+});
+
+test('手掌波纹每次按下只散出一圈，扩散淡出；长按仅播一轮，隐藏清空且重开无残留',()=>{
+ const s=fixture(),ui=s.hud.stroke;s.hud.setVisible(true);ui.consumeSample(0);
+ const left=find(s.parent,'LeftStrokeUi'),right=find(s.parent,'RightStrokeUi');
+ const rings=left.children.filter(n=>n.name.startsWith('HandRipple'));
+ const others=right.children.filter(n=>n.name.startsWith('HandRipple'));
+ const n=count(s.parent),active=()=>rings.filter(r=>r.active).length;
+ assert.equal(rings.length,3);assert.equal(active(),0);
+ ui.setPressed('left',true);ui.setPressed('left',false);assert.equal(active(),1);assert.equal(others.filter(r=>r.active).length,0);
+ const initialScale=rings[0].scale.x,initialAlpha=rings[0].getComponent(UIOpacity).opacity;
+ ui.consumeSample(.1);assert.ok(rings[0].scale.x>initialScale);assert.ok(rings[0].getComponent(UIOpacity).opacity<initialAlpha);
+ for(let i=0;i<4;i++)ui.consumeSample(.1);assert.equal(active(),1,'一次点按不补发第二圈');
+ for(let i=0;i<12;i++)ui.consumeSample(.1);assert.equal(active(),0);
+ ui.setPressed('left',true);ui.setPressed('right',true);
+ for(let i=0;i<180;i++){ui.consumeSample(1/30);assert.ok(active()<=3);assert.ok(others.filter(r=>r.active).length<=3);assert.equal(count(s.parent),n);}
+ assert.equal(active(),0,'长按一轮结束后不再追加');assert.equal(others.filter(r=>r.active).length,0);
+ ui.setPressed('left',true);ui.consumeSample(.3);assert.equal(active(),0,'重复按下状态不重播');
+ ui.setPressed('left',false);ui.consumeSample(.3);assert.equal(active(),0,'松手不重播');
+ ui.setPressed('left',true);assert.equal(active(),1,'再次按下播放新一轮');
+ s.hud.setVisible(false);assert.equal(active(),0);assert.equal(others.filter(r=>r.active).length,0);
+ for(let i=0;i<10;i++)assert.equal(ui.consumeSample(1),false);
+ s.hud.setVisible(true);ui.consumeSample(1);assert.equal(active(),0);assert.equal(count(s.parent),n);
+});
+
+test('高清波纹扩大扩散范围，内发光置于底图与手掌之间且只在按下时闪亮',()=>{
+ const s=fixture(),ui=s.hud.stroke;s.hud.setVisible(true);ui.consumeSample(0);
+ const left=find(s.parent,'LeftStrokeUi'),hand=find(left,'HandButtonVisual'),glow=find(left,'HandInnerGlow');
+ const ring=find(left,'HandRipple0');
+ assert.ok(ring.getComponent(Sprite).spriteFrame.path.includes('ripple-ring/texture'));
+ assert.ok(glow.getComponent(Sprite).spriteFrame.path.includes('inner-glow/texture'));
+ assert.ok(hand.children.indexOf(glow)>hand.children.indexOf(find(hand,'strokeButton')));
+ assert.ok(hand.children.indexOf(glow)<hand.children.indexOf(find(hand,'strokeHand')));
+ assert.equal(glow.active,false);ui.setPressed('left',true);assert.equal(glow.active,true);
+ const alpha=glow.getComponent(UIOpacity).opacity;ui.consumeSample(.15);assert.ok(glow.getComponent(UIOpacity).opacity<alpha);
+ ui.consumeSample(.35);assert.equal(glow.active,false);assert.ok(ring.scale.x*120>280,'扩散到更大范围');
+ ui.setPressed('left',true);assert.equal(glow.active,false,'长按不重播内发光');
+ ui.setPressed('left',false);ui.setPressed('left',true);assert.equal(glow.active,true);
+ s.hud.setVisible(false);assert.equal(glow.active,false);s.hud.setVisible(true);ui.consumeSample(.1);assert.equal(glow.active,false);
+});
+
+test('白点常态带光晕一起移动，完美松手才高亮并同步消失，普通松手不闪光',()=>{
+ const s=fixture(),ui=s.hud.stroke;s.hud.setVisible(true);ui.consumeSample(0);
+ const left=find(s.parent,'LeftStrokeUi'),dot=find(left,'MovingDot'),glow=find(left,'MarkerGlow');
+ const guide={active:true,currentRatio:.4,intervals:[{rating:'perfect',startRatio:.5,endRatio:.8}]};
+ ui.setPressed('left',true);assert.equal(glow.active,false,'按下不触发闪光');ui.updateSide('left',guide);
+ assert.equal(dot.getComponent(UITransform).contentSize.width,18);assert.equal(glow.active,true);assert.equal(glow.getComponent(UIOpacity).opacity,110);
+ for(let i=0;i<10;i++){ui.consumeSample(.1);guide.currentRatio+=.01;ui.updateSide('left',guide);assert.equal(glow.getComponent(UIOpacity).opacity,110);assert.equal(glow.position.x,dot.position.x);assert.equal(glow.position.y,dot.position.y);}
+ ui.setPressed('left',false);ui.showResult('left','perfect');guide.active=false;ui.updateSide('left',guide);
+ assert.equal(glow.getComponent(UIOpacity).opacity,255);assert.equal(dot.active,true);assert.equal(glow.active,true);
+ ui.consumeSample(.1);ui.updateSide('left',guide);assert.ok(glow.getComponent(UIOpacity).opacity<255);assert.equal(dot.getComponent(UIOpacity).opacity,glow.getComponent(UIOpacity).opacity);
+ ui.consumeSample(.2);ui.updateSide('left',guide);assert.equal(dot.active,false);assert.equal(glow.active,false);
+ ui.setPressed('left',true);guide.active=true;ui.updateSide('left',guide);assert.equal(dot.getComponent(UIOpacity).opacity,255);assert.equal(glow.getComponent(UIOpacity).opacity,110);
+ ui.setPressed('left',false);ui.showResult('left','good');guide.active=false;ui.updateSide('left',guide);assert.equal(dot.active,false);assert.equal(glow.active,false);
+ ui.showResult('left','perfect');s.hud.setVisible(false);assert.equal(dot.active,false);assert.equal(glow.active,false);s.hud.setVisible(true);ui.consumeSample(.1);assert.equal(glow.active,false);
+});

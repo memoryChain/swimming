@@ -5,7 +5,8 @@ import { Swimmer } from '../entity/Swimmer';
 import { DIVE_BALANCE, getRaceDistance } from '../core/GameBalance';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import { randomFloat } from '../core/SharedRNG';
-import { GameState, StrokeType } from '../core/GameConstants';
+import type { RhythmResult } from '../core/RhythmTypes';
+import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { resolveDiveResult } from '../core/DiveResolver';
 import { DiveResult } from '../core/DiveResult';
@@ -81,12 +82,18 @@ export class GameFlowController {
     private _swimSprintViewApplied = false;
     private _preRaceDivePrepApplied = false;
     private _divingElapsed = 0;
+    private _finishViewElapsed = -1;
+    private _finishPresentationVersion = 0;
+    private _pendingFinishPresentation: (() => void) | null = null;
     private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
     constructor(private readonly _refs: GameFlowRefs) {}
 
     startGame() {
+        this._finishPresentationVersion += 1;
+        this._finishViewElapsed = -1;
+        this._pendingFinishPresentation = null;
         this._refs.debug('startGame');
         StrokeSfxManager.preload();
         this.clearAiDiveTimers();
@@ -149,15 +156,10 @@ export class GameFlowController {
         if (!this.isStrokeInputActive()) {
             return;
         }
-        const playStrokeSfx = this._refs.getState() === GameState.RACING
-            && (this._refs.playerSwimmer?.canAcceptStroke(type) ?? false);
         const result = this._refs.playerSwimmer?.handleStroke(type);
         captureNetInput({ kind: NetInputKind.Stroke, side: netSide(type) });
-        if (playStrokeSfx) {
-            StrokeSfxManager.playStroke();
-        }
         if (result) {
-            this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
+            this.presentStrokeResult(result);
         }
     }
 
@@ -174,9 +176,19 @@ export class GameFlowController {
         const result = this._refs.playerSwimmer?.handleStrokeHeld(type, held, preHeldSeconds);
         captureNetInput({ kind: held ? NetInputKind.HeldOn : NetInputKind.HeldOff, side: netSide(type) });
         if (result) {
-            this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
+            this.presentStrokeResult(result);
         }
         return true;
+    }
+
+    /** 即时松手与队列延迟结算共用入口，每次结算只反馈一次。 */
+    presentStrokeResult(result: RhythmResult) {
+        const player = this._refs.playerSwimmer;
+        if (this._refs.getState() !== GameState.RACING || !player || player.distance >= getRaceDistance()) return;
+        this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
+        if (result.rating !== Rating.GOOD && result.rating !== Rating.PERFECT) return;
+        StrokeSfxManager.playStroke(result.rating === Rating.PERFECT);
+        if (!this._cameraFollowAi) this._refs.raceCameraDirector.notifyStrokeSettled(result.rating === Rating.PERFECT);
     }
 
     handlePlayerKickStroke(type: StrokeType) {
@@ -318,6 +330,8 @@ export class GameFlowController {
             this._refs.debug(`finish ${result.name} place=${result.placement} time=${result.time.toFixed(2)}`);
             this._refs.showFinishRank(result);
             if (result.isPlayer) {
+                this._finishViewElapsed = 0;
+                this._cameraFollowAi = false;
                 this._refs.uiFlow.setSprintActive(false);
             }
         };
@@ -336,23 +350,15 @@ export class GameFlowController {
             const localLeaderboard = placement.leaderboard ?? [];
             // Networked race: adopt the host's authoritative ordering before showing
             // results (single-player resolves synchronously with the local order).
+            const presentationVersion = this._finishPresentationVersion;
             this._refs.resolveNetLeaderboard(localLeaderboard, (leaderboard) => {
+                if (presentationVersion !== this._finishPresentationVersion) return;
                 const playerRow = leaderboard.find((row) => row.isPlayer);
                 const finalPlacement = playerRow?.placement ?? placement.placement;
                 const finalPlayerWin = !!playerRow?.finished && finalPlacement === 1;
                 // Networked race: the host's authoritative time (adopted into playerRow)
                 // is the shared truth, so both screens show the same headline result.
                 const finalPlayerTime = playerRow && playerRow.time > 0 ? playerRow.time : playerTime;
-                this._refs.uiFlow.showResult(finalPlayerWin, finalPlayerTime, aiTime, {
-                    averageSpeed: finalPlayerTime > 0 ? getRaceDistance() / finalPlayerTime : 0,
-                    maxCombo: rhythm?.maxCombo ?? 0,
-                    perfectCount: rhythm?.perfectCount ?? 0,
-                    goodCount: rhythm?.goodCount ?? 0,
-                    missCount: rhythm?.missCount ?? 0,
-                    placement: finalPlacement,
-                    racerCount: placement.racerCount,
-                    leaderboard,
-                });
                 // Progression uses the authoritative (net-resolved) placement/time so
                 // the XP reward matches the result the player actually sees.
                 const progressionResult = this._refs.awardProgression({
@@ -363,11 +369,29 @@ export class GameFlowController {
                     goodCount: rhythm?.goodCount ?? 0,
                     finished: finalPlayerTime > 0,
                 });
-                this._refs.uiFlow.showProgressionResult(progressionResult);
-                this._refs.uiFlow.setSprintActive(false);
-                this._refs.clearFinishRanks();
-                this._refs.showAwards(leaderboard);
-                this._refs.setState(GameState.AWARDS);
+                const present = () => {
+                    this._refs.uiFlow.showResult(finalPlayerWin, finalPlayerTime, aiTime, {
+                        averageSpeed: finalPlayerTime > 0 ? getRaceDistance() / finalPlayerTime : 0,
+                        maxCombo: rhythm?.maxCombo ?? 0,
+                        perfectCount: rhythm?.perfectCount ?? 0,
+                        goodCount: rhythm?.goodCount ?? 0,
+                        missCount: rhythm?.missCount ?? 0,
+                        placement: finalPlacement,
+                        racerCount: placement.racerCount,
+                        leaderboard,
+                    });
+                    this._refs.uiFlow.showProgressionResult(progressionResult);
+                    this._refs.uiFlow.setSprintActive(false);
+                    this._refs.clearFinishRanks();
+                    this._refs.showAwards(leaderboard);
+                    this._refs.setState(GameState.AWARDS);
+                };
+                // 成绩解析照常完成，仅让本机触壁镜头至少展示两秒。
+                if (this._finishViewElapsed >= 0 && this._finishViewElapsed < 2) {
+                    this._pendingFinishPresentation = present;
+                } else {
+                    present();
+                }
             });
         };
         raceManager.onDiveReady = () => {
@@ -378,6 +402,8 @@ export class GameFlowController {
     }
 
     clearRaceManagerCallbacks() {
+        this._finishPresentationVersion += 1;
+        this._pendingFinishPresentation = null;
         const raceManager = this._refs.raceManager;
         if (!raceManager) {
             return;
@@ -404,6 +430,14 @@ export class GameFlowController {
     }
 
     updateRaceCamera(dt: number) {
+        if (this._finishViewElapsed >= 0 && this._finishViewElapsed < 2) {
+            this._finishViewElapsed = Math.min(2, this._finishViewElapsed + Math.max(0, dt));
+        }
+        if (this._pendingFinishPresentation && this._finishViewElapsed >= 2) {
+            const present = this._pendingFinishPresentation;
+            this._pendingFinishPresentation = null;
+            present();
+        }
         if (this._refs.getState() === GameState.DIVING) {
             this._divingElapsed += Math.max(0, dt);
         }
@@ -438,6 +472,7 @@ export class GameFlowController {
             playerSpeed: focus.currentSpeed,
             playerUpperBodyWorldPosition: focus.getCameraUpperBodyWorldPosition(this._playerUpperBodyWorldPosition),
             playerDistance: focus.distance,
+            playerFinished: this._finishViewElapsed >= 0,
             playerHeading: focus.cameraHeading,
             playerFlightPitch: focus.flightPitch,
             playerKickCadenceHz: focus.kickCadenceHz,
@@ -483,10 +518,10 @@ export class GameFlowController {
         this._refs.updateCameraSpeedLines?.(
             dt,
             cameraSnapshot.playerSpeed,
-            dolphinAirborne
+            this._finishViewElapsed < 0 && (dolphinAirborne
                 || (this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
                     && !this._refs.raceCameraDirector.topViewActive
-                    && !this._refs.raceCameraDirector.underwaterViewActive),
+                    && !this._refs.raceCameraDirector.underwaterViewActive)),
             this._sprintTriggered || dolphinAirborne,
         );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.

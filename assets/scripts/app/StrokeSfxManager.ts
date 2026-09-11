@@ -2,7 +2,8 @@ import { assetManager, AssetManager, AudioClip, AudioSource, director, game, Nod
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const SFX_NODE_NAME = 'SpeedSwimmingStrokeSfx';
-const STROKE_VOLUME = 0.23;
+const STROKE_VOLUME = 0.32;
+const PERFECT_STROKE_VOLUME = 0.52;
 
 export class StrokeSfxManager {
     private static _node: Node | null = null;
@@ -33,7 +34,7 @@ export class StrokeSfxManager {
         });
     }
 
-    static playStroke() {
+    static playStroke(perfect = false) {
         if (this._volumeScale <= 0) {
             return;
         }
@@ -48,7 +49,7 @@ export class StrokeSfxManager {
                 continue;
             }
             this._nextClip = (index + 1) % this._clips.length;
-            source.playOneShot(clip, STROKE_VOLUME * this._volumeScale);
+            source.playOneShot(clip, (perfect ? PERFECT_STROKE_VOLUME : STROKE_VOLUME) * this._volumeScale);
             return;
         }
         this.preload();

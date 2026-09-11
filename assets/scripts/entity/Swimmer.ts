@@ -678,7 +678,6 @@ export class Swimmer extends Component {
             const result = this.makeStrokeQualityResult(strokeQualityResult.type, strokeQualityResult);
             if (result) {
                 this._pendingRhythmResults.push(result);
-                this.flashSplash(result.rating);
             }
         }
 
@@ -919,6 +918,10 @@ export class Swimmer extends Component {
             return null;
         }
         const rating = ratingForStrokeQuality(strokeQualityResult.strokeQuality);
+        // 即时松手与延迟结算在这里汇合；不重启动作，不修改推进或同步数据。
+        if (!this._phases.isUnderwater && (rating === Rating.GOOD || rating === Rating.PERFECT)) {
+            this.cartoonRig?.triggerStrokeFeedback(type, rating === Rating.PERFECT);
+        }
         if (rating === Rating.PERFECT) {
             this._strokeQualityCombo += 1;
             this._perfectComboIdleSeconds = 0;

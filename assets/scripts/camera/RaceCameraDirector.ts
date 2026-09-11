@@ -82,6 +82,7 @@ const SPRINT_KICK_VIEW_CONFIRM_SECONDS = 0.24;
 // +10.5) stays in frame from the fixed 22.5m camera height; the previous 46
 // clipped lanes 1 and 8 off the top and bottom of the screen.
 const FINISH_TOP_FOV = 56;
+const FINISH_CLOSEUP_FOV = 46;
 // Debug "whole field" overhead: high, centred on the pool, framing the entire venue
 // so AI positions can be compared across clients. Ceiling is hidden (topViewActive).
 const FIELD_OVERVIEW_HEIGHT = 27;
@@ -99,6 +100,9 @@ export const RACE_CAMERA_TUNING = {
     finishTopViewPoolInset: 12,
     // 泳道内后上方跟随：沿前进方向略微俯看水面，保留两侧泳道线的纵深。
     sprintBackDistance: 1.8,
+    strokeFeedbackSeconds: 0.32,
+    strokeFeedbackBackDistance: 0.16,
+    strokeFeedbackFov: 1.2,
     // Extra pullback while the player is chaining kick-only taps. A promoted arm
     // stroke immediately removes this offset and restores sprintBackDistance.
     sprintKickPullbackDistance: 1.4,
@@ -217,6 +221,7 @@ export type RaceCameraSnapshot = {
     playerSpeed?: number;
     playerUpperBodyWorldPosition?: Vec3;
     playerDistance: number;
+    playerFinished?: boolean;
     // Radians away from the current lane direction. Used by the sprint chase so
     // it follows the swimmer's actual travel direction while steering.
     playerHeading?: number;
@@ -254,6 +259,8 @@ export class RaceCameraDirector {
     private readonly _cameraTarget = new Vec3(8, 0.25, 0);
     private _cameraNode: Node = null;
     private _mode = RaceCameraMode.Broadcast;
+    private _strokeFeedbackTime = 0;
+    private _strokeFeedbackStrength = 0;
     private _sprintFovCurrent = RACE_CAMERA_TUNING.sprintFov;
     private _broadcastShotTimer = 0;
     private _broadcastShotIndex = 0;
@@ -269,6 +276,7 @@ export class RaceCameraDirector {
     private _diveShotElapsed = -1;
     private _diveSurfaceRestoreSeconds = 0;
     private _topViewActive = false;
+    private _finishViewActive = false;
     // Debug: overhead whole-field view toggle (overrides the normal race camera).
     private _fieldOverviewActive = false;
     // Dolphin-jump follow chase active (overrides the normal race views).
@@ -362,6 +370,7 @@ export class RaceCameraDirector {
     }
 
     resetCountdownTimers() {
+        this._finishViewActive = false;
         this._preCountdownActive = false;
         this._preRacePhase = 'none';
         this._preCountdownShotIndex = -1;
@@ -375,6 +384,7 @@ export class RaceCameraDirector {
     }
 
     startPreRacePresentation() {
+        this._finishViewActive = false;
         this._mode = RaceCameraMode.Broadcast;
         this._topViewActive = false;
         this._awardsCenter = null;
@@ -419,6 +429,7 @@ export class RaceCameraDirector {
     }
 
     startAwardsPresentation(center: Vec3) {
+        this._finishViewActive = false;
         this._mode = RaceCameraMode.Broadcast;
         this._topViewActive = false;
         this._underwaterViewActive = false;
@@ -551,6 +562,8 @@ export class RaceCameraDirector {
     }
 
     resetRaceTimers() {
+        this._strokeFeedbackTime = 0;
+        this._strokeFeedbackStrength = 0;
         this._broadcastRaceElapsed = 0;
         this._broadcastShotTimer = 0;
         this._continuousKickViewSeconds = 0;
@@ -565,7 +578,21 @@ export class RaceCameraDirector {
         this._broadcastShotTimer = 0;
     }
 
+    notifyStrokeSettled(perfect: boolean) {
+        if (this._mode !== RaceCameraMode.Sprint || this._feedMode) return;
+        this._strokeFeedbackTime = RACE_CAMERA_TUNING.strokeFeedbackSeconds;
+        this._strokeFeedbackStrength = perfect ? 1 : 0.45;
+    }
+
     update(dt: number, snapshot: RaceCameraSnapshot) {
+        if (snapshot.playerFinished || snapshot.playerUnderwater || snapshot.playerDolphinCameraActive
+            || snapshot.playerFlipTurnCameraActive || this._awardsCenter || this._spectatorFreeLookActive
+            || this._fieldOverviewActive || this._mode !== RaceCameraMode.Sprint) {
+            this._strokeFeedbackTime = 0;
+        } else {
+            this._strokeFeedbackTime = Math.max(0, this._strokeFeedbackTime - Math.max(0, dt));
+        }
+        this._finishViewActive = false;
         if (!this._cameraNode) {
             return;
         }
@@ -587,6 +614,13 @@ export class RaceCameraDirector {
             this._topViewActive = false;
             this._dolphinViewActive = false;
             this.updateSpectatorCamera(dt);
+            return;
+        }
+        if (this.shouldUseFinishCloseup(snapshot)) {
+            this._finishViewActive = true;
+            this._flipTurnViewActive = false;
+            this._dolphinViewActive = false;
+            this.updateFinishCloseupCamera(snapshot);
             return;
         }
         // Debug overhead whole-field view overrides the normal race camera.
@@ -629,10 +663,6 @@ export class RaceCameraDirector {
         this._flipTurnViewActive = false;
         this._flipTurnCameraPlanted = false;
         if (this._mode === RaceCameraMode.Sprint) {
-            if (this.shouldUseFinishTopView(snapshot)) {
-                this.updateFinishTopCamera(snapshot);
-                return;
-            }
             // GameFlow promotes the camera to Sprint once the opening ascent is
             // close to the surface.
             // The broadcast-only underwater exit hard-cut below is therefore not
@@ -702,6 +732,7 @@ export class RaceCameraDirector {
         if (this._fieldOverviewActive) {
             baseFov = FIELD_OVERVIEW_FOV;
         }
+        if (this._finishViewActive) baseFov = FINISH_CLOSEUP_FOV;
         camera.fov = Math.max(18, baseFov);
     }
 
@@ -895,15 +926,6 @@ export class RaceCameraDirector {
             );
             this._broadcastDesiredFov = 43;
             underwaterView = true;
-        } else if (this.shouldUseFinishTopView(snapshot)) {
-            // Both the main broadcast camera and the venue feed settle into the
-            // finish-line top view for the final approach to the wall.
-            this.finishDiveShotIfNeeded();
-            const finishView = this.finishTopCameraView(snapshot);
-            desiredTarget = finishView.target;
-            desiredPos = finishView.position;
-            this._broadcastDesiredFov = FINISH_TOP_FOV;
-            fixedTopView = true;
         } else if (snapshot.sprintActive) {
             this.finishDiveShotIfNeeded();
             const sprintView = sprintCameraView(
@@ -1012,38 +1034,29 @@ export class RaceCameraDirector {
         this.applyFov();
     }
 
-    private shouldUseFinishTopView(snapshot: RaceCameraSnapshot): boolean {
-        // Only switch to the finish-line top view once the PLAYER has actually
-        // reached the finish wall — not during the final sprint approach. Keep the
-        // sprint chase all the way in, then cut to the top view at the touch.
-        return getRaceDistance() - snapshot.playerDistance <= RACE_CAMERA_TUNING.finishTopViewDistance;
+    private shouldUseFinishCloseup(snapshot: RaceCameraSnapshot): boolean {
+        // 用触壁事件锁定完成状态，避免最后几厘米提前切镜。
+        return snapshot.playerFinished ?? (snapshot.playerDistance >= getRaceDistance());
     }
 
-    private finishTopCameraView(snapshot: RaceCameraSnapshot): { position: Vec3; target: Vec3 } {
-        const raceDistance = getRaceDistance();
-        const courseEndDistance = this._courseLayout.currentCourseEndDistance(snapshot.playerDistance, raceDistance);
-        const finishDirection = this._courseLayout.finishDirectionAtDistance(courseEndDistance);
-        const finishX = this._courseLayout.distanceToWorldX(courseEndDistance);
-        const poolInset = clamp(
-            RACE_CAMERA_TUNING.finishTopViewPoolInset,
-            0,
-            this._courseLayout.courseLength * 0.5,
+    private updateFinishCloseupCamera(snapshot: RaceCameraSnapshot) {
+        const layout = this._courseLayout;
+        const endDistance = layout.currentCourseEndDistance(snapshot.playerDistance, getRaceDistance());
+        const direction = layout.finishDirectionAtDistance(endDistance);
+        const finishX = layout.distanceToWorldX(endDistance);
+        const body = snapshot.playerUpperBodyWorldPosition;
+        const playerZ = body?.z ?? this._playerLaneZ;
+        // 外侧泳道向池心偏移取景，避免机位落入池岸道具；上下半池均能保留邻道。
+        const side = playerZ > 0 ? -1 : 1;
+        this._cameraPos.set(finishX - direction * 3.5, layout.waterY + 1.5, playerZ + side * 3);
+        this._cameraTarget.set(
+            body?.x ?? snapshot.playerX,
+            Math.max(layout.waterY + 0.35, body?.y ?? snapshot.playerY + 0.5),
+            playerZ,
         );
-        const targetX = finishX - poolInset * finishDirection;
-        const target = new Vec3(targetX, 0.18, 0);
-        return {
-            position: new Vec3(target.x, 22.5, 0),
-            target,
-        };
-    }
-
-    private updateFinishTopCamera(snapshot: RaceCameraSnapshot) {
-        const view = this.finishTopCameraView(snapshot);
-        this._cameraPos.set(view.position);
-        this._cameraTarget.set(view.target);
-        this._topViewActive = true;
+        this._topViewActive = false;
         this._underwaterViewActive = false;
-        this.applyCameraTransform(new Vec3(0, 0, -1));
+        this.applyCameraTransform();
         this.applyFov();
     }
 
@@ -1051,6 +1064,8 @@ export class RaceCameraDirector {
         const direction = this._courseLayout.directionAtDistance(snapshot.playerDistance);
         const continuousKickViewActive = this.updateContinuousKickView(dt, snapshot);
         const view = sprintCameraView(snapshot, direction, continuousKickViewActive, this._courseLayout.waterY);
+        const pulse = this._strokeFeedbackStrength * Math.sin(Math.PI * this._strokeFeedbackTime / RACE_CAMERA_TUNING.strokeFeedbackSeconds);
+        view.position.x -= direction * RACE_CAMERA_TUNING.strokeFeedbackBackDistance * pulse;
         if (immediate) {
             this._cameraPos.set(view.position);
             this._cameraTarget.set(view.target);
@@ -1066,9 +1081,9 @@ export class RaceCameraDirector {
             this._cameraTarget.y += (view.target.y - this._cameraTarget.y) * follow;
             this._cameraTarget.z += (view.target.z - this._cameraTarget.z) * lateral;
         }
-        const targetSprintFov = snapshot.sprintActive
-            ? RACE_CAMERA_TUNING.sprintFov + RACE_CAMERA_TUNING.sprintFovBoost
-            : RACE_CAMERA_TUNING.sprintFov;
+        const targetSprintFov = RACE_CAMERA_TUNING.sprintFov
+            + (snapshot.sprintActive ? RACE_CAMERA_TUNING.sprintFovBoost : 0)
+            + pulse * RACE_CAMERA_TUNING.strokeFeedbackFov;
         const fovBlend = clamp(1 - Math.exp(-Math.max(0, dt) * RACE_CAMERA_TUNING.sprintFovBlendSpeed), 0.02, 0.4);
         this._sprintFovCurrent += (targetSprintFov - this._sprintFovCurrent) * fovBlend;
         // Match the dolphin camera's water-state handoff: the normal chase may

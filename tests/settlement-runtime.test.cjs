@@ -103,13 +103,17 @@ if (require.main === module) {
         }
         v.show(0, data(2, false)); assert.equal(v.title.string, '未完成');
     });
-    test('本人描边沿用原稿外扩画布与底板下方层级，导出不清零矢量描边', () => {
+    test('本人描边位于整个排行列表之上，头像与底图同心', () => {
         const v = make();
         for (const place of [1, 2, 3, 4, 8]) {
             v.show(109.45, data(place));
             for (let i = 0; i < v.rows.length; i++) {
                 const row = v.rows[i];
-                assert.ok(row.root.children.indexOf(row.self.node) < row.root.children.indexOf(row.back.node));
+                assert.equal(row.self.node.parent.name, 'SelfHighlights');
+                assert.ok(v.root.children.indexOf(row.self.node.parent) > v.root.children.indexOf(v.rows[7].root));
+                const base = row.root.children.find(n => n.name === 'AvatarBase');
+                assert.equal(row.avatar.node.position.x, base.position.x);
+                assert.equal(row.avatar.node.position.y, base.position.y);
                 assert.equal(row.self.node.active, i + 1 === place);
                 assert.deepEqual(row.self.node.getComponent(UITransform).contentSize, { width: 666, height: 117 });
                 assert.equal(row.self.node.position.x - row.back.node.position.x, 0.5);
@@ -168,10 +172,14 @@ if (require.main === module) {
     });
     test('空名单、长昵称、不同屏幕尺寸以及八人转一人保留稳定结构', () => {
         const v = make(); const count = nodes(v.root).length;
-        v.show(109.45, data());
+        v.show(109.45, data(8));
+        assert.equal(v.rows[7].self.node.active, true);
         size.width = 1280; size.height = 720;
         v.show(109.45, { placement: 1, leaderboard: [] });
         assert.equal(v.rows.filter(r => r.root.active).length, 1);
+        assert.equal(v.rows.filter(r => r.self.node.active).length, 1);
+        assert.equal(v.rows[0].self.node.active, true);
+        assert.equal(v.rows[7].self.node.active, false);
         assert.equal(nodes(v.root).length, count);
         assert.equal(v.root.scale.x, Math.min(1280 / 1672, 720 / 941));
         assert.equal(v.rows[0].name.weight, undefined);

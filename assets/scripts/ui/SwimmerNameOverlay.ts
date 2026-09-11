@@ -93,29 +93,9 @@ export class SwimmerNameOverlay {
             const rankLabel = placementBadge.label;
             rankRoot.active = false;
 
-            const displayName = fitName(swimmer.swimmerName);
-            const nameWidth = Math.min(
-                NAME_MAX_WIDTH,
-                Math.max(NAME_FONT_SIZE, estimateTextWidth(displayName, NAME_FONT_SIZE) + NAME_HORIZONTAL_PADDING),
-            );
-            const nameNode = makeUiNode('Name', tag);
-            // No placement is shown before the first race snapshot, so the name
-            // starts exactly on the swimmer anchor rather than reserving badge room.
-            nameNode.setPosition(0, 0, 0);
-            nameNode.getComponent(UITransform)!.setContentSize(nameWidth, TAG_HEIGHT);
-            const label = nameNode.addComponent(Label);
-            label.string = displayName;
-            label.fontSize = NAME_FONT_SIZE;
-            label.lineHeight = TAG_HEIGHT;
-            label.color = AI_COLOR;
-            label.horizontalAlign = Label.HorizontalAlign.CENTER;
-            label.verticalAlign = Label.VerticalAlign.CENTER;
-            label.overflow = Label.Overflow.SHRINK;
-            label.enableOutline = true;
-            label.outlineColor = OUTLINE_COLOR;
-            label.outlineWidth = 1.5;
-            styleDynamicUiLabel(label, TAG_HEIGHT);
-            nameNode.getComponent(UITransform)!.setContentSize(nameWidth, TAG_HEIGHT);
+            const name = makeSwimmerNameLabel('Name', tag, swimmer.swimmerName);
+            const nameNode = name.root;
+            const nameWidth = name.width;
             const entry: NameEntry = {
                 swimmer,
                 root: tag,
@@ -295,6 +275,27 @@ export function swimmerHudScaleForDistance(cameraDistance: number): number {
         Math.min(NAME_MAX_SCALE, Math.sqrt(NAME_REFERENCE_DISTANCE / Math.max(0.01, cameraDistance))),
     );
     return Math.round(rawScale / NAME_SCALE_STEP) * NAME_SCALE_STEP;
+}
+
+/** 泳道和终点共用昵称字重、轮廓、截断与紧凑宽度。 */
+export function makeSwimmerNameLabel(name: string, parent: Node, value: string): { root: Node; width: number } {
+    const displayName = fitName(value);
+    const width = Math.min(NAME_MAX_WIDTH, Math.max(NAME_FONT_SIZE, estimateTextWidth(displayName, NAME_FONT_SIZE) + NAME_HORIZONTAL_PADDING));
+    const root = makeUiNode(name, parent);
+    const label = root.addComponent(Label);
+    label.overflow = Label.Overflow.SHRINK;
+    label.enableWrapText = false;
+    label.string = displayName;
+    label.fontSize = NAME_FONT_SIZE;
+    label.color = AI_COLOR;
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    label.enableOutline = true;
+    label.outlineColor = OUTLINE_COLOR;
+    label.outlineWidth = 1.5;
+    styleDynamicUiLabel(label, TAG_HEIGHT);
+    root.getComponent(UITransform)!.setContentSize(width, TAG_HEIGHT);
+    return { root, width };
 }
 
 function fitName(value: string): string {

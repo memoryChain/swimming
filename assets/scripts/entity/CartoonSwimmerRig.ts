@@ -1072,6 +1072,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._poseState.enterDiveFlight(duration);
     }
 
+    triggerStrokeFeedback(type: StrokeType, perfect: boolean) {
+        this._splashEmitter?.triggerStrokeFeedback(type === StrokeType.RIGHT ? 'right' : 'left', perfect);
+    }
+
     triggerArmStroke() {
         this._armAction = 1;
         this._treadExitHold = CHARACTER_POSE_TUNING.raceTreadStrokeExitHoldSeconds;

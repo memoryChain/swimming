@@ -1,41 +1,34 @@
-import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
+import { Camera, Node, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
-import { makeUiNode, uiColor } from './RuntimeUiFactory';
+import type { Swimmer } from '../entity/Swimmer';
+import { makeUiNode } from './RuntimeUiFactory';
+import { LIVE_PLACEMENT_BADGE_WIDTH, makeLivePlacementBadge, makeSwimmerNameLabel, swimmerHudScaleForDistance } from './SwimmerNameOverlay';
 
-// 完赛后在选手头顶展示名次与昵称，并随镜头投影更新位置。
-
-const PLAYER_ACCENT = uiColor(255, 214, 44, 255);
-const AI_ACCENT = uiColor(126, 200, 255, 255);
-const CHIP_TEXT = uiColor(10, 22, 38, 255);
-const BADGE_BG = uiColor(10, 24, 40, 224);
-const BADGE_BG_PLAYER = uiColor(58, 40, 6, 236);
-const NAME_TEXT = uiColor(238, 246, 255, 255);
-
-const BADGE_HEIGHT = 30;
-const CHIP_RADIUS = 12;
-const BADGE_PADDING = 8;
-const BADGE_HEAD_OFFSET_Y = 26;
-const BADGE_STACK_GAP = 33;
-const BADGE_CLUSTER_X = 110;
-
-// Slack (in UI px) allowed past the HUD edge before a head badge is culled, so a
-// swimmer right at the screen border does not pop in/out.
-const BADGE_OFF_SCREEN_MARGIN = 70;
+const TAG_HEIGHT = 24;
+const NAME_GAP = 4;
+const HEAD_GAP = 10;
+const LABEL_GAP = 4;
+const SAMPLE_SECONDS = 1 / 30;
 
 type BadgeEntry = {
-    swimmerNode: Node;
-    getHead: (out: Vec3) => Vec3;
+    swimmer: Swimmer;
     root: Node;
     placement: number;
+    width: number;
+    headX: number;
+    headTop: number;
+    scale: number;
+    shownScale: number;
+    projected: boolean;
 };
 
+/** 终点沿用泳道名牌；根据真实头顶投影留白，避免昵称压住角色。 */
 export class FinishRankOverlay {
     private _hud: Node | null = null;
     private _badgeRoot: Node | null = null;
     private readonly _badges = new Map<Node, BadgeEntry>();
     private _headBadgesVisible = true;
-
-    // Reused scratch vectors so per-frame projection allocates nothing.
+    private _elapsed = SAMPLE_SECONDS;
     private readonly _worldPos = new Vec3();
     private readonly _screen = new Vec3();
     private readonly _uiWorld = new Vec3();
@@ -45,204 +38,116 @@ export class FinishRankOverlay {
     private readonly _projectionEntries: BadgeEntry[] = [];
     private readonly _placedX: number[] = [];
     private readonly _placedY: number[] = [];
+    private readonly _placedWidths: number[] = [];
+    private readonly _placedHeights: number[] = [];
 
     bind(hud: Node) {
-        if (!hud?.isValid) {
-            return;
-        }
+        if (!hud?.isValid) return;
         this._hud = hud;
-        if (!this._badgeRoot?.isValid) {
-            this._badgeRoot = makeUiNode('FinishRankBadges', hud);
-        }
-        this._badgeRoot!.active = false;
+        if (!this._badgeRoot?.isValid) this._badgeRoot = makeUiNode('FinishRankBadges', hud);
+        if (this._badgeRoot.active) this._badgeRoot.active = false;
     }
-
-    hasResults(): boolean {
-        return this._badges.size > 0;
-    }
-
+    hasResults(): boolean { return this._badges.size > 0; }
     setHeadBadgesVisible(visible: boolean) {
         this._headBadgesVisible = visible;
-        if (this._badgeRoot?.isValid) {
-            const active = visible && this._badges.size > 0;
-            if (this._badgeRoot.active !== active) {
-                this._badgeRoot.active = active;
-            }
+        if (!this._badgeRoot?.isValid) return;
+        const active = visible && this.hasResults();
+        if (this._badgeRoot.active !== active) {
+            this._badgeRoot.active = active;
+            if (active) this._elapsed = SAMPLE_SECONDS;
         }
     }
-
     clear() {
-        for (const entry of this._badges.values()) {
-            if (entry.root?.isValid) {
-                entry.root.destroy();
-            }
-        }
+        for (const entry of this._badges.values()) if (entry.root?.isValid) entry.root.destroy();
         this._badges.clear();
         this._projectionEntries.length = 0;
-        if (this._badgeRoot?.isValid) {
-            this._badgeRoot.active = false;
-        }
+        this._elapsed = SAMPLE_SECONDS;
+        if (this._badgeRoot?.active) this._badgeRoot.active = false;
     }
-
     addResult(result: RaceFinishResult) {
         const node = result.swimmer?.node;
-        if (!node?.isValid || this._badges.has(node) || !this._badgeRoot?.isValid) {
-            return;
-        }
-        const swimmer = result.swimmer;
-        this._badges.set(node, {
-            swimmerNode: node,
-            getHead: (out) => swimmer.getCameraUpperBodyWorldPosition(out),
-            root: this.buildBadge(result),
-            placement: result.placement,
-        });
-        this._badgeRoot.active = this._headBadgesVisible;
-        this.refreshBadgeSiblingOrder();
-    }
-
-    // Reproject every head badge into HUD-local space and de-overlap them so
-    // stacked swimmers stay individually readable. Call after the race camera
-    // has been updated for the frame.
-    update(worldCamera: Camera | null, uiCamera: Camera | null) {
-        if (!this._badgeRoot?.isValid || !this._badgeRoot.active
-            || !worldCamera || !uiCamera || !this._hud?.isValid) {
-            return;
-        }
-        const hudTransform = this._hud.getComponent(UITransform);
-        if (!hudTransform) {
-            return;
-        }
-        const entries = this._projectionEntries;
-        this._placedX.length = 0;
-        this._placedY.length = 0;
-        const size = view.getVisibleSize();
-        const halfW = (hudTransform.width || size.width) / 2 + BADGE_OFF_SCREEN_MARGIN;
-        const halfH = (hudTransform.height || size.height) / 2 + BADGE_OFF_SCREEN_MARGIN;
-        // Camera forward (the -Z axis of the camera node) used to reject swimmers
-        // that are behind the camera, e.g. when facing away from the finish wall.
-        Vec3.transformQuat(this._camForward, Vec3.FORWARD, worldCamera.node.worldRotation);
-        for (const entry of entries) {
-            entry.getHead(this._worldPos);
-            // Behind the camera -> hide instead of projecting a mirrored ghost.
-            Vec3.subtract(this._camToHead, this._worldPos, worldCamera.node.worldPosition);
-            if (Vec3.dot(this._camToHead, this._camForward) <= 0) {
-                if (entry.root.active) {
-                    entry.root.active = false;
-                }
-                continue;
-            }
-            worldCamera.worldToScreen(this._worldPos, this._screen);
-            uiCamera.screenToWorld(this._screen, this._uiWorld);
-            hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
-            // Off the visible HUD area -> hide.
-            if (Math.abs(this._uiLocal.x) > halfW || Math.abs(this._uiLocal.y) > halfH) {
-                if (entry.root.active) {
-                    entry.root.active = false;
-                }
-                continue;
-            }
-            if (!entry.root.active) {
-                entry.root.active = true;
-            }
-            const x = Math.round(this._uiLocal.x);
-            let y = Math.round(this._uiLocal.y + BADGE_HEAD_OFFSET_Y);
-            for (let guard = 0; guard < entries.length; guard++) {
-                let collided = false;
-                for (let i = 0; i < this._placedX.length; i++) {
-                    if (Math.abs(this._placedX[i] - x) < BADGE_CLUSTER_X
-                        && Math.abs(this._placedY[i] - y) < BADGE_STACK_GAP) {
-                        y = this._placedY[i] + BADGE_STACK_GAP;
-                        collided = true;
-                        break;
-                    }
-                }
-                if (!collided) {
-                    break;
-                }
-            }
-            this._placedX.push(x);
-            this._placedY.push(y);
-            const current = entry.root.position;
-            if (current.x !== x || current.y !== y) {
-                entry.root.setPosition(x, y, 0);
-            }
-        }
-    }
-
-    private buildBadge(result: RaceFinishResult): Node {
-        const accent = result.isPlayer ? PLAYER_ACCENT : AI_ACCENT;
-        const bgColor = result.isPlayer ? BADGE_BG_PLAYER : BADGE_BG;
-        const name = displayName(result);
-        const nameWidth = estimateTextWidth(name, 16);
-        const badgeW = BADGE_PADDING + CHIP_RADIUS * 2 + 6 + nameWidth + BADGE_PADDING;
-
-        const badge = makeUiNode(`FinishBadge_${result.placement}`, this._badgeRoot!);
-        badge.getComponent(UITransform)!.setContentSize(badgeW, BADGE_HEIGHT);
-
-        const bg = badge.addComponent(Graphics);
-        bg.fillColor = bgColor;
-        bg.strokeColor = accent;
-        bg.lineWidth = 2;
-        bg.roundRect(-badgeW / 2, -BADGE_HEIGHT / 2, badgeW, BADGE_HEIGHT, BADGE_HEIGHT / 2);
-        bg.fill();
-        bg.stroke();
-
-        const chipCenterX = -badgeW / 2 + BADGE_PADDING + CHIP_RADIUS;
-        const chipNode = makeUiNode('Chip', badge);
-        const chip = chipNode.addComponent(Graphics);
-        chip.fillColor = accent;
-        chip.circle(chipCenterX, 0, CHIP_RADIUS);
-        chip.fill();
-
-        const rankNode = makeUiNode('Rank', badge);
-        rankNode.setPosition(chipCenterX, 1, 0);
-        rankNode.getComponent(UITransform)!.setContentSize(CHIP_RADIUS * 2 + 6, BADGE_HEIGHT);
-        const rankLabel = rankNode.addComponent(Label);
-        rankLabel.string = `${result.placement}`;
-        rankLabel.fontSize = 16;
-        rankLabel.color = CHIP_TEXT;
-        rankLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
-        rankLabel.verticalAlign = Label.VerticalAlign.CENTER;
-
-        const nameNode = makeUiNode('Name', badge);
-        const nameCenterX = chipCenterX + CHIP_RADIUS + 6 + nameWidth / 2;
-        nameNode.setPosition(nameCenterX, 1, 0);
-        nameNode.getComponent(UITransform)!.setContentSize(nameWidth + 10, BADGE_HEIGHT);
-        const nameLabel = nameNode.addComponent(Label);
-        nameLabel.string = name;
-        nameLabel.fontSize = 16;
-        nameLabel.color = result.isPlayer ? PLAYER_ACCENT : NAME_TEXT;
-        nameLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
-        nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
-
-        return badge;
-    }
-
-    // Placement only changes when a result is added/rebuilt, so do not dirty the
-    // UI hierarchy with setSiblingIndex on every projection frame.
-    private refreshBadgeSiblingOrder() {
-        this._projectionEntries.length = 0;
-        for (const entry of this._badges.values()) {
-            this._projectionEntries.push(entry);
-        }
+        if (!node?.isValid || this._badges.has(node) || !this._badgeRoot?.isValid) return;
+        const root = makeUiNode(`FinishBadge_${result.placement}`, this._badgeRoot);
+        const rank = makeLivePlacementBadge('Placement', root, result.isPlayer);
+        rank.label.string = `${result.placement}`;
+        const name = makeSwimmerNameLabel('Name', root, result.name || result.swimmer.swimmerName);
+        const width = LIVE_PLACEMENT_BADGE_WIDTH + NAME_GAP + name.width;
+        root.getComponent(UITransform)!.setContentSize(width, TAG_HEIGHT);
+        rank.root.setPosition(-width / 2 + LIVE_PLACEMENT_BADGE_WIDTH / 2, 0, 0);
+        name.root.setPosition(width / 2 - name.width / 2, 0, 0);
+        root.active = false;
+        const entry: BadgeEntry = { swimmer: result.swimmer, root, placement: result.placement, width,
+            headX: 0, headTop: 0, scale: 1, shownScale: -1, projected: false };
+        this._badges.set(node, entry);
+        this._projectionEntries.push(entry);
+        // 仅新增成绩时排序，投影帧不重排层级。
         this._projectionEntries.sort((a, b) => a.placement - b.placement);
-        for (let i = 0; i < this._projectionEntries.length; i++) {
+        for (let i = 0; i < this._projectionEntries.length; i++)
             this._projectionEntries[i].root.setSiblingIndex(this._projectionEntries.length - 1 - i);
+        if (this._badgeRoot.active !== this._headBadgesVisible) this._badgeRoot.active = this._headBadgesVisible;
+        this._elapsed = SAMPLE_SECONDS;
+    }
+    update(worldCamera: Camera | null, uiCamera: Camera | null, dt = SAMPLE_SECONDS) {
+        if (!this._badgeRoot?.isValid || !this._badgeRoot.active || !worldCamera || !uiCamera || !this._hud?.isValid) return;
+        this._elapsed += Math.max(0, dt);
+        if (this._elapsed < SAMPLE_SECONDS) return;
+        this._elapsed %= SAMPLE_SECONDS;
+        const hud = this._hud.getComponent(UITransform);
+        if (!hud) return;
+        const size = view.getVisibleSize();
+        const halfW = (hud.width || size.width) / 2;
+        const halfH = (hud.height || size.height) / 2;
+        Vec3.transformQuat(this._camForward, Vec3.FORWARD, worldCamera.node.worldRotation);
+        this._placedX.length = this._placedY.length = this._placedWidths.length = this._placedHeights.length = 0;
+        // 先投影所有头顶，避免名牌向上避让时挡住旁边较高的角色。
+        for (const entry of this._projectionEntries) {
+            entry.projected = false;
+            if (entry.root.isValid && entry.swimmer.node?.activeInHierarchy) {
+                entry.swimmer.getNameTagWorldPosition(this._worldPos);
+                Vec3.subtract(this._camToHead, this._worldPos, worldCamera.node.worldPosition);
+                if (Vec3.dot(this._camToHead, this._camForward) > 0) {
+                    entry.scale = swimmerHudScaleForDistance(this._camToHead.length());
+                    entry.swimmer.getHeadTopScreenPosition(worldCamera, this._screen);
+                    uiCamera.screenToWorld(this._screen, this._uiWorld);
+                    hud.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
+                    entry.headX = Math.round(this._uiLocal.x);
+                    entry.headTop = this._uiLocal.y;
+                    entry.projected = Math.abs(entry.headX) < halfW && Math.abs(entry.headTop) < halfH;
+                }
+            }
+            if (!entry.projected && entry.root.active) entry.root.active = false;
+        }
+        for (const entry of this._projectionEntries) {
+            if (!entry.projected) continue;
+            const width = entry.width * entry.scale;
+            const height = TAG_HEIGHT * entry.scale;
+            const x = Math.round(Math.max(-halfW + width / 2 + 4, Math.min(halfW - width / 2 - 4, entry.headX)));
+            let y = Math.ceil(entry.headTop + HEAD_GAP + height / 2);
+            for (let guard = 0; guard < this._projectionEntries.length * 2; guard++) {
+                const previousY = y;
+                for (const other of this._projectionEntries) {
+                    if (!other.projected) continue;
+                    // 头顶下方的头肩区域作为保留区，边缘留白不随远景缩小。
+                    if (Math.abs(x - other.headX) < width / 2 + 34 * other.scale
+                        && y - height / 2 < other.headTop + HEAD_GAP
+                        && y + height / 2 > other.headTop - 65 * other.scale)
+                        y = Math.ceil(other.headTop + HEAD_GAP + height / 2);
+                }
+                for (let i = 0; i < this._placedX.length; i++) {
+                    const gapY = (height + this._placedHeights[i]) / 2 + LABEL_GAP;
+                    if (Math.abs(x - this._placedX[i]) < (width + this._placedWidths[i]) / 2 + LABEL_GAP
+                        && Math.abs(y - this._placedY[i]) < gapY)
+                        y = Math.ceil(this._placedY[i] + gapY);
+                }
+                if (y === previousY) break;
+            }
+            // 上方空间不足时隐藏，不能为了挤进屏幕而把名牌压回脸上。
+            if (y + height / 2 > halfH - 4) { if (entry.root.active) entry.root.active = false; continue; }
+            this._placedX.push(x); this._placedY.push(y);
+            this._placedWidths.push(width); this._placedHeights.push(height);
+            if (!entry.root.active) entry.root.active = true;
+            if (entry.shownScale !== entry.scale) { entry.shownScale = entry.scale; entry.root.setScale(entry.scale, entry.scale, 1); }
+            if (entry.root.position.x !== x || entry.root.position.y !== y) entry.root.setPosition(x, y, 0);
         }
     }
-}
-
-function displayName(result: RaceFinishResult): string {
-    const name = result.name || (result.isPlayer ? '你' : 'AI');
-    return name.length > 6 ? `${name.slice(0, 6)}…` : name;
-}
-
-// Rough CJK-aware width estimate so the badge pill hugs the name without a
-// measure pass (full-width for non-ASCII, ~0.58em for ASCII).
-function estimateTextWidth(text: string, fontSize: number): number {
-    let width = 0;
-    for (let i = 0; i < text.length; i++) {
-        width += text.charCodeAt(i) > 255 ? fontSize : fontSize * 0.58;
-    }
-    return Math.max(fontSize, width);
 }

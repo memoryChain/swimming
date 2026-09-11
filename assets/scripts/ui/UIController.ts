@@ -349,6 +349,7 @@ export class UIController extends Component {
     showRating(rating: Rating, combo: number, side?: StrokeType) {
         const praise = praiseForRating(rating, combo);
         if (this.raceHudStatus) {
+            this.raceHudStatus.stroke.showResult(side, rating);
             this.raceHudStatus.showStrokePraise(side, praise?.text ?? '', praise?.color, combo);
             return;
         }

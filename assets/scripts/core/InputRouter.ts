@@ -4,6 +4,7 @@ import { INPUT_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 
 export type InputRouterCallbacks = {
     onStroke: (type: StrokeType) => void;
+    onStrokePressChanged?: (type: StrokeType, pressed: boolean) => void;
     onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
     onKickStroke: (type: StrokeType) => void;
     onDiveChargeStart: () => void;
@@ -131,6 +132,7 @@ export class InputRouter {
         press.active = true;
         press.startedMs = Date.now();
         press.promoted = false;
+        this._callbacks.onStrokePressChanged?.(type, true);
         this._callbacks.onKickStroke(type);
     }
 
@@ -141,6 +143,7 @@ export class InputRouter {
         }
         // The kick already fired on press. Only a promoted (long) press needs to
         // close out its arm stroke on release; a short press is already done.
+        this._callbacks.onStrokePressChanged?.(type, false);
         if (press.promoted) {
             this._callbacks.onStrokeHeld(type, false);
         }
@@ -190,6 +193,8 @@ export class InputRouter {
     }
 
     resetStrokeInput() {
+        this._callbacks.onStrokePressChanged?.(StrokeType.LEFT, false);
+        this._callbacks.onStrokePressChanged?.(StrokeType.RIGHT, false);
         this._lastPadStrokeType = null;
         this._lastPadStrokeMs = 0;
         this._leftPress.active = false;

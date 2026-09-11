@@ -95,20 +95,22 @@ export class SettlementView {
         for (let i = 0; i < 8; i++) {
             const y = 134 + i * 70;
             const root = this.node(this.root, `ResultEntry${i}`, 0, 0, WIDTH, HEIGHT);
-            // 保持 PSD 层级：外描边在行底板下方，避免其内侧阴影压在浅色底板上。
-            // 切图含外扩柔光；在统一行画布上定位，不按不透明边界缩放。
-            const self = this.art(root, 'SelfHighlight', 975, y - 25, 666, 117, ART.self);
             const back = this.art(root, 'RowBackground', 1000, y, 615, 68);
             const watermark = this.text(root, 'TopWatermark', '', 1332, y + 33, 135, 38, WATERMARK, false, false, false, true);
             const medal = this.art(root, 'RankMedal', 1020, y - 2, 46, 69);
             const rank = this.text(root, 'RankNumber', '', 1014, y + 33, 58, 29, NAVY, true, false, false, true);
             this.art(root, 'AvatarBase', 1088, y + 5, 56, 56, RESOURCE_PATHS.avatarPickerUi.avatarBase);
-            const avatar = this.art(root, 'Avatar', 1088, y + 5, 48, 48);
+            const avatar = this.art(root, 'Avatar', 1092, y + 9, 48, 48);
             // 昵称是无界动态文本，不能交给静态子集字库；独立保留系统全覆盖字体。
             const name = this.text(root, 'PlayerName', '', 1162, y + 33, 280, 26, NAVY, false, true);
             const time = this.text(root, 'FinishTime', '', 1455, y + 33, 125, 27, NAVY, false, false, true, true);
             const status = this.text(root, 'FinishStatus', '', 1455, y + 33, 125, 25, NAVY, false, false, true);
-            this.rows.push({ root, back, medal, rank, avatar, name, time, status, self, watermark });
+            this.rows.push({ root, back, medal, rank, avatar, name, time, status, self: null, watermark });
+        }
+        // 本人描边置于整个排行列表上方，外扩柔光不能被相邻行底板截断。
+        const highlights = this.node(this.root, 'SelfHighlights', 0, 0, WIDTH, HEIGHT);
+        for (let i = 0; i < this.rows.length; i++) {
+            this.rows[i].self = this.art(highlights, 'SelfHighlight', 975, 134 + i * 70 - 25, 666, 117, ART.self);
         }
         this.art(this.root, 'RewardCoin', 1133, 731, 56, 56, RESOURCE_PATHS.characterUi.upgradeCurrency);
         this.text(this.root, 'RewardTitle', '本局奖励', 1205, 760, 140, 27, WHITE);
@@ -179,6 +181,7 @@ export class SettlementView {
             const controls = this.rows[i];
             const row = list[i];
             active(controls.root, !!row);
+            active(controls.self.node, !!row && row.isPlayer);
             if (!row) continue;
             const complete = row.finished !== false && !row.quit && !row.eliminated && Number.isFinite(row.time) && row.time > 0;
             const rowTier = settlementTier(row.placement, complete);
@@ -187,7 +190,6 @@ export class SettlementView {
             if (rowTier < 3) this.setArt(controls.medal, ART.medals[rowTier]);
             active(controls.rank.node, rowTier === 3);
             setText(controls.rank, String(row.placement));
-            active(controls.self.node, row.isPlayer);
             setText(controls.watermark, rowTier < 3 ? `TOP ${row.placement}` : '');
             setText(controls.name, `${row.name}${row.isPlayer ? '（我）' : ''}`);
             setText(controls.time, settlementTime(row));
