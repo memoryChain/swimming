@@ -74,7 +74,7 @@ const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () =>
 const cache = {};
 const stubs = {
     'cc': cc,
-    'core/GameBalance': { getRaceDistance: () => 200, setRaceDifficulty: () => {} },
+    'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
     'ui/AvatarUiAssets': { avatarTexturePath: id => `avatar/${id}`, loadAvatarUiSpriteFrame: (p, done) => done({ path: p, isValid: true }) },
     'ui/ProjectUiFonts': { PROJECT_UI_ENGLISH_BOLD_FAMILY: 'Arial Black', styleProjectUiLabel: (label, weight, lineHeight) => { label.weight = weight; label.lineHeight = lineHeight; } },
     'backend/PlayerData': { PlayerData: { avatarId: 'coral', nickName: '小龟9460' } },

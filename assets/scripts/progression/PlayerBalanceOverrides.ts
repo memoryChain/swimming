@@ -1,6 +1,5 @@
 ﻿import { SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
 import { CONDITION_BALANCE } from '../core/ConditionBalance';
-import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 
 // Resolved balance overrides for the player's active character + level.
 // Applied to the player's motor / condition model / dive resolver only; the AI
@@ -17,7 +16,6 @@ export type PlayerBalanceOverrides = {
     energyTotal: number;
     perfectComboMaxOvercap: number;
     strokeQualityAccel: number;
-    kickMaxSpeed: number;
     diveMaxLaunchSpeed: number;
     // Body weight (from the character definition). Pass-through, not leveled.
     weight: number;
@@ -29,10 +27,9 @@ export type CharacterStats = {
     stamina: number;
     technique: number;
     burst: number;
-    kick: number;
 };
 
-export type CharacterDisplayStats = Pick<CharacterStats, 'stamina' | 'technique' | 'burst'>;
+export type CharacterDisplayStats = CharacterStats;
 
 // Per-level increments (micro - a maxed character is stronger but never broken).
 export const PROGRESSION_PER_LEVEL = {
@@ -40,7 +37,6 @@ export const PROGRESSION_PER_LEVEL = {
     energyTotal: 0.33,           // +19.8 at 60 (+20%)
     perfectComboMaxOvercap: 0.0009, // +0.054 at 60 (+6%)
     strokeQualityAccel: 0.006,   // +0.36 at 60 (+22.5%)
-    kickMaxSpeed: 0.005,         // +0.3 at 60 (+14.3%)
     diveMaxLaunchSpeed: 0.012,   // +0.72 at 60 (+8.8%)
 } as const;
 
@@ -81,7 +77,6 @@ export function resolvePlayerBalance(
     maxLevel: number,
     weight: number,
     energyGainAptitude: number,
-    kickAptitude: number,
 ): PlayerBalanceOverrides {
     const clampedLevel = Math.max(1, Math.min(maxLevel, level));
     const levelsAbove1 = clampedLevel - 1;
@@ -95,8 +90,6 @@ export function resolvePlayerBalance(
         + per.perfectComboMaxOvercap * levelsAbove1;
     const strokeQualityAccel = SWIMMER_BALANCE.strokeQualityAccel * attributeMultiplier(stats.technique)
         + per.strokeQualityAccel * levelsAbove1;
-    const kickMaxSpeed = SWIMMER_BALANCE.kickMaxSpeed * attributeMultiplier(kickAptitude)
-        + per.kickMaxSpeed * levelsAbove1;
     const diveMaxLaunchSpeed = DIVE_BALANCE.maxLaunchSpeed * attributeMultiplier(stats.burst)
         + per.diveMaxLaunchSpeed * levelsAbove1;
 
@@ -105,7 +98,6 @@ export function resolvePlayerBalance(
         energyTotal,
         perfectComboMaxOvercap,
         strokeQualityAccel,
-        kickMaxSpeed,
         diveMaxLaunchSpeed,
         weight,
         energyGainAptitude,

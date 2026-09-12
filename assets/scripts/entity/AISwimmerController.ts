@@ -1,5 +1,5 @@
 import { _decorator, Component } from 'cc';
-import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceDifficultyConfig, getRaceDistance } from '../core/GameBalance';
+import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceAiDifficultyConfig, getRaceDistance } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AI_DOLPHIN_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
@@ -275,8 +275,8 @@ export class AISwimmerController extends Component {
         let rubber = 0;
         let duel = 0;
         if (this.raceObserver) {
-            // Per-tier strategy scaling: 入门 barely chases, 世锦赛 clings hard.
-            const tier = getRaceDifficultyConfig();
+            // 所有比赛入口统一采用原世锦赛 AI 策略。
+            const tier = getRaceAiDifficultyConfig();
             const competitiveness = clamp(this.personality.competitiveness, 0, 1);
             const gap = this.raceObserver.gapToPlayer(distance); // + = ahead of player
             const normalized = clamp(gap / Math.max(0.5, AI_STRATEGY_TUNING.rubberBandRange), -1, 1);
@@ -334,7 +334,7 @@ export class AISwimmerController extends Component {
         // Personality weave, thinned out the harder this AI is currently pushing
         // (so a surging fighter tightens up), scaled by the difficulty tier
         // (入门 wobbles more, 世锦赛 swims cleaner), and bounded by the global cap.
-        const weaveScale = getRaceDifficultyConfig().weaveScale;
+        const weaveScale = getRaceAiDifficultyConfig().weaveScale;
         const weave = clamp(this.personality.weaveTendency * weaveScale * (1 - discipline * 0.6), 0, 1);
         const wanderChance = weave * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
         return randomFloat() < wanderChance ? justUsed : opposite;

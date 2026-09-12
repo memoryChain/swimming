@@ -1,4 +1,4 @@
-import { getRaceDistance, SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
+import { getRaceDistance, isRaceSteeringEnabled, SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { getRaceArmCycleSpeedScale, MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
@@ -42,6 +42,9 @@ type StrokeAction = {
     releasedAt: number;
     progress: number;
     baseAccelerationStarted: boolean;
+    heldBaseImpulse: number;
+    heldBaseImpulseBudget: number;
+    heldBaseAcceleration: number;
     strokeQualitySettled: boolean;
     alternationQuality: number;
     inputFreshness: number;
@@ -141,8 +144,7 @@ export class SwimmerMotor {
     private _lateralOffset = 0;
     private _lateralOffsetMin = -1000;
     private _lateralOffsetMax = 1000;
-    // Body weight for collision knockback (player from character def, AI from
-    // competitor profile; default 1). Heavy bodies resist being shoved.
+    // 真人和 AI 均使用角色定义的固有体重，碰撞求解器负责放大差异；默认 1。
     private _weight = 1;
     // Decaying collision knockback, integrated into distance/lateralOffset each
     // frame (same channels nudgeDistance/setLateralOffset use). Stored in
@@ -152,11 +154,13 @@ export class SwimmerMotor {
     private _knockbackDistance = 0;
     private _knockbackLateral = 0;
     private _steeringEnabled = false;
+    private _isAiControlled = false;
     // Kick pulse budget (radians left to sweep) per leg, driven by discrete taps.
     // Reuses the *KickMotionRemaining fields below. A tap on the contralateral
     // input tops these up; the leg sweeps through them at a fixed fast cadence.
 
-    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, initialSpeedCapBonus = 0) {
+    startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, initialSpeedCapBonus = 0, isAiControlled = false) {
+        this._isAiControlled = isAiControlled;
         this._isRacing = true;
         this._currentSpeed = initialSpeed;
         this.resetRaceState(initialDistance);
@@ -421,13 +425,14 @@ export class SwimmerMotor {
     // enters above that ceiling, so applying the surface fade there would make
     // every kick produce exactly zero propulsion.
     private computeKickAcceleration(): number {
+        // 踢腿使用全角色共用参数，不参与角色资质或等级成长。
         if (this._kickCadenceHz <= 0) {
             return 0;
         }
         const fade = this._glidePhaseActive
             ? 1
             : clamp01(
-                (this._effectiveKickMaxSpeed - this._currentSpeed)
+                (SWIMMER_BALANCE.kickMaxSpeed - this._currentSpeed)
                     / Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand),
             );
         if (fade <= 0) {
@@ -459,7 +464,9 @@ export class SwimmerMotor {
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
-        const strokeAcceleration = this.consumeStrokeAcceleration(dt);
+        const strokeAcceleration = this.consumeStrokeAcceleration(dt)
+            + this.consumeHeldBaseAcceleration(this._leftActions[0], dt)
+            + this.consumeHeldBaseAcceleration(this._rightActions[0], dt);
         // Normal-dive player and AI inputs both register discrete kick taps. AI
         // uses the same cadence-derived underwater propulsion instead of a tiny
         // one-off pulse that cannot overcome glide drag.
@@ -596,10 +603,6 @@ export class SwimmerMotor {
 
     private get _effectiveMaxSpeed(): number {
         return this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed;
-    }
-
-    private get _effectiveKickMaxSpeed(): number {
-        return this._playerBalance?.kickMaxSpeed ?? SWIMMER_BALANCE.kickMaxSpeed;
     }
 
     private get _effectiveComboMaxOvercap(): number {
@@ -929,7 +932,7 @@ export class SwimmerMotor {
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds, ranges)
             : undefined;
         this._lastStrokeQuality = strokeQuality;
-        this.startSettledStrokeAcceleration(strokeQuality, actionSeconds);
+        this.startSettledStrokeAcceleration(strokeQuality, actionSeconds, action.heldBaseImpulse, releaseProgress);
         action.strokeQualitySettled = true;
         // Steering nudge fires when a real stroke settles (“松手” for a tap, or a
         // held cycle completing). The turn scales with pull strength: the further
@@ -966,25 +969,66 @@ export class SwimmerMotor {
         return Math.max(0.001, elapsed + remainingSeconds);
     }
 
-    private startActionBaseAcceleration(type: StrokeType, action: StrokeAction) {
+    private startActionBaseAcceleration(action: StrokeAction) {
         action.baseAccelerationStarted = true;
-        // Base propulsion is paid when the stroke settles, after release timing is
-        // known, so it can be normalized by the stroke's occupied action time.
+        const cycleSeconds = this.currentCycleSeconds();
+        action.heldBaseImpulseBudget = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel)
+            * cycleSeconds * Math.max(0, SWIMMER_BALANCE.strokeAccelDurationRatio)
+            * clamp01(SWIMMER_BALANCE.strokeHeldBaseRatio);
+        const heldSeconds = cycleSeconds * clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)
+            / Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
+        action.heldBaseAcceleration = heldSeconds > 0 ? action.heldBaseImpulseBudget / heldSeconds : 0;
     }
 
-    private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number) {
+    private consumeHeldBaseAcceleration(action: StrokeAction | undefined, dt: number): number {
+        if (!action || dt <= 0 || action.startedAt < 0 || action.releasedAt >= 0 || action.strokeQualitySettled) {
+            return 0;
+        }
+        // 每只手独立预支，绝不续长或重置另一只手尚未结束的松手推进。
+        // 按动作进度限制本帧有效时间，跨过超时点的大帧也不能多领推进。
+        const remainingProgress = Math.max(0,
+            CYCLE_AMOUNT * clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress) - action.progress);
+        const heldSpeed = this.currentActionCycleSpeed() * MOTION_TUNING.heldMotionSpeedScale;
+        const activeSeconds = heldSpeed > 0 ? Math.min(dt, remainingProgress / heldSpeed) : 0;
+        const impulse = Math.min(action.heldBaseAcceleration * activeSeconds,
+            Math.max(0, action.heldBaseImpulseBudget - action.heldBaseImpulse));
+        action.heldBaseImpulse += impulse;
+        return impulse / dt;
+    }
+
+    private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number, heldBaseImpulse: number, releaseProgress: number) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel);
-        const qualityAccel = Math.max(0, strokeQuality) * this._effectiveStrokeQualityAccel * this._conditionSpeedScale;
-        const accel = (baseAccel + qualityAccel) * this.strokeActionTimeScale(actionSeconds);
+        const goodScale = strokeQuality > 0 && strokeQuality < 1
+            ? clamp01(SWIMMER_BALANCE.strokeGoodPropulsionScale) : 1;
+        const qualityAccel = Math.max(0, strokeQuality) * goodScale
+            * this._effectiveStrokeQualityAccel * this._conditionSpeedScale;
+        const timeScale = this.strokeActionTimeScale(actionSeconds, releaseProgress);
+        const pulseSeconds = Math.max(0.0001, this.currentCycleSeconds() * SWIMMER_BALANCE.strokeAccelDurationRatio);
+        const remainingBaseAccel = Math.max(0, baseAccel * timeScale - heldBaseImpulse / pulseSeconds);
+        const accel = remainingBaseAccel + qualityAccel * timeScale;
         if (accel <= 0) {
             return;
         }
         this.startStrokeAcceleration(accel, false);
     }
 
-    private strokeActionTimeScale(actionSeconds: number): number {
+    private strokeActionTimeScale(actionSeconds: number, releaseProgress: number): number {
         const referenceSeconds = this.referenceSweetCenterActionSeconds();
-        return referenceSeconds > 0 ? Math.max(0, actionSeconds) / referenceSeconds : 1;
+        const legacyScale = referenceSeconds > 0 ? Math.max(0, actionSeconds) / referenceSeconds : 1;
+        // 完美区内晚松手会延长每次输入周期，而非只延长动画回收时间。
+        // 用当前轮速和有效进度计算标准耗时，各端不依赖本地按下时间或输入延迟。
+        const heldCycleSeconds = this.currentCycleSeconds() / Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
+        const minHold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
+        const perfect = this._effectiveReleaseRanges.perfect;
+        const center = (perfect.start + perfect.end) * 0.5;
+        // 视觉宽限仍可判 PERFECT，但超出完美区终点不再增加耗时奖励。
+        const progress = clamp(releaseProgress, 0,
+            Math.min(perfect.end, clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)));
+        const referencePeriod = Math.max(0.0001, minHold + center * heldCycleSeconds);
+        const periodScale = (minHold + progress * heldCycleSeconds) / referencePeriod;
+        const strength = clamp01(SWIMMER_BALANCE.strokeTimeCompensation);
+        // 满补偿直接返回，避免混合运算的浮点消减残留历史耗时差异。
+        return strength >= 1 ? periodScale : lerp(legacyScale, periodScale, strength);
     }
 
     private referenceSweetCenterActionSeconds(): number {
@@ -1051,7 +1095,7 @@ export class SwimmerMotor {
         const full = STROKE_QUALITY_TUNING.armCycleSpeedFull;
         const span = Math.max(0.01, full - start);
         const t = clamp01((this._currentSpeed - start) / span);
-        return CYCLE_AMOUNT * getRaceArmCycleSpeedScale() * this._conditionCadenceScale * lerp(
+        return CYCLE_AMOUNT * getRaceArmCycleSpeedScale(this._isAiControlled) * this._conditionCadenceScale * lerp(
             STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond,
             STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond,
             t,
@@ -1066,6 +1110,12 @@ export class SwimmerMotor {
     // same stroke path (the AI controller only decides which side to stroke).
     setSteeringEnabled(enabled: boolean) {
         this._steeringEnabled = enabled;
+    }
+
+    private clearSteeringOffset() {
+        this._heading = 0;
+        this._headingTurnRate = 0;
+        this._poolWallRecoveryDirection = 0;
     }
 
     // Lateral offset bounds (relative to the swimmer's lane centre) so the drift
@@ -1163,6 +1213,10 @@ export class SwimmerMotor {
 
     // NETWORKED RACE: correct both heading and persistent angular velocity.
     correctHeading(targetHeading: number, targetTurnRate: number, blend: number) {
+        if (!isRaceSteeringEnabled()) {
+            this.clearSteeringOffset();
+            return;
+        }
         const max = safeMaxHeadingRadians();
         const t = clamp(finiteOr(targetHeading, 0), -max, max);
         const useBlend = clamp(blend, 0, 1);
@@ -1188,6 +1242,7 @@ export class SwimmerMotor {
     // Cancelling outward angular velocity immediately prevents continued pressure
     // into the wall; the wall-only speed cap and target brake prevent overshoot.
     returnToLaneFromPoolWall(inwardDirection: number) {
+        if (!isRaceSteeringEnabled()) return;
         const inwardSign = inwardDirection >= 0 ? 1 : -1;
         const escapeHeading = safePoolWallEscapeHeadingRadians();
         const inwardHeading = this._heading * inwardSign;
@@ -1295,6 +1350,10 @@ export class SwimmerMotor {
     // bending the path; water drag slowly relaxes curvature instead of freezing the
     // swimmer onto a fixed diagonal.
     private updateSteering(dt: number) {
+        if (!isRaceSteeringEnabled()) {
+            this.clearSteeringOffset();
+            return;
+        }
         const maxHeading = safeMaxHeadingRadians();
         this._heading = clamp(finiteOr(this._heading, 0), -maxHeading, maxHeading);
         const maxRate = safeMaxTurnRateRadians();
@@ -1408,7 +1467,7 @@ export class SwimmerMotor {
     // current axial roll: it fades to zero side-on, then reverses after capsizing.
     // powerFactor (0..1) scales the turn by how hard/long the stroke was pulled.
     private applyStrokeSteering(type: StrokeType, powerFactor: number) {
-        if (!this._steeringEnabled) {
+        if (!this._steeringEnabled || !isRaceSteeringEnabled()) {
             return;
         }
         const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
@@ -1454,6 +1513,9 @@ export class SwimmerMotor {
             releasedAt: held ? -1 : this._motionClock,
             progress: 0,
             baseAccelerationStarted: false,
+            heldBaseImpulse: 0,
+            heldBaseImpulseBudget: 0,
+            heldBaseAcceleration: 0,
             strokeQualitySettled: false,
             alternationQuality: 0,
             inputFreshness: 1,
@@ -1462,7 +1524,7 @@ export class SwimmerMotor {
             perfectGuidePresentedAt: -1,
         });
         if (startedImmediately) {
-            this.startActionBaseAcceleration(type, actions[actions.length - 1]);
+            this.startActionBaseAcceleration(actions[actions.length - 1]);
             // This press became an arm stroke, so its contralateral leg is now
             // driven by the arm. Drop the tap pulse this same press added to that
             // leg (via beginPress→recordKickTap) so it isn't replayed as an extra
@@ -1503,6 +1565,9 @@ export class SwimmerMotor {
             releasedAt: -1,
             progress: 0,
             baseAccelerationStarted: false,
+            heldBaseImpulse: 0,
+            heldBaseImpulseBudget: 0,
+            heldBaseAcceleration: 0,
             strokeQualitySettled: false,
             alternationQuality: 0,
             inputFreshness: 1,
@@ -1511,7 +1576,7 @@ export class SwimmerMotor {
             perfectGuidePresentedAt: -1,
         };
         actions.push(action);
-        this.startActionBaseAcceleration(type, action);
+        this.startActionBaseAcceleration(action);
         this._armAction = 1;
         this._kickAction = 1;
         return true;
@@ -1603,7 +1668,7 @@ export class SwimmerMotor {
             if (action.startedAt < 0) {
                 action.startedAt = frameStartedAt + elapsed;
                 if (!action.baseAccelerationStarted) {
-                    this.startActionBaseAcceleration(type, action);
+                    this.startActionBaseAcceleration(action);
                 }
             }
             const needed = CYCLE_AMOUNT - action.progress;

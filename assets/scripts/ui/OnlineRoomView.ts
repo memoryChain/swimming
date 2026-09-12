@@ -1,6 +1,6 @@
 import { Button, Color, Label, Node, Sprite, UITransform } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { RaceDifficulty, getRaceDistance } from '../core/GameBalance';
+import { RaceDifficulty, getRaceDistance, getRaceModeTitle } from '../core/GameBalance';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { fitFullScreenBackgroundCover, makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
@@ -14,9 +14,9 @@ const JOINED = uiColor(0, 179, 149);
 const HEADER_INK = uiColor(23, 36, 58);
 type TextFace = 'project' | 'regular' | 'dynamic' | 'latin';
 export const ROOM_MODES: ReadonlyArray<{ id: RaceDifficulty; label: string }> = [
-    { id: 'beginner', label: '入门泳道' },
-    { id: 'competitive', label: '竞技泳道' },
-    { id: 'championship', label: '超级世锦赛' },
+    { id: 'beginner', label: getRaceModeTitle('beginner') },
+    { id: 'competitive', label: getRaceModeTitle('competitive') },
+    { id: 'championship', label: getRaceModeTitle('championship') },
 ];
 export type OnlineMember = {
     clientId?: number;

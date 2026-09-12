@@ -116,6 +116,9 @@ export class CharacterPoseStateController {
     }
 
     enterTreadWater() {
+        if (this._state === CharacterPoseState.TreadWater) {
+            return;
+        }
         this._treadWaterStartTime = this._options.getSelfTime();
         this.setState(CharacterPoseState.TreadWater);
     }

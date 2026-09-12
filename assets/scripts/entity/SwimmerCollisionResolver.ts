@@ -22,6 +22,8 @@ const DEG2RAD = Math.PI / 180;
 export const SWIMMER_COLLISION = {
     // Master switch so the behaviour can be A/B compared.
     enabled: true as boolean,
+    // 体重只在碰撞内放大差异。同体重仍各承受一半；1 为原线性分配。
+    weightContrastExponent: 6,
     // Per-swimmer disc radius on the XZ plane (metres). Lane centres are 2.625m
     // apart, so radius*2 (=1.8m at 0.9) is the centre spacing at which two
     // swimmers touch. Raise for chunkier bodies, lower for slimmer ones.
@@ -100,12 +102,9 @@ const _contactSeen: boolean[] = [];
 // Fully separate overlapping swimmers so no two bodies interpenetrate. Call once
 // per collision step after the swimmers have updated their own positions.
 //
-// Body weight splits every separation/knockback by inverse weight (heavy bodies resist
-// being shoved). In a networked race this stays consistent because every swimmer's
-// weight is agreed across clients: AI weight comes from the shared roster, and each
-// human's weight rides the 养成 profile synced in the net roster (see RaceModifiers /
-// NetRaceModifierCodec). Residual cross-engine float divergence is absorbed by the
-// owner/host position authority, so the weighted knockback never drifts permanently.
+// 分离、击退和转体统一按体重的指数权重分配，重角色承担更小的碰撞份额。
+// 联机各端使用相同配置：AI 体重取确定性抽选模型对应的角色定义，
+// 真人体重由同步的角色摘要解析；跨端浮点残差仍由位置权威校正。
 export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     if (!SWIMMER_COLLISION.enabled) {
         clearContacts();
@@ -120,6 +119,9 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     }
 
     const count = _active.length;
+    const configuredExponent = SWIMMER_COLLISION.weightContrastExponent;
+    const weightExponent = Number.isFinite(configuredExponent)
+        ? Math.max(1, Math.min(8, configuredExponent)) : 6;
 
     for (let i = 0; i < count; i++) {
         const s = _active[i];
@@ -127,7 +129,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
         _isAi[i] = s.collisionParticipantIsAI;
-        _weight[i] = s.weight;
+        const weight = Number.isFinite(s.weight) ? Math.max(0.1, s.weight) : 1;
+        _weight[i] = Math.pow(weight, weightExponent);
         _dir[i] = s.raceDirection;
         // World-space velocity (m/s): the swim-axis component is signed by the lap
         // direction (distanceToWorldX slope magnitude is 1), the lateral component

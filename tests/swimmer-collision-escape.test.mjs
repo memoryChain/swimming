@@ -2,22 +2,27 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import CollisionResolver from '../assets/scripts/entity/SwimmerCollisionResolver.ts';
+import CharacterConfig from '../assets/scripts/app/PlayerCharacterConfig.ts';
 
 const { SWIMMER_COLLISION, resolveSwimmerCollisions } = CollisionResolver;
 
-function makeSwimmer({ x, z, direction, startZ = z, isAI = false, remoteHuman = false }) {
+function makeSwimmer({ x, z, direction, startZ = z, isAI = false, remoteHuman = false, weight = 1 }) {
     const impulses = [];
+    const rolls = [];
+    const pitches = [];
     return {
         node: { position: { x, y: 0, z } },
         isCollisionActive: true,
         isAI,
         collisionParticipantIsAI: isAI && !remoteHuman,
-        weight: 1,
+        weight,
         raceDirection: direction,
         startPosition: { x: 0, y: 0, z: startZ },
         currentSpeed: 5,
         movementHeading: 0,
         impulses,
+        rolls,
+        pitches,
         applyCollisionPush(dx, dz) {
             this.node.position.x += dx;
             this.node.position.z += dz;
@@ -27,8 +32,8 @@ function makeSwimmer({ x, z, direction, startZ = z, isAI = false, remoteHuman = 
         },
         addCollisionEnergyBonus() {},
         applyCollisionSoftnessImpulse() {},
-        applyCollisionAxialImpulse() {},
-        applyCollisionPitchImpulse() {},
+        applyCollisionAxialImpulse(value) { rolls.push(value); },
+        applyCollisionPitchImpulse(value) { pitches.push(value); },
     };
 }
 
@@ -38,6 +43,57 @@ function clearCollisionContacts() {
     resolveSwimmerCollisions([]);
     SWIMMER_COLLISION.enabled = enabled;
 }
+
+test('肌肉男正撞蛙妹主要推开轻角色，双方顺序变化不改变分离和击退', () => {
+    const heavyWeight = CharacterConfig.characterWeightForModel('muscleMan');
+    const lightWeight = CharacterConfig.characterWeightForModel('cartonSwimmer6');
+    const run = reverse => {
+        clearCollisionContacts();
+        const heavy = makeSwimmer({ x: -0.85, z: 0, direction: 1, weight: heavyWeight });
+        const light = makeSwimmer({ x: 0.85, z: 0, direction: -1, weight: lightWeight, isAI: true });
+        resolveSwimmerCollisions(reverse ? [light, heavy] : [heavy, light]);
+        return { heavy, light };
+    };
+    const normal = run(false);
+    const reverse = run(true);
+    for (const key of ['heavy', 'light']) {
+        assert.deepEqual(normal[key].node.position, reverse[key].node.position);
+        assert.deepEqual(normal[key].impulses, reverse[key].impulses);
+        assert.deepEqual(normal[key].rolls, reverse[key].rolls);
+        assert.deepEqual(normal[key].pitches, reverse[key].pitches);
+    }
+    const heavyImpulse = Math.abs(normal.heavy.impulses[0].distance);
+    const lightImpulse = Math.abs(normal.light.impulses[0].distance);
+    assert.ok(heavyImpulse < 0.35, '重角色保留明显抗撞优势');
+    assert.ok(lightImpulse > 3.6, '轻角色承担绝大多数迎面击退');
+    assert.ok(lightImpulse / heavyImpulse > 12);
+    assert.ok(Math.abs(normal.light.node.position.x - 0.85)
+        > Math.abs(normal.heavy.node.position.x + 0.85) * 12);
+    assert.ok(Math.abs(normal.light.impulses[0].lateral) <= SWIMMER_COLLISION.headOnEscapeMaxImpulse);
+});
+
+test('侧撞的击退与翻滚保留体重优势，同体重仍对称且线性档可用于对照', () => {
+    const original = SWIMMER_COLLISION.weightContrastExponent;
+    try {
+        for (const exponent of [1, 6]) for (const lightWeight of [0.85, 1.3]) {
+            SWIMMER_COLLISION.weightContrastExponent = exponent;
+            clearCollisionContacts();
+            const heavy = makeSwimmer({ x: 0, z: -0.85, direction: 1, weight: 1.3 });
+            const light = makeSwimmer({ x: 0, z: 0.85, direction: 1, weight: lightWeight });
+            heavy.movementHeading = Math.PI / 2;
+            light.movementHeading = -Math.PI / 2;
+            resolveSwimmerCollisions([heavy, light]);
+            const expectedRatio = Math.pow(1.3 / lightWeight, exponent);
+            assert.ok(Math.abs(Math.abs(light.impulses[0].lateral / heavy.impulses[0].lateral) - expectedRatio) < 1e-10);
+            assert.ok(Math.abs(Math.abs(light.rolls[0] / heavy.rolls[0]) - expectedRatio) < 1e-10);
+            assert.equal(heavy.impulses[0].distance, 0);
+            assert.equal(light.impulses[0].distance, 0);
+        }
+    } finally {
+        SWIMMER_COLLISION.weightContrastExponent = original;
+        clearCollisionContacts();
+    }
+});
 
 function runCentredHeadOn(reverseOrder) {
     clearCollisionContacts();

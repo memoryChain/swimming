@@ -52,7 +52,7 @@ const frame = p => ({ path: p, isValid: true });
 const cache = {};
 const stubs = {
     cc: { Node, UITransform, Color, Label, Sprite, Button, view: { getVisibleSize: () => size } },
-    'core/GameBalance': { getRaceDistance: () => 200, getRaceDifficulty: () => 'competitive' },
+    'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
     'ui/AvatarUiAssets': {
         avatarTexturePath: id => `avatar/${id}`,
         loadAvatarUiSpriteFrame: (p, done) => deferred ? pending.push({ p, done }) : done(frame(p)),

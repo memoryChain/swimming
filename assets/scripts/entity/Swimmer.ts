@@ -47,6 +47,7 @@ export class Swimmer extends Component {
     @property public swimmerName = 'Swimmer';
 
     private readonly _motor = new SwimmerMotor();
+    private _movementSpeed = 0;
     private _startPosition = new Vec3();
     private _hasStartPosition = false;
     private _strokeQualityCombo = 0;    private _maxStrokeQualityCombo = 0;
@@ -427,6 +428,7 @@ export class Swimmer extends Component {
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
+        this._movementSpeed = 0;
         this.captureStartPosition();
         this._ultimate.reset();
         this._phases.clearFlipTurnPhase(true);
@@ -437,7 +439,8 @@ export class Swimmer extends Component {
         }
         const maxSpeed = SWIMMER_BALANCE.maxSpeed;
         const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
-        this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
+        // 远端真人复用 AI 身体，但动作节奏必须与其本机玩家一致。
+        this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus, this.isAI && !this.collisionRemoteHuman);
         this.cartoonRig?.setPerfectGlowActive(false);
         this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setDiveReady(false);
@@ -578,6 +581,7 @@ export class Swimmer extends Component {
     }
 
     stopRace() {
+        this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
         this._phases.clearFlipTurnPhase(true);
         this._motor.stopRace();
@@ -652,10 +656,21 @@ export class Swimmer extends Component {
         // (dive start / flip turn). Excludes the short dolphin jump. No-op for AI.
         this.cartoonRig?.updateUnderwaterBubbles(this._phases.isSwimUnderwaterActive);
         if (!this._motor.isRacing) {
+            this._movementSpeed = 0;
             return;
         }
+        // 普通游泳从本步已校正的模拟位置起算，排除网络校正与渲染插值的跳变。
+        // 特殊动作自行驱动节点，使用动作执行前后的真实平面位置。
+        const swimXBeforeStep = this._courseLayout.clampSwimWorldX(
+            this._courseLayout.distanceToWorldX(this._motor.distance),
+        );
+        const swimZBeforeStep = this._startPosition.z + this._motor.lateralOffset;
+        const positionBeforeStep = this.node.position;
+        const phaseXBeforeStep = positionBeforeStep.x;
+        const phaseZBeforeStep = positionBeforeStep.z;
         this._ultimate.tick(dt);
         if (this._phases.tick(dt)) {
+            this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
             return;
         }
         this.updatePerfectComboIdle(dt);
@@ -674,6 +689,7 @@ export class Swimmer extends Component {
             this._cameraNeutralCourseRotation,
         );
         this.enforcePoolWallBoundary();
+        this.updateMovementSpeed(swimXBeforeStep, swimZBeforeStep, dt);
         for (const strokeQualityResult of this._motor.consumeStrokeQualityResults()) {
             const result = this.makeStrokeQualityResult(strokeQualityResult.type, strokeQualityResult);
             if (result) {
@@ -843,6 +859,7 @@ export class Swimmer extends Component {
     }
 
     reset() {
+        this._movementSpeed = 0;
         this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();
         Tween.stopAllByTarget(this.node);
@@ -1115,6 +1132,18 @@ export class Swimmer extends Component {
 
     get currentSpeed(): number {
         return this._motor.currentSpeed;
+    }
+
+    // HUD 展示泳池平面上的实际移动速率，斜游、横移均计入；旋转与上下起伏不计。
+    get movementSpeed(): number {
+        return this._motor.isRacing ? this._movementSpeed : 0;
+    }
+
+    private updateMovementSpeed(xBeforeStep: number, zBeforeStep: number, dt: number) {
+        const position = this.node.position;
+        const dx = position.x - xBeforeStep;
+        const dz = position.z - zBeforeStep;
+        this._movementSpeed = dt > 0 ? Math.sqrt(dx * dx + dz * dz) / dt : 0;
     }
 
     // Splash effect root, owned by the rig. Exposed so the refraction overlay can

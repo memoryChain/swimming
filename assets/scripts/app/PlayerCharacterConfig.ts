@@ -7,16 +7,14 @@ export type PlayerCharacterDefinition = {
     name: string;
     modelVariantId: string;
     unlocked: boolean;
+    // 仅体力、技巧、爆发力参与等级成长。
     stamina: number;
     technique: number;
     burst: number;
-    // Body weight for swimmer-vs-swimmer collision knockback (default ~1). Heavy
-    // bodies barely move when bumped; light bodies get knocked further.
+    // 固有体重，不随等级成长；用于碰撞击退分配，重角色更难被撞开。
     weight: number;
     // 蓄气资质（0-100，纯资质、不随等级成长）。决定赛内大招能量的积攒速率。
     energyGain: number;
-    // 踢腿资质（0-100）。影响踢腿速度上限；50 为基准（±15%）。
-    kick: number;
     description: string;
     skillName: string;
     skillDescription: string;
@@ -45,9 +43,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer6', name: '蛙妹', modelVariantId: 'cartonSwimmer6', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 0.85,
         energyGain: 82,
-        kick: 50,
         description: '戴着圆耳运动帽的活力少女，以轻快稳定的节奏跃浪前行。',
         skillName: '跃浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
@@ -55,9 +52,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer8', name: '蛙少', modelVariantId: 'cartonSwimmer8', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 1.00,
         energyGain: 82,
-        kick: 50,
         description: '戴着青蛙帽与粉色护目镜的潮酷少年，以轻快稳定的节奏跃入浪潮。',
         skillName: '蛙跃节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
         supportsSkinTone: true,
@@ -65,9 +61,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer5', name: '超级腿', modelVariantId: 'cartonSwimmer5', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 0.95,
         energyGain: 82,
-        kick: 50,
         description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
         skillName: '逐浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
@@ -75,9 +70,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer9', name: '猫姐', modelVariantId: 'cartonSwimmer9', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 0.95,
         energyGain: 82,
-        kick: 50,
         description: '戴着猫耳帽与霓彩护目镜的灵动少女，以轻盈节奏穿梭浪尖。',
         skillName: '猫影节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加灵巧。',
         supportsSkinTone: true,
@@ -85,9 +79,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer10', name: '忍者哥', modelVariantId: 'cartonSwimmer10', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 1.00,
         energyGain: 82,
-        kick: 50,
         description: '身着黑绿忍者装束的敏捷泳者，以轻快身法切入浪线。',
         skillName: '忍浪节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加利落。',
         supportsSkinTone: true,
@@ -95,9 +88,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer11', name: '健身教练', modelVariantId: 'cartonSwimmer11', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 1.15,
         energyGain: 82,
-        kick: 50,
         description: '身着荧绿运动装的全能选手，以稳定节奏和充沛耐力追逐浪线。',
         skillName: '疾风节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加流畅。',
         supportsSkinTone: true,
@@ -105,29 +97,26 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer12', name: '飞毛腿', modelVariantId: 'cartonSwimmer12', unlocked: true,
         stamina: 84, technique: 86, burst: 81,
-        weight: 0.98,
+        weight: 0.95,
         energyGain: 84,
-        kick: 52,
         description: '身着青柠运动装备的活力少年，以灵敏节奏和轻快步伐追逐浪尖。',
-        skillName: '绿电节奏', skillDescription: '灵巧的身体控制让划水、踢腿与转身衔接更加轻快。',
+        skillName: '绿电节奏', skillDescription: '灵巧的身体控制让划水与转身衔接更加轻快。',
         supportsSkinTone: true,
     },
     {
         id: 'cartonSwimmer13', name: '潜水哥', modelVariantId: 'cartonSwimmer13', unlocked: true,
         stamina: 90, technique: 82, burst: 76,
-        weight: 1.08,
+        weight: 1.15,
         energyGain: 80,
-        kick: 54,
         description: '背负轻型潜水装备的耐力型泳者，以稳定节奏穿越深水。',
-        skillName: '深潜续航', skillDescription: '扎实的耐力与踢腿控制让长距离推进更加稳定。',
+        skillName: '深潜续航', skillDescription: '扎实的耐力让长距离推进更加稳定。',
         supportsSkinTone: true,
     },
     {
         id: 'cartonSwimmer14', name: '风火轮', modelVariantId: 'cartonSwimmer14', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 0.90,
         energyGain: 82,
-        kick: 50,
         description: '身着荧绿装备的银发少女，以轻快稳定的节奏逐浪前行。',
         skillName: '霓绿节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加顺畅。',
         supportsSkinTone: true,
@@ -135,9 +124,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'cartonSwimmer15', name: '机甲coser', modelVariantId: 'cartonSwimmer15', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
-        weight: 1.0,
+        weight: 1.25,
         energyGain: 82,
-        kick: 50,
         description: '身披白绿装甲的机械泳者，以稳定节奏破浪前行。',
         skillName: '机甲节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
         supportsSkinTone: false,
@@ -145,9 +133,8 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     {
         id: 'muscleMan', name: '肌肉男', modelVariantId: 'muscleMan', unlocked: true,
         stamina: 88, technique: 70, burst: 82,
-        weight: 1.2,
+        weight: 1.30,
         energyGain: 75,
-        kick: 50,
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
@@ -258,6 +245,11 @@ export function setPlayerColorScheme(id: string) {
 
 export function findPlayerCharacter(id = selection.characterId): PlayerCharacterDefinition | null {
     return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.id === id) ?? null;
+}
+
+// AI 外形也使用相同固有体重；仅在创建或重选模型时读取，不参与逐帧工作。
+export function characterWeightForModel(modelVariantId: string): number {
+    return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.modelVariantId === modelVariantId)?.weight ?? 1;
 }
 
 // 将角色的物理体重（0.85~1.2 左右）归一化成 0-100 的“对抗”雷达轴分值。

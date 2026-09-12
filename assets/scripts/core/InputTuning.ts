@@ -24,7 +24,7 @@ export const MOTION_TUNING = {
 
     // Motion speed multiplier after a stroke side is released.
     // 单侧划水松开后的动作释放速度倍率。
-    releasedMotionSpeedScale: 2,
+    releasedMotionSpeedScale: 1.3,
 
     // AI-only continuous flutter-kick cadence at max swim speed (cycles/sec). AI
     // swimmers don't tap, so their legs still use a speed-driven flutter. The
@@ -116,10 +116,11 @@ export const STROKE_QUALITY_TUNING = {
     // *fraction* of a cycle, a faster cycle means a shorter real-time release
     // window — so high speed demands tighter timing. AI and player share these
     // values; the AI only differs in how it drives input timing.
-    armCycleLowSpeedPerSecond: 0.8,
-    armCycleHighSpeedPerSecond: 2.5,
+    // 常速区仅小幅提频，避免游速降低又拖慢动作、进一步失去推进的反馈。
+    armCycleLowSpeedPerSecond: 1.8,
+    armCycleHighSpeedPerSecond: 2,
     armCycleSpeedStart: 1.0,
-    armCycleSpeedFull: 4.5,
+    armCycleSpeedFull: 3,
     // Heart-rate quality modifier -> PERFECT window width scale strength.
     // 0 = quality axis off (PERFECT width fixed). 1 = full effect
     // (OPTIMAL widens PERFECT by 25%, LOW narrows it by 30%). 0.5 is noticeable
@@ -131,13 +132,14 @@ export const STROKE_QUALITY_TUNING = {
 // range. The existing strokeQuality values remain the shared tuning baseline;
 // lower scales widen the real-time GOOD/PERFECT release windows.
 export const RACE_DIFFICULTY_TUNING: Record<RaceDifficulty, { armCycleSpeedScale: number }> = {
-    beginner: { armCycleSpeedScale: 0.68 },
+    beginner: { armCycleSpeedScale: 1 },
     competitive: { armCycleSpeedScale: 0.84 },
     championship: { armCycleSpeedScale: 1 },
 };
 
-export function getRaceArmCycleSpeedScale(): number {
-    return Math.max(0.1, Math.min(1.5, RACE_DIFFICULTY_TUNING[getRaceDifficulty()].armCycleSpeedScale));
+export function getRaceArmCycleSpeedScale(isAiControlled = false): number {
+    const difficulty = isAiControlled ? 'championship' : getRaceDifficulty();
+    return Math.max(0.1, Math.min(1.5, RACE_DIFFICULTY_TUNING[difficulty].armCycleSpeedScale));
 }
 
 export const TARGET_LIMB_RATE = 1 / TARGET_INTERVAL;

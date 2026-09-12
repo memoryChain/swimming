@@ -109,6 +109,13 @@ export class CollisionLimpPoseController {
             flex: 0, flexVelocity: 0, endAngle: 0, endVelocity: 0, endAxis, hingeRoot });
     }
 
+    unbind(): void {
+        this._root = null;
+        this._head = null;
+        this._limbs.length = 0;
+        this.reset();
+    }
+
     reset(): void { this._weight = 0; this._initialized = false; this._previousSignal.reset(); }
 
     private bodyDirection(side: number, up: number, front: number): void {

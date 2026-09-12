@@ -60,12 +60,11 @@ export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): R
         return { balance: null };
     }
     const balance = resolvePlayerBalance(
-        { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick },
+        { stamina: character.stamina, technique: character.technique, burst: character.burst },
         digest.level,
         PROGRESSION_BALANCE.maxLevel,
         character.weight,
         character.energyGain,
-        character.kick,
     );
     return { balance };
 }
@@ -86,8 +85,8 @@ export function applyRaceModifiersToMotor(motor: SwimmerMotor, profile: RaceModi
 }
 
 // Apply the full profile (motor balance + 蓄气资质) to a swimmer. Use this for
-// the local player and remote humans; AI uses CompetitorManager.applyProfile which
-// sets weight + energyGain directly from its competitor profile.
+// the local player and remote humans.
+// AI 体重取实际模型的角色定义，蓄气仍取对手策略配置。
 export function applyRaceModifiersToSwimmer(swimmer: Swimmer, profile: RaceModifierProfile | null): void {
     applyRaceModifiersToMotor(swimmer.motor, profile);
     swimmer.setEnergyGainAptitude(profile?.balance?.energyGainAptitude ?? 50);

@@ -1,5 +1,5 @@
 import { Button, Color, Label, Node, Sprite, UITransform, view } from 'cc';
-import { getRaceDifficulty, getRaceDistance } from '../core/GameBalance';
+import { getRaceModeTitle, getRaceDistance } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { PlayerData } from '../backend/PlayerData';
 import { AVATARS } from '../backend/IdentityConfig';
@@ -15,7 +15,6 @@ const GOLD = new Color(255, 212, 0, 255);
 const SELF_GREEN = new Color(0, 182, 0, 255);
 const WATERMARK = new Color(21, 61, 88, 18);
 const ART = RESOURCE_PATHS.settlementUi;
-const MODES = { beginner: '入门泳道', competitive: '竞技泳道', championship: '超级世锦赛' };
 
 export type SettlementCallbacks = {
     onRestart: () => void;
@@ -168,7 +167,7 @@ export class SettlementView {
         setText(this.time, finished ? me!.time.toFixed(2) : '--.--');
         // 与权威最终用时保持同一口径，避免联机本地计时偏差。
         setText(this.speed, finished ? `${(getRaceDistance() / me!.time).toFixed(2)} m/s` : '-- m/s');
-        const modeTitle = MODES[getRaceDifficulty()];
+        const modeTitle = getRaceModeTitle();
         setText(this.mode, `${modeTitle} ·`);
         setText(this.modeDistance, String(getRaceDistance()));
         const distanceX = modeTitle.length === 5 ? 589 : 566;

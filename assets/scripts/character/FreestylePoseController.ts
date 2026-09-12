@@ -255,6 +255,26 @@ export class FreestylePoseController {
     private _movementHeadingRadians = 0;
     private _movementPitchRadians = 0;
 
+    unbind() {
+        // 换模等待期间仍可能收到水花、镜头和边界查询，不能保留已销毁的骨骼。
+        this.root = null;
+        this._rootBone = this._torso = this._hips = this._spine = this._spine1 = null;
+        this._neck = this._head = null;
+        this._leftShoulder = this._leftArm = this._leftForeArm = this._leftHand = null;
+        this._rightShoulder = this._rightArm = this._rightForeArm = this._rightHand = null;
+        this._leftUpLeg = this._leftLeg = this._leftFoot = this._leftToe = null;
+        this._rightUpLeg = this._rightLeg = this._rightFoot = this._rightToe = null;
+        this._breaststrokeBones.clear();
+        this._sampledActionNodes.clear();
+        this._flipTurnBones.clear();
+        this._manualBones.length = 0;
+        this._boneBaseRotation.clear();
+        this._boneBasePosition.clear();
+        this._diveTakeoffPose = null;
+        this._diveHands = null;
+        this._collisionLimp.unbind();
+    }
+
     bind(root: Node) {
         this.root = root;
         this._rootBone = findNode(root, 'Root');

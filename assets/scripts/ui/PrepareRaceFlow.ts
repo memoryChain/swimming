@@ -14,7 +14,7 @@ import {
     Texture2D,
     UITransform,
 } from 'cc';
-import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, setRaceDifficulty } from '../core/GameBalance';
+import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
@@ -949,13 +949,11 @@ function appearanceSwatchPath(group: 'skin' | 'color', id: string): string | nul
 }
 
 function raceDifficultyTitle(difficulty: RaceDifficulty): string {
-    if (difficulty === 'beginner') return '入门泳道';
-    if (difficulty === 'championship') return '超级世锦赛';
-    return '竞技泳道';
+    return getRaceModeTitle(difficulty);
 }
 
 function raceDifficultyDistance(difficulty: RaceDifficulty): string {
-    if (difficulty === 'beginner') return '50米';
+    if (difficulty === 'beginner') return '直线';
     if (difficulty === 'championship') return '200米';
     return '100米';
 }

@@ -80,7 +80,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, SWIMMER_BALANCE } from './GameBalance';
+import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isRaceSteeringEnabled, SWIMMER_BALANCE } from './GameBalance';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -462,7 +462,7 @@ export class GameManager extends Component {
         statusHud?.setVisible(raceStatusVisible);
         if (statusHud?.consumeSample(netDt)) {
             const player = this._playerSwimmer;
-            statusHud.updateValues(player.currentSpeed, this._playerCondition.heartRate,
+            statusHud.updateValues(player.movementSpeed, this._playerCondition.heartRate,
                 this._playerCondition.heartRateZone === 'OVERLOAD', this._playerCondition.energyRatio,
                 player.distance, getRaceDistance(), player.ultimate.energy / ULTIMATE_ENERGY_BALANCE.maxEnergy,
                 this._state === GameState.RACING && player.ultimate.canAffordDolphin);
@@ -509,7 +509,7 @@ export class GameManager extends Component {
                 this._overheadSpeedTextElapsed += dt;
                 if (this._overheadSpeedTextElapsed >= RACE_HUD_TEXT_REFRESH_SECONDS) {
                     this._overheadSpeedTextElapsed %= RACE_HUD_TEXT_REFRESH_SECONDS;
-                    const nextText = `${Math.max(0, playerSpeed).toFixed(2)} m/s`;
+                    const nextText = `${this._playerSwimmer.movementSpeed.toFixed(2)} m/s`;
                     if (nextText !== this._overheadSpeedText) {
                         this._overheadSpeedText = nextText;
                         this._overheadSpeedLabel.string = nextText;
@@ -2095,11 +2095,10 @@ export class GameManager extends Component {
             hudRoster.push({ swimmer, avatarId });
         }
         this._uiController?.raceHudStatus?.setRoster(hudRoster);
-        const difficulty = getRaceDifficultyConfig();
         this._preRaceIntroPanel.setRaceInfo({
             event: `${getRaceDistance()}米自由泳`,
-            format: '标准竞速赛',
-            details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${difficulty.label}难度`}`,
+            format: isRaceSteeringEnabled() ? '标准竞速赛' : '直线手感调试',
+            details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 最强档AI`}`,
             rule: '率先完成全程者获胜',
         });
     }
@@ -2575,7 +2574,6 @@ export class GameManager extends Component {
         }
         if (id !== null
             && id !== 'speed.maxSpeed'
-            && id !== 'speed.kickMaxSpeed'
             && id !== 'speed.strokeQualityAccel'
             && id !== 'speed.perfectComboMaxOvercap'
             && id !== 'dive.maxLaunchSpeed') {

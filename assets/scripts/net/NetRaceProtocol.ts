@@ -1,9 +1,15 @@
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
-// v15：泳道从起跳镜头近侧 +Z 起编号，拒绝旧方向客户端混跑以免初始站位错配。
-// 保留 v14 的玩法与网络字段布局。
-export const NET_RACE_PROTOCOL_VERSION = 15;
+// v22：GOOD 质量推进倍率与标准输入周期补偿，保证完美区中后段的推进收益。
+// 保留 v21 直线划水首版手感的推进分配、水阻、按住轮速和低速动作节奏。
+// 保留 v20 首入口无转向、所有入口 AI 共用世锦赛档的规则。
+// 保留 v19 按住划水预支基础推进、松手扣除已支付部分的规则。
+// 保留 v18 碰撞放大体重差异、AI 体重与外形一致的规则。
+// 保留 v17 按角色体型设置的固定体重。
+// 保留 v16 取消角色踢腿资质与等级加成的规则。
+// 保留 v15 的泳道方向与网络字段布局。
+export const NET_RACE_PROTOCOL_VERSION = 22;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

@@ -95,9 +95,9 @@ export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, d
     const progression = getProgressionManager();
     const level = progression.getCharacterLevel(character.id);
     const maxLevel = PROGRESSION_BALANCE.maxLevel;
-    const stats = { stamina: character.stamina, technique: character.technique, burst: character.burst, kick: character.kick };
-    const current = resolvePlayerBalance(stats, level, maxLevel, character.weight, character.energyGain, character.kick);
-    const atMax = resolvePlayerBalance(stats, maxLevel, maxLevel, character.weight, character.energyGain, character.kick);
+    const stats = { stamina: character.stamina, technique: character.technique, burst: character.burst };
+    const current = resolvePlayerBalance(stats, level, maxLevel, character.weight, character.energyGain);
+    const atMax = resolvePlayerBalance(stats, maxLevel, maxLevel, character.weight, character.energyGain);
 
     const subtitle = makeLabel('Subtitle', panel, `${character.name}　Lv.${level}${level >= maxLevel ? '（满级）' : ''}`, 22, uiColor(150, 200, 255));
     subtitle.setPosition(0, PANEL_H / 2 - 84, 1);
@@ -132,7 +132,7 @@ export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, d
     renderTable(content, rows, contentH);
     renderMechanicsSection(content, contentH / 2 - tableH - MECH_TOP_GAP);
 
-    const note1 = makeLabel('Note1', panel, `体力为先天资质（0-100），决定赛中体能池上限；体能为赛中实际值，由资质与等级折算。等级通过花费金币提升，满级 ${maxLevel}。`, 16, UI_STYLE.muted);
+    const note1 = makeLabel('Note1', panel, `体力、技巧、爆发力随等级成长；蓄气、体重为角色固有属性。花费金币升级，满级 ${maxLevel}。`, 16, UI_STYLE.muted);
     note1.getComponent(UITransform)!.setContentSize(TABLE_W - 20, 28);
     note1.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
     note1.setPosition(0, -PANEL_H / 2 + 60, 1);
@@ -180,11 +180,6 @@ function buildRows(
                 { label: '最大游速', current: fmt(current.maxSpeed, 2), max: fmt(atMax.maxSpeed, 2) },
                 { label: '出发速度', current: fmt(current.diveMaxLaunchSpeed, 2), max: fmt(atMax.diveMaxLaunchSpeed, 2) },
             ],
-        },
-        {
-            name: '踢腿',
-            aptitude: `${character.kick}`,
-            lines: [{ label: '踢腿速度上限', current: fmt(current.kickMaxSpeed, 2), max: fmt(atMax.kickMaxSpeed, 2) }],
         },
         {
             name: '体重',

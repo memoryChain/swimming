@@ -35,6 +35,77 @@ function count(n){return 1+n.children.reduce((s,c)=>s+count(c),0);}
 function update(h,charge=1,can=true){h.updateValues(2.37,182,true,.72,20,200,charge,can);}
 function roster(){return Array.from({length:8},(_,i)=>({swimmer:{id:i},avatarId:`avatar${i}`}));}
 function rows(entries,self=5){return entries.map((e,i)=>({swimmer:e.swimmer,isPlayer:i===self,placement:i+1}));}
+
+function progressSpeedFixture() {
+ const h=require('./helpers/cocos-math-harness.cjs').createHarness({'cc/env':{NATIVE:false}});
+ const loadModule=p=>h.load(path.join(root,'assets/scripts',p+'.ts'));
+ const {SwimmerMotor}=loadModule('swimmer/SwimmerMotor');
+ const file=path.join(root,'assets/scripts/entity/Swimmer.ts');
+ const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
+ const swimmerClass=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
+ // 执行真实泳者的模拟步和读数接口，仅替代场景、动画与特殊动作调度。
+ const names=['stepSimulation','updateMovementSpeed','movementSpeed','currentSpeed','netSpeed'];
+ const methods=swimmerClass.members.filter(n=>names.includes(n.name?.getText(source)));
+ assert.equal(methods.length,names.length);
+ const js=ts.transpileModule(`class SpeedHarness { ${methods.map(n=>n.getText(source)).join('\n')} }`,
+  {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+ const Harness=vm.runInNewContext(`${js}; SpeedHarness`);
+ const swimmer=new Harness(),motor=new SwimmerMotor();
+ motor.startRace(0,2.5);
+ // 固定内部游速，单独检查真实运动模型的方向及翻滚损失。
+ motor._physics.step=state=>state;
+ Object.assign(swimmer,{_motor:motor,_movementSpeed:0,isAI:false,
+  _ultimate:{tick(){}},_strokeMetrics:{update(){}},
+  _phases:{tick:()=>false,updateDiveUnderwaterTimer(){}},node:{position:{x:0,y:0,z:0},emit(){}},
+  _courseLayout:{distanceToWorldX:d=>d,clampSwimWorldX:x=>x},_startPosition:{z:0},
+  updatePerfectComboIdle(){},updatePerfectZoneGlow(){},
+  applyCoursePosition(){this.node.position.x=motor.distance;this.node.position.z=motor.lateralOffset;},
+  updateBodyMotion(){},enforcePoolWallBoundary(){}});
+ return {swimmer,motor,loadModule};
+}
+
+test('速度表显示斜游的完整移动速率，翻滚损速有效，内部及联机姿态游速不变',()=>{
+ const {swimmer,motor,loadModule}=progressSpeedFixture();
+ const s=fixture();s.hud.setVisible(true);
+ const check=()=>{
+  const before=motor.distance,beforeLateral=motor.lateralOffset;swimmer.stepSimulation(1/60);
+  const actual=Math.hypot(motor.distance-before,motor.lateralOffset-beforeLateral)*60;
+  assert.ok(Math.abs(swimmer.movementSpeed-actual)<1e-9);
+  assert.equal(swimmer.currentSpeed,2.5);assert.equal(swimmer.netSpeed,2.5);
+  s.hud.updateValues(swimmer.movementSpeed,120,false,1,motor.distance,200,0,false);
+  assert.equal(find(s.parent,'SpeedValue').getComponent(Label).string,actual.toFixed(2));
+ };
+ check();assert.ok(Math.abs(swimmer.movementSpeed-2.5)<1e-9);
+ motor.correctHeading(Math.PI/3,0,1);
+ const before=motor.distance;check();
+ assert.ok((motor.distance-before)*60<1.3,'斜游的赛程推进分量较小');
+ assert.ok(Math.abs(swimmer.movementSpeed-2.5)<1e-9,'60 度斜游仍显示完整 2.5 米每秒速率');
+ loadModule('core/GameBalance').setRaceDifficulty('beginner');
+ motor._axialRoll.setState(0,6);check();
+ assert.equal(motor.heading,0);assert.ok(swimmer.movementSpeed<1,'调试模式不偏航，翻滚仍会损失推进');
+ const source=fs.readFileSync(path.join(root,'assets/scripts/core/GameManager.ts'),'utf8');
+ assert.match(source,/statusHud\.updateValues\(player\.movementSpeed,/);
+ assert.match(source,/_playerSwimmer\.movementSpeed\.toFixed\(2\)/);
+});
+
+test('纯横移与特殊动作计入平面位移，原地旋转及上下起伏为零，步间校正不冒充加速',()=>{
+ const {swimmer,motor}=progressSpeedFixture();
+ swimmer._phases.tick=dt=>{swimmer.node.position.x+=dt*1.2;swimmer.node.position.z+=dt*0.9;return true;};
+ swimmer.stepSimulation(1/60);assert.ok(Math.abs(swimmer.movementSpeed-1.5)<1e-9);
+ swimmer._phases.tick=dt=>{swimmer.node.position.z+=dt*2;return true;};
+ swimmer.stepSimulation(1/60);assert.ok(Math.abs(swimmer.movementSpeed-2)<1e-9,'赛程没增加的纯横移仍有速度');
+ swimmer._phases.tick=()=>false;
+ motor.setFlipTurnDistance(motor.distance+20);
+ motor.setLateralOffset(3);
+ swimmer.stepSimulation(1/30);assert.ok(Math.abs(swimmer.movementSpeed-2.5)<1e-9,'不把步间网络校正及渲染位置差计入移动速度');
+ swimmer._phases.tick=()=>{swimmer.node.position.y+=1;return true;};
+ swimmer.stepSimulation(1/60);assert.equal(swimmer.movementSpeed,0,'停在墙边或原地动作时归零');
+ swimmer.stepSimulation(0);assert.equal(swimmer.movementSpeed,0);
+ swimmer._phases.tick=dt=>{swimmer.node.position.x-=dt*3;return true;};
+ swimmer.stepSimulation(1/120);assert.ok(Math.abs(swimmer.movementSpeed-3)<1e-9);
+ motor.stopRace();assert.equal(swimmer.movementSpeed,0);
+ swimmer.stepSimulation(1/60);assert.equal(swimmer._movementSpeed,0);
+});
 test('隐藏时零采样；约10Hz读数，重复值不写文字或填充',()=>{
  const s=fixture();assert.equal(s.hud.consumeSample(100),false);const before=writes;update(s.hud);assert.equal(writes,before);
  s.hud.setVisible(true);assert.equal(s.hud.consumeSample(0),true);for(let i=0;i<5;i++)assert.equal(s.hud.consumeSample(.016),false);assert.equal(s.hud.consumeSample(.025),true);

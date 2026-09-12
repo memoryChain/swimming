@@ -30,8 +30,8 @@ export type RaceDifficultyConfig = {
 };
 
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
-    // 入门：整体慢、几乎不追赶、对手爱蛇形犯错 → 玩家轻松领先并甩开。
-    { id: 'beginner', label: '入门', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
+    // 保留入口 ID 兼容存档和联机模式字段；旧 AI 数值保留，实际 AI 统一读世锦赛档。
+    { id: 'beginner', label: '手感调试', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
     // 竞技：均衡基准，策略参数原样；启用动态封道。
     { id: 'competitive', label: '竞技', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: false },
     // 世锦赛：快、咬得死、路线干净专业 → 领先也会被反复追平、缠斗。
@@ -58,6 +58,21 @@ export function setRaceDifficulty(difficulty: RaceDifficulty): RaceDifficulty {
 export function getRaceDifficultyConfig(difficulty = currentRaceDifficulty): RaceDifficultyConfig {
     return RACE_DIFFICULTY_OPTIONS.find((option) => option.id === difficulty)
         ?? RACE_DIFFICULTY_OPTIONS[1];
+}
+
+// 比赛入口与 AI 强度分离，所有入口共用原最高档的阵容倍率和策略。
+export function getRaceAiDifficultyConfig(): RaceDifficultyConfig {
+    return getRaceDifficultyConfig('championship');
+}
+
+export function isRaceSteeringEnabled(): boolean {
+    return currentRaceDifficulty !== 'beginner';
+}
+
+export function getRaceModeTitle(mode = currentRaceDifficulty): string {
+    if (mode === 'beginner') return '手感调试';
+    if (mode === 'championship') return '超级世锦赛';
+    return '竞技泳道';
 }
 
 export function raceDistanceToCourseX(distance: number): number {
@@ -93,14 +108,20 @@ export const SWIMMER_BALANCE = {
     // Wall-push speed uses the same front-loaded power shape: accelerate strongly
     // just after wall contact, then ease gently into the launch burst.
     flipTurnAccelerationExponent: 2,
-    strokeBaseAccel: 0.05,
-    strokeQualityAccel: 1.6,
-    strokeAccelDurationRatio: 0.4,
+    strokeBaseAccel: 1.5,
+    // 基础推进中允许在按住阶段预支的最大比例，松手结算扣除已支付部分。
+    strokeHeldBaseRatio: 0.8,
+    strokeQualityAccel: 2.6,
+    // 只缩放 GOOD 的质量推进，不改变判定、连击、蓄气和按住阶段的基础推进。
+    strokeGoodPropulsionScale: 0.6,
+    // 0 为原完整动作耗时补偿，1 为标准按住周期补偿；不奖励实际空等时间。
+    strokeTimeCompensation: 1,
+    strokeAccelDurationRatio: 0.45,
     // Stroke impulse punchiness (redesign, "冲刺感"): 0 = flat accel over the
     // whole pulse (smooth). Higher = the accel is front-loaded into a spike right
     // after the stroke, then fades — so the swimmer lunges forward and drag pulls
     // it back. Same total momentum; only the feel changes.
-    strokeImpulseSharpness: 0,
+    strokeImpulseSharpness: 0.3,
     // Kick propulsion (redesign): kicking no longer gives a per-tap impulse.
     // Instead the legs produce a CONTINUOUS acceleration proportional to the
     // current kick frequency (taps/sec), so fast tapping accelerates fast and
@@ -127,9 +148,9 @@ export const SWIMMER_BALANCE = {
     // Speed band below kickMaxSpeed over which the kick acceleration fades to 0,
     // so kicking eases into its ceiling instead of hard-clamping.
     kickCeilingBand: 0.5,
-    poolDeceleration: 0.06,
-    baseDrag: 0.03,
-    highSpeedDrag: 0.03,
+    poolDeceleration: 0.03,
+    baseDrag: 0.24,
+    highSpeedDrag: 0.12,
     // Underwater-glide drag (redesign): while the swimmer is still in the
     // post-dive underwater glide (before surfacing), an EXTRA drag proportional to
     // current speed is applied on top of the normal drag. So a fast dive entry

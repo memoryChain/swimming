@@ -168,7 +168,8 @@ test('同速浅侧擦仍有可见反馈，体重分配和真实击退不受视�
         assert.deepEqual(visible.a.outcomes, raw.a.outcomes);
         assert.deepEqual(visible.b.outcomes, raw.b.outcomes);
         assert.ok(Math.abs(visible.a.soft.sideVelocity) > Math.abs(raw.a.soft.sideVelocity) * 10);
-        near(Math.abs(visible.a.soft.sideVelocity), 2 * Math.abs(visible.b.soft.sideVelocity));
+        const weightRatio = Math.pow(visible.b.weight / visible.a.weight, SWIMMER_COLLISION.weightContrastExponent);
+        near(Math.abs(visible.a.soft.sideVelocity), weightRatio * Math.abs(visible.b.soft.sideVelocity));
         near(visible.a.soft.forwardVelocity, 0);
         resolveSwimmerCollisions([visible.a, visible.b]);
         assert.equal(visible.a.hits, 1);

@@ -708,6 +708,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     private clearLoadedModel() {
+        // 先解除动作和旧骨架的绑定，再销毁模型；新模型加载后重放当前展示状态。
+        this._poseState.resetRuntime();
+        this._pose.unbind();
         this._standingSoles.clear();
         this._headBounds.clear();
         this._handContact.clear();
@@ -1484,6 +1487,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     onDestroy() {
+        this._poseState.resetRuntime();
+        this._pose.unbind();
         this._standingSoles.clear();
         this._headBounds.clear();
         this._handContact.clear();

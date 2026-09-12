@@ -4,10 +4,10 @@ import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { defaultSwimmerColorVariant, SWIMMER_COLOR_VARIANTS } from '../core/ResourcePaths';
-import { getRaceDifficultyConfig } from '../core/GameBalance';
+import { getRaceAiDifficultyConfig } from '../core/GameBalance';
 import { shuffleInPlace } from '../core/SharedRNG';
 import { PlayerData } from '../backend/PlayerData';
-import { PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
+import { characterWeightForModel, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
 import { AICompetitorProfile, buildRandomizedAiRoster, getAiPersonality } from './CompetitorConfig';
 import { randomAiModelVariantId, SwimmerFactory } from './SwimmerFactory';
 
@@ -97,7 +97,9 @@ export class CompetitorManager {
         if (!rig) {
             return;
         }
-        rig.setModelVariant(randomAiModelVariantId());
+        const modelVariantId = randomAiModelVariantId();
+        rig.setModelVariant(modelVariantId);
+        swimmer.motor.setWeight(characterWeightForModel(modelVariantId));
         rig.setColorVariant(colorVariantId);
         rig.setColorOverride({ skin: new Color(skinColor[0], skinColor[1], skinColor[2]) });
     }
@@ -168,7 +170,6 @@ export class CompetitorManager {
         controller.divePower = profile.divePower;
         controller.diveReaction = profile.diveReaction;
         controller.personality = getAiPersonality(profile.personalityId);
-        swimmer.motor.setWeight(profile.weight ?? 1);
         swimmer.setEnergyGainAptitude(profile.energyGain ?? 80);
     }
 
@@ -188,7 +189,7 @@ export class CompetitorManager {
 }
 
 function scaledRaceDifficulty(baseDifficulty: number): number {
-    const scale = getRaceDifficultyConfig().aiDifficultyScale;
+    const scale = getRaceAiDifficultyConfig().aiDifficultyScale;
     return Math.max(0, Math.min(1, baseDifficulty * scale));
 }
 
