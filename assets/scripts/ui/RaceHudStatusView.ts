@@ -1,5 +1,6 @@
 import { HEART_TIERS, heartRateTier } from './HeartRatePresentation';
 import { RaceStrokeView } from './RaceStrokeView';
+import { RaceHudEntrance } from './RaceHudEntrance';
 import { StrokeType } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, Vec2, view, sys } from 'cc';
@@ -58,6 +59,7 @@ export type HudRosterEntry = { swimmer: Swimmer; avatarId: string };
 export class RaceHudStatusView {
     readonly root: Node;
     readonly stroke: RaceStrokeView;
+    private readonly entrance = new RaceHudEntrance();
     private readonly left: Node;
     private readonly right: Node;
     private readonly ranking: Node;
@@ -102,31 +104,32 @@ export class RaceHudStatusView {
         this.right = makeUiNode('RightStatus', this.root);
         this.ranking = makeUiNode('Ranking', this.right);
         this.top = makeUiNode('CourseProgress', this.root);
-        this.label(this.left, 'SpeedTitle', '速度', 28, 19, 70, 25, 18, true, 'left');
-        this.speed = this.label(this.left, 'SpeedValue', '0.00', 27, 41, 126, 65, 72, true, 'left');
+        const readouts = makeUiNode('StatusReadouts', this.left);
+        this.label(readouts, 'SpeedTitle', '速度', 28, 19, 70, 25, 18, true, 'left');
+        this.speed = this.label(readouts, 'SpeedValue', '0.00', 27, 41, 126, 65, 72, true, 'left');
         this.speed.font = speedFont;
-        const unit = this.label(this.left, 'SpeedUnit', 'm/s', 149, 73, 48, 31, 30.6, true, 'left');
+        const unit = this.label(readouts, 'SpeedUnit', 'm/s', 149, 73, 48, 31, 30.6, true, 'left');
         unit.font = speedFont;
         // 专用字体回调由预加载完成；不要再让通用字库异步覆盖它。
-        this.sprite(this.left, 'HeartBase', 'base', 22, 114, 76, 76);
-        this.sprite(this.left, 'HeartTrack', 'ring', 22, 114, 76, 76, TRACK);
-        this.heartRing = this.ring(this.left, 'HeartFill', 22, 114, 76, RED);
-        this.heartIcon = this.sprite(this.left, 'Heart', 'heart', 48, 130, 26, 22, RED);
-        this.heartValue = this.label(this.left, 'HeartValue', '80', 30, 152, 60, 25, 18.4);
-        this.label(this.left, 'HeartCaption', '心率', 30, 180, 60, 24, 15.3);
-        this.heartTierLabel = this.label(this.left, 'HeartTier', '轻松', 30, 203, 60, 22, 15.3);
-        this.warning = makeUiNode('HeartWarning', this.left);
+        this.sprite(readouts, 'HeartBase', 'base', 22, 114, 76, 76);
+        this.sprite(readouts, 'HeartTrack', 'ring', 22, 114, 76, 76, TRACK);
+        this.heartRing = this.ring(readouts, 'HeartFill', 22, 114, 76, RED);
+        this.heartIcon = this.sprite(readouts, 'Heart', 'heart', 48, 130, 26, 22, RED);
+        this.heartValue = this.label(readouts, 'HeartValue', '80', 30, 152, 60, 25, 18.4);
+        this.label(readouts, 'HeartCaption', '心率', 30, 180, 60, 24, 15.3);
+        this.heartTierLabel = this.label(readouts, 'HeartTier', '轻松', 30, 203, 60, 22, 15.3);
+        this.warning = makeUiNode('HeartWarning', readouts);
         this.sprite(this.warning, 'WarningBase', 'warning', 75, 110, 18, 18);
         this.label(this.warning, 'WarningMark', '!', 75, 109, 18, 20, 14);
         this.warning.active = false;
-        this.sprite(this.left, 'EnergyBase', 'base', 122, 114, 76, 76);
-        this.energyTrack = this.sprite(this.left, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
-        this.energyRing = this.ring(this.left, 'EnergyFill', 122, 114, 76, CYAN);
-        this.energyIcon = this.sprite(this.left, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
+        this.sprite(readouts, 'EnergyBase', 'base', 122, 114, 76, 76);
+        this.energyTrack = this.sprite(readouts, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
+        this.energyRing = this.ring(readouts, 'EnergyFill', 122, 114, 76, CYAN);
+        this.energyIcon = this.sprite(readouts, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
         this.energyIconOpacity = this.energyIcon.node.addComponent(UIOpacity);
-        this.energyValue = this.label(this.left, 'EnergyValue', '100%', 128, 152, 64, 25, 18.4);
-        this.label(this.left, 'EnergyCaption', '体力', 128, 180, 64, 24, 15.3);
-        this.energyState = this.label(this.left, 'EnergyState', '体力耗尽', 118, 203, 84, 22, 15.3);
+        this.energyValue = this.label(readouts, 'EnergyValue', '100%', 128, 152, 64, 25, 18.4);
+        this.label(readouts, 'EnergyCaption', '体力', 128, 180, 64, 24, 15.3);
+        this.energyState = this.label(readouts, 'EnergyState', '体力耗尽', 118, 203, 84, 22, 15.3);
         this.energyState.color = RED;
         this.energyState.node.active = false;
         this.distance = this.label(this.top, 'Distance', '200 m', -232, 32, 53, 25, 14.5, true, 'right');
@@ -169,11 +172,17 @@ export class RaceHudStatusView {
             this.setReady(false);
             onJump();
         });
-        this.stroke = new RaceStrokeView(this.left, this.right, key => FRAMES.get(key)!);
+        this.stroke = new RaceStrokeView(this.left, this.right, key => FRAMES.get(key)!,
+            this.entrance, () => this.entrance.finishControls());
+        this.entrance.wrap(readouts, -12, 0, 0.22);
+        this.entrance.wrap(this.top, 0, 8, 0.2, 0.04);
+        this.entrance.wrap(this.ranking, 12, 0, 0.22, 0.08);
+        this.entrance.wrap(this.jump, 0, 0, 0.16, 0.04, true);
         this.layout();
         view.on('canvas-resize', this.layout, this);
         view.on('design-resolution-changed', this.layout, this);
         this.root.once(Node.EventType.NODE_DESTROYED, () => {
+            this.entrance.dispose();
             view.off('canvas-resize', this.layout, this);
             view.off('design-resolution-changed', this.layout, this);
             this.identities.clear();
@@ -205,6 +214,8 @@ export class RaceHudStatusView {
         this.root.active = visible;
         if (visible) this.layout();
         this.stroke.setVisible(visible);
+        if (visible) this.entrance.play();
+        else this.entrance.reset();
         this.elapsed = 0.1;
         if (!visible) { this.setReady(false); }
     }

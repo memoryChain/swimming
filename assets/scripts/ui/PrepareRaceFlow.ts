@@ -43,6 +43,7 @@ import { PlayerData } from '../backend/PlayerData';
 import type { PlayerProfile } from '../backend/PlayerProfile';
 import { showToast } from './Toast';
 import { styleProjectUiLabel } from './ProjectUiFonts';
+import { LobbyUiMotion } from './LobbyUiMotion';
 
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
@@ -111,6 +112,9 @@ export class PrepareRaceFlow {
     private _activeInspectorTab: CharacterInspectorTab = 'attributes';
     private _previewRotateTouchId: number | null = null;
     private _upgradePending = false;
+    private _motion = new LobbyUiMotion();
+    private _leaving = false;
+    private _hasShownReady = false;
 
     private readonly _raceModeCards: RaceModeCardView[] = [];
     private readonly _characterCards: CharacterCardView[] = [];
@@ -142,7 +146,7 @@ export class PrepareRaceFlow {
     private _activeCharacterNotice: Node | null = null;
 
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
-        if (!this._root?.isValid || !this._content?.isValid) return;
+        if (!this._root?.isValid || !this._content?.isValid || this._leaving) return;
         if (this._view === 'ready') {
             this.presentCharacter(getPlayerCharacterSelection().characterId);
             this.refreshReadyCharacterInfo();
@@ -162,6 +166,7 @@ export class PrepareRaceFlow {
     ) {}
 
     showReadyScreen(): void {
+        if (this._content?.isValid && this._view === 'ready') return;
         this.ensureRoot();
         this._view = 'ready';
         this._draftCharacterId = null;
@@ -170,9 +175,12 @@ export class PrepareRaceFlow {
         this.buildReadyScreen(this._content!);
         this.presentCharacter(getPlayerCharacterSelection().characterId);
         this._callbacks.onCharacterManagementChanged?.(false);
+        this._motion.enter(this._hasShownReady);
+        this._hasShownReady = true;
     }
 
     showCharacterManagement(): void {
+        if (this._content?.isValid && this._view === 'characters') return;
         this.ensureRoot();
         this._view = 'characters';
         this._draftCharacterId = getPlayerCharacterSelection().characterId;
@@ -182,9 +190,12 @@ export class PrepareRaceFlow {
         this.buildCharacterManagement(this._content!);
         this.presentCharacter(this._draftCharacterId);
         this._callbacks.onCharacterManagementChanged?.(true);
+        this._motion.enter(true);
     }
 
     dispose(): void {
+        this._motion.dispose();
+        this._leaving = true;
         PlayerData.offChange(this._onProfileChange);
         this._previewRoot?.destroy();
         this._previewRoot = null;
@@ -206,10 +217,27 @@ export class PrepareRaceFlow {
     }
 
     private replaceContent(name: string): void {
+        // 切换页面才替换结构；选择状态变化不进入这里，3D 预览单独保留。
+        this._motion.dispose();
+        this._motion = new LobbyUiMotion();
+        this._leaving = false;
         this._content?.destroy();
         this.resetViewReferences();
         this._content = makeUiNode(name, this._root!);
         this._content.getComponent(UITransform)!.setContentSize(this._width, this._height);
+    }
+
+    private leaveCurrentScreen(done: () => void): void {
+        if (this._leaving || !this._content?.isValid) return;
+        this._leaving = true;
+        this._previewRotateTouchId = null;
+        const content = this._content;
+        for (const button of content.getComponentsInChildren(Button)) {
+            setButtonInteractable(button, false);
+        }
+        this._motion.exit(() => {
+            if (content.isValid && this._content === content) done();
+        });
     }
 
     private resetViewReferences(): void {
@@ -275,6 +303,7 @@ export class PrepareRaceFlow {
     }
 
     private buildReadyCharacterPanel(parent: Node): void {
+        parent = this._motion.group(parent, 'LobbyLeftMotion', -24);
         makeRaceTextureSprite('ReadyCharacterPanel', parent, RESOURCE_PATHS.lobbyUi.characterPanel, 338, 244, -454, 95, 2);
         this._readyName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 188, 38, -484, 162, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(this._readyName, 36);
@@ -304,7 +333,8 @@ export class PrepareRaceFlow {
         const manage = makeRaceTextureButton('MyCharactersButton', parent, RESOURCE_PATHS.lobbyUi.characterButton, 312, 70, -446, -220, 3);
         const manageLabel = makeBoundLabel('Label', manage, '角色养成', 24, DARK_TEXT, 150, 36, -8, 0);
         stylePsdTitleLabel(manageLabel, 32);
-        manage.on(Button.EventType.CLICK, () => this.showCharacterManagement());
+        this._motion.bindButton(manage);
+        manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
     }
 
     private refreshReadyCharacterInfo(): void {
@@ -326,7 +356,8 @@ export class PrepareRaceFlow {
         const selected = getSelectedRaceDifficulty();
         for (let index = 0; index < RACE_DIFFICULTY_OPTIONS.length; index++) {
             const option = RACE_DIFFICULTY_OPTIONS[index];
-            const card = makeUiNode(`RaceMode_${option.id}`, parent);
+            const entrance = this._motion.group(parent, `ModeEntrance_${option.id}`, 24, 0, index * 0.045);
+            const card = makeUiNode(`RaceMode_${option.id}`, entrance);
             card.getComponent(UITransform)!.setContentSize(410, 170);
             const artPath = option.id === 'beginner'
                 ? RESOURCE_PATHS.lobbyUi.modeBeginner
@@ -351,49 +382,48 @@ export class PrepareRaceFlow {
     }
 
     private selectRaceDifficulty(difficulty: RaceDifficulty): void {
-        if (getSelectedRaceDifficulty() === difficulty) return;
+        if (this._leaving || getSelectedRaceDifficulty() === difficulty) return;
         setSelectedRaceDifficulty(difficulty);
         for (const card of this._raceModeCards) {
             const selected = card.id === difficulty;
             if (card.selected === selected) continue;
             card.selected = selected;
-            this.applyRaceModeCardSelection(card);
+            this.applyRaceModeCardSelection(card, true);
         }
-        this.layoutRaceModeCards();
+        this.layoutRaceModeCards(true);
     }
 
-    private applyRaceModeCardSelection(card: RaceModeCardView): void {
-        const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
-        const x = card.selected ? 408 : 447;
-        if (card.root.scale.x !== scale || card.root.scale.y !== scale) card.root.setScale(scale, scale, card.root.scale.z);
-        if (card.root.position.x !== x) card.root.setPosition(x, card.root.position.y, card.root.position.z);
-        setNodeActive(card.selectedFrame, card.selected);
+    private applyRaceModeCardSelection(card: RaceModeCardView, animated = false): void {
+        this._motion.selectFrame(card.selectedFrame, card.selected, animated);
     }
 
-    private layoutRaceModeCards(): void {
+    private layoutRaceModeCards(animated = false): void {
         let topY = RACE_MODE_STACK_TOP_Y;
         for (const card of this._raceModeCards) {
             const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
             const visibleHeight = RACE_MODE_CARD_VISIBLE_HEIGHT * scale;
             const y = topY - visibleHeight / 2;
-            if (card.root.position.y !== y) card.root.setPosition(card.root.position.x, y, card.root.position.z);
+            this._motion.moveCard(card.root, card.selected ? 408 : 447, y, scale, animated);
             topY = y - visibleHeight / 2 - RACE_MODE_CARD_GAP;
         }
     }
 
     private buildReadyActions(parent: Node): void {
+        parent = this._motion.group(parent, 'LobbyActionsMotion', 0, -12, 0.15);
         const room = makeRaceTextureButton('FriendRoomButton', parent, RESOURCE_PATHS.lobbyUi.onlineButton, 102, 102, 236, -287, 3);
         const roomLabel = makeBoundLabel('Label', room, '联机', 18, DARK_TEXT, 64, 26, 0, -9);
         stylePsdRuntimeLabel(roomLabel, 'PingFang SC', true, 24);
-        room.on(Button.EventType.CLICK, () => this._callbacks.onOpenRoom());
+        this._motion.bindButton(room);
+        room.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(this._callbacks.onOpenRoom));
 
         const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.characterUi.confirmButton, 332, 102, 448, -287, 3);
         const startLabel = makeBoundLabel('Label', start, '开始比赛', 38, DARK_TEXT, 220, 54, -4, 0);
         stylePsdTitleLabel(startLabel, 48);
-        start.on(Button.EventType.CLICK, () => {
+        this._motion.bindButton(start, true);
+        start.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => {
             setRaceDifficulty(getSelectedRaceDifficulty());
             this._callbacks.onStartRace();
-        });
+        }));
     }
 
     private buildCharacterManagement(parent: Node): void {
@@ -410,6 +440,7 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterHeader(parent: Node): void {
+        parent = this._motion.group(parent, 'CharacterHeaderMotion', -16);
         makeRaceTextureSprite('CharacterHeaderBackground', parent, RESOURCE_PATHS.characterUi.headerBackground, 497, 111, -391.5, 304.5, 1);
 
         // Keep the larger touch target separate from the PSD-sized artwork. Changing
@@ -423,7 +454,8 @@ export class PrepareRaceFlow {
         backButton.transition = Button.Transition.SCALE;
         backButton.zoomScale = 0.97;
         backButton.duration = 0.08;
-        backHit.on(Button.EventType.CLICK, () => this.showReadyScreen());
+        this._motion.bindButton(backHit);
+        backHit.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showReadyScreen()));
 
         // The label position is its bounding-box centre. Keep the visible title at
         // the PSD x=105 edge instead of centring that box on the glyph midpoint.
@@ -432,6 +464,7 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterRoster(parent: Node): void {
+        parent = this._motion.group(parent, 'CharacterRosterMotion', -24);
         const slotCount = Math.max(PROTOTYPE_CHARACTER_SLOT_COUNT, PLAYER_CHARACTER_DEFINITIONS.length);
         const rowCount = Math.ceil(slotCount / CHARACTER_LIST_COLUMN_COUNT);
         const contentHeight = Math.max(
@@ -570,6 +603,7 @@ export class PrepareRaceFlow {
     }
 
     private buildCharacterInspector(parent: Node): void {
+        parent = this._motion.group(parent, 'CharacterInspectorMotion', 24);
         const panel = makeRaceTextureSprite('CharacterInspector', parent, RESOURCE_PATHS.characterUi.detailPanelBackground, 349, 476, 462.5, 22, 2);
         this._attributeTabArtwork = makeRaceTextureSprite('TabArtworkAttributes', panel, RESOURCE_PATHS.characterUi.tabAttributes, 299, 49, -12, 189.5, 1);
         this._appearanceTabArtwork = makeRaceTextureSprite('TabArtworkAppearance', panel, RESOURCE_PATHS.characterUi.tabAppearance, 299, 49, -12, 189.5, 1);
@@ -685,6 +719,7 @@ export class PrepareRaceFlow {
     }
 
     private refreshCharacterInspector(): void {
+        if (this._leaving) return;
         const character = this._draftCharacterId ? findPlayerCharacter(this._draftCharacterId) : null;
         if (!character) return;
         const progression = getProgressionManager();
@@ -712,7 +747,7 @@ export class PrepareRaceFlow {
     }
 
     private async upgradeDraftCharacter(): Promise<void> {
-        if (this._upgradePending || !this._draftCharacterId) return;
+        if (this._leaving || this._upgradePending || !this._draftCharacterId) return;
         const characterId = this._draftCharacterId;
         const progression = getProgressionManager();
         const level = progression.getCharacterLevel(characterId);
@@ -837,12 +872,12 @@ export class PrepareRaceFlow {
     }
 
     private confirmDraftCharacter(): void {
-        if (!this._draftCharacterId) return;
+        if (this._leaving || !this._draftCharacterId) return;
         if (getPlayerCharacterSelection().characterId !== this._draftCharacterId) selectPlayerCharacter(this._draftCharacterId);
         void PlayerData.setCharacterSelection(getPlayerCharacterSelection()).catch((error) => {
             console.warn('[PrepareRaceFlow] character selection save failed', error);
         });
-        this.showReadyScreen();
+        this.leaveCurrentScreen(() => this.showReadyScreen());
     }
 
     private buildPreviewPresentation(parent: Node): void {
@@ -875,7 +910,7 @@ export class PrepareRaceFlow {
     }
 
     private beginPreviewRotation(event: EventTouch): void {
-        if (this._previewRotateTouchId === null) this._previewRotateTouchId = event.getID();
+        if (!this._leaving && this._previewRotateTouchId === null) this._previewRotateTouchId = event.getID();
     }
 
     private updatePreviewRotation(event: EventTouch): void {
