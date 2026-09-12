@@ -4,6 +4,10 @@ const { createHarness } = require('./helpers/cocos-math-harness.cjs');
 const { load, Vec3, root } = createHarness();
 const { RaceCameraDirector, RaceCameraMode } = load(root + '/assets/scripts/camera/RaceCameraDirector.ts');
 const { CharacterAbilityState } = load(root + '/assets/scripts/swimmer/CharacterAbilityState.ts');
+const { InputRouter } = load(root + '/assets/scripts/core/InputRouter.ts');
+const { SwimmerMotor } = load(root + '/assets/scripts/swimmer/SwimmerMotor.ts');
+const { StrokeType } = load(root + '/assets/scripts/core/GameConstants.ts');
+const { STROKE_QUALITY_TUNING } = load(root + '/assets/scripts/core/InputTuning.ts');
 
 function setup(mode = RaceCameraMode.Sprint, direction = 1, lane = 0, waterY = 0.055) {
     const layout = { waterY, poolStartX: -25, poolFinishX: 25, poolWidth: 24,
@@ -198,4 +202,82 @@ test('上浮中再次踢腿、浅潜反复划水及快照深度归零，都从�
         assert.equal(s.director._kickDiveSurfaceRestore, false);
         assert.equal(s.director.underwaterViewActive, false);
     }
+});
+
+test('真实输入分类：长按划水的起手踢腿不切水下，短按踢腿仍可进入潜航', () => {
+    const originalNow = Date.now;
+    const originalHold = STROKE_QUALITY_TUNING.minHoldSeconds;
+    try {
+        for (const hz of [30, 60, 120]) for (const threshold of [0.1, 0.2, 0.4]) {
+            STROKE_QUALITY_TUNING.minHoldSeconds = threshold;
+            const s = setup();
+            const motor = new SwimmerMotor(); motor.setCharacterAbility('kickDive'); motor.startRace(10, 2);
+            let now = 1000, strokes = 0;
+            Date.now = () => now;
+            const router = new InputRouter(null, {
+                onStrokeHeld: (side, held, preHeld) => { motor.setStrokeHeld(side, held, preHeld); return true; },
+                onStroke: side => { if (motor.recordStroke(side)) strokes++; },
+                onKickStroke: side => motor.recordKickTap(side, false),
+                onKickConfirmed: () => motor.confirmKickAbility(),
+            });
+            function frame() {
+                now += 1000 / hz;
+                router.tick(); motor.update(1 / hz, { isAI: false });
+                s.depth(motor.ability.depth);
+                s.snapshot.playerArmStrokeActive = motor.isArmStrokeActive;
+                s.snapshot.playerUnderwater = motor.ability.ignoresSwimmers;
+                s.tick(1 / hz, hz);
+            }
+            for (let repeat = 0; repeat < 4; repeat++) {
+                const side = repeat % 2 ? StrokeType.RIGHT : StrokeType.LEFT;
+                router.handleScreenStroke(side);
+                for (let i = 0; i < Math.ceil((threshold + 0.5) * hz); i++) {
+                    frame();
+                    assert.equal(motor.ability.depth, 0, '普通划水全程不得触发能力下沉');
+                    assert.equal(s.director._kickDiveViewActive, false,
+                        `${hz}Hz 长按阈值${threshold}秒，第${repeat + 1}划误触发潜航`);
+                    assert.equal(s.director.underwaterViewActive, false);
+                }
+                router.handleScreenStrokeEnd(side);
+                for (let i = 0; i < hz * 2; i++) frame();
+            }
+            assert.ok(strokes >= 4, '确实经过输入分类并开始手臂划水');
+            for (let i = 0; i < hz * 2; i++) {
+                if (i % Math.max(1, Math.round(hz * 0.1)) === 0) {
+                    router.handleScreenStroke(StrokeType.LEFT);
+                    router.handleScreenStrokeEnd(StrokeType.LEFT);
+                }
+                frame();
+            }
+            assert.equal(s.director.underwaterViewActive, true, '短按踢腿仍进入水下镜头');
+            router.handleScreenStroke(StrokeType.RIGHT);
+            for (let i = 0; i < hz * 2; i++) frame();
+            assert.equal(s.director.underwaterViewActive, false, '潜航改长按划水后正常恢复水面');
+            assert.equal(s.director._kickDiveViewActive, false);
+            router.handleScreenStrokeEnd(StrokeType.RIGHT);
+        }
+    } finally { Date.now = originalNow; STROKE_QUALITY_TUNING.minHoldSeconds = originalHold; }
+});
+
+test('输入边界：漏过分类帧的长按仍是划水，短按只确认一次，重置不触发潜航', () => {
+    const originalNow = Date.now;
+    let now = 1000, kicks = 0, confirmed = 0, strokes = 0;
+    Date.now = () => now;
+    const router = new InputRouter(null, {
+        onKickStroke: () => kicks++, onKickConfirmed: () => confirmed++,
+        onStrokeHeld: () => true, onStroke: () => strokes++,
+    });
+    try {
+        router.handleScreenStroke(StrokeType.LEFT);
+        now += (STROKE_QUALITY_TUNING.minHoldSeconds + .01) * 1000;
+        router.handleScreenStrokeEnd(StrokeType.LEFT);
+        assert.equal(strokes,1);assert.equal(confirmed,0);
+        now += 1000;router.handleScreenStroke(StrokeType.LEFT);
+        now += 100;router.handleScreenStroke(StrokeType.LEFT);
+        router.handleScreenStrokeEnd(StrokeType.LEFT);router.handleScreenStrokeEnd(StrokeType.LEFT);
+        assert.equal(kicks,2);assert.equal(confirmed,1);
+        now += 1000;router.handleScreenStroke(StrokeType.RIGHT);
+        router.resetStrokeInput();router.handleScreenStrokeEnd(StrokeType.RIGHT);
+        assert.equal(confirmed,1);
+    } finally {Date.now=originalNow;}
 });

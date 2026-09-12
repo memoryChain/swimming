@@ -167,7 +167,7 @@ function bodyFixture(id) {
     const file = path.join(h.root,'assets/scripts/entity/Swimmer.ts');
     const source = ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
     const decl = source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
-    const names = ['tryDolphinJump','applyAcceptedNetDolphinJump','isCollisionActive','applyCoursePosition','motor','courseLayout','startPosition','playFinishTouch'];
+    const names = ['tryDolphinJump','applyAcceptedNetDolphinJump','isCollisionActive','applyCoursePosition','motor','courseLayout','startPosition','playFinishTouch','handleKickStroke','confirmKickStroke','canUseDolphinAbility'];
     const members = decl.members.filter(n=>names.includes(n.name?.getText(source)));
     assert.equal(members.length,names.length);
     const { DOLPHIN_JUMP } = load('core/DolphinJumpConfig');
@@ -217,6 +217,48 @@ test('实际实体：下潜深度同时驱动Y和碰撞，未够深不免碰撞�
     near(body.node.position.y,body._phases.visualSwimY());assert.equal(body.isCollisionActive,false);
     body._phases.clearDiveUnderwaterPhase();ability.depth=.8;body.applyCoursePosition(10);
     body.playFinishTouch();near(body.node.position.y,body._startPosition.y+.01);near(ability.depth,0);
+});
+
+test('潜水哥水面、水下、上浮及重开后均禁海豚跳，按钮与回放一致且不扣资源', () => {
+    const {body,condition} = bodyFixture('kickDive');
+    const heartRate = body.motor.heartRate;
+    for (const depth of [0,.8,.3,0]) {
+        body.motor.ability.depth = depth;
+        assert.equal(body.canUseDolphinAbility,false);
+        assert.equal(body.tryDolphinJump(),false);
+        assert.equal(body.applyAcceptedNetDolphinJump(),false);
+        near(condition.energy,100);near(body._ultimate.energy,100);near(body.motor.heartRate,heartRate);
+        assert.equal(body._phases.isDolphinJumpActive,false);
+    }
+    body.motor.startRace(10,2);
+    assert.equal(body.canUseDolphinAbility,false);
+    assert.equal(body.applyAcceptedNetDolphinJump(),false);
+    body.motor.setCharacterAbility('frogHop');
+    assert.equal(body.canUseDolphinAbility,true);
+    body.motor.setCharacterAbility('kickDive');
+    assert.equal(body.canUseDolphinAbility,false);
+});
+
+test('实际实体：按下反馈不改变潜水深度和Y，短按确认不重复推进，脚本阶段不能确认潜航', () => {
+    const {body} = bodyFixture('kickDive');
+    body.cartoonRig.triggerKick = () => {};
+    body.applyCoursePosition(10); const surfaceY = body.node.position.y;
+    for (let i = 0; i < 20; i++) {
+        body.handleKickStroke(StrokeType.LEFT, false);
+        body.motor.update(1 / 60, {isAI:false}); body.applyCoursePosition(body.motor.distance);
+        near(body.motor.ability.depth, 0); near(body.node.position.y, surfaceY);
+        assert.equal(body.isCollisionActive, true);
+    }
+    const speed = body.motor.currentSpeed, cadence = body.motor.kickCadenceHz;
+    body.confirmKickStroke(); near(body.motor.currentSpeed, speed); near(body.motor.kickCadenceHz, cadence);
+    body.motor.update(.2, {isAI:false}); body.applyCoursePosition(body.motor.distance);
+    assert.ok(body.motor.ability.depth > 0); assert.ok(body.node.position.y < surfaceY);
+    body.motor.ability.reset(); body._phases.startDiveUnderwaterPhase();
+    body.confirmKickStroke(); near(body.motor.ability.kickRemaining,0);
+    body._phases.clearDiveUnderwaterPhase();
+    body.motor.ability.applySnapshot({depth:.6,kickRemaining:.2,stacks:0,idleRemaining:0},true);
+    body.handleKickStroke(StrokeType.RIGHT,false);body.confirmKickStroke();
+    near(body.motor.ability.depth,.6);near(body.motor.ability.kickRemaining,.2);
 });
 
 test('真实输入回放：风火轮满层在30/60/120Hz与1/30级均提升约一成普通游速', () => {

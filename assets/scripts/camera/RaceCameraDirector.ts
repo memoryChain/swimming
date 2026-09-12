@@ -686,8 +686,10 @@ export class RaceCameraDirector {
         this._flipTurnViewActive = false;
         this._flipTurnCameraPlanted = false;
         const kickDiveDepth = snapshot.playerKickDiveDepth ?? 0;
-        if (snapshot.raceActive && !this._feedMode && !snapshot.playerFlipTurnCameraActive
-            && !snapshot.playerDolphinCameraActive && Number.isFinite(kickDiveDepth) && kickDiveDepth > 0.001) {
+        const kickDiveAvailable = snapshot.raceActive && !this._feedMode && !snapshot.playerFlipTurnCameraActive
+            && !snapshot.playerDolphinCameraActive && Number.isFinite(kickDiveDepth) && kickDiveDepth > 0.001;
+        // 能力深度只由已确认的独立踢腿触发，相机无需再猜测长按分类。
+        if (kickDiveAvailable) {
             if (!this._kickDiveViewActive) {
                 this._sprintFovCurrent = this._cameraNode.getComponent(Camera)?.fov ?? RACE_CAMERA_TUNING.sprintFov;
                 // 从当前实际显示位置接续，包含上次未走完的上浮过渡。

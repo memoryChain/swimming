@@ -20,7 +20,6 @@ import {
 export type SpeedStarsStartUiCallbacks = {
     onStart: () => void;
     onModelDebug: () => void;
-    onAiDebug: () => void;
     onUnderwaterDebug: () => void;
 };
 

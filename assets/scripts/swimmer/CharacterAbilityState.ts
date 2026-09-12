@@ -33,7 +33,9 @@ export class CharacterAbilityState implements CharacterAbilitySnapshot {
     }
 
     get infiniteStamina(): boolean { return this.id === 'exoskeleton'; }
-    get allowsDolphin(): boolean { return this.id !== 'exoskeleton' && this.depth <= 0.001; }
+    // 角色资格与临时状态分开，联机回放也必须遵守固有禁跳规则。
+    get supportsDolphin(): boolean { return this.id !== 'exoskeleton' && this.id !== 'kickDive'; }
+    get allowsDolphin(): boolean { return this.supportsDolphin && this.depth <= 0.001; }
     get ignoresSwimmers(): boolean {
         return this.id === 'kickDive' && this.depth >= Math.min(abilityValue('diverDepth', 0.1, 2), abilityValue('diverCollisionDepth', 0.05, 2));
     }

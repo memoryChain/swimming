@@ -4,12 +4,13 @@ import { Swimmer } from '../entity/Swimmer';
 import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { defaultSwimmerColorVariant, SWIMMER_COLOR_VARIANTS } from '../core/ResourcePaths';
-import { getRaceAiDifficultyConfig } from '../core/GameBalance';
+import { applyRaceModifiersToSwimmer, resolveModifiersFromDigest } from '../progression/RaceModifiers';
+import { normalizeCharacterLevel } from '../progression/ProgressionBalance';
 import { shuffleInPlace } from '../core/SharedRNG';
 import { PlayerData } from '../backend/PlayerData';
-import { characterAbilityForModel, characterHeartRateTraitForModel, characterWeightForModel, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
-import { AICompetitorProfile, buildRandomizedAiRoster, getAiPersonality } from './CompetitorConfig';
-import { randomAiModelVariantId, SwimmerFactory } from './SwimmerFactory';
+import { findPlayerCharacter, PlayerCharacterId, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
+import { AICompetitorProfile, buildRandomizedAiRoster } from './CompetitorConfig';
+import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
     laneLayout: LaneLayout;
@@ -26,11 +27,12 @@ export type CompetitorSet = {
     aiSwimmers: Swimmer[];
 };
 
-// Options for building AI opponents. Used by the 100m AI-debug 1v1 mode to spawn
-// a single opponent in one lane with a chosen difficulty.
+// 测试赛可指定单个对手泳道，也可填满玩家以外的全部泳道。
 export type AiBuildOptions = {
     soloLane?: number;
     difficultyOverride?: number;
+    characterId?: PlayerCharacterId;
+    level?: number;
 };
 
 export class CompetitorManager {
@@ -97,11 +99,7 @@ export class CompetitorManager {
         if (!rig) {
             return;
         }
-        const modelVariantId = randomAiModelVariantId();
-        rig.setModelVariant(modelVariantId);
-        swimmer.motor.setWeight(characterWeightForModel(modelVariantId));
-        swimmer.motor.setHeartRateTrait(characterHeartRateTraitForModel(modelVariantId));
-        swimmer.motor.setCharacterAbility(characterAbilityForModel(modelVariantId));
+        // 模型已由 applyProfile 与身体属性一起按角色身份更新。
         rig.setColorVariant(colorVariantId);
         rig.setColorOverride({ skin: new Color(skinColor[0], skinColor[1], skinColor[2]) });
     }
@@ -111,22 +109,26 @@ export class CompetitorManager {
         const aiSwimmers: Swimmer[] = [];
         let primaryAiController: AISwimmerController | null = null;
         const aiLanes = this.aiLaneIndices(options?.soloLane);
-        const roster = buildRandomizedAiRoster(aiLanes.length);
+        // 按完整泳道生成，避免各端跳过不同本地玩家槽位后把 AI 身份错移一位。
+        const roster = buildRandomizedAiRoster(this._options.laneLayout.laneCount);
         const playerColorVariantId = defaultSwimmerColorVariant().id;
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
         const aiSkinColors = shuffledAiSkinColors();
 
         aiLanes.forEach((lane, index) => {
-            const entry = roster[index];
+            const entry = roster[lane];
+            if (options?.characterId) entry.profile.characterId = options.characterId;
+            if (options?.level !== undefined) entry.profile.level = options.level;
             const swimmer = this._factory.create(group, {
                 name: `AISwimmerLane${lane + 1}`,
                 x: this._options.courseLayout.startX,
                 y: this._options.courseLayout.swimY,
                 z: this._options.laneLayout.centerZ(lane),
                 isAI: true,
-                colorVariantId: aiColorVariantIds[index % aiColorVariantIds.length],
-                skinColor: aiSkinColors[index % aiSkinColors.length],
+                colorVariantId: aiColorVariantIds[lane % aiColorVariantIds.length],
+                skinColor: aiSkinColors[lane % aiSkinColors.length],
                 displayName: entry.name,
+                modelVariantId: findPlayerCharacter(entry.profile.characterId)?.modelVariantId,
             });
             swimmer.configureCourse(this._options.courseLayout);
             const controller = swimmer.node.addComponent(AISwimmerController);
@@ -151,7 +153,7 @@ export class CompetitorManager {
             if (lane === this._options.playerLaneIndex) {
                 continue;
             }
-            // Solo mode (100m AI debug): build only the one opponent lane.
+            // 单对手测试只创建指定泳道，满员测试走全部非玩家泳道。
             if (soloLane !== undefined && lane !== soloLane) {
                 continue;
             }
@@ -167,11 +169,14 @@ export class CompetitorManager {
         difficultyOverride?: number,
     ) {
         controller.swimmer = swimmer;
-        controller.difficulty = difficultyOverride ?? scaledRaceDifficulty(profile.difficulty);
-        controller.bpmOffset = profile.bpmOffset;
-        controller.divePower = profile.divePower;
-        controller.personality = getAiPersonality(profile.personalityId);
-        swimmer.setEnergyGainAptitude(profile.energyGain ?? 80);
+        const characterId = profile.characterId ?? 'cartonSwimmer6';
+        const level = normalizeCharacterLevel(profile.level ?? 1);
+        const modifiers = resolveModifiersFromDigest({ characterId, level });
+        const character = findPlayerCharacter(characterId);
+        if (character) swimmer.cartoonRig?.setModelVariant(character.modelVariantId);
+        applyRaceModifiersToSwimmer(swimmer, modifiers);
+        controller.configure(characterId, level, difficultyOverride ?? profile.difficulty, modifiers.balance?.energyTotal ?? 100);
+
     }
 
     private createPlayer(group: Node): Swimmer {
@@ -187,11 +192,6 @@ export class CompetitorManager {
         swimmer.configureCourse(this._options.courseLayout);
         return swimmer;
     }
-}
-
-function scaledRaceDifficulty(baseDifficulty: number): number {
-    const scale = getRaceAiDifficultyConfig().aiDifficultyScale;
-    return Math.max(0, Math.min(1, baseDifficulty * scale));
 }
 
 function shuffledAiColorVariantIds(playerVariantId: string): string[] {

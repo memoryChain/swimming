@@ -182,21 +182,17 @@ test('continuous contact injects the escape impulse only once', () => {
     clearCollisionContacts();
 });
 
-test('远端真人复用 AI 身体时仍正面脱困，真正 AI 之间只做侧向分离', () => {
+test('远端真人与真正 AI 都遵守同一正面阻挡、击退和脱困规则', () => {
     for (const remoteHuman of [true, false]) {
         clearCollisionContacts();
         const first = makeSwimmer({ x: -0.85, z: 0, direction: 1, isAI: true, remoteHuman });
         const second = makeSwimmer({ x: 0.85, z: 0, direction: -1, isAI: true, remoteHuman });
         resolveSwimmerCollisions([first, second]);
-        if (remoteHuman) {
-            assert.ok(first.impulses[0].distance < 0);
-            assert.ok(first.impulses[0].lateral < 0);
-            assert.ok(second.impulses[0].lateral > 0);
-        } else {
-            assert.equal(first.node.position.x, -0.85);
-            assert.equal(second.node.position.x, 0.85);
-            assert.ok(first.impulses.every((impulse) => impulse.distance === 0));
-        }
+        assert.ok(first.impulses[0].distance < 0);
+        assert.ok(first.impulses[0].lateral < 0);
+        assert.ok(second.impulses[0].lateral > 0);
+        assert.ok(first.node.position.x < -0.85);
+        assert.ok(second.node.position.x > 0.85);
     }
     clearCollisionContacts();
 });

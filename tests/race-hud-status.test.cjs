@@ -16,6 +16,7 @@ class Vec3{constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}
 class Vec2{constructor(x,y){this.x=x;this.y=y;}}
 class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
 function load(file,imports,extras={}){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{require:p=>{assert.ok(imports[p],p);return imports[p];},module:m,exports:m.exports,...extras});return m.exports;}
+Node.prototype.getChildByName=function(name){return this.children.find(n=>n.name===name);};
 const heartPresentation=load('assets/scripts/ui/HeartRatePresentation.ts',{'cc':{Color}});
 function fixture(reservedRatio=0){
  let size={width:1280,height:720},safe={x:0,y:0,...size},jumps=0;const pending=[],listeners=new Map();
@@ -87,7 +88,7 @@ test('速度表显示斜游的完整移动速率，翻滚损速有效，内部�
  motor._axialRoll.setState(0,6);check();
  assert.equal(motor.heading,0);assert.ok(swimmer.movementSpeed<1,'调试模式不偏航，翻滚仍会损失推进');
  const source=fs.readFileSync(path.join(root,'assets/scripts/core/GameManager.ts'),'utf8');
- assert.match(source,/statusHud\.updateValues\(player\.movementSpeed,/);
+ assert.match(source,/hud\.updateValues\(swimmer\.movementSpeed,/);
  assert.match(source,/_playerSwimmer\.movementSpeed\.toFixed\(2\)/);
 });
 
@@ -431,4 +432,121 @@ test('机甲体力显示无限，重复状态不增加写入，换角色恢复�
  const before=writes;for(let i=0;i<100;i++)sample(true);assert.equal(writes,before);
  sample(false);assert.equal(find(s.parent,'EnergyValue').getComponent(Label).string,'100%');
  s.hud.setVisible(false);const hidden=writes;sample(true);assert.equal(writes,hidden);
+});
+
+test('禁跳角色隐藏整个按钮和触控，停止蓄气更新与入场动画，换角色和重开可恢复',()=>{
+ const s=fixture(),h=s.hud,jump=find(s.parent,'DolphinJumpButton');
+ const total=count(s.parent),listener=jump.events.click;
+ h.setDolphinSupported(false);h.setVisible(true);
+ assert.equal(jump.activeInHierarchy,false);assert.equal(jump.getComponent(Button).interactable,false);
+ assert.equal(s.animations.some(t=>t.target===jump.parent.getComponent(UIOpacity)),false);
+ update(h,1,true);jump.events.click();assert.equal(s.jumps,0);
+ const before=writes;
+ for(let i=0;i<100;i++){h.setDolphinSupported(false);update(h,i/100,true);}
+ assert.equal(writes,before,'隐藏后蓄气变化不再写入按钮');
+ h.setVisible(false);h.setVisible(true);assert.equal(jump.activeInHierarchy,false);
+ h.setDolphinSupported(true);update(h,.5,false);
+ assert.equal(jump.activeInHierarchy,true);assert.equal(jump.getComponent(Button).interactable,false);
+ update(h,1,true);jump.events.click();assert.equal(s.jumps,1);
+ h.setVisible(false);h.setVisible(true);
+ const running=s.animations.filter(t=>!t.stopped&&!t.finished&&t.target===jump.parent.getComponent(UIOpacity));
+ assert.ok(running.length>0);h.setDolphinSupported(false);assert.ok(running.every(t=>t.stopped));
+ s.finish();assert.equal(jump.activeInHierarchy,false);
+ assert.equal(count(s.parent),total);assert.equal(jump.events.click,listener);
+});
+
+test('AI观战真实HUD切换数值、左右操作、排名和技能只读，反复切换不重建并恢复玩家',()=>{
+ const s=fixture(),h=s.hud;
+ const constants=load('assets/scripts/core/GameConstants.ts',{}),{GameState,StrokeType,Rating}=constants;
+ const source=ts.createSourceFile('GameManager.ts',fs.readFileSync(path.join(root,'assets/scripts/core/GameManager.ts'),'utf8'),ts.ScriptTarget.Latest,true);
+ const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='GameManager');
+ const names=['observedAiForHud','canObserveAi','nextAiCameraIndex','selectAiCameraIndex','detachObservedAiHud','updateRaceStatusHud','toggleCameraFollowAi','createInputRouter'];
+ const methods=cls.members.filter(n=>names.includes(n.name?.getText(source)));
+ const Owner=vm.runInNewContext(ts.transpileModule(`class Owner { ${methods.map(n=>n.getText(source)).join('\n')} };Owner`,
+  {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,
+  {GameState,StrokeType,getRaceDistance:()=>200,ULTIMATE_ENERGY_BALANCE:{maxEnergy:100},InputRouter:class{constructor(_n,callbacks){this.callbacks=callbacks;}}});
+ const body=(speed,ratio)=>({node:{active:true,isValid:true},movementSpeed:speed,distance:ratio*200,
+  motor:{ability:{supportsDolphin:true,infiniteStamina:false}},ultimate:{energy:100,canAffordDolphin:true},canUseDolphinAbility:true,
+  strokeTimingGuideForSide(side,target){Object.assign(target,{active:true,currentRatio:ratio,heartRate:speed===3.4?150:90,intervals:[{rating:Rating.PERFECT,startRatio:.2,endRatio:.6}]});return target;}});
+ const player=body(1.2,.1),opponent=body(3.4,.6);
+ const ai={swimmer:opponent,condition:{heartRate:150,heartRateZone:'HIGH',energyRatio:.35},isInputPressed:side=>side===StrokeType.LEFT};
+ const entries=[{swimmer:player,avatarId:'player'},{swimmer:opponent,avatarId:'ai'}];h.setRoster(entries);
+ const leaderboard=[{swimmer:opponent,isPlayer:false,placement:1},{swimmer:player,isPlayer:true,placement:2}];
+ const owner=new Owner();let ratings=0,follow=false;
+ Object.assign(owner,{_aiDebugMode:true,_netSession:null,_cameraFollowsAi:false,_aiController:ai,_aiControllers:[ai],_aiCameraIndex:-1,_state:GameState.RACING,
+  _playerSwimmer:player,_playerCondition:{heartRate:90,heartRateZone:'LOW',energyRatio:.8},_uiController:{raceHudStatus:h},
+  _inputRouter:{isStrokePressed:side=>side===StrokeType.RIGHT},_raceManager:{getLiveLeaderboard:()=>leaderboard},
+  _uiFlow:{setRaceStatusVisible:value=>h.setVisible(value),showRating:(rating,combo,side)=>{ratings++;h.stroke.showResult(side,rating);h.showStrokePraise(side,'Perfect',undefined,combo);}},
+  _gameFlow:{setCameraFollowAi:value=>follow=value},debug(){}});
+ const input=owner.createInputRouter();
+ owner.updateRaceStatusHud(.1);const total=count(s.parent),jump=find(s.parent,'DolphinJumpButton'),listener=jump.events.click;
+ const text=name=>find(s.parent,name).getComponent(Label).string;
+ assert.equal(text('SpeedValue'),'1.20');assert.equal(text('EnergyValue'),'80%');
+ for(let i=0;i<20;i++){
+  owner.toggleCameraFollowAi();assert.equal(follow,true);
+  assert.equal(text('SpeedValue'),'3.40');assert.equal(text('HeartValue'),'150');assert.equal(text('EnergyValue'),'35%');assert.equal(text('Percent'),'60%');
+  assert.equal(text('StrokeCaption'),'AI 左划');assert.equal(h.stroke.leftGuide.currentRatio,.6);
+  assert.equal(h.stroke.sides[0].held,true);assert.equal(h.stroke.sides[1].held,false);
+  assert.equal(h.ranks[0].emphasized,true);assert.equal(h.ranks[1].emphasized,false);
+  assert.equal(jump.getComponent(Button).interactable,false);assert.equal(find(s.parent,'ReadyFace').active,true);
+  jump.events.click();assert.equal(s.jumps,0);
+  input.callbacks.onStrokePressChanged(StrokeType.RIGHT,true);assert.equal(h.stroke.sides[1].held,false,'本地按压不覆盖AI');
+  ai.onObservedPressChanged(StrokeType.LEFT,false);ai.onObservedPressChanged(StrokeType.RIGHT,true);
+  assert.equal(h.stroke.sides[0].held,false);assert.equal(h.stroke.sides[1].held,true);
+  ai.onObservedPressChanged(StrokeType.RIGHT,false);opponent.onObservedRhythmResult({rating:Rating.PERFECT,combo:3,strokeSide:StrokeType.RIGHT});
+  assert.equal(h.stroke.sides[1].feedbackOpacity.opacity,255);
+  owner.toggleCameraFollowAi();assert.equal(follow,false);
+  assert.equal(text('SpeedValue'),'1.20');assert.equal(text('HeartValue'),'90');assert.equal(text('EnergyValue'),'80%');assert.equal(text('Percent'),'10%');
+  assert.equal(text('StrokeCaption'),'左划');assert.equal(h.stroke.sides[1].feedbackOpacity.opacity,0);
+  assert.equal(h.stroke.sides[1].held,true,'切回时恢复玩家实际按住的右手');
+  assert.equal(h.ranks[1].emphasized,true);assert.equal(jump.getComponent(Button).interactable,true);
+  assert.equal(ai.onObservedPressChanged,null);assert.equal(opponent.onObservedRhythmResult,null);
+  assert.equal(count(s.parent),total);assert.equal(jump.events.click,listener);
+ }
+ assert.equal(ratings,20);
+ owner.toggleCameraFollowAi();opponent.motor.ability.supportsDolphin=false;opponent.motor.ability.infiniteStamina=true;
+ owner.updateRaceStatusHud(.1);assert.equal(jump.active,false);assert.equal(text('EnergyValue'),'无限');
+ owner._state=GameState.FINISHED;owner.updateRaceStatusHud(.1);const hidden=writes;
+ opponent.onObservedRhythmResult({rating:Rating.PERFECT,combo:4,strokeSide:StrokeType.LEFT});
+ ai.onObservedPressChanged(StrokeType.LEFT,true);assert.equal(writes,hidden);
+ owner._state=GameState.RACING;owner._netSession={};owner.updateRaceStatusHud(.1);
+ assert.equal(owner._hudObservedAi,null);assert.equal(text('SpeedValue'),'1.20');
+ assert.equal(jump.active,true);assert.equal(text('EnergyValue'),'80%');
+ assert.equal(ai.onObservedPressChanged,null);assert.equal(opponent.onObservedRhythmResult,null);
+ // 八人赛按固定对手顺序循环，每位的镜头、诊断、HUD 和订阅保持一致。
+ owner._netSession=null;owner.selectAiCameraIndex(-1);owner.updateRaceStatusHud(0);
+ const roster=Array.from({length:7},(_,i)=>({swimmer:body(2+i/10,.2+i/20),
+  condition:{heartRate:110+i,heartRateZone:'LOW',energyRatio:(60+i)/100},isInputPressed:side=>side===(i%2?StrokeType.RIGHT:StrokeType.LEFT)}));
+ let cameraTarget=null,diagnostic=null;
+ owner._aiControllers=roster;owner._raceManager.aiSwimmer=opponent;
+ owner._gameFlow.setCameraFollowAi=(value,target)=>{follow=value;cameraTarget=target;};
+ owner._aiDifficultyPanel={setDebugController:value=>diagnostic=value};
+ owner._aiDebugCameraButtonLabel={isValid:true,string:''};
+ for(let cycle=0;cycle<3;cycle++){
+  for(let i=0;i<7;i++){
+   const previous=owner._hudObservedAi;owner.toggleCameraFollowAi();
+   assert.equal(owner._aiCameraIndex,i);assert.equal(cameraTarget,roster[i].swimmer);
+   assert.equal(diagnostic,roster[i]);assert.equal(owner._hudObservedAi,roster[i]);
+   assert.equal(text('SpeedValue'),(2+i/10).toFixed(2));assert.equal(text('HeartValue'),String(110+i));
+   assert.equal(text('EnergyValue'),`${60+i}%`);assert.equal(h.stroke.leftGuide.currentRatio,.2+i/20);
+   assert.equal(h.stroke.sides[i%2].held,true);assert.equal(h.stroke.sides[1-i%2].held,false);
+   assert.equal(owner._aiDebugCameraButtonLabel.string,`AI ${i+1}/7 · 下一个`);
+   if(previous){assert.equal(previous.onObservedPressChanged,null);assert.equal(previous.swimmer.onObservedRhythmResult,null);}
+   assert.equal(owner._aiController,ai);assert.equal(owner._raceManager.aiSwimmer,opponent);
+  }
+  owner.toggleCameraFollowAi();assert.equal(follow,false);assert.equal(cameraTarget,null);
+  assert.equal(text('SpeedValue'),'1.20');assert.equal(owner._aiCameraIndex,-1);
+  assert.equal(count(s.parent),total);
+ }
+ roster[0].swimmer.node.active=false;roster[1].remoteDriven=true;roster[2].swimmer.node.isValid=false;
+ roster[3].condition=null;
+ owner.toggleCameraFollowAi();assert.equal(owner._aiCameraIndex,4);
+ roster[4].swimmer.node.active=false;owner.updateRaceStatusHud(.1);
+ assert.equal(owner._aiCameraIndex,5);assert.equal(cameraTarget,roster[5].swimmer);
+ assert.equal(roster[4].onObservedPressChanged,null);
+ roster[5].swimmer.node.active=false;roster[6].swimmer.node.active=false;owner.updateRaceStatusHud(.1);
+ assert.equal(owner._aiCameraIndex,-1);assert.equal(owner._hudObservedAi,null);assert.equal(follow,false);
+ owner.toggleCameraFollowAi();assert.equal(owner._aiCameraIndex,-1,'没有可用对手时保持玩家视角');
+ roster[0].swimmer.node.active=true;owner._netSession={};owner.toggleCameraFollowAi();
+ assert.equal(owner._aiCameraIndex,-1,'联机不启用本地 AI 观战切换');
 });

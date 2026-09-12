@@ -120,6 +120,9 @@ export class LobbyUiMotion {
         node.on(Node.EventType.TOUCH_END, release);
         node.on(Node.EventType.TOUCH_CANCEL, cancel);
         this._unbind.push(() => {
+            // 引擎可能先销毁子节点、再调用页面组件 onDestroy；此时事件处理器已释放。
+            // 活节点正常解绑，已销毁节点的监听由引擎清除，不再调用 Node.off。
+            if (!node.isValid) return;
             node.off(Node.EventType.TOUCH_START, press);
             node.off(Node.EventType.TOUCH_END, release);
             node.off(Node.EventType.TOUCH_CANCEL, cancel);

@@ -130,9 +130,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.15,
         energyGain: 80,
         heartRateTrait: 'steady',
-        description: '背着潜水装备的潜水哥，遇到拥挤就从水下穿过去。',
+        description: '短按踢腿潜入水下避开对手，划水或停踢就会上浮，不能使用海豚跳。',
         abilityId: 'kickDive',
-        skillName: '踢腿潜航', skillDescription: '踢腿潜入水下，避开碰撞\n划水或停止踢腿就会上浮',
+        skillName: '踢腿潜航', skillDescription: '踢腿潜入水下，避开碰撞\n划水上浮，不能海豚跳',
         supportsSkinTone: true,
     },
     {

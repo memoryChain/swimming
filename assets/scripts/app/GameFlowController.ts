@@ -35,6 +35,7 @@ export type GameFlowRefs = {
     handleModelDebugStroke: (type: StrokeType) => boolean;
     handleModelDebugStrokeHeld: (type: StrokeType, held: boolean) => boolean;
     handleModelDebugKickStroke: (type: StrokeType) => boolean;
+    handleModelDebugKickConfirmed?: () => boolean;
     setState: (state: GameState) => void;
     getState: () => GameState;
     clearFinishRanks: () => void;
@@ -42,6 +43,7 @@ export type GameFlowRefs = {
     showLiveRanks: (results: RaceFinishResult[]) => void;
     showFinishRank: (result: RaceFinishResult) => void;
     onSwimmerEliminated: (swimmer: Swimmer) => void;
+    onPlayerCameraRestored?: () => void;
     // Begin the pre-dive countdown. Single-player starts immediately; a networked race
     // waits for the host's synchronized GO so all players' countdowns start together.
     beginCountdown: () => void;
@@ -75,6 +77,7 @@ export class GameFlowController {
     private _sprintTriggered = false;
     private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
+    private _cameraAiTarget: Swimmer | null = null;
     private _liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
     // Once the opening dive rises close to the surface, switch the swim view to
     // the behind-the-swimmer sprint chase so the steering weave reads clearly.
@@ -184,7 +187,7 @@ export class GameFlowController {
     presentStrokeResult(result: RhythmResult) {
         const player = this._refs.playerSwimmer;
         if (this._refs.getState() !== GameState.RACING || !player || player.distance >= getRaceDistance()) return;
-        this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
+        if (!this._cameraFollowAi) this._refs.uiFlow.showRating(result.rating, result.combo, result.strokeSide);
         if (result.rating !== Rating.GOOD && result.rating !== Rating.PERFECT) return;
         StrokeSfxManager.playStroke(result.rating === Rating.PERFECT);
         if (!this._cameraFollowAi) this._refs.raceCameraDirector.notifyStrokeSettled(result.rating === Rating.PERFECT);
@@ -197,8 +200,15 @@ export class GameFlowController {
         if (!this.isStrokeInputActive()) {
             return;
         }
-        this._refs.playerSwimmer?.handleKickStroke(type);
+        this._refs.playerSwimmer?.handleKickStroke(type, false);
         captureNetInput({ kind: NetInputKind.Kick, side: netSide(type) });
+    }
+
+    handlePlayerKickConfirmed() {
+        if (this._refs.handleModelDebugKickConfirmed?.()) return;
+        if (!this.isStrokeInputActive()) return;
+        // 无第二次踢腿事件；确认后的能力深度和保持时间随既有 owner 权威快照同步。
+        this._refs.playerSwimmer?.confirmKickStroke();
     }
 
     private isStrokeInputActive(): boolean {
@@ -328,7 +338,8 @@ export class GameFlowController {
             this._refs.showFinishRank(result);
             if (result.isPlayer) {
                 this._finishViewElapsed = 0;
-                this._cameraFollowAi = false;
+                this.setCameraFollowAi(false);
+                this._refs.onPlayerCameraRestored?.();
                 this._refs.uiFlow.setSprintActive(false);
             }
         };
@@ -419,11 +430,10 @@ export class GameFlowController {
         return this._refs.raceCameraDirector.cycleMode();
     }
 
-    // Debug (100m AI-debug mode): make the race camera frame the AI opponent
-    // instead of the player. Only the visual follow position changes; race logic,
-    // placement, and sprint pacing stay anchored to the real player.
-    setCameraFollowAi(followAi: boolean) {
+    // 只切换观战对象；比赛判定、排名与冲刺逻辑仍使用真实玩家。
+    setCameraFollowAi(followAi: boolean, target: Swimmer | null = null) {
         this._cameraFollowAi = followAi;
+        this._cameraAiTarget = followAi ? target : null;
     }
 
     updateRaceCamera(dt: number) {
@@ -460,8 +470,9 @@ export class GameFlowController {
         // The camera frames this swimmer's position. Normally the player; in
         // AI-debug follow mode it's the opponent, while all race logic above still
         // uses the real player.
-        const focus = this._cameraFollowAi && this._refs.aiSwimmers[0]?.node?.isValid
-            ? this._refs.aiSwimmers[0]
+        const aiFocus = this._cameraFollowAi ? this._cameraAiTarget ?? this._refs.raceManager?.aiSwimmer : null;
+        const focus = aiFocus?.node?.isValid && aiFocus.node.active
+            ? aiFocus
             : playerSwimmer;
         const cameraSnapshot: RaceCameraSnapshot = {
             playerX: focus.node.position.x,
@@ -597,13 +608,14 @@ export class GameFlowController {
             if (!swimmer.node.active || controller?.remoteDriven) continue;
             swimmer.prepareDive();
             const power = this.aiDivePower(controller);
-            swimmer.performDive(resolveDiveResult(power));
+            swimmer.performDive(resolveDiveResult(power, swimmer.motor?.burstLaunchSpeedScale ?? 1));
             controller?.startSwimming();
             this._refs.debug(`ai dive ${swimmer.swimmerName} power=${power.toFixed(2)} at GO`);
         }
     }
 
     private aiDivePower(controller: AISwimmerController | null): number {
+        if (controller?.sampleDivePower) return controller.sampleDivePower();
         const basePower = controller?.divePower ?? DIVE_BALANCE.defaultAiPower;
         const variance = (randomFloat() * 2 - 1) * DIVE_BALANCE.aiPowerVariance;
         return Math.max(DIVE_BALANCE.aiPowerMin, Math.min(DIVE_BALANCE.aiPowerMax, basePower + variance));

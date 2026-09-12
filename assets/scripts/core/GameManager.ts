@@ -1,3 +1,4 @@
+import { findPlayerCharacter } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { CharacterOutlineVisibility } from '../character/CharacterOutlineVisibility';
 import { AVATARS, avatarSwimmerLookOf } from '../backend/IdentityConfig';
@@ -49,7 +50,6 @@ import { fitFullScreenBackgroundCover, makeUiNode, makeRect, makeLabel, makeButt
 import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
-import { SweetZoneBar } from '../ui/SweetZoneBar';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
 import {
     LIVE_PLACEMENT_BADGE_WIDTH,
@@ -62,7 +62,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugDifficulty, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -164,8 +164,7 @@ export class GameManager extends Component {
     private readonly _laneLockdownRacers: Swimmer[] = [];
     // Reused each frame for the swimmer-vs-swimmer collision pass (no per-frame allocation).
     private readonly _collisionSwimmers: Swimmer[] = [];
-    // 100m AI-debug 1v1 mode: a single opponent at PRIMARY_AI_LANE_INDEX whose
-    // difficulty is chosen from the login picker.
+    // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
     private _aiDebugDifficulty = 0.8;
     private _splashCullingEnabled: boolean = PERFORMANCE_CONFIG.splash.cullingEnabled;
@@ -282,12 +281,10 @@ export class GameManager extends Component {
     private _timingGuideMarker: Node = null;
     // Left and right arms are independent stroke queues, so each hand gets its own
     // sweet-zone dial (left dial shows the swimmer's speed; right dial omits it).
-    private readonly _sweetZoneBarLeft = new SweetZoneBar();
-    private readonly _sweetZoneBarRight = new SweetZoneBar();
-    // 100m AI-debug 1v1 extras: opponent sweet-zone dials and a camera target toggle.
-    private readonly _aiSweetZoneBarLeft = new SweetZoneBar();
-    private readonly _aiSweetZoneBarRight = new SweetZoneBar();
+    // AI 测试辅助：主 AI 完美区与镜头跟随切换。
     private _cameraFollowsAi = false;
+    private _aiCameraIndex = -1;
+    private _hudObservedAi: AISwimmerController | null = null;
     private _aiDebugCameraButton: Node = null;
     private _aiDebugCameraButtonLabel: Label = null;
     private _fieldOverviewButtonLabel: Label | null = null;
@@ -375,6 +372,7 @@ export class GameManager extends Component {
     }
 
     onDestroy() {
+        this.detachObservedAiHud();
         this._scenePreviewCamera?.dispose();
         this._scenePreviewCamera = null;
         this._sceneEffectPreviewPanel?.dispose();
@@ -425,6 +423,7 @@ export class GameManager extends Component {
         this._netRaceController?.tick(netDt, this.buildLocalSelfSnapshot());
         this.consumePlayerRhythmResults();
         this.updatePlayerCondition(dt);
+        this._aiDifficultyPanel.update(dt);
         const timingGuide = this._aiDebugMode ? this._playerSwimmer.strokeTimingGuide : null;
         const raceActive = this._state === GameState.RACING;
         const raceDistance = getRaceDistance();
@@ -454,20 +453,7 @@ export class GameManager extends Component {
             Math.sin(playerHeading),
             laneFloatCutoutActive,
         );
-        const raceStatusVisible = !this._modelDebugFlow?.active
-            && playerBeforeFinish
-            && (this._state === GameState.GLIDING || this._state === GameState.RACING);
-        this._uiFlow?.setRaceStatusVisible(raceStatusVisible);
-        const statusHud = this._uiController?.raceHudStatus;
-        statusHud?.setVisible(raceStatusVisible);
-        if (statusHud?.consumeSample(netDt)) {
-            const player = this._playerSwimmer;
-            statusHud.updateValues(player.movementSpeed, this._playerCondition.heartRate,
-                this._playerCondition.heartRateZone === 'OVERLOAD', this._playerCondition.energyRatio,
-                player.distance, getRaceDistance(), player.ultimate.energy / ULTIMATE_ENERGY_BALANCE.maxEnergy,
-                this._state === GameState.RACING && player.canUseDolphinAbility && player.ultimate.canAffordDolphin,
-                player.motor.ability.infiniteStamina);
-        }
+        this.updateRaceStatusHud(netDt);
         const presentationIndicatorVisible = this._state === GameState.PRECOUNTDOWN
             || (this._state === GameState.AWARDS && this._playerOnAwardsPodium);
         // The player can finish before the last AI swimmer. Hide player-specific
@@ -487,18 +473,7 @@ export class GameManager extends Component {
         // Sweet-zone timing feedback is a tuning aid. Keep it out of normal
         // races and only expose it in the dedicated AI-difficulty debug race.
         const playerFeedbackVisible = this._aiDebugMode && raceActive && playerBeforeFinish;
-        const strokeUi = this._uiController?.raceHudStatus?.stroke;
-        if (strokeUi?.consumeSample(netDt)) {
-            strokeUi.updateSide(StrokeType.LEFT, this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT, strokeUi.leftGuide));
-            strokeUi.updateSide(StrokeType.RIGHT, this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT, strokeUi.rightGuide));
-        }
         this.drawStrokeTimingGuide(timingGuide, playerFeedbackVisible);
-        const playerFacing = this.dialFacingSign(this._playerSwimmer);
-        const playerSpeed = this._playerSwimmer.currentSpeed;
-        this._sweetZoneBarLeft.setVisible(playerFeedbackVisible);
-        this._sweetZoneBarRight.setVisible(playerFeedbackVisible);
-        this._sweetZoneBarLeft.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, playerSpeed, playerFacing);
-        this._sweetZoneBarRight.update(playerFeedbackVisible ? this._playerSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, playerSpeed, playerFacing);
         if (this._overheadReadout && this._overheadReadout.active !== playerSpeedVisible) {
             this._overheadReadout.active = playerSpeedVisible;
         }
@@ -518,7 +493,6 @@ export class GameManager extends Component {
                 }
             }
         }
-        this.updateAiSweetZoneBar(raceActive);
         this.updateSplashCulling();
         // Single-player keeps the original render-driven separation path. Network races
         // resolve collisions inside driveNetAiFixedStep on the shared 33ms clock, never
@@ -587,14 +561,10 @@ export class GameManager extends Component {
         if (!this._playerOverheadMarker?.activeInHierarchy || this._modelDebugFlow?.active) {
             return;
         }
-        this.positionSweetZoneDialsAbove(
+        this.positionPlayerOverhead(
             this._playerSwimmer,
-            this._sweetZoneBarLeft,
-            this._sweetZoneBarRight,
             this._overheadReadout?.active ? this._overheadReadout : null,
             this._playerOverheadMarker,
-            this._aiDebugMode && this._state === GameState.RACING
-                && this._playerSwimmer.distance < getRaceDistance(),
         );
     }
 
@@ -736,6 +706,7 @@ export class GameManager extends Component {
     }
 
     restartGame() {
+        if (this._aiDebugMode) this.selectAiCameraIndex(-1);
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this.applyPlayerProgression();
@@ -746,7 +717,7 @@ export class GameManager extends Component {
 
     // Re-roll the AI lineup before each replay so tapping "再来一次" faces a freshly
     // shuffled set of opponents (names + difficulty) in new lane positions. Skipped
-    // for the 100m AI-debug 1v1, where the opponent is intentionally fixed.
+    // AI 测试保留选定阵容，便于重赛对比。
     private randomizeAiRosterForRestart() {
         if (this._aiDebugMode || this._modelDebugFlow?.active) {
             return;
@@ -870,6 +841,9 @@ export class GameManager extends Component {
             aiControllers: this._aiControllers,
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
+            onPlayerCameraRestored: () => {
+                if (this._aiDebugMode && !this._netSession) this.selectAiCameraIndex(-1);
+            },
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
             updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
                 this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
@@ -878,6 +852,7 @@ export class GameManager extends Component {
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,
             handleModelDebugStrokeHeld: (type, held) => this._modelDebugFlow?.handleStrokeHeld(type, held) ?? false,
             handleModelDebugKickStroke: (type) => this._modelDebugFlow?.handleKickStroke(type) ?? false,
+            handleModelDebugKickConfirmed: () => this._modelDebugFlow?.confirmKickStroke() ?? false,
             setState: (state) => {
                 this._state = state;
                 this.syncConditionPhase(state);
@@ -962,16 +937,7 @@ export class GameManager extends Component {
                     this._playerCondition.energy,
                     this._playerCondition.energyDepleted,
                 );
-                // A network player's dive release is local-owner timing and must not
-                // reset shared AI condition on every peer at different wall-clock
-                // moments. Network AI starts from its freshly constructed START state
-                // and is then driven only by the fixed simulation clock.
-                if (!this._netSession) {
-                    for (const aiCondition of this._aiConditions) {
-                        aiCondition.reset();
-                        aiCondition.setPhase(RacePhase.START);
-                    }
-                }
+                // AI在倒计时边缘统一重置；玩家晚跳不能给已经游动的AI补体力。
                 this._raceContext.reset();
                 this._raceContext.latestDiveResult = result;
             },
@@ -1033,12 +999,13 @@ export class GameManager extends Component {
         return new InputRouter(this.node, {
             onStroke: (type) => this.handlePlayerStroke(type),
             onStrokePressChanged: (type, pressed) => {
-                if (!pressed || this._state === GameState.RACING) {
+                if (!this.observedAiForHud() && (!pressed || this._state === GameState.RACING)) {
                     this._uiController?.raceHudStatus?.stroke.setPressed(type, pressed);
                 }
             },
             onStrokeHeld: (type, held, preHeldSeconds) => this.handlePlayerStrokeHeld(type, held, preHeldSeconds),
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
+            onKickConfirmed: () => this._gameFlow?.handlePlayerKickConfirmed(),
             onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
             onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
             onPrimaryAction: (source) => {
@@ -1356,6 +1323,7 @@ export class GameManager extends Component {
     }
 
     private buildDeferredAiSwimmers() {
+        if (this._aiDebugMode && !this._netSession) reseedSharedRandom(getAiDebugSetup().seed);
         if (this._modelDebugFlow?.active) {
             this._aiController = null;
             this.debug('deferred AI swimmers skipped for model debug');
@@ -1372,8 +1340,8 @@ export class GameManager extends Component {
 
         const competitors = this.createCompetitorManager().buildAi(
             this._swimmersRoot,
-            this._aiDebugMode
-                ? { soloLane: this._primaryAiLaneIndex, difficultyOverride: this._aiDebugDifficulty }
+            this._aiDebugMode && !this._netSession
+                ? resolveAiDebugBuildOptions(getAiDebugSetup(), this._primaryAiLaneIndex, this._aiDebugDifficulty)
                 : undefined,
         );
         this._aiController = competitors.primaryAiController;
@@ -1381,6 +1349,7 @@ export class GameManager extends Component {
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
         for (let i = 0; i < this._aiSwimmers.length; i++) {
+            this._aiControllers[i].bindCondition(this._aiConditions[i]);
             this.bindDolphinEnergyCost(this._aiSwimmers[i], this._aiConditions[i]);
         }
         for (const swimmer of this._aiSwimmers) {
@@ -1393,9 +1362,7 @@ export class GameManager extends Component {
                 swimmer.netFixedStep = true;
             }
         }
-        // Give every AI a shared read-only view of the race so its strategy layer
-        // (rubber-band toward the player + neck-and-neck duel surge) can measure
-        // gaps and rank. The player anchors the strategy, so it must be included.
+        // 全体选手共用可观察赛况，不以某个本地玩家为追赶锚点。
         const raceObserver = new AIRaceObserver(
             this._playerSwimmer,
             [this._playerSwimmer, ...this._aiSwimmers].filter((s): s is Swimmer => !!s),
@@ -1420,6 +1387,7 @@ export class GameManager extends Component {
         // Networked race: convert the lanes occupied by remote humans from AI to
         // network-driven bodies. Single-player leaves this untouched.
         this.wireRemoteSwimmers();
+        if (this._aiDebugMode) this._aiDifficultyPanel.setVisible(true);
     }
 
     // Networked race only: turn the AI swimmers that sit in remote-human lanes into
@@ -2080,10 +2048,11 @@ export class GameManager extends Component {
     private refreshAiDifficultyPanel() {
         const entries = this._aiControllers.map((controller, i) => ({
             lane: i < this._playerLaneIndex ? i : i + 1,
-            name: this._aiSwimmers[i]?.swimmerName ?? 'AI',
+            name: `${findPlayerCharacter(controller.characterId)?.name ?? controller.characterId} Lv.${controller.level}`,
             difficulty: controller.difficulty,
         }));
         this._aiDifficultyPanel.populate(entries);
+        this._aiDifficultyPanel.setDebugController(this._aiDebugMode ? this.observedAiForHud() ?? this._aiController : null);
     }
 
     private refreshSwimmerNameRoster() {
@@ -2122,7 +2091,7 @@ export class GameManager extends Component {
         this._preRaceIntroPanel.setRaceInfo({
             event: `${getRaceDistance()}米自由泳`,
             format: getRaceModeTitle(),
-            details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 最强档AI`}`,
+            details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 角色AI`}`,
             rule: '率先完成全程者获胜',
         });
     }
@@ -2186,17 +2155,8 @@ export class GameManager extends Component {
             this._uiController.settlementView?.setRoomMode(this._roomMode);
             this._timingGuideFillNode = refs.timingGuideFillNode;
             this._timingGuideMarker = refs.timingGuideMarker;
-            // Debug sweet-zone dials: bottom-center of the HUD, one per hand.
+            // 玩家与被观察 AI 的完美区统一由 HUD 手掌显示。
             const visibleSize = view.getVisibleSize();
-            const playerDialY = -visibleSize.height / 2 + 90;
-            const aiDialY = -visibleSize.height / 2 + 260;
-            const dialSpread = 78;
-            this._sweetZoneBarLeft.build(this._raceHud, -dialSpread, playerDialY, '左', true);
-            this._sweetZoneBarRight.build(this._raceHud, dialSpread, playerDialY, '右', false);
-            // AI opponent dials stacked just above the player dials (still lower
-            // area) + camera-follow button (bottom-right), shown only in AI-debug.
-            this._aiSweetZoneBarLeft.build(this._raceHud, -dialSpread, aiDialY, 'AI左', true);
-            this._aiSweetZoneBarRight.build(this._raceHud, dialSpread, aiDialY, 'AI右', false);
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
             this._swimmerNameOverlay.bind(this._raceHud);
@@ -2449,11 +2409,9 @@ export class GameManager extends Component {
         if (phase === null) {
             return;
         }
-        // COUNTDOWN is the synchronized pre-race boundary. Reset genuine network AI
-        // here (rather than on a local human's dive release) so every peer begins the
-        // fixed-step condition simulation from the same state. Remote-human
-        // placeholders are owner-driven and deliberately excluded.
-        if (this._netSession && state === GameState.COUNTDOWN) {
+        // 单机和联机都只在赛前倒计时重置AI，远端真人始终由owner管理。
+        if (state === GameState.COUNTDOWN) {
+            if (this._aiDebugMode && !this._netSession) reseedSharedRandom(getAiDebugSetup().seed);
             for (let i = 0; i < this._aiConditions.length; i++) {
                 if (!this._aiControllers[i]?.remoteDriven) {
                     this._aiConditions[i].reset();
@@ -2521,7 +2479,7 @@ export class GameManager extends Component {
             190,
             56,
             new Color(40, 96, 168, 235),
-            '跟随AI',
+            '玩家 · 查看AI',
         );
         button.setPosition(width / 2 - 115, -height / 2 + 140, 0);
         button.setSiblingIndex(raceHud.children.length - 1);
@@ -2613,6 +2571,13 @@ export class GameManager extends Component {
         // Player progression resolves these values from the global tuning constants.
         // Re-resolve in place so a solo live-tuning edit affects player and AI together.
         this.applyPlayerProgression();
+        for (const controller of this._aiControllers) {
+            if (!controller.remoteDriven && controller.swimmer) {
+                applyRaceModifiersToSwimmer(controller.swimmer, resolveModifiersFromDigest({
+                    characterId: controller.characterId, level: controller.level,
+                }));
+            }
+        }
     }
 
     private handleTuningVisibilityChanged(visible: boolean) {
@@ -2659,40 +2624,16 @@ export class GameManager extends Component {
         }
         if (!this._aiDebugMode) {
             this._cameraFollowsAi = false;
+            this._aiCameraIndex = -1;
             this._gameFlow?.setCameraFollowAi(false);
-            this._aiSweetZoneBarLeft.setVisible(false);
-            this._aiSweetZoneBarRight.setVisible(false);
         }
     }
 
-    // Drive the opponent's sweet-zone dials from the single AI swimmer (AI-debug).
-    private updateAiSweetZoneBar(raceActive: boolean) {
-        const aiSwimmer = this._aiDebugMode ? this._aiSwimmers[0] : null;
-        const show = raceActive && !!aiSwimmer && aiSwimmer.distance < getRaceDistance();
-        this._aiSweetZoneBarLeft.setVisible(show);
-        this._aiSweetZoneBarRight.setVisible(show);
-        if (aiSwimmer) {
-            const facing = this.dialFacingSign(aiSwimmer);
-            const speed = aiSwimmer.currentSpeed;
-            this._aiSweetZoneBarLeft.update(show ? aiSwimmer.strokeTimingGuideForSide(StrokeType.LEFT) : null, speed, facing);
-            this._aiSweetZoneBarRight.update(show ? aiSwimmer.strokeTimingGuideForSide(StrokeType.RIGHT) : null, speed, facing);
-            if (show) {
-                this.positionSweetZoneDialsAbove(aiSwimmer, this._aiSweetZoneBarLeft, this._aiSweetZoneBarRight);
-            }
-        }
-    }
-
-    // Project a point above the swimmer's head into HUD-local space and pin the
-    // swimmer's two hand dials there so they hover overhead and follow the
-    // character as the camera moves. Left/right dials keep their side-by-side
-    // screen spread. Falls back silently if the camera/HUD aren't ready.
-    private positionSweetZoneDialsAbove(
+    // 只投影玩家身份标记及兼容速度读数，不再创建或投影旧完美区圆盘。
+    private positionPlayerOverhead(
         swimmer: Swimmer | null,
-        leftBar: SweetZoneBar,
-        rightBar: SweetZoneBar,
         readout: Node | null = null,
         playerMarker: Node | null = null,
-        positionDials = true,
     ) {
         const node = swimmer?.node;
         const worldCamera = this._cameraNode?.getComponent(Camera);
@@ -2709,10 +2650,6 @@ export class GameManager extends Component {
         }
         // Perspective scale from the camera's distance to the swimmer.
         const camDistance = Vec3.distance(this._cameraNode.worldPosition, this._tmpDialAnchorWorld);
-        const scale = Math.max(
-            this._dialMinScale,
-            Math.min(this._dialMaxScale, this._dialRefDistance / Math.max(camDistance, 0.001)),
-        );
         // World camera -> screen pixels -> UI camera world -> HUD-local. Going
         // through the actual UI camera (instead of Camera.convertToUINode's
         // design-scale math) keeps the anchor correct when the runtime viewport
@@ -2725,14 +2662,6 @@ export class GameManager extends Component {
         this._uiCamera.screenToWorld(this._tmpDialScreen, this._tmpDialAnchorWorld);
         hudTransform.convertToNodeSpaceAR(this._tmpDialAnchorWorld, this._tmpDialAnchorUi);
         const cx = this._tmpDialAnchorUi.x;
-        const cy = this._tmpDialAnchorUi.y + this._dialScreenOffsetY * scale;
-        const spread = this._dialScreenSpread * scale;
-        if (positionDials) {
-            leftBar.setAnchorPosition(cx - spread, cy);
-            rightBar.setAnchorPosition(cx + spread, cy);
-            leftBar.setScale(scale);
-            rightBar.setScale(scale);
-        }
         // Speed and player marker stay at fixed screen size so the main character
         // remains identifiable in the widest camera shots.
         const speedOffsetY = this._raceCameraDirector.topViewActive
@@ -2929,17 +2858,105 @@ export class GameManager extends Component {
         return right.x * facing >= 0 ? 1 : -1;
     }
 
-    // Toggle the race camera between the player and the AI opponent (AI-debug).
+    private observedAiForHud(): AISwimmerController | null {
+        if (!this._aiDebugMode || this._netSession || !this._cameraFollowsAi) return null;
+        const ai = this._aiControllers[this._aiCameraIndex];
+        return this.canObserveAi(ai) ? ai : null;
+    }
+
+    private canObserveAi(ai: AISwimmerController | null | undefined): boolean {
+        return !!(ai && !ai.remoteDriven && ai.condition && ai.swimmer?.node?.isValid && ai.swimmer.node.active);
+    }
+
+    private nextAiCameraIndex(): number {
+        for (let i = (this._aiCameraIndex ?? -1) + 1; i < this._aiControllers.length; i++) {
+            if (this.canObserveAi(this._aiControllers[i])) return i;
+        }
+        return -1;
+    }
+
+    private selectAiCameraIndex(index: number) {
+        this._aiCameraIndex = index;
+        this._cameraFollowsAi = index >= 0;
+        const ai = index >= 0 ? this._aiControllers[index] : null;
+        this._gameFlow?.setCameraFollowAi(!!ai, ai?.swimmer ?? null);
+        this._aiDifficultyPanel?.setDebugController(ai ?? this._aiController);
+        if (this._aiDebugCameraButtonLabel?.isValid) {
+            const text = ai ? `AI ${index + 1}/${this._aiControllers.length} · 下一个` : '玩家 · 查看AI';
+            if (this._aiDebugCameraButtonLabel.string !== text) this._aiDebugCameraButtonLabel.string = text;
+        }
+    }
+
+    private detachObservedAiHud() {
+        if (!this._hudObservedAi) return;
+        this._hudObservedAi.onObservedPressChanged = null;
+        this._hudObservedAi.swimmer.onObservedRhythmResult = null;
+        this._hudObservedAi = null;
+    }
+
+    /** 只切换 HUD 读数和反馈订阅；玩法输入、资源和网络仍由原选手持有。 */
+    private updateRaceStatusHud(dt: number) {
+        const hud = this._uiController?.raceHudStatus;
+        // 当前对手被淘汰或销毁时移到下一位；不改变比赛主 AI 或任何泳道身份。
+        if (this._aiDebugMode && !this._netSession && this._cameraFollowsAi && !this.observedAiForHud()) {
+            this.selectAiCameraIndex(this.nextAiCameraIndex());
+        }
+        const ai = this.observedAiForHud();
+        const changed = (this._hudObservedAi ?? null) !== ai;
+        if (changed) {
+            this.detachObservedAiHud();
+            this._hudObservedAi = ai;
+            hud?.setObservedSwimmer(ai?.swimmer ?? null);
+            if (ai) {
+                // 仅观察对象变更时创建回调；隐藏 HUD 不做格式化或动画工作。
+                ai.onObservedPressChanged = (side, pressed) => {
+                    if (this._hudObservedAi === ai && this._state === GameState.RACING
+                        && ai.swimmer.distance < getRaceDistance()) hud?.stroke.setPressed(side, pressed);
+                };
+                ai.swimmer.onObservedRhythmResult = result => {
+                    if (this._hudObservedAi === ai && hud?.root.activeInHierarchy
+                        && this._state === GameState.RACING && ai.swimmer.distance < getRaceDistance()) {
+                        this._uiFlow?.showRating(result.rating, result.combo, result.strokeSide);
+                    }
+                };
+            }
+        }
+        const swimmer = ai?.swimmer ?? this._playerSwimmer;
+        if (!swimmer) return;
+        const condition = ai?.condition ?? this._playerCondition;
+        const visible = !this._modelDebugFlow?.active && swimmer.node.active
+            && swimmer.distance < getRaceDistance()
+            && (this._state === GameState.GLIDING || this._state === GameState.RACING);
+        const becameVisible = visible && hud && !hud.root.activeInHierarchy;
+        hud?.setDolphinSupported(swimmer.motor.ability.supportsDolphin);
+        this._uiFlow?.setRaceStatusVisible(visible);
+        hud?.setVisible(visible);
+        if ((changed || becameVisible) && hud) {
+            hud.stroke.setPressed(StrokeType.LEFT, ai ? ai.isInputPressed(StrokeType.LEFT) : this._inputRouter?.isStrokePressed(StrokeType.LEFT) ?? false);
+            hud.stroke.setPressed(StrokeType.RIGHT, ai ? ai.isInputPressed(StrokeType.RIGHT) : this._inputRouter?.isStrokePressed(StrokeType.RIGHT) ?? false);
+            if (this._raceManager && visible) hud.updateRanks(this._raceManager.getLiveLeaderboard());
+        }
+        if (hud?.consumeSample(dt)) {
+            hud.updateValues(swimmer.movementSpeed, condition.heartRate, condition.heartRateZone === 'OVERLOAD',
+                condition.energyRatio, swimmer.distance, getRaceDistance(),
+                swimmer.ultimate.energy / ULTIMATE_ENERGY_BALANCE.maxEnergy,
+                this._state === GameState.RACING && swimmer.canUseDolphinAbility && swimmer.ultimate.canAffordDolphin,
+                swimmer.motor.ability.infiniteStamina);
+        }
+        const stroke = hud?.stroke;
+        if (stroke?.consumeSample(dt)) {
+            stroke.updateSide(StrokeType.LEFT, swimmer.strokeTimingGuideForSide(StrokeType.LEFT, stroke.leftGuide));
+            stroke.updateSide(StrokeType.RIGHT, swimmer.strokeTimingGuideForSide(StrokeType.RIGHT, stroke.rightGuide));
+        }
+    }
+
+    // 按泳道阵容依次遍历全部 AI，最后返回玩家；单对手仍是玩家与 AI 往返。
     private toggleCameraFollowAi() {
-        if (!this._aiDebugMode) {
+        if (!this._aiDebugMode || this._netSession) {
             return;
         }
-        this._cameraFollowsAi = !this._cameraFollowsAi;
-        this._gameFlow?.setCameraFollowAi(this._cameraFollowsAi);
-        if (this._aiDebugCameraButtonLabel?.isValid) {
-            this._aiDebugCameraButtonLabel.string = this._cameraFollowsAi ? '跟随玩家' : '跟随AI';
-        }
-        this.debug(`camera follow=${this._cameraFollowsAi ? 'AI' : 'player'}`);
+        this.selectAiCameraIndex(this.nextAiCameraIndex());
+        this.updateRaceStatusHud(0);
     }
 
     private enterModelDebug(initialActionId = 'freestyle') {

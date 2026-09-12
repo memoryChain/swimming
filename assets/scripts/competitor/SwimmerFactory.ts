@@ -14,6 +14,7 @@ export type CreateSwimmerOptions = {
     colorVariantId?: string;
     skinColor?: readonly [number, number, number];
     displayName?: string;
+    modelVariantId?: string;
 };
 
 export class SwimmerFactory {
@@ -30,7 +31,7 @@ export class SwimmerFactory {
         const selectedPlayer = options.isAI ? null : findPlayerCharacter();
         // Roll once while creating the opponent so a lane keeps the same
         // available production model for the entire race.
-        const modelVariantId = selectedPlayer?.modelVariantId
+        const modelVariantId = options.modelVariantId ?? selectedPlayer?.modelVariantId
             ?? (options.isAI ? randomAiModelVariantId() : defaultSwimmerModelVariant().id);
         const robotStyle = selectedPlayer?.robotStyle === true;
         rig.setModelVariant(modelVariantId);

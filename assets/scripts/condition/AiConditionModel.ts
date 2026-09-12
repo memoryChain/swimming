@@ -22,6 +22,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export class AiConditionModel {
+    private _energyTotal = CONDITION_BALANCE.energy.total;
+    get energyTotal(): number { return this._energyTotal; }
+    // 身份／等级只在赛前或重新分配阵容时更新，不能在比赛内借此补体力。
+    configureEnergyTotal(total: number) {
+        this._energyTotal = Number.isFinite(total) ? Math.max(1, total) : CONDITION_BALANCE.energy.total;
+        this.reset();
+    }
     private _infiniteStamina = false;
     setInfiniteStamina(value: boolean) { this._infiniteStamina = value; }
     private _phase: RacePhase = RacePhase.START;
@@ -38,7 +45,7 @@ export class AiConditionModel {
         this._phase = RacePhase.START;
         this._heartRate = HEART_RATE_BOUNDS.min;
         this._heartRateZone = HeartRateZone.LOW;
-        this._energy = CONDITION_BALANCE.energy.total;
+        this._energy = this._energyTotal;
         this._energyDepleted = false;
         this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
@@ -72,7 +79,7 @@ export class AiConditionModel {
     // 沿用既有网络字段；旧冷却字段保留占位，不再参与计算。
     applyAuthoritativeState(energyRatio: number, heartRate: number, _depletionCooldown = -1) {
         if (!Number.isFinite(energyRatio) || !Number.isFinite(heartRate)) return;
-        this._energy = clamp(energyRatio, 0, 1) * CONDITION_BALANCE.energy.total;
+        this._energy = clamp(energyRatio, 0, 1) * this._energyTotal;
         this._heartRate = clamp(heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
         this._heartRateZone = zoneForHeartRate(this._heartRate);
         this._energyDepleted = this._energy <= 0;
@@ -96,7 +103,7 @@ export class AiConditionModel {
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
         // 与玩家共用耗尽后的推进和动作轮速倍率。
-        const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
+        const ratio = clamp(this._energy / this._energyTotal, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
         this._cadenceModifier = energyDepletionCadenceScale(ratio);
     }
@@ -106,7 +113,7 @@ export class AiConditionModel {
     get heartRate(): number { return this._heartRate; }
     get heartRateZone(): HeartRateZone { return this._heartRateZone; }
     get energy(): number { return this._energy; }
-    get energyRatio(): number { return clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1); }
+    get energyRatio(): number { return clamp(this._energy / this._energyTotal, 0, 1); }
     get energyDepleted(): boolean { return this._energyDepleted; }
     get sprintTier(): SprintTier { return this._sprintTier; }
     get qualityModifier(): number { return this._qualityModifier; }

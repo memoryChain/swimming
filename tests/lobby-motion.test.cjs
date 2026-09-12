@@ -31,7 +31,7 @@ class Node {
     setPosition(x,y,z){this.position=new Vec3(x,y,z);}
     setScale(x,y,z){this.scale=new Vec3(x,y,z);}
     on(e,f){if(!this.events.has(e))this.events.set(e,new Set());this.events.get(e).add(f);}
-    off(e,f){this.events.get(e)?.delete(f);}
+    off(e,f){if(!this.isValid)throw new TypeError("Cannot read properties of null (reading 'off')");this.events.get(e)?.delete(f);}
     emit(e,id=1){for(const f of this.events.get(e)??[])f({getID:()=>id});}
     destroy(){this.isValid=false;this.children.forEach(c=>c.destroy());}
 }
@@ -136,4 +136,54 @@ test('入场与屏幕锚点独立，点击打断按钮弹入后仍复原，离�
     near(button.scale.x,1);near(group.position.x,0);assert.equal(anchor.position.x,200);assert.equal(size(anchor),count);
     assert.equal(s.running,0);
     motion.exit(()=>assert.fail('销毁后不可触发导航'));motion.dispose();s.advance(1);assert.equal(s.running,0);
+});
+
+test('引擎先销毁子按钮后再清理大厅，解绑不得访问已销毁的事件处理器',()=>{
+    const s=setup(),f=s.flow,button=new Node('AI测试');button.setParent(s.parent);button.addComponent(Button);
+    f._root=s.parent;f._content=s.parent;
+    f._motion.bindButton(button);button.emit('start');
+    button.destroy();
+    assert.doesNotThrow(()=>f.dispose());
+    assert.doesNotThrow(()=>f.dispose());
+    s.advance(1);assert.equal(s.running,0);
+});
+
+test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留大厅，重复点击不重复换场',()=>{
+    const source=ts.createSourceFile('LoginManager.ts',fs.readFileSync('assets/scripts/app/LoginManager.ts','utf8'),ts.ScriptTarget.Latest,true);
+    const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='LoginManager');
+    const methods=cls.members.filter(n=>['startAiDebug','launchMainGame','onDestroy'].includes(n.name?.getText(source)));
+    for(const failure of ['none','bundle','scene']){
+        const s=setup(),f=s.flow,button=new Node('AI测试');button.setParent(s.parent);button.addComponent(Button);
+        f._root=s.parent;f._content=s.parent;
+        f._motion.bindButton(button);button.emit('start');
+        const preview=new Node('角色预览');f._previewRoot=preview;
+        let loads=0,runs=0,pendingBundle,pendingScene,mode,owner;
+        const Login=vm.runInNewContext(ts.transpileModule(`class Login { ${methods.map(n=>n.getText(source)).join('\n')} };Login`,
+            {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,{
+            setAiDebugDifficulty(){},setRaceDifficulty(){},getAiDebugSetup:()=>({mode:'competitive'}),setMainGameLaunchMode:value=>mode=value,
+            LoadingOverlay:{show(){},hide(){}},console:{error(){}},
+            loadRaceBundle:cb=>{loads++;pendingBundle=cb;},
+            director:{runScene(){
+                assert.equal(owner._prepareRaceFlow,null,'必须先释放大厅，再调用引擎换场');
+                assert.equal(preview.isValid,false);assert.equal(s.running,0);
+                s.parent.destroy();owner.onDestroy();runs++;
+            }},
+        });
+        owner=new Login();owner._prepareRaceFlow=f;
+        owner.startAiDebug(.95);owner.startAiDebug(.95);assert.equal(loads,1);
+        if(failure==='bundle')pendingBundle(new Error('加载失败'),null);
+        else {
+            pendingBundle(null,{loadScene(_name,cb){pendingScene=cb;}});
+            if(failure==='scene')pendingScene(new Error('场景失败'),null);
+        }
+        if(failure!=='none'){
+            assert.equal(owner._prepareRaceFlow,f);assert.equal(preview.isValid,true);assert.equal(s.parent.isValid,true);
+            assert.equal(owner._loadingRace,false);assert.equal(runs,0);
+            owner.startAiDebug(.95);assert.equal(loads,2);
+            pendingBundle(null,{loadScene(_name,cb){pendingScene=cb;}});
+        }
+        pendingScene(null,{});
+        assert.equal(runs,1);assert.equal(mode,'ai-debug');
+        assert.doesNotThrow(()=>owner.onDestroy());
+    }
 });

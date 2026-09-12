@@ -1,7 +1,9 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, consumeReturnToLobby, setRoomMode } from '../core/GameLaunchOptions';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
-import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
+import { mountAiDebugSetupPicker } from '../ui/AiDebugSetupPicker';
+import { getAiDebugSetup } from '../core/GameLaunchOptions';
+import { setRaceDifficulty } from '../core/GameBalance';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 import { SpeedStarsStartUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
@@ -176,6 +178,7 @@ export class LoginManager extends Component {
         this._offAppShow?.();
         this._offAppShow = null;
         this._prepareRaceFlow?.dispose();
+        this._prepareRaceFlow = null;
         this._roomFlow?.dispose();
         this._identityEditPanel?.dispose();
         this._identityEditPanel = null;
@@ -199,6 +202,7 @@ export class LoginManager extends Component {
         this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onStartRace: () => this.startGame(),
             onOpenRoom: () => this.openRoomFromPrepare(),
+            onAiDebug: () => this.showAiDebugPicker(),
             onCharacterManagementChanged: (active) => {
                 this._headBar?.setBack(null);
                 this._headBar?.setIdentityVisible(!active);
@@ -319,10 +323,10 @@ export class LoginManager extends Component {
         this.launchMainGame('underwater-debug');
     }
 
-    // 100m AI-debug 1v1: store the chosen difficulty and launch straight into a
-    // single-opponent race. All race modes now use the fixed 100m distance.
+    // 测试赛使用面板指定的赛程、人数、角色等级与智力。
     startAiDebug(difficulty: number) {
         setAiDebugDifficulty(difficulty);
+        setRaceDifficulty(getAiDebugSetup().mode);
         this.launchMainGame('ai-debug');
     }
 
@@ -353,6 +357,10 @@ export class LoginManager extends Component {
                     console.error('[SpeedSwimming] MainGame scene failed to load', sceneError);
                     return;
                 }
+                // AI 测试也从大厅进入。趁节点仍有效先清理按钮动效、监听和预览；
+                // 不能等引擎销毁子节点后的 onDestroy 再解绑。加载失败不移除大厅。
+                this._prepareRaceFlow?.dispose();
+                this._prepareRaceFlow = null;
                 director.runScene(scene);
             });
         });
@@ -393,7 +401,6 @@ export class LoginManager extends Component {
         new SpeedStarsStartUiPrefabBuilder({
             onStart: () => this.openPrepareRace(),
             onModelDebug: () => this.startModelDebug(),
-            onAiDebug: () => this.showAiDebugPicker(),
             onUnderwaterDebug: () => this.startUnderwaterDebug(),
         }).build(getUILayer(canvasNode, UILayer.Screen), width, height, (error, refs) => {
             if (error) {
@@ -433,38 +440,13 @@ export class LoginManager extends Component {
         });
     }
 
-    // Overlay that lets the tester pick the single opponent's difficulty before a
-    // 100m 1v1 debug race. Built in code on the canvas so it needs no prefab.
+    // 弹框继承 Popup 专用渲染层，不能改为主界面的 UI_2D。
     private showAiDebugPicker() {
         if (!this._canvasNode) {
             return;
         }
         const popup = getUILayer(this._canvasNode, UILayer.Popup);
         popup.getChildByName('AiDebugPicker')?.destroy();
-        const overlay = makeUiNode('AiDebugPicker', popup);
-        overlay.layer = Layers.Enum.UI_2D;
-        const dim = makeRect('Dim', overlay, this._designWidth, this._designHeight, uiColor(2, 8, 14, 210));
-        fitFullScreenBackgroundCover(dim);
-        makeLabel('Title', overlay, '选择 AI 难度', 30, uiColor(240, 250, 255)).setPosition(0, 190, 0);
-
-        const tiers = AI_DEBUG_DIFFICULTY_TIERS;
-        const spacing = 74;
-        const firstY = ((tiers.length - 1) * spacing) / 2 + 10;
-        tiers.forEach((tier, i) => {
-            const button = makeButton(`Tier${i}`, overlay, 300, 60, uiColor(40, 96, 168, 240), tier.label);
-            button.setPosition(0, firstY - i * spacing, 0);
-            button.on(Node.EventType.TOUCH_END, () => this.startAiDebug(tier.value));
-        });
-
-        const cancel = makeButton('Cancel', overlay, 200, 52, uiColor(90, 96, 104, 235), '返回');
-        cancel.setPosition(0, firstY - tiers.length * spacing - 6, 0);
-        cancel.on(Node.EventType.TOUCH_END, () => overlay.destroy());
-
-        // DEBUG ONLY: free coin grant (no ad, no cap) tucked into this dev popup so
-        // it stays reachable for testing the level system, while the headbar "+"
-        // runs the real rewarded-ad flow. Remove before a production release.
-        const debugCoins = makeButton('DebugCoins', overlay, 300, 52, uiColor(120, 72, 24, 235), `调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
-        debugCoins.setPosition(0, firstY - (tiers.length + 1) * spacing - 6, 0);
-        debugCoins.on(Node.EventType.TOUCH_END, () => { void this.grantDebugCoins(); });
+        mountAiDebugSetupPicker(popup, difficulty => this.startAiDebug(difficulty), () => { void this.grantDebugCoins(); });
     }
 }

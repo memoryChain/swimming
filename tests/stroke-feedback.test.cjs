@@ -10,6 +10,28 @@ const { GameFlowController }=load(root+'/assets/scripts/app/GameFlowController.t
 const { GameState, Rating, StrokeType }=load(root+'/assets/scripts/core/GameConstants.ts');
 const { RaceCameraDirector, RaceCameraMode, RACE_CAMERA_TUNING }=load(root+'/assets/scripts/camera/RaceCameraDirector.ts');
 
+test('观战镜头逐个读取指定 AI，失效回退玩家，玩家完赛同步恢复观战状态',()=>{
+ const swimmer=i=>({node:{isValid:true,active:true,position:{x:i,y:0}},distance:10+i,currentSpeed:i,
+  getCameraUpperBodyWorldPosition:out=>out.set(i,1,0)});
+ const player=swimmer(0),opponents=Array.from({length:7},(_,i)=>swimmer(i+1));
+ let snapshot,restored=0;
+ const manager={aiSwimmer:opponents[0]};
+ const flow=new GameFlowController({playerSwimmer:player,aiSwimmers:opponents,raceManager:manager,
+  getState:()=>GameState.RACING,raceCameraDirector:{selectMode(){},update:(_dt,value)=>snapshot=value},
+  uiFlow:{setSprintActive(){}},showFinishRank(){},debug(){},onPlayerCameraRestored:()=>restored++});
+ for(const target of opponents){
+  flow.setCameraFollowAi(true,target);flow.updateRaceCamera(.016);
+  assert.equal(snapshot.playerX,target.node.position.x);assert.equal(snapshot.playerSpeed,target.currentSpeed);
+  assert.equal(snapshot.playerDistance,target.distance);assert.equal(manager.aiSwimmer,opponents[0]);
+ }
+ opponents[6].node.active=false;flow.updateRaceCamera(.016);assert.equal(snapshot.playerX,0);
+ flow.setCameraFollowAi(false);flow.updateRaceCamera(.016);assert.equal(snapshot.playerX,0);
+ flow.setCameraFollowAi(true,opponents[3]);flow.bindRaceManagerCallbacks();
+ manager.onSwimmerFinished({isPlayer:true,name:'玩家',placement:8,time:100});
+ flow.updateRaceCamera(.016);assert.equal(snapshot.playerX,0);assert.equal(restored,1);
+ assert.equal(flow._cameraAiTarget,null);assert.equal(flow._cameraFollowAi,false);
+});
+
 test('开始划水不提前报成功，即时与延迟结算使用同一反馈入口，失误和结束后不播放成功反馈',()=>{
  audio.length=network.length=0;let state=GameState.RACING;const ui=[],camera=[];
  const good={rating:Rating.GOOD,combo:0,strokeSide:StrokeType.LEFT};
@@ -21,7 +43,8 @@ test('开始划水不提前报成功，即时与延迟结算使用同一反馈�
  flow.handlePlayerStrokeHeld(StrokeType.LEFT,false);assert.deepEqual(audio,[false]);assert.equal(ui.length,1);
  flow.presentStrokeResult({...good,rating:Rating.PERFECT});assert.deepEqual(audio,[false,true]);assert.deepEqual(camera,[false,true]);
  flow.presentStrokeResult({...good,rating:Rating.BAD});assert.equal(audio.length,2);
- flow._cameraFollowAi=true;flow.presentStrokeResult(good);assert.equal(camera.length,2,'观看AI不响应本地划水镜头');
+ const beforeAi=ui.length;
+ flow._cameraFollowAi=true;flow.presentStrokeResult(good);assert.equal(camera.length,2,'观看AI不响应本地划水镜头');assert.equal(ui.length,beforeAi,'观看AI不混入玩家评价');
  state=GameState.FINISHED;flow.presentStrokeResult(good);assert.equal(audio.length,3);
  state=GameState.RACING;refs.playerSwimmer.distance=100000;flow.presentStrokeResult(good);assert.equal(audio.length,3);
 });

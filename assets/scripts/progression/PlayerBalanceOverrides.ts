@@ -1,9 +1,7 @@
 ﻿import { HeartRateTraitId } from '../core/ConditionBalance';
 import { BURST_BALANCE, TECHNIQUE_BALANCE } from '../core/GameBalance';
 
-// Resolved balance overrides for the player's active character + level.
-// Applied to the player's motor / condition model / dive resolver only; the AI
-// keeps reading the raw global constants, so progression never affects opponents.
+// 玩家、远端真人和 AI 共用的角色等级属性解析；智力不改变此结果。
 //
 // 体力直接使用赛内点数；技巧与爆发力继续使用各自的属性映射。
 //   stamina  -> energyTotal（显示值与赛内上限相同）

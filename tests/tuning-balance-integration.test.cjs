@@ -260,7 +260,11 @@ test('三个入口的 AI 阵容强度一致，换局后体重匹配模型，同�
         setModelVariant(id) { this.modelVariantId = id; }
         setOutlineVisible() {} setColorVariant() {} setColorOverride() {} setSkinOutfit() {} build() {}
     }
-    class AiController {}
+    class AiController {
+        configure(characterId, level, difficulty, energyTotal) {
+            Object.assign(this, { characterId, level, difficulty, energyTotal });
+        }
+    }
     let Motor;
     class Swimmer {
         constructor() { this.motor = new Motor(); }
@@ -307,6 +311,64 @@ test('三个入口的 AI 阵容强度一致，换局后体重匹配模型，同�
     }
     assert.deepEqual(snapshots[0], snapshots[1]);
     assert.deepEqual(snapshots[0], snapshots[2]);
+    // 每端跳过的本地玩家泳道不同，同一实际泳道的AI身体与智力仍必须一致。
+    const byLane = [];
+    for (let playerLaneIndex = 0; playerLaneIndex < 8; playerLaneIndex++) {
+        setRaceDifficulty('competitive'); reseedSharedRandom(12345);
+        const manager = new CompetitorManager({
+            laneLayout: { laneCount: 8, centerZ: lane => lane * 2.625 },
+            courseLayout: { startX: 0, swimY: 0 }, playerLaneIndex, primaryAiLaneIndex: (playerLaneIndex + 1) % 8,
+        });
+        const { aiSwimmers, aiControllers } = manager.buildAi(new cc.Node('联机槽位'));
+        const lanes = new Map();
+        aiControllers.forEach((ai, i) => lanes.set(i < playerLaneIndex ? i : i + 1,
+            [ai.characterId, ai.level, ai.difficulty, ai.energyTotal, aiSwimmers[i].motor.weight]));
+        byLane.push(lanes);
+    }
+    for (const a of byLane) for (const b of byLane) for (const [lane, value] of a) {
+        if (b.has(lane)) assert.deepEqual(value, b.get(lane));
+    }
+
+    // 执行 GameManager 的真实创建入口，防止面板有选项而运行时仍固定只建一个 AI。
+    const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
+        .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
+    const ts = require(tsPath), vm = require('node:vm');
+    const source = ts.createSourceFile('GameManager.ts', fs.readFileSync(path.resolve(__dirname, '../assets/scripts/core/GameManager.ts'), 'utf8'), ts.ScriptTarget.Latest, true);
+    const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'GameManager');
+    const method = cls.members.find(n => n.name?.getText(source) === 'buildDeferredAiSwimmers');
+    const launch = loadModule('core/GameLaunchOptions');
+    const Flow = vm.runInNewContext(ts.transpileModule(`class Flow { ${method.getText(source)} }; Flow`,
+        { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText,
+        { ...launch, reseedSharedRandom, RACE_OPPONENTS_ENABLED: true });
+    for (const opponentCount of [1, 7]) for (const mixedCharacters of [false, true]) for (let playerLane = 0; playerLane < 8; playerLane++) {
+        const primaryLane = (playerLane + 1) % 8;
+        launch.setAiDebugSetup({ characterId: 'muscleMan', level: 30, mode: 'competitive', seed: 42, opponentCount, mixedCharacters });
+        const manager = new CompetitorManager({
+            laneLayout: { laneCount: 8, centerZ: lane => lane * 2.625 },
+            courseLayout: { startX: 0, swimY: 0 }, playerLaneIndex: playerLane, primaryAiLaneIndex: primaryLane,
+        });
+        const group = new cc.Node('调试阵容'); group.isValid = true;
+        const owner = new Flow(), stopAfterBuild = new Error('已创建阵容'); let result;
+        Object.assign(owner, { _aiDebugMode: true, _netSession: null, _aiDebugDifficulty: 1,
+            _primaryAiLaneIndex: primaryLane, _swimmersRoot: group,
+            createCompetitorManager: () => ({ buildAi(root, options) { result = manager.buildAi(root, options); throw stopAfterBuild; } }) });
+        assert.throws(() => owner.buildDeferredAiSwimmers(), e => e === stopAfterBuild);
+        assert.equal(result.aiSwimmers.length, opponentCount);
+        assert.equal(result.aiControllers.length, opponentCount);
+        assert.ok(result.primaryAiController);
+        const lanes = result.aiSwimmers.map(s => s.node.position.z / 2.625);
+        assert.ok(!lanes.includes(playerLane));
+        assert.equal(new Set(lanes).size, opponentCount);
+        for (const ai of result.aiControllers) { assert.equal(ai.level, 30); assert.equal(ai.difficulty, 1); }
+        const ids = new Set(result.aiControllers.map(ai => ai.characterId));
+        if (opponentCount === 7 && mixedCharacters) assert.equal(ids.size, 7);
+        else assert.deepEqual([...ids], ['muscleMan']);
+        // 网络比赛即使存在调试标记，也不能采用本地的测试阵容覆盖。
+        owner._netSession = {};
+        assert.throws(() => owner.buildDeferredAiSwimmers(), e => e === stopAfterBuild);
+        assert.equal(result.aiSwimmers.length, 7);
+        assert.ok(result.aiControllers.every(ai => ai.level <= 5 && ai.difficulty < 1));
+    }
 });
 
 test('标准竞速入口连续同侧划水不偏航，其余入口仍转向，切换不污染全局参数', () => {
@@ -367,13 +429,12 @@ test('入口赛程切换同步运动上限和折返点，预览其他模式不�
     }
 });
 
-test('三个入口的玩家与 AI 共用轮速，AI 策略仍统一最高档', () => {
+test('三个入口的玩家与 AI 共用轮速，赛制不改变身体规则', () => {
     const h = heldStrokeFixture();
-    const { setRaceDifficulty, getRaceAiDifficultyConfig, getRaceDifficultyConfig } = h.loadModule('core/GameBalance');
+    const { setRaceDifficulty } = h.loadModule('core/GameBalance');
     let aiSpeed;
     for (const mode of ['beginner', 'competitive', 'championship']) {
         setRaceDifficulty(mode);
-        assert.equal(getRaceAiDifficultyConfig(), getRaceDifficultyConfig('championship'));
         h.motor.startRace(0, 2);
         h.motor.update(0.01, { isAI: true });
         const speed = h.motor.currentActionCycleSpeed();

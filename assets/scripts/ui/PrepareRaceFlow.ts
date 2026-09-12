@@ -49,6 +49,7 @@ import { CharacterAttributeTips } from './CharacterAttributeTips';
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
     onOpenRoom: () => void;
+    onAiDebug?: () => void;
     onCharacterManagementChanged?: (active: boolean) => void;
 };
 
@@ -201,10 +202,10 @@ export class PrepareRaceFlow {
         this._motion.dispose();
         this._leaving = true;
         PlayerData.offChange(this._onProfileChange);
-        this._previewRoot?.destroy();
+        if (this._previewRoot?.isValid) this._previewRoot.destroy();
         this._previewRoot = null;
         this._preview = null;
-        this._root?.destroy();
+        if (this._root?.isValid) this._root.destroy();
         this._root = null;
         this._content = null;
         this._lobbyBackgroundImage = null;
@@ -342,6 +343,14 @@ export class PrepareRaceFlow {
         stylePsdTitleLabel(manageLabel, 32);
         this._motion.bindButton(manage);
         manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
+        if (this._callbacks.onAiDebug) {
+            const aiTest = makeRaceTextureButton('AiDebugButton', parent, RESOURCE_PATHS.lobbyUi.characterButton, 250, 56, -446, -303, 3);
+            const aiLabel = makeBoundLabel('Label', aiTest, 'AI 测试', 22, DARK_TEXT, 170, 32, -6, 0);
+            stylePsdTitleLabel(aiLabel, 28);
+            this._motion.bindButton(aiTest);
+            // 只打开弹框，关闭后保留大厅角色预览及当前赛制，不触发离场重建。
+            aiTest.on(Button.EventType.CLICK, () => this._callbacks.onAiDebug?.());
+        }
     }
 
     private bindAttributeTip(parent: Node, index: number, x: number, y: number, width: number, height: number): void {

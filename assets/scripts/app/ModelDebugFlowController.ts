@@ -222,11 +222,17 @@ export class ModelDebugFlowController {
         if (!this._active) {
             return false;
         }
-        if (this._debugMotor.recordKickTap(type)) {
+        if (this._debugMotor.recordKickTap(type, false)) {
             this.freestylePreview()?.rig.triggerKick();
         }
         this._refs.debug(`model debug: kick tap ${type}`);
         this.updateDebugHud();
+        return true;
+    }
+
+    confirmKickStroke(): boolean {
+        if (!this._active) return false;
+        this._debugMotor.confirmKickAbility();
         return true;
     }
 

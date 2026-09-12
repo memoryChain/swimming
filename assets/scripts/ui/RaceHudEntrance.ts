@@ -2,7 +2,7 @@ import { Node, tween, Tween, UIOpacity, Vec3 } from 'cc';
 import { makeUiNode } from './RuntimeUiFactory';
 
 type Part = {
-    node: Node; opacity: UIOpacity; offset: Vec3; duration: number; delay: number;
+    node: Node; content: Node; opacity: UIOpacity; offset: Vec3; duration: number; delay: number;
     control: boolean; move: Tween<Node> | null; fade: Tween<UIOpacity> | null;
 };
 const REST = new Vec3();
@@ -14,13 +14,14 @@ export class RaceHudEntrance {
     wrap(content: Node, x: number, y: number, duration: number, delay = 0, control = false): void {
         const node = makeUiNode(`${content.name}Entrance`, content.parent!);
         content.setParent(node);
-        this._parts.push({ node, opacity: node.addComponent(UIOpacity), offset: new Vec3(x, y, 0),
+        this._parts.push({ node, content, opacity: node.addComponent(UIOpacity), offset: new Vec3(x, y, 0),
             duration, delay, control, move: null, fade: null });
     }
 
     play(): void {
         this.reset();
         for (const part of this._parts) {
+            if (!part.content.active) continue;
             part.opacity.opacity = 0;
             if (part.offset.x !== 0 || part.offset.y !== 0) {
                 part.node.setPosition(part.offset);
@@ -40,6 +41,14 @@ export class RaceHudEntrance {
     }
 
     reset(): void { for (const part of this._parts) this.finish(part); }
+
+    // 控件权限变化只更新该控件，并取消尚未完成的入场动画。
+    setPartVisible(content: Node, visible: boolean): void {
+        if (content.active !== visible) content.active = visible;
+        if (!visible) {
+            for (const part of this._parts) if (part.content === content) this.finish(part);
+        }
+    }
     dispose(): void { this.reset(); this._parts.length = 0; }
 
     private finish(part: Part): void {

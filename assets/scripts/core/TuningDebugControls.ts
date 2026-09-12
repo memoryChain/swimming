@@ -2,11 +2,12 @@ import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
-import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
+import { AI_STROKE_TUNING } from '../competitor/CompetitorConfig';
+import { AI_PLANNER_TUNING } from '../competitor/AiRaceConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, HEART_RATE_TUNING, RACE_PHASE_BALANCE } from './ConditionBalance';
-import { TECHNIQUE_BALANCE, BURST_BALANCE, DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
+import { TECHNIQUE_BALANCE, BURST_BALANCE, DIVE_BALANCE, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import { INPUT_TUNING, MOTION_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
@@ -361,27 +362,18 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: 'AI对手',
         controls: [
-            control('ai.timingSigmaLow', '低难度手感抖动', '难度=0 时 AI 松手时机的随机抖动幅度（甜区比例）。越大越容易划歪、失误越多；难度越高抖动越小。', () => AI_STROKE_TUNING.timingSigmaLow, (v) => AI_STROKE_TUNING.timingSigmaLow = v, 0.005, 0, 0.3, 3),
-            control('ai.timingSigmaHigh', '高难度手感抖动', '难度=1 时 AI 松手时机的随机抖动幅度。接近 0 表示最强 AI 几乎每次都命中甜区中心（稳定满分）。', () => AI_STROKE_TUNING.timingSigmaHigh, (v) => AI_STROKE_TUNING.timingSigmaHigh = v, 0.001, 0, 0.1, 3),
+            control('ai.timingSigmaLow', 'AI松手误差基准', '各正式智力档的松手误差按此基准等比调整；变态档始终无随机误差。', () => AI_STROKE_TUNING.timingSigmaLow, (v) => AI_STROKE_TUNING.timingSigmaLow = v, 0.005, 0, 0.3, 3),
             control('ai.maxReleaseProgress', 'AI最迟松手', 'AI 模拟松手的进度上限（占一圈的比例）。必须小于划水超时圈数，保证 AI 总在超时前松手。', () => AI_STROKE_TUNING.maxReleaseProgress, (v) => AI_STROKE_TUNING.maxReleaseProgress = v, 0.01, 0.2, 0.49, 2),
-            control('ai.gapSecondsSlow', '低难度划水间隔', '难度=0 时，AI 松开一只手到按下另一只手之间的间隔秒数。越大划频越慢、越慢。', () => AI_STROKE_TUNING.gapSecondsSlow, (v) => AI_STROKE_TUNING.gapSecondsSlow = v, 0.01, 0, 0.6, 2, 's'),
-            control('ai.gapSecondsFast', '高难度划水间隔', '难度=1 时的划水间隔秒数。越小划频越高、越快。最强 AI 用这个间隔。', () => AI_STROKE_TUNING.gapSecondsFast, (v) => AI_STROKE_TUNING.gapSecondsFast = v, 0.005, 0, 0.4, 3, 's'),
+            control('ai.gapSecondsSlow', 'AI划间停顿基准', '各智力档按此基准调整松手后的停顿，长按分类等待仍须完整经过。', () => AI_STROKE_TUNING.gapSecondsSlow, (v) => AI_STROKE_TUNING.gapSecondsSlow = v, 0.01, 0, 0.6, 2, 's'),
             control('ai.gapJitter', '划水间隔抖动', 'AI 每次划水间隔上下浮动的随机比例，让节奏不那么机械。', () => AI_STROKE_TUNING.gapJitter, (v) => AI_STROKE_TUNING.gapJitter = v, 0.02, 0, 0.8, 2),
             control('ai.startDelayMin', '起步延迟下限', 'AI 进入游泳阶段后，第一次划水前随机延迟的最小秒数。', () => AI_STROKE_TUNING.startDelayMin, (v) => AI_STROKE_TUNING.startDelayMin = v, 0.01, 0, 0.6, 2, 's'),
             control('ai.startDelayMax', '起步延迟上限', 'AI 进入游泳阶段后，第一次划水前随机延迟的最大秒数。', () => AI_STROKE_TUNING.startDelayMax, (v) => AI_STROKE_TUNING.startDelayMax = v, 0.01, 0, 0.8, 2, 's'),
             control('ai.maxHoldSeconds', 'AI保底松手时间', '兜底：AI 按住超过这个秒数还没等到目标进度就强制松手，防止卡住。', () => AI_STROKE_TUNING.maxHoldSeconds, (v) => AI_STROKE_TUNING.maxHoldSeconds = v, 0.05, 0.2, 1.5, 2, 's'),
-            control('aiStrategy.effortEaseRate', '策略反应速度', 'AI 策略发力向目标靠拢的速率（每秒）。越低橡皮筋/追赶越隐形、越平滑；越高反应越快越明显。', () => AI_STRATEGY_TUNING.effortEaseRate, (v) => AI_STRATEGY_TUNING.effortEaseRate = v, 0.05, 0.1, 4, 2, '/s'),
-            control('aiStrategy.rubberBandStrength', '橡皮筋强度', '落后玩家时 AI 额外发力的最大幅度（叠加到难度上）。越大追赶越猛、越容易被你甩不掉；0=完全不追赶。会按对手性格的竞争性缩放。', () => AI_STRATEGY_TUNING.rubberBandStrength, (v) => AI_STRATEGY_TUNING.rubberBandStrength = v, 0.01, 0, 0.4, 2),
-            control('aiStrategy.rubberBandRange', '橡皮筋范围', '橡皮筋饱和所需的领先/落后米数。领先或落后玩家超过这个距离后追赶/收力达到最大。越大追赶越"温柔"。', () => AI_STRATEGY_TUNING.rubberBandRange, (v) => AI_STRATEGY_TUNING.rubberBandRange = v, 0.5, 2, 40, 1, 'm'),
-            control('aiStrategy.duelBoost', '贴身缠斗强度', '玩家就在身边（缠斗范围内）时 AI 额外发力的最大幅度，制造你追我赶。越大贴身时越拼。', () => AI_STRATEGY_TUNING.duelBoost, (v) => AI_STRATEGY_TUNING.duelBoost = v, 0.01, 0, 0.3, 2),
-            control('aiStrategy.duelRange', '缠斗触发距离', '与玩家的距离小于这个米数时进入贴身缠斗、额外发力。越大越早开始"较劲"。', () => AI_STRATEGY_TUNING.duelRange, (v) => AI_STRATEGY_TUNING.duelRange = v, 0.5, 0.5, 15, 1, 'm'),
-            control('aiStrategy.maxModifier', '策略发力上限', '所有策略（配速+橡皮筋+缠斗）叠加后对难度的最大偏移。越小越"隐形"、越接近纯难度；越大策略影响越强。', () => AI_STRATEGY_TUNING.maxModifier, (v) => AI_STRATEGY_TUNING.maxModifier = v, 0.02, 0, 0.5, 2),
-            control('aiStrategy.startFadeProgress', '起步发力衰减点', '性格里的"起步发力"在赛程进行到这个比例时衰减为 0。越大起步优势维持越久。', () => AI_STRATEGY_TUNING.startFadeProgress, (v) => AI_STRATEGY_TUNING.startFadeProgress = v, 0.02, 0.05, 0.6, 2),
-            control('aiStrategy.finishRampStartProgress', '冲刺发力起点', '性格里的"后程冲刺"从赛程这个比例开始逐渐加满。越小冲刺发力开始得越早。', () => AI_STRATEGY_TUNING.finishRampStartProgress, (v) => AI_STRATEGY_TUNING.finishRampStartProgress = v, 0.02, 0.4, 0.95, 2),
-            control('difficulty.championship.aiDifficultyScale', '统一AI倍率', '所有入口共用原世锦赛 AI 档位。1 表示使用原始 AI 阵容难度。', () => getRaceDifficultyConfig('championship').aiDifficultyScale, (v) => getRaceDifficultyConfig('championship').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
-            control('difficulty.championship.rubberBandScale', '统一AI追赶倍率', '所有入口共用的 AI 追赶强度倍率。', () => getRaceDifficultyConfig('championship').rubberBandScale, (v) => getRaceDifficultyConfig('championship').rubberBandScale = v, 0.05, 0, 2.5, 2),
-            control('difficulty.championship.duelScale', '统一AI缠斗倍率', '所有入口共用的 AI 贴身缠斗发力倍率。', () => getRaceDifficultyConfig('championship').duelScale, (v) => getRaceDifficultyConfig('championship').duelScale = v, 0.05, 0, 2.5, 2),
-            control('difficulty.championship.weaveScale', '统一AI蛇形倍率', '所有入口共用的 AI 蛇形倾向倍率；标准竞速入口关闭转向偏移。', () => getRaceDifficultyConfig('championship').weaveScale, (v) => getRaceDifficultyConfig('championship').weaveScale = v, 0.05, 0, 3, 2),
+            control('aiPlan.budgetScale', 'AI体力预留倍率', '提高会更早省力，降低会更积极消耗体力。智力不修改体力上限。', () => AI_PLANNER_TUNING.budgetScale, v => AI_PLANNER_TUNING.budgetScale = v, 0.02, 0.5, 1.5, 2),
+            control('aiPlan.heartTargetOffset', 'AI目标心率偏移', '在角色策略目标上偏移；高目标减少休息，但真实完美区间会收窄。', () => AI_PLANNER_TUNING.heartTargetOffset, v => AI_PLANNER_TUNING.heartTargetOffset = v, 2, -30, 30, 0),
+            control('aiPlan.sprintDistanceScale', 'AI冲刺距离倍率', '调整各角色200米和400米末段冲刺距离，仍要求剩余体力够用。', () => AI_PLANNER_TUNING.sprintDistanceScale, v => AI_PLANNER_TUNING.sprintDistanceScale = v, 0.05, 0.5, 2, 2),
+            control('aiPlan.kickBlockScale', 'AI踢腿段时长倍率', '连续省力或降心率的最短保持时间，避免反复打断划水节奏。', () => AI_PLANNER_TUNING.kickBlockScale, v => AI_PLANNER_TUNING.kickBlockScale = v, 0.05, 0.3, 2, 2),
+            control('aiPlan.jumpSpaceMargin', 'AI跳跃空间余量', '完整海豚跳估计距离之外再预留的空间，实际释放仍经过玩家共享检查。', () => AI_PLANNER_TUNING.jumpSpaceMargin, v => AI_PLANNER_TUNING.jumpSpaceMargin = v, 0.2, 0, 6, 1, 'm'),
         ],
     },
     {
@@ -771,8 +763,10 @@ const RETIRED_CONDITION_TUNING_KEYS = new Set([
     '划水.冲刺回血加成',
 ]);
 
+const RETIRED_AI_TUNING_KEYS = new Set(["ai.gapSecondsFast", "ai.timingSigmaHigh", "aiStrategy.duelBoost", "aiStrategy.duelRange", "aiStrategy.effortEaseRate", "aiStrategy.finishRampStartProgress", "aiStrategy.maxModifier", "aiStrategy.rubberBandRange", "aiStrategy.rubberBandStrength", "aiStrategy.startFadeProgress", "difficulty.championship.aiDifficultyScale", "difficulty.championship.duelScale", "difficulty.championship.rubberBandScale", "difficulty.championship.weaveScale"]);
+
 function isKnownLegacyTuningKey(key: string): boolean {
-    if (RETIRED_CONDITION_TUNING_KEYS.has(key)) return true;
+    if (RETIRED_CONDITION_TUNING_KEYS.has(key) || RETIRED_AI_TUNING_KEYS.has(key)) return true;
     if (key === 'dolphin.triggerHoldSeconds'
         || key === '海豚跃.双手长按触发'
         || key === 'speed.strokeStabilityAccel'
@@ -940,14 +934,6 @@ function validateTuningRelations(changedId?: string) {
     STROKE_QUALITY_TUNING.perfectStart = perfect.start;
     STROKE_QUALITY_TUNING.perfectEnd = perfect.end;
 
-    if (AI_STROKE_TUNING.timingSigmaHigh > AI_STROKE_TUNING.timingSigmaLow) {
-        console.warn('[SpeedSwimming] tuning adjusted: ai.timingSigmaHigh must not exceed timingSigmaLow');
-        AI_STROKE_TUNING.timingSigmaHigh = AI_STROKE_TUNING.timingSigmaLow;
-    }
-    if (AI_STROKE_TUNING.gapSecondsFast > AI_STROKE_TUNING.gapSecondsSlow) {
-        console.warn('[SpeedSwimming] tuning adjusted: ai.gapSecondsFast must not exceed gapSecondsSlow');
-        AI_STROKE_TUNING.gapSecondsFast = AI_STROKE_TUNING.gapSecondsSlow;
-    }
     if (AI_STROKE_TUNING.startDelayMax < AI_STROKE_TUNING.startDelayMin) {
         console.warn('[SpeedSwimming] tuning adjusted: ai.startDelayMax must not be below startDelayMin');
         AI_STROKE_TUNING.startDelayMax = AI_STROKE_TUNING.startDelayMin;

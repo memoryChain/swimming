@@ -122,6 +122,21 @@ export class RaceStrokeView {
         s.hand.setScale(pressed?PRESS:REST);
         if(s.opacity.opacity!==(pressed?255:210))s.opacity.opacity=pressed?255:210;
     }
+    /** 只在观察对象切换时清理旧反馈，保留节点、布局与入场状态。 */
+    resetFeedback(observingAi: boolean) {
+        this.elapsed = 1 / 30;
+        for (let i = 0; i < this.sides.length; i++) {
+            const s = this.sides[i];
+            this.clearRipples(s);
+            Tween.stopAllByTarget(s.hand); Tween.stopAllByTarget(s.feedback); Tween.stopAllByTarget(s.feedbackOpacity);
+            s.hand.setScale(REST); s.held = false; s.inPerfect = false;
+            s.handSprite.color = WHITE; s.markerSprite.color = WHITE; s.opacity.opacity = 210;
+            s.feedbackOpacity.opacity = 0;
+            const label = s.hand.getChildByName('StrokeCaption')?.getComponent(Label);
+            const text = observingAi ? (i === 0 ? 'AI 左划' : 'AI 右划') : (i === 0 ? '左划' : '右划');
+            if (label && label.string !== text) label.string = text;
+        }
+    }
     showResult(side:StrokeType|undefined,rating:Rating) {
         if(!this.visible||side===undefined)return;
         if(rating!==Rating.GOOD&&rating!==Rating.PERFECT)return;

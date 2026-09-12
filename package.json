@@ -27,6 +27,8 @@
     "ui:images:check": "python scripts/optimize-ui-images.py --check",
     "textures:fix": "node extensions/wechat-race-subpackage/texture-compression-policy.js --fix",
     "textures:check": "node extensions/wechat-race-subpackage/texture-compression-policy.js --check",
-    "test:abilities": "npx --yes --package typescript@5.4.5 -c \"node --test tests/character-abilities.test.cjs tests/kick-dive-camera.test.cjs\""
+    "test:abilities": "npx --yes --package typescript@5.4.5 -c \"node --test tests/character-abilities.test.cjs tests/kick-dive-camera.test.cjs\"",
+    "test:ai": "npx --yes --package typescript@5.4.5 -c \"node --test tests/ai-race-strategy.test.cjs tests/ai-debug-ui.test.cjs tests/ai-dive-start.test.cjs\"",
+    "benchmark:ai": "npx --yes --package typescript@5.4.5 -c \"node scripts/benchmark-ai.cjs\""
   }
 }

@@ -114,7 +114,8 @@ export class RemoteSwimmerController extends Component {
                 break;
             }
             case NetInputKind.Kick:
-                swimmer.handleKickStroke(strokeType(event.side));
+                // 按下事件仅回放踢腿反馈；下潜取 owner 的已确认能力快照。
+                swimmer.handleKickStroke(strokeType(event.side), false);
                 break;
             case NetInputKind.HeldOn:
                 swimmer.handleStrokeHeld(strokeType(event.side), true, STROKE_QUALITY_TUNING.minHoldSeconds);

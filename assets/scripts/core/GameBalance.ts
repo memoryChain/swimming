@@ -13,29 +13,15 @@ export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
 export type RaceDifficultyConfig = {
     id: RaceDifficulty;
     label: string;
-    // Uniform multiplier on every lane's base difficulty (accuracy + cadence).
-    aiDifficultyScale: number;
-    // Strategy-layer multipliers, applied on top of AI_STRATEGY_TUNING so each
-    // tier feels distinct beyond raw speed:
-    //   rubberBandScale — how hard the pack chases the player when it falls behind
-    //                     (low = you can pull away; high = they cling to you).
-    //   duelScale       — extra push when an AI is neck-and-neck with the player.
-    //   weaveScale      — personality weave amount (high = more wobble/mistakes,
-    //                     low = cleaner, more professional lines).
-    rubberBandScale: number;
-    duelScale: number;
-    weaveScale: number;
     // Whether this tier enables the dynamic lane-lockdown race modifier.
     laneLockdownEnabled: boolean;
 };
 
+// 保留稳定入口ID供存档和房间使用；AI等级与智力独立配置于 competitor/AiRaceConfig。
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
-    // 保留入口 ID 兼容存档和联机模式字段；旧 AI 数值保留，实际 AI 统一读世锦赛档。
-    { id: 'beginner', label: '标准竞速', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
-    // 狂野 200 米入口保留转向；当前未启用动态封道。
-    { id: 'competitive', label: '狂野模式', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: false },
-    // 狂野 400 米入口；同时保留原最高档 AI 配置，供三个入口共用。
-    { id: 'championship', label: '狂野模式', aiDifficultyScale: 1, rubberBandScale: 1.6, duelScale: 1.7, weaveScale: 0.45, laneLockdownEnabled: false },
+    { id: 'beginner', label: '标准竞速', laneLockdownEnabled: false },
+    { id: 'competitive', label: '狂野模式', laneLockdownEnabled: false },
+    { id: 'championship', label: '狂野模式', laneLockdownEnabled: false },
 ];
 
 let currentRaceDifficulty: RaceDifficulty = 'competitive';
@@ -59,11 +45,6 @@ export function setRaceDifficulty(difficulty: RaceDifficulty): RaceDifficulty {
 export function getRaceDifficultyConfig(difficulty = currentRaceDifficulty): RaceDifficultyConfig {
     return RACE_DIFFICULTY_OPTIONS.find((option) => option.id === difficulty)
         ?? RACE_DIFFICULTY_OPTIONS[1];
-}
-
-// 比赛入口与 AI 强度分离，所有入口共用原最高档的阵容倍率和策略。
-export function getRaceAiDifficultyConfig(): RaceDifficultyConfig {
-    return getRaceDifficultyConfig('championship');
 }
 
 export function isRaceSteeringEnabled(): boolean {

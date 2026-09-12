@@ -1,439 +1,352 @@
 import { _decorator, Component } from 'cc';
-import { DIVE_BALANCE, RHYTHM_BALANCE, getRaceAiDifficultyConfig, getRaceDistance } from '../core/GameBalance';
+import { getRaceDistance, isRaceSteeringEnabled } from '../core/GameBalance';
 import { StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
-import { AI_STROKE_TUNING, AI_STRATEGY_TUNING, AI_DOLPHIN_TUNING, AIPersonality, getAiPersonality } from '../competitor/CompetitorConfig';
+import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
+import { abilityValue } from '../core/CharacterAbilityConfig';
+import { CONDITION_BALANCE } from '../core/ConditionBalance';
+import { AI_STROKE_TUNING, AI_DOLPHIN_TUNING } from '../competitor/CompetitorConfig';
+import { AI_CHARACTER_STRATEGIES, intelligenceForDifficulty } from '../competitor/AiRaceConfig';
+import { AiRaceObservation, AiRacePlanner } from '../competitor/AiRacePlanner';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
-import { STEERING_TUNING } from '../core/SteeringTuning';
+import { PlayerCharacterId } from '../app/PlayerCharacterConfig';
+import { AiConditionModel } from '../condition/AiConditionModel';
 import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
+type AiStrokePhase = 'gap' | 'press' | 'stroke';
 
-type AiStrokePhase = 'gap' | 'stroke';
-
-// Simulated-input AI. Instead of the old visual-only motion, the AI now drives
-// the SAME stroke path as the player: it "presses" (handleStrokeHeld true +
-// handleStroke), holds while watching the arm-pull progress, then "releases"
-// (handleStrokeHeld false) at a target release progress. That release timing lands
-// in the shared sweet zone (STROKE_QUALITY_TUNING), so AI propulsion comes from the
-// exact same stroke-quality-to-acceleration path the player uses. `difficulty` is the
-// competitiveness baseline: it sharpens the release accuracy (higher = closer to the
-// perfect center every stroke) AND tightens the stroke cadence (higher = faster).
-//
-// On top of that baseline sits a STRATEGY layer (see AI_STRATEGY_TUNING +
-// AI_PERSONALITIES): each AI spends its effort with a purpose (pacing by
-// personality) and reacts to the race (subtle rubber-band + duel surge measured
-// against the player). Strategy is applied as a small, smoothed EFFORT MODIFIER
-// added to `difficulty` — it never overrides difficulty, so catch-up stays hidden.
+// 角色策略只生成合法输入；运动、资源与判定始终由玩家共用模型结算。
 @ccclass('AISwimmerController')
 export class AISwimmerController extends Component {
     @property(Swimmer) public swimmer: Swimmer = null;
-    @property({ range: [0, 1, 0.01] }) public difficulty = RHYTHM_BALANCE.aiDifficulty;
-    // Small per-lane cadence flavor (BPM units) so equal-difficulty lanes don't
-    // stroke in perfect lockstep. Positive = slightly faster cadence.
-    @property public bpmOffset = 0;
-    @property({ range: [0, 1, 0.01] }) public divePower = DIVE_BALANCE.defaultAiPower;
-
-    // Stable racing style. Assigned from the lane's AICompetitorProfile at build
-    // time; defaults to a neutral steady pacer for safety.
-    public personality: AIPersonality = getAiPersonality('steady');
-    // Shared race view used for rank/gap-based strategy. Null before it is wired
-    // (or in isolated tests), in which case strategy falls back to pacing only.
+    @property({ range: [0, 1, 0.01] }) public difficulty = 0.5;
+    public characterId: PlayerCharacterId = 'cartonSwimmer6';
+    public level = 1;
+    public energyTotal = 140;
     public raceObserver: AIRaceObserver | null = null;
-    // Assigned with the matching condition model. Event-only; remote humans never call it.
-    public onDolphinJumpStarted: (() => void) | null = null;
-
-    // NETWORKED RACE ONLY: when this lane is a remote human (driven by
-    // RemoteSwimmerController from network input), the AI must never act. Defaults
-    // false so single-player / local AI behaviour is completely unchanged.
+    public condition: AiConditionModel | null = null;
     public remoteDriven = false;
-
+    public onDolphinJumpStarted: (() => void) | null = null;
+    public onObservedPressChanged: ((side: StrokeType, pressed: boolean) => void) | null = null;
+    isInputPressed(side: StrokeType): boolean {
+        return this._active && ((this._phase !== 'gap' && this._side === side) || (this._primed && this._primedSide === side));
+    }
+    private clearObservedPress() {
+        this.onObservedPressChanged?.(StrokeType.LEFT, false);
+        this.onObservedPressChanged?.(StrokeType.RIGHT, false);
+    }
+    readonly planner = new AiRacePlanner();
     private _active = false;
     private _phase: AiStrokePhase = 'gap';
+    private _side = StrokeType.LEFT;
+    private _nextSide = StrokeType.LEFT;
+    private _kickSide = StrokeType.LEFT;
     private _timer = 0;
-    private _side: StrokeType = StrokeType.LEFT;
-    private _nextSide: StrokeType = StrokeType.LEFT;
-    private _targetProgress = 0;
-    private _holdElapsed = 0;
-    // Smoothed strategy effort added to `difficulty`. Eased every frame toward the
-    // live target so rank/gap swings translate into gradual, invisible changes.
-    private _effortModifier = 0;
-    // World-Z bounds of a pending lane-lockdown corridor. Null outside its
-    // warning window, so ordinary personality weaving remains unchanged.
-    private _laneLockdownSafeMinZ: number | null = null;
-    private _laneLockdownSafeMaxZ: number | null = null;
-    private _laneLockdownWarning = false;
-    private _laneLockdownAware = false;
+    private _heldSeconds = 0;
+    private _target = 0.375;
+    private _primed = false;
+    private _primedSeconds = 0;
+    private _primedSide = StrokeType.LEFT;
+    private _decisionClock = 0;
+    private _kickClock = 0;
+    private _strokeDistance = 0;
+    private _strokeEnergy = 0;
+    private _lastStrokeStart = -10;
+    private _clock = 0;
+    private _targetZ: number | null = null;
+    private _safeMinZ: number | null = null;
+    private _safeMaxZ: number | null = null;
+    private _safeWarning = false;
+    private _safeAware = false;
+    private _wasLocked = false;
+    private _swimSeconds = 0;
+    private _kickSeconds = 0;
+    private _jumps = 0;
+    private _decisions = 0;
+    private readonly _observation: AiRaceObservation = {
+        distance: 0, raceDistance: 200, wallDistance: 50, energy: 140, energyTotal: 140,
+        heartRate: 80, speed: 0, infiniteStamina: false, supportsDolphin: true,
+        dolphinReady: false, dolphinCost: 5, dolphinRange: 8, dolphinStrain: 25,
+        minDolphinSpace: 3, kickDive: false, nearbyThreat: false, closeRace: false,
+        strokeCostPerMeter: 0.7,
+    };
 
-    // Dolphin-jump (海豚跃) state. Cooldown gates re-triggers; the decision timer
-    // throttles how often the trigger is re-rolled; the air-tap timer paces the
-    // comedic mid-air spin.
-    private _dolphinCooldown = 0;
-    private _dolphinDecisionTimer = 0;
-    private _dolphinAirTapTimer = 0;
+    get intelligence() { return intelligenceForDifficulty(this.difficulty); }
+    get divePower(): number { const s = this.intelligence; return (s.chargeMin + s.chargeMax) * 0.5; }
+    sampleDivePower(): number { const s = this.intelligence; return randomRange(s.chargeMin, s.chargeMax); }
+
+    configure(characterId: PlayerCharacterId, level: number, difficulty: number, energyTotal: number) {
+        this.stopSwimming();
+        this.characterId = characterId;
+        this.level = level;
+        this.difficulty = difficulty;
+        this.energyTotal = energyTotal;
+        this.condition?.configureEnergyTotal(energyTotal);
+        this.condition?.setInfiniteStamina(this.swimmer.motor.ability.infiniteStamina);
+    }
+
+    bindCondition(condition: AiConditionModel) {
+        this.condition = condition;
+        condition.configureEnergyTotal(this.energyTotal);
+        condition.setInfiniteStamina(this.swimmer.motor.ability.infiniteStamina);
+    }
 
     setLaneLockdownSafeZRange(minZ: number | null, maxZ: number | null, warning: boolean) {
-        if (!Number.isFinite(minZ) || !Number.isFinite(maxZ)) {
-            this._laneLockdownSafeMinZ = null;
-            this._laneLockdownSafeMaxZ = null;
-            this._laneLockdownWarning = false;
-            this._laneLockdownAware = false;
-            return;
-        }
-        const safeMin = Math.min(minZ, maxZ);
-        const safeMax = Math.max(minZ, maxZ);
-        if (safeMin !== this._laneLockdownSafeMinZ || safeMax !== this._laneLockdownSafeMaxZ) {
-            this._laneLockdownAware = false;
-        }
-        this._laneLockdownSafeMinZ = safeMin;
-        this._laneLockdownSafeMaxZ = safeMax;
-        this._laneLockdownWarning = warning;
+        const valid = minZ !== null && maxZ !== null && Number.isFinite(minZ) && Number.isFinite(maxZ);
+        const min = valid ? Math.min(minZ, maxZ) : null;
+        const max = valid ? Math.max(minZ, maxZ) : null;
+        if (min !== this._safeMinZ || max !== this._safeMaxZ) this._safeAware = false;
+        this._safeMinZ = min; this._safeMaxZ = max; this._safeWarning = warning;
     }
 
     startSwimming() {
-        // Networked remote human: driven by RemoteSwimmerController, never by AI.
-        if (this.remoteDriven) {
-            return;
-        }
-        // Idempotent: an AI that already began swimming (e.g. right after its own
-        // dive) keeps its rhythm instead of being reset when the race-wide start
-        // fires. Only a fresh (inactive) controller initializes its schedule.
-        if (this._active) {
-            return;
-        }
+        if (this.remoteDriven || this._active) return;
+        this.clearObservedPress();
         this._active = true;
         this._phase = 'gap';
-        this._nextSide = StrokeType.LEFT;
-        this._holdElapsed = 0;
-        this._effortModifier = 0;
-        this._dolphinCooldown = 0;
-        this._dolphinDecisionTimer = 0;
-        this._dolphinAirTapTimer = 0;
-        this._timer = randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
+        this._primed = false;
+        this._primedSeconds = 0;
+        this._side = this._nextSide = this._kickSide = StrokeType.LEFT;
+        this._clock = this._decisionClock = this._kickClock = this._heldSeconds = 0;
+        this._swimSeconds = this._kickSeconds = this._jumps = this._decisions = 0;
+        this._lastStrokeStart = -10;
+        this._wasLocked = false;
+        this._safeAware = false;
+        this._targetZ = null;
+        this._observation.strokeCostPerMeter = 0.7;
+        this.planner.reset();
+        this._timer = this.intelligence.id === 'extreme' ? 0
+            : randomRange(AI_STROKE_TUNING.startDelayMin, AI_STROKE_TUNING.startDelayMax);
     }
 
     stopSwimming() {
-        // Release any in-flight stroke so a stopped AI doesn't leave an arm held.
-        if (this._active && this._phase === 'stroke' && this.swimmer) {
-            this.swimmer.handleStrokeHeld(this._side, false);
-        }
+        this.clearObservedPress();
+        if (!this.remoteDriven && this._phase === 'stroke') this.swimmer?.handleStrokeHeld(this._side, false);
         this._active = false;
+        this._primed = false;
         this._phase = 'gap';
     }
 
     update(dt: number) {
-        // Fixed-step (net race): stepped by the net driver, not the engine.
-        if (this.swimmer?.netFixedStep) {
-            return;
-        }
+        if (this.swimmer?.netFixedStep) return;
         this.stepSimulation(scaledDelta(dt));
     }
 
-    // One AI decision step. `sdt` is the final step length (scaling applied by caller).
-    stepSimulation(sdt: number) {
-        if (!this._active || !this.swimmer || !this.swimmer.isRacing) {
+    stepSimulation(dt: number) {
+        if (this.remoteDriven || !this._active || !this.swimmer?.node.active
+            || !this.swimmer.isRacing || !(dt > 0) || !Number.isFinite(dt)) return;
+        this._clock += dt;
+        const body = this.swimmer;
+        // 折返与跳跃会清除动作。恢复后丢弃旧按住状态，不能残留一只手或沿用旧预算采样。
+        if (body.isFlipTurning || body.isDolphinJumpActive || !body.canUseArmStroke) {
+            if (!this._wasLocked) this.clearObservedPress();
+            this._phase = 'gap'; this._primed = false; this._timer = 0; this._wasLocked = true;
+            if (!body.isFlipTurning && !body.isDolphinJumpActive) this.kick(dt);
             return;
         }
-        if (this._dolphinCooldown > 0) {
-            this._dolphinCooldown -= sdt;
+        if (this._wasLocked) {
+            this._wasLocked = false;
+            this._decisionClock = this.intelligence.decisionSeconds;
         }
-        // While a dolphin jump is in the air, suspend normal strokes and only run
-        // the comedic random mid-air spin.
-        if (this.swimmer.isDolphinJumpActive) {
-            this.updateDolphinAirComedy(sdt);
-            return;
+        this._decisionClock += dt;
+        if (this._decisionClock >= this.intelligence.decisionSeconds || this._decisions === 0) {
+            this.observe();
+            this.planner.decide(this._observation, AI_CHARACTER_STRATEGIES[this.characterId], this.intelligence, this._decisionClock);
+            this._decisionClock = 0;
+            this._decisions++;
         }
-        this.updateEffortModifier(sdt);
-        this.maybeTriggerDolphinJump(sdt);
-        // A jump started this step: skip the normal stroke logic (the scripted
-        // phase owns the body now).
-        if (this.swimmer.isDolphinJumpActive) {
-            return;
-        }
-        if (this._phase === 'gap') {
-            this._timer -= sdt;
-            if (this._timer <= 0) {
-                this.beginStroke();
-            }
-            return;
-        }
-        this.updateStroke(sdt);
-    }
-
-    // Decide whether to launch a dolphin jump this step. The trigger is
-    // outcome-affecting, so it is drawn from the deterministic SharedRNG stream
-    // (host correction absorbs residual drift). Every eligible AI draws once per
-    // decision window so the shared stream consumption stays uniform.
-    private maybeTriggerDolphinJump(sdt: number) {
-        if (!AI_DOLPHIN_TUNING.enabled || this._dolphinCooldown > 0) {
-            return;
-        }
-        // Only from surface racing (tryDolphinJump also guards near walls/finish).
-        if (this.swimmer.isUnderwater) {
-            return;
-        }
-        this._dolphinDecisionTimer -= sdt;
-        if (this._dolphinDecisionTimer > 0) {
-            return;
-        }
-        this._dolphinDecisionTimer = AI_DOLPHIN_TUNING.decisionIntervalSeconds;
-        const chance = this.dolphinJumpChance();
-        if (randomFloat() >= chance) {
-            return;
-        }
-        if (this.swimmer.tryDolphinJump()) {
+        // 已经开始的一划正常松手后再换策略，避免为了恢复心率反复制造早松失误。
+        if (this._phase === 'stroke') { this.updateStroke(dt); return; }
+        if (this._phase === 'press') { this.promotePress(dt); return; }
+        const kicking = this.planner.action === 'recover' || this.planner.action === 'save' || this.planner.action === 'evade';
+        if (this.planner.wantsJump && AI_DOLPHIN_TUNING.enabled && !body.isUnderwater && body.tryDolphinJump()) {
+            this._jumps++;
+            this.planner.wantsJump = false;
             this.onDolphinJumpStarted?.();
-            this._dolphinCooldown = AI_DOLPHIN_TUNING.cooldownSeconds;
-            this._dolphinAirTapTimer = 0;
-            // Cleanly restart the stroke cycle after the scripted jump completes.
-            this._phase = 'gap';
-            this._timer = 0;
-        }
-    }
-
-    // Per-decision jump probability from the three strategies: rookies (菜鸟) show
-    // off at random, experts (高手) leap over a swimmer they are about to overtake,
-    // and everyone may launch a triumphant leap near the finish. Uses the strongest
-    // matching chance so overlapping conditions don't stack into spam.
-    private dolphinJumpChance(): number {
-        let chance = 0;
-        const remaining = getRaceDistance() - this.swimmer.distance;
-        if (remaining <= AI_DOLPHIN_TUNING.finishZoneMeters) {
-            chance = Math.max(chance, AI_DOLPHIN_TUNING.finishShowoffChance);
-        }
-        if (this.difficulty >= AI_DOLPHIN_TUNING.expertDifficultyMin
-            && this.raceObserver?.hasSwimmerCloseAhead(
-                this.swimmer,
-                AI_DOLPHIN_TUNING.closeAheadGap,
-                AI_DOLPHIN_TUNING.closeAheadLateral,
-            )) {
-            chance = Math.max(chance, AI_DOLPHIN_TUNING.expertJumpOverChance);
-        }
-        if (this.difficulty <= AI_DOLPHIN_TUNING.rookieDifficultyMax) {
-            chance = Math.max(chance, AI_DOLPHIN_TUNING.rookieShowoffChance);
-        }
-        return chance;
-    }
-
-    // Comedic mid-air spin: while airborne, tap random sides to corkscrew. This is
-    // VISUAL ONLY (the roll never changes speed/position), so it deliberately uses
-    // non-shared Math.random() — consuming SharedRNG here would desync the shared
-    // stream that outcome-affecting draws depend on.
-    private updateDolphinAirComedy(sdt: number) {
-        if (!this.swimmer.isDolphinAirActive) {
             return;
         }
-        this._dolphinAirTapTimer -= sdt;
-        if (this._dolphinAirTapTimer > 0) {
+        if (kicking) {
+            this._kickSeconds += dt;
+            // 严重偏航时允许正常付费划水回正；资源规划随后补偿这个开销。
+            if (isRaceSteeringEnabled() && Math.abs(body.steeringHeadingRatio) > 0.35
+                && this.condition?.energy > 0 && this._clock - this._lastStrokeStart > 1.5) {
+                this._nextSide = body.correctiveStrokeSide();
+                this.beginPress();
+            } else this.kick(dt);
             return;
         }
-        this._dolphinAirTapTimer = AI_DOLPHIN_TUNING.airTapIntervalSeconds;
-        if (Math.random() < AI_DOLPHIN_TUNING.airTapChance) {
-            const side = Math.random() < 0.5 ? StrokeType.LEFT : StrokeType.RIGHT;
-            this.swimmer.handleKickStroke(side);
-        }
+        this._timer -= dt;
+        if (this._timer <= 0) this.beginPress();
     }
 
-    // Effective competitiveness for THIS moment: the baseline difficulty plus the
-    // smoothed strategy effort, clamped so strategy never reaches a trivial or
-    // hopeless extreme. Everything downstream (accuracy, cadence, steering
-    // discipline) reads this instead of raw `difficulty`.
-    private effectiveDifficulty(): number {
-        return clamp(
-            this.difficulty + this._effortModifier,
-            AI_STRATEGY_TUNING.minEffective,
-            AI_STRATEGY_TUNING.maxEffective,
-        );
-    }
-
-    // Ease the effort modifier toward the strategy target every frame. Keeping the
-    // easing on the modifier (not on the raw signals) is what makes rubber-band
-    // catch-up feel like a natural push rather than a visible speed snap.
-    private updateEffortModifier(sdt: number) {
-        const target = this.computeStrategyTarget();
-        const t = clamp(sdt * AI_STRATEGY_TUNING.effortEaseRate, 0, 1);
-        this._effortModifier += (target - this._effortModifier) * t;
-    }
-
-    // Combine the three strategy sources into a single (small, capped) effort
-    // delta: personality pacing over the race, a rubber-band toward the player,
-    // and a neck-and-neck duel surge. Rubber-band and duel need the shared
-    // observer; without it only pacing applies.
-    private computeStrategyTarget(): number {
-        const distance = this.swimmer.distance;
-        const raceDistance = this.raceObserver?.raceDistance ?? 0;
-        const progress = raceDistance > 0 ? clamp(distance / raceDistance, 0, 1) : 0;
-
-        const startWeight = clamp(1 - progress / Math.max(0.05, AI_STRATEGY_TUNING.startFadeProgress), 0, 1);
-        const finishSpan = Math.max(0.05, 1 - AI_STRATEGY_TUNING.finishRampStartProgress);
-        const finishWeight = clamp((progress - AI_STRATEGY_TUNING.finishRampStartProgress) / finishSpan, 0, 1);
-        const pacing = this.personality.startEffort * startWeight + this.personality.finishEffort * finishWeight;
-
-        let rubber = 0;
-        let duel = 0;
-        if (this.raceObserver) {
-            // 所有比赛入口统一采用原世锦赛 AI 策略。
-            const tier = getRaceAiDifficultyConfig();
-            const competitiveness = clamp(this.personality.competitiveness, 0, 1);
-            const gap = this.raceObserver.gapToPlayer(distance); // + = ahead of player
-            const normalized = clamp(gap / Math.max(0.5, AI_STRATEGY_TUNING.rubberBandRange), -1, 1);
-            // Trailing (gap < 0) → positive effort; leading (gap > 0) → ease off.
-            rubber = -normalized * AI_STRATEGY_TUNING.rubberBandStrength * competitiveness * tier.rubberBandScale;
-            const absGap = Math.abs(gap);
-            if (absGap < AI_STRATEGY_TUNING.duelRange) {
-                duel = AI_STRATEGY_TUNING.duelBoost * (1 - absGap / AI_STRATEGY_TUNING.duelRange) * competitiveness * tier.duelScale;
+    private observe() {
+        const b = this.swimmer, s = this._observation, ability = b.motor.ability;
+        s.distance = b.distance;
+        s.raceDistance = getRaceDistance();
+        const nextWall = b.courseLayout.nextInternalTurnDistance(s.distance, s.raceDistance);
+        s.wallDistance = Math.max(0, (nextWall ?? s.raceDistance) - s.distance - DOLPHIN_JUMP.endMargin);
+        s.energy = this.condition?.energy ?? this.energyTotal;
+        s.energyTotal = this.energyTotal;
+        s.heartRate = b.heartRate; s.speed = b.currentSpeed;
+        s.infiniteStamina = ability.infiniteStamina;
+        s.supportsDolphin = ability.allowsDolphin;
+        s.dolphinReady = b.ultimate.canAffordDolphin;
+        s.dolphinCost = DOLPHIN_JUMP.staminaCost * (ability.id === 'frogHop' ? abilityValue('frogDolphinCost', 0, 2) : 1);
+        const launch = DOLPHIN_JUMP.launchSpeed * b.motor.burstLaunchSpeedScale
+            * (ability.id === 'frogHop' ? abilityValue('frogDolphinSpeed', 0.1, 2) : 1);
+        const angle = DOLPHIN_JUMP.launchAngleDegrees * Math.PI / 180;
+        // 只估计完整空间，不修改实际抛物线；落水段另留当前速度的保守余量。
+        s.dolphinRange = launch * launch * Math.sin(2 * angle) / Math.max(0.1, DOLPHIN_JUMP.gravity)
+            + Math.max(1, s.speed) * (DOLPHIN_JUMP.dipSeconds + DOLPHIN_JUMP.landingHoldSeconds);
+        s.dolphinStrain = DOLPHIN_JUMP.strainHr;
+        s.minDolphinSpace = DOLPHIN_JUMP.minAvailableDistance;
+        s.kickDive = ability.id === 'kickDive';
+        const nearby = isRaceSteeringEnabled() ? this.raceObserver?.nearestPhysicalOpponent(b, 4, 2.2) : null;
+        s.nearbyThreat = !!nearby && (nearby.weight >= b.weight || s.kickDive);
+        s.closeRace = this.raceObserver?.hasCloseCompetitor(b, 3) ?? false;
+        this._targetZ = null;
+        if (nearby && this.intelligence.discipline >= 0.8) {
+            const style = AI_CHARACTER_STRATEGIES[this.characterId];
+            const z = b.node.position.z, otherZ = nearby.node.position.z;
+            if (style.contest && s.energy > this.planner.sprintReserve && Math.abs(nearby.distance - b.distance) <= 2) {
+                this._targetZ = otherZ;
+            } else if (style.avoidContact && !s.kickDive) {
+                const halfWidth = b.courseLayout.poolWidth * 0.5;
+                const direction = z === otherZ ? (z > 0 ? -1 : 1) : Math.sign(z - otherZ);
+                this._targetZ = clamp(otherZ + direction * 1.5, -halfWidth + 0.8, halfWidth - 0.8);
             }
         }
-
-        return clamp(pacing + rubber + duel, -AI_STRATEGY_TUNING.maxModifier, AI_STRATEGY_TUNING.maxModifier);
     }
 
-    private beginStroke() {
-        const side = this._nextSide;
-        // A previous same-side pull may still be sweeping out its released tail;
-        // wait a beat and retry rather than dropping the stroke.
-        if (!this.swimmer.canAcceptStroke(side)) {
-            this._timer = 0.02;
-            return;
-        }
+    private kick(dt: number) {
+        this._kickClock -= dt;
+        if (this._kickClock > 0) return;
+        // 短按不提升为手臂，踢腿推进仍受 Motor 的真实频率上限约束。
+        this.onObservedPressChanged?.(this._kickSide, true);
+        this.swimmer.handleKickStroke(this._kickSide);
+        this.onObservedPressChanged?.(this._kickSide, false);
+        this._kickSide = opposite(this._kickSide);
+        this._kickClock = 1 / Math.max(1, this.intelligence.kickHz);
+    }
+
+    private beginPress() {
+        const body = this.swimmer;
+        const side = this.pickSide();
+        if (!body.canAcceptStroke(side)) { this._timer = 0; return; }
         this._side = side;
-        this._targetProgress = this.pickTargetProgress();
-        this._holdElapsed = 0;
-        // Replicate the player's promote sequence: mark held first (captures the
-        // press time), then record the stroke (creates the StrokeAction).
-        this.swimmer.handleStrokeHeld(side, true);
-        this.swimmer.handleStroke(side);
+        this._heldSeconds = 0;
+        this._phase = 'press';
+        // 玩家按下同样先踢腿，超过分类时长才转成长按；未确认短按不触发潜航能力。
+        this.onObservedPressChanged?.(side, true);
+        body.handleKickStroke(side, false);
+    }
+
+    private promotePress(dt: number) {
+        this._heldSeconds += dt;
+        const threshold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
+        if (this._heldSeconds + 1e-8 < threshold || !this.swimmer.canAcceptStroke(this._side)) return;
+        this.swimmer.handleStrokeHeld(this._side, true, threshold);
+        this.swimmer.handleStroke(this._side);
+        this._lastStrokeStart = this._clock;
+        this._strokeDistance = this.swimmer.distance;
+        this._strokeEnergy = this.condition?.energy ?? this.energyTotal;
+        const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
+        const skill = this.intelligence;
+        const sigma = skill.timingSigma * (AI_STROKE_TUNING.timingSigmaLow / 0.12);
+        this._target = clamp(center + (sigma > 0 ? randomGaussian() * sigma : 0), 0.05,
+            Math.min(AI_STROKE_TUNING.maxReleaseProgress, STROKE_QUALITY_TUNING.armStrokeTimeoutProgress - 0.01));
         this._phase = 'stroke';
     }
 
-    // Choose the next stroke side. This is the ONLY place the AI "steers": it
-    // shares the player's stroke-driven steering, so imperfect side choices make
-    // it weave. When off course, effort (effective difficulty) decides whether it
-    // takes the corrective side. Its baseline weaving is now a PERSONALITY trait
-    // (weaveTendency) rather than pure difficulty noise, dampened as it pushes
-    // harder — so a steady AI swims straight with purpose while a weaver flails.
-    private pickNextSide(justUsed: StrokeType): StrokeType {
-        const opposite = justUsed === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
-        if (!this.swimmer) {
-            return opposite;
-        }
-        const lockdownSide = this.laneLockdownSteeringSide(justUsed, opposite);
-        if (lockdownSide) {
-            return lockdownSide;
-        }
-        const discipline = clamp(this.effectiveDifficulty(), 0, 1);
-        const drift = Math.abs(this.swimmer.steeringHeadingRatio);
-        if (drift >= clamp(STEERING_TUNING.aiCorrectHeadingRatio, 0, 1)) {
-            const corrective = this.swimmer.correctiveStrokeSide();
-            const wrong = corrective === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT;
-            return randomFloat() < discipline ? corrective : wrong;
-        }
-        // Personality weave, thinned out the harder this AI is currently pushing
-        // (so a surging fighter tightens up), scaled by the difficulty tier
-        // (入门 wobbles more, 世锦赛 swims cleaner), and bounded by the global cap.
-        const weaveScale = getRaceAiDifficultyConfig().weaveScale;
-        const weave = clamp(this.personality.weaveTendency * weaveScale * (1 - discipline * 0.6), 0, 1);
-        const wanderChance = weave * clamp(STEERING_TUNING.aiWanderChance, 0, 1);
-        return randomFloat() < wanderChance ? justUsed : opposite;
-    }
-
-    private laneLockdownSteeringSide(justUsed: StrokeType, opposite: StrokeType): StrokeType | null {
-        if (this._laneLockdownSafeMinZ === null || this._laneLockdownSafeMaxZ === null || !this.swimmer) {
-            return null;
-        }
-        // The controller always predicts from the leader's current lane, but
-        // only sharp AI notices and trusts that prediction before the visible
-        // warning. A warning makes everyone more likely to notice, while still
-        // letting low-difficulty racers make late mistakes.
-        if (!this._laneLockdownAware) {
-            const difficulty = clamp(this.effectiveDifficulty(), 0, 1);
-            const awareness = this._laneLockdownWarning
-                ? 0.2 + 0.8 * difficulty
-                : clamp((difficulty - 0.58) / 0.32, 0, 1);
-            if (randomFloat() >= awareness) {
-                return null;
+    private updateStroke(dt: number) {
+        this._swimSeconds += dt;
+        this._heldSeconds += dt;
+        const b = this.swimmer;
+        const progress = b.aiActiveStrokeProgress(this._side);
+        const maxHold = Math.max(AI_STROKE_TUNING.maxHoldSeconds,
+            b.actionCycleSeconds / Math.max(0.01, MOTION_TUNING.heldMotionSpeedScale) + STROKE_QUALITY_TUNING.minHoldSeconds);
+        if (this._primed) this._primedSeconds += dt;
+        // 测试极限：前一划结束前短暂按下另一侧，重叠的是分类等待，不跳过等待本身。
+        // 预按时间短于分类门槛，因此不会暗中抑制应已开始的另一只手臂。
+        const threshold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
+        const remainingHold = Math.max(0, this._target - progress) * b.actionCycleSeconds
+            / Math.max(0.01, MOTION_TUNING.heldMotionSpeedScale);
+        if (!this._primed && this.intelligence.id === 'extreme' && progress >= 0 && progress < this._target
+            && remainingHold <= threshold * 0.5 && threshold > dt * 2
+            && Math.abs(b.steeringHeadingRatio) < 0.12 && this._targetZ === null && this._safeMinZ === null
+            && !this.planner.wantsJump && (this.planner.action === 'swim' || this.planner.action === 'sprint')) {
+            this._primedSide = opposite(this._side);
+            if (b.canAcceptStroke(this._primedSide)) {
+                this.onObservedPressChanged?.(this._primedSide, true);
+                b.handleKickStroke(this._primedSide, false);
+                this._primed = true; this._primedSeconds = 0;
             }
-            this._laneLockdownAware = true;
         }
-        const inset = 0.22;
-        const safeMin = this._laneLockdownSafeMinZ + inset;
-        const safeMax = this._laneLockdownSafeMaxZ - inset;
-        const currentZ = this.swimmer.node.position.z;
-        let targetZ: number | null = null;
-        if (currentZ < safeMin) {
-            targetZ = safeMin;
-        } else if (currentZ > safeMax) {
-            targetZ = safeMax;
+        if (progress >= 0 && progress < this._target && this._heldSeconds < maxHold) return;
+        this.onObservedPressChanged?.(this._side, false);
+        if (progress >= 0) b.handleStrokeHeld(this._side, false);
+        const distance = b.distance - this._strokeDistance;
+        const energy = this.condition?.energy ?? this.energyTotal;
+        // 仅普通划水样本估算每米成本，跳跃与折返被阶段锁排除。至少一划成本，避开结算时序偏差。
+        if (distance > 0.1 && !b.isUnderwater) {
+            const cost = Math.max(CONDITION_BALANCE.energy.drainPerStroke, this._strokeEnergy - energy);
+            const sample = clamp(cost / Math.max(0.3, distance + b.currentSpeed * (this.intelligence.gap + STROKE_QUALITY_TUNING.minHoldSeconds)), 0.25, 2.5);
+            this._observation.strokeCostPerMeter += (sample - this._observation.strokeCostPerMeter) * 0.12;
         }
-        // Once inside the pending corridor, stop personality wandering from
-        // throwing the AI back into a marked-for-closure lane.
-        if (targetZ === null) {
-            const drift = Math.abs(this.swimmer.steeringHeadingRatio);
-            return drift > 0.08 ? this.swimmer.correctiveStrokeSide() : opposite;
+        this._nextSide = opposite(this._side);
+        const skill = this.intelligence;
+        this._timer = skill.gap * (AI_STROKE_TUNING.gapSecondsSlow / 0.22)
+            * (skill.id === 'extreme' ? 1 : 1 + randomRange(-AI_STROKE_TUNING.gapJitter, AI_STROKE_TUNING.gapJitter));
+        if (b.motor.ability.id === 'breathControl' && this.planner.action !== 'sprint') {
+            const untilNext = 1 / abilityValue('coachMaxStrokeHz', 0.1, 5) - (this._clock - this._lastStrokeStart) - STROKE_QUALITY_TUNING.minHoldSeconds;
+            this._timer = Math.max(this._timer, untilNext);
         }
-        const targetSign = targetZ > currentZ ? 1 : -1;
-        // LEFT turns toward +Z on the outbound lap and -Z after the flip turn.
-        const leftTurnSign = this.swimmer.raceDirection >= 0 ? 1 : -1;
-        return leftTurnSign === targetSign ? StrokeType.LEFT : StrokeType.RIGHT;
-    }
-
-    private updateStroke(sdt: number) {
-        this._holdElapsed += sdt;
-        const progress = this.swimmer.aiActiveStrokeProgress(this._side);
-        // The stroke settled/cleared on its own (e.g. auto-completed): move on.
-        if (progress < 0) {
-            this.scheduleGap();
-            return;
-        }
-        const minHold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
-        const reachedTarget = progress >= this._targetProgress && this._holdElapsed >= minHold;
-        // Exhaustion deliberately slows the action cycle. Keep the time fallback
-        // behind the progress fallback so it does not force a slowed AI to release
-        // before its intended sweet-zone target. The small margin covers one fixed step.
-        const cadenceAwareMaxHold = this.swimmer.actionCycleSeconds
-            * Math.max(0, AI_STROKE_TUNING.maxReleaseProgress)
-            / Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale)
-            + 0.033;
-        const maxHold = Math.max(AI_STROKE_TUNING.maxHoldSeconds, cadenceAwareMaxHold);
-        const safetyRelease = progress >= AI_STROKE_TUNING.maxReleaseProgress
-            || this._holdElapsed >= maxHold;
-        if (reachedTarget || safetyRelease) {
-            this.swimmer.handleStrokeHeld(this._side, false);
-            this.scheduleGap();
-        }
-    }
-
-    // Target release progress for this stroke: the shared sweet-zone center plus
-    // effort-scaled noise. At high effective difficulty the noise collapses to ~0
-    // so the AI hits the perfect center every stroke; at low effort the wide
-    // spread produces less-perfect hits and occasional full misses (tail below the
-    // good zone), exactly like a shaky player.
-    private pickTargetProgress(): number {
-        const center = (STROKE_QUALITY_TUNING.perfectStart + STROKE_QUALITY_TUNING.perfectEnd) * 0.5;
-        const sigma = lerp(AI_STROKE_TUNING.timingSigmaLow, AI_STROKE_TUNING.timingSigmaHigh, this.effectiveDifficulty());
-        const target = center + randomGaussian() * sigma;
-        return clamp(target, 0.05, AI_STROKE_TUNING.maxReleaseProgress);
-    }
-
-    private scheduleGap() {
-        // Decide the next side now that this stroke has settled (its steering has
-        // been applied, so the heading reflects it).
-        this._nextSide = this.pickNextSide(this._side);
-        const base = lerp(AI_STROKE_TUNING.gapSecondsSlow, AI_STROKE_TUNING.gapSecondsFast, this.effectiveDifficulty());
-        // bpmOffset nudges cadence a little: higher offset = slightly tighter gap.
-        const flavor = clamp(1 - this.bpmOffset * 0.002, 0.85, 1.15);
-        const jitter = 1 + randomRange(-AI_STROKE_TUNING.gapJitter, AI_STROKE_TUNING.gapJitter);
-        this._timer = Math.max(0, base * flavor * jitter);
         this._phase = 'gap';
+        if (this._primed && (this.planner.wantsJump || (this.planner.action !== 'swim' && this.planner.action !== 'sprint'))) {
+            this.onObservedPressChanged?.(this._primedSide, false);
+            if (this._primedSeconds < threshold) b.confirmKickStroke();
+            this._primed = false;
+        }
+        if (this._primed) {
+            // 已按下的键完整经过分类时长，下一步继续提升；左右都遵循玩家动作占用检查。
+            this._phase = 'press';
+            this._side = this._primedSide;
+            this._heldSeconds = this._primedSeconds;
+            this._primed = false;
+        }
+    }
+
+    private pickSide(): StrokeType {
+        const b = this.swimmer;
+        if (!isRaceSteeringEnabled()) return this._nextSide;
+        const discipline = this.intelligence.discipline;
+        let targetZ = this._targetZ;
+        if (this._safeMinZ !== null && this._safeMaxZ !== null) {
+            if (!this._safeAware) this._safeAware = randomFloat() < discipline * (this._safeWarning ? 1 : 0.5);
+            if (this._safeAware) targetZ = clamp(b.node.position.z, this._safeMinZ + 0.22, this._safeMaxZ - 0.22);
+        }
+        if (Math.abs(b.steeringHeadingRatio) > 0.18) {
+            return randomFloat() < discipline ? b.correctiveStrokeSide() : this._nextSide;
+        }
+        if (targetZ !== null && Math.abs(targetZ - b.node.position.z) > 0.3) {
+            const sign = targetZ > b.node.position.z ? 1 : -1;
+            return sign === (b.raceDirection >= 0 ? 1 : -1) ? StrokeType.LEFT : StrokeType.RIGHT;
+        }
+        return randomFloat() < (1 - discipline) * 0.08 ? this._side : this._nextSide;
+    }
+
+    // 仅测试或显式调试调用时生成对象，正式比赛帧无日志和诊断分配。
+    debugSnapshot() {
+        return { characterId: this.characterId, level: this.level, intelligence: this.intelligence.id,
+            action: this.planner.action, reason: this.planner.reason, desiredEnergy: this.planner.desiredEnergy,
+            sprintReserve: this.planner.sprintReserve, energy: this.condition?.energy ?? this.energyTotal,
+            heartRate: this.swimmer?.heartRate ?? 80, decisions: this._decisions,
+            swimSeconds: this._swimSeconds, kickSeconds: this._kickSeconds, jumps: this._jumps };
     }
 }
 
-function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * clamp(t, 0, 1);
-}
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
-}
+function opposite(side: StrokeType): StrokeType { return side === StrokeType.LEFT ? StrokeType.RIGHT : StrokeType.LEFT; }
+function clamp(value: number, min: number, max: number): number { return Math.max(min, Math.min(max, value)); }

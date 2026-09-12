@@ -379,7 +379,7 @@ export class SwimmerMotor {
 
     // A leg-kick tap adds visual kick budget and registers cadence. During
     // underwater glide the same cadence propulsion runs without the surface cap.
-    recordKickTap(type: StrokeType): boolean {
+    recordKickTap(type: StrokeType, confirmed = true): boolean {
         const queued = this.queueKickOnly(type);
         if (!queued) {
             return false;
@@ -390,7 +390,13 @@ export class SwimmerMotor {
         // rapid taps whip the legs at the player's finger rhythm. Propulsion comes
         // from the resulting kick FREQUENCY (registerKickCadence), not this tap.
         this.registerKickCadence();
+        if (confirmed) this.confirmKickAbility();
         return true;
+    }
+
+    // 短按松手只确认能力，不重复注入踢腿推进、频率和动画预算。
+    confirmKickAbility() {
+        if (this.isRacing && !this.isArmStrokeActive) this.ability.kick();
     }
 
     // Estimate the current kick frequency from the interval since the last tap.
@@ -400,7 +406,6 @@ export class SwimmerMotor {
     // animation is effectively uncapped. Propulsion applies its own, lower cap
     // (kickCadenceMaxHz) separately in computeKickAcceleration.
     private registerKickCadence() {
-        this.ability.kick();
         const now = this._motionClock;
         if (this._lastKickTapClock >= 0) {
             const interval = now - this._lastKickTapClock;

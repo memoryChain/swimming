@@ -33,13 +33,7 @@ export const SWIMMER_COLLISION = {
     // Gauss-Seidel passes let chains of 3+ stacked swimmers settle with no
     // residual overlap. 8 swimmers -> a handful of passes is plenty.
     separationIterations: 4,
-    // AI-vs-AI pairs only separate SIDEWAYS (lateral / Z), never along the swim
-    // axis (X / distance). Background swimmers are "acting" — they should spread
-    // out so they never clump into a blob, but they must never block each other's
-    // forward progress or pile up behind a slow lane. Any pair involving the
-    // PLAYER still resolves fully on both axes (the impassable "hold your line"
-    // racing feel that actually matters to the player).
-    aiVsAiLateralOnly: true as boolean,
+    // 所有参赛者共用双轴阻挡与击退，不给 AI 之间免阻挡特权。
     // --- Decaying knockback impulse (layered on top of the separation above) ---
     // Master switch for the knockback slide. The instantaneous separation always
     // runs; this only gates the extra decaying impulse.
@@ -79,7 +73,6 @@ const MAX_SWIMMERS = 8;
 const CONTACT_RELEASE_MARGIN = 0.08;
 const POSITION_DIRECTION_QUANTIZATION = 1000;
 const _active: Swimmer[] = [];
-const _isAi: boolean[] = [];
 const _origX: number[] = [];
 const _origZ: number[] = [];
 const _posX: number[] = [];
@@ -128,7 +121,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
         const pos = s.node.position;
         _origX[i] = _posX[i] = pos.x;
         _origZ[i] = _posZ[i] = pos.z;
-        _isAi[i] = s.collisionParticipantIsAI;
         const weight = Number.isFinite(s.weight) ? Math.max(0.1, s.weight) : 1;
         _weight[i] = Math.pow(weight, weightExponent);
         _dir[i] = s.raceDirection;
@@ -168,10 +160,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 if (distSq >= minDistSq) {
                     continue;
                 }
-                // Two AI bodies never block each other on the swim axis: they
-                // only get nudged sideways so the pack spreads out instead of
-                // piling up. Player pairs resolve on both axes.
-                const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
                 anyOverlap = true;
 
                 let nx: number;
@@ -194,10 +182,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 const overlap = minDist - dist;
                 const sepI = totalW > 0 ? overlap * (wj / totalW) : overlap * 0.5;
                 const sepJ = totalW > 0 ? overlap * (wi / totalW) : overlap * 0.5;
-                if (!lateralOnly) {
-                    _posX[i] += nx * sepI;
-                    _posX[j] -= nx * sepJ;
-                }
+                _posX[i] += nx * sepI;
+                _posX[j] -= nx * sepJ;
                 _posZ[i] += nz * sepI;
                 _posZ[j] -= nz * sepJ;
             }
@@ -223,7 +209,6 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 if (distSq >= minDistSq || !_newContact[i * MAX_SWIMMERS + j]) {
                     continue;
                 }
-                const lateralOnly = SWIMMER_COLLISION.aiVsAiLateralOnly && _isAi[i] && _isAi[j];
                 let nx: number;
                 let nz: number;
                 let dist: number;
@@ -268,7 +253,7 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                     (nx * _forwardZ[j] - nz * _forwardX[j]) * softJ,
                     (-nx * _forwardX[j] - nz * _forwardZ[j]) * softJ,
                 );
-                const headOn = !lateralOnly && _dir[i] * _dir[j] < 0;
+                const headOn = _dir[i] * _dir[j] < 0;
                 if (SWIMMER_COLLISION.knockbackEnabled) {
                     // Preserve the real left/right relationship whenever one exists.
                     // A nearly centred head-on hit has no useful Z normal, so choose a

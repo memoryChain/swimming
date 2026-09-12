@@ -96,6 +96,7 @@ export class RaceHudStatusView {
     private readonly identities = new Map<Swimmer, string>();
     private elapsed = 0.1;
     private ready = false;
+    private observedSwimmer: Swimmer | null = null;
     private scale = 1;
 
     constructor(parent: Node, onJump: () => void) {
@@ -168,7 +169,7 @@ export class RaceHudStatusView {
         this.jumpButton.interactable = false;
         this.jump.addComponent(BlockInputEvents);
         this.jump.on(Button.EventType.CLICK, () => {
-            if (!this.root.activeInHierarchy || !this.ready) return;
+            if (!this.jump.activeInHierarchy || !this.ready || this.observedSwimmer) return;
             this.setReady(false);
             onJump();
         });
@@ -207,6 +208,21 @@ export class RaceHudStatusView {
         const rankingY = reservedBottom > 0
             ? -Math.max(0, (reservedBottom - safeTop) / this.scale + 12 - 62) : 0;
         if (this.ranking.position.y !== rankingY) this.ranking.setPosition(0, rankingY, 0);
+    }
+
+    setDolphinSupported(supported: boolean) {
+        if (this.jump.active === supported) return;
+        this.entrance.setPartVisible(this.jump, supported);
+        if (!supported) this.setReady(false);
+    }
+
+    setObservedSwimmer(swimmer: Swimmer | null) {
+        if (this.observedSwimmer === swimmer) return;
+        this.observedSwimmer = swimmer;
+        this.elapsed = 0.1;
+        this.stroke.resetFeedback(!!swimmer);
+        const interactable = this.ready && !swimmer;
+        if (this.jumpButton.interactable !== interactable) this.jumpButton.interactable = interactable;
     }
 
     setVisible(visible: boolean) {
@@ -261,11 +277,13 @@ export class RaceHudStatusView {
         this.fill(this.progress, Math.round(progress * 399) / 399);
         this.fill(this.heartRing, -0.75 * Math.round(clamp(this.displayedHeart / 180) * 100) / 100);
         this.fill(this.energyRing, -0.75 * Math.round(clamp(energyRatio) * 100) / 100);
-        this.fill(this.jumpRing, -0.75 * Math.round(clamp(ultimateRatio) * 100) / 100);
+        if (this.jump.active) {
+            this.fill(this.jumpRing, -0.75 * Math.round(clamp(ultimateRatio) * 100) / 100);
+            this.setReady(canJump && ultimateRatio >= 1);
+        }
         this.tint(this.heartIcon, tier.color);
         this.tint(this.heartRing, tier.color);
         this.active(this.warning, this.displayedHeartTier === 3);
-        this.setReady(canJump && ultimateRatio >= 1);
     }
     showStrokePraise(side: StrokeType | undefined, text: string, color: Color | undefined, combo: number) {
         this.stroke.showPraise(side, text, color, combo);
@@ -282,7 +300,7 @@ export class RaceHudStatusView {
             const slot = this.ranks[i], result = results[i];
             this.active(slot.root, Boolean(result));
             if (!result) { slot.identity = null; slot.path = ''; continue; }
-            const self = result.isPlayer;
+            const self = this.observedSwimmer ? result.swimmer === this.observedSwimmer : result.isPlayer;
             const height = self ? 62 : 32;
             const center = -(y + height / 2);
             if (slot.root.position.y !== center) slot.root.setPosition(0, center, 0);
@@ -319,7 +337,7 @@ export class RaceHudStatusView {
     private setReady(ready: boolean) {
         if (this.ready === ready) return;
         this.ready = ready;
-        this.jumpButton.interactable = ready;
+        this.jumpButton.interactable = ready && !this.observedSwimmer;
         this.active(this.jumpFace, ready);
         this.active(this.jumpCharge, !ready);
         this.tint(this.dolphin, ready ? WHITE : DOLPHIN_WHITE);

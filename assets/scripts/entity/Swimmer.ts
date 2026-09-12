@@ -61,6 +61,8 @@ export class Swimmer extends Component {
     private _goodStrokeQualityCount = 0;
     private _missStrokeQualityCount = 0;
     private readonly _pendingRhythmResults: RhythmResult[] = [];
+    // 调试观战只订阅已结算反馈，不消费或改写玩法队列。
+    public onObservedRhythmResult: ((result: RhythmResult) => void) | null = null;
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
     private _pendingAiConditionStrokes = 0;
@@ -782,7 +784,7 @@ export class Swimmer extends Component {
             && this._phases.canUseArmStroke;
     }
 
-    handleKickStroke(type: StrokeType): void {
+    handleKickStroke(type: StrokeType, confirmed = true): void {
         if (!this._motor.isRacing) {
             return;
         }
@@ -800,15 +802,20 @@ export class Swimmer extends Component {
             return;
         }
         if (this._phases.isDiveGlidePoseActive) {
-            const recorded = this._motor.recordKickTap(type);
+            const recorded = this._motor.recordKickTap(type, confirmed);
             if (recorded) {
                 this.cartoonRig?.triggerKick();
             }
             return;
         }
-        if (this._motor.recordKickTap(type)) {
+        if (this._motor.recordKickTap(type, confirmed)) {
             this.cartoonRig?.triggerKick();
         }
+    }
+
+    confirmKickStroke() {
+        if (this._phases.isUnderwater || this._phases.isFlipTurnActive || this._phases.isDolphinJumpActive) return;
+        this._motor.confirmKickAbility();
     }
 
     handleStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): RhythmResult | null {
@@ -982,6 +989,7 @@ export class Swimmer extends Component {
         }
         const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._strokeQualityCombo);
         result.strokeSide = type;
+        this.onObservedRhythmResult?.(result);
         return result;
     }
 
@@ -1362,7 +1370,7 @@ export class Swimmer extends Component {
     // frame will align the exact post-spend energy.
     // owner 快照已含心率负担与体力扣费；回放与重复/迟到事件不能再次结算。
     applyAcceptedNetDolphinJump(): boolean {
-        if (!this._motor.isRacing || this._motor.ability.id === 'exoskeleton' || !this._phases.tryStartDolphinJump()) {
+        if (!this._motor.isRacing || !this._motor.ability.supportsDolphin || !this._phases.tryStartDolphinJump()) {
             return false;
         }
         this._ultimate.spendDolphin();

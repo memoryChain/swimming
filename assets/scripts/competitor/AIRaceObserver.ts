@@ -1,20 +1,37 @@
 import { getRaceDistance } from '../core/GameBalance';
 import { Swimmer } from '../entity/Swimmer';
 
-// Shared, read-only view of the live race that every AISwimmerController consults
-// to make strategic decisions. One instance is built per race and handed to all
-// AI controllers, so rank/gap queries stay cheap (a single pass over the small
-// roster) and there is one source of truth for "where is everyone".
-//
-// The player is the anchor of AI strategy: rubber-band catch-up and the duel
-// surge are measured against the player specifically, not the abstract field,
-// because this is a player-vs-AI race and the feel that matters is "the pack is
-// hunting me / I'm reeling them in".
+// 共享赛况只暴露当前可见对手；新策略不以本地玩家为锚点。
 export class AIRaceObserver {
     constructor(
         private readonly _player: Swimmer | null,
         private readonly _racers: Swimmer[],
     ) {}
+
+    nearestPhysicalOpponent(swimmer: Swimmer, forwardRange: number, lateralRange: number): Swimmer | null {
+        let best: Swimmer | null = null;
+        let bestDistance = Infinity;
+        const p = swimmer.node.position;
+        for (const other of this._racers) {
+            if (!other || other === swimmer || !other.node.active || !other.isRacing
+                || other.isDolphinJumpActive || other.motor.ability.ignoresSwimmers) continue;
+            const dx = Math.abs(other.node.position.x - p.x);
+            const dz = Math.abs(other.node.position.z - p.z);
+            const metric = dx + dz;
+            if (dx <= forwardRange && dz <= lateralRange && (metric < bestDistance || (metric === bestDistance && best && other.node.position.z < best.node.position.z))) {
+                best = other; bestDistance = metric;
+            }
+        }
+        return best;
+    }
+
+    hasCloseCompetitor(swimmer: Swimmer, range: number): boolean {
+        for (const other of this._racers) {
+            if (other && other !== swimmer && other.node.active && other.isRacing
+                && Math.abs(other.distance - swimmer.distance) <= range) return true;
+        }
+        return false;
+    }
 
     // Course progress the player has covered (metres along the lane).
     get playerDistance(): number {

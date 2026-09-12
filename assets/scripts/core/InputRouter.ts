@@ -7,6 +7,8 @@ export type InputRouterCallbacks = {
     onStrokePressChanged?: (type: StrokeType, pressed: boolean) => void;
     onStrokeHeld: (type: StrokeType, held: boolean, preHeldSeconds?: number) => boolean;
     onKickStroke: (type: StrokeType) => void;
+    // 只在短按松手确认后触发能力；按下反馈不代表玩家选择了独立踢腿。
+    onKickConfirmed?: (type: StrokeType) => void;
     onDiveChargeStart: () => void;
     onDiveRelease: (holdSeconds: number) => void;
     onPrimaryAction: (source?: 'space') => void;
@@ -124,11 +126,14 @@ export class InputRouter {
         this.endPress(type);
     }
 
+    isStrokePressed(type: StrokeType): boolean { return this.pressState(type).active; }
+
     // Begin classifying a press. The leg kick fires right away so the legs react
     // to the player's tap rhythm instantly. If the press is held past
     // STROKE_QUALITY_TUNING.minHoldSeconds, tick() promotes it to an arm stroke.
     private beginPress(type: StrokeType) {
         const press = this.pressState(type);
+        if (press.active) return;
         press.active = true;
         press.startedMs = Date.now();
         press.promoted = false;
@@ -141,14 +146,20 @@ export class InputRouter {
         if (!press.active) {
             return;
         }
-        // The kick already fired on press. Only a promoted (long) press needs to
-        // close out its arm stroke on release; a short press is already done.
-        this._callbacks.onStrokePressChanged?.(type, false);
-        if (press.promoted) {
-            this._callbacks.onStrokeHeld(type, false);
-        }
+        const now = Date.now();
+        const thresholdMs = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds) * 1000;
+        // 即使长按跨过分类边界后直接松手、期间没有 tick，也不能误判为短按潜水。
+        this.promoteIfDue(type, now, thresholdMs);
+        const promoted = press.promoted;
+        const confirmedKick = !promoted && now - press.startedMs < thresholdMs;
         press.active = false;
         press.promoted = false;
+        this._callbacks.onStrokePressChanged?.(type, false);
+        if (promoted) {
+            this._callbacks.onStrokeHeld(type, false);
+        } else if (confirmedKick) {
+            this._callbacks.onKickConfirmed?.(type);
+        }
     }
 
     private pressState(type: StrokeType) {
