@@ -23,6 +23,7 @@ class Component { get isValid() { return this.node?.isValid; } }
 class UITransform extends Component {
     contentSize = { width: 0, height: 0 };
     setContentSize(width, height) { this.contentSize = { width, height }; }
+    convertToNodeSpaceAR(input, out) { const p = this.node.getWorldPosition({}); out.x = input.x - p.x; out.y = input.y - p.y; out.z = input.z - p.z; return out; }
 }
 class Label extends Component {
     static HorizontalAlign = { CENTER: 0, LEFT: 1, RIGHT: 2 }; static VerticalAlign = { CENTER: 0 };
@@ -57,6 +58,8 @@ class Node {
     setParent(p) { this.parent = p; p.children.push(this); }
     addComponent(C) { const c = new C(); c.node = this; this.components.push(c); return c; }
     getComponent(C) { return this.components.find(c => c instanceof C); }
+    get activeInHierarchy() { return this.active && this.isValid && (!this.parent || this.parent.activeInHierarchy); }
+    getWorldPosition(out) { out.x = this.position.x; out.y = this.position.y; out.z = this.position.z; for (let p = this.parent; p; p = p.parent) { out.x += p.position.x; out.y += p.position.y; out.z += p.position.z; } return out; }
     setPosition(x, y, z = 0) { this.position = { x, y, z }; }
     setScale(x, y, z = 1) { this.scale = { x, y, z }; }
     on(event, fn) { (this.handlers[event] ??= []).push(fn); }
@@ -354,6 +357,13 @@ test('本地预览与真实房号切换不替换字体或重建，赛制数字�
     assert.equal(find(v.root, 'DistanceUnit').getComponent(Label).string, '米');
     assert.equal(find(v.root, 'ModeCheck1').active, true); assert.equal(find(v.root, 'ModeCheck0').active, false);
     assert.ok(find(v.root, 'ModeDistance1').getComponent(Label).color.equals(new Color(0, 179, 149)));
+    assert.deepEqual([0, 1, 2].map(i => find(v.root, `ModeDistance${i}`).getComponent(Label).string), ['200', '200', '400']);
+    for (const mode of ['championship', 'beginner', 'competitive', 'championship']) {
+        v.update(state({ mode }));
+        assert.equal(find(v.root, 'Distance').getComponent(Label).string, mode === 'championship' ? '400' : '200');
+        assert.equal(nodes(v.root).length, count, '切换距离不得重建房间');
+    }
+
 });
 test('准备失败保留原状态，重试成功后主按钮才切换', async () => {
     const f = flow(); net.updateReady = async () => { throw new Error('offline'); };
@@ -472,4 +482,156 @@ test('缺少平台准备接口不得静默报告成功', async () => {
     const { WechatGameRoom } = load(path.join(root, 'assets/scripts/net/WechatGameRoom.ts'));
     const room = new WechatGameRoom(); room._gsm = {};
     await assert.rejects(room.updateReady(true));
+});
+
+function attributeTipsHarness() {
+    const overlay = new Node('PopupLayer');
+    const identityCamera = {
+        worldToScreen(p, out) { Object.assign(out, p); return out; },
+        screenToWorld(p, out) { Object.assign(out, p); return out; },
+    };
+    overlay.addComponent(Canvas).cameraComponent = identityCamera;
+    const pending = [];
+    const factory = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
+    const resources = load(path.join(root, 'assets/scripts/core/ResourcePaths.ts'));
+    const file = path.join(root, 'assets/scripts/ui/CharacterAttributeTips.ts');
+    const imports = {
+        cc: { ...cc, Vec3: class { x = 0; y = 0; z = 0; } },
+        '../core/ResourcePaths': resources,
+        './RuntimeUiFactory': factory,
+        './UILayers': { UILayer: { Popup: 3 }, getUILayer: () => overlay },
+        './ProjectUiFonts': stubs['ui/ProjectUiFonts'],
+        './AvatarUiAssets': { loadAvatarUiSpriteFrame: (path, done) => pending.push({ path, done }) },
+    };
+    const m = { exports: {} };
+    vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS } }).outputText,
+        { module: m, exports: m.exports, require: id => imports[id] });
+    return { ...m.exports, overlay, pending, factory, resources, identityCamera };
+}
+
+test('属性tips复用联机资源，开关不新增节点或监听，关闭阻断及迟到资源释放正确', () => {
+    const h = attributeTipsHarness(), canvas = new Node('canvas');
+    canvas.addComponent(Canvas).cameraComponent = h.identityCamera;
+    const anchor = h.factory.makeTouchArea('StatRow', canvas, 284, 42);
+    const before = resizeListeners.get('canvas-resize')?.size ?? 0;
+    const tips = new h.CharacterAttributeTips(canvas);
+    assert.equal(h.pending[0].path, h.resources.RESOURCE_PATHS.onlineRoomUi.popup);
+    assert.equal(tips.root.active, false);
+    const count = nodes(tips.root).length;
+    const panel = find(tips.root, 'AttributeTipsPanel');
+    assert.ok(panel.getComponent(Button), '面板必须消费触摸，阻止点击穿透');
+    for (const width of [1280, 1600, 2532 / 1170 * 720]) {
+        visibleSize.width = width;
+        for (const x of [-width / 2 + 20, width / 2 - 20]) {
+            anchor.setPosition(x, 80);
+            for (let i = 0; i < 30; i++) {
+                tips.show(i % 3, anchor);
+                const info = h.CHARACTER_ATTRIBUTE_TIPS[i % 3];
+                assert.equal(find(tips.root, 'AttributeTipsTitle').getComponent(Label).string, info.title);
+                assert.equal(find(tips.root, 'AttributeTipsSummary').getComponent(Label).string, info.summary);
+                assert.equal(find(tips.root, 'AttributeTipsDetail').getComponent(Label).string, info.detail);
+                assert.equal(tips.root.active, true);
+                assert.ok(Math.abs(panel.position.x) + 208 <= width / 2 - 16);
+                assert.ok(Math.abs(panel.position.y) + 132 <= 360 - 16);
+                panel.click(); assert.equal(tips.root.active, true);
+                find(tips.root, i % 2 ? 'CloseAttributeTips' : 'DismissAttributeTips').click();
+                assert.equal(tips.root.active, false);
+                assert.equal(nodes(tips.root).length, count);
+                assert.equal(h.pending.length, 1);
+            }
+        }
+    }
+    anchor.active = false; tips.show(0, anchor); assert.equal(tips.root.active, false);
+    anchor.active = true; tips.show(0, anchor);
+    for (const fn of resizeListeners.get('canvas-resize')) fn();
+    assert.equal(tips.root.active, false);
+    tips.dispose(); tips.dispose();
+    h.pending[0].done({ isValid: true });
+    assert.equal(panel.getComponent(Sprite).spriteFrame, null, '销毁后晚到资源不回写');
+    assert.equal(resizeListeners.get('canvas-resize').size, before);
+    visibleSize.width = 1280;
+});
+
+test('主界面和角色页三行真实绑定同一tips，点击不升级或重建预览，离开时拒绝新弹框', () => {
+    const h = attributeTipsHarness();
+    const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
+    const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
+    const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'PrepareRaceFlow');
+    const methods = cls.members.filter(n => ['buildReadyCharacterPanel', 'buildAttributeContent', 'bindAttributeTip'].includes(n.name?.getText(source)));
+    assert.equal(methods.length, 3);
+    const makeArt = (name, parent, ...args) => h.factory.makeUiNode(name, parent);
+    const makeBoundLabel = (name, parent, text, size, color, w, height, x, y) => {
+        const node = h.factory.makeLabel(name, parent, text, size, color); node.setPosition(x, y);
+        node.getComponent(UITransform).setContentSize(w, height); return node.getComponent(Label);
+    };
+    const Harness = vm.runInNewContext(ts.transpileModule(`class Harness { ${methods.map(n => n.getText(source)).join('\n')} }`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText + '; Harness', {
+        ...cc, ...h.factory, ...h.resources, CharacterAttributeTips: h.CharacterAttributeTips,
+        Rect: class {}, WHITE: new Color(), DARK_TEXT: new Color(),
+        stylePsdTitleLabel() {}, stylePsdRuntimeLabel() {}, makeBoundLabel,
+        makeRaceTextureSprite: makeArt, makeRaceTextureRegionSprite: makeArt,
+        makeRaceTextureButton: (name, parent) => h.factory.makeTouchArea(name, parent, 100, 50),
+    });
+    const f = new Harness();
+    Object.assign(f, { _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
+    const ready = new Node('Ready'), attributes = new Node('Attributes');
+    ready.addComponent(Canvas).cameraComponent = h.identityCamera;
+    attributes.addComponent(Canvas).cameraComponent = h.identityCamera;
+    f.buildReadyCharacterPanel(ready); f.buildAttributeContent(attributes);
+    for (const parent of [ready, attributes]) {
+        const count = nodes(parent).length;
+        for (let i = 0; i < 3; i++) {
+            const hit = find(parent, `AttributeTipHit${i}`);
+            assert.ok(hit.getComponent(UITransform).contentSize.width >= 284);
+            assert.equal(hit.handlers.click.length, 1);
+            hit.click(); assert.equal(find(f._attributeTips.root, 'AttributeTipsTitle').getComponent(Label).string, h.CHARACTER_ATTRIBUTE_TIPS[i].title);
+            f._attributeTips.hide(); assert.equal(nodes(parent).length, count);
+        }
+    }
+    assert.equal(h.pending.length, 1, '两个页面只创建一个tips实例');
+    f._leaving = true; find(ready, 'AttributeTipHit0').click(); assert.equal(f._attributeTips.root.active, false);
+    f._attributeTips.dispose();
+});
+
+
+test('属性tips跨相机投影：主画布原点和覆盖层原点不同，弹框仍贴着左右属性行', () => {
+    const h = attributeTipsHarness();
+    const canvas = new Node('MainCanvas');
+    const anchor = h.factory.makeTouchArea('AttributeRow', canvas, 284, 42);
+    let sourceCalls = 0, popupCalls = 0;
+    // 模拟主 UI 相机在(640,360)，覆盖层相机在原点；屏幕投影还包含缩放和偏移。
+    canvas.addComponent(Canvas).cameraComponent = {
+        worldToScreen(p, out) {
+            sourceCalls++;
+            out.x = (p.x - canvas.position.x) * 0.8 + 512;
+            out.y = (p.y - canvas.position.y) * 0.8 + 288;
+            out.z = 0.5; return out;
+        },
+    };
+    h.overlay.getComponent(Canvas).cameraComponent = {
+        screenToWorld(p, out) {
+            popupCalls++;
+            out.x = (p.x - 512) / 0.8 + h.overlay.position.x;
+            out.y = (p.y - 288) / 0.8 + h.overlay.position.y;
+            out.z = 0; return out;
+        },
+    };
+    const tips = new h.CharacterAttributeTips(canvas);
+    try {
+        for (const width of [1280, 1600, 2532 / 1170 * 720]) {
+            visibleSize.width = width;
+            for (const [mainX, mainY, popupX, popupY] of [[640, 360, 0, 0], [960, 540, -120, 80]]) {
+                canvas.setPosition(mainX, mainY); h.overlay.setPosition(popupX, popupY);
+                for (const [x, y] of [[-446, 107], [-446, 62], [-446, 17], [447, 107.5], [447, 63.5], [447, 18]]) {
+                    anchor.setPosition(x, y, 4); tips.show(1, anchor);
+                    const panel = find(tips.root, 'AttributeTipsPanel');
+                    const limit = width / 2 - 208 - 16;
+                    assert.ok(Math.abs(panel.position.x - Math.max(-limit, Math.min(limit, x + 44))) < 1e-6);
+                    assert.ok(Math.abs(panel.position.y - (y - 154)) < 1e-6, '弹框顶部必须落在所点行下方');
+                }
+            }
+        }
+        assert.equal(sourceCalls, 36); assert.equal(popupCalls, sourceCalls);
+        canvas.getComponent(Canvas).cameraComponent = null;
+        tips.show(0, anchor); assert.equal(tips.root.active, false, '缺少渲染相机不回退到错误的世界坐标');
+    } finally { tips.dispose(); visibleSize.width = 1280; }
 });

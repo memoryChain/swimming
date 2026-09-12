@@ -44,6 +44,7 @@ export class OnlineRoomView {
     private readonly roomNumberLocal: Label;
     private readonly count: Label;
     private readonly modeText: Label;
+    private readonly distanceText: Label;
     private readonly modePermission: Label;
     private readonly modeArrow: Label;
     private readonly hint: Label;
@@ -99,7 +100,7 @@ export class OnlineRoomView {
         this.modePermission.color = MUTED;
         this.picture(p, 'ModeBackground', ART.modePanel, 102, 514, 328, 66);
         this.modeText = this.text(p, 'Mode', '', 166, 525, 123, 34, 22, false);
-        this.text(p, 'Distance', String(getRaceDistance()), 310, 526, 50, 34, 23, false, 'latin');
+        this.distanceText = this.text(p, 'Distance', '', 310, 526, 50, 34, 23, false, 'latin');
         this.text(p, 'DistanceUnit', '米', 360, 526, 24, 34, 23, false);
         this.modeArrow = this.text(p, 'Expand', '▲', 394, 525, 26, 34, 14);
         this.touch(p, 'ModeHit', 105, 518, 320, 54, () => {
@@ -124,7 +125,7 @@ export class OnlineRoomView {
         ROOM_MODES.forEach((mode, i) => {
             const y = 357 + i * 48;
             this.modeLabels.push(this.text(this.drawer, `ModeOption${i}`, mode.label, 124, y, 150, 34, 21, false));
-            this.modeDistances.push(this.text(this.drawer, `ModeDistance${i}`, String(getRaceDistance()), 316, y, 48, 34, 21, true, 'latin'));
+            this.modeDistances.push(this.text(this.drawer, `ModeDistance${i}`, String(getRaceDistance(ROOM_MODES[i].id)), 316, y, 48, 34, 21, true, 'latin'));
             this.modeUnits.push(this.text(this.drawer, `ModeUnit${i}`, '米', 364, y, 23, 34, 21, false));
             this.modeChecks.push(this.text(this.drawer, `ModeCheck${i}`, '✓', 393, y, 22, 34, 21));
             this.touch(this.drawer, `ChooseMode${i}`, 109, y, 313, 42, () => {
@@ -172,6 +173,7 @@ export class OnlineRoomView {
             state.roomNumber.replace(/^(\d{3})(\d{3})$/, '$1 $2'));
         assign(this.count, `${state.members.length}/8`);
         assign(this.modeText, ROOM_MODES.find(m => m.id === state.mode)!.label);
+        assign(this.distanceText, String(getRaceDistance(state.mode)));
         assign(this.modePermission, state.isHost ? '仅房主可切换' : '房主设置');
         visible(this.modeArrow.node, state.isHost);
         if (!state.isHost || state.busy) visible(this.drawer, false);

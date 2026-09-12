@@ -341,7 +341,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('difficulty.championship.aiDifficultyScale', '统一AI倍率', '所有入口共用原世锦赛 AI 档位。1 表示使用原始 AI 阵容难度。', () => getRaceDifficultyConfig('championship').aiDifficultyScale, (v) => getRaceDifficultyConfig('championship').aiDifficultyScale = v, 0.02, 0.1, 1.5, 2),
             control('difficulty.championship.rubberBandScale', '统一AI追赶倍率', '所有入口共用的 AI 追赶强度倍率。', () => getRaceDifficultyConfig('championship').rubberBandScale, (v) => getRaceDifficultyConfig('championship').rubberBandScale = v, 0.05, 0, 2.5, 2),
             control('difficulty.championship.duelScale', '统一AI缠斗倍率', '所有入口共用的 AI 贴身缠斗发力倍率。', () => getRaceDifficultyConfig('championship').duelScale, (v) => getRaceDifficultyConfig('championship').duelScale = v, 0.05, 0, 2.5, 2),
-            control('difficulty.championship.weaveScale', '统一AI蛇形倍率', '所有入口共用的 AI 蛇形倾向倍率；手感调试入口关闭转向偏移。', () => getRaceDifficultyConfig('championship').weaveScale, (v) => getRaceDifficultyConfig('championship').weaveScale = v, 0.05, 0, 3, 2),
+            control('difficulty.championship.weaveScale', '统一AI蛇形倍率', '所有入口共用的 AI 蛇形倾向倍率；标准竞速入口关闭转向偏移。', () => getRaceDifficultyConfig('championship').weaveScale, (v) => getRaceDifficultyConfig('championship').weaveScale = v, 0.05, 0, 3, 2),
         ],
     },
     {

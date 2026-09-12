@@ -293,7 +293,7 @@ test('三个入口的 AI 阵容强度一致，换局后体重匹配模型，同�
     assert.deepEqual(snapshots[0], snapshots[2]);
 });
 
-test('调试入口连续同侧划水不偏航，其余入口仍转向，切换不污染全局参数', () => {
+test('标准竞速入口连续同侧划水不偏航，其余入口仍转向，切换不污染全局参数', () => {
     const h = heldStrokeFixture();
     const { setRaceDifficulty, getRaceModeTitle } = h.loadModule('core/GameBalance');
     const steering = h.loadModule('core/SteeringTuning').STEERING_TUNING;
@@ -309,7 +309,7 @@ test('调试入口连续同侧划水不偏航，其余入口仍转向，切换�
             for (let i = 0; i < 40; i++) h.motor.update(1 / 60, { isAI: false });
         }
         if (mode === 'beginner') {
-            assert.equal(getRaceModeTitle(), '手感调试');
+            assert.equal(getRaceModeTitle(), '标准竞速');
             assert.equal(h.motor.heading, 0);
             assert.equal(h.motor.headingTurnRate, 0);
             assert.equal(h.motor.lateralOffset, 0);
@@ -323,6 +323,32 @@ test('调试入口连续同侧划水不偏航，其余入口仍转向，切换�
         }
     }
     assert.deepEqual(steering, original);
+});
+
+test('入口赛程切换同步运动上限和折返点，预览其他模式不污染当前比赛', () => {
+    const h = heldStrokeFixture();
+    const { setRaceDifficulty, getRaceDistance } = h.loadModule('core/GameBalance');
+    const { RaceCourseLayout } = h.loadModule('venue/RaceCourseLayout');
+    const { DEFAULT_POOL_DEFINITION } = h.loadModule('venue/VenueConfig');
+    const layout = new RaceCourseLayout(DEFAULT_POOL_DEFINITION);
+    for (const [mode, distance] of [['beginner', 200], ['championship', 400], ['competitive', 200], ['championship', 400], ['beginner', 200]]) {
+        setRaceDifficulty(mode);
+        assert.equal(getRaceDistance(), distance);
+        assert.equal(getRaceDistance('championship'), 400);
+        assert.equal(getRaceDistance(), distance, '房间预览不得更改运行中的赛程');
+        h.motor.startRace(0, 2);
+        h.motor.setFlipTurnDistance(300);
+        assert.equal(h.motor.distance, Math.min(300, distance));
+        h.motor.setFlipTurnDistance(500);
+        assert.equal(h.motor.distance, distance);
+        const walls = [];
+        for (let d = 0; d < distance; d += 50) {
+            const next = layout.nextInternalTurnDistance(d, getRaceDistance());
+            if (next !== null) walls.push(next);
+        }
+        assert.deepEqual(walls, distance === 400 ? [50, 100, 150, 200, 250, 300, 350] : [50, 100, 150]);
+        assert.equal(layout.nextInternalTurnDistance(distance - 1, getRaceDistance()), null, '终点必须触壁完赛而非再次翻滚');
+    }
 });
 
 test('三个入口的玩家与 AI 共用轮速，AI 策略仍统一最高档', () => {

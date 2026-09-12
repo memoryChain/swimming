@@ -27,7 +27,8 @@
 // 保留 v15 的泳道方向与网络字段布局。
 // 版本39：技巧统一增强完整手臂推进，移除技巧连击超速映射，重分配角色技巧。
 // 版本40：技巧初始档位拉开为84～114，成长曲线和其他角色属性不变。
-export const NET_RACE_PROTOCOL_VERSION = 40;
+// 版本41：三个入口依次为标准竞速200米、狂野200米、狂野400米，统一最高档AI。
+export const NET_RACE_PROTOCOL_VERSION = 41;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

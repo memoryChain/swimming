@@ -14,7 +14,7 @@ import {
     Texture2D,
     UITransform,
 } from 'cc';
-import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
+import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, getRaceDistance, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
@@ -37,13 +37,14 @@ import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview'
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolveCharacterDisplayStats } from '../progression/PlayerBalanceOverrides';
-import { fitFullScreenBackgroundCover, makeLabel, makeRect, makeRoundedRect, makeScreenEdgeGroup, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenBackgroundCover, makeLabel, makeRect, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
 import type { PlayerProfile } from '../backend/PlayerProfile';
 import { showToast } from './Toast';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import { LobbyUiMotion } from './LobbyUiMotion';
+import { CharacterAttributeTips } from './CharacterAttributeTips';
 
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
@@ -114,6 +115,7 @@ export class PrepareRaceFlow {
     private _upgradePending = false;
     private _motion = new LobbyUiMotion();
     private _leaving = false;
+    private _attributeTips: CharacterAttributeTips | null = null;
     private _hasShownReady = false;
 
     private readonly _raceModeCards: RaceModeCardView[] = [];
@@ -194,6 +196,8 @@ export class PrepareRaceFlow {
     }
 
     dispose(): void {
+        this._attributeTips?.dispose();
+        this._attributeTips = null;
         this._motion.dispose();
         this._leaving = true;
         PlayerData.offChange(this._onProfileChange);
@@ -217,6 +221,7 @@ export class PrepareRaceFlow {
     }
 
     private replaceContent(name: string): void {
+        this._attributeTips?.hide();
         // 切换页面才替换结构；选择状态变化不进入这里，3D 预览单独保留。
         this._motion.dispose();
         this._motion = new LobbyUiMotion();
@@ -230,6 +235,7 @@ export class PrepareRaceFlow {
     private leaveCurrentScreen(done: () => void): void {
         if (this._leaving || !this._content?.isValid) return;
         this._leaving = true;
+        this._attributeTips?.hide();
         this._previewRotateTouchId = null;
         const content = this._content;
         for (const button of content.getComponentsInChildren(Button)) {
@@ -310,7 +316,7 @@ export class PrepareRaceFlow {
         this._readyLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 64, 28, -335, 165);
         stylePsdRuntimeLabel(this._readyLevel, 'Arial Black', true, 22);
 
-        const statNames = ['体力', '技巧', '爆发'];
+        const statNames = ['体力', '技巧', '爆发力'];
         const statY = [107, 62, 17];
         for (let index = 0; index < statNames.length; index++) {
             const statName = makeBoundLabel(`StatName${index}`, parent, statNames[index], 18, uiColor(31, 43, 62), 92, 28, -488, statY[index], Label.HorizontalAlign.LEFT);
@@ -318,6 +324,7 @@ export class PrepareRaceFlow {
             const statValue = makeBoundLabel(`StatValue${index}`, parent, '', 19, uiColor(31, 43, 62), 82, 28, -357, statY[index], Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(statValue, 'Arial Black', true, 24);
             this._readyStats.push(statValue);
+            this.bindAttributeTip(parent, index, -446, statY[index], 290, 42);
         }
 
         makeRaceTextureSprite('ReadySkillCard', parent, RESOURCE_PATHS.lobbyUi.skillCard, 320, 145, -445, -98.5, 2);
@@ -335,6 +342,16 @@ export class PrepareRaceFlow {
         stylePsdTitleLabel(manageLabel, 32);
         this._motion.bindButton(manage);
         manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
+    }
+
+    private bindAttributeTip(parent: Node, index: number, x: number, y: number, width: number, height: number): void {
+        const hit = makeTouchArea(`AttributeTipHit${index}`, parent, width, height);
+        hit.setPosition(x, y, 4);
+        hit.on(Button.EventType.CLICK, () => {
+            if (this._leaving || !hit.isValid || !hit.activeInHierarchy) return;
+            if (!this._attributeTips) this._attributeTips = new CharacterAttributeTips(this._canvasNode);
+            this._attributeTips.show(index, hit);
+        });
     }
 
     private refreshReadyCharacterInfo(): void {
@@ -569,6 +586,7 @@ export class PrepareRaceFlow {
     private selectDraftCharacter(characterId: PlayerCharacterId): void {
         if (this._draftCharacterId === characterId) return;
         const previous = this._draftCharacterId;
+        this._attributeTips?.hide();
         this._draftCharacterId = characterId;
         this.refreshCharacterCard(previous);
         this.refreshCharacterCard(characterId);
@@ -654,6 +672,7 @@ export class PrepareRaceFlow {
 
     private selectInspectorTab(tab: CharacterInspectorTab, force: boolean): void {
         if (!force && this._activeInspectorTab === tab) return;
+        this._attributeTips?.hide();
         this._activeInspectorTab = tab;
         setNodeActive(this._attributeContent, tab === 'attributes');
         setNodeActive(this._appearanceContent, tab === 'appearance');
@@ -673,7 +692,7 @@ export class PrepareRaceFlow {
         makeRaceTextureSprite('CharacterLevelPill', parent, RESOURCE_PATHS.characterUi.levelPill, 64, 28, 95.5, 143, 1);
         this._inspectorLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 54, 24, 95.5, 143);
         stylePsdRuntimeLabel(this._inspectorLevel, 'Arial Black', true, 20);
-        const names = ['体力', '技巧', '爆发'];
+        const names = ['体力', '技巧', '爆发力'];
         const iconPaths = [
             RESOURCE_PATHS.characterUi.statHp,
             RESOURCE_PATHS.characterUi.statTechnique,
@@ -695,6 +714,7 @@ export class PrepareRaceFlow {
             const next = makeBoundLabel(`Next${index}`, parent, '', 19, uiColor(56, 208, 29), 62, 28, 78.5, y, Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(next, 'Arial Black', true, 24);
             this._inspectorNextStats.push(next);
+            this.bindAttributeTip(parent, index, -15.5, y, 284, 42);
         }
         makeRaceTextureSprite('SkillHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -53, 1);
         const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 76, 24, -119.5, -53, Label.HorizontalAlign.LEFT);
@@ -988,9 +1008,7 @@ function raceDifficultyTitle(difficulty: RaceDifficulty): string {
 }
 
 function raceDifficultyDistance(difficulty: RaceDifficulty): string {
-    if (difficulty === 'beginner') return '直线';
-    if (difficulty === 'championship') return '200米';
-    return '100米';
+    return `${getRaceDistance(difficulty)}米`;
 }
 
 function stylePsdRuntimeLabel(label: Label, fontFamily: string, bold: boolean, lineHeight: number): void {

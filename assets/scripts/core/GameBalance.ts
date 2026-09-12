@@ -31,17 +31,18 @@ export type RaceDifficultyConfig = {
 
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
     // 保留入口 ID 兼容存档和联机模式字段；旧 AI 数值保留，实际 AI 统一读世锦赛档。
-    { id: 'beginner', label: '手感调试', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
-    // 竞技入口保留转向；当前未启用动态封道。
-    { id: 'competitive', label: '竞技', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: false },
-    // 世锦赛：快、咬得死、路线干净专业 → 领先也会被反复追平、缠斗。
-    { id: 'championship', label: '世锦赛', aiDifficultyScale: 1, rubberBandScale: 1.6, duelScale: 1.7, weaveScale: 0.45, laneLockdownEnabled: false },
+    { id: 'beginner', label: '标准竞速', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
+    // 狂野 200 米入口保留转向；当前未启用动态封道。
+    { id: 'competitive', label: '狂野模式', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: false },
+    // 狂野 400 米入口；同时保留原最高档 AI 配置，供三个入口共用。
+    { id: 'championship', label: '狂野模式', aiDifficultyScale: 1, rubberBandScale: 1.6, duelScale: 1.7, weaveScale: 0.45, laneLockdownEnabled: false },
 ];
 
 let currentRaceDifficulty: RaceDifficulty = 'competitive';
 
-export function getRaceDistance(): number {
-    return RACE_DISTANCE;
+// 入口共用赛程映射；传入模式供准备页/房间预览，省略时读取当前比赛。
+export function getRaceDistance(mode = currentRaceDifficulty): number {
+    return mode === 'championship' ? 400 : RACE_DISTANCE;
 }
 
 export function getRaceDifficulty(): RaceDifficulty {
@@ -70,9 +71,7 @@ export function isRaceSteeringEnabled(): boolean {
 }
 
 export function getRaceModeTitle(mode = currentRaceDifficulty): string {
-    if (mode === 'beginner') return '手感调试';
-    if (mode === 'championship') return '超级世锦赛';
-    return '竞技泳道';
+    return getRaceDifficultyConfig(mode).label;
 }
 
 export function raceDistanceToCourseX(distance: number): number {

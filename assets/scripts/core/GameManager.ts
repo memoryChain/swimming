@@ -80,7 +80,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isRaceSteeringEnabled, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, SWIMMER_BALANCE } from './GameBalance';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -2112,7 +2112,7 @@ export class GameManager extends Component {
         this._uiController?.raceHudStatus?.setRoster(hudRoster);
         this._preRaceIntroPanel.setRaceInfo({
             event: `${getRaceDistance()}米自由泳`,
-            format: isRaceSteeringEnabled() ? '标准竞速赛' : '直线手感调试',
+            format: getRaceModeTitle(),
             details: `${entries.length}人竞速  ·  ${this._netSession ? '联机对战' : `${getRaceModeTitle()} · 最强档AI`}`,
             rule: '率先完成全程者获胜',
         });
