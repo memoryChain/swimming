@@ -1,3 +1,5 @@
+import { CharacterAbilityState } from './CharacterAbilityState';
+import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
 import { perfectWidthScale, HeartRateTraitId } from '../core/ConditionBalance';
 import { getRaceDistance, isRaceSteeringEnabled, TECHNIQUE_BALANCE, SWIMMER_BALANCE } from '../core/GameBalance';
@@ -89,6 +91,12 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    readonly ability = new CharacterAbilityState();
+
+    setCharacterAbility(id: CharacterAbilityId) {
+        this.ability.configure(id);
+        this._heartRate.setBreathControl(id === 'breathControl');
+    }
     private readonly _previewRanges: ReleaseRanges = { good: { start: 0, end: 1 }, perfect: { start: 0, end: 1 } };
     private readonly _heartRate = new StrokeHeartRateModel();
     private _authoritativeHeartRate = -1;
@@ -174,6 +182,7 @@ export class SwimmerMotor {
 
     stopRace() {
         this._isRacing = false;
+        this.ability.reset();
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
         this._axialRoll.reset();
@@ -193,12 +202,14 @@ export class SwimmerMotor {
             this._axialRoll.reset();
         }
         if (active) {
+            this.ability.suspend();
             this._collisionPitch.reset();
             this.collisionSoftness.reset();
         }
     }
 
     beginFlipTurnPhase() {
+        this.ability.suspend();
         // The flip turn is an input-locked movement phase. Discard any held or
         // queued stroke so it cannot resume halfway through the wall push.
         // A knockback impulse buffered just before the turn would freeze during
@@ -389,6 +400,7 @@ export class SwimmerMotor {
     // animation is effectively uncapped. Propulsion applies its own, lower cap
     // (kickCadenceMaxHz) separately in computeKickAcceleration.
     private registerKickCadence() {
+        this.ability.kick();
         const now = this._motionClock;
         if (this._lastKickTapClock >= 0) {
             const interval = now - this._lastKickTapClock;
@@ -427,14 +439,15 @@ export class SwimmerMotor {
         const fade = this._glidePhaseActive
             ? 1
             : clamp01(
-                (SWIMMER_BALANCE.kickMaxSpeed - this._currentSpeed)
+                (SWIMMER_BALANCE.kickMaxSpeed * (this.ability.id === 'powerKick' ? abilityValue('legKickSpeed', 0.1, 2) : 1) - this._currentSpeed)
                     / Math.max(0.01, SWIMMER_BALANCE.kickCeilingBand),
             );
         if (fade <= 0) {
             return 0;
         }
         const propulsionHz = Math.min(this._kickCadenceHz, SWIMMER_BALANCE.kickCadenceMaxHz);
-        return SWIMMER_BALANCE.kickAccelPerHz * propulsionHz * fade;
+        return SWIMMER_BALANCE.kickAccelPerHz * propulsionHz * fade
+            * (this.ability.id === 'powerKick' ? abilityValue('legKickAcceleration', 0.1, 3) : 1);
     }
 
     setStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): StrokeQualityResult | null {
@@ -457,6 +470,8 @@ export class SwimmerMotor {
         }
 
         this._heartRate.tick(dt);
+        if (this._glidePhaseActive) this.ability.suspend();
+        else this.ability.tick(dt, this.isActiveStrokeHeld(StrokeType.LEFT) || this.isActiveStrokeHeld(StrokeType.RIGHT));
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
@@ -496,8 +511,9 @@ export class SwimmerMotor {
             this.armCatchSupportForSide(StrokeType.LEFT),
             this.armCatchSupportForSide(StrokeType.RIGHT),
             this._kickCadenceHz,
+            this.ability.recoveryScale,
         );
-        this._collisionPitch.update(dt, !this._glidePhaseActive);
+        this._collisionPitch.update(dt, !this._glidePhaseActive, this.ability.recoveryScale);
         this.collisionSoftness.update(dt);
         const raceDistance = getRaceDistance();
         // Forward race progress uses only the along-lane component; veering with a
@@ -533,6 +549,7 @@ export class SwimmerMotor {
 
     private resetRaceState(initialDistance = 0) {
         this._heartRate.reset();
+        this.ability.reset();
         this._authoritativeHeartRate = -1;
         this.clearKnockback();
         this._distance = Math.max(0, initialDistance);
@@ -592,7 +609,8 @@ export class SwimmerMotor {
     }
 
     get burstWallLaunchSpeedScale(): number {
-        return this._playerBalance?.burstWallLaunchSpeedScale ?? 1;
+        return (this._playerBalance?.burstWallLaunchSpeedScale ?? 1)
+            * (this.ability.id === 'wallKick' ? abilityValue('wallLaunch', 0.1, 3) : 1);
     }
 
     private get _effectiveMaxSpeed(): number {
@@ -634,13 +652,17 @@ export class SwimmerMotor {
         return this.fillReleaseRanges({ good: { start: 0, end: 1 }, perfect: { start: 0, end: 1 } }, 1);
     }
 
+    private characterPerfectWidth(heartRate: number): number {
+        return perfectWidthScale(heartRate) * this.ability.perfectWidth;
+    }
+
     private fillReleaseRanges(out: ReleaseRanges, width: number): ReleaseRanges {
         const tuning = STROKE_QUALITY_TUNING;
         out.good.start = clamp01(Math.min(tuning.goodStart, tuning.goodEnd));
         out.good.end = clamp01(Math.max(tuning.goodStart, tuning.goodEnd));
         const start = clamp(Math.min(tuning.perfectStart, tuning.perfectEnd), out.good.start, out.good.end);
         const end = clamp(Math.max(tuning.perfectStart, tuning.perfectEnd), out.good.start, out.good.end);
-        const center = (start + end) * 0.5, half = (end - start) * width * 0.5;
+        const center = (start + end) * 0.5, half = Math.min(center - out.good.start, out.good.end - center, (end - start) * width * 0.5);
         out.perfect.start = center - half;
         out.perfect.end = center + half;
         return out;
@@ -858,6 +880,7 @@ export class SwimmerMotor {
     private forceArmStrokeTimeout(type: StrokeType, action: StrokeAction) {
         action.releasedAt = this._motionClock;
         action.strokeQualitySettled = true;
+        this.settleAbility(0);
         this._lastStrokeQuality = 0;
         this.startStrokeAcceleration(Math.max(0, STROKE_QUALITY_TUNING.armStrokeTimeoutAccel) * action.propulsionScale, false);
         const actionSeconds = this.predictedActionSecondsAfterRelease(action);
@@ -930,6 +953,7 @@ export class SwimmerMotor {
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds, ranges)
             : undefined;
         this._lastStrokeQuality = strokeQuality;
+        this.settleAbility(strokeQuality);
         this.startSettledStrokeAcceleration(strokeQuality, actionSeconds, action.heldBaseImpulse, releaseProgress, action.propulsionScale, ranges);
         action.strokeQualitySettled = true;
         // Steering nudge fires when a real stroke settles (“松手” for a tap, or a
@@ -969,18 +993,20 @@ export class SwimmerMotor {
 
     private startActionBaseAcceleration(action: StrokeAction) {
         action.baseAccelerationStarted = true;
+        this.ability.armStart();
         action.heartRate = Math.round(this.heartRate * 100) / 100;
         const ranges = this._effectiveReleaseRanges;
         const center = perfectReleaseCenter(ranges);
-        action.perfectWidth = perfectWidthScale(action.heartRate);
-        const half = (ranges.perfect.end - ranges.perfect.start) * action.perfectWidth * 0.5;
+        action.perfectWidth = this.characterPerfectWidth(action.heartRate);
+        const half = Math.min(center - ranges.good.start, ranges.good.end - center, (ranges.perfect.end - ranges.perfect.start) * action.perfectWidth * 0.5);
         ranges.perfect.start = center - half;
         ranges.perfect.end = center + half;
         action.ranges = ranges;
         this._heartRate.recordStart();
         // 已开始的一划保持完整预算，耗尽状态作用于之后开始的划水。
         // 技巧与耗尽共同锁到本划；调参或耗尽切换不会让在途动作重复领推进。
-        action.propulsionScale = this._conditionSpeedScale * (this._playerBalance?.strokePropulsionScale ?? 1);
+        action.propulsionScale = this._conditionSpeedScale * (this._playerBalance?.strokePropulsionScale ?? 1)
+            * this.ability.strokePower * this.chainPropulsionScale();
         const cycleSeconds = this.currentCycleSeconds();
         action.heldBaseImpulseBudget = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel) * action.propulsionScale
             * cycleSeconds * Math.max(0, SWIMMER_BALANCE.strokeAccelDurationRatio)
@@ -988,6 +1014,21 @@ export class SwimmerMotor {
         const heldSeconds = cycleSeconds * clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)
             / Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
         action.heldBaseAcceleration = heldSeconds > 0 ? action.heldBaseImpulseBudget / heldSeconds : 0;
+    }
+
+    private chainPropulsionScale(): number {
+        if (this.ability.stacks <= 0) return 1;
+        // 使用与技巧一致的速度→推进近似曲线，只在实际起划时解析。
+        const ratio = 1 + this.ability.stacks * abilityValue('chainSpeedPerStack', 0, 0.05);
+        return Math.pow(ratio, TECHNIQUE_BALANCE.propulsionExponent - TECHNIQUE_BALANCE.propulsionCurvature * (ratio - 1));
+    }
+
+    private settleAbility(quality: number) {
+        if (this.ability.id !== 'perfectChain') return;
+        const ranges = this._effectiveReleaseRanges;
+        const interval = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds)
+            + perfectReleaseCenter(ranges) * this.currentCycleSeconds() / Math.max(0.01, MOTION_TUNING.heldMotionSpeedScale);
+        this.ability.settle(quality, interval);
     }
 
     private consumeHeldBaseAcceleration(action: StrokeAction | undefined, dt: number): number {
@@ -1011,7 +1052,7 @@ export class SwimmerMotor {
         const goodScale = strokeQuality > 0 && strokeQuality < 1
             ? clamp01(SWIMMER_BALANCE.strokeGoodPropulsionScale) : 1;
         const qualityAccel = Math.max(0, strokeQuality) * goodScale
-            * this._effectiveStrokeQualityAccel * propulsionScale;
+            * this._effectiveStrokeQualityAccel * propulsionScale * this.ability.qualityReward(strokeQuality);
         const timeScale = this.strokeActionTimeScale(actionSeconds, releaseProgress, ranges);
         const pulseSeconds = Math.max(0.0001, this.currentCycleSeconds() * SWIMMER_BALANCE.strokeAccelDurationRatio);
         const remainingBaseAccel = Math.max(0, baseAccel * timeScale - heldBaseImpulse / pulseSeconds);
@@ -1814,7 +1855,7 @@ export class SwimmerMotor {
         const releaseProgress = action ? clamp01(action.progress / CYCLE_AMOUNT) : 0;
         const out = target ?? { active: false, currentRatio: 0, holdSeconds: 0, actionSeconds: 0, minHoldRatio: 0, intervals: [] };
         out.heartRate = action?.heartRate ?? this.heartRate;
-        out.perfectWidthScale = action?.perfectWidth ?? perfectWidthScale(out.heartRate);
+        out.perfectWidthScale = action?.perfectWidth ?? this.characterPerfectWidth(out.heartRate);
         out.active = !!action && action.releasedAt < 0;
         out.currentRatio = releaseProgress;
         out.displayEndRatio = clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress);
@@ -1851,7 +1892,7 @@ export class SwimmerMotor {
     }
 
     private timingGuideIntervals(action: StrokeAction | null, actionSeconds: number, intervals: StrokeTimingGuideInterval[] = []): StrokeTimingGuideInterval[] {
-        const ranges = action?.ranges ?? this.fillReleaseRanges(this._previewRanges, perfectWidthScale(this.heartRate));
+        const ranges = action?.ranges ?? this.fillReleaseRanges(this._previewRanges, this.characterPerfectWidth(this.heartRate));
         const timeout = clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress);
         // 使用精确边界，极限窗口不再被 96 格采样误差放大或缩小。
         let count = 0, start = 0;

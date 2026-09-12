@@ -28,7 +28,8 @@
 // 版本39：技巧统一增强完整手臂推进，移除技巧连击超速映射，重分配角色技巧。
 // 版本40：技巧初始档位拉开为84～114，成长曲线和其他角色属性不变。
 // 版本41：三个入口依次为标准竞速200米、狂野200米、狂野400米，统一最高档AI。
-export const NET_RACE_PROTOCOL_VERSION = 41;
+// 版本42：角色固有能力；追加下潜深度/踢腿保持/连击与余时权威状态。
+export const NET_RACE_PROTOCOL_VERSION = 42;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

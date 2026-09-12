@@ -243,7 +243,7 @@ export class RaceHudStatusView {
         this.elapsed %= 0.1;
         return true;
     }
-    updateValues(speed: number, heart: number, _overload: boolean, energyRatio: number, distance: number, total: number, ultimateRatio: number, canJump: boolean) {
+    updateValues(speed: number, heart: number, _overload: boolean, energyRatio: number, distance: number, total: number, ultimateRatio: number, canJump: boolean, infiniteStamina = false) {
         if (!this.root.activeInHierarchy) return;
         this.text(this.speed, Math.max(0, speed).toFixed(2));
         this.displayedHeart = Math.max(80, Math.min(180, heart));
@@ -252,7 +252,7 @@ export class RaceHudStatusView {
         this.text(this.heartValue, String(Math.round(this.displayedHeart)));
         this.text(this.heartTierLabel, tier.label);
         if (!this.heartTierLabel.color.equals(tier.color)) this.heartTierLabel.color = tier.color;
-        this.text(this.energyValue, `${Math.round(clamp(energyRatio) * 100)}%`);
+        this.text(this.energyValue, infiniteStamina ? '无限' : `${Math.round(clamp(energyRatio) * 100)}%`);
         // 使用实际资源判断，不能把尚有体力但取整显示 0% 的情况当作耗尽。
         this.setEnergyDepleted(energyRatio <= 0);
         this.text(this.distance, `${total} m`);

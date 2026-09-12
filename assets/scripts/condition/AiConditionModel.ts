@@ -22,6 +22,8 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export class AiConditionModel {
+    private _infiniteStamina = false;
+    setInfiniteStamina(value: boolean) { this._infiniteStamina = value; }
     private _phase: RacePhase = RacePhase.START;
     private _heartRate = HEART_RATE_BOUNDS.min;
     private _heartRateZone: HeartRateZone = HeartRateZone.LOW;
@@ -56,6 +58,7 @@ export class AiConditionModel {
 
     // 成功技能一次性扣费，与划水计数独立；立即刷新耗尽倍率供同帧输入/快照使用。
     consumeEnergy(cost: number) {
+        if (this._infiniteStamina) return;
         this._energy = energyAfterCost(this._energy, cost);
         this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
@@ -79,6 +82,7 @@ export class AiConditionModel {
     // 只接收真正 AI 的实际结算计数；远端真人始终采用 owner 体力。
     consumeStrokes(count: number) {
         if (!Number.isFinite(count) || count <= 0) return;
+        if (this._infiniteStamina) return;
         this._energy = energyAfterStrokes(this._energy, count);
         this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();

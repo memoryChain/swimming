@@ -7,7 +7,7 @@ import { defaultSwimmerColorVariant, SWIMMER_COLOR_VARIANTS } from '../core/Reso
 import { getRaceAiDifficultyConfig } from '../core/GameBalance';
 import { shuffleInPlace } from '../core/SharedRNG';
 import { PlayerData } from '../backend/PlayerData';
-import { characterHeartRateTraitForModel, characterWeightForModel, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
+import { characterAbilityForModel, characterHeartRateTraitForModel, characterWeightForModel, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
 import { AICompetitorProfile, buildRandomizedAiRoster, getAiPersonality } from './CompetitorConfig';
 import { randomAiModelVariantId, SwimmerFactory } from './SwimmerFactory';
 
@@ -101,6 +101,7 @@ export class CompetitorManager {
         rig.setModelVariant(modelVariantId);
         swimmer.motor.setWeight(characterWeightForModel(modelVariantId));
         swimmer.motor.setHeartRateTrait(characterHeartRateTraitForModel(modelVariantId));
+        swimmer.motor.setCharacterAbility(characterAbilityForModel(modelVariantId));
         rig.setColorVariant(colorVariantId);
         rig.setColorOverride({ skin: new Color(skinColor[0], skinColor[1], skinColor[2]) });
     }

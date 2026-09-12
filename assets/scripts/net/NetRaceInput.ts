@@ -1,3 +1,4 @@
+import { encodeCharacterAbility, decodeCharacterAbility } from './NetCharacterAbilityCodec';
 import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollisionSoftnessCodec';
 
 // Per-frame input encoding for WeChat lock-step (帧同步) races.
@@ -151,7 +152,7 @@ export function encodeInputFrame(
     const body = events.map(encodeEvent).filter((token) => token.length > 0).join(TOKEN_SEP);
     let out = `${senderPos}${HEADER_SEP}${body}`;
     if (self) {
-        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeCollisionSoftness(self.collisionSoftness)}`;
+        out += `${HEADER_SEP}${self.lane},${Math.round(self.distance * 100)},${Math.round(self.lateral * 1000)},${self.finished ? 1 : 0},${Math.round(self.heading * 1000)},${Math.round(Math.max(0, self.speed) * 100)},${Math.max(0, Math.round(self.energy))},${Math.round(self.axialRoll * 1000)},${Math.round(self.axialRollVelocity * 1000)},${Math.round(self.headingVelocity * 1000)},${Math.round(self.collisionPitch * 1000)},${Math.round(self.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(self.conditionEnergyRatio)},${encodeConditionHeartRate(self.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeCollisionSoftness(self.collisionSoftness)},${encodeCharacterAbility(self.abilityState)}`;
     } else if (inputSeq >= 0) {
         // Preserve the self slot so old decoders still see a valid empty field.
         out += HEADER_SEP;
@@ -221,6 +222,7 @@ export function decodeInputFrame(payload: string): DecodedInputFrame {
                     conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
                     ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
                     collisionSoftness: decodeCollisionSoftness(p[15]),
+                abilityState: decodeCharacterAbility(p[16]),
                 };
             }
         }

@@ -17,7 +17,7 @@ export class CollisionPitchModel {
         this._angularVelocity = 0;
     }
 
-    update(rawDt: number, surfaceActive: boolean) {
+    update(rawDt: number, surfaceActive: boolean, recoveryScale = 1) {
         const dt = clamp(finite(rawDt), 0, 0.05);
         if (dt <= 0) {
             return;
@@ -33,9 +33,9 @@ export class CollisionPitchModel {
 
         const tuning = COLLISION_PITCH_TUNING;
         let angularAccel = -Math.sin(this._angle)
-            * Math.max(0, finite(tuning.rightingTorque))
+            * Math.max(0, finite(tuning.rightingTorque)) * recoveryScale
             * DEG2RAD;
-        angularAccel -= this._angularVelocity * Math.max(0, finite(tuning.angularDrag));
+        angularAccel -= this._angularVelocity * Math.max(0, finite(tuning.angularDrag)) * recoveryScale;
 
         this._angularVelocity += angularAccel * dt;
         this.clampVelocity();

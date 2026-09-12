@@ -26,6 +26,7 @@
     "ui:images:optimize": "python scripts/optimize-ui-images.py --apply",
     "ui:images:check": "python scripts/optimize-ui-images.py --check",
     "textures:fix": "node extensions/wechat-race-subpackage/texture-compression-policy.js --fix",
-    "textures:check": "node extensions/wechat-race-subpackage/texture-compression-policy.js --check"
+    "textures:check": "node extensions/wechat-race-subpackage/texture-compression-policy.js --check",
+    "test:abilities": "npx --yes --package typescript@5.4.5 -c \"node --test tests/character-abilities.test.cjs tests/kick-dive-camera.test.cjs\""
   }
 }

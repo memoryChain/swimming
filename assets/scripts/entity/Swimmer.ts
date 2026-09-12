@@ -1,3 +1,5 @@
+import { abilityValue } from '../core/CharacterAbilityConfig';
+import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
@@ -85,6 +87,14 @@ export class Swimmer extends Component {
         return this._motor;
     }
 
+    get netAbilityState(): Readonly<CharacterAbilitySnapshot> { return this._motor.ability; }
+
+    applyNetAbilityState(state: Readonly<CharacterAbilitySnapshot> | undefined, remoteHuman: boolean) {
+        this._motor.ability.applySnapshot(state, remoteHuman);
+    }
+
+    get canUseDolphinAbility(): boolean { return this._motor.ability.allowsDolphin; }
+
     get courseLayout(): RaceCourseLayout {
         return this._courseLayout;
     }
@@ -102,7 +112,8 @@ export class Swimmer extends Component {
             && this.node.active
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
-            && !this._phases.isUnderwater;
+            && !this._phases.isUnderwater
+            && !this._motor.ability.ignoresSwimmers;
     }
 
     // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
@@ -659,7 +670,7 @@ export class Swimmer extends Component {
     stepSimulation(dt: number) {
         // Player-only friction bubbles during the sustained underwater glides
         // (dive start / flip turn). Excludes the short dolphin jump. No-op for AI.
-        this.cartoonRig?.updateUnderwaterBubbles(this._phases.isSwimUnderwaterActive);
+        this.cartoonRig?.updateUnderwaterBubbles(this._phases.isSwimUnderwaterActive || this._motor.ability.ignoresSwimmers);
         if (!this._motor.isRacing) {
             this._movementSpeed = 0;
             return;
@@ -673,14 +684,17 @@ export class Swimmer extends Component {
         const positionBeforeStep = this.node.position;
         const phaseXBeforeStep = positionBeforeStep.x;
         const phaseZBeforeStep = positionBeforeStep.z;
+        this._ultimate.setAbilityGainScale(this._motor.ability.id === 'frogHop' ? abilityValue('frogEnergyGain', 0.1, 3) : 1);
         this._ultimate.tick(dt);
         // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
         const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
         if (this._phases.tick(dt)) {
+            this._motor.ability.suspend();
             this._motor.tickRestingHeartRate(dt, freezeJumpHeartRate);
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
             return;
         }
+        if (this._phases.isUnderwater) this._motor.ability.suspend();
         this.updatePerfectComboIdle(dt);
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
@@ -854,6 +868,8 @@ export class Swimmer extends Component {
 
     playFinishTouch() {
         const finishPosition = this.node.position.clone();
+        // 潜航触线后恢复水面漂浮，不能把下潜深度带进完赛姿态。
+        const finishY = this._motor.ability.depth > 0 ? this._startPosition.y : finishPosition.y;
         const direction = this._courseLayout.finishDirectionAtDistance(getRaceDistance());
         const inwardDirection = -direction;
         Tween.stopAllByTarget(this.node);
@@ -863,7 +879,7 @@ export class Swimmer extends Component {
         this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
         this.cartoonRig?.setFinishFloating();
         const x = this.finishFloatX(direction);
-        this.node.setPosition(x, finishPosition.y + 0.01, finishPosition.z);
+        this.node.setPosition(x, finishY + 0.01, finishPosition.z);
     }
 
     reset() {
@@ -994,11 +1010,12 @@ export class Swimmer extends Component {
         const visualAxialRollRadians = this._phases.dolphinRollResidualRadians()
             + this._motor.axialRollRadians * this.cartoonRig.axialRollVisualWeight;
         const bodyUpProjection = Math.cos(bodyPitchRadians) * Math.cos(visualAxialRollRadians);
-        const kickOnlyUnderwater = this._phases.isDiveGlidePoseActive
-            && !this._phases.canUseArmStroke;
+        const kickOnlyUnderwater = (this._phases.isDiveGlidePoseActive
+            && !this._phases.canUseArmStroke) || (this._motor.ability.depth > 0.01
+                && !this._motor.isActiveStrokeHeld(StrokeType.LEFT) && !this._motor.isActiveStrokeHeld(StrokeType.RIGHT));
         // Arm motion may start during ascent, but surface-only leg spray remains
         // suppressed until the swimmer actually exits the underwater phase.
-        this.cartoonRig.setLegSplashSuppressed(this._phases.isUnderwater);
+        this.cartoonRig.setLegSplashSuppressed(this._phases.isUnderwater || this._motor.ability.depth > 0.05);
         if (kickOnlyUnderwater) {
             this.cartoonRig.updateUnderwaterKickFromMotor(dt, this._motor, this.raceDirection, bodyPitchRadians);
         } else {
@@ -1014,7 +1031,7 @@ export class Swimmer extends Component {
     }
 
     private flashSplash(rating: Rating) {
-        if (this._phases.isUnderwater) {
+        if (this._phases.isUnderwater || this._motor.ability.depth > 0.05) {
             return;
         }
         const scale = rating === Rating.PERFECT ? 1.15 : rating === Rating.BAD ? 0.55 : 0.85;
@@ -1077,7 +1094,7 @@ export class Swimmer extends Component {
             Quat.rotateX(this._tmpCourseRotation, this._tmpCourseRotation, axialRoll);
             Quat.rotateX(this._cameraNeutralCourseRotation, this._cameraNeutralCourseRotation, axialRoll);
         }
-        this.node.setPosition(x, this._phases.visualSwimY(), z);
+        this.node.setPosition(x, this._phases.visualSwimY() - (this._phases.isUnderwater ? 0 : this._motor.ability.depth), z);
         this.node.setRotation(this._tmpCourseRotation);
     }
 
@@ -1155,11 +1172,16 @@ export class Swimmer extends Component {
     }
 
     get isUnderwater(): boolean {
-        return this._phases.isUnderwater;
+        return this._phases.isUnderwater || this._motor.ability.ignoresSwimmers;
     }
 
     get underwaterRiseProgress(): number {
         return this._phases.underwaterRiseProgress;
+    }
+
+    // 镜头读取实际能力深度；脚本化跳水、海豚跳和转身仍由各自镜头接管。
+    get kickDiveDepth(): number {
+        return this._phases.isUnderwater ? 0 : this._motor.ability.depth;
     }
 
     // Sustained limb effort (0..1), used by the flow layer to read sprint intent.
@@ -1317,7 +1339,7 @@ export class Swimmer extends Component {
 
     // 满气按钮发动海豚跳；转身、水下或前方空间不足时由阶段控制器拒绝。
     tryDolphinJump(): boolean {
-        if (!this._motor.isRacing) {
+        if (!this._motor.isRacing || !this._motor.ability.allowsDolphin) {
             return false;
         }
         if (!this._ultimate.canAffordDolphin) {
@@ -1329,7 +1351,8 @@ export class Swimmer extends Component {
         }
         this._ultimate.spendDolphin();
         this._motor.addHeartRateBurden(DOLPHIN_JUMP.strainHr);
-        this.onDolphinJumpEnergyCost?.(DOLPHIN_JUMP.staminaCost);
+        this.onDolphinJumpEnergyCost?.(DOLPHIN_JUMP.staminaCost
+            * (this._motor.ability.id === 'frogHop' ? abilityValue('frogDolphinCost', 0, 2) : 1));
         return true;
     }
 
@@ -1339,7 +1362,7 @@ export class Swimmer extends Component {
     // frame will align the exact post-spend energy.
     // owner 快照已含心率负担与体力扣费；回放与重复/迟到事件不能再次结算。
     applyAcceptedNetDolphinJump(): boolean {
-        if (!this._motor.isRacing || !this._phases.tryStartDolphinJump()) {
+        if (!this._motor.isRacing || this._motor.ability.id === 'exoskeleton' || !this._phases.tryStartDolphinJump()) {
             return false;
         }
         this._ultimate.spendDolphin();

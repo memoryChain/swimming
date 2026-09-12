@@ -724,7 +724,8 @@ export class PrepareRaceFlow {
         makeRaceTextureRegionSprite('SkillIcon', parent, RESOURCE_PATHS.lobbyUi.skillCard, new Rect(20, 49, 71, 71), 70, 70, -118.5, -122, 2);
         this._inspectorSkillName = makeBoundLabel('SkillName', parent, '', 20, DARK_TEXT, 190, 28, 25.5, -102, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(this._inspectorSkillName, 27);
-        this._inspectorSkillDescription = makeBoundLabel('SkillDescription', parent, '', 16, uiColor(72, 82, 98), 190, 34, 25.5, -135, Label.HorizontalAlign.LEFT);
+        // 两行 20px 行高另留 2px，顶部避开技能名，底部止于升级按钮上沿。
+        this._inspectorSkillDescription = makeBoundLabel('SkillDescription', parent, '', 16, uiColor(72, 82, 98), 190, 42, 25.5, -139, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(this._inspectorSkillDescription, 'PingFang SC', false, 20);
         this._inspectorSkillDescription.enableWrapText = true;
 

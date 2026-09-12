@@ -465,7 +465,8 @@ export class GameManager extends Component {
             statusHud.updateValues(player.movementSpeed, this._playerCondition.heartRate,
                 this._playerCondition.heartRateZone === 'OVERLOAD', this._playerCondition.energyRatio,
                 player.distance, getRaceDistance(), player.ultimate.energy / ULTIMATE_ENERGY_BALANCE.maxEnergy,
-                this._state === GameState.RACING && player.ultimate.canAffordDolphin);
+                this._state === GameState.RACING && player.canUseDolphinAbility && player.ultimate.canAffordDolphin,
+                player.motor.ability.infiniteStamina);
         }
         const presentationIndicatorVisible = this._state === GameState.PRECOUNTDOWN
             || (this._state === GameState.AWARDS && this._playerOnAwardsPodium);
@@ -1323,6 +1324,7 @@ export class GameManager extends Component {
         const modifiers = resolveLocalRaceModifiers();
         const overrides = modifiers.balance;
         this._playerBalanceOverrides = overrides;
+        this._playerCondition.setInfiniteStamina(modifiers.abilityId === 'exoskeleton');
         if (this._playerSwimmer) {
             applyRaceModifiersToSwimmer(this._playerSwimmer, modifiers);
         }
@@ -1658,6 +1660,7 @@ export class GameManager extends Component {
                 if (controller && !controller.remoteDriven) {
                     // 在本步结算后扣除，快照和房主迁移都不携带未消费的计数。
                     const condition = this._aiConditions[i];
+                    condition?.setInfiniteStamina(swimmer.motor.ability.infiniteStamina);
                     condition?.consumeStrokes(swimmer.consumeAiConditionStrokes());
                     if (condition) {
                         swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
@@ -1818,6 +1821,7 @@ export class GameManager extends Component {
                         collisionPitch: swimmer.netCollisionPitch,
                         collisionPitchVelocity: swimmer.netCollisionPitchVelocity,
                         collisionSoftness: swimmer.netCollisionSoftness,
+                        abilityState: swimmer.netAbilityState,
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
                         conditionHeartRate: swimmer.heartRate,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
@@ -1871,6 +1875,7 @@ export class GameManager extends Component {
             let targetPitch: number;
             let targetPitchVelocity: number;
             let targetSoftness: NetSnapshotEntry['collisionSoftness'];
+            let targetAbility: NetSnapshotEntry['abilityState'];
             let targetFinished: boolean;
             let distBlend: number;
             let latBlend: number;
@@ -1886,6 +1891,7 @@ export class GameManager extends Component {
                 targetPitch = self.collisionPitch;
                 targetPitchVelocity = self.collisionPitchVelocity;
                 targetSoftness = self.collisionSoftness;
+                targetAbility = self.abilityState;
                 targetFinished = self.finished;
                 distBlend = 0.4;
                 latBlend = 0.4;
@@ -1905,6 +1911,7 @@ export class GameManager extends Component {
                 targetPitch = target.collisionPitch;
                 targetPitchVelocity = target.collisionPitchVelocity;
                 targetSoftness = target.collisionSoftness;
+                targetAbility = target.abilityState;
                 targetFinished = target.finished;
                 distBlend = 0.2;
                 latBlend = 0.25;
@@ -1932,6 +1939,7 @@ export class GameManager extends Component {
             swimmer.applyNetCollisionPitch(targetPitch, targetPitchVelocity, headBlend);
             if (isHuman || !this._netRaceController.isHost) {
                 swimmer.applyNetCollisionSoftness(targetSoftness);
+                swimmer.applyNetAbilityState(targetAbility, isHuman);
             }
             // Drive the tread-water<->freestyle pose from the owner's authoritative speed
             // so a corrected-forward copy can't be stuck in the vertical tread pose.
@@ -2029,6 +2037,7 @@ export class GameManager extends Component {
             collisionPitch: player.netCollisionPitch,
             collisionPitchVelocity: player.netCollisionPitchVelocity,
             collisionSoftness: player.netCollisionSoftness,
+            abilityState: player.netAbilityState,
             conditionEnergyRatio: this._playerCondition.energyRatio,
             conditionHeartRate: player.heartRate,
         };
@@ -2397,7 +2406,7 @@ export class GameManager extends Component {
         this._uiFlow?.updateEnergyBar(this._playerCondition.energy, this._playerCondition.energyDepleted);
         const ultimate = this._playerSwimmer?.ultimate;
         if (ultimate) {
-            this._uiFlow?.updateUltimateEnergyBar(ultimate.energy, ultimate.canAffordDolphin);
+            this._uiFlow?.updateUltimateEnergyBar(ultimate.energy, ultimate.canAffordDolphin && !!this._playerSwimmer?.canUseDolphinAbility);
             if (ultimate.consumeDeniedFlash()) {
                 this._uiFlow?.flashUltimateEnergyDenied();
             }
@@ -2421,6 +2430,7 @@ export class GameManager extends Component {
                 continue;
             }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
+            this._aiConditions[i].setInfiniteStamina(swimmer.motor.ability.infiniteStamina);
             this._aiConditions[i].consumeStrokes(swimmer.consumeAiConditionStrokes());
             this._aiConditions[i].syncHeartRate(swimmer.heartRate);
             this._aiConditions[i].tickAi({

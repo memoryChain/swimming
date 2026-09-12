@@ -58,7 +58,7 @@ function progressSpeedFixture() {
  // 固定内部游速，单独检查真实运动模型的方向及翻滚损失。
  motor._physics.step=state=>state;
  Object.assign(swimmer,{_motor:motor,_movementSpeed:0,isAI:false,
-  _ultimate:{tick(){}},_strokeMetrics:{update(){}},
+  _ultimate:new (loadModule('condition/UltimateEnergyModel').UltimateEnergyModel)(),_strokeMetrics:{update(){}},
   _phases:{tick:()=>false,updateDiveUnderwaterTimer(){}},node:{position:{x:0,y:0,z:0},emit(){}},
   _courseLayout:{distanceToWorldX:d=>d,clampSwimWorldX:x=>x},_startPosition:{z:0},
   updatePerfectComboIdle(){},updatePerfectZoneGlow(){},
@@ -421,4 +421,14 @@ test('入场中适配不改动画锚点；隐藏取消全部入场，重进和�
  h.setVisible(true);assert.equal(find(s.parent,'StatusReadoutsEntrance').position.x,-12);
  const current=s.animations.filter(t=>!t.finished&&!t.stopped);assert.ok(current.length>0);
  s.parent.destroy();assert.ok(current.every(t=>t.stopped));assert.equal(s.listeners.size,0);
+});
+
+
+test('机甲体力显示无限，重复状态不增加写入，换角色恢复百分比',()=>{
+ const s=fixture();s.hud.setVisible(true);
+ const sample=infinite=>s.hud.updateValues(2,100,false,1,20,200,1,false,infinite);
+ sample(true);assert.equal(find(s.parent,'EnergyValue').getComponent(Label).string,'无限');
+ const before=writes;for(let i=0;i<100;i++)sample(true);assert.equal(writes,before);
+ sample(false);assert.equal(find(s.parent,'EnergyValue').getComponent(Label).string,'100%');
+ s.hud.setVisible(false);const hidden=writes;sample(true);assert.equal(writes,hidden);
 });

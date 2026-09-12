@@ -475,6 +475,7 @@ export class GameFlowController {
             playerKickCadenceHz: focus.kickCadenceHz,
             playerArmStrokeActive: focus.isArmStrokeActive,
             playerUnderwater: focus.isUnderwater,
+            playerKickDiveDepth: focus.kickDiveDepth,
             playerUnderwaterRiseProgress: focus.underwaterRiseProgress,
             closestAiDistanceGap: this.closestAiDistanceGap(playerDistance),
             playerPlacement: placement.placement,

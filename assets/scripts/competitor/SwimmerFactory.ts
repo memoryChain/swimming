@@ -3,7 +3,7 @@ import { CartoonSwimmerRig } from '../entity/CartoonSwimmerRig';
 import { Swimmer } from '../entity/Swimmer';
 import { defaultSwimmerColorVariant, defaultSwimmerModelVariant, SWIMMER_MODEL_VARIANTS } from '../core/ResourcePaths';
 import { randomInt } from '../core/SharedRNG';
-import { characterHeartRateTraitForModel, characterWeightForModel, findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from '../app/PlayerCharacterConfig';
+import { characterAbilityForModel, characterHeartRateTraitForModel, characterWeightForModel, findPlayerCharacter, selectedPlayerColorScheme, selectedPlayerSkinTone } from '../app/PlayerCharacterConfig';
 
 export type CreateSwimmerOptions = {
     name: string;
@@ -62,6 +62,7 @@ export class SwimmerFactory {
         swimmer.isAI = options.isAI;
         swimmer.motor.setWeight(characterWeightForModel(modelVariantId));
         swimmer.motor.setHeartRateTrait(characterHeartRateTraitForModel(modelVariantId));
+        swimmer.motor.setCharacterAbility(characterAbilityForModel(modelVariantId));
         swimmer.swimmerName = options.displayName || (selectedPlayer?.name ?? (options.isAI ? 'AI' : 'YOU'));
         this._debug?.(`${options.name} uses CartoonSwimmerRig model=${modelVariantId}`);
         return swimmer;

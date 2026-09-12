@@ -1,3 +1,4 @@
+import { abilityValue } from '../core/CharacterAbilityConfig';
 import { Node, Quat, Vec3 } from 'cc';
 import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import { SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
@@ -546,7 +547,8 @@ export class SwimmerRacePhases {
         const cosH = Math.max(0.1, Math.cos(heading));
         const angle = DOLPHIN_JUMP.launchAngleDegrees * Math.PI / 180;
         // 海豚与出发跳水共用爆发倍率；只缩放初速，普通 AI 保留基准。
-        const launchSpeed = DOLPHIN_JUMP.launchSpeed * motor.burstLaunchSpeedScale;
+        const launchSpeed = DOLPHIN_JUMP.launchSpeed * motor.burstLaunchSpeedScale
+            * (motor.ability.id === 'frogHop' ? abilityValue('frogDolphinSpeed', 0.1, 2) : 1);
         const horizontalSpeed = Math.max(0.1, launchSpeed * Math.cos(angle));
         let verticalSpeed = Math.max(0.1, launchSpeed * Math.sin(angle));
         let flightSeconds = Math.max(0.1, (2 * verticalSpeed) / Math.max(0.1, DOLPHIN_JUMP.gravity));

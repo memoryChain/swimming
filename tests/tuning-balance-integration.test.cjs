@@ -51,6 +51,22 @@ function heldStrokeFixture(ratio = 0.6, fixedSpeed = true) {
     return { ...h, motor, StrokeType, inputs, start };
 }
 
+test('角色能力参数全量注册，保存重载保持值，现有实例读取新配置且不清比赛状态', () => {
+    const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
+    const { CHARACTER_ABILITY_TUNING } = h.loadModule('core/CharacterAbilityConfig');
+    for (const key of Object.keys(CHARACTER_ABILITY_TUNING)) assert.ok(h.controls.has('ability.' + key), key);
+    const { CharacterAbilityState } = h.loadModule('swimmer/CharacterAbilityState');
+    const state = new CharacterAbilityState(); state.configure('kickDive'); state.depth = .3;
+    const control = h.controls.get('ability.diverDepth'); control.set(1.2);
+    h.controls.get('ability.chainSpeedPerStack').set(.015);
+    assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    control.set(.5); h.controls.get('ability.chainSpeedPerStack').set(0);
+    h.tuning.loadSavedTuningAsync(() => {});
+    assert.equal(control.get(), 1.2); assert.equal(h.controls.get('ability.chainSpeedPerStack').get(), .015);
+    assert.equal(state.depth, .3); state.kick(); state.tick(.65, false);
+    assert.equal(state.depth, 1.2);
+});
+
 test('GOOD 推进倍率只改推进，完美区判定与按住预支不变，新参数可保存重载', () => {
     const sample = (progress, goodScale) => {
         const h = heldStrokeFixture();
@@ -817,7 +833,8 @@ function dolphinBurdenFixture(conditionKind = 'player') {
     assert.equal(members.length,names.length);
     const {DOLPHIN_JUMP}=h.loadModule('core/DolphinJumpConfig');
     const js=ts.transpileModule(`class Body {${members.map(n=>n.getText(source)).join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
-    const Body=require('node:vm').runInNewContext(js+';Body',{DOLPHIN_JUMP});
+    const {abilityValue}=h.loadModule('core/CharacterAbilityConfig');
+    const Body=require('node:vm').runInNewContext(js+';Body',{DOLPHIN_JUMP,abilityValue});
     const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
     const {SwimmerRacePhases}=h.loadModule('entity/SwimmerRacePhases');
     const {UltimateEnergyModel}=h.loadModule('condition/UltimateEnergyModel');

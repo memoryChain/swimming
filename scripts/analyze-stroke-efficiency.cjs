@@ -35,6 +35,7 @@ function replay(target, kicks, roll, options = {}) {
     // 默认隔离心率比较松手收益；heartRate:null 启用实际心率积累。
     if (options.heartRate !== null) motor.applyAuthoritativeHeartRate(options.heartRate ?? 80, true);
     if (options.playerBalance) motor.setPlayerBalance(options.playerBalance);
+    if (options.abilityId) motor.setCharacterAbility(options.abilityId);
     motor.setConditionSpeedScale(options.propulsionScale ?? 1);
     motor.setConditionQualityScale(options.qualityScale ?? 1);
     motor.setConditionCadenceScale(options.cadenceScale ?? 1);

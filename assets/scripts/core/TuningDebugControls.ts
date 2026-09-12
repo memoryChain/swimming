@@ -1,3 +1,4 @@
+import { CHARACTER_ABILITY_TUNING } from './CharacterAbilityConfig';
 import { JsonAsset, native, resources, sys } from 'cc';
 import { NATIVE } from 'cc/env';
 import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
@@ -46,7 +47,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 46;
+const TUNING_FILE_VERSION = 48;
 
 type TuningFileData = {
     version: number;
@@ -75,6 +76,35 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '角色能力',
+        controls: [
+            control('ability.frogPerfectWidth', '蛙妹完美区倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.frogPerfectWidth, v => CHARACTER_ABILITY_TUNING.frogPerfectWidth = v, 0.1, 0.2, 2.5, 3),
+            control('ability.frogPerfectReward', '蛙妹完美奖励倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.frogPerfectReward, v => CHARACTER_ABILITY_TUNING.frogPerfectReward = v, 0.05, 0, 2, 3),
+            control('ability.frogEnergyGain', '蛙少蓄气倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.frogEnergyGain, v => CHARACTER_ABILITY_TUNING.frogEnergyGain = v, 0.1, 0.1, 3, 3),
+            control('ability.frogDolphinSpeed', '蛙少海豚初速倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.frogDolphinSpeed, v => CHARACTER_ABILITY_TUNING.frogDolphinSpeed = v, 0.05, 0.2, 2, 3),
+            control('ability.frogDolphinCost', '蛙少海豚体力倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.frogDolphinCost, v => CHARACTER_ABILITY_TUNING.frogDolphinCost = v, 0.1, 0, 2, 3),
+            control('ability.legKickAcceleration', '超级腿踢腿推进倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.legKickAcceleration, v => CHARACTER_ABILITY_TUNING.legKickAcceleration = v, 0.1, 0.1, 3, 3),
+            control('ability.legKickSpeed', '超级腿踢腿上限倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.legKickSpeed, v => CHARACTER_ABILITY_TUNING.legKickSpeed = v, 0.05, 0.1, 2, 3),
+            control('ability.legStrokePower', '超级腿手划倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.legStrokePower, v => CHARACTER_ABILITY_TUNING.legStrokePower = v, 0.05, 0.1, 2, 3),
+            control('ability.catRecovery', '猫姐姿态恢复倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.catRecovery, v => CHARACTER_ABILITY_TUNING.catRecovery = v, 0.1, 1, 3, 3),
+            control('ability.ninjaPerfectWidth', '忍者哥完美区倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.ninjaPerfectWidth, v => CHARACTER_ABILITY_TUNING.ninjaPerfectWidth = v, 0.05, 0.2, 2, 3),
+            control('ability.ninjaPerfectReward', '忍者哥完美奖励倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.ninjaPerfectReward, v => CHARACTER_ABILITY_TUNING.ninjaPerfectReward = v, 0.05, 0, 3, 3),
+            control('ability.ninjaOtherReward', '忍者哥普通奖励倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.ninjaOtherReward, v => CHARACTER_ABILITY_TUNING.ninjaOtherReward = v, 0.05, 0, 2, 3),
+            control('ability.coachMaxStrokeHz', '教练适中划频上限', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.coachMaxStrokeHz, v => CHARACTER_ABILITY_TUNING.coachMaxStrokeHz = v, 0.1, 0.5, 4, 3),
+            control('ability.coachHeartLoad', '教练适中划频心率负担', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.coachHeartLoad, v => CHARACTER_ABILITY_TUNING.coachHeartLoad = v, 0.05, 0.1, 1, 3),
+            control('ability.wallLaunch', '飞毛腿蹬墙初速倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.wallLaunch, v => CHARACTER_ABILITY_TUNING.wallLaunch = v, 0.05, 0.1, 3, 3),
+            control('ability.wallStrokePower', '飞毛腿手划倍率', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.wallStrokePower, v => CHARACTER_ABILITY_TUNING.wallStrokePower = v, 0.05, 0.1, 2, 3),
+            control('ability.diverDepth', '潜水哥最大下潜深度', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.diverDepth, v => CHARACTER_ABILITY_TUNING.diverDepth = v, 0.05, 0.5, 2, 3),
+            control('ability.diverCollisionDepth', '潜水哥免碰撞深度', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.diverCollisionDepth, v => CHARACTER_ABILITY_TUNING.diverCollisionDepth = v, 0.05, 0.1, 2, 3),
+            control('ability.diverDescentSpeed', '潜水哥下潜速度', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.diverDescentSpeed, v => CHARACTER_ABILITY_TUNING.diverDescentSpeed = v, 0.1, 0.1, 4, 3),
+            control('ability.diverAscentSpeed', '潜水哥上浮速度', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.diverAscentSpeed, v => CHARACTER_ABILITY_TUNING.diverAscentSpeed = v, 0.1, 0.1, 4, 3),
+            control('ability.diverKickHoldSeconds', '潜水哥踢腿保持秒数', '角色固有能力参数，不随等级成长；修改后用于单机调试，联机各端需使用一致配置。', () => CHARACTER_ABILITY_TUNING.diverKickHoldSeconds, v => CHARACTER_ABILITY_TUNING.diverKickHoldSeconds = v, 0.05, 0.05, 2, 3),
+            control('ability.chainMaxStacks', '风火轮最大层数', '角色固有能力参数，不随等级成长。风火轮增幅是标准划水游速的校准目标，不放大跳跃与蹬墙。', () => CHARACTER_ABILITY_TUNING.chainMaxStacks, v => CHARACTER_ABILITY_TUNING.chainMaxStacks = v, 1, 1, 10, 0),
+            control('ability.chainSpeedPerStack', '风火轮每层目标游速增幅', '角色固有能力参数，不随等级成长。风火轮增幅是标准划水游速的校准目标，不放大跳跃与蹬墙。', () => CHARACTER_ABILITY_TUNING.chainSpeedPerStack, v => CHARACTER_ABILITY_TUNING.chainSpeedPerStack = v, 0.005, 0, 0.05, 3),
+            control('ability.chainIdleCycles', '风火轮停划宽限周期', '角色固有能力参数，不随等级成长。风火轮增幅是标准划水游速的校准目标，不放大跳跃与蹬墙。', () => CHARACTER_ABILITY_TUNING.chainIdleCycles, v => CHARACTER_ABILITY_TUNING.chainIdleCycles = v, 0.25, 1, 5, 3),
+        ],
+    },
     {
         name: '技巧',
         controls: [
@@ -201,6 +231,16 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dive.underwaterRiseSeconds', '水下上浮时间', '水下阶段从深度回升到水面的时间。上浮结束后才恢复手臂划水。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseSeconds = v, 0.05, 0.1, 5, 2, 's'),
             control('dive.straightenRatio', '斜下拉平占比', '水下保持阶段里，把入水斜下姿态拉回水平所用时间占比。越小越早变水平。', () => SWIMMER_ACTION_TUNING.diveStraightenRatio, (v) => SWIMMER_ACTION_TUNING.diveStraightenRatio = v, 0.05, 0.05, 1, 2),
             control('dive.underwaterRiseTilt', '上浮抬头角度', '上浮阶段身体斜上抬头的最大角度，到达水面时回到水平。', () => SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterRiseTiltDegrees = v, 0.5, 0, 30, 1, '°'),
+        ],
+    },
+    {
+        name: '踢腿潜水相机',
+        controls: [
+            control('camera.kickDiveBackDistance', '潜水镜头后距', '踢腿潜入水下时，相机跟在角色身后的距离。', () => RACE_CAMERA_TUNING.kickDiveBackDistance, (v) => RACE_CAMERA_TUNING.kickDiveBackDistance = v, 0.1, 1, 6, 1, 'm'),
+            control('camera.kickDiveBelowDistance', '潜水镜头下移', '相机低于角色上半身的距离，越大越能仰看水面。', () => RACE_CAMERA_TUNING.kickDiveBelowDistance, (v) => RACE_CAMERA_TUNING.kickDiveBelowDistance = v, 0.05, 0, 0.8, 2, 'm'),
+            control('camera.kickDiveFov', '潜水镜头视野', '踢腿潜航镜头的垂直视野角度。', () => RACE_CAMERA_TUNING.kickDiveFov, (v) => RACE_CAMERA_TUNING.kickDiveFov = v, 1, 35, 80, 0, '°'),
+            control('camera.kickDiveFollowSpeed', '潜水镜头跟随', '下潜与水下跟随的速度，越大越快贴近角色。', () => RACE_CAMERA_TUNING.kickDiveFollowSpeed, (v) => RACE_CAMERA_TUNING.kickDiveFollowSpeed = v, 0.5, 2, 20, 1, '/s'),
+            control('camera.kickDiveVerticalSpeed', '潜水过水面速度', '实际镜头靠近水面时的升降速度上限，限制进出水面和快速切换动作时的位置跳变。', () => RACE_CAMERA_TUNING.kickDiveVerticalSpeed, (v) => RACE_CAMERA_TUNING.kickDiveVerticalSpeed = v, 0.1, 1, 6, 1, 'm/s'),
         ],
     },
     {

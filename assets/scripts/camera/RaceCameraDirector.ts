@@ -172,6 +172,13 @@ export const RACE_CAMERA_TUNING = {
     dolphinApexReferenceHeight: 1.2,
     // 相机视场角(FOV)：海豚跃跟随相机的垂直视场角。单位：度。越大越广、速度感越强。
     dolphinFov: 55,
+    // 主动踢腿潜航：贴近身后、略低于上半身，保留前方泳道与头顶水面。
+    kickDiveBackDistance: 2.8,
+    kickDiveBelowDistance: 0.35,
+    kickDiveFov: 58,
+    kickDiveFollowSpeed: 8,
+    // 过水面时最终显示机位的升降速度上限，安全距离不能造成单帧跳变。
+    kickDiveVerticalSpeed: 3,
 };
 
 // A zero tuning value means "the first actual ascent frame", not the start of
@@ -237,6 +244,8 @@ export type RaceCameraSnapshot = {
     // Normalized progress through the current underwater ascent. Zero covers
     // descent/hold, one means the surface has been reached.
     playerUnderwaterRiseProgress?: number;
+    // 已同步的主动潜航深度，独立于碰撞免疫阈值和脚本化入水进度。
+    playerKickDiveDepth?: number;
     closestAiDistanceGap: number;
     playerPlacement: number;
     racerCount: number;
@@ -281,6 +290,9 @@ export class RaceCameraDirector {
     private _fieldOverviewActive = false;
     // Dolphin-jump follow chase active (overrides the normal race views).
     private _dolphinViewActive = false;
+    private _kickDiveViewActive = false;
+    private _kickDiveSurfaceRestore = false;
+    private _cameraStepSeconds = 0;
     // When true this director drives the venue jumbotron feed camera. Both the
     // main broadcast camera and this feed use the classic side-tracking race
     // views outside the actual sprint phase.
@@ -370,6 +382,8 @@ export class RaceCameraDirector {
     }
 
     resetCountdownTimers() {
+        this._kickDiveViewActive = false;
+        this._kickDiveSurfaceRestore = false;
         this._finishViewActive = false;
         this._preCountdownActive = false;
         this._preRacePhase = 'none';
@@ -585,7 +599,16 @@ export class RaceCameraDirector {
     }
 
     update(dt: number, snapshot: RaceCameraSnapshot) {
+        this._cameraStepSeconds = Number.isFinite(dt) ? Math.max(0, Math.min(dt, 0.1)) : 0;
+        // 高优先级镜头和非比赛阶段立即取消潜航跟随，避免结束、重开残留。
+        if (!snapshot.raceActive || snapshot.playerFinished || snapshot.playerDolphinCameraActive
+            || snapshot.playerFlipTurnCameraActive || this._awardsCenter || this._spectatorFreeLookActive
+            || this._fieldOverviewActive || this._feedMode) {
+            this._kickDiveViewActive = false;
+            this._kickDiveSurfaceRestore = false;
+        }
         if (snapshot.playerFinished || snapshot.playerUnderwater || snapshot.playerDolphinCameraActive
+            || (snapshot.playerKickDiveDepth ?? 0) > 0
             || snapshot.playerFlipTurnCameraActive || this._awardsCenter || this._spectatorFreeLookActive
             || this._fieldOverviewActive || this._mode !== RaceCameraMode.Sprint) {
             this._strokeFeedbackTime = 0;
@@ -662,6 +685,24 @@ export class RaceCameraDirector {
         const leavingFlipTurnView = this._flipTurnViewActive;
         this._flipTurnViewActive = false;
         this._flipTurnCameraPlanted = false;
+        const kickDiveDepth = snapshot.playerKickDiveDepth ?? 0;
+        if (snapshot.raceActive && !this._feedMode && !snapshot.playerFlipTurnCameraActive
+            && !snapshot.playerDolphinCameraActive && Number.isFinite(kickDiveDepth) && kickDiveDepth > 0.001) {
+            if (!this._kickDiveViewActive) {
+                this._sprintFovCurrent = this._cameraNode.getComponent(Camera)?.fov ?? RACE_CAMERA_TUNING.sprintFov;
+                // 从当前实际显示位置接续，包含上次未走完的上浮过渡。
+                this._cameraPos.set(this._renderCameraPos);
+            }
+            this._kickDiveViewActive = true;
+            this._kickDiveSurfaceRestore = false;
+            this._continuousKickViewSeconds = 0;
+            this.updateKickDiveCamera(dt, snapshot);
+            return;
+        }
+        if (this._kickDiveViewActive) {
+            this._kickDiveViewActive = false;
+            this._kickDiveSurfaceRestore = true;
+        }
         if (this._mode === RaceCameraMode.Sprint) {
             // GameFlow promotes the camera to Sprint once the opening ascent is
             // close to the surface.
@@ -670,14 +711,16 @@ export class RaceCameraDirector {
             // sprint transition instead of blending across the pool.
             const leavingUnderwaterDiveView = this._underwaterViewActive;
             this._topViewActive = false;
-            this.updateSprintCamera(dt, snapshot, leavingFlipTurnView || leavingUnderwaterDiveView);
+            this.updateSprintCamera(dt, snapshot,
+                !this._kickDiveSurfaceRestore && (leavingFlipTurnView || leavingUnderwaterDiveView));
+            this.finishKickDiveSurfaceRestore();
             return;
         }
         if (this._mode === RaceCameraMode.Broadcast) {
             this.updateBroadcastCamera(dt, snapshot);
             return;
         }
-        this.updateTopCamera(snapshot);
+        this.updateTopCamera(snapshot, dt);
     }
 
     private updateSpectatorCamera(dt: number) {
@@ -728,6 +771,9 @@ export class RaceCameraDirector {
         }
         if (this._dolphinViewActive) {
             baseFov = RACE_CAMERA_TUNING.dolphinFov;
+        }
+        if (this._kickDiveViewActive || (this._kickDiveSurfaceRestore && this._mode === RaceCameraMode.Top)) {
+            baseFov = this._sprintFovCurrent;
         }
         if (this._fieldOverviewActive) {
             baseFov = FIELD_OVERVIEW_FOV;
@@ -961,7 +1007,7 @@ export class RaceCameraDirector {
 
         this._topViewActive = fixedTopView;
         this._underwaterViewActive = underwaterView;
-        if (wasUnderwaterView && !underwaterView) {
+        if (wasUnderwaterView && !underwaterView && !this._kickDiveSurfaceRestore) {
             this._cameraPos.set(desiredPos);
             this._cameraTarget.set(desiredTarget);
             this._broadcastCameraFov = this._broadcastDesiredFov;
@@ -993,8 +1039,12 @@ export class RaceCameraDirector {
         Vec3.lerp(this._cameraPos, this._cameraPos, desiredPos, smooth);
         Vec3.lerp(this._cameraTarget, this._cameraTarget, desiredTarget, smooth);
         this._broadcastCameraFov += (this._broadcastDesiredFov - this._broadcastCameraFov) * smooth;
+        if (this._kickDiveSurfaceRestore) {
+            this._underwaterViewActive = this._cameraPos.y < this._courseLayout.waterY;
+        }
         this.applyCameraTransform();
         this.applyFov();
+        this.finishKickDiveSurfaceRestore();
     }
 
     private readonly _shotDesiredPos = new Vec3();
@@ -1022,8 +1072,24 @@ export class RaceCameraDirector {
         }
     }
 
-    private updateTopCamera(snapshot: RaceCameraSnapshot) {
+    private updateTopCamera(snapshot: RaceCameraSnapshot, dt = 0) {
         const playerX = snapshot.playerX;
+        if (this._kickDiveSurfaceRestore) {
+            this._shotDesiredTarget.set(playerX, 0.18, 0);
+            this._shotDesiredPos.set(playerX, 17.5, 0);
+            const blend = cameraBlend(dt, 8);
+            Vec3.lerp(this._cameraTarget, this._cameraTarget, this._shotDesiredTarget, blend);
+            Vec3.lerp(this._cameraPos, this._cameraPos, this._shotDesiredPos, blend);
+            this._sprintFovCurrent += (44 - this._sprintFovCurrent) * blend;
+            this._underwaterViewActive = this._cameraPos.y < this._courseLayout.waterY;
+            this._topViewActive = !this._underwaterViewActive;
+            this.applyCameraTransform(new Vec3(0, 0, -1));
+            this.applyFov();
+            if (Vec3.distance(this._cameraPos, this._shotDesiredPos) <= 0.02) {
+                this.finishKickDiveSurfaceRestore();
+            }
+            return;
+        }
         this._topViewActive = true;
         this._underwaterViewActive = false;
         // Strict pool-orthogonal top view: camera is directly above the target,
@@ -1092,6 +1158,41 @@ export class RaceCameraDirector {
         // This prevents the floor/surface colours from popping to the above-water
         // set while the new chase viewpoint is still physically submerged.
         this._underwaterViewActive = this._cameraPos.y < this._courseLayout.waterY;
+        this.applyCameraTransform();
+        this.applyFov();
+    }
+
+    private updateKickDiveCamera(dt: number, snapshot: RaceCameraSnapshot) {
+        const layout = this._courseLayout;
+        const body = snapshot.playerUpperBodyWorldPosition;
+        const x = body?.x ?? snapshot.playerX;
+        const y = body?.y ?? snapshot.playerY + 0.54;
+        const z = body?.z ?? this._playerLaneZ;
+        const heading = snapshot.playerHeading ?? 0;
+        const forwardX = layout.directionAtDistance(snapshot.playerDistance) * Math.cos(heading);
+        const forwardZ = Math.sin(heading);
+        const minX = Math.min(layout.poolStartX, layout.poolFinishX) + 0.45;
+        const maxX = Math.max(layout.poolStartX, layout.poolFinishX) - 0.45;
+        const halfWidth = Math.max(0, layout.poolWidth * 0.5 - 0.45);
+        this._shotDesiredTarget.set(x, Math.min(y + 0.08, layout.waterY - 0.12), z);
+        this._shotDesiredPos.set(
+            clamp(x - RACE_CAMERA_TUNING.kickDiveBackDistance * forwardX, minX, maxX),
+            clamp(y - RACE_CAMERA_TUNING.kickDiveBelowDistance, layout.waterY - 1.35, layout.waterY - 0.25),
+            clamp(z - RACE_CAMERA_TUNING.kickDiveBackDistance * forwardZ, -halfWidth, halfWidth),
+        );
+        const blend = 1 - Math.exp(-Math.max(0, Number.isFinite(dt) ? dt : 0)
+            * RACE_CAMERA_TUNING.kickDiveFollowSpeed);
+        Vec3.lerp(this._cameraPos, this._cameraPos, this._shotDesiredPos, blend);
+        Vec3.lerp(this._cameraTarget, this._cameraTarget, this._shotDesiredTarget, blend);
+        this._sprintFovCurrent += (RACE_CAMERA_TUNING.kickDiveFov - this._sprintFovCurrent) * blend;
+        this._broadcastCameraFov = this._sprintFovCurrent;
+        this._topViewActive = false;
+        // 以机位过水面为准切换已有水下渲染，统一遵守水面禁区保护。
+        this._underwaterViewActive = this._cameraPos.y < layout.waterY;
+        if (this._underwaterViewActive) {
+            this._cameraPos.x = clamp(this._cameraPos.x, minX, maxX);
+            this._cameraPos.z = clamp(this._cameraPos.z, -halfWidth, halfWidth);
+        }
         this.applyCameraTransform();
         this.applyFov();
     }
@@ -1314,17 +1415,42 @@ export class RaceCameraDirector {
     }
 
     private applyCameraTransform(up?: Vec3) {
+        const previousRenderY = this._renderCameraPos.y;
         this._renderCameraPos.set(this._cameraPos);
         this._renderCameraPos.y = clampCameraHeightToWaterSide(
             this._renderCameraPos.y,
             this._courseLayout.waterY,
             this._underwaterViewActive,
         );
+        if (this._kickDiveViewActive || this._kickDiveSurfaceRestore) {
+            // 安全距离约束目标机位；实际机位以限速连续穿过水面，不能直接跨过禁区。
+            // 逻辑位置保持独立，否则向水面推进时会被同侧安全距离反复推回。
+            // 高位俯视镜头在远离水面时可加快收拢，靠近水面后统一限速。
+            const speed = Math.max(0.1, RACE_CAMERA_TUNING.kickDiveVerticalSpeed,
+                Math.abs(previousRenderY - this._courseLayout.waterY)
+                    * Math.min(8, Math.max(0, RACE_CAMERA_TUNING.kickDiveFollowSpeed)));
+            const maxStep = speed * this._cameraStepSeconds;
+            this._renderCameraPos.y = previousRenderY
+                + clamp(this._renderCameraPos.y - previousRenderY, -maxStep, maxStep);
+            this._underwaterViewActive = this._renderCameraPos.y < this._courseLayout.waterY;
+            if (this._underwaterViewActive) this._topViewActive = false;
+        }
         this._cameraNode.setPosition(this._renderCameraPos);
         this._cameraNode.lookAt(this._cameraTarget, up);
     }
 
+    private finishKickDiveSurfaceRestore() {
+        // 实际机位追上水面目标后才交还普通镜头，不能仅凭逻辑机位已出水就结束。
+        if (this._kickDiveSurfaceRestore && !this._underwaterViewActive
+            && this._cameraPos.y >= this._courseLayout.waterY + Math.max(0.1, RACE_CAMERA_TUNING.waterlineAboveClearance)
+            && Math.abs(this._renderCameraPos.y - this._cameraPos.y) < 0.001) {
+            this._kickDiveSurfaceRestore = false;
+        }
+    }
+
     private resetBroadcastDirector() {
+        this._kickDiveViewActive = false;
+        this._kickDiveSurfaceRestore = false;
         this._broadcastShotTimer = 0;
         this._broadcastDuelTimer = 0;
         this._broadcastDuelCooldown = 0;

@@ -1,4 +1,4 @@
-import { characterHeartRateTraitForModel } from './PlayerCharacterConfig';
+import { characterAbilityForModel, characterHeartRateTraitForModel } from './PlayerCharacterConfig';
 import { Camera, Color, EventMouse, Label, Layers, Material, MeshRenderer, Node, primitives, utils, Vec3, view } from 'cc';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { AISwimmerController } from '../entity/AISwimmerController';
@@ -384,6 +384,7 @@ export class ModelDebugFlowController {
             return;
         }
         this._debugMotor.setHeartRateTrait(characterHeartRateTraitForModel(variant.id));
+        this._debugMotor.setCharacterAbility(characterAbilityForModel(variant.id));
         let applied = false;
         for (const preview of this._actionPreviews) {
             if (preview.rig.setModelVariant(variant.id)) {

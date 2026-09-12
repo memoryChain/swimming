@@ -24,6 +24,7 @@ export class AxialRollModel {
         leftCatchSupport: number,
         rightCatchSupport: number,
         kickCadenceHz: number,
+        recoveryScale = 1,
     ) {
         const dt = clamp(finite(rawDt), 0, 0.05);
         if (dt <= 0) {
@@ -85,7 +86,7 @@ export class AxialRollModel {
         const drag = Math.max(0, finite(tuning.angularDrag))
             + Math.max(0, finite(kickCadenceHz))
                 * Math.max(0, finite(tuning.kickAngularDragPerHz));
-        angularAccel -= this._angularVelocity * drag;
+        angularAccel -= this._angularVelocity * drag * recoveryScale;
 
         this._angularVelocity += angularAccel * dt;
         this.clampVelocity();

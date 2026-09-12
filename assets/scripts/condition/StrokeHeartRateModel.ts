@@ -1,3 +1,4 @@
+import { abilityValue } from '../core/CharacterAbilityConfig';
 import { HEART_RATE_TRAITS, HEART_RATE_TUNING, HeartRateTraitId } from '../core/ConditionBalance';
 
 /** 只记录实际开始的手臂动作。固定环形队列，不按按键或结算重复计数。 */
@@ -9,6 +10,8 @@ export class StrokeHeartRateModel {
     private value = 80;
 
     private trait: HeartRateTraitId = 'balanced';
+    private breathControl = false;
+    setBreathControl(enabled: boolean) { this.breathControl = enabled; }
 
     setTrait(trait: HeartRateTraitId) { this.trait = HEART_RATE_TRAITS[trait] ? trait : 'balanced'; }
     get heartRateTrait(): HeartRateTraitId { return this.trait; }
@@ -17,7 +20,11 @@ export class StrokeHeartRateModel {
     reset() { this.head = 0; this.count = 0; this.clock = 0; this.value = 80; }
     get heartRate(): number { return this.value; }
     get strokeRate(): number { return this.count / HEART_RATE_TUNING.sampleSeconds; }
-    get targetHeartRate(): number { return Math.min(180, 80 + HEART_RATE_TUNING.bpmPerStrokeHz * this.strokeRate); }
+    get targetHeartRate(): number {
+        const load = this.breathControl && this.strokeRate <= abilityValue('coachMaxStrokeHz', 0.5, 4)
+            ? abilityValue('coachHeartLoad', 0.1, 1) : 1;
+        return Math.min(180, 80 + HEART_RATE_TUNING.bpmPerStrokeHz * this.strokeRate * load);
+    }
 
     applyAuthoritative(value: number) {
         if (Number.isFinite(value) && value >= 0) this.value = Math.max(80, Math.min(180, value));

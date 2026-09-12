@@ -1,3 +1,4 @@
+import type { CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { HeartRateTraitId } from '../core/ConditionBalance';
 import { RaceDifficulty } from '../core/GameBalance';
 
@@ -19,7 +20,9 @@ export type PlayerCharacterDefinition = {
     // 固有心率特性：升温慢的角色恢复也慢，不随养成改变。
     heartRateTrait: HeartRateTraitId;
     description: string;
+    abilityId: CharacterAbilityId;
     skillName: string;
+    // 两行短文案，每行至多 11 个全角字，适配角色页 190px 文本框。
     skillDescription: string;
     robotStyle?: boolean;
     supportsSkinTone?: boolean;
@@ -50,8 +53,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 0.85,
         energyGain: 82,
         heartRateTrait: 'balanced',
-        description: '戴着圆耳运动帽的活力少女，以轻快稳定的节奏跃浪前行。',
-        skillName: '跃浪节奏', skillDescription: '长续航配合熟练划水，适合持续推进。',
+        description: '圆耳帽下藏着出色水感，划得稳，比划得猛更拿手。',
+        abilityId: 'frogSense',
+        skillName: '水感天赋', skillDescription: '更容易划出完美\n但完美划水加速较少',
         supportsSkinTone: true,
     },
     {
@@ -60,8 +64,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.00,
         energyGain: 82,
         heartRateTrait: 'balanced',
-        description: '戴着青蛙帽与粉色护目镜的潮酷少年，以轻快稳定的节奏跃入浪潮。',
-        skillName: '蛙跃节奏', skillDescription: '较高技巧弥补起跳不足，持续划水效率出色。',
+        description: '青蛙帽少年爱蹦也会蹦，用频繁的小跳逐段追赶。',
+        abilityId: 'frogHop',
+        skillName: '小蛙连跳', skillDescription: '海豚跳攒得快、更省体力\n但每次跳得较近',
         supportsSkinTone: true,
     },
     {
@@ -70,8 +75,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 0.95,
         energyGain: 82,
         heartRateTrait: 'quick',
-        description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
-        skillName: '逐浪节奏', skillDescription: '轻体型配合强劲起跳，划水与爆发各有所长。',
+        description: '轻装运动少女练出一双强腿，停手踢腿也能向前追。',
+        abilityId: 'powerKick',
+        skillName: '腿比手好使', skillDescription: '踢腿能游得更快\n但用手划水力气较小',
         supportsSkinTone: true,
     },
     {
@@ -80,8 +86,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 0.95,
         energyGain: 82,
         heartRateTrait: 'quick',
-        description: '戴着猫耳帽与霓彩护目镜的灵动少女，以轻盈节奏穿梭浪尖。',
-        skillName: '猫影节奏', skillDescription: '充足体力与熟练划水，适合长时间保持节奏。',
+        description: '猫耳少女身轻灵巧，撞得开她，却很难让她一直失控。',
+        abilityId: 'catBalance',
+        skillName: '猫式平衡', skillDescription: '被撞翻后能很快稳住\n但身体轻，容易被撞开',
         supportsSkinTone: true,
     },
     {
@@ -90,8 +97,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.00,
         energyGain: 82,
         heartRateTrait: 'balanced',
-        description: '身着黑绿忍者装束的敏捷泳者，以轻快身法切入浪线。',
-        skillName: '忍浪节奏', skillDescription: '高技巧带来更强的划水推进，持续游速突出。',
+        description: '忍者哥讲究精准出手，每一划都要落在最好的时机。',
+        abilityId: 'precision',
+        skillName: '精准发力', skillDescription: '松手要准，完美加速更强\n没划准时，加速较弱',
         supportsSkinTone: true,
     },
     {
@@ -100,8 +108,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.15,
         energyGain: 82,
         heartRateTrait: 'steady',
-        description: '身着荧绿运动装的力量选手，凭借强劲蹬墙与扎实体型争夺位置。',
-        skillName: '疾风节奏', skillDescription: '扎实体型与强劲起跳，适合争夺有利位置。',
+        description: '健身教练擅长控制呼吸，按自己的节奏稳步发力。',
+        abilityId: 'breathControl',
+        skillName: '呼吸管理', skillDescription: '划水别太急，心跳更平稳\n划得太快就失去这个优势',
         supportsSkinTone: true,
     },
     {
@@ -110,8 +119,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 0.95,
         energyGain: 84,
         heartRateTrait: 'quick',
-        description: '身着青柠运动装备的活力少年，以灵敏节奏和轻快步伐追逐浪尖。',
-        skillName: '绿电节奏', skillDescription: '较高技巧兼顾起跳能力，划水与爆发衔接均衡。',
+        description: '飞毛腿把池壁当起跑线，每次折返都是追赶的机会。',
+        abilityId: 'wallKick',
+        skillName: '蹬墙起飞', skillDescription: '蹬墙后冲得更快\n但平时划水力气较小',
         supportsSkinTone: true,
     },
     {
@@ -120,8 +130,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.15,
         energyGain: 80,
         heartRateTrait: 'steady',
-        description: '背负轻型潜水装备的耐力型泳者，以稳定节奏穿越深水。',
-        skillName: '深潜续航', skillDescription: '高体力与熟练划水弥补较弱的起跳速度。',
+        description: '背着潜水装备的潜水哥，遇到拥挤就从水下穿过去。',
+        abilityId: 'kickDive',
+        skillName: '踢腿潜航', skillDescription: '踢腿潜入水下，避开碰撞\n划水或停止踢腿就会上浮',
         supportsSkinTone: true,
     },
     {
@@ -130,8 +141,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 0.90,
         energyGain: 82,
         heartRateTrait: 'quick',
-        description: '身着荧绿装备的银发少女，以轻快稳定的节奏逐浪前行。',
-        skillName: '霓绿节奏', skillDescription: '较高技巧配合轻体型，在续航与起跳之间取得平衡。',
+        description: '风火轮越划越顺，连续划准就能越游越快。',
+        abilityId: 'perfectChain',
+        skillName: '风火连划', skillDescription: '连续划出完美，越游越快\n失误或停太久，奖励消失',
         supportsSkinTone: true,
     },
     {
@@ -140,8 +152,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.25,
         energyGain: 82,
         heartRateTrait: 'slow',
-        description: '身披白绿装甲的机械泳者，以稳定节奏破浪前行。',
-        skillName: '机甲节奏', skillDescription: '重体型与强起跳占优，划水时需要安排体力。',
+        description: '装甲动力管够，里面的人仍要把握划水节奏。',
+        abilityId: 'exoskeleton',
+        skillName: '动力外骨骼', skillDescription: '划水不消耗体力\n机甲太僵硬，不能海豚跳',
         supportsSkinTone: false,
     },
     {
@@ -150,8 +163,9 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         weight: 1.30,
         energyGain: 75,
         heartRateTrait: 'slow',
-        description: '力量型游泳选手，起跳与对抗强劲，但持续划水需要精打细算。',
-        skillName: '强力起跳', skillDescription: '强劲初速让跳水、海豚跳和蹬墙更具优势。',
+        description: '肌肉男凭扎实体型争夺位置，正面碰撞就是他的主场。',
+        abilityId: 'heavyBody',
+        skillName: '重量优势', skillDescription: '身体重，能把对手撞开\n自己不容易被撞偏',
     },
 ];
 
@@ -292,3 +306,7 @@ export function selectedPlayerColorScheme(): PlayerColorScheme {
 
 export function setSelectedRaceDifficulty(difficulty: RaceDifficulty) { selectedRaceDifficulty = difficulty; }
 export function getSelectedRaceDifficulty(): RaceDifficulty { return selectedRaceDifficulty; }
+
+export function characterAbilityForModel(modelVariantId: string): CharacterAbilityId {
+    return PLAYER_CHARACTER_DEFINITIONS.find(character => character.modelVariantId === modelVariantId)?.abilityId ?? 'none';
+}

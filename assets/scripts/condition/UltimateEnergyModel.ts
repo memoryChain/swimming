@@ -14,6 +14,8 @@ export class UltimateEnergyModel {
     private _energy = 0;
     private _gainAptitude = 50;
     private _gainMultiplier = 1;
+    private _abilityGainScale = 1;
+    setAbilityGainScale(value: number) { this._abilityGainScale = Number.isFinite(value) ? clamp(value, 0, 3) : 1; }
     private _deniedFlash = false;
     private _simulationSeconds = 0;
     private _lastCollisionBonusAt = Number.NEGATIVE_INFINITY;
@@ -126,6 +128,6 @@ export class UltimateEnergyModel {
         if (!Number.isFinite(amount) || amount <= 0) {
             return;
         }
-        this._energy = clamp(this._energy + amount * this._gainMultiplier, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
+        this._energy = clamp(this._energy + amount * this._gainMultiplier * this._abilityGainScale, 0, ULTIMATE_ENERGY_BALANCE.maxEnergy);
     }
 }

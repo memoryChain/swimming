@@ -1,3 +1,4 @@
+import type { CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import type { SwimmerMotor } from '../swimmer/SwimmerMotor';
 import type { Swimmer } from '../entity/Swimmer';
 import type { PlayerBalanceOverrides } from './PlayerBalanceOverrides';
@@ -27,6 +28,7 @@ import { findPlayerCharacter, getPlayerCharacterSelection, PlayerCharacterId } f
 // / applyRaceModifiers*, and (if it needs its own wire field) the codec. The transport is
 // generic and needs no change.
 export interface RaceModifierProfile {
+    abilityId?: CharacterAbilityId;
     // Progression-derived movement/condition balance (null = neutral / no character).
     balance: PlayerBalanceOverrides | null;
     // Future 养成 fields go here, e.g. startBoost?: number; luckyLaneBias?: number; ...
@@ -67,7 +69,7 @@ export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): R
         character.energyGain,
         character.heartRateTrait,
     );
-    return { balance };
+    return { balance, abilityId: character.abilityId };
 }
 
 // Resolve the local player's full profile from their save. Same source single-player
@@ -83,6 +85,7 @@ export function resolveLocalRaceModifiers(): RaceModifierProfile {
 // the motor on the raw global constants (neutral).
 export function applyRaceModifiersToMotor(motor: SwimmerMotor, profile: RaceModifierProfile | null): void {
     motor.setPlayerBalance(profile?.balance ?? null);
+    motor.setCharacterAbility(profile?.abilityId ?? 'none');
 }
 
 // Apply the full profile (motor balance + 蓄气资质) to a swimmer. Use this for

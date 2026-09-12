@@ -1,3 +1,4 @@
+import { encodeCharacterAbility, decodeCharacterAbility } from './NetCharacterAbilityCodec';
 import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
 import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollisionSoftnessCodec';
 
@@ -27,6 +28,7 @@ import { encodeCollisionSoftness, decodeCollisionSoftness } from './NetCollision
 // The leading "S|" tag distinguishes snapshots from other broadcast messages.
 
 export interface NetSnapshotEntry {
+    abilityState?: Readonly<import('../swimmer/CharacterAbilityState').CharacterAbilitySnapshot>;
     lane: number;
     distance: number;
     lateral: number;
@@ -80,7 +82,7 @@ const TAG = 'S|';
 
 export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)}`)
+        .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
         .join(';');
     return `${TAG}${hostPos}#${body}`;
 }
@@ -140,6 +142,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                 conditionHeartRate: decodeConditionHeartRate(conditionHeartRate),
                 conditionDepletionCooldown: decodeConditionCooldown(conditionCooldownMs),
                 collisionSoftness: decodeCollisionSoftness(parts[15]),
+                abilityState: decodeCharacterAbility(parts[16]),
             });
         }
     }
@@ -162,7 +165,7 @@ export function encodeSelfSnapshot(
     ownerStateSeq = entry.ownerStateSeq ?? -1,
     ownerPos = entry.ownerPos ?? -1,
 ): string {
-    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)}`;
+    return `${SELF_TAG}${entry.lane},${Math.round(entry.distance * 100)},${Math.round(entry.lateral * 1000)},${entry.finished ? 1 : 0},${Math.round(entry.heading * 1000)},${Math.round(Math.max(0, entry.speed) * 100)},${Math.max(0, Math.round(entry.energy))},${Math.round(entry.axialRoll * 1000)},${Math.round(entry.axialRollVelocity * 1000)},${Math.round(entry.headingVelocity * 1000)},${Math.round(entry.collisionPitch * 1000)},${Math.round(entry.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(entry.conditionEnergyRatio)},${encodeConditionHeartRate(entry.conditionHeartRate)},${encodeOwnerStateSeq(ownerStateSeq)},${encodeOwnerStateSeq(ownerPos)},${encodeCollisionSoftness(entry.collisionSoftness)},${encodeCharacterAbility(entry.abilityState)}`;
 }
 
 // Returns null if the payload is not a self-position report.
@@ -211,6 +214,7 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
         ownerStateSeq: decodeOwnerStateSeq(ownerStateSeq),
         ownerPos: decodeOwnerStateSeq(ownerPos),
         collisionSoftness: decodeCollisionSoftness(parts[16]),
+        abilityState: decodeCharacterAbility(parts[17]),
     };
 }
 
