@@ -3,11 +3,13 @@
 
 import {
     BlockInputEvents,
+    Button,
     Label,
     Node,
     Sprite,
     UITransform,
 } from 'cc';
+import { PopupUiMotion } from './PopupUiMotion';
 import { SettingsManager } from '../app/SettingsManager';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
@@ -34,6 +36,7 @@ const ACTION_Y = -186;
 
 export class SettingsPanel {
     private _root: Node | null = null;
+    private _motion: PopupUiMotion | null = null;
     private _musicRow: VolumeRow | null = null;
     private _sfxRow: VolumeRow | null = null;
     private _initialMusic = 0.8;
@@ -58,6 +61,7 @@ export class SettingsPanel {
             696, PANEL_HEIGHT, 0, PANEL_Y,
         );
         panel.addComponent(BlockInputEvents);
+        this._motion = new PopupUiMotion(root, dim, panel);
 
         const title = makeLabel('Title', panel, '音量设置', 30, uiColor(13, 39, 76, 255));
         styleProjectUiLabel(title.getComponent(Label)!, 'semibold', 38);
@@ -96,21 +100,24 @@ export class SettingsPanel {
     }
 
     show(): void {
-        if (!this._root?.isValid || !this._musicRow || !this._sfxRow) return;
+        if (!this._root?.isValid || !this._musicRow || !this._sfxRow || this._motion?.showing) return;
         this._initialMusic = SettingsManager.musicVolume;
         this._initialSfx = SettingsManager.sfxVolume;
         this._draftMusic = this._initialMusic;
         this._draftSfx = this._initialSfx;
         this.updateRow(this._musicRow, this._draftMusic);
         this.updateRow(this._sfxRow, this._draftSfx);
-        if (!this._root.active) this._root.active = true;
+        this._motion?.show();
     }
 
     hide(): void {
-        if (this._root?.isValid && this._root.active) this._root.active = false;
+        this.cancel();
     }
 
     dispose(): void {
+        if (this._motion?.interactive) this.restorePreview();
+        this._motion?.dispose();
+        this._motion = null;
         if (this._root?.isValid) this._root.destroy();
         this._root = null;
         this._musicRow = null;
@@ -147,6 +154,7 @@ export class SettingsPanel {
 
         let row: VolumeRow;
         const slider = makeDragSlider(`${title}Slider`, parent, 300, 14, 0.8, (ratio) => {
+            if (!this._motion?.interactive) return;
             const normalized = quantizeVolume(ratio);
             if (row.valueLabel.string !== formatVolume(normalized)) {
                 row.valueLabel.string = formatVolume(normalized);
@@ -176,7 +184,8 @@ export class SettingsPanel {
         styleProjectUiLabel(cancelText.getComponent(Label)!, 'semibold', 34);
         cancelText.getComponent(UITransform)!.setContentSize(220, 52);
         cancelText.setPosition(0, 0, 1);
-        cancel.on(Node.EventType.TOUCH_END, () => this.cancel());
+        this._motion!.bindButton(cancel, () => true);
+        cancel.on(Button.EventType.CLICK, () => this.cancel());
 
         const confirm = makeTouchArea('Confirm', panel, 272, 70);
         confirm.setPosition(170, ACTION_Y, 2);
@@ -188,7 +197,8 @@ export class SettingsPanel {
         styleProjectUiLabel(confirmText.getComponent(Label)!, 'semibold', 34);
         confirmText.getComponent(UITransform)!.setContentSize(220, 52);
         confirmText.setPosition(0, 0, 1);
-        confirm.on(Node.EventType.TOUCH_END, () => this.confirm());
+        this._motion!.bindButton(confirm, () => true);
+        confirm.on(Button.EventType.CLICK, () => this.confirm());
     }
 
     private updateRow(row: VolumeRow, volume: number): void {
@@ -198,19 +208,25 @@ export class SettingsPanel {
         if (row.valueLabel.string !== text) row.valueLabel.string = text;
     }
 
-    private cancel(): void {
+    private restorePreview(): void {
         if (this._draftMusic !== this._initialMusic) {
             SettingsManager.previewMusicVolume(this._initialMusic);
         }
         if (this._draftSfx !== this._initialSfx) {
             SettingsManager.previewSfxVolume(this._initialSfx);
         }
-        this.hide();
+    }
+
+    private cancel(): void {
+        if (!this._motion?.interactive) return;
+        this.restorePreview();
+        this._motion.hide();
     }
 
     private confirm(): void {
+        if (!this._motion?.interactive) return;
         SettingsManager.setVolumes(this._draftMusic, this._draftSfx);
-        this.hide();
+        this._motion.hide();
     }
 }
 

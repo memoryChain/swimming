@@ -12,23 +12,25 @@ class Button extends Comp{static Transition={SCALE:1};static EventType={CLICK:'c
 class BlockInputEvents extends Comp{}
 class Font{}
 class UIOpacity extends Comp{opacity=255;}
-class Vec3{constructor(x,y,z){Object.assign(this,{x,y,z});}}
-const noopTween=()=>({to(){return this;},delay(){return this;},start(){return this;}});
+class Vec3{constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}}
 class Vec2{constructor(x,y){this.x=x;this.y=y;}}
-class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position={x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
+class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
 function load(file,imports,extras={}){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{require:p=>{assert.ok(imports[p],p);return imports[p];},module:m,exports:m.exports,...extras});return m.exports;}
 function fixture(reservedRatio=0){
  let size={width:1280,height:720},safe={x:0,y:0,...size},jumps=0;const pending=[],listeners=new Map();
  const view={getVisibleSize:()=>size,on:(e,f,ctx)=>listeners.set(e,()=>f.call(ctx)),off:e=>listeners.delete(e)};
- const cc={BlockInputEvents,Button,Color,Font,Label,Node,Sprite,UITransform,Vec2,Vec3,UIOpacity,Tween:{stopAllByTarget(){}},tween:noopTween,view,sys:{getSafeAreaRect:()=>safe}};
+ const animations=[];
+ const trackedTween=target=>{const t={target,steps:[],stopped:false,to(seconds,props){this.steps.push({seconds,props});return this;},delay(seconds){this.steps.push({seconds});return this;},call(fn){this.steps.push({fn});return this;},stop(){this.stopped=true;return this;},start(){animations.push(this);return this;}};return t;};
+ const cc={BlockInputEvents,Button,Color,Font,Label,Node,Sprite,UITransform,Vec2,Vec3,UIOpacity,Tween:{stopAllByTarget(){}},tween:trackedTween,view,sys:{getSafeAreaRect:()=>safe}};
  const block=fs.readFileSync(path.join(root,'assets/scripts/core/ResourcePaths.ts'),'utf8').match(/raceHudUi: (\{[\s\S]*?\n    \}),/)[1];
  const art=vm.runInNewContext('('+block+')');
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
  const constants={StrokeType:{LEFT:'left',RIGHT:'right'},Rating:{PERFECT:'perfect',GOOD:'good',BAD:'bad'}};
+ const entrance=load('assets/scripts/ui/RaceHudEntrance.ts',{'cc':cc,'./RuntimeUiFactory':{makeUiNode:node}});
  const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
- const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
+ const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./RaceHudEntrance':entrance,'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
  mod.preloadRaceHudStatus(e=>assert.equal(e,null));const parent=new Node('root');const hud=new mod.RaceHudStatusView(parent,()=>jumps++);
- return {hud,parent,pending,listeners,get jumps(){return jumps;},resize(w,h,l=0,r=0,top=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h-top};listeners.get('canvas-resize')();}};
+ return {hud,parent,pending,listeners,animations,finish(){for(const t of animations){if(t.stopped||t.finished)continue;for(const step of t.steps){if(t.stopped)break;if(step.props)Object.assign(t.target,step.props);step.fn?.();}t.finished=true;}},get jumps(){return jumps;},resize(w,h,l=0,r=0,top=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h-top};listeners.get('canvas-resize')();}};
 }
 function find(n,name){if(n.name===name)return n;for(const c of n.children){const f=find(c,name);if(f)return f;}}
 function count(n){return 1+n.children.reduce((s,c)=>s+count(c),0);}
@@ -248,4 +250,34 @@ test('白点常态带光晕一起移动，完美松手才高亮并同步消失�
  ui.setPressed('left',true);guide.active=true;ui.updateSide('left',guide);assert.equal(dot.getComponent(UIOpacity).opacity,255);assert.equal(glow.getComponent(UIOpacity).opacity,110);
  ui.setPressed('left',false);ui.showResult('left','good');guide.active=false;ui.updateSide('left',guide);assert.equal(dot.active,false);assert.equal(glow.active,false);
  ui.showResult('left','perfect');s.hud.setVisible(false);assert.equal(dot.active,false);assert.equal(glow.active,false);s.hud.setVisible(true);ui.consumeSample(.1);assert.equal(glow.active,false);
+});
+
+
+test('HUD 入场期间真实读数及输入立即生效，重复显示不重播且不重建',()=>{
+ const s=fixture(),h=s.hud,total=count(s.parent);h.setVisible(true);const started=s.animations.length;
+ assert.ok(Math.abs(Math.max(...s.animations.map(t=>t.steps.reduce((sum,step)=>sum+(step.seconds??0),0)))-.3)<1e-9);
+ for(let i=0;i<120;i++)h.setVisible(true);
+ assert.equal(s.animations.length,started);assert.equal(count(s.parent),total);
+ update(h,.5,false);assert.equal(find(s.parent,'SpeedValue').getComponent(Label).string,'2.37');
+ assert.equal(find(s.parent,'Percent').getComponent(Label).string,'10%');assert.equal(find(s.parent,'DolphinJumpButton').getComponent(Button).interactable,false);
+ const left=find(s.parent,'LeftStrokeUiEntrance'),right=find(s.parent,'RightStrokeUiEntrance');
+ assert.equal(left.getComponent(UIOpacity).opacity,0);h.stroke.setPressed('left',true);
+ assert.equal(left.getComponent(UIOpacity).opacity,255);assert.equal(right.getComponent(UIOpacity).opacity,255);
+ assert.equal(find(s.parent,'LeftStrokeUi').children.find(n=>n.name==='HandButtonVisual').scale.x,.88);
+ s.finish();assert.equal(find(s.parent,'StatusReadoutsEntrance').position.x,0);
+ assert.equal(find(s.parent,'RankingEntrance').getComponent(UIOpacity).opacity,255);
+ assert.equal(s.animations.filter(t=>!t.stopped&&!t.finished).length,0);
+});
+
+test('入场中适配不改动画锚点；隐藏取消全部入场，重进和销毁不留残留',()=>{
+ const s=fixture(),h=s.hud;h.setVisible(true);s.resize(1920,720,40,40);
+ assert.equal(find(s.parent,'LeftStatus').position.x,-920);
+ assert.equal(find(s.parent,'StatusReadoutsEntrance').position.x,-12);
+ h.setVisible(false);s.finish();assert.equal(h.root.active,false);assert.equal(h.consumeSample(10),false);
+ for(const name of ['StatusReadoutsEntrance','CourseProgressEntrance','RankingEntrance','LeftStrokeUiEntrance','RightStrokeUiEntrance']){
+  const n=find(s.parent,name);assert.equal(n.position.x,0);assert.equal(n.position.y,0);assert.equal(n.getComponent(UIOpacity).opacity,255);
+ }
+ h.setVisible(true);assert.equal(find(s.parent,'StatusReadoutsEntrance').position.x,-12);
+ const current=s.animations.filter(t=>!t.finished&&!t.stopped);assert.ok(current.length>0);
+ s.parent.destroy();assert.ok(current.every(t=>t.stopped));assert.equal(s.listeners.size,0);
 });

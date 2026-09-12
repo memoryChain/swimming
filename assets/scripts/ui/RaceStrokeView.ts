@@ -1,3 +1,4 @@
+import type { RaceHudEntrance } from './RaceHudEntrance';
 import { Color, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc';
 import { StrokeType, Rating } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
@@ -44,7 +45,7 @@ export class RaceStrokeView {
     readonly rightGuide: StrokeTimingGuide = { active:false,currentRatio:0,holdSeconds:0,actionSeconds:0,minHoldRatio:0,intervals:[] };
     private visible = false;
     private elapsed = 0;
-    constructor(left:Node,right:Node,private readonly frame:(key:StrokeArt)=>SpriteFrame) {
+    constructor(left:Node,right:Node,private readonly frame:(key:StrokeArt)=>SpriteFrame, entrance?:RaceHudEntrance, private readonly onPress?:()=>void) {
         for (let index=0;index<2;index++) {
             const sign=index===0?1:-1,root=makeUiNode(index===0?'LeftStrokeUi':'RightStrokeUi',index===0?left:right);
             const sprite=(name:string,key:StrokeArt,x:number,y:number,w:number,h:number)=>{
@@ -92,6 +93,7 @@ export class RaceStrokeView {
             praise.sizeMode=Sprite.SizeMode.CUSTOM;praise.trim=false;
             const combo=this.label(feedback,'Combo','',sign*24,32,64,24,18);combo.color=GOLD;
             this.sides.push({markerOpacity,markerGlow,markerGlowOpacity,markerGlowAge:MARKER_FLASH_SECONDS,innerGlow,innerGlowOpacity,innerGlowAge:INNER_GLOW_SECONDS,ripples,rippleNext:0,root,sign,hand,opacity,marker,bands,starts,ends,praise,combo,feedback,feedbackOpacity,held:false,inPerfect:false,handSprite,markerSprite,lastTier:0,praiseKey:'',zoneRatio:.8});root.active=false;
+            entrance?.wrap(root, 0, 0, 0.12, 0, true);
             root.once(Node.EventType.NODE_DESTROYED,()=>{Tween.stopAllByTarget(hand);Tween.stopAllByTarget(feedback);Tween.stopAllByTarget(feedbackOpacity);});
         }
     }
@@ -105,6 +107,7 @@ export class RaceStrokeView {
         if(s.held===pressed)return;
         s.held=pressed;Tween.stopAllByTarget(s.hand);
         if(pressed){
+            this.onPress?.();
             this.emitRipple(s);s.innerGlowAge=0;
             // 新一划取消旧的松手闪光，常态光晕由白点的显示快照驱动。
             if(s.markerGlowAge<MARKER_FLASH_SECONDS){

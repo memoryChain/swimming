@@ -6,6 +6,7 @@ import {
     Sprite,
     UITransform,
 } from 'cc';
+import { PopupUiMotion } from './PopupUiMotion';
 import { AVATARS, generateRandomNickName } from '../backend/IdentityConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
@@ -35,6 +36,7 @@ const AVATAR_HIT_SIZE = 90;
 
 export class IdentityEditPanel {
     private _root: Node | null = null;
+    private _motion: PopupUiMotion | null = null;
     private _nicknameLabel: Label | null = null;
     private _selection: Node | null = null;
     private _confirmButton: Button | null = null;
@@ -61,6 +63,7 @@ export class IdentityEditPanel {
             696, 436, 0, PANEL_Y,
         );
         panel.addComponent(BlockInputEvents);
+        this._motion = new PopupUiMotion(root, dim, panel);
 
         const title = makeLabel('Title', panel, '选择头像', 30, uiColor(13, 39, 76, 255));
         const titleLabel = title.getComponent(Label)!;
@@ -75,22 +78,24 @@ export class IdentityEditPanel {
     }
 
     show(): void {
-        if (!this._root?.isValid) return;
+        if (!this._root?.isValid || this._saving || this._motion?.showing) return;
         this._draftAvatarId = AVATARS.some((option) => option.id === PlayerData.avatarId)
             ? PlayerData.avatarId
             : AVATARS[0].id;
         this._draftNickname = PlayerData.nickName;
         this.setNicknameLabel(this._draftNickname);
         this.updateSelection(this._draftAvatarId);
-        if (!this._root.active) this._root.active = true;
+        this._motion?.show();
     }
 
     hide(): void {
         if (this._saving || !this._root?.isValid) return;
-        if (this._root.active) this._root.active = false;
+        this._motion?.hide();
     }
 
     dispose(): void {
+        this._motion?.dispose();
+        this._motion = null;
         if (this._root?.isValid) this._root.destroy();
         this._root = null;
         this._nicknameLabel = null;
@@ -125,7 +130,7 @@ export class IdentityEditPanel {
                 }
             });
 
-            node.on(Node.EventType.TOUCH_END, () => this.selectAvatar(option.id));
+            node.on(Button.EventType.CLICK, () => this.selectAvatar(option.id));
             this._avatarViews.set(option.id, { node, button });
         }
 
@@ -178,7 +183,7 @@ export class IdentityEditPanel {
         styleProjectUiLabel(randomLabel, 'semibold', 26);
         randomText.getComponent(UITransform)!.setContentSize(100, 40);
         randomText.setPosition(27, 0, 1);
-        random.on(Node.EventType.TOUCH_END, () => this.randomizeNickname());
+        random.on(Button.EventType.CLICK, () => this.randomizeNickname());
     }
 
     private buildActions(panel: Node): void {
@@ -192,7 +197,8 @@ export class IdentityEditPanel {
         styleProjectUiLabel(cancelText.getComponent(Label)!, 'semibold', 34);
         cancelText.getComponent(UITransform)!.setContentSize(220, 52);
         cancelText.setPosition(0, 0, 1);
-        cancel.on(Node.EventType.TOUCH_END, () => this.hide());
+        this._motion!.bindButton(cancel, () => !this._saving);
+        cancel.on(Button.EventType.CLICK, () => this.hide());
 
         const confirm = makeTouchArea('Confirm', panel, 272, 70);
         confirm.setPosition(170, -216, 2);
@@ -204,14 +210,18 @@ export class IdentityEditPanel {
         styleProjectUiLabel(confirmText.getComponent(Label)!, 'semibold', 34);
         confirmText.getComponent(UITransform)!.setContentSize(220, 52);
         confirmText.setPosition(0, 0, 1);
-        confirm.on(Node.EventType.TOUCH_END, () => { void this.confirm(); });
+        this._motion!.bindButton(confirm, () => !this._saving);
+        confirm.on(Button.EventType.CLICK, () => { void this.confirm(); });
         this._confirmButton = confirm.getComponent(Button)!;
     }
 
     private selectAvatar(avatarId: string): void {
-        if (this._saving || avatarId === this._selectedId) return;
+        if (this._saving || !this._motion?.interactive || avatarId === this._selectedId) return;
         this._draftAvatarId = avatarId;
         this.updateSelection(avatarId);
+        const next = this._avatarViews.get(avatarId);
+        if (next) this._motion.pulse(next.node);
+        if (this._selection) this._motion.pulse(this._selection);
     }
 
     private updateSelection(avatarId: string): void {
@@ -231,7 +241,7 @@ export class IdentityEditPanel {
     }
 
     private randomizeNickname(): void {
-        if (this._saving) return;
+        if (this._saving || !this._motion?.interactive) return;
         this._draftNickname = generateRandomNickName();
         this.setNicknameLabel(this._draftNickname);
     }
@@ -243,7 +253,8 @@ export class IdentityEditPanel {
     }
 
     private async confirm(): Promise<void> {
-        if (this._saving) return;
+        if (this._saving || !this._motion?.interactive) return;
+        const root = this._root;
         this._saving = true;
         if (this._confirmButton?.isValid && this._confirmButton.interactable) {
             this._confirmButton.interactable = false;
@@ -253,10 +264,12 @@ export class IdentityEditPanel {
             if (this._draftAvatarId !== PlayerData.avatarId) patch.avatarId = this._draftAvatarId;
             if (this._draftNickname !== PlayerData.nickName) patch.nickName = this._draftNickname;
             if (patch.avatarId || patch.nickName) await PlayerData.setIdentity(patch);
-            if (this._root?.isValid && this._root.active) this._root.active = false;
+            if (this._root === root && root?.isValid) this._motion?.hide();
         } catch (error) {
             console.warn('[AvatarUI] 保存头像资料失败', error);
         } finally {
+            // 旧保存请求不能影响销毁后重新建立的弹窗。
+            if (this._root !== root) return;
             this._saving = false;
             if (this._confirmButton?.isValid && !this._confirmButton.interactable) {
                 this._confirmButton.interactable = true;
