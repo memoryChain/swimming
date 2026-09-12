@@ -104,7 +104,7 @@ export class PlayerConditionModel {
         // PERFECT 由 Motor 按每划心率快照处理，旧倍率保持中性。
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
-        // 只区分有体力与已耗尽，不随剩余比例逐渐衰减。
+        // 只区分有体力与已耗尽；耗尽后推进与动作轮速一起减弱，不按剩余比例渐变。
         const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
         this._cadenceModifier = energyDepletionCadenceScale(ratio);

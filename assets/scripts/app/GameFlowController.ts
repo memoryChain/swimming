@@ -84,7 +84,7 @@ export class GameFlowController {
     private _finishViewElapsed = -1;
     private _finishPresentationVersion = 0;
     private _pendingFinishPresentation: (() => void) | null = null;
-    private readonly _aiDiveTimerIds: ReturnType<typeof setTimeout>[] = [];
+    private _aiDivesStarted = false;
     private readonly _playerUpperBodyWorldPosition = new Vec3();
 
     constructor(private readonly _refs: GameFlowRefs) {}
@@ -95,7 +95,7 @@ export class GameFlowController {
         this._pendingFinishPresentation = null;
         this._refs.debug('startGame');
         StrokeSfxManager.preload();
-        this.clearAiDiveTimers();
+        this._aiDivesStarted = false;
         this.resetDiveCharge();
         this._sprintTriggered = false;
         this._lastSprintTier = SprintTier.STEADY;
@@ -297,7 +297,7 @@ export class GameFlowController {
             if (state === GameState.DIVING) {
                 this._divingElapsed = 0;
                 this._refs.uiFlow.showGo();
-                this.prepareAndScheduleAiDives();
+                this.startAiDivesAtGo();
             }
             if (state === GameState.GLIDING) {
                 // The pre-jump burst must not survive into the airborne/entry phase.
@@ -570,7 +570,7 @@ export class GameFlowController {
     }
 
     stopAllAi() {
-        this.clearAiDiveTimers();
+        this._aiDivesStarted = false;
         for (const controller of this._refs.aiControllers) {
             controller.stopSwimming();
         }
@@ -586,48 +586,23 @@ export class GameFlowController {
         return gap;
     }
 
-    private prepareAndScheduleAiDives() {
-        this.clearAiDiveTimers();
+    private startAiDivesAtGo() {
+        if (this._aiDivesStarted || this._refs.getState() !== GameState.DIVING) return;
+        this._aiDivesStarted = true;
+        // 所有真正 AI 都在发令边缘发动；远端真人只接受自己的网络输入。
         for (let i = 0; i < this._refs.aiSwimmers.length; i++) {
             const swimmer = this._refs.aiSwimmers[i];
-            swimmer.prepareDive();
             const controller = this._refs.aiControllers[i];
-            // Networked remote human: its dive comes from network input, not the AI
-            // dive timer. Still prepareDive()'d above so the body is on the block.
-            if (controller?.remoteDriven) {
-                continue;
-            }
-            const delayMs = Math.round(this.aiDiveReactionDelay(controller) * 1000);
-            const power = this.aiDivePower(swimmer, controller);
-            const diveResult = resolveDiveResult(power);
-            const timerId = setTimeout(() => {
-                const state = this._refs.getState();
-                if (state !== GameState.DIVING && state !== GameState.GLIDING && state !== GameState.RACING) {
-                    return;
-                }
-                swimmer.performDive(diveResult);
-                // Start this AI swimming the moment it enters the water, so it races
-                // on its own reaction time even if the player stalls on the block
-                // (the race-wide RACING transition is gated on the player's dive).
-                controller?.startSwimming();
-                this._refs.debug(`ai dive ${swimmer.swimmerName} power=${power.toFixed(2)} delay=${(delayMs / 1000).toFixed(2)}`);
-            }, delayMs);
-            this._aiDiveTimerIds.push(timerId);
+            if (!swimmer.node.active || controller?.remoteDriven) continue;
+            swimmer.prepareDive();
+            const power = this.aiDivePower(controller);
+            swimmer.performDive(resolveDiveResult(power));
+            controller?.startSwimming();
+            this._refs.debug(`ai dive ${swimmer.swimmerName} power=${power.toFixed(2)} at GO`);
         }
     }
 
-    private clearAiDiveTimers() {
-        while (this._aiDiveTimerIds.length > 0) {
-            clearTimeout(this._aiDiveTimerIds.pop());
-        }
-    }
-
-    private aiDiveReactionDelay(controller: AISwimmerController | null): number {
-        const baseReaction = controller?.diveReaction ?? DIVE_BALANCE.defaultAiReactionSeconds;
-        return Math.max(0.03, baseReaction + randomFloat() * DIVE_BALANCE.aiReactionRandomSeconds);
-    }
-
-    private aiDivePower(swimmer: Swimmer, controller: AISwimmerController | null): number {
+    private aiDivePower(controller: AISwimmerController | null): number {
         const basePower = controller?.divePower ?? DIVE_BALANCE.defaultAiPower;
         const variance = (randomFloat() * 2 - 1) * DIVE_BALANCE.aiPowerVariance;
         return Math.max(DIVE_BALANCE.aiPowerMin, Math.min(DIVE_BALANCE.aiPowerMax, basePower + variance));
@@ -670,11 +645,7 @@ export class GameFlowController {
         this._refs.debug(`dive commit reason=${reason} charge=${charge.toFixed(2)} power=${power.toFixed(2)}`);
         this._refs.uiFlow.showDiveRelease(power, this._divingElapsed > LATE_DIVE_START_SECONDS);
         this._refs.raceCameraDirector.startDiveShot();
-        const diveResult = resolveDiveResult(power);
-        const diveSpeedScale = this._refs.playerDiveSpeedScale();
-        if (diveSpeedScale !== 1) {
-            diveResult.launchSpeed *= diveSpeedScale;
-        }
+        const diveResult = resolveDiveResult(power, this._refs.playerDiveSpeedScale());
         // Publish the final owner-authoritative result only after progression has
         // adjusted it. This covers manual and countdown-end dives and keeps older
         // clients compatible because the launch-speed suffix is optional.

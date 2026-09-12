@@ -1,3 +1,5 @@
+import { DIVE_BALANCE, SWIMMER_BALANCE } from '../core/GameBalance';
+import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { HEART_RATE_TRAITS } from '../core/ConditionBalance';
 // 角色属性弹窗：成长属性与固有属性分开显示，操作说明读取现行玩法语义。
 
@@ -54,7 +56,7 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
         title: '体力消耗',
         lines: [
             '角色面板的体力就是赛内体力上限；每次手臂划水固定扣除，比赛中不自动恢复。',
-            '耗尽后新划水的推进固定减弱；踢腿不扣体力，海豚跳成功释放另扣体力。',
+            '耗尽后划水动作变慢、推进减弱；踢腿不扣体力，海豚跳成功释放另扣体力。',
         ],
     },
     {
@@ -170,8 +172,9 @@ function buildRows(
             name: '爆发力',
             aptitude: `${character.burst}`,
             lines: [
-                { label: '最大游速', current: fmt(current.maxSpeed, 2), max: fmt(atMax.maxSpeed, 2) },
-                { label: '出发速度', current: fmt(current.diveMaxLaunchSpeed, 2), max: fmt(atMax.diveMaxLaunchSpeed, 2) },
+                { label: '满蓄力跳水初速', current: fmt(DIVE_BALANCE.maxLaunchSpeed * current.burstLaunchSpeedScale, 2), max: fmt(DIVE_BALANCE.maxLaunchSpeed * atMax.burstLaunchSpeedScale, 2) },
+                { label: '海豚跳初速', current: fmt(DOLPHIN_JUMP.launchSpeed * current.burstLaunchSpeedScale, 2), max: fmt(DOLPHIN_JUMP.launchSpeed * atMax.burstLaunchSpeedScale, 2) },
+                { label: '翻滚蹬墙初速', current: fmt(SWIMMER_BALANCE.flipTurnPushLaunchSpeed * current.burstWallLaunchSpeedScale, 2), max: fmt(SWIMMER_BALANCE.flipTurnPushLaunchSpeed * atMax.burstWallLaunchSpeedScale, 2) },
             ],
         },
         {

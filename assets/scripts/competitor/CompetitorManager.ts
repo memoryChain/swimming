@@ -169,7 +169,6 @@ export class CompetitorManager {
         controller.difficulty = difficultyOverride ?? scaledRaceDifficulty(profile.difficulty);
         controller.bpmOffset = profile.bpmOffset;
         controller.divePower = profile.divePower;
-        controller.diveReaction = profile.diveReaction;
         controller.personality = getAiPersonality(profile.personalityId);
         swimmer.setEnergyGainAptitude(profile.energyGain ?? 80);
     }

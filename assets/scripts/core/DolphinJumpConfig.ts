@@ -28,7 +28,7 @@ export const DOLPHIN_JUMP = {
     // —— 空中抛物线 —— 靠近池壁时水平速度会被自动收窄，保证落点在池内；空中不施加阻力。
     // 离水弹射速度基准：越大飞得越远、越夸张。单位：米/秒。
     // 注：这是「基准值」。玩家实际弹射速度会按角色「爆发力」(burst) + 等级缩放
-    //（复用跳水的养成比例 diveMaxLaunchSpeed / 基准），爆发力越高飞得越远；AI 用基准值。
+    //（跳水与海豚共用 burstLaunchSpeedScale），爆发力越高飞得越远；AI 用基准值。
     launchSpeed: 8.0,
     // 起跳角度：抛物线仰角。单位：度。越大越高越短，越小越平越远。
     launchAngleDegrees: 40,

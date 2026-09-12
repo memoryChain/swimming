@@ -175,9 +175,8 @@ export class RaceManager extends Component {
     private updateDiving(dt: number) {
         this._raceTimer += dt;
         this.onProgressUpdate?.(this.playerSwimmer?.distance ?? 0, this.aiSwimmer?.distance ?? 0, dt);
-        // AI race on their own reaction timers even if the player never dives. Keep
-        // watching for finishers here so the race can still conclude (player = DNF)
-        // instead of hanging with the AI frozen at the wall.
+        // AI 发令即起跳，即使玩家未跳也要继续比赛。
+        // 持续检测完赛，避免玩家未跳时 AI 停在终点而无法结算。
         this.trackFinishers(dt);
     }
 
@@ -195,9 +194,7 @@ export class RaceManager extends Component {
         this.trackFinishers(dt);
     }
 
-    // Finisher detection + straggler countdown + race conclusion. Runs during
-    // DIVING/GLIDING/RACING so the race always concludes even if the player never
-    // dives (the AI dive and race on their own reaction timers).
+    // 跳水、滑行、游泳阶段都检测完赛并结算；AI 已在发令时独立启动，玩家未跳也能结束比赛。
     private trackFinishers(dt: number) {
         const aiSwimmers = this.activeAiSwimmers();
         const activeRacers = this.activeRacers();

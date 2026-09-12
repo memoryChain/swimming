@@ -510,9 +510,10 @@ export class Swimmer extends Component {
 
     performDive(result: DiveResult): number {
         this.captureStartPosition();
-        const divePower = result.power;
         const launchSpeed = result.launchSpeed;
-        const crouchDuration = lerp(SWIMMER_ACTION_TUNING.diveCrouchSecondsMax, SWIMMER_ACTION_TUNING.diveCrouchSecondsMin, divePower);
+        // 同时提交的跳水同时离台，蓄力、爆发和飞行距离不再改变准备时间。
+        const anticipation = Math.max(0, DIVE_BALANCE.takeoffAnticipationSeconds);
+        const crouchDuration = anticipation * 0.625;
         const direction = this._courseLayout.direction;
         const start = this.divePlatformPosition();
         const launchStart = new Vec3(
@@ -529,7 +530,7 @@ export class Swimmer extends Component {
         const entry = this._courseLayout.entryPosition(distance, this._startPosition.z);
         entry.y = entryY;
         const poseTransitionDuration = projectileFlightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio;
-        const launchDelayDuration = poseTransitionDuration * SWIMMER_ACTION_TUNING.diveLaunchDelayRatio;
+        const launchDelayDuration = anticipation - crouchDuration;
         const preLaunchBurstDuration = Math.max(0.01, crouchDuration + launchDelayDuration - 1 / 60);
         const totalDuration = crouchDuration + launchDelayDuration + projectileFlightDuration;
 

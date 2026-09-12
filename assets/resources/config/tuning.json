@@ -1,7 +1,10 @@
 {
-  "version": 37,
-  "updatedAt": "2026-09-12T15:01:24.228Z",
+  "version": 44,
+  "updatedAt": "2026-09-12T16:41:58.439Z",
   "values": {
+    "dive.takeoffAnticipationSeconds": 0.32,
+    "burst.speedGainPerPoint": 0.006,
+    "burst.wallSpeedGainPerPoint": 0.018,
     "collision.weightContrastExponent": 4,
     "collision.knockbackDepthFactor": 6,
     "collision.knockbackSpeedFactor": 0.8,
@@ -246,7 +249,8 @@
     "water.floorFarEnd": 18,
     "condition.energyTotal": 100,
     "condition.strokeDrain": 1,
-    "condition.exhaustedPropulsionScale": 0.5,
+    "condition.exhaustedPropulsionScale": 0.15,
+    "condition.exhaustedCadenceScale": 0.6,
     "heartRate.sampleSeconds": 2,
     "heartRate.bpmPerStrokeHz": 40,
     "heartRate.riseSeconds": 8,

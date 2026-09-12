@@ -12,15 +12,11 @@ export type SwimPhysicsInput = {
     speedCapBonus: number;
     // Extra drag coefficient (per m/s) active only during the underwater glide.
     glideDrag?: number;
-    // Player-only override for the speed ceiling. When set, replaces
-    // SWIMMER_BALANCE.maxSpeed so progression can raise the player's top speed
-    // without affecting AI swimmers.
-    maxSpeedOverride?: number;
 };
 
 export class SwimPhysicsModel {
     step(state: SwimPhysicsState, input: SwimPhysicsInput): SwimPhysicsState {
-        const maxSpeed = (input.maxSpeedOverride ?? SWIMMER_BALANCE.maxSpeed) + Math.max(0, input.speedCapBonus);
+        const maxSpeed = SWIMMER_BALANCE.maxSpeed + Math.max(0, input.speedCapBonus);
         const speedRatio = clamp01(state.currentSpeed / maxSpeed);
         const accelLimit = 0.16 + 0.84 * (1 - Math.pow(speedRatio, 1.6));
         const accel = input.strokeAcceleration * accelLimit + Math.max(0, input.kickAcceleration);

@@ -21,6 +21,24 @@
 | `camera/RaceCameraDirector.ts` | 消费精简比赛快照、控制镜头 |
 | `ui/RaceHudStatusView.ts`、`RaceStrokeView.ts` | 消费显示状态和每划判定快照，不决定玩法 |
 
+## AI 发令出发
+
+`GameFlowController.startAiDivesAtGo()` 在进入 DIVING 的状态边缘同步发动真正 AI，以一次性标记防止重复调用；不再创建逐 AI 的 setTimeout。`aiDivePower()` 保留共享随机的蓄力差异，远端真人和隐藏泳者不参与。`Swimmer.performDive()` 统一使用 `DIVE_BALANCE.takeoffAnticipationSeconds`，下蹲和离台等待不依赖 power 或飞行时长；同帧提交才能同帧离台，远端网络晚到仍沿权威位置校正处理。
+
+## 角色体力预算
+
+角色初始体力80～150点，直接来自 `PlayerCharacterConfig.ts`，30级增加29点。面板、赛内体力上限与远端角色digest统一解析，不缓存旧基值，不修改存档等级或付费记录。体重和爆发同时占优者让出体力；仅角色表调整，不新增每帧成本。真正AI继续使用共享默认上限。
+
+## 耗尽后的动作与推进
+
+`ConditionBalance` 统一提供耗尽推进0.15、轮速0.6。`PlayerConditionModel`／`AiConditionModel`／`RemoteSwimmerController` 从同一体力比例条件解析，正体力不降频。`SwimmerMotor` 的动画和动作进度共用轮速，改变倍率不清空当前进度；推进仍在起划时锁定。海豚扣费与联机AI步末结算后同时刷新两项倍率。停划和踢腿不回体力，独立踢腿与特殊动作初速保留既有规则，重开复位；不增加每帧分配、定时器或网络字段。
+
+## 爆发力的生效边界
+
+`PlayerBalanceOverrides.burstLaunchSpeedScale` 由角色爆发力及整数等级成长解析，增幅读取 `BURST_BALANCE.speedGainPerPoint`（调参键 `burst.speedGainPerPoint`，默认 0.006），只用于 `DiveResolver` 出发初速与 `SwimmerRacePhases` 海豚弹射初速；翻滚蹬墙读取独立的 `burstWallLaunchSpeedScale`，由 `BURST_BALANCE.wallSpeedGainPerPoint`（调参键 `burst.wallSpeedGainPerPoint`，默认 0.018）解析。`SwimPhysicsModel` 的常规上限和高速推进衰减统一读 `SWIMMER_BALANCE.maxSpeed`，不接收角色速度覆盖。三处不重复叠乘；蹬墙每次从基准重算。普通 AI 没有玩家养成覆盖，倍率为 1。
+
+出发跳水在 owner 侧先完成爆发加成，再发送最终 launchSpeed，远端直接采用该值；海豚和蹬墙从已有角色 ID/等级 digest 分别解析对应倍率，各端规则一致。不新增网络字段。
+
 ## 心率与体力的事件边界
 
 实际起划在 Motor 的 `startActionBaseAcceleration()` 记录一次心率事件；按下、重复请求、释放和结算不能重复登记。每划开始保存心率与 PERFECT 边界，HUD 与释放判定读同一快照。
@@ -37,7 +55,7 @@
 
 持续心率：真人 owner 权威，真正 AI 房主权威。划水事件携带该次心率快照，远端只在起划时临时应用，之后恢复较新的持续 owner 状态。事件的已锁定边界不被后续校正移动。混合预测与校正不能改成只依靠远端自己的模拟推断。
 
-所有新增逐泳者可见状态都要判断是否需要权威同步；沿用既有网络会话门控、固定步和报文顺序，不在 UI 热路径增加模拟或日志。当前玩法协议 v31。
+所有新增逐泳者可见状态都要判断是否需要权威同步；沿用既有网络会话门控、固定步和报文顺序，不在 UI 热路径增加模拟或日志。当前玩法协议 v38。
 
 ## 表现与性能
 

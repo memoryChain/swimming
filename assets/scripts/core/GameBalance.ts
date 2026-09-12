@@ -98,6 +98,7 @@ export const SWIMMER_BALANCE = {
     minSpeed: 0,
     // Initial burst produced by pushing off the wall. This is intentionally
     // independent of entry speed and decays during underwater glide like a dive.
+    // 角色实际蹬墙初速 = 此基准 × 爆发倍率；不改变翻滚时长。
     flipTurnPushLaunchSpeed: 5.2,
     // Streamlined wall-push glide has much less extra drag than the normal dive
     // phase. Base/high-speed water drag still slows the burst naturally.
@@ -167,6 +168,15 @@ export const SWIMMER_BALANCE = {
     perfectComboOvercapDecay: 0.45,
 };
 
+// 爆发力只影响三种起跳初速，独立于技巧的推进成长。
+export const BURST_BALANCE = {
+    referenceAttribute: 50,
+    // 每点相对 50 点增加 0.6% 基准初速；调参键 burst.speedGainPerPoint。
+    speedGainPerPoint: 0.006,
+    // 蹬墙单独放大爆发差异；不改变跳水和海豚跳的初速曲线。
+    wallSpeedGainPerPoint: 0.018,
+};
+
 export const DIVE_BALANCE = {
     platformNodeOffset: new Vec3(-1.37, 0.53, 0),
     minLaunchSpeed: 4.2,
@@ -179,8 +189,8 @@ export const DIVE_BALANCE = {
     chargeCycleSeconds: 1.6,
     defaultFallbackHoldSeconds: 0.12,
     defaultAiPower: 0.72,
-    defaultAiReactionSeconds: 0.14,
-    aiReactionRandomSeconds: 0.08,
+    // 从提交跳水到真正离台的固定准备时长；蓄力与爆发只改变初速。
+    takeoffAnticipationSeconds: 0.32,
     aiPowerVariance: 0.08,
     aiPowerMin: 0.38,
     aiPowerMax: 0.96,

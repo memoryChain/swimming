@@ -91,7 +91,7 @@ export class AiConditionModel {
         // PERFECT 由 Motor 按每划心率快照处理，旧倍率保持中性。
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
-        // 与玩家共用耗尽后的固定推进倍率。
+        // 与玩家共用耗尽后的推进和动作轮速倍率。
         const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
         this._cadenceModifier = energyDepletionCadenceScale(ratio);

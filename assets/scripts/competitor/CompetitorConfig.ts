@@ -8,7 +8,6 @@ export type AICompetitorProfile = {
     difficulty: number;
     bpmOffset: number;
     divePower: number;
-    diveReaction: number;
     // Stable racing style (see AI_PERSONALITIES). Gives each lane a recognizable
     // purpose — fast starter, closer, steady pacer, weaver — layered on top of the
     // raw difficulty so opponents no longer feel like interchangeable noise.
@@ -68,14 +67,14 @@ export function getAiPersonality(id: AIPersonalityId): AIPersonality {
 }
 
 export const DEFAULT_AI_PROFILES: AICompetitorProfile[] = [
-    { difficulty: 0.56, bpmOffset: -22, divePower: 0.44, diveReaction: 0.36, personalityId: 'weaver', energyGain: 78 },
-    { difficulty: 0.68, bpmOffset: -14, divePower: 0.56, diveReaction: 0.26, personalityId: 'steady', energyGain: 83 },
-    { difficulty: 0.8, bpmOffset: -4, divePower: 0.72, diveReaction: 0.14, personalityId: 'closer', energyGain: 80 },
-    { difficulty: 0.64, bpmOffset: -18, divePower: 0.5, diveReaction: 0.3, personalityId: 'sprinter', energyGain: 88 },
-    { difficulty: 0.88, bpmOffset: 4, divePower: 0.84, diveReaction: 0.08, personalityId: 'fighter', energyGain: 76 },
-    { difficulty: 0.5, bpmOffset: -28, divePower: 0.38, diveReaction: 0.46, personalityId: 'weaver', energyGain: 82 },
-    { difficulty: 0.82, bpmOffset: -2, divePower: 0.74, diveReaction: 0.13, personalityId: 'frontrunner', energyGain: 85 },
-    { difficulty: 0.9, bpmOffset: 6, divePower: 0.88, diveReaction: 0.07, personalityId: 'closer', energyGain: 90 },
+    { difficulty: 0.56, bpmOffset: -22, divePower: 0.44, personalityId: 'weaver', energyGain: 78 },
+    { difficulty: 0.68, bpmOffset: -14, divePower: 0.56, personalityId: 'steady', energyGain: 83 },
+    { difficulty: 0.8, bpmOffset: -4, divePower: 0.72, personalityId: 'closer', energyGain: 80 },
+    { difficulty: 0.64, bpmOffset: -18, divePower: 0.5, personalityId: 'sprinter', energyGain: 88 },
+    { difficulty: 0.88, bpmOffset: 4, divePower: 0.84, personalityId: 'fighter', energyGain: 76 },
+    { difficulty: 0.5, bpmOffset: -28, divePower: 0.38, personalityId: 'weaver', energyGain: 82 },
+    { difficulty: 0.82, bpmOffset: -2, divePower: 0.74, personalityId: 'frontrunner', energyGain: 85 },
+    { difficulty: 0.9, bpmOffset: 6, divePower: 0.88, personalityId: 'closer', energyGain: 90 },
 ];
 
 // Preset difficulty tiers offered by the 100m AI-debug 1v1 picker. Value is the

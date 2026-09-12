@@ -5,7 +5,7 @@ import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorCo
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, HEART_RATE_TUNING, RACE_PHASE_BALANCE } from './ConditionBalance';
-import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
+import { BURST_BALANCE, DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import { INPUT_TUNING, MOTION_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
@@ -46,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 37;
+const TUNING_FILE_VERSION = 44;
 
 type TuningFileData = {
     version: number;
@@ -75,6 +75,13 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '爆发力',
+        controls: [
+            control('burst.speedGainPerPoint', '跳水海豚每点增幅', '相对 50 点爆发力，每点增加的基准初速比例。0.006 表示每点 0.6%；仅跳水和海豚跳共用。', () => BURST_BALANCE.speedGainPerPoint, (v) => BURST_BALANCE.speedGainPerPoint = v, 0.001, 0, 0.012, 3),
+            control('burst.wallSpeedGainPerPoint', '蹬墙每点增幅', '相对 50 点爆发力，每点增加的蹬墙基准初速比例。0.018 表示每点 1.8%；不改变翻滚时长、跳水或海豚跳。', () => BURST_BALANCE.wallSpeedGainPerPoint, (v) => BURST_BALANCE.wallSpeedGainPerPoint = v, 0.001, 0, 0.02, 3),
+        ],
+    },
     {
         name: '碰撞',
         controls: [
@@ -161,7 +168,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dolphin.staminaCost', '海豚跳体力消耗', '成功释放时额外扣除的体力点数；不足扣至零，仍可释放，失败不扣费。不受每划成本或角色等级倍率影响。', () => DOLPHIN_JUMP.staminaCost, (v) => DOLPHIN_JUMP.staminaCost = v, 1, 0, 100, 0),
             control('dolphin.strainHr', '海豚跳心率负担', '成功释放时一次性增加心率，封顶 180；失败不增加，起跳至落水冻结心率，落水后恢复；体力成本另行配置。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 5, 0, 100, 0),
             control('dolphin.minAvailableDistance', '最小可用距离', '距离前方池壁或终点不足这么多米时不允许起跳（临界处理）。', () => DOLPHIN_JUMP.minAvailableDistance, (v) => DOLPHIN_JUMP.minAvailableDistance = v, 0.5, 0.5, 15, 1, 'm'),
-            control('dolphin.launchSpeed', '起跳速度', '离水弹射速度，越大飞得越远、越夸张。靠近池壁时会自动收窄以免飞出。', () => DOLPHIN_JUMP.launchSpeed, (v) => DOLPHIN_JUMP.launchSpeed = v, 0.5, 3, 16, 1, 'm/s'),
+            control('dolphin.launchSpeed', '起跳速度', '海豚跳初速基准，角色再乘爆发倍率。靠近池壁时自动压缩轨迹。', () => DOLPHIN_JUMP.launchSpeed, (v) => DOLPHIN_JUMP.launchSpeed = v, 0.5, 3, 16, 1, 'm/s'),
             control('dolphin.launchAngleDegrees', '起跳角度', '离水抛物线角度。越大越高越短，越小越平越远。', () => DOLPHIN_JUMP.launchAngleDegrees, (v) => DOLPHIN_JUMP.launchAngleDegrees = v, 1, 15, 70, 0, '°'),
             control('dolphin.gravity', '空中重力', '空中抛物线重力。越小滞空越久、飞得越夸张。', () => DOLPHIN_JUMP.gravity, (v) => DOLPHIN_JUMP.gravity = v, 0.5, 4, 30, 1),
             control('dolphin.dipDepth', '入水下潜深度', '起跳前短暂潜入水面的深度。', () => DOLPHIN_JUMP.dipDepth, (v) => DOLPHIN_JUMP.dipDepth = v, 0.05, 0, 1.5, 2, 'm'),
@@ -181,6 +188,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '跳水',
         controls: [
+            control('dive.takeoffAnticipationSeconds', '统一起跳准备', '提交跳水到离台的固定时长。玩家与 AI 共用，不随蓄力百分比、爆发力或飞行距离改变。', () => DIVE_BALANCE.takeoffAnticipationSeconds, (v) => DIVE_BALANCE.takeoffAnticipationSeconds = v, 0.01, 0, 1, 2, 's'),
             control('dive.minPower', '最低跳水', '没有蓄力或蓄力条很低时保留的最低跳水力度。数值越高，失误跳水也会更快。', () => DIVE_BALANCE.minPower, (v) => DIVE_BALANCE.minPower = v, 0.02, 0, 0.8, 2),
             control('dive.chargeCycleSeconds', '蓄力周期', '蓄力条从 0 到 1 再回到 0 的完整周期。值越小，顶点更难抓；值越大，蓄力节奏更宽松。', () => DIVE_BALANCE.chargeCycleSeconds, (v) => DIVE_BALANCE.chargeCycleSeconds = v, 0.05, 0.4, 4, 2, 's'),
             control('dive.underwaterHoldSeconds', '水下保持时间', '跳水入水后保持水下深度、只允许踢腿推进的时间。', () => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds, (v) => SWIMMER_ACTION_TUNING.diveUnderwaterHoldSeconds = v, 0.05, 0, 5, 2, 's'),
@@ -217,7 +225,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
         name: '速度',
         controls: [
             control('speed.baseSpeed', '基础速度', '进入游泳阶段时的初始速度。跳水入水速度仍由跳水参数决定。', () => SWIMMER_BALANCE.baseSpeed, (v) => SWIMMER_BALANCE.baseSpeed = v, 0.05, 0, 2, 2, 'm/s'),
-            control('speed.maxSpeed', '最高速度', '玩家常规游泳速度上限，也用于计算当前速度比例。', () => SWIMMER_BALANCE.maxSpeed, (v) => SWIMMER_BALANCE.maxSpeed = v, 0.05, 1, 6, 2, 'm/s'),
+            control('speed.maxSpeed', '最高速度', '所有角色共用的常规游速上限，也用于推进衰减；爆发力不改变此值。', () => SWIMMER_BALANCE.maxSpeed, (v) => SWIMMER_BALANCE.maxSpeed = v, 0.05, 1, 6, 2, 'm/s'),
             control('speed.strokeBaseAccel', '基础动作加速', '每次划水的基础推进加速度：按住时提前支付一部分，松手时补足剩余部分。', () => SWIMMER_BALANCE.strokeBaseAccel, (v) => SWIMMER_BALANCE.strokeBaseAccel = v, 0.05, 0, 5, 2),
             control('speed.strokeHeldBaseRatio', '按住推进占比', '按住期间最多提前支付的基础推进比例，在超时进度前均匀推进；松手扣除已支付部分，再叠加质量奖励。下一划生效。', () => SWIMMER_BALANCE.strokeHeldBaseRatio, (v) => SWIMMER_BALANCE.strokeHeldBaseRatio = v, 0.05, 0, 1, 2),
             control('speed.strokeQualityAccel', '划水质量加速', '在 PERFECT 区间内松手的质量推进基准，按划水周期补偿；GOOD 另乘其推进倍率。这是划水的主要推进来源。', () => SWIMMER_BALANCE.strokeQualityAccel, (v) => SWIMMER_BALANCE.strokeQualityAccel = v, 0.05, 0, 8, 2),
@@ -259,7 +267,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
         controls: [
             control('condition.energyTotal', 'AI默认体力上限', 'AI 和缺少角色档案时使用的体力上限。正常玩家直接使用角色面板体力，不受此值换算；比赛中不自动恢复。', () => CONDITION_BALANCE.energy.total, (v) => CONDITION_BALANCE.energy.total = v, 5, 1, 1000, 0),
             control('condition.strokeDrain', '每划体力消耗', '左右手各算一次，划水结算时固定扣除。GOOD、PERFECT、失误和超时同价；踢腿不扣体力。', () => CONDITION_BALANCE.energy.drainPerStroke, (v) => CONDITION_BALANCE.energy.drainPerStroke = v, 0.1, 0.1, 10, 2),
-            control('condition.exhaustedPropulsionScale', '耗尽后推进倍率', '体力归零后，新开始的手臂划水使用此固定倍率，包含按住推进和松手奖励。0.5 表示推进减半，动作速度与判定不变。', () => CONDITION_BALANCE.energy.exhaustedPropulsionScale, (v) => CONDITION_BALANCE.energy.exhaustedPropulsionScale = v, 0.05, 0, 1, 2),
+            control('condition.exhaustedPropulsionScale', '耗尽后推进倍率', '体力归零后，新开始的手臂划水使用此固定倍率，包含按住推进和松手奖励。0.15 表示保留 15% 推进；实际游速受水阻和踢腿影响，动作速度另由耗尽轮速控制。', () => CONDITION_BALANCE.energy.exhaustedPropulsionScale, (v) => CONDITION_BALANCE.energy.exhaustedPropulsionScale = v, 0.05, 0, 1, 2),
+            control('condition.exhaustedCadenceScale', '耗尽后动作速度', '体力归零后手臂划水和回收的速度倍率，0.6 表示正常轮速的 60%。保留当前动作进度，不改变完美区进度宽度，不影响独立踢腿及特殊起跳。', () => CONDITION_BALANCE.energy.exhaustedCadenceScale, (v) => CONDITION_BALANCE.energy.exhaustedCadenceScale = v, 0.05, 0.1, 1, 2),
         ],
     },
     {

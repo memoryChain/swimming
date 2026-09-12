@@ -111,7 +111,7 @@ test('新手感完美节奏优于抢划，换手速度起伏受控，30/60/120 �
     assert.ok(Math.max(...steady) - Math.min(...steady) < 0.15);
 });
 
-test('无输入滑行保留约一秒半余韵，低体力和耗尽不降低动作轮速', () => {
+test('无输入滑行保留约一秒半余韵，正体力保持轮速，归零才降低', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const { SwimmerMotor } = h.loadModule('swimmer/SwimmerMotor');
     const coast = () => {
@@ -130,7 +130,7 @@ test('无输入滑行保留约一秒半余韵，低体力和耗尽不降低动�
     assert.equal(energyDepletionCadenceScale(1), 1);
     assert.equal(energyDepletionCadenceScale(0.15), 1);
     assert.equal(energyDepletionCadenceScale(0.1), 1);
-    assert.equal(energyDepletionCadenceScale(0), 1);
+    assert.equal(energyDepletionCadenceScale(0), .6);
 });
 
 test('按住未松手已有实际推进，左右对称且不受本地预持有时间影响', () => {
@@ -555,7 +555,7 @@ test('侧墙回正限速、左右对称并能在不同帧率下脱离，不影�
 });
 
 
-test('耗尽后基础推进、按住推进和质量奖励同比减半，动作与判定不变', () => {
+test('单独指定推进倍率时预算同比缩放，判定不受推进倍率影响', () => {
     const sample = (scale, progress, sideName, timeout = false, changeDuringHold = false) => {
         const h = heldStrokeFixture(.8);
         h.loadModule('core/GameBalance').setRaceDifficulty('beginner');
@@ -588,15 +588,17 @@ test('体力新参数可保存重载，旧恢复、降频与心率判定配置�
     const controls = h.controls;
     for (const id of ['condition.regenLow','condition.strokeDrainOptimal','condition.efficiencyFloor',
         'condition.cadenceWarningRatio','strokeQuality.qualityZoneScaleStrength']) assert.equal(controls.has(id),false);
-    for (const [id,value] of [['condition.energyTotal',120],['condition.strokeDrain',2],['condition.exhaustedPropulsionScale',.35]]) controls.get(id).set(value);
+    for (const [id,value] of [['condition.energyTotal',120],['condition.strokeDrain',2],['condition.exhaustedPropulsionScale',.35],['condition.exhaustedCadenceScale',.45]]) controls.get(id).set(value);
     h.tuning.saveCurrentTuning();
-    controls.get('condition.energyTotal').set(100);controls.get('condition.strokeDrain').set(1);controls.get('condition.exhaustedPropulsionScale').set(.5);
+    controls.get('condition.energyTotal').set(100);controls.get('condition.strokeDrain').set(1);controls.get('condition.exhaustedPropulsionScale').set(.5);controls.get('condition.exhaustedCadenceScale').set(1);
     h.tuning.loadSavedTuningAsync(() => {});
     const { PlayerConditionModel } = h.loadModule('condition/PlayerConditionModel');
     const model = new PlayerConditionModel();
     model.updateFromStroke({strokeAccepted:true,qualityScore:1,pressureScore:1,dt:0});model.tick(60);
     assert.equal(model.energy,118);assert.equal(model.strokeCadenceScale,1);
     assert.equal(controls.get('condition.exhaustedPropulsionScale').get(),.35);
+    assert.equal(controls.get('condition.exhaustedCadenceScale').get(),.45);
+    model.consumeEnergy(999);assert.equal(model.strokeCadenceScale,.45);
 });
 
 
@@ -706,8 +708,8 @@ test('全角色 1 到 30 级三项属性逐级各加 1，显示点数直接驱�
             assert.equal(balance.energyTotal,display.stamina);
             assert.equal(balance.strokeQualityAccel,SWIMMER_BALANCE.strokeQualityAccel*(1+(display.technique-50)*.003));
             assert.equal(balance.perfectComboMaxOvercap,SWIMMER_BALANCE.perfectComboMaxOvercap*(1+(display.technique-50)*.003));
-            assert.equal(balance.maxSpeed,SWIMMER_BALANCE.maxSpeed*(1+(display.burst-50)*.003));
-            assert.equal(balance.diveMaxLaunchSpeed,DIVE_BALANCE.maxLaunchSpeed*(1+(display.burst-50)*.003));
+            assert.equal(balance.burstLaunchSpeedScale,1+(display.burst-50)*.006);
+            assert.equal(balance.burstWallLaunchSpeedScale,1+(display.burst-50)*.018);
             assert.equal(balance.weight,character.weight);assert.equal(balance.energyGainAptitude,character.energyGain);
             previous=display;
         }
@@ -782,7 +784,7 @@ function dolphinBurdenFixture(conditionKind = 'player') {
     const file=path.join(h.root,'assets/scripts/entity/Swimmer.ts');
     const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
     const decl=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
-    const names=['tryDolphinJump','applyAcceptedNetDolphinJump','applyConditionSpeedScale'];
+    const names=['tryDolphinJump','applyAcceptedNetDolphinJump','applyConditionSpeedScale','applyConditionCadenceScale'];
     const members=decl.members.filter(n=>names.includes(n.name?.getText(source)));
     assert.equal(members.length,names.length);
     const {DOLPHIN_JUMP}=h.loadModule('core/DolphinJumpConfig');
@@ -881,7 +883,8 @@ test('成功海豚跳本地玩家和AI额外扣5体力，不足扣零，耗尽�
             assert.equal(body.tryDolphinJump(),true,`${kind},${remaining}`);
             assert.equal(condition.energy,Math.max(0,remaining-5));
             assert.equal(condition.energyDepleted,remaining<=5);
-            assert.equal(motor._conditionSpeedScale,remaining<=5?.5:1);
+            assert.equal(motor._conditionSpeedScale,remaining<=5?.15:1);
+            assert.equal(motor._conditionCadenceScale,remaining<=5?.6:1);
             assert.equal(condition.energyRatio,Math.max(0,remaining-5)/100,'同帧 self/AI snapshot 已读到扣费后的比例');
             const stamina=condition.energy;
             assert.equal(body.tryDolphinJump(),false);assert.equal(condition.energy,stamina);
@@ -912,5 +915,173 @@ test('海豚跳体力成本独立于每划成本和心率，参数可保存重�
         body.collisionRemoteHuman=true;body._phases._dolphinActive=false;body._ultimate.applyNetEnergy(0,1);motor.applyAuthoritativeHeartRate(170,true);
         assert.equal(body.applyAcceptedNetDolphinJump(),true);assert.equal(condition.energy,before);assert.equal(motor.heartRate,170);
         body.onDolphinJumpEnergyCost(8);assert.equal(condition.energy,before,'远端身份防护不能消耗占位AI体力');
+    }
+});
+
+
+test('单独改变爆发力不改变普通划水、踢腿、超速滑行的逐帧运动与心率', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
+    const {resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {StrokeType}=h.loadModule('core/GameConstants');
+    h.loadModule('core/GameBalance').setRaceDifficulty('beginner');
+    for(const initialSpeed of [.8,2.5,5]) {
+        const motors=[50,80,109].map(burst=>{
+            const m=new SwimmerMotor();
+            m.setPlayerBalance(resolvePlayerBalance({stamina:85,technique:84,burst},1,30,1,82));
+            m.startRace(0,initialSpeed);return m;
+        });
+        for(let frame=0;frame<1800;frame++) {
+            const side=Math.floor(frame/30)%2?StrokeType.RIGHT:StrokeType.LEFT;
+            for(const m of motors) {
+                if(frame<1200) {
+                    if(frame%30===0){m.setStrokeHeld(side,true,.2);m.recordStroke(side);}
+                    if(frame%30===12)m.setStrokeHeld(side,false);
+                } else if(frame%12===0)m.recordKickTap(side);
+                m.setGlidePhase(frame>=1500);
+                m.update(1/60,{isAI:false});
+            }
+            for(const m of motors.slice(1)) {
+                assert.equal(m.currentSpeed,motors[0].currentSpeed);
+                assert.equal(m.distance,motors[0].distance);
+                assert.equal(m.heartRate,motors[0].heartRate);
+                assert.equal(m._speedCapBonus,motors[0]._speedCapBonus);
+            }
+        }
+    }
+});
+
+test('蹬墙使用独立爆发倍率且重开不叠乘，海豚近墙保护与中性 AI 保留', () => {
+    const h=dolphinBurdenFixture();
+    const {resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {resolveDiveResult}=h.loadModule('core/DiveResolver');
+    const {DIVE_BALANCE,SWIMMER_BALANCE}=h.loadModule('core/GameBalance');
+    const {DOLPHIN_JUMP}=h.loadModule('core/DolphinJumpConfig');
+    Object.assign(h.host.cartoonRig,{startRaceFlipTurn:()=>.3,finishRaceFlipTurn(){},setStrokeHeld(){}});
+    for(const burst of [null,45,60,80,100,129]) {
+        const scale=burst===null?1:1+(burst-50)*.006;
+        const wallScale=burst===null?1:1+(burst-50)*.018;
+        h.motor.setPlayerBalance(burst===null?null:resolvePlayerBalance({stamina:85,technique:84,burst},1,30,1,82));
+        assert.equal(h.motor.burstLaunchSpeedScale,scale);
+        assert.equal(h.motor.burstWallLaunchSpeedScale,wallScale);
+        for(const power of [0,.3,.72,1]) {
+            const baseline=resolveDiveResult(power),grown=resolveDiveResult(power,h.motor.burstLaunchSpeedScale);
+            assert.equal(grown.launchSpeed,baseline.launchSpeed*scale);
+            assert.deepEqual({...grown,launchSpeed:0},{...baseline,launchSpeed:0},'爆发力不改变跳水评价或其他结果');
+        }
+        for(let repeat=0;repeat<2;repeat++) {
+            h.motor.startRace(49.99,2);
+            assert.equal(h.body._phases.tryStartFlipTurnPhase(1/60),true);
+            assert.equal(h.body._phases._flipTurnPushSpeed,SWIMMER_BALANCE.flipTurnPushLaunchSpeed*wallScale);
+        }
+        h.body._phases._flipTurnActive=false;
+        for(const distance of [10,46.5,49.9]) {
+            h.body._phases._dolphinActive=false;h.motor.startRace(distance,2);
+            const accepted=h.body._phases.tryStartDolphinJump();
+            assert.equal(accepted,distance!==49.9);
+            if(!accepted)continue;
+            const phase=h.body._phases;
+            const vx=DOLPHIN_JUMP.launchSpeed*scale*Math.cos(DOLPHIN_JUMP.launchAngleDegrees*Math.PI/180);
+            assert.equal(phase._dolphinHorizontalSpeed,vx);
+            assert.equal(phase._dolphinLandingExitSpeed,vx);
+            const landingSeconds=DOLPHIN_JUMP.landingDescentSeconds+DOLPHIN_JUMP.landingHoldSeconds+DOLPHIN_JUMP.landingRiseSeconds;
+            const total=2*DOLPHIN_JUMP.dipSeconds+vx*phase._dolphinFlightSeconds+vx*landingSeconds*phase._dolphinLandingDurationScale;
+            assert.ok(total<=50-distance+1e-8,'整套海豚动作不越过折返墙');
+        }
+        const before=h.motor.burstLaunchSpeedScale;
+        const base=DIVE_BALANCE.maxLaunchSpeed;DIVE_BALANCE.maxLaunchSpeed=0;
+        assert.equal(h.motor.burstLaunchSpeedScale,before,'海豚与蹬墙倍率不再反算跳水最高速度');
+        DIVE_BALANCE.maxLaunchSpeed=base;
+    }
+});
+
+
+test('爆发增幅可保存重载，本地和联机解析一致，技巧与普通游速不受新参数影响', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {resolveModifiersFromDigest}=h.loadModule('progression/RaceModifiers');
+    const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
+    const {resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {PLAYER_CHARACTER_DEFINITIONS}=h.loadModule('app/PlayerCharacterConfig');
+    const {SWIMMER_BALANCE}=h.loadModule('core/GameBalance');
+    const c=PLAYER_CHARACTER_DEFINITIONS.find(c=>c.id==='muscleMan');
+    const resolve=()=>resolvePlayerBalance(c,30,30,c.weight,c.energyGain,c.heartRateTrait);
+    const original=resolve(),maxSpeed=SWIMMER_BALANCE.maxSpeed;
+    assert.equal(original.burstLaunchSpeedScale,1.474);
+    h.controls.get('burst.speedGainPerPoint').set(.008);
+    h.tuning.saveCurrentTuning();h.controls.get('burst.speedGainPerPoint').set(0);
+    h.tuning.loadSavedTuningAsync(()=>{});
+    assert.equal(h.controls.get('burst.speedGainPerPoint').get(),.008);
+    const changed=resolve();assert.ok(changed.burstLaunchSpeedScale>original.burstLaunchSpeedScale);
+    assert.equal(changed.burstWallLaunchSpeedScale,original.burstWallLaunchSpeedScale);
+    h.controls.get('burst.wallSpeedGainPerPoint').set(.012);
+    h.tuning.saveCurrentTuning();h.controls.get('burst.wallSpeedGainPerPoint').set(0);
+    h.tuning.loadSavedTuningAsync(()=>{});
+    const wallChanged=resolve();
+    assert.equal(wallChanged.burstWallLaunchSpeedScale,1+79*.012);
+    assert.equal(wallChanged.burstLaunchSpeedScale,changed.burstLaunchSpeedScale);
+    assert.deepEqual({...wallChanged,burstWallLaunchSpeedScale:changed.burstWallLaunchSpeedScale},changed);
+    assert.deepEqual(wallChanged,resolveModifiersFromDigest({characterId:c.id,level:30}).balance);
+    assert.equal(changed.strokeQualityAccel,original.strokeQualityAccel);
+    assert.equal(changed.perfectComboMaxOvercap,original.perfectComboMaxOvercap);
+    assert.equal(changed.energyTotal,original.energyTotal);assert.equal(SWIMMER_BALANCE.maxSpeed,maxSpeed);
+    assert.equal(new SwimmerMotor().burstWallLaunchSpeedScale,1);
+    assert.equal(new SwimmerMotor().burstLaunchSpeedScale,1,'普通 AI 保留中性倍率');
+});
+
+
+test('蹬墙差异在30/60/120Hz均可见，满级高速不被普通上限截断，水阻保持减速', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
+    const {resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {SWIMMER_BALANCE:B}=h.loadModule('core/GameBalance');
+    const {CHARACTER_POSE_TUNING:P}=h.loadModule('character/CharacterMotionTuning');
+    const seconds=P.flipTurnUnderwaterDiveSeconds+P.flipTurnUnderwaterHoldSeconds+P.flipTurnUnderwaterRiseSeconds;
+    const distances=new Map();
+    for(const fps of [30,60,120]) {
+        for(const burst of [45,100,129]) {
+            const motor=new SwimmerMotor();
+            motor.setPlayerBalance(resolvePlayerBalance({stamina:85,technique:84,burst},1,30,1,82));
+            const launch=B.flipTurnPushLaunchSpeed*motor.burstWallLaunchSpeedScale;
+            const push=launch*P.flipTurnReturnToSwimSeconds/(B.flipTurnAccelerationExponent+1);
+            motor.startRace();motor.beginFlipTurnPhase();motor.completeFlipTurnPhase(50+push,launch);
+            motor.setGlidePhase(true,B.flipTurnUnderwaterGlideDrag,true);
+            let previous=launch,time=0;
+            while(time<seconds-1e-9) {
+                const dt=Math.min(1/fps,seconds-time);motor.update(dt,{isAI:false});time+=dt;
+                assert.ok(motor.currentSpeed>=0&&motor.currentSpeed<previous);
+                if(time<.1)assert.ok(motor.currentSpeed>B.maxSpeed,'高速蹬墙不能首帧被巡航上限截掉');
+                previous=motor.currentSpeed;
+            }
+            const distance=motor.distance-50;
+            assert.ok(distance>0&&distance<15,'满级推进不会跨过下一面池壁');
+            distances.set(`${fps}:${burst}`,distance);
+        }
+        const gap=distances.get(`${fps}:100`)-distances.get(`${fps}:45`);
+        assert.ok(gap>3.5&&gap<4.1,'一档强化目标是低高爆发之间约3至4米差距');
+        assert.ok(distances.get(`${fps}:129`)>distances.get(`${fps}:100`));
+    }
+    // 现有运动使用逐帧积分；高速端30与120Hz约差2%，这里检查相对偏差而非假定逐帧相同。
+    for(const burst of [45,100,129])assert.ok(Math.abs(distances.get(`30:${burst}`)-distances.get(`120:${burst}`))<distances.get(`120:${burst}`)*.025);
+});
+
+
+test('角色取舍：爆发与体重同时占优者必须让出体力，成长和海豚扣费后仍成立', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {PLAYER_CHARACTER_DEFINITIONS:C}=h.loadModule('app/PlayerCharacterConfig');
+    const {resolveCharacterDisplayStats}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {PlayerConditionModel}=h.loadModule('condition/PlayerConditionModel');
+    for(const level of [1,30])for(const a of C) {
+        const stats=resolveCharacterDisplayStats(a,level,30);
+        const condition=new PlayerConditionModel();condition.setProgressionOverrides({energyTotal:stats.stamina});condition.reset();
+        for(let i=1;i<=stats.stamina;i++) {
+            assert.equal(condition.energyDepleted,false);
+            condition.updateFromStroke({strokeAccepted:true,qualityScore:1,pressureScore:1,dt:0});
+        }
+        assert.equal(condition.energy,0);assert.equal(condition.energyDepleted,true);
+        for(const b of C)if(a!==b&&a.burst>=b.burst&&a.weight>=b.weight&&(a.burst>b.burst||a.weight>b.weight)) {
+            const other=resolveCharacterDisplayStats(b,level,30);
+            assert.ok(stats.stamina<other.stamina,`${a.name}相对${b.name}不能同时占据三个属性优势`);
+            assert.ok(Math.max(0,stats.stamina-10)<Math.max(0,other.stamina-10),'同样两次海豚扣费后仍保留续航取舍');
+        }
     }
 });

@@ -8,7 +8,8 @@ export const CONDITION_BALANCE = {
     energy: {
         total: 100,
         drainPerStroke: 1,
-        exhaustedPropulsionScale: 0.5,
+        exhaustedPropulsionScale: 0.15,
+        exhaustedCadenceScale: 0.6,
     },
 };
 
@@ -65,8 +66,10 @@ export function conditionQualityScale(_heartRate: number): number {
     return 1;
 }
 
-export function energyDepletionCadenceScale(_energyRatio: number): number {
-    return 1;
+export function energyDepletionCadenceScale(energyRatio: number): number {
+    return Number.isFinite(energyRatio) && energyRatio <= 0
+        ? Math.max(0.1, Math.min(1, CONDITION_BALANCE.energy.exhaustedCadenceScale))
+        : 1;
 }
 
 

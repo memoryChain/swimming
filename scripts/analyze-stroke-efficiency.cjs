@@ -34,6 +34,8 @@ function replay(target, kicks, roll, options = {}) {
     const motor = new SwimmerMotor(); motor.startRace(0, 0.8); motor.setSteeringEnabled(true);
     // 默认隔离心率比较松手收益；heartRate:null 启用实际心率积累。
     if (options.heartRate !== null) motor.applyAuthoritativeHeartRate(options.heartRate ?? 80, true);
+    if (options.playerBalance) motor.setPlayerBalance(options.playerBalance);
+    motor.setConditionSpeedScale(options.propulsionScale ?? 1);
     motor.setConditionQualityScale(options.qualityScale ?? 1);
     motor.setConditionCadenceScale(options.cadenceScale ?? 1);
     let time = 0, nextPress = 0, activeSide = null, side = StrokeType.LEFT, pressedAt = 0;

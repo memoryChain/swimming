@@ -1,6 +1,6 @@
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
 import { perfectWidthScale, HeartRateTraitId } from '../core/ConditionBalance';
-import { getRaceDistance, isRaceSteeringEnabled, SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
+import { getRaceDistance, isRaceSteeringEnabled, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
@@ -479,7 +479,6 @@ export class SwimmerMotor {
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
                 glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
-                maxSpeedOverride: this._playerBalance?.maxSpeed,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
@@ -587,20 +586,17 @@ export class SwimmerMotor {
         this.setHeartRateTrait(overrides?.heartRateTrait ?? 'balanced');
     }
 
-    // Burst-driven multiplier for the dolphin-jump launch speed. Reuses the same
-    // ratio the dive uses (diveMaxLaunchSpeed / base), so a high-爆发力 / higher
-    // level character launches farther. Returns 1 for swimmers without progression
-    // overrides (AI), keeping opponents on the raw DOLPHIN_JUMP.launchSpeed.
-    get dolphinLaunchSpeedScale(): number {
-        const base = DIVE_BALANCE.maxLaunchSpeed;
-        if (!this._playerBalance || !(base > 0)) {
-            return 1;
-        }
-        return this._playerBalance.diveMaxLaunchSpeed / base;
+    // 爆发力只在跳水、海豚跳与翻滚蹬墙的发动初速上生效；普通 AI 使用基准。
+    get burstLaunchSpeedScale(): number {
+        return this._playerBalance?.burstLaunchSpeedScale ?? 1;
+    }
+
+    get burstWallLaunchSpeedScale(): number {
+        return this._playerBalance?.burstWallLaunchSpeedScale ?? 1;
     }
 
     private get _effectiveMaxSpeed(): number {
-        return this._playerBalance?.maxSpeed ?? SWIMMER_BALANCE.maxSpeed;
+        return SWIMMER_BALANCE.maxSpeed;
     }
 
     private get _effectiveComboMaxOvercap(): number {
@@ -609,7 +605,7 @@ export class SwimmerMotor {
 
     private get _effectiveComboOvercapDecay(): number {
         // Intentionally not progression-overridable: the overcap AMOUNT scales
-        // with character burst (see _effectiveComboMaxOvercap), but the DECAY rate
+        // with character technique (see _effectiveComboMaxOvercap), but the DECAY rate
         // is a global physics constant shared by player and AI.
         return Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay);
     }

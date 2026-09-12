@@ -80,7 +80,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { DIVE_BALANCE, getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isRaceSteeringEnabled, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isRaceSteeringEnabled, SWIMMER_BALANCE } from './GameBalance';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -943,9 +943,7 @@ export class GameManager extends Component {
                 const center = this._awardsPresentation.show(leaderboard, this._poolNode);
                 this._raceCameraDirector.startAwardsPresentation(center);
             },
-            playerDiveSpeedScale: () => this._playerBalanceOverrides
-                ? this._playerBalanceOverrides.diveMaxLaunchSpeed / DIVE_BALANCE.maxLaunchSpeed
-                : 1,
+            playerDiveSpeedScale: () => this._playerBalanceOverrides?.burstLaunchSpeedScale ?? 1,
             awardProgression: (input) => {
                 const progression = getProgressionManager();
                 const characterId = getPlayerCharacterSelection().characterId;
@@ -1312,6 +1310,7 @@ export class GameManager extends Component {
             if (swimmer.collisionRemoteHuman) return;
             condition.consumeEnergy(cost);
             swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
+            swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
         };
     }
 
@@ -1660,7 +1659,10 @@ export class GameManager extends Component {
                     // 在本步结算后扣除，快照和房主迁移都不携带未消费的计数。
                     const condition = this._aiConditions[i];
                     condition?.consumeStrokes(swimmer.consumeAiConditionStrokes());
-                    if (condition) swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
+                    if (condition) {
+                        swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
+                        swimmer.applyConditionCadenceScale(condition.strokeCadenceScale);
+                    }
                 }
             }
             // One collision solve per deterministic simulation step, after every
@@ -2589,6 +2591,8 @@ export class GameManager extends Component {
             return;
         }
         if (id !== null
+            && id !== 'burst.speedGainPerPoint'
+            && id !== 'burst.wallSpeedGainPerPoint'
             && id !== 'speed.maxSpeed'
             && id !== 'speed.strokeQualityAccel'
             && id !== 'speed.perfectComboMaxOvercap'

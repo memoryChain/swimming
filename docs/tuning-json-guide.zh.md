@@ -4,7 +4,7 @@
 
 ## 配置结构与优先级
 
-`assets/resources/config/tuning.json` 当前为 v37。`values` 是稳定英文 ID 对应的数值，`updatedAt` 是保存时间，`version` 用于兼容性诊断和迁移提示；版本号本身不是选用哪个文件的优先级。
+`assets/resources/config/tuning.json` 当前为 v44。`values` 是稳定英文 ID 对应的数值，`updatedAt` 是保存时间，`version` 用于兼容性诊断和迁移提示；版本号本身不是选用哪个文件的优先级。
 
 1. 源码配置提供默认值，启动前记录默认快照。
 2. `GameManager.onLoad()` 在创建运行时系统前异步加载项目 `config/tuning`。
@@ -36,9 +36,12 @@
 | 某类角色升温/降温太快 | 对应特性的 `heartRate.*RiseSeconds` / `*RecoverySeconds`；均衡使用 `riseSeconds` / `recoverySeconds` |
 | 所有人同样划频的目标心率不对 | `heartRate.bpmPerStrokeHz`；采样缓冲读 `sampleSeconds` |
 | 能满力划多少次 | 角色体力及 `condition.strokeDrain` |
-| 力竭后还能游多快 | `condition.exhaustedPropulsionScale`，不能直接当作最终速度倍率 |
+| 力竭后还能游多快 | `condition.exhaustedPropulsionScale=0.15` 与 `condition.exhaustedCadenceScale=0.6`；前者不是最终速度倍率，后者同时缩慢动作和判定进度，体力仍不恢复 |
 | 海豚跳体力负担 | `dolphin.staminaCost`，成功一次扣除固定点数，不足扣零，独立于每划成本 |
 | 海豚跳心率负担 | `dolphin.strainHr`，成功释放一次性增加，起跳至落水冻结 |
+| 发令后离台准备时长 | `dive.takeoffAnticipationSeconds`，当前 0.32 秒；玩家与 AI 共用，蓄力和爆发不改变该时长 |
+| 角色体力预算 | `PlayerCharacterConfig.ts` 直接配置初始80～150点，每级+1；体重、爆发同时占优时让出体力，不增加赛内换算 |
+| 三种起跳初速 | 跳水／海豚增幅 `burst.speedGainPerPoint`（当前 0.006），蹬墙增幅 `burst.wallSpeedGainPerPoint`（当前 0.018），倍率见 `PlayerBalanceOverrides.ts`；海豚基准 `dolphin.launchSpeed`、蹬墙基准 `speed.flipTurnPushLaunchSpeed`，跳水基准见 `DIVE_BALANCE`；普通 `speed.maxSpeed` 不受爆发影响 |
 | 踢腿过强 | `speed.kickAccelPerHz`、`kickCadenceMaxHz`、`kickMaxSpeed` |
 | 大体型碰撞优势 | 角色 `weight`、`collision.weightContrastExponent` |
 
@@ -46,6 +49,6 @@
 
 加载/保存会整理 GOOD 与 PERFECT 起止范围，限制在超时边界内；高速轮速不低于低速轮速，轮速速度窗口终点必须大于起点。心率宽度节点按顺序限制为不递增。不要用互相矛盾的参数依赖校正“碰巧”获得想要结果。
 
-单机调参会刷新需要重新解析的角色运动覆盖；联机沿既有会话隔离规则处理，不能在不同设备使用不同共享配置后期待相同结果。玩法规则变更需升级 `NetRaceProtocol.ts` 版本；本次为 v31。
+单机调参会刷新需要重新解析的角色运动覆盖；联机沿既有会话隔离规则处理，不能在不同设备使用不同共享配置后期待相同结果。玩法规则变更需升级 `NetRaceProtocol.ts` 版本；本次为 v38。
 
 回放命令和记录口径见 [数值验证](游戏数值与手感配置.zh.md#10-数值验证与后续待调)。修改运行时代码后执行项目规定的 TypeScript 检查；新增静态 UI 文案后执行 `pnpm fonts:build` 和 `pnpm fonts:check`。

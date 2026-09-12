@@ -40,12 +40,13 @@ export type PlayerColorScheme = {
 };
 
 // Add a definition here to introduce a selectable character. The management
+// 体力按爆发与体型做取舍：高爆发／重体型让出续航；这是角色基值，不是赛内动态扣减。
 // roster derives its scrollable slot count from this catalog, and the formal
 // race hand-off uses the same definitions directly.
 export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] = [
     {
         id: 'cartonSwimmer6', name: '蛙妹', modelVariantId: 'cartonSwimmer6', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 140, technique: 84, burst: 60,
         weight: 0.85,
         energyGain: 82,
         heartRateTrait: 'balanced',
@@ -55,7 +56,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer8', name: '蛙少', modelVariantId: 'cartonSwimmer8', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 125, technique: 84, burst: 65,
         weight: 1.00,
         energyGain: 82,
         heartRateTrait: 'balanced',
@@ -65,7 +66,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer5', name: '超级腿', modelVariantId: 'cartonSwimmer5', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 105, technique: 84, burst: 90,
         weight: 0.95,
         energyGain: 82,
         heartRateTrait: 'quick',
@@ -75,7 +76,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer9', name: '猫姐', modelVariantId: 'cartonSwimmer9', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 145, technique: 84, burst: 55,
         weight: 0.95,
         energyGain: 82,
         heartRateTrait: 'quick',
@@ -85,7 +86,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer10', name: '忍者哥', modelVariantId: 'cartonSwimmer10', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 115, technique: 84, burst: 75,
         weight: 1.00,
         energyGain: 82,
         heartRateTrait: 'balanced',
@@ -95,17 +96,17 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer11', name: '健身教练', modelVariantId: 'cartonSwimmer11', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 100, technique: 84, burst: 85,
         weight: 1.15,
         energyGain: 82,
         heartRateTrait: 'steady',
-        description: '身着荧绿运动装的全能选手，以稳定节奏和充沛耐力追逐浪线。',
+        description: '身着荧绿运动装的力量选手，凭借强劲蹬墙与扎实体型争夺位置。',
         skillName: '疾风节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加流畅。',
         supportsSkinTone: true,
     },
     {
         id: 'cartonSwimmer12', name: '飞毛腿', modelVariantId: 'cartonSwimmer12', unlocked: true,
-        stamina: 84, technique: 86, burst: 81,
+        stamina: 115, technique: 86, burst: 80,
         weight: 0.95,
         energyGain: 84,
         heartRateTrait: 'quick',
@@ -115,7 +116,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer13', name: '潜水哥', modelVariantId: 'cartonSwimmer13', unlocked: true,
-        stamina: 90, technique: 82, burst: 76,
+        stamina: 150, technique: 82, burst: 45,
         weight: 1.15,
         energyGain: 80,
         heartRateTrait: 'steady',
@@ -125,7 +126,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer14', name: '风火轮', modelVariantId: 'cartonSwimmer14', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 125, technique: 84, burst: 70,
         weight: 0.90,
         energyGain: 82,
         heartRateTrait: 'quick',
@@ -135,7 +136,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'cartonSwimmer15', name: '机甲coser', modelVariantId: 'cartonSwimmer15', unlocked: true,
-        stamina: 85, technique: 84, burst: 80,
+        stamina: 85, technique: 84, burst: 95,
         weight: 1.25,
         energyGain: 82,
         heartRateTrait: 'slow',
@@ -145,12 +146,12 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
     },
     {
         id: 'muscleMan', name: '肌肉男', modelVariantId: 'muscleMan', unlocked: true,
-        stamina: 88, technique: 70, burst: 82,
+        stamina: 80, technique: 70, burst: 100,
         weight: 1.30,
         energyGain: 75,
         heartRateTrait: 'slow',
-        description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
-        skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
+        description: '力量型游泳选手，起跳与对抗强劲，但持续划水需要精打细算。',
+        skillName: '强力起跳', skillDescription: '强劲初速让跳水、海豚跳和蹬墙更具优势。',
     },
 ];
 

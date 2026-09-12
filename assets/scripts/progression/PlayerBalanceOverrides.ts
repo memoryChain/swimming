@@ -1,5 +1,5 @@
 ﻿import { HeartRateTraitId } from '../core/ConditionBalance';
-import { SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
+import { BURST_BALANCE, SWIMMER_BALANCE } from '../core/GameBalance';
 
 // Resolved balance overrides for the player's active character + level.
 // Applied to the player's motor / condition model / dive resolver only; the AI
@@ -8,14 +8,14 @@ import { SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
 // 体力直接使用赛内点数；技巧与爆发力继续使用各自的属性映射。
 //   stamina  -> energyTotal（显示值与赛内上限相同）
 //   technique -> perfectComboMaxOvercap + strokeQualityAccel (rhythm/combo)
-//   burst    -> maxSpeed + diveMaxLaunchSpeed (speed/burst)
+//   burst    -> burstLaunchSpeedScale / burstWallLaunchSpeedScale（仅三种起跳初速）
 
 export type PlayerBalanceOverrides = {
-    maxSpeed: number;
     energyTotal: number;
     perfectComboMaxOvercap: number;
     strokeQualityAccel: number;
-    diveMaxLaunchSpeed: number;
+    burstLaunchSpeedScale: number;
+    burstWallLaunchSpeedScale: number;
     // Body weight (from the character definition). Pass-through, not leveled.
     weight: number;
     // 蓄气资质（from the character definition）. Pass-through, not leveled.
@@ -38,7 +38,7 @@ export const PROGRESSION_PER_LEVEL = {
     burst: 1,
 } as const;
 
-// 技巧、爆发力每点对应 0.3% 的基础参数增幅，以 50 点为基准。
+// 技巧维持每点 0.3%；爆发力使用独立的三种起跳配置。
 function attributeMultiplier(value: number): number {
     return 1 + (value - 50) * 0.003;
 }
@@ -68,18 +68,18 @@ export function resolvePlayerBalance(
     heartRateTrait: HeartRateTraitId = 'balanced',
 ): PlayerBalanceOverrides {
     const grown = resolveCharacterDisplayStats(stats, level, maxLevel);
-    const maxSpeed = SWIMMER_BALANCE.maxSpeed * attributeMultiplier(grown.burst);
     const energyTotal = grown.stamina;
     const perfectComboMaxOvercap = SWIMMER_BALANCE.perfectComboMaxOvercap * attributeMultiplier(grown.technique);
     const strokeQualityAccel = SWIMMER_BALANCE.strokeQualityAccel * attributeMultiplier(grown.technique);
-    const diveMaxLaunchSpeed = DIVE_BALANCE.maxLaunchSpeed * attributeMultiplier(grown.burst);
+    const burstLaunchSpeedScale = 1 + (grown.burst - BURST_BALANCE.referenceAttribute) * BURST_BALANCE.speedGainPerPoint;
+    const burstWallLaunchSpeedScale = 1 + (grown.burst - BURST_BALANCE.referenceAttribute) * BURST_BALANCE.wallSpeedGainPerPoint;
 
     return {
-        maxSpeed,
         energyTotal,
         perfectComboMaxOvercap,
         strokeQualityAccel,
-        diveMaxLaunchSpeed,
+        burstLaunchSpeedScale,
+        burstWallLaunchSpeedScale,
         weight,
         energyGainAptitude,
         heartRateTrait,

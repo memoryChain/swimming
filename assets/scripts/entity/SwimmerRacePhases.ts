@@ -398,7 +398,7 @@ export class SwimmerRacePhases {
         this._flipTurnIncomingDirection = incomingDirection;
         this._flipTurnMaxReach = incomingDirection * (contactX - exitX);
         this._flipTurnEntrySpeed = entrySpeed;
-        this._flipTurnPushSpeed = finiteNonNegative(SWIMMER_BALANCE.flipTurnPushLaunchSpeed);
+        this._flipTurnPushSpeed = finiteNonNegative(SWIMMER_BALANCE.flipTurnPushLaunchSpeed * motor.burstWallLaunchSpeedScale);
         // Wall-turn assets are authored only for prone entry. Resetting here also
         // makes the very first scripted frame use the correct waist/foot height.
         motor.beginFlipTurnPhase();
@@ -545,9 +545,8 @@ export class SwimmerRacePhases {
         const heading = motor.heading;
         const cosH = Math.max(0.1, Math.cos(heading));
         const angle = DOLPHIN_JUMP.launchAngleDegrees * Math.PI / 180;
-        // Launch speed scales with the character's 爆发力 (burst) + level, reusing
-        // the same progression ratio the dive uses. AI keeps the raw base speed.
-        const launchSpeed = DOLPHIN_JUMP.launchSpeed * motor.dolphinLaunchSpeedScale;
+        // 海豚与出发跳水共用爆发倍率；只缩放初速，普通 AI 保留基准。
+        const launchSpeed = DOLPHIN_JUMP.launchSpeed * motor.burstLaunchSpeedScale;
         const horizontalSpeed = Math.max(0.1, launchSpeed * Math.cos(angle));
         let verticalSpeed = Math.max(0.1, launchSpeed * Math.sin(angle));
         let flightSeconds = Math.max(0.1, (2 * verticalSpeed) / Math.max(0.1, DOLPHIN_JUMP.gravity));

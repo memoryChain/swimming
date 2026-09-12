@@ -17,13 +17,13 @@ function near(actual, expected, epsilon = 1e-10) {
     assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);
 }
 
-test('体力仅在归零后减弱推进，旧condition倍率不叠加心率窗口或降低划频', () => {
+test('体力仅在归零后减弱推进和动作轮速，不额外缩窄心率窗口', () => {
     for (const ratio of [1, .15, .05, .001, .000001]) {
         near(conditionEfficiencyScale(ratio), 1);
         near(energyDepletionCadenceScale(ratio), 1);
     }
-    near(conditionEfficiencyScale(0), .5);
-    near(energyDepletionCadenceScale(0), 1);
+    near(conditionEfficiencyScale(0), .15);
+    near(energyDepletionCadenceScale(0), .6);
     for (const hr of [0, 109, 110, 149, 150, 175, 200]) near(conditionQualityScale(hr), 1);
 });
 
@@ -54,10 +54,10 @@ test('体力属性增加可消耗次数，耗尽后继续结算且不恢复，�
         near(model.efficiencyModifier, 1);
         model.updateFromStroke({ strokeAccepted: true, qualityScore: 1, pressureScore: 1, dt: 0 });
     }
-    near(model.energy, 0);near(model.efficiencyModifier, .5);
+    near(model.energy, 0);near(model.efficiencyModifier, .15);
     model.tick(600);near(model.energy, 0);
     model.updateFromStroke({ strokeAccepted: true, qualityScore: 1, pressureScore: 1, dt: 0 });
-    near(model.energy, 0);near(model.strokeCadenceScale, 1);
+    near(model.energy, 0);near(model.strokeCadenceScale, .6);
     model.reset();near(model.energy, 120);near(model.efficiencyModifier, 1);
 });
 
@@ -67,7 +67,7 @@ test('AI 按结算次数扣除，权威耗尽状态在房主迁移后不恢复',
     model.consumeStrokes(25);near(model.energy, 75);
     model.applyAuthoritativeState(.2, 120, .125);near(model.energy, 20);
     model.consumeStrokes(19);near(model.energy, 1);near(model.efficiencyModifier, 1);
-    model.consumeStrokes(1);near(model.energy, 0);near(model.efficiencyModifier, .5);
+    model.consumeStrokes(1);near(model.energy, 0);near(model.efficiencyModifier, .15);
     model.applyAuthoritativeState(0, 120, .125);
     model.tickAi({ difficulty: .7, progress: .5, dt: 60 });
     near(model.energy, 0);near(model.depletionCooldownRemaining, 0);
@@ -107,9 +107,9 @@ test('小数每划消耗和权威比例还原不会留下额外满力次数', ()
         CONDITION_BALANCE.energy.drainPerStroke=.1;
         const model=new PlayerConditionModel();model.setProgressionOverrides({energyTotal:1});model.reset();
         for(let i=0;i<10;i++) model.updateFromStroke({strokeAccepted:true,qualityScore:1,pressureScore:1,dt:0});
-        near(model.energy,0);near(model.efficiencyModifier,.5);
+        near(model.energy,0);near(model.efficiencyModifier,.15);
         CONDITION_BALANCE.energy.drainPerStroke=1;
         const ai=new AiConditionModel();ai.applyAuthoritativeState(.28,120);ai.consumeStrokes(28);
-        near(ai.energy,0);near(ai.efficiencyModifier,.5);
+        near(ai.energy,0);near(ai.efficiencyModifier,.15);
     } finally { CONDITION_BALANCE.energy.drainPerStroke=previous; }
 });

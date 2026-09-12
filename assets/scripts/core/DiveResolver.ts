@@ -1,7 +1,7 @@
 ﻿// DiveResolver: pure function turning a normalized dive power into a DiveResult.
 // No Cocos dependencies, no side effects. Both the player chain
 // (GameFlowController.commitDive -> RaceManager.startFromDive) and the AI chain
-// (GameFlowController.prepareAndScheduleAiDives -> Swimmer.performDive) call this
+// (GameFlowController.startAiDivesAtGo -> Swimmer.performDive) call this
 // so the dive outcome is produced in exactly one place.
 
 import { DIVE_BALANCE } from './GameBalance';
@@ -67,14 +67,14 @@ function optimalEntryStrokesForTier(tier: DiveQualityTier): number {
     }
 }
 
-export function resolveDiveResult(power: number): DiveResult {
+export function resolveDiveResult(power: number, launchSpeedScale = 1): DiveResult {
     const divePower = clamp01(power);
     const tier = classifyTier(divePower);
     const entryStyle = styleForTier(tier);
 
     return {
         power: divePower,
-        launchSpeed: lerp(DIVE_BALANCE.minLaunchSpeed, DIVE_BALANCE.maxLaunchSpeed, divePower),
+        launchSpeed: lerp(DIVE_BALANCE.minLaunchSpeed, DIVE_BALANCE.maxLaunchSpeed, divePower) * launchSpeedScale,
         qualityTier: tier,
         entryStyle,
         heartRateStartModifier: lerp(HEART_RATE_START_MIN, HEART_RATE_START_MAX, divePower),

@@ -35,7 +35,6 @@ export class AISwimmerController extends Component {
     // stroke in perfect lockstep. Positive = slightly faster cadence.
     @property public bpmOffset = 0;
     @property({ range: [0, 1, 0.01] }) public divePower = DIVE_BALANCE.defaultAiPower;
-    @property public diveReaction = DIVE_BALANCE.defaultAiReactionSeconds;
 
     // Stable racing style. Assigned from the lane's AICompetitorProfile at build
     // time; defaults to a neutral steady pacer for safety.

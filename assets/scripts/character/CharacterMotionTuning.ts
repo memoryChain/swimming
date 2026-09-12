@@ -175,20 +175,9 @@ export const SWIMMER_ACTION_TUNING = {
     // 完赛漂浮姿态距离池壁保留的安全距离。
     finishFloatPoolEdgeClearance: 0.55,
 
-    // Minimum crouch duration for high-power dives.
-    // 高质量跳水时较短的下蹲蓄势时长。
-    diveCrouchSecondsMin: 0.18,
-
-    // Maximum crouch duration for low-power dives.
-    // 低质量跳水时较长的下蹲蓄势时长。
-    diveCrouchSecondsMax: 0.26,
-
     // Ratio of flight time spent extending into streamline.
     // 腾空阶段中用于伸展到流线型姿态的时间占比。
     diveExtensionRatio: 0.52,
-
-    // Portion of the dive pose transition that plays before the root leaves the block.
-    diveLaunchDelayRatio: 0.25,
 
     // Start-block compression before launch.
     diveCrouchBackOffset: 0.1,
