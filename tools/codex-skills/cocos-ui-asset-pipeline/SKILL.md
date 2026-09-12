@@ -18,6 +18,8 @@ description: 制作和维护 Cocos 游戏 UI，从概念设计、分层 Photosho
 - 只有确实缺少合适美术资源、需要生成位图时，读 [生成素材与拆分](references/imagegen-decomposition.md)，并使用当前可用的 `imagegen` 技能。不要为了套流程重新生成已获认可的素材。
 - 批量建立资产清单或采用本技能的旧 PowerShell 校验工具时，读 [清单与预算](references/manifest-and-budgets.md)。
 
+- 制作或调整大厅、弹窗、HUD 动效时，读 [动效与特效制作规范](references/motion-and-vfx.zh.md)，其中也汇总本项目场景水花的触发、空间、粒子及实录验证经验；具体参数通过文内项目说明索引查询。
+
 ## 核心流程
 
 1. **确认真源**：核对当前 PSD 的路径、尺寸、层树与预览；打开的旧文档不一定是定稿。查看实际代码入口与资源引用，不根据截图猜节点或数据源。

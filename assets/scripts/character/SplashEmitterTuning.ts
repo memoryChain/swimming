@@ -46,8 +46,8 @@ export const SPLASH_EMITTER_TUNING = {
 
     // Runtime particle alpha, 0-255. Translucent so streaks read as water spray, not solid white.
     // 运行时粒子透明度，范围 0-255；偏透使水条读作水花飞溅，而非实白。
-    particleAlpha: 182,
-    plumeAlpha: 100,
+    particleAlpha: 230,
+    plumeAlpha: 255,
 
     // Maximum swim speed used to normalize splash intensity.
     // 用于归一化水花强度的最大游泳速度。
@@ -123,7 +123,7 @@ export const SPLASH_EMITTER_TUNING = {
 
         // Intensity clamp sent to the foam shader.
         // 传入泡沫 shader 的强度上限。
-        maxIntensity: 2.4,
+        maxIntensity: 1.2,
 
         // Scale multipliers for surface foam when moving fast or bursting.
         // 高速移动或爆发时水面泡沫的缩放倍率。
@@ -147,7 +147,7 @@ export const SPLASH_EMITTER_TUNING = {
         otherSpeedMotionWeight: 0.16,
         handBurstGenericWeight: 0.28,
         handArmCycleBurstWeight: 0.45,
-        handRippleLifetime: 0.34,
+        handRippleLifetime: 0.45,
 
         // Small vertical lift for foam during burst.
         // 爆发时泡沫片的轻微上抬。
@@ -155,7 +155,7 @@ export const SPLASH_EMITTER_TUNING = {
 
         // Foam position lead/trail values relative to body and bones.
         // 泡沫相对身体和骨骼的前后位置偏移。
-        footBoneSpeedBack: 0.34,
+        footBoneSpeedBack: 0.20,
         bodySpeedBack: 0.08,
         fallbackBaseSpeedBack: 0.14,
         fallbackFootExtraBack: 0.26,
@@ -204,7 +204,7 @@ export const SPLASH_EMITTER_TUNING = {
                 ripple: false,
                 basePosition: [-0.94, 0.005, 0],
                 baseEuler: [0, 0, 0],
-                baseScale: [0.72, 1, 0.48],
+                baseScale: [1.0, 1, 1.15],
                 speedWeight: 0.85,
                 armWeight: 0.04,
                 kickWeight: 1.65,
@@ -221,14 +221,13 @@ export const SPLASH_EMITTER_TUNING = {
         // Particle capacity per emitter. Short-lived streaks stay sparse to contain CPU simulation
         // and transparent overdraw on WeChat Mini Game.
         // 每个发射器的粒子容量。细短水丝保持稀疏，控制微信小游戏的 CPU 模拟和透明叠绘。
-        capacity: 32,
+        capacity: 16,
 
         // Particle system playback duration; emissions are manual bursts.
         // 粒子系统播放时长；实际发射由代码手动 burst 控制。
         duration: 1,
 
-        // Local-space simulation keeps particles attached to each swimmer.
-        // 本地空间模拟，让粒子跟随各自运动员节点。
+        // 世界空间让已发射的水花留在入水位置，不随角色向前拖行。
         simulationSpace: 0,
         simulationSpeed: 1,
 
@@ -262,9 +261,9 @@ export const SPLASH_EMITTER_TUNING = {
 
         // A medium cone branches into a flame-like white spray without becoming a broad square cloud.
         // 中等圆锥角把水滴分成白色火焰般的细支，同时避免变成宽大的方块云团。
-        handShapeAngle: 64,
+        handShapeAngle: 24,
         legShapeAngle: 32,
-        handShapeRadius: 0.15,
+        handShapeRadius: 0.045,
         legShapeRadius: 0.07,
         shapeArc: 360,
         handRandomDirection: 0,
@@ -278,8 +277,8 @@ export const SPLASH_EMITTER_TUNING = {
         // particle reads as a fine white water filament from every camera angle.
         // 拉伸广告牌渲染：把小水滴沿速度拉长，使每颗粒子在任何相机角度都读作细白水丝。
         stretchedRenderMode: 1,
-        stretchVelocityScale: 0.085,
-        stretchLengthScale: 0.68,
+        stretchVelocityScale: 0.025,
+        stretchLengthScale: 0.35,
 
         // Plain billboard render mode used by the 'blocky' style (no velocity stretch).
         // 'blocky' 风格使用的普通广告牌渲染模式（不做速度拉伸）。
@@ -298,8 +297,8 @@ export const SPLASH_EMITTER_TUNING = {
             body: 0.26,
         },
         roleFade: {
-            hand: { holdTime: 0.26, endTime: 0.64 },
-            leg: { holdTime: 0.32, endTime: 0.76 },
+            hand: { holdTime: 0.42, endTime: 1 },
+            leg: { holdTime: 0.4, endTime: 1 },
             body: { holdTime: 0.28, endTime: 0.66 },
         },
 
@@ -382,106 +381,34 @@ export const SPLASH_EMITTER_TUNING = {
         leftBodyZ: -0.26,
         rightBodyZ: 0.26,
 
-        // Hand emitter cluster. Tune palmOffset[1] to change emission height.
-        // Kept to 3 emitters per hand for WeChat: fewer particle systems and less overdraw.
-        // 手部发射器组；调 palmOffset[1] 可以改变发射高度。
-        // 微信小游戏下每只手保留 3 个发射器：更少粒子系统、更少透明叠绘。
+        // 每只手／脚各一片低矮水片和一个稀疏水滴发射器，避免叠成白块。
         handCluster: [
             {
-                nameSuffix: 'Core',
-                role: 'hand',
-                visual: 'plume',
-                sideOffsetZ: 0,
-                basePosition: [0.46, 0.08, 0],
-                palmOffset: [0.28, 0.018, 0],
-                forwardTilt: 0,
-                lateralTilt: 0,
-                countScale: 0.9,
-                sizeScale: 2.8,
-                heightScale: 3.1,
+                nameSuffix: 'Sheet', role: 'hand', visual: 'plume',
+                sideOffsetZ: 0, basePosition: [0.46, 0.045, 0],
+                palmOffset: [0, 0.20, 0], forwardTilt: 0, lateralTilt: 0,
+                countScale: 0.15, sizeScale: 8.5, heightScale: 0.9,
             },
             {
-                nameSuffix: 'Inner',
-                role: 'hand',
-                visual: 'plume',
-                sideOffsetZ: -0.2,
-                basePosition: [0.49, 0.075, 0],
-                palmOffset: [0.3, 0.014, -0.2],
-                forwardTilt: 0,
-                lateralTilt: 0,
-                countScale: 0.55,
-                sizeScale: 2.05,
-                heightScale: 2.35,
-            },
-            {
-                nameSuffix: 'Outer',
-                role: 'hand',
-                visual: 'spray',
-                sideOffsetZ: 0.16,
-                basePosition: [0.51, 0.085, 0],
-                palmOffset: [0.13, -0.035, 0.16],
-                forwardTilt: 10,
-                lateralTilt: 18,
-                countScale: 0.52,
-                sizeScale: 0.7,
-                heightScale: 0.82,
+                nameSuffix: 'Drops', role: 'hand', visual: 'spray',
+                sideOffsetZ: 0, basePosition: [0.46, 0.04, 0],
+                palmOffset: [0, 0.04, 0], forwardTilt: 0, lateralTilt: 28,
+                countScale: 0.5, sizeScale: 0.55, heightScale: 1,
             },
         ] satisfies SplashParticleEmitterTuning[],
 
-        // Lower-leg emitter. Tune palmOffset[1] to change kick splash height.
-        // 小腿发射器；调 palmOffset[1] 可以改变打腿水花高度。
         legCluster: [
             {
-                nameSuffix: 'Toe',
-                role: 'leg',
-                visual: 'plume',
-                sideOffsetZ: 0.02,
-                basePosition: [-0.7, 0.018, 0],
-                palmOffset: [0.08, 0.018, 0.035],
-                forwardTilt: 0,
-                lateralTilt: 0,
-                countScale: 0.46,
-                sizeScale: 2.15,
-                heightScale: 2.75,
+                nameSuffix: 'Sheet', role: 'leg', visual: 'plume',
+                sideOffsetZ: 0, basePosition: [-0.7, 0.025, 0],
+                palmOffset: [-0.04, 0.12, 0], forwardTilt: 0, lateralTilt: 0,
+                countScale: 0.12, sizeScale: 4.4, heightScale: 0.8,
             },
             {
-                nameSuffix: 'Sole',
-                role: 'leg',
-                visual: 'plume',
-                sideOffsetZ: -0.015,
-                basePosition: [-0.74, 0.014, 0],
-                palmOffset: [-0.02, 0.015, -0.09],
-                forwardTilt: 0,
-                lateralTilt: 0,
-                countScale: 0.28,
-                sizeScale: 1.55,
-                heightScale: 2.05,
-            },
-            {
-                nameSuffix: 'Heel',
-                role: 'leg',
-                visual: 'spray',
-                sideOffsetZ: -0.055,
-                basePosition: [-0.78, 0.012, 0],
-                palmOffset: [-0.09, 0.012, -0.05],
-                forwardTilt: 10,
-                lateralTilt: 18,
-                countScale: 0.24,
-                sizeScale: 0.72,
-                heightScale: 0.8,
-            },
-            {
-                nameSuffix: 'Backwash',
-                role: 'leg',
-                visual: 'spray',
-                sideOffsetZ: 0.035,
-                basePosition: [-0.84, 0.01, 0],
-                palmOffset: [-0.18, 0.006, 0.02],
-                forwardTilt: -12,
-                lateralTilt: -13,
-                countScale: 0.18,
-                sizeScale: 0.68,
-                heightScale: 0.75,
+                nameSuffix: 'Drops', role: 'leg', visual: 'spray',
+                sideOffsetZ: 0, basePosition: [-0.74, 0.025, 0],
+                palmOffset: [-0.06, 0.025, 0], forwardTilt: 0, lateralTilt: 35,
+                countScale: 0.3, sizeScale: 0.45, heightScale: 1,
             },
         ] satisfies SplashParticleEmitterTuning[],
 
@@ -503,6 +430,36 @@ export const SPLASH_EMITTER_TUNING = {
         } satisfies SplashParticleEmitterTuning,
     },
 
+    // 手掌入水时的短促飞溅，与 GOOD／PERFECT 反馈分开触发。
+    handImpact: {
+        // 手骨位于腕部，4 厘米接触带近似手掌下缘；抬高后才允许下一次拍水。
+        contactHeight: 0.04,
+        rearmHeight: 0.12,
+        height: 0.10,
+        lifetimeMin: 0.30,
+        lifetimeMax: 0.40,
+        speedMin: 1.8,
+        speedMax: 2.5,
+        gravity: 0.8,
+        sizeMin: 0.15,
+        sizeMax: 0.22,
+        lengthScale: 1.15,
+        sizeOverLifetime: [[0, 1], [0.55, 1], [0.9, 0.35], [1, 0]] as const,
+        // 每只手向自身外侧和身后喷散，根节点朝向负责转弯与转向。
+        elevation: 38,
+        backwardWeight: 0.8,
+        outwardWeight: 0.7,
+        angle: 20,
+        radius: 0.05,
+        countMin: 4,
+        countMax: 6,
+        fineCount: 3,
+        fineSizeMin: 0.055,
+        fineSizeMax: 0.09,
+        fineLifetimeMin: 0.22,
+        fineLifetimeMax: 0.30,
+    },
+
     behavior: {
         // Hand splash entry and burst thresholds.
         // 手部水花入水和爆发阈值。
@@ -511,11 +468,11 @@ export const SPLASH_EMITTER_TUNING = {
         handProgressWindow: 0.26,
         handEntryScaleMin: 0.9,
         handEntryScaleMax: 1.18,
-        handBurstCountMin: 6,
-        handBurstCountMax: 15,
+        handBurstCountMin: 3,
+        handBurstCountMax: 7,
         handBurstExtraCount: 2,
-        handBurstCountClampMin: 5,
-        handBurstCountClampMax: 18,
+        handBurstCountClampMin: 2,
+        handBurstCountClampMax: 9,
         handBurstArmWeight: 0.75,
         handBurstGenericWeight: 0.35,
 
@@ -530,7 +487,7 @@ export const SPLASH_EMITTER_TUNING = {
         legEntryScaleMax: 1.16,
         legEmitThreshold: 0.08,
         legBurstCountMin: 4,
-        legBurstCountMax: 11,
+        legBurstCountMax: 5,
         legBurstSpeedScale: 0.42,
         legBurstPullScale: 0.86,
         legCooldownMin: 0.07,
@@ -554,12 +511,12 @@ export const SPLASH_EMITTER_TUNING = {
 
         // Particle burst physics and size ranges.
         // 粒子爆发的速度、生命周期和尺寸范围。
-        handSpeedMin: 2,
-        handSpeedMax: 3.4,
-        legSpeedMin: 2.2,
-        legSpeedMax: 3.6,
+        handSpeedMin: 0.65,
+        handSpeedMax: 1.25,
+        legSpeedMin: 0.5,
+        legSpeedMax: 1.0,
         plumeSpeedScale: 0,
-        plumeLifetimeScale: 0.58,
+        plumeLifetimeScale: 1,
         plumeGravity: 0,
         speedRangeMinScale: 0.58,
         speedRangeMaxScale: 1.08,
@@ -569,7 +526,7 @@ export const SPLASH_EMITTER_TUNING = {
         legLifetimeMin: 0.2,
         legLifetimeMaxLowSpeed: 0.3,
         legLifetimeMaxHighSpeed: 0.36,
-        handSizeMin: 0.045,
+        handSizeMin: 0.065,
         handSizeMax: 0.1,
         legSizeMin: 0.06,
         legSizeMax: 0.13,
@@ -579,7 +536,7 @@ export const SPLASH_EMITTER_TUNING = {
         handSpraySeconds: 0.035,
         legSpraySeconds: 0.045,
         initialEmitScale: 0.72,
-        handInitialEmitMin: 2,
+        handInitialEmitMin: 1,
         legInitialEmitMin: 1,
         burstCooldownMin: 0.018,
         burstCooldownMax: 0.04,
@@ -590,9 +547,9 @@ export const SPLASH_EMITTER_TUNING = {
         // 连续发射累计与单粒子抖动。
         minSprayDt: 1 / 240,
         maxSprayDt: 1 / 20,
-        handJitterX: 0.11,
+        handJitterX: 0.025,
         handJitterY: 0.014,
-        handJitterZ: 0.14,
+        handJitterZ: 0.035,
         legJitterX: 0.11,
         legJitterY: 0.025,
         legJitterZ: 0.105,
@@ -606,7 +563,7 @@ export const SPLASH_EMITTER_TUNING = {
 
         // A small part of hand droplets splashes forward for a natural look.
         // 少量手部水滴向前飞溅，让效果更自然。
-        forwardSplashChance: 0.28,
+        forwardSplashChance: 0.05,
         forwardOffsetMin: 0.018,
         forwardOffsetMax: 0.152,
         forwardTurnMin: 118,

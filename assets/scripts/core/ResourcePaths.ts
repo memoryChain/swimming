@@ -381,6 +381,7 @@ export const RESOURCE_PATHS = {
     poolWaterMaterial: 'pool/RagingPoolWater',
     swimmerSplashMaterial: 'pool/SwimmerSplash',
     swimmerSplashParticleTexture: 'pool/SwimmerSplashDroplet/texture',
+    swimmerSplashSurfaceTexture: 'pool/SwimmerSplashSurface/texture',
     swimmerSplashSprayTexture: 'pool/SwimmerSplashSpray/texture',
     spectatorCameraFlashTexture: 'pool/SpectatorCameraFlash/texture',
     skyboxVariants: SKYBOX_VARIANTS,

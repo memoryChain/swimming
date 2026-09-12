@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "8c1f5bf1-df12-4d89-9bcf-3f8fdab0f6f2",
+  "uuid": "05f77a72-ebe3-4545-8bfe-da7819aa0dd3",
   "files": [
     ".json",
     ".png"
@@ -10,19 +10,19 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "8c1f5bf1-df12-4d89-9bcf-3f8fdab0f6f2@6c48a",
-      "displayName": "SwimmerSplashDroplet",
+      "uuid": "05f77a72-ebe3-4545-8bfe-da7819aa0dd3@6c48a",
+      "displayName": "SwimmerSplashSurface",
       "id": "6c48a",
       "name": "texture",
       "userData": {
-        "wrapModeS": "clamp-to-edge",
-        "wrapModeT": "clamp-to-edge",
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
         "minfilter": "linear",
         "magfilter": "linear",
         "mipfilter": "none",
         "anisotropy": 0,
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "8c1f5bf1-df12-4d89-9bcf-3f8fdab0f6f2",
+        "imageUuidOrDatabaseUri": "05f77a72-ebe3-4545-8bfe-da7819aa0dd3",
         "visible": false
       },
       "ver": "1.0.22",
@@ -37,7 +37,7 @@
     "type": "texture",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "8c1f5bf1-df12-4d89-9bcf-3f8fdab0f6f2@6c48a",
+    "redirect": "05f77a72-ebe3-4545-8bfe-da7819aa0dd3@6c48a",
     "compressSettings": {
       "useCompressTexture": true,
       "presetId": "astc-world-alpha-8x8"
