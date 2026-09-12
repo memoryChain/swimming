@@ -111,9 +111,11 @@ test('frame self and input sequence round-trip, including an empty self slot', (
     assert.equal(noSelf.inputSeq, 100);
 });
 
-test('heart-rate quantization never crosses a quality-zone boundary', () => {
+test('心率量化保留显示读数且不改变判定', () => {
     for (const heartRate of [109.49, 109.5, 109.99, 110, 149.49, 149.5, 149.99, 150, 174.49, 174.5, 174.99, 175]) {
         const wire = decodeConditionHeartRate(encodeConditionHeartRate(heartRate));
+        assert.equal(wire, Math.floor(heartRate));
+        assert.equal(conditionQualityScale(wire), 1);
         assert.equal(conditionQualityScale(wire), conditionQualityScale(heartRate), `heartRate=${heartRate}`);
     }
 });
@@ -180,4 +182,19 @@ test('lobby protocol request lets a missing declaration be retried without a hel
     const retriedHello = decodeProtocolHello(encodeProtocolHello(4));
     hostVersions[retriedHello.pos] = retriedHello.version;
     assert.equal(hasCompatibleProtocol([0, 4], hostVersions), true);
+});
+
+
+test('三个同步通道均保留正体力与耗尽边界', () => {
+    for (const ratio of [1, .01, .00049, .000001, 0]) {
+        const e = entry({ conditionEnergyRatio: ratio });
+        const copies = [decodeRaceSnapshot(encodeRaceSnapshot(0, [e])).entries[0],
+            decodeSelfSnapshot(encodeSelfSnapshot(e, 1, 1)),
+            decodeInputFrame(encodeInputFrame(1, [], e, 1, 1)).self];
+        for (const copy of copies) {
+            assert.equal(copy.conditionEnergyRatio > 0, ratio > 0);
+            assert.equal(ConditionBalance.conditionEfficiencyScale(copy.conditionEnergyRatio),
+                ConditionBalance.conditionEfficiencyScale(ratio));
+        }
+    }
 });

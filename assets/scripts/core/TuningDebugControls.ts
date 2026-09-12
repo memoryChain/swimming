@@ -8,8 +8,7 @@ import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
-import { HeartRateZone } from '../condition/ConditionTypes';
-import { INPUT_TUNING, MOTION_TUNING, RACE_DIFFICULTY_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
+import { INPUT_TUNING, MOTION_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from './SteeringTuning';
 import { applyWaterColorTuning, WATER_COLOR_TUNING } from '../venue/WaterColorTuning';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
@@ -192,7 +191,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '冲刺与终点相机',
         controls: [
-            control('race.sprintDistanceFromFinish', '冲刺触发距离', '距离终点还剩多少米时进入冲刺阶段。冲刺期间体力耗尽仍会显示，但不再施加质量和效率减益。', () => RACE_PHASE_BALANCE.sprintDistanceFromFinish, (v) => RACE_PHASE_BALANCE.sprintDistanceFromFinish = v, 1, 0, 100, 0, 'm'),
+            control('race.sprintDistanceFromFinish', '冲刺触发距离', '距离终点还剩多少米时进入冲刺阶段。冲刺沿用相同体力消耗和耗尽推进规则。', () => RACE_PHASE_BALANCE.sprintDistanceFromFinish, (v) => RACE_PHASE_BALANCE.sprintDistanceFromFinish = v, 1, 0, 100, 0, 'm'),
             control('camera.finishTopViewDistance', '终点俯视距离', '主角距终点还剩多少米时切到终点俯视镜头。设很小(≈0)=只有主角真正到达终点才切俯视，冲刺全程保持跟随。', () => RACE_CAMERA_TUNING.finishTopViewDistance, (v) => RACE_CAMERA_TUNING.finishTopViewDistance = v, 0.05, 0, 50, 2, 'm'),
             control('camera.finishTopViewPoolInset', '终点俯视内移', '完赛俯视镜头中心从终点向泳池内侧移动的距离。越大则终点越靠画面边缘、能看到的泳池范围越多。', () => RACE_CAMERA_TUNING.finishTopViewPoolInset, (v) => RACE_CAMERA_TUNING.finishTopViewPoolInset = v, 0.5, 0, 25, 1, 'm'),
             control('camera.sprintBackDistance', '冲刺镜头后距', '冲刺镜头位于主角上半身后方的距离。越小越接近第一人称，越大看到的人物越完整。', () => RACE_CAMERA_TUNING.sprintBackDistance, (v) => RACE_CAMERA_TUNING.sprintBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
@@ -246,36 +245,28 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('strokeQuality.goodEnd', 'GOOD终点', 'GOOD 区间终点，范围 0..1。终点必须大于起点。', () => STROKE_QUALITY_TUNING.goodEnd, (v) => STROKE_QUALITY_TUNING.goodEnd = v, 0.01, 0, 1, 2),
             control('strokeQuality.perfectStart', 'PERFECT起点', 'PERFECT 区间起点，范围 0..1。PERFECT 优先级高于 GOOD。', () => STROKE_QUALITY_TUNING.perfectStart, (v) => STROKE_QUALITY_TUNING.perfectStart = v, 0.01, 0, 1, 2),
             control('strokeQuality.perfectEnd', 'PERFECT终点', 'PERFECT 区间终点，范围 0..1。终点必须大于起点。', () => STROKE_QUALITY_TUNING.perfectEnd, (v) => STROKE_QUALITY_TUNING.perfectEnd = v, 0.01, 0, 1, 2),
-            control('strokeQuality.qualityZoneScaleStrength', '质量甜区强度', '心率质量修正影响 PERFECT 甜区宽度的强度。0=关闭（PERFECT 宽度固定）；1=完全生效（最佳区放大约25%、低区收窄约30%）。默认0.5，明显但不抢戏。', () => STROKE_QUALITY_TUNING.qualityZoneScaleStrength, (v) => STROKE_QUALITY_TUNING.qualityZoneScaleStrength = v, 0.05, 0, 1, 2),
-            control('strokeQuality.perfectVisualReleaseGraceSeconds', '黄色松手宽容', '角色确实显示过黄色后，补偿画面显示、玩家松手和触摸事件进入游戏的延迟；不会扩大提前松手的 PERFECT 区。', () => STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds, (v) => STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds = v, 0.01, 0, 0.2, 2, 's'),
             control('gesture.armStrokeTimeoutProgress', '超时圈数', '一直长按不松手时，手臂划水推进到整圈的这个比例后自动结束（手已出水），判为超时失误。0.5=半圈。', () => STROKE_QUALITY_TUNING.armStrokeTimeoutProgress, (v) => STROKE_QUALITY_TUNING.armStrokeTimeoutProgress = v, 0.05, 0.2, 1, 2),
             control('gesture.armStrokeTimeoutAccel', '超时失误加速', '划水超时失误时只给的很小推进加速度。用于惩罚一直按住不松手。', () => STROKE_QUALITY_TUNING.armStrokeTimeoutAccel, (v) => STROKE_QUALITY_TUNING.armStrokeTimeoutAccel = v, 0.01, 0, 1, 2),
             control('strokeQuality.armCycleLowSpeedPerSecond', '低速划水轮速', '速度低于“起爬速度”时手臂划水每秒的圈数（下限）。越低=低速时一圈越慢，甜区的实际时间窗口越宽（越好打）。', () => STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleLowSpeedPerSecond = v, 0.02, 0.05, 3, 2),
             control('strokeQuality.armCycleHighSpeedPerSecond', '高速划水轮速', '速度达到“顶速速度”后手臂划水每秒的圈数（上限）。越高=高速时一圈越快，甜区的实际时间窗口越短（越难打）。', () => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond, (v) => STROKE_QUALITY_TUNING.armCycleHighSpeedPerSecond = v, 0.05, 1, 6, 2),
             control('strokeQuality.armCycleSpeedStart', '起爬速度', '低于这个速度时轮速恒为下限；到达后才开始随速度加快。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedStart, (v) => STROKE_QUALITY_TUNING.armCycleSpeedStart = v, 0.1, 0, 6, 2, 'm/s'),
             control('strokeQuality.armCycleSpeedFull', '顶速速度', '到达这个速度时轮速升到上限；再快也不变。应大于“起爬速度”。单位 m/s。', () => STROKE_QUALITY_TUNING.armCycleSpeedFull, (v) => STROKE_QUALITY_TUNING.armCycleSpeedFull = v, 0.1, 0.1, 8, 2, 'm/s'),
-            control('condition.strokeDrainLow', '低区每划体力', '心率处于低区时，每次完成划水消耗的体力。较低的消耗适合恢复和长距离稳游。', () => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.LOW], (v) => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.LOW] = v, 0.05, 0, 5, 2),
-            control('condition.strokeDrainOptimal', '最佳区每划体力', '心率处于最佳区时，每次完成划水消耗的体力。这是长距离稳定游进的主要基准。', () => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.OPTIMAL], (v) => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.OPTIMAL] = v, 0.05, 0, 5, 2),
-            control('condition.strokeDrainHighPressure', '高压区每划体力', '心率处于高压区时，每次完成划水消耗的体力。应高于最佳区，体现持续强划的代价。', () => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.HIGH_PRESSURE], (v) => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.HIGH_PRESSURE] = v, 0.05, 0, 5, 2),
-            control('condition.strokeDrainOverload', '过载区每划体力', '心率处于过载区时，每次完成划水消耗的体力。应最高，让过载只能短时间使用。', () => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.OVERLOAD], (v) => CONDITION_BALANCE.energy.drainPerStroke[HeartRateZone.OVERLOAD] = v, 0.05, 0, 5, 2),
-            control('condition.effortDecay', '努力采样衰减', '不划水时持续努力采样的每秒衰减速度。越小则划水间隔中的目标心率更稳定，惯性更明显。', () => CONDITION_BALANCE.heartRate.effortDecayPerSecond, (v) => CONDITION_BALANCE.heartRate.effortDecayPerSecond = v, 0.05, 0, 2, 2, '/s'),
-            control('condition.easeUp', '心率上升速率', '心率向目标值上升的每秒速度。越小则心率上升越平滑。', () => CONDITION_BALANCE.heartRate.easeUpPerSecond, (v) => CONDITION_BALANCE.heartRate.easeUpPerSecond = v, 1, 2, 60, 0, ' bpm/s'),
-            control('condition.easeDown', '心率下降速率', '心率从高位回落的每秒速度。越小则恢复越慢、心率惯性越明显。', () => CONDITION_BALANCE.heartRate.easeDownPerSecond, (v) => CONDITION_BALANCE.heartRate.easeDownPerSecond = v, 0.5, 1, 40, 1, ' bpm/s'),
-            control('condition.depletionCooldown', '体力耗尽冷却', '体力降到零后暂停恢复的时间。设为零可关闭冷却。', () => CONDITION_BALANCE.energy.depletionCooldownSeconds, (v) => CONDITION_BALANCE.energy.depletionCooldownSeconds = v, 0.1, 0, 5, 1, 's'),
-            control('condition.efficiencyFloor', '效率地板', '体力耗尽时的效率下限。0=没力气完全游不动；0.5=还能以一半效率游。配合效率曲线指数使用。', () => CONDITION_BALANCE.efficiency.energyFloor, (v) => CONDITION_BALANCE.efficiency.energyFloor = v, 0.05, 0, 0.9, 2),
-            control('condition.curveExponent', '效率曲线指数', '效率随体力衰减的曲线形状。1=线性；<1=缓启动（高体力几乎不掉，最后10%急跌）。0.3=陡峭缓启动。', () => CONDITION_BALANCE.efficiency.curveExponent, (v) => CONDITION_BALANCE.efficiency.curveExponent = v, 0.05, 0.1, 2, 2),
-            control('condition.cadenceWarningRatio', '降频预警体力', '体力低于这个比例后，划水动作开始逐渐变慢。0.15 表示 15%。', () => CONDITION_BALANCE.cadence.warningRatio, (v) => CONDITION_BALANCE.cadence.warningRatio = v, 0.01, 0, 0.5, 2),
-            control('condition.cadenceExhaustedRatio', '降频力竭体力', '体力低于这个比例后进入更重的第二段降频。应不高于预警体力。', () => CONDITION_BALANCE.cadence.exhaustedRatio, (v) => CONDITION_BALANCE.cadence.exhaustedRatio = v, 0.01, 0, 0.3, 2),
-            control('condition.cadenceWarningScale', '力竭入口划频', '体力降到力竭阈值时的动作频率倍率。0.85 表示原频率的 85%。', () => CONDITION_BALANCE.cadence.warningScale, (v) => CONDITION_BALANCE.cadence.warningScale = v, 0.05, 0.3, 1, 2),
-            control('condition.cadenceExhaustedScale', '空体力划频', '体力归零时的动作频率倍率。0.6 表示原频率的 60%。', () => CONDITION_BALANCE.cadence.exhaustedScale, (v) => CONDITION_BALANCE.cadence.exhaustedScale = v, 0.05, 0.3, 1, 2),
-            control('condition.regenLow', '低区回血', '心率在低区时每秒回复的体力。越高回血越快。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.LOW] = v, 0.05, 0, 5, 2),
-            control('condition.regenOptimal', '最佳区回血', '心率在最佳区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OPTIMAL] = v, 0.05, 0, 5, 2),
-            control('condition.regenHighPressure', '高压区回血', '心率在高压区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.HIGH_PRESSURE] = v, 0.05, 0, 5, 2),
-            control('condition.regenOverload', '过载区回血', '心率在过载区时每秒回复的体力。', () => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OVERLOAD], (v) => CONDITION_BALANCE.energy.regenPerZone[HeartRateZone.OVERLOAD] = v, 0.05, 0, 3, 2),
-            control('condition.regenSprintBoost', '冲刺回血加成', '冲刺阶段在所有心率区回血基础上额外增加的每秒回血。让终点段体力回升、形成情绪峰值。', () => CONDITION_BALANCE.energy.regenSprintBoost, (v) => CONDITION_BALANCE.energy.regenSprintBoost = v, 0.1, 0, 5, 2),
-            control('difficulty.beginner.armCycleSpeedScale', '调试玩家轮速', '手感调试入口的玩家动作轮速倍率。越低则动作越慢、松手窗口越宽。AI 使用统一轮速。', () => RACE_DIFFICULTY_TUNING.beginner.armCycleSpeedScale, (v) => RACE_DIFFICULTY_TUNING.beginner.armCycleSpeedScale = v, 0.02, 0.2, 1.5, 2),
-            control('difficulty.competitive.armCycleSpeedScale', '竞技玩家轮速', '竞技入口的玩家动作轮速倍率。AI 使用统一轮速。', () => RACE_DIFFICULTY_TUNING.competitive.armCycleSpeedScale, (v) => RACE_DIFFICULTY_TUNING.competitive.armCycleSpeedScale = v, 0.02, 0.2, 1.5, 2),
-            control('difficulty.championship.armCycleSpeedScale', '世锦赛及AI轮速', '世锦赛玩家与所有入口 AI 共用的动作轮速倍率。1 表示使用基础轮速。', () => RACE_DIFFICULTY_TUNING.championship.armCycleSpeedScale, (v) => RACE_DIFFICULTY_TUNING.championship.armCycleSpeedScale = v, 0.02, 0.2, 1.5, 2),
+        ],
+    },
+    {
+        name: '体力',
+        controls: [
+            control('condition.energyTotal', 'AI默认体力上限', 'AI 和缺少角色档案时使用的体力上限。正常玩家直接使用角色面板体力，不受此值换算；比赛中不自动恢复。', () => CONDITION_BALANCE.energy.total, (v) => CONDITION_BALANCE.energy.total = v, 5, 1, 1000, 0),
+            control('condition.strokeDrain', '每划体力消耗', '左右手各算一次，划水结算时固定扣除。GOOD、PERFECT、失误和超时同价；踢腿不扣体力。', () => CONDITION_BALANCE.energy.drainPerStroke, (v) => CONDITION_BALANCE.energy.drainPerStroke = v, 0.1, 0.1, 10, 2),
+            control('condition.exhaustedPropulsionScale', '耗尽后推进倍率', '体力归零后，新开始的手臂划水使用此固定倍率，包含按住推进和松手奖励。0.5 表示推进减半，动作速度与判定不变。', () => CONDITION_BALANCE.energy.exhaustedPropulsionScale, (v) => CONDITION_BALANCE.energy.exhaustedPropulsionScale = v, 0.05, 0, 1, 2),
+        ],
+    },
+    {
+        name: '心率显示',
+        controls: [
+            control('condition.effortDecay', '努力采样衰减', '仅影响心率显示：不划水时努力采样的衰减速度，不改变体力、判定或推进。', () => CONDITION_BALANCE.heartRate.effortDecayPerSecond, (v) => CONDITION_BALANCE.heartRate.effortDecayPerSecond = v, 0.05, 0, 2, 2, '/s'),
+            control('condition.easeUp', '心率上升速率', '仅影响心率显示：向目标值上升的每秒速度。', () => CONDITION_BALANCE.heartRate.easeUpPerSecond, (v) => CONDITION_BALANCE.heartRate.easeUpPerSecond = v, 1, 2, 60, 0, ' bpm/s'),
+            control('condition.easeDown', '心率下降速率', '仅影响心率显示：从高位回落的每秒速度，不恢复体力。', () => CONDITION_BALANCE.heartRate.easeDownPerSecond, (v) => CONDITION_BALANCE.heartRate.easeDownPerSecond = v, 0.5, 1, 40, 1, ' bpm/s'),
         ],
     },
     {
@@ -665,7 +656,53 @@ function collectInvalidLegacyTuningValues(snapshot: Record<string, unknown>): st
         .map((key) => `${key}=${formatTuningValue(snapshot[key])}`);
 }
 
+const RETIRED_CONDITION_TUNING_KEYS = new Set([
+    'strokeQuality.perfectVisualReleaseGraceSeconds',
+    '划水.黄色松手宽容',
+    'difficulty.beginner.armCycleSpeedScale',
+    'difficulty.competitive.armCycleSpeedScale',
+    'difficulty.championship.armCycleSpeedScale',
+    '划水.调试玩家轮速',
+    '划水.竞技玩家轮速',
+    '划水.世锦赛及AI轮速',
+    'strokeQuality.qualityZoneScaleStrength',
+    '划水.质量甜区强度',
+    'condition.strokeDrainLow',
+    '划水.低区每划体力',
+    'condition.strokeDrainOptimal',
+    '划水.最佳区每划体力',
+    'condition.strokeDrainHighPressure',
+    '划水.高压区每划体力',
+    'condition.strokeDrainOverload',
+    '划水.过载区每划体力',
+    'condition.depletionCooldown',
+    '划水.体力耗尽冷却',
+    'condition.efficiencyFloor',
+    '划水.效率地板',
+    'condition.curveExponent',
+    '划水.效率曲线指数',
+    'condition.cadenceWarningRatio',
+    '划水.降频预警体力',
+    'condition.cadenceExhaustedRatio',
+    '划水.降频力竭体力',
+    'condition.cadenceWarningScale',
+    '划水.力竭入口划频',
+    'condition.cadenceExhaustedScale',
+    '划水.空体力划频',
+    'condition.regenLow',
+    '划水.低区回血',
+    'condition.regenOptimal',
+    '划水.最佳区回血',
+    'condition.regenHighPressure',
+    '划水.高压区回血',
+    'condition.regenOverload',
+    '划水.过载区回血',
+    'condition.regenSprintBoost',
+    '划水.冲刺回血加成',
+]);
+
 function isKnownLegacyTuningKey(key: string): boolean {
+    if (RETIRED_CONDITION_TUNING_KEYS.has(key)) return true;
     if (key === 'dolphin.triggerHoldSeconds'
         || key === '海豚跃.双手长按触发'
         || key === 'speed.strokeStabilityAccel'
@@ -832,11 +869,6 @@ function validateTuningRelations(changedId?: string) {
     );
     STROKE_QUALITY_TUNING.perfectStart = perfect.start;
     STROKE_QUALITY_TUNING.perfectEnd = perfect.end;
-    STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds = clamp(
-        STROKE_QUALITY_TUNING.perfectVisualReleaseGraceSeconds,
-        0,
-        0.2,
-    );
 
     if (AI_STROKE_TUNING.timingSigmaHigh > AI_STROKE_TUNING.timingSigmaLow) {
         console.warn('[SpeedSwimming] tuning adjusted: ai.timingSigmaHigh must not exceed timingSigmaLow');
@@ -868,23 +900,6 @@ function validateTuningRelations(changedId?: string) {
             `${STROKE_QUALITY_TUNING.armCycleSpeedStart.toFixed(3)}; set to ${fixed.toFixed(3)}`,
         );
         STROKE_QUALITY_TUNING.armCycleSpeedFull = fixed;
-    }
-
-    if (CONDITION_BALANCE.cadence.exhaustedRatio > CONDITION_BALANCE.cadence.warningRatio) {
-        console.warn(
-            `[SpeedSwimming] tuning adjusted: condition.cadenceExhaustedRatio ` +
-            `${CONDITION_BALANCE.cadence.exhaustedRatio.toFixed(2)} was above warning ratio ` +
-            `${CONDITION_BALANCE.cadence.warningRatio.toFixed(2)}`,
-        );
-        CONDITION_BALANCE.cadence.exhaustedRatio = CONDITION_BALANCE.cadence.warningRatio;
-    }
-    if (CONDITION_BALANCE.cadence.exhaustedScale > CONDITION_BALANCE.cadence.warningScale) {
-        console.warn(
-            `[SpeedSwimming] tuning adjusted: condition.cadenceExhaustedScale ` +
-            `${CONDITION_BALANCE.cadence.exhaustedScale.toFixed(2)} was above warning scale ` +
-            `${CONDITION_BALANCE.cadence.warningScale.toFixed(2)}`,
-        );
-        CONDITION_BALANCE.cadence.exhaustedScale = CONDITION_BALANCE.cadence.warningScale;
     }
 
     if (RACE_PHASE_BALANCE.sprintDistanceFromFinish < RACE_CAMERA_TUNING.finishTopViewDistance) {

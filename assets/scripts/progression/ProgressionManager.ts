@@ -1,5 +1,5 @@
 import { sys } from 'cc';
-import { PROGRESSION_BALANCE, coinCostForLevel, calculateRaceCoins, RacePerformanceInput } from './ProgressionBalance';
+import { PROGRESSION_BALANCE, normalizeCharacterLevel, coinCostForLevel, calculateRaceCoins, RacePerformanceInput } from './ProgressionBalance';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { resolvePlayerBalance, PlayerBalanceOverrides } from './PlayerBalanceOverrides';
 import { PlayerData } from '../backend/PlayerData';
@@ -40,7 +40,7 @@ export class ProgressionManager {
     }
 
     getCharacterLevel(characterId: PlayerCharacterId): number {
-        return this._progress(characterId).level;
+        return normalizeCharacterLevel(this._progress(characterId).level);
     }
 
     // Coin cost to take this character from its current level to the next.
@@ -144,7 +144,7 @@ export class ProgressionManager {
                 const entry = legacy.characters[id];
                 if (entry && typeof entry.level === 'number') {
                     characters[id] = {
-                        level: Math.max(1, Math.floor(entry.level)),
+                        level: normalizeCharacterLevel(entry.level),
                     };
                 }
             }

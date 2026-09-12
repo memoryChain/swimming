@@ -1,13 +1,11 @@
 ﻿import { SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
-import { CONDITION_BALANCE } from '../core/ConditionBalance';
 
 // Resolved balance overrides for the player's active character + level.
 // Applied to the player's motor / condition model / dive resolver only; the AI
 // keeps reading the raw global constants, so progression never affects opponents.
 //
-// The three display attributes (stamina/technique/burst, 0-100) are mapped to
-// real game values:
-//   stamina  -> energy.total (endurance pool)
+// 体力直接使用赛内点数；技巧与爆发力继续使用各自的属性映射。
+//   stamina  -> energyTotal（显示值与赛内上限相同）
 //   technique -> perfectComboMaxOvercap + strokeQualityAccel (rhythm/combo)
 //   burst    -> maxSpeed + diveMaxLaunchSpeed (speed/burst)
 
@@ -31,43 +29,31 @@ export type CharacterStats = {
 
 export type CharacterDisplayStats = CharacterStats;
 
-// Per-level increments (micro - a maxed character is stronger but never broken).
+// 养成只增加玩家可见的整数属性；物理参数由成长后的属性统一解析。
 export const PROGRESSION_PER_LEVEL = {
-    maxSpeed: 0.007,             // +0.42 at 60 (+10.5%)
-    energyTotal: 0.33,           // +19.8 at 60 (+20%)
-    perfectComboMaxOvercap: 0.0009, // +0.054 at 60 (+6%)
-    strokeQualityAccel: 0.006,   // +0.36 at 60 (+22.5%)
-    diveMaxLaunchSpeed: 0.012,   // +0.72 at 60 (+8.8%)
+    stamina: 1,
+    technique: 1,
+    burst: 1,
 } as const;
 
-// Convert a 0-100 display attribute to a 0..1 multiplier centered at 0.5 (=50).
-// At 50 the character is neutral; above 50 gets a bonus, below 50 gets a penalty.
-// The bonus/penalty scale is tuned so a 100-stat character gets ~+15% and a
-// 0-stat character gets ~-15%.
+// 技巧、爆发力每点对应 0.3% 的基础参数增幅，以 50 点为基准。
 function attributeMultiplier(value: number): number {
     return 1 + (value - 50) * 0.003;
 }
 
-/**
- * Converts leveled runtime gains back into the same integer rating scale used
- * by the character catalog. UI screens must use this instead of exposing raw
- * energy, acceleration, or speed units as if they were character attributes.
- */
+// 面板与赛内共用成长结果；体力直接作为赛内上限。
 export function resolveCharacterDisplayStats(
     stats: CharacterStats,
     level: number,
     maxLevel: number,
 ): CharacterDisplayStats {
-    const clampedLevel = Math.max(1, Math.min(maxLevel, level));
+    const clampedLevel = Number.isFinite(level)
+        ? Math.max(1, Math.min(maxLevel, Math.floor(level))) : 1;
     const levelsAbove1 = clampedLevel - 1;
-    const attributeScale = 0.003;
     return {
-        stamina: Math.round(stats.stamina
-            + (PROGRESSION_PER_LEVEL.energyTotal / (CONDITION_BALANCE.energy.total * attributeScale)) * levelsAbove1),
-        technique: Math.round(stats.technique
-            + (PROGRESSION_PER_LEVEL.strokeQualityAccel / (SWIMMER_BALANCE.strokeQualityAccel * attributeScale)) * levelsAbove1),
-        burst: Math.round(stats.burst
-            + (PROGRESSION_PER_LEVEL.maxSpeed / (SWIMMER_BALANCE.maxSpeed * attributeScale)) * levelsAbove1),
+        stamina: Math.round(stats.stamina) + PROGRESSION_PER_LEVEL.stamina * levelsAbove1,
+        technique: Math.round(stats.technique) + PROGRESSION_PER_LEVEL.technique * levelsAbove1,
+        burst: Math.round(stats.burst) + PROGRESSION_PER_LEVEL.burst * levelsAbove1,
     };
 }
 
@@ -78,20 +64,12 @@ export function resolvePlayerBalance(
     weight: number,
     energyGainAptitude: number,
 ): PlayerBalanceOverrides {
-    const clampedLevel = Math.max(1, Math.min(maxLevel, level));
-    const levelsAbove1 = clampedLevel - 1;
-    const per = PROGRESSION_PER_LEVEL;
-
-    const maxSpeed = SWIMMER_BALANCE.maxSpeed * attributeMultiplier(stats.burst)
-        + per.maxSpeed * levelsAbove1;
-    const energyTotal = CONDITION_BALANCE.energy.total * attributeMultiplier(stats.stamina)
-        + per.energyTotal * levelsAbove1;
-    const perfectComboMaxOvercap = SWIMMER_BALANCE.perfectComboMaxOvercap * attributeMultiplier(stats.technique)
-        + per.perfectComboMaxOvercap * levelsAbove1;
-    const strokeQualityAccel = SWIMMER_BALANCE.strokeQualityAccel * attributeMultiplier(stats.technique)
-        + per.strokeQualityAccel * levelsAbove1;
-    const diveMaxLaunchSpeed = DIVE_BALANCE.maxLaunchSpeed * attributeMultiplier(stats.burst)
-        + per.diveMaxLaunchSpeed * levelsAbove1;
+    const grown = resolveCharacterDisplayStats(stats, level, maxLevel);
+    const maxSpeed = SWIMMER_BALANCE.maxSpeed * attributeMultiplier(grown.burst);
+    const energyTotal = grown.stamina;
+    const perfectComboMaxOvercap = SWIMMER_BALANCE.perfectComboMaxOvercap * attributeMultiplier(grown.technique);
+    const strokeQualityAccel = SWIMMER_BALANCE.strokeQualityAccel * attributeMultiplier(grown.technique);
+    const diveMaxLaunchSpeed = DIVE_BALANCE.maxLaunchSpeed * attributeMultiplier(grown.burst);
 
     return {
         maxSpeed,

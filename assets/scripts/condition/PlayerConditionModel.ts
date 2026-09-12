@@ -15,6 +15,7 @@ import {
 } from './ConditionTypes';
 import {
     CONDITION_BALANCE,
+    energyAfterStrokes,
     CONDITION_PHASE_TUNING,
     conditionEfficiencyScale,
     conditionQualityScale,
@@ -37,7 +38,6 @@ export class PlayerConditionModel {
     private _efficiencyModifier = 1;
     private _cadenceModifier = 1;
     private _energyTotalOverride: number | null = null;
-    private _depletionCooldown = 0;
 
     // Internal drift bookkeeping (doc 27.2: not exposed).
     private _lastQualityScore = 0;
@@ -63,7 +63,6 @@ export class PlayerConditionModel {
         this._strokesSinceDive = 0;
         this._startupWobbleModifier = 1;
         this._optimalEntryStrokes = 0;
-        this._depletionCooldown = 0;
     }
 
     setProgressionOverrides(opts: { energyTotal?: number } | null) {
@@ -159,12 +158,6 @@ export class PlayerConditionModel {
 
         this._heartRateZone = zoneForHeartRate(this._heartRate);
 
-        // Energy regeneration: all heart-rate zones regen (LOW strongest).
-        // SPRINT boosts all zones so the finish is an all-out peak, not a crawl.
-        if (this._depletionCooldown > 0) {
-            this._depletionCooldown = Math.max(0, this._depletionCooldown - dt);
-        }
-        this.regenEnergy(dt);
         this.refreshModifiers();
     }
 
@@ -174,45 +167,18 @@ export class PlayerConditionModel {
     }
 
     private drainEnergyForStroke() {
-        const energyCfg = CONDITION_BALANCE.energy;
-        let drain = energyCfg.drainPerStroke[this._heartRateZone];
-        if (this._phase === RacePhase.SPRINT) {
-            drain *= energyCfg.sprintTierMultiplier[this._sprintTier];
-        }
-        const wasPositive = this._energy > 0;
-        this._energy = clamp(this._energy - drain, 0, this._effectiveEnergyTotal);
+        this._energy = energyAfterStrokes(this._energy, 1);
         this._energyDepleted = this._energy <= 0;
-        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
-            this._depletionCooldown = energyCfg.depletionCooldownSeconds;
-        }
     }
 
     private refreshModifiers() {
-        // Quality axis: driven ONLY by heart-rate zone (hand stability).
-        // Energy depletion does NOT affect quality - the two axes are orthogonal.
+        // 心率仅显示，判定和动作轮速始终保持原值。
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
-        // Efficiency axis: driven by ENERGY (muscle fuel), not heart rate.
-        // Slow-start curve: efficiency = floor + (1-floor) * ratio^exponent.
+        // 只区分有体力与已耗尽，不随剩余比例逐渐衰减。
         const ratio = clamp(this._energy / this._effectiveEnergyTotal, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
         this._cadenceModifier = energyDepletionCadenceScale(ratio);
-    }
-
-    // Energy regen: all zones regen (LOW strongest); SPRINT boosts all zones.
-    private regenEnergy(dt: number) {
-        if (this._depletionCooldown > 0) {
-            return;
-        }
-        const energyCfg = CONDITION_BALANCE.energy;
-        // All zones regen, but LOW regenerates the most. SPRINT boosts all zones
-        // so the finish feels like an all-out peak regardless of how hard you push.
-        let rate = energyCfg.regenPerZone[this._heartRateZone];
-        if (this._phase === RacePhase.SPRINT) {
-            rate += energyCfg.regenSprintBoost;
-        }
-        this._energy = clamp(this._energy + rate * dt, 0, this._effectiveEnergyTotal);
-        this._energyDepleted = this._energy <= 0;
     }
 
     // --- Query getters (doc 27.4) ---

@@ -1,3 +1,8 @@
+// 版本 27：统一各入口划水轮速，修复续划长按计时，移除依赖显示的隐藏判定宽容。
+// 版本 26：体力、技巧、爆发力每级各加 1 点，赛内参数统一从成长后的属性解析。
+// 版本 25：角色等级上限统一为 30，旧高等级档案按新上限计算。
+// 版本 24：角色面板体力直接等于赛内上限，双方按角色与等级解析相同点数。
+// 版本 23：体力按划扣除，耗尽后固定减弱整划推进，心率仅显示；AI 同规则。
 // Lobby-level protocol gate. Wire codecs remain append-compatible, but gameplay
 // semantics are not safe across versions that disagree on owner condition/order.
 
@@ -9,7 +14,7 @@
 // 保留 v17 按角色体型设置的固定体重。
 // 保留 v16 取消角色踢腿资质与等级加成的规则。
 // 保留 v15 的泳道方向与网络字段布局。
-export const NET_RACE_PROTOCOL_VERSION = 22;
+export const NET_RACE_PROTOCOL_VERSION = 27;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

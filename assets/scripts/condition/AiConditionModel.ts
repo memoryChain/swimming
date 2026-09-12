@@ -1,10 +1,4 @@
-// AiConditionModel: simplified condition state for AI swimmers (doc 26/27.3).
-// AI does NOT do the full input-driven gameplay: no updateFromStroke, no
-// StrokeMetrics, no applyDiveResult. State is derived each frame from
-// difficulty + aiPower + progress via tickAi. Output serves AI presentation
-// only and is NOT shown to the player (doc 26.1/26.3). Implements the same
-// readonly getter surface as PlayerConditionModel so callers stay uniform.
-
+// AI 按实际划水结算次数扣体力，心率保留独立的显示走势。
 import {
     AiConditionInput,
     ConditionReadout,
@@ -16,6 +10,7 @@ import {
 } from './ConditionTypes';
 import {
     CONDITION_BALANCE,
+    energyAfterStrokes,
     conditionEfficiencyScale,
     conditionQualityScale,
     energyDepletionCadenceScale,
@@ -39,7 +34,6 @@ export class AiConditionModel {
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
     private _cadenceModifier = 1;
-    private _depletionCooldown = 0;
 
     reset() {
         this._phase = RacePhase.START;
@@ -51,7 +45,6 @@ export class AiConditionModel {
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
         this._cadenceModifier = 1;
-        this._depletionCooldown = 0;
     }
 
     setPhase(phase: RacePhase) {
@@ -72,32 +65,21 @@ export class AiConditionModel {
         this.refreshModifiers();
     }
 
-    // Reconcile the locally stepped shadow state with the host-authoritative AI
-    // condition carried by S|. Keeping a stepped shadow (instead of applying only
-    // presentation modifiers) lets this client take over coherently after host
-    // migration. New S| payloads transfer the exact cooldown remainder; the
-    // edge-triggered fallback below is retained only for legacy payloads that do not
-    // contain that appended field.
-    applyAuthoritativeState(energyRatio: number, heartRate: number, depletionCooldown = -1) {
-        if (!Number.isFinite(energyRatio) || !Number.isFinite(heartRate)) {
-            return;
-        }
-        const energyCfg = CONDITION_BALANCE.energy;
-        const wasPositive = this._energy > 0;
-        const ratio = clamp(energyRatio, 0, 1);
-        this._energy = ratio * energyCfg.total;
+    // 沿用既有网络字段；旧冷却字段保留占位，不再参与计算。
+    applyAuthoritativeState(energyRatio: number, heartRate: number, _depletionCooldown = -1) {
+        if (!Number.isFinite(energyRatio) || !Number.isFinite(heartRate)) return;
+        this._energy = clamp(energyRatio, 0, 1) * CONDITION_BALANCE.energy.total;
         this._heartRate = clamp(heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
         this._heartRateZone = zoneForHeartRate(this._heartRate);
         this._energyDepleted = this._energy <= 0;
-        if (Number.isFinite(depletionCooldown) && depletionCooldown >= 0) {
-            // New S| packets carry the host's exact remaining cooldown so a client
-            // promoted during exhaustion does not restart a full cooldown locally.
-            this._depletionCooldown = Math.max(0, depletionCooldown);
-        } else if (!this._energyDepleted) {
-            this._depletionCooldown = 0;
-        } else if (wasPositive && this._depletionCooldown <= 0) {
-            this._depletionCooldown = energyCfg.depletionCooldownSeconds;
-        }
+        this.refreshModifiers();
+    }
+
+    // 只接收真正 AI 的实际结算计数；远端真人始终采用 owner 体力。
+    consumeStrokes(count: number) {
+        if (!Number.isFinite(count) || count <= 0) return;
+        this._energy = energyAfterStrokes(this._energy, count);
+        this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
     }
 
@@ -118,11 +100,6 @@ export class AiConditionModel {
         );
         this._heartRateZone = zoneForHeartRate(this._heartRate);
 
-        if (this._depletionCooldown > 0) {
-            this._depletionCooldown = Math.max(0, this._depletionCooldown - input.dt);
-        }
-        this.drainEnergy(difficulty, input.dt);
-        this.regenEnergy(input.dt);
         this.refreshModifiers();
     }
 
@@ -142,43 +119,11 @@ export class AiConditionModel {
         return lerp(bounds.optimalLower + 4, bounds.highPressureLower - 6, difficulty);
     }
 
-    private drainEnergy(difficulty: number, dt: number) {
-        // AI energy is a preset curve, not a gameplay result (doc 26.2).
-        // Burn scales with current zone and is heavier in SPRINT for aggressive AI.
-        const energyCfg = CONDITION_BALANCE.energy;
-        const perSecond = energyCfg.drainPerStroke[this._heartRateZone] * 2;
-        let drain = perSecond * dt;
-        if (this._phase === RacePhase.SPRINT) {
-            drain *= lerp(1.2, 3.0, difficulty);
-        }
-        const wasPositive = this._energy > 0;
-        this._energy = clamp(this._energy - drain, 0, energyCfg.total);
-        this._energyDepleted = this._energy <= 0;
-        if (wasPositive && this._energyDepleted && this._depletionCooldown <= 0) {
-            this._depletionCooldown = energyCfg.depletionCooldownSeconds;
-        }
-    }
-
-    // Energy regen: same model as the player. All zones regen (LOW strongest);
-    // SPRINT boosts all zones so AI also peaks at the finish instead of stalling.
-    private regenEnergy(dt: number) {
-        if (this._depletionCooldown > 0) {
-            return;
-        }
-        const energyCfg = CONDITION_BALANCE.energy;
-        let rate = energyCfg.regenPerZone[this._heartRateZone];
-        if (this._phase === RacePhase.SPRINT) {
-            rate += energyCfg.regenSprintBoost;
-        }
-        this._energy = clamp(this._energy + rate * dt, 0, energyCfg.total);
-        this._energyDepleted = this._energy <= 0;
-    }
-
     private refreshModifiers() {
-        // Quality axis: driven ONLY by heart-rate zone (hand stability).
+        // 心率不再修正判定。
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
-        // Efficiency axis: energy curve, same formula as the player.
+        // 与玩家共用耗尽后的固定推进倍率。
         const ratio = clamp(this._energy / CONDITION_BALANCE.energy.total, 0, 1);
         this._efficiencyModifier = conditionEfficiencyScale(ratio);
         this._cadenceModifier = energyDepletionCadenceScale(ratio);
@@ -195,7 +140,7 @@ export class AiConditionModel {
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
     get strokeCadenceScale(): number { return this._cadenceModifier; }
-    get depletionCooldownRemaining(): number { return this._depletionCooldown; }
+    get depletionCooldownRemaining(): number { return 0; }
 
     readout(): ConditionReadout {
         return {

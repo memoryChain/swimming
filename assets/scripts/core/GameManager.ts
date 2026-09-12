@@ -1651,6 +1651,12 @@ export class GameManager extends Component {
                 }
                 controller?.stepSimulation(NET_SIM_STEP);
                 swimmer.stepSimulation(NET_SIM_STEP);
+                if (controller && !controller.remoteDriven) {
+                    // 在本步结算后扣除，快照和房主迁移都不携带未消费的计数。
+                    const condition = this._aiConditions[i];
+                    condition?.consumeStrokes(swimmer.consumeAiConditionStrokes());
+                    if (condition) swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
+                }
             }
             // One collision solve per deterministic simulation step, after every
             // net-driven body has advanced in stable lane order. The local player's
@@ -2405,6 +2411,7 @@ export class GameManager extends Component {
                 continue;
             }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
+            this._aiConditions[i].consumeStrokes(swimmer.consumeAiConditionStrokes());
             this._aiConditions[i].tickAi({
                 difficulty: controller.difficulty,
                 progress,

@@ -189,18 +189,17 @@ test('评价按照实际手别显示；两侧独立，失误不显示负面文�
  s.hud.showStrokePraise('left','Good',new Color(80,240,160),0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Combo').getComponent(Label).string,'');s.hud.showStrokePraise('left','',undefined,0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-stroke-v1/praise-good/texture');
 });
 
-test('真实圆盘与新UI复用同一动态判定区，状态缩放和调参移动后快照保持一致',()=>{
+test('真实圆盘与新UI共用固定判定区，心率不改变宽度，显式调参仍同步',()=>{
  const h=require('./helpers/cocos-math-harness.cjs').createHarness({'cc/env':{NATIVE:false}});
  const {SwimmerMotor}=h.load(path.join(root,'assets/scripts/swimmer/SwimmerMotor.ts'));
  const {STROKE_QUALITY_TUNING:tuning}=h.load(path.join(root,'assets/scripts/core/InputTuning.ts'));
  const motor=new SwimmerMotor(),target={active:false,currentRatio:0,holdSeconds:0,actionSeconds:0,minHoldRatio:0,intervals:[]};
- const original=[tuning.perfectStart,tuning.perfectEnd,tuning.qualityZoneScaleStrength];
+ const original=[tuning.perfectStart,tuning.perfectEnd];
  try {
-  tuning.qualityZoneScaleStrength=1;
   let firstWidth;
-  for(const scale of [.3,1,1.7]){motor.setConditionQualityScale(scale);const ordinary=motor.strokeTimingGuideForSide('left');const reusable=motor.strokeTimingGuideForSide('left',target);assert.equal(reusable,target);assert.equal(JSON.stringify(reusable),JSON.stringify(ordinary));const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p);const w=p.endRatio-p.startRatio;if(firstWidth===undefined)firstWidth=w;else assert.ok(w>firstWidth);}
+  for(const scale of [.3,1,1.7]){motor.setConditionQualityScale(scale);const ordinary=motor.strokeTimingGuideForSide('left');const reusable=motor.strokeTimingGuideForSide('left',target);assert.equal(reusable,target);assert.equal(JSON.stringify(reusable),JSON.stringify(ordinary));const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p);const w=p.endRatio-p.startRatio;if(firstWidth===undefined)firstWidth=w;else assert.equal(w,firstWidth);}
   const previous=target.intervals.find(i=>i.rating==='perfect').startRatio;tuning.perfectStart=.44;tuning.perfectEnd=.5;motor.strokeTimingGuideForSide('right',target);const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p.startRatio>previous);assert.equal(motor.ratingForGuideRatio((p.startRatio+p.endRatio)/2,null,1),'perfect');
- } finally {[tuning.perfectStart,tuning.perfectEnd,tuning.qualityZoneScaleStrength]=original;}
+ } finally {[tuning.perfectStart,tuning.perfectEnd]=original;}
 });
 
 test('弧线尾端对应原划水结束进度，区间与白点统一归一化，不改变松手窗口',()=>{

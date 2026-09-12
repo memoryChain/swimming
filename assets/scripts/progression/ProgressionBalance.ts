@@ -3,8 +3,15 @@
 // character. No XP stat exists - coinCostForLevel is the cost to go from `level`
 // to `level + 1` directly.
 export const PROGRESSION_BALANCE = {
-    maxLevel: 60,
+    maxLevel: 30,
 } as const;
+
+// 存档、旧档迁移和界面读取共用等级边界。
+export function normalizeCharacterLevel(level: unknown): number {
+    return typeof level === 'number' && Number.isFinite(level)
+        ? Math.max(1, Math.min(PROGRESSION_BALANCE.maxLevel, Math.floor(level)))
+        : 1;
+}
 
 // Coin cost to advance from level `level` to `level + 1`.
 // Curve: 800 * n^1.15 - level 1 needs ~2 races (1st place), steepens gradually.

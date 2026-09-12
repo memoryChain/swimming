@@ -1,4 +1,4 @@
-import { RaceDifficulty, TARGET_INTERVAL, getRaceDifficulty, getTargetInterval } from './GameBalance';
+import { TARGET_INTERVAL, getTargetInterval } from './GameBalance';
 
 export const INPUT_TUNING = {
     padStrokeDedupeMs: 45,
@@ -101,11 +101,6 @@ export const STROKE_QUALITY_TUNING = {
     goodEnd: 0.5,
     perfectStart: 0.34,
     perfectEnd: 0.46,
-    // A player releases after seeing a rendered yellow frame, while the input
-    // reaches gameplay a few frames later. This grace only applies when that
-    // exact held stroke was actually presented as yellow; it does not widen the
-    // ordinary PERFECT range for blind/early releases.
-    perfectVisualReleaseGraceSeconds: 0.08,
     // Arm-stroke cadence vs. swim speed (redesign): the pull cadence ramps
     // linearly from armCycleLowSpeedPerSecond to armCycleHighSpeedPerSecond as
     // current speed crosses the window [armCycleSpeedStart, armCycleSpeedFull],
@@ -121,26 +116,7 @@ export const STROKE_QUALITY_TUNING = {
     armCycleHighSpeedPerSecond: 2,
     armCycleSpeedStart: 1.0,
     armCycleSpeedFull: 3,
-    // Heart-rate quality modifier -> PERFECT window width scale strength.
-    // 0 = quality axis off (PERFECT width fixed). 1 = full effect
-    // (OPTIMAL widens PERFECT by 25%, LOW narrows it by 30%). 0.5 is noticeable
-    // but not auto-aiming (heart-rate notes sec 18).
-    qualityZoneScaleStrength: 0.5,
 };
-
-// Per-race difficulty multipliers applied to both ends of the arm-cycle speed
-// range. The existing strokeQuality values remain the shared tuning baseline;
-// lower scales widen the real-time GOOD/PERFECT release windows.
-export const RACE_DIFFICULTY_TUNING: Record<RaceDifficulty, { armCycleSpeedScale: number }> = {
-    beginner: { armCycleSpeedScale: 1 },
-    competitive: { armCycleSpeedScale: 0.84 },
-    championship: { armCycleSpeedScale: 1 },
-};
-
-export function getRaceArmCycleSpeedScale(isAiControlled = false): number {
-    const difficulty = isAiControlled ? 'championship' : getRaceDifficulty();
-    return Math.max(0.1, Math.min(1.5, RACE_DIFFICULTY_TUNING[difficulty].armCycleSpeedScale));
-}
 
 export const TARGET_LIMB_RATE = 1 / TARGET_INTERVAL;
 

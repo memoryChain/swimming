@@ -58,6 +58,7 @@ export class Swimmer extends Component {
     private readonly _pendingRhythmResults: RhythmResult[] = [];
     private readonly _strokeMetrics = new StrokeMetrics();
     private readonly _pendingConditionInputs: StrokeConditionInput[] = [];
+    private _pendingAiConditionStrokes = 0;
     private readonly _ultimate = new UltimateEnergyModel();
     private _courseLayout: RaceCourseLayout = DEFAULT_RACE_COURSE_LAYOUT;
     private readonly _phases = new SwimmerRacePhases(this);
@@ -440,7 +441,7 @@ export class Swimmer extends Component {
         const maxSpeed = SWIMMER_BALANCE.maxSpeed;
         const initialSpeedCapBonus = Math.max(0, initialSpeed - maxSpeed);
         // 远端真人复用 AI 身体，但动作节奏必须与其本机玩家一致。
-        this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus, this.isAI && !this.collisionRemoteHuman);
+        this._motor.startRace(initialDistance, initialSpeed, initialSpeedCapBonus);
         this.cartoonRig?.setPerfectGlowActive(false);
         this.applyCoursePosition(initialDistance);
         this.cartoonRig?.setDiveReady(false);
@@ -874,6 +875,7 @@ export class Swimmer extends Component {
         this._missStrokeQualityCount = 0;
         this._pendingRhythmResults.length = 0;
         this._pendingConditionInputs.length = 0;
+        this._pendingAiConditionStrokes = 0;
         this._ultimate.reset();
         this._strokeMetrics.reset();
         this.node.setPosition(this.divePlatformPosition());
@@ -900,7 +902,7 @@ export class Swimmer extends Component {
     }
 
     private updatePerfectZoneGlow() {
-        if (this.isAI) {
+        if (this.isAI || !PERFORMANCE_CONFIG.visualFeedback.perfectZoneBodyGlowEnabled) {
             return;
         }
         const leftHeld = this._motor.isActiveStrokeHeld(StrokeType.LEFT);
@@ -912,17 +914,7 @@ export class Swimmer extends Component {
         const active = (leftHeld || rightHeld)
             && (!leftHeld || leftPerfect)
             && (!rightHeld || rightPerfect);
-        if (active) {
-            if (leftHeld) {
-                this._motor.markPerfectGuidePresented(StrokeType.LEFT);
-            }
-            if (rightHeld) {
-                this._motor.markPerfectGuidePresented(StrokeType.RIGHT);
-            }
-        }
-        this.cartoonRig?.setPerfectGlowActive(
-            PERFORMANCE_CONFIG.visualFeedback.perfectZoneBodyGlowEnabled && active,
-        );
+        this.cartoonRig?.setPerfectGlowActive(active);
     }
 
     private playStroke(type: StrokeType, rating: Rating) {
@@ -961,6 +953,9 @@ export class Swimmer extends Component {
                 pressureScore: this._strokeMetrics.effortScore,
                 dt: 0,
             });
+        } else if (!this.collisionRemoteHuman) {
+            // AI 只累计数字，避免逐划创建 condition 输入对象。
+            this._pendingAiConditionStrokes += 1;
         }
         const result = rhythmResultFromStrokeQuality(strokeQualityResult, this._strokeQualityCombo);
         result.strokeSide = type;
@@ -1361,6 +1356,12 @@ export class Swimmer extends Component {
 
     applyConditionCadenceScale(scale: number) {
         this._motor.setConditionCadenceScale(scale);
+    }
+
+    consumeAiConditionStrokes(): number {
+        const count = this._pendingAiConditionStrokes;
+        this._pendingAiConditionStrokes = 0;
+        return count;
     }
 
     consumeConditionInputs(): StrokeConditionInput[] {

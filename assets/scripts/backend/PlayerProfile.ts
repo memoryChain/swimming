@@ -4,6 +4,7 @@
 // Kept deliberately small; add fields over time and bump PLAYER_PROFILE_SCHEMA
 // when the shape changes so old saves can migrate.
 
+import { normalizeCharacterLevel } from '../progression/ProgressionBalance';
 import { defaultAvatarId, generateRandomNickName } from './IdentityConfig';
 import {
     createDefaultPlayerCharacterSelection,
@@ -100,9 +101,9 @@ export function createDefaultProfile(): PlayerProfile {
 
 // Clamp/validate a single character progress entry read from storage.
 function normalizeCharacterProgress(raw: unknown): CharacterProgress {
-    const entry = raw as Partial<CharacterProgress>;
+    const entry = raw as Partial<CharacterProgress> | null;
     return {
-        level: Number.isFinite(entry.level as number) ? Math.max(1, Math.floor(entry.level as number)) : 1,
+        level: normalizeCharacterLevel(entry?.level),
     };
 }
 

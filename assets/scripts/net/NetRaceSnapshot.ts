@@ -216,7 +216,8 @@ export function decodeSelfSnapshot(payload: string): NetSnapshotEntry | null {
 
 export function encodeConditionEnergyRatio(value: number): number {
     return Number.isFinite(value) && value >= 0
-        ? Math.max(0, Math.min(1000, Math.round(value * 1000)))
+        // 正体力不能量化成 0，否则远端会提前进入耗尽推进。
+        ? Math.max(value > 0 ? 1 : 0, Math.min(1000, Math.round(value * 1000)))
         : -1;
 }
 

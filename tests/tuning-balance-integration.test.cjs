@@ -12,8 +12,9 @@ const PREVIOUS_STROKE_FEEL = {
     'speed.strokeHeldBaseRatio': 0.6, 'speed.strokeAccelDurationRatio': 0.35,
     'speed.strokeImpulseSharpness': 0.6, 'speed.poolDeceleration': 0.05,
     'speed.baseDrag': 0.42, 'speed.highSpeedDrag': 0.18,
-    'difficulty.beginner.armCycleSpeedScale': 0.68,
-    'motion.heldMotionSpeedScale': 0.8, 'strokeQuality.armCycleLowSpeedPerSecond': 1.5,
+    // 已移除入口倍率；将旧 0.68 倍等价折入基础轮速，继续回放历史手感。
+    'motion.heldMotionSpeedScale': 0.8, 'strokeQuality.armCycleLowSpeedPerSecond': 1.5 * 0.68,
+    'strokeQuality.armCycleHighSpeedPerSecond': 2 * 0.68,
 };
 
 function setup(externalModules = {}) {
@@ -110,7 +111,7 @@ test('新手感完美节奏优于抢划，换手速度起伏受控，30/60/120 �
     assert.ok(Math.max(...steady) - Math.min(...steady) < 0.15);
 });
 
-test('无输入滑行保留约一秒半余韵，疲劳仍只在低体力时降低动作轮速', () => {
+test('无输入滑行保留约一秒半余韵，低体力和耗尽不降低动作轮速', () => {
     const h = setup(); h.tuning.loadSavedTuningAsync(() => {});
     const { SwimmerMotor } = h.loadModule('swimmer/SwimmerMotor');
     const coast = () => {
@@ -128,8 +129,8 @@ test('无输入滑行保留约一秒半余韵，疲劳仍只在低体力时降�
     const { energyDepletionCadenceScale } = h.loadModule('core/ConditionBalance');
     assert.equal(energyDepletionCadenceScale(1), 1);
     assert.equal(energyDepletionCadenceScale(0.15), 1);
-    assert.ok(energyDepletionCadenceScale(0.1) < 1);
-    assert.equal(energyDepletionCadenceScale(0), 0.6);
+    assert.equal(energyDepletionCadenceScale(0.1), 1);
+    assert.equal(energyDepletionCadenceScale(0), 1);
 });
 
 test('按住未松手已有实际推进，左右对称且不受本地预持有时间影响', () => {
@@ -170,6 +171,8 @@ test('松手只支付剩余基础预算，完美质量奖励保持一致且不�
     const totals = [];
     for (const ratio of [0, 0.6, 1]) {
         const h = heldStrokeFixture(ratio);
+        // 模拟真实输入分类已经耗时，不能在模拟时钟 0 倒推 200ms 到负数哨兵区。
+        h.motor.update(.3, { isAI: false });
         const action = h.start();
         const targetSeconds = Math.PI * 2 * 0.375 / (h.motor.currentActionCycleSpeed()
             * h.loadModule('core/InputTuning').MOTION_TUNING.heldMotionSpeedScale);
@@ -321,23 +324,103 @@ test('调试入口连续同侧划水不偏航，其余入口仍转向，切换�
     assert.deepEqual(steering, original);
 });
 
-test('AI 各入口共用世锦赛策略和轮速，玩家与远端真人继续使用入口轮速', () => {
+test('三个入口的玩家与 AI 共用轮速，AI 策略仍统一最高档', () => {
     const h = heldStrokeFixture();
     const { setRaceDifficulty, getRaceAiDifficultyConfig, getRaceDifficultyConfig } = h.loadModule('core/GameBalance');
-    const { getRaceArmCycleSpeedScale, RACE_DIFFICULTY_TUNING } = h.loadModule('core/InputTuning');
     let aiSpeed;
     for (const mode of ['beginner', 'competitive', 'championship']) {
         setRaceDifficulty(mode);
         assert.equal(getRaceAiDifficultyConfig(), getRaceDifficultyConfig('championship'));
-        h.motor.startRace(0, 2, 0, true);
+        h.motor.startRace(0, 2);
+        h.motor.update(0.01, { isAI: true });
         const speed = h.motor.currentActionCycleSpeed();
         if (aiSpeed === undefined) aiSpeed = speed;
         assert.equal(speed, aiSpeed);
-        assert.equal(getRaceArmCycleSpeedScale(true), RACE_DIFFICULTY_TUNING.championship.armCycleSpeedScale);
-        h.motor.startRace(0, 2, 0, false);
-        assert.ok(Math.abs(h.motor.currentActionCycleSpeed() / aiSpeed
-            - RACE_DIFFICULTY_TUNING[mode].armCycleSpeedScale / RACE_DIFFICULTY_TUNING.championship.armCycleSpeedScale) < 1e-10);
-        assert.equal(getRaceArmCycleSpeedScale(false), RACE_DIFFICULTY_TUNING[mode].armCycleSpeedScale);
+        h.motor.startRace(0, 2);
+        h.motor.update(0.01, { isAI: false });
+        assert.equal(h.motor.currentActionCycleSpeed(), aiSpeed);
+    }
+});
+
+test('同侧回收续划与普通起划在完整 PERFECT 区间一致，左右手和不同轮速均保留起手时间', () => {
+    const h = heldStrokeFixture();
+    const { setRaceDifficulty } = h.loadModule('core/GameBalance');
+    for (const mode of ['beginner', 'competitive', 'championship']) {
+        setRaceDifficulty(mode);
+        for (const speed of [1, 2, 3]) {
+            for (const side of [h.StrokeType.LEFT, h.StrokeType.RIGHT]) {
+                for (const target of [.249, .25, .3, .375, .5, .501, .52]) {
+                    h.motor.startRace(0, speed);
+                    h.motor.update(.3, { isAI: false });
+                    const first = h.start(side);
+                    const rate = h.motor.currentActionCycleSpeed();
+                    h.motor.update(.375 * Math.PI * 2 / rate, { isAI: false });
+                    first.progress = .375 * Math.PI * 2;
+                    assert.equal(h.motor.setStrokeHeld(side, false).strokeQuality, 1);
+                    // 下一次按下先完成 200ms 分类，但上一划仍在回收。
+                    h.motor.update(.2, { isAI: false });
+                    h.motor.setStrokeHeld(side, true, .2);
+                    assert.equal(h.motor.recordStroke(side), false);
+                    const actions = side === h.StrokeType.LEFT ? h.motor._leftActions : h.motor._rightActions;
+                    for (let frame = 0; actions[0] === first && frame < 100; frame++) {
+                        h.motor.update(.001, { isAI: false });
+                    }
+                    const next = actions[0];
+                    assert.notEqual(next, first);
+                    assert.ok(Math.abs(next.startedAt - next.pressedAt - .2) < 1e-9);
+                    h.motor.update((target * Math.PI * 2 - next.progress) / rate, { isAI: false });
+                    next.progress = target * Math.PI * 2;
+                    const shownPerfect = h.motor.isActiveStrokeInPerfectZone(side);
+                    const result = h.motor.setStrokeHeld(side, false);
+                    assert.equal(!!result.downgradedToKick, false);
+                    assert.equal(result.strokeQuality === 1, target >= .25 && target <= .5);
+                    assert.equal(result.strokeQuality === 1, shownPerfect);
+                }
+            }
+        }
+    }
+});
+
+test('普通短按仍受起手门槛限制，移除末端容错后区外不判 PERFECT', () => {
+    for (const [preHeld, progress, expected] of [[0, .25, false], [.2, .25, true], [.2, .5, true], [.2, .501, false], [.2, .52, false]]) {
+        const h = heldStrokeFixture();
+        h.motor.update(.3, { isAI: false });
+        const action = h.start(h.StrokeType.LEFT, preHeld);
+        h.motor.update(progress * Math.PI * 2 / h.motor.currentActionCycleSpeed(), { isAI: false });
+        action.progress = progress * Math.PI * 2;
+        const result = h.motor.setStrokeHeld(h.StrokeType.LEFT, false);
+        assert.equal(result.strokeQuality === 1, expected);
+        assert.equal(!!result.downgradedToKick, preHeld === 0);
+    }
+});
+
+test('旧本地调参不能重新引入入口轮速差异或隐藏容错', () => {
+    const h = setup();
+    const retired = {
+        'difficulty.beginner.armCycleSpeedScale': .3,
+        'difficulty.competitive.armCycleSpeedScale': .4,
+        'difficulty.championship.armCycleSpeedScale': 1.5,
+        'strokeQuality.perfectVisualReleaseGraceSeconds': .2,
+    };
+    h.saved.set('SpeedSwimming.Tuning.v1', JSON.stringify({
+        version: h.project.version, updatedAt: '2099-01-01T00:00:00.000Z',
+        values: { ...h.project.values, ...retired },
+    }));
+    h.tuning.loadSavedTuningAsync(() => {});
+    const { SwimmerMotor } = h.loadModule('swimmer/SwimmerMotor');
+    const { setRaceDifficulty } = h.loadModule('core/GameBalance');
+    const rates = [];
+    for (const mode of ['beginner', 'competitive', 'championship']) {
+        setRaceDifficulty(mode);
+        const motor = new SwimmerMotor(); motor.startRace(0, 2);
+        rates.push(motor.currentActionCycleSpeed());
+    }
+    assert.equal(rates[0], rates[1]); assert.equal(rates[1], rates[2]);
+    assert.equal(h.tuning.saveCurrentTuning().ok, true);
+    const saved = JSON.parse(h.saved.get('SpeedSwimming.Tuning.v1')).values;
+    for (const key of Object.keys(retired)) {
+        assert.equal(h.controls.has(key), false);
+        assert.equal(Object.hasOwn(saved, key), false);
     }
 });
 
@@ -347,13 +430,16 @@ test('角色仅三项属性成长，体重和蓄气在升级后保持固有值',
     const { PLAYER_CHARACTER_DEFINITIONS } = loadModule('app/PlayerCharacterConfig');
     const { resolvePlayerBalance, resolveCharacterDisplayStats } = loadModule('progression/PlayerBalanceOverrides');
     for (const character of PLAYER_CHARACTER_DEFINITIONS) {
-        const first = resolvePlayerBalance(character, 1, 60, character.weight, character.energyGain);
-        const max = resolvePlayerBalance(character, 60, 60, character.weight, character.energyGain);
+        const first = resolvePlayerBalance(character, 1, 30, character.weight, character.energyGain);
+        const max = resolvePlayerBalance(character, 30, 30, character.weight, character.energyGain);
         assert.equal('kick' in character, false);
         assert.equal('kickMaxSpeed' in max, false);
-        const firstDisplay = resolveCharacterDisplayStats(character, 1, 60);
-        const maxDisplay = resolveCharacterDisplayStats(character, 60, 60);
+        const firstDisplay = resolveCharacterDisplayStats(character, 1, 30);
+        const maxDisplay = resolveCharacterDisplayStats(character, 30, 30);
         assert.deepEqual(Object.keys(maxDisplay).sort(), ['burst', 'stamina', 'technique']);
+        assert.equal(firstDisplay.stamina, character.stamina);
+        assert.equal(first.energyTotal, firstDisplay.stamina);
+        assert.equal(max.energyTotal, maxDisplay.stamina);
         for (const key of Object.keys(maxDisplay)) assert.ok(maxDisplay[key] > firstDisplay[key]);
         for (const value of [first, max]) {
             assert.equal(value.weight, character.weight);
@@ -369,9 +455,9 @@ test('所有角色和等级共用踢腿上限，全局调参即时生效且水�
     const { resolvePlayerBalance } = loadModule('progression/PlayerBalanceOverrides');
     const { SwimmerMotor } = loadModule('swimmer/SwimmerMotor');
     const { StrokeType } = loadModule('core/GameConstants');
-    for (const character of PLAYER_CHARACTER_DEFINITIONS) for (const level of [1, 60]) {
+    for (const character of PLAYER_CHARACTER_DEFINITIONS) for (const level of [1, 30]) {
         const motor = new SwimmerMotor();
-        motor.setPlayerBalance(resolvePlayerBalance(character, level, 60, character.weight, character.energyGain));
+        motor.setPlayerBalance(resolvePlayerBalance(character, level, 30, character.weight, character.energyGain));
         motor.startRace(0, 2.7);
         motor.recordKickTap(StrokeType.LEFT);
         motor.recordKickTap(StrokeType.RIGHT);
@@ -464,5 +550,167 @@ test('侧墙回正限速、左右对称并能在不同帧率下脱离，不影�
         motor.correctHeading(-sign * 5 * radians, 0, 1);
         motor.updateSteering(1 / hz);
         assert.equal(motor.headingTurnRate, 0, '脱墙后回正弹簧必须停止');
+    }
+});
+
+
+test('耗尽后基础推进、按住推进和质量奖励同比减半，动作与判定不变', () => {
+    const sample = (scale, progress, sideName, timeout = false, changeDuringHold = false) => {
+        const h = heldStrokeFixture(.8);
+        h.loadModule('core/GameBalance').setRaceDifficulty('beginner');
+        h.motor.update(.3, { isAI: false });h.motor.setConditionSpeedScale(scale);
+        const action = h.start(h.StrokeType[sideName]);
+        const speed = h.motor.currentActionCycleSpeed();
+        if (changeDuringHold) h.motor.setConditionSpeedScale(.5);
+        const seconds = Math.PI * 2 * progress / speed;
+        for (let i = 0; i < 120; i++) h.motor.update(seconds / 120, { isAI: false });
+        let result;
+        if (timeout) result = h.motor.consumeStrokeQualityResults()[0];
+        else { action.progress = Math.PI * 2 * progress; result = h.motor.setStrokeHeld(h.StrokeType[sideName], false); }
+        return { quality: result.strokeQuality, bad: result.badReason, speed, paid: action.heldBaseImpulse,
+            total: action.heldBaseImpulse + h.motor._strokeAcceleration * h.motor._strokeAccelerationSeconds };
+    };
+    for (const side of ['LEFT', 'RIGHT']) for (const p of [.1, .24, .25, .375, .5]) {
+        const full=sample(1,p,side),empty=sample(.5,p,side);
+        assert.equal(empty.quality,full.quality);assert.equal(empty.speed,full.speed);
+        assert.ok(Math.abs(empty.paid-full.paid*.5)<1e-9);
+        assert.ok(Math.abs(empty.total-full.total*.5)<1e-9);
+    }
+    const full=sample(1,.61,'LEFT',true),empty=sample(.5,.61,'LEFT',true);
+    assert.equal(full.bad,'timeout');assert.equal(empty.bad,'timeout');
+    assert.ok(Math.abs(empty.total-full.total*.5)<1e-9);
+    assert.deepEqual(sample(1,.375,'RIGHT',false,true),sample(1,.375,'RIGHT'), '耗尽边界不打断已经开始的一划');
+});
+
+test('体力新参数可保存重载，旧恢复、降频与心率判定配置不再生效', () => {
+    const h = setup();h.tuning.loadSavedTuningAsync(() => {});
+    const controls = h.controls;
+    for (const id of ['condition.regenLow','condition.strokeDrainOptimal','condition.efficiencyFloor',
+        'condition.cadenceWarningRatio','strokeQuality.qualityZoneScaleStrength']) assert.equal(controls.has(id),false);
+    for (const [id,value] of [['condition.energyTotal',120],['condition.strokeDrain',2],['condition.exhaustedPropulsionScale',.35]]) controls.get(id).set(value);
+    h.tuning.saveCurrentTuning();
+    controls.get('condition.energyTotal').set(100);controls.get('condition.strokeDrain').set(1);controls.get('condition.exhaustedPropulsionScale').set(.5);
+    h.tuning.loadSavedTuningAsync(() => {});
+    const { PlayerConditionModel } = h.loadModule('condition/PlayerConditionModel');
+    const model = new PlayerConditionModel();
+    model.updateFromStroke({strokeAccepted:true,qualityScore:1,pressureScore:1,dt:0});model.tick(60);
+    assert.equal(model.energy,118);assert.equal(model.strokeCadenceScale,1);
+    assert.equal(controls.get('condition.exhaustedPropulsionScale').get(),.35);
+});
+
+
+test('真实泳者结算分别投递玩家和 AI 消耗，远端真人不重复记账', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(() => {});
+    let ts;try { ts=require('typescript'); } catch {
+        ts=require(process.env.PATH.split(path.delimiter).map(dir=>path.resolve(dir,'../typescript/lib/typescript.js')).find(p=>fs.existsSync(p)));
+    }
+    const file=path.join(h.root,'assets/scripts/entity/Swimmer.ts');
+    const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
+    const decl=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
+    const names=['makeStrokeQualityResult','consumeAiConditionStrokes','consumeConditionInputs'];
+    const members=decl.members.filter(n=>names.includes(n.name?.getText(source)));
+    assert.equal(members.length,names.length);
+    const js=ts.transpileModule(`class Settlement { ${members.map(n=>n.getText(source)).join('\n')} }`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    const C=require('node:vm').runInNewContext(js+';Settlement',{
+        ...h.loadModule('core/StrokeQualityScoring'),...h.loadModule('core/GameConstants'),
+    });
+    for (const identity of ['player','ai','remote']) {
+        const body=new C();Object.assign(body,{isAI:identity!=='player',collisionRemoteHuman:identity==='remote',
+            _phases:{isUnderwater:false},_ultimate:{addStrokeRating(){}},_strokeMetrics:{effortScore:1},
+            _pendingAiConditionStrokes:0,_pendingConditionInputs:[],_strokeQualityCombo:0,
+            _maxStrokeQualityCombo:0,_perfectStrokeQualityCount:0,_goodStrokeQualityCount:0,_missStrokeQualityCount:0});
+        assert.equal(body.makeStrokeQualityResult('left',null),null);
+        for (const quality of [0,.5,1]) body.makeStrokeQualityResult('left',{strokeQuality:quality,type:'left',holdSeconds:.4});
+        assert.equal(body.consumeAiConditionStrokes(),identity==='ai'?3:0);
+        assert.equal(body.consumeAiConditionStrokes(),0);
+        const inputs=body.consumeConditionInputs();assert.equal(inputs.length,identity==='player'?3:0);
+        assert.equal(body.consumeConditionInputs().length,0);
+        if(identity==='player') {
+            const {PlayerConditionModel}=h.loadModule('condition/PlayerConditionModel');const condition=new PlayerConditionModel();
+            for(const input of inputs) condition.updateFromStroke(input);assert.equal(condition.energy,97);
+        }
+    }
+});
+
+
+test('角色面板、升级预览、赛内上限和联机档案共用体力点数，不受默认上限换算', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(() => {});
+    const {PLAYER_CHARACTER_DEFINITIONS}=h.loadModule('app/PlayerCharacterConfig');
+    const {resolveCharacterDisplayStats,resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {resolveModifiersFromDigest}=h.loadModule('progression/RaceModifiers');
+    const {PlayerConditionModel}=h.loadModule('condition/PlayerConditionModel');
+    h.controls.get('condition.energyTotal').set(250);
+    for(const character of PLAYER_CHARACTER_DEFINITIONS) for(const level of [-1,1,2,3,29,30,31,60]) {
+        const display=resolveCharacterDisplayStats(character,level,30);
+        const balance=resolvePlayerBalance(character,level,30,character.weight,character.energyGain);
+        const net=resolveModifiersFromDigest({characterId:character.id,level}).balance;
+        const expected=character.stamina+Math.max(1,Math.min(30,level))-1;
+        assert.equal(display.stamina,expected);assert.equal(balance.energyTotal,expected);
+        assert.equal(net.energyTotal,expected);
+        const model=new PlayerConditionModel();model.setProgressionOverrides({energyTotal:balance.energyTotal});model.reset();
+        assert.equal(model.energy,display.stamina);
+        model.updateFromStroke({strokeAccepted:true,qualityScore:1,pressureScore:1,dt:0});
+        assert.ok(Math.abs(model.energy-(display.stamina-1))<1e-10);
+    }
+});
+
+
+test('30 级封顶：旧档归一、29 升 30、批量升级和满级不扣金币', async () => {
+    const h=setup();
+    const {normalizeProfile}=h.loadModule('backend/PlayerProfile');
+    const {MockBackend}=h.loadModule('backend/MockBackend');
+    const {coinCostForLevel,PROGRESSION_BALANCE}=h.loadModule('progression/ProgressionBalance');
+    const {ProgressionManager}=h.loadModule('progression/ProgressionManager');
+    const {PlayerData}=h.loadModule('backend/PlayerData');
+    assert.equal(PROGRESSION_BALANCE.maxLevel,30);
+    assert.equal(coinCostForLevel(30),0);assert.equal(coinCostForLevel(60),0);
+    const id='cartonSwimmer6',backend=new MockBackend();
+    for(const [old,expected] of [[60,30],[31,30],[29,29],[-2,1],[29.9,29]]) {
+        const profile=normalizeProfile({coins:999999,characters:{[id]:{level:old}}});
+        assert.equal(profile.characters[id].level,expected);assert.equal(profile.coins,999999);
+    }
+    h.saved.set('swimming.player-profile',JSON.stringify({coins:999999,characters:{[id]:{level:29}}}));
+    const last=await backend.spendCoinsForLevel(id,60);
+    assert.equal(last.levelsGained,1);assert.equal(last.profile.characters[id].level,30);
+    assert.equal(last.coinsSpent,coinCostForLevel(29));
+    const full=await backend.spendCoinsForLevel(id,1);
+    assert.equal(full.reason,'maxed');assert.equal(full.coinsSpent,0);
+    assert.equal(full.profile.coins,last.profile.coins);
+    h.saved.set('swimming.player-profile',JSON.stringify({coins:999999,characters:{[id]:{level:1}}}));
+    const bulk=await backend.spendCoinsForLevel(id,60);
+    assert.equal(bulk.levelsGained,29);assert.equal(bulk.profile.characters[id].level,30);
+    PlayerData.profile.characters[id]={level:60};const manager=new ProgressionManager();
+    assert.equal(manager.getCharacterLevel(id),30);assert.equal(manager.canAffordNextLevel(id),false);
+    assert.equal(manager.projectSpendToMax(id).levels,0);
+    h.saved.set('SpeedSwimming.Progression.v2',JSON.stringify({characters:{[id]:{level:60}}}));
+    manager.migrateLegacySave();assert.equal(PlayerData.profile.characters[id].level,30);
+});
+
+
+test('全角色 1 到 30 级三项属性逐级各加 1，显示点数直接驱动赛内成长', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(() => {});
+    const {PLAYER_CHARACTER_DEFINITIONS}=h.loadModule('app/PlayerCharacterConfig');
+    const {resolveCharacterDisplayStats,resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {SWIMMER_BALANCE,DIVE_BALANCE}=h.loadModule('core/GameBalance');
+    for (const character of PLAYER_CHARACTER_DEFINITIONS) {
+        let previous;
+        for (let level=1;level<=30;level++) {
+            const display=resolveCharacterDisplayStats(character,level,30);
+            const balance=resolvePlayerBalance(character,level,30,character.weight,character.energyGain);
+            for (const stat of ['stamina','technique','burst']) {
+                assert.ok(Number.isInteger(display[stat]));
+                assert.equal(display[stat],character[stat]+level-1);
+                if (previous) assert.equal(display[stat]-previous[stat],1);
+            }
+            assert.equal(balance.energyTotal,display.stamina);
+            assert.equal(balance.strokeQualityAccel,SWIMMER_BALANCE.strokeQualityAccel*(1+(display.technique-50)*.003));
+            assert.equal(balance.perfectComboMaxOvercap,SWIMMER_BALANCE.perfectComboMaxOvercap*(1+(display.technique-50)*.003));
+            assert.equal(balance.maxSpeed,SWIMMER_BALANCE.maxSpeed*(1+(display.burst-50)*.003));
+            assert.equal(balance.diveMaxLaunchSpeed,DIVE_BALANCE.maxLaunchSpeed*(1+(display.burst-50)*.003));
+            assert.equal(balance.weight,character.weight);assert.equal(balance.energyGainAptitude,character.energyGain);
+            previous=display;
+        }
+        assert.deepEqual(resolveCharacterDisplayStats(character,31,30),previous);
+        assert.deepEqual(resolveCharacterDisplayStats(character,60,30),previous);
     }
 });
