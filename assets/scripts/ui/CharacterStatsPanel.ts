@@ -1,8 +1,5 @@
-// Character stats popup: a scrollable table of the selected character's
-// attributes, separating fixed traits from level-growth ones and showing what
-// each one affects in race terms. Below the table, an "operation-driven" section
-// explains systems (heart rate, stroke quality, energy) that are decided by the
-// player's input rather than character aptitude. Built in code (no prefab).
+import { HEART_RATE_TRAITS } from '../core/ConditionBalance';
+// 角色属性弹窗：成长属性与固有属性分开显示，操作说明读取现行玩法语义。
 
 import { Button, Color, Graphics, Label, Mask, Node, ScrollView, UITransform } from 'cc';
 import { findPlayerCharacter, getPlayerCharacterSelection, weightToPhysicalRating } from '../app/PlayerCharacterConfig';
@@ -42,8 +39,8 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
     {
         title: '心率',
         lines: [
-            '由划水节奏和持续用力驱动，停顿时回落；仅作状态显示。',
-            '心率不改变判定区间、推进大小或体力消耗。',
+            '实际划水越频繁，心率越高；停止划水自然恢复，快慢由角色固有特性决定。',
+            '心率越高，完美区间越窄，极限保留基础宽度的 30%；每划开始时锁定区间。',
         ],
     },
     {
@@ -57,7 +54,7 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
         title: '体力消耗',
         lines: [
             '角色面板的体力就是赛内体力上限；每次手臂划水固定扣除，比赛中不自动恢复。',
-            '耗尽后新划水的推进固定减弱；动作速度和判定区间不变，踢腿不扣体力。',
+            '耗尽后新划水的推进固定减弱；踢腿不扣体力，海豚跳成功释放另扣体力。',
         ],
     },
     {
@@ -92,8 +89,8 @@ export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, d
     const level = progression.getCharacterLevel(character.id);
     const maxLevel = PROGRESSION_BALANCE.maxLevel;
     const stats = { stamina: character.stamina, technique: character.technique, burst: character.burst };
-    const current = resolvePlayerBalance(stats, level, maxLevel, character.weight, character.energyGain);
-    const atMax = resolvePlayerBalance(stats, maxLevel, maxLevel, character.weight, character.energyGain);
+    const current = resolvePlayerBalance(stats, level, maxLevel, character.weight, character.energyGain, character.heartRateTrait);
+    const atMax = resolvePlayerBalance(stats, maxLevel, maxLevel, character.weight, character.energyGain, character.heartRateTrait);
 
     const subtitle = makeLabel('Subtitle', panel, `${character.name}　Lv.${level}${level >= maxLevel ? '（满级）' : ''}`, 22, uiColor(150, 200, 255));
     subtitle.setPosition(0, PANEL_H / 2 - 84, 1);
@@ -128,7 +125,7 @@ export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, d
     renderTable(content, rows, contentH);
     renderMechanicsSection(content, contentH / 2 - tableH - MECH_TOP_GAP);
 
-    const note1 = makeLabel('Note1', panel, `体力、技巧、爆发力随等级成长；蓄气、体重为角色固有属性。花费金币升级，满级 ${maxLevel}。`, 16, UI_STYLE.muted);
+    const note1 = makeLabel('Note1', panel, `体力、技巧、爆发力随等级成长；蓄气、体重、心率特性为固有属性。满级 ${maxLevel}。`, 16, UI_STYLE.muted);
     note1.getComponent(UITransform)!.setContentSize(TABLE_W - 20, 28);
     note1.getComponent(Label)!.overflow = Label.Overflow.SHRINK;
     note1.setPosition(0, -PANEL_H / 2 + 60, 1);
@@ -183,6 +180,11 @@ function buildRows(
             lines: [{ label: `对抗（体重 ${character.weight}）`, current: '固定', max: '固定' }],
         },
         {
+            name: '心率特性',
+            aptitude: '固有',
+            lines: [{ label: '升温与恢复节奏', current: HEART_RATE_TRAITS[character.heartRateTrait].label, max: '不变' }],
+        },
+        {
             name: '蓄气',
             aptitude: `${character.energyGain}`,
             lines: [{ label: `大招积攒 ×${energyGainMultiplier(character.energyGain).toFixed(2)}`, current: '固定', max: '固定' }],
@@ -235,7 +237,7 @@ function renderTable(content: Node, rows: StatRow[], contentH: number): void {
 
 function renderMechanicsSection(content: Node, topY: number): void {
     let y = topY;
-    addLeftLabel(content, 'MechHeading', '【操作相关】由你的操作决定，不受角色资质影响', 20, UI_STYLE.cyan, y);
+    addLeftLabel(content, 'MechHeading', '【赛内规则】划水、心率、体力与蓄气', 20, UI_STYLE.cyan, y);
     y -= MECH_HEADING_H;
 
     for (const item of MECHANICS_ITEMS) {

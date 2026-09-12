@@ -1,3 +1,5 @@
+import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
+import { perfectWidthScale, HeartRateTraitId } from '../core/ConditionBalance';
 import { getRaceDistance, isRaceSteeringEnabled, SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
@@ -36,6 +38,9 @@ export type StrokeQualityResult = {
 };
 
 type StrokeAction = {
+    heartRate: number;
+    perfectWidth: number;
+    ranges: ReleaseRanges | null;
     queuedAt: number;
     startedAt: number;
     pressedAt: number;
@@ -51,8 +56,6 @@ type StrokeAction = {
     inputFreshness: number;
     inputLeadSeconds: number;
     inputLeadRatio: number;
-    // Last simulation time at which this exact action contributed to a visible
-    // whole-body yellow guide. -1 means the player was never shown PERFECT for it.
 };
 
 type QueueSideStrokeResult = {
@@ -71,6 +74,8 @@ export type StrokeTimingGuideInterval = {
 };
 
 export type StrokeTimingGuide = {
+    heartRate?: number;
+    perfectWidthScale?: number;
     /** 新弧线的末端对应原有划水超时进度；仅用于显示归一化。 */
     displayEndRatio?: number;
     active: boolean;
@@ -84,6 +89,9 @@ export type StrokeTimingGuide = {
 type ReleaseRanges = { perfect: { start: number; end: number }; good: { start: number; end: number } };
 
 export class SwimmerMotor {
+    private readonly _previewRanges: ReleaseRanges = { good: { start: 0, end: 1 }, perfect: { start: 0, end: 1 } };
+    private readonly _heartRate = new StrokeHeartRateModel();
+    private _authoritativeHeartRate = -1;
     private readonly _physics = new SwimPhysicsModel();
     private readonly _axialRoll = new AxialRollModel();
     private readonly _collisionPitch = new CollisionPitchModel();
@@ -349,7 +357,7 @@ export class SwimmerMotor {
             return false;
         }
         const progress = clamp01(action.progress / CYCLE_AMOUNT);
-        const perfect = this._effectiveReleaseRanges.perfect;
+        const perfect = action.ranges!.perfect;
         return progress >= perfect.start && progress <= perfect.end;
     }
 
@@ -448,6 +456,7 @@ export class SwimmerMotor {
             return false;
         }
 
+        this._heartRate.tick(dt);
         this._motionClock += dt;
         this._armAction = Math.max(0, this._armAction - dt * 4.6);
         this._kickAction = Math.max(0, this._kickAction - dt * 6.8);
@@ -524,6 +533,8 @@ export class SwimmerMotor {
     }
 
     private resetRaceState(initialDistance = 0) {
+        this._heartRate.reset();
+        this._authoritativeHeartRate = -1;
         this.clearKnockback();
         this._distance = Math.max(0, initialDistance);
         this._bodyPhase = 0;
@@ -573,6 +584,7 @@ export class SwimmerMotor {
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {
         this._playerBalance = overrides;
         this._weight = overrides?.weight ?? 1;
+        this.setHeartRateTrait(overrides?.heartRateTrait ?? 'balanced');
     }
 
     // Burst-driven multiplier for the dolphin-jump launch speed. Reuses the same
@@ -606,14 +618,38 @@ export class SwimmerMotor {
         return this._playerBalance?.strokeQualityAccel ?? SWIMMER_BALANCE.strokeQualityAccel;
     }
 
-    // 心率仅显示；判定区间只读取明确的划水调参。
+    setHeartRateTrait(trait: HeartRateTraitId) { this._heartRate.setTrait(trait); }
+    get heartRateTrait(): HeartRateTraitId { return this._heartRate.heartRateTrait; }
+
+    get heartRate(): number { return this._authoritativeHeartRate >= 0 ? this._authoritativeHeartRate : this._heartRate.heartRate; }
+    // 只供本地成功动作使用，远端真人心率由 owner 覆盖，不能重复叠加负担。
+    addHeartRateBurden(amount: number) {
+        if (this._isRacing && this._authoritativeHeartRate < 0) this._heartRate.addBurden(amount);
+    }
+
+    // 海豚跳冻结心率数值但采样时钟照走；普通转身等阶段自然恢复。
+    tickRestingHeartRate(dt: number, freezeValue = false) { if (this._isRacing) this._heartRate.tick(dt, freezeValue); }
+    applyAuthoritativeHeartRate(value: number, remoteHuman = false) {
+        if (!Number.isFinite(value) || value < 0) return;
+        this._heartRate.applyAuthoritative(value);
+        this._authoritativeHeartRate = remoteHuman ? Math.max(80, Math.min(180, value)) : -1;
+    }
+
+    // 基础区间只读调参；动作开始时保存独立的心率区间。
     private get _effectiveReleaseRanges(): ReleaseRanges {
-        const good = normalizedReleaseRange(STROKE_QUALITY_TUNING.goodStart, STROKE_QUALITY_TUNING.goodEnd);
-        const perfect = normalizedReleaseRange(STROKE_QUALITY_TUNING.perfectStart, STROKE_QUALITY_TUNING.perfectEnd);
-        return {
-            good,
-            perfect: { start: clamp(perfect.start, good.start, good.end), end: clamp(perfect.end, good.start, good.end) },
-        };
+        return this.fillReleaseRanges({ good: { start: 0, end: 1 }, perfect: { start: 0, end: 1 } }, 1);
+    }
+
+    private fillReleaseRanges(out: ReleaseRanges, width: number): ReleaseRanges {
+        const tuning = STROKE_QUALITY_TUNING;
+        out.good.start = clamp01(Math.min(tuning.goodStart, tuning.goodEnd));
+        out.good.end = clamp01(Math.max(tuning.goodStart, tuning.goodEnd));
+        const start = clamp(Math.min(tuning.perfectStart, tuning.perfectEnd), out.good.start, out.good.end);
+        const end = clamp(Math.max(tuning.perfectStart, tuning.perfectEnd), out.good.start, out.good.end);
+        const center = (start + end) * 0.5, half = (end - start) * width * 0.5;
+        out.perfect.start = center - half;
+        out.perfect.end = center + half;
+        return out;
     }
 
     // 保留统一 condition 接口，旧调用不能重新引入心率判定修正。
@@ -891,7 +927,7 @@ export class SwimmerMotor {
 
         // Single-stroke quality is purely the release-timing sweet zone now
         // (no cross-stroke consistency, no alternation, no input-freshness).
-        const ranges = this._effectiveReleaseRanges;
+        const ranges = action.ranges!;
         // 判定只读取进度范围，不依赖身体发光、HUD 采样或另一只手的状态。
         const strokeQuality = holdTimeValid
             ? strokeQualityFromReleaseProgress(releaseProgress, ranges)
@@ -900,7 +936,7 @@ export class SwimmerMotor {
             ? describeReleaseBadReason(releaseProgress, holdTimeValid, holdSeconds, minHoldSeconds, ranges)
             : undefined;
         this._lastStrokeQuality = strokeQuality;
-        this.startSettledStrokeAcceleration(strokeQuality, actionSeconds, action.heldBaseImpulse, releaseProgress, action.propulsionScale);
+        this.startSettledStrokeAcceleration(strokeQuality, actionSeconds, action.heldBaseImpulse, releaseProgress, action.propulsionScale, ranges);
         action.strokeQualitySettled = true;
         // Steering nudge fires when a real stroke settles (“松手” for a tap, or a
         // held cycle completing). The turn scales with pull strength: the further
@@ -939,6 +975,15 @@ export class SwimmerMotor {
 
     private startActionBaseAcceleration(action: StrokeAction) {
         action.baseAccelerationStarted = true;
+        action.heartRate = Math.round(this.heartRate * 100) / 100;
+        const ranges = this._effectiveReleaseRanges;
+        const center = perfectReleaseCenter(ranges);
+        action.perfectWidth = perfectWidthScale(action.heartRate);
+        const half = (ranges.perfect.end - ranges.perfect.start) * action.perfectWidth * 0.5;
+        ranges.perfect.start = center - half;
+        ranges.perfect.end = center + half;
+        action.ranges = ranges;
+        this._heartRate.recordStart();
         // 已开始的一划保持完整预算，耗尽状态作用于之后开始的划水。
         action.propulsionScale = this._conditionSpeedScale;
         const cycleSeconds = this.currentCycleSeconds();
@@ -966,13 +1011,13 @@ export class SwimmerMotor {
         return impulse / dt;
     }
 
-    private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number, heldBaseImpulse: number, releaseProgress: number, propulsionScale: number) {
+    private startSettledStrokeAcceleration(strokeQuality: number, actionSeconds: number, heldBaseImpulse: number, releaseProgress: number, propulsionScale: number, ranges: ReleaseRanges) {
         const baseAccel = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel) * propulsionScale;
         const goodScale = strokeQuality > 0 && strokeQuality < 1
             ? clamp01(SWIMMER_BALANCE.strokeGoodPropulsionScale) : 1;
         const qualityAccel = Math.max(0, strokeQuality) * goodScale
             * this._effectiveStrokeQualityAccel * propulsionScale;
-        const timeScale = this.strokeActionTimeScale(actionSeconds, releaseProgress);
+        const timeScale = this.strokeActionTimeScale(actionSeconds, releaseProgress, ranges);
         const pulseSeconds = Math.max(0.0001, this.currentCycleSeconds() * SWIMMER_BALANCE.strokeAccelDurationRatio);
         const remainingBaseAccel = Math.max(0, baseAccel * timeScale - heldBaseImpulse / pulseSeconds);
         const accel = remainingBaseAccel + qualityAccel * timeScale;
@@ -982,16 +1027,16 @@ export class SwimmerMotor {
         this.startStrokeAcceleration(accel, false);
     }
 
-    private strokeActionTimeScale(actionSeconds: number, releaseProgress: number): number {
+    private strokeActionTimeScale(actionSeconds: number, releaseProgress: number, ranges: ReleaseRanges = this._effectiveReleaseRanges): number {
         const referenceSeconds = this.referenceSweetCenterActionSeconds();
         const legacyScale = referenceSeconds > 0 ? Math.max(0, actionSeconds) / referenceSeconds : 1;
         // 完美区内晚松手会延长每次输入周期，而非只延长动画回收时间。
         // 用当前轮速和有效进度计算标准耗时，各端不依赖本地按下时间或输入延迟。
         const heldCycleSeconds = this.currentCycleSeconds() / Math.max(0.0001, MOTION_TUNING.heldMotionSpeedScale);
         const minHold = Math.max(0, STROKE_QUALITY_TUNING.minHoldSeconds);
-        const perfect = this._effectiveReleaseRanges.perfect;
+        const perfect = ranges.perfect;
         const center = (perfect.start + perfect.end) * 0.5;
-        // 视觉宽限仍可判 PERFECT，但超出完美区终点不再增加耗时奖励。
+        // 超出本划完美区终点不再增加耗时奖励。
         const progress = clamp(releaseProgress, 0,
             Math.min(perfect.end, clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)));
         const referencePeriod = Math.max(0.0001, minHold + center * heldCycleSeconds);
@@ -1476,6 +1521,9 @@ export class SwimmerMotor {
         const pressedAt = held ? Math.max(0, isLeft ? this._leftPressStartedAt : this._rightPressStartedAt) : -1;
         const startedImmediately = actions.length === 0;
         actions.push({
+            heartRate: 80,
+            perfectWidth: 1,
+            ranges: null,
             queuedAt: this._motionClock,
             startedAt: startedImmediately ? this._motionClock : -1,
             pressedAt,
@@ -1530,6 +1578,9 @@ export class SwimmerMotor {
         }
         this.queueMotionCycle(armKey);
         const action: StrokeAction = {
+            heartRate: 80,
+            perfectWidth: 1,
+            ranges: null,
             queuedAt: atTime,
             startedAt: atTime,
             pressedAt,
@@ -1767,6 +1818,8 @@ export class SwimmerMotor {
         // sweet zone and the moving marker both live on this axis now.
         const releaseProgress = action ? clamp01(action.progress / CYCLE_AMOUNT) : 0;
         const out = target ?? { active: false, currentRatio: 0, holdSeconds: 0, actionSeconds: 0, minHoldRatio: 0, intervals: [] };
+        out.heartRate = action?.heartRate ?? this.heartRate;
+        out.perfectWidthScale = action?.perfectWidth ?? perfectWidthScale(out.heartRate);
         out.active = !!action && action.releasedAt < 0;
         out.currentRatio = releaseProgress;
         out.displayEndRatio = clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress);
@@ -1787,12 +1840,10 @@ export class SwimmerMotor {
     private currentGuideAction(): StrokeAction | null {
         const left = this._leftActions[0];
         const right = this._rightActions[0];
-        const candidates = [left, right].filter((action) => action && action.startedAt >= 0 && !action.strokeQualitySettled);
-        if (candidates.length === 0) {
-            return null;
-        }
-        candidates.sort((a, b) => a.startedAt - b.startedAt);
-        return candidates[0];
+        const usableLeft = left && left.startedAt >= 0 && !left.strokeQualitySettled ? left : null;
+        const usableRight = right && right.startedAt >= 0 && !right.strokeQualitySettled ? right : null;
+        return usableLeft && usableRight ? (usableLeft.startedAt <= usableRight.startedAt ? usableLeft : usableRight)
+            : usableLeft ?? usableRight;
     }
 
     private currentHoldSeconds(action: StrokeAction): number {
@@ -1805,39 +1856,25 @@ export class SwimmerMotor {
     }
 
     private timingGuideIntervals(action: StrokeAction | null, actionSeconds: number, intervals: StrokeTimingGuideInterval[] = []): StrokeTimingGuideInterval[] {
-        let count = 0;
-        const ranges = this._effectiveReleaseRanges;
-        const steps = 96;
-        let openRating = this.ratingForGuideRatio(0.5 / steps, action, actionSeconds, ranges);
-        let openStart = 0;
-        for (let i = 1; i <= steps; i++) {
-            const start = i / steps;
-            const end = Math.min(1, (i + 1) / steps);
-            const rating = i < steps ? this.ratingForGuideRatio((start + end) * 0.5, action, actionSeconds, ranges) : openRating;
-            if (i >= steps || rating !== openRating) {
-                const interval = intervals[count] ?? (intervals[count] = { rating: openRating, startRatio: 0, endRatio: 0 });
-                interval.rating = openRating;
-                interval.startRatio = openStart;
-                interval.endRatio = start;
-                count++;
-                openRating = rating;
-                openStart = start;
-            }
+        const ranges = action?.ranges ?? this.fillReleaseRanges(this._previewRanges, perfectWidthScale(this.heartRate));
+        const timeout = clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress);
+        // 使用精确边界，极限窗口不再被 96 格采样误差放大或缩小。
+        let count = 0, start = 0;
+        for (let index = 0; index < 5; index++) {
+            const rawEnd = index === 0 ? ranges.good.start : index === 1 ? ranges.perfect.start
+                : index === 2 ? ranges.perfect.end : index === 3 ? ranges.good.end : 1;
+            const end = index === 4 ? 1 : Math.min(timeout, rawEnd);
+            if (end <= start) continue;
+            const rating = index === 0 || index === 4 ? Rating.BAD : index === 2 ? Rating.PERFECT : Rating.GOOD;
+            const interval = intervals[count] ?? (intervals[count] = { rating, startRatio: 0, endRatio: 0 });
+            interval.rating = rating;
+            interval.startRatio = start;
+            interval.endRatio = end;
+            count++;
+            start = end;
         }
         intervals.length = count;
         return intervals;
-    }
-
-    private ratingForGuideRatio(holdRatio: number, action: StrokeAction | null, actionSeconds: number, ranges = this._effectiveReleaseRanges): Rating {
-        // The guide axis is release progress (fraction of a full cycle). Map it
-        // through the same release-timing sweet zone used for scoring so the
-        // on-screen guide shows exactly where PERFECT / GOOD land. Progress past
-        // the overhold-timeout point can never be a valid release (auto miss).
-        const progress = clamp01(holdRatio);
-        if (progress >= clamp01(STROKE_QUALITY_TUNING.armStrokeTimeoutProgress)) {
-            return Rating.BAD;
-        }
-        return ratingForGuideStrokeQuality(strokeQualityFromReleaseProgress(progress, ranges));
     }
 }
 
@@ -1946,23 +1983,6 @@ function describeReleaseBadReason(releaseProgress: number, holdTimeValid: boolea
     return `released_late(${(releaseProgress * 100).toFixed(0)}%)`;
 }
 
-function normalizedReleaseRange(startValue: number, endValue: number): { start: number; end: number } {
-    return {
-        start: clamp01(Math.min(startValue, endValue)),
-        end: clamp01(Math.max(startValue, endValue)),
-    };
-}
-
 function perfectReleaseCenter(ranges: ReleaseRanges): number {
     return clamp01((ranges.perfect.start + ranges.perfect.end) * 0.5);
-}
-
-function ratingForGuideStrokeQuality(strokeQuality: number): Rating {
-    if (strokeQuality >= 0.999) {
-        return Rating.PERFECT;
-    }
-    if (strokeQuality > 0) {
-        return Rating.GOOD;
-    }
-    return Rating.BAD;
 }

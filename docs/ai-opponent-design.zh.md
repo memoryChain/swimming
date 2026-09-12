@@ -1,12 +1,12 @@
 # AI 对手设计（单局比赛）
 
-> 面向单局比赛的 AI 对手：如何"能游 → 有目的、有策略、三档手感明显不同"。
+> 面向单局比赛的 AI 对手：如何通过输入节奏与性格形成策略；当前三个入口统一最高档。
 > 代码位置：`assets/scripts/entity/AISwimmerController.ts`、`assets/scripts/competitor/CompetitorConfig.ts`、`assets/scripts/competitor/AIRaceObserver.ts`、`assets/scripts/core/GameBalance.ts`。
 > 所有数值都可在"模型调试"面板的 **AI对手** 组实时调，保存进 `assets/resources/config/tuning.json`。
 
 ## 1. 核心原则
 
-- **AI 和玩家共用同一套划水机制**：AI 不是"直接给速度"，而是模拟玩家的 `按下 → 保持 → 松手` 划水路径，推进力全部来自松手时机落在甜区（`STROKE_QUALITY_TUNING`）。所以 AI 的强弱和玩家是同一把尺子，公平可信。
+- **AI 和玩家共用同一套划水机制**：AI 不是"直接给速度"，而是模拟玩家的 `按下 → 保持 → 松手` 划水路径，推进来自按住阶段基础预支及松手后的剩余基础/质量奖励（`STROKE_QUALITY_TUNING`）。所以 AI 的强弱和玩家是同一把尺子，公平可信。
 - **分层设计**：难度基线 → 性格 → 策略 → 难度档位缩放。每一层只做一件事，互不覆盖。
 - **追赶要"隐形"**：橡皮筋/缠斗都是在难度轴上叠加一个**小而平滑**的发力修正，绝不瞬移、不硬拉速度。
 
@@ -62,42 +62,20 @@ AI 通过共享的 `AIRaceObserver` 读到自己相对**玩家**的距离差（`
 - **配速 pacing**：即第 3 节的起步/冲刺发力。
 - 三者相加后被 `maxModifier=0.2` 封顶，确保追赶始终"隐形"、不喧宾夺主。
 
-## 5. 第四层：三个难度档位（明显不同的手感）
+## 5. 比赛入口与 AI 强度分离
 
-档位定义在 `RACE_DIFFICULTY_OPTIONS`。除了整体快慢（`aiDifficultyScale`），还分别缩放**追赶、缠斗、蛇形**三项策略，让三档的"脾气"不同，而不只是"更快"。
+2026-09-12 起，三个入口统一通过 `getRaceAiDifficultyConfig()` 读取原世锦赛档。第一个入口改为手感调试并关闭转向偏移；其余保留转向。旧入口 ID 保留兼容，不再提供三档 AI 难度差异。
 
-| 档位 | AI倍率<br>(快慢·手稳) | 追赶<br>rubberBandScale | 缠斗<br>duelScale | 蛇形<br>weaveScale |
-|------|:---:|:---:|:---:|:---:|
-| **入门 beginner** | 0.60 | 0.35 | 0.30 | 1.60 |
-| **竞技 competitive** | 0.82 | 1.00 | 1.00 | 1.00 |
-| **世锦赛 championship** | 1.00 | 1.60 | 1.70 | 0.45 |
-
-**玩家会明显感受到：**
-- **入门**：对手整体慢、爱划歪犯错、你一旦领先基本甩得掉 → 轻松领先、容错高。
-- **竞技**：均衡基准，你追我赶但公平，考验稳定发挥。
-- **世锦赛**：对手快、路线干净专业，你领先也会被反复追平、贴身死拼 → 甩不掉，要真发挥才能赢。
-
-各泳道基线 difficulty 经 `aiDifficultyScale` 缩放后的实际难度：
-
-| 泳道基线 | 入门 ×0.60 | 竞技 ×0.82 | 世锦赛 ×1.0 |
-|:---:|:---:|:---:|:---:|
-| 0.50 | 0.30 | 0.41 | 0.50 |
-| 0.56 | 0.34 | 0.46 | 0.56 |
-| 0.64 | 0.38 | 0.52 | 0.64 |
-| 0.68 | 0.41 | 0.56 | 0.68 |
-| 0.80 | 0.48 | 0.66 | 0.80 |
-| 0.82 | 0.49 | 0.67 | 0.82 |
-| 0.88 | 0.53 | 0.72 | 0.88 |
-| 0.90 | 0.54 | 0.74 | 0.90 |
+AI 按实际模型读取角色固有体重与心率特性，使用真实起划频率改变心率，再锁定每划 PERFECT 区间。策略层仍可影响输入选择，不能绕过动作模型直接加速度或伪造心率。具体参数见 [统一数值配置](游戏数值与手感配置.zh.md)。
 
 ## 6. 调参入口
 
 模型调试面板 → **AI对手** 组（id 前缀 `ai.*` / `aiStrategy.*` / `difficulty.*`），改完保存进 `tuning.json`，正式比赛加载生效。
 
-- **整体快慢/手稳**：`ai.timingSigma*`、`ai.gapSeconds*`；每档 `difficulty.<档>.aiDifficultyScale`。
+- **整体快慢/手稳**：`ai.timingSigma*`、`ai.gapSeconds*`；统一读取 `difficulty.championship.aiDifficultyScale`。
 - **追赶手感**：`aiStrategy.rubberBandStrength/Range`、`aiStrategy.duelBoost/Range`、`aiStrategy.maxModifier`、`aiStrategy.effortEaseRate`。
 - **配速节奏**：`aiStrategy.startFadeProgress`、`aiStrategy.finishRampStartProgress`。
-- **三档差异**：每档 `difficulty.<档>.rubberBandScale / duelScale / weaveScale`。
+- **共享档位策略**：仅 `difficulty.championship.rubberBandScale / duelScale / weaveScale` 影响当前三个入口。
 - **性格阵容**：直接改 `CompetitorConfig.ts` 的 `AI_PERSONALITIES` 与 `DEFAULT_AI_PROFILES`（非运行时滑块）。
 
 ## 7. 调优建议（顺序）

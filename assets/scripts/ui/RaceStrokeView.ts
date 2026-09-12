@@ -1,3 +1,4 @@
+import { HEART_TIERS, HEART_BAND_TINTS, heartRateTier } from './HeartRatePresentation';
 import { Color, Label, Node, Sprite, SpriteFrame, Tween, tween, UIOpacity, UITransform, Vec3 } from 'cc';
 import { StrokeType, Rating } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
@@ -21,7 +22,7 @@ const RIPPLE_COUNT = 3;
 const MARKER_FLASH_SECONDS = 0.18;
 const MARKER_GLOW_IDLE_OPACITY = 110;
 type HandRipple = { node:Node; opacity:UIOpacity; age:number; diameter:number };
-const HAND_READY = new Color(224,255,140);
+const HAND_READY = new Color(255,255,255);
 const POP = new Vec3(1.08,1.08,1);
 const POP_STRONG = new Vec3(1.15,1.15,1);
 type PraiseArt = 'praiseGood'|'praiseGreat'|'praiseExcellent'|'praisePerfect'|'praiseAmazing'|'praiseCrazy'|'praiseUnbelievable';
@@ -215,12 +216,17 @@ export class RaceStrokeView {
             this.position(s.marker,guide.currentRatio/endRatio,s.sign);
             if(s.markerGlow.active)this.position(s.markerGlow,guide.currentRatio/endRatio,s.sign);
         }
+        const tier=heartRateTier(guide.heartRate ?? 80),color=HEART_TIERS[tier].color,bandTint=HEART_BAND_TINTS[tier];
         let used=0,inPerfect=false;
         for(const interval of guide.intervals){
             if(interval.rating!==Rating.PERFECT||interval.endRatio<=interval.startRatio)continue;
             if(guide.active&&guide.currentRatio>=interval.startRatio&&guide.currentRatio<=interval.endRatio)inPerfect=true;
             if(used===s.bands.length)break;
             const band=s.bands[used],a=clamp(interval.startRatio/endRatio),b=clamp(interval.endRatio/endRatio);
+            if(!band.color.equals(bandTint))band.color=bandTint;
+            const startSprite=s.starts[used].getComponent(Sprite)!,endSprite=s.ends[used].getComponent(Sprite)!;
+            if(!startSprite.color.equals(color))startSprite.color=color;
+            if(!endSprite.color.equals(color))endSprite.color=color;
             if(used===0)s.zoneRatio=(a+b)*.5;
             if(!band.node.active)band.node.active=true;
             // 贴图有4px上留白，路径有效高度177px；与白点完全同一映射。

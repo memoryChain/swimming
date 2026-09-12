@@ -265,7 +265,7 @@ test('三个入口的 AI 阵容强度一致，换局后体重匹配模型，同�
     };
     cc.Layers = { Enum: { DEFAULT: 1 } };
     const { CompetitorManager } = loadModule('competitor/CompetitorManager');
-    const { characterWeightForModel } = loadModule('app/PlayerCharacterConfig');
+    const { characterWeightForModel, characterHeartRateTraitForModel } = loadModule('app/PlayerCharacterConfig');
     const { reseedSharedRandom } = loadModule('core/SharedRNG');
     const { setRaceDifficulty } = loadModule('core/GameBalance');
     const snapshots = [];
@@ -283,7 +283,8 @@ test('三个入口的 AI 阵容强度一致，换局后体重匹配模型，同�
             frames.push(aiSwimmers.map((swimmer, index) => {
                 const id = swimmer.cartoonRig.modelVariantId;
                 assert.equal(swimmer.motor.weight, characterWeightForModel(id));
-                return [id, swimmer.motor.weight, aiControllers[index].difficulty];
+                assert.equal(swimmer.motor.heartRateTrait, characterHeartRateTraitForModel(id));
+                return [id, swimmer.motor.weight, swimmer.motor.heartRateTrait, aiControllers[index].difficulty];
             }));
         }
         snapshots.push(frames);
@@ -712,5 +713,204 @@ test('全角色 1 到 30 级三项属性逐级各加 1，显示点数直接驱�
         }
         assert.deepEqual(resolveCharacterDisplayStats(character,31,30),previous);
         assert.deepEqual(resolveCharacterDisplayStats(character,60,30),previous);
+    }
+});
+
+
+test('心率新参数可保存重载，旧努力采样不能重新生效', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    for(const key of ['condition.effortDecay','condition.easeUp','condition.easeDown'])assert.equal(h.controls.has(key),false);
+    const value=h.controls.get('heartRate.riseSeconds');value.set(12);
+    h.tuning.saveCurrentTuning();value.set(8);h.tuning.loadSavedTuningAsync(()=>{});
+    assert.equal(value.get(),12);assert.equal(h.controls.get('heartRate.minimumWidth').get(),.3);
+    const {StrokeHeartRateModel}=h.loadModule('condition/StrokeHeartRateModel');
+    const model=new StrokeHeartRateModel();model.recordStart();model.tick(1);
+    assert.ok(Math.abs(model.heartRate-(100-20*Math.exp(-1/12)))<1e-9);
+});
+
+test('角色固有心率贯穿本地成长、联机解析、AI模型和重新比赛，等级体重不改变特性', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {PLAYER_CHARACTER_DEFINITIONS,characterHeartRateTraitForModel}=h.loadModule('app/PlayerCharacterConfig');
+    const {resolvePlayerBalance}=h.loadModule('progression/PlayerBalanceOverrides');
+    const {resolveModifiersFromDigest,applyRaceModifiersToMotor}=h.loadModule('progression/RaceModifiers');
+    const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
+    const motor=new SwimmerMotor();
+    const traits={cartonSwimmer6:'balanced',cartonSwimmer8:'balanced',cartonSwimmer5:'quick',cartonSwimmer9:'quick',cartonSwimmer10:'balanced',cartonSwimmer11:'steady',cartonSwimmer12:'quick',cartonSwimmer13:'steady',cartonSwimmer14:'quick',cartonSwimmer15:'slow',muscleMan:'slow'};
+    for(const c of PLAYER_CHARACTER_DEFINITIONS) for(const level of [1,15,30,60]) {
+        const local=resolvePlayerBalance(c,level,30,c.weight,c.energyGain,c.heartRateTrait);
+        const net=resolveModifiersFromDigest({characterId:c.id,level});
+        assert.equal(c.heartRateTrait,traits[c.id]);assert.deepEqual(net.balance,local);
+        applyRaceModifiersToMotor(motor,net);motor.startRace();
+        assert.equal(motor.heartRateTrait,traits[c.id]);assert.equal(motor.heartRate,80);
+        motor.applyAuthoritativeHeartRate(180);motor.update(.5,{isAI:false});
+        motor.startRace();assert.equal(motor.heartRateTrait,traits[c.id]);assert.equal(motor.heartRate,80);
+        const ai=new SwimmerMotor();ai.setHeartRateTrait(characterHeartRateTraitForModel(c.modelVariantId));
+        ai.setWeight(2);ai.startRace();ai.applyAuthoritativeHeartRate(180);
+        motor.applyAuthoritativeHeartRate(180);
+        for(let i=0;i<120;i++){ai.update(1/60,{isAI:true});motor.update(1/60,{isAI:false});}
+        assert.equal(ai.heartRate,motor.heartRate);
+    }
+    applyRaceModifiersToMotor(motor,resolveModifiersFromDigest({characterId:'unknown',level:30}));
+    assert.equal(motor.heartRateTrait,'balanced');assert.equal(characterHeartRateTraitForModel('unknown'),'balanced');
+});
+
+test('四档心率参数可持久化，正在比赛的模型也读取最新时间常数', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {HEART_RATE_TRAITS}=h.loadModule('core/ConditionBalance');
+    const {StrokeHeartRateModel}=h.loadModule('condition/StrokeHeartRateModel');
+    const models=[];
+    for(const [id,profile] of Object.entries(HEART_RATE_TRAITS)) {
+        const m=new StrokeHeartRateModel();m.setTrait(id);models.push(m);
+        h.controls.get('heartRate.'+profile.riseKey).set(14);
+        h.controls.get('heartRate.'+profile.recoveryKey).set(7);
+    }
+    h.tuning.saveCurrentTuning();
+    for(const profile of Object.values(HEART_RATE_TRAITS)) {
+        h.controls.get('heartRate.'+profile.riseKey).set(1);
+        h.controls.get('heartRate.'+profile.recoveryKey).set(1);
+    }
+    h.tuning.loadSavedTuningAsync(()=>{});
+    for(const m of models) {
+        m.recordStart();m.tick(1);assert.ok(Math.abs(m.heartRate-(100-20*Math.exp(-1/14)))<1e-9);
+        m.reset();m.applyAuthoritative(180);m.tick(1);assert.ok(Math.abs(m.heartRate-(80+100*Math.exp(-1/7)))<1e-9);
+    }
+});
+
+function dolphinBurdenFixture(conditionKind = 'player') {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    let ts;try {ts=require('typescript');} catch {ts=require(process.env.PATH.split(path.delimiter).map(dir=>path.resolve(dir,'../typescript/lib/typescript.js')).find(p=>fs.existsSync(p)));}
+    const file=path.join(h.root,'assets/scripts/entity/Swimmer.ts');
+    const source=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
+    const decl=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='Swimmer');
+    const names=['tryDolphinJump','applyAcceptedNetDolphinJump','applyConditionSpeedScale'];
+    const members=decl.members.filter(n=>names.includes(n.name?.getText(source)));
+    assert.equal(members.length,names.length);
+    const {DOLPHIN_JUMP}=h.loadModule('core/DolphinJumpConfig');
+    const js=ts.transpileModule(`class Body {${members.map(n=>n.getText(source)).join('\n')}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    const Body=require('node:vm').runInNewContext(js+';Body',{DOLPHIN_JUMP});
+    const {SwimmerMotor}=h.loadModule('swimmer/SwimmerMotor');
+    const {SwimmerRacePhases}=h.loadModule('entity/SwimmerRacePhases');
+    const {UltimateEnergyModel}=h.loadModule('condition/UltimateEnergyModel');
+    const {DEFAULT_RACE_COURSE_LAYOUT}=h.loadModule('venue/RaceCourseLayout');
+    const motor=new SwimmerMotor();motor.startRace(10,2);
+    const body=new Body();body._motor=motor;body._ultimate=new UltimateEnergyModel();body._ultimate.applyNetEnergy(100,1);
+    const host={motor,node:new h.cc.Node(),courseLayout:DEFAULT_RACE_COURSE_LAYOUT,
+        cartoonRig:{setDiveStreamlinePose(){},setLegSplashSuppressed(){},setPerfectGlowActive(){},triggerSplashBurst(){}}};
+    body._phases=new SwimmerRacePhases(host);
+    const gmFile=path.join(h.root,'assets/scripts/core/GameManager.ts');
+    const gmSource=ts.createSourceFile(gmFile,fs.readFileSync(gmFile,'utf8'),ts.ScriptTarget.Latest,true);
+    const gmDecl=gmSource.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='GameManager');
+    const binding=gmDecl.members.find(n=>n.name?.getText(gmSource)==='bindDolphinEnergyCost');
+    assert.ok(binding);
+    const bindingJs=ts.transpileModule(`class Binder {${binding.getText(gmSource)}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
+    const Binder=require('node:vm').runInNewContext(bindingJs+';Binder');
+    const Condition=conditionKind==='player'?h.loadModule('condition/PlayerConditionModel').PlayerConditionModel:h.loadModule('condition/AiConditionModel').AiConditionModel;
+    const condition=new Condition(),binder=new Binder();binder.bindDolphinEnergyCost(body,condition);
+    return {...h,body,motor,host,condition,binder};
+}
+
+test('海豚跳成功只加一次25心率并封顶180，失败与重复点击不付费，保留实际划频历史', () => {
+    const {body,motor,host,loadModule,condition}=dolphinBurdenFixture();
+    const {StrokeType}=loadModule('core/GameConstants');
+    for(const hr of [80,140,155,170,180]) {
+        body._phases._dolphinActive=false;body._ultimate.applyNetEnergy(100,1);motor.startRace(10,2);
+        motor.applyAuthoritativeHeartRate(hr);motor.update(.3,{isAI:false});motor.applyAuthoritativeHeartRate(hr);
+        motor.setStrokeHeld(StrokeType.LEFT,true,.2);motor.recordStroke(StrokeType.LEFT);
+        const rate=motor._heartRate.strokeRate;
+        assert.equal(body.tryDolphinJump(),true);assert.equal(motor.heartRate,Math.min(180,hr+25));
+        assert.equal(body._ultimate.energy,0);assert.equal(motor._heartRate.strokeRate,rate);
+        assert.equal(motor._leftActions.length,0,'海豚阶段按原规则取消在途划水');
+        assert.equal(body.tryDolphinJump(),false);assert.equal(motor.heartRate,Math.min(180,hr+25));
+    }
+    for(const reason of ['energy','turn','underwater','active','wall','finish','stopped','rig']) {
+        motor.startRace(10,2);motor.applyAuthoritativeHeartRate(100);
+        Object.assign(body._phases,{_dolphinActive:reason==='active',_flipTurnActive:reason==='turn',_diveUnderwaterActive:reason==='underwater'});
+        body._ultimate.applyNetEnergy(reason==='energy'?99:100,1);
+        if(reason==='wall')motor.startRace(49.9,2);
+        if(reason==='finish')motor.startRace(199.9,2);
+        if(reason==='stopped')motor.stopRace();
+        const rig=host.cartoonRig;if(reason==='rig')host.cartoonRig=null;
+        const before=motor.heartRate,energy=body._ultimate.energy,stamina=condition.energy;
+        assert.equal(body.tryDolphinJump(),false,reason);assert.equal(motor.heartRate,before,reason);assert.equal(body._ultimate.energy,energy,reason);assert.equal(condition.energy,stamina,reason);
+        host.cartoonRig=rig;
+    }
+});
+
+test('海豚跳远端回放不叠加权威心率，迟到事件及重复快照不能再次增压', () => {
+    const {body,motor}=dolphinBurdenFixture();
+    for(const hr of [80,105,170,180]) {
+        body._phases._dolphinActive=false;motor.startRace(10,2);motor.applyAuthoritativeHeartRate(hr,true);
+        body._ultimate.applyNetEnergy(0,1);
+        assert.equal(body.applyAcceptedNetDolphinJump(),true);
+        assert.equal(motor.heartRate,hr);assert.equal(body._ultimate.energy,0);
+        assert.equal(body.applyAcceptedNetDolphinJump(),false);assert.equal(motor.heartRate,hr);
+        motor.addHeartRateBurden(25);assert.equal(motor.heartRate,hr);
+        motor.applyAuthoritativeHeartRate(hr,true);assert.equal(motor.heartRate,hr);
+    }
+});
+
+test('海豚心率负担可调20或30并保存，异常配置不降心率，各角色自然恢复且重新开赛归80', () => {
+    const {body,motor,controls,tuning,loadModule}=dolphinBurdenFixture();
+    const control=controls.get('dolphin.strainHr');
+    for(const cost of [0,20,30]) {
+        control.set(cost);tuning.saveCurrentTuning();control.set(99);tuning.loadSavedTuningAsync(()=>{});assert.equal(control.get(),cost);
+        for(const [trait,tau] of [['quick',1.5],['balanced',2.5],['steady',3.5],['slow',4.5]]) {
+            body._phases._dolphinActive=false;body._ultimate.applyNetEnergy(100,1);motor.setHeartRateTrait(trait);motor.startRace(10,2);
+            assert.equal(body.tryDolphinJump(),true);assert.equal(motor.heartRate,80+cost);
+            for(let i=0;i<360;i++)motor.tickRestingHeartRate(1/120,true);
+            assert.equal(motor.heartRate,80+cost);
+            for(let i=0;i<120;i++)motor.tickRestingHeartRate(1/120);
+            assert.ok(Math.abs(motor.heartRate-(80+cost*Math.exp(-1/tau)))<1e-8);
+            motor.startRace();assert.equal(motor.heartRate,80);assert.equal(motor.heartRateTrait,trait);
+        }
+    }
+    const {StrokeHeartRateModel}=loadModule('condition/StrokeHeartRateModel');const model=new StrokeHeartRateModel();
+    for(const value of [NaN,Infinity,-Infinity,-25,0]){model.addBurden(value);assert.equal(model.heartRate,80);}
+    model.addBurden(1000);assert.equal(model.heartRate,180);
+    motor.stopRace();motor.addHeartRateBurden(25);assert.equal(motor.heartRate,80);
+});
+
+test('成功海豚跳本地玩家和AI额外扣5体力，不足扣零，耗尽倍率在返回和发包前立即生效', () => {
+    for(const kind of ['player','ai']) {
+        const {body,motor,condition,binder}=dolphinBurdenFixture(kind);
+        // 重绑覆盖已有回调，再赛不叠加收费。
+        binder.bindDolphinEnergyCost(body,condition);binder.bindDolphinEnergyCost(body,condition);
+        for(const remaining of [100,6,5,3,0]) {
+            condition.reset();condition.consumeEnergy(100-remaining);
+            motor.startRace(10,2);body._phases._dolphinActive=false;body._ultimate.applyNetEnergy(100,1);
+            assert.equal(body.tryDolphinJump(),true,`${kind},${remaining}`);
+            assert.equal(condition.energy,Math.max(0,remaining-5));
+            assert.equal(condition.energyDepleted,remaining<=5);
+            assert.equal(motor._conditionSpeedScale,remaining<=5?.5:1);
+            assert.equal(condition.energyRatio,Math.max(0,remaining-5)/100,'同帧 self/AI snapshot 已读到扣费后的比例');
+            const stamina=condition.energy;
+            assert.equal(body.tryDolphinJump(),false);assert.equal(condition.energy,stamina);
+        }
+        condition.reset();assert.equal(condition.energy,100);assert.equal(condition.efficiencyModifier,1);
+    }
+});
+
+test('海豚跳体力成本独立于每划成本和心率，参数可保存重载，远端回放不重复扣费', () => {
+    const {body,motor,condition,controls,tuning,loadModule}=dolphinBurdenFixture();
+    const cost=controls.get('dolphin.staminaCost');assert.equal(cost.get(),5);
+    cost.set(8);tuning.saveCurrentTuning();cost.set(1);tuning.loadSavedTuningAsync(()=>{});assert.equal(cost.get(),8);
+    controls.get('condition.strokeDrain').set(2);
+    for(const levelEnergy of [85,114]) for(const hr of [80,180]) {
+        condition.setProgressionOverrides({energyTotal:levelEnergy});condition.reset();
+        body._phases._dolphinActive=false;motor.startRace(10,2);motor.applyAuthoritativeHeartRate(hr);body._ultimate.applyNetEnergy(100,1);
+        assert.equal(body.tryDolphinJump(),true);assert.equal(condition.energy,levelEnergy-8);
+        condition.updateFromStroke({strokeAccepted:true});assert.equal(condition.energy,levelEnergy-10,'之后一次划水按自己成本正常扣除');
+    }
+    for(const invalid of [NaN,Infinity,-Infinity,-5,0]) {
+        const before=condition.energy;condition.consumeEnergy(invalid);assert.equal(condition.energy,before);
+    }
+    cost.set(0);body._phases._dolphinActive=false;body._ultimate.applyNetEnergy(100,1);
+    const before=condition.energy;assert.equal(body.tryDolphinJump(),true);assert.equal(condition.energy,before);
+    const {energyAfterCost}=loadModule('core/ConditionBalance');
+    assert.equal(energyAfterCost(5.0000000001,5),0);assert.equal(energyAfterCost(2,10000),0);
+    for(let repeat=0;repeat<3;repeat++) {
+        body.collisionRemoteHuman=true;body._phases._dolphinActive=false;body._ultimate.applyNetEnergy(0,1);motor.applyAuthoritativeHeartRate(170,true);
+        assert.equal(body.applyAcceptedNetDolphinJump(),true);assert.equal(condition.energy,before);assert.equal(motor.heartRate,170);
+        body.onDolphinJumpEnergyCost(8);assert.equal(condition.energy,before,'远端身份防护不能消耗占位AI体力');
     }
 });

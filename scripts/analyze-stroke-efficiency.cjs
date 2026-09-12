@@ -32,6 +32,8 @@ function replay(target, kicks, roll, options = {}) {
     const gap = options.gap ?? 0.02;
     AXIAL_ROLL_TUNING.minForwardScale = roll ? rollFloor : 1;
     const motor = new SwimmerMotor(); motor.startRace(0, 0.8); motor.setSteeringEnabled(true);
+    // 默认隔离心率比较松手收益；heartRate:null 启用实际心率积累。
+    if (options.heartRate !== null) motor.applyAuthoritativeHeartRate(options.heartRate ?? 80, true);
     motor.setConditionQualityScale(options.qualityScale ?? 1);
     motor.setConditionCadenceScale(options.cadenceScale ?? 1);
     let time = 0, nextPress = 0, activeSide = null, side = StrokeType.LEFT, pressedAt = 0;
@@ -115,6 +117,7 @@ function replay(target, kicks, roll, options = {}) {
         }
     } finally { Date.now = previousNow; }
     return {
+        heartRate: motor.heartRate,
         x: target / STROKE_QUALITY_TUNING.armStrokeTimeoutProgress * 100,
         target, meanSpeed: distance / measured, internalSpeed: speedSum / measured,
         armPerSecond: armImpulse / measured, kickPerSecond: kickImpulse / measured,

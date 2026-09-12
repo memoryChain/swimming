@@ -111,7 +111,7 @@ test('frame self and input sequence round-trip, including an empty self slot', (
     assert.equal(noSelf.inputSeq, 100);
 });
 
-test('心率量化保留显示读数且不改变判定', () => {
+test('状态快照保留整数心率，旧condition质量倍率维持中性', () => {
     for (const heartRate of [109.49, 109.5, 109.99, 110, 149.49, 149.5, 149.99, 150, 174.49, 174.5, 174.99, 175]) {
         const wire = decodeConditionHeartRate(encodeConditionHeartRate(heartRate));
         assert.equal(wire, Math.floor(heartRate));
@@ -197,4 +197,15 @@ test('三个同步通道均保留正体力与耗尽边界', () => {
                 ConditionBalance.conditionEfficiencyScale(ratio));
         }
     }
+});
+
+
+test('划水事件携带动作心率，百分之一精度与同包及旧包状态独立', () => {
+    for(const hr of [80,100.01,139.99,160,179.98,180]) {
+        const packet=encodeInputFrame(0,[{kind:'s',side:1,heartRate:hr}],entry({conditionHeartRate:180}),3);
+        const decoded=decodeInputFrame(packet);
+        assert.equal(decoded.events[0].heartRate,hr);
+        assert.equal(decoded.events[0].side,1);
+    }
+    assert.deepEqual(decodeInputFrame('0|s0').events,[{kind:'s',side:0}]);
 });

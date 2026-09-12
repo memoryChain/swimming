@@ -1,7 +1,8 @@
+import { HEART_TIERS, heartRateTier } from './HeartRatePresentation';
 import { RaceStrokeView } from './RaceStrokeView';
 import { StrokeType } from '../core/GameConstants';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
-import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UITransform, Vec2, view, sys } from 'cc';
+import { BlockInputEvents, Button, Color, Font, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, Vec2, view, sys } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import type { RaceFinishResult } from '../core/RaceManager';
@@ -23,6 +24,7 @@ const RED = new Color(255, 73, 76);
 const GOLD = new Color(255, 201, 58);
 const TEXT_OUTLINE = new Color(0, 0, 0, 51);
 const TRACK = new Color(39, 60, 73, 204);
+const DEPLETED_TRACK = new Color(255, 73, 76, 120);
 // 源稿蓄气中海豚为浅白 52.16%，不能再次乘灰蓝色。
 const DOLPHIN_WHITE = new Color(245, 250, 252, 133);
 const COURSE_TRACK = new Color(39, 60, 73, 184);
@@ -63,6 +65,18 @@ export class RaceHudStatusView {
     private readonly speed: Label;
     private readonly heartValue: Label;
     private readonly energyValue: Label;
+    private readonly energyState: Label;
+    private readonly energyIcon: Sprite;
+    private readonly energyIconOpacity: UIOpacity;
+    private readonly energyTrack: Sprite;
+    private energyDepleted = false;
+    private energyPulsePhase = 0;
+    private readonly heartTierLabel: Label;
+    private pulseElapsed = 0;
+    private pulsePhase = 0;
+    private displayedHeart = 80;
+    private displayedHeartTier = 0;
+    private heartScale = 1;
     private readonly distance: Label;
     private readonly percent: Label;
     private readonly heartRing: Sprite;
@@ -79,7 +93,6 @@ export class RaceHudStatusView {
     private readonly ranks: RankSlot[] = [];
     private readonly identities = new Map<Swimmer, string>();
     private elapsed = 0.1;
-    private warningClock = 0;
     private ready = false;
     private scale = 1;
 
@@ -99,18 +112,23 @@ export class RaceHudStatusView {
         this.sprite(this.left, 'HeartTrack', 'ring', 22, 114, 76, 76, TRACK);
         this.heartRing = this.ring(this.left, 'HeartFill', 22, 114, 76, RED);
         this.heartIcon = this.sprite(this.left, 'Heart', 'heart', 48, 130, 26, 22, RED);
-        this.heartValue = this.label(this.left, 'HeartValue', '0', 30, 152, 60, 25, 18.4);
+        this.heartValue = this.label(this.left, 'HeartValue', '80', 30, 152, 60, 25, 18.4);
         this.label(this.left, 'HeartCaption', '心率', 30, 180, 60, 24, 15.3);
+        this.heartTierLabel = this.label(this.left, 'HeartTier', '轻松', 30, 203, 60, 22, 15.3);
         this.warning = makeUiNode('HeartWarning', this.left);
         this.sprite(this.warning, 'WarningBase', 'warning', 75, 110, 18, 18);
         this.label(this.warning, 'WarningMark', '!', 75, 109, 18, 20, 14);
         this.warning.active = false;
         this.sprite(this.left, 'EnergyBase', 'base', 122, 114, 76, 76);
-        this.sprite(this.left, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
+        this.energyTrack = this.sprite(this.left, 'EnergyTrack', 'ring', 122, 114, 76, 76, TRACK);
         this.energyRing = this.ring(this.left, 'EnergyFill', 122, 114, 76, CYAN);
-        this.sprite(this.left, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
+        this.energyIcon = this.sprite(this.left, 'Lightning', 'lightning', 151, 126, 21, 28, CYAN);
+        this.energyIconOpacity = this.energyIcon.node.addComponent(UIOpacity);
         this.energyValue = this.label(this.left, 'EnergyValue', '100%', 128, 152, 64, 25, 18.4);
         this.label(this.left, 'EnergyCaption', '体力', 128, 180, 64, 24, 15.3);
+        this.energyState = this.label(this.left, 'EnergyState', '体力耗尽', 118, 203, 84, 22, 15.3);
+        this.energyState.color = RED;
+        this.energyState.node.active = false;
         this.distance = this.label(this.top, 'Distance', '200 m', -232, 32, 53, 25, 14.5, true, 'right');
         this.sprite(this.top, 'ProgressTrack', 'progress', -173, 39, 399, 12, COURSE_TRACK);
         this.progress = this.sprite(this.top, 'ProgressFill', 'progress', -173, 39, 399, 12, CYAN);
@@ -188,32 +206,54 @@ export class RaceHudStatusView {
         if (visible) this.layout();
         this.stroke.setVisible(visible);
         this.elapsed = 0.1;
-        if (!visible) { this.warningClock = 0; this.setReady(false); }
+        if (!visible) { this.setReady(false); }
     }
     /** 先门控再读取/格式化数据，UI 节流不影响玩法和网络。 */
     consumeSample(dt: number): boolean {
         if (!this.root.activeInHierarchy) return false;
-        this.elapsed += dt;
+        const elapsed = Math.max(0, dt);
+        if (this.energyDepleted) this.energyPulsePhase = (this.energyPulsePhase + elapsed / 1.6) % 1;
+        this.pulsePhase = (this.pulsePhase + elapsed * this.displayedHeart / 60) % 1;
+        this.pulseElapsed += elapsed;
+        if (this.pulseElapsed >= 1 / 30) {
+            this.pulseElapsed %= 1 / 30;
+            // 只缩放心形；数值、文字、完美区边界保持稳定。
+            const beat = Math.max(0, Math.sin(this.pulsePhase * Math.PI * 2));
+            const scale = Math.round((1 + HEART_TIERS[this.displayedHeartTier].amplitude * beat * beat) * 1000) / 1000;
+            if (scale !== this.heartScale) { this.heartScale = scale; this.heartIcon.node.setScale(scale, scale, 1); }
+            // 体力耗尽只让闪电缓慢呼吸，提示文字及空槽保持稳定；复用 30Hz 采样。
+            if (this.energyDepleted) {
+                const opacity = Math.round(207 + 48 * Math.cos(this.energyPulsePhase * Math.PI * 2));
+                if (this.energyIconOpacity.opacity !== opacity) this.energyIconOpacity.opacity = opacity;
+            }
+        }
+        this.elapsed += elapsed;
         if (this.elapsed < 0.1) return false;
-        this.warningClock += this.elapsed;
         this.elapsed %= 0.1;
         return true;
     }
-    updateValues(speed: number, heart: number, overload: boolean, energyRatio: number, distance: number, total: number, ultimateRatio: number, canJump: boolean) {
+    updateValues(speed: number, heart: number, _overload: boolean, energyRatio: number, distance: number, total: number, ultimateRatio: number, canJump: boolean) {
         if (!this.root.activeInHierarchy) return;
         this.text(this.speed, Math.max(0, speed).toFixed(2));
-        this.text(this.heartValue, String(Math.round(heart)));
+        this.displayedHeart = Math.max(80, Math.min(180, heart));
+        this.displayedHeartTier = heartRateTier(this.displayedHeart);
+        const tier = HEART_TIERS[this.displayedHeartTier];
+        this.text(this.heartValue, String(Math.round(this.displayedHeart)));
+        this.text(this.heartTierLabel, tier.label);
+        if (!this.heartTierLabel.color.equals(tier.color)) this.heartTierLabel.color = tier.color;
         this.text(this.energyValue, `${Math.round(clamp(energyRatio) * 100)}%`);
+        // 使用实际资源判断，不能把尚有体力但取整显示 0% 的情况当作耗尽。
+        this.setEnergyDepleted(energyRatio <= 0);
         this.text(this.distance, `${total} m`);
         const progress = clamp(distance / Math.max(1, total));
         this.text(this.percent, `${Math.round(progress * 100)}%`);
         this.fill(this.progress, Math.round(progress * 399) / 399);
-        this.fill(this.heartRing, -0.75 * Math.round(clamp(heart / 200) * 100) / 100);
+        this.fill(this.heartRing, -0.75 * Math.round(clamp(this.displayedHeart / 180) * 100) / 100);
         this.fill(this.energyRing, -0.75 * Math.round(clamp(energyRatio) * 100) / 100);
         this.fill(this.jumpRing, -0.75 * Math.round(clamp(ultimateRatio) * 100) / 100);
-        this.tint(this.heartIcon, RED);
-        this.tint(this.heartRing, RED);
-        this.active(this.warning, overload && Math.floor(this.warningClock * 3) % 2 === 0);
+        this.tint(this.heartIcon, tier.color);
+        this.tint(this.heartRing, tier.color);
+        this.active(this.warning, this.displayedHeartTier === 3);
         this.setReady(canJump && ultimateRatio >= 1);
     }
     showStrokePraise(side: StrokeType | undefined, text: string, color: Color | undefined, combo: number) {
@@ -253,6 +293,17 @@ export class RaceHudStatusView {
                 if (slot.portrait.isValid && slot.path === path && slot.identity === result.swimmer) slot.portrait.spriteFrame = frame;
             });
         }
+    }
+    private setEnergyDepleted(depleted: boolean) {
+        if (this.energyDepleted === depleted) return;
+        this.energyDepleted = depleted;
+        this.energyPulsePhase = 0;
+        if (this.energyIconOpacity.opacity !== 255) this.energyIconOpacity.opacity = 255;
+        this.active(this.energyState.node, depleted);
+        const color = depleted ? RED : WHITE;
+        if (!this.energyValue.color.equals(color)) this.energyValue.color = color;
+        this.tint(this.energyIcon, depleted ? RED : CYAN);
+        this.tint(this.energyTrack, depleted ? DEPLETED_TRACK : TRACK);
     }
     private setReady(ready: boolean) {
         if (this.ready === ready) return;

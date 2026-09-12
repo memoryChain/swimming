@@ -1,4 +1,4 @@
-// AI 按实际划水结算次数扣体力，心率保留独立的显示走势。
+// AI 按实际划水结算次数扣体力，心率与玩家共用 Motor 中的实际划频模型。
 import {
     AiConditionInput,
     ConditionReadout,
@@ -11,6 +11,7 @@ import {
 import {
     CONDITION_BALANCE,
     energyAfterStrokes,
+    energyAfterCost,
     conditionEfficiencyScale,
     conditionQualityScale,
     energyDepletionCadenceScale,
@@ -18,10 +19,6 @@ import {
 
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
-}
-
-function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t;
 }
 
 export class AiConditionModel {
@@ -55,14 +52,18 @@ export class AiConditionModel {
         this.refreshModifiers();
     }
 
-    // Event-driven: keep AI on the same one-shot dolphin-jump heart-rate rule.
-    applyDolphinJumpStrain(strainHr: number) {
-        if (!Number.isFinite(strainHr) || strainHr <= 0) {
-            return;
-        }
-        this._heartRate = clamp(this._heartRate + strainHr, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
-        this._heartRateZone = zoneForHeartRate(this._heartRate);
+    applyDolphinJumpStrain(_strainHr: number) {}
+
+    // 成功技能一次性扣费，与划水计数独立；立即刷新耗尽倍率供同帧输入/快照使用。
+    consumeEnergy(cost: number) {
+        this._energy = energyAfterCost(this._energy, cost);
+        this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
+    }
+    syncHeartRate(value: number) {
+        if (!Number.isFinite(value)) return;
+        this._heartRate = clamp(value, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
+        this._heartRateZone = zoneForHeartRate(this._heartRate);
     }
 
     // 沿用既有网络字段；旧冷却字段保留占位，不再参与计算。
@@ -83,44 +84,11 @@ export class AiConditionModel {
         this.refreshModifiers();
     }
 
-    // Clock-driven derivation. No input judging; pure curve over difficulty/progress.
-    // Solo supplies render dt; network races supply the fixed simulation dt.
-    tickAi(input: AiConditionInput) {
-        const difficulty = clamp(input.difficulty, 0, 1);
-
-        // Target heart-rate by phase. Higher difficulty settles closer to the
-        // efficient OPTIMAL band and is steadier; sprint pushes higher.
-        const targetHeartRate = this.targetHeartRate(difficulty, input.progress);
-        // Higher difficulty -> faster, smoother approach to its target.
-        const approach = clamp(lerp(0.6, 2.4, difficulty) * input.dt, 0, 1);
-        this._heartRate = clamp(
-            lerp(this._heartRate, targetHeartRate, approach),
-            HEART_RATE_BOUNDS.min,
-            HEART_RATE_BOUNDS.max,
-        );
-        this._heartRateZone = zoneForHeartRate(this._heartRate);
-
-        this.refreshModifiers();
-    }
-
-    private targetHeartRate(difficulty: number, progress: number): number {
-        const bounds = HEART_RATE_BOUNDS;
-        if (this._phase === RacePhase.START) {
-            // Climb toward the lower OPTIMAL edge quickly.
-            return lerp(bounds.optimalLower - 6, bounds.optimalLower + 6, difficulty);
-        }
-        if (this._phase === RacePhase.SPRINT) {
-            // Aggressive AI pushes into HIGH_PRESSURE / OVERLOAD near the finish.
-            const base = lerp(bounds.optimalLower + 10, bounds.overloadLower, difficulty);
-            const lateBoost = clamp(progress, 0, 1) * lerp(0, 8, difficulty);
-            return clamp(base + lateBoost, bounds.min, bounds.max);
-        }
-        // PACE / RESULT: sit inside OPTIMAL, steadier at high difficulty.
-        return lerp(bounds.optimalLower + 4, bounds.highPressureLower - 6, difficulty);
-    }
+    // 实际划水心率由 Motor 驱动；阶段和难度不再额外增压。
+    tickAi(_input: AiConditionInput) { this.refreshModifiers(); }
 
     private refreshModifiers() {
-        // 心率不再修正判定。
+        // PERFECT 由 Motor 按每划心率快照处理，旧倍率保持中性。
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
         // 与玩家共用耗尽后的固定推进倍率。

@@ -1,4 +1,5 @@
-﻿import { SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
+﻿import { HeartRateTraitId } from '../core/ConditionBalance';
+import { SWIMMER_BALANCE, DIVE_BALANCE } from '../core/GameBalance';
 
 // Resolved balance overrides for the player's active character + level.
 // Applied to the player's motor / condition model / dive resolver only; the AI
@@ -19,6 +20,7 @@ export type PlayerBalanceOverrides = {
     weight: number;
     // 蓄气资质（from the character definition）. Pass-through, not leveled.
     energyGainAptitude: number;
+    heartRateTrait: HeartRateTraitId;
 };
 
 export type CharacterStats = {
@@ -63,6 +65,7 @@ export function resolvePlayerBalance(
     maxLevel: number,
     weight: number,
     energyGainAptitude: number,
+    heartRateTrait: HeartRateTraitId = 'balanced',
 ): PlayerBalanceOverrides {
     const grown = resolveCharacterDisplayStats(stats, level, maxLevel);
     const maxSpeed = SWIMMER_BALANCE.maxSpeed * attributeMultiplier(grown.burst);
@@ -79,5 +82,6 @@ export function resolvePlayerBalance(
         diveMaxLaunchSpeed,
         weight,
         energyGainAptitude,
+        heartRateTrait,
     };
 }

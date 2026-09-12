@@ -17,7 +17,7 @@ function near(actual, expected, epsilon = 1e-10) {
     assert.ok(Math.abs(actual - expected) <= epsilon, `${actual} != ${expected}`);
 }
 
-test('体力仅在归零后减弱推进，心率和剩余体力不改变判定与划频', () => {
+test('体力仅在归零后减弱推进，旧condition倍率不叠加心率窗口或降低划频', () => {
     for (const ratio of [1, .15, .05, .001, .000001]) {
         near(conditionEfficiencyScale(ratio), 1);
         near(energyDepletionCadenceScale(ratio), 1);

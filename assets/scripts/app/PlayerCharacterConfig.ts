@@ -1,3 +1,4 @@
+import { HeartRateTraitId } from '../core/ConditionBalance';
 import { RaceDifficulty } from '../core/GameBalance';
 
 export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13' | 'cartonSwimmer14' | 'cartonSwimmer15';
@@ -15,6 +16,8 @@ export type PlayerCharacterDefinition = {
     weight: number;
     // 蓄气资质（0-100，纯资质、不随等级成长）。决定赛内大招能量的积攒速率。
     energyGain: number;
+    // 固有心率特性：升温慢的角色恢复也慢，不随养成改变。
+    heartRateTrait: HeartRateTraitId;
     description: string;
     skillName: string;
     skillDescription: string;
@@ -45,6 +48,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 0.85,
         energyGain: 82,
+        heartRateTrait: 'balanced',
         description: '戴着圆耳运动帽的活力少女，以轻快稳定的节奏跃浪前行。',
         skillName: '跃浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
@@ -54,6 +58,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 1.00,
         energyGain: 82,
+        heartRateTrait: 'balanced',
         description: '戴着青蛙帽与粉色护目镜的潮酷少年，以轻快稳定的节奏跃入浪潮。',
         skillName: '蛙跃节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
         supportsSkinTone: true,
@@ -63,6 +68,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 0.95,
         energyGain: 82,
+        heartRateTrait: 'quick',
         description: '轻装上阵的运动少女，以轻快而稳定的节奏逐浪前行。',
         skillName: '逐浪节奏', skillDescription: '均衡的身体控制让连续划水更加顺畅。',
         supportsSkinTone: true,
@@ -72,6 +78,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 0.95,
         energyGain: 82,
+        heartRateTrait: 'quick',
         description: '戴着猫耳帽与霓彩护目镜的灵动少女，以轻盈节奏穿梭浪尖。',
         skillName: '猫影节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加灵巧。',
         supportsSkinTone: true,
@@ -81,6 +88,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 1.00,
         energyGain: 82,
+        heartRateTrait: 'balanced',
         description: '身着黑绿忍者装束的敏捷泳者，以轻快身法切入浪线。',
         skillName: '忍浪节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加利落。',
         supportsSkinTone: true,
@@ -90,6 +98,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 1.15,
         energyGain: 82,
+        heartRateTrait: 'steady',
         description: '身着荧绿运动装的全能选手，以稳定节奏和充沛耐力追逐浪线。',
         skillName: '疾风节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加流畅。',
         supportsSkinTone: true,
@@ -99,6 +108,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 84, technique: 86, burst: 81,
         weight: 0.95,
         energyGain: 84,
+        heartRateTrait: 'quick',
         description: '身着青柠运动装备的活力少年，以灵敏节奏和轻快步伐追逐浪尖。',
         skillName: '绿电节奏', skillDescription: '灵巧的身体控制让划水与转身衔接更加轻快。',
         supportsSkinTone: true,
@@ -108,6 +118,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 90, technique: 82, burst: 76,
         weight: 1.15,
         energyGain: 80,
+        heartRateTrait: 'steady',
         description: '背负轻型潜水装备的耐力型泳者，以稳定节奏穿越深水。',
         skillName: '深潜续航', skillDescription: '扎实的耐力让长距离推进更加稳定。',
         supportsSkinTone: true,
@@ -117,6 +128,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 0.90,
         energyGain: 82,
+        heartRateTrait: 'quick',
         description: '身着荧绿装备的银发少女，以轻快稳定的节奏逐浪前行。',
         skillName: '霓绿节奏', skillDescription: '均衡的身体控制让连续划水与转身衔接更加顺畅。',
         supportsSkinTone: true,
@@ -126,6 +138,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 85, technique: 84, burst: 80,
         weight: 1.25,
         energyGain: 82,
+        heartRateTrait: 'slow',
         description: '身披白绿装甲的机械泳者，以稳定节奏破浪前行。',
         skillName: '机甲节奏', skillDescription: '均衡的身体控制让连续划水与入水衔接更加顺畅。',
         supportsSkinTone: false,
@@ -135,6 +148,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         stamina: 88, technique: 70, burst: 82,
         weight: 1.30,
         energyGain: 75,
+        heartRateTrait: 'slow',
         description: '力量型游泳选手，拥有强劲的划水爆发与稳定续航。',
         skillName: '强力划水', skillDescription: '稳定的力量输出让冲刺阶段更具压迫感。',
     },
@@ -252,9 +266,12 @@ export function characterWeightForModel(modelVariantId: string): number {
     return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.modelVariantId === modelVariantId)?.weight ?? 1;
 }
 
-// 将角色的物理体重（0.85~1.2 左右）归一化成 0-100 的“对抗”雷达轴分值。
-// 底层 weight 仍驱动碰撞击退；这里只用于雷达图显示，刻意压缩差异（约 50~85），
-// 让角色之间有区分但不至于像 0~100 那样悬殊。
+// AI 与玩家从同一份角色配置读取，未知模型保持均衡。
+export function characterHeartRateTraitForModel(modelVariantId: string): HeartRateTraitId {
+    return PLAYER_CHARACTER_DEFINITIONS.find((character) => character.modelVariantId === modelVariantId)?.heartRateTrait ?? 'balanced';
+}
+
+// 体重 0.85～1.30 映射为对抗雷达 50～95；仅展示，碰撞仍直接使用体重。
 export function weightToPhysicalRating(weight: number): number {
     return Math.max(0, Math.min(100, Math.round(50 + (weight - 0.85) * 100)));
 }

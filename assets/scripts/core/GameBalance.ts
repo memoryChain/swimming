@@ -32,7 +32,7 @@ export type RaceDifficultyConfig = {
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
     // 保留入口 ID 兼容存档和联机模式字段；旧 AI 数值保留，实际 AI 统一读世锦赛档。
     { id: 'beginner', label: '手感调试', aiDifficultyScale: 0.6, rubberBandScale: 0.35, duelScale: 0.3, weaveScale: 1.6, laneLockdownEnabled: false },
-    // 竞技：均衡基准，策略参数原样；启用动态封道。
+    // 竞技入口保留转向；当前未启用动态封道。
     { id: 'competitive', label: '竞技', aiDifficultyScale: 0.82, rubberBandScale: 1, duelScale: 1, weaveScale: 1, laneLockdownEnabled: false },
     // 世锦赛：快、咬得死、路线干净专业 → 领先也会被反复追平、缠斗。
     { id: 'championship', label: '世锦赛', aiDifficultyScale: 1, rubberBandScale: 1.6, duelScale: 1.7, weaveScale: 0.45, laneLockdownEnabled: false },
@@ -94,7 +94,7 @@ export const GLIDE_SECONDS = 0.72;
 
 export const SWIMMER_BALANCE = {
     baseSpeed: 0.8,
-    maxSpeed: 4,
+    maxSpeed: 3.4,
     minSpeed: 0,
     // Initial burst produced by pushing off the wall. This is intentionally
     // independent of entry speed and decays during underwater glide like a dive.
@@ -134,17 +134,17 @@ export const SWIMMER_BALANCE = {
     // (post-dive/dolphin glide) this runs without the surface ceiling fade, so it
     // is the main way to hold speed after entering the water — keep it punchy
     // enough that flutter-kicking clearly propels instead of just slowing the bleed.
-    kickAccelPerHz: 0.46,
+    kickAccelPerHz: 0.22,
     // PROPULSION cadence cap: kick frequency above this doesn't add more speed, so
     // a burst of extremely fast taps can't spike the pace. Only limits propulsion;
     // the leg animation tracks the raw finger rhythm (see kickCadenceMeasureMaxHz).
-    kickCadenceMaxHz: 8,
+    kickCadenceMaxHz: 4.8,
     // SAFETY cap applied when measuring cadence (1/interval), high enough that real
     // tapping never reaches it — it only stops a near-zero gap between two taps from
     // blowing the value up. The leg animation uses this (effectively uncapped).
     kickCadenceMeasureMaxHz: 20,
     // Speed ceiling reachable by kicking alone.
-    kickMaxSpeed: 2.1,
+    kickMaxSpeed: 2.7,
     // Speed band below kickMaxSpeed over which the kick acceleration fades to 0,
     // so kicking eases into its ceiling instead of hard-clamping.
     kickCeilingBand: 0.5,

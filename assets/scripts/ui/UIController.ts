@@ -14,29 +14,29 @@ const FINISH_URGENT = new Color(255, 66, 0);
 const HUD_BAR_WIDTH = 220;
 const HUD_BAR_BACKGROUND = new Color(20, 24, 34, 180);
 const HUD_READY_TICK = new Color(255, 255, 255, 200);
-const HEART_RATE_LOW = new Color(120, 196, 255, 255);
-const HEART_RATE_OPTIMAL = new Color(80, 242, 161, 255);
-const HEART_RATE_HIGH = new Color(255, 184, 77, 255);
-const HEART_RATE_OVERLOAD = new Color(255, 92, 92, 255);
+const HEART_RATE_LOW = new Color(204, 238, 83, 255);
+const HEART_RATE_OPTIMAL = new Color(255, 201, 58, 255);
+const HEART_RATE_HIGH = new Color(255, 152, 80, 255);
+const HEART_RATE_OVERLOAD = new Color(255, 73, 76, 255);
 const ENERGY_EMPTY = new Color(120, 120, 130, 255);
-const ENERGY_LOW = new Color(255, 92, 92, 255);
-const ENERGY_MID = new Color(255, 184, 77, 255);
+const ENERGY_LOW = new Color(255, 73, 76, 255);
+const ENERGY_MID = new Color(255, 152, 80, 255);
 const ENERGY_HIGH = new Color(120, 220, 255, 255);
 const SPRINT_ENERGY_EMPTY = new Color(180, 80, 30, 255);
 const SPRINT_ENERGY_LOW = new Color(255, 100, 30, 255);
 const SPRINT_ENERGY_MID = new Color(255, 160, 40, 255);
 const SPRINT_ENERGY_HIGH = new Color(255, 210, 70, 255);
-const ULTIMATE_DENIED = new Color(255, 92, 92, 255);
+const ULTIMATE_DENIED = new Color(255, 73, 76, 255);
 const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
 const ULTIMATE_READY = new Color(255, 215, 90, 255);
 const ULTIMATE_CHARGING = new Color(210, 160, 60, 255);
 // Race praise is presentation-only. Keep the gameplay Rating enum at three
 // levels so movement, rewards, statistics, and net simulation stay unchanged.
-const PRAISE_GOOD = { text: 'Good', color: new Color(80, 242, 161, 255) };
+const PRAISE_GOOD = { text: 'Good', color: new Color(255, 201, 58, 255) };
 const PRAISE_GREAT = { text: 'Great', color: new Color(80, 216, 255, 255) };
 const PRAISE_EXCELLENT = { text: 'Excellent', color: new Color(156, 142, 255, 255) };
 const PRAISE_PERFECT = { text: 'Perfect', color: new Color(255, 224, 89, 255) };
-const PRAISE_AMAZING = { text: 'Amazing', color: new Color(255, 184, 77, 255) };
+const PRAISE_AMAZING = { text: 'Amazing', color: new Color(255, 152, 80, 255) };
 const PRAISE_CRAZY = { text: 'Crazy', color: new Color(255, 122, 184, 255) };
 const PRAISE_UNBELIEVABLE = { text: 'Unbelievable', color: new Color(255, 208, 97, 255) };
 
@@ -197,7 +197,7 @@ export class UIController extends Component {
 
     updateHeartRateBar(heartRate: number, zone: string) {
         if (this.raceHudStatus) return;
-        const ratio = clamp01(heartRate / 200);
+        const ratio = clamp01(heartRate / 180);
         const color = heartRateZoneColor(zone);
         const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
         const colorChanged = color !== this._heartRateColor;

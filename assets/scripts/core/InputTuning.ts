@@ -88,19 +88,19 @@ export const MOTION_TUNING = {
 };
 
 export const STROKE_QUALITY_TUNING = {
-    minHoldSeconds: 0.16,
+    minHoldSeconds: 0.2,
     // Arm-stroke overhold timeout (redesign): while a stroke is still held and
     // its pull progresses past this fraction of a full cycle, the hand has left
     // the water — the stroke auto-ends as a timeout miss giving only a tiny
     // propulsion (armStrokeTimeoutAccel). 0.5 = half circle (end of the pull).
-    armStrokeTimeoutProgress: 0.5,
+    armStrokeTimeoutProgress: 0.6,
     armStrokeTimeoutAccel: 0.08,
     // Release-timing sweet zones use explicit progress ranges on 0..1. If GOOD
     // and PERFECT overlap, the overlap scores as PERFECT.
-    goodStart: 0.22,
-    goodEnd: 0.5,
-    perfectStart: 0.34,
-    perfectEnd: 0.46,
+    goodStart: 0.15,
+    goodEnd: 0.6,
+    perfectStart: 0.25,
+    perfectEnd: 0.5,
     // Arm-stroke cadence vs. swim speed (redesign): the pull cadence ramps
     // linearly from armCycleLowSpeedPerSecond to armCycleHighSpeedPerSecond as
     // current speed crosses the window [armCycleSpeedStart, armCycleSpeedFull],

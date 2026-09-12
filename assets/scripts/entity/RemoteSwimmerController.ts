@@ -1,3 +1,4 @@
+import { STROKE_QUALITY_TUNING } from '../core/InputTuning';
 // Remote-human swimmer driver for lock-step (帧同步) races.
 //
 // A remote human occupies a normal Swimmer body (built like an AI competitor) but is
@@ -82,6 +83,7 @@ export class RemoteSwimmerController extends Component {
     }
 
     private applyConditionScales(energyRatio: number, heartRate: number): void {
+        this.swimmer?.applyAuthoritativeHeartRate(heartRate, true);
         this.swimmer?.applyConditionSpeedScale(conditionEfficiencyScale(energyRatio));
         this.swimmer?.applyConditionQualityScale(conditionQualityScale(heartRate));
         this.swimmer?.applyConditionCadenceScale(energyDepletionCadenceScale(energyRatio));
@@ -100,14 +102,22 @@ export class RemoteSwimmerController extends Component {
 
     private applyEvent(swimmer: Swimmer, event: NetInputEvent): void {
         switch (event.kind) {
-            case NetInputKind.Stroke:
-                swimmer.handleStroke(strokeType(event.side));
+            case NetInputKind.Stroke: {
+                // 输入只覆盖本次起划快照，不能污染较新的持续 owner 状态。
+                const ownerHeartRate = swimmer.heartRate;
+                try {
+                    if (event.heartRate !== undefined) swimmer.applyAuthoritativeHeartRate(event.heartRate, true);
+                    swimmer.handleStroke(strokeType(event.side));
+                } finally {
+                    if (event.heartRate !== undefined) swimmer.applyAuthoritativeHeartRate(ownerHeartRate, true);
+                }
                 break;
+            }
             case NetInputKind.Kick:
                 swimmer.handleKickStroke(strokeType(event.side));
                 break;
             case NetInputKind.HeldOn:
-                swimmer.handleStrokeHeld(strokeType(event.side), true, 0);
+                swimmer.handleStrokeHeld(strokeType(event.side), true, STROKE_QUALITY_TUNING.minHoldSeconds);
                 break;
             case NetInputKind.HeldOff:
                 swimmer.handleStrokeHeld(strokeType(event.side), false, 0);

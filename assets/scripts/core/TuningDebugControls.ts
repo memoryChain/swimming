@@ -4,7 +4,7 @@ import { CHARACTER_POSE_TUNING, FREESTYLE_POSE_TUNING, SWIMMER_ACTION_TUNING } f
 import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorConfig';
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
-import { CONDITION_BALANCE, RACE_PHASE_BALANCE } from './ConditionBalance';
+import { CONDITION_BALANCE, HEART_RATE_TUNING, RACE_PHASE_BALANCE } from './ConditionBalance';
 import { DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
@@ -46,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 33;
+const TUNING_FILE_VERSION = 37;
 
 type TuningFileData = {
     version: number;
@@ -158,6 +158,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '海豚跃',
         controls: [
+            control('dolphin.staminaCost', '海豚跳体力消耗', '成功释放时额外扣除的体力点数；不足扣至零，仍可释放，失败不扣费。不受每划成本或角色等级倍率影响。', () => DOLPHIN_JUMP.staminaCost, (v) => DOLPHIN_JUMP.staminaCost = v, 1, 0, 100, 0),
+            control('dolphin.strainHr', '海豚跳心率负担', '成功释放时一次性增加心率，封顶 180；失败不增加，起跳至落水冻结心率，落水后恢复；体力成本另行配置。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 5, 0, 100, 0),
             control('dolphin.minAvailableDistance', '最小可用距离', '距离前方池壁或终点不足这么多米时不允许起跳（临界处理）。', () => DOLPHIN_JUMP.minAvailableDistance, (v) => DOLPHIN_JUMP.minAvailableDistance = v, 0.5, 0.5, 15, 1, 'm'),
             control('dolphin.launchSpeed', '起跳速度', '离水弹射速度，越大飞得越远、越夸张。靠近池壁时会自动收窄以免飞出。', () => DOLPHIN_JUMP.launchSpeed, (v) => DOLPHIN_JUMP.launchSpeed = v, 0.5, 3, 16, 1, 'm/s'),
             control('dolphin.launchAngleDegrees', '起跳角度', '离水抛物线角度。越大越高越短，越小越平越远。', () => DOLPHIN_JUMP.launchAngleDegrees, (v) => DOLPHIN_JUMP.launchAngleDegrees = v, 1, 15, 70, 0, '°'),
@@ -167,7 +169,6 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('dolphin.rollEaseRate', '转体跟随速度', '轴向转体角度向输入目标追赶的速度。越大转得越快、越跟手。', () => DOLPHIN_JUMP.rollEaseRate, (v) => DOLPHIN_JUMP.rollEaseRate = v, 0.5, 2, 20, 1),
             control('dolphin.landingDepth', '落水下潜深度', '落水后潜入水下的深度，随后上浮恢复正常游泳。', () => DOLPHIN_JUMP.landingDepth, (v) => DOLPHIN_JUMP.landingDepth = v, 0.05, 0, 2, 2, 'm'),
             control('dolphin.landingRollUnwindSeconds', '转体回正时间', '落水后把残余轴向转体拉回正常游泳姿态所用的时间。', () => DOLPHIN_JUMP.landingRollUnwindSeconds, (v) => DOLPHIN_JUMP.landingRollUnwindSeconds = v, 0.05, 0.1, 2, 2, 's'),
-            control('dolphin.strainHr', '起跳心率增长', '海豚跃成功发动时立即增加的心率（加法、封顶 200），不消耗普通体力。', () => DOLPHIN_JUMP.strainHr, (v) => DOLPHIN_JUMP.strainHr = v, 1, 0, 100, 0),
             control('camera.dolphinBackDistance', '相机后距', '海豚跃跟随相机沿飞行切线在身后的基础距离。', () => RACE_CAMERA_TUNING.dolphinBackDistance, (v) => RACE_CAMERA_TUNING.dolphinBackDistance = v, 0.1, 0.5, 8, 1, 'm'),
             control('camera.dolphinApexPullback', '顶点拉远', '腾空到最高点时在基础后距上额外往后拉的距离，用来把整个跃起框进画面。', () => RACE_CAMERA_TUNING.dolphinApexPullback, (v) => RACE_CAMERA_TUNING.dolphinApexPullback = v, 0.1, 0, 5, 1, 'm'),
             control('camera.dolphinHeight', '相机抬高', '在切线跟拍基础上额外的世界向上抬高量（取景用，别调太大否则会削弱抛物线跟拍感）。', () => RACE_CAMERA_TUNING.dolphinHeight, (v) => RACE_CAMERA_TUNING.dolphinHeight = v, 0.05, -0.5, 2, 2, 'm'),
@@ -227,7 +228,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.kickAccelPerHz', '踢腿每频加速', '踢腿推进：每 1Hz 踢腿频率产生的加速度。点得越快频率越高、加速越快；点得慢加速慢。', () => SWIMMER_BALANCE.kickAccelPerHz, (v) => SWIMMER_BALANCE.kickAccelPerHz = v, 0.02, 0, 2, 2),
             control('speed.kickMaxSpeed', '踢腿速度上限', '单靠踢腿能达到的最高速度上限。应低于手臂 maxSpeed，让手臂才是主发动机。', () => SWIMMER_BALANCE.kickMaxSpeed, (v) => SWIMMER_BALANCE.kickMaxSpeed = v, 0.1, 0, 4, 1),
             control('speed.kickCeilingBand', '踢腿封顶缓冲', '接近踢腿速度上限前多大速度区间内加速度渐渐衰减到 0，让踢腿平滑贴近上限而不是硬顶。', () => SWIMMER_BALANCE.kickCeilingBand, (v) => SWIMMER_BALANCE.kickCeilingBand = v, 0.05, 0.05, 2, 2),
-            control('speed.kickCadenceMaxHz', '踢腿推进频率上限', '踢腿【推进】的频率上限（次/秒）：超过这个频率不再加更多速度，防止爆点连击把速度拉爆。只限制推进，不影响腿动画速度。', () => SWIMMER_BALANCE.kickCadenceMaxHz, (v) => SWIMMER_BALANCE.kickCadenceMaxHz = v, 0.5, 1, 16, 1),
+            control('speed.kickCadenceMaxHz', '踢腿推进频率上限', '踢腿【推进】的频率上限（次/秒）：超过这个频率不再加更多速度，防止爆点连击把速度拉爆。只限制推进，不影响腿动画速度。', () => SWIMMER_BALANCE.kickCadenceMaxHz, (v) => SWIMMER_BALANCE.kickCadenceMaxHz = v, 0.1, 1, 16, 1),
             control('speed.kickCadenceMeasureMaxHz', '踢腿测量安全阀', '频率测量的安全上限（次/秒），设很高只为防止两次点击间隔极小时数值爆掉。腿动画用这个值，正常手速几乎碰不到，相当于不限。', () => SWIMMER_BALANCE.kickCadenceMeasureMaxHz, (v) => SWIMMER_BALANCE.kickCadenceMeasureMaxHz = v, 1, 8, 40, 0),
             control('speed.poolDeceleration', '泳池减速', '泳池或场景提供的固定减速度。未来不同泳池可以配置不同数值。', () => SWIMMER_BALANCE.poolDeceleration, (v) => SWIMMER_BALANCE.poolDeceleration = v, 0.02, 0, 2, 2),
             control('speed.baseDrag', '基础阻力', '与速度成正比的线性阻力（∝ v）。', () => SWIMMER_BALANCE.baseDrag, (v) => SWIMMER_BALANCE.baseDrag = v, 0.02, 0, 2, 2),
@@ -262,11 +263,22 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
     {
-        name: '心率显示',
+        name: '心率与完美区',
         controls: [
-            control('condition.effortDecay', '努力采样衰减', '仅影响心率显示：不划水时努力采样的衰减速度，不改变体力、判定或推进。', () => CONDITION_BALANCE.heartRate.effortDecayPerSecond, (v) => CONDITION_BALANCE.heartRate.effortDecayPerSecond = v, 0.05, 0, 2, 2, '/s'),
-            control('condition.easeUp', '心率上升速率', '仅影响心率显示：向目标值上升的每秒速度。', () => CONDITION_BALANCE.heartRate.easeUpPerSecond, (v) => CONDITION_BALANCE.heartRate.easeUpPerSecond = v, 1, 2, 60, 0, ' bpm/s'),
-            control('condition.easeDown', '心率下降速率', '仅影响心率显示：从高位回落的每秒速度，不恢复体力。', () => CONDITION_BALANCE.heartRate.easeDownPerSecond, (v) => CONDITION_BALANCE.heartRate.easeDownPerSecond = v, 0.5, 1, 40, 1, ' bpm/s'),
+            control('heartRate.sampleSeconds', '频率采样秒数', '统计最近几秒实际开始的手臂动作；停止划水后，旧动作逐个退出采样。', () => HEART_RATE_TUNING.sampleSeconds, (v) => HEART_RATE_TUNING.sampleSeconds = v, 0.25, 0.5, 4, 2, ' s'),
+            control('heartRate.bpmPerStrokeHz', '每赫兹目标心率', '目标心率为 80 加上划水次数每秒乘此值，封顶 180。', () => HEART_RATE_TUNING.bpmPerStrokeHz, (v) => HEART_RATE_TUNING.bpmPerStrokeHz = v, 5, 10, 80, 0, ''),
+            control('heartRate.riseSeconds', '均衡：升温时间常数', '越大升温越慢；8 秒时快速划水约 8～12 秒明显收窄。', () => HEART_RATE_TUNING.riseSeconds, (v) => HEART_RATE_TUNING.riseSeconds = v, 0.5, 1, 30, 1, ' s'),
+            control('heartRate.recoverySeconds', '均衡：恢复时间常数', '越小恢复越快；踢腿和停止操作按同样速度恢复，不回体力。', () => HEART_RATE_TUNING.recoverySeconds, (v) => HEART_RATE_TUNING.recoverySeconds = v, 0.25, 0.5, 15, 2, ' s'),
+            control('heartRate.quickRiseSeconds', '快升快降：升温', '角色固有心率特性的升温时间常数，越大变化越慢；不随等级增长。', () => HEART_RATE_TUNING.quickRiseSeconds, (v) => HEART_RATE_TUNING.quickRiseSeconds = v, 0.5, 0.5, 30, 1, ' s'),
+            control('heartRate.quickRecoverySeconds', '快升快降：恢复', '角色固有心率特性的恢复时间常数，越大变化越慢；不随等级增长。', () => HEART_RATE_TUNING.quickRecoverySeconds, (v) => HEART_RATE_TUNING.quickRecoverySeconds = v, 0.25, 0.5, 15, 2, ' s'),
+            control('heartRate.steadyRiseSeconds', '慢升慢降：升温', '角色固有心率特性的升温时间常数，越大变化越慢；不随等级增长。', () => HEART_RATE_TUNING.steadyRiseSeconds, (v) => HEART_RATE_TUNING.steadyRiseSeconds = v, 0.5, 0.5, 30, 1, ' s'),
+            control('heartRate.steadyRecoverySeconds', '慢升慢降：恢复', '角色固有心率特性的恢复时间常数，越大变化越慢；不随等级增长。', () => HEART_RATE_TUNING.steadyRecoverySeconds, (v) => HEART_RATE_TUNING.steadyRecoverySeconds = v, 0.25, 0.5, 15, 2, ' s'),
+            control('heartRate.slowRiseSeconds', '极慢升降：升温', '角色固有心率特性的升温时间常数，越大变化越慢；不随等级增长。', () => HEART_RATE_TUNING.slowRiseSeconds, (v) => HEART_RATE_TUNING.slowRiseSeconds = v, 0.5, 0.5, 30, 1, ' s'),
+            control('heartRate.slowRecoverySeconds', '极慢升降：恢复', '角色固有心率特性的恢复时间常数，越大变化越慢；不随等级增长。', () => HEART_RATE_TUNING.slowRecoverySeconds, (v) => HEART_RATE_TUNING.slowRecoverySeconds = v, 0.25, 0.5, 15, 2, ' s'),
+            control('heartRate.widthAt120', '120心率剩余宽度', '相对于原 PERFECT 宽度；节点之间连续变化，开始时锁定本划。', () => HEART_RATE_TUNING.widthAt120, (v) => HEART_RATE_TUNING.widthAt120 = v, 0.05, 0.3, 1, 2, ''),
+            control('heartRate.widthAt140', '140心率剩余宽度', '与前后节点连续插值，不能大于前一节点。', () => HEART_RATE_TUNING.widthAt140, (v) => HEART_RATE_TUNING.widthAt140 = v, 0.05, 0.3, 1, 2, ''),
+            control('heartRate.widthAt160', '160心率剩余宽度', '极限档入口的剩余宽度，与 180 心率下限连续衔接。', () => HEART_RATE_TUNING.widthAt160, (v) => HEART_RATE_TUNING.widthAt160 = v, 0.05, 0.3, 1, 2, ''),
+            control('heartRate.minimumWidth', '极限剩余宽度', '180 心率的最小宽度；0.3 表示保留原完美区的 30%。', () => HEART_RATE_TUNING.minimumWidth, (v) => HEART_RATE_TUNING.minimumWidth = v, 0.05, 0.1, 1, 2, ''),
         ],
     },
     {
@@ -657,6 +669,9 @@ function collectInvalidLegacyTuningValues(snapshot: Record<string, unknown>): st
 }
 
 const RETIRED_CONDITION_TUNING_KEYS = new Set([
+    'condition.effortDecay', 'condition.easeUp', 'condition.easeDown',
+    '心率显示.努力采样衰减', '心率显示.心率上升速率', '心率显示.心率下降速率',
+    '海豚跃.起跳心率增长',
     'strokeQuality.perfectVisualReleaseGraceSeconds',
     '划水.黄色松手宽容',
     'difficulty.beginner.armCycleSpeedScale',

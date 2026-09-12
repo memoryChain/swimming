@@ -69,6 +69,7 @@ export class ProgressionManager {
             PROGRESSION_BALANCE.maxLevel,
             character.weight,
             character.energyGain,
+            character.heartRateTrait,
         );
     }
 

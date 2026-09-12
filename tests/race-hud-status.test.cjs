@@ -17,6 +17,7 @@ const noopTween=()=>({to(){return this;},delay(){return this;},start(){return th
 class Vec2{constructor(x,y){this.x=x;this.y=y;}}
 class Node{static EventType={NODE_DESTROYED:'destroy'};children=[];components=[];events={};active=true;isValid=true;scale={x:1,y:1};position={x:0,y:0};constructor(name){this.name=name;}get activeInHierarchy(){return this.active&&(!this.parent||this.parent.activeInHierarchy);}setParent(p){this.parent=p;p.children.push(this);}addComponent(C){const c=new C();c.node=this;this.components.push(c);return c;}getComponent(C){return this.components.find(c=>c instanceof C);}setPosition(x,y){this.position={x,y};}setScale(x,y){this.scale=typeof x==='object'?{x:x.x,y:x.y}:{x,y};}on(e,f){this.events[e]=f;}once(e,f){this.on(e,f);}off(e){delete this.events[e];}destroy(){this.isValid=false;for(const c of this.children)c.destroy();this.events.destroy?.();}}
 function load(file,imports,extras={}){const m={exports:{}};const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;vm.runInNewContext(js,{require:p=>{assert.ok(imports[p],p);return imports[p];},module:m,exports:m.exports,...extras});return m.exports;}
+const heartPresentation=load('assets/scripts/ui/HeartRatePresentation.ts',{'cc':{Color}});
 function fixture(reservedRatio=0){
  let size={width:1280,height:720},safe={x:0,y:0,...size},jumps=0;const pending=[],listeners=new Map();
  const view={getVisibleSize:()=>size,on:(e,f,ctx)=>listeners.set(e,()=>f.call(ctx)),off:e=>listeners.delete(e)};
@@ -25,8 +26,8 @@ function fixture(reservedRatio=0){
  const art=vm.runInNewContext('('+block+')');
  function node(name,p){const n=new Node(name);n.setParent(p);n.addComponent(UITransform);return n;}
  const constants={StrokeType:{LEFT:'left',RIGHT:'right'},Rating:{PERFECT:'perfect',GOOD:'good',BAD:'bad'}};
- const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
- const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
+ const stroke=load('assets/scripts/ui/RaceStrokeView.ts',{'./HeartRatePresentation':heartPresentation,'cc':cc,'../core/GameConstants':constants,'./RuntimeUiFactory':{makeUiNode:node},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}}});
+ const mod=load('assets/scripts/ui/RaceHudStatusView.ts',{'./HeartRatePresentation':heartPresentation,'../platform/PlatformManager':{platform:()=>({getTopRightReservedBottomRatio:()=>reservedRatio})},'./RaceStrokeView':stroke,'../core/GameConstants':constants,'cc':cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceHudUi:art}},'../core/RaceBundleLoader':{loadRaceAsset:(p,t,cb)=>cb(null,new Font())},'./AvatarUiAssets':{avatarTexturePath:id=>id,loadAvatarUiSpriteFrame:(p,cb)=>{if(p.startsWith('ui/race-hud')||p.startsWith('ui/race-stroke'))cb({path:p});else pending.push({p,cb});}},'./ProjectUiFonts':{styleProjectUiLabel:(l,w,h)=>{l.weight=w;l.lineHeight=h;}},'./RuntimeUiFactory':{makeUiNode:node}});
  mod.preloadRaceHudStatus(e=>assert.equal(e,null));const parent=new Node('root');const hud=new mod.RaceHudStatusView(parent,()=>jumps++);
  return {hud,parent,pending,listeners,get jumps(){return jumps;},resize(w,h,l=0,r=0,top=0){size={width:w,height:h};safe={x:l,y:0,width:w-l-r,height:h-top};listeners.get('canvas-resize')();}};
 }
@@ -112,6 +113,31 @@ test('隐藏时零采样；约10Hz读数，重复值不写文字或填充',()=>{
  update(s.hud);assert.equal(find(s.parent,'SpeedValue').getComponent(Label).string,'2.37');assert.equal(find(s.parent,'EnergyValue').getComponent(Label).string,'72%');assert.equal(find(s.parent,'Percent').getComponent(Label).string,'10%');
  const changed=writes;update(s.hud);assert.equal(writes,changed);
 });
+test('体力真正归零才提示耗尽，闪电慢呼吸，隐藏零更新，重开及反复切换不残留',()=>{
+ const s=fixture();s.hud.setVisible(true);
+ const energy=find(s.parent,'EnergyValue').getComponent(Label),state=find(s.parent,'EnergyState');
+ const icon=find(s.parent,'Lightning').getComponent(Sprite),opacity=icon.node.getComponent(UIOpacity);
+ const track=find(s.parent,'EnergyTrack').getComponent(Sprite),fill=find(s.parent,'EnergyFill').getComponent(Sprite);
+ const initialCount=count(s.parent),normalTrack=track.color,normalIcon=icon.color,normalText=energy.color;
+ const sample=ratio=>s.hud.updateValues(2,120,false,ratio,20,200,1,true);
+ sample(.001);assert.equal(energy.string,'0%');assert.equal(state.active,false);
+ const heart=find(s.parent,'Heart').getComponent(Sprite).color;
+ sample(0);assert.equal(state.active,true);assert.equal(state.getComponent(Label).string,'体力耗尽');
+ assert.ok(icon.color.equals(new Color(255,73,76)));assert.ok(energy.color.equals(icon.color));
+ assert.ok(!track.color.equals(normalTrack));assert.equal(Math.abs(fill.fillRange),0);
+ assert.ok(find(s.parent,'Heart').getComponent(Sprite).color.equals(heart),'耗尽不改变心率颜色');
+ const before=writes;sample(0);assert.equal(writes,before,'重复耗尽不重写标签或填充');
+ for(let i=0;i<48;i++)s.hud.consumeSample(1/60);
+ assert.ok(opacity.opacity<=161&&opacity.opacity>=159);assert.equal(writes,before,'呼吸不重写文字');
+ s.hud.setVisible(false);const hiddenOpacity=opacity.opacity,hiddenWrites=writes;
+ for(let i=0;i<120;i++){assert.equal(s.hud.consumeSample(1/60),false);sample(1);}
+ assert.equal(opacity.opacity,hiddenOpacity);assert.equal(writes,hiddenWrites,'隐藏后零采样与写入');
+ s.hud.setVisible(true);sample(1);
+ assert.equal(state.active,false);assert.equal(energy.string,'100%');assert.equal(opacity.opacity,255);
+ assert.ok(icon.color.equals(normalIcon));assert.ok(track.color.equals(normalTrack));assert.ok(energy.color.equals(normalText));
+ for(let i=0;i<20;i++){sample(0);s.hud.consumeSample(.4);sample(.001);assert.equal(state.active,false);assert.equal(opacity.opacity,255);}
+ assert.equal(count(s.parent),initialCount,'状态切换不重建节点');
+});
 test('空蓄气不可点、满蓄气可点一次；隐藏/非比赛状态不跳，按钮阻止穿透',()=>{
  const s=fixture(),n=find(s.parent,'DolphinJumpButton'),button=n.getComponent(Button);s.hud.setVisible(true);update(s.hud,.99);assert.equal(button.interactable,false);n.events.click();assert.equal(s.jumps,0);
  update(s.hud);assert.equal(button.interactable,true);assert.ok(n.getComponent(BlockInputEvents));n.events.click();n.events.click();assert.equal(s.jumps,1);assert.equal(button.interactable,false);
@@ -189,7 +215,7 @@ test('评价按照实际手别显示；两侧独立，失误不显示负面文�
  s.hud.showStrokePraise('left','Good',new Color(80,240,160),0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Combo').getComponent(Label).string,'');s.hud.showStrokePraise('left','',undefined,0);assert.equal(find(find(s.parent,'LeftStrokeUi'),'Praise').getComponent(Sprite).spriteFrame.path,'ui/race-stroke-v1/praise-good/texture');
 });
 
-test('真实圆盘与新UI共用固定判定区，心率不改变宽度，显式调参仍同步',()=>{
+test('旧质量倍率不再叠加缩放，真实圆盘与新UI共用基础调参',()=>{
  const h=require('./helpers/cocos-math-harness.cjs').createHarness({'cc/env':{NATIVE:false}});
  const {SwimmerMotor}=h.load(path.join(root,'assets/scripts/swimmer/SwimmerMotor.ts'));
  const {STROKE_QUALITY_TUNING:tuning}=h.load(path.join(root,'assets/scripts/core/InputTuning.ts'));
@@ -198,7 +224,7 @@ test('真实圆盘与新UI共用固定判定区，心率不改变宽度，显式
  try {
   let firstWidth;
   for(const scale of [.3,1,1.7]){motor.setConditionQualityScale(scale);const ordinary=motor.strokeTimingGuideForSide('left');const reusable=motor.strokeTimingGuideForSide('left',target);assert.equal(reusable,target);assert.equal(JSON.stringify(reusable),JSON.stringify(ordinary));const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p);const w=p.endRatio-p.startRatio;if(firstWidth===undefined)firstWidth=w;else assert.equal(w,firstWidth);}
-  const previous=target.intervals.find(i=>i.rating==='perfect').startRatio;tuning.perfectStart=.44;tuning.perfectEnd=.5;motor.strokeTimingGuideForSide('right',target);const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p.startRatio>previous);assert.equal(motor.ratingForGuideRatio((p.startRatio+p.endRatio)/2,null,1),'perfect');
+  const previous=target.intervals.find(i=>i.rating==='perfect').startRatio;tuning.perfectStart=.44;tuning.perfectEnd=.5;motor.strokeTimingGuideForSide('right',target);const p=target.intervals.find(i=>i.rating==='perfect');assert.ok(p.startRatio>previous);assert.ok(Math.abs(p.startRatio-.44)<1e-12);assert.ok(Math.abs(p.endRatio-.5)<1e-12);motor.startRace(0,2);motor.update(.3,{isAI:false});motor.setStrokeHeld('right',true,.2);motor.recordStroke('right');motor.update(.05,{isAI:false});motor._rightActions[0].progress=(p.startRatio+p.endRatio)*Math.PI;assert.equal(motor.setStrokeHeld('right',false).strokeQuality,1);
  } finally {[tuning.perfectStart,tuning.perfectEnd]=original;}
 });
 
@@ -318,4 +344,50 @@ test('白点常态带光晕一起移动，完美松手才高亮并同步消失�
  ui.setPressed('left',true);guide.active=true;ui.updateSide('left',guide);assert.equal(dot.getComponent(UIOpacity).opacity,255);assert.equal(glow.getComponent(UIOpacity).opacity,110);
  ui.setPressed('left',false);ui.showResult('left','good');guide.active=false;ui.updateSide('left',guide);assert.equal(dot.active,false);assert.equal(glow.active,false);
  ui.showResult('left','perfect');s.hud.setVisible(false);assert.equal(dot.active,false);assert.equal(glow.active,false);s.hud.setVisible(true);ui.consumeSample(.1);assert.equal(glow.active,false);
+});
+
+
+test('心率四档颜色关联本划弧线，不显示宽度文字，心形动画不抖动文字和边界',()=>{
+ const s=fixture();s.hud.setVisible(true);const total=count(s.parent);
+ const heart=find(s.parent,'Heart'),number=find(s.parent,'HeartValue'),numberPosition={...number.position};
+ for(const [hr,label,width,index] of [[80,'轻松',100,0],[120,'发力',80,1],[140,'高压',55,2],[180,'极限',30,3]]){
+  s.hud.updateValues(2,hr,false,.5,20,200,.2,false);
+  assert.equal(find(s.parent,'HeartTier').getComponent(Label).string,label);
+  assert.equal(find(s.parent,'HeartWidth'),undefined);
+  assert.ok(heart.getComponent(Sprite).color.equals(heartPresentation.HEART_TIERS[index].color));
+  const guide={active:true,heartRate:hr,currentRatio:.375,intervals:[{rating:'perfect',startRatio:.3,endRatio:.45}]};
+  s.hud.stroke.updateSide('left',guide);
+  const tick=find(find(s.parent,'LeftStrokeUi'),'PerfectBoundary');
+  assert.ok(tick.getComponent(Sprite).color.equals(heartPresentation.HEART_TIERS[index].color));
+  const point={...tick.position};let max=1;
+  for(let i=0;i<120;i++){s.hud.consumeSample(1/120);max=Math.max(max,heart.scale.x);}
+  assert.ok(max>1.02);assert.deepEqual(number.position,numberPosition);assert.deepEqual(tick.position,point);
+  assert.equal(count(s.parent),total);
+ }
+ const old={...heart.scale};s.hud.setVisible(false);for(let i=0;i<60;i++)s.hud.consumeSample(1/60);assert.deepEqual(heart.scale,old);
+});
+
+
+test('特殊动作继续自然恢复心率，海豚动画不重复积分，重新开赛归80',()=>{
+ const {swimmer,motor}=progressSpeedFixture();motor.applyAuthoritativeHeartRate(180);
+ swimmer._phases.tick=dt=>{motor.advanceVisualAnimation(dt);return true;};
+ for(let i=0;i<60;i++)swimmer.stepSimulation(1/60);
+ assert.ok(Math.abs(motor.heartRate-(80+100*Math.exp(-1/2.5)))<1e-8);
+ motor.startRace();assert.equal(motor.heartRate,80);
+});
+
+test('海豚蓄势与腾空冻结心率，落水交界帧不提前恢复，旧起划历史仍按真实时间过期',()=>{
+ for(const fps of [30,60,120]) {
+  const {swimmer,motor}=progressSpeedFixture();
+  motor._heartRate.recordStart();motor.applyAuthoritativeHeartRate(100);motor.addHeartRateBurden(25);
+  swimmer._phases.isDolphinJumpActive=true;
+  swimmer._phases.tick=dt=>{motor.advanceVisualAnimation(dt);return true;};
+  for(let i=0;i<fps*3;i++){swimmer.stepSimulation(1/fps);assert.equal(motor.heartRate,125);}
+  assert.equal(motor._heartRate.strokeRate,0,'冻结期间采样仍过期，落水不残留旧负荷');
+  swimmer._phases.tick=()=>{swimmer._phases.isDolphinJumpActive=false;return true;};
+  swimmer.stepSimulation(1/fps);assert.equal(motor.heartRate,125,'阶段跨到落水也不补恢复整帧');
+  for(let i=0;i<fps;i++)swimmer.stepSimulation(1/fps);
+  assert.ok(Math.abs(motor.heartRate-(80+45*Math.exp(-1/2.5)))<1e-8);
+  motor.startRace();assert.equal(motor.heartRate,80);
+ }
 });

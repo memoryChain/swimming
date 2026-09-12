@@ -1,3 +1,4 @@
+import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
 import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
@@ -40,6 +41,8 @@ export class Swimmer extends Component {
     @property public isAI = false;
     // 远端真人复用 AI 身体，但碰撞身份必须与其所属客户端一致。
     public collisionRemoteHuman = false;
+    // 由流程层绑定体力模型；每次成功释放同步结算，重开不叠加监听。
+    public onDolphinJumpEnergyCost: ((cost: number) => void) | null = null;
 
     get collisionParticipantIsAI(): boolean {
         return this.isAI && !this.collisionRemoteHuman;
@@ -670,7 +673,10 @@ export class Swimmer extends Component {
         const phaseXBeforeStep = positionBeforeStep.x;
         const phaseZBeforeStep = positionBeforeStep.z;
         this._ultimate.tick(dt);
+        // 用步前状态覆盖落水交界帧，避免阶段 tick 结束后提前恢复整帧心率。
+        const freezeJumpHeartRate = this._phases.isDolphinJumpActive;
         if (this._phases.tick(dt)) {
+            this._motor.tickRestingHeartRate(dt, freezeJumpHeartRate);
             this.updateMovementSpeed(phaseXBeforeStep, phaseZBeforeStep, dt);
             return;
         }
@@ -1308,8 +1314,7 @@ export class Swimmer extends Component {
         return this._phases.isDolphinAirActive;
     }
 
-    // Begin a dolphin jump (both-hands gesture). Only from surface racing; the
-    // phase controller rejects it mid-turn/underwater or too close to a wall.
+    // 满气按钮发动海豚跳；转身、水下或前方空间不足时由阶段控制器拒绝。
     tryDolphinJump(): boolean {
         if (!this._motor.isRacing) {
             return false;
@@ -1322,6 +1327,8 @@ export class Swimmer extends Component {
             return false;
         }
         this._ultimate.spendDolphin();
+        this._motor.addHeartRateBurden(DOLPHIN_JUMP.strainHr);
+        this.onDolphinJumpEnergyCost?.(DOLPHIN_JUMP.staminaCost);
         return true;
     }
 
@@ -1329,6 +1336,7 @@ export class Swimmer extends Component {
     // successfully passed energy/phase validation. Do not reject that accepted action
     // against this remote copy's predicted energy; the reliable self-state in the same
     // frame will align the exact post-spend energy.
+    // owner 快照已含心率负担与体力扣费；回放与重复/迟到事件不能再次结算。
     applyAcceptedNetDolphinJump(): boolean {
         if (!this._motor.isRacing || !this._phases.tryStartDolphinJump()) {
             return false;
@@ -1344,6 +1352,12 @@ export class Swimmer extends Component {
             goodCount: this._goodStrokeQualityCount,
             missCount: this._missStrokeQualityCount,
         };
+    }
+
+    get heartRate(): number { return this._motor.heartRate; }
+
+    applyAuthoritativeHeartRate(value: number, remoteHuman = false) {
+        this._motor.applyAuthoritativeHeartRate(value, remoteHuman);
     }
 
     applyConditionSpeedScale(scale: number) {

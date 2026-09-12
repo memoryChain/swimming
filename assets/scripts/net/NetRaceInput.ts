@@ -48,6 +48,8 @@ export const enum NetInputKind {
 }
 
 export interface NetInputEvent {
+    /** 实际输入发生时的心率，百分之一 bpm，避免同包快照比动作更晚。 */
+    heartRate?: number;
     kind: NetInputKind;
     // Present for Stroke / Kick / HeldOn / HeldOff.
     side?: NetInputSide;
@@ -78,6 +80,9 @@ const SPEED_SCALE = 100;
 function encodeEvent(event: NetInputEvent): string {
     switch (event.kind) {
         case NetInputKind.Stroke:
+            return Number.isFinite(event.heartRate)
+                ? `s${event.side === 1 ? 1 : 0},${Math.round(Math.max(80, Math.min(180, event.heartRate!)) * 100)}`
+                : `s${event.side === 1 ? 1 : 0}`;
         case NetInputKind.Kick:
         case NetInputKind.HeldOn:
         case NetInputKind.HeldOff:
@@ -105,7 +110,12 @@ function decodeToken(token: string): NetInputEvent | null {
     }
     const kind = token.charAt(0) as NetInputKind;
     switch (kind) {
-        case NetInputKind.Stroke:
+        case NetInputKind.Stroke: {
+            const value = Number(token.slice(3));
+            const side = token.charAt(1) === '1' ? 1 : 0;
+            return token.charAt(2) === ',' && Number.isFinite(value) && value >= 8000 && value <= 18000
+                ? { kind, side, heartRate: value / 100 } : { kind, side };
+        }
         case NetInputKind.Kick:
         case NetInputKind.HeldOn:
         case NetInputKind.HeldOff:

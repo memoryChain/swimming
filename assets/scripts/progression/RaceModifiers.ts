@@ -65,6 +65,7 @@ export function resolveModifiersFromDigest(digest: RaceModifierDigest | null): R
         PROGRESSION_BALANCE.maxLevel,
         character.weight,
         character.energyGain,
+        character.heartRateTrait,
     );
     return { balance };
 }

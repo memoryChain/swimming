@@ -1,7 +1,4 @@
-// PlayerConditionModel: the player heart-rate + energy state layer (doc 23/27).
-// Pure data object, no Cocos types. Driven by the flow/game layer, never holds
-// a back-reference to Swimmer. Inputs arrive via updateFromStroke (event-driven)
-// and tick (per-frame drift); outputs are read through the getters.
+// 玩家体力按结算计数；心率只同步 Motor 的实际划频模型。
 
 import {
     ConditionReadout,
@@ -16,7 +13,7 @@ import {
 import {
     CONDITION_BALANCE,
     energyAfterStrokes,
-    CONDITION_PHASE_TUNING,
+    energyAfterCost,
     conditionEfficiencyScale,
     conditionQualityScale,
     energyDepletionCadenceScale,
@@ -39,14 +36,6 @@ export class PlayerConditionModel {
     private _cadenceModifier = 1;
     private _energyTotalOverride: number | null = null;
 
-    // Internal drift bookkeeping (doc 27.2: not exposed).
-    private _lastQualityScore = 0;
-    private _timeSinceLastStroke = 0;
-    private _effortSample = 0;
-    private _strokesSinceDive = 0;
-    private _startupWobbleModifier = 1;
-    private _optimalEntryStrokes = 0;
-
     reset() {
         this._phase = RacePhase.START;
         this._heartRate = HEART_RATE_BOUNDS.min;
@@ -57,12 +46,6 @@ export class PlayerConditionModel {
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
         this._cadenceModifier = 1;
-        this._lastQualityScore = 0;
-        this._timeSinceLastStroke = 0;
-        this._effortSample = 0;
-        this._strokesSinceDive = 0;
-        this._startupWobbleModifier = 1;
-        this._optimalEntryStrokes = 0;
     }
 
     setProgressionOverrides(opts: { energyTotal?: number } | null) {
@@ -81,85 +64,31 @@ export class PlayerConditionModel {
         this.refreshModifiers();
     }
 
-    // Maps the dive outcome onto the opening heart-rate state (doc 24.4 / 29.3).
-    applyDiveResult(result: DiveResult) {
-        this._heartRate = clamp(result.heartRateStartModifier, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
-        this._heartRateZone = zoneForHeartRate(this._heartRate);
-        this._startupWobbleModifier = result.heartRateStartupWobbleModifier;
-        this._optimalEntryStrokes = result.optimalZoneEntryModifier;
-        this._strokesSinceDive = 0;
+    // 入水质量不再改变心率；初始值由 Motor 在开赛时统一重置为 80。
+    applyDiveResult(_result: DiveResult) {}
+    applyDolphinJumpStrain(_strainHr: number) {}
+
+    // 成功技能一次性扣费，与划水计数独立；立即刷新耗尽倍率供同帧输入/快照使用。
+    consumeEnergy(cost: number) {
+        this._energy = energyAfterCost(this._energy, cost);
+        this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
     }
 
-    // Event-driven: a successful dolphin jump adds an immediate heart-rate spike.
-    applyDolphinJumpStrain(strainHr: number) {
-        if (!Number.isFinite(strainHr) || strainHr <= 0) {
-            return;
-        }
-        this._heartRate = clamp(this._heartRate + strainHr, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
-        this._heartRateZone = zoneForHeartRate(this._heartRate);
-        this.refreshModifiers();
-    }
-
-    // Event-driven: called once per stroke settlement (doc 27.2).
+    // 结算只扣体力，开始次数由 Motor 计算，避免同一划被重复计数。
     updateFromStroke(input: StrokeConditionInput) {
-        if (!input.strokeAccepted) {
-            return;
-        }
-        this._lastQualityScore = input.qualityScore;
-        this._timeSinceLastStroke = 0;
-        this._strokesSinceDive += 1;
-
-        const hr = CONDITION_BALANCE.heartRate;
-
-        // Startup wobble: first strokes after a dive use the dive wobble modifier,
-        // which inflates the effort sample so HR is jittery right after entry.
-        const inStartupWindow = this._strokesSinceDive <= hr.startupStrokeWindow;
-        const wobble = inStartupWindow ? this._startupWobbleModifier : 1;
-
-        // Strokes refresh the *sustained effort* sample (0..~1) instead of directly
-        // adding HR. tick() then eases HR toward a target derived from this sample,
-        // so a steady rhythm reaches an equilibrium rather than ratcheting to 100.
-        const effort = clamp(input.pressureScore * wobble, 0, 1.8);
-        this._effortSample = Math.max(this._effortSample, effort);
-
+        if (!input.strokeAccepted) return;
         this.drainEnergyForStroke();
-        this._heartRateZone = zoneForHeartRate(this._heartRate);
         this.refreshModifiers();
     }
 
-    // Per-frame: natural heart-rate drift toward LOW when not stroking (doc 27.2).
-    tick(dt: number) {
-        this._timeSinceLastStroke += dt;
-        const hr = CONDITION_BALANCE.heartRate;
-        const phaseTuning = CONDITION_PHASE_TUNING[this._phase];
-
-        // The effort sample fades when strokes stop, so the HR target falls back
-        // toward rest and the swimmer recovers between bursts.
-        this._effortSample = Math.max(0, this._effortSample - hr.effortDecayPerSecond * dt);
-
-        // Target HR is interpolated from sustained effort; phase push-scale biases
-        // it upward (SPRINT runs hotter).
-        const effort = clamp(this._effortSample * phaseTuning.hrPushScale, 0, 1.8);
-        const target = clamp(
-            hr.restTargetHr + (hr.maxEffortTargetHr - hr.restTargetHr) * effort,
-            HEART_RATE_BOUNDS.min,
-            HEART_RATE_BOUNDS.max,
-        );
-
-        // Ease toward the target; climbing is faster than recovery (driftScale tunes recovery).
-        if (this._heartRate < target) {
-            this._heartRate = Math.min(target, this._heartRate + hr.easeUpPerSecond * dt);
-        } else {
-            const step = hr.easeDownPerSecond * phaseTuning.hrDriftScale * dt;
-            this._heartRate = Math.max(target, this._heartRate - step);
-        }
-        this._heartRate = clamp(this._heartRate, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
-
+    // 心率只消费实际运动模型，不能另跑一条显示曲线。
+    syncHeartRate(value: number) {
+        if (!Number.isFinite(value)) return;
+        this._heartRate = clamp(value, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);
         this._heartRateZone = zoneForHeartRate(this._heartRate);
-
-        this.refreshModifiers();
     }
+    tick(_dt: number) { this.refreshModifiers(); }
 
     // Driven by the flow layer during SPRINT (doc 27.2).
     updateSprintState(input: SprintConditionInput) {
@@ -172,7 +101,7 @@ export class PlayerConditionModel {
     }
 
     private refreshModifiers() {
-        // 心率仅显示，判定和动作轮速始终保持原值。
+        // PERFECT 由 Motor 按每划心率快照处理，旧倍率保持中性。
         this._qualityModifier = conditionQualityScale(this._heartRate);
 
         // 只区分有体力与已耗尽，不随剩余比例逐渐衰减。

@@ -976,9 +976,6 @@ export class GameManager extends Component {
                 this._raceContext.reset();
                 this._raceContext.latestDiveResult = result;
             },
-            applyPlayerDolphinJumpStrain: () => {
-                this._playerCondition.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
-            },
             enterSprint: () => {
                 this._playerCondition.setPhase(RacePhase.SPRINT);
                 // In a net race each genuine AI derives its phase from its own
@@ -1289,6 +1286,7 @@ export class GameManager extends Component {
         const competitors = this.createCompetitorManager().buildPlayer(root);
         this._swimmersRoot = competitors.group;
         this._playerSwimmer = competitors.playerSwimmer;
+        this.bindDolphinEnergyCost(this._playerSwimmer, this._playerCondition);
         this._aiController = null;
         this._aiControllers = [];
         this._aiSwimmers = [];
@@ -1306,6 +1304,15 @@ export class GameManager extends Component {
         this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
         this.applyPlayerProgression();
+    }
+
+    private bindDolphinEnergyCost(swimmer: Swimmer, condition: PlayerConditionModel | AiConditionModel) {
+        swimmer.onDolphinJumpEnergyCost = (cost) => {
+            // 远端真人复用 AI 身体，体力始终消费 owner 权威值。
+            if (swimmer.collisionRemoteHuman) return;
+            condition.consumeEnergy(cost);
+            swimmer.applyConditionSpeedScale(condition.efficiencyModifier);
+        };
     }
 
     private applyPlayerProgression() {
@@ -1372,10 +1379,8 @@ export class GameManager extends Component {
         this._aiControllers.splice(0, this._aiControllers.length, ...competitors.aiControllers);
         this._aiSwimmers.splice(0, this._aiSwimmers.length, ...competitors.aiSwimmers);
         this._aiConditions.splice(0, this._aiConditions.length, ...this._aiSwimmers.map(() => new AiConditionModel()));
-        for (let index = 0; index < this._aiControllers.length; index++) {
-            this._aiControllers[index].onDolphinJumpStarted = () => {
-                this._aiConditions[index]?.applyDolphinJumpStrain(DOLPHIN_JUMP.strainHr);
-            };
+        for (let i = 0; i < this._aiSwimmers.length; i++) {
+            this.bindDolphinEnergyCost(this._aiSwimmers[i], this._aiConditions[i]);
         }
         for (const swimmer of this._aiSwimmers) {
             swimmer.reset();
@@ -1703,6 +1708,7 @@ export class GameManager extends Component {
             return;
         }
         const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
+        condition.syncHeartRate(swimmer.heartRate);
         condition.tickAi({
             difficulty: controller.difficulty,
             progress,
@@ -1811,7 +1817,7 @@ export class GameManager extends Component {
                         collisionPitchVelocity: swimmer.netCollisionPitchVelocity,
                         collisionSoftness: swimmer.netCollisionSoftness,
                         conditionEnergyRatio: aiCondition?.energyRatio ?? -1,
-                        conditionHeartRate: aiCondition?.heartRate ?? -1,
+                        conditionHeartRate: swimmer.heartRate,
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
                     });
                 }
@@ -1971,6 +1977,7 @@ export class GameManager extends Component {
                             hostTarget.conditionHeartRate,
                             hostTarget.conditionDepletionCooldown ?? -1,
                         );
+                        swimmer.applyAuthoritativeHeartRate(hostTarget.conditionHeartRate);
                         swimmer.applyConditionSpeedScale(aiCondition.efficiencyModifier);
                         swimmer.applyConditionQualityScale(aiCondition.qualityModifier);
                         swimmer.applyConditionCadenceScale(aiCondition.strokeCadenceScale);
@@ -2021,7 +2028,7 @@ export class GameManager extends Component {
             collisionPitchVelocity: player.netCollisionPitchVelocity,
             collisionSoftness: player.netCollisionSoftness,
             conditionEnergyRatio: this._playerCondition.energyRatio,
-            conditionHeartRate: this._playerCondition.heartRate,
+            conditionHeartRate: player.heartRate,
         };
     }
 
@@ -2379,6 +2386,7 @@ export class GameManager extends Component {
         for (const input of this._playerSwimmer?.consumeConditionInputs() ?? []) {
             this._playerCondition.updateFromStroke(input);
         }
+        this._playerCondition.syncHeartRate(this._playerSwimmer?.heartRate ?? 80);
         this._playerCondition.tick(dt);
         this._playerSwimmer?.applyConditionSpeedScale(this._playerCondition.efficiencyModifier);
         this._playerSwimmer?.applyConditionQualityScale(this._playerCondition.qualityModifier);
@@ -2412,6 +2420,7 @@ export class GameManager extends Component {
             }
             const progress = raceDistance > 0 ? swimmer.distance / raceDistance : 0;
             this._aiConditions[i].consumeStrokes(swimmer.consumeAiConditionStrokes());
+            this._aiConditions[i].syncHeartRate(swimmer.heartRate);
             this._aiConditions[i].tickAi({
                 difficulty: controller.difficulty,
                 progress,

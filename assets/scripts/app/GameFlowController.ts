@@ -50,7 +50,6 @@ export type GameFlowRefs = {
     resolveNetLeaderboard: (leaderboard: RaceFinishResult[], done: (leaderboard: RaceFinishResult[]) => void) => void;
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
-    applyPlayerDolphinJumpStrain: () => void;
     playerDiveSpeedScale: () => number;
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
         { characterId: string; coinsGained: number } | null;
@@ -157,7 +156,7 @@ export class GameFlowController {
             return;
         }
         const result = this._refs.playerSwimmer?.handleStroke(type);
-        captureNetInput({ kind: NetInputKind.Stroke, side: netSide(type) });
+        captureNetInput({ kind: NetInputKind.Stroke, side: netSide(type), heartRate: this._refs.playerSwimmer?.heartRate });
         if (result) {
             this.presentStrokeResult(result);
         }
@@ -207,8 +206,7 @@ export class GameFlowController {
         return state === GameState.RACING || state === GameState.GLIDING;
     }
 
-    // Both-hands long-press gesture: launch the player into a dolphin jump. Only
-    // from surface racing; the swimmer/phase controller rejects it otherwise.
+    // 满气按钮释放海豚跳；成功后的能量与心率结算由 Swimmer 统一处理。
     handleDolphinJump() {
         if (this._refs.getState() !== GameState.RACING) {
             return;
@@ -218,7 +216,6 @@ export class GameFlowController {
             return;
         }
         if (swimmer.tryDolphinJump()) {
-            this._refs.applyPlayerDolphinJumpStrain();
             captureNetInput({ kind: NetInputKind.DolphinJump });
             this._refs.debug('dolphin jump');
         }
