@@ -101,7 +101,7 @@ const { RoomFlow } = load(path.join(root, 'assets/scripts/ui/RoomFlow.ts'));
 const { NET_RACE_PROTOCOL_VERSION } = load(path.join(root, 'assets/scripts/net/NetRaceProtocol.ts'));
 function nodes(n) { return [n, ...n.children.flatMap(nodes)]; }
 function find(n, name) { return nodes(n).find(n => n.name === name); }
-const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '铁臂狂鲨', level: 2 };
+const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2 };
 const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime' };
 function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', ...overrides }; }
 test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装饰整体适配', () => {

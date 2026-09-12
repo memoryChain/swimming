@@ -130,7 +130,7 @@ test('可选角色均有唯一模型，并复用标准动作资源', () => {
     }
 });
 
-test('逐浪少女配色与肤色独立，恢复暖肤色保留原图', () => {
+test('超级腿配色与肤色独立，恢复暖肤色保留原图', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer5');
@@ -165,7 +165,7 @@ test('新角色养成摘要可往返，旧角色表协议被拒绝', () => {
     assert.equal(Protocol.isCompatibleProtocolVersion(Protocol.NET_RACE_PROTOCOL_VERSION), true);
 });
 
-test('逐浪少女保持单网格单材质与 41 骨骼，遮罩为独立小纹理', () => {
+test('超级腿保持单网格单材质与 41 骨骼，遮罩为独立小纹理', () => {
     const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer5.glb', root));
     const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
     assert.equal(doc.meshes.length, 1);
@@ -179,7 +179,7 @@ test('逐浪少女保持单网格单材质与 41 骨骼，遮罩为独立小纹�
     assert.equal(png[25], 6);
 });
 
-test('跃浪少女配色与肤色独立，恢复暖肤色保留原图', () => {
+test('蛙妹配色与肤色独立，恢复暖肤色保留原图', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer6');
@@ -205,7 +205,7 @@ test('跃浪少女配色与肤色独立，恢复暖肤色保留原图', () => {
 });
 
 
-test('跃浪少女保持单网格单材质与 41 骨骼，遮罩为独立小纹理', () => {
+test('蛙妹保持单网格单材质与 41 骨骼，遮罩为独立小纹理', () => {
     const data = fs.readFileSync(new URL('assets/race/models/CartonSwimmer6.glb', root));
     const doc = JSON.parse(data.subarray(20, 20 + data.readUInt32LE(12)).toString());
     assert.equal(doc.meshes.length, 1);
@@ -219,7 +219,7 @@ test('跃浪少女保持单网格单材质与 41 骨骼，遮罩为独立小纹�
     assert.equal(png[25], 6);
 });
 
-test('蛙跃潮童服装与肤色独立切换，资源遵守移动端预算', () => {
+test('蛙少服装与肤色独立切换，资源遵守移动端预算', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer8');
@@ -255,7 +255,7 @@ test('蛙跃潮童服装与肤色独立切换，资源遵守移动端预算', ()
     }
 });
 
-test('霓光灵猫复用共享骨架动作，UV 重排后仍满足移动端预算', () => {
+test('猫姐复用共享骨架动作，UV 重排后仍满足移动端预算', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer9');
@@ -289,7 +289,7 @@ test('霓光灵猫复用共享骨架动作，UV 重排后仍满足移动端预�
     }
 });
 
-test('青影忍浪复用共享骨架动作，UV 重排后仍满足移动端预算', () => {
+test('忍者哥复用共享骨架动作，UV 重排后仍满足移动端预算', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer10');
@@ -300,7 +300,7 @@ test('青影忍浪复用共享骨架动作，UV 重排后仍满足移动端预�
         assert.equal(model.dynamicColor.usesCapChannel, false);
         assert.equal(model.dynamicColor.maskPath, 'models/CartonSwimmer10ColorMask/texture');
         assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
-        assert.equal(PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === 'cartonSwimmer10').name, '青影忍浪');
+        assert.equal(PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === 'cartonSwimmer10').name, '忍者哥');
         assert.equal(model.candidates[0], 'models/CartonSwimmer10');
         setPlayerSkinTone('deep');
         setPlayerColorScheme('blue');
@@ -317,7 +317,7 @@ test('青影忍浪复用共享骨架动作，UV 重排后仍满足移动端预�
         assert.equal(doc.meshes[0].primitives.length, 1);
         assert.equal(doc.skins[0].joints.length, 41);
         assert.equal(doc.accessors[primitive.indices].count / 3, 5551);
-        // 2ce3 属于青影忍浪10；保留既有重排UV与标准化骨架，不能误换12或14。
+        // 2ce3 属于忍者哥10；保留既有重排UV与标准化骨架，不能误换12或14。
         assert.equal(doc.accessors[primitive.attributes.POSITION].count, 5864);
         // 无损 PNG 避免色界再次受 JPEG 污染；运行分辨率仍固定 512。
         assert.ok(data.length <= 768 * 1024);
@@ -344,7 +344,7 @@ test('青影忍浪复用共享骨架动作，UV 重排后仍满足移动端预�
     }
 });
 
-test('疾风浪客修正肘部后复用共享骨架动作，资源满足移动端预算', () => {
+test('健身教练修正肘部后复用共享骨架动作，资源满足移动端预算', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer11');
@@ -378,7 +378,7 @@ test('疾风浪客修正肘部后复用共享骨架动作，资源满足移动�
     }
 });
 
-test('绿电潮童复用共享骨架动作，换色遮罩与模型满足移动端预算', () => {
+test('飞毛腿复用共享骨架动作，换色遮罩与模型满足移动端预算', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer12');
@@ -389,7 +389,7 @@ test('绿电潮童复用共享骨架动作，换色遮罩与模型满足移动�
         assert.equal(model.dynamicColor.usesCapChannel, false);
         assert.equal(model.dynamicColor.maskPath, 'models/CartonSwimmer12ColorMask/texture');
         assert.equal(model.sampledActionOverrideDir, 'model-actions/tPose');
-        assert.equal(PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === 'cartonSwimmer12').name, '绿电潮童');
+        assert.equal(PLAYER_CHARACTER_DEFINITIONS.find(c => c.id === 'cartonSwimmer12').name, '飞毛腿');
         setPlayerSkinTone('deep');
         setPlayerColorScheme('blue');
         assert.equal(selectedPlayerSkinTone().id, 'deep');
@@ -429,7 +429,7 @@ test('绿电潮童复用共享骨架动作，换色遮罩与模型满足移动�
     }
 });
 
-test('深潜先锋肤色与全部服装色独立，暖肤色恢复精修原图', () => {
+test('潜水哥肤色与全部服装色独立，暖肤色恢复精修原图', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer13');
@@ -451,10 +451,10 @@ test('深潜先锋肤色与全部服装色独立，暖肤色恢复精修原图',
     }
 });
 
-test('深潜先锋草稿肤色按草稿角色生效，确认后的序列化存档可恢复', () => {
+test('潜水哥草稿肤色按草稿角色生效，确认后的序列化存档可恢复', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
-        // 当前已选角色不支持换肤，也不能拦住尚未确认的深潜先锋草稿。
+        // 当前已选角色不支持换肤，也不能拦住尚未确认的潜水哥草稿。
         selectPlayerCharacter('cartonSwimmer15');
         const draftCharacterId = 'cartonSwimmer13';
         setPlayerSkinTone('warm', draftCharacterId);
@@ -480,7 +480,7 @@ test('深潜先锋草稿肤色按草稿角色生效，确认后的序列化存�
     }
 });
 
-test('深潜先锋精修资源保留原模型与配色通道，仅新增有效皮肤遮罩', () => {
+test('潜水哥肩臂修正保留精修网格、瓶组与配色通道', () => {
     const model = Resources.findSwimmerModelVariant('cartonSwimmer13');
     assert.equal(model.dynamicColor?.mode, 'mask');
     assert.equal(model.dynamicColor?.maskPath, 'models/CartonSwimmer13ColorMask/texture');
@@ -498,10 +498,10 @@ test('深潜先锋精修资源保留原模型与配色通道，仅新增有效�
     assert.equal(doc.skins[0].joints.length, 41);
     assert.equal(doc.accessors[primitive.indices].count / 3, 5562);
     assert.equal(doc.accessors[primitive.attributes.POSITION].count, 7896);
-    // 保留主干 53a0214 的氧气瓶骨骼修复；网格、贴图和资源预算沿用精修版。
+    // 保留氧气瓶修复与精修外观；2026-09-12 仅调整 438 个肩臂顶点的权重。
     assert.equal(data.length, 583140);
     assert.equal(createHash('sha256').update(data).digest('hex'),
-        '1f84a8d6f47b906168bf2b8d9a7a024db0bbc249d1837492e1c4ec5b93f4a10b');
+        '960fca890bbfa2f45d534de191ebd1774c1c28f948dc69b7f02d4f7ebf14568f');
     assert.equal(doc.images.length, 1);
     assert.equal(doc.images[0].mimeType, 'image/jpeg');
     const imageView = doc.bufferViews[doc.images[0].bufferView];
@@ -535,7 +535,7 @@ test('深潜先锋精修资源保留原模型与配色通道，仅新增有效�
     assert.ok(skinBoundary > 0, '皮肤边界必须有分数覆盖');
 });
 
-test('新增破浪机甲复用动作与单材质，装甲只使用R换色且有独立卡面', () => {
+test('新增机甲coser复用动作与单材质，装甲只使用R换色且有独立卡面', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer15');
@@ -589,7 +589,7 @@ test('新增破浪机甲复用动作与单材质，装甲只使用R换色且有�
     }
 });
 
-test('霓绿少女保留精修设计，肤色与服装色可独立切换', () => {
+test('风火轮保留精修设计，肤色与服装色可独立切换', () => {
     const previous = { ...getPlayerCharacterSelection() };
     try {
         selectPlayerCharacter('cartonSwimmer14');
@@ -620,7 +620,7 @@ test('霓绿少女保留精修设计，肤色与服装色可独立切换', () =>
         assert.equal(doc.materials.length, 1);
         assert.equal(doc.meshes[0].primitives.length, 1);
         assert.equal(doc.skins[0].joints.length, 41);
-        // 霓绿少女保持 c1b6 银发精修版；bf613 只属于绿电潮童 12。
+        // 风火轮保持 c1b6 银发精修版；bf613 只属于飞毛腿 12。
         assert.equal(doc.accessors[primitive.indices].count / 3, 5603);
         assert.equal(doc.accessors[primitive.attributes.POSITION].count, 7753);
         assert.equal(doc.scenes[0].name, 'Scene');
@@ -691,7 +691,7 @@ test('试用配色匹配已选样张，角色切换与存档恢复保留颜色�
     }
 });
 
-test('铁臂狂鲨短臂精修版保留身份并提供独立衣帽和肤色遮罩', () => {
+test('肌肉男短臂精修版保留身份并提供独立衣帽和肤色遮罩', () => {
     const model = Resources.findSwimmerModelVariant('muscleMan');
     assert.equal(model.dynamicColor.mode, 'mask');
     assert.equal(model.dynamicColor.maskPath, 'models/MuscleManColorMask/texture');

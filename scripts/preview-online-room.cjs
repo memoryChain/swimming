@@ -37,7 +37,7 @@ function render(node, x = 640, y = 360) {
 for (const mode of ['host', 'member-ready', 'member-idle', 'host-popup', 'host-drawer']) {
     const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
     const isHost = mode.startsWith('host');
-    const members = [{ ...host, self: isHost }, { ...guest, pos: 1, self: !isHost, ready: mode !== 'member-idle' }, { ...guest, pos: 2, self: false, nickName: '浪花33', avatarId: 'rose', character: '跃浪少女' }];
+    const members = [{ ...host, self: isHost }, { ...guest, pos: 1, self: !isHost, ready: mode !== 'member-idle' }, { ...guest, pos: 2, self: false, nickName: '浪花33', avatarId: 'rose', character: '蛙妹' }];
     v.update(state({ members, isHost, ready: mode === 'member-ready', canStart: true, hint: mode === 'member-ready' ? '已准备 · 等待房主开始' : '' }));
     if (mode === 'host-popup') { v.popupPos = 1; v.popup.setPosition(667, -252); v.popup.active = true; v.update(v.state); }
     if (mode === 'host-drawer') v.drawer.active = true;

@@ -3,7 +3,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createRig, Node, Vec3, Quat, Mat4, load, root } = require('./helpers/character-contact-harness.cjs');
+const { createRig: createCharacterRig, Node, Vec3, Quat, Mat4, load, root } = require('./helpers/character-contact-harness.cjs');
+// 验证自由泳求解器对全部骨架的兼容性，独立于正式比赛的角色分配。
+function createRig(file) {
+    const rig = createCharacterRig(file);
+    rig.pose.setSurfaceSwimStyle('freestyle');
+    return rig;
+}
 const { sampleProneFreestyleArm, proneFreestyleRollSignal } = load(path.join(root, 'assets/scripts/character/ProneFreestyleMotion.ts'));
 const { MOTION_TUNING } = load(path.join(root, 'assets/scripts/core/InputTuning.ts'));
 const { elbowStrainSampler } = require('./helpers/skinned-arm-strain.cjs');

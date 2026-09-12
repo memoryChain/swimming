@@ -43,7 +43,7 @@ export type PlayerColorScheme = {
 // race hand-off uses the same definitions directly.
 export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] = [
     {
-        id: 'cartonSwimmer6', name: '跃浪少女', modelVariantId: 'cartonSwimmer6', unlocked: true,
+        id: 'cartonSwimmer6', name: '蛙妹', modelVariantId: 'cartonSwimmer6', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -53,7 +53,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer8', name: '蛙跃潮童', modelVariantId: 'cartonSwimmer8', unlocked: true,
+        id: 'cartonSwimmer8', name: '蛙少', modelVariantId: 'cartonSwimmer8', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -63,7 +63,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer5', name: '逐浪少女', modelVariantId: 'cartonSwimmer5', unlocked: true,
+        id: 'cartonSwimmer5', name: '超级腿', modelVariantId: 'cartonSwimmer5', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -73,7 +73,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer9', name: '霓光灵猫', modelVariantId: 'cartonSwimmer9', unlocked: true,
+        id: 'cartonSwimmer9', name: '猫姐', modelVariantId: 'cartonSwimmer9', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -83,7 +83,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer10', name: '青影忍浪', modelVariantId: 'cartonSwimmer10', unlocked: true,
+        id: 'cartonSwimmer10', name: '忍者哥', modelVariantId: 'cartonSwimmer10', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -93,7 +93,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer11', name: '疾风浪客', modelVariantId: 'cartonSwimmer11', unlocked: true,
+        id: 'cartonSwimmer11', name: '健身教练', modelVariantId: 'cartonSwimmer11', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -103,7 +103,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer12', name: '绿电潮童', modelVariantId: 'cartonSwimmer12', unlocked: true,
+        id: 'cartonSwimmer12', name: '飞毛腿', modelVariantId: 'cartonSwimmer12', unlocked: true,
         stamina: 84, technique: 86, burst: 81,
         weight: 0.98,
         energyGain: 84,
@@ -113,7 +113,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer13', name: '深潜先锋', modelVariantId: 'cartonSwimmer13', unlocked: true,
+        id: 'cartonSwimmer13', name: '潜水哥', modelVariantId: 'cartonSwimmer13', unlocked: true,
         stamina: 90, technique: 82, burst: 76,
         weight: 1.08,
         energyGain: 80,
@@ -123,7 +123,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer14', name: '霓绿少女', modelVariantId: 'cartonSwimmer14', unlocked: true,
+        id: 'cartonSwimmer14', name: '风火轮', modelVariantId: 'cartonSwimmer14', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -133,7 +133,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: true,
     },
     {
-        id: 'cartonSwimmer15', name: '破浪机甲', modelVariantId: 'cartonSwimmer15', unlocked: true,
+        id: 'cartonSwimmer15', name: '机甲coser', modelVariantId: 'cartonSwimmer15', unlocked: true,
         stamina: 85, technique: 84, burst: 80,
         weight: 1.0,
         energyGain: 82,
@@ -143,7 +143,7 @@ export const PLAYER_CHARACTER_DEFINITIONS: readonly PlayerCharacterDefinition[] 
         supportsSkinTone: false,
     },
     {
-        id: 'muscleMan', name: '铁臂狂鲨', modelVariantId: 'muscleMan', unlocked: true,
+        id: 'muscleMan', name: '肌肉男', modelVariantId: 'muscleMan', unlocked: true,
         stamina: 88, technique: 70, burst: 82,
         weight: 1.2,
         energyGain: 75,

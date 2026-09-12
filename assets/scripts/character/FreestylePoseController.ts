@@ -12,6 +12,7 @@ import type { CollisionSoftnessState } from '../swimmer/CollisionSoftnessModel';
 import type { StandingSoleContact } from './StandingSoleContact';
 import type { CharacterSupportPlane } from './CharacterSupportPlane';
 import type { CharacterHandContact } from './CharacterHandContact';
+import type { SurfaceSwimStyle } from '../core/ResourcePaths';
 import { proneFreestyleExtensionWeight, proneFreestyleRollSignal, proneFreestyleWeight, sampleProneFreestyleArm } from './ProneFreestyleMotion';
 
 type InterpolatedActionSample = SampledActionMotionSample & {
@@ -147,7 +148,9 @@ export class FreestylePoseController {
     private readonly _tmpBlendPosition = new Vec3();
     private readonly _tmpDirection = new Vec3();
     private readonly _tmpArmDirection = new Vec3();
-    private _proneFreestyleWeight = 1;
+    private _surfaceSwimStyle: SurfaceSwimStyle = 'legacy';
+    private _surfaceBodyUpProjection = 1;
+    private _proneFreestyleWeight = 0;
     private _proneChestRoll = 0;
     private readonly _proneUpperDirection = new Vec3();
     private readonly _proneForeDirection = new Vec3();
@@ -456,10 +459,17 @@ export class FreestylePoseController {
         );
     }
 
+    setSurfaceSwimStyle(style: SurfaceSwimStyle = 'legacy') {
+        this._surfaceSwimStyle = style;
+        this.setSurfaceBodyUpProjection(this._surfaceBodyUpProjection);
+    }
+
     // 俯泳抬头在翻成仰泳后会变成压头；仅在仰面半周平滑反转抬升方向。
     // 使用已有身体朝上投影，不累计新的姿态状态，也不改变根节点物理姿态。
     setSurfaceBodyUpProjection(projection: number) {
-        this._proneFreestyleWeight = proneFreestyleWeight(projection);
+        this._surfaceBodyUpProjection = projection;
+        this._proneFreestyleWeight = this._surfaceSwimStyle === 'freestyle'
+            ? proneFreestyleWeight(projection) : 0;
         this._surfaceLiftDirection = Number.isFinite(projection)
             ? 1 - 2 * smoothRange(-projection, 0, 1)
             : 1;

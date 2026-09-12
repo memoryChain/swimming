@@ -9,8 +9,8 @@ const { CharacterHandContact } = load(path.join(root, 'assets/scripts/character/
 const { FreestylePoseController } = load(path.join(root, 'assets/scripts/character/FreestylePoseController.ts'));
 const { SWIMMER_MODEL_VARIANTS } = load(path.join(root, 'assets/scripts/core/ResourcePaths.ts'));
 
-function createRig(file) {
-    const data = fs.readFileSync(path.join(root, 'assets/race/models', file));
+function createRig(file, modelDirectory = process.env.CHARACTER_MODEL_DIRECTORY || path.join(root, 'assets/race/models')) {
+    const data = fs.readFileSync(path.join(modelDirectory, file));
     const jsonSize = data.readUInt32LE(12);
     const gltf = JSON.parse(data.subarray(20, 20 + jsonSize));
     const binary = data.subarray(28 + jsonSize);
@@ -57,6 +57,7 @@ function createRig(file) {
     const hands = new CharacterHandContact(); hands.bind(wrapper, renderers); pose.setDiveHandContact(hands);
     wrapper.setRotationFromEuler(0, 90, 0);
     const variant = SWIMMER_MODEL_VARIANTS.find(v => v.candidates.some(p => p.toLowerCase().includes(file.slice(0, -4).toLowerCase())));
+    pose.setSurfaceSwimStyle(variant?.surfaceSwimStyle);
     const scale = 1.35 * (variant?.modelScaleMultiplier || 1);
     wrapper.scale.set(scale, scale, scale);
     // 独立保留全部足部顶点，验证压缩成 16 点后没有漏掉更低的真实鞋底。
@@ -134,7 +135,7 @@ function createRig(file) {
         if (count) Vec3.multiplyScalar(center, center, 1 / count);
         return { min, max, center };
     }
-    return { pose, soles, hands, wrapper, variant, exactY, renderers, fullHead, exactHandBounds };
+    return { pose, soles, hands, wrapper, variant, exactY, renderers, fullHead, exactHandBounds, modelDirectory };
 }
 
 module.exports = { ...harness, createRig };

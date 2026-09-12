@@ -4,7 +4,7 @@ const { Vec3, Mat4, root } = require('./character-contact-harness.cjs');
 
 // 按真实三角形边测量肘部蒙皮拉伸，包含辅助 Twist 骨，不能仅检查主骨矩阵。
 function elbowStrainSampler(rig, file) {
-    const data = fs.readFileSync(path.join(root, 'assets/race/models', file));
+    const data = fs.readFileSync(path.join(rig.modelDirectory || path.join(root, 'assets/race/models'), file));
     const size = data.readUInt32LE(12), gltf = JSON.parse(data.subarray(20, 20 + size));
     const binary = data.subarray(28 + size), pieces = [];
     const point = new Vec3(), ratios = [];

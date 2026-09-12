@@ -1,5 +1,7 @@
 import type { SampledActionId } from '../character/SampledActionMotionCurve';
 
+export type SurfaceSwimStyle = 'legacy' | 'freestyle';
+
 export type SwimmerModelVariant = {
     id: string;
     label: string;
@@ -13,6 +15,8 @@ export type SwimmerModelVariant = {
     raceModelEulerDegrees?: readonly [number, number, number];
     debugPose?: 'breaststroke' | 'divePrep';
     swimHeadLiftDegrees?: number;
+    // 水面划水动作；省略时沿用旧版划水，仅指定角色启用新版自由泳。
+    surfaceSwimStyle?: SurfaceSwimStyle;
     // Inverted-hull shell width. Omit to use the shared character default.
     outlineWidth?: number;
     // Rig-profile emote and tread-water curves. Characters normalized to the
@@ -104,7 +108,8 @@ const CARTON_SWIMMER15_PREFAB_CANDIDATES = [
 export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
     {
         id: 'muscleMan',
-        label: 'Muscle Man',
+        surfaceSwimStyle: 'freestyle',
+        label: '肌肉男',
         candidates: MUSCLE_MAN_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.24,
         preserveOriginalMaterial: true,
@@ -115,13 +120,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/MuscleManColorMask/texture',
-            labelPrefix: 'Muscle Man',
+            labelPrefix: '肌肉男',
             usesCapChannel: true,
         },
     },
     {
         id: 'cartonSwimmer5',
-        label: '逐浪少女',
+        label: '超级腿',
         candidates: CARTON_SWIMMER5_PREFAB_CANDIDATES,
         // Per-character whole-model tuning. Edit these multipliers directly when
         // comparing the roster; 1 keeps the shared default scale.
@@ -134,13 +139,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer5ColorMask/texture',
-            labelPrefix: '逐浪少女',
+            labelPrefix: '超级腿',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer6',
-        label: '跃浪少女',
+        label: '蛙妹',
         candidates: CARTON_SWIMMER6_PREFAB_CANDIDATES,
         modelScaleMultiplier: 0.97,
         preserveOriginalMaterial: true,
@@ -151,13 +156,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer6ColorMask/texture',
-            labelPrefix: '跃浪少女',
+            labelPrefix: '蛙妹',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer8',
-        label: '蛙跃潮童',
+        label: '蛙少',
         candidates: CARTON_SWIMMER8_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.02,
         preserveOriginalMaterial: true,
@@ -168,13 +173,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer8ColorMask/texture',
-            labelPrefix: '蛙跃潮童',
+            labelPrefix: '蛙少',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer9',
-        label: '霓光灵猫',
+        label: '猫姐',
         candidates: CARTON_SWIMMER9_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.00,
         preserveOriginalMaterial: true,
@@ -185,13 +190,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer9ColorMask/texture',
-            labelPrefix: '霓光灵猫',
+            labelPrefix: '猫姐',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer10',
-        label: '青影忍浪',
+        label: '忍者哥',
         candidates: CARTON_SWIMMER10_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.02,
         preserveOriginalMaterial: true,
@@ -202,13 +207,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer10ColorMask/texture',
-            labelPrefix: '青影忍浪',
+            labelPrefix: '忍者哥',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer11',
-        label: '疾风浪客',
+        label: '健身教练',
         candidates: CARTON_SWIMMER11_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.06,
         preserveOriginalMaterial: true,
@@ -219,13 +224,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer11ColorMask/texture',
-            labelPrefix: '疾风浪客',
+            labelPrefix: '健身教练',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer12',
-        label: '绿电潮童',
+        label: '飞毛腿',
         candidates: CARTON_SWIMMER12_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.0,
         preserveOriginalMaterial: true,
@@ -236,13 +241,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer12ColorMask/texture',
-            labelPrefix: '绿电潮童',
+            labelPrefix: '飞毛腿',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer13',
-        label: '深潜先锋',
+        label: '潜水哥',
         candidates: CARTON_SWIMMER13_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.04,
         preserveOriginalMaterial: true,
@@ -253,13 +258,13 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer13ColorMask/texture',
-            labelPrefix: '深潜先锋',
+            labelPrefix: '潜水哥',
             usesCapChannel: false,
         },
     },
     {
         id: 'cartonSwimmer14',
-        label: '霓绿少女',
+        label: '风火轮',
         candidates: CARTON_SWIMMER14_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.0,
         preserveOriginalMaterial: true,
@@ -270,14 +275,14 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer14ColorMask/texture',
-            labelPrefix: '霓绿少女',
+            labelPrefix: '风火轮',
             usesCapChannel: false,
         },
     },
     // 新机甲沿用唯一标准动作集；遮罩只控制绿甲，不把白甲或关节当肤色。
     {
         id: 'cartonSwimmer15',
-        label: '破浪机甲',
+        label: '机甲coser',
         candidates: CARTON_SWIMMER15_PREFAB_CANDIDATES,
         modelScaleMultiplier: 1.12,
         preserveOriginalMaterial: true,
@@ -288,7 +293,7 @@ export const SWIMMER_MODEL_VARIANTS: SwimmerModelVariant[] = [
         dynamicColor: {
             mode: 'mask',
             maskPath: 'models/CartonSwimmer15ColorMask/texture',
-            labelPrefix: '破浪机甲',
+            labelPrefix: '机甲coser',
             usesCapChannel: false,
         },
     },
