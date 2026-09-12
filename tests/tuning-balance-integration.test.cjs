@@ -706,8 +706,10 @@ test('全角色 1 到 30 级三项属性逐级各加 1，显示点数直接驱�
                 if (previous) assert.equal(display[stat]-previous[stat],1);
             }
             assert.equal(balance.energyTotal,display.stamina);
-            assert.equal(balance.strokeQualityAccel,SWIMMER_BALANCE.strokeQualityAccel*(1+(display.technique-50)*.003));
-            assert.equal(balance.perfectComboMaxOvercap,SWIMMER_BALANCE.perfectComboMaxOvercap*(1+(display.technique-50)*.003));
+            assert.ok(balance.strokePropulsionScale > 0);
+            if (level > 1) assert.ok(balance.strokePropulsionScale > resolvePlayerBalance(character,level-1,30,character.weight,character.energyGain).strokePropulsionScale);
+            assert.equal('perfectComboMaxOvercap' in balance,false);
+            assert.equal('strokeQualityAccel' in balance,false);
             assert.equal(balance.burstLaunchSpeedScale,1+(display.burst-50)*.006);
             assert.equal(balance.burstWallLaunchSpeedScale,1+(display.burst-50)*.018);
             assert.equal(balance.weight,character.weight);assert.equal(balance.energyGainAptitude,character.energyGain);
@@ -1021,13 +1023,26 @@ test('爆发增幅可保存重载，本地和联机解析一致，技巧与普�
     assert.equal(wallChanged.burstLaunchSpeedScale,changed.burstLaunchSpeedScale);
     assert.deepEqual({...wallChanged,burstWallLaunchSpeedScale:changed.burstWallLaunchSpeedScale},changed);
     assert.deepEqual(wallChanged,resolveModifiersFromDigest({characterId:c.id,level:30}).balance);
-    assert.equal(changed.strokeQualityAccel,original.strokeQualityAccel);
-    assert.equal(changed.perfectComboMaxOvercap,original.perfectComboMaxOvercap);
+    assert.equal(changed.strokePropulsionScale,original.strokePropulsionScale);
     assert.equal(changed.energyTotal,original.energyTotal);assert.equal(SWIMMER_BALANCE.maxSpeed,maxSpeed);
     assert.equal(new SwimmerMotor().burstWallLaunchSpeedScale,1);
     assert.equal(new SwimmerMotor().burstLaunchSpeedScale,1,'普通 AI 保留中性倍率');
 });
 
+
+test('技巧成长目标保存重载且本地联机一致，不改其他角色属性', () => {
+    const h=setup();h.tuning.loadSavedTuningAsync(()=>{});
+    const {resolveModifiersFromDigest}=h.loadModule('progression/RaceModifiers');
+    const digest={characterId:'cartonSwimmer10',level:30};
+    const original=resolveModifiersFromDigest(digest).balance;
+    const control=h.controls.get('technique.speedGainPerPoint');
+    control.set(.004);h.tuning.saveCurrentTuning();control.set(0);
+    h.tuning.loadSavedTuningAsync(()=>{});assert.equal(control.get(),.004);
+    const changed=resolveModifiersFromDigest(digest).balance;
+    assert.ok(changed.strokePropulsionScale>original.strokePropulsionScale);
+    assert.deepEqual({...changed,strokePropulsionScale:original.strokePropulsionScale},original);
+    control.set(0);assert.equal(resolveModifiersFromDigest(digest).balance.strokePropulsionScale,1);
+});
 
 test('蹬墙差异在30/60/120Hz均可见，满级高速不被普通上限截断，水阻保持减速', () => {
     const h=setup();h.tuning.loadSavedTuningAsync(()=>{});

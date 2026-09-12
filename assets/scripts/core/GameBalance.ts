@@ -162,10 +162,21 @@ export const SWIMMER_BALANCE = {
     // 与当前速度成正比的额外阻力。于是入水速度很快就会衰减，除非玩家持续抖腿踢水（每次潜水
     // 踢腿推进由上面的点击频率参数计算）。只作用于滑行阶段，水面游泳不受影响；设 0 关闭。
     glideDrag: 0.22,
-    // Overspeed cap/decay: a strong dive can launch above maxSpeed; these clamp
-    // how far over and how fast it bleeds back down. (Legacy name kept.)
+    // 已有超速状态回落时的共享余量参数，保护当前速度，不限制起跳初速。
+    // 保留旧调参ID兼容存档；不再由技巧或PERFECT连击加成。
     perfectComboMaxOvercap: 0.9,
     perfectComboOvercapDecay: 0.45,
+};
+
+// 技巧只缩放完整手臂推进；基准保留旧84点技巧的质量奖励，普通AI仍使用原共享推进。
+export const TECHNIQUE_BALANCE = {
+    referenceAttribute: 84,
+    referenceQualityScale: 1.102,
+    // 标准PERFECT稳定游速的校准目标，非每帧直接乘速度。
+    speedGainPerPoint: 0.003,
+    // 真实输入回放拟合；仅用于把目标游速差换成推进倍率，不改变水阻或游速上限。
+    propulsionExponent: 5.85,
+    propulsionCurvature: 6,
 };
 
 // 爆发力只影响三种起跳初速，独立于技巧的推进成长。

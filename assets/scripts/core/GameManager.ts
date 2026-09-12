@@ -2591,6 +2591,7 @@ export class GameManager extends Component {
             return;
         }
         if (id !== null
+            && id !== 'technique.speedGainPerPoint'
             && id !== 'burst.speedGainPerPoint'
             && id !== 'burst.wallSpeedGainPerPoint'
             && id !== 'speed.maxSpeed'

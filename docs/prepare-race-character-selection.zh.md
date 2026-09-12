@@ -10,7 +10,7 @@
 - `name`：界面显示名。
 - `modelVariantId`：`ResourcePaths.ts` 中已有模型变体 ID。
 - `unlocked`：是否在角色列表中可点击。
-- `stamina`、`technique`、`burst`：右侧面板显示的 0–100 属性。
+- `stamina`、`technique`、`burst`：右侧面板显示的成长整数属性，可超过100，等级上限30。
 - `description`、`skillName`、`skillDescription`：角色说明与技能文案。
 - `robotStyle`：机械角色的材质风格开关（可选）。
 

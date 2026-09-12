@@ -49,7 +49,7 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
         title: '划水质量',
         lines: [
             '整个完美区间均可判定 PERFECT；GOOD 的质量奖励较少，失误仍保留基础推进。',
-            '技巧影响质量推进奖励；PERFECT 连击另有速度上限与蓄气奖励。',
+            '技巧越高，相同操作下划水推进越强；PERFECT 连击提供额外蓄气。',
         ],
     },
     {
@@ -164,8 +164,7 @@ function buildRows(
             name: '技巧',
             aptitude: `${character.technique}`,
             lines: [
-                { label: '划水推力', current: fmt(current.strokeQualityAccel, 2), max: fmt(atMax.strokeQualityAccel, 2) },
-                { label: '超速上限', current: fmt(current.perfectComboMaxOvercap, 2), max: fmt(atMax.perfectComboMaxOvercap, 2) },
+                { label: '划水推进倍率', current: `${fmt(current.strokePropulsionScale, 2)}倍`, max: `${fmt(atMax.strokePropulsionScale, 2)}倍` },
             ],
         },
         {

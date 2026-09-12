@@ -5,7 +5,7 @@ import { AI_STROKE_TUNING, AI_STRATEGY_TUNING } from '../competitor/CompetitorCo
 import { RACE_CAMERA_TUNING } from '../camera/RaceCameraDirector';
 import { CAMERA_SPEED_LINE_TUNING } from '../ui/CameraSpeedLineOverlay';
 import { CONDITION_BALANCE, HEART_RATE_TUNING, RACE_PHASE_BALANCE } from './ConditionBalance';
-import { BURST_BALANCE, DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
+import { TECHNIQUE_BALANCE, BURST_BALANCE, DIVE_BALANCE, getRaceDifficultyConfig, SWIMMER_BALANCE } from './GameBalance';
 import { DOLPHIN_JUMP } from './DolphinJumpConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import { INPUT_TUNING, MOTION_TUNING, STROKE_QUALITY_TUNING } from './InputTuning';
@@ -46,7 +46,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 44;
+const TUNING_FILE_VERSION = 46;
 
 type TuningFileData = {
     version: number;
@@ -75,6 +75,12 @@ type TuningLoadCandidate = {
 };
 
 export const TUNING_GROUPS: TuningGroup[] = [
+    {
+        name: '技巧',
+        controls: [
+            control('technique.speedGainPerPoint', '每点游速成长目标', '相对84点技巧，标准连续PERFECT每点约增加的基准游速比例。0.003表示每10点约3%；实际通过完整手臂推进实现，改变其他推进参数后需重新测算。0关闭技巧差异。', () => TECHNIQUE_BALANCE.speedGainPerPoint, (v) => TECHNIQUE_BALANCE.speedGainPerPoint = v, 0.0005, 0, 0.006, 4),
+        ],
+    },
     {
         name: '爆发力',
         controls: [
@@ -242,7 +248,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('speed.baseDrag', '基础阻力', '与速度成正比的线性阻力（∝ v）。', () => SWIMMER_BALANCE.baseDrag, (v) => SWIMMER_BALANCE.baseDrag = v, 0.02, 0, 2, 2),
             control('speed.highSpeedDrag', '高速阻力', '与速度平方成正比的二次阻力（∝ v²）。值越高，速度越快阻力增长越剧烈，低速时几乎没有影响。', () => SWIMMER_BALANCE.highSpeedDrag, (v) => SWIMMER_BALANCE.highSpeedDrag = v, 0.01, 0, 2.5, 2),
             control('speed.glideDrag', '潜水滑行阻力', '仅在跳水入水后的潜水滑行阶段叠加的额外阻力（∝ v）。越大越迫使玩家靠抖腿踢水维持速度，不踢就很快掉速；设 0 关闭。', () => SWIMMER_BALANCE.glideDrag, (v) => SWIMMER_BALANCE.glideDrag = v, 0.02, 0, 3, 2),
-            control('speed.perfectComboMaxOvercap', '超速幅度上限', '跳水能把速度顶过最高速度上限多少。值越大,跳水入水速度优势越明显;值越小,跳水收益越低。设 0 则跳水不能超速。', () => SWIMMER_BALANCE.perfectComboMaxOvercap, (v) => SWIMMER_BALANCE.perfectComboMaxOvercap = v, 0.05, 0, 3, 2),
+            control('speed.perfectComboMaxOvercap', '超速幅度上限', '已有超速状态回落时保留的额外上限余量；保护当前已有速度，不限制起跳初速。全角色共用，与技巧、PERFECT连击无关。', () => SWIMMER_BALANCE.perfectComboMaxOvercap, (v) => SWIMMER_BALANCE.perfectComboMaxOvercap = v, 0.05, 0, 3, 2),
             control('speed.perfectComboOvercapDecay', '超速回落速率', '超出最高速度的那部分速度每秒回落多少。值越大掉得越快、跳水优势持续越短;值越小超速持续越久。', () => SWIMMER_BALANCE.perfectComboOvercapDecay, (v) => SWIMMER_BALANCE.perfectComboOvercapDecay = v, 0.05, 0, 3, 2),
         ],
     },

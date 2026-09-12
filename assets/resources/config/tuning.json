@@ -1,6 +1,6 @@
 {
-  "version": 44,
-  "updatedAt": "2026-09-12T16:41:58.439Z",
+  "version": 46,
+  "updatedAt": "2026-09-12T17:11:22.582Z",
   "values": {
     "dive.takeoffAnticipationSeconds": 0.32,
     "burst.speedGainPerPoint": 0.006,
@@ -266,6 +266,7 @@
     "heartRate.slowRiseSeconds": 12,
     "heartRate.slowRecoverySeconds": 4.5,
     "dolphin.strainHr": 25,
-    "dolphin.staminaCost": 5
+    "dolphin.staminaCost": 5,
+    "technique.speedGainPerPoint": 0.003
   }
 }

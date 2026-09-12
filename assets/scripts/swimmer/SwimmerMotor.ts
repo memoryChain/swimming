@@ -1,6 +1,6 @@
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
 import { perfectWidthScale, HeartRateTraitId } from '../core/ConditionBalance';
-import { getRaceDistance, isRaceSteeringEnabled, SWIMMER_BALANCE } from '../core/GameBalance';
+import { getRaceDistance, isRaceSteeringEnabled, TECHNIQUE_BALANCE, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
@@ -600,18 +600,16 @@ export class SwimmerMotor {
     }
 
     private get _effectiveComboMaxOvercap(): number {
-        return this._playerBalance?.perfectComboMaxOvercap ?? SWIMMER_BALANCE.perfectComboMaxOvercap;
+        return SWIMMER_BALANCE.perfectComboMaxOvercap;
     }
 
     private get _effectiveComboOvercapDecay(): number {
-        // Intentionally not progression-overridable: the overcap AMOUNT scales
-        // with character technique (see _effectiveComboMaxOvercap), but the DECAY rate
-        // is a global physics constant shared by player and AI.
+        // 超速回落参数全角色共用，连击与技巧不再参与。
         return Math.max(0, SWIMMER_BALANCE.perfectComboOvercapDecay);
     }
 
     private get _effectiveStrokeQualityAccel(): number {
-        return this._playerBalance?.strokeQualityAccel ?? SWIMMER_BALANCE.strokeQualityAccel;
+        return SWIMMER_BALANCE.strokeQualityAccel * (this._playerBalance ? TECHNIQUE_BALANCE.referenceQualityScale : 1);
     }
 
     setHeartRateTrait(trait: HeartRateTraitId) { this._heartRate.setTrait(trait); }
@@ -981,7 +979,8 @@ export class SwimmerMotor {
         action.ranges = ranges;
         this._heartRate.recordStart();
         // 已开始的一划保持完整预算，耗尽状态作用于之后开始的划水。
-        action.propulsionScale = this._conditionSpeedScale;
+        // 技巧与耗尽共同锁到本划；调参或耗尽切换不会让在途动作重复领推进。
+        action.propulsionScale = this._conditionSpeedScale * (this._playerBalance?.strokePropulsionScale ?? 1);
         const cycleSeconds = this.currentCycleSeconds();
         action.heldBaseImpulseBudget = Math.max(0, SWIMMER_BALANCE.strokeBaseAccel) * action.propulsionScale
             * cycleSeconds * Math.max(0, SWIMMER_BALANCE.strokeAccelDurationRatio)
