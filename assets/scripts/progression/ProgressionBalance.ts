@@ -14,25 +14,23 @@ export function normalizeCharacterLevel(level: unknown): number {
 }
 
 // Coin cost to advance from level `level` to `level + 1`.
-// Curve: 800 * n^1.15 - level 1 needs ~2 races (1st place), steepens gradually.
-// (Mirrors the previous XP curve verbatim; only the unit semantics changed.)
+// 原型成长曲线：首级约两场，后续平滑递增；50金币取整便于阅读。
 export function coinCostForLevel(level: number): number {
     if (level < 1 || level >= PROGRESSION_BALANCE.maxLevel) {
         return 0;
     }
-    return Math.round(800 * Math.pow(level, 1.15));
+    return Math.round((500 + 250 * level + 30 * level * level) / 50) * 50;
 }
 
 export const COIN_REWARDS = {
-    finishBase: 100,
+    finishBase: 200,
     placement: {
-        values: [200, 120, 80, 40] as const,
+        values: [200, 140, 100, 70] as const,
         fallback: 40,
     },
     performance: {
-        perMaxCombo: 3,
-        perPerfect: 2,
-        perGood: 1,
+        accuracy: 70,
+        stability: 30,
     },
 } as const;
 
@@ -43,6 +41,9 @@ export type RacePerformanceInput = {
     perfectCount: number;
     goodCount: number;
     finished: boolean;
+    missCount?: number;
+    distance?: 200 | 400;
+    factor?: number;
 };
 
 // Coins awarded for a race. DNF (finished === false) awards nothing.
@@ -54,8 +55,10 @@ export function calculateRaceCoins(input: RacePerformanceInput): number {
     const placementCoins = placementIndex < COIN_REWARDS.placement.values.length
         ? COIN_REWARDS.placement.values[placementIndex]
         : COIN_REWARDS.placement.fallback;
-    const perfCoins = Math.max(0, input.maxCombo) * COIN_REWARDS.performance.perMaxCombo
-        + Math.max(0, input.perfectCount) * COIN_REWARDS.performance.perPerfect
-        + Math.max(0, input.goodCount) * COIN_REWARDS.performance.perGood;
-    return COIN_REWARDS.finishBase + placementCoins + perfCoins;
+    const total = input.perfectCount + input.goodCount + (input.missCount ?? 0);
+    const perfCoins = total > 0 ? Math.min(100, Math.round(
+        COIN_REWARDS.performance.accuracy * input.perfectCount / total
+        + COIN_REWARDS.performance.stability * Math.min(1, input.maxCombo / total))) : 0;
+    return Math.round((COIN_REWARDS.finishBase + placementCoins + perfCoins)
+        * (input.distance === 400 ? 2.2 : 1) * (input.factor ?? 1));
 }

@@ -782,7 +782,7 @@ test('30 级封顶：旧档归一、29 升 30、批量升级和满级不扣金�
     const full=await backend.spendCoinsForLevel(id,1);
     assert.equal(full.reason,'maxed');assert.equal(full.coinsSpent,0);
     assert.equal(full.profile.coins,last.profile.coins);
-    h.saved.set('swimming.player-profile',JSON.stringify({coins:999999,characters:{[id]:{level:1}}}));
+    h.saved.set('swimming.player-profile',JSON.stringify({coins:999999,characters:{[id]:{level:1,signed:true}}}));
     const bulk=await backend.spendCoinsForLevel(id,60);
     assert.equal(bulk.levelsGained,29);assert.equal(bulk.profile.characters[id].level,30);
     PlayerData.profile.characters[id]={level:60};const manager=new ProgressionManager();

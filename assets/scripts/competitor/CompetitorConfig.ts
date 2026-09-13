@@ -1,7 +1,13 @@
-import { randomInt, shuffleInPlace } from '../core/SharedRNG';
+import { randomInt, shuffleInPlace, sharedRandom } from '../core/SharedRNG';
 import { PLAYER_CHARACTER_DEFINITIONS, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { getRaceDifficulty } from '../core/GameBalance';
 import { AI_EVENTS, AI_EVENT_BY_MODE, AI_INTELLIGENCE, AiIntelligenceId } from './AiRaceConfig';
+import { validateAiEvent } from './AiEventValidation';
+import type { AiEventConfig } from './AiRaceConfig';
+let soloEvent: AiEventConfig | null = null;
+export function getFixedSoloAiCount(): number | undefined { return soloEvent?.opponentCount; }
+export function hasFixedSoloAiRoster(): boolean { return soloEvent?.opponentCount !== undefined; }
+export function setSoloAiEvent(event: AiEventConfig | null): void { soloEvent = event; }
 
 export type AICompetitorProfile = {
     characterId: PlayerCharacterId;
@@ -87,13 +93,26 @@ export type AiRosterEntry = {
 // time and when the player taps "再来一次", so every restart reshuffles opponents
 // and their lane positions.
 export function buildRandomizedAiRoster(count: number): AiRosterEntry[] {
-    const event = AI_EVENTS[AI_EVENT_BY_MODE[getRaceDifficulty()]] ?? AI_EVENTS.club;
-    const characters = shuffleInPlace(PLAYER_CHARACTER_DEFINITIONS.filter((character) => character.unlocked));
+    const event = soloEvent ?? AI_EVENTS[AI_EVENT_BY_MODE[getRaceDifficulty()]] ?? AI_EVENTS.club;
+    validateAiEvent(event);
+    if (event.opponentCount !== undefined && count !== event.opponentCount) throw new Error("实际AI人数与赛事配置不一致");
+    const weights = event.characterWeights?.filter(entry => entry.weight > 0);
+    const totalWeight = weights?.reduce((sum, entry) => sum + entry.weight, 0) ?? 0;
+    const characters = weights ? [] : shuffleInPlace(PLAYER_CHARACTER_DEFINITIONS.filter((character) => character.unlocked));
     const tiers = shuffleInPlace(event.intelligence.slice());
     const chosen: AICompetitorProfile[] = [];
     for (let i = 0; i < count; i++) {
-        const skill = AI_INTELLIGENCE[tiers[i % tiers.length]];
-        chosen.push({ characterId: characters[i % characters.length].id,
+        const skill = AI_INTELLIGENCE[event.opponentCount === undefined ? tiers[i % tiers.length] : tiers[i]];
+        let characterId: PlayerCharacterId;
+        if (weights) {
+            let draw = sharedRandom().next() * totalWeight;
+            characterId = weights[weights.length - 1].characterId;
+            for (const entry of weights) {
+                draw -= entry.weight;
+                if (draw < 0) { characterId = entry.characterId; break; }
+            }
+        } else characterId = characters[i % characters.length].id;
+        chosen.push({ characterId,
             level: event.minLevel + randomInt(event.maxLevel - event.minLevel + 1),
             intelligence: skill.id, difficulty: skill.value });
     }

@@ -25,10 +25,13 @@ export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
 ];
 
 let currentRaceDifficulty: RaceDifficulty = 'competitive';
+let soloDistance: 200 | 400 | null = null;
+export function setSoloRaceDistance(distance: 200 | 400 | null): void { soloDistance = distance; }
 
 // 入口共用赛程映射；传入模式供准备页/房间预览，省略时读取当前比赛。
-export function getRaceDistance(mode = currentRaceDifficulty): number {
-    return mode === 'championship' ? 400 : RACE_DISTANCE;
+export function getRaceDistance(mode?: RaceDifficulty): number {
+    if (mode === undefined && soloDistance !== null) return soloDistance;
+    return (mode ?? currentRaceDifficulty) === 'championship' ? 400 : RACE_DISTANCE;
 }
 
 export function getRaceDifficulty(): RaceDifficulty {

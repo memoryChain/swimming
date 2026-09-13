@@ -177,7 +177,9 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
     assert.equal(methods.length, 2);
     const code = ts.transpileModule(`class LayoutHarness { ${methods.map(n => n.getText(source)).join('\n')} }`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
-    const Harness = vm.runInNewContext(`${code}; LayoutHarness`, { makeScreenEdgeGroup });
+    let careerParent;
+    const Harness = vm.runInNewContext(`${code}; LayoutHarness`, { makeScreenEdgeGroup,
+        CareerPrototypePanel: class { constructor(parent) { careerParent = parent; } } });
     const safeApi = cc.sys.getSafeAreaRect;
     cc.sys.getSafeAreaRect = () => { throw new Error('页面整栏布局不应读取设备安全区'); };
     try {
@@ -198,13 +200,12 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
             const rightMargin = node => width / 2 - node.position.x - 640;
             const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
             near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 48);
-            near(rightMargin(owners.buildRaceModeList), width === 1280 ? 0 : 48);
-            assert.equal(owners.buildRaceModeList, owners.buildReadyActions);
+            near(rightMargin(careerParent), width === 1280 ? 0 : 48);
             near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 48);
             near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 60);
             near(leftMargin(owners.buildCharacterHeader), 0);
             assert.equal(owners.buildPreviewPresentation, canvas);
-            const groups = [owners.buildReadyCharacterPanel, owners.buildRaceModeList,
+            const groups = [owners.buildReadyCharacterPanel, careerParent,
                 owners.buildCharacterRoster, owners.buildCharacterInspector];
             const positions = groups.map(node => node.position.x);
             const count = nodes(canvas).length;
@@ -572,7 +573,7 @@ test('主界面和角色页三行真实绑定同一tips，点击不升级或重�
         makeRaceTextureButton: (name, parent) => h.factory.makeTouchArea(name, parent, 100, 50),
     });
     const f = new Harness();
-    Object.assign(f, { _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
+    Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
     const ready = new Node('Ready'), attributes = new Node('Attributes');
     ready.addComponent(Canvas).cameraComponent = h.identityCamera;
     attributes.addComponent(Canvas).cameraComponent = h.identityCamera;

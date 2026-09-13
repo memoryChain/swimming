@@ -194,6 +194,13 @@ if (require.main === module) {
             assert.ok(fs.existsSync(file), resource); assert.ok(fs.existsSync(file + '.meta'), resource + '.meta');
         }
     });
+    test('好友结算隐藏全部金币与生涯提示，恢复单人时重新显示', () => {
+        const v = make(); v.setRoomMode(true); v.show(100, data(1));
+        v.setReward(800); v.setCareerMessage('联赛积分 +20');
+        for (const name of ['RewardCoin', 'RewardTitle', 'RewardValue', 'CareerMessage']) assert.equal(find(v.root, name).active, false);
+        v.setRoomMode(false);
+        for (const name of ['RewardCoin', 'RewardTitle', 'RewardValue', 'CareerMessage']) assert.equal(find(v.root, name).active, true);
+    });
     test('右侧遮罩位于 UI 下层且无点击拦截，英文数字与中文状态分别使用字体', () => {
         const v = make(); v.show(109.45, data(4));
         assert.equal(v.root.children[0].name, 'RightShade');

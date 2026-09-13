@@ -71,6 +71,10 @@ import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
 import { NetSnapshotEntry } from '../net/NetRaceSnapshot';
 import { NET_SIM_STEP } from '../net/NetSimClock';
 import { reseedSharedRandom } from './SharedRNG';
+import { getSoloRaceTicket, setSoloRaceTicket, markSoloReturn } from '../progression/SoloRaceSession';
+import { setSoloRaceDistance } from './GameBalance';
+import { centeredLaneStart, aiIndexInLaneRange } from '../competitor/RaceLaneAllocation';
+import { setSoloAiEvent, getFixedSoloAiCount } from '../competitor/CompetitorConfig';
 import { getPlayerCharacterSelection } from '../app/PlayerCharacterConfig';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
@@ -213,6 +217,8 @@ export class GameManager extends Component {
     private _poolNode: Node = null;
     private _cameraNode: Node = null;
     private _playerLaneIndex = PLAYER_LANE_INDEX;
+    private _raceLaneStart = 0;
+    private _raceLaneCount = LANE_LAYOUT.laneCount;
     private _primaryAiLaneIndex = PRIMARY_AI_LANE_INDEX;
     private _waterRefraction: WaterRefractionController | null = null;
     private _laneLockdownVisuals: LaneLockdownVisuals | null = null;
@@ -706,6 +712,10 @@ export class GameManager extends Component {
     }
 
     restartGame() {
+        if (!this._roomMode && !this._aiDebugMode && getSoloRaceTicket()) {
+            this.returnToLogin();
+            return;
+        }
         if (this._aiDebugMode) this.selectAiCameraIndex(-1);
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
@@ -754,6 +764,7 @@ export class GameManager extends Component {
             return;
         }
         this._isReturningToLogin = true;
+        if (!this._roomMode && getSoloRaceTicket()) { setReturnToLobby(true); markSoloReturn(); }
         // Room-mode races return to the online room, not the main menu.
         if (this._roomMode) {
             setReturnToRoom(true);
@@ -775,6 +786,16 @@ export class GameManager extends Component {
     private buildScene(done: (error?: unknown) => void) {
         this._roomMode = consumeRoomMode();
         this._netSession = consumeNetRaceSession();
+        if (this._roomMode || this._netSession || this._aiDebugMode) {
+            setSoloRaceTicket(null);
+            setSoloRaceDistance(null);
+            setSoloAiEvent(null);
+        } else {
+            const ticket = getSoloRaceTicket();
+            setSoloRaceDistance(ticket?.distance ?? null);
+            setSoloAiEvent(ticket?.ai ?? null);
+            if (ticket) reseedSharedRandom(ticket.seed);
+        }
         if (this._netSession) {
             // Networked race: every client reseeds SharedRNG with the host's seed so
             // the AI fill, lane assignment, and roster shuffles match on all clients.
@@ -920,10 +941,16 @@ export class GameManager extends Component {
                 this._raceCameraDirector.startAwardsPresentation(center);
             },
             playerDiveSpeedScale: () => this._playerBalanceOverrides?.burstLaunchSpeedScale ?? 1,
-            awardProgression: (input) => {
-                const progression = getProgressionManager();
-                const characterId = getPlayerCharacterSelection().characterId;
-                return progression.awardRace(characterId, input);
+            awardProgression: async (input) => {
+                if (this._roomMode || this._netSession || this._aiDebugMode || this._modelDebugFlow?.active) return null;
+                const ticket = getSoloRaceTicket();
+                if (!ticket) return null;
+                try {
+                    const result = await PlayerData.executeCareer({ type: 'settle', ticketId: ticket.id, ...input });
+                    return result.receipt ?? { characterId: ticket.characterId, coinsGained: 0, message: result.message };
+                } catch {
+                    return { characterId: ticket.characterId, coinsGained: 0, message: '保存失败，下次开赛时自动重试结算' };
+                }
             },
             applyPlayerDive: (result) => {
                 this._playerCondition.reset();
@@ -1010,6 +1037,9 @@ export class GameManager extends Component {
                 const settlement = this._uiController?.settlementView;
                 if (settlement?.root.active) {
                     settlement.activatePrimary();
+                } else if (getSoloRaceTicket() && (this._state === GameState.FINISHED || this._state === GameState.AWARDS)) {
+                    // 等待结算展示期间不允许键盘绕过赛事入口重复使用旧凭据开赛。
+                    return;
                 } else if (!(this._roomMode && (this._state === GameState.FINISHED || this._state === GameState.AWARDS))) {
                     this._gameFlow?.handlePrimaryAction();
                 }
@@ -1299,17 +1329,26 @@ export class GameManager extends Component {
     }
 
     private assignRaceLanes() {
+        this._raceLaneStart = 0; this._raceLaneCount = LANE_LAYOUT.laneCount;
         if (this._netSession) {
             // Networked race: every client lays swimmers out identically from the
             // shared roster, and each client's own player takes its seat's lane.
             this._netLanePlan = buildNetLanePlan(this._netSession, LANE_LAYOUT.laneCount);
             this._playerLaneIndex = this._netLanePlan.playerLane;
         } else {
-            this._playerLaneIndex = randomInt(LANE_LAYOUT.laneCount);
+            const aiCount = getFixedSoloAiCount();
+            if (aiCount !== undefined) {
+                this._raceLaneCount = aiCount + 1;
+                this._raceLaneStart = centeredLaneStart(LANE_LAYOUT.laneCount, this._raceLaneCount);
+            }
+            this._playerLaneIndex = this._raceLaneStart + randomInt(this._raceLaneCount);
         }
         this._primaryAiLaneIndex = this._playerLaneIndex === PRIMARY_AI_LANE_INDEX
             ? (PRIMARY_AI_LANE_INDEX + 1) % LANE_LAYOUT.laneCount
             : PRIMARY_AI_LANE_INDEX;
+        if (this._primaryAiLaneIndex < this._raceLaneStart || this._primaryAiLaneIndex >= this._raceLaneStart + this._raceLaneCount) {
+            this._primaryAiLaneIndex = this._raceLaneStart + (this._playerLaneIndex === this._raceLaneStart ? 1 : 0);
+        }
         const playerLaneZ = LANE_LAYOUT.centerZ(this._playerLaneIndex);
         this._raceCameraDirector.setPlayerLaneZ(playerLaneZ);
         this._cameraTarget.z = playerLaneZ;
@@ -1536,15 +1575,12 @@ export class GameManager extends Component {
         if (lane === this._playerLaneIndex) {
             return this._playerSwimmer;
         }
-        const index = lane < this._playerLaneIndex ? lane : lane - 1;
-        return this._aiSwimmers[index] ?? null;
+        const index = this.aiIndexForLane(lane);
+        return index >= 0 ? this._aiSwimmers[index] ?? null : null;
     }
 
     private aiIndexForLane(lane: number): number {
-        if (lane === this._playerLaneIndex || lane < 0 || lane >= LANE_LAYOUT.laneCount) {
-            return -1;
-        }
-        return lane < this._playerLaneIndex ? lane : lane - 1;
+        return aiIndexInLaneRange(lane, this._playerLaneIndex, this._raceLaneStart, this._raceLaneCount);
     }
 
     // The stable assigned lane (0-based) of a swimmer, i.e. the reverse of
@@ -2041,7 +2077,7 @@ export class GameManager extends Component {
     // order, skipping the player lane).
     private refreshAiDifficultyPanel() {
         const entries = this._aiControllers.map((controller, i) => ({
-            lane: i < this._playerLaneIndex ? i : i + 1,
+            lane: this._raceLaneStart + i + (this._raceLaneStart + i >= this._playerLaneIndex ? 1 : 0),
             name: `${findPlayerCharacter(controller.characterId)?.name ?? controller.characterId} Lv.${controller.level}`,
             difficulty: controller.difficulty,
         }));

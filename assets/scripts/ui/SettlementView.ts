@@ -2,6 +2,7 @@ import { Button, Color, Label, Node, Sprite, UITransform, view } from 'cc';
 import { getRaceModeTitle, getRaceDistance } from '../core/GameBalance';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { PlayerData } from '../backend/PlayerData';
+import { getSoloRaceTicket } from '../progression/SoloRaceSession';
 import { AVATARS } from '../backend/IdentityConfig';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
@@ -57,6 +58,7 @@ export class SettlementView {
     private readonly modeDistance: Label;
     private readonly modeUnit: Label;
     private readonly reward: Label;
+    private readonly careerMessage: Label;
     private readonly primary: Node;
     private readonly primaryText: Label;
     private readonly secondary: Node;
@@ -114,6 +116,7 @@ export class SettlementView {
         this.art(this.root, 'RewardCoin', 1133, 731, 56, 56, RESOURCE_PATHS.characterUi.upgradeCurrency);
         this.text(this.root, 'RewardTitle', '本局奖励', 1205, 760, 140, 27, WHITE);
         this.reward = this.text(this.root, 'RewardValue', '+0', 1344, 758, 260, 49, GOLD, false, false, false, true);
+        this.careerMessage = this.text(this.root, 'CareerMessage', '', 1000, 699, 610, 24, WHITE);
         this.secondary = this.button('ReturnToLobby', 1000, 808, 247, 90,
             RESOURCE_PATHS.onlineRoomUi.exitButton, () => callbacks.onMenu());
         this.text(this.secondary, 'Label', '返回大厅', 0, 45, 247, 35, NAVY, true);
@@ -125,7 +128,10 @@ export class SettlementView {
     setRoomMode(roomMode: boolean): void {
         this.roomMode = roomMode;
         active(this.secondary, !roomMode);
-        setText(this.primaryText, roomMode ? '返回房间' : '再来一局');
+        setText(this.primaryText, roomMode ? '返回房间' : getSoloRaceTicket() ? '返回赛事' : '再来一局');
+        for (const name of ['RewardCoin', 'RewardTitle', 'RewardValue', 'CareerMessage']) {
+            const node = this.root.children.find(child => child.name === name); if (node) active(node, !roomMode);
+        }
     }
 
     /** 键盘确认与主按钮共用权限和防重复保护。 */
@@ -208,6 +214,8 @@ export class SettlementView {
     setReward(coins: number): void {
         setText(this.reward, `+${Number.isFinite(coins) ? Math.max(0, Math.floor(coins)) : 0}`);
     }
+
+    setCareerMessage(message: string): void { setText(this.careerMessage, message); }
 
     private node(parent: Node, name: string, x: number, y: number, w: number, h: number): Node {
         const node = new Node(name);

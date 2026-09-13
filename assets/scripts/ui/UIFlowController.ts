@@ -5,6 +5,7 @@ import { RaceResultStats, UIController } from './UIController';
 export type ProgressionResult = {
     characterId: string;
     coinsGained: number;
+    message?: string;
 } | null;
 
 export type UIFlowRefs = {

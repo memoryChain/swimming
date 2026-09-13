@@ -1,5 +1,8 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
 import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, consumeReturnToLobby, setRoomMode } from '../core/GameLaunchOptions';
+import { setSoloRaceTicket } from '../progression/SoloRaceSession';
+import { setSoloRaceDistance } from '../core/GameBalance';
+import { setSoloAiEvent } from '../competitor/CompetitorConfig';
 import { loadRaceBundle } from '../core/RaceBundleLoader';
 import { mountAiDebugSetupPicker } from '../ui/AiDebugSetupPicker';
 import { getAiDebugSetup } from '../core/GameLaunchOptions';
@@ -95,7 +98,7 @@ export class LoginManager extends Component {
         // z-order juggling. Load the profile so the count reflects saved data.
         this._headBar = new ResourceHeadBar();
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
-            onAddCoins: () => this.watchAdForCoins(),
+            onAddCoins: () => this.toast('单人比赛获得金币，角色页可消耗金币升级'),
             onEditIdentity: () => this.openIdentityEdit(),
             onOpenSettings: () => this.openSettings(),
         });
@@ -189,8 +192,6 @@ export class LoginManager extends Component {
 
     startGame() {
         this._headBar?.setBack(null);
-        this._prepareRaceFlow?.dispose();
-        this._prepareRaceFlow = null;
         this.launchMainGame('race');
     }
 
@@ -335,6 +336,7 @@ export class LoginManager extends Component {
             return;
         }
         this._loadingRace = true;
+        if (mode !== 'race') { setSoloRaceTicket(null); setSoloRaceDistance(null); setSoloAiEvent(null); }
         setMainGameLaunchMode(mode);
 
         // Cover the whole Login -> MainGame switch with a persistent loading
@@ -348,6 +350,7 @@ export class LoginManager extends Component {
                 this._loadingRace = false;
                 LoadingOverlay.hide();
                 console.error('[SpeedSwimming] race bundle failed to load', bundleError);
+                this.recoverPrepareAfterLoadFailure();
                 return;
             }
             bundle.loadScene('MainGame', (sceneError, scene) => {
@@ -355,6 +358,7 @@ export class LoginManager extends Component {
                     this._loadingRace = false;
                     LoadingOverlay.hide();
                     console.error('[SpeedSwimming] MainGame scene failed to load', sceneError);
+                    this.recoverPrepareAfterLoadFailure();
                     return;
                 }
                 // AI 测试也从大厅进入。趁节点仍有效先清理按钮动效、监听和预览；
@@ -364,6 +368,12 @@ export class LoginManager extends Component {
                 director.runScene(scene);
             });
         });
+    }
+
+    private recoverPrepareAfterLoadFailure(): void {
+        // 加载失败后的生命周期恢复，旧界面已退场，需要重新挂载可操作入口。
+        this._prepareRaceFlow?.dispose(); this._prepareRaceFlow = null;
+        this.openPrepareRace(); this.toast('比赛加载失败，请重试');
     }
 
     private findCanvasNode(): Node {

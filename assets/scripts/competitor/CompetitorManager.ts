@@ -1,3 +1,4 @@
+import { centeredLaneStart } from './RaceLaneAllocation';
 import { Color, Node } from 'cc';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
@@ -9,7 +10,7 @@ import { normalizeCharacterLevel } from '../progression/ProgressionBalance';
 import { shuffleInPlace } from '../core/SharedRNG';
 import { PlayerData } from '../backend/PlayerData';
 import { findPlayerCharacter, PlayerCharacterId, PLAYER_SKIN_TONES } from '../app/PlayerCharacterConfig';
-import { AICompetitorProfile, buildRandomizedAiRoster } from './CompetitorConfig';
+import { AICompetitorProfile, buildRandomizedAiRoster, getFixedSoloAiCount } from './CompetitorConfig';
 import { SwimmerFactory } from './SwimmerFactory';
 
 export type CompetitorBuildOptions = {
@@ -108,15 +109,28 @@ export class CompetitorManager {
         const aiControllers: AISwimmerController[] = [];
         const aiSwimmers: Swimmer[] = [];
         let primaryAiController: AISwimmerController | null = null;
-        const aiLanes = this.aiLaneIndices(options?.soloLane);
-        // 按完整泳道生成，避免各端跳过不同本地玩家槽位后把 AI 身份错移一位。
-        const roster = buildRandomizedAiRoster(this._options.laneLayout.laneCount);
+        let aiLanes = this.aiLaneIndices(options?.soloLane);
+        const configuredCount = getFixedSoloAiCount();
+        const fixedSolo = configuredCount !== undefined;
+        if (fixedSolo) {
+            if (!Number.isInteger(configuredCount) || configuredCount < 1 || configuredCount > aiLanes.length) {
+                throw new Error('赛事AI人数超出可用泳道数量');
+            }
+            const start = centeredLaneStart(this._options.laneLayout.laneCount, configuredCount + 1);
+            if (this._options.playerLaneIndex < start || this._options.playerLaneIndex > start + configuredCount) {
+                throw new Error('玩家泳道不在本场居中泳道范围内');
+            }
+            aiLanes = aiLanes.filter(lane => lane >= start && lane <= start + configuredCount);
+        }
+        // 单人生涯按难度列表对应的实际AI人数生成，不为玩家生成并丢弃一个难度名额。
+        // 联机及旧配置仍按完整泳道生成，保持各端槽位映射一致。
+        const roster = buildRandomizedAiRoster(fixedSolo ? aiLanes.length : this._options.laneLayout.laneCount);
         const playerColorVariantId = defaultSwimmerColorVariant().id;
         const aiColorVariantIds = shuffledAiColorVariantIds(playerColorVariantId);
         const aiSkinColors = shuffledAiSkinColors();
 
         aiLanes.forEach((lane, index) => {
-            const entry = roster[lane];
+            const entry = roster[fixedSolo ? index : lane];
             if (options?.characterId) entry.profile.characterId = options.characterId;
             if (options?.level !== undefined) entry.profile.level = options.level;
             const swimmer = this._factory.create(group, {
@@ -135,7 +149,7 @@ export class CompetitorManager {
             this.applyProfile(controller, swimmer, entry.profile, options?.difficultyOverride);
             aiSwimmers.push(swimmer);
             aiControllers.push(controller);
-            if (lane === this._options.primaryAiLaneIndex || options?.soloLane !== undefined) {
+            if (!primaryAiController || lane === this._options.primaryAiLaneIndex || options?.soloLane !== undefined) {
                 primaryAiController = controller;
             }
         });

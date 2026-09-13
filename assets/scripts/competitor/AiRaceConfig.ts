@@ -65,7 +65,16 @@ export const AI_PLANNER_TUNING = {
     jumpSpaceMargin: 1,
 };
 
+export interface AiCharacterWeight {
+    characterId: PlayerCharacterId;
+    /** 相对权重；0不出现。每个AI独立抽取，允许同角色重复。 */
+    weight: number;
+}
 export interface AiEventConfig {
+    /** 固定阵容人数，难度列表必须一人一项；旧快速/联机配置不填。 */
+    opponentCount?: number;
+    /** 不填沿用全角色打乱；填写后按权重有放回抽取。 */
+    characterWeights?: readonly AiCharacterWeight[];
     minLevel: number;
     maxLevel: number;
     intelligence: readonly AiIntelligenceId[];
