@@ -4,7 +4,6 @@ import {
     ConditionReadout,
     HeartRateZone,
     RacePhase,
-    SprintTier,
     HEART_RATE_BOUNDS,
     zoneForHeartRate,
 } from './ConditionTypes';
@@ -36,7 +35,6 @@ export class AiConditionModel {
     private _heartRateZone: HeartRateZone = HeartRateZone.LOW;
     private _energy = CONDITION_BALANCE.energy.total;
     private _energyDepleted = false;
-    private _sprintTier: SprintTier = SprintTier.STEADY;
     private _qualityModifier = 1;
     private _efficiencyModifier = 1;
     private _cadenceModifier = 1;
@@ -47,7 +45,6 @@ export class AiConditionModel {
         this._heartRateZone = HeartRateZone.LOW;
         this._energy = this._energyTotal;
         this._energyDepleted = false;
-        this._sprintTier = SprintTier.STEADY;
         this._qualityModifier = 1;
         this._efficiencyModifier = 1;
         this._cadenceModifier = 1;
@@ -55,9 +52,6 @@ export class AiConditionModel {
 
     setPhase(phase: RacePhase) {
         this._phase = phase;
-        if (phase !== RacePhase.SPRINT) {
-            this._sprintTier = SprintTier.STEADY;
-        }
         this.refreshModifiers();
     }
 
@@ -115,7 +109,6 @@ export class AiConditionModel {
     get energy(): number { return this._energy; }
     get energyRatio(): number { return clamp(this._energy / this._energyTotal, 0, 1); }
     get energyDepleted(): boolean { return this._energyDepleted; }
-    get sprintTier(): SprintTier { return this._sprintTier; }
     get qualityModifier(): number { return this._qualityModifier; }
     get efficiencyModifier(): number { return this._efficiencyModifier; }
     get strokeCadenceScale(): number { return this._cadenceModifier; }
@@ -127,7 +120,6 @@ export class AiConditionModel {
             heartRateZone: this._heartRateZone,
             energy: this._energy,
             energyDepleted: this._energyDepleted,
-            sprintTier: this._sprintTier,
             qualityModifier: this._qualityModifier,
             efficiencyModifier: this._efficiencyModifier,
         };

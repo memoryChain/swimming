@@ -10,19 +10,16 @@ import { DiveResult } from '../core/DiveResult';
 export class RaceContext {
     phase: RacePhase = RacePhase.START;
     latestDiveResult: DiveResult | null = null;
-    sprintActive = false;
 
     constructor(readonly playerCondition: PlayerConditionModel) {}
 
     reset() {
         this.phase = RacePhase.START;
         this.latestDiveResult = null;
-        this.sprintActive = false;
     }
 
     setPhase(phase: RacePhase) {
         this.phase = phase;
-        this.sprintActive = phase === RacePhase.SPRINT;
     }
 
     // --- Small phase-semantics helpers (doc 20.5) ---

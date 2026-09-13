@@ -954,12 +954,6 @@ export class GameManager extends Component {
                 this._raceContext.setPhase(RacePhase.SPRINT);
                 this._uiFlow?.setSprintActive(true);
             },
-            updateSprintTier: (tier) => {
-                this._playerCondition.updateSprintState({ sprintTier: tier });
-                // Sprint activity belongs to the race phase, not the current
-                // effort tier. STEADY/PUSH/GAMBLE only tunes intensity.
-                this._raceContext.sprintActive = this._playerCondition.phase === RacePhase.SPRINT;
-            },
             debug: (message) => this.debug(message),
         });
     }
