@@ -9,7 +9,7 @@ import NetSimClock from '../assets/scripts/net/NetSimClock.ts';
 
 const { AiConditionModel } = AiCondition;
 const { PlayerConditionModel } = PlayerCondition;
-const { RacePhase, SprintTier } = ConditionTypes;
+const { RacePhase } = ConditionTypes;
 const { CONDITION_BALANCE, conditionEfficiencyScale, conditionQualityScale, energyDepletionCadenceScale } = ConditionBalance;
 const { NET_SIM_STEP } = NetSimClock;
 
@@ -27,23 +27,20 @@ test('体力仅在归零后减弱推进和动作轮速，不额外缩窄心率�
     for (const hr of [0, 109, 110, 149, 150, 175, 200]) near(conditionQualityScale(hr), 1);
 });
 
-test('玩家每划固定扣除，心率、判定、间隔和冲刺档位都不改变成本', () => {
+test('玩家每划固定扣除，心率、判定、间隔和冲刺阶段都不改变成本', () => {
     for (const phase of [RacePhase.PACE, RacePhase.SPRINT]) {
-        for (const tier of Object.values(SprintTier)) {
-            const model = new PlayerConditionModel(); model.setPhase(phase);
-            model.updateSprintState({ sprintTier: tier });
-            model.updateFromStroke({ strokeAccepted: false, qualityScore: 1, pressureScore: 1, dt: 0 });
-            near(model.energy, 100);
-            for (let i = 0; i < 30; i++) {
-                model.applyDolphinJumpStrain(i % 2 ? 100 : 0);
-                model.updateFromStroke({ strokeAccepted: true, qualityScore: [0, .5, 1][i % 3], pressureScore: i % 2, dt: 0 });
-                model.tick(i % 2 ? .1 : 3);
-                near(model.energy, 99 - i);
-                near(model.efficiencyModifier, 1);
-                near(model.strokeCadenceScale, 1);
-            }
-            model.tick(600); near(model.energy, 70);
+        const model = new PlayerConditionModel(); model.setPhase(phase);
+        model.updateFromStroke({ strokeAccepted: false, qualityScore: 1, pressureScore: 1, dt: 0 });
+        near(model.energy, 100);
+        for (let i = 0; i < 30; i++) {
+            model.applyDolphinJumpStrain(i % 2 ? 100 : 0);
+            model.updateFromStroke({ strokeAccepted: true, qualityScore: [0, .5, 1][i % 3], pressureScore: i % 2, dt: 0 });
+            model.tick(i % 2 ? .1 : 3);
+            near(model.energy, 99 - i);
+            near(model.efficiencyModifier, 1);
+            near(model.strokeCadenceScale, 1);
         }
+        model.tick(600); near(model.energy, 70);
     }
 });
 

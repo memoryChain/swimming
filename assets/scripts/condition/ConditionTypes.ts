@@ -19,13 +19,6 @@ export enum HeartRateZone {
     OVERLOAD = 'OVERLOAD',
 }
 
-// Sprint intensity tiers, meaningful only during SPRINT (design doc 23.5).
-export enum SprintTier {
-    STEADY = 'STEADY',
-    PUSH = 'PUSH',
-    GAMBLE = 'GAMBLE',
-}
-
 // Heart-rate zone boundaries on a gameplay 80..180 scale.
 // 轻松 80–100，发力 101–139，高压 140–159，极限 160–180。
 export const HEART_RATE_BOUNDS = {
@@ -60,11 +53,6 @@ export interface StrokeConditionInput {
     dt: number;
 }
 
-// Driven by the flow layer during the sprint phase (design doc 27.2).
-export interface SprintConditionInput {
-    sprintTier: SprintTier;
-}
-
 // Per-frame input for the AI condition model (design doc 27.3).
 export interface AiConditionInput {
     difficulty: number;
@@ -78,7 +66,6 @@ export interface ConditionReadout {
     heartRateZone: HeartRateZone;
     energy: number;
     energyDepleted: boolean;
-    sprintTier: SprintTier;
     qualityModifier: number;
     efficiencyModifier: number;
 }

@@ -10,7 +10,6 @@ import { GameState, Rating, StrokeType } from '../core/GameConstants';
 import { RaceFinishResult, RaceManager, RacePlacementSummary } from '../core/RaceManager';
 import { resolveDiveResult } from '../core/DiveResolver';
 import { DiveResult } from '../core/DiveResult';
-import { SprintTier } from '../condition/ConditionTypes';
 import { CHARACTER_ACTION_CONFIG, selectAdjacentDistinctActions } from '../character/CharacterActionConfig';
 import { RACE_PHASE_BALANCE } from '../core/ConditionBalance';
 import { UIFlowController } from '../ui/UIFlowController';
@@ -56,16 +55,11 @@ export type GameFlowRefs = {
     awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
         { characterId: string; coinsGained: number } | null;
     enterSprint: () => void;
-    updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
     updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean) => void;
     debug: (message: string) => void;
 };
 
-// Sprint effort -> tier thresholds (doc 19.8). The flow layer reads the player's
-// sustained effort during SPRINT and interprets it as STEADY / PUSH / GAMBLE.
-const SPRINT_PUSH_EFFORT = 0.6;
-const SPRINT_GAMBLE_EFFORT = 0.85;
 const LIVE_RANK_REFRESH_SECONDS = 0.2;
 const LATE_DIVE_START_SECONDS = 1.2;
 
@@ -75,7 +69,6 @@ export class GameFlowController {
     private _diveChargePower = 0;
     private _diveCommitted = false;
     private _sprintTriggered = false;
-    private _lastSprintTier: SprintTier = SprintTier.STEADY;
     private _cameraFollowAi = false;
     private _cameraAiTarget: Swimmer | null = null;
     private _liveRankRefreshElapsed = LIVE_RANK_REFRESH_SECONDS;
@@ -101,7 +94,6 @@ export class GameFlowController {
         this._aiDivesStarted = false;
         this.resetDiveCharge();
         this._sprintTriggered = false;
-        this._lastSprintTier = SprintTier.STEADY;
         this._swimSprintViewApplied = false;
         this._preRaceDivePrepApplied = false;
         this._divingElapsed = 0;
@@ -463,9 +455,6 @@ export class GameFlowController {
             this._refs.debug(`sprint phase entered remaining=${distanceToFinish.toFixed(1)}m`);
         }
 
-        if (this._sprintTriggered && this._refs.getState() === GameState.RACING) {
-            this.updateSprintTier(playerSwimmer.effortScore);
-        }
         const placement = this.calculatePlayerPlacement();
         // The camera frames this swimmer's position. Normally the player; in
         // AI-debug follow mode it's the opponent, while all race logic above still
@@ -673,22 +662,6 @@ export class GameFlowController {
 
     private calculateDivePower(charge: number): number {
         return Math.max(DIVE_BALANCE.minPower, Math.min(1, DIVE_BALANCE.minPower + clamp01(charge) * (1 - DIVE_BALANCE.minPower)));
-    }
-
-    // Interpret sustained sprint effort into a tier and push it only on change
-    // (doc 19: flow layer drives sprintTier; STEADY/PUSH/GAMBLE).
-    private updateSprintTier(effort: number) {
-        let tier = SprintTier.STEADY;
-        if (effort >= SPRINT_GAMBLE_EFFORT) {
-            tier = SprintTier.GAMBLE;
-        } else if (effort >= SPRINT_PUSH_EFFORT) {
-            tier = SprintTier.PUSH;
-        }
-        if (tier !== this._lastSprintTier) {
-            this._lastSprintTier = tier;
-            this._refs.updateSprintTier(tier);
-            this._refs.debug(`sprint tier=${tier}`);
-        }
     }
 
     private calculatePlayerPlacement(): RacePlacementSummary {

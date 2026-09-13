@@ -22,10 +22,6 @@ const ENERGY_EMPTY = new Color(120, 120, 130, 255);
 const ENERGY_LOW = new Color(255, 73, 76, 255);
 const ENERGY_MID = new Color(255, 152, 80, 255);
 const ENERGY_HIGH = new Color(120, 220, 255, 255);
-const SPRINT_ENERGY_EMPTY = new Color(180, 80, 30, 255);
-const SPRINT_ENERGY_LOW = new Color(255, 100, 30, 255);
-const SPRINT_ENERGY_MID = new Color(255, 160, 40, 255);
-const SPRINT_ENERGY_HIGH = new Color(255, 210, 70, 255);
 const ULTIMATE_DENIED = new Color(255, 73, 76, 255);
 const ULTIMATE_EMPTY = new Color(110, 100, 80, 255);
 const ULTIMATE_READY = new Color(255, 215, 90, 255);
@@ -225,9 +221,7 @@ export class UIController extends Component {
     updateEnergyBar(energy: number, depleted: boolean) {
         if (this.raceHudStatus) return;
         const ratio = clamp01(energy / this._energyTotal);
-        const color = this._sprintActive
-            ? sprintEnergyColor(ratio, depleted)
-            : energyColor(ratio, depleted);
+        const color = energyColor(ratio, depleted);
         const fillPixel = Math.round(ratio * HUD_BAR_WIDTH);
         const colorChanged = color !== this._energyColor;
         if (this.energyBarFill && (fillPixel !== this._energyFillPixel || colorChanged)) {
@@ -249,8 +243,6 @@ export class UIController extends Component {
         if (active === this._sprintActive) {
             return;
         }
-        this._energyFillPixel = -1;
-        this._energyColor = null;
         this._sprintActive = active;
         if (!this.sprintLabel) {
             return;
@@ -883,20 +875,6 @@ function energyColor(ratio: number, depleted: boolean): Color {
         return ENERGY_MID;
     }
     return ENERGY_HIGH;
-}
-
-// Fiery palette during sprint: warm oranges replace the normal blue/teal.
-function sprintEnergyColor(ratio: number, depleted: boolean): Color {
-    if (depleted || ratio <= 0.0001) {
-        return SPRINT_ENERGY_EMPTY;
-    }
-    if (ratio < 0.25) {
-        return SPRINT_ENERGY_LOW;
-    }
-    if (ratio < 0.5) {
-        return SPRINT_ENERGY_MID;
-    }
-    return SPRINT_ENERGY_HIGH;
 }
 
 function ultimateEnergyColor(ratio: number, enough: boolean, denied: boolean): Color {
