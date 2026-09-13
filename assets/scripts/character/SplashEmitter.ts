@@ -19,6 +19,7 @@ type SplashPart = {
     kickWeight: number;
     burstWeight: number;
     rippleTime: number;
+    rippleScale: number;
     lastHandEntry: number;
     frozenWorldPosition: Vec3;
 };
@@ -233,6 +234,7 @@ export class SplashEmitter {
     private _wake: WorldWakeEmitter | null = null;
     private readonly _particleEmitters: SplashParticleEmitter[] = [];
     private readonly _tmpWorld = new Vec3();
+    private readonly _tmpTakeoffPoint = new Vec3();
     private readonly _tmpLocal = new Vec3();
     private readonly _tmpEmitPosition = new Vec3();
     private readonly _tmpEmitEuler = new Vec3();
@@ -349,13 +351,63 @@ export class SplashEmitter {
         this.update(TUNING.triggerBurstUpdateSpeed);
     }
 
-    // Big one-shot surface plume for the dolphin-jump take-off and landing. Unlike
-    // triggerBurst (which only feeds the foam/spray signals and relies on the
-    // hand/leg entry edges to actually spawn particles), this fires an immediate
-    // exaggerated particle plume from EVERY emitter — hands, legs and body — at the
-    // fast particle profile, bypassing the entry gating and the leg-splash
-    // suppression that is active mid-jump. The leg emitters' continuous spray is
-    // still cleared next frame by the suppression, so no spray trails into the air.
+    // 玩家近距离镜头的起跳点强调；单张主水片、两侧飞溅和世界空间波纹。
+    triggerTakeoffSurfaceBurst(scale = 2.6) {
+        if (this._culled || !this._particleEffectsEnabled) return;
+        const config = TUNING.takeoffImpact;
+        const strength = clamp(scale / 2.6, 0, 1.5);
+        if (strength <= 0) return;
+        const direction = this._state.movementDirection >= 0 ? 1 : -1;
+        const heading = this._state.movementHeadingRadians;
+        // 从当前身体接触点发射，之后由世界空间粒子留在起跳水面。
+        if (!this._options.getBoneWorldPosition('Body', this._tmpTakeoffPoint)) {
+            this._tmpTakeoffPoint.set(this._options.owner.worldPosition);
+        }
+        this._tmpTakeoffPoint.y = this._waterY + config.height;
+        if (!this.node.active) this.node.active = true;
+        for (const emitter of this._particleEmitters) {
+            if (emitter.role !== 'hand') continue;
+            const sheet = emitter.visual === 'plume';
+            if (sheet && emitter.side === 'right') continue;
+            const side = emitter.side === 'left' ? -1 : 1;
+            this._tmpWorld.set(this._tmpTakeoffPoint);
+            const lateral = sheet ? 0 : side * config.lateralOffset;
+            this._tmpWorld.x -= Math.sin(heading) * lateral;
+            this._tmpWorld.z += direction * Math.cos(heading) * lateral;
+            emitter.node.setWorldPosition(this._tmpWorld);
+            const yaw = Math.atan2(direction * 0.8, -side * direction) * 180 / Math.PI;
+            emitter.node.setRotationFromEuler(sheet ? 90 : 46, sheet ? 0 : yaw, 0);
+            const system = emitter.system;
+            setCurveRangeTwoConstants(system.startLifetime, sheet ? config.sheetLifetimeMin : config.dropLifetimeMin, sheet ? config.sheetLifetimeMax : config.dropLifetimeMax);
+            setCurveRangeTwoConstants(system.startSpeed, sheet ? 0.22 : config.dropSpeedMin, sheet ? 0.40 : config.dropSpeedMax);
+            setCurveRange(system.gravityModifier, sheet ? 0 : 0.9);
+            setCurveRangeTwoConstants(system.startSizeX, sheet ? config.sheetWidthMin * strength : 0.14, sheet ? config.sheetWidthMax * strength : 0.23);
+            setCurveRangeTwoConstants(system.startSizeY, sheet ? config.sheetHeightMin * strength : 0.14, sheet ? config.sheetHeightMax * strength : 0.23);
+            setCurveRangeTwoConstants(system.startSizeZ, sheet ? config.sheetWidthMin * strength : 0.14, sheet ? config.sheetWidthMax * strength : 0.23);
+            if (system.shapeModule) { system.shapeModule.angle = sheet ? 8 : 24; system.shapeModule.radius = 0.06; }
+            system.play();
+            (system as any).emit(sheet ? 1 : config.dropCount, 0);
+            if (!sheet) {
+                setCurveRangeTwoConstants(system.startSizeX, 0.055, 0.095);
+                setCurveRangeTwoConstants(system.startSizeY, 0.055, 0.095);
+                setCurveRangeTwoConstants(system.startSizeZ, 0.055, 0.095);
+                setCurveRangeTwoConstants(system.startLifetime, 0.22, 0.34);
+                (system as any).emit(config.fineCount, 0);
+            }
+            emitter.sprayTime = emitter.sprayRate = emitter.sprayCarry = 0;
+            emitter.keepAlive = config.sheetLifetimeMax;
+            emitter.cooldown = 0.3;
+        }
+        for (const part of this._parts) {
+            if (part.node.name !== 'LeftHandRipple') continue;
+            part.frozenWorldPosition.set(this._tmpTakeoffPoint);
+            part.frozenWorldPosition.y = this._waterY + part.basePosition.y;
+            part.rippleTime = TUNING.foam.handRippleLifetime;
+            part.rippleScale = config.rippleScale;
+            this.keepHandRippleFrozen(part);
+        }
+    }
+
     triggerBigSurfaceBurst(scale = 1) {
         if (this._culled) {
             return;
@@ -406,6 +458,7 @@ export class SplashEmitter {
         this._state = EMPTY_STATE;
         for (const part of this._parts) {
             part.rippleTime = 0;
+            part.rippleScale = 1;
             part.lastHandEntry = 0;
         }
         for (const emitter of this._particleEmitters) {
@@ -430,6 +483,7 @@ export class SplashEmitter {
         }
         this._culled = culled;
         if (culled) {
+            for (const part of this._parts) { part.rippleTime = 0; part.rippleScale = 1; }
             this._leftHandImpact.reset();
             this._rightHandImpact.reset();
             this._wake?.reset();
@@ -513,6 +567,7 @@ export class SplashEmitter {
             if (isHandRipple) {
                 const enteredWater = (part.node.name.indexOf('Left') >= 0 ? this._leftHandImpact : this._rightHandImpact).triggered;
                 if (enteredWater) {
+                    part.rippleScale = 1;
                     this.freezeHandRippleAtPalm(part);
                     part.rippleTime = TUNING.foam.handRippleLifetime;
                 } else {
@@ -572,9 +627,9 @@ export class SplashEmitter {
             }
             part.node.setRotationFromEuler(0, isFoot && direction < 0 ? 180 : 0, 0);
             part.node.setScale(
-                part.baseScale.x * footBoost * (1 + speedRatio * TUNING.foam.speedScaleX + surge * TUNING.foam.surgeScaleX),
+                part.baseScale.x * part.rippleScale * footBoost * (1 + speedRatio * TUNING.foam.speedScaleX + surge * TUNING.foam.surgeScaleX),
                 1,
-                part.baseScale.z * footBoost * (1 + surge * TUNING.foam.surgeScaleZ),
+                part.baseScale.z * part.rippleScale * footBoost * (1 + surge * TUNING.foam.surgeScaleZ),
             );
             part.params.set(intensity, speedRatio, Math.min(TUNING.foam.maxIntensity, burst), part.seed);
             part.material.setProperty('splashParams', part.params);
@@ -659,6 +714,7 @@ export class SplashEmitter {
             kickWeight: tuning.kickWeight,
             burstWeight: tuning.burstWeight,
             rippleTime: 0,
+            rippleScale: 1,
             lastHandEntry: 0,
             frozenWorldPosition: new Vec3(),
         });
@@ -1042,7 +1098,7 @@ export class SplashEmitter {
         const isPlume = emitter.visual === 'plume';
         const useHandSprayProfile = emitter.role === 'leg' && emitter.visual === 'spray';
         // 判定反馈恢复常规喷散角度，避免沿用上一次拍水的短促小锥形。
-        if (isHand && emitter.visual === 'spray' && emitter.system.shapeModule) {
+        if (isHand && emitter.system.shapeModule) {
             emitter.system.shapeModule.angle = TUNING.particleSystem.handShapeAngle;
             emitter.system.shapeModule.radius = TUNING.particleSystem.handShapeRadius;
         }

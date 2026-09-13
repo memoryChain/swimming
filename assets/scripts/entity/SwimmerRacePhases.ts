@@ -677,7 +677,7 @@ export class SwimmerRacePhases {
                 this._dolphinElapsed = 0;
                 this._dolphinBaseDistance = distance;
                 this._dolphinBaseLateral = worldZ - this._host.startPosition.z;
-                rig?.triggerBigSplash(DOLPHIN_JUMP.takeoffSplashScale);
+                rig?.triggerTakeoffSplash(DOLPHIN_JUMP.takeoffSplashScale);
             }
             return;
         }

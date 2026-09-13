@@ -170,3 +170,19 @@ test('正反向游动的左右手飞溅轴均向外后方抬起', () => {
         assert(axis.y>.3,'先向上飞溅，再由重力落回');
     }
 });
+
+test('起跳点只发一张主水片和两侧少量飞溅，波纹留在水面',()=>{
+ const {Vec3}=createHarness();
+ const Subject=method('triggerTakeoffSurfaceBurst',{clamp:(v,a,b)=>Math.max(a,Math.min(b,v)),setCurveRange:()=>{},setCurveRangeTwoConstants:()=>{}});
+ const h=new Subject(),counts=[],positions=[];
+ Object.assign(h,{_culled:false,_particleEffectsEnabled:true,_state:{movementDirection:1,movementHeadingRadians:0},_waterY:.15,_tmpWorld:new Vec3(),_tmpTakeoffPoint:new Vec3(),node:{active:false},_options:{getBoneWorldPosition:(_,v)=>{v.set(3,4,5);return true;}}});
+ h._particleEmitters=[];
+ for(const side of ['left','right'])for(const visual of ['plume','spray'])h._particleEmitters.push({role:'hand',side,visual,node:{setWorldPosition:v=>positions.push({...v}),setRotationFromEuler(){}},system:{shapeModule:{},play(){},emit:n=>counts.push([visual,n])}});
+ const ring={node:{name:'LeftHandRipple'},frozenWorldPosition:new Vec3(),basePosition:new Vec3(0,.01,0),rippleScale:1};h._parts=[ring];h.keepHandRippleFrozen=()=>{};
+ h.triggerTakeoffSurfaceBurst();
+ assert.deepEqual(counts,[['plume',1],['spray',6],['spray',3],['spray',6],['spray',3]]);
+ assert(positions.every(p=>p.y===.15+TUNING.takeoffImpact.height));
+ assert.equal(ring.frozenWorldPosition.x,3);assert.equal(ring.frozenWorldPosition.y,.16);assert.equal(ring.rippleScale,TUNING.takeoffImpact.rippleScale);
+ assert(h._particleEmitters.filter(e=>e.keepAlive).every(e=>e.sprayTime===0));
+ counts.length=0;h._culled=true;h.triggerTakeoffSurfaceBurst();assert.equal(counts.length,0);
+});

@@ -427,6 +427,7 @@ export const RESOURCE_PATHS = {
         topSettings: 'ui/lobby-v1/top-settings/texture',
         topCurrency: 'ui/lobby-v1/top-currency/texture',
     },
+    softSpeedStreak: 'ui/vfx/SoftSpeedStreak/texture',
     raceHudCountdownFont: 'fonts/Bungee-Regular',
     raceHudUi: {
         speedFont: 'fonts/ShuiMasterSpeed-Heavy',

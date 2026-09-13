@@ -1576,6 +1576,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     // Big exaggerated one-shot surface plume for the dolphin-jump take-off and
     // landing (all emitters fire, bypassing entry gating and leg suppression).
+    triggerTakeoffSplash(scale = 2.6) {
+        this._splashEmitter?.triggerTakeoffSurfaceBurst(scale);
+    }
+
     triggerBigSplash(scale = 1) {
         this._splashEmitter?.triggerBigSurfaceBurst(scale);
     }

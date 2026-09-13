@@ -23,6 +23,7 @@ class Component { get isValid() { return this.node?.isValid; } }
 class UITransform extends Component {
     contentSize = { width: 0, height: 0 };
     setContentSize(width, height) { this.contentSize = { width, height }; }
+    convertToWorldSpaceAR(input, out) { const p = this.node.getWorldPosition({}); out.x = input.x + p.x; out.y = input.y + p.y; out.z = input.z + p.z; return out; }
     convertToNodeSpaceAR(input, out) { const p = this.node.getWorldPosition({}); out.x = input.x - p.x; out.y = input.y - p.y; out.z = input.z - p.z; return out; }
 }
 class Label extends Component {
@@ -496,7 +497,7 @@ function attributeTipsHarness() {
     const resources = load(path.join(root, 'assets/scripts/core/ResourcePaths.ts'));
     const file = path.join(root, 'assets/scripts/ui/CharacterAttributeTips.ts');
     const imports = {
-        cc: { ...cc, Vec3: class { x = 0; y = 0; z = 0; } },
+        cc: { ...cc, Vec3: class { x = 0; y = 0; z = 0; set(x, y, z) { Object.assign(this, { x, y, z }); } } },
         '../core/ResourcePaths': resources,
         './RuntimeUiFactory': factory,
         './UILayers': { UILayer: { Popup: 3 }, getUILayer: () => overlay },
@@ -509,13 +510,13 @@ function attributeTipsHarness() {
     return { ...m.exports, overlay, pending, factory, resources, identityCamera };
 }
 
-test('属性tips复用联机资源，开关不新增节点或监听，关闭阻断及迟到资源释放正确', () => {
+test('属性说明静态卡片开关不新增节点或监听，关闭阻断正确', () => {
     const h = attributeTipsHarness(), canvas = new Node('canvas');
     canvas.addComponent(Canvas).cameraComponent = h.identityCamera;
     const anchor = h.factory.makeTouchArea('StatRow', canvas, 284, 42);
     const before = resizeListeners.get('canvas-resize')?.size ?? 0;
     const tips = new h.CharacterAttributeTips(canvas);
-    assert.equal(h.pending[0].path, h.resources.RESOURCE_PATHS.onlineRoomUi.popup);
+    assert.equal(h.pending.length, 0, '静态说明卡无需额外加载纹理');
     assert.equal(tips.root.active, false);
     const count = nodes(tips.root).length;
     const panel = find(tips.root, 'AttributeTipsPanel');
@@ -525,34 +526,33 @@ test('属性tips复用联机资源，开关不新增节点或监听，关闭阻�
         for (const x of [-width / 2 + 20, width / 2 - 20]) {
             anchor.setPosition(x, 80);
             for (let i = 0; i < 30; i++) {
-                tips.show(i % 3, anchor);
-                const info = h.CHARACTER_ATTRIBUTE_TIPS[i % 3];
-                assert.equal(find(tips.root, 'AttributeTipsTitle').getComponent(Label).string, info.title);
-                assert.equal(find(tips.root, 'AttributeTipsSummary').getComponent(Label).string, info.summary);
-                assert.equal(find(tips.root, 'AttributeTipsDetail').getComponent(Label).string, info.detail);
+                tips.show(anchor);
+                assert.equal(find(tips.root, 'AttributeTipsTitle').getComponent(Label).string, '属性说明');
+                for (const [index, info] of h.CHARACTER_ATTRIBUTE_TIPS.entries()) {
+                    assert.equal(find(tips.root, `AttributeTipsHeading${index}`).getComponent(Label).string, info.title);
+                    assert.equal(find(tips.root, `AttributeTipsSummary${index}`).getComponent(Label).string, info.summary);
+                }
                 assert.equal(tips.root.active, true);
-                assert.ok(Math.abs(panel.position.x) + 208 <= width / 2 - 16);
-                assert.ok(Math.abs(panel.position.y) + 132 <= 360 - 16);
+                assert.ok(Math.abs(panel.position.x) + 180 <= width / 2 - 16);
+                assert.ok(Math.abs(panel.position.y) + 142 <= 360 - 16);
                 panel.click(); assert.equal(tips.root.active, true);
                 find(tips.root, i % 2 ? 'CloseAttributeTips' : 'DismissAttributeTips').click();
                 assert.equal(tips.root.active, false);
                 assert.equal(nodes(tips.root).length, count);
-                assert.equal(h.pending.length, 1);
+                assert.equal(h.pending.length, 0);
             }
         }
     }
-    anchor.active = false; tips.show(0, anchor); assert.equal(tips.root.active, false);
-    anchor.active = true; tips.show(0, anchor);
+    anchor.active = false; tips.show(anchor); assert.equal(tips.root.active, false);
+    anchor.active = true; tips.show(anchor);
     for (const fn of resizeListeners.get('canvas-resize')) fn();
     assert.equal(tips.root.active, false);
     tips.dispose(); tips.dispose();
-    h.pending[0].done({ isValid: true });
-    assert.equal(panel.getComponent(Sprite).spriteFrame, null, '销毁后晚到资源不回写');
     assert.equal(resizeListeners.get('canvas-resize').size, before);
     visibleSize.width = 1280;
 });
 
-test('主界面和角色页三行真实绑定同一tips，点击不升级或重建预览，离开时拒绝新弹框', () => {
+test('主界面和角色页整个属性区域绑定同一说明卡，点击不升级或重建预览，离开时拒绝新弹框', () => {
     const h = attributeTipsHarness();
     const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -572,7 +572,7 @@ test('主界面和角色页三行真实绑定同一tips，点击不升级或重�
         makeRaceTextureButton: (name, parent) => h.factory.makeTouchArea(name, parent, 100, 50),
     });
     const f = new Harness();
-    Object.assign(f, { _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
+    Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
     const ready = new Node('Ready'), attributes = new Node('Attributes');
     ready.addComponent(Canvas).cameraComponent = h.identityCamera;
     attributes.addComponent(Canvas).cameraComponent = h.identityCamera;
@@ -580,15 +580,15 @@ test('主界面和角色页三行真实绑定同一tips，点击不升级或重�
     for (const parent of [ready, attributes]) {
         const count = nodes(parent).length;
         for (let i = 0; i < 3; i++) {
-            const hit = find(parent, `AttributeTipHit${i}`);
+            const hit = find(parent, 'AttributeTipHit');
             assert.ok(hit.getComponent(UITransform).contentSize.width >= 284);
             assert.equal(hit.handlers.click.length, 1);
-            hit.click(); assert.equal(find(f._attributeTips.root, 'AttributeTipsTitle').getComponent(Label).string, h.CHARACTER_ATTRIBUTE_TIPS[i].title);
+            hit.click(); assert.equal(find(f._attributeTips.root, 'AttributeTipsTitle').getComponent(Label).string, '属性说明');
             f._attributeTips.hide(); assert.equal(nodes(parent).length, count);
         }
     }
-    assert.equal(h.pending.length, 1, '两个页面只创建一个tips实例');
-    f._leaving = true; find(ready, 'AttributeTipHit0').click(); assert.equal(f._attributeTips.root.active, false);
+    assert.equal(h.overlay.children.length, 1, '两个页面只创建一个tips实例');
+    f._leaving = true; find(ready, 'AttributeTipHit').click(); assert.equal(f._attributeTips.root.active, false);
     f._attributeTips.dispose();
 });
 
@@ -622,16 +622,19 @@ test('属性tips跨相机投影：主画布原点和覆盖层原点不同，弹�
             for (const [mainX, mainY, popupX, popupY] of [[640, 360, 0, 0], [960, 540, -120, 80]]) {
                 canvas.setPosition(mainX, mainY); h.overlay.setPosition(popupX, popupY);
                 for (const [x, y] of [[-446, 107], [-446, 62], [-446, 17], [447, 107.5], [447, 63.5], [447, 18]]) {
-                    anchor.setPosition(x, y, 4); tips.show(1, anchor);
+                    anchor.setPosition(x, y, 4); tips.show(anchor);
                     const panel = find(tips.root, 'AttributeTipsPanel');
-                    const limit = width / 2 - 208 - 16;
-                    assert.ok(Math.abs(panel.position.x - Math.max(-limit, Math.min(limit, x + 44))) < 1e-6);
-                    assert.ok(Math.abs(panel.position.y - (y - 154)) < 1e-6, '弹框顶部必须落在所点行下方');
+                    const limit = width / 2 - 180 - 16;
+                    const halfAnchor = anchor.getComponent(UITransform).contentSize.width / 2;
+                    const right = x + halfAnchor + 28 + 180;
+                    const preferred = right > limit ? x - halfAnchor - 28 - 180 : right;
+                    assert.ok(Math.abs(panel.position.x - Math.max(-limit, Math.min(limit, preferred))) < 1e-6);
+                    assert.ok(Math.abs(panel.position.y - y) < 1e-6, '说明卡应与整个属性区域垂直居中');
                 }
             }
         }
-        assert.equal(sourceCalls, 36); assert.equal(popupCalls, sourceCalls);
+        assert.ok(sourceCalls >= 36); assert.equal(popupCalls, sourceCalls);
         canvas.getComponent(Canvas).cameraComponent = null;
-        tips.show(0, anchor); assert.equal(tips.root.active, false, '缺少渲染相机不回退到错误的世界坐标');
+        tips.show(anchor); assert.equal(tips.root.active, false, '缺少渲染相机不回退到错误的世界坐标');
     } finally { tips.dispose(); visibleSize.width = 1280; }
 });

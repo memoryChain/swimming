@@ -325,8 +325,10 @@ export class PrepareRaceFlow {
             const statValue = makeBoundLabel(`StatValue${index}`, parent, '', 19, uiColor(31, 43, 62), 82, 28, -357, statY[index], Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(statValue, 'Arial Black', true, 24);
             this._readyStats.push(statValue);
-            this.bindAttributeTip(parent, index, -446, statY[index], 290, 42);
+
         }
+
+        this.bindAttributeTip(parent, -446, 62, 290, 132);
 
         makeRaceTextureSprite('ReadySkillCard', parent, RESOURCE_PATHS.lobbyUi.skillCard, 320, 145, -445, -98.5, 2);
         const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 70, 24, -545, -42);
@@ -353,13 +355,13 @@ export class PrepareRaceFlow {
         }
     }
 
-    private bindAttributeTip(parent: Node, index: number, x: number, y: number, width: number, height: number): void {
-        const hit = makeTouchArea(`AttributeTipHit${index}`, parent, width, height);
+    private bindAttributeTip(parent: Node, x: number, y: number, width: number, height: number): void {
+        const hit = makeTouchArea('AttributeTipHit', parent, width, height);
         hit.setPosition(x, y, 4);
         hit.on(Button.EventType.CLICK, () => {
             if (this._leaving || !hit.isValid || !hit.activeInHierarchy) return;
             if (!this._attributeTips) this._attributeTips = new CharacterAttributeTips(this._canvasNode);
-            this._attributeTips.show(index, hit);
+            this._attributeTips.show(hit);
         });
     }
 
@@ -723,8 +725,9 @@ export class PrepareRaceFlow {
             const next = makeBoundLabel(`Next${index}`, parent, '', 19, uiColor(56, 208, 29), 62, 28, 78.5, y, Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(next, 'Arial Black', true, 24);
             this._inspectorNextStats.push(next);
-            this.bindAttributeTip(parent, index, -15.5, y, 284, 42);
+
         }
+        this.bindAttributeTip(parent, -15.5, 40.75, 284, 131.5);
         makeRaceTextureSprite('SkillHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -53, 1);
         const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 76, 24, -119.5, -53, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 20);

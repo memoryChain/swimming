@@ -58,7 +58,7 @@ export type GameFlowRefs = {
     enterSprint: () => void;
     updateSprintTier: (tier: SprintTier) => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
-    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean) => void;
+    updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean, jumpActive: boolean, flightPitch: number) => void;
     debug: (message: string) => void;
 };
 
@@ -527,11 +527,13 @@ export class GameFlowController {
         this._refs.updateCameraSpeedLines?.(
             dt,
             cameraSnapshot.playerSpeed,
-            this._finishViewElapsed < 0 && (dolphinAirborne
-                || (this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
+            cameraSnapshot.raceActive && this._finishViewElapsed < 0 && (dolphinAirborne
+                || (!playerSwimmer.isDolphinCameraActive && this._refs.raceCameraDirector.mode === RaceCameraMode.Sprint
                     && !this._refs.raceCameraDirector.topViewActive
                     && !this._refs.raceCameraDirector.underwaterViewActive)),
             this._sprintTriggered || dolphinAirborne,
+            dolphinAirborne,
+            playerSwimmer.flightPitch,
         );
         // Feed the jumbotron side-view camera the same snapshot so both stay in sync.
         this._refs.updateScoreboardFeed?.(dt, cameraSnapshot);

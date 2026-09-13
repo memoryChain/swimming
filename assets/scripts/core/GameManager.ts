@@ -845,8 +845,8 @@ export class GameManager extends Component {
                 if (this._aiDebugMode && !this._netSession) this.selectAiCameraIndex(-1);
             },
             updateScoreboardFeed: (dt, snapshot) => this._scoreboardFeed?.update(dt, snapshot),
-            updateCameraSpeedLines: (dt, speed, visible, sprintBoost) => {
-                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost);
+            updateCameraSpeedLines: (dt, speed, visible, sprintBoost, jumpActive, flightPitch) => {
+                this._cameraSpeedLines.update(dt, speed, visible, sprintBoost, jumpActive, flightPitch);
             },
             exitModelDebug: (showStart) => this.exitModelDebug(showStart),
             handleModelDebugStroke: (type) => this._modelDebugFlow?.handleStroke(type) ?? false,

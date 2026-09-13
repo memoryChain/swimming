@@ -431,6 +431,24 @@ export const SPLASH_EMITTER_TUNING = {
     },
 
     // 手掌入水时的短促飞溅，与 GOOD／PERFECT 反馈分开触发。
+    takeoffImpact: {
+        height: 0.22,
+        lateralOffset: 0.30,
+        sheetWidthMin: 2.0,
+        sheetWidthMax: 2.3,
+        sheetHeightMin: 1.25,
+        sheetHeightMax: 1.55,
+        sheetLifetimeMin: 0.60,
+        sheetLifetimeMax: 0.72,
+        dropLifetimeMin: 0.35,
+        dropLifetimeMax: 0.50,
+        dropSpeedMin: 2.2,
+        dropSpeedMax: 3.2,
+        dropCount: 6,
+        fineCount: 3,
+        rippleScale: 2.6,
+    },
+
     handImpact: {
         // 手骨位于腕部，4 厘米接触带近似手掌下缘；抬高后才允许下一次拍水。
         contactHeight: 0.04,

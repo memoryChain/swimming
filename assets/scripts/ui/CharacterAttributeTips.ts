@@ -1,43 +1,34 @@
-import { Button, Camera, Canvas, Label, Node, Sprite, UITransform, Vec3, view } from 'cc';
-import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { makeLabel, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { Button, Camera, Canvas, Label, Node, UITransform, Vec3, view } from 'cc';
+import { makeLabel, makeRoundedRect, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import { getUILayer, UILayer } from './UILayers';
 
 // 顺序与主界面、角色属性页一致。解释稳定规则，不写会随调参变化的倍率。
 export const CHARACTER_ATTRIBUTE_TIPS = [
-    {
-        title: '体力',
-        summary: '决定能维持多少次有力划水。\n体力越高，持续划水越久。',
-        detail: '划水和海豚跳都会消耗体力。\n耗尽后划水更慢、推进更弱。\n比赛中体力不会自行恢复。',
-    },
-    {
-        title: '技巧',
-        summary: '增强每次手臂划水的推进。\n同样操作，技巧越高游得越快。',
-        detail: '按住划水和松手推进都会增强。\n不改变左右转向和完美判定。\n不影响独立踢腿或起跳速度。',
-    },
-    {
-        title: '爆发力',
-        summary: '提高跳水、海豚跳和翻滚蹬墙\n这三种动作的初速度。',
-        detail: '爆发力越高，起跳冲得越快。\n其他条件相同，推进距离更远。\n不提高普通划水或踢腿的速度。',
-    },
+    { title: '体力', summary: '划水更持久，比赛中不恢复。' },
+    { title: '技巧', summary: '增强每次划水的推进。' },
+    { title: '爆发力', summary: '提高跳水、海豚跳和蹬墙初速度。' },
 ] as const;
 
-const WIDTH = 416;
-const HEIGHT = 264;
+const WIDTH = 360;
+// 24px 上下留白；标题 32px；标题后 20px；每组两行各 26px、组间 14px。
+const PADDING = 24;
+const TITLE_HEIGHT = 32;
+const LINE_HEIGHT = 26;
+const GROUP_GAP = 14;
+const HEADER_GAP = 20;
+const HEIGHT = PADDING * 2 + TITLE_HEIGHT + HEADER_GAP
+    + CHARACTER_ATTRIBUTE_TIPS.length * LINE_HEIGHT * 2
+    + (CHARACTER_ATTRIBUTE_TIPS.length - 1) * GROUP_GAP;
 const MARGIN = 16;
 const TITLE_COLOR = uiColor(247, 250, 255);
-const BODY_COLOR = uiColor(181, 201, 225);
+const BODY_COLOR = uiColor(202, 218, 235);
 
-/** 复用联机玩家 tips 原底板、分隔线、配色及关闭方式；只在点击时更新。 */
+/** 大厅和角色页共用的属性说明；静态底板只创建一次，三项文案一次建立。 */
 export class CharacterAttributeTips {
     readonly root: Node;
     private readonly panel: Node;
     private readonly dismiss: Node;
-    private readonly title: Label;
-    private readonly summary: Label;
-    private readonly detail: Label;
     private readonly anchorPoint = new Vec3();
     private readonly screenPoint = new Vec3();
     private readonly overlayWorld = new Vec3();
@@ -51,18 +42,22 @@ export class CharacterAttributeTips {
         this.dismiss.on(Button.EventType.CLICK, () => this.hide());
         // 面板本身消费触摸，阅读时点击文字不会穿透到旋转、升级或开始按钮。
         this.panel = makeTouchArea('AttributeTipsPanel', this.root, WIDTH, HEIGHT);
-        const sprite = this.panel.addComponent(Sprite);
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        sprite.trim = false;
-        loadAvatarUiSpriteFrame(RESOURCE_PATHS.onlineRoomUi.popup, frame => {
-            if (!this.disposed && sprite.isValid && frame && sprite.spriteFrame !== frame) sprite.spriteFrame = frame;
+        // 简单静态形状，不使用拉伸图片、逐帧绘制或装饰特效。
+        makeRoundedRect('CardSurface', this.panel, WIDTH, HEIGHT, uiColor(23, 43, 64, 250), 20,
+            uiColor(105, 146, 168, 180), 1);
+        const titleY = HEIGHT / 2 - PADDING - TITLE_HEIGHT / 2;
+        const title = this.text('AttributeTipsTitle', '属性说明', 24, TITLE_HEIGHT, titleY, true);
+        title.node.getComponent(UITransform)!.setContentSize(260, TITLE_HEIGHT);
+        title.node.setPosition(-26, titleY);
+        const contentTop = HEIGHT / 2 - PADDING - TITLE_HEIGHT - HEADER_GAP;
+        CHARACTER_ATTRIBUTE_TIPS.forEach((info, index) => {
+            const y = contentTop - LINE_HEIGHT / 2 - index * (LINE_HEIGHT * 2 + GROUP_GAP);
+            const heading = this.text(`AttributeTipsHeading${index}`, info.title, 20, LINE_HEIGHT, y, true);
+            heading.color = uiColor(133, 237, 219);
+            this.text(`AttributeTipsSummary${index}`, info.summary, 18, LINE_HEIGHT, y - LINE_HEIGHT, false);
         });
-        // 原图等比放大两倍：保留顶部指示箭头及中间横线，文字分放在线的上下。
-        this.title = this.text('AttributeTipsTitle', '', 26, 36, 80, true);
-        this.summary = this.text('AttributeTipsSummary', '', 20, 56, 28, false);
-        this.detail = this.text('AttributeTipsDetail', '', 18, 78, -56, false);
         const close = makeTouchArea('CloseAttributeTips', this.panel, 44, 44);
-        close.setPosition(166, 84);
+        close.setPosition(148, titleY);
         const closeLabel = makeLabel('CloseText', close, '×', 26, uiColor(200, 216, 237)).getComponent(Label)!;
         closeLabel.overflow = Label.Overflow.CLAMP;
         styleProjectUiLabel(closeLabel, 'semibold', 32);
@@ -73,31 +68,39 @@ export class CharacterAttributeTips {
         view.on('design-resolution-changed', this.onResize);
     }
 
-    show(index: number, anchor: Node): void {
-        const info = CHARACTER_ATTRIBUTE_TIPS[index];
-        if (this.disposed || !this.root.isValid || !anchor.isValid || !anchor.activeInHierarchy || !info) return;
+    show(anchor: Node): void {
+        if (this.disposed || !this.root.isValid || !anchor.isValid || !anchor.activeInHierarchy) return;
         const sourceCamera = canvasCamera(anchor);
         const popupCamera = canvasCamera(this.root);
         if (!sourceCamera || !popupCamera) {
             this.hide();
             return;
         }
-        assign(this.title, info.title);
-        assign(this.summary, info.summary);
-        assign(this.detail, info.detail);
         const size = view.getVisibleSize();
         resize(this.root, size.width, size.height);
         resize(this.dismiss, size.width, size.height);
-        anchor.getWorldPosition(this.anchorPoint);
+        const anchorTransform = anchor.getComponent(UITransform)!;
+        this.anchorPoint.set(anchorTransform.contentSize.width / 2 + 28, 0, 0);
+        anchorTransform.convertToWorldSpaceAR(this.anchorPoint, this.overlayWorld);
         // 两个 Canvas 由不同相机渲染，世界坐标原点可能不同，必须经过屏幕坐标衔接。
-        sourceCamera.worldToScreen(this.anchorPoint, this.screenPoint);
+        sourceCamera.worldToScreen(this.overlayWorld, this.screenPoint);
         popupCamera.screenToWorld(this.screenPoint, this.overlayWorld);
         this.root.getComponent(UITransform)!.convertToNodeSpaceAR(this.overlayWorld, this.anchorPoint);
-        // 原图顶部箭头比中心左移44px；优先置于属性行下方，限制在可见画布内。
+        // 属性区右边缘加面板边距；空间不足时放左侧，避免盖住属性或超出屏幕。
         const xLimit = Math.max(0, size.width / 2 - WIDTH / 2 - MARGIN);
         const yLimit = Math.max(0, size.height / 2 - HEIGHT / 2 - MARGIN);
-        const x = Math.max(-xLimit, Math.min(xLimit, this.anchorPoint.x + 44));
-        const y = Math.max(-yLimit, Math.min(yLimit, this.anchorPoint.y - 22 - HEIGHT / 2));
+        let preferredX = this.anchorPoint.x + WIDTH / 2;
+        const anchorY = this.anchorPoint.y;
+        if (preferredX > xLimit) {
+            this.anchorPoint.set(-anchorTransform.contentSize.width / 2 - 28, 0, 0);
+            anchorTransform.convertToWorldSpaceAR(this.anchorPoint, this.overlayWorld);
+            sourceCamera.worldToScreen(this.overlayWorld, this.screenPoint);
+            popupCamera.screenToWorld(this.screenPoint, this.overlayWorld);
+            this.root.getComponent(UITransform)!.convertToNodeSpaceAR(this.overlayWorld, this.anchorPoint);
+            preferredX = this.anchorPoint.x - WIDTH / 2;
+        }
+        const x = Math.max(-xLimit, Math.min(xLimit, preferredX));
+        const y = Math.max(-yLimit, Math.min(yLimit, anchorY));
         if (this.panel.position.x !== x || this.panel.position.y !== y) this.panel.setPosition(x, y);
         if (!this.root.active) this.root.active = true;
     }
@@ -120,16 +123,12 @@ export class CharacterAttributeTips {
         label.horizontalAlign = Label.HorizontalAlign.LEFT;
         label.verticalAlign = Label.VerticalAlign.CENTER;
         label.overflow = Label.Overflow.CLAMP;
-        label.enableWrapText = true;
-        styleProjectUiLabel(label, heading ? 'semibold' : 'regular', size + 8);
-        label.node.getComponent(UITransform)!.setContentSize(heading ? 290 : 344, height);
-        label.node.setPosition(heading ? -27 : 0, y);
+        label.enableWrapText = false;
+        styleProjectUiLabel(label, heading ? 'semibold' : 'regular', height);
+        label.node.getComponent(UITransform)!.setContentSize(312, height);
+        label.node.setPosition(0, y);
         return label;
     }
-}
-
-function assign(label: Label, value: string): void {
-    if (label.string !== value) label.string = value;
 }
 
 function resize(node: Node, width: number, height: number): void {
