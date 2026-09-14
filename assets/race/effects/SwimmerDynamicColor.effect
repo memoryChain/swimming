@@ -214,10 +214,9 @@ CCProgram swimmer-color-fs %{
       // central surfaces untouched.
       float innerEdge = pow(1.0 - clamp(chargeNdotV, 0.0, 1.0), 1.8);
       float chargeProgress = clamp(chargeParams.y, 0.0, 1.0);
-      vec3 chargeColor = chargeProgress < 0.34
-        ? chargeBlue.rgb
-        : (chargeProgress < 0.67 ? chargeYellow.rgb : chargeRed.rgb);
-      float chargePulse = 0.95 + sin(cc_time.x * chargeParams.w) * 0.05;
+      vec3 chargeColor = mix(chargeBlue.rgb, chargeYellow.rgb, smoothstep(0.50, 0.82, chargeProgress));
+      chargeColor = mix(chargeColor, chargeRed.rgb, smoothstep(0.85, 1.0, chargeProgress));
+      float chargePulse = 0.92 + sin(cc_time.x * 5.0) * 0.08;
       // A narrow hot core boosts only the silhouette-most pixels. The broader
       // inner glow width remains unchanged and the body centre stays untouched.
       float edgeCore = pow(1.0 - clamp(chargeNdotV, 0.0, 1.0), 6.0);

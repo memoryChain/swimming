@@ -4,19 +4,19 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 
 const GATHER_BLUE = new Color(48, 198, 255, 238);
 const GATHER_YELLOW = new Color(255, 218, 42, 238);
-const GATHER_RED = new Color(255, 54, 24, 238);
+const GATHER_RED = new Color(255, 235, 155, 238);
 const RELEASE_YELLOW_WHITE = new Color(255, 232, 128, 255);
 const RELEASE_BURST_SECONDS = 0.38;
 const RELEASE_BURST_DISTANCE = 0.92;
-const GATHER_TRAVEL_DISTANCE = 0.72;
+const GATHER_TRAVEL_DISTANCE = 0.55;
 // 28 paired ribbons are already baked into the single mesh. Revealing half of
 // them makes the gather read denser without adding draw calls or allocations.
 const GATHER_FIXED_DENSITY = 0.50;
-const RAY_INNER_RADIUS = 0.26;
-const RAY_OUTER_RADIUS = 0.76;
-const RAY_HALF_WIDTH = 0.009;
-const RELEASE_HALO_SEGMENTS = 28;
-const RELEASE_HALO_HALF_WIDTH = 0.045;
+const RAY_INNER_RADIUS = 0.24;
+const RAY_OUTER_RADIUS = 0.34;
+const RAY_HALF_WIDTH = 0.026;
+const RELEASE_HALO_SEGMENTS = 64;
+const RELEASE_HALO_HALF_WIDTH = 0.028;
 const POSITION_EPSILON_SQ = 0.0004;
 
 const RAY_COUNT = 28;
@@ -59,6 +59,11 @@ export class DiveChargeGatherEffect {
             return;
         }
         this._requestedActive = active;
+        if (active) {
+            // 每次新蓄力只记一次起点；蓄力往返和调色不重播圆环。
+            this._params.y = shaderTimeSeconds();
+            if (this._material?.isValid) this._material.setProperty('chargeParams', this._params);
+        }
         this.syncVisibility();
     }
 
@@ -204,17 +209,19 @@ function buildGatherGeometry() {
     // visible around the swimmer.
     const direction = Vec3.RIGHT;
     const sideA = Vec3.UP;
-    const sideB = Vec3.FORWARD;
     for (let rayIndex = 0; rayIndex < RAY_COUNT; rayIndex++) {
         // Density reveals the first N rays. A golden-ratio phase permutation
         // keeps that visible subset from respawning in a regular sequence.
         const phase = (rayIndex * GOLDEN_RATIO_CONJUGATE) % 1;
         const densityRank = rayIndex / Math.max(1, RAY_COUNT - 1);
         appendRibbon(positions, normals, uvs, colors, indices, direction, sideA, phase, densityRank, 0);
-        appendRibbon(positions, normals, uvs, colors, indices, direction, sideB, phase, densityRank, 1);
     }
     // Three crossed soft rings read as one volumetric halo from the side, top,
     // and diagonal countdown cameras while staying in this mesh's draw call.
+    // 十条低透明度长线，与原短光点和圆环共用一次绘制。
+    for (let i = 0; i < 10; i++) {
+        appendRibbon(positions, normals, uvs, colors, indices, direction, sideA, (i * 0.37) % 1, i / 28, 1);
+    }
     appendReleaseHalo(positions, normals, uvs, colors, indices);
     return { positions, normals, uvs, colors, indices };
 }
@@ -226,9 +233,9 @@ function appendReleaseHalo(
     colors: number[],
     indices: number[],
 ) {
-    appendHaloRing(positions, normals, uvs, colors, indices, [1, 0, 0], [0, 1, 0]);
-    appendHaloRing(positions, normals, uvs, colors, indices, [1, 0, 0], [0, 0, 1]);
-    appendHaloRing(positions, normals, uvs, colors, indices, [0, 1, 0], [0, 0, 1]);
+    appendHaloRing(positions, normals, uvs, colors, indices, [1, 0, 0], [0, 1, 0], 0);
+    appendHaloRing(positions, normals, uvs, colors, indices, [1, 0, 0], [0, 1, 0], 1);
+    appendHaloRing(positions, normals, uvs, colors, indices, [1, 0, 0], [0, 1, 0], 1.5);
 }
 
 function appendHaloRing(
@@ -239,6 +246,7 @@ function appendHaloRing(
     indices: number[],
     axisA: readonly [number, number, number],
     axisB: readonly [number, number, number],
+    delaySeconds: number,
 ) {
     for (let segment = 0; segment < RELEASE_HALO_SEGMENTS; segment++) {
         const angle0 = segment / RELEASE_HALO_SEGMENTS * Math.PI * 2;
@@ -254,10 +262,10 @@ function appendHaloRing(
             axisA[2] * Math.cos(angle1) + axisB[2] * Math.sin(angle1),
         ];
         const base = positions.length / 3;
-        appendHaloVertex(positions, normals, uvs, colors, direction0, 1 - RELEASE_HALO_HALF_WIDTH, segment / RELEASE_HALO_SEGMENTS, 0);
-        appendHaloVertex(positions, normals, uvs, colors, direction0, 1 + RELEASE_HALO_HALF_WIDTH, segment / RELEASE_HALO_SEGMENTS, 1);
-        appendHaloVertex(positions, normals, uvs, colors, direction1, 1 - RELEASE_HALO_HALF_WIDTH, (segment + 1) / RELEASE_HALO_SEGMENTS, 0);
-        appendHaloVertex(positions, normals, uvs, colors, direction1, 1 + RELEASE_HALO_HALF_WIDTH, (segment + 1) / RELEASE_HALO_SEGMENTS, 1);
+        appendHaloVertex(positions, normals, uvs, colors, direction0, 1 - RELEASE_HALO_HALF_WIDTH, segment / RELEASE_HALO_SEGMENTS, 0, delaySeconds);
+        appendHaloVertex(positions, normals, uvs, colors, direction0, 1 + RELEASE_HALO_HALF_WIDTH, segment / RELEASE_HALO_SEGMENTS, 1, delaySeconds);
+        appendHaloVertex(positions, normals, uvs, colors, direction1, 1 - RELEASE_HALO_HALF_WIDTH, (segment + 1) / RELEASE_HALO_SEGMENTS, 0, delaySeconds);
+        appendHaloVertex(positions, normals, uvs, colors, direction1, 1 + RELEASE_HALO_HALF_WIDTH, (segment + 1) / RELEASE_HALO_SEGMENTS, 1, delaySeconds);
         indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
     }
 }
@@ -271,12 +279,14 @@ function appendHaloVertex(
     radius: number,
     u: number,
     v: number,
+    delaySeconds: number,
 ) {
     positions.push(direction[0] * radius, direction[1] * radius, direction[2] * radius);
     normals.push(direction[0], direction[1], direction[2]);
     uvs.push(u, v);
     // Vertex colour B marks release-halo geometry; gather rays keep B at zero.
-    colors.push(0, 0, 1, 1);
+    // 颜色属性限定0～1，延迟按两秒归一化编码。
+    colors.push(0, 0, 1, delaySeconds / 2);
 }
 
 function appendRibbon(
@@ -331,12 +341,12 @@ function appendVertex(
 function gatherSpeedForProgress(progress: number): number {
     const value = Math.max(0, Math.min(1, progress));
     if (value < 0.34) {
-        return lerp(2.2, 2.6, value / 0.34);
+        return lerp(0.85, 1.05, value / 0.34);
     }
     if (value < 0.67) {
-        return lerp(2.6, 3.25, (value - 0.34) / 0.33);
+        return lerp(1.05, 1.3, (value - 0.34) / 0.33);
     }
-    return lerp(3.25, 3.9, (value - 0.67) / 0.33);
+    return lerp(1.3, 1.6, (value - 0.67) / 0.33);
 }
 
 function shaderTimeSeconds(): number {

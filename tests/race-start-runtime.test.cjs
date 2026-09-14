@@ -40,7 +40,7 @@ function setup(fail=false) {
         sys:{getSafeAreaRect:()=>({x:0,y:0,width:size.width-right,height:size.height})},
         Tween:{stopAllByTarget:o=>tweens.forEach(t=>{if(t.o===o)t.stopped=true;})},
         tween:o=>{const t={o,delay(){return t;},to(){return t;},call(f){t.cb=f;return t;},start(){tweens.push(t);return t;}};return t;}};
-    const imports={cc,'../core/ResourcePaths':{RESOURCE_PATHS:{raceStartUi:Object.fromEntries(keys.map(k=>[k,k]))}},
+    const imports={cc,'../core/ResourcePaths':{RESOURCE_PATHS:{softSpeedStreak:'softSpeedStreak',raceStartUi:Object.fromEntries(keys.map(k=>[k,k]))}},
         './AvatarUiAssets':{loadAvatarUiSpriteFrame:(p,cb)=>callbacks.push(()=>cb(fail?null:{path:p}))},
         './ProjectUiFonts':{styleProjectUiLabel:l=>assert.equal(l.overflow,Label.Overflow.SHRINK)}};
     const m={exports:{}};
@@ -78,8 +78,8 @@ test('斜槽固定尺寸、30Hz 刷新、往返颜色与标记在同一中心线
         assert.equal(a.fill.spriteFrame.path,`charge-fill-${key}`);
         assert.equal(transform.contentSize,original);
         const y=502-Math.round(ratio*233);
-        assert.equal(a.cap.position.x,1234-(y-226)*.2-645);
-        assert.equal(a.cap.position.y,361-y);
+        assert.equal(a.cap.position.x+560,1234-(y-226)*.2-645);
+        assert.equal(a.cap.position.y-10,361-y);
     }
     assert.equal(a.cap.active,false);
 });
@@ -106,4 +106,21 @@ test('导出清单尺寸与运行时 PNG、资源路径一致；不包含未选�
         assert.ok(paths.includes(`ui/race-start-v1/${asset.name}/texture`),file);
     }
     assert.equal(fs.existsSync('assets/race/ui/race-start-v1/ready-on-block.png'),false);
+});
+
+test('蓄力光点固定复用；释放不重复启动，取消与重入清理回弹和透明度',()=>{
+    const {art:a,parent}=setup();const total=count(parent);
+    a.showReady();a.setCharge(.9,true);a.update(1/30);
+    assert.ok(a.lights.some(v=>v.opacity.opacity>0));
+    a.showRelease(.9,false);a.update(.1);const elapsed=a.releaseTime;
+    a.showRelease(.9,false);assert.equal(a.releaseTime,elapsed);
+    assert.ok(a.chargeVisual.scale.x>1);assert.ok(a.chargeOpacity.opacity<255);
+    a.setCharge(0,false);assert.equal(a.releaseTime,-1);
+    assert.equal(a.chargeVisual.scale.x,1);assert.equal(a.chargeOpacity.opacity,255);
+    assert.ok(a.lights.every(v=>v.opacity.opacity===0));
+    a.reset();a.showReady();a.setCharge(.4,true);a.update(1/30);
+    assert.equal(a.releaseTime,-1);assert.equal(count(parent),total);
+    a.setCharge(0,true);assert.ok(a.lights.every(v=>v.opacity.opacity===0));
+    a.setCharge(.9,true);a.showRelease(.9,false);a.update(.6);
+    assert.equal(a.chargeOpacity.opacity,0);assert.ok(a.lights.every(v=>v.opacity.opacity===0));
 });

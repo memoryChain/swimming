@@ -3,7 +3,11 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
-type AssetKey = keyof typeof RESOURCE_PATHS.raceStartUi;
+const SOURCES = { ...RESOURCE_PATHS.raceStartUi, 'charge-light': RESOURCE_PATHS.softSpeedStreak };
+type AssetKey = keyof typeof SOURCES;
+const CHARGE_BLUE = new Color(158, 234, 255, 255);
+const CHARGE_GOLD = new Color(255, 225, 130, 255);
+type ChargeLight = { sprite: Sprite; opacity: UIOpacity; x: number; y: number };
 type Cue = 'ready' | 'go' | 'late' | 'good' | 'great' | 'perfect';
 const FRAMES = new Map<AssetKey, SpriteFrame>();
 // 来自 PS 透明裁剪清单，坐标使用 1290×720 设计画布。
@@ -14,11 +18,11 @@ const CUES: Record<Cue, readonly [number, number, number, number]> = {
 };
 
 export function preloadRaceStartUi(done: (error: Error | null) => void): void {
-    const keys = Object.keys(RESOURCE_PATHS.raceStartUi) as AssetKey[];
+    const keys = Object.keys(SOURCES) as AssetKey[];
     let remaining = keys.length;
     let failed: Error | null = null;
     for (const key of keys) {
-        loadAvatarUiSpriteFrame(RESOURCE_PATHS.raceStartUi[key], (frame) => {
+        loadAvatarUiSpriteFrame(SOURCES[key], (frame) => {
             if (frame) FRAMES.set(key, frame);
             else failed = new Error(`起跳 UI 素材加载失败：${key}`);
             if (--remaining === 0) done(failed);
@@ -40,6 +44,13 @@ export class RaceStartView {
     private readonly opacity: UIOpacity;
     private readonly fill: Sprite;
     private readonly cap: Node;
+    private readonly chargeVisual: Node;
+    private readonly chargeOpacity: UIOpacity;
+    private readonly lights: ChargeLight[] = [];
+    private motionTime = 0;
+    private releaseTime = -1;
+    private visualScale = 1;
+    private lightGold = false;
     private current: Cue | null = null;
     private pending: Cue | null = null;
     private ratio = 0;
@@ -52,18 +63,37 @@ export class RaceStartView {
         this.root = this.node(parent, 'RaceStartArt');
         this.cueRoot = this.node(this.root, 'Cue');
         this.chargeRoot = this.node(this.root, 'Charge');
+        this.chargeVisual = this.node(this.chargeRoot, 'ChargeMotion');
+        // 动画绕斜槽中心，不改变安全区布局与输入区域。
+        this.chargeVisual.setPosition(560, -10, 0);
+        this.chargeOpacity = this.chargeVisual.addComponent(UIOpacity);
+        this.chargeOpacity.opacity = 255;
         this.cue = this.sprite(this.cueRoot, 'ready', 457, 508, 377, 113);
         this.opacity = this.cue.node.addComponent(UIOpacity);
         this.hint = this.label(this.cueRoot, '长按蓄力，听令起跳', 645, 623.5, 300, 40, 21);
-        this.sprite(this.chargeRoot, 'charge-track', 1155, 224, 100, 291);
-        this.fill = this.sprite(this.chargeRoot, 'charge-fill-low', 1166, 269, 72, 233);
+        this.sprite(this.chargeVisual, 'charge-track', 1155, 224, 100, 291);
+        this.fill = this.sprite(this.chargeVisual, 'charge-fill-low', 1166, 269, 72, 233);
         this.fill.type = Sprite.Type.FILLED;
         this.fill.fillType = Sprite.FillType.VERTICAL;
         this.fill.fillStart = 0;
         this.fill.fillRange = 0;
-        this.cap = this.sprite(this.chargeRoot, 'charge-cap', 1209, 276, 28, 8).node;
-        this.label(this.chargeRoot, '松手起跳', 1132, 312, 100, 26, 16);
-        this.label(this.chargeRoot, '蓄力', 1176, 531, 70, 32, 19);
+        this.cap = this.sprite(this.chargeVisual, 'charge-cap', 1209, 276, 28, 8).node;
+        this.label(this.chargeVisual, '松手起跳', 1132, 312, 100, 26, 16);
+        this.label(this.chargeVisual, '蓄力', 1176, 531, 70, 32, 19);
+        for (let i = 0; i < 8; i++) {
+            const sprite = this.sprite(this.chargeVisual, i === 0 ? 'charge-light' : 'charge-cap', 0, 0,
+                i === 0 ? 46 : i === 7 ? 3 : 3.5, i === 0 ? 20 : i === 7 ? 38 : 6);
+            sprite.color = CHARGE_BLUE;
+            if (i > 0) sprite.node.angle = i === 7 ? -11 : (i % 2 ? 28 : -28);
+            const opacity = sprite.node.addComponent(UIOpacity);
+            opacity.opacity = 0;
+            this.lights.push({ sprite, opacity, x: NaN, y: NaN });
+        }
+        // 子节点抵消中心偏移，保持原稿坐标；后续位置也使用同一偏移。
+        for (const child of this.chargeVisual.children) {
+            const pos = child.position;
+            child.setPosition(pos.x - 560, pos.y + 10, 0);
+        }
         this.layout();
         view.on('canvas-resize', this.layout, this);
         view.on('design-resolution-changed', this.layout, this);
@@ -133,6 +163,7 @@ export class RaceStartView {
     }
 
     showRelease(power: number, late: boolean): void {
+        if (this.releaseTime < 0) this.releaseTime = 0;
         const result: Cue = late ? 'late' : power >= 0.85 ? 'perfect' : power >= 0.55 ? 'great' : 'good';
         if (this.current === 'go') this.pending = result;
         else this.showCue(result);
@@ -163,17 +194,23 @@ export class RaceStartView {
     setCharge(power: number, visible: boolean): void {
         const entering = visible && !this.chargeRoot.active;
         active(this.chargeRoot, visible);
-        if (!visible) return;
+        if (!visible) { this.resetChargeMotion(); return; }
+        if (power === 0 && this.releaseTime < 0) this.resetChargeMotion();
         this.ratio = Number.isFinite(power) ? Math.max(0, Math.min(1, power)) : 0;
         if (entering) this.renderCharge();
     }
 
     update(dt: number): void {
-        if (!this.root.activeInHierarchy || !this.chargeRoot.active) return;
-        this.elapsed += dt;
+        if (!this.root.activeInHierarchy || !this.chargeRoot.active
+            || (this.releaseTime >= 0.48 && this.chargeOpacity.opacity === 0)) return;
+        const step = Math.max(0, dt);
+        this.motionTime += step;
+        if (this.releaseTime >= 0) this.releaseTime += step;
+        this.elapsed += step;
         if (this.elapsed < 1 / 30) return;
         this.elapsed %= 1 / 30;
         this.renderCharge();
+        this.renderChargeMotion();
     }
 
     private renderCharge(): void {
@@ -188,10 +225,62 @@ export class RaceStartView {
         this.fill.fillRange = pixel / this.chargePixelHeight;
         active(this.cap, pixel > 0);
         const y = 502 - 233 * pixel / this.chargePixelHeight;
-        this.cap.setPosition(1234 - (y - 226) * 0.2 - 645, 361 - y, 0);
+        this.cap.setPosition(1234 - (y - 226) * 0.2 - 645 - 560, 371 - y, 0);
+    }
+
+    private resetChargeMotion(): void {
+        this.motionTime = 0;
+        this.releaseTime = -1;
+        if (this.visualScale !== 1) {
+            this.visualScale = 1;
+            this.chargeVisual.setScale(1, 1, 1);
+        }
+        if (this.chargeOpacity.opacity !== 255) this.chargeOpacity.opacity = 255;
+        for (const light of this.lights) if (light.opacity.opacity !== 0) light.opacity.opacity = 0;
+    }
+
+    private renderChargeMotion(): void {
+        const released = this.releaseTime >= 0;
+        const fade = released ? Math.max(0, 1 - this.releaseTime / 0.48) : 1;
+        const alpha = Math.round(255 * fade);
+        if (this.chargeOpacity.opacity !== alpha) this.chargeOpacity.opacity = alpha;
+        const scale = released ? Math.round((1 + 0.085 * Math.sin(Math.min(1, this.releaseTime / 0.3) * Math.PI)) * 1000) / 1000 : 1;
+        if (scale !== this.visualScale) {
+            this.visualScale = scale;
+            this.chargeVisual.setScale(scale, scale, 1);
+        }
+        const gold = this.ratio > 0.82;
+        if (gold !== this.lightGold) {
+            this.lightGold = gold;
+            for (const light of this.lights) light.sprite.color = gold ? CHARGE_GOLD : CHARGE_BLUE;
+        }
+        const y = 502 - 233 * this.pixel / this.chargePixelHeight;
+        const x = 1234 - (y - 226) * 0.2 - 1205;
+        for (let i = 0; i < this.lights.length; i++) {
+            const light = this.lights[i];
+            let lx = x, ly = 371 - y;
+            let opacity = this.ratio > 0 && fade > 0 ? Math.round(160 + 80 * this.ratio) : 0;
+            if (i === 7) {
+                lx = 39; ly = 86;
+                if (this.ratio < 0.85 || released) opacity = 0;
+            } else if (i > 0) {
+                const j = i - 1, side = j % 2 ? 1 : -1;
+                const phase = (this.motionTime * 1.8 + j / 6) % 1;
+                lx += side * (14 + 42 * (1 - phase));
+                ly -= (j % 3 - 1) * 20 * (1 - phase);
+                opacity = Math.round(opacity * Math.sin(phase * Math.PI));
+            }
+            lx = Math.round(lx); ly = Math.round(ly);
+            if (light.opacity.opacity !== opacity) light.opacity.opacity = opacity;
+            if (opacity > 0 && (light.x !== lx || light.y !== ly)) {
+                light.x = lx; light.y = ly;
+                light.sprite.node.setPosition(lx, ly, 0);
+            }
+        }
     }
 
     reset(): void {
+        this.resetChargeMotion();
         Tween.stopAllByTarget(this.opacity);
         this.pending = null;
         this.current = null;

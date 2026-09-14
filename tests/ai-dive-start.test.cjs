@@ -47,6 +47,7 @@ test('同种子重开得到同一 AI 蓄力结果，未按住的玩家仍可在�
     s.raceManager.onStateChange(s.GameState.COUNTDOWN);assert.deepEqual(run(),first);
 });
 function compiler(){
+    if(process.env.TYPESCRIPT_PATH)return require(process.env.TYPESCRIPT_PATH);
     try{return require('typescript');}catch{}
     return require(process.env.PATH.split(path.delimiter).map(d=>path.resolve(d,'../typescript/lib/typescript.js')).find(p=>fs.existsSync(p)));
 }
@@ -61,21 +62,33 @@ test('真实跳水序列的离台准备固定，蓄力与爆发只改变飞行�
     const method=cls.members.find(n=>n.name?.getText(source)==='performDive');
     const helpers=source.statements.filter(n=>ts.isFunctionDeclaration(n)&&['degreesToRadians','projectileTimeToY'].includes(n.name.text));
     const js=ts.transpileModule(`${helpers.map(n=>n.getText(source)).join('\n')} class Body {${method.getText(source)}}`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
-    const tween=()=>({to(seconds,props,opts){steps.push({seconds,props,opts});return this;},delay(seconds){steps.push({seconds});return this;},call(){return this;},start(){}});
+    const tween=()=>({to(seconds,props,opts){steps.push({seconds,props,opts});return this;},delay(seconds){steps.push({seconds});return this;},call(callback){steps.push({seconds:0,callback});return this;},start(){}});
     const Body=vm.runInNewContext(js+';Body',{DIVE_BALANCE,SWIMMER_ACTION_TUNING,Vec3:h.Vec3,Tween:{stopAllByTarget(){}},tween});
     const body=new Body();body.node=new h.cc.Node();body.captureStartPosition=()=>{};
     body.divePlatformPosition=()=>new h.Vec3(0,.397,0);body._startPosition={z:0};
     body._courseLayout={direction:1,swimY:0,entryPosition:(d,z)=>new h.Vec3(d,0,z)};
-    body.cartoonRig={setDiveReady(){},releaseDiveChargeEffect(){}};
+    let bursts=0,entries=0;body.applyDiveProjectile=()=>{};
+    body.cartoonRig={triggerDiveEntrySplash(point){entries++;assert.equal(point.y,0);assert.ok(point.x*body._courseLayout.direction>0);},setDiveReady(){},startDiveStreamlineTransition(){},releaseDiveChargeEffect(duration,direction){bursts++;assert.equal(duration,.32);assert.equal(direction,body._courseLayout.direction);}};
     for(const anticipation of [.32,.5,0]){
         DIVE_BALANCE.takeoffAnticipationSeconds=anticipation;
         const flightTimes=[];
         for(const power of [.3,.6,1])for(const scale of [.97,1,1.3,1.474]){
-            steps.length=0;const total=body.performDive(resolveDiveResult(power,scale));
+            steps.length=0;bursts=0;entries=0;const total=body.performDive(resolveDiveResult(power,scale));
             const air=steps.findIndex(s=>s.opts?.onUpdate);
             const preparation=steps.slice(0,air).reduce((sum,s)=>sum+s.seconds,0);
             assert.ok(Math.abs(preparation-anticipation)<1e-10);
             assert.ok(Math.abs(total-preparation-steps[air].seconds)<1e-10);
+            assert.equal(bursts,0);
+            let elapsed=0;
+            for(const step of steps.slice(0,air)) {
+                elapsed+=step.seconds;
+                const previous=bursts;step.callback?.();
+                if(bursts>previous)assert.ok(Math.abs(elapsed-anticipation*.625)<1e-10,'爆发绑定蹬台伸展开始');
+            }
+            assert.equal(bursts,1,'蹬台伸展只释放一次');
+            steps[air].opts.onUpdate(null,0);assert.equal(entries,0);
+            steps[air].opts.onUpdate(null,1);steps[air].opts.onUpdate(null,1);
+            assert.equal(entries,1,'下降穿水只爆发一次');
             flightTimes.push(steps[air].seconds);
         }
         assert.ok(Math.max(...flightTimes)>Math.min(...flightTimes),'飞行时间保留数值差异');

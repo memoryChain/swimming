@@ -186,3 +186,15 @@ test('起跳点只发一张主水片和两侧少量飞溅，波纹留在水面',
  assert(h._particleEmitters.filter(e=>e.keepAlive).every(e=>e.sprayTime===0));
  counts.length=0;h._culled=true;h.triggerTakeoffSurfaceBurst();assert.equal(counts.length,0);
 });
+
+test('离台横向光环固定在角色中心，不被压到水面或跟随角色移动',()=>{
+    const {Vec3}=createHarness();
+    const Subject=method('triggerDiveTakeoffRing');const effect=new Subject();
+    const part={node:{name:'EntryImpactRing'},frozenWorldPosition:new Vec3(),rippleTime:0};
+    effect._parts=[part];effect._culled=false;effect.node={active:false};
+    effect.keepHandRippleFrozen=()=>{};
+    const origin=new Vec3(4,1.2,2);effect.triggerDiveTakeoffRing(origin);
+    origin.set(10,0,0);
+    assert.equal(part.frozenWorldPosition.x,4);assert.equal(part.frozenWorldPosition.y,1.2);
+    assert.equal(part.rippleTime,.65);assert.equal(effect.node.active,true);
+});

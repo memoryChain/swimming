@@ -129,7 +129,7 @@ const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
 const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
 const DIVE_CHARGE_BLUE = new Color(48, 198, 255, 255);
 const DIVE_CHARGE_YELLOW = new Color(255, 218, 42, 255);
-const DIVE_CHARGE_RED = new Color(255, 54, 24, 255);
+const DIVE_CHARGE_RED = new Color(255, 235, 155, 255);
 const DIVE_CHARGE_VISUAL_INTERVAL_SECONDS = 1 / 30;
 const DIVE_CHARGE_POWER_STEPS = 20;
 const ARM_CYCLE_AMOUNT = Math.PI * 2;
@@ -243,6 +243,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _diveChargeVisualElapsed = 0;
     private _diveChargeReleaseBurstRemaining = 0;
     private readonly _diveChargeWorldCenter = new Vec3();
+    private readonly _diveChargeBodyPoints = Array.from({ length: 11 }, () => new Vec3());
     private readonly _diveChargeBodyMaterials: Material[] = [];
     private readonly _diveChargeBodyParams = new Vec4(0, 0, 0.90, 15);
     private _modelVariantId = defaultSwimmerModelVariant().id;
@@ -1580,6 +1581,10 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._splashEmitter?.triggerTakeoffSurfaceBurst(scale);
     }
 
+    triggerDiveEntrySplash(point: Vec3, scale = 2.6) {
+        this._splashEmitter?.triggerTakeoffSurfaceBurst(scale, point);
+    }
+
     triggerBigSplash(scale = 1) {
         this._splashEmitter?.triggerBigSurfaceBurst(scale);
     }
@@ -1645,15 +1650,16 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._diveChargeGatherEffect = null;
     }
 
-    /** Stop charging and play the outward burst during the pre-take-off anticipation. */
-    releaseDiveChargeEffect(duration?: number) {
+    /** 离台时让圆形光点收拢淡出，保留微弱身体轮廓直至入水。 */
+    releaseDiveChargeEffect(duration?: number, direction = 1) {
         this._diveChargeRequestedActive = false;
         this._diveChargeRequestedPower = 0;
         this._diveChargeVisualElapsed = 0;
-        this.applyDiveChargeBodyMaterial(0, 0, false);
+        this.applyDiveChargeBodyMaterial(0.18, this._diveChargeBodyParams.y, true);
         const gather = this._diveChargeGatherEffect;
-        if (gather && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
-            gather.setWorldPosition(this._diveChargeWorldCenter);
+        if (this.getDiveChargeBodyCenter(this._diveChargeWorldCenter)) {
+            gather?.setWorldPosition(this._diveChargeWorldCenter);
+            this._splashEmitter?.triggerDiveTakeoffRing(this._diveChargeWorldCenter);
         }
         this._diveChargeReleaseBurstRemaining = gather?.releaseBurst(duration) ?? 0;
     }
@@ -1758,6 +1764,25 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updatePerfectGlowMaterial();
     }
 
+    /** 取头、四肢与髋部的整体范围中心，跟随准备姿势而非偏向头部的镜头锚点。 */
+    private getDiveChargeBodyCenter(out: Vec3): boolean {
+        const points = this._diveChargeBodyPoints;
+        let count = this._pose.getSwimBoundaryWorldPositions(points);
+        if (this._pose.getHipWorldPosition(points[count])) count++;
+        if (count === 0) return false;
+        let minX = points[0].x, maxX = minX;
+        let minY = points[0].y, maxY = minY;
+        let minZ = points[0].z, maxZ = minZ;
+        for (let i = 1; i < count; i++) {
+            const point = points[i];
+            minX = Math.min(minX, point.x); maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y); maxY = Math.max(maxY, point.y);
+            minZ = Math.min(minZ, point.z); maxZ = Math.max(maxZ, point.z);
+        }
+        out.set((minX + maxX) * 0.5, (minY + maxY) * 0.5, (minZ + maxZ) * 0.5);
+        return true;
+    }
+
     private updateDiveChargeVisual(dt: number) {
         this._diveChargeVisualElapsed += Math.max(0, dt);
         if (this._diveChargeVisualElapsed < DIVE_CHARGE_VISUAL_INTERVAL_SECONDS) {
@@ -1781,7 +1806,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
         gather.setCharge(intensity, this._diveChargeRequestedPower);
         gather.setActive(active);
-        if (active && this._pose.getUpperBodyWorldPosition(this._diveChargeWorldCenter)) {
+        if (active && this.getDiveChargeBodyCenter(this._diveChargeWorldCenter)) {
             gather.setWorldPosition(this._diveChargeWorldCenter);
         }
     }

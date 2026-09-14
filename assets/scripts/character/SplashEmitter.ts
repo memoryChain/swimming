@@ -298,6 +298,9 @@ export class SplashEmitter {
                                 this.createPart(material, part, surfaceTexture);
                             }
                         }
+                        if (!reduced) {
+                            this.createPart(material, { ...TUNING.foam.parts[0], name: 'EntryImpactRing' }, surfaceTexture);
+                        }
                         this.createParticleEmitterCluster('LeftHandSplashParticles', 'left', TUNING.particleEmitters.leftHandZ);
                         this.createParticleEmitterCluster('RightHandSplashParticles', 'right', TUNING.particleEmitters.rightHandZ);
                         this.createLegParticleEmitter('LeftLowerLegSplashParticles', 'left', TUNING.particleEmitters.leftLegZ);
@@ -352,7 +355,7 @@ export class SplashEmitter {
     }
 
     // 玩家近距离镜头的起跳点强调；单张主水片、两侧飞溅和世界空间波纹。
-    triggerTakeoffSurfaceBurst(scale = 2.6) {
+    triggerTakeoffSurfaceBurst(scale = 2.6, contactPoint?: Vec3) {
         if (this._culled || !this._particleEffectsEnabled) return;
         const config = TUNING.takeoffImpact;
         const strength = clamp(scale / 2.6, 0, 1.5);
@@ -360,7 +363,9 @@ export class SplashEmitter {
         const direction = this._state.movementDirection >= 0 ? 1 : -1;
         const heading = this._state.movementHeadingRadians;
         // 从当前身体接触点发射，之后由世界空间粒子留在起跳水面。
-        if (!this._options.getBoneWorldPosition('Body', this._tmpTakeoffPoint)) {
+        if (contactPoint) {
+            this._tmpTakeoffPoint.set(contactPoint);
+        } else if (!this._options.getBoneWorldPosition('Body', this._tmpTakeoffPoint)) {
             this._tmpTakeoffPoint.set(this._options.owner.worldPosition);
         }
         this._tmpTakeoffPoint.y = this._waterY + config.height;
@@ -405,6 +410,18 @@ export class SplashEmitter {
             part.rippleTime = TUNING.foam.handRippleLifetime;
             part.rippleScale = config.rippleScale;
             this.keepHandRippleFrozen(part);
+        }
+    }
+
+    /** 离台时的横向光环，固定在角色出生位置，不挪到水面。 */
+    triggerDiveTakeoffRing(point: Vec3) {
+        if (this._culled) return;
+        for (const part of this._parts) {
+            if (part.node.name !== 'EntryImpactRing') continue;
+            part.frozenWorldPosition.set(point);
+            part.rippleTime = 0.65;
+            this.keepHandRippleFrozen(part);
+            if (!this.node.active) this.node.active = true;
         }
     }
 
@@ -559,6 +576,20 @@ export class SplashEmitter {
         }
         let anyActive = this._wake?.update(this._lastDt, this._waterY, speed, this._state, this._options) ?? false;
         for (const part of this._parts) {
+            if (part.node.name === 'EntryImpactRing') {
+                part.rippleTime = Math.max(0, part.rippleTime - this._lastDt);
+                const active = part.rippleTime > 0;
+                if (part.node.active !== active) part.node.active = active;
+                if (!active) continue;
+                anyActive = true;
+                this.keepHandRippleFrozen(part);
+                const progress = 1 - part.rippleTime / 0.65;
+                const radius = 0.25 + 1.55 * (1 - (1 - progress) * (1 - progress));
+                part.node.setScale(radius, 1, radius);
+                part.shapeParams.set(0, 0, 2, progress);
+                part.material.setProperty('shapeParams', part.shapeParams);
+                continue;
+            }
             const isHand = part.node.name.indexOf('Hand') >= 0;
             const isFoot = part.node.name.indexOf('Foot') >= 0;
             const isHandRipple = part.node.name.indexOf('HandRipple') >= 0;
@@ -670,6 +701,7 @@ export class SplashEmitter {
         surfaceTexture: Texture2D,
     ) {
         const node = new Node(tuning.name);
+        if (tuning.name === 'EntryImpactRing') node.active = false;
         node.setParent(this.node);
         // The splash root may already have been moved to the dedicated swimmer
         // overlay layer before this async material callback completes. New Cocos
@@ -684,7 +716,9 @@ export class SplashEmitter {
         node.setScale(baseScale);
 
         const renderer = node.addComponent(MeshRenderer);
-        renderer.mesh = tuning.mesh === 'ripple'
+        renderer.mesh = tuning.name === 'EntryImpactRing'
+            ? utils.createMesh(createEntryImpactRingGeometry())
+            : tuning.mesh === 'ripple'
             ? utils.createMesh(createEllipticalRippleGeometry(tuning.width, tuning.length))
             : utils.createMesh(primitives.plane({
                 width: tuning.width,
@@ -1506,4 +1540,19 @@ function initializeSplashModules(system: ParticleSystem) {
         if (property === 'shapeModule') module.onInit(system);
         else module.bindTarget(system.processor);
     }
+}
+
+/** 固定水面圆环：仅初始化一次，运行时只缩放与淡出。 */
+function createEntryImpactRingGeometry() {
+    const positions: number[] = [], normals: number[] = [], uvs: number[] = [], indices: number[] = [];
+    for (let i = 0; i <= 64; i++) {
+        const angle = i / 64 * Math.PI * 2;
+        for (let edge = 0; edge < 2; edge++) {
+            const radius = edge === 0 ? 0.94 : 1;
+            positions.push(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+            normals.push(0, 1, 0); uvs.push(i / 64, edge);
+        }
+        if (i < 64) { const b = i * 2; indices.push(b, b + 2, b + 1, b + 1, b + 2, b + 3); }
+    }
+    return { positions, normals, uvs, indices };
 }

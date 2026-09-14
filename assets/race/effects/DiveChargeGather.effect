@@ -22,7 +22,7 @@ CCEffect %{
         chargeYellow: { value: [1.0, 0.72, 0.04, 0.9], linear: true, editor: { type: color } }
         chargeRed:    { value: [1.0, 0.08, 0.025, 0.9], linear: true, editor: { type: color } }
         releaseColor: { value: [1.0, 0.82, 0.32, 1.0], linear: true, editor: { type: color } }
-        # x = intensity, y = reserved, z = travel distance,
+        # x = intensity, y = ring start time, z = travel distance,
         # w = actual charge progress (0..1).
         chargeParams: { value: [0.0, 0.0, 0.72, 0.0] }
         # x = phase at time origin, y = time origin, z = cycles/second,
@@ -43,6 +43,7 @@ CCProgram dive-charge-gather-vs %{
   out float v_cycleFade;
   out float v_releaseFade;
   out float v_haloFade;
+  out float v_longLine;
 
   in vec4 a_color;
 
@@ -72,8 +73,9 @@ CCProgram dive-charge-gather-vs %{
     // G carries a stable ray id. Combining it with the completed cycle count
     // gives each incoming streak a fresh, deterministic point around the body.
     float phaseOffset = a_color.g;
+    float motionTime = mix(cc_time.x, releaseParams.y, step(0.5, releaseParams.x));
     float cycleValue = gatherMotion.x
-      + (cc_time.x - gatherMotion.y) * gatherMotion.z
+      + (motionTime - gatherMotion.y) * gatherMotion.z
       + phaseOffset;
     float cycle = fract(cycleValue);
     float cycleIndex = floor(cycleValue);
@@ -101,7 +103,7 @@ CCProgram dive-charge-gather-vs %{
       : vec3(1.0, 0.0, 0.0);
     vec3 tangentA = normalize(cross(tangentReference, radialDirection));
     vec3 tangentB = normalize(cross(radialDirection, tangentA));
-    vec3 ribbonSide = mix(tangentA, tangentB, step(0.5, a_color.a));
+    vec3 ribbonSide = normalize(cross(toCamera, radialDirection));
     float releaseT = clamp(
       (cc_time.x - releaseParams.y) / max(releaseParams.z, 0.001),
       0.0,
@@ -111,27 +113,30 @@ CCProgram dive-charge-gather-vs %{
     float haloGeometry = step(0.5, a_color.b);
 
     // Gather mode: streaks appear outside the body and travel inward.
-    float baseRadius = position.x;
-    float lateralWidth = a_color.a < 0.5 ? position.y : position.z;
+    float longLine = step(0.5, a_color.a) * (1.0 - haloGeometry);
+    float baseRadius = mix(position.x, 0.24 + (position.x - 0.24) * 5.0, longLine);
+    float lateralWidth = position.y * mix(1.0, 0.65 * mix(1.0, 0.10, a_texCoord.x), longLine);
+    v_longLine = longLine;
     vec3 ribbonPosition = radialDirection * baseRadius + ribbonSide * lateralWidth;
     float gatherTravel = (1.0 - cycle) * chargeParams.z;
     vec3 gatherPosition = ribbonPosition + radialDirection * gatherTravel;
 
     // Release mode: collapse the authored ribbon to the centre on the first
     // frame, then restore its length while carrying it rapidly outward.
-    float releaseShape = smoothstep(0.0, 0.22, releaseT);
-    float releaseRadius = mix(0.035, baseRadius, releaseShape)
-      + releaseParams.w * releaseT * releaseT;
-    vec3 releasePosition = ribbonSide * lateralWidth * releaseShape
-      + radialDirection * releaseRadius;
+    float releaseShape = smoothstep(0.0, 0.08, releaseT);
+    float releaseRadius = mix(0.04, baseRadius, releaseShape) + releaseParams.w * releaseT * releaseT;
+    vec3 releasePosition = ribbonSide * lateralWidth * releaseShape + radialDirection * releaseRadius;
     vec3 particlePosition = mix(gatherPosition, releasePosition, releaseMode);
 
-    // The halo is authored as three unit rings in the same mesh. Ease-out
-    // expansion creates a fast launch flash followed by a softer broad spread.
-    float haloEase = 1.0 - (1.0 - releaseT) * (1.0 - releaseT);
-    float haloScale = mix(0.055, 1.12, haloEase);
-    vec3 haloPosition = position.xyz * haloScale;
-    position.xyz = mix(particlePosition, haloPosition, haloGeometry * releaseMode);
+    // 圆环以独立的1.8秒时长只收拢一次，不随散点或蓄力往返循环。
+    // 环带顶点A保存延迟/2：三圈分别为0、1、1.5秒。
+    float ringCycle = clamp((cc_time.x - chargeParams.y - a_color.a * 2.0) / 1.8, 0.0, 1.0);
+    float ringEase = smoothstep(0.0, 1.0, ringCycle);
+    // 第二圈起始半径缩小30%，最终收拢半径保持一致。
+    float ringStartRadius = mix(0.95, 0.665, step(0.25, a_color.a));
+    float ringRadius = mix(ringStartRadius, 0.08, ringEase);
+    vec3 haloPosition = (screenRight * position.x + screenUp * position.y) * ringRadius;
+    position.xyz = mix(particlePosition, haloPosition, haloGeometry);
 
     float appear = smoothstep(0.0, 0.14, cycle);
     float arrive = 1.0 - smoothstep(0.76, 1.0, cycle);
@@ -139,13 +144,15 @@ CCProgram dive-charge-gather-vs %{
     // makes newly enabled rays fade in instead of popping as charge rises.
     float densityFade = 1.0 - smoothstep(gatherMotion.w - 0.035, gatherMotion.w + 0.035, a_color.r);
     float releaseDensity = 1.0 - smoothstep(0.505, 0.575, a_color.r);
-    v_cycleFade = appear * arrive * chargeParams.x * densityFade
+    v_cycleFade = appear * arrive * chargeParams.x * densityFade * mix(1.0, 0.48, longLine)
       * (1.0 - releaseMode) * (1.0 - haloGeometry);
-    v_releaseFade = sin(releaseT * 3.14159265) * releaseDensity
+    v_releaseFade = smoothstep(0.0, 0.06, releaseT) * (1.0 - smoothstep(0.20, 1.0, releaseT)) * releaseDensity
       * releaseMode * (1.0 - haloGeometry);
-    float haloAppear = smoothstep(0.0, 0.08, releaseT);
-    float haloDisappear = 1.0 - smoothstep(0.52, 1.0, releaseT);
-    v_haloFade = haloAppear * haloDisappear * haloGeometry * releaseMode;
+    float haloAppear = smoothstep(0.0, 0.12, ringCycle);
+    float haloDisappear = 1.0 - smoothstep(0.78, 1.0, ringCycle);
+    v_haloFade = haloAppear * haloDisappear * haloGeometry * chargeParams.x
+      * mix(1.0, 1.0 - releaseT, releaseMode)
+      * mix(1.0, 0.60, step(0.625, a_color.a));
     v_uv = a_texCoord;
 
     vec4 worldPosition = matWorld * position;
@@ -161,6 +168,7 @@ CCProgram dive-charge-gather-fs %{
   in float v_cycleFade;
   in float v_releaseFade;
   in float v_haloFade;
+  in float v_longLine;
 
   uniform DiveChargeGather {
     vec4 chargeBlue;
@@ -191,13 +199,14 @@ CCProgram dive-charge-gather-fs %{
       chargeRed,
       smoothstep(0.78, 0.92, chargeProgress)
     );
-    float gatherAlpha = across * (0.16 + tail * 0.84) * v_cycleFade * chargeColor.a;
+    float meteorFade = smoothstep(0.0, 0.045, v_uv.x) * pow(1.0 - v_uv.x, 1.5);
+    float gatherAlpha = across * mix(0.16 + tail * 0.84, meteorFade, v_longLine) * v_cycleFade * chargeColor.a;
     float releaseAlpha = across * (0.28 + tail * 0.72) * v_releaseFade * releaseColor.a;
-    float haloAlpha = pow(across, 1.5) * v_haloFade * releaseColor.a * 0.46;
+    float haloAlpha = pow(across, 1.5) * v_haloFade * chargeColor.a * 0.45;
     float alpha = gatherAlpha + releaseAlpha + haloAlpha;
-    vec3 gatherColor = mix(chargeColor.rgb, vec3(1.0), tip * 0.12);
+    vec3 gatherColor = mix(chargeColor.rgb, vec3(1.0), tip * mix(0.12, 0.65, v_longLine));
     vec3 burstColor = mix(releaseColor.rgb, vec3(1.0), 0.58 + tip * 0.30);
-    vec3 haloColor = mix(releaseColor.rgb, vec3(1.0), 0.76);
+    vec3 haloColor = mix(chargeColor.rgb, vec3(1.0), 0.30);
     vec3 color = mix(gatherColor, burstColor, step(0.001, v_releaseFade));
     color = mix(color, haloColor, step(0.001, v_haloFade));
     return CCFragOutput(vec4(color, alpha));

@@ -544,14 +544,16 @@ export class Swimmer extends Component {
         entry.y = entryY;
         const poseTransitionDuration = projectileFlightDuration * SWIMMER_ACTION_TUNING.diveExtensionRatio;
         const launchDelayDuration = anticipation - crouchDuration;
-        const preLaunchBurstDuration = Math.max(0.01, crouchDuration + launchDelayDuration - 1 / 60);
         const totalDuration = crouchDuration + launchDelayDuration + projectileFlightDuration;
+        // 同一解析抛物线的下降穿水时刻；不等到潜入水下的飞行终点再补发。
+        const contactSeconds = projectileTimeToY(launchStart.y, this._courseLayout.swimY, verticalSpeed, DIVE_BALANCE.launchGravity);
+        const contactPoint = new Vec3(launchStart.x + horizontalSpeed * contactSeconds * direction, this._courseLayout.swimY, launchStart.z);
+        let entryBurstPlayed = false;
 
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(start);
         this.node.setRotationFromEuler(0, direction > 0 ? 0 : 180, 0);
         this.cartoonRig?.setDiveReady(true);
-        this.cartoonRig?.releaseDiveChargeEffect(preLaunchBurstDuration);
         tween(this.node)
             .to(crouchDuration, {
                 position: launchStart,
@@ -559,16 +561,17 @@ export class Swimmer extends Component {
             }, { easing: 'quadIn' })
             .call(() => {
                 this.cartoonRig?.startDiveStreamlineTransition(poseTransitionDuration);
+                // 蹬台伸展开始即爆发，避免角色已经离台才出现明显反馈。
+                this.cartoonRig?.releaseDiveChargeEffect(0.32, direction);
             })
             .delay(launchDelayDuration)
-            // The pre-jump burst must be gone before the first root-motion frame.
-            // Keep the ordinary character rim suppressed until water entry.
-            .call(() => {
-                this.cartoonRig?.clearDiveChargeBurstBeforeTakeoff();
-            })
             .to(projectileFlightDuration, {}, {
                 onUpdate: (_target?: Node, ratio = 0) => {
                     this.applyDiveProjectile(launchStart, horizontalSpeed, verticalSpeed, DIVE_BALANCE.launchGravity, direction, ratio, projectileFlightDuration);
+                    if (!entryBurstPlayed && ratio * projectileFlightDuration >= contactSeconds) {
+                        entryBurstPlayed = true;
+                        this.cartoonRig?.triggerDiveEntrySplash(contactPoint);
+                    }
                 },
             })
             .call(() => {
@@ -577,7 +580,7 @@ export class Swimmer extends Component {
                 this.cartoonRig?.setDiveStreamlinePose();
                 this.startRace(distance, horizontalSpeed, true);
                 this.cartoonRig?.finishDiveChargeEffect();
-                this.flashSplash(splashRatingForEntryStyle(result.entryStyle));
+                // 主要水花已在下降穿水时触发，避免终点再叠一次爆发。
             })
             .start();
 

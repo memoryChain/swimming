@@ -75,6 +75,12 @@ CCProgram splash-fs %{
   uniform sampler2D surfaceTexture;
 
   vec4 frag () {
+    if (shapeParams.z > 1.5) {
+      float progress = clamp(shapeParams.w, 0.0, 1.0);
+      float edge = smoothstep(0.0, 0.65, 1.0 - abs(v_uv.y * 2.0 - 1.0));
+      float fade = smoothstep(0.0, 0.03, progress) * (1.0 - smoothstep(0.15, 1.0, progress));
+      return CCFragOutput(vec4(0.72, 0.94, 1.0, edge * fade * 0.30));
+    }
     // 一次图集采样：左格为短尾流，右格为断续波纹。
     float rippleMode = shapeParams.z;
     float progress = clamp(shapeParams.w, 0.0, 1.0);
