@@ -1,5 +1,5 @@
 import { sys } from 'cc';
-import { PROGRESSION_BALANCE, normalizeCharacterLevel, coinCostForLevel, calculateRaceCoins, RacePerformanceInput } from './ProgressionBalance';
+import { PROGRESSION_BALANCE, normalizeCharacterLevel, coinCostForLevel } from './ProgressionBalance';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { resolvePlayerBalance, PlayerBalanceOverrides } from './PlayerBalanceOverrides';
 import { PlayerData } from '../backend/PlayerData';
@@ -33,7 +33,7 @@ export class ProgressionManager {
     private _progress(characterId: PlayerCharacterId): CharacterProgress {
         let progress = PlayerData.profile.characters[characterId];
         if (!progress) {
-            progress = { level: 1 };
+            progress = { level: 1, signed: false, signAds: 0, adTokens: [] };
             PlayerData.profile.characters[characterId] = progress;
         }
         return progress;
@@ -73,17 +73,7 @@ export class ProgressionManager {
         );
     }
 
-    // Synchronous coin computation + in-memory mutation, then asynchronous
-    // persistence. Returns the result immediately so the UI (showProgressionResult)
-    // can display it without awaiting. Coins go to the shared wallet (not per-char).
-    awardRace(characterId: PlayerCharacterId, input: RacePerformanceInput): AwardResult {
-        const coinsGained = calculateRaceCoins(input);
-        PlayerData.profile.coins += coinsGained;
-        // Fire-and-forget persist: the in-memory profile is already updated, so UI
-        // reads stay correct; this just durably stores the change.
-        void PlayerData.persist();
-        return { characterId, coinsGained };
-    }
+    // 比赛奖励统一走后台 executeCareer(settle)，此处不再提供无比赛凭据的加币入口。
 
     // Project how many levels and coins a "spend to max" would cost, WITHOUT
     // mutating. Used by the UI's confirm dialog before calling spendToMax.
@@ -146,6 +136,7 @@ export class ProgressionManager {
                 if (entry && typeof entry.level === 'number') {
                     characters[id] = {
                         level: normalizeCharacterLevel(entry.level),
+                        signed: normalizeCharacterLevel(entry.level) > 1, signAds: 0, adTokens: [],
                     };
                 }
             }

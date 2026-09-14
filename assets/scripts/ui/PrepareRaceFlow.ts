@@ -45,6 +45,10 @@ import { showToast } from './Toast';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import { LobbyUiMotion } from './LobbyUiMotion';
 import { CharacterAttributeTips } from './CharacterAttributeTips';
+import { CareerPrototypePanel } from './CareerPrototypePanel';
+import { setSoloRaceTicket } from '../progression/SoloRaceSession';
+import { setSoloRaceDistance } from '../core/GameBalance';
+import { getUILayer, UILayer } from './UILayers';
 
 export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
@@ -147,10 +151,13 @@ export class PrepareRaceFlow {
     private _appearanceTabArtwork: Node | null = null;
     private _confirmCharacterButton: Node | null = null;
     private _activeCharacterNotice: Node | null = null;
+    private _eventPageActive = false;
+    private _careerPanel: CareerPrototypePanel | null = null;
 
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
         if (!this._root?.isValid || !this._content?.isValid || this._leaving) return;
         if (this._view === 'ready') {
+            if (this._eventPageActive) return;
             this.presentCharacter(getPlayerCharacterSelection().characterId);
             this.refreshReadyCharacterInfo();
         } else {
@@ -176,8 +183,8 @@ export class PrepareRaceFlow {
         setNodeActive(this._lobbyBackgroundImage, true);
         this.replaceContent('PrepareRaceReadyContent');
         this.buildReadyScreen(this._content!);
-        this.presentCharacter(getPlayerCharacterSelection().characterId);
-        this._callbacks.onCharacterManagementChanged?.(false);
+        if (!this._eventPageActive) this.presentCharacter(getPlayerCharacterSelection().characterId);
+        this._callbacks.onCharacterManagementChanged?.(this._eventPageActive);
         this._motion.enter(this._hasShownReady);
         this._hasShownReady = true;
     }
@@ -304,9 +311,24 @@ export class PrepareRaceFlow {
         const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 48, false);
         this.buildReadyCharacterPanel(left);
         this.buildPreviewPresentation(parent);
-        this.buildRaceModeList(right);
+        this._careerPanel = new CareerPrototypePanel(right,
+            () => this.leaveCurrentScreen(this._callbacks.onStartRace),
+            () => { setSoloRaceTicket(null); setSoloRaceDistance(null); this.leaveCurrentScreen(this._callbacks.onOpenRoom); },
+            { parent: this._root!, visibility: visible => this.setEventPageVisible(visible) });
         this.buildReadyActions(right);
         this.refreshReadyCharacterInfo();
+    }
+
+    private setEventPageVisible(visible: boolean): void {
+        this._eventPageActive = visible;
+        this._previewRotateTouchId = null;
+        this._attributeTips?.hide();
+        setNodeActive(this._content, !visible);
+        setNodeActive(this._previewRoot, !visible);
+        if (!visible && this._view === 'ready' && !this._leaving && this._content?.isValid) {
+            this.presentCharacter(getPlayerCharacterSelection().characterId);
+        }
+        this._callbacks.onCharacterManagementChanged?.(visible);
     }
 
     private buildReadyCharacterPanel(parent: Node): void {
@@ -442,16 +464,18 @@ export class PrepareRaceFlow {
         const roomLabel = makeBoundLabel('Label', room, '联机', 18, DARK_TEXT, 64, 26, 0, -9);
         stylePsdRuntimeLabel(roomLabel, 'PingFang SC', true, 24);
         this._motion.bindButton(room);
-        room.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(this._callbacks.onOpenRoom));
+        room.on(Button.EventType.CLICK, () => {
+            setSoloRaceTicket(null); setSoloRaceDistance(null);
+            this.leaveCurrentScreen(this._callbacks.onOpenRoom);
+        });
 
         const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.characterUi.confirmButton, 332, 102, 448, -287, 3);
-        const startLabel = makeBoundLabel('Label', start, '开始比赛', 38, DARK_TEXT, 220, 54, -4, 0);
+        const startLabel = makeBoundLabel('Label', start, '快速比赛', 38, DARK_TEXT, 220, 54, -4, 0);
         stylePsdTitleLabel(startLabel, 48);
         this._motion.bindButton(start, true);
-        start.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => {
-            setRaceDifficulty(getSelectedRaceDifficulty());
-            this._callbacks.onStartRace();
-        }));
+        start.on(Button.EventType.CLICK, () => {
+            if (!this._leaving) this._careerPanel?.openQuick();
+        });
     }
 
     private buildCharacterManagement(parent: Node): void {
@@ -792,12 +816,14 @@ export class PrepareRaceFlow {
         }
         this._upgradePending = true;
         setButtonInteractable(this._upgradeButton, false);
-        const result = await progression.spendForLevel(characterId);
-        this._upgradePending = false;
-        if (!this._root?.isValid) return;
-        showToast(this._canvasNode, result.levelsGained > 0 ? `升级成功 · Lv.${progression.getCharacterLevel(characterId)}` : result.reason === 'maxed' ? '角色已满级' : '金币不足');
-        this.refreshCharacterCard(characterId);
-        this.refreshCharacterInspector();
+        try {
+            const result = await progression.spendForLevel(characterId);
+            if (this._root?.isValid) showToast(this._canvasNode, result.levelsGained > 0 ? `升级成功 · Lv.${progression.getCharacterLevel(characterId)}` : result.reason === 'maxed' ? '角色已满级' : '金币不足');
+        } catch { if (this._root?.isValid) showToast(this._canvasNode, '保存失败，请重试'); }
+        finally {
+            this._upgradePending = false;
+            if (this._root?.isValid) { this.refreshCharacterCard(characterId); this.refreshCharacterInspector(); }
+        }
     }
 
     private buildAppearanceContent(parent: Node): void {

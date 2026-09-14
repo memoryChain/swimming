@@ -5,6 +5,7 @@
 // when the shape changes so old saves can migrate.
 
 import { normalizeCharacterLevel } from '../progression/ProgressionBalance';
+import { createCareer, CareerState, tierIndex, cupRounds } from '../progression/CareerRules';
 import { defaultAvatarId, generateRandomNickName } from './IdentityConfig';
 import {
     createDefaultPlayerCharacterSelection,
@@ -13,7 +14,7 @@ import {
     PlayerCharacterSelection,
 } from '../app/PlayerCharacterConfig';
 
-export const PLAYER_PROFILE_SCHEMA = 4;
+export const PLAYER_PROFILE_SCHEMA = 6;
 
 // In-game resource display names (single source of truth for UI text).
 export const CURRENCY = {
@@ -32,7 +33,7 @@ export const PROGRESSION_CONFIG = {
     dailyAdCap: 10,
     // Coins granted to brand-new accounts so the first level-up is reachable
     // before any race.
-    starterCoins: 2000,
+    starterCoins: 0,
     // DEBUG ONLY: coins granted per tap of the headbar "+" button. This is a dev
     // cheat for testing the level system with ads deferred. MUST be removed or
     // gated behind a real rewarded-ad flow before shipping to production.
@@ -43,10 +44,15 @@ export const PROGRESSION_CONFIG = {
 // Stored under profile.characters[id].
 export interface CharacterProgress {
     level: number;
+    /** 旧签约存档兼容字段，不参与当前升级权限判断。 */
+    signed: boolean;
+    signAds: number;
+    adTokens: string[];
 }
 
 export interface PlayerProfile {
     schema: number;
+    career: CareerState;
     // In-game identity (player-chosen, NOT the real WeChat profile).
     nickName: string;
     avatarId: string;
@@ -81,7 +87,7 @@ export function createDefaultCharacterProgress(): Record<string, CharacterProgre
     const characters: Record<string, CharacterProgress> = {};
     for (const def of PLAYER_CHARACTER_DEFINITIONS) {
         if (def.unlocked) {
-            characters[def.id] = { level: 1 };
+            characters[def.id] = { level: 1, signed: false, signAds: 0, adTokens: [] };
         }
     }
     return characters;
@@ -90,6 +96,7 @@ export function createDefaultCharacterProgress(): Record<string, CharacterProgre
 export function createDefaultProfile(): PlayerProfile {
     return {
         schema: PLAYER_PROFILE_SCHEMA,
+        career: createCareer(),
         nickName: generateRandomNickName(),
         avatarId: defaultAvatarId(),
         characterSelection: createDefaultPlayerCharacterSelection(),
@@ -104,6 +111,9 @@ function normalizeCharacterProgress(raw: unknown): CharacterProgress {
     const entry = raw as Partial<CharacterProgress> | null;
     return {
         level: normalizeCharacterLevel(entry?.level),
+        signed: entry?.signed === true || normalizeCharacterLevel(entry?.level) > 1,
+        signAds: Math.max(0, Math.min(3, Math.floor(Number(entry?.signAds) || 0))),
+        adTokens: Array.isArray(entry?.adTokens) ? entry.adTokens.filter(t => typeof t === 'string').slice(-3) : [],
     };
 }
 
@@ -135,6 +145,7 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
         : coinFromLegacy;
     const profile: PlayerProfile = {
         schema: PLAYER_PROFILE_SCHEMA,
+        career: normalizeCareer(src.career),
         nickName: typeof src.nickName === 'string' && src.nickName.length > 0 ? src.nickName : base.nickName,
         avatarId: typeof src.avatarId === 'string' && src.avatarId.length > 0 ? src.avatarId : base.avatarId,
         characterSelection: normalizePlayerCharacterSelection(src.characterSelection),
@@ -145,10 +156,39 @@ export function normalizeProfile(raw: unknown): PlayerProfile {
         },
         characters,
     };
+    if ((src.schema ?? 0) < 5) profile.career.freeSigningUsed = Object.keys(characters).some(id => characters[id].level > 1);
     // Roll over the daily counter on a new day.
     if (profile.daily.date !== todayString()) {
         profile.daily.date = todayString();
         profile.daily.adCount = 0;
     }
     return profile;
+}
+
+function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
+    const c = createCareer();
+    if (!raw || typeof raw !== 'object') return c;
+    c.league = tierIndex(raw.league ?? 0);
+    c.points = Math.max(0, Math.min(100, Math.floor(Number(raw.points) || 0)));
+    c.serial = Math.max(0, Math.floor(Number(raw.serial) || 0));
+    c.freeSigningUsed = raw.freeSigningUsed === true;
+    c.firstPrizes = Array.isArray(raw.firstPrizes) ? [...new Set(raw.firstPrizes.filter(n => Number.isInteger(n) && n >= 0 && n <= 5))] : [];
+    for (const id of Object.keys(createDefaultCharacterProgress())) {
+        const cup = raw.cups?.[id];
+        if (cup && typeof cup.id === 'string' && Number.isInteger(cup.tier) && cup.tier >= 0 && cup.tier <= 5
+            && Number.isInteger(cup.round) && cup.round >= 0 && cup.round < cupRounds(cup.tier)
+            && ['active', 'won', 'lost'].indexOf(cup.state) >= 0 && Number.isFinite(cup.seed)) {
+            c.cups[id] = { ...cup, coins: Math.max(0, Number(cup.coins) || 0) };
+        }
+        const wins = raw.wins?.[id];
+        if (Array.isArray(wins)) c.wins[id] = [...new Set(wins.filter(n => Number.isInteger(n) && n >= 0 && n <= 5))];
+    }
+    c.quick = { distance: raw.quick?.distance === 400 ? 400 : 200, rule: raw.quick?.rule === 'wild' ? 'wild' : 'standard' };
+    // 中断后从杯赛当前轮重新开赛；已结算回执仍保留，不能因重启重复发放。
+    c.receipts = Array.isArray(raw.receipts) ? raw.receipts.filter(r => r && typeof r.id === 'string' && Number.isFinite(r.coinsGained)).slice(-32) : [];
+    const p = raw.pending;
+    if (p && typeof p.id === 'string' && ['quick', 'league', 'cup'].indexOf(p.source) >= 0
+        && (p.distance === 200 || p.distance === 400) && (p.rule === 'standard' || p.rule === 'wild')
+        && Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 5 && p.ai && Number.isFinite(p.seed)) c.pending = p;
+    return c;
 }

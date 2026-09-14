@@ -562,9 +562,11 @@ export class UIController extends Component {
 
     showProgressionResult(result: {
         coinsGained: number;
+        message?: string;
     } | null) {
         if (this.settlementView) {
             this.settlementView.setReward(result?.coinsGained ?? 0);
+            this.settlementView.setCareerMessage(result?.message ?? '');
             return;
         }
         this.hideProgressionResult();

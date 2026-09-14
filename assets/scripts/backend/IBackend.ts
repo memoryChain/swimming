@@ -18,6 +18,7 @@
 // saveProfile is the persistence hook; callers must not use it to bypass caps.
 
 import { PlayerProfile } from './PlayerProfile';
+import type { CareerCommand, CareerResult } from '../progression/CareerRules';
 
 export type AdRewardReason = 'capped' | 'error';
 
@@ -56,6 +57,7 @@ export interface IdentityPatch {
 
 export interface IBackend {
     readonly name: string;
+    executeCareer(command: CareerCommand): Promise<CareerResult>;
 
     // Load (or first-time create) this account's profile.
     loadProfile(): Promise<PlayerProfile>;

@@ -52,8 +52,8 @@ export type GameFlowRefs = {
     showAwards: (leaderboard: RaceFinishResult[]) => void;
     applyPlayerDive: (result: DiveResult) => void;
     playerDiveSpeedScale: () => number;
-    awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; finished: boolean }) =>
-        { characterId: string; coinsGained: number } | null;
+    awardProgression: (input: { placement: number; racerCount: number; maxCombo: number; perfectCount: number; goodCount: number; missCount: number; time: number; finished: boolean }) =>
+        { characterId: string; coinsGained: number; message?: string } | null | Promise<{ characterId: string; coinsGained: number; message?: string } | null>;
     enterSprint: () => void;
     updateScoreboardFeed?: (dt: number, snapshot: RaceCameraSnapshot) => void;
     updateCameraSpeedLines?: (dt: number, speed: number, visible: boolean, sprintBoost: boolean, jumpActive: boolean, flightPitch: number) => void;
@@ -351,7 +351,7 @@ export class GameFlowController {
             // Networked race: adopt the host's authoritative ordering before showing
             // results (single-player resolves synchronously with the local order).
             const presentationVersion = this._finishPresentationVersion;
-            this._refs.resolveNetLeaderboard(localLeaderboard, (leaderboard) => {
+            this._refs.resolveNetLeaderboard(localLeaderboard, async (leaderboard) => {
                 if (presentationVersion !== this._finishPresentationVersion) return;
                 const playerRow = leaderboard.find((row) => row.isPlayer);
                 const finalPlacement = playerRow?.placement ?? placement.placement;
@@ -361,14 +361,17 @@ export class GameFlowController {
                 const finalPlayerTime = playerRow && playerRow.time > 0 ? playerRow.time : playerTime;
                 // Progression uses the authoritative (net-resolved) placement/time so
                 // the XP reward matches the result the player actually sees.
-                const progressionResult = this._refs.awardProgression({
+                const progressionResult = await this._refs.awardProgression({
                     placement: finalPlacement,
                     racerCount: placement.racerCount,
                     maxCombo: rhythm?.maxCombo ?? 0,
                     perfectCount: rhythm?.perfectCount ?? 0,
                     goodCount: rhythm?.goodCount ?? 0,
-                    finished: finalPlayerTime > 0,
+                    missCount: rhythm?.missCount ?? 0,
+                    time: finalPlayerTime,
+                    finished: !!playerRow?.finished && !playerRow.quit && !playerRow.eliminated,
                 });
+                if (presentationVersion !== this._finishPresentationVersion) return;
                 const present = () => {
                     this._refs.uiFlow.showResult(finalPlayerWin, finalPlayerTime, aiTime, {
                         averageSpeed: finalPlayerTime > 0 ? getRaceDistance() / finalPlayerTime : 0,

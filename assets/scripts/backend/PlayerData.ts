@@ -4,6 +4,7 @@
 // later) and notifies listeners whenever the profile changes.
 
 import { backend } from './BackendManager';
+import type { CareerCommand, CareerResult } from '../progression/CareerRules';
 import { AdRewardResult, IdentityPatch } from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
@@ -21,6 +22,35 @@ class PlayerDataStore {
     private _loaded = false;
     private _loading: Promise<PlayerProfile> | null = null;
     private _listeners: ChangeListener[] = [];
+    private _careerQueue: Promise<unknown> = Promise.resolve();
+    private _pendingSettlement: CareerCommand | null = null;
+
+    private enqueue<T>(action: () => Promise<T>, retrySettlement = true): Promise<T> {
+        const next = this._careerQueue.then(async () => {
+            await this.load();
+            if (!this._loaded) throw new Error('存档尚未加载');
+            if (this._pendingSettlement && retrySettlement) {
+                const retry = await backend().executeCareer(this._pendingSettlement);
+                if (!retry.ok) throw new Error(retry.message);
+                this._profile = retry.profile;
+                this._pendingSettlement = null;
+            }
+            return action();
+        });
+        this._careerQueue = next.catch(() => undefined);
+        return next;
+    }
+
+    executeCareer(command: CareerCommand): Promise<CareerResult> {
+        return this.enqueue(async () => {
+            if (command.type === 'settle') this._pendingSettlement = command;
+            const result = await backend().executeCareer(command);
+            if (command.type === 'settle') this._pendingSettlement = null;
+            this._profile = result.profile;
+            this._emit();
+            return result;
+        }, command.type !== 'settle');
+    }
 
     get profile(): PlayerProfile {
         return this._profile;
@@ -72,32 +102,38 @@ class PlayerDataStore {
     // Watched-ad reward: the backend validates the daily cap and returns the
     // authoritative profile. Updates local state and notifies listeners.
     async grantAdReward(): Promise<AdRewardResult> {
-        const result = await backend().grantAdReward();
-        this._profile = result.profile;
-        this._emit();
-        return result;
+        return this.enqueue(async () => {
+            const result = await backend().grantAdReward();
+            this._profile = result.profile;
+            this._emit();
+            return result;
+        });
     }
 
     // DEBUG ONLY: add coins with no ad and no cap (headbar "+" button while ads
     // are deferred). Updates local state and notifies listeners.
     async grantDebugCoins(amount: number): Promise<void> {
-        this._profile = await backend().grantDebugCoins(amount);
-        this._emit();
+        return this.enqueue(async () => {
+            this._profile = await backend().grantDebugCoins(amount);
+            this._emit();
+        });
     }
 
     // Spend coins to level a character. Delegates to the backend (validates
     // balance, returns authoritative profile) and maps the raw result into the
     // SpendResult shape the progression/UI layer expects.
     async spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<SpendResult> {
-        const result = await backend().spendCoinsForLevel(characterId, requestedLevels);
-        this._profile = result.profile;
-        this._emit();
-        return {
-            characterId,
-            levelsGained: result.levelsGained,
-            coinsSpent: result.coinsSpent,
-            reason: result.ok ? undefined : result.reason,
-        };
+        return this.enqueue(async () => {
+            const result = await backend().spendCoinsForLevel(characterId, requestedLevels);
+            this._profile = result.profile;
+            this._emit();
+            return {
+                characterId,
+                levelsGained: result.levelsGained,
+                coinsSpent: result.coinsSpent,
+                reason: result.ok ? undefined : result.reason,
+            };
+        });
     }
 
     // Change the chosen avatar; persists and notifies listeners.
@@ -113,37 +149,38 @@ class PlayerDataStore {
     // Save avatar and nickname together so a confirmation dialog emits one coherent
     // profile change instead of exposing a half-applied identity to room listeners.
     async setIdentity(identity: IdentityPatch): Promise<void> {
-        this._profile = await backend().saveIdentity(identity);
-        this._emit();
+        return this.enqueue(async () => {
+            this._profile = await backend().saveIdentity(identity);
+            this._emit();
+        });
     }
 
     // Persist the last confirmed playable character and appearance. Loading first
     // prevents a fast early click from overwriting other fields with defaults.
     async setCharacterSelection(selection: Readonly<PlayerCharacterSelection>): Promise<void> {
         const requested = normalizePlayerCharacterSelection(selection);
-        await this.load();
-        const current = this._profile.characterSelection;
-        if (current.characterId === requested.characterId
-            && current.skinToneId === requested.skinToneId
-            && current.colorSchemeId === requested.colorSchemeId) {
-            restorePlayerCharacterSelection(current);
-            return;
-        }
-        this._profile.characterSelection = requested;
-        restorePlayerCharacterSelection(requested);
-        this._emit();
-        this._profile = await backend().saveProfile(this._profile);
-        restorePlayerCharacterSelection(this._profile.characterSelection);
-        this._emit();
+        return this.enqueue(async () => {
+            const current = this._profile.characterSelection;
+            if (current.characterId === requested.characterId && current.skinToneId === requested.skinToneId
+                && current.colorSchemeId === requested.colorSchemeId) {
+                restorePlayerCharacterSelection(current);
+                return;
+            }
+            this._profile = await backend().saveProfile({ ...this._profile, characterSelection: requested });
+            restorePlayerCharacterSelection(this._profile.characterSelection);
+            this._emit();
+        });
     }
 
     // Persist the current in-memory profile (phase-2 progression writes). Delegates
     // to the backend and notifies listeners with the authoritative result. Safe to
     // call after mutating this.profile in place (e.g. progression coin updates).
     async persist(): Promise<PlayerProfile> {
-        this._profile = await backend().saveProfile(this._profile);
-        this._emit();
-        return this._profile;
+        return this.enqueue(async () => {
+            this._profile = await backend().saveProfile(this._profile);
+            this._emit();
+            return this._profile;
+        });
     }
 
     onChange(listener: ChangeListener): void {

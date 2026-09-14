@@ -6,6 +6,7 @@
   },
   "version": "3.8.8",
   "scripts": {
+    "test:career": "npx --yes --package typescript@5.4.5 -c \"node --test tests/career-progression.test.cjs tests/career-ui.test.cjs\"",
     "codex:setup": "node scripts/setup-codex-system-proxy.mjs",
     "fonts:setup": "node scripts/run-ui-fonts.cjs setup",
     "fonts:build": "node scripts/run-ui-fonts.cjs build",

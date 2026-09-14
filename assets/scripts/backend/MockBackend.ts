@@ -7,6 +7,7 @@
 // local mock; the production WeChat Cloud backend is the authoritative one.
 
 import { sys } from 'cc';
+import { CareerCommand, CareerResult, executeCareer } from '../progression/CareerRules';
 import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult } from './IBackend';
 import {
     createDefaultProfile,
@@ -21,6 +22,12 @@ const STORAGE_KEY = 'swimming.player-profile';
 
 export class MockBackend implements IBackend {
     readonly name = 'mock';
+
+    executeCareer(command: CareerCommand): Promise<CareerResult> {
+        const result = executeCareer(this.read(), command);
+        if (result.ok) this.write(result.profile);
+        return Promise.resolve(result);
+    }
 
     loadProfile(): Promise<PlayerProfile> {
         return Promise.resolve(this.read());
@@ -61,7 +68,7 @@ export class MockBackend implements IBackend {
         }
         let levelsGained = 0;
         let coinsSpent = 0;
-        let remaining = Math.max(0, Math.floor(requestedLevels));
+        let remaining = Number.isFinite(requestedLevels) ? Math.max(0, Math.min(30, Math.floor(requestedLevels))) : 0;
         while (remaining > 0 && progress.level < PROGRESSION_BALANCE.maxLevel) {
             const cost = coinCostForLevel(progress.level);
             if (profile.coins < cost) {
@@ -122,6 +129,7 @@ export class MockBackend implements IBackend {
             sys.localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
         } catch (error) {
             console.warn('[Backend] mock write failed', error);
+            throw error;
         }
     }
 }
