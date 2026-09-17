@@ -62,7 +62,7 @@ function setup() {
             if(this.index>=this.steps.length)running.delete(this);
         }
     }
-    const cc={Node,Button,UIOpacity,Vec3,tween:target=>new Animation(target)};
+    const cc={Node,Button,UIOpacity,Vec3,view:{on(){},off(){}},tween:target=>new Animation(target)};
     const factory={makeUiNode:(name,parent)=>{const n=new Node(name);n.setParent(parent);return n;},uiColor:()=>({})};
     function load(file,imports){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports,require:key=>imports[key]??{},console});return m.exports;}
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
