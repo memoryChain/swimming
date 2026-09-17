@@ -3,7 +3,7 @@ import { PlayerData } from '../backend/PlayerData';
 import { getPlayerCharacterSelection, findPlayerCharacter } from '../app/PlayerCharacterConfig';
 import { LEAGUES, cupName, roundName, SoloSource, RaceRule } from '../progression/CareerRules';
 import { setSoloRaceTicket, consumeSoloReturn } from '../progression/SoloRaceSession';
-import { setRaceDifficulty, setSoloRaceDistance } from '../core/GameBalance';
+import { getRaceModeConfig, RaceModeId, setRaceDifficulty, setSoloRaceDistance } from '../core/GameBalance';
 import { SeededRandom } from '../core/SharedRNG';
 import { makeButton, makeLabel, makeRect, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
@@ -94,7 +94,15 @@ export class CareerPrototypePanel {
         const component = b.node.getComponent(Button)!;
         if (component.interactable !== (enabled && !this.busy)) component.interactable = enabled && !this.busy;
     }
-    openQuick(): void { if (!this.busy) this.open('quick'); }
+    openQuick(mode?: RaceModeId): void {
+        if (this.busy) return;
+        if (mode) {
+            const config = getRaceModeConfig(mode);
+            this.distance = config.distance;
+            this.rule = config.ruleset;
+        }
+        this.open('quick');
+    }
 
     private open(screen: 'home' | 'quick' | 'career', source: 'league' | 'cup' = 'league'): void {
         this.screen = screen; this.source = source; this.confirmAbandon = false;
@@ -131,7 +139,12 @@ export class CareerPrototypePanel {
         }
         if (this.status) this.write(this.notice, this.status);
     }
-    private setRule(rule: RaceRule): void { if (this.rule !== rule) { this.rule = rule; this.refresh(); } }
+    private setRule(rule: RaceRule): void {
+        if (this.rule === rule) return;
+        this.rule = rule;
+        if (rule === 'stimulant') this.distance = 200;
+        this.refresh();
+    }
     private async abandon(id: string): Promise<void> {
         this.busy = true; this.refresh();
         try { await PlayerData.executeCareer({ type: 'abandon', characterId: id }); }
@@ -149,7 +162,9 @@ export class CareerPrototypePanel {
             if (!this.root.isValid) return;
             if (result.ok && result.ticket) {
                 setSoloRaceTicket(result.ticket);
-                setRaceDifficulty(result.ticket.rule === 'standard' ? 'beginner' : 'competitive');
+                setRaceDifficulty(result.ticket.rule === 'standard' ? 'beginner'
+                    : result.ticket.rule === 'stimulant' ? 'stimulant-brawl'
+                        : result.ticket.distance === 400 ? 'championship' : 'competitive');
                 setSoloRaceDistance(result.ticket.distance);
                 launching = true;
                 this.start();

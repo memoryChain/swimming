@@ -2,10 +2,11 @@ import { CharacterAbilityState } from './CharacterAbilityState';
 import { abilityValue, CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { StrokeHeartRateModel } from '../condition/StrokeHeartRateModel';
 import { perfectWidthScale, HeartRateTraitId } from '../core/ConditionBalance';
-import { getRaceDistance, isRaceSteeringEnabled, TECHNIQUE_BALANCE, SWIMMER_BALANCE } from '../core/GameBalance';
+import { getRaceDistance, isRaceSteeringEnabled, isStimulantBrawlMode, TECHNIQUE_BALANCE, SWIMMER_BALANCE } from '../core/GameBalance';
 import { Rating, StrokeType } from '../core/GameConstants';
 import { MOTION_TUNING, STROKE_QUALITY_TUNING } from '../core/InputTuning';
 import { MAX_STEERING_HEADING_DEGREES, STEERING_TUNING } from '../core/SteeringTuning';
+import { stimulantTurnDragScale, stimulantTurnImpulseScale } from '../core/StimulantBrawlRules';
 import { SwimPhysicsModel } from './SwimPhysicsModel';
 import { SWIMMER_COLLISION } from '../entity/SwimmerCollisionResolver';
 import type { PlayerBalanceOverrides } from '../progression/PlayerBalanceOverrides';
@@ -1428,7 +1429,8 @@ export class SwimmerMotor {
                 this._headingTurnRate = 0;
             }
         }
-        const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0));
+        const modeDragScale = isStimulantBrawlMode() ? stimulantTurnDragScale(this.heartRate) : 1;
+        const drag = Math.max(0, finiteOr(STEERING_TUNING.turnAngularDrag, 0)) * modeDragScale;
         this._headingTurnRate *= Math.exp(-drag * step);
         if (Math.abs(this._headingTurnRate) < 1e-5) {
             this._headingTurnRate = 0;
@@ -1527,9 +1529,11 @@ export class SwimmerMotor {
         }
         const minFactor = clamp01(STEERING_TUNING.turnPowerMinFactor);
         const factor = minFactor + (1 - minFactor) * clamp01(powerFactor);
+        const modeImpulseScale = isStimulantBrawlMode() ? stimulantTurnImpulseScale(this.heartRate) : 1;
         const turnImpulse = Math.max(0, finiteOr(STEERING_TUNING.turnAngularImpulse, 0))
             * DEG2RAD
-            * factor;
+            * factor
+            * modeImpulseScale;
         const dir = (type === StrokeType.LEFT ? 1 : -1) * this._courseDirection;
         const signedImpulse = dir * turnImpulse * this.axialSteeringProjection();
         const maxRate = safeMaxTurnRateRadians();

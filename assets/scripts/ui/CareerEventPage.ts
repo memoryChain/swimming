@@ -97,8 +97,9 @@ export class CareerEventPage {
         this.quickChoices=[
             this.button(this.quick,'Distance200','200米\n一分多钟',-285,50,490,112,()=>actions.distance(200)),
             this.button(this.quick,'Distance400','400米\n约三分钟',-285,-85,490,112,()=>actions.distance(400)),
-            this.button(this.quick,'RuleStandard','标准竞速\n专注划水节奏',285,50,490,112,()=>actions.rule('standard')),
-            this.button(this.quick,'RuleWild','狂野模式\n自由转向与争位',285,-85,490,112,()=>actions.rule('wild')),
+            this.button(this.quick,'RuleStandard','标准竞速\n专注划水节奏',285,88,490,72,()=>actions.rule('standard')),
+            this.button(this.quick,'RuleWild','狂野模式\n自由转向与争位',285,5,490,72,()=>actions.rule('wild')),
+            this.button(this.quick,'RuleStimulant','兴奋剂大乱斗\n抢药恢复，心率失控',285,-78,490,72,()=>actions.rule('stimulant')),
         ];
         this.text(this.quick,'QuickNotes','AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分',0,-195,1050,75,23);
         this.quickStart=this.button(this.quick,'StartEvent','开始比赛',370,-285,380,60,()=>actions.start('quick'),true);
@@ -182,7 +183,8 @@ export class CareerEventPage {
             this.active(this.abandon.root,!!active);this.enabled(this.abandon,!s.busy);
             this.write(this.abandon.label,s.confirmAbandon?'再次点击确认放弃':'放弃本届杯赛');
         } else {
-            this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy);this.active(n.selected,i===(s.distance===200?0:1)||i===(s.rule==='standard'?2:3));});
+            const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:4;
+            this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy&&!(i===1&&s.rule==='stimulant'));this.active(n.selected,i===(s.distance===200?0:1)||i===ruleIndex);});
             this.enabled(this.quickStart,!s.busy);this.write(this.quickStart.label,`开始比赛 · ${s.distance}米`);this.active(this.abandon.root,false);
         }
         this.write(this.footer,s.status||(s.busy?'正在保存并准备比赛…':isMap?'联赛账号共享 · 杯赛跟随角色':'好友对战无成长奖励'));

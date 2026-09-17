@@ -1,6 +1,6 @@
 import { Button, Color, Label, Node, Sprite, UITransform } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { RaceDifficulty, getRaceDistance, getRaceModeTitle } from '../core/GameBalance';
+import { RaceModeId, getRaceDistance, getRaceModeTitle } from '../core/GameBalance';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { fitFullScreenBackgroundCover, makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
@@ -13,10 +13,11 @@ const MUTED = uiColor(73, 100, 140);
 const JOINED = uiColor(0, 179, 149);
 const HEADER_INK = uiColor(23, 36, 58);
 type TextFace = 'project' | 'regular' | 'dynamic' | 'latin';
-export const ROOM_MODES: ReadonlyArray<{ id: RaceDifficulty; label: string }> = [
+export const ROOM_MODES: ReadonlyArray<{ id: RaceModeId; label: string }> = [
     { id: 'beginner', label: getRaceModeTitle('beginner') },
     { id: 'competitive', label: getRaceModeTitle('competitive') },
     { id: 'championship', label: getRaceModeTitle('championship') },
+    { id: 'stimulant-brawl', label: getRaceModeTitle('stimulant-brawl') },
 ];
 export type OnlineMember = {
     clientId?: number;
@@ -25,7 +26,7 @@ export type OnlineMember = {
 };
 export type OnlineRoomState = {
     members: OnlineMember[]; isHost: boolean; ready: boolean; busy: boolean;
-    canStart: boolean; roomNumber: string; hint: string; mode: RaceDifficulty;
+    canStart: boolean; roomNumber: string; hint: string; mode: RaceModeId;
 };
 type Card = { background: Sprite; avatar: Sprite; ring: Sprite; nickname: Label; role: Label;
     badge: Label; badgeBg: Sprite; plus: Label; empty: Label; member?: OnlineMember; signature: string };
@@ -66,7 +67,7 @@ export class OnlineRoomView {
     private confirmingKick = false;
 
     constructor(parent: Node, private readonly actions: {
-        exit(): void; primary(): void; invite(): void; mode(value: RaceDifficulty): void; kick(member: OnlineMember): void;
+        exit(): void; primary(): void; invite(): void; mode(value: RaceModeId): void; kick(member: OnlineMember): void;
     }) {
         this.root = makeUiNode('OnlineRoom', parent);
         const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.characterUi.background, 0, 0, 1280, 720);
@@ -120,7 +121,7 @@ export class OnlineRoomView {
         // 抽屉和玩家弹窗只创建一次，放在内容最上层；点空白关闭。
         this.drawer = makeUiNode('ModeDrawer', p);
         this.touch(this.drawer, 'DismissDrawer', 0, 85, 1280, 635, () => visible(this.drawer, false));
-        this.picture(this.drawer, 'DrawerPanel', ART.drawer, 90, 319, 351, 206);
+        this.picture(this.drawer, 'DrawerPanel', ART.drawer, 90, 271, 351, 254);
         this.text(this.drawer, 'DrawerHeading', '选择赛制', 122, 333, 272, 28, 16, false).color = MUTED;
         ROOM_MODES.forEach((mode, i) => {
             const y = 357 + i * 48;
@@ -177,7 +178,7 @@ export class OnlineRoomView {
         assign(this.modePermission, state.isHost ? '仅房主可切换' : '房主设置');
         visible(this.modeArrow.node, state.isHost);
         if (!state.isHost || state.busy) visible(this.drawer, false);
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < ROOM_MODES.length; i++) {
             const selected = state.mode === ROOM_MODES[i].id;
             const color = selected ? JOINED : INK;
             tint(this.modeLabels[i], color); tint(this.modeDistances[i], color); tint(this.modeUnits[i], color);

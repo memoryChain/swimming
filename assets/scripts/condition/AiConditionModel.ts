@@ -64,6 +64,14 @@ export class AiConditionModel {
         this._energyDepleted = this._energy <= 0;
         this.refreshModifiers();
     }
+    restoreEnergyRatio(ratio: number): number {
+        if (this._infiniteStamina || !Number.isFinite(ratio) || ratio <= 0) return 0;
+        const before = this._energy;
+        this._energy = Math.min(this._energyTotal, before + this._energyTotal * ratio);
+        this._energyDepleted = this._energy <= 0;
+        this.refreshModifiers();
+        return this._energy - before;
+    }
     syncHeartRate(value: number) {
         if (!Number.isFinite(value)) return;
         this._heartRate = clamp(value, HEART_RATE_BOUNDS.min, HEART_RATE_BOUNDS.max);

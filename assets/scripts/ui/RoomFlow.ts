@@ -10,7 +10,7 @@
 
 import { Node } from 'cc';
 import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
-import { RaceDifficulty, setRaceDifficulty } from '../core/GameBalance';
+import { RaceModeId, setRaceDifficulty } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS, getSelectedRaceDifficulty } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
@@ -40,7 +40,7 @@ export type RoomFlowCallbacks = {
 
 const MAX_SLOTS = 8;
 const IDENTITY_SEP = '|';
-let lastRoomMode: RaceDifficulty | null = null;
+let lastRoomMode: RaceModeId | null = null;
 
 type SlotMember = {
     clientId?: number;
@@ -58,7 +58,7 @@ export class RoomFlow {
     private _readyPending = false;
     private _kickPending = false;
     private _leaving = false;
-    private _mode: RaceDifficulty = getSelectedRaceDifficulty();
+    private _mode: RaceModeId = getSelectedRaceDifficulty();
     private _rulesId = '';
     private _rulesRevision = 0;
     private _rulesOwnerPos = -1;
@@ -619,7 +619,7 @@ export class RoomFlow {
 
     private ruleKey(): string { return `${this._rulesId}:${this._rulesRevision}`; }
 
-    private changeMode(mode: RaceDifficulty) {
+    private changeMode(mode: RaceModeId) {
         if (!this._isHost || this._startRequested || this._kickPending || this._leaving || mode === this._mode) return;
         this._mode = mode;
         this._rulesRevision++;

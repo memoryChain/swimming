@@ -1,6 +1,6 @@
 import type { CharacterAbilityId } from '../core/CharacterAbilityConfig';
 import { HeartRateTraitId } from '../core/ConditionBalance';
-import { RaceDifficulty } from '../core/GameBalance';
+import { RaceModeId } from '../core/GameBalance';
 
 export type PlayerCharacterId = 'muscleMan' | 'cartonSwimmer5' | 'cartonSwimmer6' | 'cartonSwimmer8' | 'cartonSwimmer9' | 'cartonSwimmer10' | 'cartonSwimmer11' | 'cartonSwimmer12' | 'cartonSwimmer13' | 'cartonSwimmer14' | 'cartonSwimmer15';
 
@@ -234,7 +234,7 @@ export function normalizePlayerCharacterSelection(raw: unknown): PlayerCharacter
 }
 
 let selection: PlayerCharacterSelection = createDefaultPlayerCharacterSelection();
-let selectedRaceDifficulty: RaceDifficulty = 'competitive';
+let selectedRaceDifficulty: RaceModeId = 'competitive';
 
 export function getPlayerCharacterSelection(): Readonly<PlayerCharacterSelection> { return selection; }
 
@@ -304,8 +304,8 @@ export function selectedPlayerColorScheme(): PlayerColorScheme {
     return PLAYER_COLOR_SCHEMES.find((scheme) => scheme.id === selection.colorSchemeId) ?? PLAYER_COLOR_SCHEMES[0];
 }
 
-export function setSelectedRaceDifficulty(difficulty: RaceDifficulty) { selectedRaceDifficulty = difficulty; }
-export function getSelectedRaceDifficulty(): RaceDifficulty { return selectedRaceDifficulty; }
+export function setSelectedRaceDifficulty(difficulty: RaceModeId) { selectedRaceDifficulty = difficulty; }
+export function getSelectedRaceDifficulty(): RaceModeId { return selectedRaceDifficulty; }
 
 export function characterAbilityForModel(modelVariantId: string): CharacterAbilityId {
     return PLAYER_CHARACTER_DEFINITIONS.find(character => character.modelVariantId === modelVariantId)?.abilityId ?? 'none';

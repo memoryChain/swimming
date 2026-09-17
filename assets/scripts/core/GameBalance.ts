@@ -9,53 +9,71 @@ export const RACE_COURSE_LENGTH = 50;
 export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
+export type RaceModeId = RaceDifficulty | 'stimulant-brawl';
+export type RaceCategoryId = 'competitive' | 'entertainment';
+export type RaceRulesetId = 'standard' | 'wild' | 'stimulant';
 
-export type RaceDifficultyConfig = {
-    id: RaceDifficulty;
+export type RaceModeConfig = {
+    id: RaceModeId;
     label: string;
+    category: RaceCategoryId;
+    distance: 200 | 400;
+    ruleset: RaceRulesetId;
     // Whether this tier enables the dynamic lane-lockdown race modifier.
     laneLockdownEnabled: boolean;
+    steeringEnabled: boolean;
 };
 
 // 保留稳定入口ID供存档和房间使用；AI等级与智力独立配置于 competitor/AiRaceConfig。
-export const RACE_DIFFICULTY_OPTIONS: readonly RaceDifficultyConfig[] = [
-    { id: 'beginner', label: '标准竞速', laneLockdownEnabled: false },
-    { id: 'competitive', label: '狂野模式', laneLockdownEnabled: false },
-    { id: 'championship', label: '狂野模式', laneLockdownEnabled: false },
+export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
+    { id: 'beginner', label: '标准竞速', category: 'competitive', distance: 200, ruleset: 'standard', laneLockdownEnabled: false, steeringEnabled: false },
+    { id: 'competitive', label: '狂野模式', category: 'competitive', distance: 200, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'championship', label: '狂野模式', category: 'competitive', distance: 400, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'stimulant-brawl', label: '兴奋剂大乱斗', category: 'entertainment', distance: 200, ruleset: 'stimulant', laneLockdownEnabled: false, steeringEnabled: true },
 ];
+export const RACE_DIFFICULTY_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter((option) => option.category === 'competitive');
 
-let currentRaceDifficulty: RaceDifficulty = 'competitive';
+let currentRaceMode: RaceModeId = 'competitive';
 let soloDistance: 200 | 400 | null = null;
 export function setSoloRaceDistance(distance: 200 | 400 | null): void { soloDistance = distance; }
 
 // 入口共用赛程映射；传入模式供准备页/房间预览，省略时读取当前比赛。
-export function getRaceDistance(mode?: RaceDifficulty): number {
+export function getRaceDistance(mode?: RaceModeId): number {
     if (mode === undefined && soloDistance !== null) return soloDistance;
-    return (mode ?? currentRaceDifficulty) === 'championship' ? 400 : RACE_DISTANCE;
+    return getRaceModeConfig(mode ?? currentRaceMode).distance;
 }
 
-export function getRaceDifficulty(): RaceDifficulty {
-    return currentRaceDifficulty;
+export function getRaceMode(): RaceModeId {
+    return currentRaceMode;
 }
 
-export function setRaceDifficulty(difficulty: RaceDifficulty): RaceDifficulty {
-    currentRaceDifficulty = RACE_DIFFICULTY_OPTIONS.some((option) => option.id === difficulty)
-        ? difficulty
+export function setRaceMode(mode: RaceModeId): RaceModeId {
+    currentRaceMode = RACE_MODE_OPTIONS.some((option) => option.id === mode)
+        ? mode
         : 'competitive';
-    return currentRaceDifficulty;
+    return currentRaceMode;
 }
 
-export function getRaceDifficultyConfig(difficulty = currentRaceDifficulty): RaceDifficultyConfig {
-    return RACE_DIFFICULTY_OPTIONS.find((option) => option.id === difficulty)
-        ?? RACE_DIFFICULTY_OPTIONS[1];
+// 兼容现有调用名；新代码使用 RaceMode 命名，旧稳定 ID 与存档值保持不变。
+export function getRaceDifficulty(): RaceModeId { return getRaceMode(); }
+export function setRaceDifficulty(mode: RaceModeId): RaceModeId { return setRaceMode(mode); }
+
+export function getRaceModeConfig(mode: RaceModeId = currentRaceMode): RaceModeConfig {
+    return RACE_MODE_OPTIONS.find((option) => option.id === mode)
+        ?? RACE_MODE_OPTIONS[1];
 }
+export const getRaceDifficultyConfig = getRaceModeConfig;
 
 export function isRaceSteeringEnabled(): boolean {
-    return currentRaceDifficulty !== 'beginner';
+    return getRaceModeConfig().steeringEnabled;
 }
 
-export function getRaceModeTitle(mode = currentRaceDifficulty): string {
-    return getRaceDifficultyConfig(mode).label;
+export function getRaceModeTitle(mode: RaceModeId = currentRaceMode): string {
+    return getRaceModeConfig(mode).label;
+}
+
+export function isStimulantBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'stimulant';
 }
 
 export function raceDistanceToCourseX(distance: number): number {

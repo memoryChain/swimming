@@ -49,6 +49,7 @@ import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { fitFullScreenBackgroundCover, makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
 import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { LoadingOverlay } from '../ui/LoadingOverlay';
+import { showToast } from '../ui/Toast';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
 import {
@@ -70,7 +71,7 @@ import { RemoteSwimmerController } from '../entity/RemoteSwimmerController';
 import { applyNetSwimmerLook } from '../net/NetSwimmerLook';
 import { NetSnapshotEntry } from '../net/NetRaceSnapshot';
 import { NET_SIM_STEP } from '../net/NetSimClock';
-import { reseedSharedRandom } from './SharedRNG';
+import { getSharedRandomSeed, reseedSharedRandom } from './SharedRNG';
 import { getSoloRaceTicket, setSoloRaceTicket, markSoloReturn } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from './GameBalance';
 import { centeredLaneStart, aiIndexInLaneRange } from '../competitor/RaceLaneAllocation';
@@ -84,7 +85,8 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isStimulantBrawlMode, SWIMMER_BALANCE } from './GameBalance';
+import { StimulantBrawlController } from './StimulantBrawlController';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -223,6 +225,8 @@ export class GameManager extends Component {
     private _waterRefraction: WaterRefractionController | null = null;
     private _laneLockdownVisuals: LaneLockdownVisuals | null = null;
     private _laneLockdownRace: LaneLockdownRaceController | null = null;
+    private _stimulantBrawl: StimulantBrawlController | null = null;
+    private _stimulantToastPriorityUntilMs = 0;
     private _laneLockdownStatusLabel: Label | null = null;
     private _eliminationDialog: Node | null = null;
     private _spectatorHud: Node | null = null;
@@ -395,6 +399,8 @@ export class GameManager extends Component {
         this._laneLockdownVisuals?.dispose();
         this._laneLockdownVisuals = null;
         this._laneLockdownRace = null;
+        this._stimulantBrawl?.dispose();
+        this._stimulantBrawl = null;
         this._waterRefraction?.dispose();
         this._waterRefraction = null;
         this._scoreboardFeed?.dispose();
@@ -508,6 +514,7 @@ export class GameManager extends Component {
         }
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
+        this.updateStimulantBrawl(dt);
         const preRacePhase = this._raceCameraDirector.preRacePhase;
         this._preRaceIntroPanel.setPhase(
             this._modelDebugFlow?.active || this._state !== GameState.PRECOUNTDOWN
@@ -1168,6 +1175,88 @@ export class GameManager extends Component {
         this._laneLockdownRace.update(dt, this._state, this._laneLockdownRacers);
     }
 
+    private updateStimulantBrawl(dt: number) {
+        if (!isStimulantBrawlMode() || this._modelDebugFlow?.active) {
+            if (this._stimulantBrawl) {
+                this._stimulantBrawl.dispose();
+                this._stimulantBrawl = null;
+                this._stimulantToastPriorityUntilMs = 0;
+                this._netRaceController?.setStimulantPickupListener(null);
+                this._netRaceController?.setStimulantStateListener(null);
+            }
+            return;
+        }
+        if (!this._stimulantBrawl && this._worldRoot?.isValid && this._playerSwimmer) {
+            this._stimulantBrawl = new StimulantBrawlController(
+                this._worldRoot,
+                getSharedRandomSeed(),
+                LANE_LAYOUT,
+                COURSE_LAYOUT,
+                lane => {
+                    const swimmer = this.swimmerForLane(lane);
+                    if (!swimmer) return null;
+                    if (lane === this._playerLaneIndex) return { swimmer, condition: this._playerCondition };
+                    const index = this.aiIndexForLane(lane);
+                    const condition = index >= 0 ? this._aiConditions[index] : null;
+                    return condition ? { swimmer, condition } : null;
+                },
+                pickup => this._netRaceController?.enqueueStimulantPickup(
+                    pickup.itemId, pickup.collectorLane, pickup.revision,
+                ),
+                feedback => {
+                    if (feedback.local) {
+                        this._stimulantToastPriorityUntilMs = Date.now() + 1400;
+                        const text = feedback.energyRestored > 0
+                            ? `兴奋剂！体力 +${Math.round(feedback.energyRestored)} · 心率 ${Math.round(feedback.heartRate)}`
+                            : `兴奋剂！体力已满 · 心率 ${Math.round(feedback.heartRate)}`;
+                        showToast(this.createRuntimeSceneBuilder().findCanvasNode(), text, { duration: 1.4 });
+                        return;
+                    }
+                    // 保证体验波会让多条泳道同时拾取，只保留本人的反馈，避免八条播报互相覆盖。
+                    if (feedback.wave === 0 || Date.now() < this._stimulantToastPriorityUntilMs) return;
+                    showToast(
+                        this.createRuntimeSceneBuilder().findCanvasNode(),
+                        `第 ${feedback.collectorLane + 1} 道选手抢到兴奋剂！`,
+                        { duration: 1.1 },
+                    );
+                },
+                wave => {
+                    if (this._state !== GameState.RACING) return;
+                    const text = wave === 0
+                        ? '开局兴奋剂已刷新！每条泳道都有一瓶'
+                        : `前方兴奋剂刷新！第 ${wave} 波争抢开始`;
+                    showToast(this.createRuntimeSceneBuilder().findCanvasNode(), text, { duration: 1.5 });
+                },
+                () => this._playerLaneIndex,
+            );
+            this._netRaceController?.setStimulantPickupListener((itemId, collectorLane, revision) => {
+                this._stimulantBrawl?.applyPickup({ itemId, collectorLane, revision });
+            });
+            this._netRaceController?.setStimulantStateListener(state => {
+                this._stimulantBrawl?.applySnapshotState(state);
+            });
+        }
+        if (this._state === GameState.RACING && (!this._netRaceController || this._netRaceController.isHost)) {
+            this._stimulantBrawl?.update();
+        }
+        for (let i = 0; i < this._aiControllers.length; i++) {
+            const controller = this._aiControllers[i], swimmer = this._aiSwimmers[i], condition = this._aiConditions[i];
+            if (!controller || !swimmer || !condition || controller.remoteDriven) continue;
+            controller.setStimulantTargetZ(this._stimulantBrawl?.targetZForAi(
+                swimmer.distance,
+                swimmer.node.position.z,
+                swimmer.heartRate,
+                condition.energyRatio,
+                swimmer.motor.ability.infiniteStamina,
+            ) ?? null);
+        }
+        this._stimulantBrawl?.updatePresentation(
+            this._playerSwimmer?.distance ?? 0,
+            dt,
+            this._state === GameState.RACING,
+        );
+    }
+
     private updateLaneLockdownStatus(status: LaneLockdownStatus | null) {
         const label = this._laneLockdownStatusLabel;
         if (!label) {
@@ -1825,7 +1914,7 @@ export class GameManager extends Component {
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
                     });
                 }
-                this._netRaceController.sendSnapshot(entries);
+                this._netRaceController.sendSnapshot(entries, this._stimulantBrawl?.snapshotState());
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
             // frame channel): a human's owner state can no longer ride uploadFrame, so

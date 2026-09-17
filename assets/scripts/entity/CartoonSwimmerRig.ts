@@ -127,6 +127,14 @@ type FlashRestoreSlot = {
 const COLLISION_FLASH_SECONDS = 0.35;
 const COLLISION_FLASH_COLOR = new Color(255, 48, 48, 255);
 const PERFECT_GLOW_COLOR = new Color(255, 198, 38, 255);
+const STIMULANT_FLASH_COLOR = new Color(255, 138, 72, 255);
+const STIMULANT_PULSE_COLORS = [
+    new Color(188, 28, 12, 255),
+    new Color(218, 42, 16, 255),
+    new Color(246, 58, 20, 255),
+    new Color(255, 82, 28, 255),
+] as const;
+const STIMULANT_REACTION_VISUAL_INTERVAL = 1 / 20;
 const DIVE_CHARGE_BLUE = new Color(48, 198, 255, 255);
 const DIVE_CHARGE_YELLOW = new Color(255, 218, 42, 255);
 const DIVE_CHARGE_RED = new Color(255, 235, 155, 255);
@@ -237,6 +245,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private _perfectGlowMaterial: Material = null;
     private readonly _perfectGlowRestoreSlots: FlashRestoreSlot[] = [];
     private _collisionFlashTimer = 0;
+    private _stimulantReactionTimer = 0;
+    private _stimulantReactionDuration = 0;
+    private _stimulantPulseHz = 2.4;
+    private _stimulantVisualElapsed = STIMULANT_REACTION_VISUAL_INTERVAL;
+    private _bodyFeedbackColorKey = 0;
     private _diveChargeGatherEffect: DiveChargeGatherEffect | null = null;
     private _diveChargeRequestedActive = false;
     private _diveChargeRequestedPower = 0;
@@ -246,6 +259,8 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     private readonly _diveChargeBodyPoints = Array.from({ length: 11 }, () => new Vec3());
     private readonly _diveChargeBodyMaterials: Material[] = [];
     private readonly _diveChargeBodyParams = new Vec4(0, 0, 0.90, 15);
+    private readonly _stimulantBodyParams = new Vec4(0, 1, 0.94, 15);
+    private _stimulantBodyGlowActive = false;
     private _modelVariantId = defaultSwimmerModelVariant().id;
     private _modelLoadToken = 0;
     private _colorVariantId = defaultSwimmerColorVariant().id;
@@ -717,6 +732,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._handContact.clear();
         this.restorePerfectGlowMaterials();
         this._diveChargeBodyMaterials.length = 0;
+        this._stimulantBodyGlowActive = false;
         this._modelLoadToken++;
         this._sampledActionOverrideLoadToken++;
         this._sampledActionOverrides.clear();
@@ -731,6 +747,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._animationPlayer.bind(null);
         this._perfectGlowIntensity = 0;
         this._collisionFlashTimer = 0;
+        this._stimulantReactionTimer = 0;
+        this._stimulantReactionDuration = 0;
+        this._bodyFeedbackColorKey = 0;
         this._hasCollisionPitchPivot = false;
         this._hasPresentationPivot = false;
         this._collisionPitchVisualOffset.set(0, 0, 0);
@@ -1454,9 +1473,18 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             }
         }
 
-        if (this._bodyFeedbackEnabled && (this._perfectGlowIntensity > 0 || this._collisionFlashTimer > 0)) {
-            this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - dt);
-            this.updatePerfectGlowMaterial();
+        if (this._bodyFeedbackEnabled && (this._collisionFlashTimer > 0 || this._stimulantReactionTimer > 0)) {
+            const hadCollisionFlash = this._collisionFlashTimer > 0;
+            const hadStimulantReaction = this._stimulantReactionTimer > 0;
+            this._collisionFlashTimer = Math.max(0, this._collisionFlashTimer - Math.max(0, dt));
+            this._stimulantReactionTimer = Math.max(0, this._stimulantReactionTimer - Math.max(0, dt));
+            this._stimulantVisualElapsed += Math.max(0, dt);
+            const effectEnded = (hadCollisionFlash && this._collisionFlashTimer <= 0)
+                || (hadStimulantReaction && this._stimulantReactionTimer <= 0);
+            if (effectEnded || this._stimulantVisualElapsed >= STIMULANT_REACTION_VISUAL_INTERVAL) {
+                this._stimulantVisualElapsed = 0;
+                this.updatePerfectGlowMaterial();
+            }
         }
 
         this._selfTime += dt;
@@ -1671,6 +1699,9 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this._bodyFeedbackEnabled = enabled;
         if (!enabled) {
             this._collisionFlashTimer = 0;
+            this._stimulantReactionTimer = 0;
+            this._stimulantReactionDuration = 0;
+            this.clearStimulantBodyGlow();
             this.restorePerfectGlowMaterials();
             return;
         }
@@ -1685,6 +1716,35 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             return;
         }
         this._collisionFlashTimer = COLLISION_FLASH_SECONDS;
+        this.updatePerfectGlowMaterial();
+    }
+
+    /** 拾取兴奋剂后的纯表现状态；重复拾取刷新时长，不参与比赛结算。 */
+    triggerStimulantReaction(heartRate: number, duration: number) {
+        if (!this._bodyFeedbackEnabled || !this.node?.isValid) {
+            return;
+        }
+        const safeDuration = Math.max(0, Number.isFinite(duration) ? duration : 0);
+        if (safeDuration <= 0) {
+            this.clearStimulantReaction();
+            return;
+        }
+        const safeHeartRate = Number.isFinite(heartRate) ? heartRate : 90;
+        const normalizedHeartRate = Math.max(0, Math.min(1, (safeHeartRate - 90) / 90));
+        this._stimulantReactionDuration = safeDuration;
+        this._stimulantReactionTimer = safeDuration;
+        this._stimulantPulseHz = 2.2 + normalizedHeartRate * 1.8;
+        this._stimulantVisualElapsed = STIMULANT_REACTION_VISUAL_INTERVAL;
+        this.updatePerfectGlowMaterial();
+    }
+
+    clearStimulantReaction() {
+        if (this._stimulantReactionTimer <= 0 && this._stimulantReactionDuration <= 0) {
+            return;
+        }
+        this._stimulantReactionTimer = 0;
+        this._stimulantReactionDuration = 0;
+        this._stimulantVisualElapsed = 0;
         this.updatePerfectGlowMaterial();
     }
 
@@ -1715,6 +1775,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         // Character skin refresh replaces renderer materials and invalidates any
         // renderer-local instances previously used by the charge effect.
         this._diveChargeBodyMaterials.length = 0;
+        this._stimulantBodyGlowActive = false;
         const modelVariant = findSwimmerModelVariant(this._modelVariantId) ?? defaultSwimmerModelVariant();
         const colorVariant = findSwimmerColorVariant(this._colorVariantId) ?? defaultSwimmerColorVariant();
         const override = this._colorOverride;
@@ -2425,20 +2486,47 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
 
     private updatePerfectGlowMaterial() {
         const collisionFlash = this.currentCollisionFlashIntensity();
+        const stimulantReaction = this._stimulantReactionTimer > 0;
         const yellowGlow = this._perfectGlowIntensity;
+        if (stimulantReaction) {
+            // 长时间兴奋剂表现只改原角色材质的轮廓光参数，绝不替换蒙皮材质。
+            // 这避免反复 setMaterial 后原材质实例失效、局部网格无法恢复而变黑。
+            if (this._perfectGlowRestoreSlots.length > 0) {
+                this.restorePerfectGlowMaterials();
+            }
+            const elapsed = Math.max(0, this._stimulantReactionDuration - this._stimulantReactionTimer);
+            if (elapsed < 0.28) {
+                this.applyStimulantBodyGlow(STIMULANT_FLASH_COLOR, 1, 10);
+            } else {
+                const pulse = Math.sin(elapsed * this._stimulantPulseHz * Math.PI * 2) * 0.5 + 0.5;
+                const index = Math.max(
+                    0,
+                    Math.min(STIMULANT_PULSE_COLORS.length - 1, Math.floor(pulse * STIMULANT_PULSE_COLORS.length)),
+                );
+                this.applyStimulantBodyGlow(
+                    STIMULANT_PULSE_COLORS[index],
+                    0.58 + index * 0.12,
+                    11 + index,
+                );
+            }
+            return;
+        }
+
+        this.clearStimulantBodyGlow();
         const intensity = Math.max(yellowGlow, collisionFlash);
         if (intensity <= 0.001) {
             this.restorePerfectGlowMaterials();
             return;
         }
 
-        // Collision feedback has explicit priority over the sweet-zone guide.
-        // Both effects start at intensity 1, so comparing their magnitudes made
-        // the tie select yellow; as the red timer decayed it could then never win.
-        // Once the red timer expires, an active sweet zone naturally shows again.
+        // 短碰撞红闪仍优先于完美区黄光；二者沿用原有短时材质反馈。
         const color = collisionFlash > 0 ? COLLISION_FLASH_COLOR : PERFECT_GLOW_COLOR;
+        const colorKey = collisionFlash > 0 ? 2 : 1;
         const flashMaterial = this.ensurePerfectGlowMaterial();
-        flashMaterial.setProperty('mainColor', color);
+        if (this._bodyFeedbackColorKey !== colorKey) {
+            this._bodyFeedbackColorKey = colorKey;
+            flashMaterial.setProperty('mainColor', color);
+        }
 
         if (this._perfectGlowRestoreSlots.length <= 0) {
             for (const renderer of this._skinnedRenderers) {
@@ -2470,6 +2558,55 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
+    private applyStimulantBodyGlow(color: Color, intensity: number, colorKey: number) {
+        let needsRebind = this._diveChargeBodyMaterials.length <= 0;
+        for (const material of this._diveChargeBodyMaterials) {
+            if (!material?.isValid) {
+                needsRebind = true;
+                break;
+            }
+        }
+        if (needsRebind) {
+            this._diveChargeBodyMaterials.length = 0;
+            this.bindDiveChargeBodyMaterials();
+        }
+
+        const safeIntensity = Math.max(0, Math.min(1, intensity));
+        const presentationChanged = needsRebind
+            || !this._stimulantBodyGlowActive
+            || this._bodyFeedbackColorKey !== colorKey
+            || this._stimulantBodyParams.x !== safeIntensity;
+        this._stimulantBodyGlowActive = true;
+        if (!presentationChanged) return;
+
+        this._stimulantBodyParams.x = safeIntensity;
+        this._stimulantBodyParams.y = 1;
+        for (const material of this._diveChargeBodyMaterials) {
+            if (!material?.isValid) continue;
+            if (needsRebind || this._bodyFeedbackColorKey !== colorKey) {
+                material.setProperty('chargeBlue', color);
+                material.setProperty('chargeYellow', color);
+                material.setProperty('chargeRed', color);
+            }
+            material.setProperty('chargeParams', this._stimulantBodyParams);
+        }
+        this._bodyFeedbackColorKey = colorKey;
+    }
+
+    private clearStimulantBodyGlow() {
+        if (!this._stimulantBodyGlowActive) return;
+        this._stimulantBodyParams.x = 0;
+        for (const material of this._diveChargeBodyMaterials) {
+            if (!material?.isValid) continue;
+            material.setProperty('chargeParams', this._stimulantBodyParams);
+            material.setProperty('chargeBlue', DIVE_CHARGE_BLUE);
+            material.setProperty('chargeYellow', DIVE_CHARGE_YELLOW);
+            material.setProperty('chargeRed', DIVE_CHARGE_RED);
+        }
+        this._stimulantBodyGlowActive = false;
+        this._bodyFeedbackColorKey = 0;
+    }
+
     private ensurePerfectGlowMaterial(): Material {
         if (this._perfectGlowMaterial?.isValid) {
             return this._perfectGlowMaterial;
@@ -2493,6 +2630,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
             }
         }
         this._perfectGlowRestoreSlots.length = 0;
+        this._bodyFeedbackColorKey = 0;
     }
 
     private currentCollisionFlashIntensity(): number {

@@ -379,6 +379,11 @@ export const RESOURCE_PATHS = {
         'pool/StartBlock',
     ],
     poolWaterMaterial: 'pool/RagingPoolWater',
+    stimulantBottlePrefabCandidates: [
+        'items/StimulantPotion',
+        'items/StimulantBottle/StimulantBottle',
+        'items/StimulantBottle',
+    ],
     swimmerSplashMaterial: 'pool/SwimmerSplash',
     swimmerSplashParticleTexture: 'pool/SwimmerSplashDroplet/texture',
     swimmerSplashSurfaceTexture: 'pool/SwimmerSplashSurface/texture',

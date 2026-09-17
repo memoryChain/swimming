@@ -57,6 +57,7 @@ export class AISwimmerController extends Component {
     private _lastStrokeStart = -10;
     private _clock = 0;
     private _targetZ: number | null = null;
+    private _stimulantTargetZ: number | null = null;
     private _safeMinZ: number | null = null;
     private _safeMaxZ: number | null = null;
     private _safeWarning = false;
@@ -102,6 +103,10 @@ export class AISwimmerController extends Component {
         this._safeMinZ = min; this._safeMaxZ = max; this._safeWarning = warning;
     }
 
+    setStimulantTargetZ(targetZ: number | null) {
+        this._stimulantTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
     startSwimming() {
         if (this.remoteDriven || this._active) return;
         this.clearObservedPress();
@@ -115,7 +120,7 @@ export class AISwimmerController extends Component {
         this._lastStrokeStart = -10;
         this._wasLocked = false;
         this._safeAware = false;
-        this._targetZ = null;
+        this._targetZ = this._stimulantTargetZ;
         this._observation.strokeCostPerMeter = 0.7;
         this.planner.reset();
         this._timer = this.intelligence.id === 'extreme' ? 0

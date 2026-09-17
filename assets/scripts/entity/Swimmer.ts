@@ -213,6 +213,14 @@ export class Swimmer extends Component {
         this.cartoonRig?.flashCollision();
     }
 
+    triggerStimulantReaction(heartRate: number, duration: number) {
+        this.cartoonRig?.triggerStimulantReaction(heartRate, duration);
+    }
+
+    clearStimulantReaction() {
+        this.cartoonRig?.clearStimulantReaction();
+    }
+
     // NETWORKED RACE ONLY: lateral offset for authoritative position snapshots.
     get netLateralOffset(): number {
         return this._motor.lateralOffset;

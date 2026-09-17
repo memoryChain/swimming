@@ -50,7 +50,7 @@ function entry(overrides = {}) {
 }
 
 test('S| keeps legacy pose fields and appends condition cooldown', () => {
-    const encoded = encodeRaceSnapshot(3, [entry()]);
+    const encoded = encodeRaceSnapshot(3, [entry()], { revision: 7, collectedMask: 0x1fffffff });
     const fields = encoded.slice(encoded.indexOf('#') + 1).split(',');
     assert.equal(fields[10], '666');
     assert.equal(fields[11], '-777');
@@ -60,10 +60,20 @@ test('S| keeps legacy pose fields and appends condition cooldown', () => {
 
     const decoded = decodeRaceSnapshot(encoded);
     assert.equal(decoded.hostPos, 3);
+    assert.equal(decoded.stimulantRevision, 7);
+    assert.equal(decoded.stimulantMask, 0x1fffffff);
     assert.equal(decoded.entries[0].collisionPitchVelocity, -0.777);
     assert.equal(decoded.entries[0].conditionEnergyRatio, 0.15);
     assert.equal(decoded.entries[0].conditionHeartRate, 149);
     assert.equal(decoded.entries[0].conditionDepletionCooldown, 0.321);
+});
+
+test('stimulant pickup event round-trips on the reliable input channel', () => {
+    const encoded = encodeInputFrame(2, [{ kind: 'p', itemId: 28, collectorLane: 6, revision: 9 }], null, -1, 44);
+    const decoded = decodeInputFrame(encoded);
+    assert.equal(decoded.senderPos, 2);
+    assert.equal(decoded.inputSeq, 44);
+    assert.deepEqual(decoded.events, [{ kind: 'p', itemId: 28, collectorLane: 6, revision: 9 }]);
 });
 
 test('legacy S| and P| payloads keep safe sentinel defaults', () => {

@@ -7,7 +7,7 @@ import { copyAiEvent } from '../competitor/AiEventValidation';
 import { calculateRaceCoins } from './ProgressionBalance';
 
 export type SoloSource = 'quick' | 'league' | 'cup';
-export type RaceRule = 'standard' | 'wild';
+export type RaceRule = 'standard' | 'wild' | 'stimulant';
 export const CAREER_RACE_RULE: RaceRule = 'wild';
 export const CAREER_VERSION = 1;
 export const LEAGUE_TARGET = 100;
@@ -80,7 +80,7 @@ export function quickEvent(profile: PlayerProfile, id: string, distance: 200 | 4
     const center = Math.max(1, Math.min(30, Math.round(level * .75 + experience * .65)));
     const skill = Math.min(3, Math.floor(experience * .5 + (distance === 400 ? .25 : 0)));
     return { minLevel: Math.max(1, center - 2), maxLevel: Math.min(30, center + 2),
-        intelligence: [SKILLS[Math.max(0, skill - 1)], SKILLS[skill], SKILLS[skill], SKILLS[Math.min(3, skill + (rule === 'wild' ? 0 : 1))]] };
+        intelligence: [SKILLS[Math.max(0, skill - 1)], SKILLS[skill], SKILLS[skill], SKILLS[Math.min(3, skill + (rule === 'standard' ? 1 : 0))]] };
 }
 
 /** 本地后台的规则引擎；正式云端应执行相同配置并核验赛事结果与广告凭证。 */
@@ -98,7 +98,8 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
     if (command.type === 'begin') {
         if (['quick', 'league', 'cup'].indexOf(command.source) < 0
             || (command.distance !== 200 && command.distance !== 400)
-            || (command.rule !== 'standard' && command.rule !== 'wild')) return fail('比赛来源或规则无效');
+            || (command.rule !== 'standard' && command.rule !== 'wild' && command.rule !== 'stimulant')
+            || (command.rule === 'stimulant' && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
         const p = profile.characters[command.characterId];
         if (!p) return fail('角色不存在');
         const tier = tierIndex(command.tier);

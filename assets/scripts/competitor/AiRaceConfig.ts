@@ -1,5 +1,5 @@
 import { PlayerCharacterId } from '../app/PlayerCharacterConfig';
-import { RaceDifficulty } from '../core/GameBalance';
+import { RaceModeId } from '../core/GameBalance';
 
 export type AiIntelligenceId = 'rookie' | 'normal' | 'skilled' | 'expert' | 'extreme';
 export interface AiIntelligence {
@@ -85,6 +85,6 @@ export const AI_EVENTS: Record<string, AiEventConfig> = {
     elite: { minLevel: 20, maxLevel: 30, intelligence: ['skilled', 'expert', 'expert'] },
 };
 // 当前三个入口同属俱乐部赛事。赛制不隐式升级智力，后续赛事可独立指向其它配置。
-export const AI_EVENT_BY_MODE: Record<RaceDifficulty, string> = {
-    beginner: 'club', competitive: 'club', championship: 'club',
+export const AI_EVENT_BY_MODE: Record<RaceModeId, string> = {
+    beginner: 'club', competitive: 'club', championship: 'club', 'stimulant-brawl': 'club',
 };

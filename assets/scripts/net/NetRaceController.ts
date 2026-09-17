@@ -16,8 +16,8 @@ import { INetRoom, NetSyncFrame, NetRoomInfo } from './INetRoom';
 import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
-import { decodeInputFrame, encodeInputFrame, NetInputEvent } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry } from './NetRaceSnapshot';
+import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -146,6 +146,9 @@ export class NetRaceController {
     private _peerNeedsBroadcast = false;
     private _lastNeedBroadcastAt = 0;
     private _needBroadcastCount = 0;
+    private readonly _authoritativeEvents: NetInputEvent[] = [];
+    private _stimulantPickupListener: ((itemId: number, collectorLane: number, revision: number) => void) | null = null;
+    private _stimulantStateListener: ((state: NetStimulantState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -169,6 +172,19 @@ export class NetRaceController {
 
     get isHost(): boolean {
         return this._isHost;
+    }
+
+    enqueueStimulantPickup(itemId: number, collectorLane: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({ kind: NetInputKind.StimulantPickup, itemId, collectorLane, revision });
+    }
+
+    setStimulantPickupListener(listener: ((itemId: number, collectorLane: number, revision: number) => void) | null): void {
+        this._stimulantPickupListener = listener;
+    }
+
+    setStimulantStateListener(listener: ((state: NetStimulantState) => void) | null): void {
+        this._stimulantStateListener = listener;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -327,10 +343,10 @@ export class NetRaceController {
     }
 
     // Host: encode + broadcast the authoritative position snapshot.
-    sendSnapshot(entries: NetSnapshotEntry[]): void {
+    sendSnapshot(entries: NetSnapshotEntry[], stimulant?: NetStimulantState | null): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries));
+        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -456,6 +472,10 @@ export class NetRaceController {
                 this._snapshotTargets = snapshot.entries;
                 this._snapshotTime = Date.now();
                 this._snapshotRevision++;
+                this._stimulantStateListener?.({
+                    revision: snapshot.stimulantRevision,
+                    collectedMask: snapshot.stimulantMask,
+                });
             }
             this.refreshHud();
             return;
@@ -479,6 +499,7 @@ export class NetRaceController {
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
             if (decoded.senderPos >= 0 && decoded.senderPos !== this._session.localPos) {
+                this.processStimulantPickups(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             return;
@@ -600,6 +621,9 @@ export class NetRaceController {
             // every client must upload every frame to keep the lock-step cadence) plus
             // its own position so peers can reliably catch up to it.
             const events: NetInputEvent[] = drainNetInput();
+            if (this._isHost && this._authoritativeEvents.length > 0) {
+                events.push(...this._authoritativeEvents.splice(0, this._authoritativeEvents.length));
+            }
             if (!this.broadcastSyncRequired) {
                 // Fully frame-synced room: input + self-position ride the reliable
                 // lock-step frame channel (zero extra broadcast traffic).
@@ -664,6 +688,7 @@ export class NetRaceController {
             }
             this._peerLatest[decoded.senderPos] = frame.frameId;
             if (decoded.senderPos !== this._session.localPos) {
+                this.processStimulantPickups(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             if (decoded.events.length > 0) {
@@ -765,6 +790,15 @@ export class NetRaceController {
             if (transientCondition) {
                 remote.restoreOwnerCondition();
             }
+        }
+    }
+
+    private processStimulantPickups(senderPos: number, events: readonly NetInputEvent[]): void {
+        if (senderPos !== this._activeHostPos) return;
+        for (const event of events) {
+            if (event.kind !== NetInputKind.StimulantPickup) continue;
+            if (event.itemId === undefined || event.collectorLane === undefined || event.revision === undefined) continue;
+            this._stimulantPickupListener?.(event.itemId, event.collectorLane, event.revision);
         }
     }
 

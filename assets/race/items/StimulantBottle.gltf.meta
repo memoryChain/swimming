@@ -1,0 +1,93 @@
+{
+  "ver": "2.3.14",
+  "importer": "gltf",
+  "imported": true,
+  "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036",
+  "files": [],
+  "subMetas": {
+    "f5ff4": {
+      "importer": "gltf-mesh",
+      "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036@f5ff4",
+      "displayName": "",
+      "id": "f5ff4",
+      "name": "StimulantPotionMesh.mesh",
+      "userData": {
+        "gltfIndex": 0,
+        "triangleCount": 280
+      },
+      "ver": "1.1.1",
+      "imported": true,
+      "files": [
+        ".bin",
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b9684": {
+      "importer": "gltf-material",
+      "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036@b9684",
+      "displayName": "",
+      "id": "b9684",
+      "name": "StimulantVertexColor.material",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "b5c6d": {
+      "importer": "gltf-scene",
+      "uuid": "2a623d89-1c89-4b0b-96ce-0c1f4a895036@b5c6d",
+      "displayName": "",
+      "id": "b5c6d",
+      "name": "StimulantBottle.prefab",
+      "userData": {
+        "gltfIndex": 0
+      },
+      "ver": "1.0.14",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "imageMetas": [],
+    "lods": {
+      "enable": false,
+      "hasBuiltinLOD": false,
+      "options": [
+        {
+          "screenRatio": 0.25,
+          "faceCount": 1
+        },
+        {
+          "screenRatio": 0.125,
+          "faceCount": 0.25
+        },
+        {
+          "screenRatio": 0.01,
+          "faceCount": 0.1
+        }
+      ]
+    },
+    "assetFinder": {
+      "meshes": [
+        "2a623d89-1c89-4b0b-96ce-0c1f4a895036@f5ff4"
+      ],
+      "skeletons": [],
+      "textures": [],
+      "materials": [
+        "2a623d89-1c89-4b0b-96ce-0c1f4a895036@b9684"
+      ],
+      "scenes": [
+        "2a623d89-1c89-4b0b-96ce-0c1f4a895036@b5c6d"
+      ]
+    }
+  }
+}

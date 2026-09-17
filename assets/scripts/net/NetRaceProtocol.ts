@@ -32,7 +32,9 @@
 // 版本43：只有短按松手确认才触发潜航；按下踢腿事件不再提前下潜。
 // 版本44：潜水哥始终禁用海豚跳，本地与远端回放共用角色资格。
 // 版本45：逐角色等级AI、合法输入分类和资源策略；完整泳道生成身份，各端体力上限一致。
-export const NET_RACE_PROTOCOL_VERSION = 45;
+// 版本46：新增兴奋剂权威拾取事件与快照恢复状态。
+// 版本47：兴奋剂改为开局逐泳道保证波＋七波随机争抢，扩展为29位拾取掩码并同步亢奋表现。
+export const NET_RACE_PROTOCOL_VERSION = 47;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

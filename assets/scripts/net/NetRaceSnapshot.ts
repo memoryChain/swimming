@@ -76,15 +76,21 @@ export interface NetSnapshotEntry {
 export interface DecodedRaceSnapshot {
     hostPos: number;
     entries: NetSnapshotEntry[];
+    stimulantRevision: number;
+    stimulantMask: number;
 }
+
+export type NetStimulantState = { revision: number; collectedMask: number };
 
 const TAG = 'S|';
 
-export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[]): string {
+export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[], stimulant?: NetStimulantState | null): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
         .join(';');
-    return `${TAG}${hostPos}#${body}`;
+    const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
+    const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
+    return `${TAG}${hostPos},${revision},${mask}#${body}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -98,7 +104,10 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     if (hash < 0) {
         return null;
     }
-    const hostPos = parseInt(rest.slice(0, hash), 10);
+    const header = rest.slice(0, hash).split(',');
+    const hostPos = parseInt(header[0], 10);
+    const stimulantRevision = header.length > 1 ? parseInt(header[1], 10) : 0;
+    const stimulantMask = header.length > 2 ? parseInt(header[2], 16) : 0;
     const body = rest.slice(hash + 1);
     const entries: NetSnapshotEntry[] = [];
     if (body.length > 0) {
@@ -146,7 +155,12 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             });
         }
     }
-    return { hostPos: Number.isFinite(hostPos) ? hostPos : 0, entries };
+    return {
+        hostPos: Number.isFinite(hostPos) ? hostPos : 0,
+        entries,
+        stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
+        stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,
+    };
 }
 
 // Self-position report (tag "P|"): a single lane's own-authoritative position, sent by

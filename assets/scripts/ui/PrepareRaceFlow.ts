@@ -14,7 +14,7 @@ import {
     Texture2D,
     UITransform,
 } from 'cc';
-import { RaceDifficulty, RACE_DIFFICULTY_OPTIONS, getRaceDistance, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
+import { RaceCategoryId, RaceModeId, RACE_MODE_OPTIONS, getRaceDistance, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
@@ -61,7 +61,8 @@ type PrepareRaceView = 'ready' | 'characters';
 type CharacterInspectorTab = 'attributes' | 'appearance';
 
 type RaceModeCardView = {
-    id: RaceDifficulty;
+    id: RaceModeId;
+    category: RaceCategoryId;
     root: Node;
     selectedFrame: Node;
     selected: boolean;
@@ -124,6 +125,8 @@ export class PrepareRaceFlow {
     private _hasShownReady = false;
 
     private readonly _raceModeCards: RaceModeCardView[] = [];
+    private readonly _raceCategoryTabs: { id: RaceCategoryId; root: Node; label: Label }[] = [];
+    private _raceCategory: RaceCategoryId = 'competitive';
     private readonly _characterCards: CharacterCardView[] = [];
     private readonly _tabs: TabView[] = [];
     private readonly _swatches: SwatchView[] = [];
@@ -257,6 +260,7 @@ export class PrepareRaceFlow {
     private resetViewReferences(): void {
         this._previewRotateTouchId = null;
         this._raceModeCards.length = 0;
+        this._raceCategoryTabs.length = 0;
         this._characterCards.length = 0;
         this._tabs.length = 0;
         this._swatches.length = 0;
@@ -404,8 +408,24 @@ export class PrepareRaceFlow {
 
     private buildRaceModeList(parent: Node): void {
         const selected = getSelectedRaceDifficulty();
-        for (let index = 0; index < RACE_DIFFICULTY_OPTIONS.length; index++) {
-            const option = RACE_DIFFICULTY_OPTIONS[index];
+        this._raceCategory = RACE_MODE_OPTIONS.find(option => option.id === selected)?.category ?? 'competitive';
+        const categories: readonly { id: RaceCategoryId; label: string }[] = [
+            { id: 'competitive', label: '竞技' },
+            { id: 'entertainment', label: '娱乐' },
+        ];
+        for (let index = 0; index < categories.length; index++) {
+            const category = categories[index];
+            const root = makeRoundedRect(`RaceCategory_${category.id}`, parent, 104, 42,
+                category.id === this._raceCategory ? uiColor(255, 225, 52) : uiColor(224, 242, 247), 18);
+            root.setPosition(356 + index * 112, 306, 4);
+            const label = makeBoundLabel('Label', root, category.label, 20, DARK_TEXT, 88, 30, 0, 0);
+            stylePsdRuntimeLabel(label, 'PingFang SC', true, 25);
+            const button = root.addComponent(Button); button.target = root; button.transition = Button.Transition.NONE;
+            root.on(Button.EventType.CLICK, () => this.selectRaceCategory(category.id));
+            this._raceCategoryTabs.push({ id: category.id, root, label });
+        }
+        for (let index = 0; index < RACE_MODE_OPTIONS.length; index++) {
+            const option = RACE_MODE_OPTIONS[index];
             const entrance = this._motion.group(parent, `ModeEntrance_${option.id}`, 24, 0, index * 0.045);
             const card = makeUiNode(`RaceMode_${option.id}`, entrance);
             card.getComponent(UITransform)!.setContentSize(410, 170);
@@ -423,7 +443,7 @@ export class PrepareRaceFlow {
             stylePsdRuntimeLabel(title, 'PingFang SC', true, 32);
             const distance = makeBoundLabel('Distance', card, raceDifficultyDistance(option.id), 20, DARK_TEXT, 78, 32, 155, -59, Label.HorizontalAlign.RIGHT);
             stylePsdRuntimeLabel(distance, 'Arial Black', true, 27);
-            const view: RaceModeCardView = { id: option.id, root: card, selectedFrame, selected: option.id === selected };
+            const view: RaceModeCardView = { id: option.id, category: option.category, root: card, selectedFrame, selected: option.id === selected };
             this._raceModeCards.push(view);
             this.applyRaceModeCardSelection(view);
             card.on(Button.EventType.CLICK, () => this.selectRaceDifficulty(option.id));
@@ -431,7 +451,29 @@ export class PrepareRaceFlow {
         this.layoutRaceModeCards();
     }
 
-    private selectRaceDifficulty(difficulty: RaceDifficulty): void {
+    private selectRaceCategory(category: RaceCategoryId): void {
+        if (this._leaving || this._raceCategory === category) return;
+        this._raceCategory = category;
+        for (const tab of this._raceCategoryTabs) {
+            const selected = tab.id === category;
+            if (tab.root.scale.x !== (selected ? 1.05 : 1)) tab.root.setScale(selected ? 1.05 : 1, selected ? 1.05 : 1, 1);
+            const graphics = tab.root.getComponent(Graphics);
+            if (graphics) {
+                graphics.clear();
+                graphics.fillColor = selected ? uiColor(255, 225, 52) : uiColor(224, 242, 247);
+                graphics.roundRect(-52, -21, 104, 42, 18);
+                graphics.fill();
+            }
+        }
+        const selectedMode = RACE_MODE_OPTIONS.find(option => option.id === getSelectedRaceDifficulty());
+        if (selectedMode?.category !== category) {
+            const first = RACE_MODE_OPTIONS.find(option => option.category === category);
+            if (first) this.selectRaceDifficulty(first.id);
+        }
+        this.layoutRaceModeCards(true);
+    }
+
+    private selectRaceDifficulty(difficulty: RaceModeId): void {
         if (this._leaving || getSelectedRaceDifficulty() === difficulty) return;
         setSelectedRaceDifficulty(difficulty);
         for (const card of this._raceModeCards) {
@@ -450,6 +492,9 @@ export class PrepareRaceFlow {
     private layoutRaceModeCards(animated = false): void {
         let topY = RACE_MODE_STACK_TOP_Y;
         for (const card of this._raceModeCards) {
+            const visible = card.category === this._raceCategory;
+            if (card.root.active !== visible) card.root.active = visible;
+            if (!visible) continue;
             const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
             const visibleHeight = RACE_MODE_CARD_VISIBLE_HEIGHT * scale;
             const y = topY - visibleHeight / 2;
@@ -474,7 +519,7 @@ export class PrepareRaceFlow {
         stylePsdTitleLabel(startLabel, 48);
         this._motion.bindButton(start, true);
         start.on(Button.EventType.CLICK, () => {
-            if (!this._leaving) this._careerPanel?.openQuick();
+            if (!this._leaving) this._careerPanel?.openQuick(getSelectedRaceDifficulty());
         });
     }
 
@@ -1042,11 +1087,11 @@ function appearanceSwatchPath(group: 'skin' | 'color', id: string): string | nul
     }
 }
 
-function raceDifficultyTitle(difficulty: RaceDifficulty): string {
+function raceDifficultyTitle(difficulty: RaceModeId): string {
     return getRaceModeTitle(difficulty);
 }
 
-function raceDifficultyDistance(difficulty: RaceDifficulty): string {
+function raceDifficultyDistance(difficulty: RaceModeId): string {
     return `${getRaceDistance(difficulty)}米`;
 }
 

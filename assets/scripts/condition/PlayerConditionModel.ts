@@ -71,6 +71,17 @@ export class PlayerConditionModel {
         this.refreshModifiers();
     }
 
+    restoreEnergyRatio(ratio: number): number {
+        if (this._infiniteStamina || !Number.isFinite(ratio) || ratio <= 0) return 0;
+        const before = this._energy;
+        this._energy = Math.min(this._effectiveEnergyTotal, before + this._effectiveEnergyTotal * ratio);
+        this._energyDepleted = this._energy <= 0;
+        this.refreshModifiers();
+        return this._energy - before;
+    }
+
+    get energyTotal(): number { return this._effectiveEnergyTotal; }
+
     // 结算只扣体力，开始次数由 Motor 计算，避免同一划被重复计数。
     updateFromStroke(input: StrokeConditionInput) {
         if (!input.strokeAccepted) return;
