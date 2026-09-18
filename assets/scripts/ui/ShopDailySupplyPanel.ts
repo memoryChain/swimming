@@ -33,7 +33,8 @@ import { LobbyUiMotion } from './LobbyUiMotion';
 type CardView = {
     slot: DailyShopRewardSlot;
     button: Button;
-    buttonArtwork: Sprite;
+    availableButtonArtwork: Node;
+    claimedButtonArtwork: Node;
     action: Label;
     videoIcon: Sprite | null;
     pendingTransactionId: string | null;
@@ -43,10 +44,7 @@ type CardView = {
 const CARD_X = [-320, 0, 320] as const;
 const MUTED = uiColor(162, 194, 214);
 const DARK = uiColor(16, 38, 61);
-const CLAIMED_BUTTON_TINT = uiColor(132, 143, 151);
-const CLAIMED_ICON_TINT = uiColor(185, 192, 197);
 const CLAIMED_TEXT = uiColor(79, 91, 99);
-const NORMAL_TINT = uiColor(255, 255, 255);
 
 /** 非比赛页面的每日补给站。层级只创建一次，刷新只修改文本与按钮状态。 */
 export class ShopDailySupplyPanel {
@@ -102,12 +100,12 @@ export class ShopDailySupplyPanel {
         this._countdown = makeStyledLabel('ResetCountdown', cardsRoot, '', 18, MUTED, 440, 28, 0, -254, false);
 
         this._cards = [
-            this.buildCard(cardsRoot, 'free_coins', 0, '每日免费金币', RESOURCE_PATHS.characterUi.upgradeCurrency,
-                `金币 +${PROGRESSION_CONFIG.dailyFreeCoins}`, '每日直接领取', '免费领取'),
-            this.buildCard(cardsRoot, 'ad_gems', 1, '突破宝石补给', RESOURCE_PATHS.shopUi.gemIcon,
-                `突破宝石 +${PROGRESSION_CONFIG.dailyAdGems}`, '完成一次激励广告', '看广告领取', true),
+            this.buildCard(cardsRoot, 'free_coins', 0, '免费金币', RESOURCE_PATHS.characterUi.upgradeCurrency,
+                `金币 +${PROGRESSION_CONFIG.dailyFreeCoins}`, '领取'),
+            this.buildCard(cardsRoot, 'ad_gems', 1, '突破宝石', RESOURCE_PATHS.shopUi.gemIcon,
+                `突破宝石 +${PROGRESSION_CONFIG.dailyAdGems}`, '看广告领取', true),
             this.buildCard(cardsRoot, 'ad_coins', 2, '金币加餐', RESOURCE_PATHS.characterUi.upgradeCurrency,
-                `金币 +${PROGRESSION_CONFIG.dailyAdCoins}`, '完成一次激励广告', '看广告领取'),
+                `金币 +${PROGRESSION_CONFIG.dailyAdCoins}`, '看广告领取'),
         ];
 
         root.active = false;
@@ -176,7 +174,6 @@ export class ShopDailySupplyPanel {
         titleText: string,
         iconPath: string,
         rewardText: string,
-        description: string,
         actionText: string,
         emphasized = false,
     ): CardView {
@@ -187,15 +184,18 @@ export class ShopDailySupplyPanel {
             292, 330, 0, 0);
         makeStyledLabel('Title', card, titleText, 23, DARK, 250, 36, 0, 120, true);
         makeSprite('RewardIcon', card, iconPath, 82, 82, 0, 48);
-        makeStyledLabel('Reward', card, rewardText, 28, emphasized ? uiColor(12, 120, 156) : DARK,
-            250, 42, 0, -18, true);
-        makeStyledLabel('Description', card, description, 17, MUTED, 250, 30, 0, -58, false);
+        makeStyledLabel('Reward', card, rewardText, 28, DARK, 250, 42, 0, -18, true);
 
         const buttonNode = makeUiNode('ClaimButton', card);
         buttonNode.getComponent(UITransform)!.setContentSize(252, 64);
         buttonNode.setPosition(0, -119, 3);
-        const buttonArtwork = makeSprite('Artwork', buttonNode, RESOURCE_PATHS.characterUi.confirmButton, 252, 56, 0, 0)
-            .getComponent(Sprite)!;
+        const availableButtonArtwork = makeSprite(
+            'AvailableArtwork', buttonNode, RESOURCE_PATHS.characterUi.confirmButton, 252, 56, 0, 0,
+        );
+        const claimedButtonArtwork = makeSprite(
+            'ClaimedArtwork', buttonNode, RESOURCE_PATHS.shopUi.claimButtonDisabled, 252, 56, 0, 0,
+        );
+        claimedButtonArtwork.active = false;
         const button = buttonNode.addComponent(Button);
         button.target = buttonNode;
         button.transition = Button.Transition.SCALE;
@@ -207,7 +207,16 @@ export class ShopDailySupplyPanel {
                 .getComponent(Sprite)!;
             action.node.setPosition(20, 0, 1);
         }
-        const view: CardView = { slot, button, buttonArtwork, action, videoIcon, pendingTransactionId: null, adVerified: false };
+        const view: CardView = {
+            slot,
+            button,
+            availableButtonArtwork,
+            claimedButtonArtwork,
+            action,
+            videoIcon,
+            pendingTransactionId: null,
+            adVerified: false,
+        };
         buttonNode.on(Button.EventType.CLICK, () => void this.claim(view));
         return view;
     }
@@ -261,11 +270,13 @@ export class ShopDailySupplyPanel {
             const busy = this._busySlot === card.slot;
             const retry = !!card.pendingTransactionId && card.adVerified;
             setButton(card.button, !claimed && !this._busySlot && !this._closing);
-            setSpriteColor(card.buttonArtwork, claimed ? CLAIMED_BUTTON_TINT : NORMAL_TINT);
-            setSpriteColor(card.videoIcon, claimed ? CLAIMED_ICON_TINT : NORMAL_TINT);
+            setNodeActive(card.availableButtonArtwork, !claimed);
+            setNodeActive(card.claimedButtonArtwork, claimed);
+            setNodeActive(card.videoIcon?.node ?? null, !claimed);
+            setNodeX(card.action.node, claimed || card.slot === 'free_coins' ? 0 : 20);
             setLabelColor(card.action, claimed ? CLAIMED_TEXT : DARK);
-            setLabel(card.action, claimed ? '今日已领取' : busy ? (retry ? '奖励到账中' : '处理中')
-                : retry ? '重试到账' : card.slot === 'free_coins' ? '免费领取' : '看广告领取');
+            setLabel(card.action, claimed ? '已领取' : busy ? (retry ? '奖励到账中' : '处理中')
+                : retry ? '重试到账' : card.slot === 'free_coins' ? '领取' : '看广告领取');
         }
     }
 
@@ -356,8 +367,12 @@ function setButton(button: Button, interactable: boolean): void {
     if (button.interactable !== interactable) button.interactable = interactable;
 }
 
-function setSpriteColor(sprite: Sprite | null, color: Color): void {
-    if (sprite?.isValid && !sameColor(sprite.color, color)) sprite.color = color;
+function setNodeActive(node: Node | null, active: boolean): void {
+    if (node?.isValid && node.active !== active) node.active = active;
+}
+
+function setNodeX(node: Node, x: number): void {
+    if (node.isValid && node.position.x !== x) node.setPosition(x, node.position.y, node.position.z);
 }
 
 function setLabelColor(label: Label, color: Color): void {

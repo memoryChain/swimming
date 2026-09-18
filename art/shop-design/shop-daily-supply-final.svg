@@ -30,8 +30,8 @@
   </g>
 
   <g fill="#14233d" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" text-anchor="middle">
-    <text x="320" y="274" font-size="23" font-weight="700">每日免费金币</text>
-    <text x="640" y="274" font-size="23" font-weight="700">突破宝石补给</text>
+    <text x="320" y="274" font-size="23" font-weight="700">免费金币</text>
+    <text x="640" y="274" font-size="23" font-weight="700">突破宝石</text>
     <text x="960" y="274" font-size="23" font-weight="700">金币加餐</text>
   </g>
   <image href="../../assets/race/ui/character-v1/upgrade-currency.png" x="279" y="300" width="82" height="82"/>
@@ -40,11 +40,8 @@
 
   <g font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" text-anchor="middle">
     <text x="320" y="418" fill="#14233d" font-size="28" font-weight="700">金币 +500</text>
-    <text x="640" y="418" fill="#0c789c" font-size="28" font-weight="700">突破宝石 +1</text>
+    <text x="640" y="418" fill="#14233d" font-size="28" font-weight="700">突破宝石 +1</text>
     <text x="960" y="418" fill="#14233d" font-size="28" font-weight="700">金币 +1000</text>
-    <text x="320" y="457" fill="#617991" font-size="17">每日直接领取</text>
-    <text x="640" y="457" fill="#617991" font-size="17">完成一次激励广告</text>
-    <text x="960" y="457" fill="#617991" font-size="17">完成一次激励广告</text>
   </g>
 
   <image href="../../assets/race/ui/character-v1/confirm-button.png" x="194" y="480" width="252" height="56"/>
@@ -53,7 +50,7 @@
   <image href="../../assets/race/ui/shop-v1/video-icon.png" x="553" y="494" width="34" height="27"/>
   <image href="../../assets/race/ui/shop-v1/video-icon.png" x="873" y="494" width="34" height="27"/>
   <g fill="#14233d" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="22" font-weight="700" text-anchor="middle">
-    <text x="320" y="518">免费领取</text>
+    <text x="320" y="518">领取</text>
     <text x="660" y="518">看广告领取</text>
     <text x="980" y="518">看广告领取</text>
   </g>

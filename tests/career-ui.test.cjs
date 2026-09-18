@@ -268,6 +268,13 @@ test('顶部每日补给与设置共用悬浮图标语言，资源条无加号�
     assert.match(panel, /SupplyCardsMotion', 24/);
     assert.match(panel, /this\._motion\.enter\(true\)/);
     assert.match(panel, /this\._motion\.exit\(/);
+    assert.match(panel, /'免费金币'[\s\S]*?'领取'/);
+    assert.match(panel, /'突破宝石'[\s\S]*?'看广告领取'/);
+    assert.doesNotMatch(panel, /makeStyledLabel\('Description'/);
+    assert.doesNotMatch(panel, /CLAIMED_BUTTON_TINT|CLAIMED_ICON_TINT/);
+    assert.match(panel, /shopUi\.claimButtonDisabled/);
+    assert.match(panel, /setNodeActive\(card\.videoIcon\?\.node \?\? null, !claimed\)/);
+    assert.match(panel, /claimed \? '已领取'/);
     assert.doesNotMatch(panel, /shopUi\.supplyPanel|makeSprite\('SupplyPanel'/);
 
     const character = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/PrepareRaceFlow.ts'), 'utf8');
