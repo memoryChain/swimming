@@ -1,12 +1,12 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
-import type { RaceDifficulty } from './GameBalance';
+import type { RaceModeId } from './GameBalance';
 
 export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwater-debug';
 
 export interface AiDebugSetup {
     characterId: PlayerCharacterId;
     level: number;
-    mode: RaceDifficulty;
+    mode: RaceModeId;
     seed: number;
     opponentCount: 1 | 7;
     mixedCharacters: boolean;

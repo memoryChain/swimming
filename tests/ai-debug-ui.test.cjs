@@ -42,21 +42,26 @@ function fixture() {
     return { Node, Label, load, view, listeners, BlockInputEvents, UITransform, root: h.root };
 }
 
+const descendants = node => [node, ...node.children.flatMap(descendants)];
+const findNode = (node, name) => descendants(node).find(child => child.name === name);
+
 test('测试入口反复切换角色等级赛程不增加节点或监听，启动只提交一次', () => {
     const { Node, Label, load } = fixture();
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const root = new Node('root'); let starts = 0;
     buildAiDebugSetupPicker(root, () => starts++, () => {});
-    const count = root.children.length;
+    const initialNodes = descendants(root);
+    const initialListeners = initialNodes.map(node => node.events.size);
     for (let i = 0; i < 100; i++) {
-        for (const name of ['Character', 'LevelUp', 'OpponentCount', 'Roster', 'Mode', 'Seed']) root.getChildByName(name).click();
-        assert.equal(root.children.length, count);
+        for (const name of ['Character', 'LevelUp', 'OpponentCount', 'Roster', 'Mode', 'Seed']) findNode(root, name).click();
+        assert.deepEqual(descendants(root), initialNodes);
     }
-    assert.equal(root.getChildByName('Level').getComponent(Label).string, '等级 30');
-    root.getChildByName('Tier4').click(); root.getChildByName('Tier4').click();
+    assert.deepEqual(initialNodes.map(node => node.events.size), initialListeners);
+    assert.equal(findNode(root, 'Level').getComponent(Label).string, '等级 30');
+    findNode(root, 'Tier4').click(); findNode(root, 'Tier4').click();
     assert.equal(starts, 1); assert.equal(getAiDebugSetup().level, 30);
-    for (const child of root.children) if (child.events.has('end')) {
+    for (const child of descendants(root)) if (child.events.has('end')) {
         assert.ok(Math.abs(child.y) <= 266);
         assert.ok(Math.abs(child.x) <= 335);
     }
@@ -78,7 +83,6 @@ test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆�
         { getUILayer: () => popup, UILayer: { Popup: 3 }, mountAiDebugSetupPicker });
     const owner = new Login(); owner._canvasNode = new Node('主画布'); owner._canvasNode.setPosition(640, 360);
     owner.startAiDebug = () => {}; owner.grantDebugCoins = () => {};
-    const descendants = node => [node, ...node.children.flatMap(descendants)];
     for (let repeat = 0; repeat < 3; repeat++) {
         owner.showAiDebugPicker(); owner.showAiDebugPicker();
         assert.equal(popup.children.length, 1);
@@ -113,17 +117,64 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     const root = new Node('Panel'); let starts = 0;
     buildAiDebugSetupPicker(root, () => starts++, () => {});
     assert.equal(getAiDebugSetup().opponentCount, 7);
-    root.getChildByName('OpponentCount').click();
-    root.getChildByName('Roster').click();
+    findNode(root, 'OpponentCount').click();
+    findNode(root, 'Roster').click();
     assert.equal(starts, 0);
-    root.getChildByName('Tier4').click();
+    findNode(root, 'Tier4').click();
     assert.equal(getAiDebugSetup().opponentCount, 1);
     const second = new Node('Panel'); buildAiDebugSetupPicker(second, () => starts++, () => {});
-    second.getChildByName('OpponentCount').click(); second.getChildByName('Roster').click();
-    second.getChildByName('Tier3').click();
+    findNode(second, 'OpponentCount').click(); findNode(second, 'Roster').click();
+    findNode(second, 'Tier3').click();
     assert.equal(getAiDebugSetup().opponentCount, 7);
     assert.equal(getAiDebugSetup().mixedCharacters, false);
     assert.equal(starts, 2);
+});
+
+test('模式测试页签只列出六个单项娱乐模式，切换不重建并以固定满员阵容启动', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel'); let starts = 0; let difficulty = -1;
+    buildAiDebugSetupPicker(root, value => { starts++; difficulty = value; }, () => {});
+    const aiContent = findNode(root, 'AiTestContent');
+    const modeContent = findNode(root, 'ModeTestContent');
+    const aiTab = findNode(root, 'AiTestTab');
+    const modeTab = findNode(root, 'ModeTestTab');
+    const initialNodes = descendants(root);
+    const initialListeners = initialNodes.map(node => node.events.size);
+    assert.equal(aiContent.activeInHierarchy, true);
+    assert.equal(modeContent.activeInHierarchy, false);
+    findNode(root, 'OpponentCount').click();
+    for (let i = 0; i < 50; i++) {
+        modeTab.click(); modeTab.click();
+        assert.equal(aiContent.activeInHierarchy, false);
+        assert.equal(modeContent.activeInHierarchy, true);
+        aiTab.click(); aiTab.click();
+        assert.equal(aiContent.activeInHierarchy, true);
+        assert.equal(modeContent.activeInHierarchy, false);
+    }
+    assert.deepEqual(descendants(root), initialNodes);
+    assert.deepEqual(initialNodes.map(node => node.events.size), initialListeners);
+
+    modeTab.click();
+    const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
+    assert.equal(choices.length, 6);
+    assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
+        '心跳苏打大乱斗', '鲨鱼大乱斗', '漩涡冲浪赛', '炮火逃生赛', '定时炸弹模式', '水雷模式',
+    ]);
+    assert.equal(choices.some(node => node.getChildByName('Label').getComponent(Label).string === '娱乐模式'), false);
+    for (const choice of choices) {
+        choice.click();
+        assert.equal(choices.filter(node => node.getChildByName('Selected').active).length, 1);
+        assert.equal(choice.getChildByName('Selected').active, true);
+    }
+    findNode(modeContent, 'ModeStart').click();
+    findNode(modeContent, 'ModeStart').click();
+    assert.equal(starts, 1);
+    assert.equal(difficulty, 0.75);
+    assert.equal(getAiDebugSetup().mode, 'minefield-brawl');
+    assert.equal(getAiDebugSetup().opponentCount, 7);
+    assert.equal(getAiDebugSetup().mixedCharacters, true);
 });
 
 test('AI诊断隐藏时不读取或格式化，显示后5Hz且相同文本不重写，重复阵容不重建', () => {
