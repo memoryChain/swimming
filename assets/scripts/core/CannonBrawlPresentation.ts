@@ -1,6 +1,7 @@
 import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CANNON_BRAWL_TUNING, CannonImpact, CannonLaunch } from './CannonBrawlController';
+import { applyWaterExplosionPhase, buildWaterExplosionGeometry } from './MineRelayBrawlPresentation';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const CANNON_EDGE_OFFSET = 1.4;
@@ -87,7 +88,8 @@ export class CannonBrawlPresentation {
         this.setActive(this.projectile, false);
         if (this.impactPlume?.isValid) {
             this.impactPlume.setWorldPosition(this.targetX, this.course.waterY + 0.035, this.targetZ);
-            this.impactPlume.setScale(0.35, 0.35, 0.35);
+            this.impactPlume.setRotationFromEuler(0, impact.strikeId * 53, 0);
+            applyWaterExplosionPhase(this.impactPlume, 0, 1);
             this.impactPlume.active = true;
         }
         this.impactRemaining = IMPACT_SECONDS;
@@ -137,8 +139,7 @@ export class CannonBrawlPresentation {
         if (this.impactRemaining > 0) {
             this.impactRemaining = Math.max(0, this.impactRemaining - presentationStep);
             const progress = 1 - this.impactRemaining / IMPACT_SECONDS;
-            const scale = 0.35 + Math.sin(Math.min(1, progress) * Math.PI * 0.72) * 1.25;
-            this.impactPlume?.setScale(scale, 0.55 + scale * 1.1, scale);
+            if (this.impactPlume) applyWaterExplosionPhase(this.impactPlume, progress, 1);
             if (this.impactRemaining <= 0) this.setActive(this.impactPlume, false);
         }
     }
@@ -167,7 +168,7 @@ export class CannonBrawlPresentation {
         this.cannonMesh = utils.createMesh(buildCannonGeometry());
         this.markerMesh = utils.createMesh(buildMarkerGeometry());
         this.projectileMesh = utils.createMesh(buildLowPolyBallGeometry());
-        this.impactMesh = utils.createMesh(buildImpactGeometry());
+        this.impactMesh = utils.createMesh(buildWaterExplosionGeometry());
         this.cannonMaterial = makeVertexMaterial('CannonBrawlPropMaterial', true);
         this.markerMaterial = makeVertexMaterial('CannonBrawlMarkerMaterial', false);
         this.impactMaterial = makeVertexMaterial('CannonBrawlImpactMaterial', false);
@@ -264,19 +265,6 @@ function buildLowPolyBallGeometry(): primitives.IGeometry {
     return geometry(positions, colors, indices, new Vec3(-0.65, -0.65, -0.65), new Vec3(0.65, 0.65, 0.65));
 }
 
-function buildImpactGeometry(): primitives.IGeometry {
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const indices: number[] = [];
-    const plumeColor: ColorTuple = [0.72, 0.94, 1, 0.72];
-    const tipColor: ColorTuple = [0.88, 0.98, 1, 0.04];
-    appendRibbon(positions, colors, indices, -0.75, 0, 0.75, 0, 3.2, plumeColor, tipColor);
-    appendRibbon(positions, colors, indices, 0, -0.75, 0, 0.75, 3.2, plumeColor, tipColor);
-    appendRing(positions, colors, indices, 0.45, 0.45, 2.1, 2.1,
-        [0.75, 0.95, 1, 0.38], [0.75, 0.95, 1, 0], 0.02);
-    return geometry(positions, colors, indices, new Vec3(-2.1, 0, -2.1), new Vec3(2.1, 3.2, 2.1));
-}
-
 type ColorTuple = readonly [number, number, number, number];
 
 function geometry(positions: number[], colors: number[], indices: number[], minPos: Vec3, maxPos: Vec3): primitives.IGeometry {
@@ -371,16 +359,4 @@ function appendRing(
         const lower = base + i * 2;
         indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
     }
-}
-
-function appendRibbon(
-    positions: number[], colors: number[], indices: number[],
-    x0: number, z0: number, x1: number, z1: number, tipY: number,
-    bottomColor: ColorTuple, topColor: ColorTuple,
-): void {
-    const base = positions.length / 3;
-    positions.push(x0, 0, z0, x1, 0, z1, x1 * 0.15, tipY, z1 * 0.15, x0 * 0.15, tipY, z0 * 0.15);
-    pushColor(colors, bottomColor, 2);
-    pushColor(colors, topColor, 2);
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
 }

@@ -63,7 +63,7 @@ export class MineRelayBrawlPresentation {
         if (!exploded || !worldPosition || !this.explosion?.isValid) return;
         this.explosion.setParent(this.worldRoot);
         this.explosion.setWorldPosition(worldPosition.x, worldPosition.y, worldPosition.z);
-        this.explosion.setScale(0.3, 0.3, 0.3);
+        applyWaterExplosionPhase(this.explosion, 0, 0.9);
         this.setActive(this.explosion, true);
         this.explosionRemaining = EXPLOSION_SECONDS;
     }
@@ -97,8 +97,7 @@ export class MineRelayBrawlPresentation {
         if (this.explosionRemaining > 0) {
             this.explosionRemaining = Math.max(0, this.explosionRemaining - presentationStep);
             const progress = 1 - this.explosionRemaining / EXPLOSION_SECONDS;
-            const scale = 0.3 + Math.sin(Math.min(1, progress) * Math.PI * 0.78) * 1.65;
-            this.explosion?.setScale(scale, 0.55 + scale * 1.2, scale);
+            if (this.explosion) applyWaterExplosionPhase(this.explosion, progress, 0.9);
             if (this.explosionRemaining <= 0) this.setActive(this.explosion, false);
         }
     }
@@ -128,7 +127,7 @@ export class MineRelayBrawlPresentation {
         if (!this.worldRoot?.isValid) return;
         this.mineMesh = utils.createMesh(buildTimedBombGeometry());
         this.lampMesh = utils.createMesh(buildLowPolyLampGeometry());
-        this.explosionMesh = utils.createMesh(buildMineExplosionGeometry());
+        this.explosionMesh = utils.createMesh(buildWaterExplosionGeometry());
         this.mineMaterial = makeMineVertexMaterial('TimedBombBodyMaterial', true);
         this.explosionMaterial = makeMineVertexMaterial('MineRelayExplosionMaterial', false);
         this.lampMaterial = new Material();
@@ -220,14 +219,148 @@ function buildLowPolyLampGeometry(): primitives.IGeometry {
     return geometry(positions, colors, indices, new Vec3(-0.13, -0.13, -0.13), new Vec3(0.13, 0.13, 0.13));
 }
 
-export function buildMineExplosionGeometry(): primitives.IGeometry {
+/**
+ * 炮火、定时炸弹和障碍水雷共用的立体水爆网格。
+ *
+ * 水冠与弧形水柱均为有厚度的低面数体块，避免交叉透明面从比赛镜头看成白色三角形。
+ * 单实例为 369 顶点／432 三角形；所有几何只在玩法初始化时构建一次，触发阶段仅复用节点并修改变换。
+ */
+export function buildWaterExplosionGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    appendRing(positions, colors, indices, 0.35, 1.95, [1, 0.48, 0.04, 0.58], [0.55, 0.9, 1, 0], 0.02);
-    appendRibbon(positions, colors, indices, -0.65, 0, 0.65, 0, 2.7, [0.75, 0.95, 1, 0.76], [1, 0.42, 0.04, 0]);
-    appendRibbon(positions, colors, indices, 0, -0.65, 0, 0.65, 2.7, [0.75, 0.95, 1, 0.76], [1, 0.42, 0.04, 0]);
-    return geometry(positions, colors, indices, new Vec3(-1.95, 0, -1.95), new Vec3(1.95, 2.7, 1.95));
+
+    // 暖色爆心只负责交代“爆炸”，主体仍保持泳池水花的青蓝色。
+    appendRing(positions, colors, indices, 0.16, 0.72,
+        [1, 0.44, 0.06, 0.62], [1, 0.7, 0.16, 0], 0.018);
+    // 两层水面波纹错开宽度，避免一整张半透明圆盘造成白块和过度填充。
+    appendRing(positions, colors, indices, 0.34, 0.78,
+        [0.88, 0.99, 1, 0.72], [0.28, 0.82, 0.98, 0.06], 0.028);
+    appendRing(positions, colors, indices, 1.18, 2.08,
+        [0.42, 0.88, 1, 0.34], [0.18, 0.68, 0.94, 0], 0.012);
+
+    appendWaterCrown(positions, colors, indices);
+    for (let i = 0; i < 9; i++) appendCurvedWaterJet(positions, colors, indices, i);
+    for (let i = 0; i < 11; i++) appendWaterDroplet(positions, colors, indices, i);
+
+    return geometry(positions, colors, indices, new Vec3(-2.15, 0, -2.15), new Vec3(2.15, 2.65, 2.15));
+}
+
+/** 以低频变换播放水爆，不改材质、不重建网格，也不产生临时对象。 */
+export function applyWaterExplosionPhase(node: Node, progress: number, intensity = 1): void {
+    const phase = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
+    const expand = 1 - Math.pow(1 - phase, 3);
+    const crest = Math.sin(phase * Math.PI);
+    const radial = (0.2 + expand * 1.42) * intensity;
+    const vertical = (0.16 + crest * 1.5) * intensity;
+    node.setScale(radial, vertical, radial);
+}
+
+function appendWaterCrown(positions: number[], colors: number[], indices: number[]): void {
+    const segments = 14;
+    const base = positions.length / 3;
+    const heightPattern = [0.76, 1, 0.84, 1.12, 0.8, 0.94, 1.08];
+    const radiusPattern = [0.92, 1.08, 0.86, 1.16, 0.96, 1.04, 0.89];
+    const baseColor: ColorTuple = [0.12, 0.68, 0.91, 0.82];
+    const shoulderColor: ColorTuple = [0.54, 0.91, 1, 0.72];
+    const tipColor: ColorTuple = [0.96, 1, 1, 0.08];
+    for (let i = 0; i <= segments; i++) {
+        const wrapped = i % segments;
+        const angle = wrapped / segments * Math.PI * 2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const height = heightPattern[wrapped % heightPattern.length];
+        const rimRadius = 0.54 * radiusPattern[wrapped % radiusPattern.length];
+        positions.push(
+            cos * 0.48, 0.04, sin * 0.48,
+            cos * 0.34, 0.72 * height, sin * 0.34,
+            cos * rimRadius, 1.82 * height, sin * rimRadius,
+        );
+        pushColor(colors, baseColor, 1);
+        pushColor(colors, shoulderColor, 1);
+        pushColor(colors, tipColor, 1);
+    }
+    for (let i = 0; i < segments; i++) {
+        const current = base + i * 3;
+        const next = current + 3;
+        indices.push(
+            current, next, current + 1,
+            current + 1, next, next + 1,
+            current + 1, next + 1, current + 2,
+            current + 2, next + 1, next + 2,
+        );
+    }
+}
+
+function appendCurvedWaterJet(
+    positions: number[], colors: number[], indices: number[], index: number,
+): void {
+    const angle = (index / 9) * Math.PI * 2 + (index % 2) * 0.12;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    const tx = -dz;
+    const tz = dx;
+    const lift = 1.05 + (index % 3) * 0.2;
+    const reach = 1.24 + (index % 4) * 0.13;
+    const centers: ReadonlyArray<readonly [number, number]> = [
+        [0.42, 0.18],
+        [0.72 + (index % 2) * 0.08, lift],
+        [reach, 0.52 + (index % 3) * 0.11],
+    ];
+    const widths = [0.13, 0.105, 0.024];
+    const depths = [0.09, 0.075, 0.018];
+    const stationColors: readonly ColorTuple[] = [
+        [0.08, 0.63, 0.9, 0.84],
+        [0.68, 0.95, 1, 0.7],
+        [0.94, 1, 1, 0.04],
+    ];
+    const base = positions.length / 3;
+    for (let station = 0; station < centers.length; station++) {
+        const [radius, y] = centers[station];
+        const width = widths[station];
+        const depth = depths[station];
+        const cx = dx * radius;
+        const cz = dz * radius;
+        positions.push(
+            cx + tx * width + dx * depth, y, cz + tz * width + dz * depth,
+            cx - tx * width + dx * depth, y, cz - tz * width + dz * depth,
+            cx - tx * width - dx * depth, y, cz - tz * width - dz * depth,
+            cx + tx * width - dx * depth, y, cz + tz * width - dz * depth,
+        );
+        pushColor(colors, stationColors[station], 4);
+    }
+    for (let station = 0; station < centers.length - 1; station++) {
+        const current = base + station * 4;
+        const next = current + 4;
+        for (let side = 0; side < 4; side++) {
+            const sideNext = (side + 1) % 4;
+            indices.push(current + side, next + side, current + sideNext,
+                current + sideNext, next + side, next + sideNext);
+        }
+    }
+}
+
+function appendWaterDroplet(
+    positions: number[], colors: number[], indices: number[], index: number,
+): void {
+    const angle = index / 11 * Math.PI * 2 + 0.2;
+    const radius = 0.78 + (index % 4) * 0.22;
+    const centerX = Math.cos(angle) * radius;
+    const centerY = 0.62 + (index % 5) * 0.2;
+    const centerZ = Math.sin(angle) * radius;
+    const size = 0.055 + (index % 3) * 0.018;
+    const base = positions.length / 3;
+    positions.push(
+        centerX + size, centerY, centerZ,
+        centerX - size, centerY, centerZ,
+        centerX, centerY + size * 1.35, centerZ,
+        centerX, centerY - size * 1.35, centerZ,
+        centerX, centerY, centerZ + size,
+        centerX, centerY, centerZ - size,
+    );
+    pushColor(colors, [0.66, 0.94, 1, 0.68], 6);
+    const faces = [0, 2, 4, 4, 2, 1, 1, 2, 5, 5, 2, 0, 4, 3, 0, 1, 3, 4, 5, 3, 1, 0, 3, 5];
+    for (const face of faces) indices.push(base + face);
 }
 
 function appendOctahedron(
@@ -337,18 +470,6 @@ function appendRing(
         const lower = base + i * 2;
         indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
     }
-}
-
-function appendRibbon(
-    positions: number[], colors: number[], indices: number[],
-    x0: number, z0: number, x1: number, z1: number, tipY: number,
-    bottomColor: ColorTuple, topColor: ColorTuple,
-): void {
-    const base = positions.length / 3;
-    positions.push(x0, 0, z0, x1, 0, z1, x1 * 0.12, tipY, z1 * 0.12, x0 * 0.12, tipY, z0 * 0.12);
-    pushColor(colors, bottomColor, 2);
-    pushColor(colors, topColor, 2);
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
 }
 
 function geometry(positions: number[], colors: number[], indices: number[], minPos: Vec3, maxPos: Vec3): primitives.IGeometry {

@@ -1,7 +1,12 @@
 import { Material, Mesh, MeshRenderer, Node, utils } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { MinefieldImpact, MinefieldMineState } from './MinefieldBrawlController';
-import { buildMineExplosionGeometry, buildMineGeometry, makeMineVertexMaterial } from './MineRelayBrawlPresentation';
+import {
+    applyWaterExplosionPhase,
+    buildMineGeometry,
+    buildWaterExplosionGeometry,
+    makeMineVertexMaterial,
+} from './MineRelayBrawlPresentation';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const EXPLOSION_SECONDS = 0.58;
@@ -24,7 +29,7 @@ export class MinefieldBrawlPresentation {
     constructor(private readonly worldRoot: Node, private readonly course: RaceCourseLayout, mineCount: number) {
         if (!worldRoot?.isValid) return;
         this.mineMesh = utils.createMesh(buildMineGeometry());
-        this.explosionMesh = utils.createMesh(buildMineExplosionGeometry());
+        this.explosionMesh = utils.createMesh(buildWaterExplosionGeometry());
         this.mineMaterial = makeMineVertexMaterial('MinefieldBodyMaterial', true);
         this.explosionMaterial = makeMineVertexMaterial('MinefieldExplosionMaterial', false);
         for (let id = 0; id < mineCount; id++) {
@@ -83,8 +88,7 @@ export class MinefieldBrawlPresentation {
             if (explosion.remaining <= 0) continue;
             explosion.remaining = Math.max(0, explosion.remaining - presentationStep);
             const progress = 1 - explosion.remaining / EXPLOSION_SECONDS;
-            const scale = 0.3 + Math.sin(Math.min(1, progress) * Math.PI * 0.78) * 1.65;
-            explosion.node.setScale(scale, 0.55 + scale * 1.2, scale);
+            applyWaterExplosionPhase(explosion.node, progress, 0.88);
             if (explosion.remaining <= 0) this.setActive(explosion.node, false);
         }
     }
@@ -101,7 +105,8 @@ export class MinefieldBrawlPresentation {
             this.course.waterY + 0.05,
             impact.lateral,
         );
-        visual.node.setScale(0.3, 0.3, 0.3);
+        visual.node.setRotationFromEuler(0, impact.mineId * 47, 0);
+        applyWaterExplosionPhase(visual.node, 0, 0.88);
         visual.remaining = EXPLOSION_SECONDS;
         this.setActive(visual.node, true);
     }
