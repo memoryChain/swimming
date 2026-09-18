@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -149,6 +149,8 @@ export class NetRaceController {
     private readonly _authoritativeEvents: NetInputEvent[] = [];
     private _stimulantPickupListener: ((itemId: number, collectorLane: number, revision: number) => void) | null = null;
     private _stimulantStateListener: ((state: NetStimulantState) => void) | null = null;
+    private _sharkEliminationListener: ((sequence: number, targetLane: number) => void) | null = null;
+    private _sharkStateListener: ((state: NetSharkState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -185,6 +187,19 @@ export class NetRaceController {
 
     setStimulantStateListener(listener: ((state: NetStimulantState) => void) | null): void {
         this._stimulantStateListener = listener;
+    }
+
+    enqueueSharkElimination(sequence: number, targetLane: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({ kind: NetInputKind.SharkElimination, sharkSequence: sequence, targetLane });
+    }
+
+    setSharkEliminationListener(listener: ((sequence: number, targetLane: number) => void) | null): void {
+        this._sharkEliminationListener = listener;
+    }
+
+    setSharkStateListener(listener: ((state: NetSharkState) => void) | null): void {
+        this._sharkStateListener = listener;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -343,10 +358,10 @@ export class NetRaceController {
     }
 
     // Host: encode + broadcast the authoritative position snapshot.
-    sendSnapshot(entries: NetSnapshotEntry[], stimulant?: NetStimulantState | null): void {
+    sendSnapshot(entries: NetSnapshotEntry[], stimulant?: NetStimulantState | null, shark?: NetSharkState | null): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant));
+        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -476,6 +491,9 @@ export class NetRaceController {
                     revision: snapshot.stimulantRevision,
                     collectedMask: snapshot.stimulantMask,
                 });
+                if (snapshot.shark) {
+                    this._sharkStateListener?.(snapshot.shark);
+                }
             }
             this.refreshHud();
             return;
@@ -499,7 +517,7 @@ export class NetRaceController {
         if (msg.slice(0, BROADCAST_INPUT_TAG.length) === BROADCAST_INPUT_TAG) {
             const decoded = decodeInputFrame(msg.slice(BROADCAST_INPUT_TAG.length));
             if (decoded.senderPos >= 0 && decoded.senderPos !== this._session.localPos) {
-                this.processStimulantPickups(decoded.senderPos, decoded.events);
+                this.processAuthoritativeEvents(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             return;
@@ -688,7 +706,7 @@ export class NetRaceController {
             }
             this._peerLatest[decoded.senderPos] = frame.frameId;
             if (decoded.senderPos !== this._session.localPos) {
-                this.processStimulantPickups(decoded.senderPos, decoded.events);
+                this.processAuthoritativeEvents(decoded.senderPos, decoded.events);
                 this.processRemotePacket(decoded.senderPos, decoded.inputSeq, decoded.events, decoded.self);
             }
             if (decoded.events.length > 0) {
@@ -793,12 +811,16 @@ export class NetRaceController {
         }
     }
 
-    private processStimulantPickups(senderPos: number, events: readonly NetInputEvent[]): void {
+    private processAuthoritativeEvents(senderPos: number, events: readonly NetInputEvent[]): void {
         if (senderPos !== this._activeHostPos) return;
         for (const event of events) {
-            if (event.kind !== NetInputKind.StimulantPickup) continue;
-            if (event.itemId === undefined || event.collectorLane === undefined || event.revision === undefined) continue;
-            this._stimulantPickupListener?.(event.itemId, event.collectorLane, event.revision);
+            if (event.kind === NetInputKind.StimulantPickup) {
+                if (event.itemId === undefined || event.collectorLane === undefined || event.revision === undefined) continue;
+                this._stimulantPickupListener?.(event.itemId, event.collectorLane, event.revision);
+            } else if (event.kind === NetInputKind.SharkElimination) {
+                if (event.sharkSequence === undefined || event.targetLane === undefined) continue;
+                this._sharkEliminationListener?.(event.sharkSequence, event.targetLane);
+            }
         }
     }
 

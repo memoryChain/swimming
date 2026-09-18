@@ -78,19 +78,48 @@ export interface DecodedRaceSnapshot {
     entries: NetSnapshotEntry[];
     stimulantRevision: number;
     stimulantMask: number;
+    shark?: NetSharkState;
 }
 
 export type NetStimulantState = { revision: number; collectedMask: number };
 
+// Race-global predator state. Only the host simulates target selection, movement,
+// bites, and elimination. Guests render this quantized snapshot and use the
+// eliminated mask as a best-effort fallback for a missed reliable event.
+export interface NetSharkState {
+    sequence: number;
+    state: number;
+    raceElapsed: number;
+    remainingSeconds: number;
+    huntOpeningGraceSeconds: number;
+    x: number;
+    z: number;
+    facingX: number;
+    facingZ: number;
+    targetLane: number;
+    eliminatedLane: number;
+    eliminatedMask: number;
+    huntIndex: number;
+    eliminationCount: number;
+}
+
 const TAG = 'S|';
 
-export function encodeRaceSnapshot(hostPos: number, entries: NetSnapshotEntry[], stimulant?: NetStimulantState | null): string {
+export function encodeRaceSnapshot(
+    hostPos: number,
+    entries: NetSnapshotEntry[],
+    stimulant?: NetStimulantState | null,
+    shark?: NetSharkState | null,
+): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
         .join(';');
     const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
-    return `${TAG}${hostPos},${revision},${mask}#${body}`;
+    const sharkBody = shark
+        ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.eliminatedLane)},${Math.max(0, Math.floor(shark.eliminatedMask)).toString(16)},${Math.max(0, Math.floor(shark.huntIndex))},${Math.max(0, Math.floor(shark.eliminationCount))}`
+        : '';
+    return `${TAG}${hostPos},${revision},${mask}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -108,7 +137,9 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const hostPos = parseInt(header[0], 10);
     const stimulantRevision = header.length > 1 ? parseInt(header[1], 10) : 0;
     const stimulantMask = header.length > 2 ? parseInt(header[2], 16) : 0;
-    const body = rest.slice(hash + 1);
+    const stateBody = rest.slice(hash + 1);
+    const sharkSeparator = stateBody.indexOf('~');
+    const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
     const entries: NetSnapshotEntry[] = [];
     if (body.length > 0) {
         for (const token of body.split(';')) {
@@ -155,11 +186,37 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             });
         }
     }
+    let shark: NetSharkState | undefined;
+    if (sharkSeparator >= 0) {
+        const p = stateBody.slice(sharkSeparator + 1).split(',');
+        if (p.length >= 14) {
+            const values = p.map((value, index) => parseInt(value, index === 11 ? 16 : 10));
+            if (values.slice(0, 14).every(Number.isFinite)) {
+                shark = {
+                    sequence: Math.max(0, values[0]),
+                    state: Math.max(0, values[1]),
+                    raceElapsed: Math.max(0, values[2] / 1000),
+                    remainingSeconds: Math.max(0, values[3] / 1000),
+                    huntOpeningGraceSeconds: Math.max(0, values[4] / 1000),
+                    x: values[5] / 100,
+                    z: values[6] / 100,
+                    facingX: values[7] / 1000,
+                    facingZ: values[8] / 1000,
+                    targetLane: values[9],
+                    eliminatedLane: values[10],
+                    eliminatedMask: Math.max(0, values[11]),
+                    huntIndex: Math.max(0, values[12]),
+                    eliminationCount: Math.max(0, values[13]),
+                };
+            }
+        }
+    }
     return {
         hostPos: Number.isFinite(hostPos) ? hostPos : 0,
         entries,
         stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,
+        shark,
     };
 }
 

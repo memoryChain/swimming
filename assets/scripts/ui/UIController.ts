@@ -56,6 +56,7 @@ export type RaceLeaderboardRow = {
     lane?: number;
     quit?: boolean;
     eliminated?: boolean;
+    sharkEliminated?: boolean;
 };
 
 @ccclass('UIController')
@@ -760,7 +761,12 @@ export class UIController extends Component {
             const color = row.isPlayer ? new Color(255, 214, 44, 255) : new Color(218, 230, 246, 255);
             setResultLabel(nameLabel, displayName, color, row.isPlayer);
             setResultLabel(rankLabel, `${row.placement}`, color, row.isPlayer);
-            setResultLabel(timeLabel, finished ? `${row.time.toFixed(2)} 秒` : '未完成', color, row.isPlayer);
+            setResultLabel(
+                timeLabel,
+                finished ? `${row.time.toFixed(2)} 秒` : row.sharkEliminated ? '鲨鱼淘汰' : '未完成',
+                color,
+                row.isPlayer,
+            );
             setResultLabel(speedLabel, finished ? `${averageSpeed.toFixed(2)} m/s` : '--', color, row.isPlayer);
             setRowBack(back, row.isPlayer ? this.resultRowPlayerFrame : this.resultRowNormalFrame);
             if (avatar) {

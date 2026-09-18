@@ -47,6 +47,7 @@ export const enum NetInputKind {
     DiveRelease = 'r', // dive release (carries final power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
     StimulantPickup = 'p', // host-authoritative item id, collector lane, revision
+    SharkElimination = 'e', // host-authoritative shark sequence and eliminated lane
 }
 
 export interface NetInputEvent {
@@ -63,6 +64,8 @@ export interface NetInputEvent {
     itemId?: number;
     collectorLane?: number;
     revision?: number;
+    sharkSequence?: number;
+    targetLane?: number;
 }
 
 export interface DecodedInputFrame {
@@ -98,6 +101,8 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DolphinJump;
         case NetInputKind.StimulantPickup:
             return `${NetInputKind.StimulantPickup}${Math.max(0, Math.floor(event.itemId ?? 0))},${Math.max(0, Math.floor(event.collectorLane ?? 0))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+        case NetInputKind.SharkElimination:
+            return `${NetInputKind.SharkElimination}${Math.max(0, Math.floor(event.sharkSequence ?? 0))},${Math.max(0, Math.floor(event.targetLane ?? 0))}`;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -135,6 +140,12 @@ function decodeToken(token: string): NetInputEvent | null {
             const values = token.slice(1).split(',').map(value => parseInt(value, 10));
             return values.length === 3 && values.every(value => Number.isSafeInteger(value) && value >= 0)
                 ? { kind, itemId: values[0], collectorLane: values[1], revision: values[2] }
+                : null;
+        }
+        case NetInputKind.SharkElimination: {
+            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
+            return values.length === 2 && values.every(value => Number.isSafeInteger(value) && value >= 0)
+                ? { kind, sharkSequence: values[0], targetLane: values[1] }
                 : null;
         }
         case NetInputKind.DiveRelease: {

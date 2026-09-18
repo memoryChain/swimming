@@ -142,7 +142,7 @@ export class CareerPrototypePanel {
     private setRule(rule: RaceRule): void {
         if (this.rule === rule) return;
         this.rule = rule;
-        if (rule === 'stimulant') this.distance = 200;
+        if (rule === 'stimulant' || rule === 'shark') this.distance = 200;
         this.refresh();
     }
     private async abandon(id: string): Promise<void> {
@@ -164,6 +164,7 @@ export class CareerPrototypePanel {
                 setSoloRaceTicket(result.ticket);
                 setRaceDifficulty(result.ticket.rule === 'standard' ? 'beginner'
                     : result.ticket.rule === 'stimulant' ? 'stimulant-brawl'
+                        : result.ticket.rule === 'shark' ? 'shark-brawl'
                         : result.ticket.distance === 400 ? 'championship' : 'competitive');
                 setSoloRaceDistance(result.ticket.distance);
                 launching = true;

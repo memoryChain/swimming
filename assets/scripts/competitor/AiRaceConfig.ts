@@ -86,5 +86,5 @@ export const AI_EVENTS: Record<string, AiEventConfig> = {
 };
 // 当前三个入口同属俱乐部赛事。赛制不隐式升级智力，后续赛事可独立指向其它配置。
 export const AI_EVENT_BY_MODE: Record<RaceModeId, string> = {
-    beginner: 'club', competitive: 'club', championship: 'club', 'stimulant-brawl': 'club',
+    beginner: 'club', competitive: 'club', championship: 'club', 'stimulant-brawl': 'club', 'shark-brawl': 'club',
 };

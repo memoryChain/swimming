@@ -85,7 +85,7 @@ function data(place = 2, finished = true) {
 }
 function make(callbacks = {}) { return new SettlementView(new Node('HUD'), { onRestart() {}, onMenu() {}, ...callbacks }); }
 if (require.main === module) {
-    test('四种荣誉状态；未完成、退出和淘汰不授予前三名奖牌', () => {
+test('五种荣誉状态；未完成、退出和淘汰不授予前三名奖牌', () => {
         for (let rank = 1; rank <= 8; rank++) {
             assert.equal(settlementTier(rank, true), rank <= 3 ? rank - 1 : 3);
             assert.equal(settlementTier(rank, false), 3);
@@ -94,6 +94,7 @@ if (require.main === module) {
         assert.equal(settlementTime({ time: 109, finished: false }), '未完成');
         assert.equal(settlementTime({ time: 109, quit: true }), '已退出');
         assert.equal(settlementTime({ time: 109, eliminated: true }), '已淘汰');
+        assert.equal(settlementTime({ time: 0, eliminated: true, sharkEliminated: true }), '鲨鱼淘汰');
         const v = make();
         for (const rank of [1, 2, 3, 4, 8]) {
             v.show(109.45, data(rank));

@@ -23,6 +23,7 @@ export type RaceFinishResult = {
     isPlayer: boolean;
     lane: number;
     eliminated?: boolean;
+    sharkEliminated?: boolean;
     // true when the swimmer LEFT a networked race mid-way (shown as 退出 in the live
     // rank, distinct from a lockdown 已淘汰). Always a subset of `eliminated`.
     quit?: boolean;
@@ -61,6 +62,7 @@ export class RaceManager extends Component {
     private _lastFinishCountdownValue = -1;
     private readonly _raceRoster: Swimmer[] = [];
     private readonly _eliminated = new Set<Swimmer>();
+    private readonly _sharkEliminated = new Set<Swimmer>();
     // Swimmers that LEFT the race (net quit), a subset of _eliminated. Kept separate so
     // the live rank can label them 退出 rather than the lockdown 已淘汰.
     private readonly _quit = new Set<Swimmer>();
@@ -81,6 +83,7 @@ export class RaceManager extends Component {
         this._finishTimes.clear();
         this.captureRaceRoster();
         this._eliminated.clear();
+        this._sharkEliminated.clear();
         this._quit.clear();
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
         this._diveResolved = false;
@@ -120,6 +123,7 @@ export class RaceManager extends Component {
         this._finishTimes.clear();
         this._raceRoster.length = 0;
         this._eliminated.clear();
+        this._sharkEliminated.clear();
         this._quit.clear();
         this._lastCountdownValue = -1;
         this._diveResolved = false;
@@ -239,16 +243,24 @@ export class RaceManager extends Component {
         }
     }
 
-    public eliminateSwimmer(swimmer: Swimmer, quit = false) {
+    public eliminateSwimmer(swimmer: Swimmer, quit = false, shark = false, presentationSeconds = 0): boolean {
         if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
-            return;
+            return false;
         }
         this._eliminated.add(swimmer);
+        if (shark) {
+            this._sharkEliminated.add(swimmer);
+        }
         if (quit) {
             this._quit.add(swimmer);
         }
-        swimmer.eliminate();
+        const keepVisible = shark && presentationSeconds > 0;
+        swimmer.eliminate(!keepVisible);
+        if (keepVisible) {
+            this.scheduleOnce(() => swimmer.hideAfterElimination(), presentationSeconds);
+        }
         this.onSwimmerEliminated?.(swimmer);
+        return true;
     }
 
     private startFinishCountdown() {
@@ -301,6 +313,7 @@ export class RaceManager extends Component {
             result.isPlayer = swimmer === this.playerSwimmer;
             result.lane = laneForSwimmer(swimmer);
             result.eliminated = isEliminated;
+            result.sharkEliminated = this._sharkEliminated.has(swimmer);
             result.quit = this._quit.has(swimmer);
             result.finished = time > 0;
             if (isEliminated) {
@@ -331,6 +344,7 @@ export class RaceManager extends Component {
                 isPlayer: swimmer === this.playerSwimmer,
                 lane: laneForSwimmer(swimmer),
                 eliminated: false,
+                sharkEliminated: false,
                 finished: false,
             };
             this._liveRowsBySwimmer.set(swimmer, row);
@@ -436,14 +450,19 @@ export class RaceManager extends Component {
     private finishLeaderboard(): RaceFinishResult[] {
         const finishers: RaceFinishResult[] = [];
         const unfinished: RaceFinishResult[] = [];
+        const eliminatedRows: RaceFinishResult[] = [];
         for (const swimmer of this.allRaceRacers()) {
             const time = this._finishTimes.get(swimmer) ?? (swimmer === this.playerSwimmer ? this._playerFinishTime : this._aiFinishTimes.get(swimmer)) ?? 0;
             const isPlayer = swimmer === this.playerSwimmer;
             const lane = laneForSwimmer(swimmer);
+            const eliminated = this._eliminated.has(swimmer);
+            const sharkEliminated = this._sharkEliminated.has(swimmer);
+            const quit = this._quit.has(swimmer);
             if (time > 0) {
-                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, finished: true });
+                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, eliminated, sharkEliminated, quit, finished: true });
             } else {
-                unfinished.push({ swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, finished: false });
+                const row = { swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, eliminated, sharkEliminated, quit, finished: false };
+                (eliminated ? eliminatedRows : unfinished).push(row);
             }
         }
         finishers.sort((a, b) => a.time - b.time);
@@ -458,7 +477,10 @@ export class RaceManager extends Component {
         for (let i = 0; i < unfinished.length; i++) {
             unfinished[i].placement = finishers.length + i + 1;
         }
-        return [...finishers, ...unfinished];
+        for (let i = 0; i < eliminatedRows.length; i++) {
+            eliminatedRows[i].placement = finishers.length + unfinished.length + i + 1;
+        }
+        return [...finishers, ...unfinished, ...eliminatedRows];
     }
 
     private setState(state: GameState) {

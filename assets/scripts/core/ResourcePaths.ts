@@ -64,6 +64,17 @@ const MUSCLE_MAN_PREFAB_CANDIDATES = [
     'models/MuscleMan',
     'models/MuscleMan/MuscleMan',
 ];
+const SHARK_MODEL_PREFAB_CANDIDATES = [
+    'models/SharkModel',
+    'models/SharkModel/SharkModel',
+];
+
+export const SHARK_MODEL_PRESENTATION = {
+    visualScale: 1.8,
+    visualYOffset: -0.18,
+    visualEulerDegrees: [0, 90, 0] as const,
+    swimAnimationSpeed: 1.2,
+};
 const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
     'models/CartonSwimmer5',
     'models/CartonSwimmer5/CartonSwimmer5',
@@ -372,6 +383,7 @@ export const RESOURCE_PATHS = {
         'charge-cap': 'ui/race-start-v1/charge-cap/texture',
     },
     swimmerPrefabCandidates: MUSCLE_MAN_PREFAB_CANDIDATES,
+    sharkPrefabCandidates: SHARK_MODEL_PREFAB_CANDIDATES,
     swimmerModelVariants: SWIMMER_MODEL_VARIANTS,
     poolPrefab: 'pool/PoolScene',
     startBlockPrefabCandidates: [

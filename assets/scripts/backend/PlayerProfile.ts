@@ -183,14 +183,14 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
         const wins = raw.wins?.[id];
         if (Array.isArray(wins)) c.wins[id] = [...new Set(wins.filter(n => Number.isInteger(n) && n >= 0 && n <= 5))];
     }
-    const quickRule = raw.quick?.rule === 'stimulant' ? 'stimulant' : raw.quick?.rule === 'wild' ? 'wild' : 'standard';
-    c.quick = { distance: quickRule === 'stimulant' ? 200 : raw.quick?.distance === 400 ? 400 : 200, rule: quickRule };
+    const quickRule = raw.quick?.rule === 'stimulant' ? 'stimulant' : raw.quick?.rule === 'shark' ? 'shark' : raw.quick?.rule === 'wild' ? 'wild' : 'standard';
+    c.quick = { distance: quickRule === 'stimulant' || quickRule === 'shark' ? 200 : raw.quick?.distance === 400 ? 400 : 200, rule: quickRule };
     // 中断后从杯赛当前轮重新开赛；已结算回执仍保留，不能因重启重复发放。
     c.receipts = Array.isArray(raw.receipts) ? raw.receipts.filter(r => r && typeof r.id === 'string' && Number.isFinite(r.coinsGained)).slice(-32) : [];
     const p = raw.pending;
     if (p && typeof p.id === 'string' && ['quick', 'league', 'cup'].indexOf(p.source) >= 0
         && (p.distance === 200 || p.distance === 400)
-        && (p.rule === 'standard' || p.rule === 'wild' || (p.rule === 'stimulant' && p.source === 'quick' && p.distance === 200))
+        && (p.rule === 'standard' || p.rule === 'wild' || ((p.rule === 'stimulant' || p.rule === 'shark') && p.source === 'quick' && p.distance === 200))
         && Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 5 && p.ai && Number.isFinite(p.seed)) c.pending = p;
     return c;
 }

@@ -9,9 +9,9 @@ export const RACE_COURSE_LENGTH = 50;
 export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
-export type RaceModeId = RaceDifficulty | 'stimulant-brawl';
+export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl';
 export type RaceCategoryId = 'competitive' | 'entertainment';
-export type RaceRulesetId = 'standard' | 'wild' | 'stimulant';
+export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark';
 
 export type RaceModeConfig = {
     id: RaceModeId;
@@ -30,6 +30,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'competitive', label: '狂野模式', category: 'competitive', distance: 200, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'championship', label: '狂野模式', category: 'competitive', distance: 400, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'stimulant-brawl', label: '兴奋剂大乱斗', category: 'entertainment', distance: 200, ruleset: 'stimulant', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'shark-brawl', label: '鲨鱼大乱斗', category: 'entertainment', distance: 200, ruleset: 'shark', laneLockdownEnabled: false, steeringEnabled: true },
 ];
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter((option) => option.category === 'competitive');
 
@@ -74,6 +75,10 @@ export function getRaceModeTitle(mode: RaceModeId = currentRaceMode): string {
 
 export function isStimulantBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
     return getRaceModeConfig(mode).ruleset === 'stimulant';
+}
+
+export function isSharkBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'shark';
 }
 
 export function raceDistanceToCourseX(distance: number): number {

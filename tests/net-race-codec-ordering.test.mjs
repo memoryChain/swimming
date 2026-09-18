@@ -5,6 +5,7 @@ import SnapshotCodec from '../assets/scripts/net/NetRaceSnapshot.ts';
 import InputCodec from '../assets/scripts/net/NetRaceInput.ts';
 import Ordering from '../assets/scripts/net/NetInputOrdering.ts';
 import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
+import ResultCodec from '../assets/scripts/net/NetRaceResult.ts';
 import ConditionBalance from '../assets/scripts/core/ConditionBalance.ts';
 
 const {
@@ -27,6 +28,7 @@ const {
     isCompatibleProtocolVersion,
 } = Protocol;
 const { conditionQualityScale } = ConditionBalance;
+const { decodeRaceResult, encodeRaceResult } = ResultCodec;
 
 function entry(overrides = {}) {
     return {
@@ -74,6 +76,44 @@ test('stimulant pickup event round-trips on the reliable input channel', () => {
     assert.equal(decoded.senderPos, 2);
     assert.equal(decoded.inputSeq, 44);
     assert.deepEqual(decoded.events, [{ kind: 'p', itemId: 28, collectorLane: 6, revision: 9 }]);
+});
+
+test('shark state and permanent elimination event round-trip across both sync fallbacks', () => {
+    const shark = {
+        sequence: 3,
+        state: 2,
+        raceElapsed: 55.432,
+        remainingSeconds: 7.321,
+        huntOpeningGraceSeconds: 0.444,
+        x: 18.27,
+        z: -2.31,
+        facingX: 0.707,
+        facingZ: -0.707,
+        targetLane: 5,
+        eliminatedLane: 2,
+        eliminatedMask: 0b00100100,
+        huntIndex: 2,
+        eliminationCount: 2,
+    };
+    const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, shark));
+    assert.deepEqual(snapshot.shark, shark);
+
+    const event = decodeInputFrame(encodeInputFrame(
+        0,
+        [{ kind: 'e', sharkSequence: 3, targetLane: 2 }],
+        null,
+        -1,
+        45,
+    ));
+    assert.deepEqual(event.events, [{ kind: 'e', sharkSequence: 3, targetLane: 2 }]);
+});
+
+test('authoritative results preserve shark elimination separately from ordinary DNF', () => {
+    const entries = [
+        { lane: 2, placement: 7, finished: false, time: 0, eliminated: true, sharkEliminated: true },
+        { lane: 3, placement: 6, finished: false, time: 0, eliminated: false, sharkEliminated: false },
+    ];
+    assert.deepEqual(decodeRaceResult(encodeRaceResult(entries)), entries);
 });
 
 test('legacy S| and P| payloads keep safe sentinel defaults', () => {

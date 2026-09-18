@@ -118,6 +118,14 @@ export class Swimmer extends Component {
             && !this._motor.ability.ignoresSwimmers;
     }
 
+    get isSharkTargetable(): boolean {
+        return this._motor.isRacing
+            && this.node.active
+            && !this._phases.isFlipTurnActive
+            && !this._phases.isDolphinJumpActive
+            && !this._phases.isUnderwater;
+    }
+
     // Displace the swimmer by (pushX, pushZ) world metres to resolve a collision.
     // Bodies are impassable, so both axes move: Z via the motor lateral offset
     // (clamped to the pool walls) and X via race distance (X is derived from
@@ -418,9 +426,13 @@ export class Swimmer extends Component {
         return this._swimBoundaryRange;
     }
 
-    eliminate() {
+    eliminate(hideImmediately = true) {
         this.stopRace();
-        this.node.active = false;
+        if (hideImmediately && this.node.active) this.node.active = false;
+    }
+
+    hideAfterElimination() {
+        if (this.node.active) this.node.active = false;
     }
 
     // NETWORKED RACE: whether the motor is racing (for the stuck-dive redundancy check).

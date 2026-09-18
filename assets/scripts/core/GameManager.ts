@@ -14,6 +14,7 @@ import {
     game,
     geometry,
     Graphics,
+    instantiate,
     Label,
     Layers,
     Material,
@@ -22,6 +23,9 @@ import {
     primitives,
     profiler,
     Sprite,
+    SkeletalAnimation,
+    Tween,
+    tween,
     UITransform,
     utils,
     Vec3,
@@ -42,6 +46,8 @@ import { CompetitorManager } from '../competitor/CompetitorManager';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
+import { SharkController } from '../entity/SharkController';
+import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
@@ -52,6 +58,9 @@ import { LoadingOverlay } from '../ui/LoadingOverlay';
 import { showToast } from '../ui/Toast';
 import { SpeedStarsUiPrefabBuilder } from '../ui/SpeedStarsUiPrefabBuilder';
 import { FinishRankOverlay } from '../ui/FinishRankOverlay';
+import { SharkEventBanner } from '../ui/SharkEventBanner';
+import { SharkLockOnOverlay } from '../ui/SharkLockOnOverlay';
+import { pickSharkBannerLine } from '../ui/SharkBannerCopy';
 import {
     LIVE_PLACEMENT_BADGE_WIDTH,
     makeLivePlacementBadge,
@@ -85,7 +94,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isStimulantBrawlMode, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isSharkBrawlMode, isStimulantBrawlMode, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
@@ -94,6 +103,7 @@ import { PERFORMANCE_CONFIG } from './PerformanceConfig';
 import { randomInt } from './SharedRNG';
 import { setTimeScale, scaledDelta, TIME_SCALE } from './TimeScale';
 import { RaceCameraDirector } from '../camera/RaceCameraDirector';
+import { SharkPictureInPictureCamera } from '../camera/SharkPictureInPictureCamera';
 import { ScenePreviewCamera } from '../camera/ScenePreviewCamera';
 import { DEFAULT_POOL_DEFINITION } from '../venue/VenueConfig';
 import { LaneLayout } from '../venue/LaneLayout';
@@ -113,6 +123,9 @@ import { LaneLockdownVisuals } from '../venue/LaneLockdownVisuals';
 import { TopViewCeilingController } from '../venue/TopViewCeilingController';
 import type { StrokeTimingGuide } from '../swimmer/SwimmerMotor';
 import { loadSampledActionsForRace } from '../character/SampledActionLoader';
+import { loadSwimmerPrefab, setLayerRecursive } from '../character/CharacterModelLoader';
+import { SHARK_MODEL_PRESENTATION, RESOURCE_PATHS } from './ResourcePaths';
+import { SWIMMER_LAYER } from '../venue/WaterSurfaceBinder';
 import { logTextureFormatDiagnostics } from './TextureFormatDiagnostics';
 
 const { ccclass } = _decorator;
@@ -227,12 +240,22 @@ export class GameManager extends Component {
     private _laneLockdownRace: LaneLockdownRaceController | null = null;
     private _stimulantBrawl: StimulantBrawlController | null = null;
     private _stimulantToastPriorityUntilMs = 0;
+    private _shark: SharkController | null = null;
+    private _sharkNode: Node | null = null;
+    private _sharkArtModel: Node | null = null;
+    private _sharkAnimation: SkeletalAnimation | null = null;
+    private _sharkWake: Node | null = null;
+    private _sharkPictureInPicture: SharkPictureInPictureCamera | null = null;
+    private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
+    private readonly _sharkEventBanner = new SharkEventBanner();
+    private readonly _sharkCollisionSwimmers: Swimmer[] = [];
     private _laneLockdownStatusLabel: Label | null = null;
     private _eliminationDialog: Node | null = null;
     private _spectatorHud: Node | null = null;
     private _spectatorTargetLabel: Label | null = null;
     private _spectatorTarget: Swimmer | null = null;
     private _spectating = false;
+    private _playerEliminationDialogToken = 0;
     private _venueManager: VenueManager | null = null;
     private _scoreboardFeed: ScoreboardFeedCamera | null = null;
     private _spectatorCameraFlashEmitter: SpectatorCameraFlashEmitter | null = null;
@@ -401,6 +424,10 @@ export class GameManager extends Component {
         this._laneLockdownRace = null;
         this._stimulantBrawl?.dispose();
         this._stimulantBrawl = null;
+        this._netRaceController?.setSharkEliminationListener(null);
+        this._netRaceController?.setSharkStateListener(null);
+        this._sharkPictureInPicture?.dispose();
+        this._sharkPictureInPicture = null;
         this._waterRefraction?.dispose();
         this._waterRefraction = null;
         this._scoreboardFeed?.dispose();
@@ -515,6 +542,11 @@ export class GameManager extends Component {
         this.updateNetRaceSync(dt);
         this.updateLaneLockdown(dt);
         this.updateStimulantBrawl(dt);
+        if (this._shark) {
+            this.updateSharkBrawl(dt);
+            this._sharkPictureInPicture?.update(this._shark, dt);
+            this._sharkEventBanner.update();
+        }
         const preRacePhase = this._raceCameraDirector.preRacePhase;
         this._preRaceIntroPanel.setPhase(
             this._modelDebugFlow?.active || this._state !== GameState.PRECOUNTDOWN
@@ -558,6 +590,13 @@ export class GameManager extends Component {
             awardsActive,
             awardsActive ? 48 : standingPresentation ? 26 : 20,
         );
+        if (this._shark) {
+            this._sharkLockOnOverlay.update(
+                this._shark,
+                this._cameraNode?.getComponent(Camera) ?? null,
+                this._uiCamera,
+            );
+        }
         // Pin the finish-line rank badges above each finished swimmer using this
         // frame's final camera transform.
         if (this._finishRankOverlay.hasResults()) {
@@ -838,6 +877,7 @@ export class GameManager extends Component {
                     this._netRaceController?.setCountdownStartListener(() => this._raceManager?.startRace());
                     this._netRaceController?.setPlayerQuitListener((pos) => this.onNetPlayerQuit(pos));
                     this.setupLaneLockdownRace();
+                    this.setupSharkBrawl();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
@@ -896,6 +936,9 @@ export class GameManager extends Component {
                         swimmer.clearLaneLockdownBounds();
                     }
                     this._laneLockdownRace?.reset();
+                    this._shark?.reset();
+                    this._sharkEventBanner.hide();
+                    this._sharkLockOnOverlay.hide();
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
                     this._laneLockdownVisuals?.clear();
@@ -1257,6 +1300,255 @@ export class GameManager extends Component {
         );
     }
 
+    private setupSharkBrawl() {
+        if (!isSharkBrawlMode() || !this._worldRoot?.isValid || !this._raceHud?.isValid || this._shark) {
+            return;
+        }
+        const root = new Node('RaceShark');
+        root.layer = SWIMMER_LAYER;
+        root.setParent(this._worldRoot);
+
+        const fallback = new Node('FallbackVisual');
+        fallback.setParent(root);
+        const body = new Node('Body');
+        body.setParent(fallback);
+        body.setScale(2.2, 0.62, 0.72);
+        const bodyRenderer = body.addComponent(MeshRenderer);
+        bodyRenderer.mesh = utils.createMesh(primitives.box());
+        const bodyMaterial = new Material();
+        bodyMaterial.initialize({ effectName: 'builtin-unlit' });
+        bodyMaterial.setProperty('mainColor', new Color(61, 83, 103, 255));
+        bodyRenderer.setMaterial(bodyMaterial, 0);
+
+        const fin = new Node('DorsalFin');
+        fin.setParent(fallback);
+        fin.setPosition(-0.1, 0.5, 0);
+        fin.setScale(0.65, 0.72, 0.12);
+        fin.setRotationFromEuler(0, 0, -18);
+        const finRenderer = fin.addComponent(MeshRenderer);
+        finRenderer.mesh = utils.createMesh(primitives.box());
+        finRenderer.setMaterial(bodyMaterial, 0);
+
+        const wake = new Node('Wake');
+        wake.setParent(root);
+        wake.setPosition(-1.25, 0.03, 0);
+        wake.setRotationFromEuler(-90, 0, 0);
+        const wakeRenderer = wake.addComponent(MeshRenderer);
+        wakeRenderer.mesh = utils.createMesh(primitives.plane({ width: 1.2, length: 1.9, widthSegments: 1, lengthSegments: 1 }));
+        const wakeMaterial = new Material();
+        wakeMaterial.initialize({ effectName: 'builtin-unlit', defines: { USE_COLOR: true } });
+        wakeMaterial.setProperty('mainColor', new Color(220, 244, 255, 100));
+        wakeRenderer.setMaterial(wakeMaterial, 0);
+        wake.active = false;
+        this._sharkWake = wake;
+        setLayerRecursive(root, SWIMMER_LAYER);
+
+        this._sharkNode = root;
+        this._shark = new SharkController({
+            node: root,
+            course: COURSE_LAYOUT,
+            swimmers: () => this.activeSharkSwimmers(),
+            laneFor: swimmer => this.assignedLaneOfSwimmer(swimmer),
+            swimmerForLane: lane => this.swimmerForLane(lane),
+            onEliminate: swimmer => this.handleSharkElimination(swimmer),
+            onRevealed: () => {
+                this._sharkEventBanner.show(
+                    pickSharkBannerLine('reveal'),
+                    new Color(255, 186, 77, 255),
+                    Math.round(SHARK_TUNING.warningSeconds * 1000),
+                );
+            },
+            onStateChange: state => this.handleSharkStateChange(state),
+            onHuntEngaged: () => this._sharkEventBanner.show(
+                pickSharkBannerLine('attack'),
+                new Color(255, 86, 70, 255),
+                1500,
+            ),
+        });
+        this._sharkPictureInPicture = new SharkPictureInPictureCamera({
+            worldRoot: this._worldRoot,
+            hud: this._raceHud,
+            course: COURSE_LAYOUT,
+        });
+        this.loadSharkArt(root, fallback);
+
+        this._netRaceController?.setSharkEliminationListener((_sequence, targetLane) => {
+            this._shark?.applyElimination(targetLane);
+        });
+        this._netRaceController?.setSharkStateListener(state => {
+            this._shark?.applyAuthoritativeState(state as import('../entity/SharkController').SharkRaceState);
+        });
+    }
+
+    private loadSharkArt(root: Node, fallback: Node) {
+        loadSwimmerPrefab((error, result) => {
+            if (error || !result?.prefab || !root.isValid || this._sharkNode !== root) {
+                if (error) this.debug(`shark art load failed: ${error.message}`);
+                return;
+            }
+            const model = instantiate(result.prefab);
+            model.name = 'SharkArtModel';
+            model.setParent(root);
+            model.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
+            model.setRotationFromEuler(...SHARK_MODEL_PRESENTATION.visualEulerDegrees);
+            model.setScale(
+                SHARK_MODEL_PRESENTATION.visualScale,
+                SHARK_MODEL_PRESENTATION.visualScale,
+                SHARK_MODEL_PRESENTATION.visualScale,
+            );
+            setLayerRecursive(model, SWIMMER_LAYER);
+            this._sharkArtModel = model;
+            this._sharkAnimation = model.getComponent(SkeletalAnimation) ?? model.getComponentInChildren(SkeletalAnimation);
+            this.startSharkSwimAnimation();
+            fallback.active = false;
+            if (this._sharkWake?.active) this._sharkWake.active = false;
+        }, RESOURCE_PATHS.sharkPrefabCandidates);
+    }
+
+    private startSharkSwimAnimation() {
+        const animation = this._sharkAnimation;
+        if (!animation?.isValid) return;
+        const state = animation.getState('Shark_Swim_Loop');
+        if (!state) {
+            this.debug('shark swim clip missing');
+            return;
+        }
+        state.speed = SHARK_MODEL_PRESENTATION.swimAnimationSpeed;
+        animation.play('Shark_Swim_Loop');
+    }
+
+    private resetSharkArtPresentation() {
+        const model = this._sharkArtModel;
+        if (!model?.isValid) return;
+        Tween.stopAllByTarget(model);
+        model.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
+        this.startSharkSwimAnimation();
+    }
+
+    private playSharkBitePresentation() {
+        const model = this._sharkArtModel;
+        if (!model?.isValid) return;
+        Tween.stopAllByTarget(model);
+        const y = SHARK_MODEL_PRESENTATION.visualYOffset;
+        model.setPosition(0, y, 0);
+        tween(model)
+            .to(0.1, { position: new Vec3(0, y - 0.12, 0) }, { easing: 'quadIn' })
+            .to(Math.max(0.08, SHARK_TUNING.bitePresentationSeconds - 0.1), { position: new Vec3(0, y - 0.54, 0) }, { easing: 'quadIn' })
+            .start();
+    }
+
+    private handleSharkStateChange(state: SharkState) {
+        if (state === SharkState.WARNING) {
+            this.resetSharkArtPresentation();
+            if ((this._shark?.huntIndex ?? 0) > 0) {
+                this._sharkEventBanner.show('鲨鱼再次出现，正在锁定最近的选手！', new Color(255, 186, 77, 255), 2200);
+            }
+        } else if (state === SharkState.HUNT) {
+            this._sharkEventBanner.show(
+                '锁定完成：立刻变向拉开距离！',
+                new Color(255, 86, 70, 255),
+                Math.round(SHARK_TUNING.huntOpeningGraceSeconds * 1000),
+            );
+        } else if (state === SharkState.BITE) {
+            this.playSharkBitePresentation();
+        } else if (state === SharkState.WANDER) {
+            this.resetSharkArtPresentation();
+            this._sharkLockOnOverlay.hide();
+            this._sharkEventBanner.enqueue(pickSharkBannerLine('retreat'), new Color(120, 220, 150, 255), 1800);
+        } else if (state === SharkState.SATIATED) {
+            this._sharkLockOnOverlay.hide();
+            const sharkNode = this._sharkNode;
+            if (sharkNode?.isValid) {
+                Tween.stopAllByTarget(sharkNode);
+                const position = sharkNode.position;
+                tween(sharkNode).to(1.2, {
+                    position: new Vec3(position.x, COURSE_LAYOUT.waterY + SHARK_TUNING.waterYOffset + SHARK_TUNING.satiatedSinkOffset, position.z),
+                }, { easing: 'quadIn' }).start();
+            }
+            this._sharkEventBanner.enqueue('鲨鱼已经吃饱，本场警报解除。', new Color(120, 220, 150, 255), 1800);
+        }
+    }
+
+    private handleSharkElimination(swimmer: Swimmer) {
+        const shark = this._shark;
+        if (!shark || !swimmer) return;
+        const presentationSeconds = shark.state === SharkState.BITE
+            ? Math.max(0, shark.remainingSeconds)
+            : 0;
+        if (!this._raceManager?.eliminateSwimmer(swimmer, false, true, presentationSeconds)) return;
+        this._sharkEventBanner.show(
+            `${swimmer.swimmerName} 被鲨鱼拖走了`,
+            new Color(255, 86, 70, 255),
+            1800,
+        );
+        if (presentationSeconds > 0) {
+            const splashNode = swimmer.cartoonRig?.splashNode;
+            if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
+            swimmer.cartoonRig?.triggerBigSplash(3.1);
+            const position = swimmer.node.position;
+        }
+        if (this._netRaceController?.isHost) {
+            const lane = this.assignedLaneOfSwimmer(swimmer);
+            if (lane >= 0) this._netRaceController.enqueueSharkElimination(shark.sequence, lane);
+        }
+    }
+
+    private activeSharkSwimmers(): readonly Swimmer[] {
+        this._sharkCollisionSwimmers.length = 0;
+        if (this._playerSwimmer?.node?.active) this._sharkCollisionSwimmers.push(this._playerSwimmer);
+        for (const swimmer of this._aiSwimmers) {
+            if (swimmer?.node?.active) this._sharkCollisionSwimmers.push(swimmer);
+        }
+        return this._sharkCollisionSwimmers;
+    }
+
+    private updateSharkBrawl(dt: number) {
+        const shark = this._shark;
+        if (!shark || this._modelDebugFlow?.active) return;
+        if (this._state !== GameState.RACING) {
+            if (shark.active) shark.reset();
+            if (this._sharkWake?.active) this._sharkWake.active = false;
+            for (const controller of this._aiControllers) controller?.setSharkTargetZ(null);
+            return;
+        }
+        if (!this._netRaceController || this._netRaceController.isHost) {
+            shark.tick(dt);
+        }
+        const hunted = shark.state === SharkState.WARNING || shark.state === SharkState.HUNT
+            ? shark.target
+            : null;
+        for (let i = 0; i < this._aiControllers.length; i++) {
+            const controller = this._aiControllers[i];
+            const swimmer = this._aiSwimmers[i];
+            let targetZ: number | null = null;
+            if (controller && swimmer && !controller.remoteDriven && hunted === swimmer) {
+                const halfWidth = COURSE_LAYOUT.poolWidth * 0.5;
+                const sharkZ = shark.node.position.z;
+                const swimmerZ = swimmer.node.position.z;
+                const direction = swimmerZ === sharkZ
+                    ? (this.assignedLaneOfSwimmer(swimmer) % 2 === 0 ? 1 : -1)
+                    : Math.sign(swimmerZ - sharkZ);
+                targetZ = Math.max(-halfWidth + 0.8, Math.min(halfWidth - 0.8, sharkZ + direction * 2.2));
+            }
+            controller?.setSharkTargetZ(targetZ);
+        }
+        this._sharkCollisionSwimmers.length = 0;
+        if (this._playerSwimmer?.isCollisionActive) this._sharkCollisionSwimmers.push(this._playerSwimmer);
+        if (!this._netRaceController || this._netRaceController.isHost) {
+            for (let i = 0; i < this._aiSwimmers.length; i++) {
+                const swimmer = this._aiSwimmers[i];
+                if (swimmer?.isCollisionActive && !this._aiControllers[i]?.remoteDriven) {
+                    this._sharkCollisionSwimmers.push(swimmer);
+                }
+            }
+        }
+        shark.resolveObstacleCollisions(this._sharkCollisionSwimmers);
+        if (this._sharkWake && !this._sharkArtModel) {
+            const wakeVisible = shark.active && shark.state !== SharkState.SATIATED;
+            if (this._sharkWake.active !== wakeVisible) this._sharkWake.active = wakeVisible;
+        }
+    }
+
     private updateLaneLockdownStatus(status: LaneLockdownStatus | null) {
         const label = this._laneLockdownStatusLabel;
         if (!label) {
@@ -1608,11 +1900,18 @@ export class GameManager extends Component {
             // plan), NOT RaceManager's world-Z-derived lane — at the finish wall
             // collisions/lateral drift push swimmers into a neighbour's Z bucket, so
             // two rows can collide on that lane and break the client's placement match.
-            const entries = [] as { lane: number; placement: number; finished: boolean; time: number }[];
+            const entries = [] as { lane: number; placement: number; finished: boolean; time: number; eliminated?: boolean; sharkEliminated?: boolean }[];
             for (const row of leaderboard) {
                 const lane = this.assignedLaneOfSwimmer(row.swimmer);
                 if (lane >= 0) {
-                    entries.push({ lane, placement: row.placement, finished: row.finished, time: row.time });
+                    entries.push({
+                        lane,
+                        placement: row.placement,
+                        finished: row.finished,
+                        time: row.time,
+                        eliminated: row.eliminated,
+                        sharkEliminated: row.sharkEliminated,
+                    });
                 }
             }
             this._netRaceController.sendResult(entries);
@@ -1635,7 +1934,7 @@ export class GameManager extends Component {
             this._netRaceController?.setAuthResultListener(null);
             done(leaderboard);
         };
-        const apply = (result: { lane: number; placement: number; finished: boolean; time: number }[]) => {
+        const apply = (result: { lane: number; placement: number; finished: boolean; time: number; eliminated?: boolean; sharkEliminated?: boolean }[]) => {
             const byLane = new Map(result.map((e) => [e.lane, e]));
             for (const row of leaderboard) {
                 // Match by the same STABLE assigned lane the host keyed by.
@@ -1644,6 +1943,8 @@ export class GameManager extends Component {
                     row.placement = auth.placement;
                     row.finished = auth.finished;
                     row.time = auth.time;
+                    row.eliminated = auth.eliminated;
+                    row.sharkEliminated = auth.sharkEliminated;
                 }
             }
             leaderboard.sort((a, b) => a.placement - b.placement);
@@ -1914,7 +2215,11 @@ export class GameManager extends Component {
                         conditionDepletionCooldown: aiCondition?.depletionCooldownRemaining ?? -1,
                     });
                 }
-                this._netRaceController.sendSnapshot(entries, this._stimulantBrawl?.snapshotState());
+                this._netRaceController.sendSnapshot(
+                    entries,
+                    this._stimulantBrawl?.snapshotState(),
+                    this._shark?.snapshot(),
+                );
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
             // frame channel): a human's owner state can no longer ride uploadFrame, so
@@ -2279,6 +2584,10 @@ export class GameManager extends Component {
             this.buildOverheadReadout();
             this.buildPlayerOverheadMarker();
             this._swimmerNameOverlay.bind(this._raceHud);
+            if (isSharkBrawlMode()) {
+                this._sharkLockOnOverlay.bind(this._raceHud);
+                this._sharkEventBanner.bind(this._raceHud);
+            }
             this.refreshSwimmerNameRoster();
             this._finishRankOverlay.bind(this._raceHud);
             this._preRaceIntroPanel.build(this._raceHud, visibleSize.width, visibleSize.height);
@@ -2382,6 +2691,22 @@ export class GameManager extends Component {
         if (swimmer !== this._playerSwimmer) {
             return;
         }
+        const bitePresentationSeconds = this._shark?.state === SharkState.BITE
+            ? Math.max(0, this._shark.remainingSeconds)
+            : 0;
+        if (bitePresentationSeconds > 0) {
+            const token = ++this._playerEliminationDialogToken;
+            this.scheduleOnce(() => {
+                if (token === this._playerEliminationDialogToken && this._state === GameState.RACING) {
+                    this.showPlayerEliminationUi();
+                }
+            }, bitePresentationSeconds);
+            return;
+        }
+        this.showPlayerEliminationUi();
+    }
+
+    private showPlayerEliminationUi() {
         if (this._eliminationDialog) {
             this._eliminationDialog.active = true;
         }
@@ -2441,6 +2766,7 @@ export class GameManager extends Component {
     }
 
     private hideEliminationAndSpectatorUi() {
+        this._playerEliminationDialogToken++;
         if (this._eliminationDialog) {
             this._eliminationDialog.active = false;
         }

@@ -34,7 +34,7 @@
 // 版本45：逐角色等级AI、合法输入分类和资源策略；完整泳道生成身份，各端体力上限一致。
 // 版本46：新增兴奋剂权威拾取事件与快照恢复状态。
 // 版本47：兴奋剂改为开局逐泳道保证波＋七波随机争抢，扩展为29位拾取掩码并同步亢奋表现。
-export const NET_RACE_PROTOCOL_VERSION = 47;
+export const NET_RACE_PROTOCOL_VERSION = 48;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 
