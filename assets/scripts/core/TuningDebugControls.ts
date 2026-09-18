@@ -399,13 +399,12 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '水雷模式',
         controls: [
-            control('minefield.mineCount', '水雷数量', '泳池中同时维持的障碍水雷数量；重开比赛后生效。', () => MINEFIELD_TUNING.mineCount, v => MINEFIELD_TUNING.mineCount = Math.round(v), 1, 3, 10, 0),
+            control('minefield.mineCount', '水雷数量', '开局生成的障碍水雷数量；重开比赛后生效。', () => MINEFIELD_TUNING.mineCount, v => MINEFIELD_TUNING.mineCount = Math.round(v), 1, 3, 10, 0),
             control('minefield.contactAlongRadius', '前后触雷范围', '身体与水雷沿赛道方向的碰撞半径。', () => MINEFIELD_TUNING.contactAlongRadius, v => MINEFIELD_TUNING.contactAlongRadius = v, 0.05, 0.5, 2.5, 2, ' m'),
             control('minefield.contactLateralRadius', '横向触雷范围', '身体与水雷跨泳道方向的碰撞半径。', () => MINEFIELD_TUNING.contactLateralRadius, v => MINEFIELD_TUNING.contactLateralRadius = v, 0.05, 0.4, 2, 2, ' m'),
             control('minefield.driftAlongRadius', '前后漂移半径', '水雷围绕锚点沿赛道方向漂动的最大距离。', () => MINEFIELD_TUNING.driftAlongRadius, v => MINEFIELD_TUNING.driftAlongRadius = v, 0.05, 0, 2, 2, ' m'),
             control('minefield.driftLateralRadius', '横向漂移半径', '水雷围绕锚点跨泳道漂动的最大距离。', () => MINEFIELD_TUNING.driftLateralRadius, v => MINEFIELD_TUNING.driftLateralRadius = v, 0.05, 0, 2, 2, ' m'),
             control('minefield.driftSpeed', '漂移速度', '所有水雷围绕锚点漂动的基础速度。', () => MINEFIELD_TUNING.driftSpeed, v => MINEFIELD_TUNING.driftSpeed = v, 0.05, 0.1, 2, 2),
-            control('minefield.respawnSeconds', '重新浮出时间', '水雷爆炸后隐藏多久再重新成为障碍。', () => MINEFIELD_TUNING.respawnSeconds, v => MINEFIELD_TUNING.respawnSeconds = v, 0.1, 1, 10, 1, ' s'),
             control('minefield.aiLookAhead', 'AI 预判距离', 'AI 在多远处开始考虑绕开同横向区域的水雷。', () => MINEFIELD_TUNING.aiLookAhead, v => MINEFIELD_TUNING.aiLookAhead = v, 0.25, 2, 10, 2, ' m'),
             control('minefield.aiAvoidOffset', 'AI 避让偏移', 'AI 绕雷时相对水雷横向中心的目标偏移。', () => MINEFIELD_TUNING.aiAvoidOffset, v => MINEFIELD_TUNING.aiAvoidOffset = v, 0.05, 0.5, 4, 2, ' m'),
         ],

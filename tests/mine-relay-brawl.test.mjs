@@ -129,7 +129,7 @@ test('水雷模式的出生布局和漂移由共享种子稳定生成', () => {
     assert.ok(a.controller.mines().every(mine => mine.active));
 });
 
-test('水雷碰到立即爆炸，并在冷却后重新漂浮', () => {
+test('水雷碰到立即爆炸，本局永久消失并只在重开时恢复', () => {
     const fixture = minefieldFixture();
     const mine = fixture.controller.mines()[0];
     fixture.racers[0].distance = mine.courseX;
@@ -141,9 +141,11 @@ test('水雷碰到立即爆炸，并在冷却后重新漂浮', () => {
     assert.equal(fixture.impacts[0].hitMask, 1);
     assert.equal(fixture.controller.mines()[mine.id].active, false);
     fixture.racers[0].distance = 0;
-    for (let elapsed = 0; elapsed < MINEFIELD_TUNING.respawnSeconds + 0.1; elapsed += 0.1) {
+    for (let elapsed = 0; elapsed < 30; elapsed += 0.1) {
         fixture.controller.update(0.1, GameState.RACING, true);
     }
+    assert.equal(fixture.controller.mines()[mine.id].active, false);
+    fixture.controller.reset();
     assert.equal(fixture.controller.mines()[mine.id].active, true);
 });
 
@@ -182,7 +184,7 @@ test('访客只接受递增的房主触雷事件', () => {
     assert.equal(fixture.controller.applyImpact(impact), false);
 });
 
-test('水雷快照修复丢失事件、漂移时钟和重生状态', () => {
+test('水雷快照修复丢失事件、漂移时钟和永久失活状态', () => {
     const host = minefieldFixture(314);
     const guest = minefieldFixture(314);
     const mine = host.controller.mines()[0];
@@ -202,13 +204,13 @@ test('水雷快照修复丢失事件、漂移时钟和重生状态', () => {
     const staleSnapshot = { ...activeSnapshot, revision: activeSnapshot.revision - 1 };
     assert.equal(guest.controller.applySnapshotState(staleSnapshot), false);
 
-    for (let elapsed = 0; elapsed < MINEFIELD_TUNING.respawnSeconds + 0.1; elapsed += 0.1) {
+    for (let elapsed = 0; elapsed < 30; elapsed += 0.1) {
         host.controller.update(0.1, GameState.RACING, true);
     }
-    const respawnedSnapshot = host.controller.snapshotState();
-    assert.equal(respawnedSnapshot.revision, activeSnapshot.revision);
-    assert.equal(guest.controller.applySnapshotState(respawnedSnapshot), true);
-    assert.equal(guest.controller.mines()[mine.id].active, true);
+    const laterSnapshot = host.controller.snapshotState();
+    assert.equal(laterSnapshot.revision, activeSnapshot.revision);
+    assert.equal(guest.controller.applySnapshotState(laterSnapshot), true);
+    assert.equal(guest.controller.mines()[mine.id].active, false);
     assert.deepEqual(guest.controller.mines(), host.controller.mines());
 });
 

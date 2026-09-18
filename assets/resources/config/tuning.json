@@ -286,7 +286,6 @@
     "minefield.driftAlongRadius": 0.75,
     "minefield.driftLateralRadius": 0.58,
     "minefield.driftSpeed": 0.72,
-    "minefield.respawnSeconds": 4.2,
     "minefield.aiLookAhead": 5.5,
     "minefield.aiAvoidOffset": 1.75,
     "dolphin.strainHr": 25,

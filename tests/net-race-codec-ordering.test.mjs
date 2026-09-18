@@ -179,7 +179,6 @@ test('minefield lifecycle state round-trips in S|', () => {
         revision: 8,
         elapsedSeconds: 14.321,
         activeMask: 0b1011011,
-        respawnSeconds: [0, 1.234, 0, 0, 2.5, 0, 0.045],
     };
     const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(
         0, [entry()], null, null, null, null, null, minefield,
@@ -225,7 +224,6 @@ test('legacy S| and P| payloads keep safe sentinel defaults', () => {
         revision: 0,
         elapsedSeconds: 0,
         activeMask: 0,
-        respawnSeconds: [],
     });
 
     const legacyP = decodeSelfSnapshot('P|2,1234,-125,0,222,456,78,444,-555,-333,666,-777');

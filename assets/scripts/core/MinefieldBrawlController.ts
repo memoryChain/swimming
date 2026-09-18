@@ -13,7 +13,6 @@ export type MinefieldMineState = {
     active: boolean;
     courseX: number;
     lateral: number;
-    respawnSeconds: number;
 };
 
 export type MinefieldImpact = {
@@ -29,7 +28,6 @@ export type MinefieldSnapshotState = {
     revision: number;
     elapsedSeconds: number;
     activeMask: number;
-    respawnSeconds: readonly number[];
 };
 
 export const MINEFIELD_TUNING = {
@@ -41,7 +39,6 @@ export const MINEFIELD_TUNING = {
     driftAlongRadius: 0.75,
     driftLateralRadius: 0.58,
     driftSpeed: 0.72,
-    respawnSeconds: 4.2,
     aiLookAhead: 5.5,
     aiAvoidOffset: 1.75,
 };
@@ -84,7 +81,6 @@ export class MinefieldBrawlController {
                 active: true,
                 courseX: anchorX,
                 lateral: anchorZ,
-                respawnSeconds: 0,
             });
             this.phaseAlong.push(random.range(0, Math.PI * 2));
             this.phaseLateral.push(random.range(0, Math.PI * 2));
@@ -99,7 +95,6 @@ export class MinefieldBrawlController {
         this.elapsed = 0;
         for (const mine of this.mineStates) {
             mine.active = true;
-            mine.respawnSeconds = 0;
         }
         this.previousRacerCourseX.fill(Number.NaN);
         this.previousRacerLateral.fill(Number.NaN);
@@ -110,12 +105,6 @@ export class MinefieldBrawlController {
         if (state !== GameState.RACING) return;
         const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
         this.elapsed += step;
-        for (const mine of this.mineStates) {
-            if (!mine.active) {
-                mine.respawnSeconds = Math.max(0, mine.respawnSeconds - step);
-                if (mine.respawnSeconds <= 0) mine.active = true;
-            }
-        }
         this.updateMinePositions();
         for (let lane = 0; lane < this.laneCount; lane++) {
             const racer = this.racerForLane(lane);
@@ -133,34 +122,26 @@ export class MinefieldBrawlController {
 
     snapshotState(): MinefieldSnapshotState {
         let activeMask = 0;
-        const respawnSeconds: number[] = [];
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
             if (mine.active) activeMask |= 1 << id;
-            respawnSeconds.push(mine.respawnSeconds);
         }
         return {
             revision: this.revision,
             elapsedSeconds: this.elapsed,
             activeMask,
-            respawnSeconds,
         };
     }
 
     applySnapshotState(state: MinefieldSnapshotState): boolean {
         if (!Number.isSafeInteger(state.revision) || state.revision < this.revision
             || !Number.isFinite(state.elapsedSeconds) || state.elapsedSeconds < 0
-            || !Number.isSafeInteger(state.activeMask) || state.activeMask < 0
-            || state.respawnSeconds.length !== this.mineStates.length) return false;
-        for (const remaining of state.respawnSeconds) {
-            if (!Number.isFinite(remaining) || remaining < 0) return false;
-        }
+            || !Number.isSafeInteger(state.activeMask) || state.activeMask < 0) return false;
         this.revision = state.revision;
         this.elapsed = state.elapsedSeconds;
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
             mine.active = (state.activeMask & (1 << id)) !== 0;
-            mine.respawnSeconds = mine.active ? 0 : state.respawnSeconds[id];
         }
         this.updateMinePositions();
         return true;
@@ -175,7 +156,6 @@ export class MinefieldBrawlController {
         this.revision = impact.revision;
         const mine = this.mineStates[impact.mineId];
         mine.active = false;
-        mine.respawnSeconds = MINEFIELD_TUNING.respawnSeconds;
         return true;
     }
 
