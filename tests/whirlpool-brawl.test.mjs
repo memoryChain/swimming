@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import Rules from '../assets/scripts/core/WhirlpoolBrawlRules.ts';
 import CareerRules from '../assets/scripts/progression/CareerRules.ts';
@@ -17,6 +18,10 @@ const {
 } = Rules;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
+const controllerSource = readFileSync(
+    new URL('../assets/scripts/core/WhirlpoolBrawlController.ts', import.meta.url),
+    'utf8',
+);
 
 function influence() {
     return {
@@ -155,6 +160,23 @@ test('AI 目标落在核心外且不越过泳池边界', () => {
         assert.ok(Math.abs(target) <= 9.25);
         assert.ok(Math.abs(target - whirlpoolCenterZ(spawn, 20)) > 2.5);
     }
+});
+
+test('漩涡表现拆分方向水流、危险核心和退场余波三层', () => {
+    assert.match(controllerSource, /buildWhirlpoolFlowGeometry\(\)/);
+    assert.match(controllerSource, /buildWhirlpoolCoreGeometry\(\)/);
+    assert.match(controllerSource, /buildWhirlpoolAfterglowGeometry\(\)/);
+    assert.match(controllerSource, /DirectionalFlow/);
+    assert.match(controllerSource, /DangerCore/);
+    assert.match(controllerSource, /ExitAfterglow/);
+    assert.match(controllerSource, /Math\.sin\(Math\.PI \* fadeProgress\)/);
+    assert.match(controllerSource, /flowRotationDegrees[\s\S]*?- visual\.spin \* rotationSpeed \* step/);
+});
+
+test('漩涡美术层复用固定网格且不引入逐帧程序绘制或粒子模拟', () => {
+    assert.match(controllerSource, /this\.meshes\.push\(flowMesh, coreMesh, afterglowMesh\)/);
+    assert.match(controllerSource, /const PRESENTATION_INTERVAL = 1 \/ 20/);
+    assert.doesNotMatch(controllerSource, /Graphics|ParticleSystem/);
 });
 
 test('漩涡赛只允许快速比赛二百米并可从存档恢复', () => {
