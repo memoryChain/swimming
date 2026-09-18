@@ -1,0 +1,148 @@
+import { BlockInputEvents, Color, Graphics, Label, LabelOutline, Node, Tween, tween, UIOpacity, UITransform, view } from 'cc';
+import { EntertainmentRecoveryPhase } from '../core/EntertainmentRecoveryController';
+import { makeLabel, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { styleProjectUiLabel } from './ProjectUiFonts';
+
+const SAMPLE_SECONDS = 0.1;
+const INVULNERABLE_TEXT = new Color(116, 236, 255, 255);
+const DIM_COLOR = new Color(0, 7, 16, 205);
+
+/** 玩家击倒／无敌提示；击倒阶段独占压暗层，倒计时仍只以 10Hz 刷新。 */
+export class EntertainmentRecoveryHud {
+    readonly root: Node;
+    private readonly overlay: Node;
+    private readonly overlayOpacity: UIOpacity;
+    private readonly dimGraphics: Graphics;
+    private readonly statusRoot: Node;
+    private readonly statusLabel: Label;
+    private elapsed = SAMPLE_SECONDS;
+    private lastText = '';
+    private lastPhase = EntertainmentRecoveryPhase.ACTIVE;
+    private layoutWidth = 0;
+    private layoutHeight = 0;
+
+    constructor(parent: Node) {
+        this.root = makeUiNode('EntertainmentRecoveryHud', parent);
+
+        this.overlay = makeUiNode('EmergencyOverlay', this.root);
+        this.overlay.addComponent(BlockInputEvents);
+        this.dimGraphics = this.overlay.addComponent(Graphics);
+        this.overlayOpacity = this.overlay.addComponent(UIOpacity);
+        const emergencyLabelNode = makeLabel('EmergencyLabel', this.overlay, '急救中……', 54, uiColor(244, 251, 255, 255));
+        emergencyLabelNode.getComponent(UITransform)!.setContentSize(620, 90);
+        const emergencyLabel = emergencyLabelNode.getComponent(Label)!;
+        emergencyLabel.enableWrapText = false;
+        emergencyLabel.overflow = Label.Overflow.SHRINK;
+        styleProjectUiLabel(emergencyLabel, 'semibold', 66);
+        const emergencyOutline = emergencyLabelNode.addComponent(LabelOutline);
+        emergencyOutline.color = uiColor(0, 6, 14, 235);
+        emergencyOutline.width = 7;
+
+        this.statusRoot = makeRoundedRect(
+            'InvulnerabilityStatus', this.root, 560, 42,
+            uiColor(7, 24, 36, 220), 18,
+            uiColor(105, 222, 255, 230), 2,
+        );
+        this.layout();
+        view.on('canvas-resize', this.layout, this);
+        view.on('design-resolution-changed', this.layout, this);
+        const labelNode = makeLabel('Status', this.statusRoot, '', 19, INVULNERABLE_TEXT);
+        labelNode.getComponent(UITransform)?.setContentSize(530, 38);
+        this.statusLabel = labelNode.getComponent(Label)!;
+        this.statusLabel.enableWrapText = false;
+        this.statusLabel.overflow = Label.Overflow.SHRINK;
+        styleProjectUiLabel(this.statusLabel, 'semibold', 34);
+        const outline = labelNode.addComponent(LabelOutline);
+        outline.color = uiColor(0, 0, 0, 100);
+        outline.width = 1;
+        this.overlay.active = false;
+        this.statusRoot.active = false;
+        this.root.active = false;
+    }
+
+    reset(): void {
+        Tween.stopAllByTarget(this.overlayOpacity);
+        this.elapsed = SAMPLE_SECONDS;
+        this.lastText = '';
+        this.lastPhase = EntertainmentRecoveryPhase.ACTIVE;
+        this.overlayOpacity.opacity = 0;
+        if (this.overlay.active) this.overlay.active = false;
+        if (this.statusRoot.active) this.statusRoot.active = false;
+        if (this.root.active) this.root.active = false;
+    }
+
+    update(dt: number, phase: EntertainmentRecoveryPhase, remainingSeconds: number): void {
+        const visible = phase !== EntertainmentRecoveryPhase.ACTIVE;
+        if (this.root.active !== visible) this.root.active = visible;
+        if (!visible) {
+            if (phase !== this.lastPhase) this.transitionTo(phase);
+            return;
+        }
+        if (phase !== this.lastPhase) this.transitionTo(phase);
+        if (phase === EntertainmentRecoveryPhase.KNOCKED) return;
+        this.elapsed += Math.max(0, Number.isFinite(dt) ? dt : 0);
+        if (this.elapsed < SAMPLE_SECONDS) return;
+        this.elapsed %= SAMPLE_SECONDS;
+        const seconds = Math.max(0, Math.ceil(remainingSeconds * 10) / 10).toFixed(1);
+        const text = `无敌保护 · ${seconds}秒`;
+        if (text !== this.lastText) {
+            this.lastText = text;
+            this.statusLabel.string = text;
+        }
+    }
+
+    dispose(): void {
+        view.off('canvas-resize', this.layout, this);
+        view.off('design-resolution-changed', this.layout, this);
+        Tween.stopAllByTarget(this.overlayOpacity);
+        if (this.root?.isValid) this.root.destroy();
+    }
+
+    private transitionTo(phase: EntertainmentRecoveryPhase): void {
+        const previous = this.lastPhase;
+        this.lastPhase = phase;
+        this.elapsed = SAMPLE_SECONDS;
+        Tween.stopAllByTarget(this.overlayOpacity);
+        if (phase === EntertainmentRecoveryPhase.KNOCKED) {
+            if (this.root.parent) this.root.setSiblingIndex(this.root.parent.children.length - 1);
+            if (this.statusRoot.active) this.statusRoot.active = false;
+            if (!this.overlay.active) this.overlay.active = true;
+            this.overlayOpacity.opacity = previous === EntertainmentRecoveryPhase.KNOCKED ? 255 : 0;
+            tween(this.overlayOpacity).to(0.18, { opacity: 255 }, { easing: 'quadOut' }).start();
+            return;
+        }
+        if (phase === EntertainmentRecoveryPhase.INVULNERABLE) {
+            if (!this.statusRoot.active) this.statusRoot.active = true;
+            if (this.overlay.active) {
+                tween(this.overlayOpacity).to(0.2, { opacity: 0 }, { easing: 'quadIn' }).call(() => {
+                    if (this.overlay.isValid) this.overlay.active = false;
+                }).start();
+            }
+            return;
+        }
+        if (this.statusRoot.active) this.statusRoot.active = false;
+        this.overlayOpacity.opacity = 0;
+        if (this.overlay.active) this.overlay.active = false;
+    }
+
+    private layout(): void {
+        if (!this.root?.isValid) return;
+        const size = view.getVisibleSize();
+        const width = Math.max(1, size.width);
+        const height = Math.max(1, size.height);
+        this.root.getComponent(UITransform)!.setContentSize(width, height);
+        this.overlay.getComponent(UITransform)!.setContentSize(width, height);
+        if (width !== this.layoutWidth || height !== this.layoutHeight) {
+            this.layoutWidth = width;
+            this.layoutHeight = height;
+            this.dimGraphics.clear();
+            this.dimGraphics.fillColor = DIM_COLOR;
+            this.dimGraphics.rect(-width * 0.5, -height * 0.5, width, height);
+            this.dimGraphics.fill();
+        }
+        const y = height * 0.5 - 172;
+        if (this.statusRoot.position.x !== 0 || this.statusRoot.position.y !== y) {
+            this.statusRoot.setPosition(0, y, 0);
+        }
+    }
+}

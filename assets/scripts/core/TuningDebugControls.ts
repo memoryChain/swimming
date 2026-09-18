@@ -21,6 +21,7 @@ import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
 import { WHIRLPOOL_BRAWL_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
+import { ENTERTAINMENT_RECOVERY_TUNING } from './EntertainmentRecoveryController';
 
 export type TuningControl = {
     id: string;
@@ -368,6 +369,14 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('whirlpool.yawAccelerationScale', '水流偏航比例', '横向水流转化为角色偏航的比例。', () => WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale, v => WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale = v, 0.01, 0, 0.6, 2),
             control('whirlpool.rollAccelerationScale', '水流侧倾比例', '横向水流转化为身体侧倾与翻滚的比例。', () => WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale, v => WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale = v, 0.02, 0, 1, 2),
             control('whirlpool.maxFlowSpeed', '水流速度上限', '所有漩涡水流叠加到泳者后的速度上限。', () => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed, v => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed = v, 0.1, 0.5, 8, 1, ' m/s'),
+        ],
+    },
+    {
+        name: '娱乐玩法击倒重生',
+        controls: [
+            control('recovery.knockedSeconds', '急救等待时间', '鲨鱼、炮弹核心或定时炸弹命中后，画面压暗并显示“急救中……”到重新入水的时间。', () => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds = v, 0.1, 0.5, 4, 1, ' s'),
+            control('recovery.invulnerableSeconds', '重生无敌时间', '重新入水后不会再次被鲨鱼、炮弹核心或定时炸弹击倒的时间。', () => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds, v => ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds = v, 0.1, 0.5, 5, 1, ' s'),
+            control('recovery.respawnSpeed', '重生初速度', '重新入水时保留的速度；设为零会完整损失原有速度。', () => ENTERTAINMENT_RECOVERY_TUNING.respawnSpeed, v => ENTERTAINMENT_RECOVERY_TUNING.respawnSpeed = v, 0.1, 0, 4, 1, ' m/s'),
         ],
     },
     {

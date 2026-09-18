@@ -79,25 +79,35 @@ export interface DecodedRaceSnapshot {
     stimulantRevision: number;
     stimulantMask: number;
     cannonRevision: number;
-    cannonEliminatedMask: number;
     cannonCompletedMask: number;
     cannonActiveStrikeId: number;
     cannonTargetDistance: number;
     cannonTargetZ: number;
     cannonRemainingSeconds: number;
     mineRelay: NetMineRelayState;
+    recovery: NetEntertainmentRecoveryState;
     shark?: NetSharkState;
 }
 
 export type NetStimulantState = { revision: number; collectedMask: number };
 export type NetCannonState = {
     revision: number;
-    eliminatedMask: number;
     completedStrikeMask: number;
     activeStrikeId: number;
     targetDistance: number;
     targetZ: number;
     remainingSeconds: number;
+};
+export type NetEntertainmentRecoveryLaneState = {
+    phase: number;
+    reason: number;
+    remainingSeconds: number;
+    distance: number;
+    revision: number;
+};
+export type NetEntertainmentRecoveryState = {
+    revision: number;
+    lanes: readonly NetEntertainmentRecoveryLaneState[];
 };
 export type NetMineRelayState = {
     revision: number;
@@ -115,8 +125,8 @@ export type NetMineRelayState = {
 };
 
 // Race-global predator state. Only the host simulates target selection, movement,
-// bites, and elimination. Guests render this quantized snapshot and use the
-// eliminated mask as a best-effort fallback for a missed reliable event.
+// bites, and knockdowns. Guests render this quantized snapshot; recovery state is
+// carried separately as a best-effort fallback for a missed reliable event.
 export interface NetSharkState {
     sequence: number;
     state: number;
@@ -128,10 +138,8 @@ export interface NetSharkState {
     facingX: number;
     facingZ: number;
     targetLane: number;
-    eliminatedLane: number;
-    eliminatedMask: number;
+    knockedLane: number;
     huntIndex: number;
-    eliminationCount: number;
 }
 
 const TAG = 'S|';
@@ -143,6 +151,7 @@ export function encodeRaceSnapshot(
     shark?: NetSharkState | null,
     cannon?: NetCannonState | null,
     mineRelay?: NetMineRelayState | null,
+    recovery?: NetEntertainmentRecoveryState | null,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
@@ -150,7 +159,8 @@ export function encodeRaceSnapshot(
     const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
     const cannonRevision = Math.max(0, Math.floor(cannon?.revision ?? 0));
-    const cannonEliminatedMask = Math.max(0, Math.floor(cannon?.eliminatedMask ?? 0)).toString(16);
+    // Header slot 4 remains reserved to keep the rest of the compact layout stable.
+    const cannonReservedMask = '0';
     const cannonCompletedMask = Math.max(0, Math.floor(cannon?.completedStrikeMask ?? 0)).toString(16);
     const cannonActiveStrike = Math.max(0, Math.floor((cannon?.activeStrikeId ?? -1) + 1));
     const cannonTargetDistance = Math.max(0, Math.round((cannon?.targetDistance ?? 0) * 100));
@@ -168,10 +178,14 @@ export function encodeRaceSnapshot(
     const mineTransferCooldownMs = Math.max(0, Math.round((mineRelay?.transferCooldownSeconds ?? 0) * 1000));
     const mineReturnProtectionMs = Math.max(0, Math.round((mineRelay?.returnProtectionSeconds ?? 0) * 1000));
     const mineRecoveryMs = Math.max(0, Math.round((mineRelay?.recoverySeconds ?? 0) * 1000));
+    const recoveryRevision = Math.max(0, Math.floor(recovery?.revision ?? 0));
+    const recoveryBody = recovery?.lanes
+        .map((lane) => `${Math.max(0, Math.floor(lane.phase))}.${Math.max(0, Math.floor(lane.reason))}.${Math.max(0, Math.round(lane.remainingSeconds * 1000))}.${Math.max(0, Math.round(lane.distance * 100))}.${Math.max(0, Math.floor(lane.revision))}`)
+        .join(':') ?? '';
     const sharkBody = shark
-        ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.eliminatedLane)},${Math.max(0, Math.floor(shark.eliminatedMask)).toString(16)},${Math.max(0, Math.floor(shark.huntIndex))},${Math.max(0, Math.floor(shark.eliminationCount))}`
+        ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonEliminatedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -190,7 +204,6 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const stimulantRevision = header.length > 1 ? parseInt(header[1], 10) : 0;
     const stimulantMask = header.length > 2 ? parseInt(header[2], 16) : 0;
     const cannonRevision = header.length > 3 ? parseInt(header[3], 10) : 0;
-    const cannonEliminatedMask = header.length > 4 ? parseInt(header[4], 16) : 0;
     const cannonCompletedMask = header.length > 5 ? parseInt(header[5], 16) : 0;
     const cannonActiveStrike = header.length > 6 ? parseInt(header[6], 10) : 0;
     const cannonTargetDistanceCm = header.length > 7 ? parseInt(header[7], 10) : 0;
@@ -208,6 +221,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const mineTransferCooldownMs = header.length > 19 ? parseInt(header[19], 10) : 0;
     const mineReturnProtectionMs = header.length > 20 ? parseInt(header[20], 10) : 0;
     const mineRecoveryMs = header.length > 21 ? parseInt(header[21], 10) : 0;
+    const recoveryRevision = header.length > 22 ? parseInt(header[22], 10) : 0;
+    const recoveryBody = header.length > 23 ? header[23] : '';
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -260,9 +275,9 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     let shark: NetSharkState | undefined;
     if (sharkSeparator >= 0) {
         const p = stateBody.slice(sharkSeparator + 1).split(',');
-        if (p.length >= 14) {
-            const values = p.map((value, index) => parseInt(value, index === 11 ? 16 : 10));
-            if (values.slice(0, 14).every(Number.isFinite)) {
+        if (p.length >= 12) {
+            const values = p.map((value) => parseInt(value, 10));
+            if (values.slice(0, 12).every(Number.isFinite)) {
                 shark = {
                     sequence: Math.max(0, values[0]),
                     state: Math.max(0, values[1]),
@@ -274,10 +289,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
                     facingX: values[7] / 1000,
                     facingZ: values[8] / 1000,
                     targetLane: values[9],
-                    eliminatedLane: values[10],
-                    eliminatedMask: Math.max(0, values[11]),
-                    huntIndex: Math.max(0, values[12]),
-                    eliminationCount: Math.max(0, values[13]),
+                    knockedLane: values[10],
+                    huntIndex: Math.max(0, values[11]),
                 };
             }
         }
@@ -288,7 +301,6 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
         stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,
         cannonRevision: Number.isSafeInteger(cannonRevision) && cannonRevision >= 0 ? cannonRevision : 0,
-        cannonEliminatedMask: Number.isSafeInteger(cannonEliminatedMask) && cannonEliminatedMask >= 0 ? cannonEliminatedMask : 0,
         cannonCompletedMask: Number.isSafeInteger(cannonCompletedMask) && cannonCompletedMask >= 0 ? cannonCompletedMask : 0,
         cannonActiveStrikeId: Number.isSafeInteger(cannonActiveStrike) && cannonActiveStrike > 0 ? cannonActiveStrike - 1 : -1,
         cannonTargetDistance: Number.isSafeInteger(cannonTargetDistanceCm) && cannonTargetDistanceCm >= 0 ? cannonTargetDistanceCm / 100 : 0,
@@ -308,8 +320,27 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             returnProtectionSeconds: safeMilliseconds(mineReturnProtectionMs),
             recoverySeconds: safeMilliseconds(mineRecoveryMs),
         },
+        recovery: decodeRecoveryState(recoveryRevision, recoveryBody),
         shark,
     };
+}
+
+function decodeRecoveryState(revision: number, body: string): NetEntertainmentRecoveryState {
+    const lanes: NetEntertainmentRecoveryLaneState[] = [];
+    if (body.length > 0) {
+        for (const token of body.split(':')) {
+            const values = token.split('.').map(value => parseInt(value, 10));
+            if (values.length !== 5 || !values.every(value => Number.isSafeInteger(value) && value >= 0)) continue;
+            lanes.push({
+                phase: values[0],
+                reason: values[1],
+                remainingSeconds: values[2] / 1000,
+                distance: values[3] / 100,
+                revision: values[4],
+            });
+        }
+    }
+    return { revision: safeNonNegativeInteger(revision), lanes };
 }
 
 function safeNonNegativeInteger(value: number): number {

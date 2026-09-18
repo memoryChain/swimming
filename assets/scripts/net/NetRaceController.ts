@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentRecoveryState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -149,14 +149,15 @@ export class NetRaceController {
     private readonly _authoritativeEvents: NetInputEvent[] = [];
     private _stimulantPickupListener: ((itemId: number, collectorLane: number, revision: number) => void) | null = null;
     private _stimulantStateListener: ((state: NetStimulantState) => void) | null = null;
-    private _sharkEliminationListener: ((sequence: number, targetLane: number) => void) | null = null;
+    private _sharkKnockdownListener: ((sequence: number, targetLane: number, distance: number) => void) | null = null;
     private _sharkStateListener: ((state: NetSharkState) => void) | null = null;
     private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
-    private _cannonImpactListener: ((strikeId: number, hitMask: number, eliminatedLane: number, revision: number) => void) | null = null;
+    private _cannonImpactListener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number) => void) | null = null;
     private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
+    private _recoveryStateListener: ((state: NetEntertainmentRecoveryState) => void) | null = null;
     private _mineRelayArmListener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null = null;
     private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
-    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, revision: number) => void) | null = null;
+    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number) => void) | null = null;
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
     private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null = null;
 
@@ -197,13 +198,18 @@ export class NetRaceController {
         this._stimulantStateListener = listener;
     }
 
-    enqueueSharkElimination(sequence: number, targetLane: number): void {
+    enqueueSharkKnockdown(sequence: number, targetLane: number, distance: number): void {
         if (!this._isHost || this._disposed) return;
-        this._authoritativeEvents.push({ kind: NetInputKind.SharkElimination, sharkSequence: sequence, targetLane });
+        this._authoritativeEvents.push({
+            kind: NetInputKind.SharkKnockdown,
+            sharkSequence: sequence,
+            targetLane,
+            knockedDistance: distance,
+        });
     }
 
-    setSharkEliminationListener(listener: ((sequence: number, targetLane: number) => void) | null): void {
-        this._sharkEliminationListener = listener;
+    setSharkKnockdownListener(listener: ((sequence: number, targetLane: number, distance: number) => void) | null): void {
+        this._sharkKnockdownListener = listener;
     }
 
     setSharkStateListener(listener: ((state: NetSharkState) => void) | null): void {
@@ -222,13 +228,14 @@ export class NetRaceController {
         });
     }
 
-    enqueueCannonImpact(strikeId: number, hitMask: number, eliminatedLane: number, revision: number): void {
+    enqueueCannonImpact(strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.CannonImpact,
             cannonStrikeId: strikeId,
             hitMask,
-            eliminatedLane,
+            knockedLane,
+            knockedDistance,
             revision,
         });
     }
@@ -237,12 +244,16 @@ export class NetRaceController {
         this._cannonLaunchListener = listener;
     }
 
-    setCannonImpactListener(listener: ((strikeId: number, hitMask: number, eliminatedLane: number, revision: number) => void) | null): void {
+    setCannonImpactListener(listener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number) => void) | null): void {
         this._cannonImpactListener = listener;
     }
 
     setCannonStateListener(listener: ((state: NetCannonState) => void) | null): void {
         this._cannonStateListener = listener;
+    }
+
+    setRecoveryStateListener(listener: ((state: NetEntertainmentRecoveryState) => void) | null): void {
+        this._recoveryStateListener = listener;
     }
 
     enqueueMineRelayArm(roundId: number, carrierLane: number, fuseSeconds: number, revision: number): void {
@@ -268,13 +279,14 @@ export class NetRaceController {
         });
     }
 
-    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, revision: number): void {
+    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MineRelayResolution,
             mineRoundId: roundId,
             mineCarrierLane: carrierLane,
             exploded,
+            mineDistance: distance,
             revision,
         });
     }
@@ -287,7 +299,7 @@ export class NetRaceController {
         this._mineRelayTransferListener = listener;
     }
 
-    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, revision: number) => void) | null): void {
+    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number) => void) | null): void {
         this._mineRelayResolutionListener = listener;
     }
 
@@ -473,10 +485,11 @@ export class NetRaceController {
         shark?: NetSharkState | null,
         cannon?: NetCannonState | null,
         mineRelay?: NetMineRelayState | null,
+        recovery?: NetEntertainmentRecoveryState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark, cannon, mineRelay));
+        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark, cannon, mineRelay, recovery));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -611,13 +624,13 @@ export class NetRaceController {
                 }
                 this._cannonStateListener?.({
                     revision: snapshot.cannonRevision,
-                    eliminatedMask: snapshot.cannonEliminatedMask,
                     completedStrikeMask: snapshot.cannonCompletedMask,
                     activeStrikeId: snapshot.cannonActiveStrikeId,
                     targetDistance: snapshot.cannonTargetDistance,
                     targetZ: snapshot.cannonTargetZ,
                     remainingSeconds: snapshot.cannonRemainingSeconds,
                 });
+                this._recoveryStateListener?.(snapshot.recovery);
                 this._mineRelayStateListener?.(snapshot.mineRelay);
             }
             this.refreshHud();
@@ -942,9 +955,10 @@ export class NetRaceController {
             if (event.kind === NetInputKind.StimulantPickup) {
                 if (event.itemId === undefined || event.collectorLane === undefined || event.revision === undefined) continue;
                 this._stimulantPickupListener?.(event.itemId, event.collectorLane, event.revision);
-            } else if (event.kind === NetInputKind.SharkElimination) {
-                if (event.sharkSequence === undefined || event.targetLane === undefined) continue;
-                this._sharkEliminationListener?.(event.sharkSequence, event.targetLane);
+            } else if (event.kind === NetInputKind.SharkKnockdown) {
+                if (event.sharkSequence === undefined || event.targetLane === undefined
+                    || event.knockedDistance === undefined) continue;
+                this._sharkKnockdownListener?.(event.sharkSequence, event.targetLane, event.knockedDistance);
             } else if (event.kind === NetInputKind.CannonLaunch) {
                 if (event.cannonStrikeId === undefined || event.targetDistance === undefined
                     || event.targetZ === undefined || event.warningSeconds === undefined
@@ -954,9 +968,10 @@ export class NetRaceController {
                 );
             } else if (event.kind === NetInputKind.CannonImpact) {
                 if (event.cannonStrikeId === undefined || event.hitMask === undefined
-                    || event.eliminatedLane === undefined || event.revision === undefined) continue;
+                    || event.knockedLane === undefined || event.knockedDistance === undefined
+                    || event.revision === undefined) continue;
                 this._cannonImpactListener?.(
-                    event.cannonStrikeId, event.hitMask, event.eliminatedLane, event.revision,
+                    event.cannonStrikeId, event.hitMask, event.knockedLane, event.knockedDistance, event.revision,
                 );
             } else if (event.kind === NetInputKind.MineRelayArm) {
                 if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
@@ -973,9 +988,10 @@ export class NetRaceController {
                 );
             } else if (event.kind === NetInputKind.MineRelayResolution) {
                 if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
-                    || event.exploded === undefined || event.revision === undefined) continue;
+                    || event.exploded === undefined || event.mineDistance === undefined
+                    || event.revision === undefined) continue;
                 this._mineRelayResolutionListener?.(
-                    event.mineRoundId, event.mineCarrierLane, event.exploded, event.revision,
+                    event.mineRoundId, event.mineCarrierLane, event.exploded, event.mineDistance, event.revision,
                 );
             } else if (event.kind === NetInputKind.MinefieldImpact) {
                 if (event.mineId === undefined || event.mineHitLane === undefined

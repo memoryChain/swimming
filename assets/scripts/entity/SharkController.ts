@@ -20,10 +20,8 @@ export type SharkRaceState = {
     facingX: number;
     facingZ: number;
     targetLane: number;
-    eliminatedLane: number;
-    eliminatedMask: number;
+    knockedLane: number;
     huntIndex: number;
-    eliminationCount: number;
 };
 
 export type SharkControllerOptions = {
@@ -32,7 +30,7 @@ export type SharkControllerOptions = {
     swimmers: () => readonly Swimmer[];
     laneFor: (swimmer: Swimmer) => number;
     swimmerForLane: (lane: number) => Swimmer | null;
-    onEliminate: (swimmer: Swimmer) => void;
+    onKnockDown: (swimmer: Swimmer) => void;
     onRevealed?: (x: number, z: number) => void;
     onStateChange?: (state: SharkState) => void;
     // Fires exactly when the no-bite wind-up ends and true pursuit begins.
@@ -58,11 +56,8 @@ export class SharkController {
     private _facingX = 1;
     private _facingZ = 0;
     private _sequence = 0;
-    private _eliminatedLane = -1;
-    private _eliminatedMask = 0;
-    private _appliedEliminatedMask = 0;
+    private _knockedLane = -1;
     private _huntIndex = 0;
-    private _eliminationCount = 0;
     private _wanderWaypoint = 0;
     private readonly _obstacleContacts = new Set<Swimmer>();
 
@@ -75,8 +70,7 @@ export class SharkController {
     get sequence(): number { return this._sequence; }
     get raceElapsed(): number { return this._raceElapsed; }
     get remainingSeconds(): number { return this._remainingSeconds; }
-    get eliminatedLane(): number { return this._eliminatedLane; }
-    get eliminatedMask(): number { return this._eliminatedMask; }
+    get knockedLane(): number { return this._knockedLane; }
     get huntIndex(): number { return this._huntIndex; }
     get target(): Swimmer | null { return this._target; }
     // Presentation-only consumers (such as the picture-in-picture feed) may observe
@@ -95,11 +89,8 @@ export class SharkController {
         this._target = null;
         this._approachNotifiedTarget = null;
         this._sequence = 0;
-        this._eliminatedLane = -1;
-        this._eliminatedMask = 0;
-        this._appliedEliminatedMask = 0;
+        this._knockedLane = -1;
         this._huntIndex = 0;
-        this._eliminationCount = 0;
         this._wanderWaypoint = 0;
         this._obstacleContacts.clear();
         if (this._opts.node.active) this._opts.node.active = false;
@@ -108,7 +99,7 @@ export class SharkController {
     private beginHuntBeat(): void {
         if (this._huntIndex >= SHARK_TUNING.hungerSchedule.length) return;
         this._sequence++;
-        this._eliminatedLane = -1;
+        this._knockedLane = -1;
         this._target = null;
         this._approachNotifiedTarget = null;
         const firstReveal = this._state === SharkState.INACTIVE;
@@ -187,18 +178,13 @@ export class SharkController {
             const mouthDz = targetPos.z - mouthZ;
             const mouthDistanceSq = mouthDx * mouthDx + mouthDz * mouthDz;
             if (mouthDistanceSq <= SHARK_TUNING.catchRadius * SHARK_TUNING.catchRadius) {
-                this._eliminatedLane = this._opts.laneFor(target);
-                if (this._eliminatedLane >= 0 && this._eliminatedLane < 30) {
-                    this._eliminatedMask |= 1 << this._eliminatedLane;
-                    this._appliedEliminatedMask |= 1 << this._eliminatedLane;
-                }
-                this._eliminationCount++;
+                this._knockedLane = this._opts.laneFor(target);
                 this._biteDirectionX = this._facingX;
                 this._biteDirectionZ = this._facingZ;
                 this._remainingSeconds = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
                 this._huntOpeningGraceSeconds = 0;
                 this.setState(SharkState.BITE);
-                this._opts.onEliminate(target);
+                this._opts.onKnockDown(target);
                 return;
             }
             const distance = Math.sqrt(dx * dx + dz * dz);
@@ -223,10 +209,8 @@ export class SharkController {
             facingX: this._facingX,
             facingZ: this._facingZ,
             targetLane: this._target ? this._opts.laneFor(this._target) : -1,
-            eliminatedLane: this._eliminatedLane,
-            eliminatedMask: this._eliminatedMask,
+            knockedLane: this._knockedLane,
             huntIndex: this._huntIndex,
-            eliminationCount: this._eliminationCount,
         };
     }
 
@@ -241,10 +225,8 @@ export class SharkController {
         this._raceElapsed = Math.max(0, state.raceElapsed);
         this._remainingSeconds = Math.max(0, state.remainingSeconds);
         this._huntOpeningGraceSeconds = Math.max(0, state.huntOpeningGraceSeconds);
-        this._eliminatedLane = state.eliminatedLane;
-        this._eliminatedMask = Math.max(0, Math.floor(state.eliminatedMask));
+        this._knockedLane = state.knockedLane;
         this._huntIndex = Math.max(0, Math.floor(state.huntIndex));
-        this._eliminationCount = Math.max(0, Math.floor(state.eliminationCount));
         this._facingX = Number.isFinite(state.facingX) ? state.facingX : this._facingX;
         this._facingZ = Number.isFinite(state.facingZ) ? state.facingZ : this._facingZ;
         this._target = state.targetLane >= 0 ? this._opts.swimmerForLane(state.targetLane) : null;
@@ -268,12 +250,6 @@ export class SharkController {
         if (previousState === SharkState.INACTIVE && state.state !== SharkState.INACTIVE) {
             this._opts.onRevealed?.(state.x, state.z);
         }
-        this.applyEliminatedMask(this._eliminatedMask);
-    }
-
-    applyElimination(lane: number): void {
-        if (!Number.isSafeInteger(lane) || lane < 0 || lane >= 30) return;
-        this.applyEliminatedMask(this._eliminatedMask | (1 << lane));
     }
 
     resolveObstacleCollisions(swimmers: readonly Swimmer[]): void {
@@ -318,8 +294,7 @@ export class SharkController {
         this._huntEngaged = false;
         this._target = null;
         this._approachNotifiedTarget = null;
-        if (this._eliminationCount >= SHARK_TUNING.maxEliminations
-            || this._huntIndex >= SHARK_TUNING.hungerSchedule.length) {
+        if (this._huntIndex >= SHARK_TUNING.hungerSchedule.length) {
             this.setState(SharkState.SATIATED);
         } else {
             this.selectNearestWanderWaypoint();
@@ -434,21 +409,6 @@ export class SharkController {
             }
         }
         this._wanderWaypoint = best;
-    }
-
-    private applyEliminatedMask(mask: number): void {
-        const newlyEliminated = mask & ~this._appliedEliminatedMask;
-        this._eliminatedMask |= mask;
-        if (newlyEliminated === 0) return;
-        for (let lane = 0; lane < 30; lane++) {
-            if ((newlyEliminated & (1 << lane)) === 0) continue;
-            const swimmer = this._opts.swimmerForLane(lane);
-            // The room may receive the event before deferred AI/remote bodies have
-            // been built. Leave that bit unapplied so the next host snapshot retries.
-            if (!swimmer) continue;
-            this._appliedEliminatedMask |= 1 << lane;
-            this._opts.onEliminate(swimmer);
-        }
     }
 
     private moveAndFace(nx: number, nz: number, distance: number): void {

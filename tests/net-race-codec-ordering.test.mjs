@@ -88,7 +88,7 @@ test('minefield impact round-trips on the reliable input channel', () => {
     }]);
 });
 
-test('shark state and permanent elimination event round-trip across both sync fallbacks', () => {
+test('shark state and knockdown event round-trip across both sync fallbacks', () => {
     const shark = {
         sequence: 3,
         state: 2,
@@ -100,22 +100,20 @@ test('shark state and permanent elimination event round-trip across both sync fa
         facingX: 0.707,
         facingZ: -0.707,
         targetLane: 5,
-        eliminatedLane: 2,
-        eliminatedMask: 0b00100100,
+        knockedLane: 2,
         huntIndex: 2,
-        eliminationCount: 2,
     };
     const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, shark));
     assert.deepEqual(snapshot.shark, shark);
 
     const event = decodeInputFrame(encodeInputFrame(
         0,
-        [{ kind: 'e', sharkSequence: 3, targetLane: 2 }],
+        [{ kind: 'e', sharkSequence: 3, targetLane: 2, knockedDistance: 86.42 }],
         null,
         -1,
         45,
     ));
-    assert.deepEqual(event.events, [{ kind: 'e', sharkSequence: 3, targetLane: 2 }]);
+    assert.deepEqual(event.events, [{ kind: 'e', sharkSequence: 3, targetLane: 2, knockedDistance: 86.42 }]);
 });
 
 test('authoritative results preserve shark and cannon elimination separately from ordinary DNF', () => {
@@ -139,16 +137,15 @@ test('cannon launch, impact and active strike round-trip across reliable events 
     }]);
     const impact = decodeInputFrame(encodeInputFrame(
         0,
-        [{ kind: 'x', cannonStrikeId: 3, hitMask: 0b01010100, eliminatedLane: 6, revision: 8 }],
+        [{ kind: 'x', cannonStrikeId: 3, hitMask: 0b01010100, knockedLane: 6, knockedDistance: 87.12, revision: 8 }],
         null,
         -1,
         47,
     ));
-    assert.deepEqual(impact.events, [{ kind: 'x', cannonStrikeId: 3, hitMask: 0b01010100, eliminatedLane: 6, revision: 8 }]);
+    assert.deepEqual(impact.events, [{ kind: 'x', cannonStrikeId: 3, hitMask: 0b01010100, knockedLane: 6, knockedDistance: 87.12, revision: 8 }]);
 
     const state = {
         revision: 7,
-        eliminatedMask: 0b01000000,
         completedStrikeMask: 0b111,
         activeStrikeId: 3,
         targetDistance: 87.36,
@@ -157,7 +154,6 @@ test('cannon launch, impact and active strike round-trip across reliable events 
     };
     const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, null, state));
     assert.equal(snapshot.cannonRevision, 7);
-    assert.equal(snapshot.cannonEliminatedMask, 0b01000000);
     assert.equal(snapshot.cannonCompletedMask, 0b111);
     assert.equal(snapshot.cannonActiveStrikeId, 3);
     assert.equal(snapshot.cannonTargetDistance, 87.36);
@@ -165,11 +161,24 @@ test('cannon launch, impact and active strike round-trip across reliable events 
     assert.equal(snapshot.cannonRemainingSeconds, 0.73);
 });
 
+test('entertainment recovery phases and authoritative respawn distance round-trip in S|', () => {
+    const recovery = {
+        revision: 9,
+        lanes: [
+            { phase: 0, reason: 0, remainingSeconds: 0, distance: 0, revision: 0 },
+            { phase: 1, reason: 1, remainingSeconds: 1.234, distance: 54.32, revision: 8 },
+            { phase: 2, reason: 3, remainingSeconds: 0.876, distance: 87.65, revision: 9 },
+        ],
+    };
+    const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, null, null, null, recovery));
+    assert.deepEqual(snapshot.recovery, recovery);
+});
+
 test('timed bomb arm, transfer, resolution and active state round-trip across both sync paths', () => {
     const events = [
         { kind: 'm', mineRoundId: 2, mineCarrierLane: 5, fuseSeconds: 6.5, revision: 11 },
         { kind: 't', mineRoundId: 2, mineFromLane: 5, mineToLane: 3, remainingSeconds: 4.321, revision: 12 },
-        { kind: 'b', mineRoundId: 2, mineCarrierLane: 3, exploded: true, revision: 13 },
+        { kind: 'b', mineRoundId: 2, mineCarrierLane: 3, exploded: true, mineDistance: 91.24, revision: 13 },
     ];
     const decoded = decodeInputFrame(encodeInputFrame(0, events, null, -1, 48));
     assert.deepEqual(decoded.events, events);

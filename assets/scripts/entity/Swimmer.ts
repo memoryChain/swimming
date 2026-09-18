@@ -98,6 +98,8 @@ export class Swimmer extends Component {
     private _cameraCollisionPitchApplied = 0;
     private _lateralMinWorld = Number.NEGATIVE_INFINITY;
     private _lateralMaxWorld = Number.POSITIVE_INFINITY;
+    private _entertainmentKnocked = false;
+    private _entertainmentInvulnerable = false;
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
@@ -126,6 +128,8 @@ export class Swimmer extends Component {
     get isCollisionActive(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && !this._entertainmentKnocked
+            && !this._entertainmentInvulnerable
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater
@@ -135,6 +139,8 @@ export class Swimmer extends Component {
     get isSharkTargetable(): boolean {
         return this._motor.isRacing
             && this.node.active
+            && !this._entertainmentKnocked
+            && !this._entertainmentInvulnerable
             && !this._phases.isFlipTurnActive
             && !this._phases.isDolphinJumpActive
             && !this._phases.isUnderwater;
@@ -445,6 +451,47 @@ export class Swimmer extends Component {
         if (hideImmediately && this.node.active) this.node.active = false;
     }
 
+    beginEntertainmentKnockout(): void {
+        if (this._entertainmentKnocked) return;
+        this._entertainmentKnocked = true;
+        this._entertainmentInvulnerable = false;
+        this._movementSpeed = 0;
+        Tween.stopAllByTarget(this.node);
+        this._phases.clearFlipTurnPhase(true);
+        this._phases.clearDiveUnderwaterPhase();
+        this._motor.suspendForEntertainmentKnockout();
+        this.cartoonRig?.finishDiveChargeEffect();
+        this.cartoonRig?.setActiveSwimming(false);
+        this.cartoonRig?.setPerfectGlowActive(false);
+    }
+
+    respawnAfterEntertainmentHit(distance: number, worldZ: number, initialSpeed: number): void {
+        Tween.stopAllByTarget(this.node);
+        this._movementSpeed = 0;
+        this._entertainmentKnocked = false;
+        this._entertainmentInvulnerable = true;
+        this._phases.clearFlipTurnPhase(true);
+        this._phases.clearDiveUnderwaterPhase();
+        this._motor.resumeAfterEntertainmentHit(distance, initialSpeed);
+        this._motor.setLateralOffset(worldZ - this._startPosition.z);
+        if (!this.node.active) this.node.active = true;
+        this.applyCoursePosition(this._motor.distance);
+        this.resetPose();
+        this.cartoonRig?.setDiveReady(false);
+        this.cartoonRig?.setActiveSwimming(true);
+        this.cartoonRig?.finishDiveChargeEffect();
+        this.cartoonRig?.setPerfectGlowActive(true);
+    }
+
+    endEntertainmentInvulnerability(): void {
+        this._entertainmentKnocked = false;
+        this._entertainmentInvulnerable = false;
+        this.updatePerfectZoneGlow();
+    }
+
+    get isEntertainmentKnocked(): boolean { return this._entertainmentKnocked; }
+    get isEntertainmentInvulnerable(): boolean { return this._entertainmentInvulnerable; }
+
     hideAfterElimination() {
         if (this.node.active) this.node.active = false;
     }
@@ -479,6 +526,8 @@ export class Swimmer extends Component {
     }
 
     startRace(initialDistance = 0, initialSpeed = SWIMMER_BALANCE.baseSpeed, fromDiveEntry = false) {
+        this._entertainmentKnocked = false;
+        this._entertainmentInvulnerable = false;
         this._movementSpeed = 0;
         this.captureStartPosition();
         this._ultimate.reset();
@@ -946,6 +995,8 @@ export class Swimmer extends Component {
     }
 
     reset() {
+        this._entertainmentKnocked = false;
+        this._entertainmentInvulnerable = false;
         this._movementSpeed = 0;
         this.cartoonRig?.setStandingSurface(null);
         this.captureStartPosition();
@@ -988,7 +1039,12 @@ export class Swimmer extends Component {
     }
 
     private updatePerfectZoneGlow() {
+        if (this._entertainmentInvulnerable) {
+            this.cartoonRig?.setPerfectGlowActive(true);
+            return;
+        }
         if (this.isAI || !PERFORMANCE_CONFIG.visualFeedback.perfectZoneBodyGlowEnabled) {
+            this.cartoonRig?.setPerfectGlowActive(false);
             return;
         }
         const leftHeld = this._motor.isActiveStrokeHeld(StrokeType.LEFT);

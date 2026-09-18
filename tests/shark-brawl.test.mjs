@@ -10,9 +10,8 @@ const { SHARK_TUNING, SharkState } = SharkTuning;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 
-test('鲨鱼大乱斗固定进行三轮追猎并最多永久淘汰三人', () => {
+test('鲨鱼大乱斗固定进行三轮追猎并在第三轮后退场', () => {
     assert.deepEqual(SHARK_TUNING.hungerSchedule, [15, 35, 55]);
-    assert.equal(SHARK_TUNING.maxEliminations, 3);
     assert.ok(SHARK_TUNING.warningSeconds > 0);
     assert.ok(SHARK_TUNING.huntOpeningGraceSeconds > 0);
     assert.ok(SHARK_TUNING.huntSeconds > 0);
@@ -28,7 +27,9 @@ test('鲨鱼模式使用固定场景控制器而非角色技能召唤', () => {
     assert.match(controller, /hungerSchedule/);
     assert.match(controller, /beginHuntBeat/);
     assert.match(controller, /resolveObstacleCollisions/);
-    assert.match(controller, /eliminatedMask/);
+    assert.match(controller, /onKnockDown/);
+    assert.match(controller, /knockedLane/);
+    assert.doesNotMatch(controller, /eliminatedMask|applyElimination/);
     assert.doesNotMatch(controller, /trySummon|ownerLane/);
     assert.equal(existsSync(new URL('../assets/race/models/SharkModel.glb', import.meta.url)), true);
 });

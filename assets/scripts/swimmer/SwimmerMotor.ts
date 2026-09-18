@@ -191,6 +191,32 @@ export class SwimmerMotor {
         this.collisionSoftness.reset();
     }
 
+    /** 娱乐玩法击倒：暂停推进并清空当前动作，但保留心率、角色能力积累和赛程状态。 */
+    suspendForEntertainmentKnockout() {
+        this.beginFlipTurnPhase();
+        this._isRacing = false;
+        this._currentSpeed = 0;
+        this._speedCapBonus = 0;
+        this._glidePhaseActive = false;
+        this._glideDrag = SWIMMER_BALANCE.glideDrag;
+    }
+
+    /** 娱乐玩法重生：从权威赛程距离以指定速度恢复，不执行整场比赛初始化。 */
+    resumeAfterEntertainmentHit(distance: number, speed: number) {
+        this._isRacing = true;
+        this._distance = Math.max(0, Math.min(getRaceDistance(), distance));
+        this._currentSpeed = Math.max(0, speed);
+        this._currentAcceleration = 0;
+        this._speedCapBonus = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
+        this._heading = 0;
+        this._headingTurnRate = 0;
+        this._poolWallRecoveryDirection = 0;
+        this.clearKnockback();
+        this._axialRoll.reset();
+        this._collisionPitch.reset();
+        this.collisionSoftness.reset();
+    }
+
     // Toggled by the Swimmer for post-dive and post-turn underwater glides.
     setGlidePhase(
         active: boolean,

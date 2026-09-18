@@ -79,6 +79,7 @@ test('定时炸弹锁定后不能传递，归零只结算当前持有者', () =>
     assert.equal(fixture.resolutions.length, 1);
     assert.equal(fixture.resolutions[0].carrierLane, carrier);
     assert.equal(fixture.resolutions[0].exploded, true);
+    assert.equal(fixture.resolutions[0].distance, fixture.racers[carrier].distance);
 });
 
 test('定时炸弹携带者冲线后拆弹，快照不会重复爆炸', () => {

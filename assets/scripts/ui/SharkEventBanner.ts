@@ -1,85 +1,134 @@
-import { Color, Label, LabelOutline, Node, UIOpacity, UITransform } from 'cc';
+import { Color, Label, LabelOutline, Node, UITransform } from 'cc';
 import { makeLabel, makeUiNode } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
-// One stable, event-driven banner for shark state changes. It deliberately does
-// not animate or redraw every frame; update() merely hides it once its deadline
-// passes, keeping race HUD work negligible on iOS WeChat.
-export class SharkEventBanner {
-    private _root: Node | null = null;
-    private _label: Label | null = null;
-    private _until = 0;
-    private _text = '';
-    private readonly _queue: { text: string; color: Color; durationMs: number }[] = [];
+export type EntertainmentBannerTone = 'info' | 'warning' | 'danger' | 'success';
+
+const TONE_COLORS: Record<EntertainmentBannerTone, Readonly<Color>> = {
+    info: new Color(116, 226, 255, 255),
+    warning: new Color(255, 196, 82, 255),
+    danger: new Color(255, 86, 70, 255),
+    success: new Color(120, 220, 150, 255),
+};
+
+type QueuedEvent = {
+    text: string;
+    tone: EntertainmentBannerTone;
+    durationMs: number;
+};
+
+/**
+ * 娱乐玩法共用的比赛文字通道。
+ * 大型赛事广播与较轻的个人反馈各自只有一个稳定节点；事件触发时替换文字，
+ * 不创建临时 Toast，也不在比赛热路径重建 UI。
+ */
+export class EntertainmentEventBanner {
+    private eventRoot: Node | null = null;
+    private eventLabel: Label | null = null;
+    private eventUntil = 0;
+    private personalRoot: Node | null = null;
+    private personalLabel: Label | null = null;
+    private personalUntil = 0;
+    private readonly eventQueue: QueuedEvent[] = [];
 
     bind(hud: Node): void {
-        if (this._root?.isValid || !hud?.isValid) return;
-        // Matches the old shark alert treatment: large heavy type with a dark
-        // outline, rather than an ordinary compact HUD label.
-        const root = makeUiNode('SharkEventBanner', hud);
-        root.getComponent(UITransform)!.setContentSize(720, 120);
-        root.setPosition(0, 210, 0);
-        root.addComponent(UIOpacity).opacity = 255;
-        const labelNode = makeLabel('Label', root, '', 40, new Color(255, 200, 100, 255));
-        labelNode.getComponent(UITransform)!.setContentSize(720, 100);
-        const label = labelNode.getComponent(Label)!;
-        styleProjectUiLabel(label, 'semibold', 50);
-        const outline = labelNode.addComponent(LabelOutline);
-        outline.color = new Color(6, 16, 30, 235);
-        outline.width = 6;
-        this._root = root;
-        this._label = label;
-        root.active = false;
+        if (this.eventRoot?.isValid || !hud?.isValid) return;
+
+        // 赛事广播延续鲨鱼玩法已确认的大字、深描边风格。
+        const eventRoot = makeUiNode('EntertainmentEventBanner', hud);
+        eventRoot.getComponent(UITransform)!.setContentSize(840, 86);
+        eventRoot.setPosition(0, 180, 0);
+        const eventLabelNode = makeLabel('Label', eventRoot, '', 40, TONE_COLORS.warning);
+        eventLabelNode.getComponent(UITransform)!.setContentSize(840, 74);
+        const eventLabel = eventLabelNode.getComponent(Label)!;
+        eventLabel.enableWrapText = false;
+        eventLabel.overflow = Label.Overflow.SHRINK;
+        styleProjectUiLabel(eventLabel, 'semibold', 50);
+        const eventOutline = eventLabelNode.addComponent(LabelOutline);
+        eventOutline.color = new Color(6, 16, 30, 235);
+        eventOutline.width = 6;
+        eventRoot.active = false;
+
+        // 个人反馈与赛事广播同源，但体量更小，避免每次拾取或传递都压住赛道。
+        const personalRoot = makeUiNode('EntertainmentPersonalFeedback', hud);
+        personalRoot.getComponent(UITransform)!.setContentSize(700, 52);
+        personalRoot.setPosition(0, 112, 0);
+        const personalLabelNode = makeLabel('Label', personalRoot, '', 28, TONE_COLORS.info);
+        personalLabelNode.getComponent(UITransform)!.setContentSize(700, 50);
+        const personalLabel = personalLabelNode.getComponent(Label)!;
+        personalLabel.enableWrapText = false;
+        personalLabel.overflow = Label.Overflow.SHRINK;
+        styleProjectUiLabel(personalLabel, 'semibold', 38);
+        const personalOutline = personalLabelNode.addComponent(LabelOutline);
+        personalOutline.color = new Color(6, 16, 30, 225);
+        personalOutline.width = 4;
+        personalRoot.active = false;
+
+        this.eventRoot = eventRoot;
+        this.eventLabel = eventLabel;
+        this.personalRoot = personalRoot;
+        this.personalLabel = personalLabel;
     }
 
-    show(text: string, color: Color, durationMs: number): void {
-        this._queue.length = 0;
-        this.present(text, color, durationMs);
+    showEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+        this.eventQueue.length = 0;
+        this.presentEvent(text, tone, durationMs);
     }
 
-    // Used for a consequence that must follow the current alert (for example,
-    // "XX was taken" followed by the shark's withdrawal). Event-only, so the
-    // tiny queue creates no race-frame churn.
-    enqueue(text: string, color: Color, durationMs: number): void {
-        const root = this._root;
-        if (!root?.isValid) return;
-        if (!root.active) {
-            this.present(text, color, durationMs);
+    enqueueEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+        if (!this.eventRoot?.isValid) return;
+        if (!this.eventRoot.active) {
+            this.presentEvent(text, tone, durationMs);
             return;
         }
-        this._queue.push({ text, color, durationMs: Math.max(0, durationMs) });
+        this.eventQueue.push({ text, tone, durationMs: Math.max(0, durationMs) });
     }
 
-    private present(text: string, color: Color, durationMs: number): void {
-        const root = this._root;
-        const label = this._label;
+    showPersonal(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+        const root = this.personalRoot;
+        const label = this.personalLabel;
         if (!root?.isValid || !label) return;
-        if (label.string !== text) label.string = text;
-        // Event-only assignment; Color is not mutated elsewhere on this label.
-        if (label.color.r !== color.r || label.color.g !== color.g || label.color.b !== color.b || label.color.a !== color.a) {
-            label.color = color;
-        }
+        this.setLabel(label, text, tone);
         if (!root.active) root.active = true;
-        this._text = text;
-        this._until = Date.now() + Math.max(0, durationMs);
+        this.personalUntil = Date.now() + Math.max(0, durationMs);
     }
 
     update(): void {
-        const root = this._root;
-        if (!root?.active || Date.now() < this._until) return;
-        const next = this._queue.shift();
-        if (next) {
-            this.present(next.text, next.color, next.durationMs);
-            return;
+        if (!this.eventRoot?.active && !this.personalRoot?.active) return;
+        const now = Date.now();
+        const eventRoot = this.eventRoot;
+        if (eventRoot?.active && now >= this.eventUntil) {
+            const next = this.eventQueue.shift();
+            if (next) this.presentEvent(next.text, next.tone, next.durationMs);
+            else eventRoot.active = false;
         }
-        root.active = false;
-        this._text = '';
+        const personalRoot = this.personalRoot;
+        if (personalRoot?.active && now >= this.personalUntil) personalRoot.active = false;
     }
 
     hide(): void {
-        if (this._root?.active) this._root.active = false;
-        this._until = 0;
-        this._text = '';
-        this._queue.length = 0;
+        if (this.eventRoot?.active) this.eventRoot.active = false;
+        if (this.personalRoot?.active) this.personalRoot.active = false;
+        this.eventUntil = 0;
+        this.personalUntil = 0;
+        this.eventQueue.length = 0;
+    }
+
+    private presentEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+        const root = this.eventRoot;
+        const label = this.eventLabel;
+        if (!root?.isValid || !label) return;
+        this.setLabel(label, text, tone);
+        if (!root.active) root.active = true;
+        this.eventUntil = Date.now() + Math.max(0, durationMs);
+    }
+
+    private setLabel(label: Label, text: string, tone: EntertainmentBannerTone): void {
+        if (label.string !== text) label.string = text;
+        const color = TONE_COLORS[tone];
+        if (!label.color.equals(color)) label.color = color;
     }
 }
+
+// 旧类名保留为源码兼容别名；新的调用统一使用 EntertainmentEventBanner。
+export { EntertainmentEventBanner as SharkEventBanner };

@@ -4,9 +4,9 @@ import { makeLabel, makeRoundedRect, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
 const SAMPLE_SECONDS = 0.1;
-const NORMAL_TEXT = new Color(231, 248, 255, 255);
-const WARNING_TEXT = new Color(255, 225, 72, 255);
-const DANGER_TEXT = new Color(255, 112, 78, 255);
+const NORMAL_TEXT = new Color(226, 247, 255, 255);
+const WARNING_TEXT = new Color(255, 220, 66, 255);
+const DANGER_TEXT = new Color(255, 92, 62, 255);
 
 export type CannonThreat = 'core' | 'splash' | 'safe';
 
@@ -20,15 +20,15 @@ export class CannonBrawlHud {
 
     constructor(parent: Node, _width: number, _height: number) {
         this.root = makeRoundedRect(
-            'CannonBrawlStatus', parent, 500, 42,
-            uiColor(6, 24, 38, 218), 18,
-            uiColor(255, 126, 44, 225), 2,
+            'CannonBrawlStatus', parent, 560, 42,
+            uiColor(7, 24, 36, 220), 18,
+            uiColor(255, 92, 44, 230), 2,
         );
         this.layout();
         view.on('canvas-resize', this.layout, this);
         view.on('design-resolution-changed', this.layout, this);
         const labelNode = makeLabel('Status', this.root, '', 19, NORMAL_TEXT);
-        labelNode.getComponent(UITransform)?.setContentSize(470, 38);
+        labelNode.getComponent(UITransform)?.setContentSize(530, 38);
         this.label = labelNode.getComponent(Label)!;
         this.label.enableWrapText = false;
         this.label.overflow = Label.Overflow.SHRINK;
@@ -60,13 +60,12 @@ export class CannonBrawlHud {
         remainingStrikes: number,
         activeRemainingSeconds: number,
         threat: CannonThreat,
-        activeCount: number,
-        playerEliminated: boolean,
+        playerRecovering: boolean,
     ): void {
         let text: string;
         let colorState = 0;
-        if (playerEliminated) {
-            text = '你被炮弹核心命中 · 可切换目标观战';
+        if (playerRecovering) {
+            text = '炮弹核心命中 · 正在重新入水';
             colorState = 2;
         } else if (activeRemainingSeconds > 0) {
             const seconds = Math.max(0.1, Math.ceil(activeRemainingSeconds * 10) / 10).toFixed(1);
@@ -81,9 +80,9 @@ export class CannonBrawlHud {
                 colorState = 0;
             }
         } else if (remainingStrikes > 0) {
-            text = `下一轮炮击待命 · 剩余${Math.max(1, activeCount)}人 · 还剩${remainingStrikes}发`;
+            text = `下一轮炮击待命 · 还剩${remainingStrikes}发`;
         } else {
-            text = `炮击阶段结束 · 剩余${Math.max(1, activeCount)}人 · 向终点冲刺`;
+            text = '炮击阶段结束 · 向终点冲刺';
         }
         if (text !== this.lastText) {
             this.lastText = text;

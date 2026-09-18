@@ -27,6 +27,7 @@ export type MineRelayResolution = {
     roundId: number;
     carrierLane: number;
     exploded: boolean;
+    distance: number;
     revision: number;
 };
 
@@ -347,6 +348,7 @@ export class MineRelayBrawlController {
             roundId: arm.roundId,
             carrierLane: arm.carrierLane,
             exploded,
+            distance: Math.max(0, this.racerForLane(arm.carrierLane)?.distance ?? 0),
             revision: this.revision + 1,
         };
         if (this.applyResolution(event)) this.onResolution(event);
@@ -493,6 +495,7 @@ function isValidResolution(event: MineRelayResolution): boolean {
         && Number.isSafeInteger(event.roundId) && event.roundId >= 0
         && Number.isSafeInteger(event.carrierLane) && event.carrierLane >= 0
         && typeof event.exploded === 'boolean'
+        && Number.isFinite(event.distance) && event.distance >= 0
         && Number.isSafeInteger(event.revision) && event.revision >= 0;
 }
 

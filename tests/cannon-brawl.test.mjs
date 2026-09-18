@@ -15,6 +15,8 @@ const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 function fixture(seed = 137) {
     const racers = Array.from({ length: 8 }, (_, lane) => ({
         active: true,
+        finished: false,
+        damageable: true,
         distance: lane === 0 ? 25 : 20,
         lateral: 8.75 - lane * 2.5,
         speed: 3,
@@ -32,7 +34,7 @@ function fixture(seed = 137) {
     return { racers, launches, impacts, controller };
 }
 
-test('炮击落点锁定，核心只淘汰最接近中心的一人', () => {
+test('炮击落点锁定，核心只击倒最接近中心的一人', () => {
     const f = fixture();
     f.controller.update(0, GameState.RACING, true);
     assert.equal(f.launches.length, 1);
@@ -43,12 +45,12 @@ test('炮击落点锁定，核心只淘汰最接近中心的一人', () => {
     f.racers[3].lateral = launch.targetZ;
     f.controller.update(CANNON_BRAWL_TUNING.warningSeconds + 0.01, GameState.RACING, true);
     assert.equal(f.impacts.length, 1);
-    assert.equal(f.impacts[0].eliminatedLane, 3);
+    assert.equal(f.impacts[0].knockedLane, 3);
+    assert.equal(f.impacts[0].knockedDistance, launch.targetDistance);
     assert.equal(f.impacts[0].hitMask, 1 << 3);
-    assert.equal(f.controller.isLaneEliminated(3), true);
 });
 
-test('外围冲击只记录命中，不触发淘汰', () => {
+test('外围冲击只记录命中，不触发击倒', () => {
     const f = fixture(19);
     f.controller.update(0, GameState.RACING, true);
     const launch = f.launches[0];
@@ -57,11 +59,10 @@ test('外围冲击只记录命中，不触发淘汰', () => {
     f.racers[2].lateral = launch.targetZ + CANNON_BRAWL_TUNING.coreLateralRadius + 0.45;
     f.controller.update(CANNON_BRAWL_TUNING.warningSeconds + 0.01, GameState.RACING, true);
     assert.equal(f.impacts[0].hitMask, 1 << 2);
-    assert.equal(f.impacts[0].eliminatedLane, -1);
-    assert.equal(f.controller.isLaneEliminated(2), false);
+    assert.equal(f.impacts[0].knockedLane, -1);
 });
 
-test('活动炮弹和淘汰掩码可由快照恢复', () => {
+test('活动炮弹和已完成波次可由快照恢复', () => {
     const host = fixture(77);
     const guest = fixture(77);
     host.controller.update(0, GameState.RACING, true);
@@ -74,7 +75,6 @@ test('活动炮弹和淘汰掩码可由快照恢复', () => {
     host.racers[4].lateral = launch.targetZ;
     host.controller.update(CANNON_BRAWL_TUNING.warningSeconds + 0.01, GameState.RACING, true);
     applied = guest.controller.applySnapshotState(host.controller.snapshotState());
-    assert.equal(applied.newEliminatedMask, 1 << 4);
     assert.equal(applied.activeChanged, true);
     assert.equal(guest.controller.currentLaunch(), null);
     assert.equal(guest.controller.applyImpact(host.impacts[0]), true);
@@ -95,11 +95,11 @@ test('同一种子生成相同首发落点，AI 在反应延迟后选择核心�
     assert.ok(Math.abs(target - launch.targetZ) > CANNON_BRAWL_TUNING.splashLateralRadius);
 });
 
-test('只剩一名在场选手时不再生成炮击', () => {
+test('只剩一名可攻击选手时仍会生成炮击', () => {
     const f = fixture();
     for (let lane = 1; lane < f.racers.length; lane++) f.racers[lane].active = false;
     f.controller.update(0, GameState.RACING, true);
-    assert.equal(f.launches.length, 0);
+    assert.equal(f.launches.length, 1);
 });
 
 test('炮火 HUD 限制十赫兹采样且不逐帧重绘图形', () => {

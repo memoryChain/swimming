@@ -283,24 +283,6 @@ export class RaceManager extends Component {
         return true;
     }
 
-    /** 炮火逃生赛只剩一名在场选手时，立即以最后幸存者身份结束比赛。 */
-    public finishIfSoleSurvivor(): boolean {
-        if (this._state !== GameState.RACING) return false;
-        const active = this.activeRacers();
-        if (active.length !== 1) return false;
-        const survivor = active[0];
-        if (survivor === this.playerSwimmer) {
-            this._playerFinished = true;
-            this._playerFinishTime = this._raceTimer;
-        } else {
-            this._aiFinishTimes.set(survivor, this._raceTimer);
-            this._aiFinishTime = this.bestAiFinishTime();
-        }
-        this.emitSwimmerFinished(survivor, this._raceTimer);
-        this.finishRace();
-        return true;
-    }
-
     public hasSwimmerFinished(swimmer: Swimmer | null): boolean {
         return !!swimmer && this._finishTimes.has(swimmer);
     }

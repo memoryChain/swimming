@@ -47,12 +47,12 @@ export const enum NetInputKind {
     DiveRelease = 'r', // dive release (carries final power + optional final launch speed)
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
     StimulantPickup = 'p', // host-authoritative item id, collector lane, revision
-    SharkElimination = 'e', // host-authoritative shark sequence and eliminated lane
+    SharkKnockdown = 'e', // host-authoritative shark sequence, knocked lane and recovery distance
     CannonLaunch = 'l', // host-authoritative strike id, target distance/Z, warning and revision
-    CannonImpact = 'x', // host-authoritative strike id, hit mask, eliminated lane and revision
+    CannonImpact = 'x', // host-authoritative strike id, hit mask, knocked lane/distance and revision
     MineRelayArm = 'm', // host-authoritative round, carrier, fuse and revision
     MineRelayTransfer = 't', // host-authoritative round, from/to lanes, remaining fuse and revision
-    MineRelayResolution = 'b', // host-authoritative round, carrier, exploded/disarmed and revision
+    MineRelayResolution = 'b', // host-authoritative round, carrier, exploded/disarmed, distance and revision
     MinefieldImpact = 'i', // host-authoritative obstacle mine id, hit lane, position and revision
 }
 
@@ -77,7 +77,8 @@ export interface NetInputEvent {
     targetZ?: number;
     warningSeconds?: number;
     hitMask?: number;
-    eliminatedLane?: number;
+    knockedLane?: number;
+    knockedDistance?: number;
     mineRoundId?: number;
     mineCarrierLane?: number;
     mineFromLane?: number;
@@ -124,18 +125,18 @@ function encodeEvent(event: NetInputEvent): string {
             return NetInputKind.DolphinJump;
         case NetInputKind.StimulantPickup:
             return `${NetInputKind.StimulantPickup}${Math.max(0, Math.floor(event.itemId ?? 0))},${Math.max(0, Math.floor(event.collectorLane ?? 0))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
-        case NetInputKind.SharkElimination:
-            return `${NetInputKind.SharkElimination}${Math.max(0, Math.floor(event.sharkSequence ?? 0))},${Math.max(0, Math.floor(event.targetLane ?? 0))}`;
+        case NetInputKind.SharkKnockdown:
+            return `${NetInputKind.SharkKnockdown}${Math.max(0, Math.floor(event.sharkSequence ?? 0))},${Math.max(0, Math.floor(event.targetLane ?? 0))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))}`;
         case NetInputKind.CannonLaunch:
             return `${NetInputKind.CannonLaunch}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.round((event.targetDistance ?? 0) * 100))},${Math.round((event.targetZ ?? 0) * 1000)},${Math.max(0, Math.round((event.warningSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.CannonImpact:
-            return `${NetInputKind.CannonImpact}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor((event.eliminatedLane ?? -1) + 1))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+            return `${NetInputKind.CannonImpact}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor((event.knockedLane ?? -1) + 1))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MineRelayArm:
             return `${NetInputKind.MineRelayArm}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${Math.max(0, Math.round((event.fuseSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MineRelayTransfer:
             return `${NetInputKind.MineRelayTransfer}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineFromLane ?? 0))},${Math.max(0, Math.floor(event.mineToLane ?? 0))},${Math.max(0, Math.round((event.remainingSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MineRelayResolution:
-            return `${NetInputKind.MineRelayResolution}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${event.exploded ? 1 : 0},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+            return `${NetInputKind.MineRelayResolution}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${event.exploded ? 1 : 0},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MinefieldImpact:
             return `${NetInputKind.MinefieldImpact}${Math.max(0, Math.floor(event.mineId ?? 0))},${Math.max(0, Math.floor(event.mineHitLane ?? 0))},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.DiveRelease: {
@@ -177,10 +178,10 @@ function decodeToken(token: string): NetInputEvent | null {
                 ? { kind, itemId: values[0], collectorLane: values[1], revision: values[2] }
                 : null;
         }
-        case NetInputKind.SharkElimination: {
+        case NetInputKind.SharkKnockdown: {
             const values = token.slice(1).split(',').map(value => parseInt(value, 10));
-            return values.length === 2 && values.every(value => Number.isSafeInteger(value) && value >= 0)
-                ? { kind, sharkSequence: values[0], targetLane: values[1] }
+            return values.length === 3 && values.every(value => Number.isSafeInteger(value) && value >= 0)
+                ? { kind, sharkSequence: values[0], targetLane: values[1], knockedDistance: values[2] / 100 }
                 : null;
         }
         case NetInputKind.CannonLaunch: {
@@ -202,12 +203,20 @@ function decodeToken(token: string): NetInputEvent | null {
             const parts = token.slice(1).split(',');
             const strikeId = parseInt(parts[0], 10);
             const hitMask = parseInt(parts[1], 16);
-            const eliminatedLanePlusOne = parseInt(parts[2], 10);
-            const revision = parseInt(parts[3], 10);
-            return parts.length === 4
-                && [strikeId, hitMask, eliminatedLanePlusOne, revision]
+            const knockedLanePlusOne = parseInt(parts[2], 10);
+            const knockedDistanceCm = parseInt(parts[3], 10);
+            const revision = parseInt(parts[4], 10);
+            return parts.length === 5
+                && [strikeId, hitMask, knockedLanePlusOne, knockedDistanceCm, revision]
                     .every(value => Number.isSafeInteger(value) && value >= 0)
-                ? { kind, cannonStrikeId: strikeId, hitMask, eliminatedLane: eliminatedLanePlusOne - 1, revision }
+                ? {
+                    kind,
+                    cannonStrikeId: strikeId,
+                    hitMask,
+                    knockedLane: knockedLanePlusOne - 1,
+                    knockedDistance: knockedDistanceCm / 100,
+                    revision,
+                }
                 : null;
         }
         case NetInputKind.MineRelayArm: {
@@ -231,7 +240,7 @@ function decodeToken(token: string): NetInputEvent | null {
         }
         case NetInputKind.MineRelayResolution: {
             const values = token.slice(1).split(',').map(value => parseInt(value, 10));
-            return values.length === 4
+            return values.length === 5
                 && values.every(value => Number.isSafeInteger(value) && value >= 0)
                 && values[2] <= 1
                 ? {
@@ -239,7 +248,8 @@ function decodeToken(token: string): NetInputEvent | null {
                     mineRoundId: values[0],
                     mineCarrierLane: values[1],
                     exploded: values[2] === 1,
-                    revision: values[3],
+                    mineDistance: values[3] / 100,
+                    revision: values[4],
                 }
                 : null;
         }

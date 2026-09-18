@@ -3,6 +3,8 @@ import { SeededRandom } from './SharedRNG';
 
 export type CannonRacerState = {
     active: boolean;
+    finished: boolean;
+    damageable: boolean;
     distance: number;
     lateral: number;
     speed: number;
@@ -19,13 +21,13 @@ export type CannonLaunch = {
 export type CannonImpact = {
     strikeId: number;
     hitMask: number;
-    eliminatedLane: number;
+    knockedLane: number;
+    knockedDistance: number;
     revision: number;
 };
 
 export type CannonBrawlState = {
     revision: number;
-    eliminatedMask: number;
     completedStrikeMask: number;
     activeStrikeId: number;
     targetDistance: number;
@@ -34,7 +36,6 @@ export type CannonBrawlState = {
 };
 
 export type CannonSnapshotApplyResult = {
-    newEliminatedMask: number;
     activeChanged: boolean;
 };
 
@@ -63,7 +64,6 @@ export const CANNON_BRAWL_TUNING = {
  */
 export class CannonBrawlController {
     private revision = 0;
-    private eliminatedMask = 0;
     private completedStrikeMask = 0;
     private appliedImpactMask = 0;
     private activeLaunch: CannonLaunch | null = null;
@@ -81,7 +81,6 @@ export class CannonBrawlController {
 
     reset(): void {
         this.revision = 0;
-        this.eliminatedMask = 0;
         this.completedStrikeMask = 0;
         this.appliedImpactMask = 0;
         this.activeLaunch = null;
@@ -97,7 +96,7 @@ export class CannonBrawlController {
             if (authoritative && this.activeRemainingSeconds <= 0) this.resolveActiveStrike();
             return;
         }
-        if (!authoritative || this.activeCount() <= 1) return;
+        if (!authoritative || this.activeCount() <= 0) return;
         const strikeId = this.nextStrikeId();
         if (strikeId < 0 || this.leaderDistance() < CANNON_STRIKE_TRIGGERS[strikeId]) return;
         const launch = this.createLaunch(strikeId);
@@ -127,9 +126,6 @@ export class CannonBrawlController {
         this.revision = Math.max(this.revision, impact.revision);
         this.completedStrikeMask |= impactBit;
         this.appliedImpactMask |= impactBit;
-        if (impact.eliminatedLane >= 0 && impact.eliminatedLane < this.laneCount) {
-            this.eliminatedMask |= 1 << impact.eliminatedLane;
-        }
         if (this.activeLaunch?.strikeId === impact.strikeId) {
             this.activeLaunch = null;
             this.activeRemainingSeconds = 0;
@@ -139,12 +135,10 @@ export class CannonBrawlController {
 
     applySnapshotState(state: CannonBrawlState): CannonSnapshotApplyResult {
         if (!isValidState(state) || state.revision < this.revision) {
-            return { newEliminatedMask: 0, activeChanged: false };
+            return { activeChanged: false };
         }
         const previousActive = this.activeLaunch?.strikeId ?? -1;
-        const newEliminatedMask = state.eliminatedMask & ~this.eliminatedMask;
         this.revision = state.revision;
-        this.eliminatedMask |= state.eliminatedMask;
         this.completedStrikeMask |= state.completedStrikeMask;
         if (state.activeStrikeId >= 0
             && state.activeStrikeId < CANNON_STRIKE_TRIGGERS.length
@@ -163,7 +157,6 @@ export class CannonBrawlController {
             this.activeRemainingSeconds = 0;
         }
         return {
-            newEliminatedMask,
             activeChanged: previousActive !== (this.activeLaunch?.strikeId ?? -1),
         };
     }
@@ -171,7 +164,6 @@ export class CannonBrawlController {
     snapshotState(): CannonBrawlState {
         return {
             revision: this.revision,
-            eliminatedMask: this.eliminatedMask >>> 0,
             completedStrikeMask: this.completedStrikeMask >>> 0,
             activeStrikeId: this.activeLaunch?.strikeId ?? -1,
             targetDistance: this.activeLaunch?.targetDistance ?? 0,
@@ -200,16 +192,10 @@ export class CannonBrawlController {
         return Math.max(0, CANNON_STRIKE_TRIGGERS.length - this.completedStrikeCount());
     }
 
-    isLaneEliminated(lane: number): boolean {
-        return lane >= 0 && lane < this.laneCount && (this.eliminatedMask & (1 << lane)) !== 0;
-    }
-
     activeCount(): number {
         let count = 0;
         for (let lane = 0; lane < this.laneCount; lane++) {
-            if ((this.eliminatedMask & (1 << lane)) !== 0) continue;
-            const racer = this.racerForLane(lane);
-            if (racer?.active && Number.isFinite(racer.distance)) count++;
+            if (this.isEligibleLane(lane)) count++;
         }
         return count;
     }
@@ -300,9 +286,8 @@ export class CannonBrawlController {
         const launch = this.activeLaunch;
         if (!launch) return;
         let hitMask = 0;
-        let eliminatedLane = -1;
+        let knockedLane = -1;
         let bestCoreDistance = Number.POSITIVE_INFINITY;
-        const canEliminate = this.activeCount() > 1;
         for (let lane = 0; lane < this.laneCount; lane++) {
             if (!this.isEligibleLane(lane)) continue;
             const racer = this.racerForLane(lane)!;
@@ -315,7 +300,7 @@ export class CannonBrawlController {
                 CANNON_BRAWL_TUNING.splashLateralRadius,
             )) continue;
             hitMask |= 1 << lane;
-            if (!canEliminate || !insideEllipse(
+            if (!insideEllipse(
                 along,
                 lateral,
                 CANNON_BRAWL_TUNING.coreAlongRadius,
@@ -327,15 +312,16 @@ export class CannonBrawlController {
                 CANNON_BRAWL_TUNING.coreAlongRadius,
                 CANNON_BRAWL_TUNING.coreLateralRadius,
             );
-            if (normalized < bestCoreDistance || (normalized === bestCoreDistance && lane < eliminatedLane)) {
+            if (normalized < bestCoreDistance || (normalized === bestCoreDistance && lane < knockedLane)) {
                 bestCoreDistance = normalized;
-                eliminatedLane = lane;
+                knockedLane = lane;
             }
         }
         const impact = {
             strikeId: launch.strikeId,
             hitMask: hitMask >>> 0,
-            eliminatedLane,
+            knockedLane,
+            knockedDistance: knockedLane >= 0 ? this.racerForLane(knockedLane)?.distance ?? 0 : 0,
             revision: this.revision + 1,
         };
         this.applyImpact(impact);
@@ -359,9 +345,9 @@ export class CannonBrawlController {
     }
 
     private isEligibleLane(lane: number): boolean {
-        if ((this.eliminatedMask & (1 << lane)) !== 0) return false;
         const racer = this.racerForLane(lane);
-        return !!racer?.active && Number.isFinite(racer.distance) && Number.isFinite(racer.lateral);
+        return !!racer?.active && !racer.finished && racer.damageable
+            && Number.isFinite(racer.distance) && Number.isFinite(racer.lateral);
     }
 
     private nearestActiveLane(targetZ: number): number {
@@ -406,14 +392,14 @@ function isValidImpact(impact: CannonImpact): boolean {
     return !!impact
         && Number.isSafeInteger(impact.strikeId) && impact.strikeId >= 0
         && Number.isSafeInteger(impact.hitMask) && impact.hitMask >= 0
-        && Number.isSafeInteger(impact.eliminatedLane) && impact.eliminatedLane >= -1
+        && Number.isSafeInteger(impact.knockedLane) && impact.knockedLane >= -1
+        && Number.isFinite(impact.knockedDistance) && impact.knockedDistance >= 0
         && Number.isSafeInteger(impact.revision) && impact.revision >= 0;
 }
 
 function isValidState(state: CannonBrawlState): boolean {
     return !!state
         && Number.isSafeInteger(state.revision) && state.revision >= 0
-        && Number.isSafeInteger(state.eliminatedMask) && state.eliminatedMask >= 0
         && Number.isSafeInteger(state.completedStrikeMask) && state.completedStrikeMask >= 0
         && Number.isSafeInteger(state.activeStrikeId) && state.activeStrikeId >= -1
         && Number.isFinite(state.targetDistance) && state.targetDistance >= 0

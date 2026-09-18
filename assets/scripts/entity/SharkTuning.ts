@@ -16,7 +16,6 @@ export const SHARK_TUNING = {
     retargetSeconds: 0.5,
     huntSpeed: 4.5,
     wanderSpeed: 1.2,
-    maxEliminations: 3,
     collisionRadius: 1.1,
     collisionPushScale: 1.8,
     spawnClearance: 6.5,
