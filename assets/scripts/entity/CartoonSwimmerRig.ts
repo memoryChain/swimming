@@ -1719,7 +1719,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         this.updatePerfectGlowMaterial();
     }
 
-    /** 拾取兴奋剂后的纯表现状态；重复拾取刷新时长，不参与比赛结算。 */
+    /** 喝下心跳苏打后的纯表现状态；重复拾取刷新时长，不参与比赛结算。 */
     triggerStimulantReaction(heartRate: number, duration: number) {
         if (!this._bodyFeedbackEnabled || !this.node?.isValid) {
             return;
@@ -2489,7 +2489,7 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         const stimulantReaction = this._stimulantReactionTimer > 0;
         const yellowGlow = this._perfectGlowIntensity;
         if (stimulantReaction) {
-            // 长时间兴奋剂表现只改原角色材质的轮廓光参数，绝不替换蒙皮材质。
+            // 长时间心跳苏打表现只改原角色材质的轮廓光参数，绝不替换蒙皮材质。
             // 这避免反复 setMaterial 后原材质实例失效、局部网格无法恢复而变黑。
             if (this._perfectGlowRestoreSlots.length > 0) {
                 this.restorePerfectGlowMaterials();

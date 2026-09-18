@@ -99,7 +99,7 @@ export class CareerEventPage {
             this.button(this.quick,'Distance400','400米\n约三分钟',-285,-85,490,112,()=>actions.distance(400)),
             this.button(this.quick,'RuleStandard','标准竞速\n专注节奏',165,105,235,62,()=>actions.rule('standard')),
             this.button(this.quick,'RuleWild','狂野模式\n自由争位',405,105,235,62,()=>actions.rule('wild')),
-            this.button(this.quick,'RuleStimulant','兴奋剂乱斗\n抢药失控',165,35,235,62,()=>actions.rule('stimulant')),
+            this.button(this.quick,'RuleStimulant','心跳苏打\n补劲上头',165,35,235,62,()=>actions.rule('stimulant')),
             this.button(this.quick,'RuleShark','鲨鱼大乱斗\n追猎淘汰',405,35,235,62,()=>actions.rule('shark')),
             this.button(this.quick,'RuleWhirlpool','漩涡冲浪赛\n外圈借力',165,-35,235,62,()=>actions.rule('whirlpool')),
             this.button(this.quick,'RuleCannon','炮火逃生赛\n躲避炮弹',405,-35,235,62,()=>actions.rule('cannon')),

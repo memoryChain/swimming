@@ -43,15 +43,24 @@ const WAVE_ANNOUNCEMENT_LEAD_DISTANCE = 18;
 const PRESENTATION_INTERVAL = 1 / 20;
 const ITEM_SCALE = 0.9;
 const ITEM_MODEL_SCALE = 1;
+const ITEM_BASE_Y_OFFSET = 0.78;
+const ITEM_MODEL_HALF_HEIGHT = 0.68;
 const BEACON_HEIGHT = 10.5;
-const BEACON_HALF_WIDTH = 0.42;
-const BEACON_BASE_RADIUS = 0.88;
+const BEACON_HALF_WIDTH = 0.3;
+const BEACON_HALO_INNER_RADIUS = 0.52;
+const BEACON_HALO_PEAK_RADIUS = 0.72;
+const BEACON_BASE_RADIUS = 0.94;
 const BEACON_BASE_Y_OFFSET = 0.04;
+const BEACON_COLUMN_GAP = 0.24;
+const BEACON_COLUMN_BOTTOM = ITEM_BASE_Y_OFFSET
+    + ITEM_MODEL_HALF_HEIGHT
+    + BEACON_COLUMN_GAP
+    - BEACON_BASE_Y_OFFSET;
 const BEACON_PICKUP_COLLAPSE_SECONDS = 0.28;
 const MAX_PICKUP_SWEEP_DISTANCE = 3;
 const STIMULANT_CUBE_COLOR = new Color(92, 255, 48, 255);
 
-/** 兴奋剂玩法的独立规则控制器；GameManager 只负责传入泳者和网络事件。 */
+/** 心跳苏打玩法的独立规则控制器；GameManager 只负责传入泳者和网络事件。 */
 export class StimulantBrawlController {
     private readonly items: ItemState[];
     private revision = 0;
@@ -108,7 +117,7 @@ export class StimulantBrawlController {
                 beaconNode: null,
                 x: p.x,
                 z: p.z,
-                baseY: course.waterY + 0.78,
+                baseY: course.waterY + ITEM_BASE_Y_OFFSET,
                 phase: spawn.id * 0.83,
                 pickupEffectRemaining: 0,
             };
@@ -500,18 +509,19 @@ function appendBeaconRibbon(
     axis: 'x' | 'z',
 ): void {
     const levels = [0, 0.16, 0.48, 0.78, 1] as const;
-    const widths = [0.48, 1, 0.9, 0.68, 0.18] as const;
-    const alphas = [0, 0.62, 0.42, 0.22, 0] as const;
+    const widths = [0.18, 0.76, 1, 0.68, 0.16] as const;
+    const alphas = [0, 0.38, 0.46, 0.22, 0] as const;
     const columns = [-1, 0, 1] as const;
-    const columnAlpha = [0.06, 1, 0.06] as const;
+    const columnAlpha = [0.08, 1, 0.08] as const;
     const base = positions.length / 3;
+    const columnHeight = BEACON_HEIGHT - BEACON_COLUMN_BOTTOM;
 
     for (let row = 0; row < levels.length; row++) {
-        const y = levels[row] * BEACON_HEIGHT;
+        const y = BEACON_COLUMN_BOTTOM + levels[row] * columnHeight;
         for (let column = 0; column < columns.length; column++) {
             const offset = columns[column] * BEACON_HALF_WIDTH * widths[row];
             positions.push(axis === 'x' ? offset : 0, y, axis === 'z' ? offset : 0);
-            colors.push(0.22, 1, 0.42, alphas[row] * columnAlpha[column]);
+            colors.push(0.58, 1, 0.72, alphas[row] * columnAlpha[column]);
         }
     }
 
@@ -527,18 +537,31 @@ function appendBeaconRibbon(
 function appendBeaconBaseHalo(positions: number[], colors: number[], indices: number[]): void {
     const segments = 16;
     const base = positions.length / 3;
-    positions.push(0, 0.025, 0);
-    colors.push(0.34, 1, 0.34, 0.52);
+    const radii = [BEACON_HALO_INNER_RADIUS, BEACON_HALO_PEAK_RADIUS, BEACON_BASE_RADIUS] as const;
+    const alphas = [0, 0.2, 0] as const;
     for (let segment = 0; segment <= segments; segment++) {
         const angle = segment / segments * Math.PI * 2;
-        positions.push(
-            Math.cos(angle) * BEACON_BASE_RADIUS,
-            0.025,
-            Math.sin(angle) * BEACON_BASE_RADIUS,
-        );
-        colors.push(0.15, 1, 0.3, 0);
+        for (let ring = 0; ring < radii.length; ring++) {
+            positions.push(
+                Math.cos(angle) * radii[ring],
+                0.025,
+                Math.sin(angle) * radii[ring],
+            );
+            colors.push(0.42, 1, 0.54, alphas[ring]);
+        }
     }
     for (let segment = 0; segment < segments; segment++) {
-        indices.push(base, base + segment + 1, base + segment + 2);
+        const current = base + segment * radii.length;
+        const next = current + radii.length;
+        for (let ring = 0; ring < radii.length - 1; ring++) {
+            indices.push(
+                current + ring,
+                next + ring,
+                current + ring + 1,
+                current + ring + 1,
+                next + ring,
+                next + ring + 1,
+            );
+        }
     }
 }

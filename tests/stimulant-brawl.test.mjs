@@ -20,7 +20,7 @@ const { PlayerConditionModel } = PlayerCondition;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 
-test('兴奋剂显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {
+test('心跳苏打显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {
     const prefab = JSON.parse(readFileSync(
         new URL('../assets/race/items/StimulantPotion.prefab', import.meta.url),
         'utf8',
@@ -41,12 +41,15 @@ test('兴奋剂显式预制体包含模型渲染器，加载器保留多路径�
     assert.match(controller, /hasMeshRenderer/);
     assert.match(controller, /buildStimulantBeaconGeometry/);
     assert.match(controller, /BEACON_VISIBLE_AHEAD_DISTANCE = 82/);
+    assert.match(controller, /BEACON_COLUMN_BOTTOM/);
+    assert.match(controller, /BEACON_HALO_INNER_RADIUS/);
+    assert.doesNotMatch(controller, /positions\.push\(0, 0\.025, 0\)/);
     assert.match(controller, /depthWrite: false/);
     assert.doesNotMatch(controller, /StimulantBottleGlowMaterial|applyMaterialRecursively/);
     assert.doesNotMatch(controller, /StimulantMarkerCube|MARKER_SCALE|MARKER_HEIGHT/);
 });
 
-test('兴奋剂赛程由种子稳定生成七波公共争抢且不再包含开局保证波', () => {
+test('心跳苏打赛程由种子稳定生成七波公共争抢且不再包含开局保证波', () => {
     const a = buildStimulantSchedule(123456);
     const b = buildStimulantSchedule(123456);
     assert.deepEqual(a, b);
@@ -77,7 +80,7 @@ test('公共争抢在一批种子中覆盖全部泳道', () => {
     assert.ok(laneHits.every(hits => hits > 0));
 });
 
-test('公共兴奋剂使用身体胶囊并扫掠短距离经过路径', () => {
+test('公共心跳苏打使用身体胶囊并扫掠短距离经过路径', () => {
     const bodyHit = stimulantPickupDistanceSquared(
         0, 0,
         1.7, 0,
@@ -109,7 +112,7 @@ test('公共兴奋剂使用身体胶囊并扫掠短距离经过路径', () => {
     assert.ok(correctionMiss > 1.2 ** 2, '过长网络校正不能沿整段路径补捡');
 });
 
-test('公共兴奋剂只允许拾取当前赛程趟数附近的道具', () => {
+test('公共心跳苏打只允许拾取当前赛程趟数附近的道具', () => {
     assert.equal(
         stimulantPickupRaceDistanceEligible(35, 34.2, 33.9, 1.2, 0.8, 3),
         true,
@@ -137,7 +140,7 @@ test('公共兴奋剂只允许拾取当前赛程趟数附近的道具', () => {
     );
 });
 
-test('折返泳池只显示当前单程的药瓶和光柱', () => {
+test('折返泳池只显示当前单程的苏打瓶和光柱', () => {
     assert.equal(stimulantIsOnCurrentCourseLeg(35, 40, 50), true);
     assert.equal(
         stimulantIsOnCurrentCourseLeg(60, 40, 50),
@@ -161,7 +164,7 @@ test('心率只在 130 以上逐步放大转向并降低阻尼', () => {
     assert.ok(Math.abs(stimulantTurnDragScale(180) - 0.55) < 1e-9);
 });
 
-test('药瓶按自身上限恢复一半且不溢出', () => {
+test('苏打瓶按自身上限恢复一半且不溢出', () => {
     const condition = new PlayerConditionModel();
     condition.setProgressionOverrides({ energyTotal: 120 });
     condition.reset();
@@ -173,7 +176,7 @@ test('药瓶按自身上限恢复一半且不溢出', () => {
     assert.equal(condition.energy, 120);
 });
 
-test('兴奋剂规则只允许快速比赛 200 米并可从存档恢复', () => {
+test('心跳苏打规则只允许快速比赛 200 米并可从存档恢复', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];
     const ok = executeCareer(profile, { type: 'begin', source: 'quick', characterId, tier: 0, distance: 200, rule: 'stimulant', seed: 7 });

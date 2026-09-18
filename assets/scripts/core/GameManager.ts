@@ -1347,8 +1347,8 @@ export class GameManager extends Component {
                     if (feedback.local) {
                         this._stimulantToastPriorityUntilMs = Date.now() + 1400;
                         const text = feedback.energyRestored > 0
-                            ? `兴奋剂！体力 +${Math.round(feedback.energyRestored)} · 心率 ${Math.round(feedback.heartRate)}`
-                            : `兴奋剂！体力已满 · 心率 ${Math.round(feedback.heartRate)}`;
+                            ? `咕咚！心跳苏打 · 体力 +${Math.round(feedback.energyRestored)} · 心率 ${Math.round(feedback.heartRate)}`
+                            : `咕咚！心跳苏打 · 体力已满 · 心率 ${Math.round(feedback.heartRate)}`;
                         showToast(this.createRuntimeSceneBuilder().findCanvasNode(), text, { duration: 1.4 });
                         return;
                     }
@@ -1356,7 +1356,7 @@ export class GameManager extends Component {
                     if (feedback.wave === 0 || Date.now() < this._stimulantToastPriorityUntilMs) return;
                     showToast(
                         this.createRuntimeSceneBuilder().findCanvasNode(),
-                        `第 ${feedback.collectorLane + 1} 道选手抢到兴奋剂！`,
+                        `第 ${feedback.collectorLane + 1} 道选手抢到心跳苏打！`,
                         { duration: 1.1 },
                     );
                 },
@@ -1364,7 +1364,7 @@ export class GameManager extends Component {
                     if (this._state !== GameState.RACING) return;
                     showToast(
                         this.createRuntimeSceneBuilder().findCanvasNode(),
-                        `前方兴奋剂刷新！第 ${wave} 波争抢开始`,
+                        `第 ${wave} 波心跳苏打出现 · 争抢开始`,
                         { duration: 1.5 },
                     );
                 },

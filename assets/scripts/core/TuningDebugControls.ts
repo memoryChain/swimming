@@ -342,17 +342,17 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
     {
-        name: '兴奋剂大乱斗',
+        name: '心跳苏打大乱斗',
         controls: [
             control('stimulant.energyRestoreRatio', '体力恢复比例', '每瓶按角色自己的体力上限恢复，1 表示一整条体力。', () => STIMULANT_BRAWL_TUNING.energyRestoreRatio, v => STIMULANT_BRAWL_TUNING.energyRestoreRatio = v, 0.05, 0, 1, 2),
             control('stimulant.heartRateBurden', '心率惩罚', '拾取后立即增加的心率，最终封顶 180。', () => STIMULANT_BRAWL_TUNING.heartRateBurden, v => STIMULANT_BRAWL_TUNING.heartRateBurden = v, 1, 0, 100, 0),
             control('stimulant.pickupRadius', '拾取半径', '俯视平面中的拾取距离；潜水和海豚跳不受高度影响。', () => STIMULANT_BRAWL_TUNING.pickupRadius, v => STIMULANT_BRAWL_TUNING.pickupRadius = v, 0.05, 0.2, 3, 2, 'm'),
             control('stimulant.pickupBodyHalfLength', '身体判定半长', '沿角色前进方向扩展的拾取胶囊半长；提高后更容易在翻滚和擦身时吃到。', () => STIMULANT_BRAWL_TUNING.pickupBodyHalfLength, v => STIMULANT_BRAWL_TUNING.pickupBodyHalfLength = v, 0.05, 0, 2, 2, 'm'),
-            control('stimulant.reactionDuration', '亢奋发光时长', '拾取后角色身体保持橙红脉冲发光的时间；再次拾取会刷新。', () => STIMULANT_BRAWL_TUNING.reactionDuration, v => STIMULANT_BRAWL_TUNING.reactionDuration = v, 0.5, 1, 12, 1, ' s'),
+            control('stimulant.reactionDuration', '上头发光时长', '喝下苏打后角色身体保持橙红脉冲发光的时间；再次拾取会刷新。', () => STIMULANT_BRAWL_TUNING.reactionDuration, v => STIMULANT_BRAWL_TUNING.reactionDuration = v, 0.5, 1, 12, 1, ' s'),
             control('stimulant.oversteerStartHeartRate', '失控起始心率', '达到此心率后，转向冲量开始增大、角速度阻尼开始减小。', () => STIMULANT_BRAWL_TUNING.oversteerStartHeartRate, v => STIMULANT_BRAWL_TUNING.oversteerStartHeartRate = v, 1, 80, 179, 0),
             control('stimulant.maxTurnImpulseScale', '最大转向倍率', '180 心率时单次划水转向冲量倍率。', () => STIMULANT_BRAWL_TUNING.maxTurnImpulseScale, v => STIMULANT_BRAWL_TUNING.maxTurnImpulseScale = v, 0.05, 1, 3, 2),
             control('stimulant.minTurnDragScale', '最低转向阻尼倍率', '180 心率时转向阻尼倍率；越低越容易持续甩尾。', () => STIMULANT_BRAWL_TUNING.minTurnDragScale, v => STIMULANT_BRAWL_TUNING.minTurnDragScale = v, 0.05, 0.1, 1, 2),
-            control('stimulant.aiSkipHeartRate', 'AI 放弃争抢心率', 'AI 心率达到该值后不再主动追药，避免连续吃药自毁。', () => STIMULANT_BRAWL_TUNING.aiSkipHeartRate, v => STIMULANT_BRAWL_TUNING.aiSkipHeartRate = v, 1, 100, 180, 0),
+            control('stimulant.aiSkipHeartRate', 'AI 放弃争抢心率', 'AI 心率达到该值后不再主动追苏打，避免连续猛喝导致过度失控。', () => STIMULANT_BRAWL_TUNING.aiSkipHeartRate, v => STIMULANT_BRAWL_TUNING.aiSkipHeartRate = v, 1, 100, 180, 0),
         ],
     },
     {

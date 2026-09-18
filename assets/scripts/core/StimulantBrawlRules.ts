@@ -64,7 +64,7 @@ export function buildStimulantSchedule(seed: number, laneCount = 8): StimulantSp
 }
 
 /**
- * 兴奋剂的二维身体胶囊与短路径扫掠判定。
+ * 心跳苏打的二维身体胶囊与短路径扫掠判定。
  * 高度不参与；过长的位置跳变视为网络校正，不沿整段路径补捡道具。
  */
 export function stimulantPickupDistanceSquared(

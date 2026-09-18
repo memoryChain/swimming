@@ -25,6 +25,16 @@ ORANGE = (1.00, 0.105, 0.018, 1.0)
 NAVY = (0.018, 0.080, 0.31, 1.0)
 WHITE = (1.00, 0.92, 0.72, 1.0)
 
+# Keep the pickup chunky enough to read as a bottle from oblique race-camera
+# angles without adding geometry, materials, or draw calls.
+BODY_FRAME_HALF_DEPTH = 0.225
+BODY_CORE_HALF_DEPTH = 0.195
+LIGHTNING_SEAT_Y = 0.185
+LIGHTNING_OUTER_Y = 0.275
+NECK_RADIUS_Y = 0.205
+COLLAR_RADIUS_Y = 0.245
+CAP_RADIUS_Y = 0.270
+
 
 class MeshBuilder:
     def __init__(self) -> None:
@@ -148,22 +158,39 @@ def build_model(collection: bpy.types.Collection) -> bpy.types.Object:
     ]
 
     # Main frame and inset core. The core stays inside the real central opening.
-    builder.add_frame(body_outer, body_inner, -0.18, 0.18, LIME)
-    builder.add_prism(core, -0.155, 0.155, ORANGE)
+    builder.add_frame(
+        body_outer,
+        body_inner,
+        -BODY_FRAME_HALF_DEPTH,
+        BODY_FRAME_HALF_DEPTH,
+        LIME,
+    )
+    builder.add_prism(core, -BODY_CORE_HALF_DEPTH, BODY_CORE_HALF_DEPTH, ORANGE)
 
     # The collar overlaps the frame by 0.05 m; the neck overlaps the cap by 0.04 m.
-    builder.add_elliptic_rings([(0.43, 0.25, 0.17), (0.63, 0.25, 0.17)], 8, LIME)
-    builder.add_elliptic_rings([(0.47, 0.31, 0.205), (0.59, 0.31, 0.205)], 8, LIME)
     builder.add_elliptic_rings([
-        (0.59, 0.265, 0.19),
-        (0.64, 0.34, 0.235),
-        (0.80, 0.34, 0.235),
-        (0.86, 0.275, 0.19),
+        (0.43, 0.25, NECK_RADIUS_Y),
+        (0.63, 0.25, NECK_RADIUS_Y),
+    ], 8, LIME)
+    builder.add_elliptic_rings([
+        (0.47, 0.31, COLLAR_RADIUS_Y),
+        (0.59, 0.31, COLLAR_RADIUS_Y),
+    ], 8, LIME)
+    builder.add_elliptic_rings([
+        (0.59, 0.265, 0.22),
+        (0.64, 0.34, CAP_RADIUS_Y),
+        (0.80, 0.34, CAP_RADIUS_Y),
+        (0.86, 0.275, 0.22),
     ], 8, NAVY)
 
     # Raised lightning geometry on both sides keeps the pickup readable while rotating.
-    builder.add_prism(lightning, -0.23, -0.14, WHITE)
-    builder.add_prism(list(reversed(lightning)), 0.14, 0.23, WHITE)
+    builder.add_prism(lightning, -LIGHTNING_OUTER_Y, -LIGHTNING_SEAT_Y, WHITE)
+    builder.add_prism(
+        list(reversed(lightning)),
+        LIGHTNING_SEAT_Y,
+        LIGHTNING_OUTER_Y,
+        WHITE,
+    )
 
     mesh = bpy.data.meshes.new("StimulantPotionMesh")
     mesh.from_pydata(builder.vertices, [], builder.faces)
@@ -235,18 +262,30 @@ def validate_model(obj: bpy.types.Object) -> dict:
         "left_right": [bounds["y"], bounds["z"]],
         "top_bottom": [bounds["x"], bounds["y"]],
     }
+    width = bounds["x"][1] - bounds["x"][0]
+    depth = bounds["y"][1] - bounds["y"][0]
+    depth_to_width_ratio = depth / width
+    if not 0.62 <= depth_to_width_ratio <= 0.68:
+        raise RuntimeError(
+            f"Bottle depth ratio failed: {depth_to_width_ratio:.3f}"
+        )
     return {
         "vertices": len(mesh.vertices),
         "polygons": len(mesh.polygons),
         "triangles": triangles,
         "materials": len(obj.material_slots),
         "bounds": bounds,
+        "depth_to_width_ratio": depth_to_width_ratio,
         "six_side_projection_bounds": projections,
         "contacts": {
             "body_to_neck_overlap_m": 0.52 - 0.43,
             "neck_to_cap_overlap_m": 0.63 - 0.59,
-            "front_lightning_seated_into_core_m": -0.14 - (-0.155),
-            "back_lightning_seated_into_core_m": 0.155 - 0.14,
+            "front_lightning_seated_into_core_m": (
+                BODY_CORE_HALF_DEPTH - LIGHTNING_SEAT_Y
+            ),
+            "back_lightning_seated_into_core_m": (
+                BODY_CORE_HALF_DEPTH - LIGHTNING_SEAT_Y
+            ),
         },
     }
 
@@ -299,6 +338,8 @@ def main() -> None:
     obj = build_model(collection)
     validation = validate_model(obj)
     bpy.context.scene["stimulant_validation"] = json.dumps(validation, ensure_ascii=False)
+    # This file is fully reproducible from the script; do not leave .blend1 backups in the repo.
+    bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_PATH))
     exported = export_gltf(obj)
     report = {"validation": validation, "export": exported}
