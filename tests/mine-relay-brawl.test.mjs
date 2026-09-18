@@ -2,179 +2,177 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import ControllerModule from '../assets/scripts/core/MineRelayBrawlController.ts';
+import TimedBombModule from '../assets/scripts/core/MineRelayBrawlController.ts';
+import MinefieldModule from '../assets/scripts/core/MinefieldBrawlController.ts';
 import GameConstants from '../assets/scripts/core/GameConstants.ts';
 import CareerRules from '../assets/scripts/progression/CareerRules.ts';
 import PlayerProfile from '../assets/scripts/backend/PlayerProfile.ts';
 
-const {
-    MineRelayBrawlController,
-    MINE_RELAY_ROUNDS,
-    MINE_RELAY_TUNING,
-} = ControllerModule;
+const { MineRelayBrawlController, MINE_RELAY_ROUNDS, MINE_RELAY_TUNING } = TimedBombModule;
+const { MinefieldBrawlController, MINEFIELD_TUNING } = MinefieldModule;
 const { GameState } = GameConstants;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 
-function fixture(seed = 137) {
+function timedBombFixture(seed = 137) {
     const racers = Array.from({ length: 8 }, (_, lane) => ({
-        active: true,
-        finished: false,
-        distance: lane === 0 ? 24 : 20,
-        lateral: 8.75 - lane * 2.5,
+        active: true, finished: false, distance: lane === 0 ? 24 : 20, lateral: 8.75 - lane * 2.5,
     }));
-    const arms = [];
-    const transfers = [];
-    const resolutions = [];
+    const arms = [], transfers = [], resolutions = [];
     const controller = new MineRelayBrawlController(
-        racers.length,
-        seed,
-        20,
-        lane => racers[lane],
-        event => arms.push({ ...event }),
-        event => transfers.push({ ...event }),
+        racers.length, seed, 20, lane => racers[lane],
+        event => arms.push({ ...event }), event => transfers.push({ ...event }),
         event => resolutions.push({ ...event }),
     );
     return { racers, arms, transfers, resolutions, controller };
 }
 
-function putTogether(f, laneA, laneB) {
-    f.racers[laneB].distance = f.racers[laneA].distance + 0.25;
-    f.racers[laneB].lateral = f.racers[laneA].lateral + 0.2;
+function putTogether(fixture, laneA, laneB) {
+    fixture.racers[laneB].distance = fixture.racers[laneA].distance + 0.25;
+    fixture.racers[laneB].lateral = fixture.racers[laneA].lateral + 0.2;
 }
 
-test('首轮由种子稳定装雷，始终只有一颗活动水雷', () => {
-    const a = fixture(912);
-    const b = fixture(912);
+function minefieldFixture(seed = 91) {
+    const racers = Array.from({ length: 2 }, () => ({ active: true, finished: false, distance: 0, lateral: 0 }));
+    const impacts = [];
+    const controller = new MinefieldBrawlController(
+        racers.length, seed, 20, lane => racers[lane], impact => impacts.push({ ...impact }),
+    );
+    return { racers, impacts, controller };
+}
+
+test('定时炸弹按共享种子直接随机发放，不再经过漂浮水雷阶段', () => {
+    const a = timedBombFixture(912);
+    const b = timedBombFixture(912);
     a.controller.update(0, GameState.RACING, true);
     b.controller.update(0, GameState.RACING, true);
     assert.deepEqual(a.arms[0], b.arms[0]);
     assert.equal(a.arms[0].roundId, 0);
     assert.equal(a.arms[0].fuseSeconds, MINE_RELAY_ROUNDS[0].fuseSeconds);
-    a.racers[0].distance = MINE_RELAY_ROUNDS[1].triggerDistance;
-    a.controller.update(0.1, GameState.RACING, true);
-    assert.equal(a.arms.length, 1);
+    assert.equal(a.controller.currentCarrierLane(), a.arms[0].carrierLane);
 });
 
-test('贴身自动传雷具有全局冷却和上一持有者防回传', () => {
-    const f = fixture();
-    f.controller.update(0, GameState.RACING, true);
-    const first = f.controller.currentCarrierLane();
+test('定时炸弹贴身传递具有冷却和上一持有者防回传', () => {
+    const fixture = timedBombFixture();
+    fixture.controller.update(0, GameState.RACING, true);
+    const first = fixture.controller.currentCarrierLane();
     const second = first === 0 ? 1 : 0;
-    putTogether(f, first, second);
-    f.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
-    assert.equal(f.transfers.length, 1);
-    assert.equal(f.transfers[0].fromLane, first);
-    assert.equal(f.transfers[0].toLane, second);
-    f.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
-    assert.equal(f.transfers.length, 1, '上一持有者仍在防回传期内');
-    f.controller.update(MINE_RELAY_TUNING.returnProtectionSeconds, GameState.RACING, true);
-    assert.equal(f.transfers.length, 2);
-    assert.equal(f.transfers[1].toLane, first);
+    putTogether(fixture, first, second);
+    fixture.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 1);
+    assert.equal(fixture.transfers[0].toLane, second);
+    fixture.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 1);
+    fixture.controller.update(MINE_RELAY_TUNING.returnProtectionSeconds, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 2);
+    assert.equal(fixture.transfers[1].toLane, first);
 });
 
-test('最后锁定阶段不能继续传雷，归零只击飞当前持有者', () => {
-    const f = fixture();
-    f.controller.update(0, GameState.RACING, true);
-    const carrier = f.controller.currentCarrierLane();
-    const target = carrier === 0 ? 1 : 0;
-    for (let lane = 0; lane < f.racers.length; lane++) {
-        if (lane !== carrier) {
-            f.racers[lane].distance += 20;
-            f.racers[lane].lateral = lane;
-        }
-    }
-    f.controller.update(MINE_RELAY_ROUNDS[0].fuseSeconds - MINE_RELAY_TUNING.lockSeconds + 0.05, GameState.RACING, true);
-    assert.equal(f.controller.isLocked(), true);
-    putTogether(f, carrier, target);
-    f.controller.update(0.1, GameState.RACING, true);
-    assert.equal(f.transfers.length, 0);
-    f.controller.update(MINE_RELAY_TUNING.lockSeconds, GameState.RACING, true);
-    assert.equal(f.resolutions.length, 1);
-    assert.deepEqual(f.resolutions[0], {
-        roundId: 0,
-        carrierLane: carrier,
-        exploded: true,
-        revision: 2,
-    });
+test('定时炸弹锁定后不能传递，归零只结算当前持有者', () => {
+    const fixture = timedBombFixture();
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    for (let lane = 0; lane < fixture.racers.length; lane++) if (lane !== carrier) fixture.racers[lane].distance += 20;
+    fixture.controller.update(MINE_RELAY_ROUNDS[0].fuseSeconds - MINE_RELAY_TUNING.lockSeconds + 0.05, GameState.RACING, true);
+    assert.equal(fixture.controller.isLocked(), true);
+    fixture.controller.update(MINE_RELAY_TUNING.lockSeconds, GameState.RACING, true);
+    assert.equal(fixture.resolutions.length, 1);
+    assert.equal(fixture.resolutions[0].carrierLane, carrier);
+    assert.equal(fixture.resolutions[0].exploded, true);
 });
 
-test('持雷者冲线后拆弹，不触发爆炸', () => {
-    const f = fixture();
-    f.controller.update(0, GameState.RACING, true);
-    const carrier = f.controller.currentCarrierLane();
-    f.racers[carrier].finished = true;
-    f.controller.update(0.1, GameState.RACING, true);
-    assert.equal(f.resolutions.length, 1);
-    assert.equal(f.resolutions[0].exploded, false);
-    assert.equal(f.controller.currentArm(), null);
-});
-
-test('快照恢复持有者、冷却和爆炸，迟到可靠事件不会重复结算', () => {
-    const host = fixture(77);
-    const guest = fixture(77);
+test('定时炸弹携带者冲线后拆弹，快照不会重复爆炸', () => {
+    const host = timedBombFixture(77);
+    const guest = timedBombFixture(77);
     host.controller.update(0, GameState.RACING, true);
-    const first = host.controller.currentCarrierLane();
-    const second = first === 0 ? 1 : 0;
-    putTogether(host, first, second);
-    host.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
     let applied = guest.controller.applySnapshotState(host.controller.snapshotState());
     assert.equal(applied.activeChanged, true);
-    assert.equal(applied.carrierChanged, true);
-    assert.equal(guest.controller.currentCarrierLane(), second);
-    host.controller.update(MINE_RELAY_ROUNDS[0].fuseSeconds, GameState.RACING, true);
+    assert.equal(guest.controller.currentCarrierLane(), host.controller.currentCarrierLane());
+    const carrier = host.controller.currentCarrierLane();
+    host.racers[carrier].finished = true;
+    host.controller.update(0.1, GameState.RACING, true);
+    assert.equal(host.resolutions[0].exploded, false);
     applied = guest.controller.applySnapshotState(host.controller.snapshotState());
-    assert.equal(applied.newlyExplodedMask, 1);
-    assert.equal(guest.controller.resolvedCarrierLane(0), second);
-    assert.equal(guest.controller.applyResolution(host.resolutions.at(-1)), false);
+    assert.equal(applied.newlyExplodedMask, 0);
+    assert.equal(guest.controller.currentArm(), null);
 });
 
-test('同版本迟到快照不能把引信倒回更长时间', () => {
-    const f = fixture();
-    f.controller.update(0, GameState.RACING, true);
-    const stale = f.controller.snapshotState();
-    f.controller.update(1.5, GameState.RACING, false);
-    const before = f.controller.currentRemainingSeconds();
-    f.controller.applySnapshotState(stale);
-    assert.equal(f.controller.currentRemainingSeconds(), before);
+test('水雷模式的出生布局和漂移由共享种子稳定生成', () => {
+    const a = minefieldFixture(123);
+    const b = minefieldFixture(123);
+    a.controller.update(0.5, GameState.RACING, false);
+    b.controller.update(0.5, GameState.RACING, false);
+    assert.deepEqual(a.controller.mines(), b.controller.mines());
+    assert.equal(a.controller.mines().length, MINEFIELD_TUNING.mineCount);
+    assert.ok(a.controller.mines().every(mine => mine.active));
 });
 
-test('AI 持雷后追人，附近非持雷 AI 向相反方向躲避', () => {
-    const f = fixture();
-    f.controller.update(0, GameState.RACING, true);
-    const carrier = f.controller.currentCarrierLane();
-    const target = carrier === 0 ? 1 : 0;
-    f.racers[target].distance = f.racers[carrier].distance + 1;
-    f.racers[target].lateral = f.racers[carrier].lateral + 1;
-    f.controller.update(MINE_RELAY_TUNING.aiReactionSlowSeconds, GameState.RACING, false);
-    assert.equal(f.controller.targetZForAi(carrier, 1), f.racers[target].lateral);
-    const avoid = f.controller.targetZForAi(target, 1);
-    assert.notEqual(avoid, null);
-    assert.ok(Math.abs(avoid - f.racers[carrier].lateral) > 1);
+test('水雷碰到立即爆炸，并在冷却后重新漂浮', () => {
+    const fixture = minefieldFixture();
+    const mine = fixture.controller.mines()[0];
+    fixture.racers[0].distance = mine.courseX;
+    fixture.racers[0].lateral = mine.lateral;
+    fixture.racers[1].active = false;
+    fixture.controller.update(0, GameState.RACING, true);
+    assert.equal(fixture.impacts.length, 1);
+    assert.equal(fixture.impacts[0].mineId, mine.id);
+    assert.equal(fixture.controller.mines()[mine.id].active, false);
+    fixture.racers[0].distance = 0;
+    for (let elapsed = 0; elapsed < MINEFIELD_TUNING.respawnSeconds + 0.1; elapsed += 0.1) {
+        fixture.controller.update(0.1, GameState.RACING, true);
+    }
+    assert.equal(fixture.controller.mines()[mine.id].active, true);
 });
 
-test('水雷 HUD 和表现遵守低频差量更新及固定网格约束', () => {
+test('水雷使用路径扫掠判定，单帧跨过水雷也会触发', () => {
+    const fixture = minefieldFixture();
+    const mine = fixture.controller.mines()[0];
+    fixture.racers[0].distance = Math.max(0, mine.courseX - 2);
+    fixture.racers[0].lateral = mine.lateral;
+    fixture.racers[1].active = false;
+    fixture.controller.update(0, GameState.RACING, true);
+    fixture.racers[0].distance = mine.courseX + 2;
+    fixture.controller.update(0, GameState.RACING, true);
+    assert.equal(fixture.impacts.length, 1);
+});
+
+test('访客只接受递增的房主触雷事件', () => {
+    const fixture = minefieldFixture();
+    const mine = fixture.controller.mines()[0];
+    const impact = { mineId: mine.id, hitLane: 1, courseX: mine.courseX, lateral: mine.lateral, revision: 1 };
+    assert.equal(fixture.controller.applyImpact(impact), true);
+    assert.equal(fixture.controller.applyImpact(impact), false);
+});
+
+test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', () => {
     const hud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts', import.meta.url), 'utf8');
     assert.match(hud, /SAMPLE_SECONDS = 0\.1/);
     assert.match(hud, /text !== this\.lastText/);
     assert.doesNotMatch(hud, /Graphics\.clear|\.clear\(\)/);
-    const presentation = readFileSync(
-        new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url),
-        'utf8',
-    );
+    const presentation = readFileSync(new URL('../assets/scripts/core/MinefieldBrawlPresentation.ts', import.meta.url), 'utf8');
     assert.match(presentation, /PRESENTATION_INTERVAL = 1 \/ 20/);
     assert.match(presentation, /buildMineGeometry/);
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
+    const timedBombPresentation = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url), 'utf8');
+    assert.match(timedBombPresentation, /buildTimedBombGeometry/);
+    assert.match(timedBombPresentation, /TimedBombWarningLamp/);
+    assert.match(timedBombPresentation, /appendFacetedCylinder/);
+    assert.doesNotMatch(timedBombPresentation, /this\.clock \* \(locked \? 190 : 75\)/);
+    const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
+    assert.doesNotMatch(manager, /showMineFloating|showMineCarrier|showMineExplosion|updateMine\(/);
 });
 
-test('水雷接力赛只允许快速比赛二百米并可保存选择', () => {
+test('两种新玩法只允许快速比赛二百米，旧水雷接力存档迁移为定时炸弹', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];
-    assert.equal(executeCareer(profile, {
-        type: 'begin', source: 'quick', characterId, tier: 0, distance: 200, rule: 'mine-relay', seed: 17,
-    }).ok, true);
-    assert.equal(normalizeProfile(profile).career.quick.rule, 'mine-relay');
-    assert.equal(executeCareer(createDefaultProfile(), {
-        type: 'begin', source: 'league', characterId, tier: 0, distance: 200, rule: 'mine-relay', seed: 17,
-    }).ok, false);
+    for (const rule of ['timed-bomb', 'minefield']) {
+        assert.equal(executeCareer(createDefaultProfile(), {
+            type: 'begin', source: 'quick', characterId, tier: 0, distance: 200, rule, seed: 17,
+        }).ok, true);
+        assert.equal(executeCareer(createDefaultProfile(), {
+            type: 'begin', source: 'league', characterId, tier: 0, distance: 200, rule, seed: 17,
+        }).ok, false);
+    }
+    profile.career.quick.rule = 'mine-relay';
+    assert.equal(normalizeProfile(profile).career.quick.rule, 'timed-bomb');
 });

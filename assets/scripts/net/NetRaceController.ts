@@ -158,6 +158,7 @@ export class NetRaceController {
     private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
     private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, revision: number) => void) | null = null;
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
+    private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -292,6 +293,22 @@ export class NetRaceController {
 
     setMineRelayStateListener(listener: ((state: NetMineRelayState) => void) | null): void {
         this._mineRelayStateListener = listener;
+    }
+
+    enqueueMinefieldImpact(mineId: number, hitLane: number, courseX: number, lateral: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.MinefieldImpact,
+            mineId,
+            mineHitLane: hitLane,
+            mineDistance: courseX,
+            mineLateral: lateral,
+            revision,
+        });
+    }
+
+    setMinefieldImpactListener(listener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null): void {
+        this._minefieldImpactListener = listener;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -959,6 +976,13 @@ export class NetRaceController {
                     || event.exploded === undefined || event.revision === undefined) continue;
                 this._mineRelayResolutionListener?.(
                     event.mineRoundId, event.mineCarrierLane, event.exploded, event.revision,
+                );
+            } else if (event.kind === NetInputKind.MinefieldImpact) {
+                if (event.mineId === undefined || event.mineHitLane === undefined
+                    || event.mineDistance === undefined || event.mineLateral === undefined
+                    || event.revision === undefined) continue;
+                this._minefieldImpactListener?.(
+                    event.mineId, event.mineHitLane, event.mineDistance, event.mineLateral, event.revision,
                 );
             }
         }

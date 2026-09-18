@@ -7,7 +7,7 @@ const ATTACH_X = -0.28;
 const ATTACH_Y = 0.48;
 const ATTACH_Z = 0;
 
-/** 单个固定低面数水雷与池化爆炸网格；水雷挂到泳者节点后无需逐帧追踪世界坐标。 */
+/** 单个固定低面数定时炸弹与池化爆炸网格；炸弹挂到泳者节点后无需逐帧追踪世界坐标。 */
 export class MineRelayBrawlPresentation {
     private mineRoot: Node | null = null;
     private lamp: Node | null = null;
@@ -87,7 +87,12 @@ export class MineRelayBrawlPresentation {
             const frequency = locked ? 18 : 5 + urgency * 8;
             const pulse = 0.78 + (Math.sin(this.clock * frequency) * 0.5 + 0.5) * (locked ? 0.5 : 0.3);
             this.lamp?.setScale(pulse, pulse, pulse);
-            this.mineRoot.setRotationFromEuler(0, this.clock * (locked ? 190 : 75), Math.sin(this.clock * 4) * 7);
+            const swayScale = locked ? 1.45 : 1;
+            this.mineRoot.setRotationFromEuler(
+                Math.sin(this.clock * 3.1) * 3 * swayScale,
+                Math.sin(this.clock * 1.8) * 6 * swayScale,
+                Math.sin(this.clock * 2.4) * 4 * swayScale,
+            );
         }
         if (this.explosionRemaining > 0) {
             this.explosionRemaining = Math.max(0, this.explosionRemaining - presentationStep);
@@ -121,19 +126,19 @@ export class MineRelayBrawlPresentation {
 
     private build(): void {
         if (!this.worldRoot?.isValid) return;
-        this.mineMesh = utils.createMesh(buildMineGeometry());
+        this.mineMesh = utils.createMesh(buildTimedBombGeometry());
         this.lampMesh = utils.createMesh(buildLowPolyLampGeometry());
-        this.explosionMesh = utils.createMesh(buildExplosionGeometry());
-        this.mineMaterial = makeVertexMaterial('MineRelayBodyMaterial', true);
-        this.explosionMaterial = makeVertexMaterial('MineRelayExplosionMaterial', false);
+        this.explosionMesh = utils.createMesh(buildMineExplosionGeometry());
+        this.mineMaterial = makeMineVertexMaterial('TimedBombBodyMaterial', true);
+        this.explosionMaterial = makeMineVertexMaterial('MineRelayExplosionMaterial', false);
         this.lampMaterial = new Material();
         this.lampMaterial.initialize({ effectName: 'builtin-unlit' });
-        this.lampMaterial.name = 'MineRelayLampMaterial';
+        this.lampMaterial.name = 'TimedBombLampMaterial';
         this.lampMaterial.setProperty('mainColor', new Color(255, 72, 24, 255));
 
-        this.mineRoot = this.makeMeshNode('MineRelayMine', this.mineMesh, this.mineMaterial, this.worldRoot);
-        this.lamp = this.makeMeshNode('MineRelayWarningLamp', this.lampMesh, this.lampMaterial, this.mineRoot);
-        this.lamp.setPosition(0, 0.48, 0);
+        this.mineRoot = this.makeMeshNode('TimedBomb', this.mineMesh, this.mineMaterial, this.worldRoot);
+        this.lamp = this.makeMeshNode('TimedBombWarningLamp', this.lampMesh, this.lampMaterial, this.mineRoot);
+        this.lamp.setPosition(0, 0.59, 0.02);
         this.explosion = this.makeMeshNode('MineRelayExplosion', this.explosionMesh, this.explosionMaterial, this.worldRoot);
         this.mineRoot.active = false;
         this.explosion.active = false;
@@ -156,7 +161,7 @@ export class MineRelayBrawlPresentation {
 
 type ColorTuple = readonly [number, number, number, number];
 
-function makeVertexMaterial(name: string, opaque: boolean): Material {
+export function makeMineVertexMaterial(name: string, opaque: boolean): Material {
     const material = new Material();
     material.initialize({
         effectName: 'builtin-unlit',
@@ -172,7 +177,7 @@ function makeVertexMaterial(name: string, opaque: boolean): Material {
     return material;
 }
 
-function buildMineGeometry(): primitives.IGeometry {
+export function buildMineGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
@@ -184,6 +189,29 @@ function buildMineGeometry(): primitives.IGeometry {
     return geometry(positions, colors, indices, new Vec3(-0.57, -0.57, -0.57), new Vec3(0.57, 0.57, 0.57));
 }
 
+export function buildTimedBombGeometry(): primitives.IGeometry {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    const rods: ReadonlyArray<readonly [number, number, ColorTuple]> = [
+        [-0.16, -0.09, [0.82, 0.08, 0.035, 1]],
+        [0.16, -0.09, [0.96, 0.16, 0.045, 1]],
+        [0, 0.15, [0.72, 0.045, 0.025, 1]],
+    ];
+    for (const [x, z, color] of rods) {
+        appendFacetedCylinder(positions, colors, indices, x, 0, z, 0.14, 0.34, color);
+    }
+
+    const strapColor: ColorTuple = [0.055, 0.065, 0.075, 1];
+    appendBox(positions, colors, indices, -0.34, -0.22, -0.25, 0.34, -0.12, 0.28, strapColor);
+    appendBox(positions, colors, indices, -0.34, 0.12, -0.25, 0.34, 0.22, 0.28, strapColor);
+
+    appendBox(positions, colors, indices, -0.22, 0.24, 0.16, 0.22, 0.48, 0.32, [0.09, 0.11, 0.13, 1]);
+    appendBox(positions, colors, indices, -0.16, 0.29, 0.315, 0.16, 0.43, 0.345, [0.12, 0.85, 0.95, 1]);
+    appendBox(positions, colors, indices, -0.025, 0.47, -0.025, 0.025, 0.55, 0.025, [0.95, 0.63, 0.08, 1]);
+    return geometry(positions, colors, indices, new Vec3(-0.34, -0.34, -0.25), new Vec3(0.34, 0.72, 0.345));
+}
+
 function buildLowPolyLampGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
@@ -192,7 +220,7 @@ function buildLowPolyLampGeometry(): primitives.IGeometry {
     return geometry(positions, colors, indices, new Vec3(-0.13, -0.13, -0.13), new Vec3(0.13, 0.13, 0.13));
 }
 
-function buildExplosionGeometry(): primitives.IGeometry {
+export function buildMineExplosionGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
@@ -241,6 +269,54 @@ function appendSpike(
     );
     pushColor(colors, color, 5);
     const faces = [0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4, 0, 3, 2, 0, 2, 1];
+    for (const index of faces) indices.push(base + index);
+}
+
+function appendFacetedCylinder(
+    positions: number[], colors: number[], indices: number[],
+    centerX: number, centerY: number, centerZ: number, radius: number, halfHeight: number, color: ColorTuple,
+): void {
+    const segments = 8;
+    const base = positions.length / 3;
+    for (let i = 0; i < segments; i++) {
+        const angle = i / segments * Math.PI * 2;
+        const x = centerX + Math.cos(angle) * radius;
+        const z = centerZ + Math.sin(angle) * radius;
+        positions.push(x, centerY - halfHeight, z, x, centerY + halfHeight, z);
+        pushColor(colors, color, 2);
+    }
+    const bottomCenter = positions.length / 3;
+    positions.push(centerX, centerY - halfHeight, centerZ, centerX, centerY + halfHeight, centerZ);
+    pushColor(colors, color, 2);
+    for (let i = 0; i < segments; i++) {
+        const next = (i + 1) % segments;
+        const lower = base + i * 2;
+        const upper = lower + 1;
+        const nextLower = base + next * 2;
+        const nextUpper = nextLower + 1;
+        indices.push(lower, upper, nextLower, nextLower, upper, nextUpper);
+        indices.push(bottomCenter, lower, nextLower, bottomCenter + 1, nextUpper, upper);
+    }
+}
+
+function appendBox(
+    positions: number[], colors: number[], indices: number[],
+    minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, color: ColorTuple,
+): void {
+    const base = positions.length / 3;
+    positions.push(
+        minX, minY, minZ, maxX, minY, minZ, maxX, maxY, minZ, minX, maxY, minZ,
+        minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ,
+    );
+    pushColor(colors, color, 8);
+    const faces = [
+        0, 3, 2, 0, 2, 1,
+        4, 5, 6, 4, 6, 7,
+        0, 4, 7, 0, 7, 3,
+        1, 2, 6, 1, 6, 5,
+        0, 1, 5, 0, 5, 4,
+        3, 7, 6, 3, 6, 2,
+    ];
     for (const index of faces) indices.push(base + index);
 }
 

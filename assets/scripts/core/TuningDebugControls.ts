@@ -20,6 +20,7 @@ import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
 import { WHIRLPOOL_BRAWL_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
+import { MINEFIELD_TUNING } from './MinefieldBrawlController';
 
 export type TuningControl = {
     id: string;
@@ -365,7 +366,7 @@ export const TUNING_GROUPS: TuningGroup[] = [
         ],
     },
     {
-        name: '水雷接力赛',
+        name: '定时炸弹模式',
         controls: [
             control('mineRelay.transferAlongRadius', '前后传递范围', '沿赛道方向的贴身传雷判定半径。', () => MINE_RELAY_TUNING.transferAlongRadius, v => MINE_RELAY_TUNING.transferAlongRadius = v, 0.05, 0.5, 2.5, 2, ' m'),
             control('mineRelay.transferLateralRadius', '横向传递范围', '跨泳道方向的贴身传雷判定半径。', () => MINE_RELAY_TUNING.transferLateralRadius, v => MINE_RELAY_TUNING.transferLateralRadius = v, 0.05, 0.4, 2, 2, ' m'),
@@ -379,6 +380,20 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('mineRelay.explosionPitchImpulse', '爆炸下扎冲量', '水雷爆炸造成的头端下扎强度。', () => MINE_RELAY_TUNING.explosionPitchImpulse, v => MINE_RELAY_TUNING.explosionPitchImpulse = v, 0.05, 0, 8, 2),
             control('mineRelay.explosionSoftnessLateralImpulse', '爆炸侧向软体', '爆炸叠加到四肢和躯干的侧向柔性冲量。', () => MINE_RELAY_TUNING.explosionSoftnessLateralImpulse, v => MINE_RELAY_TUNING.explosionSoftnessLateralImpulse = v, 0.05, 0, 4, 2),
             control('mineRelay.explosionSoftnessForwardImpulse', '爆炸前后软体', '爆炸叠加到四肢和躯干的前后柔性冲量，可为负。', () => MINE_RELAY_TUNING.explosionSoftnessForwardImpulse, v => MINE_RELAY_TUNING.explosionSoftnessForwardImpulse = v, 0.05, -3, 3, 2),
+        ],
+    },
+    {
+        name: '水雷模式',
+        controls: [
+            control('minefield.mineCount', '水雷数量', '泳池中同时维持的障碍水雷数量；重开比赛后生效。', () => MINEFIELD_TUNING.mineCount, v => MINEFIELD_TUNING.mineCount = Math.round(v), 1, 3, 10, 0),
+            control('minefield.contactAlongRadius', '前后触雷范围', '身体与水雷沿赛道方向的碰撞半径。', () => MINEFIELD_TUNING.contactAlongRadius, v => MINEFIELD_TUNING.contactAlongRadius = v, 0.05, 0.5, 2.5, 2, ' m'),
+            control('minefield.contactLateralRadius', '横向触雷范围', '身体与水雷跨泳道方向的碰撞半径。', () => MINEFIELD_TUNING.contactLateralRadius, v => MINEFIELD_TUNING.contactLateralRadius = v, 0.05, 0.4, 2, 2, ' m'),
+            control('minefield.driftAlongRadius', '前后漂移半径', '水雷围绕锚点沿赛道方向漂动的最大距离。', () => MINEFIELD_TUNING.driftAlongRadius, v => MINEFIELD_TUNING.driftAlongRadius = v, 0.05, 0, 2, 2, ' m'),
+            control('minefield.driftLateralRadius', '横向漂移半径', '水雷围绕锚点跨泳道漂动的最大距离。', () => MINEFIELD_TUNING.driftLateralRadius, v => MINEFIELD_TUNING.driftLateralRadius = v, 0.05, 0, 2, 2, ' m'),
+            control('minefield.driftSpeed', '漂移速度', '所有水雷围绕锚点漂动的基础速度。', () => MINEFIELD_TUNING.driftSpeed, v => MINEFIELD_TUNING.driftSpeed = v, 0.05, 0.1, 2, 2),
+            control('minefield.respawnSeconds', '重新浮出时间', '水雷爆炸后隐藏多久再重新成为障碍。', () => MINEFIELD_TUNING.respawnSeconds, v => MINEFIELD_TUNING.respawnSeconds = v, 0.1, 1, 10, 1, ' s'),
+            control('minefield.aiLookAhead', 'AI 预判距离', 'AI 在多远处开始考虑绕开同横向区域的水雷。', () => MINEFIELD_TUNING.aiLookAhead, v => MINEFIELD_TUNING.aiLookAhead = v, 0.25, 2, 10, 2, ' m'),
+            control('minefield.aiAvoidOffset', 'AI 避让偏移', 'AI 绕雷时相对水雷横向中心的目标偏移。', () => MINEFIELD_TUNING.aiAvoidOffset, v => MINEFIELD_TUNING.aiAvoidOffset = v, 0.05, 0.5, 4, 2, ' m'),
         ],
     },
     {

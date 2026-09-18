@@ -97,13 +97,15 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isMineRelayBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
 import { WhirlpoolBrawlController } from './WhirlpoolBrawlController';
 import { CannonBrawlController, CannonImpact, CannonLaunch, CannonRacerState } from './CannonBrawlController';
 import { CannonBrawlPresentation } from './CannonBrawlPresentation';
 import { MINE_RELAY_ROUNDS, MINE_RELAY_TUNING, MineRelayArm, MineRelayBrawlController, MineRelayRacerState, MineRelayResolution, MineRelayTransfer } from './MineRelayBrawlController';
 import { MineRelayBrawlPresentation } from './MineRelayBrawlPresentation';
+import { MinefieldBrawlController, MinefieldImpact, MinefieldRacerState, MINEFIELD_TUNING } from './MinefieldBrawlController';
+import { MinefieldBrawlPresentation } from './MinefieldBrawlPresentation';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -271,6 +273,12 @@ export class GameManager extends Component {
         () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
     );
     private readonly _mineExplosionWorldPosition = new Vec3();
+    private _minefieldBrawl: MinefieldBrawlController | null = null;
+    private _minefieldPresentation: MinefieldBrawlPresentation | null = null;
+    private readonly _minefieldRacerStates: MinefieldRacerState[] = Array.from(
+        { length: LANE_LAYOUT.laneCount },
+        () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
+    );
     private _pendingPlayerEliminationDelay = 0;
     private _stimulantToastPriorityUntilMs = 0;
     private _shark: SharkController | null = null;
@@ -473,10 +481,14 @@ export class GameManager extends Component {
         this._mineRelayPresentation = null;
         this._mineRelayHud?.dispose();
         this._mineRelayHud = null;
+        this._minefieldBrawl = null;
+        this._minefieldPresentation?.dispose();
+        this._minefieldPresentation = null;
         this._netRaceController?.setMineRelayArmListener(null);
         this._netRaceController?.setMineRelayTransferListener(null);
         this._netRaceController?.setMineRelayResolutionListener(null);
         this._netRaceController?.setMineRelayStateListener(null);
+        this._netRaceController?.setMinefieldImpactListener(null);
         this._netRaceController?.setSharkEliminationListener(null);
         this._netRaceController?.setSharkStateListener(null);
         this._sharkPictureInPicture?.dispose();
@@ -598,6 +610,7 @@ export class GameManager extends Component {
         this.updateWhirlpoolBrawl(dt);
         this.updateCannonBrawl(dt);
         this.updateMineRelayBrawl(dt);
+        this.updateMinefieldBrawl(dt);
         if (this._shark) {
             this.updateSharkBrawl(dt);
             this._sharkPictureInPicture?.update(this._shark, dt);
@@ -938,6 +951,7 @@ export class GameManager extends Component {
                     this.setupSharkBrawl();
                     this.setupCannonBrawl();
                     this.setupMineRelayBrawl();
+                    this.setupMinefieldBrawl();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
@@ -1007,6 +1021,8 @@ export class GameManager extends Component {
                     this._mineRelayBrawl?.reset();
                     this._mineRelayPresentation?.reset();
                     this._mineRelayHud?.reset();
+                    this._minefieldBrawl?.reset();
+                    this._minefieldPresentation?.reset();
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
                     this._laneLockdownVisuals?.clear();
@@ -1607,7 +1623,7 @@ export class GameManager extends Component {
         this._mineRelayBrawl = null;
         this._mineRelayPresentation?.dispose();
         this._mineRelayPresentation = null;
-        if (!isMineRelayBrawlMode() || !this._raceManager) return;
+        if (!isTimedBombBrawlMode() || !this._raceManager) return;
         if (this._worldRoot?.isValid) {
             this._mineRelayPresentation = new MineRelayBrawlPresentation(this._worldRoot);
         }
@@ -1703,12 +1719,19 @@ export class GameManager extends Component {
     }
 
     private handleMineRelayArm(event: MineRelayArm, broadcast: boolean) {
-        this._mineRelayPresentation?.attach(event, this.swimmerForLane(event.carrierLane)?.node ?? null);
-        if (event.roundId === 0) {
+        const carrierNode = this.swimmerForLane(event.carrierLane)?.node ?? null;
+        this._mineRelayPresentation?.attach(event, carrierNode);
+        if (event.carrierLane === this._playerLaneIndex) {
             showToast(
                 this.createRuntimeSceneBuilder().findCanvasNode(),
-                '水雷已启动！持雷者贴近对手即可传递',
-                { duration: 2 },
+                '定时炸弹落到你身上了！贴近对手把它传出去',
+                { duration: 1.4 },
+            );
+        } else {
+            showToast(
+                this.createRuntimeSceneBuilder().findCanvasNode(),
+                `定时炸弹随机落到${event.carrierLane + 1}号泳道！`,
+                { duration: 1.2 },
             );
         }
         if (broadcast && this._netRaceController?.isHost) {
@@ -1720,16 +1743,17 @@ export class GameManager extends Component {
 
     private handleMineRelayTransfer(event: MineRelayTransfer, broadcast: boolean) {
         const arm = this._mineRelayBrawl?.currentArm() ?? null;
+        const carrierNode = this.swimmerForLane(event.toLane)?.node ?? null;
         this._mineRelayPresentation?.attach(arm ?? {
             roundId: event.roundId,
             carrierLane: event.toLane,
             fuseSeconds: event.remainingSeconds,
             revision: event.revision,
-        }, this.swimmerForLane(event.toLane)?.node ?? null);
+        }, carrierNode);
         if (event.fromLane === this._playerLaneIndex) {
-            showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '水雷已传出！', { duration: 0.8 });
+            showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '定时炸弹已传出！', { duration: 0.8 });
         } else if (event.toLane === this._playerLaneIndex) {
-            showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '水雷传到你身上了！', { duration: 1 });
+            showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '定时炸弹传到你身上了！', { duration: 1 });
         }
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueMineRelayTransfer(
@@ -1773,9 +1797,99 @@ export class GameManager extends Component {
         swimmer.cartoonRig?.triggerBigSplash(2.45);
         showToast(
             this.createRuntimeSceneBuilder().findCanvasNode(),
-            `${swimmer.swimmerName} 的水雷爆炸，被掀翻了！`,
+            `${swimmer.swimmerName} 的定时炸弹爆炸，被掀翻了！`,
             { duration: 1.25 },
         );
+    }
+
+    private setupMinefieldBrawl() {
+        this._minefieldBrawl = null;
+        this._minefieldPresentation?.dispose();
+        this._minefieldPresentation = null;
+        this._netRaceController?.setMinefieldImpactListener(null);
+        if (!isMinefieldBrawlMode() || !this._raceManager) return;
+        this._minefieldBrawl = new MinefieldBrawlController(
+            LANE_LAYOUT.laneCount,
+            getSharedRandomSeed(),
+            COURSE_LAYOUT.poolWidth,
+            lane => {
+                const state = this._minefieldRacerStates[lane];
+                const swimmer = this.swimmerForLane(lane);
+                state.active = !!swimmer?.node?.active;
+                state.finished = (this._raceManager?.hasSwimmerFinished(swimmer ?? null) ?? false)
+                    || (swimmer?.distance ?? 0) >= getRaceDistance();
+                state.distance = swimmer?.distance ?? 0;
+                state.lateral = swimmer?.node?.position.z ?? LANE_LAYOUT.centerZ(lane);
+                return state;
+            },
+            impact => this.handleMinefieldImpact(impact, true),
+        );
+        if (this._worldRoot?.isValid) {
+            this._minefieldPresentation = new MinefieldBrawlPresentation(
+                this._worldRoot,
+                COURSE_LAYOUT,
+                MINEFIELD_TUNING.mineCount,
+            );
+        }
+        this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, revision) => {
+            const impact = { mineId, hitLane, courseX, lateral, revision };
+            if (this._minefieldBrawl?.applyImpact(impact)) this.handleMinefieldImpact(impact, false);
+        });
+        showToast(
+            this.createRuntimeSceneBuilder().findCanvasNode(),
+            '水雷会在泳池中漂移，碰到立即爆炸！',
+            { duration: 2 },
+        );
+    }
+
+    private updateMinefieldBrawl(dt: number) {
+        const controller = this._minefieldBrawl;
+        if (!controller || this._modelDebugFlow?.active) {
+            this.activePlayerAutopilot()?.setMineRelayTargetZ(null);
+            return;
+        }
+        controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
+        const visible = this._state === GameState.PRECOUNTDOWN || this._state === GameState.COUNTDOWN
+            || this._state === GameState.DIVING || this._state === GameState.GLIDING
+            || this._state === GameState.RACING;
+        this._minefieldPresentation?.update(dt, controller.mines(), visible);
+        for (let i = 0; i < this._aiControllers.length; i++) {
+            const ai = this._aiControllers[i];
+            const swimmer = this._aiSwimmers[i];
+            if (!ai || !swimmer || ai.remoteDriven) continue;
+            ai.setMineRelayTargetZ(controller.targetZForAi(this.assignedLaneOfSwimmer(swimmer)));
+        }
+        this.activePlayerAutopilot()?.setMineRelayTargetZ(controller.targetZForAi(this._playerLaneIndex));
+    }
+
+    private handleMinefieldImpact(impact: MinefieldImpact, broadcast: boolean) {
+        this._minefieldPresentation?.showImpact(impact);
+        const swimmer = this.swimmerForLane(impact.hitLane);
+        if (swimmer?.node?.active) {
+            const away = swimmer.node.position.z === impact.lateral
+                ? (impact.hitLane & 1 ? 1 : -1)
+                : Math.sign(swimmer.node.position.z - impact.lateral);
+            swimmer.applyCollisionImpulse(-MINE_RELAY_TUNING.explosionBackwardImpulse, away * MINE_RELAY_TUNING.explosionLateralImpulse);
+            swimmer.applyCollisionAxialImpulse(away * MINE_RELAY_TUNING.explosionAxialImpulse);
+            swimmer.applyCollisionPitchImpulse(-MINE_RELAY_TUNING.explosionPitchImpulse);
+            swimmer.applyCollisionSoftnessImpulse(
+                away * MINE_RELAY_TUNING.explosionSoftnessLateralImpulse,
+                MINE_RELAY_TUNING.explosionSoftnessForwardImpulse,
+            );
+            const splashNode = swimmer.cartoonRig?.splashNode;
+            if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
+            swimmer.cartoonRig?.triggerBigSplash(2.45);
+            showToast(
+                this.createRuntimeSceneBuilder().findCanvasNode(),
+                `${swimmer.swimmerName} 撞上水雷，被炸翻了！`,
+                { duration: 1.2 },
+            );
+        }
+        if (broadcast && this._netRaceController?.isHost) {
+            this._netRaceController.enqueueMinefieldImpact(
+                impact.mineId, impact.hitLane, impact.courseX, impact.lateral, impact.revision,
+            );
+        }
     }
 
     private setupSharkBrawl() {
@@ -3054,8 +3168,10 @@ export class GameManager extends Component {
                 ? '贴外圈借水流加速，避开漩涡核心'
                 : isCannonBrawlMode()
                     ? '观察水面预警躲避炮弹；核心命中直接淘汰'
-                    : isMineRelayBrawlMode()
-                        ? '持雷者贴近对手传雷；爆炸会被击飞失速'
+                    : isTimedBombBrawlMode()
+                        ? '炸弹会随机落到选手身上；贴近对手传出，倒计时结束时爆炸'
+                    : isMinefieldBrawlMode()
+                        ? '水雷在泳池中缓慢漂移；碰到立即爆炸并被掀翻失速'
                         : '率先完成全程者获胜',
         });
     }
@@ -3123,7 +3239,7 @@ export class GameManager extends Component {
             if (isCannonBrawlMode()) {
                 this._cannonBrawlHud = new CannonBrawlHud(this._raceHud, w, h);
             }
-            if (isMineRelayBrawlMode()) {
+            if (isTimedBombBrawlMode()) {
                 this._mineRelayHud = new MineRelayBrawlHud(this._raceHud, w, h);
             }
             this._cameraSpeedLines.bind(this._raceHud);

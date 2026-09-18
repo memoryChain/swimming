@@ -81,7 +81,7 @@ export const MINE_RELAY_TUNING = {
 };
 
 /**
- * 水雷接力赛的单机／房主权威规则。访客只推进显示计时，并应用可靠事件和快照。
+ * 定时炸弹模式的单机／房主权威规则。访客只推进显示计时，并应用可靠事件和快照。
  * 判定使用赛道坐标中的椭圆身体胶囊，不依赖各设备的碰撞数组顺序。
  */
 export class MineRelayBrawlController {

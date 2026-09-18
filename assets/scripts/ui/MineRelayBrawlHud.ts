@@ -8,7 +8,7 @@ const NORMAL_TEXT = new Color(226, 247, 255, 255);
 const WARNING_TEXT = new Color(255, 220, 66, 255);
 const DANGER_TEXT = new Color(255, 92, 62, 255);
 
-/** 水雷接力赛状态条；稳定节点、10Hz 采样、只在最终值变化时写属性。 */
+/** 定时炸弹模式状态条；稳定节点、10Hz 采样、只在最终值变化时写属性。 */
 export class MineRelayBrawlHud {
     readonly root: Node;
     private readonly label: Label;
@@ -67,19 +67,19 @@ export class MineRelayBrawlHud {
             const seconds = Math.max(0, Math.ceil(remainingSeconds * 10) / 10).toFixed(1);
             if (carrierLane === playerLane) {
                 if (locked) {
-                    text = `水雷已锁定 · ${seconds}秒后爆炸`;
+                    text = `炸弹已锁定 · ${seconds}秒后爆炸`;
                 } else {
-                    text = `你持有水雷 · ${seconds}秒 · 贴近对手传出`;
+                    text = `你持有定时炸弹 · ${seconds}秒 · 贴近对手传出`;
                 }
                 colorState = 2;
             } else {
-                text = `水雷在${carrierLane + 1}号泳道 · ${seconds}秒后爆炸${locked ? ' · 已锁定' : ''}`;
+                text = `炸弹在${carrierLane + 1}号泳道 · ${seconds}秒后爆炸${locked ? ' · 已锁定' : ''}`;
                 colorState = locked ? 2 : 1;
             }
         } else if (remainingRounds > 0) {
-            text = `下一轮水雷待命 · 还剩${remainingRounds}轮`;
+            text = `下一轮炸弹待命 · 还剩${remainingRounds}轮`;
         } else {
-            text = '水雷阶段结束 · 全力冲刺';
+            text = '炸弹阶段结束 · 全力冲刺';
         }
         if (text !== this.lastText) {
             this.lastText = text;

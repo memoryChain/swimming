@@ -21,7 +21,8 @@ export const ROOM_MODES: ReadonlyArray<{ id: RaceModeId; label: string }> = [
     { id: 'shark-brawl', label: getRaceModeTitle('shark-brawl') },
     { id: 'whirlpool-brawl', label: getRaceModeTitle('whirlpool-brawl') },
     { id: 'last-place-brawl', label: getRaceModeTitle('last-place-brawl') },
-    { id: 'mine-relay-brawl', label: getRaceModeTitle('mine-relay-brawl') },
+    { id: 'timed-bomb-brawl', label: getRaceModeTitle('timed-bomb-brawl') },
+    { id: 'minefield-brawl', label: getRaceModeTitle('minefield-brawl') },
 ];
 export type OnlineMember = {
     clientId?: number;

@@ -248,7 +248,8 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
         : raw.quick?.rule === 'shark' ? 'shark'
             : raw.quick?.rule === 'whirlpool' ? 'whirlpool'
                 : raw.quick?.rule === 'cannon' || raw.quick?.rule === 'last-place' ? 'cannon'
-                    : raw.quick?.rule === 'mine-relay' ? 'mine-relay'
+                    : raw.quick?.rule === 'timed-bomb' || raw.quick?.rule === 'mine-relay' ? 'timed-bomb'
+                        : raw.quick?.rule === 'minefield' ? 'minefield'
                         : raw.quick?.rule === 'wild' ? 'wild' : 'standard';
     c.quick = { distance: quickRule === 'standard' || quickRule === 'wild' ? (raw.quick?.distance === 400 ? 400 : 200) : 200, rule: quickRule };
     // 中断后从杯赛当前轮重新开赛；已结算回执仍保留，不能因重启重复发放。
@@ -259,7 +260,9 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
     const p = raw.pending;
     if (p && typeof p.id === 'string' && ['quick', 'league', 'cup'].indexOf(p.source) >= 0
         && (p.distance === 200 || p.distance === 400)
-        && (p.rule === 'standard' || p.rule === 'wild' || ((p.rule === 'stimulant' || p.rule === 'shark' || p.rule === 'whirlpool' || p.rule === 'cannon' || p.rule === 'mine-relay' || p.rule === 'last-place') && p.source === 'quick' && p.distance === 200))
-        && Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 5 && p.ai && Number.isFinite(p.seed)) c.pending = p;
+        && (p.rule === 'standard' || p.rule === 'wild' || ((p.rule === 'stimulant' || p.rule === 'shark' || p.rule === 'whirlpool' || p.rule === 'cannon' || p.rule === 'timed-bomb' || p.rule === 'minefield' || p.rule === 'mine-relay' || p.rule === 'last-place') && p.source === 'quick' && p.distance === 200))
+        && Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 5 && p.ai && Number.isFinite(p.seed)) {
+        c.pending = p.rule === 'mine-relay' ? { ...p, rule: 'timed-bomb' } : p;
+    }
     return c;
 }

@@ -7,7 +7,8 @@ import { copyAiEvent } from '../competitor/AiEventValidation';
 import { calculateRaceCoins } from './ProgressionBalance';
 
 export type SoloSource = 'quick' | 'league' | 'cup';
-export type RaceRule = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon' | 'mine-relay' | 'last-place';
+export type RaceRule = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon'
+    | 'timed-bomb' | 'minefield' | 'mine-relay' | 'last-place';
 export const CAREER_RACE_RULE: RaceRule = 'wild';
 export const CAREER_VERSION = 1;
 export const LEAGUE_TARGET = 100;
@@ -96,10 +97,11 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
         return { profile, ok: true, message: '已放弃本届，已获得金币保留' };
     }
     if (command.type === 'begin') {
+        const requestedRule: RaceRule = command.rule === 'mine-relay' ? 'timed-bomb' : command.rule;
         if (['quick', 'league', 'cup'].indexOf(command.source) < 0
             || (command.distance !== 200 && command.distance !== 400)
-            || (command.rule !== 'standard' && command.rule !== 'wild' && command.rule !== 'stimulant' && command.rule !== 'shark' && command.rule !== 'whirlpool' && command.rule !== 'cannon' && command.rule !== 'mine-relay' && command.rule !== 'last-place')
-            || ((command.rule === 'stimulant' || command.rule === 'shark' || command.rule === 'whirlpool' || command.rule === 'cannon' || command.rule === 'mine-relay' || command.rule === 'last-place') && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
+            || (requestedRule !== 'standard' && requestedRule !== 'wild' && requestedRule !== 'stimulant' && requestedRule !== 'shark' && requestedRule !== 'whirlpool' && requestedRule !== 'cannon' && requestedRule !== 'timed-bomb' && requestedRule !== 'minefield' && requestedRule !== 'last-place')
+            || ((requestedRule === 'stimulant' || requestedRule === 'shark' || requestedRule === 'whirlpool' || requestedRule === 'cannon' || requestedRule === 'timed-bomb' || requestedRule === 'minefield' || requestedRule === 'last-place') && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
         const p = profile.characters[command.characterId];
         if (!p) return fail('角色不存在');
         const tier = tierIndex(command.tier);
@@ -107,7 +109,7 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
         let configuredAi: AiEventConfig;
         try {
             const existing = c.cups[command.characterId];
-            configuredAi = command.source === 'quick' ? quickEvent(profile, command.characterId, command.distance, command.rule)
+            configuredAi = command.source === 'quick' ? quickEvent(profile, command.characterId, command.distance, requestedRule)
                 : eventFor(tier, command.source === 'cup' ? (existing?.state === 'active' && existing.tier === tier ? existing.round : 0) : undefined);
         } catch (error) { return fail(`赛事AI配置错误：${error instanceof Error ? error.message : String(error)}`); }
         let cup: CupProgress | undefined;
@@ -122,7 +124,7 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
             }
         }
         const distance = command.source === 'quick' ? command.distance : cup ? cupDistance(tier, cup.round) : 200;
-        const rule = command.source === 'quick' ? command.rule : CAREER_RACE_RULE;
+        const rule = command.source === 'quick' ? requestedRule : CAREER_RACE_RULE;
         const ticket: RaceTicket = { id: `race-${++c.serial}`, source: command.source,
             characterId: command.characterId, level: p.level, distance, rule, tier,
             round: cup?.round ?? 0, cupId: cup?.id,

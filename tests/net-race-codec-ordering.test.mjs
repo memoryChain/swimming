@@ -78,6 +78,16 @@ test('stimulant pickup event round-trips on the reliable input channel', () => {
     assert.deepEqual(decoded.events, [{ kind: 'p', itemId: 20, collectorLane: 6, revision: 9 }]);
 });
 
+test('minefield impact round-trips on the reliable input channel', () => {
+    const encoded = encodeInputFrame(0, [{
+        kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, revision: 8,
+    }], null, -1, 45);
+    const decoded = decodeInputFrame(encoded);
+    assert.deepEqual(decoded.events, [{
+        kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, revision: 8,
+    }]);
+});
+
 test('shark state and permanent elimination event round-trip across both sync fallbacks', () => {
     const shark = {
         sequence: 3,
@@ -155,7 +165,7 @@ test('cannon launch, impact and active strike round-trip across reliable events 
     assert.equal(snapshot.cannonRemainingSeconds, 0.73);
 });
 
-test('mine relay arm, transfer, resolution and active state round-trip across both sync paths', () => {
+test('timed bomb arm, transfer, resolution and active state round-trip across both sync paths', () => {
     const events = [
         { kind: 'm', mineRoundId: 2, mineCarrierLane: 5, fuseSeconds: 6.5, revision: 11 },
         { kind: 't', mineRoundId: 2, mineFromLane: 5, mineToLane: 3, remainingSeconds: 4.321, revision: 12 },
