@@ -24,6 +24,13 @@ export type MinefieldImpact = {
     revision: number;
 };
 
+export type MinefieldSnapshotState = {
+    revision: number;
+    elapsedSeconds: number;
+    activeMask: number;
+    respawnSeconds: readonly number[];
+};
+
 export const MINEFIELD_TUNING = {
     mineCount: 7,
     contactAlongRadius: 1.35,
@@ -118,6 +125,41 @@ export class MinefieldBrawlController {
     }
 
     mines(): readonly MinefieldMineState[] { return this.mineStates; }
+
+    snapshotState(): MinefieldSnapshotState {
+        let activeMask = 0;
+        const respawnSeconds: number[] = [];
+        for (let id = 0; id < this.mineStates.length; id++) {
+            const mine = this.mineStates[id];
+            if (mine.active) activeMask |= 1 << id;
+            respawnSeconds.push(mine.respawnSeconds);
+        }
+        return {
+            revision: this.revision,
+            elapsedSeconds: this.elapsed,
+            activeMask,
+            respawnSeconds,
+        };
+    }
+
+    applySnapshotState(state: MinefieldSnapshotState): boolean {
+        if (!Number.isSafeInteger(state.revision) || state.revision < this.revision
+            || !Number.isFinite(state.elapsedSeconds) || state.elapsedSeconds < 0
+            || !Number.isSafeInteger(state.activeMask) || state.activeMask < 0
+            || state.respawnSeconds.length !== this.mineStates.length) return false;
+        for (const remaining of state.respawnSeconds) {
+            if (!Number.isFinite(remaining) || remaining < 0) return false;
+        }
+        this.revision = state.revision;
+        this.elapsed = state.elapsedSeconds;
+        for (let id = 0; id < this.mineStates.length; id++) {
+            const mine = this.mineStates[id];
+            mine.active = (state.activeMask & (1 << id)) !== 0;
+            mine.respawnSeconds = mine.active ? 0 : state.respawnSeconds[id];
+        }
+        this.updateMinePositions();
+        return true;
+    }
 
     applyImpact(impact: MinefieldImpact): boolean {
         if (!Number.isSafeInteger(impact.mineId) || impact.mineId < 0 || impact.mineId >= this.mineStates.length

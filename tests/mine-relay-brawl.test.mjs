@@ -145,6 +145,36 @@ test('访客只接受递增的房主触雷事件', () => {
     assert.equal(fixture.controller.applyImpact(impact), false);
 });
 
+test('水雷快照修复丢失事件、漂移时钟和重生状态', () => {
+    const host = minefieldFixture(314);
+    const guest = minefieldFixture(314);
+    const mine = host.controller.mines()[0];
+    host.racers[0].distance = mine.courseX;
+    host.racers[0].lateral = mine.lateral;
+    host.racers[1].active = false;
+    host.controller.update(0, GameState.RACING, true);
+    host.racers[0].distance = 0;
+    host.controller.update(0.75, GameState.RACING, true);
+    guest.controller.update(1.6, GameState.RACING, false);
+
+    const activeSnapshot = host.controller.snapshotState();
+    assert.equal(guest.controller.applySnapshotState(activeSnapshot), true);
+    assert.deepEqual(guest.controller.mines(), host.controller.mines());
+    assert.equal(guest.controller.mines()[mine.id].active, false);
+
+    const staleSnapshot = { ...activeSnapshot, revision: activeSnapshot.revision - 1 };
+    assert.equal(guest.controller.applySnapshotState(staleSnapshot), false);
+
+    for (let elapsed = 0; elapsed < MINEFIELD_TUNING.respawnSeconds + 0.1; elapsed += 0.1) {
+        host.controller.update(0.1, GameState.RACING, true);
+    }
+    const respawnedSnapshot = host.controller.snapshotState();
+    assert.equal(respawnedSnapshot.revision, activeSnapshot.revision);
+    assert.equal(guest.controller.applySnapshotState(respawnedSnapshot), true);
+    assert.equal(guest.controller.mines()[mine.id].active, true);
+    assert.deepEqual(guest.controller.mines(), host.controller.mines());
+});
+
 test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', () => {
     const hud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts', import.meta.url), 'utf8');
     assert.match(hud, /SAMPLE_SECONDS = 0\.1/);
@@ -152,6 +182,7 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     assert.doesNotMatch(hud, /Graphics\.clear|\.clear\(\)/);
     const presentation = readFileSync(new URL('../assets/scripts/core/MinefieldBrawlPresentation.ts', import.meta.url), 'utf8');
     assert.match(presentation, /PRESENTATION_INTERVAL = 1 \/ 20/);
+    assert.match(presentation, /visible !== this\.visible/);
     assert.match(presentation, /buildMineGeometry/);
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
     const timedBombPresentation = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url), 'utf8');

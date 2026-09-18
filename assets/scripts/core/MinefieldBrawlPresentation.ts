@@ -24,6 +24,7 @@ export class MinefieldBrawlPresentation {
     private explosionMaterial: Material | null = null;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
+    private visible = true;
     private disposed = false;
 
     constructor(private readonly worldRoot: Node, private readonly course: RaceCourseLayout, mineCount: number) {
@@ -47,6 +48,7 @@ export class MinefieldBrawlPresentation {
     reset(): void {
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
+        this.visible = true;
         for (const node of this.mineNodes) this.setActive(node, true);
         for (const explosion of this.explosions) {
             explosion.remaining = 0;
@@ -56,9 +58,19 @@ export class MinefieldBrawlPresentation {
 
     update(dt: number, mines: readonly MinefieldMineState[], visible: boolean): void {
         if (this.disposed) return;
+        if (visible !== this.visible) {
+            this.visible = visible;
+            if (!visible) {
+                for (const node of this.mineNodes) this.setActive(node, false);
+                for (const explosion of this.explosions) {
+                    explosion.remaining = 0;
+                    this.setActive(explosion.node, false);
+                }
+            } else {
+                this.elapsed = PRESENTATION_INTERVAL;
+            }
+        }
         if (!visible) {
-            for (const node of this.mineNodes) this.setActive(node, false);
-            for (const explosion of this.explosions) this.setActive(explosion.node, false);
             return;
         }
         const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
@@ -94,7 +106,7 @@ export class MinefieldBrawlPresentation {
     }
 
     showImpact(impact: MinefieldImpact): void {
-        if (this.disposed || this.explosions.length === 0) return;
+        if (this.disposed || !this.visible || this.explosions.length === 0) return;
         let visual = this.explosions[0];
         for (const candidate of this.explosions) {
             if (candidate.remaining <= 0) { visual = candidate; break; }

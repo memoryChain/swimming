@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentRecoveryState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -160,6 +160,7 @@ export class NetRaceController {
     private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number) => void) | null = null;
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
     private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null = null;
+    private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -321,6 +322,10 @@ export class NetRaceController {
 
     setMinefieldImpactListener(listener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null): void {
         this._minefieldImpactListener = listener;
+    }
+
+    setMinefieldStateListener(listener: ((state: NetMinefieldState) => void) | null): void {
+        this._minefieldStateListener = listener;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -486,10 +491,22 @@ export class NetRaceController {
         cannon?: NetCannonState | null,
         mineRelay?: NetMineRelayState | null,
         recovery?: NetEntertainmentRecoveryState | null,
+        minefield?: NetMinefieldState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark, cannon, mineRelay, recovery));
+        }
+        this._snapSent++;
+        this._net.broadcast(encodeRaceSnapshot(
+            this._session.localPos,
+            entries,
+            stimulant,
+            shark,
+            cannon,
+            mineRelay,
+            recovery,
+            minefield,
+        ));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -632,6 +649,7 @@ export class NetRaceController {
                 });
                 this._recoveryStateListener?.(snapshot.recovery);
                 this._mineRelayStateListener?.(snapshot.mineRelay);
+                this._minefieldStateListener?.(snapshot.minefield);
             }
             this.refreshHud();
             return;

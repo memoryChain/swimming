@@ -85,6 +85,7 @@ export interface DecodedRaceSnapshot {
     cannonTargetZ: number;
     cannonRemainingSeconds: number;
     mineRelay: NetMineRelayState;
+    minefield: NetMinefieldState;
     recovery: NetEntertainmentRecoveryState;
     shark?: NetSharkState;
 }
@@ -123,6 +124,12 @@ export type NetMineRelayState = {
     returnProtectionSeconds: number;
     recoverySeconds: number;
 };
+export type NetMinefieldState = {
+    revision: number;
+    elapsedSeconds: number;
+    activeMask: number;
+    respawnSeconds: readonly number[];
+};
 
 // Race-global predator state. Only the host simulates target selection, movement,
 // bites, and knockdowns. Guests render this quantized snapshot; recovery state is
@@ -152,6 +159,7 @@ export function encodeRaceSnapshot(
     cannon?: NetCannonState | null,
     mineRelay?: NetMineRelayState | null,
     recovery?: NetEntertainmentRecoveryState | null,
+    minefield?: NetMinefieldState | null,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
@@ -182,10 +190,16 @@ export function encodeRaceSnapshot(
     const recoveryBody = recovery?.lanes
         .map((lane) => `${Math.max(0, Math.floor(lane.phase))}.${Math.max(0, Math.floor(lane.reason))}.${Math.max(0, Math.round(lane.remainingSeconds * 1000))}.${Math.max(0, Math.round(lane.distance * 100))}.${Math.max(0, Math.floor(lane.revision))}`)
         .join(':') ?? '';
+    const minefieldRevision = Math.max(0, Math.floor(minefield?.revision ?? 0));
+    const minefieldElapsedMs = Math.max(0, Math.round((minefield?.elapsedSeconds ?? 0) * 1000));
+    const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(16);
+    const minefieldRespawnBody = minefield?.respawnSeconds
+        .map(remaining => Math.max(0, Math.round(remaining * 1000)))
+        .join('.') ?? '';
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldRespawnBody}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -223,6 +237,10 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const mineRecoveryMs = header.length > 21 ? parseInt(header[21], 10) : 0;
     const recoveryRevision = header.length > 22 ? parseInt(header[22], 10) : 0;
     const recoveryBody = header.length > 23 ? header[23] : '';
+    const minefieldRevision = header.length > 24 ? parseInt(header[24], 10) : 0;
+    const minefieldElapsedMs = header.length > 25 ? parseInt(header[25], 10) : 0;
+    const minefieldActiveMask = header.length > 26 ? parseInt(header[26], 16) : 0;
+    const minefieldRespawnBody = header.length > 27 ? header[27] : '';
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -320,9 +338,26 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             returnProtectionSeconds: safeMilliseconds(mineReturnProtectionMs),
             recoverySeconds: safeMilliseconds(mineRecoveryMs),
         },
+        minefield: {
+            revision: safeNonNegativeInteger(minefieldRevision),
+            elapsedSeconds: safeMilliseconds(minefieldElapsedMs),
+            activeMask: safeNonNegativeInteger(minefieldActiveMask),
+            respawnSeconds: decodeMillisecondList(minefieldRespawnBody),
+        },
         recovery: decodeRecoveryState(recoveryRevision, recoveryBody),
         shark,
     };
+}
+
+function decodeMillisecondList(body: string): number[] {
+    if (body.length === 0) return [];
+    const values: number[] = [];
+    for (const token of body.split('.')) {
+        const value = parseInt(token, 10);
+        if (!Number.isSafeInteger(value) || value < 0) return [];
+        values.push(value / 1000);
+    }
+    return values;
 }
 
 function decodeRecoveryState(revision: number, body: string): NetEntertainmentRecoveryState {

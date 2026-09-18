@@ -174,6 +174,19 @@ test('entertainment recovery phases and authoritative respawn distance round-tri
     assert.deepEqual(snapshot.recovery, recovery);
 });
 
+test('minefield lifecycle state round-trips in S|', () => {
+    const minefield = {
+        revision: 8,
+        elapsedSeconds: 14.321,
+        activeMask: 0b1011011,
+        respawnSeconds: [0, 1.234, 0, 0, 2.5, 0, 0.045],
+    };
+    const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(
+        0, [entry()], null, null, null, null, null, minefield,
+    ));
+    assert.deepEqual(snapshot.minefield, minefield);
+});
+
 test('timed bomb arm, transfer, resolution and active state round-trip across both sync paths', () => {
     const events = [
         { kind: 'm', mineRoundId: 2, mineCarrierLane: 5, fuseSeconds: 6.5, revision: 11 },
@@ -208,6 +221,12 @@ test('legacy S| and P| payloads keep safe sentinel defaults', () => {
     assert.equal(legacyS.entries[0].conditionDepletionCooldown, -1);
     assert.equal(legacyS.mineRelay.activeRoundId, -1);
     assert.equal(legacyS.mineRelay.carrierLane, -1);
+    assert.deepEqual(legacyS.minefield, {
+        revision: 0,
+        elapsedSeconds: 0,
+        activeMask: 0,
+        respawnSeconds: [],
+    });
 
     const legacyP = decodeSelfSnapshot('P|2,1234,-125,0,222,456,78,444,-555,-333,666,-777');
     assert.equal(legacyP.conditionEnergyRatio, -1);

@@ -503,6 +503,7 @@ export class GameManager extends Component {
         this._netRaceController?.setMineRelayResolutionListener(null);
         this._netRaceController?.setMineRelayStateListener(null);
         this._netRaceController?.setMinefieldImpactListener(null);
+        this._netRaceController?.setMinefieldStateListener(null);
         this._eventPictureInPicture?.dispose();
         this._eventPictureInPicture = null;
         this._waterRefraction?.dispose();
@@ -1925,6 +1926,7 @@ export class GameManager extends Component {
         this._minefieldPresentation?.dispose();
         this._minefieldPresentation = null;
         this._netRaceController?.setMinefieldImpactListener(null);
+        this._netRaceController?.setMinefieldStateListener(null);
         if (!isMinefieldBrawlMode() || !this._raceManager) return;
         this._minefieldBrawl = new MinefieldBrawlController(
             LANE_LAYOUT.laneCount,
@@ -1953,11 +1955,15 @@ export class GameManager extends Component {
             const impact = { mineId, hitLane, courseX, lateral, revision };
             if (this._minefieldBrawl?.applyImpact(impact)) this.handleMinefieldImpact(impact, false);
         });
+        this._netRaceController?.setMinefieldStateListener(state => {
+            this._minefieldBrawl?.applySnapshotState(state);
+        });
     }
 
     private updateMinefieldBrawl(dt: number) {
         const controller = this._minefieldBrawl;
         if (!controller || this._modelDebugFlow?.active) {
+            for (const ai of this._aiControllers) ai?.setMineRelayTargetZ(null);
             this.activePlayerAutopilot()?.setMineRelayTargetZ(null);
             return;
         }
@@ -2976,6 +2982,7 @@ export class GameManager extends Component {
                     this._cannonBrawl?.snapshotState(),
                     this._mineRelayBrawl?.snapshotState(),
                     this._entertainmentRecovery?.snapshot(),
+                    this._minefieldBrawl?.snapshotState(),
                 );
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
