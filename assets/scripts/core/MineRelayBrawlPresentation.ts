@@ -3,6 +3,7 @@ import { MineRelayArm } from './MineRelayBrawlController';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const EXPLOSION_SECONDS = 0.58;
+const TIMED_BOMB_EXPLOSION_INTENSITY = 1.25;
 const ATTACH_X = -0.28;
 const ATTACH_Y = 0.48;
 const ATTACH_Z = 0;
@@ -63,7 +64,7 @@ export class MineRelayBrawlPresentation {
         if (!exploded || !worldPosition || !this.explosion?.isValid) return;
         this.explosion.setParent(this.worldRoot);
         this.explosion.setWorldPosition(worldPosition.x, worldPosition.y, worldPosition.z);
-        applyWaterExplosionPhase(this.explosion, 0, 0.9);
+        applyWaterExplosionPhase(this.explosion, 0, TIMED_BOMB_EXPLOSION_INTENSITY);
         this.setActive(this.explosion, true);
         this.explosionRemaining = EXPLOSION_SECONDS;
     }
@@ -97,7 +98,7 @@ export class MineRelayBrawlPresentation {
         if (this.explosionRemaining > 0) {
             this.explosionRemaining = Math.max(0, this.explosionRemaining - presentationStep);
             const progress = 1 - this.explosionRemaining / EXPLOSION_SECONDS;
-            if (this.explosion) applyWaterExplosionPhase(this.explosion, progress, 0.9);
+            if (this.explosion) applyWaterExplosionPhase(this.explosion, progress, TIMED_BOMB_EXPLOSION_INTENSITY);
             if (this.explosionRemaining <= 0) this.setActive(this.explosion, false);
         }
     }

@@ -81,8 +81,8 @@ export const MINE_RELAY_TUNING = {
     explosionPitchImpulse: 3.25,
     explosionSoftnessLateralImpulse: 1.8,
     explosionSoftnessForwardImpulse: -0.95,
-    blastAlongRadius: 2.8,
-    blastLateralRadius: 2.35,
+    blastAlongRadius: 5.2,
+    blastLateralRadius: 4.2,
 };
 
 /**

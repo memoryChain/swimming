@@ -7,6 +7,7 @@ const PRESENTATION_INTERVAL = 1 / 20;
 const CANNON_EDGE_OFFSET = 1.4;
 const PROJECTILE_ARC_HEIGHT = 5.8;
 const IMPACT_SECONDS = 0.52;
+const CANNON_EXPLOSION_INTENSITY = 1.08;
 
 /** 固定网格、共享材质的炮台／炮弹／水面预警表现；只消费权威规则状态。 */
 export class CannonBrawlPresentation {
@@ -89,7 +90,7 @@ export class CannonBrawlPresentation {
         if (this.impactPlume?.isValid) {
             this.impactPlume.setWorldPosition(this.targetX, this.course.waterY + 0.035, this.targetZ);
             this.impactPlume.setRotationFromEuler(0, impact.strikeId * 53, 0);
-            applyWaterExplosionPhase(this.impactPlume, 0, 1);
+            applyWaterExplosionPhase(this.impactPlume, 0, CANNON_EXPLOSION_INTENSITY);
             this.impactPlume.active = true;
         }
         this.impactRemaining = IMPACT_SECONDS;
@@ -139,7 +140,7 @@ export class CannonBrawlPresentation {
         if (this.impactRemaining > 0) {
             this.impactRemaining = Math.max(0, this.impactRemaining - presentationStep);
             const progress = 1 - this.impactRemaining / IMPACT_SECONDS;
-            if (this.impactPlume) applyWaterExplosionPhase(this.impactPlume, progress, 1);
+            if (this.impactPlume) applyWaterExplosionPhase(this.impactPlume, progress, CANNON_EXPLOSION_INTENSITY);
             if (this.impactRemaining <= 0) this.setActive(this.impactPlume, false);
         }
     }

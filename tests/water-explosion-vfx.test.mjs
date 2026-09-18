@@ -25,6 +25,15 @@ test('正式爆炸表现不再使用交叉透明薄片并保持低频变换动�
     assert.match(timedBomb, /node\.setScale/);
 });
 
+test('扩大后的爆炸范围使用原有池化网格增强体量', () => {
+    assert.match(cannon, /CANNON_EXPLOSION_INTENSITY = 1\.08/);
+    assert.match(minefield, /MINEFIELD_EXPLOSION_INTENSITY = 1/);
+    assert.match(timedBomb, /TIMED_BOMB_EXPLOSION_INTENSITY = 1\.25/);
+    assert.match(cannon, /applyWaterExplosionPhase[\s\S]*CANNON_EXPLOSION_INTENSITY/);
+    assert.match(minefield, /applyWaterExplosionPhase[\s\S]*MINEFIELD_EXPLOSION_INTENSITY/);
+    assert.match(timedBomb, /applyWaterExplosionPhase[\s\S]*TIMED_BOMB_EXPLOSION_INTENSITY/);
+});
+
 test('障碍水雷使用分层不对称模型并保持轻微三轴漂转', () => {
     assert.match(timedBomb, /appendFacetedMineBody/);
     assert.match(timedBomb, /appendDetailedMineSpike/);

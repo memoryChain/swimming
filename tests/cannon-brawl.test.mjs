@@ -62,6 +62,20 @@ test('外围冲击只记录命中，不触发击倒', () => {
     assert.equal(f.impacts[0].knockedLane, -1);
 });
 
+test('炮火扩大的外围冲击能覆盖原范围外的选手', () => {
+    assert.equal(CANNON_BRAWL_TUNING.splashAlongRadius, 3.4);
+    assert.equal(CANNON_BRAWL_TUNING.splashLateralRadius, 2.85);
+    const f = fixture(41);
+    f.controller.update(0, GameState.RACING, true);
+    const launch = f.launches[0];
+    for (const racer of f.racers) racer.distance = launch.targetDistance + 12;
+    f.racers[5].distance = launch.targetDistance + 3.1;
+    f.racers[5].lateral = launch.targetZ;
+    f.controller.update(CANNON_BRAWL_TUNING.warningSeconds + 0.01, GameState.RACING, true);
+    assert.equal(f.impacts[0].hitMask, 1 << 5);
+    assert.equal(f.impacts[0].knockedLane, -1);
+});
+
 test('活动炮弹和已完成波次可由快照恢复', () => {
     const host = fixture(77);
     const guest = fixture(77);

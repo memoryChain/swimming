@@ -11,6 +11,7 @@ import {
 const PRESENTATION_INTERVAL = 1 / 20;
 const EXPLOSION_SECONDS = 0.58;
 const EXPLOSION_POOL_SIZE = 3;
+const MINEFIELD_EXPLOSION_INTENSITY = 1;
 const MINE_ROTATION_Y_DEGREES = 14;
 const MINE_TILT_X_DEGREES = 9;
 const MINE_TILT_Z_DEGREES = 7;
@@ -104,7 +105,7 @@ export class MinefieldBrawlPresentation {
             if (explosion.remaining <= 0) continue;
             explosion.remaining = Math.max(0, explosion.remaining - presentationStep);
             const progress = 1 - explosion.remaining / EXPLOSION_SECONDS;
-            applyWaterExplosionPhase(explosion.node, progress, 0.88);
+            applyWaterExplosionPhase(explosion.node, progress, MINEFIELD_EXPLOSION_INTENSITY);
             if (explosion.remaining <= 0) this.setActive(explosion.node, false);
         }
     }
@@ -122,7 +123,7 @@ export class MinefieldBrawlPresentation {
             impact.lateral,
         );
         visual.node.setRotationFromEuler(0, impact.mineId * 47, 0);
-        applyWaterExplosionPhase(visual.node, 0, 0.88);
+        applyWaterExplosionPhase(visual.node, 0, MINEFIELD_EXPLOSION_INTENSITY);
         visual.remaining = EXPLOSION_SECONDS;
         this.setActive(visual.node, true);
     }

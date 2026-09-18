@@ -53,7 +53,8 @@
 // 版本65：定时炸弹与水雷命中事件追加房主权威冲击范围；独立水雷直接命中进入急救。
 // 版本66：统一娱乐导演扩展为三至四事件，并同步事件数量和四个激活锚点槽位。
 // 版本67：统一娱乐事件静默收尾并取消段间空档，必要结算后直接开始下一预告。
-export const NET_RACE_PROTOCOL_VERSION = 67;
+// 版本68：扩大炮火与水雷外围冲击范围，并大幅扩大定时炸弹爆炸范围。
+export const NET_RACE_PROTOCOL_VERSION = 68;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

@@ -92,13 +92,15 @@ test('定时炸弹直接击倒携带者，并把爆炸范围内的附近泳道�
         if (lane === carrier) continue;
         fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
     }
-    fixture.racers[nearby].distance = fixture.racers[carrier].distance + 2;
+    fixture.racers[nearby].distance = fixture.racers[carrier].distance + 4.8;
     fixture.racers[nearby].lateral = fixture.racers[carrier].lateral;
     fixture.controller.update(MINE_RELAY_ROUNDS[0].fuseSeconds + 0.01, GameState.RACING, true);
     const resolution = fixture.resolutions[0];
     assert.equal(resolution.carrierLane, carrier);
     assert.equal((resolution.hitMask & (1 << carrier)) !== 0, true);
     assert.equal((resolution.hitMask & (1 << nearby)) !== 0, true);
+    assert.equal(MINE_RELAY_TUNING.blastAlongRadius, 5.2);
+    assert.equal(MINE_RELAY_TUNING.blastLateralRadius, 4.2);
 });
 
 test('定时炸弹携带者冲线后拆弹，快照不会重复爆炸', () => {
@@ -150,12 +152,14 @@ test('水雷直接触碰者和附近选手由同一房主权威范围区分', ()
     const mine = fixture.controller.mines()[0];
     fixture.racers[0].distance = mine.courseX;
     fixture.racers[0].lateral = mine.lateral;
-    fixture.racers[1].distance = mine.courseX + 2;
+    fixture.racers[1].distance = mine.courseX + 3;
     fixture.racers[1].lateral = mine.lateral;
     fixture.controller.update(0, GameState.RACING, true);
     assert.equal(fixture.impacts.length, 1);
     assert.equal(fixture.impacts[0].hitLane, 0);
     assert.equal(fixture.impacts[0].hitMask, 0b11);
+    assert.equal(MINEFIELD_TUNING.blastAlongRadius, 3.2);
+    assert.equal(MINEFIELD_TUNING.blastLateralRadius, 2.5);
 });
 
 test('水雷使用路径扫掠判定，单帧跨过水雷也会触发', () => {
