@@ -30,6 +30,21 @@ export function styleProjectUiLabel(
     weight: ProjectUiFontWeight,
     lineHeight: number,
 ): void {
+    styleBundledUiLabel(label, weight, lineHeight);
+}
+
+/** 与货币栏完全共用的数字字体设置；移除旧字体请求，防止迟到回调覆盖。 */
+export function styleCurrencyNumberLabel(label: Label, lineHeight: number): void {
+    REQUESTED_WEIGHTS.delete(label);
+    label.font = null;
+    label.useSystemFont = true;
+    label.fontFamily = PROJECT_UI_ENGLISH_BOLD_FAMILY;
+    label.isBold = true;
+    label.lineHeight = lineHeight;
+    label.cacheMode = CacheMode.NONE;
+}
+
+function styleBundledUiLabel(label: Label, weight: ProjectUiFontWeight, lineHeight: number): void {
     label.lineHeight = lineHeight;
     // 共用 CHAR 图集只有 1024×1024，多字号/颜色会耗尽后漏字。
     // 界面文案按状态更新，使用独立文本纹理，避免跨页面累积字符缓存。

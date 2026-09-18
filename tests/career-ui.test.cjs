@@ -6,7 +6,7 @@ class Component {}
 class UIOpacity extends Component { opacity = 255; }
 class Scale { constructor(x=1,y=1,z=1){this.set(x,y,z);} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} clone(){return new Scale(this.x,this.y,this.z);} }
 class UITransform extends Component { setAnchorPoint(x,y){this.anchorPoint={x,y};} setContentSize(width, height) { this.contentSize = { width, height }; } }
-class Label extends Component { static Overflow = { SHRINK: 1 }; string = ''; }
+class Label extends Component { static HorizontalAlign = {LEFT: 0, CENTER: 1, RIGHT: 2}; static Overflow = { SHRINK: 1 }; string = ''; }
 class Button extends Component { static EventType = { CLICK: 'click' }; interactable = true; }
 class BlockInputEvents extends Component {}
 class Mask extends Component {static Type={GRAPHICS_RECT:1};}
@@ -37,13 +37,17 @@ const factory = {
     makeButton: (name, parent, w, h, color, text) => { const n = factory.makeRect(name, parent, w, h); n.addComponent(Button); if (text) factory.makeLabel('Label', n, text); return n; },
 };
 let adResult = 'skipped', resolveAd;
+let hotFontCache = false;
 const listeners = new Set();
 const store = { profile: null, onChange: f => listeners.add(f), offChange: f => listeners.delete(f),
     async executeCareer(command) { const result = rules.executeCareer(store.profile, command); for (const f of listeners) f(store.profile); return result; } };
 const h = createHarness({ './CareerUiArt': {
     careerArt(parent,name,asset,w,h,x=0,y=0,sliced=false){const n = factory.makeRect(name,parent,w,h); n.setPosition(x,y,0); n.asset=asset;n.sliced=sliced;return n;},
     careerButtonFeedback() {}
-}, './RuntimeUiFactory': factory, './ProjectUiFonts': { styleProjectUiLabel() {} },
+}, './RuntimeUiFactory': factory, './ProjectUiFonts': { styleCurrencyNumberLabel(label) { label.currencyNumberFont = true; }, styleProjectUiLabel(label) {
+    if (hotFontCache && label.overflow !== Label.Overflow.SHRINK && !label.string)
+        label.node.getComponent(UITransform).setContentSize(0, 0);
+} },
     '../backend/PlayerData': { PlayerData: store },
     '../platform/PlatformManager': { platform: () => ({ name: 'default', showRewardedAd: async () => adResult === 'pending' ? new Promise(r => { resolveAd = r; }) : adResult }) },
     '../platform/AdConfig': { rewardedAdUnitId: () => '测试广告位' },
@@ -158,4 +162,64 @@ test('复用美术的迟到加载不写销毁节点，独立帧释放且不销�
     pending.shift()(null,{width:200,height:160});assert.equal(frames,1);
     assert.equal(live.getComponent(Sprite).spriteFrame.insetLeft,40);
     root.destroy();assert.equal(destroyed,1);
+});
+
+test('大厅生涯卡按真实积分更新，重复刷新不新增节点或监听', () => {
+    reset(); const root = new Node('Root');
+    const panel = new CareerPrototypePanel(root, () => {}, () => {});
+    const count = descendants(root).length;
+    for (const points of [0, 20, 80, 100, 80]) {
+        store.profile.career.points = points;
+        for (let i = 0; i < 10; i++) panel.refresh();
+        assert.equal(textOf(panel.root, 'Detail'), `${points}`);
+        assert.equal(textOf(panel.root, 'PointsLimit'), '/ 100');
+        assert.equal(find(panel.root, 'ProgressFill').scale.x, points / 100);
+        assert.equal(descendants(root).length, count);
+        assert.equal(listeners.size, 1);
+        assert.match(textOf(panel.root, 'Notice'), points === 100 ? /已开放/ : new RegExp(`再获${100-points}积分`));
+    }
+    store.profile.career.league = 5; panel.refresh();
+    assert.equal(textOf(panel.root, 'Title'), '冠军级');
+    assert.match(textOf(panel.root, 'NextLeague'), /最高/);
+    root.destroy(); assert.equal(listeners.size, 0);
+});
+
+test('大厅继续杯赛选择角色自己的赛程，换角色后恢复联赛入口', () => {
+    reset(); const root = new Node('Root');
+    store.profile.career.league = 3;
+    store.profile.career.cups[ids[0]] = {id:'ongoing',tier:1,round:1,seed:3,coins:0,state:'active'};
+    const panel = new CareerPrototypePanel(root, () => {}, () => {});
+    assert.equal(textOf(find(panel.root, 'Action0'), 'Label'), '继续杯赛');
+    find(panel.root, 'Action0').click(); assert.equal(panel.tier, 1);
+    panel.open('home'); chars.selectPlayerCharacter(ids[1]); panel.refresh();
+    assert.equal(textOf(find(panel.root, 'Action0'), 'Label'), '继续生涯');
+    find(panel.root, 'Action0').click(); assert.equal(panel.tier, 3);
+    root.destroy(); assert.equal(listeners.size, 0);
+});
+
+
+test('大厅积分分色分字号，热字体缓存下生涯按钮仍保持设计左对齐文本框', () => {
+    reset(); hotFontCache = true;
+    const root = new Node('Root');
+    try {
+        const panel = new CareerPrototypePanel(root, () => {}, () => {});
+        const button = find(panel.root, 'Action0');
+        const label = find(button, 'Label').getComponent(Label);
+        assert.equal(label.horizontalAlign, Label.HorizontalAlign.LEFT);
+        assert.equal(label.overflow, Label.Overflow.SHRINK);
+        assert.equal(label.enableWrapText, false);
+        assert.equal(label.node.getComponent(UITransform).contentSize.width, 220);
+        assert.equal(button.position.x + label.node.position.x - 110 + 640, 835);
+        const value = find(panel.root, 'Detail').getComponent(Label);
+        const limit = find(panel.root, 'PointsLimit').getComponent(Label);
+        assert.equal(value.horizontalAlign, Label.HorizontalAlign.RIGHT);
+        assert.equal(value.fontSize, 26); assert.equal(limit.fontSize, 16);
+        assert.equal(value.currencyNumberFont, true); assert.equal(limit.currencyNumberFont, true);
+        assert.equal(value.color.equals(limit.color), false);
+        for (const points of [0, 9, 80, 100]) {
+            store.profile.career.points = points; panel.refresh();
+            assert.equal(value.string, `${points}`); assert.equal(limit.string, '/ 100');
+            assert.equal(label.node.getComponent(UITransform).contentSize.width, 220);
+        }
+    } finally { hotFontCache = false; root.destroy(); }
 });

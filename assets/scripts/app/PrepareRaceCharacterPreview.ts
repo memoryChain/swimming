@@ -1,4 +1,4 @@
-import { _decorator, Camera, Color, Component, DirectionalLight, Layers, Material, Node, RenderTexture, Vec3 } from 'cc';
+import { _decorator, Camera, Color, Component, DirectionalLight, Layers, Material, Node, Rect, RenderTexture, Vec3, view } from 'cc';
 import {
     CharacterAction,
     sampledActionIdFor,
@@ -73,6 +73,16 @@ export class PrepareRaceCharacterPreview extends Component {
         }
         if (this._shadowCamera) this._shadowCamera.enabled = this._shadowCaptureEnabled;
         if (this._shadowCaptureEnabled && this._rig && !this._shadowCamera) this.ensureShadowCapture();
+    }
+
+    /** 大厅 B 版展示台向左排布；只平移视口，不重载角色或重启动作。 */
+    setHallOffset(enabled: boolean): void {
+        const camera = this._cameraNode?.getComponent(Camera);
+        if (!camera) return;
+        const size = view.getVisibleSize();
+        const scale = Math.max(size.width / 1280, size.height / 720);
+        const x = enabled ? (45 - 174 * scale) / size.width : 0;
+        if (camera.rect.x !== x) camera.rect = new Rect(x, 0, 1, 1);
     }
 
     onLoad() {

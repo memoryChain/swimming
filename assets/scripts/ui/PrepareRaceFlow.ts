@@ -13,6 +13,7 @@ import {
     SpriteFrame,
     Texture2D,
     UITransform,
+    view,
 } from 'cc';
 import { RaceCategoryId, RaceModeId, RACE_MODE_OPTIONS, getRaceDistance, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
@@ -42,7 +43,7 @@ import { UI_STYLE } from './UIStyle';
 import { PlayerData } from '../backend/PlayerData';
 import type { PlayerProfile } from '../backend/PlayerProfile';
 import { showToast } from './Toast';
-import { styleProjectUiLabel } from './ProjectUiFonts';
+import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import { LobbyUiMotion } from './LobbyUiMotion';
 import { CharacterAttributeTips } from './CharacterAttributeTips';
 import { CareerPrototypePanel } from './CareerPrototypePanel';
@@ -113,6 +114,9 @@ export class PrepareRaceFlow {
     private _content: Node | null = null;
     private _lobbyBackgroundImage: Node | null = null;
     private _previewRoot: Node | null = null;
+    private _readyManageButton: Node | null = null;
+    private _previewRotateArea: Node | null = null;
+    private readonly _onResize = (): void => this.layoutPresentation();
     private _preview: PrepareRaceCharacterPreview | null = null;
     private _view: PrepareRaceView = 'ready';
     private _draftCharacterId: PlayerCharacterId | null = null;
@@ -134,8 +138,8 @@ export class PrepareRaceFlow {
     private _readyName: Label | null = null;
     private _readyLevel: Label | null = null;
     private _readyStats: Label[] = [];
-    private _readySkillName: Label | null = null;
-    private _readySkillDescription: Label | null = null;
+    private _readySkillIcon: Node | null = null;
+    private _readySkillFallback: Label | null = null;
     private _inspectorName: Label | null = null;
     private _inspectorLevel: Label | null = null;
     private _inspectorCurrentStats: Label[] = [];
@@ -182,12 +186,14 @@ export class PrepareRaceFlow {
         if (this._content?.isValid && this._view === 'ready') return;
         this.ensureRoot();
         this._view = 'ready';
+        this.updateBackground();
         this._draftCharacterId = null;
         setNodeActive(this._lobbyBackgroundImage, true);
         this.replaceContent('PrepareRaceReadyContent');
         this.buildReadyScreen(this._content!);
         if (!this._eventPageActive) this.presentCharacter(getPlayerCharacterSelection().characterId);
         this._callbacks.onCharacterManagementChanged?.(this._eventPageActive);
+        this.layoutPresentation();
         this._motion.enter(this._hasShownReady);
         this._hasShownReady = true;
     }
@@ -196,6 +202,7 @@ export class PrepareRaceFlow {
         if (this._content?.isValid && this._view === 'characters') return;
         this.ensureRoot();
         this._view = 'characters';
+        this.updateBackground();
         this._draftCharacterId = getPlayerCharacterSelection().characterId;
         this._activeInspectorTab = 'attributes';
         setNodeActive(this._lobbyBackgroundImage, true);
@@ -203,6 +210,7 @@ export class PrepareRaceFlow {
         this.buildCharacterManagement(this._content!);
         this.presentCharacter(this._draftCharacterId);
         this._callbacks.onCharacterManagementChanged?.(true);
+        this.layoutPresentation();
         this._motion.enter(true);
     }
 
@@ -212,6 +220,8 @@ export class PrepareRaceFlow {
         this._motion.dispose();
         this._leaving = true;
         PlayerData.offChange(this._onProfileChange);
+        view.off('canvas-resize', this._onResize);
+        view.off('design-resolution-changed', this._onResize);
         if (this._previewRoot?.isValid) this._previewRoot.destroy();
         this._previewRoot = null;
         this._preview = null;
@@ -229,6 +239,8 @@ export class PrepareRaceFlow {
         this._root = root;
         this.buildBackground(root);
         PlayerData.onChange(this._onProfileChange);
+        view.on('canvas-resize', this._onResize);
+        view.on('design-resolution-changed', this._onResize);
     }
 
     private replaceContent(name: string): void {
@@ -258,6 +270,8 @@ export class PrepareRaceFlow {
     }
 
     private resetViewReferences(): void {
+        this._readyManageButton = null;
+        this._previewRotateArea = null;
         this._previewRotateTouchId = null;
         this._raceModeCards.length = 0;
         this._raceCategoryTabs.length = 0;
@@ -267,8 +281,8 @@ export class PrepareRaceFlow {
         this._readyName = null;
         this._readyLevel = null;
         this._readyStats = [];
-        this._readySkillName = null;
-        this._readySkillDescription = null;
+        this._readySkillIcon = null;
+        this._readySkillFallback = null;
         this._inspectorName = null;
         this._inspectorLevel = null;
         this._inspectorCurrentStats = [];
@@ -289,6 +303,23 @@ export class PrepareRaceFlow {
         this._activeCharacterNotice = null;
     }
 
+    private _backgroundRequest = 0;
+
+    private updateBackground(): void {
+        const image = this._lobbyBackgroundImage;
+        if (!image?.isValid) return;
+        const token = ++this._backgroundRequest;
+        const path = this._view === 'ready' ? RESOURCE_PATHS.lobbyB.background : RESOURCE_PATHS.characterUi.background;
+        loadRaceAsset(path, Texture2D, (error, texture) => {
+            if (error || !texture || !image.isValid || token !== this._backgroundRequest) return;
+            const sprite = image.getComponent(Sprite) ?? image.addComponent(Sprite);
+            const old = sprite.spriteFrame;
+            const frame = new SpriteFrame(); frame.texture = texture;
+            sprite.spriteFrame = frame; sprite.sizeMode = Sprite.SizeMode.CUSTOM; sprite.trim = false;
+            old?.destroy();
+        });
+    }
+
     private buildBackground(root: Node): void {
         const fallback = makeRect('PrepareRaceBackdrop', root, this._width, this._height, uiColor(4, 20, 42));
         fitFullScreenBackgroundCover(fallback);
@@ -296,23 +327,12 @@ export class PrepareRaceFlow {
         image.setPosition(0, 0, 1);
         fitFullScreenBackgroundCover(image);
         this._lobbyBackgroundImage = image;
-        loadRaceAsset(RESOURCE_PATHS.characterUi.background, Texture2D, (error, texture) => {
-            if (error || !texture || !image.isValid) {
-                console.warn('[SpeedSwimming] prepare-race background texture failed to load', error);
-                return;
-            }
-            const frame = new SpriteFrame();
-            frame.texture = texture;
-            const sprite = image.addComponent(Sprite);
-            sprite.spriteFrame = frame;
-            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-            fallback.destroy();
-        });
+        image.once(Node.EventType.NODE_DESTROYED, () => image.getComponent(Sprite)?.spriteFrame?.destroy());
     }
 
     private buildReadyScreen(parent: Node): void {
-        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height, 48, false);
-        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 48, false);
+        const left = makeScreenEdgeGroup('LobbyLeft', parent, 'left', this._width, this._height, 0, false);
+        const right = makeScreenEdgeGroup('LobbyRight', parent, 'right', this._width, this._height, 0, false);
         this.buildReadyCharacterPanel(left);
         this.buildPreviewPresentation(parent);
         this._careerPanel = new CareerPrototypePanel(right,
@@ -337,47 +357,41 @@ export class PrepareRaceFlow {
 
     private buildReadyCharacterPanel(parent: Node): void {
         parent = this._motion.group(parent, 'LobbyLeftMotion', -24);
-        makeRaceTextureSprite('ReadyCharacterPanel', parent, RESOURCE_PATHS.lobbyUi.characterPanel, 338, 244, -454, 95, 2);
-        this._readyName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 188, 38, -484, 162, Label.HorizontalAlign.LEFT);
+        makeRaceTextureSprite('ReadyCharacterPanel', parent, RESOURCE_PATHS.lobbyB.characterInfo, 233, 274, -506.5, 24, 2);
+        this._readyName = makeBoundLabel('CharacterName', parent, '', 28, DARK_TEXT, 240, 40, -458, 147, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(this._readyName, 36);
-        this._readyLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 64, 28, -335, 165);
-        stylePsdRuntimeLabel(this._readyLevel, 'Arial Black', true, 22);
-
-        const statNames = ['体力', '技巧', '爆发力'];
-        const statY = [107, 62, 17];
+        this._readyLevel = makeBoundLabel('CharacterLevel', parent, '', 16, WHITE, 64, 28, -548, 114);
+        styleCurrencyNumberLabel(this._readyLevel, 22);
+        const statNames = ['体力', '技巧', '爆发'];
+        const statY = [69, 17, -36];
         for (let index = 0; index < statNames.length; index++) {
-            const statName = makeBoundLabel(`StatName${index}`, parent, statNames[index], 18, uiColor(31, 43, 62), 92, 28, -488, statY[index], Label.HorizontalAlign.LEFT);
-            stylePsdTitleLabel(statName, 24);
-            const statValue = makeBoundLabel(`StatValue${index}`, parent, '', 19, uiColor(31, 43, 62), 82, 28, -357, statY[index], Label.HorizontalAlign.RIGHT);
-            stylePsdRuntimeLabel(statValue, 'Arial Black', true, 24);
-            this._readyStats.push(statValue);
-
+            const label = makeBoundLabel(`StatName${index}`, parent, statNames[index], 16, DARK_TEXT, 80, 24, -491, statY[index], Label.HorizontalAlign.LEFT);
+            stylePsdTitleLabel(label, 22);
+            const value = makeBoundLabel(`StatValue${index}`, parent, '', 20, DARK_TEXT, 100, 28, -481, statY[index] - 22, Label.HorizontalAlign.LEFT);
+            styleCurrencyNumberLabel(value, 26); this._readyStats.push(value);
         }
-
-        this.bindAttributeTip(parent, -446, 62, 290, 132);
-
-        makeRaceTextureSprite('ReadySkillCard', parent, RESOURCE_PATHS.lobbyUi.skillCard, 320, 145, -445, -98.5, 2);
-        const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 70, 24, -545, -42);
-        stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 21);
-        this._readySkillName = makeBoundLabel('SkillName', parent, '', 20, DARK_TEXT, 190, 28, -405, -90, Label.HorizontalAlign.LEFT);
-        stylePsdTitleLabel(this._readySkillName, 27);
-        this._readySkillDescription = makeBoundLabel('SkillDescription', parent, '', 14, uiColor(72, 82, 98), 190, 42, -405, -126, Label.HorizontalAlign.LEFT);
-        stylePsdRuntimeLabel(this._readySkillDescription, 'PingFang SC', false, 20);
-        this._readySkillDescription.overflow = Label.Overflow.CLAMP;
-        this._readySkillDescription.enableWrapText = true;
-
-        const manage = makeRaceTextureButton('MyCharactersButton', parent, RESOURCE_PATHS.lobbyUi.characterButton, 312, 70, -446, -220, 3);
-        const manageLabel = makeBoundLabel('Label', manage, '角色养成', 24, DARK_TEXT, 150, 36, -8, 0);
+        this.bindAttributeTip(parent, -520, 12, 150, 166);
+        const skill = makeRaceTextureButton('ReadySkill', parent, RESOURCE_PATHS.lobbyB.skillBase, 74, 74, -539, -129, 3);
+        this._readySkillIcon = makeRaceTextureSprite('BreathIcon', skill, RESOURCE_PATHS.lobbyB.skillBreath, 46, 44, 0, 1, 1);
+        this._readySkillFallback = makeBoundLabel('SkillFallback', skill, '技能', 18, WHITE, 58, 30, 0, 0);
+        stylePsdTitleLabel(this._readySkillFallback, 24);
+        this._motion.bindButton(skill);
+        skill.on(Button.EventType.CLICK, () => {
+            const character = findPlayerCharacter();
+            if (!this._leaving && character) showToast(this._canvasNode, `${character.skillName}\n${character.skillDescription}`, { duration: 4 });
+        });
+        const manageParent = this._motion.group(this._content!, 'LobbyManageMotion', 0, -12, 0.1);
+        const manage = makeRaceTextureButton('MyCharactersButton', manageParent, RESOURCE_PATHS.lobbyB.characterButton, 263, 70, -190.5, -275, 3);
+        this._readyManageButton = manage;
+        const manageLabel = makeBoundLabel('Label', manage, '角色与培养', 24, DARK_TEXT, 150, 36, 28, 0);
         stylePsdTitleLabel(manageLabel, 32);
         this._motion.bindButton(manage);
         manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
         if (this._callbacks.onAiDebug) {
-            const aiTest = makeRaceTextureButton('AiDebugButton', parent, RESOURCE_PATHS.lobbyUi.characterButton, 250, 56, -446, -303, 3);
-            const aiLabel = makeBoundLabel('Label', aiTest, 'AI 测试', 22, DARK_TEXT, 170, 32, -6, 0);
-            stylePsdTitleLabel(aiLabel, 28);
-            this._motion.bindButton(aiTest);
-            // 只打开弹框，关闭后保留大厅角色预览及当前赛制，不触发离场重建。
-            aiTest.on(Button.EventType.CLICK, () => this._callbacks.onAiDebug?.());
+            const ai = makeTouchArea('AiDebugButton', parent, 120, 44); ai.setPosition(-520, -290, 3);
+            const label = makeBoundLabel('Label', ai, 'AI 测试', 18, DARK_TEXT, 120, 30, 0, 0);
+            stylePsdTitleLabel(label, 24);
+            ai.on(Button.EventType.CLICK, () => { if (!this._leaving) this._callbacks.onAiDebug?.(); });
         }
     }
 
@@ -402,8 +416,8 @@ export class PrepareRaceFlow {
         for (let index = 0; index < this._readyStats.length; index++) {
             setLabelString(this._readyStats[index], `${values[index]}`);
         }
-        setLabelString(this._readySkillName, character.skillName);
-        setLabelString(this._readySkillDescription, character.skillDescription);
+        setNodeActive(this._readySkillIcon, character.abilityId === 'breathControl');
+        setNodeActive(this._readySkillFallback?.node ?? null, character.abilityId !== 'breathControl');
     }
 
     private buildRaceModeList(parent: Node): void {
@@ -515,7 +529,7 @@ export class PrepareRaceFlow {
 
     private buildReadyActions(parent: Node): void {
         parent = this._motion.group(parent, 'LobbyActionsMotion', 0, -12, 0.15);
-        const room = makeRaceTextureButton('FriendRoomButton', parent, RESOURCE_PATHS.lobbyUi.onlineButton, 102, 102, 236, -287, 3);
+        const room = makeRaceTextureButton('FriendRoomButton', parent, RESOURCE_PATHS.lobbyUi.onlineButton, 102, 102, 216, -207, 3);
         const roomLabel = makeBoundLabel('Label', room, '联机', 18, DARK_TEXT, 64, 26, 0, -9);
         stylePsdRuntimeLabel(roomLabel, 'PingFang SC', true, 24);
         this._motion.bindButton(room);
@@ -524,8 +538,9 @@ export class PrepareRaceFlow {
             this.leaveCurrentScreen(this._callbacks.onOpenRoom);
         });
 
-        const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.characterUi.confirmButton, 332, 102, 448, -287, 3);
-        const startLabel = makeBoundLabel('Label', start, '快速比赛', 38, DARK_TEXT, 220, 54, -4, 0);
+        const start = makeRaceTextureButton('StartRaceButton', parent, RESOURCE_PATHS.lobbyB.quickButton, 352, 102, 438, -207, 3);
+        makeRaceTextureSprite('QuickIcon', start, RESOURCE_PATHS.lobbyB.quickIcon, 38, 43, -112, 3.5, 1);
+        const startLabel = makeBoundLabel('Label', start, '快速比赛', 38, DARK_TEXT, 188, 54, 25, 0);
         stylePsdTitleLabel(startLabel, 48);
         this._motion.bindButton(start, true);
         start.on(Button.EventType.CLICK, () => {
@@ -995,8 +1010,9 @@ export class PrepareRaceFlow {
     }
 
     private buildPreviewPresentation(parent: Node): void {
-        const previewX = -45;
+        const previewX = this._view === 'ready' ? -174 : -45;
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
+        this._previewRotateArea = rotateArea;
         rotateArea.getComponent(UITransform)!.setContentSize(400, 470);
         rotateArea.setPosition(previewX, -4, 2);
         rotateArea.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginPreviewRotation(event));
@@ -1005,12 +1021,35 @@ export class PrepareRaceFlow {
         rotateArea.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.endPreviewRotation(event));
     }
 
+    private layoutPresentation(): void {
+        if (!this._root?.isValid) return;
+        const size = view.getVisibleSize();
+        const scale = Math.max(size.width / 1280, size.height / 720);
+        const lobby = this._view === 'ready';
+        if (this._lobbyBackgroundImage?.isValid) {
+            fitFullScreenBackgroundCover(this._lobbyBackgroundImage);
+            // 宽屏裁切以展示台接触线为焦点，避免背景缩放把台面压到角色脚下方。
+            const y = lobby ? 240 * (scale - 1) : 0;
+            if (this._lobbyBackgroundImage.position.y !== y) this._lobbyBackgroundImage.setPosition(0, y, 1);
+        }
+        if (this._readyManageButton?.isValid) {
+            const x = -190.5 * scale;
+            if (this._readyManageButton.position.x !== x) this._readyManageButton.setPosition(x, -275, 3);
+        }
+        if (this._previewRotateArea?.isValid) {
+            const x = lobby ? -174 * scale : -45;
+            if (this._previewRotateArea.position.x !== x) this._previewRotateArea.setPosition(x, -4, 2);
+        }
+        this._preview?.setHallOffset(lobby);
+    }
+
     private presentCharacter(characterId: PlayerCharacterId | null): void {
         if (!characterId) return;
         this.ensurePreview();
         // Both non-race views use the authored platform lighting only; the former
         // extra render-texture contact shadow is deliberately disabled.
         this._preview?.setLobbyPresentation(true, false);
+        this._preview?.setHallOffset(this._view === 'ready');
         setNodeActive(this._previewRoot, true);
         this._preview?.refresh(characterId);
     }
@@ -1130,6 +1169,8 @@ function makeRaceTextureSprite(
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
     sprite.trim = false;
+    let ownedFrame: SpriteFrame | null = null;
+    node.once(Node.EventType.NODE_DESTROYED, () => { ownedFrame?.destroy(); ownedFrame = null; });
     loadRaceAsset(path, Texture2D, (error, texture) => {
         if (error || !texture || !node.isValid || !sprite.isValid) {
             if (error) console.warn(`[SpeedSwimming] lobby texture failed to load: ${path}`, error);
@@ -1137,6 +1178,7 @@ function makeRaceTextureSprite(
         }
         const frame = new SpriteFrame();
         frame.texture = texture;
+        ownedFrame = frame;
         sprite.spriteFrame = frame;
     });
     return node;

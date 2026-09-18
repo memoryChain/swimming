@@ -62,7 +62,7 @@ function setup() {
             if(this.index>=this.steps.length)running.delete(this);
         }
     }
-    const cc={Node,Button,UIOpacity,Vec3,tween:target=>new Animation(target)};
+    const cc={Node,Button,UIOpacity,Vec3,view:{on(){},off(){}},tween:target=>new Animation(target)};
     const factory={makeUiNode:(name,parent)=>{const n=new Node(name);n.setParent(parent);return n;},uiColor:()=>({})};
     function load(file,imports){const m={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{module:m,exports:m.exports,require:key=>imports[key]??{},console});return m.exports;}
     const {LobbyUiMotion}=load('assets/scripts/ui/LobbyUiMotion.ts',{'cc':cc,'./RuntimeUiFactory':factory});
@@ -81,7 +81,7 @@ test('模式快速往返：从当前值接续，最终只有一个选中框，�
     const s=setup(),f=s.flow;
     f._raceModeCards=['beginner','standard','championship'].map(id=>{
         const root=new Node(id);root.setParent(s.parent);const frame=new Node('选中框');frame.setParent(root);
-        const card={id,root,selectedFrame:frame,selected:id==='standard'};
+        const card={id,category:'competitive',root,selectedFrame:frame,selected:id==='standard'};
         f.applyRaceModeCardSelection(card);return card;
     });
     f.layoutRaceModeCards();
@@ -151,16 +151,17 @@ test('引擎先销毁子按钮后再清理大厅，解绑不得访问已销毁�
 test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留大厅，重复点击不重复换场',()=>{
     const source=ts.createSourceFile('LoginManager.ts',fs.readFileSync('assets/scripts/app/LoginManager.ts','utf8'),ts.ScriptTarget.Latest,true);
     const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='LoginManager');
-    const methods=cls.members.filter(n=>['startAiDebug','launchMainGame','onDestroy'].includes(n.name?.getText(source)));
+    const methods=cls.members.filter(n=>['startAiDebug','launchMainGame','recoverPrepareAfterLoadFailure','onDestroy'].includes(n.name?.getText(source)));
     for(const failure of ['none','bundle','scene']){
         const s=setup(),f=s.flow,button=new Node('AI测试');button.setParent(s.parent);button.addComponent(Button);
         f._root=s.parent;f._content=s.parent;
         f._motion.bindButton(button);button.emit('start');
         const preview=new Node('角色预览');f._previewRoot=preview;
-        let loads=0,runs=0,pendingBundle,pendingScene,mode,owner;
+        let loads=0,runs=0,rebuilds=0,pendingBundle,pendingScene,mode,owner;
         const Login=vm.runInNewContext(ts.transpileModule(`class Login { ${methods.map(n=>n.getText(source)).join('\n')} };Login`,
             {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,{
             setAiDebugDifficulty(){},setRaceDifficulty(){},getAiDebugSetup:()=>({mode:'competitive'}),setMainGameLaunchMode:value=>mode=value,
+            setSoloRaceTicket(){},setSoloRaceDistance(){},setSoloAiEvent(){},
             LoadingOverlay:{show(){},hide(){}},console:{error(){}},
             loadRaceBundle:cb=>{loads++;pendingBundle=cb;},
             director:{runScene(){
@@ -170,6 +171,8 @@ test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留�
             }},
         });
         owner=new Login();owner._prepareRaceFlow=f;
+        owner.openPrepareRace=()=>{rebuilds++;owner._prepareRaceFlow={dispose(){}};};
+        owner.toast=()=>{};
         owner.startAiDebug(.95);owner.startAiDebug(.95);assert.equal(loads,1);
         if(failure==='bundle')pendingBundle(new Error('加载失败'),null);
         else {
@@ -177,7 +180,7 @@ test('大厅AI开赛在runScene前释放预览与动效，加载失败仍保留�
             if(failure==='scene')pendingScene(new Error('场景失败'),null);
         }
         if(failure!=='none'){
-            assert.equal(owner._prepareRaceFlow,f);assert.equal(preview.isValid,true);assert.equal(s.parent.isValid,true);
+            assert.notEqual(owner._prepareRaceFlow,f);assert.equal(preview.isValid,false);assert.equal(s.parent.isValid,false);assert.equal(rebuilds,1);
             assert.equal(owner._loadingRace,false);assert.equal(runs,0);
             owner.startAiDebug(.95);assert.equal(loads,2);
             pendingBundle(null,{loadScene(_name,cb){pendingScene=cb;}});

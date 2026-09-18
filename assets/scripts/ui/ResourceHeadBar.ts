@@ -15,7 +15,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { platform } from '../platform/PlatformManager';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { PROJECT_UI_ENGLISH_BOLD_FAMILY } from './ProjectUiFonts';
+import { styleCurrencyNumberLabel } from './ProjectUiFonts';
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
@@ -108,8 +108,9 @@ export class ResourceHeadBar {
         nameLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
         nameLabel.verticalAlign = Label.VerticalAlign.CENTER;
         nameLabel.overflow = Label.Overflow.SHRINK;
-        nameNode.getComponent(UITransform)!.setContentSize(130, 38);
-        nameNode.setPosition(41.5, 0, 1);
+        nameNode.getComponent(UITransform)!.setContentSize(96, 38);
+        nameNode.setPosition(24.5, 0, 1);
+        makeLoginSprite('CareerBadge', identity, RESOURCE_PATHS.lobbyB.careerBadge, 42, 39, 99.5, 0);
         this._nameLabel = nameLabel;
         this._identity = identity;
 
@@ -121,9 +122,7 @@ export class ResourceHeadBar {
         // "游泳卡 N" count text.
         const countNode = makeLabel('Count', pill, '', 22, uiColor(240, 250, 255, 255));
         const countLabel = countNode.getComponent(Label)!;
-        countLabel.fontFamily = PROJECT_UI_ENGLISH_BOLD_FAMILY;
-        countLabel.isBold = true;
-        countLabel.lineHeight = 28;
+        styleCurrencyNumberLabel(countLabel, 28);
         countLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         countLabel.verticalAlign = Label.VerticalAlign.CENTER;
         countLabel.overflow = Label.Overflow.SHRINK;
