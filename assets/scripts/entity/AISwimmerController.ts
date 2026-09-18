@@ -10,13 +10,24 @@ import { AI_CHARACTER_STRATEGIES, intelligenceForDifficulty } from '../competito
 import { AiRaceObservation, AiRacePlanner } from '../competitor/AiRacePlanner';
 import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { PlayerCharacterId } from '../app/PlayerCharacterConfig';
-import { AiConditionModel } from '../condition/AiConditionModel';
+import { HeartRateZone } from '../condition/ConditionTypes';
 import { randomFloat, randomGaussian, randomRange } from '../core/SharedRNG';
 import { scaledDelta } from '../core/TimeScale';
 import { Swimmer } from './Swimmer';
 
 const { ccclass, property } = _decorator;
 type AiStrokePhase = 'gap' | 'press' | 'stroke';
+
+// 托管玩家与普通 AI 共用这一个输入控制器。控制器只需要读取体力并同步
+// 无限体力状态；AI 专用模型另外提供总量配置，玩家模型则由成长系统配置。
+export type AiControllerCondition = {
+    readonly energy: number;
+    readonly energyRatio: number;
+    readonly heartRate: number;
+    readonly heartRateZone: HeartRateZone;
+    setInfiniteStamina(value: boolean): void;
+    configureEnergyTotal?(total: number): void;
+};
 
 // 角色策略只生成合法输入；运动、资源与判定始终由玩家共用模型结算。
 @ccclass('AISwimmerController')
@@ -27,7 +38,7 @@ export class AISwimmerController extends Component {
     public level = 1;
     public energyTotal = 140;
     public raceObserver: AIRaceObserver | null = null;
-    public condition: AiConditionModel | null = null;
+    public condition: AiControllerCondition | null = null;
     public remoteDriven = false;
     public onDolphinJumpStarted: (() => void) | null = null;
     public onObservedPressChanged: ((side: StrokeType, pressed: boolean) => void) | null = null;
@@ -89,13 +100,13 @@ export class AISwimmerController extends Component {
         this.level = level;
         this.difficulty = difficulty;
         this.energyTotal = energyTotal;
-        this.condition?.configureEnergyTotal(energyTotal);
+        this.condition?.configureEnergyTotal?.(energyTotal);
         this.condition?.setInfiniteStamina(this.swimmer.motor.ability.infiniteStamina);
     }
 
-    bindCondition(condition: AiConditionModel) {
+    bindCondition(condition: AiControllerCondition) {
         this.condition = condition;
-        condition.configureEnergyTotal(this.energyTotal);
+        condition.configureEnergyTotal?.(this.energyTotal);
         condition.setInfiniteStamina(this.swimmer.motor.ability.infiniteStamina);
     }
 

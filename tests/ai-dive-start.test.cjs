@@ -18,8 +18,8 @@ function fixture(){
     const raceManager={startFromDive:r=>calls.push(['player',r.power,r.launchSpeed])};
     const refs={raceManager,aiSwimmers:swimmers,aiControllers:controllers,debug(){},
         getState:()=>state,setState:s=>state=s,
-        playerSwimmer:{prepareDive(){},setDiveChargeEffect(){}},
-        uiFlow:{showGo(){},showCountdown(){},updateDiveCharge(){},showDiveRelease(){}},
+        playerSwimmer:{prepareDive(){},setDiveChargeEffect(){},finishDiveChargeEffect(){}},
+        uiFlow:{showGo(){},showCountdown(){},hideCountdown(){},updateDiveCharge(){},showDiveRelease(){}},
         raceCameraDirector:{resetCountdownTimers(){},startDiveShot(){}},
         playerDiveSpeedScale:()=>1.3,applyPlayerDive(){}};
     const flow=new GameFlowController(refs);flow.bindRaceManagerCallbacks();
@@ -45,6 +45,18 @@ test('同种子重开得到同一 AI 蓄力结果，未按住的玩家仍可在�
     s.flow.handleDiveRelease(0);assert.equal(s.calls.filter(c=>c[0]==='player').length,1);
     s.flow.stopAllAi();s.flow.resetDiveCharge();s.calls.length=0;
     s.raceManager.onStateChange(s.GameState.COUNTDOWN);assert.deepEqual(run(),first);
+});
+test('玩家托管在发令边缘按 AI 蓄力起跳，进入游泳后接管且不会重复提交',()=>{
+    const s=fixture();let starts=0,stops=0;
+    const controller={sampleDivePower:()=>.9,startSwimming(){starts++;},stopSwimming(){stops++;}};
+    s.flow._refs.playerAutopilotController=()=>controller;
+    s.raceManager.onStateChange(s.GameState.DIVING);
+    const player=s.calls.filter(c=>c[0]==='player');
+    assert.equal(player.length,1);assert.ok(Math.abs(player[0][1]-.9)<1e-10,'托管起跳保留 AI 采样功率');
+    assert.equal(s.sent.filter(e=>e.launchSpeed!==undefined).length,1);
+    s.flow.startPlayerAutopilotDive();assert.equal(s.calls.filter(c=>c[0]==='player').length,1,'重复调用不再次起跳');
+    s.raceManager.onStateChange(s.GameState.RACING);assert.equal(starts,1);
+    s.flow.stopAllAi();assert.equal(stops,1);
 });
 function compiler(){
     if(process.env.TYPESCRIPT_PATH)return require(process.env.TYPESCRIPT_PATH);

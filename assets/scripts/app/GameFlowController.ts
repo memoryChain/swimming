@@ -28,6 +28,7 @@ export type GameFlowRefs = {
     playerSwimmer: Swimmer;
     aiSwimmers: Swimmer[];
     aiControllers: AISwimmerController[];
+    playerAutopilotController?: () => AISwimmerController | null;
     uiFlow: UIFlowController;
     raceCameraDirector: RaceCameraDirector;
     exitModelDebug: (showStart: boolean) => void;
@@ -300,6 +301,7 @@ export class GameFlowController {
                 this._divingElapsed = 0;
                 this._refs.uiFlow.showGo();
                 this.startAiDivesAtGo();
+                this.startPlayerAutopilotDive();
             }
             if (state === GameState.GLIDING) {
                 // The pre-jump burst must not survive into the airborne/entry phase.
@@ -573,6 +575,7 @@ export class GameFlowController {
         for (const controller of this._refs.aiControllers) {
             controller.startSwimming();
         }
+        this._refs.playerAutopilotController?.()?.startSwimming();
     }
 
     stopAllAi() {
@@ -580,6 +583,18 @@ export class GameFlowController {
         for (const controller of this._refs.aiControllers) {
             controller.stopSwimming();
         }
+        this._refs.playerAutopilotController?.()?.stopSwimming();
+    }
+
+    startPlayerAutopilotDive() {
+        const controller = this._refs.playerAutopilotController?.() ?? null;
+        if (!controller || this._diveCommitted || this._refs.getState() !== GameState.DIVING) {
+            return;
+        }
+        const power = controller.sampleDivePower();
+        const chargeRange = Math.max(1e-6, 1 - DIVE_BALANCE.minPower);
+        const charge = (power - DIVE_BALANCE.minPower) / chargeRange;
+        this.commitDive(charge, 'player autopilot');
     }
 
     private closestAiDistanceGap(playerDistance: number): number {

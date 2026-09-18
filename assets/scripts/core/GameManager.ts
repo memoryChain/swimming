@@ -5,6 +5,7 @@ import { AVATARS, avatarSwimmerLookOf } from '../backend/IdentityConfig';
 import { ULTIMATE_ENERGY_BALANCE } from './UltimateEnergyBalance';
 import {
     _decorator,
+    BlockInputEvents,
     Button,
     Camera,
     Color,
@@ -175,6 +176,8 @@ const BULLET_TIME_SCALES = [1, 0.5, 0.25, 0.1];
 // therefore stays active for the entire launched game session, but resets after
 // the application itself restarts.
 let recordingModeEnabledForSession = false;
+let playerAutopilotEnabledForSession = false;
+const PLAYER_AUTOPILOT_DIFFICULTY = 0.75;
 @ccclass('GameManager')
 export class GameManager extends Component {
     private _state = GameState.READY;
@@ -231,6 +234,11 @@ export class GameManager extends Component {
     private _raceTuningButton: Node | null = null;
     private _recordingModeButton: Node | null = null;
     private _recordingMode = recordingModeEnabledForSession;
+    private _playerAutopilotButton: Node | null = null;
+    private _playerAutopilotButtonLabel: Label | null = null;
+    private _playerAutopilot: AISwimmerController | null = null;
+    private _playerAutopilotEnabled = playerAutopilotEnabledForSession;
+    private _playerAutopilotUsedThisRace = false;
     private _raceTuningPaused = false;
     private _raceTuningPreviousTimeScale = 1;
     private _underwaterCameraTint: Node = null;
@@ -431,6 +439,7 @@ export class GameManager extends Component {
 
     onDestroy() {
         this.detachObservedAiHud();
+        this._playerAutopilot?.stopSwimming();
         this._scenePreviewCamera?.dispose();
         this._scenePreviewCamera = null;
         this._sceneEffectPreviewPanel?.dispose();
@@ -799,6 +808,7 @@ export class GameManager extends Component {
     }
 
     startGame() {
+        this._playerAutopilotUsedThisRace = this._playerAutopilotEnabled;
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this._gameFlow?.startGame();
@@ -810,6 +820,7 @@ export class GameManager extends Component {
             return;
         }
         if (this._aiDebugMode) this.selectAiCameraIndex(-1);
+        this._playerAutopilotUsedThisRace = this._playerAutopilotEnabled;
         this._raceUiBuilder?.resetInputState();
         this._inputRouter?.resetStrokeInput();
         this.applyPlayerProgression();
@@ -956,6 +967,7 @@ export class GameManager extends Component {
             playerSwimmer: this._playerSwimmer,
             aiSwimmers: this._aiSwimmers,
             aiControllers: this._aiControllers,
+            playerAutopilotController: () => this._playerAutopilotEnabled ? this._playerAutopilot : null,
             uiFlow: this._uiFlow,
             raceCameraDirector: this._raceCameraDirector,
             onPlayerCameraRestored: () => {
@@ -1048,7 +1060,8 @@ export class GameManager extends Component {
             },
             playerDiveSpeedScale: () => this._playerBalanceOverrides?.burstLaunchSpeedScale ?? 1,
             awardProgression: async (input) => {
-                if (this._roomMode || this._netSession || this._aiDebugMode || this._modelDebugFlow?.active) return null;
+                if (this._roomMode || this._netSession || this._aiDebugMode
+                    || this._playerAutopilotUsedThisRace || this._modelDebugFlow?.active) return null;
                 const ticket = getSoloRaceTicket();
                 if (!ticket) return null;
                 try {
@@ -1126,18 +1139,25 @@ export class GameManager extends Component {
         return new InputRouter(this.node, {
             onStroke: (type) => this.handlePlayerStroke(type),
             onStrokePressChanged: (type, pressed) => {
+                if (this._playerAutopilotEnabled) return;
                 if (!this.observedAiForHud() && (!pressed || this._state === GameState.RACING)) {
                     this._uiController?.raceHudStatus?.stroke.setPressed(type, pressed);
                 }
             },
             onStrokeHeld: (type, held, preHeldSeconds) => this.handlePlayerStrokeHeld(type, held, preHeldSeconds),
             onKickStroke: (type) => this.handlePlayerKickStroke(type),
-            onKickConfirmed: () => this._gameFlow?.handlePlayerKickConfirmed(),
-            onDiveChargeStart: () => this._gameFlow?.handleDiveChargeStart(),
-            onDiveRelease: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onKickConfirmed: () => {
+                if (!this._playerAutopilotEnabled) this._gameFlow?.handlePlayerKickConfirmed();
+            },
+            onDiveChargeStart: () => {
+                if (!this._playerAutopilotEnabled) this._gameFlow?.handleDiveChargeStart();
+            },
+            onDiveRelease: (holdSeconds) => {
+                if (!this._playerAutopilotEnabled) this._gameFlow?.handleDiveRelease(holdSeconds);
+            },
             onPrimaryAction: (source) => {
                 if (source === 'space' && this._state === GameState.RACING) {
-                    this._gameFlow?.handleDolphinJump();
+                    if (!this._playerAutopilotEnabled) this._gameFlow?.handleDolphinJump();
                     return;
                 }
                 const settlement = this._uiController?.settlementView;
@@ -1253,6 +1273,11 @@ export class GameManager extends Component {
                         target?.warning ?? false,
                     );
                 }
+                this.activePlayerAutopilot()?.setLaneLockdownSafeZRange(
+                    target?.safeMinZ ?? null,
+                    target?.safeMaxZ ?? null,
+                    target?.warning ?? false,
+                );
             },
         );
         this._laneLockdownRace.reset();
@@ -1350,6 +1375,16 @@ export class GameManager extends Component {
                 swimmer.motor.ability.infiniteStamina,
             ) ?? null);
         }
+        const playerAutopilot = this.activePlayerAutopilot();
+        if (playerAutopilot && this._playerSwimmer) {
+            playerAutopilot.setStimulantTargetZ(this._stimulantBrawl?.targetZForAi(
+                this._playerSwimmer.distance,
+                this._playerSwimmer.node.position.z,
+                this._playerSwimmer.heartRate,
+                this._playerCondition.energyRatio,
+                this._playerSwimmer.motor.ability.infiniteStamina,
+            ) ?? null);
+        }
         this._stimulantBrawl?.updatePresentation(
             this._playerSwimmer?.distance ?? 0,
             dt,
@@ -1364,6 +1399,7 @@ export class GameManager extends Component {
                 this._whirlpoolBrawl = null;
             }
             for (const controller of this._aiControllers) controller?.setWhirlpoolTargetZ(null);
+            this.activePlayerAutopilot()?.setWhirlpoolTargetZ(null);
             return;
         }
         if (!this._whirlpoolBrawl && this._worldRoot?.isValid) {
@@ -1387,6 +1423,13 @@ export class GameManager extends Component {
             controller.setWhirlpoolTargetZ(this._whirlpoolBrawl?.targetZForAi(
                 swimmer.distance,
                 swimmer.node.position.z,
+            ) ?? null);
+        }
+        const playerAutopilot = this.activePlayerAutopilot();
+        if (playerAutopilot && this._playerSwimmer) {
+            playerAutopilot.setWhirlpoolTargetZ(this._whirlpoolBrawl?.targetZForAi(
+                this._playerSwimmer.distance,
+                this._playerSwimmer.node.position.z,
             ) ?? null);
         }
         this._whirlpoolBrawl?.updatePresentation(
@@ -1446,6 +1489,7 @@ export class GameManager extends Component {
         const controller = this._cannonBrawl;
         if (!controller || this._modelDebugFlow?.active) {
             for (const ai of this._aiControllers) ai?.setCannonTargetZ(null);
+            this.activePlayerAutopilot()?.setCannonTargetZ(null);
             return;
         }
         controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
@@ -1464,6 +1508,14 @@ export class GameManager extends Component {
                 swimmer.distance,
                 swimmer.node.position.z,
                 ai.intelligence.discipline,
+            ));
+        }
+        const playerAutopilot = this.activePlayerAutopilot();
+        if (playerAutopilot && this._playerSwimmer) {
+            playerAutopilot.setCannonTargetZ(controller.targetZForAi(
+                this._playerSwimmer.distance,
+                this._playerSwimmer.node.position.z,
+                playerAutopilot.intelligence.discipline,
             ));
         }
         if (!this._cannonBrawlHud?.consumeSample(dt, this._state)) return;
@@ -1612,6 +1664,7 @@ export class GameManager extends Component {
         const controller = this._mineRelayBrawl;
         if (!controller || this._modelDebugFlow?.active) {
             for (const ai of this._aiControllers) ai?.setMineRelayTargetZ(null);
+            this.activePlayerAutopilot()?.setMineRelayTargetZ(null);
             return;
         }
         controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
@@ -1631,6 +1684,13 @@ export class GameManager extends Component {
             if (!ai || !swimmer || ai.remoteDriven) continue;
             const lane = this.assignedLaneOfSwimmer(swimmer);
             ai.setMineRelayTargetZ(controller.targetZForAi(lane, ai.intelligence.discipline));
+        }
+        const playerAutopilot = this.activePlayerAutopilot();
+        if (playerAutopilot) {
+            playerAutopilot.setMineRelayTargetZ(controller.targetZForAi(
+                this._playerLaneIndex,
+                playerAutopilot.intelligence.discipline,
+            ));
         }
         if (!this._mineRelayHud?.consumeSample(dt, this._state)) return;
         this._mineRelayHud.updateValues(
@@ -1927,6 +1987,7 @@ export class GameManager extends Component {
             if (shark.active) shark.reset();
             if (this._sharkWake?.active) this._sharkWake.active = false;
             for (const controller of this._aiControllers) controller?.setSharkTargetZ(null);
+            this.activePlayerAutopilot()?.setSharkTargetZ(null);
             return;
         }
         if (!this._netRaceController || this._netRaceController.isHost) {
@@ -1950,6 +2011,18 @@ export class GameManager extends Component {
             }
             controller?.setSharkTargetZ(targetZ);
         }
+        const playerAutopilot = this.activePlayerAutopilot();
+        let playerAutopilotTargetZ: number | null = null;
+        if (playerAutopilot && this._playerSwimmer && hunted === this._playerSwimmer) {
+            const halfWidth = COURSE_LAYOUT.poolWidth * 0.5;
+            const sharkZ = shark.node.position.z;
+            const swimmerZ = this._playerSwimmer.node.position.z;
+            const direction = swimmerZ === sharkZ
+                ? (this._playerLaneIndex % 2 === 0 ? 1 : -1)
+                : Math.sign(swimmerZ - sharkZ);
+            playerAutopilotTargetZ = Math.max(-halfWidth + 0.8, Math.min(halfWidth - 0.8, sharkZ + direction * 2.2));
+        }
+        playerAutopilot?.setSharkTargetZ(playerAutopilotTargetZ);
         this._sharkCollisionSwimmers.length = 0;
         if (this._playerSwimmer?.isCollisionActive) this._sharkCollisionSwimmers.push(this._playerSwimmer);
         if (!this._netRaceController || this._netRaceController.isHost) {
@@ -2093,6 +2166,41 @@ export class GameManager extends Component {
         this.applyBodyFeedbackEnabled();
         this.refreshAiDifficultyPanel();
         this.applyPlayerProgression();
+        this.setupPlayerAutopilot();
+    }
+
+    private setupPlayerAutopilot() {
+        if (!DEV || this._netSession || !this._playerSwimmer?.node?.isValid) {
+            this._playerAutopilot = null;
+            this._playerAutopilotEnabled = false;
+            return;
+        }
+        const controller = this._playerSwimmer.node.getComponent(AISwimmerController)
+            ?? this._playerSwimmer.node.addComponent(AISwimmerController);
+        controller.swimmer = this._playerSwimmer;
+        controller.bindCondition(this._playerCondition);
+        controller.onDolphinJumpStarted = () => this.debug('player autopilot dolphin jump');
+        controller.onObservedPressChanged = (side, pressed) => {
+            if (!this._playerAutopilotEnabled || this.observedAiForHud()) return;
+            this._uiController?.raceHudStatus?.stroke.setPressed(side, pressed);
+        };
+        this._playerAutopilot = controller;
+        this.configurePlayerAutopilot();
+    }
+
+    private configurePlayerAutopilot() {
+        const controller = this._playerAutopilot;
+        if (!controller || !this._playerSwimmer) return;
+        const characterId = getPlayerCharacterSelection().characterId;
+        const level = getProgressionManager().getCharacterLevel(characterId);
+        controller.configure(characterId, level, PLAYER_AUTOPILOT_DIFFICULTY, this._playerCondition.energyTotal);
+        if (this._playerAutopilotEnabled && this._state === GameState.RACING) {
+            controller.startSwimming();
+        }
+    }
+
+    private activePlayerAutopilot(): AISwimmerController | null {
+        return this._playerAutopilotEnabled ? this._playerAutopilot : null;
     }
 
     private bindDolphinEnergyCost(swimmer: Swimmer, condition: PlayerConditionModel | AiConditionModel) {
@@ -2124,6 +2232,7 @@ export class GameManager extends Component {
             });
             this._uiFlow?.setEnergyTotal(overrides.energyTotal);
         }
+        this.configurePlayerAutopilot();
         this.debug('progression character=' + characterId + ' level=' + level);
     }
 
@@ -2201,6 +2310,9 @@ export class GameManager extends Component {
         );
         for (const controller of this._aiControllers) {
             controller.raceObserver = raceObserver;
+        }
+        if (this._playerAutopilot) {
+            this._playerAutopilot.raceObserver = raceObserver;
         }
         this._gameFlow?.refreshPreRaceShowcaseRoster();
         // AI swimmers load one frame after startGame(), so the pre-race roster
@@ -2974,11 +3086,17 @@ export class GameManager extends Component {
         this._inputManager = input;
 
         const raceUiBuilder = new SpeedStarsUiPrefabBuilder({
-            onDolphinJump: () => this._gameFlow?.handleDolphinJump(),
+            onDolphinJump: () => {
+                if (!this._playerAutopilotEnabled) this._gameFlow?.handleDolphinJump();
+            },
             onStroke: (type) => this._inputRouter?.handleScreenStroke(type),
             onStrokeEnd: (type) => this._inputRouter?.handleScreenStrokeEnd(type),
-            onDiveHoldStart: () => this._gameFlow?.handleDiveChargeStart(),
-            onDiveHoldEnd: (holdSeconds) => this._gameFlow?.handleDiveRelease(holdSeconds),
+            onDiveHoldStart: () => {
+                if (!this._playerAutopilotEnabled) this._gameFlow?.handleDiveChargeStart();
+            },
+            onDiveHoldEnd: (holdSeconds) => {
+                if (!this._playerAutopilotEnabled) this._gameFlow?.handleDiveRelease(holdSeconds);
+            },
             onRestart: () => this.restartGame(),
             onMenu: () => {
                 if (!this._roomMode) setReturnToLobby(true);
@@ -3055,6 +3173,7 @@ export class GameManager extends Component {
             this._modelDebugSkyboxLabel = modelDebugHud.skyboxLabel;
             this._modelDebugHud.active = false;
             this.buildRaceTuningButton(this._raceHud, w, h);
+            this.buildPlayerAutopilotButton(this._raceHud, w, h);
             this.buildRecordingModeButton(this._raceHud, w, h);
 
             const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
@@ -3220,14 +3339,17 @@ export class GameManager extends Component {
     }
 
     private handlePlayerStroke(type: StrokeType) {
+        if (this._playerAutopilotEnabled) return;
         this._gameFlow?.handlePlayerStroke(type);
     }
 
     private handlePlayerStrokeHeld(type: StrokeType, held: boolean, preHeldSeconds = 0): boolean {
+        if (this._playerAutopilotEnabled) return false;
         return this._gameFlow?.handlePlayerStrokeHeld(type, held, preHeldSeconds) ?? false;
     }
 
     private handlePlayerKickStroke(type: StrokeType) {
+        if (this._playerAutopilotEnabled) return;
         this._gameFlow?.handlePlayerKickStroke(type);
     }
 
@@ -3414,6 +3536,60 @@ export class GameManager extends Component {
         button.active = !this._recordingMode;
     }
 
+    private buildPlayerAutopilotButton(raceHud: Node, width: number, height: number) {
+        // 仅开发版单机使用。托管直接驱动本机玩家，不进入联机输入与权威同步路径。
+        if (!DEV || this._netSession || !this._playerAutopilot || !raceHud?.isValid) {
+            return;
+        }
+        const button = makeButton(
+            'PlayerAutopilotButton',
+            raceHud,
+            112,
+            42,
+            new Color(116, 78, 168, 235),
+            '',
+        );
+        button.setPosition(width / 2 - 316, height / 2 - 42, 0);
+        button.setSiblingIndex(raceHud.children.length - 1);
+        button.addComponent(BlockInputEvents);
+        const labelNode = makeLabel('Label', button, '', 22, new Color(255, 255, 255, 235));
+        labelNode.getComponent(UITransform)?.setContentSize(112, 42);
+        this._playerAutopilotButton = button;
+        this._playerAutopilotButtonLabel = labelNode.getComponent(Label);
+        if (this._playerAutopilotButtonLabel) styleProjectUiLabel(this._playerAutopilotButtonLabel, 'semibold', 22);
+        button.on(Node.EventType.TOUCH_END, () => this.togglePlayerAutopilot());
+        button.active = !this._recordingMode;
+        this.refreshPlayerAutopilotButton();
+    }
+
+    private togglePlayerAutopilot() {
+        if (this._netSession || !this._playerAutopilot) return;
+        if (!this._playerAutopilotEnabled) {
+            this.handlePlayerStrokeHeld(StrokeType.LEFT, false);
+            this.handlePlayerStrokeHeld(StrokeType.RIGHT, false);
+        }
+        this._playerAutopilotEnabled = !this._playerAutopilotEnabled;
+        playerAutopilotEnabledForSession = this._playerAutopilotEnabled;
+        if (this._playerAutopilotEnabled) this._playerAutopilotUsedThisRace = true;
+        this._inputRouter?.resetStrokeInput();
+        if (!this._playerAutopilotEnabled) {
+            this._playerAutopilot.stopSwimming();
+        } else if (this._state === GameState.DIVING) {
+            this._gameFlow?.startPlayerAutopilotDive();
+        } else if (this._state === GameState.RACING) {
+            this._playerAutopilot.startSwimming();
+        }
+        this.refreshPlayerAutopilotButton();
+        this.debug(`player autopilot=${this._playerAutopilotEnabled ? 'ON' : 'OFF'}`);
+    }
+
+    private refreshPlayerAutopilotButton() {
+        const label = this._playerAutopilotButtonLabel;
+        if (!label) return;
+        const text = this._playerAutopilotEnabled ? '托管：开' : '托管：关';
+        if (label.string !== text) label.string = text;
+    }
+
     private enableRecordingMode() {
         if (this._recordingMode) {
             return;
@@ -3432,6 +3608,9 @@ export class GameManager extends Component {
         }
         if (this._recordingModeButton?.isValid && this._recordingModeButton.active) {
             this._recordingModeButton.active = false;
+        }
+        if (this._playerAutopilotButton?.isValid && this._playerAutopilotButton.active) {
+            this._playerAutopilotButton.active = false;
         }
     }
 
