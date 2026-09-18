@@ -9,6 +9,7 @@ export const enum EntertainmentRecoveryReason {
     SHARK = 1,
     CANNON = 2,
     TIMED_BOMB = 3,
+    MINEFIELD = 4,
 }
 
 export const ENTERTAINMENT_RECOVERY_TUNING = {
@@ -44,7 +45,7 @@ export type EntertainmentRecoveryHooks = {
 };
 
 /**
- * 鲨鱼／炮火／定时炸弹娱乐玩法共用的击倒恢复状态机。
+ * 鲨鱼／炮火／定时炸弹／水雷娱乐玩法共用的击倒恢复状态机。
  * 规则不持有 Cocos 节点；房主、单机和访客都推进同一阶段，权威快照负责纠偏。
  */
 export class EntertainmentRecoveryController {
@@ -202,7 +203,8 @@ function isValidRecoveryEvent(event: EntertainmentRecoveryEvent): boolean {
         && Number.isSafeInteger(event.lane) && event.lane >= 0
         && (event.reason === EntertainmentRecoveryReason.SHARK
             || event.reason === EntertainmentRecoveryReason.CANNON
-            || event.reason === EntertainmentRecoveryReason.TIMED_BOMB)
+            || event.reason === EntertainmentRecoveryReason.TIMED_BOMB
+            || event.reason === EntertainmentRecoveryReason.MINEFIELD)
         && Number.isFinite(event.distance) && event.distance >= 0
         && Number.isSafeInteger(event.revision) && event.revision > 0;
 }
@@ -217,7 +219,8 @@ function isValidRecoverySnapshot(snapshot: EntertainmentRecoverySnapshot, laneCo
             && (state.reason === EntertainmentRecoveryReason.NONE
                 || state.reason === EntertainmentRecoveryReason.SHARK
                 || state.reason === EntertainmentRecoveryReason.CANNON
-                || state.reason === EntertainmentRecoveryReason.TIMED_BOMB)
+                || state.reason === EntertainmentRecoveryReason.TIMED_BOMB
+                || state.reason === EntertainmentRecoveryReason.MINEFIELD)
             && Number.isFinite(state.remainingSeconds) && state.remainingSeconds >= 0
             && Number.isFinite(state.distance) && state.distance >= 0
             && Number.isSafeInteger(state.revision) && state.revision >= 0);

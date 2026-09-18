@@ -21,6 +21,7 @@ export type MinefieldImpact = {
     hitLane: number;
     courseX: number;
     lateral: number;
+    hitMask: number;
     revision: number;
 };
 
@@ -35,6 +36,8 @@ export const MINEFIELD_TUNING = {
     mineCount: 7,
     contactAlongRadius: 1.35,
     contactLateralRadius: 1.05,
+    blastAlongRadius: 2.45,
+    blastLateralRadius: 1.95,
     driftAlongRadius: 0.75,
     driftLateralRadius: 0.58,
     driftSpeed: 0.72,
@@ -164,6 +167,7 @@ export class MinefieldBrawlController {
     applyImpact(impact: MinefieldImpact): boolean {
         if (!Number.isSafeInteger(impact.mineId) || impact.mineId < 0 || impact.mineId >= this.mineStates.length
             || !Number.isSafeInteger(impact.hitLane) || impact.hitLane < 0 || impact.hitLane >= this.laneCount
+            || !Number.isSafeInteger(impact.hitMask) || impact.hitMask < 0
             || !Number.isSafeInteger(impact.revision) || impact.revision <= this.revision
             || !Number.isFinite(impact.courseX) || !Number.isFinite(impact.lateral)) return false;
         this.revision = impact.revision;
@@ -207,11 +211,24 @@ export class MinefieldBrawlController {
                 hitLane: lane,
                 courseX: mine.courseX,
                 lateral: mine.lateral,
+                hitMask: this.blastHitMask(mine.courseX, mine.lateral, lane),
                 revision: this.revision + 1,
             };
             if (this.applyImpact(impact)) this.onImpact(impact);
             return;
         }
+    }
+
+    private blastHitMask(courseX: number, lateral: number, directLane: number): number {
+        let mask = 0;
+        for (let lane = 0; lane < this.laneCount; lane++) {
+            const racer = this.racerForLane(lane);
+            if (!racer?.active || racer.finished) continue;
+            const dx = (courseOffset(racer.distance) - courseX) / MINEFIELD_TUNING.blastAlongRadius;
+            const dz = (racer.lateral - lateral) / MINEFIELD_TUNING.blastLateralRadius;
+            if (dx * dx + dz * dz <= 1) mask |= 1 << lane;
+        }
+        return (mask | (1 << directLane)) >>> 0;
     }
 
     private updateMinePositions(): void {

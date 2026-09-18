@@ -28,6 +28,8 @@ export type MineRelayResolution = {
     carrierLane: number;
     exploded: boolean;
     distance: number;
+    lateral: number;
+    hitMask: number;
     revision: number;
 };
 
@@ -79,6 +81,8 @@ export const MINE_RELAY_TUNING = {
     explosionPitchImpulse: 3.25,
     explosionSoftnessLateralImpulse: 1.8,
     explosionSoftnessForwardImpulse: -0.95,
+    blastAlongRadius: 2.8,
+    blastLateralRadius: 2.35,
 };
 
 /**
@@ -344,14 +348,34 @@ export class MineRelayBrawlController {
     private resolveActiveRound(exploded: boolean): void {
         const arm = this.activeArm;
         if (!arm) return;
+        const carrier = this.racerForLane(arm.carrierLane);
         const event: MineRelayResolution = {
             roundId: arm.roundId,
             carrierLane: arm.carrierLane,
             exploded,
-            distance: Math.max(0, this.racerForLane(arm.carrierLane)?.distance ?? 0),
+            distance: Math.max(0, carrier?.distance ?? 0),
+            lateral: carrier?.lateral ?? 0,
+            hitMask: exploded ? this.blastHitMask(arm.carrierLane) : 0,
             revision: this.revision + 1,
         };
         if (this.applyResolution(event)) this.onResolution(event);
+    }
+
+    private blastHitMask(carrierLane: number): number {
+        const carrier = this.racerForLane(carrierLane);
+        if (!carrier) return 1 << carrierLane;
+        let mask = 0;
+        for (let lane = 0; lane < this.laneCount; lane++) {
+            if (!this.isEligibleLane(lane)) continue;
+            const racer = this.racerForLane(lane)!;
+            if (ellipseDistanceSquared(
+                racer.distance - carrier.distance,
+                racer.lateral - carrier.lateral,
+                MINE_RELAY_TUNING.blastAlongRadius,
+                MINE_RELAY_TUNING.blastLateralRadius,
+            ) <= 1) mask |= 1 << lane;
+        }
+        return (mask | (1 << carrierLane)) >>> 0;
     }
 
     private pickTransferTarget(carrierLane: number): number {
@@ -496,6 +520,8 @@ function isValidResolution(event: MineRelayResolution): boolean {
         && Number.isSafeInteger(event.carrierLane) && event.carrierLane >= 0
         && typeof event.exploded === 'boolean'
         && Number.isFinite(event.distance) && event.distance >= 0
+        && Number.isFinite(event.lateral)
+        && Number.isSafeInteger(event.hitMask) && event.hitMask >= 0
         && Number.isSafeInteger(event.revision) && event.revision >= 0;
 }
 

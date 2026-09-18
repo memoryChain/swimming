@@ -49,7 +49,8 @@
 // 版本61：击倒急救等待延长到2.5秒，并统一娱乐玩法赛事广播、个人反馈和持续状态表现。
 // 版本62：定时炸弹爆炸改为致命击倒后原进度重生；结算事件同步权威重生距离。
 // 版本63：水雷障碍状态进入 S| 快照，补齐丢包恢复与房主迁移。
-export const NET_RACE_PROTOCOL_VERSION = 63;
+// 版本64：定时炸弹与水雷命中事件追加房主权威冲击范围；独立水雷直接命中进入急救。
+export const NET_RACE_PROTOCOL_VERSION = 64;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

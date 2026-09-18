@@ -11,6 +11,7 @@ const INVULNERABLE = 2;
 const SHARK = 1;
 const CANNON = 2;
 const TIMED_BOMB = 3;
+const MINEFIELD = 4;
 
 function fixture(lanes = 4) {
     const events = [];
@@ -80,15 +81,34 @@ test('定时炸弹致命命中复用同一套原进度重生和无敌流程', ()
     assert.deepEqual(f.events.slice(0, 2), [['knocked', 0, 72.45], ['respawn', 0, 72.45]]);
 });
 
-test('鲨鱼、炮火和定时炸弹接入复用泳者节点，不走永久淘汰或最后幸存者结算', () => {
+test('水雷命中进入同一急救流程，恢复序号跨事件单调递增', () => {
+    const f = fixture();
+    const first = f.controller.tryKnockDown(0, MINEFIELD, 42.5);
+    assert.equal(first.revision, 1);
+    f.controller.update(ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds + ENTERTAINMENT_RECOVERY_TUNING.invulnerableSeconds);
+    const second = f.controller.tryKnockDown(1, SHARK, 67.25);
+    assert.equal(second.revision, 2);
+    assert.equal(f.controller.stateForLane(0).phase, ACTIVE);
+    assert.equal(f.controller.stateForLane(1).reason, SHARK);
+});
+
+test('鲨鱼、炮火、定时炸弹和水雷接入复用泳者节点，不走永久淘汰', () => {
     const source = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     assert.match(source, /respawnAfterEntertainmentHit/);
     assert.match(source, /setSharkKnockdownListener/);
     assert.match(source, /knockDownCannonHitLane/);
     assert.match(source, /EntertainmentRecoveryReason\.TIMED_BOMB/);
+    assert.match(source, /EntertainmentRecoveryReason\.MINEFIELD/);
+    const recoverySetup = source.match(/private setupEntertainmentRecovery[\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(recoverySetup, /isMinefieldBrawlMode\(\)/);
+    const minefieldImpact = source.match(/private handleMinefieldImpact[\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(minefieldImpact, /applyEntertainmentKnockdown\([\s\S]*?EntertainmentRecoveryReason\.MINEFIELD/);
     assert.match(source, /isDamageable\(lane\)/);
     assert.match(source, /recovery\?\.phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.doesNotMatch(source, /eliminateCannonHitLane|handleSharkElimination|enqueueSharkElimination/);
+    const knockoutPresentation = source.match(/private presentEntertainmentKnockout[\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(knockoutPresentation, /setFinishFloating\(0\.18\)/);
+    assert.doesNotMatch(knockoutPresentation, /reason === EntertainmentRecoveryReason\.SHARK/);
     const swimmer = readFileSync(new URL('../assets/scripts/entity/Swimmer.ts', import.meta.url), 'utf8');
     assert.match(swimmer, /suspendForEntertainmentKnockout/);
     assert.match(swimmer, /resumeAfterEntertainmentHit/);

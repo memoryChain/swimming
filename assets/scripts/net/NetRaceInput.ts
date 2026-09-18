@@ -52,8 +52,8 @@ export const enum NetInputKind {
     CannonImpact = 'x', // host-authoritative strike id, hit mask, knocked lane/distance and revision
     MineRelayArm = 'm', // host-authoritative round, carrier, fuse and revision
     MineRelayTransfer = 't', // host-authoritative round, from/to lanes, remaining fuse and revision
-    MineRelayResolution = 'b', // host-authoritative round, carrier, exploded/disarmed, distance and revision
-    MinefieldImpact = 'i', // host-authoritative obstacle mine id, hit lane, position and revision
+    MineRelayResolution = 'b', // host-authoritative round, carrier, explosion center, hit mask and revision
+    MinefieldImpact = 'i', // host-authoritative obstacle mine id, direct lane, position, hit mask and revision
 }
 
 export interface NetInputEvent {
@@ -136,9 +136,9 @@ function encodeEvent(event: NetInputEvent): string {
         case NetInputKind.MineRelayTransfer:
             return `${NetInputKind.MineRelayTransfer}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineFromLane ?? 0))},${Math.max(0, Math.floor(event.mineToLane ?? 0))},${Math.max(0, Math.round((event.remainingSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MineRelayResolution:
-            return `${NetInputKind.MineRelayResolution}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${event.exploded ? 1 : 0},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+            return `${NetInputKind.MineRelayResolution}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${event.exploded ? 1 : 0},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MinefieldImpact:
-            return `${NetInputKind.MinefieldImpact}${Math.max(0, Math.floor(event.mineId ?? 0))},${Math.max(0, Math.floor(event.mineHitLane ?? 0))},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+            return `${NetInputKind.MinefieldImpact}${Math.max(0, Math.floor(event.mineId ?? 0))},${Math.max(0, Math.floor(event.mineHitLane ?? 0))},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -239,32 +239,38 @@ function decodeToken(token: string): NetInputEvent | null {
                 : null;
         }
         case NetInputKind.MineRelayResolution: {
-            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
-            return values.length === 5
-                && values.every(value => Number.isSafeInteger(value) && value >= 0)
-                && values[2] <= 1
+            const parts = token.slice(1).split(',');
+            const values = parts.map((value, index) => parseInt(value, index === 5 ? 16 : 10));
+            return values.length === 7
+                && values.every(value => Number.isSafeInteger(value))
+                && values[0] >= 0 && values[1] >= 0 && values[2] >= 0 && values[2] <= 1
+                && values[3] >= 0 && values[5] >= 0 && values[6] >= 0
                 ? {
                     kind,
                     mineRoundId: values[0],
                     mineCarrierLane: values[1],
                     exploded: values[2] === 1,
                     mineDistance: values[3] / 100,
-                    revision: values[4],
+                    mineLateral: values[4] / 1000,
+                    hitMask: values[5],
+                    revision: values[6],
                 }
                 : null;
         }
         case NetInputKind.MinefieldImpact: {
-            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
-            return values.length === 5
+            const parts = token.slice(1).split(',');
+            const values = parts.map((value, index) => parseInt(value, index === 4 ? 16 : 10));
+            return values.length === 6
                 && values.every(value => Number.isSafeInteger(value))
-                && values[0] >= 0 && values[1] >= 0 && values[2] >= 0 && values[4] >= 0
+                && values[0] >= 0 && values[1] >= 0 && values[2] >= 0 && values[4] >= 0 && values[5] >= 0
                 ? {
                     kind,
                     mineId: values[0],
                     mineHitLane: values[1],
                     mineDistance: values[2] / 100,
                     mineLateral: values[3] / 1000,
-                    revision: values[4],
+                    hitMask: values[4],
+                    revision: values[5],
                 }
                 : null;
         }

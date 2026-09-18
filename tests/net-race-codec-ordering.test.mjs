@@ -80,11 +80,11 @@ test('stimulant pickup event round-trips on the reliable input channel', () => {
 
 test('minefield impact round-trips on the reliable input channel', () => {
     const encoded = encodeInputFrame(0, [{
-        kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, revision: 8,
+        kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, hitMask: 0b11100000, revision: 8,
     }], null, -1, 45);
     const decoded = decodeInputFrame(encoded);
     assert.deepEqual(decoded.events, [{
-        kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, revision: 8,
+        kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, hitMask: 0b11100000, revision: 8,
     }]);
 });
 
@@ -191,7 +191,7 @@ test('timed bomb arm, transfer, resolution and active state round-trip across bo
     const events = [
         { kind: 'm', mineRoundId: 2, mineCarrierLane: 5, fuseSeconds: 6.5, revision: 11 },
         { kind: 't', mineRoundId: 2, mineFromLane: 5, mineToLane: 3, remainingSeconds: 4.321, revision: 12 },
-        { kind: 'b', mineRoundId: 2, mineCarrierLane: 3, exploded: true, mineDistance: 91.24, revision: 13 },
+        { kind: 'b', mineRoundId: 2, mineCarrierLane: 3, exploded: true, mineDistance: 91.24, mineLateral: -1.25, hitMask: 0b00111000, revision: 13 },
     ];
     const decoded = decodeInputFrame(encodeInputFrame(0, events, null, -1, 48));
     assert.deepEqual(decoded.events, events);

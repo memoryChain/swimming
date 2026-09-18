@@ -1491,7 +1491,8 @@ export class GameManager extends Component {
 
     private setupEntertainmentRecovery() {
         this._entertainmentRecovery = null;
-        if ((!isSharkBrawlMode() && !isCannonBrawlMode() && !isTimedBombBrawlMode()) || !this._raceManager) return;
+        if ((!isSharkBrawlMode() && !isCannonBrawlMode() && !isTimedBombBrawlMode()
+            && !isMinefieldBrawlMode()) || !this._raceManager) return;
         this._entertainmentRecovery = new EntertainmentRecoveryController(
             LANE_LAYOUT.laneCount,
             {
@@ -1517,14 +1518,12 @@ export class GameManager extends Component {
         return this._entertainmentRecovery.applyKnockDown({ lane, reason, distance, revision });
     }
 
-    private presentEntertainmentKnockout(lane: number, reason: EntertainmentRecoveryReason) {
+    private presentEntertainmentKnockout(lane: number, _reason: EntertainmentRecoveryReason) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer) return;
         swimmer.beginEntertainmentKnockout();
-        if (reason === EntertainmentRecoveryReason.SHARK) {
-            // 复用项目已有的竖直踩水目标姿态，短促翻起表达被重物撞停。
-            swimmer.cartoonRig?.setFinishFloating(0.18);
-        }
+        // 所有致命娱乐事件统一复用短促翻起的受击姿态，避免停在命中前的游泳动作。
+        swimmer.cartoonRig?.setFinishFloating(0.18);
         const aiIndex = this.aiIndexForLane(lane);
         if (aiIndex >= 0 && !this._aiControllers[aiIndex]?.remoteDriven) {
             this._aiControllers[aiIndex]?.stopSwimming();
@@ -1687,7 +1686,7 @@ export class GameManager extends Component {
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             if ((impact.hitMask & (1 << lane)) === 0) continue;
             if (lane === impact.knockedLane) this.knockDownCannonHitLane(lane, impact.knockedDistance, impact.revision);
-            else this.applyCannonSplashHit(lane);
+            else this.applyExplosionShockwaveHit(lane, this._lastCannonTargetZ);
         }
         if (impact.knockedLane >= 0 && (impact.hitMask & (1 << impact.knockedLane)) === 0) {
             this.knockDownCannonHitLane(impact.knockedLane, impact.knockedDistance, impact.revision);
@@ -1699,10 +1698,10 @@ export class GameManager extends Component {
         }
     }
 
-    private applyCannonSplashHit(lane: number) {
+    private applyExplosionShockwaveHit(lane: number, centerLateral: number) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer?.node?.active) return;
-        const away = swimmer.node.position.z >= this._lastCannonTargetZ ? 1 : -1;
+        const away = swimmer.node.position.z >= centerLateral ? 1 : -1;
         swimmer.applyCollisionImpulse(-1.05, away * 2.25);
         swimmer.applyCollisionAxialImpulse(away * 4.2);
         swimmer.applyCollisionPitchImpulse(-2.6);
@@ -1772,8 +1771,8 @@ export class GameManager extends Component {
             const event = { roundId, fromLane, toLane, remainingSeconds, revision };
             if (this._mineRelayBrawl?.applyTransfer(event)) this.handleMineRelayTransfer(event, false);
         });
-        this._netRaceController?.setMineRelayResolutionListener((roundId, carrierLane, exploded, distance, revision) => {
-            const event = { roundId, carrierLane, exploded, distance, revision };
+        this._netRaceController?.setMineRelayResolutionListener((roundId, carrierLane, exploded, distance, lateral, hitMask, revision) => {
+            const event = { roundId, carrierLane, exploded, distance, lateral, hitMask, revision };
             if (this._mineRelayBrawl?.applyResolution(event)) this.handleMineRelayResolution(event, false);
         });
         this._netRaceController?.setMineRelayStateListener(state => {
@@ -1889,6 +1888,10 @@ export class GameManager extends Component {
     private handleMineRelayResolution(event: MineRelayResolution, broadcast: boolean) {
         if (event.exploded) {
             this.applyMineRelayExplosion(event.carrierLane, event.distance, event.revision);
+            for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+                if (lane === event.carrierLane || (event.hitMask & (1 << lane)) === 0) continue;
+                this.applyExplosionShockwaveHit(lane, event.lateral);
+            }
         } else {
             this._mineRelayPresentation?.showResolution(false, null);
             if (event.carrierLane === this._playerLaneIndex) {
@@ -1903,7 +1906,8 @@ export class GameManager extends Component {
         }
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueMineRelayResolution(
-                event.roundId, event.carrierLane, event.exploded, event.distance, event.revision,
+                event.roundId, event.carrierLane, event.exploded, event.distance,
+                event.lateral, event.hitMask, event.revision,
             );
         }
     }
@@ -1954,7 +1958,8 @@ export class GameManager extends Component {
             lane => {
                 const state = this._minefieldRacerStates[lane];
                 const swimmer = this.swimmerForLane(lane);
-                state.active = !!swimmer?.node?.active;
+                state.active = !!swimmer?.node?.active
+                    && (this._entertainmentRecovery?.isDamageable(lane) ?? true);
                 state.finished = (this._raceManager?.hasSwimmerFinished(swimmer ?? null) ?? false)
                     || (swimmer?.distance ?? 0) >= getRaceDistance();
                 state.distance = swimmer?.distance ?? 0;
@@ -1970,8 +1975,8 @@ export class GameManager extends Component {
                 MINEFIELD_TUNING.mineCount,
             );
         }
-        this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, revision) => {
-            const impact = { mineId, hitLane, courseX, lateral, revision };
+        this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, hitMask, revision) => {
+            const impact = { mineId, hitLane, courseX, lateral, hitMask, revision };
             if (this._minefieldBrawl?.applyImpact(impact)) this.handleMinefieldImpact(impact, false);
         });
         this._netRaceController?.setMinefieldStateListener(state => {
@@ -2017,13 +2022,23 @@ export class GameManager extends Component {
             const splashNode = swimmer.cartoonRig?.splashNode;
             if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
             swimmer.cartoonRig?.triggerBigSplash(2.45);
+            this.applyEntertainmentKnockdown(
+                impact.hitLane,
+                EntertainmentRecoveryReason.MINEFIELD,
+                swimmer.distance,
+                impact.revision,
+            );
             if (swimmer === this._playerSwimmer) {
-                this._entertainmentEventBanner.showPersonal('撞上水雷 · 被炸翻', 'danger', 1200);
+                this._entertainmentEventBanner.showPersonal('撞上水雷 · 急救中', 'danger', 1200);
             }
+        }
+        for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+            if (lane === impact.hitLane || (impact.hitMask & (1 << lane)) === 0) continue;
+            this.applyExplosionShockwaveHit(lane, impact.lateral);
         }
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueMinefieldImpact(
-                impact.mineId, impact.hitLane, impact.courseX, impact.lateral, impact.revision,
+                impact.mineId, impact.hitLane, impact.courseX, impact.lateral, impact.hitMask, impact.revision,
             );
         }
     }
@@ -3321,7 +3336,7 @@ export class GameManager extends Component {
                             : isTimedBombBrawlMode()
                                 ? '炸弹会随机落到选手身上；倒计时结束会被炸倒并在原进度重生'
                                 : isMinefieldBrawlMode()
-                                    ? '水雷在泳池中缓慢漂移；碰到立即爆炸并被掀翻失速'
+                                    ? '水雷在泳池中缓慢漂移；直接触雷会被击倒，附近选手会被冲击波推开'
                                     : '率先完成全程者获胜',
         });
     }
@@ -3397,7 +3412,7 @@ export class GameManager extends Component {
             if (isCannonBrawlMode()) {
                 this._cannonBrawlHud = new CannonBrawlHud(this._raceHud, w, h);
             }
-            if (isSharkBrawlMode() || isCannonBrawlMode() || isTimedBombBrawlMode()) {
+            if (isSharkBrawlMode() || isCannonBrawlMode() || isTimedBombBrawlMode() || isMinefieldBrawlMode()) {
                 this._entertainmentRecoveryHud = new EntertainmentRecoveryHud(this._raceHud);
             }
             if (isTimedBombBrawlMode()) {

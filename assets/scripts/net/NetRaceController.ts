@@ -157,9 +157,9 @@ export class NetRaceController {
     private _recoveryStateListener: ((state: NetEntertainmentRecoveryState) => void) | null = null;
     private _mineRelayArmListener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null = null;
     private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
-    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number) => void) | null = null;
+    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
-    private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null = null;
+    private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
@@ -280,7 +280,7 @@ export class NetRaceController {
         });
     }
 
-    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number): void {
+    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MineRelayResolution,
@@ -288,6 +288,8 @@ export class NetRaceController {
             mineCarrierLane: carrierLane,
             exploded,
             mineDistance: distance,
+            mineLateral: lateral,
+            hitMask,
             revision,
         });
     }
@@ -300,7 +302,7 @@ export class NetRaceController {
         this._mineRelayTransferListener = listener;
     }
 
-    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, revision: number) => void) | null): void {
+    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, distance: number, lateral: number, hitMask: number, revision: number) => void) | null): void {
         this._mineRelayResolutionListener = listener;
     }
 
@@ -308,7 +310,7 @@ export class NetRaceController {
         this._mineRelayStateListener = listener;
     }
 
-    enqueueMinefieldImpact(mineId: number, hitLane: number, courseX: number, lateral: number, revision: number): void {
+    enqueueMinefieldImpact(mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number): void {
         if (!this._isHost || this._disposed) return;
         this._authoritativeEvents.push({
             kind: NetInputKind.MinefieldImpact,
@@ -316,11 +318,12 @@ export class NetRaceController {
             mineHitLane: hitLane,
             mineDistance: courseX,
             mineLateral: lateral,
+            hitMask,
             revision,
         });
     }
 
-    setMinefieldImpactListener(listener: ((mineId: number, hitLane: number, courseX: number, lateral: number, revision: number) => void) | null): void {
+    setMinefieldImpactListener(listener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number) => void) | null): void {
         this._minefieldImpactListener = listener;
     }
 
@@ -1007,16 +1010,19 @@ export class NetRaceController {
             } else if (event.kind === NetInputKind.MineRelayResolution) {
                 if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
                     || event.exploded === undefined || event.mineDistance === undefined
+                    || event.mineLateral === undefined || event.hitMask === undefined
                     || event.revision === undefined) continue;
                 this._mineRelayResolutionListener?.(
-                    event.mineRoundId, event.mineCarrierLane, event.exploded, event.mineDistance, event.revision,
+                    event.mineRoundId, event.mineCarrierLane, event.exploded, event.mineDistance,
+                    event.mineLateral, event.hitMask, event.revision,
                 );
             } else if (event.kind === NetInputKind.MinefieldImpact) {
                 if (event.mineId === undefined || event.mineHitLane === undefined
                     || event.mineDistance === undefined || event.mineLateral === undefined
-                    || event.revision === undefined) continue;
+                    || event.hitMask === undefined || event.revision === undefined) continue;
                 this._minefieldImpactListener?.(
-                    event.mineId, event.mineHitLane, event.mineDistance, event.mineLateral, event.revision,
+                    event.mineId, event.mineHitLane, event.mineDistance, event.mineLateral,
+                    event.hitMask, event.revision,
                 );
             }
         }

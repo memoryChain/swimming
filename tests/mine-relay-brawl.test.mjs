@@ -80,6 +80,25 @@ test('定时炸弹锁定后不能传递，归零只结算当前持有者', () =>
     assert.equal(fixture.resolutions[0].carrierLane, carrier);
     assert.equal(fixture.resolutions[0].exploded, true);
     assert.equal(fixture.resolutions[0].distance, fixture.racers[carrier].distance);
+    assert.equal(fixture.resolutions[0].hitMask, 1 << carrier);
+});
+
+test('定时炸弹直接击倒携带者，并把爆炸范围内的附近泳道写入权威掩码', () => {
+    const fixture = timedBombFixture(313);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const nearby = carrier === 0 ? 1 : 0;
+    for (let lane = 0; lane < fixture.racers.length; lane++) {
+        if (lane === carrier) continue;
+        fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
+    }
+    fixture.racers[nearby].distance = fixture.racers[carrier].distance + 2;
+    fixture.racers[nearby].lateral = fixture.racers[carrier].lateral;
+    fixture.controller.update(MINE_RELAY_ROUNDS[0].fuseSeconds + 0.01, GameState.RACING, true);
+    const resolution = fixture.resolutions[0];
+    assert.equal(resolution.carrierLane, carrier);
+    assert.equal((resolution.hitMask & (1 << carrier)) !== 0, true);
+    assert.equal((resolution.hitMask & (1 << nearby)) !== 0, true);
 });
 
 test('定时炸弹携带者冲线后拆弹，快照不会重复爆炸', () => {
@@ -117,12 +136,26 @@ test('水雷碰到立即爆炸，并在冷却后重新漂浮', () => {
     fixture.controller.update(0, GameState.RACING, true);
     assert.equal(fixture.impacts.length, 1);
     assert.equal(fixture.impacts[0].mineId, mine.id);
+    assert.equal(fixture.impacts[0].hitMask, 1);
     assert.equal(fixture.controller.mines()[mine.id].active, false);
     fixture.racers[0].distance = 0;
     for (let elapsed = 0; elapsed < MINEFIELD_TUNING.respawnSeconds + 0.1; elapsed += 0.1) {
         fixture.controller.update(0.1, GameState.RACING, true);
     }
     assert.equal(fixture.controller.mines()[mine.id].active, true);
+});
+
+test('水雷直接触碰者和附近选手由同一房主权威范围区分', () => {
+    const fixture = minefieldFixture(527);
+    const mine = fixture.controller.mines()[0];
+    fixture.racers[0].distance = mine.courseX;
+    fixture.racers[0].lateral = mine.lateral;
+    fixture.racers[1].distance = mine.courseX + 2;
+    fixture.racers[1].lateral = mine.lateral;
+    fixture.controller.update(0, GameState.RACING, true);
+    assert.equal(fixture.impacts.length, 1);
+    assert.equal(fixture.impacts[0].hitLane, 0);
+    assert.equal(fixture.impacts[0].hitMask, 0b11);
 });
 
 test('水雷使用路径扫掠判定，单帧跨过水雷也会触发', () => {
@@ -140,7 +173,7 @@ test('水雷使用路径扫掠判定，单帧跨过水雷也会触发', () => {
 test('访客只接受递增的房主触雷事件', () => {
     const fixture = minefieldFixture();
     const mine = fixture.controller.mines()[0];
-    const impact = { mineId: mine.id, hitLane: 1, courseX: mine.courseX, lateral: mine.lateral, revision: 1 };
+    const impact = { mineId: mine.id, hitLane: 1, courseX: mine.courseX, lateral: mine.lateral, hitMask: 0b10, revision: 1 };
     assert.equal(fixture.controller.applyImpact(impact), true);
     assert.equal(fixture.controller.applyImpact(impact), false);
 });
