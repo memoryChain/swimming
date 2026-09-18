@@ -16,7 +16,7 @@ import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import {
     DragSlider,
-    fitFullScreenBackgroundCover,
+    fitFullScreenSolidCover,
     makeDragSlider,
     makeLabel,
     makeRect,
@@ -31,8 +31,8 @@ type VolumeRow = {
 };
 
 const PANEL_Y = 27;
-const PANEL_HEIGHT = 376;
-const ACTION_Y = -186;
+const PANEL_HEIGHT = 420;
+const ACTION_Y = -176;
 
 export class SettingsPanel {
     private _root: Node | null = null;
@@ -43,6 +43,9 @@ export class SettingsPanel {
     private _initialSfx = 0.8;
     private _draftMusic = 0.8;
     private _draftSfx = 0.8;
+    private _presented = false;
+
+    constructor(private readonly _onPresentedChanged: (presented: boolean) => void = () => {}) {}
 
     build(parent: Node, designWidth: number, designHeight: number): Node {
         if (this._root?.isValid) return this._root;
@@ -53,7 +56,7 @@ export class SettingsPanel {
         this._root = root;
 
         const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 20, 38, 174));
-        fitFullScreenBackgroundCover(dim, designWidth, designHeight);
+        fitFullScreenSolidCover(dim, designWidth, designHeight);
         dim.on(Node.EventType.TOUCH_END, () => this.cancel());
 
         const panel = makeArtwork(
@@ -63,17 +66,24 @@ export class SettingsPanel {
         panel.addComponent(BlockInputEvents);
         this._motion = new PopupUiMotion(root, dim, panel);
 
-        const title = makeLabel('Title', panel, '音量设置', 30, uiColor(13, 39, 76, 255));
+        makeArtwork(
+            'SettingsHeaderBackground', panel, RESOURCE_PATHS.characterUi.headerBackground,
+            696, 155, 0, 132,
+        );
+
+        const title = makeLabel('Title', panel, '音量设置', 30, uiColor(20, 31, 53, 255));
         styleProjectUiLabel(title.getComponent(Label)!, 'semibold', 38);
         title.getComponent(UITransform)!.setContentSize(300, 44);
-        title.setPosition(0, 136, 1);
+        title.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.LEFT;
+        title.setPosition(-148, 156, 2);
 
         const subtitle = makeLabel(
-            'Subtitle', panel, '调整音乐与比赛音效音量', 18, uiColor(76, 104, 166, 255),
+            'Subtitle', panel, '调整音乐与比赛音效音量', 18, uiColor(61, 125, 145, 255),
         );
         styleProjectUiLabel(subtitle.getComponent(Label)!, 'regular', 26);
         subtitle.getComponent(UITransform)!.setContentSize(420, 32);
-        subtitle.setPosition(0, 100, 1);
+        subtitle.getComponent(Label)!.horizontalAlign = Label.HorizontalAlign.LEFT;
+        subtitle.setPosition(-88, 116, 2);
 
         this._musicRow = this.buildVolumeRow(
             panel, '音乐', '背景音乐', 34,
@@ -90,7 +100,7 @@ export class SettingsPanel {
             },
         );
 
-        const hint = makeLabel('Hint', panel, '拖动滑块调节，0% 为静音', 15, uiColor(111, 130, 172, 255));
+        const hint = makeLabel('Hint', panel, '拖动滑块调节，0% 为静音', 15, uiColor(92, 121, 145, 255));
         styleProjectUiLabel(hint.getComponent(Label)!, 'regular', 22);
         hint.getComponent(UITransform)!.setContentSize(420, 28);
         hint.setPosition(0, -96, 1);
@@ -107,6 +117,7 @@ export class SettingsPanel {
         this._draftSfx = this._initialSfx;
         this.updateRow(this._musicRow, this._draftMusic);
         this.updateRow(this._sfxRow, this._draftSfx);
+        this.setPresented(true);
         this._motion?.show();
     }
 
@@ -118,6 +129,7 @@ export class SettingsPanel {
         if (this._motion?.interactive) this.restorePreview();
         this._motion?.dispose();
         this._motion = null;
+        this.setPresented(false);
         if (this._root?.isValid) this._root.destroy();
         this._root = null;
         this._musicRow = null;
@@ -190,7 +202,7 @@ export class SettingsPanel {
         const confirm = makeTouchArea('Confirm', panel, 272, 70);
         confirm.setPosition(170, ACTION_Y, 2);
         makeArtwork(
-            'Artwork', confirm, RESOURCE_PATHS.avatarPickerUi.confirmButton,
+            'Artwork', confirm, RESOURCE_PATHS.characterUi.confirmButton,
             258, 57, 0, 0,
         );
         const confirmText = makeLabel('Label', confirm, '保存设置', 26, uiColor(86, 55, 0, 255));
@@ -220,13 +232,23 @@ export class SettingsPanel {
     private cancel(): void {
         if (!this._motion?.interactive) return;
         this.restorePreview();
-        this._motion.hide();
+        this.close();
     }
 
     private confirm(): void {
         if (!this._motion?.interactive) return;
         SettingsManager.setVolumes(this._draftMusic, this._draftSfx);
-        this._motion.hide();
+        this.close();
+    }
+
+    private close(): void {
+        this._motion?.hide(() => this.setPresented(false));
+    }
+
+    private setPresented(presented: boolean): void {
+        if (this._presented === presented) return;
+        this._presented = presented;
+        this._onPresentedChanged(presented);
     }
 }
 

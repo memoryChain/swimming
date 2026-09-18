@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { createHarness } = require('./helpers/cocos-math-harness.cjs');
 class Component {}
@@ -222,4 +223,51 @@ test('大厅积分分色分字号，热字体缓存下生涯按钮仍保持设�
             assert.equal(label.node.getComponent(UITransform).contentSize.width, 220);
         }
     } finally { hotFontCache = false; root.destroy(); }
+});
+
+test('顶部每日补给与设置共用悬浮图标语言，资源条无加号且红点只跟随免费金币', () => {
+    const source = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/ResourceHeadBar.ts'), 'utf8');
+    assert.match(source, /makeTopEntryButton\('SupplyStationButton'[\s\S]*?'每日补给'[\s\S]*?shopUi\.topEntrySupply/);
+    assert.match(source, /makeTopEntryButton\('SettingsButton'[\s\S]*?'设置'[\s\S]*?shopUi\.topEntrySettings/);
+    assert.doesNotMatch(source, /shopUi\.topEntryBase/);
+    assert.match(source, /makeLoginSprite\('Icon'[\s\S]*?TOP_ENTRY_ICON_SIZE/);
+    assert.match(source, /styleProjectUiLabel\(label, 'semibold', 26\)/);
+    assert.match(source, /labelNode\.addComponent\(LabelOutline\)/);
+    assert.match(source, /outline\.width = 1\.5/);
+    assert.match(source, /SupplyStationButton[\s\S]*?options\.onOpenShop\?\.\(\)/);
+    assert.match(source, /shopUi\.notificationBadge/);
+    assert.match(source, /shopUi\.resourcePillClean/g);
+    assert.doesNotMatch(source, /shopUi\.resourcePill,/);
+    assert.match(source, /const settingsX = rightEdge[\s\S]*?const gemPillX =[\s\S]*?const coinPillX =[\s\S]*?const supplyX =/);
+    assert.match(source, /const visible = !profile\.dailyShop\.freeCoinsClaimed/);
+    assert.doesNotMatch(source, /_shopBadge[\s\S]{0,250}adGemsClaimed|_shopBadge[\s\S]{0,250}adCoinsClaimed/);
+
+    const lobby = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/PrepareRaceFlow.ts'), 'utf8');
+    assert.doesNotMatch(lobby, /SupplyStationButton|_dailySupplyBadge|refreshDailySupplyEntry/);
+
+    const panel = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/ShopDailySupplyPanel.ts'), 'utf8');
+    assert.match(panel, /makeLabel\('SectionTitle', sectionRoot, '每日补给'/);
+    assert.match(panel, /RESOURCE_PATHS\.characterUi\.background/);
+    assert.match(panel, /buildSecondaryPageHeader\(headerMotion, 'Supply', '补给站'/);
+    assert.match(panel, /SupplyHeaderMotion', -16/);
+    assert.match(panel, /SupplySectionMotion', -24/);
+    assert.match(panel, /SupplyCardsMotion', 24/);
+    assert.match(panel, /this\._motion\.enter\(true\)/);
+    assert.match(panel, /this\._motion\.exit\(/);
+    assert.doesNotMatch(panel, /shopUi\.supplyPanel|makeSprite\('SupplyPanel'/);
+
+    const character = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/PrepareRaceFlow.ts'), 'utf8');
+    assert.match(character, /export function buildSecondaryPageHeader/);
+    assert.match(character, /buildSecondaryPageHeader\(parent, 'Character', '角色'/);
+
+    const manager = fs.readFileSync(path.join(h.root, 'assets/scripts/app/LoginManager.ts'), 'utf8');
+    assert.match(manager, /setIdentityVisible\(false\)/);
+    assert.match(manager, /setSupplyEntryVisible\(false\)/);
+    assert.match(manager, /transitionOutForOverlay\(revealShop\)/);
+    assert.match(manager, /transitionInFromOverlay\(\)/);
+    assert.doesNotMatch(manager, /setBack\(\(\) => this\.closeShop\(\)\)/);
+
+    const settings = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/SettingsPanel.ts'), 'utf8');
+    assert.match(settings, /SettingsHeaderBackground[\s\S]*?characterUi\.headerBackground/);
+    assert.match(settings, /characterUi\.confirmButton/);
 });

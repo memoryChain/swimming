@@ -56,6 +56,12 @@ export class PrepareRaceCharacterPreview extends Component {
         return this._shadowTexture;
     }
 
+    /** 设置弹窗只暂停这台展示相机；模型、动作和旋转状态继续保留。 */
+    setRenderingEnabled(enabled: boolean): void {
+        const camera = this._cameraNode?.getComponent(Camera);
+        if (camera && camera.enabled !== enabled) camera.enabled = enabled;
+    }
+
     setLobbyPresentation(enabled: boolean, shadowCaptureEnabled = !enabled) {
         const presentationChanged = this._lobbyPresentation !== enabled;
         const shadowChanged = this._shadowCaptureEnabled !== shadowCaptureEnabled;

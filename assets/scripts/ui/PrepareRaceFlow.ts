@@ -120,6 +120,7 @@ export class PrepareRaceFlow {
     private readonly _onResize = (): void => this.layoutPresentation();
     private _preview: PrepareRaceCharacterPreview | null = null;
     private _visible = true;
+    private _modalOverlayActive = false;
     private _view: PrepareRaceView = 'ready';
     private _draftCharacterId: PlayerCharacterId | null = null;
     private _activeInspectorTab: CharacterInspectorTab = 'attributes';
@@ -127,6 +128,7 @@ export class PrepareRaceFlow {
     private _upgradePending = false;
     private _motion = new LobbyUiMotion();
     private _leaving = false;
+    private readonly _overlayButtonStates = new Map<Button, boolean>();
     private _attributeTips: CharacterAttributeTips | null = null;
     private _hasShownReady = false;
 
@@ -221,13 +223,58 @@ export class PrepareRaceFlow {
         this._motion.enter(true);
     }
 
+    /** 设置弹窗留在主 UI 相机时，只暂停更高优先级的 3D 预览相机。 */
+    setModalOverlayActive(active: boolean): void {
+        if (this._modalOverlayActive === active) return;
+        this._modalOverlayActive = active;
+        this._preview?.setRenderingEnabled(this._visible && !this._eventPageActive && !active);
+    }
+
     /** 商店覆盖时只隐藏现有层级，返回后不会重建页面或 3D 角色预览。 */
     setVisible(visible: boolean): void {
         if (this._visible === visible) return;
         this._visible = visible;
         setNodeActive(this._root, visible);
         setNodeActive(this._previewRoot, visible && !this._eventPageActive);
+        this._preview?.setRenderingEnabled(visible && !this._eventPageActive && !this._modalOverlayActive);
         if (visible) this._onProfileChange(PlayerData.profile);
+    }
+
+    /** 二级覆盖页打开前，复用当前页面的分组侧滑退场。 */
+    transitionOutForOverlay(done: () => void): boolean {
+        if (!this._visible || !this._content?.isValid) {
+            done();
+            return true;
+        }
+        if (this._leaving) return false;
+        this._leaving = true;
+        this._attributeTips?.hide();
+        this._previewRotateTouchId = null;
+        this._overlayButtonStates.clear();
+        for (const button of this._content.getComponentsInChildren(Button)) {
+            this._overlayButtonStates.set(button, button.interactable);
+            setButtonInteractable(button, false);
+        }
+        const content = this._content;
+        this._motion.exit(() => {
+            if (!content.isValid || this._content !== content) return;
+            this.setVisible(false);
+            done();
+        });
+        return true;
+    }
+
+    /** 从二级覆盖页返回时恢复原层级，并播放同款快速入场。 */
+    transitionInFromOverlay(): void {
+        if (!this._root?.isValid || !this._content?.isValid) return;
+        this.setVisible(true);
+        for (const [button, interactable] of this._overlayButtonStates) {
+            setButtonInteractable(button, interactable);
+        }
+        this._overlayButtonStates.clear();
+        this._leaving = false;
+        this._motion.enter(true);
+        this._onProfileChange(PlayerData.profile);
     }
 
     dispose(): void {
@@ -235,6 +282,8 @@ export class PrepareRaceFlow {
         this._attributeTips = null;
         this._motion.dispose();
         this._leaving = true;
+        this._modalOverlayActive = false;
+        this._overlayButtonStates.clear();
         PlayerData.offChange(this._onProfileChange);
         view.off('canvas-resize', this._onResize);
         view.off('design-resolution-changed', this._onResize);
@@ -265,6 +314,7 @@ export class PrepareRaceFlow {
         this._motion.dispose();
         this._motion = new LobbyUiMotion();
         this._leaving = false;
+        this._overlayButtonStates.clear();
         this._content?.destroy();
         this.resetViewReferences();
         this._content = makeUiNode(name, this._root!);
@@ -583,26 +633,9 @@ export class PrepareRaceFlow {
 
     private buildCharacterHeader(parent: Node): void {
         parent = this._motion.group(parent, 'CharacterHeaderMotion', -16);
-        makeRaceTextureSprite('CharacterHeaderBackground', parent, RESOURCE_PATHS.characterUi.headerBackground, 497, 111, -391.5, 304.5, 1);
-
-        // Keep the larger touch target separate from the PSD-sized artwork. Changing
-        // the parent's UITransform previously scaled the icon from 61×40 to 76×60.
-        const backHit = makeUiNode('CharacterBackButton', parent);
-        backHit.getComponent(UITransform)!.setContentSize(76, 60);
-        backHit.setPosition(-582.5, 321, 3);
-        makeRaceTextureSprite('Artwork', backHit, RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0, 1);
-        const backButton = backHit.addComponent(Button);
-        backButton.target = backHit;
-        backButton.transition = Button.Transition.SCALE;
-        backButton.zoomScale = 0.97;
-        backButton.duration = 0.08;
-        this._motion.bindButton(backHit);
-        backHit.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showReadyScreen()));
-
-        // The label position is its bounding-box centre. Keep the visible title at
-        // the PSD x=105 edge instead of centring that box on the glyph midpoint.
-        const title = makeBoundLabel('CharacterScreenTitle', parent, '角色', 36, DARK_TEXT, 120, 48, -475, 323.5, Label.HorizontalAlign.LEFT);
-        stylePsdTitleLabel(title, 44);
+        const header = buildSecondaryPageHeader(parent, 'Character', '角色',
+            () => this.leaveCurrentScreen(() => this.showReadyScreen()));
+        this._motion.bindButton(header.backNode);
     }
 
     private buildCharacterRoster(parent: Node): void {
@@ -907,7 +940,7 @@ export class PrepareRaceFlow {
         setLabelString(this._upgradeCost, atMax ? '—' : `${cost}`);
         setLabelString(this._upgradeGemCost, breakthrough ? `${gemCost}` : '');
         setLabelString(this._upgradeAction, atMax ? '已满级' : breakthrough
-            ? PlayerData.breakthroughGems < gemCost ? '去商店' : '突破' : '升级');
+            ? PlayerData.breakthroughGems < gemCost ? '去补给站' : '突破' : '升级');
         setLabelColor(this._upgradeCost, PlayerData.coins >= cost || atMax ? DARK_TEXT : uiColor(214, 52, 52));
         setLabelColor(this._upgradeGemCost, PlayerData.breakthroughGems >= gemCost ? DARK_TEXT : uiColor(214, 52, 52));
         setButtonInteractable(this._upgradeButton, !atMax && !this._upgradePending);
@@ -1100,6 +1133,7 @@ export class PrepareRaceFlow {
         this._preview?.setLobbyPresentation(true, false);
         this._preview?.setHallOffset(this._view === 'ready');
         setNodeActive(this._previewRoot, !this._eventPageActive);
+        this._preview?.setRenderingEnabled(!this._eventPageActive && !this._modalOverlayActive);
         this._preview?.refresh(characterId);
     }
 
@@ -1124,6 +1158,39 @@ export class PrepareRaceFlow {
     private endPreviewRotation(event: EventTouch): void {
         if (event.getID() === this._previewRotateTouchId) this._previewRotateTouchId = null;
     }
+}
+
+export type SecondaryPageHeaderView = {
+    backNode: Node;
+    backButton: Button;
+    titleLabel: Label;
+};
+
+/** Shared authored header for character management and other full-screen secondary pages. */
+export function buildSecondaryPageHeader(
+    parent: Node,
+    prefix: string,
+    titleText: string,
+    onBack: () => void,
+): SecondaryPageHeaderView {
+    makeRaceTextureSprite(`${prefix}HeaderBackground`, parent, RESOURCE_PATHS.characterUi.headerBackground,
+        497, 111, -391.5, 304.5, 1);
+
+    const backNode = makeUiNode(`${prefix}BackButton`, parent);
+    backNode.getComponent(UITransform)!.setContentSize(76, 60);
+    backNode.setPosition(-582.5, 321, 3);
+    makeRaceTextureSprite('Artwork', backNode, RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0, 1);
+    const backButton = backNode.addComponent(Button);
+    backButton.target = backNode;
+    backButton.transition = Button.Transition.SCALE;
+    backButton.zoomScale = 0.97;
+    backButton.duration = 0.08;
+    backNode.on(Button.EventType.CLICK, onBack);
+
+    const titleLabel = makeBoundLabel(`${prefix}ScreenTitle`, parent, titleText,
+        36, DARK_TEXT, 180, 48, -445, 323.5, Label.HorizontalAlign.LEFT);
+    stylePsdTitleLabel(titleLabel, 44);
+    return { backNode, backButton, titleLabel };
 }
 
 function makeBoundLabel(

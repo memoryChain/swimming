@@ -1,5 +1,5 @@
 import { BlockInputEvents, Button, EventTouch, Node, tween, Tween, UIOpacity, UITransform, Vec3 } from 'cc';
-import { fitFullScreenBackgroundCover, makeUiNode } from './RuntimeUiFactory';
+import { fitFullScreenSolidCover, makeUiNode } from './RuntimeUiFactory';
 
 type Phase = 'hidden' | 'opening' | 'open' | 'closing';
 
@@ -27,7 +27,7 @@ export class PopupUiMotion {
         const blocker = makeUiNode('PopupClosingBlocker', _root);
         const size = _root.getComponent(UITransform)!.contentSize;
         blocker.getComponent(UITransform)!.setContentSize(size.width, size.height);
-        fitFullScreenBackgroundCover(blocker, size.width, size.height);
+        fitFullScreenSolidCover(blocker, size.width, size.height);
         blocker.addComponent(BlockInputEvents);
         blocker.active = false;
         this._blocker = blocker;
@@ -59,7 +59,7 @@ export class PopupUiMotion {
             .call(() => { this._dimTween = null; }).start();
     }
 
-    hide(): void {
+    hide(afterHidden?: () => void): void {
         if (!this.interactive) return;
         this.stopTransition();
         this._phase = 'closing';
@@ -72,6 +72,7 @@ export class PopupUiMotion {
             this.resetFeedback();
             this._phase = 'hidden';
             if (this._root.isValid && this._root.active) this._root.active = false;
+            afterHidden?.();
         }).start();
         this._fadeTween = tween(this._panelOpacity).to(0.16, { opacity: 0 }).start();
         this._dimTween = tween(this._dimOpacity).to(0.16, { opacity: 0 }).start();

@@ -461,9 +461,12 @@ export const RESOURCE_PATHS = {
     },
     shopUi: {
         resourcePill: 'ui/shop-v1/resource-pill/texture',
+        resourcePillClean: 'ui/shop-v1/resource-pill-clean/texture',
+        notificationBadge: 'ui/shop-v1/notification-badge/texture',
+        topEntrySupply: 'ui/shop-v1/top-entry-supply/texture',
+        topEntrySettings: 'ui/shop-v1/top-entry-settings/texture',
         gemIcon: 'ui/shop-v1/gem-icon/texture',
         videoIcon: 'ui/shop-v1/video-icon/texture',
-        supplyPanel: 'ui/shop-v1/supply-panel/texture',
         supplyCard: 'ui/shop-v1/supply-card/texture',
         supplyCardGem: 'ui/shop-v1/supply-card-gem/texture',
     },
@@ -567,6 +570,7 @@ export const RESOURCE_PATHS = {
     characterUi: {
         background: 'ui/character-v1/background/texture',
         headerBackground: 'ui/character-v1/header-bg/texture',
+        headerDots: 'ui/character-v1/header-dots/texture',
         backIcon: 'ui/character-v1/back-icon/texture',
         detailPanelBackground: 'ui/character-v1/detail-panel-bg/texture',
         tabAttributes: 'ui/character-v1/tab-attributes/texture',

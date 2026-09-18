@@ -69,7 +69,7 @@ function setup() {
     const cc={Node,Button,UIOpacity,Vec3,UITransform,BlockInputEvents,Label,Sprite,tween:target=>new Animation(target)};
     const makeUiNode=(name,parent)=>{const n=new Node(name);n.setParent(parent);n.addComponent(UITransform);return n;};
     const sliders=new Map();
-    const factory={makeUiNode,uiColor:()=>({}),fitFullScreenBackgroundCover(){},
+    const factory={makeUiNode,uiColor:()=>({}),fitFullScreenBackgroundCover(){},fitFullScreenSolidCover(){},
         makeRect:makeUiNode,makeLabel:(name,parent,text)=>{const n=makeUiNode(name,parent);n.addComponent(Label).string=text;return n;},
         makeTouchArea:(name,parent)=>{const n=makeUiNode(name,parent);n.addComponent(Button);return n;},
         makeDragSlider:(name,parent,w,h,value,callback)=>{const n=makeUiNode(name,parent);sliders.set(name,callback);return {node:n,setRatio(){}};}};
@@ -81,7 +81,7 @@ function setup() {
     const requests=[];
     const player={avatarId:'aqua',nickName:'选手',setIdentity:patch=>new Promise((resolve,reject)=>requests.push({resolve:()=>{Object.assign(player,patch);resolve();},reject}))};
     const imports={cc,'./PopupUiMotion':{PopupUiMotion},'./RuntimeUiFactory':factory,
-        '../core/ResourcePaths':{RESOURCE_PATHS:{avatarPickerUi:{}}},
+        '../core/ResourcePaths':{RESOURCE_PATHS:{avatarPickerUi:{},characterUi:{}}},
         './AvatarUiAssets':{loadAvatarUiSpriteFrame(){},loadAvatarSpriteFrame(){}},
         './ProjectUiFonts':{styleProjectUiLabel(){},styleDynamicUiLabel(){}},
         '../app/SettingsManager':{SettingsManager:settings},'../backend/PlayerData':{PlayerData:player},
@@ -113,11 +113,15 @@ test('两个弹窗快速开关：原位续接、遮罩最后释放、重复 show
     }
 });
 test('音量草稿：重复打开保留修改；取消和销毁恢复；确认一次保存且退场中拒绝滑动',()=>{
-    const s=setup(),p=new s.SettingsPanel();p.build(s.parent,1280,720);p.show();
+    const s=setup(),presented=[],p=new s.SettingsPanel(value=>presented.push(value));p.build(s.parent,1280,720);p.show();
+    assert.deepEqual(presented,[true]);
     s.sliders.get('音乐Slider')(.37);p.show();assert.equal(p._draftMusic,.37);assert.equal(s.music,.37);
-    p.hide();assert.equal(s.music,.8);s.sliders.get('音乐Slider')(.1);assert.equal(s.music,.8);s.advance(.3);
+    p.hide();assert.equal(s.music,.8);assert.deepEqual(presented,[true]);s.sliders.get('音乐Slider')(.1);assert.equal(s.music,.8);s.advance(.3);
+    assert.deepEqual(presented,[true,false]);
     p.show();s.sliders.get('音乐Slider')(.6);p.confirm();p.confirm();p.hide();assert.equal(s.persisted,1);assert.equal(s.music,.6);s.advance(.3);
+    assert.deepEqual(presented,[true,false,true,false]);
     p.show();s.sliders.get('音乐Slider')(.2);p.dispose();assert.equal(s.music,.6);assert.equal(s.running,0);
+    assert.deepEqual(presented,[true,false,true,false,true,false]);
 });
 test('头像保存：成功后才关闭，失败可重试，保存中不可重置草稿或重复请求',async()=>{
     const s=setup(),p=new s.IdentityEditPanel(),root=p.build(s.parent,1280,720);p.show();p.selectAvatar('coral');

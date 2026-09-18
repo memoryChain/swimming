@@ -1,5 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="292" height="330" viewBox="0 0 292 330">
-  <defs><linearGradient id="c" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#244d72"/><stop offset="1" stop-color="#132a48"/></linearGradient></defs>
-  <rect x="3" y="3" width="286" height="324" rx="24" fill="url(#c)" stroke="#8dbbd3" stroke-width="6"/>
-  <path d="M26 82h240" stroke="#9adcef" stroke-opacity=".3" stroke-width="2"/>
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffffff"/><stop offset="1" stop-color="#eef9fc"/>
+    </linearGradient>
+    <pattern id="dots" width="11" height="11" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="2" fill="#7edfeb"/>
+    </pattern>
+    <clipPath id="corner"><path d="M188 7h74c13 0 23 10 23 23v72c-47-4-83-35-97-95Z"/></clipPath>
+  </defs>
+  <rect x="7" y="10" width="278" height="313" rx="25" fill="#14233d" opacity=".16"/>
+  <rect x="4" y="4" width="284" height="318" rx="25" fill="url(#card)" stroke="#142f55" stroke-width="6"/>
+  <rect x="12" y="12" width="268" height="302" rx="18" fill="none" stroke="#d0edf4" stroke-width="2"/>
+  <g clip-path="url(#corner)" opacity=".62"><rect x="180" y="0" width="112" height="112" fill="url(#dots)"/></g>
+  <path d="M30 94h232" stroke="#bfe4ed" stroke-width="2" stroke-linecap="round"/>
 </svg>

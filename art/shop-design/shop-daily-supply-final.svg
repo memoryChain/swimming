@@ -1,148 +1,62 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1290" height="720" viewBox="0 0 1290 720">
   <defs>
-    <linearGradient id="veil" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b4e80" stop-opacity=".38"/>
-      <stop offset="1" stop-color="#09243f" stop-opacity=".58"/>
-    </linearGradient>
-    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fafdff" stop-opacity=".98"/>
-      <stop offset="1" stop-color="#e7f4fb" stop-opacity=".98"/>
-    </linearGradient>
-    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#edf7fc"/>
-    </linearGradient>
-    <linearGradient id="gemCard" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f9fbff"/>
-      <stop offset=".55" stop-color="#eef4ff"/>
-      <stop offset="1" stop-color="#e9faff"/>
-    </linearGradient>
-    <linearGradient id="yellowButton" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffe35b"/>
-      <stop offset="1" stop-color="#ffc617"/>
-    </linearGradient>
-    <linearGradient id="gem" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#c7f8ff"/>
-      <stop offset=".45" stop-color="#56d9ff"/>
-      <stop offset="1" stop-color="#8368ff"/>
-    </linearGradient>
-    <linearGradient id="gemDark" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#42badb"/>
-      <stop offset="1" stop-color="#5737d8"/>
-    </linearGradient>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#09233d" flood-opacity=".28"/>
-    </filter>
-    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#17324d" flood-opacity=".18"/>
-    </filter>
-    <filter id="gemGlow" x="-40%" y="-40%" width="180%" height="180%">
-      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#54dbff" flood-opacity=".65"/>
+      <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#15304d" flood-opacity=".18"/>
     </filter>
   </defs>
+  <!-- Layout source only. Runtime copy remains independent Cocos Labels. -->
+  <image href="../../assets/race/ui/character-v1/background.jpg" x="0" y="0" width="1290" height="720" preserveAspectRatio="xMidYMid slice"/>
 
-  <image href="../../assets/race/ui/lobby-b/background.png" x="0" y="0" width="1290" height="720" preserveAspectRatio="xMidYMid slice"/>
-  <rect width="1290" height="720" fill="url(#veil)"/>
-  <path d="M0 633C198 598 329 667 516 629s307-19 437 20c137 41 221 24 337-2v73H0z" fill="#72e5e4" opacity=".16"/>
+  <image href="../../assets/race/ui/character-v1/header-bg.png" x="0" y="0" width="497" height="111"/>
+  <image href="../../assets/race/ui/character-v1/back-icon.png" x="27" y="19" width="61" height="40"/>
+  <text x="105" y="60" fill="#141f35" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="36" font-weight="700">补给站</text>
 
-  <g filter="url(#softShadow)">
-    <rect x="34" y="24" width="56" height="56" rx="18" fill="#0c2947" stroke="#7deeff" stroke-width="2"/>
-    <path d="M67 39 49 52l18 13M50 52h25" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="108" y="24" width="224" height="56" rx="16" fill="#0c2947" stroke="#65d9ef" stroke-width="2"/>
-  </g>
-  <text x="220" y="62" fill="#fff" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="34" font-weight="700" text-anchor="middle">商店</text>
+  <image href="../../assets/race/ui/shop-v1/resource-pill-clean.png" x="732" y="25" width="176" height="56"/>
+  <image href="../../assets/race/ui/character-v1/upgrade-currency.png" x="748" y="31" width="44" height="44"/>
+  <text x="853" y="63" text-anchor="middle" fill="#f4faff" font-family="Arial Black,Arial,sans-serif" font-size="25">1250</text>
+  <image href="../../assets/race/ui/shop-v1/resource-pill-clean.png" x="918" y="25" width="176" height="56"/>
+  <image href="../../assets/race/ui/shop-v1/gem-icon.png" x="934" y="31" width="43" height="43"/>
+  <text x="1039" y="63" text-anchor="middle" fill="#f4faff" font-family="Arial Black,Arial,sans-serif" font-size="25">28</text>
+  <image href="../../assets/race/ui/shop-v1/top-entry-settings.png" x="1119" y="16" width="56" height="56"/>
+  <text x="1147" y="98" text-anchor="middle" fill="#14233d" stroke="#f4faff" stroke-width="2" paint-order="stroke" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="20" font-weight="700">设置</text>
 
-  <g filter="url(#softShadow)">
-    <rect x="728" y="24" width="164" height="56" rx="28" fill="#14233d" stroke="#eef8ff" stroke-opacity=".82"/>
-    <circle cx="758" cy="52" r="20" fill="#ffdb36" stroke="#fff4ae" stroke-width="3"/>
-    <circle cx="758" cy="52" r="13" fill="#ffa718" stroke="#f8890b" stroke-width="2"/>
-    <path d="M752 44h11l-5 7h6l-12 12 3-8h-6z" fill="#fff8b5"/>
-    <text x="804" y="60" fill="#fff" font-family="Arial Black,Arial,sans-serif" font-size="21" text-anchor="middle">8,420</text>
-    <circle cx="870" cy="52" r="15" fill="#f4fbff"/>
-    <path d="M870 44v16M862 52h16" stroke="#18314e" stroke-width="4" stroke-linecap="round"/>
-
-    <rect x="906" y="24" width="164" height="56" rx="28" fill="#14233d" stroke="#70e9ff" stroke-width="2"/>
-    <g transform="translate(931 33) scale(.42)" filter="url(#gemGlow)">
-      <polygon points="35,0 66,21 56,60 14,60 4,21" fill="url(#gem)" stroke="#e7fdff" stroke-width="5"/>
-      <path d="M4 21h62L35 60z" fill="url(#gemDark)" opacity=".72"/>
-      <path d="M4 21 23 8l12 13L47 8l19 13" fill="none" stroke="#eaffff" stroke-width="4"/>
-    </g>
-    <text x="988" y="60" fill="#fff" font-family="Arial Black,Arial,sans-serif" font-size="22" text-anchor="middle">6</text>
-    <circle cx="1048" cy="52" r="15" fill="#f4fbff"/>
-    <path d="M1048 44v16M1040 52h16" stroke="#18314e" stroke-width="4" stroke-linecap="round"/>
-  </g>
-  <circle cx="884" cy="32" r="7" fill="#ff4e59" stroke="#fff" stroke-width="2"/>
+  <image href="../../assets/race/ui/character-v1/header-dots.png" x="136" y="120" width="132" height="97"/>
+  <text x="177" y="179" fill="#14233d" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="34" font-weight="700">每日补给</text>
 
   <g filter="url(#shadow)">
-    <rect x="54" y="112" width="1182" height="554" rx="32" fill="url(#panel)" stroke="#a9ecf5" stroke-width="2"/>
-    <path d="M72 178h1146" stroke="#b7d8e7" stroke-width="2"/>
+    <image href="../../assets/race/ui/shop-v1/supply-card.png" x="174" y="224" width="292" height="330"/>
+    <image href="../../assets/race/ui/shop-v1/supply-card-gem.png" x="494" y="224" width="292" height="330"/>
+    <image href="../../assets/race/ui/shop-v1/supply-card.png" x="814" y="224" width="292" height="330"/>
   </g>
 
-  <text x="94" y="158" fill="#132f51" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="30" font-weight="700">每日补给</text>
-  <text x="94" y="194" fill="#58728e" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="17">每天 05:00 刷新 · 三份奖励可独立领取</text>
-  <rect x="1020" y="140" width="176" height="38" rx="19" fill="#d9edf6"/>
-  <text x="1108" y="165" fill="#375878" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="16" font-weight="700" text-anchor="middle">距刷新 12:34:56</text>
-
-  <g filter="url(#softShadow)">
-    <rect x="94" y="222" width="340" height="326" rx="24" fill="url(#card)" stroke="#c5deea" stroke-width="2"/>
-    <rect x="475" y="222" width="340" height="326" rx="24" fill="url(#gemCard)" stroke="#4fcfea" stroke-width="4"/>
-    <rect x="856" y="222" width="340" height="326" rx="24" fill="url(#card)" stroke="#c5deea" stroke-width="2"/>
+  <g fill="#14233d" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" text-anchor="middle">
+    <text x="320" y="274" font-size="23" font-weight="700">每日免费金币</text>
+    <text x="640" y="274" font-size="23" font-weight="700">突破宝石补给</text>
+    <text x="960" y="274" font-size="23" font-weight="700">金币加餐</text>
   </g>
+  <image href="../../assets/race/ui/character-v1/upgrade-currency.png" x="279" y="300" width="82" height="82"/>
+  <image href="../../assets/race/ui/shop-v1/gem-icon.png" x="599" y="300" width="82" height="82"/>
+  <image href="../../assets/race/ui/character-v1/upgrade-currency.png" x="919" y="300" width="82" height="82"/>
 
-  <rect x="112" y="238" width="92" height="32" rx="16" fill="#31cf91"/>
-  <text x="158" y="260" fill="#fff" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="16" font-weight="700" text-anchor="middle">每日免费</text>
-  <rect x="493" y="238" width="92" height="32" rx="16" fill="#7065ed"/>
-  <text x="539" y="260" fill="#fff" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="16" font-weight="700" text-anchor="middle">稀有补给</text>
-  <rect x="874" y="238" width="92" height="32" rx="16" fill="#3aa8e8"/>
-  <text x="920" y="260" fill="#fff" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="16" font-weight="700" text-anchor="middle">金币补给</text>
-
-  <g transform="translate(221 279)">
-    <circle cx="43" cy="43" r="42" fill="#ffe783" stroke="#fff2b4" stroke-width="5"/>
-    <circle cx="43" cy="43" r="29" fill="#ffac18" stroke="#ef8a0b" stroke-width="4"/>
-    <path d="M31 31h25l-11 12h14L29 61l8-13H25z" fill="#fff2a0"/>
-  </g>
-  <g transform="translate(603 276)" filter="url(#gemGlow)">
-    <polygon points="42,0 78,25 66,76 18,76 6,25" fill="url(#gem)" stroke="#eaffff" stroke-width="5"/>
-    <path d="M6 25h72L42 76z" fill="url(#gemDark)" opacity=".72"/>
-    <path d="M6 25 27 10l15 15 15-15 21 15" fill="none" stroke="#eaffff" stroke-width="4"/>
-    <path d="M24 31 41 57 60 31" fill="none" stroke="#a9f4ff" stroke-width="4" opacity=".85"/>
-  </g>
-  <g transform="translate(983 279)">
-    <circle cx="43" cy="43" r="42" fill="#ffe783" stroke="#fff2b4" stroke-width="5"/>
-    <circle cx="43" cy="43" r="29" fill="#ffac18" stroke="#ef8a0b" stroke-width="4"/>
-    <path d="M31 31h25l-11 12h14L29 61l8-13H25z" fill="#fff2a0"/>
+  <g font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" text-anchor="middle">
+    <text x="320" y="418" fill="#14233d" font-size="28" font-weight="700">金币 +500</text>
+    <text x="640" y="418" fill="#0c789c" font-size="28" font-weight="700">突破宝石 +1</text>
+    <text x="960" y="418" fill="#14233d" font-size="28" font-weight="700">金币 +1000</text>
+    <text x="320" y="457" fill="#617991" font-size="17">每日直接领取</text>
+    <text x="640" y="457" fill="#617991" font-size="17">完成一次激励广告</text>
+    <text x="960" y="457" fill="#617991" font-size="17">完成一次激励广告</text>
   </g>
 
-  <g fill="#17324d" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" text-anchor="middle">
-    <text x="264" y="399" font-size="28" font-weight="700">金币 ×100</text>
-    <text x="264" y="429" font-size="16" fill="#607a93">无需广告，点击即领</text>
-    <text x="645" y="399" font-size="28" font-weight="700" fill="#3a3b96">突破宝石 ×1</text>
-    <text x="645" y="429" font-size="16" fill="#607a93">完成一次广告后领取</text>
-    <text x="1026" y="399" font-size="28" font-weight="700">金币 ×200</text>
-    <text x="1026" y="429" font-size="16" fill="#607a93">完成一次广告后领取</text>
+  <image href="../../assets/race/ui/character-v1/confirm-button.png" x="194" y="480" width="252" height="56"/>
+  <image href="../../assets/race/ui/character-v1/confirm-button.png" x="514" y="480" width="252" height="56"/>
+  <image href="../../assets/race/ui/character-v1/confirm-button.png" x="834" y="480" width="252" height="56"/>
+  <image href="../../assets/race/ui/shop-v1/video-icon.png" x="553" y="494" width="34" height="27"/>
+  <image href="../../assets/race/ui/shop-v1/video-icon.png" x="873" y="494" width="34" height="27"/>
+  <g fill="#14233d" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="22" font-weight="700" text-anchor="middle">
+    <text x="320" y="518">免费领取</text>
+    <text x="660" y="518">看广告领取</text>
+    <text x="980" y="518">看广告领取</text>
   </g>
 
-  <g filter="url(#softShadow)">
-    <rect x="124" y="458" width="280" height="60" rx="24" fill="url(#yellowButton)" stroke="#fff6a9" stroke-width="3"/>
-    <rect x="505" y="458" width="280" height="60" rx="24" fill="url(#yellowButton)" stroke="#fff6a9" stroke-width="3"/>
-    <rect x="886" y="458" width="280" height="60" rx="24" fill="url(#yellowButton)" stroke="#fff6a9" stroke-width="3"/>
-  </g>
-  <g fill="#18314e" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="22" font-weight="700" text-anchor="middle">
-    <text x="264" y="497">免费领取</text>
-    <text x="661" y="497">看广告领取</text>
-    <text x="1042" y="497">看广告领取</text>
-  </g>
-  <g fill="#18314e">
-    <rect x="548" y="476" width="28" height="20" rx="5" fill="none" stroke="#18314e" stroke-width="3"/>
-    <path d="m559 480 9 6-9 6z"/>
-    <rect x="929" y="476" width="28" height="20" rx="5" fill="none" stroke="#18314e" stroke-width="3"/>
-    <path d="m940 480 9 6-9 6z"/>
-  </g>
-
-  <circle cx="103" cy="596" r="7" fill="#4dc9dc"/>
-  <text x="120" y="603" fill="#607a93" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="16">广告中途关闭不会消耗今日次数；奖励到账失败可直接重试结算</text>
-  <rect x="985" y="574" width="211" height="46" rx="23" fill="#d8eef6" stroke="#99dbe7"/>
-  <text x="1087" y="604" fill="#167b9b" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="18" font-weight="700" text-anchor="middle">前往角色养成</text>
-  <path d="m1175 590 9 7-9 7" fill="none" stroke="#167b9b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="94" y="646" fill="#7d94a8" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="13">概念定稿 · 正式接入时卡片、图标与按钮底图拆分，所有文案由 Cocos Label 显示</text>
+  <text x="640" y="622" text-anchor="middle" fill="#617991" font-family="ShuiMaster UI,Microsoft YaHei,Arial,sans-serif" font-size="18">每日 05:00 刷新 · 12:34:56</text>
 </svg>

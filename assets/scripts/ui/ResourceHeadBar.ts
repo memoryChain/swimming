@@ -1,12 +1,13 @@
 // Unified top resource bar for non-race screens (login, prepare-race, etc.). Shows
-// the player's shared coins and breakthrough gems. Both resource pills open the
-// daily-supply shop. Parent it directly to the
+// the player's shared coins and breakthrough gems. A dedicated supply icon sits
+// to their left, while both resource pills remain shortcuts to the same station.
+// Parent it directly to the
 // screen Canvas so it persists across non-race sub-screens on that canvas.
 //
 // It subscribes to PlayerData and refreshes automatically whenever the balance
 // changes. Do NOT add it to the race HUD.
 
-import { Button, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform, view } from 'cc';
+import { Button, Label, LabelOutline, Node, Sprite, SpriteFrame, Texture2D, UITransform, view } from 'cc';
 import { makeButton, makeLabel, makeScreenEdgeGroup, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { dailyShopCycleKey, PlayerProfile } from '../backend/PlayerProfile';
 import { PlayerData } from '../backend/PlayerData';
@@ -15,10 +16,10 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { platform } from '../platform/PlatformManager';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
-import { styleCurrencyNumberLabel } from './ProjectUiFonts';
+import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
 
 export interface ResourceHeadBarOptions {
-    // 两种资源胶囊都进入每日补给商店。
+    // 补给箱与两种资源胶囊都进入每日补给站。
     onOpenShop?: () => void;
     // Called when the player taps their identity (avatar + name) to edit it.
     onEditIdentity?: () => void;
@@ -26,8 +27,13 @@ export interface ResourceHeadBarOptions {
     onOpenSettings?: () => void;
 }
 
-const BAR_WIDTH = 198;
+const BAR_WIDTH = 176;
 const BAR_HEIGHT = 56;
+const BAR_GAP = 10;
+const TOP_ENTRY_WIDTH = 82;
+const TOP_ENTRY_HEIGHT = 90;
+const TOP_ENTRY_ICON_SIZE = 56;
+const TOP_ENTRY_GAP = 12;
 const BACK_WIDTH = 84;
 const BACK_HEIGHT = 52;
 const IDENTITY_WIDTH = 227;
@@ -43,13 +49,14 @@ const IDENTITY_AVATAR_X = -71;
 // Vertical band (px from the top of the design-resolution canvas) reserved by the
 // headbar. Non-race screens should keep their top-most UI at or below
 // `designHeight/2 - HEADBAR_TOP_SAFE_AREA` so nothing hides behind the headbar.
-export const HEADBAR_TOP_SAFE_AREA = EDGE_PADDING + BAR_HEIGHT + 8;
+export const HEADBAR_TOP_SAFE_AREA = 112;
 
 export class ResourceHeadBar {
     private _root: Node | null = null;
     private _countLabel: Label | null = null;
     private _gemCountLabel: Label | null = null;
     private _shopBadge: Node | null = null;
+    private _supplyEntry: Node | null = null;
     private _backButton: Node | null = null;
     private _backHandler: (() => void) | null = null;
     private _identity: Node | null = null;
@@ -117,13 +124,26 @@ export class ResourceHeadBar {
         this._nameLabel = nameLabel;
         this._identity = identity;
 
-        const coinPillX = designWidth / 2 - rightPadding - BAR_WIDTH / 2;
-        const gemPillX = coinPillX - BAR_WIDTH - 10;
+        // Keep the platform-native capsule clear. From left to right the authored
+        // group is: supply station, coins, gems, settings, native safe area.
+        const rightEdge = designWidth / 2 - rightPadding;
+        const settingsX = rightEdge - TOP_ENTRY_WIDTH / 2;
+        const gemPillX = settingsX - TOP_ENTRY_WIDTH / 2 - TOP_ENTRY_GAP - BAR_WIDTH / 2;
+        const coinPillX = gemPillX - BAR_WIDTH - BAR_GAP;
+        const supplyX = coinPillX - BAR_WIDTH / 2 - TOP_ENTRY_GAP - TOP_ENTRY_WIDTH / 2;
+
+        const supply = makeTopEntryButton('SupplyStationButton', right, supplyX, topY,
+            '每日补给', RESOURCE_PATHS.shopUi.topEntrySupply, () => options.onOpenShop?.());
+        this._supplyEntry = supply;
+        const badge = makeLoginSprite('FreeRewardBadge', supply, RESOURCE_PATHS.shopUi.notificationBadge, 24, 24, 27, 32);
+        badge.setPosition(27, 32, 4);
+        this._shopBadge = badge;
+
         const pill = makeUiNode('CoinResourcePill', right);
         pill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
         pill.setPosition(coinPillX, topY, 0);
-        makeLoginSprite('Artwork', pill, RESOURCE_PATHS.shopUi.resourcePill, BAR_WIDTH, BAR_HEIGHT, 0, 0);
-        makeLoginSprite('CoinIcon', pill, RESOURCE_PATHS.characterUi.upgradeCurrency, 48, 48, -70, 0);
+        makeLoginSprite('Artwork', pill, RESOURCE_PATHS.shopUi.resourcePillClean, BAR_WIDTH, BAR_HEIGHT, 0, 0);
+        makeLoginSprite('CoinIcon', pill, RESOURCE_PATHS.characterUi.upgradeCurrency, 44, 44, -60, 0);
         pill.addComponent(Button).transition = Button.Transition.NONE;
         pill.on(Node.EventType.TOUCH_END, () => options.onOpenShop?.());
 
@@ -134,20 +154,15 @@ export class ResourceHeadBar {
         countLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         countLabel.verticalAlign = Label.VerticalAlign.CENTER;
         countLabel.overflow = Label.Overflow.SHRINK;
-        countNode.getComponent(UITransform)!.setContentSize(80, 38);
-        countNode.setPosition(-3, 0, 1);
+        countNode.getComponent(UITransform)!.setContentSize(88, 38);
+        countNode.setPosition(12, 0, 1);
         this._countLabel = countLabel;
-
-        const badge = makeLabel('FreeRewardBadge', pill, '●', 26, uiColor(239, 66, 71, 255));
-        badge.getComponent(UITransform)!.setContentSize(28, 28);
-        badge.setPosition(84, 24, 3);
-        this._shopBadge = badge;
 
         const gemPill = makeUiNode('GemResourcePill', right);
         gemPill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
         gemPill.setPosition(gemPillX, topY, 0);
-        makeLoginSprite('Artwork', gemPill, RESOURCE_PATHS.shopUi.resourcePill, BAR_WIDTH, BAR_HEIGHT, 0, 0);
-        makeLoginSprite('GemIcon', gemPill, RESOURCE_PATHS.shopUi.gemIcon, 45, 45, -70, 0);
+        makeLoginSprite('Artwork', gemPill, RESOURCE_PATHS.shopUi.resourcePillClean, BAR_WIDTH, BAR_HEIGHT, 0, 0);
+        makeLoginSprite('GemIcon', gemPill, RESOURCE_PATHS.shopUi.gemIcon, 43, 43, -60, 0);
         gemPill.addComponent(Button).transition = Button.Transition.NONE;
         gemPill.on(Node.EventType.TOUCH_END, () => options.onOpenShop?.());
         const gemCountNode = makeLabel('Count', gemPill, '', 22, uiColor(240, 250, 255, 255));
@@ -156,22 +171,15 @@ export class ResourceHeadBar {
         gemCountLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         gemCountLabel.verticalAlign = Label.VerticalAlign.CENTER;
         gemCountLabel.overflow = Label.Overflow.SHRINK;
-        gemCountNode.getComponent(UITransform)!.setContentSize(80, 38);
-        gemCountNode.setPosition(-3, 0, 1);
+        gemCountNode.getComponent(UITransform)!.setContentSize(88, 38);
+        gemCountNode.setPosition(12, 0, 1);
         this._gemCountLabel = gemCountLabel;
 
-        // Settings entry, left of the resource pill. Matches the headbar panels:
-        // same dark rounded plate + faint cyan outline (only when a handler is given).
+        // Settings reuses the exact floating-icon and label treatment so both
+        // functional entries read as one authored set without another card layer.
         if (options.onOpenSettings) {
-            const settingsButton = makeUiNode('SettingsButton', right);
-            settingsButton.getComponent(UITransform)!.setContentSize(56, 56);
-            settingsButton.setPosition(gemPillX - BAR_WIDTH / 2 - 38, topY, 0);
-            makeLoginSprite('Artwork', settingsButton, RESOURCE_PATHS.lobbyUi.topSettings, 56, 56, 0, 0);
-            const settingsBtn = settingsButton.addComponent(Button);
-            settingsBtn.target = settingsButton;
-            settingsBtn.interactable = true;
-            settingsBtn.transition = Button.Transition.NONE;
-            settingsButton.on(Node.EventType.TOUCH_END, () => options.onOpenSettings?.());
+            makeTopEntryButton('SettingsButton', right, settingsX, topY,
+                '设置', RESOURCE_PATHS.shopUi.topEntrySettings, () => options.onOpenSettings?.());
         }
 
         PlayerData.onChange(this._onChange);
@@ -206,6 +214,16 @@ export class ResourceHeadBar {
     setIdentityVisible(visible: boolean): void {
         if (this._identity?.isValid && this._identity.active !== visible) {
             this._identity.active = visible;
+        }
+    }
+
+    isIdentityVisible(): boolean {
+        return !!this._identity?.isValid && this._identity.active;
+    }
+
+    setSupplyEntryVisible(visible: boolean): void {
+        if (this._supplyEntry?.isValid && this._supplyEntry.active !== visible) {
+            this._supplyEntry.active = visible;
         }
     }
 
@@ -261,6 +279,7 @@ export class ResourceHeadBar {
         this._countLabel = null;
         this._gemCountLabel = null;
         this._shopBadge = null;
+        this._supplyEntry = null;
         this._backButton = null;
         this._backHandler = null;
         this._identity = null;
@@ -268,6 +287,41 @@ export class ResourceHeadBar {
         this._avatarSprite = null;
         this._avatarId = '';
     }
+}
+
+function makeTopEntryButton(
+    name: string,
+    parent: Node,
+    x: number,
+    y: number,
+    text: string,
+    iconPath: string,
+    onTap: () => void,
+): Node {
+    const root = makeUiNode(name, parent);
+    root.getComponent(UITransform)!.setContentSize(TOP_ENTRY_WIDTH, TOP_ENTRY_HEIGHT);
+    root.setPosition(x, y, 0);
+    makeLoginSprite('Icon', root, iconPath, TOP_ENTRY_ICON_SIZE, TOP_ENTRY_ICON_SIZE, 0, 9);
+
+    const labelNode = makeLabel('Label', root, text, 20, uiColor(20, 31, 53, 255));
+    const label = labelNode.getComponent(Label)!;
+    label.horizontalAlign = Label.HorizontalAlign.CENTER;
+    label.verticalAlign = Label.VerticalAlign.CENTER;
+    label.overflow = Label.Overflow.SHRINK;
+    label.enableWrapText = false;
+    styleProjectUiLabel(label, 'semibold', 26);
+    const outline = labelNode.addComponent(LabelOutline);
+    outline.color = uiColor(244, 250, 255, 255);
+    outline.width = 1.5;
+    labelNode.getComponent(UITransform)!.setContentSize(78, 26);
+    labelNode.setPosition(0, -31, 3);
+
+    const button = root.addComponent(Button);
+    button.target = root;
+    button.interactable = true;
+    button.transition = Button.Transition.NONE;
+    root.on(Node.EventType.TOUCH_END, onTap);
+    return root;
 }
 
 function makeLoginSprite(name: string, parent: Node, path: string, width: number, height: number, x: number, y: number) {

@@ -42,6 +42,8 @@ export class LoginManager extends Component {
     private _identityEditPanel: IdentityEditPanel | null = null;
     private _settingsPanel: SettingsPanel | null = null;
     private _shopPanel: ShopDailySupplyPanel | null = null;
+    private _shopIdentityWasVisible = true;
+    private _shopTransitioning = false;
     private _roomFlow: RoomFlow | null = null;
     private _pendingOpenRoom = false;
     private _pendingOpenLobby = false;
@@ -122,15 +124,22 @@ export class LoginManager extends Component {
         this._identityEditPanel.show();
     }
 
-    // Mount once like the identity popup; reopening only refreshes draft values.
+    // Settings keeps its existing modal art but lives on the main HUD canvas.
+    // While open, the later 3D preview camera is hidden so it cannot draw over
+    // the dim or panel. This avoids the separate popup camera's desktop viewport.
     private openSettings() {
         if (!this._canvasNode) {
             return;
         }
-        const popup = getUILayer(this._canvasNode, UILayer.Popup);
         if (!this._settingsPanel) {
-            this._settingsPanel = new SettingsPanel();
-            this._settingsPanel.build(popup, this._designWidth, this._designHeight);
+            this._settingsPanel = new SettingsPanel((presented) => {
+                this._prepareRaceFlow?.setModalOverlayActive(presented);
+            });
+            this._settingsPanel.build(
+                getUILayer(this._canvasNode, UILayer.Hud),
+                this._designWidth,
+                this._designHeight,
+            );
         }
         this._settingsPanel.show();
     }
@@ -204,25 +213,45 @@ export class LoginManager extends Component {
 
     private openShop() {
         if (!this._canvasNode?.isValid) return;
+        if (this._shopTransitioning || this._shopPanel?.isVisible()) return;
         if (this._roomFlow) {
-            this.toast('联机房间中暂不能打开商店');
+            this.toast('联机房间中暂不能打开补给站');
             return;
         }
         this._headBar?.setVisible(true);
         if (!this._shopPanel) {
-            this._shopPanel = new ShopDailySupplyPanel((message) => this.toast(message));
+            this._shopPanel = new ShopDailySupplyPanel(
+                (message) => this.toast(message),
+                () => this.closeShop(),
+            );
             this._shopPanel.build(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight);
         }
+        this._shopIdentityWasVisible = this._headBar?.isIdentityVisible() ?? true;
         if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
-        this._prepareRaceFlow?.setVisible(false);
-        this._shopPanel.show();
-        this._headBar?.setBack(() => this.closeShop());
+        this._headBar?.setIdentityVisible(false);
+        this._headBar?.setSupplyEntryVisible(false);
+        this._headBar?.setBack(null);
+        this._shopTransitioning = true;
+        const revealShop = () => {
+            this._shopPanel?.show();
+            this._shopTransitioning = false;
+        };
+        if (this._prepareRaceFlow) {
+            if (this._prepareRaceFlow.transitionOutForOverlay(revealShop)) return;
+            this._headBar?.setSupplyEntryVisible(true);
+            this._headBar?.setIdentityVisible(this._shopIdentityWasVisible);
+            this._shopTransitioning = false;
+            return;
+        }
+        revealShop();
     }
 
     private closeShop() {
         this._shopPanel?.hide();
+        this._headBar?.setSupplyEntryVisible(true);
+        this._headBar?.setIdentityVisible(this._shopIdentityWasVisible);
         if (this._prepareRaceFlow) {
-            this._prepareRaceFlow.setVisible(true);
+            this._prepareRaceFlow.transitionInFromOverlay();
         } else if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
             this._headBar?.setVisible(false);

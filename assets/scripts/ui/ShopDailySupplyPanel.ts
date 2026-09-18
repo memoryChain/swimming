@@ -22,10 +22,13 @@ import { platform } from '../platform/PlatformManager';
 import {
     fitFullScreenBackgroundCover,
     makeLabel,
+    makeScreenEdgeGroup,
     makeUiNode,
     uiColor,
 } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
+import { buildSecondaryPageHeader } from './PrepareRaceFlow';
+import { LobbyUiMotion } from './LobbyUiMotion';
 
 type CardView = {
     slot: DailyShopRewardSlot;
@@ -38,7 +41,6 @@ type CardView = {
 };
 
 const CARD_X = [-320, 0, 320] as const;
-const WHITE = uiColor(245, 251, 255);
 const MUTED = uiColor(162, 194, 214);
 const DARK = uiColor(16, 38, 61);
 const CLAIMED_BUTTON_TINT = uiColor(132, 143, 151);
@@ -46,7 +48,7 @@ const CLAIMED_ICON_TINT = uiColor(185, 192, 197);
 const CLAIMED_TEXT = uiColor(79, 91, 99);
 const NORMAL_TINT = uiColor(255, 255, 255);
 
-/** 非比赛页面的每日补给商店。层级只创建一次，刷新只修改文本与按钮状态。 */
+/** 非比赛页面的每日补给站。层级只创建一次，刷新只修改文本与按钮状态。 */
 export class ShopDailySupplyPanel {
     private _root: Node | null = null;
     private _countdown: Label | null = null;
@@ -55,38 +57,56 @@ export class ShopDailySupplyPanel {
     private _timer: ReturnType<typeof setInterval> | null = null;
     private _lastCycleKey = '';
     private _transactionSerial = 0;
+    private _backButton: Button | null = null;
+    private _motion = new LobbyUiMotion();
+    private _closing = false;
     private readonly _onChange = (profile: PlayerProfile) => this.refresh(profile);
     private readonly _toast: (message: string) => void;
+    private readonly _onBack: () => void;
 
-    constructor(toast: (message: string) => void) {
+    constructor(toast: (message: string) => void, onBack: () => void) {
         this._toast = toast;
+        this._onBack = onBack;
     }
 
     build(parent: Node, designWidth: number, designHeight: number): Node {
         this.dispose();
+        this._motion = new LobbyUiMotion();
         const root = makeUiNode('ShopDailySupplyPanel', parent);
         root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
         this._root = root;
 
-        const background = makeSprite('Background', root, RESOURCE_PATHS.lobbyB.background, 1280, 720, 0, 0);
+        const background = makeSprite('Background', root, RESOURCE_PATHS.characterUi.background, 1280, 720, 0, 0);
         fitFullScreenBackgroundCover(background, 1280, 720);
 
-        const title = makeLabel('Title', root, '商店', 46, WHITE);
-        styleProjectUiLabel(title.getComponent(Label)!, 'semibold', 54);
-        title.setPosition(0, 238, 2);
-        const subtitle = makeLabel('Subtitle', root, '每日补给', 25, uiColor(111, 231, 246));
-        styleProjectUiLabel(subtitle.getComponent(Label)!, 'semibold', 32);
-        subtitle.setPosition(0, 195, 2);
+        const headerRoot = makeScreenEdgeGroup('SupplyPageHeader', root, 'left', designWidth, designHeight, 0, false);
+        const headerMotion = this._motion.group(headerRoot, 'SupplyHeaderMotion', -16);
+        const header = buildSecondaryPageHeader(headerMotion, 'Supply', '补给站', () => {
+            if (!this._busySlot) this.beginClose();
+        });
+        this._backButton = header.backButton;
+        this._motion.bindButton(header.backNode);
 
-        makeSprite('SupplyPanel', root, RESOURCE_PATHS.shopUi.supplyPanel, 1050, 456, 0, -52);
-        this._countdown = makeStyledLabel('ResetCountdown', root, '', 18, MUTED, 440, 28, 0, -254, false);
+        const sectionRoot = this._motion.group(root, 'SupplySectionMotion', -24);
+        makeSprite('SectionDots', sectionRoot, RESOURCE_PATHS.characterUi.headerDots, 132, 97, -438, 191);
+        const section = makeLabel('SectionTitle', sectionRoot, '每日补给', 34, DARK);
+        const sectionLabel = section.getComponent(Label)!;
+        sectionLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        sectionLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        sectionLabel.overflow = Label.Overflow.CLAMP;
+        styleProjectUiLabel(sectionLabel, 'semibold', 44);
+        section.getComponent(UITransform)!.setContentSize(240, 48);
+        section.setPosition(-343, 200, 2);
+
+        const cardsRoot = this._motion.group(root, 'SupplyCardsMotion', 24);
+        this._countdown = makeStyledLabel('ResetCountdown', cardsRoot, '', 18, MUTED, 440, 28, 0, -254, false);
 
         this._cards = [
-            this.buildCard(root, 'free_coins', 0, '每日免费金币', RESOURCE_PATHS.characterUi.upgradeCurrency,
+            this.buildCard(cardsRoot, 'free_coins', 0, '每日免费金币', RESOURCE_PATHS.characterUi.upgradeCurrency,
                 `金币 +${PROGRESSION_CONFIG.dailyFreeCoins}`, '每日直接领取', '免费领取'),
-            this.buildCard(root, 'ad_gems', 1, '突破宝石补给', RESOURCE_PATHS.shopUi.gemIcon,
+            this.buildCard(cardsRoot, 'ad_gems', 1, '突破宝石补给', RESOURCE_PATHS.shopUi.gemIcon,
                 `突破宝石 +${PROGRESSION_CONFIG.dailyAdGems}`, '完成一次激励广告', '看广告领取', true),
-            this.buildCard(root, 'ad_coins', 2, '金币加餐', RESOURCE_PATHS.characterUi.upgradeCurrency,
+            this.buildCard(cardsRoot, 'ad_coins', 2, '金币加餐', RESOURCE_PATHS.characterUi.upgradeCurrency,
                 `金币 +${PROGRESSION_CONFIG.dailyAdCoins}`, '完成一次激励广告', '看广告领取'),
         ];
 
@@ -98,6 +118,8 @@ export class ShopDailySupplyPanel {
 
     show(): void {
         if (!this._root?.isValid) return;
+        if (this._root.active && !this._closing) return;
+        this._closing = false;
         if (!this._root.active) this._root.active = true;
         this._lastCycleKey = dailyShopCycleKey();
         if (PlayerData.profile.dailyShop.cycleKey !== this._lastCycleKey) {
@@ -106,7 +128,12 @@ export class ShopDailySupplyPanel {
             this.refresh(PlayerData.profile);
         }
         this.updateCountdown();
+        this._motion.enter(true);
         if (!this._timer) this._timer = setInterval(() => this.tick(), 1000);
+    }
+
+    isVisible(): boolean {
+        return !!this._root?.isValid && this._root.active;
     }
 
     hide(): void {
@@ -118,6 +145,7 @@ export class ShopDailySupplyPanel {
     }
 
     dispose(): void {
+        this._motion.dispose();
         this.hide();
         PlayerData.offChange(this._onChange);
         if (this._root?.isValid) this._root.destroy();
@@ -125,6 +153,20 @@ export class ShopDailySupplyPanel {
         this._countdown = null;
         this._cards = [];
         this._busySlot = null;
+        this._backButton = null;
+        this._closing = false;
+    }
+
+    private beginClose(): void {
+        if (this._closing || this._busySlot || !this._root?.isValid || !this._root.active) return;
+        this._closing = true;
+        this.refresh(PlayerData.profile);
+        this._motion.exit(() => {
+            if (!this._root?.isValid) return;
+            this.hide();
+            this._closing = false;
+            this._onBack();
+        });
     }
 
     private buildCard(
@@ -140,30 +182,30 @@ export class ShopDailySupplyPanel {
     ): CardView {
         const card = makeUiNode(`SupplyCard-${slot}`, parent);
         card.getComponent(UITransform)!.setContentSize(292, 330);
-        card.setPosition(CARD_X[index], -36, 2);
+        card.setPosition(CARD_X[index], -29, 2);
         makeSprite('Artwork', card, emphasized ? RESOURCE_PATHS.shopUi.supplyCardGem : RESOURCE_PATHS.shopUi.supplyCard,
             292, 330, 0, 0);
-        makeStyledLabel('Title', card, titleText, 23, WHITE, 250, 36, 0, 120, true);
+        makeStyledLabel('Title', card, titleText, 23, DARK, 250, 36, 0, 120, true);
         makeSprite('RewardIcon', card, iconPath, 82, 82, 0, 48);
-        makeStyledLabel('Reward', card, rewardText, 28, emphasized ? uiColor(105, 239, 255) : WHITE,
+        makeStyledLabel('Reward', card, rewardText, 28, emphasized ? uiColor(12, 120, 156) : DARK,
             250, 42, 0, -18, true);
         makeStyledLabel('Description', card, description, 17, MUTED, 250, 30, 0, -58, false);
 
         const buttonNode = makeUiNode('ClaimButton', card);
-        buttonNode.getComponent(UITransform)!.setContentSize(220, 66);
+        buttonNode.getComponent(UITransform)!.setContentSize(252, 64);
         buttonNode.setPosition(0, -119, 3);
-        const buttonArtwork = makeSprite('Artwork', buttonNode, RESOURCE_PATHS.characterUi.upgradeButton, 220, 66, 0, 0)
+        const buttonArtwork = makeSprite('Artwork', buttonNode, RESOURCE_PATHS.characterUi.confirmButton, 252, 56, 0, 0)
             .getComponent(Sprite)!;
         const button = buttonNode.addComponent(Button);
         button.target = buttonNode;
         button.transition = Button.Transition.SCALE;
         button.zoomScale = 0.97;
-        const action = makeStyledLabel('Action', buttonNode, actionText, 22, DARK, 180, 34, 0, 0, true);
+        const action = makeStyledLabel('Action', buttonNode, actionText, 22, DARK, 200, 34, 0, 0, true);
         let videoIcon: Sprite | null = null;
         if (slot !== 'free_coins') {
             videoIcon = makeSprite('VideoIcon', buttonNode, RESOURCE_PATHS.shopUi.videoIcon, 34, 27, -70, 0)
                 .getComponent(Sprite)!;
-            action.node.setPosition(18, 0, 1);
+            action.node.setPosition(20, 0, 1);
         }
         const view: CardView = { slot, button, buttonArtwork, action, videoIcon, pendingTransactionId: null, adVerified: false };
         buttonNode.on(Button.EventType.CLICK, () => void this.claim(view));
@@ -213,11 +255,12 @@ export class ShopDailySupplyPanel {
     }
 
     private refresh(profile: PlayerProfile): void {
+        if (this._backButton) setButton(this._backButton, !this._busySlot && !this._closing);
         for (const card of this._cards) {
             const claimed = this.isClaimed(profile, card.slot);
             const busy = this._busySlot === card.slot;
             const retry = !!card.pendingTransactionId && card.adVerified;
-            setButton(card.button, !claimed && !this._busySlot);
+            setButton(card.button, !claimed && !this._busySlot && !this._closing);
             setSpriteColor(card.buttonArtwork, claimed ? CLAIMED_BUTTON_TINT : NORMAL_TINT);
             setSpriteColor(card.videoIcon, claimed ? CLAIMED_ICON_TINT : NORMAL_TINT);
             setLabelColor(card.action, claimed ? CLAIMED_TEXT : DARK);

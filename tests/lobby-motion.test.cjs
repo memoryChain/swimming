@@ -138,6 +138,21 @@ test('入场与屏幕锚点独立，点击打断按钮弹入后仍复原，离�
     motion.exit(()=>assert.fail('销毁后不可触发导航'));motion.dispose();s.advance(1);assert.equal(s.running,0);
 });
 
+test('补给站覆盖往返复用当前大厅层级，按钮状态与分组位置正确恢复',()=>{
+    const s=setup(),f=s.flow,button=new Node('角色按钮');button.setParent(s.parent);button.addComponent(Button);
+    f._root=s.parent;f._content=s.parent;
+    const group=f._motion.group(s.parent,'左侧内容',-24),count=size(s.parent);
+    let hidden=0;
+    assert.equal(f.transitionOutForOverlay(()=>hidden++),true);
+    assert.equal(button.getComponent(Button).interactable,false);
+    s.advance(1);
+    assert.equal(hidden,1);assert.equal(s.parent.active,false);
+    f.transitionInFromOverlay();
+    assert.equal(s.parent.active,true);assert.equal(button.getComponent(Button).interactable,true);
+    assert.equal(group.position.x,-24);s.advance(1);near(group.position.x,0);
+    assert.equal(size(s.parent),count);assert.equal(s.running,0);
+});
+
 test('引擎先销毁子按钮后再清理大厅，解绑不得访问已销毁的事件处理器',()=>{
     const s=setup(),f=s.flow,button=new Node('AI测试');button.setParent(s.parent);button.addComponent(Button);
     f._root=s.parent;f._content=s.parent;

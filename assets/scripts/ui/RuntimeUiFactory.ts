@@ -113,6 +113,44 @@ export function fitFullScreenBackgroundCover(
     }
 }
 
+// Solid modal scrims can safely extend past the viewport. Desktop preview and
+// embedded browser canvases may briefly report a logical visible width that is
+// narrower than their actual pixel aspect ratio, which otherwise leaves an
+// uncovered strip at one side. Use both measurements and add symmetric
+// overscan; the GPU clips the single rectangle at the camera viewport.
+export function fitFullScreenSolidCover(
+    node: Node,
+    authoredWidth = UI_DESIGN_WIDTH,
+    authoredHeight = UI_DESIGN_HEIGHT,
+): void {
+    const transform = node.getComponent(UITransform);
+    if (!transform || authoredWidth <= 0 || authoredHeight <= 0) return;
+    if (transform.contentSize.width !== authoredWidth || transform.contentSize.height !== authoredHeight) {
+        transform.setContentSize(authoredWidth, authoredHeight);
+    }
+
+    const apply = () => {
+        if (!node.isValid) return;
+        const visible = view.getVisibleSize();
+        const canvas = view.getCanvasSize();
+        const aspectWidth = canvas.height > 0 ? visible.height * canvas.width / canvas.height : 0;
+        const aspectHeight = canvas.width > 0 ? visible.width * canvas.height / canvas.width : 0;
+        const targetWidth = Math.max(authoredWidth, visible.width, aspectWidth);
+        const targetHeight = Math.max(authoredHeight, visible.height, aspectHeight);
+        const scaleX = targetWidth / authoredWidth * 1.5;
+        const scaleY = targetHeight / authoredHeight * 1.5;
+        if (node.position.x !== 0 || node.position.y !== 0) {
+            node.setPosition(0, 0, node.position.z);
+        }
+        if (node.scale.x !== scaleX || node.scale.y !== scaleY) {
+            node.setScale(scaleX, scaleY, node.scale.z);
+        }
+    };
+
+    apply();
+    onScreenResize(node, apply);
+}
+
 export function fitNodeToVisibleScreen(node: Node): void {
     const visibleSize = view.getVisibleSize();
     const transform = node.getComponent(UITransform);

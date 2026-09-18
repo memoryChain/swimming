@@ -23,6 +23,9 @@ export class LobbyUiMotion {
     }
 
     enter(short: boolean): void {
+        // Overlay pages reuse the existing hierarchy when returning. Re-enable the
+        // controller after its previous exit instead of rebuilding the whole screen.
+        this._enabled = true;
         for (const part of this._entrances) {
             const opacity = part.node.getComponent(UIOpacity)!;
             part.node.setPosition(part.x, part.y, 0);
