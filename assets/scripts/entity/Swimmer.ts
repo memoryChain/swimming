@@ -8,7 +8,7 @@ import {
     Rating,
     StrokeType,
 } from '../core/GameConstants';
-import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance } from '../core/GameBalance';
+import { DIVE_BALANCE, SWIMMER_BALANCE, getRaceDistance, isWhirlpoolBrawlMode } from '../core/GameBalance';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 import { STEERING_TUNING } from '../core/SteeringTuning';
 import type { RhythmResult, RhythmStats } from '../core/RhythmTypes';
@@ -26,6 +26,11 @@ import {
 } from '../venue/RaceCourseLayout';
 import { CartoonSwimmerRig } from './CartoonSwimmerRig';
 import { SwimmerRacePhases } from './SwimmerRacePhases';
+import {
+    sampleWhirlpoolInfluence,
+    WHIRLPOOL_BRAWL_TUNING,
+    WhirlpoolInfluence,
+} from '../core/WhirlpoolBrawlRules';
 
 const { ccclass, property } = _decorator;
 const PERFECT_COMBO_IDLE_SECONDS = 1;
@@ -43,6 +48,15 @@ export class Swimmer extends Component {
     @property public isAI = false;
     // 远端真人复用 AI 身体，但碰撞身份必须与其所属客户端一致。
     public collisionRemoteHuman = false;
+    private readonly _whirlpoolInfluence: WhirlpoolInfluence = {
+        forwardAcceleration: 0,
+        lateralAcceleration: 0,
+        yawAcceleration: 0,
+        rollAcceleration: 0,
+        intensity: 0,
+        coreIntensity: 0,
+        whirlpoolId: -1,
+    };
     // 由流程层绑定体力模型；每次成功释放同步结算，重开不叠加监听。
     public onDolphinJumpEnergyCost: ((cost: number) => void) | null = null;
 
@@ -721,6 +735,25 @@ export class Swimmer extends Component {
         }
         if (this._phases.isUnderwater) this._motor.ability.suspend();
         this.updatePerfectComboIdle(dt);
+        if (isWhirlpoolBrawlMode()) {
+            sampleWhirlpoolInfluence(
+                this._motor.distance,
+                this._startPosition.z + this._motor.lateralOffset,
+                this._courseLayout.poolWidth,
+                this._whirlpoolInfluence,
+            );
+            const submergedScale = this._phases.isUnderwater || this._motor.ability.depth > 0.2
+                ? WHIRLPOOL_BRAWL_TUNING.submergedInfluenceScale
+                : 1;
+            this._motor.applyWaterCurrent(
+                this._whirlpoolInfluence.forwardAcceleration * submergedScale,
+                this._whirlpoolInfluence.lateralAcceleration * submergedScale,
+                this._whirlpoolInfluence.yawAcceleration * submergedScale,
+                this._whirlpoolInfluence.rollAcceleration * submergedScale,
+                dt,
+                WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed,
+            );
+        }
         const finished = this._motor.update(dt, {
             isAI: this.isAI,
         });

@@ -259,6 +259,7 @@
     "stimulant.energyRestoreRatio": 0.5,
     "stimulant.heartRateBurden": 30,
     "stimulant.pickupRadius": 1.2,
+    "stimulant.pickupBodyHalfLength": 0.8,
     "stimulant.reactionDuration": 6,
     "stimulant.oversteerStartHeartRate": 130,
     "stimulant.maxTurnImpulseScale": 1.65,

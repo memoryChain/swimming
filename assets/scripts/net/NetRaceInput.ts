@@ -48,6 +48,8 @@ export const enum NetInputKind {
     DolphinJump = 'd', // dolphin jump trigger (both-hands gesture)
     StimulantPickup = 'p', // host-authoritative item id, collector lane, revision
     SharkElimination = 'e', // host-authoritative shark sequence and eliminated lane
+    CannonLaunch = 'l', // host-authoritative strike id, target distance/Z, warning and revision
+    CannonImpact = 'x', // host-authoritative strike id, hit mask, eliminated lane and revision
 }
 
 export interface NetInputEvent {
@@ -66,6 +68,12 @@ export interface NetInputEvent {
     revision?: number;
     sharkSequence?: number;
     targetLane?: number;
+    cannonStrikeId?: number;
+    targetDistance?: number;
+    targetZ?: number;
+    warningSeconds?: number;
+    hitMask?: number;
+    eliminatedLane?: number;
 }
 
 export interface DecodedInputFrame {
@@ -103,6 +111,10 @@ function encodeEvent(event: NetInputEvent): string {
             return `${NetInputKind.StimulantPickup}${Math.max(0, Math.floor(event.itemId ?? 0))},${Math.max(0, Math.floor(event.collectorLane ?? 0))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.SharkElimination:
             return `${NetInputKind.SharkElimination}${Math.max(0, Math.floor(event.sharkSequence ?? 0))},${Math.max(0, Math.floor(event.targetLane ?? 0))}`;
+        case NetInputKind.CannonLaunch:
+            return `${NetInputKind.CannonLaunch}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.round((event.targetDistance ?? 0) * 100))},${Math.round((event.targetZ ?? 0) * 1000)},${Math.max(0, Math.round((event.warningSeconds ?? 0) * 1000))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+        case NetInputKind.CannonImpact:
+            return `${NetInputKind.CannonImpact}${Math.max(0, Math.floor(event.cannonStrikeId ?? 0))},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor((event.eliminatedLane ?? -1) + 1))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -146,6 +158,33 @@ function decodeToken(token: string): NetInputEvent | null {
             const values = token.slice(1).split(',').map(value => parseInt(value, 10));
             return values.length === 2 && values.every(value => Number.isSafeInteger(value) && value >= 0)
                 ? { kind, sharkSequence: values[0], targetLane: values[1] }
+                : null;
+        }
+        case NetInputKind.CannonLaunch: {
+            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
+            return values.length === 5
+                && values.every(value => Number.isSafeInteger(value))
+                && values[0] >= 0 && values[1] >= 0 && values[3] >= 0 && values[4] >= 0
+                ? {
+                    kind,
+                    cannonStrikeId: values[0],
+                    targetDistance: values[1] / 100,
+                    targetZ: values[2] / 1000,
+                    warningSeconds: values[3] / 1000,
+                    revision: values[4],
+                }
+                : null;
+        }
+        case NetInputKind.CannonImpact: {
+            const parts = token.slice(1).split(',');
+            const strikeId = parseInt(parts[0], 10);
+            const hitMask = parseInt(parts[1], 16);
+            const eliminatedLanePlusOne = parseInt(parts[2], 10);
+            const revision = parseInt(parts[3], 10);
+            return parts.length === 4
+                && [strikeId, hitMask, eliminatedLanePlusOne, revision]
+                    .every(value => Number.isSafeInteger(value) && value >= 0)
+                ? { kind, cannonStrikeId: strikeId, hitMask, eliminatedLane: eliminatedLanePlusOne - 1, revision }
                 : null;
         }
         case NetInputKind.DiveRelease: {

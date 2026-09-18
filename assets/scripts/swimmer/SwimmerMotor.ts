@@ -1370,6 +1370,43 @@ export class SwimmerMotor {
         this._collisionPitch.applyAngularImpulse(angularVelocityDeltaRadians);
     }
 
+    // Continuous environment force used by the whirlpool rules. It feeds the same
+    // synchronized distance/lateral/heading/roll channels as normal movement, while
+    // keeping a separate cap so changing collision tuning cannot disable the mode.
+    applyWaterCurrent(
+        forwardAcceleration: number,
+        lateralAcceleration: number,
+        yawAcceleration: number,
+        rollAcceleration: number,
+        dt: number,
+        maxFlowSpeed: number,
+    ) {
+        if (!this._isRacing || this._glidePhaseActive || !(dt > 0)) return;
+        const step = Math.min(0.1, dt);
+        const cap = Math.max(0.1, Number.isFinite(maxFlowSpeed) ? maxFlowSpeed : 0.1);
+        this._knockbackDistance = clamp(
+            this._knockbackDistance + finiteOr(forwardAcceleration, 0) * step,
+            -cap,
+            cap,
+        );
+        this._knockbackLateral = clamp(
+            this._knockbackLateral + finiteOr(lateralAcceleration, 0) * step,
+            -cap,
+            cap,
+        );
+        if (isRaceSteeringEnabled()) {
+            const maxRate = safeMaxTurnRateRadians();
+            this._headingTurnRate = clamp(
+                this._headingTurnRate + finiteOr(yawAcceleration, 0) * step,
+                -maxRate,
+                maxRate,
+            );
+        }
+        if (SWIMMER_COLLISION.axialRollEnabled >= 0.5) {
+            this._axialRoll.applyAngularImpulse(finiteOr(rollAcceleration, 0) * step);
+        }
+    }
+
     clearKnockback() {
         this._knockbackDistance = 0;
         this._knockbackLateral = 0;

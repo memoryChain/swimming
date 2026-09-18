@@ -19,6 +19,8 @@ export const ROOM_MODES: ReadonlyArray<{ id: RaceModeId; label: string }> = [
     { id: 'championship', label: getRaceModeTitle('championship') },
     { id: 'stimulant-brawl', label: getRaceModeTitle('stimulant-brawl') },
     { id: 'shark-brawl', label: getRaceModeTitle('shark-brawl') },
+    { id: 'whirlpool-brawl', label: getRaceModeTitle('whirlpool-brawl') },
+    { id: 'last-place-brawl', label: getRaceModeTitle('last-place-brawl') },
 ];
 export type OnlineMember = {
     clientId?: number;
@@ -122,10 +124,10 @@ export class OnlineRoomView {
         // 抽屉和玩家弹窗只创建一次，放在内容最上层；点空白关闭。
         this.drawer = makeUiNode('ModeDrawer', p);
         this.touch(this.drawer, 'DismissDrawer', 0, 85, 1280, 635, () => visible(this.drawer, false));
-        this.picture(this.drawer, 'DrawerPanel', ART.drawer, 90, 223, 351, 302);
-        this.text(this.drawer, 'DrawerHeading', '选择赛制', 122, 285, 272, 28, 16, false).color = MUTED;
+        this.picture(this.drawer, 'DrawerPanel', ART.drawer, 90, 126, 351, 399);
+        this.text(this.drawer, 'DrawerHeading', '选择赛制', 122, 158, 272, 28, 16, false).color = MUTED;
         ROOM_MODES.forEach((mode, i) => {
-            const y = 309 + i * 48;
+            const y = 184 + i * 48;
             this.modeLabels.push(this.text(this.drawer, `ModeOption${i}`, mode.label, 124, y, 150, 34, 21, false));
             this.modeDistances.push(this.text(this.drawer, `ModeDistance${i}`, String(getRaceDistance(ROOM_MODES[i].id)), 316, y, 48, 34, 21, true, 'latin'));
             this.modeUnits.push(this.text(this.drawer, `ModeUnit${i}`, '米', 364, y, 23, 34, 21, false));

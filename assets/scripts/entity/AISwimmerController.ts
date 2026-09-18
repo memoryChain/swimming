@@ -59,6 +59,8 @@ export class AISwimmerController extends Component {
     private _targetZ: number | null = null;
     private _stimulantTargetZ: number | null = null;
     private _sharkTargetZ: number | null = null;
+    private _whirlpoolTargetZ: number | null = null;
+    private _cannonTargetZ: number | null = null;
     private _safeMinZ: number | null = null;
     private _safeMaxZ: number | null = null;
     private _safeWarning = false;
@@ -112,6 +114,14 @@ export class AISwimmerController extends Component {
         this._sharkTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
     }
 
+    setWhirlpoolTargetZ(targetZ: number | null) {
+        this._whirlpoolTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
+    setCannonTargetZ(targetZ: number | null) {
+        this._cannonTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
     startSwimming() {
         if (this.remoteDriven || this._active) return;
         this.clearObservedPress();
@@ -125,7 +135,7 @@ export class AISwimmerController extends Component {
         this._lastStrokeStart = -10;
         this._wasLocked = false;
         this._safeAware = false;
-        this._targetZ = this._sharkTargetZ ?? this._stimulantTargetZ;
+        this._targetZ = this._cannonTargetZ ?? this._sharkTargetZ ?? this._whirlpoolTargetZ ?? this._stimulantTargetZ;
         this._observation.strokeCostPerMeter = 0.7;
         this.planner.reset();
         this._timer = this.intelligence.id === 'extreme' ? 0
@@ -229,7 +239,10 @@ export class AISwimmerController extends Component {
                 this._targetZ = clamp(otherZ + direction * 1.5, -halfWidth + 0.8, halfWidth - 0.8);
             }
         }
+        if (this._stimulantTargetZ !== null) this._targetZ = this._stimulantTargetZ;
+        if (this._whirlpoolTargetZ !== null) this._targetZ = this._whirlpoolTargetZ;
         if (this._sharkTargetZ !== null) this._targetZ = this._sharkTargetZ;
+        if (this._cannonTargetZ !== null) this._targetZ = this._cannonTargetZ;
     }
 
     private kick(dt: number) {

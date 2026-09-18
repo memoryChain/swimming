@@ -95,6 +95,7 @@ test('五种荣誉状态；未完成、退出和淘汰不授予前三名奖牌',
         assert.equal(settlementTime({ time: 109, quit: true }), '已退出');
         assert.equal(settlementTime({ time: 109, eliminated: true }), '已淘汰');
         assert.equal(settlementTime({ time: 0, eliminated: true, sharkEliminated: true }), '鲨鱼淘汰');
+        assert.equal(settlementTime({ time: 0, eliminated: true, cannonEliminated: true }), '炮击淘汰');
         const v = make();
         for (const rank of [1, 2, 3, 4, 8]) {
             v.show(109.45, data(rank));

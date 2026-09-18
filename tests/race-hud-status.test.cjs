@@ -53,7 +53,7 @@ function progressSpeedFixture() {
  assert.equal(methods.length,names.length);
  const js=ts.transpileModule(`class SpeedHarness { ${methods.map(n=>n.getText(source)).join('\n')} }`,
   {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
- const Harness=vm.runInNewContext(`${js}; SpeedHarness`);
+ const Harness=vm.runInNewContext(`${js}; SpeedHarness`,{isWhirlpoolBrawlMode:()=>false});
  const swimmer=new Harness(),motor=new SwimmerMotor();
  motor.startRace(0,2.5);
  // 固定内部游速，单独检查真实运动模型的方向及翻滚损失。

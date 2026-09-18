@@ -9,9 +9,10 @@ export const RACE_COURSE_LENGTH = 50;
 export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
-export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl';
+export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl'
+    | 'whirlpool-brawl' | 'last-place-brawl';
 export type RaceCategoryId = 'competitive' | 'entertainment';
-export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark';
+export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon';
 
 export type RaceModeConfig = {
     id: RaceModeId;
@@ -31,6 +32,9 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'championship', label: '狂野模式', category: 'competitive', distance: 400, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'stimulant-brawl', label: '兴奋剂大乱斗', category: 'entertainment', distance: 200, ruleset: 'stimulant', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'shark-brawl', label: '鲨鱼大乱斗', category: 'entertainment', distance: 200, ruleset: 'shark', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'whirlpool-brawl', label: '漩涡冲浪赛', category: 'entertainment', distance: 200, ruleset: 'whirlpool', laneLockdownEnabled: false, steeringEnabled: true },
+    // 保留入口 ID，避免已有存档和联机房间选择失效；玩法本身已替换为炮火逃生赛。
+    { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true },
 ];
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter((option) => option.category === 'competitive');
 
@@ -79,6 +83,14 @@ export function isStimulantBrawlMode(mode: RaceModeId = currentRaceMode): boolea
 
 export function isSharkBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
     return getRaceModeConfig(mode).ruleset === 'shark';
+}
+
+export function isWhirlpoolBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'whirlpool';
+}
+
+export function isCannonBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'cannon';
 }
 
 export function raceDistanceToCourseX(distance: number): number {

@@ -57,6 +57,7 @@ export type RaceLeaderboardRow = {
     quit?: boolean;
     eliminated?: boolean;
     sharkEliminated?: boolean;
+    cannonEliminated?: boolean;
 };
 
 @ccclass('UIController')
@@ -763,7 +764,13 @@ export class UIController extends Component {
             setResultLabel(rankLabel, `${row.placement}`, color, row.isPlayer);
             setResultLabel(
                 timeLabel,
-                finished ? `${row.time.toFixed(2)} 秒` : row.sharkEliminated ? '鲨鱼淘汰' : '未完成',
+                finished
+                    ? `${row.time.toFixed(2)} 秒`
+                    : row.sharkEliminated
+                        ? '鲨鱼淘汰'
+                        : row.cannonEliminated
+                            ? '炮击淘汰'
+                            : '未完成',
                 color,
                 row.isPlayer,
             );

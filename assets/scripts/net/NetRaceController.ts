@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -151,6 +151,9 @@ export class NetRaceController {
     private _stimulantStateListener: ((state: NetStimulantState) => void) | null = null;
     private _sharkEliminationListener: ((sequence: number, targetLane: number) => void) | null = null;
     private _sharkStateListener: ((state: NetSharkState) => void) | null = null;
+    private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
+    private _cannonImpactListener: ((strikeId: number, hitMask: number, eliminatedLane: number, revision: number) => void) | null = null;
+    private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -200,6 +203,41 @@ export class NetRaceController {
 
     setSharkStateListener(listener: ((state: NetSharkState) => void) | null): void {
         this._sharkStateListener = listener;
+    }
+
+    enqueueCannonLaunch(strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.CannonLaunch,
+            cannonStrikeId: strikeId,
+            targetDistance,
+            targetZ,
+            warningSeconds,
+            revision,
+        });
+    }
+
+    enqueueCannonImpact(strikeId: number, hitMask: number, eliminatedLane: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.CannonImpact,
+            cannonStrikeId: strikeId,
+            hitMask,
+            eliminatedLane,
+            revision,
+        });
+    }
+
+    setCannonLaunchListener(listener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null): void {
+        this._cannonLaunchListener = listener;
+    }
+
+    setCannonImpactListener(listener: ((strikeId: number, hitMask: number, eliminatedLane: number, revision: number) => void) | null): void {
+        this._cannonImpactListener = listener;
+    }
+
+    setCannonStateListener(listener: ((state: NetCannonState) => void) | null): void {
+        this._cannonStateListener = listener;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -358,10 +396,15 @@ export class NetRaceController {
     }
 
     // Host: encode + broadcast the authoritative position snapshot.
-    sendSnapshot(entries: NetSnapshotEntry[], stimulant?: NetStimulantState | null, shark?: NetSharkState | null): void {
+    sendSnapshot(
+        entries: NetSnapshotEntry[],
+        stimulant?: NetStimulantState | null,
+        shark?: NetSharkState | null,
+        cannon?: NetCannonState | null,
+    ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark));
+        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark, cannon));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -494,6 +537,15 @@ export class NetRaceController {
                 if (snapshot.shark) {
                     this._sharkStateListener?.(snapshot.shark);
                 }
+                this._cannonStateListener?.({
+                    revision: snapshot.cannonRevision,
+                    eliminatedMask: snapshot.cannonEliminatedMask,
+                    completedStrikeMask: snapshot.cannonCompletedMask,
+                    activeStrikeId: snapshot.cannonActiveStrikeId,
+                    targetDistance: snapshot.cannonTargetDistance,
+                    targetZ: snapshot.cannonTargetZ,
+                    remainingSeconds: snapshot.cannonRemainingSeconds,
+                });
             }
             this.refreshHud();
             return;
@@ -820,6 +872,19 @@ export class NetRaceController {
             } else if (event.kind === NetInputKind.SharkElimination) {
                 if (event.sharkSequence === undefined || event.targetLane === undefined) continue;
                 this._sharkEliminationListener?.(event.sharkSequence, event.targetLane);
+            } else if (event.kind === NetInputKind.CannonLaunch) {
+                if (event.cannonStrikeId === undefined || event.targetDistance === undefined
+                    || event.targetZ === undefined || event.warningSeconds === undefined
+                    || event.revision === undefined) continue;
+                this._cannonLaunchListener?.(
+                    event.cannonStrikeId, event.targetDistance, event.targetZ, event.warningSeconds, event.revision,
+                );
+            } else if (event.kind === NetInputKind.CannonImpact) {
+                if (event.cannonStrikeId === undefined || event.hitMask === undefined
+                    || event.eliminatedLane === undefined || event.revision === undefined) continue;
+                this._cannonImpactListener?.(
+                    event.cannonStrikeId, event.hitMask, event.eliminatedLane, event.revision,
+                );
             }
         }
     }

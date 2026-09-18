@@ -1,4 +1,4 @@
-import { Color, instantiate, Material, Mesh, MeshRenderer, Node, Prefab, primitives, utils } from 'cc';
+import { Color, gfx, instantiate, Material, Mesh, MeshRenderer, Node, Prefab, primitives, utils, Vec3 } from 'cc';
 import { PlayerConditionModel } from '../condition/PlayerConditionModel';
 import { AiConditionModel } from '../condition/AiConditionModel';
 import { Swimmer } from '../entity/Swimmer';
@@ -6,17 +6,24 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { loadRaceAsset } from './RaceBundleLoader';
 import { RESOURCE_PATHS } from './ResourcePaths';
-import { buildStimulantSchedule, STIMULANT_BRAWL_TUNING, StimulantSpawn } from './StimulantBrawlRules';
+import {
+    buildStimulantSchedule,
+    stimulantPickupDistanceSquared,
+    STIMULANT_BRAWL_TUNING,
+    StimulantSpawn,
+} from './StimulantBrawlRules';
 
 type Condition = PlayerConditionModel | AiConditionModel;
 type Racer = { swimmer: Swimmer; condition: Condition };
 type ItemState = StimulantSpawn & {
     collected: boolean;
     node: Node | null;
+    beaconNode: Node | null;
     x: number;
     z: number;
     baseY: number;
     phase: number;
+    pickupEffectRemaining: number;
 };
 
 export type StimulantPickup = { itemId: number; collectorLane: number; revision: number };
@@ -28,10 +35,18 @@ export type StimulantPickupFeedback = StimulantPickup & {
 };
 
 const ITEM_VISIBLE_DISTANCE = 38;
+const BEACON_VISIBLE_AHEAD_DISTANCE = 82;
+const BEACON_VISIBLE_BEHIND_DISTANCE = 8;
 const WAVE_ANNOUNCEMENT_LEAD_DISTANCE = 18;
 const PRESENTATION_INTERVAL = 1 / 20;
 const ITEM_SCALE = 0.9;
 const ITEM_MODEL_SCALE = 1;
+const BEACON_HEIGHT = 10.5;
+const BEACON_HALF_WIDTH = 0.42;
+const BEACON_BASE_RADIUS = 0.88;
+const BEACON_BASE_Y_OFFSET = 0.04;
+const BEACON_PICKUP_COLLAPSE_SECONDS = 0.28;
+const MAX_PICKUP_SWEEP_DISTANCE = 3;
 const STIMULANT_CUBE_COLOR = new Color(92, 255, 48, 255);
 
 /** 兴奋剂玩法的独立规则控制器；GameManager 只负责传入泳者和网络事件。 */
@@ -44,18 +59,37 @@ export class StimulantBrawlController {
     private presentationTime = 0;
     private visualMesh: Mesh | null = null;
     private visualMaterial: Material | null = null;
+    private beaconMesh: Mesh | null = null;
+    private beaconMaterial: Material | null = null;
+    private readonly pickupRacers: Array<Racer | null>;
+    private readonly pickupCurrentX: Float64Array;
+    private readonly pickupCurrentZ: Float64Array;
+    private readonly pickupPreviousX: Float64Array;
+    private readonly pickupPreviousZ: Float64Array;
 
     constructor(
         private readonly root: Node,
         seed: number,
         private readonly laneLayout: LaneLayout,
         private readonly course: RaceCourseLayout,
-        private readonly racerForLane: (lane: number) => Racer | null,
+        racerForLane: (lane: number) => Racer | null,
         private readonly resolveAuthoritatively: (pickup: StimulantPickup) => void,
         private readonly onPickup: (feedback: StimulantPickupFeedback) => void,
         private readonly onWaveApproach: (wave: number) => void,
         private readonly localPlayerLane: () => number,
     ) {
+        this.pickupRacers = new Array<Racer | null>(laneLayout.laneCount).fill(null);
+        this.pickupCurrentX = new Float64Array(laneLayout.laneCount);
+        this.pickupCurrentZ = new Float64Array(laneLayout.laneCount);
+        this.pickupPreviousX = new Float64Array(laneLayout.laneCount);
+        this.pickupPreviousZ = new Float64Array(laneLayout.laneCount);
+        this.pickupCurrentX.fill(Number.NaN);
+        this.pickupCurrentZ.fill(Number.NaN);
+        this.pickupPreviousX.fill(Number.NaN);
+        this.pickupPreviousZ.fill(Number.NaN);
+        for (let lane = 0; lane < laneLayout.laneCount; lane++) {
+            this.pickupRacers[lane] = racerForLane(lane);
+        }
         this.items = buildStimulantSchedule(seed, laneLayout.laneCount).map(spawn => {
             const laneZ = laneLayout.centerZ(spawn.laneIndex) + spawn.lateralOffset;
             const p = course.swimPosition(spawn.distance, laneZ);
@@ -63,39 +97,57 @@ export class StimulantBrawlController {
                 ...spawn,
                 collected: false,
                 node: null,
+                beaconNode: null,
                 x: p.x,
                 z: p.z,
                 baseY: course.waterY + 0.78,
                 phase: spawn.id * 0.83,
+                pickupEffectRemaining: 0,
             };
         });
         // 先同步生成单个大方块，保证模型资源尚未就绪时仍能看到和拾取道具。
         this.createProgramVisuals();
+        this.createBeaconVisuals();
         this.loadModelVisuals();
     }
 
     update(): void {
         if (this.disposed) return;
         const radiusSq = STIMULANT_BRAWL_TUNING.pickupRadius * STIMULANT_BRAWL_TUNING.pickupRadius;
-        const guaranteedRadius = Math.max(
-            STIMULANT_BRAWL_TUNING.pickupRadius,
-            this.laneLayout.laneWidth * 0.55,
-        );
-        const guaranteedRadiusSq = guaranteedRadius * guaranteedRadius;
+        for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
+            const racer = this.pickupRacers[lane];
+            if (!racer?.swimmer?.node?.active) {
+                this.pickupCurrentX[lane] = Number.NaN;
+                this.pickupCurrentZ[lane] = Number.NaN;
+                continue;
+            }
+            const position = racer.swimmer.node.worldPosition;
+            this.pickupCurrentX[lane] = position.x;
+            this.pickupCurrentZ[lane] = position.z;
+        }
+
         for (const item of this.items) {
             if (item.collected) continue;
             let bestLane = -1;
-            let bestSq = item.guaranteed ? guaranteedRadiusSq : radiusSq;
+            let bestSq = radiusSq;
             for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
-                if (item.guaranteed && lane !== item.laneIndex) continue;
-                const racer = this.racerForLane(lane);
-                if (!racer?.swimmer?.node?.active) continue;
-                const pickupRadius = item.guaranteed ? guaranteedRadius : STIMULANT_BRAWL_TUNING.pickupRadius;
-                if (Math.abs(racer.swimmer.distance - item.distance) > pickupRadius) continue;
-                const p = racer.swimmer.node.worldPosition;
-                const dx = p.x - item.x;
-                const dz = p.z - item.z;
-                const distanceSq = dx * dx + dz * dz;
+                const racer = this.pickupRacers[lane];
+                const currentX = this.pickupCurrentX[lane];
+                const currentZ = this.pickupCurrentZ[lane];
+                if (!racer || !Number.isFinite(currentX) || !Number.isFinite(currentZ)) continue;
+                const heading = racer.swimmer.movementHeading;
+                const distanceSq = stimulantPickupDistanceSquared(
+                    item.x,
+                    item.z,
+                    currentX,
+                    currentZ,
+                    this.pickupPreviousX[lane],
+                    this.pickupPreviousZ[lane],
+                    racer.swimmer.raceDirection * Math.cos(heading),
+                    Math.sin(heading),
+                    STIMULANT_BRAWL_TUNING.pickupBodyHalfLength,
+                    MAX_PICKUP_SWEEP_DISTANCE,
+                );
                 if (distanceSq <= bestSq) {
                     bestSq = distanceSq;
                     bestLane = lane;
@@ -106,6 +158,11 @@ export class StimulantBrawlController {
                 this.applyPickup(pickup);
                 this.resolveAuthoritatively(pickup);
             }
+        }
+
+        for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
+            this.pickupPreviousX[lane] = this.pickupCurrentX[lane];
+            this.pickupPreviousZ[lane] = this.pickupCurrentZ[lane];
         }
     }
 
@@ -125,17 +182,21 @@ export class StimulantBrawlController {
 
         this.presentationElapsed += Math.max(0, Number.isFinite(dt) ? dt : 0);
         if (this.presentationElapsed < PRESENTATION_INTERVAL) return;
-        this.presentationTime += this.presentationElapsed;
+        const presentationStep = this.presentationElapsed;
+        this.presentationTime += presentationStep;
         this.presentationElapsed = 0;
         for (const item of this.items) {
-            if (!item.node?.isValid) continue;
             const ahead = item.distance - distance;
-            const visible = !item.collected && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
-            if (item.node.active !== visible) item.node.active = visible;
-            if (!visible) continue;
-            const bob = Math.sin(this.presentationTime * 3.1 + item.phase) * 0.12;
-            item.node.setWorldPosition(item.x, item.baseY + bob, item.z);
-            item.node.setRotationFromEuler(0, (this.presentationTime * 82 + item.id * 37) % 360, 0);
+            const itemVisible = !item.collected && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
+            if (item.node?.isValid) {
+                if (item.node.active !== itemVisible) item.node.active = itemVisible;
+                if (itemVisible) {
+                    const bob = Math.sin(this.presentationTime * 3.1 + item.phase) * 0.12;
+                    item.node.setWorldPosition(item.x, item.baseY + bob, item.z);
+                    item.node.setRotationFromEuler(0, (this.presentationTime * 82 + item.id * 37) % 360, 0);
+                }
+            }
+            this.updateBeaconPresentation(item, ahead, presentationStep);
         }
     }
 
@@ -177,7 +238,10 @@ export class StimulantBrawlController {
         this.revision = Math.max(this.revision, pickup.revision);
         item.collected = true;
         if (item.node?.isValid && item.node.active) item.node.active = false;
-        const racer = this.racerForLane(pickup.collectorLane);
+        if (item.beaconNode?.isValid && item.beaconNode.active) {
+            item.pickupEffectRemaining = BEACON_PICKUP_COLLAPSE_SECONDS;
+        }
+        const racer = this.pickupRacers[pickup.collectorLane] ?? null;
         if (!racer) return true;
         const restored = racer.condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio);
         racer.swimmer.motor.addHeartRateBurden(STIMULANT_BRAWL_TUNING.heartRateBurden);
@@ -212,21 +276,28 @@ export class StimulantBrawlController {
             if (!collected || item.collected) continue;
             item.collected = true;
             if (item.node?.isValid && item.node.active) item.node.active = false;
+            item.pickupEffectRemaining = 0;
+            if (item.beaconNode?.isValid && item.beaconNode.active) item.beaconNode.active = false;
         }
     }
 
     dispose(): void {
         this.disposed = true;
         for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
-            this.racerForLane(lane)?.swimmer.clearStimulantReaction();
+            this.pickupRacers[lane]?.swimmer.clearStimulantReaction();
         }
         for (const item of this.items) {
             if (item.node?.isValid) item.node.destroy();
+            if (item.beaconNode?.isValid) item.beaconNode.destroy();
         }
         if (this.visualMaterial?.isValid) this.visualMaterial.destroy();
         if (this.visualMesh?.isValid) this.visualMesh.destroy();
+        if (this.beaconMaterial?.isValid) this.beaconMaterial.destroy();
+        if (this.beaconMesh?.isValid) this.beaconMesh.destroy();
         this.visualMaterial = null;
         this.visualMesh = null;
+        this.beaconMaterial = null;
+        this.beaconMesh = null;
     }
 
     private createProgramVisuals(): void {
@@ -304,6 +375,67 @@ export class StimulantBrawlController {
         }
     }
 
+    private updateBeaconPresentation(item: ItemState, ahead: number, dt: number): void {
+        const beacon = item.beaconNode;
+        if (!beacon?.isValid) return;
+
+        if (item.collected) {
+            if (item.pickupEffectRemaining <= 0) {
+                if (beacon.active) beacon.active = false;
+                return;
+            }
+            item.pickupEffectRemaining = Math.max(0, item.pickupEffectRemaining - dt);
+            const ratio = item.pickupEffectRemaining / BEACON_PICKUP_COLLAPSE_SECONDS;
+            if (!beacon.active) beacon.active = true;
+            beacon.setWorldPosition(
+                item.x,
+                this.course.waterY + BEACON_BASE_Y_OFFSET + (1 - ratio) * 0.65,
+                item.z,
+            );
+            beacon.setScale(Math.max(0.015, ratio), 1 + (1 - ratio) * 0.24, Math.max(0.015, ratio));
+            if (item.pickupEffectRemaining <= 0) beacon.active = false;
+            return;
+        }
+
+        const visible = ahead <= BEACON_VISIBLE_AHEAD_DISTANCE && ahead >= -BEACON_VISIBLE_BEHIND_DISTANCE;
+        if (beacon.active !== visible) beacon.active = visible;
+        if (!visible) return;
+        const pulse = 1 + Math.sin(this.presentationTime * 2.25 + item.phase) * 0.055;
+        beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
+        beacon.setScale(pulse, 1, pulse);
+    }
+
+    private createBeaconVisuals(): void {
+        if (this.disposed || !this.root.isValid) return;
+        const mesh = utils.createMesh(buildStimulantBeaconGeometry());
+        const material = new Material();
+        material.initialize({
+            effectName: 'builtin-unlit',
+            technique: 1,
+            defines: { USE_VERTEX_COLOR: true },
+            states: {
+                rasterizerState: { cullMode: gfx.CullMode.NONE },
+                depthStencilState: { depthTest: true, depthWrite: false },
+            },
+        });
+        material.name = 'StimulantBeaconMaterial';
+        material.setProperty('mainColor', Color.WHITE);
+        this.beaconMesh = mesh;
+        this.beaconMaterial = material;
+
+        for (const item of this.items) {
+            const beacon = new Node(`StimulantBeacon_${item.id}`);
+            beacon.setParent(this.root);
+            beacon.layer = this.root.layer;
+            const renderer = beacon.addComponent(MeshRenderer);
+            renderer.mesh = mesh;
+            renderer.setMaterial(material, 0);
+            beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
+            beacon.active = !item.collected && item.distance <= BEACON_VISIBLE_AHEAD_DISTANCE;
+            item.beaconNode = beacon;
+        }
+    }
+
     private createProgramCube(name: string, mesh: Mesh, material: Material): Node {
         const node = new Node(name);
         node.setParent(this.root);
@@ -312,5 +444,71 @@ export class StimulantBrawlController {
         renderer.mesh = mesh;
         renderer.setMaterial(material, 0);
         return node;
+    }
+}
+
+function buildStimulantBeaconGeometry(): primitives.IGeometry {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+    appendBeaconRibbon(positions, colors, indices, 'x');
+    appendBeaconRibbon(positions, colors, indices, 'z');
+    appendBeaconBaseHalo(positions, colors, indices);
+    return {
+        positions,
+        colors,
+        indices,
+        minPos: new Vec3(-BEACON_BASE_RADIUS, 0, -BEACON_BASE_RADIUS),
+        maxPos: new Vec3(BEACON_BASE_RADIUS, BEACON_HEIGHT, BEACON_BASE_RADIUS),
+    };
+}
+
+function appendBeaconRibbon(
+    positions: number[],
+    colors: number[],
+    indices: number[],
+    axis: 'x' | 'z',
+): void {
+    const levels = [0, 0.16, 0.48, 0.78, 1] as const;
+    const widths = [0.48, 1, 0.9, 0.68, 0.18] as const;
+    const alphas = [0, 0.62, 0.42, 0.22, 0] as const;
+    const columns = [-1, 0, 1] as const;
+    const columnAlpha = [0.06, 1, 0.06] as const;
+    const base = positions.length / 3;
+
+    for (let row = 0; row < levels.length; row++) {
+        const y = levels[row] * BEACON_HEIGHT;
+        for (let column = 0; column < columns.length; column++) {
+            const offset = columns[column] * BEACON_HALF_WIDTH * widths[row];
+            positions.push(axis === 'x' ? offset : 0, y, axis === 'z' ? offset : 0);
+            colors.push(0.22, 1, 0.42, alphas[row] * columnAlpha[column]);
+        }
+    }
+
+    for (let row = 0; row < levels.length - 1; row++) {
+        for (let column = 0; column < columns.length - 1; column++) {
+            const lower = base + row * columns.length + column;
+            const upper = lower + columns.length;
+            indices.push(lower, upper, lower + 1, lower + 1, upper, upper + 1);
+        }
+    }
+}
+
+function appendBeaconBaseHalo(positions: number[], colors: number[], indices: number[]): void {
+    const segments = 16;
+    const base = positions.length / 3;
+    positions.push(0, 0.025, 0);
+    colors.push(0.34, 1, 0.34, 0.52);
+    for (let segment = 0; segment <= segments; segment++) {
+        const angle = segment / segments * Math.PI * 2;
+        positions.push(
+            Math.cos(angle) * BEACON_BASE_RADIUS,
+            0.025,
+            Math.sin(angle) * BEACON_BASE_RADIUS,
+        );
+        colors.push(0.15, 1, 0.3, 0);
+    }
+    for (let segment = 0; segment < segments; segment++) {
+        indices.push(base, base + segment + 1, base + segment + 2);
     }
 }

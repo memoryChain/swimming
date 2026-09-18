@@ -52,7 +52,7 @@ function entry(overrides = {}) {
 }
 
 test('S| keeps legacy pose fields and appends condition cooldown', () => {
-    const encoded = encodeRaceSnapshot(3, [entry()], { revision: 7, collectedMask: 0x1fffffff });
+    const encoded = encodeRaceSnapshot(3, [entry()], { revision: 7, collectedMask: 0x1fffff });
     const fields = encoded.slice(encoded.indexOf('#') + 1).split(',');
     assert.equal(fields[10], '666');
     assert.equal(fields[11], '-777');
@@ -63,7 +63,7 @@ test('S| keeps legacy pose fields and appends condition cooldown', () => {
     const decoded = decodeRaceSnapshot(encoded);
     assert.equal(decoded.hostPos, 3);
     assert.equal(decoded.stimulantRevision, 7);
-    assert.equal(decoded.stimulantMask, 0x1fffffff);
+    assert.equal(decoded.stimulantMask, 0x1fffff);
     assert.equal(decoded.entries[0].collisionPitchVelocity, -0.777);
     assert.equal(decoded.entries[0].conditionEnergyRatio, 0.15);
     assert.equal(decoded.entries[0].conditionHeartRate, 149);
@@ -71,11 +71,11 @@ test('S| keeps legacy pose fields and appends condition cooldown', () => {
 });
 
 test('stimulant pickup event round-trips on the reliable input channel', () => {
-    const encoded = encodeInputFrame(2, [{ kind: 'p', itemId: 28, collectorLane: 6, revision: 9 }], null, -1, 44);
+    const encoded = encodeInputFrame(2, [{ kind: 'p', itemId: 20, collectorLane: 6, revision: 9 }], null, -1, 44);
     const decoded = decodeInputFrame(encoded);
     assert.equal(decoded.senderPos, 2);
     assert.equal(decoded.inputSeq, 44);
-    assert.deepEqual(decoded.events, [{ kind: 'p', itemId: 28, collectorLane: 6, revision: 9 }]);
+    assert.deepEqual(decoded.events, [{ kind: 'p', itemId: 20, collectorLane: 6, revision: 9 }]);
 });
 
 test('shark state and permanent elimination event round-trip across both sync fallbacks', () => {
@@ -108,12 +108,51 @@ test('shark state and permanent elimination event round-trip across both sync fa
     assert.deepEqual(event.events, [{ kind: 'e', sharkSequence: 3, targetLane: 2 }]);
 });
 
-test('authoritative results preserve shark elimination separately from ordinary DNF', () => {
+test('authoritative results preserve shark and cannon elimination separately from ordinary DNF', () => {
     const entries = [
-        { lane: 2, placement: 7, finished: false, time: 0, eliminated: true, sharkEliminated: true },
-        { lane: 3, placement: 6, finished: false, time: 0, eliminated: false, sharkEliminated: false },
+        { lane: 2, placement: 7, finished: false, time: 0, eliminated: true, sharkEliminated: true, cannonEliminated: false },
+        { lane: 3, placement: 6, finished: false, time: 0, eliminated: true, sharkEliminated: false, cannonEliminated: true },
     ];
     assert.deepEqual(decodeRaceResult(encodeRaceResult(entries)), entries);
+});
+
+test('cannon launch, impact and active strike round-trip across reliable events and snapshot fallback', () => {
+    const launch = decodeInputFrame(encodeInputFrame(
+        0,
+        [{ kind: 'l', cannonStrikeId: 3, targetDistance: 87.36, targetZ: -4.125, warningSeconds: 1.25, revision: 7 }],
+        null,
+        -1,
+        46,
+    ));
+    assert.deepEqual(launch.events, [{
+        kind: 'l', cannonStrikeId: 3, targetDistance: 87.36, targetZ: -4.125, warningSeconds: 1.25, revision: 7,
+    }]);
+    const impact = decodeInputFrame(encodeInputFrame(
+        0,
+        [{ kind: 'x', cannonStrikeId: 3, hitMask: 0b01010100, eliminatedLane: 6, revision: 8 }],
+        null,
+        -1,
+        47,
+    ));
+    assert.deepEqual(impact.events, [{ kind: 'x', cannonStrikeId: 3, hitMask: 0b01010100, eliminatedLane: 6, revision: 8 }]);
+
+    const state = {
+        revision: 7,
+        eliminatedMask: 0b01000000,
+        completedStrikeMask: 0b111,
+        activeStrikeId: 3,
+        targetDistance: 87.36,
+        targetZ: -4.125,
+        remainingSeconds: 0.73,
+    };
+    const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, null, state));
+    assert.equal(snapshot.cannonRevision, 7);
+    assert.equal(snapshot.cannonEliminatedMask, 0b01000000);
+    assert.equal(snapshot.cannonCompletedMask, 0b111);
+    assert.equal(snapshot.cannonActiveStrikeId, 3);
+    assert.equal(snapshot.cannonTargetDistance, 87.36);
+    assert.equal(snapshot.cannonTargetZ, -4.125);
+    assert.equal(snapshot.cannonRemainingSeconds, 0.73);
 });
 
 test('legacy S| and P| payloads keep safe sentinel defaults', () => {

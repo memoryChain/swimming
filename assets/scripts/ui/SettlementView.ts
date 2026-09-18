@@ -31,6 +31,7 @@ export function settlementTier(placement: number, finished: boolean): number {
 export function settlementTime(row: RaceLeaderboardRow): string {
     if (row.quit) return '已退出';
     if (row.sharkEliminated) return '鲨鱼淘汰';
+    if (row.cannonEliminated) return '炮击淘汰';
     if (row.eliminated) return '已淘汰';
     return row.finished !== false && Number.isFinite(row.time) && row.time > 0
         ? row.time.toFixed(2) : '未完成';

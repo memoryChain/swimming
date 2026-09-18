@@ -491,15 +491,25 @@ export class PrepareRaceFlow {
 
     private layoutRaceModeCards(animated = false): void {
         let topY = RACE_MODE_STACK_TOP_Y;
+        let visibleCount = 0;
+        for (const card of this._raceModeCards) {
+            if (card.category === this._raceCategory) visibleCount++;
+        }
+        const compactEntertainment = this._raceCategory === 'entertainment' && visibleCount > 2;
         for (const card of this._raceModeCards) {
             const visible = card.category === this._raceCategory;
             if (card.root.active !== visible) card.root.active = visible;
             if (!visible) continue;
-            const scale = card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE;
+            const scale = compactEntertainment
+                ? (card.selected ? 0.68 : 0.62)
+                : (card.selected ? 1 : RACE_MODE_CARD_UNSELECTED_SCALE);
             const visibleHeight = RACE_MODE_CARD_VISIBLE_HEIGHT * scale;
             const y = topY - visibleHeight / 2;
-            this._motion.moveCard(card.root, card.selected ? 408 : 447, y, scale, animated);
-            topY = y - visibleHeight / 2 - RACE_MODE_CARD_GAP;
+            const x = compactEntertainment
+                ? (card.selected ? 430 : 447)
+                : (card.selected ? 408 : 447);
+            this._motion.moveCard(card.root, x, y, scale, animated);
+            topY = y - visibleHeight / 2 - (compactEntertainment ? 8 : RACE_MODE_CARD_GAP);
         }
     }
 

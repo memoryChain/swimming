@@ -24,6 +24,7 @@ export type RaceFinishResult = {
     lane: number;
     eliminated?: boolean;
     sharkEliminated?: boolean;
+    cannonEliminated?: boolean;
     // true when the swimmer LEFT a networked race mid-way (shown as 退出 in the live
     // rank, distinct from a lockdown 已淘汰). Always a subset of `eliminated`.
     quit?: boolean;
@@ -63,6 +64,9 @@ export class RaceManager extends Component {
     private readonly _raceRoster: Swimmer[] = [];
     private readonly _eliminated = new Set<Swimmer>();
     private readonly _sharkEliminated = new Set<Swimmer>();
+    private readonly _cannonEliminated = new Set<Swimmer>();
+    private readonly _eliminationOrder = new Map<Swimmer, number>();
+    private _eliminationSerial = 0;
     // Swimmers that LEFT the race (net quit), a subset of _eliminated. Kept separate so
     // the live rank can label them 退出 rather than the lockdown 已淘汰.
     private readonly _quit = new Set<Swimmer>();
@@ -81,10 +85,13 @@ export class RaceManager extends Component {
         this._aiFinishTime = 0;
         this._aiFinishTimes.clear();
         this._finishTimes.clear();
-        this.captureRaceRoster();
         this._eliminated.clear();
         this._sharkEliminated.clear();
+        this._cannonEliminated.clear();
+        this._eliminationOrder.clear();
+        this._eliminationSerial = 0;
         this._quit.clear();
+        this.captureRaceRoster();
         this._lastCountdownValue = Math.ceil(this._countdownTimer);
         this._diveResolved = false;
         this._finishCountdownActive = false;
@@ -124,6 +131,9 @@ export class RaceManager extends Component {
         this._raceRoster.length = 0;
         this._eliminated.clear();
         this._sharkEliminated.clear();
+        this._cannonEliminated.clear();
+        this._eliminationOrder.clear();
+        this._eliminationSerial = 0;
         this._quit.clear();
         this._lastCountdownValue = -1;
         this._diveResolved = false;
@@ -243,23 +253,51 @@ export class RaceManager extends Component {
         }
     }
 
-    public eliminateSwimmer(swimmer: Swimmer, quit = false, shark = false, presentationSeconds = 0): boolean {
+    public eliminateSwimmer(
+        swimmer: Swimmer,
+        quit = false,
+        shark = false,
+        presentationSeconds = 0,
+        cannon = false,
+    ): boolean {
         if (!swimmer || this._eliminated.has(swimmer) || this._state !== GameState.RACING) {
             return false;
         }
         this._eliminated.add(swimmer);
+        this._eliminationOrder.set(swimmer, ++this._eliminationSerial);
         if (shark) {
             this._sharkEliminated.add(swimmer);
+        }
+        if (cannon) {
+            this._cannonEliminated.add(swimmer);
         }
         if (quit) {
             this._quit.add(swimmer);
         }
-        const keepVisible = shark && presentationSeconds > 0;
+        const keepVisible = presentationSeconds > 0;
         swimmer.eliminate(!keepVisible);
         if (keepVisible) {
             this.scheduleOnce(() => swimmer.hideAfterElimination(), presentationSeconds);
         }
         this.onSwimmerEliminated?.(swimmer);
+        return true;
+    }
+
+    /** 炮火逃生赛只剩一名在场选手时，立即以最后幸存者身份结束比赛。 */
+    public finishIfSoleSurvivor(): boolean {
+        if (this._state !== GameState.RACING) return false;
+        const active = this.activeRacers();
+        if (active.length !== 1) return false;
+        const survivor = active[0];
+        if (survivor === this.playerSwimmer) {
+            this._playerFinished = true;
+            this._playerFinishTime = this._raceTimer;
+        } else {
+            this._aiFinishTimes.set(survivor, this._raceTimer);
+            this._aiFinishTime = this.bestAiFinishTime();
+        }
+        this.emitSwimmerFinished(survivor, this._raceTimer);
+        this.finishRace();
         return true;
     }
 
@@ -314,6 +352,7 @@ export class RaceManager extends Component {
             result.lane = laneForSwimmer(swimmer);
             result.eliminated = isEliminated;
             result.sharkEliminated = this._sharkEliminated.has(swimmer);
+            result.cannonEliminated = this._cannonEliminated.has(swimmer);
             result.quit = this._quit.has(swimmer);
             result.finished = time > 0;
             if (isEliminated) {
@@ -324,6 +363,7 @@ export class RaceManager extends Component {
         }
         this.sortLiveRowsByTime(this._liveFinished);
         this.sortLiveRowsByDistance(this._liveRacing);
+        this.sortEliminatedRows(this._liveEliminated);
         this.appendLiveRows(this._liveFinished);
         this.appendLiveRows(this._liveRacing);
         this.appendLiveRows(this._liveEliminated);
@@ -345,6 +385,7 @@ export class RaceManager extends Component {
                 lane: laneForSwimmer(swimmer),
                 eliminated: false,
                 sharkEliminated: false,
+                cannonEliminated: false,
                 finished: false,
             };
             this._liveRowsBySwimmer.set(swimmer, row);
@@ -382,6 +423,20 @@ export class RaceManager extends Component {
         }
     }
 
+    private sortEliminatedRows(rows: RaceFinishResult[]) {
+        for (let index = 1; index < rows.length; index++) {
+            const row = rows[index];
+            const order = this._eliminationOrder.get(row.swimmer) ?? 0;
+            let insertionIndex = index - 1;
+            while (insertionIndex >= 0
+                && (this._eliminationOrder.get(rows[insertionIndex].swimmer) ?? 0) < order) {
+                rows[insertionIndex + 1] = rows[insertionIndex];
+                insertionIndex -= 1;
+            }
+            rows[insertionIndex + 1] = row;
+        }
+    }
+
     private bestAiFinishTime(): number {
         let best = Number.POSITIVE_INFINITY;
         for (const time of this._aiFinishTimes.values()) {
@@ -393,7 +448,7 @@ export class RaceManager extends Component {
     private activeAiSwimmers(): Swimmer[] {
         const swimmers: Swimmer[] = [];
         const add = (swimmer: Swimmer | null) => {
-            if (swimmer && swimmer.node.active && swimmers.indexOf(swimmer) < 0) {
+            if (swimmer && swimmer.node.active && !this._eliminated.has(swimmer) && swimmers.indexOf(swimmer) < 0) {
                 swimmers.push(swimmer);
             }
         };
@@ -457,11 +512,12 @@ export class RaceManager extends Component {
             const lane = laneForSwimmer(swimmer);
             const eliminated = this._eliminated.has(swimmer);
             const sharkEliminated = this._sharkEliminated.has(swimmer);
+            const cannonEliminated = this._cannonEliminated.has(swimmer);
             const quit = this._quit.has(swimmer);
             if (time > 0) {
-                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, eliminated, sharkEliminated, quit, finished: true });
+                finishers.push({ swimmer, name: swimmer.swimmerName, placement: 0, time, isPlayer, lane, eliminated, sharkEliminated, cannonEliminated, quit, finished: true });
             } else {
-                const row = { swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, eliminated, sharkEliminated, quit, finished: false };
+                const row = { swimmer, name: swimmer.swimmerName, placement: 0, time: 0, isPlayer, lane, eliminated, sharkEliminated, cannonEliminated, quit, finished: false };
                 (eliminated ? eliminatedRows : unfinished).push(row);
             }
         }
@@ -477,6 +533,9 @@ export class RaceManager extends Component {
         for (let i = 0; i < unfinished.length; i++) {
             unfinished[i].placement = finishers.length + i + 1;
         }
+        eliminatedRows.sort((a, b) =>
+            (this._eliminationOrder.get(b.swimmer) ?? 0) - (this._eliminationOrder.get(a.swimmer) ?? 0),
+        );
         for (let i = 0; i < eliminatedRows.length; i++) {
             eliminatedRows[i].placement = finishers.length + unfinished.length + i + 1;
         }

@@ -21,13 +21,14 @@ export interface NetResultEntry {
     time: number;
     eliminated?: boolean;
     sharkEliminated?: boolean;
+    cannonEliminated?: boolean;
 }
 
 const TAG = 'R|';
 
 export function encodeRaceResult(entries: NetResultEntry[]): string {
     const body = entries
-        .map((e) => `${e.lane},${e.placement},${e.finished ? 1 : 0},${Math.round(e.time * 100)},${e.eliminated ? 1 : 0},${e.sharkEliminated ? 1 : 0}`)
+        .map((e) => `${e.lane},${e.placement},${e.finished ? 1 : 0},${Math.round(e.time * 100)},${e.eliminated ? 1 : 0},${e.sharkEliminated ? 1 : 0},${e.cannonEliminated ? 1 : 0}`)
         .join(';');
     return `${TAG}${body}`;
 }
@@ -61,6 +62,7 @@ export function decodeRaceResult(payload: string): NetResultEntry[] | null {
             time: Number.isFinite(timeCs) ? timeCs / 100 : 0,
             eliminated: parts[4] === '1',
             sharkEliminated: parts[5] === '1',
+            cannonEliminated: parts[6] === '1',
         });
     }
     return entries;

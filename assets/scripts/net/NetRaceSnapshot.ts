@@ -78,10 +78,26 @@ export interface DecodedRaceSnapshot {
     entries: NetSnapshotEntry[];
     stimulantRevision: number;
     stimulantMask: number;
+    cannonRevision: number;
+    cannonEliminatedMask: number;
+    cannonCompletedMask: number;
+    cannonActiveStrikeId: number;
+    cannonTargetDistance: number;
+    cannonTargetZ: number;
+    cannonRemainingSeconds: number;
     shark?: NetSharkState;
 }
 
 export type NetStimulantState = { revision: number; collectedMask: number };
+export type NetCannonState = {
+    revision: number;
+    eliminatedMask: number;
+    completedStrikeMask: number;
+    activeStrikeId: number;
+    targetDistance: number;
+    targetZ: number;
+    remainingSeconds: number;
+};
 
 // Race-global predator state. Only the host simulates target selection, movement,
 // bites, and elimination. Guests render this quantized snapshot and use the
@@ -110,16 +126,24 @@ export function encodeRaceSnapshot(
     entries: NetSnapshotEntry[],
     stimulant?: NetStimulantState | null,
     shark?: NetSharkState | null,
+    cannon?: NetCannonState | null,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
         .join(';');
     const revision = Math.max(0, Math.floor(stimulant?.revision ?? 0));
     const mask = Math.max(0, Math.floor(stimulant?.collectedMask ?? 0)).toString(16);
+    const cannonRevision = Math.max(0, Math.floor(cannon?.revision ?? 0));
+    const cannonEliminatedMask = Math.max(0, Math.floor(cannon?.eliminatedMask ?? 0)).toString(16);
+    const cannonCompletedMask = Math.max(0, Math.floor(cannon?.completedStrikeMask ?? 0)).toString(16);
+    const cannonActiveStrike = Math.max(0, Math.floor((cannon?.activeStrikeId ?? -1) + 1));
+    const cannonTargetDistance = Math.max(0, Math.round((cannon?.targetDistance ?? 0) * 100));
+    const cannonTargetZ = Math.round((cannon?.targetZ ?? 0) * 1000);
+    const cannonRemainingMs = Math.max(0, Math.round((cannon?.remainingSeconds ?? 0) * 1000));
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.eliminatedLane)},${Math.max(0, Math.floor(shark.eliminatedMask)).toString(16)},${Math.max(0, Math.floor(shark.huntIndex))},${Math.max(0, Math.floor(shark.eliminationCount))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonEliminatedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -137,6 +161,13 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const hostPos = parseInt(header[0], 10);
     const stimulantRevision = header.length > 1 ? parseInt(header[1], 10) : 0;
     const stimulantMask = header.length > 2 ? parseInt(header[2], 16) : 0;
+    const cannonRevision = header.length > 3 ? parseInt(header[3], 10) : 0;
+    const cannonEliminatedMask = header.length > 4 ? parseInt(header[4], 16) : 0;
+    const cannonCompletedMask = header.length > 5 ? parseInt(header[5], 16) : 0;
+    const cannonActiveStrike = header.length > 6 ? parseInt(header[6], 10) : 0;
+    const cannonTargetDistanceCm = header.length > 7 ? parseInt(header[7], 10) : 0;
+    const cannonTargetZMm = header.length > 8 ? parseInt(header[8], 10) : 0;
+    const cannonRemainingMs = header.length > 9 ? parseInt(header[9], 10) : 0;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -216,6 +247,13 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
         entries,
         stimulantRevision: Number.isSafeInteger(stimulantRevision) && stimulantRevision >= 0 ? stimulantRevision : 0,
         stimulantMask: Number.isSafeInteger(stimulantMask) && stimulantMask >= 0 ? stimulantMask : 0,
+        cannonRevision: Number.isSafeInteger(cannonRevision) && cannonRevision >= 0 ? cannonRevision : 0,
+        cannonEliminatedMask: Number.isSafeInteger(cannonEliminatedMask) && cannonEliminatedMask >= 0 ? cannonEliminatedMask : 0,
+        cannonCompletedMask: Number.isSafeInteger(cannonCompletedMask) && cannonCompletedMask >= 0 ? cannonCompletedMask : 0,
+        cannonActiveStrikeId: Number.isSafeInteger(cannonActiveStrike) && cannonActiveStrike > 0 ? cannonActiveStrike - 1 : -1,
+        cannonTargetDistance: Number.isSafeInteger(cannonTargetDistanceCm) && cannonTargetDistanceCm >= 0 ? cannonTargetDistanceCm / 100 : 0,
+        cannonTargetZ: Number.isSafeInteger(cannonTargetZMm) ? cannonTargetZMm / 1000 : 0,
+        cannonRemainingSeconds: Number.isSafeInteger(cannonRemainingMs) && cannonRemainingMs >= 0 ? cannonRemainingMs / 1000 : 0,
         shark,
     };
 }

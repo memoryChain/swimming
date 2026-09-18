@@ -1,11 +1,12 @@
 import { SeededRandom } from './SharedRNG';
 
 export const STIMULANT_BRAWL_TUNING = {
-    waveCount: 8,
+    waveCount: 7,
     itemsPerWave: 3,
     energyRestoreRatio: 0.5,
     heartRateBurden: 30,
     pickupRadius: 1.2,
+    pickupBodyHalfLength: 0.8,
     reactionDuration: 6,
     oversteerStartHeartRate: 130,
     oversteerMaxHeartRate: 180,
@@ -20,32 +21,19 @@ export type StimulantSpawn = {
     distance: number;
     laneIndex: number;
     lateralOffset: number;
-    guaranteed: boolean;
 };
 
 export const STIMULANT_PUBLIC_WAVE_DISTANCES = [35, 60, 85, 110, 135, 160, 185] as const;
-export const STIMULANT_OPENING_DISTANCE = 14;
 
 /**
  * 只依赖主机种子的固定赛程。
- * 第 0 波为每条泳道的保证体验，之后七波各三瓶并随机分散到不同泳道。
+ * 七波各三瓶并随机分散到不同泳道；所有瓶子都是公共争抢目标。
  */
 export function buildStimulantSchedule(seed: number, laneCount = 8): StimulantSpawn[] {
     const rng = new SeededRandom((seed ^ 0x51a7e11d) >>> 0);
     const result: StimulantSpawn[] = [];
     const safeLaneCount = Math.max(1, Math.floor(laneCount));
     let id = 0;
-
-    for (let laneIndex = 0; laneIndex < safeLaneCount; laneIndex++) {
-        result.push({
-            id: id++,
-            wave: 0,
-            distance: STIMULANT_OPENING_DISTANCE,
-            laneIndex,
-            lateralOffset: 0,
-            guaranteed: true,
-        });
-    }
 
     let previousLaneKey = '';
     for (let publicWave = 0; publicWave < STIMULANT_PUBLIC_WAVE_DISTANCES.length; publicWave++) {
@@ -69,11 +57,74 @@ export function buildStimulantSchedule(seed: number, laneCount = 8): StimulantSp
                 distance: STIMULANT_PUBLIC_WAVE_DISTANCES[publicWave],
                 laneIndex,
                 lateralOffset,
-                guaranteed: false,
             });
         }
     }
     return result;
+}
+
+/**
+ * 兴奋剂的二维身体胶囊与短路径扫掠判定。
+ * 高度不参与；过长的位置跳变视为网络校正，不沿整段路径补捡道具。
+ */
+export function stimulantPickupDistanceSquared(
+    itemX: number,
+    itemZ: number,
+    currentX: number,
+    currentZ: number,
+    previousX: number,
+    previousZ: number,
+    forwardX: number,
+    forwardZ: number,
+    bodyHalfLength: number,
+    maxSweepDistance: number,
+): number {
+    const safeHalfLength = Math.max(0, Number.isFinite(bodyHalfLength) ? bodyHalfLength : 0);
+    const forwardLength = Math.hypot(forwardX, forwardZ);
+    const nx = forwardLength > 1e-6 ? forwardX / forwardLength : 1;
+    const nz = forwardLength > 1e-6 ? forwardZ / forwardLength : 0;
+    let bestSq = pointSegmentDistanceSquared(
+        itemX,
+        itemZ,
+        currentX - nx * safeHalfLength,
+        currentZ - nz * safeHalfLength,
+        currentX + nx * safeHalfLength,
+        currentZ + nz * safeHalfLength,
+    );
+
+    if (!Number.isFinite(previousX) || !Number.isFinite(previousZ)) return bestSq;
+    const dx = currentX - previousX;
+    const dz = currentZ - previousZ;
+    const maxSweep = Math.max(0, Number.isFinite(maxSweepDistance) ? maxSweepDistance : 0);
+    if (dx * dx + dz * dz > maxSweep * maxSweep) return bestSq;
+    bestSq = Math.min(bestSq, pointSegmentDistanceSquared(
+        itemX,
+        itemZ,
+        previousX,
+        previousZ,
+        currentX,
+        currentZ,
+    ));
+    return bestSq;
+}
+
+function pointSegmentDistanceSquared(
+    px: number,
+    pz: number,
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number,
+): number {
+    const abX = bx - ax;
+    const abZ = bz - az;
+    const lengthSq = abX * abX + abZ * abZ;
+    const ratio = lengthSq > 1e-8
+        ? Math.max(0, Math.min(1, ((px - ax) * abX + (pz - az) * abZ) / lengthSq))
+        : 0;
+    const dx = px - (ax + abX * ratio);
+    const dz = pz - (az + abZ * ratio);
+    return dx * dx + dz * dz;
 }
 
 export function stimulantOversteerRatio(heartRate: number): number {
