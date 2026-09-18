@@ -38,12 +38,15 @@ export function buildEntertainmentStimulantSchedule(
     seed: number,
     laneCount: number,
     anchorDistance: number,
+    raceDistance = 200,
 ): StimulantSpawn[] {
-    const anchor = Math.max(0, Math.min(175, Number.isFinite(anchorDistance) ? anchorDistance : 0));
-    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, [
-        Math.min(190, anchor + 6),
-        Math.min(194, anchor + 19),
-    ]);
+    const longRace = raceDistance >= 400;
+    const lastAnchor = longRace ? 365 : 175;
+    const lastSpawn = longRace ? 390 : 194;
+    const anchor = Math.max(0, Math.min(lastAnchor, Number.isFinite(anchorDistance) ? anchorDistance : 0));
+    const offsets = longRace ? [5, 13, 21, 29] : [6, 19];
+    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount,
+        offsets.map(offset => Math.min(lastSpawn, anchor + offset)));
 }
 
 function buildScheduleAtDistances(

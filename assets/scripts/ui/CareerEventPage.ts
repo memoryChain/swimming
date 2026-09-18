@@ -191,8 +191,8 @@ export class CareerEventPage {
             this.write(this.abandon.label,s.confirmAbandon?'再次点击确认放弃':'放弃本届杯赛');
         } else {
             const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:4;
-            const entertainment=s.rule!=='standard'&&s.rule!=='wild';
-            this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy&&!(i===1&&entertainment));this.active(n.selected,i===(s.distance===200?0:1)||i===ruleIndex);});
+            const fixedShortEvent=s.rule!=='standard'&&s.rule!=='wild'&&s.rule!=='entertainment';
+            this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy&&!(i===1&&fixedShortEvent));this.active(n.selected,i===(s.distance===200?0:1)||i===ruleIndex);});
             this.enabled(this.quickStart,!s.busy);this.write(this.quickStart.label,`开始比赛 · ${s.distance}米`);this.active(this.abandon.root,false);
         }
         this.write(this.footer,s.status||(s.busy?'正在保存并准备比赛…':isMap?'联赛账号共享 · 杯赛跟随角色':'好友对战无成长奖励'));

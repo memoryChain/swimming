@@ -107,7 +107,7 @@ function nodes(n) { return [n, ...n.children.flatMap(nodes)]; }
 function find(n, name) { return nodes(n).find(n => n.name === name); }
 const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2 };
 const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime' };
-function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', ...overrides }; }
+function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', distance: 200, ...overrides }; }
 test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装饰整体适配', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const worldX = n => n.position.x + (n.parent ? worldX(n.parent) : 0);
@@ -359,12 +359,16 @@ test('本地预览与真实房号切换不替换字体或重建，赛制数字�
     assert.equal(find(v.root, 'DistanceUnit').getComponent(Label).string, '米');
     assert.equal(find(v.root, 'ModeCheck1').active, true); assert.equal(find(v.root, 'ModeCheck0').active, false);
     assert.ok(find(v.root, 'ModeDistance1').getComponent(Label).color.equals(new Color(0, 179, 149)));
-    assert.deepEqual([0, 1, 2].map(i => find(v.root, `ModeDistance${i}`).getComponent(Label).string), ['200', '200', '400']);
+    assert.deepEqual([0, 1, 2, 3, 4].map(i => find(v.root, `ModeDistance${i}`).getComponent(Label).string), ['200', '200', '400', '200', '400']);
     for (const mode of ['championship', 'beginner', 'competitive', 'championship']) {
-        v.update(state({ mode }));
+        v.update(state({ mode, distance: mode === 'championship' ? 400 : 200 }));
         assert.equal(find(v.root, 'Distance').getComponent(Label).string, mode === 'championship' ? '400' : '200');
         assert.equal(nodes(v.root).length, count, '切换距离不得重建房间');
     }
+
+    v.update(state({ mode: 'entertainment-brawl', distance: 400 }));
+    assert.equal(find(v.root, 'Distance').getComponent(Label).string, '400');
+    assert.equal(find(v.root, 'ModeCheck4').active, true);
 
 });
 test('准备失败保留原状态，重试成功后主按钮才切换', async () => {
@@ -381,16 +385,16 @@ test('赛制改变使旧准备失效，旧版本及乱序 ACK 不能恢复准备
     h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 5, ready: true }); assert.equal(h.allMembersReady(), false);
     h.changeMode('beginner'); h.handleRules({ t: 'rulesReady', pos: 2, key, seq: 7, ready: true }); assert.equal(h.allMembersReady(), false);
     const g = flow(); g._localReady = true;
-    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: h._rulesRevision, mode: 'beginner' });
+    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: h._rulesRevision, mode: 'beginner', distance: 200 });
     await Promise.resolve(); assert.equal(g._localReady, false); assert.equal(g._mode, 'beginner');
-    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: 0, mode: 'championship' }); assert.equal(g._mode, 'beginner');
+    g.handleRules({ t: 'rules', owner: 0, id: h._rulesId, rev: 0, mode: 'championship', distance: 400 }); assert.equal(g._mode, 'beginner');
     h.dispose(); g.dispose();
 });
 test('准备请求途中赛制改变，不接受旧请求的成功回调', async () => {
     const g = flow(); let resolve;
     net.updateReady = () => new Promise(r => { resolve = r; });
     const pending = g.setReady(true);
-    g.handleRules({ t: 'rules', owner: 0, id: g._rulesId, rev: 2, mode: 'beginner' });
+    g.handleRules({ t: 'rules', owner: 0, id: g._rulesId, rev: 2, mode: 'beginner', distance: 200 });
     net.updateReady = async () => {}; resolve(); await pending;
     assert.equal(g._localReady, false); assert.equal(g._localReadyRule, ''); g.dispose();
 });

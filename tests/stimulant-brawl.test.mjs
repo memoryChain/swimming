@@ -9,6 +9,7 @@ import PlayerProfile from '../assets/scripts/backend/PlayerProfile.ts';
 
 const {
     buildStimulantSchedule,
+    buildEntertainmentStimulantSchedule,
     STIMULANT_PUBLIC_WAVE_DISTANCES,
     stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
@@ -19,6 +20,13 @@ const {
 const { PlayerConditionModel } = PlayerCondition;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
+
+test('400 米娱乐长局生成四波苏打且不越过冲刺收尾区', () => {
+    const schedule = buildEntertainmentStimulantSchedule(123456, 8, 350, 400);
+    assert.equal(schedule.length, 12);
+    assert.deepEqual([...new Set(schedule.map(item => item.wave))], [1, 2, 3, 4]);
+    assert.ok(schedule.every(item => item.distance >= 355 && item.distance <= 390));
+});
 
 test('心跳苏打显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {
     const prefab = JSON.parse(readFileSync(

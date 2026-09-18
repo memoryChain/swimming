@@ -74,6 +74,7 @@ export class SharkController {
     get remainingSeconds(): number { return this._remainingSeconds; }
     get knockedLane(): number { return this._knockedLane; }
     get huntIndex(): number { return this._huntIndex; }
+    hasCompletedHunts(): boolean { return this._huntIndex >= this.hungerSchedule().length; }
     get target(): Swimmer | null { return this._target; }
     // Presentation-only consumers (such as the picture-in-picture feed) may observe
     // the host-restored node, but never mutate its movement or target state.

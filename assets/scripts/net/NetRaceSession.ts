@@ -27,6 +27,8 @@ export interface NetRaceSessionData {
     localIsHost: boolean;
     // This client's own seat index (WeChat posNum) used to stamp uploaded frames.
     localPos: number;
+    // Room-authoritative race length. Entertainment mode may use either short or long pacing.
+    distance: 200 | 400;
 }
 
 let _session: NetRaceSessionData | null = null;

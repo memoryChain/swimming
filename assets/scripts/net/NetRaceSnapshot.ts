@@ -275,7 +275,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const directorActivatedMask = header.length > 33 ? parseInt(header[33], 16) : 0;
     const directorResidentMask = header.length > 34 ? parseInt(header[34], 16) : 0;
     const directorAnchorCm = header.length > 35 ? parseInt(header[35], 10) : 0;
-    const directorEventAnchors = header.length > 36 ? decodeCentimeterList(header[36]) : [0, 0, 0, 0];
+    const directorEventAnchors = header.length > 36 ? decodeCentimeterList(header[36]) : [0, 0, 0, 0, 0, 0];
     const directorEventCount = header.length > 37 ? parseInt(header[37], 10) : 0;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
@@ -390,7 +390,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             activatedMask: safeNonNegativeInteger(directorActivatedMask),
             residentMask: safeNonNegativeInteger(directorResidentMask),
             anchorDistance: Number.isSafeInteger(directorAnchorCm) && directorAnchorCm >= 0 ? directorAnchorCm / 100 : 0,
-            eventAnchorDistances: directorEventAnchors.length === 4 ? directorEventAnchors : [0, 0, 0, 0],
+            eventAnchorDistances: directorEventAnchors.length === 6 ? directorEventAnchors : [0, 0, 0, 0, 0, 0],
         },
         recovery: decodeRecoveryState(recoveryRevision, recoveryBody),
         shark,

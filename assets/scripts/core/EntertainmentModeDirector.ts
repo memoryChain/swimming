@@ -39,11 +39,16 @@ export type EntertainmentDirectorTransition = {
 const OPENING_SECONDS = 4;
 const THREE_EVENT_PREVIEW_SECONDS = 6;
 const FOUR_EVENT_PREVIEW_SECONDS = 5;
+const LONG_RACE_PREVIEW_SECONDS = 6;
 const THREE_EVENT_LAST_PREVIEW_DISTANCE = 165;
 const FOUR_EVENT_LAST_PREVIEW_DISTANCE = 175;
+const LONG_RACE_LAST_PREVIEW_DISTANCE = 365;
 const THREE_EVENT_LAST_ACTIVATION_DISTANCE = 175;
 const FOUR_EVENT_LAST_ACTIVATION_DISTANCE = 185;
+const LONG_RACE_LAST_ACTIVATION_DISTANCE = 385;
 const FOUR_EVENT_DURATION_SCALE = 0.75;
+const LONG_RACE_DURATION_SCALE = 1.4;
+const MAX_EVENT_COUNT = 6;
 const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.STIMULANT]: 10,
     [EntertainmentEventId.TIMED_BOMB]: 10,
@@ -120,7 +125,7 @@ export class EntertainmentModeDirector {
     private activatedMask = 0;
     private residentMask = 0;
     private anchorDistance = 0;
-    private readonly eventAnchorDistances = [0, 0, 0, 0];
+    private readonly eventAnchorDistances = [0, 0, 0, 0, 0, 0];
     private readonly events: EntertainmentEventId[];
     private readonly transition: EntertainmentDirectorTransition = {
         previewEvent: null,
@@ -128,8 +133,8 @@ export class EntertainmentModeDirector {
         finishedEvent: null,
     };
 
-    constructor(seed: number) {
-        this.events = [...buildEntertainmentEventOrder(seed)];
+    constructor(seed: number, raceDistance = 200) {
+        this.events = [...buildEntertainmentEventOrder(seed, raceDistance)];
         this.publishRuntimeState();
     }
 
@@ -152,6 +157,8 @@ export class EntertainmentModeDirector {
     }
 
     selectedEvents(): readonly EntertainmentEventId[] { return this.events; }
+
+    previewDurationSeconds(): number { return this.previewSeconds(); }
 
     anchorDistanceForEvent(event: EntertainmentEventId): number {
         const index = this.events.indexOf(event);
@@ -298,28 +305,46 @@ export class EntertainmentModeDirector {
     }
 
     private previewSeconds(): number {
+        if (this.events.length >= 5) return LONG_RACE_PREVIEW_SECONDS;
         return this.events.length === 4 ? FOUR_EVENT_PREVIEW_SECONDS : THREE_EVENT_PREVIEW_SECONDS;
     }
 
     private eventDurationScale(): number {
+        if (this.events.length >= 5) return LONG_RACE_DURATION_SCALE;
         return this.events.length === 4 ? FOUR_EVENT_DURATION_SCALE : 1;
     }
 
     private lastPreviewDistance(): number {
+        if (this.events.length >= 5) return LONG_RACE_LAST_PREVIEW_DISTANCE;
         return this.events.length === 4
             ? FOUR_EVENT_LAST_PREVIEW_DISTANCE
             : THREE_EVENT_LAST_PREVIEW_DISTANCE;
     }
 
     private lastActivationDistance(): number {
+        if (this.events.length >= 5) return LONG_RACE_LAST_ACTIVATION_DISTANCE;
         return this.events.length === 4
             ? FOUR_EVENT_LAST_ACTIVATION_DISTANCE
             : THREE_EVENT_LAST_ACTIVATION_DISTANCE;
     }
 }
 
-export function buildEntertainmentEventOrder(seed: number): readonly EntertainmentEventId[] {
+export function buildEntertainmentEventOrder(seed: number, raceDistance = 200): readonly EntertainmentEventId[] {
     const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ 0x656e7465) >>> 0);
+    if (raceDistance >= 400) {
+        const events = [
+            EntertainmentEventId.STIMULANT,
+            EntertainmentEventId.TIMED_BOMB,
+            EntertainmentEventId.WHIRLPOOL,
+            EntertainmentEventId.MINEFIELD,
+            EntertainmentEventId.SHARK,
+            EntertainmentEventId.CANNON,
+        ];
+        random.shuffle(events);
+        events.length = random.int(2) === 0 ? 5 : 6;
+        moveFieldEventAwayFromEnd(events, random);
+        return events;
+    }
     const field = random.int(2) === 0 ? EntertainmentEventId.WHIRLPOOL : EntertainmentEventId.MINEFIELD;
     const contest = random.int(2) === 0 ? EntertainmentEventId.STIMULANT : EntertainmentEventId.TIMED_BOMB;
     const assault = random.int(2) === 0 ? EntertainmentEventId.SHARK : EntertainmentEventId.CANNON;
@@ -333,29 +358,22 @@ export function buildEntertainmentEventOrder(seed: number): readonly Entertainme
         events.push(remaining[random.int(remaining.length)]);
     }
     random.shuffle(events);
-    const lastIndex = events.length - 1;
-    if (isFieldEvent(events[lastIndex])) {
-        const nonFieldIndices = events
-            .map((event, index) => isFieldEvent(event) ? -1 : index)
-            .filter(index => index >= 0 && index < lastIndex);
-        const swapIndex = nonFieldIndices[random.int(nonFieldIndices.length)];
-        const last = events[lastIndex];
-        events[lastIndex] = events[swapIndex];
-        events[swapIndex] = last;
-    }
+    moveFieldEventAwayFromEnd(events, random);
     return events;
 }
 
 export function packEntertainmentEvents(events: readonly EntertainmentEventId[]): number {
     let packed = 0;
-    for (let index = 0; index < Math.min(4, events.length); index++) {
+    for (let index = 0; index < Math.min(MAX_EVENT_COUNT, events.length); index++) {
         packed |= (events[index] & 0x7) << (index * 3);
     }
     return packed >>> 0;
 }
 
 export function unpackEntertainmentEvents(packed: number, eventCount: number): readonly EntertainmentEventId[] {
-    const count = eventCount === 4 ? 4 : eventCount === 3 ? 3 : 0;
+    const count = Number.isSafeInteger(eventCount) && eventCount >= 3 && eventCount <= MAX_EVENT_COUNT
+        ? eventCount
+        : 0;
     return Array.from({ length: count }, (_, index) => (
         (packed >>> (index * 3)) & 0x7
     ) as EntertainmentEventId);
@@ -367,19 +385,19 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
     return !!state
         && Number.isSafeInteger(state.revision) && state.revision >= 0
         && Number.isSafeInteger(state.phase) && state.phase >= 0 && state.phase <= EntertainmentDirectorPhase.COMPLETE
-        && Number.isSafeInteger(state.eventCount) && state.eventCount >= 3 && state.eventCount <= 4
+        && Number.isSafeInteger(state.eventCount) && state.eventCount >= 3 && state.eventCount <= MAX_EVENT_COUNT
         && Number.isSafeInteger(state.eventIndex) && state.eventIndex >= 0 && state.eventIndex <= state.eventCount
         && Number.isFinite(state.remainingSeconds) && state.remainingSeconds >= 0
         && Number.isSafeInteger(state.packedEvents) && state.packedEvents >= 0
         && Number.isSafeInteger(state.activatedMask) && state.activatedMask >= 0
         && Number.isSafeInteger(state.residentMask) && state.residentMask >= 0
         && Number.isFinite(state.anchorDistance) && state.anchorDistance >= 0
-        && Array.isArray(state.eventAnchorDistances) && state.eventAnchorDistances.length === 4
+        && Array.isArray(state.eventAnchorDistances) && state.eventAnchorDistances.length === MAX_EVENT_COUNT
         && state.eventAnchorDistances.every(distance => Number.isFinite(distance) && distance >= 0);
 }
 
 function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
-    if ((events.length !== 3 && events.length !== 4) || new Set(events).size !== events.length) return false;
+    if (events.length < 3 || events.length > MAX_EVENT_COUNT || new Set(events).size !== events.length) return false;
     const fieldCount = events.filter(event => event === EntertainmentEventId.WHIRLPOOL
         || event === EntertainmentEventId.MINEFIELD).length;
     const contestCount = events.filter(event => event === EntertainmentEventId.STIMULANT
@@ -392,4 +410,16 @@ function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
 
 function isFieldEvent(event: EntertainmentEventId): boolean {
     return event === EntertainmentEventId.WHIRLPOOL || event === EntertainmentEventId.MINEFIELD;
+}
+
+function moveFieldEventAwayFromEnd(events: EntertainmentEventId[], random: SeededRandom): void {
+    const lastIndex = events.length - 1;
+    if (!isFieldEvent(events[lastIndex])) return;
+    const nonFieldIndices = events
+        .map((event, index) => isFieldEvent(event) ? -1 : index)
+        .filter(index => index >= 0 && index < lastIndex);
+    const swapIndex = nonFieldIndices[random.int(nonFieldIndices.length)];
+    const last = events[lastIndex];
+    events[lastIndex] = events[swapIndex];
+    events[swapIndex] = last;
 }

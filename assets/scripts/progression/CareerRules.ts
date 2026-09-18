@@ -101,7 +101,8 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
         if (['quick', 'league', 'cup'].indexOf(command.source) < 0
             || (command.distance !== 200 && command.distance !== 400)
             || (requestedRule !== 'standard' && requestedRule !== 'wild' && requestedRule !== 'stimulant' && requestedRule !== 'shark' && requestedRule !== 'whirlpool' && requestedRule !== 'cannon' && requestedRule !== 'timed-bomb' && requestedRule !== 'minefield' && requestedRule !== 'last-place' && requestedRule !== 'entertainment')
-            || ((requestedRule === 'stimulant' || requestedRule === 'shark' || requestedRule === 'whirlpool' || requestedRule === 'cannon' || requestedRule === 'timed-bomb' || requestedRule === 'minefield' || requestedRule === 'last-place' || requestedRule === 'entertainment') && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
+            || (requestedRule === 'entertainment' && command.source !== 'quick')
+            || ((requestedRule === 'stimulant' || requestedRule === 'shark' || requestedRule === 'whirlpool' || requestedRule === 'cannon' || requestedRule === 'timed-bomb' || requestedRule === 'minefield' || requestedRule === 'last-place') && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
         const p = profile.characters[command.characterId];
         if (!p) return fail('角色不存在');
         const tier = tierIndex(command.tier);

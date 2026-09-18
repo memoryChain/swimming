@@ -75,7 +75,7 @@ import { CannonBrawlHud } from '../ui/CannonBrawlHud';
 import { EntertainmentRecoveryHud } from '../ui/EntertainmentRecoveryHud';
 import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
-import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
+import { consumeMainGameLaunchMode, consumeRoomMode, consumeRoomRaceDistance, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
 import { NetRaceController } from '../net/NetRaceController';
 import { buildNetLanePlan, NetLanePlan } from '../net/NetLanePlan';
@@ -948,10 +948,11 @@ export class GameManager extends Component {
 
     private buildScene(done: (error?: unknown) => void) {
         this._roomMode = consumeRoomMode();
+        const roomRaceDistance = consumeRoomRaceDistance();
         this._netSession = consumeNetRaceSession();
         if (this._roomMode || this._netSession || this._aiDebugMode) {
             setSoloRaceTicket(null);
-            setSoloRaceDistance(null);
+            setSoloRaceDistance(this._netSession?.distance ?? (this._roomMode ? roomRaceDistance : null));
             setSoloAiEvent(null);
         } else {
             const ticket = getSoloRaceTicket();
@@ -1374,7 +1375,7 @@ export class GameManager extends Component {
         resetEntertainmentEventRuntime();
         setRuntimeWhirlpoolSpawns(null);
         this._entertainmentDirector = isEntertainmentBrawlMode()
-            ? new EntertainmentModeDirector(getSharedRandomSeed())
+            ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance())
             : null;
         this._netRaceController?.setEntertainmentDirectorStateListener(state => {
             const director = this._entertainmentDirector;
@@ -1399,7 +1400,7 @@ export class GameManager extends Component {
         if (event === EntertainmentEventId.TIMED_BOMB) {
             return !!this._mineRelayBrawl
                 && this._mineRelayBrawl.currentArm() === null
-                && this._mineRelayBrawl.completedRoundCount() > 0;
+                && this._mineRelayBrawl.remainingRoundCount() === 0;
         }
         if (event === EntertainmentEventId.CANNON) {
             return !!this._cannonBrawl
@@ -1407,7 +1408,7 @@ export class GameManager extends Component {
                 && this._cannonBrawl.remainingStrikeCount() === 0;
         }
         if (event === EntertainmentEventId.SHARK) {
-            return !!this._shark && this._shark.huntIndex > 0
+            return !!this._shark && this._shark.hasCompletedHunts()
                 && (this._shark.state === SharkState.WANDER || this._shark.state === SharkState.SATIATED);
         }
         return true;
@@ -1415,9 +1416,7 @@ export class GameManager extends Component {
 
     private handleEntertainmentDirectorTransition(transition: EntertainmentDirectorTransition) {
         if (transition.previewEvent !== null) {
-            const previewDurationMs = this._entertainmentDirector?.selectedEvents().length === 4
-                ? 5000
-                : 6000;
+            const previewDurationMs = (this._entertainmentDirector?.previewDurationSeconds() ?? 6) * 1000;
             this._entertainmentEventBanner.showEvent(
                 entertainmentPreviewCopy(transition.previewEvent),
                 'warning',
@@ -1556,6 +1555,7 @@ export class GameManager extends Component {
                         getSharedRandomSeed(),
                         LANE_LAYOUT.laneCount,
                         this.entertainmentAnchorDistance(EntertainmentEventId.STIMULANT),
+                        getRaceDistance(),
                     )
                     : undefined,
             );
@@ -1777,12 +1777,10 @@ export class GameManager extends Component {
             launch => this.handleCannonLaunch(launch, true),
             impact => this.handleCannonImpact(impact, true),
             isEntertainmentBrawlMode()
-                ? [
-                    this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + 1,
-                    this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + 3,
-                    this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + 5,
-                ]
+                ? (getRaceDistance() >= 400 ? [1, 3, 5, 7, 9] : [1, 3, 5])
+                    .map(offset => this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + offset)
                 : undefined,
+            Math.max(0, getRaceDistance() - 20),
         );
         this._netRaceController?.setCannonLaunchListener((strikeId, targetDistance, targetZ, warningSeconds, revision) => {
             const launch = { strikeId, targetDistance, targetZ, warningSeconds, revision };
@@ -1963,7 +1961,12 @@ export class GameManager extends Component {
             event => this.handleMineRelayTransfer(event, true),
             event => this.handleMineRelayResolution(event, true),
             isEntertainmentBrawlMode()
-                ? [{ triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB), fuseSeconds: 8 }]
+                ? (getRaceDistance() >= 400
+                    ? [
+                        { triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB), fuseSeconds: 8 },
+                        { triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB) + 12, fuseSeconds: 8 },
+                    ]
+                    : [{ triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB), fuseSeconds: 8 }])
                 : undefined,
         );
         this._netRaceController?.setMineRelayArmListener((roundId, carrierLane, fuseSeconds, revision) => {
@@ -2004,10 +2007,14 @@ export class GameManager extends Component {
 
     private updateMineRelayBrawl(dt: number) {
         const controller = this._mineRelayBrawl;
-        if (!controller || this._modelDebugFlow?.active || (isEntertainmentBrawlMode() && !isTimedBombBrawlMode())) {
+        const entertainmentEventInactive = isEntertainmentBrawlMode() && !isTimedBombBrawlMode();
+        if (!controller || this._modelDebugFlow?.active || entertainmentEventInactive) {
             for (const ai of this._aiControllers) ai?.setMineRelayTargetZ(null);
             this.activePlayerAutopilot()?.setMineRelayTargetZ(null);
             if (isEntertainmentBrawlMode()) this._mineRelayHud?.hide();
+            if (controller && entertainmentEventInactive) {
+                this._mineRelayPresentation?.updateResidualEffects(dt, this._state === GameState.RACING);
+            }
             return;
         }
         controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
@@ -2314,7 +2321,9 @@ export class GameManager extends Component {
                 'danger',
                 1500,
             ),
-            hungerSchedule: isEntertainmentBrawlMode() ? [0] : undefined,
+            hungerSchedule: isEntertainmentBrawlMode()
+                ? (getRaceDistance() >= 400 ? [0, 9] : [0])
+                : undefined,
             wanderAfterFinalHunt: isEntertainmentBrawlMode(),
         });
         this.loadSharkArt(root, fallback);

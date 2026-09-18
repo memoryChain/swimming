@@ -181,7 +181,7 @@ export class CareerPrototypePanel {
     private setRule(rule: RaceRule): void {
         if (this.rule === rule) return;
         this.rule = rule;
-        if (rule !== 'standard' && rule !== 'wild') this.distance = 200;
+        if (rule !== 'standard' && rule !== 'wild' && rule !== 'entertainment') this.distance = 200;
         this.refresh();
     }
     private async abandon(id: string): Promise<void> {

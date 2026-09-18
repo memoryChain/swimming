@@ -78,6 +78,7 @@ export class CannonBrawlController {
         private readonly onLaunch: (launch: CannonLaunch) => void,
         private readonly onImpact: (impact: CannonImpact) => void,
         private readonly strikeTriggers: readonly number[] = CANNON_STRIKE_TRIGGERS,
+        private readonly finishSafeDistance: number = CANNON_BRAWL_TUNING.finishSafeDistance,
     ) {}
 
     reset(): void {
@@ -250,7 +251,7 @@ export class CannonBrawlController {
             ),
         );
         const targetDistance = Math.min(
-            CANNON_BRAWL_TUNING.finishSafeDistance,
+            this.finishSafeDistance,
             Math.max(0, racer.distance + lead + rng.range(-0.35, 0.35)),
         );
         const targetZ = Math.max(-halfWidth, Math.min(halfWidth, racer.lateral + rng.range(-0.16, 0.16)));

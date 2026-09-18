@@ -85,6 +85,10 @@ test('快速比赛仅两组选择，反复切换节点与监听稳定，重复�
     assert.deepEqual(ruleChoices.map(choice => textOf(choice, 'Label')), [
         '标准竞速\n专注节奏', '狂野模式\n自由竞速', '娱乐模式\n随机事件',
     ]);
+    find(page, 'RuleEntertainment').click();
+    assert.equal(find(page, 'Distance400').getComponent(Button).interactable, true);
+    find(page, 'Distance400').click();
+    assert.equal(panel.distance, 400); assert.equal(panel.rule, 'entertainment');
     for (let i = 0; i < 30; i++) for (const name of ['Distance200', 'Distance400', 'RuleStandard', 'RuleWild']) find(panel.page.root, name).click();
     assert.equal(descendants(root).length, before); assert.equal(listeners.size, 1);
     assert.equal(panel.distance, 400); assert.equal(panel.rule, 'wild');

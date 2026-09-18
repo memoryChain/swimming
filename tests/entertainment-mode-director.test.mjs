@@ -38,6 +38,35 @@ test('娱乐模式每局抽取三到四个不重复事件，三类保底且场�
     assert.deepEqual([...counts].sort(), [3, 4]);
 });
 
+test('400 米娱乐模式抽取五到六个不重复事件，并使用六个联机锚点槽位', () => {
+    const counts = new Set();
+    for (let seed = 0; seed < 200; seed++) {
+        const events = buildEntertainmentEventOrder(seed, 400);
+        counts.add(events.length);
+        assert.ok(events.length === 5 || events.length === 6);
+        assert.equal(new Set(events).size, events.length);
+        assert.notEqual(events.at(-1), EntertainmentEventId.WHIRLPOOL);
+        assert.notEqual(events.at(-1), EntertainmentEventId.MINEFIELD);
+        const director = new EntertainmentModeDirector(seed, 400);
+        assert.equal(director.previewDurationSeconds(), 6);
+        assert.equal(director.snapshot().eventAnchorDistances.length, 6);
+    }
+    assert.deepEqual([...counts].sort(), [5, 6]);
+});
+
+test('400 米长局在冲刺截止线前可依次激活完整事件表', () => {
+    let seed = 0;
+    while (buildEntertainmentEventOrder(seed, 400).length !== 6) seed++;
+    const director = new EntertainmentModeDirector(seed, 400);
+    const activated = [];
+    for (let elapsed = 0; elapsed < 150 && director.snapshot().phase !== EntertainmentDirectorPhase.COMPLETE; elapsed += 0.1) {
+        const transition = director.update(0.1, 200, true);
+        if (transition.activatedEvent !== null) activated.push(transition.activatedEvent);
+    }
+    assert.deepEqual(activated, director.selectedEvents());
+    assert.equal(activated.length, 6);
+});
+
 test('导演先保留四秒正常游泳，再进行五至六秒搞笑广播预告', () => {
     const director = new EntertainmentModeDirector(18);
     const previewSeconds = director.selectedEvents().length === 4 ? 5 : 6;
@@ -122,7 +151,9 @@ test('正式入口收拢为娱乐模式，六合一复用原控制器并使用�
     assert.match(prepare, /PUBLIC_RACE_MODE_OPTIONS/);
     assert.match(manager, /buildEntertainmentStimulantSchedule/);
     assert.match(manager, /fuseSeconds: 8/);
+    assert.match(manager, /getRaceDistance\(\) >= 400 \? \[1, 3, 5, 7, 9\] : \[1, 3, 5\]/);
+    assert.match(manager, /triggerDistance: this\.entertainmentAnchorDistance\(EntertainmentEventId\.TIMED_BOMB\) \+ 12/);
     assert.match(manager, /isEntertainmentBrawlMode\(\) \? 5 : MINEFIELD_TUNING\.mineCount/);
-    assert.match(manager, /hungerSchedule: isEntertainmentBrawlMode\(\) \? \[0\]/);
+    assert.match(manager, /getRaceDistance\(\) >= 400 \? \[0, 9\] : \[0\]/);
     assert.doesNotMatch(manager, /Unified(?:Shark|Cannon|Mine|Whirlpool|Stimulant)(?:Controller|Presentation|Prefab)/);
 });

@@ -261,7 +261,7 @@ function normalizeCareer(raw: Partial<CareerState> | undefined): CareerState {
     const p = raw.pending;
     if (p && typeof p.id === 'string' && ['quick', 'league', 'cup'].indexOf(p.source) >= 0
         && (p.distance === 200 || p.distance === 400)
-        && (p.rule === 'standard' || p.rule === 'wild' || ((p.rule === 'entertainment' || p.rule === 'stimulant' || p.rule === 'shark' || p.rule === 'whirlpool' || p.rule === 'cannon' || p.rule === 'timed-bomb' || p.rule === 'minefield' || p.rule === 'mine-relay' || p.rule === 'last-place') && p.source === 'quick' && p.distance === 200))
+        && (p.rule === 'standard' || p.rule === 'wild' || (p.rule === 'entertainment' && p.source === 'quick') || ((p.rule === 'stimulant' || p.rule === 'shark' || p.rule === 'whirlpool' || p.rule === 'cannon' || p.rule === 'timed-bomb' || p.rule === 'minefield' || p.rule === 'mine-relay' || p.rule === 'last-place') && p.source === 'quick' && p.distance === 200))
         && Number.isInteger(p.tier) && p.tier >= 0 && p.tier <= 5 && p.ai && Number.isFinite(p.seed)) {
         c.pending = p.rule === 'mine-relay' ? { ...p, rule: 'timed-bomb' } : p;
     }

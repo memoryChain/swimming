@@ -9,8 +9,8 @@
 // return-to-room after finishing) is phase 2B and needs on-device testing.
 
 import { Node } from 'cc';
-import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
-import { RaceModeId, normalizePublicRaceMode, setRaceDifficulty } from '../core/GameBalance';
+import { OnlineRoomView, OnlineMember, ROOM_MODES, RoomRaceDistance } from './OnlineRoomView';
+import { RaceModeId, getRaceDistance, normalizePublicRaceMode, setRaceDifficulty } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS, getSelectedRaceDifficulty } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
@@ -33,7 +33,7 @@ import {
 export type RoomFlowCallbacks = {
     onExit: () => void;
     // Editor / local-preview start (no real net): launch a placeholder single race.
-    onStartLocalRace: (humanCount: number) => void;
+    onStartLocalRace: (humanCount: number, distance: RoomRaceDistance) => void;
     // Networked start: the shared NetRaceSession has been set; launch the net race.
     onStartNetRace: () => void;
 };
@@ -41,6 +41,7 @@ export type RoomFlowCallbacks = {
 const MAX_SLOTS = 8;
 const IDENTITY_SEP = '|';
 let lastRoomMode: RaceModeId | null = null;
+let lastRoomDistance: RoomRaceDistance | null = null;
 
 type SlotMember = {
     clientId?: number;
@@ -59,6 +60,7 @@ export class RoomFlow {
     private _kickPending = false;
     private _leaving = false;
     private _mode: RaceModeId = normalizePublicRaceMode(getSelectedRaceDifficulty());
+    private _distance: RoomRaceDistance = getRaceDistance(this._mode) === 400 ? 400 : 200;
     private _rulesId = '';
     private _rulesRevision = 0;
     private _rulesOwnerPos = -1;
@@ -110,6 +112,7 @@ export class RoomFlow {
         private readonly _reconnect: boolean = false,
     ) {
         if (_reconnect && lastRoomMode) this._mode = lastRoomMode;
+        if (_reconnect && lastRoomDistance) this._distance = lastRoomDistance;
         if (_reconnect) {
             // Returning after a race: keep whatever role we had (owner stays owner).
             let owner = false;
@@ -132,7 +135,7 @@ export class RoomFlow {
             exit: () => this.exit(),
             primary: () => this._isHost ? this.startRace() : this.toggleReady(),
             invite: () => this.invite(),
-            mode: value => this.changeMode(value),
+            mode: (value, distance) => this.changeMode(value, distance),
             kick: member => { void this.kickMember(member); },
         });
         this._root = this._view.root;
@@ -559,7 +562,7 @@ export class RoomFlow {
             members, isHost: this._isHost, ready: this._localReady,
             busy: this._startRequested || this._readyPending || this._kickPending || this._leaving,
             canStart, roomNumber: this._netReal ? this._roomId || '获取中…' : '本地预览',
-            hint, mode: this._mode,
+            hint, mode: this._mode, distance: this._distance,
         });
     }
 
@@ -619,9 +622,12 @@ export class RoomFlow {
 
     private ruleKey(): string { return `${this._rulesId}:${this._rulesRevision}`; }
 
-    private changeMode(mode: RaceModeId) {
-        if (!this._isHost || this._startRequested || this._kickPending || this._leaving || mode === this._mode) return;
+    private changeMode(mode: RaceModeId, distance: RoomRaceDistance = getRaceDistance(mode) === 400 ? 400 : 200) {
+        if (!this._isHost || this._startRequested || this._kickPending || this._leaving
+            || !isRoomModeSelection(mode, distance)
+            || (mode === this._mode && distance === this._distance)) return;
         this._mode = mode;
+        this._distance = distance;
         this._rulesRevision++;
         for (const pos of Object.keys(this._ruleReady)) delete this._ruleReady[Number(pos)];
         this._statusHint = this._netReal ? '赛制已切换，等待成员重新准备' : null;
@@ -633,7 +639,7 @@ export class RoomFlow {
         if (!this._netReal || !this._accessInfo || this._localPos < 0) return;
         if (this._isHost) {
             if (!this._rulesId) this._rulesId = String(Date.now());
-            netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision, mode: this._mode }));
+            netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision, mode: this._mode, distance: this._distance }));
         } else if (this._rulesId) {
             netRoom().broadcast(JSON.stringify({ t: 'rulesReady', pos: this._localPos, key: this.ruleKey(), seq: this._readyVersion, ready: this._localReady && !this._readyPending }));
         }
@@ -653,7 +659,7 @@ export class RoomFlow {
         if (data?.t !== 'rules') return false;
         const owner = this._members.find(m => m.owner);
         if (this._isHost || !owner || data.owner !== owner.pos || typeof data.id !== 'string' ||
-            !Number.isSafeInteger(data.rev) || data.rev < 0 || !ROOM_MODES.some(m => m.id === data.mode)) return true;
+            !Number.isSafeInteger(data.rev) || data.rev < 0 || !isRoomModeSelection(data.mode, data.distance)) return true;
         if (!/^\d{13,16}$/.test(data.id)) return true;
         if (this._rulesOwnerPos === owner.pos && Number(data.id) < Number(this._rulesId)) return true;
         if (data.id === this._rulesId && data.rev < this._rulesRevision) return true;
@@ -663,6 +669,7 @@ export class RoomFlow {
             this._rulesOwnerPos = owner.pos;
             this._rulesRevision = data.rev;
             this._mode = data.mode;
+            this._distance = data.distance;
             this._localReady = false;
             this._localReadyRule = '';
             this._readyVersion++;
@@ -704,9 +711,10 @@ export class RoomFlow {
         if (!this._netReal) {
             setRaceDifficulty(this._mode);
             lastRoomMode = this._mode;
+            lastRoomDistance = this._distance;
             this.stopRulesTimer();
             // Editor / local preview: launch the placeholder single-player race.
-            this._callbacks.onStartLocalRace(this._members.length);
+            this._callbacks.onStartLocalRace(this._members.length, this._distance);
             return;
         }
         if (!this._isHost) {
@@ -751,6 +759,7 @@ export class RoomFlow {
             seed: this._pendingSeed,
             mods: this._memberModifiers,
             mode: this._mode,
+            distance: this._distance,
             rules: this.ruleKey(),
         }));
         if (this._reconnect) {
@@ -850,11 +859,13 @@ export class RoomFlow {
                     this.setHint('房主版本与当前客户端不兼容，请更新后重试');
                     return;
                 }
-                if (!this._isHost && (!this._localReady || data.rules !== this.ruleKey() || data.mode !== this._mode)) {
+                if (!this._isHost && (!this._localReady || data.rules !== this.ruleKey()
+                    || data.mode !== this._mode || data.distance !== this._distance)) {
                     this.setHint('赛制或准备状态未确认，请重新准备'); return;
                 }
-                if (!ROOM_MODES.some(m => m.id === data.mode)) return;
+                if (!isRoomModeSelection(data.mode, data.distance)) return;
                 this._mode = data.mode;
+                this._distance = data.distance;
                 setRaceDifficulty(this._mode);
                 this._pendingSeed = data.seed >>> 0;
                 this._startRequested = true;
@@ -912,6 +923,7 @@ export class RoomFlow {
         }
         this._raceEntered = true;
         lastRoomMode = this._mode;
+        lastRoomDistance = this._distance;
         this.stopRulesTimer();
         this.clearStartTimeout();
         // Clear our ready as the race begins so the server doesn't carry a stale
@@ -934,6 +946,7 @@ export class RoomFlow {
             members,
             localIsHost: this._isHost,
             localPos: this._localPos >= 0 ? this._localPos : (this._isHost ? 0 : 0),
+            distance: this._distance,
         });
         this._callbacks.onStartNetRace();
     }
@@ -977,6 +990,10 @@ export class RoomFlow {
         this._root = null;
         this._view = null;
     }
+}
+
+function isRoomModeSelection(mode: unknown, distance: unknown): mode is RaceModeId {
+    return ROOM_MODES.some(option => option.id === mode && option.distance === distance);
 }
 
 function encodeIdentity(avatarId: string, nickName: string): string {

@@ -54,7 +54,8 @@
 // 版本66：统一娱乐导演扩展为三至四事件，并同步事件数量和四个激活锚点槽位。
 // 版本67：统一娱乐事件静默收尾并取消段间空档，必要结算后直接开始下一预告。
 // 版本68：扩大炮火与水雷外围冲击范围，并大幅扩大定时炸弹爆炸范围。
-export const NET_RACE_PROTOCOL_VERSION = 68;
+// 版本69：娱乐模式支持 400 米长局，房间同步赛程距离，导演快照扩展为六个事件锚点。
+export const NET_RACE_PROTOCOL_VERSION = 69;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

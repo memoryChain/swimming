@@ -1,6 +1,6 @@
 import { Button, Color, Label, Node, Sprite, UITransform } from 'cc';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { RaceModeId, getRaceDistance, getRaceModeTitle } from '../core/GameBalance';
+import { RaceModeId, getRaceModeTitle } from '../core/GameBalance';
 import { avatarTexturePath, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { fitFullScreenBackgroundCover, makeLabel, makeRoundedRect, makeScreenEdgeGroup, makeTouchArea, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { PROJECT_UI_ENGLISH_BOLD_FAMILY, styleProjectUiLabel } from './ProjectUiFonts';
@@ -13,11 +13,13 @@ const MUTED = uiColor(73, 100, 140);
 const JOINED = uiColor(0, 179, 149);
 const HEADER_INK = uiColor(23, 36, 58);
 type TextFace = 'project' | 'regular' | 'dynamic' | 'latin';
-export const ROOM_MODES: ReadonlyArray<{ id: RaceModeId; label: string }> = [
-    { id: 'beginner', label: getRaceModeTitle('beginner') },
-    { id: 'competitive', label: getRaceModeTitle('competitive') },
-    { id: 'championship', label: getRaceModeTitle('championship') },
-    { id: 'entertainment-brawl', label: getRaceModeTitle('entertainment-brawl') },
+export type RoomRaceDistance = 200 | 400;
+export const ROOM_MODES: ReadonlyArray<{ id: RaceModeId; label: string; distance: RoomRaceDistance }> = [
+    { id: 'beginner', label: getRaceModeTitle('beginner'), distance: 200 },
+    { id: 'competitive', label: getRaceModeTitle('competitive'), distance: 200 },
+    { id: 'championship', label: getRaceModeTitle('championship'), distance: 400 },
+    { id: 'entertainment-brawl', label: getRaceModeTitle('entertainment-brawl'), distance: 200 },
+    { id: 'entertainment-brawl', label: getRaceModeTitle('entertainment-brawl'), distance: 400 },
 ];
 export type OnlineMember = {
     clientId?: number;
@@ -26,7 +28,7 @@ export type OnlineMember = {
 };
 export type OnlineRoomState = {
     members: OnlineMember[]; isHost: boolean; ready: boolean; busy: boolean;
-    canStart: boolean; roomNumber: string; hint: string; mode: RaceModeId;
+    canStart: boolean; roomNumber: string; hint: string; mode: RaceModeId; distance: RoomRaceDistance;
 };
 type Card = { background: Sprite; avatar: Sprite; ring: Sprite; nickname: Label; role: Label;
     badge: Label; badgeBg: Sprite; plus: Label; empty: Label; member?: OnlineMember; signature: string };
@@ -67,7 +69,7 @@ export class OnlineRoomView {
     private confirmingKick = false;
 
     constructor(parent: Node, private readonly actions: {
-        exit(): void; primary(): void; invite(): void; mode(value: RaceModeId): void; kick(member: OnlineMember): void;
+        exit(): void; primary(): void; invite(): void; mode(value: RaceModeId, distance: RoomRaceDistance): void; kick(member: OnlineMember): void;
     }) {
         this.root = makeUiNode('OnlineRoom', parent);
         const bg = this.picture(this.root, 'Background', RESOURCE_PATHS.characterUi.background, 0, 0, 1280, 720);
@@ -126,12 +128,12 @@ export class OnlineRoomView {
         ROOM_MODES.forEach((mode, i) => {
             const y = 184 + i * 48;
             this.modeLabels.push(this.text(this.drawer, `ModeOption${i}`, mode.label, 124, y, 150, 34, 21, false));
-            this.modeDistances.push(this.text(this.drawer, `ModeDistance${i}`, String(getRaceDistance(ROOM_MODES[i].id)), 316, y, 48, 34, 21, true, 'latin'));
+            this.modeDistances.push(this.text(this.drawer, `ModeDistance${i}`, String(mode.distance), 316, y, 48, 34, 21, true, 'latin'));
             this.modeUnits.push(this.text(this.drawer, `ModeUnit${i}`, '米', 364, y, 23, 34, 21, false));
             this.modeChecks.push(this.text(this.drawer, `ModeCheck${i}`, '✓', 393, y, 22, 34, 21));
             this.touch(this.drawer, `ChooseMode${i}`, 109, y, 313, 42, () => {
                 visible(this.drawer, false);
-                if (this.state?.isHost && !this.state.busy) actions.mode(mode.id);
+                if (this.state?.isHost && !this.state.busy) actions.mode(mode.id, mode.distance);
             });
         });
         this.drawer.active = false;
@@ -173,13 +175,13 @@ export class OnlineRoomView {
         assign(numericRoom ? this.roomNumber : this.roomNumberLocal,
             state.roomNumber.replace(/^(\d{3})(\d{3})$/, '$1 $2'));
         assign(this.count, `${state.members.length}/8`);
-        assign(this.modeText, ROOM_MODES.find(m => m.id === state.mode)?.label ?? getRaceModeTitle(state.mode));
-        assign(this.distanceText, String(getRaceDistance(state.mode)));
+        assign(this.modeText, ROOM_MODES.find(m => m.id === state.mode && m.distance === state.distance)?.label ?? getRaceModeTitle(state.mode));
+        assign(this.distanceText, String(state.distance));
         assign(this.modePermission, state.isHost ? '仅房主可切换' : '房主设置');
         visible(this.modeArrow.node, state.isHost);
         if (!state.isHost || state.busy) visible(this.drawer, false);
         for (let i = 0; i < ROOM_MODES.length; i++) {
-            const selected = state.mode === ROOM_MODES[i].id;
+            const selected = state.mode === ROOM_MODES[i].id && state.distance === ROOM_MODES[i].distance;
             const color = selected ? JOINED : INK;
             tint(this.modeLabels[i], color); tint(this.modeDistances[i], color); tint(this.modeUnits[i], color);
             tint(this.modeChecks[i], JOINED); visible(this.modeChecks[i].node, selected);

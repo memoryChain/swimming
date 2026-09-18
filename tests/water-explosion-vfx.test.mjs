@@ -5,6 +5,7 @@ import test from 'node:test';
 const cannon = readFileSync(new URL('../assets/scripts/core/CannonBrawlPresentation.ts', import.meta.url), 'utf8');
 const minefield = readFileSync(new URL('../assets/scripts/core/MinefieldBrawlPresentation.ts', import.meta.url), 'utf8');
 const timedBomb = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url), 'utf8');
+const gameManager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
 
 test('炮火、水雷和定时炸弹复用立体水爆网格', () => {
     assert.match(cannon, /buildWaterExplosionGeometry/);
@@ -34,6 +35,16 @@ test('扩大后的爆炸范围使用原有池化网格增强体量', () => {
     assert.match(timedBomb, /applyWaterExplosionPhase[\s\S]*TIMED_BOMB_EXPLOSION_INTENSITY/);
 });
 
+test('娱乐模式定时炸弹使用精修炸药束、切角计时器和连续导线并保持单网格', () => {
+    const model = timedBomb.match(/export function buildTimedBombGeometry[\s\S]*?\n}\n\nfunction buildLowPolyLampGeometry/)?.[0] ?? '';
+    assert.match(model, /appendFacetedBundleBand/);
+    assert.match(model, /appendChamferedBox/);
+    assert.match(model, /appendFacetedCable/);
+    assert.match(model, /中央引信座与警示灯共轴/);
+    assert.match(timedBomb, /this\.mineMesh = utils\.createMesh\(buildTimedBombGeometry\(\)\)/);
+    assert.doesNotMatch(model, /resources\.load|assetManager\.load|new Material/);
+});
+
 test('障碍水雷使用分层不对称模型并保持轻微三轴漂转', () => {
     assert.match(timedBomb, /appendFacetedMineBody/);
     assert.match(timedBomb, /appendDetailedMineSpike/);
@@ -42,4 +53,10 @@ test('障碍水雷使用分层不对称模型并保持轻微三轴漂转', () =>
     assert.match(minefield, /MINE_TILT_X_DEGREES = 9/);
     assert.match(minefield, /MINE_TILT_Z_DEGREES = 7/);
     assert.match(minefield, /rotationPhase/);
+});
+
+test('定时炸弹事件切换后仍会播完已触发的水花', () => {
+    assert.match(timedBomb, /updateResidualEffects\(dt: number, racing: boolean\)/);
+    assert.match(timedBomb, /private advanceExplosion\(step: number\)/);
+    assert.match(gameManager, /this\._mineRelayPresentation\?\.updateResidualEffects\(dt, this\._state === GameState\.RACING\)/);
 });

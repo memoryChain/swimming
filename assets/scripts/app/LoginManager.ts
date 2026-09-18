@@ -1,5 +1,5 @@
 import { _decorator, Camera, Canvas, Color, Component, director, Layers, Node, UITransform, view } from 'cc';
-import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, consumeReturnToLobby, setRoomMode } from '../core/GameLaunchOptions';
+import { MainGameLaunchMode, setAiDebugDifficulty, setMainGameLaunchMode, consumeReturnToRoom, consumeReturnToLobby, setRoomMode, setRoomRaceDistance } from '../core/GameLaunchOptions';
 import { setSoloRaceTicket } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from '../core/GameBalance';
 import { setSoloAiEvent } from '../competitor/CompetitorConfig';
@@ -334,10 +334,11 @@ export class LoginManager extends Component {
         }
         this._roomFlow = new RoomFlow(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight, {
             onExit: () => this.exitRoom(),
-            onStartLocalRace: (_humanCount) => {
+            onStartLocalRace: (_humanCount, distance) => {
                 // Editor / local preview: standard race in ROOM MODE so the finish
                 // screen offers only "exit", which returns here and re-opens the room.
                 setRoomMode(true);
+                setRoomRaceDistance(distance);
                 this._headBar?.setBack(null);
                 this.launchMainGame('race');
             },

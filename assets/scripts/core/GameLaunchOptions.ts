@@ -58,6 +58,7 @@ export function getAiDebugDifficulty(): number {
 // Room mode: the next race was launched from the online room. GameManager reads it
 // to show only an "exit" action (no replay) on the finish screen.
 let pendingRoomMode = false;
+let pendingRoomRaceDistance: 200 | 400 = 200;
 // Set when a room-mode race exits back to Login, so LoginManager re-opens the room.
 let pendingReturnToRoom = false;
 let pendingReturnToLobby = false;
@@ -77,6 +78,16 @@ export function setRoomMode(value: boolean) {
 export function consumeRoomMode(): boolean {
     const value = pendingRoomMode;
     pendingRoomMode = false;
+    return value;
+}
+
+export function setRoomRaceDistance(value: 200 | 400) {
+    pendingRoomRaceDistance = value === 400 ? 400 : 200;
+}
+
+export function consumeRoomRaceDistance(): 200 | 400 {
+    const value = pendingRoomRaceDistance;
+    pendingRoomRaceDistance = 200;
     return value;
 }
 

@@ -73,6 +73,7 @@ export class MineRelayBrawlPresentation {
         if (this.disposed) return;
         if (!racing) {
             this.detachMine();
+            this.explosionRemaining = 0;
             this.setActive(this.explosion, false);
             return;
         }
@@ -95,12 +96,24 @@ export class MineRelayBrawlPresentation {
                 Math.sin(this.clock * 2.4) * 4 * swayScale,
             );
         }
-        if (this.explosionRemaining > 0) {
-            this.explosionRemaining = Math.max(0, this.explosionRemaining - presentationStep);
-            const progress = 1 - this.explosionRemaining / EXPLOSION_SECONDS;
-            if (this.explosion) applyWaterExplosionPhase(this.explosion, progress, TIMED_BOMB_EXPLOSION_INTENSITY);
-            if (this.explosionRemaining <= 0) this.setActive(this.explosion, false);
+        this.advanceExplosion(presentationStep);
+    }
+
+    /** 玩法切换后只收尾已经触发的爆炸，避免复用节点停在动画中间帧。 */
+    updateResidualEffects(dt: number, racing: boolean): void {
+        if (this.disposed) return;
+        if (!racing) {
+            this.explosionRemaining = 0;
+            this.setActive(this.explosion, false);
+            return;
         }
+        if (this.explosionRemaining <= 0) return;
+        const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+        this.elapsed += step;
+        if (this.elapsed < PRESENTATION_INTERVAL) return;
+        const presentationStep = this.elapsed;
+        this.elapsed = 0;
+        this.advanceExplosion(presentationStep);
     }
 
     dispose(): void {
@@ -122,6 +135,14 @@ export class MineRelayBrawlPresentation {
         if (!this.mineRoot?.isValid) return;
         this.mineRoot.setParent(this.worldRoot);
         this.setActive(this.mineRoot, false);
+    }
+
+    private advanceExplosion(step: number): void {
+        if (this.explosionRemaining <= 0) return;
+        this.explosionRemaining = Math.max(0, this.explosionRemaining - step);
+        const progress = 1 - this.explosionRemaining / EXPLOSION_SECONDS;
+        if (this.explosion) applyWaterExplosionPhase(this.explosion, progress, TIMED_BOMB_EXPLOSION_INTENSITY);
+        if (this.explosionRemaining <= 0) this.setActive(this.explosion, false);
     }
 
     private build(): void {
@@ -205,22 +226,49 @@ export function buildTimedBombGeometry(): primitives.IGeometry {
     const colors: number[] = [];
     const indices: number[] = [];
     const rods: ReadonlyArray<readonly [number, number, ColorTuple]> = [
-        [-0.16, -0.09, [0.82, 0.08, 0.035, 1]],
-        [0.16, -0.09, [0.96, 0.16, 0.045, 1]],
-        [0, 0.15, [0.72, 0.045, 0.025, 1]],
+        [-0.16, -0.09, [0.78, 0.055, 0.028, 1]],
+        [0.16, -0.09, [0.94, 0.12, 0.035, 1]],
+        [0, 0.15, [0.68, 0.035, 0.02, 1]],
     ];
     for (const [x, z, color] of rods) {
-        appendFacetedCylinder(positions, colors, indices, x, 0, z, 0.14, 0.34, color);
+        appendFacetedCylinder(positions, colors, indices, x, 0, z, 0.135, 0.315, color);
+        appendFacetedCylinder(positions, colors, indices, x, -0.325, z, 0.145, 0.025, [0.20, 0.025, 0.018, 1]);
+        appendFacetedCylinder(positions, colors, indices, x, 0.325, z, 0.145, 0.025, [0.31, 0.045, 0.025, 1]);
     }
 
-    const strapColor: ColorTuple = [0.055, 0.065, 0.075, 1];
-    appendBox(positions, colors, indices, -0.34, -0.22, -0.25, 0.34, -0.12, 0.28, strapColor);
-    appendBox(positions, colors, indices, -0.34, 0.12, -0.25, 0.34, 0.22, 0.28, strapColor);
+    // 两道有厚度的十边形束带真正环抱炸药束，避免旧版横向方块把三根炸药压成一整坨。
+    const strapColor: ColorTuple = [0.055, 0.07, 0.078, 1];
+    appendFacetedBundleBand(positions, colors, indices, -0.18, 0.28, 0.335, 0.045, strapColor);
+    appendFacetedBundleBand(positions, colors, indices, 0.15, 0.28, 0.335, 0.045, [0.075, 0.09, 0.098, 1]);
 
-    appendBox(positions, colors, indices, -0.22, 0.24, 0.16, 0.22, 0.48, 0.32, [0.09, 0.11, 0.13, 1]);
-    appendBox(positions, colors, indices, -0.16, 0.29, 0.315, 0.16, 0.43, 0.345, [0.12, 0.85, 0.95, 1]);
-    appendBox(positions, colors, indices, -0.025, 0.47, -0.025, 0.025, 0.55, 0.025, [0.95, 0.63, 0.08, 1]);
-    return geometry(positions, colors, indices, new Vec3(-0.34, -0.34, -0.25), new Vec3(0.34, 0.72, 0.345));
+    // 前方计时器以炸药束正面的接触面为锚点，侧扣压进束带，避免悬浮感。
+    appendBox(positions, colors, indices, -0.30, 0.205, 0.145, -0.225, 0.43, 0.285, [0.19, 0.22, 0.225, 1]);
+    appendBox(positions, colors, indices, 0.225, 0.205, 0.145, 0.30, 0.43, 0.285, [0.19, 0.22, 0.225, 1]);
+    appendChamferedBox(positions, colors, indices, -0.24, 0.19, 0.15, 0.24, 0.50, 0.33, 0.035,
+        [0.07, 0.085, 0.095, 1]);
+
+    // 深色显示槽、青色计时玻璃、分段读数和实体按钮，让正面在比赛镜头下仍有清晰层次。
+    appendChamferedBox(positions, colors, indices, -0.18, 0.285, 0.326, 0.18, 0.445, 0.343, 0.018,
+        [0.018, 0.038, 0.045, 1]);
+    appendBox(positions, colors, indices, -0.145, 0.31, 0.341, 0.145, 0.418, 0.352, [0.08, 0.68, 0.78, 1]);
+    appendBox(positions, colors, indices, -0.105, 0.335, 0.351, -0.065, 0.393, 0.358, [0.66, 1, 0.92, 1]);
+    appendBox(positions, colors, indices, -0.02, 0.335, 0.351, 0.02, 0.393, 0.358, [0.66, 1, 0.92, 1]);
+    appendBox(positions, colors, indices, 0.065, 0.335, 0.351, 0.105, 0.393, 0.358, [0.66, 1, 0.92, 1]);
+    appendBox(positions, colors, indices, -0.17, 0.225, 0.329, 0.055, 0.255, 0.347, [0.92, 0.53, 0.045, 1]);
+    appendBox(positions, colors, indices, 0.095, 0.215, 0.329, 0.165, 0.265, 0.354, [0.88, 0.08, 0.035, 1]);
+
+    // 两根连续低模导线从炸药端盖进入计时器顶部，连接点均有轻微压入。
+    appendFacetedCable(positions, colors, indices, [
+        [-0.16, 0.34, -0.09], [-0.19, 0.41, 0.015], [-0.17, 0.46, 0.17],
+    ], 0.018, [0.96, 0.57, 0.035, 1]);
+    appendFacetedCable(positions, colors, indices, [
+        [0.16, 0.34, -0.09], [0.20, 0.405, 0.025], [0.17, 0.455, 0.17],
+    ], 0.017, [0.12, 0.15, 0.16, 1]);
+
+    // 中央引信座与警示灯共轴，灯体由独立小网格承担闪烁，不增加炸弹主体材质。
+    appendFacetedCylinder(positions, colors, indices, 0, 0.375, 0, 0.075, 0.04, [0.12, 0.15, 0.155, 1]);
+    appendFacetedCylinder(positions, colors, indices, 0, 0.445, 0, 0.043, 0.035, [0.94, 0.57, 0.055, 1]);
+    return geometry(positions, colors, indices, new Vec3(-0.36, -0.36, -0.25), new Vec3(0.36, 0.70, 0.365));
 }
 
 function buildLowPolyLampGeometry(): primitives.IGeometry {
@@ -487,6 +535,127 @@ function appendDetailedMineSpike(
         indices.push(last + side, last + (side + 1) % 4, tip);
     }
     indices.push(base, base + 3, base + 2, base, base + 2, base + 1);
+}
+
+function appendFacetedBundleBand(
+    positions: number[], colors: number[], indices: number[],
+    centerY: number, innerRadius: number, outerRadius: number, halfHeight: number, color: ColorTuple,
+): void {
+    const segments = 10;
+    const base = positions.length / 3;
+    for (let i = 0; i < segments; i++) {
+        const angle = i / segments * Math.PI * 2;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        positions.push(
+            cos * outerRadius, centerY - halfHeight, sin * outerRadius,
+            cos * outerRadius, centerY + halfHeight, sin * outerRadius,
+            cos * innerRadius, centerY - halfHeight, sin * innerRadius,
+            cos * innerRadius, centerY + halfHeight, sin * innerRadius,
+        );
+        pushColor(colors, color, 4);
+    }
+    for (let i = 0; i < segments; i++) {
+        const next = (i + 1) % segments;
+        const currentBase = base + i * 4;
+        const nextBase = base + next * 4;
+        const outerBottom = currentBase, outerTop = currentBase + 1;
+        const innerBottom = currentBase + 2, innerTop = currentBase + 3;
+        const nextOuterBottom = nextBase, nextOuterTop = nextBase + 1;
+        const nextInnerBottom = nextBase + 2, nextInnerTop = nextBase + 3;
+        indices.push(
+            outerBottom, outerTop, nextOuterBottom, nextOuterBottom, outerTop, nextOuterTop,
+            innerBottom, nextInnerBottom, innerTop, nextInnerBottom, nextInnerTop, innerTop,
+            outerTop, innerTop, nextOuterTop, nextOuterTop, innerTop, nextInnerTop,
+            outerBottom, nextOuterBottom, innerBottom, nextOuterBottom, nextInnerBottom, innerBottom,
+        );
+    }
+}
+
+function appendChamferedBox(
+    positions: number[], colors: number[], indices: number[],
+    minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number,
+    chamfer: number, color: ColorTuple,
+): void {
+    const cut = Math.max(0, Math.min(chamfer, (maxX - minX) * 0.5, (maxY - minY) * 0.5));
+    const outline: ReadonlyArray<readonly [number, number]> = [
+        [minX + cut, minY], [maxX - cut, minY], [maxX, minY + cut], [maxX, maxY - cut],
+        [maxX - cut, maxY], [minX + cut, maxY], [minX, maxY - cut], [minX, minY + cut],
+    ];
+    const base = positions.length / 3;
+    for (const [x, y] of outline) positions.push(x, y, minZ);
+    for (const [x, y] of outline) positions.push(x, y, maxZ);
+    const backCenter = positions.length / 3;
+    positions.push((minX + maxX) * 0.5, (minY + maxY) * 0.5, minZ);
+    const frontCenter = positions.length / 3;
+    positions.push((minX + maxX) * 0.5, (minY + maxY) * 0.5, maxZ);
+    pushColor(colors, color, outline.length * 2 + 2);
+    for (let i = 0; i < outline.length; i++) {
+        const next = (i + 1) % outline.length;
+        indices.push(
+            base + i, base + next, base + outline.length + next,
+            base + i, base + outline.length + next, base + outline.length + i,
+            backCenter, base + next, base + i,
+            frontCenter, base + outline.length + i, base + outline.length + next,
+        );
+    }
+}
+
+function appendFacetedCable(
+    positions: number[], colors: number[], indices: number[],
+    points: ReadonlyArray<readonly [number, number, number]>, radius: number, color: ColorTuple,
+): void {
+    if (points.length < 2) return;
+    const segments = 6;
+    const base = positions.length / 3;
+    for (let pointIndex = 0; pointIndex < points.length; pointIndex++) {
+        const point = points[pointIndex];
+        const previous = points[Math.max(0, pointIndex - 1)];
+        const next = points[Math.min(points.length - 1, pointIndex + 1)];
+        let tx = next[0] - previous[0], ty = next[1] - previous[1], tz = next[2] - previous[2];
+        const tangentLength = Math.max(0.0001, Math.hypot(tx, ty, tz));
+        tx /= tangentLength; ty /= tangentLength; tz /= tangentLength;
+        const referenceX = Math.abs(ty) > 0.9 ? 1 : 0;
+        const referenceY = Math.abs(ty) > 0.9 ? 0 : 1;
+        let ux = ty * 0 - tz * referenceY;
+        let uy = tz * referenceX - tx * 0;
+        let uz = tx * referenceY - ty * referenceX;
+        const sideLength = Math.max(0.0001, Math.hypot(ux, uy, uz));
+        ux /= sideLength; uy /= sideLength; uz /= sideLength;
+        const vx = ty * uz - tz * uy;
+        const vy = tz * ux - tx * uz;
+        const vz = tx * uy - ty * ux;
+        for (let segment = 0; segment < segments; segment++) {
+            const angle = segment / segments * Math.PI * 2;
+            const cos = Math.cos(angle) * radius, sin = Math.sin(angle) * radius;
+            positions.push(
+                point[0] + ux * cos + vx * sin,
+                point[1] + uy * cos + vy * sin,
+                point[2] + uz * cos + vz * sin,
+            );
+            pushColor(colors, color, 1);
+        }
+    }
+    for (let pointIndex = 0; pointIndex < points.length - 1; pointIndex++) {
+        const current = base + pointIndex * segments;
+        const next = current + segments;
+        for (let segment = 0; segment < segments; segment++) {
+            const sideNext = (segment + 1) % segments;
+            indices.push(current + segment, next + segment, current + sideNext,
+                current + sideNext, next + segment, next + sideNext);
+        }
+    }
+    const firstCenter = positions.length / 3;
+    positions.push(points[0][0], points[0][1], points[0][2]);
+    const lastCenter = positions.length / 3;
+    const lastPoint = points[points.length - 1];
+    positions.push(lastPoint[0], lastPoint[1], lastPoint[2]);
+    pushColor(colors, color, 2);
+    const lastRing = base + (points.length - 1) * segments;
+    for (let segment = 0; segment < segments; segment++) {
+        const next = (segment + 1) % segments;
+        indices.push(firstCenter, base + next, base + segment,
+            lastCenter, lastRing + segment, lastRing + next);
+    }
 }
 
 function appendFacetedCylinder(

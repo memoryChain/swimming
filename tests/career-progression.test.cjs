@@ -169,6 +169,8 @@ test('四种距离规则组合独立，好友来源拒绝奖励凭据', () => {
         const t = begin(p, 'quick', a, 0, { distance, rule });
         assert.equal(t.distance, distance); assert.equal(t.rule, rule);
     }
+    const entertainment = begin(p, 'quick', a, 0, { distance: 400, rule: 'entertainment' });
+    assert.equal(entertainment.distance, 400); assert.equal(entertainment.rule, 'entertainment');
     const old = JSON.stringify(p);
     assert.equal(executeCareer(p, { type: 'begin', source: 'friend', characterId: a, tier: 0, distance: 200, rule: 'standard', seed: 4 }).ok, false);
     assert.equal(JSON.stringify(p), old);
