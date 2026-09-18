@@ -117,6 +117,22 @@ test('炮火 HUD 限制十赫兹采样且不逐帧重绘图形', () => {
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
 });
 
+test('看台大炮使用分层炮架、轮毂、斜撑和渐细炮管并保持单网格共享材质', () => {
+    const presentation = readFileSync(
+        new URL('../assets/scripts/core/CannonBrawlPresentation.ts', import.meta.url),
+        'utf8',
+    );
+    const model = presentation.match(/function buildCannonGeometry[\s\S]*?\n}/)?.[0] ?? '';
+    assert.match(model, /appendBeamYZ/);
+    assert.match(model, /appendTaperedCylinder/);
+    assert.match(model, /轮轴贯穿两侧车轮/);
+    assert.match(model, /双层炮口/);
+    assert.match(model, /暗色圆面覆盖炮口端盖/);
+    assert.match(presentation, /this\.cannonMesh = utils\.createMesh\(buildCannonGeometry\(\)\)/);
+    assert.match(presentation, /this\.cannonMesh, this\.cannonMaterial/);
+    assert.doesNotMatch(presentation, /resources\.load|assetManager\.load/);
+});
+
 test('炮火逃生赛只允许快速比赛二百米，旧末位存档迁移为炮火规则', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];

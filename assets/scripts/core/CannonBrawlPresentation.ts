@@ -228,14 +228,50 @@ function buildCannonGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    appendBox(positions, colors, indices, 0, 0.15, 0, 1.65, 0.3, 1.35, [0.18, 0.22, 0.28, 1]);
-    appendBox(positions, colors, indices, 0, 0.52, 0.12, 1.02, 0.52, 1.02, [0.55, 0.20, 0.12, 1]);
-    appendCylinder(positions, colors, indices, -0.72, 0.42, 0.15, 0.48, 0.20, 'x', [0.11, 0.12, 0.15, 1]);
-    appendCylinder(positions, colors, indices, 0.72, 0.42, 0.15, 0.48, 0.20, 'x', [0.11, 0.12, 0.15, 1]);
-    appendCylinder(positions, colors, indices, 0, 1.02, 0.36, 0.23, 2.25, 'z', [0.19, 0.23, 0.29, 1]);
-    appendCylinder(positions, colors, indices, 0, 1.02, 1.43, 0.32, 0.24, 'z', [0.08, 0.10, 0.13, 1]);
-    appendBox(positions, colors, indices, 0, 0.74, -0.72, 0.28, 0.28, 0.58, [0.67, 0.27, 0.12, 1]);
-    return geometry(positions, colors, indices, new Vec3(-0.85, 0, -1.05), new Vec3(0.85, 1.5, 1.58));
+    const iron: ColorTuple = [0.12, 0.15, 0.20, 1];
+    const ironLight: ColorTuple = [0.22, 0.28, 0.35, 1];
+    const ironDark: ColorTuple = [0.055, 0.065, 0.085, 1];
+    const carriage: ColorTuple = [0.53, 0.17, 0.09, 1];
+    const carriageLight: ColorTuple = [0.68, 0.27, 0.11, 1];
+    const brass: ColorTuple = [0.72, 0.45, 0.14, 1];
+
+    // 贴地底盘和两根炮架纵梁保持明确接触，远景先读出稳重的梯形承重轮廓。
+    appendBox(positions, colors, indices, 0, 0.14, -0.02, 1.72, 0.28, 1.38, iron);
+    appendBox(positions, colors, indices, -0.49, 0.43, -0.08, 0.25, 0.34, 1.24, carriage);
+    appendBox(positions, colors, indices, 0.49, 0.43, -0.08, 0.25, 0.34, 1.24, carriage);
+    appendBox(positions, colors, indices, 0, 0.39, -0.57, 1.18, 0.34, 0.24, carriageLight);
+
+    // 轮轴贯穿两侧车轮；外胎、轮面和轮毂分层但仍属于同一合并网格。
+    appendCylinder(positions, colors, indices, 0, 0.46, 0.08, 0.12, 1.66, 'x', ironDark);
+    for (const side of [-1, 1]) {
+        appendCylinder(positions, colors, indices, side * 0.76, 0.46, 0.08, 0.52, 0.22, 'x', ironDark);
+        appendCylinder(positions, colors, indices, side * 0.775, 0.46, 0.08, 0.39, 0.25, 'x', carriage);
+        appendCylinder(positions, colors, indices, side * 0.80, 0.46, 0.08, 0.18, 0.30, 'x', brass);
+    }
+
+    // 两根斜撑从纵梁上表面接到炮耳下方，避免炮管像悬浮在方盒上。
+    appendBeamYZ(positions, colors, indices, -0.49, 0.55, -0.33, 0.94, -0.07, 0.18, 0.16, carriageLight);
+    appendBeamYZ(positions, colors, indices, 0.49, 0.55, -0.33, 0.94, -0.07, 0.18, 0.16, carriageLight);
+    appendCylinder(positions, colors, indices, 0, 0.98, -0.05, 0.31, 1.12, 'x', brass);
+
+    // 炮身由后膛、加强箍、渐细炮管和双层炮口组成，保留硬朗十边低模轮廓。
+    appendTaperedCylinder(positions, colors, indices,
+        0, 0.94, -0.70, 0, 0.98, -0.18, 0.36, 0.30, ironLight);
+    appendTaperedCylinder(positions, colors, indices,
+        0, 0.975, -0.24, 0, 1.01, 0.02, 0.36, 0.32, brass);
+    appendTaperedCylinder(positions, colors, indices,
+        0, 1.00, -0.02, 0, 1.18, 1.34, 0.27, 0.17, ironLight);
+    appendTaperedCylinder(positions, colors, indices,
+        0, 1.16, 1.24, 0, 1.20, 1.53, 0.25, 0.29, iron);
+    appendTaperedCylinder(positions, colors, indices,
+        0, 1.195, 1.47, 0, 1.22, 1.66, 0.34, 0.34, brass);
+    // 略微前置的暗色圆面覆盖炮口端盖，比赛镜头下能明确读成空膛而不是实心柱。
+    appendTaperedCylinder(positions, colors, indices,
+        0, 1.222, 1.662, 0, 1.223, 1.675, 0.235, 0.235, ironDark);
+
+    // 后膛把手让背面也有清晰轮廓，同时与后膛末端保持小幅穿插连接。
+    appendBox(positions, colors, indices, 0, 0.88, -0.78, 0.40, 0.16, 0.26, brass);
+    return geometry(positions, colors, indices, new Vec3(-0.96, 0, -0.91), new Vec3(0.96, 1.57, 1.70));
 }
 
 function buildMarkerGeometry(): primitives.IGeometry {
@@ -323,6 +359,87 @@ function appendCylinder(
         const next = (i + 1) % segments;
         indices.push(capA, base + next, base + i, capB, base + segments + i, base + segments + next);
     }
+}
+
+function appendTaperedCylinder(
+    positions: number[], colors: number[], indices: number[],
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number,
+    radiusA: number, radiusB: number, color: ColorTuple,
+): void {
+    const segments = 10;
+    const dx = bx - ax, dy = by - ay, dz = bz - az;
+    const length = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    const nx = dx / length, ny = dy / length, nz = dz / length;
+    // 炮管接近 Z 轴，优先用世界 Y 构造稳定横截面；退化时改用世界 X。
+    const refX = Math.abs(ny) > 0.92 ? 1 : 0;
+    const refY = Math.abs(ny) > 0.92 ? 0 : 1;
+    let ux = ny * 0 - nz * refY;
+    let uy = nz * refX - nx * 0;
+    let uz = nx * refY - ny * refX;
+    const uLength = Math.sqrt(ux * ux + uy * uy + uz * uz) || 1;
+    ux /= uLength; uy /= uLength; uz /= uLength;
+    const vx = ny * uz - nz * uy;
+    const vy = nz * ux - nx * uz;
+    const vz = nx * uy - ny * ux;
+    const base = positions.length / 3;
+    for (let i = 0; i < segments; i++) {
+        const angle = i / segments * Math.PI * 2;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        positions.push(
+            ax + (ux * cos + vx * sin) * radiusA,
+            ay + (uy * cos + vy * sin) * radiusA,
+            az + (uz * cos + vz * sin) * radiusA,
+        );
+    }
+    for (let i = 0; i < segments; i++) {
+        const angle = i / segments * Math.PI * 2;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        positions.push(
+            bx + (ux * cos + vx * sin) * radiusB,
+            by + (uy * cos + vy * sin) * radiusB,
+            bz + (uz * cos + vz * sin) * radiusB,
+        );
+    }
+    pushColor(colors, color, segments * 2);
+    for (let i = 0; i < segments; i++) {
+        const next = (i + 1) % segments;
+        // 横截面基向量满足 u × v = 轴向；按外侧逆时针绕序构造侧壁。
+        indices.push(base + i, base + next, base + segments + i,
+            base + next, base + segments + next, base + segments + i);
+    }
+    const capA = positions.length / 3;
+    positions.push(ax, ay, az, bx, by, bz);
+    pushColor(colors, color, 2);
+    for (let i = 0; i < segments; i++) {
+        const next = (i + 1) % segments;
+        indices.push(capA, base + next, base + i,
+            capA + 1, base + segments + i, base + segments + next);
+    }
+}
+
+function appendBeamYZ(
+    positions: number[], colors: number[], indices: number[],
+    cx: number, ay: number, az: number, by: number, bz: number,
+    widthX: number, thickness: number, color: ColorTuple,
+): void {
+    const dy = by - ay, dz = bz - az;
+    const length = Math.sqrt(dy * dy + dz * dz) || 1;
+    const py = -dz / length * thickness * 0.5;
+    const pz = dy / length * thickness * 0.5;
+    const hx = widthX * 0.5;
+    const base = positions.length / 3;
+    positions.push(
+        cx - hx, ay - py, az - pz, cx + hx, ay - py, az - pz,
+        cx + hx, ay + py, az + pz, cx - hx, ay + py, az + pz,
+        cx - hx, by - py, bz - pz, cx + hx, by - py, bz - pz,
+        cx + hx, by + py, bz + pz, cx - hx, by + py, bz + pz,
+    );
+    pushColor(colors, color, 8);
+    const faces = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
+        0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7,
+        0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+    for (const index of faces) indices.push(base + index);
 }
 
 function appendDisc(
