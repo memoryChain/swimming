@@ -189,6 +189,9 @@ export class LoginManager extends Component {
             return;
         }
         if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
+        // Establish the lobby default before the restored page emits its visibility state.
+        // A quick-race return may synchronously hide this group while the flow is built.
+        this._headBar?.setRightControlsVisible(true);
         this._prepareRaceFlow = new PrepareRaceFlow(getUILayer(this._canvasNode, UILayer.Screen), this._canvasNode, this._designWidth, this._designHeight, {
             onStartRace: () => this.startGame(),
             onOpenRoom: () => this.openRoomFromPrepare(),
@@ -205,7 +208,6 @@ export class LoginManager extends Component {
         });
         this._prepareRaceFlow.showReadyScreen();
         this._headBar?.setVisible(true);
-        this._headBar?.setRightControlsVisible(true);
         // The approved lobby composition has no back button. Character management
         // supplies its own temporary return action through the callback above.
         this._headBar?.setBack(null);

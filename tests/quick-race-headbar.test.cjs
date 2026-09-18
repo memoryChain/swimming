@@ -26,3 +26,17 @@ test('赛事页面保留快速比赛与生涯类型直到关闭通知', () => {
     assert.match(panel, /if \(visible\) this\.pageScreen = this\.screen === 'quick' \? 'quick' : 'career'/);
     assert.match(panel, /visibility\(false, this\.pageScreen\)/);
 });
+
+test('赛后恢复快速比赛页时右侧顶栏不会被大厅默认状态重新打开', () => {
+    const manager = read('assets/scripts/app/LoginManager.ts');
+    const start = manager.indexOf('private openPrepareRace()');
+    const end = manager.indexOf('private exitPrepareRace()', start);
+    assert.ok(start >= 0 && end > start);
+    const openPrepareRace = manager.slice(start, end);
+    const defaultRightControls = openPrepareRace.indexOf('setRightControlsVisible(true)');
+    const buildFlow = openPrepareRace.indexOf('new PrepareRaceFlow');
+    const showReadyScreen = openPrepareRace.indexOf('showReadyScreen()');
+    assert.ok(defaultRightControls >= 0 && defaultRightControls < buildFlow);
+    assert.ok(buildFlow < showReadyScreen);
+    assert.equal(openPrepareRace.indexOf('setRightControlsVisible(true)', showReadyScreen), -1);
+});
