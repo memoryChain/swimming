@@ -12,9 +12,9 @@ h.cc.sys = { localStorage: {
     removeItem: key => storage.delete(key),
 } };
 const load = name => h.load(path.join(h.root, 'assets/scripts', name + '.ts'));
-const { createDefaultProfile, normalizeProfile } = load('backend/PlayerProfile');
+const { createDefaultProfile, normalizeProfile, dailyShopCycleKey } = load('backend/PlayerProfile');
 const { executeCareer, quickEvent, cupRounds } = load('progression/CareerRules');
-const { coinCostForLevel, calculateRaceCoins } = load('progression/ProgressionBalance');
+const { coinCostForLevel, calculateRaceCoins, gemCostForBreakthrough } = load('progression/ProgressionBalance');
 const { MockBackend } = load('backend/MockBackend');
 const roster = Object.keys(createDefaultProfile().characters);
 const [a, b] = roster;
@@ -34,6 +34,75 @@ test('旧存档保留金币和培养等级，已培养角色免重复签约', ()
     assert.equal(p.career.freeSigningUsed, true);
     assert.equal(normalizeProfile({ schema: 4, characters: { [a]: { level: 1 } } }).career.freeSigningUsed, false);
     assert.deepEqual(normalizeProfile(JSON.parse(JSON.stringify(p))).career, p.career);
+});
+
+test('双货币旧档只迁移一次，按历史首冠权益扣除已完成突破消耗', () => {
+    const p = normalizeProfile({
+        schema: 6,
+        coins: 999,
+        characters: { [a]: { level: 11 }, [b]: { level: 6 } },
+        career: { wins: { [a]: [0, 1, 2], [b]: [0] } },
+    });
+    assert.equal(p.characters[a].breakthroughCount, 2);
+    assert.equal(p.characters[b].breakthroughCount, 1);
+    assert.equal(p.breakthroughGems, 3, '历史权益 7，已完成突破消耗 4');
+    p.breakthroughGems = 9;
+    assert.equal(normalizeProfile(JSON.parse(JSON.stringify(p))).breakthroughGems, 9, '新档不得重复补发');
+});
+
+test('每日补给三档独立，广告未完成不消耗，05:00 北京时间换日', async () => {
+    assert.equal(dailyShopCycleKey(Date.UTC(2026, 8, 17, 20, 59, 59)), '2026-09-17');
+    assert.equal(dailyShopCycleKey(Date.UTC(2026, 8, 17, 21, 0, 0)), '2026-09-18');
+    storage.clear();
+    const backend = new MockBackend();
+    let result = await backend.claimDailyShopReward('ad_gems', false, 'incomplete');
+    assert.equal(result.ok, false); assert.equal(result.reason, 'ad_incomplete');
+    result = await backend.claimDailyShopReward('free_coins', false, 'free');
+    assert.equal(result.ok, true); assert.equal(result.grantedCoins, 100);
+    result = await backend.claimDailyShopReward('ad_gems', true, 'gem');
+    assert.equal(result.ok, true); assert.equal(result.grantedGems, 1);
+    result = await backend.claimDailyShopReward('ad_coins', true, 'coins');
+    assert.equal(result.ok, true); assert.equal(result.grantedCoins, 200);
+    const p = await backend.loadProfile();
+    assert.equal(p.coins, 300); assert.equal(p.breakthroughGems, 1);
+    assert.deepEqual(p.dailyShop, { cycleKey: dailyShopCycleKey(), freeCoinsClaimed: true, adGemsClaimed: true, adCoinsClaimed: true });
+    const repeat = await backend.claimDailyShopReward('ad_gems', true, 'gem-retry');
+    assert.equal(repeat.ok, false); assert.equal(repeat.reason, 'claimed');
+    assert.equal((await backend.loadProfile()).breakthroughGems, 1);
+});
+
+test('普通升级停在突破关卡，突破原子消耗金币和宝石', async () => {
+    storage.clear(); const backend = new MockBackend();
+    let p = await backend.loadProfile();
+    p.characters[a].level = 5; p.coins = 5000; p.breakthroughGems = 0;
+    await backend.saveProfile(p);
+    const normal = await backend.spendCoinsForLevel(a, 5);
+    assert.equal(normal.ok, false); assert.equal(normal.reason, 'breakthrough_required');
+    const lacking = await backend.breakthroughCharacter(a, 5);
+    assert.equal(lacking.ok, false); assert.equal(lacking.reason, 'insufficient_gems');
+    p = await backend.loadProfile(); p.breakthroughGems = 1; await backend.saveProfile(p);
+    const cost = coinCostForLevel(5);
+    const result = await backend.breakthroughCharacter(a, 5);
+    assert.equal(result.ok, true); assert.equal(result.coinsSpent, cost);
+    assert.equal(result.gemsSpent, gemCostForBreakthrough(5));
+    p = await backend.loadProfile();
+    assert.equal(p.characters[a].level, 6); assert.equal(p.characters[a].breakthroughCount, 1);
+    assert.equal(p.coins, 5000 - cost); assert.equal(p.breakthroughGems, 0);
+});
+
+test('杯赛突破宝石按角色与段位首冠发放，重复结算和重夺不重复', () => {
+    const p = createDefaultProfile(); p.career.points = 100;
+    finish(p, begin(p, 'cup'));
+    const final = begin(p, 'cup');
+    const first = finish(p, final);
+    assert.equal(first.receipt.breakthroughGemsGained, 1);
+    assert.equal(p.breakthroughGems, 1);
+    assert.equal(finish(p, final).receipt.breakthroughGemsGained, 1);
+    assert.equal(p.breakthroughGems, 1, '相同结算凭据必须幂等');
+    finish(p, begin(p, 'cup', a, 0));
+    const repeat = finish(p, begin(p, 'cup', a, 0));
+    assert.equal(repeat.receipt.breakthroughGemsGained, 0);
+    assert.equal(p.breakthroughGems, 1);
 });
 
 test('联赛进度账号共享，换未培养角色不降固定赛事难度', () => {

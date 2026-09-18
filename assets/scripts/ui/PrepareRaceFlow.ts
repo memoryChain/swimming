@@ -55,6 +55,7 @@ export type PrepareRaceFlowCallbacks = {
     onStartRace: () => void;
     onOpenRoom: () => void;
     onAiDebug?: () => void;
+    onOpenShop?: () => void;
     onCharacterManagementChanged?: (active: boolean) => void;
 };
 
@@ -118,6 +119,7 @@ export class PrepareRaceFlow {
     private _previewRotateArea: Node | null = null;
     private readonly _onResize = (): void => this.layoutPresentation();
     private _preview: PrepareRaceCharacterPreview | null = null;
+    private _visible = true;
     private _view: PrepareRaceView = 'ready';
     private _draftCharacterId: PlayerCharacterId | null = null;
     private _activeInspectorTab: CharacterInspectorTab = 'attributes';
@@ -146,8 +148,12 @@ export class PrepareRaceFlow {
     private _inspectorNextStats: Label[] = [];
     private _inspectorSkillName: Label | null = null;
     private _inspectorSkillDescription: Label | null = null;
+    private _mechanismMilestone: Label | null = null;
     private _upgradeButton: Button | null = null;
     private _upgradeCost: Label | null = null;
+    private _upgradeCoinIcon: Node | null = null;
+    private _upgradeGemIcon: Node | null = null;
+    private _upgradeGemCost: Label | null = null;
     private _upgradeAction: Label | null = null;
     private _attributeContent: Node | null = null;
     private _appearanceContent: Node | null = null;
@@ -162,7 +168,8 @@ export class PrepareRaceFlow {
     private _careerPanel: CareerPrototypePanel | null = null;
 
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
-        if (!this._root?.isValid || !this._content?.isValid || this._leaving) return;
+        if (!this._visible || !this._root?.isValid || !this._root.activeInHierarchy
+            || !this._content?.isValid || this._leaving) return;
         if (this._view === 'ready') {
             if (this._eventPageActive) return;
             this.presentCharacter(getPlayerCharacterSelection().characterId);
@@ -212,6 +219,15 @@ export class PrepareRaceFlow {
         this._callbacks.onCharacterManagementChanged?.(true);
         this.layoutPresentation();
         this._motion.enter(true);
+    }
+
+    /** 商店覆盖时只隐藏现有层级，返回后不会重建页面或 3D 角色预览。 */
+    setVisible(visible: boolean): void {
+        if (this._visible === visible) return;
+        this._visible = visible;
+        setNodeActive(this._root, visible);
+        setNodeActive(this._previewRoot, visible && !this._eventPageActive);
+        if (visible) this._onProfileChange(PlayerData.profile);
     }
 
     dispose(): void {
@@ -289,8 +305,12 @@ export class PrepareRaceFlow {
         this._inspectorNextStats = [];
         this._inspectorSkillName = null;
         this._inspectorSkillDescription = null;
+        this._mechanismMilestone = null;
         this._upgradeButton = null;
         this._upgradeCost = null;
+        this._upgradeCoinIcon = null;
+        this._upgradeGemIcon = null;
+        this._upgradeGemCost = null;
         this._upgradeAction = null;
         this._attributeContent = null;
         this._appearanceContent = null;
@@ -825,6 +845,8 @@ export class PrepareRaceFlow {
         makeRaceTextureSprite('SkillHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -53, 1);
         const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 76, 24, -119.5, -53, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 20);
+        this._mechanismMilestone = makeBoundLabel('MechanismMilestone', parent, '', 13, uiColor(60, 105, 130), 190, 22, 55, -53, Label.HorizontalAlign.RIGHT);
+        stylePsdRuntimeLabel(this._mechanismMilestone, 'PingFang SC', false, 18);
         // Reuse the lobby skill-card texture region so both screens always show
         // the identical icon and dark circular frame without a duplicate asset.
         makeRaceTextureRegionSprite('SkillIcon', parent, RESOURCE_PATHS.lobbyUi.skillCard, new Rect(20, 49, 71, 71), 70, 70, -118.5, -122, 2);
@@ -837,9 +859,12 @@ export class PrepareRaceFlow {
 
         const upgrade = makeRaceTextureButton('UpgradeButton', parent, RESOURCE_PATHS.characterUi.upgradeButton, 313, 70, -16, -195, 2);
         this._upgradeButton = upgrade.getComponent(Button)!;
-        makeRaceTextureSprite('CurrencyIcon', upgrade, RESOURCE_PATHS.characterUi.upgradeCurrency, 36, 36, -106.5, 0, 2);
+        this._upgradeCoinIcon = makeRaceTextureSprite('CurrencyIcon', upgrade, RESOURCE_PATHS.characterUi.upgradeCurrency, 36, 36, -106.5, 0, 2);
         this._upgradeCost = makeBoundLabel('Cost', upgrade, '', 22, DARK_TEXT, 78, 30, -30.5, 0, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(this._upgradeCost, 'Arial Black', true, 28);
+        this._upgradeGemIcon = makeRaceTextureSprite('GemIcon', upgrade, RESOURCE_PATHS.shopUi.gemIcon, 32, 32, -40, 0, 2);
+        this._upgradeGemCost = makeBoundLabel('GemCost', upgrade, '', 20, DARK_TEXT, 30, 30, -7, 0, Label.HorizontalAlign.LEFT);
+        stylePsdRuntimeLabel(this._upgradeGemCost, 'Arial Black', true, 28);
         this._upgradeAction = makeBoundLabel('Action', upgrade, '升级', 24, DARK_TEXT, 90, 34, 68, 0);
         stylePsdTitleLabel(this._upgradeAction, 31);
         upgrade.on(Button.EventType.CLICK, () => void this.upgradeDraftCharacter());
@@ -864,12 +889,27 @@ export class PrepareRaceFlow {
         }
         setLabelString(this._inspectorSkillName, character.skillName);
         setLabelString(this._inspectorSkillDescription, character.skillDescription);
+        setLabelString(this._mechanismMilestone, level >= 30 ? '机制强化 III'
+            : level >= 20 ? '机制强化 II · 下次 Lv.30'
+                : level >= 10 ? '机制强化 I · 下次 Lv.20'
+                    : '机制强化 · Lv.10');
         const atMax = level >= PROGRESSION_BALANCE.maxLevel;
         const cost = atMax ? 0 : progression.coinCostForNextLevel(character.id);
-        const affordable = !atMax && PlayerData.coins >= cost;
+        const gemCost = atMax ? 0 : progression.gemCostForNextLevel(character.id);
+        const breakthrough = gemCost > 0;
+        const affordable = !atMax && PlayerData.coins >= cost && PlayerData.breakthroughGems >= gemCost;
+        setNodeActive(this._upgradeGemIcon, breakthrough);
+        setNodeActive(this._upgradeGemCost?.node ?? null, breakthrough);
+        if (this._upgradeCoinIcon?.isValid) this._upgradeCoinIcon.setPosition(breakthrough ? -132 : -106.5, 0, 2);
+        setLabelLayout(this._upgradeCost, breakthrough ? -84 : -30.5, breakthrough ? 56 : 78, breakthrough ? 20 : 22);
+        setLabelLayout(this._upgradeGemCost, -7, 30, 20);
+        setLabelLayout(this._upgradeAction, breakthrough ? 76 : 68, breakthrough ? 110 : 90, 24);
         setLabelString(this._upgradeCost, atMax ? '—' : `${cost}`);
-        setLabelString(this._upgradeAction, atMax ? '已满级' : '升级');
-        setLabelColor(this._upgradeCost, affordable || atMax ? DARK_TEXT : uiColor(214, 52, 52));
+        setLabelString(this._upgradeGemCost, breakthrough ? `${gemCost}` : '');
+        setLabelString(this._upgradeAction, atMax ? '已满级' : breakthrough
+            ? PlayerData.breakthroughGems < gemCost ? '去商店' : '突破' : '升级');
+        setLabelColor(this._upgradeCost, PlayerData.coins >= cost || atMax ? DARK_TEXT : uiColor(214, 52, 52));
+        setLabelColor(this._upgradeGemCost, PlayerData.breakthroughGems >= gemCost ? DARK_TEXT : uiColor(214, 52, 52));
         setButtonInteractable(this._upgradeButton, !atMax && !this._upgradePending);
     }
 
@@ -880,6 +920,11 @@ export class PrepareRaceFlow {
         const level = progression.getCharacterLevel(characterId);
         if (level >= PROGRESSION_BALANCE.maxLevel) return;
         const cost = progression.coinCostForNextLevel(characterId);
+        const gemCost = progression.gemCostForNextLevel(characterId);
+        if (gemCost > 0 && PlayerData.breakthroughGems < gemCost) {
+            this._callbacks.onOpenShop?.();
+            return;
+        }
         if (PlayerData.coins < cost) {
             showToast(this._canvasNode, '金币不足');
             return;
@@ -888,7 +933,11 @@ export class PrepareRaceFlow {
         setButtonInteractable(this._upgradeButton, false);
         try {
             const result = await progression.spendForLevel(characterId);
-            if (this._root?.isValid) showToast(this._canvasNode, result.levelsGained > 0 ? `升级成功 · Lv.${progression.getCharacterLevel(characterId)}` : result.reason === 'maxed' ? '角色已满级' : '金币不足');
+            if (this._root?.isValid) showToast(this._canvasNode, result.levelsGained > 0
+                ? `${gemCost > 0 ? '突破' : '升级'}成功 · Lv.${progression.getCharacterLevel(characterId)}`
+                : result.reason === 'maxed' ? '角色已满级'
+                    : result.reason === 'insufficient_gems' ? '突破宝石不足'
+                        : '金币不足');
         } catch { if (this._root?.isValid) showToast(this._canvasNode, '保存失败，请重试'); }
         finally {
             this._upgradePending = false;
@@ -1044,13 +1093,13 @@ export class PrepareRaceFlow {
     }
 
     private presentCharacter(characterId: PlayerCharacterId | null): void {
-        if (!characterId) return;
+        if (!characterId || !this._visible) return;
         this.ensurePreview();
         // Both non-race views use the authored platform lighting only; the former
         // extra render-texture contact shadow is deliberately disabled.
         this._preview?.setLobbyPresentation(true, false);
         this._preview?.setHallOffset(this._view === 'ready');
-        setNodeActive(this._previewRoot, true);
+        setNodeActive(this._previewRoot, !this._eventPageActive);
         this._preview?.refresh(characterId);
     }
 
@@ -1242,6 +1291,16 @@ function setLabelString(label: Label | null, value: string): void {
 
 function setLabelColor(label: Label | null, color: Color): void {
     if (label?.isValid && !sameColor(label.color, color)) label.color = color;
+}
+
+function setLabelLayout(label: Label | null, x: number, width: number, fontSize: number): void {
+    if (!label?.isValid) return;
+    if (label.node.position.x !== x || label.node.position.y !== 0) {
+        label.node.setPosition(x, 0, label.node.position.z);
+    }
+    const transform = label.node.getComponent(UITransform);
+    if (transform && transform.contentSize.width !== width) transform.setContentSize(width, transform.contentSize.height);
+    if (label.fontSize !== fontSize) label.fontSize = fontSize;
 }
 
 function setNodeActive(node: Node | null, active: boolean): void {

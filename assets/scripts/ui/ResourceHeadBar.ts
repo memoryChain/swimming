@@ -1,6 +1,6 @@
 // Unified top resource bar for non-race screens (login, prepare-race, etc.). Shows
-// the player's in-game resources — phase 1 has one: 游泳卡 (swim cards) — and offers a
-// "+" button that triggers the watch-ad reward flow. Parent it directly to the
+// the player's shared coins and breakthrough gems. Both resource pills open the
+// daily-supply shop. Parent it directly to the
 // screen Canvas so it persists across non-race sub-screens on that canvas.
 //
 // It subscribes to PlayerData and refreshes automatically whenever the balance
@@ -8,7 +8,7 @@
 
 import { Button, Label, Node, Sprite, SpriteFrame, Texture2D, UITransform, view } from 'cc';
 import { makeButton, makeLabel, makeScreenEdgeGroup, makeUiNode, uiColor } from './RuntimeUiFactory';
-import { PlayerProfile } from '../backend/PlayerProfile';
+import { dailyShopCycleKey, PlayerProfile } from '../backend/PlayerProfile';
 import { PlayerData } from '../backend/PlayerData';
 import { UI_STYLE } from './UIStyle';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
@@ -18,8 +18,8 @@ import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets
 import { styleCurrencyNumberLabel } from './ProjectUiFonts';
 
 export interface ResourceHeadBarOptions {
-    // Called when the player taps "+" to gain resources by watching an ad.
-    onAddCoins?: () => void;
+    // 两种资源胶囊都进入每日补给商店。
+    onOpenShop?: () => void;
     // Called when the player taps their identity (avatar + name) to edit it.
     onEditIdentity?: () => void;
     // Called when the player taps the settings gear (shown only when provided).
@@ -48,12 +48,15 @@ export const HEADBAR_TOP_SAFE_AREA = EDGE_PADDING + BAR_HEIGHT + 8;
 export class ResourceHeadBar {
     private _root: Node | null = null;
     private _countLabel: Label | null = null;
+    private _gemCountLabel: Label | null = null;
+    private _shopBadge: Node | null = null;
     private _backButton: Node | null = null;
     private _backHandler: (() => void) | null = null;
     private _identity: Node | null = null;
     private _nameLabel: Label | null = null;
     private _avatarSprite: Sprite | null = null;
     private _avatarId = '';
+    private _cycleTimer: ReturnType<typeof setInterval> | null = null;
     // Identity X when the back button is hidden vs shown (it shifts right to make
     // room for the back button, and is NEVER hidden).
     private _identityXDefault = 0;
@@ -114,10 +117,15 @@ export class ResourceHeadBar {
         this._nameLabel = nameLabel;
         this._identity = identity;
 
-        const pill = makeUiNode('ResourcePill', right);
+        const coinPillX = designWidth / 2 - rightPadding - BAR_WIDTH / 2;
+        const gemPillX = coinPillX - BAR_WIDTH - 10;
+        const pill = makeUiNode('CoinResourcePill', right);
         pill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
-        pill.setPosition(designWidth / 2 - rightPadding - BAR_WIDTH / 2, topY, 0);
-        makeLoginSprite('Artwork', pill, RESOURCE_PATHS.lobbyUi.topCurrency, BAR_WIDTH, BAR_HEIGHT, 0, 0);
+        pill.setPosition(coinPillX, topY, 0);
+        makeLoginSprite('Artwork', pill, RESOURCE_PATHS.shopUi.resourcePill, BAR_WIDTH, BAR_HEIGHT, 0, 0);
+        makeLoginSprite('CoinIcon', pill, RESOURCE_PATHS.characterUi.upgradeCurrency, 48, 48, -70, 0);
+        pill.addComponent(Button).transition = Button.Transition.NONE;
+        pill.on(Node.EventType.TOUCH_END, () => options.onOpenShop?.());
 
         // "游泳卡 N" count text.
         const countNode = makeLabel('Count', pill, '', 22, uiColor(240, 250, 255, 255));
@@ -130,18 +138,34 @@ export class ResourceHeadBar {
         countNode.setPosition(-3, 0, 1);
         this._countLabel = countLabel;
 
-        const addButton = makeUiNode('Add', pill);
-        addButton.getComponent(UITransform)!.setContentSize(48, 48);
-        addButton.setPosition(70.5, 0, 1);
-        addButton.addComponent(Button).transition = Button.Transition.NONE;
-        addButton.on(Node.EventType.TOUCH_END, () => options.onAddCoins?.());
+        const badge = makeLabel('FreeRewardBadge', pill, '●', 26, uiColor(239, 66, 71, 255));
+        badge.getComponent(UITransform)!.setContentSize(28, 28);
+        badge.setPosition(84, 24, 3);
+        this._shopBadge = badge;
+
+        const gemPill = makeUiNode('GemResourcePill', right);
+        gemPill.getComponent(UITransform)!.setContentSize(BAR_WIDTH, BAR_HEIGHT);
+        gemPill.setPosition(gemPillX, topY, 0);
+        makeLoginSprite('Artwork', gemPill, RESOURCE_PATHS.shopUi.resourcePill, BAR_WIDTH, BAR_HEIGHT, 0, 0);
+        makeLoginSprite('GemIcon', gemPill, RESOURCE_PATHS.shopUi.gemIcon, 45, 45, -70, 0);
+        gemPill.addComponent(Button).transition = Button.Transition.NONE;
+        gemPill.on(Node.EventType.TOUCH_END, () => options.onOpenShop?.());
+        const gemCountNode = makeLabel('Count', gemPill, '', 22, uiColor(240, 250, 255, 255));
+        const gemCountLabel = gemCountNode.getComponent(Label)!;
+        styleCurrencyNumberLabel(gemCountLabel, 28);
+        gemCountLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        gemCountLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        gemCountLabel.overflow = Label.Overflow.SHRINK;
+        gemCountNode.getComponent(UITransform)!.setContentSize(80, 38);
+        gemCountNode.setPosition(-3, 0, 1);
+        this._gemCountLabel = gemCountLabel;
 
         // Settings entry, left of the resource pill. Matches the headbar panels:
         // same dark rounded plate + faint cyan outline (only when a handler is given).
         if (options.onOpenSettings) {
             const settingsButton = makeUiNode('SettingsButton', right);
             settingsButton.getComponent(UITransform)!.setContentSize(56, 56);
-            settingsButton.setPosition(designWidth / 2 - rightPadding - BAR_WIDTH - 28, topY, 0);
+            settingsButton.setPosition(gemPillX - BAR_WIDTH / 2 - 38, topY, 0);
             makeLoginSprite('Artwork', settingsButton, RESOURCE_PATHS.lobbyUi.topSettings, 56, 56, 0, 0);
             const settingsBtn = settingsButton.addComponent(Button);
             settingsBtn.target = settingsButton;
@@ -151,6 +175,11 @@ export class ResourceHeadBar {
         }
 
         PlayerData.onChange(this._onChange);
+        this._cycleTimer = setInterval(() => {
+            if (PlayerData.profile.dailyShop.cycleKey !== dailyShopCycleKey()) {
+                void PlayerData.refreshProfile();
+            }
+        }, 30000);
         this.refresh(PlayerData.profile);
         return root;
     }
@@ -202,6 +231,14 @@ export class ResourceHeadBar {
         if (this._countLabel && this._countLabel.string !== count) {
             this._countLabel.string = count;
         }
+        const gems = `${profile.breakthroughGems}`;
+        if (this._gemCountLabel && this._gemCountLabel.string !== gems) {
+            this._gemCountLabel.string = gems;
+        }
+        if (this._shopBadge?.isValid) {
+            const visible = !profile.dailyShop.freeCoinsClaimed;
+            if (this._shopBadge.active !== visible) this._shopBadge.active = visible;
+        }
         this.refreshIdentity(profile);
     }
 
@@ -213,11 +250,17 @@ export class ResourceHeadBar {
 
     dispose(): void {
         PlayerData.offChange(this._onChange);
+        if (this._cycleTimer) {
+            clearInterval(this._cycleTimer);
+            this._cycleTimer = null;
+        }
         if (this._root?.isValid) {
             this._root.destroy();
         }
         this._root = null;
         this._countLabel = null;
+        this._gemCountLabel = null;
+        this._shopBadge = null;
         this._backButton = null;
         this._backHandler = null;
         this._identity = null;

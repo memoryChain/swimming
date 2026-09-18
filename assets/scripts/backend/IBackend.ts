@@ -4,7 +4,7 @@
 // local mock for the WeChat Cloud backend later is a one-line change in
 // BackendManager, with zero changes to callers.
 //
-// SECURITY: all resource changes (adding coins, spending coins to level) are done
+// SECURITY: all resource changes (adding resources, upgrading and breakthroughs) are done
 // BY the backend, not by the caller. The caller only expresses intent ("I watched
 // an ad", "spend coins to level up"); the backend (a cloud function in production)
 // validates caps/balances and returns the authoritative new profile. The client
@@ -33,7 +33,7 @@ export interface AdRewardResult {
     reason?: AdRewardReason;
 }
 
-export type SpendFailReason = 'insufficient' | 'maxed';
+export type SpendFailReason = 'insufficient' | 'maxed' | 'breakthrough_required';
 
 export interface LevelSpendResult {
     // True when at least one level was gained.
@@ -46,6 +46,28 @@ export interface LevelSpendResult {
     coinsSpent: number;
     // Why nothing was spent, when ok is false.
     reason?: SpendFailReason;
+}
+
+export type DailyShopRewardSlot = 'free_coins' | 'ad_gems' | 'ad_coins';
+export type DailyShopClaimReason = 'claimed' | 'ad_incomplete' | 'error';
+
+export interface DailyShopClaimResult {
+    ok: boolean;
+    profile: PlayerProfile;
+    slot: DailyShopRewardSlot;
+    grantedCoins: number;
+    grantedGems: number;
+    reason?: DailyShopClaimReason;
+}
+
+export type BreakthroughFailReason = 'invalid_level' | 'insufficient_coins' | 'insufficient_gems' | 'maxed';
+
+export interface BreakthroughResult {
+    ok: boolean;
+    profile: PlayerProfile;
+    coinsSpent: number;
+    gemsSpent: number;
+    reason?: BreakthroughFailReason;
 }
 
 // Cosmetic identity fields the player chooses (nickname / avatar). Not anti-cheat
@@ -68,6 +90,9 @@ export interface IBackend {
     // via grantDebugCoins instead); this stays ready for when ads ship.
     grantAdReward(): Promise<AdRewardResult>;
 
+    // 领取每日补给。正式后台必须校验广告凭证与 transactionId，并原子写入。
+    claimDailyShopReward(slot: DailyShopRewardSlot, adCompleted: boolean, transactionId: string): Promise<DailyShopClaimResult>;
+
     // DEBUG ONLY: add coins with no ad and no cap. Used by the headbar "+" button
     // while the rewarded-ad flow is deferred. MUST NOT exist in the production
     // cloud backend (or must be gated to dev accounts).
@@ -78,6 +103,9 @@ export interface IBackend {
     // many as the balance allows, validates, and returns the authoritative
     // profile + how many levels were gained + coins spent.
     spendCoinsForLevel(characterId: string, requestedLevels: number): Promise<LevelSpendResult>;
+
+    // 突破关卡单独结算，金币、宝石和等级必须在一次事务中同时变更。
+    breakthroughCharacter(characterId: string, expectedLevel: number): Promise<BreakthroughResult>;
 
     // Persist the player-chosen identity (nickname / avatar). Returns the updated
     // profile.

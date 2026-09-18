@@ -459,6 +459,14 @@ export const RESOURCE_PATHS = {
         topSettings: 'ui/lobby-v1/top-settings/texture',
         topCurrency: 'ui/lobby-v1/top-currency/texture',
     },
+    shopUi: {
+        resourcePill: 'ui/shop-v1/resource-pill/texture',
+        gemIcon: 'ui/shop-v1/gem-icon/texture',
+        videoIcon: 'ui/shop-v1/video-icon/texture',
+        supplyPanel: 'ui/shop-v1/supply-panel/texture',
+        supplyCard: 'ui/shop-v1/supply-card/texture',
+        supplyCardGem: 'ui/shop-v1/supply-card-gem/texture',
+    },
     softSpeedStreak: 'ui/vfx/SoftSpeedStreak/texture',
     raceHudCountdownFont: 'fonts/Bungee-Regular',
     raceHudUi: {

@@ -32,7 +32,7 @@ export interface RaceTicket {
 }
 export interface CareerReceipt {
     id: string; characterId: string; coinsGained: number; regular: number;
-    podium: number; first: number; points: number; message: string;
+    podium: number; first: number; points: number; breakthroughGemsGained: number; message: string;
 }
 export interface CareerState {
     version: number; league: number; points: number; freeSigningUsed: boolean;
@@ -143,7 +143,8 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
     const factor = t.source === 'quick' ? 1 : LEAGUES[t.tier].factor;
     const regular = t.source === 'cup' ? 0 : calculateRaceCoins({ ...command, finished, factor, distance: t.distance });
     const receipt: CareerReceipt = { id: t.id, characterId: t.characterId, coinsGained: regular,
-        regular, podium: 0, first: 0, points: 0, message: finished ? '比赛完成' : '未完赛，本场无奖励' };
+        regular, podium: 0, first: 0, points: 0, breakthroughGemsGained: 0,
+        message: finished ? '比赛完成' : '未完赛，本场无奖励' };
     if (t.source === 'league') {
         if (finished && t.tier === c.league) {
             receipt.points = Math.min(100 - c.points, [20, 14, 10, 6, 0, 0, 0, 0][command.placement - 1]);
@@ -161,9 +162,16 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
                 receipt.regular = t.championCoins ?? CUP_REWARDS[t.tier].championCoins;
                 receipt.coinsGained = receipt.regular;
                 const wins = c.wins[t.characterId] ?? (c.wins[t.characterId] = []);
-                if (wins.indexOf(t.tier) < 0) wins.push(t.tier);
+                if (wins.indexOf(t.tier) < 0) {
+                    wins.push(t.tier);
+                    receipt.breakthroughGemsGained = CUP_REWARDS[t.tier].firstChampionGems;
+                    profile.breakthroughGems += receipt.breakthroughGemsGained;
+                }
                 if (t.tier === c.league && c.points >= 100 && c.league < 5) {
                     c.league++; c.points = 0; receipt.message = `晋级成功 · ${LEAGUES[c.league].name}`;
+                }
+                if (receipt.breakthroughGemsGained > 0) {
+                    receipt.message += ` · 突破宝石 +${receipt.breakthroughGemsGained}`;
                 }
             }
         } else if (finished && command.placement <= (t.round === 0 ? 4 : 3)) {

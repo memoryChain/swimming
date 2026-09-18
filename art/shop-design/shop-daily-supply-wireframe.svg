@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1290" height="720" viewBox="0 0 1290 720">
+  <rect width="1290" height="720" fill="#e9f4f7"/>
+  <g fill="none" stroke="#17324d" stroke-width="2">
+    <rect x="34" y="24" width="56" height="56" rx="18"/>
+    <path d="M68 40 50 52l18 12M51 52h24"/>
+    <rect x="112" y="24" width="220" height="56" rx="12"/>
+    <rect x="728" y="24" width="164" height="56" rx="28"/>
+    <rect x="906" y="24" width="164" height="56" rx="28"/>
+    <rect x="1120" y="16" width="136" height="64" rx="32" stroke-dasharray="8 6"/>
+    <rect x="54" y="112" width="1182" height="554" rx="30"/>
+    <rect x="94" y="222" width="340" height="326" rx="24"/>
+    <rect x="475" y="222" width="340" height="326" rx="24" stroke-width="4"/>
+    <rect x="856" y="222" width="340" height="326" rx="24"/>
+    <circle cx="264" cy="329" r="53"/>
+    <polygon points="645,274 697,313 680,374 610,374 593,313"/>
+    <circle cx="1026" cy="329" r="53"/>
+    <rect x="124" y="458" width="280" height="60" rx="24"/>
+    <rect x="505" y="458" width="280" height="60" rx="24"/>
+    <rect x="886" y="458" width="280" height="60" rx="24"/>
+  </g>
+  <g fill="#17324d" font-family="Microsoft YaHei,Arial,sans-serif">
+    <text x="222" y="62" font-size="34" text-anchor="middle" font-weight="700">商店</text>
+    <text x="810" y="60" font-size="20" text-anchor="middle">金币 8,420</text>
+    <text x="988" y="60" font-size="20" text-anchor="middle">宝石 6</text>
+    <text x="1188" y="53" font-size="14" text-anchor="middle">微信原生控件预留</text>
+    <text x="94" y="164" font-size="30" font-weight="700">每日补给</text>
+    <text x="94" y="196" font-size="17">每天 05:00 刷新 · 三份奖励可独立领取</text>
+    <text x="1196" y="174" font-size="17" text-anchor="end">距刷新 12:34:56</text>
+    <text x="264" y="260" font-size="18" text-anchor="middle">每日免费</text>
+    <text x="264" y="407" font-size="28" text-anchor="middle" font-weight="700">金币 ×100</text>
+    <text x="264" y="437" font-size="16" text-anchor="middle">无需广告，点击即领</text>
+    <text x="264" y="496" font-size="23" text-anchor="middle" font-weight="700">免费领取</text>
+    <text x="645" y="260" font-size="18" text-anchor="middle">稀有补给</text>
+    <text x="645" y="407" font-size="28" text-anchor="middle" font-weight="700">突破宝石 ×1</text>
+    <text x="645" y="437" font-size="16" text-anchor="middle">完成一次广告后领取</text>
+    <text x="645" y="496" font-size="23" text-anchor="middle" font-weight="700">看广告领取</text>
+    <text x="1026" y="260" font-size="18" text-anchor="middle">金币补给</text>
+    <text x="1026" y="407" font-size="28" text-anchor="middle" font-weight="700">金币 ×200</text>
+    <text x="1026" y="437" font-size="16" text-anchor="middle">完成一次广告后领取</text>
+    <text x="1026" y="496" font-size="23" text-anchor="middle" font-weight="700">看广告领取</text>
+    <text x="94" y="604" font-size="16">广告中途关闭不会消耗今日次数</text>
+    <text x="1196" y="604" font-size="18" text-anchor="end" font-weight="700">前往角色养成 &gt;</text>
+    <text x="94" y="642" font-size="14">线框稿：所有文字在正式接入时使用 Cocos Label，不属于运行时切图。</text>
+  </g>
+</svg>

@@ -1,5 +1,11 @@
 import { sys } from 'cc';
-import { PROGRESSION_BALANCE, normalizeCharacterLevel, coinCostForLevel } from './ProgressionBalance';
+import {
+    PROGRESSION_BALANCE,
+    breakthroughIndexForLevel,
+    coinCostForLevel,
+    gemCostForBreakthrough,
+    normalizeCharacterLevel,
+} from './ProgressionBalance';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import { resolvePlayerBalance, PlayerBalanceOverrides } from './PlayerBalanceOverrides';
 import { PlayerData } from '../backend/PlayerData';
@@ -18,7 +24,8 @@ export type SpendResult = {
     characterId: string;
     levelsGained: number;
     coinsSpent: number;
-    reason?: 'maxed' | 'insufficient';
+    gemsSpent: number;
+    reason?: 'maxed' | 'insufficient' | 'breakthrough_required' | 'invalid_level' | 'insufficient_coins' | 'insufficient_gems';
 };
 
 // Reads/writes character progression through the shared PlayerData profile (which
@@ -33,7 +40,7 @@ export class ProgressionManager {
     private _progress(characterId: PlayerCharacterId): CharacterProgress {
         let progress = PlayerData.profile.characters[characterId];
         if (!progress) {
-            progress = { level: 1, signed: false, signAds: 0, adTokens: [] };
+            progress = { level: 1, breakthroughCount: 0, signed: false, signAds: 0, adTokens: [] };
             PlayerData.profile.characters[characterId] = progress;
         }
         return progress;
@@ -48,13 +55,22 @@ export class ProgressionManager {
         return coinCostForLevel(this.getCharacterLevel(characterId));
     }
 
+    gemCostForNextLevel(characterId: PlayerCharacterId): number {
+        return gemCostForBreakthrough(this.getCharacterLevel(characterId));
+    }
+
+    isBreakthroughRequired(characterId: PlayerCharacterId): boolean {
+        return breakthroughIndexForLevel(this.getCharacterLevel(characterId)) >= 0;
+    }
+
     // Whether the wallet can afford at least one more level for this character.
     canAffordNextLevel(characterId: PlayerCharacterId): boolean {
         const level = this.getCharacterLevel(characterId);
         if (level >= PROGRESSION_BALANCE.maxLevel) {
             return false;
         }
-        return PlayerData.coins >= coinCostForLevel(level);
+        return PlayerData.coins >= coinCostForLevel(level)
+            && PlayerData.breakthroughGems >= gemCostForBreakthrough(level);
     }
 
     resolveBalance(characterId: PlayerCharacterId): PlayerBalanceOverrides | null {
@@ -83,6 +99,7 @@ export class ProgressionManager {
         let coins = 0;
         let wallet = PlayerData.coins;
         while (level < PROGRESSION_BALANCE.maxLevel) {
+            if (breakthroughIndexForLevel(level) >= 0) break;
             const cost = coinCostForLevel(level);
             if (wallet < cost) {
                 break;
@@ -99,6 +116,10 @@ export class ProgressionManager {
     // level was gained. The backend validates the balance and returns the
     // authoritative profile.
     async spendForLevel(characterId: PlayerCharacterId): Promise<SpendResult> {
+        const level = this.getCharacterLevel(characterId);
+        if (breakthroughIndexForLevel(level) >= 0) {
+            return PlayerData.breakthroughCharacter(characterId, level);
+        }
         return PlayerData.spendCoinsForLevel(characterId, 1);
     }
 
@@ -136,6 +157,7 @@ export class ProgressionManager {
                 if (entry && typeof entry.level === 'number') {
                     characters[id] = {
                         level: normalizeCharacterLevel(entry.level),
+                        breakthroughCount: Math.floor((normalizeCharacterLevel(entry.level) - 1) / 5),
                         signed: normalizeCharacterLevel(entry.level) > 1, signAds: 0, adTokens: [],
                     };
                 }

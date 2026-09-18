@@ -17,7 +17,6 @@ import { getUILayer, UILayer } from '../ui/UILayers';
 import { netRoom } from '../net/NetManager';
 import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
-import { rewardedAdUnitId } from '../platform/AdConfig';
 import { showToast } from '../ui/Toast';
 import { PlayerData } from '../backend/PlayerData';
 import { PROGRESSION_CONFIG, CURRENCY } from '../backend/PlayerProfile';
@@ -26,6 +25,7 @@ import { SettingsManager } from './SettingsManager';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { MusicManager } from './MusicManager';
 import { PrepareRaceFlow } from '../ui/PrepareRaceFlow';
+import { ShopDailySupplyPanel } from '../ui/ShopDailySupplyPanel';
 
 
 const { ccclass } = _decorator;
@@ -41,6 +41,7 @@ export class LoginManager extends Component {
     private _headBar: ResourceHeadBar | null = null;
     private _identityEditPanel: IdentityEditPanel | null = null;
     private _settingsPanel: SettingsPanel | null = null;
+    private _shopPanel: ShopDailySupplyPanel | null = null;
     private _roomFlow: RoomFlow | null = null;
     private _pendingOpenRoom = false;
     private _pendingOpenLobby = false;
@@ -48,7 +49,6 @@ export class LoginManager extends Component {
     private _pendingReconnect = false;
     private _loginUiRetries = 0;
     private _offAppShow: (() => void) | null = null;
-    private _adInProgress = false;
 
     onLoad() {
         const canvasNode = this.findCanvasNode();
@@ -98,7 +98,7 @@ export class LoginManager extends Component {
         // z-order juggling. Load the profile so the count reflects saved data.
         this._headBar = new ResourceHeadBar();
         this._headBar.build(getUILayer(canvasNode, UILayer.Hud), width, height, {
-            onAddCoins: () => this.toast('单人比赛获得金币，角色页可消耗金币升级'),
+            onOpenShop: () => this.openShop(),
             onEditIdentity: () => this.openIdentityEdit(),
             onOpenSettings: () => this.openSettings(),
         });
@@ -132,37 +132,6 @@ export class LoginManager extends Component {
         this._settingsPanel.show();
     }
 
-    // Rewarded-ad reward flow for the headbar "+" button: show the ad, and only on
-    // a completed view ask the backend to grant coins (it enforces the daily cap).
-    // The headbar auto-refreshes via PlayerData.onChange. Editor/web auto-completes
-    // the mock ad so this is testable locally.
-    private async watchAdForCoins() {
-        if (this._adInProgress) {
-            return;
-        }
-        this._adInProgress = true;
-        try {
-            const outcome = await platform().showRewardedAd(rewardedAdUnitId(platform().name));
-            if (outcome === 'completed') {
-                const reward = await PlayerData.grantAdReward();
-                if (reward.ok) {
-                    this.toast(`+${reward.granted} ${CURRENCY.coin.label}`);
-                } else if (reward.reason === 'capped') {
-                    this.toast('今日看广告次数已达上限');
-                } else {
-                    this.toast('发放失败，请稍后再试');
-                }
-            } else if (outcome === 'unavailable') {
-                this.toast('暂无可用广告');
-            } else if (outcome === 'error') {
-                this.toast('广告加载失败，请稍后再试');
-            }
-            // 'skipped' (closed early): no reward, no nagging toast.
-        } finally {
-            this._adInProgress = false;
-        }
-    }
-
     private toast(text: string) {
         if (this._canvasNode?.isValid) {
             showToast(this._canvasNode, text);
@@ -187,6 +156,8 @@ export class LoginManager extends Component {
         this._identityEditPanel = null;
         this._settingsPanel?.dispose();
         this._settingsPanel = null;
+        this._shopPanel?.dispose();
+        this._shopPanel = null;
         this._headBar?.dispose();
     }
 
@@ -204,6 +175,7 @@ export class LoginManager extends Component {
             onStartRace: () => this.startGame(),
             onOpenRoom: () => this.openRoomFromPrepare(),
             onAiDebug: () => this.showAiDebugPicker(),
+            onOpenShop: () => this.openShop(),
             onCharacterManagementChanged: (active) => {
                 this._headBar?.setBack(null);
                 this._headBar?.setIdentityVisible(!active);
@@ -223,6 +195,32 @@ export class LoginManager extends Component {
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
         }
+    }
+
+    private openShop() {
+        if (!this._canvasNode?.isValid) return;
+        if (this._roomFlow) {
+            this.toast('联机房间中暂不能打开商店');
+            return;
+        }
+        if (!this._shopPanel) {
+            this._shopPanel = new ShopDailySupplyPanel((message) => this.toast(message));
+            this._shopPanel.build(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight);
+        }
+        if (this._loginUiRoot?.isValid) this._loginUiRoot.active = false;
+        this._prepareRaceFlow?.setVisible(false);
+        this._shopPanel.show();
+        this._headBar?.setBack(() => this.closeShop());
+    }
+
+    private closeShop() {
+        this._shopPanel?.hide();
+        if (this._prepareRaceFlow) {
+            this._prepareRaceFlow.setVisible(true);
+        } else if (this._loginUiRoot?.isValid) {
+            this._loginUiRoot.active = true;
+        }
+        this._headBar?.setBack(null);
     }
 
     private openRoomFromPrepare() {
@@ -273,6 +271,7 @@ export class LoginManager extends Component {
         if (this._roomFlow) {
             return;
         }
+        this._shopPanel?.hide();
         this._prepareRaceFlow?.dispose();
         this._prepareRaceFlow = null;
         // NOTE: do NOT gate on _loginUiRoot here. When launched from a friend's share

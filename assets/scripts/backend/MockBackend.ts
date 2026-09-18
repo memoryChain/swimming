@@ -8,15 +8,28 @@
 
 import { sys } from 'cc';
 import { CareerCommand, CareerResult, executeCareer } from '../progression/CareerRules';
-import { AdRewardResult, IBackend, IdentityPatch, LevelSpendResult } from './IBackend';
+import {
+    AdRewardResult,
+    BreakthroughResult,
+    DailyShopClaimResult,
+    DailyShopRewardSlot,
+    IBackend,
+    IdentityPatch,
+    LevelSpendResult,
+} from './IBackend';
 import {
     createDefaultProfile,
     normalizeProfile,
     PlayerProfile,
     PROGRESSION_CONFIG,
-    todayString,
+    dailyShopCycleKey,
 } from './PlayerProfile';
-import { PROGRESSION_BALANCE, coinCostForLevel } from '../progression/ProgressionBalance';
+import {
+    PROGRESSION_BALANCE,
+    breakthroughIndexForLevel,
+    coinCostForLevel,
+    gemCostForBreakthrough,
+} from '../progression/ProgressionBalance';
 
 const STORAGE_KEY = 'swimming.player-profile';
 
@@ -33,20 +46,45 @@ export class MockBackend implements IBackend {
         return Promise.resolve(this.read());
     }
 
-    grantAdReward(): Promise<AdRewardResult> {
+    async grantAdReward(): Promise<AdRewardResult> {
+        // 兼容旧调用，但必须与新的“广告金币”槽位共用同一日限，不能成为额外入口。
+        const result = await this.claimDailyShopReward('ad_coins', true, `legacy-${Date.now()}`);
+        return {
+            ok: result.ok,
+            profile: result.profile,
+            granted: result.grantedCoins,
+            reason: result.ok ? undefined : result.reason === 'claimed' ? 'capped' : 'error',
+        };
+    }
+
+    claimDailyShopReward(slot: DailyShopRewardSlot, adCompleted: boolean, _transactionId: string): Promise<DailyShopClaimResult> {
         const profile = this.read();
-        if (profile.daily.date !== todayString()) {
-            profile.daily.date = todayString();
-            profile.daily.adCount = 0;
+        this.rollDailyShop(profile);
+        const claimed = slot === 'free_coins' ? profile.dailyShop.freeCoinsClaimed
+            : slot === 'ad_gems' ? profile.dailyShop.adGemsClaimed
+                : profile.dailyShop.adCoinsClaimed;
+        if (claimed) {
+            return Promise.resolve({ ok: false, profile, slot, grantedCoins: 0, grantedGems: 0, reason: 'claimed' });
         }
-        if (profile.daily.adCount >= PROGRESSION_CONFIG.dailyAdCap) {
-            return Promise.resolve({ ok: false, profile, granted: 0, reason: 'capped' });
+        if (slot !== 'free_coins' && !adCompleted) {
+            return Promise.resolve({ ok: false, profile, slot, grantedCoins: 0, grantedGems: 0, reason: 'ad_incomplete' });
         }
-        const granted = PROGRESSION_CONFIG.adRewardCoins;
-        profile.coins += granted;
-        profile.daily.adCount += 1;
+        let grantedCoins = 0;
+        let grantedGems = 0;
+        if (slot === 'free_coins') {
+            grantedCoins = PROGRESSION_CONFIG.dailyFreeCoins;
+            profile.dailyShop.freeCoinsClaimed = true;
+        } else if (slot === 'ad_gems') {
+            grantedGems = PROGRESSION_CONFIG.dailyAdGems;
+            profile.dailyShop.adGemsClaimed = true;
+        } else {
+            grantedCoins = PROGRESSION_CONFIG.dailyAdCoins;
+            profile.dailyShop.adCoinsClaimed = true;
+        }
+        profile.coins += grantedCoins;
+        profile.breakthroughGems += grantedGems;
         this.write(profile);
-        return Promise.resolve({ ok: true, profile, granted });
+        return Promise.resolve({ ok: true, profile, slot, grantedCoins, grantedGems });
     }
 
     // DEBUG ONLY: no ad, no cap. See IBackend.grantDebugCoins.
@@ -70,6 +108,9 @@ export class MockBackend implements IBackend {
         let coinsSpent = 0;
         let remaining = Number.isFinite(requestedLevels) ? Math.max(0, Math.min(30, Math.floor(requestedLevels))) : 0;
         while (remaining > 0 && progress.level < PROGRESSION_BALANCE.maxLevel) {
+            if (breakthroughIndexForLevel(progress.level) >= 0) {
+                break;
+            }
             const cost = coinCostForLevel(progress.level);
             if (profile.coins < cost) {
                 break;
@@ -81,10 +122,36 @@ export class MockBackend implements IBackend {
             remaining -= 1;
         }
         if (levelsGained === 0) {
-            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason: 'insufficient' });
+            const reason = breakthroughIndexForLevel(progress.level) >= 0 ? 'breakthrough_required' : 'insufficient';
+            return Promise.resolve({ ok: false, profile, levelsGained: 0, coinsSpent: 0, reason });
         }
         this.write(profile);
         return Promise.resolve({ ok: true, profile, levelsGained, coinsSpent });
+    }
+
+    breakthroughCharacter(characterId: string, expectedLevel: number): Promise<BreakthroughResult> {
+        const profile = this.read();
+        const progress = profile.characters[characterId];
+        if (!progress || progress.level >= PROGRESSION_BALANCE.maxLevel) {
+            return Promise.resolve({ ok: false, profile, coinsSpent: 0, gemsSpent: 0, reason: 'maxed' });
+        }
+        if (progress.level !== expectedLevel || breakthroughIndexForLevel(progress.level) < 0) {
+            return Promise.resolve({ ok: false, profile, coinsSpent: 0, gemsSpent: 0, reason: 'invalid_level' });
+        }
+        const coins = coinCostForLevel(progress.level);
+        const gems = gemCostForBreakthrough(progress.level);
+        if (profile.coins < coins) {
+            return Promise.resolve({ ok: false, profile, coinsSpent: 0, gemsSpent: 0, reason: 'insufficient_coins' });
+        }
+        if (profile.breakthroughGems < gems) {
+            return Promise.resolve({ ok: false, profile, coinsSpent: 0, gemsSpent: 0, reason: 'insufficient_gems' });
+        }
+        profile.coins -= coins;
+        profile.breakthroughGems -= gems;
+        progress.level += 1;
+        progress.breakthroughCount = breakthroughIndexForLevel(expectedLevel) + 1;
+        this.write(profile);
+        return Promise.resolve({ ok: true, profile, coinsSpent: coins, gemsSpent: gems });
     }
 
     saveIdentity(identity: IdentityPatch): Promise<PlayerProfile> {
@@ -131,5 +198,16 @@ export class MockBackend implements IBackend {
             console.warn('[Backend] mock write failed', error);
             throw error;
         }
+    }
+
+    private rollDailyShop(profile: PlayerProfile): void {
+        const cycleKey = dailyShopCycleKey();
+        if (profile.dailyShop.cycleKey === cycleKey) return;
+        profile.dailyShop = {
+            cycleKey,
+            freeCoinsClaimed: false,
+            adGemsClaimed: false,
+            adCoinsClaimed: false,
+        };
     }
 }

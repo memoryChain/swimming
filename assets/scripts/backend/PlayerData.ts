@@ -5,7 +5,12 @@
 
 import { backend } from './BackendManager';
 import type { CareerCommand, CareerResult } from '../progression/CareerRules';
-import { AdRewardResult, IdentityPatch } from './IBackend';
+import {
+    AdRewardResult,
+    DailyShopClaimResult,
+    DailyShopRewardSlot,
+    IdentityPatch,
+} from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
 import { createDefaultProfile, PlayerProfile } from './PlayerProfile';
 import type { SpendResult } from '../progression/ProgressionManager';
@@ -60,6 +65,10 @@ class PlayerDataStore {
         return this._profile.coins;
     }
 
+    get breakthroughGems(): number {
+        return this._profile.breakthroughGems;
+    }
+
     get nickName(): string {
         return this._profile.nickName;
     }
@@ -110,6 +119,28 @@ class PlayerDataStore {
         });
     }
 
+    /** 重新读取后台权威存档；用于每日 05:00 换日，不影响首次加载去重。 */
+    refreshProfile(): Promise<PlayerProfile> {
+        return this.enqueue(async () => {
+            this._profile = await backend().loadProfile();
+            this._emit();
+            return this._profile;
+        });
+    }
+
+    async claimDailyShopReward(
+        slot: DailyShopRewardSlot,
+        adCompleted: boolean,
+        transactionId: string,
+    ): Promise<DailyShopClaimResult> {
+        return this.enqueue(async () => {
+            const result = await backend().claimDailyShopReward(slot, adCompleted, transactionId);
+            this._profile = result.profile;
+            this._emit();
+            return result;
+        });
+    }
+
     // DEBUG ONLY: add coins with no ad and no cap (headbar "+" button while ads
     // are deferred). Updates local state and notifies listeners.
     async grantDebugCoins(amount: number): Promise<void> {
@@ -131,6 +162,22 @@ class PlayerDataStore {
                 characterId,
                 levelsGained: result.levelsGained,
                 coinsSpent: result.coinsSpent,
+                gemsSpent: 0,
+                reason: result.ok ? undefined : result.reason,
+            };
+        });
+    }
+
+    async breakthroughCharacter(characterId: string, expectedLevel: number): Promise<SpendResult> {
+        return this.enqueue(async () => {
+            const result = await backend().breakthroughCharacter(characterId, expectedLevel);
+            this._profile = result.profile;
+            this._emit();
+            return {
+                characterId,
+                levelsGained: result.ok ? 1 : 0,
+                coinsSpent: result.coinsSpent,
+                gemsSpent: result.gemsSpent,
                 reason: result.ok ? undefined : result.reason,
             };
         });

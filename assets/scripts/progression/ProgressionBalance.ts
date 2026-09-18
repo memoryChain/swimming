@@ -6,6 +6,30 @@ export const PROGRESSION_BALANCE = {
     maxLevel: 30,
 } as const;
 
+/** 到达这些等级后，下一次升级必须同时支付金币和突破宝石。 */
+export const BREAKTHROUGH_LEVELS = [5, 10, 15, 20, 25] as const;
+export const BREAKTHROUGH_GEM_COSTS = [1, 2, 3, 4, 5] as const;
+
+export function breakthroughIndexForLevel(level: number): number {
+    return BREAKTHROUGH_LEVELS.indexOf(normalizeCharacterLevel(level) as typeof BREAKTHROUGH_LEVELS[number]);
+}
+
+export function gemCostForBreakthrough(level: number): number {
+    const index = breakthroughIndexForLevel(level);
+    return index >= 0 ? BREAKTHROUGH_GEM_COSTS[index] : 0;
+}
+
+export function completedBreakthroughsForLevel(level: number): number {
+    return Math.min(BREAKTHROUGH_LEVELS.length, Math.floor((normalizeCharacterLevel(level) - 1) / 5));
+}
+
+export function spentBreakthroughGemsForLevel(level: number): number {
+    const count = completedBreakthroughsForLevel(level);
+    let total = 0;
+    for (let i = 0; i < count; i++) total += BREAKTHROUGH_GEM_COSTS[i];
+    return total;
+}
+
 // 存档、旧档迁移和界面读取共用等级边界。
 export function normalizeCharacterLevel(level: unknown): number {
     return typeof level === 'number' && Number.isFinite(level)
