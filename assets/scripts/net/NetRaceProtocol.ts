@@ -43,7 +43,9 @@
 // 版本55：兴奋剂拾取增加赛程距离门槛，避免 200 米折返时提前拾取后续趟数的隐藏道具。
 // 版本56：水雷增强追近与拾取范围，并加入最晚贴身触发（该混合玩法已在 57 拆除）。
 // 版本57：旧漂雷传递拆为自动发放的定时炸弹与独立障碍水雷，新增房主权威触雷事件。
-export const NET_RACE_PROTOCOL_VERSION = 57;
+// 版本58：漩涡按房主种子生成安全随机位置，并统一渐入、增强、衰减的水流表现语义。
+// 版本59：漩涡外圈区分顺流加速与逆流阻力，折返泳段的可见旋向与水流方向统一。
+export const NET_RACE_PROTOCOL_VERSION = 59;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

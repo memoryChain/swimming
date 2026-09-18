@@ -2,9 +2,11 @@ import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import {
     WHIRLPOOL_BRAWL_TUNING,
-    WHIRLPOOL_SPAWNS,
+    type WhirlpoolSpawn,
     whirlpoolCenterZ,
+    whirlpoolSpawnsForSeed,
     whirlpoolTargetZForAi,
+    whirlpoolWorldSpin,
 } from './WhirlpoolBrawlRules';
 
 type Visual = {
@@ -12,13 +14,18 @@ type Visual = {
     distance: number;
     spin: -1 | 1;
     phase: number;
+    rotationDegrees: number;
 };
 
 const PRESENTATION_INTERVAL = 1 / 20;
-const VISIBLE_AHEAD_DISTANCE = 48;
-const VISIBLE_BEHIND_DISTANCE = 12;
+const EMERGE_AHEAD_DISTANCE = 42;
+const FULL_AHEAD_DISTANCE = 10;
+const FADE_BEHIND_START_DISTANCE = 5.5;
+const FADE_BEHIND_END_DISTANCE = 14;
 const ANNOUNCEMENT_DISTANCE = 16;
-const ROTATION_DEGREES_PER_SECOND = 46;
+const MIN_ROTATION_DEGREES_PER_SECOND = 8;
+const MAX_ROTATION_DEGREES_PER_SECOND = 46;
+const MIN_VISIBLE_SCALE = 0.08;
 
 /** 漩涡玩法的低开销表现与 AI 路线提示；物理作用由泳者模拟步中的纯规则计算。 */
 export class WhirlpoolBrawlController {
@@ -29,12 +36,15 @@ export class WhirlpoolBrawlController {
     private clock = 0;
     private announcedMask = 0;
     private disposed = false;
+    private readonly spawns: readonly WhirlpoolSpawn[];
 
     constructor(
         private readonly parent: Node,
         private readonly course: RaceCourseLayout,
-        private readonly onApproach: (index: number) => void,
+        seed: number,
+        private readonly onApproach: (spawn: WhirlpoolSpawn, index: number, worldSpin: -1 | 1) => void,
     ) {
+        this.spawns = whirlpoolSpawnsForSeed(seed);
         this.buildVisuals();
     }
 
@@ -44,6 +54,7 @@ export class WhirlpoolBrawlController {
         this.announcedMask = 0;
         for (const visual of this.visuals) {
             if (visual.root?.isValid && visual.root.active) visual.root.active = false;
+            visual.rotationDegrees = visual.phase * 57.295779513;
         }
     }
 
@@ -51,12 +62,12 @@ export class WhirlpoolBrawlController {
         if (this.disposed) return;
         const distance = Number.isFinite(referenceDistance) ? referenceDistance : 0;
         if (allowAnnouncements) {
-            for (let i = 0; i < WHIRLPOOL_SPAWNS.length; i++) {
-                const ahead = WHIRLPOOL_SPAWNS[i].distance - distance;
+            for (let i = 0; i < this.spawns.length; i++) {
+                const ahead = this.spawns[i].distance - distance;
                 const bit = 1 << i;
                 if ((this.announcedMask & bit) === 0 && ahead <= ANNOUNCEMENT_DISTANCE && ahead >= -1) {
                     this.announcedMask |= bit;
-                    this.onApproach(i);
+                    this.onApproach(this.spawns[i], i, this.visuals[i].spin);
                 }
             }
         }
@@ -68,17 +79,23 @@ export class WhirlpoolBrawlController {
         this.clock += step;
         for (const visual of this.visuals) {
             const ahead = visual.distance - distance;
-            const visible = ahead <= VISIBLE_AHEAD_DISTANCE && ahead >= -VISIBLE_BEHIND_DISTANCE;
+            const strength = presentationStrength(ahead);
+            const visible = strength > 0.001;
             if (visual.root.active !== visible) visual.root.active = visible;
             if (!visible) continue;
-            const pulse = 1 + Math.sin(this.clock * 2.1 + visual.phase) * 0.035;
-            visual.root.setScale(pulse, 1, visual.spin * pulse);
-            visual.root.setRotationFromEuler(0, visual.spin * this.clock * ROTATION_DEGREES_PER_SECOND, 0);
+            const easedStrength = 1 - (1 - strength) * (1 - strength);
+            const pulse = 1 + Math.sin(this.clock * 2.1 + visual.phase) * 0.025 * strength;
+            const scale = (MIN_VISIBLE_SCALE + (1 - MIN_VISIBLE_SCALE) * easedStrength) * pulse;
+            const rotationSpeed = MIN_ROTATION_DEGREES_PER_SECOND
+                + (MAX_ROTATION_DEGREES_PER_SECOND - MIN_ROTATION_DEGREES_PER_SECOND) * strength;
+            visual.rotationDegrees = (visual.rotationDegrees + visual.spin * rotationSpeed * step) % 360;
+            visual.root.setScale(scale, 1, visual.spin * scale);
+            visual.root.setRotationFromEuler(0, visual.rotationDegrees, 0);
         }
     }
 
     targetZForAi(distance: number, currentZ: number): number | null {
-        return whirlpoolTargetZForAi(distance, currentZ, this.course.poolWidth);
+        return whirlpoolTargetZForAi(distance, currentZ, this.course.poolWidth, this.spawns);
     }
 
     dispose(): void {
@@ -112,7 +129,8 @@ export class WhirlpoolBrawlController {
         this.mesh = mesh;
         this.material = material;
 
-        for (const spawn of WHIRLPOOL_SPAWNS) {
+        for (const spawn of this.spawns) {
+            const worldSpin = whirlpoolWorldSpin(spawn, this.course.directionAtDistance(spawn.distance));
             const node = new Node(`Whirlpool_${spawn.id}`);
             node.setParent(this.parent);
             node.layer = this.parent.layer;
@@ -121,11 +139,33 @@ export class WhirlpoolBrawlController {
             renderer.setMaterial(material, 0);
             const p = this.course.swimPosition(spawn.distance, whirlpoolCenterZ(spawn, this.course.poolWidth));
             node.setWorldPosition(p.x, this.course.waterY + 0.035, p.z);
-            node.setScale(1, 1, spawn.spin);
+            node.setScale(1, 1, worldSpin);
             node.active = false;
-            this.visuals.push({ root: node, distance: spawn.distance, spin: spawn.spin, phase: spawn.id * 1.37 });
+            const phase = spawn.id * 1.37;
+            this.visuals.push({
+                root: node,
+                distance: spawn.distance,
+                spin: worldSpin,
+                phase,
+                rotationDegrees: phase * 57.295779513,
+            });
         }
     }
+}
+
+function presentationStrength(ahead: number): number {
+    if (ahead >= EMERGE_AHEAD_DISTANCE || ahead <= -FADE_BEHIND_END_DISTANCE) return 0;
+    if (ahead > FULL_AHEAD_DISTANCE) {
+        return smooth01((EMERGE_AHEAD_DISTANCE - ahead) / (EMERGE_AHEAD_DISTANCE - FULL_AHEAD_DISTANCE));
+    }
+    if (ahead >= -FADE_BEHIND_START_DISTANCE) return 1;
+    return smooth01((ahead + FADE_BEHIND_END_DISTANCE)
+        / (FADE_BEHIND_END_DISTANCE - FADE_BEHIND_START_DISTANCE));
+}
+
+function smooth01(value: number): number {
+    const t = Math.max(0, Math.min(1, value));
+    return t * t * (3 - 2 * t);
 }
 
 function buildWhirlpoolGeometry(): primitives.IGeometry {

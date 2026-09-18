@@ -1422,7 +1422,8 @@ export class GameManager extends Component {
             this._whirlpoolBrawl = new WhirlpoolBrawlController(
                 this._worldRoot,
                 COURSE_LAYOUT,
-                () => {
+                getSharedRandomSeed(),
+                (_spawn, _index, _worldSpin) => {
                     if (this._state !== GameState.RACING) return;
                     showToast(
                         this.createRuntimeSceneBuilder().findCanvasNode(),
