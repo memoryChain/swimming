@@ -39,7 +39,8 @@
 // 版本50：新增漩涡冲浪赛的固定场次、水流规则与 AI 绕核路线。
 // 版本52：末位淘汰赛改为炮火逃生赛，新增炮击预警／命中事件与活动炮弹快照。
 // 版本53：新增水雷接力赛的装雷、传递、爆炸／拆弹事件与活动水雷快照。
-export const NET_RACE_PROTOCOL_VERSION = 53;
+// 版本55：兴奋剂拾取增加赛程距离门槛，避免 200 米折返时提前拾取后续趟数的隐藏道具。
+export const NET_RACE_PROTOCOL_VERSION = 55;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

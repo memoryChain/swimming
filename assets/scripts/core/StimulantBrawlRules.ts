@@ -108,6 +108,53 @@ export function stimulantPickupDistanceSquared(
     return bestSq;
 }
 
+/**
+ * 先按赛程距离筛掉其他趟数的道具，再进行世界坐标中的身体胶囊判定。
+ * 50 米泳池会把 200 米赛程折返到重复的世界坐标；缺少这一层会提前拾取后续趟数的隐藏道具。
+ */
+export function stimulantPickupRaceDistanceEligible(
+    itemDistance: number,
+    currentDistance: number,
+    previousDistance: number,
+    pickupRadius: number,
+    bodyHalfLength: number,
+    maxSweepDistance: number,
+): boolean {
+    if (!Number.isFinite(itemDistance) || !Number.isFinite(currentDistance)) return false;
+    const reach = Math.max(0, Number.isFinite(pickupRadius) ? pickupRadius : 0)
+        + Math.max(0, Number.isFinite(bodyHalfLength) ? bodyHalfLength : 0);
+    let startDistance = currentDistance;
+    const maxSweep = Math.max(0, Number.isFinite(maxSweepDistance) ? maxSweepDistance : 0);
+    if (
+        Number.isFinite(previousDistance)
+        && Math.abs(currentDistance - previousDistance) <= maxSweep
+    ) {
+        startDistance = previousDistance;
+    }
+    return itemDistance >= Math.min(startDistance, currentDistance) - reach
+        && itemDistance <= Math.max(startDistance, currentDistance) + reach;
+}
+
+/**
+ * 折返泳池中，道具只在它所属的当前单程内显示。
+ * 否则下一单程的道具会提前映射到眼前的同一池段，形成“看得见但吃不到”的假目标。
+ */
+export function stimulantIsOnCurrentCourseLeg(
+    itemDistance: number,
+    referenceDistance: number,
+    courseLength: number,
+): boolean {
+    if (
+        !Number.isFinite(itemDistance)
+        || !Number.isFinite(referenceDistance)
+        || !Number.isFinite(courseLength)
+        || courseLength <= 0
+    ) return false;
+    const itemLeg = Math.floor(Math.max(0, itemDistance) / courseLength);
+    const referenceLeg = Math.floor(Math.max(0, referenceDistance) / courseLength);
+    return itemLeg === referenceLeg;
+}
+
 function pointSegmentDistanceSquared(
     px: number,
     pz: number,

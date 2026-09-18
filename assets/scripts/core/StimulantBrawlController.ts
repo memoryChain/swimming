@@ -8,7 +8,9 @@ import { loadRaceAsset } from './RaceBundleLoader';
 import { RESOURCE_PATHS } from './ResourcePaths';
 import {
     buildStimulantSchedule,
+    stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
+    stimulantPickupRaceDistanceEligible,
     STIMULANT_BRAWL_TUNING,
     StimulantSpawn,
 } from './StimulantBrawlRules';
@@ -66,6 +68,8 @@ export class StimulantBrawlController {
     private readonly pickupCurrentZ: Float64Array;
     private readonly pickupPreviousX: Float64Array;
     private readonly pickupPreviousZ: Float64Array;
+    private readonly pickupCurrentDistance: Float64Array;
+    private readonly pickupPreviousDistance: Float64Array;
 
     constructor(
         private readonly root: Node,
@@ -83,10 +87,14 @@ export class StimulantBrawlController {
         this.pickupCurrentZ = new Float64Array(laneLayout.laneCount);
         this.pickupPreviousX = new Float64Array(laneLayout.laneCount);
         this.pickupPreviousZ = new Float64Array(laneLayout.laneCount);
+        this.pickupCurrentDistance = new Float64Array(laneLayout.laneCount);
+        this.pickupPreviousDistance = new Float64Array(laneLayout.laneCount);
         this.pickupCurrentX.fill(Number.NaN);
         this.pickupCurrentZ.fill(Number.NaN);
         this.pickupPreviousX.fill(Number.NaN);
         this.pickupPreviousZ.fill(Number.NaN);
+        this.pickupCurrentDistance.fill(Number.NaN);
+        this.pickupPreviousDistance.fill(Number.NaN);
         for (let lane = 0; lane < laneLayout.laneCount; lane++) {
             this.pickupRacers[lane] = racerForLane(lane);
         }
@@ -119,11 +127,13 @@ export class StimulantBrawlController {
             if (!racer?.swimmer?.node?.active) {
                 this.pickupCurrentX[lane] = Number.NaN;
                 this.pickupCurrentZ[lane] = Number.NaN;
+                this.pickupCurrentDistance[lane] = Number.NaN;
                 continue;
             }
             const position = racer.swimmer.node.worldPosition;
             this.pickupCurrentX[lane] = position.x;
             this.pickupCurrentZ[lane] = position.z;
+            this.pickupCurrentDistance[lane] = racer.swimmer.distance;
         }
 
         for (const item of this.items) {
@@ -135,6 +145,14 @@ export class StimulantBrawlController {
                 const currentX = this.pickupCurrentX[lane];
                 const currentZ = this.pickupCurrentZ[lane];
                 if (!racer || !Number.isFinite(currentX) || !Number.isFinite(currentZ)) continue;
+                if (!stimulantPickupRaceDistanceEligible(
+                    item.distance,
+                    this.pickupCurrentDistance[lane],
+                    this.pickupPreviousDistance[lane],
+                    STIMULANT_BRAWL_TUNING.pickupRadius,
+                    STIMULANT_BRAWL_TUNING.pickupBodyHalfLength,
+                    MAX_PICKUP_SWEEP_DISTANCE,
+                )) continue;
                 const heading = racer.swimmer.movementHeading;
                 const distanceSq = stimulantPickupDistanceSquared(
                     item.x,
@@ -163,6 +181,7 @@ export class StimulantBrawlController {
         for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
             this.pickupPreviousX[lane] = this.pickupCurrentX[lane];
             this.pickupPreviousZ[lane] = this.pickupCurrentZ[lane];
+            this.pickupPreviousDistance[lane] = this.pickupCurrentDistance[lane];
         }
     }
 
@@ -187,7 +206,12 @@ export class StimulantBrawlController {
         this.presentationElapsed = 0;
         for (const item of this.items) {
             const ahead = item.distance - distance;
-            const itemVisible = !item.collected && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
+            const onCurrentLeg = stimulantIsOnCurrentCourseLeg(
+                item.distance,
+                distance,
+                this.course.courseLength,
+            );
+            const itemVisible = !item.collected && onCurrentLeg && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
             if (item.node?.isValid) {
                 if (item.node.active !== itemVisible) item.node.active = itemVisible;
                 if (itemVisible) {
@@ -196,7 +220,7 @@ export class StimulantBrawlController {
                     item.node.setRotationFromEuler(0, (this.presentationTime * 82 + item.id * 37) % 360, 0);
                 }
             }
-            this.updateBeaconPresentation(item, ahead, presentationStep);
+            this.updateBeaconPresentation(item, ahead, onCurrentLeg, presentationStep);
         }
     }
 
@@ -314,7 +338,9 @@ export class StimulantBrawlController {
             const node = this.createProgramCube(`StimulantCube_${item.id}`, mesh, material);
             node.setWorldPosition(item.x, item.baseY, item.z);
             node.setScale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
-            node.active = !item.collected && Math.abs(item.distance) <= ITEM_VISIBLE_DISTANCE;
+            node.active = !item.collected
+                && stimulantIsOnCurrentCourseLeg(item.distance, 0, this.course.courseLength)
+                && Math.abs(item.distance) <= ITEM_VISIBLE_DISTANCE;
             item.node = node;
         }
     }
@@ -375,7 +401,7 @@ export class StimulantBrawlController {
         }
     }
 
-    private updateBeaconPresentation(item: ItemState, ahead: number, dt: number): void {
+    private updateBeaconPresentation(item: ItemState, ahead: number, onCurrentLeg: boolean, dt: number): void {
         const beacon = item.beaconNode;
         if (!beacon?.isValid) return;
 
@@ -397,7 +423,9 @@ export class StimulantBrawlController {
             return;
         }
 
-        const visible = ahead <= BEACON_VISIBLE_AHEAD_DISTANCE && ahead >= -BEACON_VISIBLE_BEHIND_DISTANCE;
+        const visible = onCurrentLeg
+            && ahead <= BEACON_VISIBLE_AHEAD_DISTANCE
+            && ahead >= -BEACON_VISIBLE_BEHIND_DISTANCE;
         if (beacon.active !== visible) beacon.active = visible;
         if (!visible) return;
         const pulse = 1 + Math.sin(this.presentationTime * 2.25 + item.phase) * 0.055;
@@ -431,7 +459,9 @@ export class StimulantBrawlController {
             renderer.mesh = mesh;
             renderer.setMaterial(material, 0);
             beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
-            beacon.active = !item.collected && item.distance <= BEACON_VISIBLE_AHEAD_DISTANCE;
+            beacon.active = !item.collected
+                && stimulantIsOnCurrentCourseLeg(item.distance, 0, this.course.courseLength)
+                && item.distance <= BEACON_VISIBLE_AHEAD_DISTANCE;
             item.beaconNode = beacon;
         }
     }

@@ -10,7 +10,9 @@ import PlayerProfile from '../assets/scripts/backend/PlayerProfile.ts';
 const {
     buildStimulantSchedule,
     STIMULANT_PUBLIC_WAVE_DISTANCES,
+    stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
+    stimulantPickupRaceDistanceEligible,
     stimulantTurnDragScale,
     stimulantTurnImpulseScale,
 } = Rules;
@@ -105,6 +107,51 @@ test('公共兴奋剂使用身体胶囊并扫掠短距离经过路径', () => {
         3,
     );
     assert.ok(correctionMiss > 1.2 ** 2, '过长网络校正不能沿整段路径补捡');
+});
+
+test('公共兴奋剂只允许拾取当前赛程趟数附近的道具', () => {
+    assert.equal(
+        stimulantPickupRaceDistanceEligible(35, 34.2, 33.9, 1.2, 0.8, 3),
+        true,
+        '身体判定范围内的当前波次应该允许拾取',
+    );
+    assert.equal(
+        stimulantPickupRaceDistanceEligible(35, 37.4, 34.8, 1.2, 0.8, 3),
+        true,
+        '一次短更新跨过道具时应该允许扫掠拾取',
+    );
+    assert.equal(
+        stimulantPickupRaceDistanceEligible(135, 35, 34.8, 1.2, 0.8, 3),
+        false,
+        '物理位置重合也不能提前拾取后续趟数的隐藏道具',
+    );
+    assert.equal(
+        stimulantPickupRaceDistanceEligible(35, 135, 134.8, 1.2, 0.8, 3),
+        false,
+        '经过同一物理位置时不能补拾已经错过的前序趟数道具',
+    );
+    assert.equal(
+        stimulantPickupRaceDistanceEligible(35, 40, 30, 1.2, 0.8, 3),
+        false,
+        '过长的网络校正不能沿整段赛程距离补捡',
+    );
+});
+
+test('折返泳池只显示当前单程的药瓶和光柱', () => {
+    assert.equal(stimulantIsOnCurrentCourseLeg(35, 40, 50), true);
+    assert.equal(
+        stimulantIsOnCurrentCourseLeg(60, 40, 50),
+        false,
+        '折返后的 60 米道具不能在第一趟提前显示',
+    );
+    assert.equal(
+        stimulantIsOnCurrentCourseLeg(60, 50, 50),
+        true,
+        '完成 50 米转身后应立即显示第二趟道具',
+    );
+    assert.equal(stimulantIsOnCurrentCourseLeg(85, 99.9, 50), true);
+    assert.equal(stimulantIsOnCurrentCourseLeg(110, 99.9, 50), false);
+    assert.equal(stimulantIsOnCurrentCourseLeg(110, 100, 50), true);
 });
 
 test('心率只在 130 以上逐步放大转向并降低阻尼', () => {
