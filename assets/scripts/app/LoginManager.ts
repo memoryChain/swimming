@@ -110,16 +110,22 @@ export class LoginManager extends Component {
         void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
     }
 
-    // Lazily mount the authored avatar picker once. Reopening only resets its draft
-    // values and visibility; selection changes never rebuild the hierarchy.
+    // Keep the avatar picker on the main HUD canvas, matching SettingsPanel. The
+    // later 3D preview camera is paused while the modal is presented so it cannot
+    // draw over the full-screen dim on desktop or extra-wide viewports.
     private openIdentityEdit() {
         if (!this._canvasNode) {
             return;
         }
-        const popup = getUILayer(this._canvasNode, UILayer.Popup);
         if (!this._identityEditPanel) {
-            this._identityEditPanel = new IdentityEditPanel();
-            this._identityEditPanel.build(popup, this._designWidth, this._designHeight);
+            this._identityEditPanel = new IdentityEditPanel((presented) => {
+                this._prepareRaceFlow?.setModalOverlayActive(presented);
+            });
+            this._identityEditPanel.build(
+                getUILayer(this._canvasNode, UILayer.Hud),
+                this._designWidth,
+                this._designHeight,
+            );
         }
         this._identityEditPanel.show();
     }

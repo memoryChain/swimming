@@ -124,14 +124,15 @@ test('音量草稿：重复打开保留修改；取消和销毁恢复；确认�
     assert.deepEqual(presented,[true,false,true,false,true,false]);
 });
 test('头像保存：成功后才关闭，失败可重试，保存中不可重置草稿或重复请求',async()=>{
-    const s=setup(),p=new s.IdentityEditPanel(),root=p.build(s.parent,1280,720);p.show();p.selectAvatar('coral');
+    const s=setup(),presented=[],p=new s.IdentityEditPanel(value=>presented.push(value)),root=p.build(s.parent,1280,720);p.show();p.selectAvatar('coral');
+    assert.deepEqual(presented,[true]);
     const pending=p.confirm();p.show();p.hide();p.selectAvatar('aqua');await p.confirm();
     assert.equal(s.requests.length,1);assert.equal(p._draftAvatarId,'coral');assert.equal(root.active,true);
     s.requests[0].reject(Error('模拟保存失败'));await pending;
-    assert.equal(root.active,true);assert.equal(p._saving,false);assert.equal(p._confirmButton.interactable,true);
+    assert.equal(root.active,true);assert.equal(p._saving,false);assert.equal(p._confirmButton.interactable,true);assert.deepEqual(presented,[true]);
     const retry=p.confirm();s.requests[1].resolve();await retry;
-    assert.equal(root.active,true);assert.equal(find(root,'PopupClosingBlocker').active,true);s.advance(.3);assert.equal(root.active,false);
-    p.show();assert.equal(p._draftAvatarId,'coral');p.dispose();
+    assert.equal(root.active,true);assert.equal(find(root,'PopupClosingBlocker').active,true);assert.deepEqual(presented,[true]);s.advance(.3);assert.equal(root.active,false);assert.deepEqual(presented,[true,false]);
+    p.show();assert.equal(p._draftAvatarId,'coral');p.dispose();assert.deepEqual(presented,[true,false,true,false]);
 });
 test('旧保存完成不能关闭重新创建的弹窗；按钮取消触摸和已选头像保持稳定',async()=>{
     const s=setup(),p=new s.IdentityEditPanel(),old=p.build(s.parent,1280,720);p.show();s.advance(.3);

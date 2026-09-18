@@ -13,7 +13,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { styleDynamicUiLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import {
-    fitFullScreenBackgroundCover,
+    fitFullScreenSolidCover,
     makeLabel,
     makeRect,
     makeTouchArea,
@@ -45,6 +45,9 @@ export class IdentityEditPanel {
     private _draftAvatarId: string = AVATARS[0].id;
     private _draftNickname = '';
     private _saving = false;
+    private _presented = false;
+
+    constructor(private readonly _onPresentedChanged: (presented: boolean) => void = () => {}) {}
 
     build(parent: Node, designWidth: number, designHeight: number): Node {
         if (this._root?.isValid) return this._root;
@@ -55,7 +58,7 @@ export class IdentityEditPanel {
         this._root = root;
 
         const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 20, 38, 174));
-        fitFullScreenBackgroundCover(dim, designWidth, designHeight);
+        fitFullScreenSolidCover(dim, designWidth, designHeight);
         dim.on(Node.EventType.TOUCH_END, () => this.hide());
 
         const panel = makeArtwork(
@@ -85,17 +88,19 @@ export class IdentityEditPanel {
         this._draftNickname = PlayerData.nickName;
         this.setNicknameLabel(this._draftNickname);
         this.updateSelection(this._draftAvatarId);
+        this.setPresented(true);
         this._motion?.show();
     }
 
     hide(): void {
         if (this._saving || !this._root?.isValid) return;
-        this._motion?.hide();
+        this.close();
     }
 
     dispose(): void {
         this._motion?.dispose();
         this._motion = null;
+        this.setPresented(false);
         if (this._root?.isValid) this._root.destroy();
         this._root = null;
         this._nicknameLabel = null;
@@ -264,7 +269,7 @@ export class IdentityEditPanel {
             if (this._draftAvatarId !== PlayerData.avatarId) patch.avatarId = this._draftAvatarId;
             if (this._draftNickname !== PlayerData.nickName) patch.nickName = this._draftNickname;
             if (patch.avatarId || patch.nickName) await PlayerData.setIdentity(patch);
-            if (this._root === root && root?.isValid) this._motion?.hide();
+            if (this._root === root && root?.isValid) this.close();
         } catch (error) {
             console.warn('[AvatarUI] 保存头像资料失败', error);
         } finally {
@@ -275,6 +280,16 @@ export class IdentityEditPanel {
                 this._confirmButton.interactable = true;
             }
         }
+    }
+
+    private close(): void {
+        this._motion?.hide(() => this.setPresented(false));
+    }
+
+    private setPresented(presented: boolean): void {
+        if (this._presented === presented) return;
+        this._presented = presented;
+        this._onPresentedChanged(presented);
     }
 }
 

@@ -223,7 +223,7 @@ export class PrepareRaceFlow {
         this._motion.enter(true);
     }
 
-    /** 设置弹窗留在主 UI 相机时，只暂停更高优先级的 3D 预览相机。 */
+    /** 主 HUD 弹窗显示时，只暂停更高优先级的 3D 预览相机。 */
     setModalOverlayActive(active: boolean): void {
         if (this._modalOverlayActive === active) return;
         this._modalOverlayActive = active;
