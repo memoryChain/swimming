@@ -180,12 +180,23 @@ export function buildMineGeometry(): primitives.IGeometry {
     const positions: number[] = [];
     const colors: number[] = [];
     const indices: number[] = [];
-    appendOctahedron(positions, colors, indices, 0.34, [0.07, 0.10, 0.12, 1]);
+
+    appendFacetedMineBody(positions, colors, indices, 0.34);
+    // 略微凸出的腰线让深色球体在比赛镜头下仍有层次，并为旋转提供稳定参照。
+    appendFacetedCylinder(positions, colors, indices, 0, 0, 0, 0.365, 0.055, [0.08, 0.16, 0.18, 1]);
     const directions: ReadonlyArray<readonly [number, number, number]> = [
-        [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+        [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1],
+        [0.62, 0.58, 0.53], [-0.62, 0.58, -0.53],
+        [0.60, -0.63, -0.49], [-0.60, -0.63, 0.49],
     ];
-    for (const direction of directions) appendSpike(positions, colors, indices, direction, [0.15, 0.19, 0.21, 1]);
-    return geometry(positions, colors, indices, new Vec3(-0.57, -0.57, -0.57), new Vec3(0.57, 0.57, 0.57));
+    for (const direction of directions) appendDetailedMineSpike(positions, colors, indices, direction);
+
+    // 顶部触发器和侧面警示牌打破完全对称轮廓，轻微旋转时也能被读出来。
+    appendFacetedCylinder(positions, colors, indices, 0, 0.405, 0, 0.11, 0.075, [0.13, 0.17, 0.17, 1]);
+    appendFacetedCylinder(positions, colors, indices, 0, 0.515, 0, 0.052, 0.045, [0.92, 0.38, 0.055, 1]);
+    appendBox(positions, colors, indices, -0.15, 0.455, -0.026, 0.15, 0.495, 0.026, [0.24, 0.29, 0.28, 1]);
+    appendBox(positions, colors, indices, 0.07, -0.07, 0.305, 0.23, 0.075, 0.355, [0.72, 0.24, 0.055, 1]);
+    return geometry(positions, colors, indices, new Vec3(-0.66, -0.66, -0.66), new Vec3(0.66, 0.59, 0.66));
 }
 
 export function buildTimedBombGeometry(): primitives.IGeometry {
@@ -376,11 +387,59 @@ function appendOctahedron(
     for (const index of faces) indices.push(base + index);
 }
 
-function appendSpike(
-    positions: number[], colors: number[], indices: number[],
-    direction: readonly [number, number, number], color: ColorTuple,
+function appendFacetedMineBody(
+    positions: number[], colors: number[], indices: number[], radius: number,
 ): void {
-    const [dx, dy, dz] = direction;
+    const segments = 10;
+    const bands = 6;
+    for (let band = 0; band < bands; band++) {
+        const theta0 = band / bands * Math.PI;
+        const theta1 = (band + 1) / bands * Math.PI;
+        const sin0 = Math.sin(theta0), cos0 = Math.cos(theta0);
+        const sin1 = Math.sin(theta1), cos1 = Math.cos(theta1);
+        for (let segment = 0; segment < segments; segment++) {
+            const angle0 = segment / segments * Math.PI * 2;
+            const angle1 = (segment + 1) / segments * Math.PI * 2;
+            const x00 = Math.cos(angle0) * sin0 * radius;
+            const z00 = Math.sin(angle0) * sin0 * radius;
+            const x01 = Math.cos(angle1) * sin0 * radius;
+            const z01 = Math.sin(angle1) * sin0 * radius;
+            const x10 = Math.cos(angle0) * sin1 * radius;
+            const z10 = Math.sin(angle0) * sin1 * radius;
+            const x11 = Math.cos(angle1) * sin1 * radius;
+            const z11 = Math.sin(angle1) * sin1 * radius;
+            const shade = 0.9 + ((segment + band * 2) % 3) * 0.055;
+            const color: ColorTuple = [0.055 * shade, 0.115 * shade, 0.13 * shade, 1];
+            const base = positions.length / 3;
+            if (band === 0) {
+                positions.push(0, radius, 0, x11, cos1 * radius, z11, x10, cos1 * radius, z10);
+                pushColor(colors, color, 3);
+                indices.push(base, base + 1, base + 2);
+            } else if (band === bands - 1) {
+                positions.push(x00, cos0 * radius, z00, x01, cos0 * radius, z01, 0, -radius, 0);
+                pushColor(colors, color, 3);
+                indices.push(base, base + 1, base + 2);
+            } else {
+                positions.push(
+                    x00, cos0 * radius, z00, x01, cos0 * radius, z01,
+                    x10, cos1 * radius, z10, x11, cos1 * radius, z11,
+                );
+                pushColor(colors, color, 4);
+                indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+            }
+        }
+    }
+}
+
+function appendDetailedMineSpike(
+    positions: number[], colors: number[], indices: number[],
+    direction: readonly [number, number, number],
+): void {
+    let [dx, dy, dz] = direction;
+    const directionLength = Math.max(0.001, Math.hypot(dx, dy, dz));
+    dx /= directionLength;
+    dy /= directionLength;
+    dz /= directionLength;
     const up: readonly [number, number, number] = Math.abs(dy) < 0.9 ? [0, 1, 0] : [1, 0, 0];
     let ux = dy * up[2] - dz * up[1];
     let uy = dz * up[0] - dx * up[2];
@@ -390,19 +449,43 @@ function appendSpike(
     const vx = dy * uz - dz * uy;
     const vy = dz * ux - dx * uz;
     const vz = dx * uy - dy * ux;
-    const cx = dx * 0.26, cy = dy * 0.26, cz = dz * 0.26;
-    const half = 0.095;
+    const distances = [0.25, 0.37, 0.49];
+    const widths = [0.135, 0.105, 0.068];
+    const sectionColors: readonly ColorTuple[] = [
+        [0.055, 0.08, 0.085, 1],
+        [0.12, 0.20, 0.21, 1],
+        [0.19, 0.29, 0.30, 1],
+    ];
     const base = positions.length / 3;
-    positions.push(
-        cx + ux * half + vx * half, cy + uy * half + vy * half, cz + uz * half + vz * half,
-        cx - ux * half + vx * half, cy - uy * half + vy * half, cz - uz * half + vz * half,
-        cx - ux * half - vx * half, cy - uy * half - vy * half, cz - uz * half - vz * half,
-        cx + ux * half - vx * half, cy + uy * half - vy * half, cz + uz * half - vz * half,
-        dx * 0.57, dy * 0.57, dz * 0.57,
-    );
-    pushColor(colors, color, 5);
-    const faces = [0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4, 0, 3, 2, 0, 2, 1];
-    for (const index of faces) indices.push(base + index);
+    for (let section = 0; section < distances.length; section++) {
+        const distance = distances[section];
+        const half = widths[section];
+        const cx = dx * distance, cy = dy * distance, cz = dz * distance;
+        positions.push(
+            cx + ux * half + vx * half, cy + uy * half + vy * half, cz + uz * half + vz * half,
+            cx - ux * half + vx * half, cy - uy * half + vy * half, cz - uz * half + vz * half,
+            cx - ux * half - vx * half, cy - uy * half - vy * half, cz - uz * half - vz * half,
+            cx + ux * half - vx * half, cy + uy * half - vy * half, cz + uz * half - vz * half,
+        );
+        pushColor(colors, sectionColors[section], 4);
+    }
+    const tip = positions.length / 3;
+    positions.push(dx * 0.64, dy * 0.64, dz * 0.64);
+    pushColor(colors, [0.24, 0.34, 0.34, 1], 1);
+    for (let section = 0; section < distances.length - 1; section++) {
+        const current = base + section * 4;
+        const next = current + 4;
+        for (let side = 0; side < 4; side++) {
+            const sideNext = (side + 1) % 4;
+            indices.push(current + side, current + sideNext, next + sideNext,
+                current + side, next + sideNext, next + side);
+        }
+    }
+    const last = base + (distances.length - 1) * 4;
+    for (let side = 0; side < 4; side++) {
+        indices.push(last + side, last + (side + 1) % 4, tip);
+    }
+    indices.push(base, base + 3, base + 2, base, base + 2, base + 1);
 }
 
 function appendFacetedCylinder(

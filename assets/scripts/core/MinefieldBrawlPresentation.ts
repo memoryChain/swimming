@@ -11,6 +11,9 @@ import {
 const PRESENTATION_INTERVAL = 1 / 20;
 const EXPLOSION_SECONDS = 0.58;
 const EXPLOSION_POOL_SIZE = 3;
+const MINE_ROTATION_Y_DEGREES = 14;
+const MINE_TILT_X_DEGREES = 9;
+const MINE_TILT_Z_DEGREES = 7;
 
 type ExplosionVisual = { node: Node; remaining: number };
 
@@ -90,10 +93,11 @@ export class MinefieldBrawlPresentation {
                 this.course.waterY + 0.09 + Math.sin(this.clock * 2.6 + id * 0.8) * 0.055,
                 mine.lateral,
             );
+            const rotationPhase = this.clock + id * 0.73;
             node.setRotationFromEuler(
-                Math.sin(this.clock * 1.7 + id) * 7,
-                this.clock * (38 + id * 3),
-                Math.sin(this.clock * 2.1 + id * 0.5) * 6,
+                Math.sin(rotationPhase * 0.55) * MINE_TILT_X_DEGREES,
+                rotationPhase * (MINE_ROTATION_Y_DEGREES + id * 0.65) + id * 31,
+                Math.cos(rotationPhase * 0.43 + 0.8) * MINE_TILT_Z_DEGREES,
             );
         }
         for (const explosion of this.explosions) {
