@@ -57,6 +57,7 @@ export type PrepareRaceFlowCallbacks = {
     onAiDebug?: () => void;
     onOpenShop?: () => void;
     onCharacterManagementChanged?: (active: boolean) => void;
+    onQuickRacePageChanged?: (active: boolean) => void;
 };
 
 type PrepareRaceView = 'ready' | 'characters';
@@ -408,12 +409,12 @@ export class PrepareRaceFlow {
         this._careerPanel = new CareerPrototypePanel(right,
             () => this.leaveCurrentScreen(this._callbacks.onStartRace),
             () => { setSoloRaceTicket(null); setSoloRaceDistance(null); this.leaveCurrentScreen(this._callbacks.onOpenRoom); },
-            { parent: this._root!, visibility: visible => this.setEventPageVisible(visible) });
+            { parent: this._root!, visibility: (visible, screen) => this.setEventPageVisible(visible, screen) });
         this.buildReadyActions(right);
         this.refreshReadyCharacterInfo();
     }
 
-    private setEventPageVisible(visible: boolean): void {
+    private setEventPageVisible(visible: boolean, screen: 'quick' | 'career'): void {
         this._eventPageActive = visible;
         this._previewRotateTouchId = null;
         this._attributeTips?.hide();
@@ -422,7 +423,7 @@ export class PrepareRaceFlow {
         if (!visible && this._view === 'ready' && !this._leaving && this._content?.isValid) {
             this.presentCharacter(getPlayerCharacterSelection().characterId);
         }
-        this._callbacks.onCharacterManagementChanged?.(visible);
+        this._callbacks.onQuickRacePageChanged?.(visible && screen === 'quick');
     }
 
     private buildReadyCharacterPanel(parent: Node): void {

@@ -33,10 +33,14 @@ export class CareerPrototypePanel {
     private buttons: { node: Node; label: Label; action: () => void }[] = [];
     private readonly page: CareerEventPage;
     private pageVisible = false;
+    private pageScreen: 'quick' | 'career' = 'career';
     private readonly changed = () => { if (this.root.isValid && (this.root.active || this.page.root.active)) this.refresh(); };
 
     constructor(parent: Node, private readonly start: () => void, private readonly friends: () => void,
-        private readonly pageHost?: { parent: Node; visibility: (visible: boolean) => void }) {
+        private readonly pageHost?: {
+            parent: Node;
+            visibility: (visible: boolean, screen: 'quick' | 'career') => void;
+        }) {
         const previous = consumeSoloReturn();
         if (previous) {
             this.screen = previous.source === 'quick' ? 'quick' : 'career';
@@ -98,7 +102,7 @@ export class CareerPrototypePanel {
         PlayerData.onChange(this.changed);
         this.root.once(Node.EventType.NODE_DESTROYED, () => {
             PlayerData.offChange(this.changed); this.page.dispose();
-            if (this.pageVisible) this.pageHost?.visibility(false);
+            if (this.pageVisible) this.pageHost?.visibility(false, this.pageScreen);
         });
         this.refresh();
     }
@@ -165,7 +169,9 @@ export class CareerPrototypePanel {
         if (this.page.root.active !== visible) this.page.root.active = visible;
         if (this.pageVisible !== visible) {
             if (!visible) this.page.hide();
-            this.pageVisible = visible; this.pageHost?.visibility(visible);
+            this.pageVisible = visible;
+            if (visible) this.pageScreen = this.screen === 'quick' ? 'quick' : 'career';
+            this.pageHost?.visibility(visible, this.pageScreen);
         }
         for (let i = 0; i < this.buttons.length; i++) {
             if (this.buttons[i].node.active !== this.visible[i]) this.buttons[i].node.active = this.visible[i];

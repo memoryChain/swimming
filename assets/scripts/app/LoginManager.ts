@@ -198,9 +198,14 @@ export class LoginManager extends Component {
                 this._headBar?.setBack(null);
                 this._headBar?.setIdentityVisible(!active);
             },
+            onQuickRacePageChanged: (active) => {
+                this._headBar?.setIdentityVisible(!active);
+                this._headBar?.setRightControlsVisible(!active);
+            },
         });
         this._prepareRaceFlow.showReadyScreen();
         this._headBar?.setVisible(true);
+        this._headBar?.setRightControlsVisible(true);
         // The approved lobby composition has no back button. Character management
         // supplies its own temporary return action through the callback above.
         this._headBar?.setBack(null);
@@ -211,6 +216,7 @@ export class LoginManager extends Component {
         this._prepareRaceFlow = null;
         this._headBar?.setBack(null);
         this._headBar?.setIdentityVisible(true);
+        this._headBar?.setRightControlsVisible(true);
         this._headBar?.setVisible(false);
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;

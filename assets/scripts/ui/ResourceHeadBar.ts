@@ -53,6 +53,7 @@ export const HEADBAR_TOP_SAFE_AREA = 112;
 
 export class ResourceHeadBar {
     private _root: Node | null = null;
+    private _rightControls: Node | null = null;
     private _countLabel: Label | null = null;
     private _gemCountLabel: Label | null = null;
     private _shopBadge: Node | null = null;
@@ -78,6 +79,7 @@ export class ResourceHeadBar {
         this._root = root;
         const left = makeScreenEdgeGroup('HeadBarLeft', root, 'left', designWidth, designHeight, 8, false);
         const right = makeScreenEdgeGroup('HeadBarRight', root, 'right', designWidth, designHeight, 0, false);
+        this._rightControls = right;
 
         const topY = designHeight / 2 - 10 - IDENTITY_HEIGHT / 2;
         const nativeRightReserve = Math.ceil(platform().getTopRightReservedRatio() * view.getVisibleSize().width);
@@ -221,6 +223,13 @@ export class ResourceHeadBar {
         return !!this._identity?.isValid && this._identity.active;
     }
 
+    /** 玩法选择页保留左侧玩家身份，只隐藏右侧补给、资源数量与设置入口。 */
+    setRightControlsVisible(visible: boolean): void {
+        if (this._rightControls?.isValid && this._rightControls.active !== visible) {
+            this._rightControls.active = visible;
+        }
+    }
+
     setSupplyEntryVisible(visible: boolean): void {
         if (this._supplyEntry?.isValid && this._supplyEntry.active !== visible) {
             this._supplyEntry.active = visible;
@@ -276,6 +285,7 @@ export class ResourceHeadBar {
             this._root.destroy();
         }
         this._root = null;
+        this._rightControls = null;
         this._countLabel = null;
         this._gemCountLabel = null;
         this._shopBadge = null;
