@@ -30,13 +30,34 @@ export const STIMULANT_PUBLIC_WAVE_DISTANCES = [35, 60, 85, 110, 135, 160, 185] 
  * 七波各三瓶并随机分散到不同泳道；所有瓶子都是公共争抢目标。
  */
 export function buildStimulantSchedule(seed: number, laneCount = 8): StimulantSpawn[] {
+    return buildScheduleAtDistances(seed, laneCount, STIMULANT_PUBLIC_WAVE_DISTANCES);
+}
+
+/** 六合一短事件：两波各三瓶，位置以房主激活时的权威赛程距离为锚点。 */
+export function buildEntertainmentStimulantSchedule(
+    seed: number,
+    laneCount: number,
+    anchorDistance: number,
+): StimulantSpawn[] {
+    const anchor = Math.max(0, Math.min(175, Number.isFinite(anchorDistance) ? anchorDistance : 0));
+    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, [
+        Math.min(190, anchor + 6),
+        Math.min(194, anchor + 19),
+    ]);
+}
+
+function buildScheduleAtDistances(
+    seed: number,
+    laneCount: number,
+    distances: readonly number[],
+): StimulantSpawn[] {
     const rng = new SeededRandom((seed ^ 0x51a7e11d) >>> 0);
     const result: StimulantSpawn[] = [];
     const safeLaneCount = Math.max(1, Math.floor(laneCount));
     let id = 0;
 
     let previousLaneKey = '';
-    for (let publicWave = 0; publicWave < STIMULANT_PUBLIC_WAVE_DISTANCES.length; publicWave++) {
+    for (let publicWave = 0; publicWave < distances.length; publicWave++) {
         const wave = publicWave + 1;
         const lanes = Array.from({ length: safeLaneCount }, (_, index) => index);
         rng.shuffle(lanes);
@@ -54,7 +75,7 @@ export function buildStimulantSchedule(seed: number, laneCount = 8): StimulantSp
             result.push({
                 id: id++,
                 wave,
-                distance: STIMULANT_PUBLIC_WAVE_DISTANCES[publicWave],
+                distance: distances[publicWave],
                 laneIndex,
                 lateralOffset,
             });

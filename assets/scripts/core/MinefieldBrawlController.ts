@@ -67,12 +67,14 @@ export class MinefieldBrawlController {
         private readonly poolWidth: number,
         private readonly racerForLane: (lane: number) => MinefieldRacerState | null,
         private readonly onImpact: (impact: MinefieldImpact) => void,
+        mineCount: number = MINEFIELD_TUNING.mineCount,
     ) {
         const random = new SeededRandom((seed ^ 0x6d696e65) >>> 0);
         const halfWidth = Math.max(1, poolWidth * 0.5 - 0.8);
         const xOrder = random.shuffle([...ANCHOR_X]);
         const zOrder = random.shuffle([...ANCHOR_Z_RATIOS]);
-        for (let id = 0; id < MINEFIELD_TUNING.mineCount; id++) {
+        const count = Math.max(1, Math.min(ANCHOR_X.length, Math.floor(mineCount)));
+        for (let id = 0; id < count; id++) {
             const anchorX = xOrder[id % xOrder.length];
             const anchorZ = zOrder[id % zOrder.length] * halfWidth;
             this.anchorCourseX.push(anchorX);

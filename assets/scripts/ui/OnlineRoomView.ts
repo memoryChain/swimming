@@ -17,12 +17,7 @@ export const ROOM_MODES: ReadonlyArray<{ id: RaceModeId; label: string }> = [
     { id: 'beginner', label: getRaceModeTitle('beginner') },
     { id: 'competitive', label: getRaceModeTitle('competitive') },
     { id: 'championship', label: getRaceModeTitle('championship') },
-    { id: 'stimulant-brawl', label: getRaceModeTitle('stimulant-brawl') },
-    { id: 'shark-brawl', label: getRaceModeTitle('shark-brawl') },
-    { id: 'whirlpool-brawl', label: getRaceModeTitle('whirlpool-brawl') },
-    { id: 'last-place-brawl', label: getRaceModeTitle('last-place-brawl') },
-    { id: 'timed-bomb-brawl', label: getRaceModeTitle('timed-bomb-brawl') },
-    { id: 'minefield-brawl', label: getRaceModeTitle('minefield-brawl') },
+    { id: 'entertainment-brawl', label: getRaceModeTitle('entertainment-brawl') },
 ];
 export type OnlineMember = {
     clientId?: number;
@@ -178,7 +173,7 @@ export class OnlineRoomView {
         assign(numericRoom ? this.roomNumber : this.roomNumberLocal,
             state.roomNumber.replace(/^(\d{3})(\d{3})$/, '$1 $2'));
         assign(this.count, `${state.members.length}/8`);
-        assign(this.modeText, ROOM_MODES.find(m => m.id === state.mode)!.label);
+        assign(this.modeText, ROOM_MODES.find(m => m.id === state.mode)?.label ?? getRaceModeTitle(state.mode));
         assign(this.distanceText, String(getRaceDistance(state.mode)));
         assign(this.modePermission, state.isHost ? '仅房主可切换' : '房主设置');
         visible(this.modeArrow.node, state.isHost);

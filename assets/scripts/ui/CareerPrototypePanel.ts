@@ -196,6 +196,7 @@ export class CareerPrototypePanel {
             if (result.ok && result.ticket) {
                 setSoloRaceTicket(result.ticket);
                 setRaceDifficulty(result.ticket.rule === 'standard' ? 'beginner'
+                    : result.ticket.rule === 'entertainment' ? 'entertainment-brawl'
                     : result.ticket.rule === 'stimulant' ? 'stimulant-brawl'
                         : result.ticket.rule === 'shark' ? 'shark-brawl'
                             : result.ticket.rule === 'whirlpool' ? 'whirlpool-brawl'

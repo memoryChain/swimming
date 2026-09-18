@@ -8,6 +8,7 @@ import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { careerArt, careerButtonFeedback } from './CareerUiArt';
 
 type Control = { root: Node; label: Label; selected: Node };
+type ButtonSurface = 'panel' | 'rule' | 'primary';
 export interface EventPageState {
     screen: 'quick' | 'career'; source: 'league' | 'cup'; tier: number;
     characterId: PlayerCharacterId; distance: 200 | 400; rule: RaceRule;
@@ -75,16 +76,16 @@ export class CareerEventPage {
         for(let i=0;i<LEAGUES.length;i++) {
             const y=this.rowY(i),x=-415+(i%2)*40;
             if(i<LEAGUES.length-1) makeRect(`RouteLink${i}`,this.content,8,ROW_HEIGHT-90,uiColor(190,242,252)).setPosition(-395,y+ROW_HEIGHT/2);
-            const n=this.button(this.content,`LeagueTier${i}`,'',x,y,235,114,()=>actions.tier(i));
+            const n=this.button(this.content,`LeagueTier${i}`,'',x,y,235,114,()=>actions.tier(i),'panel');
             this.nodes.push(n);
         }
         this.detail=this.card(this.content,'SelectedEventPanel',135,0,660,348);
         this.detailTitle=this.text(this.detail,'SelectedLeague','',0,127,570,40,29);
         this.points=this.text(this.detail,'LeaguePoints','',0,85,550,34,23);
-        this.leagueStart=this.button(this.detail,'StartLeague','开始联赛',0,35,330,54,()=>actions.start('league'),true);
+        this.leagueStart=this.button(this.detail,'StartLeague','开始联赛',0,35,330,54,()=>actions.start('league'),'primary');
         this.cupTitle=this.text(this.detail,'CupName','',0,-17,560,30,23);
         for(let i=0;i<3;i++)this.rounds.push(this.text(this.detail,`CupRound${i}`,'',-200+i*200,-57,194,48,17));
-        this.cupStart=this.button(this.detail,'StartCup','参加杯赛',0,-117,330,52,()=>actions.start('cup'),true);
+        this.cupStart=this.button(this.detail,'StartCup','参加杯赛',0,-117,330,52,()=>actions.start('cup'),'primary');
         this.cupState=this.text(this.detail,'CupState','',0,-155,580,25,16);
         this.current=this.button(this.root,'ReturnCurrent','定位当前联赛',-390,-305,280,48,()=>{
             if(!this.snapshot)return;
@@ -95,19 +96,14 @@ export class CareerEventPage {
         this.text(this.quick,'DistanceHeading','比赛距离',-285,150,500,40,28);
         this.text(this.quick,'RuleHeading','玩法规则',285,150,500,40,28);
         this.quickChoices=[
-            this.button(this.quick,'Distance200','200米\n一分多钟',-285,50,490,112,()=>actions.distance(200)),
-            this.button(this.quick,'Distance400','400米\n约三分钟',-285,-85,490,112,()=>actions.distance(400)),
-            this.button(this.quick,'RuleStandard','标准竞速\n专注节奏',165,105,235,62,()=>actions.rule('standard')),
-            this.button(this.quick,'RuleWild','狂野模式\n自由争位',405,105,235,62,()=>actions.rule('wild')),
-            this.button(this.quick,'RuleStimulant','心跳苏打\n补劲上头',165,35,235,62,()=>actions.rule('stimulant')),
-            this.button(this.quick,'RuleShark','鲨鱼大乱斗\n追猎淘汰',405,35,235,62,()=>actions.rule('shark')),
-            this.button(this.quick,'RuleWhirlpool','漩涡冲浪赛\n外圈借力',165,-35,235,62,()=>actions.rule('whirlpool')),
-            this.button(this.quick,'RuleCannon','炮火逃生赛\n躲避炮弹',405,-35,235,62,()=>actions.rule('cannon')),
-            this.button(this.quick,'RuleTimedBomb','定时炸弹模式\n随机发放传递',165,-105,235,62,()=>actions.rule('timed-bomb')),
-            this.button(this.quick,'RuleMinefield','水雷模式\n碰到立即爆炸',405,-105,235,62,()=>actions.rule('minefield')),
+            this.button(this.quick,'Distance200','200米\n一分多钟',-285,50,490,112,()=>actions.distance(200),'panel'),
+            this.button(this.quick,'Distance400','400米\n约三分钟',-285,-85,490,112,()=>actions.distance(400),'panel'),
+            this.button(this.quick,'RuleStandard','标准竞速\n专注节奏',285,90,490,62,()=>actions.rule('standard')),
+            this.button(this.quick,'RuleWild','狂野模式\n自由竞速',285,15,490,62,()=>actions.rule('wild')),
+            this.button(this.quick,'RuleEntertainment','娱乐模式\n随机事件',285,-60,490,62,()=>actions.rule('entertainment')),
         ];
         this.text(this.quick,'QuickNotes','AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分',0,-195,1050,75,23);
-        this.quickStart=this.button(this.quick,'StartEvent','开始比赛',370,-285,380,60,()=>actions.start('quick'),true);
+        this.quickStart=this.button(this.quick,'StartEvent','开始比赛',370,-285,380,60,()=>actions.start('quick'),'primary');
         this.footer=this.text(this.root,'EventStatus','',100,-345,930,26,17);this.footer.color=WHITE;
         this.rules=makeRect('RulesOverlay',this.root,3000,1600,uiColor(0,22,46,190));this.rules.addComponent(BlockInputEvents);
         const sheet=this.card(this.rules,'RulesSheet',0,0,850,490);
@@ -133,10 +129,16 @@ export class CareerEventPage {
         const n=makeRect(name,parent,w,h,WHITE);n.setPosition(x,y);
         careerArt(n,'Surface',RESOURCE_PATHS.characterUi.detailPanelBackground,w,h,0,0,true);return n;
     }
-    private button(parent:Node,name:string,value:string,x:number,y:number,w:number,h:number,action:()=>void,primary=false):Control {
+    private button(parent:Node,name:string,value:string,x:number,y:number,w:number,h:number,action:()=>void,surface:ButtonSurface='rule'):Control {
         const root=makeButton(name,parent,w,h,uiColor(25,142,182),'');root.setPosition(x,y);
-        careerArt(root,'Surface',primary?RESOURCE_PATHS.lobbyUi.characterButton:h>80?RESOURCE_PATHS.characterUi.detailPanelBackground:RESOURCE_PATHS.avatarPickerUi.cancelButton,w,h,0,0,true);
+        const art=surface==='primary'
+            ? RESOURCE_PATHS.lobbyUi.characterButton
+            : surface==='panel'
+                ? RESOURCE_PATHS.characterUi.detailPanelBackground
+                : RESOURCE_PATHS.avatarPickerUi.cancelButton;
+        careerArt(root,'Surface',art,w,h,0,0,true);
         careerButtonFeedback(root);
+        const primary=surface==='primary';
         const label=this.text(root,'Label',value,primary?-12:0,0,w-(primary?70:18),h-10,23);
         const selected=makeRect('SelectionMark',root,w-16,5,uiColor(255,227,35));selected.setPosition(0,-h/2+5);selected.active=false;
         root.on(Button.EventType.CLICK,()=>{if(!this.snapshot?.busy&&root.getComponent(Button)!.interactable)action();});
@@ -188,7 +190,7 @@ export class CareerEventPage {
             this.active(this.abandon.root,!!active);this.enabled(this.abandon,!s.busy);
             this.write(this.abandon.label,s.confirmAbandon?'再次点击确认放弃':'放弃本届杯赛');
         } else {
-            const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:s.rule==='stimulant'?4:s.rule==='shark'?5:s.rule==='whirlpool'?6:s.rule==='cannon'?7:s.rule==='minefield'?9:8;
+            const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:4;
             const entertainment=s.rule!=='standard'&&s.rule!=='wild';
             this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy&&!(i===1&&entertainment));this.active(n.selected,i===(s.distance===200?0:1)||i===ruleIndex);});
             this.enabled(this.quickStart,!s.busy);this.write(this.quickStart.label,`开始比赛 · ${s.distance}米`);this.active(this.abandon.root,false);

@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -161,6 +161,7 @@ export class NetRaceController {
     private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
     private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
+    private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -331,6 +332,10 @@ export class NetRaceController {
         this._minefieldStateListener = listener;
     }
 
+    setEntertainmentDirectorStateListener(listener: ((state: NetEntertainmentDirectorState) => void) | null): void {
+        this._entertainmentDirectorStateListener = listener;
+    }
+
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
     // high-performance+ disables GameServerManager frame sync), the game must sync via
     // broadcast() only: human self-positions go out as P| instead of riding uploadFrame.
@@ -495,6 +500,7 @@ export class NetRaceController {
         mineRelay?: NetMineRelayState | null,
         recovery?: NetEntertainmentRecoveryState | null,
         minefield?: NetMinefieldState | null,
+        entertainmentDirector?: NetEntertainmentDirectorState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
@@ -509,6 +515,7 @@ export class NetRaceController {
             mineRelay,
             recovery,
             minefield,
+            entertainmentDirector,
         ));
     }
 
@@ -635,6 +642,9 @@ export class NetRaceController {
                 this._snapshotTargets = snapshot.entries;
                 this._snapshotTime = Date.now();
                 this._snapshotRevision++;
+                // 先创建／启用本快照所需的玩法控制器，再把各玩法状态灌入；
+                // 否则访客首次收到激活快照时会白白丢掉一轮子状态。
+                this._entertainmentDirectorStateListener?.(snapshot.entertainmentDirector);
                 this._stimulantStateListener?.({
                     revision: snapshot.stimulantRevision,
                     collectedMask: snapshot.stimulantMask,

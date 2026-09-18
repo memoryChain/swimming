@@ -73,6 +73,9 @@ export class AISwimmerController extends Component {
     private _whirlpoolTargetZ: number | null = null;
     private _cannonTargetZ: number | null = null;
     private _mineRelayTargetZ: number | null = null;
+    private _minefieldTargetZ: number | null = null;
+    private _eventIntentPriority = 0;
+    private _eventIntentHoldUntil = 0;
     private _safeMinZ: number | null = null;
     private _safeMaxZ: number | null = null;
     private _safeWarning = false;
@@ -138,6 +141,10 @@ export class AISwimmerController extends Component {
         this._mineRelayTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
     }
 
+    setMinefieldTargetZ(targetZ: number | null) {
+        this._minefieldTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
     startSwimming() {
         if (this.remoteDriven || this._active) return;
         this.clearObservedPress();
@@ -151,7 +158,9 @@ export class AISwimmerController extends Component {
         this._lastStrokeStart = -10;
         this._wasLocked = false;
         this._safeAware = false;
-        this._targetZ = this._mineRelayTargetZ ?? this._cannonTargetZ ?? this._sharkTargetZ ?? this._whirlpoolTargetZ ?? this._stimulantTargetZ;
+        this._eventIntentPriority = 0;
+        this._eventIntentHoldUntil = 0;
+        this._targetZ = this.resolveEventTargetZ();
         this._observation.strokeCostPerMeter = 0.7;
         this.planner.reset();
         this._timer = this.intelligence.id === 'extreme' ? 0
@@ -255,11 +264,44 @@ export class AISwimmerController extends Component {
                 this._targetZ = clamp(otherZ + direction * 1.5, -halfWidth + 0.8, halfWidth - 0.8);
             }
         }
-        if (this._stimulantTargetZ !== null) this._targetZ = this._stimulantTargetZ;
-        if (this._whirlpoolTargetZ !== null) this._targetZ = this._whirlpoolTargetZ;
-        if (this._sharkTargetZ !== null) this._targetZ = this._sharkTargetZ;
-        if (this._cannonTargetZ !== null) this._targetZ = this._cannonTargetZ;
-        if (this._mineRelayTargetZ !== null) this._targetZ = this._mineRelayTargetZ;
+        const eventTarget = this.resolveEventTargetZ();
+        if (eventTarget !== null) this._targetZ = eventTarget;
+    }
+
+    /**
+     * 多事件共存时只输出一个横向意图。近距离水雷／炸弹与即时袭击优先，
+     * 同级目标至少保持一个短决策窗，避免 AI 在驻留物之间逐次观察时左右抖动。
+     */
+    private resolveEventTargetZ(): number | null {
+        let desiredPriority = 0;
+        if (this._stimulantTargetZ !== null) desiredPriority = 1;
+        if (this._whirlpoolTargetZ !== null) desiredPriority = 2;
+        if (this._mineRelayTargetZ !== null) desiredPriority = 3;
+        if (this._sharkTargetZ !== null) desiredPriority = 4;
+        if (this._cannonTargetZ !== null) desiredPriority = 5;
+        if (this._minefieldTargetZ !== null) desiredPriority = 6;
+
+        const heldTarget = this.eventTargetForPriority(this._eventIntentPriority);
+        if (heldTarget === null || desiredPriority > this._eventIntentPriority
+            || this._clock >= this._eventIntentHoldUntil) {
+            if (desiredPriority !== this._eventIntentPriority) {
+                this._eventIntentPriority = desiredPriority;
+                this._eventIntentHoldUntil = this._clock + 0.35;
+            }
+        }
+        return this.eventTargetForPriority(this._eventIntentPriority);
+    }
+
+    private eventTargetForPriority(priority: number): number | null {
+        switch (priority) {
+            case 6: return this._minefieldTargetZ;
+            case 5: return this._cannonTargetZ;
+            case 4: return this._sharkTargetZ;
+            case 3: return this._mineRelayTargetZ;
+            case 2: return this._whirlpoolTargetZ;
+            case 1: return this._stimulantTargetZ;
+            default: return null;
+        }
     }
 
     private kick(dt: number) {

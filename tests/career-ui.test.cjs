@@ -71,6 +71,20 @@ test('快速比赛仅两组选择，反复切换节点与监听稳定，重复�
     const panel = new CareerPrototypePanel(root, () => starts++, () => {});
     const before = descendants(root).length;
     panel.openQuick();
+    const page = panel.page.root;
+    const entertainment = find(page, 'RuleEntertainment');
+    const entertainmentSurface = find(entertainment, 'Surface');
+    assert.equal(entertainmentSurface.asset, find(find(page, 'RuleStandard'), 'Surface').asset);
+    assert.notEqual(entertainmentSurface.asset, find(find(page, 'Distance200'), 'Surface').asset);
+    const ruleChoices = ['RuleStandard', 'RuleWild', 'RuleEntertainment'].map(name => find(page, name));
+    assert.deepEqual(ruleChoices.map(choice => choice.position.y), [90, 15, -60]);
+    assert.deepEqual(ruleChoices.map(choice => choice.getComponent(UITransform).contentSize), [
+        {width: 490, height: 62}, {width: 490, height: 62}, {width: 490, height: 62},
+    ]);
+    assert.deepEqual(ruleChoices.map(choice => choice.position.x), [285, 285, 285]);
+    assert.deepEqual(ruleChoices.map(choice => textOf(choice, 'Label')), [
+        '标准竞速\n专注节奏', '狂野模式\n自由竞速', '娱乐模式\n随机事件',
+    ]);
     for (let i = 0; i < 30; i++) for (const name of ['Distance200', 'Distance400', 'RuleStandard', 'RuleWild']) find(panel.page.root, name).click();
     assert.equal(descendants(root).length, before); assert.equal(listeners.size, 1);
     assert.equal(panel.distance, 400); assert.equal(panel.rule, 'wild');

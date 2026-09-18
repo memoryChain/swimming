@@ -77,6 +77,7 @@ export class CannonBrawlController {
         private readonly racerForLane: (lane: number) => CannonRacerState | null,
         private readonly onLaunch: (launch: CannonLaunch) => void,
         private readonly onImpact: (impact: CannonImpact) => void,
+        private readonly strikeTriggers: readonly number[] = CANNON_STRIKE_TRIGGERS,
     ) {}
 
     reset(): void {
@@ -98,7 +99,7 @@ export class CannonBrawlController {
         }
         if (!authoritative || this.activeCount() <= 0) return;
         const strikeId = this.nextStrikeId();
-        if (strikeId < 0 || this.leaderDistance() < CANNON_STRIKE_TRIGGERS[strikeId]) return;
+        if (strikeId < 0 || this.leaderDistance() < this.strikeTriggers[strikeId]) return;
         const launch = this.createLaunch(strikeId);
         if (!launch) {
             this.completedStrikeMask |= 1 << strikeId;
@@ -110,7 +111,7 @@ export class CannonBrawlController {
 
     applyLaunch(launch: CannonLaunch): boolean {
         if (!isValidLaunch(launch) || launch.revision <= this.revision
-            || launch.strikeId >= CANNON_STRIKE_TRIGGERS.length) return false;
+            || launch.strikeId >= this.strikeTriggers.length) return false;
         this.revision = launch.revision;
         this.activeLaunch = { ...launch };
         this.activeRemainingSeconds = launch.warningSeconds;
@@ -122,7 +123,7 @@ export class CannonBrawlController {
         const impactBit = 1 << impact.strikeId;
         if (!isValidImpact(impact) || impact.revision < this.revision
             || (this.appliedImpactMask & impactBit) !== 0
-            || impact.strikeId >= CANNON_STRIKE_TRIGGERS.length) return false;
+            || impact.strikeId >= this.strikeTriggers.length) return false;
         this.revision = Math.max(this.revision, impact.revision);
         this.completedStrikeMask |= impactBit;
         this.appliedImpactMask |= impactBit;
@@ -141,7 +142,7 @@ export class CannonBrawlController {
         this.revision = state.revision;
         this.completedStrikeMask |= state.completedStrikeMask;
         if (state.activeStrikeId >= 0
-            && state.activeStrikeId < CANNON_STRIKE_TRIGGERS.length
+            && state.activeStrikeId < this.strikeTriggers.length
             && (this.completedStrikeMask & (1 << state.activeStrikeId)) === 0) {
             this.activeLaunch = {
                 strikeId: state.activeStrikeId,
@@ -182,14 +183,14 @@ export class CannonBrawlController {
 
     completedStrikeCount(): number {
         let count = 0;
-        for (let i = 0; i < CANNON_STRIKE_TRIGGERS.length; i++) {
+        for (let i = 0; i < this.strikeTriggers.length; i++) {
             if ((this.completedStrikeMask & (1 << i)) !== 0) count++;
         }
         return count;
     }
 
     remainingStrikeCount(): number {
-        return Math.max(0, CANNON_STRIKE_TRIGGERS.length - this.completedStrikeCount());
+        return Math.max(0, this.strikeTriggers.length - this.completedStrikeCount());
     }
 
     activeCount(): number {
@@ -329,7 +330,7 @@ export class CannonBrawlController {
     }
 
     private nextStrikeId(): number {
-        for (let id = 0; id < CANNON_STRIKE_TRIGGERS.length; id++) {
+        for (let id = 0; id < this.strikeTriggers.length; id++) {
             if ((this.completedStrikeMask & (1 << id)) === 0) return id;
         }
         return -1;

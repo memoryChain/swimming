@@ -36,6 +36,10 @@ export type SharkControllerOptions = {
     // Fires once per locked target when the predator is close enough for the
     // local presentation to show the incoming attack before a possible bite.
     onTargetApproach?: (target: Swimmer, sharkX: number, sharkZ: number) => void;
+    /** 六合一可注入单轮短赛程；独立鲨鱼模式继续使用全局三轮赛程。 */
+    hungerSchedule?: readonly number[];
+    /** 最后一轮结束后继续低速巡游，作为场地残留。 */
+    wanderAfterFinalHunt?: boolean;
 };
 
 // A single race-owned predator. It has no per-frame allocations and intentionally
@@ -95,7 +99,7 @@ export class SharkController {
     }
 
     private beginHuntBeat(): void {
-        if (this._huntIndex >= SHARK_TUNING.hungerSchedule.length) return;
+        if (this._huntIndex >= this.hungerSchedule().length) return;
         this._sequence++;
         this._knockedLane = -1;
         this._target = null;
@@ -121,8 +125,8 @@ export class SharkController {
         if (!Number.isFinite(dt) || dt <= 0) return;
         this._raceElapsed += dt;
         if ((this._state === SharkState.INACTIVE || this._state === SharkState.WANDER)
-            && this._huntIndex < SHARK_TUNING.hungerSchedule.length
-            && this._raceElapsed >= SHARK_TUNING.hungerSchedule[this._huntIndex]) {
+            && this._huntIndex < this.hungerSchedule().length
+            && this._raceElapsed >= this.hungerSchedule()[this._huntIndex]) {
             this.beginHuntBeat();
         }
         if (this._state === SharkState.INACTIVE || this._state === SharkState.SATIATED) return;
@@ -297,8 +301,13 @@ export class SharkController {
         this._huntEngaged = false;
         this._target = null;
         this._approachNotifiedTarget = null;
-        if (this._huntIndex >= SHARK_TUNING.hungerSchedule.length) {
-            this.setState(SharkState.SATIATED);
+        if (this._huntIndex >= this.hungerSchedule().length) {
+            if (this._opts.wanderAfterFinalHunt) {
+                this.selectNearestWanderWaypoint();
+                this.setState(SharkState.WANDER);
+            } else {
+                this.setState(SharkState.SATIATED);
+            }
         } else {
             this.selectNearestWanderWaypoint();
             this.setState(SharkState.WANDER);
@@ -372,6 +381,10 @@ export class SharkController {
         }
         this._opts.node.setPosition(furthestX, layout.waterY + SHARK_TUNING.waterYOffset, furthestZ);
         this.selectNearestWanderWaypoint();
+    }
+
+    private hungerSchedule(): readonly number[] {
+        return this._opts.hungerSchedule ?? SHARK_TUNING.hungerSchedule;
     }
 
     private updateWander(dt: number): void {

@@ -1,4 +1,5 @@
 import { Vec3 } from 'cc';
+import { EntertainmentEventId, isEntertainmentEventResident } from './EntertainmentModeDirector';
 
 export const RACE_DISTANCE = 200 as const;
 export const RACE_COURSE_LENGTH = 50;
@@ -11,10 +12,10 @@ export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
 export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl'
     | 'whirlpool-brawl' | 'last-place-brawl' | 'timed-bomb-brawl' | 'minefield-brawl'
-    | 'mine-relay-brawl';
+    | 'mine-relay-brawl' | 'entertainment-brawl';
 export type RaceCategoryId = 'competitive' | 'entertainment';
 export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon'
-    | 'timed-bomb' | 'minefield';
+    | 'timed-bomb' | 'minefield' | 'entertainment';
 
 export type RaceModeConfig = {
     id: RaceModeId;
@@ -25,6 +26,8 @@ export type RaceModeConfig = {
     // Whether this tier enables the dynamic lane-lockdown race modifier.
     laneLockdownEnabled: boolean;
     steeringEnabled: boolean;
+    /** 旧单项入口保留给存档、联机兼容与开发调试；正式准备页只展示公开入口。 */
+    publicEntry?: boolean;
 };
 
 // 保留稳定入口ID供存档和房间使用；AI等级与智力独立配置于 competitor/AiRaceConfig。
@@ -32,14 +35,18 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'beginner', label: '标准竞速', category: 'competitive', distance: 200, ruleset: 'standard', laneLockdownEnabled: false, steeringEnabled: false },
     { id: 'competitive', label: '狂野模式', category: 'competitive', distance: 200, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
     { id: 'championship', label: '狂野模式', category: 'competitive', distance: 400, ruleset: 'wild', laneLockdownEnabled: false, steeringEnabled: true },
-    { id: 'stimulant-brawl', label: '心跳苏打大乱斗', category: 'entertainment', distance: 200, ruleset: 'stimulant', laneLockdownEnabled: false, steeringEnabled: true },
-    { id: 'shark-brawl', label: '鲨鱼大乱斗', category: 'entertainment', distance: 200, ruleset: 'shark', laneLockdownEnabled: false, steeringEnabled: true },
-    { id: 'whirlpool-brawl', label: '漩涡冲浪赛', category: 'entertainment', distance: 200, ruleset: 'whirlpool', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'entertainment-brawl', label: '娱乐模式', category: 'entertainment', distance: 200, ruleset: 'entertainment', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'stimulant-brawl', label: '心跳苏打大乱斗', category: 'entertainment', distance: 200, ruleset: 'stimulant', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'shark-brawl', label: '鲨鱼大乱斗', category: 'entertainment', distance: 200, ruleset: 'shark', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'whirlpool-brawl', label: '漩涡冲浪赛', category: 'entertainment', distance: 200, ruleset: 'whirlpool', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     // 保留入口 ID，避免已有存档和联机房间选择失效；玩法本身已替换为炮火逃生赛。
-    { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true },
-    { id: 'timed-bomb-brawl', label: '定时炸弹模式', category: 'entertainment', distance: 200, ruleset: 'timed-bomb', laneLockdownEnabled: false, steeringEnabled: true },
-    { id: 'minefield-brawl', label: '水雷模式', category: 'entertainment', distance: 200, ruleset: 'minefield', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'timed-bomb-brawl', label: '定时炸弹模式', category: 'entertainment', distance: 200, ruleset: 'timed-bomb', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'minefield-brawl', label: '水雷模式', category: 'entertainment', distance: 200, ruleset: 'minefield', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
 ];
+export const PUBLIC_RACE_MODE_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter(
+    option => option.publicEntry !== false,
+);
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter((option) => option.category === 'competitive');
 
 let currentRaceMode: RaceModeId = 'competitive';
@@ -75,6 +82,11 @@ export function getRaceModeConfig(mode: RaceModeId = currentRaceMode): RaceModeC
 }
 export const getRaceDifficultyConfig = getRaceModeConfig;
 
+export function normalizePublicRaceMode(mode: RaceModeId): RaceModeId {
+    const config = getRaceModeConfig(mode);
+    return config.publicEntry === false ? 'entertainment-brawl' : config.id;
+}
+
 export function isRaceSteeringEnabled(): boolean {
     return getRaceModeConfig().steeringEnabled;
 }
@@ -84,27 +96,43 @@ export function getRaceModeTitle(mode: RaceModeId = currentRaceMode): string {
 }
 
 export function isStimulantBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'stimulant';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'stimulant' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.STIMULANT));
 }
 
 export function isSharkBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'shark';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'shark' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.SHARK));
 }
 
 export function isWhirlpoolBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'whirlpool';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'whirlpool' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.WHIRLPOOL));
 }
 
 export function isCannonBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'cannon';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'cannon' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.CANNON));
 }
 
 export function isTimedBombBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'timed-bomb';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'timed-bomb' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.TIMED_BOMB));
 }
 
 export function isMinefieldBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'minefield';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'minefield' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.MINEFIELD));
+}
+
+export function isEntertainmentBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'entertainment';
 }
 
 /** @deprecated 旧入口只用于兼容仍未迁移的调用。 */

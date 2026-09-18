@@ -10,7 +10,7 @@
 
 import { Node } from 'cc';
 import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
-import { RaceModeId, setRaceDifficulty } from '../core/GameBalance';
+import { RaceModeId, normalizePublicRaceMode, setRaceDifficulty } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS, getSelectedRaceDifficulty } from '../app/PlayerCharacterConfig';
 import { PlayerData } from '../backend/PlayerData';
 import { netRoom } from '../net/NetManager';
@@ -58,7 +58,7 @@ export class RoomFlow {
     private _readyPending = false;
     private _kickPending = false;
     private _leaving = false;
-    private _mode: RaceModeId = getSelectedRaceDifficulty();
+    private _mode: RaceModeId = normalizePublicRaceMode(getSelectedRaceDifficulty());
     private _rulesId = '';
     private _rulesRevision = 0;
     private _rulesOwnerPos = -1;

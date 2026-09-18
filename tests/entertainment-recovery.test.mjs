@@ -81,7 +81,7 @@ test('定时炸弹致命命中复用同一套原进度重生和无敌流程', ()
     assert.deepEqual(f.events.slice(0, 2), [['knocked', 0, 72.45], ['respawn', 0, 72.45]]);
 });
 
-test('水雷命中进入同一急救流程，恢复序号跨事件单调递增', () => {
+test('六合一水雷命中进入同一急救流程，恢复序号跨事件单调递增', () => {
     const f = fixture();
     const first = f.controller.tryKnockDown(0, MINEFIELD, 42.5);
     assert.equal(first.revision, 1);
@@ -92,7 +92,7 @@ test('水雷命中进入同一急救流程，恢复序号跨事件单调递增',
     assert.equal(f.controller.stateForLane(1).reason, SHARK);
 });
 
-test('鲨鱼、炮火、定时炸弹和水雷接入复用泳者节点，不走永久淘汰', () => {
+test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳者节点，不走永久淘汰', () => {
     const source = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     assert.match(source, /respawnAfterEntertainmentHit/);
     assert.match(source, /setSharkKnockdownListener/);
@@ -102,7 +102,8 @@ test('鲨鱼、炮火、定时炸弹和水雷接入复用泳者节点，不走�
     const recoverySetup = source.match(/private setupEntertainmentRecovery[\s\S]*?\n    }/)?.[0] ?? '';
     assert.match(recoverySetup, /isMinefieldBrawlMode\(\)/);
     const minefieldImpact = source.match(/private handleMinefieldImpact[\s\S]*?\n    }/)?.[0] ?? '';
-    assert.match(minefieldImpact, /applyEntertainmentKnockdown\([\s\S]*?EntertainmentRecoveryReason\.MINEFIELD/);
+    assert.match(minefieldImpact, /applyEventKnockdown\([\s\S]*?EntertainmentRecoveryReason\.MINEFIELD/);
+    assert.doesNotMatch(minefieldImpact, /if \(isEntertainmentBrawlMode\(\)\)/);
     assert.match(source, /isDamageable\(lane\)/);
     assert.match(source, /recovery\?\.phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.doesNotMatch(source, /eliminateCannonHitLane|handleSharkElimination|enqueueSharkElimination/);

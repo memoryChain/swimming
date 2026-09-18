@@ -4,6 +4,7 @@ import { makeLabel, makeRoundedRect, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
 const SAMPLE_SECONDS = 0.1;
+const COMPLETION_SECONDS = 2;
 const NORMAL_TEXT = new Color(226, 247, 255, 255);
 const WARNING_TEXT = new Color(255, 220, 66, 255);
 const DANGER_TEXT = new Color(255, 92, 62, 255);
@@ -17,6 +18,8 @@ export class CannonBrawlHud {
     private elapsed = SAMPLE_SECONDS;
     private lastText = '';
     private colorState = 0;
+    private completionRemainingSeconds = 0;
+    private hadPendingStrike = false;
 
     constructor(parent: Node, _width: number, _height: number) {
         this.root = makeRoundedRect(
@@ -43,14 +46,26 @@ export class CannonBrawlHud {
         this.elapsed = SAMPLE_SECONDS;
         this.lastText = '';
         this.colorState = 0;
+        this.hide();
+    }
+
+    hide(): void {
+        this.completionRemainingSeconds = 0;
+        this.hadPendingStrike = false;
         if (this.root.active) this.root.active = false;
     }
 
     consumeSample(dt: number, state: GameState): boolean {
-        const visible = state === GameState.RACING;
-        if (this.root.active !== visible) this.root.active = visible;
-        if (!visible) return false;
-        this.elapsed += Math.max(0, Number.isFinite(dt) ? dt : 0);
+        if (state !== GameState.RACING) {
+            this.hide();
+            return false;
+        }
+        const step = Math.max(0, Number.isFinite(dt) ? dt : 0);
+        if (this.completionRemainingSeconds > 0) {
+            this.completionRemainingSeconds = Math.max(0, this.completionRemainingSeconds - step);
+            if (this.completionRemainingSeconds <= 0 && this.root.active) this.root.active = false;
+        }
+        this.elapsed += step;
         if (this.elapsed < SAMPLE_SECONDS) return false;
         this.elapsed %= SAMPLE_SECONDS;
         return true;
@@ -61,9 +76,14 @@ export class CannonBrawlHud {
         activeRemainingSeconds: number,
         threat: CannonThreat,
         playerRecovering: boolean,
+        showCompletion = true,
     ): void {
         let text: string;
         let colorState = 0;
+        if (activeRemainingSeconds > 0 || remainingStrikes > 0) {
+            this.hadPendingStrike = true;
+            this.completionRemainingSeconds = 0;
+        }
         if (playerRecovering) {
             text = '炮弹核心命中 · 正在重新入水';
             colorState = 2;
@@ -81,9 +101,17 @@ export class CannonBrawlHud {
             }
         } else if (remainingStrikes > 0) {
             text = `下一轮炮击待命 · 还剩${remainingStrikes}发`;
-        } else {
+        } else if (showCompletion && (this.hadPendingStrike || this.completionRemainingSeconds > 0)) {
+            if (this.hadPendingStrike) {
+                this.hadPendingStrike = false;
+                this.completionRemainingSeconds = COMPLETION_SECONDS;
+            }
             text = '炮击阶段结束 · 向终点冲刺';
+        } else {
+            this.hide();
+            return;
         }
+        if (!this.root.active) this.root.active = true;
         if (text !== this.lastText) {
             this.lastText = text;
             this.label.string = text;

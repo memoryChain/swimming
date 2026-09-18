@@ -111,6 +111,7 @@ export class MineRelayBrawlController {
         private readonly onArm: (event: MineRelayArm) => void,
         private readonly onTransfer: (event: MineRelayTransfer) => void,
         private readonly onResolution: (event: MineRelayResolution) => void,
+        private readonly rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = MINE_RELAY_ROUNDS,
     ) {}
 
     reset(): void {
@@ -154,7 +155,7 @@ export class MineRelayBrawlController {
         }
         if (!authoritative || this.recoverySeconds > 0 || this.activeCount() <= 1) return;
         const roundId = this.nextRoundId();
-        if (roundId < 0 || this.leaderDistance() < MINE_RELAY_ROUNDS[roundId].triggerDistance) return;
+        if (roundId < 0 || this.leaderDistance() < this.rounds[roundId].triggerDistance) return;
         const carrierLane = this.pickStarterLane(roundId);
         if (carrierLane < 0) {
             this.completedRoundMask |= 1 << roundId;
@@ -163,7 +164,7 @@ export class MineRelayBrawlController {
         const arm: MineRelayArm = {
             roundId,
             carrierLane,
-            fuseSeconds: MINE_RELAY_ROUNDS[roundId].fuseSeconds,
+            fuseSeconds: this.rounds[roundId].fuseSeconds,
             revision: this.revision + 1,
         };
         this.applyArm(arm);
@@ -171,7 +172,7 @@ export class MineRelayBrawlController {
     }
 
     applyArm(event: MineRelayArm): boolean {
-        if (!isValidArm(event) || event.roundId >= MINE_RELAY_ROUNDS.length
+        if (!isValidArm(event) || event.roundId >= this.rounds.length
             || event.carrierLane >= this.laneCount || event.revision <= this.revision
             || (this.completedRoundMask & (1 << event.roundId)) !== 0) return false;
         this.revision = event.revision;
@@ -201,7 +202,7 @@ export class MineRelayBrawlController {
 
     applyResolution(event: MineRelayResolution): boolean {
         const bit = 1 << event.roundId;
-        if (!isValidResolution(event) || event.roundId >= MINE_RELAY_ROUNDS.length
+        if (!isValidResolution(event) || event.roundId >= this.rounds.length
             || event.carrierLane >= this.laneCount || event.revision < this.revision
             || (event.exploded
                 ? (this.appliedExplosionMask & bit) !== 0
@@ -253,13 +254,13 @@ export class MineRelayBrawlController {
         this.recoverySeconds = sameRevision
             ? Math.min(previousRecovery, state.recoverySeconds)
             : state.recoverySeconds;
-        if (state.activeRoundId >= 0 && state.activeRoundId < MINE_RELAY_ROUNDS.length
+        if (state.activeRoundId >= 0 && state.activeRoundId < this.rounds.length
             && state.carrierLane >= 0 && state.carrierLane < this.laneCount
             && (this.completedRoundMask & (1 << state.activeRoundId)) === 0) {
             this.activeArm = {
                 roundId: state.activeRoundId,
                 carrierLane: state.carrierLane,
-                fuseSeconds: MINE_RELAY_ROUNDS[state.activeRoundId].fuseSeconds,
+                fuseSeconds: this.rounds[state.activeRoundId].fuseSeconds,
                 revision: state.revision,
             };
             this.remainingSeconds = sameRevision
@@ -299,10 +300,10 @@ export class MineRelayBrawlController {
     currentCarrierLane(): number { return this.activeArm?.carrierLane ?? -1; }
     currentRemainingSeconds(): number { return this.remainingSeconds; }
     isLocked(): boolean { return !!this.activeArm && this.remainingSeconds <= MINE_RELAY_TUNING.lockSeconds; }
-    completedRoundCount(): number { return countBits(this.completedRoundMask, MINE_RELAY_ROUNDS.length); }
-    remainingRoundCount(): number { return Math.max(0, MINE_RELAY_ROUNDS.length - this.completedRoundCount()); }
+    completedRoundCount(): number { return countBits(this.completedRoundMask, this.rounds.length); }
+    remainingRoundCount(): number { return Math.max(0, this.rounds.length - this.completedRoundCount()); }
     resolvedCarrierLane(roundId: number): number {
-        return roundId >= 0 && roundId < MINE_RELAY_ROUNDS.length
+        return roundId >= 0 && roundId < this.rounds.length
             ? readPackedLane(this.resolvedCarrierLanesPacked, roundId)
             : -1;
     }
@@ -312,7 +313,7 @@ export class MineRelayBrawlController {
         const arm = this.activeArm;
         const racer = this.racerForLane(lane);
         if (!arm || !racer?.active || racer.finished || this.isLocked()) return null;
-        const elapsed = MINE_RELAY_ROUNDS[arm.roundId].fuseSeconds - this.remainingSeconds;
+        const elapsed = this.rounds[arm.roundId].fuseSeconds - this.remainingSeconds;
         const clampedDiscipline = clamp(discipline, 0, 1);
         const reaction = MINE_RELAY_TUNING.aiReactionSlowSeconds
             + (MINE_RELAY_TUNING.aiReactionFastSeconds - MINE_RELAY_TUNING.aiReactionSlowSeconds) * clampedDiscipline;
@@ -440,7 +441,7 @@ export class MineRelayBrawlController {
     }
 
     private nextRoundId(): number {
-        for (let id = 0; id < MINE_RELAY_ROUNDS.length; id++) {
+        for (let id = 0; id < this.rounds.length; id++) {
             if ((this.completedRoundMask & (1 << id)) === 0) return id;
         }
         return -1;

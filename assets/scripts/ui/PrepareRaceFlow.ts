@@ -15,7 +15,7 @@ import {
     UITransform,
     view,
 } from 'cc';
-import { RaceCategoryId, RaceModeId, RACE_MODE_OPTIONS, getRaceDistance, getRaceModeTitle, setRaceDifficulty } from '../core/GameBalance';
+import { RaceCategoryId, RaceModeId, PUBLIC_RACE_MODE_OPTIONS, getRaceDistance, getRaceModeTitle, normalizePublicRaceMode, setRaceDifficulty } from '../core/GameBalance';
 import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import {
@@ -491,8 +491,10 @@ export class PrepareRaceFlow {
     }
 
     private buildRaceModeList(parent: Node): void {
-        const selected = getSelectedRaceDifficulty();
-        this._raceCategory = RACE_MODE_OPTIONS.find(option => option.id === selected)?.category ?? 'competitive';
+        const storedSelection = getSelectedRaceDifficulty();
+        const selected = normalizePublicRaceMode(storedSelection);
+        if (selected !== storedSelection) setSelectedRaceDifficulty(selected);
+        this._raceCategory = PUBLIC_RACE_MODE_OPTIONS.find(option => option.id === selected)?.category ?? 'competitive';
         const categories: readonly { id: RaceCategoryId; label: string }[] = [
             { id: 'competitive', label: '竞技' },
             { id: 'entertainment', label: '娱乐' },
@@ -508,8 +510,8 @@ export class PrepareRaceFlow {
             root.on(Button.EventType.CLICK, () => this.selectRaceCategory(category.id));
             this._raceCategoryTabs.push({ id: category.id, root, label });
         }
-        for (let index = 0; index < RACE_MODE_OPTIONS.length; index++) {
-            const option = RACE_MODE_OPTIONS[index];
+        for (let index = 0; index < PUBLIC_RACE_MODE_OPTIONS.length; index++) {
+            const option = PUBLIC_RACE_MODE_OPTIONS[index];
             const entrance = this._motion.group(parent, `ModeEntrance_${option.id}`, 24, 0, index * 0.045);
             const card = makeUiNode(`RaceMode_${option.id}`, entrance);
             card.getComponent(UITransform)!.setContentSize(410, 170);
@@ -549,9 +551,11 @@ export class PrepareRaceFlow {
                 graphics.fill();
             }
         }
-        const selectedMode = RACE_MODE_OPTIONS.find(option => option.id === getSelectedRaceDifficulty());
+        const selectedMode = PUBLIC_RACE_MODE_OPTIONS.find(
+            option => option.id === normalizePublicRaceMode(getSelectedRaceDifficulty()),
+        );
         if (selectedMode?.category !== category) {
-            const first = RACE_MODE_OPTIONS.find(option => option.category === category);
+            const first = PUBLIC_RACE_MODE_OPTIONS.find(option => option.category === category);
             if (first) this.selectRaceDifficulty(first.id);
         }
         this.layoutRaceModeCards(true);

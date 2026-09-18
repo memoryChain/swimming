@@ -28,6 +28,7 @@ const WHIRLPOOL_RANDOM_SALT = 0x77686972;
 export const WHIRLPOOL_MAX_CENTER_FRACTION = 0.34;
 let cachedSpawnSeed = -1;
 let cachedSpawns: readonly WhirlpoolSpawn[] = [];
+let runtimeSpawns: readonly WhirlpoolSpawn[] | null = null;
 
 /**
  * 每个 50 米泳段生成一个漩涡。赛程距离避开出发端与折返墙，横向中心限制在
@@ -59,7 +60,22 @@ export function whirlpoolSpawnsForSeed(seed: number): readonly WhirlpoolSpawn[] 
 }
 
 export function currentWhirlpoolSpawns(): readonly WhirlpoolSpawn[] {
-    return whirlpoolSpawnsForSeed(getSharedRandomSeed());
+    return runtimeSpawns ?? whirlpoolSpawnsForSeed(getSharedRandomSeed());
+}
+
+export function setRuntimeWhirlpoolSpawns(spawns: readonly WhirlpoolSpawn[] | null): void {
+    runtimeSpawns = spawns;
+}
+
+/** 六合一只留一个漩涡，并以导演同步的激活距离为锚点。 */
+export function entertainmentWhirlpoolSpawn(seed: number, anchorDistance: number): readonly WhirlpoolSpawn[] {
+    const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ 0x454e5457) >>> 0);
+    return [{
+        id: 0,
+        distance: Math.max(8, Math.min(190, anchorDistance + 13)),
+        centerFraction: quantize(random.range(-WHIRLPOOL_MAX_CENTER_FRACTION, WHIRLPOOL_MAX_CENTER_FRACTION), 1000),
+        spin: random.int(2) === 0 ? -1 : 1,
+    }];
 }
 
 export const WHIRLPOOL_BRAWL_TUNING = {

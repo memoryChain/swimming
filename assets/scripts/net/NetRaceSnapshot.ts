@@ -86,6 +86,7 @@ export interface DecodedRaceSnapshot {
     cannonRemainingSeconds: number;
     mineRelay: NetMineRelayState;
     minefield: NetMinefieldState;
+    entertainmentDirector: NetEntertainmentDirectorState;
     recovery: NetEntertainmentRecoveryState;
     shark?: NetSharkState;
 }
@@ -130,6 +131,18 @@ export type NetMinefieldState = {
     activeMask: number;
     respawnSeconds: readonly number[];
 };
+export type NetEntertainmentDirectorState = {
+    revision: number;
+    phase: number;
+    eventIndex: number;
+    eventCount: number;
+    remainingSeconds: number;
+    packedEvents: number;
+    activatedMask: number;
+    residentMask: number;
+    anchorDistance: number;
+    eventAnchorDistances: readonly number[];
+};
 
 // Race-global predator state. Only the host simulates target selection, movement,
 // bites, and knockdowns. Guests render this quantized snapshot; recovery state is
@@ -160,6 +173,7 @@ export function encodeRaceSnapshot(
     mineRelay?: NetMineRelayState | null,
     recovery?: NetEntertainmentRecoveryState | null,
     minefield?: NetMinefieldState | null,
+    entertainmentDirector?: NetEntertainmentDirectorState | null,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
@@ -196,10 +210,22 @@ export function encodeRaceSnapshot(
     const minefieldRespawnBody = minefield?.respawnSeconds
         .map(remaining => Math.max(0, Math.round(remaining * 1000)))
         .join('.') ?? '';
+    const directorRevision = Math.max(0, Math.floor(entertainmentDirector?.revision ?? 0));
+    const directorPhase = Math.max(0, Math.floor(entertainmentDirector?.phase ?? 0));
+    const directorEventIndex = Math.max(0, Math.floor(entertainmentDirector?.eventIndex ?? 0));
+    const directorEventCount = Math.max(0, Math.floor(entertainmentDirector?.eventCount ?? 0));
+    const directorRemainingMs = Math.max(0, Math.round((entertainmentDirector?.remainingSeconds ?? 0) * 1000));
+    const directorPackedEvents = Math.max(0, Math.floor(entertainmentDirector?.packedEvents ?? 0)).toString(16);
+    const directorActivatedMask = Math.max(0, Math.floor(entertainmentDirector?.activatedMask ?? 0)).toString(16);
+    const directorResidentMask = Math.max(0, Math.floor(entertainmentDirector?.residentMask ?? 0)).toString(16);
+    const directorAnchorCm = Math.max(0, Math.round((entertainmentDirector?.anchorDistance ?? 0) * 100));
+    const directorEventAnchors = entertainmentDirector?.eventAnchorDistances
+        .map(distance => Math.max(0, Math.round(distance * 100)))
+        .join('.') ?? '';
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldRespawnBody}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldRespawnBody},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -241,6 +267,16 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const minefieldElapsedMs = header.length > 25 ? parseInt(header[25], 10) : 0;
     const minefieldActiveMask = header.length > 26 ? parseInt(header[26], 16) : 0;
     const minefieldRespawnBody = header.length > 27 ? header[27] : '';
+    const directorRevision = header.length > 28 ? parseInt(header[28], 10) : 0;
+    const directorPhase = header.length > 29 ? parseInt(header[29], 10) : 0;
+    const directorEventIndex = header.length > 30 ? parseInt(header[30], 10) : 0;
+    const directorRemainingMs = header.length > 31 ? parseInt(header[31], 10) : 0;
+    const directorPackedEvents = header.length > 32 ? parseInt(header[32], 16) : 0;
+    const directorActivatedMask = header.length > 33 ? parseInt(header[33], 16) : 0;
+    const directorResidentMask = header.length > 34 ? parseInt(header[34], 16) : 0;
+    const directorAnchorCm = header.length > 35 ? parseInt(header[35], 10) : 0;
+    const directorEventAnchors = header.length > 36 ? decodeCentimeterList(header[36]) : [0, 0, 0, 0];
+    const directorEventCount = header.length > 37 ? parseInt(header[37], 10) : 0;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -344,6 +380,18 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             activeMask: safeNonNegativeInteger(minefieldActiveMask),
             respawnSeconds: decodeMillisecondList(minefieldRespawnBody),
         },
+        entertainmentDirector: {
+            revision: safeNonNegativeInteger(directorRevision),
+            phase: safeNonNegativeInteger(directorPhase),
+            eventIndex: safeNonNegativeInteger(directorEventIndex),
+            eventCount: safeNonNegativeInteger(directorEventCount),
+            remainingSeconds: safeMilliseconds(directorRemainingMs),
+            packedEvents: safeNonNegativeInteger(directorPackedEvents),
+            activatedMask: safeNonNegativeInteger(directorActivatedMask),
+            residentMask: safeNonNegativeInteger(directorResidentMask),
+            anchorDistance: Number.isSafeInteger(directorAnchorCm) && directorAnchorCm >= 0 ? directorAnchorCm / 100 : 0,
+            eventAnchorDistances: directorEventAnchors.length === 4 ? directorEventAnchors : [0, 0, 0, 0],
+        },
         recovery: decodeRecoveryState(recoveryRevision, recoveryBody),
         shark,
     };
@@ -356,6 +404,17 @@ function decodeMillisecondList(body: string): number[] {
         const value = parseInt(token, 10);
         if (!Number.isSafeInteger(value) || value < 0) return [];
         values.push(value / 1000);
+    }
+    return values;
+}
+
+function decodeCentimeterList(body: string): number[] {
+    if (body.length === 0) return [];
+    const values: number[] = [];
+    for (const token of body.split('.')) {
+        const value = parseInt(token, 10);
+        if (!Number.isSafeInteger(value) || value < 0) return [];
+        values.push(value / 100);
     }
     return values;
 }

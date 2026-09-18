@@ -58,8 +58,9 @@ export class WhirlpoolBrawlController {
         private readonly course: RaceCourseLayout,
         seed: number,
         private readonly onApproach: (spawn: WhirlpoolSpawn, index: number, worldSpin: -1 | 1) => void,
+        spawns?: readonly WhirlpoolSpawn[],
     ) {
-        this.spawns = whirlpoolSpawnsForSeed(seed);
+        this.spawns = spawns ?? whirlpoolSpawnsForSeed(seed);
         this.buildVisuals();
     }
 

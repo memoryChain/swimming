@@ -39,7 +39,7 @@ export class EntertainmentEventBanner {
         eventRoot.getComponent(UITransform)!.setContentSize(840, 86);
         eventRoot.setPosition(0, 180, 0);
         const eventLabelNode = makeLabel('Label', eventRoot, '', 40, TONE_COLORS.warning);
-        eventLabelNode.getComponent(UITransform)!.setContentSize(840, 74);
+        eventLabelNode.getComponent(UITransform)!.setContentSize(840, 82);
         const eventLabel = eventLabelNode.getComponent(Label)!;
         eventLabel.enableWrapText = false;
         eventLabel.overflow = Label.Overflow.SHRINK;
@@ -81,7 +81,11 @@ export class EntertainmentEventBanner {
             this.presentEvent(text, tone, durationMs);
             return;
         }
-        this.eventQueue.push({ text, tone, durationMs: Math.max(0, durationMs) });
+        this.eventQueue.push({
+            text,
+            tone,
+            durationMs: Math.max(0, durationMs),
+        });
     }
 
     showPersonal(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
@@ -114,7 +118,11 @@ export class EntertainmentEventBanner {
         this.eventQueue.length = 0;
     }
 
-    private presentEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+    private presentEvent(
+        text: string,
+        tone: EntertainmentBannerTone,
+        durationMs: number,
+    ): void {
         const root = this.eventRoot;
         const label = this.eventLabel;
         if (!root?.isValid || !label) return;
