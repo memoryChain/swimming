@@ -282,6 +282,7 @@ export class GameManager extends Component {
         () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
     );
     private readonly _mineExplosionWorldPosition = new Vec3();
+    private readonly _sharkBiteWorldPosition = new Vec3();
     private _minefieldBrawl: MinefieldBrawlController | null = null;
     private _minefieldPresentation: MinefieldBrawlPresentation | null = null;
     private readonly _minefieldRacerStates: MinefieldRacerState[] = Array.from(
@@ -294,6 +295,8 @@ export class GameManager extends Component {
     private _sharkArtModel: Node | null = null;
     private _sharkAnimation: SkeletalAnimation | null = null;
     private _sharkWake: Node | null = null;
+    private _sharkSplashFocus: Swimmer | null = null;
+    private _sharkSplashFocusSeconds = 0;
     private _eventPictureInPicture: RaceEventPictureInPictureCamera | null = null;
     private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
     private readonly _entertainmentEventBanner = new EntertainmentEventBanner();
@@ -728,13 +731,25 @@ export class GameManager extends Component {
         const marginXZ = PERFORMANCE_CONFIG.splash.visibilityMarginXZ;
         const marginY = PERFORMANCE_CONFIG.splash.visibilityMarginY;
         const playerX = playerNode.position.x;
+        const activeSharkTarget = this._shark
+            && (this._shark.state === SharkState.WARNING
+                || this._shark.state === SharkState.HUNT
+                || this._shark.state === SharkState.BITE)
+            ? this._shark.target
+            : null;
+        const sharkFeedTarget = this._sharkSplashFocusSeconds > 0
+            ? this._sharkSplashFocus
+            : activeSharkTarget;
         for (const swimmer of this._aiSwimmers) {
             const node = swimmer?.node;
             if (!node?.isValid) {
                 continue;
             }
             let culled: boolean;
-            if (frustum) {
+            if (swimmer === sharkFeedTarget) {
+                // 鲨鱼画中画正在观察该选手时，不能按主镜头视锥清掉其动作和水花。
+                culled = false;
+            } else if (frustum) {
                 const pos = node.position;
                 this._tmpSplashCullCenter.set(pos.x, pos.y, pos.z);
                 geometry.AABB.set(
@@ -1480,7 +1495,7 @@ export class GameManager extends Component {
         this._entertainmentRecovery = new EntertainmentRecoveryController(
             LANE_LAYOUT.laneCount,
             {
-                onKnocked: lane => this.presentEntertainmentKnockout(lane),
+                onKnocked: (lane, state) => this.presentEntertainmentKnockout(lane, state.reason),
                 onRespawn: (lane, state) => this.respawnEntertainmentSwimmer(lane, state.distance),
                 onRecovered: lane => this.swimmerForLane(lane)?.endEntertainmentInvulnerability(),
             },
@@ -1502,10 +1517,14 @@ export class GameManager extends Component {
         return this._entertainmentRecovery.applyKnockDown({ lane, reason, distance, revision });
     }
 
-    private presentEntertainmentKnockout(lane: number) {
+    private presentEntertainmentKnockout(lane: number, reason: EntertainmentRecoveryReason) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer) return;
         swimmer.beginEntertainmentKnockout();
+        if (reason === EntertainmentRecoveryReason.SHARK) {
+            // 复用项目已有的竖直踩水目标姿态，短促翻起表达被重物撞停。
+            swimmer.cartoonRig?.setFinishFloating(0.18);
+        }
         const aiIndex = this.aiIndexForLane(lane);
         if (aiIndex >= 0 && !this._aiControllers[aiIndex]?.remoteDriven) {
             this._aiControllers[aiIndex]?.stopSwimming();
@@ -2183,7 +2202,9 @@ export class GameManager extends Component {
 
     private applySharkKnockDown(lane: number, distance: number, revision: number, broadcast: boolean) {
         const swimmer = this.swimmerForLane(lane);
-        if (!swimmer || !this.applyEntertainmentKnockdown(
+        if (!swimmer) return;
+        swimmer.node.getWorldPosition(this._sharkBiteWorldPosition);
+        if (!this.applyEntertainmentKnockdown(
             lane, EntertainmentRecoveryReason.SHARK, distance, revision,
         )) return;
         this._entertainmentEventBanner.showEvent(
@@ -2193,7 +2214,10 @@ export class GameManager extends Component {
         );
         const splashNode = swimmer.cartoonRig?.splashNode;
         if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
-        swimmer.cartoonRig?.triggerBigSplash(3.1);
+        swimmer.setSplashCulled(false);
+        this._sharkSplashFocus = swimmer;
+        this._sharkSplashFocusSeconds = Math.max(1, SHARK_TUNING.biteCameraHoldSeconds);
+        swimmer.cartoonRig?.triggerBigSplashAt(this._sharkBiteWorldPosition, 3.1);
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueSharkKnockdown(revision, lane, distance);
         }
@@ -2213,10 +2237,16 @@ export class GameManager extends Component {
         if (!shark || this._modelDebugFlow?.active) return;
         if (this._state !== GameState.RACING) {
             if (shark.active) shark.reset();
+            this._sharkSplashFocus = null;
+            this._sharkSplashFocusSeconds = 0;
             if (this._sharkWake?.active) this._sharkWake.active = false;
             for (const controller of this._aiControllers) controller?.setSharkTargetZ(null);
             this.activePlayerAutopilot()?.setSharkTargetZ(null);
             return;
+        }
+        if (this._sharkSplashFocusSeconds > 0) {
+            this._sharkSplashFocusSeconds = Math.max(0, this._sharkSplashFocusSeconds - Math.max(0, dt));
+            if (this._sharkSplashFocusSeconds <= 0) this._sharkSplashFocus = null;
         }
         if (!this._netRaceController || this._netRaceController.isHost) {
             shark.tick(dt);

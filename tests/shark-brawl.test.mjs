@@ -34,6 +34,48 @@ test('鲨鱼模式使用固定场景控制器而非角色技能召唤', () => {
     assert.equal(existsSync(new URL('../assets/race/models/SharkModel.glb', import.meta.url)), true);
 });
 
+test('鲨鱼首次现身会先激活节点再启动警告动画', () => {
+    const controller = readFileSync(
+        new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
+        'utf8',
+    );
+    const beginIndex = controller.indexOf('private beginHuntBeat(): void');
+    const activateIndex = controller.indexOf(
+        'if (!this._opts.node.active) this._opts.node.active = true;',
+        beginIndex,
+    );
+    const warningIndex = controller.indexOf('this.setState(SharkState.WARNING);', beginIndex);
+    assert.ok(beginIndex >= 0);
+    assert.ok(activateIndex > beginIndex);
+    assert.ok(warningIndex > activateIndex);
+});
+
+test('鲨鱼咬伤只复用画中画可见的大水花进行遮挡', () => {
+    const manager = readFileSync(
+        new URL('../assets/scripts/core/GameManager.ts', import.meta.url),
+        'utf8',
+    );
+    const rig = readFileSync(
+        new URL('../assets/scripts/entity/CartoonSwimmerRig.ts', import.meta.url),
+        'utf8',
+    );
+    const knockdownIndex = manager.indexOf('private applySharkKnockDown(');
+    const knockdownEnd = manager.indexOf('private activeSharkSwimmers()', knockdownIndex);
+    const knockdownSource = manager.slice(knockdownIndex, knockdownEnd);
+    assert.match(knockdownSource, /setLayerRecursive\(splashNode, SWIMMER_LAYER\)/);
+    assert.match(knockdownSource, /getWorldPosition\(this\._sharkBiteWorldPosition\)/);
+    assert.match(knockdownSource, /triggerBigSplashAt\(this\._sharkBiteWorldPosition, 3\.1\)/);
+    assert.match(manager, /swimmer === sharkFeedTarget/);
+    assert.match(knockdownSource, /setSplashCulled\(false\)/);
+    assert.match(knockdownSource, /_sharkSplashFocusSeconds = Math\.max\(1, SHARK_TUNING\.biteCameraHoldSeconds\)/);
+    assert.match(manager, /setFinishFloating\(0\.18\)/);
+    assert.match(rig, /triggerBigSplashAt\(point: Vec3, scale = 2\.6\)/);
+    assert.match(rig, /triggerTakeoffSurfaceBurst\(scale, point\)/);
+    assert.match(rig, /transitionTo\(CharacterPoseState\.TreadWater, transitionSeconds\)/);
+    assert.doesNotMatch(manager, /SharkBiteOcclusion|_sharkBiteOcclusion/);
+    assert.equal(existsSync(new URL('../assets/scripts/entity/SharkBiteOcclusionEffect.ts', import.meta.url)), false);
+});
+
 test('鲨鱼规则只允许快速比赛二百米并可从存档恢复', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];

@@ -6,7 +6,7 @@ import type { BreaststrokeBoneName, BreaststrokeMotionSample } from '../characte
 import { sampledActionIdFor } from '../character/CharacterActionConfig';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import { CHARACTER_POSE_TUNING } from '../character/CharacterMotionTuning';
-import { CharacterPoseStateController } from '../character/CharacterPoseStateController';
+import { CharacterPoseState, CharacterPoseStateController } from '../character/CharacterPoseStateController';
 import { CharacterRig } from '../character/CharacterRig';
 import { StandingSoleContact } from '../character/StandingSoleContact';
 import type { CharacterSupportPlane } from '../character/CharacterSupportPlane';
@@ -1068,13 +1068,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         return this.refreshShowcaseAction();
     }
 
-    setFinishFloating() {
+    setFinishFloating(transitionSeconds = 0) {
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {
             return;
         }
         this._animationPlayer.stop();
-        this._poseState.enterTreadWater();
+        if (transitionSeconds > 0) {
+            this._poseState.transitionTo(CharacterPoseState.TreadWater, transitionSeconds);
+        } else {
+            this._poseState.enterTreadWater();
+        }
     }
 
     setDiveStreamlinePose() {
@@ -1610,6 +1614,11 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
     }
 
     triggerDiveEntrySplash(point: Vec3, scale = 2.6) {
+        this._splashEmitter?.triggerTakeoffSurfaceBurst(scale, point);
+    }
+
+    // 事件命中使用明确的世界坐标，避免角色动作刚重置时通用手脚爆发找不到可见接触点。
+    triggerBigSplashAt(point: Vec3, scale = 2.6) {
         this._splashEmitter?.triggerTakeoffSurfaceBurst(scale, point);
     }
 
