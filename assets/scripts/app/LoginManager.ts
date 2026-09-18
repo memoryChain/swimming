@@ -102,6 +102,9 @@ export class LoginManager extends Component {
             onEditIdentity: () => this.openIdentityEdit(),
             onOpenSettings: () => this.openSettings(),
         });
+        // The first screen is a clean launch cover. Player identity, settings and
+        // balances belong to the lobby and its secondary screens, not this cover.
+        this._headBar.setVisible(false);
         void PlayerData.load().then(() => getProgressionManager().migrateLegacySave());
     }
 
@@ -182,6 +185,7 @@ export class LoginManager extends Component {
             },
         });
         this._prepareRaceFlow.showReadyScreen();
+        this._headBar?.setVisible(true);
         // The approved lobby composition has no back button. Character management
         // supplies its own temporary return action through the callback above.
         this._headBar?.setBack(null);
@@ -192,6 +196,7 @@ export class LoginManager extends Component {
         this._prepareRaceFlow = null;
         this._headBar?.setBack(null);
         this._headBar?.setIdentityVisible(true);
+        this._headBar?.setVisible(false);
         if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
         }
@@ -203,6 +208,7 @@ export class LoginManager extends Component {
             this.toast('联机房间中暂不能打开商店');
             return;
         }
+        this._headBar?.setVisible(true);
         if (!this._shopPanel) {
             this._shopPanel = new ShopDailySupplyPanel((message) => this.toast(message));
             this._shopPanel.build(getUILayer(this._canvasNode, UILayer.Screen), this._designWidth, this._designHeight);
@@ -219,6 +225,7 @@ export class LoginManager extends Component {
             this._prepareRaceFlow.setVisible(true);
         } else if (this._loginUiRoot?.isValid) {
             this._loginUiRoot.active = true;
+            this._headBar?.setVisible(false);
         }
         this._headBar?.setBack(null);
     }
@@ -299,6 +306,7 @@ export class LoginManager extends Component {
                 this.launchMainGame('race');
             },
         }, joinRoomId, reconnect);
+        this._headBar?.setVisible(true);
         this._headBar?.setBack(null);
         this._headBar?.setIdentityVisible(false);
     }

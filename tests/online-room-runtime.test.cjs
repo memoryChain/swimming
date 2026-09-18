@@ -420,7 +420,7 @@ function navigationHarness() {
     const file = path.join(root, 'assets/scripts/app/LoginManager.ts');
     const ast = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
     const cls = ast.statements.find(s => ts.isClassDeclaration(s) && s.name.text === 'LoginManager');
-    const names = ['openPrepareRace', 'openRoom', 'exitRoom', 'buildLoginScreen'];
+    const names = ['openPrepareRace', 'exitPrepareRace', 'openRoom', 'exitRoom', 'buildLoginScreen'];
     const methods = cls.members.filter(m => names.includes(m.name?.getText(ast))).map(m => m.getText(ast)).join('\n');
     const code = ts.transpileModule(`class Navigation { ${methods} } exports.Navigation = Navigation;`, {
         compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
@@ -428,7 +428,7 @@ function navigationHarness() {
     let loaded, roomMode = true, opened = 0;
     const context = { exports: {}, console,
         getUILayer: n => n, UILayer: { Screen: 1 }, setRoomMode: value => { roomMode = value; },
-        PrepareRaceFlow: class { showReadyScreen() { opened++; } },
+        PrepareRaceFlow: class { showReadyScreen() { opened++; } dispose() {} },
         RoomFlow: class { dispose() {} },
         SpeedStarsStartUiPrefabBuilder: class { build(_p, _w, _h, cb) { loaded = cb; } },
     };
@@ -438,6 +438,23 @@ function navigationHarness() {
     manager._designWidth = 1280; manager._designHeight = 720;
     return { manager, loaded: root => loaded(null, { root }), opened: () => opened, roomMode: () => roomMode };
 }
+test('启动封面隐藏常驻顶栏，进入大厅后再显示', () => {
+    const source = fs.readFileSync(path.join(root, 'assets/scripts/app/LoginManager.ts'), 'utf8');
+    assert.match(source, /this\._headBar\.setVisible\(false\);\s*void PlayerData\.load/);
+    const h = navigationHarness(), m = h.manager, visible = [];
+    m._headBar = {
+        setVisible(value) { visible.push(value); },
+        setBack() {},
+        setIdentityVisible() {},
+    };
+    m._loginUiRoot = new Node('Login');
+    m.openPrepareRace();
+    assert.equal(visible.at(-1), true);
+    assert.equal(m._loginUiRoot.active, false);
+    m.exitPrepareRace();
+    assert.equal(visible.at(-1), false);
+    assert.equal(m._loginUiRoot.active, true);
+});
 test('联机返回进入大厅，不回到登录开始页，并清理房间模式', () => {
     const h = navigationHarness(), m = h.manager; let disposed = 0;
     m._loginUiRoot = new Node('Login'); m._loginUiRoot.active = false;
