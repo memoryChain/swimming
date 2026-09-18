@@ -155,11 +155,40 @@ test('cannon launch, impact and active strike round-trip across reliable events 
     assert.equal(snapshot.cannonRemainingSeconds, 0.73);
 });
 
+test('mine relay arm, transfer, resolution and active state round-trip across both sync paths', () => {
+    const events = [
+        { kind: 'm', mineRoundId: 2, mineCarrierLane: 5, fuseSeconds: 6.5, revision: 11 },
+        { kind: 't', mineRoundId: 2, mineFromLane: 5, mineToLane: 3, remainingSeconds: 4.321, revision: 12 },
+        { kind: 'b', mineRoundId: 2, mineCarrierLane: 3, exploded: true, revision: 13 },
+    ];
+    const decoded = decodeInputFrame(encodeInputFrame(0, events, null, -1, 48));
+    assert.deepEqual(decoded.events, events);
+
+    const state = {
+        revision: 12,
+        completedRoundMask: 0b11,
+        explodedRoundMask: 0b01,
+        resolvedCarrierLanesPacked: 0x46,
+        activeRoundId: 2,
+        carrierLane: 3,
+        previousCarrierLane: 5,
+        lastStarterLane: 5,
+        remainingSeconds: 4.321,
+        transferCooldownSeconds: 0.612,
+        returnProtectionSeconds: 1.012,
+        recoverySeconds: 0,
+    };
+    const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(0, [entry()], null, null, null, state));
+    assert.deepEqual(snapshot.mineRelay, state);
+});
+
 test('legacy S| and P| payloads keep safe sentinel defaults', () => {
     const legacyS = decodeRaceSnapshot('S|0#2,1234,-125,0,222,456,78,444,-555,-333,666,-777');
     assert.equal(legacyS.entries[0].conditionEnergyRatio, -1);
     assert.equal(legacyS.entries[0].conditionHeartRate, -1);
     assert.equal(legacyS.entries[0].conditionDepletionCooldown, -1);
+    assert.equal(legacyS.mineRelay.activeRoundId, -1);
+    assert.equal(legacyS.mineRelay.carrierLane, -1);
 
     const legacyP = decodeSelfSnapshot('P|2,1234,-125,0,222,456,78,444,-555,-333,666,-777');
     assert.equal(legacyP.conditionEnergyRatio, -1);

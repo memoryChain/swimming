@@ -19,6 +19,7 @@ import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
 import { WHIRLPOOL_BRAWL_TUNING } from './WhirlpoolBrawlRules';
+import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 
 export type TuningControl = {
     id: string;
@@ -361,6 +362,23 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('whirlpool.outerBoostAcceleration', '外圈加速', '贴着漩涡外缘通过时获得的前进加速度。', () => WHIRLPOOL_BRAWL_TUNING.outerBoostAcceleration, v => WHIRLPOOL_BRAWL_TUNING.outerBoostAcceleration = v, 0.1, 0, 6, 1),
             control('whirlpool.coreBackwardAcceleration', '中心回卷', '进入核心后受到的反向水流强度。', () => WHIRLPOOL_BRAWL_TUNING.coreBackwardAcceleration, v => WHIRLPOOL_BRAWL_TUNING.coreBackwardAcceleration = v, 0.1, 0, 8, 1),
             control('whirlpool.maxFlowSpeed', '水流速度上限', '所有漩涡水流叠加到泳者后的速度上限。', () => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed, v => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed = v, 0.1, 0.5, 8, 1, ' m/s'),
+        ],
+    },
+    {
+        name: '水雷接力赛',
+        controls: [
+            control('mineRelay.transferAlongRadius', '前后传递范围', '沿赛道方向的贴身传雷判定半径。', () => MINE_RELAY_TUNING.transferAlongRadius, v => MINE_RELAY_TUNING.transferAlongRadius = v, 0.05, 0.5, 2.5, 2, ' m'),
+            control('mineRelay.transferLateralRadius', '横向传递范围', '跨泳道方向的贴身传雷判定半径。', () => MINE_RELAY_TUNING.transferLateralRadius, v => MINE_RELAY_TUNING.transferLateralRadius = v, 0.05, 0.4, 2, 2, ' m'),
+            control('mineRelay.transferCooldownSeconds', '传递冷却', '装雷或传递后暂时不能再次传递的时间。', () => MINE_RELAY_TUNING.transferCooldownSeconds, v => MINE_RELAY_TUNING.transferCooldownSeconds = v, 0.05, 0.2, 2, 2, ' s'),
+            control('mineRelay.returnProtectionSeconds', '防回传时间', '上一持有者暂时不能接回水雷的时间。', () => MINE_RELAY_TUNING.returnProtectionSeconds, v => MINE_RELAY_TUNING.returnProtectionSeconds = v, 0.05, 0.3, 3, 2, ' s'),
+            control('mineRelay.lockSeconds', '最后锁定时间', '引信归零前禁止继续传递的时长。', () => MINE_RELAY_TUNING.lockSeconds, v => MINE_RELAY_TUNING.lockSeconds = v, 0.05, 0.2, 2, 2, ' s'),
+            control('mineRelay.recoverySeconds', '轮间休息', '一轮爆炸或拆弹后到下一轮可启动的间隔。', () => MINE_RELAY_TUNING.recoverySeconds, v => MINE_RELAY_TUNING.recoverySeconds = v, 0.1, 0, 5, 1, ' s'),
+            control('mineRelay.explosionBackwardImpulse', '爆炸后退冲量', '水雷爆炸对持有者施加的反向冲量。', () => MINE_RELAY_TUNING.explosionBackwardImpulse, v => MINE_RELAY_TUNING.explosionBackwardImpulse = v, 0.05, 0, 5, 2),
+            control('mineRelay.explosionLateralImpulse', '爆炸横飞冲量', '水雷爆炸把持有者推向泳池外侧的冲量。', () => MINE_RELAY_TUNING.explosionLateralImpulse, v => MINE_RELAY_TUNING.explosionLateralImpulse = v, 0.05, 0, 6, 2),
+            control('mineRelay.explosionAxialImpulse', '爆炸翻滚冲量', '水雷爆炸造成的轴向翻滚强度。', () => MINE_RELAY_TUNING.explosionAxialImpulse, v => MINE_RELAY_TUNING.explosionAxialImpulse = v, 0.1, 0, 10, 1),
+            control('mineRelay.explosionPitchImpulse', '爆炸下扎冲量', '水雷爆炸造成的头端下扎强度。', () => MINE_RELAY_TUNING.explosionPitchImpulse, v => MINE_RELAY_TUNING.explosionPitchImpulse = v, 0.05, 0, 8, 2),
+            control('mineRelay.explosionSoftnessLateralImpulse', '爆炸侧向软体', '爆炸叠加到四肢和躯干的侧向柔性冲量。', () => MINE_RELAY_TUNING.explosionSoftnessLateralImpulse, v => MINE_RELAY_TUNING.explosionSoftnessLateralImpulse = v, 0.05, 0, 4, 2),
+            control('mineRelay.explosionSoftnessForwardImpulse', '爆炸前后软体', '爆炸叠加到四肢和躯干的前后柔性冲量，可为负。', () => MINE_RELAY_TUNING.explosionSoftnessForwardImpulse, v => MINE_RELAY_TUNING.explosionSoftnessForwardImpulse = v, 0.05, -3, 3, 2),
         ],
     },
     {

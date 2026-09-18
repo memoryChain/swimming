@@ -85,6 +85,7 @@ export interface DecodedRaceSnapshot {
     cannonTargetDistance: number;
     cannonTargetZ: number;
     cannonRemainingSeconds: number;
+    mineRelay: NetMineRelayState;
     shark?: NetSharkState;
 }
 
@@ -97,6 +98,20 @@ export type NetCannonState = {
     targetDistance: number;
     targetZ: number;
     remainingSeconds: number;
+};
+export type NetMineRelayState = {
+    revision: number;
+    completedRoundMask: number;
+    explodedRoundMask: number;
+    resolvedCarrierLanesPacked: number;
+    activeRoundId: number;
+    carrierLane: number;
+    previousCarrierLane: number;
+    lastStarterLane: number;
+    remainingSeconds: number;
+    transferCooldownSeconds: number;
+    returnProtectionSeconds: number;
+    recoverySeconds: number;
 };
 
 // Race-global predator state. Only the host simulates target selection, movement,
@@ -127,6 +142,7 @@ export function encodeRaceSnapshot(
     stimulant?: NetStimulantState | null,
     shark?: NetSharkState | null,
     cannon?: NetCannonState | null,
+    mineRelay?: NetMineRelayState | null,
 ): string {
     const body = entries
         .map((e) => `${e.lane},${Math.round(e.distance * 100)},${Math.round(e.lateral * 1000)},${e.finished ? 1 : 0},${Math.round(e.heading * 1000)},${Math.round(Math.max(0, e.speed) * 100)},${Math.max(0, Math.round(e.energy))},${Math.round(e.axialRoll * 1000)},${Math.round(e.axialRollVelocity * 1000)},${Math.round(e.headingVelocity * 1000)},${Math.round(e.collisionPitch * 1000)},${Math.round(e.collisionPitchVelocity * 1000)},${encodeConditionEnergyRatio(e.conditionEnergyRatio)},${encodeConditionHeartRate(e.conditionHeartRate)},${encodeConditionCooldown(e.conditionDepletionCooldown ?? -1)},${encodeCollisionSoftness(e.collisionSoftness)},${encodeCharacterAbility(e.abilityState)}`)
@@ -140,10 +156,22 @@ export function encodeRaceSnapshot(
     const cannonTargetDistance = Math.max(0, Math.round((cannon?.targetDistance ?? 0) * 100));
     const cannonTargetZ = Math.round((cannon?.targetZ ?? 0) * 1000);
     const cannonRemainingMs = Math.max(0, Math.round((cannon?.remainingSeconds ?? 0) * 1000));
+    const mineRevision = Math.max(0, Math.floor(mineRelay?.revision ?? 0));
+    const mineCompletedMask = Math.max(0, Math.floor(mineRelay?.completedRoundMask ?? 0)).toString(16);
+    const mineExplodedMask = Math.max(0, Math.floor(mineRelay?.explodedRoundMask ?? 0)).toString(16);
+    const mineResolvedCarriers = Math.max(0, Math.floor(mineRelay?.resolvedCarrierLanesPacked ?? 0)).toString(16);
+    const mineActiveRound = Math.max(0, Math.floor((mineRelay?.activeRoundId ?? -1) + 1));
+    const mineCarrierLane = Math.max(0, Math.floor((mineRelay?.carrierLane ?? -1) + 1));
+    const minePreviousCarrierLane = Math.max(0, Math.floor((mineRelay?.previousCarrierLane ?? -1) + 1));
+    const mineLastStarterLane = Math.max(0, Math.floor((mineRelay?.lastStarterLane ?? -1) + 1));
+    const mineRemainingMs = Math.max(0, Math.round((mineRelay?.remainingSeconds ?? 0) * 1000));
+    const mineTransferCooldownMs = Math.max(0, Math.round((mineRelay?.transferCooldownSeconds ?? 0) * 1000));
+    const mineReturnProtectionMs = Math.max(0, Math.round((mineRelay?.returnProtectionSeconds ?? 0) * 1000));
+    const mineRecoveryMs = Math.max(0, Math.round((mineRelay?.recoverySeconds ?? 0) * 1000));
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.eliminatedLane)},${Math.max(0, Math.floor(shark.eliminatedMask)).toString(16)},${Math.max(0, Math.floor(shark.huntIndex))},${Math.max(0, Math.floor(shark.eliminationCount))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonEliminatedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonEliminatedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -168,6 +196,18 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const cannonTargetDistanceCm = header.length > 7 ? parseInt(header[7], 10) : 0;
     const cannonTargetZMm = header.length > 8 ? parseInt(header[8], 10) : 0;
     const cannonRemainingMs = header.length > 9 ? parseInt(header[9], 10) : 0;
+    const mineRevision = header.length > 10 ? parseInt(header[10], 10) : 0;
+    const mineCompletedMask = header.length > 11 ? parseInt(header[11], 16) : 0;
+    const mineExplodedMask = header.length > 12 ? parseInt(header[12], 16) : 0;
+    const mineResolvedCarriers = header.length > 13 ? parseInt(header[13], 16) : 0;
+    const mineActiveRound = header.length > 14 ? parseInt(header[14], 10) : 0;
+    const mineCarrierLane = header.length > 15 ? parseInt(header[15], 10) : 0;
+    const minePreviousCarrierLane = header.length > 16 ? parseInt(header[16], 10) : 0;
+    const mineLastStarterLane = header.length > 17 ? parseInt(header[17], 10) : 0;
+    const mineRemainingMs = header.length > 18 ? parseInt(header[18], 10) : 0;
+    const mineTransferCooldownMs = header.length > 19 ? parseInt(header[19], 10) : 0;
+    const mineReturnProtectionMs = header.length > 20 ? parseInt(header[20], 10) : 0;
+    const mineRecoveryMs = header.length > 21 ? parseInt(header[21], 10) : 0;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -254,8 +294,30 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
         cannonTargetDistance: Number.isSafeInteger(cannonTargetDistanceCm) && cannonTargetDistanceCm >= 0 ? cannonTargetDistanceCm / 100 : 0,
         cannonTargetZ: Number.isSafeInteger(cannonTargetZMm) ? cannonTargetZMm / 1000 : 0,
         cannonRemainingSeconds: Number.isSafeInteger(cannonRemainingMs) && cannonRemainingMs >= 0 ? cannonRemainingMs / 1000 : 0,
+        mineRelay: {
+            revision: safeNonNegativeInteger(mineRevision),
+            completedRoundMask: safeNonNegativeInteger(mineCompletedMask),
+            explodedRoundMask: safeNonNegativeInteger(mineExplodedMask),
+            resolvedCarrierLanesPacked: safeNonNegativeInteger(mineResolvedCarriers),
+            activeRoundId: Number.isSafeInteger(mineActiveRound) && mineActiveRound > 0 ? mineActiveRound - 1 : -1,
+            carrierLane: Number.isSafeInteger(mineCarrierLane) && mineCarrierLane > 0 ? mineCarrierLane - 1 : -1,
+            previousCarrierLane: Number.isSafeInteger(minePreviousCarrierLane) && minePreviousCarrierLane > 0 ? minePreviousCarrierLane - 1 : -1,
+            lastStarterLane: Number.isSafeInteger(mineLastStarterLane) && mineLastStarterLane > 0 ? mineLastStarterLane - 1 : -1,
+            remainingSeconds: safeMilliseconds(mineRemainingMs),
+            transferCooldownSeconds: safeMilliseconds(mineTransferCooldownMs),
+            returnProtectionSeconds: safeMilliseconds(mineReturnProtectionMs),
+            recoverySeconds: safeMilliseconds(mineRecoveryMs),
+        },
         shark,
     };
+}
+
+function safeNonNegativeInteger(value: number): number {
+    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function safeMilliseconds(value: number): number {
+    return Number.isSafeInteger(value) && value >= 0 ? value / 1000 : 0;
 }
 
 // Self-position report (tag "P|"): a single lane's own-authoritative position, sent by

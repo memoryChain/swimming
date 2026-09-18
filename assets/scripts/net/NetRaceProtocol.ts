@@ -38,7 +38,8 @@
 // 版本49：兴奋剂移除开局保证波，公共争抢改为身体胶囊与短路径扫掠拾取。
 // 版本50：新增漩涡冲浪赛的固定场次、水流规则与 AI 绕核路线。
 // 版本52：末位淘汰赛改为炮火逃生赛，新增炮击预警／命中事件与活动炮弹快照。
-export const NET_RACE_PROTOCOL_VERSION = 52;
+// 版本53：新增水雷接力赛的装雷、传递、爆炸／拆弹事件与活动水雷快照。
+export const NET_RACE_PROTOCOL_VERSION = 53;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

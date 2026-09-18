@@ -167,6 +167,7 @@ export class CareerPrototypePanel {
                         : result.ticket.rule === 'shark' ? 'shark-brawl'
                             : result.ticket.rule === 'whirlpool' ? 'whirlpool-brawl'
                                 : result.ticket.rule === 'cannon' || result.ticket.rule === 'last-place' ? 'last-place-brawl'
+                                    : result.ticket.rule === 'mine-relay' ? 'mine-relay-brawl'
                         : result.ticket.distance === 400 ? 'championship' : 'competitive');
                 setSoloRaceDistance(result.ticket.distance);
                 launching = true;

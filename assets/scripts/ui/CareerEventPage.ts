@@ -103,6 +103,7 @@ export class CareerEventPage {
             this.button(this.quick,'RuleShark','鲨鱼大乱斗\n追猎淘汰',405,35,235,62,()=>actions.rule('shark')),
             this.button(this.quick,'RuleWhirlpool','漩涡冲浪赛\n外圈借力',165,-35,235,62,()=>actions.rule('whirlpool')),
             this.button(this.quick,'RuleCannon','炮火逃生赛\n躲避炮弹',405,-35,235,62,()=>actions.rule('cannon')),
+            this.button(this.quick,'RuleMineRelay','水雷接力赛\n贴身传雷',285,-105,235,62,()=>actions.rule('mine-relay')),
         ];
         this.text(this.quick,'QuickNotes','AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分',0,-195,1050,75,23);
         this.quickStart=this.button(this.quick,'StartEvent','开始比赛',370,-285,380,60,()=>actions.start('quick'),true);
@@ -186,7 +187,7 @@ export class CareerEventPage {
             this.active(this.abandon.root,!!active);this.enabled(this.abandon,!s.busy);
             this.write(this.abandon.label,s.confirmAbandon?'再次点击确认放弃':'放弃本届杯赛');
         } else {
-            const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:s.rule==='stimulant'?4:s.rule==='shark'?5:s.rule==='whirlpool'?6:7;
+            const ruleIndex=s.rule==='standard'?2:s.rule==='wild'?3:s.rule==='stimulant'?4:s.rule==='shark'?5:s.rule==='whirlpool'?6:s.rule==='cannon'?7:8;
             const entertainment=s.rule!=='standard'&&s.rule!=='wild';
             this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy&&!(i===1&&entertainment));this.active(n.selected,i===(s.distance===200?0:1)||i===ruleIndex);});
             this.enabled(this.quickStart,!s.busy);this.write(this.quickStart.label,`开始比赛 · ${s.distance}米`);this.active(this.abandon.root,false);

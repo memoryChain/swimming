@@ -7,7 +7,7 @@ import { copyAiEvent } from '../competitor/AiEventValidation';
 import { calculateRaceCoins } from './ProgressionBalance';
 
 export type SoloSource = 'quick' | 'league' | 'cup';
-export type RaceRule = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon' | 'last-place';
+export type RaceRule = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon' | 'mine-relay' | 'last-place';
 export const CAREER_RACE_RULE: RaceRule = 'wild';
 export const CAREER_VERSION = 1;
 export const LEAGUE_TARGET = 100;
@@ -98,8 +98,8 @@ export function executeCareer(profile: PlayerProfile, command: CareerCommand): C
     if (command.type === 'begin') {
         if (['quick', 'league', 'cup'].indexOf(command.source) < 0
             || (command.distance !== 200 && command.distance !== 400)
-            || (command.rule !== 'standard' && command.rule !== 'wild' && command.rule !== 'stimulant' && command.rule !== 'shark' && command.rule !== 'whirlpool' && command.rule !== 'cannon' && command.rule !== 'last-place')
-            || ((command.rule === 'stimulant' || command.rule === 'shark' || command.rule === 'whirlpool' || command.rule === 'cannon' || command.rule === 'last-place') && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
+            || (command.rule !== 'standard' && command.rule !== 'wild' && command.rule !== 'stimulant' && command.rule !== 'shark' && command.rule !== 'whirlpool' && command.rule !== 'cannon' && command.rule !== 'mine-relay' && command.rule !== 'last-place')
+            || ((command.rule === 'stimulant' || command.rule === 'shark' || command.rule === 'whirlpool' || command.rule === 'cannon' || command.rule === 'mine-relay' || command.rule === 'last-place') && (command.source !== 'quick' || command.distance !== 200))) return fail('比赛来源或规则无效');
         const p = profile.characters[command.characterId];
         if (!p) return fail('角色不存在');
         const tier = tierIndex(command.tier);

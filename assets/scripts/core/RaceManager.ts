@@ -301,6 +301,10 @@ export class RaceManager extends Component {
         return true;
     }
 
+    public hasSwimmerFinished(swimmer: Swimmer | null): boolean {
+        return !!swimmer && this._finishTimes.has(swimmer);
+    }
+
     private startFinishCountdown() {
         this._finishCountdownActive = true;
         this._finishCountdownTimer = FINISH_STRAGGLER_COUNTDOWN_SECONDS;

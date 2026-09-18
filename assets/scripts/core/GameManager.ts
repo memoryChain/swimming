@@ -72,6 +72,7 @@ import { CameraSpeedLineOverlay } from '../ui/CameraSpeedLineOverlay';
 import { UIController } from '../ui/UIController';
 import { UIFlowController } from '../ui/UIFlowController';
 import { CannonBrawlHud } from '../ui/CannonBrawlHud';
+import { MineRelayBrawlHud } from '../ui/MineRelayBrawlHud';
 import { DebugLogController } from './DebugLogController';
 import { consumeMainGameLaunchMode, consumeRoomMode, getAiDebugSetup, getAiDebugDifficulty, resolveAiDebugBuildOptions, setReturnToRoom, setReturnToLobby } from './GameLaunchOptions';
 import { consumeNetRaceSession, NetRaceSessionData } from '../net/NetRaceSession';
@@ -95,11 +96,13 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isMineRelayBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
 import { WhirlpoolBrawlController } from './WhirlpoolBrawlController';
 import { CannonBrawlController, CannonImpact, CannonLaunch, CannonRacerState } from './CannonBrawlController';
 import { CannonBrawlPresentation } from './CannonBrawlPresentation';
+import { MINE_RELAY_ROUNDS, MINE_RELAY_TUNING, MineRelayArm, MineRelayBrawlController, MineRelayRacerState, MineRelayResolution, MineRelayTransfer } from './MineRelayBrawlController';
+import { MineRelayBrawlPresentation } from './MineRelayBrawlPresentation';
 import { RACE_PHASE_BALANCE } from './ConditionBalance';
 import { LaneLockdownRaceController, LaneLockdownStatus } from './LaneLockdownRaceController';
 import { loadSavedTuningAsync } from './TuningDebugControls';
@@ -252,6 +255,14 @@ export class GameManager extends Component {
         { length: LANE_LAYOUT.laneCount },
         () => ({ active: false, distance: 0, lateral: 0, speed: 0 }),
     );
+    private _mineRelayBrawl: MineRelayBrawlController | null = null;
+    private _mineRelayPresentation: MineRelayBrawlPresentation | null = null;
+    private _mineRelayHud: MineRelayBrawlHud | null = null;
+    private readonly _mineRelayRacerStates: MineRelayRacerState[] = Array.from(
+        { length: LANE_LAYOUT.laneCount },
+        () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
+    );
+    private readonly _mineExplosionWorldPosition = new Vec3();
     private _pendingPlayerEliminationDelay = 0;
     private _stimulantToastPriorityUntilMs = 0;
     private _shark: SharkController | null = null;
@@ -448,6 +459,15 @@ export class GameManager extends Component {
         this._cannonBrawlPresentation = null;
         this._cannonBrawlHud?.dispose();
         this._cannonBrawlHud = null;
+        this._mineRelayBrawl = null;
+        this._mineRelayPresentation?.dispose();
+        this._mineRelayPresentation = null;
+        this._mineRelayHud?.dispose();
+        this._mineRelayHud = null;
+        this._netRaceController?.setMineRelayArmListener(null);
+        this._netRaceController?.setMineRelayTransferListener(null);
+        this._netRaceController?.setMineRelayResolutionListener(null);
+        this._netRaceController?.setMineRelayStateListener(null);
         this._netRaceController?.setSharkEliminationListener(null);
         this._netRaceController?.setSharkStateListener(null);
         this._sharkPictureInPicture?.dispose();
@@ -568,6 +588,7 @@ export class GameManager extends Component {
         this.updateStimulantBrawl(dt);
         this.updateWhirlpoolBrawl(dt);
         this.updateCannonBrawl(dt);
+        this.updateMineRelayBrawl(dt);
         if (this._shark) {
             this.updateSharkBrawl(dt);
             this._sharkPictureInPicture?.update(this._shark, dt);
@@ -905,6 +926,7 @@ export class GameManager extends Component {
                     this.setupLaneLockdownRace();
                     this.setupSharkBrawl();
                     this.setupCannonBrawl();
+                    this.setupMineRelayBrawl();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
@@ -970,6 +992,9 @@ export class GameManager extends Component {
                     this._cannonBrawl?.reset();
                     this._cannonBrawlPresentation?.reset();
                     this._cannonBrawlHud?.reset();
+                    this._mineRelayBrawl?.reset();
+                    this._mineRelayPresentation?.reset();
+                    this._mineRelayHud?.reset();
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
                     this._laneLockdownVisuals?.clear();
@@ -1524,6 +1549,173 @@ export class GameManager extends Component {
             { duration: 1.8 },
         );
         this._raceManager.finishIfSoleSurvivor();
+    }
+
+    private setupMineRelayBrawl() {
+        this._mineRelayBrawl = null;
+        this._mineRelayPresentation?.dispose();
+        this._mineRelayPresentation = null;
+        if (!isMineRelayBrawlMode() || !this._raceManager) return;
+        if (this._worldRoot?.isValid) {
+            this._mineRelayPresentation = new MineRelayBrawlPresentation(this._worldRoot);
+        }
+        this._mineRelayBrawl = new MineRelayBrawlController(
+            LANE_LAYOUT.laneCount,
+            getSharedRandomSeed(),
+            COURSE_LAYOUT.poolWidth,
+            lane => {
+                const state = this._mineRelayRacerStates[lane];
+                const swimmer = this.swimmerForLane(lane);
+                state.active = !!swimmer?.node?.active;
+                state.finished = (this._raceManager?.hasSwimmerFinished(swimmer ?? null) ?? false)
+                    || (swimmer?.distance ?? 0) >= getRaceDistance();
+                state.distance = swimmer?.distance ?? 0;
+                state.lateral = swimmer?.node?.position.z ?? LANE_LAYOUT.centerZ(lane);
+                return state;
+            },
+            event => this.handleMineRelayArm(event, true),
+            event => this.handleMineRelayTransfer(event, true),
+            event => this.handleMineRelayResolution(event, true),
+        );
+        this._netRaceController?.setMineRelayArmListener((roundId, carrierLane, fuseSeconds, revision) => {
+            const event = { roundId, carrierLane, fuseSeconds, revision };
+            if (this._mineRelayBrawl?.applyArm(event)) this.handleMineRelayArm(event, false);
+        });
+        this._netRaceController?.setMineRelayTransferListener((roundId, fromLane, toLane, remainingSeconds, revision) => {
+            const event = { roundId, fromLane, toLane, remainingSeconds, revision };
+            if (this._mineRelayBrawl?.applyTransfer(event)) this.handleMineRelayTransfer(event, false);
+        });
+        this._netRaceController?.setMineRelayResolutionListener((roundId, carrierLane, exploded, revision) => {
+            const event = { roundId, carrierLane, exploded, revision };
+            if (this._mineRelayBrawl?.applyResolution(event)) this.handleMineRelayResolution(event, false);
+        });
+        this._netRaceController?.setMineRelayStateListener(state => {
+            const controller = this._mineRelayBrawl;
+            const applied = controller?.applySnapshotState(state);
+            if (!controller || !applied) return;
+            if (applied.activeChanged || applied.carrierChanged) {
+                const arm = controller.currentArm();
+                this._mineRelayPresentation?.sync(
+                    arm,
+                    arm ? this.swimmerForLane(arm.carrierLane)?.node ?? null : null,
+                );
+            }
+            for (let roundId = 0; roundId < MINE_RELAY_ROUNDS.length; roundId++) {
+                if ((applied.newlyExplodedMask & (1 << roundId)) === 0) continue;
+                const lane = controller.resolvedCarrierLane(roundId);
+                if (lane >= 0) this.applyMineRelayExplosion(lane);
+            }
+        });
+    }
+
+    private updateMineRelayBrawl(dt: number) {
+        const controller = this._mineRelayBrawl;
+        if (!controller || this._modelDebugFlow?.active) {
+            for (const ai of this._aiControllers) ai?.setMineRelayTargetZ(null);
+            return;
+        }
+        controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
+        const arm = controller.currentArm();
+        const carrierNode = arm ? this.swimmerForLane(arm.carrierLane)?.node ?? null : null;
+        this._mineRelayPresentation?.update(
+            dt,
+            arm,
+            carrierNode,
+            controller.currentRemainingSeconds(),
+            controller.isLocked(),
+            this._state === GameState.RACING,
+        );
+        for (let i = 0; i < this._aiControllers.length; i++) {
+            const ai = this._aiControllers[i];
+            const swimmer = this._aiSwimmers[i];
+            if (!ai || !swimmer || ai.remoteDriven) continue;
+            const lane = this.assignedLaneOfSwimmer(swimmer);
+            ai.setMineRelayTargetZ(controller.targetZForAi(lane, ai.intelligence.discipline));
+        }
+        if (!this._mineRelayHud?.consumeSample(dt, this._state)) return;
+        this._mineRelayHud.updateValues(
+            controller.currentCarrierLane(),
+            this._playerLaneIndex,
+            controller.currentRemainingSeconds(),
+            controller.isLocked(),
+            controller.remainingRoundCount(),
+        );
+    }
+
+    private handleMineRelayArm(event: MineRelayArm, broadcast: boolean) {
+        this._mineRelayPresentation?.attach(event, this.swimmerForLane(event.carrierLane)?.node ?? null);
+        if (event.roundId === 0) {
+            showToast(
+                this.createRuntimeSceneBuilder().findCanvasNode(),
+                '水雷已启动！持雷者贴近对手即可传递',
+                { duration: 2 },
+            );
+        }
+        if (broadcast && this._netRaceController?.isHost) {
+            this._netRaceController.enqueueMineRelayArm(
+                event.roundId, event.carrierLane, event.fuseSeconds, event.revision,
+            );
+        }
+    }
+
+    private handleMineRelayTransfer(event: MineRelayTransfer, broadcast: boolean) {
+        const arm = this._mineRelayBrawl?.currentArm() ?? null;
+        this._mineRelayPresentation?.attach(arm ?? {
+            roundId: event.roundId,
+            carrierLane: event.toLane,
+            fuseSeconds: event.remainingSeconds,
+            revision: event.revision,
+        }, this.swimmerForLane(event.toLane)?.node ?? null);
+        if (event.fromLane === this._playerLaneIndex) {
+            showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '水雷已传出！', { duration: 0.8 });
+        } else if (event.toLane === this._playerLaneIndex) {
+            showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '水雷传到你身上了！', { duration: 1 });
+        }
+        if (broadcast && this._netRaceController?.isHost) {
+            this._netRaceController.enqueueMineRelayTransfer(
+                event.roundId, event.fromLane, event.toLane, event.remainingSeconds, event.revision,
+            );
+        }
+    }
+
+    private handleMineRelayResolution(event: MineRelayResolution, broadcast: boolean) {
+        if (event.exploded) {
+            this.applyMineRelayExplosion(event.carrierLane);
+        } else {
+            this._mineRelayPresentation?.showResolution(false, null);
+            if (event.carrierLane === this._playerLaneIndex) {
+                showToast(this.createRuntimeSceneBuilder().findCanvasNode(), '带雷冲线，拆弹成功！', { duration: 1.2 });
+            }
+        }
+        if (broadcast && this._netRaceController?.isHost) {
+            this._netRaceController.enqueueMineRelayResolution(
+                event.roundId, event.carrierLane, event.exploded, event.revision,
+            );
+        }
+    }
+
+    private applyMineRelayExplosion(lane: number) {
+        const swimmer = this.swimmerForLane(lane);
+        if (!swimmer?.node?.active) return;
+        swimmer.node.getWorldPosition(this._mineExplosionWorldPosition);
+        this._mineRelayPresentation?.showResolution(true, this._mineExplosionWorldPosition);
+        const lateral = swimmer.node.position.z;
+        const away = lateral === 0 ? (lane & 1 ? 1 : -1) : Math.sign(lateral);
+        swimmer.applyCollisionImpulse(-MINE_RELAY_TUNING.explosionBackwardImpulse, away * MINE_RELAY_TUNING.explosionLateralImpulse);
+        swimmer.applyCollisionAxialImpulse(away * MINE_RELAY_TUNING.explosionAxialImpulse);
+        swimmer.applyCollisionPitchImpulse(-MINE_RELAY_TUNING.explosionPitchImpulse);
+        swimmer.applyCollisionSoftnessImpulse(
+            away * MINE_RELAY_TUNING.explosionSoftnessLateralImpulse,
+            MINE_RELAY_TUNING.explosionSoftnessForwardImpulse,
+        );
+        const splashNode = swimmer.cartoonRig?.splashNode;
+        if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
+        swimmer.cartoonRig?.triggerBigSplash(2.45);
+        showToast(
+            this.createRuntimeSceneBuilder().findCanvasNode(),
+            `${swimmer.swimmerName} 的水雷爆炸，被掀翻了！`,
+            { duration: 1.25 },
+        );
     }
 
     private setupSharkBrawl() {
@@ -2448,6 +2640,7 @@ export class GameManager extends Component {
                     this._stimulantBrawl?.snapshotState(),
                     this._shark?.snapshot(),
                     this._cannonBrawl?.snapshotState(),
+                    this._mineRelayBrawl?.snapshotState(),
                 );
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step
@@ -2749,7 +2942,9 @@ export class GameManager extends Component {
                 ? '贴外圈借水流加速，避开漩涡核心'
                 : isCannonBrawlMode()
                     ? '观察水面预警躲避炮弹；核心命中直接淘汰'
-                    : '率先完成全程者获胜',
+                    : isMineRelayBrawlMode()
+                        ? '持雷者贴近对手传雷；爆炸会被击飞失速'
+                        : '率先完成全程者获胜',
         });
     }
 
@@ -2809,6 +3004,9 @@ export class GameManager extends Component {
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
             if (isCannonBrawlMode()) {
                 this._cannonBrawlHud = new CannonBrawlHud(this._raceHud, w, h);
+            }
+            if (isMineRelayBrawlMode()) {
+                this._mineRelayHud = new MineRelayBrawlHud(this._raceHud, w, h);
             }
             this._cameraSpeedLines.bind(this._raceHud);
             this._uiController = refs.uiController;

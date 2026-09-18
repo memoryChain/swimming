@@ -17,7 +17,7 @@ import { netRoom } from './NetManager';
 import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
-import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -154,6 +154,10 @@ export class NetRaceController {
     private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
     private _cannonImpactListener: ((strikeId: number, hitMask: number, eliminatedLane: number, revision: number) => void) | null = null;
     private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
+    private _mineRelayArmListener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null = null;
+    private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
+    private _mineRelayResolutionListener: ((roundId: number, carrierLane: number, exploded: boolean, revision: number) => void) | null = null;
+    private _mineRelayStateListener: ((state: NetMineRelayState) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -238,6 +242,56 @@ export class NetRaceController {
 
     setCannonStateListener(listener: ((state: NetCannonState) => void) | null): void {
         this._cannonStateListener = listener;
+    }
+
+    enqueueMineRelayArm(roundId: number, carrierLane: number, fuseSeconds: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.MineRelayArm,
+            mineRoundId: roundId,
+            mineCarrierLane: carrierLane,
+            fuseSeconds,
+            revision,
+        });
+    }
+
+    enqueueMineRelayTransfer(roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.MineRelayTransfer,
+            mineRoundId: roundId,
+            mineFromLane: fromLane,
+            mineToLane: toLane,
+            remainingSeconds,
+            revision,
+        });
+    }
+
+    enqueueMineRelayResolution(roundId: number, carrierLane: number, exploded: boolean, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.MineRelayResolution,
+            mineRoundId: roundId,
+            mineCarrierLane: carrierLane,
+            exploded,
+            revision,
+        });
+    }
+
+    setMineRelayArmListener(listener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null): void {
+        this._mineRelayArmListener = listener;
+    }
+
+    setMineRelayTransferListener(listener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null): void {
+        this._mineRelayTransferListener = listener;
+    }
+
+    setMineRelayResolutionListener(listener: ((roundId: number, carrierLane: number, exploded: boolean, revision: number) => void) | null): void {
+        this._mineRelayResolutionListener = listener;
+    }
+
+    setMineRelayStateListener(listener: ((state: NetMineRelayState) => void) | null): void {
+        this._mineRelayStateListener = listener;
     }
 
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
@@ -401,10 +455,11 @@ export class NetRaceController {
         stimulant?: NetStimulantState | null,
         shark?: NetSharkState | null,
         cannon?: NetCannonState | null,
+        mineRelay?: NetMineRelayState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
-        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark, cannon));
+        }        this._snapSent++;        this._net.broadcast(encodeRaceSnapshot(this._session.localPos, entries, stimulant, shark, cannon, mineRelay));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -546,6 +601,7 @@ export class NetRaceController {
                     targetZ: snapshot.cannonTargetZ,
                     remainingSeconds: snapshot.cannonRemainingSeconds,
                 });
+                this._mineRelayStateListener?.(snapshot.mineRelay);
             }
             this.refreshHud();
             return;
@@ -884,6 +940,25 @@ export class NetRaceController {
                     || event.eliminatedLane === undefined || event.revision === undefined) continue;
                 this._cannonImpactListener?.(
                     event.cannonStrikeId, event.hitMask, event.eliminatedLane, event.revision,
+                );
+            } else if (event.kind === NetInputKind.MineRelayArm) {
+                if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
+                    || event.fuseSeconds === undefined || event.revision === undefined) continue;
+                this._mineRelayArmListener?.(
+                    event.mineRoundId, event.mineCarrierLane, event.fuseSeconds, event.revision,
+                );
+            } else if (event.kind === NetInputKind.MineRelayTransfer) {
+                if (event.mineRoundId === undefined || event.mineFromLane === undefined
+                    || event.mineToLane === undefined || event.remainingSeconds === undefined
+                    || event.revision === undefined) continue;
+                this._mineRelayTransferListener?.(
+                    event.mineRoundId, event.mineFromLane, event.mineToLane, event.remainingSeconds, event.revision,
+                );
+            } else if (event.kind === NetInputKind.MineRelayResolution) {
+                if (event.mineRoundId === undefined || event.mineCarrierLane === undefined
+                    || event.exploded === undefined || event.revision === undefined) continue;
+                this._mineRelayResolutionListener?.(
+                    event.mineRoundId, event.mineCarrierLane, event.exploded, event.revision,
                 );
             }
         }

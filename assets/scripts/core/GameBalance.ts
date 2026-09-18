@@ -10,9 +10,9 @@ export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
 export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl'
-    | 'whirlpool-brawl' | 'last-place-brawl';
+    | 'whirlpool-brawl' | 'last-place-brawl' | 'mine-relay-brawl';
 export type RaceCategoryId = 'competitive' | 'entertainment';
-export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon';
+export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon' | 'mine-relay';
 
 export type RaceModeConfig = {
     id: RaceModeId;
@@ -35,6 +35,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'whirlpool-brawl', label: '漩涡冲浪赛', category: 'entertainment', distance: 200, ruleset: 'whirlpool', laneLockdownEnabled: false, steeringEnabled: true },
     // 保留入口 ID，避免已有存档和联机房间选择失效；玩法本身已替换为炮火逃生赛。
     { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true },
+    { id: 'mine-relay-brawl', label: '水雷接力赛', category: 'entertainment', distance: 200, ruleset: 'mine-relay', laneLockdownEnabled: false, steeringEnabled: true },
 ];
 export const RACE_DIFFICULTY_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter((option) => option.category === 'competitive');
 
@@ -91,6 +92,10 @@ export function isWhirlpoolBrawlMode(mode: RaceModeId = currentRaceMode): boolea
 
 export function isCannonBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
     return getRaceModeConfig(mode).ruleset === 'cannon';
+}
+
+export function isMineRelayBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'mine-relay';
 }
 
 export function raceDistanceToCourseX(distance: number): number {
