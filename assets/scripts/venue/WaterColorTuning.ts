@@ -1,4 +1,4 @@
-import { Color, Material, Vec4 } from 'cc';
+import { Color, Material, Vec3, Vec4 } from 'cc';
 import { PERFORMANCE_CONFIG } from '../core/PerformanceConfig';
 
 // Runtime-tunable water/underwater colours. The debug tuning panel writes these
@@ -95,19 +95,28 @@ export function registerFloorTintApplier(fn: () => void) {
 
 const _waterMaterials: Material[] = [];
 const _swimmerMaterials: Material[] = [];
-// Whether swimmer draws should clip their above-water fragments (set only while
-// the underwater mirror-reflection camera is rendering; see setSwimmerReflectClip).
-let _swimmerReflectClip = false;
+// Identify the one mirrored camera that is allowed to clip above-water swimmer
+// fragments. Auxiliary above-water cameras (event PIP, venue feed, previews) use
+// the same materials, so a shared boolean would incorrectly clip all of them.
+const _swimmerReflectClipParams = new Vec4(0, 0, 0, 0);
+const REFLECTION_CAMERA_POSITION_STEPS_PER_METRE = 20;
 
 // Toggle the reflection clip flag on every registered swimmer material. Called by
-// WaterRefractionController when the main camera crosses below the surface, so the
-// reflection pass drops above-water fragments (no ghost) while direct/broadcast
-// draws stay intact. No-op when unchanged (avoids per-frame material writes).
-export function setSwimmerReflectClip(on: boolean) {
-    if (on === _swimmerReflectClip) {
+// WaterRefractionController while its mirrored camera is active. The quantized
+// world position lets the shader distinguish that pass from other cameras while
+// keeping material writes below render frequency. No-op when unchanged.
+export function setSwimmerReflectClip(on: boolean, cameraPosition?: Readonly<Vec3>) {
+    const enabled = on && !!cameraPosition;
+    const x = enabled ? quantizeReflectionPosition(cameraPosition.x) : 0;
+    const y = enabled ? quantizeReflectionPosition(cameraPosition.y) : 0;
+    const z = enabled ? quantizeReflectionPosition(cameraPosition.z) : 0;
+    if (_swimmerReflectClipParams.x === (enabled ? 1 : 0)
+        && _swimmerReflectClipParams.y === x
+        && _swimmerReflectClipParams.z === y
+        && _swimmerReflectClipParams.w === z) {
         return;
     }
-    _swimmerReflectClip = on;
+    _swimmerReflectClipParams.set(enabled ? 1 : 0, x, y, z);
     for (const material of _swimmerMaterials) {
         applySwimmerReflectClip(material);
     }
@@ -115,10 +124,15 @@ export function setSwimmerReflectClip(on: boolean) {
 
 function applySwimmerReflectClip(material: Material) {
     try {
-        material.setProperty('reflectClipParams', new Vec4(_swimmerReflectClip ? 1 : 0, 0, 0, 0));
+        material.setProperty('reflectClipParams', _swimmerReflectClipParams);
     } catch {
         // Material's effect lacks the uniform; ignore.
     }
+}
+
+function quantizeReflectionPosition(value: number): number {
+    return Math.round(value * REFLECTION_CAMERA_POSITION_STEPS_PER_METRE)
+        / REFLECTION_CAMERA_POSITION_STEPS_PER_METRE;
 }
 
 // Register the live pool-water material so tuning changes reach it. Applies the
@@ -243,7 +257,7 @@ function applySwimmerMaterial(material: Material) {
             WATER_COLOR_TUNING.aboveB,
             Math.max(0, Math.min(255, Math.round(WATER_COLOR_TUNING.aboveStrength * 255))),
         ));
-        material.setProperty('reflectClipParams', new Vec4(_swimmerReflectClip ? 1 : 0, 0, 0, 0));
+        material.setProperty('reflectClipParams', _swimmerReflectClipParams);
     } catch {
         // Not a swimmer body material; ignore.
     }

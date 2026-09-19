@@ -1,4 +1,4 @@
-import { Color, Label, LabelOutline, Node, UITransform } from 'cc';
+import { Color, Label, LabelOutline, Node, UITransform, view } from 'cc';
 import { makeLabel, makeUiNode } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
@@ -10,6 +10,16 @@ const TONE_COLORS: Record<EntertainmentBannerTone, Readonly<Color>> = {
     danger: new Color(255, 86, 70, 255),
     success: new Color(120, 220, 150, 255),
 };
+const EVENT_WIDTH = 840;
+const EVENT_HEIGHT = 86;
+const EVENT_LABEL_HEIGHT = 82;
+const EVENT_Y = 180;
+const PERSONAL_WIDTH = 700;
+const PERSONAL_HEIGHT = 52;
+const PERSONAL_LABEL_HEIGHT = 50;
+const PERSONAL_Y = 112;
+const SCREEN_MARGIN = 18;
+const PICTURE_IN_PICTURE_GAP = 16;
 
 type QueuedEvent = {
     text: string;
@@ -30,6 +40,7 @@ export class EntertainmentEventBanner {
     private personalRoot: Node | null = null;
     private personalLabel: Label | null = null;
     private personalUntil = 0;
+    private pictureInPictureLeft: number | null = null;
     private readonly eventQueue: QueuedEvent[] = [];
 
     bind(hud: Node): void {
@@ -37,10 +48,10 @@ export class EntertainmentEventBanner {
 
         // 赛事广播延续鲨鱼玩法已确认的大字、深描边风格。
         const eventRoot = makeUiNode('EntertainmentEventBanner', hud);
-        eventRoot.getComponent(UITransform)!.setContentSize(840, 86);
-        eventRoot.setPosition(0, 180, 0);
+        eventRoot.getComponent(UITransform)!.setContentSize(EVENT_WIDTH, EVENT_HEIGHT);
+        eventRoot.setPosition(0, EVENT_Y, 0);
         const eventLabelNode = makeLabel('Label', eventRoot, '', 40, TONE_COLORS.warning);
-        eventLabelNode.getComponent(UITransform)!.setContentSize(840, 82);
+        eventLabelNode.getComponent(UITransform)!.setContentSize(EVENT_WIDTH, EVENT_LABEL_HEIGHT);
         const eventLabel = eventLabelNode.getComponent(Label)!;
         eventLabel.enableWrapText = false;
         eventLabel.overflow = Label.Overflow.SHRINK;
@@ -52,10 +63,10 @@ export class EntertainmentEventBanner {
 
         // 个人反馈与赛事广播同源，但体量更小，避免每次拾取或传递都压住赛道。
         const personalRoot = makeUiNode('EntertainmentPersonalFeedback', hud);
-        personalRoot.getComponent(UITransform)!.setContentSize(700, 52);
-        personalRoot.setPosition(0, 112, 0);
+        personalRoot.getComponent(UITransform)!.setContentSize(PERSONAL_WIDTH, PERSONAL_HEIGHT);
+        personalRoot.setPosition(0, PERSONAL_Y, 0);
         const personalLabelNode = makeLabel('Label', personalRoot, '', 28, TONE_COLORS.info);
-        personalLabelNode.getComponent(UITransform)!.setContentSize(700, 50);
+        personalLabelNode.getComponent(UITransform)!.setContentSize(PERSONAL_WIDTH, PERSONAL_LABEL_HEIGHT);
         const personalLabel = personalLabelNode.getComponent(Label)!;
         personalLabel.enableWrapText = false;
         personalLabel.overflow = Label.Overflow.SHRINK;
@@ -69,6 +80,21 @@ export class EntertainmentEventBanner {
         this.eventLabel = eventLabel;
         this.personalRoot = personalRoot;
         this.personalLabel = personalLabel;
+        this.layout();
+        view.on('canvas-resize', this.layout, this);
+        view.on('design-resolution-changed', this.layout, this);
+        eventRoot.once(Node.EventType.NODE_DESTROYED, () => {
+            view.off('canvas-resize', this.layout, this);
+            view.off('design-resolution-changed', this.layout, this);
+        });
+    }
+
+    /** 画中画出现时只收窄文字通道，不移动排名或重建广播节点。 */
+    setPictureInPictureLeft(leftEdge: number | null): void {
+        const next = leftEdge !== null && Number.isFinite(leftEdge) ? leftEdge : null;
+        if (this.pictureInPictureLeft === next) return;
+        this.pictureInPictureLeft = next;
+        this.layout();
     }
 
     showEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
@@ -153,6 +179,40 @@ export class EntertainmentEventBanner {
         if (label.string !== text) label.string = text;
         const color = TONE_COLORS[tone];
         if (!label.color.equals(color)) label.color = color;
+    }
+
+    private layout(): void {
+        this.layoutChannel(this.eventRoot, this.eventLabel, EVENT_WIDTH, EVENT_HEIGHT, EVENT_LABEL_HEIGHT, EVENT_Y);
+        this.layoutChannel(this.personalRoot, this.personalLabel, PERSONAL_WIDTH, PERSONAL_HEIGHT, PERSONAL_LABEL_HEIGHT, PERSONAL_Y);
+    }
+
+    private layoutChannel(
+        root: Node | null,
+        label: Label | null,
+        preferredWidth: number,
+        height: number,
+        labelHeight: number,
+        y: number,
+    ): void {
+        if (!root?.isValid || !label) return;
+        const size = view.getVisibleSize();
+        const naturalWidth = Math.min(preferredWidth, Math.max(1, size.width - SCREEN_MARGIN * 2));
+        const left = -naturalWidth * 0.5;
+        const naturalRight = naturalWidth * 0.5;
+        const right = this.pictureInPictureLeft === null
+            ? naturalRight
+            : Math.min(naturalRight, this.pictureInPictureLeft - PICTURE_IN_PICTURE_GAP);
+        const width = Math.max(1, right - left);
+        const x = left + width * 0.5;
+        const rootTransform = root.getComponent(UITransform)!;
+        if (rootTransform.contentSize.width !== width || rootTransform.contentSize.height !== height) {
+            rootTransform.setContentSize(width, height);
+        }
+        const labelTransform = label.node.getComponent(UITransform)!;
+        if (labelTransform.contentSize.width !== width || labelTransform.contentSize.height !== labelHeight) {
+            labelTransform.setContentSize(width, labelHeight);
+        }
+        if (root.position.x !== x || root.position.y !== y) root.setPosition(x, y, 0);
     }
 }
 

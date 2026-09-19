@@ -3957,6 +3957,7 @@ export class GameManager extends Component {
                     worldRoot: this._worldRoot,
                     hud: this._raceHud,
                     course: COURSE_LAYOUT,
+                    onHudBoundsChanged: leftEdge => this._entertainmentEventBanner.setPictureInPictureLeft(leftEdge),
                 });
             }
             if (isEntertainmentBrawlMode() || isCannonBrawlMode()) {

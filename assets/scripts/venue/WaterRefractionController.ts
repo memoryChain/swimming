@@ -724,12 +724,6 @@ export class WaterRefractionController {
             return;
         }
         main.node.getWorldPosition(this._tmpCamPos);
-        // Tell the swimmer shader to clip above-water fragments while the mirror
-        // reflection is being drawn. Gated on the MAIN camera being clearly below
-        // the surface, so the reflection camera (which sits above the surface) is
-        // the only above-water swimmer draw and gets clipped; the direct underwater
-        // overlay (camera below) and all above-water/broadcast draws stay intact.
-        setSwimmerReflectClip(this._tmpCamPos.y < this._waterY);
         const below = this._underwaterViewActive
             && this._tmpCamPos.y < this._waterY + REFLECTION_ACTIVE_MARGIN;
         if (below !== this._reflectionActive) {
@@ -737,6 +731,7 @@ export class WaterRefractionController {
             refl.enabled = below;
         }
         if (!below) {
+            setSwimmerReflectClip(false);
             return;
         }
         const h = this._waterY;
@@ -750,6 +745,10 @@ export class WaterRefractionController {
         this._tmpReflPos.set(this._tmpCamPos.x, 2 * h - this._tmpCamPos.y, this._tmpCamPos.z);
         this._tmpReflAhead.set(this._tmpAhead.x, 2 * h - this._tmpAhead.y, this._tmpAhead.z);
         this._tmpReflUp.set(this._tmpUp.x, -this._tmpUp.y, this._tmpUp.z);
+        // The swimmer material is shared by every camera. Include this reflected
+        // camera's quantized world position so the shader clips only this pass;
+        // an event PIP above the surface must remain a normal complete draw.
+        setSwimmerReflectClip(true, this._tmpReflPos);
         refl.node.setWorldPosition(this._tmpReflPos);
         refl.node.lookAt(this._tmpReflAhead, this._tmpReflUp);
         refl.projection = main.projection;

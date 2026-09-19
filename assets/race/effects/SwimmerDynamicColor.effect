@@ -44,10 +44,9 @@ CCEffect %{
         # applies when the camera is below the surface; normal above-water race
         # views are untouched.
         aboveWaterColor: { value: [0.412, 0.675, 0.804, 0.45], linear: true, editor: { type: color } }
-        # x>0.5 = this draw is the underwater mirror reflection (a camera ABOVE the
-        # surface): discard the swimmer's above-water fragments so the reflection
-        # only shows the submerged body (no above-water ghost). Set on the fly by
-        # WaterRefractionController; 0 for all normal direct/broadcast draws.
+        # x>0.5 enables underwater mirror clipping; yzw stores the mirrored
+        # camera's quantized world position. Position matching prevents the shared
+        # material from clipping event PIP and other above-water camera passes.
         reflectClipParams: { value: [0, 0, 0, 0] }
         # Cel shading (quantised directional light):
         # x = band count (2~4 gives a comic look), y = shadow-side brightness floor
@@ -131,12 +130,17 @@ CCProgram swimmer-color-fs %{
   };
 
   vec4 frag () {
-    // Underwater mirror reflection clip: when this draw is the reflection (a camera
-    // ABOVE the surface, flagged by reflectClipParams.x), drop the ABOVE-water
-    // fragments so the mirror reflects only the submerged body (no ghost). The
-    // camY>waterLine test keeps the direct underwater overlay (camera below the
-    // surface) and every above-water/broadcast draw (flag=0) fully intact.
-    if (reflectClipParams.x > 0.5 && v_worldPos.y > waterLine.x && cc_cameraPos.y > waterLine.x) {
+    // Underwater mirror reflection clip. Materials are shared across cameras, so
+    // require the current camera to match the mirrored camera position instead of
+    // treating every above-water auxiliary camera as a reflection pass.
+    float reflectionCameraMatch = 1.0 - step(
+      0.09,
+      distance(cc_cameraPos.xyz, reflectClipParams.yzw)
+    );
+    if (reflectClipParams.x > 0.5
+        && reflectionCameraMatch > 0.5
+        && v_worldPos.y > waterLine.x
+        && cc_cameraPos.y > waterLine.x) {
       discard;
     }
     vec4 baseSample = texture(mainTexture, v_uv);
@@ -172,7 +176,16 @@ CCProgram swimmer-color-fs %{
     // supports both presentation cases without per-frame material writes. Blend
     // over a narrow band to avoid a colour pop while the camera crosses the plane.
     float cameraSubmerge = 1.0 - smoothstep(waterLine.x - 0.12, waterLine.x + 0.04, cc_cameraPos.y);
-    float belowness = step(v_worldPos.y, waterLine.x);
+    // Blend the filter over the authored waterline fade depth instead of changing
+    // colour on one exact plane. This is especially noticeable in the event feed,
+    // where a close camera can otherwise turn a swimmer's skin/suit abruptly as
+    // the animated body crosses the surface.
+    float waterFadeDepth = max(waterLine.y, 0.001);
+    float belowness = 1.0 - smoothstep(
+      waterLine.x - waterFadeDepth,
+      waterLine.x,
+      v_worldPos.y
+    );
     // --- Soft toon shading -----------------------------------------------------
     // Use the skinned vertex normal so lighting remains continuous across the
     // model's low-poly triangle boundaries. Soft bands retain the illustrated
@@ -270,14 +283,22 @@ CCProgram swimmer-color-fs %{
     // nearby swimmer (real "the further underwater, the bluer" look). Only below
     // the waterline, and only when enabled.
     float depthDist = length(cc_cameraPos.xyz - v_worldPos);
-    float depthT = clamp((depthDist - depthFogParams.x) / max(depthFogParams.y - depthFogParams.x, 0.001), 0.0, 1.0);
+    // Only the part of the viewing ray that is actually underwater contributes
+    // to water absorption. The old full-distance value counted a high broadcast
+    // camera's travel through air, so the 17 m shark establishing shot made a
+    // shallow swimmer much bluer than the same swimmer in the close shot.
+    float waterDepth = max(waterLine.x - v_worldPos.y, 0.0);
+    float rayVerticalSpan = max(cc_cameraPos.y - v_worldPos.y, 0.001);
+    float aboveWaterPath = depthDist * clamp(waterDepth / rayVerticalSpan, 0.0, 1.0);
+    float waterPathDistance = mix(aboveWaterPath, depthDist, cameraSubmerge);
+    float depthT = clamp((waterPathDistance - depthFogParams.x) / max(depthFogParams.y - depthFogParams.x, 0.001), 0.0, 1.0);
     float depthAmt = depthT * depthFogColor.a * belowness * step(0.5, depthFogParams.z);
     bodyColor = mix(bodyColor, depthFogColor.rgb, depthAmt);
     // Above-waterline haze: when the CAMERA is underwater, a body part above the
     // surface fades toward aboveWaterColor so it reads as poking through the
     // surface instead of a hard glitch. camUnder gates it out of above-water
     // race views (there the above-water body must render normally).
-    float aboveness = step(waterLine.x, v_worldPos.y);
+    float aboveness = 1.0 - belowness;
     bodyColor = mix(bodyColor, aboveWaterColor.rgb, aboveness * cameraSubmerge * aboveWaterColor.a);
     vec4 outputColor = vec4(bodyColor, baseSample.a * mainColor.a);
     CC_APPLY_FOG(outputColor);

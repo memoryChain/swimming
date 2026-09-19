@@ -12,11 +12,26 @@ const runtimeScene = readFileSync(
     new URL('../assets/scripts/app/RuntimeSceneBuilder.ts', import.meta.url),
     'utf8',
 );
+const swimmerEffect = readFileSync(
+    new URL('../assets/race/effects/SwimmerDynamicColor.effect', import.meta.url),
+    'utf8',
+);
+const waterRefraction = readFileSync(
+    new URL('../assets/scripts/venue/WaterRefractionController.ts', import.meta.url),
+    'utf8',
+);
+const waterColorTuning = readFileSync(
+    new URL('../assets/scripts/venue/WaterColorTuning.ts', import.meta.url),
+    'utf8',
+);
 
 test('娱乐玩法共用一套低分辨率事件镜头', () => {
     assert.equal((camera.match(/new RenderTexture/g) ?? []).length, 1);
-    assert.match(camera, /const FEED_WIDTH = 224/);
-    assert.match(camera, /const FEED_HEIGHT = 126/);
+    assert.match(camera, /const FEED_WIDTH = 256/);
+    assert.match(camera, /const FEED_HEIGHT = 144/);
+    assert.match(camera, /const PANEL_HEIGHT = 200/);
+    assert.match(camera, /statusNode\.setPosition\(0, PANEL_HEIGHT \* 0\.5 - 41, 0\)/);
+    assert.match(camera, /image\.setPosition\(0, -27, 0\)/);
     assert.match(camera, /const RENDER_INTERVAL_SECONDS = 1 \/ 30/);
     assert.match(camera, /const TIMED_BOMB_ARM_PREVIEW_SECONDS = 1\.2/);
     assert.match(camera, /const TIMED_BOMB_TRANSFER_PREVIEW_SECONDS = 0\.8/);
@@ -26,6 +41,32 @@ test('娱乐玩法共用一套低分辨率事件镜头', () => {
     assert.match(runtimeScene, /SPECTATOR_LAYER \| VENUE_CEILING_LAYER/);
     assert.doesNotMatch(camera, /Graphics|setInterval|setTimeout/);
     assert.equal(existsSync(new URL('../assets/scripts/camera/SharkPictureInPictureCamera.ts', import.meta.url)), false);
+});
+
+test('画中画为排名和微信胶囊保留右侧空间，并在尺寸变化时重新布局', () => {
+    assert.match(camera, /const RANKING_RAIL_WIDTH = 117/);
+    assert.match(camera, /const COURSE_PROGRESS_RIGHT = 226/);
+    assert.match(camera, /platform\(\)\.getTopRightReservedRatio\(\)/);
+    assert.match(camera, /Math\.max\(rightInset \+ RANKING_RAIL_WIDTH \* hudScale, nativeRightReserve\)/);
+    assert.match(camera, /availableWidth \/ \(PANEL_WIDTH \+ RANKING_RAIL_GAP \+ COURSE_PROGRESS_GAP\)/);
+    assert.match(camera, /view\.on\('canvas-resize', this\.layoutHud, this\)/);
+    assert.match(camera, /view\.off\('canvas-resize', this\.layoutHud, this\)/);
+    assert.match(gameManager, /onHudBoundsChanged: leftEdge => this\._entertainmentEventBanner\.setPictureInPictureLeft\(leftEdge\)/);
+});
+
+test('高位事件镜头只按视线穿过水体的距离计算人物水下吸收', () => {
+    assert.match(swimmerEffect, /float waterFadeDepth = max\(waterLine\.y, 0\.001\)/);
+    assert.match(swimmerEffect, /float aboveWaterPath = depthDist \* clamp\(waterDepth \/ rayVerticalSpan, 0\.0, 1\.0\)/);
+    assert.match(swimmerEffect, /float waterPathDistance = mix\(aboveWaterPath, depthDist, cameraSubmerge\)/);
+    assert.doesNotMatch(swimmerEffect, /float depthT = clamp\(\(depthDist - depthFogParams\.x\)/);
+});
+
+test('水下反射裁切只匹配真正的反射相机，不污染事件画中画', () => {
+    assert.match(waterColorTuning, /setSwimmerReflectClip\(on: boolean, cameraPosition\?: Readonly<Vec3>\)/);
+    assert.match(waterRefraction, /setSwimmerReflectClip\(true, this\._tmpReflPos\)/);
+    assert.match(waterRefraction, /if \(!below\) \{[\s\S]*?setSwimmerReflectClip\(false\)/);
+    assert.match(swimmerEffect, /distance\(cc_cameraPos\.xyz, reflectClipParams\.yzw\)/);
+    assert.match(swimmerEffect, /reflectionCameraMatch > 0\.5/);
 });
 
 test('共用事件镜头只在高空俯拍阶段排除顶棚', () => {

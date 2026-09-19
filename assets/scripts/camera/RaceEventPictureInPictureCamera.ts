@@ -1,4 +1,4 @@
-import { Camera, Color, Label, LabelOutline, Layers, Node, RenderTexture, Sprite, SpriteFrame, UITransform, Vec3, view } from 'cc';
+import { Camera, Color, Label, LabelOutline, Layers, Node, RenderTexture, Sprite, SpriteFrame, sys, UITransform, Vec3, view } from 'cc';
 import type { CannonImpact, CannonLaunch } from '../core/CannonBrawlController';
 import type { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
@@ -6,12 +6,18 @@ import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SWIMMER_LAYER, UNDERWATER_LAYER } from '../venue/WaterSurfaceBinder';
 import { setCameraVenueCeilingVisible, VENUE_CEILING_LAYER } from '../venue/TopViewCeilingController';
 import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
-import { makeLabel, makeRoundedRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
+import { makeLabel, makeRoundedRect, makeUiNode, UI_DESIGN_HEIGHT, UI_DESIGN_WIDTH, uiColor } from '../ui/RuntimeUiFactory';
+import { platform } from '../platform/PlatformManager';
 
-const FEED_WIDTH = 224;
-const FEED_HEIGHT = 126;
-const PANEL_HEIGHT = 164;
+const FEED_WIDTH = 256;
+const FEED_HEIGHT = 144;
+const PANEL_WIDTH = FEED_WIDTH + 12;
+const PANEL_HEIGHT = 200;
 const PANEL_MARGIN = 18;
+const RANKING_RAIL_WIDTH = 117;
+const RANKING_RAIL_GAP = 16;
+const COURSE_PROGRESS_RIGHT = 226;
+const COURSE_PROGRESS_GAP = 12;
 const RENDER_INTERVAL_SECONDS = 1 / 30;
 const CANNON_IMPACT_HOLD_SECONDS = 1;
 const WHIRLPOOL_PREVIEW_SECONDS = 1.5;
@@ -32,6 +38,7 @@ export type RaceEventPictureInPictureOptions = {
     worldRoot: Node;
     hud: Node;
     course: RaceCourseLayout;
+    onHudBoundsChanged?: (leftEdge: number | null) => void;
 };
 
 /**
@@ -78,6 +85,8 @@ export class RaceEventPictureInPictureCamera {
     private lastTimedBombCopyLocked = false;
     private lastTimedBombCopyResolution: TimedBombResolution = 'none';
     private ceilingVisible = true;
+    private hudLeftEdge = 0;
+    private notifiedHudLeftEdge: number | null = null;
     private readonly cameraPosition = new Vec3();
     private readonly focus = new Vec3();
     private readonly subjectPosition = new Vec3();
@@ -350,6 +359,9 @@ export class RaceEventPictureInPictureCamera {
     }
 
     dispose(): void {
+        this.notifyHudBounds(false);
+        view.off('canvas-resize', this.layoutHud, this);
+        view.off('design-resolution-changed', this.layoutHud, this);
         if (this.camera?.isValid) {
             this.camera.targetTexture = null;
             this.camera.enabled = false;
@@ -597,6 +609,7 @@ export class RaceEventPictureInPictureCamera {
         this.renderElapsed = RENDER_INTERVAL_SECONDS;
         if (this.root?.isValid && this.root.active !== active) this.root.active = active;
         if (!active && this.camera?.isValid && this.camera.enabled) this.camera.enabled = false;
+        this.notifyHudBounds(active);
     }
 
     private hide(): void {
@@ -638,38 +651,32 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private buildHud(): void {
-        const visibleSize = view.getVisibleSize();
         const root = makeRoundedRect(
             'RaceEventPictureInPicture',
             this.options.hud,
-            FEED_WIDTH + 12,
+            PANEL_WIDTH,
             PANEL_HEIGHT,
             uiColor(5, 16, 30, 232),
             10,
             uiColor(91, 174, 221, 215),
             2,
         );
-        root.setPosition(
-            visibleSize.width * 0.5 - (FEED_WIDTH + 12) * 0.5 - PANEL_MARGIN,
-            visibleSize.height * 0.5 - PANEL_HEIGHT * 0.5 - PANEL_MARGIN,
-            0,
-        );
-        const titleNode = makeLabel('Title', root, '', 18, uiColor(224, 243, 255));
+        const titleNode = makeLabel('Title', root, '', 19, uiColor(224, 243, 255));
         titleNode.getComponent(UITransform)!.setContentSize(FEED_WIDTH, 26);
         titleNode.setPosition(0, PANEL_HEIGHT * 0.5 - 16, 0);
         const title = titleNode.getComponent(Label)!;
-        styleProjectUiLabel(title, 'semibold', 24);
-        const statusNode = makeLabel('Status', root, '', 14, WARNING_COLOR);
+        styleProjectUiLabel(title, 'semibold', 25);
+        const statusNode = makeLabel('Status', root, '', 15, WARNING_COLOR);
         statusNode.getComponent(UITransform)!.setContentSize(FEED_WIDTH, 20);
-        statusNode.setPosition(0, PANEL_HEIGHT * 0.5 - 37, 0);
+        statusNode.setPosition(0, PANEL_HEIGHT * 0.5 - 41, 0);
         const status = statusNode.getComponent(Label)!;
-        styleProjectUiLabel(status, 'semibold', 20);
+        styleProjectUiLabel(status, 'semibold', 21);
         const outline = statusNode.addComponent(LabelOutline);
         outline.color = uiColor(0, 6, 14, 230);
         outline.width = 2;
         const image = makeUiNode('Feed', root);
         image.getComponent(UITransform)!.setContentSize(FEED_WIDTH, FEED_HEIGHT);
-        image.setPosition(0, -13, 0);
+        image.setPosition(0, -27, 0);
         const sprite = image.addComponent(Sprite);
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
         const spriteFrame = new SpriteFrame();
@@ -680,6 +687,47 @@ export class RaceEventPictureInPictureCamera {
         this.titleLabel = title;
         this.statusLabel = status;
         this.spriteFrame = spriteFrame;
+        this.layoutHud();
+        view.on('canvas-resize', this.layoutHud, this);
+        view.on('design-resolution-changed', this.layoutHud, this);
+    }
+
+    private layoutHud(): void {
+        const root = this.root;
+        if (!root?.isValid) return;
+        const size = view.getVisibleSize();
+        const safe = sys.getSafeAreaRect(false);
+        const leftInset = Math.max(0, safe.x);
+        const rightInset = Math.max(0, size.width - safe.x - safe.width);
+        const safeTop = Math.max(0, size.height - safe.y - safe.height);
+        const hudScale = Math.min(
+            1,
+            Math.max(1, size.width - leftInset - rightInset) / UI_DESIGN_WIDTH,
+            Math.max(1, safe.height) / UI_DESIGN_HEIGHT,
+        );
+        // 最右侧永久留给排名；微信胶囊更宽时使用胶囊左边界，但不重复叠加安全区。
+        const nativeRightReserve = size.width * platform().getTopRightReservedRatio();
+        const rightReserve = Math.max(rightInset + RANKING_RAIL_WIDTH * hudScale, nativeRightReserve);
+        const availableWidth = size.width * 0.5 - rightReserve - COURSE_PROGRESS_RIGHT * hudScale;
+        const panelScale = Math.min(
+            hudScale,
+            Math.max(0.01, availableWidth / (PANEL_WIDTH + RANKING_RAIL_GAP + COURSE_PROGRESS_GAP)),
+        );
+        const panelRight = size.width * 0.5 - rightReserve - RANKING_RAIL_GAP * panelScale;
+        const panelTop = size.height * 0.5 - safeTop - PANEL_MARGIN * panelScale;
+        const x = panelRight - PANEL_WIDTH * panelScale * 0.5;
+        const y = panelTop - PANEL_HEIGHT * panelScale * 0.5;
+        if (root.position.x !== x || root.position.y !== y) root.setPosition(x, y, 0);
+        if (root.scale.x !== panelScale || root.scale.y !== panelScale) root.setScale(panelScale, panelScale, 1);
+        this.hudLeftEdge = panelRight - PANEL_WIDTH * panelScale;
+        if (this.active) this.notifyHudBounds(true);
+    }
+
+    private notifyHudBounds(active: boolean): void {
+        const leftEdge = active ? this.hudLeftEdge : null;
+        if (this.notifiedHudLeftEdge === leftEdge) return;
+        this.notifiedHudLeftEdge = leftEdge;
+        this.options.onHudBoundsChanged?.(leftEdge);
     }
 }
 

@@ -31,10 +31,18 @@ test('共用横幅保留鲨鱼大字描边，同时以稳定节点分离个人�
     assert.doesNotMatch(banner, /destroy\(\)/);
 });
 
+test('画中画出现时广播复用原节点并收窄到镜头左侧', () => {
+    assert.match(banner, /setPictureInPictureLeft\(leftEdge: number \| null\)/);
+    assert.match(banner, /this\.pictureInPictureLeft - PICTURE_IN_PICTURE_GAP/);
+    assert.match(banner, /layoutChannel\(this\.eventRoot, this\.eventLabel/);
+    assert.doesNotMatch(banner, /setPictureInPictureLeft[\s\S]*?makeUiNode/);
+});
+
 test('六合一激活时用原广播位置显示三秒红色行动提示', () => {
     assert.match(gameManager, /showDirectorEvent\([\s\S]*?entertainmentActionCopy\([\s\S]*?transition\.activatedEvent[\s\S]*?'danger'[\s\S]*?3000/);
-    assert.match(banner, /setContentSize\(840, 86\)/);
-    assert.match(banner, /setPosition\(0, 180, 0\)/);
+    assert.match(banner, /const EVENT_WIDTH = 840/);
+    assert.match(banner, /const EVENT_HEIGHT = 86/);
+    assert.match(banner, /const EVENT_Y = 180/);
     assert.match(banner, /makeLabel\('Label', eventRoot, '', 40, TONE_COLORS\.warning\)/);
     assert.match(gameManager, /isEntertainmentBrawlMode\(\) && wave === 1/);
     assert.match(gameManager, /launch\.strikeId === 0 && !isEntertainmentBrawlMode\(\)/);
