@@ -56,6 +56,7 @@ export class Swimmer extends Component {
         intensity: 0,
         coreIntensity: 0,
         whirlpoolId: -1,
+        maxFlowSpeed: WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed,
     };
     // 由流程层绑定体力模型；每次成功释放同步结算，重开不叠加监听。
     public onDolphinJumpEnergyCost: ((cost: number) => void) | null = null;
@@ -800,7 +801,7 @@ export class Swimmer extends Component {
                 this._whirlpoolInfluence.yawAcceleration * submergedScale,
                 this._whirlpoolInfluence.rollAcceleration * submergedScale,
                 dt,
-                WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed,
+                this._whirlpoolInfluence.maxFlowSpeed,
             );
         }
         const finished = this._motor.update(dt, {

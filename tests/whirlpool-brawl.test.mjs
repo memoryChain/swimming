@@ -10,6 +10,9 @@ const {
     WHIRLPOOL_BRAWL_TUNING,
     WHIRLPOOL_SPAWN_BANDS,
     WHIRLPOOL_MAX_CENTER_FRACTION,
+    WHIRLPOOL_SUPER_MAX_CENTER_FRACTION,
+    WHIRLPOOL_SUPER_TUNING,
+    entertainmentWhirlpoolSpawn,
     sampleWhirlpoolInfluence,
     whirlpoolCenterZ,
     whirlpoolSpawnsForSeed,
@@ -20,6 +23,10 @@ const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 const controllerSource = readFileSync(
     new URL('../assets/scripts/core/WhirlpoolBrawlController.ts', import.meta.url),
+    'utf8',
+);
+const gameManagerSource = readFileSync(
+    new URL('../assets/scripts/core/GameManager.ts', import.meta.url),
     'utf8',
 );
 
@@ -59,6 +66,65 @@ test('同一随机布局的水流采样可重复', () => {
         sampleWhirlpoolInfluence(spawn.distance + 1.2, z + 1.8, 20, influence(), spawns),
         sampleWhirlpoolInfluence(spawn.distance + 1.2, z + 1.8, 20, influence(), spawns),
     );
+});
+
+test('独立漩涡局低概率只强化一个中段漩涡并靠近池中线', () => {
+    let superCount = 0;
+    for (let seed = 0; seed < 400; seed++) {
+        const spawns = whirlpoolSpawnsForSeed(seed);
+        const supers = spawns.filter(spawn => spawn.variant === 'super');
+        assert.ok(supers.length <= 1);
+        if (supers.length === 0) continue;
+        superCount++;
+        assert.ok(supers[0].id === 1 || supers[0].id === 2);
+        assert.ok(Math.abs(supers[0].centerFraction) <= WHIRLPOOL_SUPER_MAX_CENTER_FRACTION);
+    }
+    assert.ok(superCount >= 70 && superCount <= 130);
+});
+
+test('模式测试可按同一种子强制小漩涡或一个中段大漩涡', () => {
+    const normal = whirlpoolSpawnsForSeed(2468, 'normal');
+    const superSpawns = whirlpoolSpawnsForSeed(2468, 'super');
+    assert.equal(normal.filter(spawn => spawn.variant === 'super').length, 0);
+    const supers = superSpawns.filter(spawn => spawn.variant === 'super');
+    assert.equal(supers.length, 1);
+    assert.ok(supers[0].id === 1 || supers[0].id === 2);
+    assert.ok(Math.abs(supers[0].centerFraction) <= WHIRLPOOL_SUPER_MAX_CENTER_FRACTION);
+    assert.deepEqual(whirlpoolSpawnsForSeed(2468, 'normal'), normal);
+    assert.deepEqual(whirlpoolSpawnsForSeed(2468, 'super'), superSpawns);
+});
+
+test('强制规格只接入本地AI测试，正式与联机仍使用纯随机', () => {
+    assert.match(gameManagerSource, /this\._aiDebugMode && !this\._netSession\s*\? getAiDebugSetup\(\)\.whirlpoolSelection\s*:\s*'random'/);
+});
+
+test('六合一超级漩涡落在下一处泳池中心，冲刺段不足时安全降级', () => {
+    const superSpawn = entertainmentWhirlpoolSpawn(73, 40, 200, true)[0];
+    assert.equal(superSpawn.variant, 'super');
+    assert.equal(superSpawn.distance, 75);
+    assert.ok(Math.abs(superSpawn.centerFraction) <= WHIRLPOOL_SUPER_MAX_CENTER_FRACTION);
+    const fallback = entertainmentWhirlpoolSpawn(73, 188, 200, true)[0];
+    assert.equal(fallback.variant, 'normal');
+    assert.ok(fallback.distance <= 190);
+});
+
+test('超级漩涡扩大作用范围并增强吸力、旋转与水流上限', () => {
+    const source = whirlpoolSpawnsForSeed(2468)[0];
+    const normal = { ...source, variant: 'normal', centerFraction: 0 };
+    const superSpawn = { ...source, variant: 'super', centerFraction: 0 };
+    const center = whirlpoolCenterZ(superSpawn, 20);
+    const normalOutside = sampleWhirlpoolInfluence(
+        normal.distance, center + WHIRLPOOL_BRAWL_TUNING.lateralRadius * 1.2, 20, influence(), [normal],
+    );
+    const superOutside = sampleWhirlpoolInfluence(
+        superSpawn.distance, center + WHIRLPOOL_BRAWL_TUNING.lateralRadius * 1.2, 20, influence(), [superSpawn],
+    );
+    assert.equal(normalOutside.intensity, 0);
+    assert.ok(superOutside.intensity > 0);
+    const normalCore = sampleWhirlpoolInfluence(normal.distance, center, 20, influence(), [normal]);
+    const superCore = sampleWhirlpoolInfluence(superSpawn.distance, center, 20, influence(), [superSpawn]);
+    assert.ok(Math.abs(superCore.forwardAcceleration) > Math.abs(normalCore.forwardAcceleration));
+    assert.equal(superCore.maxFlowSpeed, WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed * WHIRLPOOL_SUPER_TUNING.maxFlowSpeedScale);
 });
 
 test('漩涡外圈给前进收益，核心产生明显回卷惩罚', () => {
@@ -174,7 +240,10 @@ test('漩涡表现拆分方向水流、危险核心和退场余波三层', () =>
 });
 
 test('漩涡美术层复用固定网格且不引入逐帧程序绘制或粒子模拟', () => {
-    assert.match(controllerSource, /this\.meshes\.push\(flowMesh, coreMesh, afterglowMesh\)/);
+    assert.match(controllerSource, /createWhirlpoolVisualResources/);
+    assert.match(controllerSource, /normal: createWhirlpoolVisualResourceSet\(false\)/);
+    assert.match(controllerSource, /super: createWhirlpoolVisualResourceSet\(true\)/);
+    assert.match(controllerSource, /const arms = superVariant \? 5 : 3/);
     assert.match(controllerSource, /const PRESENTATION_INTERVAL = 1 \/ 20/);
     assert.doesNotMatch(controllerSource, /Graphics|ParticleSystem/);
 });

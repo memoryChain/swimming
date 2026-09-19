@@ -18,7 +18,7 @@ import { AXIAL_ROLL_TUNING } from './AxialRollTuning';
 import { COLLISION_PITCH_TUNING } from './CollisionPitchTuning';
 import { COLLISION_SOFTNESS_TUNING } from './CollisionSoftnessTuning';
 import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
-import { WHIRLPOOL_BRAWL_TUNING } from './WhirlpoolBrawlRules';
+import { WHIRLPOOL_BRAWL_TUNING, WHIRLPOOL_SUPER_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
 import { ENTERTAINMENT_RECOVERY_TUNING } from './EntertainmentRecoveryController';
@@ -369,6 +369,11 @@ export const TUNING_GROUPS: TuningGroup[] = [
             control('whirlpool.yawAccelerationScale', '水流偏航比例', '横向水流转化为角色偏航的比例。', () => WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale, v => WHIRLPOOL_BRAWL_TUNING.yawAccelerationScale = v, 0.01, 0, 0.6, 2),
             control('whirlpool.rollAccelerationScale', '水流侧倾比例', '横向水流转化为身体侧倾与翻滚的比例。', () => WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale, v => WHIRLPOOL_BRAWL_TUNING.rollAccelerationScale = v, 0.02, 0, 1, 2),
             control('whirlpool.maxFlowSpeed', '水流速度上限', '所有漩涡水流叠加到泳者后的速度上限。', () => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed, v => WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed = v, 0.1, 0.5, 8, 1, ' m/s'),
+            control('whirlpool.superInwardPullScale', '超级吸力倍率', '超级漩涡相对普通漩涡的向心吸力倍率。', () => WHIRLPOOL_SUPER_TUNING.inwardPullScale, v => WHIRLPOOL_SUPER_TUNING.inwardPullScale = v, 0.05, 1, 2, 2),
+            control('whirlpool.superSwirlScale', '超级旋转倍率', '超级漩涡相对普通漩涡的切向旋转推力倍率。', () => WHIRLPOOL_SUPER_TUNING.swirlScale, v => WHIRLPOOL_SUPER_TUNING.swirlScale = v, 0.05, 1, 2, 2),
+            control('whirlpool.superOuterBoostScale', '超级顺流倍率', '超级漩涡外圈顺流路线的额外收益倍率。', () => WHIRLPOOL_SUPER_TUNING.outerBoostScale, v => WHIRLPOOL_SUPER_TUNING.outerBoostScale = v, 0.05, 1, 2.5, 2),
+            control('whirlpool.superCounterflowScale', '超级逆流倍率', '超级漩涡外圈逆流路线的额外阻力倍率。', () => WHIRLPOOL_SUPER_TUNING.outerCounterflowScale, v => WHIRLPOOL_SUPER_TUNING.outerCounterflowScale = v, 0.05, 1, 2.5, 2),
+            control('whirlpool.superBackwardScale', '超级回卷倍率', '超级漩涡核心反向回卷的倍率。', () => WHIRLPOOL_SUPER_TUNING.coreBackwardScale, v => WHIRLPOOL_SUPER_TUNING.coreBackwardScale = v, 0.05, 1, 2.5, 2),
         ],
     },
     {

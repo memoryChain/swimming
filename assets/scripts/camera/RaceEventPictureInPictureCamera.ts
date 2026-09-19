@@ -55,6 +55,7 @@ export class RaceEventPictureInPictureCamera {
     private cannonSourceZ = 0;
     private whirlpoolX = 0;
     private whirlpoolZ = 0;
+    private whirlpoolSuper = false;
     private readonly cameraPosition = new Vec3();
     private readonly focus = new Vec3();
     private readonly subjectPosition = new Vec3();
@@ -166,12 +167,19 @@ export class RaceEventPictureInPictureCamera {
         this.finishRender();
     }
 
-    showWhirlpoolPreview(distance: number, lateral: number, spin: -1 | 1): void {
+    showWhirlpoolPreview(distance: number, lateral: number, spin: -1 | 1, superVariant = false): void {
+        // 漩涡是路线教学镜头，不能抢占鲨鱼咬击或炮火落点等即时危险镜头。
+        if (this.mode === 'shark' || this.mode === 'cannon') return;
         this.mode = 'whirlpool';
         this.whirlpoolX = this.options.course.distanceToWorldX(distance);
         this.whirlpoolZ = lateral;
+        this.whirlpoolSuper = superVariant;
         this.holdSeconds = WHIRLPOOL_PREVIEW_SECONDS;
-        this.setCopy('漩涡俯视', spin > 0 ? '顺时针水流 · 贴外圈借力' : '逆时针水流 · 贴外圈借力', INFO_COLOR);
+        this.setCopy(
+            superVariant ? '超级漩涡俯视' : '漩涡俯视',
+            spin > 0 ? '顺时针水流 · 贴外圈借力' : '逆时针水流 · 贴外圈借力',
+            INFO_COLOR,
+        );
         this.setVisible(true);
     }
 
@@ -191,10 +199,10 @@ export class RaceEventPictureInPictureCamera {
         this.focus.set(this.whirlpoolX, this.options.course.waterY, this.whirlpoolZ);
         this.cameraPosition.set(
             this.whirlpoolX - this.options.course.direction * 1.1,
-            this.options.course.waterY + 13.5,
+            this.options.course.waterY + (this.whirlpoolSuper ? 18.5 : 13.5),
             this.whirlpoolZ + 0.8,
         );
-        this.applyCameraPose(42);
+        this.applyCameraPose(this.whirlpoolSuper ? 45 : 42);
         this.finishRender();
     }
 

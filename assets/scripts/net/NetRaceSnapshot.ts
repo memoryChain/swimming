@@ -139,6 +139,7 @@ export type NetEntertainmentDirectorState = {
     packedEvents: number;
     activatedMask: number;
     residentMask: number;
+    specialMask: number;
     anchorDistance: number;
     eventAnchorDistances: readonly number[];
 };
@@ -220,10 +221,11 @@ export function encodeRaceSnapshot(
     const directorEventAnchors = entertainmentDirector?.eventAnchorDistances
         .map(distance => Math.max(0, Math.round(distance * 100)))
         .join('.') ?? '';
+    const directorSpecialMask = Math.max(0, Math.floor(entertainmentDirector?.specialMask ?? 0)).toString(16);
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldReserved},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldReserved},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -274,6 +276,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const directorAnchorCm = header.length > 35 ? parseInt(header[35], 10) : 0;
     const directorEventAnchors = header.length > 36 ? decodeCentimeterList(header[36]) : [0, 0, 0, 0, 0, 0];
     const directorEventCount = header.length > 37 ? parseInt(header[37], 10) : 0;
+    const directorSpecialMask = header.length > 38 ? parseInt(header[38], 16) : 0;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -385,6 +388,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             packedEvents: safeNonNegativeInteger(directorPackedEvents),
             activatedMask: safeNonNegativeInteger(directorActivatedMask),
             residentMask: safeNonNegativeInteger(directorResidentMask),
+            specialMask: safeNonNegativeInteger(directorSpecialMask),
             anchorDistance: Number.isSafeInteger(directorAnchorCm) && directorAnchorCm >= 0 ? directorAnchorCm / 100 : 0,
             eventAnchorDistances: directorEventAnchors.length === 6 ? directorEventAnchors : [0, 0, 0, 0, 0, 0],
         },

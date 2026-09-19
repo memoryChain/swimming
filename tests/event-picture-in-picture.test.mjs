@@ -24,8 +24,10 @@ test('炮火、首个漩涡和鲨鱼使用事件镜头，炸弹与水雷不接�
     assert.match(gameManager, /showCannonLaunch\(launch\)/);
     assert.match(gameManager, /showCannonImpact\(impact\)/);
     assert.doesNotMatch(gameManager, /showMineFloating\(|showMineCarrier\(|showMineExplosion\(|updateMine\(/);
-    assert.match(gameManager, /if \(index === 0\)/);
+    assert.match(gameManager, /featuredIndex >= 0 \? featuredIndex : 0/);
     assert.match(gameManager, /showWhirlpoolPreview\(/);
+    assert.match(camera, /this\.whirlpoolSuper \? 18\.5 : 13\.5/);
+    assert.match(camera, /this\.mode === 'shark' \|\| this\.mode === 'cannon'/);
     assert.doesNotMatch(camera, /Stimulant|心跳苏打/);
 });
 

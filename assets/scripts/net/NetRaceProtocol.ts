@@ -56,7 +56,9 @@
 // 版本68：扩大炮火与水雷外围冲击范围，并大幅扩大定时炸弹爆炸范围。
 // 版本69：娱乐模式支持 400 米长局，房间同步赛程距离，导演快照扩展为六个事件锚点。
 // 版本70：水雷触爆后本局永久失活，快照只保留漂移时钟和存活掩码。
-export const NET_RACE_PROTOCOL_VERSION = 70;
+// 版本71：统一娱乐模式击倒增加可靠全局恢复事件，周期快照只作为丢包兜底。
+// 版本72：导演快照追加特殊事件掩码，超级漩涡的规格与水流强度跨端一致。
+export const NET_RACE_PROTOCOL_VERSION = 72;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

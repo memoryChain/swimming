@@ -30,6 +30,13 @@ export type MinefieldSnapshotState = {
     activeMask: number;
 };
 
+export type MinefieldExclusionZone = {
+    courseX: number;
+    lateral: number;
+    alongRadius: number;
+    lateralRadius: number;
+};
+
 export const MINEFIELD_TUNING = {
     mineCount: 7,
     contactAlongRadius: 1.35,
@@ -65,15 +72,28 @@ export class MinefieldBrawlController {
         private readonly racerForLane: (lane: number) => MinefieldRacerState | null,
         private readonly onImpact: (impact: MinefieldImpact) => void,
         mineCount: number = MINEFIELD_TUNING.mineCount,
+        exclusionZone: MinefieldExclusionZone | null = null,
     ) {
         const random = new SeededRandom((seed ^ 0x6d696e65) >>> 0);
         const halfWidth = Math.max(1, poolWidth * 0.5 - 0.8);
         const xOrder = random.shuffle([...ANCHOR_X]);
         const zOrder = random.shuffle([...ANCHOR_Z_RATIOS]);
         const count = Math.max(1, Math.min(ANCHOR_X.length, Math.floor(mineCount)));
+        let candidates = xOrder.map((anchorX, index) => ({
+            anchorX,
+            anchorZ: zOrder[index % zOrder.length] * halfWidth,
+        }));
+        if (exclusionZone) {
+            const safe = candidates.filter(candidate => !isMineAnchorExcluded(
+                candidate.anchorX, candidate.anchorZ, exclusionZone,
+            ));
+            const reserved = candidates.filter(candidate => isMineAnchorExcluded(
+                candidate.anchorX, candidate.anchorZ, exclusionZone,
+            ));
+            candidates = safe.concat(reserved);
+        }
         for (let id = 0; id < count; id++) {
-            const anchorX = xOrder[id % xOrder.length];
-            const anchorZ = zOrder[id % zOrder.length] * halfWidth;
+            const { anchorX, anchorZ } = candidates[id];
             this.anchorCourseX.push(anchorX);
             this.anchorLateral.push(anchorZ);
             this.mineStates.push({
@@ -229,6 +249,15 @@ export class MinefieldBrawlController {
             );
         }
     }
+}
+
+function isMineAnchorExcluded(
+    courseX: number,
+    lateral: number,
+    zone: MinefieldExclusionZone,
+): boolean {
+    return Math.abs(courseX - zone.courseX) < Math.max(0, zone.alongRadius)
+        && Math.abs(lateral - zone.lateral) < Math.max(0, zone.lateralRadius);
 }
 
 function ellipseContains(x: number, z: number, centerX: number, centerZ: number): boolean {

@@ -1,4 +1,5 @@
 import { SeededRandom } from './SharedRNG';
+import { WHIRLPOOL_SUPER_CHANCE } from './WhirlpoolBrawlRules';
 
 export const enum EntertainmentEventId {
     STIMULANT = 0,
@@ -26,6 +27,7 @@ export type EntertainmentDirectorState = {
     packedEvents: number;
     activatedMask: number;
     residentMask: number;
+    specialMask: number;
     anchorDistance: number;
     eventAnchorDistances: readonly number[];
 };
@@ -49,6 +51,7 @@ const LONG_RACE_LAST_ACTIVATION_DISTANCE = 385;
 const FOUR_EVENT_DURATION_SCALE = 0.75;
 const LONG_RACE_DURATION_SCALE = 1.4;
 const MAX_EVENT_COUNT = 6;
+const ENTERTAINMENT_SPECIAL_RANDOM_SALT = 0x53504543;
 const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.STIMULANT]: 10,
     [EntertainmentEventId.TIMED_BOMB]: 10,
@@ -91,22 +94,26 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
     }
 }
 
-export function entertainmentPreviewCopy(event: EntertainmentEventId): string {
+export function entertainmentPreviewCopy(event: EntertainmentEventId, special = false): string {
     switch (event) {
         case EntertainmentEventId.STIMULANT: return '泳池广播：饮料车已翻！心跳苏打即将漂入赛道';
         case EntertainmentEventId.TIMED_BOMB: return '泳池广播：有位选手马上要收到会滴滴响的特别礼物';
-        case EntertainmentEventId.WHIRLPOOL: return '泳池广播：排水系统情绪不稳，前方水流即将拧巴';
+        case EntertainmentEventId.WHIRLPOOL: return special
+            ? '泳池广播：主排水口全开！泳池中心即将出现超级漩涡'
+            : '泳池广播：排水系统情绪不稳，前方水流即将拧巴';
         case EntertainmentEventId.MINEFIELD: return '泳池广播：清洁队请假了，几颗水雷正在自由活动';
         case EntertainmentEventId.SHARK: return '泳池广播：请勿投喂——它已经自己来找饭了';
         case EntertainmentEventId.CANNON: return '泳池广播：看台礼炮瞄反了，建议各位先游快一点';
     }
 }
 
-export function entertainmentActionCopy(event: EntertainmentEventId): string {
+export function entertainmentActionCopy(event: EntertainmentEventId, special = false): string {
     switch (event) {
         case EntertainmentEventId.STIMULANT: return '心跳苏打争夺开始 · 靠近瓶子抢先喝下';
         case EntertainmentEventId.TIMED_BOMB: return '定时炸弹已发放 · 贴近对手传出';
-        case EntertainmentEventId.WHIRLPOOL: return '漩涡冲浪开始 · 贴外圈顺流借力';
+        case EntertainmentEventId.WHIRLPOOL: return special
+            ? '超级漩涡出现 · 远离核心或贴外圈冲浪'
+            : '漩涡冲浪开始 · 贴外圈顺流借力';
         case EntertainmentEventId.MINEFIELD: return '漂流水雷入场 · 注意横向避让';
         case EntertainmentEventId.SHARK: return '鲨鱼巡场开始 · 观察锁定及时变向';
         case EntertainmentEventId.CANNON: return '炮火点名开始 · 注意落点并横移';
@@ -124,6 +131,7 @@ export class EntertainmentModeDirector {
     private remainingSeconds = OPENING_SECONDS;
     private activatedMask = 0;
     private residentMask = 0;
+    private specialMask = 0;
     private anchorDistance = 0;
     private readonly eventAnchorDistances = [0, 0, 0, 0, 0, 0];
     private readonly events: EntertainmentEventId[];
@@ -135,6 +143,7 @@ export class EntertainmentModeDirector {
 
     constructor(seed: number, raceDistance = 200) {
         this.events = [...buildEntertainmentEventOrder(seed, raceDistance)];
+        this.specialMask = buildEntertainmentSpecialMask(seed, this.events);
         this.publishRuntimeState();
     }
 
@@ -157,6 +166,10 @@ export class EntertainmentModeDirector {
     }
 
     selectedEvents(): readonly EntertainmentEventId[] { return this.events; }
+
+    isSpecialEvent(event: EntertainmentEventId): boolean {
+        return (this.specialMask & eventBit(event)) !== 0;
+    }
 
     previewDurationSeconds(): number { return this.previewSeconds(); }
 
@@ -239,6 +252,7 @@ export class EntertainmentModeDirector {
             packedEvents: packEntertainmentEvents(this.events),
             activatedMask: this.activatedMask >>> 0,
             residentMask: this.residentMask >>> 0,
+            specialMask: this.specialMask >>> 0,
             anchorDistance: this.anchorDistance,
             eventAnchorDistances: [...this.eventAnchorDistances],
         };
@@ -251,6 +265,7 @@ export class EntertainmentModeDirector {
             state?.eventCount ?? 0,
         );
         if (!validDirectorState(state) || !validEventOrder(authoritativeEvents)
+            || (state.specialMask !== 0 && authoritativeEvents.indexOf(EntertainmentEventId.WHIRLPOOL) < 0)
             || state.revision < this.revision) return transition;
         const previousPhase = this.phase;
         const previousIndex = this.eventIndex;
@@ -265,6 +280,7 @@ export class EntertainmentModeDirector {
         this.remainingSeconds = state.remainingSeconds;
         this.activatedMask = state.activatedMask;
         this.residentMask = state.residentMask;
+        this.specialMask = state.specialMask;
         this.anchorDistance = state.anchorDistance;
         for (let index = 0; index < this.eventAnchorDistances.length; index++) {
             this.eventAnchorDistances[index] = state.eventAnchorDistances[index];
@@ -362,6 +378,17 @@ export function buildEntertainmentEventOrder(seed: number, raceDistance = 200): 
     return events;
 }
 
+export function buildEntertainmentSpecialMask(
+    seed: number,
+    events: readonly EntertainmentEventId[],
+): number {
+    if (events.indexOf(EntertainmentEventId.WHIRLPOOL) < 0) return 0;
+    const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ ENTERTAINMENT_SPECIAL_RANDOM_SALT) >>> 0);
+    return random.next() < WHIRLPOOL_SUPER_CHANCE
+        ? eventBit(EntertainmentEventId.WHIRLPOOL)
+        : 0;
+}
+
 export function packEntertainmentEvents(events: readonly EntertainmentEventId[]): number {
     let packed = 0;
     for (let index = 0; index < Math.min(MAX_EVENT_COUNT, events.length); index++) {
@@ -391,6 +418,8 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
         && Number.isSafeInteger(state.packedEvents) && state.packedEvents >= 0
         && Number.isSafeInteger(state.activatedMask) && state.activatedMask >= 0
         && Number.isSafeInteger(state.residentMask) && state.residentMask >= 0
+        && Number.isSafeInteger(state.specialMask) && state.specialMask >= 0
+        && (state.specialMask & ~eventBit(EntertainmentEventId.WHIRLPOOL)) === 0
         && Number.isFinite(state.anchorDistance) && state.anchorDistance >= 0
         && Array.isArray(state.eventAnchorDistances) && state.eventAnchorDistances.length === MAX_EVENT_COUNT
         && state.eventAnchorDistances.every(distance => Number.isFinite(distance) && distance >= 0);

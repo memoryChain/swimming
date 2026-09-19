@@ -160,10 +160,50 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
 
     makeLabel('Subtitle', modeContent, '选择一个单项娱乐模式，使用固定阵容和种子开始测试', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
     const modeViews = new Map<RaceModeId, { selected: Node; label: Label | null }>();
+    const whirlpoolSelectionViews = new Map<typeof setup.whirlpoolSelection, Node>();
+    const whirlpoolOptions = makeUiNode('WhirlpoolOptions', modeContent);
+    const whirlpoolTitle = makeLabel('WhirlpoolTitle', whirlpoolOptions, '漩涡规格', 17, uiColor(190, 210, 220));
+    whirlpoolTitle.getComponent(UITransform).setContentSize(110, 40);
+    whirlpoolTitle.setPosition(-350, -50, 0);
+    const whirlpoolSelections = [
+        { id: 'random', label: '纯随机' },
+        { id: 'normal', label: '小漩涡' },
+        { id: 'super', label: '大漩涡' },
+    ] as const;
+    const updateWhirlpoolSelection = (
+        previous: typeof setup.whirlpoolSelection | null,
+        current: typeof setup.whirlpoolSelection,
+    ) => {
+        if (previous === current) return;
+        if (previous) setActive(whirlpoolSelectionViews.get(previous), false);
+        setActive(whirlpoolSelectionViews.get(current), true);
+    };
+    whirlpoolSelections.forEach((option, index) => {
+        const choice = button(
+            whirlpoolOptions,
+            `WhirlpoolSelection${index}`,
+            option.label,
+            -160 + index * 200,
+            -50,
+            170,
+            () => {
+                const previous = setup.whirlpoolSelection;
+                setup.whirlpoolSelection = option.id;
+                updateWhirlpoolSelection(previous, setup.whirlpoolSelection);
+            },
+            40,
+        );
+        const selected = makeRect('Selected', choice.node, 154, 4, uiColor(66, 222, 255, 255));
+        selected.setPosition(0, -18, 0);
+        setActive(selected, option.id === setup.whirlpoolSelection);
+        whirlpoolSelectionViews.set(option.id, selected);
+    });
+    setActive(whirlpoolOptions, modeTestMode === 'whirlpool-brawl');
     const updateModeSelection = (previous: RaceModeId | null, current: RaceModeId) => {
         if (previous === current) return;
         if (previous) setActive(modeViews.get(previous)?.selected ?? null, false);
         setActive(modeViews.get(current)?.selected ?? null, true);
+        setActive(whirlpoolOptions, current === 'whirlpool-brawl');
         write(modeStart.label, `开始测试：${getRaceModeTitle(current)}`);
     };
     for (let index = 0; index < MODE_TEST_MODES.length; index++) {
@@ -180,9 +220,9 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         setActive(selected, testMode === modeTestMode);
         modeViews.set(testMode, { selected, label: card.label });
     }
-    modeSeed = button(modeContent, 'ModeSeed', seedText(), 0, -82, 340, cycleSeed);
-    makeLabel('Hint', modeContent, '固定为玩家 + 7 个高手 AI · 混合角色 · 等级沿用角色页设置', 18, uiColor(190, 210, 220)).setPosition(0, -132, 0);
-    const modeStart = button(modeContent, 'ModeStart', `开始测试：${getRaceModeTitle(modeTestMode)}`, 0, -190, 420, () => {
+    modeSeed = button(modeContent, 'ModeSeed', seedText(), 0, -108, 340, cycleSeed);
+    makeLabel('Hint', modeContent, '固定为玩家 + 7 个高手 AI · 混合角色 · 等级沿用角色页设置', 18, uiColor(190, 210, 220)).setPosition(0, -152, 0);
+    const modeStart = button(modeContent, 'ModeStart', `开始测试：${getRaceModeTitle(modeTestMode)}`, 0, -202, 420, () => {
         launch(modeTestMode, MODE_TEST_DIFFICULTY, true);
     });
 

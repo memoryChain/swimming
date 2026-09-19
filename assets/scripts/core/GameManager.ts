@@ -100,8 +100,21 @@ import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
-import { WhirlpoolBrawlController } from './WhirlpoolBrawlController';
-import { entertainmentWhirlpoolSpawn, setRuntimeWhirlpoolSpawns, whirlpoolCenterZ } from './WhirlpoolBrawlRules';
+import {
+    createWhirlpoolVisualResources,
+    disposeWhirlpoolVisualResources,
+    WhirlpoolBrawlController,
+    type WhirlpoolVisualResources,
+} from './WhirlpoolBrawlController';
+import {
+    entertainmentWhirlpoolSpawn,
+    isSuperWhirlpool,
+    setRuntimeWhirlpoolSpawns,
+    whirlpoolCenterZ,
+    whirlpoolSpawnsForSeed,
+    WHIRLPOOL_BRAWL_TUNING,
+    WHIRLPOOL_SUPER_TUNING,
+} from './WhirlpoolBrawlRules';
 import { CannonBrawlController, CannonImpact, CannonLaunch, CannonRacerState } from './CannonBrawlController';
 import { CannonBrawlPresentation } from './CannonBrawlPresentation';
 import {
@@ -276,6 +289,7 @@ export class GameManager extends Component {
     private _stimulantBrawl: StimulantBrawlController | null = null;
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
+    private _whirlpoolVisualResources: WhirlpoolVisualResources | null = null;
     private _cannonBrawl: CannonBrawlController | null = null;
     private _cannonBrawlPresentation: CannonBrawlPresentation | null = null;
     private _cannonBrawlHud: CannonBrawlHud | null = null;
@@ -501,6 +515,8 @@ export class GameManager extends Component {
         setRuntimeWhirlpoolSpawns(null);
         this._whirlpoolBrawl?.dispose();
         this._whirlpoolBrawl = null;
+        disposeWhirlpoolVisualResources(this._whirlpoolVisualResources);
+        this._whirlpoolVisualResources = null;
         this._cannonBrawl = null;
         this._cannonBrawlPresentation?.dispose();
         this._cannonBrawlPresentation = null;
@@ -1377,6 +1393,12 @@ export class GameManager extends Component {
         this._entertainmentDirector = isEntertainmentBrawlMode()
             ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance())
             : null;
+        disposeWhirlpoolVisualResources(this._whirlpoolVisualResources);
+        this._whirlpoolVisualResources = null;
+        if (isWhirlpoolBrawlMode()
+            || (this._entertainmentDirector?.selectedEvents().indexOf(EntertainmentEventId.WHIRLPOOL) ?? -1) >= 0) {
+            this._whirlpoolVisualResources = createWhirlpoolVisualResources();
+        }
         this._netRaceController?.setEntertainmentDirectorStateListener(state => {
             const director = this._entertainmentDirector;
             if (!director) return;
@@ -1418,15 +1440,26 @@ export class GameManager extends Component {
         if (transition.previewEvent !== null) {
             const previewDurationMs = (this._entertainmentDirector?.previewDurationSeconds() ?? 6) * 1000;
             this._entertainmentEventBanner.showEvent(
-                entertainmentPreviewCopy(transition.previewEvent),
+                entertainmentPreviewCopy(
+                    transition.previewEvent,
+                    this._entertainmentDirector?.isSpecialEvent(transition.previewEvent) ?? false,
+                ),
                 'warning',
                 previewDurationMs,
             );
         }
         if (transition.activatedEvent !== null) {
             this.activateEntertainmentEvent(transition.activatedEvent);
+            const special = transition.activatedEvent === EntertainmentEventId.WHIRLPOOL
+                ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
+                    this.entertainmentAnchorDistance(transition.activatedEvent),
+                )[0])
+                : (this._entertainmentDirector?.isSpecialEvent(transition.activatedEvent) ?? false);
             this._entertainmentEventBanner.showEvent(
-                entertainmentActionCopy(transition.activatedEvent),
+                entertainmentActionCopy(
+                    transition.activatedEvent,
+                    special,
+                ),
                 'danger',
                 3000,
             );
@@ -1448,7 +1481,7 @@ export class GameManager extends Component {
                 this.setupMineRelayBrawl();
                 break;
             case EntertainmentEventId.WHIRLPOOL:
-                setRuntimeWhirlpoolSpawns(entertainmentWhirlpoolSpawn(getSharedRandomSeed(), anchorDistance));
+                setRuntimeWhirlpoolSpawns(this.entertainmentWhirlpoolSpawns(anchorDistance));
                 break;
             case EntertainmentEventId.MINEFIELD:
                 this.setupMinefieldBrawl();
@@ -1476,7 +1509,10 @@ export class GameManager extends Component {
                 case EntertainmentEventId.WHIRLPOOL:
                     if (!this._whirlpoolBrawl) {
                         setRuntimeWhirlpoolSpawns(entertainmentWhirlpoolSpawn(
-                            getSharedRandomSeed(), this.entertainmentAnchorDistance(event),
+                            getSharedRandomSeed(),
+                            this.entertainmentAnchorDistance(event),
+                            getRaceDistance(),
+                            director.isSpecialEvent(event),
                         ));
                     }
                     break;
@@ -1495,6 +1531,15 @@ export class GameManager extends Component {
 
     private entertainmentAnchorDistance(event: EntertainmentEventId): number {
         return this._entertainmentDirector?.anchorDistanceForEvent(event) ?? 0;
+    }
+
+    private entertainmentWhirlpoolSpawns(anchorDistance: number) {
+        return entertainmentWhirlpoolSpawn(
+            getSharedRandomSeed(),
+            anchorDistance,
+            getRaceDistance(),
+            this._entertainmentDirector?.isSpecialEvent(EntertainmentEventId.WHIRLPOOL) ?? false,
+        );
     }
 
     private entertainmentLeaderDistance(): number {
@@ -1608,6 +1653,17 @@ export class GameManager extends Component {
             return;
         }
         if (!this._whirlpoolBrawl && this._worldRoot?.isValid) {
+            const spawns = isEntertainmentBrawlMode()
+                ? this.entertainmentWhirlpoolSpawns(
+                    this.entertainmentAnchorDistance(EntertainmentEventId.WHIRLPOOL),
+                )
+                : whirlpoolSpawnsForSeed(
+                    getSharedRandomSeed(),
+                    this._aiDebugMode && !this._netSession
+                        ? getAiDebugSetup().whirlpoolSelection
+                        : 'random',
+                );
+            const featuredIndex = spawns.findIndex(isSuperWhirlpool);
             this._whirlpoolBrawl = new WhirlpoolBrawlController(
                 this._worldRoot,
                 COURSE_LAYOUT,
@@ -1615,24 +1671,23 @@ export class GameManager extends Component {
                 (spawn, index, worldSpin) => {
                     if (this._state !== GameState.RACING) return;
                     this._entertainmentEventBanner.showEvent(
-                        '前方漩涡 · 贴外圈借力',
+                        isSuperWhirlpool(spawn)
+                            ? '超级漩涡逼近泳池中心 · 远离核心或顺流冲浪'
+                            : '前方漩涡 · 贴外圈借力',
                         'warning',
                         1500,
                     );
-                    if (index === 0) {
+                    if (index === (featuredIndex >= 0 ? featuredIndex : 0)) {
                         this._eventPictureInPicture?.showWhirlpoolPreview(
                             spawn.distance,
                             whirlpoolCenterZ(spawn, COURSE_LAYOUT.poolWidth),
                             worldSpin,
+                            isSuperWhirlpool(spawn),
                         );
                     }
                 },
-                isEntertainmentBrawlMode()
-                    ? entertainmentWhirlpoolSpawn(
-                        getSharedRandomSeed(),
-                        this.entertainmentAnchorDistance(EntertainmentEventId.WHIRLPOOL),
-                    )
-                    : undefined,
+                spawns,
+                this._whirlpoolVisualResources ?? undefined,
             );
         }
         for (let i = 0; i < this._aiControllers.length; i++) {
@@ -2180,6 +2235,17 @@ export class GameManager extends Component {
             },
             impact => this.handleMinefieldImpact(impact, true),
             isEntertainmentBrawlMode() ? 5 : MINEFIELD_TUNING.mineCount,
+            isEntertainmentBrawlMode()
+                && this._entertainmentDirector?.isSpecialEvent(EntertainmentEventId.WHIRLPOOL)
+                ? {
+                    courseX: 25,
+                    lateral: 0,
+                    alongRadius: WHIRLPOOL_BRAWL_TUNING.alongRadius
+                        * WHIRLPOOL_SUPER_TUNING.alongRadiusScale + 1,
+                    lateralRadius: WHIRLPOOL_BRAWL_TUNING.lateralRadius
+                        * WHIRLPOOL_SUPER_TUNING.lateralRadiusScale + 1.6,
+                }
+                : null,
         );
         if (this._worldRoot?.isValid) {
             this._minefieldPresentation = new MinefieldBrawlPresentation(

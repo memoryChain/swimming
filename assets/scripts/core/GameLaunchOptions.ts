@@ -1,5 +1,6 @@
 import type { PlayerCharacterId } from '../app/PlayerCharacterConfig';
 import type { RaceModeId } from './GameBalance';
+import type { WhirlpoolSpawnSelection } from './WhirlpoolBrawlRules';
 
 export type MainGameLaunchMode = 'race' | 'model-debug' | 'ai-debug' | 'underwater-debug';
 
@@ -10,9 +11,10 @@ export interface AiDebugSetup {
     seed: number;
     opponentCount: 1 | 7;
     mixedCharacters: boolean;
+    whirlpoolSelection: WhirlpoolSpawnSelection;
 }
 const pendingAiDebugSetup: AiDebugSetup = { characterId: 'cartonSwimmer6', level: 1, mode: 'beginner', seed: 20260913,
-    opponentCount: 7, mixedCharacters: true };
+    opponentCount: 7, mixedCharacters: true, whirlpoolSelection: 'random' };
 export function getAiDebugSetup(): Readonly<AiDebugSetup> { return pendingAiDebugSetup; }
 export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.characterId = setup.characterId;
@@ -21,6 +23,9 @@ export function setAiDebugSetup(setup: AiDebugSetup) {
     pendingAiDebugSetup.seed = setup.seed >>> 0;
     pendingAiDebugSetup.opponentCount = setup.opponentCount === 7 ? 7 : 1;
     pendingAiDebugSetup.mixedCharacters = setup.mixedCharacters === true;
+    pendingAiDebugSetup.whirlpoolSelection = setup.whirlpoolSelection === 'normal' || setup.whirlpoolSelection === 'super'
+        ? setup.whirlpoolSelection
+        : 'random';
 }
 
 /** 只在本地 AI 测试赛使用；所有对手共用所选等级和智力，多角色沿用赛事随机阵容。 */

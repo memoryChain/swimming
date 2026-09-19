@@ -129,6 +129,16 @@ test('水雷模式的出生布局和漂移由共享种子稳定生成', () => {
     assert.ok(a.controller.mines().every(mine => mine.active));
 });
 
+test('六合一为超级漩涡预留中心区域且保持五枚水雷', () => {
+    const racers = Array.from({ length: 2 }, () => ({ active: true, finished: false, distance: 0, lateral: 0 }));
+    const controller = new MinefieldBrawlController(
+        racers.length, 123, 20, lane => racers[lane], () => {}, 5,
+        { courseX: 25, lateral: 0, alongRadius: 8.02, lateralRadius: 7.9 },
+    );
+    assert.equal(controller.mines().length, 5);
+    assert.ok(controller.mines().every(mine => Math.abs(mine.courseX - 25) >= 7.2));
+});
+
 test('水雷碰到立即爆炸，本局永久消失并只在重开时恢复', () => {
     const fixture = minefieldFixture();
     const mine = fixture.controller.mines()[0];

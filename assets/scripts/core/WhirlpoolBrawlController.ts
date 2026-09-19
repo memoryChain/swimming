@@ -2,6 +2,7 @@ import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import {
     WHIRLPOOL_BRAWL_TUNING,
+    WHIRLPOOL_SUPER_TUNING,
     type WhirlpoolSpawn,
     whirlpoolCenterZ,
     whirlpoolSpawnsForSeed,
@@ -22,6 +23,22 @@ type Visual = {
     phase: number;
     flowRotationDegrees: number;
     coreRotationDegrees: number;
+    superVariant: boolean;
+};
+
+type WhirlpoolVisualResourceSet = {
+    flowMesh: Mesh;
+    coreMesh: Mesh;
+    afterglowMesh: Mesh;
+    flowMaterial: Material;
+    coreMaterial: Material;
+    afterglowBaseMaterial: Material;
+};
+
+export type WhirlpoolVisualResources = {
+    normal: WhirlpoolVisualResourceSet;
+    super: WhirlpoolVisualResourceSet;
+    disposed: boolean;
 };
 
 type GeometryBuffers = {
@@ -36,22 +53,25 @@ const FULL_AHEAD_DISTANCE = 10;
 const FADE_BEHIND_START_DISTANCE = 5.5;
 const FADE_BEHIND_END_DISTANCE = 14;
 const ANNOUNCEMENT_DISTANCE = 16;
+const SUPER_ANNOUNCEMENT_DISTANCE = 30;
 const MIN_ROTATION_DEGREES_PER_SECOND = 8;
 const MAX_ROTATION_DEGREES_PER_SECOND = 52;
 const MIN_VISIBLE_SCALE = 0.08;
 const AFTERGLOW_MAX_ALPHA = 138;
 const AFTERGLOW_COLOR = new Color(156, 235, 255, 0);
+const SUPER_AFTERGLOW_COLOR = new Color(145, 196, 255, 0);
 
 /** 漩涡玩法的低开销表现与 AI 路线提示；物理作用由泳者模拟步中的纯规则计算。 */
 export class WhirlpoolBrawlController {
     private readonly visuals: Visual[] = [];
-    private readonly meshes: Mesh[] = [];
     private readonly materials: Material[] = [];
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private announcedMask = 0;
     private disposed = false;
     private readonly spawns: readonly WhirlpoolSpawn[];
+    private readonly resources: WhirlpoolVisualResources;
+    private readonly ownsResources: boolean;
 
     constructor(
         private readonly parent: Node,
@@ -59,8 +79,11 @@ export class WhirlpoolBrawlController {
         seed: number,
         private readonly onApproach: (spawn: WhirlpoolSpawn, index: number, worldSpin: -1 | 1) => void,
         spawns?: readonly WhirlpoolSpawn[],
+        resources?: WhirlpoolVisualResources,
     ) {
         this.spawns = spawns ?? whirlpoolSpawnsForSeed(seed);
+        this.resources = resources ?? createWhirlpoolVisualResources();
+        this.ownsResources = !resources;
         this.buildVisuals();
     }
 
@@ -84,7 +107,10 @@ export class WhirlpoolBrawlController {
             for (let i = 0; i < this.spawns.length; i++) {
                 const ahead = this.spawns[i].distance - distance;
                 const bit = 1 << i;
-                if ((this.announcedMask & bit) === 0 && ahead <= ANNOUNCEMENT_DISTANCE && ahead >= -1) {
+                const announcementDistance = this.spawns[i].variant === 'super'
+                    ? SUPER_ANNOUNCEMENT_DISTANCE
+                    : ANNOUNCEMENT_DISTANCE;
+                if ((this.announcedMask & bit) === 0 && ahead <= announcementDistance && ahead >= -1) {
                     this.announcedMask |= bit;
                     this.onApproach(this.spawns[i], i, this.visuals[i].spin);
                 }
@@ -98,7 +124,7 @@ export class WhirlpoolBrawlController {
         this.clock += step;
         for (const visual of this.visuals) {
             const ahead = visual.distance - distance;
-            const strength = presentationStrength(ahead);
+            const strength = presentationStrength(ahead, visual.superVariant);
             const visible = strength > 0.001;
             if (visual.root.active !== visible) visual.root.active = visible;
             if (!visible) {
@@ -115,7 +141,8 @@ export class WhirlpoolBrawlController {
             const coreScale = (0.12 + 0.88 * coreStrength)
                 * (1 - pulse * 0.018 * strength);
             const rotationSpeed = MIN_ROTATION_DEGREES_PER_SECOND
-                + (MAX_ROTATION_DEGREES_PER_SECOND - MIN_ROTATION_DEGREES_PER_SECOND) * strength;
+                + (MAX_ROTATION_DEGREES_PER_SECOND - MIN_ROTATION_DEGREES_PER_SECOND) * strength
+                + (visual.superVariant ? 8 * strength : 0);
             // Cocos 的正 Y 欧拉角在 X/Z 平面上沿规则旋向的反方向转动，因此视觉角速度取反。
             visual.flowRotationDegrees = (visual.flowRotationDegrees
                 - visual.spin * rotationSpeed * step) % 360;
@@ -153,42 +180,33 @@ export class WhirlpoolBrawlController {
             if (visual.root?.isValid) visual.root.destroy();
         }
         this.visuals.length = 0;
-        for (const mesh of this.meshes) mesh.destroy();
         for (const material of this.materials) material.destroy();
-        this.meshes.length = 0;
         this.materials.length = 0;
+        if (this.ownsResources) disposeWhirlpoolVisualResources(this.resources);
     }
 
     private buildVisuals(): void {
         if (!this.parent?.isValid) return;
 
-        // 三层都由全部漩涡共享网格；只有余波需要逐漩涡透明度，因此为其复制四份轻量材质。
-        const flowMesh = utils.createMesh(buildWhirlpoolFlowGeometry());
-        const coreMesh = utils.createMesh(buildWhirlpoolCoreGeometry());
-        const afterglowMesh = utils.createMesh(buildWhirlpoolAfterglowGeometry());
-        const flowMaterial = createWhirlpoolMaterial('WhirlpoolFlowSharedMaterial');
-        const coreMaterial = createWhirlpoolMaterial('WhirlpoolCoreSharedMaterial');
-        const afterglowBaseMaterial = createWhirlpoolMaterial('WhirlpoolAfterglowBaseMaterial');
-        this.meshes.push(flowMesh, coreMesh, afterglowMesh);
-        this.materials.push(flowMaterial, coreMaterial, afterglowBaseMaterial);
-
         for (const spawn of this.spawns) {
+            const superVariant = spawn.variant === 'super';
+            const resources = superVariant ? this.resources.super : this.resources.normal;
             const worldSpin = whirlpoolWorldSpin(spawn, this.course.directionAtDistance(spawn.distance));
-            const root = new Node(`Whirlpool_${spawn.id}`);
+            const root = new Node(`${superVariant ? 'SuperWhirlpool' : 'Whirlpool'}_${spawn.id}`);
             root.setParent(this.parent);
             root.layer = this.parent.layer;
             const p = this.course.swimPosition(spawn.distance, whirlpoolCenterZ(spawn, this.course.poolWidth));
             root.setWorldPosition(p.x, this.course.waterY + 0.035, p.z);
 
-            const flow = createVisualLayer(root, 'DirectionalFlow', flowMesh, flowMaterial, 0);
-            const core = createVisualLayer(root, 'DangerCore', coreMesh, coreMaterial, 0.002);
+            const flow = createVisualLayer(root, 'DirectionalFlow', resources.flowMesh, resources.flowMaterial, 0);
+            const core = createVisualLayer(root, 'DangerCore', resources.coreMesh, resources.coreMaterial, 0.002);
             const afterglowMaterial = new Material();
-            afterglowMaterial.copy(afterglowBaseMaterial);
+            afterglowMaterial.copy(resources.afterglowBaseMaterial);
             afterglowMaterial.name = `WhirlpoolAfterglow_${spawn.id}`;
-            const afterglowColor = AFTERGLOW_COLOR.clone();
+            const afterglowColor = (superVariant ? SUPER_AFTERGLOW_COLOR : AFTERGLOW_COLOR).clone();
             afterglowMaterial.setProperty('mainColor', afterglowColor);
             this.materials.push(afterglowMaterial);
-            const afterglow = createVisualLayer(root, 'ExitAfterglow', afterglowMesh, afterglowMaterial, 0.004);
+            const afterglow = createVisualLayer(root, 'ExitAfterglow', resources.afterglowMesh, afterglowMaterial, 0.004);
             afterglow.active = false;
             root.active = false;
 
@@ -206,6 +224,7 @@ export class WhirlpoolBrawlController {
                 phase,
                 flowRotationDegrees: phase * 57.295779513,
                 coreRotationDegrees: -phase * 31.4,
+                superVariant,
             });
         }
     }
@@ -218,10 +237,11 @@ export class WhirlpoolBrawlController {
     }
 }
 
-function presentationStrength(ahead: number): number {
-    if (ahead >= EMERGE_AHEAD_DISTANCE || ahead <= -FADE_BEHIND_END_DISTANCE) return 0;
+function presentationStrength(ahead: number, superVariant: boolean): number {
+    const emergeDistance = superVariant ? EMERGE_AHEAD_DISTANCE + 12 : EMERGE_AHEAD_DISTANCE;
+    if (ahead >= emergeDistance || ahead <= -FADE_BEHIND_END_DISTANCE) return 0;
     if (ahead > FULL_AHEAD_DISTANCE) {
-        return smooth01((EMERGE_AHEAD_DISTANCE - ahead) / (EMERGE_AHEAD_DISTANCE - FULL_AHEAD_DISTANCE));
+        return smooth01((emergeDistance - ahead) / (emergeDistance - FULL_AHEAD_DISTANCE));
     }
     if (ahead >= -FADE_BEHIND_START_DISTANCE) return 1;
     return smooth01((ahead + FADE_BEHIND_END_DISTANCE)
@@ -259,6 +279,40 @@ function createWhirlpoolMaterial(name: string): Material {
     return material;
 }
 
+/** 赛前一次性创建普通／超级两套固定资源，激活事件时只挂轻量节点和材质实例。 */
+export function createWhirlpoolVisualResources(): WhirlpoolVisualResources {
+    return {
+        normal: createWhirlpoolVisualResourceSet(false),
+        super: createWhirlpoolVisualResourceSet(true),
+        disposed: false,
+    };
+}
+
+export function disposeWhirlpoolVisualResources(resources: WhirlpoolVisualResources | null): void {
+    if (!resources || resources.disposed) return;
+    resources.disposed = true;
+    for (const set of [resources.normal, resources.super]) {
+        set.flowMesh.destroy();
+        set.coreMesh.destroy();
+        set.afterglowMesh.destroy();
+        set.flowMaterial.destroy();
+        set.coreMaterial.destroy();
+        set.afterglowBaseMaterial.destroy();
+    }
+}
+
+function createWhirlpoolVisualResourceSet(superVariant: boolean): WhirlpoolVisualResourceSet {
+    const prefix = superVariant ? 'SuperWhirlpool' : 'Whirlpool';
+    return {
+        flowMesh: utils.createMesh(superVariant ? buildWhirlpoolFlowGeometry(true) : buildWhirlpoolFlowGeometry()),
+        coreMesh: utils.createMesh(superVariant ? buildWhirlpoolCoreGeometry(true) : buildWhirlpoolCoreGeometry()),
+        afterglowMesh: utils.createMesh(superVariant ? buildWhirlpoolAfterglowGeometry(true) : buildWhirlpoolAfterglowGeometry()),
+        flowMaterial: createWhirlpoolMaterial(`${prefix}FlowSharedMaterial`),
+        coreMaterial: createWhirlpoolMaterial(`${prefix}CoreSharedMaterial`),
+        afterglowBaseMaterial: createWhirlpoolMaterial(`${prefix}AfterglowBaseMaterial`),
+    };
+}
+
 function createVisualLayer(parent: Node, name: string, mesh: Mesh, material: Material, height: number): Node {
     const node = new Node(name);
     node.setParent(parent);
@@ -270,12 +324,15 @@ function createVisualLayer(parent: Node, name: string, mesh: Mesh, material: Mat
     return node;
 }
 
-function buildWhirlpoolFlowGeometry(): primitives.IGeometry {
+function buildWhirlpoolFlowGeometry(superVariant = false): primitives.IGeometry {
     const buffers: GeometryBuffers = { positions: [], colors: [], indices: [] };
-    const arms = 3;
+    const arms = superVariant ? 5 : 3;
     const segments = 16;
-    const maxRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius);
-    const coreRadius = maxRadius * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio;
+    const maxRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius
+        * (superVariant ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1));
+    const coreRadius = Math.max(0.2, WHIRLPOOL_BRAWL_TUNING.lateralRadius
+        * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio
+        * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreRadiusScale : 1));
 
     // 向内收束的细水带负责表达吸力；外端更亮，靠近核心时收窄并压暗。
     for (let arm = 0; arm < arms; arm++) {
@@ -295,8 +352,8 @@ function buildWhirlpoolFlowGeometry(): primitives.IGeometry {
                 centerX + tangentX * width, 0, centerZ + tangentZ * width,
             );
             const alpha = Math.sin(Math.PI * Math.min(1, t * 1.06)) * (0.48 + t * 0.28);
-            pushColor(buffers.colors, 0.16, 0.67, 0.86, alpha * 0.70);
-            pushColor(buffers.colors, 0.78, 0.98, 1, alpha);
+            pushColor(buffers.colors, superVariant ? 0.20 : 0.16, superVariant ? 0.42 : 0.67, superVariant ? 0.92 : 0.86, alpha * 0.70);
+            pushColor(buffers.colors, superVariant ? 0.70 : 0.78, superVariant ? 0.86 : 0.98, 1, alpha);
         }
         for (let segment = 0; segment < segments; segment++) {
             const lower = base + segment * 2;
@@ -306,43 +363,47 @@ function buildWhirlpoolFlowGeometry(): primitives.IGeometry {
 
     // 六枚断续箭头沿外圈顺时针排布；整体镜像后自然变为反向，直接提示顺流加速路线。
     const routeRadius = maxRadius * 0.76;
-    for (let marker = 0; marker < 6; marker++) {
-        const centerAngle = marker / 6 * Math.PI * 2;
+    const markerCount = superVariant ? 10 : 6;
+    for (let marker = 0; marker < markerCount; marker++) {
+        const centerAngle = marker / markerCount * Math.PI * 2;
         appendDirectionalMarker(buffers, routeRadius, centerAngle, 0.34, 0.15);
     }
 
     return finishGeometry(buffers, maxRadius * 1.02);
 }
 
-function buildWhirlpoolCoreGeometry(): primitives.IGeometry {
+function buildWhirlpoolCoreGeometry(superVariant = false): primitives.IGeometry {
     const buffers: GeometryBuffers = { positions: [], colors: [], indices: [] };
     const maxRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius);
-    const coreRadius = maxRadius * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio;
+    const coreRadius = maxRadius * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio
+        * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreRadiusScale : 1);
     const segments = 24;
     const center = buffers.positions.length / 3;
     buffers.positions.push(0, 0, 0);
-    pushColor(buffers.colors, 0.015, 0.12, 0.24, 0.88);
+    pushColor(buffers.colors, superVariant ? 0.045 : 0.015, superVariant ? 0.035 : 0.12, superVariant ? 0.24 : 0.24, superVariant ? 0.94 : 0.88);
     for (let segment = 0; segment <= segments; segment++) {
         const angle = segment / segments * Math.PI * 2;
         buffers.positions.push(Math.cos(angle) * coreRadius, 0, Math.sin(angle) * coreRadius);
-        pushColor(buffers.colors, 0.06, 0.38, 0.56, 0.18);
+        pushColor(buffers.colors, superVariant ? 0.20 : 0.06, superVariant ? 0.22 : 0.38, superVariant ? 0.66 : 0.56, superVariant ? 0.30 : 0.18);
     }
     for (let segment = 0; segment < segments; segment++) {
         buffers.indices.push(center, center + segment + 1, center + segment + 2);
     }
 
     // 破碎泡沫环让危险核心边界在比赛镜头下仍然可读，又避免一整圈白色贴纸感。
-    for (let dash = 0; dash < 10; dash++) {
-        const start = dash / 10 * Math.PI * 2;
-        appendArcRibbon(buffers, coreRadius * 1.12, 0.13, start, start + 0.34, 2,
-            0.72, 0.96, 1, 0.58);
+    const dashCount = superVariant ? 14 : 10;
+    for (let dash = 0; dash < dashCount; dash++) {
+        const start = dash / dashCount * Math.PI * 2;
+        appendArcRibbon(buffers, coreRadius * 1.12, superVariant ? 0.17 : 0.13, start, start + (superVariant ? 0.28 : 0.34), 2,
+            superVariant ? 0.82 : 0.72, superVariant ? 0.90 : 0.96, 1, superVariant ? 0.72 : 0.58);
     }
     return finishGeometry(buffers, coreRadius * 1.35);
 }
 
-function buildWhirlpoolAfterglowGeometry(): primitives.IGeometry {
+function buildWhirlpoolAfterglowGeometry(superVariant = false): primitives.IGeometry {
     const buffers: GeometryBuffers = { positions: [], colors: [], indices: [] };
-    const maxRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius);
+    const maxRadius = Math.max(1, WHIRLPOOL_BRAWL_TUNING.lateralRadius
+        * (superVariant ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1));
     appendArcRibbon(buffers, maxRadius * 0.77, 0.09, 0, Math.PI * 2, 36,
         0.52, 0.90, 1, 0.36);
     appendArcRibbon(buffers, maxRadius * 0.91, 0.055, 0.24, Math.PI * 2 - 0.32, 28,

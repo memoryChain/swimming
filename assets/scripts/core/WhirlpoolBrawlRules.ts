@@ -5,7 +5,11 @@ export type WhirlpoolSpawn = {
     distance: number;
     centerFraction: number;
     spin: -1 | 1;
+    variant: WhirlpoolVariant;
 };
+
+export type WhirlpoolVariant = 'normal' | 'super';
+export type WhirlpoolSpawnSelection = 'random' | WhirlpoolVariant;
 
 export type WhirlpoolInfluence = {
     forwardAcceleration: number;
@@ -15,6 +19,7 @@ export type WhirlpoolInfluence = {
     intensity: number;
     coreIntensity: number;
     whirlpoolId: number;
+    maxFlowSpeed: number;
 };
 
 export const WHIRLPOOL_SPAWN_BANDS = [
@@ -25,8 +30,13 @@ export const WHIRLPOOL_SPAWN_BANDS = [
 ] as const;
 
 const WHIRLPOOL_RANDOM_SALT = 0x77686972;
+const WHIRLPOOL_SUPER_RANDOM_SALT = 0x53555052;
+const ENTERTAINMENT_WHIRLPOOL_RANDOM_SALT = 0x454e5457;
 export const WHIRLPOOL_MAX_CENTER_FRACTION = 0.34;
+export const WHIRLPOOL_SUPER_MAX_CENTER_FRACTION = 0.08;
+export const WHIRLPOOL_SUPER_CHANCE = 0.25;
 let cachedSpawnSeed = -1;
+let cachedSpawnSelection: WhirlpoolSpawnSelection = 'random';
 let cachedSpawns: readonly WhirlpoolSpawn[] = [];
 let runtimeSpawns: readonly WhirlpoolSpawn[] | null = null;
 
@@ -34,9 +44,17 @@ let runtimeSpawns: readonly WhirlpoolSpawn[] | null = null;
  * 每个 50 米泳段生成一个漩涡。赛程距离避开出发端与折返墙，横向中心限制在
  * 泳池中部安全带内；独立随机流不会改变 AI、阵容或其他玩法的共享随机序列。
  */
-export function whirlpoolSpawnsForSeed(seed: number): readonly WhirlpoolSpawn[] {
+export function whirlpoolSpawnsForSeed(
+    seed: number,
+    selection: WhirlpoolSpawnSelection = 'random',
+): readonly WhirlpoolSpawn[] {
     const normalizedSeed = (Number.isFinite(seed) ? seed : 0) >>> 0;
-    if (normalizedSeed === cachedSpawnSeed && cachedSpawns.length === WHIRLPOOL_SPAWN_BANDS.length) {
+    const resolvedSelection: WhirlpoolSpawnSelection = selection === 'normal' || selection === 'super'
+        ? selection
+        : 'random';
+    if (normalizedSeed === cachedSpawnSeed
+        && resolvedSelection === cachedSpawnSelection
+        && cachedSpawns.length === WHIRLPOOL_SPAWN_BANDS.length) {
         return cachedSpawns;
     }
     const random = new SeededRandom((normalizedSeed ^ WHIRLPOOL_RANDOM_SALT) >>> 0);
@@ -52,9 +70,25 @@ export function whirlpoolSpawnsForSeed(seed: number): readonly WhirlpoolSpawn[] 
                 WHIRLPOOL_MAX_CENTER_FRACTION,
             ), 1000),
             spin: id % 2 === 0 ? firstSpin : firstSpin === 1 ? -1 : 1,
+            variant: 'normal',
         });
     }
+    const superRandom = new SeededRandom((normalizedSeed ^ WHIRLPOOL_SUPER_RANDOM_SALT) >>> 0);
+    const superRoll = superRandom.next();
+    if (resolvedSelection === 'super'
+        || (resolvedSelection === 'random' && superRoll < WHIRLPOOL_SUPER_CHANCE)) {
+        const superIndex = 1 + superRandom.int(2);
+        spawns[superIndex] = {
+            ...spawns[superIndex],
+            centerFraction: quantize(superRandom.range(
+                -WHIRLPOOL_SUPER_MAX_CENTER_FRACTION,
+                WHIRLPOOL_SUPER_MAX_CENTER_FRACTION,
+            ), 1000),
+            variant: 'super',
+        };
+    }
     cachedSpawnSeed = normalizedSeed;
+    cachedSpawnSelection = resolvedSelection;
     cachedSpawns = spawns;
     return cachedSpawns;
 }
@@ -67,14 +101,32 @@ export function setRuntimeWhirlpoolSpawns(spawns: readonly WhirlpoolSpawn[] | nu
     runtimeSpawns = spawns;
 }
 
-/** 六合一只留一个漩涡，并以导演同步的激活距离为锚点。 */
-export function entertainmentWhirlpoolSpawn(seed: number, anchorDistance: number): readonly WhirlpoolSpawn[] {
-    const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ 0x454e5457) >>> 0);
+/**
+ * 六合一只留一个漩涡。超级规格优先落在激活点之后的下一个泳池物理中心；
+ * 冲刺段来不及安全展开时自动降级为普通规格，避免贴终点突然生成。
+ */
+export function entertainmentWhirlpoolSpawn(
+    seed: number,
+    anchorDistance: number,
+    raceDistance = 200,
+    requestSuper = false,
+): readonly WhirlpoolSpawn[] {
+    const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ ENTERTAINMENT_WHIRLPOOL_RANDOM_SALT) >>> 0);
+    const safeAnchor = Math.max(0, Number.isFinite(anchorDistance) ? anchorDistance : 0);
+    const safeRaceDistance = Math.max(50, Number.isFinite(raceDistance) ? raceDistance : 200);
+    const superDistance = requestSuper
+        ? nextPoolCenterDistance(safeAnchor + 8, safeRaceDistance - 8)
+        : null;
+    const isSuper = superDistance !== null;
     return [{
         id: 0,
-        distance: Math.max(8, Math.min(190, anchorDistance + 13)),
-        centerFraction: quantize(random.range(-WHIRLPOOL_MAX_CENTER_FRACTION, WHIRLPOOL_MAX_CENTER_FRACTION), 1000),
+        distance: isSuper ? superDistance : Math.max(8, Math.min(safeRaceDistance - 10, safeAnchor + 13)),
+        centerFraction: quantize(random.range(
+            isSuper ? -WHIRLPOOL_SUPER_MAX_CENTER_FRACTION : -WHIRLPOOL_MAX_CENTER_FRACTION,
+            isSuper ? WHIRLPOOL_SUPER_MAX_CENTER_FRACTION : WHIRLPOOL_MAX_CENTER_FRACTION,
+        ), 1000),
         spin: random.int(2) === 0 ? -1 : 1,
+        variant: isSuper ? 'super' : 'normal',
     }];
 }
 
@@ -95,6 +147,18 @@ export const WHIRLPOOL_BRAWL_TUNING = {
     submergedInfluenceScale: 0.35,
 };
 
+export const WHIRLPOOL_SUPER_TUNING = {
+    alongRadiusScale: 1.35,
+    lateralRadiusScale: 1.5,
+    coreRadiusScale: 1.25,
+    inwardPullScale: 1.3,
+    swirlScale: 1.25,
+    outerBoostScale: 1.4,
+    outerCounterflowScale: 1.3,
+    coreBackwardScale: 1.35,
+    maxFlowSpeedScale: 1.08,
+};
+
 export function resetWhirlpoolInfluence(out: WhirlpoolInfluence): void {
     out.forwardAcceleration = 0;
     out.lateralAcceleration = 0;
@@ -103,6 +167,7 @@ export function resetWhirlpoolInfluence(out: WhirlpoolInfluence): void {
     out.intensity = 0;
     out.coreIntensity = 0;
     out.whirlpoolId = -1;
+    out.maxFlowSpeed = WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed;
 }
 
 export function whirlpoolCenterZ(spawn: WhirlpoolSpawn, poolWidth: number): number {
@@ -130,11 +195,17 @@ export function sampleWhirlpoolInfluence(
     resetWhirlpoolInfluence(out);
     if (!Number.isFinite(distance) || !Number.isFinite(worldZ)) return out;
 
-    const alongRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.alongRadius);
-    const lateralRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.lateralRadius);
-    const coreRadius = Math.max(0.05, Math.min(0.8, WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio));
-
     for (const spawn of spawns) {
+        const superVariant = spawn.variant === 'super';
+        const alongRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.alongRadius
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.alongRadiusScale : 1));
+        const lateralRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.lateralRadius
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1));
+        const baseCoreRadius = WHIRLPOOL_BRAWL_TUNING.lateralRadius
+            * WHIRLPOOL_BRAWL_TUNING.coreRadiusRatio;
+        const coreRadius = Math.max(0.05, Math.min(0.8,
+            baseCoreRadius * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreRadiusScale : 1)
+            / lateralRadius));
         const along = distance - spawn.distance;
         if (Math.abs(along) > alongRadius) continue;
         const lateral = worldZ - whirlpoolCenterZ(spawn, poolWidth);
@@ -153,8 +224,12 @@ export function sampleWhirlpoolInfluence(
         const coreSwirlScale = Math.max(0, Math.min(1, WHIRLPOOL_BRAWL_TUNING.coreSwirlScale));
         const inwardBandScale = outerInwardScale + (1 - outerInwardScale) * core;
         const swirlBandScale = 1 - (1 - coreSwirlScale) * core;
-        const inward = WHIRLPOOL_BRAWL_TUNING.inwardPullAcceleration * smoothFalloff * inwardBandScale;
-        const swirl = WHIRLPOOL_BRAWL_TUNING.swirlAcceleration * smoothFalloff * swirlBandScale;
+        const inward = WHIRLPOOL_BRAWL_TUNING.inwardPullAcceleration
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.inwardPullScale : 1)
+            * smoothFalloff * inwardBandScale;
+        const swirl = WHIRLPOOL_BRAWL_TUNING.swirlAcceleration
+            * (superVariant ? WHIRLPOOL_SUPER_TUNING.swirlScale : 1)
+            * smoothFalloff * swirlBandScale;
 
         // nx/nz are dimensionless; convert their directions back into the two
         // gameplay acceleration channels. The alternating spin produces different
@@ -168,12 +243,15 @@ export function sampleWhirlpoolInfluence(
         const downstream = Math.max(0, tangentForwardDirection);
         const counterflow = Math.max(0, -tangentForwardDirection);
         const outerFlow = ring * (1 - core) * (
-            WHIRLPOOL_BRAWL_TUNING.outerBoostAcceleration * downstream
-            - WHIRLPOOL_BRAWL_TUNING.outerCounterflowAcceleration * counterflow
+            WHIRLPOOL_BRAWL_TUNING.outerBoostAcceleration
+                * (superVariant ? WHIRLPOOL_SUPER_TUNING.outerBoostScale : 1) * downstream
+            - WHIRLPOOL_BRAWL_TUNING.outerCounterflowAcceleration
+                * (superVariant ? WHIRLPOOL_SUPER_TUNING.outerCounterflowScale : 1) * counterflow
         );
         const forward = radialForward + tangentForward
             + outerFlow
-            - WHIRLPOOL_BRAWL_TUNING.coreBackwardAcceleration * core;
+            - WHIRLPOOL_BRAWL_TUNING.coreBackwardAcceleration
+                * (superVariant ? WHIRLPOOL_SUPER_TUNING.coreBackwardScale : 1) * core;
         const lateralForce = radialLateral + tangentLateral;
 
         out.forwardAcceleration += forward;
@@ -184,6 +262,8 @@ export function sampleWhirlpoolInfluence(
             out.intensity = smoothFalloff;
             out.coreIntensity = core;
             out.whirlpoolId = spawn.id;
+            out.maxFlowSpeed = WHIRLPOOL_BRAWL_TUNING.maxFlowSpeed
+                * (superVariant ? WHIRLPOOL_SUPER_TUNING.maxFlowSpeedScale : 1);
         }
     }
     return out;
@@ -195,9 +275,10 @@ export function whirlpoolTargetZForAi(
     poolWidth: number,
     spawns: readonly WhirlpoolSpawn[] = currentWhirlpoolSpawns(),
 ): number | null {
-    const lateralRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.lateralRadius);
     const halfUsable = Math.max(0.5, Math.abs(poolWidth) * 0.5 - 0.75);
     for (const spawn of spawns) {
+        const lateralRadius = Math.max(0.5, WHIRLPOOL_BRAWL_TUNING.lateralRadius
+            * (spawn.variant === 'super' ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1));
         const ahead = spawn.distance - distance;
         if (ahead < -2 || ahead > 18) continue;
         const center = whirlpoolCenterZ(spawn, poolWidth);
@@ -210,6 +291,15 @@ export function whirlpoolTargetZForAi(
         return Math.max(-halfUsable, Math.min(halfUsable, target));
     }
     return null;
+}
+
+export function isSuperWhirlpool(spawn: WhirlpoolSpawn | null | undefined): boolean {
+    return spawn?.variant === 'super';
+}
+
+function nextPoolCenterDistance(minDistance: number, maxDistance: number): number | null {
+    const first = 25 + Math.ceil((minDistance - 25) / 50) * 50;
+    return first >= minDistance && first <= maxDistance ? first : null;
 }
 
 function quantize(value: number, precision: number): number {

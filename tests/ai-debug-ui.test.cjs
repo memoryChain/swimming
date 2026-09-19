@@ -177,6 +177,36 @@ test('模式测试页签只列出六个单项娱乐模式，切换不重建并�
     assert.equal(getAiDebugSetup().mixedCharacters, true);
 });
 
+test('漩涡模式测试可选纯随机、小漩涡或大漩涡并保留选择', () => {
+    const { Node, Label, load } = fixture();
+    const { getAiDebugSetup } = load('core/GameLaunchOptions');
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    const root = new Node('Panel'); let starts = 0;
+    buildAiDebugSetupPicker(root, () => starts++, () => {});
+    findNode(root, 'ModeTestTab').click();
+    const options = findNode(root, 'WhirlpoolOptions');
+    assert.equal(options.activeInHierarchy, false);
+    findNode(root, 'ModeChoice2').click();
+    assert.equal(options.activeInHierarchy, true);
+    const choices = options.children.filter(node => node.name.startsWith('WhirlpoolSelection'));
+    assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
+        '纯随机', '小漩涡', '大漩涡',
+    ]);
+    assert.equal(choices[0].getChildByName('Selected').active, true);
+    choices[2].click();
+    assert.equal(choices.filter(node => node.getChildByName('Selected').active).length, 1);
+    assert.equal(choices[2].getChildByName('Selected').active, true);
+    findNode(root, 'ModeChoice1').click();
+    assert.equal(options.activeInHierarchy, false);
+    findNode(root, 'ModeChoice2').click();
+    assert.equal(options.activeInHierarchy, true);
+    assert.equal(choices[2].getChildByName('Selected').active, true);
+    findNode(root, 'ModeStart').click();
+    assert.equal(starts, 1);
+    assert.equal(getAiDebugSetup().mode, 'whirlpool-brawl');
+    assert.equal(getAiDebugSetup().whirlpoolSelection, 'super');
+});
+
 test('AI诊断隐藏时不读取或格式化，显示后5Hz且相同文本不重写，重复阵容不重建', () => {
     const { Node, Label, load } = fixture();
     const { AiDifficultyPanel } = load('ui/AiDifficultyPanel');

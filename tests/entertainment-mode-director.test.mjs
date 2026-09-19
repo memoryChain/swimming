@@ -10,6 +10,7 @@ const {
     EntertainmentEventId,
     EntertainmentDirectorPhase,
     buildEntertainmentEventOrder,
+    buildEntertainmentSpecialMask,
 } = DirectorModule;
 const { encodeRaceSnapshot, decodeRaceSnapshot } = SnapshotModule;
 
@@ -140,6 +141,31 @@ test('导演状态跟随比赛快照往返，支持访客恢复和房主迁移',
     assert.equal(transition.activatedEvent, director.selectedEvents()[0]);
     assert.deepEqual(guest.selectedEvents(), director.selectedEvents());
     assert.deepEqual(guest.snapshot(), decoded.entertainmentDirector);
+});
+
+test('超级漩涡只在已入选漩涡事件时低概率规划，并随导演快照恢复', () => {
+    let eligible = 0;
+    let specials = 0;
+    for (let seed = 0; seed < 500; seed++) {
+        const events = buildEntertainmentEventOrder(seed, 400);
+        const mask = buildEntertainmentSpecialMask(seed, events);
+        if (events.indexOf(EntertainmentEventId.WHIRLPOOL) < 0) {
+            assert.equal(mask, 0);
+            continue;
+        }
+        eligible++;
+        if (mask !== 0) specials++;
+        assert.equal(mask & ~(1 << EntertainmentEventId.WHIRLPOOL), 0);
+    }
+    assert.ok(specials > eligible * 0.18 && specials < eligible * 0.32);
+
+    let seed = 0;
+    while (!new EntertainmentModeDirector(seed, 400).isSpecialEvent(EntertainmentEventId.WHIRLPOOL)) seed++;
+    const host = new EntertainmentModeDirector(seed, 400);
+    const payload = encodeRaceSnapshot(0, [], null, null, null, null, null, null, host.snapshot());
+    const guest = new EntertainmentModeDirector(seed + 1, 400);
+    guest.applySnapshot(decodeRaceSnapshot(payload).entertainmentDirector);
+    assert.equal(guest.isSpecialEvent(EntertainmentEventId.WHIRLPOOL), true);
 });
 
 test('正式入口收拢为娱乐模式，六合一复用原控制器并使用压缩参数', () => {
