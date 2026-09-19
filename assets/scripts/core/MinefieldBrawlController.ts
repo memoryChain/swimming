@@ -11,6 +11,7 @@ export type MinefieldRacerState = {
 export type MinefieldMineState = {
     id: number;
     active: boolean;
+    armed: boolean;
     courseX: number;
     lateral: number;
 };
@@ -28,6 +29,7 @@ export type MinefieldSnapshotState = {
     revision: number;
     elapsedSeconds: number;
     activeMask: number;
+    armedMask: number;
 };
 
 export type MinefieldExclusionZone = {
@@ -46,6 +48,9 @@ export const MINEFIELD_TUNING = {
     driftAlongRadius: 0.75,
     driftLateralRadius: 0.58,
     driftSpeed: 0.72,
+    spawnClearAlongRadius: 2.85,
+    spawnClearLateralRadius: 1.8,
+    spawnClearSeconds: 0.45,
     aiLookAhead: 5.5,
     aiAvoidOffset: 1.75,
 };
@@ -57,11 +62,15 @@ const ANCHOR_Z_RATIOS = [-0.54, 0.34, -0.12, 0.58, -0.4, 0.1, 0.46] as const;
 export class MinefieldBrawlController {
     private revision = 0;
     private elapsed = 0;
+    private activeMineCount = 0;
+    private lastSnapshotRevision = -1;
+    private lastSnapshotElapsed = -1;
     private readonly mineStates: MinefieldMineState[] = [];
     private readonly anchorCourseX: number[] = [];
     private readonly anchorLateral: number[] = [];
     private readonly phaseAlong: number[] = [];
     private readonly phaseLateral: number[] = [];
+    private readonly spawnClearSeconds: number[] = [];
     private readonly previousRacerCourseX: number[];
     private readonly previousRacerLateral: number[];
 
@@ -99,33 +108,44 @@ export class MinefieldBrawlController {
             this.mineStates.push({
                 id,
                 active: true,
+                armed: false,
                 courseX: anchorX,
                 lateral: anchorZ,
             });
             this.phaseAlong.push(random.range(0, Math.PI * 2));
             this.phaseLateral.push(random.range(0, Math.PI * 2));
+            this.spawnClearSeconds.push(0);
         }
         this.previousRacerCourseX = new Array(laneCount).fill(Number.NaN);
         this.previousRacerLateral = new Array(laneCount).fill(Number.NaN);
+        this.activeMineCount = this.mineStates.length;
         this.updateMinePositions();
+        this.resetSpawnSafety();
     }
 
     reset(): void {
         this.revision = 0;
         this.elapsed = 0;
+        this.activeMineCount = this.mineStates.length;
+        this.lastSnapshotRevision = -1;
+        this.lastSnapshotElapsed = -1;
         for (const mine of this.mineStates) {
             mine.active = true;
+            mine.armed = false;
         }
+        this.spawnClearSeconds.fill(0);
         this.previousRacerCourseX.fill(Number.NaN);
         this.previousRacerLateral.fill(Number.NaN);
         this.updateMinePositions();
+        this.resetSpawnSafety();
     }
 
     update(dt: number, state: GameState, authoritative: boolean): void {
-        if (state !== GameState.RACING) return;
+        if (state !== GameState.RACING || this.activeMineCount <= 0) return;
         const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
         this.elapsed += step;
         this.updateMinePositions();
+        if (authoritative) this.updateSpawnSafety(step);
         for (let lane = 0; lane < this.laneCount; lane++) {
             const racer = this.racerForLane(lane);
             const courseX = courseOffset(racer?.distance ?? 0);
@@ -142,26 +162,39 @@ export class MinefieldBrawlController {
 
     snapshotState(): MinefieldSnapshotState {
         let activeMask = 0;
+        let armedMask = 0;
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
             if (mine.active) activeMask |= 1 << id;
+            if (mine.active && mine.armed) armedMask |= 1 << id;
         }
         return {
             revision: this.revision,
             elapsedSeconds: this.elapsed,
             activeMask,
+            armedMask,
         };
     }
 
     applySnapshotState(state: MinefieldSnapshotState): boolean {
         if (!Number.isSafeInteger(state.revision) || state.revision < this.revision
             || !Number.isFinite(state.elapsedSeconds) || state.elapsedSeconds < 0
-            || !Number.isSafeInteger(state.activeMask) || state.activeMask < 0) return false;
+            || !Number.isSafeInteger(state.activeMask) || state.activeMask < 0
+            || !Number.isSafeInteger(state.armedMask) || state.armedMask < 0) return false;
+        if (state.revision === this.lastSnapshotRevision
+            && state.elapsedSeconds < this.lastSnapshotElapsed) return false;
+        this.lastSnapshotRevision = state.revision;
+        this.lastSnapshotElapsed = state.elapsedSeconds;
         this.revision = state.revision;
+        // 已用最近一次权威快照时钟过滤乱序包；接受后允许轻微回正本地漂移。
         this.elapsed = state.elapsedSeconds;
+        this.activeMineCount = 0;
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
             mine.active = (state.activeMask & (1 << id)) !== 0;
+            mine.armed = mine.active && (state.armedMask & (1 << id)) !== 0;
+            if (mine.active) this.activeMineCount++;
+            this.spawnClearSeconds[id] = 0;
         }
         this.updateMinePositions();
         return true;
@@ -175,7 +208,9 @@ export class MinefieldBrawlController {
             || !Number.isFinite(impact.courseX) || !Number.isFinite(impact.lateral)) return false;
         this.revision = impact.revision;
         const mine = this.mineStates[impact.mineId];
+        if (mine.active) this.activeMineCount = Math.max(0, this.activeMineCount - 1);
         mine.active = false;
+        mine.armed = false;
         return true;
     }
 
@@ -186,7 +221,7 @@ export class MinefieldBrawlController {
         let nearest: MinefieldMineState | null = null;
         let nearestAhead = Infinity;
         for (const mine of this.mineStates) {
-            if (!mine.active) continue;
+            if (!mine.active || !mine.armed) continue;
             const along = Math.abs(mine.courseX - courseX);
             if (along > MINEFIELD_TUNING.aiLookAhead || along >= nearestAhead) continue;
             if (Math.abs(mine.lateral - racer.lateral) > MINEFIELD_TUNING.contactLateralRadius * 2.2) continue;
@@ -203,7 +238,7 @@ export class MinefieldBrawlController {
         const previousX = this.previousRacerCourseX[lane];
         const previousZ = this.previousRacerLateral[lane];
         for (const mine of this.mineStates) {
-            if (!mine.active) continue;
+            if (!mine.active || !mine.armed) continue;
             const hit = Number.isFinite(previousX) && Math.abs(courseX - previousX) <= 5
                 ? segmentHitsEllipse(previousX, previousZ, courseX, lateral, mine.courseX, mine.lateral)
                 : ellipseContains(courseX, lateral, mine.courseX, mine.lateral);
@@ -248,6 +283,45 @@ export class MinefieldBrawlController {
                 -halfWidth, halfWidth,
             );
         }
+    }
+
+    /**
+     * 动态事件激活时，若水雷正压在任一选手身上，先保持隐藏且无碰撞；
+     * 只有房主确认扩大后的出生安全区连续清空后才启用，避免刷新同帧直接爆炸。
+     */
+    private resetSpawnSafety(): void {
+        for (let id = 0; id < this.mineStates.length; id++) {
+            const mine = this.mineStates[id];
+            mine.armed = mine.active && !this.isSpawnBlocked(mine);
+            this.spawnClearSeconds[id] = 0;
+        }
+    }
+
+    private updateSpawnSafety(dt: number): void {
+        for (let id = 0; id < this.mineStates.length; id++) {
+            const mine = this.mineStates[id];
+            if (!mine.active || mine.armed) continue;
+            if (this.isSpawnBlocked(mine)) {
+                this.spawnClearSeconds[id] = 0;
+                continue;
+            }
+            const clearSeconds = this.spawnClearSeconds[id] + dt;
+            this.spawnClearSeconds[id] = clearSeconds;
+            if (clearSeconds >= MINEFIELD_TUNING.spawnClearSeconds) mine.armed = true;
+        }
+    }
+
+    private isSpawnBlocked(mine: MinefieldMineState): boolean {
+        for (let lane = 0; lane < this.laneCount; lane++) {
+            const racer = this.racerForLane(lane);
+            if (!racer?.active || racer.finished) continue;
+            const dx = (courseOffset(racer.distance) - mine.courseX)
+                / MINEFIELD_TUNING.spawnClearAlongRadius;
+            const dz = (racer.lateral - mine.lateral)
+                / MINEFIELD_TUNING.spawnClearLateralRadius;
+            if (dx * dx + dz * dz <= 1) return true;
+        }
+        return false;
     }
 }
 

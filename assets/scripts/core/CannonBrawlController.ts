@@ -103,9 +103,10 @@ export class CannonBrawlController {
             if (authoritative && this.activeRemainingSeconds <= 0) this.resolveActiveStrike();
             return;
         }
-        if (!authoritative || this.activeCount() <= 0) return;
+        if (!authoritative) return;
         const strikeId = this.nextStrikeId();
-        if (strikeId < 0 || this.leaderDistance() < this.strikeTriggers[strikeId]) return;
+        if (strikeId < 0 || this.activeCount() <= 0
+            || this.leaderDistance() < this.strikeTriggers[strikeId]) return;
         const launch = this.createLaunch(strikeId);
         if (!launch) {
             this.completedStrikeMask |= 1 << strikeId;
@@ -145,19 +146,29 @@ export class CannonBrawlController {
             return { activeChanged: false };
         }
         const previousActive = this.activeLaunch?.strikeId ?? -1;
+        const previousRevision = this.revision;
+        const previousRemainingSeconds = this.activeRemainingSeconds;
+        const previousWarningSeconds = this.activeLaunch?.warningSeconds ?? 0;
         this.revision = state.revision;
         this.completedStrikeMask |= state.completedStrikeMask;
         if (state.activeStrikeId >= 0
             && state.activeStrikeId < this.strikeTriggers.length
             && (this.completedStrikeMask & (1 << state.activeStrikeId)) === 0) {
+            const sameCountdown = state.revision === previousRevision
+                && state.activeStrikeId === previousActive;
             this.activeLaunch = {
                 strikeId: state.activeStrikeId,
                 targetDistance: state.targetDistance,
                 targetZ: state.targetZ,
-                warningSeconds: Math.max(0, state.remainingSeconds),
+                warningSeconds: sameCountdown
+                    ? previousWarningSeconds
+                    : Math.max(0, state.remainingSeconds),
                 revision: state.revision,
             };
-            this.activeRemainingSeconds = Math.max(0, state.remainingSeconds);
+            const nextRemainingSeconds = Math.max(0, state.remainingSeconds);
+            this.activeRemainingSeconds = sameCountdown
+                ? Math.min(previousRemainingSeconds, nextRemainingSeconds)
+                : nextRemainingSeconds;
             this.lastTargetLane = this.nearestActiveLane(state.targetZ);
         } else {
             this.activeLaunch = null;

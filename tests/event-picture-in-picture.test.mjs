@@ -69,3 +69,10 @@ test('比赛更新路径不为相机采样创建逐帧回调闭包', () => {
     assert.match(camera, /private finishRender\(\): void/);
     assert.doesNotMatch(camera, /renderIfDue\([^\n]*=>/);
 });
+
+test('鲨鱼危险镜头占用期间炮火只缓存落点，不反复抢占画中画', () => {
+    const cannonLaunch = camera.match(/showCannonLaunch\([\s\S]*?\n    }/)?.[0] ?? '';
+    const cannonUpdate = camera.match(/updateCannon\([\s\S]*?\n    }/)?.[0] ?? '';
+    assert.match(cannonLaunch, /this\.cannonTargetX = target\.x[\s\S]*?if \(this\.mode === 'shark'\) return[\s\S]*?this\.mode = 'cannon'/);
+    assert.match(cannonUpdate, /showCannonLaunch\(launch\)[\s\S]*?if \(this\.mode !== 'cannon'\) return/);
+});

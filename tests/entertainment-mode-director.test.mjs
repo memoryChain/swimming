@@ -199,6 +199,18 @@ test('导演状态跟随比赛快照往返，支持访客恢复和房主迁移',
     assert.deepEqual(guest.snapshot(), decoded.entertainmentDirector);
 });
 
+test('同一导演修订的乱序快照不会把阶段倒计时拨回去', () => {
+    const host = new EntertainmentModeDirector(92);
+    host.update(4.01, 200, true);
+    const preview = host.snapshot();
+    assert.equal(preview.phase, EntertainmentDirectorPhase.PREVIEW);
+
+    const guest = new EntertainmentModeDirector(92);
+    guest.applySnapshot({ ...preview, remainingSeconds: 2 });
+    guest.applySnapshot({ ...preview, remainingSeconds: 4 });
+    assert.equal(guest.snapshot().remainingSeconds, 2);
+});
+
 test('超级漩涡只在已入选漩涡事件时低概率规划，并随导演快照恢复', () => {
     let eligible = 0;
     let specials = 0;

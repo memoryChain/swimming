@@ -95,6 +95,18 @@ test('活动炮弹和已完成波次可由快照恢复', () => {
     assert.equal(guest.controller.applyImpact(host.impacts[0]), false);
 });
 
+test('同一炮击修订的旧快照不会延长当前落点倒计时', () => {
+    const host = fixture(77);
+    const guest = fixture(77);
+    host.controller.update(0, GameState.RACING, true);
+    const snapshot = host.controller.snapshotState();
+    guest.controller.applySnapshotState(snapshot);
+    guest.controller.update(1, GameState.RACING, false);
+    const remaining = guest.controller.currentRemainingSeconds();
+    guest.controller.applySnapshotState(snapshot);
+    assert.equal(guest.controller.currentRemainingSeconds(), remaining);
+});
+
 test('同一种子生成相同首发落点，AI 在反应延迟后选择核心外安全区', () => {
     const a = fixture(912);
     const b = fixture(912);

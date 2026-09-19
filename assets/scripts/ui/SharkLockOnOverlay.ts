@@ -5,14 +5,18 @@ import { makeUiNode } from './RuntimeUiFactory';
 
 const MARKER_SIZE = 42;
 const UPDATE_INTERVAL_MS = 34;
+const PULSE_STEP = 0.005;
 
 // Static Graphics is built exactly once. Projection and transform writes are
 // throttled to 30Hz and skipped entirely while no shark target exists.
 export class SharkLockOnOverlay {
-    private _hud: Node | null = null;
+    private _hudTransform: UITransform | null = null;
     private _root: Node | null = null;
     private _marker: Node | null = null;
     private _lastSampleMs = 0;
+    private _lastX = Number.NaN;
+    private _lastY = Number.NaN;
+    private _lastPulse = Number.NaN;
     private readonly _world = new Vec3();
     private readonly _screen = new Vec3();
     private readonly _uiWorld = new Vec3();
@@ -20,7 +24,7 @@ export class SharkLockOnOverlay {
 
     bind(hud: Node): void {
         if (this._root?.isValid || !hud?.isValid) return;
-        this._hud = hud;
+        this._hudTransform = hud.getComponent(UITransform);
         const root = makeUiNode('SharkLockOnOverlay', hud);
         const marker = makeUiNode('Marker', root);
         marker.getComponent(UITransform)!.setContentSize(MARKER_SIZE, MARKER_SIZE);
@@ -43,7 +47,8 @@ export class SharkLockOnOverlay {
         const root = this._root;
         const target = shark?.target ?? null;
         const active = !!target && (shark?.state === SharkState.WARNING || shark?.state === SharkState.HUNT);
-        if (!root?.isValid || !active || !worldCamera || !uiCamera || !target?.node.activeInHierarchy) {
+        if (!root?.isValid || !this._hudTransform || !active || !worldCamera || !uiCamera
+            || !target?.node.activeInHierarchy) {
             if (root?.active) root.active = false;
             return;
         }
@@ -53,11 +58,20 @@ export class SharkLockOnOverlay {
         target.getCameraUpperBodyWorldPosition(this._world);
         worldCamera.worldToScreen(this._world, this._screen);
         uiCamera.screenToWorld(this._screen, this._uiWorld);
-        this._hud!.getComponent(UITransform)!.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
+        this._hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
         if (!root.active) root.active = true;
-        root.setPosition(Math.round(this._uiLocal.x), Math.round(this._uiLocal.y + 46), 0);
-        const pulse = 1 + 0.12 * Math.sin(now * 0.009);
-        this._marker!.setScale(pulse, pulse, 1);
+        const x = Math.round(this._uiLocal.x);
+        const y = Math.round(this._uiLocal.y + 46);
+        if (x !== this._lastX || y !== this._lastY) {
+            this._lastX = x;
+            this._lastY = y;
+            root.setPosition(x, y, 0);
+        }
+        const pulse = Math.round((1 + 0.12 * Math.sin(now * 0.009)) / PULSE_STEP) * PULSE_STEP;
+        if (pulse !== this._lastPulse) {
+            this._lastPulse = pulse;
+            this._marker!.setScale(pulse, pulse, 1);
+        }
     }
 
     hide(): void {

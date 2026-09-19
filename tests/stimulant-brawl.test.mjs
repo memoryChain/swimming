@@ -28,6 +28,16 @@ test('400 米娱乐长局生成四波苏打且不越过冲刺收尾区', () => {
     assert.ok(schedule.every(item => item.distance >= 355 && item.distance <= 390));
 });
 
+test('六合一苏打首波始终生成在激活领先位置前方，不会贴脸白送', () => {
+    const shortAnchor = 84.25;
+    const shortSchedule = buildEntertainmentStimulantSchedule(123456, 8, shortAnchor, 200);
+    assert.equal(Math.min(...shortSchedule.map(item => item.distance)), shortAnchor + 6);
+
+    const longAnchor = 214.5;
+    const longSchedule = buildEntertainmentStimulantSchedule(123456, 8, longAnchor, 400);
+    assert.equal(Math.min(...longSchedule.map(item => item.distance)), longAnchor + 5);
+});
+
 test('心跳苏打显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {
     const prefab = JSON.parse(readFileSync(
         new URL('../assets/race/items/StimulantPotion.prefab', import.meta.url),

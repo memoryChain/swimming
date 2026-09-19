@@ -54,6 +54,7 @@ export const enum NetInputKind {
     MineRelayTransfer = 't', // host-authoritative round, from/to lanes, remaining fuse and revision
     MineRelayResolution = 'b', // host-authoritative round, carrier, explosion center, hit mask and revision
     MinefieldImpact = 'i', // host-authoritative obstacle mine id, direct lane, position, hit mask and revision
+    EntertainmentKnockdown = 'u', // host-authoritative global recovery lane/reason/distance/revision
 }
 
 export interface NetInputEvent {
@@ -90,6 +91,8 @@ export interface NetInputEvent {
     exploded?: boolean;
     mineId?: number;
     mineHitLane?: number;
+    recoveryLane?: number;
+    recoveryReason?: number;
 }
 
 export interface DecodedInputFrame {
@@ -139,6 +142,8 @@ function encodeEvent(event: NetInputEvent): string {
             return `${NetInputKind.MineRelayResolution}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${event.exploded ? 1 : 0},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MinefieldImpact:
             return `${NetInputKind.MinefieldImpact}${Math.max(0, Math.floor(event.mineId ?? 0))},${Math.max(0, Math.floor(event.mineHitLane ?? 0))},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+        case NetInputKind.EntertainmentKnockdown:
+            return `${NetInputKind.EntertainmentKnockdown}${Math.max(0, Math.floor(event.recoveryLane ?? 0))},${Math.max(0, Math.floor(event.recoveryReason ?? 0))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.DiveRelease: {
             const power = Math.max(0, Math.min(POWER_SCALE, Math.round((event.power ?? 0) * POWER_SCALE)));
             if (Number.isFinite(event.launchSpeed) && (event.launchSpeed ?? -1) >= 0) {
@@ -271,6 +276,20 @@ function decodeToken(token: string): NetInputEvent | null {
                     mineLateral: values[3] / 1000,
                     hitMask: values[4],
                     revision: values[5],
+                }
+                : null;
+        }
+        case NetInputKind.EntertainmentKnockdown: {
+            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
+            return values.length === 4
+                && values.every(value => Number.isSafeInteger(value) && value >= 0)
+                && values[1] >= 1 && values[1] <= 4 && values[3] > 0
+                ? {
+                    kind,
+                    recoveryLane: values[0],
+                    recoveryReason: values[1],
+                    knockedDistance: values[2] / 100,
+                    revision: values[3],
                 }
                 : null;
         }

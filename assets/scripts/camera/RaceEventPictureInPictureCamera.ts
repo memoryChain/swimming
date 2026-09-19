@@ -152,6 +152,8 @@ export class RaceEventPictureInPictureCamera {
         this.cannonSourceX = target.x;
         this.cannonSourceY = this.options.course.waterY + 1.2;
         this.cannonSourceZ = side * (this.options.course.poolWidth * 0.5 + 0.5);
+        // 鲨鱼危险镜头优先级最高；炮火仍缓存落点，待鲨鱼镜头退出后再接管。
+        if (this.mode === 'shark') return;
         this.mode = 'cannon';
         this.setCeilingVisible(true);
         this.holdSeconds = 0;
@@ -176,6 +178,7 @@ export class RaceEventPictureInPictureCamera {
         const safeDt = safeStep(dt);
         if (launch) {
             if (this.mode !== 'cannon') this.showCannonLaunch(launch);
+            if (this.mode !== 'cannon') return;
             const total = Math.max(0.01, launch.warningSeconds);
             const progress = clamp01(1 - remainingSeconds / total);
             if (!this.shouldRender(safeDt)) return;

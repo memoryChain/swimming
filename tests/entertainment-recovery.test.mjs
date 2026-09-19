@@ -96,6 +96,10 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
     const source = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     assert.match(source, /respawnAfterEntertainmentHit/);
     assert.match(source, /setSharkKnockdownListener/);
+    assert.match(source, /setEntertainmentKnockdownListener/);
+    assert.match(source, /enqueueEntertainmentKnockdown/);
+    assert.match(source, /stateForLane\(lane\)[\s\S]*?EntertainmentRecoveryPhase\.KNOCKED/);
+    assert.doesNotMatch(source, /!this\._netRaceController\.isHost\) return false/);
     assert.match(source, /knockDownCannonHitLane/);
     assert.match(source, /EntertainmentRecoveryReason\.TIMED_BOMB/);
     assert.match(source, /EntertainmentRecoveryReason\.MINEFIELD/);
@@ -123,6 +127,16 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.INVULNERABLE/);
     assert.match(hud, /无敌保护/);
+});
+
+test('离开比赛状态时立即清理急救遮罩、无敌表现和娱乐画中画', () => {
+    const source = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
+    const transition = source.match(/previousState === GameState\.RACING[\s\S]*?\n                }/)?.[0] ?? '';
+    assert.match(transition, /_entertainmentRecovery\?\.reset\(\)/);
+    assert.match(transition, /_entertainmentRecoveryHud\?\.reset\(\)/);
+    assert.match(transition, /clearEntertainmentRecoveryPresentation\(\)/);
+    assert.match(transition, /_eventPictureInPicture\?\.reset\(\)/);
+    assert.match(transition, /_sharkLockOnOverlay\.hide\(\)/);
 });
 
 test('娱乐身体反馈保留角色原贴图材质，不再替换蒙皮材质', () => {

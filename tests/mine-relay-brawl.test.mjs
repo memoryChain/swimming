@@ -127,6 +127,36 @@ test('水雷模式的出生布局和漂移由共享种子稳定生成', () => {
     assert.deepEqual(a.controller.mines(), b.controller.mines());
     assert.equal(a.controller.mines().length, MINEFIELD_TUNING.mineCount);
     assert.ok(a.controller.mines().every(mine => mine.active));
+    assert.ok(a.controller.mines().every(mine => mine.armed));
+});
+
+test('动态水雷压在选手当前位置时保持隐藏无碰撞，离开安全区后才启用', () => {
+    const probeRacers = [{ active: false, finished: false, distance: 0, lateral: 0 }];
+    const probe = new MinefieldBrawlController(1, 2026, 20, lane => probeRacers[lane], () => {});
+    const spawn = probe.mines()[0];
+    const racers = [{ active: true, finished: false, distance: spawn.courseX, lateral: spawn.lateral }];
+    const impacts = [];
+    const controller = new MinefieldBrawlController(
+        1, 2026, 20, lane => racers[lane], impact => impacts.push({ ...impact }),
+    );
+
+    assert.equal(controller.mines()[0].active, true);
+    assert.equal(controller.mines()[0].armed, false);
+    controller.update(0.1, GameState.RACING, true);
+    assert.equal(impacts.length, 0, '出生安全区内不能刷新同帧爆炸');
+
+    racers[0].distance = 0;
+    racers[0].lateral = 0;
+    for (let elapsed = 0; elapsed < MINEFIELD_TUNING.spawnClearSeconds + 0.1; elapsed += 0.1) {
+        controller.update(0.1, GameState.RACING, true);
+    }
+    assert.equal(controller.mines()[0].armed, true);
+
+    const armedMine = controller.mines()[0];
+    racers[0].distance = armedMine.courseX;
+    racers[0].lateral = armedMine.lateral;
+    controller.update(0, GameState.RACING, true);
+    assert.equal(impacts.length, 1, '离开出生安全区后水雷应恢复正常碰撞');
 });
 
 test('六合一为超级漩涡预留中心区域且保持五枚水雷', () => {
@@ -210,6 +240,7 @@ test('水雷快照修复丢失事件、漂移时钟和永久失活状态', () =>
     assert.equal(guest.controller.applySnapshotState(activeSnapshot), true);
     assert.deepEqual(guest.controller.mines(), host.controller.mines());
     assert.equal(guest.controller.mines()[mine.id].active, false);
+    assert.equal(guest.controller.mines()[mine.id].armed, false);
 
     const staleSnapshot = { ...activeSnapshot, revision: activeSnapshot.revision - 1 };
     assert.equal(guest.controller.applySnapshotState(staleSnapshot), false);
@@ -222,6 +253,19 @@ test('水雷快照修复丢失事件、漂移时钟和永久失活状态', () =>
     assert.equal(guest.controller.applySnapshotState(laterSnapshot), true);
     assert.equal(guest.controller.mines()[mine.id].active, false);
     assert.deepEqual(guest.controller.mines(), host.controller.mines());
+});
+
+test('同一水雷修订的旧快照不会回拨漂移时钟或复活障碍', () => {
+    const fixture = minefieldFixture(314);
+    const base = fixture.controller.snapshotState();
+    const consumed = { ...base, elapsedSeconds: 2, activeMask: 0, armedMask: 0 };
+    assert.equal(fixture.controller.applySnapshotState(consumed), true);
+    assert.ok(fixture.controller.mines().every(mine => !mine.active));
+
+    const stale = { ...base, elapsedSeconds: 1 };
+    assert.equal(fixture.controller.applySnapshotState(stale), false);
+    assert.ok(fixture.controller.mines().every(mine => !mine.active));
+    assert.equal(fixture.controller.snapshotState().elapsedSeconds, 2);
 });
 
 test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', () => {

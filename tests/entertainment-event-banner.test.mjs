@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const gameManager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
+const director = readFileSync(new URL('../assets/scripts/core/EntertainmentModeDirector.ts', import.meta.url), 'utf8');
 const banner = readFileSync(new URL('../assets/scripts/ui/SharkEventBanner.ts', import.meta.url), 'utf8');
 const cannonHud = readFileSync(new URL('../assets/scripts/ui/CannonBrawlHud.ts', import.meta.url), 'utf8');
 const bombHud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts', import.meta.url), 'utf8');
@@ -31,7 +32,7 @@ test('共用横幅保留鲨鱼大字描边，同时以稳定节点分离个人�
 });
 
 test('六合一激活时用原广播位置显示三秒红色行动提示', () => {
-    assert.match(gameManager, /showEvent\([\s\S]*?entertainmentActionCopy\(transition\.activatedEvent\)[\s\S]*?'danger'[\s\S]*?3000/);
+    assert.match(gameManager, /showDirectorEvent\([\s\S]*?entertainmentActionCopy\([\s\S]*?transition\.activatedEvent[\s\S]*?'danger'[\s\S]*?3000/);
     assert.match(banner, /setContentSize\(840, 86\)/);
     assert.match(banner, /setPosition\(0, 180, 0\)/);
     assert.match(banner, /makeLabel\('Label', eventRoot, '', 40, TONE_COLORS\.warning\)/);
@@ -40,9 +41,20 @@ test('六合一激活时用原广播位置显示三秒红色行动提示', () =>
     assert.match(gameManager, /onRevealed: \(\) => \{[\s\S]*?if \(isEntertainmentBrawlMode\(\)\) return/);
 });
 
-test('三事件局预告六秒，四事件局预告五秒', () => {
-    assert.match(gameManager, /selectedEvents\(\)\.length === 4[\s\S]*?\? 5000[\s\S]*?: 6000/);
-    assert.match(gameManager, /entertainmentPreviewCopy\(transition\.previewEvent\)[\s\S]*?previewDurationMs/);
+test('三事件与长局预告六秒，四事件局预告五秒', () => {
+    assert.match(director, /const THREE_EVENT_PREVIEW_SECONDS = 6/);
+    assert.match(director, /const FOUR_EVENT_PREVIEW_SECONDS = 5/);
+    assert.match(director, /const LONG_RACE_PREVIEW_SECONDS = 6/);
+    assert.match(director, /this\.events\.length === 4 \? FOUR_EVENT_PREVIEW_SECONDS : THREE_EVENT_PREVIEW_SECONDS/);
+    assert.match(gameManager, /previewDurationSeconds\(\)[\s\S]*?\* 1000/);
+    assert.match(gameManager, /entertainmentPreviewCopy\([\s\S]*?transition\.previewEvent[\s\S]*?previewDurationMs/);
+});
+
+test('导演预告和激活广播不会被子玩法短提示覆盖', () => {
+    assert.match(banner, /private directorUntil = 0/);
+    assert.match(banner, /showDirectorEvent\([\s\S]*?this\.directorUntil = Date\.now\(\) \+ safeDuration/);
+    assert.match(banner, /showEvent\([\s\S]*?Date\.now\(\) < this\.directorUntil\) return/);
+    assert.match(banner, /enqueueEvent\([\s\S]*?Date\.now\(\) < this\.directorUntil\) return/);
 });
 
 test('炮火与定时炸弹持续状态条使用同一尺寸和位置', () => {

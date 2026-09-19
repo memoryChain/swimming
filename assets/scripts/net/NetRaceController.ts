@@ -154,6 +154,7 @@ export class NetRaceController {
     private _cannonLaunchListener: ((strikeId: number, targetDistance: number, targetZ: number, warningSeconds: number, revision: number) => void) | null = null;
     private _cannonImpactListener: ((strikeId: number, hitMask: number, knockedLane: number, knockedDistance: number, revision: number) => void) | null = null;
     private _cannonStateListener: ((state: NetCannonState) => void) | null = null;
+    private _entertainmentKnockdownListener: ((lane: number, reason: number, distance: number, revision: number) => void) | null = null;
     private _recoveryStateListener: ((state: NetEntertainmentRecoveryState) => void) | null = null;
     private _mineRelayArmListener: ((roundId: number, carrierLane: number, fuseSeconds: number, revision: number) => void) | null = null;
     private _mineRelayTransferListener: ((roundId: number, fromLane: number, toLane: number, remainingSeconds: number, revision: number) => void) | null = null;
@@ -252,6 +253,23 @@ export class NetRaceController {
 
     setCannonStateListener(listener: ((state: NetCannonState) => void) | null): void {
         this._cannonStateListener = listener;
+    }
+
+    enqueueEntertainmentKnockdown(lane: number, reason: number, distance: number, revision: number): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.EntertainmentKnockdown,
+            recoveryLane: lane,
+            recoveryReason: reason,
+            knockedDistance: distance,
+            revision,
+        });
+    }
+
+    setEntertainmentKnockdownListener(
+        listener: ((lane: number, reason: number, distance: number, revision: number) => void) | null,
+    ): void {
+        this._entertainmentKnockdownListener = listener;
     }
 
     setRecoveryStateListener(listener: ((state: NetEntertainmentRecoveryState) => void) | null): void {
@@ -1003,6 +1021,12 @@ export class NetRaceController {
                     || event.revision === undefined) continue;
                 this._cannonImpactListener?.(
                     event.cannonStrikeId, event.hitMask, event.knockedLane, event.knockedDistance, event.revision,
+                );
+            } else if (event.kind === NetInputKind.EntertainmentKnockdown) {
+                if (event.recoveryLane === undefined || event.recoveryReason === undefined
+                    || event.knockedDistance === undefined || event.revision === undefined) continue;
+                this._entertainmentKnockdownListener?.(
+                    event.recoveryLane, event.recoveryReason, event.knockedDistance, event.revision,
                 );
             } else if (event.kind === NetInputKind.MineRelayArm) {
                 if (event.mineRoundId === undefined || event.mineCarrierLane === undefined

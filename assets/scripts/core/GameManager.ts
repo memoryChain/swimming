@@ -497,6 +497,7 @@ export class GameManager extends Component {
         this._netRaceController?.setCannonLaunchListener(null);
         this._netRaceController?.setCannonImpactListener(null);
         this._netRaceController?.setCannonStateListener(null);
+        this._netRaceController?.setEntertainmentKnockdownListener(null);
         this._netRaceController?.setRecoveryStateListener(null);
         this._netRaceController?.setSharkKnockdownListener(null);
         this._netRaceController?.setSharkStateListener(null);
@@ -1066,6 +1067,13 @@ export class GameManager extends Component {
                 this._state = state;
                 if (previousState === GameState.RACING && state !== GameState.RACING) {
                     this._entertainmentEventBanner.hide();
+                    this._entertainmentRecovery?.reset();
+                    this._entertainmentRecoveryHud?.reset();
+                    this.clearEntertainmentRecoveryPresentation();
+                    this._cannonBrawlHud?.hide();
+                    this._mineRelayHud?.hide();
+                    this._eventPictureInPicture?.reset();
+                    this._sharkLockOnOverlay.hide();
                 }
                 this.syncConditionPhase(state);
                 if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
@@ -1453,7 +1461,7 @@ export class GameManager extends Component {
         }
         if (transition.previewEvent !== null) {
             const previewDurationMs = (this._entertainmentDirector?.previewDurationSeconds() ?? 6) * 1000;
-            this._entertainmentEventBanner.showEvent(
+            this._entertainmentEventBanner.showDirectorEvent(
                 entertainmentPreviewCopy(
                     transition.previewEvent,
                     this._entertainmentDirector?.isSpecialEvent(transition.previewEvent) ?? false,
@@ -1469,7 +1477,7 @@ export class GameManager extends Component {
                     this.entertainmentAnchorDistance(transition.activatedEvent),
                 )[0])
                 : (this._entertainmentDirector?.isSpecialEvent(transition.activatedEvent) ?? false);
-            this._entertainmentEventBanner.showEvent(
+            this._entertainmentEventBanner.showDirectorEvent(
                 entertainmentActionCopy(
                     transition.activatedEvent,
                     special,
@@ -1769,11 +1777,27 @@ export class GameManager extends Component {
         this._entertainmentRecovery = new EntertainmentRecoveryController(
             LANE_LAYOUT.laneCount,
             {
-                onKnocked: (lane, state) => this.presentEntertainmentKnockout(lane, state.reason),
+                onKnocked: (lane, state) => {
+                    this.presentEntertainmentKnockout(lane, state.reason);
+                    if (isEntertainmentBrawlMode() && this._netRaceController?.isHost) {
+                        this._netRaceController.enqueueEntertainmentKnockdown(
+                            lane, state.reason, state.distance, state.revision,
+                        );
+                    }
+                },
                 onRespawn: (lane, state) => this.respawnEntertainmentSwimmer(lane, state.distance),
                 onRecovered: lane => this.swimmerForLane(lane)?.endEntertainmentInvulnerability(),
             },
         );
+        this._netRaceController?.setEntertainmentKnockdownListener((lane, reason, distance, revision) => {
+            if (!isEntertainmentBrawlMode()) return;
+            this.applyEntertainmentKnockdown(
+                lane,
+                reason as EntertainmentRecoveryReason,
+                distance,
+                revision,
+            );
+        });
         this._netRaceController?.setRecoveryStateListener(state => {
             this._entertainmentRecovery?.applySnapshot(state as import('./EntertainmentRecoveryController').EntertainmentRecoverySnapshot);
         });
@@ -1802,7 +1826,11 @@ export class GameManager extends Component {
         }
         // 六合一的六个子控制器各有独立 revision，不能拿它们直接竞争同一恢复状态机。
         // 房主改由恢复控制器生成全局递增 revision；访客从周期快照恢复，避免跨事件旧号覆盖新号。
-        if (this._netRaceController && !this._netRaceController.isHost) return false;
+        if (this._netRaceController && !this._netRaceController.isHost) {
+            const state = this._entertainmentRecovery?.stateForLane(lane);
+            return state?.phase === EntertainmentRecoveryPhase.KNOCKED
+                && state.reason === reason;
+        }
         return !!this._entertainmentRecovery?.tryKnockDown(lane, reason, distance);
     }
 

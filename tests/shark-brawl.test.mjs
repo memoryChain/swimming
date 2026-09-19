@@ -144,6 +144,22 @@ test('鲨鱼咬伤只复用画中画可见的大水花进行遮挡', () => {
     assert.equal(existsSync(new URL('../assets/scripts/entity/SharkBiteOcclusionEffect.ts', import.meta.url)), false);
 });
 
+test('鲨鱼锁定标记缓存投影组件并只在量化结果变化时写变换', () => {
+    const overlay = readFileSync(
+        new URL('../assets/scripts/ui/SharkLockOnOverlay.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(overlay, /const UPDATE_INTERVAL_MS = 34;/);
+    assert.match(overlay, /private _hudTransform: UITransform \| null = null;/);
+    assert.match(overlay, /if \(x !== this\._lastX \|\| y !== this\._lastY\)/);
+    assert.match(overlay, /if \(pulse !== this\._lastPulse\)/);
+    const updateIndex = overlay.indexOf('update(shark: SharkController');
+    const hideIndex = overlay.indexOf('hide(): void', updateIndex);
+    const updateSource = overlay.slice(updateIndex, hideIndex);
+    assert.doesNotMatch(updateSource, /getComponent\(UITransform\)/);
+    assert.doesNotMatch(updateSource, /Graphics\.clear|\.clear\(\)/);
+});
+
 test('鲨鱼规则只允许快速比赛二百米并可从存档恢复', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];

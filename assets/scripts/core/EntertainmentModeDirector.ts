@@ -307,6 +307,11 @@ export class EntertainmentModeDirector {
         const previousEvent = this.currentEvent();
         const previousActivationSerial = this.activationSerial;
         const previousEncoreRound = this.encoreRound;
+        const sameCountdown = state.revision === this.revision
+            && state.phase === previousPhase
+            && state.eventIndex === previousIndex
+            && state.encoreRound === previousEncoreRound;
+        const previousRemainingSeconds = this.remainingSeconds;
         this.events.length = authoritativeEvents.length;
         for (let index = 0; index < authoritativeEvents.length; index++) {
             this.events[index] = authoritativeEvents[index];
@@ -314,7 +319,9 @@ export class EntertainmentModeDirector {
         this.revision = state.revision;
         this.phase = state.phase;
         this.eventIndex = state.eventIndex;
-        this.remainingSeconds = state.remainingSeconds;
+        this.remainingSeconds = sameCountdown
+            ? Math.min(previousRemainingSeconds, state.remainingSeconds)
+            : state.remainingSeconds;
         this.activatedMask = state.activatedMask;
         this.residentMask = state.residentMask;
         this.specialMask = state.specialMask;

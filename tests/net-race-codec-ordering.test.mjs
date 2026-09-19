@@ -88,6 +88,18 @@ test('minefield impact round-trips on the reliable input channel', () => {
     }]);
 });
 
+test('unified entertainment knockdown round-trips with the global recovery revision', () => {
+    const event = {
+        kind: 'u',
+        recoveryLane: 6,
+        recoveryReason: 4,
+        knockedDistance: 127.35,
+        revision: 19,
+    };
+    const decoded = decodeInputFrame(encodeInputFrame(0, [event], null, -1, 46));
+    assert.deepEqual(decoded.events, [event]);
+});
+
 test('shark state and knockdown event round-trip across both sync fallbacks', () => {
     const shark = {
         sequence: 3,
@@ -179,11 +191,74 @@ test('minefield lifecycle state round-trips in S|', () => {
         revision: 8,
         elapsedSeconds: 14.321,
         activeMask: 0b1011011,
+        armedMask: 0b0011011,
     };
     const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(
         0, [entry()], null, null, null, null, null, minefield,
     ));
     assert.deepEqual(snapshot.minefield, minefield);
+});
+
+test('八泳道满状态快照保持在项目的一点五千字节回归预算内', () => {
+    const entries = Array.from({ length: 8 }, (_, lane) => entry({
+        lane,
+        distance: 400,
+        lateral: lane % 2 === 0 ? -10 : 10,
+        finished: lane === 7,
+        heading: Math.PI,
+        headingVelocity: -20,
+        speed: 12,
+        energy: 100,
+        axialRoll: Math.PI,
+        axialRollVelocity: -20,
+        collisionPitch: Math.PI,
+        collisionPitchVelocity: -20,
+        conditionEnergyRatio: 1,
+        conditionHeartRate: 180,
+        conditionDepletionCooldown: 10,
+        collisionSoftness: { side: 2, forward: -2, sideVelocity: 20, forwardVelocity: -20 },
+        abilityState: { depth: 2, kickRemaining: 2, stacks: 10, idleRemaining: 10 },
+    }));
+    const recovery = {
+        revision: 999999,
+        lanes: entries.map((_, lane) => ({
+            phase: 2,
+            reason: 4,
+            remainingSeconds: 99.999,
+            distance: 400,
+            revision: 999999 - lane,
+        })),
+    };
+    const payload = encodeRaceSnapshot(
+        7,
+        entries,
+        { revision: 999999, collectedMask: 0x7fffffff },
+        {
+            sequence: 999999, state: 4, raceElapsed: 999.999, remainingSeconds: 99.999,
+            huntOpeningGraceSeconds: 9.999, x: 400, z: -10, facingX: -1, facingZ: 1,
+            targetLane: 7, knockedLane: 7, huntIndex: 99,
+        },
+        {
+            revision: 999999, completedStrikeMask: 0x7fffffff, activeStrikeId: 9,
+            targetDistance: 400, targetZ: -10, remainingSeconds: 99.999,
+        },
+        {
+            revision: 999999, completedRoundMask: 0x7fffffff, explodedRoundMask: 0x7fffffff,
+            resolvedCarrierLanesPacked: 0x7fffffff, activeRoundId: 9, carrierLane: 7,
+            previousCarrierLane: 6, lastStarterLane: 7, remainingSeconds: 99.999,
+            transferCooldownSeconds: 9.999, returnProtectionSeconds: 9.999, recoverySeconds: 9.999,
+        },
+        recovery,
+        { revision: 999999, elapsedSeconds: 999.999, activeMask: 0x7fffffff, armedMask: 0x7fffffff },
+        {
+            revision: 999999, phase: 4, eventIndex: 5, eventCount: 6, remainingSeconds: 99.999,
+            packedEvents: 0x7fffffff, activatedMask: 0x7fffffff, residentMask: 0x7fffffff,
+            specialMask: 0x7fffffff, activationSerial: 999999, lastActivatedEvent: 5,
+            encoreRound: 999999, encoreEvent: 5, anchorDistance: 400,
+            eventAnchorDistances: [32, 96, 160, 224, 288, 360],
+        },
+    );
+    assert.ok(Buffer.byteLength(payload, 'utf8') <= 1536, `snapshot bytes=${Buffer.byteLength(payload, 'utf8')}`);
 });
 
 test('timed bomb arm, transfer, resolution and active state round-trip across both sync paths', () => {
@@ -224,6 +299,7 @@ test('legacy S| and P| payloads keep safe sentinel defaults', () => {
         revision: 0,
         elapsedSeconds: 0,
         activeMask: 0,
+        armedMask: 0,
     });
 
     const legacyP = decodeSelfSnapshot('P|2,1234,-125,0,222,456,78,444,-555,-333,666,-777');
@@ -305,7 +381,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 74);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 76);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

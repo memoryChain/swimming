@@ -26,6 +26,7 @@ export class EntertainmentEventBanner {
     private eventRoot: Node | null = null;
     private eventLabel: Label | null = null;
     private eventUntil = 0;
+    private directorUntil = 0;
     private personalRoot: Node | null = null;
     private personalLabel: Label | null = null;
     private personalUntil = 0;
@@ -71,12 +72,23 @@ export class EntertainmentEventBanner {
     }
 
     showEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+        if (this.eventRoot?.active && Date.now() < this.directorUntil) return;
+        this.directorUntil = 0;
         this.eventQueue.length = 0;
         this.presentEvent(text, tone, durationMs);
     }
 
+    /** 导演预告／激活文案在自己的展示期内不被子玩法的短提示覆盖。 */
+    showDirectorEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
+        const safeDuration = Math.max(0, durationMs);
+        this.eventQueue.length = 0;
+        this.directorUntil = Date.now() + safeDuration;
+        this.presentEvent(text, tone, safeDuration);
+    }
+
     enqueueEvent(text: string, tone: EntertainmentBannerTone, durationMs: number): void {
         if (!this.eventRoot?.isValid) return;
+        if (this.eventRoot.active && Date.now() < this.directorUntil) return;
         if (!this.eventRoot.active) {
             this.presentEvent(text, tone, durationMs);
             return;
@@ -102,6 +114,7 @@ export class EntertainmentEventBanner {
         const now = Date.now();
         const eventRoot = this.eventRoot;
         if (eventRoot?.active && now >= this.eventUntil) {
+            this.directorUntil = 0;
             const next = this.eventQueue.shift();
             if (next) this.presentEvent(next.text, next.tone, next.durationMs);
             else eventRoot.active = false;
@@ -114,6 +127,7 @@ export class EntertainmentEventBanner {
         if (this.eventRoot?.active) this.eventRoot.active = false;
         if (this.personalRoot?.active) this.personalRoot.active = false;
         this.eventUntil = 0;
+        this.directorUntil = 0;
         this.personalUntil = 0;
         this.eventQueue.length = 0;
     }

@@ -60,7 +60,9 @@
 // 版本72：导演快照追加特殊事件掩码，超级漩涡的规格与水流强度跨端一致。
 // 版本73：娱乐事件按赛程锚点分散触发，并同步激活序号、最后事件与返场状态。
 // 版本74：巡游鲨鱼加入房主权威的持续纠缠防卡死补咬。
-export const NET_RACE_PROTOCOL_VERSION = 74;
+// 版本75：水雷出生保护状态进入 S| 快照，禁止贴脸刷新后同帧触爆。
+// 版本76：导演、炮火与水雷拒绝同修订乱序快照回拨，保持事件计时与一次性障碍单调。
+export const NET_RACE_PROTOCOL_VERSION = 76;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

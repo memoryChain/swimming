@@ -36,7 +36,9 @@ test('扩大后的爆炸范围使用原有池化网格增强体量', () => {
 });
 
 test('娱乐模式定时炸弹使用精修炸药束、切角计时器和连续导线并保持单网格', () => {
-    const model = timedBomb.match(/export function buildTimedBombGeometry[\s\S]*?\n}\n\nfunction buildLowPolyLampGeometry/)?.[0] ?? '';
+    const start = timedBomb.indexOf('export function buildTimedBombGeometry');
+    const end = timedBomb.indexOf('function buildLowPolyLampGeometry', start);
+    const model = start >= 0 && end > start ? timedBomb.slice(start, end) : '';
     assert.match(model, /appendFacetedBundleBand/);
     assert.match(model, /appendChamferedBox/);
     assert.match(model, /appendFacetedCable/);

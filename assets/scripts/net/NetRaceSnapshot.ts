@@ -129,6 +129,7 @@ export type NetMinefieldState = {
     revision: number;
     elapsedSeconds: number;
     activeMask: number;
+    armedMask: number;
 };
 export type NetEntertainmentDirectorState = {
     revision: number;
@@ -211,8 +212,8 @@ export function encodeRaceSnapshot(
     const minefieldRevision = Math.max(0, Math.floor(minefield?.revision ?? 0));
     const minefieldElapsedMs = Math.max(0, Math.round((minefield?.elapsedSeconds ?? 0) * 1000));
     const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(16);
-    // Slot 27 stays empty so the following entertainment-director fields retain their compact indices.
-    const minefieldReserved = '';
+    // Slot 27 now carries the host-authoritative spawn-safe/armed state without shifting later fields.
+    const minefieldArmedMask = Math.max(0, Math.floor(minefield?.armedMask ?? 0)).toString(16);
     const directorRevision = Math.max(0, Math.floor(entertainmentDirector?.revision ?? 0));
     const directorPhase = Math.max(0, Math.floor(entertainmentDirector?.phase ?? 0));
     const directorEventIndex = Math.max(0, Math.floor(entertainmentDirector?.eventIndex ?? 0));
@@ -233,7 +234,7 @@ export function encodeRaceSnapshot(
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldReserved},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -274,6 +275,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const minefieldRevision = header.length > 24 ? parseInt(header[24], 10) : 0;
     const minefieldElapsedMs = header.length > 25 ? parseInt(header[25], 10) : 0;
     const minefieldActiveMask = header.length > 26 ? parseInt(header[26], 16) : 0;
+    const minefieldArmedMask = header.length > 27 ? parseInt(header[27], 16) : 0;
     const directorRevision = header.length > 28 ? parseInt(header[28], 10) : 0;
     const directorPhase = header.length > 29 ? parseInt(header[29], 10) : 0;
     const directorEventIndex = header.length > 30 ? parseInt(header[30], 10) : 0;
@@ -390,6 +392,7 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             revision: safeNonNegativeInteger(minefieldRevision),
             elapsedSeconds: safeMilliseconds(minefieldElapsedMs),
             activeMask: safeNonNegativeInteger(minefieldActiveMask),
+            armedMask: safeNonNegativeInteger(minefieldArmedMask),
         },
         entertainmentDirector: {
             revision: safeNonNegativeInteger(directorRevision),

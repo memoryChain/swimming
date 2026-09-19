@@ -40,6 +40,7 @@ export class MinefieldBrawlPresentation {
         for (let id = 0; id < mineCount; id++) {
             const node = this.makeMeshNode(`MinefieldMine${id}`, this.mineMesh, this.mineMaterial);
             node.setScale(1.08, 1.08, 1.08);
+            node.active = false;
             this.mineNodes.push(node);
         }
         for (let index = 0; index < EXPLOSION_POOL_SIZE; index++) {
@@ -53,7 +54,8 @@ export class MinefieldBrawlPresentation {
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
         this.visible = true;
-        for (const node of this.mineNodes) this.setActive(node, true);
+        // 下一次 20Hz 表现采样会按 active + armed 恢复正确显隐，避免重置帧在原点闪现。
+        for (const node of this.mineNodes) this.setActive(node, false);
         for (const explosion of this.explosions) {
             explosion.remaining = 0;
             this.setActive(explosion.node, false);
@@ -86,7 +88,7 @@ export class MinefieldBrawlPresentation {
         for (let id = 0; id < this.mineNodes.length; id++) {
             const node = this.mineNodes[id];
             const mine = mines[id];
-            const active = !!mine?.active;
+            const active = !!mine?.active && !!mine?.armed;
             this.setActive(node, active);
             if (!active) continue;
             node.setWorldPosition(
