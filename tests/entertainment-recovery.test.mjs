@@ -124,3 +124,23 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.INVULNERABLE/);
     assert.match(hud, /无敌保护/);
 });
+
+test('娱乐身体反馈保留角色原贴图材质，不再替换蒙皮材质', () => {
+    const rig = readFileSync(
+        new URL('../assets/scripts/entity/CartoonSwimmerRig.ts', import.meta.url),
+        'utf8',
+    );
+    const start = rig.indexOf('private updatePerfectGlowMaterial()');
+    const end = rig.indexOf('private currentCollisionFlashIntensity()', start);
+    const bodyFeedback = rig.slice(start, end);
+    assert.ok(start >= 0 && end > start);
+    assert.match(bodyFeedback, /applyBodyMaterialGlow/);
+    assert.match(bodyFeedback, /setProperty\('chargeParams'/);
+    assert.doesNotMatch(bodyFeedback, /setMaterial\(/);
+    assert.doesNotMatch(rig, /SwimmerBodyFlashUnlit|_perfectGlowRestoreSlots/);
+    const swimmer = readFileSync(
+        new URL('../assets/scripts/entity/Swimmer.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(swimmer, /presentStanding[\s\S]*?clearTransientBodyFeedback\(\)/);
+});

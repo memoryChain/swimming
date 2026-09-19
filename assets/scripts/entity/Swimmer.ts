@@ -693,7 +693,7 @@ export class Swimmer extends Component {
         this._phases.clearDiveUnderwaterPhase();
         this.cartoonRig?.finishDiveChargeEffect();
         this.cartoonRig?.setActiveSwimming(false);
-        this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.clearTransientBodyFeedback();
     }
 
     // NETWORKED RACE ONLY: when true this swimmer is stepped in deterministic fixed
@@ -988,7 +988,7 @@ export class Swimmer extends Component {
         Tween.stopAllByTarget(this.node);
         this._motor.stopRace();
         this.cartoonRig?.finishDiveChargeEffect();
-        this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.clearTransientBodyFeedback();
         this.node.setRotationFromEuler(0, inwardDirection > 0 ? 0 : 180, 0);
         this.cartoonRig?.setFinishFloating();
         const x = this.finishFloatX(direction);
@@ -1022,7 +1022,7 @@ export class Swimmer extends Component {
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setDiveReady(true);
         this.cartoonRig?.finishDiveChargeEffect();
-        this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.clearTransientBodyFeedback();
     }
 
     presentStanding(position: Vec3, facingY: number, surfaceWorldY: number | null = null) {
@@ -1036,7 +1036,7 @@ export class Swimmer extends Component {
         this.cartoonRig?.setActiveSwimming(false);
         this.cartoonRig?.setShowcaseStanding();
         this.cartoonRig?.finishDiveChargeEffect();
-        this.cartoonRig?.setPerfectGlowActive(false);
+        this.cartoonRig?.clearTransientBodyFeedback();
     }
 
     private updatePerfectZoneGlow() {
