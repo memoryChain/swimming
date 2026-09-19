@@ -1302,9 +1302,12 @@ export class GameManager extends Component {
                 }
                 this._poolNode = pool;
                 // Attach the ceiling lights before the top-view binder scans so
-                // its 'ceiling'-named node is captured and hidden in top view.
+                // its 'ceiling'-named node is captured for per-camera filtering.
                 applyCeilingLightArray(pool, (message) => this.debug(message));
-                const ceilingCount = this._topViewCeiling.bind(pool);
+                const ceilingCount = this._topViewCeiling.bind(
+                    pool,
+                    this._cameraNode?.getComponent(Camera) ?? null,
+                );
                 this.debug(`top-view ceiling nodes=${ceilingCount}`);
                 this.setupWaterRefraction(pool);
                 applyPoolEdgeToonOutline(pool, (message) => this.debug(message));

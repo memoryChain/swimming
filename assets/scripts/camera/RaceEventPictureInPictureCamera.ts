@@ -4,6 +4,7 @@ import type { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { SWIMMER_LAYER, UNDERWATER_LAYER } from '../venue/WaterSurfaceBinder';
+import { setCameraVenueCeilingVisible, VENUE_CEILING_LAYER } from '../venue/TopViewCeilingController';
 import { styleProjectUiLabel } from '../ui/ProjectUiFonts';
 import { makeLabel, makeRoundedRect, makeUiNode, uiColor } from '../ui/RuntimeUiFactory';
 
@@ -56,6 +57,7 @@ export class RaceEventPictureInPictureCamera {
     private whirlpoolX = 0;
     private whirlpoolZ = 0;
     private whirlpoolSuper = false;
+    private ceilingVisible = true;
     private readonly cameraPosition = new Vec3();
     private readonly focus = new Vec3();
     private readonly subjectPosition = new Vec3();
@@ -86,6 +88,7 @@ export class RaceEventPictureInPictureCamera {
                 this.biteHoldSeconds = 0;
             }
             this.setVisible(true);
+            this.setCeilingVisible(shark.state !== SharkState.WARNING);
             this.presentSharkState(shark.state);
             this.updateWarningPush(shark, safeDt);
             if (shark.state === SharkState.BITE) {
@@ -127,6 +130,7 @@ export class RaceEventPictureInPictureCamera {
         this.cannonSourceY = this.options.course.waterY + 1.2;
         this.cannonSourceZ = side * (this.options.course.poolWidth * 0.5 + 0.5);
         this.mode = 'cannon';
+        this.setCeilingVisible(true);
         this.holdSeconds = 0;
         this.setCopy('炮火镜头', '炮弹已锁定落点', DANGER_COLOR);
         this.setVisible(true);
@@ -171,6 +175,7 @@ export class RaceEventPictureInPictureCamera {
         // 漩涡是路线教学镜头，不能抢占鲨鱼咬击或炮火落点等即时危险镜头。
         if (this.mode === 'shark' || this.mode === 'cannon') return;
         this.mode = 'whirlpool';
+        this.setCeilingVisible(false);
         this.whirlpoolX = this.options.course.distanceToWorldX(distance);
         this.whirlpoolZ = lateral;
         this.whirlpoolSuper = superVariant;
@@ -374,11 +379,18 @@ export class RaceEventPictureInPictureCamera {
 
     private hide(): void {
         this.setVisible(false);
+        this.setCeilingVisible(true);
         this.mode = 'none';
         this.holdSeconds = 0;
         this.warningPush = 0;
         this.biteHoldSeconds = 0;
         this.lastSharkState = SharkState.INACTIVE;
+    }
+
+    private setCeilingVisible(visible: boolean): void {
+        if (this.ceilingVisible === visible) return;
+        this.ceilingVisible = visible;
+        setCameraVenueCeilingVisible(this.camera, visible);
     }
 
     private buildCamera(): void {
@@ -387,7 +399,7 @@ export class RaceEventPictureInPictureCamera {
         node.layer = Layers.Enum.DEFAULT;
         const camera = node.addComponent(Camera);
         camera.projection = Camera.ProjectionType.PERSPECTIVE;
-        camera.visibility = Layers.Enum.DEFAULT | SWIMMER_LAYER | UNDERWATER_LAYER;
+        camera.visibility = Layers.Enum.DEFAULT | SWIMMER_LAYER | UNDERWATER_LAYER | VENUE_CEILING_LAYER;
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
         camera.clearColor = FEED_CLEAR_COLOR;
         camera.near = 0.1;

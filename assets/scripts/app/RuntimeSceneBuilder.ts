@@ -3,6 +3,7 @@ import { RaceCameraDirector } from '../camera/RaceCameraDirector';
 import { StandardSkyboxApplier } from './StandardSkyboxApplier';
 import { WATER_SURFACE_LAYER, UNDERWATER_LAYER } from '../venue/WaterSurfaceBinder';
 import { SPECTATOR_LAYER } from '../venue/SpectatorVisibility';
+import { VENUE_CEILING_LAYER } from '../venue/TopViewCeilingController';
 
 export type RuntimeSceneRefs = {
     canvasNode: Node;
@@ -101,7 +102,8 @@ export class RuntimeSceneBuilder {
         // Render the DEFAULT scene plus the water surface and underwater layers.
         // The refraction camera renders only the underwater layer (pool bottom)
         // into its RenderTexture.
-        camera.visibility = Layers.BitMask.DEFAULT | WATER_SURFACE_LAYER | UNDERWATER_LAYER | SPECTATOR_LAYER;
+        camera.visibility = Layers.BitMask.DEFAULT | WATER_SURFACE_LAYER | UNDERWATER_LAYER
+            | SPECTATOR_LAYER | VENUE_CEILING_LAYER;
         camera.clearFlags = Camera.ClearFlag.SOLID_COLOR;
         camera.clearColor = color(74, 158, 224);
         camera.fov = 36;

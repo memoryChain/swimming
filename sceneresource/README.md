@@ -41,7 +41,7 @@
    - `start_block_anchor_root`
    - `start_block_anchor_near_01` 至 `start_block_anchor_near_08`
    - `start_block_top_near_marker`
-6. 俯视相机会按名称隐藏天花板；新增顶部构件时，节点名必须包含 `ceiling`。
+6. 顶部构件会按名称归入独立相机层；新增顶部构件时，节点名必须包含 `ceiling`，以便主镜头俯视和娱乐事件高空镜头分别排除，且不影响同时渲染的其他相机。
 7. 普通看台必须保留 16 个独立节点 `BleacherBatch_T{1..4}_{N/S/E/W}`。观众生成依赖每个节点的包围盒和层号，不能把它们合成一个总 Mesh。
 8. `CornerStands_Merged` 也必须保留。看台 atlas 脚本预期共 17 个看台批次。
 9. 新增或修改场馆几何时控制面数、材质槽、透明层和贴图尺寸。微信小游戏优先减少 draw call 和透明 overdraw。
@@ -188,7 +188,7 @@ npm run textures:check
 - 浮漂复用原 `LaneFloatBeads.png` 的 128×16 纹理及原着色器；轴向每色段 U 从 0 到 12，纹理采样器必须保持 REPEAT，暗缝和固定顶光提供盘片观感，无新增贴图或采样。几何及 U→12-U 的 UV 映射镜像一致。`LaneFloatCutout.effect` 在顶点阶段按圆周 V 计算固定顶光，顶部 V=0.5；V 在底部跨缝不拆点，因为原纹理各行相同，圆周顶光在顶点阶段计算。闭合绳体保持背面剔除，Effect 及 `WaterSurfaceBinder` 的三条初始化路径均为 BACK。无新增透明层、实时灯光、物理模拟或逐帧逻辑；水下染色与运动员遮挡裁切保持原流程。此方案只模拟盘片明暗，近景外轮廓无真实凹槽，不得声称与逐颗建模完全一致；远处纹理闪烁、实际跟拍效果及帧率仍须微信真机验证。
 - 仰泳旗线已移除；四组泳池梯、两组救生站与泳具车、裁判席和低矮长凳位置正常；领奖台西端的自由环绕镜头区域必须保持无高物体遮挡。
 - `PoolsideProps_Merged` 的 Blender world bounds 基线约为 X `4.965..45.035`、Y `-14.710..15.657`、Z `-0.920..2.485`；独立设施及四组池沿扶梯的甲板侧支脚都必须落在外侧地面 `Z=0.2`，每组扶梯当前有 16 个顶点命中该接地平面；导出脚本会分别检查四组扶梯，并拦截换轴、漏应用变换、整体移位或抬高 0.2m 的损坏状态。
-- 顶视镜头仍能隐藏名称包含 `ceiling` 的顶部构件。
+- 顶视镜头仍能排除名称包含 `ceiling` 的顶部构件；切换必须使用独立顶棚层和相机可见掩码，不能全局隐藏节点影响同时渲染的画中画或主镜头。
 - 真机重要改动需同时检查 iOS 和 Android 微信小游戏。
 
 ## 禁止事项
@@ -294,7 +294,7 @@ python scripts/run-blender.py -- sceneresource/SwimmingVenue_Rebuild_FlatColor.b
 - 新灯具由 `refine-ceiling-lighting.py` 在 editable 中创作，源码集合 `CeilingPremiumLighting` 包含 7 个浅拱肋、1 个屋盖、4 组线性灯，共 12 个独立编辑对象；合批目标为 `ceiling_lighting_rig`，Mesh 名为 `ceiling_lighting_rig_Mesh`。
 - 横向支架落在现有 `StandBackWall_N/S` 的实际墙顶 `Z≈9.276m`；四条双槽灯沿泳池纵向延展，位于 Blender Y `-9/-3/3/9m`，灯壳底面 `Z=11.36m`。双吊杆连接拱肋与灯壳，扩散面内嵌槽口 0.03m，并与槽底相交 0.01m。屋盖两端按东西后墙与场馆切角收口。
 - 运行时 2,320 triangles、2,600 导出顶点、1 个不透明材质 primitive，只有 POSITION/COLOR_0；无新增纹理、法线、UV、实时光源或透明光晕。GLB 比旧场馆增加 66,824 bytes。全馆 primitive 上限仍为 39，不能放宽。
-- `CeilingLightArray.ts` 现在只绑定一次 `builtin-unlit` 顶点色材质，节点销毁时释放自建材质；不生成灯具网格。旧 76 个逐灯眩光节点和控制器已移除，比赛帧不做灯具计算。`TopViewCeilingController` 按节点名整体隐藏和恢复，包括屋盖；不要把灯具并入不带 ceiling 名称的其他场馆批次。
+- `CeilingLightArray.ts` 现在只绑定一次 `builtin-unlit` 顶点色材质，节点销毁时释放自建材质；不生成灯具网格。旧 76 个逐灯眩光节点和控制器已移除，比赛帧不做灯具计算。`TopViewCeilingController` 把名称含 `ceiling` 的节点树归入独立顶棚层，主镜头只在俯视状态边沿切换相机掩码；共用事件相机仅在漩涡俯视和鲨鱼高空预警阶段排除该层，炮火与鲨鱼近景继续显示。不要把灯具并入不带 ceiling 名称的其他场馆批次。
 - 灯具与屋盖为纯视觉内容，不影响单机或联机结果；水面仍使用原本的近似反光，不增加反射相机。
 - 修改时先备份 editable、master、GLB 和 meta，运行下列作者/同步步骤，再按本文标准流程执行 batch、dry-run、正式 export、Creator 重新导入、`textures:fix` 与 `textures:check`。保留原有 67 个子资源 UUID，新增灯具 Mesh 与 Material 子资源；原有 33 个网格和 7 张图片的数据应保持不变。
 

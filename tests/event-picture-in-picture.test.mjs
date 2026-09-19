@@ -8,15 +8,28 @@ const gameManager = readFileSync(
     new URL('../assets/scripts/core/GameManager.ts', import.meta.url),
     'utf8',
 );
+const runtimeScene = readFileSync(
+    new URL('../assets/scripts/app/RuntimeSceneBuilder.ts', import.meta.url),
+    'utf8',
+);
 
 test('娱乐玩法共用一套低分辨率事件镜头', () => {
     assert.equal((camera.match(/new RenderTexture/g) ?? []).length, 1);
     assert.match(camera, /const FEED_WIDTH = 224/);
     assert.match(camera, /const FEED_HEIGHT = 126/);
     assert.match(camera, /const RENDER_INTERVAL_SECONDS = 1 \/ 30/);
-    assert.match(camera, /camera\.visibility = Layers\.Enum\.DEFAULT \| SWIMMER_LAYER \| UNDERWATER_LAYER/);
+    assert.match(camera, /camera\.visibility = Layers\.Enum\.DEFAULT \| SWIMMER_LAYER \| UNDERWATER_LAYER \| VENUE_CEILING_LAYER/);
+    assert.match(runtimeScene, /SPECTATOR_LAYER \| VENUE_CEILING_LAYER/);
     assert.doesNotMatch(camera, /Graphics|setInterval|setTimeout/);
     assert.equal(existsSync(new URL('../assets/scripts/camera/SharkPictureInPictureCamera.ts', import.meta.url)), false);
+});
+
+test('共用事件镜头只在高空俯拍阶段排除顶棚', () => {
+    assert.match(camera, /showWhirlpoolPreview[\s\S]*?this\.setCeilingVisible\(false\)/);
+    assert.match(camera, /showCannonLaunch[\s\S]*?this\.setCeilingVisible\(true\)/);
+    assert.match(camera, /this\.setCeilingVisible\(shark\.state !== SharkState\.WARNING\)/);
+    assert.match(camera, /private setCeilingVisible\(visible: boolean\)[\s\S]*?if \(this\.ceilingVisible === visible\) return/);
+    assert.doesNotMatch(gameManager, /_eventPictureInPicture\?\.showMine|_eventPictureInPicture\?\.showStimulant/);
 });
 
 test('炮火、首个漩涡和鲨鱼使用事件镜头，炸弹与水雷不接入', () => {

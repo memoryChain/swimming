@@ -21,7 +21,7 @@ class MeshRenderer {
     setMaterial(material) { this.material = material; }
 }
 class Node {
-    isValid = true; active = true; children = []; components = [];
+    isValid = true; active = true; layer = 1; children = []; components = [];
     constructor(name) { this.name = name; }
     addComponent(Type) { const component = new Type(); component.node = this; this.components.push(component); return component; }
     getComponent(Type) { return this.components.find(c => c instanceof Type); }
@@ -35,8 +35,8 @@ function load(name) {
     return module.exports;
 }
 const { applyCeilingLightArray, CeilingLightingMaterialOwner } = load('CeilingLightArray');
-const { TopViewCeilingController } = load('TopViewCeilingController');
-test('灯具重复绑定不增节点或材质，俯视切换完整隐藏并恢复', () => {
+const { TopViewCeilingController, VENUE_CEILING_LAYER } = load('TopViewCeilingController');
+test('灯具重复绑定不增节点或材质，俯视只切主相机层并恢复', () => {
     const pool = new Node('pool'), imported = new Node('LowPolyPool'), rig = new Node('ceiling_lighting_rig');
     pool.children.push(imported); imported.children.push(rig);
     const renderer = rig.addComponent(MeshRenderer);
@@ -53,13 +53,26 @@ test('灯具重复绑定不增节点或材质，俯视切换完整隐藏并恢�
     assert.equal(rig.components.length, 2);
     assert.equal(pool.children.length, 1);
     assert.equal(imported.children.length, 1);
+    let visibility = (1 << 8) | VENUE_CEILING_LAYER;
+    let visibilityWrites = 0;
+    const camera = {
+        isValid: true,
+        get visibility() { return visibility; },
+        set visibility(value) { visibility = value; visibilityWrites++; },
+    };
     const top = new TopViewCeilingController();
-    assert.equal(top.bind(pool), 1);
+    assert.equal(top.bind(pool, camera), 1);
+    assert.equal(rig.layer, VENUE_CEILING_LAYER);
     for (let i = 0; i < 10; i++) {
-        top.update(true); assert.equal(rig.active, false);
-        top.update(true); top.update(false); assert.equal(rig.active, true);
+        top.update(true); assert.equal(camera.visibility & VENUE_CEILING_LAYER, 0);
+        assert.equal(rig.active, true);
+        top.update(true); top.update(false); assert.ok(camera.visibility & VENUE_CEILING_LAYER);
     }
     rig.active = false; top.update(true); top.update(false); assert.equal(rig.active, false);
+    assert.equal(visibilityWrites, 22);
+    top.dispose();
+    assert.equal(rig.layer, 1);
+    assert.ok(camera.visibility & VENUE_CEILING_LAYER);
     owner.onDestroy(); assert.equal(material.destroyed, true); assert.equal(owner.material, null);
     assert.equal(renderer.mesh.borrowed, true);
 });
