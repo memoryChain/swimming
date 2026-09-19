@@ -23,7 +23,7 @@ function fixture() {
         setScale(x, y, z) { this.scale = { x, y, z }; }
         on(event, callback) { assert.equal(this.events.has(event), false); this.events.set(event, callback); }
         once(event, callback) { this.on(event, callback); }
-        click() { this.events.get('end')?.(); }
+        click() { return this.events.get('end')?.(); }
         destroy() { this.events.get('destroyed')?.(); if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1); }
     }
     const makeUiNode = (name, parent) => { const n = new Node(name); n.addComponent(UITransform); n.layer = parent?.layer ?? 0; n.parent = parent; parent?.children.push(n); return n; };
@@ -44,13 +44,17 @@ function fixture() {
 
 const descendants = node => [node, ...node.children.flatMap(descendants)];
 const findNode = (node, name) => descendants(node).find(child => child.name === name);
+const emptyCurrencyDebug = () => ({
+    read: () => ({ coins: 0, breakthroughGems: 0 }),
+    adjust: async () => ({ coins: 0, breakthroughGems: 0 }),
+});
 
 test('测试入口反复切换角色等级赛程不增加节点或监听，启动只提交一次', () => {
     const { Node, Label, load } = fixture();
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const root = new Node('root'); let starts = 0;
-    buildAiDebugSetupPicker(root, () => starts++, () => {});
+    buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
     const initialNodes = descendants(root);
     const initialListeners = initialNodes.map(node => node.events.size);
     for (let i = 0; i < 100; i++) {
@@ -80,9 +84,11 @@ test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆�
     const popup = new Node('Popup'); popup.layer = 1 << 14;
     const Login = vm.runInNewContext(ts.transpileModule(`class Login { ${method.getText(source)} }; Login`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText,
-        { getUILayer: () => popup, UILayer: { Popup: 3 }, mountAiDebugSetupPicker });
+        { getUILayer: () => popup, UILayer: { Popup: 3 }, mountAiDebugSetupPicker,
+            PlayerData: { coins: 100, breakthroughGems: 2 } });
     const owner = new Login(); owner._canvasNode = new Node('主画布'); owner._canvasNode.setPosition(640, 360);
-    owner.startAiDebug = () => {}; owner.grantDebugCoins = () => {};
+    owner.startAiDebug = () => {};
+    owner.adjustDebugCurrency = async () => ({ coins: 100, breakthroughGems: 2 });
     for (let repeat = 0; repeat < 3; repeat++) {
         owner.showAiDebugPicker(); owner.showAiDebugPicker();
         assert.equal(popup.children.length, 1);
@@ -115,14 +121,14 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
     const root = new Node('Panel'); let starts = 0;
-    buildAiDebugSetupPicker(root, () => starts++, () => {});
+    buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
     assert.equal(getAiDebugSetup().opponentCount, 7);
     findNode(root, 'OpponentCount').click();
     findNode(root, 'Roster').click();
     assert.equal(starts, 0);
     findNode(root, 'Tier4').click();
     assert.equal(getAiDebugSetup().opponentCount, 1);
-    const second = new Node('Panel'); buildAiDebugSetupPicker(second, () => starts++, () => {});
+    const second = new Node('Panel'); buildAiDebugSetupPicker(second, () => starts++, emptyCurrencyDebug());
     findNode(second, 'OpponentCount').click(); findNode(second, 'Roster').click();
     findNode(second, 'Tier3').click();
     assert.equal(getAiDebugSetup().opponentCount, 7);
@@ -135,7 +141,7 @@ test('模式测试页签列出七个单项娱乐模式，切换不重建并以�
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
     const root = new Node('Panel'); let starts = 0; let difficulty = -1;
-    buildAiDebugSetupPicker(root, value => { starts++; difficulty = value; }, () => {});
+    buildAiDebugSetupPicker(root, value => { starts++; difficulty = value; }, emptyCurrencyDebug());
     const aiContent = findNode(root, 'AiTestContent');
     const modeContent = findNode(root, 'ModeTestContent');
     const aiTab = findNode(root, 'AiTestTab');
@@ -177,12 +183,56 @@ test('模式测试页签列出七个单项娱乐模式，切换不重建并以�
     assert.equal(getAiDebugSetup().mixedCharacters, true);
 });
 
+test('货币调试页可分别增减两种货币、切换数额并保持节点稳定', async () => {
+    const { Node, Label, load } = fixture();
+    const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
+    let balances = { coins: 50, breakthroughGems: 2 };
+    const changes = [];
+    const currencyDebug = {
+        read: () => balances,
+        adjust: async (currency, delta) => {
+            changes.push([currency, delta]);
+            balances = { ...balances, [currency]: Math.max(0, balances[currency] + delta) };
+            return balances;
+        },
+    };
+    const root = new Node('Panel');
+    buildAiDebugSetupPicker(root, () => {}, currencyDebug);
+    const initialNodes = descendants(root);
+    const initialListeners = initialNodes.map(node => node.events.size);
+    const currencyTab = findNode(root, 'CurrencyDebugTab');
+    const content = findNode(root, 'CurrencyDebugContent');
+    currencyTab.click(); currencyTab.click();
+    assert.equal(content.activeInHierarchy, true);
+
+    const coinRow = findNode(content, 'CoinRow');
+    const gemRow = findNode(content, 'GemRow');
+    assert.equal(findNode(coinRow, 'Balance').getComponent(Label).string, '当前：50');
+    assert.equal(findNode(gemRow, 'Balance').getComponent(Label).string, '当前：2');
+    findNode(coinRow, 'Amount').click();
+    assert.equal(findNode(coinRow, 'Amount').getChildByName('Label').getComponent(Label).string, '数额 1000');
+    await findNode(coinRow, 'Add').click();
+    await findNode(coinRow, 'Subtract').click();
+    await findNode(coinRow, 'Subtract').click();
+    assert.equal(findNode(coinRow, 'Balance').getComponent(Label).string, '当前：0');
+    await findNode(gemRow, 'Add').click();
+    findNode(gemRow, 'Amount').click();
+    await findNode(gemRow, 'Subtract').click();
+    assert.equal(findNode(gemRow, 'Balance').getComponent(Label).string, '当前：0');
+    assert.deepEqual(changes, [
+        ['coins', 1000], ['coins', -1000], ['coins', -1000],
+        ['breakthroughGems', 1], ['breakthroughGems', -5],
+    ]);
+    assert.deepEqual(descendants(root), initialNodes);
+    assert.deepEqual(initialNodes.map(node => node.events.size), initialListeners);
+});
+
 test('漩涡模式测试可选纯随机、小漩涡或大漩涡并保留选择', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
     const root = new Node('Panel'); let starts = 0;
-    buildAiDebugSetupPicker(root, () => starts++, () => {});
+    buildAiDebugSetupPicker(root, () => starts++, emptyCurrencyDebug());
     findNode(root, 'ModeTestTab').click();
     const options = findNode(root, 'WhirlpoolOptions');
     assert.equal(options.activeInHierarchy, false);

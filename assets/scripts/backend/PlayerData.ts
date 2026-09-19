@@ -9,6 +9,7 @@ import {
     AdRewardResult,
     DailyShopClaimResult,
     DailyShopRewardSlot,
+    DebugCurrencyId,
     IdentityPatch,
 } from './IBackend';
 import { generateRandomNickName } from './IdentityConfig';
@@ -141,12 +142,12 @@ class PlayerDataStore {
         });
     }
 
-    // DEBUG ONLY: add coins with no ad and no cap (headbar "+" button while ads
-    // are deferred). Updates local state and notifies listeners.
-    async grantDebugCoins(amount: number): Promise<void> {
+    // DEBUG ONLY: adjust a local test wallet and notify every shared balance view.
+    async adjustDebugCurrency(currency: DebugCurrencyId, delta: number): Promise<PlayerProfile> {
         return this.enqueue(async () => {
-            this._profile = await backend().grantDebugCoins(amount);
+            this._profile = await backend().adjustDebugCurrency(currency, delta);
             this._emit();
+            return this._profile;
         });
     }
 

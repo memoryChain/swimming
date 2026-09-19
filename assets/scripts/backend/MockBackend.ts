@@ -13,6 +13,7 @@ import {
     BreakthroughResult,
     DailyShopClaimResult,
     DailyShopRewardSlot,
+    DebugCurrencyId,
     IBackend,
     IdentityPatch,
     LevelSpendResult,
@@ -87,10 +88,11 @@ export class MockBackend implements IBackend {
         return Promise.resolve({ ok: true, profile, slot, grantedCoins, grantedGems });
     }
 
-    // DEBUG ONLY: no ad, no cap. See IBackend.grantDebugCoins.
-    grantDebugCoins(amount: number): Promise<PlayerProfile> {
+    // DEBUG ONLY: no ad, no cap. See IBackend.adjustDebugCurrency.
+    adjustDebugCurrency(currency: DebugCurrencyId, delta: number): Promise<PlayerProfile> {
         const profile = this.read();
-        profile.coins += Math.max(0, Math.floor(amount));
+        const amount = Number.isFinite(delta) ? Math.trunc(delta) : 0;
+        profile[currency] = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, profile[currency] + amount));
         this.write(profile);
         return Promise.resolve(profile);
     }

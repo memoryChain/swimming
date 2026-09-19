@@ -459,8 +459,8 @@ export class PrepareRaceFlow {
         this._motion.bindButton(manage);
         manage.on(Button.EventType.CLICK, () => this.leaveCurrentScreen(() => this.showCharacterManagement()));
         if (this._callbacks.onAiDebug) {
-            const ai = makeTouchArea('AiDebugButton', parent, 120, 44); ai.setPosition(-520, -290, 3);
-            const label = makeBoundLabel('Label', ai, 'AI 测试', 18, DARK_TEXT, 120, 30, 0, 0);
+            const ai = makeTouchArea('AiDebugButton', parent, 140, 44); ai.setPosition(-510, -290, 3);
+            const label = makeBoundLabel('Label', ai, '调试模式', 18, DARK_TEXT, 140, 30, 0, 0);
             stylePsdTitleLabel(label, 24);
             ai.on(Button.EventType.CLICK, () => { if (!this._leaving) this._callbacks.onAiDebug?.(); });
         }

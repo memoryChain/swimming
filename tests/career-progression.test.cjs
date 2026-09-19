@@ -71,6 +71,25 @@ test('每日补给三档独立，广告未完成不消耗，05:00 北京时间�
     assert.equal((await backend.loadProfile()).breakthroughGems, 1);
 });
 
+test('货币调试可持久化增减金币与突破宝石，余额最低为零', async () => {
+    storage.clear();
+    const backend = new MockBackend();
+    let p = await backend.adjustDebugCurrency('coins', 1000);
+    assert.equal(p.coins, 1000);
+    p = await backend.adjustDebugCurrency('breakthroughGems', 5);
+    assert.equal(p.breakthroughGems, 5);
+    p = await backend.adjustDebugCurrency('coins', -300);
+    assert.equal(p.coins, 700);
+    p = await backend.adjustDebugCurrency('breakthroughGems', -99);
+    assert.equal(p.breakthroughGems, 0);
+    p = await backend.adjustDebugCurrency('coins', Number.NaN);
+    assert.equal(p.coins, 700);
+    assert.deepEqual(
+        { coins: (await backend.loadProfile()).coins, breakthroughGems: (await backend.loadProfile()).breakthroughGems },
+        { coins: 700, breakthroughGems: 0 },
+    );
+});
+
 test('普通升级停在突破关卡，突破原子消耗金币和宝石', async () => {
     storage.clear(); const backend = new MockBackend();
     let p = await backend.loadProfile();

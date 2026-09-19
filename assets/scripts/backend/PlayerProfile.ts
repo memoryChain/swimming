@@ -42,10 +42,6 @@ export const PROGRESSION_CONFIG = {
     // Coins granted to brand-new accounts so the first level-up is reachable
     // before any race.
     starterCoins: 0,
-    // DEBUG ONLY: coins granted per tap of the headbar "+" button. This is a dev
-    // cheat for testing the level system with ads deferred. MUST be removed or
-    // gated behind a real rewarded-ad flow before shipping to production.
-    debugGrantCoins: 10000,
 } as const;
 
 // Per-character progression (level only - no XP; coins buy levels directly).

@@ -3,6 +3,7 @@ import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
 import { getRaceDistance, getRaceModeTitle, RaceDifficulty, RaceModeId } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
+import type { DebugCurrencyId } from '../backend/IBackend';
 import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
@@ -24,14 +25,38 @@ type DebugButtonView = {
     label: Label | null;
 };
 
+export type DebugCurrencyBalances = Readonly<{
+    coins: number;
+    breakthroughGems: number;
+}>;
+
+export type DebugCurrencyPanelOptions = {
+    read: () => DebugCurrencyBalances;
+    adjust: (currency: DebugCurrencyId, delta: number) => Promise<DebugCurrencyBalances>;
+};
+
+const EMPTY_CURRENCY_DEBUG: DebugCurrencyPanelOptions = {
+    read: () => ({ coins: 0, breakthroughGems: 0 }),
+    adjust: async () => ({ coins: 0, breakthroughGems: 0 }),
+};
+
+const CURRENCY_AMOUNT_STEPS: Readonly<Record<DebugCurrencyId, readonly number[]>> = {
+    coins: [100, 1000, 10000],
+    breakthroughGems: [1, 5, 10],
+};
+
 /** 保留 Popup 相机坐标系；全屏遮挡独立于面板缩放，窗口变化时才更新布局。 */
-export function mountAiDebugSetupPicker(parent: Node, start: (difficulty: number) => void, grantCoins: () => void): Node {
+export function mountAiDebugSetupPicker(
+    parent: Node,
+    start: (difficulty: number) => void,
+    currencyDebug: DebugCurrencyPanelOptions,
+): Node {
     const overlay = makeUiNode('AiDebugPicker', parent);
     overlay.addComponent(BlockInputEvents);
     const dim = makeRect('Dim', overlay, 1, 1, uiColor(2, 8, 14, 210));
     const panel = makeUiNode('Panel', overlay);
     panel.getComponent(UITransform).setContentSize(PANEL_WIDTH, PANEL_HEIGHT);
-    buildAiDebugSetupPicker(panel, start, grantCoins, () => overlay.destroy());
+    buildAiDebugSetupPicker(panel, start, currencyDebug, () => overlay.destroy());
     const layout = () => {
         const size = view.getVisibleSize();
         const transform = overlay.getComponent(UITransform);
@@ -53,7 +78,12 @@ export function mountAiDebugSetupPicker(parent: Node, start: (difficulty: number
 }
 
 // 仅调试入口。节点和监听一次建立，页签切换只改 active/选中态，不加载或重建角色模型。
-export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) => void, grantCoins: () => void, close = () => root.destroy()) {
+export function buildAiDebugSetupPicker(
+    root: Node,
+    start: (difficulty: number) => void,
+    currencyDebug: DebugCurrencyPanelOptions = EMPTY_CURRENCY_DEBUG,
+    close = () => root.destroy(),
+) {
     const setup = { ...getAiDebugSetup() };
     const raceModes: RaceDifficulty[] = ['beginner', 'competitive', 'championship'];
     let raceMode: RaceDifficulty = raceModes.indexOf(setup.mode as RaceDifficulty) >= 0
@@ -77,11 +107,13 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
 
     const aiContent = makeUiNode('AiTestContent', root);
     const modeContent = makeUiNode('ModeTestContent', root);
+    const currencyContent = makeUiNode('CurrencyDebugContent', root);
     setActive(modeContent, false);
+    setActive(currencyContent, false);
 
     const makeTab = (name: string, text: string, x: number, content: Node) => {
-        const tab = button(root, name, text, x, 266, 220, () => selectTab(content), 44);
-        const selected = makeRect('Selected', tab.node, 204, 4, uiColor(66, 222, 255, 255));
+        const tab = button(root, name, text, x, 266, 210, () => selectTab(content), 44);
+        const selected = makeRect('Selected', tab.node, 194, 4, uiColor(66, 222, 255, 255));
         selected.setPosition(0, -20, 0);
         setActive(selected, content === aiContent);
         return { ...tab, selected };
@@ -89,6 +121,7 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     let activeContent = aiContent;
     let aiTab: ReturnType<typeof makeTab>;
     let modeTab: ReturnType<typeof makeTab>;
+    let currencyTab: ReturnType<typeof makeTab>;
     const selectTab = (content: Node) => {
         if (activeContent === content) return;
         setActive(activeContent, false);
@@ -96,9 +129,11 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         setActive(activeContent, true);
         setActive(aiTab.selected, content === aiContent);
         setActive(modeTab.selected, content === modeContent);
+        setActive(currencyTab.selected, content === currencyContent);
     };
-    aiTab = makeTab('AiTestTab', '角色 AI 测试', -116, aiContent);
-    modeTab = makeTab('ModeTestTab', '模式测试', 116, modeContent);
+    aiTab = makeTab('AiTestTab', '角色 AI 测试', -230, aiContent);
+    modeTab = makeTab('ModeTestTab', '模式测试', 0, modeContent);
+    currencyTab = makeTab('CurrencyDebugTab', '货币调试', 230, currencyContent);
 
     makeLabel('Subtitle', aiContent, '先设置阵容，再点击右侧智力档开始比赛', 18, uiColor(190, 210, 220)).setPosition(0, 218, 0);
     const mixed = () => setup.opponentCount === 7 && setup.mixedCharacters;
@@ -227,8 +262,47 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
         launch(modeTestMode, MODE_TEST_DIFFICULTY, true);
     });
 
-    button(root, 'Cancel', '返回', -195, -266, 220, close);
-    button(root, 'DebugCoins', '调试领取金币', 210, -266, 290, grantCoins);
+    makeLabel('Subtitle', currencyContent, '调整本地测试存档，点击中间数额可切换档位', 18, uiColor(190, 210, 220)).setPosition(0, 205, 0);
+    const balanceLabels = new Map<DebugCurrencyId, Label | null>();
+    const amountIndexes: Record<DebugCurrencyId, number> = { coins: 0, breakthroughGems: 0 };
+    let currencyBusy = false;
+    const updateCurrencyBalances = (balances: DebugCurrencyBalances) => {
+        write(balanceLabels.get('coins') ?? null, `当前：${Math.max(0, Math.floor(balances.coins))}`);
+        write(balanceLabels.get('breakthroughGems') ?? null, `当前：${Math.max(0, Math.floor(balances.breakthroughGems))}`);
+    };
+    const adjustCurrency = async (currency: DebugCurrencyId, direction: -1 | 1) => {
+        if (currencyBusy) return;
+        currencyBusy = true;
+        const steps = CURRENCY_AMOUNT_STEPS[currency];
+        const delta = steps[amountIndexes[currency]] * direction;
+        try {
+            updateCurrencyBalances(await currencyDebug.adjust(currency, delta));
+        } finally {
+            currencyBusy = false;
+        }
+    };
+    const makeCurrencyRow = (currency: DebugCurrencyId, title: string, y: number) => {
+        const row = makeUiNode(currency === 'coins' ? 'CoinRow' : 'GemRow', currencyContent);
+        row.setPosition(0, y, 0);
+        makeRect('Back', row, 760, 126, uiColor(20, 51, 84, 245));
+        makeLabel('Title', row, title, 24, uiColor(240, 250, 255)).setPosition(-278, 22, 0);
+        const balance = makeLabel('Balance', row, '', 18, uiColor(190, 210, 220)).getComponent(Label);
+        balance.node.setPosition(-278, -22, 0);
+        balanceLabels.set(currency, balance);
+        button(row, 'Subtract', '−', 24, 0, 70, () => adjustCurrency(currency, -1), 54);
+        const amountText = () => `数额 ${CURRENCY_AMOUNT_STEPS[currency][amountIndexes[currency]]}`;
+        const amount = button(row, 'Amount', amountText(), 170, 0, 190, () => {
+            amountIndexes[currency] = (amountIndexes[currency] + 1) % CURRENCY_AMOUNT_STEPS[currency].length;
+            write(amount.label, amountText());
+        }, 54);
+        button(row, 'Add', '+', 316, 0, 70, () => adjustCurrency(currency, 1), 54);
+    };
+    makeCurrencyRow('coins', '金币', 105);
+    makeCurrencyRow('breakthroughGems', '突破宝石', -50);
+    updateCurrencyBalances(currencyDebug.read());
+    makeLabel('Hint', currencyContent, '余额不会低于 0；调试货币不进入比赛状态或联机同步', 18, uiColor(190, 210, 220)).setPosition(0, -158, 0);
+
+    button(root, 'Cancel', '返回', 0, -266, 240, close);
     // 静态调试文案同样使用随包字体；只在挂载时应用，不在切换或比赛帧重复遍历。
     const styleLabels = (node: Node) => {
         const label = node.getComponent(Label);

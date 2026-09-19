@@ -19,7 +19,8 @@ import { ensureLogin } from '../platform/PlatformSession';
 import { platform } from '../platform/PlatformManager';
 import { showToast } from '../ui/Toast';
 import { PlayerData } from '../backend/PlayerData';
-import { PROGRESSION_CONFIG, CURRENCY } from '../backend/PlayerProfile';
+import { CURRENCY } from '../backend/PlayerProfile';
+import type { DebugCurrencyId } from '../backend/IBackend';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { SettingsManager } from './SettingsManager';
 import { SettingsPanel } from '../ui/SettingsPanel';
@@ -156,12 +157,21 @@ export class LoginManager extends Component {
         }
     }
 
-    // DEBUG ONLY: add coins with no ad and no cap. Reachable only from the AI-debug
-    // popup (hidden dev panel), NOT the headbar "+" which now runs the real ad flow.
-    // See PROGRESSION_CONFIG.debugGrantCoins - remove before a production release.
-    private async grantDebugCoins() {
-        await PlayerData.grantDebugCoins(PROGRESSION_CONFIG.debugGrantCoins);
-        this.toast(`调试 +${PROGRESSION_CONFIG.debugGrantCoins} ${CURRENCY.coin.label}`);
+    // 只供调试弹窗使用。实际变更仍由 backend 持久化，不能直接改共享 profile。
+    private async adjustDebugCurrency(currency: DebugCurrencyId, delta: number) {
+        const before = currency === 'coins' ? PlayerData.coins : PlayerData.breakthroughGems;
+        try {
+            const profile = await PlayerData.adjustDebugCurrency(currency, delta);
+            const after = profile[currency];
+            const applied = after - before;
+            const label = currency === 'coins' ? CURRENCY.coin.label : CURRENCY.breakthroughGem.label;
+            this.toast(applied === 0 ? `${label}已经是 0` : `调试 ${applied > 0 ? '+' : ''}${applied} ${label}`);
+            return { coins: profile.coins, breakthroughGems: profile.breakthroughGems };
+        } catch (error) {
+            console.warn('[DebugMode] currency adjustment failed', error);
+            this.toast('货币调试失败');
+            return { coins: PlayerData.coins, breakthroughGems: PlayerData.breakthroughGems };
+        }
     }
 
     onDestroy() {
@@ -508,6 +518,9 @@ export class LoginManager extends Component {
         }
         const popup = getUILayer(this._canvasNode, UILayer.Popup);
         popup.getChildByName('AiDebugPicker')?.destroy();
-        mountAiDebugSetupPicker(popup, difficulty => this.startAiDebug(difficulty), () => { void this.grantDebugCoins(); });
+        mountAiDebugSetupPicker(popup, difficulty => this.startAiDebug(difficulty), {
+            read: () => ({ coins: PlayerData.coins, breakthroughGems: PlayerData.breakthroughGems }),
+            adjust: (currency, delta) => this.adjustDebugCurrency(currency, delta),
+        });
     }
 }

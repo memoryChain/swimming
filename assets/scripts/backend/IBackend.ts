@@ -20,6 +20,8 @@
 import { PlayerProfile } from './PlayerProfile';
 import type { CareerCommand, CareerResult } from '../progression/CareerRules';
 
+export type DebugCurrencyId = 'coins' | 'breakthroughGems';
+
 export type AdRewardReason = 'capped' | 'error';
 
 export interface AdRewardResult {
@@ -86,17 +88,15 @@ export interface IBackend {
 
     // Grant coins for a completed rewarded-ad view. Backend enforces the daily
     // cap and returns the authoritative profile. Never rejects - inspect result.ok.
-    // NOTE: the ad path is dormant in v1 (the headbar "+" is a debug free-grant
-    // via grantDebugCoins instead); this stays ready for when ads ship.
+    // NOTE: the ad path is dormant in v1; this stays ready for when ads ship.
     grantAdReward(): Promise<AdRewardResult>;
 
     // 领取每日补给。正式后台必须校验广告凭证与 transactionId，并原子写入。
     claimDailyShopReward(slot: DailyShopRewardSlot, adCompleted: boolean, transactionId: string): Promise<DailyShopClaimResult>;
 
-    // DEBUG ONLY: add coins with no ad and no cap. Used by the headbar "+" button
-    // while the rewarded-ad flow is deferred. MUST NOT exist in the production
-    // cloud backend (or must be gated to dev accounts).
-    grantDebugCoins(amount: number): Promise<PlayerProfile>;
+    // DEBUG ONLY: adjust a local test balance with no ad or cap. A production
+    // backend must omit this capability or gate it to authenticated dev accounts.
+    adjustDebugCurrency(currency: DebugCurrencyId, delta: number): Promise<PlayerProfile>;
 
     // Spend coins to level a character. requestedLevels caps how many levels to
     // attempt (1 for single, maxLevel for "spend to max"); the backend spends as
