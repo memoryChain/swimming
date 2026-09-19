@@ -118,6 +118,28 @@ test('鲨鱼首次现身会先激活节点再启动警告动画', () => {
     assert.ok(warningIndex > activateIndex);
 });
 
+test('鲨鱼首轮从水下上浮且上浮完成前不参与碰撞', () => {
+    assert.ok(SHARK_TUNING.entryRiseSeconds > 0);
+    assert.ok(SHARK_TUNING.entryRiseSeconds < SHARK_TUNING.warningSeconds);
+    assert.ok(SHARK_TUNING.entryStartDepth > 0);
+    assert.ok(SHARK_TUNING.entrySplashProgress > 0 && SHARK_TUNING.entrySplashProgress < 1);
+
+    const controller = readFileSync(
+        new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
+        'utf8',
+    );
+    const presentation = readFileSync(
+        new URL('../assets/scripts/core/SharkEntryPresentation.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(controller, /get entryProgress\(\): number/);
+    assert.match(controller, /if \(this\.entryActive \|\| \(this\._state !== SharkState\.WANDER/);
+    assert.match(presentation, /shark\.sequence === 1/);
+    assert.match(presentation, /buildWaterExplosionGeometry\(\)/);
+    assert.match(presentation, /applyWaterExplosionPhase/);
+    assert.doesNotMatch(presentation, /Graphics|ParticleSystem/);
+});
+
 test('鲨鱼咬伤只复用画中画可见的大水花进行遮挡', () => {
     const manager = readFileSync(
         new URL('../assets/scripts/core/GameManager.ts', import.meta.url),

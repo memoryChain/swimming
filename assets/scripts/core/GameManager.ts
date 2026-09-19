@@ -49,6 +49,7 @@ import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
+import { SharkEntryPresentation } from './SharkEntryPresentation';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
@@ -327,6 +328,7 @@ export class GameManager extends Component {
     private _pendingPlayerEliminationDelay = 0;
     private _shark: SharkController | null = null;
     private _sharkNode: Node | null = null;
+    private _sharkEntryPresentation: SharkEntryPresentation | null = null;
     private _sharkArtModel: Node | null = null;
     private _sharkAnimation: SkeletalAnimation | null = null;
     private _sharkWake: Node | null = null;
@@ -547,6 +549,8 @@ export class GameManager extends Component {
         this._litterBrawl = null;
         this._litterPresentation?.dispose();
         this._litterPresentation = null;
+        this._sharkEntryPresentation?.dispose();
+        this._sharkEntryPresentation = null;
         this._netRaceController?.setMineRelayArmListener(null);
         this._netRaceController?.setMineRelayTransferListener(null);
         this._netRaceController?.setMineRelayResolutionListener(null);
@@ -2583,8 +2587,12 @@ export class GameManager extends Component {
         root.layer = SWIMMER_LAYER;
         root.setParent(this._worldRoot);
 
+        const visualRoot = new Node('SharkVisualRoot');
+        visualRoot.layer = SWIMMER_LAYER;
+        visualRoot.setParent(root);
+
         const fallback = new Node('FallbackVisual');
-        fallback.setParent(root);
+        fallback.setParent(visualRoot);
         const body = new Node('Body');
         body.setParent(fallback);
         body.setScale(2.2, 0.62, 0.72);
@@ -2605,7 +2613,7 @@ export class GameManager extends Component {
         finRenderer.setMaterial(bodyMaterial, 0);
 
         const wake = new Node('Wake');
-        wake.setParent(root);
+        wake.setParent(visualRoot);
         wake.setPosition(-1.25, 0.03, 0);
         wake.setRotationFromEuler(-90, 0, 0);
         const wakeRenderer = wake.addComponent(MeshRenderer);
@@ -2619,6 +2627,12 @@ export class GameManager extends Component {
         setLayerRecursive(root, SWIMMER_LAYER);
 
         this._sharkNode = root;
+        this._sharkEntryPresentation = new SharkEntryPresentation(
+            this._worldRoot,
+            visualRoot,
+            COURSE_LAYOUT,
+            SWIMMER_LAYER,
+        );
         this._shark = new SharkController({
             node: root,
             course: COURSE_LAYOUT,
@@ -2645,7 +2659,7 @@ export class GameManager extends Component {
                 : undefined,
             wanderAfterFinalHunt: isEntertainmentBrawlMode(),
         });
-        this.loadSharkArt(root, fallback);
+        this.loadSharkArt(root, visualRoot, fallback);
 
         this._netRaceController?.setSharkKnockdownListener((sequence, targetLane, distance) => {
             this.applySharkKnockDown(targetLane, distance, sequence, false);
@@ -2655,15 +2669,15 @@ export class GameManager extends Component {
         });
     }
 
-    private loadSharkArt(root: Node, fallback: Node) {
+    private loadSharkArt(root: Node, visualRoot: Node, fallback: Node) {
         loadSwimmerPrefab((error, result) => {
-            if (error || !result?.prefab || !root.isValid || this._sharkNode !== root) {
+            if (error || !result?.prefab || !root.isValid || !visualRoot.isValid || this._sharkNode !== root) {
                 if (error) this.debug(`shark art load failed: ${error.message}`);
                 return;
             }
             const model = instantiate(result.prefab);
             model.name = 'SharkArtModel';
-            model.setParent(root);
+            model.setParent(visualRoot);
             model.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
             model.setRotationFromEuler(...SHARK_MODEL_PRESENTATION.visualEulerDegrees);
             model.setScale(
@@ -2799,6 +2813,7 @@ export class GameManager extends Component {
         }
         if (this._state !== GameState.RACING) {
             if (shark.active) shark.reset();
+            this._sharkEntryPresentation?.reset();
             this._sharkSplashFocus = null;
             this._sharkSplashFocusSeconds = 0;
             if (this._sharkWake?.active) this._sharkWake.active = false;
@@ -2813,6 +2828,7 @@ export class GameManager extends Component {
         if (!this._netRaceController || this._netRaceController.isHost) {
             shark.tick(dt);
         }
+        this._sharkEntryPresentation?.update(dt, shark);
         const hunted = shark.state === SharkState.WARNING || shark.state === SharkState.HUNT
             ? shark.target
             : null;
@@ -2859,7 +2875,7 @@ export class GameManager extends Component {
         }
         shark.resolveObstacleCollisions(this._sharkCollisionSwimmers);
         if (this._sharkWake && !this._sharkArtModel) {
-            const wakeVisible = shark.active && shark.state !== SharkState.SATIATED;
+            const wakeVisible = shark.active && !shark.entryActive && shark.state !== SharkState.SATIATED;
             if (this._sharkWake.active !== wakeVisible) this._sharkWake.active = wakeVisible;
         }
     }

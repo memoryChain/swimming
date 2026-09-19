@@ -11,6 +11,11 @@ export enum SharkState {
 export const SHARK_TUNING = {
     hungerSchedule: [15, 35, 55] as readonly number[],
     warningSeconds: 3,
+    entryRiseSeconds: 1.1,
+    entryStartDepth: 1.35,
+    entrySplashProgress: 0.72,
+    entrySplashSeconds: 0.62,
+    entrySplashIntensity: 1.12,
     huntOpeningGraceSeconds: 1.1,
     huntSeconds: 8,
     retargetSeconds: 0.5,

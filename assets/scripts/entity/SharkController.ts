@@ -82,6 +82,13 @@ export class SharkController {
     get remainingSeconds(): number { return this._remainingSeconds; }
     get knockedLane(): number { return this._knockedLane; }
     get huntIndex(): number { return this._huntIndex; }
+    get entryProgress(): number {
+        if (this._state !== SharkState.WARNING || this._sequence !== 1 || this._huntIndex !== 0) return 1;
+        const duration = Math.max(0.01, Math.min(SHARK_TUNING.warningSeconds, SHARK_TUNING.entryRiseSeconds));
+        const elapsed = SHARK_TUNING.warningSeconds - this._remainingSeconds;
+        return Math.max(0, Math.min(1, elapsed / duration));
+    }
+    get entryActive(): boolean { return this.entryProgress < 1; }
     hasCompletedHunts(): boolean { return this._huntIndex >= this.hungerSchedule().length; }
     get target(): Swimmer | null { return this._target; }
     // Presentation-only consumers (such as the picture-in-picture feed) may observe
@@ -271,7 +278,7 @@ export class SharkController {
     }
 
     resolveObstacleCollisions(swimmers: readonly Swimmer[]): void {
-        if (this._state !== SharkState.WANDER && this._state !== SharkState.WARNING) {
+        if (this.entryActive || (this._state !== SharkState.WANDER && this._state !== SharkState.WARNING)) {
             this._obstacleContacts.clear();
             return;
         }
