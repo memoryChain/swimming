@@ -18,7 +18,7 @@
     "test:results": "npx --yes --package typescript@5.4.5 -c \"node tests/settlement-runtime.test.cjs\"",
     "test:awards": "npx --yes --package typescript@5.4.5 -c \"node tests/awards-presentation-runtime.test.cjs\"",
     "ui:room:preview": "npx --yes --package typescript@5.4.5 -c \"node scripts/preview-online-room.cjs\"",
-    "test:net": "npx --yes --package tsx@4.20.5 tsx --test tests/net-race-codec-ordering.test.mjs tests/condition-sync-cadence.test.mjs tests/collision-softness.test.mjs",
+    "test:net": "npx --yes --package tsx@4.20.5 tsx --test tests/net-race-codec-ordering.test.mjs tests/condition-sync-cadence.test.mjs tests/collision-softness.test.mjs tests/wechat-network-policy.test.cjs",
     "test:stimulant": "npx --yes --package tsx@4.20.5 tsx --test tests/stimulant-brawl.test.mjs tests/net-race-codec-ordering.test.mjs",
     "test:shark": "npx --yes --package tsx@4.20.5 tsx --test tests/shark-brawl.test.mjs tests/entertainment-recovery.test.mjs tests/net-race-codec-ordering.test.mjs",
     "test:whirlpool": "npx --yes --package tsx@4.20.5 tsx --test tests/whirlpool-brawl.test.mjs tests/net-race-codec-ordering.test.mjs",

@@ -290,7 +290,7 @@ sharedRandom();             // 取共享实例
 8. **GameServerManager 事件必须 `login()` 之后再注册**：全新设备上 login 前 `gsm.onXxx` 会抛 `undefined is not an object (this.emitter.on)`。`WechatGameRoom` 里 `_loggedIn` 后才 bindEvents。
 9. **帧事件是「追加」监听不是替换**：裸重绑会叠加 → 每帧处理两遍。用 `offSyncFrame/offDisconnect` 精确解绑（存下回调引用）。
 10. **房主退出用 `ownerLeaveRoom({assignToMinPosNum:true})`**，访客用 `memberLeaveRoom`。房主用 member 版退→别人还看得到房主。
-11. **★★iOS 高性能模式与帧同步不兼容**：`game.json "iOSHighPerformance":true` 会让 iOS 建不出帧同步 Worker（`createWXLibWorker is not a function`）→ `nativeInstance.uploadFrame` undefined、onSyncFrame 永不来。**联机必须关闭 iOS 高性能模式**（构建面板取消勾选，别只手改 build/game.json）。安卓不受影响。
+11. **★★iOS 高性能模式可能禁用帧同步 Worker，但当前项目保留高性能并自动降级**：部分 iOS 运行时在 `game.json "iOSHighPerformance":true` 时会出现 `createWXLibWorker is not a function`、`nativeInstance.uploadFrame` undefined 或 onSyncFrame 永不回调。`WechatGameRoom` 会锁存帧通道不可用，`NetRaceController` 用 `NB|` 通知全房切到 `IN|` 输入事件＋`P|` 自身状态广播，房主 `S|` 快照继续承担恢复兜底。构建钩子统一写入高性能与高性能＋开关；不要只改构建面板或 build/game.json。若要关闭高性能做对照测试，应修改 `extensions/wechat-race-subpackage/hooks.js` 的单一策略常量后完整重建，并重新验证 iOS／Android 混合房。
 12. **`game.json lockStepOptions`** 由 `extensions/wechat-race-subpackage/hooks.js` 构建期注入（`gameTick:33, heartBeatTick:2000, offlineTimeLength:60000, UDPReliabilityStrategy:5, dataType:'String'`）。**改 hooks.js 要重载扩展 + 重 Build**，别手改 build 目录（重 Build 会覆盖）。
 13. **必须体验版联调**：真机调试分享出去的是开发版，好友打不开（`Load Subpackage failed: path: music`）。双方都用体验版。
 14. **热启动邀请走 `wx.onShow`**：游戏已运行时点分享卡，不走启动（onLoad 不再执行），新 query 给 onShow。`IPlatform.onAppShow` 处理。冷启动才走 `getLaunchQuery`。

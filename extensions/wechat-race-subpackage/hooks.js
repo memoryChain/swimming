@@ -19,6 +19,12 @@ const SUBPACKAGE_BUNDLES = [
 ];
 const MAX_WECHAT_MAIN_SOURCE_BYTES = 4 * 1024 * 1024;
 const FORBIDDEN_TEXTURE_EXTENSIONS = new Set(['.pvr', '.pkm']);
+// Keep the iOS performance policy in one explicit switch. High-performance mode can
+// disable GameServerManager's frame-sync worker on some iOS runtimes; the race layer
+// detects that condition and moves the whole room to its NB|/IN|/P| broadcast fallback.
+// Change this only as an intentional build-policy decision followed by mixed-device
+// testing, rather than relying on a stale Creator build-panel value.
+const IOS_HIGH_PERFORMANCE_ENABLED = true;
 
 // WeChat lock-step (帧同步) options for wx.getGameServerManager(). gameTick is the
 // logical frame interval in ms (33ms ≈ 30 logical frames/sec). Matches the official
@@ -159,14 +165,13 @@ exports.onAfterBuild = async function onAfterBuild(options, result) {
     // Configure lock-step so wx.getGameServerManager() stops falling back to defaults
     // (the "lockStepOptions is not an Object" runtime warning) and uses our gameTick.
     gameConfig.lockStepOptions = LOCK_STEP_OPTIONS;
-    // Cocos Creator's build panel exposes "高性能模式(iOS)" (iOSHighPerformance) but NOT the
-    // newer 高性能+ flag, so inject it here on every WeChat build. iOSHighPerformance+ requires
-    // iOSHighPerformance to also be true (WeChat: "要开通高性能+模式请先保证游戏已经在高性能模式下"),
-    // so force both. NOTE: '+' is part of the key, so it needs bracket notation. To disable
-    // high-performance mode (e.g. to A/B test framerate), flip these to false here and rebuild —
-    // do NOT hand-edit build/wechatgame/game.json, a rebuild overwrites it.
-    gameConfig.iOSHighPerformance = true;
-    gameConfig['iOSHighPerformance+'] = true;
+    // Cocos Creator's build panel exposes "高性能模式(iOS)" (iOSHighPerformance) but not the
+    // newer 高性能+ flag, so the checked-in policy owns both values. When enabled, an iOS
+    // runtime without the frame-sync worker is expected to use the network layer's
+    // broadcast fallback. NOTE: '+' is part of the key, so it needs bracket notation.
+    // Do not hand-edit build/wechatgame/game.json; a rebuild overwrites it.
+    gameConfig.iOSHighPerformance = IOS_HIGH_PERFORMANCE_ENABLED;
+    gameConfig['iOSHighPerformance+'] = IOS_HIGH_PERFORMANCE_ENABLED;
     fs.writeFileSync(gameJsonPath, `${JSON.stringify(gameConfig, null, 4)}\n`, 'utf8');
 
     const verifiedSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
