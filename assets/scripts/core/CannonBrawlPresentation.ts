@@ -1,7 +1,11 @@
 import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { CANNON_BRAWL_TUNING, CannonImpact, CannonLaunch } from './CannonBrawlController';
-import { applyWaterExplosionPhase, buildWaterExplosionGeometry } from './MineRelayBrawlPresentation';
+import {
+    ENTERTAINMENT_SPLASH_OWNER,
+    ENTERTAINMENT_SPLASH_PROFILE,
+    EntertainmentWaterSplashPool,
+} from './EntertainmentWaterSplash';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const CANNON_EDGE_OFFSET = 1.4;
@@ -9,7 +13,7 @@ const CANNON_STAND_TRAVEL = 4.2;
 const CANNON_ENTRANCE_SECONDS = 1.8;
 const CANNON_EXIT_SECONDS = 1.2;
 const PROJECTILE_ARC_HEIGHT = 5.8;
-const IMPACT_SECONDS = 0.52;
+const IMPACT_SECONDS = 0.56;
 const CANNON_EXPLOSION_INTENSITY = 1.08;
 
 const enum CannonDeploymentPhase {
@@ -24,15 +28,12 @@ export class CannonBrawlPresentation {
     private readonly cannons: Node[] = [];
     private marker: Node | null = null;
     private projectile: Node | null = null;
-    private impactPlume: Node | null = null;
     private cannonMesh: Mesh | null = null;
     private markerMesh: Mesh | null = null;
     private projectileMesh: Mesh | null = null;
-    private impactMesh: Mesh | null = null;
     private cannonMaterial: Material | null = null;
     private markerMaterial: Material | null = null;
     private projectileMaterial: Material | null = null;
-    private impactMaterial: Material | null = null;
     private activeStrikeId = -1;
     private lastStrikeId = -1;
     private activeCannonIndex = 0;
@@ -41,17 +42,18 @@ export class CannonBrawlPresentation {
     private sourceX = 0;
     private sourceY = 0;
     private sourceZ = 0;
-    private impactRemaining = 0;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private disposed = false;
     private deploymentPhase = CannonDeploymentPhase.DEPLOYED;
     private deploymentElapsed = 0;
     private standWorldX = 0;
+    private readonly impactWorldPosition = new Vec3();
 
     constructor(
         private readonly parent: Node,
         private readonly course: RaceCourseLayout,
+        private readonly waterSplashes: EntertainmentWaterSplashPool | null,
     ) {
         this.build();
     }
@@ -59,12 +61,11 @@ export class CannonBrawlPresentation {
     reset(): void {
         this.activeStrikeId = -1;
         this.lastStrikeId = -1;
-        this.impactRemaining = 0;
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
-        this.setActive(this.impactPlume, false);
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.CANNON);
     }
 
     /** 娱乐事件预告开始时，把两侧礼炮从观众席深处推到池边。 */
@@ -121,8 +122,6 @@ export class CannonBrawlPresentation {
         this.projectile?.setScale(0.58, 0.58, 0.58);
         this.setActive(this.marker, true);
         this.setActive(this.projectile, true);
-        this.setActive(this.impactPlume, false);
-        this.impactRemaining = 0;
     }
 
     showImpact(impact: CannonImpact): void {
@@ -130,13 +129,16 @@ export class CannonBrawlPresentation {
             || (impact.strikeId !== this.activeStrikeId && impact.strikeId !== this.lastStrikeId)) return;
         this.setActive(this.marker, false);
         this.setActive(this.projectile, false);
-        if (this.impactPlume?.isValid) {
-            this.impactPlume.setWorldPosition(this.targetX, this.course.waterY + 0.035, this.targetZ);
-            this.impactPlume.setRotationFromEuler(0, impact.strikeId * 53, 0);
-            applyWaterExplosionPhase(this.impactPlume, 0, CANNON_EXPLOSION_INTENSITY);
-            this.impactPlume.active = true;
-        }
-        this.impactRemaining = IMPACT_SECONDS;
+        this.impactWorldPosition.set(this.targetX, this.course.waterY + 0.035, this.targetZ);
+        this.waterSplashes?.play({
+            owner: ENTERTAINMENT_SPLASH_OWNER.CANNON,
+            profile: ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION,
+            position: this.impactWorldPosition,
+            yawDegrees: impact.strikeId * 53,
+            intensity: CANNON_EXPLOSION_INTENSITY,
+            duration: IMPACT_SECONDS,
+            layer: this.parent.layer,
+        });
         this.activeStrikeId = -1;
     }
 
@@ -157,7 +159,6 @@ export class CannonBrawlPresentation {
         if (!racing) {
             this.setActive(this.marker, false);
             this.setActive(this.projectile, false);
-            this.setActive(this.impactPlume, false);
             return;
         }
         this.syncLaunch(launch);
@@ -180,32 +181,23 @@ export class CannonBrawlPresentation {
             const markerPulse = 1 + Math.sin(this.clock * 10) * 0.055;
             this.marker?.setScale(markerPulse, 1, markerPulse);
         }
-
-        if (this.impactRemaining > 0) {
-            this.impactRemaining = Math.max(0, this.impactRemaining - presentationStep);
-            const progress = 1 - this.impactRemaining / IMPACT_SECONDS;
-            if (this.impactPlume) applyWaterExplosionPhase(this.impactPlume, progress, CANNON_EXPLOSION_INTENSITY);
-            if (this.impactRemaining <= 0) this.setActive(this.impactPlume, false);
-        }
     }
 
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.CANNON);
         for (const cannon of this.cannons) if (cannon?.isValid) cannon.destroy();
         this.cannons.length = 0;
         if (this.marker?.isValid) this.marker.destroy();
         if (this.projectile?.isValid) this.projectile.destroy();
-        if (this.impactPlume?.isValid) this.impactPlume.destroy();
-        this.marker = this.projectile = this.impactPlume = null;
+        this.marker = this.projectile = null;
         this.cannonMesh?.destroy();
         this.markerMesh?.destroy();
         this.projectileMesh?.destroy();
-        this.impactMesh?.destroy();
         this.cannonMaterial?.destroy();
         this.markerMaterial?.destroy();
         this.projectileMaterial?.destroy();
-        this.impactMaterial?.destroy();
     }
 
     private build(): void {
@@ -213,10 +205,8 @@ export class CannonBrawlPresentation {
         this.cannonMesh = utils.createMesh(buildCannonGeometry());
         this.markerMesh = utils.createMesh(buildMarkerGeometry());
         this.projectileMesh = utils.createMesh(buildLowPolyBallGeometry());
-        this.impactMesh = utils.createMesh(buildWaterExplosionGeometry());
         this.cannonMaterial = makeVertexMaterial('CannonBrawlPropMaterial', true);
         this.markerMaterial = makeVertexMaterial('CannonBrawlMarkerMaterial', false);
-        this.impactMaterial = makeVertexMaterial('CannonBrawlImpactMaterial', false);
         this.projectileMaterial = new Material();
         this.projectileMaterial.initialize({ effectName: 'builtin-unlit' });
         this.projectileMaterial.name = 'CannonBrawlProjectileMaterial';
@@ -233,10 +223,8 @@ export class CannonBrawlPresentation {
         }
         this.marker = this.makeMeshNode('CannonImpactWarning', this.markerMesh, this.markerMaterial);
         this.projectile = this.makeMeshNode('CannonProjectile', this.projectileMesh, this.projectileMaterial);
-        this.impactPlume = this.makeMeshNode('CannonImpactPlume', this.impactMesh, this.impactMaterial);
         this.marker.active = false;
         this.projectile.active = false;
-        this.impactPlume.active = false;
     }
 
     private makeMeshNode(name: string, mesh: Mesh, material: Material): Node {

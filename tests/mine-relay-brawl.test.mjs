@@ -19,12 +19,15 @@ function timedBombFixture(seed = 137) {
         active: true, finished: false, distance: lane === 0 ? 24 : 20, lateral: 8.75 - lane * 2.5,
     }));
     const arms = [], transfers = [], resolutions = [];
+    const physicalContacts = new Set();
     const controller = new MineRelayBrawlController(
         racers.length, seed, 20, lane => racers[lane],
         event => arms.push({ ...event }), event => transfers.push({ ...event }),
         event => resolutions.push({ ...event }),
+        MINE_RELAY_ROUNDS,
+        (laneA, laneB) => physicalContacts.has(`${Math.min(laneA, laneB)}:${Math.max(laneA, laneB)}`),
     );
-    return { racers, arms, transfers, resolutions, controller };
+    return { racers, arms, transfers, resolutions, physicalContacts, controller };
 }
 
 function putTogether(fixture, laneA, laneB) {
@@ -58,7 +61,7 @@ test('定时炸弹贴身传递具有冷却和上一持有者防回传', () => {
     const first = fixture.controller.currentCarrierLane();
     const second = first === 0 ? 1 : 0;
     putTogether(fixture, first, second);
-    fixture.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
+    fixture.controller.update(MINE_RELAY_TUNING.initialTransferCooldownSeconds + 0.01, GameState.RACING, true);
     assert.equal(fixture.transfers.length, 1);
     assert.equal(fixture.transfers[0].toLane, second);
     fixture.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds + 0.01, GameState.RACING, true);
@@ -79,16 +82,119 @@ test('定时炸弹传递扫掠双方相对路径，单帧擦身而过也能传�
     }
     fixture.racers[target].distance = fixture.racers[carrier].distance - 1.4;
     fixture.racers[target].lateral = fixture.racers[carrier].lateral;
-    fixture.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds - 0.01, GameState.RACING, true);
+    fixture.controller.update(MINE_RELAY_TUNING.initialTransferCooldownSeconds - 0.01, GameState.RACING, true);
     assert.equal(fixture.transfers.length, 0);
 
     fixture.racers[target].distance = fixture.racers[carrier].distance + 1.4;
     fixture.controller.update(0.02, GameState.RACING, true);
     assert.equal(fixture.transfers.length, 1);
     assert.equal(fixture.transfers[0].toLane, target);
-    assert.ok(Math.abs(MINE_RELAY_TUNING.transferBodyAlongRadius * 2 - 1.25) < 1e-9,
-        '双方身体半径之和应保持原静态传递范围');
-    assert.ok(Math.abs(MINE_RELAY_TUNING.transferBodyLateralRadius * 2 - 0.9) < 1e-9);
+    assert.ok(Math.abs(MINE_RELAY_TUNING.transferBodyAlongRadius * 2 - 1.6) < 1e-9);
+    assert.ok(Math.abs(MINE_RELAY_TUNING.transferBodyLateralRadius * 2 - 1.3) < 1e-9);
+});
+
+test('人物碰撞已经触发翻滚时，即使求解分离到炸弹椭圆外也会交接', () => {
+    const fixture = timedBombFixture(547);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const target = carrier === 0 ? 1 : 0;
+    for (let lane = 0; lane < fixture.racers.length; lane++) {
+        if (lane === carrier || lane === target) continue;
+        fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
+    }
+    fixture.racers[target].distance = fixture.racers[carrier].distance + 1.8;
+    fixture.racers[target].lateral = fixture.racers[carrier].lateral;
+    fixture.physicalContacts.add(`${Math.min(carrier, target)}:${Math.max(carrier, target)}`);
+
+    fixture.controller.update(MINE_RELAY_TUNING.initialTransferCooldownSeconds - 0.01, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 0, '真实碰撞仍不能绕过初次接棒冷却');
+    fixture.controller.update(0.02, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 1);
+    assert.equal(fixture.transfers[0].toLane, target);
+});
+
+test('前方近距离目标持续对齐后触发辅助短传，瞬时进入范围不会误传', () => {
+    const fixture = timedBombFixture(557);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const target = carrier === 0 ? 1 : 0;
+    for (let lane = 0; lane < fixture.racers.length; lane++) {
+        if (lane === carrier || lane === target) continue;
+        fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
+    }
+    fixture.racers[target].distance = fixture.racers[carrier].distance + 2;
+    fixture.racers[target].lateral = fixture.racers[carrier].lateral + 1;
+    fixture.controller.update(MINE_RELAY_TUNING.initialTransferCooldownSeconds, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 0);
+
+    fixture.controller.update(MINE_RELAY_TUNING.assistedPassConfirmSeconds - 0.02, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 0);
+    fixture.controller.update(0.03, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 1);
+    assert.equal(fixture.transfers[0].toLane, target);
+});
+
+test('辅助短传不会把炸弹自动抛给身后或横向未对齐的人', () => {
+    const fixture = timedBombFixture(559);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const behind = carrier === 0 ? 1 : 0;
+    const side = carrier <= 1 ? 2 : 1;
+    for (let lane = 0; lane < fixture.racers.length; lane++) {
+        if (lane === carrier) continue;
+        fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
+    }
+    fixture.racers[behind].distance = fixture.racers[carrier].distance - 2;
+    fixture.racers[behind].lateral = fixture.racers[carrier].lateral + 1;
+    fixture.racers[side].distance = fixture.racers[carrier].distance + 2;
+    fixture.racers[side].lateral = fixture.racers[carrier].lateral + 1.5;
+    fixture.controller.update(
+        MINE_RELAY_TUNING.initialTransferCooldownSeconds + MINE_RELAY_TUNING.assistedPassConfirmSeconds + 0.1,
+        GameState.RACING,
+        true,
+    );
+    assert.equal(fixture.transfers.length, 0);
+});
+
+test('辅助短传至少跨两个权威采样点确认，单帧卡顿不会直接传递', () => {
+    const fixture = timedBombFixture(563);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const target = carrier === 0 ? 1 : 0;
+    for (let lane = 0; lane < fixture.racers.length; lane++) {
+        if (lane === carrier || lane === target) continue;
+        fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
+    }
+    fixture.racers[target].distance = fixture.racers[carrier].distance + 2;
+    fixture.racers[target].lateral = fixture.racers[carrier].lateral + 1;
+    fixture.controller.update(
+        MINE_RELAY_TUNING.initialTransferCooldownSeconds + MINE_RELAY_TUNING.assistedPassConfirmSeconds + 0.1,
+        GameState.RACING,
+        true,
+    );
+    assert.equal(fixture.transfers.length, 0);
+    fixture.controller.update(MINE_RELAY_TUNING.assistedPassConfirmSeconds, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 1);
+    assert.equal(fixture.transfers[0].toLane, target);
+});
+
+test('定时炸弹优先发给附近存在可追目标的选手', () => {
+    const fixture = timedBombFixture(733);
+    const distances = [0, 18, 40, 42, 68, 87, 108, 130];
+    for (let lane = 0; lane < fixture.racers.length; lane++) fixture.racers[lane].distance = distances[lane];
+    fixture.controller.update(0, GameState.RACING, true);
+    assert.ok([2, 3].includes(fixture.controller.currentCarrierLane()));
+});
+
+test('初次接棒保护期内附近 AI 不会立即横移逃开', () => {
+    const fixture = timedBombFixture(317);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const nearby = carrier === 0 ? 1 : carrier - 1;
+    fixture.controller.update(MINE_RELAY_TUNING.aiReactionFastSeconds + 0.01, GameState.RACING, true);
+    assert.equal(fixture.controller.targetZForAi(nearby, 1), null);
+    fixture.controller.update(MINE_RELAY_TUNING.initialTransferCooldownSeconds, GameState.RACING, true);
+    assert.notEqual(fixture.controller.targetZForAi(nearby, 1), null);
 });
 
 test('定时炸弹锁定后不能传递，归零只结算当前持有者', () => {
@@ -333,9 +439,47 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     assert.match(timedBombPresentation, /buildTimedBombGeometry/);
     assert.match(timedBombPresentation, /TimedBombWarningLamp/);
     assert.match(timedBombPresentation, /appendFacetedCylinder/);
-    assert.doesNotMatch(timedBombPresentation, /this\.clock \* \(locked \? 190 : 75\)/);
+    assert.match(timedBombPresentation, /beginThrowFromStands/);
+    assert.match(timedBombPresentation, /THROW_ARC_HEIGHT = 3\.6/);
+    assert.match(timedBombPresentation, /TRANSFER_THROW_SECONDS = 0\.22/);
+    assert.match(timedBombPresentation, /TRANSFER_THROW_ARC_HEIGHT = 0\.55/);
+    assert.match(timedBombPresentation, /transfer\(arm: MineRelayArm/);
+    assert.match(timedBombPresentation, /Vec3\.transformMat4/);
+    const timedBombController = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlController.ts', import.meta.url), 'utf8');
     const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
+    assert.match(manager, /attach\(event, carrierNode, true\)/);
+    assert.match(manager, /transfer\(arm \?\? \{/);
+    assert.match(manager, /hasSwimmerCollisionContact/);
+    assert.match(timedBombController, /pickPhysicalContactTarget/);
+    assert.doesNotMatch(timedBombPresentation, /this\.clock \* \(locked \? 190 : 75\)/);
     assert.doesNotMatch(manager, /showMineFloating|showMineCarrier|showMineExplosion|updateMine\(/);
+});
+
+test('宽容传递参数写入正式调参配置并保留调试入口', () => {
+    const tuning = JSON.parse(readFileSync(
+        new URL('../assets/resources/config/tuning.json', import.meta.url),
+        'utf8',
+    ));
+    assert.equal(tuning.values['mineRelay.transferBodyAlongRadius'], 0.8);
+    assert.equal(tuning.values['mineRelay.transferBodyLateralRadius'], 0.65);
+    assert.equal(tuning.values['mineRelay.initialTransferCooldownSeconds'], 0.55);
+    assert.equal(tuning.values['mineRelay.transferCooldownSeconds'], 0.45);
+    assert.equal(tuning.values['mineRelay.assistedPassMinAheadDistance'], 0.4);
+    assert.equal(tuning.values['mineRelay.assistedPassMaxAheadDistance'], 2.8);
+    assert.equal(tuning.values['mineRelay.assistedPassLateralDistance'], 1.2);
+    assert.equal(tuning.values['mineRelay.assistedPassConfirmSeconds'], 0.18);
+    assert.equal(tuning.values['mineRelay.starterNearbyAlongDistance'], 4.8);
+    assert.equal(tuning.values['mineRelay.starterNearbyLateralDistance'], 5.4);
+    const controls = readFileSync(new URL('../assets/scripts/core/TuningDebugControls.ts', import.meta.url), 'utf8');
+    for (const id of [
+        'mineRelay.initialTransferCooldownSeconds',
+        'mineRelay.assistedPassMinAheadDistance',
+        'mineRelay.assistedPassMaxAheadDistance',
+        'mineRelay.assistedPassLateralDistance',
+        'mineRelay.assistedPassConfirmSeconds',
+        'mineRelay.starterNearbyAlongDistance',
+        'mineRelay.starterNearbyLateralDistance',
+    ]) assert.match(controls, new RegExp(id.replaceAll('.', '\\.')));
 });
 
 test('两种新玩法只允许快速比赛二百米，旧水雷接力存档迁移为定时炸弹', () => {

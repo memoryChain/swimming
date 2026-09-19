@@ -13,7 +13,7 @@ export const enum EntertainmentRecoveryReason {
 }
 
 export const ENTERTAINMENT_RECOVERY_TUNING = {
-    knockedSeconds: 2.5,
+    knockedSeconds: 3.5,
     invulnerableSeconds: 2,
     respawnSpeed: 0,
 };

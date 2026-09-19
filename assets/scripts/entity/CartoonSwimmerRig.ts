@@ -1074,6 +1074,17 @@ export class CartoonSwimmerRig extends Component implements CharacterRig {
         }
     }
 
+    setEntertainmentKnocked(transitionSeconds = 0) {
+        this._pose.resetCollisionSoftness();
+        if (this._modelDebugMode) {
+            return;
+        }
+        this._animationPlayer.stop();
+        this.clearCollisionPitchPivotCompensation();
+        this._pose.setMovementPitchRadians(0);
+        this._poseState.enterEntertainmentKnockout(transitionSeconds);
+    }
+
     setDiveStreamlinePose() {
         this._pose.resetCollisionSoftness();
         if (this._modelDebugMode) {

@@ -8,10 +8,10 @@ import { loadRaceAsset } from './RaceBundleLoader';
 import { RESOURCE_PATHS } from './ResourcePaths';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES, waterFloatPhase } from './WaterFloatMotion';
 import {
-    applyWaterExplosionPhase,
-    buildWaterExplosionGeometry,
-    makeMineVertexMaterial,
-} from './MineRelayBrawlPresentation';
+    ENTERTAINMENT_SPLASH_OWNER,
+    ENTERTAINMENT_SPLASH_PROFILE,
+    EntertainmentWaterSplashPool,
+} from './EntertainmentWaterSplash';
 import {
     buildStimulantSchedule,
     stimulantIsOnCurrentCourseLeg,
@@ -23,7 +23,6 @@ import {
 
 type Condition = PlayerConditionModel | AiConditionModel;
 type Racer = { swimmer: Swimmer; condition: Condition };
-type SplashVisual = { node: Node; remaining: number };
 type ItemState = StimulantSpawn & {
     collected: boolean;
     node: Node | null;
@@ -81,7 +80,6 @@ const THROW_ARC_HEIGHT = 1.8;
 const THROW_ALONG_ARC_DISTANCE = 0.65;
 const BEACON_REVEAL_START = 0.72;
 const LANDING_SPLASH_SECONDS = 0.42;
-const LANDING_SPLASH_POOL_SIZE = 3;
 const LANDING_SPLASH_INTENSITY = 0.30;
 const MAX_PICKUP_SWEEP_DISTANCE = 3;
 const STIMULANT_CUBE_COLOR = new Color(92, 255, 48, 255);
@@ -98,9 +96,6 @@ export class StimulantBrawlController {
     private visualMaterial: Material | null = null;
     private beaconMesh: Mesh | null = null;
     private beaconMaterial: Material | null = null;
-    private landingSplashMesh: Mesh | null = null;
-    private landingSplashMaterial: Material | null = null;
-    private readonly landingSplashes: SplashVisual[] = [];
     private readonly pickupRacers: Array<Racer | null>;
     private readonly pickupCurrentX: Float64Array;
     private readonly pickupCurrentZ: Float64Array;
@@ -108,6 +103,7 @@ export class StimulantBrawlController {
     private readonly pickupPreviousZ: Float64Array;
     private readonly pickupCurrentDistance: Float64Array;
     private readonly pickupPreviousDistance: Float64Array;
+    private readonly splashWorldPosition = new Vec3();
 
     constructor(
         private readonly root: Node,
@@ -119,6 +115,7 @@ export class StimulantBrawlController {
         private readonly onPickup: (feedback: StimulantPickupFeedback) => void,
         private readonly onWaveApproach: (wave: number) => void,
         private readonly localPlayerLane: () => number,
+        private readonly waterSplashes: EntertainmentWaterSplashPool | null,
         schedule?: readonly StimulantSpawn[],
     ) {
         this.pickupRacers = new Array<Racer | null>(laneLayout.laneCount).fill(null);
@@ -158,7 +155,6 @@ export class StimulantBrawlController {
         // 先同步生成单个大方块，保证模型资源尚未就绪时仍能看到和拾取道具。
         this.createProgramVisuals();
         this.createBeaconVisuals();
-        this.createLandingSplashVisuals();
         this.loadModelVisuals();
     }
 
@@ -272,7 +268,6 @@ export class StimulantBrawlController {
             }
             this.updateBeaconPresentation(item, ahead, onCurrentLeg, presentationStep);
         }
-        this.updateLandingSplashes(presentationStep);
     }
 
     targetZForAi(
@@ -358,6 +353,7 @@ export class StimulantBrawlController {
 
     dispose(): void {
         this.disposed = true;
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.STIMULANT);
         for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
             this.pickupRacers[lane]?.swimmer.clearStimulantReaction();
         }
@@ -365,22 +361,14 @@ export class StimulantBrawlController {
             if (item.node?.isValid) item.node.destroy();
             if (item.beaconNode?.isValid) item.beaconNode.destroy();
         }
-        for (const splash of this.landingSplashes) {
-            if (splash.node.isValid) splash.node.destroy();
-        }
-        this.landingSplashes.length = 0;
         if (this.visualMaterial?.isValid) this.visualMaterial.destroy();
         if (this.visualMesh?.isValid) this.visualMesh.destroy();
         if (this.beaconMaterial?.isValid) this.beaconMaterial.destroy();
         if (this.beaconMesh?.isValid) this.beaconMesh.destroy();
-        if (this.landingSplashMaterial?.isValid) this.landingSplashMaterial.destroy();
-        if (this.landingSplashMesh?.isValid) this.landingSplashMesh.destroy();
         this.visualMaterial = null;
         this.visualMesh = null;
         this.beaconMaterial = null;
         this.beaconMesh = null;
-        this.landingSplashMaterial = null;
-        this.landingSplashMesh = null;
     }
 
     private createProgramVisuals(): void {
@@ -529,19 +517,6 @@ export class StimulantBrawlController {
         }
     }
 
-    private createLandingSplashVisuals(): void {
-        if (this.disposed || !this.root.isValid) return;
-        const mesh = utils.createMesh(buildWaterExplosionGeometry());
-        const material = makeMineVertexMaterial('StimulantLandingSplashMaterial', false);
-        this.landingSplashMesh = mesh;
-        this.landingSplashMaterial = material;
-        for (let index = 0; index < LANDING_SPLASH_POOL_SIZE; index++) {
-            const node = this.createProgramCube(`StimulantLandingSplash_${index}`, mesh, material);
-            node.active = false;
-            this.landingSplashes.push({ node, remaining: 0 });
-        }
-    }
-
     private getLaunchReferenceDistance(item: ItemState, fallbackDistance: number): number {
         let leaderDistance = stimulantIsOnCurrentCourseLeg(
             item.distance,
@@ -617,33 +592,19 @@ export class StimulantBrawlController {
     }
 
     private showLandingSplash(item: ItemState): void {
-        if (this.landingSplashes.length === 0) return;
-        let visual = this.landingSplashes[0];
-        for (const candidate of this.landingSplashes) {
-            if (candidate.remaining <= 0) {
-                visual = candidate;
-                break;
-            }
-            if (candidate.remaining < visual.remaining) visual = candidate;
-        }
-        visual.node.setWorldPosition(item.x, this.course.waterY + 0.035, item.z);
-        visual.node.setRotationFromEuler(0, item.id * 71, 0);
-        visual.remaining = LANDING_SPLASH_SECONDS;
-        applyWaterExplosionPhase(visual.node, 0, LANDING_SPLASH_INTENSITY);
-        if (!visual.node.active) visual.node.active = true;
-    }
-
-    private updateLandingSplashes(dt: number): void {
-        for (const splash of this.landingSplashes) {
-            if (splash.remaining <= 0) continue;
-            splash.remaining = Math.max(0, splash.remaining - dt);
-            applyWaterExplosionPhase(
-                splash.node,
-                1 - splash.remaining / LANDING_SPLASH_SECONDS,
-                LANDING_SPLASH_INTENSITY,
-            );
-            if (splash.remaining <= 0 && splash.node.active) splash.node.active = false;
-        }
+        const throwSide = item.z >= 0 ? 1 : -1;
+        this.splashWorldPosition.set(item.x, this.course.waterY + 0.035, item.z);
+        this.waterSplashes?.play({
+            owner: ENTERTAINMENT_SPLASH_OWNER.STIMULANT,
+            profile: ENTERTAINMENT_SPLASH_PROFILE.LIGHT_ENTRY,
+            position: this.splashWorldPosition,
+            yawDegrees: throwSide > 0 ? 180 : 0,
+            intensity: LANDING_SPLASH_INTENSITY,
+            duration: LANDING_SPLASH_SECONDS,
+            radialScale: 1.08,
+            verticalScale: 0.74,
+            layer: this.root.layer,
+        });
     }
 
     private createProgramCube(name: string, mesh: Mesh, material: Material): Node {

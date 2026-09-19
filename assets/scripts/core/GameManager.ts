@@ -50,7 +50,7 @@ import { Swimmer } from '../entity/Swimmer';
 import { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { SharkEntryPresentation } from './SharkEntryPresentation';
-import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
+import { hasSwimmerCollisionContact, resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
@@ -100,6 +100,7 @@ import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
 import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
+import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
 import {
     createWhirlpoolVisualResources,
@@ -290,6 +291,7 @@ export class GameManager extends Component {
     private _laneLockdownVisuals: LaneLockdownVisuals | null = null;
     private _laneLockdownRace: LaneLockdownRaceController | null = null;
     private _stimulantBrawl: StimulantBrawlController | null = null;
+    private _entertainmentWaterSplashes: EntertainmentWaterSplashPool | null = null;
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
     private _whirlpoolVisualResources: WhirlpoolVisualResources | null = null;
@@ -553,6 +555,8 @@ export class GameManager extends Component {
         this._litterPresentation = null;
         this._sharkEntryPresentation?.dispose();
         this._sharkEntryPresentation = null;
+        this._entertainmentWaterSplashes?.dispose();
+        this._entertainmentWaterSplashes = null;
         this._netRaceController?.setMineRelayArmListener(null);
         this._netRaceController?.setMineRelayTransferListener(null);
         this._netRaceController?.setMineRelayResolutionListener(null);
@@ -687,6 +691,7 @@ export class GameManager extends Component {
             this.updateSharkBrawl(dt);
             this._eventPictureInPicture?.updateShark(this._shark, dt);
         }
+        this._entertainmentWaterSplashes?.update(dt);
         const preRacePhase = this._raceCameraDirector.preRacePhase;
         this._preRaceIntroPanel.setPhase(
             this._modelDebugFlow?.active || this._state !== GameState.PRECOUNTDOWN
@@ -729,6 +734,7 @@ export class GameManager extends Component {
             raceDistance,
             awardsActive,
             awardsActive ? 48 : standingPresentation ? 26 : 20,
+            netDt,
         );
         if (this._shark) {
             this._sharkLockOnOverlay.update(
@@ -1128,6 +1134,7 @@ export class GameManager extends Component {
                     this._minefieldPresentation?.reset();
                     this._litterBrawl?.reset();
                     this._litterPresentation?.reset();
+                    this._entertainmentWaterSplashes?.reset();
                     this._playerLitterSlowed = false;
                     this.clearLitterInfluence();
                     this._eventPictureInPicture?.reset();
@@ -1715,6 +1722,7 @@ export class GameManager extends Component {
                     );
                 },
                 () => this._playerLaneIndex,
+                this.entertainmentWaterSplashes(),
                 isEntertainmentBrawlMode()
                     ? buildEntertainmentStimulantSchedule(
                         getSharedRandomSeed(),
@@ -1903,7 +1911,7 @@ export class GameManager extends Component {
         if (!swimmer) return;
         swimmer.beginEntertainmentKnockout();
         // 所有致命娱乐事件统一复用短促翻起的受击姿态，避免停在命中前的游泳动作。
-        swimmer.cartoonRig?.setFinishFloating(0.18);
+        swimmer.cartoonRig?.setEntertainmentKnocked(0.18);
         const aiIndex = this.aiIndexForLane(lane);
         if (aiIndex >= 0 && !this._aiControllers[aiIndex]?.remoteDriven) {
             this._aiControllers[aiIndex]?.stopSwimming();
@@ -1943,6 +1951,13 @@ export class GameManager extends Component {
     private clearEntertainmentRecoveryPresentation() {
         this._playerSwimmer?.endEntertainmentInvulnerability();
         for (const swimmer of this._aiSwimmers) swimmer?.endEntertainmentInvulnerability();
+    }
+
+    private entertainmentWaterSplashes(): EntertainmentWaterSplashPool | null {
+        if (this._entertainmentWaterSplashes) return this._entertainmentWaterSplashes;
+        if (!this._worldRoot?.isValid) return null;
+        this._entertainmentWaterSplashes = new EntertainmentWaterSplashPool(this._worldRoot);
+        return this._entertainmentWaterSplashes;
     }
 
     private setupCannonBrawl() {
@@ -2067,6 +2082,7 @@ export class GameManager extends Component {
             this._cannonBrawlPresentation = new CannonBrawlPresentation(
                 this._worldRoot,
                 COURSE_LAYOUT,
+                this.entertainmentWaterSplashes(),
             );
         }
         return this._cannonBrawlPresentation;
@@ -2158,7 +2174,11 @@ export class GameManager extends Component {
         this._eventPictureInPicture?.clearTimedBombTracking();
         if (!isTimedBombBrawlMode() || !this._raceManager) return;
         if (this._worldRoot?.isValid) {
-            this._mineRelayPresentation = new MineRelayBrawlPresentation(this._worldRoot);
+            this._mineRelayPresentation = new MineRelayBrawlPresentation(
+                this._worldRoot,
+                COURSE_LAYOUT,
+                this.entertainmentWaterSplashes(),
+            );
         }
         this._mineRelayBrawl = new MineRelayBrawlController(
             LANE_LAYOUT.laneCount,
@@ -2179,6 +2199,10 @@ export class GameManager extends Component {
             event => this.handleMineRelayTransfer(event, true),
             event => this.handleMineRelayResolution(event, true),
             isEntertainmentBrawlMode() ? this.entertainmentTimedBombRounds() : undefined,
+            (laneA, laneB) => hasSwimmerCollisionContact(
+                this.swimmerForLane(laneA),
+                this.swimmerForLane(laneB),
+            ),
         );
         this._netRaceController?.setMineRelayArmListener((roundId, carrierLane, fuseSeconds, revision) => {
             const event = { roundId, carrierLane, fuseSeconds, revision };
@@ -2294,7 +2318,7 @@ export class GameManager extends Component {
 
     private handleMineRelayArm(event: MineRelayArm, broadcast: boolean) {
         const carrierNode = this.swimmerForLane(event.carrierLane)?.node ?? null;
-        this._mineRelayPresentation?.attach(event, carrierNode);
+        this._mineRelayPresentation?.attach(event, carrierNode, true);
         this._eventPictureInPicture?.showTimedBombCarrier(
             carrierNode,
             event.carrierLane,
@@ -2323,13 +2347,14 @@ export class GameManager extends Component {
 
     private handleMineRelayTransfer(event: MineRelayTransfer, broadcast: boolean) {
         const arm = this._mineRelayBrawl?.currentArm() ?? null;
+        const previousCarrierNode = this.swimmerForLane(event.fromLane)?.node ?? null;
         const carrierNode = this.swimmerForLane(event.toLane)?.node ?? null;
-        this._mineRelayPresentation?.attach(arm ?? {
+        this._mineRelayPresentation?.transfer(arm ?? {
             roundId: event.roundId,
             carrierLane: event.toLane,
             fuseSeconds: event.remainingSeconds,
             revision: event.revision,
-        }, carrierNode);
+        }, previousCarrierNode, carrierNode);
         this._eventPictureInPicture?.showTimedBombCarrier(
             carrierNode,
             event.toLane,
@@ -2351,7 +2376,12 @@ export class GameManager extends Component {
 
     private handleMineRelayResolution(event: MineRelayResolution, broadcast: boolean) {
         if (event.exploded) {
-            this.applyMineRelayExplosion(event.carrierLane, event.distance, event.revision);
+            this.applyMineRelayExplosion(
+                event.carrierLane,
+                event.distance,
+                event.lateral,
+                event.revision,
+            );
             for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
                 if (lane === event.carrierLane || (event.hitMask & (1 << lane)) === 0) continue;
                 this.applyExplosionShockwaveHit(lane, event.lateral);
@@ -2382,7 +2412,12 @@ export class GameManager extends Component {
         }
     }
 
-    private applyMineRelayExplosion(lane: number, distance?: number, recoveryRevision?: number) {
+    private applyMineRelayExplosion(
+        lane: number,
+        distance?: number,
+        lateral?: number,
+        recoveryRevision?: number,
+    ) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer?.node?.active) return;
         this._eventPictureInPicture?.showTimedBombResolution(
@@ -2391,10 +2426,18 @@ export class GameManager extends Component {
             true,
             lane === this._playerLaneIndex,
         );
-        swimmer.node.getWorldPosition(this._mineExplosionWorldPosition);
+        if (distance !== undefined && lateral !== undefined) {
+            this._mineExplosionWorldPosition.set(
+                COURSE_LAYOUT.distanceToWorldX(distance),
+                COURSE_LAYOUT.waterY + 0.035,
+                lateral,
+            );
+        } else {
+            swimmer.node.getWorldPosition(this._mineExplosionWorldPosition);
+        }
         this._mineRelayPresentation?.showResolution(true, this._mineExplosionWorldPosition);
-        const lateral = swimmer.node.position.z;
-        const away = lateral === 0 ? (lane & 1 ? 1 : -1) : Math.sign(lateral);
+        const swimmerLateral = swimmer.node.position.z;
+        const away = swimmerLateral === 0 ? (lane & 1 ? 1 : -1) : Math.sign(swimmerLateral);
         swimmer.applyCollisionImpulse(-MINE_RELAY_TUNING.explosionBackwardImpulse, away * MINE_RELAY_TUNING.explosionLateralImpulse);
         swimmer.applyCollisionAxialImpulse(away * MINE_RELAY_TUNING.explosionAxialImpulse);
         swimmer.applyCollisionPitchImpulse(-MINE_RELAY_TUNING.explosionPitchImpulse);
@@ -2461,6 +2504,7 @@ export class GameManager extends Component {
                 this._worldRoot,
                 COURSE_LAYOUT,
                 isEntertainmentBrawlMode() ? 5 : MINEFIELD_TUNING.mineCount,
+                this.entertainmentWaterSplashes(),
             );
         }
         this._netRaceController?.setMinefieldImpactListener((mineId, hitLane, courseX, lateral, hitMask, revision) => {
@@ -2568,6 +2612,7 @@ export class GameManager extends Component {
                 this._worldRoot,
                 COURSE_LAYOUT,
                 LITTER_BRAWL_TUNING.poolSize,
+                this.entertainmentWaterSplashes(),
             );
         }
     }
@@ -2677,6 +2722,7 @@ export class GameManager extends Component {
             visualRoot,
             COURSE_LAYOUT,
             SWIMMER_LAYER,
+            this.entertainmentWaterSplashes(),
         );
         this._shark = new SharkController({
             node: root,

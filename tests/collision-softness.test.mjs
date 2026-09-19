@@ -11,7 +11,7 @@ const { CollisionSoftnessModel } = Softness;
 const { collisionRelaxationTarget } = Softness;
 const { COLLISION_SOFTNESS_TUNING: tuning } = Tuning;
 const { encodeCollisionSoftness, decodeCollisionSoftness } = Codec;
-const { resolveSwimmerCollisions, SWIMMER_COLLISION } = Collision;
+const { hasSwimmerCollisionContact, resolveSwimmerCollisions, SWIMMER_COLLISION } = Collision;
 const keys = ['side', 'forward', 'sideVelocity', 'forwardVelocity'];
 const near = (a, b, tolerance = 1e-9) => assert.ok(Math.abs(a - b) <= tolerance, `${a} / ${b}`);
 
@@ -113,6 +113,19 @@ function swimmer(x, z, dir, weight) {
         applyCollisionSoftnessImpulse(x, z) { this.soft.impulse(x, z); this.hits++; },
     };
 }
+
+test('碰撞求解分离人物后仍保留稳定接触关系供同帧玩法消费', () => {
+    resolveSwimmerCollisions([]);
+    const a = swimmer(0, 0, 1, 60);
+    const b = swimmer(SWIMMER_COLLISION.radius * 2 - 0.01, 0, -1, 60);
+    resolveSwimmerCollisions([a, b]);
+    assert.equal(hasSwimmerCollisionContact(a, b), true);
+    assert.ok(Math.abs(a.node.position.x - b.node.position.x) >= SWIMMER_COLLISION.radius * 2 - 1e-9);
+    b.node.position.x = a.node.position.x + SWIMMER_COLLISION.radius * 2 + 0.2;
+    resolveSwimmerCollisions([a, b]);
+    assert.equal(hasSwimmerCollisionContact(a, b), false);
+    resolveSwimmerCollisions([]);
+});
 
 test('碰撞柔性只在接触开始注入，启用前后位移、冲量、能量完全相同', () => {
     const saved = tuning.enabled;

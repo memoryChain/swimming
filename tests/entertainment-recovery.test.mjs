@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 
 import RecoveryModule from '../assets/scripts/core/EntertainmentRecoveryController.ts';
 
@@ -25,7 +25,9 @@ function fixture(lanes = 4) {
 
 test('击倒后按等待、无敌、恢复三个阶段推进并保留权威距离', () => {
     const f = fixture();
-    assert.equal(ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, 2.5);
+    assert.equal(ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds, 3.5);
+    const savedTuning = JSON.parse(readFileSync(new URL('../assets/resources/config/tuning.json', import.meta.url), 'utf8'));
+    assert.equal(savedTuning.values['recovery.knockedSeconds'], 3.5);
     const event = f.controller.tryKnockDown(2, SHARK, 54.32);
     assert.deepEqual(event, { lane: 2, reason: SHARK, distance: 54.32, revision: 1 });
     assert.equal(f.controller.stateForLane(2).phase, KNOCKED);
@@ -112,7 +114,8 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
     assert.match(source, /recovery\?\.phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.doesNotMatch(source, /eliminateCannonHitLane|handleSharkElimination|enqueueSharkElimination/);
     const knockoutPresentation = source.match(/private presentEntertainmentKnockout[\s\S]*?\n    }/)?.[0] ?? '';
-    assert.match(knockoutPresentation, /setFinishFloating\(0\.18\)/);
+    assert.match(knockoutPresentation, /setEntertainmentKnocked\(0\.18\)/);
+    assert.doesNotMatch(knockoutPresentation, /setFinishFloating\(/);
     assert.doesNotMatch(knockoutPresentation, /reason === EntertainmentRecoveryReason\.SHARK/);
     const swimmer = readFileSync(new URL('../assets/scripts/entity/Swimmer.ts', import.meta.url), 'utf8');
     assert.match(swimmer, /suspendForEntertainmentKnockout/);
@@ -122,11 +125,79 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
 
 test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条', () => {
     const hud = readFileSync(new URL('../assets/scripts/ui/EntertainmentRecoveryHud.ts', import.meta.url), 'utf8');
-    assert.match(hud, /急救中……/);
+    assert.match(hud, /\['急救中\.', '急救中\.\.', '急救中\.\.\.'\]/);
+    assert.match(hud, /EMERGENCY_DOT_SECONDS = 0\.35/);
+    assert.match(hud, /EMERGENCY_IMPACT_HOLD_SECONDS = 0\.45/);
+    assert.match(hud, /EMERGENCY_DIM_DELAY_SECONDS = EMERGENCY_IMPACT_HOLD_SECONDS/);
+    assert.match(hud, /EmergencyDim/);
+    assert.match(hud, /emergencyCardOpacity/);
+    assert.match(hud, /delay\(EMERGENCY_IMPACT_HOLD_SECONDS\)/);
+    assert.match(hud, /scale: new Vec3\(1\.04, 1\.04, 1\)/);
+    assert.match(hud, /startEmergencyBreathing\(\)/);
+    assert.match(hud, /repeatForever\(\)/);
+    assert.match(hud, /RESOURCE_PATHS\.entertainmentRecoveryUi\.rescueCard/);
+    assert.match(hud, /Sprite\.SizeMode\.CUSTOM/);
+    assert.match(hud, /EmergencyCardMotion/);
     assert.match(hud, /BlockInputEvents/);
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.INVULNERABLE/);
     assert.match(hud, /无敌保护/);
+    const card = statSync(new URL('../assets/race/ui/entertainment-recovery-v1/rescue-card.png', import.meta.url));
+    assert.ok(card.size > 0 && card.size < 512 * 1024);
+});
+
+test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增联机字段', () => {
+    const poseState = readFileSync(
+        new URL('../assets/scripts/character/CharacterPoseStateController.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(poseState, /EntertainmentKnocked = 'entertainment-knocked'/);
+    assert.match(poseState, /applyFinishFloatingPose\(\)/);
+    assert.match(poseState, /entertainmentKnockoutRollDegrees/);
+    assert.doesNotMatch(
+        poseState.match(/private applyEntertainmentKnockoutSetup[\s\S]*?\n    }/)?.[0] ?? '',
+        /applyBreaststrokePose/,
+    );
+
+    const overlay = readFileSync(
+        new URL('../assets/scripts/ui/SwimmerNameOverlay.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(overlay, /DIZZY_SAMPLE_SECONDS = 1 \/ 20/);
+    assert.match(overlay, /DIZZY_STAR_COUNT = 3/);
+    assert.match(overlay, /DIZZY_ORBIT_RADIUS_X/);
+    assert.match(overlay, /DIZZY_ORBIT_RADIUS_Y/);
+    assert.match(overlay, /DIZZY_TRAIL_SEGMENT_COUNT = 2/);
+    assert.match(overlay, /RESOURCE_PATHS\.softSpeedStreak/);
+    assert.match(overlay, /DizzyTrail_/);
+    assert.match(overlay, /leadPhase = phase - segment \* DIZZY_TRAIL_PHASE_STEP/);
+    assert.match(overlay, /tailPhase = phase - \(segment \+ 1\) \* DIZZY_TRAIL_PHASE_STEP/);
+    assert.match(overlay, /trail\.root\.setRotationFromEuler\(0, 0, angle\)/);
+    assert.match(overlay, /trail\.opacity\.opacity = trailAlpha/);
+    assert.match(overlay, /i \* FULL_CIRCLE_RADIANS \/ DIZZY_STAR_COUNT/);
+    assert.match(overlay, /const depth = \(1 - sin\) \* 0\.5/);
+    assert.match(overlay, /star\.root\.setPosition\(x, y, 0\)/);
+    assert.match(overlay, /star\.root\.setScale\(scale, scale, 1\)/);
+    assert.match(overlay, /star\.opacity\.opacity = alpha/);
+    assert.match(overlay, /isEntertainmentKnocked/);
+    assert.match(overlay, /EntertainmentDizzyStars/);
+    assert.match(overlay, /makeUiNode\('EntertainmentDizzyStars', this\._root\)/);
+    assert.match(overlay, /Vec3\.copy\(this\._worldPos, swimmerNode\.worldPosition\)/);
+    assert.match(overlay, /RESOURCE_PATHS\.entertainmentKnockoutUi\.dizzyStars/);
+    assert.doesNotMatch(overlay, /ParticleSystem|Graphics\.clear\(\)/);
+    assert.doesNotMatch(overlay, /dizzyRoot\.setRotationFromEuler|DIZZY_ROTATION_DEGREES_PER_SECOND/);
+
+    const star = statSync(new URL(
+        '../assets/race/ui/entertainment-knockout-v1/dizzy-stars.png',
+        import.meta.url,
+    ));
+    assert.ok(star.size > 0 && star.size < 128 * 1024);
+
+    const protocol = readFileSync(
+        new URL('../assets/scripts/net/NetRaceProtocol.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 81/);
 });
 
 test('离开比赛状态时立即清理急救遮罩、无敌表现和娱乐画中画', () => {

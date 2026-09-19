@@ -135,8 +135,9 @@ test('鲨鱼首轮从水下上浮且上浮完成前不参与碰撞', () => {
     assert.match(controller, /get entryProgress\(\): number/);
     assert.match(controller, /if \(this\.entryActive \|\| \(this\._state !== SharkState\.WANDER/);
     assert.match(presentation, /shark\.sequence === 1/);
-    assert.match(presentation, /buildWaterExplosionGeometry\(\)/);
-    assert.match(presentation, /applyWaterExplosionPhase/);
+    assert.match(presentation, /owner: ENTERTAINMENT_SPLASH_OWNER\.SHARK_ENTRY/);
+    assert.match(presentation, /profile: ENTERTAINMENT_SPLASH_PROFILE\.HEAVY_ENTRY/);
+    assert.match(presentation, /layer: this\.splashLayer/);
     assert.doesNotMatch(presentation, /Graphics|ParticleSystem/);
 });
 
@@ -158,7 +159,7 @@ test('鲨鱼咬伤只复用画中画可见的大水花进行遮挡', () => {
     assert.match(manager, /swimmer === sharkFeedTarget/);
     assert.match(knockdownSource, /setSplashCulled\(false\)/);
     assert.match(knockdownSource, /_sharkSplashFocusSeconds = Math\.max\(1, SHARK_TUNING\.biteCameraHoldSeconds\)/);
-    assert.match(manager, /setFinishFloating\(0\.18\)/);
+    assert.match(manager, /setEntertainmentKnocked\(0\.18\)/);
     assert.match(rig, /triggerBigSplashAt\(point: Vec3, scale = 2\.6\)/);
     assert.match(rig, /triggerTakeoffSurfaceBurst\(scale, point\)/);
     assert.match(rig, /transitionTo\(CharacterPoseState\.TreadWater, transitionSeconds\)/);

@@ -1,17 +1,20 @@
-import { Material, Mesh, MeshRenderer, Node, utils } from 'cc';
+import { Material, Mesh, MeshRenderer, Node, utils, Vec3 } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { MinefieldImpact, MinefieldMineState } from './MinefieldBrawlController';
 import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
 import {
-    applyWaterExplosionPhase,
     buildMineGeometry,
-    buildWaterExplosionGeometry,
     makeMineVertexMaterial,
 } from './MineRelayBrawlPresentation';
+import {
+    ENTERTAINMENT_SPLASH_OWNER,
+    ENTERTAINMENT_SPLASH_PROFILE,
+    type EntertainmentSplashProfile,
+    EntertainmentWaterSplashPool,
+} from './EntertainmentWaterSplash';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const EXPLOSION_SECONDS = 0.58;
-const EXPLOSION_POOL_SIZE = 3;
 const MINEFIELD_EXPLOSION_INTENSITY = 1;
 const ENTRY_STAGGER_SECONDS = 0.04;
 const ENTRY_DISTURB_SECONDS = 0.28;
@@ -29,31 +32,30 @@ const MINE_ROTATION_Y_DEGREES = 14;
 const MINE_TILT_X_DEGREES = 9;
 const MINE_TILT_Z_DEGREES = 7;
 
-type ExplosionVisual = { node: Node; remaining: number; duration: number; intensity: number };
-
 /** 共享网格和材质的低面数水雷池；运行时只更新节点显隐和变换。 */
 export class MinefieldBrawlPresentation {
     private readonly mineNodes: Node[] = [];
-    private readonly explosions: ExplosionVisual[] = [];
     private readonly entryElapsed: number[] = [];
     private readonly entryWasArmed: boolean[] = [];
     private readonly entryDisturbanceShown: boolean[] = [];
     private readonly entryBreachShown: boolean[] = [];
     private mineMesh: Mesh | null = null;
-    private explosionMesh: Mesh | null = null;
     private mineMaterial: Material | null = null;
-    private explosionMaterial: Material | null = null;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private visible = true;
     private disposed = false;
+    private readonly splashWorldPosition = new Vec3();
 
-    constructor(private readonly worldRoot: Node, private readonly course: RaceCourseLayout, mineCount: number) {
+    constructor(
+        private readonly worldRoot: Node,
+        private readonly course: RaceCourseLayout,
+        mineCount: number,
+        private readonly waterSplashes: EntertainmentWaterSplashPool | null,
+    ) {
         if (!worldRoot?.isValid) return;
         this.mineMesh = utils.createMesh(buildMineGeometry());
-        this.explosionMesh = utils.createMesh(buildWaterExplosionGeometry());
         this.mineMaterial = makeMineVertexMaterial('MinefieldBodyMaterial', true);
-        this.explosionMaterial = makeMineVertexMaterial('MinefieldExplosionMaterial', false);
         for (let id = 0; id < mineCount; id++) {
             const node = this.makeMeshNode(`MinefieldMine${id}`, this.mineMesh, this.mineMaterial);
             node.setScale(1.08, 1.08, 1.08);
@@ -64,22 +66,13 @@ export class MinefieldBrawlPresentation {
             this.entryDisturbanceShown.push(false);
             this.entryBreachShown.push(false);
         }
-        for (let index = 0; index < EXPLOSION_POOL_SIZE; index++) {
-            const node = this.makeMeshNode(`MinefieldExplosion${index}`, this.explosionMesh, this.explosionMaterial);
-            node.active = false;
-            this.explosions.push({
-                node,
-                remaining: 0,
-                duration: EXPLOSION_SECONDS,
-                intensity: MINEFIELD_EXPLOSION_INTENSITY,
-            });
-        }
     }
 
     reset(): void {
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
         this.visible = true;
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.MINEFIELD);
         // 下一次 20Hz 表现采样会从水下重新播放入场，避免重置帧在原点闪现。
         for (let id = 0; id < this.mineNodes.length; id++) {
             this.setActive(this.mineNodes[id], false);
@@ -87,10 +80,6 @@ export class MinefieldBrawlPresentation {
             this.entryWasArmed[id] = false;
             this.entryDisturbanceShown[id] = false;
             this.entryBreachShown[id] = false;
-        }
-        for (const explosion of this.explosions) {
-            explosion.remaining = 0;
-            this.setActive(explosion.node, false);
         }
     }
 
@@ -100,10 +89,7 @@ export class MinefieldBrawlPresentation {
             this.visible = visible;
             if (!visible) {
                 for (const node of this.mineNodes) this.setActive(node, false);
-                for (const explosion of this.explosions) {
-                    explosion.remaining = 0;
-                    this.setActive(explosion.node, false);
-                }
+                this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.MINEFIELD);
             } else {
                 this.elapsed = PRESENTATION_INTERVAL;
             }
@@ -148,8 +134,10 @@ export class MinefieldBrawlPresentation {
                     mine.courseX,
                     mine.lateral,
                     id * 43,
+                    ENTERTAINMENT_SPLASH_PROFILE.HEAVY_ENTRY,
                     ENTRY_DISTURB_INTENSITY,
                     ENTRY_DISTURB_VISUAL_SECONDS,
+                    true,
                 );
             }
             if (!this.entryBreachShown[id]
@@ -160,6 +148,7 @@ export class MinefieldBrawlPresentation {
                     mine.courseX,
                     mine.lateral,
                     id * 47 + 19,
+                    ENTERTAINMENT_SPLASH_PROFILE.HEAVY_ENTRY,
                     ENTRY_BREACH_INTENSITY,
                     ENTRY_BREACH_VISUAL_SECONDS,
                 );
@@ -197,21 +186,15 @@ export class MinefieldBrawlPresentation {
                 Math.cos(rotationPhase * 0.43 + 0.8) * MINE_TILT_Z_DEGREES - entryTilt * 0.55,
             );
         }
-        for (const explosion of this.explosions) {
-            if (explosion.remaining <= 0) continue;
-            explosion.remaining = Math.max(0, explosion.remaining - presentationStep);
-            const progress = 1 - explosion.remaining / explosion.duration;
-            applyWaterExplosionPhase(explosion.node, progress, explosion.intensity);
-            if (explosion.remaining <= 0) this.setActive(explosion.node, false);
-        }
     }
 
     showImpact(impact: MinefieldImpact): void {
-        if (this.disposed || !this.visible || this.explosions.length === 0) return;
+        if (this.disposed || !this.visible) return;
         this.showWaterVisual(
             impact.courseX,
             impact.lateral,
             impact.mineId * 47,
+            ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION,
             MINEFIELD_EXPLOSION_INTENSITY,
             EXPLOSION_SECONDS,
         );
@@ -221,39 +204,37 @@ export class MinefieldBrawlPresentation {
         courseX: number,
         lateral: number,
         rotationY: number,
+        profile: EntertainmentSplashProfile,
         intensity: number,
         duration: number,
+        rippleOnly = false,
     ): void {
-        if (this.disposed || !this.visible || this.explosions.length === 0) return;
-        let visual = this.explosions[0];
-        for (const candidate of this.explosions) {
-            if (candidate.remaining <= 0) { visual = candidate; break; }
-            if (candidate.remaining < visual.remaining) visual = candidate;
-        }
-        visual.node.setWorldPosition(
+        if (this.disposed || !this.visible) return;
+        this.splashWorldPosition.set(
             this.course.distanceToWorldX(courseX),
             this.course.waterY + 0.05,
             lateral,
         );
-        visual.node.setRotationFromEuler(0, rotationY, 0);
-        visual.duration = Math.max(0.01, duration);
-        visual.intensity = Math.max(0, intensity);
-        applyWaterExplosionPhase(visual.node, 0, visual.intensity);
-        visual.remaining = visual.duration;
-        this.setActive(visual.node, true);
+        this.waterSplashes?.play({
+            owner: ENTERTAINMENT_SPLASH_OWNER.MINEFIELD,
+            profile,
+            position: this.splashWorldPosition,
+            yawDegrees: rotationY,
+            intensity,
+            duration,
+            rippleOnly,
+            layer: this.worldRoot.layer,
+        });
     }
 
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.MINEFIELD);
         for (const node of this.mineNodes) if (node.isValid) node.destroy();
-        for (const visual of this.explosions) if (visual.node.isValid) visual.node.destroy();
         this.mineNodes.length = 0;
-        this.explosions.length = 0;
         this.mineMesh?.destroy();
-        this.explosionMesh?.destroy();
         this.mineMaterial?.destroy();
-        this.explosionMaterial?.destroy();
     }
 
     private makeMeshNode(name: string, mesh: Mesh, material: Material): Node {

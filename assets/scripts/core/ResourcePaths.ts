@@ -503,6 +503,12 @@ export const RESOURCE_PATHS = {
         dolphin: 'ui/race-hud-v1/dolphin/texture',
         jumpReady: 'ui/race-hud-v1/jump-ready/texture',
     },
+    entertainmentRecoveryUi: {
+        rescueCard: 'ui/entertainment-recovery-v1/rescue-card/texture',
+    },
+    entertainmentKnockoutUi: {
+        dizzyStars: 'ui/entertainment-knockout-v1/dizzy-stars/texture',
+    },
     preRaceUi: {
         eventStrip: 'ui/pre-race-v1/event-strip/texture',
         cardNormal: 'ui/pre-race-v1/card-normal/texture',

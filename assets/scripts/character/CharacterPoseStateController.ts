@@ -13,6 +13,7 @@ export enum CharacterPoseState {
     Glide = 'glide',
     Freestyle = 'freestyle',
     TreadWater = 'tread-water',
+    EntertainmentKnocked = 'entertainment-knocked',
 }
 
 export type CharacterPoseStateControllerOptions = {
@@ -47,12 +48,16 @@ export class CharacterPoseStateController {
     private _diveTransitionElapsed = 0;
     private _diveTransitionDuration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds;
     private _treadWaterStartTime = 0;
+    private _entertainmentKnockoutStartTime = 0;
     private _showcaseStartTime = 0;
     private _showcaseAction: SampledActionMotion | null = findSampledDebugAction('waving');
     private _poseTransition: PoseTransition | null = null;
     private readonly _transitionPosition = new Vec3();
     private readonly _transitionRotation = new Quat();
     private readonly _transitionScale = new Vec3();
+    private readonly _knockoutBaseRotation = new Quat();
+    private readonly _knockoutLocalRoll = new Quat();
+    private readonly _knockoutRotation = new Quat();
 
     constructor(private readonly _options: CharacterPoseStateControllerOptions) {}
 
@@ -69,7 +74,8 @@ export class CharacterPoseStateController {
     // not represent visibility during the preparation presentation.
     get isPresentationMotionActive(): boolean {
         return !this._poseTransition
-            && this._state === CharacterPoseState.TreadWater;
+            && (this._state === CharacterPoseState.TreadWater
+                || this._state === CharacterPoseState.EntertainmentKnocked);
     }
 
     setShowcaseAction(
@@ -123,10 +129,16 @@ export class CharacterPoseStateController {
         this.setState(CharacterPoseState.TreadWater);
     }
 
+    enterEntertainmentKnockout(transitionSeconds = 0) {
+        this._entertainmentKnockoutStartTime = this._options.getSelfTime();
+        this.transitionTo(CharacterPoseState.EntertainmentKnocked, transitionSeconds);
+    }
+
     reset() {
         this._options.pose.setDiveSupportPlane(null);
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
+        this._entertainmentKnockoutStartTime = 0;
         this._showcaseStartTime = 0;
         this._state = CharacterPoseState.Preview;
         this._poseTransition = null;
@@ -135,6 +147,7 @@ export class CharacterPoseStateController {
     resetRuntime() {
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
+        this._entertainmentKnockoutStartTime = 0;
         this._poseTransition = null;
     }
 
@@ -162,6 +175,10 @@ export class CharacterPoseStateController {
         }
         if (this._state === CharacterPoseState.TreadWater) {
             this.updateTreadWater();
+            return true;
+        }
+        if (this._state === CharacterPoseState.EntertainmentKnocked) {
+            this.updateEntertainmentKnockout();
             return true;
         }
         if (this._state === CharacterPoseState.Preview && !hasAnimation) {
@@ -260,6 +277,9 @@ export class CharacterPoseStateController {
             case CharacterPoseState.TreadWater:
                 this.applyTreadWaterSetup();
                 break;
+            case CharacterPoseState.EntertainmentKnocked:
+                this.applyEntertainmentKnockoutSetup();
+                break;
             case CharacterPoseState.Preview:
             default:
                 break;
@@ -355,6 +375,23 @@ export class CharacterPoseStateController {
         this._options.setSplashVisible(false);
     }
 
+    private applyEntertainmentKnockoutSetup() {
+        const model = this._options.getModel();
+        if (!model || !this._options.getRoot()) {
+            return;
+        }
+        const y = CHARACTER_POSE_TUNING.raceModelBaseY
+            + this._options.raceModelYOffset()
+            + MOTION_TUNING.swimBodyYOffset
+            + CHARACTER_POSE_TUNING.entertainmentKnockoutModelYOffset;
+        model.setPosition(0, y, 0);
+        this.applyModelScale(model);
+        this.applyEntertainmentKnockoutRotation(0);
+        this._options.pose.applyFinishFloatingPose();
+        this._options.updateSplashSurface(0);
+        this._options.setSplashVisible(false);
+    }
+
     private applyDivePrepModelSetup() {
         const model = this._options.getModel();
         if (!model) {
@@ -388,6 +425,37 @@ export class CharacterPoseStateController {
         const bob = Math.sin(this._options.getSelfTime() * CHARACTER_POSE_TUNING.finishFloatBobSpeed) * CHARACTER_POSE_TUNING.finishFloatBobAmplitude;
         model.setPosition(0, CHARACTER_POSE_TUNING.finishFloatBaseY + bob, 0);
         this.applyTreadWaterPose();
+    }
+
+    private updateEntertainmentKnockout() {
+        const model = this._options.getModel();
+        if (!model || !this._options.getRoot()) {
+            return;
+        }
+        const elapsed = Math.max(0, this._options.getSelfTime() - this._entertainmentKnockoutStartTime);
+        const phase = elapsed * CHARACTER_POSE_TUNING.entertainmentKnockoutBobSpeed;
+        const baseY = CHARACTER_POSE_TUNING.raceModelBaseY
+            + this._options.raceModelYOffset()
+            + MOTION_TUNING.swimBodyYOffset
+            + CHARACTER_POSE_TUNING.entertainmentKnockoutModelYOffset;
+        model.setPosition(0, baseY + Math.sin(phase) * CHARACTER_POSE_TUNING.entertainmentKnockoutBobAmplitude, 0);
+        this.applyEntertainmentKnockoutRotation(
+            Math.sin(phase * 0.72) * CHARACTER_POSE_TUNING.entertainmentKnockoutRollSwayDegrees,
+        );
+    }
+
+    private applyEntertainmentKnockoutRotation(swayDegrees: number) {
+        const model = this._options.getModel();
+        if (!model) return;
+        const euler = this._options.raceModelEulerDegrees();
+        Quat.fromEuler(this._knockoutBaseRotation, euler[0], euler[1], euler[2]);
+        Quat.fromAxisAngle(
+            this._knockoutLocalRoll,
+            Vec3.UNIT_Y,
+            (CHARACTER_POSE_TUNING.entertainmentKnockoutRollDegrees + swayDegrees) * Math.PI / 180,
+        );
+        Quat.multiply(this._knockoutRotation, this._knockoutBaseRotation, this._knockoutLocalRoll);
+        model.setRotation(this._knockoutRotation);
     }
 
     private updateShowcaseStanding() {

@@ -87,6 +87,14 @@ export const CHARACTER_POSE_TUNING = {
     // 程序化踩水动作在动画倍率前的一整轮周期。
     finishTreadWaterCycleSeconds: 2.25,
 
+    // Entertainment knockdowns keep the swimmer visibly incapacitated at the
+    // surface instead of reusing the upright finish/tread-water pose.
+    entertainmentKnockoutModelYOffset: -0.06,
+    entertainmentKnockoutRollDegrees: 102,
+    entertainmentKnockoutRollSwayDegrees: 4,
+    entertainmentKnockoutBobAmplitude: 0.022,
+    entertainmentKnockoutBobSpeed: 2.1,
+
     // Procedural breaststroke preview cycle duration before animation speed scaling.
     // Debug 预览里的程序化蛙泳/踩水动作在动画倍率前的一整轮周期。
     breaststrokePreviewCycleSeconds: 2.25,

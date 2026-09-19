@@ -95,8 +95,11 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.match(controller, /THROW_TRIGGER_AHEAD_DISTANCE = 18/);
     assert.match(controller, /THROW_FORCE_LANDED_AHEAD_DISTANCE = 6/);
     assert.match(controller, /THROW_SECONDS = 1\.25/);
-    assert.match(controller, /LANDING_SPLASH_POOL_SIZE = 3/);
-    assert.match(controller, /buildWaterExplosionGeometry/);
+    assert.match(controller, /owner: ENTERTAINMENT_SPLASH_OWNER\.STIMULANT/);
+    assert.match(controller, /profile: ENTERTAINMENT_SPLASH_PROFILE\.LIGHT_ENTRY/);
+    assert.match(controller, /LANDING_SPLASH_SECONDS = 0\.42/);
+    assert.match(controller, /verticalScale: 0\.74/);
+    assert.doesNotMatch(controller, /landingSplashes|buildWaterExplosionGeometry|Graphics|ParticleSystem/);
     assert.match(controller, /Math\.sin\(t \* Math\.PI\) \* THROW_ARC_HEIGHT/);
     assert.match(controller, /this\.course\.poolWidth \* 0\.5 \+ THROW_STAND_OFFSET/);
     assert.match(controller, /BEACON_REVEAL_START = 0\.72/);

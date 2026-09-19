@@ -10,6 +10,7 @@ export interface CharacterRig {
     setShowcaseStanding(transitionSeconds?: number): void;
     setDiveReady(active: boolean, transitionSeconds?: number): void;
     setFinishFloating(): void;
+    setEntertainmentKnocked(transitionSeconds?: number): void;
     triggerArmStroke(): void;
     triggerKick(): void;
     triggerStroke(type: StrokeType): void;

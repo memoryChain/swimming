@@ -1,6 +1,8 @@
-import { Camera, Color, Graphics, Label, Node, UITransform, Vec3, view } from 'cc';
+import { Camera, Color, Graphics, Label, Node, Sprite, SpriteFrame, UIOpacity, UITransform, Vec3, view } from 'cc';
 import type { RaceFinishResult } from '../core/RaceManager';
+import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import type { Swimmer } from '../entity/Swimmer';
+import { loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { styleProjectUiLabel, styleDynamicUiLabel } from './ProjectUiFonts';
 import { makeUiNode } from './RuntimeUiFactory';
 
@@ -13,6 +15,26 @@ const NAME_FONT_SIZE = 15;
 const NAME_HORIZONTAL_PADDING = 2;
 const NAME_MAX_WIDTH = TAG_WIDTH - LIVE_PLACEMENT_BADGE_WIDTH - RANK_NAME_GAP;
 const HEAD_OFFSET_Y = 30;
+const DIZZY_SIZE = 76;
+const DIZZY_OFFSET_Y = 64;
+const DIZZY_STAR_COUNT = 3;
+const DIZZY_STAR_SIZE = 30;
+const DIZZY_ORBIT_RADIUS_X = 31;
+const DIZZY_ORBIT_RADIUS_Y = 11;
+const DIZZY_ORBIT_RADIANS_PER_SECOND = Math.PI * 2 / 4.6;
+const DIZZY_TRAIL_SEGMENT_COUNT = 2;
+const DIZZY_TRAIL_PHASE_STEP = 0.50;
+const DIZZY_TRAIL_BASE_WIDTH = 24;
+const DIZZY_TRAIL_HEIGHT = 7;
+const DIZZY_TRAIL_SCALE_STEP = 0.02;
+const DIZZY_TRAIL_ALPHA_FACTORS = [0.70, 0.42] as const;
+const DIZZY_MIN_SCALE = 0.72;
+const DIZZY_MAX_SCALE = 1.12;
+const DIZZY_SCALE_STEP = 0.02;
+const DIZZY_MIN_OPACITY = 155;
+const DIZZY_MAX_OPACITY = 255;
+const DIZZY_SAMPLE_SECONDS = 1 / 20;
+const FULL_CIRCLE_RADIANS = Math.PI * 2;
 const OFF_SCREEN_MARGIN = 48;
 const COLLISION_PADDING_X = 2;
 const COLLISION_PADDING_Y = 2;
@@ -26,6 +48,29 @@ const RANK_BG = new Color(112, 76, 174, 242);
 const RANK_TEXT = new Color(245, 250, 252);
 const SELF_BG = new Color(255, 201, 58, 242);
 const SELF_TEXT = new Color(54, 49, 35);
+const DIZZY_TRAIL_COLOR = new Color(255, 220, 84, 255);
+
+type DizzyTrailVisual = {
+    root: Node;
+    sprite: Sprite;
+    opacity: UIOpacity;
+    x: number;
+    y: number;
+    angle: number;
+    scaleX: number;
+    alpha: number;
+};
+
+type DizzyStarVisual = {
+    root: Node;
+    sprite: Sprite;
+    opacity: UIOpacity;
+    x: number;
+    y: number;
+    scale: number;
+    alpha: number;
+    trails: DizzyTrailVisual[];
+};
 
 type NameEntry = {
     swimmer: Swimmer;
@@ -39,6 +84,12 @@ type NameEntry = {
     x: number;
     y: number;
     scale: number;
+    dizzyRoot: Node;
+    dizzyStars: DizzyStarVisual[];
+    dizzyPhase: number;
+    dizzyX: number;
+    dizzyY: number;
+    dizzyKnocked: boolean;
 };
 
 // Lightweight race-time name tags. They reuse the same world -> screen -> HUD
@@ -60,6 +111,9 @@ export class SwimmerNameOverlay {
     private readonly _placedWidths: number[] = [];
     private readonly _placedHeights: number[] = [];
     private _anchorWarmupFrames = 0;
+    private _dizzyFrame: SpriteFrame | null = null;
+    private _dizzyTrailFrame: SpriteFrame | null = null;
+    private _dizzyElapsed = DIZZY_SAMPLE_SECONDS;
 
     bind(hud: Node) {
         if (!hud?.isValid) {
@@ -69,6 +123,30 @@ export class SwimmerNameOverlay {
         if (!this._root?.isValid) {
             this._root = makeUiNode('SwimmerNameTags', hud);
             this._root.active = false;
+            loadAvatarUiSpriteFrame(RESOURCE_PATHS.entertainmentKnockoutUi.dizzyStars, (frame) => {
+                if (!frame) return;
+                this._dizzyFrame = frame;
+                for (const entry of this._entries) {
+                    for (const star of entry.dizzyStars) {
+                        if (star.sprite?.isValid && star.sprite.spriteFrame !== frame) {
+                            star.sprite.spriteFrame = frame;
+                        }
+                    }
+                }
+            });
+            loadAvatarUiSpriteFrame(RESOURCE_PATHS.softSpeedStreak, (frame) => {
+                if (!frame) return;
+                this._dizzyTrailFrame = frame;
+                for (const entry of this._entries) {
+                    for (const star of entry.dizzyStars) {
+                        for (const trail of star.trails) {
+                            if (trail.sprite?.isValid && trail.sprite.spriteFrame !== frame) {
+                                trail.sprite.spriteFrame = frame;
+                            }
+                        }
+                    }
+                }
+            });
         }
     }
 
@@ -96,6 +174,59 @@ export class SwimmerNameOverlay {
             const name = makeSwimmerNameLabel('Name', tag, swimmer.swimmerName);
             const nameNode = name.root;
             const nameWidth = name.width;
+            // Keep the dizzy orbit on the HUD root instead of parenting it to the
+            // animated head tag. Its screen-space anchor comes from the stable
+            // swimmer root, so a flipped or submerged head cannot drag it into water.
+            const dizzyRoot = makeUiNode('EntertainmentDizzyStars', this._root);
+            dizzyRoot.getComponent(UITransform)!.setContentSize(DIZZY_SIZE, DIZZY_SIZE);
+            const dizzyStars: DizzyStarVisual[] = [];
+            const dizzyTrails: DizzyTrailVisual[][] = [];
+            // Build every trail before the stars so the two shared textures stay
+            // grouped into two stable UI batches and every trail remains behind.
+            for (let i = 0; i < DIZZY_STAR_COUNT; i++) {
+                const trails: DizzyTrailVisual[] = [];
+                for (let segment = 0; segment < DIZZY_TRAIL_SEGMENT_COUNT; segment++) {
+                    const trailRoot = makeUiNode(`DizzyTrail_${i + 1}_${segment + 1}`, dizzyRoot);
+                    trailRoot.getComponent(UITransform)!.setContentSize(DIZZY_TRAIL_BASE_WIDTH, DIZZY_TRAIL_HEIGHT);
+                    const sprite = trailRoot.addComponent(Sprite);
+                    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+                    sprite.trim = false;
+                    sprite.color = DIZZY_TRAIL_COLOR;
+                    sprite.spriteFrame = this._dizzyTrailFrame;
+                    const opacity = trailRoot.addComponent(UIOpacity);
+                    trails.push({
+                        root: trailRoot,
+                        sprite,
+                        opacity,
+                        x: Number.NaN,
+                        y: Number.NaN,
+                        angle: Number.NaN,
+                        scaleX: -1,
+                        alpha: -1,
+                    });
+                }
+                dizzyTrails.push(trails);
+            }
+            for (let i = 0; i < DIZZY_STAR_COUNT; i++) {
+                const starRoot = makeUiNode(`DizzyStar_${i + 1}`, dizzyRoot);
+                starRoot.getComponent(UITransform)!.setContentSize(DIZZY_STAR_SIZE, DIZZY_STAR_SIZE);
+                const sprite = starRoot.addComponent(Sprite);
+                sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+                sprite.trim = false;
+                sprite.spriteFrame = this._dizzyFrame;
+                const opacity = starRoot.addComponent(UIOpacity);
+                dizzyStars.push({
+                    root: starRoot,
+                    sprite,
+                    opacity,
+                    x: Number.NaN,
+                    y: Number.NaN,
+                    scale: -1,
+                    alpha: -1,
+                    trails: dizzyTrails[i],
+                });
+            }
+            dizzyRoot.active = false;
             const entry: NameEntry = {
                 swimmer,
                 root: tag,
@@ -108,6 +239,12 @@ export class SwimmerNameOverlay {
                 x: Number.NaN,
                 y: Number.NaN,
                 scale: -1,
+                dizzyRoot,
+                dizzyStars,
+                dizzyPhase: 0,
+                dizzyX: Number.NaN,
+                dizzyY: Number.NaN,
+                dizzyKnocked: false,
             };
             this._entries.push(entry);
             this._entriesBySwimmer.set(swimmer, entry);
@@ -161,8 +298,15 @@ export class SwimmerNameOverlay {
             entry.x = Number.NaN;
             entry.y = Number.NaN;
             entry.scale = -1;
+            entry.dizzyX = Number.NaN;
+            entry.dizzyY = Number.NaN;
+            entry.dizzyKnocked = false;
+            entry.dizzyPhase = 0;
             if (entry.root?.isValid && entry.root.active) {
                 entry.root.active = false;
+            }
+            if (entry.dizzyRoot?.isValid && entry.dizzyRoot.active) {
+                entry.dizzyRoot.active = false;
             }
         }
     }
@@ -174,6 +318,7 @@ export class SwimmerNameOverlay {
         finishDistance: number,
         showFinished = false,
         headOffsetY = HEAD_OFFSET_Y,
+        dt = 0,
     ) {
         if (!this._root?.isValid || !this._root.active || !this._hud?.isValid || !worldCamera || !uiCamera) {
             return;
@@ -194,6 +339,10 @@ export class SwimmerNameOverlay {
         this._placedY.length = 0;
         this._placedWidths.length = 0;
         this._placedHeights.length = 0;
+        this._dizzyElapsed += Math.max(0, dt);
+        const advanceDizzy = this._dizzyElapsed >= DIZZY_SAMPLE_SECONDS;
+        const dizzyDt = advanceDizzy ? this._dizzyElapsed : 0;
+        if (advanceDizzy) this._dizzyElapsed = 0;
 
         for (const entry of this._entries) {
             const swimmerNode = entry.swimmer?.node;
@@ -202,6 +351,9 @@ export class SwimmerNameOverlay {
                 if (entry.root?.isValid && entry.root.active) {
                     entry.root.active = false;
                 }
+                if (entry.dizzyRoot?.isValid && entry.dizzyRoot.active) {
+                    entry.dizzyRoot.active = false;
+                }
                 continue;
             }
             entry.swimmer.getNameTagWorldPosition(this._worldPos);
@@ -209,6 +361,9 @@ export class SwimmerNameOverlay {
             if (Vec3.dot(this._cameraToHead, this._cameraForward) <= 0) {
                 if (entry.root.active) {
                     entry.root.active = false;
+                }
+                if (entry.dizzyRoot.active) {
+                    entry.dizzyRoot.active = false;
                 }
                 continue;
             }
@@ -221,6 +376,9 @@ export class SwimmerNameOverlay {
             if (Math.abs(this._uiLocal.x) > halfWidth || Math.abs(this._uiLocal.y) > halfHeight) {
                 if (entry.root.active) {
                     entry.root.active = false;
+                }
+                if (entry.dizzyRoot.active) {
+                    entry.dizzyRoot.active = false;
                 }
                 continue;
             }
@@ -254,14 +412,110 @@ export class SwimmerNameOverlay {
             if (!entry.root.active) {
                 entry.root.active = true;
             }
+            const wantsDizzy = entry.swimmer.isEntertainmentKnocked && !!entry.dizzyStars[0]?.sprite.spriteFrame;
+            const enteredDizzy = wantsDizzy && !entry.dizzyKnocked;
+            entry.dizzyKnocked = wantsDizzy;
+            let showDizzy = wantsDizzy && entry.dizzyRoot.active;
+            if (wantsDizzy && (advanceDizzy || enteredDizzy)) {
+                Vec3.copy(this._worldPos, swimmerNode.worldPosition);
+                worldCamera.worldToScreen(this._worldPos, this._screenPos);
+                uiCamera.screenToWorld(this._screenPos, this._uiWorld);
+                hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
+                const dizzyX = Math.round(this._uiLocal.x);
+                const dizzyY = Math.round(this._uiLocal.y + DIZZY_OFFSET_Y * labelScale);
+                showDizzy = Math.abs(dizzyX) <= halfWidth && Math.abs(dizzyY) <= halfHeight;
+                if (showDizzy && (entry.dizzyX !== dizzyX || entry.dizzyY !== dizzyY)) {
+                    entry.dizzyX = dizzyX;
+                    entry.dizzyY = dizzyY;
+                    entry.dizzyRoot.setPosition(dizzyX, dizzyY, 1);
+                }
+            }
+            if (entry.dizzyRoot.active !== showDizzy) {
+                entry.dizzyRoot.active = showDizzy;
+                if (showDizzy) {
+                    this.updateDizzyOrbit(entry, 0, true);
+                }
+            }
+            if (showDizzy && advanceDizzy) {
+                this.updateDizzyOrbit(entry, dizzyDt, false);
+            }
             if (entry.scale !== labelScale) {
                 entry.scale = labelScale;
                 entry.root.setScale(labelScale, labelScale, 1);
+                entry.dizzyRoot.setScale(labelScale, labelScale, 1);
             }
             if (entry.x !== x || entry.y !== y) {
                 entry.x = x;
                 entry.y = y;
                 entry.root.setPosition(x, y, 0);
+            }
+        }
+    }
+
+    private updateDizzyOrbit(entry: NameEntry, dt: number, reset: boolean) {
+        entry.dizzyPhase = reset
+            ? 0
+            : (entry.dizzyPhase + Math.max(0, dt) * DIZZY_ORBIT_RADIANS_PER_SECOND) % FULL_CIRCLE_RADIANS;
+        for (let i = 0; i < entry.dizzyStars.length; i++) {
+            const star = entry.dizzyStars[i];
+            const phase = entry.dizzyPhase + i * FULL_CIRCLE_RADIANS / DIZZY_STAR_COUNT;
+            const sin = Math.sin(phase);
+            const x = Math.round(Math.cos(phase) * DIZZY_ORBIT_RADIUS_X);
+            const y = Math.round(sin * DIZZY_ORBIT_RADIUS_Y);
+            // The lower half of the tilted orbit passes in front of the swimmer:
+            // make it larger and brighter while every star stays screen-upright.
+            const depth = (1 - sin) * 0.5;
+            const rawScale = DIZZY_MIN_SCALE + (DIZZY_MAX_SCALE - DIZZY_MIN_SCALE) * depth;
+            const scale = Math.round(rawScale / DIZZY_SCALE_STEP) * DIZZY_SCALE_STEP;
+            const alpha = Math.round(DIZZY_MIN_OPACITY + (DIZZY_MAX_OPACITY - DIZZY_MIN_OPACITY) * depth);
+            for (let segment = 0; segment < star.trails.length; segment++) {
+                const trail = star.trails[segment];
+                const leadPhase = phase - segment * DIZZY_TRAIL_PHASE_STEP;
+                const tailPhase = phase - (segment + 1) * DIZZY_TRAIL_PHASE_STEP;
+                const leadX = Math.cos(leadPhase) * DIZZY_ORBIT_RADIUS_X;
+                const leadY = Math.sin(leadPhase) * DIZZY_ORBIT_RADIUS_Y;
+                const tailX = Math.cos(tailPhase) * DIZZY_ORBIT_RADIUS_X;
+                const tailY = Math.sin(tailPhase) * DIZZY_ORBIT_RADIUS_Y;
+                const trailX = Math.round((leadX + tailX) * 0.5);
+                const trailY = Math.round((leadY + tailY) * 0.5);
+                const deltaX = leadX - tailX;
+                const deltaY = leadY - tailY;
+                const angle = Math.round(Math.atan2(deltaY, deltaX) * 180 / Math.PI);
+                const rawScaleX = Math.max(0.25, Math.sqrt(deltaX * deltaX + deltaY * deltaY) / DIZZY_TRAIL_BASE_WIDTH);
+                const scaleX = Math.round(rawScaleX / DIZZY_TRAIL_SCALE_STEP) * DIZZY_TRAIL_SCALE_STEP;
+                const trailDepth = (1 - Math.sin((leadPhase + tailPhase) * 0.5)) * 0.5;
+                const depthAlpha = DIZZY_MIN_OPACITY + (DIZZY_MAX_OPACITY - DIZZY_MIN_OPACITY) * trailDepth;
+                const trailAlpha = Math.round(depthAlpha * DIZZY_TRAIL_ALPHA_FACTORS[segment]);
+                if (trail.x !== trailX || trail.y !== trailY) {
+                    trail.x = trailX;
+                    trail.y = trailY;
+                    trail.root.setPosition(trailX, trailY, 0);
+                }
+                if (trail.angle !== angle) {
+                    trail.angle = angle;
+                    trail.root.setRotationFromEuler(0, 0, angle);
+                }
+                if (trail.scaleX !== scaleX) {
+                    trail.scaleX = scaleX;
+                    trail.root.setScale(scaleX, 1, 1);
+                }
+                if (trail.alpha !== trailAlpha) {
+                    trail.alpha = trailAlpha;
+                    trail.opacity.opacity = trailAlpha;
+                }
+            }
+            if (star.x !== x || star.y !== y) {
+                star.x = x;
+                star.y = y;
+                star.root.setPosition(x, y, 0);
+            }
+            if (star.scale !== scale) {
+                star.scale = scale;
+                star.root.setScale(scale, scale, 1);
+            }
+            if (star.alpha !== alpha) {
+                star.alpha = alpha;
+                star.opacity.opacity = alpha;
             }
         }
     }

@@ -1,5 +1,11 @@
 import { Color, gfx, Material, Mesh, MeshRenderer, Node, primitives, utils, Vec3 } from 'cc';
-import { MineRelayArm } from './MineRelayBrawlController';
+import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
+import {
+    ENTERTAINMENT_SPLASH_OWNER,
+    ENTERTAINMENT_SPLASH_PROFILE,
+    EntertainmentWaterSplashPool,
+} from './EntertainmentWaterSplash';
+import { MINE_RELAY_TUNING, type MineRelayArm } from './MineRelayBrawlController';
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const EXPLOSION_SECONDS = 0.58;
@@ -7,40 +13,95 @@ const TIMED_BOMB_EXPLOSION_INTENSITY = 1.25;
 const ATTACH_X = -0.28;
 const ATTACH_Y = 0.48;
 const ATTACH_Z = 0;
+const THROW_ARC_HEIGHT = 3.6;
+const THROW_STAND_OFFSET = 3.2;
+const THROW_SOURCE_HEIGHT = 4.8;
+const TRANSFER_THROW_SECONDS = 0.22;
+const TRANSFER_THROW_ARC_HEIGHT = 0.55;
 
-/** 单个固定低面数定时炸弹与池化爆炸网格；炸弹挂到泳者节点后无需逐帧追踪世界坐标。 */
+/** 单个固定低面数定时炸弹；仅抛入和交接阶段追踪世界落点，爆炸水花交给娱乐模式共享池。 */
 export class MineRelayBrawlPresentation {
     private mineRoot: Node | null = null;
     private lamp: Node | null = null;
-    private explosion: Node | null = null;
     private mineMesh: Mesh | null = null;
     private lampMesh: Mesh | null = null;
-    private explosionMesh: Mesh | null = null;
     private mineMaterial: Material | null = null;
     private lampMaterial: Material | null = null;
-    private explosionMaterial: Material | null = null;
     private activeRoundId = -1;
-    private explosionRemaining = 0;
+    private throwTarget: Node | null = null;
+    private throwRemaining = 0;
+    private throwDuration = 0;
+    private throwArcHeight = 0;
+    private throwSpinScale = 1;
+    private throwSourceX = 0;
+    private throwSourceY = 0;
+    private throwSourceZ = 0;
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private disposed = false;
+    private readonly attachLocalPosition = new Vec3(ATTACH_X, ATTACH_Y, ATTACH_Z);
+    private readonly throwTargetWorldPosition = new Vec3();
+    private readonly resolutionWorldPosition = new Vec3();
 
-    constructor(private readonly worldRoot: Node) {
+    constructor(
+        private readonly worldRoot: Node,
+        private readonly course: RaceCourseLayout,
+        private readonly waterSplashes: EntertainmentWaterSplashPool | null,
+    ) {
         this.build();
     }
 
     reset(): void {
         this.activeRoundId = -1;
-        this.explosionRemaining = 0;
         this.elapsed = PRESENTATION_INTERVAL;
         this.clock = 0;
+        this.cancelThrow();
         this.detachMine();
-        this.setActive(this.explosion, false);
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.TIMED_BOMB);
     }
 
-    attach(arm: MineRelayArm, carrierNode: Node | null): void {
+    attach(arm: MineRelayArm, carrierNode: Node | null, throwFromStands = false): void {
         if (this.disposed || !arm || !carrierNode?.isValid || !this.mineRoot?.isValid) return;
         this.activeRoundId = arm.roundId;
+        if (throwFromStands) {
+            this.beginThrowFromStands(carrierNode);
+            return;
+        }
+        this.cancelThrow();
+        this.attachToCarrier(carrierNode);
+    }
+
+    transfer(arm: MineRelayArm, fromCarrierNode: Node | null, carrierNode: Node | null): void {
+        if (this.disposed || !arm || !carrierNode?.isValid || !this.mineRoot?.isValid) return;
+        this.activeRoundId = arm.roundId;
+        if (this.mineRoot.active) {
+            this.mineRoot.getWorldPosition(this.throwTargetWorldPosition);
+        } else if (fromCarrierNode?.isValid) {
+            Vec3.transformMat4(this.throwTargetWorldPosition, this.attachLocalPosition, fromCarrierNode.worldMatrix);
+        } else {
+            this.attachToCarrier(carrierNode);
+            return;
+        }
+        const sourceX = this.throwTargetWorldPosition.x;
+        const sourceY = this.throwTargetWorldPosition.y;
+        const sourceZ = this.throwTargetWorldPosition.z;
+        this.cancelThrow();
+        this.throwTarget = carrierNode;
+        this.throwDuration = TRANSFER_THROW_SECONDS;
+        this.throwRemaining = this.throwDuration;
+        this.throwArcHeight = TRANSFER_THROW_ARC_HEIGHT;
+        this.throwSpinScale = 0.45;
+        this.throwSourceX = sourceX;
+        this.throwSourceY = sourceY;
+        this.throwSourceZ = sourceZ;
+        this.mineRoot.setParent(this.worldRoot);
+        this.mineRoot.setWorldPosition(sourceX, sourceY, sourceZ);
+        this.mineRoot.setScale(1, 1, 1);
+        this.setActive(this.mineRoot, true);
+    }
+
+    private attachToCarrier(carrierNode: Node): void {
+        if (!this.mineRoot?.isValid || !carrierNode?.isValid) return;
         this.mineRoot.setParent(carrierNode);
         this.mineRoot.setPosition(ATTACH_X, ATTACH_Y, ATTACH_Z);
         this.mineRoot.setRotationFromEuler(0, 0, 0);
@@ -53,6 +114,9 @@ export class MineRelayBrawlPresentation {
             if (this.activeRoundId >= 0) this.detachMine();
             return;
         }
+        if (this.throwRemaining > 0
+            && arm.roundId === this.activeRoundId
+            && this.throwTarget === carrierNode) return;
         if (arm.roundId !== this.activeRoundId || this.mineRoot?.parent !== carrierNode) {
             this.attach(arm, carrierNode);
         }
@@ -60,21 +124,25 @@ export class MineRelayBrawlPresentation {
 
     showResolution(exploded: boolean, worldPosition: Readonly<Vec3> | null): void {
         if (this.disposed) return;
+        const resolvedRoundId = this.activeRoundId;
         this.detachMine();
-        if (!exploded || !worldPosition || !this.explosion?.isValid) return;
-        this.explosion.setParent(this.worldRoot);
-        this.explosion.setWorldPosition(worldPosition.x, worldPosition.y, worldPosition.z);
-        applyWaterExplosionPhase(this.explosion, 0, TIMED_BOMB_EXPLOSION_INTENSITY);
-        this.setActive(this.explosion, true);
-        this.explosionRemaining = EXPLOSION_SECONDS;
+        if (!exploded || !worldPosition) return;
+        this.resolutionWorldPosition.set(worldPosition.x, this.course.waterY + 0.035, worldPosition.z);
+        this.waterSplashes?.play({
+            owner: ENTERTAINMENT_SPLASH_OWNER.TIMED_BOMB,
+            profile: ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION,
+            position: this.resolutionWorldPosition,
+            yawDegrees: resolvedRoundId * 53,
+            intensity: TIMED_BOMB_EXPLOSION_INTENSITY,
+            duration: EXPLOSION_SECONDS,
+            layer: this.worldRoot.layer,
+        });
     }
 
     update(dt: number, arm: MineRelayArm | null, carrierNode: Node | null, remainingSeconds: number, locked: boolean, racing: boolean): void {
         if (this.disposed) return;
         if (!racing) {
             this.detachMine();
-            this.explosionRemaining = 0;
-            this.setActive(this.explosion, false);
             return;
         }
         this.sync(arm, carrierNode);
@@ -84,7 +152,8 @@ export class MineRelayBrawlPresentation {
         const presentationStep = this.elapsed;
         this.elapsed = 0;
         this.clock += presentationStep;
-        if (arm && this.mineRoot?.active) {
+        const throwing = this.advanceThrow(presentationStep);
+        if (arm && this.mineRoot?.active && !throwing) {
             const urgency = Math.max(0, Math.min(1, 1 - remainingSeconds / Math.max(0.01, arm.fuseSeconds)));
             const frequency = locked ? 18 : 5 + urgency * 8;
             const pulse = 0.78 + (Math.sin(this.clock * frequency) * 0.5 + 0.5) * (locked ? 0.5 : 0.3);
@@ -96,62 +165,95 @@ export class MineRelayBrawlPresentation {
                 Math.sin(this.clock * 2.4) * 4 * swayScale,
             );
         }
-        this.advanceExplosion(presentationStep);
     }
 
-    /** 玩法切换后只收尾已经触发的爆炸，避免复用节点停在动画中间帧。 */
+    /** 共用水花池自行收尾；切换后本控制器无需继续遍历爆炸节点。 */
     updateResidualEffects(dt: number, racing: boolean): void {
-        if (this.disposed) return;
-        if (!racing) {
-            this.explosionRemaining = 0;
-            this.setActive(this.explosion, false);
-            return;
-        }
-        if (this.explosionRemaining <= 0) return;
-        const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
-        this.elapsed += step;
-        if (this.elapsed < PRESENTATION_INTERVAL) return;
-        const presentationStep = this.elapsed;
-        this.elapsed = 0;
-        this.advanceExplosion(presentationStep);
+        void dt;
+        if (!racing) this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.TIMED_BOMB);
     }
 
     dispose(): void {
         if (this.disposed) return;
         this.disposed = true;
+        this.waterSplashes?.cancelOwner(ENTERTAINMENT_SPLASH_OWNER.TIMED_BOMB);
         if (this.mineRoot?.isValid) this.mineRoot.destroy();
-        if (this.explosion?.isValid) this.explosion.destroy();
-        this.mineRoot = this.lamp = this.explosion = null;
+        this.mineRoot = this.lamp = null;
         this.mineMesh?.destroy();
         this.lampMesh?.destroy();
-        this.explosionMesh?.destroy();
         this.mineMaterial?.destroy();
         this.lampMaterial?.destroy();
-        this.explosionMaterial?.destroy();
     }
 
     private detachMine(): void {
         this.activeRoundId = -1;
+        this.cancelThrow();
         if (!this.mineRoot?.isValid) return;
         this.mineRoot.setParent(this.worldRoot);
         this.setActive(this.mineRoot, false);
     }
 
-    private advanceExplosion(step: number): void {
-        if (this.explosionRemaining <= 0) return;
-        this.explosionRemaining = Math.max(0, this.explosionRemaining - step);
-        const progress = 1 - this.explosionRemaining / EXPLOSION_SECONDS;
-        if (this.explosion) applyWaterExplosionPhase(this.explosion, progress, TIMED_BOMB_EXPLOSION_INTENSITY);
-        if (this.explosionRemaining <= 0) this.setActive(this.explosion, false);
+    private beginThrowFromStands(carrierNode: Node): void {
+        if (!this.mineRoot?.isValid) return;
+        this.cancelThrow();
+        this.throwTarget = carrierNode;
+        this.throwDuration = Math.max(0.2, MINE_RELAY_TUNING.initialTransferCooldownSeconds);
+        this.throwRemaining = this.throwDuration;
+        this.throwArcHeight = THROW_ARC_HEIGHT;
+        this.throwSpinScale = 1;
+        Vec3.transformMat4(this.throwTargetWorldPosition, this.attachLocalPosition, carrierNode.worldMatrix);
+        const standSide = this.throwTargetWorldPosition.z >= 0 ? 1 : -1;
+        this.throwSourceX = this.throwTargetWorldPosition.x - this.course.direction * 1.8;
+        this.throwSourceY = this.course.waterY + THROW_SOURCE_HEIGHT;
+        this.throwSourceZ = standSide * (this.course.poolWidth * 0.5 + THROW_STAND_OFFSET);
+        this.mineRoot.setParent(this.worldRoot);
+        this.mineRoot.setWorldPosition(this.throwSourceX, this.throwSourceY, this.throwSourceZ);
+        this.mineRoot.setRotationFromEuler(0, 0, 0);
+        this.mineRoot.setScale(1, 1, 1);
+        this.setActive(this.mineRoot, true);
+    }
+
+    private advanceThrow(step: number): boolean {
+        if (this.throwRemaining <= 0) return false;
+        const target = this.throwTarget;
+        if (!target?.isValid || !this.mineRoot?.isValid) {
+            this.detachMine();
+            return false;
+        }
+        this.throwRemaining = Math.max(0, this.throwRemaining - step);
+        const progress = 1 - this.throwRemaining / Math.max(0.01, this.throwDuration);
+        Vec3.transformMat4(this.throwTargetWorldPosition, this.attachLocalPosition, target.worldMatrix);
+        const x = this.throwSourceX + (this.throwTargetWorldPosition.x - this.throwSourceX) * progress;
+        const z = this.throwSourceZ + (this.throwTargetWorldPosition.z - this.throwSourceZ) * progress;
+        const baseY = this.throwSourceY + (this.throwTargetWorldPosition.y - this.throwSourceY) * progress;
+        const y = baseY + Math.sin(progress * Math.PI) * this.throwArcHeight;
+        this.mineRoot.setWorldPosition(x, y, z);
+        this.mineRoot.setRotationFromEuler(
+            progress * 540 * this.throwSpinScale,
+            progress * 720 * this.throwSpinScale,
+            progress * 360 * this.throwSpinScale,
+        );
+        if (this.throwRemaining <= 0) {
+            this.cancelThrow();
+            this.attachToCarrier(target);
+            return false;
+        }
+        return true;
+    }
+
+    private cancelThrow(): void {
+        this.throwTarget = null;
+        this.throwRemaining = 0;
+        this.throwDuration = 0;
+        this.throwArcHeight = 0;
+        this.throwSpinScale = 1;
     }
 
     private build(): void {
         if (!this.worldRoot?.isValid) return;
         this.mineMesh = utils.createMesh(buildTimedBombGeometry());
         this.lampMesh = utils.createMesh(buildLowPolyLampGeometry());
-        this.explosionMesh = utils.createMesh(buildWaterExplosionGeometry());
         this.mineMaterial = makeMineVertexMaterial('TimedBombBodyMaterial', true);
-        this.explosionMaterial = makeMineVertexMaterial('MineRelayExplosionMaterial', false);
         this.lampMaterial = new Material();
         this.lampMaterial.initialize({ effectName: 'builtin-unlit' });
         this.lampMaterial.name = 'TimedBombLampMaterial';
@@ -160,9 +262,7 @@ export class MineRelayBrawlPresentation {
         this.mineRoot = this.makeMeshNode('TimedBomb', this.mineMesh, this.mineMaterial, this.worldRoot);
         this.lamp = this.makeMeshNode('TimedBombWarningLamp', this.lampMesh, this.lampMaterial, this.mineRoot);
         this.lamp.setPosition(0, 0.59, 0.02);
-        this.explosion = this.makeMeshNode('MineRelayExplosion', this.explosionMesh, this.explosionMaterial, this.worldRoot);
         this.mineRoot.active = false;
-        this.explosion.active = false;
     }
 
     private makeMeshNode(name: string, mesh: Mesh, material: Material, parent: Node): Node {
@@ -277,150 +377,6 @@ function buildLowPolyLampGeometry(): primitives.IGeometry {
     const indices: number[] = [];
     appendOctahedron(positions, colors, indices, 0.13, [1, 1, 1, 1]);
     return geometry(positions, colors, indices, new Vec3(-0.13, -0.13, -0.13), new Vec3(0.13, 0.13, 0.13));
-}
-
-/**
- * 炮火、定时炸弹和障碍水雷共用的立体水爆网格。
- *
- * 水冠与弧形水柱均为有厚度的低面数体块，避免交叉透明面从比赛镜头看成白色三角形。
- * 单实例为 369 顶点／432 三角形；所有几何只在玩法初始化时构建一次，触发阶段仅复用节点并修改变换。
- */
-export function buildWaterExplosionGeometry(): primitives.IGeometry {
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const indices: number[] = [];
-
-    // 暖色爆心只负责交代“爆炸”，主体仍保持泳池水花的青蓝色。
-    appendRing(positions, colors, indices, 0.16, 0.72,
-        [1, 0.44, 0.06, 0.62], [1, 0.7, 0.16, 0], 0.018);
-    // 两层水面波纹错开宽度，避免一整张半透明圆盘造成白块和过度填充。
-    appendRing(positions, colors, indices, 0.34, 0.78,
-        [0.88, 0.99, 1, 0.72], [0.28, 0.82, 0.98, 0.06], 0.028);
-    appendRing(positions, colors, indices, 1.18, 2.08,
-        [0.42, 0.88, 1, 0.34], [0.18, 0.68, 0.94, 0], 0.012);
-
-    appendWaterCrown(positions, colors, indices);
-    for (let i = 0; i < 9; i++) appendCurvedWaterJet(positions, colors, indices, i);
-    for (let i = 0; i < 11; i++) appendWaterDroplet(positions, colors, indices, i);
-
-    return geometry(positions, colors, indices, new Vec3(-2.15, 0, -2.15), new Vec3(2.15, 2.65, 2.15));
-}
-
-/** 以低频变换播放水爆，不改材质、不重建网格，也不产生临时对象。 */
-export function applyWaterExplosionPhase(node: Node, progress: number, intensity = 1): void {
-    const phase = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
-    const expand = 1 - Math.pow(1 - phase, 3);
-    const crest = Math.sin(phase * Math.PI);
-    const radial = (0.2 + expand * 1.42) * intensity;
-    const vertical = (0.16 + crest * 1.5) * intensity;
-    node.setScale(radial, vertical, radial);
-}
-
-function appendWaterCrown(positions: number[], colors: number[], indices: number[]): void {
-    const segments = 14;
-    const base = positions.length / 3;
-    const heightPattern = [0.76, 1, 0.84, 1.12, 0.8, 0.94, 1.08];
-    const radiusPattern = [0.92, 1.08, 0.86, 1.16, 0.96, 1.04, 0.89];
-    const baseColor: ColorTuple = [0.12, 0.68, 0.91, 0.82];
-    const shoulderColor: ColorTuple = [0.54, 0.91, 1, 0.72];
-    const tipColor: ColorTuple = [0.96, 1, 1, 0.08];
-    for (let i = 0; i <= segments; i++) {
-        const wrapped = i % segments;
-        const angle = wrapped / segments * Math.PI * 2;
-        const cos = Math.cos(angle);
-        const sin = Math.sin(angle);
-        const height = heightPattern[wrapped % heightPattern.length];
-        const rimRadius = 0.54 * radiusPattern[wrapped % radiusPattern.length];
-        positions.push(
-            cos * 0.48, 0.04, sin * 0.48,
-            cos * 0.34, 0.72 * height, sin * 0.34,
-            cos * rimRadius, 1.82 * height, sin * rimRadius,
-        );
-        pushColor(colors, baseColor, 1);
-        pushColor(colors, shoulderColor, 1);
-        pushColor(colors, tipColor, 1);
-    }
-    for (let i = 0; i < segments; i++) {
-        const current = base + i * 3;
-        const next = current + 3;
-        indices.push(
-            current, next, current + 1,
-            current + 1, next, next + 1,
-            current + 1, next + 1, current + 2,
-            current + 2, next + 1, next + 2,
-        );
-    }
-}
-
-function appendCurvedWaterJet(
-    positions: number[], colors: number[], indices: number[], index: number,
-): void {
-    const angle = (index / 9) * Math.PI * 2 + (index % 2) * 0.12;
-    const dx = Math.cos(angle);
-    const dz = Math.sin(angle);
-    const tx = -dz;
-    const tz = dx;
-    const lift = 1.05 + (index % 3) * 0.2;
-    const reach = 1.24 + (index % 4) * 0.13;
-    const centers: ReadonlyArray<readonly [number, number]> = [
-        [0.42, 0.18],
-        [0.72 + (index % 2) * 0.08, lift],
-        [reach, 0.52 + (index % 3) * 0.11],
-    ];
-    const widths = [0.13, 0.105, 0.024];
-    const depths = [0.09, 0.075, 0.018];
-    const stationColors: readonly ColorTuple[] = [
-        [0.08, 0.63, 0.9, 0.84],
-        [0.68, 0.95, 1, 0.7],
-        [0.94, 1, 1, 0.04],
-    ];
-    const base = positions.length / 3;
-    for (let station = 0; station < centers.length; station++) {
-        const [radius, y] = centers[station];
-        const width = widths[station];
-        const depth = depths[station];
-        const cx = dx * radius;
-        const cz = dz * radius;
-        positions.push(
-            cx + tx * width + dx * depth, y, cz + tz * width + dz * depth,
-            cx - tx * width + dx * depth, y, cz - tz * width + dz * depth,
-            cx - tx * width - dx * depth, y, cz - tz * width - dz * depth,
-            cx + tx * width - dx * depth, y, cz + tz * width - dz * depth,
-        );
-        pushColor(colors, stationColors[station], 4);
-    }
-    for (let station = 0; station < centers.length - 1; station++) {
-        const current = base + station * 4;
-        const next = current + 4;
-        for (let side = 0; side < 4; side++) {
-            const sideNext = (side + 1) % 4;
-            indices.push(current + side, next + side, current + sideNext,
-                current + sideNext, next + side, next + sideNext);
-        }
-    }
-}
-
-function appendWaterDroplet(
-    positions: number[], colors: number[], indices: number[], index: number,
-): void {
-    const angle = index / 11 * Math.PI * 2 + 0.2;
-    const radius = 0.78 + (index % 4) * 0.22;
-    const centerX = Math.cos(angle) * radius;
-    const centerY = 0.62 + (index % 5) * 0.2;
-    const centerZ = Math.sin(angle) * radius;
-    const size = 0.055 + (index % 3) * 0.018;
-    const base = positions.length / 3;
-    positions.push(
-        centerX + size, centerY, centerZ,
-        centerX - size, centerY, centerZ,
-        centerX, centerY + size * 1.35, centerZ,
-        centerX, centerY - size * 1.35, centerZ,
-        centerX, centerY, centerZ + size,
-        centerX, centerY, centerZ - size,
-    );
-    pushColor(colors, [0.66, 0.94, 1, 0.68], 6);
-    const faces = [0, 2, 4, 4, 2, 1, 1, 2, 5, 5, 2, 0, 4, 3, 0, 1, 3, 4, 5, 3, 1, 0, 3, 5];
-    for (const face of faces) indices.push(base + face);
 }
 
 function appendOctahedron(
@@ -704,25 +660,6 @@ function appendBox(
         3, 7, 6, 3, 6, 2,
     ];
     for (const index of faces) indices.push(base + index);
-}
-
-function appendRing(
-    positions: number[], colors: number[], indices: number[],
-    innerRadius: number, outerRadius: number, innerColor: ColorTuple, outerColor: ColorTuple, y: number,
-): void {
-    const segments = 24;
-    const base = positions.length / 3;
-    for (let i = 0; i <= segments; i++) {
-        const a = i / segments * Math.PI * 2;
-        positions.push(Math.cos(a) * innerRadius, y, Math.sin(a) * innerRadius,
-            Math.cos(a) * outerRadius, y, Math.sin(a) * outerRadius);
-        pushColor(colors, innerColor, 1);
-        pushColor(colors, outerColor, 1);
-    }
-    for (let i = 0; i < segments; i++) {
-        const lower = base + i * 2;
-        indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
-    }
 }
 
 function geometry(positions: number[], colors: number[], indices: number[], minPos: Vec3, maxPos: Vec3): primitives.IGeometry {
