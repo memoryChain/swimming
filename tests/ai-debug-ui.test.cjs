@@ -130,7 +130,7 @@ test('对手人数、混合阵容和单角色设置提交到启动配置，切�
     assert.equal(starts, 2);
 });
 
-test('模式测试页签只列出六个单项娱乐模式，切换不重建并以固定满员阵容启动', () => {
+test('模式测试页签列出七个单项娱乐模式，切换不重建并以固定满员阵容启动', () => {
     const { Node, Label, load } = fixture();
     const { getAiDebugSetup } = load('core/GameLaunchOptions');
     const { buildAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
@@ -158,9 +158,9 @@ test('模式测试页签只列出六个单项娱乐模式，切换不重建并�
 
     modeTab.click();
     const choices = modeContent.children.filter(node => node.name.startsWith('ModeChoice'));
-    assert.equal(choices.length, 6);
+    assert.equal(choices.length, 7);
     assert.deepEqual(choices.map(node => node.getChildByName('Label').getComponent(Label).string), [
-        '心跳苏打大乱斗', '鲨鱼大乱斗', '漩涡冲浪赛', '炮火逃生赛', '定时炸弹模式', '水雷模式',
+        '心跳苏打大乱斗', '鲨鱼大乱斗', '漩涡冲浪赛', '炮火逃生赛', '定时炸弹模式', '水雷模式', '垃圾漂流大乱斗',
     ]);
     assert.equal(choices.some(node => node.getChildByName('Label').getComponent(Label).string === '娱乐模式'), false);
     for (const choice of choices) {
@@ -172,7 +172,7 @@ test('模式测试页签只列出六个单项娱乐模式，切换不重建并�
     findNode(modeContent, 'ModeStart').click();
     assert.equal(starts, 1);
     assert.equal(difficulty, 0.75);
-    assert.equal(getAiDebugSetup().mode, 'minefield-brawl');
+    assert.equal(getAiDebugSetup().mode, 'litter-brawl');
     assert.equal(getAiDebugSetup().opponentCount, 7);
     assert.equal(getAiDebugSetup().mixedCharacters, true);
 });

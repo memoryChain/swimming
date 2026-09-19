@@ -126,6 +126,8 @@ export class CareerPrototypePanel {
         if (this.busy) return;
         if (mode) {
             const config = getRaceModeConfig(mode);
+            // 垃圾漂流仍只能从 AI 调试弹框启动，不能借快速比赛进入生涯指令。
+            if (config.ruleset === 'litter') return;
             this.distance = config.distance;
             this.rule = config.ruleset;
         }
