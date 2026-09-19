@@ -2602,6 +2602,8 @@ export class GameManager extends Component {
         if (!this.applyEventKnockdown(
             lane, EntertainmentRecoveryReason.SHARK, distance, revision,
         )) return;
+        // 巡游补咬不进入正式 HUNT/BITE 状态，仍补一次低成本下扎动作。
+        if (this._shark?.state === SharkState.WANDER) this.playSharkBitePresentation();
         this._entertainmentEventBanner.showEvent(
             `${swimmer.swimmerName}被鲨鱼咬伤`,
             'danger',
@@ -2680,6 +2682,10 @@ export class GameManager extends Component {
             playerAutopilotTargetZ = Math.max(-halfWidth + 0.8, Math.min(halfWidth - 0.8, sharkZ + direction * 2.2));
         }
         playerAutopilot?.setSharkTargetZ(playerAutopilotTargetZ);
+        if (!this._netRaceController || this._netRaceController.isHost) {
+            // 赛果判定由房主独占；其中也包含远程真人的权威位置副本。
+            shark.updateObstacleBites(this.activeSharkSwimmers(), dt);
+        }
         this._sharkCollisionSwimmers.length = 0;
         if (this._playerSwimmer?.isCollisionActive) this._sharkCollisionSwimmers.push(this._playerSwimmer);
         if (!this._netRaceController || this._netRaceController.isHost) {

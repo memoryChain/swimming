@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 
 import SharkTuning from '../assets/scripts/entity/SharkTuning.ts';
+import SharkObstacleBiteRules from '../assets/scripts/entity/SharkObstacleBiteTracker.ts';
 import CareerRules from '../assets/scripts/progression/CareerRules.ts';
 import PlayerProfile from '../assets/scripts/backend/PlayerProfile.ts';
 
 const { SHARK_TUNING, SharkState } = SharkTuning;
+const { SharkObstacleBiteTracker } = SharkObstacleBiteRules;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 
@@ -19,6 +21,71 @@ test('鲨鱼大乱斗固定进行三轮追猎并在第三轮后退场', () => {
     assert.equal(SharkState.SATIATED, 5);
 });
 
+test('巡游鲨鱼只会处决持续逆向纠缠的选手', () => {
+    const tracker = new SharkObstacleBiteTracker({
+        blockedSeconds: SHARK_TUNING.obstacleBiteBlockedSeconds,
+        reverseDistance: SHARK_TUNING.obstacleBiteReverseDistance,
+        forwardSpeedTolerance: SHARK_TUNING.obstacleBiteForwardSpeedTolerance,
+        sameTargetCooldownSeconds: SHARK_TUNING.obstacleBiteSameTargetCooldownSeconds,
+        globalCooldownSeconds: SHARK_TUNING.obstacleBiteGlobalCooldownSeconds,
+    });
+    const sample = (overrides = {}) => ({
+        lane: 2,
+        contact: true,
+        opposing: true,
+        damageable: true,
+        distance: 50,
+        ...overrides,
+    });
+    const advance = value => tracker.sample(
+        value.lane,
+        value.contact,
+        value.opposing,
+        value.damageable,
+        value.distance,
+        tracker.beginFrame(0.1),
+    );
+
+    assert.equal(advance(sample()), false);
+    let triggered = false;
+    for (let i = 0; i < 17; i++) triggered ||= advance(sample());
+    assert.equal(triggered, true);
+
+    tracker.reset();
+    for (let i = 0; i < 20; i++) assert.equal(advance(sample({ opposing: false })), false);
+    for (let i = 0; i < 20; i++) {
+        assert.equal(advance(sample({ distance: 50 + i * 0.1 })), false);
+    }
+});
+
+test('巡游鲨鱼被反向推走八十厘米时会提前处决，短暂分离会重置计时', () => {
+    const tracker = new SharkObstacleBiteTracker({
+        blockedSeconds: SHARK_TUNING.obstacleBiteBlockedSeconds,
+        reverseDistance: SHARK_TUNING.obstacleBiteReverseDistance,
+        forwardSpeedTolerance: SHARK_TUNING.obstacleBiteForwardSpeedTolerance,
+        sameTargetCooldownSeconds: SHARK_TUNING.obstacleBiteSameTargetCooldownSeconds,
+        globalCooldownSeconds: SHARK_TUNING.obstacleBiteGlobalCooldownSeconds,
+    });
+    const advance = (distance, contact = true) => tracker.sample(
+        1,
+        contact,
+        true,
+        true,
+        distance,
+        tracker.beginFrame(0.1),
+    );
+
+    assert.equal(advance(30), false);
+    for (let i = 0; i < 8; i++) assert.equal(advance(30), false);
+    assert.equal(advance(30, false), false);
+    for (let i = 0; i < 8; i++) assert.equal(advance(30), false);
+
+    let triggered = false;
+    for (let distance = 29.8; distance >= 29; distance -= 0.2) triggered ||= advance(distance);
+    assert.equal(triggered, true);
+    assert.equal(advance(28), false);
+});
+
 test('鲨鱼模式使用固定场景控制器而非角色技能召唤', () => {
     const controller = readFileSync(
         new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
@@ -27,6 +94,7 @@ test('鲨鱼模式使用固定场景控制器而非角色技能召唤', () => {
     assert.match(controller, /hungerSchedule/);
     assert.match(controller, /beginHuntBeat/);
     assert.match(controller, /resolveObstacleCollisions/);
+    assert.match(controller, /updateObstacleBites/);
     assert.match(controller, /onKnockDown/);
     assert.match(controller, /knockedLane/);
     assert.doesNotMatch(controller, /eliminatedMask|applyElimination/);

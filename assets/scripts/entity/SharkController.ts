@@ -1,6 +1,7 @@
 import { Node } from 'cc';
 import type { Swimmer } from './Swimmer';
 import { SHARK_TUNING, SharkState } from './SharkTuning';
+import { SharkObstacleBiteTracker } from './SharkObstacleBiteTracker';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
 
 const RADIANS_TO_DEGREES = 180 / Math.PI;
@@ -62,6 +63,13 @@ export class SharkController {
     private _huntIndex = 0;
     private _wanderWaypoint = 0;
     private readonly _obstacleContacts = new Set<Swimmer>();
+    private readonly _obstacleBites = new SharkObstacleBiteTracker({
+        blockedSeconds: SHARK_TUNING.obstacleBiteBlockedSeconds,
+        reverseDistance: SHARK_TUNING.obstacleBiteReverseDistance,
+        forwardSpeedTolerance: SHARK_TUNING.obstacleBiteForwardSpeedTolerance,
+        sameTargetCooldownSeconds: SHARK_TUNING.obstacleBiteSameTargetCooldownSeconds,
+        globalCooldownSeconds: SHARK_TUNING.obstacleBiteGlobalCooldownSeconds,
+    });
 
     constructor(private readonly _opts: SharkControllerOptions) {
         this._opts.node.active = false;
@@ -96,6 +104,7 @@ export class SharkController {
         this._huntIndex = 0;
         this._wanderWaypoint = 0;
         this._obstacleContacts.clear();
+        this._obstacleBites.reset();
         if (this._opts.node.active) this._opts.node.active = false;
     }
 
@@ -187,6 +196,7 @@ export class SharkController {
             const mouthDistanceSq = mouthDx * mouthDx + mouthDz * mouthDz;
             if (mouthDistanceSq <= SHARK_TUNING.catchRadius * SHARK_TUNING.catchRadius) {
                 this._knockedLane = this._opts.laneFor(target);
+                this._obstacleBites.registerBite(this._knockedLane, target.distance);
                 this._biteDirectionX = this._facingX;
                 this._biteDirectionZ = this._facingZ;
                 this._remainingSeconds = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
@@ -292,6 +302,43 @@ export class SharkController {
                 swimmer.applyCollisionAxialImpulse(nz * strength * 2.4);
                 this._obstacleContacts.add(swimmer);
             }
+        }
+    }
+
+    /** 房主／单机专用：巡游时若逆向顶住选手过久，转为一次现有鲨鱼击倒。 */
+    updateObstacleBites(swimmers: readonly Swimmer[], dt: number): void {
+        const step = this._obstacleBites.beginFrame(dt);
+        if (step <= 0) return;
+        const shark = this._opts.node.position;
+        const contactDistance = SHARK_TUNING.collisionRadius + 0.9
+            + SHARK_TUNING.obstacleBiteContactPadding;
+        const contactDistanceSq = contactDistance * contactDistance;
+        const canBite = this._state === SharkState.WANDER;
+        for (const swimmer of swimmers) {
+            if (!swimmer) continue;
+            const lane = this._opts.laneFor(swimmer);
+            if (lane < 0) continue;
+            const p = swimmer.node.position;
+            const dx = p.x - shark.x;
+            const dz = p.z - shark.z;
+            const contact = canBite && dx * dx + dz * dz <= contactDistanceSq;
+            const opposing = this._facingX * swimmer.raceDirection
+                <= SHARK_TUNING.obstacleBiteOpposingDot;
+            if (!this._obstacleBites.sample(
+                lane,
+                contact,
+                opposing,
+                swimmer.isSharkTargetable,
+                swimmer.distance,
+                step,
+            )) continue;
+
+            // sequence 同时是可靠击倒事件的单调 revision；巡游补咬也必须递增，
+            // 否则同一泳道早先被正常追猎咬过后会拒绝这次恢复事件。
+            this._sequence++;
+            this._knockedLane = lane;
+            this._opts.onKnockDown(swimmer);
+            break;
         }
     }
 
