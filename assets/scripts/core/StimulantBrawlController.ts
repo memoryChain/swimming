@@ -42,9 +42,15 @@ const BEACON_VISIBLE_BEHIND_DISTANCE = 8;
 const WAVE_ANNOUNCEMENT_LEAD_DISTANCE = 18;
 const PRESENTATION_INTERVAL = 1 / 20;
 const ITEM_SCALE = 0.9;
-const ITEM_MODEL_SCALE = 1;
-const ITEM_BASE_Y_OFFSET = 0.78;
+const ITEM_MODEL_SCALE = 0.84;
+const ITEM_BASE_Y_OFFSET = 0.4;
 const ITEM_MODEL_HALF_HEIGHT = 0.68;
+const ITEM_BOB_AMPLITUDE = 0.045;
+const ITEM_FLOAT_ANGULAR_SPEED = 1.65;
+const ITEM_YAW_SPEED_DEGREES = 34;
+const ITEM_BASE_LEAN_DEGREES = 8;
+const ITEM_PITCH_SWAY_DEGREES = 2.25;
+const ITEM_ROLL_SWAY_DEGREES = 3;
 const BEACON_HEIGHT = 10.5;
 const BEACON_HALF_WIDTH = 0.3;
 const BEACON_HALO_INNER_RADIUS = 0.52;
@@ -53,7 +59,7 @@ const BEACON_BASE_RADIUS = 0.94;
 const BEACON_BASE_Y_OFFSET = 0.04;
 const BEACON_COLUMN_GAP = 0.24;
 const BEACON_COLUMN_BOTTOM = ITEM_BASE_Y_OFFSET
-    + ITEM_MODEL_HALF_HEIGHT
+    + ITEM_MODEL_HALF_HEIGHT * ITEM_MODEL_SCALE
     + BEACON_COLUMN_GAP
     - BEACON_BASE_Y_OFFSET;
 const BEACON_PICKUP_COLLAPSE_SECONDS = 0.28;
@@ -225,9 +231,15 @@ export class StimulantBrawlController {
             if (item.node?.isValid) {
                 if (item.node.active !== itemVisible) item.node.active = itemVisible;
                 if (itemVisible) {
-                    const bob = Math.sin(this.presentationTime * 3.1 + item.phase) * 0.12;
+                    const floatAngle = this.presentationTime * ITEM_FLOAT_ANGULAR_SPEED + item.phase;
+                    const bob = Math.sin(floatAngle) * ITEM_BOB_AMPLITUDE;
+                    const leanDirection = (item.id & 1) === 0 ? 1 : -1;
+                    const pitch = leanDirection * ITEM_BASE_LEAN_DEGREES
+                        + Math.sin(floatAngle * 0.72 + item.phase * 0.19) * ITEM_PITCH_SWAY_DEGREES;
+                    const roll = Math.cos(floatAngle * 0.61 + item.phase * 1.37) * ITEM_ROLL_SWAY_DEGREES;
+                    const yaw = (this.presentationTime * ITEM_YAW_SPEED_DEGREES + item.id * 37) % 360;
                     item.node.setWorldPosition(item.x, item.baseY + bob, item.z);
-                    item.node.setRotationFromEuler(0, (this.presentationTime * 82 + item.id * 37) % 360, 0);
+                    item.node.setRotationFromEuler(pitch, yaw, roll);
                 }
             }
             this.updateBeaconPresentation(item, ahead, onCurrentLeg, presentationStep);

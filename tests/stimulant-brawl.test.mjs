@@ -61,7 +61,14 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.match(controller, /BEACON_VISIBLE_AHEAD_DISTANCE = 82/);
     assert.match(controller, /BEACON_COLUMN_BOTTOM/);
     assert.match(controller, /BEACON_HALO_INNER_RADIUS/);
+    assert.match(controller, /ITEM_MODEL_SCALE = 0\.84/);
+    assert.match(controller, /ITEM_BASE_Y_OFFSET = 0\.4/);
+    assert.match(controller, /ITEM_MODEL_HALF_HEIGHT \* ITEM_MODEL_SCALE/);
+    assert.match(controller, /ITEM_BOB_AMPLITUDE = 0\.045/);
+    assert.match(controller, /ITEM_BASE_LEAN_DEGREES = 8/);
+    assert.match(controller, /setRotationFromEuler\(pitch, yaw, roll\)/);
     assert.doesNotMatch(controller, /positions\.push\(0, 0\.025, 0\)/);
+    assert.doesNotMatch(controller, /this\.presentationTime \* 82/);
     assert.match(controller, /depthWrite: false/);
     assert.doesNotMatch(controller, /StimulantBottleGlowMaterial|applyMaterialRecursively/);
     assert.doesNotMatch(controller, /StimulantMarkerCube|MARKER_SCALE|MARKER_HEIGHT/);

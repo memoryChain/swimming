@@ -21,6 +21,8 @@ OBJECT_NAME = "StimulantPotion"
 COLOR_ATTRIBUTE = "Color"
 
 LIME = (0.43, 1.00, 0.025, 1.0)
+LIME_BEVEL = (0.62, 1.00, 0.055, 1.0)
+LIME_SIDE = (0.25, 0.72, 0.018, 1.0)
 ORANGE = (1.00, 0.105, 0.018, 1.0)
 NAVY = (0.018, 0.080, 0.31, 1.0)
 WHITE = (1.00, 0.92, 0.72, 1.0)
@@ -34,6 +36,8 @@ LIGHTNING_OUTER_Y = 0.275
 NECK_RADIUS_Y = 0.205
 COLLAR_RADIUS_Y = 0.245
 CAP_RADIUS_Y = 0.270
+FRAME_FACE_SCALE = 0.95
+FRAME_BEVEL_DEPTH = 0.045
 
 
 class MeshBuilder:
@@ -59,27 +63,63 @@ class MeshBuilder:
             faces.append((i, j, count + j, count + i))
         self._append(vertices, faces, color)
 
-    def add_frame(self, outer_xz, inner_xz, y_min, y_max, color) -> None:
-        """Create a closed faceted frame with a real central opening."""
+    def add_beveled_frame(
+        self,
+        outer_xz,
+        inner_xz,
+        y_min,
+        y_max,
+        face_scale,
+        bevel_depth,
+        face_color,
+        bevel_color,
+        side_color,
+    ) -> None:
+        """Create a closed frame with narrow modeled front/back chamfers."""
         count = len(outer_xz)
-        vertices = [(x, y_min, z) for x, z in outer_xz]
-        vertices += [(x, y_max, z) for x, z in outer_xz]
+        outer_face = scaled_profile(outer_xz, face_scale)
+        vertices = [(x, y_min, z) for x, z in outer_face]
+        vertices += [(x, y_min + bevel_depth, z) for x, z in outer_xz]
+        vertices += [(x, y_max - bevel_depth, z) for x, z in outer_xz]
+        vertices += [(x, y_max, z) for x, z in outer_face]
         vertices += [(x, y_min, z) for x, z in inner_xz]
         vertices += [(x, y_max, z) for x, z in inner_xz]
         faces = []
+        face_colors = []
         for i in range(count):
             j = (i + 1) % count
-            outer_front, outer_back = i, count + i
-            inner_front, inner_back = count * 2 + i, count * 3 + i
-            outer_front_j, outer_back_j = j, count + j
-            inner_front_j, inner_back_j = count * 2 + j, count * 3 + j
+            outer_front = i
+            outer_front_mid = count + i
+            outer_back_mid = count * 2 + i
+            outer_back = count * 3 + i
+            inner_front = count * 4 + i
+            inner_back = count * 5 + i
+            outer_front_j = j
+            outer_front_mid_j = count + j
+            outer_back_mid_j = count * 2 + j
+            outer_back_j = count * 3 + j
+            inner_front_j = count * 4 + j
+            inner_back_j = count * 5 + j
             faces.extend([
                 (outer_front, outer_front_j, inner_front_j, inner_front),
+                (outer_front, outer_front_mid, outer_front_mid_j, outer_front_j),
+                (outer_front_mid, outer_back_mid, outer_back_mid_j, outer_front_mid_j),
+                (outer_back_mid, outer_back, outer_back_j, outer_back_mid_j),
                 (outer_back, inner_back, inner_back_j, outer_back_j),
-                (outer_front, outer_back, outer_back_j, outer_front_j),
                 (inner_front, inner_front_j, inner_back_j, inner_back),
             ])
-        self._append(vertices, faces, color)
+            face_colors.extend([
+                face_color,
+                bevel_color,
+                side_color,
+                bevel_color,
+                face_color,
+                side_color,
+            ])
+        offset = len(self.vertices)
+        self.vertices.extend(vertices)
+        self.faces.extend(tuple(offset + index for index in face) for face in faces)
+        self.face_colors.extend(face_colors)
 
     def add_elliptic_rings(self, rings, segments, color) -> None:
         """Build one closed, faceted body from measured elliptical rings."""
@@ -158,12 +198,16 @@ def build_model(collection: bpy.types.Collection) -> bpy.types.Object:
     ]
 
     # Main frame and inset core. The core stays inside the real central opening.
-    builder.add_frame(
+    builder.add_beveled_frame(
         body_outer,
         body_inner,
         -BODY_FRAME_HALF_DEPTH,
         BODY_FRAME_HALF_DEPTH,
+        FRAME_FACE_SCALE,
+        FRAME_BEVEL_DEPTH,
         LIME,
+        LIME_BEVEL,
+        LIME_SIDE,
     )
     builder.add_prism(core, -BODY_CORE_HALF_DEPTH, BODY_CORE_HALF_DEPTH, ORANGE)
 
@@ -237,7 +281,7 @@ def triangle_count(mesh: bpy.types.Mesh) -> int:
 def validate_model(obj: bpy.types.Object) -> dict:
     mesh = obj.data
     triangles = triangle_count(mesh)
-    if not 100 <= triangles <= 300:
+    if not 100 <= triangles <= 340:
         raise RuntimeError(f"Triangle budget failed: {triangles}")
     if len(obj.material_slots) != 1:
         raise RuntimeError(f"Expected one material slot, got {len(obj.material_slots)}")
