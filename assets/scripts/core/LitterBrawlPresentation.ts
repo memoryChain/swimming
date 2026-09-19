@@ -2,6 +2,7 @@ import { Material, Mesh, MeshRenderer, Node, utils } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { LitterClusterState } from './LitterBrawlController';
 import { buildRigidLitterGeometry, buildSoftLitterGeometry } from './LitterDebrisGeometry';
+import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
 import {
     applyWaterExplosionPhase,
     buildWaterExplosionGeometry,
@@ -141,6 +142,7 @@ export class LitterBrawlPresentation {
                 }
             } else {
                 const phase = this.clock * 2.1 + cluster.id * 0.83;
+                const floatInstancePhase = cluster.id * 0.83 + cluster.visualVariant * 0.19;
                 const retireProgress = cluster.phase === 'retiring' ? clamp01(cluster.phaseProgress) : 0;
                 const sink = smoothstep(retireProgress) * 0.72;
                 const retireShrink = smoothstep(clamp01((retireProgress - 0.55) / 0.45));
@@ -153,7 +155,17 @@ export class LitterBrawlPresentation {
                         ? Math.sin(impactProgress * Math.PI * 2.4) * (1 - impactProgress) * 125
                         : 0;
                     const rollDirection = cluster.id % 2 === 0 ? 1 : -1;
-                    node.setWorldPosition(targetX, targetY + 0.035 + Math.sin(phase * 0.73) * 0.045 - sink, cluster.lateral);
+                    node.setWorldPosition(
+                        targetX,
+                        targetY + 0.035
+                            + sampleWaterFloatOffset(
+                                this.clock,
+                                floatInstancePhase,
+                                WATER_FLOAT_PROFILES.rigidDebris,
+                            )
+                            - sink,
+                        cluster.lateral,
+                    );
                     node.setRotationFromEuler(
                         this.clock * 24 * rollDirection + Math.sin(phase * 0.55) * 8 + bounce,
                         cluster.visualVariant * 63 + Math.sin(phase * 0.31) * 14 + bounce * 1.45,
@@ -168,7 +180,17 @@ export class LitterBrawlPresentation {
                     const pushSway = pushProgress < 1
                         ? Math.sin(pushProgress * Math.PI) * (1 - pushProgress) * 18
                         : 0;
-                    node.setWorldPosition(targetX, targetY + 0.015 + Math.sin(phase * 0.67) * 0.055 - sink, cluster.lateral);
+                    node.setWorldPosition(
+                        targetX,
+                        targetY + 0.015
+                            + sampleWaterFloatOffset(
+                                this.clock,
+                                floatInstancePhase,
+                                WATER_FLOAT_PROFILES.softDebris,
+                            )
+                            - sink,
+                        cluster.lateral,
+                    );
                     node.setRotationFromEuler(
                         58 + Math.sin(phase * 0.61) * 12 + pushSway * 0.45,
                         cluster.visualVariant * 51 + Math.sin(phase * 0.29) * 24 + pushSway,

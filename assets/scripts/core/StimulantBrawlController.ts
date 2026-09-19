@@ -6,6 +6,12 @@ import { LaneLayout } from '../venue/LaneLayout';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import { loadRaceAsset } from './RaceBundleLoader';
 import { RESOURCE_PATHS } from './ResourcePaths';
+import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES, waterFloatPhase } from './WaterFloatMotion';
+import {
+    applyWaterExplosionPhase,
+    buildWaterExplosionGeometry,
+    makeMineVertexMaterial,
+} from './MineRelayBrawlPresentation';
 import {
     buildStimulantSchedule,
     stimulantIsOnCurrentCourseLeg,
@@ -17,6 +23,7 @@ import {
 
 type Condition = PlayerConditionModel | AiConditionModel;
 type Racer = { swimmer: Swimmer; condition: Condition };
+type SplashVisual = { node: Node; remaining: number };
 type ItemState = StimulantSpawn & {
     collected: boolean;
     node: Node | null;
@@ -26,6 +33,9 @@ type ItemState = StimulantSpawn & {
     baseY: number;
     phase: number;
     pickupEffectRemaining: number;
+    visualSpawnStarted: boolean;
+    visualLanded: boolean;
+    throwElapsed: number;
 };
 
 export type StimulantPickup = { itemId: number; collectorLane: number; revision: number };
@@ -45,8 +55,6 @@ const ITEM_SCALE = 0.9;
 const ITEM_MODEL_SCALE = 0.84;
 const ITEM_BASE_Y_OFFSET = 0.4;
 const ITEM_MODEL_HALF_HEIGHT = 0.68;
-const ITEM_BOB_AMPLITUDE = 0.045;
-const ITEM_FLOAT_ANGULAR_SPEED = 1.65;
 const ITEM_YAW_SPEED_DEGREES = 34;
 const ITEM_BASE_LEAN_DEGREES = 8;
 const ITEM_PITCH_SWAY_DEGREES = 2.25;
@@ -63,6 +71,18 @@ const BEACON_COLUMN_BOTTOM = ITEM_BASE_Y_OFFSET
     + BEACON_COLUMN_GAP
     - BEACON_BASE_Y_OFFSET;
 const BEACON_PICKUP_COLLAPSE_SECONDS = 0.28;
+const THROW_TRIGGER_AHEAD_DISTANCE = 18;
+const THROW_FORCE_LANDED_AHEAD_DISTANCE = 6;
+const THROW_SECONDS = 1.25;
+const THROW_STAGGER_SECONDS = 0.08;
+const THROW_STAND_OFFSET = 4.6;
+const THROW_START_HEIGHT = 5.4;
+const THROW_ARC_HEIGHT = 1.8;
+const THROW_ALONG_ARC_DISTANCE = 0.65;
+const BEACON_REVEAL_START = 0.72;
+const LANDING_SPLASH_SECONDS = 0.42;
+const LANDING_SPLASH_POOL_SIZE = 3;
+const LANDING_SPLASH_INTENSITY = 0.30;
 const MAX_PICKUP_SWEEP_DISTANCE = 3;
 const STIMULANT_CUBE_COLOR = new Color(92, 255, 48, 255);
 
@@ -78,6 +98,9 @@ export class StimulantBrawlController {
     private visualMaterial: Material | null = null;
     private beaconMesh: Mesh | null = null;
     private beaconMaterial: Material | null = null;
+    private landingSplashMesh: Mesh | null = null;
+    private landingSplashMaterial: Material | null = null;
+    private readonly landingSplashes: SplashVisual[] = [];
     private readonly pickupRacers: Array<Racer | null>;
     private readonly pickupCurrentX: Float64Array;
     private readonly pickupCurrentZ: Float64Array;
@@ -127,11 +150,15 @@ export class StimulantBrawlController {
                 baseY: course.waterY + ITEM_BASE_Y_OFFSET,
                 phase: spawn.id * 0.83,
                 pickupEffectRemaining: 0,
+                visualSpawnStarted: false,
+                visualLanded: false,
+                throwElapsed: 0,
             };
         });
         // 先同步生成单个大方块，保证模型资源尚未就绪时仍能看到和拾取道具。
         this.createProgramVisuals();
         this.createBeaconVisuals();
+        this.createLandingSplashVisuals();
         this.loadModelVisuals();
     }
 
@@ -227,23 +254,25 @@ export class StimulantBrawlController {
                 distance,
                 this.course.courseLength,
             );
-            const itemVisible = !item.collected && onCurrentLeg && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
+            this.updateThrowState(
+                item,
+                this.getLaunchReferenceDistance(item, distance),
+                presentationStep,
+            );
+            const itemVisible = !item.collected
+                && item.visualSpawnStarted
+                && onCurrentLeg
+                && Math.abs(ahead) <= ITEM_VISIBLE_DISTANCE;
             if (item.node?.isValid) {
                 if (item.node.active !== itemVisible) item.node.active = itemVisible;
                 if (itemVisible) {
-                    const floatAngle = this.presentationTime * ITEM_FLOAT_ANGULAR_SPEED + item.phase;
-                    const bob = Math.sin(floatAngle) * ITEM_BOB_AMPLITUDE;
-                    const leanDirection = (item.id & 1) === 0 ? 1 : -1;
-                    const pitch = leanDirection * ITEM_BASE_LEAN_DEGREES
-                        + Math.sin(floatAngle * 0.72 + item.phase * 0.19) * ITEM_PITCH_SWAY_DEGREES;
-                    const roll = Math.cos(floatAngle * 0.61 + item.phase * 1.37) * ITEM_ROLL_SWAY_DEGREES;
-                    const yaw = (this.presentationTime * ITEM_YAW_SPEED_DEGREES + item.id * 37) % 360;
-                    item.node.setWorldPosition(item.x, item.baseY + bob, item.z);
-                    item.node.setRotationFromEuler(pitch, yaw, roll);
+                    if (item.visualLanded) this.applyFloatingPresentation(item);
+                    else this.applyThrowPresentation(item);
                 }
             }
             this.updateBeaconPresentation(item, ahead, onCurrentLeg, presentationStep);
         }
+        this.updateLandingSplashes(presentationStep);
     }
 
     targetZForAi(
@@ -336,14 +365,22 @@ export class StimulantBrawlController {
             if (item.node?.isValid) item.node.destroy();
             if (item.beaconNode?.isValid) item.beaconNode.destroy();
         }
+        for (const splash of this.landingSplashes) {
+            if (splash.node.isValid) splash.node.destroy();
+        }
+        this.landingSplashes.length = 0;
         if (this.visualMaterial?.isValid) this.visualMaterial.destroy();
         if (this.visualMesh?.isValid) this.visualMesh.destroy();
         if (this.beaconMaterial?.isValid) this.beaconMaterial.destroy();
         if (this.beaconMesh?.isValid) this.beaconMesh.destroy();
+        if (this.landingSplashMaterial?.isValid) this.landingSplashMaterial.destroy();
+        if (this.landingSplashMesh?.isValid) this.landingSplashMesh.destroy();
         this.visualMaterial = null;
         this.visualMesh = null;
         this.beaconMaterial = null;
         this.beaconMesh = null;
+        this.landingSplashMaterial = null;
+        this.landingSplashMesh = null;
     }
 
     private createProgramVisuals(): void {
@@ -360,9 +397,7 @@ export class StimulantBrawlController {
             const node = this.createProgramCube(`StimulantCube_${item.id}`, mesh, material);
             node.setWorldPosition(item.x, item.baseY, item.z);
             node.setScale(ITEM_SCALE, ITEM_SCALE, ITEM_SCALE);
-            node.active = !item.collected
-                && stimulantIsOnCurrentCourseLeg(item.distance, 0, this.course.courseLength)
-                && Math.abs(item.distance) <= ITEM_VISIBLE_DISTANCE;
+            node.active = false;
             item.node = node;
         }
     }
@@ -403,6 +438,10 @@ export class StimulantBrawlController {
                 node.setScale(ITEM_MODEL_SCALE, ITEM_MODEL_SCALE, ITEM_MODEL_SCALE);
                 node.active = !item.collected && (fallback?.active ?? false);
                 item.node = node;
+                if (node.active) {
+                    if (item.visualLanded) this.applyFloatingPresentation(item);
+                    else this.applyThrowPresentation(item);
+                }
                 if (fallback?.isValid) fallback.destroy();
             }
         });
@@ -445,14 +484,18 @@ export class StimulantBrawlController {
             return;
         }
 
-        const visible = onCurrentLeg
+        const visible = item.visualSpawnStarted
+            && onCurrentLeg
             && ahead <= BEACON_VISIBLE_AHEAD_DISTANCE
             && ahead >= -BEACON_VISIBLE_BEHIND_DISTANCE;
         if (beacon.active !== visible) beacon.active = visible;
         if (!visible) return;
         const pulse = 1 + Math.sin(this.presentationTime * 2.25 + item.phase) * 0.055;
+        const reveal = item.visualLanded
+            ? 1
+            : Math.max(0.015, smoothstep((this.throwProgress(item) - BEACON_REVEAL_START) / (1 - BEACON_REVEAL_START)));
         beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
-        beacon.setScale(pulse, 1, pulse);
+        beacon.setScale(pulse, reveal, pulse);
     }
 
     private createBeaconVisuals(): void {
@@ -481,10 +524,125 @@ export class StimulantBrawlController {
             renderer.mesh = mesh;
             renderer.setMaterial(material, 0);
             beacon.setWorldPosition(item.x, this.course.waterY + BEACON_BASE_Y_OFFSET, item.z);
-            beacon.active = !item.collected
-                && stimulantIsOnCurrentCourseLeg(item.distance, 0, this.course.courseLength)
-                && item.distance <= BEACON_VISIBLE_AHEAD_DISTANCE;
+            beacon.active = false;
             item.beaconNode = beacon;
+        }
+    }
+
+    private createLandingSplashVisuals(): void {
+        if (this.disposed || !this.root.isValid) return;
+        const mesh = utils.createMesh(buildWaterExplosionGeometry());
+        const material = makeMineVertexMaterial('StimulantLandingSplashMaterial', false);
+        this.landingSplashMesh = mesh;
+        this.landingSplashMaterial = material;
+        for (let index = 0; index < LANDING_SPLASH_POOL_SIZE; index++) {
+            const node = this.createProgramCube(`StimulantLandingSplash_${index}`, mesh, material);
+            node.active = false;
+            this.landingSplashes.push({ node, remaining: 0 });
+        }
+    }
+
+    private getLaunchReferenceDistance(item: ItemState, fallbackDistance: number): number {
+        let leaderDistance = stimulantIsOnCurrentCourseLeg(
+            item.distance,
+            fallbackDistance,
+            this.course.courseLength,
+        ) ? fallbackDistance : Number.NEGATIVE_INFINITY;
+        for (const racer of this.pickupRacers) {
+            if (!racer?.swimmer?.node?.active) continue;
+            const racerDistance = racer.swimmer.distance;
+            if (
+                Number.isFinite(racerDistance)
+                && racerDistance > leaderDistance
+                && stimulantIsOnCurrentCourseLeg(item.distance, racerDistance, this.course.courseLength)
+            ) {
+                leaderDistance = racerDistance;
+            }
+        }
+        return Number.isFinite(leaderDistance) ? leaderDistance : fallbackDistance;
+    }
+
+    private updateThrowState(item: ItemState, launchReferenceDistance: number, dt: number): void {
+        if (item.collected || item.visualLanded) return;
+        const launchAhead = item.distance - launchReferenceDistance;
+        const leaderOnCurrentLeg = stimulantIsOnCurrentCourseLeg(
+            item.distance,
+            launchReferenceDistance,
+            this.course.courseLength,
+        );
+        if (!item.visualSpawnStarted) {
+            if (!leaderOnCurrentLeg || launchAhead > THROW_TRIGGER_AHEAD_DISTANCE || launchAhead < -2) return;
+            item.visualSpawnStarted = true;
+            if (launchAhead <= THROW_FORCE_LANDED_AHEAD_DISTANCE) {
+                item.visualLanded = true;
+                item.throwElapsed = THROW_SECONDS;
+                return;
+            }
+            item.throwElapsed = -(item.id % 3) * THROW_STAGGER_SECONDS;
+        }
+        item.throwElapsed += dt;
+        if (item.throwElapsed < THROW_SECONDS && launchAhead > THROW_FORCE_LANDED_AHEAD_DISTANCE) return;
+        item.throwElapsed = THROW_SECONDS;
+        item.visualLanded = true;
+        this.showLandingSplash(item);
+    }
+
+    private throwProgress(item: ItemState): number {
+        return clamp01(item.throwElapsed / THROW_SECONDS);
+    }
+
+    private applyThrowPresentation(item: ItemState): void {
+        const t = this.throwProgress(item);
+        const eased = smoothstep(t);
+        const throwSide = item.z >= 0 ? 1 : -1;
+        const startZ = throwSide * (this.course.poolWidth * 0.5 + THROW_STAND_OFFSET);
+        item.node!.setWorldPosition(
+            item.x + Math.sin(t * Math.PI) * throwSide * THROW_ALONG_ARC_DISTANCE,
+            item.baseY + (1 - t) * THROW_START_HEIGHT + Math.sin(t * Math.PI) * THROW_ARC_HEIGHT,
+            lerp(startZ, item.z, eased),
+        );
+        item.node!.setRotationFromEuler(35 + t * 230, item.id * 53 + t * 330, 20 + t * 165);
+    }
+
+    private applyFloatingPresentation(item: ItemState): void {
+        const floatAngle = waterFloatPhase(this.presentationTime, item.phase, WATER_FLOAT_PROFILES.pickup);
+        const bob = sampleWaterFloatOffset(this.presentationTime, item.phase, WATER_FLOAT_PROFILES.pickup);
+        const leanDirection = (item.id & 1) === 0 ? 1 : -1;
+        const pitch = leanDirection * ITEM_BASE_LEAN_DEGREES
+            + Math.sin(floatAngle * 0.72 + item.phase * 0.19) * ITEM_PITCH_SWAY_DEGREES;
+        const roll = Math.cos(floatAngle * 0.61 + item.phase * 1.37) * ITEM_ROLL_SWAY_DEGREES;
+        const yaw = (this.presentationTime * ITEM_YAW_SPEED_DEGREES + item.id * 37) % 360;
+        item.node!.setWorldPosition(item.x, item.baseY + bob, item.z);
+        item.node!.setRotationFromEuler(pitch, yaw, roll);
+    }
+
+    private showLandingSplash(item: ItemState): void {
+        if (this.landingSplashes.length === 0) return;
+        let visual = this.landingSplashes[0];
+        for (const candidate of this.landingSplashes) {
+            if (candidate.remaining <= 0) {
+                visual = candidate;
+                break;
+            }
+            if (candidate.remaining < visual.remaining) visual = candidate;
+        }
+        visual.node.setWorldPosition(item.x, this.course.waterY + 0.035, item.z);
+        visual.node.setRotationFromEuler(0, item.id * 71, 0);
+        visual.remaining = LANDING_SPLASH_SECONDS;
+        applyWaterExplosionPhase(visual.node, 0, LANDING_SPLASH_INTENSITY);
+        if (!visual.node.active) visual.node.active = true;
+    }
+
+    private updateLandingSplashes(dt: number): void {
+        for (const splash of this.landingSplashes) {
+            if (splash.remaining <= 0) continue;
+            splash.remaining = Math.max(0, splash.remaining - dt);
+            applyWaterExplosionPhase(
+                splash.node,
+                1 - splash.remaining / LANDING_SPLASH_SECONDS,
+                LANDING_SPLASH_INTENSITY,
+            );
+            if (splash.remaining <= 0 && splash.node.active) splash.node.active = false;
         }
     }
 
@@ -497,6 +655,19 @@ export class StimulantBrawlController {
         renderer.setMaterial(material, 0);
         return node;
     }
+}
+
+function smoothstep(value: number): number {
+    const t = clamp01(value);
+    return t * t * (3 - 2 * t);
+}
+
+function clamp01(value: number): number {
+    return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t;
 }
 
 function buildStimulantBeaconGeometry(): primitives.IGeometry {

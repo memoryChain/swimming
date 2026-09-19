@@ -1,6 +1,7 @@
 import { Material, Mesh, MeshRenderer, Node, utils } from 'cc';
 import { RaceCourseLayout } from '../venue/RaceCourseLayout';
 import type { MinefieldImpact, MinefieldMineState } from './MinefieldBrawlController';
+import { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } from './WaterFloatMotion';
 import {
     applyWaterExplosionPhase,
     buildMineGeometry,
@@ -93,7 +94,8 @@ export class MinefieldBrawlPresentation {
             if (!active) continue;
             node.setWorldPosition(
                 this.course.distanceToWorldX(mine.courseX),
-                this.course.waterY + 0.09 + Math.sin(this.clock * 2.6 + id * 0.8) * 0.055,
+                this.course.waterY + 0.09
+                    + sampleWaterFloatOffset(this.clock, id * 0.8, WATER_FLOAT_PROFILES.heavyHazard),
                 mine.lateral,
             );
             const rotationPhase = this.clock + id * 0.73;

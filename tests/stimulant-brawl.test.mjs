@@ -6,6 +6,7 @@ import Rules from '../assets/scripts/core/StimulantBrawlRules.ts';
 import PlayerCondition from '../assets/scripts/condition/PlayerConditionModel.ts';
 import CareerRules from '../assets/scripts/progression/CareerRules.ts';
 import PlayerProfile from '../assets/scripts/backend/PlayerProfile.ts';
+import WaterFloatMotion from '../assets/scripts/core/WaterFloatMotion.ts';
 
 const {
     buildStimulantSchedule,
@@ -20,6 +21,29 @@ const {
 const { PlayerConditionModel } = PlayerCondition;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
+const { sampleWaterFloatOffset, WATER_FLOAT_PROFILES } = WaterFloatMotion;
+
+test('水面漂浮物共用双波形规则并按物体质量分档', () => {
+    const pickup = WATER_FLOAT_PROFILES.pickup;
+    const samples = Array.from({ length: 120 }, (_, index) => (
+        sampleWaterFloatOffset(index / 20, 0.83, pickup)
+    ));
+    assert.ok(Math.max(...samples) > 0.07, '心跳苏打应有清晰可见的上浮阶段');
+    assert.ok(Math.min(...samples) < -0.07, '心跳苏打应有清晰可见的下沉阶段');
+    assert.ok(samples.every(value => Math.abs(value) <= pickup.amplitude * 1.22 + 1e-9));
+
+    const minefield = readFileSync(
+        new URL('../assets/scripts/core/MinefieldBrawlPresentation.ts', import.meta.url),
+        'utf8',
+    );
+    const litter = readFileSync(
+        new URL('../assets/scripts/core/LitterBrawlPresentation.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(minefield, /WATER_FLOAT_PROFILES\.heavyHazard/);
+    assert.match(litter, /WATER_FLOAT_PROFILES\.rigidDebris/);
+    assert.match(litter, /WATER_FLOAT_PROFILES\.softDebris/);
+});
 
 test('400 米娱乐长局生成四波苏打且不越过冲刺收尾区', () => {
     const schedule = buildEntertainmentStimulantSchedule(123456, 8, 350, 400);
@@ -64,9 +88,18 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.match(controller, /ITEM_MODEL_SCALE = 0\.84/);
     assert.match(controller, /ITEM_BASE_Y_OFFSET = 0\.4/);
     assert.match(controller, /ITEM_MODEL_HALF_HEIGHT \* ITEM_MODEL_SCALE/);
-    assert.match(controller, /ITEM_BOB_AMPLITUDE = 0\.045/);
+    assert.match(controller, /WATER_FLOAT_PROFILES\.pickup/);
+    assert.match(controller, /sampleWaterFloatOffset/);
     assert.match(controller, /ITEM_BASE_LEAN_DEGREES = 8/);
     assert.match(controller, /setRotationFromEuler\(pitch, yaw, roll\)/);
+    assert.match(controller, /THROW_TRIGGER_AHEAD_DISTANCE = 18/);
+    assert.match(controller, /THROW_FORCE_LANDED_AHEAD_DISTANCE = 6/);
+    assert.match(controller, /THROW_SECONDS = 1\.25/);
+    assert.match(controller, /LANDING_SPLASH_POOL_SIZE = 3/);
+    assert.match(controller, /buildWaterExplosionGeometry/);
+    assert.match(controller, /Math\.sin\(t \* Math\.PI\) \* THROW_ARC_HEIGHT/);
+    assert.match(controller, /this\.course\.poolWidth \* 0\.5 \+ THROW_STAND_OFFSET/);
+    assert.match(controller, /BEACON_REVEAL_START = 0\.72/);
     assert.doesNotMatch(controller, /positions\.push\(0, 0\.025, 0\)/);
     assert.doesNotMatch(controller, /this\.presentationTime \* 82/);
     assert.match(controller, /depthWrite: false/);
