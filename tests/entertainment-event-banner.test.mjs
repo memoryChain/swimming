@@ -49,6 +49,15 @@ test('六合一激活时用原广播位置显示三秒红色行动提示', () =>
     assert.match(gameManager, /onRevealed: \(\) => \{[\s\S]*?if \(isEntertainmentBrawlMode\(\)\) return/);
 });
 
+test('六合一广播在阶段边沿用比赛种子和激活序号选择同组文案', () => {
+    assert.match(director, /ENTERTAINMENT_BROADCAST_VARIANT_COUNT = 10/);
+    assert.match(director, /entertainmentBroadcastVariantIndex\([\s\S]*?new SeededRandom\(/);
+    assert.doesNotMatch(director, /entertainmentBroadcastVariantIndex\([\s\S]*?Math\.random\(/);
+    assert.match(gameManager, /const previewActivationSerial = [\s\S]*?activationSerial[\s\S]*?\+ 1/);
+    assert.match(gameManager, /entertainmentPreviewCopy\([\s\S]*?getSharedRandomSeed\(\)[\s\S]*?previewActivationSerial/);
+    assert.match(gameManager, /entertainmentActionCopy\([\s\S]*?getSharedRandomSeed\(\)[\s\S]*?activationSerial/);
+});
+
 test('三事件与长局预告六秒，四事件局预告五秒', () => {
     assert.match(director, /const THREE_EVENT_PREVIEW_SECONDS = 6/);
     assert.match(director, /const FOUR_EVENT_PREVIEW_SECONDS = 5/);

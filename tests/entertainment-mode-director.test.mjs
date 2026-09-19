@@ -9,8 +9,12 @@ const {
     EntertainmentModeDirector,
     EntertainmentEventId,
     EntertainmentDirectorPhase,
+    ENTERTAINMENT_BROADCAST_VARIANT_COUNT,
     buildEntertainmentEventOrder,
     buildEntertainmentSpecialMask,
+    entertainmentActionCopy,
+    entertainmentBroadcastVariantIndex,
+    entertainmentPreviewCopy,
 } = DirectorModule;
 const { encodeRaceSnapshot, decodeRaceSnapshot } = SnapshotModule;
 
@@ -22,6 +26,57 @@ function advance(director, seconds, distance, canFinish = true) {
     }
     return last ?? { previewEvent: null, activatedEvent: null, finishedEvent: null };
 }
+
+test('六种娱乐事件各有十组确定性广播，同一事件前十次不重复', () => {
+    assert.equal(ENTERTAINMENT_BROADCAST_VARIANT_COUNT, 10);
+    const seed = 0x2468ace0;
+    for (let event = EntertainmentEventId.STIMULANT; event <= EntertainmentEventId.CANNON; event++) {
+        const indices = [];
+        const previews = [];
+        const actions = [];
+        for (let serial = 1; serial <= ENTERTAINMENT_BROADCAST_VARIANT_COUNT; serial++) {
+            indices.push(entertainmentBroadcastVariantIndex(event, seed, serial));
+            previews.push(entertainmentPreviewCopy(event, false, seed, serial));
+            actions.push(entertainmentActionCopy(event, false, seed, serial));
+        }
+        assert.equal(new Set(indices).size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
+        assert.equal(new Set(previews).size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
+        assert.equal(new Set(actions).size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
+        assert.ok(previews.every(copy => copy.startsWith('泳池广播：') && copy.length <= 31));
+        assert.ok(actions.every(copy => copy.includes('·') && copy.length <= 24));
+    }
+});
+
+test('广播文案由比赛种子、事件和激活序号确定，预告与行动提示保持同组', () => {
+    const seed = 13579;
+    const event = EntertainmentEventId.CANNON;
+    const serial = 4;
+    const variant = entertainmentBroadcastVariantIndex(event, seed, serial);
+    assert.equal(variant, entertainmentBroadcastVariantIndex(event, seed, serial));
+    assert.equal(
+        entertainmentPreviewCopy(event, false, seed, serial),
+        entertainmentPreviewCopy(event, false, seed, serial),
+    );
+    assert.equal(
+        entertainmentActionCopy(event, false, seed, serial),
+        entertainmentActionCopy(event, false, seed, serial),
+    );
+    assert.notEqual(
+        entertainmentBroadcastVariantIndex(event, seed, serial + 1),
+        variant,
+    );
+});
+
+test('超级漩涡也有十组独立广播文案', () => {
+    const previews = new Set();
+    const actions = new Set();
+    for (let serial = 1; serial <= ENTERTAINMENT_BROADCAST_VARIANT_COUNT; serial++) {
+        previews.add(entertainmentPreviewCopy(EntertainmentEventId.WHIRLPOOL, true, 97531, serial));
+        actions.add(entertainmentActionCopy(EntertainmentEventId.WHIRLPOOL, true, 97531, serial));
+    }
+    assert.equal(previews.size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
+    assert.equal(actions.size, ENTERTAINMENT_BROADCAST_VARIANT_COUNT);
+});
 
 test('娱乐模式每局抽取三到四个不重复事件，三类保底且场地事件不排最后', () => {
     const counts = new Set();

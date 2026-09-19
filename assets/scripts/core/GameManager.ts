@@ -1484,6 +1484,7 @@ export class GameManager extends Component {
     }
 
     private handleEntertainmentDirectorTransition(transition: EntertainmentDirectorTransition) {
+        const director = this._entertainmentDirector;
         if (transition.cancelledPreview) {
             this._entertainmentEventBanner.hideEvent();
         }
@@ -1493,11 +1494,14 @@ export class GameManager extends Component {
             this.activateEntertainmentEvent(transition.recoveredEvent);
         }
         if (transition.previewEvent !== null) {
-            const previewDurationMs = (this._entertainmentDirector?.previewDurationSeconds() ?? 6) * 1000;
+            const previewDurationMs = (director?.previewDurationSeconds() ?? 6) * 1000;
+            const previewActivationSerial = (director?.snapshot().activationSerial ?? 0) + 1;
             this._entertainmentEventBanner.showDirectorEvent(
                 entertainmentPreviewCopy(
                     transition.previewEvent,
-                    this._entertainmentDirector?.isSpecialEvent(transition.previewEvent) ?? false,
+                    director?.isSpecialEvent(transition.previewEvent) ?? false,
+                    getSharedRandomSeed(),
+                    previewActivationSerial,
                 ),
                 'warning',
                 previewDurationMs,
@@ -1509,11 +1513,14 @@ export class GameManager extends Component {
                 ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
                     this.entertainmentAnchorDistance(transition.activatedEvent),
                 )[0])
-                : (this._entertainmentDirector?.isSpecialEvent(transition.activatedEvent) ?? false);
+                : (director?.isSpecialEvent(transition.activatedEvent) ?? false);
+            const activationSerial = Math.max(1, director?.snapshot().activationSerial ?? 1);
             this._entertainmentEventBanner.showDirectorEvent(
                 entertainmentActionCopy(
                     transition.activatedEvent,
                     special,
+                    getSharedRandomSeed(),
+                    activationSerial,
                 ),
                 'danger',
                 3000,
