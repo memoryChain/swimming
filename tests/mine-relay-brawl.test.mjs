@@ -321,6 +321,13 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     assert.match(presentation, /PRESENTATION_INTERVAL = 1 \/ 20/);
     assert.match(presentation, /visible !== this\.visible/);
     assert.match(presentation, /buildMineGeometry/);
+    assert.match(presentation, /ENTRY_DISTURB_SECONDS = 0\.28/);
+    assert.match(presentation, /ENTRY_RISE_SECONDS = 0\.72/);
+    assert.match(presentation, /ENTRY_SETTLE_SECONDS = 0\.3/);
+    assert.match(presentation, /ENTRY_STAGGER_SECONDS = 0\.04/);
+    assert.match(presentation, /ENTRY_START_DEPTH = 0\.82/);
+    assert.match(presentation, /showWaterVisual[\s\S]*ENTRY_BREACH_INTENSITY/);
+    assert.match(presentation, /entryWasArmed/);
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
     const timedBombPresentation = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url), 'utf8');
     assert.match(timedBombPresentation, /buildTimedBombGeometry/);
