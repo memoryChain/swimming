@@ -470,6 +470,8 @@ export const RESOURCE_PATHS = {
         supplyCard: 'ui/shop-v1/supply-card/texture',
         supplyCardGem: 'ui/shop-v1/supply-card-gem/texture',
         claimButtonDisabled: 'ui/shop-v1/claim-button-disabled/texture',
+        rewardPopupPanel: 'ui/shop-v1/reward-popup-panel/texture',
+        rewardBurst: 'ui/shop-v1/reward-burst/texture',
     },
     softSpeedStreak: 'ui/vfx/SoftSpeedStreak/texture',
     raceHudCountdownFont: 'fonts/Bungee-Regular',

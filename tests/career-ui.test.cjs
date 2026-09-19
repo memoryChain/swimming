@@ -280,6 +280,19 @@ test('顶部每日补给与设置共用悬浮图标语言，资源条无加号�
     assert.match(panel, /setNodeActive\(card\.videoIcon\?\.node \?\? null, !claimed\)/);
     assert.match(panel, /claimed \? '已领取'/);
     assert.doesNotMatch(panel, /shopUi\.supplyPanel|makeSprite\('SupplyPanel'/);
+    assert.match(panel, /class RewardClaimPopup/);
+    assert.match(panel, /shopUi\.rewardPopupPanel/);
+    assert.match(panel, /shopUi\.rewardBurst/);
+    assert.match(panel, /'领取成功'/);
+    assert.match(panel, /'点击任意位置继续'/);
+    assert.match(panel, /'Title', panel, '领取成功', 38, DARK, 380, 54, 0, 109/);
+    assert.match(panel, /'Reward', panel, '', 31, DARK, 420, 48, 0, -66/);
+    assert.match(panel, /'Hint', panel, '点击任意位置继续', 18, POPUP_HINT, 360, 32, 0, -124/);
+    assert.match(panel, /this\._rewardPopup\?\.show\(grantedReward\)/);
+    assert.doesNotMatch(panel, /this\._toast\(reward\)/);
+    for (const file of ['reward-popup-panel.png', 'reward-popup-panel.png.meta', 'reward-burst.png', 'reward-burst.png.meta']) {
+        assert.ok(fs.existsSync(path.join(h.root, 'assets/race/ui/shop-v1', file)), `${file} 应存在`);
+    }
 
     const character = fs.readFileSync(path.join(h.root, 'assets/scripts/ui/PrepareRaceFlow.ts'), 'utf8');
     assert.match(character, /export function buildSecondaryPageHeader/);

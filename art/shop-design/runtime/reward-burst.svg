@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fffce4" stop-opacity=".92"/>
+      <stop offset=".34" stop-color="#ffe681" stop-opacity=".50"/>
+      <stop offset="1" stop-color="#ffc83d" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ray" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#fff7c4" stop-opacity=".12"/>
+      <stop offset=".45" stop-color="#ffe47a" stop-opacity=".44"/>
+      <stop offset="1" stop-color="#ffc83d" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <filter id="sparkleGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#ffd65b" flood-opacity=".50" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="halo"/>
+      <feMerge><feMergeNode in="halo"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <g filter="url(#soft)">
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(45 256 256)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(90 256 256)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(135 256 256)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(180 256 256)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(225 256 256)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(270 256 256)"/>
+    <path d="M244 224 L268 224 L286 54 Q256 37 226 54 Z" fill="url(#ray)" transform="rotate(315 256 256)"/>
+  </g>
+
+  <circle cx="256" cy="256" r="128" fill="url(#centerGlow)"/>
+
+  <g fill="#fff9d8" filter="url(#sparkleGlow)">
+    <path d="M151 112 C155 130 160 135 178 139 C160 143 155 148 151 166 C147 148 142 143 124 139 C142 135 147 130 151 112 Z"/>
+    <path d="M381 151 C384 164 388 168 401 171 C388 174 384 178 381 191 C378 178 374 174 361 171 C374 168 378 164 381 151 Z"/>
+    <path d="M403 306 C407 323 412 328 429 332 C412 336 407 341 403 358 C399 341 394 336 377 332 C394 328 399 323 403 306 Z"/>
+    <path d="M319 393 C322 405 326 409 338 412 C326 415 322 419 319 431 C316 419 312 415 300 412 C312 409 316 405 319 393 Z"/>
+    <path d="M132 323 C135 336 139 340 152 343 C139 346 135 350 132 363 C129 350 125 346 112 343 C125 340 129 336 132 323 Z"/>
+    <path d="M345 92 C347 101 350 104 359 106 C350 108 347 111 345 120 C343 111 340 108 331 106 C340 104 343 101 345 92 Z"/>
+  </g>
+</svg>

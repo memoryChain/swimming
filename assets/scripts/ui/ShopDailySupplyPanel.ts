@@ -1,4 +1,5 @@
 import {
+    BlockInputEvents,
     Button,
     Color,
     Label,
@@ -6,7 +7,11 @@ import {
     Sprite,
     SpriteFrame,
     Texture2D,
+    Tween,
+    tween,
+    UIOpacity,
     UITransform,
+    Vec3,
 } from 'cc';
 import { PlayerData } from '../backend/PlayerData';
 import {
@@ -21,7 +26,9 @@ import { rewardedAdUnitId } from '../platform/AdConfig';
 import { platform } from '../platform/PlatformManager';
 import {
     fitFullScreenBackgroundCover,
+    fitFullScreenSolidCover,
     makeLabel,
+    makeRect,
     makeScreenEdgeGroup,
     makeUiNode,
     uiColor,
@@ -29,6 +36,7 @@ import {
 import { styleProjectUiLabel } from './ProjectUiFonts';
 import { buildSecondaryPageHeader } from './PrepareRaceFlow';
 import { LobbyUiMotion } from './LobbyUiMotion';
+import { PopupUiMotion } from './PopupUiMotion';
 
 type CardView = {
     slot: DailyShopRewardSlot;
@@ -41,10 +49,16 @@ type CardView = {
     adVerified: boolean;
 };
 
+type RewardPresentation = {
+    iconPath: string;
+    text: string;
+};
+
 const CARD_X = [-320, 0, 320] as const;
 const MUTED = uiColor(162, 194, 214);
 const DARK = uiColor(16, 38, 61);
 const CLAIMED_TEXT = uiColor(79, 91, 99);
+const POPUP_HINT = uiColor(92, 121, 145);
 
 /** 非比赛页面的每日补给站。层级只创建一次，刷新只修改文本与按钮状态。 */
 export class ShopDailySupplyPanel {
@@ -56,6 +70,7 @@ export class ShopDailySupplyPanel {
     private _lastCycleKey = '';
     private _transactionSerial = 0;
     private _backButton: Button | null = null;
+    private _rewardPopup: RewardClaimPopup | null = null;
     private _motion = new LobbyUiMotion();
     private _closing = false;
     private readonly _onChange = (profile: PlayerProfile) => this.refresh(profile);
@@ -108,6 +123,9 @@ export class ShopDailySupplyPanel {
                 `金币 +${PROGRESSION_CONFIG.dailyAdCoins}`, '看广告领取'),
         ];
 
+        this._rewardPopup = new RewardClaimPopup();
+        this._rewardPopup.build(root, designWidth, designHeight);
+
         root.active = false;
         PlayerData.onChange(this._onChange);
         this.refresh(PlayerData.profile);
@@ -144,6 +162,8 @@ export class ShopDailySupplyPanel {
 
     dispose(): void {
         this._motion.dispose();
+        this._rewardPopup?.dispose();
+        this._rewardPopup = null;
         this.hide();
         PlayerData.offChange(this._onChange);
         if (this._root?.isValid) this._root.destroy();
@@ -225,6 +245,7 @@ export class ShopDailySupplyPanel {
         if (this._busySlot || this.isClaimed(PlayerData.profile, card.slot)) return;
         this._busySlot = card.slot;
         this.refresh(PlayerData.profile);
+        let grantedReward: RewardPresentation | null = null;
         try {
             if (card.slot !== 'free_coins' && !card.adVerified) {
                 setLabel(card.action, '广告播放中');
@@ -245,8 +266,9 @@ export class ShopDailySupplyPanel {
                 card.pendingTransactionId = null;
                 card.adVerified = false;
                 if (result.ok) {
-                    const reward = result.grantedGems > 0 ? `突破宝石 +${result.grantedGems}` : `金币 +${result.grantedCoins}`;
-                    this._toast(reward);
+                    grantedReward = result.grantedGems > 0
+                        ? { iconPath: RESOURCE_PATHS.shopUi.gemIcon, text: `突破宝石 ×${result.grantedGems}` }
+                        : { iconPath: RESOURCE_PATHS.characterUi.upgradeCurrency, text: `金币 ×${result.grantedCoins}` };
                 }
             } else if (result.reason === 'ad_incomplete') {
                 card.pendingTransactionId = null;
@@ -260,6 +282,7 @@ export class ShopDailySupplyPanel {
         } finally {
             this._busySlot = null;
             this.refresh(PlayerData.profile);
+            if (grantedReward) this._rewardPopup?.show(grantedReward);
         }
     }
 
@@ -307,6 +330,124 @@ export class ShopDailySupplyPanel {
         const minutes = Math.floor((left % 3600000) / 60000);
         const seconds = Math.floor((left % 60000) / 1000);
         setLabel(this._countdown, `每日 05:00 刷新 · ${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`);
+    }
+}
+
+/** 奖励到账弹窗：节点与监听只创建一次，领取成功时只更新图标、数量和短动效。 */
+class RewardClaimPopup {
+    private _root: Node | null = null;
+    private _motion: PopupUiMotion | null = null;
+    private _rewardIcon: Sprite | null = null;
+    private _rewardText: Label | null = null;
+    private _burstNode: Node | null = null;
+    private _iconPath = '';
+    private _iconTween: Tween<Node> | null = null;
+    private _burstTween: Tween<Node> | null = null;
+
+    build(parent: Node, designWidth: number, designHeight: number): Node {
+        const root = makeUiNode('RewardClaimPopup', parent);
+        root.getComponent(UITransform)!.setContentSize(designWidth, designHeight);
+        this._root = root;
+
+        const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 20, 38, 178));
+        fitFullScreenSolidCover(dim, designWidth, designHeight);
+        dim.on(Node.EventType.TOUCH_END, () => this.hide());
+
+        const panel = makeUiNode('Panel', root);
+        panel.getComponent(UITransform)!.setContentSize(560, 420);
+        panel.addComponent(BlockInputEvents);
+        panel.on(Node.EventType.TOUCH_END, () => this.hide());
+        makeSprite('Artwork', panel, RESOURCE_PATHS.shopUi.rewardPopupPanel, 560, 420, 0, 0);
+
+        makeStyledLabel('Title', panel, '领取成功', 38, DARK, 380, 54, 0, 109, true);
+
+        const burst = makeSprite('RewardBurst', panel, RESOURCE_PATHS.shopUi.rewardBurst, 236, 236, 0, 12);
+        burst.addComponent(UIOpacity).opacity = 148;
+        this._burstNode = burst;
+
+        const iconNode = makeUiNode('RewardIcon', panel);
+        iconNode.getComponent(UITransform)!.setContentSize(96, 96);
+        iconNode.setPosition(0, 12, 4);
+        const icon = iconNode.addComponent(Sprite);
+        icon.sizeMode = Sprite.SizeMode.CUSTOM;
+        icon.trim = false;
+        this._rewardIcon = icon;
+
+        this._rewardText = makeStyledLabel('Reward', panel, '', 31, DARK, 420, 48, 0, -66, true);
+        makeStyledLabel('Hint', panel, '点击任意位置继续', 18, POPUP_HINT, 360, 32, 0, -124, false);
+
+        this._motion = new PopupUiMotion(root, dim, panel);
+        root.active = false;
+        return root;
+    }
+
+    show(reward: RewardPresentation): void {
+        if (!this._root?.isValid || !this._rewardText) return;
+        setLabel(this._rewardText, reward.text);
+        this.setRewardIcon(reward.iconPath);
+        this._motion?.show();
+        this.playRewardPulse();
+    }
+
+    dispose(): void {
+        this.stopRewardPulse();
+        this._motion?.dispose();
+        this._motion = null;
+        if (this._root?.isValid) this._root.destroy();
+        this._root = null;
+        this._rewardIcon = null;
+        this._rewardText = null;
+        this._burstNode = null;
+        this._iconPath = '';
+    }
+
+    private hide(): void {
+        if (!this._motion?.interactive) return;
+        this.stopRewardPulse();
+        this._motion.hide();
+    }
+
+    private setRewardIcon(path: string): void {
+        const sprite = this._rewardIcon;
+        if (!sprite?.node.isValid || this._iconPath === path) return;
+        this._iconPath = path;
+        sprite.spriteFrame = null;
+        loadRaceAsset(path, Texture2D, (error, texture) => {
+            if (error || !texture || !sprite.isValid || !sprite.node.isValid || this._iconPath !== path) return;
+            const frame = new SpriteFrame();
+            frame.texture = texture;
+            sprite.spriteFrame = frame;
+        });
+    }
+
+    private playRewardPulse(): void {
+        this.stopRewardPulse();
+        const iconNode = this._rewardIcon?.node;
+        if (iconNode?.isValid) {
+            iconNode.setScale(0.72, 0.72, 1);
+            this._iconTween = tween(iconNode)
+                .to(0.16, { scale: new Vec3(1.09, 1.09, 1) }, { easing: 'cubicOut' })
+                .to(0.09, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
+                .call(() => { this._iconTween = null; })
+                .start();
+        }
+        if (this._burstNode?.isValid) {
+            this._burstNode.setScale(0.82, 0.82, 1);
+            this._burstTween = tween(this._burstNode)
+                .to(0.22, { scale: new Vec3(1.04, 1.04, 1) }, { easing: 'cubicOut' })
+                .to(0.1, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
+                .call(() => { this._burstTween = null; })
+                .start();
+        }
+    }
+
+    private stopRewardPulse(): void {
+        this._iconTween?.stop();
+        this._burstTween?.stop();
+        this._iconTween = null;
+        this._burstTween = null;
+        if (this._rewardIcon?.node.isValid) this._rewardIcon.node.setScale(1, 1, 1);
+        if (this._burstNode?.isValid) this._burstNode.setScale(1, 1, 1);
     }
 }
 
