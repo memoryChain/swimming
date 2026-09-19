@@ -15,13 +15,18 @@ const PANEL_MARGIN = 18;
 const RENDER_INTERVAL_SECONDS = 1 / 30;
 const CANNON_IMPACT_HOLD_SECONDS = 1;
 const WHIRLPOOL_PREVIEW_SECONDS = 1.5;
+const TIMED_BOMB_ARM_PREVIEW_SECONDS = 1.2;
+const TIMED_BOMB_TRANSFER_PREVIEW_SECONDS = 0.8;
+const TIMED_BOMB_REOPEN_COOLDOWN_SECONDS = 1;
+const TIMED_BOMB_RESOLUTION_HOLD_SECONDS = 1;
 
 const WARNING_COLOR = new Color(255, 190, 86, 255);
 const DANGER_COLOR = new Color(255, 82, 72, 255);
 const INFO_COLOR = new Color(107, 222, 255, 255);
 const FEED_CLEAR_COLOR = new Color(13, 48, 86, 255);
 
-type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool';
+type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb';
+type TimedBombResolution = 'none' | 'exploded' | 'disarmed';
 
 export type RaceEventPictureInPictureOptions = {
     worldRoot: Node;
@@ -57,6 +62,21 @@ export class RaceEventPictureInPictureCamera {
     private whirlpoolX = 0;
     private whirlpoolZ = 0;
     private whirlpoolSuper = false;
+    private timedBombCarrier: Node | null = null;
+    private timedBombLane = -1;
+    private timedBombLocal = false;
+    private timedBombLocked = false;
+    private timedBombRemainingSeconds = 0;
+    private timedBombPreviewSeconds = 0;
+    private timedBombReopenCooldownSeconds = 0;
+    private timedBombResolution: TimedBombResolution = 'none';
+    private timedBombResolutionHoldSeconds = 0;
+    private timedBombPoseReady = false;
+    private lastTimedBombCopyLane = -2;
+    private lastTimedBombCopySeconds = -1;
+    private lastTimedBombCopyLocal = false;
+    private lastTimedBombCopyLocked = false;
+    private lastTimedBombCopyResolution: TimedBombResolution = 'none';
     private ceilingVisible = true;
     private readonly cameraPosition = new Vec3();
     private readonly focus = new Vec3();
@@ -64,6 +84,8 @@ export class RaceEventPictureInPictureCamera {
     private readonly targetPosition = new Vec3();
     private readonly biteHoldCameraPosition = new Vec3();
     private readonly biteHoldFocus = new Vec3();
+    private readonly timedBombDesiredCameraPosition = new Vec3();
+    private readonly timedBombDesiredFocus = new Vec3();
 
     constructor(private readonly options: RaceEventPictureInPictureOptions) {
         this.buildCamera();
@@ -71,6 +93,7 @@ export class RaceEventPictureInPictureCamera {
     }
 
     reset(): void {
+        this.resetTimedBombTrackingState();
         this.hide();
     }
 
@@ -173,7 +196,7 @@ export class RaceEventPictureInPictureCamera {
 
     showWhirlpoolPreview(distance: number, lateral: number, spin: -1 | 1, superVariant = false): void {
         // 漩涡是路线教学镜头，不能抢占鲨鱼咬击或炮火落点等即时危险镜头。
-        if (this.mode === 'shark' || this.mode === 'cannon') return;
+        if (this.mode === 'shark' || this.mode === 'cannon' || this.mode === 'timed-bomb') return;
         this.mode = 'whirlpool';
         this.setCeilingVisible(false);
         this.whirlpoolX = this.options.course.distanceToWorldX(distance);
@@ -209,6 +232,118 @@ export class RaceEventPictureInPictureCamera {
         );
         this.applyCameraPose(this.whirlpoolSuper ? 45 : 42);
         this.finishRender();
+    }
+
+    showTimedBombCarrier(
+        carrier: Node | null,
+        lane: number,
+        remainingSeconds: number,
+        local: boolean,
+        transferred = false,
+    ): void {
+        this.timedBombCarrier = carrier?.isValid ? carrier : null;
+        this.timedBombLane = lane;
+        this.timedBombLocal = local;
+        this.timedBombLocked = false;
+        this.timedBombRemainingSeconds = Math.max(0, remainingSeconds);
+        this.timedBombResolution = 'none';
+        this.timedBombResolutionHoldSeconds = 0;
+        if (!this.timedBombCarrier || this.isTimedBombBlockedByHigherPriority()) return;
+        if (transferred && this.mode !== 'timed-bomb' && this.timedBombReopenCooldownSeconds > 0) return;
+        const alreadyTracking = this.mode === 'timed-bomb';
+        this.mode = 'timed-bomb';
+        this.setCeilingVisible(true);
+        this.timedBombPreviewSeconds = Math.max(
+            this.timedBombPreviewSeconds,
+            transferred ? TIMED_BOMB_TRANSFER_PREVIEW_SECONDS : TIMED_BOMB_ARM_PREVIEW_SECONDS,
+        );
+        if (!alreadyTracking) {
+            this.timedBombPoseReady = false;
+            this.invalidateTimedBombCopy();
+        }
+        this.presentTimedBombState();
+        this.setVisible(true);
+    }
+
+    updateTimedBomb(
+        carrier: Node | null,
+        lane: number,
+        remainingSeconds: number,
+        locked: boolean,
+        racing: boolean,
+        local: boolean,
+        dt: number,
+    ): void {
+        const safeDt = safeStep(dt);
+        this.timedBombReopenCooldownSeconds = Math.max(0, this.timedBombReopenCooldownSeconds - safeDt);
+        if (carrier?.isValid) this.timedBombCarrier = carrier;
+        if (lane >= 0) {
+            this.timedBombLane = lane;
+            this.timedBombLocal = local;
+            this.timedBombLocked = locked;
+            this.timedBombRemainingSeconds = Math.max(0, remainingSeconds);
+        }
+
+        if (this.timedBombResolution !== 'none') {
+            this.timedBombResolutionHoldSeconds = Math.max(0, this.timedBombResolutionHoldSeconds - safeDt);
+            if (this.timedBombResolutionHoldSeconds <= 0) {
+                if (this.mode === 'timed-bomb') this.hide();
+                this.resetTimedBombTrackingState();
+                return;
+            }
+            if (!this.isTimedBombBlockedByHigherPriority() && this.mode !== 'timed-bomb') {
+                this.mode = 'timed-bomb';
+                this.setCeilingVisible(true);
+                this.timedBombPoseReady = false;
+                this.invalidateTimedBombCopy();
+                this.setVisible(true);
+            }
+        } else if (!racing || !this.timedBombCarrier?.isValid) {
+            if (this.mode === 'timed-bomb') this.hide();
+            return;
+        } else if (locked && !this.isTimedBombBlockedByHigherPriority() && this.mode !== 'timed-bomb') {
+            this.mode = 'timed-bomb';
+            this.setCeilingVisible(true);
+            this.timedBombPoseReady = false;
+            this.invalidateTimedBombCopy();
+            this.setVisible(true);
+        } else if (!locked && this.mode === 'timed-bomb') {
+            this.timedBombPreviewSeconds = Math.max(0, this.timedBombPreviewSeconds - safeDt);
+            if (this.timedBombPreviewSeconds <= 0) {
+                this.timedBombReopenCooldownSeconds = TIMED_BOMB_REOPEN_COOLDOWN_SECONDS;
+                this.hide();
+                return;
+            }
+        }
+
+        if (this.mode !== 'timed-bomb' || this.isTimedBombBlockedByHigherPriority()) return;
+        this.presentTimedBombState();
+        if (!this.shouldRender(safeDt)) return;
+        this.updateTimedBombCameraPose(safeDt);
+        this.finishRender();
+    }
+
+    showTimedBombResolution(carrier: Node | null, lane: number, exploded: boolean, local: boolean): void {
+        this.timedBombCarrier = carrier?.isValid ? carrier : this.timedBombCarrier;
+        this.timedBombLane = lane;
+        this.timedBombLocal = local;
+        this.timedBombLocked = true;
+        this.timedBombRemainingSeconds = 0;
+        this.timedBombResolution = exploded ? 'exploded' : 'disarmed';
+        this.timedBombResolutionHoldSeconds = TIMED_BOMB_RESOLUTION_HOLD_SECONDS;
+        if (!this.timedBombCarrier?.isValid || this.isTimedBombBlockedByHigherPriority()) return;
+        const alreadyTracking = this.mode === 'timed-bomb';
+        this.mode = 'timed-bomb';
+        this.setCeilingVisible(true);
+        if (!alreadyTracking) this.timedBombPoseReady = false;
+        this.invalidateTimedBombCopy();
+        this.presentTimedBombState();
+        this.setVisible(true);
+    }
+
+    clearTimedBombTracking(): void {
+        if (this.mode === 'timed-bomb') this.hide();
+        this.resetTimedBombTrackingState();
     }
 
     dispose(): void {
@@ -247,6 +382,33 @@ export class RaceEventPictureInPictureCamera {
             (this.cannonSourceZ + this.cannonTargetZ) * 0.5,
         );
         this.applyCameraPose(52);
+    }
+
+    private updateTimedBombCameraPose(dt: number): void {
+        const carrier = this.timedBombCarrier;
+        if (!carrier?.isValid) return;
+        carrier.getWorldPosition(this.subjectPosition);
+        const outward = this.subjectPosition.z >= 0 ? 1 : -1;
+        this.timedBombDesiredFocus.set(
+            this.subjectPosition.x + this.options.course.direction * 0.45,
+            this.options.course.waterY + 0.18,
+            this.subjectPosition.z,
+        );
+        this.timedBombDesiredCameraPosition.set(
+            this.subjectPosition.x - this.options.course.direction * 4.2,
+            this.options.course.waterY + 2.8,
+            this.subjectPosition.z + outward * 4.3,
+        );
+        if (!this.timedBombPoseReady) {
+            this.cameraPosition.set(this.timedBombDesiredCameraPosition);
+            this.focus.set(this.timedBombDesiredFocus);
+            this.timedBombPoseReady = true;
+        } else {
+            const blend = Math.min(1, dt * 8);
+            Vec3.lerp(this.cameraPosition, this.cameraPosition, this.timedBombDesiredCameraPosition, blend);
+            Vec3.lerp(this.focus, this.focus, this.timedBombDesiredFocus, blend);
+        }
+        this.applyCameraPose(44);
     }
 
     private updateSharkCameraPose(shark: SharkController): void {
@@ -338,6 +500,63 @@ export class RaceEventPictureInPictureCamera {
             biting ? '吞没目标中' : hunting ? '正在追击最近选手' : '已落水，锁定目标中',
             hunting ? DANGER_COLOR : WARNING_COLOR,
         );
+    }
+
+    private presentTimedBombState(): void {
+        const wholeSeconds = Math.max(0, Math.ceil(this.timedBombRemainingSeconds));
+        if (this.timedBombLane === this.lastTimedBombCopyLane
+            && wholeSeconds === this.lastTimedBombCopySeconds
+            && this.timedBombLocal === this.lastTimedBombCopyLocal
+            && this.timedBombLocked === this.lastTimedBombCopyLocked
+            && this.timedBombResolution === this.lastTimedBombCopyResolution) return;
+        this.lastTimedBombCopyLane = this.timedBombLane;
+        this.lastTimedBombCopySeconds = wholeSeconds;
+        this.lastTimedBombCopyLocal = this.timedBombLocal;
+        this.lastTimedBombCopyLocked = this.timedBombLocked;
+        this.lastTimedBombCopyResolution = this.timedBombResolution;
+        let status: string;
+        let color: Readonly<Color> = WARNING_COLOR;
+        if (this.timedBombResolution === 'exploded') {
+            status = this.timedBombLocal ? '你被炸倒 · 急救中' : `${this.timedBombLane + 1}号泳道被炸倒`;
+            color = DANGER_COLOR;
+        } else if (this.timedBombResolution === 'disarmed') {
+            status = this.timedBombLocal ? '你已冲线 · 拆弹成功' : `${this.timedBombLane + 1}号泳道拆弹成功`;
+            color = INFO_COLOR;
+        } else if (this.timedBombLocked) {
+            status = this.timedBombLocal
+                ? `炸弹已锁定在你身上 · ${wholeSeconds}秒`
+                : `${this.timedBombLane + 1}号泳道已锁定 · ${wholeSeconds}秒`;
+            color = DANGER_COLOR;
+        } else {
+            status = this.timedBombLocal
+                ? `你持有定时炸弹 · ${wholeSeconds}秒`
+                : `${this.timedBombLane + 1}号泳道持有 · ${wholeSeconds}秒`;
+        }
+        this.setCopy('炸弹追踪', status, color);
+    }
+
+    private isTimedBombBlockedByHigherPriority(): boolean {
+        return this.mode === 'shark' || this.mode === 'cannon';
+    }
+
+    private invalidateTimedBombCopy(): void {
+        this.lastTimedBombCopyLane = -2;
+        this.lastTimedBombCopySeconds = -1;
+        this.lastTimedBombCopyResolution = 'none';
+    }
+
+    private resetTimedBombTrackingState(): void {
+        this.timedBombCarrier = null;
+        this.timedBombLane = -1;
+        this.timedBombLocal = false;
+        this.timedBombLocked = false;
+        this.timedBombRemainingSeconds = 0;
+        this.timedBombPreviewSeconds = 0;
+        this.timedBombReopenCooldownSeconds = 0;
+        this.timedBombResolution = 'none';
+        this.timedBombResolutionHoldSeconds = 0;
+        this.timedBombPoseReady = false;
+        this.invalidateTimedBombCopy();
     }
 
     private shouldRender(dt: number): boolean {

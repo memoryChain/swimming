@@ -2038,6 +2038,7 @@ export class GameManager extends Component {
         this._mineRelayBrawl = null;
         this._mineRelayPresentation?.dispose();
         this._mineRelayPresentation = null;
+        this._eventPictureInPicture?.clearTimedBombTracking();
         if (!isTimedBombBrawlMode() || !this._raceManager) return;
         if (this._worldRoot?.isValid) {
             this._mineRelayPresentation = new MineRelayBrawlPresentation(this._worldRoot);
@@ -2080,10 +2081,22 @@ export class GameManager extends Component {
             if (!controller || !applied) return;
             if (applied.activeChanged || applied.carrierChanged) {
                 const arm = controller.currentArm();
+                const carrierNode = arm ? this.swimmerForLane(arm.carrierLane)?.node ?? null : null;
                 this._mineRelayPresentation?.sync(
                     arm,
-                    arm ? this.swimmerForLane(arm.carrierLane)?.node ?? null : null,
+                    carrierNode,
                 );
+                if (arm) {
+                    this._eventPictureInPicture?.showTimedBombCarrier(
+                        carrierNode,
+                        arm.carrierLane,
+                        controller.currentRemainingSeconds(),
+                        arm.carrierLane === this._playerLaneIndex,
+                        applied.carrierChanged && !applied.activeChanged,
+                    );
+                } else {
+                    this._eventPictureInPicture?.clearTimedBombTracking();
+                }
             }
             for (let roundId = 0; roundId < MINE_RELAY_ROUNDS.length; roundId++) {
                 if ((applied.newlyExplodedMask & (1 << roundId)) === 0) continue;
@@ -2107,6 +2120,12 @@ export class GameManager extends Component {
             if (isEntertainmentBrawlMode()) this._mineRelayHud?.hide();
             if (controller && entertainmentEventInactive) {
                 this._mineRelayPresentation?.updateResidualEffects(dt, this._state === GameState.RACING);
+                // 事件退场后仍让已触发的爆炸／拆弹结果镜头播完；普通携带特写会立即关闭。
+                this._eventPictureInPicture?.updateTimedBomb(
+                    null, -1, 0, false, false, false, dt,
+                );
+            } else {
+                this._eventPictureInPicture?.clearTimedBombTracking();
             }
             return;
         }
@@ -2120,6 +2139,16 @@ export class GameManager extends Component {
             controller.currentRemainingSeconds(),
             controller.isLocked(),
             this._state === GameState.RACING,
+        );
+        const carrierLane = arm?.carrierLane ?? -1;
+        this._eventPictureInPicture?.updateTimedBomb(
+            carrierNode,
+            carrierLane,
+            controller.currentRemainingSeconds(),
+            controller.isLocked(),
+            this._state === GameState.RACING,
+            carrierLane === this._playerLaneIndex,
+            dt,
         );
         for (let i = 0; i < this._aiControllers.length; i++) {
             const ai = this._aiControllers[i];
@@ -2149,6 +2178,12 @@ export class GameManager extends Component {
     private handleMineRelayArm(event: MineRelayArm, broadcast: boolean) {
         const carrierNode = this.swimmerForLane(event.carrierLane)?.node ?? null;
         this._mineRelayPresentation?.attach(event, carrierNode);
+        this._eventPictureInPicture?.showTimedBombCarrier(
+            carrierNode,
+            event.carrierLane,
+            event.fuseSeconds,
+            event.carrierLane === this._playerLaneIndex,
+        );
         if (event.carrierLane === this._playerLaneIndex) {
             this._entertainmentEventBanner.showPersonal(
                 '炸弹落到你身上 · 贴近对手传出',
@@ -2178,6 +2213,13 @@ export class GameManager extends Component {
             fuseSeconds: event.remainingSeconds,
             revision: event.revision,
         }, carrierNode);
+        this._eventPictureInPicture?.showTimedBombCarrier(
+            carrierNode,
+            event.toLane,
+            event.remainingSeconds,
+            event.toLane === this._playerLaneIndex,
+            true,
+        );
         if (event.fromLane === this._playerLaneIndex) {
             this._entertainmentEventBanner.showPersonal('定时炸弹已传出', 'success', 800);
         } else if (event.toLane === this._playerLaneIndex) {
@@ -2199,6 +2241,12 @@ export class GameManager extends Component {
             }
         } else {
             this._mineRelayPresentation?.showResolution(false, null);
+            this._eventPictureInPicture?.showTimedBombResolution(
+                this.swimmerForLane(event.carrierLane)?.node ?? null,
+                event.carrierLane,
+                false,
+                event.carrierLane === this._playerLaneIndex,
+            );
             if (event.carrierLane === this._playerLaneIndex) {
                 this._entertainmentEventBanner.showPersonal('带雷冲线 · 拆弹成功', 'success', 1200);
             } else if (!isEntertainmentBrawlMode()) {
@@ -2220,6 +2268,12 @@ export class GameManager extends Component {
     private applyMineRelayExplosion(lane: number, distance?: number, recoveryRevision?: number) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer?.node?.active) return;
+        this._eventPictureInPicture?.showTimedBombResolution(
+            swimmer.node,
+            lane,
+            true,
+            lane === this._playerLaneIndex,
+        );
         swimmer.node.getWorldPosition(this._mineExplosionWorldPosition);
         this._mineRelayPresentation?.showResolution(true, this._mineExplosionWorldPosition);
         const lateral = swimmer.node.position.z;
@@ -3734,7 +3788,8 @@ export class GameManager extends Component {
             this.applyRoomModeHud(this._raceHud);
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
-            if ((isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode() || isWhirlpoolBrawlMode())
+            if ((isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode()
+                || isWhirlpoolBrawlMode() || isTimedBombBrawlMode())
                 && this._worldRoot?.isValid) {
                 this._eventPictureInPicture = new RaceEventPictureInPictureCamera({
                     worldRoot: this._worldRoot,
