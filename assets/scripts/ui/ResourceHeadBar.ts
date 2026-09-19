@@ -29,11 +29,12 @@ export interface ResourceHeadBarOptions {
 
 const BAR_WIDTH = 176;
 const BAR_HEIGHT = 56;
-const BAR_GAP = 10;
+const COIN_GEM_GAP = 10;
 const TOP_ENTRY_WIDTH = 82;
 const TOP_ENTRY_HEIGHT = 90;
 const TOP_ENTRY_ICON_SIZE = 56;
-const TOP_ENTRY_GAP = 12;
+const SUPPLY_WALLET_GAP = 22;
+const WALLET_SETTINGS_GAP = 26;
 const BACK_WIDTH = 84;
 const BACK_HEIGHT = 52;
 const IDENTITY_WIDTH = 227;
@@ -127,12 +128,14 @@ export class ResourceHeadBar {
         this._identity = identity;
 
         // Keep the platform-native capsule clear. From left to right the authored
-        // group is: supply station, coins, gems, settings, native safe area.
+        // group is: supply station, coins, gems, settings, native safe area. Coins
+        // and gems form one compact wallet; the larger outer gaps separate that
+        // wallet from the supply feature and the settings utility.
         const rightEdge = designWidth / 2 - rightPadding;
         const settingsX = rightEdge - TOP_ENTRY_WIDTH / 2;
-        const gemPillX = settingsX - TOP_ENTRY_WIDTH / 2 - TOP_ENTRY_GAP - BAR_WIDTH / 2;
-        const coinPillX = gemPillX - BAR_WIDTH - BAR_GAP;
-        const supplyX = coinPillX - BAR_WIDTH / 2 - TOP_ENTRY_GAP - TOP_ENTRY_WIDTH / 2;
+        const gemPillX = settingsX - TOP_ENTRY_WIDTH / 2 - WALLET_SETTINGS_GAP - BAR_WIDTH / 2;
+        const coinPillX = gemPillX - BAR_WIDTH - COIN_GEM_GAP;
+        const supplyX = coinPillX - BAR_WIDTH / 2 - SUPPLY_WALLET_GAP - TOP_ENTRY_WIDTH / 2;
 
         const supply = makeTopEntryButton('SupplyStationButton', right, supplyX, topY,
             '每日补给', RESOURCE_PATHS.shopUi.topEntrySupply, () => options.onOpenShop?.());

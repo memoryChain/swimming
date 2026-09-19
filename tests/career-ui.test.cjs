@@ -256,6 +256,12 @@ test('顶部每日补给与设置共用悬浮图标语言，资源条无加号�
     assert.match(source, /shopUi\.notificationBadge/);
     assert.match(source, /shopUi\.resourcePillClean/g);
     assert.doesNotMatch(source, /shopUi\.resourcePill,/);
+    assert.match(source, /const COIN_GEM_GAP = 10;/);
+    assert.match(source, /const SUPPLY_WALLET_GAP = 22;/);
+    assert.match(source, /const WALLET_SETTINGS_GAP = 26;/);
+    assert.match(source, /gemPillX = settingsX[\s\S]*?WALLET_SETTINGS_GAP/);
+    assert.match(source, /coinPillX = gemPillX[\s\S]*?COIN_GEM_GAP/);
+    assert.match(source, /supplyX = coinPillX[\s\S]*?SUPPLY_WALLET_GAP/);
     assert.match(source, /const settingsX = rightEdge[\s\S]*?const gemPillX =[\s\S]*?const coinPillX =[\s\S]*?const supplyX =/);
     assert.match(source, /const visible = !profile\.dailyShop\.freeCoinsClaimed/);
     assert.doesNotMatch(source, /_shopBadge[\s\S]{0,250}adGemsClaimed|_shopBadge[\s\S]{0,250}adCoinsClaimed/);
