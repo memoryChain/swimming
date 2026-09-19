@@ -26,13 +26,14 @@ function chain(width = 8, height = 4) {
     }
 }
 
-test('独立贴图启用 mip，GLB 内嵌图片保持单级采样', () => {
-    assert.equal(mipFilterForImage('assets/race/models/CartonSwimmer10.glb.meta'), 'none');
+test('角色与泳池常规纹理启用 mip，三张纯色色板保持单级采样', () => {
+    assert.equal(mipFilterForImage('assets/race/models/CartonSwimmer10.glb.meta'), 'linear');
     assert.equal(mipFilterForImage('assets/race/models/CartonSwimmer10ColorMask.png.meta'), 'linear');
-    assert.equal(mipFilterForImage('assets/race/pool/LowPolyPool.glb.meta', 'PoolWallNarrowTilesWhite.image'), 'none');
+    assert.equal(mipFilterForImage('assets/race/pool/LowPolyPool.glb.meta', 'PoolWallNarrowTilesWhite.image'), 'linear');
     for (const name of ['BleacherFlatColorAtlas', 'StandArchitectureArtAtlas', 'PoolsidePropsFlatColorAtlas']) {
         assert.equal(mipFilterForImage('assets/race/pool/LowPolyPool.glb.meta', `${name}.image`), 'none');
     }
+    assert.equal(mipFilterForImage('assets/race/items/Unrelated.glb.meta', 'Item.image'), null);
     for (const file of ['assets/race/pool/SwimmerSplashSpray.png.meta', 'assets/resources/ui/test.png.meta', 'assets/race/ui/test.png.meta']) {
         assert.equal(mipFilterForImage(file), null);
     }

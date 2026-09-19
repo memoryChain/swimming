@@ -3,13 +3,22 @@
 const fs = require('fs');
 const path = require('path');
 
-// 当前 Creator 的 GLB 内嵌图片没有生成 mip 链，压缩纹理必须保持单级采样。
-// 独立图片可生成完整 CMIP；粒子和动态水面不在本次范围内。
+// 角色底图、常规泳池纹理与独立换色遮罩使用 Creator 离线生成的完整 CMIP 链。
+// 三张低频纯色色板保持单级采样；其他 GLB、粒子和动态水面不在本次范围内。
 const POOL_IMAGES = new Set(['LaneFloatBeads.png', 'PoolBanner.png', 'PoolFasciaBrand.png',
     'PoolFeedFloor.png', 'IndoorNightSky.png']);
+const POOL_SINGLE_LEVEL_IMAGES = new Set([
+    'BleacherFlatColorAtlas',
+    'StandArchitectureArtAtlas',
+    'PoolsidePropsFlatColorAtlas',
+]);
 
 function mipFilterForImage(relativeMeta, imageName = '') {
-    if (/^assets\/race\/(models|pool)\/[^/]+\.(glb|gltf)\.meta$/i.test(relativeMeta)) return 'none';
+    if (/^assets\/race\/models\/[^/]+\.(glb|gltf)\.meta$/i.test(relativeMeta)) return 'linear';
+    if (/^assets\/race\/pool\/[^/]+\.(glb|gltf)\.meta$/i.test(relativeMeta)) {
+        const baseName = String(imageName).replace(/\.image$/i, '');
+        return POOL_SINGLE_LEVEL_IMAGES.has(baseName) ? 'none' : 'linear';
+    }
     if (/^assets\/race\/models\/[^/]+ColorMask\.png\.meta$/i.test(relativeMeta)) return 'linear';
     if (relativeMeta.startsWith('assets/race/pool/') && POOL_IMAGES.has(path.basename(relativeMeta, '.meta'))) return 'linear';
     return null;
@@ -50,7 +59,7 @@ function auditTextureMipmaps(projectRoot, { fix = false } = {}) {
             if (sampler.userData.mipfilter === expected) continue;
             result.issues.push({ relativePath: relativeMeta, assetName: sampler.name || sampler.displayName,
                 expected: `mipfilter=${expected}`, current: `mipfilter=${sampler.userData.mipfilter}`,
-                reason: expected === 'linear' ? '独立贴图启用完整 mip 链采样' : 'GLB 内嵌压缩贴图保持单级采样', kind: 'mipmap' });
+                reason: expected === 'linear' ? '角色与泳池常规纹理启用完整 mip 链采样' : '泳池纯色色板保持单级采样', kind: 'mipmap' });
             if (fix) {
                 sampler.userData.mipfilter = expected;
                 result.changed++;

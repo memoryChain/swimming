@@ -75,7 +75,7 @@
         "wrapModeT": "repeat",
         "minfilter": "linear",
         "magfilter": "linear",
-        "mipfilter": "none",
+        "mipfilter": "linear",
         "anisotropy": 0,
         "isUuid": true,
         "imageUuidOrDatabaseUri": "cf3994cf-aca9-45c3-8bf1-9ca1b3d2790a@a7b88"
