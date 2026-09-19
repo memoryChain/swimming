@@ -142,6 +142,12 @@ test('看台大炮使用分层炮架、轮毂、斜撑和渐细炮管并保持�
     assert.match(model, /轮轴贯穿两侧车轮/);
     assert.match(model, /双层炮口/);
     assert.match(model, /暗色圆面覆盖炮口端盖/);
+    const wheelLayers = [...model.matchAll(
+        /appendCylinder\(positions, colors, indices, wheelCenterX, 0\.46, 0\.08, 0\.(\d+), 0\.(\d+), 'x'/g,
+    )].map(match => ({ radius: Number(`0.${match[1]}`), length: Number(`0.${match[2]}`) }));
+    assert.equal(wheelLayers.length, 3);
+    assert.ok(wheelLayers[0].length < wheelLayers[1].length);
+    assert.ok(wheelLayers[1].length < wheelLayers[2].length);
     assert.match(presentation, /this\.cannonMesh = utils\.createMesh\(buildCannonGeometry\(\)\)/);
     assert.match(presentation, /this\.cannonMesh, this\.cannonMaterial/);
     assert.doesNotMatch(presentation, /resources\.load|assetManager\.load/);

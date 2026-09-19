@@ -245,9 +245,12 @@ function buildCannonGeometry(): primitives.IGeometry {
     // 轮轴贯穿两侧车轮；外胎、轮面和轮毂分层但仍属于同一合并网格。
     appendCylinder(positions, colors, indices, 0, 0.46, 0.08, 0.12, 1.66, 'x', ironDark);
     for (const side of [-1, 1]) {
-        appendCylinder(positions, colors, indices, side * 0.76, 0.46, 0.08, 0.52, 0.22, 'x', ironDark);
-        appendCylinder(positions, colors, indices, side * 0.775, 0.46, 0.08, 0.39, 0.25, 'x', carriage);
-        appendCylinder(positions, colors, indices, side * 0.80, 0.46, 0.08, 0.18, 0.30, 'x', brass);
+        // 三层共用轴向中心，并让轮面、轮毂依次加宽。这样两侧端盖都会逐层
+        // 外凸，不再全部落在同一平面产生深度闪烁（看起来像轮子一直在转）。
+        const wheelCenterX = side * 0.76;
+        appendCylinder(positions, colors, indices, wheelCenterX, 0.46, 0.08, 0.52, 0.22, 'x', ironDark);
+        appendCylinder(positions, colors, indices, wheelCenterX, 0.46, 0.08, 0.39, 0.25, 'x', carriage);
+        appendCylinder(positions, colors, indices, wheelCenterX, 0.46, 0.08, 0.18, 0.30, 'x', brass);
     }
 
     // 两根斜撑从纵梁上表面接到炮耳下方，避免炮管像悬浮在方盒上。
