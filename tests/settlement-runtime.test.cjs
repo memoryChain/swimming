@@ -30,9 +30,12 @@ class Label extends Component {
     writes = 0; _string = '';
     get string() { return this._string; } set string(v) { this.writes++; this._string = v; }
 }
-class Sprite extends Component { static SizeMode = { CUSTOM: 0 }; spriteFrame = null; }
+class SpriteFrame { set texture(v){this.path=v.path;} destroy(){this.destroyed=true;} }
+class Texture2D {}
+class Sprite extends Component { static Type={SLICED:1}; static SizeMode = { CUSTOM: 0 }; spriteFrame = null; }
 class Button extends Component { static Transition = { SCALE: 1 }; static EventType = { CLICK: 'click' }; }
 class Node {
+    static EventType={NODE_DESTROYED:'destroy'};
     children = []; components = []; handlers = {}; active = true; isValid = true; layer = 1;
     position = { x: 0, y: 0, z: 0 }; scale = { x: 1, y: 1, z: 1 };
     constructor(name) { this.name = name; }
@@ -42,8 +45,9 @@ class Node {
     setPosition(x, y, z = 0) { this.position = { x, y, z }; }
     setScale(x, y, z = 1) { this.scale = { x, y, z }; }
     on(event, fn) { (this.handlers[event] ??= []).push(fn); }
+    once(event,fn){this.on(event,fn);}
     click() { for (const fn of this.handlers.click ?? []) fn(); }
-    destroy() { this.isValid = false; for (const child of this.children) child.destroy(); }
+    destroy() { this.isValid = false; for(const fn of this.handlers.destroy??[])fn(); for (const child of this.children) child.destroy(); }
 }
 const size = { width: 1672, height: 941 };
 let deferred = false;
@@ -51,14 +55,15 @@ const pending = [];
 const frame = p => ({ path: p, isValid: true });
 const cache = {};
 const stubs = {
-    cc: { Node, UITransform, Color, Label, Sprite, Button, view: { getVisibleSize: () => size } },
+    cc: { Node, UITransform, Color, Label, Sprite, SpriteFrame, Texture2D, Button, view: { getVisibleSize: () => size } },
+    'core/RaceBundleLoader': {loadRaceAsset(p,type,done){done(null,{path:p,width:350,height:16});}},
     'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
     'ui/AvatarUiAssets': {
         avatarTexturePath: id => `avatar/${id}`,
         loadAvatarUiSpriteFrame: (p, done) => deferred ? pending.push({ p, done }) : done(frame(p)),
     },
     'ui/ProjectUiFonts': { PROJECT_UI_ENGLISH_BOLD_FAMILY: 'Arial Black', styleProjectUiLabel: (label, weight, lineHeight) => { label.weight = weight; label.lineHeight = lineHeight; } },
-    'backend/PlayerData': { PlayerData: { avatarId: 'coral', nickName: '小鲸3949' } },
+    'backend/PlayerData': { PlayerData: { avatarId: 'coral', nickName: '小鲸3949', profile:{career:{league:0,points:0,receipts:[]}} } },
     'backend/IdentityConfig': { AVATARS: [{ id: 'coral' }, { id: 'aqua' }, { id: 'lime' }] },
 };
 function load(file) {
@@ -85,6 +90,27 @@ function data(place = 2, finished = true) {
 }
 function make(callbacks = {}) { return new SettlementView(new Node('HUD'), { onRestart() {}, onMenu() {}, ...callbacks }); }
 if (require.main === module) {
+    test('联赛回执驱动积分区；满分、历史赛事、好友赛及重复显示不残留', () => {
+        const session=load(path.join(root,'assets/scripts/progression/SoloRaceSession.ts'));
+        const career=stubs['backend/PlayerData'].PlayerData.profile.career;
+        const v=make();v.show(90,data(4));
+        session.setSoloRaceTicket({id:'ui-test',source:'league',tier:0});
+        Object.assign(career,{league:0,points:26,receipts:[{id:'ui-test',points:6}]});
+        v.setCareerMessage('联赛积分 +6 · 26/100');
+        assert.equal(v.careerGain.string,'+6');
+        assert.ok(!nodes(v.root).some(n => ['CareerTotal','CareerTrack','CareerFill'].includes(n.name)));
+        assert.equal(v.reward.node.position.y, v.careerGain.node.position.y);
+        assert.ok(v.reward.node.position.x < v.careerGain.node.position.x);
+        assert.equal(v.careerMessage.string,'');assert.equal(v.careerPoints.active,true);
+        const count=nodes(v.root).length;for(let i=0;i<20;i++)v.setCareerMessage('重复回执');assert.equal(nodes(v.root).length,count);
+        career.points=100;career.receipts[0].points=20;v.setCareerMessage('晋级杯已开放');assert.equal(v.careerHeading.string,'联赛积分');assert.equal(v.careerGain.string,'+20');
+        v.setRoomMode(true);assert.equal(v.careerPoints.active,false);v.setCareerMessage('联赛积分');assert.equal(v.careerPoints.active,false);
+        v.setRoomMode(false);career.league=1;v.setCareerMessage('历史');assert.equal(v.careerPoints.active,false);assert.equal(v.careerMessage.string,'历史联赛 · 不增加积分');
+        career.league=0;career.points=0;career.receipts[0].points=0;v.setCareerMessage('无积分');assert.equal(v.careerGain.string,'+0');
+        v.show(90,data(4));assert.equal(v.careerPoints.active,false);assert.equal(v.careerMessage.string,'');
+        session.setSoloRaceTicket(null);v.setCareerMessage('杯赛结束');assert.equal(v.careerPoints.active,false);assert.equal(v.careerMessage.string,'杯赛结束');
+        v.root.destroy();Object.assign(career,{league:0,points:0,receipts:[]});
+    });
     test('四种荣誉状态；未完成、退出和淘汰不授予前三名奖牌', () => {
         for (let rank = 1; rank <= 8; rank++) {
             assert.equal(settlementTier(rank, true), rank <= 3 ? rank - 1 : 3);
@@ -229,4 +255,7 @@ if (require.main === module) {
         assert.equal(options.consumeReturnToRoom(), false);
     });
 }
-module.exports = { SettlementView, Node, Label, Sprite, UITransform, data, find, nodes, make };
+module.exports = { SettlementView, Node, Label, Sprite, UITransform, data, find, nodes, make, setCareerFixture(ticket, career) {
+    load(path.join(root,'assets/scripts/progression/SoloRaceSession.ts')).setSoloRaceTicket(ticket);
+    stubs['backend/PlayerData'].PlayerData.profile.career=career;
+} };

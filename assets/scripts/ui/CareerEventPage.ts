@@ -1,192 +1,335 @@
-import { BlockInputEvents, Button, Label, Mask, Node, ScrollView, UITransform, UIOpacity, Vec2, view } from 'cc';
+import { BlockInputEvents, Button, Label, Mask, Node, Sprite, UITransform, sys, view } from 'cc';
 import type { PlayerProfile } from '../backend/PlayerProfile';
-import { LEAGUES, cupDistance, cupName, cupRounds, roundName, RaceRule, SoloSource } from '../progression/CareerRules';
+import { LEAGUES, RaceRule, SoloSource } from '../progression/CareerRules';
 import { findPlayerCharacter, PlayerCharacterId } from '../app/PlayerCharacterConfig';
-import { makeButton, makeLabel, makeRect, makeUiNode, uiColor, fitFullScreenBackgroundCover } from './RuntimeUiFactory';
-import { styleProjectUiLabel } from './ProjectUiFonts';
+import { makeRect, makeUiNode, uiColor, fitFullScreenBackgroundCover } from './RuntimeUiFactory';
+import { styleCurrencyNumberLabel } from './ProjectUiFonts';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
-import { careerArt, careerButtonFeedback } from './CareerUiArt';
+import { careerPageModel, CareerRoundStyle } from './CareerPageModel';
+import { CareerControl, CareerImage, careerImage, careerLabel, careerText, careerColor, showCareerNode,
+    CAREER_INK, CAREER_MUTED, CAREER_WHITE, CAREER_YELLOW } from './CareerPageWidgets';
 
-type Control = { root: Node; label: Label; selected: Node };
 export interface EventPageState {
     screen: 'quick' | 'career'; source: 'league' | 'cup'; tier: number;
     characterId: PlayerCharacterId; distance: 200 | 400; rule: RaceRule;
     busy: boolean; confirmAbandon: boolean; status: string; profile: PlayerProfile;
+    reviewCupTier?: number | null;
 }
 export interface EventPageActions {
     home(): void; tier(value: number): void;
     distance(value: 200 | 400): void; rule(value: RaceRule): void;
     start(source?: SoloSource): void; abandon(): void; cancelAbandon?(): void;
+    characters?(): void; finishReview?(): void;
 }
-const INK = uiColor(9,45,66), WHITE = uiColor(255,255,255);
-const ROW_HEIGHT = 220, VIEW_HEIGHT = 490, CONTENT_HEIGHT = ROW_HEIGHT * LEAGUES.length + 200;
+const ART = RESOURCE_PATHS.careerUi;
+const CYAN = uiColor(0, 192, 211), GREEN = uiColor(29, 108, 60);
+const ROUND_COLORS: Record<CareerRoundStyle, ReturnType<typeof uiColor>> = {
+    pending: uiColor(229,244,253), current: uiColor(255,241,183),
+    complete: uiColor(222,245,231), failed: uiColor(255,225,219),
+};
+const RED = uiColor(170,67,58);
+const CENTERS = [148,350,546,742,938,1137];
+type TierView = { control: CareerControl; badge: CareerImage };
+type RoundView = { root: Node; bg: CareerImage; status: Label; name: Label; distance: Label; unit: Label; condition: Label };
 
-/** 联赛节点与当前角色杯赛共用一张纵向地图，滚动只由ScrollView驱动。 */
+/** 生涯主稿的稳定节点树；刷新只更新变化的文字、贴图、颜色和状态。无update。 */
 export class CareerEventPage {
     readonly root: Node;
-    private readonly title: Label;
-    private readonly subtitle: Label;
-    private readonly map: Node;
-    private readonly scroll: ScrollView;
-    private readonly content: Node;
-    private readonly nodes: Control[] = [];
-    private readonly detail: Node;
-    private readonly detailTitle: Label;
-    private readonly points: Label;
-    private readonly cupTitle: Label;
-    private readonly cupState: Label;
-    private readonly rounds: Label[] = [];
-    private readonly leagueStart: Control;
-    private readonly cupStart: Control;
-    private readonly back: Control;
-    private readonly current: Control;
-    private readonly rulesButton: Control;
-    private readonly rules: Node;
-    private readonly rulesClose: Control;
-    private readonly abandon: Control;
+    private readonly design: Node;
+    private readonly career: Node;
     private readonly quick: Node;
-    private readonly quickChoices: Control[];
-    private readonly quickStart: Control;
+    private readonly background: CareerImage;
+    private readonly title: Label;
+    private readonly back: CareerControl;
+    private readonly tiers: TierView[] = [];
+    private readonly hero: CareerImage;
+    private readonly heroTitle: Label;
+    private readonly avatar: CareerImage;
+    private readonly characterName: Label;
+    private readonly characterLevel: Label;
+    private readonly changeCharacter: CareerControl;
+    private readonly points: Label;
+    private readonly progress: CareerImage;
+    private readonly hint: Label;
+    private readonly leagueStart: CareerControl;
+    private readonly cupStart: CareerControl;
+    private readonly cupTitle: Label;
+    private readonly rounds: RoundView[] = [];
+    private readonly roundArrows: CareerImage[] = [];
+    private readonly rulesButton: CareerControl;
+    private readonly levelPill: CareerImage;
+    private heroTier = -1;
+    private readonly layoutCharacterLevel = () => {
+        const width = this.characterName.node.getComponent(UITransform)!.contentSize.width;
+        const x = 584 + width + 12 + 35 - 640;
+        for (const n of [this.levelPill.node, this.characterLevel.node]) {
+            if (n.position.x !== x) n.setPosition(x, n.position.y);
+        }
+    };
     private readonly footer: Label;
+    private readonly quickControls: CareerControl[] = [];
+    private readonly quickSurfaces: CareerImage[] = [];
+    private readonly quickStart: CareerControl;
+    private readonly rules: Node;
+    private readonly rulesText: Label;
+    private readonly rulesClose: CareerControl;
+    private readonly confirm: Node;
+    private readonly confirmYes: CareerControl;
+    private readonly confirmNo: CareerControl;
     private snapshot: EventPageState | null = null;
-    private entered = false;
-    private selectedTier = -1;
+    private cupAction: ReturnType<typeof careerPageModel> | null = null;
+    private pointsValue = -1;
+    private roundCount = 0;
+    private readonly resize = () => {
+        if (!this.root.isValid) return;
+        fitFullScreenBackgroundCover(this.background.node, 1280, 720);
+        const size = view.getVisibleSize(), safe = sys.getSafeAreaRect(false);
+        const width = Math.min(size.width, safe.width || size.width), height = Math.min(size.height, safe.height || size.height);
+        const scale = Math.min(1, width / 1280, height / 720);
+        if (this.design.scale.x !== scale) this.design.setScale(scale, scale, 1);
+        const x = safe.width ? safe.x + safe.width / 2 - size.width / 2 : 0;
+        const y = safe.height ? safe.y + safe.height / 2 - size.height / 2 : 0;
+        if (this.design.position.x !== x || this.design.position.y !== y) this.design.setPosition(x, y);
+    };
 
     constructor(parent: Node, private readonly actions: EventPageActions) {
-        this.root = makeRect('CareerEventPage',parent,3000,1600,uiColor(24,162,202));
-        this.root.addComponent(BlockInputEvents); this.root.active=false;
-        const bg=careerArt(this.root,'Background',RESOURCE_PATHS.lobbyUi.background,1280,720);
-        const fit=()=>{if(bg.isValid)fitFullScreenBackgroundCover(bg,1280,720);};fit();
-        view.on('canvas-resize',fit);view.on('design-resolution-changed',fit);
-        this.root.once(Node.EventType.NODE_DESTROYED,()=>{view.off('canvas-resize',fit);view.off('design-resolution-changed',fit);});
-        this.title=this.text(this.root,'PageTitle','生涯之路',0,285,620,52,36);this.title.color=WHITE;
-        this.subtitle=this.text(this.root,'PageSubtitle','',0,239,950,30,19);this.subtitle.color=WHITE;
-        this.back=this.button(this.root,'BackToLobby','返回大厅',-480,285,185,50,actions.home);
-        this.rulesButton=this.button(this.root,'RulesButton','玩法说明',480,285,185,50,()=>{if(!this.snapshot?.busy)this.active(this.rules,true);});
-        this.map=makeUiNode('CareerMap',this.root);this.map.setPosition(0,-25);
-        this.map.getComponent(UITransform)!.setContentSize(1150,VIEW_HEIGHT);
-        this.map.addComponent(Mask).type=Mask.Type.GRAPHICS_RECT;
-        this.scroll=this.map.addComponent(ScrollView);
-        this.scroll.horizontal=false;this.scroll.vertical=true;this.scroll.inertia=true;this.scroll.elastic=true;
-        this.scroll.brake=0.5;this.scroll.cancelInnerEvents=true;
-        this.content=makeUiNode('RouteContent',this.map);
-        this.content.getComponent(UITransform)!.setContentSize(1150,CONTENT_HEIGHT);
-        this.content.setPosition(0,(VIEW_HEIGHT-CONTENT_HEIGHT)/2);this.scroll.content=this.content;
-        for(let i=0;i<LEAGUES.length;i++) {
-            const y=this.rowY(i),x=-415+(i%2)*40;
-            if(i<LEAGUES.length-1) makeRect(`RouteLink${i}`,this.content,8,ROW_HEIGHT-90,uiColor(190,242,252)).setPosition(-395,y+ROW_HEIGHT/2);
-            const n=this.button(this.content,`LeagueTier${i}`,'',x,y,235,114,()=>actions.tier(i));
-            this.nodes.push(n);
+        this.root = makeUiNode('CareerEventPage', parent);
+        this.root.getComponent(UITransform)!.setContentSize(4000, 2400);
+        this.root.addComponent(BlockInputEvents); this.root.active = false;
+        this.background = careerImage(this.root, 'Background', ART.background, 0, 0, 1280, 720);
+        this.design = makeUiNode('CareerDesign', this.root);
+        this.design.getComponent(UITransform)!.setContentSize(1280, 720);
+        this.career = makeUiNode('CareerMap', this.design);
+        this.quick = makeUiNode('QuickPage', this.design);
+        careerImage(this.design, 'Header', RESOURCE_PATHS.characterUi.headerBackground, 0, 0, 497, 111);
+        this.back = new CareerControl(this.design, 'BackToLobby', '', 16, 8, 80, 64, () => actions.home());
+        new CareerImage(this.back.root, 'BackIcon', RESOURCE_PATHS.characterUi.backIcon, 61, 40, 0, 0);
+        this.title = careerLabel(this.design, 'PageTitle', '生涯', 105, 13, 350, 50, 36);
+        careerImage(this.career, 'RouteLine', ART.route, 146, 140, 990, 10);
+        for (let i = 0; i < 6; i++) {
+            const control = new CareerControl(this.career, `LeagueTier${i}`, LEAGUES[i].name, CENTERS[i] - 80, 79, 160, 141,
+                () => { if (!this.snapshot?.busy) actions.tier(i); }, false, 18);
+            control.label.node.setPosition(0, -47.5);
+            control.label.node.getComponent(UITransform)!.setContentSize(155, 30);
+            const widths = [74,114,120,130,133,144];
+            const badge = new CareerImage(control.root, 'Badge', ART.lockedBadges[i], widths[i], 112, 0, 17, true);
+            this.tiers.push({control, badge});
         }
-        this.detail=this.card(this.content,'SelectedEventPanel',135,0,660,348);
-        this.detailTitle=this.text(this.detail,'SelectedLeague','',0,127,570,40,29);
-        this.points=this.text(this.detail,'LeaguePoints','',0,85,550,34,23);
-        this.leagueStart=this.button(this.detail,'StartLeague','开始联赛',0,35,330,54,()=>actions.start('league'),true);
-        this.cupTitle=this.text(this.detail,'CupName','',0,-17,560,30,23);
-        for(let i=0;i<3;i++)this.rounds.push(this.text(this.detail,`CupRound${i}`,'',-200+i*200,-57,194,48,17));
-        this.cupStart=this.button(this.detail,'StartCup','参加杯赛',0,-117,330,52,()=>actions.start('cup'),true);
-        this.cupState=this.text(this.detail,'CupState','',0,-155,580,25,16);
-        this.current=this.button(this.root,'ReturnCurrent','定位当前联赛',-390,-305,280,48,()=>{
-            if(!this.snapshot)return;
-            const tier=this.snapshot.profile.career.league;
-            actions.tier(tier);this.focus(tier,true);
-        });
-        this.quick=makeUiNode('QuickPage',this.root);
-        this.text(this.quick,'DistanceHeading','比赛距离',-285,150,500,40,28);
-        this.text(this.quick,'RuleHeading','玩法规则',285,150,500,40,28);
-        this.quickChoices=[
-            this.button(this.quick,'Distance200','200米\n一分多钟',-285,50,490,112,()=>actions.distance(200)),
-            this.button(this.quick,'Distance400','400米\n约三分钟',-285,-85,490,112,()=>actions.distance(400)),
-            this.button(this.quick,'RuleStandard','标准竞速\n专注划水节奏',285,50,490,112,()=>actions.rule('standard')),
-            this.button(this.quick,'RuleWild','狂野模式\n自由转向与争位',285,-85,490,112,()=>actions.rule('wild')),
+        this.hero = careerImage(this.career, 'HonorBadge', ART.badges[0], 28, 238, 327, 249, true);
+        careerImage(this.career, 'Podium', ART.podium, 28, 485, 327, 132);
+        this.heroTitle = careerLabel(this.career, 'SelectedLeague', '', 52, 525, 280, 43, 29, CAREER_INK, true);
+        this.rulesButton = new CareerControl(this.career, 'RulesButton', '赛事规则', 119, 616, 144, 43, () => this.openRules(), false, 23);
+        careerColor(this.rulesButton.label, CAREER_WHITE);
+        const underline = careerImage(this.career, 'RulesUnderline', ART.panel, 145, 652, 92, 2);
+        careerColor(underline.sprite, CAREER_WHITE);
+        careerImage(this.career, 'CharacterBar', ART.characterBar, 392, 218, 862, 74);
+        const avatarClip = makeUiNode('CharacterAvatarClip', this.career);
+        avatarClip.setPosition(439 - 640, 360 - 256);
+        avatarClip.getComponent(UITransform)!.setContentSize(56, 56);
+        avatarClip.addComponent(Mask).type = Mask.Type.GRAPHICS_ELLIPSE;
+        this.avatar = new CareerImage(avatarClip, 'CharacterAvatar', '', 56, 56, 0, 0, true);
+        this.tag(this.career, '出场', '当前出场', 484, 239, 88, 30, ART.tagActive, GREEN);
+        this.characterName = careerLabel(this.career, 'CharacterName', '', 584, 233, 170, 44, 24);
+        this.characterName.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+        this.characterName.node.setPosition(584 - 640, 360 - 255);
+        this.characterName.overflow = Label.Overflow.NONE;
+        this.characterName.node.on(Node.EventType.SIZE_CHANGED, this.layoutCharacterLevel);
+        this.levelPill = careerImage(this.career, 'LevelPill', ART.panel, 767, 241, 70, 28, false, true);
+        careerColor(this.levelPill.sprite, CAREER_INK);
+        this.characterLevel = careerLabel(this.career, 'CharacterLevel', '', 767, 240, 70, 30, 16, CAREER_WHITE, true);
+        this.changeCharacter = new CareerControl(this.career, 'ChangeCharacter', '更换', 1129, 230, 84, 50,
+            () => actions.characters?.(), false, 23);
+        careerImage(this.career, 'ChangeArrow', ART.arrow, 1209, 243, 27, 24);
+        styleCurrencyNumberLabel(this.characterLevel, 23);
+        const detail = makeUiNode('SelectedEventPanel', this.career);
+        careerImage(detail, 'LeaguePanel', ART.panel, 392, 306, 416, 368);
+        careerImage(detail, 'CupPanel', ART.panel, 822, 306, 432, 368, false, true);
+        this.tag(detail, '账号', '账号共享', 418, 326, 103, 36, ART.tagAccount);
+        this.tag(detail, '角色', '角色专属', 848, 326, 106, 36, ART.tagCharacter);
+        careerLabel(detail, 'LeagueTitle', '联赛挑战', 420, 366, 320, 52, 38);
+        const modeNumber = careerLabel(detail, 'LeagueDistance', '200', 421, 420, 50, 30, 21, CAREER_MUTED);
+        styleCurrencyNumberLabel(modeNumber, 28);
+        careerLabel(detail, 'LeagueMode', '米 · 狂野模式', 471, 420, 270, 30, 21, CAREER_MUTED);
+        const area = careerImage(detail, 'PointsArea', ART.panelWhite, 408, 463, 384, 115, false, true);
+        careerColor(area.sprite, uiColor(229,244,253));
+        careerLabel(detail, 'PointsHeading', '联赛积分', 427, 477, 150, 32, 20);
+        this.points = careerLabel(detail, 'LeaguePoints', '', 612, 470, 95, 44, 34, CYAN);
+        styleCurrencyNumberLabel(this.points, 41);
+        this.points.horizontalAlign = Label.HorizontalAlign.RIGHT;
+        const limit = careerLabel(detail, 'PointsLimit', '/ 100', 718, 480, 65, 30, 22, CAREER_MUTED);
+        styleCurrencyNumberLabel(limit, 29);
+        careerImage(detail, 'ProgressTrack', ART.progressTrack, 426, 515, 350, 16);
+        this.progress = new CareerImage(detail, 'ProgressFill', ART.progressFill, 350, 16, 0, 0, false, true, 8);
+        this.progress.node.getComponent(UITransform)!.setAnchorPoint(0, 0.5);
+        this.progress.node.setPosition(426 - 640, 360 - 523);
+        this.hint = careerLabel(detail, 'LeagueHint', '', 426, 537, 352, 32, 17, CAREER_MUTED, false, false);
+        this.leagueStart = new CareerControl(detail, 'StartLeague', '开始联赛', 407, 590, 384, 70, () => actions.start('league'), true, 31);
+        this.cupTitle = careerLabel(detail, 'CupName', '', 850, 366, 225, 52, 36);
+        for (let i = 0; i < 3; i++) {
+            const r = makeUiNode(`CupRound${i}`, detail);
+            const bg = new CareerImage(r, 'RoundSurface', ART.panelWhite, 112, 94, 0, 0, false, true);
+            const make = (name: string, y: number, size: number, bold = true) => careerLabel(r, name, '', 640 - 76, 360 + y - 12, 152, 24, size, CAREER_INK, false, bold);
+            const distance = make('Distance', 12, 20, false);
+            const unit = make('DistanceUnit', 12, 20, false); careerText(unit, '米'); careerColor(unit, CAREER_MUTED);
+            this.rounds.push({ root: r, bg, status: make('Status', -47, 14), name: make('Name', -19, 24),
+                distance, unit, condition: make('Condition', 39, 18, false) });
+            if (i < 2) this.roundArrows.push(careerImage(detail, `RoundArrow${i}`, ART.arrow, 964 + i * 136, 474, 14, 14));
+        }
+        this.cupStart = new CareerControl(detail, 'StartCup', '', 839, 598, 397, 62, () => this.onCup(), true, 31);
+        this.buildQuick();
+        this.quickStart = new CareerControl(this.quick, 'StartEvent', '开始比赛', 820, 610, 380, 60, () => actions.start('quick'), true, 26);
+        this.footer = careerLabel(this.design, 'EventStatus', '', 392, 681, 862, 30, 17, CAREER_WHITE, true);
+        this.rules = this.overlay('RulesOverlay', true);
+        careerLabel(this.rules, 'RulesTitle', '赛事规则', 310, 174, 660, 50, 32, CAREER_INK, true);
+        this.rulesText = careerLabel(this.rules, 'RulesText', '', 318, 234, 644, 252, 21, CAREER_INK, false, false);
+        this.rulesText.enableWrapText = true;
+        this.rulesText.lineHeight = 42;
+        this.rulesText.verticalAlign = Label.VerticalAlign.TOP;
+        // 与音量设置一致：按钮中心压在面板下边缘内侧2px，底图保持258×57原始比例。
+        careerImage(this.rules, 'RulesCloseSurface', RESOURCE_PATHS.avatarPickerUi.confirmButton, 511, 539.5, 258, 57, true);
+        this.rulesClose = new CareerControl(this.rules, 'CloseRules', '返回赛事', 504, 533, 272, 70, () => showCareerNode(this.rules, false), false, 26);
+        this.confirm = this.overlay('AbandonConfirm');
+        careerLabel(this.confirm, 'ConfirmTitle', '放弃本届杯赛？', 260, 175, 760, 60, 32, CAREER_INK, true);
+        const warning = careerLabel(this.confirm, 'ConfirmWarning', '本届轮次进度将结束，再次挑战从预赛开始。\n账号联赛积分与已有夺冠记录保留。', 285, 270, 710, 125, 24, CAREER_INK, true, false);
+        warning.enableWrapText = true;
+        this.confirmNo = new CareerControl(this.confirm, 'CancelAbandon', '保留进度', 280, 470, 330, 65, () => actions.cancelAbandon?.(), true, 27);
+        this.confirmYes = new CareerControl(this.confirm, 'ConfirmAbandon', '确认放弃', 670, 470, 330, 65, () => actions.abandon(), true, 27);
+        this.resize(); view.on('canvas-resize', this.resize); view.on('design-resolution-changed', this.resize);
+        this.root.once(Node.EventType.NODE_DESTROYED, () => { view.off('canvas-resize', this.resize); view.off('design-resolution-changed', this.resize); });
+    }
+    private tag(parent: Node, name: string, value: string, x: number, y: number, w: number, h: number,
+        asset: string, ink = CAREER_INK): void {
+        careerImage(parent, `${name}Tag`, asset, x, y, w, h);
+        careerLabel(parent, `${name}TagLabel`, value, x + 5, y, w - 10, h, 18, ink, true);
+    }
+    private overlay(name: string, themed = false): Node {
+        const root = makeRect(name, this.design, 4000, 2400, uiColor(0, 22, 46, 190));
+        root.addComponent(BlockInputEvents);
+        if (themed) careerImage(root, 'Sheet', RESOURCE_PATHS.avatarPickerUi.panel, 280, 140, 720, 430);
+        else careerImage(root, 'Sheet', ART.panel, 230, 110, 820, 500, false, true);
+        root.active = false; return root;
+    }
+    private buildQuick(): void {
+        careerLabel(this.quick, 'DistanceHeading', '比赛距离', 100, 175, 500, 45, 28, CAREER_WHITE, true);
+        careerLabel(this.quick, 'RuleHeading', '玩法规则', 670, 175, 500, 45, 28, CAREER_WHITE, true);
+        const entries: [string, string, number, number, () => void][] = [
+            ['Distance200', '200米\n一分多钟', 100, 254, () => this.actions.distance(200)],
+            ['Distance400', '400米\n约三分钟', 100, 389, () => this.actions.distance(400)],
+            ['RuleStandard', '标准竞速\n专注划水节奏', 670, 254, () => this.actions.rule('standard')],
+            ['RuleWild', '狂野模式\n自由转向与争位', 670, 389, () => this.actions.rule('wild')],
         ];
-        this.text(this.quick,'QuickNotes','AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分',0,-195,1050,75,23);
-        this.quickStart=this.button(this.quick,'StartEvent','开始比赛',370,-285,380,60,()=>actions.start('quick'),true);
-        this.footer=this.text(this.root,'EventStatus','',100,-345,930,26,17);this.footer.color=WHITE;
-        this.rules=makeRect('RulesOverlay',this.root,3000,1600,uiColor(0,22,46,190));this.rules.addComponent(BlockInputEvents);
-        const sheet=this.card(this.rules,'RulesSheet',0,0,850,490);
-        this.text(sheet,'RulesTitle','生涯比赛说明',0,180,720,50,32);
-        this.text(sheet,'RulesText','上下滑动探索联赛，点击节点查看本级赛事。\n联赛与杯赛均采用狂野模式。\n前四名获得20 / 14 / 10 / 6积分。\n本级积分满100后开放对应杯赛，夺冠晋级。\n联赛进度账号共享，杯赛进度属于当前角色。\n杯赛可分轮完成，轮间可以培养角色。',0,15,730,245,23);
-        this.abandon=this.button(sheet,'AbandonCup','放弃本届杯赛',-190,-177,355,56,actions.abandon);
-        this.rulesClose=this.button(sheet,'CloseRules','返回地图',220,-177,260,56,()=>{
-            if(!this.snapshot?.busy){actions.cancelAbandon?.();this.active(this.rules,false);}
-        });this.rules.active=false;
-    }
-    private rowY(tier:number):number{return -CONTENT_HEIGHT/2+100+ROW_HEIGHT*(tier+0.5);}
-    private focus(tier:number,animated:boolean):void {
-        this.scroll.stopAutoScroll();
-        const offset=Math.max(0,Math.min(CONTENT_HEIGHT-VIEW_HEIGHT,CONTENT_HEIGHT/2-this.rowY(tier)-VIEW_HEIGHT/2));
-        this.scroll.scrollToOffset(new Vec2(0,offset),animated?0.25:0);
-    }
-    private text(parent:Node,name:string,value:string,x:number,y:number,w:number,h:number,size:number):Label {
-        const n=makeLabel(name,parent,value,size,INK);n.setPosition(x,y);n.getComponent(UITransform)!.setContentSize(w,h);
-        const l=n.getComponent(Label)!;l.enableWrapText=true;l.overflow=Label.Overflow.SHRINK;
-        styleProjectUiLabel(l,size>=27?'semibold':'regular',size+5);return l;
-    }
-    private card(parent:Node,name:string,x:number,y:number,w:number,h:number):Node {
-        const n=makeRect(name,parent,w,h,WHITE);n.setPosition(x,y);
-        careerArt(n,'Surface',RESOURCE_PATHS.characterUi.detailPanelBackground,w,h,0,0,true);return n;
-    }
-    private button(parent:Node,name:string,value:string,x:number,y:number,w:number,h:number,action:()=>void,primary=false):Control {
-        const root=makeButton(name,parent,w,h,uiColor(25,142,182),'');root.setPosition(x,y);
-        careerArt(root,'Surface',primary?RESOURCE_PATHS.lobbyUi.characterButton:h>80?RESOURCE_PATHS.characterUi.detailPanelBackground:RESOURCE_PATHS.avatarPickerUi.cancelButton,w,h,0,0,true);
-        careerButtonFeedback(root);
-        const label=this.text(root,'Label',value,primary?-12:0,0,w-(primary?70:18),h-10,23);
-        const selected=makeRect('SelectionMark',root,w-16,5,uiColor(255,227,35));selected.setPosition(0,-h/2+5);selected.active=false;
-        root.on(Button.EventType.CLICK,()=>{if(!this.snapshot?.busy&&root.getComponent(Button)!.interactable)action();});
-        return {root,label,selected};
-    }
-    private active(n:Node,v:boolean):void{if(n.active!==v)n.active=v;}
-    private write(l:Label,v:string):void{if(l.string!==v)l.string=v;}
-    private enabled(c:Control,v:boolean):void {
-        const b=c.root.getComponent(Button)!;if(b.interactable!==v)b.interactable=v;
-        const o=c.root.getComponent(UIOpacity)??c.root.addComponent(UIOpacity);
-        if(o.opacity!==(v?255:135))o.opacity=v?255:135;
-    }
-    refresh(s:EventPageState):void {
-        this.snapshot=s;const c=s.profile.career,isMap=s.screen==='career',cup=c.cups[s.characterId];
-        this.active(this.map,isMap);this.active(this.current.root,isMap);this.active(this.quick,!isMap);
-        this.write(this.title,isMap?'生涯之路':'单人快速比赛');
-        this.write(this.subtitle,`${findPlayerCharacter(s.characterId)?.name} · ${isMap?'上下滑动探索，点击联赛节点':'选择距离与玩法规则'}`);
-        this.enabled(this.back,!s.busy);this.enabled(this.current,!s.busy);this.enabled(this.rulesButton,!s.busy);this.enabled(this.rulesClose,!s.busy);
-        if(this.scroll.enabled===s.busy)this.scroll.enabled=!s.busy;
-        if(isMap) {
-            for(let i=0;i<this.nodes.length;i++) {
-                const n=this.nodes[i];this.write(n.label,`${i+1}. ${LEAGUES[i].name}\n${i<c.league?'已通过':i===c.league?'当前联赛':'未解锁'}`);
-                this.active(n.selected,i===s.tier);this.enabled(n,!s.busy);
-            }
-            if(this.selectedTier!==s.tier||!this.entered) {
-                this.detail.setPosition(135,this.rowY(s.tier));this.active(this.rules,false);
-                this.focus(s.tier,this.entered);this.selectedTier=s.tier;
-            }
-            this.entered=true;
-            const unlocked=s.tier<=c.league,points=s.tier<c.league?100:s.tier===c.league?c.points:0;
-            this.write(this.detailTitle,LEAGUES[s.tier].name);
-            this.write(this.points,`联赛积分 ${points} / 100${!unlocked?' · 尚未解锁':''}`);
-            this.enabled(this.leagueStart,!s.busy&&unlocked);
-            this.write(this.leagueStart.label,unlocked?'开始联赛':'晋级前一级后开放');
-            const same=cup?.tier===s.tier?cup:null,active=same?.state==='active';
-            const other=cup?.state==='active'&&cup.tier!==s.tier;
-            const cupOpen=unlocked&&(points>=100||active);
-            this.write(this.cupTitle,cupName(s.tier));
-            const count=cupRounds(s.tier);
-            for(let i=0;i<3;i++) {
-                const l=this.rounds[i];this.active(l.node,i<count);if(i>=count)continue;
-                const x=count===2?-145+i*290:-200+i*200;if(l.node.position.x!==x)l.node.setPosition(x,-57);
-                const status=same?.state==='won'||(same&&i<same.round)?'已通过':same?.state==='lost'&&i===same.round?'未通过':active&&same.round===i?'待比赛':i===count-1?'第一名夺冠':i===0?'前四晋级':'前三晋级';
-                this.write(l,`${roundName(s.tier,i)} · ${cupDistance(s.tier,i)}米\n${status}`);
-            }
-            this.enabled(this.cupStart,!s.busy&&cupOpen&&!other);
-            this.write(this.cupStart.label,other?'该角色还有未完成杯赛':!cupOpen?'积分满100开放杯赛':active?`继续${roundName(s.tier,same.round)}`:same?'重新挑战杯赛':'参加杯赛');
-            this.write(this.cupState,active?'可分轮完成，切回当前角色继续':same?.state==='won'?'本角色已夺冠':same?.state==='lost'?'本届结束，重新挑战从预赛开始':s.tier===LEAGUES.length-1?'最高联赛 · 挑战冠军荣誉':'杯赛夺冠后晋级下一联赛');
-            this.active(this.abandon.root,!!active);this.enabled(this.abandon,!s.busy);
-            this.write(this.abandon.label,s.confirmAbandon?'再次点击确认放弃':'放弃本届杯赛');
-        } else {
-            this.quickChoices.forEach((n,i)=>{this.enabled(n,!s.busy);this.active(n.selected,i===(s.distance===200?0:1)||i===(s.rule==='standard'?2:3));});
-            this.enabled(this.quickStart,!s.busy);this.write(this.quickStart.label,`开始比赛 · ${s.distance}米`);this.active(this.abandon.root,false);
+        for (const [name, value, x, y, action] of entries) {
+            const bg = careerImage(this.quick, `${name}Surface`, ART.panel, x, y, 490, 112, false, true);
+            const c = new CareerControl(this.quick, name, value, x, y, 490, 112, action);
+            c.label.enableWrapText = true; this.quickControls.push(c); this.quickSurfaces.push(bg);
         }
-        this.write(this.footer,s.status||(s.busy?'正在保存并准备比赛…':isMap?'联赛账号共享 · 杯赛跟随角色':'好友对战无成长奖励'));
+        const note = careerLabel(this.quick, 'QuickNotes', 'AI按角色等级与生涯进度自动匹配\n完赛获得金币，不增加联赛积分', 90, 526, 1100, 68, 23, CAREER_WHITE, true, false);
+        note.enableWrapText = true;
+        const help = new CareerControl(this.quick, 'QuickRules', '玩法说明', 70, 620, 220, 50, () => this.openRules());
+        careerColor(help.label, CAREER_WHITE);
     }
-    hide():void {this.scroll.stopAutoScroll();this.active(this.rules,false);this.entered=false;}
-    dispose():void {this.hide();if(this.root.isValid)this.root.destroy();}
+    private openRules(): void { if (!this.snapshot?.busy) showCareerNode(this.rules, true); }
+    private onCup(): void {
+        const m = this.cupAction;
+        if (!m || this.snapshot?.busy) return;
+        if (m.action === 'next') this.actions.finishReview?.();
+        else if (m.action === 'locate') this.actions.tier(m.actionTier);
+        else if (m.action === 'start') this.actions.start('cup');
+    }
+    refresh(s: EventPageState): void {
+        this.snapshot = s;
+        const isCareer = s.screen === 'career';
+        showCareerNode(this.career, isCareer); showCareerNode(this.quick, !isCareer);
+        this.background.set(isCareer ? ART.background : RESOURCE_PATHS.lobbyUi.background);
+        careerText(this.title, isCareer ? '生涯' : '单人快速比赛');
+        this.back.update('', !s.busy); this.rulesClose.update('返回赛事', !s.busy);
+        this.confirmYes.update(s.busy ? '正在保存…' : '确认放弃', !s.busy);
+        this.confirmNo.update('保留进度', !s.busy);
+        showCareerNode(this.confirm, isCareer && s.confirmAbandon);
+        if (isCareer) this.refreshCareer(s);
+        else {
+            for (let i = 0; i < this.quickControls.length; i++) {
+                this.quickControls[i].update(this.quickControls[i].label.string, !s.busy);
+                const selected = i === (s.distance === 200 ? 0 : 1) || i === (s.rule === 'standard' ? 2 : 3);
+                careerColor(this.quickSurfaces[i].sprite, selected ? CAREER_YELLOW : CAREER_WHITE);
+            }
+            this.quickStart.update(`开始比赛 · ${s.distance}米`, !s.busy);
+        }
+        careerText(this.rulesText, isCareer
+            ? '• 顶部徽章可切换赛事；联赛与杯赛均为狂野模式。\n• 联赛前四名获得20 / 14 / 10 / 6积分，上限100分。\n• 本级满100分开放杯赛，夺冠晋级；最高级可重复挑战。\n• 前三级两轮，后三级三轮；三轮制决赛为400米。\n• 联赛进度账号共享；杯赛按角色保存，轮间可培养。\n• 回打旧联赛可获金币，不增加当前联赛积分。'
+            : '• 选择200米或400米，再选择标准竞速或狂野模式。\n• 对手根据当前角色等级与生涯表现自动匹配。\n• 完赛获得金币，不增加联赛积分。');
+        careerText(this.footer, s.status || (s.busy ? '正在保存并准备比赛…' : ''));
+    }
+    private refreshCareer(s: EventPageState): void {
+        const m = careerPageModel(s.profile.career, s.characterId, s.tier, s.reviewCupTier); this.cupAction = m;
+        for (let i = 0; i < this.tiers.length; i++) {
+            const v = this.tiers[i], unlocked = i <= s.profile.career.league;
+            v.control.update(LEAGUES[i].name, !s.busy); careerColor(v.control.label, i === m.tier ? CAREER_YELLOW : CAREER_WHITE);
+            v.badge.set(unlocked ? ART.badges[i] : ART.lockedBadges[i]);
+        }
+        this.hero.set(m.unlocked ? ART.badges[m.tier] : ART.lockedBadges[m.tier]);
+        if (this.heroTier !== m.tier) {
+            this.heroTier = m.tier;
+            // 按透明主体面积标定视觉体量，各级保持原比例与展台圆心；第一档按红线额外上移25像素。
+            const heights = [196, 212, 228, 244, 260, 276];
+            const scale = heights[m.tier] / 249;
+            this.hero.node.setScale(scale, scale, 1);
+            this.hero.node.setPosition(191.5 - 640, 360 - (m.tier === 0 ? 462 : 487) + heights[m.tier] / 2);
+        }
+        careerText(this.heroTitle, LEAGUES[m.tier].name);
+        this.rulesButton.update('赛事规则', !s.busy); careerColor(this.rulesButton.label, CAREER_WHITE);
+        const character = findPlayerCharacter(s.characterId);
+        careerText(this.characterName, character?.name ?? '');
+        this.layoutCharacterLevel();
+        careerText(this.characterLevel, `LV.${s.profile.characters[s.characterId]?.level ?? 1}`);
+        this.avatar.set(RESOURCE_PATHS.characterUi.portraits[s.characterId]);
+        this.changeCharacter.update('更换', !s.busy && !!this.actions.characters);
+        careerText(this.points, `${m.points}`); careerText(this.hint, m.hint);
+        if (this.pointsValue !== m.points) {
+            this.pointsValue = m.points;
+            const width = Math.round(350 * m.points / 100);
+            showCareerNode(this.progress.node, width > 0);
+            this.progress.node.getComponent(UITransform)!.setContentSize(width, 16);
+        }
+        this.leagueStart.update(m.unlocked ? '开始联赛' : '尚未解锁', !s.busy && m.unlocked, !m.unlocked);
+        careerText(this.cupTitle, m.title);
+        const count = m.rounds.length;
+        for (let i = 0; i < 3; i++) {
+            const r = this.rounds[i], state = m.rounds[i]; showCareerNode(r.root, !!state); if (!state) continue;
+            if (this.roundCount !== count) {
+                const x = count === 2 ? [926.5, 1149.5][i] : 903 + i * 136;
+                r.root.setPosition(x - 640, 360 - 481);
+                const width = count === 2 ? 159 : 112;
+                const padding = count === 2 ? 18 : 10;
+                r.bg.node.getComponent(UITransform)!.setContentSize(width, 94);
+                // 两轮与三轮共用紧凑左对齐信息；状态放在底框外下方。
+                const rows = [28, 0, -25];
+                [r.name, r.distance, r.condition].forEach((label, index) => {
+                    label.node.getComponent(UITransform)!.setContentSize(width - padding * 2, 26);
+                    label.node.setPosition(0, rows[index]);
+                });
+                r.distance.node.getComponent(UITransform)!.setContentSize(46, 26);
+                r.distance.node.setPosition(-width / 2 + padding + 23, rows[1]);
+                r.unit.node.getComponent(UITransform)!.setContentSize(24, 26);
+                r.unit.node.setPosition(-width / 2 + padding + 46 + 12, rows[1]);
+                r.status.horizontalAlign = Label.HorizontalAlign.CENTER;
+                r.status.node.getComponent(UITransform)!.setContentSize(width, 22);
+                r.status.node.setPosition(0, -63);
+            }
+            careerText(r.status, state.status); careerText(r.name, state.title);
+            careerText(r.distance, `${state.distance}`); careerText(r.condition, state.condition);
+            careerColor(r.bg.sprite, ROUND_COLORS[state.style]);
+            careerColor(r.status, state.style === 'failed' ? RED : state.style === 'complete' ? GREEN : CAREER_MUTED);
+            careerColor(r.distance, CAREER_MUTED); careerColor(r.condition, CAREER_MUTED);
+        }
+        if (this.roundCount !== count) {
+            this.roundCount = count;
+            this.roundArrows[0].node.setPosition((count === 2 ? 1037 : 971) - 640, 360 - 481);
+            this.roundArrows[0].node.getComponent(UITransform)!.setContentSize(count === 2 ? 27 : 14, count === 2 ? 24 : 14);
+            showCareerNode(this.roundArrows[1].node, count === 3);
+        }
+        this.cupStart.update(s.busy ? '正在准备…' : m.button, !s.busy && m.action !== 'locked', m.action === 'locked');
+    }
+    hide(): void { showCareerNode(this.rules, false); showCareerNode(this.confirm, false); }
+    dispose(): void { this.hide(); this.root.active = false; if (this.root.isValid) this.root.destroy(); }
 }

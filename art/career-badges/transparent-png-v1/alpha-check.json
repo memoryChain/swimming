@@ -1,0 +1,62 @@
+[
+  {
+    "file": "career-badge-01.png",
+    "size": [
+      1254,
+      1254
+    ],
+    "transparent_pixels": 758341,
+    "center_alpha": 253,
+    "edge_pixels_alpha_over_128": 0
+  },
+  {
+    "file": "career-badge-02.png",
+    "size": [
+      1254,
+      1254
+    ],
+    "transparent_pixels": 974167,
+    "center_alpha": 254,
+    "edge_pixels_alpha_over_128": 0
+  },
+  {
+    "file": "career-badge-03.png",
+    "size": [
+      1254,
+      1254
+    ],
+    "transparent_pixels": 902834,
+    "center_alpha": 254,
+    "edge_pixels_alpha_over_128": 0
+  },
+  {
+    "file": "career-badge-04.png",
+    "size": [
+      1254,
+      1254
+    ],
+    "transparent_pixels": 907916,
+    "center_alpha": 253,
+    "edge_pixels_alpha_over_128": 0
+  },
+  {
+    "file": "career-badge-05.png",
+    "size": [
+      1254,
+      1254
+    ],
+    "transparent_pixels": 825438,
+    "center_alpha": 253,
+    "edge_pixels_alpha_over_128": 0
+  },
+  {
+    "file": "career-badge-06.png",
+    "size": [
+      1254,
+      1254
+    ],
+    "transparent_pixels": 869074,
+    "center_alpha": 253,
+    "edge_pixels_alpha_over_128": 0
+  }
+]

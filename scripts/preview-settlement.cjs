@@ -2,7 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { make, Label, Sprite, UITransform, data } = require('../tests/settlement-runtime.test.cjs');
+const { make, Label, Sprite, UITransform, data, setCareerFixture } = require('../tests/settlement-runtime.test.cjs');
 const root = path.resolve(__dirname, '..');
 const output = path.join(root, 'output/settlement-runtime');
 fs.mkdirSync(output, { recursive: true });
@@ -22,7 +22,8 @@ function render(node, x = 836, y = 470.5) {
     if (size) {
         const common = `position:absolute;left:${x - size.width / 2}px;top:${y - size.height / 2}px;width:${size.width}px;height:${size.height}px;`;
         const sprite = node.getComponent(Sprite), label = node.getComponent(Label);
-        if (sprite?.spriteFrame) result += `<img style="${common}" src="${resource(sprite.spriteFrame.path)}">`;
+        if (sprite?.spriteFrame && sprite.type === Sprite.Type.SLICED) result += `<div style="${common}border:4px solid transparent;box-sizing:border-box;border-image:url('${resource(sprite.spriteFrame.path)}') 8 fill stretch"></div>`;
+        else if (sprite?.spriteFrame) result += `<img style="${common}" src="${resource(sprite.spriteFrame.path)}">`;
         if (label) {
             const c = label.color;
             const align = label.horizontalAlign === 1 ? 'flex-start' : label.horizontalAlign === 2 ? 'flex-end' : 'center';
@@ -34,11 +35,22 @@ function render(node, x = 836, y = 470.5) {
 const font = pathToFileURL(path.join(root, 'assets/race/fonts/ShuiMasterUI-SemiBold.ttf')).href;
 for (const [name, rank, finished, room] of [
     ['gold', 1, true, false], ['silver', 2, true, false], ['bronze', 3, true, false],
-    ['normal', 4, true, false], ['unfinished', 8, false, false], ['room', 2, true, true],
+    ['normal', 4, true, false], ['league', 4, true, false], ['league-full', 4, true, false], ['unfinished', 8, false, false], ['room', 2, true, true],
 ]) {
+    const league = name.startsWith('league');
+    setCareerFixture(league ? {id:'preview',source:'league',tier:0} : null, {league:0,points:name==='league-full'?100:26,receipts:[{id:'preview',points:6}]});
     const v = make();
-    v.setRoomMode(room); v.show(109.45, data(rank, finished)); v.setReward(642);
+    v.setRoomMode(room); v.show(109.45, data(rank, finished)); v.setReward(league?306:642); if(league)v.setCareerMessage('比赛完成');
     const html = `<!doctype html><meta charset="utf-8"><style>@font-face{font-family:Shui;src:url('${font}')}body{margin:0;background:#12395b}.screen{position:relative;width:1672px;height:941px;overflow:hidden;background:linear-gradient(140deg,#0564b9,#134977)}</style><div class="screen">${render(v.root)}<div style="position:absolute;left:100px;top:480px;color:#ffffff88;font:24px sans-serif">UI 离线排版校验<br>此处保留游戏内实时领奖台与角色</div></div><script>document.fonts.ready.then(()=>{for(const e of document.querySelectorAll('[data-fit]')){const s=e.firstElementChild;if(s.scrollWidth>e.clientWidth)s.style.fontSize=parseFloat(getComputedStyle(e).fontSize)*e.clientWidth/s.scrollWidth+'px'}window.ready=true})</script>`;
     fs.writeFileSync(path.join(output, name + '.html'), html);
+    const serial=n=>{const label=n.getComponent(Label),sprite=n.getComponent(Sprite);let asset=sprite?.spriteFrame?.path;
+        if(asset?.startsWith('avatar/')){const names={aqua:'avatar-01-female-diver',coral:'avatar-02-future-girl',lime:'avatar-03-courier-boy'};asset='ui/avatar-picker-v1/'+names[asset.slice(7)]+'/texture';}
+        return {name:n.name,active:n.active,position:n.position,scale:n.scale,size:n.getComponent(UITransform)?.contentSize,asset,
+            sliced:sprite?.type===Sprite.Type.SLICED,inset:8,text:label?.string,font:label?.fontSize,weight:label?.weight,
+            numberFont:!!label&&!label.weight&&/^[\x00-\x7F]*$/.test(label.string),lineHeight:label?.lineHeight,
+            align:label?(label.horizontalAlign===1?0:label.horizontalAlign===2?2:1):undefined,
+            color:label?[label.color.r,label.color.g,label.color.b,label.color.a]:undefined,children:n.children.map(serial)};};
+    fs.writeFileSync(path.join(output,name+'.json'),JSON.stringify(serial(v.root)));
+
 }
-console.log('已生成 output/settlement-runtime 的六种状态排版；不是引擎/真机截图。');
+console.log('已生成 output/settlement-runtime 的结算状态排版；不是引擎/真机截图。');

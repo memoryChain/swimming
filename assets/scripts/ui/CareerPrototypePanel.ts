@@ -10,6 +10,12 @@ import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts'
 import { careerArt, careerButtonFeedback } from './CareerUiArt';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { CareerEventPage } from './CareerEventPage';
+import { CareerImage } from './CareerPageWidgets';
+
+export interface CareerNavigation {
+    screen: 'quick' | 'career'; tier: number; source: 'league' | 'cup';
+    reviewCupTier: number | null; characterId: string;
+}
 
 /** 大厅生涯入口与赛事导航；数据事件只更新文字和进度，不重建层级。 */
 export class CareerPrototypePanel {
@@ -22,6 +28,9 @@ export class CareerPrototypePanel {
     private busy = false;
     private confirmAbandon = false;
     private status = '';
+    private reviewCupTier: number | null = null;
+    private reviewCharacterId = '';
+    private disposed = false;
     private readonly visible = [false];
     private title: Label;
     private detail: Label;
@@ -29,6 +38,7 @@ export class CareerPrototypePanel {
     private nextLeague: Label;
     private station: Label;
     private progress: Node;
+    private readonly badge: CareerImage;
     private progressValue = -1;
     private buttons: { node: Node; label: Label; action: () => void }[] = [];
     private readonly page: CareerEventPage;
@@ -36,19 +46,34 @@ export class CareerPrototypePanel {
     private readonly changed = () => { if (this.root.isValid && (this.root.active || this.page.root.active)) this.refresh(); };
 
     constructor(parent: Node, private readonly start: () => void, private readonly friends: () => void,
-        private readonly pageHost?: { parent: Node; visibility: (visible: boolean) => void }) {
+        private readonly pageHost?: { parent: Node; visibility: (visible: boolean) => void;
+            characters?: (navigation: CareerNavigation) => void; navigation?: CareerNavigation | null }) {
         const previous = consumeSoloReturn();
         if (previous) {
             this.screen = previous.source === 'quick' ? 'quick' : 'career';
             this.source = previous.source === 'cup' ? 'cup' : 'league';
-            this.tier = PlayerData.profile.career.league;
+            this.tier = previous.source === 'quick' ? PlayerData.profile.career.league : previous.tier;
+            const cup = PlayerData.profile.career.cups[previous.characterId];
+            const receipt = PlayerData.profile.career.receipts.find(r => r.id === previous.id);
+            if (previous.source === 'cup' && cup?.state === 'won' && cup.tier === previous.tier
+                && PlayerData.profile.career.league === previous.tier + 1 && receipt?.message.startsWith('晋级成功')) {
+                this.reviewCupTier = previous.tier;
+                this.reviewCharacterId = previous.characterId;
+                this.tier = PlayerData.profile.career.league;
+            }
+        }
+        if (pageHost?.navigation) {
+            const n = pageHost.navigation;
+            this.screen = n.screen; this.tier = n.tier; this.source = n.source;
+            this.reviewCupTier = n.reviewCupTier; this.reviewCharacterId = n.characterId;
         }
         this.root = makeUiNode('CareerPrototype', parent);
         this.root.getComponent(UITransform)!.setContentSize(449, 380);
         this.root.setPosition(0, 0, 3);
         const art = RESOURCE_PATHS.lobbyB;
         careerArt(this.root, 'Surface', art.careerCard, 449, 250, 393.5, 75);
-        careerArt(this.root, 'CareerBadge', art.careerBadge, 206, 192, 491, 147);
+        this.badge = new CareerImage(this.root, 'CareerBadge', RESOURCE_PATHS.careerUi.badges[PlayerData.profile.career.league],
+            206, 192, 491, 147, true);
         this.at('Caption', '生涯之路', 237, 149, 80, 24, 16, uiColor(158, 99, 27)).horizontalAlign = Label.HorizontalAlign.CENTER;
         this.title = this.at('Title', '', 284, 105, 180, 52, 40);
         this.nextLeague = this.at('NextLeague', '', 366, 67, 334, 25, 16, uiColor(83, 107, 141));
@@ -85,21 +110,28 @@ export class CareerPrototypePanel {
         this.buttons.push(entry);
         this.page = new CareerEventPage(pageHost?.parent ?? parent, {
             home: () => this.open('home'),
-            tier: value => { if (value >= 0 && value < LEAGUES.length && this.tier !== value) { this.tier = value; this.confirmAbandon = false; this.status = ''; this.refresh(); } },
+            tier: value => { if (!this.busy && value >= 0 && value < LEAGUES.length && (this.tier !== value || this.reviewCupTier !== null)) {
+                this.tier = value; this.reviewCupTier = null; this.confirmAbandon = false; this.status = ''; this.refresh();
+            } },
             distance: value => { if (this.distance !== value) { this.distance = value; this.refresh(); } },
             rule: value => this.setRule(value),
             start: source => { void this.begin(source ?? (this.screen === 'quick' ? 'quick' : 'league')); },
+            characters: pageHost?.characters ? () => {
+                if (!this.busy) pageHost.characters?.(this.navigation());
+            } : undefined,
+            finishReview: () => {
+                if (this.busy) return;
+                this.reviewCupTier = null; this.tier = PlayerData.profile.career.league; this.refresh();
+            },
             cancelAbandon: () => { this.confirmAbandon = false; this.refresh(); },
             abandon: () => {
+                if (this.busy) return;
                 if (!this.confirmAbandon) { this.confirmAbandon = true; this.refresh(); }
                 else void this.abandon(getPlayerCharacterSelection().characterId);
             },
         });
         PlayerData.onChange(this.changed);
-        this.root.once(Node.EventType.NODE_DESTROYED, () => {
-            PlayerData.offChange(this.changed); this.page.dispose();
-            if (this.pageVisible) this.pageHost?.visibility(false);
-        });
+        this.root.once(Node.EventType.NODE_DESTROYED, () => this.dispose());
         this.refresh();
     }
 
@@ -120,8 +152,20 @@ export class CareerPrototypePanel {
     }
     openQuick(): void { if (!this.busy) this.open('quick'); }
 
+    private navigation(): CareerNavigation {
+        return { screen: this.screen === 'quick' ? 'quick' : 'career', tier: this.tier, source: this.source,
+            reviewCupTier: this.reviewCupTier, characterId: getPlayerCharacterSelection().characterId };
+    }
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true; PlayerData.offChange(this.changed); this.page.dispose();
+        if (this.pageVisible) { this.pageVisible = false; this.pageHost?.visibility(false); }
+    }
+
     private open(screen: 'home' | 'quick' | 'career', source: 'league' | 'cup' = 'league'): void {
+        if (this.busy || this.disposed) return;
         this.screen = screen; this.source = source; this.confirmAbandon = false;
+        this.reviewCupTier = null;
         if (screen === 'career') {
             const cup = PlayerData.profile.career.cups[getPlayerCharacterSelection().characterId];
             this.tier = source === 'cup' && cup?.state === 'active' ? cup.tier : PlayerData.profile.career.league;
@@ -129,10 +173,13 @@ export class CareerPrototypePanel {
         this.status = ''; this.refresh();
     }
     refresh(): void {
+        if (this.disposed) return;
         const p = PlayerData.profile, c = p.career, id = getPlayerCharacterSelection().characterId;
+        if (this.reviewCharacterId !== id) this.reviewCupTier = null;
         const cp = c.cups[id];
         this.visible.fill(false);
         if (this.screen === 'home') {
+            this.badge.set(RESOURCE_PATHS.careerUi.badges[c.league]);
             this.write(this.title, LEAGUES[c.league].name);
             this.write(this.nextLeague, c.league < LEAGUES.length - 1
                 ? `下一站 ${LEAGUES[c.league + 1].name}` : '已到达最高联赛级别');
@@ -150,7 +197,7 @@ export class CareerPrototypePanel {
         } else {
             this.page.refresh({ screen: this.screen, source: this.source, tier: this.tier,
                 characterId: id, distance: this.distance, rule: this.rule, busy: this.busy,
-                confirmAbandon: this.confirmAbandon, status: this.status, profile: p });
+                confirmAbandon: this.confirmAbandon, status: this.status, profile: p, reviewCupTier: this.reviewCupTier });
         }
         const visible = this.screen !== 'home';
         if (this.root.active === visible) this.root.active = !visible;
@@ -166,8 +213,12 @@ export class CareerPrototypePanel {
     }
     private setRule(rule: RaceRule): void { if (this.rule !== rule) { this.rule = rule; this.refresh(); } }
     private async abandon(id: string): Promise<void> {
+        if (this.busy || this.disposed) return;
         this.busy = true; this.refresh();
-        try { await PlayerData.executeCareer({ type: 'abandon', characterId: id }); }
+        try {
+            const result = await PlayerData.executeCareer({ type: 'abandon', characterId: id });
+            this.status = result.ok ? '' : result.message;
+        }
         catch { this.status = '保存失败，请重试'; }
         finally { this.busy = false; this.confirmAbandon = false; if (this.root.isValid) this.refresh(); }
     }

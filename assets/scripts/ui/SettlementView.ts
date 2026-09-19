@@ -12,6 +12,7 @@ const WIDTH = 1672;
 const HEIGHT = 941;
 const NAVY = new Color(9, 31, 75, 255);
 const WHITE = new Color(249, 252, 255, 255);
+const CYAN = new Color(0, 216, 235, 255);
 const GOLD = new Color(255, 212, 0, 255);
 const SELF_GREEN = new Color(0, 182, 0, 255);
 const WATERMARK = new Color(21, 61, 88, 18);
@@ -59,6 +60,10 @@ export class SettlementView {
     private readonly modeUnit: Label;
     private readonly reward: Label;
     private readonly careerMessage: Label;
+    private readonly careerPoints: Node;
+    private readonly careerHeading: Label;
+    private readonly careerGain: Label;
+    private careerPointsVisible = false;
     private readonly primary: Node;
     private readonly primaryText: Label;
     private readonly secondary: Node;
@@ -113,10 +118,14 @@ export class SettlementView {
         for (let i = 0; i < this.rows.length; i++) {
             this.rows[i].self = this.art(highlights, 'SelfHighlight', 975, 134 + i * 70 - 25, 666, 117, ART.self);
         }
-        this.art(this.root, 'RewardCoin', 1133, 731, 56, 56, RESOURCE_PATHS.characterUi.upgradeCurrency);
-        this.text(this.root, 'RewardTitle', '本局奖励', 1205, 760, 140, 27, WHITE);
-        this.reward = this.text(this.root, 'RewardValue', '+0', 1344, 758, 260, 49, GOLD, false, false, false, true);
-        this.careerMessage = this.text(this.root, 'CareerMessage', '', 1000, 699, 610, 24, WHITE);
+        this.art(this.root, 'RewardCoin', 1000, 737, 44, 44, RESOURCE_PATHS.characterUi.upgradeCurrency);
+        this.text(this.root, 'RewardTitle', '本局奖励', 1052, 759, 104, 24, WHITE);
+        this.reward = this.text(this.root, 'RewardValue', '+0', 1164, 759, 160, 36, GOLD, false, false, false, true);
+        this.careerMessage = this.text(this.root, 'CareerMessage', '', 1340, 759, 275, 24, WHITE);
+        this.careerPoints = this.node(this.root, 'CareerPoints', 0, 0, WIDTH, HEIGHT);
+        this.careerHeading = this.text(this.careerPoints, 'CareerHeading', '联赛积分', 1360, 759, 112, 24, WHITE);
+        this.careerGain = this.text(this.careerPoints, 'CareerGain', '', 1480, 759, 135, 36, CYAN, false, false, false, true);
+        active(this.careerPoints, false);
         this.secondary = this.button('ReturnToLobby', 1000, 808, 247, 90,
             RESOURCE_PATHS.onlineRoomUi.exitButton, () => callbacks.onMenu());
         this.text(this.secondary, 'Label', '返回大厅', 0, 45, 247, 35, NAVY, true);
@@ -129,6 +138,7 @@ export class SettlementView {
         this.roomMode = roomMode;
         active(this.secondary, !roomMode);
         setText(this.primaryText, roomMode ? '返回房间' : getSoloRaceTicket() ? '返回赛事' : '再来一局');
+        active(this.careerPoints, !roomMode && this.careerPointsVisible);
         for (const name of ['RewardCoin', 'RewardTitle', 'RewardValue', 'CareerMessage']) {
             const node = this.root.children.find(child => child.name === name); if (node) active(node, !roomMode);
         }
@@ -182,6 +192,7 @@ export class SettlementView {
         if (this.modeDistance.node.position.x !== numberCenter) this.modeDistance.node.setPosition(numberCenter, HEIGHT / 2 - 215, 0);
         if (this.modeUnit.node.position.x !== unitCenter) this.modeUnit.node.setPosition(unitCenter, HEIGHT / 2 - 215, 0);
         this.setReward(0);
+        this.setCareerMessage('');
         for (let i = 0; i < this.rows.length; i++) {
             const controls = this.rows[i];
             const row = list[i];
@@ -215,7 +226,26 @@ export class SettlementView {
         setText(this.reward, `+${Number.isFinite(coins) ? Math.max(0, Math.floor(coins)) : 0}`);
     }
 
-    setCareerMessage(message: string): void { setText(this.careerMessage, message); }
+    setCareerMessage(message: string): void {
+        this.careerPointsVisible = false;
+        active(this.careerPoints, false);
+        setText(this.careerMessage, message);
+        if (this.roomMode || !message) return;
+        const ticket = getSoloRaceTicket();
+        const career = PlayerData.profile?.career;
+        const receipt = ticket && career?.receipts.find(item => item.id === ticket.id);
+        // 展示已落盘的本场回执，不从名次重算奖励，也不解析提示文案。
+        if (ticket?.source !== 'league' || !career || !receipt) return;
+        if (ticket.tier !== career.league) {
+            setText(this.careerMessage, '历史联赛 · 不增加积分');
+            return;
+        }
+        this.careerPointsVisible = true;
+        active(this.careerPoints, true);
+        setText(this.careerMessage, '');
+        setText(this.careerHeading, '联赛积分');
+        setText(this.careerGain, `+${Math.max(0, receipt.points)}`);
+    }
 
     private node(parent: Node, name: string, x: number, y: number, w: number, h: number): Node {
         const node = new Node(name);

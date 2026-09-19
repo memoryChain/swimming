@@ -1,4 +1,5 @@
 import { _decorator, Component } from 'cc';
+import { DEV } from 'cc/env';
 import { COUNTDOWN_SECONDS, FINISH_STRAGGLER_COUNTDOWN_SECONDS, GLIDE_SECONDS, getRaceDistance } from './GameBalance';
 import { GameState } from './GameConstants';
 import { scaledDelta } from './TimeScale';
@@ -256,6 +257,36 @@ export class RaceManager extends Component {
         this._finishCountdownTimer = FINISH_STRAGGLER_COUNTDOWN_SECONDS;
         this._lastFinishCountdownValue = Math.ceil(this._finishCountdownTimer);
         this.onFinishCountdownTick?.(this._lastFinishCountdownValue);
+    }
+
+    /** 仅供本机生涯调试；调用方必须排除房间和联机会话。 */
+    public debugFinishWithPlacement(placement: number): boolean {
+        if (!DEV || !this.playerSwimmer || !Number.isInteger(placement)
+            || (this._state !== GameState.COUNTDOWN && this._state !== GameState.DIVING
+                && this._state !== GameState.GLIDING && this._state !== GameState.RACING)) return false;
+        const roster = this.allRaceRacers();
+        if (roster.indexOf(this.playerSwimmer) < 0 || placement < 1 || placement > roster.length) return false;
+        // 覆盖整场成绩，确保已经触壁或淘汰的选手不会挤占指定名次。
+        const ordered = this.getLiveLeaderboard().map(row => row.swimmer).filter(swimmer => swimmer !== this.playerSwimmer);
+        ordered.splice(placement - 1, 0, this.playerSwimmer);
+        this.unscheduleAllCallbacks();
+        this._finishTimes.clear();
+        this._aiFinishTimes.clear();
+        this._eliminated.clear();
+        this._quit.clear();
+        const firstTime = Math.max(1, this._raceTimer);
+        ordered.forEach((swimmer, index) => {
+            const time = firstTime + index;
+            swimmer.stopRace();
+            this._finishTimes.set(swimmer, time);
+            if (swimmer === this.playerSwimmer) this._playerFinishTime = time;
+            else this._aiFinishTimes.set(swimmer, time);
+        });
+        this._playerFinished = true;
+        this._aiFinishTime = this.bestAiFinishTime();
+        // 复用正常结算与生涯回调，不额外触发逐个触壁镜头。
+        this.finishRace();
+        return true;
     }
 
     private finishRace() {

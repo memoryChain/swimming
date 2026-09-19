@@ -1,0 +1,220 @@
+{
+  "canvas": [
+    1280,
+    720
+  ],
+  "bundle": "race",
+  "badges": [
+    {
+      "source": "art/career-badges/transparent-png-v1/career-badge-01.png",
+      "output": "assets/race/ui/career-v1/badge-1.png",
+      "sourceCrop": [
+        131,
+        85,
+        1121,
+        1195
+      ],
+      "size": [
+        457,
+        512
+      ]
+    },
+    {
+      "source": "art/career-badges/locked/png/career-badge-01-locked.png",
+      "output": "assets/race/ui/career-v1/badge-1-locked.png",
+      "sourceCrop": [
+        131,
+        85,
+        1121,
+        1195
+      ],
+      "size": [
+        457,
+        512
+      ]
+    },
+    {
+      "source": "art/career-badges/transparent-png-v1/career-badge-02.png",
+      "output": "assets/race/ui/career-v1/badge-2.png",
+      "sourceCrop": [
+        70,
+        159,
+        1186,
+        1094
+      ],
+      "size": [
+        512,
+        429
+      ]
+    },
+    {
+      "source": "art/career-badges/locked/png/career-badge-02-locked.png",
+      "output": "assets/race/ui/career-v1/badge-2-locked.png",
+      "sourceCrop": [
+        70,
+        159,
+        1186,
+        1094
+      ],
+      "size": [
+        512,
+        429
+      ]
+    },
+    {
+      "source": "art/career-badges/transparent-png-v1/career-badge-03.png",
+      "output": "assets/race/ui/career-v1/badge-3.png",
+      "sourceCrop": [
+        15,
+        119,
+        1239,
+        1107
+      ],
+      "size": [
+        512,
+        413
+      ]
+    },
+    {
+      "source": "art/career-badges/locked/png/career-badge-03-locked.png",
+      "output": "assets/race/ui/career-v1/badge-3-locked.png",
+      "sourceCrop": [
+        15,
+        119,
+        1239,
+        1107
+      ],
+      "size": [
+        512,
+        413
+      ]
+    },
+    {
+      "source": "art/career-badges/transparent-png-v1/career-badge-04.png",
+      "output": "assets/race/ui/career-v1/badge-4.png",
+      "sourceCrop": [
+        16,
+        158,
+        1238,
+        1126
+      ],
+      "size": [
+        512,
+        406
+      ]
+    },
+    {
+      "source": "art/career-badges/locked/png/career-badge-04-locked.png",
+      "output": "assets/race/ui/career-v1/badge-4-locked.png",
+      "sourceCrop": [
+        16,
+        158,
+        1238,
+        1126
+      ],
+      "size": [
+        512,
+        406
+      ]
+    },
+    {
+      "source": "art/career-badges/transparent-png-v1/career-badge-05.png",
+      "output": "assets/race/ui/career-v1/badge-5.png",
+      "sourceCrop": [
+        10,
+        109,
+        1241,
+        1163
+      ],
+      "size": [
+        512,
+        438
+      ]
+    },
+    {
+      "source": "art/career-badges/locked/png/career-badge-05-locked.png",
+      "output": "assets/race/ui/career-v1/badge-5-locked.png",
+      "sourceCrop": [
+        10,
+        109,
+        1241,
+        1163
+      ],
+      "size": [
+        512,
+        438
+      ]
+    },
+    {
+      "source": "art/career-badges/transparent-png-v1/career-badge-06.png",
+      "output": "assets/race/ui/career-v1/badge-6.png",
+      "sourceCrop": [
+        28,
+        122,
+        1234,
+        1148
+      ],
+      "size": [
+        512,
+        436
+      ]
+    },
+    {
+      "source": "art/career-badges/locked/png/career-badge-06-locked.png",
+      "output": "assets/race/ui/career-v1/badge-6-locked.png",
+      "sourceCrop": [
+        28,
+        122,
+        1234,
+        1148
+      ],
+      "size": [
+        512,
+        436
+      ]
+    }
+  ],
+  "revision": {
+    "backgroundExport": "scripts/export-career-corrections.jsx",
+    "routeRect": [
+      146,
+      140,
+      990,
+      10
+    ],
+    "cupSource": "art/career-ui/assets/cup-redrawn.png",
+    "heroHeights": [
+      196,
+      212,
+      228,
+      244,
+      260,
+      276
+    ],
+    "heroCenterX": 191.5,
+    "heroBottom": 487,
+    "roundHeight": 94,
+    "tags": {
+      "tag-active": [
+        484,
+        239,
+        88,
+        30
+      ],
+      "tag-account": [
+        418,
+        326,
+        103,
+        36
+      ],
+      "tag-character": [
+        848,
+        326,
+        106,
+        36
+      ]
+    },
+    "firstHeroBottom": 462,
+    "cupArtworkVisible": false
+  }
+}

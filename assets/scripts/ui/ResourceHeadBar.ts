@@ -16,6 +16,7 @@ import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { platform } from '../platform/PlatformManager';
 import { loadAvatarSpriteFrame, loadAvatarUiSpriteFrame } from './AvatarUiAssets';
 import { styleCurrencyNumberLabel } from './ProjectUiFonts';
+import { CareerImage } from './CareerPageWidgets';
 
 export interface ResourceHeadBarOptions {
     // Called when the player taps "+" to gain resources by watching an ad.
@@ -54,6 +55,7 @@ export class ResourceHeadBar {
     private _nameLabel: Label | null = null;
     private _avatarSprite: Sprite | null = null;
     private _avatarId = '';
+    private _careerBadge: CareerImage | null = null;
     // Identity X when the back button is hidden vs shown (it shifts right to make
     // room for the back button, and is NEVER hidden).
     private _identityXDefault = 0;
@@ -110,7 +112,8 @@ export class ResourceHeadBar {
         nameLabel.overflow = Label.Overflow.SHRINK;
         nameNode.getComponent(UITransform)!.setContentSize(96, 38);
         nameNode.setPosition(24.5, 0, 1);
-        makeLoginSprite('CareerBadge', identity, RESOURCE_PATHS.lobbyB.careerBadge, 42, 39, 99.5, 0);
+        this._careerBadge = new CareerImage(identity, 'CareerBadge', RESOURCE_PATHS.careerUi.badges[PlayerData.profile.career.league],
+            42, 39, 99.5, 0, true);
         this._nameLabel = nameLabel;
         this._identity = identity;
 
@@ -182,6 +185,7 @@ export class ResourceHeadBar {
 
     // Update the displayed identity from the in-game profile.
     private refreshIdentity(profile: PlayerProfile): void {
+        this._careerBadge?.set(RESOURCE_PATHS.careerUi.badges[profile.career.league]);
         if (this._nameLabel?.isValid && this._nameLabel.string !== profile.nickName) {
             this._nameLabel.string = profile.nickName;
         }
@@ -223,6 +227,7 @@ export class ResourceHeadBar {
         this._identity = null;
         this._nameLabel = null;
         this._avatarSprite = null;
+        this._careerBadge = null;
         this._avatarId = '';
     }
 }

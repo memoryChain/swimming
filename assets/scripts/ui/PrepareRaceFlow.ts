@@ -46,7 +46,7 @@ import { showToast } from './Toast';
 import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import { LobbyUiMotion } from './LobbyUiMotion';
 import { CharacterAttributeTips } from './CharacterAttributeTips';
-import { CareerPrototypePanel } from './CareerPrototypePanel';
+import { CareerNavigation, CareerPrototypePanel } from './CareerPrototypePanel';
 import { setSoloRaceTicket } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from '../core/GameBalance';
 import { getUILayer, UILayer } from './UILayers';
@@ -157,6 +157,7 @@ export class PrepareRaceFlow {
     private _activeCharacterNotice: Node | null = null;
     private _eventPageActive = false;
     private _careerPanel: CareerPrototypePanel | null = null;
+    private _eventReturn: CareerNavigation | null = null;
 
     private readonly _onProfileChange = (_profile: PlayerProfile): void => {
         if (!this._root?.isValid || !this._content?.isValid || this._leaving) return;
@@ -212,6 +213,7 @@ export class PrepareRaceFlow {
     }
 
     dispose(): void {
+        this._careerPanel?.dispose(); this._careerPanel = null;
         this._attributeTips?.dispose();
         this._attributeTips = null;
         this._motion.dispose();
@@ -246,6 +248,10 @@ export class PrepareRaceFlow {
         this._motion.dispose();
         this._motion = new LobbyUiMotion();
         this._leaving = false;
+        // 页面级切换显式释放赛事页；不等待Cocos延迟destroy回调影响新页面。
+        this._careerPanel?.dispose(); this._careerPanel = null;
+        this._eventPageActive = false;
+        setNodeActive(this._previewRoot, true);
         this._content?.destroy();
         this.resetViewReferences();
         this._content = makeUiNode(name, this._root!);
@@ -334,7 +340,14 @@ export class PrepareRaceFlow {
         this._careerPanel = new CareerPrototypePanel(right,
             () => this.leaveCurrentScreen(this._callbacks.onStartRace),
             () => { setSoloRaceTicket(null); setSoloRaceDistance(null); this.leaveCurrentScreen(this._callbacks.onOpenRoom); },
-            { parent: this._root!, visibility: visible => this.setEventPageVisible(visible) });
+            { parent: this._root!, navigation: this._eventReturn,
+                visibility: visible => { if (this._view === 'ready') this.setEventPageVisible(visible); },
+                characters: navigation => {
+                    if (this._leaving) return;
+                    this._eventReturn = navigation;
+                    this.showCharacterManagement();
+                } });
+        this._eventReturn = null;
         this.buildReadyActions(right);
         this.refreshReadyCharacterInfo();
     }

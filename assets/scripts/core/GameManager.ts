@@ -43,7 +43,7 @@ import { AIRaceObserver } from '../competitor/AIRaceObserver';
 import { AISwimmerController } from '../entity/AISwimmerController';
 import { Swimmer } from '../entity/Swimmer';
 import { resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
-import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
+import { CareerRaceDebugPanel, DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
 import { fitFullScreenBackgroundCover, makeUiNode, makeRect, makeLabel, makeButton } from '../ui/RuntimeUiFactory';
@@ -317,6 +317,7 @@ export class GameManager extends Component {
     private _bulletTimeIndex = 0;
     private readonly _raceCameraDirector = new RaceCameraDirector(PLAYER_LANE_Z, COURSE_LAYOUT);
     private readonly _characterOutlineVisibility = new CharacterOutlineVisibility();
+    private readonly _careerRaceDebugPanel = new CareerRaceDebugPanel();
     private readonly _finishRankOverlay = new FinishRankOverlay();
     private readonly _swimmerNameOverlay = new SwimmerNameOverlay();
     private readonly _cameraSpeedLines = new CameraSpeedLineOverlay();
@@ -876,6 +877,7 @@ export class GameManager extends Component {
             handleModelDebugKickConfirmed: () => this._modelDebugFlow?.confirmKickStroke() ?? false,
             setState: (state) => {
                 this._state = state;
+                this._careerRaceDebugPanel.setAvailable(this.canDebugCareerFinish());
                 this.syncConditionPhase(state);
                 if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
                     && this._spectatorCameraFlashEmitter?.isValid) {
@@ -2224,6 +2226,11 @@ export class GameManager extends Component {
             this._modelDebugHud.active = false;
             this.buildRaceTuningButton(this._raceHud, w, h);
             this.buildRecordingModeButton(this._raceHud, w, h);
+            if (DEV && !this._netSession && !this._roomMode && getSoloRaceTicket()) {
+                this._careerRaceDebugPanel.build(this._raceHud, w, h,
+                    () => this._raceManager.getLiveLeaderboard().length,
+                    (placement) => this.canDebugCareerFinish() && this._raceManager.debugFinishWithPlacement(placement));
+            }
 
             const debugPanel = new DebugPanelBuilder().build(uiRoot, w, h);
             this._debugLog.bind(debugPanel.root, debugPanel.logLabel);
@@ -2519,6 +2526,13 @@ export class GameManager extends Component {
         button.on(Node.EventType.TOUCH_END, () => this.toggleCameraFollowAi());
     }
 
+    private canDebugCareerFinish(): boolean {
+        return DEV && !this._netSession && !this._roomMode && !this._aiDebugMode
+            && !this._modelDebugFlow?.active && !this._recordingMode && !!getSoloRaceTicket()
+            && (this._state === GameState.COUNTDOWN || this._state === GameState.DIVING
+                || this._state === GameState.GLIDING || this._state === GameState.RACING);
+    }
+
     private buildRaceTuningButton(raceHud: Node, width: number, height: number) {
         // Developer-only and solo-only. Runtime tuning changes gameplay state and
         // must never be exposed in an authoritative network race.
@@ -2573,6 +2587,7 @@ export class GameManager extends Component {
     }
 
     private applyRecordingModePresentation() {
+        this._careerRaceDebugPanel.setAvailable(false);
         profiler.hideStats();
         this._debugLog.setVisible(false);
         this._aiDifficultyPanel.setVisible(false);

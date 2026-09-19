@@ -62,3 +62,4 @@
 .agents/**                       eol=lf
 scripts/run-blender.py            text eol=lf
 scripts/manage-project-skills.py  text eol=lf
+art/career-ui/生涯之路.psd filter=lfs diff=lfs merge=lfs -text
