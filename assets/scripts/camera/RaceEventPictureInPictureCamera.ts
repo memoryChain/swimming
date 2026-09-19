@@ -153,12 +153,12 @@ export class RaceEventPictureInPictureCamera {
         this.finishRender();
     }
 
-    showCannonLaunch(launch: CannonLaunch): void {
+    showCannonLaunch(launch: CannonLaunch, sourceWorldX = Number.NaN): void {
         const target = this.options.course.swimPosition(launch.targetDistance, launch.targetZ);
         const side = (launch.strikeId & 1) === 0 ? -1 : 1;
         this.cannonTargetX = target.x;
         this.cannonTargetZ = target.z;
-        this.cannonSourceX = target.x;
+        this.cannonSourceX = Number.isFinite(sourceWorldX) ? sourceWorldX : target.x;
         this.cannonSourceY = this.options.course.waterY + 1.2;
         this.cannonSourceZ = side * (this.options.course.poolWidth * 0.5 + 0.5);
         // 鲨鱼危险镜头优先级最高；炮火仍缓存落点，待鲨鱼镜头退出后再接管。
@@ -179,14 +179,20 @@ export class RaceEventPictureInPictureCamera {
         this.setCopy('炮火镜头', status, impact.knockedLane >= 0 ? DANGER_COLOR : WARNING_COLOR);
     }
 
-    updateCannon(launch: CannonLaunch | null, remainingSeconds: number, racing: boolean, dt: number): void {
+    updateCannon(
+        launch: CannonLaunch | null,
+        remainingSeconds: number,
+        racing: boolean,
+        dt: number,
+        sourceWorldX = Number.NaN,
+    ): void {
         if (!racing) {
             if (this.mode === 'cannon') this.hide();
             return;
         }
         const safeDt = safeStep(dt);
         if (launch) {
-            if (this.mode !== 'cannon') this.showCannonLaunch(launch);
+            if (this.mode !== 'cannon') this.showCannonLaunch(launch, sourceWorldX);
             if (this.mode !== 'cannon') return;
             const total = Math.max(0.01, launch.warningSeconds);
             const progress = clamp01(1 - remainingSeconds / total);
@@ -380,19 +386,21 @@ export class RaceEventPictureInPictureCamera {
     }
 
     private updateCannonCameraPose(progress: number, targetDistance: number): void {
+        const projectileX = this.cannonSourceX + (this.cannonTargetX - this.cannonSourceX) * progress;
         const projectileZ = this.cannonSourceZ + (this.cannonTargetZ - this.cannonSourceZ) * progress;
         const projectileY = this.cannonSourceY
             + (this.options.course.waterY + 0.12 - this.cannonSourceY) * progress
             + Math.sin(progress * Math.PI) * 5.2;
         const focusWeight = 0.42 + progress * 0.28;
+        const focusX = projectileX + (this.cannonTargetX - projectileX) * focusWeight;
         this.focus.set(
-            this.cannonTargetX,
+            focusX,
             this.options.course.waterY + 0.45 + projectileY * 0.08,
             projectileZ + (this.cannonTargetZ - projectileZ) * focusWeight,
         );
         const direction = this.options.course.directionAtDistance(targetDistance);
         this.cameraPosition.set(
-            this.cannonTargetX - direction * 7.4,
+            focusX - direction * 7.4,
             this.options.course.waterY + 5.4,
             (this.cannonSourceZ + this.cannonTargetZ) * 0.5,
         );

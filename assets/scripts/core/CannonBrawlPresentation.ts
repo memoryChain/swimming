@@ -5,9 +5,19 @@ import { applyWaterExplosionPhase, buildWaterExplosionGeometry } from './MineRel
 
 const PRESENTATION_INTERVAL = 1 / 20;
 const CANNON_EDGE_OFFSET = 1.4;
+const CANNON_STAND_TRAVEL = 4.2;
+const CANNON_ENTRANCE_SECONDS = 1.8;
+const CANNON_EXIT_SECONDS = 1.2;
 const PROJECTILE_ARC_HEIGHT = 5.8;
 const IMPACT_SECONDS = 0.52;
 const CANNON_EXPLOSION_INTENSITY = 1.08;
+
+const enum CannonDeploymentPhase {
+    DEPLOYED,
+    ENTERING,
+    EXITING,
+    STOWED,
+}
 
 /** 固定网格、共享材质的炮台／炮弹／水面预警表现；只消费权威规则状态。 */
 export class CannonBrawlPresentation {
@@ -35,6 +45,9 @@ export class CannonBrawlPresentation {
     private elapsed = PRESENTATION_INTERVAL;
     private clock = 0;
     private disposed = false;
+    private deploymentPhase = CannonDeploymentPhase.DEPLOYED;
+    private deploymentElapsed = 0;
+    private standWorldX = 0;
 
     constructor(
         private readonly parent: Node,
@@ -54,6 +67,36 @@ export class CannonBrawlPresentation {
         this.setActive(this.impactPlume, false);
     }
 
+    /** 娱乐事件预告开始时，把两侧礼炮从观众席深处推到池边。 */
+    beginEntrance(): void {
+        if (this.disposed) return;
+        this.deploymentPhase = CannonDeploymentPhase.ENTERING;
+        this.deploymentElapsed = 0;
+        this.applyDeploymentProgress(0, false);
+        for (const cannon of this.cannons) this.setActive(cannon, true);
+    }
+
+    /** 权威状态已经进入炮击阶段时直接就位，避免晚加入客户端补播整段进场。 */
+    snapDeployed(): void {
+        if (this.disposed) return;
+        this.deploymentPhase = CannonDeploymentPhase.DEPLOYED;
+        this.deploymentElapsed = 0;
+        this.applyDeploymentProgress(1, false);
+        for (const cannon of this.cannons) this.setActive(cannon, true);
+    }
+
+    /** 炮火事件结束后退回观众席深处，完成后关闭节点。 */
+    beginExit(): void {
+        if (this.disposed || this.deploymentPhase === CannonDeploymentPhase.STOWED
+            || this.deploymentPhase === CannonDeploymentPhase.EXITING) return;
+        this.deploymentPhase = CannonDeploymentPhase.EXITING;
+        this.deploymentElapsed = 0;
+    }
+
+    sourceWorldX(): number {
+        return this.standWorldX;
+    }
+
     showLaunch(launch: CannonLaunch): void {
         if (this.disposed || !launch) return;
         this.activeStrikeId = launch.strikeId;
@@ -66,10 +109,10 @@ export class CannonBrawlPresentation {
         const edgeZ = side * (this.course.poolWidth * 0.5 + CANNON_EDGE_OFFSET);
         const cannon = this.cannons[this.activeCannonIndex];
         if (cannon?.isValid) {
-            cannon.setWorldPosition(target.x, this.course.waterY + 0.12, edgeZ);
-            cannon.setRotationFromEuler(0, side > 0 ? 180 : 0, 0);
+            this.setActive(cannon, true);
         }
-        this.sourceX = target.x;
+        // 礼炮在整轮事件中固定于进场位置；只让炮弹飞向新的落点，避免每炮沿看台瞬移。
+        this.sourceX = this.sourceWorldX();
         this.sourceY = this.course.waterY + 1.2;
         this.sourceZ = edgeZ + (side > 0 ? -0.9 : 0.9);
         this.marker?.setWorldPosition(target.x, this.course.waterY + 0.045, target.z);
@@ -124,6 +167,7 @@ export class CannonBrawlPresentation {
         const presentationStep = this.elapsed;
         this.elapsed = 0;
         this.clock += presentationStep;
+        this.updateDeployment(presentationStep);
 
         if (launch && this.activeStrikeId === launch.strikeId) {
             const total = Math.max(0.01, CANNON_BRAWL_TUNING.warningSeconds);
@@ -179,6 +223,7 @@ export class CannonBrawlPresentation {
         this.projectileMaterial.setProperty('mainColor', new Color(31, 35, 41, 255));
 
         const midpoint = (this.course.startX + this.course.finishX) * 0.5;
+        this.standWorldX = midpoint;
         for (let i = 0; i < 2; i++) {
             const side = i === 0 ? -1 : 1;
             const cannon = this.makeMeshNode(`PoolsideCannon_${i + 1}`, this.cannonMesh, this.cannonMaterial);
@@ -206,6 +251,39 @@ export class CannonBrawlPresentation {
 
     private setActive(node: Node | null, active: boolean): void {
         if (node?.isValid && node.active !== active) node.active = active;
+    }
+
+    private updateDeployment(dt: number): void {
+        if (this.deploymentPhase !== CannonDeploymentPhase.ENTERING
+            && this.deploymentPhase !== CannonDeploymentPhase.EXITING) return;
+        this.deploymentElapsed += dt;
+        const entering = this.deploymentPhase === CannonDeploymentPhase.ENTERING;
+        const duration = entering ? CANNON_ENTRANCE_SECONDS : CANNON_EXIT_SECONDS;
+        const progress = Math.min(1, this.deploymentElapsed / duration);
+        // 进场末段柔和减速，退场逐渐加速；全程只移动现有两个合并网格节点。
+        const eased = entering
+            ? 1 - Math.pow(1 - progress, 3)
+            : progress * progress;
+        this.applyDeploymentProgress(eased, !entering);
+        if (progress < 1) return;
+        this.deploymentElapsed = 0;
+        this.deploymentPhase = entering
+            ? CannonDeploymentPhase.DEPLOYED
+            : CannonDeploymentPhase.STOWED;
+        if (!entering) {
+            for (const cannon of this.cannons) this.setActive(cannon, false);
+        }
+    }
+
+    private applyDeploymentProgress(progress: number, exiting: boolean): void {
+        for (let i = 0; i < this.cannons.length; i++) {
+            const side = i === 0 ? -1 : 1;
+            const edgeZ = side * (this.course.poolWidth * 0.5 + CANNON_EDGE_OFFSET);
+            const travelProgress = exiting ? progress : 1 - progress;
+            const z = edgeZ + side * CANNON_STAND_TRAVEL * travelProgress;
+            const cannon = this.cannons[i];
+            if (cannon?.isValid) cannon.setWorldPosition(this.standWorldX, this.course.waterY + 0.12, z);
+        }
     }
 }
 

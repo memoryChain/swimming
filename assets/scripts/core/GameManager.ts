@@ -296,6 +296,7 @@ export class GameManager extends Component {
     private _cannonBrawl: CannonBrawlController | null = null;
     private _cannonBrawlPresentation: CannonBrawlPresentation | null = null;
     private _cannonBrawlHud: CannonBrawlHud | null = null;
+    private _cannonPreviewPending = false;
     private _entertainmentRecovery: EntertainmentRecoveryController | null = null;
     private _entertainmentRecoveryHud: EntertainmentRecoveryHud | null = null;
     private _lastCannonTargetZ = 0;
@@ -532,6 +533,7 @@ export class GameManager extends Component {
         this._cannonBrawl = null;
         this._cannonBrawlPresentation?.dispose();
         this._cannonBrawlPresentation = null;
+        this._cannonPreviewPending = false;
         this._cannonBrawlHud?.dispose();
         this._cannonBrawlHud = null;
         this._entertainmentRecovery = null;
@@ -1428,6 +1430,7 @@ export class GameManager extends Component {
     private setupEntertainmentMode() {
         resetEntertainmentEventRuntime();
         setRuntimeWhirlpoolSpawns(null);
+        this._cannonPreviewPending = false;
         this._entertainmentDirector = isEntertainmentBrawlMode()
             ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance())
             : null;
@@ -1491,15 +1494,26 @@ export class GameManager extends Component {
         const director = this._entertainmentDirector;
         if (transition.cancelledPreview) {
             this._entertainmentEventBanner.hideEvent();
+            if (this._cannonPreviewPending) {
+                this._cannonBrawlPresentation?.beginExit();
+                this._cannonPreviewPending = false;
+            }
         }
         if (transition.recoveredEvent !== null) {
             // 客机可能错过整段返场；先静默重置该子玩法，再由同一份 S| 快照
             // 灌入最终权威状态，避免旧一轮的 revision／追猎序号拒绝新状态。
+            if (transition.recoveredEvent === EntertainmentEventId.CANNON) {
+                this._cannonPreviewPending = false;
+            }
             this.activateEntertainmentEvent(transition.recoveredEvent);
         }
         if (transition.previewEvent !== null) {
             const previewDurationMs = (director?.previewDurationSeconds() ?? 6) * 1000;
             const previewActivationSerial = (director?.snapshot().activationSerial ?? 0) + 1;
+            if (transition.previewEvent === EntertainmentEventId.CANNON) {
+                this._cannonPreviewPending = true;
+                this.ensureCannonBrawlPresentation()?.beginEntrance();
+            }
             this._entertainmentEventBanner.showDirectorEvent(
                 entertainmentPreviewCopy(
                     transition.previewEvent,
@@ -1512,6 +1526,9 @@ export class GameManager extends Component {
             );
         }
         if (transition.activatedEvent !== null) {
+            if (transition.activatedEvent === EntertainmentEventId.CANNON) {
+                this._cannonPreviewPending = false;
+            }
             this.activateEntertainmentEvent(transition.activatedEvent);
             const special = transition.activatedEvent === EntertainmentEventId.WHIRLPOOL
                 ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
@@ -1532,6 +1549,8 @@ export class GameManager extends Component {
         }
         if (transition.finishedEvent === EntertainmentEventId.CANNON) {
             this._cannonBrawlHud?.hide();
+            this._cannonBrawlPresentation?.beginExit();
+            this._cannonPreviewPending = false;
         } else if (transition.finishedEvent === EntertainmentEventId.TIMED_BOMB) {
             this._mineRelayHud?.hide();
         }
@@ -1574,6 +1593,7 @@ export class GameManager extends Component {
                 } else {
                     this.setupCannonBrawl();
                 }
+                this._cannonBrawlPresentation?.snapDeployed();
                 break;
         }
     }
@@ -1927,11 +1947,11 @@ export class GameManager extends Component {
 
     private setupCannonBrawl() {
         this._cannonBrawl = null;
-        this._cannonBrawlPresentation?.dispose();
-        this._cannonBrawlPresentation = null;
         if (!isCannonBrawlMode() || !this._raceManager) return;
-        if (this._worldRoot?.isValid) {
-            this._cannonBrawlPresentation = new CannonBrawlPresentation(this._worldRoot, COURSE_LAYOUT);
+        const presentation = this.ensureCannonBrawlPresentation();
+        if (isEntertainmentBrawlMode()
+            && isEntertainmentEventBurstActive(EntertainmentEventId.CANNON)) {
+            presentation?.snapDeployed();
         }
         this._cannonBrawl = new CannonBrawlController(
             LANE_LAYOUT.laneCount,
@@ -1969,7 +1989,10 @@ export class GameManager extends Component {
                 const launch = this._cannonBrawl?.currentLaunch() ?? null;
                 if (launch) this._lastCannonTargetZ = launch.targetZ;
                 this._cannonBrawlPresentation?.syncLaunch(launch);
-                if (launch) this._eventPictureInPicture?.showCannonLaunch(launch);
+                if (launch) this._eventPictureInPicture?.showCannonLaunch(
+                    launch,
+                    this._cannonBrawlPresentation?.sourceWorldX(),
+                );
             }
         });
     }
@@ -1977,6 +2000,14 @@ export class GameManager extends Component {
     private updateCannonBrawl(dt: number) {
         const controller = this._cannonBrawl;
         if (!controller || this._modelDebugFlow?.active || (isEntertainmentBrawlMode() && !isCannonBrawlMode())) {
+            if (!this._modelDebugFlow?.active) {
+                this._cannonBrawlPresentation?.update(
+                    dt,
+                    null,
+                    0,
+                    this._state === GameState.RACING,
+                );
+            }
             for (const ai of this._aiControllers) ai?.setCannonTargetZ(null);
             this.activePlayerAutopilot()?.setCannonTargetZ(null);
             return;
@@ -1994,6 +2025,7 @@ export class GameManager extends Component {
             controller.currentRemainingSeconds(),
             this._state === GameState.RACING,
             dt,
+            launch ? this._cannonBrawlPresentation?.sourceWorldX() : undefined,
         );
         for (let i = 0; i < this._aiControllers.length; i++) {
             const ai = this._aiControllers[i];
@@ -2030,10 +2062,23 @@ export class GameManager extends Component {
         );
     }
 
+    private ensureCannonBrawlPresentation(): CannonBrawlPresentation | null {
+        if (!this._cannonBrawlPresentation && this._worldRoot?.isValid) {
+            this._cannonBrawlPresentation = new CannonBrawlPresentation(
+                this._worldRoot,
+                COURSE_LAYOUT,
+            );
+        }
+        return this._cannonBrawlPresentation;
+    }
+
     private handleCannonLaunch(launch: CannonLaunch, broadcast: boolean) {
         this._lastCannonTargetZ = launch.targetZ;
         this._cannonBrawlPresentation?.showLaunch(launch);
-        this._eventPictureInPicture?.showCannonLaunch(launch);
+        this._eventPictureInPicture?.showCannonLaunch(
+            launch,
+            this._cannonBrawlPresentation?.sourceWorldX(),
+        );
         if (launch.strikeId === 0 && !isEntertainmentBrawlMode()) {
             this._entertainmentEventBanner.showEvent(
                 '炮击来袭 · 观察落点并横移躲避',

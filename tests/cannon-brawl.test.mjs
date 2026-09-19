@@ -165,6 +165,37 @@ test('看台大炮使用分层炮架、轮毂、斜撑和渐细炮管并保持�
     assert.doesNotMatch(presentation, /resources\.load|assetManager\.load/);
 });
 
+test('六合一炮火预告推动礼炮进场，整轮固定位置并在结束后退场', () => {
+    const presentation = readFileSync(
+        new URL('../assets/scripts/core/CannonBrawlPresentation.ts', import.meta.url),
+        'utf8',
+    );
+    const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
+    const pictureInPicture = readFileSync(
+        new URL('../assets/scripts/camera/RaceEventPictureInPictureCamera.ts', import.meta.url),
+        'utf8',
+    );
+    const showLaunchStart = presentation.indexOf('showLaunch(launch: CannonLaunch)');
+    const showImpactStart = presentation.indexOf('showImpact(impact: CannonImpact)', showLaunchStart);
+    const showLaunch = presentation.slice(showLaunchStart, showImpactStart);
+    assert.match(presentation, /CANNON_ENTRANCE_SECONDS = 1\.8/);
+    assert.match(presentation, /CANNON_EXIT_SECONDS = 1\.2/);
+    assert.match(presentation, /beginEntrance\(\)/);
+    assert.match(presentation, /snapDeployed\(\)/);
+    assert.match(presentation, /beginExit\(\)/);
+    assert.match(presentation, /deploymentPhase/);
+    assert.match(presentation, /private standWorldX = 0/);
+    assert.doesNotMatch(presentation, /cannonX0|cannonX1/);
+    assert.doesNotMatch(presentation, /\btween\(/);
+    assert.match(showLaunch, /this\.sourceWorldX\(\)/);
+    assert.doesNotMatch(showLaunch, /cannon\.setWorldPosition/);
+    assert.match(manager, /transition\.previewEvent === EntertainmentEventId\.CANNON/);
+    assert.match(manager, /this\._cannonBrawlPresentation\?\.beginExit\(\)/);
+    assert.doesNotMatch(manager, /cannonStandWorldX/);
+    assert.match(pictureInPicture, /const projectileX = this\.cannonSourceX/);
+    assert.match(pictureInPicture, /const focusX = projectileX/);
+});
+
 test('炮火逃生赛只允许快速比赛二百米，旧末位存档迁移为炮火规则', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];
