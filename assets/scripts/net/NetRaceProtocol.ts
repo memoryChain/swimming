@@ -58,7 +58,8 @@
 // 版本70：水雷触爆后本局永久失活，快照只保留漂移时钟和存活掩码。
 // 版本71：统一娱乐模式击倒增加可靠全局恢复事件，周期快照只作为丢包兜底。
 // 版本72：导演快照追加特殊事件掩码，超级漩涡的规格与水流强度跨端一致。
-export const NET_RACE_PROTOCOL_VERSION = 72;
+// 版本73：娱乐事件按赛程锚点分散触发，并同步激活序号、最后事件与返场状态。
+export const NET_RACE_PROTOCOL_VERSION = 73;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

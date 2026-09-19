@@ -111,7 +111,7 @@ export class MineRelayBrawlController {
         private readonly onArm: (event: MineRelayArm) => void,
         private readonly onTransfer: (event: MineRelayTransfer) => void,
         private readonly onResolution: (event: MineRelayResolution) => void,
-        private readonly rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = MINE_RELAY_ROUNDS,
+        private rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = MINE_RELAY_ROUNDS,
     ) {}
 
     reset(): void {
@@ -127,6 +127,11 @@ export class MineRelayBrawlController {
         this.recoverySeconds = 0;
         this.previousCarrierLane = -1;
         this.lastStarterLane = -1;
+    }
+
+    restart(rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = this.rounds): void {
+        this.rounds = rounds;
+        this.reset();
     }
 
     update(dt: number, state: GameState, authoritative: boolean): void {
@@ -455,7 +460,7 @@ export class MineRelayBrawlController {
         return leader;
     }
 
-    private activeCount(): number {
+    activeCount(): number {
         let count = 0;
         for (let lane = 0; lane < this.laneCount; lane++) if (this.isEligibleLane(lane)) count++;
         return count;

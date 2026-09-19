@@ -77,7 +77,7 @@ export class CannonBrawlController {
         private readonly racerForLane: (lane: number) => CannonRacerState | null,
         private readonly onLaunch: (launch: CannonLaunch) => void,
         private readonly onImpact: (impact: CannonImpact) => void,
-        private readonly strikeTriggers: readonly number[] = CANNON_STRIKE_TRIGGERS,
+        private strikeTriggers: readonly number[] = CANNON_STRIKE_TRIGGERS,
         private readonly finishSafeDistance: number = CANNON_BRAWL_TUNING.finishSafeDistance,
     ) {}
 
@@ -88,6 +88,11 @@ export class CannonBrawlController {
         this.activeLaunch = null;
         this.activeRemainingSeconds = 0;
         this.lastTargetLane = -1;
+    }
+
+    restart(strikeTriggers: readonly number[] = this.strikeTriggers): void {
+        this.strikeTriggers = strikeTriggers;
+        this.reset();
     }
 
     update(dt: number, state: GameState, authoritative: boolean): void {

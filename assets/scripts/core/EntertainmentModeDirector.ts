@@ -28,6 +28,10 @@ export type EntertainmentDirectorState = {
     activatedMask: number;
     residentMask: number;
     specialMask: number;
+    activationSerial: number;
+    lastActivatedEvent: EntertainmentEventId | null;
+    encoreRound: number;
+    encoreEvent: EntertainmentEventId | null;
     anchorDistance: number;
     eventAnchorDistances: readonly number[];
 };
@@ -35,6 +39,7 @@ export type EntertainmentDirectorState = {
 export type EntertainmentDirectorTransition = {
     previewEvent: EntertainmentEventId | null;
     activatedEvent: EntertainmentEventId | null;
+    recoveredEvent: EntertainmentEventId | null;
     finishedEvent: EntertainmentEventId | null;
 };
 
@@ -42,16 +47,26 @@ const OPENING_SECONDS = 4;
 const THREE_EVENT_PREVIEW_SECONDS = 6;
 const FOUR_EVENT_PREVIEW_SECONDS = 5;
 const LONG_RACE_PREVIEW_SECONDS = 6;
-const THREE_EVENT_LAST_PREVIEW_DISTANCE = 165;
-const FOUR_EVENT_LAST_PREVIEW_DISTANCE = 175;
-const LONG_RACE_LAST_PREVIEW_DISTANCE = 365;
-const THREE_EVENT_LAST_ACTIVATION_DISTANCE = 175;
-const FOUR_EVENT_LAST_ACTIVATION_DISTANCE = 185;
-const LONG_RACE_LAST_ACTIVATION_DISTANCE = 385;
+const SHORT_RACE_GAP_SECONDS = 5;
+const LONG_RACE_GAP_SECONDS = 8;
+const ENCORE_GAP_MIN_SECONDS = 10;
+const ENCORE_GAP_VARIATION_SECONDS = 2;
 const FOUR_EVENT_DURATION_SCALE = 0.75;
 const LONG_RACE_DURATION_SCALE = 1.4;
 const MAX_EVENT_COUNT = 6;
 const ENTERTAINMENT_SPECIAL_RANDOM_SALT = 0x53504543;
+const ENTERTAINMENT_ENCORE_RANDOM_SALT = 0x454e434f;
+const EVENT_PROGRESS_BY_COUNT: Readonly<Record<number, readonly number[]>> = {
+    3: [0.12, 0.48, 0.82],
+    4: [0.10, 0.35, 0.60, 0.85],
+    5: [0.08, 0.29, 0.50, 0.71, 0.90],
+    6: [0.08, 0.24, 0.40, 0.56, 0.72, 0.90],
+};
+const ENCORE_EVENTS: readonly EntertainmentEventId[] = [
+    EntertainmentEventId.CANNON,
+    EntertainmentEventId.SHARK,
+    EntertainmentEventId.TIMED_BOMB,
+];
 const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.STIMULANT]: 10,
     [EntertainmentEventId.TIMED_BOMB]: 10,
@@ -122,7 +137,8 @@ export function entertainmentActionCopy(event: EntertainmentEventId, special = f
 
 /**
  * 统一娱乐模式的房主权威事件导演。它只管理顺序和时间，不复制六个玩法的规则或表现。
- * 每局固定抽取场地、争夺、袭击各一个事件，并有一半概率追加一个不重复事件；场地事件不会排在最后。
+ * 200 米抽取三至四个主事件，400 米抽取五至六个；主事件按赛程锚点分散，
+ * 赛程仍未结束时仅返场可安全重置的事件，场地内容和一次性道具不重复生成。
  */
 export class EntertainmentModeDirector {
     private revision = 0;
@@ -132,18 +148,27 @@ export class EntertainmentModeDirector {
     private activatedMask = 0;
     private residentMask = 0;
     private specialMask = 0;
+    private activationSerial = 0;
+    private lastActivatedEvent: EntertainmentEventId | null = null;
+    private encoreRound = 0;
+    private encoreEvent: EntertainmentEventId | null = null;
     private anchorDistance = 0;
     private readonly eventAnchorDistances = [0, 0, 0, 0, 0, 0];
     private readonly events: EntertainmentEventId[];
+    private readonly seed: number;
+    private readonly raceDistance: number;
     private readonly transition: EntertainmentDirectorTransition = {
         previewEvent: null,
         activatedEvent: null,
+        recoveredEvent: null,
         finishedEvent: null,
     };
 
     constructor(seed: number, raceDistance = 200) {
-        this.events = [...buildEntertainmentEventOrder(seed, raceDistance)];
-        this.specialMask = buildEntertainmentSpecialMask(seed, this.events);
+        this.seed = Number.isFinite(seed) ? seed >>> 0 : 0;
+        this.raceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
+        this.events = [...buildEntertainmentEventOrder(this.seed, this.raceDistance)];
+        this.specialMask = buildEntertainmentSpecialMask(this.seed, this.events);
         this.publishRuntimeState();
     }
 
@@ -154,15 +179,20 @@ export class EntertainmentModeDirector {
         this.remainingSeconds = OPENING_SECONDS;
         this.activatedMask = 0;
         this.residentMask = 0;
+        this.activationSerial = 0;
+        this.lastActivatedEvent = null;
+        this.encoreRound = 0;
+        this.encoreEvent = null;
         this.anchorDistance = 0;
         this.eventAnchorDistances.fill(0);
         this.publishRuntimeState();
     }
 
     currentEvent(): EntertainmentEventId | null {
-        return this.eventIndex >= 0 && this.eventIndex < this.events.length
-            ? this.events[this.eventIndex]
-            : null;
+        if (this.eventIndex >= 0 && this.eventIndex < this.events.length) {
+            return this.events[this.eventIndex];
+        }
+        return this.eventIndex === this.events.length ? this.encoreEvent : null;
     }
 
     selectedEvents(): readonly EntertainmentEventId[] { return this.events; }
@@ -174,6 +204,7 @@ export class EntertainmentModeDirector {
     previewDurationSeconds(): number { return this.previewSeconds(); }
 
     anchorDistanceForEvent(event: EntertainmentEventId): number {
+        if (this.currentEvent() === event && this.anchorDistance > 0) return this.anchorDistance;
         const index = this.events.indexOf(event);
         return index >= 0 ? this.eventAnchorDistances[index] : 0;
     }
@@ -191,26 +222,27 @@ export class EntertainmentModeDirector {
         if (this.remainingSeconds > 0) return transition;
 
         if (this.phase === EntertainmentDirectorPhase.OPENING || this.phase === EntertainmentDirectorPhase.GAP) {
-            if (this.eventIndex >= this.events.length || distance >= this.lastPreviewDistance()) {
-                this.complete();
-                return transition;
-            }
+            if (!this.readyForPreview(distance)) return transition;
             this.phase = EntertainmentDirectorPhase.PREVIEW;
             this.remainingSeconds = this.previewSeconds();
             this.revision++;
             transition.previewEvent = this.currentEvent();
         } else if (this.phase === EntertainmentDirectorPhase.PREVIEW) {
             const event = this.currentEvent();
-            if (event === null || distance >= this.lastActivationDistance()) {
+            if (event === null) {
                 this.complete();
                 return transition;
             }
             this.phase = EntertainmentDirectorPhase.ACTIVE;
             this.remainingSeconds = EVENT_DURATION_SECONDS[event] * this.eventDurationScale();
             this.anchorDistance = distance;
-            this.eventAnchorDistances[this.eventIndex] = distance;
+            if (this.eventIndex < this.events.length) {
+                this.eventAnchorDistances[this.eventIndex] = distance;
+            }
             this.activatedMask |= eventBit(event);
             this.residentMask |= eventBit(event);
+            this.activationSerial++;
+            this.lastActivatedEvent = event;
             this.revision++;
             transition.activatedEvent = event;
         } else if (this.phase === EntertainmentDirectorPhase.ACTIVE) {
@@ -226,16 +258,15 @@ export class EntertainmentModeDirector {
                     this.residentMask &= ~eventBit(event);
                 }
             }
-            this.eventIndex++;
-            if (this.eventIndex >= this.events.length || distance >= this.lastPreviewDistance()) {
-                this.complete();
+            if (this.eventIndex < this.events.length) this.eventIndex++;
+            if (this.eventIndex >= this.events.length) {
+                this.scheduleEncore(event);
             } else {
-                // 当前事件静默收尾后立刻预告下一事件；驻留内容继续工作，
-                // 但下一强事件仍需完整预告后才会激活。
-                this.phase = EntertainmentDirectorPhase.PREVIEW;
-                this.remainingSeconds = this.previewSeconds();
+                // 驻留内容继续工作；下一次强事件至少留出一段正常游泳时间，
+                // 并等领先选手抵达对应赛程锚点后才开始完整预告。
+                this.phase = EntertainmentDirectorPhase.GAP;
+                this.remainingSeconds = this.gapSeconds();
                 this.revision++;
-                transition.previewEvent = this.currentEvent();
             }
         }
         this.publishRuntimeState();
@@ -253,6 +284,10 @@ export class EntertainmentModeDirector {
             activatedMask: this.activatedMask >>> 0,
             residentMask: this.residentMask >>> 0,
             specialMask: this.specialMask >>> 0,
+            activationSerial: this.activationSerial,
+            lastActivatedEvent: this.lastActivatedEvent,
+            encoreRound: this.encoreRound,
+            encoreEvent: this.encoreEvent,
             anchorDistance: this.anchorDistance,
             eventAnchorDistances: [...this.eventAnchorDistances],
         };
@@ -269,7 +304,9 @@ export class EntertainmentModeDirector {
             || state.revision < this.revision) return transition;
         const previousPhase = this.phase;
         const previousIndex = this.eventIndex;
-        const previousActivatedMask = this.activatedMask;
+        const previousEvent = this.currentEvent();
+        const previousActivationSerial = this.activationSerial;
+        const previousEncoreRound = this.encoreRound;
         this.events.length = authoritativeEvents.length;
         for (let index = 0; index < authoritativeEvents.length; index++) {
             this.events[index] = authoritativeEvents[index];
@@ -281,20 +318,30 @@ export class EntertainmentModeDirector {
         this.activatedMask = state.activatedMask;
         this.residentMask = state.residentMask;
         this.specialMask = state.specialMask;
+        this.activationSerial = state.activationSerial;
+        this.lastActivatedEvent = state.lastActivatedEvent;
+        this.encoreRound = state.encoreRound;
+        this.encoreEvent = state.encoreEvent;
         this.anchorDistance = state.anchorDistance;
         for (let index = 0; index < this.eventAnchorDistances.length; index++) {
             this.eventAnchorDistances[index] = state.eventAnchorDistances[index];
         }
         const event = this.currentEvent();
         if (event !== null && this.phase === EntertainmentDirectorPhase.PREVIEW
-            && (previousPhase !== this.phase || previousIndex !== this.eventIndex)) {
+            && (previousPhase !== this.phase || previousIndex !== this.eventIndex
+                || previousEncoreRound !== this.encoreRound || previousEvent !== event)) {
             transition.previewEvent = event;
         }
-        const newlyActivated = this.activatedMask & ~previousActivatedMask;
-        if (event !== null && (newlyActivated & eventBit(event)) !== 0) transition.activatedEvent = event;
+        if (event !== null && this.phase === EntertainmentDirectorPhase.ACTIVE
+            && this.activationSerial > previousActivationSerial) transition.activatedEvent = event;
+        if (this.activationSerial > previousActivationSerial
+            && this.phase !== EntertainmentDirectorPhase.ACTIVE) {
+            transition.recoveredEvent = this.lastActivatedEvent;
+        }
         if (previousPhase === EntertainmentDirectorPhase.ACTIVE
-            && (this.phase !== previousPhase || previousIndex !== this.eventIndex)) {
-            transition.finishedEvent = this.events[previousIndex] ?? null;
+            && (this.phase !== previousPhase || previousIndex !== this.eventIndex
+                || previousEncoreRound !== this.encoreRound || previousEvent !== event)) {
+            transition.finishedEvent = previousEvent;
         }
         this.publishRuntimeState();
         return transition;
@@ -308,6 +355,18 @@ export class EntertainmentModeDirector {
         this.publishRuntimeState();
     }
 
+    private scheduleEncore(previousEvent: EntertainmentEventId | null): void {
+        this.eventIndex = this.events.length;
+        this.encoreRound++;
+        const random = new SeededRandom((this.seed ^ ENTERTAINMENT_ENCORE_RANDOM_SALT
+            ^ Math.imul(this.encoreRound, 0x9e3779b1)) >>> 0);
+        const candidates = ENCORE_EVENTS.filter(event => event !== previousEvent);
+        this.encoreEvent = candidates[random.int(candidates.length)];
+        this.phase = EntertainmentDirectorPhase.GAP;
+        this.remainingSeconds = ENCORE_GAP_MIN_SECONDS + random.next() * ENCORE_GAP_VARIATION_SECONDS;
+        this.revision++;
+    }
+
     private publishRuntimeState(): void {
         runtimeResidentMask = this.residentMask;
         runtimeActiveEvent = this.phase === EntertainmentDirectorPhase.ACTIVE ? this.currentEvent() : null;
@@ -316,6 +375,7 @@ export class EntertainmentModeDirector {
     private clearTransition(): EntertainmentDirectorTransition {
         this.transition.previewEvent = null;
         this.transition.activatedEvent = null;
+        this.transition.recoveredEvent = null;
         this.transition.finishedEvent = null;
         return this.transition;
     }
@@ -330,18 +390,14 @@ export class EntertainmentModeDirector {
         return this.events.length === 4 ? FOUR_EVENT_DURATION_SCALE : 1;
     }
 
-    private lastPreviewDistance(): number {
-        if (this.events.length >= 5) return LONG_RACE_LAST_PREVIEW_DISTANCE;
-        return this.events.length === 4
-            ? FOUR_EVENT_LAST_PREVIEW_DISTANCE
-            : THREE_EVENT_LAST_PREVIEW_DISTANCE;
+    private gapSeconds(): number {
+        return this.events.length >= 5 ? LONG_RACE_GAP_SECONDS : SHORT_RACE_GAP_SECONDS;
     }
 
-    private lastActivationDistance(): number {
-        if (this.events.length >= 5) return LONG_RACE_LAST_ACTIVATION_DISTANCE;
-        return this.events.length === 4
-            ? FOUR_EVENT_LAST_ACTIVATION_DISTANCE
-            : THREE_EVENT_LAST_ACTIVATION_DISTANCE;
+    private readyForPreview(distance: number): boolean {
+        if (this.eventIndex >= this.events.length) return this.encoreEvent !== null;
+        const progress = EVENT_PROGRESS_BY_COUNT[this.events.length]?.[this.eventIndex] ?? 0;
+        return distance >= this.raceDistance * progress;
     }
 }
 
@@ -420,6 +476,16 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
         && Number.isSafeInteger(state.residentMask) && state.residentMask >= 0
         && Number.isSafeInteger(state.specialMask) && state.specialMask >= 0
         && (state.specialMask & ~eventBit(EntertainmentEventId.WHIRLPOOL)) === 0
+        && Number.isSafeInteger(state.activationSerial) && state.activationSerial >= 0
+        && (state.lastActivatedEvent === null
+            || (Number.isSafeInteger(state.lastActivatedEvent)
+                && state.lastActivatedEvent >= EntertainmentEventId.STIMULANT
+                && state.lastActivatedEvent <= EntertainmentEventId.CANNON))
+        && (state.activationSerial === 0 || state.lastActivatedEvent !== null)
+        && Number.isSafeInteger(state.encoreRound) && state.encoreRound >= 0
+        && (state.encoreEvent === null || ENCORE_EVENTS.indexOf(state.encoreEvent) >= 0)
+        && (state.eventIndex < state.eventCount || state.encoreEvent !== null
+            || state.phase === EntertainmentDirectorPhase.COMPLETE)
         && Number.isFinite(state.anchorDistance) && state.anchorDistance >= 0
         && Array.isArray(state.eventAnchorDistances) && state.eventAnchorDistances.length === MAX_EVENT_COUNT
         && state.eventAnchorDistances.every(distance => Number.isFinite(distance) && distance >= 0);

@@ -55,25 +55,28 @@ test('400 米娱乐模式抽取五到六个不重复事件，并使用六个联�
     assert.deepEqual([...counts].sort(), [5, 6]);
 });
 
-test('400 米长局在冲刺截止线前可依次激活完整事件表', () => {
+test('400 米长局按赛程锚点依次激活完整事件表', () => {
     let seed = 0;
     while (buildEntertainmentEventOrder(seed, 400).length !== 6) seed++;
     const director = new EntertainmentModeDirector(seed, 400);
     const activated = [];
-    for (let elapsed = 0; elapsed < 150 && director.snapshot().phase !== EntertainmentDirectorPhase.COMPLETE; elapsed += 0.1) {
-        const transition = director.update(0.1, 200, true);
+    for (let elapsed = 0; elapsed < 260 && activated.length < director.selectedEvents().length; elapsed += 0.1) {
+        const transition = director.update(0.1, 400, true);
         if (transition.activatedEvent !== null) activated.push(transition.activatedEvent);
     }
     assert.deepEqual(activated, director.selectedEvents());
     assert.equal(activated.length, 6);
 });
 
-test('导演先保留四秒正常游泳，再进行五至六秒搞笑广播预告', () => {
+test('导演同时满足开局留白和首个赛程锚点后，再进行五至六秒搞笑广播预告', () => {
     const director = new EntertainmentModeDirector(18);
     const previewSeconds = director.selectedEvents().length === 4 ? 5 : 6;
     let transition = director.update(3.9, 8);
     assert.equal(transition.previewEvent, null);
     transition = director.update(0.11, 8);
+    assert.equal(transition.previewEvent, null);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.OPENING);
+    transition = director.update(0.11, 100);
     assert.equal(transition.previewEvent, director.selectedEvents()[0]);
     assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.PREVIEW);
     transition = director.update(previewSeconds - 0.1, 20);
@@ -88,24 +91,29 @@ test('四事件局压缩节奏后仍可依次激活全部四个事件', () => {
     while (buildEntertainmentEventOrder(seed).length !== 4) seed++;
     const director = new EntertainmentModeDirector(seed);
     const activated = [];
-    for (let elapsed = 0; elapsed < 90 && director.snapshot().phase !== EntertainmentDirectorPhase.COMPLETE; elapsed += 0.1) {
-        const transition = director.update(0.1, 80, true);
+    for (let elapsed = 0; elapsed < 150 && activated.length < director.selectedEvents().length; elapsed += 0.1) {
+        const transition = director.update(0.1, 200, true);
         if (transition.activatedEvent !== null) activated.push(transition.activatedEvent);
     }
     assert.deepEqual(activated, director.selectedEvents());
     assert.equal(activated.length, 4);
 });
 
-test('事件完成后不进入空档，同一帧直接开始下一事件预告', () => {
+test('事件完成后进入真实空档，至少五秒后才允许下一次预告', () => {
     const director = new EntertainmentModeDirector(18);
     const previewSeconds = director.selectedEvents().length === 4 ? 5 : 6;
-    director.update(4.01, 10);
-    let transition = director.update(previewSeconds + 0.01, 20);
+    director.update(4.01, 200);
+    let transition = director.update(previewSeconds + 0.01, 200);
     const firstEvent = director.selectedEvents()[0];
     const secondEvent = director.selectedEvents()[1];
     assert.equal(transition.activatedEvent, firstEvent);
-    transition = director.update(director.snapshot().remainingSeconds + 0.01, 40, true);
+    transition = director.update(director.snapshot().remainingSeconds + 0.01, 200, true);
     assert.equal(transition.finishedEvent, firstEvent);
+    assert.equal(transition.previewEvent, null);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.GAP);
+    transition = director.update(4.9, 200, true);
+    assert.equal(transition.previewEvent, null);
+    transition = director.update(0.11, 200, true);
     assert.equal(transition.previewEvent, secondEvent);
     assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.PREVIEW);
     assert.equal(director.snapshot().remainingSeconds, previewSeconds);
@@ -115,13 +123,61 @@ test('定时炸弹未结算时导演不会切段，结算后继续轮换', () =>
     let seed = 0;
     while (buildEntertainmentEventOrder(seed)[0] !== EntertainmentEventId.TIMED_BOMB) seed++;
     const director = new EntertainmentModeDirector(seed);
-    if (director.snapshot().phase !== EntertainmentDirectorPhase.PREVIEW) advance(director, 7, 20, true);
-    advance(director, 7, 20, true);
+    if (director.snapshot().phase !== EntertainmentDirectorPhase.PREVIEW) advance(director, 7, 200, true);
+    advance(director, 7, 200, true);
     assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.ACTIVE);
     advance(director, 12, 40, false);
     assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.ACTIVE);
     advance(director, 1, 40, true);
-    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.PREVIEW);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.GAP);
+});
+
+test('400 米事件覆盖到赛程后段，主事件结束后只返场可安全重置的事件', () => {
+    let seed = 0;
+    while (buildEntertainmentEventOrder(seed, 400).length !== 6) seed++;
+    const director = new EntertainmentModeDirector(seed, 400);
+    const ratios = [0.08, 0.24, 0.40, 0.56, 0.72, 0.90];
+    const anchors = [];
+    for (let index = 0; index < ratios.length; index++) {
+        const distance = ratios[index] * 400;
+        let transition = director.update(100, distance, true);
+        assert.equal(transition.previewEvent, director.selectedEvents()[index]);
+        transition = director.update(director.previewDurationSeconds() + 0.01, distance, true);
+        assert.equal(transition.activatedEvent, director.selectedEvents()[index]);
+        anchors.push(director.snapshot().anchorDistance);
+        transition = director.update(100, distance, true);
+        assert.equal(transition.finishedEvent, director.selectedEvents()[index]);
+    }
+    assert.deepEqual(anchors, ratios.map(ratio => ratio * 400));
+
+    const afterMain = director.snapshot();
+    assert.equal(afterMain.phase, EntertainmentDirectorPhase.GAP);
+    assert.equal(afterMain.encoreRound, 1);
+    assert.ok([
+        EntertainmentEventId.CANNON,
+        EntertainmentEventId.SHARK,
+        EntertainmentEventId.TIMED_BOMB,
+    ].includes(afterMain.encoreEvent));
+    const firstEncore = afterMain.encoreEvent;
+    let transition = director.update(12.01, 399, true);
+    assert.equal(transition.previewEvent, firstEncore);
+    transition = director.update(director.previewDurationSeconds() + 0.01, 399, true);
+    assert.equal(transition.activatedEvent, firstEncore);
+    assert.equal(director.snapshot().activationSerial, 7);
+    assert.equal(director.snapshot().eventAnchorDistances.length, 6);
+
+    const payload = encodeRaceSnapshot(0, [], null, null, null, null, null, null, director.snapshot());
+    const guest = new EntertainmentModeDirector(seed + 100, 400);
+    const guestTransition = guest.applySnapshot(decodeRaceSnapshot(payload).entertainmentDirector);
+    assert.equal(guestTransition.activatedEvent, firstEncore);
+    assert.equal(guest.applySnapshot(decodeRaceSnapshot(payload).entertainmentDirector).activatedEvent, null);
+    const recoveryGuest = new EntertainmentModeDirector(seed, 400);
+    recoveryGuest.applySnapshot(afterMain);
+    director.update(100, 399, true);
+    const nextEncore = director.snapshot();
+    assert.equal(nextEncore.encoreRound, 2);
+    assert.notEqual(nextEncore.encoreEvent, firstEncore);
+    assert.equal(recoveryGuest.applySnapshot(nextEncore).recoveredEvent, firstEncore);
 });
 
 test('导演状态跟随比赛快照往返，支持访客恢复和房主迁移', () => {
@@ -178,7 +234,9 @@ test('正式入口收拢为娱乐模式，六合一复用原控制器并使用�
     assert.match(manager, /buildEntertainmentStimulantSchedule/);
     assert.match(manager, /fuseSeconds: 8/);
     assert.match(manager, /getRaceDistance\(\) >= 400 \? \[1, 3, 5, 7, 9\] : \[1, 3, 5\]/);
-    assert.match(manager, /triggerDistance: this\.entertainmentAnchorDistance\(EntertainmentEventId\.TIMED_BOMB\) \+ 12/);
+    assert.match(manager, /triggerDistance: anchor \+ 12/);
+    assert.match(manager, /_mineRelayBrawl\.restart\(this\.entertainmentTimedBombRounds\(\)\)/);
+    assert.match(manager, /_cannonBrawl\.restart\(this\.entertainmentCannonStrikeTriggers\(\)\)/);
     assert.match(manager, /isEntertainmentBrawlMode\(\) \? 5 : MINEFIELD_TUNING\.mineCount/);
     assert.match(manager, /getRaceDistance\(\) >= 400 \? \[0, 9\] : \[0\]/);
     assert.doesNotMatch(manager, /Unified(?:Shark|Cannon|Mine|Whirlpool|Stimulant)(?:Controller|Presentation|Prefab)/);

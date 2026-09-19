@@ -1062,7 +1062,11 @@ export class GameManager extends Component {
             handleModelDebugKickStroke: (type) => this._modelDebugFlow?.handleKickStroke(type) ?? false,
             handleModelDebugKickConfirmed: () => this._modelDebugFlow?.confirmKickStroke() ?? false,
             setState: (state) => {
+                const previousState = this._state;
                 this._state = state;
+                if (previousState === GameState.RACING && state !== GameState.RACING) {
+                    this._entertainmentEventBanner.hide();
+                }
                 this.syncConditionPhase(state);
                 if ((state === GameState.READY || state === GameState.PRECOUNTDOWN)
                     && this._spectatorCameraFlashEmitter?.isValid) {
@@ -1424,13 +1428,15 @@ export class GameManager extends Component {
     private canFinishEntertainmentEvent(event: EntertainmentEventId | null): boolean {
         if (event === EntertainmentEventId.TIMED_BOMB) {
             return !!this._mineRelayBrawl
-                && this._mineRelayBrawl.currentArm() === null
-                && this._mineRelayBrawl.remainingRoundCount() === 0;
+                && (this._mineRelayBrawl.activeCount() <= 1
+                    || (this._mineRelayBrawl.currentArm() === null
+                        && this._mineRelayBrawl.remainingRoundCount() === 0));
         }
         if (event === EntertainmentEventId.CANNON) {
             return !!this._cannonBrawl
-                && this._cannonBrawl.currentLaunch() === null
-                && this._cannonBrawl.remainingStrikeCount() === 0;
+                && (this._cannonBrawl.activeCount() <= 0
+                    || (this._cannonBrawl.currentLaunch() === null
+                        && this._cannonBrawl.remainingStrikeCount() === 0));
         }
         if (event === EntertainmentEventId.SHARK) {
             return !!this._shark && this._shark.hasCompletedHunts()
@@ -1440,6 +1446,11 @@ export class GameManager extends Component {
     }
 
     private handleEntertainmentDirectorTransition(transition: EntertainmentDirectorTransition) {
+        if (transition.recoveredEvent !== null) {
+            // 客机可能错过整段返场；先静默重置该子玩法，再由同一份 S| 快照
+            // 灌入最终权威状态，避免旧一轮的 revision／追猎序号拒绝新状态。
+            this.activateEntertainmentEvent(transition.recoveredEvent);
+        }
         if (transition.previewEvent !== null) {
             const previewDurationMs = (this._entertainmentDirector?.previewDurationSeconds() ?? 6) * 1000;
             this._entertainmentEventBanner.showEvent(
@@ -1481,7 +1492,13 @@ export class GameManager extends Component {
                 // 控制器在本帧后续 update 中创建，沿用独立玩法的全部美术与拾取反馈。
                 break;
             case EntertainmentEventId.TIMED_BOMB:
-                this.setupMineRelayBrawl();
+                if (this._mineRelayBrawl) {
+                    this._mineRelayBrawl.restart(this.entertainmentTimedBombRounds());
+                    this._mineRelayPresentation?.reset();
+                    this._mineRelayHud?.reset();
+                } else {
+                    this.setupMineRelayBrawl();
+                }
                 break;
             case EntertainmentEventId.WHIRLPOOL:
                 setRuntimeWhirlpoolSpawns(this.entertainmentWhirlpoolSpawns(anchorDistance));
@@ -1490,10 +1507,21 @@ export class GameManager extends Component {
                 this.setupMinefieldBrawl();
                 break;
             case EntertainmentEventId.SHARK:
-                this.setupSharkBrawl();
+                if (this._shark) {
+                    // 返场使用原有鲨鱼节点和监听，只重置本轮追猎状态，避免重复创建模型。
+                    this._shark.reset();
+                } else {
+                    this.setupSharkBrawl();
+                }
                 break;
             case EntertainmentEventId.CANNON:
-                this.setupCannonBrawl();
+                if (this._cannonBrawl) {
+                    this._cannonBrawl.restart(this.entertainmentCannonStrikeTriggers());
+                    this._cannonBrawlPresentation?.reset();
+                    this._cannonBrawlHud?.reset();
+                } else {
+                    this.setupCannonBrawl();
+                }
                 break;
         }
     }
@@ -1501,7 +1529,9 @@ export class GameManager extends Component {
     private reconcileEntertainmentResidents() {
         const director = this._entertainmentDirector;
         if (!director) return;
-        for (const event of director.selectedEvents()) {
+        // 返场事件可能是主事件表里唯一漏掉的那一种，恢复时必须扫描完整事件 ID，
+        // 不能只遍历 selectedEvents()，否则晚加入会漏建返场后的驻留鲨鱼或炮台。
+        for (let event = EntertainmentEventId.STIMULANT; event <= EntertainmentEventId.CANNON; event++) {
             if (!isEntertainmentEventResident(event)) continue;
             switch (event) {
                 case EntertainmentEventId.STIMULANT:
@@ -1543,6 +1573,21 @@ export class GameManager extends Component {
             getRaceDistance(),
             this._entertainmentDirector?.isSpecialEvent(EntertainmentEventId.WHIRLPOOL) ?? false,
         );
+    }
+
+    private entertainmentCannonStrikeTriggers(): readonly number[] {
+        return (getRaceDistance() >= 400 ? [1, 3, 5, 7, 9] : [1, 3, 5])
+            .map(offset => this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + offset);
+    }
+
+    private entertainmentTimedBombRounds(): ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> {
+        const anchor = this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB);
+        return getRaceDistance() >= 400
+            ? [
+                { triggerDistance: anchor, fuseSeconds: 8 },
+                { triggerDistance: anchor + 12, fuseSeconds: 8 },
+            ]
+            : [{ triggerDistance: anchor, fuseSeconds: 8 }];
     }
 
     private entertainmentLeaderDistance(): number {
@@ -1834,10 +1879,7 @@ export class GameManager extends Component {
             },
             launch => this.handleCannonLaunch(launch, true),
             impact => this.handleCannonImpact(impact, true),
-            isEntertainmentBrawlMode()
-                ? (getRaceDistance() >= 400 ? [1, 3, 5, 7, 9] : [1, 3, 5])
-                    .map(offset => this.entertainmentAnchorDistance(EntertainmentEventId.CANNON) + offset)
-                : undefined,
+            isEntertainmentBrawlMode() ? this.entertainmentCannonStrikeTriggers() : undefined,
             Math.max(0, getRaceDistance() - 20),
         );
         this._netRaceController?.setCannonLaunchListener((strikeId, targetDistance, targetZ, warningSeconds, revision) => {
@@ -2018,14 +2060,7 @@ export class GameManager extends Component {
             event => this.handleMineRelayArm(event, true),
             event => this.handleMineRelayTransfer(event, true),
             event => this.handleMineRelayResolution(event, true),
-            isEntertainmentBrawlMode()
-                ? (getRaceDistance() >= 400
-                    ? [
-                        { triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB), fuseSeconds: 8 },
-                        { triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB) + 12, fuseSeconds: 8 },
-                    ]
-                    : [{ triggerDistance: this.entertainmentAnchorDistance(EntertainmentEventId.TIMED_BOMB), fuseSeconds: 8 }])
-                : undefined,
+            isEntertainmentBrawlMode() ? this.entertainmentTimedBombRounds() : undefined,
         );
         this._netRaceController?.setMineRelayArmListener((roundId, carrierLane, fuseSeconds, revision) => {
             const event = { roundId, carrierLane, fuseSeconds, revision };
