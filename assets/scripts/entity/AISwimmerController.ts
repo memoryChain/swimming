@@ -74,6 +74,7 @@ export class AISwimmerController extends Component {
     private _cannonTargetZ: number | null = null;
     private _mineRelayTargetZ: number | null = null;
     private _minefieldTargetZ: number | null = null;
+    private _litterTargetZ: number | null = null;
     private _eventIntentPriority = 0;
     private _eventIntentHoldUntil = 0;
     private _safeMinZ: number | null = null;
@@ -143,6 +144,10 @@ export class AISwimmerController extends Component {
 
     setMinefieldTargetZ(targetZ: number | null) {
         this._minefieldTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
+    }
+
+    setLitterTargetZ(targetZ: number | null) {
+        this._litterTargetZ = targetZ !== null && Number.isFinite(targetZ) ? targetZ : null;
     }
 
     startSwimming() {
@@ -280,6 +285,7 @@ export class AISwimmerController extends Component {
         if (this._sharkTargetZ !== null) desiredPriority = 4;
         if (this._cannonTargetZ !== null) desiredPriority = 5;
         if (this._minefieldTargetZ !== null) desiredPriority = 6;
+        if (this._litterTargetZ !== null) desiredPriority = 7;
 
         const heldTarget = this.eventTargetForPriority(this._eventIntentPriority);
         if (heldTarget === null || desiredPriority > this._eventIntentPriority
@@ -294,6 +300,7 @@ export class AISwimmerController extends Component {
 
     private eventTargetForPriority(priority: number): number | null {
         switch (priority) {
+            case 7: return this._litterTargetZ;
             case 6: return this._minefieldTargetZ;
             case 5: return this._cannonTargetZ;
             case 4: return this._sharkTargetZ;

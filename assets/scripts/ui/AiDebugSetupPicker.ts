@@ -15,6 +15,7 @@ const MODE_TEST_MODES: readonly RaceModeId[] = [
     'last-place-brawl',
     'timed-bomb-brawl',
     'minefield-brawl',
+    'litter-brawl',
 ];
 const MODE_TEST_DIFFICULTY = AI_DEBUG_DIFFICULTY_TIERS[2].value;
 
@@ -208,15 +209,15 @@ export function buildAiDebugSetupPicker(root: Node, start: (difficulty: number) 
     };
     for (let index = 0; index < MODE_TEST_MODES.length; index++) {
         const testMode = MODE_TEST_MODES[index];
-        const x = index % 2 === 0 ? -200 : 200;
-        const y = 154 - Math.floor(index / 2) * 70;
-        const card = button(modeContent, `ModeChoice${index}`, getRaceModeTitle(testMode), x, y, 340, () => {
+        const x = -280 + (index % 3) * 280;
+        const y = 154 - Math.floor(index / 3) * 62;
+        const card = button(modeContent, `ModeChoice${index}`, getRaceModeTitle(testMode), x, y, 250, () => {
             const previous = modeTestMode;
             modeTestMode = testMode;
             updateModeSelection(previous, modeTestMode);
-        }, 52);
-        const selected = makeRect('Selected', card.node, 8, 46, uiColor(66, 222, 255, 255));
-        selected.setPosition(-164, 0, 0);
+        }, 48);
+        const selected = makeRect('Selected', card.node, 8, 42, uiColor(66, 222, 255, 255));
+        selected.setPosition(-119, 0, 0);
         setActive(selected, testMode === modeTestMode);
         modeViews.set(testMode, { selected, label: card.label });
     }

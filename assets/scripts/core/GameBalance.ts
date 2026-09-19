@@ -12,10 +12,10 @@ export const FINISH_STRAGGLER_COUNTDOWN_SECONDS = 10;
 export type RaceDifficulty = 'beginner' | 'competitive' | 'championship';
 export type RaceModeId = RaceDifficulty | 'stimulant-brawl' | 'shark-brawl'
     | 'whirlpool-brawl' | 'last-place-brawl' | 'timed-bomb-brawl' | 'minefield-brawl'
-    | 'mine-relay-brawl' | 'entertainment-brawl';
+    | 'mine-relay-brawl' | 'litter-brawl' | 'entertainment-brawl';
 export type RaceCategoryId = 'competitive' | 'entertainment';
 export type RaceRulesetId = 'standard' | 'wild' | 'stimulant' | 'shark' | 'whirlpool' | 'cannon'
-    | 'timed-bomb' | 'minefield' | 'entertainment';
+    | 'timed-bomb' | 'minefield' | 'litter' | 'entertainment';
 
 export type RaceModeConfig = {
     id: RaceModeId;
@@ -43,6 +43,7 @@ export const RACE_MODE_OPTIONS: readonly RaceModeConfig[] = [
     { id: 'last-place-brawl', label: '炮火逃生赛', category: 'entertainment', distance: 200, ruleset: 'cannon', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'timed-bomb-brawl', label: '定时炸弹模式', category: 'entertainment', distance: 200, ruleset: 'timed-bomb', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
     { id: 'minefield-brawl', label: '水雷模式', category: 'entertainment', distance: 200, ruleset: 'minefield', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
+    { id: 'litter-brawl', label: '垃圾漂流大乱斗', category: 'entertainment', distance: 200, ruleset: 'litter', laneLockdownEnabled: false, steeringEnabled: true, publicEntry: false },
 ];
 export const PUBLIC_RACE_MODE_OPTIONS: readonly RaceModeConfig[] = RACE_MODE_OPTIONS.filter(
     option => option.publicEntry !== false,
@@ -129,6 +130,10 @@ export function isMinefieldBrawlMode(mode: RaceModeId = currentRaceMode): boolea
     const ruleset = getRaceModeConfig(mode).ruleset;
     return ruleset === 'minefield' || (ruleset === 'entertainment'
         && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.MINEFIELD));
+}
+
+export function isLitterBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
+    return getRaceModeConfig(mode).ruleset === 'litter';
 }
 
 export function isEntertainmentBrawlMode(mode: RaceModeId = currentRaceMode): boolean {

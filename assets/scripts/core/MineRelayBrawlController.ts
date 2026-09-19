@@ -1,4 +1,9 @@
 import { GameState } from './GameConstants';
+import {
+    expandedEllipseContains,
+    expandedEllipseDistanceSquared,
+    segmentHitsExpandedEllipse,
+} from './RaceContactGeometry';
 import { SeededRandom } from './SharedRNG';
 
 export type MineRelayRacerState = {
@@ -64,8 +69,9 @@ export const MINE_RELAY_ROUNDS: ReadonlyArray<{ triggerDistance: number; fuseSec
 ];
 
 export const MINE_RELAY_TUNING = {
-    transferAlongRadius: 1.25,
-    transferLateralRadius: 0.9,
+    transferBodyAlongRadius: 0.625,
+    transferBodyLateralRadius: 0.45,
+    transferMaxSweepDistance: 3,
     transferCooldownSeconds: 0.7,
     returnProtectionSeconds: 1.1,
     lockSeconds: 0.8,
@@ -87,7 +93,7 @@ export const MINE_RELAY_TUNING = {
 
 /**
  * 定时炸弹模式的单机／房主权威规则。访客只推进显示计时，并应用可靠事件和快照。
- * 判定使用赛道坐标中的椭圆身体胶囊，不依赖各设备的碰撞数组顺序。
+ * 传递判定使用赛道坐标中的双方身体扩张椭圆与相对路径扫掠，不依赖各设备的碰撞数组顺序。
  */
 export class MineRelayBrawlController {
     private revision = 0;
@@ -102,6 +108,8 @@ export class MineRelayBrawlController {
     private recoverySeconds = 0;
     private previousCarrierLane = -1;
     private lastStarterLane = -1;
+    private readonly previousRacerDistance: number[];
+    private readonly previousRacerLateral: number[];
 
     constructor(
         private readonly laneCount: number,
@@ -112,7 +120,10 @@ export class MineRelayBrawlController {
         private readonly onTransfer: (event: MineRelayTransfer) => void,
         private readonly onResolution: (event: MineRelayResolution) => void,
         private rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = MINE_RELAY_ROUNDS,
-    ) {}
+    ) {
+        this.previousRacerDistance = new Array(laneCount).fill(Number.NaN);
+        this.previousRacerLateral = new Array(laneCount).fill(Number.NaN);
+    }
 
     reset(): void {
         this.revision = 0;
@@ -127,6 +138,8 @@ export class MineRelayBrawlController {
         this.recoverySeconds = 0;
         this.previousCarrierLane = -1;
         this.lastStarterLane = -1;
+        this.previousRacerDistance.fill(Number.NaN);
+        this.previousRacerLateral.fill(Number.NaN);
     }
 
     restart(rounds: ReadonlyArray<{ triggerDistance: number; fuseSeconds: number }> = this.rounds): void {
@@ -135,45 +148,53 @@ export class MineRelayBrawlController {
     }
 
     update(dt: number, state: GameState, authoritative: boolean): void {
-        if (state !== GameState.RACING) return;
-        const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
-        this.recoverySeconds = Math.max(0, this.recoverySeconds - step);
-        if (this.activeArm) {
-            this.remainingSeconds = Math.max(0, this.remainingSeconds - step);
-            this.transferCooldownSeconds = Math.max(0, this.transferCooldownSeconds - step);
-            this.returnProtectionSeconds = Math.max(0, this.returnProtectionSeconds - step);
-            if (!authoritative) return;
-            const carrier = this.racerForLane(this.activeArm.carrierLane);
-            if (!carrier?.active || carrier.finished) {
-                this.resolveActiveRound(false);
-                return;
-            }
-            if (this.remainingSeconds <= 0) {
-                this.resolveActiveRound(true);
-                return;
-            }
-            if (!this.isLocked() && this.transferCooldownSeconds <= 0) {
-                const nextCarrier = this.pickTransferTarget(this.activeArm.carrierLane);
-                if (nextCarrier >= 0) this.transferTo(nextCarrier);
-            }
+        if (state !== GameState.RACING) {
+            this.previousRacerDistance.fill(Number.NaN);
+            this.previousRacerLateral.fill(Number.NaN);
             return;
         }
-        if (!authoritative || this.recoverySeconds > 0 || this.activeCount() <= 1) return;
-        const roundId = this.nextRoundId();
-        if (roundId < 0 || this.leaderDistance() < this.rounds[roundId].triggerDistance) return;
-        const carrierLane = this.pickStarterLane(roundId);
-        if (carrierLane < 0) {
-            this.completedRoundMask |= 1 << roundId;
-            return;
+        try {
+            const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+            this.recoverySeconds = Math.max(0, this.recoverySeconds - step);
+            if (this.activeArm) {
+                this.remainingSeconds = Math.max(0, this.remainingSeconds - step);
+                this.transferCooldownSeconds = Math.max(0, this.transferCooldownSeconds - step);
+                this.returnProtectionSeconds = Math.max(0, this.returnProtectionSeconds - step);
+                if (!authoritative) return;
+                const carrier = this.racerForLane(this.activeArm.carrierLane);
+                if (!carrier?.active || carrier.finished) {
+                    this.resolveActiveRound(false);
+                    return;
+                }
+                if (this.remainingSeconds <= 0) {
+                    this.resolveActiveRound(true);
+                    return;
+                }
+                if (!this.isLocked() && this.transferCooldownSeconds <= 0) {
+                    const nextCarrier = this.pickTransferTarget(this.activeArm.carrierLane);
+                    if (nextCarrier >= 0) this.transferTo(nextCarrier);
+                }
+                return;
+            }
+            if (!authoritative || this.recoverySeconds > 0 || this.activeCount() <= 1) return;
+            const roundId = this.nextRoundId();
+            if (roundId < 0 || this.leaderDistance() < this.rounds[roundId].triggerDistance) return;
+            const carrierLane = this.pickStarterLane(roundId);
+            if (carrierLane < 0) {
+                this.completedRoundMask |= 1 << roundId;
+                return;
+            }
+            const arm: MineRelayArm = {
+                roundId,
+                carrierLane,
+                fuseSeconds: this.rounds[roundId].fuseSeconds,
+                revision: this.revision + 1,
+            };
+            this.applyArm(arm);
+            this.onArm(arm);
+        } finally {
+            this.rememberRacerPositions();
         }
-        const arm: MineRelayArm = {
-            roundId,
-            carrierLane,
-            fuseSeconds: this.rounds[roundId].fuseSeconds,
-            revision: this.revision + 1,
-        };
-        this.applyArm(arm);
-        this.onArm(arm);
     }
 
     applyArm(event: MineRelayArm): boolean {
@@ -387,25 +408,64 @@ export class MineRelayBrawlController {
     private pickTransferTarget(carrierLane: number): number {
         const carrier = this.racerForLane(carrierLane);
         if (!carrier) return -1;
+        const previousCarrierDistance = this.previousRacerDistance[carrierLane];
+        const previousCarrierLateral = this.previousRacerLateral[carrierLane];
         let bestLane = -1;
         let bestDistance = Number.POSITIVE_INFINITY;
         for (let lane = 0; lane < this.laneCount; lane++) {
             if (lane === carrierLane || !this.isEligibleLane(lane)) continue;
             if (lane === this.previousCarrierLane && this.returnProtectionSeconds > 0) continue;
             const racer = this.racerForLane(lane)!;
-            const normalized = ellipseDistanceSquared(
-                racer.distance - carrier.distance,
-                racer.lateral - carrier.lateral,
-                MINE_RELAY_TUNING.transferAlongRadius,
-                MINE_RELAY_TUNING.transferLateralRadius,
+            const along = racer.distance - carrier.distance;
+            const lateral = racer.lateral - carrier.lateral;
+            const inside = expandedEllipseContains(
+                along, lateral, 0, 0,
+                MINE_RELAY_TUNING.transferBodyAlongRadius,
+                MINE_RELAY_TUNING.transferBodyLateralRadius,
+                MINE_RELAY_TUNING.transferBodyAlongRadius,
+                MINE_RELAY_TUNING.transferBodyLateralRadius,
             );
-            if (normalized > 1) continue;
+            const previousAlong = this.previousRacerDistance[lane] - previousCarrierDistance;
+            const previousLateral = this.previousRacerLateral[lane] - previousCarrierLateral;
+            const relativeSweepAlong = along - previousAlong;
+            const relativeSweepLateral = lateral - previousLateral;
+            const maxSweep = MINE_RELAY_TUNING.transferMaxSweepDistance;
+            const canSweep = Number.isFinite(previousAlong) && Number.isFinite(previousLateral)
+                && relativeSweepAlong * relativeSweepAlong + relativeSweepLateral * relativeSweepLateral
+                    <= maxSweep * maxSweep;
+            const swept = canSweep && segmentHitsExpandedEllipse(
+                previousAlong, previousLateral, along, lateral, 0, 0,
+                MINE_RELAY_TUNING.transferBodyAlongRadius,
+                MINE_RELAY_TUNING.transferBodyLateralRadius,
+                MINE_RELAY_TUNING.transferBodyAlongRadius,
+                MINE_RELAY_TUNING.transferBodyLateralRadius,
+            );
+            if (!inside && !swept) continue;
+            const normalized = inside ? expandedEllipseDistanceSquared(
+                along, lateral, 0, 0,
+                MINE_RELAY_TUNING.transferBodyAlongRadius,
+                MINE_RELAY_TUNING.transferBodyLateralRadius,
+                MINE_RELAY_TUNING.transferBodyAlongRadius,
+                MINE_RELAY_TUNING.transferBodyLateralRadius,
+            ) : 1;
             if (normalized < bestDistance || (normalized === bestDistance && lane < bestLane)) {
                 bestDistance = normalized;
                 bestLane = lane;
             }
         }
         return bestLane;
+    }
+
+    private rememberRacerPositions(): void {
+        for (let lane = 0; lane < this.laneCount; lane++) {
+            const racer = this.racerForLane(lane);
+            this.previousRacerDistance[lane] = racer?.active && !racer.finished
+                ? racer.distance
+                : Number.NaN;
+            this.previousRacerLateral[lane] = racer?.active && !racer.finished
+                ? racer.lateral
+                : Number.NaN;
+        }
     }
 
     private nearestPassTarget(carrierLane: number): number {

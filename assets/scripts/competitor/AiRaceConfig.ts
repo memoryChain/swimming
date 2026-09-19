@@ -88,5 +88,5 @@ export const AI_EVENTS: Record<string, AiEventConfig> = {
 export const AI_EVENT_BY_MODE: Record<RaceModeId, string> = {
     beginner: 'club', competitive: 'club', championship: 'club', 'stimulant-brawl': 'club', 'shark-brawl': 'club',
     'whirlpool-brawl': 'club', 'last-place-brawl': 'club', 'timed-bomb-brawl': 'club',
-    'minefield-brawl': 'club', 'mine-relay-brawl': 'club', 'entertainment-brawl': 'club',
+    'minefield-brawl': 'club', 'mine-relay-brawl': 'club', 'litter-brawl': 'club', 'entertainment-brawl': 'club',
 };

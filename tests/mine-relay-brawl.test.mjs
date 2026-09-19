@@ -68,6 +68,29 @@ test('定时炸弹贴身传递具有冷却和上一持有者防回传', () => {
     assert.equal(fixture.transfers[1].toLane, first);
 });
 
+test('定时炸弹传递扫掠双方相对路径，单帧擦身而过也能传递', () => {
+    const fixture = timedBombFixture(441);
+    fixture.controller.update(0, GameState.RACING, true);
+    const carrier = fixture.controller.currentCarrierLane();
+    const target = carrier === 0 ? 1 : 0;
+    for (let lane = 0; lane < fixture.racers.length; lane++) {
+        if (lane === carrier || lane === target) continue;
+        fixture.racers[lane].distance = fixture.racers[carrier].distance + 20;
+    }
+    fixture.racers[target].distance = fixture.racers[carrier].distance - 1.4;
+    fixture.racers[target].lateral = fixture.racers[carrier].lateral;
+    fixture.controller.update(MINE_RELAY_TUNING.transferCooldownSeconds - 0.01, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 0);
+
+    fixture.racers[target].distance = fixture.racers[carrier].distance + 1.4;
+    fixture.controller.update(0.02, GameState.RACING, true);
+    assert.equal(fixture.transfers.length, 1);
+    assert.equal(fixture.transfers[0].toLane, target);
+    assert.ok(Math.abs(MINE_RELAY_TUNING.transferBodyAlongRadius * 2 - 1.25) < 1e-9,
+        '双方身体半径之和应保持原静态传递范围');
+    assert.ok(Math.abs(MINE_RELAY_TUNING.transferBodyLateralRadius * 2 - 0.9) < 1e-9);
+});
+
 test('定时炸弹锁定后不能传递，归零只结算当前持有者', () => {
     const fixture = timedBombFixture();
     fixture.controller.update(0, GameState.RACING, true);
@@ -187,6 +210,27 @@ test('水雷碰到立即爆炸，本局永久消失并只在重开时恢复', ()
     assert.equal(fixture.controller.mines()[mine.id].active, false);
     fixture.controller.reset();
     assert.equal(fixture.controller.mines()[mine.id].active, true);
+});
+
+test('水雷使用自身与人物身体的扩张接触范围，身体边缘擦到即可触雷', () => {
+    const fixture = minefieldFixture(811);
+    const mine = fixture.controller.mines()[0];
+    const centerGap = MINEFIELD_TUNING.mineItemAlongRadius
+        + MINEFIELD_TUNING.swimmerContactAlongRadius * 0.75;
+    assert.ok(centerGap > MINEFIELD_TUNING.mineItemAlongRadius,
+        '人物中心应位于水雷自身范围之外');
+    fixture.racers[0].distance = mine.courseX + centerGap;
+    fixture.racers[0].lateral = mine.lateral;
+    fixture.racers[1].active = false;
+    fixture.controller.update(0, GameState.RACING, true);
+    assert.equal(fixture.impacts.length, 1);
+    assert.equal(fixture.impacts[0].mineId, mine.id);
+    assert.ok(Math.abs(MINEFIELD_TUNING.mineItemAlongRadius
+        + MINEFIELD_TUNING.swimmerContactAlongRadius - 1.35) < 1e-9,
+        '扩张后应保持原纵向触雷总范围');
+    assert.ok(Math.abs(MINEFIELD_TUNING.mineItemLateralRadius
+        + MINEFIELD_TUNING.swimmerContactLateralRadius - 1.05) < 1e-9,
+        '扩张后应保持原横向触雷总范围');
 });
 
 test('水雷直接触碰者和附近选手由同一房主权威范围区分', () => {

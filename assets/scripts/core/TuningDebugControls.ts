@@ -21,6 +21,7 @@ import { STIMULANT_BRAWL_TUNING } from './StimulantBrawlRules';
 import { WHIRLPOOL_BRAWL_TUNING, WHIRLPOOL_SUPER_TUNING } from './WhirlpoolBrawlRules';
 import { MINE_RELAY_TUNING } from './MineRelayBrawlController';
 import { MINEFIELD_TUNING } from './MinefieldBrawlController';
+import { LITTER_BRAWL_TUNING } from './LitterBrawlController';
 import { ENTERTAINMENT_RECOVERY_TUNING } from './EntertainmentRecoveryController';
 
 export type TuningControl = {
@@ -53,7 +54,7 @@ const PROJECT_TUNING_RESOURCE = 'config/tuning';
 const PROJECT_TUNING_ASSET_PATH = 'assets/resources/config/tuning.json';
 const TUNING_FILE_DIR = 'SpeedSwimming';
 const TUNING_FILE_NAME = 'tuning.json';
-const TUNING_FILE_VERSION = 48;
+const TUNING_FILE_VERSION = 57;
 
 type TuningFileData = {
     version: number;
@@ -387,8 +388,9 @@ export const TUNING_GROUPS: TuningGroup[] = [
     {
         name: '定时炸弹模式',
         controls: [
-            control('mineRelay.transferAlongRadius', '前后传递范围', '沿赛道方向的贴身传雷判定半径。', () => MINE_RELAY_TUNING.transferAlongRadius, v => MINE_RELAY_TUNING.transferAlongRadius = v, 0.05, 0.5, 2.5, 2, ' m'),
-            control('mineRelay.transferLateralRadius', '横向传递范围', '跨泳道方向的贴身传雷判定半径。', () => MINE_RELAY_TUNING.transferLateralRadius, v => MINE_RELAY_TUNING.transferLateralRadius = v, 0.05, 0.4, 2, 2, ' m'),
+            control('mineRelay.transferBodyAlongRadius', '身体前后传递半径', '每名选手沿赛道方向参与贴身传递的身体半径；双方半径相加后保持原总范围。', () => MINE_RELAY_TUNING.transferBodyAlongRadius, v => MINE_RELAY_TUNING.transferBodyAlongRadius = v, 0.025, 0.25, 1.25, 3, ' m'),
+            control('mineRelay.transferBodyLateralRadius', '身体横向传递半径', '每名选手跨泳道方向参与贴身传递的身体半径；双方半径相加后保持原总范围。', () => MINE_RELAY_TUNING.transferBodyLateralRadius, v => MINE_RELAY_TUNING.transferBodyLateralRadius = v, 0.025, 0.2, 1, 3, ' m'),
+            control('mineRelay.transferMaxSweepDistance', '传递扫掠上限', '双方相对位移不超过该距离时补做跨帧扫掠，过大的网络校正不会沿整段误传。', () => MINE_RELAY_TUNING.transferMaxSweepDistance, v => MINE_RELAY_TUNING.transferMaxSweepDistance = v, 0.1, 1, 5, 1, ' m'),
             control('mineRelay.transferCooldownSeconds', '传递冷却', '装雷或传递后暂时不能再次传递的时间。', () => MINE_RELAY_TUNING.transferCooldownSeconds, v => MINE_RELAY_TUNING.transferCooldownSeconds = v, 0.05, 0.2, 2, 2, ' s'),
             control('mineRelay.returnProtectionSeconds', '防回传时间', '上一持有者暂时不能接回水雷的时间。', () => MINE_RELAY_TUNING.returnProtectionSeconds, v => MINE_RELAY_TUNING.returnProtectionSeconds = v, 0.05, 0.3, 3, 2, ' s'),
             control('mineRelay.lockSeconds', '最后锁定时间', '引信归零前禁止继续传递的时长。', () => MINE_RELAY_TUNING.lockSeconds, v => MINE_RELAY_TUNING.lockSeconds = v, 0.05, 0.2, 2, 2, ' s'),
@@ -405,13 +407,46 @@ export const TUNING_GROUPS: TuningGroup[] = [
         name: '水雷模式',
         controls: [
             control('minefield.mineCount', '水雷数量', '开局生成的障碍水雷数量；重开比赛后生效。', () => MINEFIELD_TUNING.mineCount, v => MINEFIELD_TUNING.mineCount = Math.round(v), 1, 3, 10, 0),
-            control('minefield.contactAlongRadius', '前后触雷范围', '身体与水雷沿赛道方向的碰撞半径。', () => MINEFIELD_TUNING.contactAlongRadius, v => MINEFIELD_TUNING.contactAlongRadius = v, 0.05, 0.5, 2.5, 2, ' m'),
-            control('minefield.contactLateralRadius', '横向触雷范围', '身体与水雷跨泳道方向的碰撞半径。', () => MINEFIELD_TUNING.contactLateralRadius, v => MINEFIELD_TUNING.contactLateralRadius = v, 0.05, 0.4, 2, 2, ' m'),
+            control('minefield.mineItemAlongRadius', '水雷前后接触半径', '水雷自身沿赛道方向的接触半径，结算时与人物身体半径相加。', () => MINEFIELD_TUNING.mineItemAlongRadius, v => MINEFIELD_TUNING.mineItemAlongRadius = v, 0.025, 0.2, 1.5, 3, ' m'),
+            control('minefield.mineItemLateralRadius', '水雷横向接触半径', '水雷自身跨泳道方向的接触半径，结算时与人物身体半径相加。', () => MINEFIELD_TUNING.mineItemLateralRadius, v => MINEFIELD_TUNING.mineItemLateralRadius = v, 0.025, 0.2, 1.5, 3, ' m'),
+            control('minefield.swimmerContactAlongRadius', '身体前后触雷半径', '人物身体沿赛道方向参与水雷实体触碰的简化半径。', () => MINEFIELD_TUNING.swimmerContactAlongRadius, v => MINEFIELD_TUNING.swimmerContactAlongRadius = v, 0.02, 0.3, 1.2, 2, ' m'),
+            control('minefield.swimmerContactLateralRadius', '身体横向触雷半径', '人物身体跨泳道方向参与水雷实体触碰的简化半径。', () => MINEFIELD_TUNING.swimmerContactLateralRadius, v => MINEFIELD_TUNING.swimmerContactLateralRadius = v, 0.02, 0.2, 0.8, 2, ' m'),
             control('minefield.driftAlongRadius', '前后漂移半径', '水雷围绕锚点沿赛道方向漂动的最大距离。', () => MINEFIELD_TUNING.driftAlongRadius, v => MINEFIELD_TUNING.driftAlongRadius = v, 0.05, 0, 2, 2, ' m'),
             control('minefield.driftLateralRadius', '横向漂移半径', '水雷围绕锚点跨泳道漂动的最大距离。', () => MINEFIELD_TUNING.driftLateralRadius, v => MINEFIELD_TUNING.driftLateralRadius = v, 0.05, 0, 2, 2, ' m'),
             control('minefield.driftSpeed', '漂移速度', '所有水雷围绕锚点漂动的基础速度。', () => MINEFIELD_TUNING.driftSpeed, v => MINEFIELD_TUNING.driftSpeed = v, 0.05, 0.1, 2, 2),
+            control('minefield.spawnClearAlongRadius', '出生前后安全区', '动态投放时，选手位于该前后半径内则水雷保持隐藏且不启爆。', () => MINEFIELD_TUNING.spawnClearAlongRadius, v => MINEFIELD_TUNING.spawnClearAlongRadius = v, 0.05, 1.35, 5, 2, ' m'),
+            control('minefield.spawnClearLateralRadius', '出生横向安全区', '动态投放时，选手位于该横向半径内则水雷保持隐藏且不启爆。', () => MINEFIELD_TUNING.spawnClearLateralRadius, v => MINEFIELD_TUNING.spawnClearLateralRadius = v, 0.05, 1.05, 4, 2, ' m'),
+            control('minefield.spawnClearSeconds', '离开后启用延迟', '所有选手离开出生安全区后，水雷还需连续保持安全的时间。', () => MINEFIELD_TUNING.spawnClearSeconds, v => MINEFIELD_TUNING.spawnClearSeconds = v, 0.05, 0, 2, 2, ' s'),
             control('minefield.aiLookAhead', 'AI 预判距离', 'AI 在多远处开始考虑绕开同横向区域的水雷。', () => MINEFIELD_TUNING.aiLookAhead, v => MINEFIELD_TUNING.aiLookAhead = v, 0.25, 2, 10, 2, ' m'),
             control('minefield.aiAvoidOffset', 'AI 避让偏移', 'AI 绕雷时相对水雷横向中心的目标偏移。', () => MINEFIELD_TUNING.aiAvoidOffset, v => MINEFIELD_TUNING.aiAvoidOffset = v, 0.05, 0.5, 4, 2, ' m'),
+        ],
+    },
+    {
+        name: '垃圾漂流大乱斗',
+        controls: [
+            control('litter.fallingSeconds', '垃圾飞行时间', '从看台侧抛出到落水的时长，越长留给玩家的预警越充足。', () => LITTER_BRAWL_TUNING.fallingSeconds, v => LITTER_BRAWL_TUNING.fallingSeconds = v, 0.05, 0.6, 3, 2, ' s'),
+            control('litter.contactAlongRadius', '前后减速范围', '垃圾沿赛道方向的柔性接触半径。', () => LITTER_BRAWL_TUNING.contactAlongRadius, v => LITTER_BRAWL_TUNING.contactAlongRadius = v, 0.05, 0.5, 3, 2, ' m'),
+            control('litter.contactLateralRadius', '横向减速范围', '垃圾跨泳道方向的柔性接触半径。', () => LITTER_BRAWL_TUNING.contactLateralRadius, v => LITTER_BRAWL_TUNING.contactLateralRadius = v, 0.05, 0.4, 2.5, 2, ' m'),
+            control('litter.maxEnvironmentDrag', '中心最大阻力', '从垃圾中心穿过时叠加到前进速度的最大水阻系数；不影响方向。', () => LITTER_BRAWL_TUNING.maxEnvironmentDrag, v => LITTER_BRAWL_TUNING.maxEnvironmentDrag = v, 0.05, 0, 1.5, 2),
+            control('litter.swimmerContactAlongRadius', '身体前后接触半径', '人物身体沿赛道方向参与垃圾实体接触的简化半径；不会扩大软垃圾的持续减速区。', () => LITTER_BRAWL_TUNING.swimmerContactAlongRadius, v => LITTER_BRAWL_TUNING.swimmerContactAlongRadius = v, 0.02, 0.3, 1.2, 2, ' m'),
+            control('litter.swimmerContactLateralRadius', '身体横向接触半径', '人物身体跨泳道方向参与垃圾实体接触的简化半径。', () => LITTER_BRAWL_TUNING.swimmerContactLateralRadius, v => LITTER_BRAWL_TUNING.swimmerContactLateralRadius = v, 0.02, 0.2, 0.8, 2, ' m'),
+            control('litter.rigidItemAlongRadius', '瓶子前后接触半径', '可乐瓶自身沿赛道方向的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.rigidItemAlongRadius, v => LITTER_BRAWL_TUNING.rigidItemAlongRadius = v, 0.02, 0.15, 1, 2, ' m'),
+            control('litter.rigidItemLateralRadius', '瓶子横向接触半径', '可乐瓶自身跨泳道方向的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.rigidItemLateralRadius, v => LITTER_BRAWL_TUNING.rigidItemLateralRadius = v, 0.02, 0.08, 0.6, 2, ' m'),
+            control('litter.softPushContactAlongRadius', '袋子前后推挤半径', '零食袋自身沿赛道方向触发漂移的接触半径，和持续减速范围分开。', () => LITTER_BRAWL_TUNING.softPushContactAlongRadius, v => LITTER_BRAWL_TUNING.softPushContactAlongRadius = v, 0.02, 0.15, 1.2, 2, ' m'),
+            control('litter.softPushContactLateralRadius', '袋子横向推挤半径', '零食袋自身跨泳道方向触发漂移的接触半径，结算时会与人物身体半径相加。', () => LITTER_BRAWL_TUNING.softPushContactLateralRadius, v => LITTER_BRAWL_TUNING.softPushContactLateralRadius = v, 0.02, 0.08, 0.8, 2, ' m'),
+            control('litter.rigidSpeedRetain', '硬碰后速度保留', '撞上硬垃圾后立即保留的当前前进速度比例；越低瞬时掉速越明显。', () => LITTER_BRAWL_TUNING.rigidSpeedRetain, v => LITTER_BRAWL_TUNING.rigidSpeedRetain = v, 0.05, 0.2, 1, 2),
+            control('litter.rigidBackwardImpulse', '硬碰后退冲量', '硬垃圾碰撞给选手的短促后退冲量，不触发击倒。', () => LITTER_BRAWL_TUNING.rigidBackwardImpulse, v => LITTER_BRAWL_TUNING.rigidBackwardImpulse = v, 0.05, 0, 2, 2),
+            control('litter.rigidLateralImpulse', '硬碰侧弹冲量', '硬垃圾碰撞把选手向接触点外侧弹开的冲量。', () => LITTER_BRAWL_TUNING.rigidLateralImpulse, v => LITTER_BRAWL_TUNING.rigidLateralImpulse = v, 0.05, 0, 3, 2),
+            control('litter.rigidDebrisBounceSpeed', '塑料瓶被撞速度', '碰撞后可乐瓶被拨开的初速度；越高越有轻塑料瓶的感觉。', () => LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed, v => LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed = v, 0.05, 0.5, 4, 2, ' m/s'),
+            control('litter.softDebrisPushSpeed', '零食袋被带走速度', '身体首次穿入零食袋时，袋子沿前进和接触外侧滑开的初速度。', () => LITTER_BRAWL_TUNING.softDebrisPushSpeed, v => LITTER_BRAWL_TUNING.softDebrisPushSpeed = v, 0.05, 0.2, 2, 2, ' m/s'),
+            control('litter.softDebrisPushDamping', '零食袋滑动衰减', '零食袋受推后速度消退的快慢；数值越低，随水流滑行越久。', () => LITTER_BRAWL_TUNING.softDebrisPushDamping, v => LITTER_BRAWL_TUNING.softDebrisPushDamping = v, 0.05, 0.5, 4, 2),
+            control('litter.driftAlongRadius', '垃圾前后漂动幅度', '水流漂移沿赛道方向的最大活动范围。', () => LITTER_BRAWL_TUNING.driftAlongRadius, v => LITTER_BRAWL_TUNING.driftAlongRadius = v, 0.05, 0.1, 0.8, 2, ' m'),
+            control('litter.driftLateralRadius', '垃圾横向漂动幅度', '水流漂移跨泳道方向的最大活动范围。', () => LITTER_BRAWL_TUNING.driftLateralRadius, v => LITTER_BRAWL_TUNING.driftLateralRadius = v, 0.05, 0.1, 0.7, 2, ' m'),
+            control('litter.driftSpeed', '垃圾漂动速度', '两组缓慢水流摆动的基础速度。', () => LITTER_BRAWL_TUNING.driftSpeed, v => LITTER_BRAWL_TUNING.driftSpeed = v, 0.02, 0.1, 1, 2),
+            control('litter.floatingLifetime', '正常漂浮时长', '垃圾落水后保持可碰撞状态的时间，结束后在原地附近开始下沉。', () => LITTER_BRAWL_TUNING.floatingLifetime, v => LITTER_BRAWL_TUNING.floatingLifetime = v, 0.5, 6, 24, 1, ' s'),
+            control('litter.retireSeconds', '缓慢下沉时长', '垃圾停止影响比赛后，在原位置附近缓慢下沉直至回收的时间。', () => LITTER_BRAWL_TUNING.retireSeconds, v => LITTER_BRAWL_TUNING.retireSeconds = v, 0.2, 1.5, 8, 1, ' s'),
+            control('litter.safeHalfWidth', '安全空隙半宽', '每波保留的主要无垃圾通道半宽。', () => LITTER_BRAWL_TUNING.safeHalfWidth, v => LITTER_BRAWL_TUNING.safeHalfWidth = v, 0.05, 0.8, 3, 2, ' m'),
+            control('litter.aiLookAhead', 'AI 预判距离', 'AI 在多远处开始把安全空隙当作横向绕行目标。', () => LITTER_BRAWL_TUNING.aiLookAhead, v => LITTER_BRAWL_TUNING.aiLookAhead = v, 0.25, 2, 14, 2, ' m'),
         ],
     },
     {

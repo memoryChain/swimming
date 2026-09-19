@@ -1,4 +1,5 @@
 import { GameState } from './GameConstants';
+import { expandedEllipseContains, segmentHitsExpandedEllipse } from './RaceContactGeometry';
 import { SeededRandom } from './SharedRNG';
 
 export type MinefieldRacerState = {
@@ -41,8 +42,10 @@ export type MinefieldExclusionZone = {
 
 export const MINEFIELD_TUNING = {
     mineCount: 7,
-    contactAlongRadius: 1.35,
-    contactLateralRadius: 1.05,
+    mineItemAlongRadius: 0.67,
+    mineItemLateralRadius: 0.65,
+    swimmerContactAlongRadius: 0.68,
+    swimmerContactLateralRadius: 0.4,
     blastAlongRadius: 3.2,
     blastLateralRadius: 2.5,
     driftAlongRadius: 0.75,
@@ -58,7 +61,7 @@ export const MINEFIELD_TUNING = {
 const ANCHOR_X = [6.5, 12.5, 19.5, 27, 34.5, 41, 46] as const;
 const ANCHOR_Z_RATIOS = [-0.54, 0.34, -0.12, 0.58, -0.4, 0.1, 0.46] as const;
 
-/** 房主负责命中结果；访客只同步同一组确定性水雷的视觉和可靠命中事件。 */
+/** 房主使用水雷与人物身体的扩张椭圆负责命中；访客只同步确定性视觉和可靠命中事件。 */
 export class MinefieldBrawlController {
     private revision = 0;
     private elapsed = 0;
@@ -224,7 +227,9 @@ export class MinefieldBrawlController {
             if (!mine.active || !mine.armed) continue;
             const along = Math.abs(mine.courseX - courseX);
             if (along > MINEFIELD_TUNING.aiLookAhead || along >= nearestAhead) continue;
-            if (Math.abs(mine.lateral - racer.lateral) > MINEFIELD_TUNING.contactLateralRadius * 2.2) continue;
+            const contactLateralRadius = MINEFIELD_TUNING.mineItemLateralRadius
+                + MINEFIELD_TUNING.swimmerContactLateralRadius;
+            if (Math.abs(mine.lateral - racer.lateral) > contactLateralRadius * 2.2) continue;
             nearest = mine;
             nearestAhead = along;
         }
@@ -240,8 +245,20 @@ export class MinefieldBrawlController {
         for (const mine of this.mineStates) {
             if (!mine.active || !mine.armed) continue;
             const hit = Number.isFinite(previousX) && Math.abs(courseX - previousX) <= 5
-                ? segmentHitsEllipse(previousX, previousZ, courseX, lateral, mine.courseX, mine.lateral)
-                : ellipseContains(courseX, lateral, mine.courseX, mine.lateral);
+                ? segmentHitsExpandedEllipse(
+                    previousX, previousZ, courseX, lateral, mine.courseX, mine.lateral,
+                    MINEFIELD_TUNING.mineItemAlongRadius,
+                    MINEFIELD_TUNING.mineItemLateralRadius,
+                    MINEFIELD_TUNING.swimmerContactAlongRadius,
+                    MINEFIELD_TUNING.swimmerContactLateralRadius,
+                )
+                : expandedEllipseContains(
+                    courseX, lateral, mine.courseX, mine.lateral,
+                    MINEFIELD_TUNING.mineItemAlongRadius,
+                    MINEFIELD_TUNING.mineItemLateralRadius,
+                    MINEFIELD_TUNING.swimmerContactAlongRadius,
+                    MINEFIELD_TUNING.swimmerContactLateralRadius,
+                );
             if (!hit) continue;
             const impact: MinefieldImpact = {
                 mineId: mine.id,
@@ -332,26 +349,6 @@ function isMineAnchorExcluded(
 ): boolean {
     return Math.abs(courseX - zone.courseX) < Math.max(0, zone.alongRadius)
         && Math.abs(lateral - zone.lateral) < Math.max(0, zone.lateralRadius);
-}
-
-function ellipseContains(x: number, z: number, centerX: number, centerZ: number): boolean {
-    const nx = (x - centerX) / MINEFIELD_TUNING.contactAlongRadius;
-    const nz = (z - centerZ) / MINEFIELD_TUNING.contactLateralRadius;
-    return nx * nx + nz * nz <= 1;
-}
-
-function segmentHitsEllipse(ax: number, az: number, bx: number, bz: number, centerX: number, centerZ: number): boolean {
-    const sx = (ax - centerX) / MINEFIELD_TUNING.contactAlongRadius;
-    const sz = (az - centerZ) / MINEFIELD_TUNING.contactLateralRadius;
-    const ex = (bx - centerX) / MINEFIELD_TUNING.contactAlongRadius;
-    const ez = (bz - centerZ) / MINEFIELD_TUNING.contactLateralRadius;
-    const dx = ex - sx;
-    const dz = ez - sz;
-    const lengthSq = dx * dx + dz * dz;
-    const t = lengthSq > 0 ? clamp(-(sx * dx + sz * dz) / lengthSq, 0, 1) : 0;
-    const px = sx + dx * t;
-    const pz = sz + dz * t;
-    return px * px + pz * pz <= 1;
 }
 
 function clamp(value: number, min: number, max: number): number {

@@ -140,6 +140,7 @@ export class SwimmerMotor {
     // step applies SWIMMER_BALANCE.glideDrag so an un-kicked glide bleeds off fast.
     private _glidePhaseActive = false;
     private _glideDrag = SWIMMER_BALANCE.glideDrag;
+    private _environmentDrag = 0;
     // Kick propulsion is driven by the CURRENT tap frequency, not per-tap pulses.
     // _kickCadenceHz is estimated from the interval between taps (and decays when
     // tapping stops); each frame it produces a continuous acceleration that fades
@@ -186,6 +187,7 @@ export class SwimmerMotor {
         this.ability.reset();
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
+        this._environmentDrag = 0;
         this._axialRoll.reset();
         this._collisionPitch.reset();
         this.collisionSoftness.reset();
@@ -340,6 +342,7 @@ export class SwimmerMotor {
         this._isRacing = false;
         this._glidePhaseActive = false;
         this._glideDrag = SWIMMER_BALANCE.glideDrag;
+        this._environmentDrag = 0;
         this.resetRaceState();
     }
 
@@ -526,6 +529,7 @@ export class SwimmerMotor {
                 kickAcceleration,
                 speedCapBonus: this._speedCapBonus,
                 glideDrag: this._glidePhaseActive ? this._glideDrag : 0,
+                environmentDrag: this._environmentDrag,
             },
         );
         this._currentAcceleration = dt > 0 ? (next.currentSpeed - this._currentSpeed) / dt : 0;
@@ -612,6 +616,7 @@ export class SwimmerMotor {
         this._speedCapBonus = 0;
         this._conditionSpeedScale = 1;
         this._conditionCadenceScale = 1;
+        this._environmentDrag = 0;
         this._lastStrokeQuality = 0;
         this._currentAcceleration = 0;
         this._kickCadenceHz = 0;
@@ -627,6 +632,16 @@ export class SwimmerMotor {
 
     setConditionSpeedScale(scale: number) {
         this._conditionSpeedScale = clamp(scale, 0, 2);
+    }
+
+    setEnvironmentDrag(drag: number) {
+        this._environmentDrag = clamp(Number.isFinite(drag) ? drag : 0, 0, 2);
+    }
+
+    applyEnvironmentSpeedRetain(retain: number) {
+        const scale = clamp(Number.isFinite(retain) ? retain : 1, 0, 1);
+        this._currentSpeed *= scale;
+        this._speedCapBonus = Math.max(0, this._currentSpeed - SWIMMER_BALANCE.maxSpeed);
     }
 
     setPlayerBalance(overrides: PlayerBalanceOverrides | null) {

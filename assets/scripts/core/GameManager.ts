@@ -97,7 +97,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
 import {
@@ -127,6 +127,8 @@ import { MINE_RELAY_ROUNDS, MINE_RELAY_TUNING, MineRelayArm, MineRelayBrawlContr
 import { MineRelayBrawlPresentation } from './MineRelayBrawlPresentation';
 import { MinefieldBrawlController, MinefieldImpact, MinefieldRacerState, MINEFIELD_TUNING } from './MinefieldBrawlController';
 import { MinefieldBrawlPresentation } from './MinefieldBrawlPresentation';
+import { LitterBrawlController, LitterRacerState, LitterRigidImpact, LITTER_BRAWL_TUNING } from './LitterBrawlController';
+import { LitterBrawlPresentation } from './LitterBrawlPresentation';
 import {
     EntertainmentEventId,
     EntertainmentModeDirector,
@@ -312,6 +314,13 @@ export class GameManager extends Component {
     private _minefieldBrawl: MinefieldBrawlController | null = null;
     private _minefieldPresentation: MinefieldBrawlPresentation | null = null;
     private readonly _minefieldRacerStates: MinefieldRacerState[] = Array.from(
+        { length: LANE_LAYOUT.laneCount },
+        () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
+    );
+    private _litterBrawl: LitterBrawlController | null = null;
+    private _litterPresentation: LitterBrawlPresentation | null = null;
+    private _playerLitterSlowed = false;
+    private readonly _litterRacerStates: LitterRacerState[] = Array.from(
         { length: LANE_LAYOUT.laneCount },
         () => ({ active: false, finished: false, distance: 0, lateral: 0 }),
     );
@@ -534,6 +543,10 @@ export class GameManager extends Component {
         this._minefieldBrawl = null;
         this._minefieldPresentation?.dispose();
         this._minefieldPresentation = null;
+        this._litterBrawl?.dispose();
+        this._litterBrawl = null;
+        this._litterPresentation?.dispose();
+        this._litterPresentation = null;
         this._netRaceController?.setMineRelayArmListener(null);
         this._netRaceController?.setMineRelayTransferListener(null);
         this._netRaceController?.setMineRelayResolutionListener(null);
@@ -662,6 +675,7 @@ export class GameManager extends Component {
         this.updateCannonBrawl(dt);
         this.updateMineRelayBrawl(dt);
         this.updateMinefieldBrawl(dt);
+        if (this._litterBrawl) this.updateLitterBrawl(dt);
         this._entertainmentEventBanner.update();
         if (this._shark) {
             this.updateSharkBrawl(dt);
@@ -1018,6 +1032,7 @@ export class GameManager extends Component {
                     this.setupCannonBrawl();
                     this.setupMineRelayBrawl();
                     this.setupMinefieldBrawl();
+                    this.setupLitterBrawl();
                     this._gameFlow = this.createGameFlow();
                     this._modelDebugFlow = this.createModelDebugFlow();
                     this._inputRouter = this.createInputRouter();
@@ -1105,6 +1120,10 @@ export class GameManager extends Component {
                     this._mineRelayHud?.reset();
                     this._minefieldBrawl?.reset();
                     this._minefieldPresentation?.reset();
+                    this._litterBrawl?.reset();
+                    this._litterPresentation?.reset();
+                    this._playerLitterSlowed = false;
+                    this.clearLitterInfluence();
                     this._eventPictureInPicture?.reset();
                 } else if (state === GameState.AWARDS) {
                     MusicManager.playResult();
@@ -2456,6 +2475,99 @@ export class GameManager extends Component {
         }
     }
 
+    private setupLitterBrawl() {
+        this.clearLitterInfluence();
+        this._litterBrawl?.dispose();
+        this._litterBrawl = null;
+        this._litterPresentation?.dispose();
+        this._litterPresentation = null;
+        this._playerLitterSlowed = false;
+        // 第一阶段只在本地调试入口开放，避免未经验证的规则进入联机赛果同步。
+        if (!isLitterBrawlMode() || !this._raceManager || this._netSession) return;
+        this._litterBrawl = new LitterBrawlController(
+            LANE_LAYOUT.laneCount,
+            getSharedRandomSeed(),
+            COURSE_LAYOUT.poolWidth,
+            lane => {
+                const state = this._litterRacerStates[lane];
+                const swimmer = this.swimmerForLane(lane);
+                state.active = !!swimmer?.node?.active;
+                state.finished = (this._raceManager?.hasSwimmerFinished(swimmer ?? null) ?? false)
+                    || (swimmer?.distance ?? 0) >= getRaceDistance();
+                state.distance = swimmer?.distance ?? 0;
+                state.lateral = swimmer?.node?.position.z ?? LANE_LAYOUT.centerZ(lane);
+                return state;
+            },
+            wave => this._entertainmentEventBanner.showEvent(
+                wave === 0
+                    ? '看台有观众开始往泳池里乱扔垃圾了'
+                    : '又有垃圾被扔进泳池·注意水面漂浮物',
+                'warning',
+                2200,
+            ),
+            impact => this.handleLitterRigidImpact(impact),
+        );
+        if (this._worldRoot?.isValid) {
+            this._litterPresentation = new LitterBrawlPresentation(
+                this._worldRoot,
+                COURSE_LAYOUT,
+                LITTER_BRAWL_TUNING.poolSize,
+            );
+        }
+    }
+
+    private updateLitterBrawl(dt: number) {
+        const controller = this._litterBrawl;
+        if (!controller) return;
+        if (this._modelDebugFlow?.active) {
+            this.clearLitterInfluence();
+            return;
+        }
+        controller.update(dt, this._state);
+        const visible = this._state === GameState.COUNTDOWN || this._state === GameState.DIVING
+            || this._state === GameState.GLIDING || this._state === GameState.RACING;
+        this._litterPresentation?.update(dt, controller.clusters(), visible);
+        for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+            const swimmer = this.swimmerForLane(lane);
+            if (!swimmer) continue;
+            swimmer.applyEnvironmentDrag(controller.environmentDragForLane(lane));
+        }
+        const playerDrag = controller.environmentDragForLane(this._playerLaneIndex);
+        const playerSlowed = playerDrag > 0.08 && this._state === GameState.RACING;
+        if (playerSlowed && !this._playerLitterSlowed) {
+            this._entertainmentEventBanner.showPersonal('穿过软垃圾·持续划水可以挣脱减速', 'warning', 1100);
+        }
+        this._playerLitterSlowed = playerSlowed;
+        for (let index = 0; index < this._aiControllers.length; index++) {
+            const ai = this._aiControllers[index];
+            const swimmer = this._aiSwimmers[index];
+            if (!ai || !swimmer || ai.remoteDriven) continue;
+            ai.setLitterTargetZ(controller.targetZForAi(this.assignedLaneOfSwimmer(swimmer)));
+        }
+        this.activePlayerAutopilot()?.setLitterTargetZ(controller.targetZForAi(this._playerLaneIndex));
+    }
+
+    private handleLitterRigidImpact(impact: LitterRigidImpact) {
+        const swimmer = this.swimmerForLane(impact.lane);
+        if (!swimmer?.node?.active) return;
+        swimmer.applyEnvironmentSpeedRetain(LITTER_BRAWL_TUNING.rigidSpeedRetain);
+        swimmer.applyCollisionImpulse(
+            -LITTER_BRAWL_TUNING.rigidBackwardImpulse,
+            impact.away * LITTER_BRAWL_TUNING.rigidLateralImpulse,
+        );
+        if (swimmer === this._playerSwimmer) {
+            this._entertainmentEventBanner.showPersonal('撞上硬垃圾·被弹开并瞬间减速', 'danger', 1050);
+        }
+    }
+
+    private clearLitterInfluence() {
+        this._playerSwimmer?.applyEnvironmentDrag(0);
+        for (const swimmer of this._aiSwimmers) swimmer?.applyEnvironmentDrag(0);
+        for (const ai of this._aiControllers) ai?.setLitterTargetZ(null);
+        this.activePlayerAutopilot()?.setLitterTargetZ(null);
+        this._playerLitterSlowed = false;
+    }
+
     private setupSharkBrawl() {
         if (!isSharkBrawlMode() || !this._worldRoot?.isValid || !this._raceHud?.isValid || this._shark) {
             return;
@@ -3772,6 +3884,8 @@ export class GameManager extends Component {
                                 ? '炸弹会随机落到选手身上；倒计时结束会被炸倒并在原进度重生'
                                 : isMinefieldBrawlMode()
                                     ? '水雷在泳池中缓慢漂移；直接触雷会被击倒，附近选手会被冲击波推开'
+                                    : isLitterBrawlMode()
+                                        ? '观众会将垃圾扔入水中；硬垃圾会弹开并瞬间减速，软垃圾可穿过但会持续拖慢'
                                     : '率先完成全程者获胜',
         });
     }

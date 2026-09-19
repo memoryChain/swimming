@@ -12,6 +12,8 @@ export type SwimPhysicsInput = {
     speedCapBonus: number;
     // Extra drag coefficient (per m/s) active only during the underwater glide.
     glideDrag?: number;
+    // World-space soft obstacles add drag only; they never write heading or position.
+    environmentDrag?: number;
 };
 
 export class SwimPhysicsModel {
@@ -26,6 +28,7 @@ export class SwimPhysicsModel {
             + SWIMMER_BALANCE.baseDrag * speed
             + SWIMMER_BALANCE.highSpeedDrag * speed * speed
             + Math.max(0, input.glideDrag ?? 0) * speed
+            + Math.max(0, input.environmentDrag ?? 0) * speed
         );
         const currentSpeed = clamp(state.currentSpeed + (accel - drag) * input.dt, SWIMMER_BALANCE.minSpeed, maxSpeed);
 

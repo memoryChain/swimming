@@ -1509,6 +1509,14 @@ export class Swimmer extends Component {
         this._motor.setConditionSpeedScale(scale);
     }
 
+    applyEnvironmentDrag(drag: number) {
+        this._motor.setEnvironmentDrag(drag);
+    }
+
+    applyEnvironmentSpeedRetain(retain: number) {
+        this._motor.applyEnvironmentSpeedRetain(retain);
+    }
+
     applyConditionQualityScale(scale: number) {
         this._motor.setConditionQualityScale(scale);
     }
