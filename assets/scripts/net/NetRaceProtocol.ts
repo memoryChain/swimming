@@ -62,7 +62,8 @@
 // 版本74：巡游鲨鱼加入房主权威的持续卡住防卡死补咬。
 // 版本75：水雷出生保护状态进入 S| 快照，禁止贴脸刷新后同帧触爆。
 // 版本76：导演、炮火与水雷拒绝同修订乱序快照回退，保持事件计时与一次性障碍单调。
-export const NET_RACE_PROTOCOL_VERSION = 76;
+// 版本77：水雷触雷与定时炸弹传递使用身体椭圆相对扫掠，覆盖单帧高速擦身。
+export const NET_RACE_PROTOCOL_VERSION = 77;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

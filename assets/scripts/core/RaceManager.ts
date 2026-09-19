@@ -287,6 +287,10 @@ export class RaceManager extends Component {
         return !!swimmer && this._finishTimes.has(swimmer);
     }
 
+    public hasAnyFinisher(): boolean {
+        return this._finishTimes.size > 0;
+    }
+
     private startFinishCountdown() {
         this._finishCountdownActive = true;
         this._finishCountdownTimer = FINISH_STRAGGLER_COUNTDOWN_SECONDS;

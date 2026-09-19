@@ -16,6 +16,7 @@ export const enum EntertainmentDirectorPhase {
     ACTIVE = 2,
     GAP = 3,
     COMPLETE = 4,
+    CLOSING = 5,
 }
 
 export type EntertainmentDirectorState = {
@@ -37,6 +38,7 @@ export type EntertainmentDirectorState = {
 };
 
 export type EntertainmentDirectorTransition = {
+    cancelledPreview: boolean;
     previewEvent: EntertainmentEventId | null;
     activatedEvent: EntertainmentEventId | null;
     recoveredEvent: EntertainmentEventId | null;
@@ -158,6 +160,7 @@ export class EntertainmentModeDirector {
     private readonly seed: number;
     private readonly raceDistance: number;
     private readonly transition: EntertainmentDirectorTransition = {
+        cancelledPreview: false,
         previewEvent: null,
         activatedEvent: null,
         recoveredEvent: null,
@@ -209,6 +212,24 @@ export class EntertainmentModeDirector {
         return index >= 0 ? this.eventAnchorDistances[index] : 0;
     }
 
+    /** 首位选手完赛后停止安排新事件；已经激活的事件保留到自身结算完成。 */
+    lockAfterFirstFinish(): EntertainmentDirectorTransition {
+        const transition = this.clearTransition();
+        if (this.phase === EntertainmentDirectorPhase.COMPLETE
+            || this.phase === EntertainmentDirectorPhase.CLOSING) return transition;
+        if (this.phase === EntertainmentDirectorPhase.ACTIVE) {
+            this.phase = EntertainmentDirectorPhase.CLOSING;
+            this.revision++;
+            this.publishRuntimeState();
+            return transition;
+        }
+        if (this.phase === EntertainmentDirectorPhase.PREVIEW) {
+            transition.cancelledPreview = true;
+        }
+        this.complete();
+        return transition;
+    }
+
     update(
         dt: number,
         leaderDistance: number,
@@ -245,7 +266,7 @@ export class EntertainmentModeDirector {
             this.lastActivatedEvent = event;
             this.revision++;
             transition.activatedEvent = event;
-        } else if (this.phase === EntertainmentDirectorPhase.ACTIVE) {
+        } else if (isActiveDirectorPhase(this.phase)) {
             const event = this.currentEvent();
             // 定时炸弹等必须先结算，导演才允许切下一段，避免悬挂状态跨事件。
             if (!canFinishCurrent) {
@@ -257,6 +278,10 @@ export class EntertainmentModeDirector {
                 if ((PERSISTENT_EVENTS_MASK & eventBit(event)) === 0) {
                     this.residentMask &= ~eventBit(event);
                 }
+            }
+            if (this.phase === EntertainmentDirectorPhase.CLOSING) {
+                this.complete();
+                return transition;
             }
             if (this.eventIndex < this.events.length) this.eventIndex++;
             if (this.eventIndex >= this.events.length) {
@@ -339,14 +364,18 @@ export class EntertainmentModeDirector {
                 || previousEncoreRound !== this.encoreRound || previousEvent !== event)) {
             transition.previewEvent = event;
         }
-        if (event !== null && this.phase === EntertainmentDirectorPhase.ACTIVE
+        if (event !== null && isActiveDirectorPhase(this.phase)
             && this.activationSerial > previousActivationSerial) transition.activatedEvent = event;
         if (this.activationSerial > previousActivationSerial
-            && this.phase !== EntertainmentDirectorPhase.ACTIVE) {
+            && !isActiveDirectorPhase(this.phase)) {
             transition.recoveredEvent = this.lastActivatedEvent;
         }
-        if (previousPhase === EntertainmentDirectorPhase.ACTIVE
-            && (this.phase !== previousPhase || previousIndex !== this.eventIndex
+        if (previousPhase === EntertainmentDirectorPhase.PREVIEW
+            && this.phase === EntertainmentDirectorPhase.COMPLETE) {
+            transition.cancelledPreview = true;
+        }
+        if (isActiveDirectorPhase(previousPhase)
+            && (!isActiveDirectorPhase(this.phase) || previousIndex !== this.eventIndex
                 || previousEncoreRound !== this.encoreRound || previousEvent !== event)) {
             transition.finishedEvent = previousEvent;
         }
@@ -376,10 +405,11 @@ export class EntertainmentModeDirector {
 
     private publishRuntimeState(): void {
         runtimeResidentMask = this.residentMask;
-        runtimeActiveEvent = this.phase === EntertainmentDirectorPhase.ACTIVE ? this.currentEvent() : null;
+        runtimeActiveEvent = isActiveDirectorPhase(this.phase) ? this.currentEvent() : null;
     }
 
     private clearTransition(): EntertainmentDirectorTransition {
+        this.transition.cancelledPreview = false;
         this.transition.previewEvent = null;
         this.transition.activatedEvent = null;
         this.transition.recoveredEvent = null;
@@ -471,10 +501,15 @@ export function unpackEntertainmentEvents(packed: number, eventCount: number): r
 
 function eventBit(event: EntertainmentEventId): number { return 1 << event; }
 
+function isActiveDirectorPhase(phase: EntertainmentDirectorPhase): boolean {
+    return phase === EntertainmentDirectorPhase.ACTIVE
+        || phase === EntertainmentDirectorPhase.CLOSING;
+}
+
 function validDirectorState(state: EntertainmentDirectorState): boolean {
     return !!state
         && Number.isSafeInteger(state.revision) && state.revision >= 0
-        && Number.isSafeInteger(state.phase) && state.phase >= 0 && state.phase <= EntertainmentDirectorPhase.COMPLETE
+        && Number.isSafeInteger(state.phase) && state.phase >= 0 && state.phase <= EntertainmentDirectorPhase.CLOSING
         && Number.isSafeInteger(state.eventCount) && state.eventCount >= 3 && state.eventCount <= MAX_EVENT_COUNT
         && Number.isSafeInteger(state.eventIndex) && state.eventIndex >= 0 && state.eventIndex <= state.eventCount
         && Number.isFinite(state.remainingSeconds) && state.remainingSeconds >= 0

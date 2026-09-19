@@ -57,6 +57,14 @@ test('导演预告和激活广播不会被子玩法短提示覆盖', () => {
     assert.match(banner, /enqueueEvent\([\s\S]*?Date\.now\(\) < this\.directorUntil\) return/);
 });
 
+test('首位选手完赛后由房主停止新事件，并单独关闭尚未激活的预告', () => {
+    assert.match(gameManager, /_raceManager\?\.hasAnyFinisher\(\)[\s\S]*?director\.lockAfterFirstFinish\(\)/);
+    assert.match(gameManager, /director\.lockAfterFirstFinish\(\)[\s\S]*?closingTransition = director\.update\(/);
+    assert.match(gameManager, /transition\.cancelledPreview[\s\S]*?_entertainmentEventBanner\.hideEvent\(\)/);
+    assert.match(banner, /hide\(\): void \{[\s\S]*?this\.hideEvent\(\)/);
+    assert.match(banner, /hideEvent\(\): void \{[\s\S]*?this\.eventQueue\.length = 0/);
+});
+
 test('炮火与定时炸弹持续状态条使用同一尺寸和位置', () => {
     for (const source of [cannonHud, bombHud]) {
         assert.match(source, /560, 42/);

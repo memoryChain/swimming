@@ -1427,6 +1427,17 @@ export class GameManager extends Component {
         const director = this._entertainmentDirector;
         if (!director || this._modelDebugFlow?.active || this._state !== GameState.RACING) return;
         if (this._netRaceController && !this._netRaceController.isHost) return;
+        if (this._raceManager?.hasAnyFinisher()) {
+            this.handleEntertainmentDirectorTransition(director.lockAfterFirstFinish());
+            const closingEvent = director.currentEvent();
+            const closingTransition = director.update(
+                dt,
+                this.entertainmentLeaderDistance(),
+                this.canFinishEntertainmentEvent(closingEvent),
+            );
+            this.handleEntertainmentDirectorTransition(closingTransition);
+            return;
+        }
         const current = director.currentEvent();
         const canFinish = this.canFinishEntertainmentEvent(current);
         const transition = director.update(dt, this.entertainmentLeaderDistance(), canFinish);
@@ -1454,6 +1465,9 @@ export class GameManager extends Component {
     }
 
     private handleEntertainmentDirectorTransition(transition: EntertainmentDirectorTransition) {
+        if (transition.cancelledPreview) {
+            this._entertainmentEventBanner.hideEvent();
+        }
         if (transition.recoveredEvent !== null) {
             // 客机可能错过整段返场；先静默重置该子玩法，再由同一份 S| 快照
             // 灌入最终权威状态，避免旧一轮的 revision／追猎序号拒绝新状态。

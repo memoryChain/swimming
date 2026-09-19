@@ -132,6 +132,71 @@ test('定时炸弹未结算时导演不会切段，结算后继续轮换', () =>
     assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.GAP);
 });
 
+test('首位选手完赛时取消尚未激活的预告，并永久停止后续排期', () => {
+    const director = new EntertainmentModeDirector(18);
+    const firstEvent = director.selectedEvents()[0];
+    let transition = director.update(4.01, 200, true);
+    assert.equal(transition.previewEvent, firstEvent);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.PREVIEW);
+
+    transition = director.lockAfterFirstFinish();
+    assert.equal(transition.cancelledPreview, true);
+    assert.equal(transition.activatedEvent, null);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.COMPLETE);
+    assert.equal(director.snapshot().residentMask, 0);
+
+    transition = director.update(100, 200, true);
+    assert.equal(transition.previewEvent, null);
+    assert.equal(transition.activatedEvent, null);
+});
+
+test('首位选手完赛时允许已激活事件自然结算，但不再安排返场', () => {
+    const director = new EntertainmentModeDirector(18);
+    director.update(4.01, 200, true);
+    const firstEvent = director.selectedEvents()[0];
+    let transition = director.update(director.previewDurationSeconds() + 0.01, 200, true);
+    assert.equal(transition.activatedEvent, firstEvent);
+
+    transition = director.lockAfterFirstFinish();
+    assert.equal(transition.cancelledPreview, false);
+    assert.equal(transition.finishedEvent, null);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.CLOSING);
+
+    director.update(100, 200, false);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.CLOSING);
+    transition = director.update(0.3, 200, true);
+    assert.equal(transition.finishedEvent, firstEvent);
+    assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.COMPLETE);
+    assert.equal(director.snapshot().encoreRound, 0);
+
+    transition = director.update(100, 200, true);
+    assert.equal(transition.previewEvent, null);
+    assert.equal(transition.activatedEvent, null);
+});
+
+test('完赛收尾锁定随导演快照同步，激活转收尾不会被客机误判为事件结束', () => {
+    const host = new EntertainmentModeDirector(92);
+    host.update(4.01, 200, true);
+    host.update(host.previewDurationSeconds() + 0.01, 200, true);
+    const active = host.snapshot();
+    const event = host.currentEvent();
+
+    const guest = new EntertainmentModeDirector(999);
+    assert.equal(guest.applySnapshot(active).activatedEvent, event);
+    host.lockAfterFirstFinish();
+    const payload = encodeRaceSnapshot(0, [], null, null, null, null, null, null, host.snapshot());
+    const closing = decodeRaceSnapshot(payload).entertainmentDirector;
+    const transition = guest.applySnapshot(closing);
+    assert.equal(transition.finishedEvent, null);
+    assert.equal(transition.activatedEvent, null);
+    assert.equal(guest.snapshot().phase, EntertainmentDirectorPhase.CLOSING);
+
+    host.update(100, 200, true);
+    const finished = guest.applySnapshot(host.snapshot());
+    assert.equal(finished.finishedEvent, event);
+    assert.equal(guest.snapshot().phase, EntertainmentDirectorPhase.COMPLETE);
+});
+
 test('400 米事件覆盖到赛程后段，主事件结束后只返场可安全重置的事件', () => {
     let seed = 0;
     while (buildEntertainmentEventOrder(seed, 400).length !== 6) seed++;

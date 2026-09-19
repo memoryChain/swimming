@@ -124,11 +124,15 @@ export class EntertainmentEventBanner {
     }
 
     hide(): void {
-        if (this.eventRoot?.active) this.eventRoot.active = false;
+        this.hideEvent();
         if (this.personalRoot?.active) this.personalRoot.active = false;
+        this.personalUntil = 0;
+    }
+
+    hideEvent(): void {
+        if (this.eventRoot?.active) this.eventRoot.active = false;
         this.eventUntil = 0;
         this.directorUntil = 0;
-        this.personalUntil = 0;
         this.eventQueue.length = 0;
     }
 
