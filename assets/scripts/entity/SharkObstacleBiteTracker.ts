@@ -17,7 +17,7 @@ type ContactState = {
 const MAX_TRACKED_LANES = 32;
 
 /**
- * 只记录巡游鲨鱼与选手的持续纠缠，不接触 Cocos 节点。
+ * 只记录巡游鲨鱼与选手持续卡住的状态，不接触 Cocos 节点。
  * 房主／单机每帧喂入权威位置；短暂擦碰、同向同行和仍能正常前进都不会触发。
  */
 export class SharkObstacleBiteTracker {

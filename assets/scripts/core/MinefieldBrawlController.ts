@@ -286,7 +286,7 @@ export class MinefieldBrawlController {
     }
 
     /**
-     * 动态事件激活时，若水雷正压在任一选手身上，先保持隐藏且无碰撞；
+     * 动态事件激活时，如果水雷正压在任一选手身上，先保持隐藏且无碰撞；
      * 只有房主确认扩大后的出生安全区连续清空后才启用，避免刷新同帧直接爆炸。
      */
     private resetSpawnSafety(): void {

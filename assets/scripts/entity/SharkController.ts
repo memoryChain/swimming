@@ -305,7 +305,7 @@ export class SharkController {
         }
     }
 
-    /** 房主／单机专用：巡游时若逆向顶住选手过久，转为一次现有鲨鱼击倒。 */
+    /** 房主／单机专用：巡游时如果逆向顶住选手过久，转为一次现有鲨鱼击倒。 */
     updateObstacleBites(swimmers: readonly Swimmer[], dt: number): void {
         const step = this._obstacleBites.beginFrame(dt);
         if (step <= 0) return;

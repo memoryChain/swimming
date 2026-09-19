@@ -178,7 +178,7 @@ function bodyFixture(id) {
     body._courseLayout = load('venue/RaceCourseLayout').DEFAULT_RACE_COURSE_LAYOUT;
     body._startPosition = new h.cc.Vec3();
     body._tmpCourseRotation = new h.cc.Quat(); body._cameraNeutralCourseRotation = new h.cc.Quat();
-    body.cartoonRig = {axialRollVisualWeight:1,setDiveStreamlinePose(){},setLegSplashSuppressed(){},setPerfectGlowActive(){},triggerSplashBurst(){},finishDiveChargeEffect(){},setFinishFloating(){}};
+    body.cartoonRig = {axialRollVisualWeight:1,setDiveStreamlinePose(){},setLegSplashSuppressed(){},setPerfectGlowActive(){},triggerSplashBurst(){},finishDiveChargeEffect(){},clearTransientBodyFeedback(){},setFinishFloating(){}};
     body.finishFloatX = () => 0;
     body._ultimate = new (load('condition/UltimateEnergyModel').UltimateEnergyModel)(); body._ultimate.applyNetEnergy(100,1);
     body._phases = new (load('entity/SwimmerRacePhases').SwimmerRacePhases)(body);

@@ -168,7 +168,7 @@ test('双侧与单侧安全区均不叠加视觉边距，窗口变化后重新�
     visibleSize.width = 1280; safeLeft = 0; safeRight = 0;
 });
 
-test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横屏翻转不改变留白', () => {
+test('真实大厅贴边、角色页面保留固定侧距，横屏翻转不改变留白', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
     const file = path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts');
     const source = ts.createSourceFile(file, fs.readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
@@ -200,8 +200,8 @@ test('真实大厅及角色页面组装：两侧均增加灵动岛间距，横�
             const leftMargin = node => node.position.x - 640 + width / 2;
             const rightMargin = node => width / 2 - node.position.x - 640;
             const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-6, `${actual} != ${expected}`);
-            near(leftMargin(owners.buildReadyCharacterPanel), width === 1280 ? 0 : 48);
-            near(rightMargin(careerParent), width === 1280 ? 0 : 48);
+            near(leftMargin(owners.buildReadyCharacterPanel), 0);
+            near(rightMargin(careerParent), 0);
             near(leftMargin(owners.buildCharacterRoster), width === 1280 ? 0 : 48);
             near(rightMargin(owners.buildCharacterInspector), width === 1280 ? 0 : 60);
             near(leftMargin(owners.buildCharacterHeader), 0);
@@ -450,6 +450,7 @@ test('启动封面隐藏常驻顶栏，进入大厅后再显示', () => {
         setVisible(value) { visible.push(value); },
         setBack() {},
         setIdentityVisible() {},
+        setRightControlsVisible() {},
     };
     m._loginUiRoot = new Node('Login');
     m.openPrepareRace();
@@ -589,21 +590,22 @@ test('主界面和角色页整个属性区域绑定同一说明卡，点击不�
     const Harness = vm.runInNewContext(ts.transpileModule(`class Harness { ${methods.map(n => n.getText(source)).join('\n')} }`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText + '; Harness', {
         ...cc, ...h.factory, ...h.resources, CharacterAttributeTips: h.CharacterAttributeTips,
         Rect: class {}, WHITE: new Color(), DARK_TEXT: new Color(),
-        stylePsdTitleLabel() {}, stylePsdRuntimeLabel() {}, makeBoundLabel,
+        stylePsdTitleLabel() {}, stylePsdRuntimeLabel() {}, styleCurrencyNumberLabel() {}, makeBoundLabel,
         makeRaceTextureSprite: makeArt, makeRaceTextureRegionSprite: makeArt,
         makeRaceTextureButton: (name, parent) => h.factory.makeTouchArea(name, parent, 100, 50),
     });
     const f = new Harness();
     Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
     const ready = new Node('Ready'), attributes = new Node('Attributes');
+    f._content = ready;
     ready.addComponent(Canvas).cameraComponent = h.identityCamera;
     attributes.addComponent(Canvas).cameraComponent = h.identityCamera;
     f.buildReadyCharacterPanel(ready); f.buildAttributeContent(attributes);
-    for (const parent of [ready, attributes]) {
+    for (const [parent, minimumHitWidth] of [[ready, 150], [attributes, 284]]) {
         const count = nodes(parent).length;
         for (let i = 0; i < 3; i++) {
             const hit = find(parent, 'AttributeTipHit');
-            assert.ok(hit.getComponent(UITransform).contentSize.width >= 284);
+            assert.ok(hit.getComponent(UITransform).contentSize.width >= minimumHitWidth);
             assert.equal(hit.handlers.click.length, 1);
             hit.click(); assert.equal(find(f._attributeTips.root, 'AttributeTipsTitle').getComponent(Label).string, '属性说明');
             f._attributeTips.hide(); assert.equal(nodes(parent).length, count);

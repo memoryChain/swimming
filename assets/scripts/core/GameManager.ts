@@ -2711,7 +2711,7 @@ export class GameManager extends Component {
         }
         playerAutopilot?.setSharkTargetZ(playerAutopilotTargetZ);
         if (!this._netRaceController || this._netRaceController.isHost) {
-            // 赛果判定由房主独占；其中也包含远程真人的权威位置副本。
+            // 赛果判定由房主独占；其中也包含远程真人的权威位置记录。
             shark.updateObstacleBites(this.activeSharkSwimmers(), dt);
         }
         this._sharkCollisionSwimmers.length = 0;

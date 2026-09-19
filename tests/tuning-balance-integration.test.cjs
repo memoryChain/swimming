@@ -761,9 +761,9 @@ test('角色面板、升级预览、赛内上限和联机档案共用体力点�
 });
 
 
-test('30 级封顶：旧档归一、29 升 30、批量升级和满级不扣金币', async () => {
+test('30 级封顶：旧档归一、突破关卡分段批量升级和满级不扣金币', async () => {
     const h=setup();
-    const {normalizeProfile}=h.loadModule('backend/PlayerProfile');
+    const {normalizeProfile,PLAYER_PROFILE_SCHEMA}=h.loadModule('backend/PlayerProfile');
     const {MockBackend}=h.loadModule('backend/MockBackend');
     const {coinCostForLevel,PROGRESSION_BALANCE}=h.loadModule('progression/ProgressionBalance');
     const {ProgressionManager}=h.loadModule('progression/ProgressionManager');
@@ -782,9 +782,18 @@ test('30 级封顶：旧档归一、29 升 30、批量升级和满级不扣金�
     const full=await backend.spendCoinsForLevel(id,1);
     assert.equal(full.reason,'maxed');assert.equal(full.coinsSpent,0);
     assert.equal(full.profile.coins,last.profile.coins);
-    h.saved.set('swimming.player-profile',JSON.stringify({coins:999999,characters:{[id]:{level:1,signed:true}}}));
-    const bulk=await backend.spendCoinsForLevel(id,60);
-    assert.equal(bulk.levelsGained,29);assert.equal(bulk.profile.characters[id].level,30);
+    h.saved.set('swimming.player-profile',JSON.stringify({
+        schema:PLAYER_PROFILE_SCHEMA,coins:999999,breakthroughGems:15,
+        characters:{[id]:{level:1,breakthroughCount:0,signed:true}},
+    }));
+    let bulk=await backend.spendCoinsForLevel(id,60);
+    assert.equal(bulk.levelsGained,4);assert.equal(bulk.profile.characters[id].level,5);
+    for(const gate of [5,10,15,20,25]) {
+        const breakthrough=await backend.breakthroughCharacter(id,gate);
+        assert.equal(breakthrough.ok,true);assert.equal(breakthrough.profile.characters[id].level,gate+1);
+        bulk=await backend.spendCoinsForLevel(id,60);
+    }
+    assert.equal(bulk.levelsGained,4);assert.equal(bulk.profile.characters[id].level,30);
     PlayerData.profile.characters[id]={level:60};const manager=new ProgressionManager();
     assert.equal(manager.getCharacterLevel(id),30);assert.equal(manager.canAffordNextLevel(id),false);
     assert.equal(manager.projectSpendToMax(id).levels,0);

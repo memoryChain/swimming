@@ -8,7 +8,8 @@ const { FreestylePoseController } = load(path.join(root, 'assets/scripts/charact
 const { COLLISION_SOFTNESS_TUNING: tuning } = load(path.join(root, 'assets/scripts/core/CollisionSoftnessTuning.ts'));
 const { CollisionSoftnessModel } = load(path.join(root, 'assets/scripts/swimmer/CollisionSoftnessModel.ts'));
 const zero = { side: 0, forward: 0, sideVelocity: 0, forwardVelocity: 0 };
-const models = fs.readdirSync(path.join(root, 'assets/race/models')).filter(f => f.endsWith('.glb'));
+const models = fs.readdirSync(path.join(root, 'assets/race/models'))
+    .filter(file => /^(CartonSwimmer\d+|MuscleMan)\.glb$/.test(file));
 const records = [];
 function rig(file) {
     const data = fs.readFileSync(path.join(root, 'assets/race/models', file));
