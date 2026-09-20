@@ -2213,11 +2213,9 @@ export class GameManager extends Component {
             return;
         }
         if (!this._cannonBrawlHud?.consumeSample(dt, this._state)) return;
-        const player = this._playerSwimmer;
         this._cannonBrawlHud.updateValues(
             controller.remainingStrikeCount(),
             launch ? controller.currentRemainingSeconds() : 0,
-            player ? controller.threatForRacer(player.distance, player.node.position.z) : 'safe',
             this._entertainmentRecovery?.stateForLane(this._playerLaneIndex)?.phase
                 !== EntertainmentRecoveryPhase.ACTIVE,
             !isEntertainmentBrawlMode(),

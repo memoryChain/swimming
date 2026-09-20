@@ -4,7 +4,6 @@ import { EntertainmentStatusStrip, EntertainmentStatusTone } from './Entertainme
 
 const SAMPLE_SECONDS = 0.1;
 const COMPLETION_SECONDS = 2;
-export type CannonThreat = 'core' | 'splash' | 'safe';
 
 /** 炮火逃生赛状态条；一次构建，10Hz 采样，只在最终显示值变化时写 UI。 */
 export class CannonBrawlHud {
@@ -53,7 +52,6 @@ export class CannonBrawlHud {
     updateValues(
         remainingStrikes: number,
         activeRemainingSeconds: number,
-        threat: CannonThreat,
         playerRecovering: boolean,
         showCompletion = true,
     ): void {
@@ -70,18 +68,11 @@ export class CannonBrawlHud {
             tone = 'danger';
         } else if (activeRemainingSeconds > 0) {
             const seconds = Math.max(0.1, Math.ceil(activeRemainingSeconds * 10) / 10).toFixed(1);
-            if (threat === 'core') {
-                message = '核心危险 · 立即横移';
-                tone = 'danger';
-            } else if (threat === 'splash') {
-                message = '冲击区 · 继续躲避';
-                tone = 'warning';
-            } else {
-                message = '已离开危险区';
-            }
+            message = '落弹倒计时';
             value = `${seconds}秒`;
+            tone = 'warning';
         } else if (remainingStrikes > 0) {
-            message = '下一轮炮击待命';
+            message = '下一发待命';
             value = `${remainingStrikes}发`;
         } else if (showCompletion && (this.hadPendingStrike || this.completionRemainingSeconds > 0)) {
             if (this.hadPendingStrike) {

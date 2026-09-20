@@ -134,6 +134,9 @@ test('炮火 HUD 限制十赫兹采样且不逐帧重绘图形', () => {
     assert.match(source, /SAMPLE_SECONDS = 0\.1/);
     assert.match(source, /consumeSample/);
     assert.match(source, /new EntertainmentStatusStrip/);
+    assert.match(source, /message = '落弹倒计时'/);
+    assert.match(source, /message = '下一发待命'/);
+    assert.doesNotMatch(source, /核心危险|冲击区|已离开危险区/);
     assert.match(statusStrip, /message !== this\.lastMessage/);
     assert.match(statusStrip, /value !== this\.lastValue/);
     assert.doesNotMatch(source, /Graphics\.clear|\.clear\(\)/);
