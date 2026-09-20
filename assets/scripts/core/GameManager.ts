@@ -1924,7 +1924,7 @@ export class GameManager extends Component {
             LANE_LAYOUT.laneCount,
             {
                 onKnocked: (lane, state) => {
-                    this.presentEntertainmentKnockout(lane, state.reason);
+                    this.presentEntertainmentKnockout(lane, state.reason, state.remainingSeconds);
                     if (isEntertainmentBrawlMode() && this._netRaceController?.isHost) {
                         this._netRaceController.enqueueEntertainmentKnockdown(
                             lane, state.reason, state.distance, state.revision,
@@ -1980,12 +1980,23 @@ export class GameManager extends Component {
         return !!this._entertainmentRecovery?.tryKnockDown(lane, reason, distance);
     }
 
-    private presentEntertainmentKnockout(lane: number, _reason: EntertainmentRecoveryReason) {
+    private presentEntertainmentKnockout(
+        lane: number,
+        _reason: EntertainmentRecoveryReason,
+        remainingSeconds: number,
+    ) {
         const swimmer = this.swimmerForLane(lane);
         if (!swimmer) return;
         swimmer.beginEntertainmentKnockout();
+        if (_reason === EntertainmentRecoveryReason.CANNON) {
+            const away = swimmer.node.position.z >= this._lastCannonTargetZ ? 1 : -1;
+            swimmer.configureEntertainmentKnockoutLaunch(-swimmer.raceDirection, away);
+        }
         // 所有致命娱乐事件统一复用短促翻起的受击姿态，避免停在命中前的游泳动作。
         swimmer.cartoonRig?.setEntertainmentKnocked(0.18);
+        swimmer.syncEntertainmentKnockoutPresentation(
+            Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - remainingSeconds),
+        );
         const aiIndex = this.aiIndexForLane(lane);
         if (aiIndex >= 0 && !this._aiControllers[aiIndex]?.remoteDriven) {
             this._aiControllers[aiIndex]?.stopSwimming();
@@ -2014,6 +2025,13 @@ export class GameManager extends Component {
         const controller = this._entertainmentRecovery;
         if (!controller) return;
         if (this._state === GameState.RACING) controller.update(dt);
+        for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+            const state = controller.stateForLane(lane);
+            if (state?.phase !== EntertainmentRecoveryPhase.KNOCKED) continue;
+            this.swimmerForLane(lane)?.syncEntertainmentKnockoutPresentation(
+                Math.max(0, ENTERTAINMENT_RECOVERY_TUNING.knockedSeconds - state.remainingSeconds),
+            );
+        }
         const playerState = controller.stateForLane(this._playerLaneIndex);
         this._entertainmentRecoveryHud?.update(
             dt,
@@ -2229,13 +2247,6 @@ export class GameManager extends Component {
         const splashNode = swimmer.cartoonRig?.splashNode;
         if (splashNode?.isValid) setLayerRecursive(splashNode, SWIMMER_LAYER);
         swimmer.cartoonRig?.triggerBigSplash(2.8);
-        const position = swimmer.node.position;
-        const away = position.z >= this._lastCannonTargetZ ? 1 : -1;
-        Tween.stopAllByTarget(swimmer.node);
-        tween(swimmer.node)
-            .to(0.22, { position: new Vec3(position.x, position.y + 0.55, position.z + away * 0.9) }, { easing: 'quadOut' })
-            .to(0.58, { position: new Vec3(position.x - swimmer.raceDirection * 0.7, position.y - 0.14, position.z + away * 1.55) }, { easing: 'quadIn' })
-            .start();
         this._entertainmentEventBanner.showEvent(
             `${swimmer.swimmerName}被炮弹核心命中`,
             'danger',

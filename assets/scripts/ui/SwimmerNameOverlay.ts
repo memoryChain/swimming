@@ -15,17 +15,17 @@ const NAME_FONT_SIZE = 15;
 const NAME_HORIZONTAL_PADDING = 2;
 const NAME_MAX_WIDTH = TAG_WIDTH - LIVE_PLACEMENT_BADGE_WIDTH - RANK_NAME_GAP;
 const HEAD_OFFSET_Y = 30;
-const DIZZY_SIZE = 76;
-const DIZZY_OFFSET_Y = 64;
+const DIZZY_SIZE = 92;
+const DIZZY_OFFSET_Y = 24;
 const DIZZY_STAR_COUNT = 3;
-const DIZZY_STAR_SIZE = 30;
-const DIZZY_ORBIT_RADIUS_X = 31;
-const DIZZY_ORBIT_RADIUS_Y = 11;
+const DIZZY_STAR_SIZE = 36;
+const DIZZY_ORBIT_RADIUS_X = 38;
+const DIZZY_ORBIT_RADIUS_Y = 14;
 const DIZZY_ORBIT_RADIANS_PER_SECOND = Math.PI * 2 / 4.6;
 const DIZZY_TRAIL_SEGMENT_COUNT = 2;
 const DIZZY_TRAIL_PHASE_STEP = 0.50;
-const DIZZY_TRAIL_BASE_WIDTH = 24;
-const DIZZY_TRAIL_HEIGHT = 7;
+const DIZZY_TRAIL_BASE_WIDTH = 28;
+const DIZZY_TRAIL_HEIGHT = 8;
 const DIZZY_TRAIL_SCALE_STEP = 0.02;
 const DIZZY_TRAIL_ALPHA_FACTORS = [0.70, 0.42] as const;
 const DIZZY_MIN_SCALE = 0.72;
@@ -175,8 +175,8 @@ export class SwimmerNameOverlay {
             const nameNode = name.root;
             const nameWidth = name.width;
             // Keep the dizzy orbit on the HUD root instead of parenting it to the
-            // animated head tag. Its screen-space anchor comes from the stable
-            // swimmer root, so a flipped or submerged head cannot drag it into water.
+            // collision-avoiding name tag. Its anchor is projected separately from
+            // the rendered head bone, so label stacking cannot push it aside.
             const dizzyRoot = makeUiNode('EntertainmentDizzyStars', this._root);
             dizzyRoot.getComponent(UITransform)!.setContentSize(DIZZY_SIZE, DIZZY_SIZE);
             const dizzyStars: DizzyStarVisual[] = [];
@@ -417,10 +417,8 @@ export class SwimmerNameOverlay {
             entry.dizzyKnocked = wantsDizzy;
             let showDizzy = wantsDizzy && entry.dizzyRoot.active;
             if (wantsDizzy && (advanceDizzy || enteredDizzy)) {
-                Vec3.copy(this._worldPos, swimmerNode.worldPosition);
-                worldCamera.worldToScreen(this._worldPos, this._screenPos);
-                uiCamera.screenToWorld(this._screenPos, this._uiWorld);
-                hudTransform.convertToNodeSpaceAR(this._uiWorld, this._uiLocal);
+                // Reuse the rendered head's projected HUD position calculated above.
+                // Re-projecting it here added duplicate camera work for every knocked swimmer.
                 const dizzyX = Math.round(this._uiLocal.x);
                 const dizzyY = Math.round(this._uiLocal.y + DIZZY_OFFSET_Y * labelScale);
                 showDizzy = Math.abs(dizzyX) <= halfWidth && Math.abs(dizzyY) <= halfHeight;

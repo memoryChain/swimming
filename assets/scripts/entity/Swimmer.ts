@@ -2,7 +2,7 @@ import { abilityValue } from '../core/CharacterAbilityConfig';
 import type { CharacterAbilitySnapshot } from '../swimmer/CharacterAbilityState';
 import { DOLPHIN_JUMP } from '../core/DolphinJumpConfig';
 import { _decorator, Camera, Component, Node, Quat, Tween, Vec3, tween } from 'cc';
-import { SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
+import { CHARACTER_POSE_TUNING, SWIMMER_ACTION_TUNING } from '../character/CharacterMotionTuning';
 import type { CharacterAction } from '../character/CharacterActionConfig';
 import {
     Rating,
@@ -103,6 +103,20 @@ export class Swimmer extends Component {
     private _lateralMaxWorld = Number.POSITIVE_INFINITY;
     private _entertainmentKnocked = false;
     private _entertainmentInvulnerable = false;
+    private readonly _entertainmentLandingStartPosition = new Vec3();
+    private readonly _entertainmentLandingEndPosition = new Vec3();
+    private readonly _entertainmentLandingPosition = new Vec3();
+    private readonly _entertainmentLandingStartRotation = new Quat();
+    private readonly _entertainmentLandingEndRotation = new Quat();
+    private readonly _entertainmentLandingRotation = new Quat();
+    private _entertainmentLandingPeakY = 0;
+    private _entertainmentLandingRiseRatio = 0;
+    private _entertainmentLandingImpactOffsetX = 0;
+    private _entertainmentLandingImpactOffsetZ = 0;
+    private _entertainmentLandingDuration = 0;
+    private _entertainmentLandingComplete = true;
+    private _entertainmentLandingSampled = false;
+    private _entertainmentLandingSplashPlayed = true;
     // Internal accessors for the race-phase controller (SwimmerRacePhases).
     get motor(): SwimmerMotor {
         return this._motor;
@@ -460,6 +474,7 @@ export class Swimmer extends Component {
         this._entertainmentInvulnerable = false;
         this._movementSpeed = 0;
         Tween.stopAllByTarget(this.node);
+        this.prepareEntertainmentKnockoutLanding();
         this._phases.clearFlipTurnPhase(true);
         this._phases.clearDiveUnderwaterPhase();
         this._motor.suspendForEntertainmentKnockout();
@@ -468,11 +483,147 @@ export class Swimmer extends Component {
         this.cartoonRig?.setPerfectGlowActive(false);
     }
 
+    configureEntertainmentKnockoutLaunch(forwardDirection: number, lateralDirection: number): void {
+        if (!this._entertainmentKnocked) return;
+        const swimY = this._courseLayout.swimY;
+        const startY = this._entertainmentLandingStartPosition.y;
+        const alreadyAirborne = startY > swimY + CHARACTER_POSE_TUNING.entertainmentKnockoutAirborneThreshold;
+        this._entertainmentLandingEndPosition.x = this._entertainmentLandingStartPosition.x;
+        this._entertainmentLandingEndPosition.y = swimY;
+        this._entertainmentLandingEndPosition.z = this._entertainmentLandingStartPosition.z;
+        this._entertainmentLandingImpactOffsetX = Math.sign(forwardDirection || 1)
+            * CHARACTER_POSE_TUNING.entertainmentKnockoutImpactBackwardDistance;
+        this._entertainmentLandingImpactOffsetZ = Math.sign(lateralDirection || 1)
+            * CHARACTER_POSE_TUNING.entertainmentKnockoutImpactLateralDistance;
+        this._entertainmentLandingPeakY = alreadyAirborne
+            ? startY
+            : swimY + CHARACTER_POSE_TUNING.entertainmentKnockoutImpactLift;
+        this._entertainmentLandingRiseRatio = alreadyAirborne ? 0 : 0.28;
+        const heightSeconds = Math.max(0, startY - swimY)
+            * CHARACTER_POSE_TUNING.entertainmentKnockoutLandingSecondsPerMeter;
+        this._entertainmentLandingDuration = Math.min(
+            CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMaxSeconds,
+            Math.max(
+                CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMinSeconds,
+                CHARACTER_POSE_TUNING.entertainmentKnockoutImpactFlightSeconds + heightSeconds,
+            ),
+        );
+        this._entertainmentLandingComplete = false;
+        this._entertainmentLandingSampled = false;
+        this._entertainmentLandingSplashPlayed = false;
+    }
+
+    syncEntertainmentKnockoutPresentation(elapsedSeconds: number): void {
+        if (!this._entertainmentKnocked) return;
+        const elapsed = Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
+        const duration = this._entertainmentLandingDuration;
+        if (duration > 0 && !this._entertainmentLandingComplete) {
+            const firstSample = !this._entertainmentLandingSampled;
+            this._entertainmentLandingSampled = true;
+            const t = Math.min(1, elapsed / duration);
+            const eased = t * t * (3 - 2 * t);
+            Vec3.lerp(
+                this._entertainmentLandingPosition,
+                this._entertainmentLandingStartPosition,
+                this._entertainmentLandingEndPosition,
+                eased,
+            );
+            const impactArc = 4 * t * (1 - t);
+            this._entertainmentLandingPosition.x += this._entertainmentLandingImpactOffsetX * impactArc;
+            this._entertainmentLandingPosition.z += this._entertainmentLandingImpactOffsetZ * impactArc;
+            this._entertainmentLandingPosition.x = this._courseLayout.clampSwimWorldX(
+                this._entertainmentLandingPosition.x,
+            );
+            const halfPoolWidth = Math.max(0.3, this._courseLayout.poolWidth * 0.5 - 0.5);
+            this._entertainmentLandingPosition.z = Math.max(
+                -halfPoolWidth,
+                Math.min(halfPoolWidth, this._entertainmentLandingPosition.z),
+            );
+            if (this._entertainmentLandingRiseRatio > 0 && t < this._entertainmentLandingRiseRatio) {
+                const riseT = t / this._entertainmentLandingRiseRatio;
+                const riseEase = 1 - (1 - riseT) * (1 - riseT);
+                this._entertainmentLandingPosition.y = this._entertainmentLandingStartPosition.y
+                    + (this._entertainmentLandingPeakY - this._entertainmentLandingStartPosition.y) * riseEase;
+            } else {
+                const fallStart = this._entertainmentLandingRiseRatio;
+                const fallT = Math.max(0, Math.min(1, (t - fallStart) / Math.max(0.01, 1 - fallStart)));
+                this._entertainmentLandingPosition.y = this._entertainmentLandingPeakY
+                    + (this._entertainmentLandingEndPosition.y - this._entertainmentLandingPeakY) * fallT * fallT;
+            }
+            Quat.slerp(
+                this._entertainmentLandingRotation,
+                this._entertainmentLandingStartRotation,
+                this._entertainmentLandingEndRotation,
+                eased,
+            );
+            this.node.setPosition(this._entertainmentLandingPosition);
+            this.node.setRotation(this._entertainmentLandingRotation);
+            if (t >= 1) {
+                this._entertainmentLandingComplete = true;
+                if (!firstSample && !this._entertainmentLandingSplashPlayed) {
+                    this._entertainmentLandingSplashPlayed = true;
+                    this.cartoonRig?.triggerBigSplash(
+                        CHARACTER_POSE_TUNING.entertainmentKnockoutLandingSplashScale,
+                    );
+                }
+            }
+        }
+        this.cartoonRig?.syncEntertainmentKnockoutElapsed(Math.max(0, elapsed - duration));
+    }
+
+    private prepareEntertainmentKnockoutLanding(): void {
+        Vec3.copy(this._entertainmentLandingStartPosition, this.node.position);
+        Vec3.copy(this._entertainmentLandingEndPosition, this._entertainmentLandingStartPosition);
+        Quat.copy(this._entertainmentLandingStartRotation, this.node.rotation);
+        const visualDistance = Math.min(this._motor.distance, getRaceDistance());
+        const direction = this._courseLayout.finishDirectionAtDistance(visualDistance);
+        const headingDegrees = this._motor.heading * 180 / Math.PI;
+        const yaw = (direction > 0 ? 0 : 180) - direction * headingDegrees;
+        Quat.fromEuler(this._entertainmentLandingEndRotation, 0, yaw, 0);
+        const swimY = this._courseLayout.swimY;
+        const height = this._entertainmentLandingStartPosition.y - swimY;
+        this._entertainmentLandingImpactOffsetX = 0;
+        this._entertainmentLandingImpactOffsetZ = 0;
+        if (height > CHARACTER_POSE_TUNING.entertainmentKnockoutAirborneThreshold) {
+            this._entertainmentLandingEndPosition.y = swimY;
+            this._entertainmentLandingPeakY = this._entertainmentLandingStartPosition.y;
+            this._entertainmentLandingRiseRatio = 0;
+            this._entertainmentLandingDuration = Math.min(
+                CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMaxSeconds,
+                Math.max(
+                    CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMinSeconds,
+                    CHARACTER_POSE_TUNING.entertainmentKnockoutLandingMinSeconds
+                        + height * CHARACTER_POSE_TUNING.entertainmentKnockoutLandingSecondsPerMeter,
+                ),
+            );
+            this._entertainmentLandingComplete = false;
+            this._entertainmentLandingSplashPlayed = false;
+        } else {
+            this._entertainmentLandingPeakY = this._entertainmentLandingStartPosition.y;
+            this._entertainmentLandingRiseRatio = 0;
+            this._entertainmentLandingDuration = 0;
+            this._entertainmentLandingComplete = true;
+            this._entertainmentLandingSplashPlayed = true;
+            this.node.setRotation(this._entertainmentLandingEndRotation);
+        }
+        this._entertainmentLandingSampled = false;
+    }
+
+    private resetEntertainmentKnockoutPresentation(): void {
+        this._entertainmentLandingDuration = 0;
+        this._entertainmentLandingImpactOffsetX = 0;
+        this._entertainmentLandingImpactOffsetZ = 0;
+        this._entertainmentLandingComplete = true;
+        this._entertainmentLandingSampled = false;
+        this._entertainmentLandingSplashPlayed = true;
+    }
+
     respawnAfterEntertainmentHit(distance: number, worldZ: number, initialSpeed: number): void {
         Tween.stopAllByTarget(this.node);
         this._movementSpeed = 0;
         this._entertainmentKnocked = false;
         this._entertainmentInvulnerable = true;
+        this.resetEntertainmentKnockoutPresentation();
         this._phases.clearFlipTurnPhase(true);
         this._phases.clearDiveUnderwaterPhase();
         this._motor.resumeAfterEntertainmentHit(distance, initialSpeed);

@@ -91,9 +91,33 @@ export const CHARACTER_POSE_TUNING = {
     // surface instead of reusing the upright finish/tread-water pose.
     entertainmentKnockoutModelYOffset: -0.06,
     entertainmentKnockoutRollDegrees: 102,
-    entertainmentKnockoutRollSwayDegrees: 4,
-    entertainmentKnockoutBobAmplitude: 0.022,
-    entertainmentKnockoutBobSpeed: 2.1,
+    entertainmentKnockoutRollSwayDegrees: 6,
+    entertainmentKnockoutBobAmplitude: 0.018,
+    entertainmentKnockoutBobSpeed: 1.8,
+    // Visual-only child-model sinking. The authoritative swimmer root, race
+    // distance, collision footprint, and network correction remain unchanged.
+    entertainmentKnockoutSinkDepth: 0.34,
+    entertainmentKnockoutSinkSeconds: 3.0,
+    // A knockdown caught above the surface must finish a short water-entry phase
+    // before the child model begins its slow sinking/buoyancy presentation.
+    entertainmentKnockoutAirborneThreshold: 0.06,
+    entertainmentKnockoutLandingMinSeconds: 0.28,
+    entertainmentKnockoutLandingMaxSeconds: 0.62,
+    entertainmentKnockoutLandingSecondsPerMeter: 0.18,
+    entertainmentKnockoutImpactLift: 0.55,
+    entertainmentKnockoutImpactFlightSeconds: 0.58,
+    entertainmentKnockoutImpactBackwardDistance: 0.7,
+    entertainmentKnockoutImpactLateralDistance: 1.55,
+    entertainmentKnockoutLandingSplashScale: 1.65,
+    // Limbs lag behind the faster-sinking torso. Direction weights bend each
+    // chain toward world-up without translating joints or changing gameplay.
+    entertainmentKnockoutLimbFloatRiseSeconds: 1.4,
+    entertainmentKnockoutUpperArmBuoyancy: 0.55,
+    entertainmentKnockoutForeArmBuoyancy: 0.85,
+    entertainmentKnockoutThighBuoyancy: 0.14,
+    entertainmentKnockoutCalfBuoyancy: 0.36,
+    // Small additive motion layered over the anatomically safe buoyant pose.
+    entertainmentKnockoutLimbSwayDegrees: 8,
 
     // Procedural breaststroke preview cycle duration before animation speed scaling.
     // Debug 预览里的程序化蛙泳/踩水动作在动画倍率前的一整轮周期。

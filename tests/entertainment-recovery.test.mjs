@@ -115,12 +115,24 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
     assert.doesNotMatch(source, /eliminateCannonHitLane|handleSharkElimination|enqueueSharkElimination/);
     const knockoutPresentation = source.match(/private presentEntertainmentKnockout[\s\S]*?\n    }/)?.[0] ?? '';
     assert.match(knockoutPresentation, /setEntertainmentKnocked\(0\.18\)/);
+    assert.match(knockoutPresentation, /syncEntertainmentKnockoutPresentation/);
+    assert.match(knockoutPresentation, /knockedSeconds - remainingSeconds/);
+    assert.match(knockoutPresentation, /configureEntertainmentKnockoutLaunch/);
     assert.doesNotMatch(knockoutPresentation, /setFinishFloating\(/);
     assert.doesNotMatch(knockoutPresentation, /reason === EntertainmentRecoveryReason\.SHARK/);
     const swimmer = readFileSync(new URL('../assets/scripts/entity/Swimmer.ts', import.meta.url), 'utf8');
     assert.match(swimmer, /suspendForEntertainmentKnockout/);
     assert.match(swimmer, /resumeAfterEntertainmentHit/);
+    assert.match(swimmer, /prepareEntertainmentKnockoutLanding\(\)/);
+    assert.match(swimmer, /syncEntertainmentKnockoutPresentation\(elapsedSeconds: number\)/);
+    assert.match(swimmer, /Math\.max\(0, elapsed - duration\)/);
+    assert.match(swimmer, /entertainmentKnockoutLandingSplashScale/);
+    assert.match(swimmer, /configureEntertainmentKnockoutLaunch/);
+    assert.match(swimmer, /const impactArc = 4 \* t \* \(1 - t\)/);
+    assert.match(swimmer, /syncEntertainmentKnockoutElapsed\(Math\.max\(0, elapsed - duration\)\)/);
     assert.doesNotMatch(swimmer.match(/respawnAfterEntertainmentHit[\s\S]*?\n    }/)?.[0] ?? '', /\.startRace\(/);
+    const cannonKnockdown = source.match(/private knockDownCannonHitLane[\s\S]*?\n    }/)?.[0] ?? '';
+    assert.doesNotMatch(cannonKnockdown, /tween\(swimmer\.node\)|position\.y \+ 0\.55/);
 });
 
 test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条', () => {
@@ -185,8 +197,15 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         'utf8',
     );
     assert.match(poseState, /EntertainmentKnocked = 'entertainment-knocked'/);
-    assert.match(poseState, /applyFinishFloatingPose\(\)/);
+    assert.match(poseState, /applyEntertainmentKnockoutPose\(0, 0\)/);
+    assert.match(poseState, /entertainmentKnockoutSinkSeconds/);
+    assert.match(poseState, /entertainmentKnockoutSinkDepth \* sinkRatio/);
+    assert.match(poseState, /baseY - sink \+ bob/);
+    assert.match(poseState, /applyEntertainmentKnockoutPose\(phase, elapsed\)/);
     assert.match(poseState, /entertainmentKnockoutRollDegrees/);
+    assert.match(poseState, /syncEntertainmentKnockoutElapsed\(elapsedSeconds: number\)/);
+    assert.match(poseState, /const elapsed = this\._entertainmentKnockoutElapsedSeconds/);
+    assert.doesNotMatch(poseState, /getSelfTime\(\) - this\._entertainmentKnockoutStartTime/);
     assert.doesNotMatch(
         poseState.match(/private applyEntertainmentKnockoutSetup[\s\S]*?\n    }/)?.[0] ?? '',
         /applyBreaststrokePose/,
@@ -196,10 +215,20 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         new URL('../assets/scripts/ui/SwimmerNameOverlay.ts', import.meta.url),
         'utf8',
     );
+    const pose = readFileSync(
+        new URL('../assets/scripts/character/FreestylePoseController.ts', import.meta.url),
+        'utf8',
+    );
+    const tuning = readFileSync(
+        new URL('../assets/scripts/character/CharacterMotionTuning.ts', import.meta.url),
+        'utf8',
+    );
     assert.match(overlay, /DIZZY_SAMPLE_SECONDS = 1 \/ 20/);
     assert.match(overlay, /DIZZY_STAR_COUNT = 3/);
-    assert.match(overlay, /DIZZY_ORBIT_RADIUS_X/);
-    assert.match(overlay, /DIZZY_ORBIT_RADIUS_Y/);
+    assert.match(overlay, /DIZZY_OFFSET_Y = 24/);
+    assert.match(overlay, /DIZZY_STAR_SIZE = 36/);
+    assert.match(overlay, /DIZZY_ORBIT_RADIUS_X = 38/);
+    assert.match(overlay, /DIZZY_ORBIT_RADIUS_Y = 14/);
     assert.match(overlay, /DIZZY_TRAIL_SEGMENT_COUNT = 2/);
     assert.match(overlay, /RESOURCE_PATHS\.softSpeedStreak/);
     assert.match(overlay, /DizzyTrail_/);
@@ -215,10 +244,34 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
     assert.match(overlay, /isEntertainmentKnocked/);
     assert.match(overlay, /EntertainmentDizzyStars/);
     assert.match(overlay, /makeUiNode\('EntertainmentDizzyStars', this\._root\)/);
-    assert.match(overlay, /Vec3\.copy\(this\._worldPos, swimmerNode\.worldPosition\)/);
+    assert.match(overlay, /entry\.swimmer\.getNameTagWorldPosition\(this\._worldPos\)/);
+    assert.doesNotMatch(overlay, /Vec3\.copy\(this\._worldPos, swimmerNode\.worldPosition\)/);
+    const dizzyAnchorUpdate = overlay.match(
+        /if \(wantsDizzy && \(advanceDizzy \|\| enteredDizzy\)\) \{[\s\S]*?const dizzyX/,
+    )?.[0] ?? '';
+    assert.doesNotMatch(dizzyAnchorUpdate, /worldToScreen|screenToWorld|convertToNodeSpaceAR/);
     assert.match(overlay, /RESOURCE_PATHS\.entertainmentKnockoutUi\.dizzyStars/);
     assert.doesNotMatch(overlay, /ParticleSystem|Graphics\.clear\(\)/);
     assert.doesNotMatch(overlay, /dizzyRoot\.setRotationFromEuler|DIZZY_ROTATION_DEGREES_PER_SECOND/);
+    assert.match(pose, /applyEntertainmentKnockoutPose\(phase: number, elapsedSeconds: number\)/);
+    assert.match(pose, /this\.applyFinishFloatingPose\(\)/);
+    assert.match(pose, /Vec3\.UNIT_Y/);
+    assert.match(pose, /applyEntertainmentLimbBuoyancy/);
+    assert.match(pose, /entertainmentLimbDirectionInRoot/);
+    assert.match(pose, /this\.applyCurrentBoneOffset\(this\._leftArm/);
+    assert.match(pose, /this\.applyCurrentBoneOffset\(this\._rightLeg/);
+    assert.match(tuning, /entertainmentKnockoutSinkDepth: 0\.34/);
+    assert.match(tuning, /entertainmentKnockoutSinkSeconds: 3\.0/);
+    assert.match(tuning, /entertainmentKnockoutAirborneThreshold: 0\.06/);
+    assert.match(tuning, /entertainmentKnockoutLandingMaxSeconds: 0\.62/);
+    assert.match(tuning, /entertainmentKnockoutImpactFlightSeconds: 0\.58/);
+    assert.match(tuning, /entertainmentKnockoutLandingSplashScale: 1\.65/);
+    assert.match(tuning, /entertainmentKnockoutLimbFloatRiseSeconds: 1\.4/);
+    assert.match(tuning, /entertainmentKnockoutUpperArmBuoyancy: 0\.55/);
+    assert.match(tuning, /entertainmentKnockoutForeArmBuoyancy: 0\.85/);
+    assert.match(tuning, /entertainmentKnockoutThighBuoyancy: 0\.14/);
+    assert.match(tuning, /entertainmentKnockoutCalfBuoyancy: 0\.36/);
+    assert.match(tuning, /entertainmentKnockoutLimbSwayDegrees: 8/);
 
     const star = statSync(new URL(
         '../assets/race/ui/entertainment-knockout-v1/dizzy-stars.png',
@@ -231,6 +284,12 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         'utf8',
     );
     assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 84/);
+
+    const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
+    const recoveryUpdate = manager.match(/private updateEntertainmentRecovery[\s\S]*?const playerState/)?.[0] ?? '';
+    assert.match(recoveryUpdate, /state\?\.phase !== EntertainmentRecoveryPhase\.KNOCKED/);
+    assert.match(recoveryUpdate, /knockedSeconds - state\.remainingSeconds/);
+    assert.match(recoveryUpdate, /syncEntertainmentKnockoutPresentation/);
 });
 
 test('离开比赛状态时立即清理急救遮罩、无敌表现和娱乐画中画', () => {

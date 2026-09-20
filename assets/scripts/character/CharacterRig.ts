@@ -11,6 +11,7 @@ export interface CharacterRig {
     setDiveReady(active: boolean, transitionSeconds?: number): void;
     setFinishFloating(): void;
     setEntertainmentKnocked(transitionSeconds?: number): void;
+    syncEntertainmentKnockoutElapsed(elapsedSeconds: number): void;
     triggerArmStroke(): void;
     triggerKick(): void;
     triggerStroke(type: StrokeType): void;

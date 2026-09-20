@@ -48,7 +48,7 @@ export class CharacterPoseStateController {
     private _diveTransitionElapsed = 0;
     private _diveTransitionDuration = CHARACTER_POSE_TUNING.diveStreamlineTransitionSeconds;
     private _treadWaterStartTime = 0;
-    private _entertainmentKnockoutStartTime = 0;
+    private _entertainmentKnockoutElapsedSeconds = 0;
     private _showcaseStartTime = 0;
     private _showcaseAction: SampledActionMotion | null = findSampledDebugAction('waving');
     private _poseTransition: PoseTransition | null = null;
@@ -130,15 +130,21 @@ export class CharacterPoseStateController {
     }
 
     enterEntertainmentKnockout(transitionSeconds = 0) {
-        this._entertainmentKnockoutStartTime = this._options.getSelfTime();
+        this._entertainmentKnockoutElapsedSeconds = 0;
         this.transitionTo(CharacterPoseState.EntertainmentKnocked, transitionSeconds);
+    }
+
+    syncEntertainmentKnockoutElapsed(elapsedSeconds: number) {
+        this._entertainmentKnockoutElapsedSeconds = Number.isFinite(elapsedSeconds)
+            ? Math.max(0, elapsedSeconds)
+            : 0;
     }
 
     reset() {
         this._options.pose.setDiveSupportPlane(null);
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
-        this._entertainmentKnockoutStartTime = 0;
+        this._entertainmentKnockoutElapsedSeconds = 0;
         this._showcaseStartTime = 0;
         this._state = CharacterPoseState.Preview;
         this._poseTransition = null;
@@ -147,7 +153,7 @@ export class CharacterPoseStateController {
     resetRuntime() {
         this._diveTransitionElapsed = 0;
         this._treadWaterStartTime = 0;
-        this._entertainmentKnockoutStartTime = 0;
+        this._entertainmentKnockoutElapsedSeconds = 0;
         this._poseTransition = null;
     }
 
@@ -387,7 +393,7 @@ export class CharacterPoseStateController {
         model.setPosition(0, y, 0);
         this.applyModelScale(model);
         this.applyEntertainmentKnockoutRotation(0);
-        this._options.pose.applyFinishFloatingPose();
+        this._options.pose.applyEntertainmentKnockoutPose(0, 0);
         this._options.updateSplashSurface(0);
         this._options.setSplashVisible(false);
     }
@@ -432,16 +438,20 @@ export class CharacterPoseStateController {
         if (!model || !this._options.getRoot()) {
             return;
         }
-        const elapsed = Math.max(0, this._options.getSelfTime() - this._entertainmentKnockoutStartTime);
+        const elapsed = this._entertainmentKnockoutElapsedSeconds;
         const phase = elapsed * CHARACTER_POSE_TUNING.entertainmentKnockoutBobSpeed;
         const baseY = CHARACTER_POSE_TUNING.raceModelBaseY
             + this._options.raceModelYOffset()
             + MOTION_TUNING.swimBodyYOffset
             + CHARACTER_POSE_TUNING.entertainmentKnockoutModelYOffset;
-        model.setPosition(0, baseY + Math.sin(phase) * CHARACTER_POSE_TUNING.entertainmentKnockoutBobAmplitude, 0);
+        const sinkRatio = smoothStep(elapsed / Math.max(0.01, CHARACTER_POSE_TUNING.entertainmentKnockoutSinkSeconds));
+        const sink = CHARACTER_POSE_TUNING.entertainmentKnockoutSinkDepth * sinkRatio;
+        const bob = Math.sin(phase) * CHARACTER_POSE_TUNING.entertainmentKnockoutBobAmplitude;
+        model.setPosition(0, baseY - sink + bob, 0);
         this.applyEntertainmentKnockoutRotation(
             Math.sin(phase * 0.72) * CHARACTER_POSE_TUNING.entertainmentKnockoutRollSwayDegrees,
         );
+        this._options.pose.applyEntertainmentKnockoutPose(phase, elapsed);
     }
 
     private applyEntertainmentKnockoutRotation(swayDegrees: number) {
