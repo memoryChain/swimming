@@ -509,7 +509,7 @@ test('缺少平台准备接口不得静默报告成功', async () => {
 });
 
 function attributeTipsHarness() {
-    const overlay = new Node('PopupLayer');
+    const overlay = new Node('HudLayer');
     const identityCamera = {
         worldToScreen(p, out) { Object.assign(out, p); return out; },
         screenToWorld(p, out) { Object.assign(out, p); return out; },
@@ -523,7 +523,7 @@ function attributeTipsHarness() {
         cc: { ...cc, Vec3: class { x = 0; y = 0; z = 0; set(x, y, z) { Object.assign(this, { x, y, z }); } } },
         '../core/ResourcePaths': resources,
         './RuntimeUiFactory': factory,
-        './UILayers': { UILayer: { Popup: 3 }, getUILayer: () => overlay },
+        './UILayers': { UILayer: { Hud: 2 }, getUILayer: () => overlay },
         './ProjectUiFonts': stubs['ui/ProjectUiFonts'],
         './AvatarUiAssets': { loadAvatarUiSpriteFrame: (path, done) => pending.push({ path, done }) },
     };
@@ -538,7 +538,8 @@ test('属性说明静态卡片开关不新增节点或监听，关闭阻断正�
     canvas.addComponent(Canvas).cameraComponent = h.identityCamera;
     const anchor = h.factory.makeTouchArea('StatRow', canvas, 284, 42);
     const before = resizeListeners.get('canvas-resize')?.size ?? 0;
-    const tips = new h.CharacterAttributeTips(canvas);
+    const presented = [];
+    const tips = new h.CharacterAttributeTips(canvas, value => presented.push(value));
     assert.equal(h.pending.length, 0, '静态说明卡无需额外加载纹理');
     assert.equal(tips.root.active, false);
     const count = nodes(tips.root).length;
@@ -571,6 +572,8 @@ test('属性说明静态卡片开关不新增节点或监听，关闭阻断正�
     for (const fn of resizeListeners.get('canvas-resize')) fn();
     assert.equal(tips.root.active, false);
     tips.dispose(); tips.dispose();
+    assert.equal(presented.at(-1), false);
+    assert.equal(presented.filter(Boolean).length, presented.filter(value => !value).length);
     assert.equal(resizeListeners.get('canvas-resize').size, before);
     visibleSize.width = 1280;
 });
@@ -595,7 +598,9 @@ test('主界面和角色页整个属性区域绑定同一说明卡，点击不�
         makeRaceTextureButton: (name, parent) => h.factory.makeTouchArea(name, parent, 100, 50),
     });
     const f = new Harness();
-    Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas') });
+    const presented = [];
+    Object.assign(f, { _callbacks: {}, _motion: { group: p => p, bindButton() {} }, _readyStats: [], _inspectorCurrentStats: [], _inspectorNextStats: [], _canvasNode: new Node('canvas'),
+        setModalOverlayActive(value) { presented.push(value); } });
     const ready = new Node('Ready'), attributes = new Node('Attributes');
     f._content = ready;
     ready.addComponent(Canvas).cameraComponent = h.identityCamera;
@@ -612,6 +617,7 @@ test('主界面和角色页整个属性区域绑定同一说明卡，点击不�
         }
     }
     assert.equal(h.overlay.children.length, 1, '两个页面只创建一个tips实例');
+    assert.equal(presented.at(-1), false, '关闭说明卡后恢复3D预览');
     f._leaving = true; find(ready, 'AttributeTipHit').click(); assert.equal(f._attributeTips.root.active, false);
     f._attributeTips.dispose();
 });

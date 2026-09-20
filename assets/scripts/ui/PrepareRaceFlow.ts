@@ -471,7 +471,12 @@ export class PrepareRaceFlow {
         hit.setPosition(x, y, 4);
         hit.on(Button.EventType.CLICK, () => {
             if (this._leaving || !hit.isValid || !hit.activeInHierarchy) return;
-            if (!this._attributeTips) this._attributeTips = new CharacterAttributeTips(this._canvasNode);
+            if (!this._attributeTips) {
+                this._attributeTips = new CharacterAttributeTips(
+                    this._canvasNode,
+                    presented => this.setModalOverlayActive(presented),
+                );
+            }
             this._attributeTips.show(hit);
         });
     }

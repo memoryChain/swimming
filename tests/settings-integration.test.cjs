@@ -35,6 +35,29 @@ test('头像弹窗与设置共用主HUD遮罩方案，并保留身份保存协�
     assert.match(identity, /PlayerData\.setIdentity\(patch\)/);
 });
 
+test('调试模式和属性说明共用主HUD坐标系，并在显示期间暂停3D预览', () => {
+    const manager = fs.readFileSync(path.join(root, 'assets/scripts/app/LoginManager.ts'), 'utf8');
+    const picker = fs.readFileSync(path.join(root, 'assets/scripts/ui/AiDebugSetupPicker.ts'), 'utf8');
+    const tips = fs.readFileSync(path.join(root, 'assets/scripts/ui/CharacterAttributeTips.ts'), 'utf8');
+    const prepare = fs.readFileSync(path.join(root, 'assets/scripts/ui/PrepareRaceFlow.ts'), 'utf8');
+
+    assert.match(manager, /const hud = getUILayer\(this\._canvasNode, UILayer\.Hud\);[\s\S]*?mountAiDebugSetupPicker\(hud/);
+    assert.match(manager, /onPresentedChanged: presented => this\._prepareRaceFlow\?\.setModalOverlayActive\(presented\)/);
+    assert.match(picker, /fitFullScreenSolidCover\(dim, UI_DESIGN_WIDTH, UI_DESIGN_HEIGHT\)/);
+    assert.match(picker, /node\.on\(Button\.EventType\.CLICK, action\)/);
+    assert.match(tips, /getUILayer\(canvas, UILayer\.Hud\)/);
+    assert.match(prepare, /new CharacterAttributeTips\([\s\S]*?presented => this\.setModalOverlayActive\(presented\)/);
+    assert.doesNotMatch(manager, /showAiDebugPicker\(\)[\s\S]{0,220}UILayer\.Popup/);
+});
+
+test('保留的独立提示画布随浏览器尺寸同步子层和正交相机', () => {
+    const layers = fs.readFileSync(path.join(root, 'assets/scripts/ui/UILayers.ts'), 'utf8');
+    assert.match(layers, /function syncPopupOverlay\(overlay: Node\)/);
+    assert.match(layers, /resize\(overlay\);[\s\S]*?for \(const layer of POPUP_LAYERS\)[\s\S]*?resize\(node\)/);
+    assert.match(layers, /camera\.orthoHeight !== orthoHeight[\s\S]*?camera\.orthoHeight = orthoHeight/);
+    assert.match(layers, /view\.on\('canvas-resize', apply\)[\s\S]*?view\.off\('canvas-resize', apply\)/);
+});
+
 test('设置音量仍为预览、取消恢复、确认一次保存', () => {
     const panel = fs.readFileSync(path.join(root, 'assets/scripts/ui/SettingsPanel.ts'), 'utf8');
     const manager = fs.readFileSync(path.join(root, 'assets/scripts/app/SettingsManager.ts'), 'utf8');

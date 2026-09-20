@@ -1,6 +1,6 @@
 // Appearance popup: pick skin tone + outfit color directly from a swatch grid.
 // Built in code (no prefab); opened from the prepare-race 外观 button. Mirrors
-// the SettingsPanel modal pattern (UILayer.Popup + dim tap-to-close).
+// the SettingsPanel modal pattern (UILayer.Hud + dim tap-to-close).
 
 import { Button, Graphics, Node, UITransform } from 'cc';
 import {
@@ -12,7 +12,7 @@ import {
     setPlayerColorScheme,
     setPlayerSkinTone,
 } from '../app/PlayerCharacterConfig';
-import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenSolidCover, makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { getUILayer, UILayer } from './UILayers';
 import { UI_STYLE } from './UIStyle';
 
@@ -25,18 +25,30 @@ export type AppearancePanelOptions = {
     // Called whenever a choice changes so the caller can refresh the 3D preview
     // and the on-screen color indicator.
     onChange?: () => void;
+    // Interactive HUD modals must pause the higher-priority 3D preview while open.
+    onPresentedChanged: (presented: boolean) => void;
 };
 
-// Opens a modal appearance picker in the Popup layer. Re-opening destroys the
+// Opens a modal appearance picker in the Hud layer. Re-opening destroys the
 // previous panel first, so only one instance is ever shown.
-export function openAppearancePanel(canvasNode: Node, designWidth: number, designHeight: number, options: AppearancePanelOptions = {}): void {
-    const popup = getUILayer(canvasNode, UILayer.Popup);
-    popup.getChildByName('AppearancePanel')?.destroy();
-    const root = makeUiNode('AppearancePanel', popup);
+export function openAppearancePanel(canvasNode: Node, designWidth: number, designHeight: number, options: AppearancePanelOptions): void {
+    const hud = getUILayer(canvasNode, UILayer.Hud);
+    hud.getChildByName('AppearancePanel')?.destroy();
+    const root = makeUiNode('AppearancePanel', hud);
+    let presented = true;
+    options.onPresentedChanged(true);
+    root.once(Node.EventType.NODE_DESTROYED, () => {
+        if (!presented) return;
+        presented = false;
+        options.onPresentedChanged(false);
+    });
 
     const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 8, 14, 200));
-    fitFullScreenBackgroundCover(dim);
-    dim.on(Node.EventType.TOUCH_END, () => root.destroy());
+    fitFullScreenSolidCover(dim, designWidth, designHeight);
+    const dimButton = dim.addComponent(Button);
+    dimButton.target = dim;
+    dimButton.transition = Button.Transition.NONE;
+    dim.on(Button.EventType.CLICK, () => root.destroy());
 
     const perRow = 4;
     const rows = Math.ceil(PLAYER_COLOR_SCHEMES.length / perRow);

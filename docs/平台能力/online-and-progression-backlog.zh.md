@@ -15,7 +15,7 @@
 - ✅ **确定性随机 `SharedRNG`**：`assets/scripts/core/SharedRNG.ts`；AI/赛道/名单随机全部改走种子流。为帧同步铺路（同 seed + 同输入 = 各端一致）。
 - ✅ **平台抽象层 `platform/`**：`IPlatform` + 微信/抖音/默认实现 + `PlatformManager`（按 `cc/env` 编译期常量选实现）。
 - ✅ **登录接入**：`PlatformSession.ensureLogin()`，进入 Login 场景即登录；编辑器/Web 走 mock 不崩。
-- ✅ **UI 层级框架 `assets/scripts/ui/UILayers.ts`**：Canvas 下固定层容器（Background/Screen/Hud/Popup/Toast），高层永远盖低层，取代 bringToTop 打补丁；登录→Screen、赛前→Screen、headbar→Hud、弹窗→Popup。含 `HEADBAR_TOP_SAFE_AREA` 顶部安全区常量供界面避让。
+- ✅ **UI 层级框架 `assets/scripts/ui/UILayers.ts`**：Canvas 下固定层容器（Background/Screen/Hud/Popup/Toast），高层永远盖低层，取代 bringToTop 打补丁；登录→Screen、赛前→Screen、headbar 与大厅交互弹窗→Hud。交互弹窗显示时暂停 3D 预览以统一显示／点击坐标；独立 Popup／Toast 只保留给确需压过预览的瞬时内容，并随窗口同步画布和相机尺寸。
 
 ---
 

@@ -511,16 +511,18 @@ export class LoginManager extends Component {
         });
     }
 
-    // 弹框继承 Popup 专用渲染层，不能改为主界面的 UI_2D。
+    // 调试弹窗与设置、头像编辑共用主 HUD 坐标系。显示期间暂停更高优先级
+    // 的 3D 预览，避免独立 Popup 相机在桌面宽屏下产生遮罩和命中偏移。
     private showAiDebugPicker() {
         if (!this._canvasNode) {
             return;
         }
-        const popup = getUILayer(this._canvasNode, UILayer.Popup);
-        popup.getChildByName('AiDebugPicker')?.destroy();
-        mountAiDebugSetupPicker(popup, difficulty => this.startAiDebug(difficulty), {
+        const hud = getUILayer(this._canvasNode, UILayer.Hud);
+        hud.getChildByName('AiDebugPicker')?.destroy();
+        mountAiDebugSetupPicker(hud, difficulty => this.startAiDebug(difficulty), {
             read: () => ({ coins: PlayerData.coins, breakthroughGems: PlayerData.breakthroughGems }),
             adjust: (currency, delta) => this.adjustDebugCurrency(currency, delta),
+            onPresentedChanged: presented => this._prepareRaceFlow?.setModalOverlayActive(presented),
         });
     }
 }

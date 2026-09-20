@@ -7,18 +7,17 @@
 //   const screen = getUILayer(canvas, UILayer.Screen);
 //   builder.build(screen, ...);            // full-screen UI screens
 //   headBar.build(getUILayer(canvas, UILayer.Hud), ...);   // persistent overlays
-//   makeUiNode('Dialog', getUILayer(canvas, UILayer.Popup));// modal dialogs
+//   makeUiNode('Dialog', getUILayer(canvas, UILayer.Hud));  // interactive modals
 //
 // Layer containers sit at canvas center (0,0) at design size, so children keep the
 // same coordinates they'd have directly under the Canvas.
 //
 // Popup/Toast live on a SEPARATE overlay canvas with its own camera (priority 2,
 // dedicated layer bit 1<<14). The prepare-race 3D character preview renders on a
-// priority-1 camera, so without this overlay any modal would be hidden behind the
-// character. The overlay camera (DEPTH_ONLY) draws popups above the character but
-// below the cross-scene LoadingOverlay (priority 100). makeUiNode inherits its
-// parent's layer, so every popup subtree node automatically lands on 1<<14 and is
-// rendered solely by the overlay camera.
+// priority-1 camera. Interactive menu dialogs use Hud and pause that preview so
+// rendering and input share one camera. Popup/Toast remain for transient content
+// that truly has to render above the preview. makeUiNode inherits its parent's
+// layer, so those subtrees land on 1<<14 and are rendered only by this camera.
 //
 // NOTE: the cross-scene LoadingOverlay is intentionally NOT part of this; it uses
 // its own persistent node + camera (priority 100) so it stays above everything,
@@ -35,8 +34,8 @@ export enum UILayer {
     // Persistent overlays that sit above screens but below dialogs (resource
     // headbar, non-modal HUD widgets on menus).
     Hud = 2,
-    // Modal dialogs, pickers, confirmations. Rendered on the popup overlay canvas
-    // so they appear above the 3D character preview.
+    // Dedicated overlay content. Interactive menu dialogs should normally use
+    // Hud and pause the prepare-race preview instead.
     Popup = 3,
     // Transient top-most feedback (toasts, reward pop text).
     Toast = 4,
@@ -52,6 +51,7 @@ const POPUP_CAMERA_PRIORITY = 2;
 const POPUP_CANVAS_NAME = 'UILayerPopupCanvas';
 const MAIN_LAYERS: UILayer[] = [UILayer.Background, UILayer.Screen, UILayer.Hud];
 const POPUP_LAYERS: UILayer[] = [UILayer.Popup, UILayer.Toast];
+const SYNCED_POPUP_CANVASES = new WeakSet<Node>();
 
 function layerNodeName(layer: UILayer): string {
     return `UILayer_${layer}_${UILayer[layer]}`;
@@ -77,6 +77,41 @@ export function getUILayer(canvas: Node, layer: UILayer): Node {
 // `canvas` itself if it has no parent.
 function popupHost(canvas: Node): Node {
     return canvas.parent ?? canvas;
+}
+
+function syncPopupOverlay(overlay: Node): void {
+    const apply = () => {
+        if (!overlay.isValid) return;
+        const visible = view.getVisibleSize();
+        const design = view.getDesignResolutionSize();
+        const width = visible.width || design.width || 1280;
+        const height = visible.height || design.height || 720;
+        const resize = (node: Node): void => {
+            const transform = node.getComponent(UITransform);
+            if (transform
+                && (transform.contentSize.width !== width || transform.contentSize.height !== height)) {
+                transform.setContentSize(width, height);
+            }
+        };
+        resize(overlay);
+        for (const layer of POPUP_LAYERS) {
+            const node = overlay.getChildByName(layerNodeName(layer));
+            if (node) resize(node);
+        }
+        const camera = overlay.getComponent(Canvas)?.cameraComponent;
+        const orthoHeight = height / 2;
+        if (camera && camera.orthoHeight !== orthoHeight) camera.orthoHeight = orthoHeight;
+    };
+
+    apply();
+    if (SYNCED_POPUP_CANVASES.has(overlay)) return;
+    SYNCED_POPUP_CANVASES.add(overlay);
+    view.on('canvas-resize', apply);
+    view.on('design-resolution-changed', apply);
+    overlay.once(Node.EventType.NODE_DESTROYED, () => {
+        view.off('canvas-resize', apply);
+        view.off('design-resolution-changed', apply);
+    });
 }
 
 function ensureLayers(canvas: Node): void {
@@ -132,6 +167,7 @@ function ensureLayers(canvas: Node): void {
             node.getComponent(UITransform)?.setContentSize(width, height);
         }
     }
+    syncPopupOverlay(overlay!);
 
     // Keep the main layer containers as the last N children of canvas, ordered.
     const total = canvas.children.length;

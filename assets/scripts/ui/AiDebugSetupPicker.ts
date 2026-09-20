@@ -1,10 +1,19 @@
-import { BlockInputEvents, Label, Node, UITransform, view } from 'cc';
+import { BlockInputEvents, Button, Label, Node, UITransform, view } from 'cc';
 import { getAiDebugSetup, setAiDebugSetup } from '../core/GameLaunchOptions';
 import { getRaceDistance, getRaceModeTitle, RaceDifficulty, RaceModeId } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS } from '../app/PlayerCharacterConfig';
 import { AI_DEBUG_DIFFICULTY_TIERS } from '../competitor/CompetitorConfig';
 import type { DebugCurrencyId } from '../backend/IBackend';
-import { makeButton, makeLabel, makeRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import {
+    fitFullScreenSolidCover,
+    makeButton,
+    makeLabel,
+    makeRect,
+    makeUiNode,
+    UI_DESIGN_HEIGHT,
+    UI_DESIGN_WIDTH,
+    uiColor,
+} from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
 
 const PANEL_WIDTH = 880;
@@ -33,6 +42,7 @@ export type DebugCurrencyBalances = Readonly<{
 export type DebugCurrencyPanelOptions = {
     read: () => DebugCurrencyBalances;
     adjust: (currency: DebugCurrencyId, delta: number) => Promise<DebugCurrencyBalances>;
+    onPresentedChanged?: (presented: boolean) => void;
 };
 
 const EMPTY_CURRENCY_DEBUG: DebugCurrencyPanelOptions = {
@@ -45,7 +55,7 @@ const CURRENCY_AMOUNT_STEPS: Readonly<Record<DebugCurrencyId, readonly number[]>
     breakthroughGems: [1, 5, 10],
 };
 
-/** 保留 Popup 相机坐标系；全屏遮挡独立于面板缩放，窗口变化时才更新布局。 */
+/** 使用主 HUD 坐标系；全屏遮挡独立于面板缩放，窗口变化时才更新布局。 */
 export function mountAiDebugSetupPicker(
     parent: Node,
     start: (difficulty: number) => void,
@@ -53,7 +63,8 @@ export function mountAiDebugSetupPicker(
 ): Node {
     const overlay = makeUiNode('AiDebugPicker', parent);
     overlay.addComponent(BlockInputEvents);
-    const dim = makeRect('Dim', overlay, 1, 1, uiColor(2, 8, 14, 210));
+    const dim = makeRect('Dim', overlay, UI_DESIGN_WIDTH, UI_DESIGN_HEIGHT, uiColor(2, 8, 14, 210));
+    fitFullScreenSolidCover(dim, UI_DESIGN_WIDTH, UI_DESIGN_HEIGHT);
     const panel = makeUiNode('Panel', overlay);
     panel.getComponent(UITransform).setContentSize(PANEL_WIDTH, PANEL_HEIGHT);
     buildAiDebugSetupPicker(panel, start, currencyDebug, () => overlay.destroy());
@@ -63,16 +74,21 @@ export function mountAiDebugSetupPicker(
         if (transform.contentSize.width !== size.width || transform.contentSize.height !== size.height) {
             transform.setContentSize(size.width, size.height);
         }
-        if (dim.scale.x !== size.width || dim.scale.y !== size.height) dim.setScale(size.width, size.height, 1);
         const scale = Math.min(1, Math.max(1, size.width - 48) / PANEL_WIDTH, Math.max(1, size.height - 48) / PANEL_HEIGHT);
         if (panel.scale.x !== scale || panel.scale.y !== scale) panel.setScale(scale, scale, 1);
     };
     layout();
     view.on('canvas-resize', layout);
     view.on('design-resolution-changed', layout);
+    let presented = true;
+    currencyDebug.onPresentedChanged?.(true);
     overlay.once(Node.EventType.NODE_DESTROYED, () => {
         view.off('canvas-resize', layout);
         view.off('design-resolution-changed', layout);
+        if (presented) {
+            presented = false;
+            currencyDebug.onPresentedChanged?.(false);
+        }
     });
     return overlay;
 }
@@ -97,7 +113,7 @@ export function buildAiDebugSetupPicker(
     const button = (parent: Node, name: string, text: string, x: number, y: number, width: number, action: () => void, height = 48): DebugButtonView => {
         const node = makeButton(name, parent, width, height, uiColor(40, 96, 168, 240), text);
         node.setPosition(x, y, 0);
-        node.on(Node.EventType.TOUCH_END, action);
+        node.on(Button.EventType.CLICK, action);
         return { node, label: node.getChildByName('Label')?.getComponent(Label) ?? null };
     };
     const write = (label: Label | null, text: string) => { if (label && label.string !== text) label.string = text; };

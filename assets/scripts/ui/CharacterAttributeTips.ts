@@ -32,12 +32,13 @@ export class CharacterAttributeTips {
     private readonly anchorPoint = new Vec3();
     private readonly screenPoint = new Vec3();
     private readonly overlayWorld = new Vec3();
+    private presented = false;
     private disposed = false;
     private readonly onResize = (): void => this.hide();
 
-    constructor(canvas: Node) {
-        // 单独的 Popup 相机保证 tips 显示在角色 3D 预览上方。
-        this.root = makeUiNode('CharacterAttributeTips', getUILayer(canvas, UILayer.Popup));
+    constructor(canvas: Node, private readonly onPresentedChanged?: (presented: boolean) => void) {
+        // 与其他交互弹窗共用主 HUD；显示时由宿主暂停更高优先级的 3D 预览。
+        this.root = makeUiNode('CharacterAttributeTips', getUILayer(canvas, UILayer.Hud));
         this.dismiss = makeTouchArea('DismissAttributeTips', this.root, 1280, 720);
         this.dismiss.on(Button.EventType.CLICK, () => this.hide());
         // 面板本身消费触摸，阅读时点击文字不会穿透到旋转、升级或开始按钮。
@@ -71,8 +72,8 @@ export class CharacterAttributeTips {
     show(anchor: Node): void {
         if (this.disposed || !this.root.isValid || !anchor.isValid || !anchor.activeInHierarchy) return;
         const sourceCamera = canvasCamera(anchor);
-        const popupCamera = canvasCamera(this.root);
-        if (!sourceCamera || !popupCamera) {
+        const targetCamera = canvasCamera(this.root);
+        if (!sourceCamera || !targetCamera) {
             this.hide();
             return;
         }
@@ -82,9 +83,9 @@ export class CharacterAttributeTips {
         const anchorTransform = anchor.getComponent(UITransform)!;
         this.anchorPoint.set(anchorTransform.contentSize.width / 2 + 28, 0, 0);
         anchorTransform.convertToWorldSpaceAR(this.anchorPoint, this.overlayWorld);
-        // 两个 Canvas 由不同相机渲染，世界坐标原点可能不同，必须经过屏幕坐标衔接。
+        // 保留屏幕坐标衔接，既支持当前同 Canvas，也避免未来锚点来自其他 Canvas 时错位。
         sourceCamera.worldToScreen(this.overlayWorld, this.screenPoint);
-        popupCamera.screenToWorld(this.screenPoint, this.overlayWorld);
+        targetCamera.screenToWorld(this.screenPoint, this.overlayWorld);
         this.root.getComponent(UITransform)!.convertToNodeSpaceAR(this.overlayWorld, this.anchorPoint);
         // 属性区右边缘加面板边距；空间不足时放左侧，避免盖住属性或超出屏幕。
         const xLimit = Math.max(0, size.width / 2 - WIDTH / 2 - MARGIN);
@@ -95,7 +96,7 @@ export class CharacterAttributeTips {
             this.anchorPoint.set(-anchorTransform.contentSize.width / 2 - 28, 0, 0);
             anchorTransform.convertToWorldSpaceAR(this.anchorPoint, this.overlayWorld);
             sourceCamera.worldToScreen(this.overlayWorld, this.screenPoint);
-            popupCamera.screenToWorld(this.screenPoint, this.overlayWorld);
+            targetCamera.screenToWorld(this.screenPoint, this.overlayWorld);
             this.root.getComponent(UITransform)!.convertToNodeSpaceAR(this.overlayWorld, this.anchorPoint);
             preferredX = this.anchorPoint.x - WIDTH / 2;
         }
@@ -103,10 +104,12 @@ export class CharacterAttributeTips {
         const y = Math.max(-yLimit, Math.min(yLimit, anchorY));
         if (this.panel.position.x !== x || this.panel.position.y !== y) this.panel.setPosition(x, y);
         if (!this.root.active) this.root.active = true;
+        this.setPresented(true);
     }
 
     hide(): void {
         if (!this.disposed && this.root.isValid && this.root.active) this.root.active = false;
+        this.setPresented(false);
     }
 
     dispose(): void {
@@ -116,6 +119,12 @@ export class CharacterAttributeTips {
         view.off('canvas-resize', this.onResize);
         view.off('design-resolution-changed', this.onResize);
         this.root.destroy();
+    }
+
+    private setPresented(presented: boolean): void {
+        if (this.presented === presented) return;
+        this.presented = presented;
+        this.onPresentedChanged?.(presented);
     }
 
     private text(name: string, value: string, size: number, height: number, y: number, heading: boolean): Label {

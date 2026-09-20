@@ -7,13 +7,14 @@ const { createHarness } = require('./helpers/cocos-math-harness.cjs');
 
 function fixture() {
     class Label { string = ''; static HorizontalAlign = { LEFT: 0, RIGHT: 1 }; }
+    class Button { static EventType = { CLICK: 'click' }; }
     class UITransform { contentSize = { width: 0, height: 0 }; setContentSize(w, h) { this.width = w; this.height = h; this.contentSize = { width: w, height: h }; } }
     class BlockInputEvents {}
     class Graphics { clear() {} rect() {} fill() {} }
     class Node {
         static EventType = { TOUCH_END: 'end', NODE_DESTROYED: 'destroyed' };
         children = []; components = new Map(); events = new Map(); active = true;
-        x = 0; y = 0; layer = 0; scale = { x: 1, y: 1, z: 1 };
+        x = 0; y = 0; layer = 0; isValid = true; scale = { x: 1, y: 1, z: 1 };
         constructor(name) { this.name = name; }
         get activeInHierarchy() { return this.active && (!this.parent || this.parent.activeInHierarchy); }
         addComponent(C) { const c = new C(); c.node = this; this.components.set(C, c); return c; }
@@ -23,20 +24,41 @@ function fixture() {
         setScale(x, y, z) { this.scale = { x, y, z }; }
         on(event, callback) { assert.equal(this.events.has(event), false); this.events.set(event, callback); }
         once(event, callback) { this.on(event, callback); }
-        click() { return this.events.get('end')?.(); }
-        destroy() { this.events.get('destroyed')?.(); if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1); }
+        click() { return (this.events.get('click') ?? this.events.get('end'))?.(); }
+        destroy() {
+            if (!this.isValid) return;
+            for (const child of [...this.children]) child.destroy();
+            this.events.get('destroyed')?.();
+            this.isValid = false;
+            if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1);
+        }
     }
     const makeUiNode = (name, parent) => { const n = new Node(name); n.addComponent(UITransform); n.layer = parent?.layer ?? 0; n.parent = parent; parent?.children.push(n); return n; };
     const makeLabel = (name, parent, text, size = 18) => { const n = makeUiNode(name, parent); n.addComponent(Label).string = text; n.getComponent(UITransform).setContentSize(620, size + 14); return n; };
     const makeRect = (name, parent, w, height) => { const n = makeUiNode(name, parent); n.addComponent(Graphics); n.getComponent(UITransform).setContentSize(w, height); return n; };
-    const makeButton = (name, parent, w, height, color, text) => { const n = makeRect(name, parent); n.getComponent(UITransform).setContentSize(w, height); makeLabel('Label', n, text); return n; };
-    const h = createHarness({ './RuntimeUiFactory': { makeUiNode, makeLabel, makeRect, makeButton, uiColor: (...values) => values },
-        './ProjectUiFonts': { styleProjectUiLabel() {} } });
     const listeners = new Map();
-    const view = { size: { width: 1280, height: 720 }, getVisibleSize() { return this.size; },
+    const view = { size: { width: 1280, height: 720 }, canvasSize: { width: 1280, height: 720 },
+        getVisibleSize() { return this.size; }, getCanvasSize() { return this.canvasSize; },
         on(event, fn) { if (!listeners.has(event)) listeners.set(event, new Set()); listeners.get(event).add(fn); },
         off(event, fn) { listeners.get(event)?.delete(fn); } };
-    Object.assign(h.cc, { Label, UITransform, Graphics, Node, BlockInputEvents, view,
+    const makeButton = (name, parent, w, height, color, text) => { const n = makeRect(name, parent); n.addComponent(Button); n.getComponent(UITransform).setContentSize(w, height); makeLabel('Label', n, text); return n; };
+    const fitFullScreenSolidCover = (node, authoredWidth = 1280, authoredHeight = 720) => {
+        const apply = () => {
+            const visible = view.getVisibleSize(), canvas = view.getCanvasSize();
+            const aspectWidth = canvas.height > 0 ? visible.height * canvas.width / canvas.height : 0;
+            const aspectHeight = canvas.width > 0 ? visible.width * canvas.height / canvas.width : 0;
+            node.setScale(Math.max(authoredWidth, visible.width, aspectWidth) / authoredWidth * 1.5,
+                Math.max(authoredHeight, visible.height, aspectHeight) / authoredHeight * 1.5, 1);
+        };
+        apply(); view.on('canvas-resize', apply); view.on('design-resolution-changed', apply);
+        node.once(Node.EventType.NODE_DESTROYED, () => {
+            view.off('canvas-resize', apply); view.off('design-resolution-changed', apply);
+        });
+    };
+    const h = createHarness({ './RuntimeUiFactory': { makeUiNode, makeLabel, makeRect, makeButton,
+        fitFullScreenSolidCover, UI_DESIGN_WIDTH: 1280, UI_DESIGN_HEIGHT: 720, uiColor: (...values) => values },
+        './ProjectUiFonts': { styleProjectUiLabel() {} } });
+    Object.assign(h.cc, { Button, Label, UITransform, Graphics, Node, BlockInputEvents, view,
         sys: { getSafeAreaRect: () => view.safe ?? { x: 0, y: 0, ...view.size } } });
     const load = name => h.load(path.join(h.root, 'assets/scripts', name + '.ts'));
     return { Node, Label, load, view, listeners, BlockInputEvents, UITransform, root: h.root };
@@ -65,13 +87,13 @@ test('测试入口反复切换角色等级赛程不增加节点或监听，启�
     assert.equal(findNode(root, 'Level').getComponent(Label).string, '等级 30');
     findNode(root, 'Tier4').click(); findNode(root, 'Tier4').click();
     assert.equal(starts, 1); assert.equal(getAiDebugSetup().level, 30);
-    for (const child of descendants(root)) if (child.events.has('end')) {
+    for (const child of descendants(root)) if (child.events.has('click')) {
         assert.ok(Math.abs(child.y) <= 266);
         assert.ok(Math.abs(child.x) <= 335);
     }
 });
 
-test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆盖屏幕，关闭清理窗口监听', () => {
+test('真实登录入口使用主HUD，面板居中适配，宽屏遮挡完整，关闭恢复3D预览并清理监听', () => {
     const h = fixture(), { Node, load, view, listeners, UITransform, BlockInputEvents } = h;
     const tsPath = process.env.TYPESCRIPT_PATH || process.env.PATH.split(path.delimiter)
         .map(p => path.resolve(p, '../typescript/lib/typescript.js')).find(p => fs.existsSync(p));
@@ -81,26 +103,32 @@ test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆�
     const cls = source.statements.find(n => ts.isClassDeclaration(n) && n.name.text === 'LoginManager');
     const method = cls.members.find(n => n.name?.getText(source) === 'showAiDebugPicker');
     const { mountAiDebugSetupPicker } = load('ui/AiDebugSetupPicker');
-    const popup = new Node('Popup'); popup.layer = 1 << 14;
+    const hud = new Node('Hud'); hud.layer = 1 << 25;
     const Login = vm.runInNewContext(ts.transpileModule(`class Login { ${method.getText(source)} }; Login`,
         { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText,
-        { getUILayer: () => popup, UILayer: { Popup: 3 }, mountAiDebugSetupPicker,
+        { getUILayer: () => hud, UILayer: { Hud: 2 }, mountAiDebugSetupPicker,
             PlayerData: { coins: 100, breakthroughGems: 2 } });
     const owner = new Login(); owner._canvasNode = new Node('主画布'); owner._canvasNode.setPosition(640, 360);
+    const presented = [];
+    owner._prepareRaceFlow = { setModalOverlayActive: value => presented.push(value) };
     owner.startAiDebug = () => {};
     owner.adjustDebugCurrency = async () => ({ coins: 100, breakthroughGems: 2 });
     for (let repeat = 0; repeat < 3; repeat++) {
         owner.showAiDebugPicker(); owner.showAiDebugPicker();
-        assert.equal(popup.children.length, 1);
-        const overlay = popup.children[0], panel = overlay.getChildByName('Panel'), dim = overlay.getChildByName('Dim');
+        assert.equal(hud.children.length, 1);
+        const overlay = hud.children[0], panel = overlay.getChildByName('Panel'), dim = overlay.getChildByName('Dim');
         assert.ok(overlay.getComponent(BlockInputEvents));
-        for (const node of descendants(overlay)) assert.equal(node.layer, popup.layer, node.name);
+        for (const node of descendants(overlay)) assert.equal(node.layer, hud.layer, node.name);
         for (const [width, height] of [[1280, 720], [1600, 720], [960, 540], [720, 1280]]) {
             view.size = { width, height };
+            view.canvasSize = width === 1600 ? { width: 1920, height: 720 } : { width, height };
             for (const fn of listeners.get('canvas-resize')) fn();
             assert.equal(overlay.x, 0); assert.equal(overlay.y, 0);
             assert.equal(panel.x, 0); assert.equal(panel.y, 0);
-            assert.equal(dim.scale.x, width); assert.equal(dim.scale.y, height);
+            const coveredWidth = 1280 * dim.scale.x;
+            const coveredHeight = 720 * dim.scale.y;
+            assert.ok(coveredWidth >= Math.max(width, height * view.canvasSize.width / view.canvasSize.height));
+            assert.ok(coveredHeight >= Math.max(height, width * view.canvasSize.height / view.canvasSize.width));
             assert.equal(overlay.getComponent(UITransform).contentSize.width, width);
             assert.ok(880 * panel.scale.x <= width - 48 + 1e-6);
             assert.ok(620 * panel.scale.y <= height - 48 + 1e-6);
@@ -111,9 +139,11 @@ test('真实登录入口保持弹窗专用层，面板居中适配，遮挡覆�
             }
         }
         panel.getChildByName('Cancel').click();
-        assert.equal(popup.children.length, 0);
+        assert.equal(hud.children.length, 0);
         for (const set of listeners.values()) assert.equal(set.size, 0);
     }
+    assert.equal(presented.at(-1), false);
+    assert.equal(presented.filter(Boolean).length, presented.filter(value => !value).length);
 });
 
 test('对手人数、混合阵容和单角色设置提交到启动配置，切换不会立即启动', () => {

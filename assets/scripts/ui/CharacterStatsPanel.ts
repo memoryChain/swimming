@@ -9,7 +9,7 @@ import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolvePlayerBalance } from '../progression/PlayerBalanceOverrides';
 import { energyGainMultiplier } from '../core/UltimateEnergyBalance';
-import { fitFullScreenBackgroundCover, makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
+import { fitFullScreenSolidCover, makeButton, makeLabel, makeRect, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { getUILayer, UILayer } from './UILayers';
 import { UI_STYLE } from './UIStyle';
 
@@ -69,14 +69,34 @@ const MECHANICS_ITEMS: MechanicsItem[] = [
     },
 ];
 
-export function openCharacterStatsPanel(canvasNode: Node, designWidth: number, designHeight: number): void {
-    const popup = getUILayer(canvasNode, UILayer.Popup);
-    popup.getChildByName('CharacterStatsPanel')?.destroy();
-    const root = makeUiNode('CharacterStatsPanel', popup);
+export type CharacterStatsPanelOptions = {
+    // Interactive HUD modals must pause the higher-priority 3D preview while open.
+    onPresentedChanged: (presented: boolean) => void;
+};
+
+export function openCharacterStatsPanel(
+    canvasNode: Node,
+    designWidth: number,
+    designHeight: number,
+    options: CharacterStatsPanelOptions,
+): void {
+    const hud = getUILayer(canvasNode, UILayer.Hud);
+    hud.getChildByName('CharacterStatsPanel')?.destroy();
+    const root = makeUiNode('CharacterStatsPanel', hud);
+    let presented = true;
+    options.onPresentedChanged(true);
+    root.once(Node.EventType.NODE_DESTROYED, () => {
+        if (!presented) return;
+        presented = false;
+        options.onPresentedChanged(false);
+    });
 
     const dim = makeRect('Dim', root, designWidth, designHeight, uiColor(2, 8, 14, 200));
-    fitFullScreenBackgroundCover(dim);
-    dim.on(Node.EventType.TOUCH_END, () => root.destroy());
+    fitFullScreenSolidCover(dim, designWidth, designHeight);
+    const dimButton = dim.addComponent(Button);
+    dimButton.target = dim;
+    dimButton.transition = Button.Transition.NONE;
+    dim.on(Button.EventType.CLICK, () => root.destroy());
 
     const panel = makeRoundedRect('Panel', root, PANEL_W, PANEL_H, uiColor(14, 36, 58, 252), 18, uiColor(86, 196, 236, 110), 2);
     makeLabel('Title', panel, '角色属性', 34, UI_STYLE.white).setPosition(0, PANEL_H / 2 - 44, 1);
