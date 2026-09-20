@@ -65,6 +65,12 @@ const STIMULANT_STAT_TEXT_WIDTH = 104;
 const STIMULANT_STAT_TEXT_HEIGHT = 34;
 const STIMULANT_ENERGY_TEXT_Y = 27;
 const STIMULANT_HEART_TEXT_Y = -26;
+const STIMULANT_TITLE_WIDTH = 245;
+const STIMULANT_TITLE_HEIGHT = 89;
+const STIMULANT_TITLE_X = -8;
+const STIMULANT_TITLE_Y = -3;
+const STIMULANT_COUNTER_STEPS = 5;
+const STIMULANT_COUNTER_STEP_SECONDS = 0.1;
 const SCREEN_MARGIN = 18;
 const PICTURE_IN_PICTURE_GAP = 16;
 const WHITE = new Color(248, 252, 255, 255);
@@ -112,9 +118,16 @@ export class EntertainmentEventBanner {
     private personalLabel: Label | null = null;
     private stimulantRoot: Node | null = null;
     private stimulantCardSprite: Sprite | null = null;
+    private stimulantTitleRoot: Node | null = null;
+    private stimulantTitleSprite: Sprite | null = null;
+    private stimulantTitleEchoRoot: Node | null = null;
+    private stimulantTitleEchoSprite: Sprite | null = null;
+    private stimulantTitleEchoOpacity: UIOpacity | null = null;
+    private stimulantIconRoot: Node | null = null;
     private stimulantIconSprite: Sprite | null = null;
     private stimulantEnergyLabel: Label | null = null;
     private stimulantHeartLabel: Label | null = null;
+    private stimulantCounterTimeline: Node | null = null;
     private personalUntil = 0;
 
     private pictureInPictureLeft: number | null = null;
@@ -202,19 +215,25 @@ export class EntertainmentEventBanner {
         this.showPersonalRoot(durationMs);
     }
 
-    /** 心跳苏打使用专属结构化卡片，不再把三项信息挤成一行普通文字。 */
-    showStimulantPickup(energyRestored: number, heartRate: number, durationMs = 1400): void {
+    /** 心跳苏打使用真实拾取前后值做短促跳数，不伪造比赛状态。 */
+    showStimulantPickup(
+        energyRatioBefore: number,
+        energyRatioAfter: number,
+        heartRateBefore: number,
+        heartRateAfter: number,
+        infiniteStamina: boolean,
+        durationMs = 1700,
+    ): void {
         if (!this.personalRoot?.isValid || !this.stimulantEnergyLabel || !this.stimulantHeartLabel) return;
         this.setPersonalMode(true);
-        const energy = Math.max(0, Math.round(energyRestored));
-        const heart = Math.max(0, Math.round(heartRate));
-        this.setLabel(
-            this.stimulantEnergyLabel,
-            energy > 0 ? `体力 +${energy}` : '体力已满',
-            ENERGY_CYAN,
-        );
-        this.setLabel(this.stimulantHeartLabel, `心率 ${heart}`, HEART_ORANGE);
+        const energyFrom = Math.round(Math.max(0, Math.min(1, energyRatioBefore)) * 100);
+        const energyTo = Math.round(Math.max(0, Math.min(1, energyRatioAfter)) * 100);
+        const heartFrom = Math.max(0, Math.round(heartRateBefore));
+        const heartTo = Math.max(0, Math.round(heartRateAfter));
+        this.setLabel(this.stimulantEnergyLabel, this.stimulantEnergyText(energyFrom, infiniteStamina), ENERGY_CYAN);
+        this.setLabel(this.stimulantHeartLabel, `心率 ${heartFrom}`, HEART_ORANGE);
         this.showPersonalRoot(durationMs, true);
+        this.playStimulantPickupMotion(energyFrom, energyTo, heartFrom, heartTo, infiniteStamina);
     }
 
     update(): void {
@@ -346,6 +365,24 @@ export class EntertainmentEventBanner {
         iconSprite.sizeMode = Sprite.SizeMode.CUSTOM;
         iconSprite.trim = false;
 
+        const titleEchoNode = makeUiNode('StimulantTitleEcho', stimulantRoot);
+        titleEchoNode.getComponent(UITransform)!.setContentSize(STIMULANT_TITLE_WIDTH, STIMULANT_TITLE_HEIGHT);
+        titleEchoNode.setPosition(STIMULANT_TITLE_X, STIMULANT_TITLE_Y, 1);
+        const titleEchoSprite = titleEchoNode.addComponent(Sprite);
+        titleEchoSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        titleEchoSprite.trim = false;
+        titleEchoSprite.color = new Color(255, 132, 76, 255);
+        const titleEchoOpacity = titleEchoNode.addComponent(UIOpacity);
+        titleEchoOpacity.opacity = 0;
+        titleEchoNode.active = false;
+
+        const titleNode = makeUiNode('StimulantTitle', stimulantRoot);
+        titleNode.getComponent(UITransform)!.setContentSize(STIMULANT_TITLE_WIDTH, STIMULANT_TITLE_HEIGHT);
+        titleNode.setPosition(STIMULANT_TITLE_X, STIMULANT_TITLE_Y, 2);
+        const titleSprite = titleNode.addComponent(Sprite);
+        titleSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        titleSprite.trim = false;
+
         const energyNode = makeLabel('Energy', stimulantRoot, '', 22, ENERGY_CYAN);
         energyNode.getComponent(UITransform)!.setContentSize(STIMULANT_STAT_TEXT_WIDTH, STIMULANT_STAT_TEXT_HEIGHT);
         energyNode.setPosition(STIMULANT_STAT_TEXT_X, STIMULANT_ENERGY_TEXT_Y, 1);
@@ -362,6 +399,9 @@ export class EntertainmentEventBanner {
         heartLabel.overflow = Label.Overflow.SHRINK;
         styleProjectUiLabel(heartLabel, 'semibold', 30);
 
+        const counterTimeline = makeUiNode('StimulantCounterTimeline', stimulantRoot);
+        counterTimeline.getComponent(UITransform)!.setContentSize(1, 1);
+
         stimulantRoot.active = false;
         root.active = false;
         this.personalRoot = root;
@@ -371,9 +411,16 @@ export class EntertainmentEventBanner {
         this.personalLabel = personalLabel;
         this.stimulantRoot = stimulantRoot;
         this.stimulantCardSprite = cardSprite;
+        this.stimulantTitleRoot = titleNode;
+        this.stimulantTitleSprite = titleSprite;
+        this.stimulantTitleEchoRoot = titleEchoNode;
+        this.stimulantTitleEchoSprite = titleEchoSprite;
+        this.stimulantTitleEchoOpacity = titleEchoOpacity;
+        this.stimulantIconRoot = iconNode;
         this.stimulantIconSprite = iconSprite;
         this.stimulantEnergyLabel = energyLabel;
         this.stimulantHeartLabel = heartLabel;
+        this.stimulantCounterTimeline = counterTimeline;
     }
 
     private loadArtwork(): void {
@@ -383,6 +430,7 @@ export class EntertainmentEventBanner {
         this.loadFrame('event-danger', paths.events.danger, 190, 180, 22);
         this.loadFrame('event-success', paths.events.success, 190, 180, 22);
         this.loadFrame('stimulant-card', paths.stimulantCard);
+        this.loadFrame('stimulant-title', paths.stimulantTitle);
         this.loadFrame('icon-stimulant', paths.icons.stimulant);
         this.loadFrame('icon-timed-bomb', paths.icons.timedBomb);
         this.loadFrame('icon-whirlpool', paths.icons.whirlpool);
@@ -416,6 +464,10 @@ export class EntertainmentEventBanner {
         }
         if (key === 'stimulant-card' && this.stimulantCardSprite?.spriteFrame !== frame) {
             this.stimulantCardSprite!.spriteFrame = frame;
+        }
+        if (key === 'stimulant-title') {
+            this.setSpriteFrame(this.stimulantTitleSprite, frame);
+            this.setSpriteFrame(this.stimulantTitleEchoSprite, frame);
         }
         if (key === 'icon-stimulant' && this.stimulantIconSprite?.spriteFrame !== frame) {
             this.stimulantIconSprite!.spriteFrame = frame;
@@ -464,17 +516,133 @@ export class EntertainmentEventBanner {
         const motion = this.personalMotionRoot;
         const opacity = this.personalOpacity;
         if (!root?.isValid || !motion?.isValid || !opacity) return;
+        const wasActive = root.active;
         this.stopPersonalTweens();
         if (!root.active) root.active = true;
-        opacity.opacity = 0;
+        opacity.opacity = wasActive ? 255 : 0;
         motion.setPosition(0, -8, 0);
         motion.setScale(punch ? 0.88 : 0.96, punch ? 0.88 : 0.96, 1);
-        tween(opacity).to(0.12, { opacity: 255 }, { easing: 'quadOut' }).start();
+        const opacityTween = tween(opacity);
+        if (!wasActive) opacityTween.to(0.12, { opacity: 255 }, { easing: 'quadOut' });
+        if (punch) {
+            const fadeDelay = Math.max(0, durationMs / 1000 - (wasActive ? 0 : 0.12) - 0.15);
+            opacityTween.delay(fadeDelay).to(0.15, { opacity: 0 }, { easing: 'quadIn' });
+        }
+        if (!wasActive || punch) opacityTween.start();
         tween(motion)
             .to(0.18, { position: new Vec3(0, 2, 0), scale: new Vec3(punch ? 1.04 : 1, punch ? 1.04 : 1, 1) }, { easing: 'backOut' })
             .to(0.08, { position: new Vec3(0, 0, 0), scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
             .start();
         this.personalUntil = Date.now() + Math.max(0, durationMs);
+    }
+
+    private playStimulantPickupMotion(
+        energyFrom: number,
+        energyTo: number,
+        heartFrom: number,
+        heartTo: number,
+        infiniteStamina: boolean,
+    ): void {
+        const title = this.stimulantTitleRoot;
+        const echo = this.stimulantTitleEchoRoot;
+        const echoOpacity = this.stimulantTitleEchoOpacity;
+        const icon = this.stimulantIconRoot;
+        const timeline = this.stimulantCounterTimeline;
+        if (!title?.isValid || !echo?.isValid || !echoOpacity || !icon?.isValid || !timeline?.isValid) return;
+
+        title.setPosition(STIMULANT_TITLE_X - 7, STIMULANT_TITLE_Y, 2);
+        title.setScale(0.94, 0.94, 1);
+        title.angle = -2.4;
+        tween(title)
+            .to(0.055, {
+                position: new Vec3(STIMULANT_TITLE_X + 6, STIMULANT_TITLE_Y, 2),
+                scale: new Vec3(1.08, 1.08, 1),
+                angle: 2.2,
+            }, { easing: 'cubicOut' })
+            .to(0.05, {
+                position: new Vec3(STIMULANT_TITLE_X - 5, STIMULANT_TITLE_Y, 2),
+                scale: new Vec3(1.02, 1.02, 1),
+                angle: -1.8,
+            }, { easing: 'quadInOut' })
+            .to(0.045, {
+                position: new Vec3(STIMULANT_TITLE_X + 3, STIMULANT_TITLE_Y, 2),
+                scale: new Vec3(1.05, 1.05, 1),
+                angle: 1.2,
+            }, { easing: 'quadInOut' })
+            .to(0.04, {
+                position: new Vec3(STIMULANT_TITLE_X - 1, STIMULANT_TITLE_Y, 2),
+                scale: new Vec3(0.99, 0.99, 1),
+                angle: -0.6,
+            }, { easing: 'quadInOut' })
+            .to(0.05, {
+                position: new Vec3(STIMULANT_TITLE_X, STIMULANT_TITLE_Y, 2),
+                scale: new Vec3(1, 1, 1),
+                angle: 0,
+            }, { easing: 'quadOut' })
+            .delay(0.18)
+            .to(0.07, { scale: new Vec3(1.055, 1.055, 1), angle: 0.7 }, { easing: 'quadOut' })
+            .to(0.08, { scale: new Vec3(0.99, 0.99, 1), angle: -0.35 }, { easing: 'quadInOut' })
+            .to(0.07, { scale: new Vec3(1.045, 1.045, 1), angle: 0.35 }, { easing: 'quadOut' })
+            .to(0.1, { scale: new Vec3(1, 1, 1), angle: 0 }, { easing: 'quadInOut' })
+            .start();
+
+        echo.active = true;
+        echo.setPosition(STIMULANT_TITLE_X - 5, STIMULANT_TITLE_Y, 1);
+        echo.setScale(0.96, 0.96, 1);
+        echo.angle = -1.6;
+        echoOpacity.opacity = 0;
+        tween(echoOpacity)
+            .to(0.055, { opacity: 92 }, { easing: 'quadOut' })
+            .to(0.18, { opacity: 0 }, { easing: 'quadIn' })
+            .call(() => { if (echo.isValid) echo.active = false; })
+            .start();
+        tween(echo)
+            .to(0.23, {
+                position: new Vec3(STIMULANT_TITLE_X + 5, STIMULANT_TITLE_Y, 1),
+                scale: new Vec3(1.035, 1.035, 1),
+                angle: 1.2,
+            }, { easing: 'quadOut' })
+            .start();
+
+        icon.setScale(0.8, 0.8, 1);
+        icon.angle = -8;
+        tween(icon)
+            .to(0.14, { scale: new Vec3(1.12, 1.12, 1), angle: 5 }, { easing: 'backOut' })
+            .to(0.08, { scale: new Vec3(0.98, 0.98, 1), angle: -2 }, { easing: 'quadInOut' })
+            .to(0.1, { scale: new Vec3(1, 1, 1), angle: 0 }, { easing: 'quadOut' })
+            .delay(0.12)
+            .to(0.06, { scale: new Vec3(1.08, 1.08, 1) }, { easing: 'quadOut' })
+            .to(0.09, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
+            .to(0.07, { scale: new Vec3(1.06, 1.06, 1) }, { easing: 'quadOut' })
+            .to(0.1, { scale: new Vec3(1, 1, 1) }, { easing: 'quadInOut' })
+            .start();
+
+        let counterTween = tween(timeline);
+        for (let step = 1; step <= STIMULANT_COUNTER_STEPS; step++) {
+            const progress = step / STIMULANT_COUNTER_STEPS;
+            counterTween = counterTween
+                .delay(STIMULANT_COUNTER_STEP_SECONDS)
+                .call(() => {
+                    const eased = 1 - (1 - progress) * (1 - progress);
+                    const energy = Math.round(energyFrom + (energyTo - energyFrom) * eased);
+                    const heart = Math.round(heartFrom + (heartTo - heartFrom) * eased);
+                    if (this.stimulantEnergyLabel) {
+                        this.setLabel(
+                            this.stimulantEnergyLabel,
+                            this.stimulantEnergyText(energy, infiniteStamina),
+                            ENERGY_CYAN,
+                        );
+                    }
+                    if (this.stimulantHeartLabel) {
+                        this.setLabel(this.stimulantHeartLabel, `心率 ${heart}`, HEART_ORANGE);
+                    }
+                });
+        }
+        counterTween.start();
+    }
+
+    private stimulantEnergyText(value: number, infiniteStamina: boolean): string {
+        return infiniteStamina ? '体力 无限' : `体力 ${value}%`;
     }
 
     private setPersonalMode(stimulant: boolean): void {
@@ -499,6 +667,31 @@ export class EntertainmentEventBanner {
     private stopPersonalTweens(): void {
         if (this.personalOpacity) Tween.stopAllByTarget(this.personalOpacity);
         if (this.personalMotionRoot) Tween.stopAllByTarget(this.personalMotionRoot);
+        if (this.stimulantTitleRoot) Tween.stopAllByTarget(this.stimulantTitleRoot);
+        if (this.stimulantTitleEchoRoot) Tween.stopAllByTarget(this.stimulantTitleEchoRoot);
+        if (this.stimulantTitleEchoOpacity) Tween.stopAllByTarget(this.stimulantTitleEchoOpacity);
+        if (this.stimulantIconRoot) Tween.stopAllByTarget(this.stimulantIconRoot);
+        if (this.stimulantCounterTimeline) Tween.stopAllByTarget(this.stimulantCounterTimeline);
+        this.resetStimulantMotionNodes();
+    }
+
+    private resetStimulantMotionNodes(): void {
+        if (this.stimulantTitleRoot?.isValid) {
+            this.stimulantTitleRoot.setPosition(STIMULANT_TITLE_X, STIMULANT_TITLE_Y, 2);
+            this.stimulantTitleRoot.setScale(1, 1, 1);
+            this.stimulantTitleRoot.angle = 0;
+        }
+        if (this.stimulantTitleEchoRoot?.isValid) {
+            this.stimulantTitleEchoRoot.setPosition(STIMULANT_TITLE_X, STIMULANT_TITLE_Y, 1);
+            this.stimulantTitleEchoRoot.setScale(1, 1, 1);
+            this.stimulantTitleEchoRoot.angle = 0;
+            this.stimulantTitleEchoRoot.active = false;
+        }
+        if (this.stimulantTitleEchoOpacity?.isValid) this.stimulantTitleEchoOpacity.opacity = 0;
+        if (this.stimulantIconRoot?.isValid) {
+            this.stimulantIconRoot.setScale(1, 1, 1);
+            this.stimulantIconRoot.angle = 0;
+        }
     }
 
     private layout(): void {

@@ -518,6 +518,7 @@ export const RESOURCE_PATHS = {
             success: 'ui/entertainment-banner-v1/event-banner-success/texture',
         },
         stimulantCard: 'ui/entertainment-banner-v1/stimulant-pickup-base/texture',
+        stimulantTitle: 'ui/entertainment-banner-v1/stimulant-pickup-title/texture',
         icons: {
             stimulant: 'ui/entertainment-banner-v1/icon-stimulant/texture',
             timedBomb: 'ui/entertainment-banner-v1/icon-timed-bomb/texture',

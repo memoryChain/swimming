@@ -8,6 +8,7 @@ const banner = readFileSync(new URL('../assets/scripts/ui/SharkEventBanner.ts', 
 const cannonHud = readFileSync(new URL('../assets/scripts/ui/CannonBrawlHud.ts', import.meta.url), 'utf8');
 const bombHud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts', import.meta.url), 'utf8');
 const statusStrip = readFileSync(new URL('../assets/scripts/ui/EntertainmentStatusStrip.ts', import.meta.url), 'utf8');
+const resourcePaths = readFileSync(new URL('../assets/scripts/core/ResourcePaths.ts', import.meta.url), 'utf8');
 
 test('六种娱乐玩法共用赛事广播与个人反馈，不再从比赛编排调用通用 Toast', () => {
     assert.match(gameManager, /new EntertainmentEventBanner\(\)/);
@@ -36,6 +37,10 @@ test('共用横幅保留鲨鱼大字描边，同时以稳定节点分离个人�
     assert.match(banner, /const STIMULANT_CARD_Y = -68/);
     assert.match(banner, /cardSprite\.type = Sprite\.Type\.SIMPLE/);
     assert.doesNotMatch(banner, /makeLabel\('Title', stimulantRoot/);
+    assert.match(banner, /makeUiNode\('StimulantTitle', stimulantRoot\)/);
+    assert.match(banner, /makeUiNode\('StimulantTitleEcho', stimulantRoot\)/);
+    assert.match(banner, /loadFrame\('stimulant-title', paths\.stimulantTitle\)/);
+    assert.match(resourcePaths, /stimulantTitle: 'ui\/entertainment-banner-v1\/stimulant-pickup-title\/texture'/);
     assert.doesNotMatch(banner, /makeUiNode\('Heartbeat', stimulantRoot/);
     assert.doesNotMatch(banner, /loadFrame\('heartbeat'/);
     assert.match(banner, /const STIMULANT_STAT_TEXT_X = 210/);
@@ -48,7 +53,23 @@ test('共用横幅保留鲨鱼大字描边，同时以稳定节点分离个人�
     assert.doesNotMatch(banner, /loadFrame\('stimulant-card',[^\n]*110, 110, 26/);
 });
 
-test('画中画出现时广播复用原节点并收窄到镜头左侧', () => {
+test('心跳超频标题使用衰减震动，体力百分比和真实心率按十赫兹跳到拾取后数值', () => {
+    assert.match(gameManager, /feedback\.energyRatioBefore,[\s\S]*?feedback\.energyRatioAfter,[\s\S]*?feedback\.heartRateBefore,[\s\S]*?feedback\.heartRate,[\s\S]*?feedback\.infiniteStamina/);
+    assert.match(banner, /const STIMULANT_COUNTER_STEPS = 5/);
+    assert.match(banner, /const STIMULANT_COUNTER_STEP_SECONDS = 0\.1/);
+    assert.match(banner, /Math\.round\(Math\.max\(0, Math\.min\(1, energyRatioBefore\)\) \* 100\)/);
+    assert.match(banner, /`体力 \$\{value\}%`/);
+    assert.match(banner, /playStimulantPickupMotion\(energyFrom, energyTo, heartFrom, heartTo, infiniteStamina\)/);
+    assert.match(banner, /STIMULANT_TITLE_X - 7/);
+    assert.match(banner, /angle: 2\.2/);
+    assert.match(banner, /scale: new Vec3\(1\.055, 1\.055, 1\)/);
+    assert.match(banner, /for \(let step = 1; step <= STIMULANT_COUNTER_STEPS; step\+\+\)/);
+    assert.match(banner, /Tween\.stopAllByTarget\(this\.stimulantCounterTimeline\)/);
+    assert.doesNotMatch(banner, /stimulantCardRoot|tween\(energyRoot\)|tween\(heartRoot\)/);
+    assert.doesNotMatch(banner, /update\(\): void \{[\s\S]*?stimulantEnergyLabel\.string/);
+});
+
+test('广播从比赛初始化起使用画中画左侧的固定安全区', () => {
     assert.match(banner, /setPictureInPictureLeft\(leftEdge: number \| null\)/);
     assert.match(banner, /this\.pictureInPictureLeft - PICTURE_IN_PICTURE_GAP/);
     assert.match(banner, /this\.layoutEventChannel\(\)/);

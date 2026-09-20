@@ -109,6 +109,11 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.doesNotMatch(controller, /positions\.push\(0, 0\.025, 0\)/);
     assert.doesNotMatch(controller, /this\.presentationTime \* 82/);
     assert.match(controller, /depthWrite: false/);
+    assert.match(controller, /const energyRatioBefore = racer\.condition\.energyRatio/);
+    assert.match(controller, /const heartRateBefore = racer\.swimmer\.heartRate/);
+    assert.match(controller, /energyRatioAfter: racer\.condition\.energyRatio/);
+    assert.match(controller, /infiniteStamina: racer\.swimmer\.motor\.ability\.infiniteStamina/);
+    assert.match(controller, /heartRateBefore,/);
     assert.doesNotMatch(controller, /StimulantBottleGlowMaterial|applyMaterialRecursively/);
     assert.doesNotMatch(controller, /StimulantMarkerCube|MARKER_SCALE|MARKER_HEIGHT/);
 });

@@ -41,7 +41,11 @@ export type StimulantPickup = { itemId: number; collectorLane: number; revision:
 export type StimulantPickupFeedback = StimulantPickup & {
     wave: number;
     local: boolean;
+    energyRatioBefore: number;
+    energyRatioAfter: number;
+    infiniteStamina: boolean;
     energyRestored: number;
+    heartRateBefore: number;
     heartRate: number;
 };
 
@@ -313,6 +317,8 @@ export class StimulantBrawlController {
         }
         const racer = this.pickupRacers[pickup.collectorLane] ?? null;
         if (!racer) return true;
+        const energyRatioBefore = racer.condition.energyRatio;
+        const heartRateBefore = racer.swimmer.heartRate;
         const restored = racer.condition.restoreEnergyRatio(STIMULANT_BRAWL_TUNING.energyRestoreRatio);
         racer.swimmer.motor.addHeartRateBurden(
             STIMULANT_BRAWL_TUNING.heartRateBurden,
@@ -327,7 +333,11 @@ export class StimulantBrawlController {
             ...pickup,
             wave: item.wave,
             local: pickup.collectorLane === this.localPlayerLane(),
+            energyRatioBefore,
+            energyRatioAfter: racer.condition.energyRatio,
+            infiniteStamina: racer.swimmer.motor.ability.infiniteStamina,
             energyRestored: restored,
+            heartRateBefore,
             heartRate: racer.swimmer.heartRate,
         });
         return true;

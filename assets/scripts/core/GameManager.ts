@@ -1776,9 +1776,12 @@ export class GameManager extends Component {
                 feedback => {
                     if (feedback.local) {
                         this._entertainmentEventBanner.showStimulantPickup(
-                            feedback.energyRestored,
+                            feedback.energyRatioBefore,
+                            feedback.energyRatioAfter,
+                            feedback.heartRateBefore,
                             feedback.heartRate,
-                            1400,
+                            feedback.infiniteStamina,
+                            1700,
                         );
                     }
                 },
