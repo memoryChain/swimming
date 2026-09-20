@@ -2867,13 +2867,20 @@ export class GameManager extends Component {
         const controller = this._litterBrawl;
         if (!controller) return;
         if (this._modelDebugFlow?.active) {
+            this._eventPictureInPicture?.updateLitter(controller.clusters(), false, dt);
             this.clearLitterInfluence();
             return;
         }
         controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
         const visible = this._state === GameState.COUNTDOWN || this._state === GameState.DIVING
             || this._state === GameState.GLIDING || this._state === GameState.RACING;
-        this._litterPresentation?.update(dt, controller.clusters(), visible);
+        const clusters = controller.clusters();
+        this._litterPresentation?.update(dt, clusters, visible);
+        this._eventPictureInPicture?.updateLitter(
+            clusters,
+            isLitterBrawlMode() && this._state === GameState.RACING,
+            dt,
+        );
         for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
             const swimmer = this.swimmerForLane(lane);
             if (!swimmer) continue;
@@ -4379,7 +4386,7 @@ export class GameManager extends Component {
             this.buildLaneLockdownStatus(this._raceHud, w, h);
             this.buildEliminationSpectatorUi(this._raceHud, w, h);
             if ((isEntertainmentBrawlMode() || isSharkBrawlMode() || isCannonBrawlMode()
-                || isWhirlpoolBrawlMode() || isTimedBombBrawlMode())
+                || isWhirlpoolBrawlMode() || isTimedBombBrawlMode() || isLitterBrawlMode())
                 && this._worldRoot?.isValid) {
                 this._eventPictureInPicture = new RaceEventPictureInPictureCamera({
                     worldRoot: this._worldRoot,

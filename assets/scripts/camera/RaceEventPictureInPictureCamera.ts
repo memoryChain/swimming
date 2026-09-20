@@ -1,5 +1,6 @@
 import { Camera, Color, Label, LabelOutline, Layers, Node, RenderTexture, Sprite, SpriteFrame, sys, UITransform, Vec3, view } from 'cc';
 import type { CannonImpact, CannonLaunch } from '../core/CannonBrawlController';
+import type { LitterClusterState } from '../core/LitterBrawlController';
 import type { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import type { RaceCourseLayout } from '../venue/RaceCourseLayout';
@@ -26,13 +27,14 @@ const TIMED_BOMB_ARM_PREVIEW_SECONDS = 1.2;
 const TIMED_BOMB_TRANSFER_PREVIEW_SECONDS = 0.8;
 const TIMED_BOMB_REOPEN_COOLDOWN_SECONDS = 1;
 const TIMED_BOMB_RESOLUTION_HOLD_SECONDS = 1;
+const LITTER_LANDING_HOLD_SECONDS = 0.5;
 
 const WARNING_COLOR = new Color(255, 190, 86, 255);
 const DANGER_COLOR = new Color(255, 82, 72, 255);
 const INFO_COLOR = new Color(107, 222, 255, 255);
 const FEED_CLEAR_COLOR = new Color(13, 48, 86, 255);
 
-type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb';
+type FeedMode = 'none' | 'shark' | 'cannon' | 'whirlpool' | 'timed-bomb' | 'litter';
 type TimedBombResolution = 'none' | 'exploded' | 'disarmed';
 
 export type RaceEventPictureInPictureOptions = {
@@ -84,6 +86,9 @@ export class RaceEventPictureInPictureCamera {
     private timedBombResolutionHoldSeconds = 0;
     private timedBombBlastPositionReady = false;
     private timedBombPoseReady = false;
+    private litterHoldSeconds = 0;
+    private litterFocusWorldX = 0;
+    private litterFocusZ = 0;
     private lastTimedBombCopyLane = -2;
     private lastTimedBombCopySeconds = -1;
     private lastTimedBombCopyLocal = false;
@@ -382,6 +387,63 @@ export class RaceEventPictureInPictureCamera {
         this.resetTimedBombTrackingState();
     }
 
+    updateLitter(clusters: readonly LitterClusterState[], racing: boolean, dt: number): void {
+        const safeDt = safeStep(dt);
+        if (!racing) {
+            if (this.mode === 'litter') this.hide();
+            this.litterHoldSeconds = 0;
+            return;
+        }
+
+        let fallingWave = -1;
+        for (let index = 0; index < clusters.length; index++) {
+            const cluster = clusters[index];
+            if (!cluster.active || cluster.phase !== 'falling' || cluster.phaseProgress < 0) continue;
+            if (cluster.wave > fallingWave) fallingWave = cluster.wave;
+        }
+
+        if (fallingWave < 0) {
+            if (this.mode !== 'litter') return;
+            this.litterHoldSeconds = Math.max(0, this.litterHoldSeconds - safeDt);
+            if (this.litterHoldSeconds <= 0) {
+                this.hide();
+                return;
+            }
+            if (!this.shouldRender(safeDt)) return;
+            this.updateLitterCameraPose();
+            this.finishRender();
+            return;
+        }
+
+        // 垃圾镜头只承担事件建立感；鲨鱼、炮火、漩涡和定时炸弹等已有镜头均可优先占用共享画面。
+        if (this.mode !== 'none' && this.mode !== 'litter') return;
+        if (this.mode !== 'litter') {
+            this.mode = 'litter';
+            this.setCeilingVisible(false);
+            this.setCopy('赛道异物', '垃圾投放中', WARNING_COLOR);
+            this.setVisible(true);
+        }
+        this.litterHoldSeconds = LITTER_LANDING_HOLD_SECONDS;
+        if (!this.shouldRender(safeDt)) return;
+
+        let focusWorldX = 0;
+        let focusZ = 0;
+        let focusCount = 0;
+        for (let index = 0; index < clusters.length; index++) {
+            const cluster = clusters[index];
+            if (!cluster.active || cluster.wave !== fallingWave) continue;
+            focusWorldX += this.options.course.distanceToWorldX(cluster.anchorCourseX);
+            focusZ += cluster.anchorLateral;
+            focusCount++;
+        }
+        if (focusCount > 0) {
+            this.litterFocusWorldX = focusWorldX / focusCount;
+            this.litterFocusZ = focusZ / focusCount;
+        }
+        this.updateLitterCameraPose();
+        this.finishRender();
+    }
+
     dispose(): void {
         this.notifyHudBounds(false);
         view.off('canvas-resize', this.layoutHud, this);
@@ -423,6 +485,20 @@ export class RaceEventPictureInPictureCamera {
             (this.cannonSourceZ + this.cannonTargetZ) * 0.5,
         );
         this.applyCameraPose(52);
+    }
+
+    private updateLitterCameraPose(): void {
+        this.focus.set(
+            this.litterFocusWorldX,
+            this.options.course.waterY + 0.85,
+            this.litterFocusZ,
+        );
+        this.cameraPosition.set(
+            this.litterFocusWorldX - this.options.course.direction * 5.2,
+            this.options.course.waterY + 10.8,
+            this.litterFocusZ + 0.5,
+        );
+        this.applyCameraPose(54);
     }
 
     private updateTimedBombCameraPose(dt: number): void {
@@ -676,6 +752,7 @@ export class RaceEventPictureInPictureCamera {
         this.holdSeconds = 0;
         this.warningPush = 0;
         this.biteHoldSeconds = 0;
+        this.litterHoldSeconds = 0;
         this.biteCameraBasisReady = false;
         this.lastSharkState = SharkState.INACTIVE;
     }

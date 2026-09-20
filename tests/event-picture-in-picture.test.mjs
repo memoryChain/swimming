@@ -38,6 +38,7 @@ test('娱乐玩法共用一套低分辨率事件镜头', () => {
     assert.match(camera, /const TIMED_BOMB_TRANSFER_PREVIEW_SECONDS = 0\.8/);
     assert.match(camera, /const TIMED_BOMB_REOPEN_COOLDOWN_SECONDS = 1/);
     assert.match(camera, /const TIMED_BOMB_RESOLUTION_HOLD_SECONDS = 1/);
+    assert.match(camera, /const LITTER_LANDING_HOLD_SECONDS = 0\.5/);
     assert.match(camera, /camera\.visibility = Layers\.Enum\.DEFAULT \| SWIMMER_LAYER \| UNDERWATER_LAYER \| VENUE_CEILING_LAYER/);
     assert.match(runtimeScene, /SPECTATOR_LAYER \| VENUE_CEILING_LAYER/);
     assert.doesNotMatch(camera, /Graphics|setInterval|setTimeout/);
@@ -86,7 +87,7 @@ test('共用事件镜头只在高空俯拍阶段排除顶棚', () => {
     assert.doesNotMatch(gameManager, /_eventPictureInPicture\?\.showMine|_eventPictureInPicture\?\.showStimulant/);
 });
 
-test('炮火、首个漩涡、鲨鱼和定时炸弹复用事件镜头，障碍水雷不接入', () => {
+test('炮火、首个漩涡、鲨鱼、定时炸弹和垃圾投放复用事件镜头，障碍水雷不接入', () => {
     assert.match(gameManager, /updateShark\(this\._shark, dt\)/);
     assert.match(gameManager, /showCannonLaunch\([\s\S]*?launch,[\s\S]*?sourceWorldX\(\)/);
     assert.match(gameManager, /showCannonImpact\(impact\)/);
@@ -95,12 +96,39 @@ test('炮火、首个漩涡、鲨鱼和定时炸弹复用事件镜头，障碍�
     assert.match(gameManager, /updateTimedBomb\(/);
     assert.match(gameManager, /showTimedBombResolution\(/);
     assert.match(gameManager, /clearTimedBombTracking\(\)/);
-    assert.match(gameManager, /isWhirlpoolBrawlMode\(\) \|\| isTimedBombBrawlMode\(\)/);
+    assert.match(
+        gameManager,
+        /isWhirlpoolBrawlMode\(\) \|\| isTimedBombBrawlMode\(\) \|\| isLitterBrawlMode\(\)/,
+    );
     assert.match(gameManager, /featuredIndex >= 0 \? featuredIndex : 0/);
     assert.match(gameManager, /showWhirlpoolPreview\(/);
+    assert.match(gameManager, /updateLitter\([\s\S]*?clusters,[\s\S]*?isLitterBrawlMode\(\)/);
     assert.match(camera, /this\.whirlpoolSuper \? 18\.5 : 13\.5/);
     assert.match(camera, /this\.mode === 'shark' \|\| this\.mode === 'cannon' \|\| this\.mode === 'timed-bomb'/);
     assert.doesNotMatch(camera, /Stimulant|心跳苏打/);
+});
+
+test('垃圾画中画只观察当前飞行槽位并在最后一组落水后短暂保留', () => {
+    assert.match(camera, /type FeedMode = [^\n]*'litter'/);
+    assert.match(camera, /updateLitter\(clusters: readonly LitterClusterState\[\], racing: boolean, dt: number\)/);
+    assert.match(camera, /cluster\.phase !== 'falling' \|\| cluster\.phaseProgress < 0/);
+    assert.match(camera, /if \(cluster\.wave > fallingWave\) fallingWave = cluster\.wave/);
+    assert.match(camera, /this\.litterHoldSeconds = LITTER_LANDING_HOLD_SECONDS/);
+    assert.match(camera, /this\.setCopy\('赛道异物', '垃圾投放中', WARNING_COLOR\)/);
+    assert.match(camera, /distanceToWorldX\(cluster\.anchorCourseX\)/);
+    assert.match(camera, /this\.setCeilingVisible\(false\)/);
+    assert.match(camera, /if \(this\.mode !== 'none' && this\.mode !== 'litter'\) return/);
+    const litterUpdate = camera.match(/updateLitter\([\s\S]*?\n    }\n\n    dispose/)?.[0] ?? '';
+    assert.doesNotMatch(litterUpdate, /\.filter\(|\.map\(|new Vec|new Array|\[\.\.\./);
+});
+
+test('调试入口的独立垃圾模式会创建并驱动共享画中画', () => {
+    const creation = gameManager.match(/if \(\(isEntertainmentBrawlMode\(\)[\s\S]*?new RaceEventPictureInPictureCamera/)?.[0] ?? '';
+    assert.match(creation, /isLitterBrawlMode\(\)/);
+    assert.match(
+        gameManager,
+        /updateLitter\(\s*clusters,\s*isLitterBrawlMode\(\) && this\._state === GameState\.RACING,\s*dt,\s*\)/,
+    );
 });
 
 test('定时炸弹仅写共享事件画中画，障碍水雷仍只使用世界表现', () => {
