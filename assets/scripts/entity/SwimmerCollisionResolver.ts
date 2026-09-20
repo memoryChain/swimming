@@ -4,6 +4,17 @@ import { COLLISION_SOFTNESS_TUNING } from '../core/CollisionSoftnessTuning';
 
 const DEG2RAD = Math.PI / 180;
 
+export type SwimmerCollisionImpactListener = (
+    worldX: number,
+    worldZ: number,
+    normalX: number,
+    normalZ: number,
+    flowX: number,
+    flowZ: number,
+    tangentialSpeed: number,
+    magnitude: number,
+) => void;
+
 // Swimmer-vs-swimmer collision. The race only ever has up to 8 swimmers moving
 // kinematically (position is driven by SwimPhysicsModel, not a physics engine),
 // so a full 3D physics engine (Ammo/Box2D) would be overkill and add WASM weight
@@ -98,7 +109,10 @@ const _contactSeen: boolean[] = [];
 // 分离、击退和转体统一按体重的指数权重分配，重角色承担更小的碰撞份额。
 // 联机各端使用相同配置：AI 体重取确定性抽选模型对应的角色定义，
 // 真人体重由同步的角色摘要解析；跨端浮点残差仍由位置权威校正。
-export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
+export function resolveSwimmerCollisions(
+    swimmers: readonly Swimmer[],
+    onImpact?: SwimmerCollisionImpactListener,
+): void {
     if (!SWIMMER_COLLISION.enabled) {
         clearContacts();
         return;
@@ -197,7 +211,8 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
     // impulse magnitude from overlap depth + closing speed, split by inverse
     // weight. Lateral impulse always; distance impulse only for head-on pairs
     // that are still closing (both lose progress, never free distance).
-    if (SWIMMER_COLLISION.knockbackEnabled
+    if (onImpact
+        || SWIMMER_COLLISION.knockbackEnabled
         || SWIMMER_COLLISION.axialRollEnabled >= 0.5
         || COLLISION_PITCH_TUNING.enabled >= 0.5
         || COLLISION_SOFTNESS_TUNING.enabled >= 0.5) {
@@ -234,6 +249,16 @@ export function resolveSwimmerCollisions(swimmers: readonly Swimmer[]): void {
                 if (mag <= 0) {
                     continue;
                 }
+                onImpact?.(
+                    (_origX[i] + _origX[j]) * 0.5,
+                    (_origZ[i] + _origZ[j]) * 0.5,
+                    nx,
+                    nz,
+                    (_velX[i] + _velX[j]) * 0.5,
+                    (_velZ[i] + _velZ[j]) * 0.5,
+                    Math.abs((_velX[i] - _velX[j]) * -nz + (_velZ[i] - _velZ[j]) * nx),
+                    mag,
+                );
                 const wi = _weight[i];
                 const wj = _weight[j];
                 const totalW = wi + wj;

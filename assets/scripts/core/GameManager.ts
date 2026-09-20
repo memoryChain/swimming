@@ -50,7 +50,9 @@ import { Swimmer } from '../entity/Swimmer';
 import { SharkController } from '../entity/SharkController';
 import { SHARK_TUNING, SharkState } from '../entity/SharkTuning';
 import { SharkEntryPresentation } from './SharkEntryPresentation';
-import { hasSwimmerCollisionContact, resolveSwimmerCollisions } from '../entity/SwimmerCollisionResolver';
+import { hasSwimmerCollisionContact, resolveSwimmerCollisions, type SwimmerCollisionImpactListener } from '../entity/SwimmerCollisionResolver';
+import { SwimmerCollisionSplashPool } from '../swimmer/SwimmerCollisionSplash';
+import { collisionSplashModeForRace } from '../swimmer/CollisionSplashRules';
 import { DebugPanelBuilder } from '../ui/DebugPanelBuilder';
 import { AiDifficultyPanel } from '../ui/AiDifficultyPanel';
 import { ModelDebugHudBuilder } from '../ui/ModelDebugHudBuilder';
@@ -230,6 +232,28 @@ export class GameManager extends Component {
     private readonly _laneLockdownRacers: Swimmer[] = [];
     // Reused each frame for the swimmer-vs-swimmer collision pass (no per-frame allocation).
     private readonly _collisionSwimmers: Swimmer[] = [];
+    private _collisionWaterSplashes: SwimmerCollisionSplashPool | null = null;
+    private readonly _onSwimmerCollisionImpact: SwimmerCollisionImpactListener = (
+        worldX,
+        worldZ,
+        normalX,
+        normalZ,
+        flowX,
+        flowZ,
+        tangentialSpeed,
+        magnitude,
+    ) => {
+        this._collisionWaterSplashes?.play(
+            worldX,
+            worldZ,
+            normalX,
+            normalZ,
+            flowX,
+            flowZ,
+            tangentialSpeed,
+            magnitude,
+        );
+    };
     // AI 测试赛可选 1 或 7 个对手，等级、智力和阵容来自开始页面板。
     private _aiDebugMode = false;
     private _aiDebugDifficulty = 0.8;
@@ -557,6 +581,8 @@ export class GameManager extends Component {
         this._sharkEntryPresentation = null;
         this._entertainmentWaterSplashes?.dispose();
         this._entertainmentWaterSplashes = null;
+        this._collisionWaterSplashes?.dispose();
+        this._collisionWaterSplashes = null;
         this._netRaceController?.setMineRelayArmListener(null);
         this._netRaceController?.setMineRelayTransferListener(null);
         this._netRaceController?.setMineRelayResolutionListener(null);
@@ -692,6 +718,7 @@ export class GameManager extends Component {
             this._eventPictureInPicture?.updateShark(this._shark, dt);
         }
         this._entertainmentWaterSplashes?.update(dt);
+        this._collisionWaterSplashes?.update(dt);
         const preRacePhase = this._raceCameraDirector.preRacePhase;
         this._preRaceIntroPanel.setPhase(
             this._modelDebugFlow?.active || this._state !== GameState.PRECOUNTDOWN
@@ -876,7 +903,7 @@ export class GameManager extends Component {
         // the 养成 profile synced in the net roster and applied in wireRemoteSwimmers), so
         // the weighted knockback split resolves the same everywhere. Residual float
         // divergence is absorbed by the owner/host position authority.
-        resolveSwimmerCollisions(this._collisionSwimmers);
+        resolveSwimmerCollisions(this._collisionSwimmers, this._onSwimmerCollisionImpact);
     }
 
     private toggleSplashCulling() {
@@ -1023,6 +1050,13 @@ export class GameManager extends Component {
                 return;
             }
             try {
+                const collisionSplashRace = getRaceDifficultyConfig();
+                this._collisionWaterSplashes = new SwimmerCollisionSplashPool(
+                    this._worldRoot,
+                    COURSE_LAYOUT.waterY,
+                    SWIMMER_LAYER,
+                    collisionSplashModeForRace(collisionSplashRace.ruleset, collisionSplashRace.category),
+                );
                 this.buildPlayerSwimmer3D(this._worldRoot);
                 this.buildUi(scene.canvasNode, scene.width, scene.height, (uiError) => {
                     if (uiError) {
@@ -1093,6 +1127,7 @@ export class GameManager extends Component {
                 const previousState = this._state;
                 this._state = state;
                 if (previousState === GameState.RACING && state !== GameState.RACING) {
+                    this._collisionWaterSplashes?.reset();
                     this._entertainmentEventBanner.hide();
                     this._entertainmentRecovery?.reset();
                     this._entertainmentRecoveryHud?.reset();
@@ -1135,6 +1170,7 @@ export class GameManager extends Component {
                     this._litterBrawl?.reset();
                     this._litterPresentation?.reset();
                     this._entertainmentWaterSplashes?.reset();
+                    this._collisionWaterSplashes?.reset();
                     this._playerLitterSlowed = false;
                     this.clearLitterInfluence();
                     this._eventPictureInPicture?.reset();
