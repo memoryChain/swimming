@@ -58,10 +58,15 @@ const SUPER_ANNOUNCEMENT_DISTANCE = 30;
 const ACTIVATION_ENTRANCE_SECONDS = 1.25;
 const MIN_ROTATION_DEGREES_PER_SECOND = 8;
 const MAX_ROTATION_DEGREES_PER_SECOND = 52;
+const CORE_ROTATION_SPEED_SCALE = 1.12;
+const CORE_ROTATION_BASE_DEGREES_PER_SECOND = 12;
+const SUPER_CORE_ROTATION_BONUS_DEGREES_PER_SECOND = 8;
 const MIN_VISIBLE_SCALE = 0.08;
 const AFTERGLOW_MAX_ALPHA = 138;
 const AFTERGLOW_COLOR = new Color(156, 235, 255, 0);
 const SUPER_AFTERGLOW_COLOR = new Color(145, 196, 255, 0);
+const UNDERWATER_SPIRAL_DEPTH = 1.35;
+const SUPER_UNDERWATER_SPIRAL_DEPTH = 1.75;
 
 /** 漩涡玩法的低开销表现与 AI 路线提示；物理作用由泳者模拟步中的纯规则计算。 */
 export class WhirlpoolBrawlController {
@@ -171,16 +176,21 @@ export class WhirlpoolBrawlController {
                 * (1 + pulse * 0.025 * strength);
             const coreScale = (0.12 + 0.88 * coreStrength)
                 * (1 - pulse * 0.035 * strength);
+            const coreDepthScale = 0.08 + 0.92 * coreStrength;
             const rotationSpeed = MIN_ROTATION_DEGREES_PER_SECOND
                 + (MAX_ROTATION_DEGREES_PER_SECOND - MIN_ROTATION_DEGREES_PER_SECOND) * strength
                 + (visual.superVariant ? 8 * strength : 0);
+            const coreRotationSpeed = rotationSpeed * CORE_ROTATION_SPEED_SCALE
+                + CORE_ROTATION_BASE_DEGREES_PER_SECOND
+                + (visual.superVariant ? SUPER_CORE_ROTATION_BONUS_DEGREES_PER_SECOND * strength : 0);
             // Cocos 的正 Y 欧拉角在 X/Z 平面上沿规则旋向的反方向转动，因此视觉角速度取反。
             visual.flowRotationDegrees = (visual.flowRotationDegrees
                 - visual.spin * rotationSpeed * step) % 360;
             visual.coreRotationDegrees = (visual.coreRotationDegrees
-                - visual.spin * (rotationSpeed * 0.78 + 8) * step) % 360;
+                - visual.spin * coreRotationSpeed * step) % 360;
             setMirroredScale(visual.flow, flowScale, visual.spin);
-            setMirroredScale(visual.core, coreScale, visual.spin);
+            // 水下螺旋与表面核心共用一个网格；Y 轴单独展开，避免入场时整根水柱突然出现。
+            visual.core.setScale(coreScale, coreDepthScale, visual.spin * coreScale);
             visual.flow.setRotationFromEuler(0, visual.flowRotationDegrees, 0);
             visual.core.setRotationFromEuler(0, visual.coreRotationDegrees, 0);
 
@@ -437,6 +447,22 @@ function buildWhirlpoolCoreGeometry(superVariant = false): primitives.IGeometry 
         );
     }
 
+    // 将稀疏的倒锥螺旋直接烘进危险核心网格。它与水面核心共用节点、材质和绘制批次，
+    // 只增加少量顶点；向下逐渐收窄，让水下镜头也能读出吸入方向和旋向。
+    const underwaterDepth = superVariant ? SUPER_UNDERWATER_SPIRAL_DEPTH : UNDERWATER_SPIRAL_DEPTH;
+    const underwaterArms = superVariant ? 4 : 3;
+    const underwaterSegments = superVariant ? 18 : 14;
+    for (let arm = 0; arm < underwaterArms; arm++) {
+        appendUnderwaterSuctionSpiral(
+            buffers,
+            coreRadius,
+            arm / underwaterArms * Math.PI * 2,
+            underwaterSegments,
+            underwaterDepth,
+            superVariant,
+        );
+    }
+
     // 破碎泡沫环让危险核心边界在比赛镜头下仍然可读，又避免一整圈白色贴纸感。
     const dashCount = superVariant ? 14 : 10;
     for (let dash = 0; dash < dashCount; dash++) {
@@ -444,7 +470,7 @@ function buildWhirlpoolCoreGeometry(superVariant = false): primitives.IGeometry 
         appendArcRibbon(buffers, coreRadius * 1.12, superVariant ? 0.17 : 0.13, start, start + (superVariant ? 0.28 : 0.34), 2,
             superVariant ? 0.82 : 0.72, superVariant ? 0.90 : 0.96, 1, superVariant ? 0.72 : 0.58);
     }
-    return finishGeometry(buffers, coreRadius * 1.35);
+    return finishGeometry(buffers, coreRadius * 1.35, -underwaterDepth - 0.08, 0.01);
 }
 
 function appendCoreSuctionRibbon(
@@ -481,6 +507,56 @@ function appendCoreSuctionRibbon(
             buffers.colors,
             superVariant ? 0.76 : 0.72,
             superVariant ? 0.86 : 0.96,
+            1,
+            alpha,
+        );
+    }
+    for (let segment = 0; segment < segments; segment++) {
+        const lower = base + segment * 2;
+        buffers.indices.push(lower, lower + 2, lower + 1, lower + 1, lower + 2, lower + 3);
+    }
+}
+
+function appendUnderwaterSuctionSpiral(
+    buffers: GeometryBuffers,
+    coreRadius: number,
+    baseAngle: number,
+    segments: number,
+    depth: number,
+    superVariant: boolean,
+): void {
+    const base = buffers.positions.length / 3;
+    const turns = superVariant ? 3.4 : 3.0;
+    for (let segment = 0; segment <= segments; segment++) {
+        const t = segment / segments;
+        const taper = t * t * (3 - 2 * t);
+        const radius = coreRadius * (0.84 - taper * 0.70);
+        const angle = baseAngle + t * Math.PI * turns;
+        const halfWidth = coreRadius * (0.042 - t * 0.014);
+        const tangentX = -Math.sin(angle);
+        const tangentZ = Math.cos(angle);
+        const centerX = Math.cos(angle) * radius;
+        const centerZ = Math.sin(angle) * radius;
+        const y = -0.06 - depth * t;
+        buffers.positions.push(
+            centerX - tangentX * halfWidth, y, centerZ - tangentZ * halfWidth,
+            centerX + tangentX * halfWidth, y, centerZ + tangentZ * halfWidth,
+        );
+
+        // 两端压暗，中段保持清晰；避免水下形成一整块透明圆锥和高填充率叠色。
+        const middleFade = Math.sin(Math.PI * t);
+        const alpha = (0.05 + middleFade * (superVariant ? 0.34 : 0.29)) * (1 - t * 0.35);
+        pushColor(
+            buffers.colors,
+            superVariant ? 0.20 : 0.12,
+            superVariant ? 0.43 : 0.58,
+            superVariant ? 0.88 : 0.82,
+            alpha * 0.68,
+        );
+        pushColor(
+            buffers.colors,
+            superVariant ? 0.62 : 0.54,
+            superVariant ? 0.80 : 0.91,
             1,
             alpha,
         );
@@ -566,12 +642,17 @@ function pushColor(colors: number[], red: number, green: number, blue: number, a
     colors.push(red, green, blue, alpha);
 }
 
-function finishGeometry(buffers: GeometryBuffers, radius: number): primitives.IGeometry {
+function finishGeometry(
+    buffers: GeometryBuffers,
+    radius: number,
+    minY = -0.01,
+    maxY = 0.01,
+): primitives.IGeometry {
     return {
         positions: buffers.positions,
         colors: buffers.colors,
         indices: buffers.indices,
-        minPos: new Vec3(-radius, -0.01, -radius),
-        maxPos: new Vec3(radius, 0.01, radius),
+        minPos: new Vec3(-radius, minY, -radius),
+        maxPos: new Vec3(radius, maxY, radius),
     };
 }
