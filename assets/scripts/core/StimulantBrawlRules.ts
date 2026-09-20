@@ -25,6 +25,9 @@ export type StimulantSpawn = {
 };
 
 export const STIMULANT_PUBLIC_WAVE_DISTANCES = [35, 60, 85, 110, 135, 160, 185] as const;
+export const STIMULANT_ENTERTAINMENT_WALL_CLEARANCE = 4;
+const STIMULANT_ENTERTAINMENT_MIN_LEAD_DISTANCE = 4;
+const STIMULANT_ENTERTAINMENT_MIN_WAVE_GAP = 4;
 
 /**
  * 只依赖主机种子的固定赛程。
@@ -40,14 +43,80 @@ export function buildEntertainmentStimulantSchedule(
     laneCount: number,
     anchorDistance: number,
     raceDistance = 200,
+    courseLength = 50,
 ): StimulantSpawn[] {
     const longRace = raceDistance >= 400;
     const lastAnchor = longRace ? 365 : 175;
     const lastSpawn = longRace ? 390 : 194;
     const anchor = Math.max(0, Math.min(lastAnchor, Number.isFinite(anchorDistance) ? anchorDistance : 0));
     const offsets = longRace ? [5, 13, 21, 29] : [6, 19];
-    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount,
-        offsets.map(offset => Math.min(lastSpawn, anchor + offset)));
+    const distances = keepEntertainmentSpawnsClearOfTurnWalls(
+        offsets.map(offset => Math.min(lastSpawn, anchor + offset)),
+        anchor,
+        lastSpawn,
+        courseLength,
+        raceDistance,
+    );
+    return buildScheduleAtDistances(seed ^ 0x454e5453, laneCount, distances);
+}
+
+/**
+ * 动态投放不得落在折返墙附近。整批仍保持赛程前进方向上的稳定顺序，
+ * 同时给第一波和相邻波次保留最小前向距离，避免修正后贴脸或堆叠。
+ */
+function keepEntertainmentSpawnsClearOfTurnWalls(
+    distances: readonly number[],
+    anchorDistance: number,
+    lastSpawnDistance: number,
+    courseLength: number,
+    raceDistance: number,
+): number[] {
+    const result: number[] = [];
+    let minimumDistance = Math.min(
+        lastSpawnDistance,
+        anchorDistance + STIMULANT_ENTERTAINMENT_MIN_LEAD_DISTANCE,
+    );
+    for (const rawDistance of distances) {
+        const candidate = Math.max(minimumDistance, Math.min(lastSpawnDistance, rawDistance));
+        const safeDistance = moveStimulantSpawnClearOfTurnWall(
+            candidate,
+            minimumDistance,
+            lastSpawnDistance,
+            courseLength,
+            raceDistance,
+        );
+        result.push(safeDistance);
+        minimumDistance = Math.min(
+            lastSpawnDistance,
+            safeDistance + STIMULANT_ENTERTAINMENT_MIN_WAVE_GAP,
+        );
+    }
+    return result;
+}
+
+function moveStimulantSpawnClearOfTurnWall(
+    distance: number,
+    minimumDistance: number,
+    maximumDistance: number,
+    courseLength: number,
+    raceDistance: number,
+): number {
+    if (!Number.isFinite(courseLength) || courseLength <= 0) return distance;
+    const wallIndex = Math.round(distance / courseLength);
+    const wallDistance = wallIndex * courseLength;
+    if (wallIndex <= 0 || wallDistance >= raceDistance) return distance;
+    if (Math.abs(distance - wallDistance) >= STIMULANT_ENTERTAINMENT_WALL_CLEARANCE) return distance;
+
+    const beforeWall = wallDistance - STIMULANT_ENTERTAINMENT_WALL_CLEARANCE;
+    const afterWall = wallDistance + STIMULANT_ENTERTAINMENT_WALL_CLEARANCE;
+    const canUseBefore = beforeWall >= minimumDistance;
+    const canUseAfter = afterWall <= maximumDistance;
+    if (canUseBefore && canUseAfter) {
+        return distance - beforeWall <= afterWall - distance ? beforeWall : afterWall;
+    }
+    if (canUseBefore) return beforeWall;
+    if (canUseAfter) return afterWall;
+    return distance;
 }
 
 function buildScheduleAtDistances(

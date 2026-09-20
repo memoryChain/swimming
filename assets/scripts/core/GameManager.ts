@@ -1805,6 +1805,7 @@ export class GameManager extends Component {
                         LANE_LAYOUT.laneCount,
                         this.entertainmentAnchorDistance(EntertainmentEventId.STIMULANT),
                         getRaceDistance(),
+                        COURSE_LAYOUT.courseLength,
                     )
                     : undefined,
             );

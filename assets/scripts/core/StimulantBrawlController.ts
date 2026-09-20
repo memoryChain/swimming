@@ -180,7 +180,8 @@ export class StimulantBrawlController {
         }
 
         for (const item of this.items) {
-            if (item.collected) continue;
+            // 权威拾取只能发生在瓶子已经完成落水之后，避免投掷尚未显形时被提前吃掉。
+            if (item.collected || !item.visualLanded) continue;
             let bestLane = -1;
             let bestSq = radiusSq;
             for (let lane = 0; lane < this.laneLayout.laneCount; lane++) {
@@ -188,6 +189,11 @@ export class StimulantBrawlController {
                 const currentX = this.pickupCurrentX[lane];
                 const currentZ = this.pickupCurrentZ[lane];
                 if (!racer || !Number.isFinite(currentX) || !Number.isFinite(currentZ)) continue;
+                if (!stimulantIsOnCurrentCourseLeg(
+                    item.distance,
+                    this.pickupCurrentDistance[lane],
+                    this.course.courseLength,
+                )) continue;
                 if (!stimulantPickupRaceDistanceEligible(
                     item.distance,
                     this.pickupCurrentDistance[lane],

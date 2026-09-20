@@ -13,6 +13,7 @@ const {
     buildStimulantSchedule,
     buildEntertainmentStimulantSchedule,
     STIMULANT_BRAWL_TUNING,
+    STIMULANT_ENTERTAINMENT_WALL_CLEARANCE,
     STIMULANT_PUBLIC_WAVE_DISTANCES,
     stimulantIsOnCurrentCourseLeg,
     stimulantPickupDistanceSquared,
@@ -65,6 +66,33 @@ test('六合一苏打首波始终生成在激活领先位置前方，不会贴�
     assert.equal(Math.min(...longSchedule.map(item => item.distance)), longAnchor + 5);
 });
 
+test('六合一苏打动态投放避开折返墙并保持波次间距', () => {
+    for (const [raceDistance, lastAnchor] of [[200, 175], [400, 365]]) {
+        for (let anchor = 0; anchor <= lastAnchor; anchor += 0.25) {
+            const schedule = buildEntertainmentStimulantSchedule(
+                123456,
+                8,
+                anchor,
+                raceDistance,
+                50,
+            );
+            const distances = [...new Set(schedule.map(item => item.distance))];
+            assert.ok(distances[0] >= anchor + 4 - 1e-9, '首波必须保持至少四米前向安全距离');
+            for (let index = 1; index < distances.length; index++) {
+                assert.ok(distances[index] - distances[index - 1] >= 4 - 1e-9, '相邻波次不能因避墙而堆叠');
+            }
+            for (const distance of distances) {
+                for (let wall = 50; wall < raceDistance; wall += 50) {
+                    assert.ok(
+                        Math.abs(distance - wall) >= STIMULANT_ENTERTAINMENT_WALL_CLEARANCE - 1e-9,
+                        `投放点 ${distance} 距折返墙 ${wall} 过近`,
+                    );
+                }
+            }
+        }
+    }
+});
+
 test('心跳苏打显式预制体包含模型渲染器，加载器保留多路径、单方块兜底和远距光柱', () => {
     const prefab = JSON.parse(readFileSync(
         new URL('../assets/race/items/StimulantPotion.prefab', import.meta.url),
@@ -109,6 +137,8 @@ test('心跳苏打显式预制体包含模型渲染器，加载器保留多路�
     assert.doesNotMatch(controller, /positions\.push\(0, 0\.025, 0\)/);
     assert.doesNotMatch(controller, /this\.presentationTime \* 82/);
     assert.match(controller, /depthWrite: false/);
+    assert.match(controller, /if \(item\.collected \|\| !item\.visualLanded\) continue/);
+    assert.match(controller, /stimulantIsOnCurrentCourseLeg\(\s*item\.distance,\s*this\.pickupCurrentDistance\[lane\]/);
     assert.match(controller, /const energyRatioBefore = racer\.condition\.energyRatio/);
     assert.match(controller, /const heartRateBefore = racer\.swimmer\.heartRate/);
     assert.match(controller, /energyRatioAfter: racer\.condition\.energyRatio/);

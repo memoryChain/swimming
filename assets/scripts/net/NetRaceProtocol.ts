@@ -71,7 +71,8 @@
 // 版本83：心跳苏打恢复降至30%、心率负担升至40，并在拾取后禁止心率自然回落4秒。
 // 版本84：单独水雷玩法新增房主权威的三波补充，并同步波次与每个复用槽位的代次。
 // 版本85：巡游鲨鱼补咬增加独立蓄势状态；闭合节点才击倒，结束后回到巡游且不推进追猎轮次。
-export const NET_RACE_PROTOCOL_VERSION = 85;
+// 版本86：六合一心跳苏打避开折返墙，且只允许已落水、与选手同趟数的瓶子被权威拾取。
+export const NET_RACE_PROTOCOL_VERSION = 86;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 
