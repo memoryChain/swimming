@@ -11,6 +11,7 @@ export type MinefieldRacerState = {
 
 export type MinefieldMineState = {
     id: number;
+    generation: number;
     active: boolean;
     armed: boolean;
     courseX: number;
@@ -31,6 +32,8 @@ export type MinefieldSnapshotState = {
     elapsedSeconds: number;
     activeMask: number;
     armedMask: number;
+    waveIndex: number;
+    slotWavesPacked: number;
 };
 
 export type MinefieldExclusionZone = {
@@ -42,6 +45,8 @@ export type MinefieldExclusionZone = {
 
 export const MINEFIELD_TUNING = {
     mineCount: 7,
+    waveSecondDistance: 65,
+    waveThirdDistance: 130,
     mineItemAlongRadius: 0.67,
     mineItemLateralRadius: 0.65,
     swimmerContactAlongRadius: 0.68,
@@ -60,11 +65,20 @@ export const MINEFIELD_TUNING = {
 
 const ANCHOR_X = [6.5, 12.5, 19.5, 27, 34.5, 41, 46] as const;
 const ANCHOR_Z_RATIOS = [-0.54, 0.34, -0.12, 0.58, -0.4, 0.1, 0.46] as const;
+const SLOT_WAVE_BITS = 2;
+const MAX_SLOT_WAVE = 3;
+
+type MinefieldWaveLayout = {
+    lateral: number[];
+    phaseAlong: number[];
+    phaseLateral: number[];
+};
 
 /** 房主使用水雷与人物身体的扩张椭圆负责命中；访客只同步确定性视觉和可靠命中事件。 */
 export class MinefieldBrawlController {
     private revision = 0;
     private elapsed = 0;
+    private waveIndex = 0;
     private activeMineCount = 0;
     private lastSnapshotRevision = -1;
     private lastSnapshotElapsed = -1;
@@ -76,6 +90,7 @@ export class MinefieldBrawlController {
     private readonly spawnClearSeconds: number[] = [];
     private readonly previousRacerCourseX: number[];
     private readonly previousRacerLateral: number[];
+    private readonly waveLayouts: MinefieldWaveLayout[] = [];
 
     constructor(
         private readonly laneCount: number,
@@ -85,6 +100,7 @@ export class MinefieldBrawlController {
         private readonly onImpact: (impact: MinefieldImpact) => void,
         mineCount: number = MINEFIELD_TUNING.mineCount,
         exclusionZone: MinefieldExclusionZone | null = null,
+        private readonly waveTriggerDistances: readonly number[] = [],
     ) {
         const random = new SeededRandom((seed ^ 0x6d696e65) >>> 0);
         const halfWidth = Math.max(1, poolWidth * 0.5 - 0.8);
@@ -110,6 +126,7 @@ export class MinefieldBrawlController {
             this.anchorLateral.push(anchorZ);
             this.mineStates.push({
                 id,
+                generation: 0,
                 active: true,
                 armed: false,
                 courseX: anchorX,
@@ -118,6 +135,24 @@ export class MinefieldBrawlController {
             this.phaseAlong.push(random.range(0, Math.PI * 2));
             this.phaseLateral.push(random.range(0, Math.PI * 2));
             this.spawnClearSeconds.push(0);
+        }
+        this.waveLayouts.push({
+            lateral: [...this.anchorLateral],
+            phaseAlong: [...this.phaseAlong],
+            phaseLateral: [...this.phaseLateral],
+        });
+        for (let wave = 1; wave <= this.waveTriggerDistances.length; wave++) {
+            const waveRandom = new SeededRandom((seed ^ 0x6d696e65 ^ Math.imul(wave, 0x9e3779b1)) >>> 0);
+            const waveZOrder = waveRandom.shuffle([...ANCHOR_Z_RATIOS]);
+            const lateral: number[] = [];
+            const phaseAlong: number[] = [];
+            const phaseLateral: number[] = [];
+            for (let id = 0; id < count; id++) {
+                lateral.push(waveZOrder[id % waveZOrder.length] * halfWidth);
+                phaseAlong.push(waveRandom.range(0, Math.PI * 2));
+                phaseLateral.push(waveRandom.range(0, Math.PI * 2));
+            }
+            this.waveLayouts.push({ lateral, phaseAlong, phaseLateral });
         }
         this.previousRacerCourseX = new Array(laneCount).fill(Number.NaN);
         this.previousRacerLateral = new Array(laneCount).fill(Number.NaN);
@@ -129,13 +164,16 @@ export class MinefieldBrawlController {
     reset(): void {
         this.revision = 0;
         this.elapsed = 0;
+        this.waveIndex = 0;
         this.activeMineCount = this.mineStates.length;
         this.lastSnapshotRevision = -1;
         this.lastSnapshotElapsed = -1;
         for (const mine of this.mineStates) {
+            mine.generation = 0;
             mine.active = true;
             mine.armed = false;
         }
+        this.applyWaveLayoutToAllSlots(0);
         this.spawnClearSeconds.fill(0);
         this.previousRacerCourseX.fill(Number.NaN);
         this.previousRacerLateral.fill(Number.NaN);
@@ -143,11 +181,19 @@ export class MinefieldBrawlController {
         this.resetSpawnSafety();
     }
 
-    update(dt: number, state: GameState, authoritative: boolean): void {
-        if (state !== GameState.RACING || this.activeMineCount <= 0) return;
+    update(
+        dt: number,
+        state: GameState,
+        authoritative: boolean,
+        leaderDistance = 0,
+        allowNewWaves = true,
+    ): void {
+        if (state !== GameState.RACING) return;
         const step = Number.isFinite(dt) ? Math.max(0, Math.min(0.1, dt)) : 0;
         this.elapsed += step;
         this.updateMinePositions();
+        if (authoritative && allowNewWaves) this.updateWaves(leaderDistance);
+        if (this.activeMineCount <= 0) return;
         if (authoritative) this.updateSpawnSafety(step);
         for (let lane = 0; lane < this.laneCount; lane++) {
             const racer = this.racerForLane(lane);
@@ -166,16 +212,20 @@ export class MinefieldBrawlController {
     snapshotState(): MinefieldSnapshotState {
         let activeMask = 0;
         let armedMask = 0;
+        let slotWavesPacked = 0;
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
             if (mine.active) activeMask |= 1 << id;
             if (mine.active && mine.armed) armedMask |= 1 << id;
+            slotWavesPacked |= mine.generation << (id * SLOT_WAVE_BITS);
         }
         return {
             revision: this.revision,
             elapsedSeconds: this.elapsed,
             activeMask,
             armedMask,
+            waveIndex: this.waveIndex,
+            slotWavesPacked,
         };
     }
 
@@ -183,17 +233,27 @@ export class MinefieldBrawlController {
         if (!Number.isSafeInteger(state.revision) || state.revision < this.revision
             || !Number.isFinite(state.elapsedSeconds) || state.elapsedSeconds < 0
             || !Number.isSafeInteger(state.activeMask) || state.activeMask < 0
-            || !Number.isSafeInteger(state.armedMask) || state.armedMask < 0) return false;
+            || !Number.isSafeInteger(state.armedMask) || state.armedMask < 0
+            || !Number.isSafeInteger(state.waveIndex) || state.waveIndex < this.waveIndex
+            || state.waveIndex >= this.waveLayouts.length
+            || !Number.isSafeInteger(state.slotWavesPacked) || state.slotWavesPacked < 0) return false;
         if (state.revision === this.lastSnapshotRevision
             && state.elapsedSeconds < this.lastSnapshotElapsed) return false;
+        for (let id = 0; id < this.mineStates.length; id++) {
+            const generation = this.unpackSlotWave(state.slotWavesPacked, id);
+            if (generation > state.waveIndex || generation >= this.waveLayouts.length) return false;
+        }
         this.lastSnapshotRevision = state.revision;
         this.lastSnapshotElapsed = state.elapsedSeconds;
         this.revision = state.revision;
+        this.waveIndex = state.waveIndex;
         // 已用最近一次权威快照时钟过滤乱序包；接受后允许轻微回正本地漂移。
         this.elapsed = state.elapsedSeconds;
         this.activeMineCount = 0;
         for (let id = 0; id < this.mineStates.length; id++) {
             const mine = this.mineStates[id];
+            const generation = this.unpackSlotWave(state.slotWavesPacked, id);
+            if (mine.generation !== generation) this.configureSlotForWave(id, generation);
             mine.active = (state.activeMask & (1 << id)) !== 0;
             mine.armed = mine.active && (state.armedMask & (1 << id)) !== 0;
             if (mine.active) this.activeMineCount++;
@@ -300,6 +360,48 @@ export class MinefieldBrawlController {
                 -halfWidth, halfWidth,
             );
         }
+    }
+
+    private updateWaves(leaderDistance: number): void {
+        const safeLeaderDistance = Number.isFinite(leaderDistance) ? Math.max(0, leaderDistance) : 0;
+        while (this.waveIndex < this.waveTriggerDistances.length
+            && safeLeaderDistance >= this.waveTriggerDistances[this.waveIndex]) {
+            this.refillWave(this.waveIndex + 1);
+        }
+    }
+
+    private refillWave(nextWave: number): void {
+        if (nextWave <= this.waveIndex || nextWave >= this.waveLayouts.length) return;
+        this.waveIndex = nextWave;
+        this.revision++;
+        for (let id = 0; id < this.mineStates.length; id++) {
+            const mine = this.mineStates[id];
+            if (mine.active) continue;
+            this.configureSlotForWave(id, nextWave);
+            mine.active = true;
+            mine.armed = false;
+            this.spawnClearSeconds[id] = 0;
+            this.activeMineCount++;
+        }
+        this.updateMinePositions();
+    }
+
+    private applyWaveLayoutToAllSlots(wave: number): void {
+        for (let id = 0; id < this.mineStates.length; id++) this.configureSlotForWave(id, wave);
+    }
+
+    private configureSlotForWave(id: number, wave: number): void {
+        const layout = this.waveLayouts[wave];
+        const mine = this.mineStates[id];
+        if (!layout || !mine) return;
+        mine.generation = wave;
+        this.anchorLateral[id] = layout.lateral[id];
+        this.phaseAlong[id] = layout.phaseAlong[id];
+        this.phaseLateral[id] = layout.phaseLateral[id];
+    }
+
+    private unpackSlotWave(packed: number, id: number): number {
+        return (packed >>> (id * SLOT_WAVE_BITS)) & MAX_SLOT_WAVE;
     }
 
     /**

@@ -2498,6 +2498,9 @@ export class GameManager extends Component {
                         * WHIRLPOOL_SUPER_TUNING.lateralRadiusScale + 1.6,
                 }
                 : null,
+            isEntertainmentBrawlMode()
+                ? []
+                : [MINEFIELD_TUNING.waveSecondDistance, MINEFIELD_TUNING.waveThirdDistance],
         );
         if (this._worldRoot?.isValid) {
             this._minefieldPresentation = new MinefieldBrawlPresentation(
@@ -2523,7 +2526,13 @@ export class GameManager extends Component {
             this.activePlayerAutopilot()?.setMinefieldTargetZ(null);
             return;
         }
-        controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
+        controller.update(
+            dt,
+            this._state,
+            !this._netRaceController || this._netRaceController.isHost,
+            this.entertainmentLeaderDistance(),
+            !(this._raceManager?.hasAnyFinisher() ?? false),
+        );
         const visible = this._state === GameState.PRECOUNTDOWN || this._state === GameState.COUNTDOWN
             || this._state === GameState.DIVING || this._state === GameState.GLIDING
             || this._state === GameState.RACING;

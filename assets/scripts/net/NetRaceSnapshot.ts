@@ -130,6 +130,8 @@ export type NetMinefieldState = {
     elapsedSeconds: number;
     activeMask: number;
     armedMask: number;
+    waveIndex: number;
+    slotWavesPacked: number;
 };
 export type NetEntertainmentDirectorState = {
     revision: number;
@@ -214,6 +216,8 @@ export function encodeRaceSnapshot(
     const minefieldActiveMask = Math.max(0, Math.floor(minefield?.activeMask ?? 0)).toString(16);
     // Slot 27 now carries the host-authoritative spawn-safe/armed state without shifting later fields.
     const minefieldArmedMask = Math.max(0, Math.floor(minefield?.armedMask ?? 0)).toString(16);
+    const minefieldWaveIndex = Math.max(0, Math.floor(minefield?.waveIndex ?? 0));
+    const minefieldSlotWavesPacked = Math.max(0, Math.floor(minefield?.slotWavesPacked ?? 0)).toString(16);
     const directorRevision = Math.max(0, Math.floor(entertainmentDirector?.revision ?? 0));
     const directorPhase = Math.max(0, Math.floor(entertainmentDirector?.phase ?? 0));
     const directorEventIndex = Math.max(0, Math.floor(entertainmentDirector?.eventIndex ?? 0));
@@ -234,7 +238,7 @@ export function encodeRaceSnapshot(
     const sharkBody = shark
         ? `~${Math.max(0, Math.floor(shark.sequence))},${Math.max(0, Math.floor(shark.state))},${Math.max(0, Math.round(shark.raceElapsed * 1000))},${Math.max(0, Math.round(shark.remainingSeconds * 1000))},${Math.max(0, Math.round(shark.huntOpeningGraceSeconds * 1000))},${Math.round(shark.x * 100)},${Math.round(shark.z * 100)},${Math.round(shark.facingX * 1000)},${Math.round(shark.facingZ * 1000)},${Math.round(shark.targetLane)},${Math.round(shark.knockedLane)},${Math.max(0, Math.floor(shark.huntIndex))}`
         : '';
-    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent}#${body}${sharkBody}`;
+    return `${TAG}${hostPos},${revision},${mask},${cannonRevision},${cannonReservedMask},${cannonCompletedMask},${cannonActiveStrike},${cannonTargetDistance},${cannonTargetZ},${cannonRemainingMs},${mineRevision},${mineCompletedMask},${mineExplodedMask},${mineResolvedCarriers},${mineActiveRound},${mineCarrierLane},${minePreviousCarrierLane},${mineLastStarterLane},${mineRemainingMs},${mineTransferCooldownMs},${mineReturnProtectionMs},${mineRecoveryMs},${recoveryRevision},${recoveryBody},${minefieldRevision},${minefieldElapsedMs},${minefieldActiveMask},${minefieldArmedMask},${directorRevision},${directorPhase},${directorEventIndex},${directorRemainingMs},${directorPackedEvents},${directorActivatedMask},${directorResidentMask},${directorAnchorCm},${directorEventAnchors},${directorEventCount},${directorSpecialMask},${directorActivationSerial},${directorEncoreRound},${directorEncoreEvent},${directorLastActivatedEvent},${minefieldWaveIndex},${minefieldSlotWavesPacked}#${body}${sharkBody}`;
 }
 
 // Returns null if the payload is not a race snapshot (so other broadcast messages
@@ -291,6 +295,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
     const directorEncoreRound = header.length > 40 ? parseInt(header[40], 10) : 0;
     const directorEncoreEvent = header.length > 41 ? parseInt(header[41], 10) : 0;
     const directorLastActivatedEvent = header.length > 42 ? parseInt(header[42], 10) : 0;
+    const minefieldWaveIndex = header.length > 43 ? parseInt(header[43], 10) : 0;
+    const minefieldSlotWavesPacked = header.length > 44 ? parseInt(header[44], 16) : 0;
     const stateBody = rest.slice(hash + 1);
     const sharkSeparator = stateBody.indexOf('~');
     const body = sharkSeparator >= 0 ? stateBody.slice(0, sharkSeparator) : stateBody;
@@ -393,6 +399,8 @@ export function decodeRaceSnapshot(payload: string): DecodedRaceSnapshot | null 
             elapsedSeconds: safeMilliseconds(minefieldElapsedMs),
             activeMask: safeNonNegativeInteger(minefieldActiveMask),
             armedMask: safeNonNegativeInteger(minefieldArmedMask),
+            waveIndex: safeNonNegativeInteger(minefieldWaveIndex),
+            slotWavesPacked: safeNonNegativeInteger(minefieldSlotWavesPacked),
         },
         entertainmentDirector: {
             revision: safeNonNegativeInteger(directorRevision),

@@ -37,6 +37,7 @@ export class MinefieldBrawlPresentation {
     private readonly mineNodes: Node[] = [];
     private readonly entryElapsed: number[] = [];
     private readonly entryWasArmed: boolean[] = [];
+    private readonly entryGeneration: number[] = [];
     private readonly entryDisturbanceShown: boolean[] = [];
     private readonly entryBreachShown: boolean[] = [];
     private mineMesh: Mesh | null = null;
@@ -63,6 +64,7 @@ export class MinefieldBrawlPresentation {
             this.mineNodes.push(node);
             this.entryElapsed.push(0);
             this.entryWasArmed.push(false);
+            this.entryGeneration.push(-1);
             this.entryDisturbanceShown.push(false);
             this.entryBreachShown.push(false);
         }
@@ -78,6 +80,7 @@ export class MinefieldBrawlPresentation {
             this.setActive(this.mineNodes[id], false);
             this.entryElapsed[id] = 0;
             this.entryWasArmed[id] = false;
+            this.entryGeneration[id] = -1;
             this.entryDisturbanceShown[id] = false;
             this.entryBreachShown[id] = false;
         }
@@ -106,6 +109,14 @@ export class MinefieldBrawlPresentation {
         for (let id = 0; id < this.mineNodes.length; id++) {
             const node = this.mineNodes[id];
             const mine = mines[id];
+            const generation = mine?.generation ?? -1;
+            if (generation !== this.entryGeneration[id]) {
+                this.entryGeneration[id] = generation;
+                this.entryWasArmed[id] = false;
+                this.entryElapsed[id] = 0;
+                this.entryDisturbanceShown[id] = false;
+                this.entryBreachShown[id] = false;
+            }
             const armed = !!mine?.active && !!mine?.armed;
             if (!armed) {
                 this.setActive(node, false);

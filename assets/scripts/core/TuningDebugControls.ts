@@ -415,6 +415,8 @@ export const TUNING_GROUPS: TuningGroup[] = [
         name: '水雷模式',
         controls: [
             control('minefield.mineCount', '水雷数量', '开局生成的障碍水雷数量；重开比赛后生效。', () => MINEFIELD_TUNING.mineCount, v => MINEFIELD_TUNING.mineCount = Math.round(v), 1, 3, 10, 0),
+            control('minefield.waveSecondDistance', '第二波触发距离', '单独水雷玩法中，领先选手达到该赛程距离时补齐已消失的水雷。', () => MINEFIELD_TUNING.waveSecondDistance, v => MINEFIELD_TUNING.waveSecondDistance = v, 1, 50, 95, 0, ' m'),
+            control('minefield.waveThirdDistance', '第三波触发距离', '单独水雷玩法中，领先选手达到该赛程距离时再次补齐已消失的水雷。', () => MINEFIELD_TUNING.waveThirdDistance, v => MINEFIELD_TUNING.waveThirdDistance = v, 1, 100, 180, 0, ' m'),
             control('minefield.mineItemAlongRadius', '水雷前后接触半径', '水雷自身沿赛道方向的接触半径，结算时与人物身体半径相加。', () => MINEFIELD_TUNING.mineItemAlongRadius, v => MINEFIELD_TUNING.mineItemAlongRadius = v, 0.025, 0.2, 1.5, 3, ' m'),
             control('minefield.mineItemLateralRadius', '水雷横向接触半径', '水雷自身跨泳道方向的接触半径，结算时与人物身体半径相加。', () => MINEFIELD_TUNING.mineItemLateralRadius, v => MINEFIELD_TUNING.mineItemLateralRadius = v, 0.025, 0.2, 1.5, 3, ' m'),
             control('minefield.swimmerContactAlongRadius', '身体前后触雷半径', '人物身体沿赛道方向参与水雷实体触碰的简化半径。', () => MINEFIELD_TUNING.swimmerContactAlongRadius, v => MINEFIELD_TUNING.swimmerContactAlongRadius = v, 0.02, 0.3, 1.2, 2, ' m'),

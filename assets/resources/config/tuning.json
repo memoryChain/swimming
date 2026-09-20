@@ -290,6 +290,8 @@
     "mineRelay.explosionSoftnessLateralImpulse": 1.8,
     "mineRelay.explosionSoftnessForwardImpulse": -0.95,
     "minefield.mineCount": 7,
+    "minefield.waveSecondDistance": 65,
+    "minefield.waveThirdDistance": 130,
     "minefield.mineItemAlongRadius": 0.67,
     "minefield.mineItemLateralRadius": 0.65,
     "minefield.swimmerContactAlongRadius": 0.68,

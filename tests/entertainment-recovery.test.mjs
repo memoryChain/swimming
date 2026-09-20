@@ -197,7 +197,7 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         new URL('../assets/scripts/net/NetRaceProtocol.ts', import.meta.url),
         'utf8',
     );
-    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 83/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 84/);
 });
 
 test('离开比赛状态时立即清理急救遮罩、无敌表现和娱乐画中画', () => {

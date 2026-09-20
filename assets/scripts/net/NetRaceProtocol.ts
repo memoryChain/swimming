@@ -69,7 +69,8 @@
 // 版本81：定时炸弹优先消费人物碰撞求解器的稳定接触，避免翻滚后因先行分离而漏传。
 // 版本82：六合一首位完赛后取消定时炸弹待触发轮次，只保留已装载炸弹自然结算。
 // 版本83：心跳苏打恢复降至30%、心率负担升至40，并在拾取后禁止心率自然回落4秒。
-export const NET_RACE_PROTOCOL_VERSION = 83;
+// 版本84：单独水雷玩法新增房主权威的三波补充，并同步波次与每个复用槽位的代次。
+export const NET_RACE_PROTOCOL_VERSION = 84;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

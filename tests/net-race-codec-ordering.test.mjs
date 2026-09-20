@@ -192,6 +192,8 @@ test('minefield lifecycle state round-trips in S|', () => {
         elapsedSeconds: 14.321,
         activeMask: 0b1011011,
         armedMask: 0b0011011,
+        waveIndex: 2,
+        slotWavesPacked: 0b10_01_01_00_00_00_00,
     };
     const snapshot = decodeRaceSnapshot(encodeRaceSnapshot(
         0, [entry()], null, null, null, null, null, minefield,
@@ -249,7 +251,11 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
             transferCooldownSeconds: 9.999, returnProtectionSeconds: 9.999, recoverySeconds: 9.999,
         },
         recovery,
-        { revision: 999999, elapsedSeconds: 999.999, activeMask: 0x7fffffff, armedMask: 0x7fffffff },
+        {
+            revision: 999999, elapsedSeconds: 999.999,
+            activeMask: 0x7fffffff, armedMask: 0x7fffffff,
+            waveIndex: 2, slotWavesPacked: 0x3fff,
+        },
         {
             revision: 999999, phase: 4, eventIndex: 5, eventCount: 6, remainingSeconds: 99.999,
             packedEvents: 0x7fffffff, activatedMask: 0x7fffffff, residentMask: 0x7fffffff,
@@ -300,6 +306,8 @@ test('legacy S| and P| payloads keep safe sentinel defaults', () => {
         elapsedSeconds: 0,
         activeMask: 0,
         armedMask: 0,
+        waveIndex: 0,
+        slotWavesPacked: 0,
     });
 
     const legacyP = decodeSelfSnapshot('P|2,1234,-125,0,222,456,78,444,-555,-333,666,-777');
@@ -381,7 +389,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 83);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 84);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

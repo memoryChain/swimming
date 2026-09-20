@@ -35,11 +35,12 @@ function putTogether(fixture, laneA, laneB) {
     fixture.racers[laneB].lateral = fixture.racers[laneA].lateral + 0.2;
 }
 
-function minefieldFixture(seed = 91) {
+function minefieldFixture(seed = 91, waveTriggerDistances = []) {
     const racers = Array.from({ length: 2 }, () => ({ active: true, finished: false, distance: 0, lateral: 0 }));
     const impacts = [];
     const controller = new MinefieldBrawlController(
         racers.length, seed, 20, lane => racers[lane], impact => impacts.push({ ...impact }),
+        MINEFIELD_TUNING.mineCount, null, waveTriggerDistances,
     );
     return { racers, impacts, controller };
 }
@@ -318,6 +319,91 @@ test('水雷碰到立即爆炸，本局永久消失并只在重开时恢复', ()
     assert.equal(fixture.controller.mines()[mine.id].active, true);
 });
 
+test('单独水雷玩法在65米和130米按波次补齐已消失的水雷', () => {
+    const fixture = minefieldFixture(901, [65, 130]);
+    for (const mine of fixture.controller.mines()) {
+        fixture.controller.applyImpact({
+            mineId: mine.id,
+            hitLane: 0,
+            courseX: mine.courseX,
+            lateral: mine.lateral,
+            hitMask: 1,
+            revision: fixture.controller.snapshotState().revision + 1,
+        });
+    }
+    assert.ok(fixture.controller.mines().every(mine => !mine.active));
+
+    fixture.controller.update(0, GameState.RACING, true, 65);
+    assert.equal(fixture.controller.snapshotState().waveIndex, 1);
+    assert.equal(fixture.controller.mines().filter(mine => mine.active).length, 7);
+    assert.ok(fixture.controller.mines().every(mine => mine.generation === 1));
+
+    fixture.controller.applyImpact({
+        mineId: 2,
+        hitLane: 0,
+        courseX: fixture.controller.mines()[2].courseX,
+        lateral: fixture.controller.mines()[2].lateral,
+        hitMask: 1,
+        revision: fixture.controller.snapshotState().revision + 1,
+    });
+    fixture.controller.update(0, GameState.RACING, true, 130);
+    assert.equal(fixture.controller.snapshotState().waveIndex, 2);
+    assert.equal(fixture.controller.mines().filter(mine => mine.active).length, 7);
+    assert.equal(fixture.controller.mines()[2].generation, 2);
+    assert.ok(fixture.controller.mines().filter(mine => mine.id !== 2)
+        .every(mine => mine.generation === 1));
+});
+
+test('后续波只补空槽，仍存活的水雷不会重放入场或改变位置', () => {
+    const fixture = minefieldFixture(903, [65, 130]);
+    const surviving = fixture.controller.mines()[0];
+    const before = { courseX: surviving.courseX, lateral: surviving.lateral, generation: surviving.generation };
+    const consumed = fixture.controller.mines()[1];
+    fixture.controller.applyImpact({
+        mineId: consumed.id,
+        hitLane: 0,
+        courseX: consumed.courseX,
+        lateral: consumed.lateral,
+        hitMask: 1,
+        revision: 1,
+    });
+
+    fixture.controller.update(0, GameState.RACING, true, 65);
+    assert.deepEqual(
+        { courseX: surviving.courseX, lateral: surviving.lateral, generation: surviving.generation },
+        before,
+    );
+    assert.equal(fixture.controller.mines()[1].generation, 1);
+    assert.equal(fixture.controller.mines().filter(mine => mine.active).length, 7);
+});
+
+test('首位完赛收尾后不再触发尚未到达的水雷波次', () => {
+    const fixture = minefieldFixture(905, [65, 130]);
+    fixture.controller.update(0, GameState.RACING, true, 130, false);
+    assert.equal(fixture.controller.snapshotState().waveIndex, 0);
+    assert.ok(fixture.controller.mines().every(mine => mine.generation === 0));
+});
+
+test('水雷快照同步波次和槽位代次，客机不会复活旧布局', () => {
+    const host = minefieldFixture(907, [65, 130]);
+    const guest = minefieldFixture(907, [65, 130]);
+    const consumed = host.controller.mines()[3];
+    host.controller.applyImpact({
+        mineId: consumed.id,
+        hitLane: 0,
+        courseX: consumed.courseX,
+        lateral: consumed.lateral,
+        hitMask: 1,
+        revision: 1,
+    });
+    host.controller.update(0, GameState.RACING, true, 65);
+
+    assert.equal(guest.controller.applySnapshotState(host.controller.snapshotState()), true);
+    assert.deepEqual(guest.controller.mines(), host.controller.mines());
+    assert.equal(guest.controller.snapshotState().waveIndex, 1);
+    assert.equal(guest.controller.mines()[3].generation, 1);
+});
+
 test('水雷使用自身与人物身体的扩张接触范围，身体边缘擦到即可触雷', () => {
     const fixture = minefieldFixture(811);
     const mine = fixture.controller.mines()[0];
@@ -434,6 +520,7 @@ test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', 
     assert.match(presentation, /ENTRY_START_DEPTH = 0\.82/);
     assert.match(presentation, /showWaterVisual[\s\S]*ENTRY_BREACH_INTENSITY/);
     assert.match(presentation, /entryWasArmed/);
+    assert.match(presentation, /entryGeneration/);
     assert.doesNotMatch(presentation, /Graphics|\.clear\(\)/);
     const timedBombPresentation = readFileSync(new URL('../assets/scripts/core/MineRelayBrawlPresentation.ts', import.meta.url), 'utf8');
     assert.match(timedBombPresentation, /buildTimedBombGeometry/);
