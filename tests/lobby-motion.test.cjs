@@ -101,6 +101,21 @@ test('模式快速往返：从当前值接续，最终只有一个选中框，�
     assert.equal(s.running,0);
 });
 
+test('快速弹窗开关保留大厅与3D预览，不重载角色并阻断预览拖动',()=>{
+    const s=setup(),f=s.flow;
+    f._view='ready';f._content=new Node('大厅');f._previewRoot=new Node('角色');
+    f.presentCharacter=()=>assert.fail('开关快速弹窗不应重载角色');
+    for(let i=0;i<20;i++) {
+        f.setEventPageVisible(true,true);
+        assert.equal(f._content.active,true);assert.equal(f._previewRoot.active,true);
+        f.beginPreviewRotation({getID:()=>1});assert.equal(f._previewRotateTouchId,null);
+        f.setEventPageVisible(false,false);
+        assert.equal(f._content.active,true);assert.equal(f._previewRoot.active,true);
+    }
+    f.beginPreviewRotation({getID:()=>2});assert.equal(f._previewRotateTouchId,2);
+    f.setEventPageVisible(true,false);assert.equal(f._content.active,false);assert.equal(f._previewRoot.active,false);
+});
+
 test('重复开始和联机点击只执行一次；外部邀请销毁页面后取消旧导航',()=>{
     for(const disposed of [false,true]){
         const s=setup(),f=s.flow,button=new Node('开始');button.setParent(s.parent);button.addComponent(Button);

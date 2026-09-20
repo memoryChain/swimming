@@ -21,14 +21,14 @@ export const ROOM_MODES: ReadonlyArray<{ id: RaceDifficulty; label: string }> = 
 export type OnlineMember = {
     clientId?: number;
     pos: number; self: boolean; owner: boolean; ready: boolean;
-    avatarId: string; nickName: string; character: string; level: number;
+    avatarId: string; nickName: string; character: string; level: number; careerLeague?: number;
 };
 export type OnlineRoomState = {
     members: OnlineMember[]; isHost: boolean; ready: boolean; busy: boolean;
     canStart: boolean; roomNumber: string; hint: string; mode: RaceDifficulty;
 };
 type Card = { background: Sprite; avatar: Sprite; ring: Sprite; nickname: Label; role: Label;
-    badge: Label; badgeBg: Sprite; plus: Label; empty: Label; member?: OnlineMember; signature: string };
+    badge: Label; badgeBg: Sprite; careerBadge: Sprite; plus: Label; empty: Label; member?: OnlineMember; signature: string };
 
 /** 固定层级，只在房间事件或操作时更新；不参与比赛逐帧更新。坐标来自 1280×720 PSD。 */
 export class OnlineRoomView {
@@ -37,6 +37,7 @@ export class OnlineRoomView {
     private readonly cards: Card[] = [];
     private readonly textureKeys = new Map<Sprite, string>();
     private readonly hostAvatar: Sprite;
+    private readonly hostCareerBadge: Sprite;
     private readonly hostName: Label;
     private readonly hostCharacter: Label;
     private readonly hostLevel: Label;
@@ -81,6 +82,7 @@ export class OnlineRoomView {
         this.picture(p, 'HostPanel', ART.hostPanel, 64, 84, 404, 522);
         this.picture(p, 'MembersPanel', ART.membersPanel, 468, 98, 760, 508);
         this.text(p, 'HostHeading', '房主', 112, 130, 130, 50, 34, false);
+        this.hostCareerBadge = this.picture(p, 'HostCareerBadge', '', 366, 119, 64, 64);
         this.hostAvatar = this.picture(p, 'HostAvatar', '', 116, 201, 112, 112);
         this.hostName = this.text(p, 'HostName', '', 253, 207, 174, 40, 31, false, 'dynamic');
         this.hostCharacter = this.text(p, 'HostCharacter', '', 253, 254, 119, 30, 21, false);
@@ -165,6 +167,7 @@ export class OnlineRoomView {
         assign(this.hostCharacter, host?.character ?? '');
         assign(this.hostLevel, host?.level ? `LV.${host.level}` : '');
         visible(this.hostAvatar.node, !!host);
+        this.updateCareerBadge(this.hostCareerBadge, host?.careerLeague, 64);
         if (host) this.texture(this.hostAvatar, avatarTexturePath(host.avatarId));
         const numericRoom = /^[\x20-\x7e]+$/.test(state.roomNumber);
         visible(this.roomNumber.node, numericRoom);
@@ -208,6 +211,7 @@ export class OnlineRoomView {
         this.text(parent, `SeatNumber${i}`, String(i + 1), x + 10, y + 7, 37, 36, 24, true, 'latin').color = WHITE;
         const ring = this.picture(parent, `AvatarRing${i}`, ART.avatarRing, x + 50, y + 32, 78, 78);
         const avatar = this.picture(parent, `Avatar${i}`, '', x + 53, y + 35, 72, 72);
+        const careerBadge = this.picture(parent, `CareerBadge${i}`, '', x + 128, y + 9, 38, 38);
         const nickname = this.text(parent, `Nickname${i}`, '', x + 15, y + 115, 148, 27, 19, true, 'dynamic');
         const role = this.text(parent, `Character${i}`, '', x + 15, y + 142, 148, 25, 14);
         role.color = MUTED;
@@ -215,7 +219,7 @@ export class OnlineRoomView {
         const badge = this.text(parent, `Status${i}`, '', x + 31, y + 175, 116, 25, 16);
         const plus = this.text(parent, `Plus${i}`, '+', x + 51, y + 60, 76, 78, 54);
         const empty = this.text(parent, `Invite${i}`, '邀请好友', x + 16, y + 146, 146, 32, 19, true, 'regular');
-        const card: Card = { background, avatar, ring, nickname, role, badge, badgeBg, plus, empty, signature: '' };
+        const card: Card = { background, avatar, ring, nickname, role, badge, badgeBg, careerBadge, plus, empty, signature: '' };
         this.touch(parent, `SeatHit${i}`, x + 6, y + 5, 166, 202, () => {
             if (!card.member) { this.closePopup(); this.actions.invite(); return; }
             if (this.state?.busy) return;
@@ -238,6 +242,7 @@ export class OnlineRoomView {
             (card.member.nickName !== member.nickName || card.member.clientId !== member.clientId)) this.closePopup();
         card.signature = signature; card.member = member;
         for (const n of [card.avatar.node, card.ring.node, card.nickname.node, card.role.node, card.badge.node, card.badgeBg.node]) visible(n, !!member);
+        this.updateCareerBadge(card.careerBadge, member?.careerLeague, 38);
         // 空位加号已经是独立于文案的图形，包含在空位底图中。
         visible(card.plus.node, false); visible(card.empty.node, !member);
         this.texture(card.background, !member ? ART.memberEmpty : member.owner ? ART.memberHost : member.ready ? ART.memberReady : ART.memberIdle);
@@ -248,6 +253,12 @@ export class OnlineRoomView {
         assign(card.badge, member.owner ? '房主' : member.ready ? '已准备' : '未准备');
         this.texture(card.badgeBg, member.owner ? ART.badgeHost : member.ready ? ART.badgeReady : ART.badgeIdle);
         tint(card.badge, member.ready && !member.owner ? WHITE : INK);
+    }
+
+    private updateCareerBadge(sprite: Sprite, league: number | undefined, size: number): void {
+        const path = Number.isInteger(league) ? RESOURCE_PATHS.careerUi.badges[league!] : undefined;
+        visible(sprite.node, !!path);
+        if (path) this.texture(sprite, path, size);
     }
 
     private closePopup(): void { visible(this.popup, false); this.popupPos = -1; this.confirmingKick = false; }
@@ -277,11 +288,19 @@ export class OnlineRoomView {
         if (path) this.texture(sprite, path);
         return sprite;
     }
-    private texture(sprite: Sprite, path: string): void {
+    private texture(sprite: Sprite, path: string, containSize?: number): void {
         if (this.textureKeys.get(sprite) === path) return;
         this.textureKeys.set(sprite, path);
         loadAvatarUiSpriteFrame(path, frame => {
-            if (sprite.isValid && frame && this.textureKeys.get(sprite) === path && sprite.spriteFrame !== frame) sprite.spriteFrame = frame;
+            if (!sprite.isValid || !frame || this.textureKeys.get(sprite) !== path) return;
+            if (sprite.spriteFrame !== frame) sprite.spriteFrame = frame;
+            if (containSize) {
+                sprite.trim = false;
+                const scale = containSize / Math.max(frame.rect.width, frame.rect.height);
+                const width = frame.rect.width * scale, height = frame.rect.height * scale;
+                const transform = sprite.node.getComponent(UITransform)!;
+                if (transform.contentSize.width !== width || transform.contentSize.height !== height) transform.setContentSize(width, height);
+            }
         });
     }
     private touch(p: Node, name: string, x: number, y: number, w: number, h: number, fn: () => void): Node {

@@ -4,7 +4,7 @@ var root=File($.fileName).parent.parent.fsName;
 var dest=new Folder(root+'/assets/race/ui/online-room-v1');dest.create();
 var source=app.documents.getByName('划水大师-联机-1280x720-v6-成员已准备.psd');
 function find(parent,name){for(var i=0;i<parent.layers.length;i++){var l=parent.layers[i];if(l.name===name)return l;if(l.typename==='LayerSet'){var f=find(l,name);if(f)return f;}}return null;}
-function clean(group,hide){for(var i=0;i<group.layers.length;i++){var l=group.layers[i];if(l.typename==='ArtLayer'&&l.kind===LayerKind.TEXT)l.visible=false;for(var j=0;j<hide.length;j++)if(hide[j]===l.name)l.visible=false;if(l.typename==='LayerSet')clean(l,hide);}}
+function clean(group,hide){for(var i=0;i<group.layers.length;i++){var l=group.layers[i];if((l.typename==='ArtLayer'&&l.kind===LayerKind.TEXT)||l.name==='当前生涯徽章／运行时替换')l.visible=false;for(var j=0;j<hide.length;j++)if(hide[j]===l.name)l.visible=false;if(l.typename==='LayerSet')clean(l,hide);}}
 function out(name,target,hide,box){
     app.activeDocument=source;var d=source.duplicate('切图临时工作副本');
     for(var i=0;i<d.layers.length;i++)d.layers[i].visible=false;
@@ -16,7 +16,7 @@ function out(name,target,hide,box){
     d.saveAs(new File(dest.fsName+'/'+name+'.png'),new PNGSaveOptions(),true,Extension.LOWERCASE);
     d.close(SaveOptions.DONOTSAVECHANGES);
 }
-out('host-panel','03 房主信息卡',['赛制选择／收起态','房主头像／高清智能对象'],[64,84,468,606]);
+out('host-panel','03 房主信息卡',['赛制选择／收起态','房主头像／高清智能对象','头像金色外环'],[64,84,468,606]);
 out('members-panel','成员区底板／顶边102 底边592',[],[468,98,1228,606]);
 var strip=['玩家头像／可替换高清智能对象','头像浅色背景','头像白色圆框','头像轻阴影','状态底板／无文字'];
 out('member-host','01号成员位／房主',strip,[493,158,671,374]);

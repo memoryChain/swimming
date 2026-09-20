@@ -76,12 +76,17 @@ const cc = { Node, UITransform, Label, Sprite, Button, Graphics, Color, Canvas, 
     sys: { getSafeAreaRect: () => ({ x: safeLeft, y: 0, width: visibleSize.width - safeLeft - safeRight, height: visibleSize.height }) } };
 const net = { isSupported: () => false, setCallbacks: () => {}, broadcast: () => {}, updateReady: async () => {}, isOwner: () => true, getRoomInfo: async () => null, kickMember: async () => {}, leaveRoom: async () => {} };
 const cache = {};
+function previewFrame(p) {
+    const file = path.join(root, 'assets/race', p.replace('/texture', '.png'));
+    const png = fs.existsSync(file) ? fs.readFileSync(file) : null;
+    return { path: p, isValid: true, rect: { width: png ? png.readUInt32BE(16) : 120, height: png ? png.readUInt32BE(20) : 100 } };
+}
 const stubs = {
     'cc': cc,
     'core/GameBalance': require('./helpers/cocos-math-harness.cjs').createHarness().load(path.join(root, 'assets/scripts/core/GameBalance.ts')),
-    'ui/AvatarUiAssets': { avatarTexturePath: id => `avatar/${id}`, loadAvatarUiSpriteFrame: (p, done) => done({ path: p, isValid: true }) },
+    'ui/AvatarUiAssets': { avatarTexturePath: id => `avatar/${id}`, loadAvatarUiSpriteFrame: (p, done) => done(previewFrame(p)) },
     'ui/ProjectUiFonts': { PROJECT_UI_ENGLISH_BOLD_FAMILY: 'Arial Black', styleProjectUiLabel: (label, weight, lineHeight) => { label.weight = weight; label.lineHeight = lineHeight; } },
-    'backend/PlayerData': { PlayerData: { avatarId: 'coral', nickName: '小龟9460' } },
+    'backend/PlayerData': { PlayerData: { avatarId: 'coral', nickName: '小龟9460', profile: { career: { league: 2 } } } },
     'net/NetManager': { netRoom: () => net },
     'net/NetRaceSession': { setNetRaceSession: () => {} },
     'progression/RaceModifiers': { resolveLocalModifierDigest: () => ({ characterId: 'muscleMan', level: 2 }) },
@@ -105,8 +110,8 @@ const { RoomFlow } = load(path.join(root, 'assets/scripts/ui/RoomFlow.ts'));
 const { NET_RACE_PROTOCOL_VERSION } = load(path.join(root, 'assets/scripts/net/NetRaceProtocol.ts'));
 function nodes(n) { return [n, ...n.children.flatMap(nodes)]; }
 function find(n, name) { return nodes(n).find(n => n.name === name); }
-const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2 };
-const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime' };
+const host = { pos: 0, self: false, owner: true, ready: true, avatarId: 'coral', nickName: '小龟9460', character: '肌肉男', level: 2, careerLeague: 0 };
+const guest = { ...host, pos: 2, self: true, owner: false, ready: false, nickName: '海风07', avatarId: 'lime', careerLeague: 3 };
 function state(overrides = {}) { return { members: [host, guest], isHost: false, ready: false, busy: false, canStart: false, roomNumber: '826419', hint: '', mode: 'competitive', ...overrides }; }
 test('宽屏侧栏避让安全区，标题、箭头和点击区域随三角装饰整体适配', () => {
     const { makeScreenEdgeGroup } = load(path.join(root, 'assets/scripts/ui/RuntimeUiFactory.ts'));
@@ -270,6 +275,76 @@ function flow(isHost = false) {
     f._memberProtocolVersions[0] = NET_RACE_PROTOCOL_VERSION; f._memberProtocolVersions[2] = NET_RACE_PROTOCOL_VERSION;
     return f;
 }
+
+test('生涯徽章按成员段位显示，空位和未知段位隐藏，房主迁移局部更新', () => {
+    const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
+    v.update(state());
+    const count = nodes(v.root).length;
+    const sprite = name => find(v.root, name).getComponent(Sprite);
+    assert.match(sprite('HostCareerBadge').spriteFrame.path, /badge-1\/texture$/);
+    assert.match(sprite('CareerBadge2').spriteFrame.path, /badge-4\/texture$/);
+    assert.equal(find(v.root, 'CareerBadge1').active, false);
+    assert.deepEqual(find(v.root, 'HostCareerBadge').getComponent(UITransform).contentSize, { width: 64 * 457 / 512, height: 64 });
+    for (let i = 0; i < 100; i++) {
+        const members = [{ ...host, owner: false, careerLeague: undefined }, { ...guest, owner: true, careerLeague: i % 6 }];
+        v.update(state({ members }));
+        assert.equal(find(v.root, 'CareerBadge0').active, false);
+        assert.equal(sprite('HostCareerBadge').spriteFrame.path, sprite('CareerBadge2').spriteFrame.path);
+    }
+    v.update(state({ members: [] }));
+    assert.equal(find(v.root, 'HostCareerBadge').active, false);
+    assert.equal(find(v.root, 'CareerBadge2').active, false);
+    assert.equal(nodes(v.root).length, count);
+});
+
+test('联机徽章采用各自账号段位，广播重发、异常包、换人和离房均正确处理', () => {
+    const f = flow(false);
+    f.reconcileProtocolRoster();
+    f.render();
+    assert.equal(f._view.state.members.find(m => m.self).careerLeague, 2);
+    assert.equal(f._view.state.members.find(m => m.owner).careerLeague, undefined);
+    f.handleBroadcast('CB|0|5');
+    assert.equal(f._view.state.members.find(m => m.owner).careerLeague, 5);
+    for (const msg of ['CB|0|6', 'CB|0|-1', 'CB|0|1.5', 'CB|0|NaN', 'CB|9|1', 'CB|1|3', 'CB|2|0']) f.handleBroadcast(msg);
+    assert.equal(f._memberCareerLeagues[0], 5);
+    assert.equal(f._memberCareerLeagues[1], undefined);
+    assert.equal(f._view.state.members.find(m => m.self).careerLeague, 2);
+    const old = net.broadcast, sent = [];
+    net.broadcast = msg => sent.push(msg);
+    try {
+        f.broadcastSelfModifiers(); f.broadcastRules();
+        assert.equal(sent.filter(msg => msg === 'CB|2|2').length, 2);
+        f._netReal = false; f.broadcastSelfCareer();
+        assert.equal(sent.filter(msg => msg === 'CB|2|2').length, 2);
+    } finally { net.broadcast = old; }
+    f._members[0] = { ...f._members[0], clientId: 123 };
+    f.reconcileProtocolRoster();
+    assert.equal(f._memberCareerLeagues[0], undefined);
+    f.handleBroadcast('CB|0|1');
+    f._members = f._members.filter(m => m.pos !== 0);
+    f.reconcileProtocolRoster();
+    assert.equal(f._memberCareerLeagues[0], undefined);
+    f._root.destroy();
+});
+
+test('迟到的徽章贴图不覆盖新段位，销毁后不再写回节点', () => {
+    const loader = stubs['ui/AvatarUiAssets'], original = loader.loadAvatarUiSpriteFrame, pending = [];
+    loader.loadAvatarUiSpriteFrame = (path, done) => pending.push({ path, done });
+    try {
+        const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
+        v.update(state());
+        v.update(state({ members: [{ ...host, careerLeague: 5 }] }));
+        const badge = find(v.root, 'HostCareerBadge').getComponent(Sprite);
+        for (const request of pending.filter(r => r.path.includes('badge-6/'))) request.done(previewFrame(request.path));
+        const current = badge.spriteFrame;
+        for (const request of pending.filter(r => r.path.includes('badge-1/'))) request.done(previewFrame(request.path));
+        assert.equal(badge.spriteFrame, current);
+        v.update(state({ members: [{ ...host, careerLeague: 3 }] }));
+        v.root.destroy();
+        for (const request of pending.filter(r => r.path.includes('badge-4/'))) request.done(previewFrame(request.path));
+        assert.equal(badge.spriteFrame, current);
+    } finally { loader.loadAvatarUiSpriteFrame = original; }
+});
 test('八个座位稳定，空座位不挤占，重复准备切换不新增节点和监听', () => {
     const v = new OnlineRoomView(new Node('root'), { exit() {}, primary() {}, invite() {}, mode() {}, kick() {} });
     v.update(state()); const count = nodes(v.root).length;

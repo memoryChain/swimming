@@ -94,6 +94,25 @@ test('隐藏与离开无绘制；取消排队评价；尺寸适配后层级稳�
     a.destroy();assert.equal(s.events.size,0);
 });
 test('资源全部就绪才交付；加载失败明确阻止无图进入',()=>{assert.ok(setup(true).error);});
+
+test('从READY或GO直接进入结算会清空提示、蓄力和待播评价，重开仍可显示READY',()=>{
+    const source=ts.createSourceFile('UIController.ts',fs.readFileSync('assets/scripts/ui/UIController.ts','utf8'),ts.ScriptTarget.Latest,true);
+    const cls=source.statements.find(n=>ts.isClassDeclaration(n)&&n.name.text==='UIController');
+    const methods=cls.members.filter(n=>['showResult','hideCountdown'].includes(n.name?.getText(source)));
+    const Controller=vm.runInNewContext(ts.transpileModule(`class Controller { ${methods.map(m=>m.getText(source)).join('\n')} }; Controller`,
+        {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,{});
+    for(const phase of ['ready','go']) {
+        const s=setup(),a=s.art,controller=new Controller();
+        Object.assign(controller,{raceStartView:a,settlementView:{show(){assert.equal(a.cueRoot.active,false);}},
+            setSpeedBarVisible(){},setRaceStatusVisible(){},hideFinishCountdown(){}});
+        a.showReady();if(phase==='go'){a.showGo();a.showRelease(.95,false);}
+        assert.equal(a.cueRoot.active,true);
+        controller.showResult(true,1,2,{racerCount:8});s.finish();
+        assert.equal(a.cueRoot.active,false);assert.equal(a.chargeRoot.active,false);
+        assert.equal(a.pending,null);assert.equal(a.current,null);
+        a.showReady();assert.equal(a.cueRoot.active,true);assert.equal(a.hint.active,true);
+    }
+});
 test('导出清单尺寸与运行时 PNG、资源路径一致；不包含未选标题',()=>{
     const manifest=JSON.parse(fs.readFileSync('docs/race-start-ui/runtime-export-layout.json','utf8'));
     const paths=fs.readFileSync('assets/scripts/core/ResourcePaths.ts','utf8');

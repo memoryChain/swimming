@@ -14,6 +14,12 @@ def render(n, canvas, x=640, y=360, sx=1, sy=1):
     layer=Image.new('RGBA',canvas.size)
     if w>0 and h>0:
         if n.get('fill'): ImageDraw.Draw(layer).rectangle((left,top,left+w,top+h),fill=tuple(n['fill']))
+        if n.get('shape'):
+            shape=n['shape']; stroke=n.get('strokeWidth',0); d=ImageDraw.Draw(layer)
+            bounds=(round(x+(shape['x']-stroke/2)*sx),round(y-(shape['y']+shape['h']+stroke/2)*sy),
+                    round(x+(shape['x']+shape['w']+stroke/2)*sx),round(y-(shape['y']-stroke/2)*sy))
+            d.rounded_rectangle(bounds,radius=(shape['r']+stroke/2)*sy,fill=tuple(n['shapeFill']),
+                                outline=tuple(n['stroke']) if n.get('stroke') else None,width=max(1,round(stroke*sy)))
         if n.get('asset'):
             file=ROOT/'assets/race'/n['asset'].replace('/texture','.png')
             if not file.exists(): file=file.with_suffix('.jpg')
@@ -38,10 +44,14 @@ def render(n, canvas, x=640, y=360, sx=1, sy=1):
                 f=ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial Black.ttf' if n.get('numberFont') else str(FONT.with_name('ShuiMasterUI-Regular.ttf') if n.get('weight')=='regular' else FONT),fs)
                 if max(f.getlength(t) for t in lines)<=w and len(lines)*n.get('lineHeight',fs+7)<=h+8: break
                 fs-=1
-            d=ImageDraw.Draw(layer); lh=n.get('lineHeight',fs+7); yy=top if n.get('verticalAlign')==0 else top+(h-len(lines)*lh)/2
+            # 对齐Cocos 3.8.8的alphabetic基线；不能把字形顶端放到行框顶端。
+            # 无描边单行居中基线为文本框中心 + 字号×0.37，仍只是离线近似。
+            d=ImageDraw.Draw(layer); lh=n.get('lineHeight',n.get('font',24)+7)*fs/n.get('font',24)
+            yy=top+fs*.87 if n.get('verticalAlign')==0 else top+h/2+fs*.37-(len(lines)-1)*lh/2
+            if n.get('verticalAlign')==2: yy=top+h-fs*.26-(len(lines)-1)*lh
             for line in lines:
                 tw=f.getlength(line); xx=left if n.get('align')==0 else left+w-tw if n.get('align')==2 else left+(w-tw)/2
-                d.text((xx,yy),line,font=f,fill=tuple(n.get('color',[9,25,67])),anchor='lt'); yy+=lh
+                d.text((xx,yy),line,font=f,fill=tuple(n.get('color',[9,25,67])),anchor='ls'); yy+=lh
     for child in n['children']: render(child,layer,x,y,sx,sy)
     if n.get('mask'):
         mask=Image.new('L',canvas.size); ImageDraw.Draw(mask).ellipse((left,top,left+w,top+h),fill=255)

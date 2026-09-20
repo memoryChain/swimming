@@ -34,7 +34,7 @@ import {
     setPlayerSkinTone,
     setSelectedRaceDifficulty,
 } from '../app/PlayerCharacterConfig';
-import { PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
+import { CHARACTER_PREVIEW_RIGHT_SHIFT, PrepareRaceCharacterPreview } from '../app/PrepareRaceCharacterPreview';
 import { getProgressionManager } from '../progression/ProgressionManager';
 import { PROGRESSION_BALANCE } from '../progression/ProgressionBalance';
 import { resolveCharacterDisplayStats } from '../progression/PlayerBalanceOverrides';
@@ -46,7 +46,9 @@ import { showToast } from './Toast';
 import { styleCurrencyNumberLabel, styleProjectUiLabel } from './ProjectUiFonts';
 import { LobbyUiMotion } from './LobbyUiMotion';
 import { CharacterAttributeTips } from './CharacterAttributeTips';
+import { CharacterSkillIcon } from './CharacterSkillIcon';
 import { CareerNavigation, CareerPrototypePanel } from './CareerPrototypePanel';
+import { CareerImage } from './CareerPageWidgets';
 import { setSoloRaceTicket } from '../progression/SoloRaceSession';
 import { setSoloRaceDistance } from '../core/GameBalance';
 import { getUILayer, UILayer } from './UILayers';
@@ -125,6 +127,7 @@ export class PrepareRaceFlow {
     private _motion = new LobbyUiMotion();
     private _leaving = false;
     private _attributeTips: CharacterAttributeTips | null = null;
+    private _skillTips: CharacterAttributeTips | null = null;
     private _hasShownReady = false;
 
     private readonly _raceModeCards: RaceModeCardView[] = [];
@@ -135,10 +138,12 @@ export class PrepareRaceFlow {
     private _readyName: Label | null = null;
     private _readyLevel: Label | null = null;
     private _readyStats: Label[] = [];
-    private _readySkillIcon: Node | null = null;
+    private _readySkillIcon: CharacterSkillIcon | null = null;
     private _readySkillFallback: Label | null = null;
+    private _inspectorSkillIcon: CharacterSkillIcon | null = null;
     private _inspectorName: Label | null = null;
     private _inspectorLevel: Label | null = null;
+    private _characterCareerBadge: CareerImage | null = null;
     private _inspectorCurrentStats: Label[] = [];
     private _inspectorNextStats: Label[] = [];
     private _inspectorSkillName: Label | null = null;
@@ -156,6 +161,7 @@ export class PrepareRaceFlow {
     private _confirmCharacterButton: Node | null = null;
     private _activeCharacterNotice: Node | null = null;
     private _eventPageActive = false;
+    private _eventPageModal = false;
     private _careerPanel: CareerPrototypePanel | null = null;
     private _eventReturn: CareerNavigation | null = null;
 
@@ -166,6 +172,7 @@ export class PrepareRaceFlow {
             this.presentCharacter(getPlayerCharacterSelection().characterId);
             this.refreshReadyCharacterInfo();
         } else {
+            this._characterCareerBadge?.set(RESOURCE_PATHS.careerUi.badges[_profile.career.league]);
             this.refreshCharacterCards();
             this.refreshCharacterInspector();
             this.refreshCharacterConfirmState();
@@ -189,8 +196,8 @@ export class PrepareRaceFlow {
         setNodeActive(this._lobbyBackgroundImage, true);
         this.replaceContent('PrepareRaceReadyContent');
         this.buildReadyScreen(this._content!);
-        if (!this._eventPageActive) this.presentCharacter(getPlayerCharacterSelection().characterId);
-        this._callbacks.onCharacterManagementChanged?.(this._eventPageActive);
+        if (!this._eventPageActive || this._eventPageModal) this.presentCharacter(getPlayerCharacterSelection().characterId);
+        this._callbacks.onCharacterManagementChanged?.(this._eventPageActive && !this._eventPageModal);
         this.layoutPresentation();
         this._motion.enter(this._hasShownReady);
         this._hasShownReady = true;
@@ -216,6 +223,8 @@ export class PrepareRaceFlow {
         this._careerPanel?.dispose(); this._careerPanel = null;
         this._attributeTips?.dispose();
         this._attributeTips = null;
+        this._skillTips?.dispose();
+        this._skillTips = null;
         this._motion.dispose();
         this._leaving = true;
         PlayerData.offChange(this._onProfileChange);
@@ -244,6 +253,7 @@ export class PrepareRaceFlow {
 
     private replaceContent(name: string): void {
         this._attributeTips?.hide();
+        this._skillTips?.hide();
         // 切换页面才替换结构；选择状态变化不进入这里，3D 预览单独保留。
         this._motion.dispose();
         this._motion = new LobbyUiMotion();
@@ -251,6 +261,7 @@ export class PrepareRaceFlow {
         // 页面级切换显式释放赛事页；不等待Cocos延迟destroy回调影响新页面。
         this._careerPanel?.dispose(); this._careerPanel = null;
         this._eventPageActive = false;
+        this._eventPageModal = false;
         setNodeActive(this._previewRoot, true);
         this._content?.destroy();
         this.resetViewReferences();
@@ -262,6 +273,7 @@ export class PrepareRaceFlow {
         if (this._leaving || !this._content?.isValid) return;
         this._leaving = true;
         this._attributeTips?.hide();
+        this._skillTips?.hide();
         this._previewRotateTouchId = null;
         const content = this._content;
         for (const button of content.getComponentsInChildren(Button)) {
@@ -285,8 +297,10 @@ export class PrepareRaceFlow {
         this._readyStats = [];
         this._readySkillIcon = null;
         this._readySkillFallback = null;
+        this._inspectorSkillIcon = null;
         this._inspectorName = null;
         this._inspectorLevel = null;
+        this._characterCareerBadge = null;
         this._inspectorCurrentStats = [];
         this._inspectorNextStats = [];
         this._inspectorSkillName = null;
@@ -340,8 +354,8 @@ export class PrepareRaceFlow {
         this._careerPanel = new CareerPrototypePanel(right,
             () => this.leaveCurrentScreen(this._callbacks.onStartRace),
             () => { setSoloRaceTicket(null); setSoloRaceDistance(null); this.leaveCurrentScreen(this._callbacks.onOpenRoom); },
-            { parent: this._root!, navigation: this._eventReturn,
-                visibility: visible => { if (this._view === 'ready') this.setEventPageVisible(visible); },
+            { parent: this._root!, popupParent: getUILayer(this._canvasNode, UILayer.Popup), navigation: this._eventReturn,
+                visibility: (visible, modal) => { if (this._view === 'ready') this.setEventPageVisible(visible, modal); },
                 characters: navigation => {
                     if (this._leaving) return;
                     this._eventReturn = navigation;
@@ -352,16 +366,20 @@ export class PrepareRaceFlow {
         this.refreshReadyCharacterInfo();
     }
 
-    private setEventPageVisible(visible: boolean): void {
+    private setEventPageVisible(visible: boolean, modal = false): void {
+        const wasFullScreen = this._eventPageActive && !this._eventPageModal;
         this._eventPageActive = visible;
+        this._eventPageModal = visible && modal;
         this._previewRotateTouchId = null;
         this._attributeTips?.hide();
-        setNodeActive(this._content, !visible);
-        setNodeActive(this._previewRoot, !visible);
-        if (!visible && this._view === 'ready' && !this._leaving && this._content?.isValid) {
+        this._skillTips?.hide();
+        const fullScreen = visible && !modal;
+        setNodeActive(this._content, !fullScreen);
+        setNodeActive(this._previewRoot, !fullScreen);
+        if (wasFullScreen && !fullScreen && this._view === 'ready' && !this._leaving && this._content?.isValid) {
             this.presentCharacter(getPlayerCharacterSelection().characterId);
         }
-        this._callbacks.onCharacterManagementChanged?.(visible);
+        this._callbacks.onCharacterManagementChanged?.(fullScreen);
     }
 
     private buildReadyCharacterPanel(parent: Node): void {
@@ -381,13 +399,16 @@ export class PrepareRaceFlow {
         }
         this.bindAttributeTip(parent, -520, 12, 150, 166);
         const skill = makeRaceTextureButton('ReadySkill', parent, RESOURCE_PATHS.lobbyB.skillBase, 74, 74, -539, -129, 3);
-        this._readySkillIcon = makeRaceTextureSprite('BreathIcon', skill, RESOURCE_PATHS.lobbyB.skillBreath, 46, 44, 0, 1, 1);
         this._readySkillFallback = makeBoundLabel('SkillFallback', skill, '技能', 18, WHITE, 58, 30, 0, 0);
         stylePsdTitleLabel(this._readySkillFallback, 24);
+        this._readySkillIcon = new CharacterSkillIcon(skill, 74, this._readySkillFallback.node);
         this._motion.bindButton(skill);
         skill.on(Button.EventType.CLICK, () => {
             const character = findPlayerCharacter();
-            if (!this._leaving && character) showToast(this._canvasNode, `${character.skillName}\n${character.skillDescription}`, { duration: 4 });
+            if (this._leaving || !character || !skill.isValid || !skill.activeInHierarchy) return;
+            this._attributeTips?.hide();
+            if (!this._skillTips) this._skillTips = new CharacterAttributeTips(this._canvasNode, 'skill');
+            this._skillTips.showSkill(skill, character.skillName, character.skillDescription);
         });
         const manageParent = this._motion.group(this._content!, 'LobbyManageMotion', 0, -12, 0.1);
         const manage = makeRaceTextureButton('MyCharactersButton', manageParent, RESOURCE_PATHS.lobbyB.characterButton, 263, 70, -190.5, -275, 3);
@@ -410,6 +431,7 @@ export class PrepareRaceFlow {
         hit.on(Button.EventType.CLICK, () => {
             if (this._leaving || !hit.isValid || !hit.activeInHierarchy) return;
             if (!this._attributeTips) this._attributeTips = new CharacterAttributeTips(this._canvasNode);
+            this._skillTips?.hide();
             this._attributeTips.show(hit);
         });
     }
@@ -425,8 +447,7 @@ export class PrepareRaceFlow {
         for (let index = 0; index < this._readyStats.length; index++) {
             setLabelString(this._readyStats[index], `${values[index]}`);
         }
-        setNodeActive(this._readySkillIcon, character.abilityId === 'breathControl');
-        setNodeActive(this._readySkillFallback?.node ?? null, character.abilityId !== 'breathControl');
+        this._readySkillIcon?.setAbility(character.abilityId);
     }
 
     private buildRaceModeList(parent: Node): void {
@@ -650,6 +671,7 @@ export class PrepareRaceFlow {
         if (this._draftCharacterId === characterId) return;
         const previous = this._draftCharacterId;
         this._attributeTips?.hide();
+        this._skillTips?.hide();
         this._draftCharacterId = characterId;
         this.refreshCharacterCard(previous);
         this.refreshCharacterCard(characterId);
@@ -685,6 +707,9 @@ export class PrepareRaceFlow {
 
     private buildCharacterInspector(parent: Node): void {
         parent = this._motion.group(parent, 'CharacterInspectorMotion', 24);
+        // 账号生涯徽章独立于角色和页签；随右侧栏适配，使用原图比例且不附加文字。
+        this._characterCareerBadge = new CareerImage(parent, 'CharacterCareerBadge',
+            RESOURCE_PATHS.careerUi.badges[PlayerData.profile.career.league], 56, 56, 225, 180, true);
         const panel = makeRaceTextureSprite('CharacterInspector', parent, RESOURCE_PATHS.characterUi.detailPanelBackground, 349, 476, 462.5, 22, 2);
         this._attributeTabArtwork = makeRaceTextureSprite('TabArtworkAttributes', panel, RESOURCE_PATHS.characterUi.tabAttributes, 299, 49, -12, 189.5, 1);
         this._appearanceTabArtwork = makeRaceTextureSprite('TabArtworkAppearance', panel, RESOURCE_PATHS.characterUi.tabAppearance, 299, 49, -12, 189.5, 1);
@@ -736,6 +761,7 @@ export class PrepareRaceFlow {
     private selectInspectorTab(tab: CharacterInspectorTab, force: boolean): void {
         if (!force && this._activeInspectorTab === tab) return;
         this._attributeTips?.hide();
+        this._skillTips?.hide();
         this._activeInspectorTab = tab;
         setNodeActive(this._attributeContent, tab === 'attributes');
         setNodeActive(this._appearanceContent, tab === 'appearance');
@@ -783,9 +809,11 @@ export class PrepareRaceFlow {
         makeRaceTextureSprite('SkillHeader', parent, RESOURCE_PATHS.characterUi.skillHeader, 316, 28, -14.5, -53, 1);
         const skillHeading = makeBoundLabel('SkillHeading', parent, 'SKILL', 16, DARK_TEXT, 76, 24, -119.5, -53, Label.HorizontalAlign.LEFT);
         stylePsdRuntimeLabel(skillHeading, 'Arial Black', true, 20);
-        // Reuse the lobby skill-card texture region so both screens always show
-        // the identical icon and dark circular frame without a duplicate asset.
-        makeRaceTextureRegionSprite('SkillIcon', parent, RESOURCE_PATHS.lobbyUi.skillCard, new Rect(20, 49, 71, 71), 70, 70, -118.5, -122, 2);
+        // 与大厅共用圆底和能力图标，不再裁切旧卡片里固定的肺部图案。
+        const skillBase = makeRaceTextureSprite('SkillBase', parent, RESOURCE_PATHS.lobbyB.skillBase, 70, 70, -118.5, -122, 2);
+        const skillFallback = makeBoundLabel('SkillFallback', skillBase, '技能', 18, WHITE, 58, 30, 0, 0);
+        stylePsdTitleLabel(skillFallback, 24);
+        this._inspectorSkillIcon = new CharacterSkillIcon(skillBase, 70, skillFallback.node);
         this._inspectorSkillName = makeBoundLabel('SkillName', parent, '', 20, DARK_TEXT, 190, 28, 25.5, -102, Label.HorizontalAlign.LEFT);
         stylePsdTitleLabel(this._inspectorSkillName, 27);
         // 两行 20px 行高另留 2px，顶部避开技能名，底部止于升级按钮上沿。
@@ -822,6 +850,7 @@ export class PrepareRaceFlow {
         }
         setLabelString(this._inspectorSkillName, character.skillName);
         setLabelString(this._inspectorSkillDescription, character.skillDescription);
+        this._inspectorSkillIcon?.setAbility(character.abilityId);
         const atMax = level >= PROGRESSION_BALANCE.maxLevel;
         const cost = atMax ? 0 : progression.coinCostForNextLevel(character.id);
         const affordable = !atMax && PlayerData.coins >= cost;
@@ -968,7 +997,7 @@ export class PrepareRaceFlow {
     }
 
     private buildPreviewPresentation(parent: Node): void {
-        const previewX = this._view === 'ready' ? -174 : -45;
+        const previewX = this._view === 'ready' ? -174 : -45 + CHARACTER_PREVIEW_RIGHT_SHIFT;
         const rotateArea = makeUiNode('CharacterRotateArea', parent);
         this._previewRotateArea = rotateArea;
         rotateArea.getComponent(UITransform)!.setContentSize(400, 470);
@@ -995,7 +1024,7 @@ export class PrepareRaceFlow {
             if (this._readyManageButton.position.x !== x) this._readyManageButton.setPosition(x, -275, 3);
         }
         if (this._previewRotateArea?.isValid) {
-            const x = lobby ? -174 * scale : -45;
+            const x = lobby ? -174 * scale : -45 + CHARACTER_PREVIEW_RIGHT_SHIFT;
             if (this._previewRotateArea.position.x !== x) this._previewRotateArea.setPosition(x, -4, 2);
         }
         this._preview?.setHallOffset(lobby);
@@ -1021,7 +1050,7 @@ export class PrepareRaceFlow {
     }
 
     private beginPreviewRotation(event: EventTouch): void {
-        if (!this._leaving && this._previewRotateTouchId === null) this._previewRotateTouchId = event.getID();
+        if (!this._leaving && !this._eventPageActive && this._previewRotateTouchId === null) this._previewRotateTouchId = event.getID();
     }
 
     private updatePreviewRotation(event: EventTouch): void {

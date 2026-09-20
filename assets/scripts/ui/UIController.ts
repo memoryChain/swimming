@@ -507,6 +507,8 @@ export class UIController extends Component {
     }
 
     showResult(isWin: boolean, playerTime: number, aiTime: number, stats?: RaceResultStats) {
+        // 调试结算可从赛前直接进入；不能依赖经过RACING才清除READY、蓄力与待播评价。
+        this.hideCountdown();
         const soloRace = (stats?.racerCount ?? 2) <= 1;
         if (!this.settlementView) this.layoutResultPanelForAwards();
         this.setSpeedBarVisible(false);

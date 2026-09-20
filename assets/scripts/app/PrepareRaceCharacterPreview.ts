@@ -10,6 +10,7 @@ import { findPlayerCharacter, PlayerCharacterId, selectedPlayerColorScheme, sele
 
 const { ccclass } = _decorator;
 const PREVIEW_CHARACTER_SCALE = 1.3;
+export const CHARACTER_PREVIEW_RIGHT_SHIFT = 30;
 const LOBBY_CHARACTER_SCALE = 1.58;
 const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
 // Small lift of the showcase model so the central preview reads slightly higher
@@ -18,6 +19,7 @@ const PREVIEW_CHARACTER_Y_OFFSET = -0.99;
 const PREVIEW_CHARACTER_LIFT = 0.2;
 const PREVIEW_CAMERA_TARGET = new Vec3(0, 0.88, 0);
 const LOBBY_CAMERA_TARGET = new Vec3(0.28, 1.04, 0);
+const PREVIEW_CAMERA_POSITION = new Vec3(3.5, 1.5, 4.6);
 const LOBBY_FRONT_YAW_DEGREES = -37.3;
 const SHADOW_SILHOUETTE_LAYER = 1 << 22;
 const SHADOW_TEXTURE_SIZE = 192;
@@ -47,6 +49,7 @@ export class PrepareRaceCharacterPreview extends Component {
     private _selectedCharacterId = '';
     private _showcaseAction = CharacterAction.ArmStretching;
     private _lobbyPresentation = false;
+    private _hallOffsetEnabled = false;
     private _shadowCaptureEnabled = true;
     private readonly _modelPivot = new Vec3();
     private readonly _modelPivotInRotationRoot = new Vec3();
@@ -69,20 +72,39 @@ export class PrepareRaceCharacterPreview extends Component {
             }
             this._yawDegrees = enabled ? LOBBY_FRONT_YAW_DEGREES : 0;
             this._pivotNode?.setRotationFromEuler(0, this._yawDegrees, 0);
+            // 先以原始位置确定朝向，再沿相机右轴平移；不能对平移后的相机重新朝中心看。
+            this._cameraNode?.setPosition(PREVIEW_CAMERA_POSITION);
             this._cameraNode?.lookAt(enabled ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
+            this.setHallOffset(this._hallOffsetEnabled);
         }
         if (this._shadowCamera) this._shadowCamera.enabled = this._shadowCaptureEnabled;
         if (this._shadowCaptureEnabled && this._rig && !this._shadowCamera) this.ensureShadowCapture();
     }
 
-    /** 大厅 B 版展示台向左排布；只平移视口，不重载角色或重启动作。 */
+    /** 平移取景位置而非负视口，避免后续UI渲染继承偏移与裁剪；不重载角色。 */
     setHallOffset(enabled: boolean): void {
+        this._hallOffsetEnabled = enabled;
         const camera = this._cameraNode?.getComponent(Camera);
         if (!camera) return;
         const size = view.getVisibleSize();
         const scale = Math.max(size.width / 1280, size.height / 720);
-        const x = enabled ? (45 - 174 * scale) / size.width : 0;
-        if (camera.rect.x !== x) camera.rect = new Rect(x, 0, 1, 1);
+        const pixels = enabled ? 45 - 174 * scale : CHARACTER_PREVIEW_RIGHT_SHIFT;
+        const target = this._lobbyPresentation ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET;
+        const dx = PREVIEW_CAMERA_POSITION.x - target.x;
+        const dy = PREVIEW_CAMERA_POSITION.y - target.y;
+        const dz = PREVIEW_CAMERA_POSITION.z - target.z;
+        const depth = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const horizontal = Math.sqrt(dx * dx + dz * dz);
+        const shift = -pixels * 2 * depth * Math.tan(camera.fov * Math.PI / 360) / size.height;
+        const x = PREVIEW_CAMERA_POSITION.x + dz / horizontal * shift;
+        const z = PREVIEW_CAMERA_POSITION.z - dx / horizontal * shift;
+        if (camera.rect.x !== 0 || camera.rect.y !== 0 || camera.rect.width !== 1 || camera.rect.height !== 1) {
+            camera.rect = new Rect(0, 0, 1, 1);
+        }
+        const position = this._cameraNode!.position;
+        if (position.x !== x || position.y !== PREVIEW_CAMERA_POSITION.y || position.z !== z) {
+            this._cameraNode!.setPosition(x, PREVIEW_CAMERA_POSITION.y, z);
+        }
     }
 
     onLoad() {
@@ -208,7 +230,7 @@ export class PrepareRaceCharacterPreview extends Component {
         const cameraNode = new Node('PrepareRacePreviewCamera');
         cameraNode.layer = Layers.Enum.DEFAULT;
         cameraNode.setParent(this.node);
-        cameraNode.setPosition(3.5, 1.5, 4.6);
+        cameraNode.setPosition(PREVIEW_CAMERA_POSITION);
         cameraNode.lookAt(this._lobbyPresentation ? LOBBY_CAMERA_TARGET : PREVIEW_CAMERA_TARGET);
         const camera = cameraNode.addComponent(Camera);
         camera.projection = Camera.ProjectionType.PERSPECTIVE;

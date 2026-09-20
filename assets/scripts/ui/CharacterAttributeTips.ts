@@ -20,37 +20,48 @@ const HEADER_GAP = 20;
 const HEIGHT = PADDING * 2 + TITLE_HEIGHT + HEADER_GAP
     + CHARACTER_ATTRIBUTE_TIPS.length * LINE_HEIGHT * 2
     + (CHARACTER_ATTRIBUTE_TIPS.length - 1) * GROUP_GAP;
+const SKILL_HEIGHT = PADDING * 2 + TITLE_HEIGHT + HEADER_GAP + LINE_HEIGHT * 3;
 const MARGIN = 16;
 const TITLE_COLOR = uiColor(247, 250, 255);
 const BODY_COLOR = uiColor(202, 218, 235);
 
-/** 大厅和角色页共用的属性说明；静态底板只创建一次，三项文案一次建立。 */
+/** 属性与技能共用的说明卡片；底板、文字和监听仅创建一次。 */
 export class CharacterAttributeTips {
     readonly root: Node;
     private readonly panel: Node;
     private readonly dismiss: Node;
+    private readonly height: number;
+    private skillHeading: Label | null = null;
+    private skillSummary: Label | null = null;
     private readonly anchorPoint = new Vec3();
     private readonly screenPoint = new Vec3();
     private readonly overlayWorld = new Vec3();
     private disposed = false;
     private readonly onResize = (): void => this.hide();
 
-    constructor(canvas: Node) {
+    constructor(canvas: Node, mode: 'attributes' | 'skill' = 'attributes') {
+        this.height = mode === 'skill' ? SKILL_HEIGHT : HEIGHT;
         // 单独的 Popup 相机保证 tips 显示在角色 3D 预览上方。
-        this.root = makeUiNode('CharacterAttributeTips', getUILayer(canvas, UILayer.Popup));
+        this.root = makeUiNode(mode === 'skill' ? 'CharacterSkillTips' : 'CharacterAttributeTips', getUILayer(canvas, UILayer.Popup));
         this.dismiss = makeTouchArea('DismissAttributeTips', this.root, 1280, 720);
         this.dismiss.on(Button.EventType.CLICK, () => this.hide());
         // 面板本身消费触摸，阅读时点击文字不会穿透到旋转、升级或开始按钮。
-        this.panel = makeTouchArea('AttributeTipsPanel', this.root, WIDTH, HEIGHT);
+        this.panel = makeTouchArea('AttributeTipsPanel', this.root, WIDTH, this.height);
         // 简单静态形状，不使用拉伸图片、逐帧绘制或装饰特效。
-        makeRoundedRect('CardSurface', this.panel, WIDTH, HEIGHT, uiColor(23, 43, 64, 250), 20,
+        makeRoundedRect('CardSurface', this.panel, WIDTH, this.height, uiColor(23, 43, 64, 250), 20,
             uiColor(105, 146, 168, 180), 1);
-        const titleY = HEIGHT / 2 - PADDING - TITLE_HEIGHT / 2;
-        const title = this.text('AttributeTipsTitle', '属性说明', 24, TITLE_HEIGHT, titleY, true);
+        const titleY = this.height / 2 - PADDING - TITLE_HEIGHT / 2;
+        const title = this.text('AttributeTipsTitle', mode === 'skill' ? '技能说明' : '属性说明', 24, TITLE_HEIGHT, titleY, true);
         title.node.getComponent(UITransform)!.setContentSize(260, TITLE_HEIGHT);
         title.node.setPosition(-26, titleY);
-        const contentTop = HEIGHT / 2 - PADDING - TITLE_HEIGHT - HEADER_GAP;
-        CHARACTER_ATTRIBUTE_TIPS.forEach((info, index) => {
+        const contentTop = this.height / 2 - PADDING - TITLE_HEIGHT - HEADER_GAP;
+        if (mode === 'skill') {
+            this.skillHeading = this.text('SkillTipsHeading', '', 20, LINE_HEIGHT, contentTop - LINE_HEIGHT / 2, true);
+            this.skillHeading.color = uiColor(133, 237, 219);
+            this.skillSummary = this.text('SkillTipsSummary', '', 18, LINE_HEIGHT * 2, contentTop - LINE_HEIGHT * 2, false);
+            this.skillSummary.enableWrapText = true;
+            styleProjectUiLabel(this.skillSummary, 'regular', LINE_HEIGHT);
+        } else CHARACTER_ATTRIBUTE_TIPS.forEach((info, index) => {
             const y = contentTop - LINE_HEIGHT / 2 - index * (LINE_HEIGHT * 2 + GROUP_GAP);
             const heading = this.text(`AttributeTipsHeading${index}`, info.title, 20, LINE_HEIGHT, y, true);
             heading.color = uiColor(133, 237, 219);
@@ -66,6 +77,13 @@ export class CharacterAttributeTips {
         this.root.active = false;
         view.on('canvas-resize', this.onResize);
         view.on('design-resolution-changed', this.onResize);
+    }
+
+    showSkill(anchor: Node, name: string, description: string): void {
+        if (this.disposed || !this.skillHeading || !this.skillSummary) return;
+        if (this.skillHeading.string !== name) this.skillHeading.string = name;
+        if (this.skillSummary.string !== description) this.skillSummary.string = description;
+        this.show(anchor);
     }
 
     show(anchor: Node): void {
@@ -88,7 +106,7 @@ export class CharacterAttributeTips {
         this.root.getComponent(UITransform)!.convertToNodeSpaceAR(this.overlayWorld, this.anchorPoint);
         // 属性区右边缘加面板边距；空间不足时放左侧，避免盖住属性或超出屏幕。
         const xLimit = Math.max(0, size.width / 2 - WIDTH / 2 - MARGIN);
-        const yLimit = Math.max(0, size.height / 2 - HEIGHT / 2 - MARGIN);
+        const yLimit = Math.max(0, size.height / 2 - this.height / 2 - MARGIN);
         let preferredX = this.anchorPoint.x + WIDTH / 2;
         const anchorY = this.anchorPoint.y;
         if (preferredX > xLimit) {

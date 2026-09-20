@@ -15,6 +15,7 @@ import { CareerImage } from './CareerPageWidgets';
 export interface CareerNavigation {
     screen: 'quick' | 'career'; tier: number; source: 'league' | 'cup';
     reviewCupTier: number | null; characterId: string;
+    distance?: 200 | 400; rule?: RaceRule;
 }
 
 /** 大厅生涯入口与赛事导航；数据事件只更新文字和进度，不重建层级。 */
@@ -43,14 +44,16 @@ export class CareerPrototypePanel {
     private buttons: { node: Node; label: Label; action: () => void }[] = [];
     private readonly page: CareerEventPage;
     private pageVisible = false;
+    private pageModal = false;
     private readonly changed = () => { if (this.root.isValid && (this.root.active || this.page.root.active)) this.refresh(); };
 
     constructor(parent: Node, private readonly start: () => void, private readonly friends: () => void,
-        private readonly pageHost?: { parent: Node; visibility: (visible: boolean) => void;
+        private readonly pageHost?: { parent: Node; popupParent?: Node; visibility: (visible: boolean, modal?: boolean) => void;
             characters?: (navigation: CareerNavigation) => void; navigation?: CareerNavigation | null }) {
         const previous = consumeSoloReturn();
         if (previous) {
-            this.screen = previous.source === 'quick' ? 'quick' : 'career';
+            // 快速比赛的“返回大厅”落到大厅；更换角色返回仍由navigation恢复弹窗。
+            this.screen = previous.source === 'quick' ? 'home' : 'career';
             this.source = previous.source === 'cup' ? 'cup' : 'league';
             this.tier = previous.source === 'quick' ? PlayerData.profile.career.league : previous.tier;
             const cup = PlayerData.profile.career.cups[previous.characterId];
@@ -66,6 +69,7 @@ export class CareerPrototypePanel {
             const n = pageHost.navigation;
             this.screen = n.screen; this.tier = n.tier; this.source = n.source;
             this.reviewCupTier = n.reviewCupTier; this.reviewCharacterId = n.characterId;
+            this.distance = n.distance ?? this.distance; this.rule = n.rule ?? this.rule;
         }
         this.root = makeUiNode('CareerPrototype', parent);
         this.root.getComponent(UITransform)!.setContentSize(449, 380);
@@ -113,7 +117,7 @@ export class CareerPrototypePanel {
             tier: value => { if (!this.busy && value >= 0 && value < LEAGUES.length && (this.tier !== value || this.reviewCupTier !== null)) {
                 this.tier = value; this.reviewCupTier = null; this.confirmAbandon = false; this.status = ''; this.refresh();
             } },
-            distance: value => { if (this.distance !== value) { this.distance = value; this.refresh(); } },
+            distance: value => { if (!this.busy && this.distance !== value) { this.distance = value; this.status = ''; this.refresh(); } },
             rule: value => this.setRule(value),
             start: source => { void this.begin(source ?? (this.screen === 'quick' ? 'quick' : 'league')); },
             characters: pageHost?.characters ? () => {
@@ -129,7 +133,7 @@ export class CareerPrototypePanel {
                 if (!this.confirmAbandon) { this.confirmAbandon = true; this.refresh(); }
                 else void this.abandon(getPlayerCharacterSelection().characterId);
             },
-        });
+        }, pageHost?.popupParent);
         PlayerData.onChange(this.changed);
         this.root.once(Node.EventType.NODE_DESTROYED, () => this.dispose());
         this.refresh();
@@ -154,7 +158,8 @@ export class CareerPrototypePanel {
 
     private navigation(): CareerNavigation {
         return { screen: this.screen === 'quick' ? 'quick' : 'career', tier: this.tier, source: this.source,
-            reviewCupTier: this.reviewCupTier, characterId: getPlayerCharacterSelection().characterId };
+            reviewCupTier: this.reviewCupTier, characterId: getPlayerCharacterSelection().characterId,
+            distance: this.distance, rule: this.rule };
     }
     dispose(): void {
         if (this.disposed) return;
@@ -178,7 +183,7 @@ export class CareerPrototypePanel {
         if (this.reviewCharacterId !== id) this.reviewCupTier = null;
         const cp = c.cups[id];
         this.visible.fill(false);
-        if (this.screen === 'home') {
+        if (this.screen !== 'career') {
             this.badge.set(RESOURCE_PATHS.careerUi.badges[c.league]);
             this.write(this.title, LEAGUES[c.league].name);
             this.write(this.nextLeague, c.league < LEAGUES.length - 1
@@ -194,24 +199,26 @@ export class CareerPrototypePanel {
             this.write(this.station, continuing ? roundName(cp.tier, cp.round) : `联赛·第${c.league + 1}站`);
             this.write(this.notice, continuing ? `${cupName(cp.tier)} · ${roundName(cp.tier, cp.round)}待开始`
                 : points < 100 ? `再获${100 - points}积分，开放晋级杯` : '晋级杯已开放，前往挑战');
-        } else {
+        }
+        if (this.screen !== 'home') {
             this.page.refresh({ screen: this.screen, source: this.source, tier: this.tier,
                 characterId: id, distance: this.distance, rule: this.rule, busy: this.busy,
                 confirmAbandon: this.confirmAbandon, status: this.status, profile: p, reviewCupTier: this.reviewCupTier });
         }
         const visible = this.screen !== 'home';
-        if (this.root.active === visible) this.root.active = !visible;
+        const modal = this.screen === 'quick';
+        if (this.root.active !== (this.screen !== 'career')) this.root.active = this.screen !== 'career';
         if (this.page.root.active !== visible) this.page.root.active = visible;
-        if (this.pageVisible !== visible) {
+        if (this.pageVisible !== visible || this.pageModal !== modal) {
             if (!visible) this.page.hide();
-            this.pageVisible = visible; this.pageHost?.visibility(visible);
+            this.pageVisible = visible; this.pageModal = modal; this.pageHost?.visibility(visible, modal);
         }
         for (let i = 0; i < this.buttons.length; i++) {
             if (this.buttons[i].node.active !== this.visible[i]) this.buttons[i].node.active = this.visible[i];
         }
-        if (this.status) this.write(this.notice, this.status);
+        if (this.status && this.screen === 'home') this.write(this.notice, this.status);
     }
-    private setRule(rule: RaceRule): void { if (this.rule !== rule) { this.rule = rule; this.refresh(); } }
+    private setRule(rule: RaceRule): void { if (!this.busy && this.rule !== rule) { this.rule = rule; this.status = ''; this.refresh(); } }
     private async abandon(id: string): Promise<void> {
         if (this.busy || this.disposed) return;
         this.busy = true; this.refresh();

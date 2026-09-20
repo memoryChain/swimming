@@ -1,4 +1,5 @@
 import type { SampledActionId } from '../character/SampledActionMotionCurve';
+import type { CharacterAbilityId } from './CharacterAbilityConfig';
 
 export type SurfaceSwimStyle = 'legacy' | 'freestyle';
 
@@ -441,6 +442,19 @@ export const RESOURCE_PATHS = {
             'ui/career-v1/badge-5-locked/texture', 'ui/career-v1/badge-6-locked/texture',
         ] as const,
     },
+    characterSkillIcons: {
+        frogSense: 'ui/character-skills/frog-sense/texture',
+        frogHop: 'ui/character-skills/frog-hop/texture',
+        powerKick: 'ui/character-skills/power-kick/texture',
+        catBalance: 'ui/character-skills/cat-balance/texture',
+        precision: 'ui/character-skills/precision/texture',
+        breathControl: 'ui/lobby-b/skill-breath/texture',
+        wallKick: 'ui/character-skills/wall-kick/texture',
+        kickDive: 'ui/character-skills/kick-dive/texture',
+        perfectChain: 'ui/character-skills/perfect-chain/texture',
+        exoskeleton: 'ui/character-skills/exoskeleton/texture',
+        heavyBody: 'ui/character-skills/heavy-body/texture',
+    } satisfies Record<Exclude<CharacterAbilityId, 'none'>, string>,
     lobbyB: {
         background: 'ui/lobby-b/background/texture',
         careerCard: 'ui/lobby-b/career-card/texture',

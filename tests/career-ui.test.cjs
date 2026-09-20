@@ -7,8 +7,14 @@ class UIOpacity extends Component { opacity = 255; }
 class Scale { constructor(x=1,y=1,z=1){this.set(x,y,z);} set(x,y,z){this.x=x;this.y=y;this.z=z;return this;} clone(){return new Scale(this.x,this.y,this.z);} }
 class UITransform extends Component { setAnchorPoint(x,y){this.anchorPoint={x,y};} setContentSize(width, height) { this.contentSize = { width, height }; } }
 class Label extends Component { static HorizontalAlign = {LEFT: 0, CENTER: 1, RIGHT: 2}; static VerticalAlign={TOP:0,CENTER:1}; static Overflow = { NONE: 0, SHRINK: 1 }; _string = ''; get string(){return this._string;} set string(value){this._string=value;if(this.overflow===0 && this.node){this.node.getComponent(UITransform).setContentSize(value.length*this.fontSize,this.fontSize+7);for(const fn of this.node.handlers['size-changed']??[])fn();}} }
-class Button extends Component { static EventType = { CLICK: 'click' }; interactable = true; }
+class Button extends Component { static EventType = { CLICK: 'click' }; static Transition = {NONE:0}; interactable = true; }
 class BlockInputEvents extends Component {}
+class Graphics extends Component {
+    clears=0;
+    clear(){this.clears++;this.shape=null;}
+    roundRect(x,y,w,h,r){this.shape={x,y,w,h,r};}
+    fill(){} stroke(){}
+}
 class Mask extends Component {static Type={GRAPHICS_RECT:1,GRAPHICS_ELLIPSE:2};}
 class ScrollView extends Component {enabled=true;stopAutoScroll(){} scrollToOffset(offset,duration){this.offset=offset;this.duration=duration;const h=this.content.getComponent(UITransform).contentSize.height;this.content.setPosition(0,(490-h)/2+offset.y,0);}}
 
@@ -20,6 +26,7 @@ class Node {
     setScale(x,y,z) { this.scale = new Scale(x,y,z); }
     setPosition(x, y, z) { this.position = { x, y, z }; }
     setParent(parent) { this.parent = parent; parent.children.push(this); }
+    setSiblingIndex(index) { const children=this.parent.children;children.splice(children.indexOf(this),1);children.splice(index,0,this); }
     addComponent(C) { const c = new C(); c.node = this; this.components.push(c); return c; }
     getComponent(C) { return this.components.find(c => c instanceof C); }
     getChildByName(name) { return this.children.find(c => c.name === name); }
@@ -49,8 +56,9 @@ function uiFrame(asset,done){const frame=new SpriteFrame();let width=512,height=
 const h = createHarness({ '../core/RaceBundleLoader':{loadRaceAsset(asset,type,done){uiFrame(asset,frame=>done(null,frame.texture));}}, './AvatarUiAssets':{loadAvatarUiSpriteFrame:uiFrame}, './CareerUiArt': {
     careerArt(parent,name,asset,w,h,x=0,y=0,sliced=false){const n = factory.makeRect(name,parent,w,h); n.setPosition(x,y,0); n.asset=asset;n.sliced=sliced;return n;},
     careerButtonFeedback() {}
-}, './RuntimeUiFactory': factory, './ProjectUiFonts': { styleCurrencyNumberLabel(label) { label.currencyNumberFont = true; }, styleProjectUiLabel(label, weight) {
+}, './RuntimeUiFactory': factory, './ProjectUiFonts': { styleCurrencyNumberLabel(label, lineHeight) { label.currencyNumberFont = true; label.lineHeight = lineHeight; }, styleProjectUiLabel(label, weight, lineHeight) {
     label.projectWeight = weight;
+    label.lineHeight = lineHeight;
     if (hotFontCache && label.overflow !== Label.Overflow.SHRINK && !label.string)
         label.node.getComponent(UITransform).setContentSize(0, 0);
 } },
@@ -58,7 +66,7 @@ const h = createHarness({ '../core/RaceBundleLoader':{loadRaceAsset(asset,type,d
     '../platform/PlatformManager': { platform: () => ({ name: 'default', showRewardedAd: async () => adResult === 'pending' ? new Promise(r => { resolveAd = r; }) : adResult }) },
     '../platform/AdConfig': { rewardedAdUnitId: () => '测试广告位' },
 });
-Object.assign(h.cc, { Vec2: class { constructor(x,y){this.x=x;this.y=y;} }, ScrollView, Mask, view: {on(){},off(){},getVisibleSize(){return {width:1280,height:720};}}, UIOpacity, tween: target => { let props; const t = {to(seconds,p){props=p;return t;},start(){Object.assign(target,props);return t;},stop(){}};return t;}, Node, Button, Label, Sprite, SpriteFrame, UITransform, BlockInputEvents, sys: { getSafeAreaRect(){return {x:0,y:0,width:1280,height:720};}, localStorage: { getItem: () => null } } });
+Object.assign(h.cc, { Vec2: class { constructor(x,y){this.x=x;this.y=y;} }, ScrollView, Mask, Graphics, view: {on(){},off(){},getVisibleSize(){return {width:1280,height:720};},getVisibleOrigin(){return {x:0,y:0};}}, UIOpacity, tween: target => { let props; const t = {to(seconds,p){props=p;return t;},start(){Object.assign(target,props);return t;},stop(){}};return t;}, Node, Button, Label, Sprite, SpriteFrame, UITransform, BlockInputEvents, sys: { getSafeAreaRect(){return {x:0,y:0,width:1280,height:720};}, localStorage: { getItem: () => null } } });
 const load = name => h.load(path.join(h.root, 'assets/scripts', name + '.ts'));
 const profile = load('backend/PlayerProfile');
 const rules = load('progression/CareerRules');
@@ -79,13 +87,124 @@ test('快速比赛仅两组选择，反复切换节点与监听稳定，重复�
     for (let i = 0; i < 30; i++) for (const name of ['Distance200', 'Distance400', 'RuleStandard', 'RuleWild']) find(panel.page.root, name).click();
     assert.equal(descendants(root).length, before); assert.equal(listeners.size, 1);
     assert.equal(panel.distance, 400); assert.equal(panel.rule, 'wild');
-    assert.ok(textOf(panel.page.root, 'QuickNotes').indexOf('自动匹配') >= 0);
+    assert.equal(find(panel.page.root, 'QuickNotes'), undefined);
+    assert.equal(find(panel.page.root, 'QuickRules'), undefined);
+    assert.equal(find(panel.page.root, 'Background').active, false);
+    assert.equal(find(panel.page.root, 'CareerHeader').active, false);
     for (const n of descendants(root)) if (n.handlers.click) assert.equal(n.handlers.click.length, 1);
     find(panel.page.root, 'StartEvent').click(); find(panel.page.root, 'StartEvent').click();
+    find(panel.page.root, 'Distance200').click(); find(panel.page.root, 'CloseQuick').click();
+    assert.equal(panel.distance,400);assert.equal(panel.screen,'quick');
     await tick(); assert.equal(starts, 1); assert.equal(store.profile.career.pending.distance, 400);
     find(panel.page.root, 'StartEvent').click(); await tick();
     assert.equal(starts, 1, '退场加载期间不能恢复开赛按钮');
     root.destroy(); assert.equal(listeners.size, 0);
+});
+
+test('快速弹窗覆盖独立弹窗层，关闭保持大厅与选择，底部按钮有充足间距', () => {
+    reset(); const host=new Node('页面层'), popup=new Node('弹窗层'), events=[];
+    const panel=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,popupParent:popup,
+        visibility:(visible,modal)=>events.push([visible,modal])});
+    panel.openQuick();const quick=find(popup,'QuickRacePopup');
+    assert.equal(quick.active,true);assert.equal(panel.root.active,true);
+    assert.deepEqual(events.at(-1),[true,true]);
+    assert.ok(find(quick,'QuickBackdrop').getComponent(BlockInputEvents));
+    assert.ok(find(quick,'QuickSheet').getComponent(BlockInputEvents));
+    const option=find(quick,'RuleWild'),start=find(quick,'StartEvent');
+    const gap=option.position.y-option.getComponent(UITransform).contentSize.height/2
+        -(start.position.y+start.getComponent(UITransform).contentSize.height/2);
+    assert.ok(gap>=44,`玩法与开赛按钮间距${gap}`);
+    for(const name of ['Distance200','RuleWild']) {
+        assert.equal(find(quick,name+'Check').active,true);
+        assert.deepEqual(find(quick,name+'Surface').getComponent(Graphics).strokeColor.values,[43,183,73]);
+    }
+    const surfaces=['Distance200','Distance400','RuleStandard','RuleWild'].map(name=>find(quick,name+'Surface').getComponent(Graphics));
+    const redraws=surfaces.map(g=>g.clears);
+    for(let i=0;i<20;i++)find(quick,'Distance200').click();
+    assert.deepEqual(surfaces.map(g=>g.clears),redraws,'重复选择不得重绘');
+    for(const g of surfaces) {
+        assert.equal(g.lineWidth,3);assert.equal(g.shape.r,12);
+        assert.equal(g.shape.w+g.lineWidth,360);assert.equal(g.shape.h+g.lineWidth,66);
+    }
+    assert.equal(find(quick,'DistanceMarker').getComponent(Graphics).shape.r,4);
+    assert.ok(!descendants(quick).some(n=>n.name.endsWith('Subtitle')));
+    const sheetSize=find(quick,'QuickSheet').getComponent(UITransform).contentSize;
+    assert.ok(sheetSize.width<938);assert.ok(Math.abs(sheetSize.width/sheetSize.height-696/436)<0.002);
+    find(quick,'Distance400').click();find(quick,'RuleStandard').click();
+    assert.equal(find(quick,'Distance200Check').active,false);
+    assert.equal(find(quick,'RuleWildCheck').active,false);
+    find(quick,'QuickBackdrop').click();
+    assert.equal(quick.active,false);assert.equal(panel.root.active,true);assert.deepEqual(events.at(-1),[false,false]);
+    panel.openQuick();assert.equal(panel.distance,400);assert.equal(panel.rule,'standard');
+    find(quick,'CloseQuick').click();assert.equal(panel.screen,'home');
+    panel.dispose();panel.dispose();assert.equal(popup.children.length,0);
+    host.destroy();popup.destroy();assert.equal(listeners.size,0);
+});
+
+test('更换角色恢复快速弹窗，赛后返回大厅不弹窗，再次打开保留配置', () => {
+    reset();const host=new Node('页面层');let navigation;
+    const panel=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,visibility(){},characters:n=>navigation=n});
+    panel.openQuick();find(panel.page.root,'Distance400').click();find(panel.page.root,'RuleStandard').click();
+    find(panel.page.root,'QuickChangeCharacter').click();
+    assert.equal(navigation.screen,'quick');assert.equal(navigation.distance,400);assert.equal(navigation.rule,'standard');
+    panel.dispose();panel.root.destroy();chars.selectPlayerCharacter(ids[1]);store.profile.characters[ids[1]].level=7;
+    const next=new CareerPrototypePanel(host,()=>{},()=>{},{parent:host,visibility(){},characters(){},navigation});
+    assert.equal(next.screen,'quick');assert.equal(next.distance,400);assert.equal(next.rule,'standard');
+    assert.equal(textOf(next.page.root,'QuickCharacterName'),chars.findPlayerCharacter(ids[1]).name);
+    assert.equal(textOf(next.page.root,'QuickLevel'),'LV.7');
+    const name=find(next.page.root,'QuickCharacterName');
+    name.getComponent(UITransform).setContentSize(150,44);name.handlers['size-changed'].forEach(f=>f());
+    assert.equal(find(next.page.root,'QuickLevelPill').position.x,475+150+12+35-640);
+    next.dispose();next.root.destroy();
+    const session=load('progression/SoloRaceSession');
+    store.profile.career.quick={distance:400,rule:'standard'};
+    session.setSoloRaceTicket({id:'quick-return',source:'quick',tier:0,characterId:ids[1]});session.markSoloReturn();
+    const popup=new Node('独立弹窗层'),events=[];
+    const returned=new CareerPrototypePanel(host,()=>{},()=>{},
+        {parent:host,popupParent:popup,visibility:(visible,modal)=>events.push([visible,modal])});
+    assert.equal(returned.screen,'home');assert.equal(returned.root.active,true);
+    assert.equal(returned.page.root.active,false);assert.equal(find(popup,'QuickRacePopup').active,false);
+    assert.ok(!events.some(([visible])=>visible));assert.equal(session.consumeSoloReturn(),null);
+    returned.refresh();assert.equal(find(popup,'QuickRacePopup').active,false);
+    returned.openQuick();
+    assert.equal(find(popup,'QuickRacePopup').active,true);
+    assert.equal(returned.distance,400);assert.equal(returned.rule,'standard');
+    assert.equal(find(popup,'Distance400Check').active,true);assert.equal(find(popup,'RuleStandardCheck').active,true);
+    host.destroy();popup.destroy();session.setSoloRaceTicket(null);assert.equal(listeners.size,0);
+});
+
+test('快速比赛保存失败显示就地错误并恢复操作，窄屏安全区不裁切弹窗', async () => {
+    reset();const host=new Node('页面层'),panel=new CareerPrototypePanel(host,()=>assert.fail('失败不能开赛'),()=>{});
+    panel.openQuick();find(panel.page.root,'Distance400').click();
+    const execute=store.executeCareer;store.executeCareer=async()=>{throw new Error('存储失败');};
+    const oldSize=h.cc.view.getVisibleSize,oldSafe=h.cc.sys.getSafeAreaRect;
+    try {
+        find(panel.page.root,'StartEvent').click();await tick();
+        assert.match(textOf(panel.page.root,'QuickStatus'),/保存失败/);
+        assert.equal(find(panel.page.root,'StartEvent').getComponent(Button).interactable,true);
+        assert.equal(find(panel.page.root,'CloseQuick').getComponent(Button).interactable,true);
+        assert.equal(panel.distance,400);
+        for(const width of [960,1290,1600]) {
+            h.cc.view.getVisibleSize=()=>({width,height:720});
+            h.cc.sys.getSafeAreaRect=()=>({x:30,y:10,width:width-60,height:700});
+            panel.page.quick.resize();const design=find(panel.page.root,'QuickDesign');
+            assert.ok(1290*design.scale.x<=width-60);assert.ok(720*design.scale.y<=700);
+        }
+    } finally {store.executeCareer=execute;h.cc.view.getVisibleSize=oldSize;h.cc.sys.getSafeAreaRect=oldSafe;host.destroy();}
+});
+
+test('可视区域原点非零时快速弹窗仍居中，安全区只改变可用尺度',()=>{
+    reset();const host=new Node('页面层'),panel=new CareerPrototypePanel(host,()=>{},()=>{});panel.openQuick();
+    const oldSize=h.cc.view.getVisibleSize,oldSafe=h.cc.sys.getSafeAreaRect,oldOrigin=h.cc.view.getVisibleOrigin;
+    try{
+        h.cc.view.getVisibleSize=()=>({width:1600,height:720});
+        for(const origin of [-160,0,160]) {
+            h.cc.view.getVisibleOrigin=()=>({x:origin,y:20});
+            h.cc.sys.getSafeAreaRect=()=>({x:origin+40,y:20,width:1520,height:720});
+            panel.page.quick.resize();const design=find(panel.page.root,'QuickDesign');
+            assert.equal(design.position.x,0);assert.equal(design.position.y,0);assert.equal(design.scale.x,1);
+        }
+    }finally{h.cc.view.getVisibleSize=oldSize;h.cc.sys.getSafeAreaRect=oldSafe;h.cc.view.getVisibleOrigin=oldOrigin;host.destroy();}
 });
 
 test('横向六级路线默认选中当前联赛，重复切换不重建节点或监听', () => {
@@ -94,6 +213,9 @@ test('横向六级路线默认选中当前联赛，重复切换不重建节点�
     panel.root.getChildByName('Action0').click();const page=panel.page.root;
     assert.equal(find(page,'LeagueTab'),undefined);assert.equal(find(page,'CupTab'),undefined);
     assert.equal(panel.tier,3);assert.equal(textOf(page,'LeaguePoints'),'64');
+    assert.equal(find(page,'LeagueSelection3').active,true);
+    assert.equal(find(page,'LeagueSelection1').active,false);
+    assert.deepEqual(find(find(page,'LeagueTier3'),'Label').getComponent(Label).color.values,[9,25,67]);
     assert.equal(find(page,'CareerMap').getComponent(ScrollView),undefined);
     const before=descendants(root).length;
     for(let i=0;i<20;i++) {find(page,'LeagueTier1').click();find(page,'LeagueTier3').click();}
@@ -140,7 +262,7 @@ if (process.env.CAREER_LAYOUT_EXPORT) {
     const fs=require('node:fs'); reset();const host=new Node('Root');
     const panel=new CareerPrototypePanel(host,()=>{},()=>{});
     const serial=n=>({name:n.name,active:n.active,position:n.position,scale:n.scale,size:n.getComponent(UITransform)?.contentSize,
-        anchor:n.getComponent(UITransform)?.anchorPoint,fill:n.fill?.values,asset:n.asset,inset:n.getComponent(Sprite)?.spriteFrame?.insetLeft,sliced:n.getComponent(Sprite)?.type===Sprite.Type.SLICED||n.sliced,
+        shape:n.getComponent(Graphics)?.shape,stroke:n.getComponent(Graphics)?.strokeColor?.values,strokeWidth:n.getComponent(Graphics)?.lineWidth,shapeFill:n.getComponent(Graphics)?.fillColor?.values,anchor:n.getComponent(UITransform)?.anchorPoint,fill:n.fill?.values,asset:n.asset,inset:n.getComponent(Sprite)?.spriteFrame?.insetLeft,sliced:n.getComponent(Sprite)?.type===Sprite.Type.SLICED||n.sliced,
         text:n.getComponent(Label)?.string,font:n.getComponent(Label)?.fontSize,weight:n.getComponent(Label)?.projectWeight,lineHeight:n.getComponent(Label)?.lineHeight,verticalAlign:n.getComponent(Label)?.verticalAlign,numberFont:n.getComponent(Label)?.currencyNumberFont,color:n.getComponent(Label)?.color?.values,align:n.getComponent(Label)?.horizontalAlign,tint:n.getComponent(Sprite)?.color?.values,mask:!!n.getComponent(Mask),children:n.children.map(serial)});
     const scenes={lobby:serial(panel.root)};
     panel.root.getChildByName('Action0').click();scenes.league=serial(panel.page.root);store.profile.career.points=20;panel.refresh();scenes.points20=serial(panel.page.root);store.profile.career.points=0;panel.refresh();
@@ -149,6 +271,11 @@ if (process.env.CAREER_LAYOUT_EXPORT) {
     store.profile.career.cups[ids[0]]={id:'preview',tier:3,round:1,seed:3,state:'active',coins:240};
     panel.tier=3;panel.refresh();scenes.cup=serial(panel.page.root);
     find(panel.page.root,'RulesButton').click();scenes.rules=serial(panel.page.root);panel.page.hide();store.profile.career.league=5;panel.tier=5;store.profile.career.cups[ids[0]]={id:'max',tier:5,round:2,seed:3,state:'won',coins:240};panel.refresh();scenes.max=serial(panel.page.root);
+    panel.openQuick();
+    const originalSize=h.cc.view.getVisibleSize,originalSafe=h.cc.sys.getSafeAreaRect;
+    h.cc.view.getVisibleSize=()=>({width:1290,height:720});h.cc.sys.getSafeAreaRect=()=>({x:0,y:0,width:1290,height:720});
+    panel.page.quick.resize();scenes.quick=serial(panel.page.root);
+    h.cc.view.getVisibleSize=originalSize;h.cc.sys.getSafeAreaRect=originalSafe;
     fs.writeFileSync(process.env.CAREER_LAYOUT_EXPORT,JSON.stringify(scenes));host.destroy();
 }
 
@@ -364,7 +491,7 @@ test('头像不拉伸、名称变宽后等级跟随，徽章居中并逐级增�
         const current=badge.getComponent(UITransform).contentSize.height*badge.scale.y;
         assert.ok(current>height);height=current;
         assert.equal(badge.position.x,191.5-640);
-        assert.ok(Math.abs(badge.position.y-current/2-(360-(i===0?462:487)))<1e-6);
+        assert.ok(Math.abs(badge.position.y-current/2-(360-(i===0?437:462)))<1e-6);
     }
     root.destroy();
 });

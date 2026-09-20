@@ -9,6 +9,7 @@
 // return-to-room after finishing) is phase 2B and needs on-device testing.
 
 import { Node } from 'cc';
+import { LEAGUES } from '../progression/CareerRules';
 import { OnlineRoomView, OnlineMember, ROOM_MODES } from './OnlineRoomView';
 import { RaceDifficulty, setRaceDifficulty } from '../core/GameBalance';
 import { PLAYER_CHARACTER_DEFINITIONS, getSelectedRaceDifficulty } from '../app/PlayerCharacterConfig';
@@ -78,6 +79,7 @@ export class RoomFlow {
     // Peers' 养成 digests collected from the lobby broadcast channel, keyed by seat
     // (posNum). memberExtInfo is only 32 bytes (too small for a modifier blob), so each
     // client broadcasts its tiny digest instead; consumed into the session at start.
+    private readonly _memberCareerLeagues: Record<number, number> = {};
     private readonly _memberModifiers: Record<number, string> = {};
     private readonly _memberProtocolVersions: Record<number, number> = {};
     private readonly _memberProtocolFingerprints: Record<number, string> = {};
@@ -298,6 +300,7 @@ export class RoomFlow {
         if (!this._netReal || this._localPos < 0) {
             return;
         }
+        this.broadcastSelfCareer();
         this._memberProtocolVersions[this._localPos] = NET_RACE_PROTOCOL_VERSION;
         netRoom().broadcast(encodeProtocolHello(this._localPos));
         const payload = this.storeSelfModifiers();
@@ -305,6 +308,22 @@ export class RoomFlow {
             return;
         }
         netRoom().broadcast(`MOD|${this._localPos}|${payload}`);
+    }
+
+    // 徽章仅供房间展示，独立于比赛养成摘要；复用房间定时器补偿广播丢包。
+    private broadcastSelfCareer(): void {
+        if (!this._netReal || this._localPos < 0) return;
+        netRoom().broadcast(`CB|${this._localPos}|${PlayerData.profile.career.league}`);
+    }
+
+    private collectMemberCareer(msg: string): void {
+        const match = /^CB\|([0-7])\|(\d+)$/.exec(msg);
+        if (!match) return;
+        const pos = Number(match[1]), league = Number(match[2]);
+        if (pos === this._localPos || !this._members.some(m => m.pos === pos)
+            || league >= LEAGUES.length || this._memberCareerLeagues[pos] === league) return;
+        this._memberCareerLeagues[pos] = league;
+        this.render();
     }
 
     // Ask every modern peer to repeat its PV| declaration. This is used only when
@@ -362,10 +381,11 @@ export class RoomFlow {
                 continue;
             }
             active[member.pos] = true;
-            const fingerprint = `${member.avatarId}|${member.nickName}`;
+            const fingerprint = `${member.clientId ?? ''}|${member.avatarId}|${member.nickName}`;
             if (this._memberProtocolFingerprints[member.pos] !== fingerprint) {
                 delete this._memberProtocolVersions[member.pos];
                 delete this._memberModifiers[member.pos];
+                delete this._memberCareerLeagues[member.pos];
                 delete this._ruleReady[member.pos];
                 delete this._ruleReadyVersions[member.pos];
                 this._memberProtocolFingerprints[member.pos] = fingerprint;
@@ -385,6 +405,7 @@ export class RoomFlow {
             if (!active[pos]) {
                 delete this._memberProtocolFingerprints[pos];
                 delete this._memberModifiers[pos];
+                delete this._memberCareerLeagues[pos];
                 delete this._ruleReady[pos];
                 delete this._ruleReadyVersions[pos];
             }
@@ -547,6 +568,7 @@ export class RoomFlow {
                 ...m, pos: m.pos < 0 ? 0 : m.pos,
                 ready: m.owner || (m.self ? this._localReady : m.ready),
                 character: character ?? '角色同步中…', level: digest?.level ?? 0,
+                careerLeague: m.self ? PlayerData.profile.career.league : this._memberCareerLeagues[m.pos],
             };
         });
         const canStart = !this._netReal || (this.allMembersReady() && this.protocolCompatible());
@@ -631,6 +653,7 @@ export class RoomFlow {
 
     private broadcastRules() {
         if (!this._netReal || !this._accessInfo || this._localPos < 0) return;
+        this.broadcastSelfCareer();
         if (this._isHost) {
             if (!this._rulesId) this._rulesId = String(Date.now());
             netRoom().broadcast(JSON.stringify({ t: 'rules', owner: this._localPos, id: this._rulesId, rev: this._rulesRevision, mode: this._mode }));
@@ -811,6 +834,7 @@ export class RoomFlow {
     // 首局房主和成员都需调用 startGame；重赛继续复用已有会话，不再次调用。
     private handleBroadcast(msg: string) {
         if (!this._root?.isValid || this._roomUnavailable || this._raceEntered || this._leaving) return;
+        if (msg.startsWith('CB|')) { this.collectMemberCareer(msg); return; }
         const protocolRequest = decodeProtocolRequest(msg);
         if (protocolRequest) {
             // RoomFlow owns callbacks only while this client is in the lobby. A

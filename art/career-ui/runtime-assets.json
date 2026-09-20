@@ -34,7 +34,7 @@
       ]
     },
     {
-      "source": "art/career-badges/transparent-png-v1/career-badge-02.png",
+      "source": "art/career-badges/edge-fix-02/career-badge-02-edge-fixed.png",
       "output": "assets/race/ui/career-v1/badge-2.png",
       "sourceCrop": [
         70,
