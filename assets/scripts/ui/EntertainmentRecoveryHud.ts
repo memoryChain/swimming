@@ -23,9 +23,14 @@ const EMERGENCY_CARD_OVERSHOOT_X = 12;
 const EMERGENCY_CARD_EXIT_SECONDS = 0.17;
 const EMERGENCY_CARD_EXIT_X = 140;
 const EMERGENCY_PROGRESS_WIDTH = 420;
-const EMERGENCY_PROGRESS_X = 88;
+const EMERGENCY_PROGRESS_HEIGHT = 8;
+const EMERGENCY_PROGRESS_RADIUS = 4;
+const EMERGENCY_PROGRESS_X = 64;
 const EMERGENCY_PROGRESS_Y = -112;
 const EMERGENCY_PROGRESS_STEPS = 100;
+const EMERGENCY_PROGRESS_DANGER = new Color(238, 67, 49, 255);
+const EMERGENCY_PROGRESS_STABLE = new Color(255, 196, 52, 255);
+const EMERGENCY_PROGRESS_READY = new Color(72, 210, 105, 255);
 const INVULNERABLE_ENTER_SECONDS = 0.16;
 const INVULNERABLE_SETTLE_SECONDS = 0.08;
 const INVULNERABLE_TEXT = new Color(116, 236, 255, 255);
@@ -45,6 +50,8 @@ export class EntertainmentRecoveryHud {
     private readonly emergencyLabelNode: Node;
     private readonly emergencyDotsLabel: Label;
     private readonly emergencyProgressFill: Node;
+    private readonly emergencyProgressFillGraphics: Graphics;
+    private readonly emergencyProgressColor = new Color(EMERGENCY_PROGRESS_DANGER);
     private readonly statusRoot: Node;
     private readonly statusOpacity: UIOpacity;
     private readonly statusLabel: Label;
@@ -137,9 +144,10 @@ export class EntertainmentRecoveryHud {
         progressTrack.setPosition(EMERGENCY_PROGRESS_X, EMERGENCY_PROGRESS_Y, 1);
         this.emergencyProgressFill = makeRoundedRect(
             'EmergencyProgressFill', progressTrack,
-            EMERGENCY_PROGRESS_WIDTH, 8,
-            uiColor(255, 116, 52, 255), 4,
+            EMERGENCY_PROGRESS_WIDTH, EMERGENCY_PROGRESS_HEIGHT,
+            EMERGENCY_PROGRESS_DANGER, EMERGENCY_PROGRESS_RADIUS,
         );
+        this.emergencyProgressFillGraphics = this.emergencyProgressFill.getComponent(Graphics)!;
         this.setEmergencyProgressStep(0);
 
         this.statusRoot = makeRoundedRect(
@@ -336,6 +344,29 @@ export class EntertainmentRecoveryHud {
         const x = -EMERGENCY_PROGRESS_WIDTH * 0.5 + EMERGENCY_PROGRESS_WIDTH * ratio * 0.5;
         this.emergencyProgressFill.setPosition(x, 0, 1);
         this.emergencyProgressFill.setScale(ratio, 1, 1);
+        this.updateEmergencyProgressColor(ratio);
+    }
+
+    private updateEmergencyProgressColor(ratio: number): void {
+        const from = ratio < 0.5 ? EMERGENCY_PROGRESS_DANGER : EMERGENCY_PROGRESS_STABLE;
+        const to = ratio < 0.5 ? EMERGENCY_PROGRESS_STABLE : EMERGENCY_PROGRESS_READY;
+        const segmentRatio = ratio < 0.5 ? ratio * 2 : (ratio - 0.5) * 2;
+        this.emergencyProgressColor.set(
+            Math.round(from.r + (to.r - from.r) * segmentRatio),
+            Math.round(from.g + (to.g - from.g) * segmentRatio),
+            Math.round(from.b + (to.b - from.b) * segmentRatio),
+            255,
+        );
+        this.emergencyProgressFillGraphics.clear();
+        this.emergencyProgressFillGraphics.fillColor = this.emergencyProgressColor;
+        this.emergencyProgressFillGraphics.roundRect(
+            -EMERGENCY_PROGRESS_WIDTH * 0.5,
+            -EMERGENCY_PROGRESS_HEIGHT * 0.5,
+            EMERGENCY_PROGRESS_WIDTH,
+            EMERGENCY_PROGRESS_HEIGHT,
+            EMERGENCY_PROGRESS_RADIUS,
+        );
+        this.emergencyProgressFillGraphics.fill();
     }
 
     private playInvulnerabilityEntry(): void {

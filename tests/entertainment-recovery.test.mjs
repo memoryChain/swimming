@@ -148,9 +148,17 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /position: new Vec3\(EMERGENCY_CARD_EXIT_X, 18, 0\)/);
     assert.match(hud, /EmergencyProgressTrack/);
     assert.match(hud, /EmergencyProgressFill/);
+    assert.match(hud, /EMERGENCY_PROGRESS_X = 64/);
+    assert.match(hud, /EMERGENCY_PROGRESS_DANGER = new Color\(238, 67, 49, 255\)/);
+    assert.match(hud, /EMERGENCY_PROGRESS_STABLE = new Color\(255, 196, 52, 255\)/);
+    assert.match(hud, /EMERGENCY_PROGRESS_READY = new Color\(72, 210, 105, 255\)/);
     assert.match(hud, /updateEmergencyProgress\(dt, remainingSeconds\)/);
     assert.match(hud, /ENTERTAINMENT_RECOVERY_TUNING\.knockedSeconds/);
     assert.match(hud, /setEmergencyProgressStep\(Math\.round\(progress \* EMERGENCY_PROGRESS_STEPS\)\)/);
+    assert.match(hud, /private updateEmergencyProgressColor\(ratio: number\)/);
+    assert.match(hud, /ratio < 0\.5 \? EMERGENCY_PROGRESS_DANGER : EMERGENCY_PROGRESS_STABLE/);
+    assert.match(hud, /ratio < 0\.5 \? EMERGENCY_PROGRESS_STABLE : EMERGENCY_PROGRESS_READY/);
+    assert.match(hud, /this\.emergencyProgressFillGraphics\.clear\(\)/);
     assert.match(hud, /this\.inputBlocker\.enabled = false;[\s\S]*?this\.playInvulnerabilityEntry\(\)/);
     assert.match(hud, /INVULNERABLE_ENTER_SECONDS/);
     assert.doesNotMatch(hud, /startEmergencyBreathing|repeatForever/);
