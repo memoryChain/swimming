@@ -42,6 +42,7 @@ export class MineRelayBrawlPresentation {
     private readonly attachLocalPosition = new Vec3(ATTACH_X, ATTACH_Y, ATTACH_Z);
     private readonly throwTargetWorldPosition = new Vec3();
     private readonly resolutionWorldPosition = new Vec3();
+    private readonly explosionCoreWorldPosition = new Vec3();
 
     constructor(
         private readonly worldRoot: Node,
@@ -125,8 +126,11 @@ export class MineRelayBrawlPresentation {
     showResolution(exploded: boolean, worldPosition: Readonly<Vec3> | null): void {
         if (this.disposed) return;
         const resolvedRoundId = this.activeRoundId;
+        const hasVisibleBomb = !!exploded && !!this.mineRoot?.isValid && this.mineRoot.active;
+        if (hasVisibleBomb) this.mineRoot!.getWorldPosition(this.explosionCoreWorldPosition);
         this.detachMine();
         if (!exploded || !worldPosition) return;
+        if (!hasVisibleBomb) this.explosionCoreWorldPosition.set(worldPosition);
         this.resolutionWorldPosition.set(worldPosition.x, this.course.waterY + 0.035, worldPosition.z);
         this.waterSplashes?.play({
             owner: ENTERTAINMENT_SPLASH_OWNER.TIMED_BOMB,
@@ -135,6 +139,7 @@ export class MineRelayBrawlPresentation {
             yawDegrees: resolvedRoundId * 53,
             intensity: TIMED_BOMB_EXPLOSION_INTENSITY,
             duration: EXPLOSION_SECONDS,
+            explosionCorePosition: this.explosionCoreWorldPosition,
             layer: this.worldRoot.layer,
         });
     }

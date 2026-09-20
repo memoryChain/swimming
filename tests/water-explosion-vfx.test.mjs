@@ -28,6 +28,7 @@ test('共享水花使用预建低模网格、单材质和二十赫兹变换更�
     assert.match(sharedSplash, /buildLightEntryGeometry\(\)/);
     assert.match(sharedSplash, /buildHeavyEntryBodyGeometry\(\)/);
     assert.match(sharedSplash, /buildExplosionBodyGeometry\(\)/);
+    assert.match(sharedSplash, /buildExplosionPressureCoreGeometry\(\)/);
     assert.match(sharedSplash, /buildHeavyImpactRingGeometry\(\)/);
     assert.match(sharedSplash, /buildExplosionImpactRingGeometry\(\)/);
     assert.match(sharedSplash, /appendBrokenRing/);
@@ -81,6 +82,19 @@ test('爆炸冲击波使用立体波峰并让水柱先于水面余波结束', ()
     assert.match(cannon, /IMPACT_SECONDS = 0\.95/);
     assert.match(minefield, /EXPLOSION_SECONDS = 0\.95/);
     assert.match(timedBomb, /EXPLOSION_SECONDS = 0\.95/);
+});
+
+test('水雷和定时炸弹在水面水花之外显示实际爆点高度的三维爆压核心', () => {
+    assert.match(sharedSplash, /EXPLOSION_CORE_END_PHASE = 0\.46/);
+    assert.match(sharedSplash, /ExplosionPressureCore/);
+    assert.match(sharedSplash, /appendPressureShell/);
+    assert.match(sharedSplash, /explosionCorePosition\?: Readonly<Vec3>/);
+    assert.match(sharedSplash, /slot\.explosionCore\.setScale\(coreScale, coreVertical, coreScale\)/);
+    assert.match(minefield, /mineNode\.getWorldPosition\(this\.explosionCoreWorldPosition\)/);
+    assert.match(minefield, /explosionCorePosition,/);
+    assert.match(timedBomb, /this\.mineRoot!\.getWorldPosition\(this\.explosionCoreWorldPosition\)/);
+    assert.match(timedBomb, /explosionCorePosition: this\.explosionCoreWorldPosition/);
+    assert.doesNotMatch(sharedSplash, /ParticleSystem|Graphics|\.clear\(\)/);
 });
 
 test('游戏管理器只持有一个共享水花池并统一推进生命周期', () => {

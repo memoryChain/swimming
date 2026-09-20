@@ -47,6 +47,7 @@ export class MinefieldBrawlPresentation {
     private visible = true;
     private disposed = false;
     private readonly splashWorldPosition = new Vec3();
+    private readonly explosionCoreWorldPosition = new Vec3();
 
     constructor(
         private readonly worldRoot: Node,
@@ -201,6 +202,17 @@ export class MinefieldBrawlPresentation {
 
     showImpact(impact: MinefieldImpact): void {
         if (this.disposed || !this.visible) return;
+        const mineNode = this.mineNodes[impact.mineId];
+        let coreHeight = this.course.waterY + 0.09;
+        if (mineNode?.isValid && mineNode.active) {
+            mineNode.getWorldPosition(this.explosionCoreWorldPosition);
+            coreHeight = this.explosionCoreWorldPosition.y;
+        }
+        this.explosionCoreWorldPosition.set(
+            this.course.distanceToWorldX(impact.courseX),
+            coreHeight,
+            impact.lateral,
+        );
         this.showWaterVisual(
             impact.courseX,
             impact.lateral,
@@ -208,6 +220,8 @@ export class MinefieldBrawlPresentation {
             ENTERTAINMENT_SPLASH_PROFILE.EXPLOSION,
             MINEFIELD_EXPLOSION_INTENSITY,
             EXPLOSION_SECONDS,
+            false,
+            this.explosionCoreWorldPosition,
         );
     }
 
@@ -219,6 +233,7 @@ export class MinefieldBrawlPresentation {
         intensity: number,
         duration: number,
         rippleOnly = false,
+        explosionCorePosition?: Readonly<Vec3>,
     ): void {
         if (this.disposed || !this.visible) return;
         this.splashWorldPosition.set(
@@ -234,6 +249,7 @@ export class MinefieldBrawlPresentation {
             intensity,
             duration,
             rippleOnly,
+            explosionCorePosition,
             layer: this.worldRoot.layer,
         });
     }
