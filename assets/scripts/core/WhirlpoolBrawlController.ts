@@ -24,6 +24,7 @@ type Visual = {
     flowRotationDegrees: number;
     coreRotationDegrees: number;
     superVariant: boolean;
+    activationEntranceElapsed: number;
 };
 
 type WhirlpoolVisualResourceSet = {
@@ -54,6 +55,7 @@ const FADE_BEHIND_START_DISTANCE = 5.5;
 const FADE_BEHIND_END_DISTANCE = 14;
 const ANNOUNCEMENT_DISTANCE = 16;
 const SUPER_ANNOUNCEMENT_DISTANCE = 30;
+const ACTIVATION_ENTRANCE_SECONDS = 1.25;
 const MIN_ROTATION_DEGREES_PER_SECOND = 8;
 const MAX_ROTATION_DEGREES_PER_SECOND = 52;
 const MIN_VISIBLE_SCALE = 0.08;
@@ -96,8 +98,24 @@ export class WhirlpoolBrawlController {
             if (visual.afterglow?.isValid && visual.afterglow.active) visual.afterglow.active = false;
             visual.flowRotationDegrees = visual.phase * 57.295779513;
             visual.coreRotationDegrees = -visual.phase * 31.4;
+            visual.activationEntranceElapsed = -1;
             this.setAfterglowAlpha(visual, 0);
         }
+    }
+
+    /** 统一娱乐事件激活时立即播放一次生成过程，不改变漩涡的物理位置或作用范围。 */
+    beginActivationEntrance(index: number): boolean {
+        if (this.disposed) return false;
+        const visual = this.visuals[index];
+        if (!visual?.root?.isValid) return false;
+        visual.activationEntranceElapsed = 0;
+        visual.flowRotationDegrees = visual.phase * 57.295779513;
+        visual.coreRotationDegrees = -visual.phase * 31.4;
+        if (visual.root.active) visual.root.active = false;
+        if (visual.afterglow.active) visual.afterglow.active = false;
+        this.setAfterglowAlpha(visual, 0);
+        this.elapsed = PRESENTATION_INTERVAL;
+        return true;
     }
 
     updatePresentation(referenceDistance: number, dt: number, allowAnnouncements: boolean): void {
@@ -124,7 +142,20 @@ export class WhirlpoolBrawlController {
         this.clock += step;
         for (const visual of this.visuals) {
             const ahead = visual.distance - distance;
-            const strength = presentationStrength(ahead, visual.superVariant);
+            const distanceStrength = presentationStrength(ahead, visual.superVariant);
+            let strength = distanceStrength;
+            if (visual.activationEntranceElapsed >= 0) {
+                visual.activationEntranceElapsed = Math.min(
+                    ACTIVATION_ENTRANCE_SECONDS,
+                    visual.activationEntranceElapsed + step,
+                );
+                if (visual.activationEntranceElapsed < ACTIVATION_ENTRANCE_SECONDS) {
+                    strength = smooth01(visual.activationEntranceElapsed / ACTIVATION_ENTRANCE_SECONDS);
+                } else if (ahead >= -FADE_BEHIND_START_DISTANCE) {
+                    // 已在激活镜头里生成的漩涡保持成形，不再因本地玩家仍离得较远而重新隐藏。
+                    strength = 1;
+                }
+            }
             const visible = strength > 0.001;
             if (visual.root.active !== visible) visual.root.active = visible;
             if (!visible) {
@@ -225,6 +256,7 @@ export class WhirlpoolBrawlController {
                 flowRotationDegrees: phase * 57.295779513,
                 coreRotationDegrees: -phase * 31.4,
                 superVariant,
+                activationEntranceElapsed: -1,
             });
         }
     }

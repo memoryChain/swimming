@@ -382,6 +382,17 @@ test('漩涡美术层复用固定网格且不引入逐帧程序绘制或粒子�
     assert.doesNotMatch(controllerSource, /Graphics|ParticleSystem/);
 });
 
+test('统一娱乐漩涡随第二条广播立即生成并由画中画拍摄入场', () => {
+    assert.match(gameManagerSource, /activateEntertainmentEvent\(transition\.activatedEvent, true\)/);
+    assert.match(gameManagerSource, /_whirlpoolActivationPreviewPending = true/);
+    assert.match(gameManagerSource, /beginActivationEntrance\(previewIndex\)/);
+    assert.match(gameManagerSource, /!this\._whirlpoolActivationPreviewPlayed/);
+    assert.match(controllerSource, /const ACTIVATION_ENTRANCE_SECONDS = 1\.25/);
+    assert.match(controllerSource, /beginActivationEntrance\(index: number\): boolean/);
+    assert.match(controllerSource, /activationEntranceElapsed \/ ACTIVATION_ENTRANCE_SECONDS/);
+    assert.match(controllerSource, /ahead >= -FADE_BEHIND_START_DISTANCE/);
+});
+
 test('漩涡赛只允许快速比赛二百米并可从存档恢复', () => {
     const profile = createDefaultProfile();
     const characterId = Object.keys(profile.characters)[0];

@@ -120,6 +120,7 @@ import {
     setRuntimeWhirlpoolSpawns,
     whirlpoolCenterZ,
     whirlpoolSpawnsForSeed,
+    whirlpoolWorldSpin,
     WHIRLPOOL_BRAWL_TUNING,
     WHIRLPOOL_SUPER_TUNING,
 } from './WhirlpoolBrawlRules';
@@ -347,6 +348,8 @@ export class GameManager extends Component {
     private _entertainmentDirector: EntertainmentModeDirector | null = null;
     private _whirlpoolBrawl: WhirlpoolBrawlController | null = null;
     private _whirlpoolVisualResources: WhirlpoolVisualResources | null = null;
+    private _whirlpoolActivationPreviewPending = false;
+    private _whirlpoolActivationPreviewPlayed = false;
     private _cannonBrawl: CannonBrawlController | null = null;
     private _cannonBrawlPresentation: CannonBrawlPresentation | null = null;
     private _cannonBrawlHud: CannonBrawlHud | null = null;
@@ -583,6 +586,8 @@ export class GameManager extends Component {
         setRuntimeWhirlpoolSpawns(null);
         this._whirlpoolBrawl?.dispose();
         this._whirlpoolBrawl = null;
+        this._whirlpoolActivationPreviewPending = false;
+        this._whirlpoolActivationPreviewPlayed = false;
         disposeWhirlpoolVisualResources(this._whirlpoolVisualResources);
         this._whirlpoolVisualResources = null;
         this._cannonBrawl = null;
@@ -1178,6 +1183,8 @@ export class GameManager extends Component {
                     this._laneLockdownRace?.reset();
                     this._entertainmentDirector?.reset();
                     setRuntimeWhirlpoolSpawns(null);
+                    this._whirlpoolActivationPreviewPending = false;
+                    this._whirlpoolActivationPreviewPlayed = false;
                     this._shark?.reset();
                     this._entertainmentEventBanner.hide();
                     this._sharkLockOnOverlay.hide();
@@ -1499,6 +1506,8 @@ export class GameManager extends Component {
     private setupEntertainmentMode() {
         resetEntertainmentEventRuntime();
         setRuntimeWhirlpoolSpawns(null);
+        this._whirlpoolActivationPreviewPending = false;
+        this._whirlpoolActivationPreviewPlayed = false;
         this._cannonPreviewPending = false;
         this._entertainmentDirector = isEntertainmentBrawlMode()
             ? new EntertainmentModeDirector(getSharedRandomSeed(), getRaceDistance())
@@ -1604,7 +1613,7 @@ export class GameManager extends Component {
             if (transition.activatedEvent === EntertainmentEventId.CANNON) {
                 this._cannonPreviewPending = false;
             }
-            this.activateEntertainmentEvent(transition.activatedEvent);
+            this.activateEntertainmentEvent(transition.activatedEvent, true);
             const special = transition.activatedEvent === EntertainmentEventId.WHIRLPOOL
                 ? isSuperWhirlpool(this.entertainmentWhirlpoolSpawns(
                     this.entertainmentAnchorDistance(transition.activatedEvent),
@@ -1633,7 +1642,7 @@ export class GameManager extends Component {
         }
     }
 
-    private activateEntertainmentEvent(event: EntertainmentEventId) {
+    private activateEntertainmentEvent(event: EntertainmentEventId, playActivationEntrance = false) {
         const anchorDistance = this.entertainmentAnchorDistance(event);
         switch (event) {
             case EntertainmentEventId.STIMULANT:
@@ -1650,6 +1659,10 @@ export class GameManager extends Component {
                 break;
             case EntertainmentEventId.WHIRLPOOL:
                 setRuntimeWhirlpoolSpawns(this.entertainmentWhirlpoolSpawns(anchorDistance));
+                if (playActivationEntrance) {
+                    this._whirlpoolActivationPreviewPending = true;
+                    this._whirlpoolActivationPreviewPlayed = false;
+                }
                 break;
             case EntertainmentEventId.MINEFIELD:
                 this.setupMinefieldBrawl();
@@ -1884,7 +1897,8 @@ export class GameManager extends Component {
                         'whirlpool',
                         '漩涡警报',
                     );
-                    if (index === (featuredIndex >= 0 ? featuredIndex : 0)) {
+                    if (index === (featuredIndex >= 0 ? featuredIndex : 0)
+                        && (!isEntertainmentBrawlMode() || !this._whirlpoolActivationPreviewPlayed)) {
                         this._eventPictureInPicture?.showWhirlpoolPreview(
                             spawn.distance,
                             whirlpoolCenterZ(spawn, COURSE_LAYOUT.poolWidth),
@@ -1896,6 +1910,23 @@ export class GameManager extends Component {
                 spawns,
                 this._whirlpoolVisualResources ?? undefined,
             );
+            if (this._whirlpoolActivationPreviewPending) {
+                const previewIndex = featuredIndex >= 0 ? featuredIndex : 0;
+                const previewSpawn = spawns[previewIndex];
+                if (previewSpawn && this._whirlpoolBrawl.beginActivationEntrance(previewIndex)) {
+                    this._eventPictureInPicture?.showWhirlpoolPreview(
+                        previewSpawn.distance,
+                        whirlpoolCenterZ(previewSpawn, COURSE_LAYOUT.poolWidth),
+                        whirlpoolWorldSpin(
+                            previewSpawn,
+                            COURSE_LAYOUT.directionAtDistance(previewSpawn.distance),
+                        ),
+                        isSuperWhirlpool(previewSpawn),
+                    );
+                    this._whirlpoolActivationPreviewPlayed = true;
+                }
+                this._whirlpoolActivationPreviewPending = false;
+            }
         }
         for (let i = 0; i < this._aiControllers.length; i++) {
             const controller = this._aiControllers[i];
