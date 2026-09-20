@@ -75,6 +75,12 @@ export const SHARK_MODEL_PRESENTATION = {
     visualEulerDegrees: [0, 90, 0] as const,
     swimAnimationSpeed: 1.2,
     biteAnimationSpeed: 1.1,
+    biteBlendSeconds: 0.04,
+    swimBlendSeconds: 0.08,
+    // 击倒现在发生在 0.09 秒蓄势之后；这里只保留闭合到水花的短延迟。
+    biteSplashDelaySeconds: 0.04,
+    biteDropStart: 0.04,
+    biteDropEnd: 0.10,
 };
 const CARTON_SWIMMER5_PREFAB_CANDIDATES = [
     'models/CartonSwimmer5',

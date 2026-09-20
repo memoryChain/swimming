@@ -73,7 +73,7 @@ def mesh_components(mesh):
     return components
 
 
-def is_lower_jaw_component(mesh, indices):
+def is_lower_jaw_component(mesh, component_index, indices):
     coords = [mesh.vertices[index].co for index in indices]
     min_x = min(point.x for point in coords)
     max_x = max(point.x for point in coords)
@@ -83,7 +83,9 @@ def is_lower_jaw_component(mesh, indices):
     max_z = max(point.z for point in coords)
     center_z = sum(point.z for point in coords) / len(coords)
     within_mouth_width = max(abs(min_x), abs(max_x)) <= 0.15
-    in_front_of_hinge = min_y < -0.225 and max_y <= -0.198
+    if component_index in {106, 107, 108}:
+        return False
+    in_front_of_hinge = min_y < -0.225 and max_y <= -0.15
     lower_shell = max_z <= 0.16 and center_z <= 0.125
     lower_tooth = len(indices) <= 8 and min_z < 0.125 and center_z <= 0.145 and max_z <= 0.19
     return within_mouth_width and in_front_of_hinge and (lower_shell or lower_tooth)
@@ -120,8 +122,8 @@ def add_jaw_bone_and_weights(rig, mesh_object):
 
     components = mesh_components(mesh_object.data)
     selected_components = [
-        component for component in components
-        if is_lower_jaw_component(mesh_object.data, component)
+        component for component_index, component in enumerate(components)
+        if is_lower_jaw_component(mesh_object.data, component_index, component)
     ]
     selected = sorted({index for component in selected_components for index in component})
     if not selected:
@@ -150,9 +152,9 @@ def build_bite_action(rig, swim_action, sampled):
     action.use_fake_user = True
     rig.animation_data.action = action
 
-    # 先抬头张嘴，再让下颌快速闭合并保持三帧；头部只做短促前压，避免读成整鱼撞击。
-    head_angles = (0, -3, -5, 7, 10, 8, 4, 0, -2, 0, 0)
-    jaw_angles = (0, 4, 15, 24, 24, 24, 16, 6, 0, 0, 0)
+    # 先让下颌主动张开 10 度，再快速闭合到 19 度并保持五帧；头部只做小幅前压。
+    head_angles = (0, -2, -3, 4, 5, 5, 4, 2, 0, 0, 0)
+    jaw_angles = (0, -10, 19, 19, 19, 19, 19, 12, 7, 3, 0)
     for frame, pose in enumerate(sampled, start=1):
         for bone in rig.pose.bones:
             location, rotation, scale = pose[bone.name]
@@ -232,7 +234,7 @@ def render_preview(rig, bite_action, tracks, mesh_object, jaw_vertices):
         "left": ((-1.5, -0.03, 0.28), (0, -0.03, 0.23)),
         "pip": ((-1.25, 0.34, 0.72), (0, -0.20, 0.16)),
     }
-    for frame in (1, 3, 4, 5, 7, 9, 11):
+    for frame in (1, 2, 3, 4, 5, 7, 9, 11):
         scene.frame_set(frame)
         for view_name, (location, target) in views.items():
             camera.location = location

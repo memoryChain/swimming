@@ -62,7 +62,7 @@
         "sample": 30,
         "span": {
           "from": 0,
-          "to": 0.46666666865348816
+          "to": 0.4583333432674408
         },
         "events": []
       },
@@ -85,7 +85,7 @@
         "sample": 30,
         "span": {
           "from": 0,
-          "to": 0.8333333134651184
+          "to": 1.0416666269302368
         },
         "events": []
       },
@@ -104,7 +104,7 @@
       "name": "Shark_Rig.skeleton",
       "userData": {
         "gltfIndex": 0,
-        "jointsLength": 6
+        "jointsLength": 7
       },
       "ver": "1.0.1",
       "imported": true,
@@ -179,13 +179,13 @@
     "animationImportSettings": [
       {
         "name": "Shark_Bite",
-        "duration": 0.46666666865348816,
+        "duration": 0.4583333432674408,
         "fps": 30,
         "splits": [
           {
             "name": "Shark_Bite",
             "from": 0,
-            "to": 0.46666666865348816,
+            "to": 0.4583333432674408,
             "wrapMode": 2,
             "previousId": "d4c35"
           }
@@ -193,13 +193,13 @@
       },
       {
         "name": "Shark_Swim_Loop",
-        "duration": 0.8333333134651184,
+        "duration": 1.0416666269302368,
         "fps": 30,
         "splits": [
           {
             "name": "Shark_Swim_Loop",
             "from": 0,
-            "to": 0.8333333134651184,
+            "to": 1.0416666269302368,
             "wrapMode": 2,
             "previousId": "bb942"
           }

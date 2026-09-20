@@ -59,6 +59,9 @@ export class RaceEventPictureInPictureCamera {
     private holdSeconds = 0;
     private warningPush = 0;
     private biteHoldSeconds = 0;
+    private biteCameraBasisReady = false;
+    private biteForwardX = 1;
+    private biteForwardZ = 0;
     private lastSharkState = SharkState.INACTIVE;
     private lastFov = 46;
     private cannonTargetX = 0;
@@ -120,6 +123,7 @@ export class RaceEventPictureInPictureCamera {
                 this.mode = 'shark';
                 this.warningPush = 0;
                 this.biteHoldSeconds = 0;
+                this.biteCameraBasisReady = false;
             }
             this.setVisible(true);
             this.setCeilingVisible(shark.state !== SharkState.WARNING);
@@ -504,24 +508,35 @@ export class RaceEventPictureInPictureCamera {
         const dx = targetPosition.x - this.subjectPosition.x;
         const dz = targetPosition.z - this.subjectPosition.z;
         const length = Math.sqrt(dx * dx + dz * dz);
-        const forwardX = length > 0.001 ? dx / length : 1;
-        const forwardZ = length > 0.001 ? dz / length : 0;
-        const sideX = -forwardZ;
-        const sideZ = forwardX;
+        let forwardX = length > 0.001 ? dx / length : 1;
+        let forwardZ = length > 0.001 ? dz / length : 0;
         if (shark.state === SharkState.BITE) {
+            if (!this.biteCameraBasisReady) {
+                this.biteForwardX = forwardX;
+                this.biteForwardZ = forwardZ;
+                this.biteCameraBasisReady = true;
+            } else {
+                forwardX = this.biteForwardX;
+                forwardZ = this.biteForwardZ;
+            }
+            const sideX = -forwardZ;
+            const sideZ = forwardX;
             this.focus.set(
-                this.subjectPosition.x + forwardX * 0.45,
-                waterY - 0.16,
-                this.subjectPosition.z + forwardZ * 0.45,
+                this.subjectPosition.x + forwardX * 0.62,
+                waterY - 0.14,
+                this.subjectPosition.z + forwardZ * 0.62,
             );
             this.cameraPosition.set(
-                this.subjectPosition.x - forwardX * 0.9 + sideX * 2.7,
-                waterY + 1.05,
-                this.subjectPosition.z - forwardZ * 0.9 + sideZ * 2.7,
+                this.subjectPosition.x - forwardX * 0.65 + sideX * 2.2,
+                waterY + 0.82,
+                this.subjectPosition.z - forwardZ * 0.65 + sideZ * 2.2,
             );
-            this.applyCameraPose(34);
+            this.applyCameraPose(31);
             return;
         }
+        if (this.biteCameraBasisReady) this.biteCameraBasisReady = false;
+        const sideX = -forwardZ;
+        const sideZ = forwardX;
         const targetLead = Math.min(1.35, length * 0.32);
         this.focus.set(
             this.subjectPosition.x + forwardX * targetLead,
@@ -661,6 +676,7 @@ export class RaceEventPictureInPictureCamera {
         this.holdSeconds = 0;
         this.warningPush = 0;
         this.biteHoldSeconds = 0;
+        this.biteCameraBasisReady = false;
         this.lastSharkState = SharkState.INACTIVE;
     }
 

@@ -103,7 +103,7 @@ test('unified entertainment knockdown round-trips with the global recovery revis
 test('shark state and knockdown event round-trip across both sync fallbacks', () => {
     const shark = {
         sequence: 3,
-        state: 2,
+        state: 6,
         raceElapsed: 55.432,
         remainingSeconds: 7.321,
         huntOpeningGraceSeconds: 0.444,
@@ -389,7 +389,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 84);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 85);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

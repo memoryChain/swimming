@@ -31,7 +31,7 @@ export type SharkControllerOptions = {
     swimmerForLane: (lane: number) => Swimmer | null;
     onKnockDown: (swimmer: Swimmer) => void;
     onRevealed?: (x: number, z: number) => void;
-    onStateChange?: (state: SharkState) => void;
+    onStateChange?: (state: SharkState, previousState: SharkState) => void;
     // Fires exactly when the no-bite wind-up ends and true pursuit begins.
     onHuntEngaged?: () => void;
     // Fires once per locked target when the predator is close enough for the
@@ -54,6 +54,7 @@ export class SharkController {
     private _huntEngaged = false;
     private _biteDirectionX = 1;
     private _biteDirectionZ = 0;
+    private _biteResolved = false;
     private _target: Swimmer | null = null;
     private _approachNotifiedTarget: Swimmer | null = null;
     private _facingX = 1;
@@ -104,6 +105,7 @@ export class SharkController {
         this._huntEngaged = false;
         this._biteDirectionX = 1;
         this._biteDirectionZ = 0;
+        this._biteResolved = false;
         this._target = null;
         this._approachNotifiedTarget = null;
         this._sequence = 0;
@@ -151,16 +153,31 @@ export class SharkController {
             this.updateWander(dt);
             return;
         }
-        if (this._state === SharkState.BITE) {
-            this._remainingSeconds = Math.max(0, this._remainingSeconds - dt);
-            const step = Math.min(
-                Math.max(0, SHARK_TUNING.biteLungeSpeed) * dt,
-                Math.max(0, SHARK_TUNING.biteLungeSpeed) * this._remainingSeconds + 0.02,
+        if (this._state === SharkState.BITE || this._state === SharkState.PATROL_BITE) {
+            const patrolBite = this._state === SharkState.PATROL_BITE;
+            const duration = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
+            const anticipation = Math.min(
+                duration,
+                Math.max(0, SHARK_TUNING.biteAnticipationSeconds),
             );
+            const previousElapsed = Math.max(0, duration - this._remainingSeconds);
+            this._remainingSeconds = Math.max(0, this._remainingSeconds - dt);
+            const elapsed = Math.max(0, duration - this._remainingSeconds);
+            if (!this._biteResolved && elapsed >= anticipation) {
+                this._biteResolved = true;
+                const target = this._target;
+                if (target) this._opts.onKnockDown(target);
+            }
+            // 只积分越过蓄势节点后的时间；低帧率跨过节点也不会把停顿时长算进前扑。
+            const lungeSeconds = Math.max(0, elapsed - Math.max(previousElapsed, anticipation));
+            const step = Math.max(0, SHARK_TUNING.biteLungeSpeed) * lungeSeconds;
             if (step > 0) {
                 this.moveAndFace(this._biteDirectionX, this._biteDirectionZ, step);
             }
-            if (this._remainingSeconds <= 0) this.finishHunt();
+            if (this._remainingSeconds <= 0) {
+                if (patrolBite) this.finishPatrolBite();
+                else this.finishHunt();
+            }
             return;
         }
         if (this._state === SharkState.WARNING) {
@@ -206,10 +223,10 @@ export class SharkController {
                 this._obstacleBites.registerBite(this._knockedLane, target.distance);
                 this._biteDirectionX = this._facingX;
                 this._biteDirectionZ = this._facingZ;
+                this._biteResolved = false;
                 this._remainingSeconds = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
                 this._huntOpeningGraceSeconds = 0;
                 this.setState(SharkState.BITE);
-                this._opts.onKnockDown(target);
                 return;
             }
             const distance = Math.sqrt(dx * dx + dz * dz);
@@ -255,6 +272,20 @@ export class SharkController {
         this._facingX = Number.isFinite(state.facingX) ? state.facingX : this._facingX;
         this._facingZ = Number.isFinite(state.facingZ) ? state.facingZ : this._facingZ;
         this._target = state.targetLane >= 0 ? this._opts.swimmerForLane(state.targetLane) : null;
+        if (this._state === SharkState.BITE || this._state === SharkState.PATROL_BITE) {
+            const duration = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
+            const anticipation = Math.min(
+                duration,
+                Math.max(0, SHARK_TUNING.biteAnticipationSeconds),
+            );
+            const authoritativeResolved = duration - this._remainingSeconds + 0.001 >= anticipation;
+            const sameBite = previousState === this._state && previousSequence === state.sequence;
+            this._biteResolved = authoritativeResolved || (sameBite && this._biteResolved);
+            this._biteDirectionX = this._facingX;
+            this._biteDirectionZ = this._facingZ;
+        } else {
+            this._biteResolved = false;
+        }
         if (state.sequence > previousSequence) this._approachNotifiedTarget = null;
         const node = this._opts.node;
         if (node.active !== this.active) node.active = this.active;
@@ -270,7 +301,7 @@ export class SharkController {
                 this.notifyTargetApproach(target, state.x, state.z, targetDx * targetDx + targetDz * targetDz);
             }
         }
-        if (previousState !== this._state) this._opts.onStateChange?.(this._state);
+        if (previousState !== this._state) this._opts.onStateChange?.(this._state, previousState);
         if (this._state === SharkState.HUNT && this._huntOpeningGraceSeconds <= 0) this.notifyHuntEngaged();
         if (previousState === SharkState.INACTIVE && state.state !== SharkState.INACTIVE) {
             this._opts.onRevealed?.(state.x, state.z);
@@ -344,9 +375,27 @@ export class SharkController {
             // 否则同一泳道早先被正常追猎咬过后会拒绝这次恢复事件。
             this._sequence++;
             this._knockedLane = lane;
-            this._opts.onKnockDown(swimmer);
+            this._target = swimmer;
+            this._approachNotifiedTarget = null;
+            this._biteDirectionX = this._facingX;
+            this._biteDirectionZ = this._facingZ;
+            this._biteResolved = false;
+            this._remainingSeconds = Math.max(0.05, SHARK_TUNING.bitePresentationSeconds);
+            this._huntOpeningGraceSeconds = 0;
+            this.setState(SharkState.PATROL_BITE);
             break;
         }
+    }
+
+    private finishPatrolBite(): void {
+        this._remainingSeconds = 0;
+        this._huntOpeningGraceSeconds = 0;
+        this._huntEngaged = false;
+        this._biteResolved = false;
+        this._target = null;
+        this._approachNotifiedTarget = null;
+        this.selectNearestWanderWaypoint();
+        this.setState(SharkState.WANDER);
     }
 
     private finishHunt(): void {
@@ -354,6 +403,7 @@ export class SharkController {
         this._remainingSeconds = 0;
         this._huntOpeningGraceSeconds = 0;
         this._huntEngaged = false;
+        this._biteResolved = false;
         this._target = null;
         this._approachNotifiedTarget = null;
         if (this._huntIndex >= this.hungerSchedule().length) {
@@ -371,9 +421,10 @@ export class SharkController {
 
     private setState(state: SharkState): void {
         if (this._state === state) return;
+        const previousState = this._state;
         this._state = state;
         if (state === SharkState.HUNT) this._huntEngaged = false;
-        this._opts.onStateChange?.(state);
+        this._opts.onStateChange?.(state, previousState);
     }
 
     private notifyHuntEngaged(): void {

@@ -12,13 +12,31 @@ const { SharkObstacleBiteTracker } = SharkObstacleBiteRules;
 const { executeCareer } = CareerRules;
 const { createDefaultProfile, normalizeProfile } = PlayerProfile;
 
+function readGlbJson(buffer) {
+    assert.equal(buffer.toString('ascii', 0, 4), 'glTF');
+    const jsonLength = buffer.readUInt32LE(12);
+    const jsonChunkType = buffer.toString('ascii', 16, 20);
+    assert.equal(jsonChunkType, 'JSON');
+    return JSON.parse(buffer.subarray(20, 20 + jsonLength).toString('utf8').trimEnd());
+}
+
+function animationMaxTime(gltf, name) {
+    const animation = gltf.animations.find(candidate => candidate.name === name);
+    assert.ok(animation, `missing animation ${name}`);
+    return Math.max(...animation.samplers.map(sampler => gltf.accessors[sampler.input].max[0]));
+}
+
 test('鲨鱼大乱斗固定进行三轮追猎并在第三轮后退场', () => {
     assert.deepEqual(SHARK_TUNING.hungerSchedule, [15, 35, 55]);
     assert.ok(SHARK_TUNING.warningSeconds > 0);
     assert.ok(SHARK_TUNING.huntOpeningGraceSeconds > 0);
     assert.ok(SHARK_TUNING.huntSeconds > 0);
+    assert.equal(SHARK_TUNING.biteAnticipationSeconds, 0.09);
+    assert.ok(SHARK_TUNING.biteAnticipationSeconds < SHARK_TUNING.bitePresentationSeconds);
+    assert.ok(SHARK_TUNING.biteLungeSpeed <= 1);
     assert.equal(SharkState.WANDER, 4);
     assert.equal(SharkState.SATIATED, 5);
+    assert.equal(SharkState.PATROL_BITE, 6);
 });
 
 test('巡游鲨鱼只会处决持续逆向纠缠的选手', () => {
@@ -86,6 +104,25 @@ test('巡游鲨鱼被反向推走八十厘米时会提前处决，短暂分离�
     assert.equal(advance(28), false);
 });
 
+test('巡游补咬先进入独立咬合节奏，结束后不推进正式追猎轮次', () => {
+    const controller = readFileSync(
+        new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
+        'utf8',
+    );
+    const obstacleIndex = controller.indexOf('updateObstacleBites(swimmers: readonly Swimmer[], dt: number)');
+    const finishPatrolIndex = controller.indexOf('private finishPatrolBite(): void', obstacleIndex);
+    const obstacleSource = controller.slice(obstacleIndex, finishPatrolIndex);
+    const finishHuntIndex = controller.indexOf('private finishHunt(): void', finishPatrolIndex);
+    const finishPatrolSource = controller.slice(finishPatrolIndex, finishHuntIndex);
+    assert.match(obstacleSource, /this\._target = swimmer/);
+    assert.match(obstacleSource, /this\._remainingSeconds = Math\.max\(0\.05, SHARK_TUNING\.bitePresentationSeconds\)/);
+    assert.match(obstacleSource, /this\.setState\(SharkState\.PATROL_BITE\)/);
+    assert.doesNotMatch(obstacleSource, /this\._opts\.onKnockDown\(swimmer\)/);
+    assert.match(finishPatrolSource, /this\.setState\(SharkState\.WANDER\)/);
+    assert.doesNotMatch(finishPatrolSource, /_huntIndex\+\+/);
+    assert.match(controller, /this\._state === SharkState\.BITE \|\| this\._state === SharkState\.PATROL_BITE/);
+});
+
 test('鲨鱼模式使用固定场景控制器而非角色技能召唤', () => {
     const controller = readFileSync(
         new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
@@ -110,17 +147,81 @@ test('鲨鱼咬合状态播放独立骨骼动作并在状态结束后恢复游�
     const model = readFileSync(
         new URL('../assets/race/models/SharkModel.glb', import.meta.url),
     );
+    const camera = readFileSync(
+        new URL('../assets/scripts/camera/RaceEventPictureInPictureCamera.ts', import.meta.url),
+        'utf8',
+    );
+    const builder = readFileSync(
+        new URL('../art/shark-animation/build_shark_bite_animation.py', import.meta.url),
+        'utf8',
+    );
     const biteIndex = manager.indexOf('private startSharkBiteAnimation()');
     const biteEnd = manager.indexOf('private resetSharkArtPresentation()', biteIndex);
     const biteSource = manager.slice(biteIndex, biteEnd);
+    const gltf = readGlbJson(model);
     assert.ok(biteIndex >= 0);
     assert.match(biteSource, /getState\('Shark_Bite'\)/);
     assert.match(biteSource, /state\.speed = SHARK_MODEL_PRESENTATION\.biteAnimationSpeed/);
-    assert.match(biteSource, /animation\.play\('Shark_Bite'\)/);
+    assert.match(biteSource, /animation\.crossFade\('Shark_Bite', SHARK_MODEL_PRESENTATION\.biteBlendSeconds\)/);
     assert.match(manager, /private playSharkBitePresentation\(\)[\s\S]*?this\.startSharkBiteAnimation\(\)/);
-    assert.match(manager, /private resetSharkArtPresentation\(\)[\s\S]*?this\.startSharkSwimAnimation\(\)/);
+    assert.match(manager, /private resetSharkArtPresentation\(\)[\s\S]*?this\.startSharkSwimAnimation\(SHARK_MODEL_PRESENTATION\.swimBlendSeconds\)/);
     assert.notEqual(model.indexOf(Buffer.from('Shark_Bite')), -1);
     assert.notEqual(model.indexOf(Buffer.from('Shark_Swim_Loop')), -1);
+    assert.equal(gltf.skins.length, 1);
+    assert.equal(gltf.skins[0].joints.length, 7);
+    assert.equal(gltf.meshes.length, 1);
+    assert.equal(gltf.meshes[0].primitives.length, 1);
+    assert.ok(gltf.nodes.some(node => node.name === 'Shark_Jaw'));
+    assert.ok(Math.abs(animationMaxTime(gltf, 'Shark_Bite') - 11 / 24) < 1e-6);
+    assert.ok(Math.abs(animationMaxTime(gltf, 'Shark_Swim_Loop') - 25 / 24) < 1e-6);
+    assert.match(builder, /jaw_angles = \(0, -10, 19, 19, 19, 19, 19, 12, 7, 3, 0\)/);
+    assert.match(camera, /private biteCameraBasisReady = false/);
+    assert.match(camera, /this\.biteForwardX = forwardX/);
+    assert.match(camera, /sideX \* 2\.2/);
+    assert.match(camera, /this\.applyCameraPose\(31\)/);
+});
+
+test('正式咬合先停顿蓄势，再在闭合节点结算击倒并开始前扑', () => {
+    const controller = readFileSync(
+        new URL('../assets/scripts/entity/SharkController.ts', import.meta.url),
+        'utf8',
+    );
+    const resourcePaths = readFileSync(
+        new URL('../assets/scripts/core/ResourcePaths.ts', import.meta.url),
+        'utf8',
+    );
+    const biteIndex = controller.indexOf(
+        'if (this._state === SharkState.BITE || this._state === SharkState.PATROL_BITE)',
+    );
+    const warningIndex = controller.indexOf('if (this._state === SharkState.WARNING)', biteIndex);
+    const biteTick = controller.slice(biteIndex, warningIndex);
+    const catchIndex = controller.indexOf('if (mouthDistanceSq <=');
+    const chaseIndex = controller.indexOf('const distance = Math.sqrt', catchIndex);
+    const catchTransition = controller.slice(catchIndex, chaseIndex);
+    assert.match(biteTick, /SHARK_TUNING\.biteAnticipationSeconds/);
+    assert.match(biteTick, /if \(!this\._biteResolved && elapsed >= anticipation\)/);
+    assert.match(biteTick, /this\._opts\.onKnockDown\(target\)/);
+    assert.match(biteTick, /const lungeSeconds = Math\.max\(0, elapsed - Math\.max\(previousElapsed, anticipation\)\)/);
+    assert.match(catchTransition, /this\._biteResolved = false/);
+    assert.doesNotMatch(catchTransition, /onKnockDown/);
+    assert.match(controller, /const authoritativeResolved = duration - this\._remainingSeconds \+ 0\.001 >= anticipation/);
+    assert.match(resourcePaths, /biteSplashDelaySeconds: 0\.04/);
+});
+
+test('巡游补咬动画按权威序号去重，丢失蓄势快照时保留可靠事件兜底', () => {
+    const manager = readFileSync(
+        new URL('../assets/scripts/core/GameManager.ts', import.meta.url),
+        'utf8',
+    );
+    assert.match(manager, /state === SharkState\.BITE \|\| state === SharkState\.PATROL_BITE/);
+    assert.match(manager, /playSharkBitePresentationOnce\(this\._shark\?\.sequence \?\? 0\)/);
+    assert.match(manager, /if \(normalizedSequence <= this\._lastSharkBitePresentationSequence\) return/);
+    assert.match(manager, /const missedPatrolWindup = this\._shark\?\.state === SharkState\.WANDER/);
+    assert.match(manager, /if \(!this\._sharkArtModel\?\.isValid\) return/);
+    assert.match(manager, /this\.playSharkBitePresentationOnce\(revision\)/);
+    assert.match(manager, /sharkState === SharkState\.BITE \|\| sharkState === SharkState\.PATROL_BITE/);
+    assert.match(manager, /missedPatrolWindup \? SHARK_TUNING\.biteAnticipationSeconds : 0/);
+    assert.match(manager, /previousState !== SharkState\.PATROL_BITE/);
 });
 
 test('鲨鱼首次现身会先激活节点再启动警告动画', () => {
@@ -176,7 +277,10 @@ test('鲨鱼咬伤只复用画中画可见的大水花进行遮挡', () => {
     const knockdownSource = manager.slice(knockdownIndex, knockdownEnd);
     assert.match(knockdownSource, /setLayerRecursive\(splashNode, SWIMMER_LAYER\)/);
     assert.match(knockdownSource, /getWorldPosition\(this\._sharkBiteWorldPosition\)/);
-    assert.match(knockdownSource, /triggerBigSplashAt\(this\._sharkBiteWorldPosition, 3\.1\)/);
+    assert.match(knockdownSource, /const splashPosition = this\._sharkBiteWorldPosition\.clone\(\)/);
+    assert.match(knockdownSource, /this\.scheduleOnce\(\(\) =>/);
+    assert.match(knockdownSource, /triggerBigSplashAt\(splashPosition, 3\.1\)/);
+    assert.match(knockdownSource, /SHARK_MODEL_PRESENTATION\.biteSplashDelaySeconds/);
     assert.match(manager, /swimmer === sharkFeedTarget/);
     assert.match(knockdownSource, /setSplashCulled\(false\)/);
     assert.match(knockdownSource, /_sharkSplashFocusSeconds = Math\.max\(1, SHARK_TUNING\.biteCameraHoldSeconds\)/);

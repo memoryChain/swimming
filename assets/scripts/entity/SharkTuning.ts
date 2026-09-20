@@ -6,6 +6,8 @@ export enum SharkState {
     BITE = 3,
     WANDER = 4,
     SATIATED = 5,
+    // 巡游防卡死补咬：复用咬合节奏，但结束后只回到巡游，不推进追猎轮次。
+    PATROL_BITE = 6,
 }
 
 export const SHARK_TUNING = {
@@ -34,7 +36,9 @@ export const SHARK_TUNING = {
     biteMouthForwardOffset: 0.75,
     catchRadius: 0.55,
     bitePresentationSeconds: 0.38,
-    biteLungeSpeed: 2.1,
+    // 先让张嘴和轻微后仰建立预期，再在闭合节点结算击倒。
+    biteAnticipationSeconds: 0.09,
+    biteLungeSpeed: 0.95,
     biteCameraHoldSeconds: 2,
     approachCameraDistance: 3.5,
     waterYOffset: -0.28,

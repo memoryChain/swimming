@@ -389,6 +389,7 @@ export class GameManager extends Component {
     private _sharkWake: Node | null = null;
     private _sharkSplashFocus: Swimmer | null = null;
     private _sharkSplashFocusSeconds = 0;
+    private _lastSharkBitePresentationSequence = -1;
     private _eventPictureInPicture: RaceEventPictureInPictureCamera | null = null;
     private readonly _sharkLockOnOverlay = new SharkLockOnOverlay();
     private readonly _entertainmentEventBanner = new EntertainmentEventBanner();
@@ -2851,7 +2852,7 @@ export class GameManager extends Component {
                     '鲨鱼警报',
                 );
             },
-            onStateChange: state => this.handleSharkStateChange(state),
+            onStateChange: (state, previousState) => this.handleSharkStateChange(state, previousState),
             onHuntEngaged: () => this._entertainmentEventBanner.showEvent(
                 pickSharkBannerLine('attack'),
                 'danger',
@@ -2893,13 +2894,18 @@ export class GameManager extends Component {
             setLayerRecursive(model, SWIMMER_LAYER);
             this._sharkArtModel = model;
             this._sharkAnimation = model.getComponent(SkeletalAnimation) ?? model.getComponentInChildren(SkeletalAnimation);
-            this.startSharkSwimAnimation();
+            const sharkState = this._shark?.state;
+            if (sharkState === SharkState.BITE || sharkState === SharkState.PATROL_BITE) {
+                this.playSharkBitePresentationOnce(this._shark?.sequence ?? 0);
+            } else {
+                this.startSharkSwimAnimation();
+            }
             fallback.active = false;
             if (this._sharkWake?.active) this._sharkWake.active = false;
         }, RESOURCE_PATHS.sharkPrefabCandidates);
     }
 
-    private startSharkSwimAnimation() {
+    private startSharkSwimAnimation(blendSeconds = 0) {
         const animation = this._sharkAnimation;
         if (!animation?.isValid) return;
         const state = animation.getState('Shark_Swim_Loop');
@@ -2908,7 +2914,8 @@ export class GameManager extends Component {
             return;
         }
         state.speed = SHARK_MODEL_PRESENTATION.swimAnimationSpeed;
-        animation.play('Shark_Swim_Loop');
+        if (blendSeconds > 0) animation.crossFade('Shark_Swim_Loop', blendSeconds);
+        else animation.play('Shark_Swim_Loop');
     }
 
     private startSharkBiteAnimation() {
@@ -2920,7 +2927,7 @@ export class GameManager extends Component {
             return;
         }
         state.speed = SHARK_MODEL_PRESENTATION.biteAnimationSpeed;
-        animation.play('Shark_Bite');
+        animation.crossFade('Shark_Bite', SHARK_MODEL_PRESENTATION.biteBlendSeconds);
     }
 
     private resetSharkArtPresentation() {
@@ -2928,7 +2935,7 @@ export class GameManager extends Component {
         if (!model?.isValid) return;
         Tween.stopAllByTarget(model);
         model.setPosition(0, SHARK_MODEL_PRESENTATION.visualYOffset, 0);
-        this.startSharkSwimAnimation();
+        this.startSharkSwimAnimation(SHARK_MODEL_PRESENTATION.swimBlendSeconds);
     }
 
     private playSharkBitePresentation() {
@@ -2939,13 +2946,27 @@ export class GameManager extends Component {
         const y = SHARK_MODEL_PRESENTATION.visualYOffset;
         model.setPosition(0, y, 0);
         tween(model)
-            .to(0.1, { position: new Vec3(0, y - 0.12, 0) }, { easing: 'quadIn' })
-            .to(Math.max(0.08, SHARK_TUNING.bitePresentationSeconds - 0.1), { position: new Vec3(0, y - 0.54, 0) }, { easing: 'quadIn' })
+            .to(0.1, { position: new Vec3(0, y - SHARK_MODEL_PRESENTATION.biteDropStart, 0) }, { easing: 'quadIn' })
+            .to(
+                Math.max(0.08, SHARK_TUNING.bitePresentationSeconds - 0.1),
+                { position: new Vec3(0, y - SHARK_MODEL_PRESENTATION.biteDropEnd, 0) },
+                { easing: 'quadIn' },
+            )
             .start();
     }
 
-    private handleSharkStateChange(state: SharkState) {
-        if (state === SharkState.WARNING) {
+    private playSharkBitePresentationOnce(sequence: number) {
+        const normalizedSequence = Math.max(0, Math.floor(sequence));
+        if (normalizedSequence <= this._lastSharkBitePresentationSequence) return;
+        if (!this._sharkArtModel?.isValid) return;
+        this._lastSharkBitePresentationSequence = normalizedSequence;
+        this.playSharkBitePresentation();
+    }
+
+    private handleSharkStateChange(state: SharkState, previousState: SharkState) {
+        if (state === SharkState.INACTIVE) {
+            this._lastSharkBitePresentationSequence = -1;
+        } else if (state === SharkState.WARNING) {
             this.resetSharkArtPresentation();
             if ((this._shark?.huntIndex ?? 0) > 0) {
                 this._entertainmentEventBanner.showEvent(
@@ -2964,12 +2985,12 @@ export class GameManager extends Component {
                 'shark',
                 '鲨鱼警报',
             );
-        } else if (state === SharkState.BITE) {
-            this.playSharkBitePresentation();
+        } else if (state === SharkState.BITE || state === SharkState.PATROL_BITE) {
+            this.playSharkBitePresentationOnce(this._shark?.sequence ?? 0);
         } else if (state === SharkState.WANDER) {
             this.resetSharkArtPresentation();
             this._sharkLockOnOverlay.hide();
-            if (!isEntertainmentBrawlMode()) {
+            if (previousState !== SharkState.PATROL_BITE && !isEntertainmentBrawlMode()) {
                 this._entertainmentEventBanner.enqueueEvent(
                     pickSharkBannerLine('retreat'),
                     'success',
@@ -3015,8 +3036,10 @@ export class GameManager extends Component {
         if (!this.applyEventKnockdown(
             lane, EntertainmentRecoveryReason.SHARK, distance, revision,
         )) return;
-        // 巡游补咬不进入正式 HUNT/BITE 状态，仍补一次低成本下扎动作。
-        if (this._shark?.state === SharkState.WANDER) this.playSharkBitePresentation();
+        // 若访客丢失了巡游补咬的快照，可靠击倒事件仍补播一次动作；
+        // 序号去重避免随后到达的 PATROL_BITE 快照把动画重新播放一遍。
+        const missedPatrolWindup = this._shark?.state === SharkState.WANDER;
+        this.playSharkBitePresentationOnce(revision);
         this._entertainmentEventBanner.showEvent(
             `${swimmer.swimmerName}被鲨鱼咬伤`,
             'danger',
@@ -3029,7 +3052,13 @@ export class GameManager extends Component {
         swimmer.setSplashCulled(false);
         this._sharkSplashFocus = swimmer;
         this._sharkSplashFocusSeconds = Math.max(1, SHARK_TUNING.biteCameraHoldSeconds);
-        swimmer.cartoonRig?.triggerBigSplashAt(this._sharkBiteWorldPosition, 3.1);
+        const splashPosition = this._sharkBiteWorldPosition.clone();
+        const splashDelay = SHARK_MODEL_PRESENTATION.biteSplashDelaySeconds
+            + (missedPatrolWindup ? SHARK_TUNING.biteAnticipationSeconds : 0);
+        this.scheduleOnce(() => {
+            if (this._state !== GameState.RACING || !swimmer.node?.isValid) return;
+            swimmer.cartoonRig?.triggerBigSplashAt(splashPosition, 3.1);
+        }, splashDelay);
         if (broadcast && this._netRaceController?.isHost) {
             this._netRaceController.enqueueSharkKnockdown(revision, lane, distance);
         }

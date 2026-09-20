@@ -70,7 +70,8 @@
 // 版本82：六合一首位完赛后取消定时炸弹待触发轮次，只保留已装载炸弹自然结算。
 // 版本83：心跳苏打恢复降至30%、心率负担升至40，并在拾取后禁止心率自然回落4秒。
 // 版本84：单独水雷玩法新增房主权威的三波补充，并同步波次与每个复用槽位的代次。
-export const NET_RACE_PROTOCOL_VERSION = 84;
+// 版本85：巡游鲨鱼补咬增加独立蓄势状态；闭合节点才击倒，结束后回到巡游且不推进追猎轮次。
+export const NET_RACE_PROTOCOL_VERSION = 85;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 
