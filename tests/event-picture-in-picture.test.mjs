@@ -53,6 +53,14 @@ test('画中画为排名和微信胶囊保留右侧空间，并在尺寸变化�
     assert.match(camera, /view\.on\('canvas-resize', this\.layoutHud, this\)/);
     assert.match(camera, /view\.off\('canvas-resize', this\.layoutHud, this\)/);
     assert.match(gameManager, /onHudBoundsChanged: leftEdge => this\._entertainmentEventBanner\.setPictureInPictureLeft\(leftEdge\)/);
+    const setVisibleStart = camera.indexOf('private setVisible(active: boolean)');
+    const hideStart = camera.indexOf('private hide()', setVisibleStart);
+    const setVisible = camera.slice(setVisibleStart, hideStart);
+    assert.doesNotMatch(setVisible, /notifyHudBounds/);
+    const layoutStart = camera.indexOf('private layoutHud()');
+    const notifyStart = camera.indexOf('private notifyHudBounds', layoutStart);
+    const layoutHud = camera.slice(layoutStart, notifyStart);
+    assert.match(layoutHud, /this\.notifyHudBounds\(true\)/);
 });
 
 test('高位事件镜头只按视线穿过水体的距离计算人物水下吸收', () => {
@@ -80,7 +88,7 @@ test('共用事件镜头只在高空俯拍阶段排除顶棚', () => {
 
 test('炮火、首个漩涡、鲨鱼和定时炸弹复用事件镜头，障碍水雷不接入', () => {
     assert.match(gameManager, /updateShark\(this\._shark, dt\)/);
-    assert.match(gameManager, /showCannonLaunch\(launch\)/);
+    assert.match(gameManager, /showCannonLaunch\([\s\S]*?launch,[\s\S]*?sourceWorldX\(\)/);
     assert.match(gameManager, /showCannonImpact\(impact\)/);
     assert.doesNotMatch(gameManager, /showMineFloating\(|showMineCarrier\(|showMineExplosion\(|updateMine\(/);
     assert.match(gameManager, /showTimedBombCarrier\(/);
@@ -116,5 +124,5 @@ test('鲨鱼危险镜头占用期间炮火只缓存落点，不反复抢占画�
     const cannonLaunch = camera.match(/showCannonLaunch\([\s\S]*?\n    }/)?.[0] ?? '';
     const cannonUpdate = camera.match(/updateCannon\([\s\S]*?\n    }/)?.[0] ?? '';
     assert.match(cannonLaunch, /this\.cannonTargetX = target\.x[\s\S]*?if \(this\.mode === 'shark'\) return[\s\S]*?this\.mode = 'cannon'/);
-    assert.match(cannonUpdate, /showCannonLaunch\(launch\)[\s\S]*?if \(this\.mode !== 'cannon'\) return/);
+    assert.match(cannonUpdate, /showCannonLaunch\(launch, sourceWorldX\)[\s\S]*?if \(this\.mode !== 'cannon'\) return/);
 });

@@ -149,7 +149,7 @@ export class EntertainmentEventBanner {
         });
     }
 
-    /** 画中画出现时只收窄广播通道，不移动排名，也不重建节点。 */
+    /** 接收画中画的固定安全边界；只在初始化或屏幕尺寸变化时重新布局。 */
     setPictureInPictureLeft(leftEdge: number | null): void {
         const next = leftEdge !== null && Number.isFinite(leftEdge) ? leftEdge : null;
         if (this.pictureInPictureLeft === next) return;

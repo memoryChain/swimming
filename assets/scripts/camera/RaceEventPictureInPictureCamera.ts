@@ -667,7 +667,6 @@ export class RaceEventPictureInPictureCamera {
         this.renderElapsed = RENDER_INTERVAL_SECONDS;
         if (this.root?.isValid && this.root.active !== active) this.root.active = active;
         if (!active && this.camera?.isValid && this.camera.enabled) this.camera.enabled = false;
-        this.notifyHudBounds(active);
     }
 
     private hide(): void {
@@ -779,7 +778,8 @@ export class RaceEventPictureInPictureCamera {
         if (root.position.x !== x || root.position.y !== y) root.setPosition(x, y, 0);
         if (root.scale.x !== panelScale || root.scale.y !== panelScale) root.setScale(panelScale, panelScale, 1);
         this.hudLeftEdge = panelRight - PANEL_WIDTH * panelScale;
-        if (this.active) this.notifyHudBounds(true);
+        // 画中画即使暂时隐藏也永久占用同一安全区，避免广播在镜头显隐时左右重排。
+        this.notifyHudBounds(true);
     }
 
     private notifyHudBounds(active: boolean): void {
