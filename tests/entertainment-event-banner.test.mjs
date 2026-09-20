@@ -7,6 +7,7 @@ const director = readFileSync(new URL('../assets/scripts/core/EntertainmentModeD
 const banner = readFileSync(new URL('../assets/scripts/ui/SharkEventBanner.ts', import.meta.url), 'utf8');
 const cannonHud = readFileSync(new URL('../assets/scripts/ui/CannonBrawlHud.ts', import.meta.url), 'utf8');
 const bombHud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts', import.meta.url), 'utf8');
+const statusStrip = readFileSync(new URL('../assets/scripts/ui/EntertainmentStatusStrip.ts', import.meta.url), 'utf8');
 
 test('六种娱乐玩法共用赛事广播与个人反馈，不再从比赛编排调用通用 Toast', () => {
     assert.match(gameManager, /new EntertainmentEventBanner\(\)/);
@@ -131,11 +132,19 @@ test('首位选手完赛后由房主停止新事件，并单独关闭尚未激�
     assert.match(banner, /hideEvent\(\): void \{[\s\S]*?this\.eventQueue\.length = 0/);
 });
 
-test('炮火与定时炸弹持续状态条使用同一尺寸和位置', () => {
+test('炮火与定时炸弹持续状态条复用无图标美术、程序文字与同一位置', () => {
+    assert.match(statusStrip, /ENTERTAINMENT_STATUS_STRIP_WIDTH = 560/);
+    assert.match(statusStrip, /ENTERTAINMENT_STATUS_STRIP_HEIGHT = 56/);
+    assert.match(statusStrip, /makeLabel\('Message'/);
+    assert.match(statusStrip, /makeLabel\('Value'/);
+    assert.match(statusStrip, /RESOURCE_PATHS\.entertainmentStatusUi\.base/);
+    assert.doesNotMatch(statusStrip, /makeUiNode\('Icon'/);
+    assert.doesNotMatch(statusStrip, /Graphics/);
     for (const source of [cannonHud, bombHud]) {
-        assert.match(source, /560, 42/);
+        assert.match(source, /new EntertainmentStatusStrip/);
         assert.match(source, /size\.height \* 0\.5 - 118/);
         assert.match(source, /SAMPLE_SECONDS = 0\.1/);
+        assert.match(source, /this\.strip\.setContent\(message, value, tone\)/);
     }
 });
 

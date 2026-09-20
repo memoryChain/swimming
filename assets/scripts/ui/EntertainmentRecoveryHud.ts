@@ -4,6 +4,7 @@ import { loadRaceAsset } from '../core/RaceBundleLoader';
 import { RESOURCE_PATHS } from '../core/ResourcePaths';
 import { makeLabel, makeRoundedRect, makeUiNode, uiColor } from './RuntimeUiFactory';
 import { styleProjectUiLabel } from './ProjectUiFonts';
+import { EntertainmentStatusStrip } from './EntertainmentStatusStrip';
 
 const SAMPLE_SECONDS = 0.1;
 const EMERGENCY_DOT_SECONDS = 0.35;
@@ -33,7 +34,6 @@ const EMERGENCY_PROGRESS_STABLE = new Color(255, 196, 52, 255);
 const EMERGENCY_PROGRESS_READY = new Color(72, 210, 105, 255);
 const INVULNERABLE_ENTER_SECONDS = 0.16;
 const INVULNERABLE_SETTLE_SECONDS = 0.08;
-const INVULNERABLE_TEXT = new Color(116, 236, 255, 255);
 const DIM_COLOR = new Color(0, 7, 16, 205);
 
 /** 玩家击倒／无敌提示；击倒阶段独占压暗层，倒计时仍只以 10Hz 刷新。 */
@@ -52,16 +52,15 @@ export class EntertainmentRecoveryHud {
     private readonly emergencyProgressFill: Node;
     private readonly emergencyProgressFillGraphics: Graphics;
     private readonly emergencyProgressColor = new Color(EMERGENCY_PROGRESS_DANGER);
+    private readonly statusStrip: EntertainmentStatusStrip;
     private readonly statusRoot: Node;
     private readonly statusOpacity: UIOpacity;
-    private readonly statusLabel: Label;
     private elapsed = SAMPLE_SECONDS;
     private emergencyElapsed = 0;
     private emergencyDotIndex = 0;
     private lastEmergencyDots = '';
     private emergencyProgressElapsed = SAMPLE_SECONDS;
     private lastEmergencyProgressStep = -1;
-    private lastText = '';
     private lastPhase = EntertainmentRecoveryPhase.ACTIVE;
     private layoutWidth = 0;
     private layoutHeight = 0;
@@ -150,26 +149,14 @@ export class EntertainmentRecoveryHud {
         this.emergencyProgressFillGraphics = this.emergencyProgressFill.getComponent(Graphics)!;
         this.setEmergencyProgressStep(0);
 
-        this.statusRoot = makeRoundedRect(
-            'InvulnerabilityStatus', this.root, 560, 42,
-            uiColor(7, 24, 36, 220), 18,
-            uiColor(105, 222, 255, 230), 2,
-        );
+        this.statusStrip = new EntertainmentStatusStrip(this.root, 'InvulnerabilityStatus');
+        this.statusRoot = this.statusStrip.root;
         this.statusOpacity = this.statusRoot.addComponent(UIOpacity);
         this.layout();
         view.on('canvas-resize', this.layout, this);
         view.on('design-resolution-changed', this.layout, this);
-        const labelNode = makeLabel('Status', this.statusRoot, '', 19, INVULNERABLE_TEXT);
-        labelNode.getComponent(UITransform)?.setContentSize(530, 38);
-        this.statusLabel = labelNode.getComponent(Label)!;
-        this.statusLabel.enableWrapText = false;
-        this.statusLabel.overflow = Label.Overflow.SHRINK;
-        styleProjectUiLabel(this.statusLabel, 'semibold', 34);
-        const outline = labelNode.addComponent(LabelOutline);
-        outline.color = uiColor(0, 0, 0, 100);
-        outline.width = 1;
         this.overlay.active = false;
-        this.statusRoot.active = false;
+        this.statusStrip.hide();
         this.inputBlocker.enabled = false;
         this.root.active = false;
     }
@@ -187,7 +174,6 @@ export class EntertainmentRecoveryHud {
         this.lastEmergencyDots = '';
         this.emergencyProgressElapsed = SAMPLE_SECONDS;
         this.lastEmergencyProgressStep = -1;
-        this.lastText = '';
         this.lastPhase = EntertainmentRecoveryPhase.ACTIVE;
         this.emergencyMotionRoot.setPosition(0, 0, 0);
         this.emergencyMotionRoot.setScale(1, 1, 1);
@@ -199,7 +185,7 @@ export class EntertainmentRecoveryHud {
         this.inputBlocker.enabled = false;
         this.setEmergencyProgressStep(0);
         if (this.overlay.active) this.overlay.active = false;
-        if (this.statusRoot.active) this.statusRoot.active = false;
+        this.statusStrip.reset();
         if (this.root.active) this.root.active = false;
     }
 
@@ -220,11 +206,7 @@ export class EntertainmentRecoveryHud {
         if (this.elapsed < SAMPLE_SECONDS) return;
         this.elapsed %= SAMPLE_SECONDS;
         const seconds = Math.max(0, Math.ceil(remainingSeconds * 10) / 10).toFixed(1);
-        const text = `无敌保护 · ${seconds}秒`;
-        if (text !== this.lastText) {
-            this.lastText = text;
-            this.statusLabel.string = text;
-        }
+        this.statusStrip.setContent('无敌保护', `${seconds}秒`, 'protect');
     }
 
     dispose(): void {
@@ -255,7 +237,7 @@ export class EntertainmentRecoveryHud {
         this.emergencyLabelNode.setScale(1, 1, 1);
         if (phase === EntertainmentRecoveryPhase.KNOCKED) {
             if (this.root.parent) this.root.setSiblingIndex(this.root.parent.children.length - 1);
-            if (this.statusRoot.active) this.statusRoot.active = false;
+            this.statusStrip.hide();
             if (!this.overlay.active) this.overlay.active = true;
             this.inputBlocker.enabled = true;
             this.emergencyElapsed = -EMERGENCY_IMPACT_HOLD_SECONDS;
@@ -312,7 +294,7 @@ export class EntertainmentRecoveryHud {
             return;
         }
         this.inputBlocker.enabled = false;
-        if (this.statusRoot.active) this.statusRoot.active = false;
+        this.statusStrip.reset();
         this.dimOpacity.opacity = 0;
         this.emergencyCardOpacity.opacity = 0;
         if (this.overlay.active) this.overlay.active = false;

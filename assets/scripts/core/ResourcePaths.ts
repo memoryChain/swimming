@@ -507,6 +507,9 @@ export const RESOURCE_PATHS = {
     entertainmentRecoveryUi: {
         rescueCard: 'ui/entertainment-recovery-v1/rescue-card/texture',
     },
+    entertainmentStatusUi: {
+        base: 'ui/entertainment-status-v1/status-strip/texture',
+    },
     entertainmentBannerUi: {
         events: {
             info: 'ui/entertainment-banner-v1/event-banner-info/texture',

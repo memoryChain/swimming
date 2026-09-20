@@ -538,9 +538,13 @@ test('同一水雷修订的旧快照不会回拨漂移时钟或复活障碍', ()
 
 test('两种玩法的 HUD 与表现不逐帧重建 UI，也不接管主镜头', () => {
     const hud = readFileSync(new URL('../assets/scripts/ui/MineRelayBrawlHud.ts', import.meta.url), 'utf8');
+    const statusStrip = readFileSync(new URL('../assets/scripts/ui/EntertainmentStatusStrip.ts', import.meta.url), 'utf8');
     assert.match(hud, /SAMPLE_SECONDS = 0\.1/);
-    assert.match(hud, /text !== this\.lastText/);
+    assert.match(hud, /new EntertainmentStatusStrip/);
+    assert.match(statusStrip, /message !== this\.lastMessage/);
+    assert.match(statusStrip, /value !== this\.lastValue/);
     assert.doesNotMatch(hud, /Graphics\.clear|\.clear\(\)/);
+    assert.doesNotMatch(statusStrip, /Graphics\.clear|\.clear\(\)/);
     const presentation = readFileSync(new URL('../assets/scripts/core/MinefieldBrawlPresentation.ts', import.meta.url), 'utf8');
     assert.match(presentation, /PRESENTATION_INTERVAL = 1 \/ 20/);
     assert.match(presentation, /visible !== this\.visible/);

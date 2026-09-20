@@ -130,10 +130,14 @@ test('只剩一名可攻击选手时仍会生成炮击', () => {
 
 test('炮火 HUD 限制十赫兹采样且不逐帧重绘图形', () => {
     const source = readFileSync(new URL('../assets/scripts/ui/CannonBrawlHud.ts', import.meta.url), 'utf8');
+    const statusStrip = readFileSync(new URL('../assets/scripts/ui/EntertainmentStatusStrip.ts', import.meta.url), 'utf8');
     assert.match(source, /SAMPLE_SECONDS = 0\.1/);
     assert.match(source, /consumeSample/);
-    assert.match(source, /text !== this\.lastText/);
+    assert.match(source, /new EntertainmentStatusStrip/);
+    assert.match(statusStrip, /message !== this\.lastMessage/);
+    assert.match(statusStrip, /value !== this\.lastValue/);
     assert.doesNotMatch(source, /Graphics\.clear|\.clear\(\)/);
+    assert.doesNotMatch(statusStrip, /Graphics\.clear|\.clear\(\)/);
     const presentation = readFileSync(
         new URL('../assets/scripts/core/CannonBrawlPresentation.ts', import.meta.url),
         'utf8',

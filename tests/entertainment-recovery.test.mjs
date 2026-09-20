@@ -125,6 +125,7 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
 
 test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条', () => {
     const hud = readFileSync(new URL('../assets/scripts/ui/EntertainmentRecoveryHud.ts', import.meta.url), 'utf8');
+    const statusStrip = readFileSync(new URL('../assets/scripts/ui/EntertainmentStatusStrip.ts', import.meta.url), 'utf8');
     assert.match(hud, /EMERGENCY_DOT_TEXTS = \['\.', '\.\.', '\.\.\.'\]/);
     assert.match(hud, /EMERGENCY_DOT_SECONDS = 0\.35/);
     assert.match(hud, /EMERGENCY_IMPACT_HOLD_SECONDS = 0\.45/);
@@ -169,6 +170,11 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.KNOCKED/);
     assert.match(hud, /phase === EntertainmentRecoveryPhase\.INVULNERABLE/);
     assert.match(hud, /无敌保护/);
+    assert.match(hud, /new EntertainmentStatusStrip\(this\.root, 'InvulnerabilityStatus'\)/);
+    assert.match(hud, /this\.statusStrip\.setContent\('无敌保护', `\$\{seconds\}秒`, 'protect'\)/);
+    assert.match(statusStrip, /makeLabel\('Message'/);
+    assert.match(statusStrip, /makeLabel\('Value'/);
+    assert.doesNotMatch(statusStrip, /makeUiNode\('Icon'/);
     const card = statSync(new URL('../assets/race/ui/entertainment-recovery-v1/rescue-card.png', import.meta.url));
     assert.ok(card.size > 0 && card.size < 512 * 1024);
 });
