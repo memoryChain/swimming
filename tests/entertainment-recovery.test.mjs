@@ -3,8 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 
 import RecoveryModule from '../assets/scripts/core/EntertainmentRecoveryController.ts';
+import RecoveryCopyModule from '../assets/scripts/ui/EntertainmentRecoveryCopy.ts';
 
 const { EntertainmentRecoveryController, ENTERTAINMENT_RECOVERY_TUNING } = RecoveryModule;
+const {
+    ENTERTAINMENT_RECOVERY_COPY_POOLS,
+    recoveryCopyTierForText,
+    selectEntertainmentRecoveryCopy,
+} = RecoveryCopyModule;
 const ACTIVE = 0;
 const KNOCKED = 1;
 const INVULNERABLE = 2;
@@ -22,6 +28,36 @@ function fixture(lanes = 4) {
     });
     return { controller, events };
 }
+
+test('急救文案按正式、通用幽默和受击原因分池，并按长度使用三档字号', () => {
+    assert.ok(ENTERTAINMENT_RECOVERY_COPY_POOLS.formal.includes('急救中'));
+    for (const pool of Object.values(ENTERTAINMENT_RECOVERY_COPY_POOLS)) {
+        assert.ok(pool.length >= 3);
+        for (const copy of pool) {
+            const length = Array.from(copy).length;
+            assert.ok(length >= 3 && length <= 10, `${copy} 长度应在三到十字之间`);
+        }
+    }
+    assert.equal(recoveryCopyTierForText('急救中'), 'large');
+    assert.equal(recoveryCopyTierForText('队医冲刺中'), 'medium');
+    assert.equal(recoveryCopyTierForText('泳帽还在问题不大'), 'small');
+});
+
+test('同一次权威击倒固定同一句急救文案，不新增玩法随机或联机字段', () => {
+    const first = selectEntertainmentRecoveryCopy(SHARK, 2, 17);
+    assert.deepEqual(selectEntertainmentRecoveryCopy(SHARK, 2, 17), first);
+    const sharkSpecific = new Set(ENTERTAINMENT_RECOVERY_COPY_POOLS.shark);
+    const cannonSpecific = new Set(ENTERTAINMENT_RECOVERY_COPY_POOLS.cannon);
+    const sharkSeen = new Set();
+    const cannonSeen = new Set();
+    for (let revision = 1; revision <= 80; revision++) {
+        sharkSeen.add(selectEntertainmentRecoveryCopy(SHARK, 2, revision).text);
+        cannonSeen.add(selectEntertainmentRecoveryCopy(CANNON, 2, revision).text);
+    }
+    assert.ok([...sharkSeen].some(copy => sharkSpecific.has(copy)));
+    assert.ok([...cannonSeen].some(copy => cannonSpecific.has(copy)));
+    assert.ok([...sharkSeen].some(copy => !cannonSeen.has(copy)));
+});
 
 test('击倒后按等待、无敌、恢复三个阶段推进并保留权威距离', () => {
     const f = fixture();
@@ -138,6 +174,7 @@ test('鲨鱼、炮火、定时炸弹和独立／六合一水雷接入复用泳�
 test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条', () => {
     const hud = readFileSync(new URL('../assets/scripts/ui/EntertainmentRecoveryHud.ts', import.meta.url), 'utf8');
     const statusStrip = readFileSync(new URL('../assets/scripts/ui/EntertainmentStatusStrip.ts', import.meta.url), 'utf8');
+    const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     assert.match(hud, /EMERGENCY_DOT_TEXTS = \['\.', '\.\.', '\.\.\.'\]/);
     assert.match(hud, /EMERGENCY_DOT_SECONDS = 0\.35/);
     assert.match(hud, /EMERGENCY_IMPACT_HOLD_SECONDS = 0\.45/);
@@ -152,8 +189,18 @@ test('本地击倒使用独占急救遮罩，重生后再显示无敌状态条',
     assert.match(hud, /紧急救援/);
     assert.match(hud, /'紧急救援', 34/);
     assert.match(hud, /'急救中', 74/);
-    assert.match(hud, /EmergencyDots/);
-    assert.match(hud, /horizontalAlign = Label\.HorizontalAlign\.LEFT/);
+    assert.match(hud, /EMERGENCY_COPY_LAYOUTS/);
+    assert.match(hud, /lastRecoveryCopyRevision = -1/);
+    assert.match(hud, /selectEntertainmentRecoveryCopy\(reason, lane, revision\)/);
+    assert.match(hud, /this\.emergencyLabel\.fontSize !== layout\.fontSize/);
+    assert.match(manager, /playerState\?\.reason \?\? EntertainmentRecoveryReason\.NONE/);
+    assert.match(manager, /playerState\?\.revision \?\? 0/);
+    assert.match(manager, /this\._playerLaneIndex/);
+    assert.doesNotMatch(hud, /makeLabel\('EmergencyDots'/);
+    assert.match(hud, /this\.emergencyLabel\.horizontalAlign = Label\.HorizontalAlign\.LEFT/);
+    assert.match(hud, /const combined = `\$\{this\.emergencyCopyText\}\$\{text\}`/);
+    assert.match(hud, /this\.emergencyLabel\.string = combined/);
+    assert.match(hud, /medium: \{ fontSize: 60, lineHeight: 72, width: 570, left: -170 \}/);
     assert.match(hud, /EMERGENCY_CARD_ENTRY_X = -160/);
     assert.match(hud, /EMERGENCY_CARD_OVERSHOOT_X = 12/);
     assert.match(hud, /position: new Vec3\(EMERGENCY_CARD_OVERSHOOT_X, 0, 0\)[\s\S]*?easing: 'cubicOut'/);
@@ -283,7 +330,7 @@ test('旁观击倒使用独立漂浮姿态和低频头顶眩晕星，不新增�
         new URL('../assets/scripts/net/NetRaceProtocol.ts', import.meta.url),
         'utf8',
     );
-    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 86/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION = 87/);
 
     const manager = readFileSync(new URL('../assets/scripts/core/GameManager.ts', import.meta.url), 'utf8');
     const recoveryUpdate = manager.match(/private updateEntertainmentRecovery[\s\S]*?const playerState/)?.[0] ?? '';

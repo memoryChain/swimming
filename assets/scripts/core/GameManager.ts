@@ -104,7 +104,7 @@ import { InputManager } from './InputManager';
 import { InputRouter } from './InputRouter';
 import { RaceFinishResult, RaceManager } from './RaceManager';
 import { GameState, Rating, StrokeType } from './GameConstants';
-import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, SWIMMER_BALANCE } from './GameBalance';
+import { getRaceDifficultyConfig, getRaceDistance, getRaceModeTitle, isCannonBrawlMode, isEntertainmentBrawlMode, isLitterBrawlMode, isMinefieldBrawlMode, isSharkBrawlMode, isStimulantBrawlMode, isTimedBombBrawlMode, isWhirlpoolBrawlMode, raceDistanceToCourseX, SWIMMER_BALANCE } from './GameBalance';
 import { StimulantBrawlController } from './StimulantBrawlController';
 import { EntertainmentWaterSplashPool } from './EntertainmentWaterSplash';
 import { buildEntertainmentStimulantSchedule } from './StimulantBrawlRules';
@@ -115,6 +115,7 @@ import {
     type WhirlpoolVisualResources,
 } from './WhirlpoolBrawlController';
 import {
+    currentWhirlpoolSpawns,
     entertainmentWhirlpoolSpawn,
     isSuperWhirlpool,
     setRuntimeWhirlpoolSpawns,
@@ -136,7 +137,7 @@ import { MINE_RELAY_ROUNDS, MINE_RELAY_TUNING, MineRelayArm, MineRelayBrawlContr
 import { MineRelayBrawlPresentation } from './MineRelayBrawlPresentation';
 import { MinefieldBrawlController, MinefieldImpact, MinefieldRacerState, MINEFIELD_TUNING } from './MinefieldBrawlController';
 import { MinefieldBrawlPresentation } from './MinefieldBrawlPresentation';
-import { LitterBrawlController, LitterRacerState, LitterRigidImpact, LITTER_BRAWL_TUNING } from './LitterBrawlController';
+import { buildEntertainmentLitterSchedule, litterCorridorOverlapsObstacle, LitterBrawlController, LitterContact, LitterRacerState, LitterRigidImpact, LITTER_BRAWL_TUNING } from './LitterBrawlController';
 import { LitterBrawlPresentation } from './LitterBrawlPresentation';
 import {
     EntertainmentEventId,
@@ -204,6 +205,7 @@ function entertainmentBannerIcon(event: EntertainmentEventId): EntertainmentBann
         case EntertainmentEventId.CANNON: return 'cannon';
         case EntertainmentEventId.MINEFIELD: return 'mine';
         case EntertainmentEventId.SHARK: return 'shark';
+        case EntertainmentEventId.LITTER: return 'broadcast';
         default: return 'broadcast';
     }
 }
@@ -216,6 +218,7 @@ function entertainmentActiveBannerCategory(event: EntertainmentEventId): Enterta
         case EntertainmentEventId.CANNON: return '炮火警报';
         case EntertainmentEventId.MINEFIELD: return '水雷警报';
         case EntertainmentEventId.SHARK: return '鲨鱼警报';
+        case EntertainmentEventId.LITTER: return '赛道异物';
         default: return '广播通知';
     }
 }
@@ -624,6 +627,8 @@ export class GameManager extends Component {
         this._netRaceController?.setMineRelayStateListener(null);
         this._netRaceController?.setMinefieldImpactListener(null);
         this._netRaceController?.setMinefieldStateListener(null);
+        this._netRaceController?.setLitterStateListener(null);
+        this._netRaceController?.setLitterContactListener(null);
         this._eventPictureInPicture?.dispose();
         this._eventPictureInPicture = null;
         this._waterRefraction?.dispose();
@@ -1536,6 +1541,9 @@ export class GameManager extends Component {
                 && isTimedBombBrawlMode()) {
                 this._mineRelayBrawl?.cancelPendingRoundsAfterCurrent();
             }
+            if (director.currentEvent() === EntertainmentEventId.LITTER && isLitterBrawlMode()) {
+                this._litterBrawl?.cancelPendingWaves();
+            }
             this.handleEntertainmentDirectorTransition(director.lockAfterFirstFinish());
             const closingEvent = director.currentEvent();
             const closingTransition = director.update(
@@ -1639,6 +1647,8 @@ export class GameManager extends Component {
             this._cannonPreviewPending = false;
         } else if (transition.finishedEvent === EntertainmentEventId.TIMED_BOMB) {
             this._mineRelayHud?.hide();
+        } else if (transition.finishedEvent === EntertainmentEventId.LITTER) {
+            this._litterBrawl?.cancelPendingWaves();
         }
     }
 
@@ -1685,6 +1695,9 @@ export class GameManager extends Component {
                 }
                 this._cannonBrawlPresentation?.snapDeployed();
                 break;
+            case EntertainmentEventId.LITTER:
+                this.setupLitterBrawl();
+                break;
         }
     }
 
@@ -1693,7 +1706,7 @@ export class GameManager extends Component {
         if (!director) return;
         // 返场事件可能是主事件表里唯一漏掉的那一种，恢复时必须扫描完整事件 ID，
         // 不能只遍历 selectedEvents()，否则晚加入会漏建返场后的驻留鲨鱼或炮台。
-        for (let event = EntertainmentEventId.STIMULANT; event <= EntertainmentEventId.CANNON; event++) {
+        for (let event = EntertainmentEventId.STIMULANT; event <= EntertainmentEventId.LITTER; event++) {
             if (!isEntertainmentEventResident(event)) continue;
             switch (event) {
                 case EntertainmentEventId.STIMULANT:
@@ -1719,6 +1732,9 @@ export class GameManager extends Component {
                     break;
                 case EntertainmentEventId.CANNON:
                     if (!this._cannonBrawl) this.setupCannonBrawl();
+                    break;
+                case EntertainmentEventId.LITTER:
+                    if (!this._litterBrawl) this.setupLitterBrawl();
                     break;
             }
         }
@@ -2073,6 +2089,9 @@ export class GameManager extends Component {
             dt,
             playerState?.phase ?? EntertainmentRecoveryPhase.ACTIVE,
             playerState?.remainingSeconds ?? 0,
+            playerState?.reason ?? EntertainmentRecoveryReason.NONE,
+            playerState?.revision ?? 0,
+            this._playerLaneIndex,
         );
     }
 
@@ -2723,8 +2742,13 @@ export class GameManager extends Component {
         this._litterPresentation?.dispose();
         this._litterPresentation = null;
         this._playerLitterSlowed = false;
-        // 第一阶段只在本地调试入口开放，避免未经验证的规则进入联机赛果同步。
-        if (!isLitterBrawlMode() || !this._raceManager || this._netSession) return;
+        if (!isLitterBrawlMode() || !this._raceManager) return;
+        const schedule = isEntertainmentBrawlMode()
+            ? buildEntertainmentLitterSchedule(
+                this.entertainmentAnchorDistance(EntertainmentEventId.LITTER),
+                getRaceDistance(),
+            )
+            : undefined;
         this._litterBrawl = new LitterBrawlController(
             LANE_LAYOUT.laneCount,
             getSharedRandomSeed(),
@@ -2739,17 +2763,36 @@ export class GameManager extends Component {
                 state.lateral = swimmer?.node?.position.z ?? LANE_LAYOUT.centerZ(lane);
                 return state;
             },
-            wave => this._entertainmentEventBanner.showEvent(
-                wave === 0
-                    ? '看台有观众开始往泳池里乱扔垃圾了'
-                    : '又有垃圾被扔进泳池·注意水面漂浮物',
-                'warning',
-                2200,
-                'broadcast',
-                '赛道异物',
-            ),
+            wave => {
+                if (isEntertainmentBrawlMode()) return;
+                this._entertainmentEventBanner.showEvent(
+                    wave === 0
+                        ? '看台有观众开始往泳池里乱扔垃圾了'
+                        : '又有垃圾被扔进泳池·注意水面漂浮物',
+                    'warning',
+                    2200,
+                    'broadcast',
+                    '赛道异物',
+                );
+            },
             impact => this.handleLitterRigidImpact(impact),
+            schedule,
+            isEntertainmentBrawlMode()
+                ? (courseX, safeCenter, safeHalfWidth) => this.isEntertainmentLitterWaveSafe(
+                    courseX,
+                    safeCenter,
+                    safeHalfWidth,
+                )
+                : undefined,
+            contact => this._netRaceController?.enqueueLitterContact(contact),
         );
+        this._netRaceController?.setLitterStateListener(state => {
+            this._litterBrawl?.applySnapshotState(state);
+        });
+        this._netRaceController?.setLitterContactListener((contact: LitterContact) => {
+            if (!this._litterBrawl?.applyContact(contact) || contact.kind !== 'rigid') return;
+            this.handleLitterRigidImpact(contact);
+        });
         if (this._worldRoot?.isValid) {
             this._litterPresentation = new LitterBrawlPresentation(
                 this._worldRoot,
@@ -2760,6 +2803,68 @@ export class GameManager extends Component {
         }
     }
 
+    private isEntertainmentLitterWaveSafe(
+        courseX: number,
+        safeCenter: number,
+        safeHalfWidth: number,
+    ): boolean {
+        const swimmerClearance = LITTER_BRAWL_TUNING.spawnSwimmerClearAlongRadius
+            + LITTER_BRAWL_TUNING.rigidItemAlongRadius
+            + LITTER_BRAWL_TUNING.swimmerContactAlongRadius;
+        for (let lane = 0; lane < LANE_LAYOUT.laneCount; lane++) {
+            const swimmer = this.swimmerForLane(lane);
+            if (!swimmer?.node?.active
+                || this._raceManager?.hasSwimmerFinished(swimmer)
+                || swimmer.distance >= getRaceDistance()) continue;
+            if (Math.abs(raceDistanceToCourseX(swimmer.distance) - courseX) <= swimmerClearance) return false;
+        }
+
+        const mines = this._minefieldBrawl?.mines();
+        if (mines) {
+            const mineAlongClearance = MINEFIELD_TUNING.mineItemAlongRadius
+                + MINEFIELD_TUNING.swimmerContactAlongRadius
+                + LITTER_BRAWL_TUNING.spawnMineAlongMargin;
+            const mineLateralClearance = MINEFIELD_TUNING.mineItemLateralRadius
+                + MINEFIELD_TUNING.swimmerContactLateralRadius
+                + LITTER_BRAWL_TUNING.spawnMineLateralMargin;
+            for (const mine of mines) {
+                if (!mine.active) continue;
+                if (litterCorridorOverlapsObstacle(
+                    courseX,
+                    safeCenter,
+                    safeHalfWidth,
+                    mine.courseX,
+                    mine.lateral,
+                    mineAlongClearance,
+                    mineLateralClearance,
+                )) return false;
+            }
+        }
+
+        if (isWhirlpoolBrawlMode()) {
+            for (const spawn of currentWhirlpoolSpawns()) {
+                const superVariant = isSuperWhirlpool(spawn);
+                const alongRadius = WHIRLPOOL_BRAWL_TUNING.alongRadius
+                    * (superVariant ? WHIRLPOOL_SUPER_TUNING.alongRadiusScale : 1)
+                    + LITTER_BRAWL_TUNING.spawnWhirlpoolAlongMargin;
+                if (Math.abs(raceDistanceToCourseX(spawn.distance) - courseX) > alongRadius) continue;
+                const lateralRadius = WHIRLPOOL_BRAWL_TUNING.lateralRadius
+                    * (superVariant ? WHIRLPOOL_SUPER_TUNING.lateralRadiusScale : 1)
+                    + LITTER_BRAWL_TUNING.spawnWhirlpoolLateralMargin;
+                if (litterCorridorOverlapsObstacle(
+                    courseX,
+                    safeCenter,
+                    safeHalfWidth,
+                    raceDistanceToCourseX(spawn.distance),
+                    whirlpoolCenterZ(spawn, COURSE_LAYOUT.poolWidth),
+                    alongRadius,
+                    lateralRadius,
+                )) return false;
+            }
+        }
+        return true;
+    }
+
     private updateLitterBrawl(dt: number) {
         const controller = this._litterBrawl;
         if (!controller) return;
@@ -2767,7 +2872,7 @@ export class GameManager extends Component {
             this.clearLitterInfluence();
             return;
         }
-        controller.update(dt, this._state);
+        controller.update(dt, this._state, !this._netRaceController || this._netRaceController.isHost);
         const visible = this._state === GameState.COUNTDOWN || this._state === GameState.DIVING
             || this._state === GameState.GLIDING || this._state === GameState.RACING;
         this._litterPresentation?.update(dt, controller.clusters(), visible);
@@ -3897,6 +4002,7 @@ export class GameManager extends Component {
                     this._entertainmentRecovery?.snapshot(),
                     this._minefieldBrawl?.snapshotState(),
                     this._entertainmentDirector?.snapshot(),
+                    this._litterBrawl?.snapshotState(),
                 );
             }
             // Broadcast-only fallback (e.g. iOS high-performance+ disables the lock-step

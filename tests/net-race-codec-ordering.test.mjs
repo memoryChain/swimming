@@ -7,6 +7,7 @@ import Ordering from '../assets/scripts/net/NetInputOrdering.ts';
 import Protocol from '../assets/scripts/net/NetRaceProtocol.ts';
 import ResultCodec from '../assets/scripts/net/NetRaceResult.ts';
 import ConditionBalance from '../assets/scripts/core/ConditionBalance.ts';
+import LitterCodec from '../assets/scripts/net/NetLitterSnapshot.ts';
 
 const {
     decodeConditionHeartRate,
@@ -28,6 +29,7 @@ const {
     isCompatibleProtocolVersion,
 } = Protocol;
 const { conditionQualityScale } = ConditionBalance;
+const { decodeLitterSnapshot, encodeLitterSnapshot } = LitterCodec;
 const { decodeRaceResult, encodeRaceResult } = ResultCodec;
 
 function entry(overrides = {}) {
@@ -48,6 +50,42 @@ function entry(overrides = {}) {
         conditionHeartRate: 149.9,
         conditionDepletionCooldown: 0.321,
         ...overrides,
+    };
+}
+
+function litterState(slotCount = 6) {
+    return {
+        revision: 999999,
+        elapsedSeconds: 999.999,
+        nextWave: 3,
+        spawnOrder: slotCount,
+        randomState: 0xffffffff,
+        spawnRetryRemaining: 0.25,
+        blockedWaveSeconds: 2.999,
+        cancelledWaveCount: 1,
+        slots: Array.from({ length: slotCount }, (_, id) => ({
+            id,
+            generation: 3,
+            wave: Math.floor(id / 2),
+            kind: id % 2 === 0 ? 'rigid' : 'soft',
+            phase: id < 2 ? 'floating' : 'retiring',
+            age: 18.999,
+            courseX: 48.8,
+            lateral: id % 2 === 0 ? -9.999 : 9.999,
+            anchorCourseX: 48.8,
+            anchorLateral: id % 2 === 0 ? -9.999 : 9.999,
+            safeCenter: id % 2 === 0 ? -7.777 : 7.777,
+            throwSide: id % 2 === 0 ? -1 : 1,
+            visualVariant: id % 3,
+            impactRevision: 99,
+            driftPhase: 6.283,
+            spawnOrder: id,
+            insideMask: 0xff,
+            bounceAlongVelocity: 2.45,
+            bounceLateralVelocity: -1.764,
+            retireStartCourseX: 48.8,
+            retireStartLateral: id % 2 === 0 ? -9.999 : 9.999,
+        })),
     };
 }
 
@@ -86,6 +124,24 @@ test('minefield impact round-trips on the reliable input channel', () => {
     assert.deepEqual(decoded.events, [{
         kind: 'i', mineId: 4, mineHitLane: 6, mineDistance: 27.35, mineLateral: -2.125, hitMask: 0b11100000, revision: 8,
     }]);
+});
+
+test('garbage contact round-trips with slot generation, trajectory and monotonic revision', () => {
+    const event = {
+        kind: 'g',
+        litterSlotId: 4,
+        litterGeneration: 2,
+        litterKind: 0,
+        litterLane: 6,
+        litterAway: -1,
+        litterCourseX: 27.35,
+        litterLateral: -2.125,
+        litterBounceAlong: 2.45,
+        litterBounceLateral: -1.764,
+        revision: 18,
+    };
+    const decoded = decodeInputFrame(encodeInputFrame(0, [event], null, -1, 46));
+    assert.deepEqual(decoded.events, [event]);
 });
 
 test('unified entertainment knockdown round-trips with the global recovery revision', () => {
@@ -201,6 +257,13 @@ test('minefield lifecycle state round-trips in S|', () => {
     assert.deepEqual(snapshot.minefield, minefield);
 });
 
+test('garbage lifecycle and active slot state round-trips in the periodic L| fallback', () => {
+    const litter = litterState(6);
+    const snapshot = decodeLitterSnapshot(encodeLitterSnapshot(3, litter));
+    assert.equal(snapshot.hostPos, 3);
+    assert.deepEqual(snapshot.state, litter);
+});
+
 test('八泳道满状态快照保持在项目的一点五千字节回归预算内', () => {
     const entries = Array.from({ length: 8 }, (_, lane) => entry({
         lane,
@@ -265,6 +328,9 @@ test('八泳道满状态快照保持在项目的一点五千字节回归预算�
         },
     );
     assert.ok(Buffer.byteLength(payload, 'utf8') <= 1536, `snapshot bytes=${Buffer.byteLength(payload, 'utf8')}`);
+    const litterPayload = encodeLitterSnapshot(7, litterState(6));
+    assert.ok(Buffer.byteLength(litterPayload, 'utf8') <= 1536,
+        `litter snapshot bytes=${Buffer.byteLength(litterPayload, 'utf8')}`);
 });
 
 test('timed bomb arm, transfer, resolution and active state round-trip across both sync paths', () => {
@@ -389,7 +455,7 @@ test('an attributed P| or frame self cannot update another registered lane', () 
 });
 
 test('lobby protocol hello rejects missing or mixed versions', () => {
-    assert.equal(NET_RACE_PROTOCOL_VERSION, 86);
+    assert.equal(NET_RACE_PROTOCOL_VERSION, 87);
     const hello = decodeProtocolHello(encodeProtocolHello(4));
     assert.deepEqual(hello, { pos: 4, version: NET_RACE_PROTOCOL_VERSION });
     assert.equal(decodeProtocolHello('PV|4|bad'), null);

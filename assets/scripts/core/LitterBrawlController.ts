@@ -24,6 +24,13 @@ export const LITTER_BRAWL_TUNING = {
     softDebrisPushDamping: 1.65,
     aiLookAhead: 8,
     safeHalfWidth: 1.45,
+    spawnSafetyRetrySeconds: 0.25,
+    maxSpawnDelaySeconds: 3,
+    spawnSwimmerClearAlongRadius: 2.6,
+    spawnMineAlongMargin: 1.25,
+    spawnMineLateralMargin: 0.55,
+    spawnWhirlpoolAlongMargin: 1.1,
+    spawnWhirlpoolLateralMargin: 0.35,
     waterEdgeMargin: 0.9,
     driftAlongRadius: 0.42,
     driftLateralRadius: 0.34,
@@ -31,6 +38,49 @@ export const LITTER_BRAWL_TUNING = {
     floatingLifetime: 13.5,
     retireSeconds: 4.2,
 };
+
+/** 统一娱乐模式只覆盖投放数量和赛程锚点，垃圾本体规则继续共用。 */
+export const LITTER_BRAWL_ENTERTAINMENT_TUNING = {
+    shortWaveOffsets: [0, 7] as readonly number[],
+    longWaveOffsets: [0, 6, 12] as readonly number[],
+    finishSafetyDistance: 2,
+};
+
+export type LitterBrawlSchedule = Readonly<{
+    waveDistances: readonly number[];
+    landingLeadDistance: number;
+}>;
+
+export const LITTER_BRAWL_INDEPENDENT_SCHEDULE: LitterBrawlSchedule = {
+    waveDistances: LITTER_BRAWL_TUNING.waveDistances,
+    landingLeadDistance: LITTER_BRAWL_TUNING.landingLeadDistance,
+};
+
+/** 仅在事件激活边沿调用；返回的新数组不会进入比赛帧热路径。 */
+export function buildEntertainmentLitterSchedule(
+    anchorDistance: number,
+    raceDistance: number,
+): LitterBrawlSchedule {
+    const safeRaceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
+    const safeAnchor = Number.isFinite(anchorDistance) ? Math.max(0, anchorDistance) : 0;
+    const offsets = safeRaceDistance >= 400
+        ? LITTER_BRAWL_ENTERTAINMENT_TUNING.longWaveOffsets
+        : LITTER_BRAWL_ENTERTAINMENT_TUNING.shortWaveOffsets;
+    const maxTriggerDistance = Math.max(0, safeRaceDistance
+        - LITTER_BRAWL_TUNING.landingLeadDistance
+        - LITTER_BRAWL_ENTERTAINMENT_TUNING.finishSafetyDistance);
+    const waveDistances: number[] = [];
+    for (const offset of offsets) {
+        const distance = clamp(safeAnchor + offset, 0, maxTriggerDistance);
+        if (waveDistances.length === 0 || distance > waveDistances[waveDistances.length - 1] + 0.01) {
+            waveDistances.push(distance);
+        }
+    }
+    return {
+        waveDistances,
+        landingLeadDistance: LITTER_BRAWL_TUNING.landingLeadDistance,
+    };
+}
 
 export type LitterPhase = 'falling' | 'floating' | 'retiring';
 export type LitterKind = 'rigid' | 'soft';
@@ -53,9 +103,81 @@ export type LitterClusterState = {
 
 export type LitterRigidImpact = {
     slotId: number;
+    generation: number;
     lane: number;
     away: -1 | 1;
+    courseX: number;
+    lateral: number;
+    revision: number;
 };
+
+export type LitterContact = LitterRigidImpact & {
+    kind: LitterKind;
+    bounceAlongVelocity: number;
+    bounceLateralVelocity: number;
+};
+
+export type LitterSnapshotSlot = Readonly<{
+    id: number;
+    generation: number;
+    wave: number;
+    kind: LitterKind;
+    phase: LitterPhase;
+    age: number;
+    courseX: number;
+    lateral: number;
+    anchorCourseX: number;
+    anchorLateral: number;
+    safeCenter: number;
+    throwSide: -1 | 1;
+    visualVariant: number;
+    impactRevision: number;
+    driftPhase: number;
+    spawnOrder: number;
+    insideMask: number;
+    bounceAlongVelocity: number;
+    bounceLateralVelocity: number;
+    retireStartCourseX: number;
+    retireStartLateral: number;
+}>;
+
+export type LitterSnapshotState = Readonly<{
+    revision: number;
+    elapsedSeconds: number;
+    nextWave: number;
+    spawnOrder: number;
+    randomState: number;
+    spawnRetryRemaining: number;
+    blockedWaveSeconds: number;
+    cancelledWaveCount: number;
+    slots: readonly LitterSnapshotSlot[];
+}>;
+
+export type LitterSnapshotApplyResult = Readonly<{
+    applied: boolean;
+    activeChanged: boolean;
+}>;
+
+export type LitterWaveSafetyCheck = (
+    courseX: number,
+    safeCenter: number,
+    safeHalfWidth: number,
+) => boolean;
+
+/** 事件激活边沿的纯计算；调用方直接传标量，避免在比赛帧里构造临时障碍对象。 */
+export function litterCorridorOverlapsObstacle(
+    courseX: number,
+    safeCenter: number,
+    safeHalfWidth: number,
+    obstacleCourseX: number,
+    obstacleLateral: number,
+    obstacleAlongRadius: number,
+    obstacleLateralRadius: number,
+): boolean {
+    return Math.abs(obstacleCourseX - courseX) <= Math.max(0, obstacleAlongRadius)
+        && Math.abs(obstacleLateral - safeCenter)
+            <= Math.max(0, safeHalfWidth) + Math.max(0, obstacleLateralRadius);
+}
 
 export type LitterRacerState = {
     active: boolean;
@@ -87,6 +209,16 @@ export class LitterBrawlController {
     private randomState: number;
     private nextWave = 0;
     private spawnOrder = 0;
+    private activeSlotCount = 0;
+    private spawnRetryRemaining = 0;
+    private blockedWaveSeconds = 0;
+    private cancelledWaveCount = 0;
+    private revision = 0;
+    private elapsedSeconds = 0;
+    private lastSnapshotRevision = -1;
+    private lastSnapshotElapsed = -1;
+    private waveDistances: readonly number[] = LITTER_BRAWL_INDEPENDENT_SCHEDULE.waveDistances;
+    private landingLeadDistance = LITTER_BRAWL_INDEPENDENT_SCHEDULE.landingLeadDistance;
     private readonly previousRacerCourseX: number[];
     private readonly previousRacerLateral: number[];
 
@@ -97,6 +229,9 @@ export class LitterBrawlController {
         private readonly racerForLane: (lane: number) => LitterRacerState | null,
         private readonly onWave?: (wave: number) => void,
         private readonly onRigidImpact?: (impact: LitterRigidImpact) => void,
+        schedule: LitterBrawlSchedule = LITTER_BRAWL_INDEPENDENT_SCHEDULE,
+        private readonly isWaveSafe?: LitterWaveSafetyCheck,
+        private readonly onContact?: (contact: LitterContact) => void,
     ) {
         this.randomSeed = ((seed ^ 0x6c697474) >>> 0) || 0x9e3779b9;
         this.randomState = this.randomSeed;
@@ -127,11 +262,20 @@ export class LitterBrawlController {
         }));
         this.previousRacerCourseX = Array.from({ length: laneCount }, () => Number.NaN);
         this.previousRacerLateral = Array.from({ length: laneCount }, () => 0);
+        this.applySchedule(schedule);
     }
 
     reset(): void {
         this.nextWave = 0;
         this.spawnOrder = 0;
+        this.activeSlotCount = 0;
+        this.spawnRetryRemaining = 0;
+        this.blockedWaveSeconds = 0;
+        this.cancelledWaveCount = 0;
+        this.revision = 0;
+        this.elapsedSeconds = 0;
+        this.lastSnapshotRevision = -1;
+        this.lastSnapshotElapsed = -1;
         this.randomState = this.randomSeed;
         for (const slot of this.slots) {
             slot.active = false;
@@ -149,6 +293,37 @@ export class LitterBrawlController {
         this.previousRacerLateral.fill(0);
     }
 
+    /** 切换赛程只重置本控制器实例，不修改独立玩法或全局调参。 */
+    restart(schedule?: LitterBrawlSchedule): void {
+        if (schedule) this.applySchedule(schedule);
+        this.reset();
+    }
+
+    /** 首位完赛或导演收尾时只取消尚未投放的波次，已出现垃圾自然漂流和下沉。 */
+    cancelPendingWaves(): void {
+        if (this.nextWave >= this.waveDistances.length) return;
+        this.nextWave = this.waveDistances.length;
+        this.spawnRetryRemaining = 0;
+        this.blockedWaveSeconds = 0;
+        this.revision++;
+    }
+
+    pendingWaveCount(): number {
+        return Math.max(0, this.waveDistances.length - this.nextWave);
+    }
+
+    activeCount(): number {
+        return this.activeSlotCount;
+    }
+
+    cancelledCount(): number {
+        return this.cancelledWaveCount;
+    }
+
+    isComplete(): boolean {
+        return this.pendingWaveCount() === 0 && this.activeCount() === 0;
+    }
+
     dispose(): void {
         this.reset();
     }
@@ -157,16 +332,115 @@ export class LitterBrawlController {
         return this.slots;
     }
 
-    update(dt: number, state: GameState): void {
-        if (state !== GameState.RACING) return;
-        const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
-        const leaderDistance = this.leaderDistance();
-        while (this.nextWave < LITTER_BRAWL_TUNING.waveDistances.length
-            && leaderDistance >= LITTER_BRAWL_TUNING.waveDistances[this.nextWave]) {
-            this.spawnWave(this.nextWave);
-            this.onWave?.(this.nextWave);
-            this.nextWave++;
+    snapshotState(): LitterSnapshotState {
+        const slots: LitterSnapshotSlot[] = [];
+        for (const slot of this.slots) {
+            if (!slot.active) continue;
+            slots.push({
+                id: slot.id,
+                generation: slot.generation,
+                wave: slot.wave,
+                kind: slot.kind,
+                phase: slot.phase,
+                age: slot.age,
+                courseX: slot.courseX,
+                lateral: slot.lateral,
+                anchorCourseX: slot.anchorCourseX,
+                anchorLateral: slot.anchorLateral,
+                safeCenter: slot.safeCenter,
+                throwSide: slot.throwSide,
+                visualVariant: slot.visualVariant,
+                impactRevision: slot.impactRevision,
+                driftPhase: slot.driftPhase,
+                spawnOrder: slot.spawnOrder,
+                insideMask: slot.insideMask,
+                bounceAlongVelocity: slot.bounceAlongVelocity,
+                bounceLateralVelocity: slot.bounceLateralVelocity,
+                retireStartCourseX: slot.retireStartCourseX,
+                retireStartLateral: slot.retireStartLateral,
+            });
         }
+        return {
+            revision: this.revision,
+            elapsedSeconds: this.elapsedSeconds,
+            nextWave: this.nextWave,
+            spawnOrder: this.spawnOrder,
+            randomState: this.randomState >>> 0,
+            spawnRetryRemaining: this.spawnRetryRemaining,
+            blockedWaveSeconds: this.blockedWaveSeconds,
+            cancelledWaveCount: this.cancelledWaveCount,
+            slots,
+        };
+    }
+
+    applySnapshotState(state: LitterSnapshotState): LitterSnapshotApplyResult {
+        if (!this.validSnapshotState(state)
+            || state.revision < this.revision
+            || state.revision < this.lastSnapshotRevision
+            || (state.revision === this.lastSnapshotRevision
+                && state.elapsedSeconds < this.lastSnapshotElapsed)) {
+            return { applied: false, activeChanged: false };
+        }
+        let activeMask = 0;
+        for (const source of state.slots) {
+            const bit = 1 << source.id;
+            if ((activeMask & bit) !== 0) return { applied: false, activeChanged: false };
+            activeMask |= bit;
+        }
+        const previousActiveMask = this.activeMask();
+        this.lastSnapshotRevision = state.revision;
+        this.lastSnapshotElapsed = state.elapsedSeconds;
+        this.revision = state.revision;
+        this.elapsedSeconds = state.elapsedSeconds;
+        this.nextWave = state.nextWave;
+        this.spawnOrder = state.spawnOrder;
+        this.randomState = state.randomState >>> 0;
+        this.spawnRetryRemaining = state.spawnRetryRemaining;
+        this.blockedWaveSeconds = state.blockedWaveSeconds;
+        this.cancelledWaveCount = state.cancelledWaveCount;
+        this.activeSlotCount = state.slots.length;
+        for (const slot of this.slots) {
+            slot.active = false;
+            slot.insideMask = 0;
+        }
+        for (const source of state.slots) this.applySnapshotSlot(this.slots[source.id], source);
+        this.previousRacerCourseX.fill(Number.NaN);
+        this.previousRacerLateral.fill(0);
+        return { applied: true, activeChanged: previousActiveMask !== activeMask };
+    }
+
+    applyContact(contact: LitterContact): boolean {
+        if (!contact || !Number.isSafeInteger(contact.slotId)
+            || contact.slotId < 0 || contact.slotId >= this.slots.length
+            || !Number.isSafeInteger(contact.generation) || contact.generation < 0
+            || !Number.isSafeInteger(contact.lane) || contact.lane < 0 || contact.lane >= this.laneCount
+            || (contact.away !== -1 && contact.away !== 1)
+            || (contact.kind !== 'rigid' && contact.kind !== 'soft')
+            || !Number.isFinite(contact.courseX) || !Number.isFinite(contact.lateral)
+            || !Number.isFinite(contact.bounceAlongVelocity)
+            || !Number.isFinite(contact.bounceLateralVelocity)
+            || !Number.isSafeInteger(contact.revision) || contact.revision <= this.revision) return false;
+        const slot = this.slots[contact.slotId];
+        if (!slot.active || slot.generation !== contact.generation || slot.kind !== contact.kind) return false;
+        this.revision = contact.revision;
+        slot.courseX = contact.courseX;
+        slot.lateral = contact.lateral;
+        slot.anchorCourseX = contact.courseX;
+        slot.anchorLateral = contact.lateral;
+        slot.bounceAlongVelocity = contact.bounceAlongVelocity;
+        slot.bounceLateralVelocity = contact.bounceLateralVelocity;
+        slot.impactRevision++;
+        slot.insideMask |= 1 << contact.lane;
+        return true;
+    }
+
+    update(dt: number, state: GameState, authoritative = true): void {
+        if (state !== GameState.RACING) return;
+        if (this.nextWave >= this.waveDistances.length && this.activeCount() === 0) return;
+        const step = Number.isFinite(dt) ? Math.max(0, dt) : 0;
+        this.elapsedSeconds += step;
+        const leaderDistance = this.leaderDistance();
+        if (authoritative) this.updatePendingWaves(step, leaderDistance);
         for (const slot of this.slots) {
             if (!slot.active) continue;
             slot.age += step;
@@ -198,6 +472,7 @@ export class LitterBrawlController {
                 if (retireProgress >= 1) {
                     slot.active = false;
                     slot.insideMask = 0;
+                    this.activeSlotCount = Math.max(0, this.activeSlotCount - 1);
                 }
                 continue;
             }
@@ -231,7 +506,7 @@ export class LitterBrawlController {
                 halfWidth,
             );
         }
-        this.resolveLitterContacts();
+        if (authoritative) this.resolveLitterContacts();
         this.rememberRacerPositions();
     }
 
@@ -279,12 +554,46 @@ export class LitterBrawlController {
         return nearest ? clamp(nearest.safeCenter, -this.usableHalfWidth(), this.usableHalfWidth()) : null;
     }
 
-    private spawnWave(wave: number): void {
+    private updatePendingWaves(step: number, leaderDistance: number): void {
+        if (this.nextWave >= this.waveDistances.length
+            || leaderDistance < this.waveDistances[this.nextWave]) return;
+        this.blockedWaveSeconds += step;
+        this.spawnRetryRemaining = Math.max(0, this.spawnRetryRemaining - step);
+        if (this.spawnRetryRemaining > 0) return;
+        const wave = this.nextWave;
+        if (this.spawnWave(wave)) {
+            this.onWave?.(wave);
+            this.nextWave++;
+            this.revision++;
+            this.spawnRetryRemaining = 0;
+            this.blockedWaveSeconds = 0;
+            // 跳过多个赛程锚点时仍允许同帧补齐，但最多受固定预设波数约束。
+            this.updatePendingWaves(0, leaderDistance);
+            return;
+        }
+        if (this.blockedWaveSeconds >= LITTER_BRAWL_TUNING.maxSpawnDelaySeconds) {
+            this.nextWave++;
+            this.cancelledWaveCount++;
+            this.revision++;
+            this.spawnRetryRemaining = 0;
+            this.blockedWaveSeconds = 0;
+            return;
+        }
+        this.spawnRetryRemaining = LITTER_BRAWL_TUNING.spawnSafetyRetrySeconds;
+    }
+
+    private spawnWave(wave: number): boolean {
         const halfWidth = this.usableHalfWidth();
+        const randomStateBeforePlan = this.randomState;
         const safeCenter = lerp(-halfWidth + LITTER_BRAWL_TUNING.safeHalfWidth,
             halfWidth - LITTER_BRAWL_TUNING.safeHalfWidth, this.nextRandom());
-        const raceAnchor = LITTER_BRAWL_TUNING.waveDistances[wave] + LITTER_BRAWL_TUNING.landingLeadDistance;
+        const raceAnchor = this.waveDistances[wave] + this.landingLeadDistance;
         const courseX = courseOffset(raceAnchor);
+        if (this.isWaveSafe && !this.isWaveSafe(courseX, safeCenter, LITTER_BRAWL_TUNING.safeHalfWidth)) {
+            // 等待期间必须保留同一候选通道，不能因帧数不同持续重抽并让联机布局分叉。
+            this.randomState = randomStateBeforePlan;
+            return false;
+        }
         const candidates = this.lateralCandidates(safeCenter, halfWidth);
         for (let index = 0; index < LITTER_BRAWL_TUNING.waveCount; index++) {
             const slot = this.nextSlot();
@@ -292,6 +601,7 @@ export class LitterBrawlController {
             const candidateIndex = Math.min(candidates.length - 1, Math.floor(this.nextRandom() * candidates.length));
             const lateral = candidates.splice(candidateIndex, 1)[0] ?? (index === 0 ? -halfWidth * 0.7 : halfWidth * 0.7);
             slot.active = true;
+            this.activeSlotCount++;
             slot.generation++;
             slot.wave = wave;
             slot.phase = 'falling';
@@ -314,6 +624,7 @@ export class LitterBrawlController {
             slot.retireStartCourseX = 0;
             slot.retireStartLateral = 0;
         }
+        return true;
     }
 
     private resolveLitterContacts(): void {
@@ -359,10 +670,19 @@ export class LitterBrawlController {
                     ? (lane & 1 ? 1 : -1)
                     : racer.lateral > slot.lateral ? 1 : -1;
                 slot.impactRevision++;
+                this.revision++;
                 if (rigid) {
                     slot.bounceAlongVelocity = courseDirection(racer.distance) * LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed;
                     slot.bounceLateralVelocity = -away * LITTER_BRAWL_TUNING.rigidDebrisBounceSpeed * 0.72;
-                    this.onRigidImpact?.({ slotId: slot.id, lane, away });
+                    this.onRigidImpact?.({
+                        slotId: slot.id,
+                        generation: slot.generation,
+                        lane,
+                        away,
+                        courseX: slot.courseX,
+                        lateral: slot.lateral,
+                        revision: this.revision,
+                    });
                 } else {
                     const pushSpeed = LITTER_BRAWL_TUNING.softDebrisPushSpeed;
                     slot.bounceAlongVelocity = clamp(
@@ -376,6 +696,18 @@ export class LitterBrawlController {
                         pushSpeed * 0.7,
                     );
                 }
+                this.onContact?.({
+                    slotId: slot.id,
+                    generation: slot.generation,
+                    lane,
+                    away,
+                    kind: slot.kind,
+                    courseX: slot.courseX,
+                    lateral: slot.lateral,
+                    bounceAlongVelocity: slot.bounceAlongVelocity,
+                    bounceLateralVelocity: slot.bounceLateralVelocity,
+                    revision: this.revision,
+                });
             }
             slot.insideMask = nextMask;
         }
@@ -427,6 +759,75 @@ export class LitterBrawlController {
         return Math.max(1.5, this.poolWidth * 0.5 - LITTER_BRAWL_TUNING.waterEdgeMargin);
     }
 
+    private activeMask(): number {
+        let mask = 0;
+        for (const slot of this.slots) if (slot.active) mask |= 1 << slot.id;
+        return mask;
+    }
+
+    private validSnapshotState(state: LitterSnapshotState): boolean {
+        if (!state || !Number.isSafeInteger(state.revision) || state.revision < 0
+            || !Number.isFinite(state.elapsedSeconds) || state.elapsedSeconds < 0
+            || !Number.isSafeInteger(state.nextWave) || state.nextWave < 0
+            || state.nextWave > this.waveDistances.length
+            || !Number.isSafeInteger(state.spawnOrder) || state.spawnOrder < 0
+            || !Number.isSafeInteger(state.randomState) || state.randomState < 0
+            || state.randomState > 0xffffffff
+            || !Number.isFinite(state.spawnRetryRemaining) || state.spawnRetryRemaining < 0
+            || !Number.isFinite(state.blockedWaveSeconds) || state.blockedWaveSeconds < 0
+            || !Number.isSafeInteger(state.cancelledWaveCount) || state.cancelledWaveCount < 0
+            || !Array.isArray(state.slots) || state.slots.length > this.slots.length) return false;
+        for (const slot of state.slots) {
+            if (!slot || !Number.isSafeInteger(slot.id) || slot.id < 0 || slot.id >= this.slots.length
+                || !Number.isSafeInteger(slot.generation) || slot.generation < 0
+                || !Number.isSafeInteger(slot.wave) || slot.wave < 0 || slot.wave >= this.waveDistances.length
+                || (slot.kind !== 'rigid' && slot.kind !== 'soft')
+                || (slot.phase !== 'falling' && slot.phase !== 'floating' && slot.phase !== 'retiring')
+                || !Number.isFinite(slot.age) || slot.age < 0
+                || !Number.isFinite(slot.courseX) || !Number.isFinite(slot.lateral)
+                || !Number.isFinite(slot.anchorCourseX) || !Number.isFinite(slot.anchorLateral)
+                || !Number.isFinite(slot.safeCenter) || (slot.throwSide !== -1 && slot.throwSide !== 1)
+                || !Number.isSafeInteger(slot.visualVariant) || slot.visualVariant < 0 || slot.visualVariant > 2
+                || !Number.isSafeInteger(slot.impactRevision) || slot.impactRevision < 0
+                || !Number.isFinite(slot.driftPhase)
+                || !Number.isSafeInteger(slot.spawnOrder) || slot.spawnOrder < 0
+                || !Number.isSafeInteger(slot.insideMask) || slot.insideMask < 0
+                || !Number.isFinite(slot.bounceAlongVelocity) || !Number.isFinite(slot.bounceLateralVelocity)
+                || !Number.isFinite(slot.retireStartCourseX) || !Number.isFinite(slot.retireStartLateral)) return false;
+        }
+        return true;
+    }
+
+    private applySnapshotSlot(slot: LitterSlot, source: LitterSnapshotSlot): void {
+        slot.active = true;
+        slot.generation = source.generation;
+        slot.wave = source.wave;
+        slot.kind = source.kind;
+        slot.phase = source.phase;
+        slot.phaseProgress = source.phase === 'falling'
+            ? clamp01(source.age / LITTER_BRAWL_TUNING.fallingSeconds)
+            : source.phase === 'retiring'
+                ? clamp01((source.age - LITTER_BRAWL_TUNING.fallingSeconds
+                    - LITTER_BRAWL_TUNING.floatingLifetime) / LITTER_BRAWL_TUNING.retireSeconds)
+                : 1;
+        slot.age = source.age;
+        slot.courseX = source.courseX;
+        slot.lateral = source.lateral;
+        slot.anchorCourseX = source.anchorCourseX;
+        slot.anchorLateral = source.anchorLateral;
+        slot.safeCenter = source.safeCenter;
+        slot.throwSide = source.throwSide;
+        slot.visualVariant = source.visualVariant;
+        slot.impactRevision = source.impactRevision;
+        slot.driftPhase = source.driftPhase;
+        slot.spawnOrder = source.spawnOrder;
+        slot.insideMask = source.insideMask;
+        slot.bounceAlongVelocity = source.bounceAlongVelocity;
+        slot.bounceLateralVelocity = source.bounceLateralVelocity;
+        slot.retireStartCourseX = source.retireStartCourseX;
+        slot.retireStartLateral = source.retireStartLateral;
+    }
+
     private nextRandom(): number {
         let state = this.randomState;
         state ^= state << 13;
@@ -434,6 +835,22 @@ export class LitterBrawlController {
         state ^= state << 5;
         this.randomState = state >>> 0;
         return this.randomState / 0x100000000;
+    }
+
+    private applySchedule(schedule: LitterBrawlSchedule): void {
+        const maxWaves = Math.floor(LITTER_BRAWL_TUNING.poolSize / LITTER_BRAWL_TUNING.waveCount);
+        const distances: number[] = [];
+        const source = Array.isArray(schedule?.waveDistances) ? schedule.waveDistances : [];
+        for (let index = 0; index < source.length && distances.length < maxWaves; index++) {
+            const distance = source[index];
+            if (!Number.isFinite(distance) || distance < 0) continue;
+            if (distances.length > 0 && distance <= distances[distances.length - 1]) continue;
+            distances.push(distance);
+        }
+        this.waveDistances = distances;
+        this.landingLeadDistance = Number.isFinite(schedule?.landingLeadDistance)
+            ? Math.max(0, schedule.landingLeadDistance)
+            : LITTER_BRAWL_TUNING.landingLeadDistance;
     }
 }
 

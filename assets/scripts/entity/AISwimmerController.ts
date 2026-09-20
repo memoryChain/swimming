@@ -281,11 +281,11 @@ export class AISwimmerController extends Component {
         let desiredPriority = 0;
         if (this._stimulantTargetZ !== null) desiredPriority = 1;
         if (this._whirlpoolTargetZ !== null) desiredPriority = 2;
-        if (this._mineRelayTargetZ !== null) desiredPriority = 3;
-        if (this._sharkTargetZ !== null) desiredPriority = 4;
-        if (this._cannonTargetZ !== null) desiredPriority = 5;
-        if (this._minefieldTargetZ !== null) desiredPriority = 6;
-        if (this._litterTargetZ !== null) desiredPriority = 7;
+        if (this._litterTargetZ !== null) desiredPriority = 3;
+        if (this._mineRelayTargetZ !== null) desiredPriority = 4;
+        if (this._sharkTargetZ !== null) desiredPriority = 5;
+        if (this._cannonTargetZ !== null) desiredPriority = 6;
+        if (this._minefieldTargetZ !== null) desiredPriority = 7;
 
         const heldTarget = this.eventTargetForPriority(this._eventIntentPriority);
         if (heldTarget === null || desiredPriority > this._eventIntentPriority
@@ -300,11 +300,11 @@ export class AISwimmerController extends Component {
 
     private eventTargetForPriority(priority: number): number | null {
         switch (priority) {
-            case 7: return this._litterTargetZ;
-            case 6: return this._minefieldTargetZ;
-            case 5: return this._cannonTargetZ;
-            case 4: return this._sharkTargetZ;
-            case 3: return this._mineRelayTargetZ;
+            case 7: return this._minefieldTargetZ;
+            case 6: return this._cannonTargetZ;
+            case 5: return this._sharkTargetZ;
+            case 4: return this._mineRelayTargetZ;
+            case 3: return this._litterTargetZ;
             case 2: return this._whirlpoolTargetZ;
             case 1: return this._stimulantTargetZ;
             default: return null;

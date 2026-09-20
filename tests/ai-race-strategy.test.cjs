@@ -21,6 +21,31 @@ function observation(overrides = {}) {
         nearbyThreat: false, closeRace: false, strokeCostPerMeter: .7, ...overrides };
 }
 
+test('娱乐事件横向意图按致命危险、垃圾、普通场地和争抢依次仲裁', () => {
+    const { ai } = h.create();
+    ai._clock = 2;
+    ai.setStimulantTargetZ(-1);
+    ai.setWhirlpoolTargetZ(-2);
+    ai.setLitterTargetZ(-3);
+    assert.equal(ai.resolveEventTargetZ(), -3, '垃圾应高于普通路线、苏打和漩涡');
+    assert.equal(ai._eventIntentHoldUntil, 2.35, '切换意图后保留 0.35 秒决策窗');
+
+    ai.setMineRelayTargetZ(-4);
+    assert.equal(ai.resolveEventTargetZ(), -4, '定时炸弹应立即抢占垃圾目标');
+    ai.setSharkTargetZ(-5);
+    assert.equal(ai.resolveEventTargetZ(), -5, '鲨鱼锁定应立即抢占垃圾目标');
+    ai.setCannonTargetZ(-6);
+    assert.equal(ai.resolveEventTargetZ(), -6, '炮火核心应立即抢占垃圾目标');
+    ai.setMinefieldTargetZ(-7);
+    assert.equal(ai.resolveEventTargetZ(), -7, '近距离水雷应保持最高避险优先级');
+
+    ai.setMinefieldTargetZ(null);
+    ai.setCannonTargetZ(null);
+    ai.setSharkTargetZ(null);
+    ai.setMineRelayTargetZ(null);
+    assert.equal(ai.resolveEventTargetZ(), -3, '致命危险解除后应回到仍有效的垃圾绕行目标');
+});
+
 test('11个角色各等级与玩家共用属性和体力；智力不改身体', () => {
     for (const c of PLAYER_CHARACTER_DEFINITIONS) for (const level of [1, 15, 30]) {
         const s = h.create(c.id, level, .3), elite = h.create(c.id, level, 1);

@@ -8,7 +8,11 @@ export const enum EntertainmentEventId {
     MINEFIELD = 3,
     SHARK = 4,
     CANNON = 5,
+    LITTER = 6,
 }
+
+/** 阶段 F～H 已完成；正式娱乐导演从七种候选中按赛程抽取三至六种。 */
+export const ENTERTAINMENT_LITTER_SELECTION_ENABLED = true;
 
 export const enum EntertainmentDirectorPhase {
     OPENING = 0,
@@ -60,7 +64,7 @@ const ENTERTAINMENT_SPECIAL_RANDOM_SALT = 0x53504543;
 const ENTERTAINMENT_ENCORE_RANDOM_SALT = 0x454e434f;
 const ENTERTAINMENT_COPY_RANDOM_SALT = 0x42524353;
 const ENTERTAINMENT_COPY_SPECIAL_SALT = 0x53555052;
-const ENTERTAINMENT_COPY_VARIANT_STEPS = [1, 3, 7, 9] as const;
+const ENTERTAINMENT_COPY_VARIANT_STEPS = [1, 3, 7, 9, 11, 13, 17, 19] as const;
 const EVENT_PROGRESS_BY_COUNT: Readonly<Record<number, readonly number[]>> = {
     3: [0.12, 0.48, 0.82],
     4: [0.10, 0.35, 0.60, 0.85],
@@ -79,12 +83,14 @@ const EVENT_DURATION_SECONDS: Readonly<Record<EntertainmentEventId, number>> = {
     [EntertainmentEventId.MINEFIELD]: 8,
     [EntertainmentEventId.SHARK]: 13,
     [EntertainmentEventId.CANNON]: 7,
+    [EntertainmentEventId.LITTER]: 8,
 };
 const PERSISTENT_EVENTS_MASK = eventBit(EntertainmentEventId.STIMULANT)
     | eventBit(EntertainmentEventId.WHIRLPOOL)
     | eventBit(EntertainmentEventId.MINEFIELD)
     | eventBit(EntertainmentEventId.SHARK)
-    | eventBit(EntertainmentEventId.CANNON);
+    | eventBit(EntertainmentEventId.CANNON)
+    | eventBit(EntertainmentEventId.LITTER);
 
 let runtimeResidentMask = 0;
 let runtimeActiveEvent: EntertainmentEventId | null = null;
@@ -111,12 +117,13 @@ export function entertainmentEventName(event: EntertainmentEventId): string {
         case EntertainmentEventId.MINEFIELD: return '漂流水雷';
         case EntertainmentEventId.SHARK: return '鲨鱼巡场';
         case EntertainmentEventId.CANNON: return '炮火点名';
+        case EntertainmentEventId.LITTER: return '垃圾漂流';
     }
 }
 
 type EntertainmentBroadcastCopy = readonly [preview: string, action: string];
 
-export const ENTERTAINMENT_BROADCAST_VARIANT_COUNT = 10;
+export const ENTERTAINMENT_BROADCAST_VARIANT_COUNT = 20;
 const ENTERTAINMENT_PREVIEW_PREFIX = '泳池广播：';
 
 const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
@@ -134,6 +141,16 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：有几瓶苏打认为自己比选手更会游', '苏打抢道 · 靠近瓶子把它喝掉'],
         ['泳池广播：广播室收到一箱过度热情的能量饮料', '能量来袭 · 抢瓶补体力并获得加速'],
         ['泳池广播：今日特供即将下水，请让心脏做好准备', '特供开抢 · 靠近瓶子获得强力加速'],
+        ['泳池广播：饮料箱拒绝靠岸，决定沿泳道自行配送', '能量漂流 · 靠近瓶子抢先补给'],
+        ['泳池广播：营养师还没赶到，补给已经先游起来了', '补给先行 · 抢到苏打恢复体力'],
+        ['泳池广播：自动售货机开启移动服务，就是移动得有点远', '移动售货 · 靠近漂瓶直接拾取'],
+        ['泳池广播：几瓶苏打已获得临时泳道，请选手自行处理', '苏打占道 · 抢瓶补能并获得加速'],
+        ['泳池广播：医务组正在调查是谁点了双倍心跳套餐', '心跳套餐 · 抢苏打提速，注意转向'],
+        ['泳池广播：瓶盖宣布自己会游，瓶身表示并不知情', '漂瓶失控 · 靠近苏打抢先喝下'],
+        ['泳池广播：今日补给不走陆路，改走水路直达赛场', '水路补给 · 抢到瓶子恢复体力'],
+        ['泳池广播：裁判说水里的饮料不能喝，赞助商说可以', '规则争议 · 靠近苏打获得强化'],
+        ['泳池广播：补给员只是手滑了一下，现在全场都得抢', '全场开抢 · 靠近瓶子直接拾取'],
+        ['泳池广播：心脏热身已经结束，真正的加速饮料来了', '加速补给 · 抢苏打获得强力提速'],
     ],
     [EntertainmentEventId.TIMED_BOMB]: [
         ['泳池广播：有位选手马上要收到会滴滴响的礼物', '炸弹已发放 · 贴近对手把它传出'],
@@ -146,6 +163,16 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：有人把倒计时装置误当成了接力棒', '爆炸接力开始 · 靠近对手完成交棒'],
         ['泳池广播：本轮奖品会响会闪，就是不保证安全', '危险奖品已发放 · 贴近对手转赠'],
         ['泳池广播：请注意，一件烫手礼物即将空降赛场', '烫手礼物到手 · 贴近对手传走'],
+        ['泳池广播：包裹上只写了四个字，请尽快转交', '紧急转交 · 贴近对手传出炸弹'],
+        ['泳池广播：计时器正在催单，目前的收件人压力很大', '倒计时催单 · 靠近对手完成交接'],
+        ['泳池广播：烫手山芋完成升级，现在还会发光和响铃', '山芋升级 · 贴近对手赶快传走'],
+        ['泳池广播：本次快递不支持拒收，只支持当面转赠', '强制签收 · 靠近对手转交炸弹'],
+        ['泳池广播：接力组拿错了器材，这根接力棒正在倒数', '危险接力 · 贴近对手完成交棒'],
+        ['泳池广播：抽奖箱里只有一张奖券，中奖者请保持冷静', '唯一大奖 · 靠近对手及时转赠'],
+        ['泳池广播：有个背包开启了震动模式，而且关不掉', '背包震动 · 贴近对手甩掉炸弹'],
+        ['泳池广播：拆弹专家还在路上，建议先交给下一位', '专家迟到 · 靠近对手转移炸弹'],
+        ['泳池广播：倒计时装置不喜欢独处，请帮它认识新朋友', '寻找朋友 · 贴近对手完成传递'],
+        ['泳池广播：本轮社交活动很简单，带着炸弹主动贴近别人', '危险社交 · 靠近对手把它送走'],
     ],
     [EntertainmentEventId.WHIRLPOOL]: [
         ['泳池广播：排水系统情绪不稳，前方水流即将拧巴', '漩涡出现 · 贴外圈顺流借力'],
@@ -158,6 +185,16 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：泳池底部传来咕噜声，路线即将变弯', '路线变弯 · 贴外圈顺流通过'],
         ['泳池广播：本场新增旋转项目，所有选手自动报名', '旋转项目开始 · 远核心、贴外圈'],
         ['泳池广播：水面开始拧麻花，请勿坚持走最短线', '水流拧巴 · 绕开核心顺流冲浪'],
+        ['泳池广播：有人想喝咖啡，顺手把整座泳池搅了一遍', '水流搅动 · 避开核心贴外圈'],
+        ['泳池广播：水面正在加载旋转模式，直线功能暂时离线', '旋转模式 · 顺着外圈水流前进'],
+        ['泳池广播：排水口今天格外抢镜，准备在赛道中央表演', '排水表演 · 远离核心借流通过'],
+        ['泳池广播：前方直线正在维修，请各位绕着水流走', '直线维修 · 贴外圈顺流加速'],
+        ['泳池广播：泳池临时安装了转盘，而且没有停止按钮', '水上转盘 · 避开核心顺流绕行'],
+        ['泳池广播：几股水流正在绕圈开会，请不要坐到中间', '旋流开会 · 远核心贴外圈通过'],
+        ['泳池广播：维修工只拧了半圈阀门，水面却转了十几圈', '阀门失控 · 顺着外圈水流前进'],
+        ['泳池广播：中心水域好像晕了，现在正努力让大家一起晕', '中心旋转 · 绕开核心保持方向'],
+        ['泳池广播：浪花正在排队转弯，选手可以顺路搭个便车', '浪花转弯 · 贴外圈借流提速'],
+        ['泳池广播：今天不只选手练转身，整片水面也要练', '全池转身 · 避核心顺外圈冲浪'],
     ],
     [EntertainmentEventId.MINEFIELD]: [
         ['泳池广播：清洁队请假了，几颗水雷正在自由活动', '水雷入场 · 横向避让，碰到就会爆炸'],
@@ -170,6 +207,16 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：泳池开放盲盒项目，碰到可能当场开奖', '危险盲盒开漂 · 不要碰到水雷'],
         ['泳池广播：前方有刺球随波逐流，脾气比水流还大', '刺球漂来 · 横向变线绕开爆炸范围'],
         ['泳池广播：安全员表示一切可控，然后迅速离场', '安全员离场 · 观察水雷并及时绕行'],
+        ['泳池广播：几颗铁球报名漂流项目，但忘了拆掉引信', '铁球漂流 · 横向避开水雷'],
+        ['泳池广播：水雷表示自己只是路过，碰一下就不一定了', '危险路过 · 拉开距离避免触碰'],
+        ['泳池广播：安全手册被风吹走了，目前只剩下不要碰', '安全提示 · 看准位置及时绕行'],
+        ['泳池广播：水面突然长出几颗刺，泳池方拒绝解释', '水面长刺 · 横向变线避开爆炸'],
+        ['泳池广播：器材管理员数了三遍，还是少了几颗水雷', '器材失踪 · 观察漂移方向及时躲避'],
+        ['泳池广播：前方障碍看起来很圆，脾气却一点也不圆', '脾气铁球 · 绕开水雷继续前进'],
+        ['泳池广播：请不要亲自测试水雷的碰撞系统是否正常', '禁止测试 · 拉开距离横向绕行'],
+        ['泳池广播：泳池推出漂流抽奖，中奖方式是碰到水雷', '危险抽奖 · 避开水雷爆炸范围'],
+        ['泳池广播：那些尖刺不是装饰，重复一次，不是装饰', '尖刺警告 · 看准水雷及时变线'],
+        ['泳池广播：本泳道新增标点符号，名字叫爆点', '爆点开漂 · 横向避让继续冲刺'],
     ],
     [EntertainmentEventId.SHARK]: [
         ['泳池广播：请勿投喂，它已经自己来找饭了', '鲨鱼巡场 · 观察锁定并及时变向'],
@@ -182,6 +229,16 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：水下传来磨牙声，可能不是设备故障', '磨牙声靠近 · 观察鲨鱼及时变向'],
         ['泳池广播：请保持冷静，尤其不要游得像一份午餐', '午餐时间到 · 被锁定后立刻变向'],
         ['泳池广播：大型鱼类申请加入比赛，裁判没敢拒绝', '鲨鱼参赛 · 留意锁定并拉开距离'],
+        ['泳池广播：水下食堂提前营业，但菜单看起来很眼熟', '食堂开门 · 留意锁定及时变向'],
+        ['泳池广播：一片背鳍前来签到，工作人员选择远程确认', '背鳍签到 · 观察目标迅速躲避'],
+        ['泳池广播：鲨鱼表示只游一圈，至于咬不咬另说', '鲨鱼试游 · 被锁定后立即改变方向'],
+        ['泳池广播：水下检查员已经到场，检查工具是一排牙齿', '水下检查 · 保持移动甩开锁定'],
+        ['泳池广播：救生员吹了三次哨，鲨鱼一次都没回头', '警告无效 · 留意锁定及时变向'],
+        ['泳池广播：本场特邀嘉宾很上镜，就是看起来有点饿', '嘉宾巡场 · 拉开距离避免被咬'],
+        ['泳池广播：鲨鱼拿到了今日菜单，选手名单正好在上面', '菜单更新 · 被锁定后立刻转向'],
+        ['泳池广播：水下传来热身声，准确地说，是牙齿热身', '牙齿热身 · 观察鲨鱼及时躲避'],
+        ['泳池广播：一位没有邀请函的贵宾正在快速接近赛道', '贵宾入场 · 保持移动甩开锁定'],
+        ['泳池广播：请不要争当最快的午餐，尤其被盯上以后', '午餐竞速 · 迅速变向摆脱鲨鱼'],
     ],
     [EntertainmentEventId.CANNON]: [
         ['泳池广播：看台礼炮瞄反了，建议各位先游快一点', '炮火点名 · 观察落点并横移躲避'],
@@ -194,6 +251,38 @@ const ENTERTAINMENT_BROADCAST_COPIES: Readonly<Record<
         ['泳池广播：上方发现不明重物，正在快速变得更明', '重物坠落 · 看准落点横向躲开'],
         ['泳池广播：礼炮组把庆祝和瞄准的顺序弄反了', '礼炮点名 · 观察红区并及时横移'],
         ['泳池广播：请抬头看路，不对，请看水面的落点', '炮弹来袭 · 盯住落点横移避开'],
+        ['泳池广播：礼炮组申请增加气氛，结果把气氛砸进了泳池', '气氛来袭 · 观察红区及时躲避'],
+        ['泳池广播：炮台正在寻找志愿者，可惜没有人举手', '随机点名 · 看清落点横向变线'],
+        ['泳池广播：庆典彩排进入实弹阶段，导演本人已经撤离', '实弹彩排 · 离开标记区域'],
+        ['泳池广播：空中快递即将送达，本次配送没有降落伞', '空投到达 · 观察落点及时横移'],
+        ['泳池广播：水面的红圈不是领奖台，请不要主动站进去', '红圈警告 · 迅速离开落点区域'],
+        ['泳池广播：炮手正在测试重力，选手负责提供测试地点', '重力测试 · 看准预警横向躲避'],
+        ['泳池广播：观众想看更大的水花，礼炮组认真听取了意见', '大水花预警 · 避开炮弹落点'],
+        ['泳池广播：天空出现一个感叹号，马上还会出现一个坑', '高空警告 · 观察红区及时变线'],
+        ['泳池广播：几枚炮弹正在练习跳水，入水动作不计分', '炮弹跳水 · 横向避开标记区域'],
+        ['泳池广播：炮台表示只是随便瞄瞄，请各位不要相信', '炮台瞄准 · 盯住落点迅速闪避'],
+    ],
+    [EntertainmentEventId.LITTER]: [
+        ['泳池广播：看台零食吃完了，包装决定下水参赛', '垃圾入场 · 看清软硬漂浮物及时绕行'],
+        ['泳池广播：清洁车走错方向，一路开到了泳池边', '赛道变脏 · 绕开硬瓶或持续划出软袋'],
+        ['泳池广播：观众席开展投掷比赛，泳池不幸当靶场', '杂物落水 · 观察安全空隙及时变线'],
+        ['泳池广播：几件垃圾拒绝进桶，坚持体验水上项目', '漂浮物入场 · 硬瓶要躲、软袋可穿'],
+        ['泳池广播：保洁员刚转身，零食袋和瓶子集体出逃', '垃圾出逃 · 找准通路避开减速'],
+        ['泳池广播：水面卫生评分下降，路线选择难度上升', '赛道异物 · 绕开硬物并挣脱软袋'],
+        ['泳池广播：失物招领处表示，这批东西不用还了', '失物开漂 · 看准空隙横向绕行'],
+        ['泳池广播：一只瓶子和一只袋子决定组队拦路', '软硬夹击 · 避开瓶子或强行穿袋'],
+        ['泳池广播：看台补给吃得很快，包装来得更快', '包装落水 · 选择安全通道继续冲刺'],
+        ['泳池广播：泳池临时增加环保课，考试方式是绕行', '环保考试 · 分清硬瓶软袋及时避让'],
+        ['泳池广播：薯片袋学会了冲浪，空瓶决定一起报名', '包装参赛 · 分清软硬及时绕行'],
+        ['泳池广播：回收物拒绝接受分类，现在全都漂进了赛道', '分类失败 · 绕开硬瓶并划出软袋'],
+        ['泳池广播：零食已经走了，包装却选择留下继续比赛', '包装留场 · 看准安全空隙变线'],
+        ['泳池广播：瓶子负责拦路，塑料袋负责把人留下', '垃圾配合 · 避开硬物并持续划出软袋'],
+        ['泳池广播：垃圾桶盖只开了一秒，赛道付出了全部代价', '垃圾出逃 · 找准通路及时绕行'],
+        ['泳池广播：水面卫生进入紧急状态，保洁员还在赶来的路上', '卫生预警 · 分清软硬漂浮物'],
+        ['泳池广播：包装袋接管了部分泳道，但没有出示许可证', '包装占道 · 横向寻找安全通路'],
+        ['泳池广播：环保小组安排了一场实践课，选手都是考生', '实践考试 · 绕开硬瓶或穿过软袋'],
+        ['泳池广播：硬瓶负责碰撞，软袋负责拖慢，分工非常明确', '软硬分工 · 看清类型及时避让'],
+        ['泳池广播：几件垃圾正在水面开会，正好把路堵了', '漂流会议 · 选择空隙继续冲刺'],
     ],
 };
 
@@ -208,11 +297,21 @@ const SUPER_WHIRLPOOL_BROADCAST_COPIES: readonly EntertainmentBroadcastCopy[] = 
     ['泳池广播：中心水域申请高速旋转，裁判已经批准', '高速旋转开始 · 远核心、顺外圈'],
     ['泳池广播：本场进入洗衣机档位，请抓稳自己的泳道', '洗衣机档启动 · 避核心贴外圈冲浪'],
     ['泳池广播：超级漩涡即将开张，中心位置不设座位', '超级漩涡开张 · 绕开核心借流提速'],
+    ['泳池广播：主排水口宣布全员免费旋转，谢绝退票', '免费旋转 · 远离核心贴外圈冲浪'],
+    ['泳池广播：水面正在把整个泳池拧成一杯特大饮料', '全池搅拌 · 避开核心顺流绕行'],
+    ['泳池广播：维修队建议关闭总阀门，但没人知道它在哪', '总阀失踪 · 远核心贴外圈通过'],
+    ['泳池广播：中心水域开启最高档，附近不再保证直线', '最高档旋流 · 顺外圈借力前进'],
+    ['泳池广播：排水系统今天超额完成任务，请勿靠近验收', '排水超额 · 避开核心顺流冲刺'],
+    ['泳池广播：超级漩涡申请扩大营业面积，现已批准', '漩涡扩张 · 远离核心贴外圈'],
+    ['泳池广播：水流已进入洗衣机脱水环节，请抓稳方向', '脱水环节 · 避核心顺外圈冲浪'],
+    ['泳池广播：中心咕噜声突破安全音量，水面即将暴走', '中心暴走 · 贴外圈借流通过'],
+    ['泳池广播：泳池中央出现水上旋转门，而且转得很快', '旋转门开启 · 绕开核心顺流前进'],
+    ['泳池广播：主排水口决定证明自己不是装饰', '主排水发力 · 远核心贴外圈提速'],
 ];
 
 /**
  * 广播属于表现层，但仍用比赛种子派生独立随机流，让联机各端显示一致。
- * 与 10 互质的步长保证同一事件连续取前十次时不重复，也不消费玩法 RNG。
+ * 与 20 互质的步长保证同一事件连续取前二十次时不重复，也不消费玩法 RNG。
  */
 export function entertainmentBroadcastVariantIndex(
     event: EntertainmentEventId,
@@ -296,10 +395,14 @@ export class EntertainmentModeDirector {
         finishedEvent: null,
     };
 
-    constructor(seed: number, raceDistance = 200) {
+    constructor(
+        seed: number,
+        raceDistance = 200,
+        includeLitter = ENTERTAINMENT_LITTER_SELECTION_ENABLED,
+    ) {
         this.seed = Number.isFinite(seed) ? seed >>> 0 : 0;
         this.raceDistance = Number.isFinite(raceDistance) ? Math.max(1, raceDistance) : 200;
-        this.events = [...buildEntertainmentEventOrder(this.seed, this.raceDistance)];
+        this.events = [...buildEntertainmentEventOrder(this.seed, this.raceDistance, includeLitter)];
         this.specialMask = buildEntertainmentSpecialMask(this.seed, this.events);
         this.publishRuntimeState();
     }
@@ -567,8 +670,33 @@ export class EntertainmentModeDirector {
     }
 }
 
-export function buildEntertainmentEventOrder(seed: number, raceDistance = 200): readonly EntertainmentEventId[] {
+export function buildEntertainmentEventOrder(
+    seed: number,
+    raceDistance = 200,
+    includeLitter = ENTERTAINMENT_LITTER_SELECTION_ENABLED,
+): readonly EntertainmentEventId[] {
     const random = new SeededRandom(((Number.isFinite(seed) ? seed : 0) ^ 0x656e7465) >>> 0);
+    if (includeLitter) {
+        const count = raceDistance >= 400 ? (random.int(2) === 0 ? 5 : 6) : (random.int(2) === 0 ? 3 : 4);
+        const field = [
+            EntertainmentEventId.WHIRLPOOL,
+            EntertainmentEventId.MINEFIELD,
+            EntertainmentEventId.LITTER,
+        ];
+        const contest = [EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB];
+        const assault = [EntertainmentEventId.SHARK, EntertainmentEventId.CANNON];
+        const events = [
+            field[random.int(field.length)],
+            contest[random.int(contest.length)],
+            assault[random.int(assault.length)],
+        ];
+        const remaining = [...field, ...contest, ...assault].filter(event => events.indexOf(event) < 0);
+        random.shuffle(remaining);
+        while (events.length < count && remaining.length > 0) events.push(remaining.pop()!);
+        random.shuffle(events);
+        moveFieldEventAwayFromEnd(events, random);
+        return events;
+    }
     if (raceDistance >= 400) {
         const events = [
             EntertainmentEventId.STIMULANT,
@@ -651,7 +779,7 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
         && (state.lastActivatedEvent === null
             || (Number.isSafeInteger(state.lastActivatedEvent)
                 && state.lastActivatedEvent >= EntertainmentEventId.STIMULANT
-                && state.lastActivatedEvent <= EntertainmentEventId.CANNON))
+                && state.lastActivatedEvent <= EntertainmentEventId.LITTER))
         && (state.activationSerial === 0 || state.lastActivatedEvent !== null)
         && Number.isSafeInteger(state.encoreRound) && state.encoreRound >= 0
         && (state.encoreEvent === null || ENCORE_EVENTS.indexOf(state.encoreEvent) >= 0)
@@ -664,8 +792,10 @@ function validDirectorState(state: EntertainmentDirectorState): boolean {
 
 function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
     if (events.length < 3 || events.length > MAX_EVENT_COUNT || new Set(events).size !== events.length) return false;
-    const fieldCount = events.filter(event => event === EntertainmentEventId.WHIRLPOOL
-        || event === EntertainmentEventId.MINEFIELD).length;
+    if (events.some(event => !Number.isSafeInteger(event)
+        || event < EntertainmentEventId.STIMULANT
+        || event > EntertainmentEventId.LITTER)) return false;
+    const fieldCount = events.filter(event => isFieldEvent(event)).length;
     const contestCount = events.filter(event => event === EntertainmentEventId.STIMULANT
         || event === EntertainmentEventId.TIMED_BOMB).length;
     const assaultCount = events.filter(event => event === EntertainmentEventId.SHARK
@@ -675,7 +805,9 @@ function validEventOrder(events: readonly EntertainmentEventId[]): boolean {
 }
 
 function isFieldEvent(event: EntertainmentEventId): boolean {
-    return event === EntertainmentEventId.WHIRLPOOL || event === EntertainmentEventId.MINEFIELD;
+    return event === EntertainmentEventId.WHIRLPOOL
+        || event === EntertainmentEventId.MINEFIELD
+        || event === EntertainmentEventId.LITTER;
 }
 
 function moveFieldEventAwayFromEnd(events: EntertainmentEventId[], random: SeededRandom): void {

@@ -10,6 +10,7 @@ const {
     EntertainmentEventId,
     EntertainmentDirectorPhase,
     ENTERTAINMENT_BROADCAST_VARIANT_COUNT,
+    ENTERTAINMENT_LITTER_SELECTION_ENABLED,
     buildEntertainmentEventOrder,
     buildEntertainmentSpecialMask,
     entertainmentActionCopy,
@@ -27,10 +28,10 @@ function advance(director, seconds, distance, canFinish = true) {
     return last ?? { previewEvent: null, activatedEvent: null, finishedEvent: null };
 }
 
-test('六种娱乐事件各有十组确定性广播，同一事件前十次不重复', () => {
-    assert.equal(ENTERTAINMENT_BROADCAST_VARIANT_COUNT, 10);
+test('七种娱乐事件各有二十组确定性广播，同一事件前二十次不重复', () => {
+    assert.equal(ENTERTAINMENT_BROADCAST_VARIANT_COUNT, 20);
     const seed = 0x2468ace0;
-    for (let event = EntertainmentEventId.STIMULANT; event <= EntertainmentEventId.CANNON; event++) {
+    for (let event = EntertainmentEventId.STIMULANT; event <= EntertainmentEventId.LITTER; event++) {
         const indices = [];
         const previews = [];
         const actions = [];
@@ -67,7 +68,7 @@ test('广播文案由比赛种子、事件和激活序号确定，预告与行�
     );
 });
 
-test('超级漩涡也有十组独立广播文案', () => {
+test('超级漩涡也有二十组独立广播文案', () => {
     const previews = new Set();
     const actions = new Set();
     for (let serial = 1; serial <= ENTERTAINMENT_BROADCAST_VARIANT_COUNT; serial++) {
@@ -85,11 +86,14 @@ test('娱乐模式每局抽取三到四个不重复事件，三类保底且场�
         counts.add(events.length);
         assert.ok(events.length === 3 || events.length === 4);
         assert.equal(new Set(events).size, events.length);
-        assert.ok(events.filter(event => event === EntertainmentEventId.WHIRLPOOL || event === EntertainmentEventId.MINEFIELD).length >= 1);
+        assert.ok(events.filter(event => event === EntertainmentEventId.WHIRLPOOL
+            || event === EntertainmentEventId.MINEFIELD
+            || event === EntertainmentEventId.LITTER).length >= 1);
         assert.ok(events.filter(event => event === EntertainmentEventId.STIMULANT || event === EntertainmentEventId.TIMED_BOMB).length >= 1);
         assert.ok(events.filter(event => event === EntertainmentEventId.SHARK || event === EntertainmentEventId.CANNON).length >= 1);
         assert.notEqual(events.at(-1), EntertainmentEventId.WHIRLPOOL);
         assert.notEqual(events.at(-1), EntertainmentEventId.MINEFIELD);
+        assert.notEqual(events.at(-1), EntertainmentEventId.LITTER);
     }
     assert.deepEqual([...counts].sort(), [3, 4]);
 });
@@ -103,6 +107,7 @@ test('400 米娱乐模式抽取五到六个不重复事件，并使用六个联�
         assert.equal(new Set(events).size, events.length);
         assert.notEqual(events.at(-1), EntertainmentEventId.WHIRLPOOL);
         assert.notEqual(events.at(-1), EntertainmentEventId.MINEFIELD);
+        assert.notEqual(events.at(-1), EntertainmentEventId.LITTER);
         const director = new EntertainmentModeDirector(seed, 400);
         assert.equal(director.previewDurationSeconds(), 6);
         assert.equal(director.snapshot().eventAnchorDistances.length, 6);
@@ -172,6 +177,33 @@ test('事件完成后进入真实空档，至少五秒后才允许下一次预�
     assert.equal(transition.previewEvent, secondEvent);
     assert.equal(director.snapshot().phase, EntertainmentDirectorPhase.PREVIEW);
     assert.equal(director.snapshot().remainingSeconds, previewSeconds);
+});
+
+test('正式七合一候选保持三类保底、数量上限和场地事件非末位', () => {
+    assert.equal(ENTERTAINMENT_LITTER_SELECTION_ENABLED, true, '房主权威恢复完成后正式抽取应启用垃圾');
+    const fieldEvents = new Set([
+        EntertainmentEventId.WHIRLPOOL,
+        EntertainmentEventId.MINEFIELD,
+        EntertainmentEventId.LITTER,
+    ]);
+    const contestEvents = new Set([EntertainmentEventId.STIMULANT, EntertainmentEventId.TIMED_BOMB]);
+    const assaultEvents = new Set([EntertainmentEventId.SHARK, EntertainmentEventId.CANNON]);
+    let sawLitter = false;
+    for (let seed = 0; seed < 1000; seed++) {
+        for (const distance of [200, 400]) {
+            const events = buildEntertainmentEventOrder(seed, distance);
+            assert.ok(distance === 200 ? events.length === 3 || events.length === 4 : events.length === 5 || events.length === 6);
+            assert.equal(new Set(events).size, events.length);
+            assert.ok(events.some(event => fieldEvents.has(event)));
+            assert.ok(events.some(event => contestEvents.has(event)));
+            assert.ok(events.some(event => assaultEvents.has(event)));
+            assert.equal(fieldEvents.has(events.at(-1)), false);
+            if (events.includes(EntertainmentEventId.LITTER)) sawLitter = true;
+        }
+    }
+    assert.equal(sawLitter, true);
+    assert.ok(buildEntertainmentEventOrder(123, 200, false).every(event => event !== EntertainmentEventId.LITTER),
+        '显式关闭时仍保留旧六事件兼容路径');
 });
 
 test('定时炸弹未结算时导演不会切段，结算后继续轮换', () => {

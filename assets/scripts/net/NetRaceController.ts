@@ -18,6 +18,8 @@ import { NetRaceSessionData } from './NetRaceSession';
 import { drainNetInput, setNetInputCaptureActive } from './NetInputCapture';
 import { decodeInputFrame, encodeInputFrame, NetInputEvent, NetInputKind } from './NetRaceInput';
 import { decodeRaceSnapshot, encodeRaceSnapshot, decodeSelfSnapshot, encodeSelfSnapshot, NetCannonState, NetEntertainmentDirectorState, NetEntertainmentRecoveryState, NetMinefieldState, NetMineRelayState, NetSharkState, NetSnapshotEntry, NetStimulantState } from './NetRaceSnapshot';
+import { decodeLitterSnapshot, encodeLitterSnapshot } from './NetLitterSnapshot';
+import type { LitterContact, LitterSnapshotState } from '../core/LitterBrawlController';
 import { decodeRaceResult, encodeRaceResult, NetResultEntry } from './NetRaceResult';
 import {
     MonotonicSequenceTracker,
@@ -163,6 +165,8 @@ export class NetRaceController {
     private _minefieldImpactListener: ((mineId: number, hitLane: number, courseX: number, lateral: number, hitMask: number, revision: number) => void) | null = null;
     private _minefieldStateListener: ((state: NetMinefieldState) => void) | null = null;
     private _entertainmentDirectorStateListener: ((state: NetEntertainmentDirectorState) => void) | null = null;
+    private _litterStateListener: ((state: LitterSnapshotState) => void) | null = null;
+    private _litterContactListener: ((contact: LitterContact) => void) | null = null;
 
     constructor(private readonly _session: NetRaceSessionData) {
         this._net = netRoom();
@@ -354,6 +358,31 @@ export class NetRaceController {
         this._entertainmentDirectorStateListener = listener;
     }
 
+    setLitterStateListener(listener: ((state: LitterSnapshotState) => void) | null): void {
+        this._litterStateListener = listener;
+    }
+
+    enqueueLitterContact(contact: LitterContact): void {
+        if (!this._isHost || this._disposed) return;
+        this._authoritativeEvents.push({
+            kind: NetInputKind.LitterContact,
+            litterSlotId: contact.slotId,
+            litterGeneration: contact.generation,
+            litterKind: contact.kind === 'soft' ? 1 : 0,
+            litterLane: contact.lane,
+            litterAway: contact.away,
+            litterCourseX: contact.courseX,
+            litterLateral: contact.lateral,
+            litterBounceAlong: contact.bounceAlongVelocity,
+            litterBounceLateral: contact.bounceLateralVelocity,
+            revision: contact.revision,
+        });
+    }
+
+    setLitterContactListener(listener: ((contact: LitterContact) => void) | null): void {
+        this._litterContactListener = listener;
+    }
+
     // Whether the reliable lock-step frame channel works. When false (e.g. iOS
     // high-performance+ disables GameServerManager frame sync), the game must sync via
     // broadcast() only: human self-positions go out as P| instead of riding uploadFrame.
@@ -519,6 +548,7 @@ export class NetRaceController {
         recovery?: NetEntertainmentRecoveryState | null,
         minefield?: NetMinefieldState | null,
         entertainmentDirector?: NetEntertainmentDirectorState | null,
+        litter?: LitterSnapshotState | null,
     ): void {
         if (this._disposed || !this._net.isSupported()) {
             return;
@@ -535,6 +565,7 @@ export class NetRaceController {
             minefield,
             entertainmentDirector,
         ));
+        if (litter) this._net.broadcast(encodeLitterSnapshot(this._session.localPos, litter));
     }
 
     // Client: the most recent authoritative snapshot (empty until one arrives).
@@ -683,6 +714,14 @@ export class NetRaceController {
                 this._minefieldStateListener?.(snapshot.minefield);
             }
             this.refreshHud();
+            return;
+        }
+        const litter = decodeLitterSnapshot(msg);
+        if (litter) {
+            this.adoptHostFromSnapshot(litter.hostPos);
+            if (!this._isHost && litter.hostPos === this._activeHostPos) {
+                this._litterStateListener?.(litter.state);
+            }
             return;
         }
         const self = decodeSelfSnapshot(msg);
@@ -1058,6 +1097,24 @@ export class NetRaceController {
                     event.mineId, event.mineHitLane, event.mineDistance, event.mineLateral,
                     event.hitMask, event.revision,
                 );
+            } else if (event.kind === NetInputKind.LitterContact) {
+                if (event.litterSlotId === undefined || event.litterGeneration === undefined
+                    || event.litterKind === undefined || event.litterLane === undefined
+                    || event.litterAway === undefined || event.litterCourseX === undefined
+                    || event.litterLateral === undefined || event.litterBounceAlong === undefined
+                    || event.litterBounceLateral === undefined || event.revision === undefined) continue;
+                this._litterContactListener?.({
+                    slotId: event.litterSlotId,
+                    generation: event.litterGeneration,
+                    kind: event.litterKind === 1 ? 'soft' : 'rigid',
+                    lane: event.litterLane,
+                    away: event.litterAway === 1 ? 1 : -1,
+                    courseX: event.litterCourseX,
+                    lateral: event.litterLateral,
+                    bounceAlongVelocity: event.litterBounceAlong,
+                    bounceLateralVelocity: event.litterBounceLateral,
+                    revision: event.revision,
+                });
             }
         }
     }

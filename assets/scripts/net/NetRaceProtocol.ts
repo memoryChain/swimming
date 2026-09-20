@@ -72,7 +72,8 @@
 // 版本84：单独水雷玩法新增房主权威的三波补充，并同步波次与每个复用槽位的代次。
 // 版本85：巡游鲨鱼补咬增加独立蓄势状态；闭合节点才击倒，结束后回到巡游且不推进追猎轮次。
 // 版本86：六合一心跳苏打避开折返墙，且只允许已落水、与选手同趟数的瓶子被权威拾取。
-export const NET_RACE_PROTOCOL_VERSION = 86;
+// 版本87：垃圾漂流加入房主权威接触事件与独立周期 L| 状态恢复包。
+export const NET_RACE_PROTOCOL_VERSION = 87;
 const PROTOCOL_TAG = 'PV|';
 const PROTOCOL_REQUEST_TAG = 'PVQ|';
 

@@ -133,7 +133,9 @@ export function isMinefieldBrawlMode(mode: RaceModeId = currentRaceMode): boolea
 }
 
 export function isLitterBrawlMode(mode: RaceModeId = currentRaceMode): boolean {
-    return getRaceModeConfig(mode).ruleset === 'litter';
+    const ruleset = getRaceModeConfig(mode).ruleset;
+    return ruleset === 'litter' || (ruleset === 'entertainment'
+        && mode === currentRaceMode && isEntertainmentEventResident(EntertainmentEventId.LITTER));
 }
 
 export function isEntertainmentBrawlMode(mode: RaceModeId = currentRaceMode): boolean {

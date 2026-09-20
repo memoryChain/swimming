@@ -48,6 +48,7 @@ function createHarness(externalModules = {}) {
         return module.exports;
     }
     const { Vec3 } = load(path.join(engine, 'cocos/core/math/vec3.ts'));
+    const { Vec4 } = load(path.join(engine, 'cocos/core/math/vec4.ts'));
     const { Quat } = load(path.join(engine, 'cocos/core/math/quat.ts'));
     const { Mat4 } = load(path.join(engine, 'cocos/core/math/mat4.ts'));
     class Node {
@@ -86,7 +87,7 @@ function createHarness(externalModules = {}) {
             Quat.multiply(this.rotation, inverse, q); this.writes++;
         }
     }
-    cc = { Node, Vec3, Quat, Mat4, gfx: { AttributeName: { ATTR_POSITION: 'POSITION', ATTR_JOINTS: 'JOINTS_0', ATTR_WEIGHTS: 'WEIGHTS_0' } } };
-    return { load, Node, Vec3, Quat, Mat4, cc, root };
+    cc = { Node, Vec3, Vec4, Quat, Mat4, gfx: { AttributeName: { ATTR_POSITION: 'POSITION', ATTR_JOINTS: 'JOINTS_0', ATTR_WEIGHTS: 'WEIGHTS_0' } } };
+    return { load, Node, Vec3, Vec4, Quat, Mat4, cc, root };
 }
 module.exports = { createHarness };

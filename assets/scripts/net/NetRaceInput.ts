@@ -54,6 +54,7 @@ export const enum NetInputKind {
     MineRelayTransfer = 't', // host-authoritative round, from/to lanes, remaining fuse and revision
     MineRelayResolution = 'b', // host-authoritative round, carrier, explosion center, hit mask and revision
     MinefieldImpact = 'i', // host-authoritative obstacle mine id, direct lane, position, hit mask and revision
+    LitterContact = 'g', // host-authoritative garbage slot contact, resulting trajectory and revision
     EntertainmentKnockdown = 'u', // host-authoritative global recovery lane/reason/distance/revision
 }
 
@@ -93,6 +94,15 @@ export interface NetInputEvent {
     mineHitLane?: number;
     recoveryLane?: number;
     recoveryReason?: number;
+    litterSlotId?: number;
+    litterGeneration?: number;
+    litterKind?: number;
+    litterLane?: number;
+    litterAway?: number;
+    litterCourseX?: number;
+    litterLateral?: number;
+    litterBounceAlong?: number;
+    litterBounceLateral?: number;
 }
 
 export interface DecodedInputFrame {
@@ -142,6 +152,8 @@ function encodeEvent(event: NetInputEvent): string {
             return `${NetInputKind.MineRelayResolution}${Math.max(0, Math.floor(event.mineRoundId ?? 0))},${Math.max(0, Math.floor(event.mineCarrierLane ?? 0))},${event.exploded ? 1 : 0},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.MinefieldImpact:
             return `${NetInputKind.MinefieldImpact}${Math.max(0, Math.floor(event.mineId ?? 0))},${Math.max(0, Math.floor(event.mineHitLane ?? 0))},${Math.max(0, Math.round((event.mineDistance ?? 0) * 100))},${Math.round((event.mineLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.hitMask ?? 0)).toString(16)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
+        case NetInputKind.LitterContact:
+            return `${NetInputKind.LitterContact}${Math.max(0, Math.floor(event.litterSlotId ?? 0))},${Math.max(0, Math.floor(event.litterGeneration ?? 0))},${event.litterKind === 1 ? 1 : 0},${Math.max(0, Math.floor(event.litterLane ?? 0))},${event.litterAway === 1 ? 1 : 0},${Math.round((event.litterCourseX ?? 0) * 100)},${Math.round((event.litterLateral ?? 0) * 1000)},${Math.round((event.litterBounceAlong ?? 0) * 1000)},${Math.round((event.litterBounceLateral ?? 0) * 1000)},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.EntertainmentKnockdown:
             return `${NetInputKind.EntertainmentKnockdown}${Math.max(0, Math.floor(event.recoveryLane ?? 0))},${Math.max(0, Math.floor(event.recoveryReason ?? 0))},${Math.max(0, Math.round((event.knockedDistance ?? 0) * 100))},${Math.max(0, Math.floor(event.revision ?? 0))}`;
         case NetInputKind.DiveRelease: {
@@ -276,6 +288,27 @@ function decodeToken(token: string): NetInputEvent | null {
                     mineLateral: values[3] / 1000,
                     hitMask: values[4],
                     revision: values[5],
+                }
+                : null;
+        }
+        case NetInputKind.LitterContact: {
+            const values = token.slice(1).split(',').map(value => parseInt(value, 10));
+            return values.length === 10
+                && values.every(Number.isSafeInteger)
+                && values[0] >= 0 && values[1] >= 0 && values[2] >= 0 && values[2] <= 1
+                && values[3] >= 0 && values[4] >= 0 && values[4] <= 1 && values[9] > 0
+                ? {
+                    kind,
+                    litterSlotId: values[0],
+                    litterGeneration: values[1],
+                    litterKind: values[2],
+                    litterLane: values[3],
+                    litterAway: values[4] === 1 ? 1 : -1,
+                    litterCourseX: values[5] / 100,
+                    litterLateral: values[6] / 1000,
+                    litterBounceAlong: values[7] / 1000,
+                    litterBounceLateral: values[8] / 1000,
+                    revision: values[9],
                 }
                 : null;
         }

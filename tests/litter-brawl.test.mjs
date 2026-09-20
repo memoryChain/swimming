@@ -8,12 +8,18 @@ import LitterModule from '../assets/scripts/core/LitterBrawlController.ts';
 import ContactGeometry from '../assets/scripts/core/RaceContactGeometry.ts';
 
 const { GameState } = GameConstants;
-const { LitterBrawlController, LITTER_BRAWL_TUNING } = LitterModule;
+const {
+    LitterBrawlController,
+    LITTER_BRAWL_TUNING,
+    LITTER_BRAWL_INDEPENDENT_SCHEDULE,
+    buildEntertainmentLitterSchedule,
+    litterCorridorOverlapsObstacle,
+} = LitterModule;
 const { expandedEllipseContains, segmentHitsExpandedEllipse } = ContactGeometry;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-function fixture(seed = 20260919) {
+function fixture(seed = 20260919, schedule = LITTER_BRAWL_INDEPENDENT_SCHEDULE, isWaveSafe) {
     const racers = Array.from({ length: 8 }, (_, lane) => ({
         active: true,
         finished: false,
@@ -22,11 +28,255 @@ function fixture(seed = 20260919) {
     }));
     const waves = [];
     const impacts = [];
+    const contacts = [];
     const controller = new LitterBrawlController(
         8, seed, 20, lane => racers[lane], wave => waves.push(wave), impact => impacts.push(impact),
+        schedule, isWaveSafe, contact => contacts.push(contact),
     );
-    return { controller, racers, waves, impacts };
+    return { controller, racers, waves, impacts, contacts };
 }
+
+test('独立赛程保持五波，统一娱乐覆盖按赛程生成两波或三波', () => {
+    assert.deepEqual(LITTER_BRAWL_INDEPENDENT_SCHEDULE.waveDistances, [18, 48, 82, 118, 154]);
+    const short = buildEntertainmentLitterSchedule(70, 200);
+    const long = buildEntertainmentLitterSchedule(120, 400);
+    assert.deepEqual(short.waveDistances, [70, 77]);
+    assert.deepEqual(long.waveDistances, [120, 126, 132]);
+    assert.equal(short.landingLeadDistance, LITTER_BRAWL_TUNING.landingLeadDistance);
+    assert.equal(long.landingLeadDistance, LITTER_BRAWL_TUNING.landingLeadDistance);
+
+    const shortFixture = fixture(41, short);
+    shortFixture.racers[0].distance = 200;
+    shortFixture.controller.update(0, GameState.RACING);
+    assert.deepEqual(shortFixture.waves, [0, 1]);
+    assert.equal(shortFixture.controller.activeCount(), 4);
+    assert.equal(shortFixture.controller.pendingWaveCount(), 0);
+
+    const longFixture = fixture(42, long);
+    longFixture.racers[0].distance = 400;
+    longFixture.controller.update(0, GameState.RACING);
+    assert.deepEqual(longFixture.waves, [0, 1, 2]);
+    assert.equal(longFixture.controller.activeCount(), 6);
+});
+
+test('统一赛程受终点安全距离约束且不会生成重复触发点', () => {
+    const nearFinish = buildEntertainmentLitterSchedule(195, 200);
+    assert.deepEqual(nearFinish.waveDistances, [191]);
+    assert.ok(nearFinish.waveDistances[0] + nearFinish.landingLeadDistance <= 198);
+});
+
+test('组合安全不满足时保持同一候选通道等待，安全后才投放', () => {
+    const schedule = buildEntertainmentLitterSchedule(30, 200);
+    const checks = [];
+    let safe = false;
+    const { controller, racers, waves } = fixture(44, schedule, (courseX, safeCenter, safeHalfWidth) => {
+        checks.push([courseX, safeCenter, safeHalfWidth]);
+        return safe;
+    });
+    racers[0].distance = 30;
+    controller.update(0, GameState.RACING);
+    controller.update(0.25, GameState.RACING);
+    assert.equal(controller.activeCount(), 0);
+    assert.equal(controller.pendingWaveCount(), 2);
+    assert.equal(checks.length, 2);
+    assert.deepEqual(checks[1], checks[0], '等待期间不能随帧数重新抽取安全通道');
+
+    safe = true;
+    controller.update(0.25, GameState.RACING);
+    assert.equal(controller.activeCount(), 2);
+    assert.deepEqual(waves, [0]);
+    assert.equal(controller.cancelledCount(), 0);
+});
+
+test('组合安全持续不满足超过窗口后取消该波且不生成贴脸垃圾', () => {
+    const schedule = { waveDistances: [10], landingLeadDistance: 7 };
+    const { controller, racers, waves } = fixture(45, schedule, () => false);
+    racers[0].distance = 10;
+    for (let index = 0; index < 13; index++) controller.update(0.25, GameState.RACING);
+    assert.equal(controller.activeCount(), 0);
+    assert.equal(controller.pendingWaveCount(), 0);
+    assert.equal(controller.cancelledCount(), 1);
+    assert.deepEqual(waves, [], '被取消波次不能触发已投放广播');
+    assert.equal(controller.isComplete(), true);
+});
+
+test('安全通道同时排除活动水雷、普通漩涡和超级漩涡的影响范围', () => {
+    const courseX = 20;
+    const safeCenter = 0;
+    const safeHalfWidth = LITTER_BRAWL_TUNING.safeHalfWidth;
+    const mineAlongRadius = 0.67 + 0.68 + LITTER_BRAWL_TUNING.spawnMineAlongMargin;
+    const mineLateralRadius = 0.65 + 0.4 + LITTER_BRAWL_TUNING.spawnMineLateralMargin;
+    assert.equal(litterCorridorOverlapsObstacle(
+        courseX, safeCenter, safeHalfWidth,
+        courseX + mineAlongRadius - 0.001, safeCenter + safeHalfWidth + mineLateralRadius - 0.001,
+        mineAlongRadius, mineLateralRadius,
+    ), true, '边界上的活动水雷仍占用安全通道');
+    assert.equal(litterCorridorOverlapsObstacle(
+        courseX, safeCenter, safeHalfWidth,
+        courseX + mineAlongRadius + 0.01, safeCenter,
+        mineAlongRadius, mineLateralRadius,
+    ), false, '纵向范围之外的水雷不应误挡波次');
+
+    const normalAlongRadius = 5.2 + LITTER_BRAWL_TUNING.spawnWhirlpoolAlongMargin;
+    const normalLateralRadius = 4.2 + LITTER_BRAWL_TUNING.spawnWhirlpoolLateralMargin;
+    assert.equal(litterCorridorOverlapsObstacle(
+        courseX, -5.9, safeHalfWidth,
+        courseX, 0,
+        normalAlongRadius, normalLateralRadius,
+    ), true, '普通漩涡的完整影响范围不能与安全通道重叠');
+    assert.equal(litterCorridorOverlapsObstacle(
+        courseX, -6.01, safeHalfWidth,
+        courseX, 0,
+        normalAlongRadius, normalLateralRadius,
+    ), false, '普通漩涡外侧应保留真实通路');
+
+    const superAlongRadius = 5.2 * 1.35 + LITTER_BRAWL_TUNING.spawnWhirlpoolAlongMargin;
+    const superLateralRadius = 4.2 * 1.5 + LITTER_BRAWL_TUNING.spawnWhirlpoolLateralMargin;
+    assert.equal(litterCorridorOverlapsObstacle(
+        courseX, -8, safeHalfWidth,
+        courseX, 0,
+        superAlongRadius, superLateralRadius,
+    ), true, '超级漩涡必须使用放大后的范围');
+    assert.equal(litterCorridorOverlapsObstacle(
+        courseX + superAlongRadius + 0.01, -8, safeHalfWidth,
+        courseX, 0,
+        superAlongRadius, superLateralRadius,
+    ), false, '超级漩涡纵向范围之外不应误挡波次');
+});
+
+test('权威快照恢复活动槽位和漂移内部状态，旧快照不能回拨', () => {
+    const schedule = buildEntertainmentLitterSchedule(30, 200);
+    const host = fixture(46, schedule);
+    host.racers[0].distance = 30;
+    host.controller.update(2, GameState.RACING);
+    const snapshot = host.controller.snapshotState();
+    assert.equal(snapshot.slots.length, 2);
+
+    const guest = fixture(999, schedule);
+    guest.racers[0].distance = 200;
+    guest.controller.update(1, GameState.RACING, false);
+    assert.equal(guest.controller.activeCount(), 0, '访客不得自行触发已越过的波次');
+    assert.equal(guest.controller.applySnapshotState(snapshot).applied, true);
+    assert.equal(guest.controller.activeCount(), 2);
+    assert.deepEqual(
+        guest.controller.snapshotState(),
+        snapshot,
+        '恢复必须覆盖随机流、波次、活动槽位及后续漂移所需内部状态',
+    );
+
+    guest.controller.update(0.2, GameState.RACING, false);
+    const advanced = guest.controller.snapshotState();
+    assert.ok(advanced.elapsedSeconds > snapshot.elapsedSeconds);
+    assert.equal(guest.impacts.length, 0, '访客只做表现预测，不自行结算接触');
+    assert.equal(guest.controller.applySnapshotState({
+        ...snapshot,
+        elapsedSeconds: snapshot.elapsedSeconds - 0.01,
+    }).applied, false, '同修订倒序快照不能回拨垃圾');
+    assert.deepEqual(guest.controller.snapshotState(), advanced);
+});
+
+test('较新权威快照可静默回收旧槽位且不会补播波次或碰撞反馈', () => {
+    const schedule = { waveDistances: [10], landingLeadDistance: 7 };
+    const host = fixture(47, schedule);
+    host.racers[0].distance = 10;
+    host.controller.update(0, GameState.RACING);
+    const active = host.controller.snapshotState();
+    host.controller.update(
+        LITTER_BRAWL_TUNING.fallingSeconds
+            + LITTER_BRAWL_TUNING.floatingLifetime
+            + LITTER_BRAWL_TUNING.retireSeconds
+            + 0.1,
+        GameState.RACING,
+    );
+    const retired = host.controller.snapshotState();
+    assert.equal(retired.slots.length, 0);
+
+    const guest = fixture(48, schedule);
+    assert.equal(guest.controller.applySnapshotState(active).applied, true);
+    assert.equal(guest.controller.applySnapshotState(retired).activeChanged, true);
+    assert.equal(guest.controller.activeCount(), 0);
+    assert.deepEqual(guest.waves, [], '快照恢复不能补播旧投放提示');
+    assert.deepEqual(guest.impacts, [], '快照恢复不能补播旧碰撞反馈');
+    assert.equal(guest.controller.applySnapshotState(active).applied, false, '已回收槽位不能被旧包复活');
+});
+
+test('可靠垃圾接触按全局修订去重并把权威受推轨迹应用到访客', () => {
+    const schedule = { waveDistances: [0], landingLeadDistance: 7 };
+    const host = fixture(49, schedule);
+    host.racers[0].distance = 0;
+    host.controller.update(LITTER_BRAWL_TUNING.fallingSeconds + 0.1, GameState.RACING);
+    const beforeContact = host.controller.snapshotState();
+    const rigid = host.controller.clusters().find(slot => slot.active && slot.kind === 'rigid');
+    host.racers[0].distance = rigid.courseX;
+    host.racers[0].lateral = rigid.lateral;
+    host.controller.update(0.05, GameState.RACING);
+    assert.equal(host.contacts.length, 1);
+    const contact = host.contacts[0];
+    assert.equal(contact.kind, 'rigid');
+
+    const guest = fixture(50, schedule);
+    assert.equal(guest.controller.applySnapshotState(beforeContact).applied, true);
+    assert.equal(guest.controller.applyContact(contact), true);
+    assert.equal(guest.controller.applyContact(contact), false, '重复可靠事件不能重复结算');
+    assert.equal(guest.controller.applyContact({ ...contact, revision: contact.revision - 1 }), false,
+        '迟到事件不能回拨垃圾轨迹');
+    const guestSlot = guest.controller.snapshotState().slots.find(slot => slot.id === contact.slotId);
+    assert.equal(guestSlot.bounceAlongVelocity, contact.bounceAlongVelocity);
+    assert.equal(guestSlot.bounceLateralVelocity, contact.bounceLateralVelocity);
+});
+
+test('房主迁移从最近快照继续下一波，不重抽通道或重投旧波次', () => {
+    const schedule = buildEntertainmentLitterSchedule(30, 200);
+    const oldHost = fixture(51, schedule);
+    oldHost.racers[0].distance = 30;
+    oldHost.controller.update(0, GameState.RACING);
+    const migration = oldHost.controller.snapshotState();
+
+    const promoted = fixture(9999, schedule);
+    promoted.racers[0].distance = 30;
+    assert.equal(promoted.controller.applySnapshotState(migration).applied, true);
+    assert.deepEqual(promoted.waves, [], '迁移恢复不能补播已经投放的旧波次');
+
+    oldHost.racers[0].distance = 200;
+    promoted.racers[0].distance = 200;
+    oldHost.controller.update(0, GameState.RACING, true);
+    promoted.controller.update(0, GameState.RACING, true);
+    assert.deepEqual(promoted.waves, [1]);
+    assert.deepEqual(promoted.controller.snapshotState(), oldHost.controller.snapshotState(),
+        '新房主必须沿用权威随机流和相同安全通道继续');
+});
+
+test('导演收尾只取消待投波次，已出现垃圾继续自然下沉并在重启后复用当前预设', () => {
+    const schedule = buildEntertainmentLitterSchedule(30, 200);
+    const { controller, racers, waves } = fixture(43, schedule);
+    racers[0].distance = 30;
+    controller.update(0, GameState.RACING);
+    assert.deepEqual(waves, [0]);
+    assert.equal(controller.activeCount(), 2);
+    assert.equal(controller.pendingWaveCount(), 1);
+
+    controller.cancelPendingWaves();
+    racers[0].distance = 200;
+    controller.update(0, GameState.RACING);
+    assert.deepEqual(waves, [0], '收尾后不能继续投放尚未出现的波次');
+    assert.equal(controller.activeCount(), 2, '已经出现的垃圾不能在收尾边沿瞬间消失');
+
+    controller.update(
+        LITTER_BRAWL_TUNING.fallingSeconds
+            + LITTER_BRAWL_TUNING.floatingLifetime
+            + LITTER_BRAWL_TUNING.retireSeconds
+            + 0.1,
+        GameState.RACING,
+    );
+    assert.equal(controller.activeCount(), 0);
+    assert.equal(controller.isComplete(), true);
+
+    controller.restart();
+    racers[0].distance = 200;
+    controller.update(0, GameState.RACING);
+    assert.deepEqual(waves, [0, 0, 1], '普通重启应继续使用统一模式预设而不是退回独立五波');
+    assert.equal(controller.activeCount(), 4);
+});
 
 test('赛程触发垃圾落入并在落水后才产生柔性阻力', () => {
     const { controller, racers, waves } = fixture();
@@ -241,13 +491,28 @@ test('实现不引入 Graphics 每帧重绘，也不将垃圾挂到角色节点'
     assert.doesNotMatch(presentation, /retireTargetLateral/);
 });
 
-test('第一阶段入口保持隐藏且不扩展六合一与联机协议', () => {
+test('阶段 I 正式启用七合一轮换但公开独立垃圾入口仍保持关闭', () => {
     const balance = fs.readFileSync(path.join(root, 'assets/scripts/core/GameBalance.ts'), 'utf8');
     const director = fs.readFileSync(path.join(root, 'assets/scripts/core/EntertainmentModeDirector.ts'), 'utf8');
+    const manager = fs.readFileSync(path.join(root, 'assets/scripts/core/GameManager.ts'), 'utf8');
+    const ai = fs.readFileSync(path.join(root, 'assets/scripts/entity/AISwimmerController.ts'), 'utf8');
     const room = fs.readFileSync(path.join(root, 'assets/scripts/ui/OnlineRoomView.ts'), 'utf8');
     const protocol = fs.readFileSync(path.join(root, 'assets/scripts/net/NetRaceProtocol.ts'), 'utf8');
+    const input = fs.readFileSync(path.join(root, 'assets/scripts/net/NetRaceInput.ts'), 'utf8');
+    const litterSnapshot = fs.readFileSync(path.join(root, 'assets/scripts/net/NetLitterSnapshot.ts'), 'utf8');
     assert.match(balance, /id:\s*'litter-brawl'[\s\S]*?publicEntry:\s*false/);
-    assert.doesNotMatch(director, /LITTER|litter-brawl/);
+    assert.match(director, /EntertainmentEventId\.LITTER/);
+    assert.match(director, /ENTERTAINMENT_LITTER_SELECTION_ENABLED\s*=\s*true/);
+    assert.match(manager, /case EntertainmentEventId\.LITTER:[\s\S]*?setupLitterBrawl\(\)/);
+    assert.match(manager, /currentWhirlpoolSpawns\(\)/);
+    assert.match(manager, /_minefieldBrawl\?\.mines\(\)/);
+    assert.match(manager, /spawnSwimmerClearAlongRadius/);
+    assert.match(ai, /_litterTargetZ !== null\) desiredPriority = 3/);
+    assert.match(ai, /_mineRelayTargetZ !== null\) desiredPriority = 4/);
+    assert.match(manager, /setLitterStateListener/);
+    assert.match(manager, /setLitterContactListener/);
+    assert.match(input, /LitterContact\s*=\s*'g'/);
+    assert.match(litterSnapshot, /const TAG = 'L\|'/);
     assert.doesNotMatch(room, /litter-brawl/);
-    assert.doesNotMatch(protocol, /Litter|litter/);
+    assert.match(protocol, /NET_RACE_PROTOCOL_VERSION\s*=\s*87/);
 });

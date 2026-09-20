@@ -121,7 +121,7 @@ test('六合一激活时用原广播位置显示三秒红色行动提示', () =>
 });
 
 test('六合一广播在阶段边沿用比赛种子和激活序号选择同组文案', () => {
-    assert.match(director, /ENTERTAINMENT_BROADCAST_VARIANT_COUNT = 10/);
+    assert.match(director, /ENTERTAINMENT_BROADCAST_VARIANT_COUNT = 20/);
     assert.match(director, /entertainmentBroadcastVariantIndex\([\s\S]*?new SeededRandom\(/);
     assert.doesNotMatch(director, /entertainmentBroadcastVariantIndex\([\s\S]*?Math\.random\(/);
     assert.match(gameManager, /const previewActivationSerial = [\s\S]*?activationSerial[\s\S]*?\+ 1/);
